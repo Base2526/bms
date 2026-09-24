@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -16,7 +16,9 @@ import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modi
 import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
-import { posDeviceStorageNamespace, readPosDeviceToken } from "@/lib/pos/deviceTokenClient";
+import { posDeviceStorageNamespace, readPosDeviceToken, requestDesktopOperationalAttention } from "@/lib/pos/deviceTokenClient";
+import { incomingOrderAttentionKeys, incomingOrderNeedsAttention, incomingOrderOperationalState } from "@/lib/pos/incomingOrderAttention";
+import { summarizeDeliveryIntakeControls } from "@/lib/pos/deliveryIntakePresentation";
 import {
   VERIFY_CASHIER_MUTATION,
   posGraphqlRequest,
@@ -29,7 +31,7 @@ import {
 } from "@pos-core/posPin";
 import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import { usePosStartupPreparation } from "@/components/pos/PosStartupPreparation";
-import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
+import { PosWorkspaceContext, type PosIncomingOrderNotice, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { posPaymentMethodLabel, receiptDocumentTitle,
   receiptLabel,
@@ -59,7 +61,7 @@ import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useWakeLock } from "@/app/hooks/useWakeLock";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
-import { PosConnectionStatus } from "@/components/realtime/RealtimeProvider";
+import { PosConnectionStatus, useRealtimeInvalidation } from "@/components/realtime/RealtimeProvider";
 import {
   alertPollIntervalMs,
   describeAgo,
@@ -81,7 +83,10 @@ const RetailPosWorkspace = dynamic(() => import("@/app/(pos)/pos/page"), {
 });
 
 /** เหตุการณ์ที่จอนี้เห็นจริง — หน้าตั้งค่าแสดงเฉพาะชุดนี้ ไม่ยื่นตัวเลือกที่ตั้งแล้วไม่มีผล */
-const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
+const RESTAURANT_ALERT_KINDS: readonly AlertKind[] = ["ORDER_ACTION", "ORDER_NEW", "QR_PENDING", "FOOD_READY", "SLA_LATE"] as const;
+const INCOMING_ORDER_REALTIME_EVENTS = [
+  "order.created", "order.paid", "order.status_changed", "order.cancelled", "order.fulfillment_changed",
+] as const;
 
 // จำ "ฉันยืนอยู่จอไหน / โต๊ะไหน" ไว้ข้ามการรีเฟรช — ต่อท้ายด้วย namespace ของ device เพื่อผูกกับ
 // เครื่องนี้เครื่องเดียว (แบบเดียวกับ bms.pos.localTab. ของหน้าค้าปลีก) เครื่องอื่นที่ใช้
@@ -99,10 +104,10 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "OTHER";
+type RestaurantScreen = "ORDER" | "FLOOR" | "INCOMING" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "OTHER";
 type OtherWorkTab = Extract<PosTab, "sell" | "returns" | "stock" | "deposits">;
 const OTHER_WORK_TABS: readonly OtherWorkTab[] = ["sell", "returns", "stock", "deposits"];
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "OTHER"];
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "OTHER"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -110,7 +115,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "QUEUE", "QR",
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", other: "OTHER",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", other: "OTHER",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
@@ -190,6 +195,7 @@ type ServiceCall = {
   acknowledgedAt: string | null;
   completedAt: string | null;
 };
+type IncomingOrderNotice = PosIncomingOrderNotice;
 type PosMember = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number; tier: { code: string; name: string } | null };
 /**
  * สถานะโปรแกรมสะสมแต้ม + แต้มที่บิลนี้จะได้ — server คิดมาให้แล้วทั้งคู่
@@ -262,6 +268,19 @@ function localReceiptTime(iso: string, mode: ReceiptLanguageMode): string {
   return Number.isNaN(at.getTime()) ? iso : at.toLocaleString(receiptLocale(mode));
 }
 type Translate = (key: string, vars?: Record<string, string | number>) => string;
+
+function otherWorkCopy(tab: OtherWorkTab, t: Translate): { title: string; description: string } {
+  switch (tab) {
+    case "sell":
+      return { title: t("pos_restaurant.other_work_sell"), description: t("pos_restaurant.other_work_sell_desc") };
+    case "returns":
+      return { title: t("pos_restaurant.other_work_returns"), description: t("pos_restaurant.other_work_returns_desc") };
+    case "stock":
+      return { title: t("pos_restaurant.other_work_stock"), description: t("pos_restaurant.other_work_stock_desc") };
+    case "deposits":
+      return { title: t("pos_restaurant.other_work_deposits"), description: t("pos_restaurant.other_work_deposits_desc") };
+  }
+}
 function billHistoryNote(receipt: RecentReceipt, t: Translate): string {
   if (receipt.voidedAt) return t("pos_restaurant.bill_voided");
   if (receipt.orderStatus === "RETURNED") return t("pos_restaurant.bill_returned");
@@ -530,10 +549,14 @@ export default function RestaurantPosPage() {
   const knownReadyTicketIds = useRef<Set<string> | null>(null);
   const knownQrSubmissionIds = useRef<Set<string> | null>(null);
   const knownServiceCallIds = useRef<Set<string> | null>(null);
+  const knownIncomingActionKeys = useRef<Set<string> | null>(null);
+  const incomingRequestSequenceRef = useRef(0);
+  const incomingAppliedSequenceRef = useRef(0);
   // นาฬิกาย้ำเสียงของแต่ละกอง — เก็บใน ref เพราะมันเปลี่ยนทุกรอบ poll และไม่มีอะไรบนจอ
   // ที่ต้องวาดใหม่ตามมัน (state จะทำให้จอครัวรีเรนเดอร์เปล่า ๆ ทุก 5 วินาที)
   const ticketRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
   const qrRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const incomingOrderRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
   const knownLateTicketIds = useRef<Set<string> | null>(null);
   const [activeArea, setActiveArea] = useState("");
   const [selectedTableId, setSelectedTableId] = useState("");
@@ -541,6 +564,8 @@ export default function RestaurantPosPage() {
   // ORDER = จอสั่งอาหาร (กริดเมนูเต็มพื้นที่) · FLOOR = ผังโต๊ะ · KITCHEN = จอครัว
   // กดโต๊ะแล้วเด้งเข้า ORDER เสมอ เพราะงานถัดไปของคนกดคือ "สั่งอาหาร" ไม่ใช่ดูผังต่อ
   const [screen, setScreen] = useState<RestaurantScreen>("FLOOR");
+  const screenRef = useRef<RestaurantScreen>(screen);
+  screenRef.current = screen;
   const [otherWorkTab, setOtherWorkTab] = useState<OtherWorkTab | null>(null);
   // ต้องอ่านค่าที่จำไว้ให้เสร็จก่อน effect ที่เขียนทับจะเริ่มทำงาน — สลับลำดับกันแล้วค่า
   // เริ่มต้น ("FLOOR" / ไม่มีบิล) จะทับของที่จำไว้ตั้งแต่ก่อนที่ใครจะได้อ่านมัน
@@ -564,6 +589,11 @@ export default function RestaurantPosPage() {
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [qrSubmissions, setQrSubmissions] = useState<QrSubmission[]>([]);
   const [serviceCalls, setServiceCalls] = useState<ServiceCall[]>([]);
+  const [incomingOrders, setIncomingOrders] = useState<IncomingOrderNotice[]>([]);
+  const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
+  const [deliveryIntakeState, setDeliveryIntakeState] = useState<"ACCEPTING" | "PARTIAL" | "PAUSED">("ACCEPTING");
+  const [deliveryPauseControlledElsewhere, setDeliveryPauseControlledElsewhere] = useState(false);
+  const [deliveryPauseNeedsManualAction, setDeliveryPauseNeedsManualAction] = useState(false);
   const [qrSelectedId, setQrSelectedId] = useState("");
   const [qrRejectOpen, setQrRejectOpen] = useState(false);
   const [qrRejectReason, setQrRejectReason] = useState("");
@@ -1300,6 +1330,39 @@ export default function RestaurantPosPage() {
     setServiceCalls(rows);
     return rows;
   }
+  async function loadIncomingOrders(signal?: AbortSignal) {
+    const requestSequence = ++incomingRequestSequenceRef.current;
+    const data = await json("/api/pos/restaurant/incoming", { signal });
+    const rows: IncomingOrderNotice[] = Array.isArray(data.orders) ? data.orders : [];
+    // Realtime hints and polling can finish out of order. Apply only the newest successful
+    // response so a late packet cannot resurrect an already accepted/cancelled order in the bell.
+    if (requestSequence < incomingAppliedSequenceRef.current) return rows;
+    incomingAppliedSequenceRef.current = requestSequence;
+    const actionKeys = incomingOrderAttentionKeys(rows);
+    const newlyActionable = newAlertIds(knownIncomingActionKeys.current, actionKeys);
+    if (newlyActionable.length > 0 && screenRef.current !== "INCOMING") {
+      alerts.notify("ORDER_ACTION");
+      void requestDesktopOperationalAttention();
+    }
+    knownIncomingActionKeys.current = new Set(actionKeys);
+    const repeat = evaluateAlertRepeat(incomingOrderRepeatRef.current, {
+      pending: actionKeys.length > 0,
+      now: Date.now(),
+      repeatSeconds: alerts.settings.repeatSeconds,
+      maxRepeats: alerts.settings.maxRepeats,
+    });
+    incomingOrderRepeatRef.current = repeat.state;
+    if (repeat.play && screenRef.current !== "INCOMING") alerts.notify("ORDER_ACTION");
+    setIncomingOrders(rows);
+    setRestaurantOrdersPaused(data?.config?.paused === true);
+    const controls = Array.isArray(data?.config?.deliveryIntakeControls)
+      ? data.config.deliveryIntakeControls : [];
+    const deliveryIntake = summarizeDeliveryIntakeControls(controls);
+    setDeliveryIntakeState(deliveryIntake.state);
+    setDeliveryPauseControlledElsewhere(deliveryIntake.controlledElsewhere);
+    setDeliveryPauseNeedsManualAction(deliveryIntake.needsManualAction);
+    return rows;
+  }
   async function setMenuAvailability(item: MenuItem, unavailable: boolean, reason?: string | null) {
     await run(async () => {
       const result = await json("/api/pos/restaurant/menu", {
@@ -1330,7 +1393,7 @@ export default function RestaurantPosPage() {
     else setLoading(true);
     try {
       if (!(await loadSession())) return;
-      await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist()]);
+      await Promise.all([loadFloor(), loadTickets(), loadMenu(), loadQrSubmissions(), loadServiceCalls(), loadWaitlist(), loadIncomingOrders()]);
       if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null));
       setError("");
     } catch (cause) {
@@ -1506,6 +1569,21 @@ export default function RestaurantPosPage() {
     enabled: Boolean(token),
     intervalMs: alertPollIntervalMs({ focused: screen === "CALLS", visible: pageVisible }),
     onRefresh: (signal) => loadServiceCalls(signal),
+  });
+  // ออเดอร์จากแชท/เว็บ/provider เป็นงานที่มี deadline และอาจเข้าขณะพนักงานอยู่หน้าผัง
+  // หรือจอครัว จึงต้องอัปเดตทุกหน้าจอเหมือนคำเรียกโต๊ะ ไม่ใช่รอจนเปิดเมนูออร์เดอร์เข้า
+  // Realtime เป็นเพียง hint; polling นี้คงอยู่เป็น reconciliation path ตามสัญญาระบบเดิม
+  useLiveRefresh({
+    enabled: Boolean(token) && screen !== "INCOMING",
+    intervalMs: alertPollIntervalMs({ focused: screen === "INCOMING", visible: pageVisible }),
+    onRefresh: (signal) => loadIncomingOrders(signal),
+  });
+  useRealtimeInvalidation({
+    eventTypes: INCOMING_ORDER_REALTIME_EVENTS,
+    onInvalidate: () => { if (screenRef.current !== "INCOMING") void loadIncomingOrders(); },
+    // WebSocket เป็นทางลัดให้เห็นงานทันที ส่วน polling ด้านบนยังเป็น reconciliation path
+    // เมื่อ event หลุด/มาซ้ำ/ต่อ WebSocket ไม่ได้ตามสัญญา realtime ของระบบ
+    debounceMs: 0,
   });
   // จอครัวที่แขวนไว้ต้องไม่ดับ — จอที่ดับคือจุดที่เบราว์เซอร์เริ่มหรี่ timer ตั้งแต่แรก
   // ขอเฉพาะตอนอยู่จอครัวจริง ๆ ไม่ใช่ทั้งแอป (แท็บเล็ตแคชเชียร์ที่วางเฉย ๆ ไม่ต้องกินแบต)
@@ -2352,11 +2430,40 @@ export default function RestaurantPosPage() {
   </main>;
   if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert closable type="warning" showIcon message={t("pos_restaurant.no_token_title")} description={t("pos_restaurant.no_token_desc")} /></main>;
 
+  const waitingIncomingOrders = incomingOrders.filter((order) => order.status === "PAID");
+  const incomingProblemOrders = incomingOrders.filter((order) => incomingOrderOperationalState(order) === "PROBLEM");
+  const incomingActionOrders = incomingOrders.filter(incomingOrderNeedsAttention);
+  const expiredAcceptanceCount = waitingIncomingOrders.filter((order) => {
+    const deadline = order.acceptanceDeadlineAt ? Date.parse(order.acceptanceDeadlineAt) : Number.NaN;
+    return Number.isFinite(deadline) && deadline <= Date.now();
+  }).length;
+  const nearestAcceptanceDeadline = waitingIncomingOrders
+    .map((order) => order.acceptanceDeadlineAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())[0] ?? null;
+  const incomingIntakeLabel = restaurantOrdersPaused && deliveryIntakeState === "PAUSED"
+    ? t("pos_restaurant.incoming_intake_paused")
+    : restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING"
+      ? t("pos_restaurant.incoming_intake_partial")
+      : t("pos_restaurant.incoming_intake_accepting");
+  const incomingAttentionDescription = [
+    expiredAcceptanceCount > 0
+      ? t("pos_restaurant.incoming_attention_expired", { count: expiredAcceptanceCount })
+      : nearestAcceptanceDeadline
+      ? t("pos_restaurant.incoming_attention_deadline", { time: timeOf(nearestAcceptanceDeadline, uiLocale) })
+      : "",
+    incomingProblemOrders.length > 0
+      ? t("pos_restaurant.incoming_attention_problem", { count: incomingProblemOrders.length })
+      : "",
+    incomingIntakeLabel,
+  ].filter(Boolean).join(" · ");
+
   // ป้ายในแถบกว้าง 64px ต้องสั้นพอไม่ตัดคำ ("สั่งอาหาร" เหลือ "สั่ง" แล้วอ่านเป็นคำอื่น)
   // ชื่อเต็มอยู่ที่ title/aria-label เพื่อให้ screen reader และ tooltip ยังได้ความหมายครบ
   const railScreens = [
     { key: "ORDER" as const, short: t("pos_restaurant.rail_order_short"), full: t("pos_restaurant.rail_order"), icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: t("pos_restaurant.rail_floor_short"), full: t("pos_restaurant.rail_floor"), icon: <AppstoreOutlined />, badge: unsentTableCount },
+    { key: "INCOMING" as const, short: t("pos_restaurant.rail_incoming_short"), full: t("pos_restaurant.rail_incoming"), icon: <BellOutlined />, badge: incomingActionOrders.length },
     { key: "QUEUE" as const, short: t("pos_restaurant.rail_queue_short"), full: t("pos_restaurant.rail_queue"), icon: <TeamOutlined />, badge: waitlist.waitingCount + waitlist.calledCount },
     { key: "QR" as const, short: "QR", full: t("pos_restaurant.rail_qr"), icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
     { key: "CALLS" as const, short: t("pos_restaurant.rail_calls_short"), full: t("pos_restaurant.rail_calls"), icon: <span aria-hidden="true">🔔</span>, badge: pendingServiceCalls.length },
@@ -2396,6 +2503,15 @@ export default function RestaurantPosPage() {
       <header className={styles.topbar}>
         <div className={styles.brand}><div><h1 className={styles.title}>BMS Restaurant</h1><p className={styles.subtitle}>{session?.location?.name ?? "-"} · {session?.device.code} · {operatorReady ? (operatorName || t("pos_restaurant.operator")) : t("pos_restaurant.operator_none")}</p></div></div>
         <div className={styles.topActions}>
+          <button type="button"
+            className={`${styles.btn} ${styles.incomingBell} ${incomingActionOrders.length > 0 ? styles.incomingBellUrgent : ""}`}
+            aria-label={t("pos_restaurant.incoming_bell_label", { count: incomingActionOrders.length })}
+            title={t("pos_restaurant.incoming_bell_label", { count: incomingActionOrders.length })}
+            onClick={() => setScreen("INCOMING")}>
+            <BellOutlined aria-hidden="true" />
+            <span>{t("pos_restaurant.rail_incoming")}</span>
+            {incomingActionOrders.length > 0 && <b className={styles.incomingBellBadge}>{incomingActionOrders.length}</b>}
+          </button>
           <PosConnectionStatus />
           <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
             <i aria-hidden="true" />
@@ -2443,6 +2559,68 @@ export default function RestaurantPosPage() {
       {alerts.blocked && <Alert closable type="warning" showIcon
         message={t("pos_alerts.blocked_banner")}
         action={<Button size="small" onClick={() => alerts.preview(alerts.settings.tones.ORDER_NEW)}>{t("pos_alerts.blocked_action")}</Button>} />}
+      {incomingActionOrders.length > 0 && screen !== "INCOMING" && <Alert
+        className={styles.incomingAttention}
+        type={waitingIncomingOrders.length > 0 ? "error" : "warning"}
+        showIcon
+        closable
+        message={t("pos_restaurant.incoming_attention_title", { count: incomingActionOrders.length })}
+        description={incomingAttentionDescription}
+        action={<button type="button" className={`${styles.btn} ${waitingIncomingOrders.length > 0 ? styles.btnDanger : styles.btnPrimary}`} onClick={() => setScreen("INCOMING")}>
+          {t("pos_restaurant.incoming_attention_open")}
+        </button>}
+      />}
+
+      {screen === "INCOMING" && <section className={styles.otherWorkWorkspace}>
+        <div className={styles.otherWorkToolbar}>
+          <span className={styles.incomingWorkspaceMark} aria-hidden="true"><BellOutlined /></span>
+          <div>
+            <h2>{t("pos_restaurant.incoming_workspace_title")}</h2>
+            <p>{t("pos_restaurant.incoming_workspace_desc")}</p>
+          </div>
+          <span className={`${styles.incomingIntakeStatus} ${restaurantOrdersPaused || deliveryIntakeState !== "ACCEPTING" ? styles.incomingIntakePaused : ""}`}>
+            {incomingIntakeLabel}
+          </span>
+        </div>
+        {deliveryPauseControlledElsewhere && <Alert
+          className={styles.incomingProviderWarning}
+          type="info"
+          showIcon
+          closable
+          message={t("pos_restaurant.incoming_central_pause")}
+        />}
+        {deliveryPauseNeedsManualAction && <Alert
+          className={styles.incomingProviderWarning}
+          type="warning"
+          showIcon
+          closable
+          message={t("pos_restaurant.incoming_provider_manual")}
+        />}
+        <div className={styles.otherWorkHost}>
+          <PosWorkspaceContext.Provider value={{
+            embedded: true,
+            initialTab: "incoming",
+            initialToken: token,
+            initialCashierId: actorUserId,
+            initialPin: actorPin,
+            suppressCustomerDisplay: true,
+            onIncomingOrdersChange: (snapshot) => {
+              // The embedded workspace owns this feed while it is open. Invalidate a parent poll
+              // that may still be returning from the screen transition and share its baseline so
+              // leaving the workspace does not announce the same unresolved order as newly arrived.
+              incomingAppliedSequenceRef.current = ++incomingRequestSequenceRef.current;
+              knownIncomingActionKeys.current = new Set(incomingOrderAttentionKeys(snapshot.orders));
+              setIncomingOrders(snapshot.orders);
+              setRestaurantOrdersPaused(snapshot.restaurantOrdersPaused);
+              setDeliveryIntakeState(snapshot.deliveryIntakeState);
+              setDeliveryPauseControlledElsewhere(snapshot.deliveryPauseControlledElsewhere);
+              setDeliveryPauseNeedsManualAction(snapshot.deliveryPauseNeedsManualAction);
+            },
+          }}>
+            <RetailPosWorkspace />
+          </PosWorkspaceContext.Provider>
+        </div>
+      </section>}
 
       {screen === "OTHER" && !otherWorkTab && <section className={styles.otherWorkScreen}>
         <div className={styles.otherWorkHead}>
@@ -2472,8 +2650,8 @@ export default function RestaurantPosPage() {
             <ArrowLeftOutlined aria-hidden="true" /> {t("pos_restaurant.other_work_title")}
           </button>
           <div>
-            <h2>{t(`pos_restaurant.other_work_${otherWorkTab}`)}</h2>
-            <p>{t(`pos_restaurant.other_work_${otherWorkTab}_desc`)}</p>
+            <h2>{otherWorkCopy(otherWorkTab, t).title}</h2>
+            <p>{otherWorkCopy(otherWorkTab, t).description}</p>
           </div>
         </div>
         <div className={styles.otherWorkHost}>

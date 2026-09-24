@@ -157,6 +157,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("restaurant.floor.manage"),
   },
   {
+    id: "sales.delivery-platforms", route: "/admin/delivery-platforms", labelKey: "admin_nav.delivery_platforms",
+    section: "sales", workspace: "SHOP",
+    visible: (ctx) => ctx.archetype === "restaurant" && ctx.can("delivery.integration.view"),
+  },
+  {
     id: "sales.board-game", route: "/admin/board-game", labelKey: "admin_nav.board_game",
     section: "sales", workspace: "SHOP",
     visible: (ctx) => ctx.archetype === "board_game_cafe" && ctx.can("board_game.session.manage"),

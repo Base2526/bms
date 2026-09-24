@@ -642,13 +642,13 @@
   background: var(--pos-sunken);
   font-size: 12px;
 }
-.pos-sale-status.is-blocked {
+.pos-sale-status[data-state="blocked"] {
   border: 1px solid #ffccc7;
   background: var(--pos-danger-bg);
   color: var(--pos-danger);
   font-weight: 600;
 }
-.pos-sale-status.is-ready {
+.pos-sale-status[data-state="ready"] {
   border: 1px solid #b7eb8f;
   background: var(--pos-money-bg);
   color: var(--pos-money);

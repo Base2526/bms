@@ -9,7 +9,9 @@ import { normalizeProvince } from "./shippingZones";
 import { normalizeCustomerIdentity } from "./customerIdentity";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
-const MARKETPLACE_CHECKOUT_CHANNELS = new Set(["lazada", "shopee"]);
+const MARKETPLACE_CHECKOUT_CHANNELS = new Set([
+  "lazada", "shopee", "grabfood", "lineman", "foodpanda",
+]);
 const CUSTOMER_SAFE_ADDRESS_LABELS = new Set([
   "บ้าน",
   "ที่ทำงาน",

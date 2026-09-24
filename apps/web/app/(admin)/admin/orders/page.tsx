@@ -134,7 +134,7 @@ function getStatusLabel(t: (key: string) => string): Record<OrderStatus, string>
 }
 const CHANNEL_COLOR: Record<string, string> = {
   line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue",
-  shopee: "orange", lazada: "purple", test: "default",
+  shopee: "orange", lazada: "purple", grabfood: "green", lineman: "lime", foodpanda: "magenta", test: "default",
 };
 
 const FILTERS = ["ALL", "PENDING", "PAID", "PACKING", "SHIPPED", "COMPLETED", "CANCELLED", "RETURNED"] as const;

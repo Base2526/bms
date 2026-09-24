@@ -22,7 +22,7 @@ import {
   installGlobalZoomPolicy,
 } from "./zoom-policy.mjs";
 
-const { app, BrowserWindow, ipcMain, Menu, net, safeStorage, screen, shell } = electronMain;
+const { app, BrowserWindow, ipcMain, Menu, net, Notification, safeStorage, screen, shell } = electronMain;
 
 installGlobalZoomPolicy(app);
 
@@ -41,6 +41,9 @@ let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
 let startupNavigation = null;
+let lastOperationalAttentionAt = 0;
+const OPERATIONAL_ATTENTION_COOLDOWN_MS = 5_000;
+const operationalNotifications = new Set();
 
 function configPath() {
   return path.join(app.getPath("userData"), "pairing.json");
@@ -376,11 +379,15 @@ function createMainWindow() {
       sandbox: true,
       partition: "persist:bms-pos",
       zoomFactor: 1,
+      // Incoming-order realtime/poll reconciliation must continue while the register is minimized;
+      // otherwise the native attention bridge cannot fire until the cashier reopens the window.
+      backgroundThrottling: false,
     },
   });
 
   setupWindowSecurity(window.webContents.session);
   window.on("move", scheduleCustomerDisplayReconcile);
+  window.on("focus", () => window.flashFrame(false));
   window.on("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;
@@ -615,6 +622,38 @@ function registerIpc() {
     clearTimeout(pendingRefreshRequest.timer);
     pendingRefreshRequest = null;
     if (!result?.handled) reloadMainApplication();
+  });
+  ipcMain.handle("bms-pos:request-operational-attention", async (event) => {
+    if (!isPairedCashierFrame(event) || !mainWindow || mainWindow.isDestroyed()) return { ok: false };
+    // A foreground event is already visible in-page and must not consume the cooldown for a
+    // different event that arrives just after the cashier minimizes the window.
+    if (mainWindow.isFocused()) return { ok: true, focused: true };
+    const now = Date.now();
+    if (now - lastOperationalAttentionAt < OPERATIONAL_ATTENTION_COOLDOWN_MS) return { ok: true, throttled: true };
+    lastOperationalAttentionAt = now;
+    mainWindow.flashFrame(true);
+    if (Notification.isSupported()) {
+      const notification = new Notification({
+        title: "BMS POS",
+        // This may be a new acceptance, hand-off, deadline or recovery task. Keep the
+        // lock-screen copy generic but accurate for every transition.
+        body: "มีงานออร์เดอร์รอดำเนินการ",
+        silent: true,
+      });
+      // Keep the object alive until the OS closes it; otherwise some Linux notification
+      // implementations can collect a locally scoped Notification before its click handler runs.
+      operationalNotifications.add(notification);
+      notification.once("close", () => operationalNotifications.delete(notification));
+      notification.on("click", () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+        notification.close();
+      });
+      notification.show();
+    }
+    return { ok: true };
   });
   ipcMain.handle("bms-pos:pair", async (event, input) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์จับคู่เครื่อง" };

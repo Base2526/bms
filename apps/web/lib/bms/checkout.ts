@@ -23,7 +23,9 @@ import {
   type CheckoutTokenPayload,
 } from "./checkoutToken";
 
-const MARKETPLACE_CHANNELS = new Set(["lazada", "shopee"]);
+const MARKETPLACE_CHANNELS = new Set([
+  "lazada", "shopee", "grabfood", "lineman", "foodpanda",
+]);
 
 export type CheckoutPaymentAccount = {
   key: string;

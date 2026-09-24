@@ -51,6 +51,8 @@ declare global {
       ): () => void;
       /** Desktop Command/Ctrl+R requests an authoritative data refresh without destroying React. */
       onRefreshRequested?(listener: () => void): () => void;
+      /** Generic OS-level attention only; accepts no order/customer payload by design. */
+      requestOperationalAttention?(): Promise<{ ok: boolean; throttled?: boolean; focused?: boolean }>;
       unpair(): Promise<{ ok: boolean }>;
     };
   }
@@ -100,6 +102,15 @@ export async function posDeviceStorageNamespace(token: string): Promise<string> 
 
 export function hasDesktopPosBridge(): boolean {
   return typeof window !== "undefined" && Boolean(window.bmsDesktop);
+}
+
+export async function requestDesktopOperationalAttention(): Promise<void> {
+  if (typeof window === "undefined" || typeof window.bmsDesktop?.requestOperationalAttention !== "function") return;
+  try {
+    await window.bmsDesktop.requestOperationalAttention();
+  } catch {
+    // The in-page badge/banner and sound remain authoritative fallbacks on older desktop shells.
+  }
 }
 
 export async function readDesktopAppInfo(): Promise<DesktopAppInfo | null> {

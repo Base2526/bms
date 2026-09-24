@@ -57,12 +57,16 @@ test("ordinary online sales do not enter the offline policy", () => {
 
 test("native recovery remains bounded, visible after commit, and cannot be hidden by unpair", () => {
   const operation = read("apps/mobile/src/lib/operation.ts");
+  const sharedOperation = read("packages/pos-client-core/src/operation.ts");
   const settings = read("apps/mobile/src/screens/settings/DeviceSettingsScreen.tsx");
   const receiptOperation = read("apps/mobile/src/graphql/operations.graphql");
   const service = read("apps/web/lib/bms/pos.ts");
 
-  assert.match(operation, /runWithOperationTimeout/);
-  assert.match(operation, /AbortController/);
+  // Mobile deliberately re-exports the platform-neutral helper used by Desktop as well. Verify
+  // both the wiring and the implementation instead of requiring a duplicated timeout locally.
+  assert.match(operation, /packages\/pos-client-core\/src\/operation/);
+  assert.match(sharedOperation, /runWithOperationTimeout/);
+  assert.match(sharedOperation, /AbortController/);
   assert.match(settings, /loadOfflineSales/);
   assert.match(settings, /ยังเลิกจับคู่ไม่ได้/);
   assert.match(receiptOperation, /offlineTenderedAt\s+offlineSyncedAt/);

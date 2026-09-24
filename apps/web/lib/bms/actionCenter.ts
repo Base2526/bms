@@ -21,6 +21,71 @@ type Signal = {
   deepLink: string;
 };
 
+async function collectDeliverySignals(tenantId: string): Promise<Signal[]> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const result = await client.query<{
+      acceptance_due: number; action_events: number; mapping_actions: number;
+      failed_commands: number; pause_failures: number; refund_pending: number;
+      settlement_mismatches: number; credential_expiring: number; unhealthy_integrations: number;
+      webhook_stale: number;
+    }>(
+      `SELECT
+        (SELECT COUNT(*)::int FROM bms_delivery_orders
+          WHERE tenant_id=$1 AND local_status IN ('RECEIVED','AWAITING_ACCEPTANCE')
+            AND acceptance_deadline_at IS NOT NULL AND acceptance_deadline_at <= now()+interval '10 minutes') AS acceptance_due,
+        (SELECT COUNT(*)::int FROM bms_delivery_events
+          WHERE tenant_id=$1 AND processing_status IN ('ACTION_REQUIRED','DEAD_LETTER')) AS action_events,
+        (SELECT COUNT(*)::int FROM bms_delivery_menu_mappings
+          WHERE tenant_id=$1 AND mapping_status IN ('UNMAPPED','STALE')) AS mapping_actions,
+        (SELECT COUNT(*)::int FROM bms_delivery_commands
+          WHERE tenant_id=$1 AND status IN ('FAILED','MANUAL_ACTION_REQUIRED')) AS failed_commands,
+        (SELECT COUNT(*)::int FROM bms_delivery_intake_controls
+          WHERE tenant_id=$1 AND desired_state <> provider_state
+            AND sync_status IN ('FAILED','MANUAL_ACTION_REQUIRED')) AS pause_failures,
+        (SELECT COUNT(DISTINCT ra.id)::int
+           FROM bms_pos_refund_allocations ra
+           JOIN bms_pos_returns pr ON pr.tenant_id=ra.tenant_id AND pr.id=ra.pos_return_id
+           JOIN bms_orders o ON o.tenant_id=pr.tenant_id AND o.id=pr.order_id
+          WHERE ra.tenant_id=$1 AND ra.method='PLATFORM_SETTLEMENT'
+            AND ra.status='PENDING') AS refund_pending,
+        (SELECT COUNT(*)::int FROM bms_delivery_settlements
+          WHERE tenant_id=$1 AND status IN ('MISMATCH','DISPUTED')) AS settlement_mismatches,
+        (SELECT COUNT(*)::int FROM bms_delivery_integrations
+          WHERE tenant_id=$1 AND active AND credential_expires_at IS NOT NULL
+            AND credential_expires_at <= now()+interval '14 days') AS credential_expiring,
+        (SELECT COUNT(*)::int FROM bms_delivery_integrations
+          WHERE tenant_id=$1 AND active AND health_status NOT IN ('HEALTHY','DISABLED')) AS unhealthy_integrations,
+        (SELECT COUNT(*)::int FROM bms_delivery_integrations
+          WHERE tenant_id=$1 AND active AND rollout_mode <> 'OFF'
+            AND (last_webhook_at IS NULL OR last_webhook_at < now()-interval '30 minutes')) AS webhook_stale`,
+      [tenantId],
+    );
+    await client.query("COMMIT");
+    const r = result.rows[0];
+    if (!r) return [];
+    const signals: Signal[] = [];
+    const add = (count: number, signal: Omit<Signal, "evidence">) => {
+      if (Number(count) > 0) signals.push({ ...signal, evidence: { count: Number(count) } });
+    };
+    add(r.acceptance_due, { key:"delivery:acceptance-due",category:"OPERATIONS",priority:"CRITICAL",title:"รับหรือแก้ออเดอร์เดลิเวอรีก่อนหมดเวลา",titleEn:"Accept or resolve delivery orders before timeout",expectedImpact:"ป้องกันออเดอร์หมดเวลาและสต็อกค้างจอง",expectedImpactEn:"Prevent provider timeouts and stranded reservations",confidence:1,dueHours:1,deepLink:"/pos?tab=incoming" });
+    add(r.action_events, { key:"delivery:event-action",category:"OPERATIONS",priority:"CRITICAL",title:"แก้เหตุการณ์เดลิเวอรีที่ต้องตรวจด้วยคน",titleEn:"Resolve delivery events requiring human review",expectedImpact:"หยุด event ที่ผิด mapping หรือขัดแย้งก่อนกระทบงานครัวและเงิน",expectedImpactEn:"Contain mapping or state conflicts before they affect kitchen and finance",confidence:1,dueHours:1,deepLink:"/admin/delivery-platforms?tab=operations" });
+    add(r.mapping_actions, { key:"delivery:mapping-action",category:"OPERATIONS",priority:"HIGH",title:"ตรวจ menu mapping ที่ยังไม่พร้อม",titleEn:"Review incomplete or stale delivery menu mappings",expectedImpact:"ป้องกันการสร้างออเดอร์บางส่วนหรือจับคู่สินค้าผิด",expectedImpactEn:"Prevent partial orders and incorrect item mapping",confidence:1,dueHours:4,deepLink:"/admin/delivery-platforms?tab=mappings" });
+    add(r.failed_commands, { key:"delivery:command-failed",category:"OPERATIONS",priority:"CRITICAL",title:"แก้คำสั่ง provider ที่ล้มเหลว",titleEn:"Resolve failed provider commands",expectedImpact:"ทำให้สถานะจริงของร้านและ provider กลับมาตรงกัน",expectedImpactEn:"Restore agreement between local and provider state",confidence:1,dueHours:1,deepLink:"/admin/delivery-platforms?tab=operations" });
+    add(r.pause_failures, { key:"delivery:pause-failed",category:"OPERATIONS",priority:"CRITICAL",title:"ตรวจการหยุดรับออเดอร์ที่ยังไม่ยืนยันบน provider",titleEn:"Review intake pauses not confirmed by providers",expectedImpact:"ลดความเสี่ยงรับออเดอร์ต่อทั้งที่ร้านตั้งใจปิด",expectedImpactEn:"Reduce the risk of receiving orders while the shop intends to be paused",confidence:1,dueHours:1,deepLink:"/admin/delivery-platforms?tab=operations" });
+    add(r.refund_pending, { key:"delivery:refund-pending",category:"OPERATIONS",priority:"HIGH",title:"ติดตาม refund เดลิเวอรีที่ยังรอ provider",titleEn:"Follow up delivery refunds pending provider confirmation",expectedImpact:"ปิดยอดคืนเงินโดยไม่ถือว่าการกดใน BMS คือผลสำเร็จ",expectedImpactEn:"Close refunds without treating a local request as provider confirmation",confidence:1,dueHours:24,deepLink:"/admin/delivery-platforms?tab=finance" });
+    add(r.settlement_mismatches, { key:"delivery:settlement-mismatch",category:"MARGIN",priority:"HIGH",title:"กระทบยอด settlement เดลิเวอรีที่ไม่ตรง",titleEn:"Reconcile mismatched delivery settlements",expectedImpact:"ค้นหาค่าธรรมเนียม คืนเงิน หรือยอดโอนที่ขาด",expectedImpactEn:"Identify missing fees, refunds, or payouts",confidence:1,dueHours:24,deepLink:"/admin/delivery-platforms?tab=finance" });
+    add(r.credential_expiring, { key:"delivery:credential-expiring",category:"OPERATIONS",priority:"HIGH",title:"หมุน credential เดลิเวอรีที่ใกล้หมดอายุ",titleEn:"Rotate expiring delivery credentials",expectedImpact:"ป้องกันการเชื่อมต่อหยุดโดยไม่ตั้งใจ",expectedImpactEn:"Prevent avoidable integration outages",confidence:1,dueHours:24,deepLink:"/admin/delivery-platforms?tab=integrations" });
+    add(r.unhealthy_integrations, { key:"delivery:integration-unhealthy",category:"OPERATIONS",priority:"CRITICAL",title:"แก้การเชื่อมต่อเดลิเวอรีที่ไม่ healthy",titleEn:"Fix unhealthy delivery integrations",expectedImpact:"กู้การรับออเดอร์และการยืนยันสถานะ provider",expectedImpactEn:"Restore order intake and provider acknowledgements",confidence:1,dueHours:1,deepLink:"/admin/delivery-platforms?tab=integrations" });
+    add(r.webhook_stale, { key:"delivery:webhook-stale",category:"OPERATIONS",priority:"HIGH",title:"ตรวจ provider ที่ไม่มี webhook ล่าสุด",titleEn:"Check providers with stale webhook activity",expectedImpact:"ค้นหา webhook ที่หยุดก่อนเกิดออเดอร์ตกหล่น",expectedImpactEn:"Detect stopped webhooks before orders are missed",confidence:.85,dueHours:2,deepLink:"/admin/delivery-platforms?tab=operations" });
+    return signals;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
+}
+
 const row = (r: any) => ({
   id: r.id,
   actionKey: r.action_key,
@@ -44,7 +109,7 @@ const row = (r: any) => ({
 });
 
 async function collectSignals(tenantId: string): Promise<Signal[]> {
-  const [ops, inventory, margin, retention, sales, pos, customerQuality, duplicateCustomers, paymentConflicts, orderOutliers, channelHealth, channelConfig] = await Promise.all([
+  const [ops, inventory, margin, retention, sales, pos, customerQuality, duplicateCustomers, paymentConflicts, orderOutliers, channelHealth, channelConfig, deliverySignals] = await Promise.all([
     getOperationalAlerts(tenantId),
     getInventoryActionCenter(tenantId, 30, 30, 20),
     query<any>(`SELECT
@@ -64,7 +129,7 @@ async function collectSignals(tenantId: string): Promise<Signal[]> {
           SELECT 1 FROM bms_orders o
            WHERE o.tenant_id=$1 AND o.customer_id=c.id
              AND o.status NOT IN ('CANCELLED','RETURNED')
-             AND o.channel NOT IN ('lazada','shopee')
+             AND o.channel NOT IN ('lazada','shopee','grabfood','lineman','foodpanda')
         )
         AND (
           NULLIF(btrim(c.phone),'') IS NULL
@@ -112,8 +177,9 @@ async function collectSignals(tenantId: string): Promise<Signal[]> {
        GROUP BY stats.sample_size, stats.avg_amount, stats.stddev_amount`, [tenantId, ["PAID","PACKING","SHIPPED","COMPLETED"]]),
     listChannelHealth(tenantId),
     listChannelsMasked(tenantId),
+    collectDeliverySignals(tenantId),
   ]);
-  const signals: Signal[] = [];
+  const signals: Signal[] = [...deliverySignals];
   const add = (condition: boolean, signal: Signal) => { if (condition) signals.push(signal); };
   add(ops.chatWaitingCount > 0, { key:"ops:chat-waiting",category:"SALES",priority:"CRITICAL",title:"ตอบลูกค้าที่กำลังรอ",titleEn:"Reply to waiting customers",evidence:{count:ops.chatWaitingCount},expectedImpact:"ลดโอกาสเสียลูกค้าจากการตอบช้า",expectedImpactEn:"Reduce lost customers caused by slow replies",confidence:.95,dueHours:1,deepLink:"/admin/inbox" });
   add(ops.slipPendingCount > 0, { key:"ops:slip-pending",category:"OPERATIONS",priority:"HIGH",title:"ตรวจสลิปรออนุมัติ",titleEn:"Review pending payment slips",evidence:{count:ops.slipPendingCount},expectedImpact:"ปลดออเดอร์ให้เดินหน้าต่อและลดเวลารอชำระ",expectedImpactEn:"Release orders for processing and reduce payment wait time",confidence:1,dueHours:4,deepLink:"/admin/payment?status=PENDING" });

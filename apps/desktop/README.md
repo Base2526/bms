@@ -45,6 +45,15 @@ authoritative; this app does not contain a database or a second settlement path.
   `Command/Ctrl+Shift+R` is labelled as the explicit full application reload for recovering a stuck
   screen. The same explanation appears in the POS help surface, and older web deployments fall back
   to a full reload when they do not expose the content-refresh bridge.
+- restaurant provider/chat orders are polled from the existing device-scoped incoming-order API on
+  every restaurant screen (including while the shift is closed), appear as a persistent rail badge and prominent action banner, and use
+  the existing per-device sound settings. A newly actionable transition (accept, hand-off, expired/
+  cancelled provider state, or failed/manual provider synchronization) can also flash the native taskbar and
+  show a generic OS notification while the cashier window is unfocused; no provider, customer or
+  order payload crosses that IPC boundary or appears on a lock screen. The cashier renderer remains
+  active while minimized so realtime and bounded polling can still raise that attention. Provider
+  terminal state and missed acceptance deadlines suppress stale accept/handoff controls, and the web
+  workflow uses the existing cancellation/refund path; the native shell still owns no order action.
 
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
 separate rollout milestones.

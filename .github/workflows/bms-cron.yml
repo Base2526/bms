@@ -56,6 +56,18 @@ jobs:
           # custom reset times instead of assuming every shop resets at 04:00 Bangkok.
           - name: menu-availability-reset
             path: /api/bms/menu-availability/reset
+          # Recovery polling for delivery platform inbox/outbox. Production should run these
+          # continuously; this schedule prevents a stopped worker from becoming invisible.
+          - name: delivery-events-process
+            path: /api/bms/delivery/events/process
+          - name: delivery-commands-process
+            path: /api/bms/delivery/commands/process
+          - name: delivery-intake-auto-resume
+            path: /api/bms/delivery/intake/auto-resume
+          - name: delivery-scheduled-preparation
+            path: /api/bms/delivery/scheduled-preparation
+          - name: delivery-acceptance-timeout
+            path: /api/bms/delivery/acceptance-timeout
           # Confirmed bookings that never arrived stop occupying the operations board after their
           # six-hour arrival window. Checked-in parties remain staff-managed WAITING/CALLED rows.
           - name: board-game-reservation-expiry

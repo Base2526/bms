@@ -276,6 +276,17 @@ wrong, and update the doc in the same change.
   (never a second money path), writes an immutable cancellation cause, and reprices/absorbs/queues a
   refund exactly like a counter partial return. Full detail:
   [agent-invariants.md § Restaurant online ordering](docs/agent-invariants.md#restaurant-online-ordering-chat-delivery-sold-out).
+- **Delivery platforms (`10.12`)** — provider contracts are capability-gated: never invent an
+  endpoint, signature header, payload, status or retry guarantee. The opaque integration id derives
+  tenant and a verified store mapping derives branch; only `VERIFIED` item/variant/modifier mappings
+  create a whole order. Webhooks write a sanitized durable inbox, the order/payment/reservation
+  commit atomically, and every external call runs after commit through the command outbox. Desired
+  pause, provider state and sync result remain separate. `PLATFORM_SETTLEMENT` is server-only and is
+  never a checkout/POS/AI choice. Scheduled orders require an explicit prep lead; rider handoff
+  commits evidence, `PACKING -> SHIPPED` and stock movement together. GrabFood/LINE MAN remain
+  contract-blocked until official partner webhook/onboarding contracts are reviewed; no live-ready
+  claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Full detail:
+  [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.
   A send never moves reserved stock, and a short receive books the shortfall as lost in transit at
@@ -351,8 +362,10 @@ wrong, and update the doc in the same change.
 
 Four mechanisms; the first three are real, the fourth is dead:
 
-1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**82 namespaces / 5,534 leaf keys per language,
-   exact th↔en parity** re-counted recursively on 2026-09-20 — net **+9** for the shared POS
+1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**84 namespaces / 5,662 leaf keys per language,
+   exact th↔en parity** re-counted recursively on 2026-09-24 — the latest net **+13** covers the
+   Restaurant POS incoming-order bell, action banner, intake status and provider-manual guidance;
+   the preceding net **+9** covers the shared POS
    online/fallback/offline connection control across retail, Restaurant and Board Game; the preceding net **+11** for the Restaurant POS
    other-work hub, direct workflow navigation and consistent restaurant identity; the preceding net **+12** for the shared in-memory
    Restaurant POS operator session, verified employee switching, lock/account menu and shift-status

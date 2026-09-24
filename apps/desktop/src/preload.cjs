@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
     refreshListeners.add(listener);
     return () => refreshListeners.delete(listener);
   },
+  // No renderer-supplied title/body: the native notification stays generic and can never leak
+  // provider/customer/order data onto the operating-system lock screen.
+  requestOperationalAttention: () => ipcRenderer.invoke("bms-pos:request-operational-attention"),
   unpair: () => ipcRenderer.invoke("bms-pos:unpair"),
   getAppInfo: () => ipcRenderer.invoke("bms-pos:app-info"),
 });

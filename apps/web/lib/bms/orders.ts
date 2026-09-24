@@ -1319,6 +1319,7 @@ export async function createOrderInTx(
     // ลูกค้ารับของที่เคาน์เตอร์เอง ช่องทาง POS ต้องไม่มีค่าส่ง แม้ร้านจะตั้ง
     // flat shipping สำหรับออร์เดอร์ออนไลน์ไว้ก็ตาม
     const shippingFee = input.channel === "pos" || fulfillmentType === "PICKUP"
+      || MARKETPLACE_CHANNELS.has(input.channel)
       ? { fee: 0, source: "none" as ShippingFeeSource }
       : await computeOrderShippingFeeInTx(client, {
           tenantId,
@@ -1820,67 +1821,70 @@ export async function completeOrder(tenantId: string, orderId: string): Promise<
 /**
  * จัดส่งจริง: PACKING → SHIPPED → ตัด current+reserved (atomic, tenant-scoped)
  */
+export async function shipOrderInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string,
+  actor = "system",
+): Promise<boolean> {
+  const info = await client.query<{ channel: string; customer_id: string | null }>(
+      `SELECT channel, customer_id FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING'`,
+      [tenantId, orderId]
+    );
+  if (info.rowCount === 0) return false;
+
+  // ช่องทางที่ร้านต้องเก็บที่อยู่เอง (ไม่ใช่มาร์เก็ตเพลส) ต้องมีที่อยู่จัดส่งของลูกค้าก่อนถึงจัดส่งได้จริง
+  const { channel, customer_id } = info.rows[0];
+  if (!MARKETPLACE_CHANNELS.has(channel)) {
+    const addr = customer_id
+      ? await client.query(
+          `SELECT 1 FROM bms_customer_addresses
+            WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping' LIMIT 1`,
+          [tenantId, customer_id]
+        )
+      : null;
+    if (!addr || addr.rowCount === 0) return false;
+  }
+
+  const ord = await client.query(
+    `UPDATE bms_orders SET status = 'SHIPPED', updated_at = now()
+      WHERE tenant_id = $2 AND id = $1 AND status = 'PACKING'`,
+    [orderId, tenantId]
+  );
+  if (ord.rowCount === 0) return false;
+
+  await client.query(
+    `UPDATE bms_inventory inv
+        SET current_stock  = current_stock  - oi.qty,
+            reserved_stock = reserved_stock - oi.qty,
+            updated_at = now()
+       FROM (
+         -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
+         SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
+           FROM bms_order_stock_lines WHERE tenant_id = $2 AND order_id = $1
+          GROUP BY tenant_id, location_id, product_sku, size
+       ) oi
+      WHERE TRUE
+        AND inv.tenant_id = oi.tenant_id
+        AND inv.location_id = oi.location_id
+        AND inv.product_sku = oi.product_sku
+        AND inv.size = oi.size`,
+    [orderId, tenantId]
+  );
+
+  await recordOrderMovements(client, [orderId], "SHIP", actor);
+  return true;
+}
+
 export async function shipOrder(tenantId: string, orderId: string): Promise<boolean> {
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId);
-
-    const info = await client.query<{ channel: string; customer_id: string | null }>(
-      `SELECT channel, customer_id FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING'`,
-      [tenantId, orderId]
-    );
-    if (info.rowCount === 0) {
+    const shipped = await shipOrderInTx(client, tenantId, orderId);
+    if (!shipped) {
       await client.query("ROLLBACK");
       return false;
     }
-
-    // ช่องทางที่ร้านต้องเก็บที่อยู่เอง (ไม่ใช่มาร์เก็ตเพลส) ต้องมีที่อยู่จัดส่งของลูกค้าก่อนถึงจัดส่งได้จริง
-    const { channel, customer_id } = info.rows[0];
-    if (!MARKETPLACE_CHANNELS.has(channel)) {
-      const addr = customer_id
-        ? await client.query(
-            `SELECT 1 FROM bms_customer_addresses
-              WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping' LIMIT 1`,
-            [tenantId, customer_id]
-          )
-        : null;
-      if (!addr || addr.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return false;
-      }
-    }
-
-    const ord = await client.query(
-      `UPDATE bms_orders SET status = 'SHIPPED', updated_at = now()
-        WHERE tenant_id = $2 AND id = $1 AND status = 'PACKING'`,
-      [orderId, tenantId]
-    );
-    if (ord.rowCount === 0) {
-      await client.query("ROLLBACK");
-      return false;
-    }
-
-    await client.query(
-      `UPDATE bms_inventory inv
-          SET current_stock  = current_stock  - oi.qty,
-              reserved_stock = reserved_stock - oi.qty,
-              updated_at = now()
-         FROM (
-           -- view ไม่ใช่ตารางตรง ๆ (8.8) — สินค้าชุดถูกแทนด้วยส่วนประกอบแล้ว
-           SELECT tenant_id, location_id, product_sku, size, SUM(qty)::integer AS qty
-             FROM bms_order_stock_lines WHERE order_id = $1
-            GROUP BY tenant_id, location_id, product_sku, size
-         ) oi
-        WHERE TRUE
-          AND inv.tenant_id = oi.tenant_id
-          AND inv.location_id = oi.location_id
-          AND inv.product_sku = oi.product_sku
-          AND inv.size = oi.size`,
-      [orderId]
-    );
-
-    await recordOrderMovements(client, [orderId], "SHIP", "system");
-
     await client.query("COMMIT");
     void notifyOrderStatusEmail(tenantId, orderId, "shipped");
     return true;

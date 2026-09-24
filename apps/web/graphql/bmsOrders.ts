@@ -347,7 +347,7 @@ export const bmsOrdersResolvers = {
       );
       return res.rows;
     },
-    // มาร์เก็ตเพลส (lazada/shopee/tiktok) = ที่อยู่อยู่ฝั่งแพลตฟอร์ม ไม่ต้องเช็ก — ช่องทางอื่นต้องมีที่อยู่จัดส่งก่อนถึงจัดส่งได้
+    // External fulfillment platforms keep delivery/rider authority on their side.
     async hasShippingAddress(parent: { channel: string; customer_id: string | null; fulfillment_type?: string | null }, _args: unknown, ctx: any) {
       if (parent.fulfillment_type === "PICKUP") return true;
       if (MARKETPLACE_CHANNELS.has(parent.channel)) return true;

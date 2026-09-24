@@ -26,15 +26,15 @@ const DEFAULT_RANK = new Map(DEFAULT_REFUND_METHOD_ORDER.map((method, index) => 
  * ภายในวิธีเดียวกันเรียง UUID เพื่อให้ลำดับ lock เหมือนกันทุก instance
  */
 export function orderRefundPaymentsForAllocation<
-  T extends { id: string; method: PaymentMethod },
+  T extends { id: string; method: string },
 >(payments: readonly T[], preferredMethod?: PaymentMethod | null): T[] {
   return [...payments].sort((left, right) => {
     const leftPreferred = preferredMethod && left.method === preferredMethod ? 0 : 1;
     const rightPreferred = preferredMethod && right.method === preferredMethod ? 0 : 1;
     if (leftPreferred !== rightPreferred) return leftPreferred - rightPreferred;
 
-    const methodDelta = (DEFAULT_RANK.get(left.method) ?? Number.MAX_SAFE_INTEGER)
-      - (DEFAULT_RANK.get(right.method) ?? Number.MAX_SAFE_INTEGER);
+    const methodDelta = (DEFAULT_RANK.get(left.method as PaymentMethod) ?? Number.MAX_SAFE_INTEGER)
+      - (DEFAULT_RANK.get(right.method as PaymentMethod) ?? Number.MAX_SAFE_INTEGER);
     if (methodDelta !== 0) return methodDelta;
     return left.id.localeCompare(right.id);
   });

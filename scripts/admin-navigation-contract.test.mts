@@ -255,6 +255,7 @@ test("emphasis differs by archetype and only explicit shop-type tools are hidden
   // other archetypes.
   const capabilityDriven = new Set([
     "/admin/product-packs", "/admin/product-labels", "/admin/wastage", "/admin/restaurant-floor",
+    "/admin/delivery-platforms",
   ]);
   const comparable = (sections: typeof restaurant) =>
     routesOf(sections).filter((route) => !capabilityDriven.has(route)).sort();

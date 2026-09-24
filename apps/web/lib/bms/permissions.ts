@@ -122,6 +122,17 @@ export const BMS_PERMISSIONS = [
   "restaurant.floor.manage",
   "restaurant.kitchen.update",
   "restaurant.check.cancel",
+  // Delivery-platform boundary (10.12). Credentials/mapping/finance remain
+  // separate from branch operators who review and hand over food.
+  "delivery.integration.view",
+  "delivery.integration.manage",
+  "delivery.mapping.manage",
+  "restaurant.order_intake.manage",
+  "restaurant.delivery.review",
+  "restaurant.delivery.handoff",
+  "delivery.settlement.view",
+  "delivery.settlement.manage",
+  "delivery.dispute.manage",
   // Board game cafe — แยกงานเวลา/โต๊ะ/คลังเกมเล่นออกจาก POS สินค้าและ inventory
   "board_game.session.manage",
   "board_game.session.override_time",

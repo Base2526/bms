@@ -23,6 +23,31 @@ export type PosServiceCallNotice = {
   createdAt: string;
 };
 
+/** Minimal incoming-order shape the restaurant shell needs for its persistent bell/banner. */
+export type PosIncomingOrderNotice = {
+  id: string;
+  channel: string;
+  status: "PAID" | "PACKING";
+  provider: "GRABFOOD" | "LINEMAN" | "FOODPANDA" | null;
+  providerDisplayNumber: string | null;
+  deliveryStatus: string | null;
+  providerStatus: string | null;
+  providerCommandStatus: string | null;
+  acceptanceDeadlineAt: string | null;
+  scheduledFulfillmentAt: string | null;
+  createdAt: string;
+};
+
+export type PosIncomingOrdersSnapshot = {
+  orders: PosIncomingOrderNotice[];
+  restaurantOrdersPaused: boolean;
+  /** Branch row controlled by the POS toggle, not the effective multi-scope state. */
+  deliveryPlatformsPaused: boolean;
+  deliveryIntakeState: "ACCEPTING" | "PARTIAL" | "PAUSED";
+  deliveryPauseControlledElsewhere: boolean;
+  deliveryPauseNeedsManualAction: boolean;
+};
+
 export type PosWorkspaceOptions = {
   embedded: boolean;
   initialTab: PosTab;
@@ -43,6 +68,8 @@ export type PosWorkspaceOptions = {
   onBoardGameCheckout?: (billingGroupId: string) => void | Promise<void>;
   /** Feeds the persistent desktop notification bell without polling the board-game workspace twice. */
   onServiceCallsChange?: (calls: PosServiceCallNotice[]) => void;
+  /** Feeds the restaurant shell bell/intake state while the embedded incoming workspace owns polling. */
+  onIncomingOrdersChange?: (snapshot: PosIncomingOrdersSnapshot) => void;
 };
 
 export const PosWorkspaceContext = createContext<PosWorkspaceOptions>({
