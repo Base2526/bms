@@ -437,7 +437,7 @@ test("modifier surcharge is catalog-owned and reaches the immutable sale snapsho
   assert.match(consumption, /MODIFIER_REQUIRES_RECIPE:/);
   assert.match(
     commission,
-    /COALESCE\(oi\.pack_unit_price \* oi\.pack_qty, oi\.unit_price \* oi\.qty\)/,
+    /oi\.line_amount/,
   );
   assert.match(page, /modifier\.priceDelta/);
 });

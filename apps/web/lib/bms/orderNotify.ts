@@ -40,7 +40,7 @@ export async function notifyOrderStatusEmail(
     if (!order || !customerEmail) return; // ไม่มีอีเมล = ข้ามเงียบๆ (ปกติมาก ไม่ใช่ error)
 
     const itemsRes = await query(
-      `SELECT oi.size, oi.qty, oi.unit_price, COALESCE(oi.product_name, p.name) AS product_name
+      `SELECT oi.size, oi.qty, oi.line_amount, COALESCE(oi.product_name, p.name) AS product_name
          FROM bms_order_items oi
          JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
         WHERE oi.tenant_id = $1 AND oi.order_id = $2`,
@@ -86,7 +86,7 @@ export async function notifyOrderStatusEmail(
       total: fmt(amountDue),
       items: itemsRes.rows.map((r: any) => ({
         name: r.product_name, size: r.size, qty: r.qty,
-        line_total: fmt(Number(r.unit_price) * Number(r.qty)),
+        line_total: fmt(Number(r.line_amount)),
       })),
       tracking_no: trackingNo,
       carrier,

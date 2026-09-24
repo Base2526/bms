@@ -305,6 +305,9 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
   if (vat.vatRegistered && result.unknownVatProducts > 0) {
     result.blockers.push(`สินค้าที่เปิดขายยังไม่ระบุประเภท VAT ${result.unknownVatProducts} รายการ`);
   }
+  if (!vat.priceIncludesVat) {
+    result.blockers.push("ร้านยังตั้งราคาเป็นไม่รวม VAT — เลือก ‘รวม VAT แล้ว’ ในค่าตั้งภาษีและบันทึกก่อนเปิดขาย");
+  }
   if (result.pairedDevices < result.activeDevices) {
     result.warnings.push(`มีเครื่องที่เปิดใช้งานแต่ยังไม่จับคู่ ${result.activeDevices - result.pairedDevices} เครื่อง`);
   }
@@ -5577,6 +5580,7 @@ export async function processPosReturn(input: {
       pack_qty: number | null;
       pack_unit_price: string | null;
       unit_price: string;
+      line_amount: string;
       receipt_unit_price: string;
       pricing_snapshot: unknown;
       returned_pack_qty: string | null;
@@ -5592,6 +5596,7 @@ export async function processPosReturn(input: {
               oi.pack_qty,
               oi.pack_unit_price,
               oi.unit_price,
+              oi.line_amount,
               oi.receipt_unit_price,
               oi.pricing_snapshot,
               COALESCE((
@@ -5678,21 +5683,15 @@ export async function processPosReturn(input: {
     const orderAmount = Math.round((
       Number(order.total_amount) + Number(order.shipping_fee ?? 0) + roundingAmount
     ) * 100) / 100;
-    const grossTotal = orderItems.reduce((sum, item) => {
-      const packQty = item.pack_qty ?? item.qty;
-      const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
-      return sum + packQty * price;
-    }, 0);
+    const grossTotal = orderItems.reduce((sum, item) => sum + Number(item.line_amount), 0);
     if (!(grossTotal > 0) || !(orderAmount >= 0)) throw new Error("ยอดบิลสำหรับคำนวณคืนเงินไม่ถูกต้อง");
 
     const lineNetTotals = new Map<number, number>();
     let allocatedNet = 0;
     orderItems.forEach((item, index) => {
-      const packQty = item.pack_qty ?? item.qty;
-      const price = item.pack_unit_price == null ? Number(item.unit_price) : Number(item.pack_unit_price);
       const lineNet = index === orderItems.length - 1
         ? Math.round((orderAmount - allocatedNet) * 100) / 100
-        : Math.round((orderAmount * ((packQty * price) / grossTotal)) * 100) / 100;
+        : Math.round((orderAmount * (Number(item.line_amount) / grossTotal)) * 100) / 100;
       lineNetTotals.set(item.id, lineNet);
       allocatedNet += lineNet;
     });
@@ -5769,7 +5768,7 @@ export async function processPosReturn(input: {
       );
       const merchantCancelledSubtotal = rawCalculated.reduce((sum, line) => (
         isMerchantResponsibleCancellation(cancellationCauses.get(line.item.id)!)
-          ? sum + line.packQty * Number(line.item.pack_unit_price ?? line.item.unit_price)
+          ? sum + Number(line.item.line_amount) * (line.packQty / Number(line.item.pack_qty ?? line.item.qty))
           : sum
       ), 0);
       const eligibleSubtotal = couponEligibilitySubtotal({

@@ -305,7 +305,7 @@ export async function getTopSellingProducts(
   const res = await query(
     `SELECT oi.product_sku AS sku, p.name,
             SUM(oi.qty)::int AS qty,
-            SUM(oi.qty * oi.unit_price) AS revenue
+            SUM(oi.line_amount) AS revenue
        FROM bms_order_items oi
        JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
@@ -327,7 +327,7 @@ export async function getLifetimeTopSellingProducts(tenantId: string, limit = 10
   const res = await query(
     `SELECT oi.product_sku AS sku, p.name,
             SUM(oi.qty)::int AS qty,
-            SUM(oi.qty * oi.unit_price) AS revenue
+            SUM(oi.line_amount) AS revenue
        FROM bms_order_items oi
        JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
@@ -367,7 +367,7 @@ export async function getProfitSummary(
               COALESCE(ARRAY_AGG(DISTINCT oi.product_sku) FILTER (
                 WHERE oi.id IS NOT NULL AND oi.cost_amount_snapshot IS NULL
               ), ARRAY[]::text[]) AS missing_cost_skus,
-              COALESCE(SUM(oi.qty * oi.unit_price) FILTER (WHERE oi.cost_amount_snapshot IS NULL), 0) AS missing_cost_revenue,
+              COALESCE(SUM(oi.line_amount) FILTER (WHERE oi.cost_amount_snapshot IS NULL), 0) AS missing_cost_revenue,
               COUNT(oi.id) FILTER (WHERE oi.cost_snapshot_source='LEGACY_CURRENT')::int AS legacy_cost_line_count
          FROM eligible_orders o
          LEFT JOIN bms_order_items oi ON oi.tenant_id=$1 AND oi.order_id=o.id`,
@@ -461,7 +461,7 @@ export async function getProfitSummary(
          SELECT COALESCE(o.returned_at,o.updated_at) AS occurred_at,
                 o.location_id, oi.product_sku, oi.cost_amount_snapshot,
                 oi.cost_amount_snapshot AS returned_cost,
-                oi.qty * oi.unit_price AS missing_cost_revenue
+                oi.line_amount AS missing_cost_revenue
            FROM bms_orders o
            JOIN bms_order_items oi
              ON oi.tenant_id=o.tenant_id AND oi.order_id=o.id
@@ -1175,7 +1175,7 @@ export async function getManagementReport(
       `WITH sold AS (
          SELECT oi.product_sku AS sku,
                 SUM(oi.qty)::int AS qty,
-                SUM(oi.qty * oi.unit_price) AS revenue,
+                SUM(oi.line_amount) AS revenue,
                 SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL) AS known_cost,
                 COUNT(*) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_lines
            FROM bms_order_items oi

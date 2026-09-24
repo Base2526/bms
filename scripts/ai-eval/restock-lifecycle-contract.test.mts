@@ -49,7 +49,7 @@ test("payment confirmation promotes only ORDERED subscriptions and allocates net
   assert.match(db.calls[0].text, /status = 'PURCHASED'/);
   assert.match(db.calls[0].text, /s\.status = 'ORDERED'/);
   assert.match(db.calls[0].text, /o\.total_amount/);
-  assert.match(db.calls[0].text, /SUM\(all_oi\.qty \* all_oi\.unit_price\)/);
+  assert.match(db.calls[0].text, /SUM\(all_oi\.line_amount\)/);
 });
 
 test("cancel, expiry, or return reopens subscriptions and clears attribution", async () => {

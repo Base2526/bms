@@ -7284,3 +7284,29 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - **ยังไม่ได้ verify:** execute ทั้ง 99 branches ด้วย live authenticated DB data, generated React Native
   codegen/compile, production deployment และ behavior บนอุปกรณ์จริง · ยังไม่ได้ย้าย/ลบ REST callers
   และไม่ได้เปลี่ยนระบบเป็น WebSocket 100%; subscription/realtime transport อยู่นอก client-readiness brief นี้
+
+### Tax leak guards — Phase 1 (2026-09-24)
+
+- เพิ่ม migration `10.13`: เก็บ `bms_order_items.line_amount` เป็นยอดเงินจริงของแต่ละบรรทัด,
+  backfill หลักฐานเดิม, บังคับ non-negative/not-null และเปลี่ยน unique invoice ของภาษีซื้อเป็นเลขเอกสาร/
+  สาขาที่ normalize แล้ว โดย migration หยุดก่อนเปลี่ยน schema ถ้าพบข้อมูลซ้ำเดิม
+- order creation กระจายยอดโปรราย SKU+size เป็นสตางค์ (เศษลงบรรทัดสุดท้าย) และทุกเส้นทางยอดขาย/
+  ภาษี/รายงานใช้ `line_amount`; `unit_price` เหลือเป็นราคาเฉลี่ยเพื่อแสดงผลและ
+  `receipt_unit_price` ยังเป็นราคาป้ายตามสัญญาเดิม
+- ใบกำกับภาษีเต็มออกได้เฉพาะบิล `COMPLETED` ที่ไม่ void/ไม่เคยคืน, audit อยู่ transaction เดียวกัน;
+  back-office return/cancel/refund ปฏิเสธบิลที่มีเอกสารภาษี active และชี้ให้คืนผ่าน POS เพื่อออกใบลดหนี้
+- ปิดการตั้งราคาไม่รวม VAT ทั้ง UI/service/readiness; ภาษีซื้อตรวจ checksum เลขผู้เสียภาษีไทย,
+  สาขา 5 หลัก, ร้านจด VAT, วันที่/เดือนขอเครดิต และ VAT 7% ภายใน tolerance 0.05 บาท;
+  document counter ใช้ atomic upsert แยก global/device scope
+- ปรับ Windows contract runner ให้เรียก local `tsx` ผ่าน Node โดยไม่ผ่าน `cmd.exe` เพื่อให้ full suite
+  ที่ยาวเกิน 8,191 ตัวอักษรรันได้; มี contract ตรึงพฤติกรรมนี้
+- **verify ก่อน mutation:** typecheck ผ่าน, focused pure contracts ผ่าน, schema export ผ่าน,
+  production build ผ่าน **120/120 pages**; pure suite ทั้งชุด **1,469/1,474** โดย 5 failures
+  เหมือน `develop` และอยู่นอก diff (assistant guide 2, board-game workspace, order alert pattern,
+  delivery SQL relation scanner)
+- **DB ยังไม่ได้ verify:** local PostgreSQL `127.0.0.1:5432` ตอบ `ECONNREFUSED` และ Docker daemon
+  ไม่ทำงาน จึงยังไม่ได้ apply/rollback migration, รัน DB contracts หรือ SELECT ตรวจข้อมูลจริง;
+  read-only preflight สำหรับร้าน `price_includes_vat=false` และ invoice ซ้ำก็ยังอ่านไม่ได้
+- **ความเสี่ยง deploy:** `line_amount` ของ order เก่าถูก backfill จากหลักฐานเดิม จึงกู้ส่วนลดโปรรายบรรทัด
+  ที่ไม่เคย persist ไม่ได้; ก่อน deploy ต้องตรวจ/จัดการ PENDING promo orders เดิม และต้องสำรอง/ตรวจ duplicate
+  invoice ก่อน migration แม้ migration จะ fail closed อยู่แล้ว

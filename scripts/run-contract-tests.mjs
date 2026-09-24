@@ -162,12 +162,15 @@ const args = [
   ...files.map((f) => path.relative(WEB, path.join(SCRIPTS, f))),
 ];
 
-// ถ้าวันหนึ่งไฟล์เทสมากพอจะทะลุเพดานอีก ต้องฟ้องให้อ่านรู้เรื่อง ไม่ใช่ปล่อยให้ cmd.exe
-// ตอบข้อความที่ไม่มีใครเดาต้นเหตุได้
-const commandLength = args.reduce((sum, arg) => sum + arg.length + 3, 4);
-if (process.platform === "win32" && commandLength > 7_500) {
-  console.error(`คำสั่งยาว ${commandLength} ตัวอักษร ใกล้เพดาน 8,191 ของ cmd.exe แล้ว`);
-  console.error("แบ่งรันด้วยตัวกรอง เช่น node scripts/run-contract-tests.mjs pure <ชื่อไฟล์บางส่วน>");
+// เรียก CLI ของ dependency ผ่าน Node โดยตรง ไม่ผ่าน cmd.exe: รายชื่อ pure suites เกิน
+// เพดาน command line 8,191 ตัวของ cmd แล้ว แม้ตัว CreateProcess เองรับได้ราว 32K.
+// ถ้าโตใกล้เพดานจริงค่อยแบ่ง batch; อย่ากลับไป shell:true เพราะจะทำให้ gate Windows
+// หยุดก่อนรันเทสทันที.
+const tsxCli = path.join(WEB, "node_modules", "tsx", "dist", "cli.mjs");
+const commandLength = [tsxCli, ...args.slice(1)].reduce((sum, arg) => sum + arg.length + 3, 4);
+if (process.platform === "win32" && commandLength > 30_000) {
+  console.error(`คำสั่งยาว ${commandLength} ตัวอักษร ใกล้เพดาน CreateProcess แล้ว`);
+  console.error("ต้องแบ่ง test files เป็นหลาย batch โดยรวม exit/TAP ให้ครบก่อนเพิ่ม suite ใหม่");
   process.exit(2);
 }
 
@@ -175,10 +178,10 @@ console.log(
   `[gate] โหมด ${mode} — ${files.length} ไฟล์` +
     (filter ? ` (กรองด้วย "${filter}" จาก ${inMode.length})` : "")
 );
-const run = spawnSync("npx", args, {
+const run = spawnSync(process.execPath, [tsxCli, ...args.slice(1)], {
   cwd: WEB,
   stdio: "inherit",
-  shell: process.platform === "win32",
+  shell: false,
 });
 const exitCode = run.status ?? 1;
 const finishedAt = new Date();

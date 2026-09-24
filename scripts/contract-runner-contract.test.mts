@@ -163,6 +163,14 @@ test('the output directory is not committed', () => {
   assert.equal(ignored.status, 0, 'ต้องอยู่ใน .gitignore — 249 KB ต่อรอบ และเป็นของเครื่องนั้น');
 });
 
+test('the Windows runner bypasses cmd.exe so the full suite is not capped at 8,191 characters', () => {
+  const source = readFileSync(RUNNER, 'utf8');
+  assert.match(source, /spawnSync\(process\.execPath, \[tsxCli, \.\.\.args\.slice\(1\)\]/);
+  assert.match(source, /shell: false/);
+  assert.doesNotMatch(source, /spawnSync\("npx"/);
+  assert.doesNotMatch(source, /7_500/);
+});
+
 // =============================================================
 // ไฟล์สรุป "เฉพาะที่แดง" — ของที่เอาไปแปะให้คน/AI อ่านต่อได้จริง
 // -------------------------------------------------------------

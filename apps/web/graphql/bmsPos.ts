@@ -284,13 +284,6 @@ export const bmsPosResolvers = {
         buyer: args.buyer,
         issuedBy: String(requireAuth(ctx).author_id),
       });
-      if (result.status === "ISSUED") {
-        await audit(ctx, "tax.document.issue_full", result.document.id, {
-          orderId: args.orderId,
-          docNo: result.document.docNo,
-          replaces: result.cancelledAbbreviated?.docNo ?? null,
-        });
-      }
       return result;
     },
 

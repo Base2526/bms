@@ -28,7 +28,7 @@ operators must resolve those records before retrying the migration.
 | Module | Tables | Key migration |
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55` |
-| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance) |
+| Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance), `10.13` (exact sale-line amount) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
@@ -369,8 +369,11 @@ same SKU and size once per normalized selling unit (for example, one `BOX` line 
 line, so they cannot bypass uniqueness or produce duplicate base rows.
 
 Since `9.22`, `receipt_unit_price` separately snapshots the selling-unit price shown before
-wholesale/promotion and order-level discounts. `unit_price` remains the effective price used by
-order arithmetic. Receipt reprints use `receipt_unit_price` plus the snapshotted discount breakdown,
+wholesale/promotion and order-level discounts. Since `10.13`, `line_amount` is the exact amount
+charged by the sale line before order-level discount; it is authoritative for VAT, refunds,
+commission and reports because a two-decimal `unit_price` cannot encode 100 / 3 exactly. The
+per-unit `unit_price` remains a rounded display/reference value. Receipt reprints use
+`receipt_unit_price` plus the snapshotted discount breakdown,
 so a size priced at 1,000 with a 10% cross-size wholesale rule still reprints as 1,000 and an
 explicit −100 adjustment instead of silently relabelling the product price as 900. Legacy rows are
 backfilled once from the best available variant/base-pack evidence at migration time; new rows are
@@ -387,6 +390,11 @@ reconstruction is not authoritative and is never used to change a legacy refund;
 written with `source: "SALE"` while creating a new order can trigger retained-basket repricing.
 Migration `9.24` enforces that provenance marker and updates the database comment so support tools do
 not mistake legacy reconstruction for an exact historical snapshot.
+
+**Input-tax identity (`10.13__bms_tax_leak_guards.sql`)** — the active tax-invoice unique index uses
+tenant, supplier tax ID, normalized supplier branch (`NULL`/blank → `00000`) and a document number
+normalized by upper-casing and removing whitespace/hyphens. Its preflight aborts when historical
+rows collide; it never chooses or deletes a financial record automatically.
 
 **Shipping carrier integration (`7.76`/`7.77`)** — both migrations are additive on `bms_shipments`;
 a manual shipment stays valid and simply keeps `carrier_booking_status = 'manual'` with the sync

@@ -272,6 +272,15 @@ requested filter is insufficient because an omitted filter otherwise means every
 generic `/api/files/[id]` route recognizes generated-report file ids and repeats these checks too;
 changing the URL must never bypass the dedicated report download route.
 
+Migration `10.13` closes the daily tax-document gaps. A positive input-VAT claim additionally
+requires a checksum-valid Thai tax ID, an explicit five-digit supplier branch, VAT registration,
+VAT within five satang of 7% of the base (supplier per-line rounding allowance), a non-future
+document date, and a claim month from the document month through six months later but never in the
+future (Bangkok time). Active supplier tax-invoice identity normalizes the document number by
+upper-casing and removing whitespace/hyphens, and treats blank/`NULL` branch as head office
+`00000`; a `23505` is reported as an already-recorded invoice. The migration aborts rather than
+deleting evidence if existing rows collide after normalization.
+
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
 shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for
 sole-owner personal-funded expenses, and `9.9`–`9.10` for the branch petty-cash wallet) owns the counter
@@ -353,6 +362,13 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **Settlement is one atomic transaction.** Order → `COMPLETED`, stock consumption, FEFO lot
   assignment (`bms_order_item_lots`), movement rows, and tax document issuance commit together or
   not at all.
+- **`bms_order_items.line_amount` is sale-line money authority (`10.13`).** `unit_price` is a
+  two-decimal per-unit reference and cannot represent a 3-for-100 promotion exactly. Promotions
+  are still priced once per SKU+size, then allocated to their loose lines in satang with the final
+  line taking the remainder. VAT, refunds, commission, reports and order line totals read
+  `line_amount`; `receipt_unit_price` remains the shelf-price snapshot used to print the explicit
+  wholesale/promotion discount. Never move a product promotion into `discount_amount`, because
+  that would put it under the order-discount ceiling and spread it across VAT categories.
 - **Idempotency keys gate every write path** (sale, return, refund settlement, and — since `9.5` —
   standalone drawer cash in/out). A key tied to a cancelled/returned terminal state cannot be reused
   as a new sale; a `PENDING`/`PAID` sale can resume its own settlement transaction; a completed key
@@ -464,6 +480,22 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
   changes the VAT base.
+- **Only VAT-inclusive catalog prices are currently sellable.** The setting mutation refuses
+  `price_includes_vat = false`, the form disables that choice, and a legacy false value blocks POS
+  readiness until a human changes it. Do not silently rewrite an existing shop setting and do not
+  claim VAT-exclusive support until every collection path actually adds VAT to the amount charged.
+- **A full tax invoice is for an intact completed sale.** `issueFullTaxInvoice()` row-locks the
+  order and rejects anything except non-void `COMPLETED`, including a sale with any non-void POS
+  return. Cancelling the abbreviated document, inserting the full document, enqueueing e-Tax and
+  writing `tax.document.issue_full` audit evidence commit in one tenant transaction.
+- **Back-office return/cancel/refund cannot strand an active sales tax document.** `returnOrder()`,
+  `cancelOrderInTx()` and the generic confirmed-payment refund reject an order with an active
+  `ABBREVIATED`/`FULL` document and direct staff to the POS return flow, which issues a credit note.
+  Reservation/cron cancellation remains valid when no document exists. The sales-tax exception
+  report also flags historical `RETURNED`/`CANCELLED` orders that still have an active document.
+- **Document-counter creation is an upsert against the real partial unique index.** The NULL-device
+  and device-bound counters use separate `ON CONFLICT ... WHERE device_id IS NULL/IS NOT NULL`
+  arbiters, so two first issuers cannot race into `23505`.
 - **The shift report is scoped to the requesting device, and to revenue-bearing order statuses.**
   `getPosShiftReport()` takes an optional `deviceId` and returns `null` if the shift belongs to a
   different device — a register cannot read another device's shift by guessing its UUID even though

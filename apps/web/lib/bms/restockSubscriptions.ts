@@ -190,16 +190,16 @@ export async function markRestockSubscriptionsPurchasedForOrder(input: {
     `UPDATE bms_restock_subscriptions s
         SET status = 'PURCHASED', resolved_at = now(),
             recovered_revenue = ROUND((
-              SELECT COALESCE(SUM(oi.qty * oi.unit_price), 0)
+              SELECT COALESCE(SUM(oi.line_amount), 0)
                 FROM bms_order_items oi
                WHERE oi.tenant_id = s.tenant_id AND oi.order_id = s.resolved_order_id
                  AND oi.product_sku = s.product_sku AND oi.size = s.size
             ) * CASE
-              WHEN (SELECT SUM(all_oi.qty * all_oi.unit_price) FROM bms_order_items all_oi
+              WHEN (SELECT SUM(all_oi.line_amount) FROM bms_order_items all_oi
                      WHERE all_oi.tenant_id = s.tenant_id AND all_oi.order_id = s.resolved_order_id) > 0
               THEN (SELECT o.total_amount FROM bms_orders o
                      WHERE o.tenant_id = s.tenant_id AND o.id = s.resolved_order_id) /
-                   (SELECT SUM(all_oi.qty * all_oi.unit_price) FROM bms_order_items all_oi
+                   (SELECT SUM(all_oi.line_amount) FROM bms_order_items all_oi
                      WHERE all_oi.tenant_id = s.tenant_id AND all_oi.order_id = s.resolved_order_id)
               ELSE 0
             END, 2),

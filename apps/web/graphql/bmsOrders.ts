@@ -340,7 +340,7 @@ export const bmsOrdersResolvers = {
   BmsOrder: {
     async items(parent: { id: string }, _args: unknown, ctx: any) {
       const res = await query(
-        `SELECT product_sku, product_name, size, qty, unit_price
+        `SELECT product_sku, product_name, size, qty, unit_price, line_amount
            FROM bms_order_items WHERE tenant_id = $2 AND order_id = $1
           ORDER BY id`,
         [parent.id, getTenantId(ctx)]
@@ -392,5 +392,6 @@ export const bmsOrdersResolvers = {
 
   BmsOrderItem: {
     unit_price: (p: any) => Number(p.unit_price),
+    line_amount: (p: any) => Number(p.line_amount),
   },
 };

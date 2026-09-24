@@ -24,6 +24,7 @@ import { earnPointsForOrderInTx, reviewMemberTierForOrder } from "./membership";
 import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscriptions";
 import { slipAmountMatches, type SlipExtract, type SlipImagePolicy, type SlipReader } from "./slipReader";
 import { resolveSlipReader, runSlipReaderFallback } from "./slipReaders";
+import { assertNoActiveSalesTaxDocumentInTx } from "./taxDocumentGuards";
 
 export type { SlipExtract } from "./slipReader";
 
@@ -552,11 +553,11 @@ async function setStatus(
   try {
     await beginTenantTx(client, tenantId);
     const locked = await client.query<{
-      status: string; payable_type: string; board_game_reservation_id: string | null;
+      status: string; payable_type: string; order_id: string | null; board_game_reservation_id: string | null;
       board_game_member_pass_id: string | null; source_payment_id: string | null;
       amount: string; refunded_amount: string;
     }>(
-      `SELECT status, payable_type, board_game_reservation_id, board_game_member_pass_id, source_payment_id,
+      `SELECT status, payable_type, order_id, board_game_reservation_id, board_game_member_pass_id, source_payment_id,
               amount, refunded_amount
          FROM bms_payments WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
       [tenantId, paymentId],
@@ -578,6 +579,9 @@ async function setStatus(
       return false;
     }
     if (to === "REFUNDED") {
+      if (payment.order_id) {
+        await assertNoActiveSalesTaxDocumentInTx(client, tenantId, payment.order_id);
+      }
       const allocatedRefund = await client.query(
         `SELECT 1 FROM bms_pos_refund_allocations
           WHERE tenant_id = $1 AND payment_id = $2 LIMIT 1`,

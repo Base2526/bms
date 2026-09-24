@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import {
+  INPUT_VAT_ROUNDING_TOLERANCE,
+  isValidThaiTaxId,
+  normalizeExpenseDocumentNo,
+  validateExpenseTaxDates,
+  validateInputVatAmount,
+} from "../apps/web/lib/bms/expenseDocuments.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
@@ -33,6 +40,24 @@ test("expense input rejects impossible dates and unknown withholding classificat
   assert.match(src, /whtRate > 100/);
 });
 
+test("input-tax validation checks Thai tax IDs, VAT tolerance and normalized invoice numbers", () => {
+  assert.equal(isValidThaiTaxId("0105555555554"), true);
+  assert.equal(isValidThaiTaxId("0105555555555"), false);
+  assert.equal(normalizeExpenseDocumentNo(" ab- 12-3 "), "AB123");
+  assert.equal(INPUT_VAT_ROUNDING_TOLERANCE, 0.05);
+  assert.doesNotThrow(() => validateInputVatAmount(100.71, 7));
+  assert.throws(() => validateInputVatAmount(100, 7.06), /ไม่สอดคล้อง/);
+});
+
+test("input-tax claim month is bounded by document month, six months and Bangkok today", () => {
+  const now = new Date("2026-09-24T05:00:00.000Z");
+  assert.doesNotThrow(() => validateExpenseTaxDates("2026-01-31", "2026-07-01", now));
+  assert.throws(() => validateExpenseTaxDates("2026-01-31", "2025-12-01", now), /เดือนที่ใช้สิทธิ์/);
+  assert.throws(() => validateExpenseTaxDates("2026-01-31", "2026-08-01", now), /เดือนที่ใช้สิทธิ์/);
+  assert.throws(() => validateExpenseTaxDates("2026-09-25", null, now), /อนาคต/);
+  assert.throws(() => validateExpenseTaxDates("2026-09-01", "2026-10-01", now), /เดือนที่ใช้สิทธิ์/);
+});
+
 test("the tax feature never disables Electron download checksum verification", () => {
   const pkg = read("apps/desktop/package.json");
   assert.doesNotMatch(pkg, /unsafelyDisableChecksums/);
@@ -50,6 +75,16 @@ test("expense mutations use exact idempotency and transactional audit", () => {
   const page = read("apps/web/app/(admin)/admin/expenses/page.tsx");
   assert.match(page, /idempotencyKey:createKey/);
   assert.doesNotMatch(page, /idempotencyKey:crypto\.randomUUID\(\)/, "a UI retry must reuse the action key");
+});
+
+test("normalized invoice uniqueness and friendly duplicate handling are migration-gated", () => {
+  const sql = read("db/migrations/10.13__bms_tax_leak_guards.sql");
+  const src = read("apps/web/lib/bms/expenseDocuments.ts");
+  assert.match(sql, /regexp_replace\(document_no, '\[\[:space:\]-\]\+'/);
+  assert.match(sql, /COALESCE\(NULLIF\(btrim\(payee_branch_code\), ''\), '00000'\)/);
+  assert.match(sql, /RAISE EXCEPTION 'active input-tax invoices collide/);
+  assert.match(src, /error\?\.code === "23505"/);
+  assert.match(src, /ใบนี้ถูกบันทึกแล้ว/);
 });
 
 test("tax summaries use each authority date instead of forcing every figure into document month", () => {

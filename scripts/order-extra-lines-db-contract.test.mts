@@ -148,7 +148,7 @@ test("charges are inside the VAT base, not bolted on after it", async () => {
   // และ query ที่ใบกำกับใช้ต้องดึงบรรทัดค่าบริการมาด้วยจริง
   const lines = await query<{ product_sku: string; amount: string }>(
     `SELECT product_sku, amount FROM (
-       SELECT product_sku, COALESCE(pack_unit_price * pack_qty, unit_price * qty) AS amount
+       SELECT product_sku, line_amount AS amount
          FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2
        UNION ALL
        SELECT 'EXTRA:' || label, unit_amount * qty

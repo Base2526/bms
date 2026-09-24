@@ -1169,6 +1169,12 @@ and cash rounding live on the store profile row and are edited at `/admin/pos-re
 (permission `tax.setting.manage`, every change audited with before/after). They apply to new bills
 only — an issued document keeps the rate and amounts stored on its own row.
 
+Every collection path currently charges the catalog amount as-is, so only **VAT-inclusive** catalog
+prices are supported. Saving `priceIncludesVat = false` is rejected and that choice is disabled in
+the form. A shop with a legacy false value gets a readiness blocker and must explicitly switch to
+VAT included; the system does not rewrite the setting silently. Supporting VAT-exclusive prices
+later requires adding VAT to every amount-collection path, not merely changing invoice arithmetic.
+
 Cash rounding applies solely to bills paid entirely in cash. The rounded difference is its own line
 on the bill and on the receipt; it is not a discount and does not change the VAT base. The counter
 screen reads the same setting through `/api/pos/session` and charges the rounded amount, so the
@@ -1244,6 +1250,13 @@ A line prints at its **shelf price**, and any wholesale step or promotion appear
 `ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer
 paid. That price is snapshotted onto the order line at sale time (`bms_order_items.receipt_unit_price`),
 separately from `unit_price`, which is the effective price the order arithmetic uses.
+
+Migration `10.13` adds `line_amount` as the exact monetary result of that arithmetic. A promotion
+such as 3 for 100 cannot be represented by `qty × NUMERIC(12,2) unit_price` without losing a satang,
+so the promotion is allocated back to order lines in whole satang and the final line receives any
+remainder. VAT, returns, commission and financial reports use `line_amount`; `unit_price` remains a
+rounded per-unit reference, while `receipt_unit_price` still prints the shelf price and the receipt's
+explicit promotion/wholesale discount reconciles it to the net sale.
 
 The two columns exist because they answer different questions, and collapsing them breaks one of the
 answers. Reprinting from `unit_price` alone makes a 1,000 size sold under a 10% step reprint as 900 —

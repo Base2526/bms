@@ -42,7 +42,7 @@ export async function getDashboard(tenantId: string) {
       query(
         `SELECT oi.product_sku AS sku, p.name,
                 SUM(oi.qty)::int AS qty,
-                SUM(oi.qty * oi.unit_price) AS revenue
+                SUM(oi.line_amount) AS revenue
            FROM bms_order_items oi
            JOIN bms_orders o ON o.id = oi.order_id
            JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku

@@ -24,6 +24,11 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.13__bms_tax_leak_guards.sql",
+    impact: "ขายไม่ได้ทุกช่องทาง และออกเอกสารภาษีไม่ได้ — บิลใหม่เขียน/อ่านยอดจริงระดับบรรทัด",
+    needs: [{ kind: "column", table: "bms_order_items", name: "line_amount" }],
+  },
+  {
     file: '9.66__bms_restaurant_order_requests.sql',
     impact: 'แชทร้านอาหารรับคำขอก่อนตรวจสต็อกไม่ได้ และร้านเปิดคิวตรวจคำขอไม่ได้',
     needs: [{ kind: 'table', name: 'bms_restaurant_order_requests' },

@@ -224,6 +224,7 @@ function PharmacyCounterSettingsCard({
 }
 
 function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
+  const { t } = useI18n();
   const [form] = Form.useForm();
   const { data, loading } = useQuery(Q_TAX_SETTINGS, { fetchPolicy: "cache-and-network" });
   const [save, { loading: saving }] = useMutation(M_TAX_SETTINGS);
@@ -242,6 +243,16 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
         message="มีผลกับบิลใหม่เท่านั้น"
         description="เอกสารที่ออกไปแล้วเก็บอัตราและยอดของตัวเองไว้ในเอกสารนั้น การแก้ตรงนี้ไม่ย้อนแก้ของเก่า · ค่าที่ถูกต้องให้ยืนยันกับผู้ทำบัญชีของร้านก่อนเปิดขาย"
       />
+      {settings?.priceIncludesVat === false && (
+        <Alert
+          closable
+          type="error"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("admin_pos_readiness.vat_exclusive_blocker_title")}
+          description={t("admin_pos_readiness.vat_exclusive_blocker_description")}
+        />
+      )}
       <Form
         form={form}
         layout="vertical"
@@ -270,12 +281,16 @@ function TaxSettingsCard({ onSaved }: { onSaved: () => void }) {
           <Form.Item name="vatRate" label="อัตรา VAT (%)">
             <InputNumber min={0} max={100} step={0.5} style={{ width: 120 }} />
           </Form.Item>
-          <Form.Item name="priceIncludesVat" label="ราคาสินค้าที่ตั้งไว้">
+          <Form.Item
+            name="priceIncludesVat"
+            label="ราคาสินค้าที่ตั้งไว้"
+            help={t("admin_pos_readiness.vat_included_only_reason")}
+          >
             <Select
               style={{ width: 200 }}
               options={[
-                { value: true, label: "รวม VAT แล้ว" },
-                { value: false, label: "ยังไม่รวม VAT" },
+                { value: true, label: t("admin_pos_readiness.vat_included") },
+                { value: false, label: t("admin_pos_readiness.vat_excluded_disabled"), disabled: true },
               ]}
             />
           </Form.Item>

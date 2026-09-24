@@ -220,7 +220,7 @@ export async function getCustomerProducts(tenantId: string, customerId: string, 
   const res = await query(
     `SELECT oi.product_sku AS sku, p.name, p.category,
             SUM(oi.qty)::int AS qty,
-            SUM(oi.qty * oi.unit_price) AS revenue,
+            SUM(oi.line_amount) AS revenue,
             MAX(o.created_at) AS last_purchased_at,
             COUNT(DISTINCT o.id)::int AS order_count
        FROM bms_order_items oi

@@ -75,6 +75,7 @@ import {
 import { validateOrderItems } from "./orderValidation";
 import { restaurantOrderingStateInTx } from "./restaurantOrdering";
 import { RestaurantCheckError } from "./restaurantPosErrors";
+import { assertNoActiveSalesTaxDocumentInTx } from "./taxDocumentGuards";
 import {
   resolveStockConsumptionInTx,
   snapshotOrderItemConsumptionInTx,
@@ -201,6 +202,8 @@ export type CreatedLine = {
   size: string;
   qty: number;
   unitPrice: number;
+  /** ยอดที่เก็บจริงของบรรทัดก่อนส่วนลดระดับบิล — exact แม้โปรหารต่อหน่วยไม่ลงตัว */
+  lineAmount: number;
   /** ราคาที่พิมพ์บนใบเสร็จก่อนราคาส่ง/โปรโมชัน (snapshot ไม่อ่านราคาสินค้าปัจจุบัน) */
   receiptUnitPrice: number;
   /** กติกาคิดราคาตามจำนวน/โปร ณ ตอนขาย สำหรับประเมินยอดคงเหลือหลังคืน */
@@ -1015,8 +1018,37 @@ export async function createOrderInTx(
       const picked = pickPromotionForLocation(scoped, locationId);
       if (picked) promoBySku.set(sku, picked);
     }
-    /** SKU ที่คิดยอดโปรไปแล้ว — โปรคิดครั้งเดียวต่อ SKU ต่อบิล ไม่ใช่ต่อบรรทัด */
-    const promoCharged = new Set<string>();
+    // กระจายยอดโปรที่คิดครั้งเดียวต่อ SKU+ไซซ์กลับลงทุกบรรทัดเป็น "ยอดเงินจริง"
+    // แบบสตางค์ต่อสตางค์ โดยบรรทัดสุดท้ายรับเศษจากการปัด ไม่ยัดเป็นส่วนลดทั้งบิล
+    // (ส่วนลดทั้งบิลถูกเกลี่ยข้ามหมวด VAT และอยู่ใต้เพดานส่วนลด จึงใช้แทนไม่ได้)
+    const promoLineAmountByIndex = new Map<number, number>();
+    const looseIndexesByVariant = new Map<string, number[]>();
+    items.forEach((item, index) => {
+      if (item.packUnitPrice != null) return;
+      const key = variantKey(item.sku, item.size);
+      const indexes = looseIndexesByVariant.get(key) ?? [];
+      indexes.push(index);
+      looseIndexesByVariant.set(key, indexes);
+    });
+    for (const [key, indexes] of looseIndexesByVariant) {
+      const first = items[indexes[0]];
+      const promo = promoBySku.get(first.sku) ?? null;
+      if (!promo) continue;
+      const qty = promoQtyByVariant.get(key) ?? 0;
+      const promotedCents = Math.round(applyPromotion(
+        await getVariantBasePriceInTx(client, tenantId, first.sku, first.size) ?? 0,
+        qty,
+        promo
+      ).amount * 100);
+      let allocatedCents = 0;
+      indexes.forEach((index, position) => {
+        const cents = position === indexes.length - 1
+          ? promotedCents - allocatedCents
+          : Math.round(promotedCents * (items[index].qty / qty));
+        allocatedCents += cents;
+        promoLineAmountByIndex.set(index, cents / 100);
+      });
+    }
 
     // สาขาที่จะตัดสต็อก — ทุกรายการในบิลเดียวต้องมาจากสาขาเดียวกัน
     // Derived products (bundle/menu) are sold lines but hold no stock themselves.
@@ -1130,8 +1162,8 @@ export async function createOrderInTx(
             it.size
           );
       // ราคาต่อหน่วยขาย (กล่อง) ถูกกว่าราคาต่อหน่วยฐาน × จำนวน เสมอ → ยอดบิลต้องคิดจาก
-      // ราคาหน่วยขายเมื่อมี ส่วน unit_price ยังเป็นราคาต่อหน่วยฐานตามความหมายเดิม
-      // (ผลคือ SUM(unit_price × qty) > total_amount เท่ากับส่วนลดยกกล่อง — ตั้งใจ)
+      // ราคาหน่วยขายเมื่อมี ส่วน line_amount เป็นยอดเงินจริงของบรรทัด และ unit_price
+      // เป็นค่าเฉลี่ยต่อชิ้นที่ปัดทศนิยมสำหรับแสดงผลเท่านั้น
       const packQty = it.packQty ?? null;
       const basePackUnitPrice = it.packUnitPrice ?? null;
       const modifierUnitPrice = (it.modifierCodes ?? []).reduce((sum, code) => (
@@ -1147,9 +1179,17 @@ export async function createOrderInTx(
       const costAmountSnapshot = hasCompleteCost
         ? Math.round(costParts.reduce((sum, part) => sum + part.qty * Number(part.cost), 0) * 100) / 100
         : null;
-      // Keep unit_price × qty (or pack_unit_price × pack_qty) equal to the
-      // taxable line amount consumed by documents, refunds and commission.
-      const unitPrice = baseUnitPrice + (it.qty > 0 ? modifierTotal / it.qty : 0);
+      // line_amount is the exact monetary authority. unit_price remains a rounded
+      // per-unit reference because a 3-for-100 line cannot fit exactly in NUMERIC(12,2).
+      const productLineAmount = promoLineAmountByIndex.get(itemIndex)
+        ?? (basePackUnitPrice != null && packQty != null
+          ? basePackUnitPrice * packQty
+          : baseUnitPrice * it.qty);
+      const lineAmount = Math.round((productLineAmount + modifierTotal) * 100) / 100;
+      const unitPrice = Math.round((
+        (it.qty > 0 ? productLineAmount / it.qty : 0)
+        + (it.qty > 0 ? modifierTotal / it.qty : 0)
+      ) * 100) / 100;
       const packUnitPrice = basePackUnitPrice == null
         ? null
         : basePackUnitPrice + modifierUnitPrice;
@@ -1157,21 +1197,14 @@ export async function createOrderInTx(
       // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
       const promo = packUnitPrice != null ? null : promoBySku.get(it.sku) ?? null;
-      if (promo && !promoCharged.has(key)) {
-        promoCharged.add(key);
-        total += applyPromotion(listPrice, promoQtyByVariant.get(key) ?? it.qty, promo).amount;
-      } else if (!promo) {
-        total += basePackUnitPrice != null && packQty != null
-          ? basePackUnitPrice * packQty
-          : baseUnitPrice * it.qty;
-      }
-      total += modifierTotal;
+      total += lineAmount;
       lines.push({
         sku: it.sku,
         name: prod.rows[0].name,
         size: it.size,
         qty: it.qty,
         unitPrice,
+        lineAmount,
         receiptUnitPrice: (basePackUnitPrice ?? listPrice) + modifierUnitPrice,
         pricingSnapshot: {
           source: "SALE",
@@ -1475,16 +1508,16 @@ export async function createOrderInTx(
 
     for (const [lineIndex, ln] of lines.entries()) {
       const insertedItem = await client.query<{ id: string }>(
-        `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price,
+        `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price, line_amount,
                                       receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price,
                                       vat_category, stock_modifier_codes, stock_consumption_version,
                                       cost_amount_snapshot, cost_snapshot_source)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $14, $15, $9, $10, $11, $12, $13, $16, 1, $17, $18)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $19, $14, $15, $9, $10, $11, $12, $13, $16, 1, $17, $18)
          RETURNING id`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
           ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot),
-          ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource]
+          ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource, ln.lineAmount]
       );
       await snapshotOrderItemConsumptionInTx(
         client,
@@ -1902,6 +1935,8 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
   try {
     await beginTenantTx(client, tenantId);
 
+    await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
+
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')
@@ -1965,6 +2000,7 @@ export async function cancelOrderInTx(
   tenantId: string,
   orderId: string
 ): Promise<boolean> {
+    await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('PENDING','PAID','PACKING')`,
