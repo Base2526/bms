@@ -1,0 +1,152 @@
+name: bms-retail-local
+
+x-db-environment: &db-environment
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:?missing POSTGRES_DB}
+  POSTGRES_USER: app
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD}
+
+x-web-runtime: &web-runtime
+  <<: *db-environment
+  NODE_ENV: production
+  BMS_DEPLOYMENT_MODE: retail-local
+  NEXT_PUBLIC_BASE_URL: http://127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}
+  NEXT_PUBLIC_GRAPHQL_HTTP: http://127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}/api/graphql
+  NEXT_PUBLIC_GRAPHQL_WS: ws://127.0.0.1:${BMS_LOCAL_WS_PORT:-3101}/graphql
+  WEB_NAME: BMS Retail Local
+  NEXT_PUBLIC_WEB_NAME: BMS Retail Local
+  COOKIE_SECURE: "0"
+  REDIS_URL: redis://:${REDIS_PASSWORD:?missing REDIS_PASSWORD}@redis:6379
+  STORAGE_DRIVER: local
+  STORAGE_DIR: /app/storage
+  JWT_SECRET: ${JWT_SECRET:?missing JWT_SECRET}
+  BMS_SECRET_KEY: ${BMS_SECRET_KEY:?missing BMS_SECRET_KEY}
+  BMS_CHECKOUT_SECRET: ${BMS_CHECKOUT_SECRET:?missing BMS_CHECKOUT_SECRET}
+  BMS_CRON_SECRET: ${BMS_CRON_SECRET:?missing BMS_CRON_SECRET}
+  BMS_JOB_TOKEN: ${BMS_JOB_TOKEN:?missing BMS_JOB_TOKEN}
+  REALTIME_OUTBOX_DISPATCH_ENABLED: "1"
+  REALTIME_SUBSCRIPTIONS_ENABLED: "1"
+  PHARMACY_INTAKE_ENABLED: "0"
+  PHARMACY_AI_ENABLED: "0"
+  PHARMACY_PROTOCOLS_ENABLED: "0"
+
+services:
+  postgres:
+    image: ${BMS_POSTGRES_IMAGE_REF:?missing BMS_POSTGRES_IMAGE_REF}
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?missing POSTGRES_DB}
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?missing POSTGRES_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=all
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: ${BMS_REDIS_IMAGE_REF:?missing BMS_REDIS_IMAGE_REF}
+    restart: unless-stopped
+    command: ["sh", "-c", "exec redis-server --appendonly yes --appendfsync everysec --requirepass \"$$REDIS_PASSWORD\""]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?missing REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - redis_data:/data
+
+  migrate:
+    image: ${BMS_WEB_IMAGE_REF:?missing BMS_WEB_IMAGE_REF}
+    environment:
+      <<: *web-runtime
+      BMS_MIGRATIONS_DIR: /app/db/migrations
+      BMS_DB_INIT_FILE: /app/db/init.sql
+    command: ["node", "scripts/retail-local-migrate.mjs"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  provision:
+    profiles: ["setup"]
+    image: ${BMS_WEB_IMAGE_REF:?missing BMS_WEB_IMAGE_REF}
+    environment:
+      <<: *web-runtime
+      BMS_LOCAL_SHOP_NAME: ${BMS_LOCAL_SHOP_NAME:-}
+      BMS_LOCAL_SHOP_SLUG: ${BMS_LOCAL_SHOP_SLUG:-local-shop}
+      BMS_LOCAL_ADMIN_NAME: ${BMS_LOCAL_ADMIN_NAME:-}
+      BMS_LOCAL_ADMIN_EMAIL: ${BMS_LOCAL_ADMIN_EMAIL:-}
+      BMS_LOCAL_ADMIN_PASSWORD: ${BMS_LOCAL_ADMIN_PASSWORD:-}
+      BMS_LOCAL_ADMIN_PIN: ${BMS_LOCAL_ADMIN_PIN:-}
+    command: ["./node_modules/.bin/tsx", "scripts/retail-local-provision.mts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  ws:
+    image: ${BMS_WS_IMAGE_REF:?missing BMS_WS_IMAGE_REF}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      WS_PORT: "8080"
+      WS_PATH: /graphql
+      REDIS_URL: redis://:${REDIS_PASSWORD:?missing REDIS_PASSWORD}@redis:6379
+      JWT_SECRET: ${JWT_SECRET:?missing JWT_SECRET}
+      WS_ALLOWED_ORIGINS: http://127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100},http://localhost:${BMS_LOCAL_WEB_PORT:-3100}
+      WS_TRUST_PROXY: "0"
+      REALTIME_SUBSCRIPTIONS_ENABLED: "1"
+      REALTIME_ORDERS_ENABLED: "1"
+      REALTIME_INVENTORY_ENABLED: "1"
+      REALTIME_PAYMENTS_ENABLED: "1"
+      REALTIME_POS_ENABLED: "1"
+    ports:
+      - "127.0.0.1:${BMS_LOCAL_WS_PORT:-3101}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/readyz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  web:
+    image: ${BMS_WEB_IMAGE_REF:?missing BMS_WEB_IMAGE_REF}
+    restart: unless-stopped
+    environment:
+      <<: *web-runtime
+    ports:
+      - "127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}:3000"
+    volumes:
+      - storage_data:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      ws:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/admin/login').then(r=>{if(r.status>=500)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  redis_data:
+  storage_data:

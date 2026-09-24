@@ -1,0 +1,21 @@
+{
+  "releaseVersion": "1.0.0-pilot.1",
+  "channel": "pilot",
+  "platformTarget": "ubuntu-24.04-lts-x64",
+  "minimumAgentVersion": "0.2.0",
+  "schemaVersion": "10.15",
+  "rollbackSafe": false,
+  "createdAt": "2026-09-24T00:00:00Z",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "keyId": "replace-with-production-key-id",
+  "components": [
+    {
+      "name": "web",
+      "kind": "oci-image",
+      "path": "artifacts/web.oci.tar",
+      "url": "https://releases.example.invalid/web.oci.tar",
+      "imageRef": "bms/web:1.0.0-pilot.1",
+      "ociDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

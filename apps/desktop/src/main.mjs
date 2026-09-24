@@ -1,6 +1,6 @@
 import electronMain from "electron/main";
 import { createHash } from "node:crypto";
-import { readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -8,7 +8,7 @@ import {
   normalizeCustomerDisplayConfig,
   selectCustomerDisplay,
 } from "./display-policy.mjs";
-import { parsePairingInput } from "./pairing.mjs";
+import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
 import {
   cachedPosEntryPath,
   MOBILE_POS_PATH,
@@ -116,6 +116,45 @@ async function removePairing() {
   activePairing = null;
   closeCustomerDisplayWindow();
   await rm(configPath(), { force: true });
+}
+
+function pairingHandoffArgument() {
+  const prefix = "--pairing-handoff=";
+  const value = process.argv.find((argument) => argument.startsWith(prefix))?.slice(prefix.length);
+  return value && path.isAbsolute(value) ? value : null;
+}
+
+async function consumePairingHandoff() {
+  const handoffPath = pairingHandoffArgument();
+  if (!handoffPath) return null;
+  try {
+    const metadata = await lstat(handoffPath);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size < 2 || metadata.size > 4096) {
+      await rm(handoffPath, { force: true });
+      return null;
+    }
+    if (process.platform !== "win32") {
+      if ((metadata.mode & 0o077) !== 0 || (typeof process.getuid === "function" && metadata.uid !== process.getuid())) {
+        await rm(handoffPath, { force: true });
+        return null;
+      }
+    }
+    const handoffBytes = await readFile(handoffPath, "utf8");
+    // The handoff contains a bearer credential. Consume it before any network operation so a
+    // parse or verification failure cannot leave a reusable token on disk.
+    await rm(handoffPath, { force: true });
+    const parsed = parsePairingHandoff(JSON.parse(handoffBytes));
+    if (!parsed) {
+      return null;
+    }
+    const verified = await verifyPairing(parsed);
+    if (!verified.ok) return null;
+    await writePairing(parsed);
+    return { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
+  } catch (error) {
+    if (error?.code !== "ENOENT") console.error("Unable to consume local pairing handoff");
+    return null;
+  }
 }
 
 async function readCustomerDisplayConfig() {
@@ -779,6 +818,7 @@ if (!singleInstance) {
     mainWindow = createMainWindow();
     customerDisplayConfig = await readCustomerDisplayConfig();
     activePairing = await readPairing();
+    if (!activePairing) activePairing = await consumePairingHandoff();
     if (activePairing) {
       void startPosNavigation();
     }

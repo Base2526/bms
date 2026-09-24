@@ -1,7 +1,8 @@
 # BMS Retail Local Managed Runtime
 
-This directory incubates the signed, one-click runtime for commercial self-install releases. It does
-not replace the existing Docker Desktop technical-pilot installer yet.
+This directory contains the managed-runtime implementation for signed, one-click commercial
+self-install releases. It does not replace the existing Docker Desktop technical-pilot installer
+until the acceptance gates below have evidence from clean target machines.
 
 ## First certified targets
 
@@ -27,26 +28,52 @@ covers the exact ASCII `protected.payload` bytes, avoiding cross-language JSON c
 ambiguity. Each component also has a SHA-256; OCI images additionally require an immutable digest.
 HTTPS alone, tags, and a checksum downloaded beside an artifact are not publisher identity.
 
-`verify-release.mjs` is the dependency-free reference verifier for release tooling and tests. The
-future native agent must implement the same verify-before-parse order with an embedded keyring; a
-public-key path supplied beside the manifest is suitable for tooling, not the customer trust root.
+`verify-release.mjs` is the dependency-free reference verifier for release tooling and tests.
+`apps/retail-local-agent` is the native single-binary implementation used by the installers. The
+customer bundle contains a release-owned, ACL-protected keyring; the manifest URL cannot replace its
+trust root.
 
 The release private key belongs only in the signing service. It must never be present in this
 repository, an installer, an image, or a target shop. Key rotation uses a new embedded public key id
 in a signed agent release before manifests start using that id.
 
-## Milestone 1
+## Implemented install path
 
-The first slice is deliberately read-only:
+- native Windows/Linux preflight and exact support-target selection;
+- Ed25519 release verification before payload interpretation;
+- resumable HTTPS component download with byte size and SHA-256 validation;
+- immutable OCI image-id verification after engine load;
+- private Windows WSL2 + Moby runtime and native Ubuntu Moby/systemd runtime;
+- loopback-only Web/WS, with PostgreSQL, Redis, and engine sockets off host ports;
+- atomic first-run migration/provisioning and ACL/mode-protected secrets;
+- short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
+- encrypted logical database/files/secrets backup through `bms-localctl backup`;
+- an Inno Setup definition for the small Windows bootstrap `.exe`;
+- release signing tooling that derives hashes from the actual artifact bytes.
 
-- machine-readable support policy;
-- signed release-envelope schema;
-- Windows and Linux candidate preflight scripts;
-- contract tests that keep unsupported/EOL targets and mutable image references out.
+The bootstrap remains small: application images, the private runtime, and Desktop are downloaded
+after publisher verification. The target needs internet access during install; a separately signed
+offline bundle is future work.
 
-The current `deploy/retail-local/install.ps1` remains the technical-pilot path until the native host
-agent, reboot-resume state machine, backup/restore recovery, and clean-machine acceptance matrix are
-implemented and evidenced.
+Production rootfs builds must call `runtime-rootfs/build-rootfs.sh` with an Ubuntu image reference
+pinned by digest. A mutable `ubuntu:24.04` tag is used only by the CI Dockerfile smoke build and is
+never acceptable as a signed release input.
+
+## Not yet a GA claim
+
+The code path is implemented, but Commercial/GA release promotion remains blocked until all of these
+external release gates are complete:
+
+- production Ed25519 release key in an isolated signing service and the matching embedded keyring;
+- Authenticode signing for the bootstrap/agent/Desktop and repository signing for Linux packages;
+- an evidenced backup/restore drill on replacement hardware;
+- transactional updater with pre-migration backup and schema-aware rollback;
+- clean-machine Windows 10/11 and Ubuntu acceptance runs, including reboot, power loss, disk full,
+  suspend/resume, printer/scanner/customer-display, and uninstall-retains-data cases.
+
+Until those gates pass, publish this only as an internal/pilot artifact. The installer deliberately
+refuses to run over an existing installation, preventing accidental secret rotation; a verified
+updater must own that path.
 
 Run the Linux candidate check with:
 
@@ -58,4 +85,12 @@ Run the Windows candidate check from PowerShell 7 with:
 
 ```powershell
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
+```
+
+Developer verification:
+
+```bash
+(cd apps/retail-local-agent && go test ./... && go vet ./...)
+node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+(cd apps/desktop && npm test && npm run lint)
 ```

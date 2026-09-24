@@ -1,0 +1,89 @@
+#!/bin/sh
+set -eu
+
+root=/var/lib/bms-retail-local
+compose="docker compose --env-file $root/.env -f $root/compose.yml"
+die() { echo "bms-localctl: $*" >&2; exit 1; }
+require_runtime() { [ -f "$root/.env" ] && [ -f "$root/compose.yml" ] || die "runtime ยังไม่ติดตั้งครบ"; }
+
+case "${1:-}" in
+  start)
+    require_runtime
+    $compose up -d --remove-orphans
+    ;;
+  stop)
+    require_runtime
+    $compose stop
+    ;;
+  status)
+    require_runtime
+    $compose ps
+    ;;
+  doctor)
+    require_runtime
+    docker info >/dev/null 2>&1 || die "Moby/Docker ไม่พร้อม"
+    $compose config --quiet
+    $compose ps --status running postgres redis web ws | grep -q . || die "service หลักไม่ได้ทำงาน"
+    wget -q -T 5 -O /dev/null http://127.0.0.1:3100/admin/login || die "Web health check ไม่ผ่าน"
+    wget -q -T 5 -O /dev/null http://127.0.0.1:3101/readyz || die "WS health check ไม่ผ่าน"
+    echo "BMS Retail Local: healthy"
+    ;;
+  backup)
+    require_runtime
+    destination=${2:-}
+    [ -n "$destination" ] || die "usage: bms-localctl backup OUTPUT.age"
+    case "$destination" in "$root"/backups/*.age) ;; *) die "backup path ต้องอยู่ใต้ $root/backups และลงท้าย .age";; esac
+    command -v age >/dev/null 2>&1 || die "ไม่พบ age encryption tool"
+    mkdir -p "$root/backups"
+    chmod 0700 "$root/backups"
+    work=$(mktemp -d "$root/.backup.XXXXXX")
+    trap 'rm -rf -- "$work"' EXIT HUP INT TERM
+    $compose exec -T postgres pg_dump -U app -d bms_local --format=custom >"$work/database.dump"
+    cp "$root/.env" "$root/compose.yml" "$work/"
+    [ ! -f "$root/installation.json" ] || cp "$root/installation.json" "$work/"
+    $compose exec -T web tar -czf - -C /app/storage . >"$work/storage.tar.gz"
+    set -- database.dump storage.tar.gz .env compose.yml
+    [ ! -f "$work/installation.json" ] || set -- "$@" installation.json
+    (cd "$work" && tar -cf backup.tar "$@")
+    age -p -o "$destination.tmp" "$work/backup.tar"
+    chmod 0600 "$destination.tmp"
+    mv -f "$destination.tmp" "$destination"
+    echo "$destination"
+    ;;
+  restore)
+    require_runtime
+    source_file=${2:-}
+    confirmation=${3:-}
+    [ -f "$source_file" ] || die "usage: bms-localctl restore BACKUP.age REPLACE-LOCAL-DATA"
+    [ "$confirmation" = "REPLACE-LOCAL-DATA" ] || die "restore ต้องยืนยันด้วย REPLACE-LOCAL-DATA"
+    command -v age >/dev/null 2>&1 || die "ไม่พบ age encryption tool"
+    work=$(mktemp -d "$root/.restore.XXXXXX")
+    trap 'rm -rf -- "$work"' EXIT HUP INT TERM
+    age -d -o "$work/backup.tar" "$source_file"
+    members=$(tar -tf "$work/backup.tar")
+    echo "$members" | grep -Fqx 'database.dump' || die "backup ไม่มี database.dump"
+    echo "$members" | grep -Fqx 'storage.tar.gz' || die "backup ไม่มี storage.tar.gz"
+    echo "$members" | grep -Fqx '.env' || die "backup ไม่มี secrets"
+    if echo "$members" | grep -Ev '^(database\.dump|storage\.tar\.gz|\.env|compose\.yml|installation\.json)$' | grep -q .; then
+      die "backup มี outer path ที่ไม่อนุญาต"
+    fi
+    tar -xf "$work/backup.tar" -C "$work"
+    restored_password=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$work/.env")
+    echo "$restored_password" | grep -Eq '^[a-f0-9]{48}$' || die "POSTGRES_PASSWORD ใน backup ไม่ถูกต้อง"
+    $compose stop web ws >/dev/null
+    $compose exec -T postgres pg_restore -U app -d bms_local --clean --if-exists --no-owner <"$work/database.dump"
+    $compose exec -T postgres psql -U app -d postgres -v ON_ERROR_STOP=1 \
+      -c "ALTER ROLE app PASSWORD '$restored_password'" >/dev/null
+    $compose run --rm --no-deps -T web sh -c \
+      'find /app/storage -mindepth 1 -delete; tar -xzf - -C /app/storage' <"$work/storage.tar.gz"
+    install -m 0600 "$work/.env" "$root/.env"
+    [ ! -f "$work/installation.json" ] || install -m 0600 "$work/installation.json" "$root/installation.json"
+    $compose run --rm migrate
+    $compose up -d --remove-orphans
+    "$0" doctor
+    echo "restore สำเร็จ"
+    ;;
+  *)
+    die "usage: bms-localctl <start|stop|status|doctor|backup|restore>"
+    ;;
+esac

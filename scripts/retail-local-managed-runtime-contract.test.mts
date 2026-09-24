@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { createSignedRelease } from "../deploy/retail-local/managed-runtime/sign-release.mjs";
 import { verifyReleaseEnvelope } from "../deploy/retail-local/managed-runtime/verify-release.mjs";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
@@ -31,11 +35,11 @@ test("Managed Runtime release contract requires publisher identity and immutable
   assert.match(payloadSchema.$defs.component.properties.url.pattern, /^\^https/);
   assert.match(payloadSchema.$defs.component.properties.sha256.pattern, /\{64\}/);
   assert.match(payloadSchema.$defs.component.properties.ociDigest.pattern, /sha256/);
-  assert.deepEqual(payloadSchema.$defs.component.allOf[0].then.required, ["ociDigest"]);
+  assert.deepEqual(payloadSchema.$defs.component.allOf[0].then.required, ["ociDigest", "imageRef"]);
   assert.ok(payloadSchema.required.includes("rollbackSafe"));
   assert.ok(payloadSchema.required.includes("minimumAgentVersion"));
   assert.ok(payloadSchema.required.includes("sourceCommit"));
-  assert.equal(payloadSchema.properties.components.allOf.length, 4);
+  assert.equal(payloadSchema.properties.components.allOf.length, 7);
 });
 
 test("reference release verifier accepts authentic bytes and refuses tampering", () => {
@@ -58,8 +62,13 @@ test("reference release verifier accepts authentic bytes and refuses tampering",
       url: `https://releases.example.invalid/${name}.tar.zst`,
       sha256: digest,
       ociDigest: `sha256:${digest}`,
+      imageRef: `bms/${name}:1.0.0-test.1`,
       sizeBytes: 1024,
-    })),
+    })).concat([
+      { name: "runtime", kind: "runtime", url: "https://releases.example.invalid/runtime", sha256: digest, sizeBytes: 1024 },
+      { name: "compose", kind: "support-file", url: "https://releases.example.invalid/compose", sha256: digest, sizeBytes: 1024 },
+      { name: "desktop", kind: "desktop", url: "https://releases.example.invalid/desktop", sha256: digest, sizeBytes: 1024 },
+    ]),
   };
   const protectedValue = Buffer.from(JSON.stringify(header)).toString("base64url");
   const payloadValue = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -100,8 +109,62 @@ test("Managed Runtime keeps authority out of Electron and does not replace the p
   const existingInstaller = read("deploy/retail-local/install.ps1");
 
   assert.match(runtimeReadme, /Electron remains a client window/);
-  assert.match(runtimeReadme, /does\s+not replace the existing Docker Desktop technical-pilot installer yet/);
+  assert.match(runtimeReadme, /does\s+not replace the existing Docker Desktop technical-pilot installer[\s\S]*acceptance gates/);
   assert.match(design, /safeStorage/);
   assert.match(design, /Uninstall keeps shop data by default/);
   assert.match(existingInstaller, /Import-RetailLocalReleaseImages/);
+});
+
+test("release signing derives hashes from artifact bytes and emits a verifiable envelope", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "bms-managed-release-"));
+  const artifact = join(directory, "component.bin");
+  await writeFile(artifact, "signed bytes");
+  const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+  const digest = "a".repeat(64);
+  const descriptors = ["web", "ws", "postgres", "redis"].map((name) => ({
+    name, kind: "oci-image", path: artifact, url: `https://release.example/${name}`,
+    imageRef: `bms/${name}:1.0.0`, ociDigest: `sha256:${digest}`,
+  })).concat([
+    { name: "runtime", kind: "runtime", path: artifact, url: "https://release.example/runtime" },
+    { name: "compose", kind: "support-file", path: artifact, url: "https://release.example/compose" },
+    { name: "desktop", kind: "desktop", path: artifact, url: "https://release.example/desktop" },
+  ] as any);
+  const envelope = await createSignedRelease({
+    releaseVersion: "1.0.0", channel: "pilot", platformTarget: "ubuntu-24.04-lts-x64",
+    minimumAgentVersion: "0.1.0", schemaVersion: "10.15", rollbackSafe: false,
+    createdAt: "2026-09-24T00:00:00Z", sourceCommit: "b".repeat(40), keyId: "test-key",
+    components: descriptors,
+  }, privateKey.export({ type: "pkcs8", format: "pem" }).toString());
+  const verified = verifyReleaseEnvelope(envelope, publicKey.export({ type: "spki", format: "pem" }).toString(), {
+    expectedKeyId: "test-key", expectedTarget: "ubuntu-24.04-lts-x64",
+  });
+  assert.equal(verified.payload.components[0].sha256, "d6eade346b42f707c1684aa3d3c029ab0809164b8b878fcccf56fe1d83b3dc1d");
+  assert.equal((await readFile(artifact, "utf8")), "signed bytes");
+});
+
+test("managed compose and installers keep private services off host ports", () => {
+  const compose = read("deploy/retail-local/managed-runtime/compose.managed.yml");
+  const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  assert.doesNotMatch(compose, /5432:5432|6379:6379/);
+  assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WEB_PORT/);
+  assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WS_PORT/);
+  assert.match(windows, /engine-load -engine windows-wsl/);
+  assert.match(windows, /pairing-handoff\.json/);
+  assert.match(windows, /test -f "\$runtimeData\/\.env"[\s\S]*if \(-not \$runtimeEnvExists\)/);
+  assert.match(linux, /engine-load -engine linux-native/);
+  assert.match(linux, /chmod 0600 "\$handoff_path"/);
+  assert.match(linux, /if \[\[ ! -f \$RUNTIME_ROOT\/\.env \]\]/);
+  assert.doesNotMatch(linux, /--privileged|0\.0\.0\.0:/);
+});
+
+test("managed lifecycle keeps backups encrypted and permanent erase explicit", () => {
+  const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
+  const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
+  const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
+  assert.match(localctl, /age -p -o/);
+  assert.match(localctl, /REPLACE-LOCAL-DATA/);
+  assert.match(localctl, /pg_dump[\s\S]*storage\.tar\.gz[\s\S]*\.env/);
+  assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
+  assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
 });

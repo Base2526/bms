@@ -11,7 +11,11 @@ const HEX_64 = /^[a-f0-9]{64}$/;
 const OCI_DIGEST = /^sha256:[a-f0-9]{64}$/;
 const COMPONENT_NAME = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
-const REQUIRED_COMPONENTS = new Set(["web", "ws", "postgres", "redis"]);
+const REQUIRED_COMPONENTS = new Set(["web", "ws", "postgres", "redis", "runtime", "compose", "desktop"]);
+const REQUIRED_KINDS = new Map([
+  ["web", "oci-image"], ["ws", "oci-image"], ["postgres", "oci-image"], ["redis", "oci-image"],
+  ["runtime", "runtime"], ["compose", "support-file"], ["desktop", "desktop"],
+]);
 const COMPONENT_KINDS = new Set(["oci-image", "runtime", "desktop", "support-file"]);
 
 function assert(condition, message) {
@@ -55,7 +59,7 @@ function validateHeader(input, expectedKeyId) {
 
 function validateComponent(input, index) {
   const component = object(input, `components[${index}]`);
-  exactKeys(component, new Set(["name", "kind", "url", "sha256", "ociDigest", "sizeBytes"]), `components[${index}]`);
+  exactKeys(component, new Set(["name", "kind", "url", "sha256", "ociDigest", "imageRef", "sizeBytes"]), `components[${index}]`);
   assert(typeof component.name === "string" && COMPONENT_NAME.test(component.name), `components[${index}].name ไม่ถูกต้อง`);
   assert(COMPONENT_KINDS.has(component.kind), `components[${index}].kind ไม่ถูกต้อง`);
   assert(typeof component.url === "string" && component.url.startsWith("https://"), `components[${index}].url ต้องเป็น HTTPS`);
@@ -63,6 +67,7 @@ function validateComponent(input, index) {
   assert(Number.isSafeInteger(component.sizeBytes) && component.sizeBytes > 0, `components[${index}].sizeBytes ไม่ถูกต้อง`);
   if (component.kind === "oci-image") {
     assert(typeof component.ociDigest === "string" && OCI_DIGEST.test(component.ociDigest), `components[${index}] ขาด immutable OCI digest`);
+    assert(typeof component.imageRef === "string" && /^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$/.test(component.imageRef), `components[${index}] ขาด imageRef`);
   }
   return component;
 }
@@ -83,11 +88,15 @@ function validatePayload(input, expectedTarget) {
   assert(typeof payload.rollbackSafe === "boolean", "rollbackSafe ต้องระบุชัดเจน");
   assert(typeof payload.createdAt === "string" && Number.isFinite(Date.parse(payload.createdAt)), "createdAt ไม่ถูกต้อง");
   assert(typeof payload.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(payload.sourceCommit), "sourceCommit ไม่ถูกต้อง");
-  assert(Array.isArray(payload.components) && payload.components.length >= 4, "release components ไม่ครบ");
+  assert(Array.isArray(payload.components) && payload.components.length >= 7, "release components ไม่ครบ");
   const components = payload.components.map(validateComponent);
   const names = new Set(components.map((component) => component.name));
   assert(names.size === components.length, "release มี component name ซ้ำ");
-  for (const name of REQUIRED_COMPONENTS) assert(names.has(name), `release ขาด component ${name}`);
+  for (const name of REQUIRED_COMPONENTS) {
+    assert(names.has(name), `release ขาด component ${name}`);
+    assert(components.find((component) => component.name === name)?.kind === REQUIRED_KINDS.get(name),
+      `component ${name} ใช้ kind ไม่ถูกต้อง`);
+  }
   return payload;
 }
 

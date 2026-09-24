@@ -63,3 +63,16 @@ DPAPI wrapping cannot be the sole backup key.
 
 Uninstall keeps shop data by default. Permanent erase is a separate, explicit workflow; unregistering
 the WSL distribution is destructive and must never occur during an ordinary uninstall.
+
+## Current delivery status
+
+The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
+Ubuntu systemd install, pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
+logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
+definition. The legacy Docker Desktop pilot remains available and unchanged while this path is
+certified.
+
+This is release-candidate engineering, not a GA declaration. Promotion to `stable` requires a
+production signing trust root, signed OS packages, a transactional updater, a replacement-machine
+restore drill, and a clean-machine evidence matrix for every target. Windows 10 22H2 is
+never promoted without current ESU evidence; ordinary out-of-support Windows 10 remains unsupported.

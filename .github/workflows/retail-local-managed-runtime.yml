@@ -1,0 +1,83 @@
+name: Retail Local Managed Runtime
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "apps/retail-local-agent/**"
+      - "apps/desktop/**"
+      - "deploy/retail-local/managed-runtime/**"
+      - "scripts/retail-local-managed-runtime-contract.test.mts"
+      - ".github/workflows/retail-local-managed-runtime.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  linux-contract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/retail-local-agent/go.mod
+          cache-dependency-path: apps/retail-local-agent/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test and cross-build native agent
+        working-directory: apps/retail-local-agent
+        run: |
+          go test ./...
+          go vet ./...
+          GOOS=linux GOARCH=amd64 go build -o /tmp/bms-runtime-agent .
+          GOOS=windows GOARCH=amd64 go build -o /tmp/bms-runtime-agent.exe .
+      - name: Validate shell and release contracts
+        run: |
+          bash -n deploy/retail-local/managed-runtime/linux/*.sh
+          sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl
+          sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
+          shellcheck deploy/retail-local/managed-runtime/linux/*.sh \
+            deploy/retail-local/managed-runtime/runtime-rootfs/build-rootfs.sh \
+            deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl \
+            deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
+          node --check deploy/retail-local/managed-runtime/sign-release.mjs
+          node --check deploy/retail-local/managed-runtime/verify-release.mjs
+          node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+      - name: Build private WSL root filesystem image
+        run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
+
+  windows-bootstrap:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/retail-local-agent/go.mod
+      - name: Parse Windows PowerShell 5.1 scripts
+        shell: powershell
+        run: |
+          $errors = @()
+          Get-ChildItem deploy/retail-local/managed-runtime/windows/*.ps1 | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            $errors += $parseErrors
+          }
+          if ($errors.Count) { $errors | Format-List; exit 1 }
+      - name: Build Windows agent
+        working-directory: apps/retail-local-agent
+        run: go test ./...; go build -o ../../deploy/retail-local/managed-runtime/windows/bms-runtime-agent.exe .
+      - name: Smoke-build unsigned bootstrap EXE
+        shell: powershell
+        run: |
+          choco install innosetup --no-progress -y
+          $bundle = (Resolve-Path deploy/retail-local/managed-runtime/windows).Path
+          '{"formatVersion":1,"keys":{}}' | Set-Content "$bundle\trusted-release-keys.json" -Encoding ascii
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
+            "/DBuildRoot=$bundle" "/DOutputRoot=$env:RUNNER_TEMP" "/DProductVersion=0.0.0-ci" `
+            "/DManifestUri=https://release.example.invalid/release.jws.json" `
+            "$bundle\BMSRetailLocal.iss"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
