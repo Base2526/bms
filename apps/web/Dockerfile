@@ -92,6 +92,7 @@ ENV NODE_ENV=production
 COPY --from=builder /app/apps/web ./
 COPY --from=builder /app/packages /app/packages
 COPY --from=builder /app/apps/web/node_modules ./node_modules
+COPY db /app/db
 
 EXPOSE 3000
 

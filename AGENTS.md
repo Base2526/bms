@@ -179,6 +179,17 @@ wrong, and update the doc in the same change.
   internal-test builds rather than a distribution channel;
   never give the shell a second money path, offline tender, or an OS-level way around a server
   check. Detail: [apps/desktop/README.md](apps/desktop/README.md).
+- **Retail Local is a deployment profile, not a fork.** It runs the same Web/WS services and POS
+  settlement path with one local PostgreSQL source of truth; it has no cloud replica, sync queue,
+  alternate price/stock logic, or database inside Electron. `bms_local_installation` is a singleton,
+  public shop signup is disabled in local mode, and first-run tenant/admin/`MAIN` branch/`POS-01`
+  provisioning commits atomically. `retail-local-migrate.mjs` is the local migration authority: it
+  orders the historical chain, records checksums, and refuses changed applied SQL. PostgreSQL/Redis
+  stay off host ports, Web/WS bind to loopback, and backups must include both data and the local
+  secrets needed to decrypt it. A test release carries pinned Web/WS/PostgreSQL/Redis images and the
+  Web image carries its matching migrations; target installs never mount schema from a source tree.
+  Detail: [docs/business/retail-local.md](docs/business/retail-local.md)
+  and [agent-invariants.md § Retail Local](docs/agent-invariants.md#retail-local-deployment).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
   second money path: a check reserves stock by creating one PENDING POS order when a kitchen round is
   sent, and `settleRestaurantCheck()` closes that same order through `recordPosSale()`. A check is

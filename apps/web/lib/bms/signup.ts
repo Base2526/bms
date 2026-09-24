@@ -11,6 +11,7 @@ import { getClient } from "@/lib/db";
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
 import { archetypeToBusinessType, isValidShopArchetype, normalizeShopArchetype } from "./shopArchetypes";
+import { isRetailLocalDeployment } from "./deploymentMode";
 
 function slugify(name: string): string {
   const base = name.trim().toLowerCase()
@@ -44,6 +45,10 @@ function tokenHash(token: string): string {
 }
 
 export async function signupShop(input: SignupInput): Promise<SignupResult> {
+  // Retail Local is intentionally one provisioned shop. Keeping the public SaaS
+  // signup active would silently turn one local installation into a second
+  // multi-tenant platform without backup/licensing/support boundaries for it.
+  if (isRetailLocalDeployment()) return { status: "INVALID" };
   const shopName = input.shopName?.trim();
   const email = input.email?.trim().toLowerCase();
   const password = input.password ?? "";
@@ -98,6 +103,7 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
 }
 
 export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyShopSignupResult> {
+  if (isRetailLocalDeployment()) return { status: "INVALID_OR_EXPIRED" };
   if (!rawToken || rawToken.length > 256) return { status: "INVALID_OR_EXPIRED" };
 
   const client = await getClient();

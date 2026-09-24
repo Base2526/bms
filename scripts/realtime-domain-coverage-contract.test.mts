@@ -201,6 +201,7 @@ const CONFIGURATION = [
   "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
   "bms_board_game_guest_tokens",
   "bms_delivery_integrations", "bms_delivery_location_mappings", "bms_delivery_menu_mappings",
+  "bms_local_installation",
 ];
 
 /** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */

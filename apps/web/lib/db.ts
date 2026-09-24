@@ -118,6 +118,11 @@ export async function getClient(): Promise<PoolClient> {
   return pool.connect();
 }
 
+/** CLI/one-shot jobs must close the shared pool so the process can terminate cleanly. */
+export async function closeDatabasePool(): Promise<void> {
+  await pool.end();
+}
+
 if (!databaseGlobal.__bmsPostgresSignalHandlerInstalled) {
   databaseGlobal.__bmsPostgresSignalHandlerInstalled = true;
   process.once("SIGINT", async () => {

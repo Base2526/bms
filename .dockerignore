@@ -16,6 +16,8 @@ storage/*
 db/*.dump
 db/*.sql
 !db/init.sql
+!db/migrations/
+!db/migrations/*.sql
 apps/mobile
 docs
 screenshots
