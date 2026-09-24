@@ -115,6 +115,22 @@ figures into that channel; embedded legacy settings are not a second publisher. 
 granted only for video on the paired origin. "Unpair" closes the customer window, clears the stored
 pairing and returns the cashier window to setup.
 
+Native order attention stays deliberately narrower than the web workflow. The restaurant surface
+polls its existing device-scoped incoming-order read on every operational screen, even before a
+shift is opened, and also treats
+realtime order events as a fast refresh hint. A newly actionable acceptance, hand-off or provider-
+recovery transition raises the in-page sound,
+persistent rail/top-bar badge and action banner; if the Desktop window is unfocused, its allow-listed
+cashier frame may additionally request taskbar attention and a generic OS notification. The IPC takes
+no renderer payload, is throttled, and never places a customer name, provider, amount or order number
+on the lock screen. The cashier renderer opts out of Electron background throttling so this bounded
+reconciliation continues while its window is minimized. Accept/reject, ready/handoff and channel pause/resume remain the existing web
+mutations with the current device token, cashier PIN, RBAC and idempotency checks. Provider-terminal
+status and an expired acceptance deadline override a stale local PAID/PACKING presentation: the card
+shows a problem state, removes accept/handoff actions and offers the existing cancellation/refund path
+with the matching cause. Provider status, ready and terminal command changes enqueue the existing
+transactional order-fulfilment invalidation; polling remains the reconciliation path.
+
 **On Linux the shell fails closed.** Electron falls back to a `basic_text` backend when no desktop
 keyring is available, and that backend does not protect a bearer credential, so pairing is blocked —
 with a message telling the operator to enable GNOME Keyring/Secret Service or unlock KWallet —
@@ -1559,6 +1575,13 @@ Treat every line below as a blocker unless explicitly marked as a warning:
 
 ## Restaurant POS (`9.40`, `9.44`–`9.49`, `9.54`–`9.55`, `9.63`–`9.64`, `9.87`)
 
+Delivery-platform orders (`10.12`) share this register and the existing kitchen/stock engines rather
+than adding a second checkout path. The Incoming surface shows provider and local status separately,
+requires a human accept, delays scheduled kitchen tickets until the configured prep time, and records
+ready plus rider handoff with device/PIN/RBAC/idempotency checks. Handoff performs the existing
+`PACKING -> SHIPPED` stock settlement inside the evidence transaction. Provider-managed delivery
+never books Flash/Kerry. See [delivery-platform integration](../integrations/delivery-platforms.md).
+
 ### Dine-in and takeaway checks (`9.87`)
 
 Restaurant counter service mode belongs to the **check**, not to the online-order fulfillment field.
@@ -1732,6 +1755,18 @@ return, purchase-receipt and deposit workspaces; it does not copy their money or
 Restaurant shops retain the restaurant visual identity in those workspaces, and the table entry in
 the POS rail is the explicit route back. Browser and desktop routes both select the requested
 workspace directly while the normal server-side device, PIN and permission guards remain unchanged.
+
+Incoming web/chat/delivery orders are a primary restaurant screen, not a hidden retail tab. Its
+badge remains visible from the floor, kitchen and queue screens, while its action banner may be
+dismissed without clearing that badge or the underlying work;
+the embedded workspace owns polling while it is open and feeds the shell's badge/intake state back
+without a second request loop. The same screen exposes separate pause/resume controls for the
+restaurant's direct channels and configured delivery platforms. A provider without a confirmed
+pause API is shown as manual action required so a local toggle is never mistaken for proof that the
+provider tablet stopped accepting orders. The displayed delivery intake state combines tenant-wide,
+branch and provider-specific controls; a register cannot pretend to resume a broader central pause.
+Overlapping manual, realtime and polling reads are sequence-guarded so an older response cannot
+resurrect an accepted/cancelled order or stale badge.
 
 Member tier, coupon, points redemption and approved manual discount are also applied to that same
 reserved order, not to a replacement order at the register. Preview reconstructs the discountable

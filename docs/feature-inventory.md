@@ -303,7 +303,7 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | **e-Tax ยื่นกรมสรรพากร** | 🧪 ปิดโดยค่าเริ่มต้น ยังไม่มี provider เซ็น/ยื่นตัวจริง · **ออกใบกำกับ ≠ ยื่นแล้ว** |
 | **AI Pharmacy Intake** | 🧪 ปิดโดยค่าเริ่มต้น ต้องเปิดธงก่อน |
 | **TikTok ส่งข้อความออก** | 📋 รับเข้าได้แล้ว ยังไม่มีเส้นทางส่งออก |
-| **GrabFood / aggregator** | 📋 ต้องใช้ API contract ของเขา ยังไม่มีตัวจำลองไหนถูกนำเสนอว่าใช้ได้จริง |
+| **GrabFood / LINE MAN / foodpanda** | 🧪 `10.12` มี tenant/RLS foundation, encrypted setup, verified mapping, webhook/command inbox-outbox, shadow/live gate, Admin setup/mapping/operations, Action Center, manual settlement reconciliation, POS accept/ready/handoff, pause/timed resume, acceptance guard และ scheduled preparation แล้ว; foodpanda ใช้ public Partner API subset ส่วน GrabFood/LINE MAN ยัง contract-blocked และทั้งชุดยังห้ามอ้างว่า production-ready ก่อน sandbox/shadow/tax/settlement cycle · [รายละเอียด](integrations/delivery-platforms.md) |
 | **แอปเครื่องขายมือถือ (iOS/Android)** | 📋 backend พร้อมแล้ว (REST + device token) ที่ขาดเป็นงาน native ล้วน: พิมพ์ผ่าน Bluetooth · สแกนด้วยกล้อง · จอลูกค้าเครื่องที่สอง |
 | **Insurance Sales Inbox** | 📋 แผน — ต้องผ่านการตรวจข้อกำกับ (คปภ.) ก่อน |
 | **แยกเครื่องพิมพ์ตามสถานีครัว** | 📋 `9.54` จองคอลัมน์ไว้แล้วแต่ยังไม่มีใครอ่าน — **อย่าเดาจากคอลัมน์นั้นว่าต่อได้แล้ว** |

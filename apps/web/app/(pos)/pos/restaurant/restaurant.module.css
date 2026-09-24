@@ -336,6 +336,18 @@
    .panelHeader) และปริยายของ flex item คือ shrink ได้ · วัดจริงที่ 320px: ปุ่ม ⋯ ของแผงบิล
    หดเหลือ 28px ซึ่งเป็นปุ่มที่ถือ "ย้ายโต๊ะ/ยกเลิกบิล" ไว้ — เป้าแตะที่นิ้วกดไม่โดนเท่ากับไม่มีปุ่ม */
 .page .btnIcon{ flex: none; width: 40px; height: 40px; min-height: 40px; padding: 0; justify-content: center; font-size: 16px; }
+.page .incomingBell {
+  position: relative; font-weight: 700; border-color: var(--line); background: var(--panel);
+}
+.page .incomingBellUrgent {
+  border-color: var(--red); background: var(--red-bg); color: var(--red);
+}
+.page .incomingBellUrgent:hover:not(:disabled) { background: var(--red-bg); filter: brightness(1.04); }
+.incomingBellBadge {
+  min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; display: inline-grid; place-items: center;
+  background: var(--red); color: var(--on-solid); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.incomingAttention { flex: none; border-radius: 0; border-inline: 0; }
 
 /* ---------- สรุปหน้าร้าน: บรรทัดเดียว ---------- */
 .strip {
@@ -1030,6 +1042,16 @@
 .otherWorkToolbar .btn { flex: none; }
 .otherWorkToolbar h2 { margin: 0; font-size: 18px; }
 .otherWorkToolbar p { margin: 2px 0 0; color: var(--ink-2); font-size: 12px; }
+.incomingWorkspaceMark {
+  width: 42px; height: 42px; flex: none; display: grid; place-items: center; border-radius: 50%;
+  background: var(--red-bg); color: var(--red); font-size: 19px;
+}
+.incomingIntakeStatus {
+  margin-inline-start: auto; padding: 5px 10px; border-radius: 999px;
+  background: var(--green-bg); color: var(--green); font-size: 12px; font-weight: 700; white-space: nowrap;
+}
+.incomingIntakePaused { background: var(--amber-bg); color: var(--amber); }
+.incomingProviderWarning { flex: none; border-radius: 0; border-inline: 0; }
 .otherWorkHost { flex: 1; min-height: 0; overflow: hidden; padding: 10px; }
 .otherWorkHost :global(.pos-page--embedded) { height: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--ground); overflow: hidden; }
 .otherWorkLoading { height: 100%; display: grid; place-items: center; }
@@ -1110,6 +1132,7 @@
   .brand { margin-inline-end: 0; }
   .topbar .btn { flex: 1 1 auto; }
   .topbar .btnIcon { flex: 0 0 40px; }
+  .topbar .incomingBell { flex: 1 1 100%; justify-content: center; }
   .shiftStatus { display: none; }
   .accountMenu { flex: 1 1 100%; }
   .accountMenu > summary { width: 100%; }
@@ -1125,6 +1148,8 @@
   .railMark { width: 34px; height: 34px; font-size: 16px; margin-bottom: 6px; }
   .railUtilitySlot { padding-top: 6px; }
   .otherWorkScreen { padding: 16px 12px; }
+  .otherWorkToolbar { align-items: flex-start; flex-wrap: wrap; }
+  .incomingIntakeStatus { margin-inline-start: 56px; }
   .otherWorkGrid { grid-template-columns: 1fr; }
   .page .otherWorkGrid button { min-height: 92px; }
 

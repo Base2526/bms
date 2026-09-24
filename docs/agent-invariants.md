@@ -320,6 +320,15 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   window, and the main process owns the one `/pos/display` window on a configured non-cashier
   display. That customer window shares the same storage partition only for same-origin
   `BroadcastChannel`, carries no preload/IPC bridge, and never becomes a second register. The
+  shell may request generic OS-level attention for a newly observed incoming order, but that IPC is
+  cashier-frame-only, throttled and accepts no renderer-supplied notification text or order data;
+  the web surface still owns the badge, sound, accept/reject/ready/handoff and pause/resume flow.
+  Provider cancellation, rejection, expiry, missed acceptance deadlines and terminal provider-command
+  failures must override stale local PAID/PACKING actions; they refresh other registers through the
+  transactional order-fulfilment invalidation, with polling retained as reconciliation. Intake status
+  shown at the register includes broader and provider-specific pauses, and a branch toggle never claims
+  to resume a tenant-wide pause.
+  Provider/customer/order detail must never be copied into an OS lock-screen notification. The
   payment QR on that display comes only from a bounded provider-issued `qrPayload` on a
   configured PromptPay/QR receiving account. A visible PromptPay ID is never enough to synthesize
   an EMV payload, and split tender displays only the amount assigned to QR. Media permission is
@@ -1007,6 +1016,44 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
   cancelled or already-shrunk line must both disappear from the counter's list and be measured
   correctly if it is still partly there.
 
+## Delivery platform integration (`10.12`)
+
+`lib/bms/deliveryPlatforms/`, the guarded `/api/bms/delivery/*` routes and migration `10.12` form the
+provider boundary for GrabFood, LINE MAN and foodpanda. Full capability, setup, finance, privacy,
+runbook and rollout detail is in [integrations/delivery-platforms.md](integrations/delivery-platforms.md).
+
+- **Provider contracts are data, not guesses.** A capability is callable only when its official
+  contract is `VERIFIED`. GrabFood and LINE MAN stay contract-blocked until partner webhook and
+  onboarding documents are reviewed; a documented SDK method alone does not authorize an invented
+  webhook or payload. foodpanda uses only its published contract, and its Partner Portal webhook
+  header must be configured explicitly.
+- **Integration id derives tenant; verified store mapping derives branch.** A provider payload never
+  supplies either authority. Only `VERIFIED` item/variant/modifier mappings may create an order, and
+  any missing/stale mapping rejects the whole basket to `ACTION_REQUIRED`—never a partial order.
+- **Inbox and outbox are durable and idempotent.** Verified webhooks write only a payload hash and
+  allowlisted operational pointers, then a leased worker creates the order/payment/reservation in one
+  tenant transaction. External provider calls run after commit from the command outbox. Desired
+  pause state, provider state and sync state remain distinct; an unsupported capability is manual
+  action, never a fake success.
+- **Platform money is server-only.** `PLATFORM_SETTLEMENT` never enters customer checkout, POS tender
+  selection or AI tools. Refund allocation remains pending until provider confirmation or finance
+  reconciliation, while settlement adjustments append and never rewrite the original sale/payment.
+- **A scheduled order never reaches the kitchen early.** Integration config must give an explicit
+  1–240 minute preparation lead. Missing policy is action-required rather than guessed. A leased job
+  creates tickets when due; accepting the order before then records acceptance without cooking.
+- **Handoff is the stock boundary and evidence.** The device branch, PIN, exact permission,
+  idempotency key, complete checklist and bag count are server-checked. Handoff, `PACKING -> SHIPPED`,
+  stock movement, safe timeline and audit commit together. Provider delivery confirmation is a
+  separate fact; a provider `DELIVERED` event completes only an order with local handoff evidence.
+- **No customer PII leaks into kitchen or CRM.** Provider identity is not auto-merged. Raw webhook
+  payloads and credentials are never logged or stored. Dispute evidence is private and tenant-bound.
+- **A missed acceptance deadline is a hard local stop, not a guessed provider action.** The leased
+  timeout worker changes the delivery workflow to action-required and records timeline/audit. Until
+  an adapter has verified reject and refund semantics it must not silently cancel the paid BMS order
+  or release its reservation; staff reconcile on the provider tablet and use the existing return
+  engine with an immutable cancellation cause.
+- Polling/reconciliation and provider-tablet fallback remain through sandbox, shadow and pilot.
+
 ## Membership and loyalty points
 
 `lib/bms/{membership,loyaltyMath}.ts`, `graphql/bmsMembership.ts`, and migration `7.96` own member
@@ -1555,9 +1602,10 @@ There are **four i18n mechanisms in this codebase; treat the first three as real
 
 - **`apps/web/i18n/` + `apps/web/lib/i18nContext.tsx`** (`I18nProvider`/`useI18n()`) — the main shared
   dictionary. `app/layout.tsx` reads a `lang` cookie server-side (default `"th"`) and passes it into
-  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-19
-  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **81 namespaces / 5,502 leaf keys per language**,
-  at exact th↔en parity — the latest +3 cover provider-issued POS payment-QR configuration guidance;
+  `ClientProviders.tsx`'s `I18nProvider`, which wraps the whole app including admin. As of 2026-09-24
+  the dictionaries in `apps/web/i18n/{th,en}.ts` hold **84 namespaces / 5,662 leaf keys per language**,
+  at exact th↔en parity — the latest +13 cover the Restaurant POS incoming-order bell, action banner,
+  intake status and provider-manual guidance; the recent +3 cover provider-issued POS payment-QR configuration guidance;
   recent preceding milestones include +2 for board-game fake-data guidance/summary and +24 for board-game time alerts, member lookup and opt-in public
   nearby-store discovery; the earlier +6 are the global order-action and Inbox alert controls; the earlier +415
   are the complete bilingual restaurant POS surface in the

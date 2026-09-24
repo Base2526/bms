@@ -216,7 +216,7 @@ const STATUS_COLOR: Record<string, string> = {
 };
 const CHANNEL_COLOR: Record<string, string> = {
   line: "green", tiktok: "magenta", facebook: "blue", instagram: "purple", web: "geekblue",
-  shopee: "orange", lazada: "purple", test: "default",
+  shopee: "orange", lazada: "purple", grabfood: "green", lineman: "lime", foodpanda: "magenta", test: "default",
 };
 const baht = (v: number) => `${Number(v).toLocaleString()} ฿`;
 const changeColor = (value: number | null | undefined) => value == null ? undefined : value >= 0 ? "#389e0d" : "#cf1322";

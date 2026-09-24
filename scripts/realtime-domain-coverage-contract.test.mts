@@ -161,6 +161,8 @@ const CHILD_OF_AGGREGATE = [
   "bms_support_events", "bms_order_discounts", "bms_order_extra_lines",
   "bms_order_item_stock_consumption", "bms_stock_movements",
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
+  "bms_delivery_order_lines", "bms_delivery_order_modifiers", "bms_delivery_order_events",
+  "bms_delivery_handoffs", "bms_delivery_settlement_lines",
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -174,6 +176,7 @@ const OPS_TELEMETRY = [
   "bms_followup_history", "bms_followup_jobs", "bms_etax_submissions",
   "bms_board_game_idempotency_results",
   "bms_inventory_operation_idempotency",
+  "bms_delivery_events", "bms_delivery_commands",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */
@@ -197,6 +200,7 @@ const CONFIGURATION = [
   "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
   "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
   "bms_board_game_guest_tokens",
+  "bms_delivery_integrations", "bms_delivery_location_mappings", "bms_delivery_menu_mappings",
 ];
 
 /** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */
@@ -209,6 +213,8 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_pass_plans", "bms_board_game_member_passes", "bms_board_game_pass_ledger",
   "bms_board_game_pass_renewals",
   "bms_board_game_identity_holds",
+  "bms_delivery_orders", "bms_delivery_intake_controls", "bms_delivery_settlements",
+  "bms_delivery_adjustments", "bms_delivery_disputes",
 ];
 
 const CLASSIFIED = new Map<string, string>();

@@ -1,5 +1,11 @@
 # รับออร์เดอร์อาหารทางแชท + เดลิเวอรี — บรีฟสำหรับ agent
 
+> อัปเดต `10.12` (2026-09-24): เอกสารเดิมด้านล่างเป็นประวัติการออกแบบ delivery ของร้านเอง
+> (`9.55`–`9.57`) ไม่ใช่สถานะล่าสุดของ GrabFood / LINE MAN / foodpanda. Foundation ของ platform,
+> capability gate, webhook/command workers, POS inbox, scheduled preparation, pause และ handoff อยู่ที่
+> [Delivery platform integration](../integrations/delivery-platforms.md). ข้อความเดิมที่ว่า feature
+> บางอย่าง “ยังไม่มีเลย” ให้อ่านเป็น historical finding ณ วันที่บนเอกสารนี้ ไม่ใช่ current inventory.
+
 > เอกสารนี้เขียนเพื่อให้ **agent อ่านแล้วลงมือได้ทันที** โดยไม่ต้องมีบทสนทนาก่อนหน้า
 > ทุกข้อเท็จจริงในหัวข้อ "สภาพโค้ดปัจจุบัน" ถูกตรวจกับซอร์สจริงแล้ว (2026-09-04) พร้อมเลขบรรทัด
 > **ก่อนเชื่อบรรทัดใดบรรทัดหนึ่ง ให้เปิดไฟล์ยืนยันก่อนเสมอ** — โค้ดอาจขยับหลังจากวันที่เขียน

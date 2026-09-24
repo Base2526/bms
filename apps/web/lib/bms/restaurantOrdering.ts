@@ -1,9 +1,12 @@
 import type { PoolClient } from "pg";
+import { createHash } from "node:crypto";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { DEFAULT_LOCATION_CODE } from "./locations";
 import { enqueueKitchenTicketsInTx } from "./kitchen";
 import { invalidateCache } from "@/lib/cache";
+import { DELIVERY_CAPABILITIES, type DeliveryProvider } from "./deliveryPlatforms";
+import { enqueueDeliveryCommandInTx } from "./deliveryPlatforms/commands";
 
 export type RestaurantOrderInterval = { day: number; open: string; close: string };
 
@@ -113,9 +116,16 @@ export async function listIncomingRestaurantOrders(tenantId: string, locationId:
   //   * cancelRestaurantOrderLines() reads packQty as a pack count (pack_qty, not base qty), so
   //     handing the screen oi.qty made every pack-sold line fail with RETURN_QTY_EXCEEDED.
   // Same returned-quantity expression as the POS return path in pos.ts.
-  const result = await query<any>(
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const result = await client.query<any>(
     `SELECT o.id, o.channel, o.customer_ref, o.status, o.fulfillment_type, o.promised_at,
             o.total_amount + o.shipping_fee AS amount_due, o.created_at,
+            d.provider, d.provider_display_number, d.local_status AS delivery_status,
+            d.provider_status, d.payment_status AS delivery_payment_status,
+            d.acceptance_deadline_at, d.scheduled_fulfillment_at, d.rider_eta_at,
+            cmd.status AS provider_command_status, cmd.last_error AS provider_command_error,
             COALESCE(jsonb_agg(jsonb_build_object(
               'orderItemId', oi.id, 'sku', oi.product_sku, 'name', p.name, 'size', oi.size,
               'qty', remaining.pack_qty, 'unitName', oi.pack_unit_name,
@@ -134,14 +144,21 @@ export async function listIncomingRestaurantOrders(tenantId: string, locationId:
          ), 0), 0) AS pack_qty
        ) remaining ON TRUE
        LEFT JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+       LEFT JOIN bms_delivery_orders d ON d.tenant_id = o.tenant_id AND d.bms_order_id = o.id
+       LEFT JOIN LATERAL (
+         SELECT status, last_error FROM bms_delivery_commands c
+          WHERE c.tenant_id = d.tenant_id AND c.delivery_order_id = d.id
+          ORDER BY c.created_at DESC LIMIT 1
+       ) cmd ON TRUE
       WHERE o.tenant_id = $1 AND o.location_id = $2 AND o.fulfillment_type IS NOT NULL
         AND o.status IN ('PAID', 'PACKING')
-      GROUP BY o.id
+      GROUP BY o.id, d.id, cmd.status, cmd.last_error
       ORDER BY (o.status = 'PAID') DESC, o.promised_at NULLS LAST, o.created_at
       LIMIT $3`,
     [tenantId, locationId, Math.min(Math.max(limit, 1), 200)]
   );
-  return result.rows.map((row: any) => ({
+    await client.query("COMMIT");
+    return result.rows.map((row: any) => ({
     id: row.id,
     channel: row.channel,
     customerRef: row.customer_ref,
@@ -150,8 +167,22 @@ export async function listIncomingRestaurantOrders(tenantId: string, locationId:
     promisedAt: row.promised_at ? new Date(row.promised_at).toISOString() : null,
     amountDue: Number(row.amount_due),
     createdAt: new Date(row.created_at).toISOString(),
+    provider: row.provider ?? null,
+    providerDisplayNumber: row.provider_display_number ?? null,
+    deliveryStatus: row.delivery_status ?? null,
+    providerStatus: row.provider_status ?? null,
+    deliveryPaymentStatus: row.delivery_payment_status ?? null,
+    acceptanceDeadlineAt: row.acceptance_deadline_at ? new Date(row.acceptance_deadline_at).toISOString() : null,
+    scheduledFulfillmentAt: row.scheduled_fulfillment_at ? new Date(row.scheduled_fulfillment_at).toISOString() : null,
+    riderEtaAt: row.rider_eta_at ? new Date(row.rider_eta_at).toISOString() : null,
+    providerCommandStatus: row.provider_command_status ?? null,
+    providerCommandError: row.provider_command_error ?? null,
     items: row.items,
-  }));
+    }));
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function listPendingRestaurantRefunds(tenantId: string, locationId: string) {
@@ -219,6 +250,8 @@ export async function acceptIncomingRestaurantOrder(input: {
   locationId: string;
   orderId: string;
   actorUserId: string;
+  deviceId?: string | null;
+  idempotencyKey?: string | null;
 }) {
   const client = await getClient();
   try {
@@ -233,9 +266,94 @@ export async function acceptIncomingRestaurantOrder(input: {
       await client.query("ROLLBACK");
       return { status: "NOT_FOUND" as const };
     }
+    const delivery = await client.query<{
+      id: string; integration_id: string; provider: DeliveryProvider; provider_order_id: string;
+      location_mapping_id: string;
+      start_preparation_at: Date | string | null; acceptance_deadline_at: Date | string | null;
+      local_status: string; provider_status: string | null;
+      rollout_mode: string; outbound_commands_enabled: boolean;
+      accepted_by: string | null; accepted_device_id: string | null;
+      acceptance_idempotency_key: string | null; acceptance_request_hash: string | null;
+    }>(
+      `SELECT d.id, d.integration_id, d.location_mapping_id, d.provider, d.provider_order_id,
+              d.start_preparation_at, d.acceptance_deadline_at, d.local_status, d.provider_status,
+              d.accepted_by, d.accepted_device_id, d.acceptance_idempotency_key, d.acceptance_request_hash,
+              i.rollout_mode, i.outbound_commands_enabled
+         FROM bms_delivery_orders d
+         JOIN bms_delivery_integrations i ON i.tenant_id=d.tenant_id AND i.id=d.integration_id
+        WHERE d.tenant_id = $1 AND d.bms_order_id = $2
+        FOR UPDATE OF d`,
+      [input.tenantId, input.orderId],
+    );
+    if (delivery.rows[0]) {
+      const key = input.idempotencyKey?.trim() ?? "";
+      const deviceId = input.deviceId?.trim() ?? "";
+      if (key.length < 8 || key.length > 200 || !deviceId) {
+        await client.query("ROLLBACK");
+        return { status: "IDEMPOTENCY_REQUIRED" as const };
+      }
+      const requestHash = createHash("sha256").update(JSON.stringify({
+        action: "accept", orderId: input.orderId, locationId: input.locationId,
+        actorUserId: input.actorUserId, deviceId,
+      })).digest("hex");
+      if (delivery.rows[0].acceptance_idempotency_key === key) {
+        if (delivery.rows[0].acceptance_request_hash !== requestHash
+          || delivery.rows[0].accepted_by !== input.actorUserId
+          || delivery.rows[0].accepted_device_id !== deviceId) {
+          await client.query("ROLLBACK");
+          return { status: "IDEMPOTENCY_CONFLICT" as const };
+        }
+        await client.query("COMMIT");
+        return { status: "ACCEPTED" as const, replayed: true };
+      }
+      const reusedKey = await client.query<{ id: string }>(
+        `SELECT id FROM bms_delivery_orders
+          WHERE tenant_id = $1 AND acceptance_idempotency_key = $2 AND id <> $3
+          LIMIT 1 FOR SHARE`,
+        [input.tenantId, key, delivery.rows[0].id],
+      );
+      if (reusedKey.rowCount) {
+        await client.query("ROLLBACK");
+        return { status: "IDEMPOTENCY_CONFLICT" as const };
+      }
+      const allowed = await client.query<{ allowed: boolean }>(
+        `SELECT CASE WHEN r.name = 'Administrator' THEN TRUE ELSE EXISTS (
+           SELECT 1 FROM bms_role_permissions rp
+            WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id
+              AND rp.permission = 'restaurant.delivery.review'
+         ) END AS allowed
+         FROM users u LEFT JOIN roles r ON r.id = u.role_id
+         WHERE u.tenant_id = $1 AND u.id = $2`,
+        [input.tenantId, input.actorUserId],
+      );
+      if (!allowed.rows[0]?.allowed) {
+        await client.query("ROLLBACK");
+        return { status: "FORBIDDEN" as const };
+      }
+      const providerTerminal = ["CANCELLED", "REJECTED", "EXPIRED"].includes(String(delivery.rows[0].provider_status ?? "").toUpperCase());
+      const acceptanceExpired = delivery.rows[0].acceptance_deadline_at
+        && new Date(delivery.rows[0].acceptance_deadline_at).getTime() <= Date.now();
+      if (order.rows[0].status !== "PACKING" && (providerTerminal || acceptanceExpired || delivery.rows[0].local_status === "EXPIRED")) {
+        await client.query(
+          `UPDATE bms_delivery_orders SET local_status='ACTION_REQUIRED',updated_at=now()
+            WHERE tenant_id=$1 AND id=$2 AND local_status IN ('RECEIVED','AWAITING_ACCEPTANCE','EXPIRED')`,
+          [input.tenantId, delivery.rows[0].id],
+        );
+        await client.query(
+          `INSERT INTO bms_delivery_order_events
+             (tenant_id,delivery_order_id,event_kind,actor_type,actor_id,source,safe_detail)
+           VALUES ($1,$2,'ACCEPT_BLOCKED_AFTER_DEADLINE','USER',$3,'POS',$4::jsonb)`,
+          [input.tenantId, delivery.rows[0].id, input.actorUserId,
+            JSON.stringify({ providerTerminal, acceptanceExpired: Boolean(acceptanceExpired), providerStatus: delivery.rows[0].provider_status })],
+        );
+        await client.query("COMMIT");
+        return { status: "ACCEPTANCE_EXPIRED" as const };
+      }
+    }
     if (order.rows[0].status === "PACKING") {
-      await client.query("COMMIT");
-      return { status: "ACCEPTED" as const, replayed: true };
+      await client.query("ROLLBACK");
+      return { status: delivery.rows[0] ? "ALREADY_ACCEPTED" as const : "ACCEPTED" as const,
+        replayed: !delivery.rows[0] };
     }
     if (order.rows[0].status !== "PAID") {
       await client.query("ROLLBACK");
@@ -246,14 +364,64 @@ export async function acceptIncomingRestaurantOrder(input: {
         WHERE tenant_id = $1 AND id = $2`,
       [input.tenantId, input.orderId]
     );
-    const ticketsCreated = await enqueueKitchenTicketsInTx(client, input.tenantId, input.orderId);
+    const preparationDue = !delivery.rows[0]?.start_preparation_at
+      || new Date(delivery.rows[0].start_preparation_at).getTime() <= Date.now();
+    const ticketsCreated = preparationDue
+      ? await enqueueKitchenTicketsInTx(client, input.tenantId, input.orderId)
+      : 0;
+    let providerCommandId: string | null = null;
+    if (delivery.rows[0]) {
+      const row = delivery.rows[0];
+      await client.query(
+        `UPDATE bms_delivery_orders
+            SET local_status = CASE WHEN $3 THEN 'PREPARING' ELSE 'ACCEPTED' END,
+                accepted_at = COALESCE(accepted_at, now()),
+                accepted_by = $4, accepted_device_id = $5,
+                acceptance_idempotency_key = $6, acceptance_request_hash = $7,
+                preparing_at = CASE WHEN $3 THEN COALESCE(preparing_at, now()) ELSE preparing_at END,
+                updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [input.tenantId, row.id, preparationDue, input.actorUserId, input.deviceId!.trim(),
+          input.idempotencyKey!.trim(), createHash("sha256").update(JSON.stringify({
+            action: "accept", orderId: input.orderId, locationId: input.locationId,
+            actorUserId: input.actorUserId, deviceId: input.deviceId!.trim(),
+          })).digest("hex")],
+      );
+      await client.query(
+        `INSERT INTO bms_delivery_order_events
+           (tenant_id, delivery_order_id, event_kind, actor_type, actor_id, source, safe_detail)
+         VALUES ($1,$2,'ORDER_ACCEPTED','USER',$3,'POS',$4::jsonb)`,
+        [input.tenantId, row.id, input.actorUserId, JSON.stringify({ ticketsCreated, scheduledPreparation: !preparationDue })],
+      );
+      const store = await client.query<{ provider_store_id: string }>(
+        `SELECT provider_store_id FROM bms_delivery_location_mappings
+          WHERE tenant_id = $1 AND id = $2 AND integration_id = $3
+            AND location_id = $4 AND active`,
+        [input.tenantId, row.location_mapping_id, row.integration_id, input.locationId],
+      );
+      if (!store.rows[0]) throw new Error("DELIVERY_LOCATION_MAPPING_MISSING_AFTER_ORDER");
+      const providerCommandReady = DELIVERY_CAPABILITIES[row.provider].acceptOrder === "VERIFIED"
+        && row.rollout_mode === "LIVE" && row.outbound_commands_enabled;
+      const command = await enqueueDeliveryCommandInTx(client, {
+        tenantId: input.tenantId,
+        integrationId: row.integration_id,
+        deliveryOrderId: row.id,
+        commandType: "ACCEPT_ORDER",
+        aggregateType: "delivery_order",
+        aggregateId: row.id,
+        desiredState: { providerOrderId: row.provider_order_id, providerStoreId: store.rows[0].provider_store_id },
+        idempotencyKey: `accept:${createHash("sha256").update(input.idempotencyKey!).digest("hex")}`,
+        initialStatus: providerCommandReady ? "PENDING" : "MANUAL_ACTION_REQUIRED",
+      });
+      providerCommandId = command.id;
+    }
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'restaurant.online_order_accept',$3,$4::jsonb)`,
       [input.tenantId, input.actorUserId, input.orderId, JSON.stringify({ locationId: input.locationId, ticketsCreated })]
     );
     await client.query("COMMIT");
-    return { status: "ACCEPTED" as const, replayed: false, ticketsCreated };
+    return { status: "ACCEPTED" as const, replayed: false, ticketsCreated, providerCommandId };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

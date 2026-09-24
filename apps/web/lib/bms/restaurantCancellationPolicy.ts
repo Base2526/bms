@@ -1,4 +1,12 @@
-export type RestaurantCancellationCause = "MERCHANT_OUT_OF_STOCK" | "CUSTOMER_CHANGED";
+export const RESTAURANT_CANCELLATION_CAUSES = [
+  "MERCHANT_OUT_OF_STOCK", "CUSTOMER_CHANGED", "PLATFORM_CANCELLED", "RIDER_UNAVAILABLE",
+  "ACCEPTANCE_TIMEOUT", "STORE_CLOSED", "INTEGRATION_FAILURE", "DUPLICATE_FRAUDULENT_EVENT",
+] as const;
+export type RestaurantCancellationCause = (typeof RESTAURANT_CANCELLATION_CAUSES)[number];
+
+export function isMerchantResponsibleCancellation(cause: RestaurantCancellationCause) {
+  return ["MERCHANT_OUT_OF_STOCK", "ACCEPTANCE_TIMEOUT", "STORE_CLOSED", "INTEGRATION_FAILURE"].includes(cause);
+}
 
 export function couponEligibilitySubtotal(input: {
   remainingSubtotal: number;

@@ -19,6 +19,8 @@ import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
+import { incomingOrderAttentionKeys, incomingOrderOperationalState, incomingOrderProblemReason } from "@/lib/pos/incomingOrderAttention";
+import { summarizeDeliveryIntakeControls } from "@/lib/pos/deliveryIntakePresentation";
 import {
   applyPromotion,
   canonicalPriceTiers,
@@ -31,6 +33,7 @@ import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRoundi
 import { cartLineCharge } from "@/lib/pos/cartCharge";
 // เกณฑ์ "เคสนี้เภสัชกรตัดสินได้ไหม" ต้องเป็นชุดเดียวกับ server (ไฟล์นี้ pure ไม่มี import อื่น)
 import { isPharmacistReviewableBlock } from "@/lib/bms/pharmacy/productPolicyDecision";
+import { RESTAURANT_CANCELLATION_CAUSES } from "@/lib/bms/restaurantCancellationPolicy";
 import {
   consumeKeyboardWedgeKey,
   DEFAULT_KEYBOARD_WEDGE_CONFIG,
@@ -71,6 +74,7 @@ import {
   hasDesktopPosBridge,
   posDeviceStorageNamespace,
   readPosDeviceToken,
+  requestDesktopOperationalAttention,
   writeBrowserPosDeviceToken,
 } from "@/lib/pos/deviceTokenClient";
 import { PosWorkspaceContext, type PosTab } from "@/components/pos/PosWorkspaceContext";
@@ -1414,6 +1418,16 @@ type IncomingRestaurantOrder = {
   promisedAt: string | null;
   amountDue: number;
   createdAt: string;
+  provider: "GRABFOOD" | "LINEMAN" | "FOODPANDA" | null;
+  providerDisplayNumber: string | null;
+  deliveryStatus: string | null;
+  providerStatus: string | null;
+  deliveryPaymentStatus: string | null;
+  acceptanceDeadlineAt: string | null;
+  scheduledFulfillmentAt: string | null;
+  riderEtaAt: string | null;
+  providerCommandStatus: string | null;
+  providerCommandError: string | null;
   // qty is the quantity still live on the order, in the same unit cancel_lines expects.
   items: Array<{ orderItemId: number; sku: string; name: string; size: string; qty: number; unitName: string | null; modifierCodes: string[] }>;
 };
@@ -1433,6 +1447,7 @@ export default function PosPage() {
     suppressCustomerDisplay,
     onBoardGameCheckout,
     onServiceCallsChange,
+    onIncomingOrdersChange,
   } = useContext(PosWorkspaceContext);
   const [token, setToken] = useState<string>(initialToken);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState<string>("");
@@ -1489,13 +1504,19 @@ export default function PosPage() {
   const [incomingRefunds, setIncomingRefunds] = useState<IncomingRefund[]>([]);
   const [incomingLoading, setIncomingLoading] = useState(false);
   const [restaurantOrdersPaused, setRestaurantOrdersPaused] = useState(false);
+  const [deliveryPlatformsPaused, setDeliveryPlatformsPaused] = useState(false);
+  const [deliveryIntakeState, setDeliveryIntakeState] = useState<"ACCEPTING" | "PARTIAL" | "PAUSED">("ACCEPTING");
+  const [deliveryPauseControlledElsewhere, setDeliveryPauseControlledElsewhere] = useState(false);
+  const [deliveryPauseNeedsManualAction, setDeliveryPauseNeedsManualAction] = useState(false);
   // เสียง/รอบอัตโนมัติของ "ออร์เดอร์เข้า" — ดูเหตุผลที่ useLiveRefresh ด้านล่าง
   // เปิดใช้เฉพาะร้านอาหาร — จอค้าปลีกของร้านทั่วไปไม่มีเหตุการณ์ไหนให้ดัง การสร้าง
   // AudioContext ทิ้งไว้จึงเป็นการแตะเครื่องเสียงของแท็บเล็ตโดยไม่ได้อะไรกลับมา
   const alerts = useOrderAlerts(session?.businessArchetype === "restaurant");
   const [alertSettingsOpen, setAlertSettingsOpen] = useState(false);
-  const knownIncomingIds = useRef<Set<string> | null>(null);
+  const knownIncomingActionKeys = useRef<Set<string> | null>(null);
   const incomingRepeatRef = useRef<AlertRepeatState>(IDLE_ALERT_REPEAT);
+  const incomingRequestSequenceRef = useRef(0);
+  const incomingAppliedSequenceRef = useRef(0);
   const posPageVisible = usePageVisible();
   const incomingWaitingCount = incomingOrders.filter((row) => row.status === "PAID").length;
   // แท็บที่เป็นของประเภทร้าน — ออเดอร์เข้ามีเฉพาะร้านอาหาร · โต๊ะ/เวลามีเฉพาะร้านบอร์ดเกม
@@ -2725,19 +2746,27 @@ export default function PosPage() {
    */
   async function refreshIncomingOrders(silent = false, signal?: AbortSignal) {
     if (!token) return;
+    const requestSequence = ++incomingRequestSequenceRef.current;
     if (!silent) setIncomingLoading(true);
     try {
       const res = await fetch("/api/pos/restaurant/incoming", { headers: authHeaders, cache: "no-store", signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.error ?? `HTTP ${res.status}`);
       const orders: IncomingRestaurantOrder[] = Array.isArray(data.orders) ? data.orders : [];
-      // ออร์เดอร์ที่รอ "คนกดรับ" คือ PAID — PACKING คือรับแล้วและครัวมีตั๋วไปแล้ว
-      // เสียงจึงผูกกับงานที่ยังไม่มีใครทำ ไม่ใช่กับจำนวนออร์เดอร์ทั้งหมดบนจอ
-      const waiting = orders.filter((row) => row.status === "PAID").map((row) => row.id);
-      if (newAlertIds(knownIncomingIds.current, waiting).length > 0) alerts.notify("CHAT_REQUEST");
-      knownIncomingIds.current = new Set(waiting);
+      // Realtime, the manual reload button and the reconciliation poll can overlap. Never let an
+      // older response that arrived late put a removed order/badge back on screen.
+      if (requestSequence < incomingAppliedSequenceRef.current) return;
+      incomingAppliedSequenceRef.current = requestSequence;
+      // ผูกเสียงกับ transition ที่ต้องมีคนทำ ไม่ใช่จำนวนออร์เดอร์ทั้งหมด: รอรับ, พร้อมส่งมอบ,
+      // เลย deadline, provider ยกเลิก หรือคำสั่ง provider ล้มเหลวจะได้คีย์คนละตัว
+      const actionKeys = incomingOrderAttentionKeys(orders);
+      if (newAlertIds(knownIncomingActionKeys.current, actionKeys).length > 0) {
+        alerts.notify("CHAT_REQUEST");
+        void requestDesktopOperationalAttention();
+      }
+      knownIncomingActionKeys.current = new Set(actionKeys);
       const repeat = evaluateAlertRepeat(incomingRepeatRef.current, {
-        pending: waiting.length > 0,
+        pending: actionKeys.length > 0,
         now: Date.now(),
         repeatSeconds: alerts.settings.repeatSeconds,
         maxRepeats: alerts.settings.maxRepeats,
@@ -2746,7 +2775,23 @@ export default function PosPage() {
       if (repeat.play) alerts.notify("CHAT_REQUEST");
       setIncomingOrders(orders);
       setIncomingRefunds(Array.isArray(data.refunds) ? data.refunds : []);
-      setRestaurantOrdersPaused(data?.config?.paused === true);
+      const deliveryControls = Array.isArray(data?.config?.deliveryIntakeControls)
+        ? data.config.deliveryIntakeControls : [];
+      const deliveryIntake = summarizeDeliveryIntakeControls(deliveryControls);
+      const nextRestaurantPaused = data?.config?.paused === true;
+      setRestaurantOrdersPaused(nextRestaurantPaused);
+      setDeliveryPlatformsPaused(deliveryIntake.branchPaused);
+      setDeliveryIntakeState(deliveryIntake.state);
+      setDeliveryPauseControlledElsewhere(deliveryIntake.controlledElsewhere);
+      setDeliveryPauseNeedsManualAction(deliveryIntake.needsManualAction);
+      onIncomingOrdersChange?.({
+        orders,
+        restaurantOrdersPaused: nextRestaurantPaused,
+        deliveryPlatformsPaused: deliveryIntake.branchPaused,
+        deliveryIntakeState: deliveryIntake.state,
+        deliveryPauseControlledElsewhere: deliveryIntake.controlledElsewhere,
+        deliveryPauseNeedsManualAction: deliveryIntake.needsManualAction,
+      });
     } catch (error: any) {
       if (!silent) {
         setNotice({ type: "error", text: `โหลดออร์เดอร์เข้าไม่สำเร็จ: ${String(error?.message ?? error)}` });
@@ -2794,14 +2839,14 @@ export default function PosPage() {
         return await mutateIncomingOrder({ ...body, managerUserId: manager.id, managerPin });
       }
       if (!res.ok) throw new Error(data?.error ?? data?.reason ?? data?.status ?? `HTTP ${res.status}`);
-      setNotice({
-        type: "ok",
-        text: body.action === "accept"
-          ? `รับออร์เดอร์แล้ว · ส่งเข้าครัว ${Number(data.ticketsCreated ?? 0)} ใบ`
-          : body.action === "cancel_lines"
-            ? `ตัดรายการแล้ว · คืนลูกค้า ฿${baht(Number(data.refundAmount ?? 0))}${Number(data.pricingAdjustmentAmount ?? 0) > 0 ? ` · ส่วนต่างราคา ฿${baht(Number(data.pricingAdjustmentAmount))}` : ""}`
-          : body.paused ? "หยุดรับออร์เดอร์ออนไลน์ชั่วคราวแล้ว" : "เปิดรับออร์เดอร์ออนไลน์แล้ว",
-      });
+      const successText = body.action === "accept"
+        ? `รับออร์เดอร์แล้ว · ส่งเข้าครัว ${Number(data.ticketsCreated ?? 0)} ใบ`
+        : body.action === "cancel_lines"
+          ? `ตัดรายการแล้ว · คืนลูกค้า ฿${baht(Number(data.refundAmount ?? 0))}${Number(data.pricingAdjustmentAmount ?? 0) > 0 ? ` · ส่วนต่างราคา ฿${baht(Number(data.pricingAdjustmentAmount))}` : ""}`
+          : body.action === "delivery_ready" ? "บันทึกว่าอาหารพร้อมแล้ว"
+            : body.action === "delivery_handoff" ? "บันทึกการส่งมอบให้ไรเดอร์และตัดสต็อกแล้ว"
+              : body.paused ? "หยุดรับออร์เดอร์ออนไลน์ชั่วคราวแล้ว" : "เปิดรับออร์เดอร์ออนไลน์แล้ว";
+      setNotice({ type: "ok", text: successText });
       await refreshIncomingOrders();
       return data;
     } catch (error: any) {
@@ -2850,6 +2895,91 @@ export default function PosPage() {
         setIncomingLoading(false);
       }
     }
+  }
+
+  async function rejectIncomingOrder(order: IncomingRestaurantOrder) {
+    if (order.items.length === 0) {
+      setNotice({ type: "error", text: "ออร์เดอร์นี้ไม่มีรายการคงเหลือให้ปฏิเสธ" });
+      return;
+    }
+    const deadlineExpired = order.acceptanceDeadlineAt
+      ? Date.parse(order.acceptanceDeadlineAt) <= Date.now() : false;
+    const defaultCause = ["CANCELLED", "REJECTED", "EXPIRED"].includes(order.providerStatus ?? "")
+      ? "PLATFORM_CANCELLED"
+      : deadlineExpired ? "ACCEPTANCE_TIMEOUT"
+        : ["FAILED", "MANUAL_ACTION_REQUIRED"].includes(order.providerCommandStatus ?? "")
+          ? "INTEGRATION_FAILURE" : "STORE_CLOSED";
+    const cause = window.prompt(
+      "เหตุผลที่ยกเลิกยอดคงเหลือทั้งออร์เดอร์\n"
+      + "MERCHANT_OUT_OF_STOCK = วัตถุดิบหมด\nCUSTOMER_CHANGED = ลูกค้าเปลี่ยนใจ\n"
+      + "PLATFORM_CANCELLED = provider ยกเลิก\nRIDER_UNAVAILABLE = ไม่มีไรเดอร์\n"
+      + "ACCEPTANCE_TIMEOUT = เลยเวลารับ\nSTORE_CLOSED = ร้านปิด/รับไม่ไหว\n"
+      + "INTEGRATION_FAILURE = ระบบเชื่อมต่อล้มเหลว\nDUPLICATE_FRAUDULENT_EVENT = รายการซ้ำ/น่าสงสัย",
+      defaultCause,
+    )?.trim().toUpperCase();
+    if (!cause || !(RESTAURANT_CANCELLATION_CAUSES as readonly string[]).includes(cause)) {
+      if (cause) setNotice({ type: "error", text: "เหตุผลยกเลิกไม่อยู่ในรายการที่ระบบรองรับ" });
+      return;
+    }
+    const detail = window.prompt("บันทึกรายละเอียดสำหรับ audit และการประสาน provider", "")?.trim();
+    if (!detail) return;
+    if (!window.confirm("ยืนยันยกเลิกยอดคงเหลือทั้งออร์เดอร์? ระบบจะคืนสต็อกและเปิดงานคืนเงินตามช่องทางเดิม")) return;
+    const result = await mutateIncomingOrder({
+      action: "cancel_lines",
+      orderId: order.id,
+      idempotencyKey: crypto.randomUUID(),
+      note: detail,
+      lines: order.items.map((item) => ({
+        orderItemId: item.orderItemId,
+        packQty: item.qty,
+        cause,
+      })),
+    });
+    if (result && order.provider) {
+      setNotice({
+        type: "ok",
+        text: "ปฏิเสธใน BMS แล้ว · ตรวจและยืนยันการปฏิเสธบน provider tablet ด้วยจนกว่า Reject API จะผ่าน live gate",
+      });
+    }
+  }
+
+  async function markIncomingDeliveryReady(order: IncomingRestaurantOrder) {
+    const confirmed = window.confirm("ยืนยันว่าอาหารและเครื่องดื่มทุกชิ้นพร้อมส่งมอบแล้ว?");
+    if (!confirmed) return;
+    await mutateIncomingOrder({
+      action: "delivery_ready",
+      orderId: order.id,
+      idempotencyKey: crypto.randomUUID(),
+    });
+  }
+
+  async function handoffIncomingDelivery(order: IncomingRestaurantOrder) {
+    const bagText = window.prompt("จำนวนถุงที่ส่งมอบ", "1")?.trim();
+    if (!bagText) return;
+    const bagCount = Number(bagText);
+    if (!Number.isInteger(bagCount) || bagCount < 1) {
+      setNotice({ type: "error", text: "จำนวนถุงต้องเป็นจำนวนเต็มอย่างน้อย 1" });
+      return;
+    }
+    const pickupCode = window.prompt("Pickup code (ถ้ามี)", "")?.trim() || null;
+    const riderReference = window.prompt("Rider reference (ถ้ามี)", "")?.trim() || null;
+    if (!window.confirm("ตรวจครบแล้ว: อาหาร · เครื่องดื่ม · เครื่องปรุง · จำนวนถุง · ซีลถุง · เลขออร์เดอร์")) return;
+    await mutateIncomingOrder({
+      action: "delivery_handoff",
+      orderId: order.id,
+      idempotencyKey: crypto.randomUUID(),
+      pickupCode,
+      riderReference,
+      bagCount,
+      checklist: {
+        foodComplete: true,
+        drinksComplete: true,
+        condimentsComplete: true,
+        bagCountCorrect: true,
+        bagSealed: true,
+        orderNumberMatched: true,
+      },
+    });
   }
 
   async function settleIncomingRefund(refund: IncomingRefund) {
@@ -4087,9 +4217,9 @@ export default function PosPage() {
   // โหลดตามแท็บ ไม่ใช่ polling — จอนี้เปิดค้างทั้งวัน การ poll ทุกสองสามวินาที
   // ตลอดกะคือ request หลายพันครั้งต่อวันต่อเครื่องเพื่อข้อมูลที่เปลี่ยนวันละไม่กี่ครั้ง
   useEffect(() => {
+    if (tab === "incoming") void refreshIncomingOrders();
     if (!token || !session?.shift) return;
     if (tab === "sell") void refreshParked();
-    if (tab === "incoming") void refreshIncomingOrders();
     if (tab === "shift") {
       void refreshCashMoves();
       void refreshExpenses();
@@ -4104,9 +4234,9 @@ export default function PosPage() {
     // scanned cart lines and approval/idempotency state stay mounted and are never discarded by a
     // data refresh. The Desktop shell has already refreshed its own catalog and session summary.
     void loadSession();
+    if (tab === "incoming") void refreshIncomingOrders();
     if (!token || !session?.shift) return;
     if (tab === "sell") void refreshParked();
-    if (tab === "incoming") void refreshIncomingOrders();
     if (tab === "shift") {
       void refreshCashMoves();
       void refreshExpenses();
@@ -4125,7 +4255,7 @@ export default function PosPage() {
   // (ที่ยืนจริง) จึงไม่มีทางรู้เลยว่ามีออร์เดอร์ออนไลน์เข้ามา จนกว่าจะเผลอกดเข้าแท็บนั้น
   // และไม่มีป้ายนับให้เห็นด้วย · ตอนนี้ดึงทุกแท็บ (ช้าลงเมื่อไม่ได้เปิดอยู่) พร้อมป้าย+เสียง
   useLiveRefresh({
-    enabled: Boolean(token) && Boolean(session?.shift) && session?.businessArchetype === "restaurant",
+    enabled: Boolean(token) && session?.businessArchetype === "restaurant",
     intervalMs: alertPollIntervalMs({ focused: tab === "incoming", visible: posPageVisible }),
     onRefresh: (signal) => refreshIncomingOrders(true, signal),
   });
@@ -6946,21 +7076,75 @@ export default function PosPage() {
                   disabled={incomingLoading} onClick={() => void mutateIncomingOrder({ action: "pause", paused: !restaurantOrdersPaused })}>
                   {restaurantOrdersPaused ? "เปิดรับออร์เดอร์" : "หยุดรับชั่วคราว"}
                 </button>
+                <button type="button" className={deliveryPlatformsPaused ? "pos-ret-btn pos-ret-btn--solid" : "pos-ret-btn"}
+                  disabled={incomingLoading || deliveryPauseControlledElsewhere}
+                  title={deliveryPauseControlledElsewhere ? "สถานะนี้ถูกควบคุมจากส่วนกลาง ต้องเปิดจากหน้าจัดการ Delivery platforms" : undefined}
+                  onClick={() => {
+                    const reason = window.prompt("เหตุผลที่เปิด/หยุดรับออเดอร์ delivery platforms", "ภาระงานหน้าร้าน")?.trim();
+                    if (!reason) return;
+                    void mutateIncomingOrder({
+                      action: "delivery_pause",
+                      paused: !deliveryPlatformsPaused,
+                      reason,
+                      idempotencyKey: crypto.randomUUID(),
+                    });
+                  }}>
+                  {deliveryPauseControlledElsewhere
+                    ? "Delivery platforms หยุดจากส่วนกลาง"
+                    : deliveryPlatformsPaused ? "เปิด Delivery platforms" : "หยุด Delivery platforms"}
+                </button>
               </div>
             </div>
+            <div className="pos-block-hint" style={{ marginTop: 8 }}>
+              สถานะ Delivery platforms: {deliveryIntakeState === "PAUSED" ? "หยุดรับ"
+                : deliveryIntakeState === "PARTIAL" ? "หยุดรับบาง provider" : "กำลังรับออร์เดอร์"}
+            </div>
+            {deliveryPauseNeedsManualAction ? (
+              <div className="pos-block-hint" style={{ marginTop: 8, color: "#b54708" }}>
+                สถานะบาง provider ยังไม่ยืนยันหรือซิงก์ไม่สำเร็จ — ตรวจและทำรายการบน provider tablet ด้วย
+              </div>
+            ) : null}
           </div>
           {incomingOrders.length === 0 ? (
             <div className="pos-card" style={{ padding: 24, textAlign: "center" }}>
               {incomingLoading ? "กำลังโหลด…" : "ยังไม่มีออร์เดอร์เข้าของสาขานี้"}
             </div>
-          ) : incomingOrders.map((order) => (
-            <div key={order.id} className="pos-card" style={{ padding: 16 }}>
+          ) : incomingOrders.map((order) => {
+            const operationalState = incomingOrderOperationalState(order);
+            const problemReason = incomingOrderProblemReason(order);
+            const problemText = problemReason === "PROVIDER_TERMINAL"
+              ? `provider เปลี่ยนเป็น ${order.providerStatus} — ตรวจการยกเลิกและยอดคืนเงิน`
+              : problemReason === "ACCEPTANCE_EXPIRED"
+                ? "เลยเวลารับออร์เดอร์แล้ว — ห้ามกดรับย้อนหลัง ตรวจการยกเลิกและยอดคืนเงิน"
+                : problemReason === "COMMAND_FAILED"
+                  ? "คำสั่งไป provider ไม่สำเร็จ — ตรวจ provider tablet ก่อนดำเนินการต่อ"
+                  : problemReason === "INCONSISTENT_READY"
+                    ? "สถานะพร้อมส่งมอบไม่ตรงกับสถานะรับออร์เดอร์ — ตรวจสอบก่อนส่งมอบ"
+                    : "สถานะเดลิเวอรีต้องตรวจสอบก่อนดำเนินการต่อ";
+            return <div key={order.id} className="pos-card" style={{ padding: 16 }}>
               <div className="pos-shift-head">
                 <div>
-                  <div className="pos-block-title">#{order.id.slice(0, 8)} · {order.fulfillmentType === "PICKUP" ? "ลูกค้ารับเอง" : "จัดส่ง"}</div>
+                  <div className="pos-block-title">
+                    {order.providerDisplayNumber ? `${order.provider} #${order.providerDisplayNumber}` : `#${order.id.slice(0, 8)}`}
+                    {" · "}{order.fulfillmentType === "PICKUP" ? "ลูกค้ารับเอง" : "จัดส่ง"}
+                  </div>
                   <div className="pos-block-hint">
                     {order.channel} · {order.promisedAt ? `สัญญา ${new Date(order.promisedAt).toLocaleString("th-TH")}` : "ยังไม่ระบุเวลาสัญญา"}
+                    {order.providerStatus ? ` · provider ${order.providerStatus}` : ""}
+                    {order.deliveryStatus ? ` · local ${order.deliveryStatus}` : ""}
+                    {order.providerCommandStatus ? ` · command ${order.providerCommandStatus}` : ""}
                   </div>
+                  {order.acceptanceDeadlineAt ? (
+                    <div className="pos-block-hint" style={{ color: new Date(order.acceptanceDeadlineAt).getTime() <= Date.now() ? "#b42318" : undefined }}>
+                      รับภายใน {new Date(order.acceptanceDeadlineAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                    </div>
+                  ) : null}
+                  {order.providerCommandError ? <div className="pos-block-hint" style={{ color: "#b42318" }}>{order.providerCommandError}</div> : null}
+                  {order.providerCommandStatus === "MANUAL_ACTION_REQUIRED" ? (
+                    <div className="pos-block-hint" style={{ color: "#b54708" }}>
+                      สถานะฝั่ง provider ยังไม่ยืนยัน — ทำรายการเดียวกันบน provider tablet และตรวจเลขออร์เดอร์ให้ตรงกัน
+                    </div>
+                  ) : null}
                 </div>
                 <strong>฿{baht(order.amountDue)}</strong>
               </div>
@@ -6968,26 +7152,57 @@ export default function PosPage() {
                 {order.items.map((item) => <li key={item.orderItemId} style={{ marginBottom: 6 }}>
                   {item.name || item.sku} · {item.size} × {item.qty}{item.unitName ? ` ${item.unitName}` : ""}
                   {item.modifierCodes?.length ? ` (${item.modifierCodes.join(", ")})` : ""}
-                  <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
-                    onClick={() => void cancelIncomingLine(order, item)}>ตัดรายการ / คืนส่วนต่าง</button>
+                  {operationalState !== "PROBLEM" ? (
+                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                      onClick={() => void cancelIncomingLine(order, item)}>ตัดรายการ / คืนส่วนต่าง</button>
+                  ) : null}
                 </li>)}
               </ul>
-              {order.status === "PAID" ? (
-                <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingLoading}
-                  onClick={() => void mutateIncomingOrder({ action: "accept", orderId: order.id })}>รับออร์เดอร์และส่งเข้าครัว</button>
-              ) : <span className="pos-chip pos-chip--ok">รับแล้ว · กำลังทำ</span>}
-            </div>
-          ))}
+              {operationalState === "PROBLEM" ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="pos-chip pos-chip--warn">ต้องตรวจสอบก่อนดำเนินการต่อ</span>
+                  <span className="pos-block-hint">{problemText}</span>
+                  {order.items.length > 0 ? (
+                    <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                      onClick={() => void rejectIncomingOrder(order)}>ยกเลิกยอดคงเหลือ / เปิดคืนเงิน</button>
+                  ) : null}
+                </div>
+              ) : operationalState === "ACCEPT" ? (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingLoading}
+                    onClick={() => void mutateIncomingOrder({ action: "accept", orderId: order.id, idempotencyKey: crypto.randomUUID() })}>รับออร์เดอร์และส่งเข้าครัว</button>
+                  <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                    onClick={() => void rejectIncomingOrder(order)}>ปฏิเสธทั้งออร์เดอร์</button>
+                </div>
+              ) : (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                  <span className="pos-chip pos-chip--ok">รับแล้ว · {operationalState === "HANDOFF" ? "พร้อมส่งมอบ" : "กำลังทำ"}</span>
+                  {order.provider && operationalState === "PREPARING" && ["ACCEPTED", "PREPARING"].includes(order.deliveryStatus ?? "") ? (
+                    <button type="button" className="pos-ret-btn" disabled={incomingLoading}
+                      onClick={() => void markIncomingDeliveryReady(order)}>อาหารพร้อมแล้ว</button>
+                  ) : null}
+                  {order.provider && operationalState === "HANDOFF" ? (
+                    <button type="button" className="pos-ret-btn pos-ret-btn--solid" disabled={incomingLoading}
+                      onClick={() => void handoffIncomingDelivery(order)}>ส่งมอบให้ไรเดอร์</button>
+                  ) : null}
+                </div>
+              )}
+            </div>;
+          })}
           <div className="pos-card" style={{ padding: 16 }}>
             <div className="pos-block-title">คิวคืนเงินเดลิเวอรี</div>
-            <div className="pos-block-hint">ต้องโอนจริงก่อน แล้วปิดงานด้วยเลขอ้างอิง</div>
+            <div className="pos-block-hint">ช่องทางร้านโอนเองต้องมีเลขอ้างอิง · PLATFORM_SETTLEMENT รอหลักฐานจาก provider เท่านั้น</div>
             {incomingRefunds.length === 0 ? <div style={{ marginTop: 12 }}>ไม่มีรายการค้าง</div> : (
               <ul style={{ paddingLeft: 22 }}>
                 {incomingRefunds.map((refund) => <li key={refund.id} style={{ marginTop: 10 }}>
                   ฿{baht(refund.amount)} · {refund.channel}/{refund.customerRef || "ไม่ระบุลูกค้า"}
                   · โดย {refund.cancelledBy || "ไม่ระบุ"} · ค้าง {Math.max(0, Math.floor((Date.now() - new Date(refund.createdAt).getTime()) / 3600000))} ชม.
-                  <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
-                    onClick={() => void settleIncomingRefund(refund)}>ปิดด้วยเลขโอน</button>
+                  {refund.method === "PLATFORM_SETTLEMENT" ? (
+                    <span className="pos-chip" style={{ marginLeft: 8 }}>รอ provider settlement</span>
+                  ) : (
+                    <button type="button" className="pos-ret-btn" style={{ marginLeft: 8 }} disabled={incomingLoading}
+                      onClick={() => void settleIncomingRefund(refund)}>ปิดด้วยเลขโอน</button>
+                  )}
                 </li>)}
               </ul>
             )}
@@ -8992,7 +9207,7 @@ export default function PosPage() {
         </section>
 
         {tab === "sell" && (
-        <section className="pos-card pos-pane pos-sale-checkout" style={{ display: "flex", flexDirection: "column" }}>
+        <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-checkout" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
           <div className="pos-sale-totalbar">
               <div className="pos-total-row">
                 <span className="pos-sale-total-label">ยอดชำระ · {itemCount} ชิ้น</span>
@@ -9006,7 +9221,7 @@ export default function PosPage() {
                 <div className="pos-sale-summary-total"><span>ยอดสุทธิ</span><strong>฿{baht(amountDue)}</strong></div>
               </div>
           </div>
-          <div className="pos-sale-checkout-scroll">
+          <div className={tab === "sell" ? "pos-sale-checkout-scroll" : undefined}>
           <div className="pos-total pos-sale-adjustments">
             <div className="pos-total-row">
               <span style={{ fontSize: 13, color: "var(--pos-muted)" }}>ยอดชำระ · {itemCount} ชิ้น</span>
@@ -10045,8 +10260,8 @@ export default function PosPage() {
           )}
 
           </div>
-          {!justSold && (<div className="pos-sale-checkout-footer">
-            <div className={`pos-sale-status ${payBlockedReason ? "is-blocked" : "is-ready"}`} role="status">
+          {!justSold && (<div className={tab === "sell" ? "pos-sale-checkout-footer" : undefined}>
+            <div className="pos-sale-status" data-state={payBlockedReason ? "blocked" : "ready"} role="status">
               <span aria-hidden="true">{payBlockedReason ? "!" : "✓"}</span>
               <span>{payBlockedReason ?? "เลือกวิธีชำระและระบุยอดรับเงิน"}</span>
             </div>
@@ -10070,7 +10285,7 @@ export default function PosPage() {
               <kbd>F2</kbd>
             </button>
           <details className="pos-sale-bill-options">
-            <summary>ตัวเลือกบิล</summary>
+            <summary>{tab === "sell" ? "ตัวเลือกบิล" : "ตัวเลือก"}</summary>
             <div className="pos-sale-bill-options-body">
           <button
             className="pos-sale-clear-bill"

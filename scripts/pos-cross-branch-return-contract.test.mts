@@ -32,7 +32,10 @@ test("counter search exposes non-marketplace completed channels without widening
     source.indexOf("export type PosReturnResult")
   );
   assert.doesNotMatch(recentSales, /o\.channel = 'pos'/);
-  assert.match(source, /COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set\(\["lazada", "shopee"\]\)/);
+  assert.match(
+    source,
+    /COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set\(\[[\s\S]*"lazada", "shopee", "grabfood", "lineman", "foodpanda",[\s\S]*\]\)/
+  );
   assert.match(source, /if \(input\.isVoid && order\.pos_device_id !== input\.deviceId\)/);
 });
 

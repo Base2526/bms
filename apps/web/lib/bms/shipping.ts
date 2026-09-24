@@ -23,9 +23,11 @@ import type {
   CarrierTrackResult,
 } from "./carriers/types";
 
-// Lazada/Shopee keep the shipping address in Seller Center. All other implemented channels,
-// including TikTok Chat, require a shipping address stored in BMS before fulfillment can ship.
-export const MARKETPLACE_CHANNELS = new Set(["lazada", "shopee"]);
+// These platforms own the customer delivery/rider leg. BMS must neither require
+// a CRM address nor book Flash/Kerry for them. TikTok here is chat, not TikTok Shop.
+export const MARKETPLACE_CHANNELS = new Set([
+  "lazada", "shopee", "grabfood", "lineman", "foodpanda",
+]);
 
 // Carrier codes/labels live in carriers/constants.ts so client components can import them
 // without pulling in @/lib/db. Re-exported here to keep existing `from "./shipping"` imports working.
@@ -668,7 +670,7 @@ export async function getShipment(tenantId: string, id: string) {
             carrier_booking_error, carrier_booking_attempted_at, created_at, updated_at,
             EXISTS (SELECT 1 FROM bms_orders o
                      WHERE o.tenant_id = bms_shipments.tenant_id AND o.id = bms_shipments.order_id
-                       AND o.channel IN ('lazada', 'shopee')) AS marketplace_managed
+                       AND o.channel IN ('lazada', 'shopee', 'grabfood', 'lineman', 'foodpanda')) AS marketplace_managed
        FROM bms_shipments WHERE tenant_id = $1 AND id = $2`,
     [tenantId, id]
   );
@@ -688,7 +690,7 @@ export async function listShipments(
             , carrier_booking_status, carrier_booking_error, carrier_booking_attempted_at
             , EXISTS (SELECT 1 FROM bms_orders o
                        WHERE o.tenant_id = bms_shipments.tenant_id AND o.id = bms_shipments.order_id
-                         AND o.channel IN ('lazada', 'shopee')) AS marketplace_managed
+                         AND o.channel IN ('lazada', 'shopee', 'grabfood', 'lineman', 'foodpanda')) AS marketplace_managed
        FROM bms_shipments
       WHERE tenant_id = $1
         AND ($2::uuid IS NULL OR order_id = $2)

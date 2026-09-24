@@ -148,6 +148,7 @@ const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/restaurant-qr/service-calls/route.ts", "ลูกค้าที่มี table session เรียกพนักงานและดูสถานะ"],
   ["app/api/bms/board-game-guest/[token]/route.ts", "ลูกค้าสแกน QR ของ session บอร์ดเกมที่กำลังเปิด"],
   ["app/api/bms/board-game-guest/service-calls/route.ts", "ลูกค้าที่มี guest token เรียกพนักงานและดูสถานะ"],
+  ["app/api/bms/delivery/[provider]/webhook/[integrationId]/route.ts", "provider webhook สาธารณะโดยจำเป็น; tenant มาจาก opaque integration id และ adapter ตรวจ signature แบบ fail-closed"],
 ]);
 
 test("every /api/bms route is guarded, or public by design with a rate limit", () => {
