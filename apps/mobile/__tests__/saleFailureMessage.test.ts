@@ -16,6 +16,12 @@ describe('describeMobileSaleFailure', () => {
     ).toBe('ยอดรับชำระไม่ตรงกับยอดขาย');
   });
 
+  it('explains an offline price mismatch when the server returns no reason', () => {
+    expect(describeMobileSaleFailure({ status: 'PAYMENT_MISMATCH' })).toContain(
+      'ห้ามรับเงินซ้ำ',
+    );
+  });
+
   it('keeps an unknown status visible with context', () => {
     expect(describeMobileSaleFailure({ status: 'NEW_STATUS' })).toBe(
       'บันทึกการขายไม่สำเร็จ (NEW_STATUS)',

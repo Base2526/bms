@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { print } from 'graphql';
 import { clearPairing, loadPairing, savePairing } from '../lib/deviceStore';
+import { loadOfflineSales } from '../lib/offlineSales';
 import {
   PosBootstrapDocument,
   type PosBootstrapQuery,
@@ -45,6 +46,7 @@ export type VerifyState =
  */
 
 export interface DeviceIdentity {
+  deviceId: string;
   deviceCode: string;
   deviceName: string | null;
   branchName: string | null;
@@ -143,14 +145,20 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const verifyTarget = useCallback(
-    async (candidate: PairingTarget) => {
+    async (
+      candidate: PairingTarget,
+      options: { publish: boolean } = { publish: true },
+    ): Promise<VerifyState> => {
       const seq = ++verifySeq.current;
-      setVerify({ kind: 'CHECKING' });
+      if (options.publish) setVerify({ kind: 'CHECKING' });
       // ทุกทางออกที่ "ได้คำตอบแล้ว" ต้องประทับเวลา ไม่ใช่เฉพาะทางที่ผ่าน — คำตอบที่ล้มซ้ำ
       // ด้วยข้อความเดิมก็อ่านไม่ออกเหมือนกันว่าเพิ่งถามไปหรือค้างมาจากรอบก่อน
-      const settle = (next: VerifyState) => {
-        setVerify(next);
-        setLastCheckedAt(Date.now());
+      const settle = (next: VerifyState): VerifyState => {
+        if (options.publish) {
+          setVerify(next);
+          setLastCheckedAt(Date.now());
+        }
+        return next;
       };
 
       const controller = new AbortController();
@@ -168,7 +176,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           body: JSON.stringify({ query: print(PosBootstrapDocument) }),
           signal: controller.signal,
         });
-        if (seq !== verifySeq.current) return;
+        if (seq !== verifySeq.current) return { kind: 'IDLE' };
 
         if (res.status === 401) {
           recordPosDiagnosticEvent(candidate, {
@@ -183,9 +191,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               errorCode: 'UNAUTHENTICATED',
             },
           });
-          markAuthenticationRejected();
-          setLastCheckedAt(Date.now());
-          return;
+          return settle({
+            kind: 'REJECTED',
+            message: REJECTED_TOKEN_MESSAGE,
+          });
         }
         if (!res.ok) {
           recordPosDiagnosticEvent(candidate, {
@@ -199,12 +208,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               durationMs: Date.now() - startedAt,
             },
           });
-          settle({
+          return settle({
             kind: 'SERVER_ERROR',
             message: `เซิร์ฟเวอร์ตอบ HTTP ${res.status}`,
             cause: `HTTP ${res.status}`,
           });
-          return;
         }
 
         // URL ที่ชี้ผิดโดเมนมักตอบ 200 พร้อมหน้า HTML — ถ้าไม่ดักตรงนี้จะได้ error ของ JSON parser
@@ -229,9 +237,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               errorCode: 'UNAUTHENTICATED',
             },
           });
-          markAuthenticationRejected();
-          setLastCheckedAt(Date.now());
-          return;
+          return settle({
+            kind: 'REJECTED',
+            message: REJECTED_TOKEN_MESSAGE,
+          });
         }
         if (body?.errors?.length) {
           recordPosDiagnosticEvent(candidate, {
@@ -246,13 +255,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               errorCode: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
             },
           });
-          settle({
+          return settle({
             kind: 'SERVER_ERROR',
             message:
               body.errors[0]?.message ?? 'เซิร์ฟเวอร์อ่านข้อมูลเครื่องไม่ได้',
             cause: body.errors[0]?.extensions?.code ?? 'GRAPHQL_ERROR',
           });
-          return;
         }
         const session = body?.data?.bmsPosSession;
         if (!session?.device) {
@@ -268,13 +276,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               errorCode: 'INVALID_POS_BOOTSTRAP',
             },
           });
-          settle({
+          return settle({
             kind: 'SERVER_ERROR',
             message:
               'ที่อยู่นี้ตอบกลับมาไม่ใช่ข้อมูลของเครื่องขาย — ตรวจว่าใส่เซิร์ฟเวอร์ถูกตัวหรือยัง',
             cause: 'ไม่ใช่ข้อมูลเครื่องขาย',
           });
-          return;
         }
 
         recordPosDiagnosticEvent(candidate, {
@@ -287,9 +294,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
             durationMs: Date.now() - startedAt,
           },
         });
-        settle({
+        return settle({
           kind: 'OK',
           info: {
+            deviceId: String(session.device.id),
             deviceCode: String(session.device.code ?? '—'),
             deviceName: session.device.name ?? null,
             branchName: session.location?.name ?? null,
@@ -301,7 +309,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
           },
         });
       } catch (e: any) {
-        if (seq !== verifySeq.current) return;
+        if (seq !== verifySeq.current) return { kind: 'IDLE' };
         const aborted = e?.name === 'AbortError';
         recordPosDiagnosticEvent(candidate, {
           category: 'pos',
@@ -318,7 +326,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
               : undefined,
           },
         });
-        settle({
+        return settle({
           kind: 'OFFLINE',
           message: aborted
             ? `ไม่ได้คำตอบภายใน ${
@@ -335,7 +343,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(timer);
       }
     },
-    [markAuthenticationRejected],
+    [],
   );
 
   const runVerify = useCallback(async () => {
@@ -345,6 +353,42 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   const pair = useCallback(
     async (next: PairingTarget) => {
+      const queued = await loadOfflineSales();
+      if (queued.some(record => record.serverUrl !== next.serverUrl)) {
+        throw new Error(
+          'ยังมีเงินสดออฟไลน์ค้างจากเซิร์ฟเวอร์เดิม ห้ามเปลี่ยนเซิร์ฟเวอร์จนกว่าจะซิงก์หรือตรวจสอบเสร็จ',
+        );
+      }
+      if (
+        queued.some(record => !record.deviceId) &&
+        (!target ||
+          target.serverUrl !== next.serverUrl ||
+          target.token !== next.token)
+      ) {
+        throw new Error(
+          'คิวออฟไลน์รุ่นเก่ายังไม่ผูกกับรหัสเครื่อง ห้ามเปลี่ยน token จนกว่าจะซิงก์หรือตรวจสอบโดยผู้ดูแลเสร็จ',
+        );
+      }
+      const checked = await verifyTarget(next, { publish: target == null });
+      if (checked.kind !== 'OK') {
+        const reason =
+          checked.kind === 'IDLE'
+            ? 'การตรวจ token ถูกยกเลิก กรุณาลองใหม่'
+            : checked.kind === 'CHECKING'
+            ? 'ยังตรวจ token ไม่เสร็จ'
+            : checked.message;
+        throw new Error(reason);
+      }
+      if (
+        queued.some(
+          record =>
+            record.deviceId && record.deviceId !== checked.info.deviceId,
+        )
+      ) {
+        throw new Error(
+          'token นี้เป็นคนละเครื่องกับคิวเงินสดออฟไลน์เดิม กรุณาใช้ token ใหม่ของเครื่องเดิม',
+        );
+      }
       await savePairing(next);
       // Set this before React can flush the PAIRED render; otherwise the startup effect can race
       // pair() and send the same bootstrap verification twice.
@@ -352,11 +396,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       setTarget(next);
       setStatus('PAIRED');
       setStoreError(null);
-      // pair() ตรวจ candidate โดยตรง ไม่อ่าน target จาก closure รอบเก่า
-      // (ก่อนแก้ การจับคู่ครั้งแรกไม่ verify อะไร และการเปลี่ยน token อาจ verify ตัวเก่า)
-      await verifyTarget(next);
+      setVerify(checked);
+      setLastCheckedAt(Date.now());
     },
-    [verifyTarget],
+    [target, verifyTarget],
   );
 
   // ถามเซิร์ฟเวอร์หนึ่งครั้งตอนเปิดแอปถ้าเครื่องจับคู่ไว้แล้ว — หน้า Login จะได้บอกได้ว่า

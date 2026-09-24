@@ -37,6 +37,7 @@ interface MovementApproval {
 }
 
 interface ShiftContextValue {
+  id: string | null;
   isOpen: boolean;
   openedAt: string;
   openedByName: string;
@@ -302,6 +303,7 @@ export function ShiftProvider({
   );
   const value = useMemo<ShiftContextValue>(
     () => ({
+      id: shift?.id ?? null,
       isOpen: shift?.status === 'OPEN',
       openedAt: shift?.openedAt ?? report?.openedAt ?? 'ยังไม่เปิดกะ',
       openedByName: report?.openedByName ?? session?.cashier.name ?? '-',

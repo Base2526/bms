@@ -311,8 +311,11 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   encrypted device queue accepts only plain retail cash sales without members, points, coupons,
   manual discounts, serial/weighted/modifier items, pharmacy approval, credit, deposits,
   restaurant checks or board-game groups. It stores no PIN, recovers the original idempotency key
-  before retrying, flushes serially and blocks shift close or device unpair while unresolved. A
-  client timeout is an unknown result and must preserve that same key. A pending reference is
+  before retrying, flushes serially and blocks shift close, device unpair, or pairing replacement
+  while unresolved. Recovery may confirm and remove an already committed sale after its shift has
+  closed, but an unsold request is never replayed into a different shift. Resolved product snapshots
+  remain available in memory for repeated outage sales during the same signed-in session. A client
+  timeout is an unknown result and must preserve that same key. A pending reference is
   not a receipt or tax document; `recordPosSale()` still commits payment, stock, audit and tax in
   the normal transaction, and the backend repeats every eligibility check.
 - **The desktop shell hosts the register; it never becomes one.** `apps/desktop/` is an Electron

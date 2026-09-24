@@ -302,7 +302,7 @@ export const TH_SECTIONS: ManualSection[] = [
           ["เล่นซ้ำแล้วได้ PAYMENT_MISMATCH", "เซิร์ฟเวอร์ยกเลิกบิลที่ถูกปฏิเสธไปแล้ว → POS รีเฟรชตะกร้าทั้งใบ ยืนยันยอดใหม่หนึ่งครั้ง"],
         ],
       },
-      { kind: "callout", tone: "danger", title: "นี่ไม่ใช่ POS แบบออฟไลน์", body: "การค้นหา ขาย คืนสินค้า ชำระเงิน และงานกะ ต้องเชื่อมต่อเซิร์ฟเวอร์ได้ ร้านต้องมีขั้นตอนสำรองแบบมือที่เขียนไว้ชัดเจน" },
+      { kind: "callout", tone: "warn", title: "Emergency Offline Mode ใช้ได้เฉพาะ Mobile POS", body: "Mobile เก็บคิวได้เฉพาะการขายปลีกธรรมดาที่รับเงินสด ไม่มีสมาชิก แต้ม คูปอง ส่วนลดอนุมัติ Serial สินค้าชั่งน้ำหนัก Modifier หรือ Pharmacy; Web/Desktop การคืนสินค้า งานกะ งานสต็อก ร้านอาหาร และบอร์ดเกมยังต้องเชื่อมต่อ Cloud รายการที่รอซิงก์ยังไม่ใช่ใบเสร็จหรือเอกสารภาษีจนกว่า Server จะตรวจและ commit สำเร็จ" },
     ],
   },
   {
@@ -583,18 +583,18 @@ export const TH_SECTIONS: ManualSection[] = [
   {
     id: "scope",
     eyebrow: "อ้างอิง",
-    title: "ขอบเขตที่ไม่รองรับ",
-    lead: "ขอบเขตที่พัฒนาแล้วคือ POS ค้าปลีกทั่วไป — รายการต่อไปนี้เป็นโมดูลแยก ไม่ใช่สวิตช์ที่ซ่อนอยู่ในการตั้งค่า",
+    title: "ขอบเขต Hybrid และการเปิดใช้งานจริง",
+    lead: "BMS Cloud และ Hybrid POS เป็นผลิตภัณฑ์เดียวกัน แต่ Emergency Offline Mode มีขอบเขตแคบกว่างานที่ใช้ได้เมื่อออนไลน์",
     defaultOpen: false,
     blocks: [
       {
         kind: "stats",
         items: [
-          { label: "ร้านอาหาร", value: "ผังโต๊ะ/ชั้น" },
-          { label: "ครัว", value: "KDS/ส่งพิมพ์ครัว" },
-          { label: "เมนู", value: "Modifier/Topping" },
-          { label: "คิว", value: "บัตรคิว/จองโต๊ะ" },
-          { label: "เครือข่าย", value: "Offline-first sync" },
+          { label: "ผลิตภัณฑ์", value: "BMS เดียว: Cloud + Emergency Offline" },
+          { label: "Mobile ตอนเน็ตล่ม", value: "Retail ธรรมดา + เงินสดเท่านั้น" },
+          { label: "Web/Desktop", value: "ต้องเชื่อมต่อ Cloud" },
+          { label: "Vertical workflow", value: "ร้านอาหาร/บอร์ดเกม/เภสัชต้องต่อ Cloud" },
+          { label: "Local server", value: "ยังไม่มี" },
           { label: "เครื่องรับบัตร", value: "ไม่มี EDC driver" },
         ],
       },
@@ -846,7 +846,7 @@ export const EN_SECTIONS: ManualSection[] = [
           ["A replay resolves to PAYMENT_MISMATCH", "The server has already cancelled the rejected bill → POS refreshes the whole cart and asks for one fresh confirmation"],
         ],
       },
-      { kind: "callout", tone: "danger", title: "This is not an offline POS", body: "Search, selling, returns, payment, and shift operations all require a live server connection. A shop needs a clearly written manual fallback procedure, entered into the system only once the connection is back." },
+      { kind: "callout", tone: "warn", title: "Emergency Offline Mode is available only on Mobile POS", body: "Mobile can queue only a plain retail cash sale with no member, points, coupon, approval discount, serial, weighted item, modifier, or pharmacy flow. Web/Desktop, returns, shifts, stock operations, restaurant, and board-game workflows still require the Cloud. A queued reference is not a receipt or tax document until the server validates and commits it." },
     ],
   },
   {
@@ -1121,18 +1121,18 @@ export const EN_SECTIONS: ManualSection[] = [
   {
     id: "scope",
     eyebrow: "Reference",
-    title: "What isn't supported",
-    lead: "The scope built so far is general retail POS — everything below is a separate module, not a hidden setting.",
+    title: "Hybrid scope and go-live boundary",
+    lead: "BMS Cloud and Hybrid POS are one product, but Emergency Offline Mode has a narrower scope than connected operation.",
     defaultOpen: false,
     blocks: [
       {
         kind: "stats",
         items: [
-          { label: "Restaurants", value: "Table/floor plans" },
-          { label: "Kitchen", value: "KDS / kitchen print" },
-          { label: "Menu", value: "Modifiers/toppings" },
-          { label: "Queueing", value: "Queue tickets/reservations" },
-          { label: "Networking", value: "Offline-first sync" },
+          { label: "Product", value: "One BMS: Cloud + Emergency Offline" },
+          { label: "Mobile outage", value: "Plain retail + cash only" },
+          { label: "Web/Desktop", value: "Cloud connection required" },
+          { label: "Vertical workflows", value: "Restaurant/board-game/pharmacy require Cloud" },
+          { label: "Local server", value: "Not available" },
           { label: "Card terminals", value: "No EDC driver" },
         ],
       },

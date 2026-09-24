@@ -106,9 +106,10 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
 
   async function onUnpair() {
     try {
-      const pending = (await loadOfflineSales()).filter(
-        record => record.serverUrl === target?.serverUrl,
-      );
+      // Keychain survives app upgrades/re-pairing. Any accepted-cash row on this physical device
+      // must block unpair, including a legacy row from a previous target that the current UI cannot
+      // display; otherwise the only credential capable of recovering it can be replaced silently.
+      const pending = await loadOfflineSales();
       if (pending.length > 0) {
         Alert.alert(
           'ยังเลิกจับคู่ไม่ได้',

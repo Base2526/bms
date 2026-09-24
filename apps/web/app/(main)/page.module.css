@@ -239,10 +239,98 @@
 }
 
 .workflowSection,
-.pricingSection {
+.pricingSection,
+.resilienceSection {
   display: grid;
   gap: 24px;
   scroll-margin-top: 96px;
+}
+
+.resilienceSection {
+  background: linear-gradient(135deg, rgba(var(--app-primary-rgb), 0.06), rgba(34, 197, 94, 0.05));
+  border: 1px solid rgba(var(--app-primary-rgb), 0.14);
+  border-radius: 24px;
+  padding: 38px;
+}
+
+.resilienceGrid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.resilienceCard {
+  background: rgba(var(--app-surface-rgb), 0.78);
+  border: 1px solid var(--app-border);
+  border-radius: 20px;
+  display: flex;
+  gap: 16px;
+  padding: 24px;
+}
+
+.resilienceCardAccent {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.resilienceCard h4,
+.resilienceCard p {
+  margin-bottom: 0 !important;
+}
+
+.resilienceCard h4 {
+  margin-top: 12px !important;
+}
+
+.resilienceIcon {
+  align-items: center;
+  background: rgba(var(--app-primary-rgb), 0.1);
+  border-radius: 16px;
+  color: var(--app-primary);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 24px;
+  height: 48px;
+  justify-content: center;
+  width: 48px;
+}
+
+.resilienceBoundary {
+  align-items: flex-start;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid #f59e0b;
+  border-radius: 0 14px 14px 0;
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+}
+
+.resilienceBoundary > :global(.anticon) {
+  color: #f59e0b;
+  font-size: 20px;
+  margin-top: 2px;
+}
+
+.resilienceBoundary > span {
+  display: grid;
+  gap: 4px;
+}
+
+.resilienceBoundary small {
+  color: var(--app-muted);
+  line-height: 1.6;
+}
+
+.productIncluded {
+  align-items: center;
+  color: var(--app-muted);
+  display: inline-flex;
+  gap: 8px;
+  justify-content: center;
+  margin: 10px 0 18px;
+}
+
+.productIncluded :global(.anticon) {
+  color: #22c55e;
 }
 
 .demoPrompt {
@@ -579,6 +667,8 @@
   .heroVisual { padding: 18px; }
   .sectionHeading { align-items: flex-start; flex-direction: column; }
   .workflowSection, .pricingSection { padding: 0 16px; }
+  .resilienceSection { border-radius: 0; padding: 34px 20px; }
+  .resilienceGrid { grid-template-columns: 1fr; }
   .demoPrompt { align-items: flex-start; flex-direction: column; }
   .stepGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .safetySection { border-radius: 0; padding: 34px 20px; }
@@ -591,6 +681,7 @@
   .customerBubble, .systemBubble { padding: 16px; }
   .bubbleIcon { width: 34px; height: 34px; }
   .detailHeader, .approvalGate, .detailFooter { align-items: flex-start; flex-direction: column; }
+  .resilienceCard { align-items: flex-start; flex-direction: column; }
 }
 
 @media (prefers-reduced-motion: reduce) {

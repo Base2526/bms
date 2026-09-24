@@ -7,6 +7,12 @@ tenant, branch, and register; a cashier user plus PIN identifies every sale, shi
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
+Product packaging does not split this into “Cloud” and “Hybrid” editions. BMS is one product: Cloud
+is the authoritative operating mode, while **Emergency Offline Mode** is a bounded resilience
+capability currently available only in the native mobile POS for plain retail cash sales. Desktop,
+browser and every richer workflow still require the Cloud. See
+[Cloud + Hybrid POS product contract](cloud-hybrid-pos.md).
+
 ### GraphQL mobile contract and REST compatibility
 
 Normal counter workflows have device-scoped GraphQL queries and mutations in
@@ -1514,10 +1520,21 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
   queue stores no PIN, recovers by the original idempotency key before retrying, flushes serially
   under the original cashier while that device shift remains open,
   and blocks shift close while unresolved. A rejected sync remains visible for review and can be
-  retried with the same key after its stock or pricing cause is corrected. The pending reference is
-  not a receipt or tax document. Scan, settlement and recovery requests have a bounded client wait;
-  a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing is
-  refused while its encrypted queue still contains accepted cash. Once committed, recent-sale views
+  retried with the same key after its stock or pricing cause is corrected. Mobile exposes these
+  states in a full-screen device-local Sync Center; accepted-cash rows cannot be discarded there.
+  Interrupted `STAGED`/`SYNCING` rows restart as unknown outcomes so recovery runs before replay, and
+  a versioned integrity fingerprint binds the encrypted request to its device, branch, shift,
+  cashier, tender time and amount. Unknown queue formats and failed Keychain writes fail closed.
+  Mobile and server both reject pharmacy, restaurant, and board-game archetypes; the server also
+  rejects a tender time from before the current shift so an externally closed shift cannot silently
+  move accepted cash into the next one. Pairing replacement and unpair both fail closed while any
+  accepted-cash row remains. Recovery can confirm a committed result without an open shift, while an
+  unsold row stops for manager review instead of replaying into another shift. Product snapshots
+  resolved during the signed-in session remain available in memory for repeated eligible outage
+  sales. The pending reference is not a receipt or tax document.
+  Scan, settlement and recovery requests have a bounded client wait;
+  a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing or
+  pairing replacement is refused while its encrypted queue contains incompatible accepted cash. Once committed, recent-sale views
   on both native and web POS identify the bill as an offline tender that has synced;
   payment, stock, audit and tax still commit only in the normal server transaction. Every other
   search, sale, return, settlement, and shift action requires BMS and PostgreSQL to be reachable.

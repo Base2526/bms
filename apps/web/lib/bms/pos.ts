@@ -3447,12 +3447,17 @@ export function validateOfflinePosTender(
   input: PosSaleInput,
   requestedPayments: PosPaymentInput[],
   nowMs = Date.now(),
+  shiftOpenedAtMs?: number,
 ): string | null {
   if (!input.offlineTenderedAt) return null;
   const tenderedAt = new Date(input.offlineTenderedAt);
   const ageMs = nowMs - tenderedAt.getTime();
   if (!Number.isFinite(tenderedAt.getTime())) return "เวลาเก็บเงินออฟไลน์ไม่ถูกต้อง";
   if (ageMs < -5 * 60_000) return "เวลาเก็บเงินออฟไลน์อยู่ในอนาคต";
+  if (
+    Number.isFinite(shiftOpenedAtMs) &&
+    tenderedAt.getTime() < Number(shiftOpenedAtMs) - 5 * 60_000
+  ) return "เวลาเก็บเงินออฟไลน์อยู่ก่อนกะปัจจุบัน ห้ามลงยอดเข้ากะใหม่";
   if (
     input.mode === "DEPOSIT" || input.salesSurface !== "RETAIL_POS" ||
     Boolean(input.boardGameBillingGroupId)
@@ -3472,6 +3477,16 @@ export function validateOfflinePosTender(
   return null;
 }
 
+export function validateOfflinePosArchetype(
+  businessArchetype: string | null | undefined,
+): string | null {
+  return businessArchetype === "pharmacy" ||
+    businessArchetype === "restaurant" ||
+    businessArchetype === "board_game_cafe"
+    ? "โหมดออฟไลน์ยังไม่รองรับประเภทร้านนี้"
+    : null;
+}
+
 export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult> {
   const { tenantId } = input;
   const isDeposit = input.mode === "DEPOSIT";
@@ -3480,8 +3495,13 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
     return { status: "DEPOSIT_INVALID", reason: "ค่าเล่นบอร์ดเกมต้องชำระเต็มจำนวน" };
   }
 
-  const shiftRes = await query<{ id: string; location_id: string; device_id: string }>(
-    `SELECT id, location_id, device_id FROM bms_pos_shifts
+  const shiftRes = await query<{
+    id: string;
+    location_id: string;
+    device_id: string;
+    opened_at: string;
+  }>(
+    `SELECT id, location_id, device_id, opened_at FROM bms_pos_shifts
       WHERE tenant_id = $1 AND id = $2 AND status = 'OPEN'`,
     [tenantId, input.shiftId]
   );
@@ -3507,7 +3527,24 @@ export async function recordPosSale(input: PosSaleInput): Promise<PosSaleResult>
       ref: payment.ref?.trim() || null,
     }))
     .filter((payment) => Number.isFinite(payment.amount) && payment.amount > 0);
-  const offlineProblem = validateOfflinePosTender(input, requestedPayments);
+  if (input.offlineTenderedAt) {
+    const profile = await query<{ business_archetype: string | null }>(
+      `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1`,
+      [tenantId],
+    );
+    const archetypeProblem = validateOfflinePosArchetype(
+      profile.rows[0]?.business_archetype,
+    );
+    if (archetypeProblem) {
+      return { status: "OFFLINE_NOT_ALLOWED", reason: archetypeProblem };
+    }
+  }
+  const offlineProblem = validateOfflinePosTender(
+    input,
+    requestedPayments,
+    Date.now(),
+    Date.parse(shift.opened_at),
+  );
   if (offlineProblem) return { status: "OFFLINE_NOT_ALLOWED", reason: offlineProblem };
   // บิลที่ไม่มีวิธีชำระเลยคือบิลที่ไม่มีใครจ่าย — ยกเว้นทางเดียว: บิลค่าเล่นบอร์ดเกมที่
   // แพ็กเกจสมาชิกจ่ายให้ครบ (`9.92`) ยอดเป็น ฿0 จริง ๆ จึงไม่มีอะไรให้รับ · ปล่อยผ่านด่านนี้

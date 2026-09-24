@@ -30,6 +30,11 @@ Customer → AI → CRM → Order → Inventory → Payment → Shipping → Das
 Facebook Messenger, Instagram, Website Live Chat.
 _Roadmap:_ WhatsApp, Email, Voice AI.
 
+**BMS Cloud and BMS Hybrid POS are one product.** Cloud remains the source of truth; Hybrid POS is
+the included **Emergency Offline Mode** capability currently limited to plain retail cash sales on
+Mobile POS. Desktop and richer workflows still require Cloud—this is not a local-server or full-
+offline claim. See [the product contract](./docs/business/cloud-hybrid-pos.md).
+
 > 📖 The product vision, modules, and rules live in
 > [`CLAUDE.md`](./CLAUDE.md) (entry point) → [`docs/`](./docs/) (architecture / business / ai / integrations / ui).
 
@@ -99,6 +104,7 @@ Receive → Detect Intent → Extract Entities → Select Tool
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | Supplier POs, receive / partial receive, supplier history — `OPEN → PARTIAL → RECEIVED` (stock-in on receive) |
 | **Payment** ✅ | Bank transfer, QR, card, TikTok Pay, cash — payment records + confirm/reject/refund + AI slip verification (`verifyPaymentSlip`, advisory only) |
+| **POS** ✅ | Browser, Mobile, and Desktop surfaces share one server settlement path; Mobile adds bounded Emergency Offline Mode for plain retail cash sales |
 | **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — shipments, tracking, status flow, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
 | **Reports** ✅ | Dashboard + date-range **sales summary** (by day/status/channel), **inventory summary** (stock value, low/out-of-stock), **top sellers** — `/admin/reports` |
 
@@ -294,6 +300,12 @@ by default — set `BMS_ALLOW_FAKE_SEED=1` to enable on a demo box.
 **ช่องทางที่รองรับ:** LINE OA, TikTok Shop / TikTok Chat, Facebook Messenger,
 Instagram, Live Chat หน้าเว็บ — _อนาคต:_ WhatsApp, Email, Voice AI
 
+**BMS Cloud และ BMS Hybrid POS เป็นผลิตภัณฑ์เดียวกัน** โดย Cloud ยังเป็นแหล่งข้อมูลจริง ส่วน
+Hybrid POS คือความสามารถ **Emergency Offline Mode** ที่รวมอยู่ในระบบ และปัจจุบันจำกัดเฉพาะการ
+ขายปลีกธรรมดาที่รับเงินสดบน Mobile POS; Desktop และ workflow ที่ซับซ้อนยังต้องเชื่อมต่อ Cloud
+จึงไม่ใช่การรับรองว่าเป็น Local Server หรือ Full Offline ดูรายละเอียดใน
+[Product contract](./docs/business/cloud-hybrid-pos.md)
+
 > 📖 วิสัยทัศน์ โมดูล และกฎต่าง ๆ อยู่ใน [`CLAUDE.md`](./CLAUDE.md) (entry point) →
 > [`docs/`](./docs/) (architecture / business / ai / integrations / ui)
 
@@ -358,6 +370,7 @@ Pipeline ของ AI ใช้ร่วมกันได้ทุกช่อ�
 | **Orders (OMS)** | Draft → Pending → Paid → Packing → Shipped → Completed / Cancelled / Refunded |
 | **Purchase** ✅ | ใบสั่งซื้อผู้ขาย, รับของ / รับบางส่วน, ประวัติซัพพลายเออร์ — `OPEN → PARTIAL → RECEIVED` (สต็อกเข้าตอนรับของ) |
 | **Payment** ✅ | โอน, QR, บัตร, TikTok Pay, เงินสด — บันทึกการชำระ + ยืนยัน/ปฏิเสธ/คืนเงิน + ตรวจสลิปด้วย AI (`verifyPaymentSlip` แนะนำเท่านั้น) |
+| **POS** ✅ | หน้า Browser, Mobile และ Desktop ใช้ Server settlement เดียวกัน; Mobile เพิ่ม Emergency Offline Mode แบบจำกัดสำหรับการขายปลีกธรรมดาที่รับเงินสด |
 | **Shipping** ✅ | Flash, Kerry, DHL, Australia Post, NZ Post — จัดส่ง, tracking, สถานะ, label (`createShipment`/`updateTracking`); `DELIVERED → order COMPLETED` |
 | **Reports** ✅ | Dashboard + รายงานยอดขายตามช่วงวันที่ (รายวัน/สถานะ/ช่องทาง), สรุปสต็อก (มูลค่า, ใกล้หมด/หมด), สินค้าขายดี — `/admin/reports` |
 

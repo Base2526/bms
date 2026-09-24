@@ -581,7 +581,11 @@ anything remains pending or needs review. `offlineTenderedAt` is evidence of whe
 the normal server settlement remains the only path that commits payment, stock, audit, and tax.
 GraphQL scan/settlement/recovery calls are time-bounded with an abort signal, but a timed-out mutation
 remains an unknown outcome and is recovered with the same key. Unpair is blocked while accepted cash
-remains queued, and committed receipts expose tender/sync timestamps for operator verification.
+remains queued, as is replacing the pairing with a different server or device. Recovery still checks
+for an already committed result when the original shift is closed, but never replays an unsold row
+into a new shift. Successfully resolved product snapshots remain in memory for repeated eligible
+sales during the same signed-in outage session, and committed receipts expose tender/sync timestamps
+for operator verification.
 
 Only queue operations that are safe to replay. The rule is the `idempotencyKey`, not the screen.
 
