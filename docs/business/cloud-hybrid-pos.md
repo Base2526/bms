@@ -29,7 +29,10 @@ Recommended customer-facing phrase:
 > BMS is one cloud business platform with Emergency Offline Mode for basic retail cash continuity on
 > Mobile POS.
 
-Do not claim “works fully offline”, “local server”, “offline restaurant”, or “offline Desktop POS”.
+Do not claim “works fully offline”, “local server”, “offline restaurant”, or “offline Desktop POS”
+for the Cloud/Hybrid product. `BMS Retail Local` is a separate **deployment mode** of the same
+codebase, currently a single-store technical pilot; it is not the Mobile emergency queue and must
+not be used to broaden Cloud/Hybrid claims.
 
 ## Current boundary
 
@@ -63,6 +66,8 @@ as authority:
    tests with documented reconciliation.
 6. Publish installation, outage, reconciliation, and remote-support runbooks.
 
-A store-local server with broad feature parity is an Enterprise phase. It needs explicit replication,
-conflict, identity, tax-document numbering, payment, and disaster-recovery design; the current Desktop
-shell is not that architecture.
+A store-local server that also synchronizes bidirectionally with Cloud remains an Enterprise phase.
+It needs explicit replication, conflict, identity, tax-document numbering, payment, and disaster-
+recovery design. The Retail Local technical pilot deliberately has one local source of truth and no
+Cloud replication; see [retail-local.md](retail-local.md). The current Desktop shell remains a client
+and does not itself contain that server.

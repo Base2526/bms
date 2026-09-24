@@ -15,6 +15,7 @@ whichever is wrong, in the same change.
 - [Public customer checkout (signed link)](#public-customer-checkout-signed-link)
 - [Carrier booking and tracking sync](#carrier-booking-and-tracking-sync)
 - [POS and tax](#pos-and-tax)
+- [Retail Local deployment](#retail-local-deployment)
 - [Restaurant POS (dine-in)](#restaurant-pos-dine-in)
 - [Board game cafe](#board-game-cafe)
 - [Product catalog: variants, sales surfaces, and stock policies](#product-catalog-variants-sales-surfaces-and-stock-policies)
@@ -519,6 +520,55 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **ESC/POS printing (`lib/pos/{escpos,printerClient}.ts`) is unverified against real hardware** —
   written over WebUSB for receipt/barcode/drawer-kick, with the browser print dialog as fallback.
   Treat it as untested per printer model until run against one.
+
+## Retail Local deployment
+
+`deploy/retail-local/`, `apps/web/scripts/retail-local-{migrate,provision}.*`,
+`lib/bms/{deploymentMode,localProvisioning}.ts`, and migration `10.15` own the single-store local
+deployment profile. The operator contract and remaining release gates live in
+[business/retail-local.md](business/retail-local.md).
+
+- **Local changes where services run, not which services own the truth.** The same Web, GraphQL,
+  WebSocket, POS services, PostgreSQL schema, RBAC, audit, idempotency, settlement and tax paths run
+  on the shop host. Never add a local-only price, stock, payment, tax or permission implementation,
+  and never put a database or money rule in Electron. The local PostgreSQL instance is the sole
+  source of truth; this profile deliberately has no cloud replica or background sync queue.
+- **One installation provisions one shop.** `bms_local_installation` is a database singleton and
+  `provisionRetailLocal()` creates tenant, default role grants, store profile, `MAIN` branch,
+  Administrator/PIN, `POS-01`, installation identity and audit evidence in one transaction under an
+  advisory lock. Only a SHA-256 device-token hash is stored; the raw token is returned once. Public
+  SaaS signup and pending-signup verification fail closed while `BMS_DEPLOYMENT_MODE=retail-local`.
+  Do not broaden this to multiple tenants or branches without first defining licensing, support,
+  backup and recovery boundaries for that product.
+- **There is no seeded fallback administrator.** `db/init.sql` must remain free of public/default
+  credentials. First-run provisioning happens only after the full schema is current, validates the
+  owner password and POS PIN with the existing identity rules, and refuses to run outside explicit
+  local mode.
+- **The migration ledger is authority.** `retail-local-migrate.mjs` takes a PostgreSQL advisory
+  lock, applies the historical SQL chain in numeric order, records a SHA-256 checksum for every
+  applied file, and refuses checksum drift. The historical role normalisation file is inserted at
+  its required point; rollback, destructive cleanup, tenant templates and the superseded role file
+  stay excluded. Do not replace the runner with `schema_full.sql`, alphabetical filename order, or
+  a best-effort loop that records success separately from the schema transaction.
+- **A test package is self-contained and version-coherent.** `package.ps1` exports the exact tagged
+  Web/WS images plus pinned PostgreSQL/Redis images, and writes the archive SHA-256 into
+  `release.json`. The Web runtime image contains the matching init schema and migrations; never
+  restore the source-tree migration bind mount, which makes a copied installer silently depend on a
+  developer checkout. Installation verifies the archive before `docker load`, then waits for both
+  application health checks and HTTP probes instead of reporting success after `compose up` alone.
+- **Local services are local by default.** PostgreSQL and Redis have no published host port; Web and
+  WS publish only on `127.0.0.1`. All application and datastore secrets are generated locally and
+  remain required—local mode is never permission to fall back to a literal key. Exposing the server
+  to the LAN or internet is a separate security design, not a port-binding tweak.
+- **Recovery needs bytes and keys.** An operable backup contains the PostgreSQL dump, file storage,
+  and the exact secret file needed to decrypt stored provider credentials. That bundle is itself
+  sensitive and belongs on encrypted off-host media. Update takes a backup before schema/image
+  changes; restore is explicit, retains the replaced storage directory, reruns migrations, and must
+  be tested instead of inferred from a successful `pg_dump`.
+- **Availability claims stop at the evidence.** Docker Compose plus PowerShell is a technical-pilot
+  install path, not a signed consumer installer. Do not advertise general availability until code
+  signing, updater/rollback, supported peripheral certification, power-loss/disk-full/restore drills,
+  off-host backup, remote diagnostics and support/licensing policy have passed their release gates.
 
 ## Restaurant POS (dine-in)
 

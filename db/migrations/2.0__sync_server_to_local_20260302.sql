@@ -182,7 +182,7 @@ BEGIN
       AND i.indisvalid
       AND i.indpred IS NULL
       AND (
-        SELECT array_agg(att.attname ORDER BY ord.ordinality)
+        SELECT array_agg(att.attname::text ORDER BY ord.ordinality)
         FROM unnest(i.indkey) WITH ORDINALITY AS ord(attnum, ordinality)
         JOIN pg_attribute att ON att.attrelid = t.oid AND att.attnum = ord.attnum
       ) = ARRAY['client_id']::text[]

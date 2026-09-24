@@ -1,6 +1,7 @@
 **/node_modules/
 .env
 .env.*
+!deploy/retail-local/.env.example
 .next/
 dist/
 dist-smoke/
@@ -37,6 +38,15 @@ db/*.dump
 .pnpm-store/
 # ผลการรันชุดเทส (scripts/run-contract-tests.mjs) — 249 KB ต่อรอบ และเป็นของเครื่องนั้น
 .test-output/
+
+# Retail Local runtime data and backups contain shop PII, credentials, and DB dumps.
+deploy/retail-local/data/
+deploy/retail-local/backups/
+deploy/retail-local/images/
+deploy/retail-local/release.json
+deploy/retail-local/installation.json
+deploy/retail-local/doctor.json
+artifacts/retail-local/
 
 # editor-local settings and generated repository snapshots
 .vscode/

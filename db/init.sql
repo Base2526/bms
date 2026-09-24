@@ -5,6 +5,7 @@ BEGIN;
 -- ===========================================================
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -16,15 +17,8 @@ CREATE TABLE IF NOT EXISTS users (
   meta TEXT,
   fake_test BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   password_hash TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS files (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  url TEXT NOT NULL,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  uploader_id UUID REFERENCES users(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS posts (
@@ -61,14 +55,6 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS system_logs (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  actor_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  action TEXT NOT NULL,
-  meta JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 -- ===========================================================
 --  SCHEMA VERSION
 -- ===========================================================
@@ -87,36 +73,9 @@ SET version = '1.1',
     applied_at = NOW()
 WHERE id = 1;
 
--- ===========================================================
---  SEED USER
--- ===========================================================
--- INSERT INTO users (name, role, email, phone, password_hash)
--- VALUES (
---   'admin',
---   'administrator',
---   'admin@local.com',
---   '098-000-0000',
---   crypt('changeme', gen_salt('bf'))
--- )
-
-INSERT INTO users (
-    name,
-    role_id,
-    email,
-    phone,
-    password_hash
-)
-VALUES (
-    'admin',
-    (
-        SELECT id
-        FROM roles
-        WHERE name = 'Administrator'
-    ),
-    'admin@local.com',
-    '098-000-0000',
-    crypt('changeme', gen_salt('bf'))
-)
-ON CONFLICT DO NOTHING;
+-- Do not create a built-in administrator here.  The old seed referenced
+-- roles/role_id before the role migration had created them and used a public
+-- default password.  Every deployment now provisions its first tenant and
+-- administrator explicitly after all migrations have completed.
 
 COMMIT;
