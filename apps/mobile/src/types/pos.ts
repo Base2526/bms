@@ -23,12 +23,18 @@ export interface PosMenuItem {
   packCode: string;
   unitName: string;
   baseQty: number;
+  /** False for bundles/recipes whose component stock is checked only by the server. */
+  stockTracked?: boolean;
   serialTracked?: boolean;
   scaleBarcode?: string | null;
   modifiers?: PosModifier[];
   selectedModifierCodes?: string[];
   packs?: PosPackOption[];
-  availableSizes?: Array<{ size: string; available: number; price?: number | null }>;
+  availableSizes?: Array<{
+    size: string;
+    available: number;
+    price?: number | null;
+  }>;
 }
 
 export interface PosPackOption {

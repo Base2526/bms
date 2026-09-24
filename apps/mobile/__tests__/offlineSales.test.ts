@@ -1,5 +1,6 @@
 import * as Keychain from 'react-native-keychain';
 import {
+  canRetryOfflineSale,
   loadOfflineSales,
   patchOfflineSale,
   putOfflineSale,
@@ -242,5 +243,29 @@ describe('offline sale secure queue', () => {
       'ล้างคิวออฟไลน์จากที่เก็บข้อมูลไม่สำเร็จ',
     );
     expect(await loadOfflineSales()).toHaveLength(1);
+  });
+
+  test('retries only correctable review outcomes, never terminal decisions', () => {
+    expect(
+      canRetryOfflineSale({
+        ...record(),
+        state: 'NEEDS_REVIEW',
+        failureCode: 'LOT_EXPIRED_OR_SHORT',
+      }),
+    ).toBe(true);
+    expect(
+      canRetryOfflineSale({
+        ...record(),
+        state: 'NEEDS_REVIEW',
+        failureCode: 'PAYMENT_MISMATCH',
+      }),
+    ).toBe(false);
+    expect(
+      canRetryOfflineSale({
+        ...record(),
+        state: 'NEEDS_REVIEW',
+        failureCode: 'SHIFT_MISMATCH',
+      }),
+    ).toBe(false);
   });
 });

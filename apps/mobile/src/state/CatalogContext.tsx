@@ -2,7 +2,9 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useLazyQuery, useQuery } from '@apollo/client';
@@ -16,7 +18,11 @@ import { normalizePriceTiers, normalizePromotion } from '../lib/cartPricing';
 import { useStoreMode } from './StoreModeContext';
 import { useDevice } from './DeviceContext';
 import { serverAssetUrl } from '../lib/realtime';
-import { runWithOperationTimeout } from '../lib/operation';
+import {
+  isDecidedRejection,
+  runWithOperationTimeout,
+} from '../lib/operation';
+import { useServerHealth } from './ServerHealthContext';
 
 interface CatalogContextValue {
   catalog: PosMenuCatalog;
@@ -40,22 +46,42 @@ function unique(values: Array<string | null | undefined>): string[] {
   ];
 }
 
+function snapshotKey(
+  code: string,
+  size: string | null | undefined,
+  packCode: string | null | undefined,
+): string {
+  return [
+    code.trim().toUpperCase(),
+    size?.trim().toUpperCase() ?? '',
+    packCode?.trim().toUpperCase() ?? '',
+  ].join('\u0000');
+}
+
 export function CatalogProvider({ children }: { children: React.ReactNode }) {
   const { mode } = useStoreMode();
   const { target } = useDevice();
+  const health = useServerHealth();
   const [searchQuery, setSearchQuery] = useState('');
+  const snapshotCache = useRef(new Map<string, PosMenuItem>());
+  const [resolvedSnapshots, setResolvedSnapshots] = useState<PosMenuItem[]>([]);
   const restaurant = useQuery(MobileRestaurantMenuDocument, {
     skip: mode !== 'restaurant',
     notifyOnNetworkStatusChange: true,
   });
   const retail = useQuery(MobilePosCatalogDocument, {
     variables: { q: searchQuery },
-    skip: mode === 'restaurant',
+    skip: mode === 'restaurant' || health.status === 'offline',
     notifyOnNetworkStatusChange: true,
   });
   const [scan] = useLazyQuery(MobilePosScanDocument, {
     fetchPolicy: 'network-only',
   });
+
+  useEffect(() => {
+    snapshotCache.current.clear();
+    setResolvedSnapshots([]);
+  }, [target?.serverUrl, target?.token]);
 
   const catalog = useMemo<PosMenuCatalog>(() => {
     const artKind =
@@ -64,6 +90,14 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
         : mode === 'pharmacy'
         ? ('pharmacy' as const)
         : ('retail' as const);
+    const offlineRetailItems = resolvedSnapshots.filter(item => {
+      const query = searchQuery.trim().toLocaleLowerCase();
+      return (
+        !query ||
+        item.sku.toLocaleLowerCase().includes(query) ||
+        item.name.toLocaleLowerCase().includes(query)
+      );
+    });
     const items: PosMenuItem[] =
       mode === 'restaurant'
         ? (restaurant.data?.bmsPosRestaurantMenu.items ?? []).map(item => ({
@@ -82,6 +116,8 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             baseQty: 1,
             availableSizes: item.availableSizes,
           }))
+        : health.status === 'offline'
+        ? offlineRetailItems
         : (retail.data?.bmsPosCatalogSearch.items ?? []).map(item => ({
             sku: item.sku,
             name: item.name,
@@ -118,6 +154,9 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
     };
   }, [
     mode,
+    health.status,
+    resolvedSnapshots,
+    searchQuery,
     restaurant.data?.bmsPosRestaurantMenu.items,
     retail.data?.bmsPosCatalogSearch.items,
     target?.serverUrl,
@@ -129,56 +168,90 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
       size: string | null = null,
       packCode: string | null = null,
     ): Promise<PosMenuItem> => {
-      const response = await runWithOperationTimeout(signal =>
-        scan({
-          variables: {
-            code: code.trim(),
-            size,
-            packCode,
-            surface: mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
-          },
-          context: { fetchOptions: { signal } },
-        }),
-      );
-      const item = response.data?.bmsPosScan;
-      if (!item) throw new Error('ไม่พบสินค้าจากรหัสนี้');
-      return {
-        sku: item.sku,
-        name: item.receiptName || item.productName,
-        price: item.packPrice,
-        // ราคาส่ง/โปรคิดจากราคาป้ายต่อหน่วยฐาน ไม่ใช่ราคาต่อหน่วยขาย — ต้องแยกเก็บทั้งคู่
-        basePrice: item.basePrice,
-        packBasePrice: item.packPrice,
-        modifierUnitPrice: 0,
-        priceTiers: normalizePriceTiers(item.priceTiers),
-        promotion: normalizePromotion(item.promotion),
-        category: 'สินค้า',
-        station: 'สินค้า',
-        sellable: item.available >= item.baseQty,
-        imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
-        unavailableNote:
-          item.available >= item.baseQty ? null : 'จำนวนคงเหลือไม่พอ',
-        artKind:
-          mode === 'restaurant'
-            ? 'food'
-            : mode === 'pharmacy'
-            ? 'pharmacy'
-            : 'retail',
-        size: item.size,
-        packCode: item.packCode,
-        unitName: item.unitName,
-        baseQty: item.baseQty,
-        serialTracked: item.serialTracked,
-        scaleBarcode: item.scaleBarcode,
-        modifiers: item.modifiers.map(modifier => ({
-          ...modifier,
-          selectionType:
-            modifier.selectionType === 'SINGLE' ? 'SINGLE' : 'MULTIPLE',
-        })),
-        packs: item.packs,
-      };
+      const requestedKey = snapshotKey(code, size, packCode);
+      const cached = snapshotCache.current.get(requestedKey);
+      if (health.status === 'offline') {
+        if (cached) return cached;
+        throw new Error(
+          'สินค้านี้ยังไม่มี snapshot ราคาในเครื่อง ต้องเชื่อมต่อ Server อย่างน้อยหนึ่งครั้งก่อนขายออฟไลน์',
+        );
+      }
+      let authoritativeMiss = false;
+      try {
+        const response = await runWithOperationTimeout(signal =>
+          scan({
+            variables: {
+              code: code.trim(),
+              size,
+              packCode,
+              surface: mode === 'restaurant' ? 'RESTAURANT_POS' : 'RETAIL_POS',
+            },
+            context: { fetchOptions: { signal } },
+          }),
+        );
+        const item = response.data?.bmsPosScan;
+        if (!item) {
+          authoritativeMiss = true;
+          throw new Error('ไม่พบสินค้าจากรหัสนี้');
+        }
+        const sellable = !item.stockTracked || item.available >= item.baseQty;
+        const resolved: PosMenuItem = {
+          sku: item.sku,
+          name: item.receiptName || item.productName,
+          price: item.packPrice,
+          // ราคาส่ง/โปรคิดจากราคาป้ายต่อหน่วยฐาน ไม่ใช่ราคาต่อหน่วยขาย — ต้องแยกเก็บทั้งคู่
+          basePrice: item.basePrice,
+          packBasePrice: item.packPrice,
+          modifierUnitPrice: 0,
+          priceTiers: normalizePriceTiers(item.priceTiers),
+          promotion: normalizePromotion(item.promotion),
+          category: 'สินค้า',
+          station: 'สินค้า',
+          sellable,
+          stockTracked: item.stockTracked,
+          imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
+          unavailableNote: sellable ? null : 'จำนวนคงเหลือไม่พอ',
+          artKind:
+            mode === 'restaurant'
+              ? 'food'
+              : mode === 'pharmacy'
+              ? 'pharmacy'
+              : 'retail',
+          size: item.size,
+          packCode: item.packCode,
+          unitName: item.unitName,
+          baseQty: item.baseQty,
+          serialTracked: item.serialTracked,
+          scaleBarcode: item.scaleBarcode,
+          modifiers: item.modifiers.map(modifier => ({
+            ...modifier,
+            selectionType:
+              modifier.selectionType === 'SINGLE' ? 'SINGLE' : 'MULTIPLE',
+          })),
+          packs: item.packs,
+        };
+        snapshotCache.current.set(requestedKey, resolved);
+        snapshotCache.current.set(
+          snapshotKey(item.sku, item.size, item.packCode),
+          resolved,
+        );
+        setResolvedSnapshots(previous => {
+          const canonical = snapshotKey(item.sku, item.size, item.packCode);
+          const next = previous.filter(
+            existing =>
+              snapshotKey(existing.sku, existing.size, existing.packCode) !==
+              canonical,
+          );
+          return [...next, resolved];
+        });
+        return resolved;
+      } catch (error) {
+        if (cached && !authoritativeMiss && !isDecidedRejection(error))
+          return cached;
+        throw error;
+      }
     },
-    [mode, scan, target?.serverUrl],
+    [health.status, mode, scan, target?.serverUrl],
   );
   const resolveScan = useCallback(
     (code: string) => resolveVariant(code),

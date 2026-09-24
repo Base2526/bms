@@ -13,6 +13,7 @@ import {
   MobilePosSaleRecoveryDocument,
 } from '../graphql/generated';
 import {
+  canRetryOfflineSale,
   loadOfflineSales,
   patchOfflineSale,
   putOfflineSale,
@@ -141,6 +142,7 @@ export function OfflineSalesProvider({
           state: 'STAGED',
           attempts: 0,
           lastError: null,
+          failureCode: null,
           updatedAt: now,
         });
         activeStages.current.add(payload.idempotencyKey);
@@ -160,6 +162,7 @@ export function OfflineSalesProvider({
         const next = await patchOfflineSale(idempotencyKey, {
           state: 'UNKNOWN',
           lastError: error ?? null,
+          failureCode: null,
         });
         setRecords(next);
         setStorageError(null);
@@ -191,7 +194,7 @@ export function OfflineSalesProvider({
   const discard = complete;
 
   const syncNow = useCallback(async () => {
-    if (syncLock.current || !session || !shift.isOpen) return;
+    if (syncLock.current || !session) return;
     syncLock.current = true;
     setSyncing(true);
     try {
@@ -215,6 +218,7 @@ export function OfflineSalesProvider({
             await patchOfflineSale(record.id, {
               state: 'SYNCING',
               lastError: null,
+              failureCode: null,
             }),
           );
           const credentials = {
@@ -236,10 +240,22 @@ export function OfflineSalesProvider({
             setRecords(await removeOfflineSale(record.id));
             continue;
           }
+          if (!shift.isOpen || !shift.id) {
+            setRecords(
+              await patchOfflineSale(record.id, {
+                state: 'NEEDS_REVIEW',
+                failureCode: 'SHIFT_NOT_OPEN',
+                lastError:
+                  'ตรวจแล้ว Server ยังไม่มีบิล และกะเดิมไม่ได้เปิดอยู่ ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ',
+              }),
+            );
+            continue;
+          }
           if (record.shiftId && record.shiftId !== shift.id) {
             setRecords(
               await patchOfflineSale(record.id, {
                 state: 'NEEDS_REVIEW',
+                failureCode: 'SHIFT_MISMATCH',
                 lastError:
                   'รายการนี้รับเงินในกะเดิมที่ปิดไปแล้ว ห้ามลงยอดเข้ากะใหม่ กรุณาให้ผู้จัดการตรวจสอบ',
               }),
@@ -285,6 +301,9 @@ export function OfflineSalesProvider({
             }),
           );
           const result = response.data?.bmsPosSale;
+          if (!result) {
+            throw new Error('Server ไม่ส่งผลการขายกลับมา ยังไม่ทราบผลรายการ');
+          }
           if (result?.status === 'SOLD') {
             setRecords(await removeOfflineSale(record.id));
             continue;
@@ -293,6 +312,7 @@ export function OfflineSalesProvider({
             await patchOfflineSale(record.id, {
               state: 'NEEDS_REVIEW',
               attempts: record.attempts + 1,
+              failureCode: result?.status ?? 'UNKNOWN_BUSINESS_RESULT',
               lastError: describeMobileSaleFailure(
                 result,
                 'Server ปฏิเสธรายการออฟไลน์',
@@ -305,6 +325,7 @@ export function OfflineSalesProvider({
               await patchOfflineSale(record.id, {
                 state: 'NEEDS_REVIEW',
                 attempts: record.attempts + 1,
+                failureCode: 'DECIDED_REJECTION',
                 lastError:
                   error instanceof Error
                     ? error.message
@@ -317,6 +338,7 @@ export function OfflineSalesProvider({
             await patchOfflineSale(record.id, {
               state: 'UNKNOWN',
               attempts: record.attempts + 1,
+              failureCode: null,
               lastError:
                 error instanceof Error ? error.message : 'ยังไม่ทราบผลการซิงก์',
             }),
@@ -347,13 +369,14 @@ export function OfflineSalesProvider({
 
   const retryReview = useCallback(async () => {
     try {
-      const reviewRecords = visibleRecords.filter(
-        record => record.state === 'NEEDS_REVIEW',
+      const reviewRecords = visibleRecords.filter(record =>
+        canRetryOfflineSale(record),
       );
       for (const record of reviewRecords) {
         await patchOfflineSale(record.id, {
           state: 'UNKNOWN',
           lastError: 'กำลังลองซิงก์ใหม่',
+          failureCode: null,
         });
       }
       setRecords(await loadOfflineSales());
@@ -370,11 +393,17 @@ export function OfflineSalesProvider({
       const record = visibleRecords.find(candidate => candidate.id === id);
       if (!record) throw new Error('ไม่พบรายการออฟไลน์ในสาขานี้');
       if (record.state === 'SYNCING') return;
+      if (!canRetryOfflineSale(record)) {
+        throw new Error(
+          'Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำ กรุณาให้ผู้จัดการกระทบยอด',
+        );
+      }
       try {
         setRecords(
           await patchOfflineSale(record.id, {
             state: 'UNKNOWN',
             lastError: 'กำลังลองซิงก์ใหม่',
+            failureCode: null,
           }),
         );
         setStorageError(null);

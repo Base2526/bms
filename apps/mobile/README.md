@@ -29,7 +29,8 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 - Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with a persisted
   unknown/syncing/review state machine, device/branch/shift-bound request-integrity fingerprint,
   full-screen Sync Center, per-item/manual retry, original-cashier attribution, fail-closed secure
-  storage, shift-close/unpair guards, and a synced badge in receipt history;
+  storage, shift-close/unpair/re-pair guards, recovery of a committed result after shift close, and
+  a synced badge in receipt history;
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
@@ -60,7 +61,9 @@ those exist only after the normal backend settlement commits.
 Continuity currently assumes the app is already signed in, the original shift remains open, and the
 product/pricing snapshot needed for the cart was loaded before the outage. The encrypted queue
 survives a process restart, but restarting while still offline does not provide offline PIN login or
-an unrestricted local catalog. A server-rejected price or stock conflict remains unresolved until it
+an unrestricted local catalog. During the same signed-in session, successfully resolved product
+snapshots stay in memory so the cashier can create further eligible cash sales from those cached
+products without waiting for the server. A server-rejected price or stock conflict remains unresolved until it
 is safely retried or handled through manager reconciliation; cash must never be accepted a second
 time for that reference.
 

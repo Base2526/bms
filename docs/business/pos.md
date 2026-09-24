@@ -1527,10 +1527,14 @@ a single due date per invoice, and no credit-limit approval workflow — a manag
   cashier, tender time and amount. Unknown queue formats and failed Keychain writes fail closed.
   Mobile and server both reject pharmacy, restaurant, and board-game archetypes; the server also
   rejects a tender time from before the current shift so an externally closed shift cannot silently
-  move accepted cash into the next one. The pending reference is not a receipt or tax document.
+  move accepted cash into the next one. Pairing replacement and unpair both fail closed while any
+  accepted-cash row remains. Recovery can confirm a committed result without an open shift, while an
+  unsold row stops for manager review instead of replaying into another shift. Product snapshots
+  resolved during the signed-in session remain available in memory for repeated eligible outage
+  sales. The pending reference is not a receipt or tax document.
   Scan, settlement and recovery requests have a bounded client wait;
-  a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing is
-  refused while its encrypted queue still contains accepted cash. Once committed, recent-sale views
+  a timeout is an unknown outcome and therefore keeps the same key for recovery. Device unpairing or
+  pairing replacement is refused while its encrypted queue contains incompatible accepted cash. Once committed, recent-sale views
   on both native and web POS identify the bill as an offline tender that has synced;
   payment, stock, audit and tax still commit only in the normal server transaction. Every other
   search, sale, return, settlement, and shift action requires BMS and PostgreSQL to be reachable.

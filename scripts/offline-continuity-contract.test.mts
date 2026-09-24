@@ -93,4 +93,44 @@ test("the sync center exposes recovery but no accepted-cash discard action", () 
     /record\.state !== 'STAGED'[\s\S]{0,120}!activeStages\.current\.has\(record\.id\)/
   );
   assert.match(provider, /record\.state !== 'NEEDS_REVIEW'/);
+
+  const recoveryCall = provider.indexOf("recover({");
+  const missingShiftGuard = provider.indexOf("if (!shift.isOpen || !shift.id)");
+  assert.ok(recoveryCall >= 0 && missingShiftGuard > recoveryCall);
+  assert.doesNotMatch(
+    provider,
+    /syncLock\.current \|\| !session \|\| !shift\.isOpen/
+  );
+  assert.match(center, /const canSync = serverOnline;/);
+  assert.match(center, /canRetryOfflineSale/);
+  assert.match(center, /Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำหรือรับเงินซ้ำ/);
+});
+
+test("pair replacement and repeated outage sales preserve the accepted-cash scope", () => {
+  const device = readFileSync(
+    new URL("../apps/mobile/src/state/DeviceContext.tsx", import.meta.url),
+    "utf8"
+  );
+  const settings = readFileSync(
+    new URL(
+      "../apps/mobile/src/screens/settings/DeviceSettingsScreen.tsx",
+      import.meta.url
+    ),
+    "utf8"
+  );
+  const catalog = readFileSync(
+    new URL("../apps/mobile/src/state/CatalogContext.tsx", import.meta.url),
+    "utf8"
+  );
+
+  assert.match(device, /const queued = await loadOfflineSales\(\)/);
+  assert.match(device, /record\.serverUrl !== next\.serverUrl/);
+  assert.match(device, /record\.deviceId !== checked\.info\.deviceId/);
+  assert.ok(
+    device.indexOf("verifyTarget(next") < device.indexOf("savePairing(next")
+  );
+  assert.match(settings, /const pending = await loadOfflineSales\(\);/);
+  assert.match(catalog, /snapshotCache/);
+  assert.match(catalog, /health\.status === 'offline'/);
+  assert.match(catalog, /สินค้านี้ยังไม่มี snapshot ราคาในเครื่อง/);
 });

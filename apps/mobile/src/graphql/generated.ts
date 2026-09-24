@@ -750,6 +750,31 @@ export type SchemaBmsCouponSummary = {
   topCoupons: Array<SchemaBmsTopCoupon>;
 };
 
+export type SchemaBmsCreateExpenseDocumentInput = {
+  amountBeforeVat: Scalars['Float']['input'];
+  category: Scalars['String']['input'];
+  documentDate: Scalars['String']['input'];
+  documentKind: Scalars['String']['input'];
+  documentNo: InputMaybe<Scalars['String']['input']>;
+  evidenceFileId: InputMaybe<Scalars['Int']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+  note: InputMaybe<Scalars['String']['input']>;
+  paidAt: InputMaybe<Scalars['String']['input']>;
+  payeeAddress: InputMaybe<Scalars['String']['input']>;
+  payeeBranchCode: InputMaybe<Scalars['String']['input']>;
+  payeeName: InputMaybe<Scalars['String']['input']>;
+  payeeTaxId: InputMaybe<Scalars['String']['input']>;
+  payeeType: InputMaybe<Scalars['String']['input']>;
+  purchaseOrderId: InputMaybe<Scalars['ID']['input']>;
+  supplierId: InputMaybe<Scalars['ID']['input']>;
+  vatAmount: InputMaybe<Scalars['Float']['input']>;
+  vatClaimMonth: InputMaybe<Scalars['String']['input']>;
+  whtAmount: InputMaybe<Scalars['Float']['input']>;
+  whtIncomeType: InputMaybe<Scalars['String']['input']>;
+  whtRate: InputMaybe<Scalars['Float']['input']>;
+};
+
 export type SchemaBmsCreateStockCountInput = {
   locationId: Scalars['ID']['input'];
   note: InputMaybe<Scalars['String']['input']>;
@@ -1079,6 +1104,80 @@ export type SchemaBmsEtaxSummary = {
   pending: Scalars['Int']['output'];
   rejected: Scalars['Int']['output'];
   sent: Scalars['Int']['output'];
+};
+
+export type SchemaBmsExpenseDocument = {
+  __typename?: 'BmsExpenseDocument';
+  amountBeforeVat: Scalars['Float']['output'];
+  branchCode: Scalars['String']['output'];
+  category: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  documentDate: Scalars['String']['output'];
+  documentKind: Scalars['String']['output'];
+  documentNo: Maybe<Scalars['String']['output']>;
+  evidenceFileId: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  locationCode: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
+  note: Maybe<Scalars['String']['output']>;
+  paidAt: Maybe<Scalars['String']['output']>;
+  payeeAddress: Maybe<Scalars['String']['output']>;
+  payeeBranchCode: Maybe<Scalars['String']['output']>;
+  payeeName: Scalars['String']['output'];
+  payeeTaxId: Maybe<Scalars['String']['output']>;
+  payeeType: Maybe<Scalars['String']['output']>;
+  purchaseOrderId: Maybe<Scalars['ID']['output']>;
+  status: Scalars['String']['output'];
+  supplierId: Maybe<Scalars['ID']['output']>;
+  vatAmount: Scalars['Float']['output'];
+  vatClaimMonth: Maybe<Scalars['String']['output']>;
+  voidReason: Maybe<Scalars['String']['output']>;
+  voidedAt: Maybe<Scalars['String']['output']>;
+  whtAmount: Scalars['Float']['output'];
+  whtIncomeType: Maybe<Scalars['String']['output']>;
+  whtRate: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsExpenseDocumentList = {
+  __typename?: 'BmsExpenseDocumentList';
+  rows: Array<SchemaBmsExpenseDocument>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsExpenseDocumentListInput = {
+  category: InputMaybe<Scalars['String']['input']>;
+  from: Scalars['String']['input'];
+  includeVoid: InputMaybe<Scalars['Boolean']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsExpenseEstablishment = {
+  __typename?: 'BmsExpenseEstablishment';
+  branchCode: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  isHeadOffice: Scalars['Boolean']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+};
+
+export type SchemaBmsExpenseTaxSummary = {
+  __typename?: 'BmsExpenseTaxSummary';
+  grandTotal: SchemaBmsExpenseTaxTotal;
+  totals: Array<SchemaBmsExpenseTaxTotal>;
+};
+
+export type SchemaBmsExpenseTaxTotal = {
+  __typename?: 'BmsExpenseTaxTotal';
+  documentCount: Scalars['Int']['output'];
+  expenseBase: Scalars['Float']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  vatPurchase: Scalars['Float']['output'];
+  wht: Scalars['Float']['output'];
 };
 
 export type SchemaBmsExpiringLotItem = {
@@ -2188,6 +2287,7 @@ export type SchemaBmsOrderEvent = {
 
 export type SchemaBmsOrderItem = {
   __typename?: 'BmsOrderItem';
+  line_amount: Scalars['Float']['output'];
   product_name: Maybe<Scalars['String']['output']>;
   product_sku: Scalars['String']['output'];
   qty: Scalars['Int']['output'];
@@ -6449,6 +6549,65 @@ export type SchemaBmsSalesSummary = {
   to: Scalars['String']['output'];
 };
 
+export type SchemaBmsSalesTaxEstablishmentTotal = {
+  __typename?: 'BmsSalesTaxEstablishmentTotal';
+  base: Scalars['Float']['output'];
+  branchCode: Scalars['String']['output'];
+  documentCount: Scalars['Int']['output'];
+  exempt: Scalars['Float']['output'];
+  locationId: Scalars['ID']['output'];
+  rounding: Scalars['Float']['output'];
+  total: Scalars['Float']['output'];
+  vat: Scalars['Float']['output'];
+};
+
+export type SchemaBmsSalesTaxException = {
+  __typename?: 'BmsSalesTaxException';
+  amount: Scalars['Float']['output'];
+  at: Scalars['String']['output'];
+  detail: Maybe<Scalars['String']['output']>;
+  kind: Scalars['String']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  orderId: Scalars['ID']['output'];
+  reference: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsSalesTaxExceptionCounts = {
+  __typename?: 'BmsSalesTaxExceptionCounts';
+  fullReplacesOtherMonth: Scalars['Int']['output'];
+  paidWithoutTaxDocument: Scalars['Int']['output'];
+  returnWithoutCreditNote: Scalars['Int']['output'];
+};
+
+export type SchemaBmsSalesTaxGrandTotal = {
+  __typename?: 'BmsSalesTaxGrandTotal';
+  base: Scalars['Float']['output'];
+  documentCount: Scalars['Int']['output'];
+  exempt: Scalars['Float']['output'];
+  rounding: Scalars['Float']['output'];
+  total: Scalars['Float']['output'];
+  vat: Scalars['Float']['output'];
+};
+
+export type SchemaBmsSalesTaxReportInput = {
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsSalesTaxReportSummary = {
+  __typename?: 'BmsSalesTaxReportSummary';
+  cancelledCount: Scalars['Int']['output'];
+  exceptionCounts: SchemaBmsSalesTaxExceptionCounts;
+  exceptions: Array<SchemaBmsSalesTaxException>;
+  from: Scalars['String']['output'];
+  grandTotal: SchemaBmsSalesTaxGrandTotal;
+  sellerTaxId: Maybe<Scalars['String']['output']>;
+  to: Scalars['String']['output'];
+  totals: Array<SchemaBmsSalesTaxEstablishmentTotal>;
+  vatRegistered: Scalars['Boolean']['output'];
+};
+
 export type SchemaBmsSeedPharmacyQueueDemoResult = {
   __typename?: 'BmsSeedPharmacyQueueDemoResult';
   assessmentId: Maybe<Scalars['ID']['output']>;
@@ -6772,11 +6931,15 @@ export type SchemaBmsStoreSummary = {
 
 export type SchemaBmsSupplier = {
   __typename?: 'BmsSupplier';
+  address: Maybe<Scalars['String']['output']>;
+  branchCode: Maybe<Scalars['String']['output']>;
   email: Maybe<Scalars['String']['output']>;
+  entityType: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   name: Scalars['String']['output'];
   note: Maybe<Scalars['String']['output']>;
   phone: Maybe<Scalars['String']['output']>;
+  taxId: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsSupplierPerformance = {
@@ -6896,6 +7059,57 @@ export type SchemaBmsTaxDocument = {
   taxableAmount: Scalars['Float']['output'];
   vatAmount: Scalars['Float']['output'];
   vatRate: Scalars['Float']['output'];
+};
+
+export type SchemaBmsTaxDocumentList = {
+  __typename?: 'BmsTaxDocumentList';
+  rows: Array<SchemaBmsTaxDocumentListRow>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTaxDocumentListInput = {
+  docType: InputMaybe<Scalars['String']['input']>;
+  from: Scalars['String']['input'];
+  includeCancelled: InputMaybe<Scalars['Boolean']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsTaxDocumentListRow = {
+  __typename?: 'BmsTaxDocumentListRow';
+  base: Scalars['Float']['output'];
+  branchCode: Scalars['String']['output'];
+  buyerName: Maybe<Scalars['String']['output']>;
+  buyerTaxId: Maybe<Scalars['String']['output']>;
+  cancelledAt: Maybe<Scalars['String']['output']>;
+  cancelledReason: Maybe<Scalars['String']['output']>;
+  channel: Maybe<Scalars['String']['output']>;
+  deviceCode: Maybe<Scalars['String']['output']>;
+  docNo: Scalars['String']['output'];
+  docType: Scalars['String']['output'];
+  exempt: Scalars['Float']['output'];
+  id: Scalars['ID']['output'];
+  issueDate: Scalars['String']['output'];
+  issuedAt: Scalars['String']['output'];
+  locationCode: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  orderId: Scalars['ID']['output'];
+  referenceDocNo: Maybe<Scalars['String']['output']>;
+  rounding: Scalars['Float']['output'];
+  total: Scalars['Float']['output'];
+  vat: Scalars['Float']['output'];
+};
+
+export type SchemaBmsTaxEstablishment = {
+  __typename?: 'BmsTaxEstablishment';
+  branchCode: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  isHeadOffice: Scalars['Boolean']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
 };
 
 export type SchemaBmsTaxInvoiceBuyerInput = {
@@ -7123,6 +7337,12 @@ export type SchemaBmsVerifyShopSignupResult = {
   slug: Maybe<Scalars['String']['output']>;
   status: Scalars['String']['output'];
   tenantId: Maybe<Scalars['ID']['output']>;
+};
+
+export type SchemaBmsVoidExpenseDocumentResult = {
+  __typename?: 'BmsVoidExpenseDocumentResult';
+  id: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
 };
 
 export type SchemaBmsWorkAssistantInput = {
@@ -7431,6 +7651,7 @@ export type SchemaMutation = {
   bmsCommissionRule: SchemaBmsMobileCommissionRuleActionResult;
   bmsCompleteOrder: Scalars['Boolean']['output'];
   bmsConfirmPayment: SchemaBmsPaymentResult;
+  bmsCreateExpenseDocument: SchemaBmsExpenseDocument;
   bmsCreateInboxDiagnosticMessage: SchemaBmsInboxDiagnosticMessageResult;
   bmsCreateKitchenStation: SchemaBmsKitchenStation;
   bmsCreateOrder: SchemaBmsReorderResult;
@@ -7699,6 +7920,7 @@ export type SchemaMutation = {
   bmsUpsertStoreProfile: SchemaBmsStoreProfile;
   bmsVerifyPaymentSlip: Maybe<SchemaBmsSlipVerification>;
   bmsVerifyShopSignup: SchemaBmsVerifyShopSignupResult;
+  bmsVoidExpenseDocument: SchemaBmsVoidExpenseDocumentResult;
   bmsWorkAssistant: SchemaBmsWorkAssistantResult;
   bmsWriteOffArInvoice: SchemaBmsArWriteOffResult;
   bookmark: SchemaToggleBookmarkResult;
@@ -7946,6 +8168,11 @@ export type SchemaMutationBmsCompleteOrderArgs = {
 
 export type SchemaMutationBmsConfirmPaymentArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type SchemaMutationBmsCreateExpenseDocumentArgs = {
+  input: SchemaBmsCreateExpenseDocumentInput;
 };
 
 
@@ -9305,6 +9532,12 @@ export type SchemaMutationBmsVerifyShopSignupArgs = {
 };
 
 
+export type SchemaMutationBmsVoidExpenseDocumentArgs = {
+  id: Scalars['ID']['input'];
+  reason: Scalars['String']['input'];
+};
+
+
 export type SchemaMutationBmsWorkAssistantArgs = {
   input: SchemaBmsWorkAssistantInput;
 };
@@ -9934,6 +10167,10 @@ export type SchemaQuery = {
   bmsDashboard: SchemaBmsDashboard;
   bmsEtaxSubmissions: Array<SchemaBmsEtaxSubmission>;
   bmsEtaxSummary: SchemaBmsEtaxSummary;
+  bmsExpenseDocuments: SchemaBmsExpenseDocumentList;
+  bmsExpenseEstablishments: Array<SchemaBmsExpenseEstablishment>;
+  bmsExpenseSuppliers: Array<SchemaBmsSupplier>;
+  bmsExpenseTaxSummary: SchemaBmsExpenseTaxSummary;
   bmsExpiringLots: Array<SchemaBmsInventoryLot>;
   bmsFollowupAnalytics: SchemaBmsFollowupAnalytics;
   bmsFollowupHistory: Array<SchemaBmsFollowupHistoryEntry>;
@@ -10079,6 +10316,7 @@ export type SchemaQuery = {
   bmsRolePermissions: Array<SchemaBmsRolePermissions>;
   bmsSalesByTier: Array<SchemaBmsSalesByTierRow>;
   bmsSalesSummary: SchemaBmsSalesSummary;
+  bmsSalesTaxReport: SchemaBmsSalesTaxReportSummary;
   bmsShipment: Maybe<SchemaBmsShipment>;
   bmsShipmentLabel: Maybe<SchemaBmsShipmentLabel>;
   bmsShipmentTrackingEvents: Array<SchemaBmsShipmentTrackingEvent>;
@@ -10093,7 +10331,9 @@ export type SchemaQuery = {
   bmsSupplierProducts: Array<SchemaBmsSupplierProduct>;
   bmsSuppliers: Array<SchemaBmsSupplier>;
   bmsSupportTickets: SchemaBmsSupportTicketPage;
+  bmsTaxDocumentList: SchemaBmsTaxDocumentList;
   bmsTaxDocuments: Array<SchemaBmsTaxDocument>;
+  bmsTaxEstablishments: Array<SchemaBmsTaxEstablishment>;
   bmsTaxSettings: SchemaBmsTaxSettings;
   bmsTenants: Array<SchemaBmsTenantRow>;
   bmsTopSellingProducts: Array<SchemaBmsTopProduct>;
@@ -10322,6 +10562,18 @@ export type SchemaQueryBmsCustomersArgs = {
 export type SchemaQueryBmsEtaxSubmissionsArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   status: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsExpenseDocumentsArgs = {
+  input: SchemaBmsExpenseDocumentListInput;
+};
+
+
+export type SchemaQueryBmsExpenseTaxSummaryArgs = {
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: Scalars['String']['input'];
 };
 
 
@@ -10870,6 +11122,11 @@ export type SchemaQueryBmsSalesSummaryArgs = {
 };
 
 
+export type SchemaQueryBmsSalesTaxReportArgs = {
+  input: SchemaBmsSalesTaxReportInput;
+};
+
+
 export type SchemaQueryBmsShipmentArgs = {
   id: Scalars['ID']['input'];
 };
@@ -10930,6 +11187,11 @@ export type SchemaQueryBmsSupportTicketsArgs = {
   q: InputMaybe<Scalars['String']['input']>;
   status: InputMaybe<Scalars['String']['input']>;
   topic: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsTaxDocumentListArgs = {
+  input: SchemaBmsTaxDocumentListInput;
 };
 
 
@@ -12412,7 +12674,7 @@ export type MobilePosScanQueryVariables = Exact<{
 }>;
 
 
-export type MobilePosScanQuery = { bmsPosScan: { sku: string, size: string, productName: string, receiptName: string, baseQty: number, packCode: string, unitName: string, packPrice: number, basePrice: number, available: number, serialTracked: boolean, scaleBarcode: string | null, imageUrl: string | null, priceTiers: Array<{ minQty: number, scope: string | null, size: string | null, unitPrice: number | null, discountPct: number | null }>, promotion: { kind: string, buyQty: number, getQty: number | null, bundlePrice: number | null } | null, modifiers: Array<{ code: string, name: string, priceDelta: number, groupCode: string, groupName: string, selectionType: string, minSelect: number, maxSelect: number | null, defaultSelected: boolean }>, packs: Array<{ code: string, unitName: string, baseQty: number, price: number }> } };
+export type MobilePosScanQuery = { bmsPosScan: { sku: string, size: string, productName: string, receiptName: string, baseQty: number, packCode: string, unitName: string, packPrice: number, basePrice: number, available: number, stockTracked: boolean, serialTracked: boolean, scaleBarcode: string | null, imageUrl: string | null, priceTiers: Array<{ minQty: number, scope: string | null, size: string | null, unitPrice: number | null, discountPct: number | null }>, promotion: { kind: string, buyQty: number, getQty: number | null, bundlePrice: number | null } | null, modifiers: Array<{ code: string, name: string, priceDelta: number, groupCode: string, groupName: string, selectionType: string, minSelect: number, maxSelect: number | null, defaultSelected: boolean }>, packs: Array<{ code: string, unitName: string, baseQty: number, price: number }> } };
 
 export type MobilePosSalesQueryVariables = Exact<{
   q: string | null | undefined;
@@ -13295,7 +13557,7 @@ export const MobilePosBoardGameWaitlistEntryFieldsFragmentDoc = {"kind":"Documen
 export const PosBootstrapDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"PosBootstrap"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosSession"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"device"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"registeredPosNo"}},{"kind":"Field","name":{"kind":"Name","value":"scanner"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"mode"}},{"kind":"Field","name":{"kind":"Name","value":"prefixKey"}},{"kind":"Field","name":{"kind":"Name","value":"suffixKey"}},{"kind":"Field","name":{"kind":"Name","value":"maxGapMs"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"location"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"branchCode"}},{"kind":"Field","name":{"kind":"Name","value":"vatCode"}},{"kind":"Field","name":{"kind":"Name","value":"pharmacistName"}}]}},{"kind":"Field","name":{"kind":"Name","value":"shift"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"deviceId"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"openedBy"}},{"kind":"Field","name":{"kind":"Name","value":"openedAt"}},{"kind":"Field","name":{"kind":"Name","value":"openingFloat"}},{"kind":"Field","name":{"kind":"Name","value":"countedCash"}},{"kind":"Field","name":{"kind":"Name","value":"expectedCash"}},{"kind":"Field","name":{"kind":"Name","value":"cashVariance"}},{"kind":"Field","name":{"kind":"Name","value":"closedAt"}},{"kind":"Field","name":{"kind":"Name","value":"pharmacistUserId"}}]}},{"kind":"Field","name":{"kind":"Name","value":"shiftReturnSummary"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"returnCount"}},{"kind":"Field","name":{"kind":"Name","value":"returnTotal"}},{"kind":"Field","name":{"kind":"Name","value":"settledTotal"}},{"kind":"Field","name":{"kind":"Name","value":"pendingTotal"}},{"kind":"Field","name":{"kind":"Name","value":"pendingCount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"cashiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"posOnly"}}]}},{"kind":"Field","name":{"kind":"Name","value":"purchaseReceivers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}}]}},{"kind":"Field","name":{"kind":"Name","value":"approvers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"approvals"}}]}},{"kind":"Field","name":{"kind":"Name","value":"kitchenOperators"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}}]}},{"kind":"Field","name":{"kind":"Name","value":"store"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"taxId"}},{"kind":"Field","name":{"kind":"Name","value":"receiptLanguageMode"}},{"kind":"Field","name":{"kind":"Name","value":"address"}},{"kind":"Field","name":{"kind":"Name","value":"phone"}},{"kind":"Field","name":{"kind":"Name","value":"logoUrl"}}]}},{"kind":"Field","name":{"kind":"Name","value":"surface"}},{"kind":"Field","name":{"kind":"Name","value":"businessArchetype"}},{"kind":"Field","name":{"kind":"Name","value":"vat"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"registered"}},{"kind":"Field","name":{"kind":"Name","value":"priceIncludesVat"}},{"kind":"Field","name":{"kind":"Name","value":"rate"}},{"kind":"Field","name":{"kind":"Name","value":"calendarEra"}},{"kind":"Field","name":{"kind":"Name","value":"cashRounding"}}]}}]}}]}}]} as unknown as DocumentNode<PosBootstrapQuery, PosBootstrapQueryVariables>;
 export const VerifyPosCashierDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"VerifyPosCashier"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosVerifyCashier"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"email"}},{"kind":"Field","name":{"kind":"Name","value":"role"}},{"kind":"Field","name":{"kind":"Name","value":"isPharmacist"}},{"kind":"Field","name":{"kind":"Name","value":"hasPin"}},{"kind":"Field","name":{"kind":"Name","value":"posOnly"}}]}}]}}]} as unknown as DocumentNode<VerifyPosCashierMutation, VerifyPosCashierMutationVariables>;
 export const MobilePosCatalogDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosCatalog"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"q"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}},"defaultValue":{"kind":"StringValue","value":"","block":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCatalogSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"q"},"value":{"kind":"Variable","name":{"kind":"Name","value":"q"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"price"}},{"kind":"Field","name":{"kind":"Name","value":"availability"}},{"kind":"Field","name":{"kind":"Name","value":"availableTotal"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"availableSizes"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"price"}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosCatalogQuery, MobilePosCatalogQueryVariables>;
-export const MobilePosScanDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosScan"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"code"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"size"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"packCode"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"surface"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}},"defaultValue":{"kind":"StringValue","value":"RETAIL_POS","block":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosScan"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"code"},"value":{"kind":"Variable","name":{"kind":"Name","value":"code"}}},{"kind":"Argument","name":{"kind":"Name","value":"size"},"value":{"kind":"Variable","name":{"kind":"Name","value":"size"}}},{"kind":"Argument","name":{"kind":"Name","value":"packCode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"packCode"}}},{"kind":"Argument","name":{"kind":"Name","value":"surface"},"value":{"kind":"Variable","name":{"kind":"Name","value":"surface"}}},{"kind":"Argument","name":{"kind":"Name","value":"withImage"},"value":{"kind":"BooleanValue","value":true}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packPrice"}},{"kind":"Field","name":{"kind":"Name","value":"basePrice"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"serialTracked"}},{"kind":"Field","name":{"kind":"Name","value":"scaleBarcode"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"priceTiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"minQty"}},{"kind":"Field","name":{"kind":"Name","value":"scope"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"unitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"discountPct"}}]}},{"kind":"Field","name":{"kind":"Name","value":"promotion"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"buyQty"}},{"kind":"Field","name":{"kind":"Name","value":"getQty"}},{"kind":"Field","name":{"kind":"Name","value":"bundlePrice"}}]}},{"kind":"Field","name":{"kind":"Name","value":"modifiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"priceDelta"}},{"kind":"Field","name":{"kind":"Name","value":"groupCode"}},{"kind":"Field","name":{"kind":"Name","value":"groupName"}},{"kind":"Field","name":{"kind":"Name","value":"selectionType"}},{"kind":"Field","name":{"kind":"Name","value":"minSelect"}},{"kind":"Field","name":{"kind":"Name","value":"maxSelect"}},{"kind":"Field","name":{"kind":"Name","value":"defaultSelected"}}]}},{"kind":"Field","name":{"kind":"Name","value":"packs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"price"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosScanQuery, MobilePosScanQueryVariables>;
+export const MobilePosScanDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosScan"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"code"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"size"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"packCode"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"surface"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}},"defaultValue":{"kind":"StringValue","value":"RETAIL_POS","block":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosScan"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"code"},"value":{"kind":"Variable","name":{"kind":"Name","value":"code"}}},{"kind":"Argument","name":{"kind":"Name","value":"size"},"value":{"kind":"Variable","name":{"kind":"Name","value":"size"}}},{"kind":"Argument","name":{"kind":"Name","value":"packCode"},"value":{"kind":"Variable","name":{"kind":"Name","value":"packCode"}}},{"kind":"Argument","name":{"kind":"Name","value":"surface"},"value":{"kind":"Variable","name":{"kind":"Name","value":"surface"}}},{"kind":"Argument","name":{"kind":"Name","value":"withImage"},"value":{"kind":"BooleanValue","value":true}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packPrice"}},{"kind":"Field","name":{"kind":"Name","value":"basePrice"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"stockTracked"}},{"kind":"Field","name":{"kind":"Name","value":"serialTracked"}},{"kind":"Field","name":{"kind":"Name","value":"scaleBarcode"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"priceTiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"minQty"}},{"kind":"Field","name":{"kind":"Name","value":"scope"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"unitPrice"}},{"kind":"Field","name":{"kind":"Name","value":"discountPct"}}]}},{"kind":"Field","name":{"kind":"Name","value":"promotion"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"kind"}},{"kind":"Field","name":{"kind":"Name","value":"buyQty"}},{"kind":"Field","name":{"kind":"Name","value":"getQty"}},{"kind":"Field","name":{"kind":"Name","value":"bundlePrice"}}]}},{"kind":"Field","name":{"kind":"Name","value":"modifiers"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"priceDelta"}},{"kind":"Field","name":{"kind":"Name","value":"groupCode"}},{"kind":"Field","name":{"kind":"Name","value":"groupName"}},{"kind":"Field","name":{"kind":"Name","value":"selectionType"}},{"kind":"Field","name":{"kind":"Name","value":"minSelect"}},{"kind":"Field","name":{"kind":"Name","value":"maxSelect"}},{"kind":"Field","name":{"kind":"Name","value":"defaultSelected"}}]}},{"kind":"Field","name":{"kind":"Name","value":"packs"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"code"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"price"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosScanQuery, MobilePosScanQueryVariables>;
 export const MobilePosSalesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosSales"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"q"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}},"defaultValue":{"kind":"IntValue","value":"50"}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRecentSales"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"q"},"value":{"kind":"Variable","name":{"kind":"Name","value":"q"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"deviceOnly"},"value":{"kind":"BooleanValue","value":false}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sales"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosReceiptFields"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosReceiptFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosReceipt"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"receiptNo"}},{"kind":"Field","name":{"kind":"Name","value":"billNo"}},{"kind":"Field","name":{"kind":"Name","value":"soldAt"}},{"kind":"Field","name":{"kind":"Name","value":"offlineTenderedAt"}},{"kind":"Field","name":{"kind":"Name","value":"offlineSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"orderStatus"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"branchCode"}},{"kind":"Field","name":{"kind":"Name","value":"cashierName"}},{"kind":"Field","name":{"kind":"Name","value":"memberName"}},{"kind":"Field","name":{"kind":"Name","value":"memberNo"}},{"kind":"Field","name":{"kind":"Name","value":"sourceChannel"}},{"kind":"Field","name":{"kind":"Name","value":"restaurantServiceMode"}},{"kind":"Field","name":{"kind":"Name","value":"paymentMethod"}},{"kind":"Field","name":{"kind":"Name","value":"paymentRef"}},{"kind":"Field","name":{"kind":"Name","value":"cashTendered"}},{"kind":"Field","name":{"kind":"Name","value":"cashChange"}},{"kind":"Field","name":{"kind":"Name","value":"returnEligible"}},{"kind":"Field","name":{"kind":"Name","value":"returnBlockedReason"}},{"kind":"Field","name":{"kind":"Name","value":"voidedAt"}},{"kind":"Field","name":{"kind":"Name","value":"roundingAmount"}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderItemId"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"packPrice"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"lineTotal"}},{"kind":"Field","name":{"kind":"Name","value":"refundablePackQty"}},{"kind":"Field","name":{"kind":"Name","value":"returnedPackQty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"payments"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"ref"}},{"kind":"Field","name":{"kind":"Name","value":"cashTendered"}},{"kind":"Field","name":{"kind":"Name","value":"cashChange"}}]}},{"kind":"Field","name":{"kind":"Name","value":"refunds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}}]}},{"kind":"Field","name":{"kind":"Name","value":"returnEvents"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isVoid"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"refundAmount"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedByName"}},{"kind":"Field","name":{"kind":"Name","value":"approvedByName"}},{"kind":"Field","name":{"kind":"Name","value":"settlementStatus"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderItemId"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"refundAmount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"refunds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}},{"kind":"Field","name":{"kind":"Name","value":"paymentId"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"discountLines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"vat"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"rate"}},{"kind":"Field","name":{"kind":"Name","value":"taxableAmount"}},{"kind":"Field","name":{"kind":"Name","value":"exemptAmount"}},{"kind":"Field","name":{"kind":"Name","value":"netBeforeVat"}},{"kind":"Field","name":{"kind":"Name","value":"vatAmount"}},{"kind":"Field","name":{"kind":"Name","value":"roundingAmount"}}]}}]}}]} as unknown as DocumentNode<MobilePosSalesQuery, MobilePosSalesQueryVariables>;
 export const MobilePosLastSaleDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosLastSale"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosLastSale"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosReceiptFields"}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosReceiptFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosReceipt"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderId"}},{"kind":"Field","name":{"kind":"Name","value":"receiptNo"}},{"kind":"Field","name":{"kind":"Name","value":"billNo"}},{"kind":"Field","name":{"kind":"Name","value":"soldAt"}},{"kind":"Field","name":{"kind":"Name","value":"offlineTenderedAt"}},{"kind":"Field","name":{"kind":"Name","value":"offlineSyncedAt"}},{"kind":"Field","name":{"kind":"Name","value":"total"}},{"kind":"Field","name":{"kind":"Name","value":"orderStatus"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"branchCode"}},{"kind":"Field","name":{"kind":"Name","value":"cashierName"}},{"kind":"Field","name":{"kind":"Name","value":"memberName"}},{"kind":"Field","name":{"kind":"Name","value":"memberNo"}},{"kind":"Field","name":{"kind":"Name","value":"sourceChannel"}},{"kind":"Field","name":{"kind":"Name","value":"restaurantServiceMode"}},{"kind":"Field","name":{"kind":"Name","value":"paymentMethod"}},{"kind":"Field","name":{"kind":"Name","value":"paymentRef"}},{"kind":"Field","name":{"kind":"Name","value":"cashTendered"}},{"kind":"Field","name":{"kind":"Name","value":"cashChange"}},{"kind":"Field","name":{"kind":"Name","value":"returnEligible"}},{"kind":"Field","name":{"kind":"Name","value":"returnBlockedReason"}},{"kind":"Field","name":{"kind":"Name","value":"voidedAt"}},{"kind":"Field","name":{"kind":"Name","value":"roundingAmount"}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderItemId"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"packPrice"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"lineTotal"}},{"kind":"Field","name":{"kind":"Name","value":"refundablePackQty"}},{"kind":"Field","name":{"kind":"Name","value":"returnedPackQty"}}]}},{"kind":"Field","name":{"kind":"Name","value":"payments"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"ref"}},{"kind":"Field","name":{"kind":"Name","value":"cashTendered"}},{"kind":"Field","name":{"kind":"Name","value":"cashChange"}}]}},{"kind":"Field","name":{"kind":"Name","value":"refunds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}}]}},{"kind":"Field","name":{"kind":"Name","value":"returnEvents"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"isVoid"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"refundAmount"}},{"kind":"Field","name":{"kind":"Name","value":"returnedAt"}},{"kind":"Field","name":{"kind":"Name","value":"returnedByName"}},{"kind":"Field","name":{"kind":"Name","value":"approvedByName"}},{"kind":"Field","name":{"kind":"Name","value":"settlementStatus"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"orderItemId"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"refundAmount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"refunds"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"method"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}},{"kind":"Field","name":{"kind":"Name","value":"completedAt"}},{"kind":"Field","name":{"kind":"Name","value":"externalRef"}},{"kind":"Field","name":{"kind":"Name","value":"paymentId"}}]}}]}},{"kind":"Field","name":{"kind":"Name","value":"discountLines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"amount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"vat"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"rate"}},{"kind":"Field","name":{"kind":"Name","value":"taxableAmount"}},{"kind":"Field","name":{"kind":"Name","value":"exemptAmount"}},{"kind":"Field","name":{"kind":"Name","value":"netBeforeVat"}},{"kind":"Field","name":{"kind":"Name","value":"vatAmount"}},{"kind":"Field","name":{"kind":"Name","value":"roundingAmount"}}]}}]}}]} as unknown as DocumentNode<MobilePosLastSaleQuery, MobilePosLastSaleQueryVariables>;
 export const MobilePosParkedSalesDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosParkedSales"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosParkedSales"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"parked"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"itemCount"}},{"kind":"Field","name":{"kind":"Name","value":"subtotalHint"}},{"kind":"Field","name":{"kind":"Name","value":"parkedByName"}},{"kind":"Field","name":{"kind":"Name","value":"pharmacyReview"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"assessmentId"}},{"kind":"Field","name":{"kind":"Name","value":"caseCode"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"canResume"}},{"kind":"Field","name":{"kind":"Name","value":"requiresSafetyCheck"}}]}},{"kind":"Field","name":{"kind":"Name","value":"cart"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"version"}},{"kind":"Field","name":{"kind":"Name","value":"couponCode"}},{"kind":"Field","name":{"kind":"Name","value":"pointsToRedeem"}},{"kind":"Field","name":{"kind":"Name","value":"extraLines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"label"}},{"kind":"Field","name":{"kind":"Name","value":"unitAmount"}}]}},{"kind":"Field","name":{"kind":"Name","value":"pharmacyReview"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"assessmentId"}},{"kind":"Field","name":{"kind":"Name","value":"caseCode"}},{"kind":"Field","name":{"kind":"Name","value":"requiresSafetyCheck"}}]}},{"kind":"Field","name":{"kind":"Name","value":"member"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"customerId"}},{"kind":"Field","name":{"kind":"Name","value":"memberNo"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"phone"}},{"kind":"Field","name":{"kind":"Name","value":"pointsBalance"}},{"kind":"Field","name":{"kind":"Name","value":"pointsUsable"}}]}},{"kind":"Field","name":{"kind":"Name","value":"lines"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"key"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"receiptName"}},{"kind":"Field","name":{"kind":"Name","value":"packCode"}},{"kind":"Field","name":{"kind":"Name","value":"unitName"}},{"kind":"Field","name":{"kind":"Name","value":"packQty"}},{"kind":"Field","name":{"kind":"Name","value":"packPrice"}},{"kind":"Field","name":{"kind":"Name","value":"basePrice"}},{"kind":"Field","name":{"kind":"Name","value":"baseQty"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"imageUrl"}},{"kind":"Field","name":{"kind":"Name","value":"modifierCodes"}},{"kind":"Field","name":{"kind":"Name","value":"serialTracked"}},{"kind":"Field","name":{"kind":"Name","value":"scaleBarcode"}},{"kind":"Field","name":{"kind":"Name","value":"serials"}}]}}]}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosParkedSalesQuery, MobilePosParkedSalesQueryVariables>;

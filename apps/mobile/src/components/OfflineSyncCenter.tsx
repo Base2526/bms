@@ -1,6 +1,9 @@
 import React, { useCallback } from 'react';
 import { Alert, Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import type { OfflineSaleRecord } from '../lib/offlineSales';
+import {
+  canRetryOfflineSale,
+  type OfflineSaleRecord,
+} from '../lib/offlineSales';
 import { useOfflineSales } from '../state/OfflineSalesContext';
 import { useServerHealth } from '../state/ServerHealthContext';
 import { useShift } from '../state/ShiftContext';
@@ -40,7 +43,9 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
   const queue = useOfflineSales();
   const offline = health.status === 'offline';
   const serverOnline = health.status === 'online';
-  const canSync = serverOnline && shift.isOpen;
+  // Recovery by idempotency key is safe without an open shift. Only an unsold replay needs the
+  // original shift; the provider stops before replay and sends that row to manager review.
+  const canSync = serverOnline;
 
   const syncPending = useCallback(() => {
     queue.syncNow().catch(reportFailure);
@@ -125,9 +130,9 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
             fullWidth
             style={styles.action}
           />
-          {queue.reviewCount > 0 ? (
+          {queue.records.some(canRetryOfflineSale) ? (
             <Button
-              label="ลองใหม่ทุกรายการที่ตรวจสอบแล้ว"
+              label="ลองใหม่เฉพาะรายการที่แก้สาเหตุได้"
               onPress={retryReview}
               disabled={!canSync || queue.syncing}
               variant="secondary"
@@ -148,11 +153,11 @@ export function OfflineSyncCenter({ visible, onClose }: Props) {
               },
             ]}
           >
-            {!shift.isOpen
-              ? 'ยังซิงก์ไม่ได้เพราะไม่มีกะเปิดอยู่ กรุณาให้ผู้จัดการตรวจสอบกะเดิม ห้ามลงยอดเข้ากะใหม่'
-              : offline
-              ? 'เครื่องยังออฟไลน์ — รายการจะอยู่ในคิวเข้ารหัสจนเชื่อมต่อได้'
-              : 'กำลังตรวจการเชื่อมต่อ — ระบบจะเปิดการซิงก์เมื่อ Server พร้อม'}
+            {!serverOnline
+              ? offline
+                ? 'เครื่องยังออฟไลน์ — รายการจะอยู่ในคิวเข้ารหัสจนเชื่อมต่อได้'
+                : 'กำลังตรวจการเชื่อมต่อ — ระบบจะเปิดการซิงก์เมื่อ Server พร้อม'
+              : 'ตรวจผลรายการเดิมได้ แต่ถ้า Server ยังไม่มีบิล ระบบจะหยุดไว้ให้ผู้จัดการตรวจสอบและจะไม่ลงยอดเข้ากะใหม่'}
           </Text>
         ) : null}
 
@@ -198,6 +203,7 @@ function OfflineSaleCard({
 }) {
   const { colors, spacing, typography } = useTheme();
   const state = STATE_LABEL[record.state];
+  const retryable = canRetryOfflineSale(record);
   const tenderedAt = new Date(record.tenderedAt);
   const tenderedLabel = Number.isFinite(tenderedAt.getTime())
     ? tenderedAt.toLocaleString('th-TH', {
@@ -255,7 +261,7 @@ function OfflineSaleCard({
         </View>
       ) : null}
 
-      {record.state === 'NEEDS_REVIEW' ? (
+      {retryable ? (
         <Button
           label="แก้สาเหตุแล้ว ลองรายการนี้ใหม่"
           onPress={onRetry}
@@ -264,6 +270,16 @@ function OfflineSaleCard({
           fullWidth
           style={{ marginTop: spacing.md }}
         />
+      ) : record.state === 'NEEDS_REVIEW' ? (
+        <Text
+          style={[
+            typography.captionStrong,
+            { color: colors.danger, marginTop: spacing.md },
+          ]}
+        >
+          Server ตัดสินรายการนี้แล้ว ห้ามส่งซ้ำหรือรับเงินซ้ำ
+          กรุณาให้ผู้จัดการกระทบยอด
+        </Text>
       ) : null}
     </Card>
   );

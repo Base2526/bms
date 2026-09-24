@@ -15,7 +15,9 @@ BMS, not a second edition, price plan, database, settlement engine, or source of
 - The on-device Sync Center keeps pending, interrupted, and rejected items visible, supports retry
   with the original key, binds new rows to the accepting device/branch/shift, and detects accidental
   queued-request or scope mutation before replay. Unknown queue formats and secure-storage write
-  failures fail closed. The Sync Center does not offer a discard action after cash has been accepted.
+  failures fail closed. Shift close, unpair, and pairing replacement cannot strand accepted cash.
+  The Sync Center can recover a committed bill without an open shift, but it never replays an unsold
+  row into a new shift and does not offer a discard action after cash has been accepted.
 - Both Mobile eligibility and the authoritative settlement service reject pharmacy, restaurant, and
   board-game archetypes from this retail outage path. The server also refuses to attribute a tender
   timestamp from before the current shift to a newly opened shift.
@@ -41,6 +43,7 @@ Emergency Offline Mode does not currently cover:
 - returns, voids, refunds, shift close, receiving, transfer, count, or other stock operations;
 - cold-start offline PIN login or an unrestricted offline product catalog; the cashier must already
   be signed in with the original shift open and must have loaded the product snapshot before outage.
+  Resolved snapshots remain usable for repeated eligible sales only within that signed-in app session.
 
 The connected Cloud product supports many of those workflows; the list above is only the outage-mode
 boundary.

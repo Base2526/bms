@@ -61,6 +61,8 @@ export interface OfflineSaleRecord {
   state: OfflineSaleQueueState;
   attempts: number;
   lastError: string | null;
+  /** Server/business code for manager triage; null means transport outcome is still unknown. */
+  failureCode?: string | null;
   updatedAt: string;
 }
 
@@ -96,6 +98,9 @@ function isOfflineSaleRecord(value: unknown): value is OfflineSaleRecord {
     typeof record.attempts === 'number' &&
     Number.isInteger(record.attempts) &&
     record.attempts >= 0 &&
+    (record.failureCode === undefined ||
+      record.failureCode === null ||
+      typeof record.failureCode === 'string') &&
     Boolean(record.payload && typeof record.payload === 'object') &&
     Array.isArray(record.payload?.lines) &&
     Array.isArray(record.payload?.payments)
@@ -242,7 +247,9 @@ export async function putOfflineSale(
 
 export async function patchOfflineSale(
   id: string,
-  patch: Partial<Pick<OfflineSaleRecord, 'state' | 'attempts' | 'lastError'>>,
+  patch: Partial<
+    Pick<OfflineSaleRecord, 'state' | 'attempts' | 'lastError' | 'failureCode'>
+  >,
 ): Promise<OfflineSaleRecord[]> {
   return locked(async () => {
     const records = await readUnlocked();
@@ -260,6 +267,19 @@ export async function patchOfflineSale(
     );
     return writeUnlocked(next);
   });
+}
+
+const RETRYABLE_REVIEW_CODES = new Set([
+  'LOT_EXPIRED_OR_SHORT',
+  'INVALID_PACK',
+]);
+
+/** Legacy review rows have no code and retain their old manual-retry behavior. */
+export function canRetryOfflineSale(record: OfflineSaleRecord): boolean {
+  return (
+    record.state === 'NEEDS_REVIEW' &&
+    (!record.failureCode || RETRYABLE_REVIEW_CODES.has(record.failureCode))
+  );
 }
 
 export async function removeOfflineSale(

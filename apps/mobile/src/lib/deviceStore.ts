@@ -35,14 +35,22 @@ export async function loadPairing(): Promise<LoadResult> {
 }
 
 export async function savePairing(target: PairingTarget): Promise<void> {
-  await Keychain.setGenericPassword(target.serverUrl, target.token, {
-    service: SERVICE,
-    // เข้าถึงได้หลังปลดล็อกเครื่องครั้งแรกหลังบูต — จอ POS ต้องกลับมาทำงานเองได้หลังไฟดับ
-    // โดยไม่ต้องมีคนมาปลดล็อกก่อน (`WHEN_UNLOCKED` จะทำให้แอปที่รีสตาร์ทเองอ่านไม่ได้)
-    accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
-  });
+  const stored = await Keychain.setGenericPassword(
+    target.serverUrl,
+    target.token,
+    {
+      service: SERVICE,
+      // เข้าถึงได้หลังปลดล็อกเครื่องครั้งแรกหลังบูต — จอ POS ต้องกลับมาทำงานเองได้หลังไฟดับ
+      // โดยไม่ต้องมีคนมาปลดล็อกก่อน (`WHEN_UNLOCKED` จะทำให้แอปที่รีสตาร์ทเองอ่านไม่ได้)
+      accessible: Keychain.ACCESSIBLE.AFTER_FIRST_UNLOCK,
+    },
+  );
+  if (!stored)
+    throw new Error('บันทึกข้อมูลจับคู่ลงที่เก็บข้อมูลปลอดภัยไม่สำเร็จ');
 }
 
 export async function clearPairing(): Promise<void> {
-  await Keychain.resetGenericPassword({ service: SERVICE });
+  const cleared = await Keychain.resetGenericPassword({ service: SERVICE });
+  if (!cleared)
+    throw new Error('ลบข้อมูลจับคู่จากที่เก็บข้อมูลปลอดภัยไม่สำเร็จ');
 }
