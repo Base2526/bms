@@ -18,9 +18,18 @@ BEGIN;
 ALTER TABLE bms_order_items
   ADD COLUMN IF NOT EXISTS line_amount NUMERIC(14,2);
 
+-- This is a schema backfill, not a user edit. Without the transaction-local
+-- guard, the generic BEFORE UPDATE trigger snapshots every legacy order item
+-- into bms_order_items_revisions, amplifying the write until the migration can
+-- hit statement_timeout. Keep the bypass scoped to this one UPDATE and restore
+-- the default immediately afterwards; a failed transaction clears LOCAL state.
+SELECT set_config('app.skip_revision', '1', true);
+
 UPDATE bms_order_items
    SET line_amount = ROUND(COALESCE(pack_unit_price * pack_qty, unit_price * qty), 2)
  WHERE line_amount IS NULL;
+
+SELECT set_config('app.skip_revision', '', true);
 
 ALTER TABLE bms_order_items
   ALTER COLUMN line_amount SET NOT NULL;

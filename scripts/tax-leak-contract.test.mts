@@ -5,12 +5,22 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFileSync(new URL(path, root), "utf8");
 
+test("the line_amount backfill bypasses revision amplification only for its update", () => {
+  const migration = read("db/migrations/10.13__bms_tax_leak_guards.sql");
+  assert.match(
+    migration,
+    /set_config\('app\.skip_revision', '1', true\);[\s\S]*?UPDATE bms_order_items[\s\S]*?WHERE line_amount IS NULL;[\s\S]*?set_config\('app\.skip_revision', '', true\);/,
+    "the legacy backfill must not create one revision snapshot per order line and must restore the flag immediately",
+  );
+});
+
 test("promotion-exact line_amount is the tax/refund/commission authority", () => {
   const orders = read("apps/web/lib/bms/orders.ts");
   const tax = read("apps/web/lib/bms/taxDocuments.ts");
   const returns = read("apps/web/lib/bms/pos.ts");
   const commission = read("apps/web/lib/bms/commission.ts");
   assert.match(orders, /promoLineAmountByIndex/);
+  assert.match(orders, /const productLineAmount = promoLineAmountByIndex\.get\(itemIndex\)/);
   assert.match(orders, /line_amount[\s\S]*ln\.lineAmount/);
   assert.match(tax, /line_amount AS amount/);
   assert.match(returns, /grossTotal[\s\S]*Number\(item\.line_amount\)/);
@@ -25,6 +35,7 @@ test("full invoices lock and reject unfinished, voided and partially returned or
   assert.match(section, /status !== "COMPLETED"/);
   assert.match(section, /voided_at != null/);
   assert.match(section, /FROM bms_pos_returns/);
+  assert.match(section, /if \(returned\.rowCount\)/);
   assert.match(section, /ORDER_NOT_INVOICEABLE/);
   assert.match(section, /INSERT INTO bms_audit_log[\s\S]*tax\.document\.issue_full/);
   assert.doesNotMatch(read("apps/web/graphql/bmsPos.ts"), /audit\(ctx, "tax\.document\.issue_full"/);
@@ -34,6 +45,7 @@ test("back-office money paths refuse an active sales tax document", () => {
   const guard = read("apps/web/lib/bms/taxDocumentGuards.ts");
   const orders = read("apps/web/lib/bms/orders.ts");
   const payments = read("apps/web/lib/bms/payments.ts");
+  assert.match(guard, /doc_type IN \('ABBREVIATED','FULL'\)/);
   assert.match(guard, /cancelled_at IS NULL/);
   assert.match(guard, /คืนผ่านหน้า POS เพื่อออกใบลดหนี้/);
   assert.ok((orders.match(/assertNoActiveSalesTaxDocumentInTx\(/g) ?? []).length >= 2);

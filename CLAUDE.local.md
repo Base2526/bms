@@ -7289,7 +7289,8 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 
 - เพิ่ม migration `10.13`: เก็บ `bms_order_items.line_amount` เป็นยอดเงินจริงของแต่ละบรรทัด,
   backfill หลักฐานเดิม, บังคับ non-negative/not-null และเปลี่ยน unique invoice ของภาษีซื้อเป็นเลขเอกสาร/
-  สาขาที่ normalize แล้ว โดย migration หยุดก่อนเปลี่ยน schema ถ้าพบข้อมูลซ้ำเดิม
+  สาขาที่ normalize แล้ว โดย migration หยุดก่อนเปลี่ยน schema ถ้าพบข้อมูลซ้ำเดิม; backfill เปิด
+  `app.skip_revision` แบบ transaction-local เฉพาะ UPDATE แล้วคืนค่าทันทีเพื่อไม่ขยาย revision table
 - order creation กระจายยอดโปรราย SKU+size เป็นสตางค์ (เศษลงบรรทัดสุดท้าย) และทุกเส้นทางยอดขาย/
   ภาษี/รายงานใช้ `line_amount`; `unit_price` เหลือเป็นราคาเฉลี่ยเพื่อแสดงผลและ
   `receipt_unit_price` ยังเป็นราคาป้ายตามสัญญาเดิม
@@ -7304,6 +7305,13 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
   production build ผ่าน **120/120 pages**; pure suite ทั้งชุด **1,469/1,474** โดย 5 failures
   เหมือน `develop` และอยู่นอก diff (assistant guide 2, board-game workspace, order alert pattern,
   delivery SQL relation scanner)
+- **mutation test:** ทำให้เสียทีละจุดแล้ว contract แดงครบ **11 gates** — promo allocation,
+  tax reader ที่ต้องอ่าน `line_amount`, สถานะ/partial-return ของใบเต็ม, back-office document type,
+  VAT-exclusive setter, counter partial-index arbiter, cancelled-order exception report, checksum ภาษีซื้อ,
+  migration revision bypass และ Windows runner; mutation back-office รอบแรกหลุด จึงเพิ่ม assertion ให้ตรึง
+  ทั้ง `ABBREVIATED`/`FULL` แล้วทดสอบซ้ำจนแดง จากนั้น restore service files ตรง SHA-256 เดิม
+- **verify หลัง restore:** tax-leak **7/7**, expense-documents **12/12**, contract-runner **16/16**
+  และ typecheck ผ่าน; final pure suite **1,470/1,475** โดยยังแดงเฉพาะ 5 baseline cases ชุดเดิม
 - **DB ยังไม่ได้ verify:** local PostgreSQL `127.0.0.1:5432` ตอบ `ECONNREFUSED` และ Docker daemon
   ไม่ทำงาน จึงยังไม่ได้ apply/rollback migration, รัน DB contracts หรือ SELECT ตรวจข้อมูลจริง;
   read-only preflight สำหรับร้าน `price_includes_vat=false` และ invoice ซ้ำก็ยังอ่านไม่ได้
