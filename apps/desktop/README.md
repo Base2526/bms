@@ -3,6 +3,11 @@
 Windows, Linux and macOS desktop shell for the existing BMS POS surface. The backend remains
 authoritative; this app does not contain a database or a second settlement path.
 
+BMS Cloud and BMS Hybrid POS are one product. This desktop shell is currently a cloud-connected POS
+surface within it; **Emergency Offline Mode is mobile-only**. The shell must not be sold as a local
+server or full-offline register until it has an encrypted queue, the same server revalidation and
+recovery guarantees, and its own failure-mode evidence.
+
 ## Current milestone (0.2)
 
 - first-run server and device pairing;
@@ -55,8 +60,8 @@ authoritative; this app does not contain a database or a second settlement path.
   terminal state and missed acceptance deadlines suppress stale accept/handoff controls, and the web
   workflow uses the existing cancellation/refund path; the native shell still owns no order action.
 
-ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and offline tender are
-separate rollout milestones.
+ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and extending Emergency
+Offline Mode to Desktop are separate rollout milestones.
 
 ## Develop
 

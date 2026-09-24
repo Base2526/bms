@@ -4,6 +4,14 @@ Bare React Native POS client (`react-native@0.87.1`, no Expo). The app uses HTTP
 authoritative reads and commands and GraphQL WS only for scoped invalidation. The database and BMS
 services remain the source of truth.
 
+## Product Positioning
+
+BMS Cloud and BMS Hybrid POS are one product, not separate editions or databases. Cloud is the
+authoritative operating mode. The native client's **Emergency Offline Mode** is a bounded continuity
+capability inside that product: today it queues only plain retail cash sales on the paired mobile
+device, then submits them through the normal server settlement path when connectivity returns. It is
+not a local server or full-offline promise.
+
 ## Current Status
 
 The in-repository RN workflows are connected to the generated GraphQL contract:
@@ -18,8 +26,9 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   receiving, AR collection, store-credit lookup, and required second-person approval;
 - pharmacy counter authorization and parked pharmacist-review handoff/resume;
 - bounded GraphQL operations so a dropped connection cannot leave scan or payment spinning forever;
-- encrypted native offline queue for plain retail cash sales, with manual sync/retry, original-cashier
-  attribution, shift-close/unpair guards, and a synced badge in receipt history;
+- Emergency Offline Mode: an encrypted native queue for plain retail cash sales, with manual
+  sync/retry, original-cashier attribution, shift-close/unpair guards, and a synced badge in receipt
+  history;
 - restaurant dine-in and takeaway checks, variants/modifiers, floor/check operations, kitchen rounds,
   settlement, incoming-order review, QR queue, service calls, waitlist, and menu availability; the
   QR/call/waitlist reads stay active across tabs and drive the `คิว/QR` badge and alerts;
@@ -41,7 +50,7 @@ their idempotency key across an unknown network result. Cash out, void, and manu
 server-provided approver list by the required permission and still receive server-side PIN/RBAC
 validation.
 
-Offline tender is intentionally limited to plain retail cash sales. Restaurant, board-game,
+Emergency Offline Mode is intentionally limited to plain retail cash sales. Restaurant, board-game,
 pharmacy, member/points/coupon, approval, serial/weighted/modifier, credit, deposit, split and
 non-cash workflows still require the server. A pending reference is not a receipt or tax document;
 those exist only after the normal backend settlement commits.

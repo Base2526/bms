@@ -13,13 +13,16 @@ import {
   CheckOutlined,
   ContactsOutlined,
   CreditCardOutlined,
+  CloudServerOutlined,
   DatabaseOutlined,
+  DesktopOutlined,
   FacebookFilled,
   GlobalOutlined,
   InboxOutlined,
   InstagramFilled,
   LockOutlined,
   MessageOutlined,
+  MobileOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   RobotOutlined,
@@ -376,6 +379,39 @@ export default function HomePage() {
         </div>
       </section>
 
+      <section className={styles.resilienceSection} id="resilience">
+        <div className={styles.sectionHeadingSimple}>
+          <Text className={styles.eyebrow}>{t("landing.hybridEyebrow")}</Text>
+          <Title level={2}>{t("landing.hybridTitle")}</Title>
+          <Paragraph>{t("landing.hybridDescription")}</Paragraph>
+        </div>
+        <div className={styles.resilienceGrid}>
+          <article className={styles.resilienceCard}>
+            <span className={styles.resilienceIcon}><CloudServerOutlined /></span>
+            <div>
+              <Tag color="blue">{t("landing.hybridCloudTag")}</Tag>
+              <Title level={4}>{t("landing.hybridCloudTitle")}</Title>
+              <Paragraph>{t("landing.hybridCloudDescription")}</Paragraph>
+            </div>
+          </article>
+          <article className={`${styles.resilienceCard} ${styles.resilienceCardAccent}`}>
+            <span className={styles.resilienceIcon}><MobileOutlined /></span>
+            <div>
+              <Tag color="green">{t("landing.hybridEmergencyTag")}</Tag>
+              <Title level={4}>{t("landing.hybridEmergencyTitle")}</Title>
+              <Paragraph>{t("landing.hybridEmergencyDescription")}</Paragraph>
+            </div>
+          </article>
+        </div>
+        <div className={styles.resilienceBoundary}>
+          <DesktopOutlined />
+          <span>
+            <strong>{t("landing.hybridBoundaryTitle")}</strong>
+            <small>{t("landing.hybridBoundaryDescription")}</small>
+          </span>
+        </div>
+      </section>
+
       <section className={styles.workflowSection} id="workflow">
         <div className={styles.sectionHeading}>
           <div>
@@ -480,6 +516,7 @@ export default function HomePage() {
           <Text className={styles.eyebrow}>{t("landing.pricingEyebrow")}</Text>
           <Title level={2}>{t("landing.pricingTitle")}</Title>
           <Paragraph>{t("landing.pricingDescription")}</Paragraph>
+          <div className={styles.productIncluded}><CheckCircleFilled /> {t("landing.hybridIncluded")}</div>
           <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
 

@@ -7,6 +7,12 @@ tenant, branch, and register; a cashier user plus PIN identifies every sale, shi
 and refund settlement. The browser never supplies authoritative tenant, price, pack conversion, or
 stock values.
 
+Product packaging does not split this into “Cloud” and “Hybrid” editions. BMS is one product: Cloud
+is the authoritative operating mode, while **Emergency Offline Mode** is a bounded resilience
+capability currently available only in the native mobile POS for plain retail cash sales. Desktop,
+browser and every richer workflow still require the Cloud. See
+[Cloud + Hybrid POS product contract](cloud-hybrid-pos.md).
+
 ### GraphQL mobile contract and REST compatibility
 
 Normal counter workflows have device-scoped GraphQL queries and mutations in

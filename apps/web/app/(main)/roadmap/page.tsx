@@ -181,6 +181,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Cashier PIN permissions, shifts, drawer movements, and X/Z reports",
           "Member lookup, loyalty, PO receiving, barcode scanning, product packs, FEFO lots, and serial controls",
           "VAT invoices, credit notes, cash rounding, whole-bill serial checks, and idempotent settlement",
+          "One BMS product: Cloud is authoritative, with mobile Emergency Offline Mode for plain retail cash sales",
         ],
       },
       {
@@ -225,6 +226,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Flash/Kerry booking, tracking, and label safety layer is built; live merchant adapters are pending",
           "Pharmacy intake and e-Tax submission queue are flag-gated; licensed/provider verification is required",
           "ESC/POS/WebUSB and mobile printer, scanner, drawer, and push integrations still need real hardware verification; on the public live dashboard only the live-stream viewer, conversion, and comment tiles are still sample numbers",
+          "Desktop Emergency Offline Mode, signed/notarized installers, auto-update, failed-sync management, and outage/soak evidence remain rollout work; there is no local-server or full-offline edition today",
           "Advanced POS features including blind close, price tiers, blind returns, commission, promotions, bundles, store credit, and deposits passed development verification but await production migrations",
         ],
       },
@@ -359,6 +361,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         deliverables: [
           "Done: bare React Native app with generated Apollo operations, device pairing, PIN/RBAC, retail and restaurant workflows, returns, shifts, and named realtime invalidation",
           "Done: stable idempotency keys survive unknown network outcomes for money and stock actions",
+          "Done: encrypted Emergency Offline Mode for plain retail cash sales, with server revalidation before a real receipt exists",
           "Done: Q6B feature parity for Board Game tables/time/members/game loans/POS checkout plus branch Stock Transfer and snapshot-delta Stock Count",
           "Remaining: real-device printer, scanner, cash-drawer, push, and pharmacy-evidence integration verification",
           "Remaining: internal TestFlight / Play distribution and production recovery/load evidence",
@@ -477,6 +480,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Cashier PIN, กะ, เงินเข้าออกลิ้นชัก และรายงาน X/Z",
           "ค้นสมาชิก, Loyalty, รับ PO, Scan barcode, Product pack, FEFO lot และ Serial number",
           "ใบกำกับภาษี VAT, Credit note, Cash rounding และ Settlement แบบ Atomic/Idempotent",
+          "ผลิตภัณฑ์ BMS เดียว: Cloud เป็นระบบหลัก พร้อม Emergency Offline Mode บน Mobile สำหรับการขายปลีกธรรมดาที่รับเงินสด",
         ],
       },
       {
@@ -521,6 +525,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
           "Safety layer ของ Flash/Kerry booking, tracking และ label พร้อม แต่ยังรอ Live merchant adapter",
           "Pharmacy intake และ e-Tax queue ปิดด้วย Feature flag และยังต้องมีผู้เชี่ยวชาญ/Provider ยืนยัน",
           "ESC/POS/WebUSB และ printer, scanner, drawer, push บนมือถือยังต้องทดสอบ Hardware จริง ส่วนหน้า Public live dashboard เหลือเฉพาะการ์ดผู้ชม/Conversion/คอมเมนต์ของไลฟ์ที่ยังเป็นตัวอย่าง",
+          "Emergency Offline Mode บน Desktop, การ Sign/Notarize installer, Auto-update, หน้าจัดการ Sync ไม่ผ่าน และหลักฐาน Outage/Soak test ยังเป็นงาน Rollout; ปัจจุบันยังไม่มี Local Server หรือ Full Offline edition",
           "Advanced POS ชุด Blind close, Price tier, Blind return, Commission, Promotion, Bundle, Store credit และ Deposit ผ่าน Dev verification แต่ยังรอ Migration Production",
         ],
       },
@@ -655,6 +660,7 @@ const ROADMAP_CONTENT: { en: RoadmapPageContent; th: RoadmapPageContent } = {
         deliverables: [
           "เสร็จแล้ว: Bare React Native + generated Apollo, device pairing, PIN/RBAC, ขาย/คืน/กะ, restaurant workflow และ named realtime invalidation",
           "เสร็จแล้ว: idempotency key เดิมถูกเก็บไว้เมื่อผลลัพธ์ network ไม่แน่นอนใน action เงิน/สต็อก",
+          "เสร็จแล้ว: Emergency Offline Mode แบบเข้ารหัสสำหรับการขายปลีกธรรมดาที่รับเงินสด โดย Server ตรวจซ้ำก่อนออกบิลจริง",
           "เสร็จแล้ว: Q6B Feature parity สำหรับโต๊ะ/เวลา/สมาชิก/ยืมคืนเกม/ชำระเงิน Board Game รวมถึง Stock Transfer และ Stock Count แบบ snapshot-delta",
           "คงเหลือ: ตรวจ printer, scanner, cash drawer, push และ pharmacy evidence บนอุปกรณ์จริง",
           "คงเหลือ: Internal TestFlight / Play distribution และหลักฐาน production recovery/load",
