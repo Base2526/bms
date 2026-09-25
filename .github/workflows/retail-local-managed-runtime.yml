@@ -6,7 +6,10 @@ on:
     paths:
       - "apps/retail-local-agent/**"
       - "apps/desktop/**"
+      - "apps/web/Dockerfile"
       - "deploy/retail-local/managed-runtime/**"
+      - "docker-compose.prod.yml"
+      - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
@@ -44,6 +47,7 @@ jobs:
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
           node --check deploy/retail-local/managed-runtime/sign-release.mjs
           node --check deploy/retail-local/managed-runtime/verify-release.mjs
+          node --check deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs

@@ -61,6 +61,9 @@ never acceptable as a signed release input.
 
 ## Not yet a GA claim
 
+The current gate-by-gate verdict is maintained in
+[Retail Local GA readiness](../../../docs/business/retail-local-ga-readiness.md).
+
 The code path is implemented, but Commercial/GA release promotion remains blocked until all of these
 external release gates are complete:
 
@@ -74,6 +77,20 @@ external release gates are complete:
 Until those gates pass, publish this only as an internal/pilot artifact. The installer deliberately
 refuses to run over an existing installation, preventing accidental secret rotation; a verified
 updater must own that path.
+
+The `stable` channel is mechanically fail-closed as well as documented: `sign-release.mjs` refuses
+to sign it outside an explicitly authorised isolated CI job and requires a release/target/commit-
+matched `promotion-evidence.json`. Every required gate must be `passed`, unexpired, and link to HTTPS
+evidence. Validate the evidence before the signing job with:
+
+```bash
+node deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs \
+  promotion-evidence.json release-descriptor.json
+```
+
+Use `promotion-evidence.example.json` only as a shape reference. Example URLs and assertions are not
+evidence. This guard prevents an accidental GA label; it does not manufacture the missing signing,
+hardware, recovery, licensing-control-plane, or clean-machine results.
 
 Run the Linux candidate check with:
 

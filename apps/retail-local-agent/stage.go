@@ -43,7 +43,10 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 	}
 	defer unlock()
 
-	statePath := filepath.Join(root, "install-state.json")
+	// Install/update progress belongs to one immutable release. A global state file made every
+	// subsequent version look like a conflicting interrupted install and therefore made the
+	// documented updater path impossible.
+	statePath := filepath.Join(releaseRoot, "install-state.json")
 	state, err := loadOrCreateState(statePath, verified.Payload)
 	if err != nil {
 		return nil, err

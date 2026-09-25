@@ -59,6 +59,8 @@ postgres_ref="bms/retail-local-postgres:16-alpine-$version"
 redis_ref="bms/retail-local-redis:7-alpine-$version"
 
 docker buildx build --platform linux/amd64 --provenance=false --load \
+  --build-arg NEXT_BUILD_CPUS="${NEXT_BUILD_CPUS:-2}" \
+  --build-arg NODE_BUILD_MAX_OLD_SPACE_SIZE="${NODE_BUILD_MAX_OLD_SPACE_SIZE:-4096}" \
   --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
   --build-arg NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql \
   --build-arg NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql \

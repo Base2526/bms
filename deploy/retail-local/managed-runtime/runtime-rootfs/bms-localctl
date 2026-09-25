@@ -23,7 +23,12 @@ case "${1:-}" in
     require_runtime
     docker info >/dev/null 2>&1 || die "Moby/Docker ไม่พร้อม"
     $compose config --quiet
-    $compose ps --status running postgres redis web ws | grep -q . || die "service หลักไม่ได้ทำงาน"
+    for service in postgres redis web ws; do
+      service_id=$($compose ps --status running -q "$service")
+      [ -n "$service_id" ] || die "service $service ไม่ได้ทำงาน"
+      health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$service_id")
+      case "$health" in running|healthy) ;; *) die "service $service ไม่พร้อม: $health";; esac
+    done
     wget -q -T 5 -O /dev/null http://127.0.0.1:3100/admin/login || die "Web health check ไม่ผ่าน"
     wget -q -T 5 -O /dev/null http://127.0.0.1:3101/readyz || die "WS health check ไม่ผ่าน"
     echo "BMS Retail Local: healthy"

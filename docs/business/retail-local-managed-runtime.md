@@ -1,5 +1,7 @@
 # BMS Retail Local Managed Runtime
 
+Current Commercial/GA evidence status: [Retail Local GA readiness](retail-local-ga-readiness.md).
+
 Managed Runtime is the commercial self-install direction for Retail Local. The customer downloads one
 signed installer, supplies shop/owner/password/PIN details, and reaches a paired POS without handling
 Docker Desktop, WSL, Compose, ports, environment files, or a raw device token.
@@ -114,3 +116,5 @@ This is release-candidate engineering, not a GA declaration. Promotion to `stabl
 production signing trust root, signed OS packages, a transactional updater, a replacement-machine
 restore drill, and a clean-machine evidence matrix for every target. Windows 10 22H2 is
 never promoted without current ESU evidence; ordinary out-of-support Windows 10 remains unsupported.
+The stable signer enforces these claims through a release/target/commit-matched, unexpired promotion
+evidence file; a pilot build or a self-authored checklist is not accepted as GA evidence.
