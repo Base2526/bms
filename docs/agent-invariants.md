@@ -591,8 +591,12 @@ deployment profile. The operator contract and remaining release gates live in
   as `TRIAL_EXPIRED` for human follow-up while every installed local operation continues. Keep
   commercial state separate from evidence-review state, preserve the same installation and data on
   paid conversion, and append an actor/reason audit row for extension, conversion, payment review,
-  reactivation or cancellation. Never return trial state from evidence ingestion as an entitlement
-  decision that the host could use to sanction the shop.
+  reactivation or cancellation. A one-use activation exchange may configure evidence delivery, but
+  failure or expiry must leave install and runtime success unchanged. Recovery carries only the
+  non-secret license reference and uses a new activation code plus a reviewable transfer event; it
+  never copies an evidence private key or bearer token. Never return trial state from evidence
+  ingestion as an entitlement decision that the host could use to sanction the shop, and never put
+  trial/commercial state on a customer receipt, bill, tax document, or kitchen ticket.
 
 ## Restaurant POS (dine-in)
 

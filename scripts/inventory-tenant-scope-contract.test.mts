@@ -142,6 +142,7 @@ const ROUTE_GUARDS = [
 const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
+  ["app/api/bms/retail-local/activate/route.ts", "ตัวติดตั้งแลก one-use activation code ที่ entropy สูง; ไม่รู้ tenant และมี rate limit"],
   ["app/api/bms/restaurant-qr/[token]/route.ts", "ลูกค้าสแกนรหัสโต๊ะเพื่อเริ่ม session ที่ผูกกับบิล OPEN"],
   ["app/api/bms/restaurant-qr/menu/route.ts", "ลูกค้าที่มี table session อ่านเมนูสาขา"],
   ["app/api/bms/restaurant-qr/menu-item/route.ts", "ลูกค้าที่มี table session อ่านตัวเลือกเมนู"],

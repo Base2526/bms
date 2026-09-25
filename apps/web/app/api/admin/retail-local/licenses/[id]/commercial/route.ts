@@ -29,6 +29,7 @@ async function handlePOST(request: NextRequest, context: { params: { id: string 
     }
     const result = await updateRetailLocalLicenseCommercialState({
       licenseId: context.params.id,
+      operationId: String(body?.operationId ?? ""),
       action,
       extensionDays: body?.extensionDays,
       reason: String(body?.reason ?? ""),

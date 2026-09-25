@@ -12,6 +12,7 @@ on:
       - "apps/web/Dockerfile"
       - "db/migrations/10.16__bms_retail_local_license_control_plane.sql"
       - "db/migrations/10.17__bms_retail_local_trial_lifecycle.sql"
+      - "db/migrations/10.18__bms_retail_local_activation_and_followup.sql"
       - "deploy/retail-local/managed-runtime/**"
       - "docker-compose.prod.yml"
       - "docs/business/retail-local*.md"
@@ -26,6 +27,20 @@ jobs:
   linux-contract:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: bms_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d bms_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -42,6 +57,29 @@ jobs:
           go vet ./...
           GOOS=linux GOARCH=amd64 go build -o /tmp/bms-runtime-agent .
           GOOS=windows GOARCH=amd64 go build -o /tmp/bms-runtime-agent.exe .
+      - name: Install Web contract-test dependencies
+        working-directory: apps/web
+        run: npm ci --ignore-scripts
+      - name: Test licensing control plane contract
+        run: node scripts/run-contract-tests.mjs pure retail-local-license-control-plane
+      - name: Test licensing migration and database contract
+        env:
+          PGPASSWORD: testpass
+          PGHOST: 127.0.0.1
+          PGPORT: 5432
+          PGDATABASE: bms_test
+          PGUSER: postgres
+          POSTGRES_HOST: 127.0.0.1
+          POSTGRES_PORT: 5432
+          POSTGRES_DB: bms_test
+          POSTGRES_USER: postgres
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE ROLE bms_app;'
+          psql -v ON_ERROR_STOP=1 < db/init.sql
+          psql -v ON_ERROR_STOP=1 < db/migrations/10.16__bms_retail_local_license_control_plane.sql
+          psql -v ON_ERROR_STOP=1 < db/migrations/10.17__bms_retail_local_trial_lifecycle.sql
+          psql -v ON_ERROR_STOP=1 < db/migrations/10.18__bms_retail_local_activation_and_followup.sql
+          node scripts/run-contract-tests.mjs db retail-local-license-db-contract
       - name: Validate shell and release contracts
         run: |
           bash -n deploy/retail-local/managed-runtime/linux/*.sh
@@ -68,6 +106,7 @@ jobs:
           node --input-type=module -e 'import {generateKeyPairSync} from "node:crypto"; import {writeFileSync} from "node:fs"; const {publicKey}=generateKeyPairSync("ed25519"); writeFileSync(process.argv[1],JSON.stringify({formatVersion:1,keys:{"ci-only":publicKey.export({type:"spki",format:"pem"}).toString()}}));' "$RUNNER_TEMP/bms-signing/keyring.json"
           deploy/retail-local/managed-runtime/linux/build-deb.sh \
             --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+            --activation-url https://control.example.com/api/bms/retail-local/activate \
             --version 0.2.0-ci.1 --output-dir "$RUNNER_TEMP/bms-package"
           package=$(find "$RUNNER_TEMP/bms-package" -name '*.deb' -type f -print -quit)
           dpkg-deb --info "$package"
@@ -76,6 +115,9 @@ jobs:
           "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" version
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/bin/bms-retail-local-update"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/bin/bms-retail-local-backup-status"
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/sbin/bms-retail-local-activate"
+          grep -Fx 'https://control.example.com/api/bms/retail-local/activate' \
+            "$RUNNER_TEMP/bms-package/extracted/etc/bms-retail-local/activation-url"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/sbin/bms-retail-local-configure-backup"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh"
           test -f "$RUNNER_TEMP/bms-package/extracted/lib/systemd/system/bms-retail-local-offhost-backup.timer"
@@ -113,5 +155,6 @@ jobs:
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DBuildRoot=$bundle" "/DOutputRoot=$env:RUNNER_TEMP" "/DProductVersion=0.0.0-ci" `
             "/DManifestUri=https://release.example.invalid/release.jws.json" `
+            "/DActivationUri=https://control.example.com/api/bms/retail-local/activate" `
             "$bundle\BMSRetailLocal.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

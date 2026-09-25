@@ -10,6 +10,9 @@
 #ifndef ManifestUri
   #error ManifestUri preprocessor define is required
 #endif
+#ifndef ActivationUri
+  #define ActivationUri ""
+#endif
 
 [Setup]
 AppId={{D6E7A532-27C1-4A69-A2B1-C73B23323431}
@@ -41,6 +44,7 @@ Source: "{#BuildRoot}\restore-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-l
 Source: "{#BuildRoot}\configure-offhost-backup.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\run-offhost-backup.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\offhost-backup-status.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
+Source: "{#BuildRoot}\activate-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\uninstall-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\uninstall-managed-runtime.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-localctl"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
@@ -48,7 +52,7 @@ Source: "{#BuildRoot}\..\runtime-rootfs\bms-update-transaction"; DestDir: "{tmp}
 
 [Run]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\bms-retail-local\install-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"""; \
+  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\bms-retail-local\install-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"" -ActivationUri ""{#ActivationUri}"""; \
   StatusMsg: "กำลังติดตั้ง BMS Retail Local..."; Flags: waituntilterminated
 
 [Icons]
@@ -64,6 +68,9 @@ Name: "{commonprograms}\BMS Retail Local\Configure Off-host Backup"; \
 Name: "{commonprograms}\BMS Retail Local\Off-host Backup Status"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\offhost-backup-status.ps1"""; Flags: runmaximized
+Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
+  Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+  Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\activate-managed-runtime.ps1"" -ActivationUri ""{#ActivationUri}"""; Flags: runmaximized
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \

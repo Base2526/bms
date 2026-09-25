@@ -215,12 +215,17 @@ test("scheduled off-host backups are encrypted, separate, retained, and visibly 
 test("Linux bootstrap package stays small and never packages a release private key", () => {
   const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");
+  const activation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
   assert.match(builder, /CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build/);
   assert.match(builder, /Architecture: amd64/);
   assert.match(builder, /trusted-release-keys\.json/);
   assert.doesNotMatch(builder, /private[-_]key|PRIVATE KEY|sign-release/);
   assert.match(setup, /release-manifest-url/);
+  assert.match(setup, /Activation Code/);
   assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
+  assert.match(builder, /bms-retail-local-activate/);
+  assert.match(activation, /TRANSFER_REQUESTED/);
+  assert.match(activation, /\.licenseCode = \$licenseCode/);
 });
 
 test("Linux release preparation builds all signed payload components before signing", () => {
@@ -267,6 +272,24 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(controlPlaneMigration, /Human back-office review queue[\s\S]*never disables an installed shop/);
 });
 
+test("activation and replacement recovery preserve business continuity without copying bearer credentials", () => {
+  const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const linuxActivation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
+  const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const windowsActivation = read("deploy/retail-local/managed-runtime/windows/activate-managed-runtime.ps1");
+  const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
+
+  assert.match(linuxInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านติดตั้งและใช้งานต่อได้/);
+  assert.match(windowsInstaller, /Activation ยังไม่สำเร็จ[\s\S]*การติดตั้งและการใช้งานร้านจะดำเนินต่อ/);
+  assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
+  assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
+  assert.match(windowsActivation, /runtime-read[\s\S]*\/var\/lib\/bms-retail-local\/installation\.json/);
+  assert.match(localctl, /installation\.json/);
+  assert.doesNotMatch(localctl, /license-evidence|evidenceToken|ingestionToken/);
+  assert.match(linuxInstaller, /licenseCode/);
+  assert.match(windowsInstaller, /licenseCode/);
+});
+
 test("stable promotion requires current external evidence for every GA gate", () => {
   const target = "ubuntu-24.04-lts-x64";
   const descriptor = {
@@ -293,6 +316,26 @@ test("stable promotion requires current external evidence for every GA gate", ()
   assert.throws(() => verifyPromotionEvidence(evidence, { ...descriptor, sourceCommit: "b".repeat(40) },
     new Date("2026-09-26T00:00:00Z")), /sourceCommit/);
   assert.throws(() => verifyPromotionEvidence(evidence, descriptor, new Date("2027-02-01T00:00:00Z")), /หมดอายุ/);
+  assert.throws(() => verifyPromotionEvidence(
+    { ...evidence, platformTarget: "ubuntu-99.99-lts-x64" },
+    { ...descriptor, platformTarget: "ubuntu-99.99-lts-x64" },
+    new Date("2026-09-26T00:00:00Z"),
+  ), /support matrix/);
+
+  const esuTarget = "windows-10-22h2-esu-x64";
+  const esuDescriptor = { ...descriptor, platformTarget: esuTarget };
+  const esuBaseIds = ids.filter((id) => id !== `clean-install-${target}` && id !== "linux-package-signing")
+    .concat(`clean-install-${esuTarget}`, "windows-authenticode");
+  const esuEvidence = {
+    ...evidence,
+    platformTarget: esuTarget,
+    gates: esuBaseIds.map((id) => ({
+      id, status: "passed", verifiedAt: "2026-09-25T00:00:00Z",
+      validUntil: "2027-01-01T00:00:00Z", evidence: [`https://evidence.example/${id}`],
+    })),
+  };
+  assert.throws(() => verifyPromotionEvidence(esuEvidence, esuDescriptor,
+    new Date("2026-09-26T00:00:00Z")), /windows-10-esu/);
 
   const signer = read("deploy/retail-local/managed-runtime/sign-release.mjs");
   assert.match(signer, /descriptor\.channel === "stable"[\s\S]*promotionEvidencePath/);

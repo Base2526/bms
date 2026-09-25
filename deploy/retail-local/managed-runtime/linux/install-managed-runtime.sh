@@ -160,6 +160,32 @@ operator_gid=$(id -g "$operator")
 device_token=$(jq -er '.deviceToken // empty' <<<"$provision_result" || true)
 tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
 pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
+
+# Redeem the one-time activation code after the authoritative local shop identity exists. The
+# exchange is best-effort and never changes installation success or any local transaction path.
+if [[ -z ${BMS_LICENSE_ID:-} && -n ${BMS_ACTIVATION_URI:-} && -n ${BMS_ACTIVATION_CODE:-} ]]; then
+  if ! is_https_url "$BMS_ACTIVATION_URI"; then
+    printf 'คำเตือน: Activation URL ไม่ปลอดภัย; ข้าม Activation และให้ร้านใช้งานต่อ\n' >&2
+  elif activation_result=$(curl --fail --silent --show-error --max-time 15 \
+      -H 'Content-Type: application/json' \
+      --data "$(jq -cn --arg activationCode "$BMS_ACTIVATION_CODE" '{activationCode:$activationCode}')" \
+      "$BMS_ACTIVATION_URI" 2>/dev/null); then
+    if license_id=$(jq -er '.licenseCode' <<<"$activation_result") && \
+       evidence_endpoint=$(jq -er '.evidenceEndpoint' <<<"$activation_result") && \
+       evidence_token=$(jq -er '.ingestionToken' <<<"$activation_result") && \
+       is_https_url "$evidence_endpoint"; then
+      export BMS_LICENSE_ID="$license_id"
+      export BMS_LICENSE_EVIDENCE_ENDPOINT="$evidence_endpoint"
+      export BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token"
+      printf 'Activation สำเร็จ\n'
+    else
+      printf 'คำเตือน: Activation response ไม่ถูกต้อง แต่ร้านติดตั้งและใช้งานต่อได้\n' >&2
+    fi
+  else
+    printf 'คำเตือน: Activation ยังไม่สำเร็จ แต่ร้านติดตั้งและใช้งานต่อได้; ติดต่อ Support ภายหลัง\n' >&2
+  fi
+fi
+unset BMS_ACTIVATION_CODE activation_result license_id evidence_endpoint evidence_token
 if [[ -n $device_token && $operator != root ]]; then
   handoff_path="/run/user/$operator_uid/bms-pairing-handoff.json"
   install -d -m 0700 -o "$operator_uid" -g "$operator_gid" "/run/user/$operator_uid"
@@ -178,7 +204,8 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
   --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
   --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId}' \
+  --arg licenseCode "${BMS_LICENSE_ID:-}" \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
 

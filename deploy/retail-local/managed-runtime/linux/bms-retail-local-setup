@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 readonly bundle_root=/usr/lib/bms-retail-local/bootstrap
 readonly release_url_file=/etc/bms-retail-local/release-manifest-url
+readonly activation_url_file=/etc/bms-retail-local/activation-url
 
 manifest_uri=${1:-}
 if [[ -z $manifest_uri && -f $release_url_file ]]; then
@@ -12,5 +13,15 @@ if [[ -z $manifest_uri ]]; then
   echo "ยังไม่ได้กำหนด release channel URL" >&2
   echo "usage: sudo bms-retail-local-setup https://release.example/release.jws.json" >&2
   exit 2
+fi
+activation_uri=
+if [[ -f $activation_url_file ]]; then
+  activation_uri=$(tr -d '\r\n' <"$activation_url_file")
+fi
+if [[ -n $activation_uri ]]; then
+  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' activation_code
+  printf '\n'
+  export BMS_ACTIVATION_URI="$activation_uri"
+  export BMS_ACTIVATION_CODE="$activation_code"
 fi
 exec "$bundle_root/install-managed-runtime.sh" "$manifest_uri" "$bundle_root"

@@ -73,6 +73,33 @@ test("license schema is append-only evidence and never a runtime entitlement gat
   assert.doesNotMatch(service, /bms_orders|bms_inventory|bms_payments|read.only|kill.switch/i);
 });
 
+test("one-time activation and trial follow-ups are control-plane only", () => {
+  const migration = readFileSync(new URL("../db/migrations/10.18__bms_retail_local_activation_and_followup.sql", import.meta.url), "utf8");
+  const activationRoute = readFileSync(new URL("../apps/web/app/api/bms/retail-local/activate/route.ts", import.meta.url), "utf8");
+  const issueRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/[id]/activation/route.ts", import.meta.url), "utf8");
+  const followUpRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/[id]/follow-ups/[followUpId]/acknowledge/route.ts", import.meta.url), "utf8");
+
+  assert.match(migration, /bootstrap_tokens[\s\S]*token_hash[\s\S]*consumed_at/);
+  assert.match(migration, /operation_id[\s\S]*UNIQUE INDEX/);
+  assert.match(migration, /trial_followups[\s\S]*14, 7, 1, 0/);
+  assert.match(migration, /never an entitlement, receipt or tax-document input/i);
+  assert.match(activationRoute, /rateLimit/);
+  assert.match(activationRoute, /payload_too_large/);
+  assert.match(issueRoute, /authorizePlatformAdminRoute/);
+  assert.match(issueRoute, /ISSUE-RETAIL-LOCAL-ACTIVATION/);
+  assert.match(followUpRoute, /authorizePlatformAdminRoute/);
+});
+
+test("trial state never contaminates receipts, bills, or tax documents", () => {
+  const customerDocuments = [
+    "../apps/web/lib/bms/taxDocuments.ts",
+    "../apps/web/lib/bms/receiptDelivery.ts",
+    "../apps/web/lib/pos/receiptI18n.ts",
+    "../apps/web/app/api/pos/send-receipt/route.ts",
+  ].map((path) => readFileSync(new URL(path, import.meta.url), "utf8")).join("\n");
+  assert.doesNotMatch(customerDocuments, /retailLocalLicens|bms_retail_local|TRIAL_(?:ACTIVE|EXPIRING|EXPIRED)/i);
+});
+
 test("30-day trials derive customer-friendly commercial follow-up states without a runtime lease", () => {
   assert.equal(RETAIL_LOCAL_TRIAL_DAYS, 30);
   const now = new Date("2026-09-25T00:00:00.000Z");
@@ -127,6 +154,7 @@ test("trial issuance and lifecycle changes stay platform-admin-only and explicit
   assert.match(commercialRoute, /authorizePlatformAdminRoute/);
   assert.match(commercialRoute, /CONVERT-RETAIL-LOCAL-TO-PAID/);
   assert.match(commercialRoute, /EXTEND-RETAIL-LOCAL-TRIAL/);
+  assert.match(commercialRoute, /operationId/);
   assert.match(commercialRoute, /reason/);
   assert.match(trialMigration, /bms_retail_local_license_commercial_events/);
   assert.match(trialMigration, /Append-only audit of human commercial actions/);

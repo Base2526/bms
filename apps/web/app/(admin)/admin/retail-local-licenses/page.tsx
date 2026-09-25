@@ -41,6 +41,7 @@ type LicenseRow = {
   customer_reference: string | null;
   status: string;
   license_type: "TRIAL" | "PAID";
+  commercial_status: "TRIAL_ACTIVE" | "PAID_ACTIVE" | "PAYMENT_REVIEW" | "CANCELLED";
   effective_commercial_status: EffectiveStatus;
   trial_started_at: string | null;
   trial_expires_at: string | null;
@@ -48,6 +49,7 @@ type LicenseRow = {
   max_active_installations: number;
   active_installation_count: number;
   open_review_count: number;
+  due_follow_up_count: number;
   last_seen_at: string | null;
 };
 
@@ -93,11 +95,16 @@ export default function RetailLocalLicensesPage() {
   const [actionTarget, setActionTarget] = useState<LicenseRow | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [action, setAction] = useState<CommercialAction>("EXTEND_TRIAL");
+  const [actionOperationId, setActionOperationId] = useState("");
+  const [activationBusyId, setActivationBusyId] = useState<string | null>(null);
+  const [followUpTarget, setFollowUpTarget] = useState<any>(null);
+  const [followUpBusy, setFollowUpBusy] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [detailBusy, setDetailBusy] = useState(false);
   const [createForm] = Form.useForm();
   const [actionForm] = Form.useForm();
+  const [followUpForm] = Form.useForm();
 
   const copy = th ? {
     title: "License BMS Retail Local",
@@ -115,8 +122,8 @@ export default function RetailLocalLicensesPage() {
     details: "รายละเอียด",
     noExpiry: "ไม่มีวันหมดอายุ",
     issueTitle: "ออก License ใหม่",
-    tokenTitle: "เก็บ Token นี้ทันที",
-    tokenWarning: "Token แสดงครั้งเดียว ใช้ส่งผ่าน commercial bootstrap เท่านั้น ห้ามส่งใน log หรืออีเมล",
+    tokenTitle: "เก็บ Activation Code นี้ทันที",
+    tokenWarning: "Activation Code แสดงครั้งเดียวและหมดอายุภายใน 7 วัน ให้ลูกค้ากรอกในตัวติดตั้งเท่านั้น ห้ามส่งใน log หรืออีเมล",
     failOpen: "Trial หมดอายุหรืออยู่ระหว่างตรวจสอบจะไม่หยุด POS, การชำระเงิน, สต็อก, รายงาน, backup, restore หรือการเข้าถึงข้อมูลของร้าน",
     saved: "บันทึกเรียบร้อย",
   } : {
@@ -135,8 +142,8 @@ export default function RetailLocalLicensesPage() {
     details: "Details",
     noExpiry: "No expiry",
     issueTitle: "Issue a license",
-    tokenTitle: "Save this token now",
-    tokenWarning: "The token is shown once. Deliver it through the commercial bootstrap only; never put it in logs or email.",
+    tokenTitle: "Save this activation code now",
+    tokenWarning: "The one-time activation code expires in seven days. Enter it only in the installer; never put it in logs or email.",
     failOpen: "Trial expiry or review never interrupts POS, payments, stock, reports, backup, restore, or access to the shop's data.",
     saved: "Saved",
   };
@@ -161,6 +168,7 @@ export default function RetailLocalLicensesPage() {
     expiring: rows.filter((row) => row.effective_commercial_status === "TRIAL_EXPIRING").length,
     expired: rows.filter((row) => row.effective_commercial_status === "TRIAL_EXPIRED").length,
     review: rows.reduce((sum, row) => sum + Number(row.open_review_count || 0), 0),
+    followUps: rows.reduce((sum, row) => sum + Number(row.due_follow_up_count || 0), 0),
   }), [rows]);
 
   const issueLicense = async () => {
@@ -191,7 +199,9 @@ export default function RetailLocalLicensesPage() {
         method: "POST",
         body: JSON.stringify({
           action,
-          extensionDays: action === "EXTEND_TRIAL" ? values.extensionDays : undefined,
+          operationId: actionOperationId,
+          extensionDays: ["EXTEND_TRIAL", "REACTIVATE"].includes(action) && actionTarget.license_type === "TRIAL"
+            ? values.extensionDays : undefined,
           reason: values.reason,
           confirmation: CONFIRMATIONS[action],
         }),
@@ -204,6 +214,43 @@ export default function RetailLocalLicensesPage() {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
       setActionBusy(false);
+    }
+  };
+
+  const issueActivation = async (row: LicenseRow) => {
+    setActivationBusyId(row.id);
+    try {
+      const result = await jsonRequest<any>(`/api/admin/retail-local/licenses/${row.id}/activation`, {
+        method: "POST",
+        body: JSON.stringify({ confirmation: "ISSUE-RETAIL-LOCAL-ACTIVATION" }),
+      });
+      setIssued({ ...result, licenseCode: row.license_code });
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActivationBusyId(null);
+    }
+  };
+
+  const acknowledgeFollowUp = async () => {
+    if (!detail?.license?.id || !followUpTarget) return;
+    const values = await followUpForm.validateFields();
+    setFollowUpBusy(true);
+    try {
+      await jsonRequest(`/api/admin/retail-local/licenses/${detail.license.id}/follow-ups/${followUpTarget.id}/acknowledge`, {
+        method: "POST",
+        body: JSON.stringify({ note: values.note }),
+      });
+      message.success(copy.saved);
+      setFollowUpTarget(null);
+      followUpForm.resetFields();
+      const refreshed = await jsonRequest(`/api/admin/retail-local/licenses/${detail.license.id}`);
+      setDetail(refreshed);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setFollowUpBusy(false);
     }
   };
 
@@ -245,7 +292,7 @@ export default function RetailLocalLicensesPage() {
     {
       title: copy.expiry,
       key: "expiry",
-      width: 190,
+      width: 280,
       render: (_: unknown, row: LicenseRow) => row.license_type === "TRIAL" ? (
         <Space direction="vertical" size={0}>
           <span>{formatDate(row.trial_expires_at)}</span>
@@ -266,9 +313,21 @@ export default function RetailLocalLicensesPage() {
       render: (_: unknown, row: LicenseRow) => (
         <Space>
           <Button size="small" onClick={() => void openDetails(row)}>{copy.details}</Button>
+          <Button size="small" loading={activationBusyId === row.id} disabled={row.commercial_status === "CANCELLED"}
+            onClick={() => Modal.confirm({
+              title: th ? "ออก Activation Code ใหม่?" : "Issue a new activation code?",
+              content: th
+                ? "Code เดิมที่ยังไม่ถูกใช้จะใช้ไม่ได้ทันที"
+                : "Any older unused activation code will stop working immediately.",
+              okText: th ? "ออก Code ใหม่" : "Issue new code",
+              onOk: () => issueActivation(row),
+            })}>Activation</Button>
           <Button size="small" icon={<SettingOutlined />} onClick={() => {
             setActionTarget(row);
-            setAction(row.license_type === "TRIAL" ? "EXTEND_TRIAL" : "MARK_PAYMENT_REVIEW");
+            setAction(["CANCELLED", "PAYMENT_REVIEW"].includes(row.commercial_status)
+              ? "REACTIVATE"
+              : row.license_type === "TRIAL" ? "EXTEND_TRIAL" : "MARK_PAYMENT_REVIEW");
+            setActionOperationId(crypto.randomUUID());
           }}>{copy.actions}</Button>
         </Space>
       ),
@@ -292,10 +351,11 @@ export default function RetailLocalLicensesPage() {
       {loadError && <Alert type="error" showIcon closable message={loadError} style={{ marginBottom: 16 }} />}
 
       <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-        <Col xs={12} md={6}><Card size="small"><Statistic title={th ? "Trial ทั้งหมด" : "All trials"} value={stats.trials} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title={th ? "ใกล้หมด" : "Expiring"} value={stats.expiring} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title={th ? "หมด Trial" : "Expired"} value={stats.expired} /></Card></Col>
-        <Col xs={12} md={6}><Card size="small"><Statistic title={th ? "รอตรวจสอบ" : "Open reviews"} value={stats.review} /></Card></Col>
+        <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "Trial ทั้งหมด" : "All trials"} value={stats.trials} /></Card></Col>
+        <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "ใกล้หมด" : "Expiring"} value={stats.expiring} /></Card></Col>
+        <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "หมด Trial" : "Expired"} value={stats.expired} /></Card></Col>
+        <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "ต้องติดตาม" : "Due follow-ups"} value={stats.followUps} /></Card></Col>
+        <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "รอตรวจสอบ" : "Open reviews"} value={stats.review} /></Card></Col>
       </Row>
 
       <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} scroll={{ x: 1150 }} pagination={{ pageSize: 20 }} />
@@ -322,30 +382,38 @@ export default function RetailLocalLicensesPage() {
         <Alert type="warning" showIcon closable message={copy.tokenWarning} style={{ marginBottom: 12 }} />
         <Descriptions column={1} size="small" bordered>
           <Descriptions.Item label="License"><Typography.Text copyable>{issued?.licenseCode}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="Token">
+          <Descriptions.Item label="Activation Code">
             <Typography.Paragraph code copyable={{ icon: <CopyOutlined /> }} style={{ wordBreak: "break-all", margin: 0 }}>
-              {issued?.ingestionToken}
+              {issued?.activationCode}
             </Typography.Paragraph>
           </Descriptions.Item>
+          {issued?.activationExpiresAt && <Descriptions.Item label={th ? "Code หมดอายุ" : "Code expires"}>{formatDate(issued.activationExpiresAt)}</Descriptions.Item>}
           {issued?.trialExpiresAt && <Descriptions.Item label={copy.expiry}>{formatDate(issued.trialExpiresAt)}</Descriptions.Item>}
         </Descriptions>
       </Modal>
 
       <Modal title={`${copy.actions} · ${actionTarget?.license_code ?? ""}`} open={Boolean(actionTarget)}
-        onCancel={() => setActionTarget(null)} onOk={() => void applyAction()} confirmLoading={actionBusy} destroyOnClose>
+        onCancel={() => { setActionTarget(null); setActionOperationId(""); actionForm.resetFields(); }}
+        onOk={() => void applyAction()} confirmLoading={actionBusy} destroyOnClose>
         <Form form={actionForm} layout="vertical" initialValues={{ extensionDays: 30 }}>
           <Form.Item label={th ? "การดำเนินการ" : "Action"} required>
-            <Select value={action} onChange={setAction} options={[
-              ...(actionTarget?.license_type === "TRIAL" ? [
+            <Select value={action} onChange={setAction} options={actionTarget ? [
+              ...(actionTarget.license_type === "TRIAL" && actionTarget.commercial_status !== "CANCELLED" ? [
                 { value: "EXTEND_TRIAL", label: th ? "ต่อ Trial" : "Extend trial" },
                 { value: "CONVERT_TO_PAID", label: th ? "แปลงเป็น Paid" : "Convert to paid" },
               ] : []),
-              { value: "MARK_PAYMENT_REVIEW", label: th ? "รอตรวจสอบการชำระ" : "Mark payment review" },
-              { value: "REACTIVATE", label: th ? "เปิดสถานะเชิงพาณิชย์อีกครั้ง" : "Reactivate commercial record" },
-              { value: "CANCEL", label: th ? "ยกเลิกสถานะเชิงพาณิชย์" : "Cancel commercial record" },
-            ]} />
+              ...(!["CANCELLED", "PAYMENT_REVIEW"].includes(actionTarget.commercial_status)
+                ? [{ value: "MARK_PAYMENT_REVIEW", label: th ? "รอตรวจสอบการชำระ" : "Mark payment review" }]
+                : []),
+              ...(["CANCELLED", "PAYMENT_REVIEW"].includes(actionTarget.commercial_status)
+                ? [{ value: "REACTIVATE", label: th ? "เปิดสถานะเชิงพาณิชย์อีกครั้ง" : "Reactivate commercial record" }]
+                : []),
+              ...(actionTarget.commercial_status !== "CANCELLED"
+                ? [{ value: "CANCEL", label: th ? "ยกเลิกสถานะเชิงพาณิชย์" : "Cancel commercial record" }]
+                : []),
+            ] : []} />
           </Form.Item>
-          {action === "EXTEND_TRIAL" && (
+          {["EXTEND_TRIAL", "REACTIVATE"].includes(action) && actionTarget?.license_type === "TRIAL" && (
             <Form.Item name="extensionDays" label={th ? "จำนวนวันที่ต่อ" : "Extension days"}
               rules={[{ required: true }]}>
               <InputNumber min={1} max={90} style={{ width: "100%" }} />
@@ -374,9 +442,31 @@ export default function RetailLocalLicensesPage() {
                 children: <div><b>{event.action}</b> · {event.previous_status || "—"} → {event.next_status}<br /><Typography.Text type="secondary">{formatDate(event.occurred_at)} · {event.reason}</Typography.Text></div>,
               }))} />
             </div>
+            <div>
+              <Typography.Title level={5}>{th ? "งานติดตาม Trial" : "Trial follow-ups"}</Typography.Title>
+              <Table rowKey="id" size="small" pagination={false} dataSource={detail.followUps || []} columns={[
+                { title: th ? "กำหนด" : "Due", dataIndex: "due_at", render: formatDate },
+                { title: th ? "ช่วง" : "Milestone", dataIndex: "milestone_days", render: (days: number) => days === 0 ? (th ? "หมดอายุ" : "Expired") : `${days} day(s)` },
+                { title: copy.status, dataIndex: "status", render: (value: string) => <Tag color={value === "PENDING" ? "gold" : "default"}>{value}</Tag> },
+                { title: "", render: (_: unknown, row: any) => row.is_due && row.status === "PENDING"
+                  ? <Button size="small" onClick={() => setFollowUpTarget(row)}>{th ? "บันทึกว่าติดตามแล้ว" : "Acknowledge"}</Button>
+                  : null },
+              ]} />
+            </div>
           </Space>
         )}
       </Drawer>
+
+      <Modal title={th ? "บันทึกการติดตาม Trial" : "Acknowledge trial follow-up"}
+        open={Boolean(followUpTarget)} onCancel={() => { setFollowUpTarget(null); followUpForm.resetFields(); }}
+        onOk={() => void acknowledgeFollowUp()} confirmLoading={followUpBusy} destroyOnClose>
+        <Form form={followUpForm} layout="vertical">
+          <Form.Item name="note" label={th ? "ผลการติดต่อลูกค้า" : "Customer follow-up note"}
+            rules={[{ required: true, min: 3, max: 500 }]}>
+            <Input.TextArea rows={3} maxLength={500} showCount />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   );
 }

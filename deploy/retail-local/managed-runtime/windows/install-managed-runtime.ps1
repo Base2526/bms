@@ -4,6 +4,7 @@ param(
   [string]$AgentPath = (Join-Path $PSScriptRoot "bms-runtime-agent.exe"),
   [string]$KeyringPath = (Join-Path $PSScriptRoot "trusted-release-keys.json"),
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal"),
+  [string]$ActivationUri,
   [string]$LicenseId,
   [string]$LicenseEvidenceUri,
   [string]$ResumeConfig
@@ -97,6 +98,9 @@ if ($ResumeConfig) {
   $resume = Get-Content -LiteralPath $ResumeConfig -Raw | ConvertFrom-Json
   $ManifestUri = [string]$resume.manifestUri
   $InstallRoot = [string]$resume.installRoot
+  $ActivationUri = if ($resume.PSObject.Properties.Name -contains "activationUri") {
+    [string]$resume.activationUri
+  } else { "" }
   $LicenseId = [string]$resume.licenseId
   $LicenseEvidenceUri = [string]$resume.licenseEvidenceUri
   $LicenseEvidenceToken = if ($resume.PSObject.Properties.Name -contains "licenseEvidenceToken") {
@@ -107,6 +111,7 @@ if ($ResumeConfig) {
 }
 
 Assert-HttpsUri $ManifestUri
+if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) { Assert-HttpsUri $ActivationUri }
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw "InstallRoot ห้ามเป็น root drive" }
 $bootstrapRoot = Join-Path $InstallRoot "bootstrap"
@@ -120,6 +125,7 @@ $installedRestoreScript = Join-Path $bootstrapRoot "restore-managed-runtime.ps1"
 $installedConfigureBackupScript = Join-Path $bootstrapRoot "configure-offhost-backup.ps1"
 $installedRunBackupScript = Join-Path $bootstrapRoot "run-offhost-backup.ps1"
 $installedBackupStatusScript = Join-Path $bootstrapRoot "offhost-backup-status.ps1"
+$installedActivationScript = Join-Path $bootstrapRoot "activate-managed-runtime.ps1"
 $installedUninstallScript = Join-Path $bootstrapRoot "uninstall-managed-runtime.ps1"
 $installedAgent = Join-Path $bootstrapRoot "bms-runtime-agent.exe"
 $installedKeyring = Join-Path $bootstrapRoot "trusted-release-keys.json"
@@ -135,6 +141,7 @@ foreach ($scriptCopy in @(
   @{ Source = (Join-Path $PSScriptRoot "configure-offhost-backup.ps1"); Destination = $installedConfigureBackupScript },
   @{ Source = (Join-Path $PSScriptRoot "run-offhost-backup.ps1"); Destination = $installedRunBackupScript },
   @{ Source = (Join-Path $PSScriptRoot "offhost-backup-status.ps1"); Destination = $installedBackupStatusScript },
+  @{ Source = (Join-Path $PSScriptRoot "activate-managed-runtime.ps1"); Destination = $installedActivationScript },
   @{ Source = (Join-Path $PSScriptRoot "uninstall-managed-runtime.ps1"); Destination = $installedUninstallScript }
 )) {
   if ((Test-Path -LiteralPath $scriptCopy.Source -PathType Leaf) -and
@@ -164,6 +171,34 @@ if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathTy
   exit 0
 }
 
+# Activation is a one-time bootstrap only. Failure stays visible but never prevents setup or later
+# shop operations; support can issue a new activation code after installation.
+if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhiteSpace($LicenseId)) {
+  $activationCode = ConvertTo-PlainSecret (Read-Host "Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง)" -AsSecureString)
+  if (-not [string]::IsNullOrWhiteSpace($activationCode)) {
+    try {
+      $activationBody = @{ activationCode = $activationCode } | ConvertTo-Json -Compress
+      $activation = Invoke-RestMethod -Uri $ActivationUri -Method Post -ContentType "application/json" `
+        -Body $activationBody -TimeoutSec 15
+      $LicenseId = [string]$activation.licenseCode
+      $LicenseEvidenceUri = [string]$activation.evidenceEndpoint
+      $LicenseEvidenceToken = [string]$activation.ingestionToken
+      Assert-NoLineBreak "License ID" $LicenseId
+      Assert-HttpsUri $LicenseEvidenceUri
+      Assert-NoLineBreak "License evidence token" $LicenseEvidenceToken
+      Write-Host "Activation สำเร็จ" -ForegroundColor Green
+    } catch {
+      Write-Warning "Activation ยังไม่สำเร็จ แต่การติดตั้งและการใช้งานร้านจะดำเนินต่อ: $($_.Exception.Message)"
+      $LicenseId = ""
+      $LicenseEvidenceUri = ""
+      $LicenseEvidenceToken = ""
+    } finally {
+      $activationCode = $null
+      $activationBody = $null
+    }
+  }
+}
+
 $preflightOutput = & $installedAgent preflight 2>&1
 $preflightExit = $LASTEXITCODE
 $preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
@@ -186,6 +221,7 @@ if ($preflight.requiresReboot) {
   $resumeJson = [ordered]@{
     manifestUri = $ManifestUri
     installRoot = $InstallRoot
+    activationUri = $ActivationUri
     licenseId = $LicenseId
     licenseEvidenceUri = $LicenseEvidenceUri
     licenseEvidenceToken = $LicenseEvidenceToken
@@ -374,6 +410,7 @@ if ($provisionResult.deviceToken) {
   tenantId = $provisionResult.tenantId
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
+  licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
   -destination "$runtimeData/installation.json" -mode "0600"
