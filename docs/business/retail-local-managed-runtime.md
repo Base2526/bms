@@ -109,12 +109,14 @@ the WSL distribution is destructive and must never occur during an ordinary unin
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
 Ubuntu systemd install, pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
 logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
-definition. The legacy Docker Desktop pilot remains available and unchanged while this path is
-certified.
+definition. It also implements a signed transactional updater: replay/downgrade refusal, verified
+pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback
+or full data restore, and startup recovery for an interrupted runtime transaction. The legacy Docker
+Desktop pilot remains available and unchanged while this path is certified.
 
 This is release-candidate engineering, not a GA declaration. Promotion to `stable` requires a
-production signing trust root, signed OS packages, a transactional updater, a replacement-machine
-restore drill, and a clean-machine evidence matrix for every target. Windows 10 22H2 is
+production signing trust root, signed OS packages, evidenced update/rollback and replacement-machine
+restore drills, and a clean-machine evidence matrix for every target. Windows 10 22H2 is
 never promoted without current ESU evidence; ordinary out-of-support Windows 10 remains unsupported.
 The stable signer enforces these claims through a release/target/commit-matched, unexpired promotion
 evidence file; a pilot build or a self-authored checklist is not accepted as GA evidence.

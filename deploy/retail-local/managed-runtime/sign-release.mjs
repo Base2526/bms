@@ -5,6 +5,8 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { verifyPromotionEvidence } from "./verify-promotion-evidence.mjs";
 
+const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/;
+
 function fail(message) {
   throw new Error(`sign-release: ${message}`);
 }
@@ -49,6 +51,7 @@ export async function createSignedRelease(descriptor, privateKeyPem) {
   ]);
   if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) fail("descriptor ไม่ถูกต้อง");
   for (const key of Object.keys(descriptor)) if (!allowed.has(key)) fail(`descriptor field ไม่รู้จัก: ${key}`);
+  if (!SEMVER.test(descriptor.releaseVersion ?? "")) fail("releaseVersion ต้องเป็น semantic version");
   if (!Array.isArray(descriptor.components)) fail("components ต้องเป็น array");
   const components = [];
   for (const component of descriptor.components) components.push(await componentFromDescriptor(component));

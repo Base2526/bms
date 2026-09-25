@@ -13,6 +13,14 @@ until docker info >/dev/null 2>&1; do
   sleep 1
 done
 
+# A power loss between migration and commit must restore the verified pre-update snapshot before
+# the private runtime is kept alive for the cashier session. First install starts this keepalive
+# before it has written the runtime contract, so that initial empty state is deliberately a no-op.
+if [ -f /var/lib/bms-retail-local/.env ] && [ -f /var/lib/bms-retail-local/compose.yml ]; then
+  /usr/local/sbin/bms-update-transaction recover
+  /usr/local/bin/bms-localctl start
+fi
+
 # WSL systemd units do not keep a distribution alive. The Windows scheduled
 # task owns this foreground process and restarts it at operator logon.
 exec sleep infinity

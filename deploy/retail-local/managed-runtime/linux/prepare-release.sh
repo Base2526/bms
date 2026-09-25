@@ -105,7 +105,7 @@ const descriptor = {
   releaseVersion: version,
   channel: "pilot",
   platformTarget: "ubuntu-24.04-lts-x64",
-  minimumAgentVersion: "0.2.0",
+  minimumAgentVersion: "0.4.0",
   schemaVersion: "10.15",
   rollbackSafe: false,
   createdAt,

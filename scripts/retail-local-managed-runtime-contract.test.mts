@@ -278,3 +278,25 @@ test("Web image build memory is configurable without editing release sources", (
     assert.doesNotMatch(dockerfile, new RegExp(`(?:ARG|ENV) ${secret}(?:=|\\s|$)`));
   }
 });
+
+test("installed-shop updates are signed, newer-only, backup-first, and recoverable", () => {
+  const agentMain = read("apps/retail-local-agent/main.go");
+  const release = read("apps/retail-local-agent/release.go");
+  const transaction = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction");
+  const linuxUpdater = read("deploy/retail-local/managed-runtime/linux/update-managed-runtime.sh");
+  const windowsUpdater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
+  const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const wslKeepalive = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive");
+
+  assert.match(agentMain, /case "verify-update"/);
+  assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
+  assert.match(release, /compareSemver/);
+  assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
+  assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
+  assert.match(transaction, /rollback_safe[\s\S]*bms-localctl restore/);
+  assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
+  assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
+  assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
+  assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);
+  assert.match(wslKeepalive, /bms-update-transaction recover/);
+});

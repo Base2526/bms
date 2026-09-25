@@ -108,18 +108,22 @@ if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw "InstallRoot 
 $bootstrapRoot = Join-Path $InstallRoot "bootstrap"
 New-Item -ItemType Directory -Force -Path $bootstrapRoot | Out-Null
 $installationReceipt = Join-Path $InstallRoot "installation.json"
-if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathType Leaf)) {
-  throw "BMS Retail Local ติดตั้งอยู่แล้ว; ห้ามรัน installer ซ้ำเพราะอาจเปลี่ยน secrets ให้ใช้ updater ที่ผ่านการ verify"
-}
 
 $installedScript = Join-Path $bootstrapRoot "install-managed-runtime.ps1"
+$installedUpdateScript = Join-Path $bootstrapRoot "update-managed-runtime.ps1"
 $installedBackupScript = Join-Path $bootstrapRoot "backup-managed-runtime.ps1"
 $installedRestoreScript = Join-Path $bootstrapRoot "restore-managed-runtime.ps1"
 $installedUninstallScript = Join-Path $bootstrapRoot "uninstall-managed-runtime.ps1"
 $installedAgent = Join-Path $bootstrapRoot "bms-runtime-agent.exe"
 $installedKeyring = Join-Path $bootstrapRoot "trusted-release-keys.json"
+$installedLocalCtl = Join-Path $bootstrapRoot "bms-localctl"
+$installedTransaction = Join-Path $bootstrapRoot "bms-update-transaction"
 if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath($installedScript)) {
   Copy-Item -LiteralPath $PSCommandPath -Destination $installedScript -Force
+}
+$sourceUpdateScript = Join-Path $PSScriptRoot "update-managed-runtime.ps1"
+if (Test-Path -LiteralPath $sourceUpdateScript -PathType Leaf) {
+  Copy-Item -LiteralPath $sourceUpdateScript -Destination $installedUpdateScript -Force
 }
 $sourceBackupScript = Join-Path $PSScriptRoot "backup-managed-runtime.ps1"
 if (Test-Path -LiteralPath $sourceBackupScript -PathType Leaf) {
@@ -139,8 +143,20 @@ if ([IO.Path]::GetFullPath($AgentPath) -ne [IO.Path]::GetFullPath($installedAgen
 if ([IO.Path]::GetFullPath($KeyringPath) -ne [IO.Path]::GetFullPath($installedKeyring)) {
   Copy-Item -LiteralPath $KeyringPath -Destination $installedKeyring -Force
 }
+foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
+  $controlSource = Join-Path $PSScriptRoot $controlName
+  $controlDestination = Join-Path $bootstrapRoot $controlName
+  if (Test-Path -LiteralPath $controlSource -PathType Leaf) {
+    Copy-Item -LiteralPath $controlSource -Destination $controlDestination -Force
+  }
+}
 & icacls $InstallRoot /inheritance:r /grant:r "Administrators:(OI)(CI)F" "SYSTEM:(OI)(CI)F" "${env:USERNAME}:(OI)(CI)F" *> $null
 if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
+
+if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathType Leaf)) {
+  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot
+  exit 0
+}
 
 $preflightOutput = & $installedAgent preflight 2>&1
 $preflightExit = $LASTEXITCODE
@@ -219,6 +235,16 @@ do {
   Start-Sleep -Seconds 2
 } while ([DateTime]::UtcNow -lt $deadline)
 if ($LASTEXITCODE -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
+
+foreach ($control in @(
+  @{ Source = $installedLocalCtl; Name = "bms-localctl" },
+  @{ Source = $installedTransaction; Name = "bms-update-transaction" }
+)) {
+  if (-not (Test-Path -LiteralPath $control.Source -PathType Leaf)) { throw "ไม่พบ runtime control $($control.Source)" }
+  & $installedAgent runtime-install-control -engine windows-wsl -distro $distroName `
+    -source $control.Source -name $control.Name
+  if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $($control.Name) ไม่สำเร็จ" }
+}
 
 foreach ($component in @($release.components | Where-Object kind -eq "oci-image")) {
   $artifact = Get-ArtifactPath $release ([string]$component.name)
@@ -334,11 +360,17 @@ if ($provisionResult.deviceToken) {
   version = [string]$release.releaseVersion
   platformTarget = [string]$release.platformTarget
   installedAt = [DateTimeOffset]::Now.ToString("o")
+  updatedAt = [DateTimeOffset]::Now.ToString("o")
+  sourceCommit = [string]$release.sourceCommit
+  schemaVersion = [string]$release.schemaVersion
   url = "http://127.0.0.1:3100"
   tenantId = $provisionResult.tenantId
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
+& $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
+  -destination "$runtimeData/installation.json" -mode "0600"
+if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
 # change installation success, runtime startup, sales, payment, data access, backup, or recovery.

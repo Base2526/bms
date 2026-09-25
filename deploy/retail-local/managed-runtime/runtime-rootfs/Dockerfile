@@ -20,8 +20,9 @@ COPY wsl.conf /etc/wsl.conf
 COPY daemon.json /etc/docker/daemon.json
 COPY bms-wsl-keepalive /usr/local/sbin/bms-wsl-keepalive
 COPY bms-localctl /usr/local/bin/bms-localctl
+COPY bms-update-transaction /usr/local/sbin/bms-update-transaction
 
-RUN chmod 0755 /usr/local/sbin/bms-wsl-keepalive /usr/local/bin/bms-localctl \
+RUN chmod 0755 /usr/local/sbin/bms-wsl-keepalive /usr/local/sbin/bms-update-transaction /usr/local/bin/bms-localctl \
   && mkdir -p /var/lib/bms-retail-local \
   && chmod 0700 /var/lib/bms-retail-local
 
