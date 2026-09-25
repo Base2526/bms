@@ -1042,3 +1042,14 @@ service and is not stored on the PO row. The migration also exposes aggregate ou
 count and oldest unpublished lag through a narrow read function used by System Health. See
 [ADR 001](decisions/001-transactional-realtime-invalidation.md)
 and the [realtime production audit](realtime-production-audit.md).
+
+## Retail Local license evidence control plane (`10.16`)
+
+The five `bms_retail_local_license_*` tables are platform-global operational evidence, not
+tenant-owned shop state. `licenses` owns the commercial identifier and allowed active-installation
+count; `tokens` stores only SHA-256 hashes of issued ingestion credentials; `installations` tracks a
+random installation id and Ed25519 public-key thumbprint; `events` is the append-only signed timeline
+with both device `occurred_at` and server `received_at`; and `reviews` records human resolution of
+limit, key, chain and transfer conflicts. These tables are read and mutated only by the token-bound
+ingestion service and platform-admin routes. No POS, payment, inventory, startup, backup or restore
+query reads them, so an outage or `REVIEW_REQUIRED` state cannot disable a shop.

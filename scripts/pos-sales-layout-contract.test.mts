@@ -18,7 +18,7 @@ test("the sell tab opts into the approved compact 64/36 workspace", () => {
     /\.pos-main-grid--sell\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*64fr\)\s+minmax\(380px,\s*36fr\)\s*!important/,
   );
   assert.match(page, /tab === "sell" \? " pos-sale-basket"/);
-  assert.match(page, /tab === "sell" \? " pos-sale-checkout"/);
+  assert.match(page, /\{tab === "sell" && \(\s*<section className="pos-card pos-pane pos-sale-checkout"/);
 });
 
 test("the basket matches the mockup hierarchy", () => {

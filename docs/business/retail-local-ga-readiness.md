@@ -5,7 +5,7 @@ Assessment date: 2026-09-25. This file records the evidence boundary; it is not 
 ## Verdict
 
 **Not Commercial/GA.** The signed payload, install, and transactional update candidate paths are
-implemented, but external certification/signing/control-plane and real-machine qualification gates
+implemented, but external certification/signing, control-plane deployment and real-machine qualification gates
 remain open. Pilot artifacts must not use the `stable` channel or be represented as generally available.
 
 ## Implemented and covered by repository tests
@@ -19,7 +19,8 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Windows bootstrap definition | Implemented candidate | Windows CI parses scripts and smoke-builds unsigned EXE |
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
-| License evidence | Implemented sender | signed/hash-chained fail-open outbox; receiver/control plane open |
+| Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |
+| License evidence + control plane | Implemented candidate | token-bound ingestion, Ed25519/hash-chain verification, append-only timeline, duplicate review, token rotation and human transfer/deactivation APIs; deployment/ops qualification still required |
 | Stable-channel claim protection | Implemented | stable signer requires unexpired promotion evidence |
 | Transactional installed-shop updater | Implemented candidate | signed newer-only release, encrypted pre-update backup, health-gated commit, rollback/data restore and interrupted-update recovery tests |
 | Consent-gated support diagnostics | Implemented candidate | tenant/device authorization, allowlist redaction, private encrypted-capable storage, retention and dedicated contract suites |
@@ -36,9 +37,9 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Failure recovery | Hardware evidence | Power loss, disk full, forced restart and suspend/resume runs with retained data and auditable outcomes |
 | Peripheral certification | Hardware evidence | Named printer, scanner, drawer and customer-display matrix for each supported target |
 | Clean-machine acceptance | Release evidence | Exact signed release on Windows 11, Windows 10 IoT LTSC 2021 and Ubuntu 24.04; transition targets remain separate |
-| Encrypted off-host backup | Engineering + operations | Scheduled export, retention, restore sampling and customer-visible failure reporting |
+| Encrypted off-host backup qualification | Hardware + operations evidence | Run scheduled export to a real supported destination, alert on a forced failure, restore a retained sample to a replacement host and reconcile totals |
 | Remote diagnostics qualification | Privacy + operations evidence | Verify the existing explicit-consent redacted bundle on the exact local release and approve the support transport/retention procedure |
-| Licensing back office | Engineering + operations | Secure activation binding, evidence ingestion/verification, duplicate review and device-transfer workflow; never a runtime kill switch |
+| Licensing back-office qualification | Deployment + operations evidence | Deploy the token-bound receiver, restrict platform-admin access, exercise duplicate/key/chain alerts plus token rotation and device transfer, and approve the customer-resolution runbook; never a runtime kill switch |
 | Support lifecycle | Operations | Published supported versions, response path, key/package revocation and end-of-support policy |
 
 ## Promotion rule

@@ -24,10 +24,12 @@ platform/release/agent versions, UTC device time, sequence number, prior-event h
 thumbprint. The canonical event is signed with the installation's Ed25519 key. The private key stays
 under the Managed Runtime data ACL and is never included in evidence or backup telemetry.
 
-Events are appended locally and placed in an outbox before delivery. HTTPS failure, timeout, or a
+Events are appended locally and placed in an outbox before delivery. A one-time back-office
+ingestion token binds the claimed license id to the issued license; only its SHA-256 hash is stored
+by the control plane, while the root-only Managed Runtime profile keeps the token. HTTPS failure, timeout, or a
 non-2xx response preserves the event for a later attempt and returns a queued result; it never stops
-the runtime. The receiving control plane adds authoritative `receivedAt` and observed network
-metadata, stores the event append-only, verifies signature/hash-chain/sequence, and opens a
+the runtime. The receiving control plane adds authoritative `receivedAt`, stores the event append-only,
+verifies the bearer binding, Ed25519 signature, device-key thumbprint, hash-chain and sequence, and opens a
 `LICENSE_REVIEW_REQUIRED` case on duplicate or conflicting installations. Staff resolve that case
 with the customer through transfer, reset, or a commercial agreement. Existing installations remain
 operational throughout review. The control plane must not collect raw hardware serials, MAC address,
@@ -47,6 +49,14 @@ task after licensing is configured. Both are explicitly outside service readines
 Until the commercial bootstrap supplies a license id and HTTPS evidence endpoint, the pulse is a
 harmless no-op; absence of licensing configuration is visible to release operations but does not
 turn a candidate build into a production license implementation.
+
+Migration `10.16` and `retailLocalLicensing.ts` implement the platform control-plane candidate. A
+platform administrator can issue a license/token, list licenses, inspect the installation/event
+timeline (`occurredAt` plus authoritative `receivedAt`), rotate a leaked token, and approve,
+deactivate or transfer an installation through `/api/admin/retail-local/licenses`. The ingestion
+token is returned only when issued/rotated and must be delivered through the commercial bootstrap,
+not email or logs. A duplicate/key/chain/limit conflict is accepted as evidence and creates a human
+review; it does not send a sanction to the shop.
 
 ## Platform shape
 
@@ -101,6 +111,13 @@ logical database dump plus stored files, installation metadata, and the exact se
 decrypt credentials. Commercial recovery must be portable to a replacement machine, so machine-only
 DPAPI wrapping cannot be the sole backup key.
 
+Windows and Ubuntu can schedule that logical bundle to a separate destination with age recipient
+encryption. The shop machine stores only the public recipient; the recovery identity stays in a
+separate support/customer vault. The job refuses the Windows system disk or the Ubuntu runtime
+filesystem, writes through a partial file, emits a SHA-256 sidecar, applies bounded retention, and
+records a customer-readable failed/passed status. A passed scheduled copy is still not proof of
+recoverability: stable promotion needs a sampled replacement-machine restore and reconciliation.
+
 Uninstall keeps shop data by default. Permanent erase is a separate, explicit workflow; unregistering
 the WSL distribution is destructive and must never occur during an ordinary uninstall.
 
@@ -109,7 +126,8 @@ the WSL distribution is destructive and must never occur during an ordinary unin
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
 Ubuntu systemd install, pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
 logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
-definition. It also implements a signed transactional updater: replay/downgrade refusal, verified
+definition. It includes scheduled encrypted off-host export, retention, checksums and stale/failure
+reporting on both supported runtime families. It also implements a signed transactional updater: replay/downgrade refusal, verified
 pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback
 or full data restore, and startup recovery for an interrupted runtime transaction. The legacy Docker
 Desktop pilot remains available and unchanged while this path is certified.

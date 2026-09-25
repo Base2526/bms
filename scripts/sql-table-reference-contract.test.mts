@@ -143,6 +143,10 @@ const relationsInSource = (raw: string): Reference[] => {
       const relation = match[1].toLowerCase();
       // `IS NOT DISTINCT FROM i.size` names a column, not a table.
       if (match[2] === ".") continue;
+      // `FROM bms_claim_work($1)` is a table-valued function, not a relation. Function
+      // definitions are checked by migration/database contracts; treating the call as a table
+      // makes every correctly named claim helper look like a missing migration table.
+      if (match[2] === "(") continue;
       if (NOT_A_RELATION.has(relation) || PROVIDED_BY_POSTGRES.test(relation) || ctes.has(relation)) continue;
       refs.push({ relation, line: literal.line });
     }
@@ -204,6 +208,7 @@ test("the scanner reads each SQL shape it claims to read", () => {
       ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id
     \`);
     const i = await query(\`SELECT indexname FROM pg_indexes WHERE tablename = $1\`);
+    const j = await query(\`SELECT * FROM bms_claim_due_work($1)\`);
   `;
 
   const found = relationsInSource(fixture);
@@ -234,6 +239,7 @@ test("the scanner reads each SQL shape it claims to read", () => {
     "set",                 // `DO UPDATE SET`
     "excluded",
     "pg_indexes",          // Postgres provides it
+    "bms_claim_due_work",  // table-valued function call, not a relation
   ]) {
     assert.ok(!names.has(notARelation), `scanner wrongly treated "${notARelation}" as a table`);
   }

@@ -582,7 +582,9 @@ deployment profile. The operator contract and remaining release gates live in
   There is no remote kill switch and no mandatory lease/renewal on a business transaction path.
   The host agent records a minimal Ed25519-signed, hash-chained evidence stream and retries its
   outbox opportunistically; endpoint failure or rejection leaves evidence queued and the shop
-  running. Suspected duplication is `LICENSE_REVIEW_REQUIRED` for back-office/customer resolution,
+  running. The commercial receiver authenticates a one-time-issued ingestion token (hash stored
+  server-side), verifies the Ed25519 signature, key thumbprint, event hash, sequence and prior hash,
+  and stores authoritative receipt time. Suspected duplication is `LICENSE_REVIEW_REQUIRED` for back-office/customer resolution,
   never an automatic runtime sanction. Device private keys, raw hardware serials, MAC addresses,
   GPS and transaction/customer data are not license telemetry.
 

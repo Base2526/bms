@@ -81,7 +81,9 @@ case "${1:-}" in
     valid_version "$version" || die "release version ไม่ถูกต้อง"
     [ "$rollback_safe" = 0 ] || [ "$rollback_safe" = 1 ] || die "rollback-safe ต้องเป็น 0 หรือ 1"
     for ref in "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"; do valid_ref "$ref" || die "image ref ไม่ถูกต้อง"; done
-    [ -f "$root/.env" ] && [ -f "$root/compose.yml" ] && [ -f "$root/installation.json" ] || die "runtime ยังติดตั้งไม่ครบ"
+    if [ ! -f "$root/.env" ] || [ ! -f "$root/compose.yml" ] || [ ! -f "$root/installation.json" ]; then
+      die "runtime ยังติดตั้งไม่ครบ"
+    fi
     [ ! -e "$active" ] || die "มี update transaction ที่ต้อง recover ก่อน"
     directory=$(transaction_dir "$version")
     [ -f "$directory/compose.next.yml" ] || die "ไม่พบ verified compose.next.yml"

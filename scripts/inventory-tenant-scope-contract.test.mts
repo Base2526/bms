@@ -132,6 +132,7 @@ const ROUTE_GUARDS = [
   "verifyLineSignature",
   "channel_secret",
   "getCheckoutByToken",         // ลิงก์ checkout ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
+  "ingestRetailLocalLicenseEvidence", // issued bearer token + signed device evidence; license id from token binding
   "mockWebhookDisabled",        // mock ยุคร้านเดียว — 404 ใน production ยิงได้แค่ dev
 ];
 

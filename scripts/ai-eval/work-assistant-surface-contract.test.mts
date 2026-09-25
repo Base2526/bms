@@ -169,7 +169,7 @@ test("global admin drawer shares proposal mutations and POS-only keeps a non-adm
   assert.match(drawer, /กะนี้ผิดตรงไหน/);
   assert.match(drawer, /ยอด VAT\/tax document ตรงกับยอดขายไหม/);
   assert.doesNotMatch(drawer, /suggestions\.map\(\(item\) => <Button key=\{item\} size="small" onClick=\{\(\) => send\(item\)\}/);
-  assert.match(posLayout, /<PosGuideAssistant \/>/);
+  assert.match(posLayout, /<PosGuideAssistant(?:\s+[^>]*)?\s*\/>/);
   assert.doesNotMatch(posGuide, /gql|\/graphql|bmsWorkAssistant/);
   assert.match(posGuide, /does not access sales data or perform actions/);
 });

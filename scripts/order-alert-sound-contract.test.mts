@@ -293,7 +293,7 @@ test("ออร์เดอร์ออนไลน์ที่เครื่�
   const source = withoutComments(await read("../apps/web/app/(pos)/pos/page.tsx"));
   assert.doesNotMatch(source, /tab !== "incoming" \|\| !token/, "กลับไปดึงเฉพาะตอนเปิดแท็บออร์เดอร์เข้า");
   assert.match(source, /incomingWaitingCount/);
-  assert.match(source, /newAlertIds\(knownIncomingIds\.current, waiting\)[\s\S]{0,40}alerts\.notify\("CHAT_REQUEST"\)/);
+  assert.match(source, /incomingOrderAttentionKeys\(orders\)[\s\S]{0,180}newAlertIds\(knownIncomingActionKeys\.current, actionKeys\)[\s\S]{0,120}alerts\.notify\("CHAT_REQUEST"\)/);
   assert.match(source, /repeat\.play\) alerts\.notify\("CHAT_REQUEST"\)/);
   // ป้ายต้องนับเฉพาะออร์เดอร์ที่ "ยังไม่มีใครกดรับ" (PAID) ไม่ใช่ทุกใบบนจอ —
   // PACKING คือรับแล้วและครัวมีตั๋วไปแล้ว การนับรวมทำให้ป้ายไม่มีวันเป็นศูนย์

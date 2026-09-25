@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$Destination,
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal")

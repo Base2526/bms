@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -104,6 +104,20 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
   assert.doesNotMatch(linux, /apt(?:-get)?\s+install|dnf\s+install|systemctl\s+(?:enable|start)/);
 });
 
+test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
+  const windowsRoot = new URL("../deploy/retail-local/managed-runtime/windows/", import.meta.url);
+  const scripts = readdirSync(windowsRoot).filter((name) => name.endsWith(".ps1"));
+  assert.ok(scripts.length > 0);
+  for (const name of scripts) {
+    const bytes = readFileSync(new URL(name, windowsRoot));
+    assert.deepEqual(
+      [...bytes.subarray(0, 3)],
+      [0xef, 0xbb, 0xbf],
+      `${name} must be UTF-8 with BOM so Windows PowerShell 5.1 does not parse Thai text as ANSI`,
+    );
+  }
+});
+
 test("Managed Runtime keeps authority out of Electron and does not replace the pilot early", () => {
   const runtimeReadme = read("deploy/retail-local/managed-runtime/README.md");
   const design = read("docs/business/retail-local-managed-runtime.md");
@@ -170,6 +184,34 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
 });
 
+test("scheduled off-host backups are encrypted, separate, retained, and visibly monitored", () => {
+  const linuxConfigure = read("deploy/retail-local/managed-runtime/linux/configure-offhost-backup.sh");
+  const linuxRunner = read("deploy/retail-local/managed-runtime/linux/run-offhost-backup.sh");
+  const linuxStatus = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-backup-status");
+  const linuxTimer = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-offhost-backup.timer");
+  const windowsConfigure = read("deploy/retail-local/managed-runtime/windows/configure-offhost-backup.ps1");
+  const windowsRunner = read("deploy/retail-local/managed-runtime/windows/run-offhost-backup.ps1");
+  const windowsStatus = read("deploy/retail-local/managed-runtime/windows/offhost-backup-status.ps1");
+
+  assert.match(linuxConfigure, /mountpoint -q[\s\S]*runtime_device[\s\S]*destination_device/);
+  assert.match(linuxRunner, /bms-localctl backup[\s\S]*--recipient/);
+  assert.match(linuxRunner, /sha256sum[\s\S]*-mtime[\s\S]*-delete/);
+  assert.match(linuxRunner, /write_status failed[\s\S]*write_status passed/);
+  assert.match(linuxStatus, /172800/);
+  assert.match(linuxTimer, /OnCalendar=\*-\*-\* 02:00:00[\s\S]*Persistent=true/);
+
+  assert.match(windowsConfigure, /DriveType[\s\S]*DiskNumber/);
+  assert.match(windowsConfigure, /New-ScheduledTaskTrigger -Daily -At 2am/);
+  assert.match(windowsConfigure, /LogonType Interactive[\s\S]*StartWhenAvailable/);
+  assert.match(windowsRunner, /bms-localctl backup[\s\S]*--recipient/);
+  assert.match(windowsRunner, /runtime-read[\s\S]*Get-FileHash[\s\S]*retentionDays/);
+  assert.match(windowsRunner, /Write-BackupStatus "failed"[\s\S]*finally/);
+  assert.match(windowsStatus, /TotalHours -gt 48/);
+  for (const source of [linuxConfigure, linuxRunner, windowsConfigure, windowsRunner]) {
+    assert.doesNotMatch(source, /license-(?:record|pulse|flush)/);
+  }
+});
+
 test("Linux bootstrap package stays small and never packages a release private key", () => {
   const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");
@@ -200,6 +242,8 @@ test("Retail Local licensing records evidence but can never stop store operation
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
+  const controlPlane = read("apps/web/lib/bms/retailLocalLicensing.ts");
+  const controlPlaneMigration = read("db/migrations/10.16__bms_retail_local_license_control_plane.sql");
   const schema = json("deploy/retail-local/managed-runtime/license-evidence.schema.json");
 
   assert.match(design, /no remote\s+kill switch/i);
@@ -208,6 +252,7 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(invariants, /never stop an already-installed shop/);
   assert.match(agent, /ed25519\.Sign/);
   assert.match(agent, /PreviousEventHash/);
+  assert.match(agent, /Authorization", "Bearer /);
   assert.match(agent, /Deliberately fail-open/);
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
@@ -217,6 +262,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);
   assert.equal(JSON.stringify(schema).includes("gps"), false);
+  assert.match(controlPlane, /crypto\.verify/);
+  assert.match(controlPlane, /EVENT_CHAIN_CONFLICT/);
+  assert.match(controlPlaneMigration, /Human back-office review queue[\s\S]*never disables an installed shop/);
 });
 
 test("stable promotion requires current external evidence for every GA gate", () => {

@@ -88,8 +88,9 @@ if [[ -f $profile ]]; then
     -license-id "$(jq -er '.licenseId' "$profile")" -tenant-id "$(jq -r '.tenantId // empty' "$profile")"
     -pos-device-id "$(jq -r '.posDeviceId // empty' "$profile")" -target "$target" -release-version "$version")
   endpoint=$(jq -r '.evidenceEndpoint // empty' "$profile")
-  [[ -z $endpoint ]] || license_args+=(-endpoint "$endpoint")
-  "$agent" "${license_args[@]}" >/dev/null 2>&1 || true
+  evidence_token=$(jq -r '.evidenceToken // empty' "$profile")
+  [[ -z $endpoint || -z $evidence_token ]] || license_args+=(-endpoint "$endpoint")
+  BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token" "$agent" "${license_args[@]}" >/dev/null 2>&1 || true
 fi
 
 printf 'BMS Retail Local update สำเร็จ: %s -> %s\n' "$current_version" "$version"

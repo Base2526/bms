@@ -6,11 +6,16 @@ on:
     paths:
       - "apps/retail-local-agent/**"
       - "apps/desktop/**"
+      - "apps/web/app/api/admin/retail-local/**"
+      - "apps/web/app/api/bms/retail-local/**"
+      - "apps/web/lib/bms/retailLocalLicensing.ts"
       - "apps/web/Dockerfile"
+      - "db/migrations/10.16__bms_retail_local_license_control_plane.sql"
       - "deploy/retail-local/managed-runtime/**"
       - "docker-compose.prod.yml"
       - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
+      - "scripts/retail-local-license-*.test.mts"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
 permissions:
@@ -69,6 +74,10 @@ jobs:
           dpkg-deb --extract "$package" "$RUNNER_TEMP/bms-package/extracted"
           "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" version
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/bin/bms-retail-local-update"
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/bin/bms-retail-local-backup-status"
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/sbin/bms-retail-local-configure-backup"
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh"
+          test -f "$RUNNER_TEMP/bms-package/extracted/lib/systemd/system/bms-retail-local-offhost-backup.timer"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
           if grep -R -E 'BEGIN .*PRIVATE KEY' "$RUNNER_TEMP/bms-package/extracted"; then exit 1; fi
 

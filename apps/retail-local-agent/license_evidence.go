@@ -30,8 +30,9 @@ const (
 )
 
 var (
-	licenseFieldPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
-	licenseEventTypes   = map[string]bool{
+	licenseFieldPattern         = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`)
+	licenseEvidenceTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{32,256}$`)
+	licenseEventTypes           = map[string]bool{
 		"INSTALLATION_REGISTERED":  true,
 		"RUNTIME_SEEN":             true,
 		"UPDATE_INSTALLED":         true,
@@ -49,6 +50,7 @@ type licenseEvidenceInput struct {
 	PlatformTarget string
 	ReleaseVersion string
 	Endpoint       string
+	EvidenceToken  string
 }
 
 type licenseEvidenceEvent struct {
@@ -91,6 +93,7 @@ type licenseEvidenceProfile struct {
 	PlatformTarget   string `json:"platformTarget"`
 	ReleaseVersion   string `json:"releaseVersion"`
 	EvidenceEndpoint string `json:"evidenceEndpoint,omitempty"`
+	EvidenceToken    string `json:"evidenceToken,omitempty"`
 }
 
 type licenseEvidenceResult struct {
@@ -123,6 +126,9 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 		if err := validateEvidenceEndpoint(input.Endpoint); err != nil {
 			return licenseEvidenceResult{}, err
 		}
+		if !licenseEvidenceTokenPattern.MatchString(input.EvidenceToken) {
+			return licenseEvidenceResult{}, errors.New("license evidence token ไม่ถูกต้อง")
+		}
 	}
 
 	evidenceRoot := filepath.Join(input.Root, "license-evidence")
@@ -139,6 +145,7 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 		FormatVersion: licenseEvidenceFormatVersion, LicenseID: input.LicenseID, TenantID: input.TenantID,
 		POSDeviceID: input.POSDeviceID, PlatformTarget: input.PlatformTarget,
 		ReleaseVersion: input.ReleaseVersion, EvidenceEndpoint: input.Endpoint,
+		EvidenceToken: input.EvidenceToken,
 	}
 	if err := writePrivateJSON(filepath.Join(evidenceRoot, "profile.json"), profile); err != nil {
 		return licenseEvidenceResult{}, fmt.Errorf("เขียน license evidence profile ไม่ได้: %w", err)
@@ -199,7 +206,7 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 	}
 	result := licenseEvidenceResult{OK: true, Recorded: true, EventID: event.EventID, InstallationID: state.InstallationID, Delivery: "local-only", Queued: queued}
 	if input.Endpoint != "" {
-		flushed, flushErr := flushLicenseEvidenceUnlocked(ctx, outboxRoot, input.Endpoint)
+		flushed, flushErr := flushLicenseEvidenceUnlocked(ctx, outboxRoot, input.Endpoint, input.EvidenceToken)
 		if flushErr != nil {
 			return licenseEvidenceResult{}, flushErr
 		}
@@ -225,12 +232,16 @@ func pulseLicenseEvidence(ctx context.Context, root, eventType string) (licenseE
 		Root: root, EventType: eventType, LicenseID: profile.LicenseID, TenantID: profile.TenantID,
 		POSDeviceID: profile.POSDeviceID, PlatformTarget: profile.PlatformTarget,
 		ReleaseVersion: profile.ReleaseVersion, Endpoint: profile.EvidenceEndpoint,
+		EvidenceToken: profile.EvidenceToken,
 	})
 }
 
-func flushLicenseEvidence(ctx context.Context, root, endpoint string) (licenseEvidenceResult, error) {
+func flushLicenseEvidence(ctx context.Context, root, endpoint, evidenceToken string) (licenseEvidenceResult, error) {
 	if err := validateEvidenceEndpoint(endpoint); err != nil {
 		return licenseEvidenceResult{}, err
+	}
+	if !licenseEvidenceTokenPattern.MatchString(evidenceToken) {
+		return licenseEvidenceResult{}, errors.New("license evidence token ไม่ถูกต้อง")
 	}
 	evidenceRoot := filepath.Join(root, "license-evidence")
 	if err := os.MkdirAll(filepath.Join(evidenceRoot, "outbox"), 0700); err != nil {
@@ -241,10 +252,10 @@ func flushLicenseEvidence(ctx context.Context, root, endpoint string) (licenseEv
 		return licenseEvidenceResult{}, err
 	}
 	defer unlock()
-	return flushLicenseEvidenceUnlocked(ctx, filepath.Join(evidenceRoot, "outbox"), endpoint)
+	return flushLicenseEvidenceUnlocked(ctx, filepath.Join(evidenceRoot, "outbox"), endpoint, evidenceToken)
 }
 
-func flushLicenseEvidenceUnlocked(ctx context.Context, outboxRoot, endpoint string) (licenseEvidenceResult, error) {
+func flushLicenseEvidenceUnlocked(ctx context.Context, outboxRoot, endpoint, evidenceToken string) (licenseEvidenceResult, error) {
 	entries, err := os.ReadDir(outboxRoot)
 	if err != nil {
 		return licenseEvidenceResult{}, err
@@ -267,6 +278,7 @@ func flushLicenseEvidenceUnlocked(ctx context.Context, outboxRoot, endpoint stri
 		}
 		request.Header.Set("Content-Type", "application/vnd.bms.license-evidence+json")
 		request.Header.Set("User-Agent", "bms-runtime-agent/"+agentVersion)
+		request.Header.Set("Authorization", "Bearer "+evidenceToken)
 		response, sendErr := client.Do(request)
 		if sendErr != nil {
 			break // Deliberately fail-open: preserve the queue for a later attempt.

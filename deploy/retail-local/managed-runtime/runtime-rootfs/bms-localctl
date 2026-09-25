@@ -4,7 +4,11 @@ set -eu
 root=/var/lib/bms-retail-local
 compose="docker compose --env-file $root/.env -f $root/compose.yml"
 die() { echo "bms-localctl: $*" >&2; exit 1; }
-require_runtime() { [ -f "$root/.env" ] && [ -f "$root/compose.yml" ] || die "runtime ยังไม่ติดตั้งครบ"; }
+require_runtime() {
+  if [ ! -f "$root/.env" ] || [ ! -f "$root/compose.yml" ]; then
+    die "runtime ยังไม่ติดตั้งครบ"
+  fi
+}
 
 case "${1:-}" in
   start)
@@ -74,8 +78,9 @@ case "${1:-}" in
     [ -f "$source_file" ] || die "usage: bms-localctl restore BACKUP.age REPLACE-LOCAL-DATA"
     [ "$confirmation" = "REPLACE-LOCAL-DATA" ] || die "restore ต้องยืนยันด้วย REPLACE-LOCAL-DATA"
     if [ -n "$option" ]; then
-      [ "$option" = "--identity" ] && [ "$identity" = "$root/update-recovery.agekey" ] && [ -f "$identity" ] || \
+      if [ "$option" != "--identity" ] || [ "$identity" != "$root/update-recovery.agekey" ] || [ ! -f "$identity" ]; then
         die "restore identity ไม่ถูกต้อง"
+      fi
     fi
     command -v age >/dev/null 2>&1 || die "ไม่พบ age encryption tool"
     work=$(mktemp -d "$root/.restore.XXXXXX")

@@ -9207,7 +9207,7 @@ export default function PosPage() {
         </section>
 
         {tab === "sell" && (
-        <section className={`pos-card pos-pane${tab === "sell" ? " pos-sale-checkout" : ""}`} style={{ display: "flex", flexDirection: "column" }}>
+        <section className="pos-card pos-pane pos-sale-checkout" style={{ display: "flex", flexDirection: "column" }}>
           <div className="pos-sale-totalbar">
               <div className="pos-total-row">
                 <span className="pos-sale-total-label">ยอดชำระ · {itemCount} ชิ้น</span>

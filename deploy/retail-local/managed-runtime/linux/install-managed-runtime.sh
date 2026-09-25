@@ -64,6 +64,11 @@ install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 install -m 0755 -o root -g root "$bundle_root/uninstall-managed-runtime.sh" /usr/local/sbin/bms-retail-local-uninstall
 install -m 0755 -o root -g root "$bundle_root/update-managed-runtime.sh" /usr/local/sbin/bms-retail-local-update
+install -m 0755 -o root -g root "$bundle_root/run-offhost-backup.sh" /usr/local/sbin/bms-retail-local-offhost-backup
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.service" \
+  /etc/systemd/system/bms-retail-local-offhost-backup.service
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.timer" \
+  /etc/systemd/system/bms-retail-local-offhost-backup.timer
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
@@ -184,8 +189,13 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
   license_args=(license-record -root "$RUNTIME_ROOT" -event INSTALLATION_REGISTERED
     -license-id "$BMS_LICENSE_ID" -tenant-id "$tenant_id" -pos-device-id "$pos_device_id"
     -target "$target" -release-version "$(jq -r '.releaseVersion' <<<"$release_json")")
-  [[ -z ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} ]] || license_args+=(-endpoint "$BMS_LICENSE_EVIDENCE_ENDPOINT")
-  if ! license_result=$($agent "${license_args[@]}" 2>&1); then
+  if [[ -n ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} && -n ${BMS_LICENSE_EVIDENCE_TOKEN:-} ]]; then
+    license_args+=(-endpoint "$BMS_LICENSE_EVIDENCE_ENDPOINT")
+  elif [[ -n ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} ]]; then
+    printf 'คำเตือน: มี Licensing endpoint แต่ไม่มี ingestion token; เก็บหลักฐานไว้ในเครื่องเท่านั้น\n' >&2
+  fi
+  if ! license_result=$(BMS_LICENSE_EVIDENCE_TOKEN="${BMS_LICENSE_EVIDENCE_TOKEN:-}" \
+    "$agent" "${license_args[@]}" 2>&1); then
     printf 'คำเตือน: เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$license_result" >&2
   fi
 fi
