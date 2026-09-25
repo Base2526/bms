@@ -363,6 +363,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ดูรายการโพสต์ทั้งหมด", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.posts", origin: "coverage" },
   { q: "ดูสถาปัตยกรรมระบบที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.architecture", origin: "coverage" },
   { q: "ดูร้านทั้งหมดในระบบ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.tenants", origin: "coverage" },
+  { q: "ออก Trial Retail Local 30 วันยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.retail-local-licenses", origin: "coverage" },
   { q: "ตั้งตารางส่งรายงานอัตโนมัติ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.report-schedule", origin: "coverage" },
   { q: "จัดการ role กลางของระบบ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.roles", origin: "coverage" },
   { q: "ดูไฟล์ที่ระบบเก็บไว้", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.files", origin: "coverage" },

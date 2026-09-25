@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: build-deb.sh --keyring FILE [--manifest-url HTTPS_URL] [--version VERSION] [--output-dir DIR]
+usage: build-deb.sh --keyring FILE [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--version VERSION] [--output-dir DIR]
 
 Builds the small Ubuntu x64 bootstrap package. The keyring must contain only trusted Ed25519 public
 keys. Private keys and application images are never copied into this package.
@@ -13,12 +13,14 @@ EOF
 
 keyring=
 manifest_url=
+activation_url=
 version=0.5.0-internal.1
 output_dir=artifacts/retail-local/managed-runtime
 while (($#)); do
   case "$1" in
     --keyring) keyring=${2:-}; shift 2 ;;
     --manifest-url) manifest_url=${2:-}; shift 2 ;;
+    --activation-url) activation_url=${2:-}; shift 2 ;;
     --version) version=${2:-}; shift 2 ;;
     --output-dir) output_dir=${2:-}; shift 2 ;;
     *) usage ;;
@@ -31,6 +33,9 @@ done
 }
 if [[ -n $manifest_url && ! $manifest_url =~ ^https://[^/@:]+([/:?#]|$) ]]; then
   echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
+fi
+if [[ -n $activation_url && ! $activation_url =~ ^https://[^/@:]+([/:?#]|$) ]]; then
+  echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
 fi
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
@@ -65,6 +70,10 @@ install -m 0755 "$runtime_root/bms-update-transaction" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
 install -m 0644 "$linux_root/bms-retail-local.service" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.service" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-license-evidence.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.timer" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-license-evidence.timer"
 install -m 0644 "$keyring" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/trusted-release-keys.json"
 install -m 0755 "$linux_root/bms-retail-local-setup" \
@@ -73,6 +82,8 @@ install -m 0755 "$linux_root/bms-retail-local-update" \
   "$package_root/usr/bin/bms-retail-local-update"
 install -m 0755 "$linux_root/bms-retail-local-backup-status" \
   "$package_root/usr/bin/bms-retail-local-backup-status"
+install -m 0755 "$linux_root/activate-managed-runtime.sh" \
+  "$package_root/usr/sbin/bms-retail-local-activate"
 install -m 0755 "$linux_root/configure-offhost-backup.sh" \
   "$package_root/usr/sbin/bms-retail-local-configure-backup"
 install -m 0755 "$linux_root/run-offhost-backup.sh" \
@@ -85,6 +96,10 @@ install -m 0644 "$linux_root/bms-retail-local-offhost-backup.service" \
   "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.service"
 install -m 0644 "$linux_root/bms-retail-local-offhost-backup.timer" \
   "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.timer"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.service" \
+  "$package_root/lib/systemd/system/bms-retail-local-license-evidence.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.timer" \
+  "$package_root/lib/systemd/system/bms-retail-local-license-evidence.timer"
 
 if [[ -n $manifest_url ]]; then
   printf '%s\n' "$manifest_url" >"$package_root/etc/bms-retail-local/release-manifest-url"
@@ -92,6 +107,8 @@ else
   : >"$package_root/etc/bms-retail-local/release-manifest-url"
 fi
 chmod 0644 "$package_root/etc/bms-retail-local/release-manifest-url"
+printf '%s\n' "$activation_url" >"$package_root/etc/bms-retail-local/activation-url"
+chmod 0644 "$package_root/etc/bms-retail-local/activation-url"
 
 cat >"$package_root/usr/share/doc/bms-retail-local-bootstrap/README" <<'EOF'
 BMS Retail Local Managed Runtime bootstrap
@@ -100,6 +117,7 @@ Install: sudo bms-retail-local-setup [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
 Update:  sudo bms-retail-local-update [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
 Backup:  sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST [RETENTION_DAYS]
 Status:  sudo bms-retail-local-backup-status
+Activate after install/restore: sudo bms-retail-local-activate [--transfer]
 The package contains no private signing key, database, shop credential, or application image.
 EOF
 
@@ -122,6 +140,7 @@ cat >"$package_root/DEBIAN/postinst" <<'EOF'
 set -e
 chmod 0755 /usr/bin/bms-retail-local-setup
 chmod 0755 /usr/bin/bms-retail-local-update
+chmod 0755 /usr/sbin/bms-retail-local-activate
 install -m 0755 /usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh \
   /usr/local/sbin/bms-retail-local-offhost-backup
 systemctl daemon-reload
@@ -133,6 +152,7 @@ cat >"$package_root/DEBIAN/prerm" <<'EOF'
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+  systemctl disable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local.service >/dev/null 2>&1 || true
 fi

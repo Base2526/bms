@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
@@ -19,6 +20,8 @@ const REQUIRED_COMMON_GATES = [
   "remote-diagnostics-privacy",
   "license-control-plane",
 ];
+const SUPPORT_MATRIX = JSON.parse(readFileSync(new URL("./support-matrix.json", import.meta.url), "utf8"));
+const SUPPORTED_TARGETS = new Map(SUPPORT_MATRIX.targets.map((target) => [target.id, target]));
 
 function assert(condition, message) {
   if (!condition) throw new Error(`promotion evidence: ${message}`);
@@ -42,9 +45,12 @@ function validEvidenceUrl(value) {
 }
 
 function platformGates(target) {
+  const policy = SUPPORTED_TARGETS.get(target);
+  assert(policy, `platformTarget ไม่อยู่ใน support matrix: ${target}`);
   const result = [`clean-install-${target}`];
-  if (target.startsWith("windows-")) result.push("windows-authenticode");
-  if (target.startsWith("ubuntu-")) result.push("linux-package-signing");
+  if (policy.platform === "windows") result.push("windows-authenticode");
+  if (policy.platform === "linux") result.push("linux-package-signing");
+  if (policy.requiresEsuEvidence) result.push("windows-10-esu");
   return result;
 }
 

@@ -17,6 +17,19 @@ POS, payments, returns, stock, shifts, reports, data access, backup, restore, an
 continue regardless of control-plane reachability or commercial review. The product has no remote
 kill switch, mandatory runtime lease, grace-period shutdown, or licensing-driven read-only mode.
 
+A new commercial installation may be issued as a **30-day trial**. The control plane starts the
+window from authoritative server time and derives `TRIAL_ACTIVE`, `TRIAL_EXPIRING` (14 days or less),
+or `TRIAL_EXPIRED`; it does not send those states back as runtime authority. Expiry creates a sales
+follow-up signal only. The already-installed shop keeps every local business and recovery path.
+Cloud services that carry an operator cost may use their own separately documented quota, but no
+cloud/add-on decision may be reused as permission to block local transactions or customer data.
+Platform staff can extend a trial, mark payment review, reactivate/cancel the commercial record, or
+convert it to paid without reinstalling or replacing the installation identity. Every such action
+requires explicit confirmation, a reason, a caller operation id for retry safety, and an append-only
+actor/timestamp audit row. Due follow-ups are created at 14, 7 and 1 day before expiry and at expiry.
+They are back-office work items only. Trial or payment state must never be printed on a customer's
+receipt, bill, tax invoice, kitchen ticket, or other business document.
+
 The host agent maintains a separate evidence identity and records `INSTALLATION_REGISTERED`,
 `RUNTIME_SEEN`, `UPDATE_INSTALLED`, `TRANSFER_REQUESTED`, and `INSTALLATION_DEACTIVATED`. Each event
 contains only the issued license id, random installation id, provisioned tenant/POS-device ids,
@@ -24,10 +37,14 @@ platform/release/agent versions, UTC device time, sequence number, prior-event h
 thumbprint. The canonical event is signed with the installation's Ed25519 key. The private key stays
 under the Managed Runtime data ACL and is never included in evidence or backup telemetry.
 
-Events are appended locally and placed in an outbox before delivery. A one-time back-office
-ingestion token binds the claimed license id to the issued license; only its SHA-256 hash is stored
-by the control plane, while the root-only Managed Runtime profile keeps the token. HTTPS failure, timeout, or a
-non-2xx response preserves the event for a later attempt and returns a queued result; it never stops
+Events are appended locally and placed in an outbox before delivery. Platform staff issue a
+seven-day, one-use activation code; the installer exchanges it over HTTPS for the license reference
+and evidence ingestion token. Only hashes of both credentials are stored by the control plane,
+while the root-only Managed Runtime profile keeps the ingestion token. Activation can be skipped or
+retried after install and an exchange failure never changes installation success. The evidence
+endpoint is derived locally from the trusted HTTPS Activation URL packaged into the bootstrap; it
+is never accepted from the activation response. HTTPS failure, timeout, or a non-2xx response
+preserves the event for a later attempt and returns a queued result; it never stops
 the runtime. The receiving control plane adds authoritative `receivedAt`, stores the event append-only,
 verifies the bearer binding, Ed25519 signature, device-key thumbprint, hash-chain and sequence, and opens a
 `LICENSE_REVIEW_REQUIRED` case on duplicate or conflicting installations. Staff resolve that case
@@ -44,19 +61,29 @@ bms-runtime-agent license-pulse ...    # RUNTIME_SEEN from the persisted minimal
 bms-runtime-agent license-flush ...    # retry queued events in sequence order
 ```
 
-Linux records a pulse after a Managed Runtime service start. Windows installs a best-effort daily
-task after licensing is configured. Both are explicitly outside service readiness and sales paths.
+Linux records a pulse after a Managed Runtime service start and through a best-effort daily timer.
+Windows installs a best-effort daily task after licensing is configured. Both are explicitly outside
+service readiness and sales paths.
 Until the commercial bootstrap supplies a license id and HTTPS evidence endpoint, the pulse is a
 harmless no-op; absence of licensing configuration is visible to release operations but does not
 turn a candidate build into a production license implementation.
 
-Migration `10.16` and `retailLocalLicensing.ts` implement the platform control-plane candidate. A
-platform administrator can issue a license/token, list licenses, inspect the installation/event
+Migrations `10.16`–`10.18` and `retailLocalLicensing.ts` implement the platform control-plane candidate. A
+platform administrator can issue a license/activation code, list licenses, inspect the installation/event
 timeline (`occurredAt` plus authoritative `receivedAt`), rotate a leaked token, and approve,
-deactivate or transfer an installation through `/api/admin/retail-local/licenses`. The ingestion
-token is returned only when issued/rotated and must be delivered through the commercial bootstrap,
-not email or logs. A duplicate/key/chain/limit conflict is accepted as evidence and creates a human
+deactivate or transfer an installation through `/api/admin/retail-local/licenses`. The one-use
+activation code is returned only when issued and must be delivered through the commercial bootstrap,
+not logs or ordinary email. The ingestion token is never shown to an operator during normal setup.
+A duplicate/key/chain/limit conflict is accepted as evidence and creates a human
 review; it does not send a sanction to the shop.
+
+`POST /api/admin/retail-local/licenses` accepts `licenseType: "TRIAL"` or `"PAID"`; omission keeps
+the existing paid behavior. Commercial actions use
+`POST /api/admin/retail-local/licenses/{id}/commercial`. List/detail responses include the stored
+commercial state, effective derived state, exact trial timestamps, and whole days remaining. Trial
+expiry is derived at read time rather than by a cron, so a missed scheduler cannot make the ledger
+lie. Evidence review status remains a separate field: suspected duplicate use and an expired trial
+are different conversations and must never be collapsed into one enforcement switch.
 
 ## Platform shape
 
@@ -117,6 +144,13 @@ separate support/customer vault. The job refuses the Windows system disk or the 
 filesystem, writes through a partial file, emits a SHA-256 sidecar, applies bounded retention, and
 records a customer-readable failed/passed status. A passed scheduled copy is still not proof of
 recoverability: stable promotion needs a sampled replacement-machine restore and reconciliation.
+
+The backup includes the non-secret `licenseCode` in `installation.json` so support can identify the
+commercial record after a restore. It deliberately excludes the evidence private key and bearer
+token. After restoring to a replacement computer, support issues a new one-use activation code and
+the operator runs `bms-retail-local-activate --transfer` (or the Windows **Activate or Transfer**
+shortcut; a restored license reference also selects transfer automatically). That creates a new evidence identity and a reviewable transfer request; the restored shop
+continues operating before, during, and after that process.
 
 Uninstall keeps shop data by default. Permanent erase is a separate, explicit workflow; unregistering
 the WSL distribution is destructive and must never occur during an ordinary uninstall.

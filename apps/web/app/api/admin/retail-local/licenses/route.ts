@@ -19,6 +19,7 @@ async function handlePOST(request: NextRequest) {
     const created = await createRetailLocalLicense({
       customerReference: body?.customerReference,
       maxActiveInstallations: body?.maxActiveInstallations,
+      licenseType: body?.licenseType,
       adminId: auth.adminId,
     });
     return NextResponse.json(created, { status: 201, headers: { "Cache-Control": "no-store" } });

@@ -20,8 +20,8 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
 | Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |
-| License evidence + control plane | Implemented candidate | token-bound ingestion, Ed25519/hash-chain verification, append-only timeline, duplicate review, token rotation and human transfer/deactivation APIs; deployment/ops qualification still required |
-| Stable-channel claim protection | Implemented | stable signer requires unexpired promotion evidence |
+| License evidence + control plane | Implemented candidate | one-use activation with locally derived evidence endpoint, daily best-effort pulse, token-bound ingestion, Ed25519/hash-chain verification, append-only timeline, duplicate review, retry-safe 30-day trial/paid lifecycle audit, due follow-up queue and human transfer/deactivation APIs; deployment/ops qualification still required |
+| Stable-channel claim protection | Implemented | stable signer requires unexpired promotion evidence and rejects targets outside the support matrix; Windows 10 ESU is an additional gate |
 | Transactional installed-shop updater | Implemented candidate | signed newer-only release, encrypted pre-update backup, health-gated commit, rollback/data restore and interrupted-update recovery tests |
 | Consent-gated support diagnostics | Implemented candidate | tenant/device authorization, allowlist redaction, private encrypted-capable storage, retention and dedicated contract suites |
 
@@ -39,7 +39,7 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Clean-machine acceptance | Release evidence | Exact signed release on Windows 11, Windows 10 IoT LTSC 2021 and Ubuntu 24.04; transition targets remain separate |
 | Encrypted off-host backup qualification | Hardware + operations evidence | Run scheduled export to a real supported destination, alert on a forced failure, restore a retained sample to a replacement host and reconcile totals |
 | Remote diagnostics qualification | Privacy + operations evidence | Verify the existing explicit-consent redacted bundle on the exact local release and approve the support transport/retention procedure |
-| Licensing back-office qualification | Deployment + operations evidence | Deploy the token-bound receiver, restrict platform-admin access, exercise duplicate/key/chain alerts plus token rotation and device transfer, and approve the customer-resolution runbook; never a runtime kill switch |
+| Licensing back-office qualification | Deployment + operations evidence | Deploy the activation/token-bound receiver, restrict platform-admin access, exercise one-use redemption, duplicate/key/chain alerts, retry-safe commercial actions, follow-up acknowledgement and replacement-device transfer, and approve the customer-resolution runbook; never a runtime kill switch |
 | Support lifecycle | Operations | Published supported versions, response path, key/package revocation and end-of-support policy |
 
 ## Promotion rule

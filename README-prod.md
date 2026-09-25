@@ -263,3 +263,27 @@ prod
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml build web ws
 
 docker compose --env-file .env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+
+
+
+
+
+
+----------- NEW
+COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.prod \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  build ws
+
+
+COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.prod \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  build web
+
+
+docker compose --env-file .env.prod \
+  -f docker-compose.yml \
+  -f docker-compose.prod.yml \
+  up -d --no-build --no-deps web ws

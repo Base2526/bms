@@ -215,12 +215,17 @@ test("scheduled off-host backups are encrypted, separate, retained, and visibly 
 test("Linux bootstrap package stays small and never packages a release private key", () => {
   const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");
+  const activation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
   assert.match(builder, /CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build/);
   assert.match(builder, /Architecture: amd64/);
   assert.match(builder, /trusted-release-keys\.json/);
   assert.doesNotMatch(builder, /private[-_]key|PRIVATE KEY|sign-release/);
   assert.match(setup, /release-manifest-url/);
+  assert.match(setup, /Activation Code/);
   assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
+  assert.match(builder, /bms-retail-local-activate/);
+  assert.match(activation, /TRANSFER_REQUESTED/);
+  assert.match(activation, /\.licenseCode = \$licenseCode/);
 });
 
 test("Linux release preparation builds all signed payload components before signing", () => {
@@ -239,6 +244,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   const invariants = read("docs/agent-invariants.md");
   const agent = read("apps/retail-local-agent/license_evidence.go");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const linuxEvidenceService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-license-evidence.service");
+  const linuxEvidenceTimer = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-license-evidence.timer");
+  const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
@@ -255,6 +263,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(agent, /Authorization", "Bearer /);
   assert.match(agent, /Deliberately fail-open/);
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
+  assert.match(linuxEvidenceService, /ExecStart=-.*license-pulse/);
+  assert.match(linuxEvidenceTimer, /OnCalendar=\*-\*-\* 03:00:00[\s\S]*Persistent=true/);
+  assert.match(linuxInstaller, /enable --now bms-retail-local-license-evidence\.timer[\s\S]*\|\|[\s\S]*ร้านยังใช้งานได้/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
   assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
   assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
@@ -265,6 +276,30 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(controlPlane, /crypto\.verify/);
   assert.match(controlPlane, /EVENT_CHAIN_CONFLICT/);
   assert.match(controlPlaneMigration, /Human back-office review queue[\s\S]*never disables an installed shop/);
+});
+
+test("activation and replacement recovery preserve business continuity without copying bearer credentials", () => {
+  const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const linuxActivation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
+  const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const windowsActivation = read("deploy/retail-local/managed-runtime/windows/activate-managed-runtime.ps1");
+  const activationRoute = read("apps/web/app/api/bms/retail-local/activate/route.ts");
+  const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
+
+  assert.match(linuxInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านติดตั้งและใช้งานต่อได้/);
+  assert.match(windowsInstaller, /Activation ยังไม่สำเร็จ[\s\S]*การติดตั้งและการใช้งานร้านจะดำเนินต่อ/);
+  assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
+  assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
+  assert.match(windowsActivation, /runtime-read[\s\S]*\/var\/lib\/bms-retail-local\/installation\.json/);
+  assert.match(linuxActivation, /activation_uri[\s\S]*\/api\/bms\/retail-local\/license-evidence/);
+  assert.match(windowsActivation, /GetLeftPart\(\[UriPartial\]::Authority\)[\s\S]*\/api\/bms\/retail-local\/license-evidence/);
+  assert.doesNotMatch(activationRoute, /evidenceEndpoint|new URL\(/);
+  assert.ok(linuxActivation.indexOf("tenant_id=$(jq") < linuxActivation.indexOf("activation_result=$(curl"));
+  assert.ok(windowsActivation.indexOf("runtime-read") < windowsActivation.indexOf("Invoke-RestMethod"));
+  assert.match(localctl, /installation\.json/);
+  assert.doesNotMatch(localctl, /license-evidence|evidenceToken|ingestionToken/);
+  assert.match(linuxInstaller, /licenseCode/);
+  assert.match(windowsInstaller, /licenseCode/);
 });
 
 test("stable promotion requires current external evidence for every GA gate", () => {
@@ -293,6 +328,26 @@ test("stable promotion requires current external evidence for every GA gate", ()
   assert.throws(() => verifyPromotionEvidence(evidence, { ...descriptor, sourceCommit: "b".repeat(40) },
     new Date("2026-09-26T00:00:00Z")), /sourceCommit/);
   assert.throws(() => verifyPromotionEvidence(evidence, descriptor, new Date("2027-02-01T00:00:00Z")), /หมดอายุ/);
+  assert.throws(() => verifyPromotionEvidence(
+    { ...evidence, platformTarget: "ubuntu-99.99-lts-x64" },
+    { ...descriptor, platformTarget: "ubuntu-99.99-lts-x64" },
+    new Date("2026-09-26T00:00:00Z"),
+  ), /support matrix/);
+
+  const esuTarget = "windows-10-22h2-esu-x64";
+  const esuDescriptor = { ...descriptor, platformTarget: esuTarget };
+  const esuBaseIds = ids.filter((id) => id !== `clean-install-${target}` && id !== "linux-package-signing")
+    .concat(`clean-install-${esuTarget}`, "windows-authenticode");
+  const esuEvidence = {
+    ...evidence,
+    platformTarget: esuTarget,
+    gates: esuBaseIds.map((id) => ({
+      id, status: "passed", verifiedAt: "2026-09-25T00:00:00Z",
+      validUntil: "2027-01-01T00:00:00Z", evidence: [`https://evidence.example/${id}`],
+    })),
+  };
+  assert.throws(() => verifyPromotionEvidence(esuEvidence, esuDescriptor,
+    new Date("2026-09-26T00:00:00Z")), /windows-10-esu/);
 
   const signer = read("deploy/retail-local/managed-runtime/sign-release.mjs");
   assert.match(signer, /descriptor\.channel === "stable"[\s\S]*promotionEvidencePath/);

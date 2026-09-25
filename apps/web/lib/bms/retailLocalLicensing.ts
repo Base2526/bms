@@ -9,15 +9,108 @@ const HEX_64 = /^[a-f0-9]{64}$/;
 const BASE64URL_32 = /^[A-Za-z0-9_-]{43}$/;
 const BASE64URL_64 = /^[A-Za-z0-9_-]{86}$/;
 const TOKEN = /^[A-Za-z0-9_-]{32,256}$/;
+const ACTIVATION_CODE = /^bmsla_[A-Za-z0-9_-]{43}$/;
 const EVENT_TYPES = new Set([
   "INSTALLATION_REGISTERED", "RUNTIME_SEEN", "UPDATE_INSTALLED",
   "TRANSFER_REQUESTED", "INSTALLATION_DEACTIVATED",
 ]);
 
-export class RetailLocalLicenseError extends Error {
-  constructor(message: string, readonly status: 400 | 401 | 404 | 409 = 400) {
-    super(message);
+export const RETAIL_LOCAL_TRIAL_DAYS = 30;
+export const RETAIL_LOCAL_ACTIVATION_DAYS = 7;
+const TRIAL_EXPIRING_DAYS = 14;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type RetailLocalCommercialState =
+  | "TRIAL_ACTIVE"
+  | "TRIAL_EXPIRING"
+  | "TRIAL_EXPIRED"
+  | "PAID_ACTIVE"
+  | "PAYMENT_REVIEW"
+  | "CANCELLED";
+
+export function deriveRetailLocalCommercialState(input: {
+  licenseType: "TRIAL" | "PAID";
+  commercialStatus: "TRIAL_ACTIVE" | "PAID_ACTIVE" | "PAYMENT_REVIEW" | "CANCELLED";
+  trialExpiresAt?: string | Date | null;
+}, now = new Date()): { status: RetailLocalCommercialState; trialDaysRemaining: number | null } {
+  if (input.commercialStatus === "CANCELLED") return { status: "CANCELLED", trialDaysRemaining: null };
+  if (input.licenseType === "PAID") {
+    return {
+      status: input.commercialStatus === "PAYMENT_REVIEW" ? "PAYMENT_REVIEW" : "PAID_ACTIVE",
+      trialDaysRemaining: null,
+    };
   }
+  const expiry = input.trialExpiresAt instanceof Date
+    ? input.trialExpiresAt
+    : new Date(input.trialExpiresAt ?? Number.NaN);
+  if (!Number.isFinite(expiry.getTime())) {
+    throw new RetailLocalLicenseError("trial license ไม่มีวันหมดอายุที่ถูกต้อง", 409);
+  }
+  const remainingMs = expiry.getTime() - now.getTime();
+  const trialDaysRemaining = remainingMs <= 0 ? 0 : Math.ceil(remainingMs / DAY_MS);
+  if (input.commercialStatus === "PAYMENT_REVIEW") return { status: "PAYMENT_REVIEW", trialDaysRemaining };
+  if (remainingMs <= 0) return { status: "TRIAL_EXPIRED", trialDaysRemaining };
+  return {
+    status: trialDaysRemaining <= TRIAL_EXPIRING_DAYS ? "TRIAL_EXPIRING" : "TRIAL_ACTIVE",
+    trialDaysRemaining,
+  };
+}
+
+type CommercialRow = {
+  license_type: "TRIAL" | "PAID";
+  commercial_status: "TRIAL_ACTIVE" | "PAID_ACTIVE" | "PAYMENT_REVIEW" | "CANCELLED";
+  trial_expires_at: string | Date | null;
+};
+
+function withEffectiveCommercialState<T extends CommercialRow>(row: T, now = new Date()) {
+  const effective = deriveRetailLocalCommercialState({
+    licenseType: row.license_type,
+    commercialStatus: row.commercial_status,
+    trialExpiresAt: row.trial_expires_at,
+  }, now);
+  return {
+    ...row,
+    effective_commercial_status: effective.status,
+    trial_days_remaining: effective.trialDaysRemaining,
+  };
+}
+
+export class RetailLocalLicenseError extends Error {
+  readonly status: 400 | 401 | 404 | 409;
+
+  constructor(message: string, status: 400 | 401 | 404 | 409 = 400) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function scheduleTrialFollowups(client: PoolClient, licenseId: string, trialExpiresAt: string | Date) {
+  await client.query(
+    `INSERT INTO bms_retail_local_trial_followups
+       (license_id, trial_expires_at, milestone_days, due_at)
+     SELECT $1, $2::timestamptz, milestone.days,
+            $2::timestamptz - (milestone.days * interval '1 day')
+     FROM (VALUES (14), (7), (1), (0)) AS milestone(days)
+     ON CONFLICT (license_id, trial_expires_at, milestone_days) DO NOTHING`,
+    [licenseId, trialExpiresAt]
+  );
+}
+
+function newActivationCode() {
+  return `bmsla_${crypto.randomBytes(32).toString("base64url")}`;
+}
+
+async function insertActivationCode(client: PoolClient, licenseId: string, adminId: string | number) {
+  const activationCode = newActivationCode();
+  const tokenHash = crypto.createHash("sha256").update(activationCode).digest("hex");
+  const created = await client.query<{ expires_at: string }>(
+    `INSERT INTO bms_retail_local_license_bootstrap_tokens
+       (license_id, token_hash, issued_by, expires_at)
+     VALUES ($1,$2,$3,now() + ($4::int * interval '1 day'))
+     RETURNING expires_at`,
+    [licenseId, tokenHash, String(adminId), RETAIL_LOCAL_ACTIVATION_DAYS]
+  );
+  return { activationCode, activationExpiresAt: created.rows[0].expires_at };
 }
 
 export type LicenseEvidenceEvent = {
@@ -273,8 +366,87 @@ function newLicenseToken() {
   return `bmslt_${crypto.randomBytes(32).toString("base64url")}`;
 }
 
+export async function redeemRetailLocalActivationCode(rawCode: string) {
+  if (!ACTIVATION_CODE.test(rawCode)) throw new RetailLocalLicenseError("activation code ไม่ถูกต้อง", 401);
+  const bootstrapHash = crypto.createHash("sha256").update(rawCode).digest("hex");
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query<{
+      bootstrap_id: string; license_id: string; license_code: string; commercial_status: string;
+      expires_at: string; consumed_at: string | null; revoked_at: string | null;
+    }>(
+      `SELECT b.id AS bootstrap_id, b.license_id, b.expires_at, b.consumed_at, b.revoked_at,
+              l.license_code, l.commercial_status
+       FROM bms_retail_local_license_bootstrap_tokens b
+       JOIN bms_retail_local_licenses l ON l.id = b.license_id
+       WHERE b.token_hash = $1
+       FOR UPDATE OF b, l`,
+      [bootstrapHash]
+    );
+    const bootstrap = found.rows[0];
+    if (!bootstrap) throw new RetailLocalLicenseError("activation code ไม่ถูกต้อง", 401);
+    if (bootstrap.consumed_at) throw new RetailLocalLicenseError("activation code ถูกใช้แล้ว", 409);
+    if (bootstrap.revoked_at) throw new RetailLocalLicenseError("activation code ถูกยกเลิกแล้ว", 409);
+    if (new Date(bootstrap.expires_at).getTime() <= Date.now()) {
+      throw new RetailLocalLicenseError("activation code หมดอายุ", 409);
+    }
+    if (bootstrap.commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("commercial record ถูกยกเลิก; กรุณาติดต่อ support", 409);
+    }
+    const ingestionToken = newLicenseToken();
+    const tokenHash = crypto.createHash("sha256").update(ingestionToken).digest("hex");
+    await client.query(
+      `INSERT INTO bms_retail_local_license_tokens (license_id, token_hash, label)
+       VALUES ($1,$2,'activation')`,
+      [bootstrap.license_id, tokenHash]
+    );
+    await client.query(
+      `UPDATE bms_retail_local_license_bootstrap_tokens SET consumed_at = now() WHERE id = $1`,
+      [bootstrap.bootstrap_id]
+    );
+    await client.query("COMMIT");
+    return { licenseCode: bootstrap.license_code, ingestionToken };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function issueRetailLocalActivationCode(licenseId: string, adminId: string | number) {
+  if (!UUID.test(licenseId)) throw new RetailLocalLicenseError("license id ไม่ถูกต้อง");
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query<{ commercial_status: string }>(
+      `SELECT commercial_status FROM bms_retail_local_licenses WHERE id = $1 FOR UPDATE`,
+      [licenseId]
+    );
+    if (!found.rows[0]) throw new RetailLocalLicenseError("ไม่พบ license", 404);
+    if (found.rows[0].commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("ต้อง REACTIVATE commercial record ก่อนออก activation code", 409);
+    }
+    await client.query(
+      `UPDATE bms_retail_local_license_bootstrap_tokens
+       SET revoked_at = now(), revoked_by = $2
+       WHERE license_id = $1 AND consumed_at IS NULL AND revoked_at IS NULL`,
+      [licenseId, String(adminId)]
+    );
+    const result = await insertActivationCode(client, licenseId, adminId);
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function createRetailLocalLicense(input: {
-  customerReference?: string; maxActiveInstallations?: number; adminId: string | number;
+  customerReference?: string; maxActiveInstallations?: number; licenseType?: string; adminId: string | number;
 }) {
   const customerReference = input.customerReference?.trim() || null;
   if (customerReference && !ID.test(customerReference)) throw new RetailLocalLicenseError("customerReference ไม่ถูกต้อง");
@@ -282,23 +454,52 @@ export async function createRetailLocalLicense(input: {
   if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100) {
     throw new RetailLocalLicenseError("maxActiveInstallations ไม่ถูกต้อง");
   }
+  const licenseType = input.licenseType ?? "PAID";
+  if (!["TRIAL", "PAID"].includes(licenseType)) {
+    throw new RetailLocalLicenseError("licenseType ต้องเป็น TRIAL หรือ PAID");
+  }
   const licenseCode = `LIC-${crypto.randomBytes(10).toString("hex").toUpperCase()}`;
-  const token = newLicenseToken();
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
   const client = await getClient();
   try {
     await client.query("BEGIN");
-    const created = await client.query<{ id: string }>(
+    const created = await client.query<{
+      id: string; trial_started_at: string | null; trial_expires_at: string | null;
+    }>(
       `INSERT INTO bms_retail_local_licenses
-         (license_code, customer_reference, max_active_installations, created_by)
-       VALUES ($1,$2,$3,$4) RETURNING id`, [licenseCode, customerReference, maximum, String(input.adminId)]
+         (license_code, customer_reference, max_active_installations, created_by,
+          license_type, commercial_status, trial_started_at, trial_expires_at, commercial_updated_by)
+       VALUES ($1,$2,$3,$4,$5::varchar,
+               (CASE WHEN $5::varchar = 'TRIAL' THEN 'TRIAL_ACTIVE' ELSE 'PAID_ACTIVE' END)::varchar,
+               CASE WHEN $5::varchar = 'TRIAL' THEN now() ELSE NULL END,
+               CASE WHEN $5::varchar = 'TRIAL' THEN now() + ($6::int * interval '1 day') ELSE NULL END,
+               $4)
+       RETURNING id, trial_started_at, trial_expires_at`,
+      [licenseCode, customerReference, maximum, String(input.adminId), licenseType, RETAIL_LOCAL_TRIAL_DAYS]
     );
+    const activation = await insertActivationCode(client, created.rows[0].id, input.adminId);
     await client.query(
-      `INSERT INTO bms_retail_local_license_tokens (license_id, token_hash, issued_by) VALUES ($1,$2,$3)`,
-      [created.rows[0].id, tokenHash, String(input.adminId)]
+      `INSERT INTO bms_retail_local_license_commercial_events
+         (license_id, action, previous_status, next_status, reason, actor_id)
+       VALUES ($1,$2,NULL,$3,$4,$5)`,
+      [created.rows[0].id, licenseType === "TRIAL" ? "TRIAL_CREATED" : "PAID_CREATED",
+        licenseType === "TRIAL" ? "TRIAL_ACTIVE" : "PAID_ACTIVE",
+        licenseType === "TRIAL" ? "Initial 30-day trial issued" : "Paid license issued",
+        String(input.adminId)]
     );
+    if (licenseType === "TRIAL" && created.rows[0].trial_expires_at) {
+      await scheduleTrialFollowups(client, created.rows[0].id, created.rows[0].trial_expires_at);
+    }
     await client.query("COMMIT");
-    return { id: created.rows[0].id, licenseCode, ingestionToken: token, maxActiveInstallations: maximum };
+    return {
+      id: created.rows[0].id,
+      licenseCode,
+      ...activation,
+      maxActiveInstallations: maximum,
+      licenseType,
+      effectiveCommercialStatus: licenseType === "TRIAL" ? "TRIAL_ACTIVE" : "PAID_ACTIVE",
+      trialStartedAt: created.rows[0].trial_started_at,
+      trialExpiresAt: created.rows[0].trial_expires_at,
+    };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
@@ -332,29 +533,35 @@ export async function rotateRetailLocalLicenseToken(licenseId: string, adminId: 
 }
 
 export async function listRetailLocalLicenses() {
-  const result = await query(
+  const result = await query<CommercialRow & Record<string, unknown>>(
     `SELECT l.id, l.license_code, l.customer_reference, l.status, l.max_active_installations,
-            l.created_at, l.updated_at,
+            l.license_type, l.commercial_status, l.trial_started_at, l.trial_expires_at,
+            l.converted_at, l.commercial_updated_at, l.created_at, l.updated_at,
             count(DISTINCT i.installation_id)::int AS installation_count,
             count(DISTINCT i.installation_id) FILTER (WHERE i.status = 'ACTIVE')::int AS active_installation_count,
             count(DISTINCT r.id) FILTER (WHERE r.status = 'OPEN')::int AS open_review_count,
+            (SELECT count(*)::int FROM bms_retail_local_trial_followups f
+             WHERE f.license_id = l.id AND f.status = 'PENDING' AND f.due_at <= now()) AS due_follow_up_count,
             max(i.last_seen_at) AS last_seen_at
      FROM bms_retail_local_licenses l
      LEFT JOIN bms_retail_local_license_installations i ON i.license_id = l.id
      LEFT JOIN bms_retail_local_license_reviews r ON r.license_id = l.id
      GROUP BY l.id ORDER BY l.updated_at DESC LIMIT 500`
   );
-  return result.rows;
+  const now = new Date();
+  return result.rows.map((row) => withEffectiveCommercialState(row, now));
 }
 
 export async function getRetailLocalLicenseDetails(licenseId: string) {
   if (!UUID.test(licenseId)) throw new RetailLocalLicenseError("license id ไม่ถูกต้อง");
-  const license = await query(
-    `SELECT id, license_code, customer_reference, status, max_active_installations, created_at, updated_at
+  const license = await query<CommercialRow & Record<string, unknown>>(
+    `SELECT id, license_code, customer_reference, status, max_active_installations,
+            license_type, commercial_status, trial_started_at, trial_expires_at, converted_at,
+            commercial_updated_at, created_at, updated_at
      FROM bms_retail_local_licenses WHERE id = $1`, [licenseId]
   );
   if (!license.rowCount) throw new RetailLocalLicenseError("ไม่พบ license", 404);
-  const [installations, events, reviews] = await Promise.all([
+  const [installations, events, reviews, commercialEvents, followUps] = await Promise.all([
     query(
       `SELECT installation_id, device_key_thumbprint, tenant_reference, pos_device_reference,
               platform_target, release_version, status, last_sequence, first_seen_at, last_seen_at,
@@ -373,8 +580,208 @@ export async function getRetailLocalLicenseDetails(licenseId: string) {
        FROM bms_retail_local_license_reviews WHERE license_id = $1
        ORDER BY opened_at DESC LIMIT 500`, [licenseId]
     ),
+    query(
+      `SELECT id, action, previous_status, next_status, reason, actor_id, occurred_at
+       FROM bms_retail_local_license_commercial_events WHERE license_id = $1
+       ORDER BY occurred_at DESC, id DESC LIMIT 500`, [licenseId]
+    ),
+    query(
+      `SELECT id, trial_expires_at, milestone_days, due_at, status, created_at,
+              acknowledged_at, acknowledged_by, acknowledgement_note,
+              (status = 'PENDING' AND due_at <= now()) AS is_due
+       FROM bms_retail_local_trial_followups WHERE license_id = $1
+       ORDER BY trial_expires_at DESC, milestone_days DESC`, [licenseId]
+    ),
   ]);
-  return { license: license.rows[0], installations: installations.rows, events: events.rows, reviews: reviews.rows };
+  return {
+    license: withEffectiveCommercialState(license.rows[0]),
+    installations: installations.rows,
+    events: events.rows,
+    reviews: reviews.rows,
+    commercialEvents: commercialEvents.rows,
+    followUps: followUps.rows,
+  };
+}
+
+export async function acknowledgeRetailLocalTrialFollowUp(input: {
+  licenseId: string; followUpId: string | number; note: string; adminId: string | number;
+}) {
+  if (!UUID.test(input.licenseId)) throw new RetailLocalLicenseError("license id ไม่ถูกต้อง");
+  const followUpId = Number(input.followUpId);
+  const note = input.note?.trim();
+  if (!Number.isSafeInteger(followUpId) || followUpId < 1) {
+    throw new RetailLocalLicenseError("follow-up id ไม่ถูกต้อง");
+  }
+  if (!note || note.length < 3 || note.length > 500) {
+    throw new RetailLocalLicenseError("note ต้องมี 3-500 ตัวอักษร");
+  }
+  const result = await query(
+    `UPDATE bms_retail_local_trial_followups
+     SET status = 'ACKNOWLEDGED', acknowledged_at = now(), acknowledged_by = $3,
+         acknowledgement_note = $4
+     WHERE id = $1 AND license_id = $2 AND status = 'PENDING'
+     RETURNING id, status, acknowledged_at`,
+    [followUpId, input.licenseId, String(input.adminId), note]
+  );
+  if (!result.rowCount) throw new RetailLocalLicenseError("ไม่พบ follow-up ที่รอดำเนินการ", 409);
+  return result.rows[0];
+}
+
+export type RetailLocalCommercialAction =
+  | "CONVERT_TO_PAID"
+  | "EXTEND_TRIAL"
+  | "MARK_PAYMENT_REVIEW"
+  | "REACTIVATE"
+  | "CANCEL";
+
+export async function updateRetailLocalLicenseCommercialState(input: {
+  licenseId: string;
+  operationId: string;
+  action: RetailLocalCommercialAction;
+  extensionDays?: number;
+  reason: string;
+  adminId: string | number;
+}) {
+  if (!UUID.test(input.licenseId)) throw new RetailLocalLicenseError("license id ไม่ถูกต้อง");
+  if (!UUID.test(input.operationId)) throw new RetailLocalLicenseError("operationId ไม่ถูกต้อง");
+  const reason = input.reason?.trim();
+  if (!reason || reason.length < 3 || reason.length > 500) {
+    throw new RetailLocalLicenseError("reason ต้องมี 3-500 ตัวอักษร");
+  }
+  if (!["CONVERT_TO_PAID", "EXTEND_TRIAL", "MARK_PAYMENT_REVIEW", "REACTIVATE", "CANCEL"].includes(input.action)) {
+    throw new RetailLocalLicenseError("commercial action ไม่ถูกต้อง");
+  }
+  const extensionDays = ["EXTEND_TRIAL", "REACTIVATE"].includes(input.action) ? input.extensionDays : undefined;
+  if (extensionDays !== undefined &&
+      (!Number.isInteger(extensionDays) || Number(extensionDays) < 1 || Number(extensionDays) > 90)) {
+    throw new RetailLocalLicenseError("extensionDays ต้องเป็น 1-90 วัน");
+  }
+
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    const found = await client.query<CommercialRow & { id: string }>(
+      `SELECT id, license_type, commercial_status, trial_expires_at
+       FROM bms_retail_local_licenses WHERE id = $1 FOR UPDATE`,
+      [input.licenseId]
+    );
+    const current = found.rows[0];
+    if (!current) throw new RetailLocalLicenseError("ไม่พบ license", 404);
+    const operation = await client.query<{
+      action: string; reason: string; details: { extensionDays?: number; result?: Record<string, unknown> };
+    }>(
+      `SELECT action, reason, details
+       FROM bms_retail_local_license_commercial_events
+       WHERE license_id = $1 AND operation_id = $2`,
+      [input.licenseId, input.operationId]
+    );
+    if (operation.rows[0]) {
+      const previousOperation = operation.rows[0];
+      if (previousOperation.action !== input.action || previousOperation.reason !== reason ||
+          Number(previousOperation.details?.extensionDays ?? 0) !== Number(extensionDays ?? 0)) {
+        throw new RetailLocalLicenseError("operationId ถูกใช้กับ commercial action คนละชุด", 409);
+      }
+      await client.query("COMMIT");
+      return { ...(previousOperation.details?.result ?? withEffectiveCommercialState(current)), replayed: true };
+    }
+    const previous = deriveRetailLocalCommercialState({
+      licenseType: current.license_type,
+      commercialStatus: current.commercial_status,
+      trialExpiresAt: current.trial_expires_at,
+    }).status;
+
+    if (input.action === "EXTEND_TRIAL" && current.license_type !== "TRIAL") {
+      throw new RetailLocalLicenseError("ต่อ Trial ได้เฉพาะ license ประเภท TRIAL", 409);
+    }
+    if (input.action === "EXTEND_TRIAL" &&
+        (!Number.isInteger(extensionDays) || Number(extensionDays) < 1)) {
+      throw new RetailLocalLicenseError("การต่อ Trial ต้องระบุ extensionDays", 409);
+    }
+    if (input.action === "EXTEND_TRIAL" && current.commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("ต้อง REACTIVATE license ก่อนต่อ Trial", 409);
+    }
+    if (input.action === "CONVERT_TO_PAID" && current.license_type !== "TRIAL") {
+      throw new RetailLocalLicenseError("license นี้เป็น PAID อยู่แล้ว", 409);
+    }
+    if (input.action === "CONVERT_TO_PAID" && current.commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("ต้อง REACTIVATE license ก่อนแปลงเป็น PAID", 409);
+    }
+    if (input.action === "MARK_PAYMENT_REVIEW" && current.commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("ต้อง REACTIVATE license ก่อน mark payment review", 409);
+    }
+    if (input.action === "MARK_PAYMENT_REVIEW" && current.commercial_status === "PAYMENT_REVIEW") {
+      throw new RetailLocalLicenseError("license อยู่ใน PAYMENT_REVIEW แล้ว", 409);
+    }
+    if (input.action === "CANCEL" && current.commercial_status === "CANCELLED") {
+      throw new RetailLocalLicenseError("commercial record ถูกยกเลิกอยู่แล้ว", 409);
+    }
+    if (input.action === "REACTIVATE" &&
+        !["CANCELLED", "PAYMENT_REVIEW"].includes(current.commercial_status)) {
+      throw new RetailLocalLicenseError("REACTIVATE ใช้ได้เฉพาะ CANCELLED หรือ PAYMENT_REVIEW", 409);
+    }
+    if (input.action === "REACTIVATE" && current.license_type === "TRIAL" &&
+        (!Number.isInteger(extensionDays) || Number(extensionDays) < 1)) {
+      throw new RetailLocalLicenseError("การเปิด Trial อีกครั้งต้องระบุ extensionDays", 409);
+    }
+
+    const updated = await client.query<CommercialRow & Record<string, unknown>>(
+      `UPDATE bms_retail_local_licenses
+       SET license_type = CASE WHEN $2 = 'CONVERT_TO_PAID' THEN 'PAID' ELSE license_type END,
+           commercial_status = CASE
+             WHEN $2 = 'CONVERT_TO_PAID' THEN 'PAID_ACTIVE'
+             WHEN $2 = 'EXTEND_TRIAL' THEN 'TRIAL_ACTIVE'
+             WHEN $2 = 'MARK_PAYMENT_REVIEW' THEN 'PAYMENT_REVIEW'
+             WHEN $2 = 'REACTIVATE' AND license_type = 'TRIAL' THEN 'TRIAL_ACTIVE'
+             WHEN $2 = 'REACTIVATE' THEN 'PAID_ACTIVE'
+             WHEN $2 = 'CANCEL' THEN 'CANCELLED'
+             ELSE commercial_status
+           END,
+           trial_expires_at = CASE WHEN $2 = 'EXTEND_TRIAL' OR ($2 = 'REACTIVATE' AND license_type = 'TRIAL')
+             THEN GREATEST(trial_expires_at, now()) + ($3::int * interval '1 day')
+             ELSE trial_expires_at END,
+           converted_at = CASE WHEN $2 = 'CONVERT_TO_PAID' THEN COALESCE(converted_at, now()) ELSE converted_at END,
+           commercial_updated_at = now(), commercial_updated_by = $4, updated_at = now()
+       WHERE id = $1
+       RETURNING id, license_type, commercial_status, trial_started_at, trial_expires_at,
+                 converted_at, commercial_updated_at`,
+      [input.licenseId, input.action, extensionDays ?? 0, String(input.adminId)]
+    );
+    const result = withEffectiveCommercialState(updated.rows[0]);
+    const responseResult = JSON.parse(JSON.stringify(result)) as typeof result;
+    if (["CONVERT_TO_PAID", "CANCEL"].includes(input.action)) {
+      await client.query(
+        `UPDATE bms_retail_local_trial_followups
+         SET status = 'CANCELLED'
+         WHERE license_id = $1 AND status = 'PENDING'`,
+        [input.licenseId]
+      );
+    } else if (["EXTEND_TRIAL", "REACTIVATE"].includes(input.action) && result.license_type === "TRIAL") {
+      await client.query(
+        `UPDATE bms_retail_local_trial_followups
+         SET status = 'CANCELLED'
+         WHERE license_id = $1 AND status = 'PENDING' AND trial_expires_at <> $2`,
+        [input.licenseId, result.trial_expires_at]
+      );
+      await scheduleTrialFollowups(client, input.licenseId, result.trial_expires_at as string | Date);
+    }
+    await client.query(
+      `INSERT INTO bms_retail_local_license_commercial_events
+         (license_id, operation_id, action, previous_status, next_status, reason, details, actor_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`,
+      [input.licenseId, input.operationId, input.action, previous, result.effective_commercial_status,
+        reason, JSON.stringify({
+          ...(extensionDays === undefined ? {} : { extensionDays }),
+          result: responseResult,
+        }), String(input.adminId)]
+    );
+    await client.query("COMMIT");
+    return { ...responseResult, replayed: false };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function resolveRetailLocalLicenseReview(input: {

@@ -77,6 +77,7 @@ const ROUTES = {
   audit: "/admin/audit",
   architecture: "/admin/architecture",
   tenants: "/admin/tenants",
+  retailLocalLicenses: "/admin/retail-local-licenses",
   reportSchedule: "/admin/report-schedule",
   roles: "/admin/roles",
   files: "/admin/files",
@@ -808,6 +809,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     title: "พื้นที่แพลตฟอร์ม (platform admin เท่านั้น)",
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "ดูและจัดการร้านทั้งหมดในมุม platform admin" },
+      { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "ออก Trial 30 วัน ต่ออายุ แปลงเป็น Paid และดูหลักฐานการใช้งาน โดยไม่ปิดกั้นร้าน" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "ตั้งหรือตรวจงานส่งรายงานแบบตามเวลา" },
       { label: "Roles", href: ROUTES.roles, note: "จัดการ role กลางของทั้งระบบ" },
       { label: "Support Tickets", href: ROUTES.supportTickets, note: "คิวเรื่องปัญหาหรือ ticket ที่ทีมต้องติดตาม" },
@@ -2022,6 +2024,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     title: "Platform workspace (platform admin only)",
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "Review or manage shops across the platform fleet" },
+      { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "Issue 30-day trials, extend or convert them to paid, and review evidence without blocking a store" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "Recurring report delivery configuration and review" },
       { label: "Roles", href: ROUTES.roles, note: "Global role definitions used by the wider system" },
       { label: "Support Tickets", href: ROUTES.supportTickets, note: "Issue and support-ticket tracking" },

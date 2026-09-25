@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily BMS Retail Local best-effort license evidence pulse
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=30m
+Unit=bms-retail-local-license-evidence.service
+
+[Install]
+WantedBy=timers.target

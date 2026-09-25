@@ -128,6 +128,7 @@ Build the Ubuntu x64 bootstrap package with a trusted **public-key-only** keyrin
 deploy/retail-local/managed-runtime/linux/build-deb.sh \
   --keyring /secure/release/trusted-release-keys.json \
   --manifest-url https://releases.example.com/retail-local/ubuntu-24.04/release.jws.json \
+  --activation-url https://control.example.com/api/bms/retail-local/activate \
   --version 0.5.0
 ```
 
@@ -137,6 +138,15 @@ downloads only components authenticated by the packaged public key. A build with
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
 After installation, update only through `sudo bms-retail-local-update`; rerunning the raw Linux setup
 script still refuses an existing shop.
+
+The setup command securely prompts for the one-use Activation Code. A missing, expired, or
+temporarily unreachable activation service is reported but does not fail installation or restrict
+the store. Activate later with `sudo bms-retail-local-activate`; after restoring a backup to a
+replacement host, use `sudo bms-retail-local-activate --transfer`. The encrypted backup keeps only
+the non-secret license reference, not the evidence signing key or bearer token. A restored license
+reference also makes the activation helper choose the transfer event automatically.
+Ubuntu schedules a daily best-effort evidence pulse at 03:00 with a randomized delay; failure is
+ignored by systemd and never changes runtime readiness. Windows uses the equivalent daily task.
 
 Configure Ubuntu off-host backup only after mounting a NAS/removable filesystem at its own mount
 point. Generate and custody the age identity outside the shop computer, then pass only its public
@@ -161,3 +171,8 @@ cannot stop an installed shop, make it read-only, or sit on a POS/payment/data/b
 keeps signed hash-chained events in `license-evidence/ledger.jsonl`, queues undelivered envelopes in
 `license-evidence/outbox/`, and treats network/control-plane failure as `queued`, not as a runtime
 failure. See [the licensing design](../../../docs/business/retail-local-managed-runtime.md#licensing-and-evidence).
+The control plane can issue the commercial record as a 30-day trial and report that it is active,
+expiring, or expired, but that state is deliberately not a host-agent command. Conversion to paid
+keeps the same installation, tenant, POS device, data, and evidence identity. Customer receipts,
+bills and tax documents never carry Trial or licensing state; follow-up belongs in the platform
+admin queue.

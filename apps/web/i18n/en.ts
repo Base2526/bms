@@ -643,6 +643,7 @@ const en = {
     kitchen: "Kitchen Board",
     restaurant_floor: "Floor Plan",
     delivery_platforms: "Delivery Platforms",
+    retail_local_licenses: "Retail Local licenses",
     board_game: "Board Game Tables",
     pos_manual: "Cashier Manual",
     products: "Products",

@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
-import { ingestRetailLocalLicenseEvidence } from "../apps/web/lib/bms/retailLocalLicensing.ts";
+import {
+  ingestRetailLocalLicenseEvidence,
+  issueRetailLocalActivationCode,
+  redeemRetailLocalActivationCode,
+  RetailLocalLicenseError,
+  updateRetailLocalLicenseCommercialState,
+} from "../apps/web/lib/bms/retailLocalLicensing.ts";
 
 function evidence(input: {
   licenseCode: string;
@@ -87,4 +93,75 @@ test("license ingestion stores an accepted chain and flags a second installation
     `SELECT reason FROM bms_retail_local_license_reviews WHERE license_id = $1 AND status = 'OPEN'`, [licenseId]
   );
   assert.equal(reviews.rows[0]?.reason, "ACTIVE_INSTALLATION_LIMIT");
+});
+
+test("activation is one-use and commercial retries are idempotent", async (t) => {
+  const licenseId = crypto.randomUUID();
+  const adminId = crypto.randomUUID();
+  const operationId = crypto.randomUUID();
+  const licenseCode = `LIC-TEST-${crypto.randomBytes(8).toString("hex")}`;
+  const activationCode = `bmsla_${crypto.randomBytes(32).toString("base64url")}`;
+  const activationHash = crypto.createHash("sha256").update(activationCode).digest("hex");
+  await query(
+    `INSERT INTO users (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`,
+    [adminId, "Retail Local Contract Admin", `${adminId}@example.invalid`, "contract-test-not-a-login"],
+  );
+  await query(
+    `INSERT INTO bms_retail_local_licenses
+       (id, license_code, max_active_installations, license_type, commercial_status,
+        trial_started_at, trial_expires_at)
+     VALUES ($1,$2,1,'TRIAL','TRIAL_ACTIVE',now(),now() + interval '30 days')`,
+    [licenseId, licenseCode],
+  );
+  await query(
+    `INSERT INTO bms_retail_local_license_bootstrap_tokens
+       (license_id, token_hash, issued_by, expires_at)
+     VALUES ($1,$2,$3,now() + interval '7 days')`,
+    [licenseId, activationHash, adminId],
+  );
+  t.after(async () => {
+    await query(`DELETE FROM bms_retail_local_trial_followups WHERE license_id = $1`, [licenseId]);
+    await query(`DELETE FROM bms_retail_local_license_commercial_events WHERE license_id = $1`, [licenseId]);
+    await query(`DELETE FROM bms_retail_local_license_bootstrap_tokens WHERE license_id = $1`, [licenseId]);
+    await query(`DELETE FROM bms_retail_local_license_tokens WHERE license_id = $1`, [licenseId]);
+    await query(`DELETE FROM bms_retail_local_licenses WHERE id = $1`, [licenseId]);
+    await query(`DELETE FROM users WHERE id = $1`, [adminId]);
+  });
+
+  const reissued = await issueRetailLocalActivationCode(licenseId, adminId);
+  const revoked = await query<{ consumed_at: Date | null; revoked_at: Date | null }>(
+    `SELECT consumed_at, revoked_at FROM bms_retail_local_license_bootstrap_tokens
+     WHERE token_hash = $1`, [activationHash],
+  );
+  assert.equal(revoked.rows[0].consumed_at, null);
+  assert.ok(revoked.rows[0].revoked_at);
+  await assert.rejects(() => redeemRetailLocalActivationCode(activationCode),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
+
+  const activation = await redeemRetailLocalActivationCode(reissued.activationCode);
+  assert.equal(activation.licenseCode, licenseCode);
+  assert.match(activation.ingestionToken, /^bmslt_/);
+  await assert.rejects(() => redeemRetailLocalActivationCode(reissued.activationCode),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
+
+  const first = await updateRetailLocalLicenseCommercialState({
+    licenseId, operationId, action: "EXTEND_TRIAL", extensionDays: 5,
+    reason: "Customer approved trial extension", adminId,
+  });
+  const replay = await updateRetailLocalLicenseCommercialState({
+    licenseId, operationId, action: "EXTEND_TRIAL", extensionDays: 5,
+    reason: "Customer approved trial extension", adminId,
+  });
+  assert.equal(first.replayed, false);
+  assert.equal(replay.replayed, true);
+  assert.equal(String(replay.trial_expires_at), String(first.trial_expires_at));
+  const eventCount = await query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM bms_retail_local_license_commercial_events
+     WHERE license_id = $1 AND operation_id = $2`, [licenseId, operationId],
+  );
+  assert.equal(eventCount.rows[0].count, "1");
+  await assert.rejects(() => updateRetailLocalLicenseCommercialState({
+    licenseId, operationId, action: "EXTEND_TRIAL", extensionDays: 6,
+    reason: "Customer approved trial extension", adminId,
+  }), /operationId/);
 });
