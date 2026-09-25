@@ -4,6 +4,8 @@ param(
   [string]$AgentPath = (Join-Path $PSScriptRoot "bms-runtime-agent.exe"),
   [string]$KeyringPath = (Join-Path $PSScriptRoot "trusted-release-keys.json"),
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal"),
+  [string]$LicenseId,
+  [string]$LicenseEvidenceUri,
   [string]$ResumeConfig
 )
 
@@ -94,6 +96,8 @@ if ($ResumeConfig) {
   $resume = Get-Content -LiteralPath $ResumeConfig -Raw | ConvertFrom-Json
   $ManifestUri = [string]$resume.manifestUri
   $InstallRoot = [string]$resume.installRoot
+  $LicenseId = [string]$resume.licenseId
+  $LicenseEvidenceUri = [string]$resume.licenseEvidenceUri
   $AgentPath = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
   $KeyringPath = Join-Path $InstallRoot "bootstrap\trusted-release-keys.json"
 }
@@ -157,7 +161,12 @@ if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
   $resumePath = Join-Path $bootstrapRoot "resume.json"
-  $resumeJson = [ordered]@{ manifestUri = $ManifestUri; installRoot = $InstallRoot } | ConvertTo-Json
+  $resumeJson = [ordered]@{
+    manifestUri = $ManifestUri
+    installRoot = $InstallRoot
+    licenseId = $LicenseId
+    licenseEvidenceUri = $LicenseEvidenceUri
+  } | ConvertTo-Json
   Write-Utf8NoBom $resumePath $resumeJson
   $resumeAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$installedScript`" -ResumeConfig `"$resumePath`""
@@ -330,6 +339,32 @@ if ($provisionResult.deviceToken) {
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
+
+# License evidence is administrative telemetry only. It is intentionally best-effort and must not
+# change installation success, runtime startup, sales, payment, data access, backup, or recovery.
+if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
+  try {
+    $licenseArguments = @(
+      "license-record", "-root", $InstallRoot, "-event", "INSTALLATION_REGISTERED",
+      "-license-id", $LicenseId, "-tenant-id", [string]$provisionResult.tenantId,
+      "-pos-device-id", [string]$provisionResult.deviceId, "-target", [string]$release.platformTarget,
+      "-release-version", [string]$release.releaseVersion
+    )
+    if (-not [string]::IsNullOrWhiteSpace($LicenseEvidenceUri)) {
+      $licenseArguments += @("-endpoint", $LicenseEvidenceUri)
+    }
+    $licenseOutput = & $installedAgent @licenseArguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ($licenseOutput -join ' ') }
+    $licenseAction = New-ScheduledTaskAction -Execute $installedAgent `
+      -Argument "license-pulse -root `"$InstallRoot`""
+    $licenseTrigger = New-ScheduledTaskTrigger -Daily -At 3am
+    $licenseSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+    Register-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Action $licenseAction `
+      -Trigger $licenseTrigger -Principal $principal -Settings $licenseSettings -Force | Out-Null
+  } catch {
+    Write-Warning "เก็บ/ตั้งเวลาหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: $($_.Exception.Message)"
+  }
+}
 
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue

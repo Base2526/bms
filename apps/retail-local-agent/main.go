@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.2.0"
+const agentVersion = "0.3.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bms-runtime-agent <preflight|verify-release|stage-release|engine-load|runtime-write|runtime-read|version>")
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|stage-release|engine-load|runtime-write|runtime-read|license-record|license-pulse|license-flush|version>")
 	}
 	switch args[0] {
 	case "version":
@@ -127,6 +127,73 @@ func run(args []string) error {
 			return errors.New("runtime-read ต้องมี -engine, -source และ -destination")
 		}
 		return readRuntimeFile(*engine, *distro, *source, *destination)
+	case "license-record":
+		flags := flag.NewFlagSet("license-record", flag.ContinueOnError)
+		root := flags.String("root", "", "Managed Runtime data root")
+		eventType := flags.String("event", "", "license evidence event type")
+		licenseID := flags.String("license-id", "", "commercial license identifier")
+		tenantID := flags.String("tenant-id", "", "provisioned tenant identifier")
+		posDeviceID := flags.String("pos-device-id", "", "provisioned POS device identifier")
+		target := flags.String("target", "", "platform target")
+		releaseVersion := flags.String("release-version", "", "installed release version")
+		endpoint := flags.String("endpoint", "", "optional HTTPS back-office evidence endpoint")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" || *eventType == "" || *licenseID == "" || *target == "" || *releaseVersion == "" {
+			return errors.New("license-record ต้องมี -root, -event, -license-id, -target และ -release-version")
+		}
+		absoluteRoot, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		result, err := recordLicenseEvidence(context.Background(), licenseEvidenceInput{
+			Root: absoluteRoot, EventType: *eventType, LicenseID: *licenseID, TenantID: *tenantID,
+			POSDeviceID: *posDeviceID, PlatformTarget: *target, ReleaseVersion: *releaseVersion,
+			Endpoint: *endpoint,
+		})
+		if err != nil {
+			return err
+		}
+		return writeJSON(result)
+	case "license-flush":
+		flags := flag.NewFlagSet("license-flush", flag.ContinueOnError)
+		root := flags.String("root", "", "Managed Runtime data root")
+		endpoint := flags.String("endpoint", "", "HTTPS back-office evidence endpoint")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" || *endpoint == "" {
+			return errors.New("license-flush ต้องมี -root และ -endpoint")
+		}
+		absoluteRoot, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		result, err := flushLicenseEvidence(context.Background(), absoluteRoot, *endpoint)
+		if err != nil {
+			return err
+		}
+		return writeJSON(result)
+	case "license-pulse":
+		flags := flag.NewFlagSet("license-pulse", flag.ContinueOnError)
+		root := flags.String("root", "", "Managed Runtime data root")
+		eventType := flags.String("event", "RUNTIME_SEEN", "profile-backed license evidence event type")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" {
+			return errors.New("license-pulse ต้องมี -root")
+		}
+		absoluteRoot, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		result, err := pulseLicenseEvidence(context.Background(), absoluteRoot, *eventType)
+		if err != nil {
+			return err
+		}
+		return writeJSON(result)
 	default:
 		return fmt.Errorf("ไม่รู้จักคำสั่ง %q", args[0])
 	}

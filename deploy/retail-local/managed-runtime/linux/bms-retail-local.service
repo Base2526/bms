@@ -9,6 +9,7 @@ Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=/var/lib/bms-retail-local
 ExecStart=/usr/bin/docker compose --env-file .env -f compose.yml up -d --remove-orphans
+ExecStartPost=-/opt/bms-retail-local/bms-runtime-agent license-pulse -root /var/lib/bms-retail-local
 ExecStop=/usr/bin/docker compose --env-file .env -f compose.yml stop
 TimeoutStartSec=300
 TimeoutStopSec=120

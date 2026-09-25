@@ -14,10 +14,16 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw "InstallRoot ไม่ปลอดภัย" }
 
+$installedAgent = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
+if (Test-Path -LiteralPath $installedAgent -PathType Leaf) {
+  # Evidence is administrative and must never make uninstall or shop recovery fail.
+  try { & $installedAgent license-pulse -root $InstallRoot -event INSTALLATION_DEACTIVATED *> $null } catch {}
+}
 & wsl.exe -d BMSRuntime -u root -- bms-localctl stop 2>$null
 & wsl.exe --terminate BMSRuntime 2>$null
 Unregister-ScheduledTask -TaskName "BMS Retail Local Runtime" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Confirm:$false -ErrorAction SilentlyContinue
 
 if (-not $EraseData) {
   Write-Host "หยุดและถอด startup แล้ว ข้อมูลร้าน, secrets และ BMSRuntime ยังอยู่เพื่อ recovery" -ForegroundColor Green

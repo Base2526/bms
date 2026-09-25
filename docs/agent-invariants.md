@@ -575,6 +575,16 @@ deployment profile. The operator contract and remaining release gates live in
   Electron. A preflight pass is only a candidate result, not a production-support claim; the signed
   target release and clean-machine failure matrix remain required. See
   [business/retail-local-managed-runtime.md](business/retail-local-managed-runtime.md).
+- **Retail Local licensing is evidence-only and fail-open.** Licensing may control activation of an
+  additional installation, access to a future major upgrade, commercial support, or an optional
+  cloud add-on. It must never stop an already-installed shop, enter read-only mode, interrupt POS,
+  payment, returns, inventory, shift close, reports, backup, restore, or access to the shop's data.
+  There is no remote kill switch and no mandatory lease/renewal on a business transaction path.
+  The host agent records a minimal Ed25519-signed, hash-chained evidence stream and retries its
+  outbox opportunistically; endpoint failure or rejection leaves evidence queued and the shop
+  running. Suspected duplication is `LICENSE_REVIEW_REQUIRED` for back-office/customer resolution,
+  never an automatic runtime sanction. Device private keys, raw hardware serials, MAC addresses,
+  GPS and transaction/customer data are not license telemetry.
 
 ## Restaurant POS (dine-in)
 

@@ -1496,6 +1496,22 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
     `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`,
   );
 
+  // พื้นอย่างเดียวไม่พอ: pos.css เปลี่ยนทั้ง background และ color ตอน hover เคยทำให้
+  // rail ที่ active คงพื้นเขียวไว้ แต่ icon/label ถูกเปลี่ยนเป็นเขียวแล้วกลืนหายไปกับพื้น
+  const activeRailHover = rules.find((rule) =>
+    rule.sel.includes(".railBtnActive:hover"),
+  );
+  assert.ok(activeRailHover, "rail ที่ active ต้องมีกฎ hover ของตัวเอง");
+  assert.match(activeRailHover.body, /color\s*:\s*var\(--on-solid\)/,
+    "rail ที่ active ต้องรักษาสี icon/label ตอน hover ไม่ให้ global POS hover ทับ");
+
+  const utilityRailHover = rules.find((rule) =>
+    rule.sel.includes('.railUtilitySlot .railBtn[aria-pressed="true"]:hover'),
+  );
+  assert.ok(utilityRailHover, "utility rail ที่ active ต้องมีกฎ hover ของตัวเอง");
+  assert.match(utilityRailHover.body, /color\s*:\s*var\(--on-solid\)/,
+    "utility rail ที่ active ต้องรักษาสี icon/label ตอน hover");
+
   // ด่านที่สาม — คนละกลไกกับ specificity: pos.css ตั้ง `min-height: 44px` ให้ทุก <button>
   // คุณสมบัติที่กฎของเรา "ไม่ได้ประกาศ" จึงตกมาจากตรงนั้น · ปุ่มที่เขียน height: 34px แล้วไม่เขียน
   // min-height จะได้กล่อง 34×44 (สูงกว่ากว้าง) แล้วไอคอนดูไม่อยู่กลาง — เจอจริงที่ปุ่ม ⋯ ของการ์ดเมนู
