@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.4.0"
+const agentVersion = "0.5.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -195,7 +195,7 @@ func run(args []string) error {
 		result, err := recordLicenseEvidence(context.Background(), licenseEvidenceInput{
 			Root: absoluteRoot, EventType: *eventType, LicenseID: *licenseID, TenantID: *tenantID,
 			POSDeviceID: *posDeviceID, PlatformTarget: *target, ReleaseVersion: *releaseVersion,
-			Endpoint: *endpoint,
+			Endpoint: *endpoint, EvidenceToken: os.Getenv("BMS_LICENSE_EVIDENCE_TOKEN"),
 		})
 		if err != nil {
 			return err
@@ -215,7 +215,8 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		result, err := flushLicenseEvidence(context.Background(), absoluteRoot, *endpoint)
+		result, err := flushLicenseEvidence(context.Background(), absoluteRoot, *endpoint,
+			os.Getenv("BMS_LICENSE_EVIDENCE_TOKEN"))
 		if err != nil {
 			return err
 		}

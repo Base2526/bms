@@ -119,7 +119,8 @@ Commercial self-install release still requires:
 - qualification evidence for the Managed Runtime encrypted off-host scheduler, retention/failure
   reporting, and a replacement-machine sample restore;
 - remote diagnostic/support workflow that never exports secrets or raw customer data;
-- licensing/device-transfer policy and a documented support lifecycle;
+- production deployment/operations evidence for the fail-open licensing evidence receiver,
+  duplicate review/device transfer, and a documented support lifecycle;
 - a decision on whether Docker Desktop remains a customer prerequisite or is replaced by a managed
   service/appliance runtime.
 

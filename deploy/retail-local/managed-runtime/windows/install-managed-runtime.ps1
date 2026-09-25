@@ -13,6 +13,7 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 $distroName = "BMSRuntime"
 $runtimeData = "/var/lib/bms-retail-local"
+$LicenseEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
 
 function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -98,6 +99,9 @@ if ($ResumeConfig) {
   $InstallRoot = [string]$resume.installRoot
   $LicenseId = [string]$resume.licenseId
   $LicenseEvidenceUri = [string]$resume.licenseEvidenceUri
+  $LicenseEvidenceToken = if ($resume.PSObject.Properties.Name -contains "licenseEvidenceToken") {
+    [string]$resume.licenseEvidenceToken
+  } else { "" }
   $AgentPath = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
   $KeyringPath = Join-Path $InstallRoot "bootstrap\trusted-release-keys.json"
 }
@@ -184,6 +188,7 @@ if ($preflight.requiresReboot) {
     installRoot = $InstallRoot
     licenseId = $LicenseId
     licenseEvidenceUri = $LicenseEvidenceUri
+    licenseEvidenceToken = $LicenseEvidenceToken
   } | ConvertTo-Json
   Write-Utf8NoBom $resumePath $resumeJson
   $resumeAction = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
@@ -384,11 +389,20 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
       "-pos-device-id", [string]$provisionResult.deviceId, "-target", [string]$release.platformTarget,
       "-release-version", [string]$release.releaseVersion
     )
-    if (-not [string]::IsNullOrWhiteSpace($LicenseEvidenceUri)) {
+    if (-not [string]::IsNullOrWhiteSpace($LicenseEvidenceUri) -and
+        -not [string]::IsNullOrWhiteSpace($LicenseEvidenceToken)) {
       $licenseArguments += @("-endpoint", $LicenseEvidenceUri)
+    } elseif (-not [string]::IsNullOrWhiteSpace($LicenseEvidenceUri)) {
+      Write-Warning "มี Licensing endpoint แต่ไม่มี ingestion token; เก็บหลักฐานไว้ในเครื่องเท่านั้น"
     }
-    $licenseOutput = & $installedAgent @licenseArguments 2>&1
-    if ($LASTEXITCODE -ne 0) { throw ($licenseOutput -join ' ') }
+    $previousEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
+    try {
+      [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $LicenseEvidenceToken, "Process")
+      $licenseOutput = & $installedAgent @licenseArguments 2>&1
+      if ($LASTEXITCODE -ne 0) { throw ($licenseOutput -join ' ') }
+    } finally {
+      [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $previousEvidenceToken, "Process")
+    }
     $licenseAction = New-ScheduledTaskAction -Execute $installedAgent `
       -Argument "license-pulse -root `"$InstallRoot`""
     $licenseTrigger = New-ScheduledTaskTrigger -Daily -At 3am

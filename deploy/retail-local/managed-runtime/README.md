@@ -128,7 +128,7 @@ Build the Ubuntu x64 bootstrap package with a trusted **public-key-only** keyrin
 deploy/retail-local/managed-runtime/linux/build-deb.sh \
   --keyring /secure/release/trusted-release-keys.json \
   --manifest-url https://releases.example.com/retail-local/ubuntu-24.04/release.jws.json \
-  --version 0.4.0
+  --version 0.5.0
 ```
 
 The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`; it does not start

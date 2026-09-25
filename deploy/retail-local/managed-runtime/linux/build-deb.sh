@@ -13,7 +13,7 @@ EOF
 
 keyring=
 manifest_url=
-version=0.4.0-internal.1
+version=0.5.0-internal.1
 output_dir=artifacts/retail-local/managed-runtime
 while (($#)); do
   case "$1" in

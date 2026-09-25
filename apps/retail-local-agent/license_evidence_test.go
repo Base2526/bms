@@ -73,10 +73,11 @@ func TestLicenseEvidenceIsSignedAndHashChained(t *testing.T) {
 
 func TestLicenseEvidenceDeliveryFailureQueuesWithoutBlocking(t *testing.T) {
 	root := t.TempDir()
+	token := strings.Repeat("a", 43)
 	result, err := recordLicenseEvidence(t.Context(), licenseEvidenceInput{
 		Root: root, EventType: "RUNTIME_SEEN", LicenseID: "lic-test-1",
 		PlatformTarget: "windows-11-x64", ReleaseVersion: "0.2.0",
-		Endpoint: "https://127.0.0.1:1/v1/license-evidence",
+		Endpoint: "https://127.0.0.1:1/v1/license-evidence", EvidenceToken: token,
 	})
 	if err != nil {
 		t.Fatalf("network failure must be fail-open, got %v", err)
@@ -115,9 +116,16 @@ func TestLicenseEvidenceRejectsUnsafeIdentifiersAndEndpoints(t *testing.T) {
 	}
 	_, err = recordLicenseEvidence(t.Context(), licenseEvidenceInput{
 		Root: root, EventType: "RUNTIME_SEEN", LicenseID: "lic-1", PlatformTarget: "x", ReleaseVersion: "1",
-		Endpoint: "http://user:pass@example.test/events",
+		Endpoint: "http://user:pass@example.test/events", EvidenceToken: strings.Repeat("a", 43),
 	})
 	if err == nil {
 		t.Fatal("expected insecure endpoint to be rejected")
+	}
+	_, err = recordLicenseEvidence(t.Context(), licenseEvidenceInput{
+		Root: root, EventType: "RUNTIME_SEEN", LicenseID: "lic-1", PlatformTarget: "x", ReleaseVersion: "1",
+		Endpoint: "https://example.test/events",
+	})
+	if err == nil {
+		t.Fatal("expected endpoint without an ingestion token to be rejected")
 	}
 }

@@ -165,10 +165,20 @@ if (Test-Path -LiteralPath $profilePath -PathType Leaf) {
       "-license-id", [string]$profile.licenseId, "-tenant-id", [string]$profile.tenantId,
       "-pos-device-id", [string]$profile.posDeviceId, "-target", $target, "-release-version", $version
     )
-    if (-not [string]::IsNullOrWhiteSpace([string]$profile.evidenceEndpoint)) {
+    $profileEvidenceToken = if ($profile.PSObject.Properties.Name -contains "evidenceToken") {
+      [string]$profile.evidenceToken
+    } else { "" }
+    if (-not [string]::IsNullOrWhiteSpace([string]$profile.evidenceEndpoint) -and
+        -not [string]::IsNullOrWhiteSpace($profileEvidenceToken)) {
       $licenseArguments += @("-endpoint", [string]$profile.evidenceEndpoint)
     }
-    & $agent @licenseArguments *> $null
+    $previousEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
+    try {
+      [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $profileEvidenceToken, "Process")
+      & $agent @licenseArguments *> $null
+    } finally {
+      [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $previousEvidenceToken, "Process")
+    }
   } catch {
     Write-Warning "บันทึก license update evidence ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: $($_.Exception.Message)"
   }

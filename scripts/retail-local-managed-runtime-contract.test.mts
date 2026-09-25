@@ -228,6 +228,8 @@ test("Retail Local licensing records evidence but can never stop store operation
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
+  const controlPlane = read("apps/web/lib/bms/retailLocalLicensing.ts");
+  const controlPlaneMigration = read("db/migrations/10.16__bms_retail_local_license_control_plane.sql");
   const schema = json("deploy/retail-local/managed-runtime/license-evidence.schema.json");
 
   assert.match(design, /no remote\s+kill switch/i);
@@ -236,6 +238,7 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(invariants, /never stop an already-installed shop/);
   assert.match(agent, /ed25519\.Sign/);
   assert.match(agent, /PreviousEventHash/);
+  assert.match(agent, /Authorization", "Bearer /);
   assert.match(agent, /Deliberately fail-open/);
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
@@ -245,6 +248,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);
   assert.equal(JSON.stringify(schema).includes("gps"), false);
+  assert.match(controlPlane, /crypto\.verify/);
+  assert.match(controlPlane, /EVENT_CHAIN_CONFLICT/);
+  assert.match(controlPlaneMigration, /Human back-office review queue[\s\S]*never disables an installed shop/);
 });
 
 test("stable promotion requires current external evidence for every GA gate", () => {
