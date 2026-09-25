@@ -8,6 +8,44 @@ It remains a deployment profile of the authoritative BMS stack. It does not crea
 stock, payment, permission, tax, or settlement implementation, and Electron remains a keystore-backed
 client rather than a server.
 
+## Licensing and evidence
+
+Licensing is an administrative control, not an availability dependency. Once installed, the shop's
+POS, payments, returns, stock, shifts, reports, data access, backup, restore, and disaster recovery
+continue regardless of control-plane reachability or commercial review. The product has no remote
+kill switch, mandatory runtime lease, grace-period shutdown, or licensing-driven read-only mode.
+
+The host agent maintains a separate evidence identity and records `INSTALLATION_REGISTERED`,
+`RUNTIME_SEEN`, `UPDATE_INSTALLED`, `TRANSFER_REQUESTED`, and `INSTALLATION_DEACTIVATED`. Each event
+contains only the issued license id, random installation id, provisioned tenant/POS-device ids,
+platform/release/agent versions, UTC device time, sequence number, prior-event hash, and device-key
+thumbprint. The canonical event is signed with the installation's Ed25519 key. The private key stays
+under the Managed Runtime data ACL and is never included in evidence or backup telemetry.
+
+Events are appended locally and placed in an outbox before delivery. HTTPS failure, timeout, or a
+non-2xx response preserves the event for a later attempt and returns a queued result; it never stops
+the runtime. The receiving control plane adds authoritative `receivedAt` and observed network
+metadata, stores the event append-only, verifies signature/hash-chain/sequence, and opens a
+`LICENSE_REVIEW_REQUIRED` case on duplicate or conflicting installations. Staff resolve that case
+with the customer through transfer, reset, or a commercial agreement. Existing installations remain
+operational throughout review. The control plane must not collect raw hardware serials, MAC address,
+GPS, sales lines, customer data, credentials, or secrets for this purpose.
+
+The evidence wire contract is [license-evidence.schema.json](../../deploy/retail-local/managed-runtime/license-evidence.schema.json).
+The agent commands are:
+
+```text
+bms-runtime-agent license-record ...   # append, sign, queue, then attempt delivery
+bms-runtime-agent license-pulse ...    # RUNTIME_SEEN from the persisted minimal profile
+bms-runtime-agent license-flush ...    # retry queued events in sequence order
+```
+
+Linux records a pulse after a Managed Runtime service start. Windows installs a best-effort daily
+task after licensing is configured. Both are explicitly outside service readiness and sales paths.
+Until the commercial bootstrap supplies a license id and HTTPS evidence endpoint, the pulse is a
+harmless no-op; absence of licensing configuration is visible to release operations but does not
+turn a candidate build into a production license implementation.
+
 ## Platform shape
 
 On Windows, a native signed host agent manages a private `BMSRuntime` WSL2 distribution containing

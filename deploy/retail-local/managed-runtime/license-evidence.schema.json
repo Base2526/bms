@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bms.local/schemas/retail-local-license-evidence-v1.json",
+  "title": "BMS Retail Local signed license evidence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["formatVersion", "event", "eventHash", "devicePublicKey", "signature"],
+  "properties": {
+    "formatVersion": { "const": 1 },
+    "event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "formatVersion", "eventId", "eventType", "licenseId", "installationId",
+        "platformTarget", "releaseVersion", "agentVersion", "occurredAt", "sequence",
+        "deviceKeyThumbprint"
+      ],
+      "properties": {
+        "formatVersion": { "const": 1 },
+        "eventId": { "type": "string", "format": "uuid" },
+        "eventType": {
+          "enum": [
+            "INSTALLATION_REGISTERED", "RUNTIME_SEEN", "UPDATE_INSTALLED",
+            "TRANSFER_REQUESTED", "INSTALLATION_DEACTIVATED"
+          ]
+        },
+        "licenseId": { "$ref": "#/$defs/id" },
+        "installationId": { "type": "string", "format": "uuid" },
+        "tenantId": { "$ref": "#/$defs/id" },
+        "posDeviceId": { "$ref": "#/$defs/id" },
+        "platformTarget": { "$ref": "#/$defs/id" },
+        "releaseVersion": { "$ref": "#/$defs/id" },
+        "agentVersion": { "$ref": "#/$defs/id" },
+        "occurredAt": { "type": "string", "format": "date-time" },
+        "sequence": { "type": "integer", "minimum": 1 },
+        "previousEventHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "deviceKeyThumbprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+      }
+    },
+    "eventHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "devicePublicKey": { "type": "string", "pattern": "^[A-Za-z0-9_-]{43}$" },
+    "signature": { "type": "string", "pattern": "^[A-Za-z0-9_-]{86}$" }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    }
+  }
+}

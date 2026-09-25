@@ -149,6 +149,8 @@ operator=${SUDO_USER:-root}
 operator_uid=$(id -u "$operator")
 operator_gid=$(id -g "$operator")
 device_token=$(jq -er '.deviceToken // empty' <<<"$provision_result" || true)
+tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
+pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
 if [[ -n $device_token && $operator != root ]]; then
   handoff_path="/run/user/$operator_uid/bms-pairing-handoff.json"
   install -d -m 0700 -o "$operator_uid" -g "$operator_gid" "/run/user/$operator_uid"
@@ -164,7 +166,21 @@ unset device_token provision_result provision_output
 
 jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target "$target" \
   --arg installedAt "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,url:"http://127.0.0.1:3100"}' \
+  --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
+
+# Licensing is evidence-only and deliberately outside the install/runtime success path. A missing
+# endpoint, unreachable control plane, rejected event, or local evidence error must never stop the
+# shop. Set these variables through the commercial bootstrap when licensing has been issued.
+if [[ -n ${BMS_LICENSE_ID:-} ]]; then
+  license_args=(license-record -root "$RUNTIME_ROOT" -event INSTALLATION_REGISTERED
+    -license-id "$BMS_LICENSE_ID" -tenant-id "$tenant_id" -pos-device-id "$pos_device_id"
+    -target "$target" -release-version "$(jq -r '.releaseVersion' <<<"$release_json")")
+  [[ -z ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} ]] || license_args+=(-endpoint "$BMS_LICENSE_EVIDENCE_ENDPOINT")
+  if ! license_result=$($agent "${license_args[@]}" 2>&1); then
+    printf 'คำเตือน: เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$license_result" >&2
+  fi
+fi
 printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'

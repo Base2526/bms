@@ -108,3 +108,8 @@ The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`
 the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and
 downloads only components authenticated by the packaged public key. A build with no
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
+Licensing is evidence-only and fail-open. It can flag an installation for back-office review, but it
+cannot stop an installed shop, make it read-only, or sit on a POS/payment/data/backup path. The agent
+keeps signed hash-chained events in `license-evidence/ledger.jsonl`, queues undelivered envelopes in
+`license-evidence/outbox/`, and treats network/control-plane failure as `queued`, not as a runtime
+failure. See [the licensing design](../../../docs/business/retail-local-managed-runtime.md#licensing-and-evidence).

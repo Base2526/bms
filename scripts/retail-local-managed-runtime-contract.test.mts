@@ -190,3 +190,26 @@ test("Linux release preparation builds all signed payload components before sign
   assert.match(prepare, /release-descriptor\.json[\s\S]*sign-release\.mjs/);
   assert.match(prepare, /BMS_ALLOW_LOCAL_RELEASE_SIGNING=1/);
 });
+
+test("Retail Local licensing records evidence but can never stop store operations", () => {
+  const design = read("docs/business/retail-local-managed-runtime.md");
+  const invariants = read("docs/agent-invariants.md");
+  const agent = read("apps/retail-local-agent/license_evidence.go");
+  const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const schema = json("deploy/retail-local/managed-runtime/license-evidence.schema.json");
+
+  assert.match(design, /no remote\s+kill switch/i);
+  assert.match(design, /Existing installations remain\s+operational throughout review/);
+  assert.match(invariants, /licensing is evidence-only and fail-open/i);
+  assert.match(invariants, /never stop an already-installed shop/);
+  assert.match(agent, /ed25519\.Sign/);
+  assert.match(agent, /PreviousEventHash/);
+  assert.match(agent, /Deliberately fail-open/);
+  assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
+  assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
+  assert.ok(schema.properties.event.properties.eventType.enum.includes("RUNTIME_SEEN"));
+  assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
+  assert.equal(JSON.stringify(schema).includes("macAddress"), false);
+  assert.equal(JSON.stringify(schema).includes("gps"), false);
+});
