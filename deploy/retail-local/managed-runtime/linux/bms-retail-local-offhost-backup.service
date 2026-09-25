@@ -1,0 +1,16 @@
+[Unit]
+Description=BMS Retail Local encrypted off-host backup
+After=bms-retail-local.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/bms-retail-local-offhost-backup
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=1800
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full

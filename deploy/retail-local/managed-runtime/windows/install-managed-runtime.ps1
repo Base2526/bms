@@ -113,6 +113,9 @@ $installedScript = Join-Path $bootstrapRoot "install-managed-runtime.ps1"
 $installedUpdateScript = Join-Path $bootstrapRoot "update-managed-runtime.ps1"
 $installedBackupScript = Join-Path $bootstrapRoot "backup-managed-runtime.ps1"
 $installedRestoreScript = Join-Path $bootstrapRoot "restore-managed-runtime.ps1"
+$installedConfigureBackupScript = Join-Path $bootstrapRoot "configure-offhost-backup.ps1"
+$installedRunBackupScript = Join-Path $bootstrapRoot "run-offhost-backup.ps1"
+$installedBackupStatusScript = Join-Path $bootstrapRoot "offhost-backup-status.ps1"
 $installedUninstallScript = Join-Path $bootstrapRoot "uninstall-managed-runtime.ps1"
 $installedAgent = Join-Path $bootstrapRoot "bms-runtime-agent.exe"
 $installedKeyring = Join-Path $bootstrapRoot "trusted-release-keys.json"
@@ -121,21 +124,19 @@ $installedTransaction = Join-Path $bootstrapRoot "bms-update-transaction"
 if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath($installedScript)) {
   Copy-Item -LiteralPath $PSCommandPath -Destination $installedScript -Force
 }
-$sourceUpdateScript = Join-Path $PSScriptRoot "update-managed-runtime.ps1"
-if (Test-Path -LiteralPath $sourceUpdateScript -PathType Leaf) {
-  Copy-Item -LiteralPath $sourceUpdateScript -Destination $installedUpdateScript -Force
-}
-$sourceBackupScript = Join-Path $PSScriptRoot "backup-managed-runtime.ps1"
-if (Test-Path -LiteralPath $sourceBackupScript -PathType Leaf) {
-  Copy-Item -LiteralPath $sourceBackupScript -Destination $installedBackupScript -Force
-}
-$sourceRestoreScript = Join-Path $PSScriptRoot "restore-managed-runtime.ps1"
-if (Test-Path -LiteralPath $sourceRestoreScript -PathType Leaf) {
-  Copy-Item -LiteralPath $sourceRestoreScript -Destination $installedRestoreScript -Force
-}
-$sourceUninstallScript = Join-Path $PSScriptRoot "uninstall-managed-runtime.ps1"
-if (Test-Path -LiteralPath $sourceUninstallScript -PathType Leaf) {
-  Copy-Item -LiteralPath $sourceUninstallScript -Destination $installedUninstallScript -Force
+foreach ($scriptCopy in @(
+  @{ Source = (Join-Path $PSScriptRoot "update-managed-runtime.ps1"); Destination = $installedUpdateScript },
+  @{ Source = (Join-Path $PSScriptRoot "backup-managed-runtime.ps1"); Destination = $installedBackupScript },
+  @{ Source = (Join-Path $PSScriptRoot "restore-managed-runtime.ps1"); Destination = $installedRestoreScript },
+  @{ Source = (Join-Path $PSScriptRoot "configure-offhost-backup.ps1"); Destination = $installedConfigureBackupScript },
+  @{ Source = (Join-Path $PSScriptRoot "run-offhost-backup.ps1"); Destination = $installedRunBackupScript },
+  @{ Source = (Join-Path $PSScriptRoot "offhost-backup-status.ps1"); Destination = $installedBackupStatusScript },
+  @{ Source = (Join-Path $PSScriptRoot "uninstall-managed-runtime.ps1"); Destination = $installedUninstallScript }
+)) {
+  if ((Test-Path -LiteralPath $scriptCopy.Source -PathType Leaf) -and
+      [IO.Path]::GetFullPath($scriptCopy.Source) -ne [IO.Path]::GetFullPath($scriptCopy.Destination)) {
+    Copy-Item -LiteralPath $scriptCopy.Source -Destination $scriptCopy.Destination -Force
+  }
 }
 if ([IO.Path]::GetFullPath($AgentPath) -ne [IO.Path]::GetFullPath($installedAgent)) {
   Copy-Item -LiteralPath $AgentPath -Destination $installedAgent -Force
@@ -146,7 +147,8 @@ if ([IO.Path]::GetFullPath($KeyringPath) -ne [IO.Path]::GetFullPath($installedKe
 foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
   $controlSource = Join-Path $PSScriptRoot $controlName
   $controlDestination = Join-Path $bootstrapRoot $controlName
-  if (Test-Path -LiteralPath $controlSource -PathType Leaf) {
+  if ((Test-Path -LiteralPath $controlSource -PathType Leaf) -and
+      [IO.Path]::GetFullPath($controlSource) -ne [IO.Path]::GetFullPath($controlDestination)) {
     Copy-Item -LiteralPath $controlSource -Destination $controlDestination -Force
   }
 }

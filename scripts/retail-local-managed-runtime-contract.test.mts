@@ -170,6 +170,34 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
 });
 
+test("scheduled off-host backups are encrypted, separate, retained, and visibly monitored", () => {
+  const linuxConfigure = read("deploy/retail-local/managed-runtime/linux/configure-offhost-backup.sh");
+  const linuxRunner = read("deploy/retail-local/managed-runtime/linux/run-offhost-backup.sh");
+  const linuxStatus = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-backup-status");
+  const linuxTimer = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-offhost-backup.timer");
+  const windowsConfigure = read("deploy/retail-local/managed-runtime/windows/configure-offhost-backup.ps1");
+  const windowsRunner = read("deploy/retail-local/managed-runtime/windows/run-offhost-backup.ps1");
+  const windowsStatus = read("deploy/retail-local/managed-runtime/windows/offhost-backup-status.ps1");
+
+  assert.match(linuxConfigure, /mountpoint -q[\s\S]*runtime_device[\s\S]*destination_device/);
+  assert.match(linuxRunner, /bms-localctl backup[\s\S]*--recipient/);
+  assert.match(linuxRunner, /sha256sum[\s\S]*-mtime[\s\S]*-delete/);
+  assert.match(linuxRunner, /write_status failed[\s\S]*write_status passed/);
+  assert.match(linuxStatus, /172800/);
+  assert.match(linuxTimer, /OnCalendar=\*-\*-\* 02:00:00[\s\S]*Persistent=true/);
+
+  assert.match(windowsConfigure, /DriveType[\s\S]*DiskNumber/);
+  assert.match(windowsConfigure, /New-ScheduledTaskTrigger -Daily -At 2am/);
+  assert.match(windowsConfigure, /LogonType Interactive[\s\S]*StartWhenAvailable/);
+  assert.match(windowsRunner, /bms-localctl backup[\s\S]*--recipient/);
+  assert.match(windowsRunner, /runtime-read[\s\S]*Get-FileHash[\s\S]*retentionDays/);
+  assert.match(windowsRunner, /Write-BackupStatus "failed"[\s\S]*finally/);
+  assert.match(windowsStatus, /TotalHours -gt 48/);
+  for (const source of [linuxConfigure, linuxRunner, windowsConfigure, windowsRunner]) {
+    assert.doesNotMatch(source, /license-(?:record|pulse|flush)/);
+  }
+});
+
 test("Linux bootstrap package stays small and never packages a release private key", () => {
   const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");

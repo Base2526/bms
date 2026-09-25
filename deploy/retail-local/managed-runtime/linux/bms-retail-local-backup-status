@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+status=/var/lib/bms-retail-local/offhost-backup-status.json
+if [[ ! -f $status ]]; then
+  echo "ยังไม่มีผล off-host backup"
+  exit 1
+fi
+jq . "$status"
+jq -e '.status == "passed"' "$status" >/dev/null
+last_success=$(jq -er '.at' "$status")
+last_epoch=$(date -u -d "$last_success" '+%s')
+now_epoch=$(date -u '+%s')
+if (( now_epoch - last_epoch > 172800 )); then
+  echo "คำเตือน: off-host backup ล่าสุดเก่ากว่า 48 ชั่วโมง" >&2
+  exit 1
+fi

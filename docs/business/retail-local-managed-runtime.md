@@ -101,6 +101,13 @@ logical database dump plus stored files, installation metadata, and the exact se
 decrypt credentials. Commercial recovery must be portable to a replacement machine, so machine-only
 DPAPI wrapping cannot be the sole backup key.
 
+Windows and Ubuntu can schedule that logical bundle to a separate destination with age recipient
+encryption. The shop machine stores only the public recipient; the recovery identity stays in a
+separate support/customer vault. The job refuses the Windows system disk or the Ubuntu runtime
+filesystem, writes through a partial file, emits a SHA-256 sidecar, applies bounded retention, and
+records a customer-readable failed/passed status. A passed scheduled copy is still not proof of
+recoverability: stable promotion needs a sampled replacement-machine restore and reconciliation.
+
 Uninstall keeps shop data by default. Permanent erase is a separate, explicit workflow; unregistering
 the WSL distribution is destructive and must never occur during an ordinary uninstall.
 
@@ -109,7 +116,8 @@ the WSL distribution is destructive and must never occur during an ordinary unin
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
 Ubuntu systemd install, pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
 logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
-definition. It also implements a signed transactional updater: replay/downgrade refusal, verified
+definition. It includes scheduled encrypted off-host export, retention, checksums and stale/failure
+reporting on both supported runtime families. It also implements a signed transactional updater: replay/downgrade refusal, verified
 pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback
 or full data restore, and startup recovery for an interrupted runtime transaction. The legacy Docker
 Desktop pilot remains available and unchanged while this path is certified.

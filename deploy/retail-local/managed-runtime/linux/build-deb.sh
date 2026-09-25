@@ -45,9 +45,11 @@ trap cleanup EXIT HUP INT TERM
 package_root="$work/package"
 mkdir -p "$package_root/DEBIAN" \
   "$package_root/usr/bin" \
+  "$package_root/usr/sbin" \
   "$package_root/usr/lib/bms-retail-local/bootstrap" \
   "$package_root/usr/share/doc/bms-retail-local-bootstrap" \
-  "$package_root/etc/bms-retail-local"
+  "$package_root/etc/bms-retail-local" \
+  "$package_root/lib/systemd/system"
 
 (cd "$agent_root" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
   -trimpath -ldflags='-s -w' -o "$package_root/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" .)
@@ -69,6 +71,20 @@ install -m 0755 "$linux_root/bms-retail-local-setup" \
   "$package_root/usr/bin/bms-retail-local-setup"
 install -m 0755 "$linux_root/bms-retail-local-update" \
   "$package_root/usr/bin/bms-retail-local-update"
+install -m 0755 "$linux_root/bms-retail-local-backup-status" \
+  "$package_root/usr/bin/bms-retail-local-backup-status"
+install -m 0755 "$linux_root/configure-offhost-backup.sh" \
+  "$package_root/usr/sbin/bms-retail-local-configure-backup"
+install -m 0755 "$linux_root/run-offhost-backup.sh" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh"
+install -m 0644 "$linux_root/bms-retail-local-offhost-backup.service" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-offhost-backup.service"
+install -m 0644 "$linux_root/bms-retail-local-offhost-backup.timer" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-offhost-backup.timer"
+install -m 0644 "$linux_root/bms-retail-local-offhost-backup.service" \
+  "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.service"
+install -m 0644 "$linux_root/bms-retail-local-offhost-backup.timer" \
+  "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.timer"
 
 if [[ -n $manifest_url ]]; then
   printf '%s\n' "$manifest_url" >"$package_root/etc/bms-retail-local/release-manifest-url"
@@ -82,6 +98,8 @@ BMS Retail Local Managed Runtime bootstrap
 
 Install: sudo bms-retail-local-setup [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
 Update:  sudo bms-retail-local-update [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
+Backup:  sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST [RETENTION_DAYS]
+Status:  sudo bms-retail-local-backup-status
 The package contains no private signing key, database, shop credential, or application image.
 EOF
 
@@ -104,6 +122,9 @@ cat >"$package_root/DEBIAN/postinst" <<'EOF'
 set -e
 chmod 0755 /usr/bin/bms-retail-local-setup
 chmod 0755 /usr/bin/bms-retail-local-update
+install -m 0755 /usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh \
+  /usr/local/sbin/bms-retail-local-offhost-backup
+systemctl daemon-reload
 echo "BMS Retail Local bootstrap installed. Run: sudo bms-retail-local-setup"
 EOF
 chmod 0755 "$package_root/DEBIAN/postinst"
@@ -112,6 +133,7 @@ cat >"$package_root/DEBIAN/prerm" <<'EOF'
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+  systemctl disable --now bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local.service >/dev/null 2>&1 || true
 fi
 exit 0

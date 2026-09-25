@@ -64,6 +64,11 @@ install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 install -m 0755 -o root -g root "$bundle_root/uninstall-managed-runtime.sh" /usr/local/sbin/bms-retail-local-uninstall
 install -m 0755 -o root -g root "$bundle_root/update-managed-runtime.sh" /usr/local/sbin/bms-retail-local-update
+install -m 0755 -o root -g root "$bundle_root/run-offhost-backup.sh" /usr/local/sbin/bms-retail-local-offhost-backup
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.service" \
+  /etc/systemd/system/bms-retail-local-offhost-backup.service
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.timer" \
+  /etc/systemd/system/bms-retail-local-offhost-backup.timer
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"

@@ -24,6 +24,7 @@ if (Test-Path -LiteralPath $installedAgent -PathType Leaf) {
 Unregister-ScheduledTask -TaskName "BMS Retail Local Runtime" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Confirm:$false -ErrorAction SilentlyContinue
+Unregister-ScheduledTask -TaskName "BMS Retail Local Off-host Backup" -Confirm:$false -ErrorAction SilentlyContinue
 
 if (-not $EraseData) {
   Write-Host "หยุดและถอด startup แล้ว ข้อมูลร้าน, secrets และ BMSRuntime ยังอยู่เพื่อ recovery" -ForegroundColor Green

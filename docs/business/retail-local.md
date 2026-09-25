@@ -116,7 +116,8 @@ Commercial self-install release still requires:
 - automatic updater with tested application + schema rollback policy;
 - supported printer/scanner/drawer matrix and real hardware certification;
 - power-loss, disk-full, forced-restart, backup corruption, and restore drills;
-- encrypted off-host backup transport and retention policy;
+- qualification evidence for the Managed Runtime encrypted off-host scheduler, retention/failure
+  reporting, and a replacement-machine sample restore;
 - remote diagnostic/support workflow that never exports secrets or raw customer data;
 - licensing/device-transfer policy and a documented support lifecycle;
 - a decision on whether Docker Desktop remains a customer prerequisite or is replaced by a managed

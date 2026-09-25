@@ -48,6 +48,8 @@ in a signed agent release before manifests start using that id.
 - atomic first-run migration/provisioning and ACL/mode-protected secrets;
 - short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
 - encrypted logical database/files/secrets backup through `bms-localctl backup`;
+- scheduled age-encrypted off-host backup for Windows and Ubuntu, with a separately held recipient
+  key, SHA-256 sidecar, retention, stale/failure status, and no dependency on the licensing service;
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
@@ -73,8 +75,13 @@ external release gates are complete:
 - Authenticode signing for the bootstrap/agent/Desktop and repository signing for Linux packages;
 - an evidenced backup/restore drill on replacement hardware;
 - an evidenced transactional update/rollback and power-interruption drill on every supported target;
+- an evidenced scheduled off-host run plus replacement-machine sample restore using the separately
+  held recovery identity;
 - clean-machine Windows 10/11 and Ubuntu acceptance runs, including reboot, power loss, disk full,
   suspend/resume, printer/scanner/customer-display, and uninstall-retains-data cases.
+- deployed licensing evidence ingestion, duplicate review/device-transfer operations, and a published
+  support lifecycle (none of these may disable an installed shop);
+- exact-release privacy/retention approval for the consent-gated remote diagnostics workflow.
 
 Until those gates pass, publish this only as an internal/pilot artifact. Ubuntu exposes the separate
 `bms-retail-local-update` command; a newer Windows bootstrap detects an existing receipt and enters
@@ -130,6 +137,25 @@ downloads only components authenticated by the packaged public key. A build with
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
 After installation, update only through `sudo bms-retail-local-update`; rerunning the raw Linux setup
 script still refuses an existing shop.
+
+Configure Ubuntu off-host backup only after mounting a NAS/removable filesystem at its own mount
+point. Generate and custody the age identity outside the shop computer, then pass only its public
+recipient to the shop:
+
+```bash
+sudo bms-retail-local-configure-backup age1... /mnt/bms-offhost 35
+sudo systemctl start bms-retail-local-offhost-backup.service
+sudo bms-retail-local-backup-status
+```
+
+On Windows, open **BMS Retail Local > Configure Off-host Backup** and enter the same kind of public
+recipient, a UNC/network/removable/separate-physical-disk directory, and retention days. The task
+runs daily at 02:00 and retries after a missed schedule. **Off-host Backup Status** returns an error
+when the last run failed or the last success is older than 48 hours. The private age identity must be
+kept in the recovery vault/second medium, never beside the backup files; losing it makes the backup
+unrecoverable. A release is not promoted until support restores a sample to a replacement machine
+with that identity and reconciles store totals.
+
 Licensing is evidence-only and fail-open. It can flag an installation for back-office review, but it
 cannot stop an installed shop, make it read-only, or sit on a POS/payment/data/backup path. The agent
 keeps signed hash-chained events in `license-evidence/ledger.jsonl`, queues undelivered envelopes in
