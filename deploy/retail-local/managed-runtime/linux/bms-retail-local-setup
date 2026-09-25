@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly bundle_root=/usr/lib/bms-retail-local/bootstrap
+readonly release_url_file=/etc/bms-retail-local/release-manifest-url
+
+manifest_uri=${1:-}
+if [[ -z $manifest_uri && -f $release_url_file ]]; then
+  manifest_uri=$(tr -d '\r\n' <"$release_url_file")
+fi
+if [[ -z $manifest_uri ]]; then
+  echo "ยังไม่ได้กำหนด release channel URL" >&2
+  echo "usage: sudo bms-retail-local-setup https://release.example/release.jws.json" >&2
+  exit 2
+fi
+exec "$bundle_root/install-managed-runtime.sh" "$manifest_uri" "$bundle_root"

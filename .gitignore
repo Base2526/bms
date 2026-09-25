@@ -47,6 +47,7 @@ deploy/retail-local/release.json
 deploy/retail-local/installation.json
 deploy/retail-local/doctor.json
 artifacts/retail-local/
+/secure/
 
 # editor-local settings and generated repository snapshots
 .vscode/

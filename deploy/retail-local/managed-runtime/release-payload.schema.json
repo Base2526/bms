@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bms.local/schemas/managed-runtime-release-payload-v1.json",
+  "title": "BMS Retail Local Managed Runtime verified release payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "product",
+    "releaseVersion",
+    "channel",
+    "platformTarget",
+    "minimumAgentVersion",
+    "schemaVersion",
+    "rollbackSafe",
+    "createdAt",
+    "sourceCommit",
+    "components"
+  ],
+  "properties": {
+    "product": { "const": "BMS Retail Local" },
+    "releaseVersion": { "$ref": "#/$defs/version" },
+    "channel": { "enum": ["pilot", "stable"] },
+    "platformTarget": { "type": "string", "pattern": "^[a-z0-9._-]{1,80}$" },
+    "minimumAgentVersion": { "$ref": "#/$defs/semver" },
+    "schemaVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "rollbackSafe": { "type": "boolean" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "sourceCommit": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "components": {
+      "type": "array",
+      "minItems": 7,
+      "items": { "$ref": "#/$defs/component" },
+      "allOf": [
+        { "contains": { "properties": { "name": { "const": "web" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "ws" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "postgres" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "redis" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "runtime" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "compose" } }, "required": ["name"] } },
+        { "contains": { "properties": { "name": { "const": "desktop" } }, "required": ["name"] } }
+      ]
+    }
+  },
+  "$defs": {
+    "version": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$" },
+    "semver": { "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$" },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "url", "sha256", "sizeBytes"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$" },
+        "kind": { "enum": ["oci-image", "runtime", "desktop", "support-file"] },
+        "url": { "type": "string", "pattern": "^https://" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "ociDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+        "imageRef": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$" },
+        "sizeBytes": { "type": "integer", "minimum": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "oci-image" } } },
+          "then": { "required": ["ociDigest", "imageRef"] }
+        }
+      ]
+    }
+  }
+}

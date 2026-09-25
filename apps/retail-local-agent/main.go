@@ -1,0 +1,152 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"flag"
+	"fmt"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+)
+
+const agentVersion = "0.2.0"
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+
+func run(args []string) error {
+	if len(args) == 0 {
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|stage-release|engine-load|runtime-write|runtime-read|version>")
+	}
+	switch args[0] {
+	case "version":
+		fmt.Println(agentVersion)
+		return nil
+	case "preflight":
+		result := platformPreflight()
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(encoded))
+		if !result.OK {
+			return errors.New("เครื่องนี้ไม่ผ่าน Managed Runtime preflight")
+		}
+		return nil
+	case "verify-release":
+		flags := flag.NewFlagSet("verify-release", flag.ContinueOnError)
+		manifest := flags.String("manifest", "", "signed release envelope")
+		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
+		target := flags.String("target", "", "expected platform target")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *manifest == "" || *keyring == "" || *target == "" {
+			return errors.New("verify-release ต้องมี -manifest, -keyring และ -target")
+		}
+		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
+		if err != nil {
+			return err
+		}
+		return writeJSON(map[string]any{
+			"ok":             true,
+			"keyId":          verified.Header.KeyID,
+			"releaseVersion": verified.Payload.ReleaseVersion,
+			"platformTarget": verified.Payload.PlatformTarget,
+			"rollbackSafe":   verified.Payload.RollbackSafe,
+			"components":     verified.Payload.Components,
+		})
+	case "stage-release":
+		flags := flag.NewFlagSet("stage-release", flag.ContinueOnError)
+		manifest := flags.String("manifest", "", "signed release envelope")
+		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
+		target := flags.String("target", "", "expected platform target")
+		root := flags.String("root", "", "Managed Runtime data root")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *manifest == "" || *keyring == "" || *target == "" || *root == "" {
+			return errors.New("stage-release ต้องมี -manifest, -keyring, -target และ -root")
+		}
+		absoluteRoot, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		result, err := stageRelease(ctx, *manifest, *keyring, *target, absoluteRoot)
+		if err != nil {
+			return err
+		}
+		return writeJSON(result)
+	case "engine-load":
+		flags := flag.NewFlagSet("engine-load", flag.ContinueOnError)
+		engine := flags.String("engine", "", "windows-wsl or linux-native")
+		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
+		artifact := flags.String("artifact", "", "verified OCI archive")
+		imageRef := flags.String("image-ref", "", "image reference contained in archive")
+		digest := flags.String("digest", "", "expected immutable image id")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *engine == "" || *artifact == "" || *imageRef == "" || *digest == "" {
+			return errors.New("engine-load ต้องมี -engine, -artifact, -image-ref และ -digest")
+		}
+		return loadAndVerifyImage(*engine, *distro, *artifact, *imageRef, *digest)
+	case "runtime-write":
+		flags := flag.NewFlagSet("runtime-write", flag.ContinueOnError)
+		engine := flags.String("engine", "", "windows-wsl or linux-native")
+		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
+		source := flags.String("source", "", "verified source file")
+		destination := flags.String("destination", "", "runtime destination below /var/lib/bms-retail-local")
+		mode := flags.String("mode", "0600", "destination permissions")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *engine == "" || *source == "" || *destination == "" {
+			return errors.New("runtime-write ต้องมี -engine, -source และ -destination")
+		}
+		return writeRuntimeFile(*engine, *distro, *source, *destination, *mode)
+	case "runtime-read":
+		flags := flag.NewFlagSet("runtime-read", flag.ContinueOnError)
+		engine := flags.String("engine", "", "windows-wsl")
+		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
+		source := flags.String("source", "", "runtime source below /var/lib/bms-retail-local")
+		destination := flags.String("destination", "", "new host destination file")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *engine == "" || *source == "" || *destination == "" {
+			return errors.New("runtime-read ต้องมี -engine, -source และ -destination")
+		}
+		return readRuntimeFile(*engine, *distro, *source, *destination)
+	default:
+		return fmt.Errorf("ไม่รู้จักคำสั่ง %q", args[0])
+	}
+}
+
+func writeJSON(value any) error {
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetEscapeHTML(false)
+	return encoder.Encode(value)
+}
+
+func safeInstallRoot(input string) (string, error) {
+	root, err := filepath.Abs(input)
+	if err != nil {
+		return "", fmt.Errorf("อ่าน install root ไม่ได้: %w", err)
+	}
+	clean := filepath.Clean(root)
+	volume := filepath.VolumeName(clean)
+	if clean == string(filepath.Separator) || (volume != "" && clean == volume+string(filepath.Separator)) {
+		return "", errors.New("ปฏิเสธ install root ที่เป็น filesystem root")
+	}
+	return clean, nil
+}

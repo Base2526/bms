@@ -53,3 +53,14 @@ export function parsePairingInput({ serverUrl, pairingInput }) {
   if (!normalizedServer) return { ok: false, error: "Server URL ไม่ถูกต้อง ระบบจริงต้องใช้ HTTPS" };
   return { ok: true, serverUrl: normalizedServer, token };
 }
+
+export function parsePairingHandoff(input, now = Date.now()) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const keys = Object.keys(input).sort();
+  if (keys.join(",") !== "expiresAt,serverUrl,token,version") return null;
+  if (input.version !== 1 || typeof input.expiresAt !== "string") return null;
+  const expiresAt = Date.parse(input.expiresAt);
+  if (!Number.isFinite(expiresAt) || expiresAt <= now || expiresAt > now + 15 * 60_000) return null;
+  const parsed = parsePairingInput({ serverUrl: input.serverUrl, pairingInput: input.token });
+  return parsed.ok ? parsed : null;
+}

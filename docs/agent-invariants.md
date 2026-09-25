@@ -569,6 +569,12 @@ deployment profile. The operator contract and remaining release gates live in
   install path, not a signed consumer installer. Do not advertise general availability until code
   signing, updater/rollback, supported peripheral certification, power-loss/disk-full/restore drills,
   off-host backup, remote diagnostics and support/licensing policy have passed their release gates.
+- **Managed Runtime is a delivery layer, not another backend.** The incubating Windows WSL2/Moby and
+  Ubuntu systemd/Moby host agent may install, start, update, back up and diagnose the same pinned
+  services, but it never owns business rules or hands an engine socket/database credential to
+  Electron. A preflight pass is only a candidate result, not a production-support claim; the signed
+  target release and clean-machine failure matrix remain required. See
+  [business/retail-local-managed-runtime.md](business/retail-local-managed-runtime.md).
 
 ## Restaurant POS (dine-in)
 
