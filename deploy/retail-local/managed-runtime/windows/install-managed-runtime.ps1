@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [string]$ManifestUri,
   [string]$AgentPath = (Join-Path $PSScriptRoot "bms-runtime-agent.exe"),

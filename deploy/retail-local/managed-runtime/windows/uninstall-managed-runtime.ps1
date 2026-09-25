@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [switch]$EraseData,
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal")

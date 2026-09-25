@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -102,6 +102,20 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
   assert.match(linux, /22\.04/);
   assert.match(linux, /PID 1 ไม่ใช่ systemd/);
   assert.doesNotMatch(linux, /apt(?:-get)?\s+install|dnf\s+install|systemctl\s+(?:enable|start)/);
+});
+
+test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
+  const windowsRoot = new URL("../deploy/retail-local/managed-runtime/windows/", import.meta.url);
+  const scripts = readdirSync(windowsRoot).filter((name) => name.endsWith(".ps1"));
+  assert.ok(scripts.length > 0);
+  for (const name of scripts) {
+    const bytes = readFileSync(new URL(name, windowsRoot));
+    assert.deepEqual(
+      [...bytes.subarray(0, 3)],
+      [0xef, 0xbb, 0xbf],
+      `${name} must be UTF-8 with BOM so Windows PowerShell 5.1 does not parse Thai text as ANSI`,
+    );
+  }
 });
 
 test("Managed Runtime keeps authority out of Electron and does not replace the pilot early", () => {
