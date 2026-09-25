@@ -5,7 +5,7 @@ Assessment date: 2026-09-25. This file records the evidence boundary; it is not 
 ## Verdict
 
 **Not Commercial/GA.** The signed payload, install, and transactional update candidate paths are
-implemented, but external certification/signing/control-plane and real-machine qualification gates
+implemented, but external certification/signing, control-plane deployment and real-machine qualification gates
 remain open. Pilot artifacts must not use the `stable` channel or be represented as generally available.
 
 ## Implemented and covered by repository tests
