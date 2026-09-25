@@ -178,6 +178,7 @@ func run(args []string) error {
 	case "license-pulse":
 		flags := flag.NewFlagSet("license-pulse", flag.ContinueOnError)
 		root := flags.String("root", "", "Managed Runtime data root")
+		eventType := flags.String("event", "RUNTIME_SEEN", "profile-backed license evidence event type")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -188,7 +189,7 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
-		result, err := pulseLicenseEvidence(context.Background(), absoluteRoot)
+		result, err := pulseLicenseEvidence(context.Background(), absoluteRoot, *eventType)
 		if err != nil {
 			return err
 		}

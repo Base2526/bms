@@ -196,7 +196,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   const invariants = read("docs/agent-invariants.md");
   const agent = read("apps/retail-local-agent/license_evidence.go");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
   const schema = json("deploy/retail-local/managed-runtime/license-evidence.schema.json");
 
   assert.match(design, /no remote\s+kill switch/i);
@@ -208,6 +210,8 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(agent, /Deliberately fail-open/);
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
+  assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
+  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
   assert.ok(schema.properties.event.properties.eventType.enum.includes("RUNTIME_SEEN"));
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);

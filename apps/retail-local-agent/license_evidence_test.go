@@ -88,7 +88,7 @@ func TestLicenseEvidenceDeliveryFailureQueuesWithoutBlocking(t *testing.T) {
 
 func TestLicensePulseUsesPersistedProfileAndMissingProfileIsNoop(t *testing.T) {
 	root := t.TempDir()
-	missing, err := pulseLicenseEvidence(t.Context(), root)
+	missing, err := pulseLicenseEvidence(t.Context(), root, "RUNTIME_SEEN")
 	if err != nil || !missing.OK || missing.Delivery != "not-configured" {
 		t.Fatalf("missing profile must be a harmless no-op: result=%+v err=%v", missing, err)
 	}
@@ -99,7 +99,7 @@ func TestLicensePulseUsesPersistedProfileAndMissingProfileIsNoop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pulse, err := pulseLicenseEvidence(t.Context(), root)
+	pulse, err := pulseLicenseEvidence(t.Context(), root, "RUNTIME_SEEN")
 	if err != nil || !pulse.OK || pulse.Queued != 2 {
 		t.Fatalf("unexpected pulse: result=%+v err=%v", pulse, err)
 	}

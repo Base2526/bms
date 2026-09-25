@@ -2,6 +2,9 @@
 set -Eeuo pipefail
 
 [[ ${EUID} -eq 0 ]] || { echo "กรุณารันด้วย sudo" >&2; exit 1; }
+# Commercial evidence is best-effort. Failure is ignored before any runtime or data operation.
+/opt/bms-retail-local/bms-runtime-agent license-pulse -root /var/lib/bms-retail-local \
+  -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
 systemctl disable --now bms-retail-local.service 2>/dev/null || true
 rm -f /etc/systemd/system/bms-retail-local.service
 systemctl daemon-reload

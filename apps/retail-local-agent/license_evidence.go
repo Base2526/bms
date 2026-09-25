@@ -208,7 +208,7 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 	return result, nil
 }
 
-func pulseLicenseEvidence(ctx context.Context, root string) (licenseEvidenceResult, error) {
+func pulseLicenseEvidence(ctx context.Context, root, eventType string) (licenseEvidenceResult, error) {
 	profilePath := filepath.Join(root, "license-evidence", "profile.json")
 	contents, err := os.ReadFile(profilePath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -222,7 +222,7 @@ func pulseLicenseEvidence(ctx context.Context, root string) (licenseEvidenceResu
 		return licenseEvidenceResult{}, errors.New("license evidence profile ไม่ถูกต้อง")
 	}
 	return recordLicenseEvidence(ctx, licenseEvidenceInput{
-		Root: root, EventType: "RUNTIME_SEEN", LicenseID: profile.LicenseID, TenantID: profile.TenantID,
+		Root: root, EventType: eventType, LicenseID: profile.LicenseID, TenantID: profile.TenantID,
 		POSDeviceID: profile.POSDeviceID, PlatformTarget: profile.PlatformTarget,
 		ReleaseVersion: profile.ReleaseVersion, Endpoint: profile.EvidenceEndpoint,
 	})
