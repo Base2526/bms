@@ -161,3 +161,6 @@ cannot stop an installed shop, make it read-only, or sit on a POS/payment/data/b
 keeps signed hash-chained events in `license-evidence/ledger.jsonl`, queues undelivered envelopes in
 `license-evidence/outbox/`, and treats network/control-plane failure as `queued`, not as a runtime
 failure. See [the licensing design](../../../docs/business/retail-local-managed-runtime.md#licensing-and-evidence).
+The control plane can issue the commercial record as a 30-day trial and report that it is active,
+expiring, or expired, but that state is deliberately not a host-agent command. Conversion to paid
+keeps the same installation, tenant, POS device, data, and evidence identity.

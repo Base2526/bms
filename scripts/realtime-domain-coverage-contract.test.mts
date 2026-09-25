@@ -179,7 +179,7 @@ const OPS_TELEMETRY = [
   "bms_delivery_events", "bms_delivery_commands",
   "bms_retail_local_licenses", "bms_retail_local_license_tokens",
   "bms_retail_local_license_installations", "bms_retail_local_license_events",
-  "bms_retail_local_license_reviews",
+  "bms_retail_local_license_reviews", "bms_retail_local_license_commercial_events",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */

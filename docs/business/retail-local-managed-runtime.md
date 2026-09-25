@@ -17,6 +17,16 @@ POS, payments, returns, stock, shifts, reports, data access, backup, restore, an
 continue regardless of control-plane reachability or commercial review. The product has no remote
 kill switch, mandatory runtime lease, grace-period shutdown, or licensing-driven read-only mode.
 
+A new commercial installation may be issued as a **30-day trial**. The control plane starts the
+window from authoritative server time and derives `TRIAL_ACTIVE`, `TRIAL_EXPIRING` (14 days or less),
+or `TRIAL_EXPIRED`; it does not send those states back as runtime authority. Expiry creates a sales
+follow-up signal only. The already-installed shop keeps every local business and recovery path.
+Cloud services that carry an operator cost may use their own separately documented quota, but no
+cloud/add-on decision may be reused as permission to block local transactions or customer data.
+Platform staff can extend a trial, mark payment review, reactivate/cancel the commercial record, or
+convert it to paid without reinstalling or replacing the installation identity. Every such action
+requires explicit confirmation, a reason, and an append-only actor/timestamp audit row.
+
 The host agent maintains a separate evidence identity and records `INSTALLATION_REGISTERED`,
 `RUNTIME_SEEN`, `UPDATE_INSTALLED`, `TRANSFER_REQUESTED`, and `INSTALLATION_DEACTIVATED`. Each event
 contains only the issued license id, random installation id, provisioned tenant/POS-device ids,
@@ -50,13 +60,21 @@ Until the commercial bootstrap supplies a license id and HTTPS evidence endpoint
 harmless no-op; absence of licensing configuration is visible to release operations but does not
 turn a candidate build into a production license implementation.
 
-Migration `10.16` and `retailLocalLicensing.ts` implement the platform control-plane candidate. A
+Migrations `10.16`–`10.17` and `retailLocalLicensing.ts` implement the platform control-plane candidate. A
 platform administrator can issue a license/token, list licenses, inspect the installation/event
 timeline (`occurredAt` plus authoritative `receivedAt`), rotate a leaked token, and approve,
 deactivate or transfer an installation through `/api/admin/retail-local/licenses`. The ingestion
 token is returned only when issued/rotated and must be delivered through the commercial bootstrap,
 not email or logs. A duplicate/key/chain/limit conflict is accepted as evidence and creates a human
 review; it does not send a sanction to the shop.
+
+`POST /api/admin/retail-local/licenses` accepts `licenseType: "TRIAL"` or `"PAID"`; omission keeps
+the existing paid behavior. Commercial actions use
+`POST /api/admin/retail-local/licenses/{id}/commercial`. List/detail responses include the stored
+commercial state, effective derived state, exact trial timestamps, and whole days remaining. Trial
+expiry is derived at read time rather than by a cron, so a missed scheduler cannot make the ledger
+lie. Evidence review status remains a separate field: suspected duplicate use and an expired trial
+are different conversations and must never be collapsed into one enforcement switch.
 
 ## Platform shape
 

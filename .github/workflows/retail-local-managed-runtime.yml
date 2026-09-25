@@ -11,6 +11,7 @@ on:
       - "apps/web/lib/bms/retailLocalLicensing.ts"
       - "apps/web/Dockerfile"
       - "db/migrations/10.16__bms_retail_local_license_control_plane.sql"
+      - "db/migrations/10.17__bms_retail_local_trial_lifecycle.sql"
       - "deploy/retail-local/managed-runtime/**"
       - "docker-compose.prod.yml"
       - "docs/business/retail-local*.md"

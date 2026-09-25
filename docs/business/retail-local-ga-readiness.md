@@ -20,7 +20,7 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
 | Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |
-| License evidence + control plane | Implemented candidate | token-bound ingestion, Ed25519/hash-chain verification, append-only timeline, duplicate review, token rotation and human transfer/deactivation APIs; deployment/ops qualification still required |
+| License evidence + control plane | Implemented candidate | token-bound ingestion, Ed25519/hash-chain verification, append-only timeline, duplicate review, token rotation, 30-day trial/paid lifecycle audit and human transfer/deactivation APIs; deployment/ops qualification still required |
 | Stable-channel claim protection | Implemented | stable signer requires unexpired promotion evidence |
 | Transactional installed-shop updater | Implemented candidate | signed newer-only release, encrypted pre-update backup, health-gated commit, rollback/data restore and interrupted-update recovery tests |
 | Consent-gated support diagnostics | Implemented candidate | tenant/device authorization, allowlist redaction, private encrypted-capable storage, retention and dedicated contract suites |

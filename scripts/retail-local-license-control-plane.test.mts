@@ -3,6 +3,8 @@ import crypto from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  deriveRetailLocalCommercialState,
+  RETAIL_LOCAL_TRIAL_DAYS,
   RetailLocalLicenseError,
   verifyRetailLocalLicenseEnvelope,
 } from "../apps/web/lib/bms/retailLocalLicensing.ts";
@@ -57,6 +59,7 @@ test("license control plane rejects tampering and unknown fields", () => {
 
 test("license schema is append-only evidence and never a runtime entitlement gate", () => {
   const migration = readFileSync(new URL("../db/migrations/10.16__bms_retail_local_license_control_plane.sql", import.meta.url), "utf8");
+  const trialMigration = readFileSync(new URL("../db/migrations/10.17__bms_retail_local_trial_lifecycle.sql", import.meta.url), "utf8");
   const service = readFileSync(new URL("../apps/web/lib/bms/retailLocalLicensing.ts", import.meta.url), "utf8");
   const route = readFileSync(new URL("../apps/web/app/api/bms/retail-local/license-evidence/route.ts", import.meta.url), "utf8");
   assert.match(migration, /Append-only signed Retail Local license evidence/);
@@ -64,6 +67,67 @@ test("license schema is append-only evidence and never a runtime entitlement gat
   assert.match(service, /crypto\.verify/);
   assert.match(service, /EVENT_CHAIN_CONFLICT/);
   assert.match(service, /ACTIVE_INSTALLATION_LIMIT/);
+  assert.match(trialMigration, /expiry never disables local business operations/i);
+  assert.match(trialMigration, /Commercial follow-up state only; never an entitlement check/i);
   assert.match(route, /authorize|Bearer/);
   assert.doesNotMatch(service, /bms_orders|bms_inventory|bms_payments|read.only|kill.switch/i);
+});
+
+test("30-day trials derive customer-friendly commercial follow-up states without a runtime lease", () => {
+  assert.equal(RETAIL_LOCAL_TRIAL_DAYS, 30);
+  const now = new Date("2026-09-25T00:00:00.000Z");
+  assert.deepEqual(
+    deriveRetailLocalCommercialState({
+      licenseType: "TRIAL",
+      commercialStatus: "TRIAL_ACTIVE",
+      trialExpiresAt: "2026-10-25T00:00:00.000Z",
+    }, now),
+    { status: "TRIAL_ACTIVE", trialDaysRemaining: 30 },
+  );
+  assert.deepEqual(
+    deriveRetailLocalCommercialState({
+      licenseType: "TRIAL",
+      commercialStatus: "TRIAL_ACTIVE",
+      trialExpiresAt: "2026-10-02T00:00:00.000Z",
+    }, now),
+    { status: "TRIAL_EXPIRING", trialDaysRemaining: 7 },
+  );
+  assert.deepEqual(
+    deriveRetailLocalCommercialState({
+      licenseType: "TRIAL",
+      commercialStatus: "TRIAL_ACTIVE",
+      trialExpiresAt: "2026-09-24T23:59:59.000Z",
+    }, now),
+    { status: "TRIAL_EXPIRED", trialDaysRemaining: 0 },
+  );
+  assert.deepEqual(
+    deriveRetailLocalCommercialState({
+      licenseType: "PAID",
+      commercialStatus: "PAID_ACTIVE",
+    }, now),
+    { status: "PAID_ACTIVE", trialDaysRemaining: null },
+  );
+  assert.deepEqual(deriveRetailLocalCommercialState({
+    licenseType: "TRIAL",
+    commercialStatus: "PAYMENT_REVIEW",
+    trialExpiresAt: "2026-10-25T00:00:00.000Z",
+  }, now), { status: "PAYMENT_REVIEW", trialDaysRemaining: 30 });
+  assert.equal(deriveRetailLocalCommercialState({
+    licenseType: "PAID",
+    commercialStatus: "CANCELLED",
+  }, now).status, "CANCELLED");
+});
+
+test("trial issuance and lifecycle changes stay platform-admin-only and explicitly confirmed", () => {
+  const createRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/route.ts", import.meta.url), "utf8");
+  const commercialRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/[id]/commercial/route.ts", import.meta.url), "utf8");
+  const trialMigration = readFileSync(new URL("../db/migrations/10.17__bms_retail_local_trial_lifecycle.sql", import.meta.url), "utf8");
+  assert.match(createRoute, /authorizePlatformAdminRoute/);
+  assert.match(createRoute, /licenseType: body\?\.licenseType/);
+  assert.match(commercialRoute, /authorizePlatformAdminRoute/);
+  assert.match(commercialRoute, /CONVERT-RETAIL-LOCAL-TO-PAID/);
+  assert.match(commercialRoute, /EXTEND-RETAIL-LOCAL-TRIAL/);
+  assert.match(commercialRoute, /reason/);
+  assert.match(trialMigration, /bms_retail_local_license_commercial_events/);
+  assert.match(trialMigration, /Append-only audit of human commercial actions/);
 });

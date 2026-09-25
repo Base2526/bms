@@ -284,6 +284,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'settings.realtime-diagnostics': <BugOutlined />,
   'settings.manual': <BookOutlined />,
   'platform.tenants': <BankOutlined />,
+  'platform.retail-local-licenses': <SafetyCertificateOutlined />,
   'platform.roles': <SnippetsOutlined />,
   'platform.report-schedule': <ScheduleOutlined />,
   'platform.support-tickets': <CustomerServiceOutlined />,

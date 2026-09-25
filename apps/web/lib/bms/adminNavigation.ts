@@ -380,6 +380,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "platform_shops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },
   {
+    id: "platform.retail-local-licenses", route: "/admin/retail-local-licenses", labelKey: "admin_nav.retail_local_licenses",
+    section: "platform_shops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
+  },
+  {
     id: "platform.report-schedule", route: "/admin/report-schedule", labelKey: "admin_nav.report_schedule",
     section: "platform_shops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },
