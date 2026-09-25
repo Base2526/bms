@@ -244,6 +244,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   const invariants = read("docs/agent-invariants.md");
   const agent = read("apps/retail-local-agent/license_evidence.go");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const linuxEvidenceService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-license-evidence.service");
+  const linuxEvidenceTimer = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-license-evidence.timer");
+  const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
@@ -260,6 +263,9 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(agent, /Authorization", "Bearer /);
   assert.match(agent, /Deliberately fail-open/);
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
+  assert.match(linuxEvidenceService, /ExecStart=-.*license-pulse/);
+  assert.match(linuxEvidenceTimer, /OnCalendar=\*-\*-\* 03:00:00[\s\S]*Persistent=true/);
+  assert.match(linuxInstaller, /enable --now bms-retail-local-license-evidence\.timer[\s\S]*\|\|[\s\S]*ร้านยังใช้งานได้/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
   assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
   assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
@@ -277,6 +283,7 @@ test("activation and replacement recovery preserve business continuity without c
   const linuxActivation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const windowsActivation = read("deploy/retail-local/managed-runtime/windows/activate-managed-runtime.ps1");
+  const activationRoute = read("apps/web/app/api/bms/retail-local/activate/route.ts");
   const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
 
   assert.match(linuxInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านติดตั้งและใช้งานต่อได้/);
@@ -284,6 +291,11 @@ test("activation and replacement recovery preserve business continuity without c
   assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /runtime-read[\s\S]*\/var\/lib\/bms-retail-local\/installation\.json/);
+  assert.match(linuxActivation, /activation_uri[\s\S]*\/api\/bms\/retail-local\/license-evidence/);
+  assert.match(windowsActivation, /GetLeftPart\(\[UriPartial\]::Authority\)[\s\S]*\/api\/bms\/retail-local\/license-evidence/);
+  assert.doesNotMatch(activationRoute, /evidenceEndpoint|new URL\(/);
+  assert.ok(linuxActivation.indexOf("tenant_id=$(jq") < linuxActivation.indexOf("activation_result=$(curl"));
+  assert.ok(windowsActivation.indexOf("runtime-read") < windowsActivation.indexOf("Invoke-RestMethod"));
   assert.match(localctl, /installation\.json/);
   assert.doesNotMatch(localctl, /license-evidence|evidenceToken|ingestionToken/);
   assert.match(linuxInstaller, /licenseCode/);

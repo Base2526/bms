@@ -145,6 +145,8 @@ the store. Activate later with `sudo bms-retail-local-activate`; after restoring
 replacement host, use `sudo bms-retail-local-activate --transfer`. The encrypted backup keeps only
 the non-secret license reference, not the evidence signing key or bearer token. A restored license
 reference also makes the activation helper choose the transfer event automatically.
+Ubuntu schedules a daily best-effort evidence pulse at 03:00 with a randomized delay; failure is
+ignored by systemd and never changes runtime readiness. Windows uses the equivalent daily task.
 
 Configure Ubuntu off-host backup only after mounting a NAS/removable filesystem at its own mount
 point. Generate and custody the age identity outside the shop computer, then pass only its public

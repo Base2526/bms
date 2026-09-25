@@ -69,6 +69,10 @@ install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.se
   /etc/systemd/system/bms-retail-local-offhost-backup.service
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local-offhost-backup.timer" \
   /etc/systemd/system/bms-retail-local-offhost-backup.timer
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.service" \
+  /etc/systemd/system/bms-retail-local-license-evidence.service
+install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.timer" \
+  /etc/systemd/system/bms-retail-local-license-evidence.timer
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
@@ -143,6 +147,8 @@ jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisio
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
+systemctl enable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || \
+  printf 'คำเตือน: ตั้งเวลา Licensing evidence ไม่สำเร็จ; ร้านยังใช้งานได้\n' >&2
 
 deadline=$((SECONDS + 240))
 until curl --fail --silent --max-time 5 http://127.0.0.1:3100/admin/login >/dev/null && \
@@ -171,9 +177,9 @@ if [[ -z ${BMS_LICENSE_ID:-} && -n ${BMS_ACTIVATION_URI:-} && -n ${BMS_ACTIVATIO
       --data "$(jq -cn --arg activationCode "$BMS_ACTIVATION_CODE" '{activationCode:$activationCode}')" \
       "$BMS_ACTIVATION_URI" 2>/dev/null); then
     if license_id=$(jq -er '.licenseCode' <<<"$activation_result") && \
-       evidence_endpoint=$(jq -er '.evidenceEndpoint' <<<"$activation_result") && \
        evidence_token=$(jq -er '.ingestionToken' <<<"$activation_result") && \
-       is_https_url "$evidence_endpoint"; then
+       [[ $BMS_ACTIVATION_URI =~ ^(https://[^/@:]+)([/:?#]|$) ]]; then
+      evidence_endpoint="${BASH_REMATCH[1]}/api/bms/retail-local/license-evidence"
       export BMS_LICENSE_ID="$license_id"
       export BMS_LICENSE_EVIDENCE_ENDPOINT="$evidence_endpoint"
       export BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token"

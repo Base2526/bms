@@ -1,0 +1,9 @@
+[Unit]
+Description=BMS Retail Local best-effort license evidence pulse
+After=network-online.target bms-retail-local.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Licensing is administrative telemetry. A failure must never fail or restart the retail runtime.
+ExecStart=-/opt/bms-retail-local/bms-runtime-agent license-pulse -root /var/lib/bms-retail-local

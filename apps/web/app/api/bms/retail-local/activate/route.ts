@@ -24,10 +24,7 @@ async function handlePOST(request: NextRequest) {
   try {
     const body = JSON.parse(text);
     const activated = await redeemRetailLocalActivationCode(String(body?.activationCode ?? ""));
-    return NextResponse.json({
-      ...activated,
-      evidenceEndpoint: new URL("/api/bms/retail-local/license-evidence", request.url).toString(),
-    }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json(activated, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof SyntaxError) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
     if (error instanceof RetailLocalLicenseError) {

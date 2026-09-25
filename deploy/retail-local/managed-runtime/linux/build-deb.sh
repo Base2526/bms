@@ -70,6 +70,10 @@ install -m 0755 "$runtime_root/bms-update-transaction" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
 install -m 0644 "$linux_root/bms-retail-local.service" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.service" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-license-evidence.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.timer" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local-license-evidence.timer"
 install -m 0644 "$keyring" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/trusted-release-keys.json"
 install -m 0755 "$linux_root/bms-retail-local-setup" \
@@ -92,6 +96,10 @@ install -m 0644 "$linux_root/bms-retail-local-offhost-backup.service" \
   "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.service"
 install -m 0644 "$linux_root/bms-retail-local-offhost-backup.timer" \
   "$package_root/lib/systemd/system/bms-retail-local-offhost-backup.timer"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.service" \
+  "$package_root/lib/systemd/system/bms-retail-local-license-evidence.service"
+install -m 0644 "$linux_root/bms-retail-local-license-evidence.timer" \
+  "$package_root/lib/systemd/system/bms-retail-local-license-evidence.timer"
 
 if [[ -n $manifest_url ]]; then
   printf '%s\n' "$manifest_url" >"$package_root/etc/bms-retail-local/release-manifest-url"
@@ -144,6 +152,7 @@ cat >"$package_root/DEBIAN/prerm" <<'EOF'
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+  systemctl disable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local.service >/dev/null 2>&1 || true
 fi

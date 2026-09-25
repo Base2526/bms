@@ -121,6 +121,7 @@ jobs:
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/sbin/bms-retail-local-configure-backup"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/run-offhost-backup.sh"
           test -f "$RUNNER_TEMP/bms-package/extracted/lib/systemd/system/bms-retail-local-offhost-backup.timer"
+          test -f "$RUNNER_TEMP/bms-package/extracted/lib/systemd/system/bms-retail-local-license-evidence.timer"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
           if grep -R -E 'BEGIN .*PRIVATE KEY' "$RUNNER_TEMP/bms-package/extracted"; then exit 1; fi
 

@@ -20,6 +20,26 @@ if (-not [Uri]::TryCreate($ActivationUri, [UriKind]::Absolute, [ref]$parsed) -or
   throw "Activation URL ต้องเป็น HTTPS ที่ไม่มี credential"
 }
 
+# Read and validate the authoritative restored receipt before consuming the one-use activation code.
+$runtimeReceipt = Join-Path $InstallRoot "activation-runtime-installation.json"
+Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
+try {
+  & $agent runtime-read -engine windows-wsl -distro "BMSRuntime" `
+    -source "/var/lib/bms-retail-local/installation.json" -destination $runtimeReceipt *> $null
+  if ($LASTEXITCODE -ne 0) { throw "อ่าน installation receipt จาก private runtime ไม่สำเร็จ" }
+  $installed = Get-Content -LiteralPath $runtimeReceipt -Raw | ConvertFrom-Json
+} finally {
+  Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
+}
+$evidenceEndpoint = "$($parsed.GetLeftPart([UriPartial]::Authority))/api/bms/retail-local/license-evidence"
+$hasStoredLicense = ($installed.PSObject.Properties.Name -contains "licenseCode") -and `
+  (-not [string]::IsNullOrWhiteSpace([string]$installed.licenseCode))
+$event = if ($Transfer -or $hasStoredLicense) {
+  "TRANSFER_REQUESTED"
+} else {
+  "INSTALLATION_REGISTERED"
+}
+
 $secureCode = Read-Host "Activation Code" -AsSecureString
 $activationCode = [Net.NetworkCredential]::new("", $secureCode).Password
 if ([string]::IsNullOrWhiteSpace($activationCode)) { throw "Activation Code ว่าง" }
@@ -32,33 +52,11 @@ try {
   $secureCode.Dispose()
 }
 
-$runtimeReceipt = Join-Path $InstallRoot "activation-runtime-installation.json"
-Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
-try {
-  & $agent runtime-read -engine windows-wsl -distro "BMSRuntime" `
-    -source "/var/lib/bms-retail-local/installation.json" -destination $runtimeReceipt *> $null
-  if ($LASTEXITCODE -ne 0) { throw "อ่าน installation receipt จาก private runtime ไม่สำเร็จ" }
-  $installed = Get-Content -LiteralPath $runtimeReceipt -Raw | ConvertFrom-Json
-} finally {
-  Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
-}
-$evidenceUri = $null
-if (-not [Uri]::TryCreate([string]$activation.evidenceEndpoint, [UriKind]::Absolute, [ref]$evidenceUri) -or
-    $evidenceUri.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($evidenceUri.UserInfo)) {
-  throw "Activation response มี evidence endpoint ที่ไม่ปลอดภัย"
-}
-$hasStoredLicense = ($installed.PSObject.Properties.Name -contains "licenseCode") -and `
-  (-not [string]::IsNullOrWhiteSpace([string]$installed.licenseCode))
-$event = if ($Transfer -or $hasStoredLicense) {
-  "TRANSFER_REQUESTED"
-} else {
-  "INSTALLATION_REGISTERED"
-}
 $arguments = @(
   "license-record", "-root", $InstallRoot, "-event", $event,
   "-license-id", [string]$activation.licenseCode, "-tenant-id", [string]$installed.tenantId,
   "-pos-device-id", [string]$installed.posDeviceId, "-target", [string]$installed.platformTarget,
-  "-release-version", [string]$installed.version, "-endpoint", [string]$activation.evidenceEndpoint
+  "-release-version", [string]$installed.version, "-endpoint", $evidenceEndpoint
 )
 $oldToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
 try {

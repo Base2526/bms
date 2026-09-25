@@ -181,7 +181,8 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhi
       $activation = Invoke-RestMethod -Uri $ActivationUri -Method Post -ContentType "application/json" `
         -Body $activationBody -TimeoutSec 15
       $LicenseId = [string]$activation.licenseCode
-      $LicenseEvidenceUri = [string]$activation.evidenceEndpoint
+      $activationUrl = [Uri]$ActivationUri
+      $LicenseEvidenceUri = "$($activationUrl.GetLeftPart([UriPartial]::Authority))/api/bms/retail-local/license-evidence"
       $LicenseEvidenceToken = [string]$activation.ingestionToken
       Assert-NoLineBreak "License ID" $LicenseId
       Assert-HttpsUri $LicenseEvidenceUri

@@ -6,10 +6,13 @@ set -Eeuo pipefail
 /opt/bms-retail-local/bms-runtime-agent license-pulse -root /var/lib/bms-retail-local \
   -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
 systemctl disable --now bms-retail-local.service 2>/dev/null || true
+systemctl disable --now bms-retail-local-license-evidence.timer 2>/dev/null || true
 systemctl disable --now bms-retail-local-offhost-backup.timer 2>/dev/null || true
 rm -f /etc/systemd/system/bms-retail-local.service
 rm -f /etc/systemd/system/bms-retail-local-offhost-backup.service \
-  /etc/systemd/system/bms-retail-local-offhost-backup.timer
+  /etc/systemd/system/bms-retail-local-offhost-backup.timer \
+  /etc/systemd/system/bms-retail-local-license-evidence.service \
+  /etc/systemd/system/bms-retail-local-license-evidence.timer
 systemctl daemon-reload
 
 if [[ ${1:-} != --erase-data ]]; then
