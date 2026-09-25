@@ -121,6 +121,35 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 	return nil
 }
 
+func installRuntimeControl(engine, distro, source, name string) error {
+	destinations := map[string]string{
+		"bms-localctl":           "/usr/local/bin/bms-localctl",
+		"bms-update-transaction": "/usr/local/sbin/bms-update-transaction",
+	}
+	destination, ok := destinations[name]
+	if !ok {
+		return errors.New("runtime control name ไม่ได้รับอนุญาต")
+	}
+	input, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	defer input.Close()
+	command, err := runtimeShellCommand(engine, distro,
+		`set -eu; temporary="$1.tmp.$$"; cat > "$temporary"; chown root:root "$temporary"; chmod 0755 "$temporary"; mv -f "$temporary" "$1"`,
+		destination)
+	if err != nil {
+		return err
+	}
+	command.Stdin = input
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		return fmt.Errorf("ติดตั้ง runtime control ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
 func readRuntimeFile(engine, distro, source, destination string) error {
 	cleanSource, err := safeRuntimePath(source)
 	if err != nil {

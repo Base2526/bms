@@ -96,3 +96,30 @@ func TestAcquireInstallLockRecoversDeadOwner(t *testing.T) {
 	}
 	unlock()
 }
+
+func TestReleaseStateIsScopedPerVersion(t *testing.T) {
+	root := t.TempDir()
+	firstPath := filepath.Join(root, "releases", "1.0.0", "install-state.json")
+	secondPath := filepath.Join(root, "releases", "1.1.0", "install-state.json")
+	if err := os.MkdirAll(filepath.Dir(firstPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(secondPath), 0700); err != nil {
+		t.Fatal(err)
+	}
+	first := releasePayload{PlatformTarget: "ubuntu-24.04-lts-x64", ReleaseVersion: "1.0.0"}
+	second := releasePayload{PlatformTarget: "ubuntu-24.04-lts-x64", ReleaseVersion: "1.1.0"}
+	firstState, err := loadOrCreateState(firstPath, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeState(firstPath, firstState); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadOrCreateState(secondPath, second); err != nil {
+		t.Fatalf("a different release must have independent resumable state: %v", err)
+	}
+	if _, err := loadOrCreateState(firstPath, second); err == nil {
+		t.Fatal("the same release directory accepted conflicting version state")
+	}
+}

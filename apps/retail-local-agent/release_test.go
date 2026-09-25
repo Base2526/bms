@@ -117,3 +117,28 @@ func TestAgentVersionCompatibility(t *testing.T) {
 		}
 	}
 }
+
+func TestCompareSemverForUpdateReplayProtection(t *testing.T) {
+	tests := []struct {
+		left, right string
+		want        int
+	}{
+		{"1.1.0", "1.0.9", 1},
+		{"1.0.0", "1.0.0", 0},
+		{"1.0.0-pilot.2", "1.0.0-pilot.1", 1},
+		{"1.0.0", "1.0.0-pilot.9", 1},
+		{"1.0.0-pilot.1", "1.0.0", -1},
+	}
+	for _, test := range tests {
+		got, err := compareSemver(test.left, test.right)
+		if err != nil {
+			t.Fatalf("compareSemver(%q, %q): %v", test.left, test.right, err)
+		}
+		if got != test.want {
+			t.Fatalf("compareSemver(%q, %q) = %d, want %d", test.left, test.right, got, test.want)
+		}
+	}
+	if _, err := compareSemver("latest", "1.0.0"); err == nil {
+		t.Fatal("non-semantic release version must be rejected")
+	}
+}

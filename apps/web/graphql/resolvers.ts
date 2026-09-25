@@ -34,7 +34,6 @@ import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
 // import { signUserToken } from "@/lib/auth/jwt";
 
 import { GraphQLUpload } from "graphql-upload-nextjs";
-import sgMail from "@sendgrid/mail";
 import { createNotification } from '@/lib/notifications/service'; 
 
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
@@ -163,18 +162,6 @@ export const COMMENT_DELETED = 'COMMENT_DELETED';
 export const NOTI_CREATED   = 'NOTI_CREATED';
 
 export const INCOMING_MESSAGE  = 'INCOMING_MESSAGE';
-
-sgMail.setApiKey(process.env.NEXT_PUBLIC_SENDGRID_API_KEY!);
-
-// (async () => {
-//   const resp = await sgMail.send({
-//     to: "android.somkid@gmail.com",
-//     from: process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL!,
-//     subject: "SendGrid test",
-//     html: "<b>Hello</b>",
-//   });
-//   console.log("=====> OK", resp[0].statusCode);
-// })();
 
 const isDev = process.env.NODE_ENV !== "production";
 const useSecureCookie = process.env.COOKIE_SECURE === "true";

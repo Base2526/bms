@@ -1,0 +1,21 @@
+{
+  "formatVersion": 1,
+  "product": "BMS Retail Local",
+  "releaseVersion": "1.0.0",
+  "platformTarget": "ubuntu-24.04-lts-x64",
+  "sourceCommit": "0000000000000000000000000000000000000000",
+  "gates": [
+    { "id": "production-release-key", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/release-key"] },
+    { "id": "transactional-update-rollback", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/update-rollback"] },
+    { "id": "replacement-machine-restore", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/replacement-restore"] },
+    { "id": "power-loss-recovery", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/power-loss"] },
+    { "id": "disk-full-recovery", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/disk-full"] },
+    { "id": "suspend-resume", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/suspend-resume"] },
+    { "id": "printer-scanner-display", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/peripherals"] },
+    { "id": "encrypted-off-host-backup", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/off-host-backup"] },
+    { "id": "remote-diagnostics-privacy", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/remote-diagnostics"] },
+    { "id": "license-control-plane", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/licensing"] },
+    { "id": "clean-install-ubuntu-24.04-lts-x64", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/ubuntu-clean-install"] },
+    { "id": "linux-package-signing", "status": "passed", "verifiedAt": "2026-09-25T00:00:00Z", "validUntil": "2027-03-25T00:00:00Z", "evidence": ["https://evidence.example.invalid/linux-package-signing"] }
+  ]
+}

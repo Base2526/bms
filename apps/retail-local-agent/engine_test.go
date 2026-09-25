@@ -29,3 +29,9 @@ func TestSafeRuntimePath(t *testing.T) {
 		}
 	}
 }
+
+func TestRuntimeControlInstallIsAllowListed(t *testing.T) {
+	if err := installRuntimeControl("windows-wsl", "BMSRuntime", "missing", "../../evil"); err == nil {
+		t.Fatal("unexpected runtime control name was accepted")
+	}
+}

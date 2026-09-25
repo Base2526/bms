@@ -18,7 +18,7 @@
   ],
   "properties": {
     "product": { "const": "BMS Retail Local" },
-    "releaseVersion": { "$ref": "#/$defs/version" },
+    "releaseVersion": { "$ref": "#/$defs/semver" },
     "channel": { "enum": ["pilot", "stable"] },
     "platformTarget": { "type": "string", "pattern": "^[a-z0-9._-]{1,80}$" },
     "minimumAgentVersion": { "$ref": "#/$defs/semver" },

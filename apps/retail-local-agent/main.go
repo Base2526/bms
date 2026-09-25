@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.3.0"
+const agentVersion = "0.4.0"
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bms-runtime-agent <preflight|verify-release|stage-release|engine-load|runtime-write|runtime-read|license-record|license-pulse|license-flush|version>")
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|verify-update|stage-release|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
 	}
 	switch args[0] {
 	case "version":
@@ -61,7 +61,39 @@ func run(args []string) error {
 			"releaseVersion": verified.Payload.ReleaseVersion,
 			"platformTarget": verified.Payload.PlatformTarget,
 			"rollbackSafe":   verified.Payload.RollbackSafe,
+			"schemaVersion":  verified.Payload.SchemaVersion,
+			"createdAt":      verified.Payload.CreatedAt,
+			"sourceCommit":   verified.Payload.SourceCommit,
 			"components":     verified.Payload.Components,
+		})
+	case "verify-update":
+		flags := flag.NewFlagSet("verify-update", flag.ContinueOnError)
+		manifest := flags.String("manifest", "", "signed release envelope")
+		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
+		target := flags.String("target", "", "expected platform target")
+		currentVersion := flags.String("current-version", "", "currently installed semantic version")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *manifest == "" || *keyring == "" || *target == "" || *currentVersion == "" {
+			return errors.New("verify-update ต้องมี -manifest, -keyring, -target และ -current-version")
+		}
+		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
+		if err != nil {
+			return err
+		}
+		comparison, err := compareSemver(verified.Payload.ReleaseVersion, *currentVersion)
+		if err != nil {
+			return err
+		}
+		if comparison <= 0 {
+			return fmt.Errorf("ปฏิเสธ release replay/downgrade: ติดตั้ง %s แต่ได้รับ %s", *currentVersion, verified.Payload.ReleaseVersion)
+		}
+		return writeJSON(map[string]any{
+			"ok": true, "releaseVersion": verified.Payload.ReleaseVersion,
+			"platformTarget": verified.Payload.PlatformTarget, "rollbackSafe": verified.Payload.RollbackSafe,
+			"schemaVersion": verified.Payload.SchemaVersion, "createdAt": verified.Payload.CreatedAt,
+			"sourceCommit": verified.Payload.SourceCommit, "components": verified.Payload.Components,
 		})
 	case "stage-release":
 		flags := flag.NewFlagSet("stage-release", flag.ContinueOnError)
@@ -127,6 +159,19 @@ func run(args []string) error {
 			return errors.New("runtime-read ต้องมี -engine, -source และ -destination")
 		}
 		return readRuntimeFile(*engine, *distro, *source, *destination)
+	case "runtime-install-control":
+		flags := flag.NewFlagSet("runtime-install-control", flag.ContinueOnError)
+		engine := flags.String("engine", "", "windows-wsl")
+		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
+		source := flags.String("source", "", "trusted bootstrap control file")
+		name := flags.String("name", "", "allow-listed runtime control name")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *engine == "" || *source == "" || *name == "" {
+			return errors.New("runtime-install-control ต้องมี -engine, -source และ -name")
+		}
+		return installRuntimeControl(*engine, *distro, *source, *name)
 	case "license-record":
 		flags := flag.NewFlagSet("license-record", flag.ContinueOnError)
 		root := flags.String("root", "", "Managed Runtime data root")

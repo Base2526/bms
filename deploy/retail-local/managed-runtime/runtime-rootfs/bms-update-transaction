@@ -1,0 +1,162 @@
+#!/bin/sh
+set -eu
+
+root=${BMS_RUNTIME_ROOT:-/var/lib/bms-retail-local}
+case "$root" in /*) ;; *) echo "bms-update-transaction: runtime root ต้องเป็น absolute path" >&2; exit 1;; esac
+[ "$root" != / ] || { echo "bms-update-transaction: ปฏิเสธ filesystem root" >&2; exit 1; }
+active="$root/update-active"
+lock="$root/.update-transaction.lock"
+die() { echo "bms-update-transaction: $*" >&2; exit 1; }
+valid_version() { echo "$1" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$'; }
+valid_ref() { echo "$1" | grep -Eq '^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$'; }
+transaction_dir() { printf '%s/updates/%s' "$root" "$1"; }
+read_phase() { cat "$(transaction_dir "$1")/phase" 2>/dev/null || printf 'unknown'; }
+write_phase() {
+  directory=$(transaction_dir "$1")
+  printf '%s\n' "$2" >"$directory/phase.tmp"
+  chmod 0600 "$directory/phase.tmp"
+  mv -f "$directory/phase.tmp" "$directory/phase"
+  sync -f "$directory" 2>/dev/null || true
+}
+compose() { docker compose --env-file "$root/.env" -f "$root/compose.yml" "$@"; }
+replace_ref() {
+  key=$1 value=$2 file=$3
+  [ "$(grep -Ec "^${key}=" "$file")" -eq 1 ] || die "$key ใน .env ไม่ถูกต้อง"
+  sed "s|^${key}=.*$|${key}=${value}|" "$file" >"$file.next"
+  mv -f "$file.next" "$file"
+}
+wait_healthy() {
+  remaining=80
+  while [ "$remaining" -gt 0 ]; do
+    if bms-localctl doctor >/dev/null 2>&1; then return 0; fi
+    remaining=$((remaining - 1))
+    sleep 3
+  done
+  return 1
+}
+unlock() { rm -f "$lock/pid" 2>/dev/null || true; rmdir "$lock" 2>/dev/null || true; }
+take_lock() {
+  if ! mkdir "$lock" 2>/dev/null; then
+    owner=$(cat "$lock/pid" 2>/dev/null || true)
+    case "$owner" in *[!0-9]*|'') owner=0;; esac
+    if [ "$owner" -gt 0 ] && kill -0 "$owner" 2>/dev/null; then
+      die "มี update transaction อื่นกำลังทำงาน"
+    fi
+    rm -f "$lock/pid" 2>/dev/null || true
+    rmdir "$lock" 2>/dev/null || die "update lock เสียหาย ต้องให้ support ตรวจสอบ"
+    mkdir "$lock" || die "สร้าง update lock ไม่สำเร็จ"
+  fi
+  printf '%s\n' "$$" >"$lock/pid"
+  trap unlock EXIT HUP INT TERM
+}
+
+rollback() {
+  version=$1 directory=$(transaction_dir "$1")
+  [ -d "$directory" ] || die "ไม่พบ transaction $version"
+  rollback_safe=$(cat "$directory/rollback-safe" 2>/dev/null || printf '0')
+  backup=$(cat "$directory/backup-path" 2>/dev/null || true)
+  write_phase "$version" rolling-back
+  compose stop web ws >/dev/null 2>&1 || true
+  install -m 0600 "$directory/old.env" "$root/.env"
+  install -m 0600 "$directory/old.compose.yml" "$root/compose.yml"
+  if [ "$rollback_safe" = 1 ]; then
+    compose up -d --remove-orphans
+    wait_healthy || die "rollback image สำเร็จแต่บริการเดิมไม่กลับมา healthy"
+  else
+    [ -f "$backup" ] || die "ไม่พบ pre-update backup สำหรับ rollback"
+    bms-localctl restore "$backup" REPLACE-LOCAL-DATA --identity "$root/update-recovery.agekey"
+  fi
+  if [ -f "$directory/old.installation.json" ]; then
+    install -m 0600 "$directory/old.installation.json" "$root/installation.json"
+  fi
+  write_phase "$version" rolled-back
+  rm -f "$active"
+}
+
+case "${1:-}" in
+  begin)
+    shift
+    [ "$#" -eq 6 ] || die "usage: begin VERSION ROLLBACK_SAFE WEB_REF WS_REF POSTGRES_REF REDIS_REF"
+    version=$1 rollback_safe=$2 web_ref=$3 ws_ref=$4 postgres_ref=$5 redis_ref=$6
+    valid_version "$version" || die "release version ไม่ถูกต้อง"
+    [ "$rollback_safe" = 0 ] || [ "$rollback_safe" = 1 ] || die "rollback-safe ต้องเป็น 0 หรือ 1"
+    for ref in "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"; do valid_ref "$ref" || die "image ref ไม่ถูกต้อง"; done
+    [ -f "$root/.env" ] && [ -f "$root/compose.yml" ] && [ -f "$root/installation.json" ] || die "runtime ยังติดตั้งไม่ครบ"
+    [ ! -e "$active" ] || die "มี update transaction ที่ต้อง recover ก่อน"
+    directory=$(transaction_dir "$version")
+    [ -f "$directory/compose.next.yml" ] || die "ไม่พบ verified compose.next.yml"
+    take_lock
+    mkdir -p "$root/backups" "$root/updates"
+    chmod 0700 "$root/backups" "$root/updates" "$directory"
+    bms-localctl doctor >/dev/null || die "runtime เดิมไม่ healthy; ปฏิเสธ update"
+    install -m 0600 "$root/.env" "$directory/old.env"
+    install -m 0600 "$root/compose.yml" "$directory/old.compose.yml"
+    install -m 0600 "$root/installation.json" "$directory/old.installation.json"
+    printf '%s\n' "$rollback_safe" >"$directory/rollback-safe"
+    if [ ! -f "$root/update-recovery.agekey" ]; then
+      age-keygen -o "$root/update-recovery.agekey.tmp" >/dev/null
+      chmod 0600 "$root/update-recovery.agekey.tmp"
+      mv -f "$root/update-recovery.agekey.tmp" "$root/update-recovery.agekey"
+    fi
+    recipient=$(age-keygen -y "$root/update-recovery.agekey")
+    backup="$root/backups/pre-update-$version.age"
+    [ ! -e "$backup" ] || die "pre-update backup มีอยู่แล้ว"
+    bms-localctl backup "$backup" --recipient "$recipient" >/dev/null
+    age -d -i "$root/update-recovery.agekey" -o /dev/null "$backup" || die "ตรวจสอบ pre-update backup ไม่ผ่าน"
+    printf '%s\n' "$backup" >"$directory/backup-path"
+    write_phase "$version" backed-up
+    printf '%s\n' "$version" >"$active.tmp"
+    chmod 0600 "$active.tmp"
+    mv -f "$active.tmp" "$active"
+
+    install -m 0600 "$directory/old.env" "$directory/env.next"
+    replace_ref BMS_WEB_IMAGE_REF "$web_ref" "$directory/env.next"
+    replace_ref BMS_WS_IMAGE_REF "$ws_ref" "$directory/env.next"
+    replace_ref BMS_POSTGRES_IMAGE_REF "$postgres_ref" "$directory/env.next"
+    replace_ref BMS_REDIS_IMAGE_REF "$redis_ref" "$directory/env.next"
+    compose stop web ws >/dev/null
+    install -m 0600 "$directory/compose.next.yml" "$root/compose.yml"
+    install -m 0600 "$directory/env.next" "$root/.env"
+    write_phase "$version" switched
+    if ! compose run --rm migrate || ! compose up -d --remove-orphans || ! wait_healthy; then
+      echo "update ไม่ผ่าน health check; กำลัง rollback" >&2
+      rollback "$version"
+      exit 1
+    fi
+    write_phase "$version" runtime-healthy
+    ;;
+  commit)
+    version=${2:-}
+    valid_version "$version" || die "release version ไม่ถูกต้อง"
+    directory=$(transaction_dir "$version")
+    [ "$(read_phase "$version")" = runtime-healthy ] || die "transaction ยังไม่พร้อม commit"
+    [ -f "$directory/installation.next.json" ] || die "ไม่พบ installation.next.json"
+    take_lock
+    bms-localctl doctor >/dev/null || die "บริการไม่ healthy; ปฏิเสธ commit"
+    install -m 0600 "$directory/installation.next.json" "$root/installation.json"
+    write_phase "$version" committed
+    rm -f "$active"
+    ;;
+  rollback)
+    version=${2:-}
+    valid_version "$version" || die "release version ไม่ถูกต้อง"
+    take_lock
+    rollback "$version"
+    ;;
+  recover)
+    [ -f "$active" ] || exit 0
+    version=$(cat "$active")
+    valid_version "$version" || die "update-active เสียหาย ต้องให้ support ตรวจสอบ"
+    phase=$(read_phase "$version")
+    if [ "$phase" = committed ] || [ "$phase" = rolled-back ]; then
+      rm -f "$active"
+      exit 0
+    fi
+    take_lock
+    echo "พบ update ที่ถูกขัดจังหวะใน phase $phase; กำลัง rollback" >&2
+    rollback "$version"
+    ;;
+  *)
+    die "usage: bms-update-transaction <begin|commit|rollback|recover> ..."
+    ;;
+esac

@@ -7,6 +7,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { createSignedRelease } from "../deploy/retail-local/managed-runtime/sign-release.mjs";
 import { verifyReleaseEnvelope } from "../deploy/retail-local/managed-runtime/verify-release.mjs";
+import { verifyPromotionEvidence } from "../deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const json = (path: string) => JSON.parse(read(path));
@@ -216,4 +217,86 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);
   assert.equal(JSON.stringify(schema).includes("gps"), false);
+});
+
+test("stable promotion requires current external evidence for every GA gate", () => {
+  const target = "ubuntu-24.04-lts-x64";
+  const descriptor = {
+    releaseVersion: "1.0.0", platformTarget: target, sourceCommit: "a".repeat(40), channel: "stable",
+  };
+  const ids = [
+    "production-release-key", "transactional-update-rollback", "replacement-machine-restore",
+    "power-loss-recovery", "disk-full-recovery", "suspend-resume", "printer-scanner-display",
+    "encrypted-off-host-backup", "remote-diagnostics-privacy", "license-control-plane",
+    `clean-install-${target}`, "linux-package-signing",
+  ];
+  const evidence = {
+    formatVersion: 1, product: "BMS Retail Local", releaseVersion: "1.0.0",
+    platformTarget: target, sourceCommit: "a".repeat(40),
+    gates: ids.map((id) => ({
+      id, status: "passed", verifiedAt: "2026-09-25T00:00:00Z",
+      validUntil: "2027-01-01T00:00:00Z", evidence: [`https://evidence.example/${id}`],
+    })),
+  };
+  const verified = verifyPromotionEvidence(evidence, descriptor, new Date("2026-09-26T00:00:00Z"));
+  assert.equal(verified.gates.length, 12);
+  assert.throws(() => verifyPromotionEvidence({ ...evidence, gates: evidence.gates.slice(1) }, descriptor,
+    new Date("2026-09-26T00:00:00Z")), /production-release-key/);
+  assert.throws(() => verifyPromotionEvidence(evidence, { ...descriptor, sourceCommit: "b".repeat(40) },
+    new Date("2026-09-26T00:00:00Z")), /sourceCommit/);
+  assert.throws(() => verifyPromotionEvidence(evidence, descriptor, new Date("2027-02-01T00:00:00Z")), /หมดอายุ/);
+
+  const signer = read("deploy/retail-local/managed-runtime/sign-release.mjs");
+  assert.match(signer, /descriptor\.channel === "stable"[\s\S]*promotionEvidencePath/);
+  assert.match(signer, /BMS_ALLOW_STABLE_RELEASE_SIGNING/);
+});
+
+test("release staging isolates resumable progress by release version", () => {
+  const stage = read("apps/retail-local-agent/stage.go");
+  assert.match(stage, /statePath := filepath\.Join\(releaseRoot, "install-state\.json"\)/);
+  assert.doesNotMatch(stage, /statePath := filepath\.Join\(root, "install-state\.json"\)/);
+});
+
+test("runtime doctor requires every authoritative service to be ready", () => {
+  const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
+  assert.match(localctl, /for service in postgres redis web ws/);
+  assert.match(localctl, /running\|healthy/);
+  assert.doesNotMatch(localctl, /ps --status running postgres redis web ws \| grep -q/);
+});
+
+test("Web image build memory is configurable without editing release sources", () => {
+  const dockerfile = read("apps/web/Dockerfile");
+  const productionCompose = read("docker-compose.prod.yml");
+  const releaseBuilder = read("deploy/retail-local/managed-runtime/linux/prepare-release.sh");
+  assert.match(dockerfile, /ARG NEXT_BUILD_CPUS=2/);
+  assert.match(dockerfile, /ARG NODE_BUILD_MAX_OLD_SPACE_SIZE=4096/);
+  assert.match(dockerfile, /ENV NODE_OPTIONS=--max-old-space-size=\$NODE_BUILD_MAX_OLD_SPACE_SIZE/);
+  assert.match(productionCompose, /NEXT_BUILD_CPUS: \$\{NEXT_BUILD_CPUS:-2\}/);
+  assert.match(productionCompose, /NODE_BUILD_MAX_OLD_SPACE_SIZE: \$\{NODE_BUILD_MAX_OLD_SPACE_SIZE:-4096\}/);
+  assert.match(releaseBuilder, /--build-arg NEXT_BUILD_CPUS=/);
+  for (const secret of ["ADMIN_TOKEN", "JWT_SECRET", "FCM_PRIVATE_KEY", "NEXT_PUBLIC_SENDGRID_API_KEY"]) {
+    assert.doesNotMatch(dockerfile, new RegExp(`(?:ARG|ENV) ${secret}(?:=|\\s|$)`));
+  }
+});
+
+test("installed-shop updates are signed, newer-only, backup-first, and recoverable", () => {
+  const agentMain = read("apps/retail-local-agent/main.go");
+  const release = read("apps/retail-local-agent/release.go");
+  const transaction = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction");
+  const linuxUpdater = read("deploy/retail-local/managed-runtime/linux/update-managed-runtime.sh");
+  const windowsUpdater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
+  const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const wslKeepalive = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive");
+
+  assert.match(agentMain, /case "verify-update"/);
+  assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
+  assert.match(release, /compareSemver/);
+  assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
+  assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
+  assert.match(transaction, /rollback_safe[\s\S]*bms-localctl restore/);
+  assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
+  assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
+  assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
+  assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);
+  assert.match(wslKeepalive, /bms-update-transaction recover/);
 });

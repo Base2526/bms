@@ -38,7 +38,9 @@ agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
 localctl_source="$bundle_root/bms-localctl"
 [[ -f $localctl_source ]] || localctl_source="$bundle_root/../runtime-rootfs/bms-localctl"
-[[ -x $agent_source && -f $keyring_source && -f $localctl_source ]] || die "installer bundle ไม่มี agent/keyring/localctl"
+transaction_source="$bundle_root/bms-update-transaction"
+[[ -f $transaction_source ]] || transaction_source="$bundle_root/../runtime-rootfs/bms-update-transaction"
+[[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || die "installer bundle ไม่มี agent/keyring/runtime controls"
 
 install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT" "$RUNTIME_ROOT" "$RUNTIME_ROOT/release"
 install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
@@ -59,7 +61,9 @@ fi
 systemctl enable --now docker.service
 docker info >/dev/null 2>&1 || die "Moby/Docker runtime ไม่พร้อม"
 install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
+install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 install -m 0755 -o root -g root "$bundle_root/uninstall-managed-runtime.sh" /usr/local/sbin/bms-retail-local-uninstall
+install -m 0755 -o root -g root "$bundle_root/update-managed-runtime.sh" /usr/local/sbin/bms-retail-local-update
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
@@ -166,8 +170,10 @@ unset device_token provision_result provision_output
 
 jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target "$target" \
   --arg installedAt "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
+  --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
   --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId}' \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
 

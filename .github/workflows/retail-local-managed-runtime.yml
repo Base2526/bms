@@ -6,7 +6,10 @@ on:
     paths:
       - "apps/retail-local-agent/**"
       - "apps/desktop/**"
+      - "apps/web/Dockerfile"
       - "deploy/retail-local/managed-runtime/**"
+      - "docker-compose.prod.yml"
+      - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
@@ -36,15 +39,21 @@ jobs:
       - name: Validate shell and release contracts
         run: |
           bash -n deploy/retail-local/managed-runtime/linux/*.sh
+          bash -n deploy/retail-local/managed-runtime/linux/bms-retail-local-update
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl
+          sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
           shellcheck deploy/retail-local/managed-runtime/linux/*.sh \
+            deploy/retail-local/managed-runtime/linux/bms-retail-local-update \
             deploy/retail-local/managed-runtime/runtime-rootfs/build-rootfs.sh \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl \
+            deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
           node --check deploy/retail-local/managed-runtime/sign-release.mjs
           node --check deploy/retail-local/managed-runtime/verify-release.mjs
+          node --check deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+          scripts/retail-local-update-transaction.test.sh
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
       - name: Build and inspect Ubuntu x64 bootstrap package
@@ -59,6 +68,8 @@ jobs:
           dpkg-deb --contents "$package"
           dpkg-deb --extract "$package" "$RUNNER_TEMP/bms-package/extracted"
           "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" version
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/bin/bms-retail-local-update"
+          test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
           if grep -R -E 'BEGIN .*PRIVATE KEY' "$RUNNER_TEMP/bms-package/extracted"; then exit 1; fi
 
   windows-bootstrap:

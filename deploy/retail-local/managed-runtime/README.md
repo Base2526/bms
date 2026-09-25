@@ -48,6 +48,8 @@ in a signed agent release before manifests start using that id.
 - atomic first-run migration/provisioning and ACL/mode-protected secrets;
 - short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
 - encrypted logical database/files/secrets backup through `bms-localctl backup`;
+- signed transactional update with replay protection, pre-migration encrypted backup, health-gated
+  commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
@@ -61,19 +63,36 @@ never acceptable as a signed release input.
 
 ## Not yet a GA claim
 
+The current gate-by-gate verdict is maintained in
+[Retail Local GA readiness](../../../docs/business/retail-local-ga-readiness.md).
+
 The code path is implemented, but Commercial/GA release promotion remains blocked until all of these
 external release gates are complete:
 
 - production Ed25519 release key in an isolated signing service and the matching embedded keyring;
 - Authenticode signing for the bootstrap/agent/Desktop and repository signing for Linux packages;
 - an evidenced backup/restore drill on replacement hardware;
-- transactional updater with pre-migration backup and schema-aware rollback;
+- an evidenced transactional update/rollback and power-interruption drill on every supported target;
 - clean-machine Windows 10/11 and Ubuntu acceptance runs, including reboot, power loss, disk full,
   suspend/resume, printer/scanner/customer-display, and uninstall-retains-data cases.
 
-Until those gates pass, publish this only as an internal/pilot artifact. The installer deliberately
-refuses to run over an existing installation, preventing accidental secret rotation; a verified
-updater must own that path.
+Until those gates pass, publish this only as an internal/pilot artifact. Ubuntu exposes the separate
+`bms-retail-local-update` command; a newer Windows bootstrap detects an existing receipt and enters
+the verified updater without rotating installation secrets.
+
+The `stable` channel is mechanically fail-closed as well as documented: `sign-release.mjs` refuses
+to sign it outside an explicitly authorised isolated CI job and requires a release/target/commit-
+matched `promotion-evidence.json`. Every required gate must be `passed`, unexpired, and link to HTTPS
+evidence. Validate the evidence before the signing job with:
+
+```bash
+node deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs \
+  promotion-evidence.json release-descriptor.json
+```
+
+Use `promotion-evidence.example.json` only as a shape reference. Example URLs and assertions are not
+evidence. This guard prevents an accidental GA label; it does not manufacture the missing signing,
+hardware, recovery, licensing-control-plane, or clean-machine results.
 
 Run the Linux candidate check with:
 
@@ -92,6 +111,7 @@ Developer verification:
 ```bash
 (cd apps/retail-local-agent && go test ./... && go vet ./...)
 node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+scripts/retail-local-update-transaction.test.sh
 (cd apps/desktop && npm test && npm run lint)
 ```
 
@@ -101,13 +121,15 @@ Build the Ubuntu x64 bootstrap package with a trusted **public-key-only** keyrin
 deploy/retail-local/managed-runtime/linux/build-deb.sh \
   --keyring /secure/release/trusted-release-keys.json \
   --manifest-url https://releases.example.com/retail-local/ubuntu-24.04/release.jws.json \
-  --version 0.2.0
+  --version 0.4.0
 ```
 
 The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`; it does not start
 the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and
 downloads only components authenticated by the packaged public key. A build with no
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
+After installation, update only through `sudo bms-retail-local-update`; rerunning the raw Linux setup
+script still refuses an existing shop.
 Licensing is evidence-only and fail-open. It can flag an installation for back-office review, but it
 cannot stop an installed shop, make it read-only, or sit on a POS/payment/data/backup path. The agent
 keeps signed hash-chained events in `license-evidence/ledger.jsonl`, queues undelivered envelopes in

@@ -6,6 +6,7 @@ import { pathToFileURL } from "node:url";
 
 const MAX_ENVELOPE_BYTES = 1024 * 1024;
 const VERSION = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/;
 const TARGET = /^[a-z0-9._-]{1,80}$/;
 const HEX_64 = /^[a-f0-9]{64}$/;
 const OCI_DIGEST = /^sha256:[a-f0-9]{64}$/;
@@ -79,7 +80,7 @@ function validatePayload(input, expectedTarget) {
     "schemaVersion", "rollbackSafe", "createdAt", "sourceCommit", "components",
   ]), "release payload");
   assert(payload.product === "BMS Retail Local", "release product ไม่ถูกต้อง");
-  assert(typeof payload.releaseVersion === "string" && VERSION.test(payload.releaseVersion), "releaseVersion ไม่ถูกต้อง");
+  assert(typeof payload.releaseVersion === "string" && SEMVER.test(payload.releaseVersion), "releaseVersion ไม่ถูกต้อง");
   assert(payload.channel === "pilot" || payload.channel === "stable", "release channel ไม่ถูกต้อง");
   assert(typeof payload.platformTarget === "string" && TARGET.test(payload.platformTarget), "platformTarget ไม่ถูกต้อง");
   if (expectedTarget) assert(payload.platformTarget === expectedTarget, `release target ไม่ตรงกับเครื่อง: ${payload.platformTarget}`);

@@ -13,7 +13,7 @@ EOF
 
 keyring=
 manifest_url=
-version=0.2.0-internal.1
+version=0.4.0-internal.1
 output_dir=artifacts/retail-local/managed-runtime
 while (($#)); do
   case "$1" in
@@ -55,14 +55,20 @@ install -m 0755 "$linux_root/install-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/install-managed-runtime.sh"
 install -m 0755 "$linux_root/uninstall-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/uninstall-managed-runtime.sh"
+install -m 0755 "$linux_root/update-managed-runtime.sh" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/update-managed-runtime.sh"
 install -m 0755 "$runtime_root/bms-localctl" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-localctl"
+install -m 0755 "$runtime_root/bms-update-transaction" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
 install -m 0644 "$linux_root/bms-retail-local.service" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/bms-retail-local.service"
 install -m 0644 "$keyring" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/trusted-release-keys.json"
 install -m 0755 "$linux_root/bms-retail-local-setup" \
   "$package_root/usr/bin/bms-retail-local-setup"
+install -m 0755 "$linux_root/bms-retail-local-update" \
+  "$package_root/usr/bin/bms-retail-local-update"
 
 if [[ -n $manifest_url ]]; then
   printf '%s\n' "$manifest_url" >"$package_root/etc/bms-retail-local/release-manifest-url"
@@ -74,7 +80,8 @@ chmod 0644 "$package_root/etc/bms-retail-local/release-manifest-url"
 cat >"$package_root/usr/share/doc/bms-retail-local-bootstrap/README" <<'EOF'
 BMS Retail Local Managed Runtime bootstrap
 
-Run: sudo bms-retail-local-setup [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
+Install: sudo bms-retail-local-setup [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
+Update:  sudo bms-retail-local-update [SIGNED_RELEASE_MANIFEST_HTTPS_URL]
 The package contains no private signing key, database, shop credential, or application image.
 EOF
 
@@ -96,6 +103,7 @@ cat >"$package_root/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
 set -e
 chmod 0755 /usr/bin/bms-retail-local-setup
+chmod 0755 /usr/bin/bms-retail-local-update
 echo "BMS Retail Local bootstrap installed. Run: sudo bms-retail-local-setup"
 EOF
 chmod 0755 "$package_root/DEBIAN/postinst"

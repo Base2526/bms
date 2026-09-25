@@ -3,6 +3,9 @@ import { createHash, createPrivateKey, sign } from "node:crypto";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+import { verifyPromotionEvidence } from "./verify-promotion-evidence.mjs";
+
+const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/;
 
 function fail(message) {
   throw new Error(`sign-release: ${message}`);
@@ -48,6 +51,7 @@ export async function createSignedRelease(descriptor, privateKeyPem) {
   ]);
   if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) fail("descriptor ไม่ถูกต้อง");
   for (const key of Object.keys(descriptor)) if (!allowed.has(key)) fail(`descriptor field ไม่รู้จัก: ${key}`);
+  if (!SEMVER.test(descriptor.releaseVersion ?? "")) fail("releaseVersion ต้องเป็น semantic version");
   if (!Array.isArray(descriptor.components)) fail("components ต้องเป็น array");
   const components = [];
   for (const component of descriptor.components) components.push(await componentFromDescriptor(component));
@@ -91,14 +95,24 @@ export async function createSignedRelease(descriptor, privateKeyPem) {
 }
 
 async function main() {
-  const [descriptorPath, privateKeyPath, outputPath] = process.argv.slice(2);
+  const [descriptorPath, privateKeyPath, outputPath, promotionEvidencePath] = process.argv.slice(2);
   if (!descriptorPath || !privateKeyPath || !outputPath) {
-    fail("usage: node sign-release.mjs descriptor.json private-key.pem release.jws.json");
+    fail("usage: node sign-release.mjs descriptor.json private-key.pem release.jws.json [promotion-evidence.json]");
   }
   if (process.env.CI !== "true" && process.env.BMS_ALLOW_LOCAL_RELEASE_SIGNING !== "1") {
     fail("local signing ถูกปิด; ใช้ isolated signing job หรือกำหนด BMS_ALLOW_LOCAL_RELEASE_SIGNING=1 โดยตั้งใจ")
   }
   const descriptor = JSON.parse(await readFile(descriptorPath, "utf8"));
+  if (descriptor.channel === "stable") {
+    if (!promotionEvidencePath) {
+      fail("stable release ต้องมี promotion-evidence.json ที่ผ่านทุก required gate");
+    }
+    if (process.env.CI !== "true" || process.env.BMS_ALLOW_STABLE_RELEASE_SIGNING !== "1") {
+      fail("stable release เซ็นได้เฉพาะ isolated CI signing job ที่อนุญาตโดยชัดเจน");
+    }
+    const promotionEvidence = JSON.parse(await readFile(promotionEvidencePath, "utf8"));
+    verifyPromotionEvidence(promotionEvidence, descriptor);
+  }
   const privateKeyPem = await readFile(privateKeyPath, "utf8");
   const envelope = await createSignedRelease(descriptor, privateKeyPem);
   await writeFile(outputPath, envelope, { mode: 0o600, flag: "wx" });

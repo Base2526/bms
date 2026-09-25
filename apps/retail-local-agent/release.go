@@ -191,7 +191,7 @@ func parseEd25519PublicKey(input string) (ed25519.PublicKey, error) {
 }
 
 func validatePayload(payload releasePayload, expectedTarget string) error {
-	if payload.Product != "BMS Retail Local" || !versionPattern.MatchString(payload.ReleaseVersion) {
+	if payload.Product != "BMS Retail Local" || !semverPattern.MatchString(payload.ReleaseVersion) {
 		return errors.New("release product/version ไม่ถูกต้อง")
 	}
 	if payload.Channel != "pilot" && payload.Channel != "stable" {
@@ -237,6 +237,75 @@ func validatePayload(payload releasePayload, expectedTarget string) error {
 		}
 	}
 	return nil
+}
+
+func compareSemver(left, right string) (int, error) {
+	leftParts := semverPattern.FindStringSubmatch(left)
+	rightParts := semverPattern.FindStringSubmatch(right)
+	if leftParts == nil || rightParts == nil {
+		return 0, errors.New("release version ไม่ใช่ semantic version")
+	}
+	for index := 1; index <= 3; index++ {
+		var leftNumber, rightNumber int
+		if _, err := fmt.Sscan(leftParts[index], &leftNumber); err != nil {
+			return 0, err
+		}
+		if _, err := fmt.Sscan(rightParts[index], &rightNumber); err != nil {
+			return 0, err
+		}
+		if leftNumber < rightNumber {
+			return -1, nil
+		}
+		if leftNumber > rightNumber {
+			return 1, nil
+		}
+	}
+	leftDash := strings.IndexByte(left, '-')
+	rightDash := strings.IndexByte(right, '-')
+	if leftDash < 0 && rightDash < 0 {
+		return 0, nil
+	}
+	if leftDash < 0 {
+		return 1, nil
+	}
+	if rightDash < 0 {
+		return -1, nil
+	}
+	leftPre := strings.Split(left[leftDash+1:], ".")
+	rightPre := strings.Split(right[rightDash+1:], ".")
+	for index := 0; index < len(leftPre) && index < len(rightPre); index++ {
+		if leftPre[index] == rightPre[index] {
+			continue
+		}
+		var leftNumber, rightNumber int
+		_, leftNumericErr := fmt.Sscan(leftPre[index], &leftNumber)
+		_, rightNumericErr := fmt.Sscan(rightPre[index], &rightNumber)
+		leftNumeric := leftNumericErr == nil && fmt.Sprint(leftNumber) == leftPre[index]
+		rightNumeric := rightNumericErr == nil && fmt.Sprint(rightNumber) == rightPre[index]
+		if leftNumeric && rightNumeric {
+			if leftNumber < rightNumber {
+				return -1, nil
+			}
+			return 1, nil
+		}
+		if leftNumeric != rightNumeric {
+			if leftNumeric {
+				return -1, nil
+			}
+			return 1, nil
+		}
+		if leftPre[index] < rightPre[index] {
+			return -1, nil
+		}
+		return 1, nil
+	}
+	if len(leftPre) < len(rightPre) {
+		return -1, nil
+	}
+	if len(leftPre) > len(rightPre) {
+		return 1, nil
+	}
+	return 0, nil
 }
 
 func agentVersionAtLeast(current, minimum string) (bool, error) {
