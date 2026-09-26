@@ -7,18 +7,25 @@ const statusClose = document.querySelector("#status-close");
 const button = document.querySelector("#pair-button");
 const buttonLabel = button.querySelector(".button-label");
 const buttonProgress = button.querySelector(".button-progress");
+const localAdminSection = document.querySelector("#local-admin-section");
+const localAdminButton = document.querySelector("#local-admin-button");
+const localAdminLabel = localAdminButton.querySelector(".button-label");
+const localAdminProgress = localAdminButton.querySelector(".button-progress");
 const version = document.querySelector("#app-version");
 const clientLabel = document.querySelector("#client-label");
 const securityNote = document.querySelector("#security-note");
 
 let storageBlocked = false;
 
-function setBusy(busy) {
+function setBusy(busy, action = "pair") {
   button.disabled = busy || storageBlocked;
+  localAdminButton.disabled = busy;
   serverInput.disabled = busy;
   pairingInput.disabled = busy;
-  buttonLabel.hidden = busy;
-  buttonProgress.hidden = !busy;
+  buttonLabel.hidden = busy && action === "pair";
+  buttonProgress.hidden = !(busy && action === "pair");
+  localAdminLabel.hidden = busy && action === "admin";
+  localAdminProgress.hidden = !(busy && action === "admin");
 }
 
 function showError(message) {
@@ -34,7 +41,7 @@ statusClose.addEventListener("click", () => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   status.hidden = true;
-  setBusy(true);
+  setBusy(true, "pair");
   try {
     const result = await window.bmsDesktop.pair({
       serverUrl: serverInput.value,
@@ -48,10 +55,24 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+localAdminButton.addEventListener("click", async () => {
+  status.hidden = true;
+  setBusy(true, "admin");
+  try {
+    const result = await window.bmsDesktop.openLocalAdmin();
+    if (!result?.ok) showError(result?.error || "เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ");
+  } catch {
+    showError("แอปไม่สามารถเปิดระบบหลังบ้านได้ กรุณาปิดแล้วเปิดใหม่");
+  } finally {
+    setBusy(false);
+  }
+});
+
 window.bmsDesktop.getAppInfo().then((info) => {
   if (info?.version) version.textContent = `v${info.version}`;
   if (info?.clientLabel) clientLabel.textContent = info.clientLabel;
   if (info?.securityNote) securityNote.textContent = info.securityNote;
+  localAdminSection.hidden = info?.platform !== "darwin";
   if (info?.secureStorageReady === false) {
     storageBlocked = true;
     button.disabled = true;

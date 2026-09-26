@@ -1,7 +1,7 @@
 {
   "formatVersion": 1,
   "product": "BMS Retail Local Managed Runtime",
-  "architectures": ["x86_64"],
+  "architectures": ["x86_64", "arm64"],
   "minimumMemoryGiB": 8,
   "minimumFreeDiskGiB": 8,
   "recommendedFreeDiskGiB": 15,
@@ -53,6 +53,17 @@
       "architecture": "x86_64",
       "supportLevel": "transition",
       "runtime": "native-moby-systemd"
+    },
+    {
+      "id": "macos-15-arm64",
+      "platform": "macos",
+      "minimumVersion": "15.0",
+      "architecture": "arm64",
+      "supportLevel": "technical-pilot",
+      "runtime": "lima-vz-moby",
+      "minimumFreeDiskGiB": 12,
+      "recommendedFreeDiskGiB": 30,
+      "requiresAppleVirtualizationFramework": true
     }
   ]
 }

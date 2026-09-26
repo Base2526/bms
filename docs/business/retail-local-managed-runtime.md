@@ -92,6 +92,22 @@ Moby and the pinned BMS services. On Ubuntu, the same agent contract manages Mob
 without virtualization. PostgreSQL data stays on the Linux filesystem; it is never run from `/mnt/c`.
 Web and WS remain loopback-only and PostgreSQL, Redis, and the engine socket are never published.
 
+macOS Apple Silicon is an experimental distribution target. Its full `.pkg` bundles Lima, a pinned
+Ubuntu ARM64 image, private Moby/Compose binaries, age, and ARM64 Web/WS/PostgreSQL/Redis images. A
+per-operator launchd agent keeps the Apple Virtualization Framework VM alive after setup. Web and WS
+are forwarded only to host loopback; PostgreSQL, Redis, their volumes, secrets, and the engine socket
+remain in the private Linux VM. Docker Desktop is neither installed nor used on the target Mac. The
+existing macOS POS Desktop `.dmg` is only a client and must never be published as this server package.
+
+The macOS builder exposes two explicit products: `--package-type server` contains only the managed
+runtime, while `--package-type server-pos` also embeds `BMS POS.app`. After first-run provisioning,
+the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
+handoff that Desktop consumes into Keychain before making a network request. Later launches need only
+open BMS POS: when its saved origin is exactly `http://127.0.0.1:3100` and that origin is unreachable,
+Desktop asks the root-owned controller to `ensure-running` and waits for Web and WS health. A remote
+pairing is never rewritten or silently failed over to local. If local services are already starting,
+the ensure operation joins that launchd job without killing or restarting the VM.
+
 The Windows product boundary is one dedicated operator account per shop host. WSL distributions are
 user-scoped and systemd services alone do not keep an instance alive, so the host agent must own
 login startup and runtime liveness. A headless server that must run before login is a different
@@ -100,9 +116,11 @@ Hyper-V/appliance product and is not implied by this design.
 ## Supported-target policy
 
 The initial primary targets are serviced Windows 11 x64, Windows 10 IoT Enterprise LTSC 2021 x64,
-and Ubuntu 24.04 LTS x64. Windows 10 22H2 is transition-only and needs evidence of current ESU;
-Ubuntu 22.04 is transition-only. Consumer Windows 10 without ESU, 32-bit systems, ARM64, arbitrary
-Linux distributions, Windows Server, and macOS local server are not initial targets.
+and Ubuntu 24.04 LTS x64. macOS 15 on Apple Silicon is experimental and must remain labelled as a
+technical pilot until its native runtime and evidence matrix exist. Windows 10 22H2 is
+transition-only and needs evidence of current ESU; Ubuntu 22.04 is transition-only. Consumer
+Windows 10 without ESU, 32-bit systems, Intel Macs, other ARM64 hosts, arbitrary Linux
+distributions, and Windows Server are not initial targets.
 
 Passing preflight means only that a machine is a candidate. A production claim additionally requires
 the exact OS/runtime/agent/application combination to pass the clean-install, update, restore,
@@ -158,13 +176,16 @@ the WSL distribution is destructive and must never occur during an ordinary unin
 ## Current delivery status
 
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
-Ubuntu systemd install, pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
+Ubuntu systemd install, and a full offline-payload macOS Apple Silicon technical-pilot package using
+Lima/VZ. It also implements the pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
 logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
 definition. It includes scheduled encrypted off-host export, retention, checksums and stale/failure
 reporting on both supported runtime families. It also implements a signed transactional updater: replay/downgrade refusal, verified
 pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback
 or full data restore, and startup recovery for an interrupted runtime transaction. The legacy Docker
-Desktop pilot remains available and unchanged while this path is certified.
+Desktop pilot remains available and unchanged while this path is certified. The macOS pilot has
+manual `age` backup export but does not yet implement signed transactional update, scheduled off-host
+backup, restore orchestration, licensing evidence activation, package signing, or notarization.
 
 This is release-candidate engineering, not a GA declaration. Promotion to `stable` requires a
 production signing trust root, signed OS packages, evidenced update/rollback and replacement-machine

@@ -1,7 +1,7 @@
 {
   "name": "@bms/desktop-pos",
   "desktopName": "bms-pos.desktop",
-  "version": "0.2.8",
+  "version": "0.2.11",
   "private": true,
   "license": "UNLICENSED",
   "type": "module",
@@ -16,8 +16,8 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "lint": "node --check src/main.mjs && node --check src/pairing.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/preload.cjs && node --check renderer/setup.js && node --check renderer/startup.js",
-    "test": "node --test test/display-policy.test.mjs test/operational-attention.test.mjs test/pairing.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/zoom-policy.test.mjs",
+    "lint": "node --check src/main.mjs && node --check src/local-runtime.mjs && node --check src/pairing.mjs && node --check src/pairing-server.mjs && node --check src/renderer-route.mjs && node --check src/secure-storage.mjs && node --check src/zoom-policy.mjs && node --check src/preload.cjs && node --check renderer/setup.js && node --check renderer/startup.js",
+    "test": "node --test test/display-policy.test.mjs test/local-admin.test.mjs test/local-runtime.test.mjs test/operational-attention.test.mjs test/pairing.test.mjs test/pairing-server.test.mjs test/renderer-route.test.mjs test/secure-storage.test.mjs test/zoom-policy.test.mjs",
     "test:smoke": "electron test/smoke-main.mjs",
     "pack:win": "electron-builder --win nsis",
     "pack:win32": "electron-builder --win nsis --ia32",

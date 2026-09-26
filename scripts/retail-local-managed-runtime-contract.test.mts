@@ -15,7 +15,7 @@ const json = (path: string) => JSON.parse(read(path));
 test("Managed Runtime support policy is explicit and does not silently bless every platform", () => {
   const policy = json("deploy/retail-local/managed-runtime/support-matrix.json");
   assert.equal(policy.formatVersion, 1);
-  assert.deepEqual(policy.architectures, ["x86_64"]);
+  assert.deepEqual(policy.architectures, ["x86_64", "arm64"]);
   assert.ok(policy.minimumMemoryGiB >= 8);
   assert.ok(policy.recommendedFreeDiskGiB >= 15);
 
@@ -24,7 +24,48 @@ test("Managed Runtime support policy is explicit and does not silently bless eve
   assert.equal(byId.get("windows-10-22h2-esu-x64")?.requiresEsuEvidence, true);
   assert.equal(byId.get("ubuntu-24.04-lts-x64")?.supportLevel, "primary");
   assert.equal(byId.get("ubuntu-22.04-lts-x64")?.supportLevel, "transition");
-  assert.equal(policy.targets.some((target: { architecture: string }) => target.architecture === "arm64"), false);
+  assert.deepEqual(byId.get("macos-15-arm64"), {
+    id: "macos-15-arm64",
+    platform: "macos",
+    minimumVersion: "15.0",
+    architecture: "arm64",
+    supportLevel: "technical-pilot",
+    runtime: "lima-vz-moby",
+    minimumFreeDiskGiB: 12,
+    recommendedFreeDiskGiB: 30,
+    requiresAppleVirtualizationFramework: true,
+  });
+});
+
+test("macOS full installer uses its private VZ runtime instead of Docker Desktop", () => {
+  const hostControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+  const vmTemplate = read("deploy/retail-local/managed-runtime/macos/lima.yaml.template");
+  const packageBuilder = read("deploy/retail-local/managed-runtime/macos/build-pkg.sh");
+  const packageSmokeTest = read("deploy/retail-local/managed-runtime/macos/smoke-test-pkg.sh");
+  const packagePostinstall = read("deploy/retail-local/managed-runtime/macos/postinstall");
+  assert.match(vmTemplate, /vmType: vz/);
+  assert.match(vmTemplate, /guestIP: 127\.0\.0\.1/);
+  assert.match(hostControl, /engine-load -engine macos-lima/);
+  assert.match(hostControl, /bms-localctl doctor/);
+  assert.match(hostControl, /ensure-running\) ensure_runtime/);
+  assert.match(hostControl, /launchctl kickstart "\$LAUNCH_LABEL"/);
+  assert.match(hostControl, /PACKAGE_TYPE/);
+  assert.match(hostControl, /pairing-handoff-/);
+  assert.match(hostControl, /BMS_RETAIL_LOCAL_LIMA_HOME:-\$HOME\/\.bmsrl/);
+  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg-arm64\.img/);
+  assert.match(packageBuilder, /docker-\$DOCKER_VERSION\.tgz/);
+  assert.match(packageBuilder, /Applications\/BMS Retail Local\.app/);
+  assert.match(packageBuilder, /Applications\/BMS POS\.app/);
+  assert.match(packageBuilder, /--package-type/);
+  assert.match(packageBuilder, /BundleIsRelocatable/);
+  assert.match(packageBuilder, /--component-plist/);
+  assert.match(packageBuilder, /BMSRetailLocal\.icns/);
+  assert.match(packageBuilder, /pkgutil --expand "\$package_path"/);
+  assert.match(packageBuilder, /gzip compressed data/);
+  assert.match(packageSmokeTest, /component Payload ต้องเป็น archive ไม่ใช่ directory/);
+  assert.match(packageSmokeTest, /<relocate>/);
+  assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
+  assert.doesNotMatch(hostControl, /Docker Desktop/i);
 });
 
 test("Managed Runtime release contract requires publisher identity and immutable components", () => {

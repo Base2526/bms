@@ -10,6 +10,17 @@ import {
 } from "./display-policy.mjs";
 import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
 import {
+  adminUrlForServer,
+  assertPairingServerResponse,
+  canRecoverByStartingManagedLocalRuntime,
+} from "./pairing-server.mjs";
+import {
+  ensureManagedLocalRuntime,
+  isManagedLocalServerUrl,
+  managedLocalPosDevicesUrl,
+  MANAGED_LOCAL_SERVER_URL,
+} from "./local-runtime.mjs";
+import {
   cachedPosEntryPath,
   MOBILE_POS_PATH,
   POS_NAVIGATION_TIMEOUT_MS,
@@ -41,6 +52,7 @@ let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
 let startupNavigation = null;
+let localRuntimeStartup = null;
 let lastOperationalAttentionAt = 0;
 const OPERATIONAL_ATTENTION_COOLDOWN_MS = 5_000;
 const operationalNotifications = new Set();
@@ -114,6 +126,7 @@ async function writePairing(pairing) {
 
 async function removePairing() {
   activePairing = null;
+  installApplicationMenu();
   closeCustomerDisplayWindow();
   await rm(configPath(), { force: true });
 }
@@ -229,6 +242,43 @@ function openExternalHttp(value) {
     const target = new URL(value);
     if (target.protocol === "https:" || target.protocol === "http:") void shell.openExternal(target.toString());
   } catch {}
+}
+
+function openAdminBackoffice() {
+  if (!activePairing) return false;
+  openExternalHttp(adminUrlForServer(activePairing.serverUrl));
+  return true;
+}
+
+function startManagedLocalRuntime() {
+  if (!localRuntimeStartup) {
+    const operation = ensureManagedLocalRuntime(MANAGED_LOCAL_SERVER_URL);
+    const wrappedOperation = operation.finally(() => {
+      if (localRuntimeStartup === wrappedOperation) localRuntimeStartup = null;
+    });
+    localRuntimeStartup = wrappedOperation;
+  }
+  return localRuntimeStartup;
+}
+
+async function openInstalledLocalAdmin() {
+  const result = await startManagedLocalRuntime();
+  if (!result?.attempted) return false;
+  openExternalHttp(managedLocalPosDevicesUrl());
+  return true;
+}
+
+function installApplicationMenu() {
+  Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
+    process.platform,
+    process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
+    {
+      adminAvailable: Boolean(activePairing),
+      openAdmin: openAdminBackoffice,
+      refreshData: refreshMainWindowData,
+      reloadApplication: reloadMainApplication,
+    },
+  )));
 }
 
 function setupWindowSecurity(targetSession) {
@@ -552,6 +602,43 @@ async function loadPosUrl(url, targetWindow = mainWindow) {
   }
 }
 
+async function probePairingServer(pairing, timeoutMs = 5_000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await net.fetch(new URL("/api/pos/session", pairing.serverUrl), {
+      method: "GET",
+      cache: "no-store",
+      redirect: "manual",
+      signal: controller.signal,
+      headers: { "x-pos-device-token": pairing.token },
+    });
+    assertPairingServerResponse(response);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function ensurePairingServerAvailable(pairing, targetWindow = mainWindow) {
+  try {
+    await probePairingServer(pairing);
+    return;
+  } catch (networkError) {
+    if (!isManagedLocalServerUrl(pairing.serverUrl) || process.platform !== "darwin") {
+      throw networkError;
+    }
+    if (!canRecoverByStartingManagedLocalRuntime(networkError)) throw networkError;
+  }
+
+  await showStartup(
+    "starting",
+    "พบ Retail Local Server ในเครื่องนี้ กำลังเริ่มบริการและตรวจสอบฐานข้อมูล กรุณารอสักครู่",
+    targetWindow,
+  );
+  await startManagedLocalRuntime();
+  await probePairingServer(pairing);
+}
+
 async function showPos(targetWindow = mainWindow) {
   if (!targetWindow || targetWindow.isDestroyed() || !activePairing) return;
   const pairing = activePairing;
@@ -614,6 +701,7 @@ function startPosNavigation() {
   const operation = (async () => {
     try {
       await showStartup("loading", "", targetWindow);
+      await ensurePairingServerAvailable(activePairing, targetWindow);
       await showPos(targetWindow);
       if (targetWindow.isDestroyed()) return;
       reconcileCustomerDisplay();
@@ -622,7 +710,8 @@ function startPosNavigation() {
       try {
         await showStartup(
           "error",
-          "เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่",
+          error?.userMessage
+            ?? "เชื่อมต่อหน้าขายไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตหรือเซิร์ฟเวอร์แล้วลองใหม่",
           targetWindow,
         );
       } catch (recoveryError) {
@@ -705,6 +794,7 @@ function registerIpc() {
     try {
       await writePairing(parsed);
       activePairing = { serverUrl: parsed.serverUrl, token: parsed.token, posEntryPath: null };
+      installApplicationMenu();
       void startPosNavigation();
       return { ok: true };
     } catch {
@@ -715,6 +805,24 @@ function registerIpc() {
   ipcMain.handle("bms-pos:get-device-token", async (event) => {
     if (!isPairedPosFrame(event)) return null;
     return activePairing?.token ?? null;
+  });
+
+  ipcMain.handle("bms-pos:open-admin", async (event) => {
+    if (!isPairedPosFrame(event)) return { ok: false };
+    return { ok: openAdminBackoffice() };
+  });
+
+  ipcMain.handle("bms-pos:open-local-admin", async (event) => {
+    if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดระบบหลังบ้าน" };
+    try {
+      return { ok: await openInstalledLocalAdmin() };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error?.userMessage
+          ?? "เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ กรุณาตรวจสอบการติดตั้ง Retail Local Server",
+      };
+    }
   });
 
   ipcMain.handle("bms-pos:retry-startup", async (event) => {
@@ -806,19 +914,12 @@ if (!singleInstance) {
     app.on("web-contents-created", (_event, webContents) => {
       installFixedZoomPolicy(webContents);
     });
-    Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
-      process.platform,
-      process.env.BMS_POS_DESKTOP_DEVTOOLS === "1",
-      {
-        refreshData: refreshMainWindowData,
-        reloadApplication: reloadMainApplication,
-      },
-    )));
     registerIpc();
     mainWindow = createMainWindow();
     customerDisplayConfig = await readCustomerDisplayConfig();
     activePairing = await readPairing();
     if (!activePairing) activePairing = await consumePairingHandoff();
+    installApplicationMenu();
     if (activePairing) {
       void startPosNavigation();
     }

@@ -39,6 +39,8 @@ declare global {
       getDeviceToken(): Promise<string | null>;
       getStorageNamespace(): Promise<string | null>;
       getAppInfo?(): Promise<DesktopAppInfo | null>;
+      /** Opens the paired server's admin login in the system browser without POS credentials. */
+      openAdmin?(): Promise<{ ok: boolean }>;
       /** Added in desktop 0.2.3; optional so a newer server remains usable from an older shell. */
       getCustomerDisplayState?(): Promise<DesktopCustomerDisplayState | null>;
       setCustomerDisplayConfig?(input: {
@@ -119,6 +121,15 @@ export async function readDesktopAppInfo(): Promise<DesktopAppInfo | null> {
     return await window.bmsDesktop.getAppInfo();
   } catch {
     return null;
+  }
+}
+
+export async function openDesktopAdmin(): Promise<boolean> {
+  if (typeof window === "undefined" || typeof window.bmsDesktop?.openAdmin !== "function") return false;
+  try {
+    return Boolean((await window.bmsDesktop.openAdmin()).ok);
+  } catch {
+    return false;
   }
 }
 

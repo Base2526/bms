@@ -45,10 +45,20 @@
               <span id="status-message"></span>
               <button id="status-close" class="status-close" type="button" aria-label="ปิดการแจ้งเตือน" title="ปิด">×</button>
             </div>
-            <button id="pair-button" type="submit">
-              <span class="button-label">ตรวจสอบและเชื่อมต่อ</span>
-              <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
-            </button>
+            <div class="setup-actions">
+              <button id="pair-button" type="submit">
+                <span class="button-label">ตรวจสอบและเชื่อมต่อ</span>
+                <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
+              </button>
+              <div id="local-admin-section" class="local-admin-section" hidden>
+                <div class="action-divider"><span>หรือ</span></div>
+                <button id="local-admin-button" class="local-admin-button" type="button">
+                  <span class="button-label">เปิดระบบหลังบ้านบนเครื่องนี้</span>
+                  <span class="button-progress" hidden>กำลังเริ่ม Retail Local Server...</span>
+                </button>
+                <p>สำหรับเครื่องที่ติดตั้ง BMS Retail Local เพื่อสร้างลิงก์จับคู่เครื่อง POS</p>
+              </div>
+            </div>
           </form>
           <footer>
             <span id="security-note">token ถูกเข้ารหัสด้วยที่เก็บข้อมูลปลอดภัยของระบบปฏิบัติการ</span>

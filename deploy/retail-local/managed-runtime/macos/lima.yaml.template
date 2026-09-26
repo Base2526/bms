@@ -1,0 +1,100 @@
+minimumLimaVersion: 2.2.0
+vmType: vz
+arch: aarch64
+cpus: 4
+memory: 8GiB
+disk: 60GiB
+
+images:
+- location: "__UBUNTU_IMAGE_URI__"
+  arch: aarch64
+  digest: "sha256:__UBUNTU_IMAGE_SHA256__"
+
+mountType: virtiofs
+mounts:
+- location: "__PAYLOAD_ROOT__"
+  mountPoint: /mnt/bms-payload
+  writable: false
+
+containerd:
+  system: false
+  user: false
+
+ssh:
+  loadDotSSHPubKeys: false
+  forwardAgent: false
+  forwardX11: false
+
+hostResolver:
+  enabled: true
+
+portForwards:
+- guestIP: 127.0.0.1
+  guestPort: 3100
+  hostIP: 127.0.0.1
+  hostPort: __HOST_WEB_PORT__
+- guestIP: 127.0.0.1
+  guestPort: 3101
+  hostIP: 127.0.0.1
+  hostPort: __HOST_WS_PORT__
+- guestIP: 0.0.0.0
+  proto: any
+  ignore: true
+- guestIP: 127.0.0.1
+  proto: any
+  ignore: true
+
+provision:
+- mode: system
+  script: |
+    #!/bin/bash
+    set -Eeuo pipefail
+    if ! command -v docker >/dev/null 2>&1; then
+      work=$(mktemp -d)
+      tar -xzf /mnt/bms-payload/runtime/docker-aarch64.tgz -C "$work"
+      install -m 0755 "$work"/docker/* /usr/local/bin/
+    fi
+    install -d -m 0755 /usr/local/lib/docker/cli-plugins
+    install -m 0755 /mnt/bms-payload/runtime/docker-compose-linux-aarch64 \
+      /usr/local/lib/docker/cli-plugins/docker-compose
+    if ! command -v age >/dev/null 2>&1; then
+      work=$(mktemp -d)
+      tar -xzf /mnt/bms-payload/runtime/age-linux-arm64.tar.gz -C "$work"
+      install -m 0755 "$work"/age/age "$work"/age/age-keygen /usr/local/bin/
+    fi
+    getent group docker >/dev/null || groupadd --system docker
+    cat >/etc/systemd/system/docker.service <<'EOF'
+    [Unit]
+    Description=BMS Retail Local private container engine
+    After=network-online.target
+    Wants=network-online.target
+
+    [Service]
+    Type=notify
+    ExecStart=/usr/local/bin/dockerd --host=unix:///var/run/docker.sock
+    ExecReload=/bin/kill -s HUP $MAINPID
+    Restart=always
+    RestartSec=2
+    TimeoutStartSec=0
+    LimitNOFILE=1048576
+    TasksMax=infinity
+    Delegate=yes
+    KillMode=process
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    install -d -m 0700 /var/lib/bms-retail-local /var/lib/bms-retail-local/backups
+    systemctl daemon-reload
+    systemctl enable --now docker.service
+
+probes:
+- script: |
+    #!/bin/bash
+    set -Eeuo pipefail
+    timeout 60s bash -c 'until sudo docker info >/dev/null 2>&1; do sleep 2; done'
+    sudo docker compose version >/dev/null
+  hint: Private Moby runtime did not become ready. Inspect /var/log/cloud-init-output.log.
+
+message: |
+  BMS Retail Local private runtime is ready.

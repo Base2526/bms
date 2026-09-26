@@ -366,6 +366,9 @@
   text-align: left;
 }
 .accountPopover button:hover { background: #f3f7fc !important; }
+.accountPopover .accountAdmin { color: #0958d9 !important; font-weight: 650; }
+.accountPopover .accountAdmin span { float: right; font-size: 15px; }
+.accountDivider { height: 1px; margin: 5px 4px; background: #edf0f5; }
 .accountPopover .accountSignOut { color: #cf1322 !important; }
 
 .infoBackdrop {

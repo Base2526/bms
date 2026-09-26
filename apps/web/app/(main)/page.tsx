@@ -409,6 +409,7 @@ export default function HomePage() {
             <strong>{t("landing.hybridBoundaryTitle")}</strong>
             <small>{t("landing.hybridBoundaryDescription")}</small>
           </span>
+          <Link href="/retail-local"><Button>{t("landing.retailLocalCta")}</Button></Link>
         </div>
       </section>
 

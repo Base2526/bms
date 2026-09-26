@@ -34,6 +34,19 @@ func engineCommand(engine, distro string, args ...string) (*exec.Cmd, error) {
 			return nil, errors.New("linux-native engine ใช้ได้เฉพาะ Linux")
 		}
 		return exec.Command("docker", args...), nil
+	case "macos-lima":
+		if runtime.GOOS != "darwin" {
+			return nil, errors.New("macos-lima engine ใช้ได้เฉพาะ macOS")
+		}
+		if !distroPattern.MatchString(distro) {
+			return nil, errors.New("ชื่อ Lima instance ไม่ถูกต้อง")
+		}
+		limactl, err := limaCtlPath()
+		if err != nil {
+			return nil, err
+		}
+		prefix := []string{"--tty=false", "shell", distro, "sudo", "docker"}
+		return exec.Command(limactl, append(prefix, args...)...), nil
 	default:
 		return nil, fmt.Errorf("engine %q ไม่รองรับ", engine)
 	}
@@ -53,9 +66,33 @@ func runtimeShellCommand(engine, distro, script string, args ...string) (*exec.C
 		}
 		prefix := []string{"-c", script, "bms-runtime"}
 		return exec.Command("sh", append(prefix, args...)...), nil
+	case "macos-lima":
+		if runtime.GOOS != "darwin" || !distroPattern.MatchString(distro) {
+			return nil, errors.New("macos-lima runtime ไม่ถูกต้อง")
+		}
+		limactl, err := limaCtlPath()
+		if err != nil {
+			return nil, err
+		}
+		prefix := []string{"--tty=false", "shell", distro, "sudo", "sh", "-c", script, "bms-runtime"}
+		return exec.Command(limactl, append(prefix, args...)...), nil
 	default:
 		return nil, fmt.Errorf("engine %q ไม่รองรับ", engine)
 	}
+}
+
+func limaCtlPath() (string, error) {
+	if configured := os.Getenv("BMS_LIMACTL_PATH"); configured != "" {
+		if !filepath.IsAbs(configured) {
+			return "", errors.New("BMS_LIMACTL_PATH ต้องเป็น absolute path")
+		}
+		return configured, nil
+	}
+	path, err := exec.LookPath("limactl")
+	if err != nil {
+		return "", errors.New("ไม่พบ limactl สำหรับ private macOS runtime")
+	}
+	return path, nil
 }
 
 func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest string) error {
@@ -155,8 +192,8 @@ func readRuntimeFile(engine, distro, source, destination string) error {
 	if err != nil {
 		return err
 	}
-	if engine != "windows-wsl" {
-		return errors.New("runtime-read ใช้สำหรับส่งออกไฟล์จาก private Windows WSL เท่านั้น")
+	if engine != "windows-wsl" && engine != "macos-lima" {
+		return errors.New("runtime-read ใช้สำหรับส่งออกไฟล์จาก private Windows WSL หรือ macOS Lima เท่านั้น")
 	}
 	command, err := runtimeShellCommand(engine, distro, `set -eu; test -f "$1"; test ! -L "$1"; cat -- "$1"`, cleanSource)
 	if err != nil {

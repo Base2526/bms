@@ -114,6 +114,30 @@ button:hover { background: #4096ff; }
 button:focus-visible { outline: 3px solid rgba(22, 119, 255, 0.26); outline-offset: 2px; }
 button:disabled { background: #91caff; cursor: wait; }
 
+.setup-actions { display: grid; margin-top: 20px; }
+.setup-actions > button { margin-top: 0; }
+.local-admin-section { display: grid; }
+.local-admin-section[hidden] { display: none; }
+.action-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  color: #98a2b3;
+  font-size: 11px;
+}
+.action-divider::before,
+.action-divider::after { content: ""; flex: 1; height: 1px; background: #e4e7ec; }
+.local-admin-button {
+  margin-top: 0;
+  border: 1px solid #84adf4;
+  background: #eef5ff;
+  color: #0958d9;
+}
+.local-admin-button:hover { background: #dceaff; }
+.local-admin-button:disabled { border-color: #c8daf7; background: #f3f7fd; color: #7ba5e6; }
+.local-admin-section p { margin: 7px 4px 0; color: #667085; font-size: 10px; line-height: 1.45; text-align: center; }
+
 footer {
   display: flex;
   justify-content: space-between;

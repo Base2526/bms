@@ -1,0 +1,13 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+APP_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+readonly APP_ROOT
+readonly SETUP_COMMAND="$APP_ROOT/Resources/BMS Retail Local Setup.command"
+
+[[ -x $SETUP_COMMAND ]] || {
+  osascript -e 'display alert "BMS Retail Local" message "ไฟล์เริ่มระบบไม่ครบ กรุณาติดตั้งแพ็กเกจใหม่" as critical'
+  exit 1
+}
+
+open -a Terminal "$SETUP_COMMAND"

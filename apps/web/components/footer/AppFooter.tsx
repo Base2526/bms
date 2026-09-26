@@ -10,6 +10,7 @@ import {
   CloseCircleOutlined,
   CodeOutlined,
   CustomerServiceOutlined,
+  DesktopOutlined,
   FileTextOutlined,
   LockOutlined,
   MessageOutlined,
@@ -57,6 +58,7 @@ const COPY = {
     security: "ความปลอดภัย",
     pricing: "แพ็กเกจราคา",
     dashboard: "Dashboard ร้านค้า",
+    retailLocal: "Retail Local",
     resources: "เรียนรู้และช่วยเหลือ",
     help: "ศูนย์ช่วยเหลือ",
     roadmap: "Roadmap",
@@ -88,6 +90,7 @@ const COPY = {
     security: "Security",
     pricing: "Pricing",
     dashboard: "Store dashboard",
+    retailLocal: "Retail Local",
     resources: "Learn and support",
     help: "Help center",
     roadmap: "Roadmap",
@@ -147,6 +150,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
     { href: "/#security", label: t.security, icon: <LockOutlined /> },
     { href: "/#pricing", label: t.pricing, icon: <ShopOutlined /> },
     { href: "/admin/dashboard", label: t.dashboard, icon: <BarChartOutlined /> },
+    { href: "/retail-local", label: t.retailLocal, icon: <DesktopOutlined /> },
   ];
 
   const resourceLinks = [
