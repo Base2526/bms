@@ -61,6 +61,9 @@ services:
       # BMS
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       BMS_AI_MODEL: ${BMS_AI_MODEL}
+      RETAIL_LOCAL_WINDOWS_DOWNLOAD_URL: ${RETAIL_LOCAL_WINDOWS_DOWNLOAD_URL:-}
+      RETAIL_LOCAL_UBUNTU_DOWNLOAD_URL: ${RETAIL_LOCAL_UBUNTU_DOWNLOAD_URL:-}
+      RETAIL_LOCAL_MACOS_DOWNLOAD_URL: ${RETAIL_LOCAL_MACOS_DOWNLOAD_URL:-}
       # ความลับที่โค้ดต้องใช้ตอน runtime — ต้องอยู่ใน environment: ไม่ใช่แค่ใน .env
       # (compose ส่งเข้า container เฉพาะตัวที่ระบุที่นี่ · --env-file ไม่ inject ให้)
       # ไม่ตั้ง = production throw ตั้งใจ ดู lib/auth/token.ts และ lib/bms/crypto.ts

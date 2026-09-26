@@ -295,7 +295,7 @@
 }
 
 .resilienceBoundary {
-  align-items: flex-start;
+  align-items: center;
   background: rgba(245, 158, 11, 0.08);
   border-left: 3px solid #f59e0b;
   border-radius: 0 14px 14px 0;
@@ -312,12 +312,33 @@
 
 .resilienceBoundary > span {
   display: grid;
+  flex: 1;
   gap: 4px;
+}
+
+.resilienceBoundary > a {
+  flex: 0 0 auto;
 }
 
 .resilienceBoundary small {
   color: var(--app-muted);
   line-height: 1.6;
+}
+
+@media (max-width: 720px) {
+  .resilienceBoundary {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .resilienceBoundary > span {
+    flex-basis: calc(100% - 40px);
+  }
+
+  .resilienceBoundary > a,
+  .resilienceBoundary > a button {
+    width: 100%;
+  }
 }
 
 .productIncluded {

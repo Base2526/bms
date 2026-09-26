@@ -1,0 +1,27 @@
+#!/bin/sh
+set -eu
+
+root="/Library/Application Support/BMS/RetailLocal"
+app="/Applications/BMS Retail Local.app"
+pos_app="/Applications/BMS POS.app"
+legacy="/Applications/BMS Retail Local Setup.command"
+
+chown -R root:wheel "$root"
+chown -R root:wheel "$app"
+chmod -R go-w "$root" "$app"
+chmod 0755 "$root/control/bms-retail-local" "/usr/local/bin/bms-retail-local" \
+  "$app/Contents/MacOS/BMS Retail Local" \
+  "$app/Contents/Resources/BMS Retail Local Setup.command"
+package_type=$(cat "$root/payload/PACKAGE_TYPE" 2>/dev/null || true)
+if [ "$package_type" = server-pos ]; then
+  if [ ! -d "$pos_app" ]; then
+    printf '%s\n' 'BMS Retail Local Server + POS installation is missing /Applications/BMS POS.app' >&2
+    exit 1
+  fi
+  chown -R root:wheel "$pos_app"
+  chmod -R go-w "$pos_app"
+  chmod 0755 "$pos_app/Contents/MacOS/BMS POS"
+fi
+if [ -f "$legacy" ]; then unlink "$legacy"; fi
+touch "$app"
+printf '%s\n' 'BMS Retail Local installed. Open Applications/BMS Retail Local.app to provision or start the server.'

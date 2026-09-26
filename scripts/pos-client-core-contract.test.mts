@@ -286,11 +286,15 @@ test("desktop rail provides professional help and real app-version diagnostics",
     desktopRenderer.indexOf('</details>', desktopRenderer.indexOf('className={styles.accountPopover}')),
   );
   assert.doesNotMatch(accountPopover, /ช่วยเหลือ|เกี่ยวกับ BMS POS/);
+  assert.match(accountPopover, /เปิดระบบหลังบ้าน/);
+  assert.match(accountPopover, /openAdminBackoffice/);
   assert.match(desktopRenderer, /window\.open\("\/pos\/manual"/);
   assert.match(desktopRenderer, /readDesktopAppInfo\(\)/);
   assert.match(desktopRenderer, /copyTextToClipboard\(diagnostic\)/);
   assert.match(desktopRenderer, /role="dialog" aria-modal="true"/);
   assert.match(desktopDeviceClient, /getAppInfo\?\(\): Promise<DesktopAppInfo \| null>/);
+  assert.match(desktopDeviceClient, /openAdmin\?\(\): Promise<\{ ok: boolean \}>/);
+  assert.match(desktopMain, /isPairedPosFrame\(event\)[\s\S]*?openAdminBackoffice\(\)/);
   assert.match(desktopMain, /!isSetupFrame\(event\) && !isPairedPosFrame\(event\)/);
 });
 

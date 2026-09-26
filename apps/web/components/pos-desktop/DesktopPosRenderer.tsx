@@ -55,6 +55,7 @@ import {
 import {
   clearPosDeviceToken,
   hasDesktopPosBridge,
+  openDesktopAdmin,
   readDesktopAppInfo,
   readPosDeviceToken,
   type DesktopAppInfo,
@@ -1053,6 +1054,13 @@ export default function DesktopPosRenderer() {
     setDesktopInfoDialog(dialog);
   }, []);
 
+  const openAdminBackoffice = useCallback(async () => {
+    if (accountMenuRef.current) accountMenuRef.current.open = false;
+    if (!await openDesktopAdmin()) {
+      setError("เปิดระบบหลังบ้านไม่สำเร็จ กรุณาลองใหม่จากเมนู BMS POS");
+    }
+  }, []);
+
   const unpair = useCallback(async () => {
     await clearPosDeviceToken();
     clearOperator();
@@ -1890,6 +1898,14 @@ export default function DesktopPosRenderer() {
                 <span className={styles.accountChevron} aria-hidden="true">⌄</span>
               </summary>
               <div className={styles.accountPopover}>
+                {hasDesktopPosBridge() ? (
+                  <>
+                    <button className={styles.accountAdmin} onClick={() => void openAdminBackoffice()}>
+                      เปิดระบบหลังบ้าน <span aria-hidden="true">↗</span>
+                    </button>
+                    <div className={styles.accountDivider} />
+                  </>
+                ) : null}
                 <button className={styles.accountSignOut} onClick={signOutCashier}>
                   ล็อก / เปลี่ยนพนักงาน
                 </button>

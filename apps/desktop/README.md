@@ -34,6 +34,10 @@ recovery guarantees, and its own failure-mode evidence.
 - paired startup paints a local connection screen before probing the server, bounds the compatibility
   probe and page navigation with timeouts, and offers retry or re-pair recovery instead of leaving the
   native window on its background colour when the network or web deployment stalls;
+- on macOS first-run setup, **เปิดระบบหลังบ้านบนเครื่องนี้** validates the installed Retail Local
+  receipt and root-owned controller, starts the managed server when needed, and opens
+  `/admin/pos-devices` in the system browser so the operator can create the pairing link without
+  knowing a localhost URL; remote-server pairing remains the explicit URL/token flow;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
 - one register owns at most one customer-display window: settings can keep it off, automatically use
@@ -174,6 +178,14 @@ npm run pack:mac
 
 The build writes `BMS-POS-<version>-arm64.dmg` for Apple Silicon and
 `BMS-POS-<version>-x64.dmg` for Intel Macs to `apps/desktop/dist/`.
+
+When this same client is embedded in the Retail Local `server-pos` package and is paired to the exact
+managed origin `http://127.0.0.1:3100`, opening BMS POS also checks the local service. If launchd has
+not started it yet, Desktop invokes only the root-owned `bms-retail-local ensure-running` controller
+and waits for health before opening the register. This behavior never applies to a remote pairing,
+to `localhost`, or to another port, so Desktop cannot silently change a cashier's selected server.
+Before pairing, the same controller is available only through the macOS setup action that opens the
+local POS-device administration page; it does not guess or replace a remote server URL.
 `.github/workflows/desktop-macos.yml` creates the two unsigned DMGs on a macOS runner after tests,
 lint and the Electron setup smoke test, and keeps them as a 14-day workflow artifact.
 

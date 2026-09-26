@@ -8,6 +8,7 @@ const { app, BrowserWindow } = electronMain;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(__dirname, "../dist-smoke");
 const screenshotPath = path.join(outputDir, "setup.png");
+const compactScreenshotPath = path.join(outputDir, "setup-compact.png");
 const startupScreenshotPath = path.join(outputDir, "startup-error.png");
 
 async function run() {
@@ -32,6 +33,7 @@ async function run() {
       heading: document.querySelector('h1')?.textContent,
       fields: document.querySelectorAll('input, textarea').length,
       button: document.querySelector('#pair-button')?.textContent?.trim(),
+      localAdminButton: document.querySelector('#local-admin-button')?.textContent?.trim(),
       alertCloseLabel: document.querySelector('#status-close')?.getAttribute('aria-label'),
       clientLabel: document.querySelector('#client-label')?.textContent,
       securityNote: document.querySelector('#security-note')?.textContent,
@@ -44,9 +46,10 @@ async function run() {
     if (
       state.fields !== 2
       || !state.button?.includes("ตรวจสอบและเชื่อมต่อ")
+      || !state.localAdminButton?.includes("เปิดระบบหลังบ้านบนเครื่องนี้")
       || state.alertCloseLabel !== "ปิดการแจ้งเตือน"
-      || state.clientLabel !== "Windows Client"
-      || !state.securityNote?.includes("Windows")
+      || state.clientLabel !== "macOS Client"
+      || !state.securityNote?.includes("macOS Keychain")
       || state.overflowX
       || state.overflowY
     ) {
@@ -59,6 +62,22 @@ async function run() {
     );
     const image = await window.webContents.capturePage();
     await writeFile(screenshotPath, image.toPNG());
+
+    window.setContentSize(700, 900);
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
+    );
+    const compactState = await window.webContents.executeJavaScript(`({
+      localAdminVisible: !document.querySelector('#local-admin-section')?.hidden,
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
+    })`);
+    if (!compactState.localAdminVisible || compactState.overflowX || compactState.overflowY) {
+      throw new Error(`Invalid compact setup layout: ${JSON.stringify(compactState)}`);
+    }
+    const compactImage = await window.webContents.capturePage();
+    await writeFile(compactScreenshotPath, compactImage.toPNG());
+    window.setContentSize(1100, 760);
 
     console.log("smoke: loading startup renderer");
     await window.loadFile(path.join(__dirname, "../renderer/startup.html"));
@@ -73,6 +92,32 @@ async function run() {
       || loadingState.errorHidden !== true
     ) {
       throw new Error(`Invalid startup loading layout: ${JSON.stringify(loadingState)}`);
+    }
+
+    console.log("smoke: loading local runtime startup renderer");
+    await window.loadFile(path.join(__dirname, "../renderer/startup.html"), {
+      query: {
+        state: "starting",
+        message: "กำลังเริ่มเซิร์ฟเวอร์ทดสอบ",
+      },
+    });
+    const localRuntimeState = await window.webContents.executeJavaScript(`({
+      heading: document.querySelector('#loading-heading')?.textContent,
+      message: document.querySelector('#loading-message')?.textContent,
+      loadingHidden: document.querySelector('#loading-state')?.hidden,
+      errorHidden: document.querySelector('#error-state')?.hidden,
+      overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
+    })`);
+    if (
+      localRuntimeState.heading !== "กำลังเริ่ม Retail Local Server"
+      || localRuntimeState.message !== "กำลังเริ่มเซิร์ฟเวอร์ทดสอบ"
+      || localRuntimeState.loadingHidden !== false
+      || localRuntimeState.errorHidden !== true
+      || localRuntimeState.overflowX
+      || localRuntimeState.overflowY
+    ) {
+      throw new Error(`Invalid local runtime startup layout: ${JSON.stringify(localRuntimeState)}`);
     }
 
     console.log("smoke: loading startup recovery renderer");
@@ -109,7 +154,7 @@ async function run() {
     );
     const startupImage = await window.webContents.capturePage();
     await writeFile(startupScreenshotPath, startupImage.toPNG());
-    console.log(JSON.stringify({ ok: true, screenshotPath, startupScreenshotPath, state, loadingState, startupState }));
+    console.log(JSON.stringify({ ok: true, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {
     window.destroy();
   }

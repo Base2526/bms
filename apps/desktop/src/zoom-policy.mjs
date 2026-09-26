@@ -41,6 +41,27 @@ export function installFixedZoomPolicy(webContents) {
 }
 
 export function desktopMenuTemplate(platform, devToolsEnabled = false, actions = {}) {
+  const openAdmin = {
+    label: "เปิดระบบหลังบ้าน",
+    accelerator: "CmdOrCtrl+Shift+A",
+    enabled: actions.adminAvailable === true,
+    click: typeof actions.openAdmin === "function" ? actions.openAdmin : () => {},
+  };
+  const appSubmenu = platform === "darwin"
+    ? [
+      { role: "about" },
+      { type: "separator" },
+      openAdmin,
+      { type: "separator" },
+      { role: "services" },
+      { type: "separator" },
+      { role: "hide" },
+      { role: "hideOthers" },
+      { role: "unhide" },
+      { type: "separator" },
+      { role: "quit" },
+    ]
+    : [openAdmin, { type: "separator" }, { role: "quit" }];
   const viewSubmenu = [
     {
       label: "รีเฟรชข้อมูลหน้าปัจจุบัน",
@@ -60,7 +81,7 @@ export function desktopMenuTemplate(platform, devToolsEnabled = false, actions =
   ];
 
   return [
-    ...(platform === "darwin" ? [{ role: "appMenu" }] : []),
+    { label: "BMS POS", submenu: appSubmenu },
     { role: "fileMenu" },
     { role: "editMenu" },
     { label: "View", submenu: viewSubmenu },

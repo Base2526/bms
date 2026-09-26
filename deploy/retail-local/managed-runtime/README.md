@@ -10,7 +10,8 @@ until the acceptance gates below have evidence from clean target machines.
 - Windows 10 IoT Enterprise LTSC 2021 x64: the fixed-purpose appliance target;
 - Windows 10 22H2 x64: transition only, with current ESU evidence;
 - Ubuntu 24.04 LTS x64: primary native-Linux target;
-- Ubuntu 22.04 LTS x64: transition target.
+- Ubuntu 22.04 LTS x64: transition target;
+- macOS 15+ on Apple Silicon: Lima/VZ + private Moby technical pilot.
 
 `support-matrix.json` is product policy, not a claim that a target has passed certification. The
 installer must also require a signed release manifest whose `platformTarget` names one of these
@@ -39,11 +40,12 @@ in a signed agent release before manifests start using that id.
 
 ## Implemented install path
 
-- native Windows/Linux preflight and exact support-target selection;
+- native Windows/Linux/macOS preflight and exact support-target selection;
 - Ed25519 release verification before payload interpretation;
 - resumable HTTPS component download with byte size and SHA-256 validation;
 - immutable OCI image-id verification after engine load;
-- private Windows WSL2 + Moby runtime and native Ubuntu Moby/systemd runtime;
+- private Windows WSL2 + Moby runtime, native Ubuntu Moby/systemd runtime, and macOS Lima/VZ + Moby
+  technical-pilot runtime;
 - loopback-only Web/WS, with PostgreSQL, Redis, and engine sockets off host ports;
 - atomic first-run migration/provisioning and ACL/mode-protected secrets;
 - short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
@@ -53,11 +55,14 @@ in a signed agent release before manifests start using that id.
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
+- a full macOS Apple Silicon `.pkg` builder that bundles all server/runtime bytes and needs no Docker
+  Desktop on the target Mac;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
-The bootstrap remains small: application images, the private runtime, and Desktop are downloaded
+The Windows/Ubuntu bootstrap remains small: application images, the private runtime, and Desktop are downloaded
 after publisher verification. The target needs internet access during install; a separately signed
-offline bundle is future work.
+offline bundle is future work. The macOS technical-pilot `.pkg` is the explicit exception: it is a
+large offline payload, currently unsigned and not notarized.
 
 Production rootfs builds must call `runtime-rootfs/build-rootfs.sh` with an Ubuntu image reference
 pinned by digest. A mutable `ubuntu:24.04` tag is used only by the CI Dockerfile smoke build and is
@@ -112,6 +117,25 @@ Run the Windows candidate check from PowerShell 7 with:
 ```powershell
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
 ```
+
+Build the full macOS Apple Silicon technical-pilot package with:
+
+```bash
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
+```
+
+That command builds `Server only`. For the recommended single-Mac installation, build the combined
+package instead; it embeds BMS POS and performs the one-time local pairing automatically:
+
+```bash
+deploy/retail-local/managed-runtime/macos/build-pkg.sh \
+  --version 0.4.0-internal.1 --package-type server-pos
+```
+
+Docker is needed only on the release workstation to build the ARM64 OCI images. The target package
+uses the bundled Lima/VZ private runtime and never calls Docker Desktop. After package installation,
+open `/Applications/BMS Retail Local.app`; do not upload the earlier payload-free `.pkg`
+fixture as a server release.
 
 Developer verification:
 

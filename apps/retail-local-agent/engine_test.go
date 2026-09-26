@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -33,5 +34,16 @@ func TestSafeRuntimePath(t *testing.T) {
 func TestRuntimeControlInstallIsAllowListed(t *testing.T) {
 	if err := installRuntimeControl("windows-wsl", "BMSRuntime", "missing", "../../evil"); err == nil {
 		t.Fatal("unexpected runtime control name was accepted")
+	}
+}
+
+func TestLimaCtlPathRequiresAbsoluteOverride(t *testing.T) {
+	original := os.Getenv("BMS_LIMACTL_PATH")
+	t.Cleanup(func() { _ = os.Setenv("BMS_LIMACTL_PATH", original) })
+	if err := os.Setenv("BMS_LIMACTL_PATH", "relative/limactl"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := limaCtlPath(); err == nil {
+		t.Fatal("relative BMS_LIMACTL_PATH was accepted")
 	}
 }

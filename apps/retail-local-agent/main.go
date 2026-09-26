@@ -120,7 +120,7 @@ func run(args []string) error {
 		return writeJSON(result)
 	case "engine-load":
 		flags := flag.NewFlagSet("engine-load", flag.ContinueOnError)
-		engine := flags.String("engine", "", "windows-wsl or linux-native")
+		engine := flags.String("engine", "", "windows-wsl, linux-native, or macos-lima")
 		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
 		artifact := flags.String("artifact", "", "verified OCI archive")
 		imageRef := flags.String("image-ref", "", "image reference contained in archive")
@@ -134,7 +134,7 @@ func run(args []string) error {
 		return loadAndVerifyImage(*engine, *distro, *artifact, *imageRef, *digest)
 	case "runtime-write":
 		flags := flag.NewFlagSet("runtime-write", flag.ContinueOnError)
-		engine := flags.String("engine", "", "windows-wsl or linux-native")
+		engine := flags.String("engine", "", "windows-wsl, linux-native, or macos-lima")
 		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
 		source := flags.String("source", "", "verified source file")
 		destination := flags.String("destination", "", "runtime destination below /var/lib/bms-retail-local")
@@ -148,7 +148,7 @@ func run(args []string) error {
 		return writeRuntimeFile(*engine, *distro, *source, *destination, *mode)
 	case "runtime-read":
 		flags := flag.NewFlagSet("runtime-read", flag.ContinueOnError)
-		engine := flags.String("engine", "", "windows-wsl")
+		engine := flags.String("engine", "", "windows-wsl or macos-lima")
 		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
 		source := flags.String("source", "", "runtime source below /var/lib/bms-retail-local")
 		destination := flags.String("destination", "", "new host destination file")
@@ -161,7 +161,7 @@ func run(args []string) error {
 		return readRuntimeFile(*engine, *distro, *source, *destination)
 	case "runtime-install-control":
 		flags := flag.NewFlagSet("runtime-install-control", flag.ContinueOnError)
-		engine := flags.String("engine", "", "windows-wsl")
+		engine := flags.String("engine", "", "windows-wsl or macos-lima")
 		distro := flags.String("distro", "BMSRuntime", "private WSL distribution")
 		source := flags.String("source", "", "trusted bootstrap control file")
 		name := flags.String("name", "", "allow-listed runtime control name")

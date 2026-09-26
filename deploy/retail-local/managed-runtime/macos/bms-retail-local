@@ -1,0 +1,364 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+readonly SYSTEM_ROOT="${BMS_RETAIL_LOCAL_SYSTEM_ROOT:-/Library/Application Support/BMS/RetailLocal}"
+readonly PAYLOAD_ROOT="$SYSTEM_ROOT/payload"
+readonly CONTROL_ROOT="$SYSTEM_ROOT/control"
+readonly STATE_ROOT="${BMS_RETAIL_LOCAL_STATE_ROOT:-$HOME/Library/Application Support/BMS/RetailLocal}"
+readonly LIMA_HOME="${BMS_RETAIL_LOCAL_LIMA_HOME:-$HOME/.bmsrl}"
+readonly INSTANCE="${BMS_RETAIL_LOCAL_INSTANCE:-bms-retail-local}"
+readonly WEB_PORT="${BMS_RETAIL_LOCAL_HOST_WEB_PORT:-3100}"
+readonly WS_PORT="${BMS_RETAIL_LOCAL_HOST_WS_PORT:-3101}"
+readonly LIMACTL="$SYSTEM_ROOT/runtime/lima/bin/limactl"
+readonly AGENT="$PAYLOAD_ROOT/bin/bms-runtime-agent"
+readonly RECEIPT="$STATE_ROOT/installation.json"
+readonly CONFIG="$STATE_ROOT/lima.yaml"
+readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
+readonly LOG_PATH="$STATE_ROOT/host-service.log"
+PROVISION_DEVICE_TOKEN=""
+LAUNCH_LABEL="gui/$(id -u)/com.bms.retail-local"
+readonly LAUNCH_LABEL
+
+export LIMA_HOME BMS_LIMACTL_PATH="$LIMACTL"
+export PATH="$SYSTEM_ROOT/runtime/lima/bin:$SYSTEM_ROOT/runtime/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
+
+die() { printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
+note() { printf '[BMS] %s\n' "$*"; }
+require_installed_payload() {
+  [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
+    die "ไฟล์ติดตั้งไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+}
+instance_status() {
+  "$LIMACTL" list "$INSTANCE" --format '{{.Status}}' 2>/dev/null | tr -d '\r' || true
+}
+guest() { "$LIMACTL" shell "$INSTANCE" "$@"; }
+yaml_escape_sed() { printf '%s' "$1" | sed -e 's/[&|]/\\&/g'; }
+# Lima's local file fetcher opens the literal file:// path and does not URL-decode %20.
+file_uri() { printf 'file://%s' "$1"; }
+random_suffix() { od -An -N 6 -tx1 /dev/urandom | tr -d ' \n'; }
+
+verify_payload() {
+  note "ตรวจ checksum ของ runtime และ server images"
+  (cd "$PAYLOAD_ROOT" && shasum -a 256 -c SHA256SUMS >/dev/null) || \
+    die "checksum ของไฟล์ใน installer ไม่ถูกต้อง"
+}
+
+render_lima_config() {
+  mkdir -p "$STATE_ROOT" "$LIMA_HOME"
+  chmod 0700 "$STATE_ROOT" "$LIMA_HOME"
+  local image_uri payload escaped_uri escaped_payload ubuntu_sha
+  image_uri=$(file_uri "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg-arm64.img")
+  payload=$(yaml_escape_sed "$PAYLOAD_ROOT")
+  escaped_uri=$(yaml_escape_sed "$image_uri")
+  escaped_payload=$payload
+  ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg-arm64.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
+  [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
+  [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
+  sed -e "s|__UBUNTU_IMAGE_URI__|$escaped_uri|g" \
+      -e "s|__UBUNTU_IMAGE_SHA256__|$ubuntu_sha|g" \
+      -e "s|__PAYLOAD_ROOT__|$escaped_payload|g" \
+      -e "s|__HOST_WEB_PORT__|$WEB_PORT|g" \
+      -e "s|__HOST_WS_PORT__|$WS_PORT|g" \
+      "$CONTROL_ROOT/lima.yaml.template" >"$CONFIG.tmp"
+  chmod 0600 "$CONFIG.tmp"
+  mv -f "$CONFIG.tmp" "$CONFIG"
+}
+
+start_setup_vm() {
+  local status
+  status=$(instance_status)
+  if [[ -z $status ]]; then
+    note "สร้าง private VM ด้วย Apple Virtualization Framework (ครั้งแรกอาจใช้เวลาหลายนาที)"
+    "$LIMACTL" start --name "$INSTANCE" --tty=false --timeout 15m "$CONFIG"
+  elif [[ $status != Running ]]; then
+    note "เริ่ม private VM"
+    "$LIMACTL" start --tty=false --timeout 10m "$INSTANCE"
+  fi
+}
+
+install_release() {
+  local name artifact image_ref digest
+  while IFS=$'\t' read -r name artifact image_ref digest; do
+    [[ -n $name ]] || continue
+    note "โหลด image: $name"
+    "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
+      -artifact "$PAYLOAD_ROOT/$artifact" -image-ref "$image_ref" -digest "$digest"
+  done <"$PAYLOAD_ROOT/release-images.tsv"
+
+  "$AGENT" runtime-write -engine macos-lima -distro "$INSTANCE" \
+    -source "$PAYLOAD_ROOT/compose.artifact" \
+    -destination /var/lib/bms-retail-local/compose.yml -mode 0600
+  "$AGENT" runtime-install-control -engine macos-lima -distro "$INSTANCE" \
+    -source "$PAYLOAD_ROOT/bms-localctl" -name bms-localctl
+
+  local web_ref ws_ref postgres_ref redis_ref
+  web_ref=$(awk -F '\t' '$1 == "web" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
+  ws_ref=$(awk -F '\t' '$1 == "ws" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
+  postgres_ref=$(awk -F '\t' '$1 == "postgres" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
+  redis_ref=$(awk -F '\t' '$1 == "redis" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
+  guest sudo sh -c '
+    set -eu
+    root=/var/lib/bms-retail-local
+    if [ ! -f "$root/.env" ]; then
+      umask 077
+      random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d " \\n"; }
+      cat >"$root/.env" <<EOF
+POSTGRES_DB=bms_local
+POSTGRES_PASSWORD=$(random_hex 24)
+REDIS_PASSWORD=$(random_hex 24)
+JWT_SECRET=$(random_hex 48)
+BMS_SECRET_KEY=$(random_hex 32)
+BMS_CHECKOUT_SECRET=$(random_hex 48)
+BMS_CRON_SECRET=$(random_hex 32)
+BMS_JOB_TOKEN=$(random_hex 32)
+BMS_LOCAL_WEB_PORT=3100
+BMS_LOCAL_WS_PORT=3101
+BMS_WEB_IMAGE_REF=$1
+BMS_WS_IMAGE_REF=$2
+BMS_POSTGRES_IMAGE_REF=$3
+BMS_REDIS_IMAGE_REF=$4
+EOF
+    fi
+  ' bms-runtime "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"
+}
+
+shell_export_line() {
+  local name=$1 value=$2 encoded
+  encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+  printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
+}
+
+provision_shop() {
+  if guest sudo test -f /var/lib/bms-retail-local/provisioned; then
+    note "พบร้านที่ provision แล้ว ดำเนินการ setup ต่อจากครั้งก่อน"
+    return
+  fi
+  local shop_name admin_name admin_email admin_password admin_pin
+  printf '\nข้อมูลร้านแรกเริ่ม (เก็บใน private VM เท่านั้น)\n'
+  read -r -p 'ชื่อร้าน: ' shop_name
+  read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
+  read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
+  read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
+  read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
+  [[ -n $shop_name && -n $admin_name && $admin_email == *@* ]] || die "ชื่อร้าน ชื่อผู้ดูแล หรืออีเมลไม่ถูกต้อง"
+  [[ ${#admin_password} -ge 8 ]] || die "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"
+  [[ $admin_pin =~ ^[0-9]{4,8}$ ]] || die "PIN ต้องเป็นตัวเลข 4-8 หลัก"
+  [[ $shop_name != *$'\n'* && $admin_name != *$'\n'* && $admin_email != *$'\n'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
+
+  local provision_result result_file
+  provision_result=$({
+    printf '#!/bin/sh\nset -eu\numask 077\n'
+    shell_export_line BMS_LOCAL_SHOP_NAME "$shop_name"
+    shell_export_line BMS_LOCAL_SHOP_SLUG local-shop
+    shell_export_line BMS_LOCAL_ADMIN_NAME "$admin_name"
+    shell_export_line BMS_LOCAL_ADMIN_EMAIL "$admin_email"
+    shell_export_line BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
+    shell_export_line BMS_LOCAL_ADMIN_PIN "$admin_pin"
+    cat <<'EOF'
+root=/var/lib/bms-retail-local
+result="$root/.provision-result.$$"
+trap 'rm -f "$result"' EXIT HUP INT TERM
+cd "$root"
+docker compose --env-file .env -f compose.yml --profile setup run --rm provision >"$result"
+grep -E '^\{"status"' "$result"
+install -m 0600 /dev/null "$root/provisioned"
+EOF
+  } | "$LIMACTL" shell "$INSTANCE" sudo sh -s)
+  result_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
+  umask 077
+  printf '%s\n' "$provision_result" | grep -E '^\{"status"' | tail -n 1 >"$result_file"
+  PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null || true)
+  rm -f -- "$result_file"
+  [[ -z $PROVISION_DEVICE_TOKEN || $PROVISION_DEVICE_TOKEN =~ ^pos_[A-Za-z0-9_-]{16,}$ ]] || \
+    die "ผลลัพธ์ pairing token ไม่ถูกต้อง"
+  unset admin_password admin_pin
+  note "สร้างร้าน ผู้ดูแล สาขา MAIN และเครื่อง POS-01 แล้ว"
+}
+
+launch_pos_desktop() {
+  [[ $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) == server-pos ]] || return
+  local pos_app="/Applications/BMS POS.app"
+  [[ -d $pos_app ]] || die "แพ็กเกจ Server + POS ไม่มี BMS POS.app"
+  if [[ -n $PROVISION_DEVICE_TOKEN ]]; then
+    local expires_at handoff
+    expires_at=$(date -v+10M -u '+%Y-%m-%dT%H:%M:%SZ')
+    handoff="$STATE_ROOT/pairing-handoff-$(random_suffix).json"
+    umask 077
+    printf '%s\n' "{\"version\":1,\"serverUrl\":\"http://127.0.0.1:3100\",\"token\":\"$PROVISION_DEVICE_TOKEN\",\"expiresAt\":\"$expires_at\"}" >"$handoff"
+    chmod 0600 "$handoff"
+    open -a "$pos_app" --args "--pairing-handoff=$handoff"
+    PROVISION_DEVICE_TOKEN=""
+  else
+    open -a "$pos_app"
+  fi
+}
+
+write_receipt() {
+  local version source_commit now
+  version=$(cat "$PAYLOAD_ROOT/VERSION")
+  source_commit=$(cat "$PAYLOAD_ROOT/SOURCE_COMMIT")
+  now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  guest sudo sh -c 'printf "%s\n" "$1" > /var/lib/bms-retail-local/installation.json; chmod 0600 /var/lib/bms-retail-local/installation.json' \
+    bms-runtime "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"macos-15-arm64\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:3100\"}"
+  umask 077
+  printf '%s\n' "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"macos-15-arm64\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:$WEB_PORT\"}" >"$RECEIPT.tmp"
+  mv -f "$RECEIPT.tmp" "$RECEIPT"
+}
+
+render_launch_agent() {
+  mkdir -p "$HOME/Library/LaunchAgents" "$STATE_ROOT"
+  local control log
+  control=$(yaml_escape_sed "$SYSTEM_ROOT/control/bms-retail-local")
+  log=$(yaml_escape_sed "$LOG_PATH")
+  sed -e "s|__HOST_CONTROL__|$control|g" -e "s|__LOG_PATH__|$log|g" \
+    "$CONTROL_ROOT/com.bms.retail-local.plist.template" >"$LAUNCH_AGENT.tmp"
+  plutil -lint "$LAUNCH_AGENT.tmp" >/dev/null
+  chmod 0600 "$LAUNCH_AGENT.tmp"
+  mv -f "$LAUNCH_AGENT.tmp" "$LAUNCH_AGENT"
+}
+
+install_launch_agent() {
+  render_launch_agent
+  launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT"
+  launchctl kickstart -k "$LAUNCH_LABEL"
+}
+
+http_ready() {
+  curl --fail --silent --max-time 5 "http://127.0.0.1:$WEB_PORT/admin/login" >/dev/null && \
+    curl --fail --silent --max-time 5 "http://127.0.0.1:$WS_PORT/readyz" >/dev/null
+}
+
+wait_for_http() {
+  local deadline=$((SECONDS + 300))
+  until http_ready; do
+    (( SECONDS < deadline )) || die "บริการไม่ผ่าน HTTP health check ดู log ด้วย: bms-retail-local logs"
+    sleep 3
+  done
+}
+
+ensure_runtime() {
+  [[ -f $RECEIPT ]] || die "ยัง setup ไม่เสร็จ"
+  require_installed_payload
+  if http_ready; then
+    note "Retail Local ทำงานอยู่แล้ว"
+    return
+  fi
+  render_launch_agent
+  if launchctl print "$LAUNCH_LABEL" >/dev/null 2>&1; then
+    # Do not use -k here: a second POS launch must not kill a VM that is already booting.
+    launchctl kickstart "$LAUNCH_LABEL"
+  else
+    launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT"
+    launchctl kickstart "$LAUNCH_LABEL"
+  fi
+  wait_for_http
+  note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
+}
+
+wait_for_guest_doctor() {
+  local deadline=$((SECONDS + 300))
+  until guest sudo /usr/local/bin/bms-localctl doctor >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      guest sudo /usr/local/bin/bms-localctl status || true
+      die "บริการใน private VM ไม่ผ่าน health check ดู log ด้วย: bms-retail-local logs"
+    fi
+    sleep 3
+  done
+  guest sudo /usr/local/bin/bms-localctl doctor
+}
+
+setup_runtime() {
+  require_installed_payload
+  [[ ! -f $RECEIPT ]] || die "ติดตั้งเรียบร้อยแล้ว ใช้คำสั่ง status หรือ doctor แทน"
+  "$AGENT" preflight >/dev/null || die "เครื่องนี้ไม่ผ่าน macOS Managed Runtime preflight"
+  verify_payload
+  render_lima_config
+  start_setup_vm
+  install_release
+  provision_shop
+  note "เริ่ม Web, WS, PostgreSQL และ Redis"
+  guest sudo /usr/local/bin/bms-localctl start
+  wait_for_http
+  wait_for_guest_doctor
+  write_receipt
+  if [[ ${BMS_RETAIL_LOCAL_TEST_MODE:-0} != 1 ]]; then
+    "$LIMACTL" stop "$INSTANCE"
+    install_launch_agent
+    wait_for_http
+    launch_pos_desktop
+  fi
+  note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
+}
+
+start_runtime() {
+  ensure_runtime
+}
+
+stop_runtime() {
+  launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
+  if [[ $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE"; fi
+  note "หยุด Retail Local แล้ว"
+}
+
+show_status() {
+  require_installed_payload
+  printf 'Version: %s\n' "$(cat "$PAYLOAD_ROOT/VERSION")"
+  printf 'Runtime: %s\n' "$(instance_status | sed 's/^$/Not created/')"
+  if [[ $(instance_status) == Running ]]; then
+    guest sudo /usr/local/bin/bms-localctl status
+  fi
+}
+
+doctor() {
+  [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
+  guest sudo /usr/local/bin/bms-localctl doctor
+  curl --fail --silent --max-time 5 "http://127.0.0.1:$WEB_PORT/admin/login" >/dev/null
+  curl --fail --silent --max-time 5 "http://127.0.0.1:$WS_PORT/readyz" >/dev/null
+  note "host forwarding: healthy"
+}
+
+backup_runtime() {
+  local output=${1:-} recipient=${2:-}
+  [[ -n $output && $recipient =~ ^age1[0-9a-z]{58}$ ]] || \
+    die "usage: bms-retail-local backup OUTPUT.age AGE_RECIPIENT"
+  [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
+  [[ ! -e $output ]] || die "ไฟล์ปลายทางมีอยู่แล้ว"
+  local name guest_path temporary
+  name="backup-$(date -u '+%Y%m%dT%H%M%SZ')-$(random_suffix).age"
+  guest_path="/var/lib/bms-retail-local/backups/$name"
+  temporary="$output.part"
+  guest sudo /usr/local/bin/bms-localctl backup "$guest_path" --recipient "$recipient"
+  "$LIMACTL" copy --backend=scp "$INSTANCE:$guest_path" "$temporary"
+  chmod 0600 "$temporary"
+  mv "$temporary" "$output"
+  guest sudo sh -c 'rm -f -- "$1"' bms-runtime "$guest_path"
+  shasum -a 256 "$output" >"$output.sha256"
+  note "backup พร้อม: $output"
+}
+
+host_service() {
+  [[ -f $RECEIPT ]] || exit 0
+  require_installed_payload
+  exec "$LIMACTL" start --foreground --tty=false --timeout 10m "$INSTANCE"
+}
+
+case "${1:-}" in
+  setup) setup_runtime ;;
+  start) start_runtime ;;
+  ensure-running) ensure_runtime ;;
+  stop) stop_runtime ;;
+  restart) stop_runtime; start_runtime ;;
+  status) show_status ;;
+  doctor) doctor ;;
+  backup) shift; backup_runtime "$@" ;;
+  logs)
+    tail -n 160 "$LOG_PATH" 2>/dev/null || true
+    [[ $(instance_status) == Running ]] && guest sudo sh -c 'cd /var/lib/bms-retail-local && docker compose --env-file .env -f compose.yml logs --tail=160' || true
+    ;;
+  open) open "http://127.0.0.1:$WEB_PORT/admin/login" ;;
+  host-service) host_service ;;
+  *)
+    die "usage: bms-retail-local <setup|start|ensure-running|stop|restart|status|doctor|backup|logs|open>"
+    ;;
+esac

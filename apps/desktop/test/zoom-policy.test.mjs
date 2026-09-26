@@ -86,3 +86,24 @@ test("desktop menu separates data refresh from application reload", () => {
   assert.equal(refreshed, 1);
   assert.equal(reloaded, 1);
 });
+
+test("BMS POS menu opens backoffice only when a server is paired", () => {
+  let opened = 0;
+  const disabledTemplate = desktopMenuTemplate("darwin", false, {
+    adminAvailable: false,
+    openAdmin: () => { opened += 1; },
+  });
+  const disabledAppMenu = disabledTemplate.find((item) => item.label === "BMS POS");
+  const disabledAdmin = disabledAppMenu.submenu.find((item) => item.label === "เปิดระบบหลังบ้าน");
+  assert.equal(disabledAdmin.enabled, false);
+
+  const enabledTemplate = desktopMenuTemplate("win32", false, {
+    adminAvailable: true,
+    openAdmin: () => { opened += 1; },
+  });
+  const enabledAppMenu = enabledTemplate.find((item) => item.label === "BMS POS");
+  const enabledAdmin = enabledAppMenu.submenu.find((item) => item.label === "เปิดระบบหลังบ้าน");
+  assert.equal(enabledAdmin.enabled, true);
+  enabledAdmin.click();
+  assert.equal(opened, 1);
+});
