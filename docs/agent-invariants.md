@@ -1138,7 +1138,10 @@ provider boundary for GrabFood, LINE MAN and foodpanda. Full capability, setup, 
 runbook and rollout detail is in [integrations/delivery-platforms.md](integrations/delivery-platforms.md).
 
 - **Provider contracts are data, not guesses.** A capability is callable only when its official
-  contract is `VERIFIED`. GrabFood and LINE MAN stay contract-blocked until partner webhook and
+  contract is `VERIFIED`. Platform partner contracts and credentials live in the global,
+  platform-admin-only `/admin/delivery-provider-settings` control plane; tenant authorization and
+  store/menu mappings stay in `/admin/delivery-platforms`. The tenant surface never reads platform
+  secrets. GrabFood and LINE MAN stay contract-blocked until partner webhook and
   onboarding documents are reviewed; a documented SDK method alone does not authorize an invented
   webhook or payload. foodpanda uses only its published contract, and its Partner Portal webhook
   header must be configured explicitly.

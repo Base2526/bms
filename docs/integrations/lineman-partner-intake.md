@@ -20,6 +20,13 @@ form. Tenant credentials may be entered only when the signed contract explicitly
 shop. An authorization-code or consent flow needs server-held state, expiry, replay protection and
 tenant binding before a **Connect LINE MAN** button can be enabled.
 
+The BMS platform owner records these confirmed facts at
+`/admin/delivery-provider-settings` (Platform workspace → System & operations → Delivery Partner
+APIs). Create the `LINEMAN / SANDBOX` row first and keep it in `DRAFT` or `CONTRACT_REVIEW` while
+facts are missing. Use the dedicated write-only secret fields; the non-secret JSON field rejects
+keys that look like credentials. The shop page `/admin/delivery-platforms` deliberately cannot see
+or edit platform secrets.
+
 ## Authentication and webhooks
 
 | Contract fact | Provider-confirmed value | Evidence/version |
@@ -71,4 +78,3 @@ For each adapter method, attach the official contract/version, redacted sandbox 
 negative authentication case, duplicate/idempotency case, timeout/retry case and the responsible
 reviewer. Production remains blocked until sandbox, shadow comparison, security/load checks, tax
 approval and one real settlement cycle pass.
-

@@ -646,6 +646,7 @@ const th = {
     kitchen: "กระดานครัว",
     restaurant_floor: "จัดผังร้าน",
     delivery_platforms: "แพลตฟอร์มเดลิเวอรี",
+    delivery_provider_settings: "Partner API เดลิเวอรี",
     retail_local_licenses: "License Retail Local",
     retail_local_releases: "ดาวน์โหลด Retail Local",
     board_game: "โต๊ะบอร์ดเกม",

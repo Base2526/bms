@@ -75,6 +75,36 @@ test("LINE MAN onboarding separates the one-time platform contract from tenant s
   assert.match(read("docs/integrations/lineman-partner-intake.md"), /Exact signed bytes and canonicalization/);
 });
 
+test("platform owner has a separate encrypted Partner API control plane", () => {
+  const migration = read("db/migrations/10.21__bms_delivery_provider_settings.sql");
+  const service = read("apps/web/lib/bms/deliveryProviderSettings.ts");
+  const route = read("apps/web/app/api/admin/delivery-providers/route.ts");
+  const layout = read("apps/web/app/(admin)/admin/delivery-provider-settings/layout.tsx");
+  const page = read("apps/web/app/(admin)/admin/delivery-provider-settings/page.tsx");
+  const navigation = read("apps/web/lib/bms/adminNavigation.ts");
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_delivery_provider_settings/);
+  assert.match(migration, /UNIQUE \(provider, environment\)/);
+  for (const column of ["client_secret_encrypted", "access_token_encrypted", "refresh_token_encrypted", "webhook_secret_encrypted"]) {
+    assert.match(migration, new RegExp(`\\b${column}\\b`));
+  }
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_delivery_provider_setting_events/);
+  assert.match(service, /encryptSecret\(next\)/);
+  assert.match(service, /maskedSecret\(row\.client_secret_encrypted\)/);
+  assert.match(service, /loadActiveDeliveryProviderRuntimeConfig/);
+  assert.match(service, /DELIVERY_PROVIDER_NOT_ACTIVE/);
+  assert.doesNotMatch(service, /SELECT \* FROM bms_delivery_provider_settings/);
+  assert.match(service, /DELIVERY_PROVIDER_ADAPTER_NOT_VERIFIED/);
+  assert.match(service, /DELIVERY_PROVIDER_CONTRACT_REQUIRED/);
+  assert.match(service, /DELIVERY_CONFIG_KEY_NOT_ALLOWED/);
+  assert.match(route, /authorizePlatformAdminRoute\(\)/);
+  assert.doesNotMatch(route, /authorizeAdminRoute\(/);
+  assert.match(layout, /requirePlatformAdminPage\(\)/);
+  assert.match(page, /\/api\/admin\/delivery-providers/);
+  assert.match(page, /Secret เข้ารหัสและอ่านค่าจริงกลับไม่ได้/);
+  assert.match(navigation, /platform\.delivery-provider-settings[\s\S]*\/admin\/delivery-provider-settings/);
+});
+
 test("foodpanda normalization rejects implicit currency and never invents provider idempotency headers", () => {
   const fixture = {
     order_id: "order-1", order_code: "A001", status: "RECEIVED", order_type: "DELIVERY",
