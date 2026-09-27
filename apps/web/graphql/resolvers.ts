@@ -8,7 +8,7 @@ import { cookies } from "next/headers";
 import path from "path";
 import GraphQLJSON from "graphql-type-json";
 
-import { USER_COOKIE, ADMIN_COOKIE, jwtSecret } from "@/lib/auth/token";
+import { USER_COOKIE, jwtSecret } from "@/lib/auth/token";
 import {
   normalizeEmail,
   normalizeUsername,
@@ -16,7 +16,7 @@ import {
   validateNewPassword,
   validateUsername,
 } from "@/lib/auth/identity";
-import { createAdminSession } from "@/lib/redisSession";
+import { issueAdminSession } from "@/lib/auth/adminSession";
 import {
   buildPasswordResetUrl,
   createResetToken,
@@ -30,7 +30,9 @@ import { getTenantName } from "@/lib/bms/platform";
 import { addLog } from "@/lib/log/log.server";
 import { v4 as uuidv4 } from 'uuid';
 
-import { verifyGoogle, verifyFacebook } from "@/lib/auth/social";
+import { verifySocialIdentity, type VerifiedSocialIdentity } from "@/lib/auth/social";
+import { socialLinkDecision } from "@/lib/auth/socialAccountPolicy";
+import { enforceAuthRateLimit } from "@/lib/auth/rateLimit";
 // import { signUserToken } from "@/lib/auth/jwt";
 
 import { GraphQLUpload } from "graphql-upload-nextjs";
@@ -88,9 +90,9 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
 import { reassignStaffConversations } from "@/lib/bms/inbox";
-import { rateLimit } from "@/lib/bms/rateLimit";
 import { requirePermission } from "@/lib/bms/permissions";
 import { audit } from "@/lib/bms/audit";
+import { assertSocialAuthAvailable } from "@/lib/bms/socialAuthSettings";
 import {
   requireManageableTarget,
   requireManageableTargets,
@@ -197,45 +199,49 @@ function normalizeStr(input: string): string {
     .replace(/^_+|_+$/g, "");    // ตัด _ หน้า/หลัง
 }
 
-function authRequestIp(ctx: any): string {
-  const headers = ctx?.req?.headers;
-  const getHeader = (name: string) =>
-    typeof headers?.get === "function" ? headers.get(name) : headers?.[name];
-  return String(
-    getHeader("cf-connecting-ip") ||
-    getHeader("x-real-ip") ||
-    String(getHeader("x-forwarded-for") || "").split(",")[0].trim() ||
-    "unknown"
-  ).slice(0, 80);
-}
-
-async function enforceAuthRateLimit(
-  ctx: any,
-  action: string,
-  identity: string,
-  identityLimit: number,
-  ipLimit: number,
-  windowMs: number
-): Promise<void> {
-  const ip = authRequestIp(ctx);
-  const identityHash = crypto.createHash("sha256").update(identity).digest("hex").slice(0, 24);
-  // Both counters must be incremented on every attempt, so run them together
-  // rather than short-circuiting on the first failure — otherwise an attacker
-  // rotating one dimension never accumulates against the other.
-  const [byIp, byIdentity] = await Promise.all([
-    rateLimit(`auth:${action}:ip:${ip}`, ipLimit, windowMs),
-    rateLimit(`auth:${action}:identity:${identityHash}`, identityLimit, windowMs),
-  ]);
-  if (!byIp.ok || !byIdentity.ok) {
-    throw new GraphQLError("Too many attempts. Please try again later.", {
-      extensions: { code: "RATE_LIMITED" },
-    });
-  }
-}
-
 async function passwordMatches(password: string, user: any): Promise<boolean> {
   const valid = await bcrypt.compare(password, user?.password_hash || DUMMY_PASSWORD_HASH);
   return !!user?.password_hash && valid;
+}
+
+async function findAndLinkSocialUser(identity: VerifiedSocialIdentity, email: string) {
+  const found = await query<any>(
+    `SELECT u.*, t.active AS tenant_active
+       FROM users u
+       LEFT JOIN bms_tenants t ON t.id = u.tenant_id
+      WHERE (lower(COALESCE(u.provider, '')) = $1 AND u.provider_id = $2)
+         OR lower(btrim(u.email)) = $3
+      ORDER BY CASE
+        WHEN lower(COALESCE(u.provider, '')) = $1 AND u.provider_id = $2 THEN 0
+        ELSE 1
+      END
+      LIMIT 1`,
+    [identity.provider, identity.provider_id, email],
+  );
+  const user = found.rows[0];
+  if (!user) return null;
+
+  const decision = socialLinkDecision(user, identity);
+  if (decision === "CONFLICT") throw new Error("Invalid credentials");
+  if (decision === "MATCHED") return user;
+
+  let linked;
+  try {
+    linked = await query<any>(
+      `UPDATE users
+          SET provider = $2, provider_id = $3, avatar = COALESCE(avatar, $4), updated_at = now()
+        WHERE id = $1
+          AND provider_id IS NULL
+          AND lower(COALESCE(provider, 'password')) IN ('password', $2)
+        RETURNING *`,
+      [user.id, identity.provider, identity.provider_id, identity.picture || null],
+    );
+  } catch (error: any) {
+    if (error?.code === "23505") throw new Error("Invalid credentials");
+    throw error;
+  }
+  if (!linked.rows[0]) throw new Error("Invalid credentials");
+  return { ...linked.rows[0], tenant_active: user.tenant_active };
 }
 
 async function getUserById(id: string) {
@@ -2989,24 +2995,17 @@ const rawResolvers = {
     },
     loginWithSocial: async (_: any, { input }: any, ctx: any) => {
       const { provider, accessToken } = input;
+      const socialAttemptHash = crypto.createHash("sha256").update(String(accessToken || "")).digest("hex");
       await enforceAuthRateLimit(
         ctx,
         "social",
-        `${String(provider || "unknown")}:${String(accessToken || "")}`,
+        `${String(provider || "unknown")}:${socialAttemptHash}`,
         10,
         60,
         15 * 60_000
       );
-
-      let socialData = null;
-
-      if (provider === "google") {
-        socialData = await verifyGoogle(accessToken);
-      } else if (provider === "facebook") {
-        socialData = await verifyFacebook(accessToken);
-      } else {
-        throw new GraphQLError("Invalid provider");
-      }
+      const normalizedProvider = await assertSocialAuthAvailable(provider, "PUBLIC_LOGIN");
+      const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
 
       if (!socialData) {
         throw new GraphQLError("Social token invalid");
@@ -3015,94 +3014,30 @@ const rawResolvers = {
         throw new GraphQLError("Social account email is not verified");
       }
 
-      const { email, name, picture, provider_id } = socialData;
-      const emailResult = validateEmail(email);
+      const emailResult = validateEmail(socialData.email);
       if (!emailResult.ok) throw new GraphQLError("Social account did not provide a valid email");
       const emailNorm = emailResult.value;
 
-      /* ======================================================
-            1) หา user ถ้ามี email อยู่แล้ว → login เลย
-         ====================================================== */
-      const { rows: existing } = await query(
-        `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
-        [emailNorm]
-      );
+      let user = await findAndLinkSocialUser(socialData, emailNorm);
 
-      let user = existing[0];
-
-      /* ======================================================
-            2) ถ้ายังไม่มี user → สร้างใหม่
-         ====================================================== */
       if (!user) {
         const randomPassword = crypto.randomBytes(16).toString("hex");
 
         const { rows: newUser } = await query(
           `
-          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, meta, is_email_verified)
-          VALUES ($1,NULL,$2,$3,'Subscriber', crypt($4, gen_salt('bf')),$5,$6,$7,TRUE)
-          ON CONFLICT (email) DO NOTHING
+          INSERT INTO users (name, username, email, avatar, role, password_hash, provider, provider_id, is_email_verified)
+          VALUES ($1,NULL,$2,$3,'Subscriber', crypt($4, gen_salt('bf')),$5,$6,TRUE)
+          ON CONFLICT DO NOTHING
           RETURNING *
         `,
-          [name, emailNorm, picture, randomPassword, provider, provider_id, JSON.stringify(socialData || {})]
+          [socialData.name, emailNorm, socialData.picture, randomPassword, socialData.provider, socialData.provider_id]
         );
 
         user = newUser[0];
         if (!user) {
-          const raced = await query(
-            `SELECT * FROM users WHERE lower(btrim(email)) = $1 LIMIT 1`,
-            [emailNorm]
-          );
-          user = raced.rows[0];
+          user = await findAndLinkSocialUser(socialData, emailNorm);
         }
       }
-
-      /*
-      web-1       | [loginWithSocial] @1 =  {
-      web-1       |   email: 'android.somkid@gmail.com',
-      web-1       |   name: 'Somkid Simajarn',
-      web-1       |   picture: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
-      web-1       |   provider: 'google',
-      web-1       |   provider_id: 'xxxx'
-      web-1       | }
-      */
-
-      /*
-      web-1       | [loginWithSocial] =  {
-      web-1       |   id: 'c2570057-d8bd-4506-9f00-0c7fc6996d52',
-      web-1       |   name: 'Somkid Simajarn',
-      web-1       |   avatar: 'https://lh3.googleusercontent.com/a/ACg8ocJ1XvMZgNQRmpi7ceC4dIhQMd6f2AumSMhVvTXilWF8y7hVkJ8b=s96-c',
-      web-1       |   phone: null,
-      web-1       |   email: 'android.somkid@gmail.com',
-      web-1       |   role: 'Subscriber',
-      web-1       |   created_at: 2025-11-13T16:57:50.060Z,
-      web-1       |   password_hash: '$2a$06$owU1d10euSYJdLhqxZGyFekkLyJzgz9eIox9c7mv1pwGHRmvyTk0a',
-      web-1       |   meta: null,
-      web-1       |   fake_test: null,
-      web-1       |   username: null,
-      web-1       |   language: 'en',
-      web-1       |   updated_at: 2025-11-13T16:57:50.060Z
-      web-1       | }
-      */
-
-      /* ======================================================
-            3) ออก JWT token
-         ====================================================== */
-         /*
-      const token = signUserToken(user);
-
-      return jwt.sign(
-        {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-        },
-        jwtSecret(),
-        { expiresIn: "30d" }
-      );
-      */
-
-      //  id: user.id, email: user.email, role: user.role
 
       if (!user) throw new GraphQLError("Unable to create social account");
 
@@ -3113,14 +3048,6 @@ const rawResolvers = {
       );
 
       cookies().set(USER_COOKIE, token, { httpOnly: true, secure: useSecureCookie && !isDev, sameSite: "lax", path: "/" });
-
-      // แนะนำ: set cookie httpOnly ใน production
-      // ctx.res.cookie("token", token, {
-      //   httpOnly: true,
-      //   sameSite: 'lax',
-      //   path: '/'
-      // });
-
 
       return {
         ok: true,
@@ -3138,7 +3065,7 @@ const rawResolvers = {
       const identifier = email ? normalizeEmail(email) : normalizeUsername(username);
       if (!identifier) throw new Error("Invalid credentials");
       await enforceAuthRateLimit(ctx, "admin-login", identifier, 10, 60, 15 * 60_000);
-      const { rows } = await query(
+      const { rows } = await query<any>(
         `SELECT u.*, t.active AS tenant_active
            FROM users u
            LEFT JOIN bms_tenants t ON t.id = u.tenant_id
@@ -3163,43 +3090,61 @@ const rawResolvers = {
       if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
       if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
 
-      // Administrator = full RBAC permissions → short-lived session; other staff roles get a longer one.
-      // Keep this in sync with the cookie maxAge below — a JWT that outlives its cookie (or vice versa)
-      // makes the two clocks disagree about when the session actually ends.
-      const sessionMaxAgeSec = user.role === "Administrator" ? 60 * 60 * 24 : 60 * 60 * 24 * 7;
-
-      // jti = this session's id in Redis (lib/redisSession.ts) — the JWT itself is still
-      // stateless/self-verifying, this is only what makes logout/revocation possible before `exp`.
-      const jti = randomUUID();
-
-      const token = jwt.sign(
-        {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-          tenant_id: user.tenant_id,
-          is_platform_admin: user.is_platform_admin === true,
-          session_version: Number(user.admin_session_version ?? 0),
-          jti,
-        },
-        jwtSecret(),
-        { expiresIn: sessionMaxAgeSec }
-      );
-
-      cookies().set(ADMIN_COOKIE, token, {
-        httpOnly: true,
-        secure: useSecureCookie && !isDev,
-        sameSite: "lax",
-        path: "/",
-        maxAge: sessionMaxAgeSec,
-      });
-
-      // best-effort — Redis ล่มไม่ควรทำให้ login ล้มเหลว (แค่ revoke ก่อนหมดอายุจะทำไม่ได้ชั่วคราว)
-      await createAdminSession(jti, user.id, sessionMaxAgeSec);
+      const token = await issueAdminSession(user);
 
       // best-effort — พลาดตรงนี้ต้องไม่ทำให้ login ล้มเหลว (แค่แสดง last login ไม่ได้)
       query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
         console.error("[loginAdmin] update last_login_at failed:", err);
+      });
+
+      return {
+        ok: true,
+        message: "Login success",
+        token,
+        user,
+      };
+    },
+    loginAdminWithSocial: async (_: any, { input }: any, ctx: any) => {
+      const { provider, accessToken } = input || {};
+      const socialAttemptHash = crypto.createHash("sha256").update(String(accessToken || "")).digest("hex");
+      await enforceAuthRateLimit(
+        ctx,
+        "admin-social",
+        `${String(provider || "unknown")}:${socialAttemptHash}`,
+        10,
+        60,
+        15 * 60_000
+      );
+      const normalizedProvider = await assertSocialAuthAvailable(provider, "ADMIN_LOGIN");
+
+      const socialData = await verifySocialIdentity(normalizedProvider, accessToken);
+      if (!socialData?.email_verified) {
+        throw new GraphQLError("Social token invalid");
+      }
+      const emailResult = validateEmail(socialData.email);
+      if (!emailResult.ok) {
+        throw new GraphQLError("Social account did not provide a valid email");
+      }
+      const emailNorm = emailResult.value;
+
+      const user = await findAndLinkSocialUser(socialData, emailNorm);
+
+      if (!user) {
+        throw new Error("Invalid credentials");
+      }
+      if (user.pos_only === true) {
+        throw new Error("บัญชีนี้ใช้ได้เฉพาะที่เครื่องขายหน้าร้าน (เข้าด้วย PIN ที่เครื่อง)");
+      }
+      if (!user.is_platform_admin && (!user.tenant_id || String(user.role).toLowerCase() === "subscriber")) {
+        throw new Error("Invalid credentials");
+      }
+      if (user.is_email_verified === false) throw new Error("Please verify your email before signing in");
+      if (user.tenant_id && user.tenant_active === false) throw new Error("Shop is not active");
+
+      const token = await issueAdminSession(user);
+
+      query("UPDATE users SET last_login_at = now() WHERE id = $1", [user.id]).catch((err) => {
+        console.error("[loginAdminWithSocial] update last_login_at failed:", err);
       });
 
       return {

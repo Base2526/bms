@@ -1,14 +1,18 @@
 'use client';
 import { gql, useMutation } from "@apollo/client";
-import { Card, Form, Input, Button, Alert, Typography, Result, Select } from "antd";
-import { useRef, useState } from "react";
+import { Card, Form, Input, Button, Alert, Typography, Result, Select, message } from "antd";
+import { useCallback, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import type { CredentialResponse } from "@react-oauth/google";
+import type { FailResponse, SuccessResponse } from "@greatsumini/react-facebook-login";
 import { ShopOutlined } from "@ant-design/icons";
 import styles from "./page.module.css";
 import { localizedShopArchetypeOptions } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { useI18n } from "@/lib/i18nContext";
 import { runSignupRequest, SignupRequestTimeout } from "@/lib/auth/signupRequest";
+import SocialLogin from "@/components/auth/SocialLogin";
 
 const { Paragraph } = Typography;
 
@@ -20,8 +24,18 @@ const M_SIGNUP = gql`
   }
 `;
 
+const M_SIGNUP_SOCIAL = gql`
+  mutation ($shopName: String!, $businessArchetype: String, $provider: String!, $accessToken: String!) {
+    bmsSignupWithSocial(shopName: $shopName, businessArchetype: $businessArchetype, provider: $provider, accessToken: $accessToken) {
+      status tenantId slug
+      user { id name email role }
+    }
+  }
+`;
+
 export default function Page() {
   const { t } = useI18n();
+  const router = useRouter();
   const archetypeOptions = localizedShopArchetypeOptions(t);
   const [form] = Form.useForm();
   const selectedArchetype = Form.useWatch("businessArchetype", form);
@@ -29,6 +43,7 @@ export default function Page() {
   const [done, setDone] = useState(false);
 
   const [signup] = useMutation(M_SIGNUP);
+  const [signupSocial] = useMutation(M_SIGNUP_SOCIAL);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submitting = useRef(false);
@@ -65,6 +80,68 @@ export default function Page() {
       setLoading(false);
     }
   };
+
+  const submitSocial = useCallback(async (provider: "google" | "facebook", accessToken: string) => {
+    if (submitting.current) return;
+    submitting.current = true;
+    try {
+      let v;
+      try { v = await form.validateFields(["shopName", "businessArchetype"]); } catch { return; }
+      setError(null);
+      setLoading(true);
+      const { data } = await runSignupRequest((signal) => signupSocial({
+        context: { fetchOptions: { signal } },
+        variables: {
+          shopName: v.shopName,
+          businessArchetype: v.businessArchetype || null,
+          provider,
+          accessToken,
+        },
+      }));
+      const result = data?.bmsSignupWithSocial;
+      if (result?.status === "VERIFIED") {
+        message.success(t("admin_login.welcome", { name: result.user?.name || '' }));
+        router.replace("/admin");
+      } else if (result?.status === "EMAIL_TAKEN") {
+        setError(t("shopSignup.email_taken"));
+      } else {
+        setError(t("shopSignup.invalid_data"));
+      }
+    } catch (e) {
+      setError(e instanceof SignupRequestTimeout
+        ? t("shopSignup.request_timeout")
+        : t("shopSignup.signup_failed"));
+    } finally {
+      submitting.current = false;
+      setLoading(false);
+    }
+  }, [form, router, signupSocial, t]);
+
+  const onGoogleSuccess = useCallback((credentialResponse: CredentialResponse) => {
+    const accessToken = credentialResponse?.credential;
+    if (!accessToken) {
+      message.error(t("login.google_missing_credential"));
+      return;
+    }
+    void submitSocial("google", accessToken);
+  }, [submitSocial, t]);
+
+  const onGoogleError = useCallback(() => {
+    message.error(t("login.google_failed"));
+  }, [t]);
+
+  const onFacebookSuccess = useCallback((response: SuccessResponse) => {
+    const accessToken = response?.accessToken;
+    if (!accessToken) {
+      message.error(t("login.facebook_missing_access_token"));
+      return;
+    }
+    void submitSocial("facebook", accessToken);
+  }, [submitSocial, t]);
+
+  const onFacebookFail = useCallback((_error: FailResponse) => {
+    message.error(t("login.facebook_failed"));
+  }, [t]);
 
   if (done) {
     return (
@@ -114,6 +191,17 @@ export default function Page() {
                   : t(`shopSignup.special_mode_${shopExperience.specialMode.toLowerCase()}`)}
               />
             )}
+            <SocialLogin
+              surface="SHOP_SIGNUP"
+              dividerLabel={t("shopSignup.or_signup_with_email")}
+              facebookLabel={t("login.continue_with_facebook")}
+              dividerPosition="after"
+              disabled={loading}
+              onGoogleSuccess={onGoogleSuccess}
+              onGoogleError={onGoogleError}
+              onFacebookSuccess={onFacebookSuccess}
+              onFacebookFail={onFacebookFail}
+            />
             <Form.Item label={t("shopSignup.owner_name")} name="name">
               <Input placeholder={t("shopSignup.owner_name_placeholder")} />
             </Form.Item>

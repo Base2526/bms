@@ -41,8 +41,8 @@ function GoogleLoginButtonInner({ disabled, onSuccess, onError }: Props) {
       justifyContent: "center",
       opacity: disabled ? 0.65 : 1,
       pointerEvents: disabled ? ("none" as const) : ("auto" as const),
-      borderRadius: 12,
-      overflow: "hidden" as const,
+      borderRadius: 4,
+      overflow: "visible" as const,
     }),
     [disabled]
   );

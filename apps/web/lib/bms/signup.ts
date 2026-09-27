@@ -10,8 +10,11 @@ import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
 import { getLatestEmailTemplate, renderEmailTemplate } from "@/lib/emailTemplates";
 import { sendEmail } from "@/lib/mailer";
+import { validateEmail } from "@/lib/auth/identity";
+import { verifySocialIdentity } from "@/lib/auth/social";
 import { archetypeToBusinessType, isValidShopArchetype, normalizeShopArchetype } from "./shopArchetypes";
 import { isRetailLocalDeployment } from "./deploymentMode";
+import { assertSocialAuthAvailable } from "./socialAuthSettings";
 
 function slugify(name: string): string {
   const base = name.trim().toLowerCase()
@@ -30,6 +33,7 @@ export type SignupInput = {
 };
 export type SignupResult =
   | { status: "PENDING_VERIFICATION" }
+  | { status: "VERIFIED"; tenantId: string; slug: string; user: SignupUser }
   | { status: "EMAIL_TAKEN" }
   | { status: "INVALID" };
 
@@ -40,8 +44,91 @@ export type VerifyShopSignupResult =
 
 const VERIFY_EXPIRY_MINUTES = 30;
 
+type SignupUser = {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  tenant_id: string | null;
+  is_platform_admin?: boolean | null;
+  admin_session_version?: number | string | null;
+};
+
 function tokenHash(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+async function createShopOwnerInTx(
+  client: Awaited<ReturnType<typeof getClient>>,
+  input: {
+    shopName: string;
+    ownerName: string | null;
+    email: string;
+    passwordHash: string;
+    businessArchetype: string | null;
+    provider?: string | null;
+    providerId?: string | null;
+    avatar?: string | null;
+  }
+) {
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype);
+  const businessType = archetypeToBusinessType(businessArchetype);
+
+  const baseSlug = slugify(input.shopName);
+  let tenantId = "";
+  let slug = "";
+  for (let n = 0; n < 100; n++) {
+    const candidate = n === 0 ? baseSlug : `${baseSlug}-${n}`;
+    const inserted = await client.query<{ id: string }>(
+      `INSERT INTO bms_tenants (name, slug, plan)
+       VALUES ($1, $2, 'free') ON CONFLICT (slug) DO NOTHING RETURNING id`,
+      [input.shopName, candidate]
+    );
+    if (inserted.rows[0]) {
+      tenantId = inserted.rows[0].id;
+      slug = candidate;
+      break;
+    }
+  }
+  if (!tenantId) throw new Error("Unable to allocate a unique shop slug");
+
+  const roleRes = await client.query<{ id: string }>(`SELECT id FROM roles WHERE name = 'Manager'`);
+  const roleId = roleRes.rows[0]?.id ?? null;
+  await client.query(
+    `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
+     SELECT $1, role_id, permission FROM bms_role_permissions
+      WHERE tenant_id = '11111111-1111-1111-1111-111111111111'
+     ON CONFLICT DO NOTHING`,
+    [tenantId]
+  );
+  const userResult = await client.query<SignupUser>(
+    `INSERT INTO users
+       (name, username, email, role, role_id, tenant_id, password_hash, is_email_verified,
+        provider, provider_id, avatar)
+     VALUES ($1, $2, $2, 'Manager', $3, $4, $5, TRUE, $6, $7, $8)
+     RETURNING *`,
+    [
+      input.ownerName || input.shopName,
+      input.email,
+      roleId,
+      tenantId,
+      input.passwordHash,
+      input.provider || "password",
+      input.providerId || null,
+      input.avatar || null,
+    ]
+  );
+  await client.query(
+    `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (tenant_id) DO UPDATE SET
+       business_type = COALESCE(bms_store_profile.business_type, EXCLUDED.business_type),
+       business_archetype = COALESCE(bms_store_profile.business_archetype, EXCLUDED.business_archetype),
+       updated_at = now()`,
+    [tenantId, businessType, businessArchetype]
+  );
+
+  return { tenantId, slug, user: userResult.rows[0] };
 }
 
 export async function signupShop(input: SignupInput): Promise<SignupResult> {
@@ -83,6 +170,7 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
     await client.query("COMMIT");
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
+    if ((err as any)?.code === "23505") return { status: "EMAIL_TAKEN" };
     throw err;
   } finally {
     client.release();
@@ -100,6 +188,66 @@ export async function signupShop(input: SignupInput): Promise<SignupResult> {
   });
   await sendEmail({ to: email, ...rendered }, { category: "auth", triggeredBy: "signup:verify-email" });
   return { status: "PENDING_VERIFICATION" };
+}
+
+export async function signupShopWithSocial(input: {
+  shopName: string;
+  businessArchetype?: string | null;
+  provider: string;
+  accessToken: string;
+}): Promise<SignupResult> {
+  if (isRetailLocalDeployment()) return { status: "INVALID" };
+  const provider = await assertSocialAuthAvailable(input.provider, "SHOP_SIGNUP");
+  const shopName = input.shopName?.trim();
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype) ?? (input.businessArchetype?.trim() ? input.businessArchetype.trim() as any : null);
+  if (!shopName || shopName.length > 120 || !isValidShopArchetype(businessArchetype)) {
+    return { status: "INVALID" };
+  }
+
+  const social = await verifySocialIdentity(provider, input.accessToken);
+  if (!social?.email_verified) return { status: "INVALID" };
+  const emailResult = validateEmail(social.email);
+  if (!emailResult.ok) return { status: "INVALID" };
+  const email = emailResult.value;
+
+  const passwordHash = await bcrypt.hash(crypto.randomBytes(32).toString("hex"), 10);
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    await client.query(`SELECT pg_advisory_xact_lock(hashtext(lower($1)))`, [email]);
+
+    const exists = await client.query(
+      `SELECT 1 FROM users
+        WHERE lower(btrim(email)) = $1
+           OR (lower(COALESCE(provider, '')) = $2 AND provider_id = $3)
+        LIMIT 1`,
+      [email, social.provider, social.provider_id],
+    );
+    if (exists.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "EMAIL_TAKEN" };
+    }
+
+    const created = await createShopOwnerInTx(client, {
+      shopName,
+      ownerName: social.name || null,
+      email,
+      passwordHash,
+      businessArchetype,
+      provider: social.provider,
+      providerId: social.provider_id,
+      avatar: social.picture || null,
+    });
+
+    await client.query("COMMIT");
+    return { status: "VERIFIED", ...created };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    if ((err as any)?.code === "23505") return { status: "EMAIL_TAKEN" };
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyShopSignupResult> {
@@ -137,56 +285,18 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
       return { status: "EMAIL_TAKEN" };
     }
 
-    const businessArchetype = normalizeShopArchetype(pending.business_archetype);
-    const businessType = archetypeToBusinessType(businessArchetype);
-
-    const baseSlug = slugify(pending.shop_name);
-    let tenantId = "";
-    let slug = "";
-    for (let n = 0; n < 100; n++) {
-      const candidate = n === 0 ? baseSlug : `${baseSlug}-${n}`;
-      const inserted = await client.query<{ id: string }>(
-        `INSERT INTO bms_tenants (name, slug, plan)
-         VALUES ($1, $2, 'free') ON CONFLICT (slug) DO NOTHING RETURNING id`,
-        [pending.shop_name, candidate]
-      );
-      if (inserted.rows[0]) {
-        tenantId = inserted.rows[0].id;
-        slug = candidate;
-        break;
-      }
-    }
-    if (!tenantId) throw new Error("Unable to allocate a unique shop slug");
-
-    const roleRes = await client.query<{ id: string }>(`SELECT id FROM roles WHERE name = 'Manager'`);
-    const roleId = roleRes.rows[0]?.id ?? null;
-    await client.query(
-      `INSERT INTO bms_role_permissions (tenant_id, role_id, permission)
-       SELECT $1, role_id, permission FROM bms_role_permissions
-        WHERE tenant_id = '11111111-1111-1111-1111-111111111111'
-       ON CONFLICT DO NOTHING`,
-      [tenantId]
-    );
-    await client.query(
-      `INSERT INTO users
-         (name, username, email, role, role_id, tenant_id, password_hash, is_email_verified)
-       VALUES ($1, $2, $2, 'Manager', $3, $4, $5, TRUE)`,
-      [pending.owner_name || pending.shop_name, pending.email, roleId, tenantId, pending.password_hash]
-    );
-    await client.query(
-      `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (tenant_id) DO UPDATE SET
-         business_type = COALESCE(bms_store_profile.business_type, EXCLUDED.business_type),
-         business_archetype = COALESCE(bms_store_profile.business_archetype, EXCLUDED.business_archetype),
-         updated_at = now()`,
-      [tenantId, businessType, businessArchetype]
-    );
+    const created = await createShopOwnerInTx(client, {
+      shopName: pending.shop_name,
+      ownerName: pending.owner_name,
+      email: pending.email,
+      passwordHash: pending.password_hash,
+      businessArchetype: pending.business_archetype,
+    });
     await client.query(
       `UPDATE bms_pending_shop_signups
           SET verified_at = now(), tenant_id = $2, updated_at = now()
         WHERE id = $1`,
-      [pending.id, tenantId]
+      [pending.id, created.tenantId]
     );
     await client.query(
       `UPDATE bms_pending_shop_signups
@@ -195,7 +305,7 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
       [pending.email, pending.id]
     );
     await client.query("COMMIT");
-    return { status: "VERIFIED", tenantId, slug };
+    return { status: "VERIFIED", tenantId: created.tenantId, slug: created.slug };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
     throw err;

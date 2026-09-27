@@ -41,6 +41,9 @@ const th = {
     welcome: "ยินดีต้อนรับ, {name}",
     google_missing_credential: "ไม่พบข้อมูล credential จาก Google",
     google_failed: "เข้าสู่ระบบด้วย Google ไม่สำเร็จ",
+    facebook_missing_access_token: "เข้าสู่ระบบด้วย Facebook ไม่สำเร็จ: ไม่พบ accessToken",
+    facebook_failed: "ยกเลิกหรือเข้าสู่ระบบด้วย Facebook ไม่สำเร็จ",
+    continue_with_facebook: "ดำเนินการต่อด้วย Facebook",
     tip_prefix: "Tip: บน server แนะนำให้เซ็ต ",
     tip_http_only_cookie: "httpOnly cookie",
     tip_middle: " จาก token เพื่อความปลอดภัย และอ่านจาก cookie ฝั่ง ",
@@ -108,6 +111,7 @@ const th = {
     success: "ตั้งรหัสผ่านใหม่สำเร็จ",
   },
   shopSignup: {
+    or_signup_with_email: "หรือสมัครด้วยอีเมล",
     heading: "สมัครใช้ BMS — เปิดร้านของคุณ",
     tagline: "สร้างร้านฟรี เริ่มขายผ่าน LINE/TikTok ด้วย AI ตอบลูกค้าอัตโนมัติ — เริ่มที่แพ็กเกจ Free",
     shop_name: "ชื่อร้าน",
@@ -647,6 +651,7 @@ const th = {
     restaurant_floor: "จัดผังร้าน",
     delivery_platforms: "แพลตฟอร์มเดลิเวอรี",
     delivery_provider_settings: "Partner API เดลิเวอรี",
+    auth_settings: "Social Login",
     retail_local_licenses: "License Retail Local",
     retail_local_releases: "ดาวน์โหลด Retail Local",
     board_game: "โต๊ะบอร์ดเกม",
@@ -1053,6 +1058,7 @@ const th = {
     loading: "กำลังโหลดผังร้าน…",
   },
   admin_login: {
+    or_login_with_email: "หรือเข้าสู่ระบบด้วยอีเมล",
     title: "เข้าสู่ระบบผู้ดูแล",
     identifier_label: "ชื่อผู้ใช้หรืออีเมล",
     identifier_required: "กรุณากรอกชื่อผู้ใช้หรืออีเมล",

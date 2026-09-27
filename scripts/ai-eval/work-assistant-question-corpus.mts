@@ -373,6 +373,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ดูคิว support ticket", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.support", origin: "coverage" },
   { q: "งาน cron รันจริงหรือยัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.operations", origin: "coverage" },
   { q: "เจ้าของระบบกรอก Partner API LINE MAN ที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.delivery-provider-settings", origin: "coverage" },
+  { q: "Super Admin เปิดหรือปิด Social Login ที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.auth-settings", origin: "coverage" },
   { q: "เช็กว่า env ตั้งค่าไว้หรือยัง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.env", origin: "coverage" },
   { q: "รัน query ตรวจข้อมูลที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.sql-console", origin: "coverage" },
   { q: "สร้างข้อมูลทดสอบยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.fake-data", origin: "coverage" },
