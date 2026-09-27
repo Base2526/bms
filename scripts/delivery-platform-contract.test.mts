@@ -5,6 +5,11 @@ import test from "node:test";
 
 import { DELIVERY_CAPABILITIES } from "../apps/web/lib/bms/deliveryPlatforms/capabilities";
 import { normalizeFoodpandaOrder } from "../apps/web/lib/bms/deliveryPlatforms/foodpanda";
+import {
+  assertTenantDeliveryConfigurationAllowed,
+  DELIVERY_PROVIDER_ONBOARDING,
+  tenantCredentialFormAvailable,
+} from "../apps/web/lib/bms/deliveryPlatforms/onboarding";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
@@ -42,6 +47,32 @@ test("provider capabilities stay conservative and unavailable contracts fail clo
   const blocked = read("apps/web/lib/bms/deliveryPlatforms/blockedAdapter.ts");
   assert.match(blocked, /CONTRACT_BLOCKED/);
   assert.doesNotMatch(blocked, /fetch\(/);
+});
+
+test("LINE MAN onboarding separates the one-time platform contract from tenant setup", () => {
+  assert.equal(DELIVERY_PROVIDER_ONBOARDING.LINEMAN.state, "PARTNER_CONTRACT_REQUIRED");
+  assert.equal(DELIVERY_PROVIDER_ONBOARDING.LINEMAN.credentialAuthority, "UNDECIDED_PENDING_CONTRACT");
+  assert.equal(tenantCredentialFormAvailable("LINEMAN"), false);
+  assert.doesNotThrow(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+    credentialValues: [], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }));
+  assert.throws(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "SHADOW", active: true, outboundCommandsEnabled: false,
+    credentialValues: [], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }), /DELIVERY_PLATFORM_PARTNER_ONBOARDING_REQUIRED/);
+  assert.throws(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+    credentialValues: ["guessed-token"], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }), /DELIVERY_TENANT_CREDENTIALS_NOT_AUTHORIZED/);
+  const service = read("apps/web/lib/bms/deliveryIntegrations.ts");
+  assert.match(service, /assertTenantDeliveryConfigurationAllowed/);
+  assert.match(service, /A placeholder must not preserve guessed credentials/);
+  const page = read("apps/web/app\/(admin)\/admin\/delivery-platforms\/page.tsx");
+  assert.match(page, /BMS กำลังรอ Partner API contract จาก LINE MAN/);
+  assert.match(page, /Only a connection placeholder can be saved/);
+  assert.match(page, /disabled=\{!tenantCredentialFieldsAvailable\}/);
+  assert.match(read("docs/integrations/lineman-partner-intake.md"), /Exact signed bytes and canonicalization/);
 });
 
 test("foodpanda normalization rejects implicit currency and never invents provider idempotency headers", () => {

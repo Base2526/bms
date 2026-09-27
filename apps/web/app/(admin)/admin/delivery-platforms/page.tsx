@@ -1,6 +1,6 @@
 'use client';
 
-import { ReloadOutlined, PlusOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, ClockCircleOutlined, ReloadOutlined, PlusOutlined } from "@ant-design/icons";
 import {
   Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Select,
   Space, Switch, Table, Tabs, Tag, Typography, message,
@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
+import { DELIVERY_PROVIDER_ONBOARDING } from "@/lib/bms/deliveryPlatforms/onboarding";
 
 type Integration = Record<string, any> & { id: string; provider: string; environment: string; capabilities: Record<string, string> };
 type Boot = {
@@ -58,6 +59,10 @@ export default function DeliveryPlatformsPage() {
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [integrationForm] = Form.useForm();
+  const selectedIntegrationProvider = Form.useWatch("provider", integrationForm) as "FOODPANDA" | "GRABFOOD" | "LINEMAN" | undefined;
+  const tenantCredentialFieldsAvailable = selectedIntegrationProvider
+    ? DELIVERY_PROVIDER_ONBOARDING[selectedIntegrationProvider].tenantSetupMode === "CREDENTIAL_FORM"
+    : true;
   const [locationForm] = Form.useForm();
   const [menuForm] = Form.useForm();
   const [settlementForm] = Form.useForm();
@@ -83,6 +88,15 @@ export default function DeliveryPlatformsPage() {
     if (tab && ["integrations", "mappings", "operations", "finance"].includes(tab)) setActiveTab(tab);
   }, []);
   useEffect(() => { void load(); }, [canView, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (tenantCredentialFieldsAvailable) return;
+    integrationForm.setFieldsValue({
+      rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+      clientId: undefined, clientSecret: undefined, accessToken: undefined,
+      refreshToken: undefined, webhookSecret: undefined, apiVersion: undefined,
+      credentialExpiresAt: undefined, configJson: "{}",
+    });
+  }, [integrationForm, selectedIntegrationProvider, tenantCredentialFieldsAvailable]);
 
   const integrationOptions = boot.integrations.map((i) => ({ value: i.id, label: `${i.provider} · ${i.environment}` }));
   const catalogOptions = useMemo(() => boot.mappings.catalog.map((p) => ({
@@ -183,6 +197,31 @@ export default function DeliveryPlatformsPage() {
   const integrations = <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <Alert closable showIcon type="warning" message={L("Live gate ยังล็อกตาม official contract", "Live gate remains locked to verified official contracts")}
       description={L("LINE MAN และ GrabFood webhook ยังไม่เปิด live adapter; foodpanda เปิดเฉพาะ capability ที่เอกสารสาธารณะยืนยัน และยังต้องมี partner credential/sandbox certification", "LINE MAN and GrabFood webhooks remain blocked; foodpanda exposes only publicly verified capabilities and still requires partner credentials and sandbox certification.")} />
+    <Card title={L("ความพร้อม LINE MAN ระดับแพลตฟอร์ม", "LINE MAN platform readiness")}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Alert closable showIcon type="info"
+          message={L("BMS กำลังรอ Partner API contract จาก LINE MAN", "BMS is waiting for the LINE MAN Partner API contract")}
+          description={L("เจ้าของร้านยังไม่ต้องกรอก Client ID, token หรือ webhook secret หน้านี้จะเปิดการเชื่อมต่อเมื่อทีมแพลตฟอร์มตรวจ authentication, webhook, lifecycle, settlement และสิทธิ์การใช้ credential แล้ว", "Shop owners should not enter a Client ID, token, or webhook secret yet. Connection will open after the platform team verifies authentication, webhooks, lifecycle, settlement, and credential authority.")} />
+        <Row gutter={[12, 12]}>
+          {[
+            ["partner", "สัญญา Partner / เจ้าของ credential", "Partner agreement / credential ownership"],
+            ["webhook", "การยืนยัน webhook และ retry", "Webhook authentication and retry"],
+            ["lifecycle", "วงจรออเดอร์ / ยกเลิก / คืนเงิน", "Order lifecycle / cancel / refund"],
+            ["catalog", "รหัสร้านและเมนู", "Store and menu identifiers"],
+            ["settlement", "รูปแบบ settlement และเจ้าของภาษี", "Settlement format and tax ownership"],
+            ["sandbox", "Sandbox และ certification", "Sandbox and certification"],
+          ].map(([key, th, en]) => <Col xs={24} md={12} xl={8} key={key}>
+            <Tag icon={<ClockCircleOutlined />} color="orange" style={{ width: "100%", padding: "6px 10px", whiteSpace: "normal" }}>
+              {L(th, en)} · {L("รอ LINE MAN", "Waiting for LINE MAN")}
+            </Tag>
+          </Col>)}
+        </Row>
+        <Typography.Text type="secondary">
+          <CheckCircleOutlined /> {L("โครงสร้าง tenant, mapping, durable inbox/outbox, order และ finance พร้อมสำหรับเสียบ adapter หลังตรวจ contract", "Tenant isolation, mappings, durable inbox/outbox, order, and finance foundations are ready for the adapter after contract review.")}
+        </Typography.Text>
+        <Button disabled>{L("เชื่อมต่อ LINE MAN (รอ Partner API)", "Connect LINE MAN (waiting for Partner API)")}</Button>
+      </Space>
+    </Card>
     <Card title={L("การเชื่อมต่อ", "Integrations")} extra={canManageIntegration && <Button type="primary" icon={<PlusOutlined />} onClick={() => {
       integrationForm.resetFields(); integrationForm.setFieldsValue({ provider: "FOODPANDA", environment: "SANDBOX", rolloutMode: "OFF", active: false, outboundCommandsEnabled: false, configJson: "{}" }); setIntegrationOpen(true);
     }}>{L("เพิ่ม", "Add")}</Button>}>
@@ -192,7 +231,9 @@ export default function DeliveryPlatformsPage() {
         { title: L("Rollout", "Rollout"), dataIndex: "rolloutMode", render: (v) => <Tag>{v}</Tag> },
         { title: L("สุขภาพ", "Health"), dataIndex: "healthStatus", render: (v) => <Tag color={statusColor(v)}>{v}</Tag> },
         { title: L("สาขา / mapping พร้อม", "Branches / verified"), render: (_, r) => `${r.locationCount} / ${r.verifiedMappingCount}` },
-        { title: L("Credential", "Credential"), render: (_, r) => [r.accessTokenMasked, r.clientSecretMasked].filter(Boolean).join(" · ") || "—" },
+        { title: L("Credential", "Credential"), render: (_, r) => DELIVERY_PROVIDER_ONBOARDING[r.provider as "FOODPANDA" | "GRABFOOD" | "LINEMAN"]?.tenantSetupMode === "PLACEHOLDER_ONLY"
+          ? <Tag color="orange">{L("จัดการโดย Partner flow หลังอนุมัติ", "Managed by partner flow after approval")}</Tag>
+          : [r.accessTokenMasked, r.clientSecretMasked].filter(Boolean).join(" · ") || "—" },
         { title: "", render: (_, r) => canManageIntegration ? <Space><Button size="small" onClick={async () => {
           try { await jsonFetch("/api/bms/delivery/integrations", { method:"POST", body:JSON.stringify({ action:"test", integrationId:r.id }) }); message.success(L("เชื่อมต่อสำเร็จ", "Connection succeeded")); await load(); }
           catch (e:any) { message.error(e?.message ?? L("ตรวจไม่ผ่าน", "Connection check failed")); }
@@ -290,12 +331,16 @@ export default function DeliveryPlatformsPage() {
       <Form form={integrationForm} layout="vertical"><Form.Item name="id" hidden><Input /></Form.Item><Row gutter={12}>
         <Col span={8}><Form.Item name="provider" label="Provider" rules={[{required:true}]}><Select options={["FOODPANDA","GRABFOOD","LINEMAN"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
         <Col span={8}><Form.Item name="environment" label={L("สภาพแวดล้อม", "Environment")} rules={[{required:true}]}><Select options={["SANDBOX","LIVE"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
-        <Col span={8}><Form.Item name="rolloutMode" label="Rollout" rules={[{required:true}]}><Select options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
-      </Row><Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch /></Form.Item></Col></Row>
-      <Form.Item name="clientId" label="Client ID"><Input /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label="API version"><Input /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
-      <Form.Item name="configJson" label={L("Config ที่ไม่ใช่ secret (JSON)", "Non-secret config (JSON)")}><Input.TextArea rows={6} /></Form.Item></Form>
+        <Col span={8}><Form.Item name="rolloutMode" label="Rollout" rules={[{required:true}]}><Select disabled={!tenantCredentialFieldsAvailable} options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
+      </Row>
+      {!tenantCredentialFieldsAvailable && <Alert closable showIcon type="warning" style={{ marginBottom: 16 }}
+        message={L("บันทึกได้เฉพาะรายการเตรียมเชื่อมต่อ", "Only a connection placeholder can be saved")}
+        description={L("Contract ยังไม่บอกว่า credential เป็นของ BMS หรือของร้าน ระบบจึงบังคับ OFF และไม่รับ secret จนกว่าทีมแพลตฟอร์มจะเปิด Partner flow", "The contract has not established whether credentials belong to BMS or the shop, so the server enforces OFF and rejects secrets until the platform team enables the partner flow.")} />}
+      <Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Form.Item name="clientId" label="Client ID"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label="API version"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input disabled={!tenantCredentialFieldsAvailable} placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
+      <Form.Item name="configJson" label={L("Config ที่ไม่ใช่ secret (JSON)", "Non-secret config (JSON)")}><Input.TextArea disabled={!tenantCredentialFieldsAvailable} rows={6} /></Form.Item></Form>
     </Modal>
 
     <Modal open={locationOpen} title={L("จับคู่สาขา", "Map provider store")} onCancel={()=>setLocationOpen(false)} onOk={()=>void saveLocationMapping()} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>

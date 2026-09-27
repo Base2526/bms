@@ -2,6 +2,10 @@ import { getClient } from "@/lib/db";
 import { decryptSecret, encryptSecret, maskSecret } from "./crypto";
 import { beginTenantTx } from "./tenant";
 import { DELIVERY_CAPABILITIES, getDeliveryPlatformAdapter } from "./deliveryPlatforms";
+import {
+  assertTenantDeliveryConfigurationAllowed,
+  tenantCredentialFormAvailable,
+} from "./deliveryPlatforms/onboarding";
 import { DELIVERY_PROVIDERS, type DeliveryAdapterConfig, type DeliveryEnvironment, type DeliveryProvider } from "./deliveryPlatforms/types";
 
 const SENSITIVE_CONFIG_KEY = /(secret|token|password|credential|private.?key)/i;
@@ -129,6 +133,18 @@ export async function upsertDeliveryIntegration(input: {
   const rolloutMode = rolloutOf(input.rolloutMode);
   const config = cleanConfig(input.config);
   const apiVersion = cleanText(input.apiVersion, 100);
+  const expiry = cleanText(input.credentialExpiresAt, 80);
+  assertTenantDeliveryConfigurationAllowed(provider, {
+    rolloutMode,
+    active: input.active,
+    outboundCommandsEnabled: input.outboundCommandsEnabled,
+    credentialValues: [
+      input.clientId, input.clientSecret, input.accessToken, input.refreshToken, input.webhookSecret,
+    ],
+    config,
+    apiVersion,
+    credentialExpiresAt: expiry,
+  });
   if (rolloutMode !== "OFF" && !input.active) throw new Error("DELIVERY_ACTIVE_REQUIRED_FOR_ROLLOUT");
   if (rolloutMode === "LIVE" && DELIVERY_CAPABILITIES[provider].webhookOrders !== "VERIFIED") {
     throw new Error("DELIVERY_OFFICIAL_WEBHOOK_CONTRACT_REQUIRED");
@@ -149,7 +165,6 @@ export async function upsertDeliveryIntegration(input: {
       throw new Error("DELIVERY_FOODPANDA_CONTRACT_CONFIG_REQUIRED");
     }
   }
-  const expiry = cleanText(input.credentialExpiresAt, 80);
   if (expiry && Number.isNaN(Date.parse(expiry))) throw new Error("DELIVERY_CREDENTIAL_EXPIRY_INVALID");
   const client = await getClient();
   try {
@@ -170,12 +185,16 @@ export async function upsertDeliveryIntegration(input: {
       throw new Error("DELIVERY_PROVIDER_ENVIRONMENT_IMMUTABLE");
     }
     const secret = (value: unknown, previous: string | null) => cleanText(value, 8000) ? encryptSecret(cleanText(value, 8000)) : previous;
-    const values = {
+    const tenantCredentialsAllowed = tenantCredentialFormAvailable(provider);
+    const values = tenantCredentialsAllowed ? {
       clientId: cleanText(input.clientId, 500) ?? old?.client_id ?? null,
       clientSecret: secret(input.clientSecret, old?.client_secret_encrypted ?? null),
       accessToken: secret(input.accessToken, old?.access_token_encrypted ?? null),
       refreshToken: secret(input.refreshToken, old?.refresh_token_encrypted ?? null),
       webhookSecret: secret(input.webhookSecret, old?.webhook_secret_encrypted ?? null),
+    } : {
+      // A placeholder must not preserve guessed credentials written before this guard existed.
+      clientId: null, clientSecret: null, accessToken: null, refreshToken: null, webhookSecret: null,
     };
     const foodpandaCredentialsReady = provider !== "FOODPANDA"
       || Boolean(values.clientId && values.clientSecret)

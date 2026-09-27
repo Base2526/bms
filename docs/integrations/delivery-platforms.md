@@ -114,6 +114,13 @@ health, branch/menu mappings, operational incidents/timelines, and finance. Thai
 follow the current admin locale; secrets are write-only and only masked presence returns to the
 browser.
 
+Provider onboarding and tenant setup are separate layers. BMS establishes and implements a partner
+contract once; each tenant then authorizes only its own shops and maps its own branches/menu. Until a
+contract identifies the credential owner, LINE MAN and GrabFood tenant records are placeholder-only:
+the server enforces `OFF`, rejects tenant-supplied credentials/config, and keeps outbound commands
+disabled. The LINE MAN evidence checklist is
+[lineman-partner-intake.md](lineman-partner-intake.md).
+
 ## Store controls and degraded mode
 
 `bms_delivery_intake_controls` keeps desired local state, observed provider state and sync result as
