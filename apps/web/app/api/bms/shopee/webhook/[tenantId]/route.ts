@@ -16,7 +16,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation } from "@/lib/bms/inbox";
+import { logConversation, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
@@ -25,13 +25,45 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type ShopeeMessage = { id?: string; message_id?: string; from_id?: string; sender_id?: string; content?: { text?: string }; message?: string };
+type ShopeeMessage = {
+  id?: string;
+  message_id?: string;
+  from_id?: string;
+  sender_id?: string;
+  type?: string;
+  message_type?: string;
+  content?: {
+    text?: string;
+    type?: string;
+    url?: string;
+    media_url?: string;
+    image_url?: string;
+    file_url?: string;
+    file_name?: string;
+    mime_type?: string;
+  };
+  message?: string;
+};
 
 function parseShopeeMessages(body: any): ShopeeMessage[] {
   // TODO(prod): แทนที่ด้วย mapping จริงตาม payload ของ Shopee Open Platform
   if (Array.isArray(body?.messages)) return body.messages;
   if (body?.data) return [body.data];
   return [];
+}
+
+function shopeeMessageType(message: ShopeeMessage): string {
+  return message.message_type ?? message.type ?? message.content?.type ?? "attachment";
+}
+
+function shopeeAttachment(message: ShopeeMessage): Attachment | null {
+  const url = message.content?.url ?? message.content?.media_url ?? message.content?.image_url ?? message.content?.file_url ?? null;
+  if (!url) return null;
+  return {
+    url,
+    name: message.content?.file_name ?? `${shopeeMessageType(message)} from Shopee`,
+    mimeType: message.content?.mime_type ?? null,
+  };
 }
 
 async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
@@ -69,12 +101,27 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   const replies = [];
   for (const m of messages) {
     const text = (m.content?.text ?? m.message ?? "").trim();
-    if (!text) continue;
     if (!(await claimInboundEvent(tenantId, "shopee", m.message_id ?? m.id))) {
       replies.push({ userId: m.from_id ?? m.sender_id, duplicate: true });
       continue;
     }
     const userId = m.from_id ?? m.sender_id ?? null;
+    if (!text) {
+      const attachment = shopeeAttachment(m);
+      await logInboundMessage(tenantId, "shopee", userId, {
+        body: attachment ? "" : `[ข้อความ Shopee ชนิด ${shopeeMessageType(m)}]`,
+        attachment,
+        meta: {
+          type: shopeeMessageType(m),
+          providerMessageId: m.message_id ?? m.id ?? null,
+          unsupportedForAi: true,
+          raw: { hasAttachment: Boolean(attachment) },
+        },
+      });
+      replies.push({ userId, logged: shopeeMessageType(m) });
+      continue;
+    }
+
     const result = await runPipeline(text, "shopee", tenantId, userId);
 
     await logConversation(tenantId, "shopee", userId, text, result.reply, result.quality);

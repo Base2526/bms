@@ -12,7 +12,8 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, notifyInboxConversationChanged } from "@/lib/bms/inbox";
+import { logConversation, notifyInboxConversationChanged, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
 import {
   recordInboundEvent,
@@ -32,8 +33,73 @@ type LineEvent = {
   type: string;
   replyToken?: string;
   source?: { userId?: string };
-  message?: { id?: string; type: string; text?: string };
+  message?: {
+    id?: string;
+    type: string;
+    text?: string;
+    fileName?: string;
+    fileSize?: number;
+    packageId?: string;
+    stickerId?: string;
+    title?: string;
+    address?: string;
+    latitude?: number;
+    longitude?: number;
+  };
 };
+
+const LINE_MEDIA_TYPES = new Set(["image", "video", "audio", "file"]);
+const LINE_MEDIA_DEFAULTS: Record<string, { mimeType: string; extension: string; label: string }> = {
+  image: { mimeType: "image/jpeg", extension: "jpg", label: "รูปภาพจาก LINE" },
+  video: { mimeType: "video/mp4", extension: "mp4", label: "วิดีโอจาก LINE" },
+  audio: { mimeType: "audio/m4a", extension: "m4a", label: "เสียงจาก LINE" },
+  file: { mimeType: "application/octet-stream", extension: "bin", label: "ไฟล์จาก LINE" },
+};
+const LINE_INBOUND_MAX_BYTES = 10 * 1024 * 1024;
+
+function lineInboundBody(message: NonNullable<LineEvent["message"]>, hasAttachment: boolean): string {
+  if (message.type === "location") {
+    return [
+      message.title,
+      message.address,
+      typeof message.latitude === "number" && typeof message.longitude === "number"
+        ? `${message.latitude}, ${message.longitude}`
+        : null,
+    ].filter(Boolean).join("\n") || "[ตำแหน่งจาก LINE]";
+  }
+  if (message.type === "sticker") {
+    return `[สติกเกอร์ LINE package:${message.packageId ?? "-"} sticker:${message.stickerId ?? "-"}]`;
+  }
+  if (hasAttachment) return "";
+  const defaults = LINE_MEDIA_DEFAULTS[message.type];
+  return defaults ? `[${defaults.label}]` : `[ข้อความ LINE ชนิด ${message.type}]`;
+}
+
+async function fetchLineInboundAttachment(
+  tenantId: string,
+  accessToken: string | null | undefined,
+  message: NonNullable<LineEvent["message"]>
+): Promise<Attachment | null> {
+  if (!accessToken || !message.id || !LINE_MEDIA_TYPES.has(message.type)) return null;
+  const defaults = LINE_MEDIA_DEFAULTS[message.type] ?? LINE_MEDIA_DEFAULTS.file;
+  try {
+    const resp = await fetch(`https://api-data.line.me/v2/bot/message/${encodeURIComponent(message.id)}/content`, {
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    if (!resp.ok) return null;
+    const len = Number(resp.headers.get("content-length") || "0");
+    if (Number.isFinite(len) && len > LINE_INBOUND_MAX_BYTES) return null;
+    const buf = Buffer.from(await resp.arrayBuffer());
+    if (buf.length > LINE_INBOUND_MAX_BYTES) return null;
+    const mimeType = resp.headers.get("content-type")?.split(";", 1)[0]?.trim() || defaults.mimeType;
+    const filename = message.fileName || `line-${message.type}-${message.id}.${defaults.extension}`;
+    const row = await persistBuffer(buf, filename, mimeType, "private", tenantId);
+    return { url: buildFileUrlById(row.id), name: row.original_name ?? filename, mimeType: row.mimetype ?? mimeType };
+  } catch (error) {
+    console.error("[BMS] LINE inbound media fetch failed:", error);
+    return null;
+  }
+}
 
 async function pushLineReply(
   tenantId: string,
@@ -121,15 +187,37 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
 
   const replies = [];
   for (const ev of events) {
-    if (ev.type !== "message" || ev.message?.type !== "text") continue;
-    const text = ev.message.text?.trim() ?? "";
-    if (!text) continue;
+    if (ev.type !== "message" || !ev.message) continue;
     if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
       replies.push({ replyToken: ev.replyToken, duplicate: true });
       continue;
     }
 
     const userId = ev.source?.userId ?? null;
+    if (ev.message.type !== "text") {
+      const attachment = await fetchLineInboundAttachment(tenantId, cfg.access_token, ev.message);
+      await logInboundMessage(tenantId, "line", userId, {
+        body: lineInboundBody(ev.message, Boolean(attachment)),
+        attachment,
+        meta: {
+          type: ev.message.type,
+          providerMessageId: ev.message.id ?? null,
+          unsupportedForAi: true,
+          raw: {
+            fileName: ev.message.fileName,
+            fileSize: ev.message.fileSize,
+            packageId: ev.message.packageId,
+            stickerId: ev.message.stickerId,
+            hasAttachment: Boolean(attachment),
+          },
+        },
+      });
+      replies.push({ replyToken: ev.replyToken, logged: ev.message.type });
+      continue;
+    }
+
+    const text = ev.message.text?.trim() ?? "";
+    if (!text) continue;
     try {
       const result = await runPipeline(text, "line", tenantId, userId);
 

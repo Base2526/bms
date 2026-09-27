@@ -12,7 +12,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
-import { logConversation } from "@/lib/bms/inbox";
+import { logConversation, logInboundMessage } from "@/lib/bms/inbox";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -35,8 +35,14 @@ type TikTokMessage = {
   id?: string;
   message_id?: string;
   user_id?: string;
-  content?: { text?: string };
+  type?: string;
+  message_type?: string;
+  content?: { text?: string; type?: string };
 };
+
+function tiktokMessageType(message: TikTokMessage): string {
+  return message.message_type ?? message.type ?? message.content?.type ?? "attachment";
+}
 
 async function handlePOST(req: NextRequest) {
   if (mockWebhookDisabled()) {
@@ -50,13 +56,21 @@ async function handlePOST(req: NextRequest) {
   const replies = [];
   for (const m of messages) {
     const text = m.content?.text?.trim() ?? "";
-    if (!text) continue;
     if (!(await claimInboundEvent(DEFAULT_TENANT_ID, "tiktok", m.message_id ?? m.id))) {
       replies.push({ userId: m.user_id, duplicate: true });
       continue;
     }
 
     const customerRef = m.user_id ?? null;
+    if (!text) {
+      await logInboundMessage(DEFAULT_TENANT_ID, "tiktok", customerRef, {
+        body: `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`,
+        meta: { type: tiktokMessageType(m), providerMessageId: m.message_id ?? m.id ?? null, unsupportedForAi: true },
+      });
+      replies.push({ userId: m.user_id, logged: tiktokMessageType(m) });
+      continue;
+    }
+
     const result = await runPipeline(text, "tiktok", DEFAULT_TENANT_ID, customerRef);
     await logConversation(DEFAULT_TENANT_ID, "tiktok", customerRef, text, result.reply, result.quality);
     // TODO(prod): ยิงกลับผ่าน TikTok Business Messaging API

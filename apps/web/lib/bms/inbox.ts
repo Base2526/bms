@@ -66,6 +66,12 @@ export function notifyInboxConversationChanged(
 }
 
 export type Attachment = { url: string; name?: string | null; mimeType?: string | null };
+export type InboundMessageMeta = {
+  type?: string | null;
+  providerMessageId?: string | null;
+  unsupportedForAi?: boolean;
+  raw?: Record<string, unknown> | null;
+};
 
 export function isImageMime(mime?: string | null): boolean {
   return !!mime && /^image\//i.test(mime);
@@ -112,7 +118,9 @@ export async function logConversation(
   customerRef: string | null,
   incoming: string,
   reply: string,
-  quality?: AiTurnQuality
+  quality?: AiTurnQuality,
+  incomingAttachment?: Attachment | null,
+  incomingMeta?: InboundMessageMeta | null
 ): Promise<void> {
   if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return;
   try {
@@ -150,14 +158,18 @@ export async function logConversation(
              status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
              updated_at = now()
        RETURNING id, (xmax = 0) AS inserted`,
-      [tenantId, channel, customerRef, customerId, incoming.slice(0, 500)]
+      [tenantId, channel, customerRef, customerId, messagePreview(incoming, incomingAttachment).slice(0, 500)]
     );
     const convId = conv.rows[0].id;
 
+    const inboundMeta = JSON.stringify({
+      ...(incomingMeta ? { inbound: incomingMeta } : {}),
+      ...(incomingAttachment ? { attachment: incomingAttachment } : {}),
+    });
     const messages = await query<{ id: string; direction: "IN" | "OUT" }>(
       `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
        VALUES
-         ($1, $2, 'IN', $3, 'customer', '{}'::jsonb),
+         ($1, $2, 'IN', $3, 'customer', $6::jsonb),
          ($1, $2, 'OUT', $4, 'ai', $5::jsonb)
        RETURNING id, direction`,
       [
@@ -166,6 +178,7 @@ export async function logConversation(
         incoming,
         reply,
         JSON.stringify(quality ? { aiQuality: quality } : {}),
+        inboundMeta,
       ]
     );
     const aiMessage = messages.rows.find((message) => message.direction === "OUT");
@@ -185,6 +198,83 @@ export async function logConversation(
     publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED", "customer", incomingMessage?.id);
   } catch (e) {
     console.error("[BMS] logConversation failed:", e);
+  }
+}
+
+/**
+ * บันทึก inbound message ที่ไม่ควรเข้า AI tool-loop โดยตรง เช่น รูป ไฟล์ สติกเกอร์
+ * หรือ location จากแพลตฟอร์มแชท. ข้อความยังเข้าคิว Inbox/assignment/realtime ปกติ
+ * เพื่อให้มนุษย์ตรวจต่อได้ โดยไม่ให้โมเดลเดาเนื้อหา media เอง.
+ */
+export async function logInboundMessage(
+  tenantId: string,
+  channel: string,
+  customerRef: string | null,
+  input: {
+    body?: string | null;
+    attachment?: Attachment | null;
+    meta?: InboundMessageMeta | null;
+  }
+): Promise<string | null> {
+  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
+  const body = (input.body ?? "").trim();
+  const attachment = input.attachment?.url ? input.attachment : null;
+  const preview = messagePreview(body, attachment) || "[ข้อความที่ระบบยังไม่รองรับ]";
+  try {
+    const cust = await query<{ customer_id: string }>(
+      `SELECT customer_id FROM bms_customer_identities
+        WHERE tenant_id = $1 AND channel = $2 AND external_ref = $3 LIMIT 1`,
+      [tenantId, channel, customerRef]
+    );
+    let customerId = cust.rows[0]?.customer_id ?? null;
+    if (!customerId) {
+      try {
+        const ensuredCustomerId = await ensureCustomerForIdentity(tenantId, channel, customerRef);
+        if (ensuredCustomerId) customerId = ensuredCustomerId;
+      } catch (error) {
+        console.error("[BMS] logInboundMessage customer identity failed:", error);
+      }
+    }
+
+    const conv = await query<{ id: string; inserted: boolean }>(
+      `INSERT INTO bms_conversations
+         (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
+       VALUES ($1, $2, $3, $4, 'OPEN', 1, $5, now(), 'customer')
+       ON CONFLICT (tenant_id, channel, customer_ref) DO UPDATE
+         SET unread = bms_conversations.unread + 1,
+             last_message = EXCLUDED.last_message,
+             last_message_at = now(),
+             last_sender_type = 'customer',
+             customer_id = COALESCE(bms_conversations.customer_id, EXCLUDED.customer_id),
+             status = CASE WHEN bms_conversations.status = 'CLOSED' THEN 'OPEN' ELSE bms_conversations.status END,
+             updated_at = now()
+       RETURNING id, (xmax = 0) AS inserted`,
+      [tenantId, channel, customerRef, customerId, preview.slice(0, 500)]
+    );
+    const conversationId = conv.rows[0].id;
+    const inserted = await query<{ id: string }>(
+      `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
+       VALUES ($1, $2, 'IN', $3, 'customer', $4::jsonb)
+       RETURNING id`,
+      [
+        tenantId,
+        conversationId,
+        body,
+        JSON.stringify({
+          inbound: input.meta ?? { unsupportedForAi: true },
+          ...(attachment ? { attachment } : {}),
+        }),
+      ]
+    );
+
+    if (conv.rows[0].inserted) {
+      await autoAssignConversation(tenantId, conversationId);
+    }
+    publishInboxChanged(tenantId, conversationId, "MESSAGES_CHANGED", "customer", inserted.rows[0]?.id);
+    return conversationId;
+  } catch (error) {
+    console.error("[BMS] logInboundMessage failed:", error);
+    return null;
   }
 }
 

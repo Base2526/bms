@@ -20,9 +20,14 @@ export function metaChallenge(url: URL, cfg: ChannelConfig | null): string | nul
   return challenge;
 }
 
-export type MetaEvent = { senderId: string; text: string; eventId: string | null };
+export type MetaEvent = {
+  senderId: string;
+  text: string;
+  eventId: string | null;
+  attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }>;
+};
 
-/** แกะข้อความ text จาก payload (รองรับทั้ง Messenger และ IG) */
+/** แกะข้อความและ attachment จาก payload (รองรับทั้ง Messenger และ IG) */
 export function parseMetaEvents(body: any): MetaEvent[] {
   const out: MetaEvent[] = [];
   const entries = Array.isArray(body?.entry) ? body.entry : [];
@@ -30,12 +35,21 @@ export function parseMetaEvents(body: any): MetaEvent[] {
     const messaging = Array.isArray(entry?.messaging) ? entry.messaging : [];
     for (const ev of messaging) {
       const senderId = ev?.sender?.id;
-      const text = ev?.message?.text?.trim();
-      // ข้าม echo (ข้อความที่เพจ/บัญชีส่งเอง) และ event ที่ไม่มี text
-      if (senderId && text && !ev?.message?.is_echo) {
+      const text = ev?.message?.text?.trim() ?? "";
+      const attachments = Array.isArray(ev?.message?.attachments)
+        ? ev.message.attachments.map((att: any) => ({
+          type: typeof att?.type === "string" ? att.type : null,
+          url: typeof att?.payload?.url === "string" ? att.payload.url : null,
+          title: typeof att?.title === "string" ? att.title : null,
+          mimeType: typeof att?.mime_type === "string" ? att.mime_type : null,
+        }))
+        : [];
+      // ข้าม echo (ข้อความที่เพจ/บัญชีส่งเอง) และ event ที่ไม่มีเนื้อหาให้ทีมเห็น
+      if (senderId && !ev?.message?.is_echo && (text || attachments.length > 0)) {
         out.push({
           senderId,
           text,
+          attachments,
           eventId: typeof ev?.message?.mid === "string" ? ev.message.mid : null,
         });
       }

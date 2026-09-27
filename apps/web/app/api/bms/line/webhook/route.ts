@@ -12,7 +12,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { DEFAULT_TENANT_ID } from "@/lib/bms/tenant";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
-import { logConversation } from "@/lib/bms/inbox";
+import { logConversation, logInboundMessage } from "@/lib/bms/inbox";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -47,15 +47,24 @@ async function handlePOST(req: NextRequest) {
 
   const replies = [];
   for (const ev of events) {
-    if (ev.type !== "message" || ev.message?.type !== "text") continue;
-    const text = ev.message.text?.trim() ?? "";
-    if (!text) continue;
+    if (ev.type !== "message" || !ev.message) continue;
     if (!(await claimInboundEvent(DEFAULT_TENANT_ID, "line", ev.message.id ?? ev.replyToken))) {
       replies.push({ replyToken: ev.replyToken, duplicate: true });
       continue;
     }
 
     const customerRef = ev.source?.userId ?? null;
+    if (ev.message.type !== "text") {
+      await logInboundMessage(DEFAULT_TENANT_ID, "line", customerRef, {
+        body: `[ข้อความ LINE ชนิด ${ev.message.type}]`,
+        meta: { type: ev.message.type, providerMessageId: ev.message.id ?? null, unsupportedForAi: true },
+      });
+      replies.push({ replyToken: ev.replyToken, logged: ev.message.type });
+      continue;
+    }
+
+    const text = ev.message.text?.trim() ?? "";
+    if (!text) continue;
     const result = await runPipeline(text, "line", DEFAULT_TENANT_ID, customerRef);
     await logConversation(DEFAULT_TENANT_ID, "line", customerRef, text, result.reply, result.quality);
     // TODO(prod): await pushLineReply(ev.replyToken, result.reply)
