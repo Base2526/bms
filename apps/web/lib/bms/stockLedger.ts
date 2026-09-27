@@ -53,10 +53,29 @@ export type StockLedgerRow = {
   closingValue: number | null;
 };
 
+export type StockLedgerMovementRow = {
+  locationId: string;
+  branchCode: string;
+  sku: string;
+  size: string;
+  productName: string;
+  unit: string;
+  voucherNo: string;
+  movementDate: string;
+  received: number | null;
+  issued: number | null;
+  balance: number;
+  movementType: string;
+  note: string | null;
+};
+
 export type StockLedgerReport = {
+  seller: { name: string; taxId: string | null };
   period: { from: string; to: string };
   establishments: Array<{ locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean }>;
   rows: StockLedgerRow[];
+  /** ledger ตามแบบรายงานภาษี: ยอดยกมา แล้วเรียงใบสำคัญรับ/จ่ายตามเวลาจริงต่อสินค้า */
+  movements: StockLedgerMovementRow[];
   /** รายการที่มีส่วนต่างไม่มีหลักฐาน — นักบัญชีต้องเห็น */
   unrecordedCount: number;
   unknownDirectionCount: number;
@@ -75,13 +94,21 @@ export async function getStockLedger(
   const locationId = input.locationId ?? null;
   const allowedLocationIds = input.allowedLocationIds ?? null;
 
-  const locRes = await query<any>(
-    `SELECT id, code, name, branch_code, is_head_office FROM bms_locations
-      WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
-        AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
-      ORDER BY is_head_office DESC, branch_code, code`,
-    [tenantId, locationId, allowedLocationIds]
-  );
+  const [locRes, sellerRes] = await Promise.all([
+    query<any>(
+      `SELECT id, code, name, branch_code, is_head_office FROM bms_locations
+        WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
+          AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
+        ORDER BY is_head_office DESC, branch_code, code`,
+      [tenantId, locationId, allowedLocationIds]
+    ),
+    query<{ name: string; tax_id: string | null }>(
+      `SELECT t.name, s.tax_id FROM bms_tenants t
+         LEFT JOIN bms_store_profile s ON s.tenant_id = t.id
+        WHERE t.id = $1`,
+      [tenantId]
+    ),
+  ]);
   if (locationId && !locRes.rowCount) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
 
   // เวลาตัดงวดตามวันไทย เหมือนรายงานอื่นทั้งหมดใน reports.ts
@@ -166,6 +193,47 @@ export async function getStockLedger(
     [tenantId, from, to, locationId, allowedLocationIds]
   );
 
+  const movementRes = await query<any>(
+    `SELECT m.id::text AS movement_id, m.location_id, l.branch_code,
+            m.product_sku, m.size, COALESCE(p.name, m.product_sku) AS product_name,
+            COALESCE(
+              (SELECT pk.unit_name FROM bms_product_packs pk
+                WHERE pk.tenant_id = $1 AND pk.product_sku = m.product_sku AND pk.is_base AND pk.active
+                  AND (pk.size = m.size OR pk.size IS NULL)
+                ORDER BY (pk.size = m.size) DESC NULLS LAST LIMIT 1),
+              sp.display_unit, sp.base_unit, 'หน่วย'
+            ) AS unit,
+            m.type, m.direction, m.qty, m.note, m.ref_order_id,
+            (m.created_at AT TIME ZONE 'Asia/Bangkok')::date::text AS movement_date,
+            COALESCE(
+              tax_doc.doc_no,
+              NULLIF(btrim(m.note), ''),
+              CASE WHEN m.ref_order_id IS NOT NULL THEN 'ORDER:' || left(m.ref_order_id::text, 8) END,
+              'MOV:' || m.id::text
+            ) AS voucher_no
+       FROM bms_stock_movements m
+       JOIN bms_locations l ON l.tenant_id = m.tenant_id AND l.id = m.location_id
+       LEFT JOIN bms_products p ON p.tenant_id = m.tenant_id AND p.sku = m.product_sku
+       LEFT JOIN bms_product_stock_policies sp
+              ON sp.tenant_id = m.tenant_id AND sp.product_sku = m.product_sku
+       LEFT JOIN LATERAL (
+         SELECT d.doc_no
+           FROM bms_tax_documents d
+          WHERE d.tenant_id = m.tenant_id AND d.order_id = m.ref_order_id
+            AND d.doc_type IN ('ABBREVIATED', 'FULL')
+          ORDER BY (d.doc_type = 'ABBREVIATED') DESC, d.issued_at, d.id
+          LIMIT 1
+       ) tax_doc ON TRUE
+      WHERE m.tenant_id = $1
+        AND m.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+        AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+        AND ($4::uuid IS NULL OR m.location_id = $4::uuid)
+        AND ($5::uuid[] IS NULL OR m.location_id = ANY($5::uuid[]))
+        AND (${IN_TYPES_SQL} OR ${OUT_TYPES_SQL})
+      ORDER BY l.is_head_office DESC, l.branch_code, m.product_sku, m.size, m.created_at, m.id`,
+    [tenantId, from, to, locationId, allowedLocationIds]
+  );
+
   const rows: StockLedgerRow[] = [];
   let unrecordedCount = 0;
   let unknownDirectionCount = 0;
@@ -219,12 +287,67 @@ export async function getStockLedger(
     });
   }
 
+  const rawMovements = new Map<string, any[]>();
+  for (const movement of movementRes.rows) {
+    const key = `${movement.location_id}\u0000${movement.product_sku}\u0000${movement.size}`;
+    const group = rawMovements.get(key) ?? [];
+    group.push(movement);
+    rawMovements.set(key, group);
+  }
+  const movements: StockLedgerMovementRow[] = [];
+  for (const row of rows) {
+    let balance = row.opening;
+    movements.push({
+      locationId: row.locationId,
+      branchCode: row.branchCode,
+      sku: row.sku,
+      size: row.size,
+      productName: row.productName,
+      unit: row.unit,
+      voucherNo: "ยอดยกมา",
+      movementDate: from,
+      received: null,
+      issued: null,
+      balance,
+      movementType: "OPENING",
+      note: row.openingUnrecorded === 0 ? null : `รวมยอดที่ไม่มี movement รองรับ ${row.openingUnrecorded}`,
+    });
+    const key = `${row.locationId}\u0000${row.sku}\u0000${row.size}`;
+    for (const movement of rawMovements.get(key) ?? []) {
+      const incoming = movement.type === "COUNT_ADJUST"
+        ? movement.direction === "IN"
+        : ["STOCK_IN", "RETURN", "TRANSFER_IN"].includes(movement.type);
+      const qty = Number(movement.qty);
+      balance += incoming ? qty : -qty;
+      movements.push({
+        locationId: row.locationId,
+        branchCode: row.branchCode,
+        sku: row.sku,
+        size: row.size,
+        productName: row.productName,
+        unit: row.unit,
+        voucherNo: movement.voucher_no,
+        movementDate: movement.movement_date,
+        received: incoming ? qty : null,
+        issued: incoming ? null : qty,
+        balance,
+        movementType: movement.type,
+        note: movement.note ?? null,
+      });
+    }
+  }
+
   return {
+    seller: {
+      name: sellerRes.rows[0]?.name ?? "",
+      taxId: sellerRes.rows[0]?.tax_id ?? null,
+    },
     period: { from, to },
     establishments: locRes.rows.map((l: any) => ({
       locationId: l.id, code: l.code, name: l.name, branchCode: l.branch_code, isHeadOffice: Boolean(l.is_head_office),
     })),
     rows,
+    movements,
     unrecordedCount,
     unknownDirectionCount,
     missingCostCount,

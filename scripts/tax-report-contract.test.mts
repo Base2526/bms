@@ -17,7 +17,9 @@ import {
   taxAmountsOf,
   taxMonthOf,
 } from "../apps/web/lib/bms/taxReportMath.ts";
-import { buildCsv } from "../apps/web/lib/bms/documentGenerator.ts";
+import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
+import { buildCsv, buildInputVatReportDoc, buildXlsx } from "../apps/web/lib/bms/documentGenerator.ts";
+import { isValidThaiTaxId } from "../apps/web/lib/bms/thaiTaxId.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
@@ -66,12 +68,21 @@ test("report periods are validated", () => {
   assert.throws(() => assertTaxPeriod("2024-01-01", "2026-01-01"));
 });
 
+test("full tax invoices share the same Thai tax-ID checksum guard as input VAT", () => {
+  assert.equal(isValidThaiTaxId("0105555555554"), true);
+  assert.equal(isValidThaiTaxId("0105555555555"), false);
+  const service = read("apps/web/lib/bms/taxDocuments.ts");
+  assert.match(service, /isValidThaiTaxId\(buyer\.taxId\.trim\(\)\)/);
+  assert.match(service, /buyer\.address\?\.trim\(\)/);
+});
+
 test("every report type in code is allowed by the latest DB CHECK (the 9.95 failure)", () => {
   const engine = read("apps/web/lib/bms/reportEngine.ts");
   const block = /export const REPORT_TYPES = \[([\s\S]*?)\] as const/.exec(engine);
   assert.ok(block);
   const types = [...block[1].matchAll(/"([A-Z_]+)"/g)].map((m) => m[1]);
   assert.ok(types.includes("VAT_SALES"));
+  assert.ok(types.includes("VAT_PURCHASE"));
 
   const dir = new URL("db/migrations/", root);
   const num = (f: string) => f.split("__")[0].split(".").map(Number);
@@ -96,17 +107,52 @@ test("the sales tax report cannot be exported as a PDF that renders Thai as blan
   assert.ok(/THAI_ONLY_REPORT_TYPES\.has\(reportType\) \? false/.test(engine));
 });
 
+test("a full invoice replacing an abbreviated invoice is a zero-value reference row", () => {
+  const report = read("apps/web/lib/bms/taxReports.ts");
+  assert.match(report, /replacesAbbreviated \? 0 : 1/);
+  assert.match(report, /\? \{ base: 0, exempt: 0, vat: 0, total: 0, rounding: 0 \}/);
+  assert.match(report, /!r\.cancelled_at \|\| r\.active_replacement_doc_no/);
+  assert.doesNotMatch(report, /date_trunc\('month', a\.issue_date\) <>/);
+});
+
+test("the input VAT report uses claim-month evidence and exports accountant-ready columns", () => {
+  const expense = read("apps/web/lib/bms/expenseDocuments.ts").replace(/--.*$/gm, "");
+  assert.match(expense, /export async function getInputVatReport/);
+  assert.match(expense, /d\.vat_claim_month BETWEEN date_trunc\('month', \$2::date\)::date/);
+  assert.match(expense, /รายงานภาษีซื้อต้องออกครั้งละหนึ่งเดือนภาษี/);
+  assert.match(expense, /d\.status = 'ACTIVE'/);
+  assert.match(expense, /d\.document_kind = 'TAX_INVOICE'/);
+  assert.match(expense, /d\.location_id = ANY\(\$5::uuid\[\]\)/);
+
+  const report = buildInputVatReportDoc({
+    buyer: { name: "FAKE buyer", taxId: "0105555555554" },
+    period: { from: "2026-09-01", to: "2026-09-30" },
+    establishments: [{ locationId: "loc", code: "MAIN", name: "HQ", branchCode: "00000", isHeadOffice: true }],
+    rows: [{
+      locationId: "loc", branchCode: "00000", documentDate: "2026-08-31", documentNo: "INV-1",
+      payeeName: "FAKE vendor", payeeTaxId: "0105555555554", payeeBranchCode: "00000",
+      amountBeforeVat: 100, vatAmount: 7, totalAmount: 107,
+    }],
+    totals: { documentCount: 1, amountBeforeVat: 100, vatAmount: 7, totalAmount: 107 },
+  }, (date) => date);
+  const workbook = XLSX.read(buildXlsx(report), { type: "buffer" });
+  assert.deepEqual(workbook.SheetNames, ["Summary", "รายงานภาษีซื้อ"]);
+  const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets["รายงานภาษีซื้อ"]);
+  assert.equal(rows[0]["เลขที่ใบกำกับภาษี"], "INV-1");
+  assert.equal(rows[0]["ภาษีมูลค่าเพิ่ม"], 7);
+});
+
 test("tax periods are cut by the Thai issue_date, never by the UTC issued_at", () => {
   const src = read("apps/web/lib/bms/taxReports.ts").replace(/--.*$/gm, "");
   assert.ok(!/d\.issued_at\s*(>=|<|BETWEEN)/.test(src));
-  assert.equal((src.match(/d\.issue_date BETWEEN \$2::date AND \$3::date/g) ?? []).length, 3);
+  assert.equal((src.match(/d\.issue_date BETWEEN \$2::date AND \$3::date/g) ?? []).length, 2);
   // ค้นด้วยคำที่มี % ต้องไม่กลายเป็น wildcard
   assert.ok(/replace\(\/\[\\\\%_\]\/g/.test(src));
 });
 
 test("the tax document page is behind tax.document.view", () => {
   const gql = read("apps/web/graphql/bmsTaxReports.ts");
-  assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 3);
+  assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 4);
 });
 
 test("tax reads, exports and generated files honour the actor's branch scope", () => {
@@ -129,11 +175,41 @@ test("tax reads, exports and generated files honour the actor's branch scope", (
   assert.match(engine, /params->'locationIds'/);
   assert.match(engine, /reportType === "VAT_SALES"[\s\S]{0,100}requirePermission\(ctx, "tax\.document\.view"\)/);
   assert.match(engine, /report_type <> 'VAT_SALES' OR \$4::boolean/);
+  assert.match(engine, /reportType === "VAT_PURCHASE"[\s\S]{0,100}requirePermission\(ctx, "expense\.view"\)/);
+  assert.match(engine, /report_type <> 'VAT_PURCHASE' OR \$5::boolean/);
   assert.match(download, /findGeneratedReportByFileId\(auth\.tenantId, fileId, auth\.ctx\)/);
   assert.match(genericFile, /requirePermission\(auth\.ctx, "report\.view"\)/);
   assert.match(genericFile, /findGeneratedReportByFileId\(auth\.tenantId, id, auth\.ctx\)/);
   assert.match(email, /findGeneratedReportByFileId\(tenantId, input\.fileId, ctx\)/);
   assert.match(reportsPage, /option\.value !== "VAT_SALES" \|\| can\("tax\.document\.view"\)/);
+  assert.match(reportsPage, /option\.value !== "VAT_PURCHASE" \|\| can\("expense\.view"\)/);
+});
+
+test("full tax invoice issuance is reachable from the tax document page and validates buyer identity", () => {
+  const page = read("apps/web/app/(admin)/admin/tax-documents/page.tsx");
+  const service = read("apps/web/lib/bms/taxDocuments.ts");
+  const gql = read("apps/web/graphql/bmsTaxReports.ts");
+  assert.match(page, /bmsIssueFullTaxInvoice/);
+  assert.match(page, /can\("tax\.document\.issue"\)/);
+  assert.match(page, /row\.docType === "ABBREVIATED" && !row\.cancelledAt/);
+  assert.match(service, /isValidThaiTaxId/);
+  assert.match(service, /\^\\d\{5\}\$/);
+  assert.match(page, /bmsFullTaxInvoiceView/);
+  assert.match(page, /data-print-root/);
+  assert.match(page, /@media print/);
+  assert.match(gql, /bmsFullTaxInvoiceView[\s\S]*?tax\.document\.view/);
+  assert.match(service, /sellerIdentity[\s\S]*?SELLER_INCOMPLETE/);
+  const snapshotMigration = read("db/migrations/10.24__bms_tax_document_seller_snapshot.sql");
+  assert.match(snapshotMigration, /seller_tax_id/);
+  assert.match(snapshotMigration, /seller_address/);
+  const etaxMigration = read("db/migrations/10.25__bms_etax_cancelled_documents.sql");
+  assert.match(etaxMigration, /'CANCELLED'/);
+  assert.match(service, /cancelQueuedTaxDocumentInTx/);
+  const queue = read("apps/web/lib/bms/etax/queue.ts");
+  assert.match(queue, /d\.cancelled_at IS NULL/);
+  assert.match(queue, /status = 'CANCELLED'/);
+  const pos = read("apps/web/lib/bms/pos.ts");
+  assert.match(pos, /cancelledTaxDocuments[\s\S]*cancelQueuedTaxDocumentInTx/);
 });
 
 test("tax document pagination keeps the real total when an offset returns no rows", () => {
@@ -149,13 +225,14 @@ test("CSV export neutralizes spreadsheet formulas without turning numeric credit
   const csv = buildCsv({
     title: "test",
     subtitle: "test",
-    meta: [],
+    meta: [{ label: "เลขประจำตัวผู้เสียภาษี", value: "0105555555554" }],
     sheets: [{
       name: "rows",
       columns: [{ key: "buyer", label: "buyer" }, { key: "amount", label: "amount" }],
       rows: [{ buyer: "=HYPERLINK(\"https://invalid.example\")", amount: -53.5 }],
     }],
   }).toString("utf8");
+  assert.match(csv, /เลขประจำตัวผู้เสียภาษี,0105555555554/);
   assert.match(csv, /'=HYPERLINK/);
   assert.match(csv, /,-53\.5/);
   assert.doesNotMatch(csv, /,'-53\.5/);
@@ -174,6 +251,13 @@ test("the goods report never counts reservations, quarantine or lost transfers a
   assert.ok(/direction = 'IN'/.test(inTypes) && /direction = 'OUT'/.test(outTypes));
   // ส่วนต่างที่ไม่มีหลักฐานต้องแสดงแยก ไม่ใช่กลืนเข้ายอดยกมาเงียบ ๆ
   assert.ok(/openingUnrecorded: unrecorded/.test(src));
+  assert.match(src, /AS voucher_no/);
+  assert.match(src, /movementDate: from/);
+  assert.match(src, /movements,/);
+  const generator = read("apps/web/lib/bms/documentGenerator.ts");
+  for (const heading of ["เลขที่ใบสำคัญ", "วัน\/เดือน\/ปี", "รับ", "จ่าย", "คงเหลือ", "หมายเหตุ"]) {
+    assert.ok(generator.includes(heading), `stock movement ledger must include ${heading}`);
+  }
 });
 
 test("only stock counts write the direction column — every sale must keep working without 10.10", () => {

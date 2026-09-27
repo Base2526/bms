@@ -49,6 +49,7 @@ export type EtaxDocumentData = {
   exemptAmount: number;
   vatAmount: number;
   vatRate: number;
+  roundingAmount: number;
   grandTotal: number;
 
   /** ใบเต็มที่ออกแทนใบย่อ — ต้องอ้างเลขใบเดิมในเอกสาร */

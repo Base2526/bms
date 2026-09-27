@@ -1,22 +1,23 @@
 'use client';
 // ใบกำกับภาษี + รายงานภาษีขาย (ประกอบ ภ.พ.30)
 // -------------------------------------------------------------
-// อ่านอย่างเดียว · สิทธิ์ tax.document.view · ส่งออก XLSX ผ่าน bmsGenerateReport (report.view)
+// อ่านรายงานด้วย tax.document.view · ออกใบเต็มด้วย tax.document.issue · ส่งออกด้วย report.view
 //
 // ส่วน "ต้องตรวจสอบ" อยู่เหนือตารางเอกสารโดยตั้งใจ — มันคือสิ่งที่ทำให้ยอดในรายงานไม่ครบ
 // ถ้าซ่อนไว้ใต้ตาราง คนจะส่งยอดให้นักบัญชีโดยไม่เห็นว่ามีบิลที่ไม่มีใบกำกับค้างอยู่
 
-import { gql, useMutation, useQuery } from "@apollo/client";
+import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Col, DatePicker, Empty, Input, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
+  Alert, Button, Card, Col, DatePicker, Empty, Form, Input, Modal, Row, Select, Space, Statistic, Switch, Table, Tag, Typography, message,
 } from "antd";
-import { FileExcelOutlined, ReloadOutlined } from "@ant-design/icons";
+import { EyeOutlined, FileExcelOutlined, PrinterOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
+import { isValidThaiTaxId } from "@/lib/bms/thaiTaxId";
 
 const Q_ESTABLISHMENTS = gql`
   query TaxEstablishments {
@@ -54,6 +55,28 @@ const M_GENERATE = gql`
   }
 `;
 
+const M_ISSUE_FULL = gql`
+  mutation IssueFullTaxInvoice($orderId: ID!, $buyer: BmsTaxInvoiceBuyerInput!) {
+    bmsIssueFullTaxInvoice(orderId: $orderId, buyer: $buyer) {
+      status reason skus
+      document { id docNo }
+      cancelledAbbreviated { id docNo }
+    }
+  }
+`;
+
+const Q_FULL_INVOICE = gql`
+  query FullTaxInvoiceView($documentId: ID!) {
+    bmsFullTaxInvoiceView(documentId: $documentId) {
+      id orderId docNo issueDate replacesDocNo amountText
+      seller { name taxId branchCode address phone locationName }
+      buyer { name taxId branchCode address phone }
+      lines { sku name size qty unit unitPrice amount }
+      subtotal discount shipping netBeforeVat exemptAmount vatAmount vatRate roundingAmount grandTotal
+    }
+  }
+`;
+
 type Establishment = { locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean };
 
 const baht = (n: number) =>
@@ -73,6 +96,9 @@ export default function TaxDocumentsPage() {
   const [search, setSearch] = useState("");
   const [includeCancelled, setIncludeCancelled] = useState(false);
   const [page, setPage] = useState(1);
+  const [fullInvoiceSource, setFullInvoiceSource] = useState<{ orderId: string; docNo: string } | null>(null);
+  const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [fullInvoiceForm] = Form.useForm();
 
   const from = month.startOf("month").format("YYYY-MM-DD");
   const to = month.endOf("month").format("YYYY-MM-DD");
@@ -95,6 +121,8 @@ export default function TaxDocumentsPage() {
     fetchPolicy: "cache-and-network",
   });
   const [generate, { loading: generating }] = useMutation(M_GENERATE);
+  const [issueFull, { loading: issuingFull }] = useMutation(M_ISSUE_FULL);
+  const [loadFullInvoice, fullInvoice] = useLazyQuery(Q_FULL_INVOICE, { fetchPolicy: "network-only" });
 
   const establishments: Establishment[] = est.data?.bmsTaxEstablishments ?? [];
   const placeLabel = useMemo(() => {
@@ -115,7 +143,7 @@ export default function TaxDocumentsPage() {
   const s = summary.data?.bmsSalesTaxReport;
   const counts = s?.exceptionCounts;
   const exceptionTotal = counts
-    ? counts.paidWithoutTaxDocument + counts.returnWithoutCreditNote + counts.fullReplacesOtherMonth
+    ? counts.paidWithoutTaxDocument + counts.returnWithoutCreditNote
     : 0;
 
   const kindLabel: Record<string, string> = {
@@ -142,10 +170,44 @@ export default function TaxDocumentsPage() {
     }
   };
 
+  const issueFullInvoice = async (buyer: any) => {
+    if (!fullInvoiceSource) return;
+    try {
+      const result = await issueFull({ variables: { orderId: fullInvoiceSource.orderId, buyer } });
+      const issued = result.data?.bmsIssueFullTaxInvoice;
+      if (issued?.status !== "ISSUED" && issued?.status !== "ALREADY_ISSUED") {
+        const missing = issued?.skus?.length ? `: ${issued.skus.join(", ")}` : "";
+        throw new Error(issued?.reason || `${issued?.status || "ออกเอกสารไม่สำเร็จ"}${missing}`);
+      }
+      message.success(t("admin_tax_documents.issue_full_done", { docNo: issued.document?.docNo ?? "" }));
+      setFullInvoiceSource(null);
+      fullInvoiceForm.resetFields();
+      if (issued.document?.id) {
+        setInvoicePreviewOpen(true);
+        await loadFullInvoice({ variables: { documentId: issued.document.id } });
+      }
+      await Promise.all([summary.refetch(), docs.refetch()]);
+    } catch (err: any) {
+      message.error(err?.message || t("admin_tax_documents.issue_full_failed"));
+    }
+  };
+
   const shownExceptions = s?.exceptions?.length ?? 0;
 
   return (
     <div>
+      <style jsx global>{`
+        @media print {
+          body * { visibility: hidden !important; }
+          [data-print-root], [data-print-root] * { visibility: visible !important; }
+          [data-print-root] {
+            position: absolute !important;
+            inset: 0 auto auto 0 !important;
+            width: 100% !important;
+            padding: 0 !important;
+          }
+        }
+      `}</style>
       <AdminPageHeader title={t("admin_tax_documents.page_title")}>
         <Select
           allowClear
@@ -218,9 +280,6 @@ export default function TaxDocumentsPage() {
             </Tag>
             <Tag color={counts.returnWithoutCreditNote ? "red" : "default"}>
               {exceptionLabel.RETURN_WITHOUT_CREDIT_NOTE}: {counts.returnWithoutCreditNote}
-            </Tag>
-            <Tag color={counts.fullReplacesOtherMonth ? "orange" : "default"}>
-              {exceptionLabel.FULL_REPLACES_OTHER_MONTH}: {counts.fullReplacesOtherMonth}
             </Tag>
           </Space>
         )}
@@ -330,9 +389,136 @@ export default function TaxDocumentsPage() {
             { title: t("admin_tax_documents.col_base"), dataIndex: "base", align: "right" as const, render: baht },
             { title: t("admin_tax_documents.col_vat"), dataIndex: "vat", align: "right" as const, render: baht },
             { title: t("admin_tax_documents.col_total"), dataIndex: "total", align: "right" as const, render: baht },
+            ...[{
+              title: t("admin_tax_documents.col_action"),
+              key: "action",
+              fixed: "right" as const,
+              render: (_: unknown, row: any) => <Space size="small">
+                {row.docType === "FULL" && <Button size="small" icon={<EyeOutlined />} onClick={() => {
+                  setInvoicePreviewOpen(true);
+                  void loadFullInvoice({ variables: { documentId: row.id } });
+                }}>{t("admin_tax_documents.view_full")}</Button>}
+                {can("tax.document.issue") && row.docType === "ABBREVIATED" && !row.cancelledAt
+                  ? <Button size="small" onClick={() => {
+                    setFullInvoiceSource({ orderId: row.orderId, docNo: row.docNo });
+                    fullInvoiceForm.setFieldsValue({ branchCode: "00000" });
+                  }}>{t("admin_tax_documents.issue_full")}</Button>
+                  : null}
+              </Space>,
+            }],
           ]}
         />
       </Card>
+
+      <Modal
+        open={Boolean(fullInvoiceSource)}
+        title={t("admin_tax_documents.issue_full_title")}
+        okText={t("admin_tax_documents.issue_full_confirm")}
+        cancelText={t("admin_tax_documents.issue_full_cancel")}
+        confirmLoading={issuingFull}
+        onCancel={() => { setFullInvoiceSource(null); fullInvoiceForm.resetFields(); }}
+        onOk={() => fullInvoiceForm.submit()}
+        destroyOnClose
+      >
+        <Alert
+          closable
+          type="warning"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={t("admin_tax_documents.issue_full_warning")}
+          description={t("admin_tax_documents.issue_full_warning_desc", { docNo: fullInvoiceSource?.docNo ?? "" })}
+        />
+        <Form form={fullInvoiceForm} layout="vertical" onFinish={(values) => void issueFullInvoice(values)}>
+          <Form.Item name="name" label={t("admin_tax_documents.buyer_name")} rules={[{ required: true }]}>
+            <Input maxLength={200} />
+          </Form.Item>
+          <Row gutter={12}>
+            <Col span={16}>
+              <Form.Item name="taxId" label={t("admin_tax_documents.buyer_tax_id")} rules={[
+                { required: true },
+                { validator: (_, value) => !value || isValidThaiTaxId(String(value))
+                    ? Promise.resolve()
+                    : Promise.reject(new Error(t("admin_tax_documents.buyer_tax_id_invalid"))) },
+              ]}>
+                <Input maxLength={13} inputMode="numeric" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="branchCode" label={t("admin_tax_documents.buyer_branch_code")} rules={[
+                { required: true },
+                { pattern: /^\d{5}$/, message: t("admin_tax_documents.buyer_branch_invalid") },
+              ]}>
+                <Input maxLength={5} inputMode="numeric" />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Form.Item name="address" label={t("admin_tax_documents.buyer_address")} rules={[{ required: true }]}>
+            <Input.TextArea rows={3} maxLength={500} />
+          </Form.Item>
+          <Form.Item name="phone" label={t("admin_tax_documents.buyer_phone")}>
+            <Input maxLength={30} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        open={invoicePreviewOpen}
+        width={900}
+        title={t("admin_tax_documents.full_preview_title")}
+        onCancel={() => setInvoicePreviewOpen(false)}
+        footer={[
+          <Button key="close" onClick={() => setInvoicePreviewOpen(false)}>{t("admin_tax_documents.issue_full_cancel")}</Button>,
+          <Button key="print" type="primary" icon={<PrinterOutlined />} disabled={!fullInvoice.data?.bmsFullTaxInvoiceView}
+            onClick={() => window.print()}>{t("admin_tax_documents.print_full")}</Button>,
+        ]}
+      >
+        {fullInvoice.loading ? <Typography.Text>{t("admin_tax_documents.loading_full")}</Typography.Text> : (() => {
+          const invoice = fullInvoice.data?.bmsFullTaxInvoiceView;
+          if (!invoice) return <Empty description={t("admin_tax_documents.full_not_found")} />;
+          const branch = (code: string) => code === "00000" ? t("admin_tax_documents.full_head_office") : `${t("admin_tax_documents.branch")} ${code}`;
+          return <div data-print-root style={{ color: "#111", background: "#fff", padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+              <div>
+                <Typography.Title level={3} style={{ margin: 0 }}>{t("admin_tax_documents.full_document_title")}</Typography.Title>
+                <div>{invoice.seller.name}</div><div>{invoice.seller.address}</div>
+                <div>{t("admin_tax_documents.tax_id_short")} {invoice.seller.taxId} · {branch(invoice.seller.branchCode)}</div>
+                {invoice.seller.phone && <div>{t("admin_tax_documents.buyer_phone")}: {invoice.seller.phone}</div>}
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div><b>{t("admin_tax_documents.document_no")}</b> {invoice.docNo}</div>
+                <div><b>{t("admin_tax_documents.col_date")}</b> {dayjs(invoice.issueDate).format("DD/MM/YYYY")}</div>
+                {invoice.replacesDocNo && <div>{t("admin_tax_documents.replaces_abbreviated")} {invoice.replacesDocNo}</div>}
+              </div>
+            </div>
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <b>{t("admin_tax_documents.buyer_section")}</b>
+              <div>{invoice.buyer.name}</div><div>{invoice.buyer.address}</div>
+              <div>{t("admin_tax_documents.tax_id_short")} {invoice.buyer.taxId} · {branch(invoice.buyer.branchCode)}</div>
+              {invoice.buyer.phone && <div>{t("admin_tax_documents.buyer_phone")}: {invoice.buyer.phone}</div>}
+            </Card>
+            <Table size="small" rowKey={(_: any, index?: number) => String(index)} pagination={false} dataSource={invoice.lines}
+              columns={[
+                { title: t("admin_tax_documents.line_no"), render: (_: unknown, __: unknown, index: number) => index + 1, width: 60 },
+                { title: t("admin_tax_documents.line_item"), render: (_: unknown, line: any) => `${line.name}${line.size && line.size !== "-" ? ` (${line.size})` : ""}` },
+                { title: t("admin_tax_documents.line_qty"), dataIndex: "qty", align: "right" as const },
+                { title: t("admin_tax_documents.line_unit"), dataIndex: "unit" },
+                { title: t("admin_tax_documents.line_unit_price"), dataIndex: "unitPrice", align: "right" as const, render: baht },
+                { title: t("admin_tax_documents.col_amount"), dataIndex: "amount", align: "right" as const, render: baht },
+              ]} />
+            <div style={{ marginLeft: "auto", width: 360, marginTop: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.subtotal")}</span><span>{baht(invoice.subtotal)}</span></div>
+              {invoice.discount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.discount")}</span><span>-{baht(invoice.discount)}</span></div>}
+              {invoice.shipping > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.shipping")}</span><span>{baht(invoice.shipping)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.net_before_vat")}</span><span>{baht(invoice.netBeforeVat)}</span></div>
+              {invoice.exemptAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.exempt_amount")}</span><span>{baht(invoice.exemptAmount)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>VAT {invoice.vatRate}%</span><span>{baht(invoice.vatAmount)}</span></div>
+              {invoice.roundingAmount !== 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{t("admin_tax_documents.rounding")}</span><span>{baht(invoice.roundingAmount)}</span></div>}
+              <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #111", paddingTop: 8 }}><span>{t("admin_tax_documents.grand_total")}</span><span>{baht(invoice.grandTotal)}</span></div>
+            </div>
+            <div style={{ marginTop: 16, textAlign: "center" }}>({invoice.amountText})</div>
+          </div>;
+        })()}
+      </Modal>
     </div>
   );
 }

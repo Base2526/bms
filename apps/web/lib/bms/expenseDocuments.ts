@@ -1,7 +1,10 @@
 import crypto from "crypto";
 import type { PoolClient } from "pg";
 import { query, runInTransaction } from "@/lib/db";
-import { isIsoCalendarDate } from "./taxReportMath";
+import { assertTaxPeriod, isIsoCalendarDate, round2 } from "./taxReportMath";
+import { isValidThaiTaxId } from "./thaiTaxId";
+
+export { isValidThaiTaxId } from "./thaiTaxId";
 
 export const EXPENSE_CATEGORIES = [
   "INVENTORY", "RENT", "UTILITIES", "INTERNET", "ADVERTISING", "TRANSPORT",
@@ -53,13 +56,6 @@ const money = (v: number | null | undefined, name: string) => {
   return Math.round((n + Number.EPSILON) * 100) / 100;
 };
 const isOneOf = <T extends string>(v: string, values: readonly T[]): v is T => values.includes(v as T);
-
-export function isValidThaiTaxId(value: string): boolean {
-  if (!taxIdRe.test(value)) return false;
-  let sum = 0;
-  for (let i = 0; i < 12; i += 1) sum += Number(value[i]) * (13 - i);
-  return (11 - (sum % 11)) % 10 === Number(value[12]);
-}
 
 export function normalizeExpenseDocumentNo(value: string): string {
   return value.toUpperCase().replace(/[\s-]+/g, "");
@@ -294,4 +290,117 @@ export async function getExpenseTaxSummary(tenantId: string, input: { from: stri
      GROUP BY location_id ORDER BY location_id`, [tenantId,input.from,input.to,input.locationId ?? null,input.allowedLocationIds ?? null]);
   const totals = res.rows.map((r:any)=>({ locationId:r.location_id, documentCount:Number(r.document_count), expenseBase:Number(r.expense_base), vatPurchase:Number(r.vat_purchase), wht:Number(r.wht) }));
   return { totals, grandTotal: totals.reduce((a,r)=>({ documentCount:a.documentCount+r.documentCount, expenseBase:a.expenseBase+r.expenseBase, vatPurchase:a.vatPurchase+r.vatPurchase, wht:a.wht+r.wht }), { documentCount:0,expenseBase:0,vatPurchase:0,wht:0 }) };
+}
+
+export type InputVatReportRow = {
+  locationId: string;
+  branchCode: string;
+  documentDate: string;
+  documentNo: string;
+  payeeName: string;
+  payeeTaxId: string;
+  payeeBranchCode: string;
+  amountBeforeVat: number;
+  vatAmount: number;
+  totalAmount: number;
+};
+
+export type InputVatReport = {
+  buyer: { name: string; taxId: string | null };
+  period: { from: string; to: string };
+  establishments: Array<{ locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean }>;
+  rows: InputVatReportRow[];
+  totals: { documentCount: number; amountBeforeVat: number; vatAmount: number; totalAmount: number };
+};
+
+/**
+ * รายงานภาษีซื้อใช้งวดจาก vat_claim_month ไม่ใช่วันที่เอกสารหรือวันที่จ่าย เพราะใบกำกับ
+ * หนึ่งใบอาจถูกนำมาใช้สิทธิ์ในเดือนถัดไปได้ตามหลักฐานที่ผู้ใช้บันทึกไว้
+ */
+export async function getInputVatReport(
+  tenantId: string,
+  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
+): Promise<InputVatReport> {
+  const requested = assertTaxPeriod(input.from, input.to);
+  if (requested.from.slice(0, 7) !== requested.to.slice(0, 7)) {
+    throw new Error("รายงานภาษีซื้อต้องออกครั้งละหนึ่งเดือนภาษี");
+  }
+  const month = requested.from.slice(0, 7);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const from = `${month}-01`;
+  const to = `${month}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, "0")}`;
+  const locationId = input.locationId ?? null;
+  const allowedLocationIds = input.allowedLocationIds ?? null;
+  const [buyerRes, locRes, rowRes] = await Promise.all([
+    query<{ name: string; tax_id: string | null }>(
+      `SELECT t.name, s.tax_id FROM bms_tenants t
+         LEFT JOIN bms_store_profile s ON s.tenant_id = t.id
+        WHERE t.id = $1`,
+      [tenantId]
+    ),
+    query<any>(
+      `SELECT id, code, name, branch_code, is_head_office FROM bms_locations
+        WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
+          AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
+        ORDER BY is_head_office DESC, branch_code, code`,
+      [tenantId, locationId, allowedLocationIds]
+    ),
+    query<any>(
+      `SELECT d.location_id, l.branch_code, d.document_date::text AS document_date,
+              d.document_no, d.payee_name, d.payee_tax_id,
+              COALESCE(NULLIF(btrim(d.payee_branch_code), ''), '00000') AS payee_branch_code,
+              d.amount_before_vat, d.vat_amount
+         FROM bms_expense_documents d
+         JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
+        WHERE d.tenant_id = $1 AND d.status = 'ACTIVE'
+          AND d.document_kind = 'TAX_INVOICE' AND d.vat_amount > 0
+          AND d.vat_claim_month BETWEEN date_trunc('month', $2::date)::date
+                                    AND date_trunc('month', $3::date)::date
+          AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
+          AND ($5::uuid[] IS NULL OR d.location_id = ANY($5::uuid[]))
+        ORDER BY d.document_date, d.document_no, d.id`,
+      [tenantId, from, to, locationId, allowedLocationIds]
+    ),
+  ]);
+  if (locationId && !locRes.rowCount) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
+
+  const rows: InputVatReportRow[] = rowRes.rows.map((row: any) => {
+    const amountBeforeVat = Number(row.amount_before_vat);
+    const vatAmount = Number(row.vat_amount);
+    return {
+      locationId: row.location_id,
+      branchCode: row.branch_code,
+      documentDate: row.document_date,
+      documentNo: row.document_no,
+      payeeName: row.payee_name,
+      payeeTaxId: row.payee_tax_id,
+      payeeBranchCode: row.payee_branch_code,
+      amountBeforeVat,
+      vatAmount,
+      totalAmount: round2(amountBeforeVat + vatAmount),
+    };
+  });
+  const totals = rows.reduce(
+    (sum, row) => ({
+      documentCount: sum.documentCount + 1,
+      amountBeforeVat: round2(sum.amountBeforeVat + row.amountBeforeVat),
+      vatAmount: round2(sum.vatAmount + row.vatAmount),
+      totalAmount: round2(sum.totalAmount + row.totalAmount),
+    }),
+    { documentCount: 0, amountBeforeVat: 0, vatAmount: 0, totalAmount: 0 }
+  );
+
+  return {
+    buyer: { name: buyerRes.rows[0]?.name ?? "", taxId: buyerRes.rows[0]?.tax_id ?? null },
+    period: { from, to },
+    establishments: locRes.rows.map((row: any) => ({
+      locationId: row.id,
+      code: row.code,
+      name: row.name,
+      branchCode: row.branch_code,
+      isHeadOffice: Boolean(row.is_head_office),
+    })),
+    rows,
+    totals,
+  };
 }

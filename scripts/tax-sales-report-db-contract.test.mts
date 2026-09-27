@@ -7,7 +7,7 @@
 //
 // ตรึง: ใบย่อสรุปรายวันต่อเครื่องเป็นช่วงเลข · ใบลดหนี้เป็นลบ · แยกยอดรายสถานประกอบการ ·
 //       ส่วน "ต้องตรวจสอบ" จับบิลที่ชำระแล้วไม่มีใบกำกับ, คืนของไม่มีใบลดหนี้,
-//       ใบเต็มที่ออกแทนใบย่อข้ามเดือน · ไฟล์ XLSX มีครบทุกแผ่น
+//       ใบเต็มที่ออกแทนใบย่อเป็นแถวอ้างอิงยอดศูนย์แม้ออกข้ามเดือน · ไฟล์ XLSX มีครบทุกแผ่น
 //
 //   node scripts/run-contract-tests.mjs db tax-sales-report
 // =============================================================
@@ -93,8 +93,8 @@ test("setup: a VAT-registered shop with documents at two establishments", async 
   )).rows[0].id;
   await query(
     `INSERT INTO bms_store_profile (tenant_id, vat_registered, price_includes_vat, vat_rate,
-                                    abbreviated_tax_invoice_approved, tax_id, calendar_era)
-     VALUES ($1,TRUE,TRUE,7,TRUE,'0105500000009','BE')`,
+                                    abbreviated_tax_invoice_approved, tax_id, calendar_era, address)
+     VALUES ($1,TRUE,TRUE,7,TRUE,'0105555555554','BE','FAKE seller address')`,
     [tenantId]
   );
   userId = (await query<{ id: string }>(
@@ -128,10 +128,10 @@ test("setup: a VAT-registered shop with documents at two establishments", async 
   orders.a1 = (await abbreviated(hqId, devA)).orderId;
   orders.a2 = (await abbreviated(hqId, devA)).orderId;
   orders.a3 = (await abbreviated(hqId, devA)).orderId;
-  // ใบที่สามลูกค้าขอใบเต็ม → ใบย่อถูกยกเลิก ใบเต็มนับแทน
+  // ใบที่สามลูกค้าขอใบเต็ม → ใบย่อยังเป็นยอดขายเดิม ใบเต็มเป็นแถวอ้างอิงยอดศูนย์
   const full = await issueFullTaxInvoice({
     tenantId, orderId: orders.a3, issuedBy: userId,
-    buyer: { name: "FAKE Co., Ltd.", taxId: "0105500000017", branchCode: "00002" },
+    buyer: { name: "FAKE Co., Ltd.", taxId: "0105555555554", branchCode: "00002", address: "FAKE address" },
   });
   assert.equal(full.status, "ISSUED", JSON.stringify(full));
 
@@ -187,7 +187,7 @@ test("a partially returned order cannot receive a full tax invoice", async () =>
     tenantId,
     orderId,
     issuedBy: userId,
-    buyer: { name: "FAKE returned buyer", taxId: "0105500000017" },
+    buyer: { name: "FAKE returned buyer", taxId: "0105555555554", address: "FAKE address" },
   });
   assert.equal(result.status, "ORDER_NOT_INVOICEABLE", JSON.stringify(result));
 });
@@ -200,12 +200,12 @@ test("abbreviated invoices are summarised per day per register as a number range
   assert.match(g.docNoFrom, /^A\d{10}$/);
   assert.match(g.docNoTo, /^A\d{10}$/);
   assert.ok(g.docNoFrom.endsWith("0001") && g.docNoTo.endsWith("0003"), `${g.docNoFrom}–${g.docNoTo}`);
-  assert.equal(g.docCount, 2, "the replaced abbreviated invoice is not counted");
+  assert.equal(g.docCount, 3, "the replaced abbreviated invoice keeps the original sale value");
   assert.equal(g.cancelledCount, 1);
-  assert.equal(g.base, 200);
-  assert.equal(g.vat, 14);
+  assert.equal(g.base, 300);
+  assert.equal(g.vat, 21);
   assert.equal(g.exempt, 0);
-  assert.equal(g.total, 214);
+  assert.equal(g.total, 321);
 });
 
 test("a full invoice is one row with the buyer, and a credit note is negative", async () => {
@@ -213,10 +213,12 @@ test("a full invoice is one row with the buyer, and a credit note is negative", 
   const full = r.rows.find((x) => x.kind === "FULL");
   assert.ok(full);
   assert.equal(full.buyerName, "FAKE Co., Ltd.");
-  assert.equal(full.buyerTaxId, "0105500000017");
+  assert.equal(full.buyerTaxId, "0105555555554");
   assert.equal(full.buyerBranchCode, "00002");
-  assert.equal(full.base, 100);
-  assert.equal(full.vat, 7);
+  assert.match(full.referenceDocNo ?? "", /^A\d{10}$/);
+  assert.equal(full.docCount, 0);
+  assert.equal(full.base, 0);
+  assert.equal(full.vat, 0);
 
   const note = r.rows.find((x) => x.kind === "CREDIT_NOTE");
   assert.ok(note);
@@ -231,7 +233,7 @@ test("totals are per establishment and add up to the grand total", async () => {
   const r = await getSalesTaxReport(tenantId, period);
   const hq = r.totals.find((t) => t.locationId === hqId)!;
   const br = r.totals.find((t) => t.locationId === branchId)!;
-  // HQ: ใบย่อ 2 + ใบเต็ม 1 = ฐาน 300 · VAT 21
+  // HQ: ใบย่อเดิม 3 ใบ = ฐาน 300 · VAT 21; ใบเต็มที่ออกแทนเป็นแถวอ้างอิงยอดศูนย์
   assert.equal(hq.base, 300);
   assert.equal(hq.vat, 21);
   assert.equal(hq.documentCount, 3);
@@ -264,7 +266,7 @@ test("the report lists what would make it incomplete", async () => {
   assert.equal(r.cancelled.length, 1);
 });
 
-test("a full invoice replacing last month's abbreviated invoice is flagged", async () => {
+test("a full invoice replacing last month's abbreviated invoice never moves or duplicates tax value", async () => {
   // ย้ายใบย่อที่ถูกแทนไปเดือนก่อน — สภาพของลูกค้าที่มาขอใบเต็มหลังสิ้นเดือน
   await query(
     `UPDATE bms_tax_documents SET issue_date = issue_date - interval '40 days'
@@ -272,9 +274,11 @@ test("a full invoice replacing last month's abbreviated invoice is flagged", asy
     [tenantId, orders.a3]
   );
   const r = await getSalesTaxReport(tenantId, period);
-  const flagged = r.exceptions.filter((x) => x.kind === "FULL_REPLACES_OTHER_MONTH");
-  assert.equal(flagged.length, 1);
-  assert.equal(flagged[0].orderId, orders.a3);
+  assert.equal(r.exceptionCounts.FULL_REPLACES_OTHER_MONTH, 0);
+  const full = r.rows.find((x) => x.kind === "FULL" && x.buyerTaxId === "0105555555554");
+  assert.ok(full);
+  assert.equal(full.base, 0);
+  assert.equal(full.vat, 0);
   // คืนสภาพ — เทสถัดไปนับเอกสารในงวดนี้
   await query(
     `UPDATE bms_tax_documents SET issue_date = issue_date + interval '40 days'
@@ -297,7 +301,7 @@ test("the document list filters by type, search and cancellation", async () => {
   const notes = await listTaxDocuments(tenantId, { ...period, docType: "CREDIT_NOTE" });
   assert.equal(notes.total, 1);
   assert.equal(notes.rows[0].total, -53.5);
-  const byBuyer = await listTaxDocuments(tenantId, { ...period, search: "0105500000017" });
+  const byBuyer = await listTaxDocuments(tenantId, { ...period, search: "0105555555554" });
   assert.equal(byBuyer.total, 1);
   assert.equal(byBuyer.rows[0].docType, "FULL");
   // % ในคำค้นต้องไม่กลายเป็น wildcard ที่คืนทุกแถว

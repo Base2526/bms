@@ -1186,6 +1186,25 @@ on the bill and on the receipt; it is not a discount and does not change the VAT
 screen reads the same setting through `/api/pos/session` and charges the rounded amount, so the
 amount it sends matches what the server computes — a mismatch would cancel the bill outright.
 
+Back-office tax reporting has three accountant-facing XLSX/CSV exports. `/admin/tax-documents`
+exports the sales-tax report and the goods/materials ledger; both include the operator identity and
+tax ID. The goods/materials workbook includes the actual voucher-by-voucher receipt, issue and
+running-balance ledger plus a reconciliation summary, and remains explicit that closing value uses
+current cost rather than FIFO or average cost. `/admin/expenses` exports one input-VAT month at a
+time from active tax invoices with positive VAT, using the recorded `vat_claim_month` as the filing
+period rather than the invoice or payment date. Export requires `report.view` plus the source-data permission (`tax.document.view` for sales
+tax, `expense.view` for input VAT), and generated-file history/download/email repeat both permission
+and branch-scope checks.
+
+An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
+buyer identity and issue a full invoice with `tax.document.issue`. The service still owns the
+decision: it accepts only an intact non-void completed sale, cancels the abbreviated invoice and
+creates the full invoice atomically, requires checksum-valid seller/buyer tax IDs and both addresses,
+and never rewrites an issued document. Seller identity is snapshotted on issue so a later profile edit
+cannot rewrite history. In the sales-tax report the original abbreviated value stays in its daily
+total and the replacing full invoice is a zero-value reference row. An unsent e-Tax queue row for a
+superseded or voided document is marked `CANCELLED` inside the same transaction.
+
 ## Product VAT category
 
 `7.88` added `bms_products.vat_category` (`V` taxable / `N` exempt / `UNKNOWN`) defaulting to

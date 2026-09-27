@@ -279,8 +279,9 @@ payee type, tax ID, payment date and rate. These reports support an accountant b
 file PP.30, PND.3 or PND.53. Tax-document lists, sales-tax summaries, stock-ledger exports and the
 generated tax-report files themselves respect `bms_user_allowed_locations`; checking only the
 requested filter is insufficient because an omitted filter otherwise means every branch. A
-`VAT_SALES` export also requires `tax.document.view` in addition to the report engine's ordinary
-`report.view`, and that extra gate is repeated when listing, downloading or emailing the file. The
+`VAT_SALES` export also requires `tax.document.view` and `VAT_PURCHASE` requires `expense.view` in
+addition to the report engine's ordinary `report.view`; those extra gates are repeated when listing,
+downloading or emailing the file. The
 generic `/api/files/[id]` route recognizes generated-report file ids and repeats these checks too;
 changing the URL must never bypass the dedicated report download route.
 
@@ -292,6 +293,23 @@ future (Bangkok time). Active supplier tax-invoice identity normalizes the docum
 upper-casing and removing whitespace/hyphens, and treats blank/`NULL` branch as head office
 `00000`; a `23505` is reported as an already-recorded invoice. The migration aborts rather than
 deleting evidence if existing rows collide after normalization.
+
+The generated `VAT_PURCHASE` workbook is one tax month at a time, follows `vat_claim_month` rather
+than document or payment date, and contains only active tax invoices with positive input VAT. The
+goods/materials workbook contains the actual voucher-by-voucher movement ledger (opening, receipt,
+issue and running balance) as well as the reconciliation summary; reservations, quarantine and lost
+transfers are not legal stock movements and never enter those columns. Both workbooks identify the
+operator and tax ID and retain the caller's branch scope in generated-file metadata so changing the
+download URL cannot widen access.
+
+When a full invoice replaces an abbreviated invoice, the abbreviated invoice remains in its original
+daily sales-tax total. The full invoice is an additional zero-value reference row naming the replaced
+number; moving the value to the full invoice or warning merely because the two issue dates cross a
+month would double-count or move the original sale. Issued documents snapshot seller identity as well
+as buyer and amounts. Full invoices require checksum-valid seller and buyer tax IDs plus both
+addresses, and their preview/print reads only the server-side document/order snapshot. Superseding or
+voiding an unsent document marks its e-Tax queue row `CANCELLED` in the same transaction; already-sent
+rows remain intact because an external recipient may already hold them.
 
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
 shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for

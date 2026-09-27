@@ -2,7 +2,7 @@
 
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Statistic, Switch, Table, Tag, message } from "antd";
-import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
+import { FileExcelOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs, { type Dayjs } from "dayjs";
 import { useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -16,6 +16,7 @@ const Q_LIST = gql`query ExpenseDocuments($input:BmsExpenseDocumentListInput!,$f
 }`;
 const M_CREATE = gql`mutation CreateExpense($input:BmsCreateExpenseDocumentInput!){ bmsCreateExpenseDocument(input:$input){ id } }`;
 const M_VOID = gql`mutation VoidExpense($id:ID!,$reason:String!){ bmsVoidExpenseDocument(id:$id,reason:$reason){ id status } }`;
+const M_GENERATE = gql`mutation GenerateInputVatReport($input:BmsGenerateReportInput!){ bmsGenerateReport(input:$input){ fileUrl } }`;
 
 const categories = ["INVENTORY","RENT","UTILITIES","INTERNET","ADVERTISING","TRANSPORT","REPAIRS","PROFESSIONAL_FEE","WAGES","OTHER"];
 const whtTypes = ["RENT","SERVICE","PROFESSIONAL","TRANSPORT","ADVERTISING","OTHER"];
@@ -24,7 +25,7 @@ const baht = (n:number) => Number(n ?? 0).toLocaleString("th-TH",{minimumFractio
 export default function ExpensesPage(){
   const { t } = useI18n();
   const { can, loading: permLoading } = useBmsPermissions();
-  const allowed = can("expense.view"), canManage = can("expense.manage");
+  const allowed = can("expense.view"), canManage = can("expense.manage"), canReport = can("report.view");
   const [month,setMonth] = useState<Dayjs>(dayjs().startOf("month"));
   const [locationId,setLocationId] = useState<string|undefined>();
   const [category,setCategory] = useState<string|undefined>();
@@ -39,6 +40,7 @@ export default function ExpensesPage(){
   const docs=useQuery(Q_LIST,{skip:!allowed,variables:vars,fetchPolicy:"cache-and-network"});
   const [createDoc,{loading:creating}]=useMutation(M_CREATE);
   const [voidDoc]=useMutation(M_VOID);
+  const [generateReport,{loading:generating}]=useMutation(M_GENERATE);
   const establishments=boot.data?.bmsExpenseEstablishments??[], suppliers=boot.data?.bmsExpenseSuppliers??[];
   const total=docs.data?.bmsExpenseTaxSummary?.grandTotal;
 
@@ -50,11 +52,13 @@ export default function ExpensesPage(){
     }catch(err:any){message.error(err?.message||t("admin_expenses.load_error"));}
   };
   const voidOne=async(id:string,reason:string)=>{try{await voidDoc({variables:{id,reason}});message.success(t("admin_expenses.void_done"));await docs.refetch();}catch(err:any){message.error(err?.message||t("admin_expenses.load_error"));}};
+  const exportInputVat=async()=>{try{const result=await generateReport({variables:{input:{reportType:"VAT_PURCHASE",format:"XLSX",dateFrom:from,dateTo:to,locationId:locationId??null,includeSummary:false}}});const url=result.data?.bmsGenerateReport?.fileUrl;if(url)window.open(url,"_blank");message.success(t("admin_expenses.export_done"));}catch(err:any){message.error(err?.message||t("admin_expenses.export_failed"));}};
   return <div>
     <AdminPageHeader title={t("admin_expenses.page_title")}>
       <DatePicker picker="month" allowClear={false} value={month} onChange={v=>v&&setMonth(v.startOf("month"))}/>
       <Select allowClear style={{width:230}} placeholder={t("admin_expenses.all_branches")} value={locationId} onChange={setLocationId} options={establishments.map((e:any)=>({value:e.locationId,label:`${e.isHeadOffice?"HQ":e.branchCode} · ${e.name}`}))}/>
       <Button icon={<ReloadOutlined/>} onClick={()=>void docs.refetch()}/>
+      {canReport&&<Button icon={<FileExcelOutlined/>} loading={generating} onClick={()=>void exportInputVat()}>{t("admin_expenses.export_input_vat")}</Button>}
       {canManage&&<Button type="primary" icon={<PlusOutlined/>} onClick={()=>{setCreateKey(crypto.randomUUID());setOpen(true);}}>{t("admin_expenses.add")}</Button>}
     </AdminPageHeader>
     <Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_expenses.intro")}/>

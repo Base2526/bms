@@ -542,7 +542,7 @@ const SALES_TAX_KIND_LABEL: Record<string, string> = {
 const SALES_TAX_EXCEPTION_LABEL: Record<string, string> = {
   PAID_WITHOUT_TAX_DOCUMENT: "ชำระแล้วแต่ไม่มีใบกำกับภาษี",
   RETURN_WITHOUT_CREDIT_NOTE: "รับคืนแล้วแต่ไม่มีใบลดหนี้",
-  FULL_REPLACES_OTHER_MONTH: "ใบเต็มออกแทนใบย่อของเดือนอื่น",
+  FULL_REPLACES_OTHER_MONTH: "ใบเต็มออกแทนใบย่อของเดือนอื่น (ข้อมูลเก่า)",
 };
 
 function establishmentLabel(e: { isHeadOffice: boolean; branchCode: string; name: string }): string {
@@ -674,6 +674,59 @@ export function buildSalesTaxReportDoc(
   };
 }
 
+// ---- รายงานภาษีซื้อ (ประกอบ ภ.พ.30) ----
+
+export function buildInputVatReportDoc(
+  report: import("./expenseDocuments").InputVatReport,
+  formatDate: (iso: string) => string
+): ReportDoc {
+  const byId = new Map(report.establishments.map((establishment) => [establishment.locationId, establishment]));
+  const place = (locationId: string) => {
+    const establishment = byId.get(locationId);
+    return establishment ? establishmentLabel(establishment) : "";
+  };
+  return {
+    title: "รายงานภาษีซื้อ",
+    subtitle: `${formatDate(report.period.from)} – ${formatDate(report.period.to)}`,
+    meta: [
+      { label: "ชื่อผู้ประกอบการ", value: report.buyer.name },
+      { label: "เลขประจำตัวผู้เสียภาษี", value: report.buyer.taxId ?? "(ยังไม่ได้ตั้งที่โปรไฟล์ร้าน)" },
+      { label: "จำนวนใบกำกับภาษี", value: String(report.totals.documentCount) },
+      { label: "มูลค่าสินค้าหรือบริการ", value: report.totals.amountBeforeVat.toFixed(2) },
+      { label: "ภาษีซื้อ", value: report.totals.vatAmount.toFixed(2) },
+      { label: "ยอดรวม", value: report.totals.totalAmount.toFixed(2) },
+      { label: "หมายเหตุ", value: "ใช้งวดตามเดือนที่บันทึกใช้สิทธิ์ภาษีซื้อ · รายงานนี้ไม่ใช่แบบ ภ.พ.30 และต้องให้นักบัญชีตรวจสอบ" },
+    ],
+    sheets: [{
+      name: "รายงานภาษีซื้อ",
+      columns: [
+        { key: "seq", label: "ลำดับ" },
+        { key: "documentDate", label: "วันที่" },
+        { key: "documentNo", label: "เลขที่ใบกำกับภาษี" },
+        { key: "payeeName", label: "ชื่อผู้ขายสินค้าหรือผู้ให้บริการ" },
+        { key: "payeeTaxId", label: "เลขประจำตัวผู้เสียภาษีผู้ขาย" },
+        { key: "payeeBranch", label: "สถานประกอบการผู้ขาย" },
+        { key: "buyerPlace", label: "สถานประกอบการผู้ซื้อ" },
+        { key: "amountBeforeVat", label: "มูลค่าสินค้าหรือบริการ" },
+        { key: "vatAmount", label: "ภาษีมูลค่าเพิ่ม" },
+        { key: "totalAmount", label: "รวม" },
+      ],
+      rows: report.rows.map((row, index) => ({
+        seq: index + 1,
+        documentDate: formatDate(row.documentDate),
+        documentNo: row.documentNo,
+        payeeName: row.payeeName,
+        payeeTaxId: row.payeeTaxId,
+        payeeBranch: row.payeeBranchCode === "00000" ? "สำนักงานใหญ่" : `สาขาที่ ${row.payeeBranchCode}`,
+        buyerPlace: place(row.locationId),
+        amountBeforeVat: row.amountBeforeVat,
+        vatAmount: row.vatAmount,
+        totalAmount: row.totalAmount,
+      })),
+    }],
+  };
+}
+
 // ---- รายงานสินค้าและวัตถุดิบ ----
 
 export function buildStockLedgerReportDoc(
@@ -686,12 +739,26 @@ export function buildStockLedgerReportDoc(
     if (!e) return "";
     return establishmentLabel(e);
   };
+  const movementLabel: Record<string, string> = {
+    OPENING: "ยอดยกมา",
+    STOCK_IN: "รับเข้า",
+    RETURN: "รับคืน",
+    TRANSFER_IN: "รับโอน",
+    COUNT_ADJUST: "ปรับจากการตรวจนับ",
+    SHIP: "ขาย/จ่ายออก",
+    STOCK_OUT: "ปรับลด",
+    TRANSFER_OUT: "โอนออก",
+    WASTAGE: "ของเสีย",
+  };
   return {
     title: "รายงานสินค้าและวัตถุดิบ",
     subtitle: `${formatDate(report.period.from)} – ${formatDate(report.period.to)}`,
     meta: [
+      { label: "ชื่อผู้ประกอบการ", value: report.seller.name },
+      { label: "เลขประจำตัวผู้เสียภาษี", value: report.seller.taxId ?? "(ยังไม่ได้ตั้งที่โปรไฟล์ร้าน)" },
       { label: "จำนวนรายการ", value: String(report.rows.length) },
       { label: "หน่วย", value: "หน่วยฐานของสินค้า (ชิ้น/กรัม ฯลฯ) ไม่ใช่หน่วยขาย" },
+      { label: "รูปแบบ", value: "แผ่นบัญชีเคลื่อนไหวแสดงใบสำคัญ วันที่ รับ จ่าย และคงเหลือ; แผ่นสรุปยอดใช้ตรวจสอบประกอบ" },
       {
         label: "มูลค่าคงเหลือโดยประมาณ",
         value: report.totalClosingValue == null
@@ -710,7 +777,33 @@ export function buildStockLedgerReportDoc(
     ],
     sheets: [
       {
-        name: "สินค้าและวัตถุดิบ",
+        name: "บัญชีเคลื่อนไหว",
+        columns: [
+          { key: "place", label: "สถานประกอบการ" },
+          { key: "sku", label: "รหัสสินค้า" },
+          { key: "productName", label: "ชื่อสินค้า/วัตถุดิบ" },
+          { key: "size", label: "ชนิด/ขนาด" },
+          { key: "unit", label: "ปริมาณนับเป็น" },
+          { key: "voucherNo", label: "เลขที่ใบสำคัญ" },
+          { key: "movementDate", label: "วัน/เดือน/ปี" },
+          { key: "received", label: "รับ" },
+          { key: "issued", label: "จ่าย" },
+          { key: "balance", label: "คงเหลือ" },
+          { key: "movementType", label: "ประเภท" },
+          { key: "note", label: "หมายเหตุ" },
+        ],
+        rows: report.movements.map((movement) => ({
+          ...movement,
+          place: place(movement.locationId),
+          movementDate: formatDate(movement.movementDate),
+          received: movement.received ?? "",
+          issued: movement.issued ?? "",
+          movementType: movementLabel[movement.movementType] ?? movement.movementType,
+          note: movement.note ?? "",
+        })),
+      },
+      {
+        name: "สรุปยอดสินค้า",
         columns: [
           { key: "place", label: "สถานประกอบการ" },
           { key: "sku", label: "รหัสสินค้า" },
@@ -785,17 +878,21 @@ function csvEscape(v: unknown): string {
 }
 
 /**
- * CSV has no multi-sheet concept, so every sheet is written into the same file
- * one after another, each preceded by a "# <sheet name>" marker line and
- * separated by a blank line — this used to only emit `doc.sheets[0]`, silently
- * dropping every other sheet (e.g. "Top products"/"By channel"/"By status" on
- * the Sales report) from CSV exports while XLSX/PDF were unaffected.
+ * CSV has no multi-sheet concept, so document identity/metadata is written first,
+ * then every sheet is written into the same file one after another. Each sheet is
+ * preceded by a "# <sheet name>" marker line and separated by a blank line. Keeping
+ * metadata here matters for statutory exports: the seller/buyer tax identity must
+ * not disappear merely because the accountant selected CSV instead of XLSX.
  */
 export function buildCsv(doc: ReportDoc): Buffer {
-  const lines: string[] = [];
+  const lines: string[] = [
+    ["ชื่อรายงาน", doc.title].map(csvEscape).join(","),
+    ["ช่วงเวลา", doc.subtitle].map(csvEscape).join(","),
+    ...doc.meta.map((m) => [m.label, m.value].map(csvEscape).join(",")),
+  ];
   for (const sheet of doc.sheets) {
     if (sheet.rows.length === 0) continue;
-    if (lines.length > 0) lines.push("");
+    lines.push("");
     lines.push(`# ${sheet.name}`);
     lines.push(sheet.columns.map((c) => csvEscape(c.label)).join(","));
     for (const row of sheet.rows) {
