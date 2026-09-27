@@ -77,6 +77,7 @@ import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscription
 import { sendStaffMessage } from "./inbox";
 import { reportBmsFailure } from "./failureAlert";
 import { normalizeReceiptPrefix } from "./taxDocumentNumber";
+import { cancelQueuedTaxDocumentInTx } from "./etax/queue";
 import {
   composeDiscounts,
   evaluatePointsEarn,
@@ -6368,12 +6369,21 @@ export async function processPosReturn(input: {
           WHERE tenant_id = $1 AND id = $2 AND voided_at IS NULL`,
         [input.tenantId, input.orderId, input.actorUserId, voidReason]
       );
-      await client.query(
+      const cancelledTaxDocuments = await client.query<{ id: string }>(
         `UPDATE bms_tax_documents
             SET cancelled_at = now(), cancelled_reason = $3
-          WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL`,
+          WHERE tenant_id = $1 AND order_id = $2 AND cancelled_at IS NULL
+          RETURNING id`,
         [input.tenantId, input.orderId, `ยกเลิกบิล: ${voidReason}`]
       );
+      for (const document of cancelledTaxDocuments.rows) {
+        await cancelQueuedTaxDocumentInTx(
+          client,
+          input.tenantId,
+          document.id,
+          "ยกเลิกก่อนนำส่ง: void บิลหน้าร้าน"
+        );
+      }
       // ครัวต้องหยุดทำอาหารของบิลที่ยกเลิกไปแล้ว — ตั๋วที่ค้างบนกระดานหลัง void
       // แปลว่าเงินคืนไปแล้วแต่ของยังถูกทำและถูกทิ้ง โดยไม่มีใครรู้ว่าทำไม
       await cancelKitchenTicketsForOrderInTx(client, input.tenantId, input.orderId);

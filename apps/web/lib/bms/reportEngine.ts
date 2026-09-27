@@ -23,6 +23,7 @@ import {
 } from "./reports";
 import { listLowStock } from "./products";
 import { getSalesTaxReport } from "./taxReports";
+import { getInputVatReport } from "./expenseDocuments";
 import { getStockLedger } from "./stockLedger";
 import { formatTaxDate } from "./taxReportMath";
 import { taxClockOf } from "./taxDocumentNumber";
@@ -42,6 +43,7 @@ import {
   buildOperationsReportDoc,
   buildSpecializedReportDoc,
   buildSalesTaxReportDoc,
+  buildInputVatReportDoc,
   buildStockLedgerReportDoc,
   buildXlsx,
   buildCsv,
@@ -61,12 +63,14 @@ export const REPORT_TYPES = [
   "SPECIALIZED",
   // รายงานภาษีขายรายสถานประกอบการ ประกอบ ภ.พ.30 (ดู taxReports.ts)
   "VAT_SALES",
+  // รายงานภาษีซื้อจากหลักฐานรายจ่าย ตามเดือนที่เลือกใช้สิทธิ์
+  "VAT_PURCHASE",
   // รายงานสินค้าและวัตถุดิบรายสถานประกอบการ (ดู stockLedger.ts)
   "STOCK_LEDGER",
 ] as const;
 
 /** รายงานที่หัวคอลัมน์/ข้อมูลเป็นภาษาไทยล้วน — pdfkit แสดงไม่ได้ (ดู documentGenerator.ts) */
-const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "STOCK_LEDGER"]);
+const THAI_ONLY_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER"]);
 
 /** เดือนปัจจุบันตามเวลาไทย — ค่าปริยายของรายงานภาษีที่ต้องมีช่วงวันที่เสมอ */
 function currentTaxMonth(): { from: string; to: string } {
@@ -157,6 +161,16 @@ async function collectReportDoc(
       });
       return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra));
     }
+    case "VAT_PURCHASE": {
+      const month = currentTaxMonth();
+      const report = await getInputVatReport(tenantId, {
+        from: dateFrom ?? month.from,
+        to: dateTo ?? month.to,
+        locationId,
+        allowedLocationIds,
+      });
+      return buildInputVatReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
+    }
     case "STOCK_LEDGER": {
       const month = currentTaxMonth();
       const report = await getStockLedger(tenantId, {
@@ -218,7 +232,7 @@ const FORMAT_MIME: Record<ReportFormat, string> = {
   PDF: "application/pdf",
 };
 const FORMAT_EXT: Record<ReportFormat, string> = { XLSX: "xlsx", CSV: "csv", PDF: "pdf" };
-const LOCATION_SENSITIVE_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "STOCK_LEDGER"]);
+const LOCATION_SENSITIVE_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER"]);
 
 function actorUserId(ctx: any): string | null {
   return ctx?.admin?.id == null ? null : String(ctx.admin.id);
@@ -231,17 +245,21 @@ async function allowedReportLocationIds(tenantId: string, ctx: any): Promise<str
   return (await listLocationsForUser(tenantId, userId)).map((location) => location.id);
 }
 
-async function canViewSalesTaxReport(ctx: any): Promise<boolean> {
+async function reportPermissionFlags(ctx: any): Promise<{ salesTax: boolean; purchaseTax: boolean }> {
   // งานระบบภายในที่ไม่มี admin context ใช้ service ได้ตามเดิม; ทุก HTTP/GraphQL/tool entry
   // point ส่ง ctx มาและต้องผ่านสิทธิ์จริง
-  if (!ctx) return true;
-  return (await loadPermissions(ctx)).has("tax.document.view");
+  if (!ctx) return { salesTax: true, purchaseTax: true };
+  const permissions = await loadPermissions(ctx);
+  return {
+    salesTax: permissions.has("tax.document.view"),
+    purchaseTax: permissions.has("expense.view"),
+  };
 }
 
-// รายงานภาษีสองชนิดมีข้อมูลรายสาขาที่ละเอียดกว่า report เดิม จึงห้ามผู้ใช้ที่ถูกจำกัด
+// รายงานภาษีและสต็อกมีข้อมูลรายสาขาที่ละเอียดกว่า report เดิม จึงห้ามผู้ใช้ที่ถูกจำกัด
 // สาขาเห็นไฟล์ all-branch/สาขาอื่นจาก history หรือเดา file id แล้วดาวน์โหลดตรง
 const GENERATED_REPORT_SCOPE_SQL = `(
-  report_type NOT IN ('VAT_SALES', 'STOCK_LEDGER')
+  report_type NOT IN ('VAT_SALES', 'VAT_PURCHASE', 'STOCK_LEDGER')
   OR $3::text[] IS NULL
   OR params->>'locationId' = ANY($3::text[])
   OR (
@@ -253,7 +271,10 @@ const GENERATED_REPORT_SCOPE_SQL = `(
     )
   )
 )`;
-const GENERATED_REPORT_PERMISSION_SQL = `(report_type <> 'VAT_SALES' OR $4::boolean)`;
+const GENERATED_REPORT_PERMISSION_SQL = `(
+  (report_type <> 'VAT_SALES' OR $4::boolean)
+  AND (report_type <> 'VAT_PURCHASE' OR $5::boolean)
+)`;
 
 export async function generateReport(
   tenantId: string,
@@ -271,6 +292,7 @@ export async function generateReport(
     throw new Error("รายงานนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังแสดงภาษาไทยไม่ได้)");
   }
   if (reportType === "VAT_SALES") await requirePermission(ctx, "tax.document.view");
+  if (reportType === "VAT_PURCHASE") await requirePermission(ctx, "expense.view");
 
   const allowedLocationIds = await allowedReportLocationIds(tenantId, ctx);
   if (locationId && allowedLocationIds && !allowedLocationIds.includes(locationId)) {
@@ -338,9 +360,9 @@ export async function generateReport(
 }
 
 export async function listGeneratedReports(tenantId: string, limit = 50, ctx?: any) {
-  const [allowedLocationIds, canViewSalesTax] = await Promise.all([
+  const [allowedLocationIds, permissionFlags] = await Promise.all([
     allowedReportLocationIds(tenantId, ctx),
-    canViewSalesTaxReport(ctx),
+    reportPermissionFlags(ctx),
   ]);
   const res = await query(
     `SELECT id, report_type, format, params, file_id, summary, generated_by, created_at
@@ -348,7 +370,7 @@ export async function listGeneratedReports(tenantId: string, limit = 50, ctx?: a
         AND ${GENERATED_REPORT_SCOPE_SQL}
         AND ${GENERATED_REPORT_PERMISSION_SQL}
       ORDER BY created_at DESC LIMIT $2`,
-    [tenantId, Math.min(Math.max(limit, 1), 200), allowedLocationIds, canViewSalesTax]
+    [tenantId, Math.min(Math.max(limit, 1), 200), allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax]
   );
   return res.rows.map((r: any) => ({
     id: r.id,
@@ -365,9 +387,9 @@ export async function listGeneratedReports(tenantId: string, limit = 50, ctx?: a
 
 /** ใช้โดย download route เพื่อยืนยันว่า fileId นี้เป็นของ tenant นี้จริง ก่อนจะเสิร์ฟไฟล์ */
 export async function findGeneratedReportByFileId(tenantId: string, fileId: number, ctx?: any) {
-  const [allowedLocationIds, canViewSalesTax] = await Promise.all([
+  const [allowedLocationIds, permissionFlags] = await Promise.all([
     allowedReportLocationIds(tenantId, ctx),
-    canViewSalesTaxReport(ctx),
+    reportPermissionFlags(ctx),
   ]);
   const res = await query(
     `SELECT id, tenant_id, file_id FROM bms_generated_reports
@@ -375,7 +397,7 @@ export async function findGeneratedReportByFileId(tenantId: string, fileId: numb
         AND ${GENERATED_REPORT_SCOPE_SQL}
         AND ${GENERATED_REPORT_PERMISSION_SQL}
       LIMIT 1`,
-    [tenantId, fileId, allowedLocationIds, canViewSalesTax]
+    [tenantId, fileId, allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax]
   );
   return res.rows[0] ?? null;
 }

@@ -21,10 +21,10 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type VatSettings } from "./vat";
+import { bahtText, computeVat, unresolvedVatSkus, type VatCategory, type VatRounding, type VatSettings } from "./vat";
 import { cashRoundingDelta, isCashRounding, type CashRounding } from "@/lib/pos/cashRounding";
 import { invalidateStoreProfileCache } from "./storeProfile";
-import { enqueueTaxDocument } from "./etax/queue";
+import { cancelQueuedTaxDocumentInTx, enqueueTaxDocument } from "./etax/queue";
 import {
   abbreviatedInvoicePrefix,
   buildTaxDocNo,
@@ -34,6 +34,7 @@ import {
   type TaxClock,
   type TaxDocLocation,
 } from "./taxDocumentNumber";
+import { isValidThaiTaxId } from "./thaiTaxId";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -54,6 +55,11 @@ export type TaxDocument = {
   buyerBranchCode: string | null;
   buyerAddress: string | null;
   buyerPhone: string | null;
+  sellerName: string | null;
+  sellerTaxId: string | null;
+  sellerBranchCode: string | null;
+  sellerAddress: string | null;
+  sellerPhone: string | null;
   taxableAmount: number;
   exemptAmount: number;
   vatAmount: number;
@@ -96,6 +102,11 @@ function mapDoc(r: any): TaxDocument {
     buyerBranchCode: r.buyer_branch_code ?? null,
     buyerAddress: r.buyer_address ?? null,
     buyerPhone: r.buyer_phone ?? null,
+    sellerName: r.seller_name ?? null,
+    sellerTaxId: r.seller_tax_id ?? null,
+    sellerBranchCode: r.seller_branch_code ?? null,
+    sellerAddress: r.seller_address ?? null,
+    sellerPhone: r.seller_phone ?? null,
     taxableAmount: Number(r.taxable_amount),
     exemptAmount: Number(r.exempt_amount),
     vatAmount: Number(r.vat_amount),
@@ -166,6 +177,29 @@ async function taxDocLocationInTx(
   const r = res.rows[0];
   // ไม่พบสาขา = ปล่อยรูปแบบเดิม ให้ FK ของ INSERT เป็นคนปฏิเสธ
   return { isHeadOffice: r?.is_head_office ?? true, branchCode: r?.branch_code ?? null };
+}
+
+async function taxDocumentSellerInTx(client: PoolClient, tenantId: string, locationId: string) {
+  const res = await client.query<{
+    name: string; tax_id: string | null; branch_code: string; address: string | null; phone: string | null;
+  }>(
+    `SELECT t.name, s.tax_id, l.branch_code,
+            COALESCE(NULLIF(btrim(l.address), ''), NULLIF(btrim(s.address), '')) AS address,
+            COALESCE(NULLIF(btrim(l.phone), ''), NULLIF(btrim(s.phone), '')) AS phone
+       FROM bms_tenants t
+       JOIN bms_locations l ON l.tenant_id = t.id AND l.id = $2
+       LEFT JOIN bms_store_profile s ON s.tenant_id = t.id
+      WHERE t.id = $1`,
+    [tenantId, locationId]
+  );
+  const row = res.rows[0];
+  return {
+    name: row?.name?.trim() || null,
+    taxId: row?.tax_id?.trim() || null,
+    branchCode: row?.branch_code?.trim() || null,
+    address: row?.address?.trim() || null,
+    phone: row?.phone?.trim() || null,
+  };
 }
 
 // ---------------------------------------------------------------
@@ -436,14 +470,17 @@ export async function issueAbbreviatedInvoiceInTx(
     : null;
 
   const docNo = buildTaxDocNo(prefix, clock, seq, settings.calendarEra);
+  const seller = await taxDocumentSellerInTx(client, tenantId, locationId);
 
   const res = await client.query(
     `INSERT INTO bms_tax_documents
        (tenant_id, location_id, order_id, device_id, doc_type, doc_no, issue_date,
+        seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
         taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
-     VALUES ($1, $2, $3, $4, 'ABBREVIATED', $5, $6::date, $7, $8, $9, $10, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, 'ABBREVIATED', $5, $6::date, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      RETURNING *`,
     [tenantId, locationId, orderId, deviceId, docNo, clock.isoDate,
+      seller.name, seller.taxId, seller.branchCode, seller.address, seller.phone,
       breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
       breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate, args.issuedBy ?? null]
   );
@@ -475,6 +512,7 @@ export type IssueFullResult =
   | { status: "VAT_CATEGORY_MISSING"; skus: string[] }
   | { status: "ORDER_NOT_FOUND" }
   | { status: "ORDER_NOT_INVOICEABLE"; reason: string }
+  | { status: "SELLER_INCOMPLETE"; reason: string }
   | { status: "BUYER_INCOMPLETE"; reason: string };
 
 /**
@@ -490,6 +528,16 @@ export async function issueFullTaxInvoice(args: {
   const { tenantId, orderId, buyer } = args;
   if (!buyer?.name?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุชื่อผู้ซื้อ" };
   if (!buyer?.taxId?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุเลขประจำตัวผู้เสียภาษี" };
+  if (!isValidThaiTaxId(buyer.taxId.trim())) {
+    return { status: "BUYER_INCOMPLETE", reason: "เลขประจำตัวผู้เสียภาษีผู้ซื้อต้องมี 13 หลักและ checksum ถูกต้อง" };
+  }
+  const buyerBranchCode = buyer.branchCode?.trim() || "00000";
+  if (!/^\d{5}$/.test(buyerBranchCode)) {
+    return { status: "BUYER_INCOMPLETE", reason: "รหัสสาขาผู้ซื้อต้องมี 5 หลัก (สำนักงานใหญ่ใช้ 00000)" };
+  }
+  if (!buyer.address?.trim()) {
+    return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุที่อยู่ผู้ซื้อสำหรับใบกำกับภาษีเต็มรูป" };
+  }
 
   const settings = await getVatSettings(tenantId);
   if (!settings.vatRegistered) return { status: "NOT_VAT_REGISTERED" };
@@ -532,6 +580,16 @@ export async function issueFullTaxInvoice(args: {
     }
     const locationId = ord.rows[0].location_id;
 
+    const sellerIdentity = await taxDocumentSellerInTx(client, tenantId, locationId);
+    if (!sellerIdentity.name || !sellerIdentity.address || !sellerIdentity.branchCode
+        || !sellerIdentity.taxId || !isValidThaiTaxId(sellerIdentity.taxId)) {
+      await client.query("ROLLBACK");
+      return {
+        status: "SELLER_INCOMPLETE",
+        reason: "กรุณาตั้งชื่อ ที่อยู่สถานประกอบการ และเลขผู้เสียภาษีของร้านที่ checksum ถูกต้องก่อนออกใบเต็ม",
+      };
+    }
+
     const already = await client.query(
       `SELECT * FROM bms_tax_documents
         WHERE tenant_id = $1 AND order_id = $2 AND doc_type = 'FULL' AND cancelled_at IS NULL`,
@@ -559,6 +617,14 @@ export async function issueFullTaxInvoice(args: {
       [tenantId, orderId]
     );
     const cancelled = abbr.rowCount ? mapDoc(abbr.rows[0]) : null;
+    if (cancelled) {
+      await cancelQueuedTaxDocumentInTx(
+        client,
+        tenantId,
+        cancelled.id,
+        "ยกเลิกก่อนนำส่ง: ออกใบกำกับภาษีเต็มรูปแทน"
+      );
+    }
 
     const clock = await taxClockInTx(client);
     const seq = await nextSequenceInTx(client, {
@@ -572,12 +638,16 @@ export async function issueFullTaxInvoice(args: {
       `INSERT INTO bms_tax_documents
          (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, replaces_document_id,
           buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+          seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
           taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
-       VALUES ($1, $2, $3, 'FULL', $4, $18::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+       VALUES ($1, $2, $3, 'FULL', $4, $23::date, $5, $6, $7, $8, $9, $10,
+               $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [tenantId, locationId, orderId, docNo, cancelled?.id ?? null,
-        buyer.name.trim(), buyer.taxId.trim(), buyer.branchCode ?? "00000",
-        buyer.address ?? null, buyer.phone ?? null,
+        buyer.name.trim(), buyer.taxId.trim(), buyerBranchCode,
+        buyer.address?.trim() || null, buyer.phone?.trim() || null,
+        sellerIdentity.name, sellerIdentity.taxId, sellerIdentity.branchCode,
+        sellerIdentity.address, sellerIdentity.phone,
         breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
         breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate,
         args.issuedBy ?? null, clock.isoDate]
@@ -740,14 +810,18 @@ export async function issueCreditNote(args: {
          (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, references_document_id,
           credit_reason, original_total,
           buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+          seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
           taxable_amount, exempt_amount, vat_amount, grand_total, vat_rate, issued_by)
-       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $19::date, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $24::date, $5, $6, $7, $8, $9, $10, $11, $12,
+               $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
        RETURNING *`,
       [tenantId, original.locationId, orderId, docNo, original.id,
         args.returnRef ? `${args.reason} [${args.returnRef}]` : args.reason,
         original.grandTotal,
         original.buyerName, original.buyerTaxId, original.buyerBranchCode,
         original.buyerAddress, original.buyerPhone,
+        original.sellerName, original.sellerTaxId, original.sellerBranchCode,
+        original.sellerAddress, original.sellerPhone,
         taxable, exempt, vat, amount, original.vatRate, args.issuedBy ?? null, clock.isoDate]
     );
 
@@ -779,4 +853,114 @@ export async function listTaxDocumentsForOrder(tenantId: string, orderId: string
 export async function getTaxDocument(tenantId: string, id: string): Promise<TaxDocument | null> {
   const res = await query(`SELECT * FROM bms_tax_documents WHERE tenant_id = $1 AND id = $2`, [tenantId, id]);
   return res.rowCount ? mapDoc(res.rows[0]) : null;
+}
+
+export type FullTaxInvoiceView = {
+  id: string;
+  orderId: string;
+  docNo: string;
+  issueDate: string;
+  seller: { name: string; taxId: string; branchCode: string; address: string; phone: string | null; locationName: string };
+  buyer: { name: string; taxId: string; branchCode: string; address: string; phone: string | null };
+  replacesDocNo: string | null;
+  lines: Array<{ sku: string; name: string; size: string; qty: number; unit: string; unitPrice: number; amount: number }>;
+  subtotal: number;
+  discount: number;
+  shipping: number;
+  netBeforeVat: number;
+  exemptAmount: number;
+  vatAmount: number;
+  vatRate: number;
+  roundingAmount: number;
+  grandTotal: number;
+  amountText: string;
+};
+
+/** ข้อมูลสำหรับ preview/print ใบเต็ม อ่านจาก snapshot ของบิลและเอกสารฝั่ง server เท่านั้น */
+export async function getFullTaxInvoiceView(
+  tenantId: string,
+  documentId: string,
+  allowedLocationIds?: string[] | null
+): Promise<FullTaxInvoiceView | null> {
+  const res = await query<any>(
+    `SELECT d.*, prev.doc_no AS replaces_doc_no,
+            COALESCE(d.seller_name, t.name) AS seller_name,
+            COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
+            COALESCE(d.seller_address, NULLIF(btrim(l.address), ''), NULLIF(btrim(s.address), '')) AS seller_address,
+            COALESCE(d.seller_phone, NULLIF(btrim(l.phone), ''), NULLIF(btrim(s.phone), '')) AS seller_phone,
+            l.name AS location_name, l.branch_code,
+            o.discount_amount, o.shipping_fee
+       FROM bms_tax_documents d
+       JOIN bms_tenants t ON t.id = d.tenant_id
+       JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
+       JOIN bms_orders o ON o.tenant_id = d.tenant_id AND o.id = d.order_id
+       LEFT JOIN bms_store_profile s ON s.tenant_id = d.tenant_id
+       LEFT JOIN bms_tax_documents prev
+              ON prev.tenant_id = d.tenant_id AND prev.id = d.replaces_document_id
+      WHERE d.tenant_id = $1 AND d.id = $2 AND d.doc_type = 'FULL'
+        AND ($3::uuid[] IS NULL OR d.location_id = ANY($3::uuid[]))`,
+    [tenantId, documentId, allowedLocationIds ?? null]
+  );
+  const d = res.rows[0];
+  if (!d) return null;
+  const items = await query<any>(
+    `SELECT oi.product_sku, oi.size, oi.qty, oi.line_amount, oi.pack_qty, oi.pack_unit_name,
+            COALESCE(NULLIF(oi.receipt_name, ''), NULLIF(oi.product_name, ''), p.name, oi.product_sku) AS item_name
+       FROM bms_order_items oi
+       LEFT JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
+      WHERE oi.tenant_id = $1 AND oi.order_id = $2
+      ORDER BY oi.id`,
+    [tenantId, d.order_id]
+  );
+  const lines = items.rows.map((row: any) => {
+    const qty = Number(row.pack_qty ?? row.qty);
+    const amount = Number(row.line_amount);
+    return {
+      sku: row.product_sku,
+      name: row.item_name,
+      size: row.size,
+      qty,
+      unit: row.pack_unit_name ?? "หน่วย",
+      unitPrice: qty === 0 ? 0 : Math.round((amount / qty) * 100) / 100,
+      amount,
+    };
+  });
+  const subtotal = Math.round(lines.reduce((sum: number, line: any) => sum + line.amount, 0) * 100) / 100;
+  const taxableAmount = Number(d.taxable_amount);
+  const exemptAmount = Number(d.exempt_amount);
+  const vatAmount = Number(d.vat_amount);
+  const grandTotal = Number(d.grand_total);
+  return {
+    id: d.id,
+    orderId: d.order_id,
+    docNo: d.doc_no,
+    issueDate: toDate(d.issue_date),
+    seller: {
+      name: d.seller_name ?? "",
+      taxId: d.seller_tax_id ?? "",
+      branchCode: d.seller_branch_code ?? d.branch_code ?? "00000",
+      address: d.seller_address ?? "",
+      phone: d.seller_phone ?? null,
+      locationName: d.location_name ?? "",
+    },
+    buyer: {
+      name: d.buyer_name ?? "",
+      taxId: d.buyer_tax_id ?? "",
+      branchCode: d.buyer_branch_code ?? "00000",
+      address: d.buyer_address ?? "",
+      phone: d.buyer_phone ?? null,
+    },
+    replacesDocNo: d.replaces_doc_no ?? null,
+    lines,
+    subtotal,
+    discount: Number(d.discount_amount ?? 0),
+    shipping: Number(d.shipping_fee ?? 0),
+    netBeforeVat: Math.round((taxableAmount - vatAmount + exemptAmount) * 100) / 100,
+    exemptAmount,
+    vatAmount,
+    vatRate: Number(d.vat_rate),
+    roundingAmount: Number(d.rounding_amount),
+    grandTotal,
+    amountText: bahtText(grandTotal),
+  };
 }

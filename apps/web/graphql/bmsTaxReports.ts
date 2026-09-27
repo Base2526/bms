@@ -14,6 +14,7 @@ import {
   listTaxDocuments,
   type TaxDocumentListFilter,
 } from "@/lib/bms/taxReports";
+import { getFullTaxInvoiceView } from "@/lib/bms/taxDocuments";
 
 function badInput(err: unknown, fallback: string): never {
   throw new GraphQLError(err instanceof Error && err.message ? err.message : fallback, {
@@ -64,6 +65,46 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
   type BmsTaxDocumentList {
     total: Int!
     rows: [BmsTaxDocumentListRow!]!
+  }
+
+  type BmsFullTaxInvoiceParty {
+    name: String!
+    taxId: String!
+    branchCode: String!
+    address: String!
+    phone: String
+    locationName: String
+  }
+
+  type BmsFullTaxInvoiceLine {
+    sku: String!
+    name: String!
+    size: String!
+    qty: Float!
+    unit: String!
+    unitPrice: Float!
+    amount: Float!
+  }
+
+  type BmsFullTaxInvoiceView {
+    id: ID!
+    orderId: ID!
+    docNo: String!
+    issueDate: String!
+    seller: BmsFullTaxInvoiceParty!
+    buyer: BmsFullTaxInvoiceParty!
+    replacesDocNo: String
+    lines: [BmsFullTaxInvoiceLine!]!
+    subtotal: Float!
+    discount: Float!
+    shipping: Float!
+    netBeforeVat: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    vatRate: Float!
+    roundingAmount: Float!
+    grandTotal: Float!
+    amountText: String!
   }
 
   input BmsSalesTaxReportInput {
@@ -132,6 +173,7 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     # รายชื่อสถานประกอบการสำหรับตัวกรอง — bmsLocations ต้องมี product.view ซึ่งผู้ดูภาษีอาจไม่มี
     bmsTaxEstablishments: [BmsTaxEstablishment!]!
     bmsTaxDocumentList(input: BmsTaxDocumentListInput!): BmsTaxDocumentList!
+    bmsFullTaxInvoiceView(documentId: ID!): BmsFullTaxInvoiceView
     bmsSalesTaxReport(input: BmsSalesTaxReportInput!): BmsSalesTaxReportSummary!
   }
 `;
@@ -163,6 +205,15 @@ export const bmsTaxReportsResolvers = {
       } catch (err) {
         badInput(err, "อ่านรายการใบกำกับไม่สำเร็จ");
       }
+    },
+    async bmsFullTaxInvoiceView(_p: unknown, args: { documentId: string }, ctx: any) {
+      await requirePermission(ctx, "tax.document.view");
+      const locations = await taxLocationScope(ctx);
+      return getFullTaxInvoiceView(
+        getTenantId(ctx),
+        args.documentId,
+        locations.map((location) => location.id)
+      );
     },
     async bmsSalesTaxReport(
       _p: unknown,

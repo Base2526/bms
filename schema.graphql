@@ -1214,6 +1214,46 @@ type BmsFulfillmentReport {
   shipmentCount: Int!
 }
 
+type BmsFullTaxInvoiceLine {
+  amount: Float!
+  name: String!
+  qty: Float!
+  size: String!
+  sku: String!
+  unit: String!
+  unitPrice: Float!
+}
+
+type BmsFullTaxInvoiceParty {
+  address: String!
+  branchCode: String!
+  locationName: String
+  name: String!
+  phone: String
+  taxId: String!
+}
+
+type BmsFullTaxInvoiceView {
+  amountText: String!
+  buyer: BmsFullTaxInvoiceParty!
+  discount: Float!
+  docNo: String!
+  exemptAmount: Float!
+  grandTotal: Float!
+  id: ID!
+  issueDate: String!
+  lines: [BmsFullTaxInvoiceLine!]!
+  netBeforeVat: Float!
+  orderId: ID!
+  replacesDocNo: String
+  roundingAmount: Float!
+  seller: BmsFullTaxInvoiceParty!
+  shipping: Float!
+  subtotal: Float!
+  vatAmount: Float!
+  vatRate: Float!
+}
+
 input BmsGenerateReportInput {
   dateFrom: String
   dateTo: String
@@ -6692,6 +6732,11 @@ type BmsTaxDocument {
   orderId: ID!
   replacesDocumentId: ID
   roundingAmount: Float!
+  sellerAddress: String
+  sellerBranchCode: String
+  sellerName: String
+  sellerPhone: String
+  sellerTaxId: String
   taxableAmount: Float!
   vatAmount: Float!
   vatRate: Float!
@@ -7903,6 +7948,7 @@ type Query {
   bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
   bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
   bmsFollowupRules: [BmsFollowupRule!]!
+  bmsFullTaxInvoiceView(documentId: ID!): BmsFullTaxInvoiceView
   bmsGenerateInvoice(orderId: ID!): BmsBusinessDoc
   bmsGeneratedReports(limit: Int): [BmsGeneratedReport!]!
   bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!

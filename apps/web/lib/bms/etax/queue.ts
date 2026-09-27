@@ -7,6 +7,7 @@
 //   PENDING → BUILT → SIGNED → SENT → ACCEPTED
 //                                  └→ REJECTED   (ปลายทางไม่รับ — ต้องแก้เอกสาร)
 //   ล้มระหว่างทาง → FAILED + นับครั้ง + เลื่อนเวลาลองใหม่แบบถอยเพิ่มขึ้น
+//   เอกสารถูกยกเลิกก่อนส่ง → CANCELLED (เก็บ payload/ประวัติไว้ แต่ไม่หยิบส่งอีก)
 //
 // ทำไมไม่ส่งทันทีตอนขาย: เครื่องหน้าร้านต้องขายต่อได้แม้ RD ล่ม การนำส่งเป็น
 // งานเบื้องหลังที่ยอมช้าได้ แต่ยอมหายไม่ได้
@@ -21,7 +22,7 @@ import { buildEtaxXml, validateEtaxDocument } from "./xml";
 
 const MAX_ATTEMPTS = 6;
 
-export type EtaxStatus = "PENDING" | "BUILT" | "SIGNED" | "SENT" | "ACCEPTED" | "REJECTED" | "FAILED";
+export type EtaxStatus = "PENDING" | "BUILT" | "SIGNED" | "SENT" | "ACCEPTED" | "REJECTED" | "FAILED" | "CANCELLED";
 
 export type EtaxSubmission = {
   id: string;
@@ -89,16 +90,40 @@ export async function enqueueTaxDocument(
   else await query(sql, [tenantId, documentId]);
 }
 
+/**
+ * Stop an unsent e-Tax job when its tax document is superseded in the same
+ * transaction. Keep the row and generated payload as an audit trail; documents
+ * that have reached SENT/ACCEPTED are deliberately left alone because an
+ * external recipient may already have received them.
+ */
+export async function cancelQueuedTaxDocumentInTx(
+  client: PoolClient,
+  tenantId: string,
+  documentId: string,
+  reason: string
+): Promise<void> {
+  await client.query(
+    `UPDATE bms_etax_submissions
+        SET status = 'CANCELLED', last_error = $3, next_attempt_at = NULL,
+            settled_at = now(), updated_at = now()
+      WHERE tenant_id = $1 AND document_id = $2
+        AND status IN ('PENDING', 'BUILT', 'SIGNED', 'FAILED')`,
+    [tenantId, documentId, reason]
+  );
+}
+
 /** ดึงข้อมูลเอกสาร + รายการ มาประกอบ XML */
 async function loadDocumentData(tenantId: string, documentId: string): Promise<EtaxDocumentData | null> {
   const res = await query<any>(
     `SELECT d.id, d.doc_type, d.doc_no, d.issue_date::text AS issue_date, d.order_id,
             d.buyer_name, d.buyer_tax_id, d.buyer_branch_code, d.buyer_address,
-            d.taxable_amount, d.exempt_amount, d.vat_amount, d.vat_rate, d.grand_total,
+            d.taxable_amount, d.exempt_amount, d.vat_amount, d.vat_rate, d.rounding_amount, d.grand_total,
             prev.doc_no AS replaces_doc_no,
             -- ชื่อผู้ประกอบการคือ bms_tenants.name · store_name เลิกใช้ตั้งแต่ 7.17
-            COALESCE(NULLIF(btrim(t.name), ''), s.store_name) AS seller_name,
-            s.tax_id AS seller_tax_id, s.address AS seller_address,
+            COALESCE(d.seller_name, NULLIF(btrim(t.name), ''), s.store_name) AS seller_name,
+            COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
+            COALESCE(d.seller_address, l.address, s.address) AS seller_address,
+            COALESCE(d.seller_branch_code, l.branch_code) AS seller_branch_code,
             s.etax_operator_id,
             l.branch_code
        FROM bms_tax_documents d
@@ -129,7 +154,7 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
     seller: {
       name: d.seller_name ?? "",
       taxId: d.seller_tax_id ?? "",
-      branchCode: d.branch_code ?? "00000",
+      branchCode: d.seller_branch_code ?? d.branch_code ?? "00000",
       address: d.seller_address ?? null,
     },
     buyer: {
@@ -152,6 +177,7 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
     exemptAmount: Number(d.exempt_amount),
     vatAmount: Number(d.vat_amount),
     vatRate: Number(d.vat_rate),
+    roundingAmount: Number(d.rounding_amount),
     grandTotal: Number(d.grand_total),
     replacesDocNo: d.replaces_doc_no ?? null,
   };
@@ -180,12 +206,16 @@ export async function processEtaxQueue(tenantId: string, limit = 20): Promise<Pr
     try {
       await beginTenantTx(client, tenantId);
       const claim = await client.query<{ id: string; document_id: string; attempts: number }>(
-        `SELECT id, document_id, attempts FROM bms_etax_submissions
-          WHERE tenant_id = $1
-            AND status IN ('PENDING', 'BUILT', 'SIGNED', 'FAILED')
-            AND attempts < $2
-            AND (next_attempt_at IS NULL OR next_attempt_at <= now())
-          ORDER BY created_at
+        `SELECT s.id, s.document_id, s.attempts
+           FROM bms_etax_submissions s
+           JOIN bms_tax_documents d
+             ON d.tenant_id = s.tenant_id AND d.id = s.document_id
+          WHERE s.tenant_id = $1
+            AND s.status IN ('PENDING', 'BUILT', 'SIGNED', 'FAILED')
+            AND d.cancelled_at IS NULL
+            AND s.attempts < $2
+            AND (s.next_attempt_at IS NULL OR s.next_attempt_at <= now())
+          ORDER BY s.created_at
           LIMIT 1
           FOR UPDATE SKIP LOCKED`,
         [tenantId, MAX_ATTEMPTS]

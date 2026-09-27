@@ -160,8 +160,10 @@ ${taxBlocks}
 export function validateEtaxDocument(doc: EtaxDocumentData): string[] {
   const errors: string[] = [];
   if (!doc.docNo?.trim()) errors.push("ไม่มีเลขที่เอกสาร");
+  if (!doc.seller.name?.trim()) errors.push("ไม่มีชื่อผู้ขาย");
   if (!doc.seller.taxId?.trim()) errors.push("ร้านยังไม่ได้ตั้งเลขประจำตัวผู้เสียภาษี");
   if (!doc.seller.branchCode?.trim()) errors.push("ร้านยังไม่ได้ตั้งรหัสสาขา (ภ.พ.20)");
+  if (!doc.seller.address?.trim()) errors.push("ร้านยังไม่ได้ตั้งที่อยู่สถานประกอบการ");
   if (doc.lines.length === 0) errors.push("เอกสารไม่มีรายการสินค้า");
   if (doc.lines.some((l) => l.vatCategory === "UNKNOWN")) {
     errors.push("มีสินค้าที่ยังไม่ระบุประเภท VAT");
@@ -170,8 +172,9 @@ export function validateEtaxDocument(doc: EtaxDocumentData): string[] {
   if (doc.docType === "FULL") {
     if (!doc.buyer.name?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีชื่อผู้ซื้อ");
     if (!doc.buyer.taxId?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีเลขประจำตัวผู้เสียภาษีผู้ซื้อ");
+    if (!doc.buyer.address?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีที่อยู่ผู้ซื้อ");
   }
-  const sum = Math.round((doc.taxableAmount + doc.exemptAmount) * 100) / 100;
+  const sum = Math.round((doc.taxableAmount + doc.exemptAmount + doc.roundingAmount) * 100) / 100;
   const total = Math.round(doc.grandTotal * 100) / 100;
   if (Math.abs(sum - total) > 0.01) {
     errors.push(`ยอดไม่สมดุล: กลุ่มภาษี ${sum} ไม่เท่ากับยอดรวม ${total}`);

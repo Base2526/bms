@@ -41,8 +41,12 @@ function ReportGeneratorCard({ from, to, locationId, archetype }: { from: string
     { value: "OPERATIONS", label: t("admin_reports.report_type_operations") },
     { value: "SPECIALIZED", label: t("admin_reports.report_type_specialized", { archetype: localizedShopArchetypeLabel(archetype, t) }) },
     { value: "VAT_SALES", label: t("admin_reports.report_type_vat_sales") },
+    { value: "VAT_PURCHASE", label: t("admin_reports.report_type_vat_purchase") },
     { value: "STOCK_LEDGER", label: t("admin_reports.report_type_stock_ledger") },
-  ].filter((option) => option.value !== "VAT_SALES" || can("tax.document.view"));
+  ].filter((option) =>
+    (option.value !== "VAT_SALES" || can("tax.document.view"))
+    && (option.value !== "VAT_PURCHASE" || can("expense.view"))
+  );
   const FORMAT_OPTIONS = [
     { value: "XLSX", label: t("admin_reports.format_xlsx") },
     { value: "CSV", label: t("admin_reports.format_csv") },

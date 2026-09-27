@@ -364,7 +364,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "expense.documents", module: "expense",
     title: both("เอกสารรายจ่ายและภาษีซื้อ", "Expense documents and input VAT"),
-    description: both("บันทึกหลักฐานรายจ่าย ภาษีซื้อ และภาษีหัก ณ ที่จ่ายรายสถานประกอบการ", "Record expense evidence, input VAT and withholding tax per establishment."),
+    description: both("บันทึกหลักฐานรายจ่าย ภาษีซื้อ และภาษีหัก ณ ที่จ่ายรายสถานประกอบการ พร้อมส่งออกรายงานภาษีซื้อ", "Record expense evidence, input VAT and withholding tax per establishment, with an input-VAT export."),
     aliases: aliases(["รายจ่าย", "ภาษีซื้อ", "หัก ณ ที่จ่าย", "ภงด 3", "ภงด 53"], ["expenses", "input VAT", "withholding tax", "PND 3", "PND 53"]),
     status: "AVAILABLE", route: "/admin/expenses", requiredPermissions: ["expense.view"],
     configurationDependencies: [],

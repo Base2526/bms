@@ -155,6 +155,13 @@ test("the period shows opening, every kind of in/out, and a closing equal to sto
   );
   assert.equal(a.closing, onHand.rows[0].current_stock);
   assert.equal(a.closingValue, 660);
+  const movementRows = r.movements.filter((x) => x.locationId === mainId && x.sku === SKU_A);
+  assert.equal(movementRows[0].voucherNo, "ยอดยกมา");
+  assert.equal(movementRows[0].balance, 15);
+  assert.equal(movementRows.at(-1)?.balance, 22);
+  assert.ok(movementRows.some((x) => x.voucherNo === "PO:new00000" && x.received === 20));
+  assert.ok(movementRows.some((x) => x.issued === 7));
+  assert.ok(!movementRows.some((x) => x.movementType === "RESERVE" || x.movementType === "TRANSFER_LOST"));
 });
 
 test("each establishment keeps its own rows", async () => {
@@ -184,8 +191,13 @@ test("a past period closes at what was on hand then, not today", async () => {
 test("the XLSX export is numeric and Thai-labelled", async () => {
   const r = await getStockLedger(tenantId, { from: daysAgo(10), to: today });
   const wb = XLSX.read(buildXlsx(buildStockLedgerReportDoc(r, (d) => d)), { type: "buffer" });
-  assert.deepEqual(wb.SheetNames, ["Summary", "สินค้าและวัตถุดิบ"]);
-  const rows = XLSX.utils.sheet_to_json<any>(wb.Sheets["สินค้าและวัตถุดิบ"]);
+  assert.deepEqual(wb.SheetNames, ["Summary", "บัญชีเคลื่อนไหว", "สรุปยอดสินค้า"]);
+  const summary = XLSX.utils.sheet_to_json<any>(wb.Sheets.Summary);
+  assert.ok(summary.some((row) => row.Field === "ชื่อผู้ประกอบการ" && row.Value === `FAKE ${TAG}`));
+  assert.ok(summary.some((row) => row.Field === "เลขประจำตัวผู้เสียภาษี"));
+  const ledger = XLSX.utils.sheet_to_json<any>(wb.Sheets["บัญชีเคลื่อนไหว"]);
+  assert.ok(ledger.some((x) => x["เลขที่ใบสำคัญ"] === "PO:new00000" && x["รับ"] === 20));
+  const rows = XLSX.utils.sheet_to_json<any>(wb.Sheets["สรุปยอดสินค้า"]);
   const a = rows.find((x) => x["รหัสสินค้า"] === SKU_A && x["สถานประกอบการ"].startsWith("สำนักงานใหญ่"));
   assert.equal(a["คงเหลือ"], 22);
   assert.equal(a["ในยอดยกมา: ไม่มีหลักฐาน"], 5);

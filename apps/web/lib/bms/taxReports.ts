@@ -7,14 +7,16 @@
 //
 // กติกาการนับ:
 //  - แบ่งงวดด้วย issue_date (วันที่ไทย ดู 10.8) ไม่ใช่ issued_at แบบ UTC
-//  - ใบกำกับเต็มรูป: หนึ่งแถวต่อหนึ่งใบ
+//  - ใบกำกับเต็มรูปทั่วไป: หนึ่งแถวต่อหนึ่งใบ
+//  - ใบเต็มที่ออกแทนใบย่อ: แสดงเป็นแถวอ้างอิงยอดศูนย์ ส่วนยอดยังอยู่ในสรุปใบย่อเดิม
+//    ตามประกาศอธิบดีฯ ฉบับที่ 89 เพื่อไม่ย้าย/นับยอดซ้ำเมื่อออกใบเต็มคนละเดือน
 //  - ใบกำกับอย่างย่อ: สรุปรวมรายวัน ต่อเครื่อง เป็นช่วงเลขที่ (เลขแรก–เลขสุดท้าย)
 //  - ใบลดหนี้: หนึ่งแถวต่อหนึ่งใบ เป็นยอดลบ อ้างอิงเลขใบกำกับเดิม
 //  - ใบที่ถูกยกเลิกไม่นับยอด แต่แยกไว้ในรายการของตัวเอง
 //
 // ⚠️ รายงานนี้ไม่ใช่การยื่นภาษี และไม่ได้ตัดสินแทนนักบัญชี · ส่วน "ต้องตรวจสอบ" มีไว้
-// บอกสิ่งที่ระบบรู้ว่าอาจทำให้ยอดไม่ครบ (บิลที่ชำระแล้วแต่ไม่มีใบกำกับ, คืนของที่ไม่มี
-// ใบลดหนี้, ใบเต็มที่ออกแทนใบย่อข้ามเดือน) — ห้ามซ่อนหรือปัดทิ้ง
+// บอกสิ่งที่ระบบรู้ว่าอาจทำให้ยอดไม่ครบ (บิลที่ชำระแล้วแต่ไม่มีใบกำกับ และคืนของที่ไม่มี
+// ใบลดหนี้) — ห้ามซ่อนหรือปัดทิ้ง
 // =============================================================
 
 import { query } from "@/lib/db";
@@ -23,7 +25,6 @@ import {
   assertTaxPeriod,
   sumTaxAmounts,
   taxAmountsOf,
-  taxMonthOf,
   type TaxAmounts,
   type TaxDocKind,
 } from "./taxReportMath";
@@ -184,7 +185,7 @@ export type SalesTaxRow = TaxAmounts & {
   deviceCode: string | null;
   docNoFrom: string;
   docNoTo: string;
-  /** จำนวนใบที่นับยอด (ใบย่อที่ถูกยกเลิกไม่นับ) */
+  /** จำนวนใบที่นับยอด (ใบย่อที่ออกใบเต็มแทนยังนับยอดเดิม; การยกเลิกชนิดอื่นไม่นับ) */
   docCount: number;
   /** ใบย่อในช่วงเลขนี้ที่ถูกยกเลิก (ส่วนใหญ่ออกใบเต็มแทน) */
   cancelledCount: number;
@@ -252,6 +253,8 @@ type DocRow = {
   buyer_tax_id: string | null;
   buyer_branch_code: string | null;
   reference_doc_no: string | null;
+  replaces_document_id: string | null;
+  active_replacement_doc_no: string | null;
   taxable_amount: string;
   exempt_amount: string;
   vat_amount: string;
@@ -297,13 +300,24 @@ export async function getSalesTaxReport(
     query<DocRow>(
       `SELECT d.doc_type, d.location_id, l.branch_code, d.device_id, dev.code AS device_code,
               d.doc_no, d.issue_date::text AS issue_date, d.issued_at, d.cancelled_at, d.cancelled_reason,
-              d.buyer_name, d.buyer_tax_id, d.buyer_branch_code,
-              ref.doc_no AS reference_doc_no,
+              d.buyer_name, d.buyer_tax_id, d.buyer_branch_code, d.replaces_document_id,
+              ref.doc_no AS reference_doc_no, replacement.doc_no AS active_replacement_doc_no,
               d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount, d.grand_total
          FROM bms_tax_documents d
          JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
          LEFT JOIN bms_pos_devices dev ON dev.tenant_id = d.tenant_id AND dev.id = d.device_id
-         LEFT JOIN bms_tax_documents ref ON ref.tenant_id = d.tenant_id AND ref.id = d.references_document_id
+         LEFT JOIN bms_tax_documents ref
+                ON ref.tenant_id = d.tenant_id
+               AND ref.id = COALESCE(d.references_document_id, d.replaces_document_id)
+         LEFT JOIN LATERAL (
+           SELECT full_doc.doc_no
+             FROM bms_tax_documents full_doc
+            WHERE full_doc.tenant_id = d.tenant_id
+              AND full_doc.replaces_document_id = d.id
+              AND full_doc.doc_type = 'FULL' AND full_doc.cancelled_at IS NULL
+            ORDER BY full_doc.issued_at, full_doc.id
+            LIMIT 1
+         ) replacement ON TRUE
         WHERE d.tenant_id = $1
           AND d.issue_date BETWEEN $2::date AND $3::date
           AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
@@ -372,7 +386,10 @@ export async function getSalesTaxReport(
       g.row.docNoTo = r.doc_no;
       if (r.cancelled_at) {
         g.row.cancelledCount += 1;
-      } else {
+      }
+      // การออกใบเต็มแทนใบย่อไม่กลับยอดขายเดิมในรายงานภาษีขาย ใบเต็มจะถูกลง
+      // เพิ่มอีกแถวโดยไม่ลงมูลค่า/VAT ส่วนการยกเลิกชนิดอื่นจึงค่อยตัดยอดออกจริง
+      if (!r.cancelled_at || r.active_replacement_doc_no) {
         g.row.docCount += 1;
         g.amounts.push(amountsOfRow(r));
       }
@@ -380,6 +397,7 @@ export async function getSalesTaxReport(
     }
 
     if (r.cancelled_at) continue;
+    const replacesAbbreviated = r.doc_type === "FULL" && Boolean(r.replaces_document_id);
     rows.push({
       kind: r.doc_type === "FULL" ? "FULL" : "CREDIT_NOTE",
       issueDate: r.issue_date,
@@ -388,13 +406,15 @@ export async function getSalesTaxReport(
       deviceCode: r.device_code,
       docNoFrom: r.doc_no,
       docNoTo: r.doc_no,
-      docCount: 1,
+      docCount: replacesAbbreviated ? 0 : 1,
       cancelledCount: 0,
       buyerName: r.buyer_name,
       buyerTaxId: r.buyer_tax_id,
       buyerBranchCode: r.buyer_branch_code,
       referenceDocNo: r.reference_doc_no,
-      ...amountsOfRow(r),
+      ...(replacesAbbreviated
+        ? { base: 0, exempt: 0, vat: 0, total: 0, rounding: 0 }
+        : amountsOfRow(r)),
     });
   }
   for (const g of abbrGroups.values()) Object.assign(g.row, sumTaxAmounts(g.amounts));
@@ -520,35 +540,8 @@ export async function getSalesTaxReport(
     }
   }
 
-  // ใบเต็มในงวดนี้ที่ออกแทนใบย่อของเดือนอื่น — ใบย่อนั้นอาจถูกรายงานไปแล้วในงวดก่อน
-  // แล้วตอนนี้ถูกยกเลิก ยอดของสองงวดจึงต้องให้นักบัญชีตัดสินว่าจะปรับยังไง
-  const replaced = await query<any>(
-    `SELECT d.order_id, d.location_id, d.doc_no, d.issue_date::text AS issue_date, d.grand_total,
-            a.doc_no AS abbr_doc_no, a.issue_date::text AS abbr_issue_date,
-            count(*) OVER () AS total_count
-       FROM bms_tax_documents d
-       JOIN bms_tax_documents a ON a.tenant_id = d.tenant_id AND a.id = d.replaces_document_id
-      WHERE d.tenant_id = $1 AND d.doc_type = 'FULL' AND d.cancelled_at IS NULL
-        AND d.issue_date BETWEEN $2::date AND $3::date
-        AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
-        AND ($6::uuid[] IS NULL OR d.location_id = ANY($6::uuid[]))
-        AND date_trunc('month', a.issue_date) <> date_trunc('month', d.issue_date)
-      ORDER BY d.issue_date
-      LIMIT $5`,
-    [tenantId, from, to, locationId, EXCEPTION_LIMIT, allowedLocationIds]
-  );
-  exceptionCounts.FULL_REPLACES_OTHER_MONTH = replaced.rows.length ? Number(replaced.rows[0].total_count) : 0;
-  for (const r of replaced.rows) {
-    exceptions.push({
-      kind: "FULL_REPLACES_OTHER_MONTH",
-      locationId: r.location_id,
-      orderId: r.order_id,
-      at: r.issue_date,
-      amount: Number(r.grand_total),
-      reference: r.doc_no,
-      detail: `แทนใบย่อ ${r.abbr_doc_no} ของงวด ${taxMonthOf(r.abbr_issue_date)}`,
-    });
-  }
+  // คง field เดิมไว้เพื่อไม่ทำ GraphQL client เก่าพัง แต่ไม่แจ้งเตือนข้ามเดือนอีกแล้ว:
+  // ใบเต็มที่ออกแทนใบย่อเป็นแถวอ้างอิงยอดศูนย์ตามกติกาข้างบน จึงไม่ย้ายยอดข้ามงวด
 
   return {
     seller: {

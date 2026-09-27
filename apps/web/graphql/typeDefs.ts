@@ -878,6 +878,11 @@ export const typeDefs = /* GraphQL */ `
     buyerBranchCode: String
     buyerAddress: String
     buyerPhone: String
+    sellerName: String
+    sellerTaxId: String
+    sellerBranchCode: String
+    sellerAddress: String
+    sellerPhone: String
     taxableAmount: Float!
     exemptAmount: Float!
     vatAmount: Float!
@@ -2739,7 +2744,7 @@ export const typeDefs = /* GraphQL */ `
 
   # ===== BMS AI Report & Document Generation (MVP core) =====
   input BmsGenerateReportInput {
-    reportType: String!   # SALES / INVENTORY / PROFIT / PRODUCTS / PAYMENTS / PURCHASES / CUSTOMERS / OPERATIONS / SPECIALIZED / VAT_SALES / STOCK_LEDGER
+    reportType: String!   # SALES / INVENTORY / PROFIT / PRODUCTS / PAYMENTS / PURCHASES / CUSTOMERS / OPERATIONS / SPECIALIZED / VAT_SALES / VAT_PURCHASE / STOCK_LEDGER
     dateFrom: String       # YYYY-MM-DD, ไม่ใช้กับ INVENTORY
     dateTo: String
     locationId: ID         # optional branch filter; tenant ownership is enforced server-side

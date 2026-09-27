@@ -76,8 +76,8 @@ test("setup: a VAT-registered shop with a head office, a branch and three regist
   )).rows[0].id;
   await query(
     `INSERT INTO bms_store_profile (tenant_id, vat_registered, price_includes_vat, vat_rate,
-                                    abbreviated_tax_invoice_approved, tax_id)
-     VALUES ($1,TRUE,TRUE,7,TRUE,'0105500000000')`,
+                                    abbreviated_tax_invoice_approved, tax_id, address)
+     VALUES ($1,TRUE,TRUE,7,TRUE,'0105555555554','FAKE seller address')`,
     [tenantId]
   );
   hqId = (await query<{ id: string }>(
@@ -138,7 +138,7 @@ test("a register with its own prefix keeps the familiar format", async () => {
 });
 
 test("full invoices at the head office and a branch on the same day do not collide", async () => {
-  const buyer = { name: "FAKE buyer", taxId: "0105500000001" };
+  const buyer = { name: "FAKE buyer", taxId: "0105555555554", address: "FAKE address" };
   const hqOrder = await newOrder(hqId);
   const brOrder = await newOrder(branchId);
   const hq = await issueFullTaxInvoice({ tenantId, orderId: hqOrder, buyer });
@@ -153,7 +153,7 @@ test("full invoices at the head office and a branch on the same day do not colli
 });
 
 test("a pending or voided order cannot receive a full tax invoice", async () => {
-  const buyer = { name: "FAKE buyer", taxId: "0105500000001" };
+  const buyer = { name: "FAKE buyer", taxId: "0105555555554", address: "FAKE address" };
   const pending = await issueFullTaxInvoice({
     tenantId, orderId: await newOrder(hqId, "PENDING"), buyer,
   });
