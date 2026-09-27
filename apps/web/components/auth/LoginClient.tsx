@@ -4,6 +4,7 @@ import React, { memo, useCallback, useMemo, useRef, useState } from "react";
 import { gql, useMutation } from "@apollo/client";
 import { message, Typography } from "antd";
 import type { CredentialResponse } from "@react-oauth/google";
+import type { FailResponse, SuccessResponse } from "@greatsumini/react-facebook-login";
 
 import AuthCard from "@/components/auth/AuthCard";
 import AuthHeader from "@/components/auth/AuthHeader";
@@ -31,6 +32,8 @@ type LoginStrings = {
   welcome: string; // supports `{name}`
   googleMissingCredential: string;
   googleFailed: string;
+  facebookMissingAccessToken: string;
+  facebookFailed: string;
 
   tipPrefix: string;
   tipHttpOnlyCookie: string;
@@ -50,7 +53,6 @@ const LOGIN = gql`
     loginUser(input: $input) {
       ok
       message
-      token
       user {
         id
         name
@@ -66,7 +68,6 @@ const LOGIN_SOCIAL = gql`
     loginWithSocial(input: $input) {
       ok
       message
-      token
       user {
         id
         name
@@ -80,7 +81,6 @@ const LOGIN_SOCIAL = gql`
 type LoginOk = {
   ok: boolean;
   message?: string | null;
-  token?: string | null;
   user?: { name?: string | null } | null;
 };
 
@@ -117,6 +117,8 @@ function LoginClientInner({ nextPath }: Props) {
       welcome: t("login.welcome"),
       googleMissingCredential: t("login.google_missing_credential"),
       googleFailed: t("login.google_failed"),
+      facebookMissingAccessToken: t("login.facebook_missing_access_token"),
+      facebookFailed: t("login.facebook_failed"),
       tipPrefix: t("login.tip_prefix"),
       tipHttpOnlyCookie: t("login.tip_http_only_cookie"),
       tipMiddle: t("login.tip_middle"),
@@ -161,7 +163,6 @@ function LoginClientInner({ nextPath }: Props) {
         const { data } = await login({ variables: { input } });
         const res = data?.loginUser as LoginOk | undefined;
         // eslint-disable-next-line no-console
-        console.log("[login]", res);
         handleLoginSuccess(res as LoginOk);
       } catch (err: any) {
         // eslint-disable-next-line no-console
@@ -196,7 +197,6 @@ function LoginClientInner({ nextPath }: Props) {
 
         const res = data?.loginWithSocial as LoginOk | undefined;
         // eslint-disable-next-line no-console
-        console.log("[loginWithSocial:google]", res);
         handleLoginSuccess(res as LoginOk);
       } catch (err: any) {
         // eslint-disable-next-line no-console
@@ -212,6 +212,41 @@ function LoginClientInner({ nextPath }: Props) {
   const onGoogleError = useCallback(() => {
     message.error(strings.googleFailed);
   }, [strings.googleFailed]);
+
+  const onFacebookSuccess = useCallback(
+    async (response: SuccessResponse) => {
+      if (submitting.current) return;
+      submitting.current = true;
+      try {
+        const accessToken = response?.accessToken;
+        if (!accessToken) {
+          message.error(strings.facebookMissingAccessToken);
+          return;
+        }
+
+        const { data } = await loginSocial({
+          variables: {
+            input: {
+              provider: "facebook",
+              accessToken,
+            },
+          },
+        });
+
+        const res = data?.loginWithSocial as LoginOk | undefined;
+        handleLoginSuccess(res as LoginOk);
+      } catch (err: any) {
+        message.error(err?.message || strings.facebookFailed);
+      } finally {
+        submitting.current = false;
+      }
+    },
+    [handleLoginSuccess, loginSocial, strings.facebookFailed, strings.facebookMissingAccessToken]
+  );
+
+  const onFacebookFail = useCallback((_error: FailResponse) => {
+    message.error(strings.facebookFailed);
+  }, [strings.facebookFailed]);
 
   return (
     <AuthCard
@@ -236,10 +271,14 @@ function LoginClientInner({ nextPath }: Props) {
         />
 
         <SocialLogin
+          surface="PUBLIC_LOGIN"
           dividerLabel={strings.divider}
+          facebookLabel={t("login.continue_with_facebook")}
           disabled={busy}
           onGoogleSuccess={onGoogleSuccess}
           onGoogleError={onGoogleError}
+          onFacebookSuccess={onFacebookSuccess}
+          onFacebookFail={onFacebookFail}
         />
 
         <Typography.Paragraph type="secondary" style={{ marginBottom: 0 }}>

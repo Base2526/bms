@@ -5,11 +5,18 @@ import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { myPermissions } from "@/lib/bms/permissions";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
-import { signupShop, verifyPendingShopSignup } from "@/lib/bms/signup";
+import { signupShop, signupShopWithSocial, verifyPendingShopSignup } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
 import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
 import { cookies } from "next/headers";
 import { signActTenant, ACT_TENANT_COOKIE } from "@/lib/auth/token";
+import { issueAdminSession } from "@/lib/auth/adminSession";
+import { enforceAuthRateLimit } from "@/lib/auth/rateLimit";
+import {
+  getSocialAuthAvailability,
+  listSocialAuthSettings,
+  updateSocialAuthSetting,
+} from "@/lib/bms/socialAuthSettings";
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -23,6 +30,9 @@ export const bmsSaasResolvers = {
     // public — ไม่ต้อง auth (โชว์ราคาแพ็กเกจที่หน้าแรก/landing page)
     async bmsPublicPlans() {
       return listPlans();
+    },
+    async socialAuthAvailability(_p: unknown, args: { surface: string }) {
+      return getSocialAuthAvailability(args.surface);
     },
     async bmsBilling(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
@@ -84,6 +94,10 @@ export const bmsSaasResolvers = {
       await requirePlatformAdmin(ctx);
       return listTenants();
     },
+    async bmsSocialAuthSettings(_p: unknown, _a: unknown, ctx: any) {
+      await requirePlatformAdmin(ctx);
+      return listSocialAuthSettings();
+    },
     // ร้านที่ platform admin กำลัง "เข้าดู" อยู่ (null = ไม่ได้ impersonate) — ใช้โชว์ banner
     async bmsActingTenant(_p: unknown, _a: unknown, ctx: any) {
       const actId = ctx?.admin?.__actingTenantId;
@@ -96,8 +110,12 @@ export const bmsSaasResolvers = {
     // public — ไม่ต้อง auth (สมัครใช้งานเอง)
     async bmsSignup(
       _p: unknown,
-      args: { shopName: string; name?: string; email: string; password: string; businessArchetype?: string | null }
+      args: { shopName: string; name?: string; email: string; password: string; businessArchetype?: string | null },
+      ctx: any,
     ) {
+      await enforceAuthRateLimit(
+        ctx, "shop-signup", String(args.email ?? "").trim().toLowerCase(), 3, 20, 60 * 60_000,
+      );
       return signupShop({
         shopName: args.shopName,
         name: args.name,
@@ -105,6 +123,30 @@ export const bmsSaasResolvers = {
         password: args.password,
         businessArchetype: args.businessArchetype,
       });
+    },
+    async bmsSignupWithSocial(
+      _p: unknown,
+      args: { shopName: string; businessArchetype?: string | null; provider: string; accessToken: string },
+      ctx: any,
+    ) {
+      await enforceAuthRateLimit(
+        ctx,
+        "shop-signup-social",
+        `${String(args.provider ?? "unknown")}:${String(args.accessToken ?? "").slice(0, 8192)}`,
+        5,
+        20,
+        60 * 60_000,
+      );
+      const result = await signupShopWithSocial({
+        shopName: args.shopName,
+        businessArchetype: args.businessArchetype,
+        provider: args.provider,
+        accessToken: args.accessToken,
+      });
+      if (result.status !== "VERIFIED") return result;
+
+      const token = await issueAdminSession(result.user);
+      return { ...result, token };
     },
     async bmsVerifyShopSignup(_p: unknown, args: { token: string }) {
       return verifyPendingShopSignup(args.token);
@@ -136,6 +178,28 @@ export const bmsSaasResolvers = {
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }
+    },
+    async bmsUpdateSocialAuthSetting(
+      _p: unknown,
+      args: {
+        input: {
+          provider: string;
+          surface: string;
+          enabled: boolean;
+        };
+        confirm: boolean;
+      },
+      ctx: any,
+    ) {
+      await requirePlatformAdmin(ctx);
+      if (args.confirm !== true) {
+        throw new GraphQLError("Confirmation required", {
+          extensions: { code: "CONFIRMATION_REQUIRED", http: { status: 400 } },
+        });
+      }
+      const auth = requireAuth(ctx);
+      const saved = await updateSocialAuthSetting(args.input, String(auth.author_id || ""));
+      return saved;
     },
     // ลบร้านถาวร (ใช้กับร้านทดสอบเท่านั้น — deleteTenant() ปฏิเสธ slug ที่ไม่ขึ้นต้นด้วย "test-")
     // audit ก่อนลบเสมอ (เขียนลง audit log ของร้านผู้กระทำเอง ไม่ใช่ร้านเป้าหมายที่กำลังจะหายไป)

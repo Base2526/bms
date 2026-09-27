@@ -6347,6 +6347,8 @@ type BmsSignupResult {
   slug: String
   status: String!
   tenantId: ID
+  token: String
+  user: User
 }
 
 type BmsSlipVerification {
@@ -6368,6 +6370,25 @@ type BmsSlowMovingItem {
   sku: String!
   soldInWindow: Int!
   trendPct: Float!
+}
+
+type BmsSocialAuthSetting {
+  adminLoginAvailable: Boolean!
+  adminLoginEnabled: Boolean!
+  configIssues: [String!]!
+  configReady: Boolean!
+  provider: String!
+  publicLoginAvailable: Boolean!
+  publicLoginEnabled: Boolean!
+  shopSignupAvailable: Boolean!
+  shopSignupEnabled: Boolean!
+  updatedAt: String!
+}
+
+input BmsSocialAuthSettingInput {
+  enabled: Boolean!
+  provider: String!
+  surface: SocialAuthSurface!
 }
 
 type BmsSqlResult {
@@ -7477,6 +7498,7 @@ type Mutation {
   bmsSetVatCategoryForUnknown(activeOnly: Boolean, vatCategory: String!): Int!
   bmsShipOrder(id: ID!): Boolean!
   bmsSignup(businessArchetype: String, email: String!, name: String, password: String!, shopName: String!): BmsSignupResult!
+  bmsSignupWithSocial(accessToken: String!, businessArchetype: String, provider: String!, shopName: String!): BmsSignupResult!
   bmsSoftDeleteAssessment(assessmentId: ID!): Boolean!
   bmsStartPharmacistReview(assessmentId: ID!): BmsPharmacyAssessment!
   bmsStockCount(input: BmsStockCountInput!): BmsMobileStockCountActionResult! @deprecated(reason: "Use the named stock-count mutations")
@@ -7498,6 +7520,7 @@ type Mutation {
   bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!
   bmsUpdateOnboardingProgress(completed: [String!], dismissed: Boolean, skipped: [String!]): BmsOnboardingProgress!
   bmsUpdateRestaurantTable(patch: BmsRestaurantTablePatchInput!, tableId: ID!): BmsRestaurantTableAdmin!
+  bmsUpdateSocialAuthSetting(confirm: Boolean!, input: BmsSocialAuthSettingInput!): BmsSocialAuthSetting!
   bmsUpdateSupportTicket(input: BmsUpdateSupportTicketInput!): BmsSupportTicket!
   bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
   bmsUpdateTracking(carrier: BmsCarrier, id: ID!, trackingNo: String): Boolean!
@@ -7548,6 +7571,7 @@ type Mutation {
   ingestCallLogs(logs: [LogCallInput!]!): Boolean!
   login(input: LoginInput!): LoginResult!
   loginAdmin(input: LoginInput!): LoginResult!
+  loginAdminWithSocial(input: SocialLoginInput!): LoginResult!
   loginMobile(email: String!, password: String!): LoginResult!
   loginUser(input: LoginInput!): LoginResult!
   loginWithSocial(input: SocialLoginInput!): LoginResult!
@@ -8030,6 +8054,7 @@ type Query {
   bmsShipmentLabel(id: ID!): BmsShipmentLabel
   bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
   bmsShipments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsShipmentStatus): [BmsShipment!]!
+  bmsSocialAuthSettings: [BmsSocialAuthSetting!]!
   bmsSqlConsoleWriteEnabled: Boolean!
   bmsStockCounts(status: String): BmsMobileStockCountsResult!
   bmsStockMovements(limit: Int = 50, size: String, sku: String!): [BmsStockMovement!]!
@@ -8103,6 +8128,7 @@ type Query {
   searchBankAccounts(limit: Int! = 20, q: String!): [SearchBankAccountResult!]!
   searchScamBankAccounts(limit: Int! = 20, q: String!): [SearchBankAccountResult!]!
   searchScamPhones(limit: Int! = 20, q: String!): [ScamPhone!]!
+  socialAuthAvailability(surface: SocialAuthSurface!): SocialAuthAvailability!
   stats: StatsSummary!
   unreadCount(chatId: ID!): Int!
   user(id: ID!): User
@@ -8296,6 +8322,17 @@ input SellerAccountInput {
   id: ID
   mode: String
   seller_account: String
+}
+
+type SocialAuthAvailability {
+  facebook: Boolean!
+  google: Boolean!
+}
+
+enum SocialAuthSurface {
+  ADMIN_LOGIN
+  PUBLIC_LOGIN
+  SHOP_SIGNUP
 }
 
 input SocialLoginInput {

@@ -181,7 +181,7 @@ const OPS_TELEMETRY = [
   "bms_retail_local_license_installations", "bms_retail_local_license_events",
   "bms_retail_local_license_reviews", "bms_retail_local_license_commercial_events",
   "bms_retail_local_license_bootstrap_tokens", "bms_retail_local_trial_followups",
-  "bms_delivery_provider_setting_events",
+  "bms_delivery_provider_setting_events", "bms_social_auth_setting_events",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */
@@ -206,7 +206,7 @@ const CONFIGURATION = [
   "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
   "bms_board_game_guest_tokens",
   "bms_delivery_integrations", "bms_delivery_location_mappings", "bms_delivery_menu_mappings",
-  "bms_delivery_provider_settings",
+  "bms_delivery_provider_settings", "bms_social_auth_settings",
   "bms_local_installation",
 ];
 

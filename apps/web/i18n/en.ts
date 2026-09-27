@@ -41,6 +41,9 @@ const en = {
     welcome: "Welcome, {name}",
     google_missing_credential: "Missing Google credential",
     google_failed: "Google sign-in failed",
+    facebook_missing_access_token: "Facebook login failed: missing accessToken",
+    facebook_failed: "Facebook login cancelled or failed",
+    continue_with_facebook: "Continue with Facebook",
     tip_prefix: "Tip: On the server, prefer setting a ",
     tip_http_only_cookie: "httpOnly cookie",
     tip_middle: " from the token for better security, and read it from ",
@@ -108,6 +111,7 @@ const en = {
     success: "Password reset successful",
   },
   shopSignup: {
+    or_signup_with_email: "or sign up with email",
     heading: "Sign up for BMS — open your shop",
     tagline: "Create a free shop and start selling on LINE/TikTok with AI auto-replies — starting on the Free plan",
     shop_name: "Shop name",
@@ -645,6 +649,7 @@ const en = {
     restaurant_floor: "Floor Plan",
     delivery_platforms: "Delivery Platforms",
     delivery_provider_settings: "Delivery Partner APIs",
+    auth_settings: "Social Login",
     retail_local_licenses: "Retail Local licenses",
     retail_local_releases: "Retail Local downloads",
     board_game: "Board Game Tables",
@@ -1051,6 +1056,7 @@ const en = {
     loading: "Loading floor plan…",
   },
   admin_login: {
+    or_login_with_email: "or sign in with email",
     title: "Admin login",
     identifier_label: "Username or email",
     identifier_required: "Please enter your username or email",

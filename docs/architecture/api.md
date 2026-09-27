@@ -843,8 +843,21 @@ Google social login verifies the ID token signature, issuer, expiry, audience, s
 email through `google-auth-library`; decoding JWT claims without verification is forbidden. Facebook
 login accepts only a valid debug-token response whose `app_id` and `user_id` match the configured app
 and `/me` response. `FACEBOOK_APP_SECRET` is server-only; the old
-`NEXT_PUBLIC_FACEBOOK_APP_SECRET` name is accepted only by Compose as a temporary environment-value
-fallback and is never injected under a public runtime name.
+`NEXT_PUBLIC_FACEBOOK_APP_SECRET` name is not accepted at runtime and must never be injected into a
+client build.
+
+Social provider visibility and execution are controlled by the global `bms_social_auth_settings`
+rows. Platform administrators can enable Google or Facebook independently for public login, Admin
+login, and shop signup, but a switch becomes effective only when the corresponding runtime
+credentials are complete and consistent. `socialAuthAvailability` is deliberately public and returns
+only provider booleans; `bmsSocialAuthSettings` and its confirmed update mutation are platform-admin
+only. Every social mutation checks the server-side effective setting before verifying a provider
+token, so a hidden button cannot be bypassed with a direct GraphQL request.
+Setting updates patch one surface at a time under a row lock, reject a new enable while provider
+configuration is incomplete, and write their before/after values to the global setting event log.
+Signup attempts are rate-limited before any provider call. The first verified social login may bind
+an unlinked password account; subsequent login uses the unique provider user id, and a conflicting
+provider binding is rejected instead of being replaced by an email match.
 
 Email verification and password-reset consumption are single atomic SQL statements, so one token
 cannot succeed twice under concurrent requests. Admin login additionally rejects public Subscriber

@@ -1360,6 +1360,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS public plans (หน้าแรก/landing — ไม่ต้อง auth) =====
     bmsPublicPlans: [BmsPlan!]!
+    socialAuthAvailability(surface: SocialAuthSurface!): SocialAuthAvailability!
 
     # ===== BMS profile (admin ที่ล็อกอินอยู่) =====
     bmsMe: BmsMe!
@@ -1367,6 +1368,7 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS platform admin (ข้ามร้าน) =====
     bmsIsPlatformAdmin: Boolean!          # ใช้ gate เมนู/หน้า
     bmsTenants: [BmsTenantRow!]!          # รายการทุกร้าน (platform admin เท่านั้น)
+    bmsSocialAuthSettings: [BmsSocialAuthSetting!]!
     bmsActingTenant: BmsActingTenant      # ร้านที่กำลัง drill-down อยู่ (null = ไม่ได้เข้าดู)
     bmsReportSubscriptions: [BmsReportSubscriptionOverview!]!  # ทุกร้าน + ค่าตั้งส่งรายงาน (platform admin เท่านั้น)
     bmsReportDeliveriesForTenant(tenantId: ID!, limit: Int): [BmsReportDelivery!]!  # ประวัติส่งของร้านที่ระบุ (platform admin)
@@ -3039,8 +3041,28 @@ export const typeDefs = /* GraphQL */ `
     usage: BmsUsage!
     plans: [BmsPlan!]!
   }
-  type BmsSignupResult { status: String!  tenantId: ID  slug: String }
+  type BmsSignupResult { status: String!  tenantId: ID  slug: String  token: String  user: User }
   type BmsVerifyShopSignupResult { status: String!  tenantId: ID  slug: String }
+
+  enum SocialAuthSurface { PUBLIC_LOGIN ADMIN_LOGIN SHOP_SIGNUP }
+  type SocialAuthAvailability { google: Boolean! facebook: Boolean! }
+  type BmsSocialAuthSetting {
+    provider: String!
+    configReady: Boolean!
+    configIssues: [String!]!
+    publicLoginEnabled: Boolean!
+    adminLoginEnabled: Boolean!
+    shopSignupEnabled: Boolean!
+    publicLoginAvailable: Boolean!
+    adminLoginAvailable: Boolean!
+    shopSignupAvailable: Boolean!
+    updatedAt: String!
+  }
+  input BmsSocialAuthSettingInput {
+    provider: String!
+    surface: SocialAuthSurface!
+    enabled: Boolean!
+  }
 
   # ===== BMS current-user profile (admin ที่ล็อกอินอยู่) =====
   type BmsMeTenant { id: ID!  name: String!  slug: String!  plan: String! }
@@ -4618,6 +4640,7 @@ export const typeDefs = /* GraphQL */ `
     loginUser(input: LoginInput!): LoginResult!
     loginWithSocial(input: SocialLoginInput!): LoginResult!
     loginAdmin(input: LoginInput!): LoginResult!
+    loginAdminWithSocial(input: SocialLoginInput!): LoginResult!
     loginMobile(email:String!, password:String!): LoginResult!
 
     registerUser(input: RegisterInput!): Boolean!
@@ -4902,12 +4925,14 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS SaaS: signup (public) + billing (admin) =====
     bmsSignup(shopName: String!, name: String, email: String!, password: String!, businessArchetype: String): BmsSignupResult!
+    bmsSignupWithSocial(shopName: String!, businessArchetype: String, provider: String!, accessToken: String!): BmsSignupResult!
     bmsVerifyShopSignup(token: String!): BmsVerifyShopSignupResult!
     bmsChangePlan(planCode: String!): Boolean!
 
     # ===== BMS platform admin (ข้ามร้าน) =====
     bmsSetTenantActive(tenantId: ID!, active: Boolean!): Boolean!
     bmsSetTenantPlan(tenantId: ID!, planCode: String!): Boolean!
+    bmsUpdateSocialAuthSetting(input: BmsSocialAuthSettingInput!, confirm: Boolean!): BmsSocialAuthSetting!
     bmsEnterTenant(tenantId: ID!): Boolean!   # drill-down เข้ามุมร้าน
     bmsExitTenant: Boolean!                   # ออกจากมุมร้าน
     bmsDeleteTenant(tenantId: ID!): Boolean!  # ลบร้านถาวร — เฉพาะร้านทดสอบ (slug ขึ้นต้น "test-")

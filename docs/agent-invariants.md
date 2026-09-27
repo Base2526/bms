@@ -181,6 +181,17 @@ trusting this count after any catalog change.
   takeover. Facebook login must verify debug-token `app_id`, `user_id`, and `/me`; keep
   `FACEBOOK_APP_SECRET` server-only. Every provider knob must remain in all three Compose web-service
   environments, and secrets must never use a `NEXT_PUBLIC_*` runtime name.
+- Social login is also gated by the global `bms_social_auth_settings` control plane. Only a platform
+  admin may change it, every change is confirmed and audited, and effective availability is the
+  intersection of that switch with runtime credential readiness. Public clients receive booleans
+  only; provider config diagnostics are platform-admin only. UI hiding is not authorization: public,
+  admin, and shop-signup social mutations re-check the same server gate immediately before token
+  verification. Password login always remains available, and Retail Local social signup remains off.
+  Signup attempts are fleet-rate-limited before provider verification. A verified social email may
+  link an unlinked password account once; after that `(provider, provider_id)` is the stable unique
+  identity, and a different provider or provider id with the same email is rejected rather than
+  silently replacing the link. Platform setting mutations patch one surface under a row lock and
+  cannot turn a new surface on while runtime configuration is incomplete.
 
 ## Public customer checkout (signed link)
 
