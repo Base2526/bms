@@ -10,7 +10,7 @@ import type { NextRequest } from "next/server";
 import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation } from "@/lib/bms/inbox";
+import { logConversation, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import crypto from "crypto";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
@@ -19,7 +19,37 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type TikTokMessage = { id?: string; message_id?: string; user_id?: string; content?: { text?: string } };
+type TikTokMessage = {
+  id?: string;
+  message_id?: string;
+  user_id?: string;
+  message_type?: string;
+  type?: string;
+  content?: {
+    text?: string;
+    type?: string;
+    url?: string;
+    media_url?: string;
+    image_url?: string;
+    file_url?: string;
+    file_name?: string;
+    mime_type?: string;
+  };
+};
+
+function tiktokMessageType(message: TikTokMessage): string {
+  return message.message_type ?? message.type ?? message.content?.type ?? "attachment";
+}
+
+function tiktokAttachment(message: TikTokMessage): Attachment | null {
+  const url = message.content?.url ?? message.content?.media_url ?? message.content?.image_url ?? message.content?.file_url ?? null;
+  if (!url) return null;
+  return {
+    url,
+    name: message.content?.file_name ?? `${tiktokMessageType(message)} from TikTok`,
+    mimeType: message.content?.mime_type ?? null,
+  };
+}
 
 async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
@@ -55,12 +85,27 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   const replies = [];
   for (const m of messages) {
     const text = m.content?.text?.trim() ?? "";
-    if (!text) continue;
     if (!(await claimInboundEvent(tenantId, "tiktok", m.message_id ?? m.id))) {
       replies.push({ userId: m.user_id, duplicate: true });
       continue;
     }
     const userId = m.user_id ?? null;
+    if (!text) {
+      const attachment = tiktokAttachment(m);
+      await logInboundMessage(tenantId, "tiktok", userId, {
+        body: attachment ? "" : `[ข้อความ TikTok ชนิด ${tiktokMessageType(m)}]`,
+        attachment,
+        meta: {
+          type: tiktokMessageType(m),
+          providerMessageId: m.message_id ?? m.id ?? null,
+          unsupportedForAi: true,
+          raw: { hasAttachment: Boolean(attachment) },
+        },
+      });
+      replies.push({ userId: m.user_id, logged: tiktokMessageType(m) });
+      continue;
+    }
+
     const result = await runPipeline(text, "tiktok", tenantId, userId);
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort

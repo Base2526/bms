@@ -13,7 +13,7 @@ import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyMetaSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, deliverToChannel } from "@/lib/bms/inbox";
+import { logConversation, deliverToChannel, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
@@ -23,6 +23,17 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHANNEL = "instagram";
+
+function firstMetaAttachment(ev: { attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }> }): Attachment | null {
+  const att = ev.attachments.find((item) => item.url);
+  if (!att?.url) return null;
+  const type = (att.type ?? "file").toLowerCase();
+  return {
+    url: att.url,
+    name: att.title ?? `${type || "attachment"} from Instagram`,
+    mimeType: att.mimeType ?? (type === "image" ? "image/jpeg" : null),
+  };
+}
 
 async function handleGET(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const cfg = await getChannel(params.tenantId?.trim(), CHANNEL);
@@ -59,9 +70,27 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
 
   for (const ev of events) {
     if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
-    const result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
-    await logConversation(tenantId, CHANNEL, ev.senderId, ev.text, result.reply, result.quality);
-    await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
+    const attachment = firstMetaAttachment(ev);
+    if (ev.text) {
+      const result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
+      await logConversation(
+        tenantId,
+        CHANNEL,
+        ev.senderId,
+        ev.text,
+        result.reply,
+        result.quality,
+        attachment,
+        attachment ? { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, raw: { attachmentCount: ev.attachments.length } } : null
+      );
+      await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
+    } else {
+      await logInboundMessage(tenantId, CHANNEL, ev.senderId, {
+        body: "",
+        attachment,
+        meta: { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, unsupportedForAi: true, raw: { attachmentCount: ev.attachments.length } },
+      });
+    }
   }
   if (events.length > 0) await recordInboundEvent(tenantId, CHANNEL);
 
