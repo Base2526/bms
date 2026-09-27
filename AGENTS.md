@@ -306,7 +306,10 @@ wrong, and update the doc in the same change.
   `VENDOR_DELIVERY` dispatched only from committed handoff). Unknown transport or changed identity
   is action-required, never inferred. GrabFood/LINE MAN remain
   contract-blocked until official partner webhook/onboarding contracts are reviewed; no live-ready
-  claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Full detail:
+  claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Provider
+  analytics keeps BMS sales/refund dates separate from statement payout, treats missing actual payout
+  as unknown, never sums mixed currencies and never allocates statement-wide fees to a branch without
+  provider evidence. Full detail:
   [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.

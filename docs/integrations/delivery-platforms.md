@@ -183,6 +183,21 @@ CSV/API parsing remains adapter work because no public settlement format is veri
 refund cannot be confirmed from the POS refund button: only a matching provider settlement/refund
 line completes its pending `PLATFORM_SETTLEMENT` allocation and records the provider-refund timeline.
 
+The Analytics tab at `/admin/delivery-platforms?tab=analytics` is permission-gated by
+`delivery.settlement.view` and compares GrabFood, LINE MAN and foodpanda without combining unlike
+accounting facts. It reports BMS sales, completed refunds, net sales, intake/acceptance/completion,
+current action-required orders, preparation time and command outcomes by provider, with daily,
+weekly or monthly trends. Shadow events stay separate from live intake and never become revenue.
+Statement gross, fees, commission, expected payout, actual payout and mismatch counts remain a
+separate settlement block. A missing `actual_net_amount` is unknown, never zero, and the combined
+actual-payout card stays blank until every statement in scope has an actual amount.
+
+Sales and refunds use their BMS transaction dates. Settlement metrics include only statements whose
+whole statement period falls inside the selected range. A branch filter applies to sales, refunds
+and operational KPIs, but hides settlement amounts because the current provider statements are not
+authoritatively allocated by branch. Do not manufacture a branch commission or payout by dividing a
+statement. Mixed-currency rows and totals are likewise withheld instead of being summed as THB.
+
 Before production, Finance must sign off who issues the receipt and tax invoice, whether delivery
 fees are merchant revenue, how merchant/provider discounts are booked, what document supports
 commission, and whether BMS prints a document in the bag. Until that decision exists, do not

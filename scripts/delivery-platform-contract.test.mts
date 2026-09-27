@@ -245,6 +245,34 @@ test("admin operations, action center and finance reconciliation are tenant-scop
   assert.match(actions, /collectDeliverySignals/);
 });
 
+test("delivery provider analytics separates operational, sales and statement authority", () => {
+  const service = read("apps/web/lib/bms/deliveryAnalytics.ts");
+  const route = read("apps/web/app/api/bms/delivery/analytics/route.ts");
+  const page = read("apps/web/app/(admin)/admin/delivery-platforms/page.tsx");
+
+  assert.match(service, /export async function getDeliveryProviderAnalytics/);
+  assert.match(service, /beginTenantTx\(client, input\.tenantId\)/);
+  assert.match(service, /bms_delivery_orders d[\s\S]*d\.tenant_id=\$1/);
+  assert.match(service, /bms_pos_refund_allocations/);
+  assert.match(service, /p\.status='REFUNDED'[\s\S]*NOT EXISTS/);
+  assert.match(service, /locationId \? \{ rows: \[\] as any\[\] \} : await client\.query/);
+  assert.match(service, /actual_net_amount == null \? null/);
+  assert.match(service, /actualPayoutComplete/);
+  assert.match(service, /span > 366/);
+  assert.ok(service.indexOf('["DAY", "WEEK", "MONTH"].includes(granularity)') < service.indexOf("date_trunc('${bucketUnit}'"));
+
+  assert.match(route, /authorizeAdminRoute\("delivery\.settlement\.view"\)/);
+  assert.match(route, /tenantId: auth\.tenantId/);
+  assert.doesNotMatch(route, /tenantId: search\.get/);
+  assert.match(route, /if \(!code\.startsWith\("DELIVERY_ANALYTICS_"\)\) throw error/);
+
+  assert.match(page, /\/api\/bms\/delivery\/analytics/);
+  assert.match(page, /key:"analytics"/);
+  assert.match(page, /Settlement เป็น statement รวม จึงไม่ปันส่วนลงสาขา/);
+  assert.match(page, /actualPayoutComplete/);
+  assert.match(page, /Shadow/);
+});
+
 test("late acceptance is blocked without inventing provider reject or refund semantics", () => {
   const timeout = read("apps/web/lib/bms/deliveryPlatforms/acceptanceTimeout.ts");
   const ordering = read("apps/web/lib/bms/restaurantOrdering.ts");
