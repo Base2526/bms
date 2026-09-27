@@ -1,9 +1,9 @@
 'use client';
 
-import { ReloadOutlined, PlusOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, ClockCircleOutlined, ReloadOutlined, PlusOutlined } from "@ant-design/icons";
 import {
   Alert, Button, Card, Col, DatePicker, Form, Input, InputNumber, Modal, Row, Select,
-  Space, Switch, Table, Tabs, Tag, Typography, message,
+  Space, Statistic, Switch, Table, Tabs, Tag, Typography, message,
 } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
+import { DELIVERY_PROVIDER_ONBOARDING } from "@/lib/bms/deliveryPlatforms/onboarding";
 
 type Integration = Record<string, any> & { id: string; provider: string; environment: string; capabilities: Record<string, string> };
 type Boot = {
@@ -18,6 +19,11 @@ type Boot = {
   mappings: { locations: any[]; menus: any[]; availableLocations: any[]; catalog: any[] };
   operations: { orders: any[]; events: any[]; commands: any[]; controls: any[] };
   finance: { settlements: any[]; lines: any[]; adjustments: any[]; disputes: any[] };
+};
+type Analytics = {
+  from: string; to: string; locationId: string | null; granularity: "DAY" | "WEEK" | "MONTH"; settlementScope: string;
+  providers: Array<Record<string, any> & { provider: string; settlement: Record<string, any> | null }>;
+  trend: Array<Record<string, any> & { provider: string; bucket: string }>;
 };
 
 async function jsonFetch(url: string, init?: RequestInit) {
@@ -50,6 +56,14 @@ export default function DeliveryPlatformsPage() {
     finance: { settlements: [], lines: [], adjustments: [], disputes: [] },
   });
   const [loading, setLoading] = useState(false);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analytics, setAnalytics] = useState<Analytics>({
+    from: dayjs().subtract(29, "day").format("YYYY-MM-DD"), to: dayjs().format("YYYY-MM-DD"),
+    locationId: null, granularity: "DAY", settlementScope: "SELECTED_PERIOD", providers: [], trend: [],
+  });
+  const [analyticsRange, setAnalyticsRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([dayjs().subtract(29, "day"), dayjs()]);
+  const [analyticsLocationId, setAnalyticsLocationId] = useState<string | undefined>();
+  const [analyticsGranularity, setAnalyticsGranularity] = useState<"DAY" | "WEEK" | "MONTH">("DAY");
   const [activeTab, setActiveTab] = useState("integrations");
   const [integrationOpen, setIntegrationOpen] = useState(false);
   const [locationOpen, setLocationOpen] = useState(false);
@@ -58,11 +72,30 @@ export default function DeliveryPlatformsPage() {
   const [adjustmentOpen, setAdjustmentOpen] = useState(false);
   const [disputeOpen, setDisputeOpen] = useState(false);
   const [integrationForm] = Form.useForm();
+  const selectedIntegrationProvider = Form.useWatch("provider", integrationForm) as "FOODPANDA" | "GRABFOOD" | "LINEMAN" | undefined;
+  const tenantCredentialFieldsAvailable = selectedIntegrationProvider
+    ? DELIVERY_PROVIDER_ONBOARDING[selectedIntegrationProvider].tenantSetupMode === "CREDENTIAL_FORM"
+    : true;
   const [locationForm] = Form.useForm();
   const [menuForm] = Form.useForm();
   const [settlementForm] = Form.useForm();
   const [adjustmentForm] = Form.useForm();
   const [disputeForm] = Form.useForm();
+
+  const loadAnalytics = async () => {
+    if (!canViewFinance) return;
+    setAnalyticsLoading(true);
+    try {
+      const params = new URLSearchParams({
+        from: analyticsRange[0].format("YYYY-MM-DD"), to: analyticsRange[1].format("YYYY-MM-DD"),
+        granularity: analyticsGranularity,
+      });
+      if (analyticsLocationId) params.set("locationId", analyticsLocationId);
+      setAnalytics(await jsonFetch(`/api/bms/delivery/analytics?${params.toString()}`));
+    } catch (error: any) {
+      message.error(error?.message ?? L("โหลดข้อมูลวิเคราะห์ไม่สำเร็จ", "Unable to load delivery analytics"));
+    } finally { setAnalyticsLoading(false); }
+  };
 
   const load = async () => {
     if (!canView) return;
@@ -80,9 +113,19 @@ export default function DeliveryPlatformsPage() {
 
   useEffect(() => {
     const tab = new URLSearchParams(window.location.search).get("tab");
-    if (tab && ["integrations", "mappings", "operations", "finance"].includes(tab)) setActiveTab(tab);
+    if (tab && ["analytics", "integrations", "mappings", "operations", "finance"].includes(tab)) setActiveTab(tab);
   }, []);
   useEffect(() => { void load(); }, [canView, canViewFinance]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void loadAnalytics(); }, [canViewFinance, analyticsRange, analyticsLocationId, analyticsGranularity]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (tenantCredentialFieldsAvailable) return;
+    integrationForm.setFieldsValue({
+      rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+      clientId: undefined, clientSecret: undefined, accessToken: undefined,
+      refreshToken: undefined, webhookSecret: undefined, apiVersion: undefined,
+      credentialExpiresAt: undefined, configJson: "{}",
+    });
+  }, [integrationForm, selectedIntegrationProvider, tenantCredentialFieldsAvailable]);
 
   const integrationOptions = boot.integrations.map((i) => ({ value: i.id, label: `${i.provider} · ${i.environment}` }));
   const catalogOptions = useMemo(() => boot.mappings.catalog.map((p) => ({
@@ -180,9 +223,129 @@ export default function DeliveryPlatformsPage() {
 
   if (!permissionLoading && !canView) return <Alert closable type="error" showIcon message={L("ไม่มีสิทธิ์ delivery.integration.view", "Missing delivery.integration.view permission")} />;
 
+  const money = (value: unknown, currency = "THB") => {
+    try {
+      return new Intl.NumberFormat(lang === "th" ? "th-TH" : "en-US", {
+        style: "currency", currency: currency === "MIXED" ? "THB" : currency, maximumFractionDigits: 2,
+      }).format(Number(value ?? 0));
+    } catch { return `${Number(value ?? 0).toLocaleString()} ${currency}`; }
+  };
+  const percent = (value: unknown) => value == null ? "—" : `${Number(value).toFixed(1)}%`;
+  const analyticsTotals = analytics.providers.reduce((total, row) => ({
+    salesOrders: total.salesOrders + Number(row.salesOrders ?? 0),
+    grossSales: total.grossSales + Number(row.grossSales ?? 0),
+    refundAmount: total.refundAmount + Number(row.refundAmount ?? 0),
+    netSales: total.netSales + Number(row.netSales ?? 0),
+    actualNet: total.actualNet + Number(row.settlement?.actualNetAmount ?? 0),
+    statementCount: total.statementCount + Number(row.settlement?.statementCount ?? 0),
+    actualStatementCount: total.actualStatementCount + Number(row.settlement?.actualStatementCount ?? 0),
+    mismatch: total.mismatch + Number(row.settlement?.mismatchStatements ?? 0),
+  }), { salesOrders:0, grossSales:0, refundAmount:0, netSales:0, actualNet:0, statementCount:0, actualStatementCount:0, mismatch:0 });
+  const analyticsCurrency = analytics.providers.find((row) => row.currency)?.currency ?? "THB";
+  const analyticsMixedCurrency = analytics.providers.some((row) => row.mixedCurrency || row.currency !== analyticsCurrency);
+  const actualPayoutComplete = analyticsTotals.statementCount > 0 && analyticsTotals.actualStatementCount === analyticsTotals.statementCount;
+
+  const analyticsView = !canViewFinance ? <Alert closable type="warning" showIcon message={L("ไม่มีสิทธิ์ delivery.settlement.view", "Missing delivery.settlement.view permission")} /> : <Space direction="vertical" size="large" style={{ width:"100%" }}>
+    <Card>
+      <Space wrap align="end">
+        <div><Typography.Text type="secondary">{L("ช่วงวันที่ขาย/ปฏิบัติการ", "Sales and operations period")}</Typography.Text><br />
+          <DatePicker.RangePicker allowClear={false} value={analyticsRange} onChange={(value) => value && setAnalyticsRange([value[0]!, value[1]!])} /></div>
+        <div><Typography.Text type="secondary">{L("สาขา", "Location")}</Typography.Text><br />
+          <Select allowClear style={{width:260}} value={analyticsLocationId} placeholder={L("ทุกสาขา", "All locations")} onChange={setAnalyticsLocationId}
+            options={boot.mappings.availableLocations.map((location) => ({ value:location.id, label:`${location.name} · ${location.code}` }))} /></div>
+        <div><Typography.Text type="secondary">{L("แนวโน้ม", "Trend interval")}</Typography.Text><br />
+          <Select style={{width:140}} value={analyticsGranularity} onChange={setAnalyticsGranularity} options={[
+            {value:"DAY",label:L("รายวัน","Daily")},{value:"WEEK",label:L("รายสัปดาห์","Weekly")},{value:"MONTH",label:L("รายเดือน","Monthly")},
+          ]} /></div>
+        <Button icon={<ReloadOutlined />} loading={analyticsLoading} onClick={() => void loadAnalytics()}>{L("คำนวณใหม่", "Refresh analytics")}</Button>
+      </Space>
+    </Card>
+    {analyticsMixedCurrency && <Alert closable showIcon type="warning" message={L("พบหลายสกุลเงิน จึงห้ามอ่านยอดรวมเป็นสกุลเดียว", "Multiple currencies found; combined totals must not be treated as one currency")} />}
+    {!analyticsLocationId && analyticsTotals.statementCount > analyticsTotals.actualStatementCount && <Alert closable showIcon type="warning"
+      message={L("บาง statement ยังไม่มียอดโอนจริง", "Some statements do not have an actual payout yet")}
+      description={L(`มียอดโอนจริง ${analyticsTotals.actualStatementCount} จาก ${analyticsTotals.statementCount} statement จึงยังไม่สรุปยอดรับจริงรวม`, `Actual payout is present for ${analyticsTotals.actualStatementCount} of ${analyticsTotals.statementCount} statements, so the combined payout remains blank.`)} />}
+    {analyticsLocationId && <Alert closable showIcon type="info"
+      message={L("Settlement เป็น statement รวม จึงไม่ปันส่วนลงสาขา", "Settlement statements are not allocated to individual locations")}
+      description={L("ยอดขายและ KPI ด้านปฏิบัติการด้านล่างกรองตามสาขาแล้ว แต่ยอดรับจริง/ค่าธรรมเนียมจะแสดงเมื่อเลือกทุกสาขาเท่านั้น เพื่อไม่เดาการปันส่วน commission", "Sales and operational KPIs are location-filtered. Actual payout and fee metrics appear only for all locations because statement-level commission cannot be allocated safely.")} />}
+    <Row gutter={[16,16]}>
+      <Col xs={12} xl={4}><Card><Statistic title={L("ออเดอร์ขาย", "Sales orders")} value={analyticsTotals.salesOrders} /></Card></Col>
+      <Col xs={12} xl={5}><Card><Statistic title={L("ยอดขายก่อนคืน", "Gross sales")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.grossSales,analyticsCurrency)} /></Card></Col>
+      <Col xs={12} xl={5}><Card><Statistic title={L("ยอดคืน", "Refunds")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.refundAmount,analyticsCurrency)} /></Card></Col>
+      <Col xs={12} xl={5}><Card><Statistic title={L("ยอดขายสุทธิ", "Net sales")} value={analyticsMixedCurrency ? "—" : money(analyticsTotals.netSales,analyticsCurrency)} /></Card></Col>
+      <Col xs={12} xl={5}><Card><Statistic title={L("รับจริงจาก statement", "Actual statement payout")} value={analyticsLocationId || analyticsMixedCurrency || !actualPayoutComplete ? "—" : money(analyticsTotals.actualNet,analyticsCurrency)} suffix={analyticsTotals.mismatch ? <Tag color="red">{analyticsTotals.mismatch} mismatch</Tag> : undefined} /></Card></Col>
+    </Row>
+    <Card title={L("เปรียบเทียบ Provider", "Provider comparison")}>
+      <Table rowKey="provider" loading={analyticsLoading} pagination={false} dataSource={analytics.providers} scroll={{x:2300}} columns={[
+        { title:"Provider", dataIndex:"provider", fixed:"left", width:125 },
+        { title:L("ออเดอร์ขาย", "Sales orders"), dataIndex:"salesOrders", align:"right", width:100 },
+        { title:L("ยอดขาย", "Gross sales"), dataIndex:"grossSales", align:"right", width:135, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
+        { title:L("ยอดคืน", "Refunds"), dataIndex:"refundAmount", align:"right", width:125, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
+        { title:L("ยอดสุทธิ", "Net sales"), dataIndex:"netSales", align:"right", width:135, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
+        { title:"AOV", dataIndex:"averageOrderValue", align:"right", width:115, render:(value,row)=>row.mixedCurrency?"—":money(value,row.currency) },
+        { title:L("รับเข้า", "Intake"), dataIndex:"intakeOrders", align:"right", width:80 },
+        { title:"Shadow", dataIndex:"shadowOrders", align:"right", width:80 },
+        { title:L("รับออเดอร์", "Acceptance"), dataIndex:"acceptanceRate", align:"right", width:105, render:percent },
+        { title:L("สำเร็จ", "Completion"), dataIndex:"completionRate", align:"right", width:100, render:percent },
+        { title:L("ยกเลิก", "Cancellation"), dataIndex:"cancellationRate", align:"right", width:105, render:percent },
+        { title:L("ต้องตรวจตอนนี้", "Current action required"), dataIndex:"actionRequiredOrders", align:"right", width:130, render:(value)=><Tag color={value?"red":"default"}>{value}</Tag> },
+        { title:L("เวลารับเฉลี่ย", "Avg accept"), dataIndex:"averageAcceptanceMinutes", align:"right", width:115, render:(value)=>value==null?"—":`${Number(value).toFixed(1)} min` },
+        { title:L("เวลาทำเฉลี่ย", "Avg prep"), dataIndex:"averagePreparationMinutes", align:"right", width:110, render:(value)=>value==null?"—":`${Number(value).toFixed(1)} min` },
+        { title:L("Command สำเร็จ", "Command success"), dataIndex:"commandSuccessRate", align:"right", width:125, render:percent },
+        { title:L("Command ค้าง/เสีย", "Command pending/problem"), align:"right", width:150, render:(_,row)=>`${row.commandPending} / ${row.commandProblem}` },
+        { title:L("คาดรับ", "Expected payout"), align:"right", width:135, render:(_,row)=>row.settlement?money(row.settlement.expectedNetAmount,row.currency):"—" },
+        { title:L("รับจริง", "Actual payout"), align:"right", width:160, render:(_,row)=>row.settlement?.actualNetAmount==null?"—":<Space size={4}>{money(row.settlement.actualNetAmount,row.currency)}{!row.settlement.actualPayoutComplete&&<Tag color="orange">{L("บางส่วน","partial")}</Tag>}</Space> },
+        { title:L("ส่วนต่าง", "Variance"), align:"right", width:125, render:(_,row)=>row.settlement?.actualPayoutComplete?money(row.settlement.varianceAmount,row.currency):"—" },
+        { title:L("ค่าธรรมเนียม", "Fees"), align:"right", width:125, render:(_,row)=>row.settlement?money(row.settlement.feeAmount,row.currency):"—" },
+        { title:"Commission", align:"right", width:125, render:(_,row)=>row.settlement?money(row.settlement.commissionAmount,row.currency):"—" },
+        { title:L("คืนเงินใน Statement", "Statement refunds"), align:"right", width:145, render:(_,row)=>row.settlement?money(row.settlement.refundAmount,row.currency):"—" },
+        { title:L("Fee + commission", "Fee + commission"), align:"right", width:145, render:(_,row)=>row.settlement?percent(row.settlement.feeCommissionRate):"—" },
+        { title:L("Statement ไม่ตรง", "Mismatched statements"), align:"right", width:130, render:(_,row)=>row.settlement?<Tag color={row.settlement.mismatchStatements?"red":"green"}>{row.settlement.mismatchStatements}</Tag>:"—" },
+      ]} />
+    </Card>
+    <Card title={L(`แนวโน้ม${analyticsGranularity === "DAY" ? "รายวัน" : analyticsGranularity === "WEEK" ? "รายสัปดาห์" : "รายเดือน"}`, `${analyticsGranularity === "DAY" ? "Daily" : analyticsGranularity === "WEEK" ? "Weekly" : "Monthly"} trend`)}>
+      <Table rowKey={(row)=>`${row.bucket}:${row.provider}`} size="small" loading={analyticsLoading} dataSource={analytics.trend}
+        pagination={analytics.trend.length > 60 ? {pageSize:60} : false} columns={[
+          { title:L("เริ่มช่วง", "Period start"), dataIndex:"bucket", render:(value)=>dayjs(value).format("YYYY-MM-DD") },
+          { title:"Provider", dataIndex:"provider", render:(value)=><Tag>{value}</Tag> },
+          { title:L("ออเดอร์", "Orders"), dataIndex:"orders", align:"right" },
+          { title:L("ยอดขาย", "Gross sales"), dataIndex:"grossSales", align:"right", render:(value,row)=>{ const provider=analytics.providers.find((p)=>p.provider===row.provider); return provider?.mixedCurrency?"—":money(value,provider?.currency ?? "THB"); } },
+          { title:L("ยอดคืน", "Refunds"), dataIndex:"refundAmount", align:"right", render:(value,row)=>{ const provider=analytics.providers.find((p)=>p.provider===row.provider); return provider?.mixedCurrency?"—":money(value,provider?.currency ?? "THB"); } },
+          { title:L("ยอดสุทธิ", "Net sales"), dataIndex:"netSales", align:"right", render:(value,row)=>{ const provider=analytics.providers.find((p)=>p.provider===row.provider); return provider?.mixedCurrency?"—":money(value,provider?.currency ?? "THB"); } },
+        ]} />
+    </Card>
+    <Alert closable showIcon type="info"
+      message={L("ยอดขายกับยอดรับจริงเป็นคนละฐาน", "Sales and actual payout use different accounting bases")}
+      description={L("ยอดขาย/คืนเงินนับตามวันเกิดรายการใน BMS ส่วน settlement นับเฉพาะ statement ที่ช่วงเวลาอยู่ภายในวันที่เลือก และไม่แก้ยอดขายย้อนหลัง", "Sales and refunds follow BMS transaction dates. Settlement includes statements whose full period falls inside the selected range and never rewrites historical sales.")} />
+  </Space>;
+
   const integrations = <Space direction="vertical" size="large" style={{ width: "100%" }}>
     <Alert closable showIcon type="warning" message={L("Live gate ยังล็อกตาม official contract", "Live gate remains locked to verified official contracts")}
       description={L("LINE MAN และ GrabFood webhook ยังไม่เปิด live adapter; foodpanda เปิดเฉพาะ capability ที่เอกสารสาธารณะยืนยัน และยังต้องมี partner credential/sandbox certification", "LINE MAN and GrabFood webhooks remain blocked; foodpanda exposes only publicly verified capabilities and still requires partner credentials and sandbox certification.")} />
+    <Card title={L("ความพร้อม LINE MAN ระดับแพลตฟอร์ม", "LINE MAN platform readiness")}>
+      <Space direction="vertical" size="middle" style={{ width: "100%" }}>
+        <Alert closable showIcon type="info"
+          message={L("BMS กำลังรอ Partner API contract จาก LINE MAN", "BMS is waiting for the LINE MAN Partner API contract")}
+          description={L("เจ้าของร้านยังไม่ต้องกรอก Client ID, token หรือ webhook secret หน้านี้จะเปิดการเชื่อมต่อเมื่อทีมแพลตฟอร์มตรวจ authentication, webhook, lifecycle, settlement และสิทธิ์การใช้ credential แล้ว", "Shop owners should not enter a Client ID, token, or webhook secret yet. Connection will open after the platform team verifies authentication, webhooks, lifecycle, settlement, and credential authority.")} />
+        <Row gutter={[12, 12]}>
+          {[
+            ["partner", "สัญญา Partner / เจ้าของ credential", "Partner agreement / credential ownership"],
+            ["webhook", "การยืนยัน webhook และ retry", "Webhook authentication and retry"],
+            ["lifecycle", "วงจรออเดอร์ / ยกเลิก / คืนเงิน", "Order lifecycle / cancel / refund"],
+            ["catalog", "รหัสร้านและเมนู", "Store and menu identifiers"],
+            ["settlement", "รูปแบบ settlement และเจ้าของภาษี", "Settlement format and tax ownership"],
+            ["sandbox", "Sandbox และ certification", "Sandbox and certification"],
+          ].map(([key, th, en]) => <Col xs={24} md={12} xl={8} key={key}>
+            <Tag icon={<ClockCircleOutlined />} color="orange" style={{ width: "100%", padding: "6px 10px", whiteSpace: "normal" }}>
+              {L(th, en)} · {L("รอ LINE MAN", "Waiting for LINE MAN")}
+            </Tag>
+          </Col>)}
+        </Row>
+        <Typography.Text type="secondary">
+          <CheckCircleOutlined /> {L("โครงสร้าง tenant, mapping, durable inbox/outbox, order และ finance พร้อมสำหรับเสียบ adapter หลังตรวจ contract", "Tenant isolation, mappings, durable inbox/outbox, order, and finance foundations are ready for the adapter after contract review.")}
+        </Typography.Text>
+        <Button disabled>{L("เชื่อมต่อ LINE MAN (รอ Partner API)", "Connect LINE MAN (waiting for Partner API)")}</Button>
+      </Space>
+    </Card>
     <Card title={L("การเชื่อมต่อ", "Integrations")} extra={canManageIntegration && <Button type="primary" icon={<PlusOutlined />} onClick={() => {
       integrationForm.resetFields(); integrationForm.setFieldsValue({ provider: "FOODPANDA", environment: "SANDBOX", rolloutMode: "OFF", active: false, outboundCommandsEnabled: false, configJson: "{}" }); setIntegrationOpen(true);
     }}>{L("เพิ่ม", "Add")}</Button>}>
@@ -192,7 +355,9 @@ export default function DeliveryPlatformsPage() {
         { title: L("Rollout", "Rollout"), dataIndex: "rolloutMode", render: (v) => <Tag>{v}</Tag> },
         { title: L("สุขภาพ", "Health"), dataIndex: "healthStatus", render: (v) => <Tag color={statusColor(v)}>{v}</Tag> },
         { title: L("สาขา / mapping พร้อม", "Branches / verified"), render: (_, r) => `${r.locationCount} / ${r.verifiedMappingCount}` },
-        { title: L("Credential", "Credential"), render: (_, r) => [r.accessTokenMasked, r.clientSecretMasked].filter(Boolean).join(" · ") || "—" },
+        { title: L("Credential", "Credential"), render: (_, r) => DELIVERY_PROVIDER_ONBOARDING[r.provider as "FOODPANDA" | "GRABFOOD" | "LINEMAN"]?.tenantSetupMode === "PLACEHOLDER_ONLY"
+          ? <Tag color="orange">{L("จัดการโดย Partner flow หลังอนุมัติ", "Managed by partner flow after approval")}</Tag>
+          : [r.accessTokenMasked, r.clientSecretMasked].filter(Boolean).join(" · ") || "—" },
         { title: "", render: (_, r) => canManageIntegration ? <Space><Button size="small" onClick={async () => {
           try { await jsonFetch("/api/bms/delivery/integrations", { method:"POST", body:JSON.stringify({ action:"test", integrationId:r.id }) }); message.success(L("เชื่อมต่อสำเร็จ", "Connection succeeded")); await load(); }
           catch (e:any) { message.error(e?.message ?? L("ตรวจไม่ผ่าน", "Connection check failed")); }
@@ -278,8 +443,9 @@ export default function DeliveryPlatformsPage() {
   </Space>;
 
   return <Space direction="vertical" size="large" style={{ width:"100%" }}>
-    <AdminPageHeader title={L("แพลตฟอร์มเดลิเวอรี", "Delivery platforms")}><Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>{L("รีเฟรช", "Refresh")}</Button></AdminPageHeader>
+    <AdminPageHeader title={L("แพลตฟอร์มเดลิเวอรี", "Delivery platforms")}><Button icon={<ReloadOutlined />} loading={loading || analyticsLoading} onClick={() => void Promise.all([load(),loadAnalytics()])}>{L("รีเฟรช", "Refresh")}</Button></AdminPageHeader>
     <Tabs activeKey={activeTab} onChange={(key) => { setActiveTab(key); history.replaceState(null,"",`?tab=${key}`); }} items={[
+      { key:"analytics", label:L("วิเคราะห์", "Analytics"), children:analyticsView },
       { key:"integrations", label:L("การเชื่อมต่อ", "Integrations"), children:integrations },
       { key:"mappings", label:L("Mapping", "Mappings"), children:mappings },
       { key:"operations", label:L("ปฏิบัติการ", "Operations"), children:operations },
@@ -290,12 +456,16 @@ export default function DeliveryPlatformsPage() {
       <Form form={integrationForm} layout="vertical"><Form.Item name="id" hidden><Input /></Form.Item><Row gutter={12}>
         <Col span={8}><Form.Item name="provider" label="Provider" rules={[{required:true}]}><Select options={["FOODPANDA","GRABFOOD","LINEMAN"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
         <Col span={8}><Form.Item name="environment" label={L("สภาพแวดล้อม", "Environment")} rules={[{required:true}]}><Select options={["SANDBOX","LIVE"].map(value=>({value}))} disabled={Boolean(integrationForm.getFieldValue("id"))} /></Form.Item></Col>
-        <Col span={8}><Form.Item name="rolloutMode" label="Rollout" rules={[{required:true}]}><Select options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
-      </Row><Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch /></Form.Item></Col></Row>
-      <Form.Item name="clientId" label="Client ID"><Input /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password /></Form.Item></Col></Row>
-      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label="API version"><Input /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
-      <Form.Item name="configJson" label={L("Config ที่ไม่ใช่ secret (JSON)", "Non-secret config (JSON)")}><Input.TextArea rows={6} /></Form.Item></Form>
+        <Col span={8}><Form.Item name="rolloutMode" label="Rollout" rules={[{required:true}]}><Select disabled={!tenantCredentialFieldsAvailable} options={["OFF","SHADOW","LIVE"].map(value=>({value}))} /></Form.Item></Col>
+      </Row>
+      {!tenantCredentialFieldsAvailable && <Alert closable showIcon type="warning" style={{ marginBottom: 16 }}
+        message={L("บันทึกได้เฉพาะรายการเตรียมเชื่อมต่อ", "Only a connection placeholder can be saved")}
+        description={L("Contract ยังไม่บอกว่า credential เป็นของ BMS หรือของร้าน ระบบจึงบังคับ OFF และไม่รับ secret จนกว่าทีมแพลตฟอร์มจะเปิด Partner flow", "The contract has not established whether credentials belong to BMS or the shop, so the server enforces OFF and rejects secrets until the platform team enables the partner flow.")} />}
+      <Row gutter={12}><Col span={12}><Form.Item name="active" label={L("เปิด integration", "Integration enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="outboundCommandsEnabled" label={L("เปิด outbound command", "Outbound commands enabled")} valuePropName="checked"><Switch disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Form.Item name="clientId" label="Client ID"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item><Row gutter={12}><Col span={12}><Form.Item name="clientSecret" label={L("Client secret (เว้นว่างเพื่อคงเดิม)", "Client secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="accessToken" label={L("Access token (เว้นว่างเพื่อคงเดิม)", "Access token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item name="refreshToken" label={L("Refresh token (เว้นว่างเพื่อคงเดิม)", "Refresh token (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="webhookSecret" label={L("Webhook secret (เว้นว่างเพื่อคงเดิม)", "Webhook secret (blank keeps current)")}><Input.Password disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col></Row>
+      <Row gutter={12}><Col span={12}><Form.Item name="apiVersion" label="API version"><Input disabled={!tenantCredentialFieldsAvailable} /></Form.Item></Col><Col span={12}><Form.Item name="credentialExpiresAt" label={L("Credential หมดอายุ", "Credential expires at")}><Input disabled={!tenantCredentialFieldsAvailable} placeholder="2027-01-31T00:00:00+07:00" /></Form.Item></Col></Row>
+      <Form.Item name="configJson" label={L("Config ที่ไม่ใช่ secret (JSON)", "Non-secret config (JSON)")}><Input.TextArea disabled={!tenantCredentialFieldsAvailable} rows={6} /></Form.Item></Form>
     </Modal>
 
     <Modal open={locationOpen} title={L("จับคู่สาขา", "Map provider store")} onCancel={()=>setLocationOpen(false)} onOk={()=>void saveLocationMapping()} okText={L("บันทึก", "Save")} cancelText={L("ยกเลิก", "Cancel")}>

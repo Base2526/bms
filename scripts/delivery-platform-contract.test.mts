@@ -5,6 +5,11 @@ import test from "node:test";
 
 import { DELIVERY_CAPABILITIES } from "../apps/web/lib/bms/deliveryPlatforms/capabilities";
 import { normalizeFoodpandaOrder } from "../apps/web/lib/bms/deliveryPlatforms/foodpanda";
+import {
+  assertTenantDeliveryConfigurationAllowed,
+  DELIVERY_PROVIDER_ONBOARDING,
+  tenantCredentialFormAvailable,
+} from "../apps/web/lib/bms/deliveryPlatforms/onboarding";
 
 const root = path.resolve(import.meta.dirname, "..");
 const read = (file: string) => fs.readFileSync(path.join(root, file), "utf8");
@@ -42,6 +47,62 @@ test("provider capabilities stay conservative and unavailable contracts fail clo
   const blocked = read("apps/web/lib/bms/deliveryPlatforms/blockedAdapter.ts");
   assert.match(blocked, /CONTRACT_BLOCKED/);
   assert.doesNotMatch(blocked, /fetch\(/);
+});
+
+test("LINE MAN onboarding separates the one-time platform contract from tenant setup", () => {
+  assert.equal(DELIVERY_PROVIDER_ONBOARDING.LINEMAN.state, "PARTNER_CONTRACT_REQUIRED");
+  assert.equal(DELIVERY_PROVIDER_ONBOARDING.LINEMAN.credentialAuthority, "UNDECIDED_PENDING_CONTRACT");
+  assert.equal(tenantCredentialFormAvailable("LINEMAN"), false);
+  assert.doesNotThrow(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+    credentialValues: [], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }));
+  assert.throws(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "SHADOW", active: true, outboundCommandsEnabled: false,
+    credentialValues: [], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }), /DELIVERY_PLATFORM_PARTNER_ONBOARDING_REQUIRED/);
+  assert.throws(() => assertTenantDeliveryConfigurationAllowed("LINEMAN", {
+    rolloutMode: "OFF", active: false, outboundCommandsEnabled: false,
+    credentialValues: ["guessed-token"], config: {}, apiVersion: null, credentialExpiresAt: null,
+  }), /DELIVERY_TENANT_CREDENTIALS_NOT_AUTHORIZED/);
+  const service = read("apps/web/lib/bms/deliveryIntegrations.ts");
+  assert.match(service, /assertTenantDeliveryConfigurationAllowed/);
+  assert.match(service, /A placeholder must not preserve guessed credentials/);
+  const page = read("apps/web/app\/(admin)\/admin\/delivery-platforms\/page.tsx");
+  assert.match(page, /BMS กำลังรอ Partner API contract จาก LINE MAN/);
+  assert.match(page, /Only a connection placeholder can be saved/);
+  assert.match(page, /disabled=\{!tenantCredentialFieldsAvailable\}/);
+  assert.match(read("docs/integrations/lineman-partner-intake.md"), /Exact signed bytes and canonicalization/);
+});
+
+test("platform owner has a separate encrypted Partner API control plane", () => {
+  const migration = read("db/migrations/10.21__bms_delivery_provider_settings.sql");
+  const service = read("apps/web/lib/bms/deliveryProviderSettings.ts");
+  const route = read("apps/web/app/api/admin/delivery-providers/route.ts");
+  const layout = read("apps/web/app/(admin)/admin/delivery-provider-settings/layout.tsx");
+  const page = read("apps/web/app/(admin)/admin/delivery-provider-settings/page.tsx");
+  const navigation = read("apps/web/lib/bms/adminNavigation.ts");
+
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_delivery_provider_settings/);
+  assert.match(migration, /UNIQUE \(provider, environment\)/);
+  for (const column of ["client_secret_encrypted", "access_token_encrypted", "refresh_token_encrypted", "webhook_secret_encrypted"]) {
+    assert.match(migration, new RegExp(`\\b${column}\\b`));
+  }
+  assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_delivery_provider_setting_events/);
+  assert.match(service, /encryptSecret\(next\)/);
+  assert.match(service, /maskedSecret\(row\.client_secret_encrypted\)/);
+  assert.match(service, /loadActiveDeliveryProviderRuntimeConfig/);
+  assert.match(service, /DELIVERY_PROVIDER_NOT_ACTIVE/);
+  assert.doesNotMatch(service, /SELECT \* FROM bms_delivery_provider_settings/);
+  assert.match(service, /DELIVERY_PROVIDER_ADAPTER_NOT_VERIFIED/);
+  assert.match(service, /DELIVERY_PROVIDER_CONTRACT_REQUIRED/);
+  assert.match(service, /DELIVERY_CONFIG_KEY_NOT_ALLOWED/);
+  assert.match(route, /authorizePlatformAdminRoute\(\)/);
+  assert.doesNotMatch(route, /authorizeAdminRoute\(/);
+  assert.match(layout, /requirePlatformAdminPage\(\)/);
+  assert.match(page, /\/api\/admin\/delivery-providers/);
+  assert.match(page, /Secret เข้ารหัสและอ่านค่าจริงกลับไม่ได้/);
+  assert.match(navigation, /platform\.delivery-provider-settings[\s\S]*\/admin\/delivery-provider-settings/);
 });
 
 test("foodpanda normalization rejects implicit currency and never invents provider idempotency headers", () => {
@@ -182,6 +243,34 @@ test("admin operations, action center and finance reconciliation are tenant-scop
   assert.match(operations, /sanitized_payload->>'providerOrderId'/);
   assert.doesNotMatch(operations, /e\.provider_order_id/);
   assert.match(actions, /collectDeliverySignals/);
+});
+
+test("delivery provider analytics separates operational, sales and statement authority", () => {
+  const service = read("apps/web/lib/bms/deliveryAnalytics.ts");
+  const route = read("apps/web/app/api/bms/delivery/analytics/route.ts");
+  const page = read("apps/web/app/(admin)/admin/delivery-platforms/page.tsx");
+
+  assert.match(service, /export async function getDeliveryProviderAnalytics/);
+  assert.match(service, /beginTenantTx\(client, input\.tenantId\)/);
+  assert.match(service, /bms_delivery_orders d[\s\S]*d\.tenant_id=\$1/);
+  assert.match(service, /bms_pos_refund_allocations/);
+  assert.match(service, /p\.status='REFUNDED'[\s\S]*NOT EXISTS/);
+  assert.match(service, /locationId \? \{ rows: \[\] as any\[\] \} : await client\.query/);
+  assert.match(service, /actual_net_amount == null \? null/);
+  assert.match(service, /actualPayoutComplete/);
+  assert.match(service, /span > 366/);
+  assert.ok(service.indexOf('["DAY", "WEEK", "MONTH"].includes(granularity)') < service.indexOf("date_trunc('${bucketUnit}'"));
+
+  assert.match(route, /authorizeAdminRoute\("delivery\.settlement\.view"\)/);
+  assert.match(route, /tenantId: auth\.tenantId/);
+  assert.doesNotMatch(route, /tenantId: search\.get/);
+  assert.match(route, /if \(!code\.startsWith\("DELIVERY_ANALYTICS_"\)\) throw error/);
+
+  assert.match(page, /\/api\/bms\/delivery\/analytics/);
+  assert.match(page, /key:"analytics"/);
+  assert.match(page, /Settlement เป็น statement รวม จึงไม่ปันส่วนลงสาขา/);
+  assert.match(page, /actualPayoutComplete/);
+  assert.match(page, /Shadow/);
 });
 
 test("late acceptance is blocked without inventing provider reject or refund semantics", () => {

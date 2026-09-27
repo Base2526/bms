@@ -289,7 +289,10 @@ wrong, and update the doc in the same change.
   [agent-invariants.md § Restaurant online ordering](docs/agent-invariants.md#restaurant-online-ordering-chat-delivery-sold-out).
 - **Delivery platforms (`10.12`)** — provider contracts are capability-gated: never invent an
   endpoint, signature header, payload, status or retry guarantee. The opaque integration id derives
-  tenant and a verified store mapping derives branch; only `VERIFIED` item/variant/modifier mappings
+  tenant and a verified store mapping derives branch. Platform partner contracts and encrypted
+  credentials live only in the platform-admin `/admin/delivery-provider-settings` control plane;
+  tenant authorization and store/menu mappings live in `/admin/delivery-platforms`, which never
+  receives platform secrets. Only `VERIFIED` item/variant/modifier mappings
   create a whole order. Webhooks write a sanitized durable inbox, the order/payment/reservation
   commit atomically, and every external call runs after commit through the command outbox. Desired
   pause, provider state and sync result remain separate. `PLATFORM_SETTLEMENT` is server-only and is
@@ -303,7 +306,10 @@ wrong, and update the doc in the same change.
   `VENDOR_DELIVERY` dispatched only from committed handoff). Unknown transport or changed identity
   is action-required, never inferred. GrabFood/LINE MAN remain
   contract-blocked until official partner webhook/onboarding contracts are reviewed; no live-ready
-  claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Full detail:
+  claim is valid before sandbox, shadow, tax approval and a real settlement cycle. Provider
+  analytics keeps BMS sales/refund dates separate from statement payout, treats missing actual payout
+  as unknown, never sums mixed currencies and never allocates statement-wide fees to a branch without
+  provider evidence. Full detail:
   [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.

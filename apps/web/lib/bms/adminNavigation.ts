@@ -428,6 +428,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },
   {
+    id: "platform.delivery-provider-settings", route: "/admin/delivery-provider-settings", labelKey: "admin_nav.delivery_provider_settings",
+    section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
+  },
+  {
     id: "platform.system-health", route: "/admin/system-health", labelKey: "admin_nav.system_health",
     section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },

@@ -1,7 +1,8 @@
 # Delivery platform integration
 
 This is the operational and engineering contract for GrabFood, LINE MAN and foodpanda. The durable
-foundation is migration `10.12`, with lifecycle hardening in `10.14`; provider code lives under
+foundation is migration `10.12`, with lifecycle hardening in `10.14` and the global partner
+control plane in `10.21`; provider code lives under
 `apps/web/lib/bms/deliveryPlatforms/`.
 The integration is deliberately fail-closed: having tables and screens does not mean a provider is
 certified for production.
@@ -84,7 +85,13 @@ Official sources reviewed on 2026-09-24:
 1. Obtain the provider agreement, sandbox account, credentials, webhook contract, retry policy,
    status list, deadlines, cancellation/refund rules, rate limits, settlement sample, API version
    and data-retention terms.
-2. Create a `SANDBOX` integration in `OFF` mode. For foodpanda, configure OAuth client id + client
+2. A platform administrator opens `/admin/delivery-provider-settings`, creates the provider's
+   `SANDBOX` control-plane row, records contract/version/authentication authority, and enters secrets
+   in the dedicated write-only fields. The service encrypts them with `BMS_SECRET_KEY`, returns only
+   masked presence, and appends a safe configuration event. It rejects `CERTIFIED`, `ACTIVE`, and
+   tenant enablement while the provider adapter's required contracts are not `VERIFIED`.
+3. The shop creates a `SANDBOX` integration in `OFF` mode at `/admin/delivery-platforms`. For
+   foodpanda, configure OAuth client id + client
    secret; a legacy encrypted access token remains compatibility-only. OAuth tokens use the provider's
    `expires_in` with a safety margin and an encrypted fleet Redis cache protected by a short refresh
    lock. A provider 401 invalidates that cache and retries the same durable operation once. Secrets
@@ -92,27 +99,39 @@ Official sources reviewed on 2026-09-24:
    encrypted with `BMS_SECRET_KEY`; list
    APIs return only presence and a short mask. Arbitrary config keys containing `secret`, `token`,
    `password`, `credential` or `privateKey` are rejected.
-3. Map one provider store to one BMS location. Record the provider item/variant/modifier identifiers
+4. Map one provider store to one BMS location. Record the provider item/variant/modifier identifiers
    obtained from its portal or verified menu read, then verify each against an active `ONLINE_ORDER`
    product variant. Suggested or stale mappings never create a live order. The current screen does
    not pretend that a successful connection test is an automatic catalog import.
-4. Run the connection test. It performs a verified menu read outside a database transaction and
+5. Run the connection test. It performs a verified menu read outside a database transaction and
    records health without exposing the response body to the browser.
-5. Move to `SHADOW`: webhooks are verified/deduplicated and provider snapshots are recorded, but no
+6. Move to `SHADOW`: webhooks are verified/deduplicated and provider snapshots are recorded, but no
    BMS order, payment or reservation is created. Compare against the provider tablet.
-6. `LIVE` rollout against the provider's production environment is rejected until webhook, fetch,
+7. `LIVE` rollout against the provider's production environment is rejected until webhook, fetch,
    accept and reject contracts are all `VERIFIED`. Today that gate remains closed for all three
    providers. A sandbox integration may use `LIVE` rollout to exercise local order writes, while a
    production integration may remain in `SHADOW` for comparison. Outbound commands have a separate
    kill switch.
-7. Rotate by sending only the new credential fields. Blank fields preserve the encrypted value.
+8. Rotate by sending only the new credential fields. Blank fields preserve the encrypted value.
    Each update advances `config_version`; in-flight workers detect the changed snapshot and stop
    before local order creation. Audit records which credential types changed, never their contents.
 
-The admin surface is `/admin/delivery-platforms`. It is permission-gated and separates integration
-health, branch/menu mappings, operational incidents/timelines, and finance. Thai and English labels
-follow the current admin locale; secrets are write-only and only masked presence returns to the
-browser.
+There are two admin surfaces with different authority:
+
+- `/admin/delivery-provider-settings` is platform-admin only. It stores the one-time partner
+  contract, credential authority, encrypted platform credentials and onboarding gate.
+- `/admin/delivery-platforms` is tenant-scoped. It manages that shop's authorization, branch/menu
+  mappings, health, operational incidents/timelines and finance.
+
+Thai and English labels follow the current admin locale. Neither surface returns plaintext secrets
+to the browser.
+
+Provider onboarding and tenant setup are separate layers. BMS establishes and implements a partner
+contract once; each tenant then authorizes only its own shops and maps its own branches/menu. Until a
+contract identifies the credential owner, LINE MAN and GrabFood tenant records are placeholder-only:
+the server enforces `OFF`, rejects tenant-supplied credentials/config, and keeps outbound commands
+disabled. The LINE MAN evidence checklist is
+[lineman-partner-intake.md](lineman-partner-intake.md).
 
 ## Store controls and degraded mode
 
@@ -163,6 +182,21 @@ orders from that tenant/integration, creates explicit missing lines, and audits 
 CSV/API parsing remains adapter work because no public settlement format is verified. A platform
 refund cannot be confirmed from the POS refund button: only a matching provider settlement/refund
 line completes its pending `PLATFORM_SETTLEMENT` allocation and records the provider-refund timeline.
+
+The Analytics tab at `/admin/delivery-platforms?tab=analytics` is permission-gated by
+`delivery.settlement.view` and compares GrabFood, LINE MAN and foodpanda without combining unlike
+accounting facts. It reports BMS sales, completed refunds, net sales, intake/acceptance/completion,
+current action-required orders, preparation time and command outcomes by provider, with daily,
+weekly or monthly trends. Shadow events stay separate from live intake and never become revenue.
+Statement gross, fees, commission, expected payout, actual payout and mismatch counts remain a
+separate settlement block. A missing `actual_net_amount` is unknown, never zero, and the combined
+actual-payout card stays blank until every statement in scope has an actual amount.
+
+Sales and refunds use their BMS transaction dates. Settlement metrics include only statements whose
+whole statement period falls inside the selected range. A branch filter applies to sales, refunds
+and operational KPIs, but hides settlement amounts because the current provider statements are not
+authoritatively allocated by branch. Do not manufacture a branch commission or payout by dividing a
+statement. Mixed-currency rows and totals are likewise withheld instead of being summed as THB.
 
 Before production, Finance must sign off who issues the receipt and tax invoice, whether delivery
 fees are merchant revenue, how merchant/provider discounts are booked, what document supports

@@ -644,6 +644,7 @@ const en = {
     kitchen: "Kitchen Board",
     restaurant_floor: "Floor Plan",
     delivery_platforms: "Delivery Platforms",
+    delivery_provider_settings: "Delivery Partner APIs",
     retail_local_licenses: "Retail Local licenses",
     retail_local_releases: "Retail Local downloads",
     board_game: "Board Game Tables",

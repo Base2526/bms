@@ -1138,7 +1138,10 @@ provider boundary for GrabFood, LINE MAN and foodpanda. Full capability, setup, 
 runbook and rollout detail is in [integrations/delivery-platforms.md](integrations/delivery-platforms.md).
 
 - **Provider contracts are data, not guesses.** A capability is callable only when its official
-  contract is `VERIFIED`. GrabFood and LINE MAN stay contract-blocked until partner webhook and
+  contract is `VERIFIED`. Platform partner contracts and credentials live in the global,
+  platform-admin-only `/admin/delivery-provider-settings` control plane; tenant authorization and
+  store/menu mappings stay in `/admin/delivery-platforms`. The tenant surface never reads platform
+  secrets. GrabFood and LINE MAN stay contract-blocked until partner webhook and
   onboarding documents are reviewed; a documented SDK method alone does not authorize an invented
   webhook or payload. foodpanda uses only its published contract, and its Partner Portal webhook
   header must be configured explicitly.
@@ -1155,6 +1158,10 @@ runbook and rollout detail is in [integrations/delivery-platforms.md](integratio
 - **Platform money is server-only.** `PLATFORM_SETTLEMENT` never enters customer checkout, POS tender
   selection or AI tools. Refund allocation remains pending until provider confirmation or finance
   reconciliation, while settlement adjustments append and never rewrite the original sale/payment.
+- **Provider analytics never turns an accounting gap into a number.** BMS sales/refunds are grouped
+  by their own transaction dates and remain separate from provider statement payout. Shadow intake
+  is not revenue; a missing actual payout is unknown, not zero; mixed currencies are not summed; and
+  statement-wide fee, commission or payout is never allocated to a branch without provider evidence.
 - **A scheduled order never reaches the kitchen early.** Integration config must give an explicit
   1–240 minute preparation lead. Missing policy is action-required rather than guessed. A leased job
   creates tickets when due; accepting the order before then records acceptance without cooking.

@@ -109,6 +109,7 @@ const ROUTES = {
   kitchen: "/admin/kitchen",
   restaurantFloor: "/admin/restaurant-floor",
   deliveryPlatforms: "/admin/delivery-platforms",
+  deliveryProviderSettings: "/admin/delivery-provider-settings",
   boardGame: "/admin/board-game",
   stockModels: "/admin/stock-models",
   wastage: "/admin/wastage",
