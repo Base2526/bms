@@ -15,6 +15,7 @@ const ALLOWED_FIELDS = new Set([
   "version",
   "channel",
   "status",
+  "accessLevel",
   "isLatest",
   "minOs",
   "releaseNotes",
@@ -83,7 +84,7 @@ export async function parseRetailLocalReleaseUploadStream(
         files: 1,
         fields: ALLOWED_FIELDS.size,
         // Busboy emits partsLimit when the counter reaches (not exceeds) the
-        // configured value, so reserve one sentinel beyond 8 fields + 1 file.
+        // configured value, so reserve one sentinel beyond metadata fields + file.
         parts: ALLOWED_FIELDS.size + 2,
         fieldSize: MAX_FIELD_BYTES,
       },

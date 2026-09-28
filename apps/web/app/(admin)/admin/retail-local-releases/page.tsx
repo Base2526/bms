@@ -34,6 +34,7 @@ type Platform = "windows-x64" | "ubuntu-x64" | "macos-arm64";
 type PackageType = "server-pos" | "server" | "pos";
 type Status = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 type Channel = "pilot" | "stable" | "internal";
+type AccessLevel = "public" | "trial";
 
 type ReleaseAsset = {
   id: string;
@@ -42,6 +43,7 @@ type ReleaseAsset = {
   version: string;
   channel: Channel;
   status: Status;
+  access_level: AccessLevel;
   is_latest: boolean;
   original_name: string;
   size_bytes: number;
@@ -91,6 +93,11 @@ const PACKAGE_LABELS: Record<PackageType, string> = {
   "server-pos": "Server + POS",
   server: "Server only",
   pos: "POS Desktop only",
+};
+
+const ACCESS_LABELS: Record<AccessLevel, string> = {
+  public: "Public",
+  trial: "Trial locked",
 };
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -148,6 +155,7 @@ export default function RetailLocalReleasesPage() {
   const [inferredFile, setInferredFile] = useState<InferredFileMeta | null>(null);
   const [uploadForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const uploadPackageType = Form.useWatch("packageType", uploadForm);
 
   const copy = th ? {
     title: "Retail Local Releases",
@@ -158,6 +166,7 @@ export default function RetailLocalReleasesPage() {
     packageType: "ประเภทติดตั้ง",
     version: "เวอร์ชัน",
     status: "สถานะ",
+    access: "การเข้าถึง",
     channel: "ช่องทาง",
     file: "ไฟล์",
     size: "ขนาด",
@@ -167,10 +176,11 @@ export default function RetailLocalReleasesPage() {
     created: "สร้างเมื่อ",
     actions: "จัดการ",
     latest: "Latest",
+    trialLock: "ล็อกด้วย Trial",
     save: "บันทึก",
     download: "ทดสอบดาวน์โหลด",
     uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน POS Desktop บน macOS ใช้ .dmg",
-    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง หน้าเว็บจึงมี Server + POS, Server only และ POS Desktop only ได้พร้อมกัน",
+    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แต่ Server + POS ถูก lock เป็น Trial และไม่แสดงเป็น public download",
     inferred: "อ่านจากไฟล์",
     inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
     checksumPending: "คำนวณระหว่างอัปโหลด",
@@ -185,6 +195,7 @@ export default function RetailLocalReleasesPage() {
     packageType: "Package type",
     version: "Version",
     status: "Status",
+    access: "Access",
     channel: "Channel",
     file: "File",
     size: "Size",
@@ -194,10 +205,11 @@ export default function RetailLocalReleasesPage() {
     created: "Created",
     actions: "Actions",
     latest: "Latest",
+    trialLock: "Trial locked",
     save: "Save",
     download: "Test download",
     uploadHint: "Server and combined packages use .exe, .deb or .pkg. macOS POS Desktop uses .dmg.",
-    publicRule: "Latest is tracked per platform and package type, so Server + POS, Server only, and POS Desktop only can be published together.",
+    publicRule: "Latest is tracked per platform and package type. Server + POS is trial locked and is not listed as a public download.",
     inferred: "Read from file",
     inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
     checksumPending: "calculated during upload",
@@ -253,6 +265,7 @@ export default function RetailLocalReleasesPage() {
     body.set("version", values.version);
     body.set("channel", values.channel);
     body.set("status", values.status);
+    body.set("accessLevel", values.accessLevel);
     body.set("isLatest", values.isLatest ? "true" : "false");
     body.set("minOs", values.minOs);
     body.set("releaseNotes", values.releaseNotes || "");
@@ -288,6 +301,7 @@ export default function RetailLocalReleasesPage() {
     uploadForm.setFieldsValue({
       ...(platform ? { platform, minOs: defaultMinOs(platform, packageType) } : {}),
       ...(packageType ? { packageType } : {}),
+      ...(packageType ? { accessLevel: packageType === "server-pos" ? "trial" : "public" } : {}),
       ...(version ? { version } : {}),
     });
     setInferredFile({
@@ -304,6 +318,7 @@ export default function RetailLocalReleasesPage() {
     setEditing(row);
     editForm.setFieldsValue({
       status: row.status,
+      accessLevel: row.access_level,
       isLatest: row.is_latest,
       minOs: row.min_os,
       releaseNotes: row.release_notes,
@@ -389,6 +404,7 @@ export default function RetailLocalReleasesPage() {
             { title: copy.platform, dataIndex: "platform", width: 140 },
             { title: copy.packageType, dataIndex: "package_type", width: 150, render: (value: PackageType) => PACKAGE_LABELS[value] },
             { title: copy.status, dataIndex: "status", width: 120, render: (value: Status) => <Tag color={STATUS_COLORS[value]}>{value}</Tag> },
+            { title: copy.access, dataIndex: "access_level", width: 130, render: (value: AccessLevel) => <Tag color={value === "trial" ? "purple" : "blue"}>{ACCESS_LABELS[value]}</Tag> },
             { title: copy.channel, dataIndex: "channel", width: 100 },
             { title: copy.file, dataIndex: "original_name", width: 260, ellipsis: true },
             { title: copy.size, dataIndex: "size_bytes", width: 100, render: formatBytes },
@@ -424,7 +440,7 @@ export default function RetailLocalReleasesPage() {
         width={720}
       >
         <Alert showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
-        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server", channel: "pilot", status: "supported", isLatest: false }}>
+        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server-pos", accessLevel: "trial", channel: "pilot", status: "supported", isLatest: false }}>
           <Row gutter={12}>
             <Col xs={24} sm={8}>
               <Form.Item name="platform" label={copy.platform} rules={[{ required: true }]}>
@@ -437,7 +453,12 @@ export default function RetailLocalReleasesPage() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="packageType" label={copy.packageType} rules={[{ required: true }]}>
-                <Select options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))} />
+                <Select
+                  options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))}
+                  onChange={(value: PackageType) => {
+                    uploadForm.setFieldValue("accessLevel", value === "server-pos" ? "trial" : "public");
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
@@ -457,6 +478,16 @@ export default function RetailLocalReleasesPage() {
                 <Select options={["supported", "legacy", "deprecated", "hidden"].map((value) => ({ value, label: value }))} />
               </Form.Item>
             </Col>
+            <Col xs={24} sm={8}>
+              <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
+                <Select
+                  disabled={uploadPackageType === "server-pos"}
+                  options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
             <Col xs={24} sm={8}>
               <Form.Item name="isLatest" label={copy.latest} valuePropName="checked">
                 <Switch />
@@ -512,6 +543,12 @@ export default function RetailLocalReleasesPage() {
         <Form form={editForm} layout="vertical">
           <Form.Item name="status" label={copy.status} rules={[{ required: true }]}>
             <Select options={["latest", "supported", "legacy", "deprecated", "hidden"].map((value) => ({ value, label: value }))} />
+          </Form.Item>
+          <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
+            <Select
+              disabled={editing?.package_type === "server-pos"}
+              options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
+            />
           </Form.Item>
           <Form.Item name="isLatest" label={copy.latest} valuePropName="checked">
             <Switch />

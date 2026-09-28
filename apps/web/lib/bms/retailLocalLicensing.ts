@@ -448,8 +448,8 @@ export async function issueRetailLocalActivationCode(licenseId: string, adminId:
 export async function createRetailLocalLicense(input: {
   customerReference?: string; maxActiveInstallations?: number; licenseType?: string; adminId: string | number;
 }) {
-  const customerReference = input.customerReference?.trim() || null;
-  if (customerReference && !ID.test(customerReference)) throw new RetailLocalLicenseError("customerReference ไม่ถูกต้อง");
+  const customerReference = input.customerReference?.trim();
+  if (!customerReference || !ID.test(customerReference)) throw new RetailLocalLicenseError("customerReference ไม่ถูกต้อง");
   const maximum = input.maxActiveInstallations ?? 1;
   if (!Number.isInteger(maximum) || maximum < 1 || maximum > 100) {
     throw new RetailLocalLicenseError("maxActiveInstallations ไม่ถูกต้อง");

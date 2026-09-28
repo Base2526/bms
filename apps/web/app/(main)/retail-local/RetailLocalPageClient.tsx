@@ -207,7 +207,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "สำหรับแคชเชียร์เพิ่มเติม เลือก Pair กับ Local Server ในร้านหรือ Server ภายนอกได้" },
     },
     downloadNow: { "server-pos": "ดาวน์โหลด Server + POS", server: "ดาวน์โหลด Server", pos: "ดาวน์โหลด POS Desktop" },
-    unavailable: { "server-pos": "ยังไม่เผยแพร่แพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
+    unavailable: { "server-pos": "ขอ Trial เพื่อรับแพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
     available: "พร้อมดาวน์โหลด",
     awaitingArtifact: "รอ publish artifact",
     includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ให้ตรวจสอบก่อนติดตั้ง",
@@ -322,7 +322,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "For an additional register. Pair it with an in-store Local Server or an external server." },
     },
     downloadNow: { "server-pos": "Download Server + POS", server: "Download Server", pos: "Download POS Desktop" },
-    unavailable: { "server-pos": "Combined package not published", server: "Server not published", pos: "POS Desktop not published" },
+    unavailable: { "server-pos": "Request a trial for the combined package", server: "Server not published", pos: "POS Desktop not published" },
     available: "Available",
     awaitingArtifact: "Awaiting published artifact",
     includes: "Every published file must show its version, file size, SHA-256 and release notes before installation.",
@@ -569,7 +569,9 @@ export default function RetailLocalPageClient({
                 </div>
                 <div className={styles.downloadMeta}>
                   <Tag color="processing">{content.currentPilot}</Tag>
-                  <Tag color={directDownload ? "success" : "default"}>{directDownload ? content.available : content.awaitingArtifact}</Tag>
+                  <Tag color={directDownload ? "success" : packageType === "server-pos" ? "purple" : "default"}>
+                    {directDownload ? content.available : packageType === "server-pos" ? content.pilot : content.awaitingArtifact}
+                  </Tag>
                   <span><FileProtectOutlined /> SHA-256 + release notes</span>
                 </div>
                 {directDownload?.version && (

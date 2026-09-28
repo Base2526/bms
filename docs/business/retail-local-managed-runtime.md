@@ -85,6 +85,22 @@ expiry is derived at read time rather than by a cron, so a missed scheduler cann
 lie. Evidence review status remains a separate field: suspected duplicate use and an expired trial
 are different conversations and must never be collapsed into one enforcement switch.
 
+The full trial handoff is:
+
+1. Publish the `server-pos` installer as a trial-locked release asset. It does not appear on the
+   anonymous `/retail-local` download list; it is distributed through the standard Retail Local
+   license/onboarding flow.
+2. Issue a Retail Local license with a required `customerReference` and `licenseType: "TRIAL"`.
+   The first activation code is returned once and expires after seven days.
+3. Give the customer the trial-locked installer and the one-time activation code through the normal
+   commercial onboarding channel.
+4. The installer redeems the activation code, receives an ingestion token, then submits signed
+   evidence. The license detail page shows the originally issued `customer_reference` beside the
+   reported `tenant_reference` and `pos_device_reference`, so staff can see who the license was
+   issued to and which shop/device actually activated it.
+5. Staff either acknowledge follow-ups, extend the trial, mark payment review, or convert the same
+   row to paid. Conversion preserves the license/installations and cancels pending trial follow-ups.
+
 ## Platform shape
 
 On Windows, a native signed host agent manages a private `BMSRuntime` WSL2 distribution containing
@@ -100,7 +116,9 @@ remain in the private Linux VM. Docker Desktop is neither installed nor used on 
 existing macOS POS Desktop `.dmg` is only a client and must never be published as this server package.
 
 The macOS builder exposes two explicit products: `--package-type server` contains only the managed
-runtime, while `--package-type server-pos` also embeds `BMS POS.app`. After first-run provisioning,
+runtime, while `--package-type server-pos` also embeds `BMS POS.app`. The combined `server-pos`
+installer is trial-locked in the release control plane: it is not an anonymous public download and is
+distributed through the standard Retail Local trial/paid onboarding flow. After first-run provisioning,
 the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
 handoff that Desktop consumes into Keychain before making a network request. Later launches need only
 open BMS POS: when its saved origin is exactly `http://127.0.0.1:3100` and that origin is unreachable,

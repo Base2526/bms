@@ -42,6 +42,7 @@ test("release multipart parser streams the file and returns small metadata", asy
   form.set("version", "1.2.3");
   form.set("channel", "pilot");
   form.set("status", "supported");
+  form.set("accessLevel", "trial");
   form.set("isLatest", "false");
   form.set("minOs", "Windows 10 x64");
   form.set("releaseNotes", "stream test");
@@ -58,6 +59,7 @@ test("release multipart parser streams the file and returns small metadata", asy
   );
 
   assert.equal(parsed.fields.packageType, "server-pos");
+  assert.equal(parsed.fields.accessLevel, "trial");
   assert.equal(parsed.storedFile.original_name, "BMS-Server-POS-1.2.3.exe");
   assert.equal(parsed.storedFile.size, Buffer.byteLength("installer-bytes"));
   assert.equal(Buffer.concat(chunks).toString("utf8"), "installer-bytes");

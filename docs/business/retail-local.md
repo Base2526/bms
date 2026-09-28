@@ -208,6 +208,13 @@ Each platform has three independent package types:
 
 The package type describes delivery, not a new runtime boundary. A combined installer still installs
 the existing server and client components; POS Desktop never owns a database or alternate sales rules.
+The combined `server-pos` package is trial-locked distribution: it is stored with
+`access_level = trial`, omitted from anonymous public downloads, and fetched only through
+the standard Retail Local license/onboarding flow. That lock applies to installer distribution only
+and must never become a runtime lease for an installed shop.
+Trial onboarding uses two records together: the trial-locked `server-pos` release asset and a Retail
+Local license whose `customer_reference` names the customer/account the platform issued it to. After
+activation, signed evidence adds the actual tenant/POS references reported by the installed host.
 
 Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
 experimental `macos-arm64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
@@ -229,9 +236,10 @@ with `BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES` (bytes). Keep release files as private
 file row and its `bms_retail_local_release_assets` owner are committed in one database transaction;
 a validation or pre-commit failure removes the stored bytes.
 
-Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden Retail
-Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Do not point the
-public page at `/api/files/[id]` directly.
+Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden public
+Retail Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Trial-locked
+assets require platform-admin authorization. Do not point the public page at `/api/files/[id]`
+directly.
 
 Release status controls the website:
 
