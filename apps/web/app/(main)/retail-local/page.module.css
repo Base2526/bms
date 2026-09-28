@@ -611,6 +611,26 @@
   overflow-wrap: anywhere;
 }
 
+.releaseNotes {
+  background: rgba(var(--app-bg-rgb), 0.52);
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+}
+
+.releaseNotes strong {
+  font-size: 13px;
+}
+
+.releaseNotes p {
+  color: var(--app-muted);
+  line-height: 1.6;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
 .downloadLink {
   display: block;
 }

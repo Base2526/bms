@@ -431,20 +431,43 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const agentMain = read("apps/retail-local-agent/main.go");
   const release = read("apps/retail-local-agent/release.go");
   const transaction = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction");
+  const linuxUpdateCommand = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-update");
   const linuxUpdater = read("deploy/retail-local/managed-runtime/linux/update-managed-runtime.sh");
   const windowsUpdater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
+  const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
   const wslKeepalive = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive");
+  const managedRuntimeDoc = read("docs/business/retail-local-managed-runtime.md");
+  const invariants = read("docs/agent-invariants.md");
 
   assert.match(agentMain, /case "verify-update"/);
+  assert.match(agentMain, /case "check-update"[\s\S]*"updateAvailable": comparison > 0/);
   assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
   assert.match(release, /compareSemver/);
   assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
   assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
   assert.match(transaction, /rollback_safe[\s\S]*bms-localctl restore/);
   assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
+  const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
+  assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
+  assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
+  assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
+  assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);
+  assert.match(windowsUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*\$CheckOnly[\s\S]*Read-Host[\s\S]*stage-release/);
+  assert.match(windowsInstaller, /Check for Updates[\s\S]*-CheckOnly[\s\S]*BMS Retail Local Update/);
+  assert.ok(linuxUpdater.indexOf("mode == check") < linuxUpdater.indexOf("install -m 0755 -o root -g root \"$localctl_source\""));
+  assert.ok(windowsUpdater.indexOf("if ($CheckOnly)") < windowsUpdater.indexOf("runtime-install-control"));
   assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);
   assert.match(wslKeepalive, /bms-update-transaction recover/);
+  for (const doc of [managedRuntimeDoc, invariants]) {
+    assert.match(doc, /user-initiated|operator-initiated/);
+    assert.match(doc, /signed release (manifest|metadata)/);
+    assert.match(doc, /preflight/);
+    assert.match(doc, /verified encrypted backup|verified backup/);
+    assert.match(doc, /health-gated commit|health checks before committing success/);
+    assert.match(doc, /rollback\/full restore|full data restore|schema-incompatible failure restores/);
+    assert.match(doc, /trial expiry must never block corrective updates|license\/trial state must not block/);
+  }
 });

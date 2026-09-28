@@ -170,6 +170,39 @@ the previous images, and publishes success only after health checks. Image rollb
 when the release declares schema compatibility; otherwise recovery restores the pre-update database,
 files, and encryption keys together.
 
+Installed-shop updates are user-initiated by default. The platform may surface an available release,
+its channel, version, size, checksum, minimum runtime, expected downtime, migration notes and rollback
+status, but the operator must explicitly choose **Check for update** or **Back up and update** before
+the local host changes bytes. The updater must not silently apply a runtime or schema change during
+trading hours, and license/trial state must not block the ability to receive a corrective update.
+
+The installed updater enforces that boundary directly. **Check for update** runs host preflight,
+verifies the publisher signature and target, and displays current/target version, channel, schema,
+component download size, publication time, and whether failure can use image rollback or requires a
+full data restore. It downloads only the small manifest and does not stage components, stop services,
+or install runtime controls. Applying the update requires a second explicit confirmation. An
+unattended launcher may use the affirmative flag only after an operator-facing surface has shown the
+same verified preview and captured consent. Customer-readable release notes accompany the release
+listing and must describe expected downtime, migration impact, rollback/restore, and support contact.
+
+The standard update flow is:
+
+1. publish the signed release manifest beside customer-readable release notes;
+2. verify and show what will change, whether the release is pilot/stable/internal, whether rollback
+   is image-only or requires full data restore, and have the operator review the stated downtime;
+3. run preflight checks for supported host, disk space and current runtime health;
+4. verify every package signature, SHA-256 and OCI digest, then stage the new bytes;
+5. create and verify the encrypted logical backup immediately before stopping the stack;
+6. apply migrations and runtime replacement in the transaction controller;
+7. pass Web, WS, PostgreSQL, Redis and HTTP health checks before committing success;
+8. record update evidence and keep the previous release/backup for rollback or support review.
+
+If any step fails before commit, the operator sees the failed phase and the host remains on or returns
+to the previous working release. If the failure happens after an incompatible schema migration,
+recovery must restore the pre-update database, files and secret bundle together rather than trying to
+mix old images with new data. Automatic background retry is limited to recovering an interrupted
+transaction on startup; choosing a newer release remains an explicit operator action.
+
 Live PostgreSQL storage is not backed up by copying a running WSL VHDX. The supported backup is a
 logical database dump plus stored files, installation metadata, and the exact secrets required to
 decrypt credentials. Commercial recovery must be portable to a replacement machine, so machine-only

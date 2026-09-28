@@ -47,7 +47,8 @@ take_lock() {
     mkdir "$lock" || die "สร้าง update lock ไม่สำเร็จ"
   fi
   printf '%s\n' "$$" >"$lock/pid"
-  trap unlock EXIT HUP INT TERM
+  trap unlock EXIT
+  trap 'exit 130' HUP INT TERM
 }
 
 rollback() {
@@ -130,10 +131,10 @@ case "${1:-}" in
   commit)
     version=${2:-}
     valid_version "$version" || die "release version ไม่ถูกต้อง"
+    take_lock
     directory=$(transaction_dir "$version")
     [ "$(read_phase "$version")" = runtime-healthy ] || die "transaction ยังไม่พร้อม commit"
     [ -f "$directory/installation.next.json" ] || die "ไม่พบ installation.next.json"
-    take_lock
     bms-localctl doctor >/dev/null || die "บริการไม่ healthy; ปฏิเสธ commit"
     install -m 0600 "$directory/installation.next.json" "$root/installation.json"
     write_phase "$version" committed

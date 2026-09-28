@@ -14,7 +14,9 @@ artifact_path() {
 [[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"
 manifest_uri=${1:-}
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
+mode=${3:-apply}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential"
+[[ $mode == apply || $mode == check || $mode == yes ]] || die "update mode ไม่ถูกต้อง"
 [[ -f $RUNTIME_ROOT/installation.json ]] || die "ยังไม่ได้ติดตั้ง BMS Retail Local"
 
 agent_source="$bundle_root/bms-runtime-agent"
@@ -23,12 +25,8 @@ localctl_source="$bundle_root/bms-localctl"
 transaction_source="$bundle_root/bms-update-transaction"
 [[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || \
   die "bootstrap package ไม่มี updater controls ครบ"
-install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT"
-install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
-install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-release-keys.json"
-install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
-install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
-agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
+agent="$agent_source"
+"$agent" preflight >/dev/null
 
 current_version=$(jq -er '.version' "$RUNTIME_ROOT/installation.json")
 target=$(jq -er '.platformTarget' "$RUNTIME_ROOT/installation.json")
@@ -39,13 +37,46 @@ curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$mani
 chmod 0600 "$manifest_path.tmp"
 mv -f "$manifest_path.tmp" "$manifest_path"
 
-release_json=$($agent verify-update -manifest "$manifest_path" \
-  -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -current-version "$current_version")
+verify_command=verify-update
+[[ $mode != check ]] || verify_command=check-update
+release_json=$($agent "$verify_command" -manifest "$manifest_path" \
+  -keyring "$keyring_source" -target "$target" -current-version "$current_version")
+if [[ $mode == check && $(jq -r '.updateAvailable' <<<"$release_json") != true ]]; then
+  printf 'BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: %s\n' "$current_version"
+  exit 0
+fi
+version=$(jq -er '.releaseVersion' <<<"$release_json")
+channel=$(jq -er '.channel' <<<"$release_json")
+schema_version=$(jq -er '.schemaVersion' <<<"$release_json")
+created_at=$(jq -er '.createdAt' <<<"$release_json")
+total_bytes=$(jq -er '[.components[].sizeBytes] | add' <<<"$release_json")
+rollback_mode=$(jq -r 'if .rollbackSafe then "image-only" else "full database/files/secrets restore" end' <<<"$release_json")
+printf 'พบ BMS Retail Local update ที่ตรวจลายเซ็นแล้ว\n'
+printf '  version: %s -> %s\n' "$current_version" "$version"
+printf '  channel: %s\n' "$channel"
+printf '  schema: %s\n' "$schema_version"
+printf '  download: %s bytes\n' "$total_bytes"
+printf '  rollback: %s\n' "$rollback_mode"
+printf '  published: %s\n' "$created_at"
+if [[ $mode == check ]]; then
+  printf 'ยังไม่ได้ดาวน์โหลด component หรือติดตั้ง update\n'
+  exit 0
+fi
+if [[ $mode != yes ]]; then
+  [[ -t 0 ]] || die "ต้องยืนยันแบบ interactive หรือเรียกด้วย --yes หลังแสดงรายละเอียดให้ operator แล้ว"
+  read -r -p 'พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง: ' confirmation
+  [[ $confirmation == UPDATE ]] || die "ยกเลิก update"
+fi
+install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT"
+install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
+install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-release-keys.json"
+install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
+install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
+agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
 stage_json=$($agent stage-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT")
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
-version=$(jq -er '.releaseVersion' <<<"$release_json")
 
 while IFS=$'\t' read -r name image_ref digest; do
   "$agent" engine-load -engine linux-native -artifact "$(artifact_path "$name")" \
