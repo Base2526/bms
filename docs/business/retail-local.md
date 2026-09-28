@@ -16,7 +16,10 @@ price, stock, permission, payment, tax documents, and audit.
 ## Current supported boundary
 
 - one installation, one provisioned tenant, one `MAIN` branch, and one initial `POS-01` device;
-- retail archetype (`mini_mart`) only for the first-run profile;
+- first-run selection of one supported shop archetype; the selection configures the shared BMS
+  experience/presets and is not a separate local business-rule implementation;
+- optional resumable sample data using the shared onboarding seeder; sample products follow the
+  selected archetype and remain marked as fake data;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;
 - portable test ZIP with prebuilt application/PostgreSQL/Redis images and SHA-256 verification;
 - deterministic ordered migrations with checksums and an advisory lock;
@@ -54,11 +57,19 @@ preflight check, validates and loads the image archive, creates local secrets, m
 waits for both Web and WS to become healthy, then performs HTTP health checks. Running directly from
 source remains supported for development; in that mode the installer builds the images locally.
 
-The installer asks for the shop name, owner identity, password, and POS PIN. It generates every
+The installer asks for the shop name, shop archetype, whether to create optional sample data, owner
+identity, password, and POS PIN. It generates every
 database/application secret locally, loads the packaged Web/WS images (or builds them in source-dev
 mode), applies all migrations, provisions the shop atomically, and starts the stack. The POS pairing
 token is displayed once and is stored in the database only as a SHA-256 hash. Paste it into BMS POS
 with server URL `http://127.0.0.1:3100`; Electron stores it in the OS keystore.
+
+Archetype is committed in the same transaction as the shop. The installer writes a protected
+provisioning checkpoint containing the one-time pairing result before it starts optional sample
+data. Seeding then runs in a separate process through `createOnboardingSampleData()`, so products
+match the selected archetype and a seed crash or power loss cannot strand the new register without
+its token. If optional seeding fails, the usable shop is preserved and the operator can resume the
+seed safely from Getting Started.
 
 The generated `.env.local` contains encryption/signing keys. It is ACL-restricted by the installer,
 git-ignored, and must never be emailed or committed.

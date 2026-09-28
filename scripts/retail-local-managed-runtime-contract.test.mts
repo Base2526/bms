@@ -189,6 +189,9 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
     assert.match(installer, /ยืนยันรหัสผ่านอีกครั้ง/);
     assert.match(installer, /ยืนยัน PIN อีกครั้ง/);
     assert.match(installer, /\[BMS/);
+    assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
+    assert.match(installer, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
+    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่/);
   }
   assert.match(windows, /preflight\.warnings/);
   assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);

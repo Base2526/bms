@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes.ts";
+
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
 test("Retail Local reuses the authoritative stack and keeps data services off host ports", () => {
@@ -43,16 +45,82 @@ test("local migration runner is ordered, checksummed, locked, and excludes destr
 
 test("first-run provisioning is single-tenant, atomic, and never persists the raw device token", () => {
   const service = read("apps/web/lib/bms/localProvisioning.ts");
+  const runner = read("apps/web/scripts/retail-local-provision.mts");
+  const sampleRunner = read("apps/web/scripts/retail-local-sample-data.mts");
   const migration = read("db/migrations/10.15__bms_retail_local_installation.sql");
   assert.match(service, /BMS_DEPLOYMENT_MODE !== "retail-local"/);
   assert.match(service, /SELECT pg_advisory_xact_lock/);
   assert.match(service, /await client\.query\("BEGIN"\)/);
   assert.match(service, /await client\.query\("COMMIT"\)/);
   assert.match(service, /hashToken\(deviceToken\)/);
+  assert.match(service, /normalizeShopArchetype\(input\.businessArchetype\)/);
+  assert.match(service, /VALUES \(\$1, \$2, \$3\)/);
+  assert.doesNotMatch(service, /VALUES \(\$1, 'general', 'mini_mart'\)/);
+  assert.match(runner, /status: "PENDING"/);
+  assert.match(runner, /status: "SKIPPED"/);
+  assert.doesNotMatch(runner, /createOnboardingSampleData/,
+    "sample generation must not delay checkpointing the one-time device token");
+  assert.match(sampleRunner, /createOnboardingSampleData\(tenantId\)/);
+  assert.match(sampleRunner, /optional sample data failed/);
   assert.doesNotMatch(migration, /device_token|password_hash|pos_pin_hash/i);
   assert.match(migration, /CHECK \(singleton\)/);
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /REVOKE ALL ON bms_local_installation FROM bms_app/);
+});
+
+test("every Retail Local installer asks for shop type and optional archetype sample data", () => {
+  const installers = [
+    read("deploy/retail-local/install.ps1"),
+    read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1"),
+    read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh"),
+    read("deploy/retail-local/managed-runtime/macos/bms-retail-local"),
+  ];
+  const archetypes = SHOP_ARCHETYPE_OPTIONS.map((option) => option.value);
+  for (const installer of installers) {
+    for (const archetype of archetypes) assert.match(installer, new RegExp(`\\b${archetype}\\b`));
+    assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
+    assert.match(installer, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
+    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่/);
+  }
+  for (const compose of [
+    read("deploy/retail-local/compose.yml"),
+    read("deploy/retail-local/managed-runtime/compose.managed.yml"),
+  ]) {
+    assert.match(compose, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
+    assert.match(compose, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
+    assert.match(compose, /sample-data:/);
+    assert.match(compose, /retail-local-sample-data\.mts/);
+  }
+});
+
+test("installers checkpoint or hand off pairing before optional sample generation", () => {
+  const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const macos = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+  const pilot = read("deploy/retail-local/install.ps1");
+
+  assert.ok(linux.indexOf('>"$provision_checkpoint"') < linux.indexOf("run --rm sample-data"),
+    "Linux must persist the token checkpoint before sample data");
+  assert.ok(windows.indexOf("Write-RuntimeText $provisionCheckpoint") < windows.indexOf('"sample-data"'),
+    "Windows must persist the token checkpoint before sample data");
+  const macCheckpoint = macos.indexOf('>"$root/provision-result.json"');
+  assert.ok(macCheckpoint >= 0 && macCheckpoint < macos.indexOf("\n  run_sample_data", macCheckpoint),
+    "macOS must persist the token checkpoint before sample data");
+  assert.match(macos, /if \[\[ \$PROVISION_SAMPLE_STATUS != PENDING \]\]; then\s+return 0/,
+    "macOS must treat skipping optional sample data as a successful setup path under set -e");
+  assert.ok(pilot.indexOf("Write-Host $result.deviceToken") < pilot.indexOf("run --rm sample-data"),
+    "the technical pilot must display the token before sample data");
+});
+
+test("sample products have an explicit preset for every supported shop type", () => {
+  const seed = read("apps/web/lib/bms/devSeed.ts");
+  const start = seed.indexOf("function productPresetForArchetype");
+  const end = seed.indexOf("function orderPresetForArchetype", start);
+  assert.ok(start >= 0 && end > start, "cannot locate the sample product preset switch");
+  const productPresets = seed.slice(start, end);
+  for (const { value } of SHOP_ARCHETYPE_OPTIONS) {
+    assert.match(productPresets, new RegExp(`case ["']${value}["']:`), `${value} falls back to generic sample products`);
+  }
 });
 
 test("Retail Local blocks public SaaS tenant signup", () => {
@@ -104,4 +172,3 @@ test("install diagnostics and destructive reset are explicit and secret-safe", (
   assert.match(checklist, /doctor\.ps1 -Json/);
   assert.match(checklist, /Do not use real customer data/);
 });
-

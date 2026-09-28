@@ -3,7 +3,8 @@
 Current Commercial/GA evidence status: [Retail Local GA readiness](retail-local-ga-readiness.md).
 
 Managed Runtime is the commercial self-install direction for Retail Local. The customer downloads one
-signed installer, supplies shop/owner/password/PIN details, and reaches a paired POS without handling
+signed installer, supplies shop type/owner/password/PIN details, optionally creates matching sample
+data, and reaches a paired POS without handling
 Docker Desktop, WSL, Compose, ports, environment files, or a raw device token.
 
 It remains a deployment profile of the authoritative BMS stack. It does not create a local-only price,
@@ -135,11 +136,14 @@ The installer persists only non-secret progress and resumes after a required reb
 2. enable/install the platform runtime and reboot if required;
 3. verify the signed release envelope and stage every component;
 4. verify SHA-256 and OCI digests before any provisioning;
-5. create machine secrets, migrate, and provision exactly once;
-6. pass service and HTTP health checks;
-7. transfer the one-time device token to Electron over a local ACL-bound channel, store it with
+5. ask for a supported shop archetype and whether optional sample data should be created, then create
+   machine secrets, migrate, provision exactly once, and persist the protected pairing checkpoint;
+6. create resumable sample data through the shared onboarding service only when requested; a sample
+   failure remains retryable and never discards the usable shop or one-time device token;
+7. pass service and HTTP health checks;
+8. transfer the one-time device token to Electron over a local ACL-bound channel, store it with
    `safeStorage`, then erase transient copies;
-8. mark installation complete and open the PIN screen.
+9. mark installation complete and open the PIN screen.
 
 A failed or interrupted stage resumes idempotently. It must not report success, expose a half-paired
 register, or rerun a completed provision operation.

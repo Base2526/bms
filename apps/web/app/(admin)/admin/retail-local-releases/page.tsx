@@ -358,7 +358,7 @@ export default function RetailLocalReleasesPage() {
           </Col>
         </Row>
 
-        <Alert showIcon type="info" message={copy.publicRule} />
+        <Alert showIcon closable type="info" message={copy.publicRule} />
 
         <Row gutter={[16, 16]}>
           {(Object.keys(PLATFORM_LABELS) as Platform[]).map((platform) => (
@@ -436,7 +436,7 @@ export default function RetailLocalReleasesPage() {
         okText={copy.upload}
         width={720}
       >
-        <Alert showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
+        <Alert showIcon closable type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
         <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server", channel: "pilot", status: "supported", isLatest: false }}>
           <Row gutter={12}>
             <Col xs={24} sm={8}>
@@ -495,6 +495,7 @@ export default function RetailLocalReleasesPage() {
           {inferredFile && (
             <Alert
               showIcon
+              closable
               type="success"
               style={{ marginTop: 16 }}
               message={copy.inferred}

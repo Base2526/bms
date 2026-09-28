@@ -20,6 +20,59 @@ shell_export() {
   encoded=$(printf '%s' "$value" | base64 -w 0)
   printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
 }
+read_business_archetype() {
+  local choice
+  while :; do
+    cat <<'EOF'
+
+ประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)
+  1) ร้านสะดวกซื้อ / ร้านขายของชำ
+  2) แฟชั่นและเสื้อผ้า
+  3) บ้านและเครื่องครัว
+  4) ความงามและของใช้ส่วนตัว
+  5) อาหารและเครื่องดื่มพร้อมขาย
+  6) อุปกรณ์ไอทีและแกดเจ็ต
+  7) ค้าส่ง / B2B
+  8) ของขวัญและสินค้าตามเทศกาล
+  9) ร้านยา
+ 10) ร้านอุปกรณ์สัตว์เลี้ยง
+ 11) ร้านวัสดุก่อสร้าง
+ 12) ร้านอาหาร / ระบบครัว
+ 13) คาเฟ่บอร์ดเกม
+ 14) ร้านประเภทอื่น
+EOF
+    read -r -p 'เลือกประเภทร้าน 1-14: ' choice
+    case "$choice" in
+      1) business_archetype=mini_mart ;;
+      2) business_archetype=fashion ;;
+      3) business_archetype=home_kitchen ;;
+      4) business_archetype=beauty_personal_care ;;
+      5) business_archetype=food_beverage ;;
+      6) business_archetype=gadgets_accessories ;;
+      7) business_archetype=b2b_wholesale ;;
+      8) business_archetype=gifts_seasonal ;;
+      9) business_archetype=pharmacy ;;
+      10) business_archetype=pet_supply ;;
+      11) business_archetype=building_materials ;;
+      12) business_archetype=restaurant ;;
+      13) business_archetype=board_game_cafe ;;
+      14) business_archetype=other ;;
+      *) printf 'กรุณาเลือกหมายเลข 1-14\n' >&2; continue ;;
+    esac
+    return
+  done
+}
+read_sample_data_choice() {
+  local answer
+  while :; do
+    read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
+    case "$answer" in
+      y|Y|yes|YES) create_sample_data=1; return ;;
+      ''|n|N|no|NO) create_sample_data=0; return ;;
+      *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
+    esac
+  done
+}
 cleanup() {
   [[ -n ${provision_script:-} ]] && rm -f -- "$provision_script"
   [[ -n ${handoff_path:-} && ! -e ${handoff_path:-} ]] || true
@@ -72,6 +125,8 @@ admin_name=''
 admin_email=''
 admin_password=''
 admin_pin=''
+business_archetype=''
+create_sample_data='0'
 if [[ ! -f $provision_checkpoint ]]; then
   step 2 "รับข้อมูลร้านและผู้ดูแล"
   while [[ -z $shop_name ]]; do read -r -p 'ชื่อร้าน: ' shop_name; done
@@ -80,6 +135,8 @@ if [[ ! -f $provision_checkpoint ]]; then
     read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
     [[ $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || echo "อีเมลไม่ถูกต้อง กรุณากรอกใหม่" >&2
   done
+  read_business_archetype
+  read_sample_data_choice
   while :; do
     read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
     read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
@@ -179,6 +236,8 @@ else
     shell_export BMS_LOCAL_ADMIN_EMAIL "$admin_email"
     shell_export BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
     shell_export BMS_LOCAL_ADMIN_PIN "$admin_pin"
+    shell_export BMS_LOCAL_BUSINESS_ARCHETYPE "$business_archetype"
+    shell_export BMS_LOCAL_CREATE_SAMPLE_DATA "$create_sample_data"
     printf 'cd %s\ndocker compose --env-file .env -f compose.yml --profile setup run --rm provision\n' "$RUNTIME_ROOT"
   } >"$provision_script"
   chmod 0700 "$provision_script"
@@ -190,6 +249,26 @@ else
   printf '%s\n' "$provision_result" >"$provision_checkpoint"
   chmod 0600 "$provision_checkpoint"
 fi
+
+sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
+if [[ $sample_status == PENDING ]]; then
+  # The provisioning checkpoint above already contains the one-time token. Sample generation may
+  # now be retried safely after a process interruption or power loss without recreating the shop.
+  sample_output=$(cd "$RUNTIME_ROOT" && \
+    docker compose --env-file .env -f compose.yml --profile setup run --rm sample-data 2>&1) || true
+  sample_result=$(grep -E '^\{"status"' <<<"$sample_output" | tail -n 1)
+  if ! jq -e . >/dev/null 2>&1 <<<"$sample_result"; then
+    sample_result='{"status":"FAILED","requested":true,"message":"sample data process did not return a readable result"}'
+  fi
+  provision_result=$(jq -c --argjson sample "$sample_result" '.sampleData = $sample' <<<"$provision_result")
+  printf '%s\n' "$provision_result" >"$provision_checkpoint"
+  chmod 0600 "$provision_checkpoint"
+  sample_status=$(jq -r '.sampleData.status' <<<"$provision_result")
+fi
+case "$sample_status" in
+  COMPLETED|ALREADY_COMPLETED) printf '[BMS] สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว\n' ;;
+  FAILED) printf 'คำแนะนำ: ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+esac
 
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
 step 6 "เริ่มบริการและตรวจสุขภาพระบบ"

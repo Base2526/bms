@@ -388,6 +388,12 @@ function productPresetForArchetype(archetype: ShopArchetype | null | undefined) 
         categories: ["อาหารจานเดียว", "กับข้าว", "เครื่องดื่ม", "ของทานเล่น", "วัตถุดิบ"],
         brands: ["House Kitchen", "House Drinks", "Fresh Daily", "Kitchen Supply", "No Brand"],
       };
+    case "board_game_cafe":
+      return {
+        prefix: "Board Game Cafe",
+        categories: ["เครื่องดื่ม", "ของทานเล่น", "เกมสำหรับขาย", "อุปกรณ์เกม", "สินค้าแฟนคลับ"],
+        brands: ["Cafe House", "Game Night", "Meeple Supply", "Tabletop Gear", "No Brand"],
+      };
     case "other":
     default:
       return {

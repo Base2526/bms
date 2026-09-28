@@ -70,6 +70,7 @@ import {
   ProfileOutlined,
   ControlOutlined,
   MoreOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -286,6 +287,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'settings.manual': <BookOutlined />,
   'platform.tenants': <BankOutlined />,
   'platform.retail-local-licenses': <SafetyCertificateOutlined />,
+  'platform.retail-local-releases': <DownloadOutlined />,
   'platform.roles': <SnippetsOutlined />,
   'platform.report-schedule': <ScheduleOutlined />,
   'platform.support-tickets': <CustomerServiceOutlined />,
@@ -295,6 +297,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'platform.logs': <DatabaseOutlined />,
   'platform.mail-log': <MailOutlined />,
   'platform.operations-schedule': <ControlOutlined />,
+  'platform.auth-settings': <KeyOutlined />,
   'platform.system-health': <HeartOutlined />,
   'platform.env': <EnvironmentOutlined />,
   'platform.sql-console': <CodeOutlined />,

@@ -48,6 +48,9 @@ in a signed agent release before manifests start using that id.
   technical-pilot runtime;
 - loopback-only Web/WS, with PostgreSQL, Redis, and engine sockets off host ports;
 - atomic first-run migration/provisioning and ACL/mode-protected secrets;
+- first-run shop-archetype selection plus opt-in, resumable onboarding sample data whose products
+  come from the shared archetype catalog; the pairing checkpoint is persisted before the separate
+  sample process, so a sample failure or interruption never blocks the shop or loses pairing;
 - short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
 - encrypted logical database/files/secrets backup through `bms-localctl backup`;
 - scheduled age-encrypted off-host backup for Windows and Ubuntu, with a separately held recipient

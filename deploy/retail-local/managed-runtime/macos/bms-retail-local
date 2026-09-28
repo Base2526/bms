@@ -17,11 +17,14 @@ readonly ARCH_FILE="$PAYLOAD_ROOT/ARCH"
 readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
 readonly LOG_PATH="$STATE_ROOT/host-service.log"
 PROVISION_DEVICE_TOKEN=""
+PROVISION_SAMPLE_STATUS=""
 SHOP_NAME=""
 ADMIN_NAME=""
 ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 ADMIN_PIN=""
+BUSINESS_ARCHETYPE=""
+CREATE_SAMPLE_DATA="0"
 LAUNCH_LABEL="gui/$(id -u)/com.bms.retail-local"
 readonly LAUNCH_LABEL
 
@@ -159,6 +162,61 @@ shell_export_line() {
   printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
 }
 
+select_business_archetype() {
+  local choice
+  while :; do
+    cat <<'EOF'
+
+ประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)
+  1) ร้านสะดวกซื้อ / ร้านขายของชำ
+  2) แฟชั่นและเสื้อผ้า
+  3) บ้านและเครื่องครัว
+  4) ความงามและของใช้ส่วนตัว
+  5) อาหารและเครื่องดื่มพร้อมขาย
+  6) อุปกรณ์ไอทีและแกดเจ็ต
+  7) ค้าส่ง / B2B
+  8) ของขวัญและสินค้าตามเทศกาล
+  9) ร้านยา
+ 10) ร้านอุปกรณ์สัตว์เลี้ยง
+ 11) ร้านวัสดุก่อสร้าง
+ 12) ร้านอาหาร / ระบบครัว
+ 13) คาเฟ่บอร์ดเกม
+ 14) ร้านประเภทอื่น
+EOF
+    read -r -p 'เลือกประเภทร้าน 1-14: ' choice
+    case "$choice" in
+      1) BUSINESS_ARCHETYPE=mini_mart ;;
+      2) BUSINESS_ARCHETYPE=fashion ;;
+      3) BUSINESS_ARCHETYPE=home_kitchen ;;
+      4) BUSINESS_ARCHETYPE=beauty_personal_care ;;
+      5) BUSINESS_ARCHETYPE=food_beverage ;;
+      6) BUSINESS_ARCHETYPE=gadgets_accessories ;;
+      7) BUSINESS_ARCHETYPE=b2b_wholesale ;;
+      8) BUSINESS_ARCHETYPE=gifts_seasonal ;;
+      9) BUSINESS_ARCHETYPE=pharmacy ;;
+      10) BUSINESS_ARCHETYPE=pet_supply ;;
+      11) BUSINESS_ARCHETYPE=building_materials ;;
+      12) BUSINESS_ARCHETYPE=restaurant ;;
+      13) BUSINESS_ARCHETYPE=board_game_cafe ;;
+      14) BUSINESS_ARCHETYPE=other ;;
+      *) printf 'กรุณาเลือกหมายเลข 1-14\n' >&2; continue ;;
+    esac
+    break
+  done
+}
+
+select_sample_data() {
+  local answer
+  while :; do
+    read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
+    case "$answer" in
+      y|Y|yes|YES) CREATE_SAMPLE_DATA=1; return ;;
+      ''|n|N|no|NO) CREATE_SAMPLE_DATA=0; return ;;
+      *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
+    esac
+  done
+}
+
 collect_shop_details() {
   local password_confirm pin_confirm
   printf '\nข้อมูลร้านแรกเริ่ม (เก็บใน private VM เท่านั้น)\n'
@@ -169,6 +227,8 @@ collect_shop_details() {
     [[ $ADMIN_EMAIL =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
       printf 'อีเมลไม่ถูกต้อง กรุณากรอกใหม่\n' >&2
   done
+  select_business_archetype
+  select_sample_data
   while :; do
     read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' ADMIN_PASSWORD; printf '\n'
     read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
@@ -183,18 +243,57 @@ collect_shop_details() {
   done
 }
 
+run_sample_data() {
+  # This helper is called under `set -e`; skipping optional sample data is a successful path.
+  # A bare `[[ ... ]] || return` would return status 1 and abort setup after provisioning.
+  if [[ $PROVISION_SAMPLE_STATUS != PENDING ]]; then
+    return 0
+  fi
+  # provision-result.json is already mode 0600 inside the private VM and contains the one-time
+  # token. From this point a sample-data interruption is retryable and cannot lose pairing.
+  guest sudo sh -c '
+    set -eu
+    root=/var/lib/bms-retail-local
+    raw="$root/.sample-result.$$"
+    json="$root/.sample-result-json.$$"
+    trap '\''rm -f "$raw" "$json"'\'' EXIT HUP INT TERM
+    cd "$root"
+    docker compose --env-file .env -f compose.yml --profile setup run --rm sample-data >"$raw" 2>&1 || true
+    if grep -E '\''^\{"status"'\'' "$raw" | tail -n 1 >"$json" && [ -s "$json" ]; then
+      :
+    else
+      printf '\''%s\n'\'' '\''{"status":"FAILED","requested":true,"message":"sample data process did not return a readable result"}'\'' >"$json"
+    fi
+    install -m 0600 "$json" "$root/sample-result.json"
+  ' bms-runtime
+
+  local result_file
+  result_file="$STATE_ROOT/.sample-result-$(random_suffix).json"
+  umask 077
+  guest sudo cat /var/lib/bms-retail-local/sample-result.json >"$result_file" 2>/dev/null || true
+  PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract status raw -o - "$result_file" 2>/dev/null || printf 'FAILED')
+  rm -f -- "$result_file"
+}
+
 provision_shop() {
-  if guest sudo test -f /var/lib/bms-retail-local/provisioned; then
+  if guest sudo test -f /var/lib/bms-retail-local/provision-result.json; then
     note "พบร้านที่ provision แล้ว ดำเนินการ setup ต่อจากครั้งก่อน"
     local checkpoint_file
     checkpoint_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
     umask 077
     guest sudo cat /var/lib/bms-retail-local/provision-result.json >"$checkpoint_file" 2>/dev/null || true
     PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$checkpoint_file" 2>/dev/null || true)
+    PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$checkpoint_file" 2>/dev/null || true)
     rm -f -- "$checkpoint_file"
+    run_sample_data
+    case "$PROVISION_SAMPLE_STATUS" in
+      COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
+      FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+    esac
     return
   fi
-  [[ -n $SHOP_NAME && -n $ADMIN_NAME && -n $ADMIN_EMAIL && -n $ADMIN_PASSWORD && -n $ADMIN_PIN ]] || \
+  [[ -n $SHOP_NAME && -n $ADMIN_NAME && -n $ADMIN_EMAIL && -n $ADMIN_PASSWORD && -n $ADMIN_PIN &&
+     -n $BUSINESS_ARCHETYPE && $CREATE_SAMPLE_DATA =~ ^[01]$ ]] || \
     die "ข้อมูล setup ไม่ครบ กรุณาเปิด Setup ใหม่"
 
   local provision_result result_file
@@ -206,6 +305,8 @@ provision_shop() {
     shell_export_line BMS_LOCAL_ADMIN_EMAIL "$ADMIN_EMAIL"
     shell_export_line BMS_LOCAL_ADMIN_PASSWORD "$ADMIN_PASSWORD"
     shell_export_line BMS_LOCAL_ADMIN_PIN "$ADMIN_PIN"
+    shell_export_line BMS_LOCAL_BUSINESS_ARCHETYPE "$BUSINESS_ARCHETYPE"
+    shell_export_line BMS_LOCAL_CREATE_SAMPLE_DATA "$CREATE_SAMPLE_DATA"
     cat <<'EOF'
 root=/var/lib/bms-retail-local
 result="$root/.provision-result.$$"
@@ -214,19 +315,25 @@ cd "$root"
 docker compose --env-file .env -f compose.yml --profile setup run --rm provision >"$result"
 grep -E '^\{"status"' "$result" | tail -n 1 >"$root/provision-result.json"
 chmod 0600 "$root/provision-result.json"
-cat "$root/provision-result.json"
 install -m 0600 /dev/null "$root/provisioned"
+cat "$root/provision-result.json"
 EOF
   } | "$LIMACTL" shell "$INSTANCE" sudo sh -s)
   result_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
   umask 077
   printf '%s\n' "$provision_result" | grep -E '^\{"status"' | tail -n 1 >"$result_file"
   PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null || true)
+  PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$result_file" 2>/dev/null || true)
   rm -f -- "$result_file"
   [[ -z $PROVISION_DEVICE_TOKEN || $PROVISION_DEVICE_TOKEN =~ ^pos_[A-Za-z0-9_-]{16,}$ ]] || \
     die "ผลลัพธ์ pairing token ไม่ถูกต้อง"
   ADMIN_PASSWORD=""; ADMIN_PIN=""
   note "สร้างร้าน ผู้ดูแล สาขา MAIN และเครื่อง POS-01 แล้ว"
+  run_sample_data
+  case "$PROVISION_SAMPLE_STATUS" in
+    COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
+    FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+  esac
 }
 
 launch_pos_desktop() {
@@ -358,7 +465,7 @@ setup_runtime() {
     wait_for_http
     launch_pos_desktop
   fi
-  guest sudo rm -f /var/lib/bms-retail-local/provision-result.json
+  guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
   step 7 "ติดตั้งสำเร็จ"
   note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
 }

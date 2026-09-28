@@ -102,7 +102,20 @@ services:
       BMS_LOCAL_ADMIN_EMAIL: ${BMS_LOCAL_ADMIN_EMAIL:-}
       BMS_LOCAL_ADMIN_PASSWORD: ${BMS_LOCAL_ADMIN_PASSWORD:-}
       BMS_LOCAL_ADMIN_PIN: ${BMS_LOCAL_ADMIN_PIN:-}
+      BMS_LOCAL_BUSINESS_ARCHETYPE: ${BMS_LOCAL_BUSINESS_ARCHETYPE:-}
+      BMS_LOCAL_CREATE_SAMPLE_DATA: ${BMS_LOCAL_CREATE_SAMPLE_DATA:-0}
     command: ["./node_modules/.bin/tsx", "scripts/retail-local-provision.mts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  sample-data:
+    profiles: ["setup"]
+    image: bms-retail-local-web:${BMS_LOCAL_IMAGE_TAG:-dev}
+    environment:
+      <<: *web-runtime
+    command: ["./node_modules/.bin/tsx", "scripts/retail-local-sample-data.mts"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -164,4 +177,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-

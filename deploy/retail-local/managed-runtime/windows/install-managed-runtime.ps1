@@ -87,6 +87,46 @@ function Read-ConfirmedSecret([string]$Prompt, [string]$ConfirmPrompt, [string]$
   }
 }
 
+function Read-BusinessArchetype {
+  $options = @(
+    [pscustomobject]@{ Value = "mini_mart"; Label = "ร้านสะดวกซื้อ / ร้านขายของชำ" },
+    [pscustomobject]@{ Value = "fashion"; Label = "แฟชั่นและเสื้อผ้า" },
+    [pscustomobject]@{ Value = "home_kitchen"; Label = "บ้านและเครื่องครัว" },
+    [pscustomobject]@{ Value = "beauty_personal_care"; Label = "ความงามและของใช้ส่วนตัว" },
+    [pscustomobject]@{ Value = "food_beverage"; Label = "อาหารและเครื่องดื่มพร้อมขาย" },
+    [pscustomobject]@{ Value = "gadgets_accessories"; Label = "อุปกรณ์ไอทีและแกดเจ็ต" },
+    [pscustomobject]@{ Value = "b2b_wholesale"; Label = "ค้าส่ง / B2B" },
+    [pscustomobject]@{ Value = "gifts_seasonal"; Label = "ของขวัญและสินค้าตามเทศกาล" },
+    [pscustomobject]@{ Value = "pharmacy"; Label = "ร้านยา" },
+    [pscustomobject]@{ Value = "pet_supply"; Label = "ร้านอุปกรณ์สัตว์เลี้ยง" },
+    [pscustomobject]@{ Value = "building_materials"; Label = "ร้านวัสดุก่อสร้าง" },
+    [pscustomobject]@{ Value = "restaurant"; Label = "ร้านอาหาร / ระบบครัว" },
+    [pscustomobject]@{ Value = "board_game_cafe"; Label = "คาเฟ่บอร์ดเกม" },
+    [pscustomobject]@{ Value = "other"; Label = "ร้านประเภทอื่น" }
+  )
+  Write-Host "`nประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)"
+  for ($index = 0; $index -lt $options.Count; $index++) {
+    Write-Host ("{0,2}) {1}" -f ($index + 1), $options[$index].Label)
+  }
+  while ($true) {
+    $choice = 0
+    $raw = Read-Host "เลือกประเภทร้าน 1-$($options.Count)"
+    if ([int]::TryParse($raw, [ref]$choice) -and $choice -ge 1 -and $choice -le $options.Count) {
+      return [string]$options[$choice - 1].Value
+    }
+    Write-Warning "กรุณาเลือกหมายเลข 1-$($options.Count)"
+  }
+}
+
+function Read-SampleDataChoice {
+  while ($true) {
+    $answer = (Read-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]").Trim()
+    if ([string]::IsNullOrEmpty($answer) -or $answer -match '^(n|no)$') { return $false }
+    if ($answer -match '^(y|yes)$') { return $true }
+    Write-Warning "กรุณาตอบ y หรือ n"
+  }
+}
+
 function Get-ArtifactPath($Release, [string]$Name) {
   $component = @($Release.components | Where-Object name -eq $Name)
   if ($component.Count -ne 1) { throw "Release ต้องมี component $Name exactly once" }
@@ -293,10 +333,14 @@ if ($distroName -in $knownDistros) {
 if ($hasProvisionCheckpoint) {
   Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
   $shopName = $adminName = $adminEmail = $adminPassword = $adminPin = ""
+  $businessArchetype = ""
+  $createSampleData = $false
 } else {
   $shopName = Read-RequiredText "ชื่อร้าน"
   $adminName = Read-RequiredText "ชื่อผู้ดูแลร้าน"
   $adminEmail = Read-EmailAddress
+  $businessArchetype = Read-BusinessArchetype
+  $createSampleData = Read-SampleDataChoice
   $adminPassword = Read-ConfirmedSecret "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" `
     "ยืนยันรหัสผ่านอีกครั้ง" '^.{8,}$' "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่"
   $adminPin = Read-ConfirmedSecret "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" `
@@ -403,6 +447,7 @@ if ($LASTEXITCODE -eq 0) {
   $provisionResult = (($checkpointOutput -join [Environment]::NewLine) | ConvertFrom-Json)
   Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
 } else {
+  $sampleDataFlag = if ($createSampleData) { "1" } else { "0" }
   $provisionScript = @(
     "#!/bin/sh",
     "set -eu",
@@ -412,6 +457,8 @@ if ($LASTEXITCODE -eq 0) {
     (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
     (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
     (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
+    (ConvertTo-ShellExport "BMS_LOCAL_BUSINESS_ARCHETYPE" $businessArchetype),
+    (ConvertTo-ShellExport "BMS_LOCAL_CREATE_SAMPLE_DATA" $sampleDataFlag),
     "cd $runtimeData",
     "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
   ) -join "`n"
@@ -426,6 +473,35 @@ if ($LASTEXITCODE -eq 0) {
   if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
   $provisionResult = $resultLine | ConvertFrom-Json
   Write-RuntimeText $provisionCheckpoint ($resultLine + "`n") "0600"
+}
+
+$sampleStatus = "SKIPPED"
+if ($provisionResult.PSObject.Properties.Name -contains "sampleData" -and $null -ne $provisionResult.sampleData) {
+  $sampleStatus = [string]$provisionResult.sampleData.status
+}
+if ($sampleStatus -eq "PENDING") {
+  # The protected checkpoint already contains the one-time token. Sample generation is therefore
+  # safe to retry after an interrupted setup without recreating the shop or losing pairing.
+  try {
+    $sampleOutput = Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f",
+      "$runtimeData/compose.yml", "--profile", "setup", "run", "--rm", "sample-data")
+    $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
+    if (-not $sampleLine) { throw "sample data process did not return a readable result" }
+    $provisionResult.sampleData = $sampleLine | ConvertFrom-Json
+  } catch {
+    $provisionResult.sampleData = [pscustomobject]@{
+      status = "FAILED"
+      requested = $true
+      message = "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน"
+    }
+  }
+  $sampleStatus = [string]$provisionResult.sampleData.status
+  Write-RuntimeText $provisionCheckpoint (($provisionResult | ConvertTo-Json -Compress -Depth 10) + "`n") "0600"
+}
+if ($sampleStatus -in @("COMPLETED", "ALREADY_COMPLETED")) {
+  Write-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" -ForegroundColor Green
+} elseif ($sampleStatus -eq "FAILED") {
+  Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
 }
 
 Write-Step 6 "เริ่มบริการและตรวจสุขภาพระบบ"

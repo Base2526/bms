@@ -78,9 +78,17 @@ expect "ชื่อผู้ดูแลร้าน: "
 send -- "Smoke Admin\r"
 expect "อีเมลผู้ดูแลร้าน: "
 send -- "smoke@example.invalid\r"
+expect "เลือกประเภทร้าน 1-14: "
+send -- "1\r"
+expect -re {y/N.*: $}
+send -- "n\r"
 expect "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): "
 send -- "RetailLocalSmoke!2026\r"
+expect "ยืนยันรหัสผ่านอีกครั้ง: "
+send -- "RetailLocalSmoke!2026\r"
 expect "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): "
+send -- "2468\r"
+expect "ยืนยัน PIN อีกครั้ง: "
 send -- "2468\r"
 expect eof
 lassign [wait] pid spawnid os_error exit_code
