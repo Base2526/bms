@@ -170,6 +170,31 @@ the previous images, and publishes success only after health checks. Image rollb
 when the release declares schema compatibility; otherwise recovery restores the pre-update database,
 files, and encryption keys together.
 
+Installed-shop updates are user-initiated by default. The platform may surface an available release,
+its channel, version, size, checksum, minimum runtime, expected downtime, migration notes and rollback
+status, but the operator must explicitly choose **Check for update** or **Back up and update** before
+the local host changes bytes. The updater must not silently apply a runtime or schema change during
+trading hours, and license/trial state must not block the ability to receive a corrective update.
+
+The standard update flow is:
+
+1. fetch the signed release manifest and customer-readable release notes;
+2. show what will change, whether the release is pilot/stable/internal, whether rollback is image-only
+   or requires full data restore, and whether a restart/downtime window is expected;
+3. run preflight checks for disk space, runtime health, backup destination, power/network assumptions
+   and any active-sale/shift constraint the release declares;
+4. create and verify the encrypted logical backup before stopping the stack;
+5. verify every package signature, SHA-256 and OCI digest, then stage the new bytes;
+6. apply migrations and runtime replacement in the transaction controller;
+7. pass Web, WS, PostgreSQL, Redis and HTTP health checks before committing success;
+8. record update evidence and keep the previous release/backup for rollback or support review.
+
+If any step fails before commit, the operator sees the failed phase and the host remains on or returns
+to the previous working release. If the failure happens after an incompatible schema migration,
+recovery must restore the pre-update database, files and secret bundle together rather than trying to
+mix old images with new data. Automatic background retry is limited to recovering an interrupted
+transaction on startup; choosing a newer release remains an explicit operator action.
+
 Live PostgreSQL storage is not backed up by copying a running WSL VHDX. The supported backup is a
 logical database dump plus stored files, installation metadata, and the exact secrets required to
 decrypt credentials. Commercial recovery must be portable to a replacement machine, so machine-only

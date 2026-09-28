@@ -173,6 +173,7 @@ export default function RetailLocalReleasesPage() {
     checksum: "SHA-256",
     minOs: "OS ขั้นต่ำ",
     notes: "Release notes",
+    notesHint: "ระบุสิ่งที่ user ต้องรู้ก่อนกด update: downtime/restart, backup, migration risk, rollback/restore และช่องทาง support",
     created: "สร้างเมื่อ",
     actions: "จัดการ",
     latest: "Latest",
@@ -202,6 +203,7 @@ export default function RetailLocalReleasesPage() {
     checksum: "SHA-256",
     minOs: "Minimum OS",
     notes: "Release notes",
+    notesHint: "Include what the operator must know before pressing update: downtime/restart, backup, migration risk, rollback/restore, and support notes.",
     created: "Created",
     actions: "Actions",
     latest: "Latest",
@@ -497,7 +499,7 @@ export default function RetailLocalReleasesPage() {
           <Form.Item name="minOs" label={copy.minOs} rules={[{ required: true }]}>
             <Input placeholder="Windows 11 Pro x64 / Ubuntu 24.04 LTS x64 / macOS 15 Apple Silicon" />
           </Form.Item>
-          <Form.Item name="releaseNotes" label={copy.notes}>
+          <Form.Item name="releaseNotes" label={copy.notes} extra={copy.notesHint}>
             <Input.TextArea rows={4} />
           </Form.Item>
           <Upload.Dragger
@@ -556,7 +558,7 @@ export default function RetailLocalReleasesPage() {
           <Form.Item name="minOs" label={copy.minOs} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="releaseNotes" label={copy.notes}>
+          <Form.Item name="releaseNotes" label={copy.notes} extra={copy.notesHint}>
             <Input.TextArea rows={8} />
           </Form.Item>
         </Form>

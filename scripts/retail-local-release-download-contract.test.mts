@@ -35,7 +35,12 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   }
   assert.match(adminPage, /name="packageType"/);
   assert.match(adminPage, /name="accessLevel"/);
+  assert.match(adminPage, /notesHint/);
+  assert.match(adminPage, /rollback\/restore/);
   assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
+  assert.match(publicPage, /releaseNotesLabel/);
+  assert.match(publicPage, /directDownload\?\.releaseNotes/);
+  assert.match(publicPage, /backup, downtime, and rollback/);
 });
 
 test("Retail Local installer upload streams to storage with bounded memory", () => {

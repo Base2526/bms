@@ -117,6 +117,14 @@ or migrating. Backups contain the database, stored files, and the secrets needed
 credentials; the backup directory therefore needs encrypted removable media or another encrypted
 destination.
 
+For managed-runtime installs, updates follow the standard user-initiated flow in
+[retail-local-managed-runtime.md](retail-local-managed-runtime.md#update-and-recovery): show the
+signed release manifest and release notes, run preflight, create a verified encrypted backup, stage
+and verify the new bytes, migrate through the transaction controller, health-check before commit, and
+fall back through rollback/full restore if needed. Early pilot shops may receive frequent updates, but
+they still require an operator action such as **Check for update** or **Back up and update**; do not
+ship a silent auto-update path for schema/runtime changes.
+
 Restore is intentionally explicit and destructive to the current local database:
 
 ```powershell
@@ -240,6 +248,10 @@ Public users download through `/api/retail-local/download/[id]`, which serves on
 Retail Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Trial-locked
 assets require platform-admin authorization. Do not point the public page at `/api/files/[id]`
 directly.
+
+Release notes are operational instructions, not marketing copy. For every Retail Local installer they
+must call out the expected update path, downtime/restart expectation, backup requirement, migration or
+data-risk notes, and rollback/restore status so the shop owner can decide when to press update.
 
 Release status controls the website:
 

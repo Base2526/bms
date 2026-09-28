@@ -435,6 +435,8 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const windowsUpdater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
   const wslKeepalive = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive");
+  const managedRuntimeDoc = read("docs/business/retail-local-managed-runtime.md");
+  const invariants = read("docs/agent-invariants.md");
 
   assert.match(agentMain, /case "verify-update"/);
   assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
@@ -447,4 +449,13 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
   assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);
   assert.match(wslKeepalive, /bms-update-transaction recover/);
+  for (const doc of [managedRuntimeDoc, invariants]) {
+    assert.match(doc, /user-initiated|operator-initiated/);
+    assert.match(doc, /signed release (manifest|metadata)/);
+    assert.match(doc, /preflight/);
+    assert.match(doc, /verified encrypted backup|verified backup/);
+    assert.match(doc, /health-gated commit|health checks before committing success/);
+    assert.match(doc, /rollback\/full restore|full data restore|schema-incompatible failure restores/);
+    assert.match(doc, /trial expiry must never block corrective updates|license\/trial state must not block/);
+  }
 });

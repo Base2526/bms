@@ -103,6 +103,7 @@ type PageContent = {
   sizeLabel: string;
   checksumLabel: string;
   minOsLabel: string;
+  releaseNotesLabel: string;
   fallbackFiles: Record<Platform, Record<PackageType, string>>;
   windowsNote: string;
   ubuntuNote: string;
@@ -210,11 +211,12 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     unavailable: { "server-pos": "ขอ Trial เพื่อรับแพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
     available: "พร้อมดาวน์โหลด",
     awaitingArtifact: "รอ publish artifact",
-    includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ให้ตรวจสอบก่อนติดตั้ง",
+    includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ที่บอก backup, downtime และ rollback ให้ตรวจก่อนติดตั้งหรือ update",
     versionLabel: "เวอร์ชัน",
     sizeLabel: "ขนาด",
     checksumLabel: "SHA-256",
     minOsLabel: "OS ขั้นต่ำ",
+    releaseNotesLabel: "ข้อควรรู้ก่อน update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
@@ -325,11 +327,12 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     unavailable: { "server-pos": "Request a trial for the combined package", server: "Server not published", pos: "POS Desktop not published" },
     available: "Available",
     awaitingArtifact: "Awaiting published artifact",
-    includes: "Every published file must show its version, file size, SHA-256 and release notes before installation.",
+    includes: "Every published file must show its version, file size, SHA-256, and release notes covering backup, downtime, and rollback before install or update.",
     versionLabel: "Version",
     sizeLabel: "Size",
     checksumLabel: "SHA-256",
     minOsLabel: "Minimum OS",
+    releaseNotesLabel: "Before you update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
@@ -581,6 +584,12 @@ export default function RetailLocalPageClient({
                     <div><dt>{content.checksumLabel}</dt><dd>{directDownload.sha256 ? directDownload.sha256.slice(0, 16) + "..." : "-"}</dd></div>
                   </dl>
                 )}
+                {directDownload?.releaseNotes ? (
+                  <div className={styles.releaseNotes}>
+                    <strong>{content.releaseNotesLabel}</strong>
+                    <p>{directDownload.releaseNotes}</p>
+                  </div>
+                ) : null}
                 {directDownload ? (
                   <a href={directDownload.url} className={styles.downloadLink} download>
                     <Button type={isRecommended ? "primary" : "default"} size="large" block icon={<DownloadOutlined />}>{content.downloadNow[packageType]}</Button>
