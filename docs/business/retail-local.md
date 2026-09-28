@@ -42,6 +42,10 @@ configuration. Local deployment is not a promise that those external services wo
 
 On a development machine at the repository root:
 
+For the one-command Windows + Linux release workflow, including POS version update instructions,
+all eight installer variants, checksums, and generated READMEs, see
+[`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
+
 ```powershell
 pwsh .\deploy\retail-local\package.ps1 -Version 0.1.0-pilot.1
 ```
