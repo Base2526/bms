@@ -146,6 +146,7 @@ test("one release command builds every Windows and Linux installer from a clean 
   const guide = read("deploy/retail-local/BUILD.md");
   assert.match(builder, /npm version \$Version --no-git-tag-version/);
   assert.match(builder, /status --porcelain --untracked-files=normal/);
+  assert.match(builder, /ConvertFrom-Json -AsHashtable/);
   assert.match(builder, /package\.ps1/);
   assert.match(builder, /build-offline-exe\.ps1/);
   assert.match(builder, /build-offline-linux\.ps1/);

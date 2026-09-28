@@ -55,11 +55,11 @@ if ($dirty.Count -gt 0) {
 }
 
 $desktopPackage = Get-Content -LiteralPath $desktopPackagePath -Raw | ConvertFrom-Json
-$desktopLock = Get-Content -LiteralPath $desktopLockPath -Raw | ConvertFrom-Json
-$lockRoot = $desktopLock.packages.PSObject.Properties[""].Value
+$desktopLock = Get-Content -LiteralPath $desktopLockPath -Raw | ConvertFrom-Json -AsHashtable
+$lockRoot = $desktopLock["packages"][""]
 if ([string]$desktopPackage.version -ne $Version -or
-    [string]$desktopLock.version -ne $Version -or
-    [string]$lockRoot.version -ne $Version) {
+    [string]$desktopLock["version"] -ne $Version -or
+    [string]$lockRoot["version"] -ne $Version) {
   throw "POS version ยังไม่ใช่ $Version ให้รัน: pwsh .\deploy\retail-local\build-release.ps1 -Version $Version -UpdateVersion แล้ว commit ก่อน"
 }
 
