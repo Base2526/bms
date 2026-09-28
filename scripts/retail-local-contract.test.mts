@@ -91,6 +91,21 @@ test("portable pilot package contains pinned images and verifies them before ins
   assert.match(install, /Test-RetailLocalHttp/);
 });
 
+test("Windows offline pilot produces real EXE variants from a verified server payload", () => {
+  const builder = read("deploy/retail-local/windows-offline/build-offline-exe.ps1");
+  const inno = read("deploy/retail-local/windows-offline/BMSRetailLocalOffline.iss");
+  assert.ok(builder.indexOf("Get-FileHash") < builder.indexOf("Expand-Archive"));
+  assert.match(builder, /ValidateSet\("server", "server-pos", "all"\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-windows-x64/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-windows-x86-legacy/);
+  assert.match(builder, /Set-Content[^\n]+\.sha256/);
+  assert.match(inno, /DefaultDirName=\{localappdata\}\\BMS\\Retail Local/);
+  assert.match(inno, /Source: "\{#BundleRoot\}\\\*"[^\n]+recursesubdirs/);
+  assert.match(inno, /Check: ServerInstallationCompleted/);
+  assert.match(inno, /FileExists\(ExpandConstant\('\{app\}\\installation\.json'\)\)/);
+  assert.match(inno, /Uninstallable=no/);
+});
+
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {
   const doctor = read("deploy/retail-local/doctor.ps1");
   const uninstall = read("deploy/retail-local/uninstall.ps1");

@@ -43,6 +43,19 @@ or internet access to fetch images. The Web image contains the exact init schema
 by its migration runner. The checksum detects corruption or modification but is not a publisher
 signature.
 
+For an internal Windows pilot, wrap that verified payload in a single offline Inno Setup executable.
+The combined variant embeds the existing x64 POS installer and starts it only after the server writes
+its installation receipt:
+
+```powershell
+pwsh .\deploy\retail-local\windows-offline\build-offline-exe.ps1 `
+  -Version 0.2.11 -PackageType all
+```
+
+This creates `Server`, `Server + POS`, `POS x64`, and `POS x86 Legacy` `.exe` files plus SHA-256
+sidecars under `artifacts/retail-local/`. It does not turn the pilot into a signed or generally
+available release; the server targets still require Windows x64, PowerShell 7 and Docker Desktop.
+
 ## Install (technical pilot)
 
 Prerequisites: Windows 11, PowerShell 7, Docker Desktop running, enough free disk space, and a tested
