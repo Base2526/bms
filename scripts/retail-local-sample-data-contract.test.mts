@@ -3,7 +3,12 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { __sampleDataTest } from "../apps/web/lib/bms/sampleData";
-import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes";
+import {
+  isShopArchetypeAvailableForNewInstall,
+  isValidShopArchetype,
+  normalizeShopArchetype,
+  SHOP_ARCHETYPE_OPTIONS,
+} from "../apps/web/lib/bms/shopArchetypes";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 const json = (path: string) => JSON.parse(read(path));
@@ -22,6 +27,14 @@ test("the versioned archetype manifest is the installer catalog authority", () =
       .sort(),
     SHOP_ARCHETYPE_OPTIONS.map((option) => option.value).sort()
   );
+  assert.equal(isValidShopArchetype("mini_mart"), true);
+  assert.equal(isShopArchetypeAvailableForNewInstall("mini_mart"), true);
+  assert.equal(isValidShopArchetype("not_a_shop_type"), false);
+  assert.equal(normalizeShopArchetype("not_a_shop_type"), null);
+
+  const aiEval = read("scripts/ai-eval/run.mjs");
+  assert.match(aiEval, /packages\/retail-local-contract\/shop-archetypes\.json/);
+  assert.doesNotMatch(aiEval, /const SHOP_ARCHETYPE_OPTIONS = \[\s*["']mini_mart/);
 });
 
 test("Starter Catalog covers every supported shop archetype with a bounded draft catalog", () => {
@@ -86,6 +99,8 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
   const managedLinux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const pack = read("deploy/retail-local/package.ps1");
   const signer = read("deploy/retail-local/managed-runtime/sign-release.mjs");
+  const signup = read("apps/web/lib/bms/signup.ts");
+  const storeProfile = read("apps/web/lib/bms/storeProfile.ts");
 
   assert.match(service, /normalizeShopArchetype\(input\.businessArchetype/);
   assert.match(service, /archetypeToBusinessType\(businessArchetype\)/);
@@ -107,4 +122,6 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
   assert.match(pack, /shopArchetypes/);
   assert.match(signer, /\["shop-archetypes", "support-file"\]/);
   assert.doesNotMatch(windows, /ValidateSet\("mini_mart"/);
+  assert.match(signup, /isValidShopArchetype\(businessArchetype\)/);
+  assert.match(storeProfile, /isShopArchetypeAvailableForNewInstall\(merged\.businessArchetype\)/);
 });

@@ -22,7 +22,8 @@ price, stock, permission, payment, tax documents, and audit.
   packages carry that release's snapshot; Managed Runtime receives the same file as a signed,
   checksummed release component. Installers show only `enabledForNewInstall` entries that are not
   `deprecated`. Removing a type means deprecating/hiding it for new installs, never invalidating the
-  stable id already stored by an existing shop;
+  stable id already stored by an existing shop. SaaS signup and later profile changes enforce the
+  same new-selection rule, while the settings UI keeps an existing deprecated id readable;
 - optional archetype-specific Starter Catalog: four inactive products with zero stock and no online
   sales surfaces, registered to one tenant-owned sample run for guarded all-or-nothing cleanup;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;

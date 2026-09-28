@@ -136,22 +136,9 @@ const ENV_OVERRIDE = {
   aliasKeyword: process.env.EVAL_ALIAS_KEYWORD || null,
 };
 
-const SHOP_ARCHETYPE_OPTIONS = [
-  "mini_mart",
-  "fashion",
-  "home_kitchen",
-  "beauty_personal_care",
-  "food_beverage",
-  "gadgets_accessories",
-  "b2b_wholesale",
-  "gifts_seasonal",
-  "pharmacy",
-  "pet_supply",
-  "building_materials",
-  "restaurant",
-  "board_game_cafe",
-  "other",
-];
+const SHOP_ARCHETYPE_OPTIONS = JSON.parse(
+  readFileSync(new URL("../../packages/retail-local-contract/shop-archetypes.json", import.meta.url), "utf8")
+).archetypes.map((entry) => entry.id);
 
 const RUN_ID = `${Date.now().toString(36)}-${process.pid.toString(36)}`;
 const RUN_STARTED_AT = new Date().toISOString();

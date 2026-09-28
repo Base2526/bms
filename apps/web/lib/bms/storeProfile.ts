@@ -11,7 +11,7 @@ import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { getOrSetCache, invalidateCache } from "@/lib/cache";
 import { beginTenantTx } from "./tenant";
-import { normalizeShopArchetype } from "./shopArchetypes";
+import { isShopArchetypeAvailableForNewInstall, normalizeShopArchetype } from "./shopArchetypes";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
@@ -249,6 +249,11 @@ export async function upsertStoreProfile(
     merged.businessArchetype = normalizedBusinessArchetype;
     const currentArchetype = normalizeShopArchetype(cur.businessArchetype);
     if (currentArchetype !== merged.businessArchetype) {
+      // Deprecated/disabled ids remain readable for existing shops, but they cannot be
+      // selected for a new shop or introduced later through a crafted GraphQL request.
+      if (merged.businessArchetype && !isShopArchetypeAvailableForNewInstall(merged.businessArchetype)) {
+        throw new Error("archetype ร้านนี้ไม่เปิดให้เลือกใหม่แล้ว");
+      }
       const archetypeLock = await businessArchetypeLockState(tenantId, client);
       if (archetypeLock.locked) {
         throw new Error(archetypeLock.reason ?? ARCHETYPE_LOCK_REASON);

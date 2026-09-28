@@ -20,8 +20,24 @@ type ShopArchetypeManifestEntry = {
 const manifestEntries = shopArchetypeManifest.archetypes as ShopArchetypeManifestEntry[];
 const compiledSet = new Set<string>(SUPPORTED_SHOP_ARCHETYPES);
 const manifestSet = new Set<string>(manifestEntries.map((entry) => entry.id));
+const manifestShapeIsValid = manifestEntries.every((entry) =>
+  typeof entry.id === "string" && entry.id.trim() === entry.id && entry.id.length > 0 &&
+  typeof entry.labels?.th === "string" && entry.labels.th.trim().length > 0 &&
+  typeof entry.labels?.en === "string" && entry.labels.en.trim().length > 0 &&
+  typeof entry.enabledForNewInstall === "boolean" &&
+  typeof entry.deprecated === "boolean" &&
+  typeof entry.starterCatalog === "boolean" &&
+  Array.isArray(entry.aliases) && entry.aliases.every((alias) =>
+    typeof alias === "string" && alias.trim() === alias && alias.length > 0
+  )
+);
+const aliases = manifestEntries.flatMap((entry) => entry.aliases);
+const aliasSet = new Set(aliases);
 if (shopArchetypeManifest.formatVersion !== 1 ||
+    !manifestShapeIsValid ||
     manifestSet.size !== manifestEntries.length ||
+    aliasSet.size !== aliases.length ||
+    aliases.some((alias) => manifestSet.has(alias)) ||
     SUPPORTED_SHOP_ARCHETYPES.some((value) => !manifestSet.has(value)) ||
     manifestEntries.some((entry) => !compiledSet.has(entry.id))) {
   throw new Error("Retail Local shop-archetypes manifest does not match the compiled application contract");
@@ -70,7 +86,7 @@ export function normalizeShopArchetype(value: string | null | undefined): ShopAr
 }
 
 export function isValidShopArchetype(value: string | null | undefined): boolean {
-  return value == null || value === "" || normalizeShopArchetype(value) != null;
+  return value == null || value.trim() === "" || isShopArchetypeAvailableForNewInstall(value);
 }
 
 export function isShopArchetypeAvailableForNewInstall(value: string | null | undefined): boolean {
