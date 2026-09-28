@@ -122,6 +122,8 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   const readme = read("deploy/retail-local/linux-offline/README.template.md");
   assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
   assert.match(builder, /imageSha256/);
+  assert.match(builder, /Replace\("`r`n", "`n"\)\.Replace\("`r", "`n"\)/);
+  assert.match(builder, /linuxPackageSourceMount/);
   assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
   assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
   assert.match(debBuilder, /bms-retail-local-server-pos/);
@@ -137,6 +139,33 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   assert.match(readme, /Linux x86\/32-bit ไม่มี/);
   assert.match(readme, /basic_text/);
   assert.match(readme, /internal pilot build แบบ unsigned/);
+});
+
+test("one release command builds every host-supported installer from a clean versioned commit", () => {
+  const builder = read("deploy/retail-local/build-release.ps1");
+  const guide = read("deploy/retail-local/BUILD.md");
+  assert.match(builder, /npm version \$Version --no-git-tag-version/);
+  assert.match(builder, /status --porcelain --untracked-files=normal/);
+  assert.match(builder, /ConvertFrom-Json -AsHashtable/);
+  assert.match(builder, /package\.ps1/);
+  assert.match(builder, /build-offline-exe\.ps1/);
+  assert.match(builder, /build-offline-linux\.ps1/);
+  assert.match(builder, /managed-runtime\/macos\/build-pkg\.sh/);
+  assert.match(builder, /npm run pack:mac/);
+  assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);
+  assert.match(builder, /Target MacOS ต้อง build บน macOS/);
+  assert.ok(
+    builder.indexOf("Build Windows installers") < builder.indexOf("Build Linux installers"),
+    "large Windows and Linux packagers must run sequentially"
+  );
+  assert.match(builder, /release\.sourceCommit -ne \$head/);
+  assert.match(builder, /SHA-256 ไม่ตรง/);
+  assert.match(guide, /-UpdateVersion/);
+  assert.match(guide, /git commit -m/);
+  assert.match(guide, /-Version 0\.2\.13/);
+  assert.match(guide, /Apple Silicon\/Intel/);
+  assert.match(guide, /-Target MacOS/);
 });
 
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {

@@ -3,7 +3,7 @@
 Commercial self-install development is tracked separately in
 [Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
 WSL2/Moby, Ubuntu systemd/Moby, and macOS Apple Virtualization Framework/Lima delivery layer. The
-macOS Apple Silicon full installer is an internal technical pilot whose clean-machine evidence,
+macOS Apple Silicon and Intel full installers are internal technical pilots whose clean-machine evidence,
 signing, notarization, update, and recovery gates are still open; none of these
 paths replaces the self-contained technical pilot package until its install, update, backup,
 restore, and failure-mode gates have evidence.
@@ -41,6 +41,10 @@ configuration. Local deployment is not a promise that those external services wo
 ## Build a test package
 
 On a development machine at the repository root:
+
+For the one-command Windows + Linux or macOS release workflow, including POS version update
+instructions, installer variants, checksums, and generated READMEs, see
+[`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
 
 ```powershell
 pwsh .\deploy\retail-local\package.ps1 -Version 0.1.0-pilot.1
@@ -140,17 +144,18 @@ Restore is intentionally explicit and destructive to the current local database:
 The existing storage directory is moved aside with a timestamp before the restored archive is
 expanded. Do not delete that retained directory until the restored store has been reconciled.
 
-## macOS Apple Silicon full installer
+## macOS full installer
 
-Build the internal full-server package on an Apple Silicon development Mac:
+Build an architecture-specific internal full-server package on a development Mac:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
 ```
 
-The resulting `BMS-Retail-Local-VERSION-arm64.pkg` contains the pinned Ubuntu VM image, Lima runtime,
-private Moby engine, Compose, age, and all ARM64 BMS service images. The target Mac needs macOS 15 or
-newer, Apple Silicon, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
+The resulting architecture-specific package contains the pinned Ubuntu VM image, Lima runtime,
+private Moby engine, Compose, age, and matching BMS service images. The target Mac needs macOS 15 or
+newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
 Homebrew, Node.js, or the source repository. This package is intentionally large because it carries
 the server payload instead of downloading it after install.
 
@@ -200,7 +205,7 @@ Commercial self-install release still requires:
 - production deployment/operations evidence for the fail-open licensing evidence receiver,
   duplicate review/device transfer, and a documented support lifecycle;
 - signed/notarized qualification of the private macOS Lima/VZ runtime as the supported replacement
-  for Docker Desktop on Apple Silicon.
+  for Docker Desktop on Apple Silicon and Intel.
 
 Do not advertise Retail Local as generally available until those gates have evidence. In particular,
 do not describe the current Electron package as containing the server: it remains a keystore-backed
@@ -231,7 +236,8 @@ Local license whose `customer_reference` names the customer/account the platform
 activation, signed evidence adds the actual tenant/POS references reported by the installed host.
 
 Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
-experimental `macos-arm64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
+experimental `macos-arm64`. The Intel macOS package is currently an internal build artifact until
+the managed release catalog adds a separate `macos-x64` target. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
 `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
 Desktop disk image (`.dmg`). Intel Mac packages are not currently accepted on this page.
 

@@ -2,7 +2,7 @@
 set -u
 
 clear
-printf 'BMS Retail Local Server (macOS Apple Silicon)\n\n'
+printf 'BMS Retail Local Server (macOS)\n\n'
 receipt="$HOME/Library/Application Support/BMS/RetailLocal/installation.json"
 if [[ -f $receipt ]]; then
   /usr/local/bin/bms-retail-local start

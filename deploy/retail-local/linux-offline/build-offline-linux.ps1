@@ -53,12 +53,30 @@ try {
   $imageHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($imageHash -ne ([string]$release.imageSha256).ToLowerInvariant()) { throw "Docker image checksum ไม่ตรง" }
 
-  $repoMount = $repoRoot -replace '\\','/'
+  # Git may materialize tracked shell files as CRLF on a Windows build host. Execute and package a
+  # normalized temporary copy so the resulting DEB remains runnable on Linux regardless of the
+  # developer's core.autocrlf setting.
+  $linuxPackageSource = Join-Path $stage "linux-package-source"
+  New-Item -ItemType Directory -Path $linuxPackageSource | Out-Null
+  $linuxPackageFiles = @(
+    "build-debs.sh", "common.sh", "bms-retail-local-setup", "bms-retail-local-start",
+    "bms-retail-local-stop", "bms-retail-local-status", "bms-retail-local-doctor",
+    "bms-retail-local-backup", "bms-retail-local.service"
+  )
+  $utf8NoBom = [Text.UTF8Encoding]::new($false)
+  foreach ($name in $linuxPackageFiles) {
+    $source = Join-Path $scriptRoot $name
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "ขาดไฟล์ Linux package: $name" }
+    $normalizedText = [IO.File]::ReadAllText($source).Replace("`r`n", "`n").Replace("`r", "`n")
+    [IO.File]::WriteAllText((Join-Path $linuxPackageSource $name), $normalizedText, $utf8NoBom)
+  }
+
+  $linuxPackageSourceMount = $linuxPackageSource -replace '\\','/'
   $bundleMount = $bundleRoot -replace '\\','/'
   $posMount = $posDebPath -replace '\\','/'
   $outputMount = $outputRoot -replace '\\','/'
   docker run --rm `
-    -v "${repoMount}:/source:ro" `
+    -v "${linuxPackageSourceMount}:/source/deploy/retail-local/linux-offline:ro" `
     -v "${bundleMount}:/bundle:ro" `
     -v "${posMount}:/input/BMS-POS.deb:ro" `
     -v "${outputMount}:/out" `
