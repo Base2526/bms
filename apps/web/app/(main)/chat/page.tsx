@@ -709,7 +709,7 @@ function ChatUI() {
   const [msgHasMore, setMsgHasMore] = useState(true);
   const [msgLoadingMore, setMsgLoadingMore] = useState(false);
 
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const toParam = searchParams.get("to");
   const { data: me } = useQuery(Q_ME);
 

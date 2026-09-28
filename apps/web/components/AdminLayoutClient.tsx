@@ -69,7 +69,7 @@ function RealtimeStatusBanner() {
 }
 
 export default function AdminLayoutClient({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const hideHeader = pathname === "/admin/login";
 
   if (hideHeader) return <main>{children}</main>;

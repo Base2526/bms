@@ -116,7 +116,7 @@ export default function Page() {
   const CHANNELS = useChannels(t);
   const STATUS_META = useStatusMeta(t);
   const HEALTH_META = useHealthMeta(t);
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [origin, setOrigin] = useState("");
   useEffect(() => { setOrigin(window.location.origin); }, []);

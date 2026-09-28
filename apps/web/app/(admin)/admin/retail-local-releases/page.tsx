@@ -262,7 +262,7 @@ export default function RetailLocalReleasesPage() {
 
     setUploading(true);
     try {
-      await jsonRequest("/api/admin/retail-local/releases", { method: "POST", body });
+      await jsonRequest("/api/admin/retail-local/releases-upload", { method: "POST", body });
       message.success(copy.uploaded);
       closeUpload();
       await load();

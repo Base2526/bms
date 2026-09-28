@@ -30,6 +30,7 @@
   },
   "include": [
     "app",
+    "pages",
     "i18n",
     "graphql",
     "lib",

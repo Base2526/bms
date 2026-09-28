@@ -75,7 +75,7 @@ function dateTimeLabel(value: string | undefined, en: boolean): string {
 }
 
 export default function WorkAssistantDrawer() {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const excluded = pathname === "/admin/login" || pathname === "/admin/assistant";
   const { lang } = useI18n();
   const en = lang === "en";
