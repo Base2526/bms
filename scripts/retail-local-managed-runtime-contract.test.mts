@@ -36,6 +36,17 @@ test("Managed Runtime support policy is explicit and does not silently bless eve
     recommendedFreeDiskGiB: 30,
     requiresAppleVirtualizationFramework: true,
   });
+  assert.deepEqual(byId.get("macos-15-x64"), {
+    id: "macos-15-x64",
+    platform: "macos",
+    minimumVersion: "15.0",
+    architecture: "x86_64",
+    supportLevel: "technical-pilot",
+    runtime: "lima-vz-moby",
+    minimumFreeDiskGiB: 12,
+    recommendedFreeDiskGiB: 30,
+    requiresAppleVirtualizationFramework: true,
+  });
 });
 
 test("macOS full installer uses its private VZ runtime instead of Docker Desktop", () => {
@@ -53,7 +64,10 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(hostControl, /PACKAGE_TYPE/);
   assert.match(hostControl, /pairing-handoff-/);
   assert.match(hostControl, /BMS_RETAIL_LOCAL_LIMA_HOME:-\$HOME\/\.bmsrl/);
-  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg-arm64\.img/);
+  assert.match(packageBuilder, /--architecture/);
+  assert.match(packageBuilder, /linux\/amd64/);
+  assert.match(packageBuilder, /lima_guest_arch=x86_64/);
+  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg\.img/);
   assert.match(packageBuilder, /docker-\$DOCKER_VERSION\.tgz/);
   assert.match(packageBuilder, /Applications\/BMS Retail Local\.app/);
   assert.match(packageBuilder, /Applications\/BMS POS\.app/);
@@ -63,7 +77,9 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(packageBuilder, /BMSRetailLocal\.icns/);
   assert.match(packageBuilder, /pkgutil --expand "\$package_path"/);
   assert.match(packageBuilder, /gzip compressed data/);
+  assert.match(packageBuilder, /"sourceCommit":"\$source_commit"/);
   assert.match(packageSmokeTest, /component Payload ต้องเป็น archive ไม่ใช่ directory/);
+  assert.match(packageSmokeTest, /macos-15-x64/);
   assert.match(packageSmokeTest, /<relocate>/);
   assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
   assert.doesNotMatch(hostControl, /Docker Desktop/i);

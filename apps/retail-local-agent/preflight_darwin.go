@@ -15,10 +15,13 @@ func platformPreflight() preflightResult {
 		OK: true, Platform: "darwin", Target: "unsupported", Architecture: runtime.GOARCH,
 		Failures: []string{}, Warnings: []string{},
 	}
-	if runtime.GOARCH != "arm64" {
-		result.fail("รองรับเฉพาะ Mac ที่ใช้ Apple Silicon")
-	} else {
+	switch runtime.GOARCH {
+	case "arm64":
 		result.Target = "macos-15-arm64"
+	case "amd64":
+		result.Target = "macos-15-x64"
+	default:
+		result.fail("รองรับเฉพาะ Mac arm64 หรือ x86_64")
 	}
 	if major, err := macOSMajorVersion(); err != nil || major < 15 {
 		result.fail("ต้องใช้ macOS 15 หรือใหม่กว่า")

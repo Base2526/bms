@@ -47,11 +47,11 @@ render_lima_config() {
   mkdir -p "$STATE_ROOT" "$LIMA_HOME"
   chmod 0700 "$STATE_ROOT" "$LIMA_HOME"
   local image_uri payload escaped_uri escaped_payload ubuntu_sha
-  image_uri=$(file_uri "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg-arm64.img")
+  image_uri=$(file_uri "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img")
   payload=$(yaml_escape_sed "$PAYLOAD_ROOT")
   escaped_uri=$(yaml_escape_sed "$image_uri")
   escaped_payload=$payload
-  ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg-arm64.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
+  ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
   [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
   [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
   sed -e "s|__UBUNTU_IMAGE_URI__|$escaped_uri|g" \
@@ -194,14 +194,15 @@ launch_pos_desktop() {
 }
 
 write_receipt() {
-  local version source_commit now
+  local version source_commit platform_target now
   version=$(cat "$PAYLOAD_ROOT/VERSION")
   source_commit=$(cat "$PAYLOAD_ROOT/SOURCE_COMMIT")
+  platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
   now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   guest sudo sh -c 'printf "%s\n" "$1" > /var/lib/bms-retail-local/installation.json; chmod 0600 /var/lib/bms-retail-local/installation.json' \
-    bms-runtime "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"macos-15-arm64\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:3100\"}"
+    bms-runtime "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"$platform_target\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:3100\"}"
   umask 077
-  printf '%s\n' "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"macos-15-arm64\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:$WEB_PORT\"}" >"$RECEIPT.tmp"
+  printf '%s\n' "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"$platform_target\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:$WEB_PORT\"}" >"$RECEIPT.tmp"
   mv -f "$RECEIPT.tmp" "$RECEIPT"
 }
 

@@ -7,22 +7,22 @@ Lima
   The upstream LICENSE is bundled under runtime/lima/share/doc/lima/LICENSE.
 
 Ubuntu Server Cloud Image
-  Version: Ubuntu 24.04 LTS ARM64 released image
+  Version: Ubuntu 24.04 LTS released image matching the installer architecture
   Source: https://cloud-images.ubuntu.com/releases/noble/release/
   Ubuntu packages remain subject to their respective licenses.
 
 Docker Engine static binaries
-  Version: 29.4.1, Linux aarch64
-  Source: https://download.docker.com/linux/static/stable/aarch64/
+  Version: 29.4.1, Linux aarch64 or x86_64 matching the installer architecture
+  Source: https://download.docker.com/linux/static/stable/
   Project licenses: https://github.com/moby/moby and https://github.com/docker/cli
 
 Docker Compose
-  Version: 5.0.2, Linux aarch64
+  Version: 5.0.2, Linux aarch64 or x86_64 matching the installer architecture
   Project: https://github.com/docker/compose
   License: Apache License 2.0
 
 age
-  Version: 1.2.1, Linux ARM64
+  Version: 1.2.1, Linux ARM64 or AMD64 matching the installer architecture
   Project: https://github.com/FiloSottile/age
   License: BSD 3-Clause
 

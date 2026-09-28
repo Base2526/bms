@@ -1,4 +1,4 @@
-BMS Retail Local Server for macOS Apple Silicon
+BMS Retail Local Server for macOS
 
 This package installs the complete Retail Local server payload and a private virtual-machine
 runtime. Docker Desktop is not required and is not used on the target Mac.
@@ -24,7 +24,7 @@ Removing the installer files does not implicitly delete shop data.
 
 Technical pilot limitations:
 
-- Apple Silicon and macOS 15 or newer only.
+- macOS 15 or newer on Apple Silicon or Intel; install the package matching the Mac architecture.
 - At least 8 GiB RAM and 12 GiB free disk; 30 GiB free is recommended for updates and backups.
 - The package is unsigned and not notarized.
 - Run clean-install, restart, backup/restore, peripheral, and power-loss acceptance checks before

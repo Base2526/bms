@@ -11,7 +11,7 @@ until the acceptance gates below have evidence from clean target machines.
 - Windows 10 22H2 x64: transition only, with current ESU evidence;
 - Ubuntu 24.04 LTS x64: primary native-Linux target;
 - Ubuntu 22.04 LTS x64: transition target;
-- macOS 15+ on Apple Silicon: Lima/VZ + private Moby technical pilot.
+- macOS 15+ on Apple Silicon or Intel: architecture-matched Lima/VZ + private Moby technical pilot.
 
 `support-matrix.json` is product policy, not a claim that a target has passed certification. The
 installer must also require a signed release manifest whose `platformTarget` names one of these
@@ -62,7 +62,7 @@ in a signed agent release before manifests start using that id.
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
-- a full macOS Apple Silicon `.pkg` builder that bundles all server/runtime bytes and needs no Docker
+- full macOS Apple Silicon/Intel `.pkg` builders that bundle all server/runtime bytes and need no Docker
   Desktop on the target Mac;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
@@ -125,10 +125,11 @@ Run the Windows candidate check from PowerShell 7 with:
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
 ```
 
-Build the full macOS Apple Silicon technical-pilot package with:
+Build both full macOS architecture-specific technical-pilot packages with:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
 ```
 
 That command builds `Server only`. For the recommended single-Mac installation, build the combined
@@ -136,10 +137,10 @@ package instead; it embeds BMS POS and performs the one-time local pairing autom
 
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh \
-  --version 0.4.0-internal.1 --package-type server-pos
+  --version 0.4.0-internal.1 --architecture arm64 --package-type server-pos
 ```
 
-Docker is needed only on the release workstation to build the ARM64 OCI images. The target package
+Docker is needed only on the release workstation to build the matching OCI images. The target package
 uses the bundled Lima/VZ private runtime and never calls Docker Desktop. After package installation,
 open `/Applications/BMS Retail Local.app`; do not upload the earlier payload-free `.pkg`
 fixture as a server release.

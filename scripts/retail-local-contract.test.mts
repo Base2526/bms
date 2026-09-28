@@ -141,7 +141,7 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   assert.match(readme, /internal pilot build แบบ unsigned/);
 });
 
-test("one release command builds every Windows and Linux installer from a clean versioned commit", () => {
+test("one release command builds every host-supported installer from a clean versioned commit", () => {
   const builder = read("deploy/retail-local/build-release.ps1");
   const guide = read("deploy/retail-local/BUILD.md");
   assert.match(builder, /npm version \$Version --no-git-tag-version/);
@@ -150,6 +150,11 @@ test("one release command builds every Windows and Linux installer from a clean 
   assert.match(builder, /package\.ps1/);
   assert.match(builder, /build-offline-exe\.ps1/);
   assert.match(builder, /build-offline-linux\.ps1/);
+  assert.match(builder, /managed-runtime\/macos\/build-pkg\.sh/);
+  assert.match(builder, /npm run pack:mac/);
+  assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);
+  assert.match(builder, /Target MacOS ต้อง build บน macOS/);
   assert.ok(
     builder.indexOf("Build Windows installers") < builder.indexOf("Build Linux installers"),
     "large Windows and Linux packagers must run sequentially"
@@ -159,6 +164,8 @@ test("one release command builds every Windows and Linux installer from a clean 
   assert.match(guide, /-UpdateVersion/);
   assert.match(guide, /git commit -m/);
   assert.match(guide, /-Version 0\.2\.13/);
+  assert.match(guide, /Apple Silicon\/Intel/);
+  assert.match(guide, /-Target MacOS/);
 });
 
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {
