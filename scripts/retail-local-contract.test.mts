@@ -122,6 +122,8 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   const readme = read("deploy/retail-local/linux-offline/README.template.md");
   assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
   assert.match(builder, /imageSha256/);
+  assert.match(builder, /Replace\("`r`n", "`n"\)\.Replace\("`r", "`n"\)/);
+  assert.match(builder, /linuxPackageSourceMount/);
   assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
   assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
   assert.match(debBuilder, /bms-retail-local-server-pos/);
