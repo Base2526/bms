@@ -91,6 +91,54 @@ test("portable pilot package contains pinned images and verifies them before ins
   assert.match(install, /Test-RetailLocalHttp/);
 });
 
+test("Windows offline pilot produces real EXE variants from a verified server payload", () => {
+  const builder = read("deploy/retail-local/windows-offline/build-offline-exe.ps1");
+  const inno = read("deploy/retail-local/windows-offline/BMSRetailLocalOffline.iss");
+  const readme = read("deploy/retail-local/windows-offline/README.template.md");
+  assert.ok(builder.indexOf("Get-FileHash") < builder.indexOf("Expand-Archive"));
+  assert.match(builder, /ValidateSet\("server", "server-pos", "all"\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-windows-x64/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-windows-x86-legacy/);
+  assert.match(builder, /Set-Content[^\n]+\.sha256/);
+  assert.match(inno, /DefaultDirName=\{localappdata\}\\BMS\\Retail Local/);
+  assert.match(inno, /Source: "\{#BundleRoot\}\\\*"[^\n]+recursesubdirs/);
+  assert.match(inno, /Check: ServerInstallationCompleted/);
+  assert.match(inno, /FileExists\(ExpandConstant\('\{app\}\\installation\.json'\)\)/);
+  assert.match(inno, /Uninstallable=no/);
+  assert.match(builder, /README\.template\.md/);
+  assert.match(builder, /Replace\("\{\{SERVER_POS_SHA256\}\}"/);
+  assert.match(readme, /PowerShell 7/);
+  assert.match(readme, /Docker Desktop/);
+  assert.match(readme, /Electron 43[\s\S]{0,120}มกราคม 2027/);
+  assert.match(readme, /ไม่มี Emergency Offline Mode/);
+  assert.match(readme, /ESC\/POS USB\/LAN ยังไม่ผ่านการรับรองทุกรุ่น/);
+});
+
+test("Linux offline pilot produces four x64 installers with verified pinned images", () => {
+  const builder = read("deploy/retail-local/linux-offline/build-offline-linux.ps1");
+  const debBuilder = read("deploy/retail-local/linux-offline/build-debs.sh");
+  const setup = read("deploy/retail-local/linux-offline/bms-retail-local-setup");
+  const backup = read("deploy/retail-local/linux-offline/bms-retail-local-backup");
+  const readme = read("deploy/retail-local/linux-offline/README.template.md");
+  assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
+  assert.match(builder, /imageSha256/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
+  assert.match(debBuilder, /bms-retail-local-server-pos/);
+  assert.match(debBuilder, /bms-retail-local-server/);
+  assert.match(setup, /sha256sum --check image\.sha256/);
+  assert.match(setup, /openssl rand -hex 48/);
+  assert.match(setup, /compose --profile setup run --rm provision/);
+  assert.match(setup, /127\.0\.0\.1:3100/);
+  assert.match(backup, /pg_dump/);
+  assert.match(backup, /secrets\.env/);
+  assert.match(backup, /SHA256SUMS\.txt/);
+  assert.match(readme, /Ubuntu 22\.04 LTS หรือ 24\.04 LTS/);
+  assert.match(readme, /Linux x86\/32-bit ไม่มี/);
+  assert.match(readme, /basic_text/);
+  assert.match(readme, /internal pilot build แบบ unsigned/);
+});
+
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {
   const doctor = read("deploy/retail-local/doctor.ps1");
   const uninstall = read("deploy/retail-local/uninstall.ps1");

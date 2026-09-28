@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. /usr/lib/bms-retail-local/common.sh
+
+require_root
+require_installed
+require_docker
+
+destination=${1:-}
+[[ -n $destination ]] || die "usage: sudo bms-retail-local-backup /path/on/encrypted-external-storage"
+[[ $destination = /* ]] || die "กรุณาระบุ absolute path"
+mkdir -p "$destination"
+destination=$(realpath "$destination")
+[[ $destination != / && $destination != "$BMS_RUNTIME_ROOT" ]] || die "ปลายทาง backup ไม่ปลอดภัย"
+
+stamp=$(date -u '+%Y%m%dT%H%M%SZ')
+backup_dir="$destination/bms-retail-local-$stamp"
+mkdir -m 0700 "$backup_dir"
+database=$(env_value POSTGRES_DB)
+[[ $database =~ ^[A-Za-z0-9_-]+$ ]] || die "POSTGRES_DB ไม่ถูกต้อง"
+postgres_id=$(compose ps -q postgres)
+[[ -n $postgres_id ]] || die "PostgreSQL ยังไม่ทำงาน"
+
+inside_dump="/tmp/bms-retail-local-$stamp.dump"
+docker exec "$postgres_id" pg_dump -U app -d "$database" -Fc -f "$inside_dump"
+trap 'docker exec "$postgres_id" rm -f "$inside_dump" >/dev/null 2>&1 || true' EXIT
+docker cp "$postgres_id:$inside_dump" "$backup_dir/database.dump"
+docker exec "$postgres_id" rm -f "$inside_dump"
+trap - EXIT
+
+tar -C "$BMS_RUNTIME_ROOT/data" -czf "$backup_dir/storage.tar.gz" storage
+install -m 0600 "$BMS_ENV_FILE" "$backup_dir/secrets.env"
+for file in installation.json release.json; do
+  [[ ! -f $BMS_RUNTIME_ROOT/$file ]] || install -m 0600 "$BMS_RUNTIME_ROOT/$file" "$backup_dir/$file"
+done
+cat >"$backup_dir/manifest.txt" <<EOF
+created_at=$(date --iso-8601=seconds)
+database=database.dump
+storage=storage.tar.gz
+secrets=secrets.env
+warning=This backup contains shop credentials and must be encrypted at rest.
+EOF
+(cd "$backup_dir" && sha256sum database.dump storage.tar.gz secrets.env manifest.txt >SHA256SUMS.txt)
+printf 'Backup สำเร็จ: %s\n' "$backup_dir"
+printf 'คำเตือน: backup นี้มี secrets ของร้าน ต้องเก็บบนสื่อเข้ารหัสและแยกจากเครื่อง Server\n'
