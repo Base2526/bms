@@ -91,7 +91,7 @@ function amount(value: number, lang: "th" | "en") {
 }
 
 export default function RestaurantQrOrderPage() {
-  const params = useParams<{ token: string }>();
+  const params = useParams<{ token: string }>()!;
   const token = String(params?.token ?? "");
   const [lang, setLang] = useState<"th" | "en">("th");
   const [bootstrap, setBootstrap] = useState<Bootstrap | null>(null);

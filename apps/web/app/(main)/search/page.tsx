@@ -66,7 +66,7 @@ const Q_GLOBAL_SEARCH = gql`
 `;
 
 export default function SearchPage() {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const router = useRouter();
   const { t } = useI18n();
 

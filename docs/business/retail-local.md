@@ -181,8 +181,15 @@ experimental `macos-arm64`. Windows packages use `.exe` and Ubuntu packages use 
 `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
 Desktop disk image (`.dmg`). Intel Mac packages are not currently accepted on this page.
 
-The uploaded bytes stream from the multipart request directly through the shared storage driver;
-neither the browser nor the Web process reads the complete installer into an `ArrayBuffer`/`Buffer`.
+The browser sends installer bytes to the dedicated
+`/api/admin/retail-local/releases-upload` Pages API route. That route disables the Pages body parser,
+reads the raw Node `IncomingMessage`, and is excluded from `middleware.ts`; do not move it into an App
+Route/`NextRequest`. Next.js 14's request adapter expands large request bodies in memory even when
+application code consumes `request.body` as a stream (`vercel/next.js#59519`), which OOM-killed the
+1.9 GiB production Web process during a 2 GiB upload.
+
+The uploaded bytes stream from that raw multipart request directly through the shared storage driver;
+neither the browser nor the upload handler reads the complete installer into an `ArrayBuffer`/`Buffer`.
 The local driver writes incrementally and the S3 driver uses bounded multipart parts, while SHA-256
 and size are computed over that same stream. The default upload ceiling is 4 GiB and may be changed
 with `BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES` (bytes). Keep release files as private `files` rows. The

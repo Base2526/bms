@@ -1,5 +1,5 @@
 import Busboy from "busboy";
-import { Readable } from "stream";
+import type { Readable } from "stream";
 
 import {
   deleteStoredFile,
@@ -32,6 +32,8 @@ export type ParsedRetailLocalReleaseUpload = {
   storedFile: PendingStoredFile;
 };
 
+type MultipartHeaders = Record<string, string | string[] | undefined>;
+
 function maxReleaseBytes(): number {
   const configured = Number(process.env.BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES || "");
   return Number.isSafeInteger(configured) && configured > 0
@@ -47,15 +49,14 @@ function uploadError(error: unknown): RetailLocalReleaseUploadError {
 }
 
 /**
- * Parse the multipart envelope without materialising the installer. The file
- * stream is consumed by the configured storage driver while busboy continues
- * parsing the small metadata fields.
+ * Node IncomingMessage entry point used by the Pages API upload route. Keeping
+ * the raw Node stream avoids Next 14's Request adapter, which expands large
+ * request bodies in memory even when the route itself consumes a stream.
  */
-export async function parseRetailLocalReleaseUpload(
-  request: Request
+export async function parseRetailLocalReleaseUploadStream(
+  source: NodeJS.ReadableStream,
+  requestHeaders: MultipartHeaders
 ): Promise<ParsedRetailLocalReleaseUpload> {
-  if (!request.body) throw new RetailLocalReleaseUploadError("file is required");
-
   const fields: Record<string, string> = {};
   const limit = maxReleaseBytes();
   let fileSeen = false;
@@ -70,9 +71,11 @@ export async function parseRetailLocalReleaseUpload(
   let parser: ReturnType<typeof Busboy>;
   try {
     const headers: Record<string, string> = {};
-    request.headers.forEach((value, name) => {
-      headers[name] = value;
-    });
+    for (const [name, value] of Object.entries(requestHeaders)) {
+      if (value !== undefined) {
+        headers[name.toLowerCase()] = Array.isArray(value) ? value.join(", ") : value;
+      }
+    }
     parser = Busboy({
       headers,
       limits: {
@@ -109,7 +112,9 @@ export async function parseRetailLocalReleaseUpload(
 
   parser.on("file", (name, file, info) => {
     if (name !== "file" || fileSeen) {
-      fail(new RetailLocalReleaseUploadError(name === "file" ? "only one file is allowed" : `unexpected file field: ${name}`));
+      fail(new RetailLocalReleaseUploadError(
+        name === "file" ? "only one file is allowed" : `unexpected file field: ${name}`
+      ));
       file.resume();
       return;
     }
@@ -127,16 +132,22 @@ export async function parseRetailLocalReleaseUpload(
     });
   });
 
-  parser.once("filesLimit", () => fail(new RetailLocalReleaseUploadError("only one file is allowed")));
-  parser.once("fieldsLimit", () => fail(new RetailLocalReleaseUploadError("too many metadata fields")));
-  parser.once("partsLimit", () => fail(new RetailLocalReleaseUploadError("too many multipart parts")));
+  parser.once("filesLimit", () => {
+    fail(new RetailLocalReleaseUploadError("only one file is allowed"));
+  });
+  parser.once("fieldsLimit", () => {
+    fail(new RetailLocalReleaseUploadError("too many metadata fields"));
+  });
+  parser.once("partsLimit", () => {
+    fail(new RetailLocalReleaseUploadError("too many multipart parts"));
+  });
 
-  const source = Readable.fromWeb(request.body as any);
   try {
     await new Promise<void>((resolve, reject) => {
       parser.once("close", resolve);
       parser.once("error", reject);
       source.once("error", reject);
+      source.once("aborted", () => reject(new RetailLocalReleaseUploadError("upload aborted")));
       source.pipe(parser);
     });
 
@@ -147,7 +158,9 @@ export async function parseRetailLocalReleaseUpload(
     if (parseFailure) throw parseFailure;
     return { fields, storedFile };
   } catch (error) {
-    source.destroy();
+    if (typeof (source as Readable).destroy === "function") {
+      (source as Readable).destroy();
+    }
     if (!parser.destroyed) parser.destroy(uploadError(error));
     if (!storedFile && storedPromise) {
       try {

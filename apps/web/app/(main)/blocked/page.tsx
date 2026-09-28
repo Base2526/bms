@@ -199,8 +199,8 @@ export default function BlockedPage() {
   const { t } = useI18n();
   const { user } = useSessionCtx();
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  const pathname = usePathname()!;
+  const searchParams = useSearchParams()!;
   const screens = useBreakpoint();
   const isMobile = !screens.md;
 

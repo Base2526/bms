@@ -66,7 +66,7 @@ const CLONE_POST = gql`
 `;
 
 export default function Page() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>()!;
   const router = useRouter();
 
   const { data, loading, error, refetch } = useQuery(Q_POST, {

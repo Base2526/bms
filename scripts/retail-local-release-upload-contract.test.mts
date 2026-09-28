@@ -33,7 +33,7 @@ test("release multipart parser streams the file and returns small metadata", asy
   });
   t.after(() => __setStorageDriverForTest(null));
 
-  const { parseRetailLocalReleaseUpload } = await import(
+  const { parseRetailLocalReleaseUploadStream } = await import(
     "../apps/web/lib/bms/retailLocalReleaseUpload.ts"
   );
   const form = new FormData();
@@ -47,10 +47,15 @@ test("release multipart parser streams the file and returns small metadata", asy
   form.set("releaseNotes", "stream test");
   form.set("file", new Blob(["installer-bytes"]), "BMS-Server-POS-1.2.3.exe");
 
-  const parsed = await parseRetailLocalReleaseUpload(new Request("http://local/upload", {
+  const request = new Request("http://local/upload", {
     method: "POST",
     body: form,
-  }));
+  });
+  const headers = Object.fromEntries(request.headers);
+  const parsed = await parseRetailLocalReleaseUploadStream(
+    Readable.fromWeb(request.body as any),
+    headers
+  );
 
   assert.equal(parsed.fields.packageType, "server-pos");
   assert.equal(parsed.storedFile.original_name, "BMS-Server-POS-1.2.3.exe");
@@ -93,14 +98,18 @@ test("release multipart parser rejects oversized files and removes partial bytes
     else process.env.BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES = previousLimit;
   });
 
-  const { parseRetailLocalReleaseUpload } = await import(
+  const { parseRetailLocalReleaseUploadStream } = await import(
     "../apps/web/lib/bms/retailLocalReleaseUpload.ts"
   );
   const form = new FormData();
   form.set("file", new Blob(["too-large"]), "BMS-Server-POS-1.2.3.exe");
 
+  const request = new Request("http://local/upload", { method: "POST", body: form });
   await assert.rejects(
-    parseRetailLocalReleaseUpload(new Request("http://local/upload", { method: "POST", body: form })),
+    parseRetailLocalReleaseUploadStream(
+      Readable.fromWeb(request.body as any),
+      Object.fromEntries(request.headers)
+    ),
     (error: any) => error?.status === 413
   );
   assert.equal(deleted.length, 1);

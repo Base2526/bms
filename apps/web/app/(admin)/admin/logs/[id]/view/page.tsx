@@ -38,7 +38,7 @@ function levelTag(level: string){
 }
 
 export default function LogDetailPage(){
-  const { id } = useParams<{id:string}>();
+  const { id } = useParams<{id:string}>()!;
   const router = useRouter();
   const [row, setRow] = useState<LogRow | null>(null);
   const [loading, setLoading] = useState(false);

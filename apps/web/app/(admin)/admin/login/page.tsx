@@ -33,7 +33,7 @@ export default function AdminLoginPage(){
   const [redirecting, setRedirecting] = useState(false);
   const submitting = useRef(false);
   const router = useRouter();
-  const sp = useSearchParams();
+  const sp = useSearchParams()!;
   const next = sp.get("next") || "/admin";
 
   const [login, { loading: loadingLogin }] = useMutation(LOGIN);

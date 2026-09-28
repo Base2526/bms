@@ -32,7 +32,7 @@ export default function PosGuideAssistant({ variant = "floating", className }: {
   variant?: "floating" | "rail";
   className?: string;
 } = {}) {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const { lang } = useI18n();
   const locale = lang === "en" ? "en" : "th";
   const [open, setOpen] = useState(false);

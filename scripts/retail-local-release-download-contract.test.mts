@@ -9,7 +9,7 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   const service = read("apps/web/lib/bms/retailLocalReleases.ts");
   const publicPage = read("apps/web/app/(main)/retail-local/RetailLocalPageClient.tsx");
   const adminPage = read("apps/web/app/(admin)/admin/retail-local-releases/page.tsx");
-  const adminRoute = read("apps/web/app/api/admin/retail-local/releases/route.ts");
+  const uploadRoute = read("apps/web/pages/api/admin/retail-local/releases-upload.ts");
 
   assert.match(migration, /DEFAULT 'server'/);
   assert.match(migration, /'server-pos', 'server', 'pos'/);
@@ -17,8 +17,8 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
 
   assert.match(service, /packageType === "pos" \? \["\.dmg"\] : \["\.pkg"\]/);
   assert.match(service, /WHERE platform = \$1 AND package_type = \$2/);
-  assert.match(adminRoute, /parseRetailLocalReleaseUpload\(request\)/);
-  assert.match(adminRoute, /packageType: fields\.packageType/);
+  assert.match(uploadRoute, /parseRetailLocalReleaseUploadStream\(req, req\.headers\)/);
+  assert.match(uploadRoute, /packageType: fields\.packageType/);
 
   for (const packageType of ["server-pos", "server", "pos"]) {
     assert.match(publicPage, new RegExp(`"${packageType}"`));
@@ -30,7 +30,10 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
 test("Retail Local installer upload streams to storage with bounded memory", () => {
   const adminPage = read("apps/web/app/(admin)/admin/retail-local-releases/page.tsx");
   const adminRoute = read("apps/web/app/api/admin/retail-local/releases/route.ts");
+  const uploadRoute = read("apps/web/pages/api/admin/retail-local/releases-upload.ts");
   const upload = read("apps/web/lib/bms/retailLocalReleaseUpload.ts");
+  const nodeAuth = read("apps/web/lib/bms/platformAdminNodeAuth.ts");
+  const middleware = read("apps/web/middleware.ts");
   const storage = read("apps/web/lib/storage.ts");
   const service = read("apps/web/lib/bms/retailLocalReleases.ts");
   const local = read("apps/web/lib/storageDrivers/local.ts");
@@ -38,9 +41,17 @@ test("Retail Local installer upload streams to storage with bounded memory", () 
 
   assert.doesNotMatch(adminPage, /file\.arrayBuffer\(\)/);
   assert.doesNotMatch(adminRoute, /request\.formData\(\)/);
-  assert.match(adminRoute, /export const runtime = "nodejs"/);
+  assert.doesNotMatch(adminRoute, /parseRetailLocalReleaseUpload/);
+  assert.match(adminPage, /\/api\/admin\/retail-local\/releases-upload/);
+  assert.match(uploadRoute, /bodyParser: false/);
+  assert.match(uploadRoute, /parseRetailLocalReleaseUploadStream\(req, req\.headers\)/);
+  assert.doesNotMatch(uploadRoute, /NextRequest|Readable\.fromWeb|request\.formData/);
+  assert.match(nodeAuth, /verifyTokenString\(token\)/);
+  assert.match(nodeAuth, /is_platform_admin/);
+  assert.match(middleware, /\(\?!api\/admin\/retail-local\/releases-upload\|/);
   assert.match(upload, /Busboy\(/);
-  assert.match(upload, /Readable\.fromWeb\(request\.body/);
+  assert.match(upload, /parseRetailLocalReleaseUploadStream/);
+  assert.doesNotMatch(upload, /Readable\.fromWeb|request\.body/);
   assert.match(upload, /fileSize: limit/);
   assert.match(upload, /writeWebFileStream\(file/);
   assert.match(storage, /getStorageDriver\(\)\.writeStream\(key, stream\)/);

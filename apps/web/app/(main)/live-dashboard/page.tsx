@@ -350,11 +350,11 @@ function trendPath(values: number[], max: number, width = 320, height = 100, clo
 
 export default function LiveDashboardPage() {
   const router = useRouter();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const { admin: adminSession, loading: sessionLoading } = useSession();
   const isAdminSession = Boolean(adminSession);
 
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const isDemo = searchParams.get("demo") === "1";
   const requestedMode = searchParams.get("mode");
   const displayMode: DisplayMode =
