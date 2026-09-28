@@ -114,6 +114,31 @@ test("Windows offline pilot produces real EXE variants from a verified server pa
   assert.match(readme, /ESC\/POS USB\/LAN ยังไม่ผ่านการรับรองทุกรุ่น/);
 });
 
+test("Linux offline pilot produces four x64 installers with verified pinned images", () => {
+  const builder = read("deploy/retail-local/linux-offline/build-offline-linux.ps1");
+  const debBuilder = read("deploy/retail-local/linux-offline/build-debs.sh");
+  const setup = read("deploy/retail-local/linux-offline/bms-retail-local-setup");
+  const backup = read("deploy/retail-local/linux-offline/bms-retail-local-backup");
+  const readme = read("deploy/retail-local/linux-offline/README.template.md");
+  assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
+  assert.match(builder, /imageSha256/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
+  assert.match(debBuilder, /bms-retail-local-server-pos/);
+  assert.match(debBuilder, /bms-retail-local-server/);
+  assert.match(setup, /sha256sum --check image\.sha256/);
+  assert.match(setup, /openssl rand -hex 48/);
+  assert.match(setup, /compose --profile setup run --rm provision/);
+  assert.match(setup, /127\.0\.0\.1:3100/);
+  assert.match(backup, /pg_dump/);
+  assert.match(backup, /secrets\.env/);
+  assert.match(backup, /SHA256SUMS\.txt/);
+  assert.match(readme, /Ubuntu 22\.04 LTS หรือ 24\.04 LTS/);
+  assert.match(readme, /Linux x86\/32-bit ไม่มี/);
+  assert.match(readme, /basic_text/);
+  assert.match(readme, /internal pilot build แบบ unsigned/);
+});
+
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {
   const doctor = read("deploy/retail-local/doctor.ps1");
   const uninstall = read("deploy/retail-local/uninstall.ps1");

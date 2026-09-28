@@ -1,0 +1,15 @@
+[Unit]
+Description=BMS Retail Local
+Requires=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/bms-retail-local-start
+ExecStop=/usr/bin/bms-retail-local-stop
+TimeoutStartSec=360
+TimeoutStopSec=120
+
+[Install]
+WantedBy=multi-user.target

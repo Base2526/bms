@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. /usr/lib/bms-retail-local/common.sh
+require_root
+require_installed
+require_docker
+compose run --rm migrate
+compose up -d web ws
+wait_healthy
+printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:%s\n' "$(env_value BMS_LOCAL_WEB_PORT)"
