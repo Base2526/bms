@@ -16,7 +16,10 @@ price, stock, permission, payment, tax documents, and audit.
 ## Current supported boundary
 
 - one installation, one provisioned tenant, one `MAIN` branch, and one initial `POS-01` device;
-- retail archetype (`mini_mart`) only for the first-run profile;
+- first-run selection of one supported shop archetype; the selected archetype is an onboarding
+  preset, never an alternate price, stock, or settlement engine;
+- optional archetype-specific Starter Catalog: four inactive products with zero stock and no online
+  sales surfaces, registered to one tenant-owned sample run for guarded all-or-nothing cleanup;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;
 - portable test ZIP with prebuilt application/PostgreSQL/Redis images and SHA-256 verification;
 - deterministic ordered migrations with checksums and an advisory lock;
@@ -67,11 +70,21 @@ preflight check, validates and loads the image archive, creates local secrets, m
 waits for both Web and WS to become healthy, then performs HTTP health checks. Running directly from
 source remains supported for development; in that mode the installer builds the images locally.
 
-The installer asks for the shop name, owner identity, password, and POS PIN. It generates every
+The installer asks for the shop name, shop type, whether to create a Starter Catalog, owner identity,
+password, and POS PIN. It generates every
 database/application secret locally, loads the packaged Web/WS images (or builds them in source-dev
 mode), applies all migrations, provisions the shop atomically, and starts the stack. The POS pairing
 token is displayed once and is stored in the database only as a SHA-256 hash. Paste it into BMS POS
 with server URL `http://127.0.0.1:3100`; Electron stores it in the OS keystore.
+
+Starter Catalog generation runs only after the core shop transaction commits, so an optional sample
+failure never makes the installation unusable. Examples are draft products with zero stock and are
+not published to storefront, customer AI, or online ordering. Admin > Getting Started shows the
+registered run and offers explicit whole-set deletion. Cleanup refuses the entire operation if any
+example was edited, activated, converted, or referenced by an order or purchase order; a SKU prefix
+is never treated as ownership evidence. Pharmacy examples are non-clinical supplies only, restaurant
+recipes remain unconfigured drafts, and board-game examples are sellable goods rather than play time
+or library copies.
 
 The generated `.env.local` contains encryption/signing keys. It is ACL-restricted by the installer,
 git-ignored, and must never be emailed or committed.

@@ -47,6 +47,25 @@ function ConvertTo-PlainSecret([Security.SecureString]$Secret) {
   return [Net.NetworkCredential]::new("", $Secret).Password
 }
 
+function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue) {
+  Write-Host ""
+  Write-Host $Prompt -ForegroundColor Cyan
+  $defaultIndex = 1
+  for ($index = 0; $index -lt $Options.Count; $index++) {
+    Write-Host ("  {0}. {1}" -f ($index + 1), $Options[$index].Label)
+    if ($Options[$index].Value -eq $DefaultValue) { $defaultIndex = $index + 1 }
+  }
+  while ($true) {
+    $answer = Read-Host ("เลือกหมายเลข [{0}]" -f $defaultIndex)
+    if (-not $answer) { return $DefaultValue }
+    $number = 0
+    if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $Options.Count) {
+      return [string]$Options[$number - 1].Value
+    }
+    Write-Host "กรุณาเลือกหมายเลข 1-$($Options.Count)" -ForegroundColor Yellow
+  }
+}
+
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
 }
@@ -327,6 +346,26 @@ if (-not $runtimeEnvExists) {
 }
 
 $shopName = Read-Host "ชื่อร้าน"
+$businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" @(
+  [pscustomobject]@{ Value = "mini_mart"; Label = "Mini Mart / Grocery" },
+  [pscustomobject]@{ Value = "fashion"; Label = "Fashion & Apparel" },
+  [pscustomobject]@{ Value = "home_kitchen"; Label = "Home & Kitchen" },
+  [pscustomobject]@{ Value = "beauty_personal_care"; Label = "Beauty & Personal Care" },
+  [pscustomobject]@{ Value = "food_beverage"; Label = "Food & Beverage" },
+  [pscustomobject]@{ Value = "gadgets_accessories"; Label = "Gadgets & Accessories" },
+  [pscustomobject]@{ Value = "b2b_wholesale"; Label = "B2B / Wholesale" },
+  [pscustomobject]@{ Value = "gifts_seasonal"; Label = "Gifts & Seasonal" },
+  [pscustomobject]@{ Value = "pharmacy"; Label = "Pharmacy" },
+  [pscustomobject]@{ Value = "pet_supply"; Label = "Pet Supply" },
+  [pscustomobject]@{ Value = "building_materials"; Label = "Building Materials" },
+  [pscustomobject]@{ Value = "restaurant"; Label = "Restaurant" },
+  [pscustomobject]@{ Value = "board_game_cafe"; Label = "Board Game Cafe" },
+  [pscustomobject]@{ Value = "other"; Label = "Other" }
+) "mini_mart"
+$sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
+  [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
+  [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+) "STARTER_CATALOG"
 $adminName = Read-Host "ชื่อผู้ดูแลร้าน"
 $adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
 $adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)
@@ -346,6 +385,8 @@ $provisionScript = @(
   (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
   (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
   (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
+  (ConvertTo-ShellExport "BMS_LOCAL_BUSINESS_ARCHETYPE" $businessArchetype),
+  (ConvertTo-ShellExport "BMS_LOCAL_SAMPLE_MODE" $sampleMode),
   "cd $runtimeData",
   "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
 ) -join "`n"
@@ -411,6 +452,9 @@ if ($provisionResult.deviceToken) {
   tenantId = $provisionResult.tenantId
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
+  businessArchetype = $provisionResult.businessArchetype
+  sampleMode = $provisionResult.sample.mode
+  sampleStatus = $provisionResult.sample.status
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
@@ -454,4 +498,7 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
 
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
+if ($provisionResult.sample.status -eq "FAILED") {
+  Write-Warning "Starter Catalog สร้างไม่สำเร็จ แต่ระบบหลักพร้อมใช้งาน: $($provisionResult.sample.error)"
+}
 Write-Host "BMS Retail Local พร้อมใช้งาน" -ForegroundColor Green

@@ -79,9 +79,10 @@ chmod +x BMS-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
 ./BMS-Retail-Local-POS-{{VERSION}}-linux-x64.AppImage
 ```
 
-ระหว่าง `bms-retail-local-setup` ระบบจะสร้าง secrets แบบสุ่ม, โหลด image ที่ตรวจ checksum แล้ว,
-ถามข้อมูลร้าน/Admin/PIN, provision ร้าน และตรวจ health ของ Web/WS จากนั้นจะแสดง POS pairing token
-ครั้งเดียว
+ระหว่าง `bms-retail-local-setup` ระบบจะสร้าง secrets แบบสุ่ม, โหลด image ที่ตรวจ checksumแล้ว,
+ถามข้อมูลร้าน ประเภทร้าน ว่าจะสร้าง Starter Catalog หรือไม่ รวมถึง Admin/PIN, provision ร้าน และตรวจ
+health ของ Web/WS จากนั้นจะแสดง POS pairing token ครั้งเดียว Starter Catalog มีสินค้า Draft 4 รายการ
+ตามประเภทร้าน สต็อก 0 และไม่แสดงออนไลน์; ตรวจหรือลบทั้งชุดได้ที่ Admin > เริ่มต้นใช้งาน
 
 ## คำสั่งดูแลระบบ
 
