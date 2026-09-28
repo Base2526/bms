@@ -41,6 +41,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       version: fields.version,
       channel: fields.channel || "pilot",
       status: fields.status || "supported",
+      accessLevel: fields.accessLevel,
       isLatest: fields.isLatest,
       minOs: fields.minOs,
       releaseNotes: fields.releaseNotes,

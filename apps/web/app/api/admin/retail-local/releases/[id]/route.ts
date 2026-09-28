@@ -16,6 +16,7 @@ async function handlePATCH(request: NextRequest, { params }: { params: { id: str
     const body = await request.json();
     const release = await updateRetailLocalReleaseAsset(params.id, {
       status: body?.status,
+      accessLevel: body?.accessLevel,
       isLatest: body?.isLatest,
       minOs: body?.minOs,
       releaseNotes: body?.releaseNotes,

@@ -148,9 +148,14 @@ test("30-day trials derive customer-friendly commercial follow-up states without
 test("trial issuance and lifecycle changes stay platform-admin-only and explicitly confirmed", () => {
   const createRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/route.ts", import.meta.url), "utf8");
   const commercialRoute = readFileSync(new URL("../apps/web/app/api/admin/retail-local/licenses/[id]/commercial/route.ts", import.meta.url), "utf8");
+  const service = readFileSync(new URL("../apps/web/lib/bms/retailLocalLicensing.ts", import.meta.url), "utf8");
   const trialMigration = readFileSync(new URL("../db/migrations/10.17__bms_retail_local_trial_lifecycle.sql", import.meta.url), "utf8");
+  const ownerMigration = readFileSync(new URL("../db/migrations/10.28__bms_retail_local_license_owner_reference.sql", import.meta.url), "utf8");
   assert.match(createRoute, /authorizePlatformAdminRoute/);
   assert.match(createRoute, /licenseType: body\?\.licenseType/);
+  assert.match(service, /if \(!customerReference \|\| !ID\.test\(customerReference\)\)/);
+  assert.match(ownerMigration, /customer_reference IS NOT NULL/);
+  assert.match(ownerMigration, /NOT VALID/);
   assert.match(commercialRoute, /authorizePlatformAdminRoute/);
   assert.match(commercialRoute, /CONVERT-RETAIL-LOCAL-TO-PAID/);
   assert.match(commercialRoute, /EXTEND-RETAIL-LOCAL-TRIAL/);

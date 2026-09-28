@@ -6,24 +6,35 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 
 test("Retail Local releases distinguish combined, server, and POS packages", () => {
   const migration = read("db/migrations/10.20__bms_retail_local_release_package_types.sql");
+  const trialLockMigration = read("db/migrations/10.27__bms_retail_local_release_trial_lock.sql");
   const service = read("apps/web/lib/bms/retailLocalReleases.ts");
   const publicPage = read("apps/web/app/(main)/retail-local/RetailLocalPageClient.tsx");
   const adminPage = read("apps/web/app/(admin)/admin/retail-local-releases/page.tsx");
   const uploadRoute = read("apps/web/pages/api/admin/retail-local/releases-upload.ts");
+  const downloadRoute = read("apps/web/app/api/retail-local/download/[id]/route.ts");
 
   assert.match(migration, /DEFAULT 'server'/);
   assert.match(migration, /'server-pos', 'server', 'pos'/);
   assert.match(migration, /\(platform, package_type\)[\s\S]*WHERE is_latest/);
+  assert.match(trialLockMigration, /access_level TEXT NOT NULL DEFAULT 'public'/);
+  assert.match(trialLockMigration, /package_type = 'server-pos'[\s\S]*access_level = 'trial'/);
+  assert.match(trialLockMigration, /package_type <> 'server-pos' OR access_level = 'trial'/);
 
   assert.match(service, /packageType === "pos" \? \["\.dmg"\] : \["\.pkg"\]/);
   assert.match(service, /WHERE platform = \$1 AND package_type = \$2/);
+  assert.match(service, /access_level = 'public'/);
+  assert.match(service, /server-pos package must be trial locked/);
+  assert.match(downloadRoute, /authorizePlatformAdminRoute/);
+  assert.match(downloadRoute, /includeTrialLocked: auth\.ok/);
   assert.match(uploadRoute, /parseRetailLocalReleaseUploadStream\(req, req\.headers\)/);
   assert.match(uploadRoute, /packageType: fields\.packageType/);
+  assert.match(uploadRoute, /accessLevel: fields\.accessLevel/);
 
   for (const packageType of ["server-pos", "server", "pos"]) {
     assert.match(publicPage, new RegExp(`"${packageType}"`));
   }
   assert.match(adminPage, /name="packageType"/);
+  assert.match(adminPage, /name="accessLevel"/);
   assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
 });
 

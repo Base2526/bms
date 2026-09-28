@@ -642,6 +642,12 @@ deployment profile. The operator contract and remaining release gates live in
   never copies an evidence private key or bearer token. Never return trial state from evidence
   ingestion as an entitlement decision that the host could use to sanction the shop, and never put
   trial/commercial state on a customer receipt, bill, tax document, or kitchen ticket.
+- **The combined Server + POS installer is trial-locked distribution, not a runtime lock.**
+  `bms_retail_local_release_assets.access_level` keeps `package_type = 'server-pos'` behind the
+  standard Retail Local license/onboarding flow, so it is omitted from anonymous public downloads.
+  That package lock must never be copied into the installed Retail Local runtime: POS, stock,
+  payment, tax, backup, restore and data access still follow the same fail-open licensing invariant
+  above.
 
 ## Restaurant POS (dine-in)
 

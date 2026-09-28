@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { authorizePlatformAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { openRetailLocalReleaseDownload, RetailLocalReleaseError } from "@/lib/bms/retailLocalReleases";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -13,7 +14,8 @@ function safeFilename(name: string) {
 
 async function handleGET(_: Request, { params }: { params: { id: string } }) {
   try {
-    const download = await openRetailLocalReleaseDownload(params.id);
+    const auth = await authorizePlatformAdminRoute();
+    const download = await openRetailLocalReleaseDownload(params.id, { includeTrialLocked: auth.ok });
     const filename = safeFilename(download.filename);
     return new NextResponse(download.stream, {
       status: 200,
