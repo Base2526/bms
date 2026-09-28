@@ -2,6 +2,7 @@ import process from "node:process";
 
 import { provisionRetailLocal } from "../lib/bms/localProvisioning";
 import { createStarterCatalog } from "../lib/bms/sampleData";
+import { DEFAULT_SHOP_ARCHETYPE } from "../lib/bms/shopArchetypes";
 import { closeDatabasePool } from "../lib/db";
 
 function required(name: string): string {
@@ -22,7 +23,7 @@ async function main(): Promise<void> {
     adminEmail: required("BMS_LOCAL_ADMIN_EMAIL"),
     adminPassword: required("BMS_LOCAL_ADMIN_PASSWORD"),
     adminPin: required("BMS_LOCAL_ADMIN_PIN"),
-    businessArchetype: process.env.BMS_LOCAL_BUSINESS_ARCHETYPE?.trim() || "mini_mart",
+    businessArchetype: process.env.BMS_LOCAL_BUSINESS_ARCHETYPE?.trim() || DEFAULT_SHOP_ARCHETYPE,
   });
   let sample: Record<string, unknown> = { status: "SKIPPED", mode: sampleMode };
   if (result.status === "PROVISIONED" && sampleMode === "STARTER_CATALOG") {

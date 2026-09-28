@@ -18,6 +18,11 @@ price, stock, permission, payment, tax documents, and audit.
 - one installation, one provisioned tenant, one `MAIN` branch, and one initial `POS-01` device;
 - first-run selection of one supported shop archetype; the selected archetype is an onboarding
   preset, never an alternate price, stock, or settlement engine;
+- `packages/retail-local-contract/shop-archetypes.json` is the versioned catalog authority. Offline
+  packages carry that release's snapshot; Managed Runtime receives the same file as a signed,
+  checksummed release component. Installers show only `enabledForNewInstall` entries that are not
+  `deprecated`. Removing a type means deprecating/hiding it for new installs, never invalidating the
+  stable id already stored by an existing shop;
 - optional archetype-specific Starter Catalog: four inactive products with zero stock and no online
   sales surfaces, registered to one tenant-owned sample run for guarded all-or-nothing cleanup;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;
@@ -42,9 +47,10 @@ pwsh .\deploy\retail-local\package.ps1 -Version 0.1.0-pilot.1
 
 This produces a ZIP and a `.sha256` file under `artifacts/retail-local/`. The ZIP contains prebuilt
 Web, WS, PostgreSQL and Redis images; the target machine does not need the repository, Node.js, npm,
-or internet access to fetch images. The Web image contains the exact init schema and migrations used
-by its migration runner. The checksum detects corruption or modification but is not a publisher
-signature.
+or internet access to fetch images. It also contains the archetype-catalog snapshot compatible with
+those images. The Web image contains the exact init schema and migrations used by its migration
+runner. The checksum detects corruption or modification but is not a publisher signature. An old
+offline EXE deliberately keeps its old compatible snapshot; publish a new package to add a new type.
 
 For an internal Windows pilot, wrap that verified payload in a single offline Inno Setup executable.
 The combined variant embeds the existing x64 POS installer and starts it only after the server writes

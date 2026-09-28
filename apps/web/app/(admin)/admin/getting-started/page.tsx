@@ -18,6 +18,7 @@ import {
   archetypeNeedsRestockEmphasis,
   localizedShopArchetypeLabel,
   onboardingChecklistKeysForArchetype,
+  shopArchetypeHasStarterCatalog,
 } from "@/lib/bms/shopArchetypes";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -91,7 +92,8 @@ export default function Page() {
   const archetype = profile?.businessArchetype || null;
   const checklistKeys = onboardingChecklistKeysForArchetype(archetype);
   const restockFirstClass = archetypeNeedsRestockEmphasis(archetype);
-  const canOfferSampleData = sampleStatusLoaded && !sampleStatus && productTotal === 0;
+  const canOfferSampleData = sampleStatusLoaded && !sampleStatus && productTotal === 0 &&
+    shopArchetypeHasStarterCatalog(archetype);
   const activeSample = sampleStatus?.status === "ACTIVE" ? sampleStatus : null;
 
   const loadSampleStatus = useCallback(async () => {

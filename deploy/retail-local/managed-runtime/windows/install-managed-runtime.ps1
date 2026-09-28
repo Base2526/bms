@@ -66,6 +66,40 @@ function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue
   }
 }
 
+function Get-ShopArchetypeCatalog([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "ไม่พบ shop-archetypes manifest ของ release"
+  }
+  $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
+    throw "shop-archetypes manifest version ไม่รองรับ"
+  }
+  $seen = @{}
+  $options = @()
+  foreach ($entry in @($manifest.archetypes)) {
+    $id = [string]$entry.id
+    if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
+      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+    }
+    $seen[$id] = $true
+    if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
+      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
+      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $options += [pscustomobject]@{
+        Value = $id
+        Label = $label
+        StarterCatalog = ($entry.starterCatalog -eq $true)
+      }
+    }
+  }
+  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  $defaultValue = [string]$manifest.defaultArchetype
+  if ($defaultValue -notin @($options | ForEach-Object Value)) {
+    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+  }
+  return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
+}
+
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
 }
@@ -272,6 +306,8 @@ $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyri
 $release = Invoke-AgentJson @("verify-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
   "-target", [string]$preflight.target)
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
+$archetypeArtifact = Get-ArtifactPath $release "shop-archetypes"
+$archetypeCatalog = Get-ShopArchetypeCatalog $archetypeArtifact.path
 
 $runtime = Get-ArtifactPath $release "runtime"
 $installedDistros = @(& wsl.exe --list --quiet | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
@@ -346,26 +382,18 @@ if (-not $runtimeEnvExists) {
 }
 
 $shopName = Read-Host "ชื่อร้าน"
-$businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" @(
-  [pscustomobject]@{ Value = "mini_mart"; Label = "Mini Mart / Grocery" },
-  [pscustomobject]@{ Value = "fashion"; Label = "Fashion & Apparel" },
-  [pscustomobject]@{ Value = "home_kitchen"; Label = "Home & Kitchen" },
-  [pscustomobject]@{ Value = "beauty_personal_care"; Label = "Beauty & Personal Care" },
-  [pscustomobject]@{ Value = "food_beverage"; Label = "Food & Beverage" },
-  [pscustomobject]@{ Value = "gadgets_accessories"; Label = "Gadgets & Accessories" },
-  [pscustomobject]@{ Value = "b2b_wholesale"; Label = "B2B / Wholesale" },
-  [pscustomobject]@{ Value = "gifts_seasonal"; Label = "Gifts & Seasonal" },
-  [pscustomobject]@{ Value = "pharmacy"; Label = "Pharmacy" },
-  [pscustomobject]@{ Value = "pet_supply"; Label = "Pet Supply" },
-  [pscustomobject]@{ Value = "building_materials"; Label = "Building Materials" },
-  [pscustomobject]@{ Value = "restaurant"; Label = "Restaurant" },
-  [pscustomobject]@{ Value = "board_game_cafe"; Label = "Board Game Cafe" },
-  [pscustomobject]@{ Value = "other"; Label = "Other" }
-) "mini_mart"
-$sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
-  [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
-  [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
-) "STARTER_CATALOG"
+$businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+  $archetypeCatalog.Options $archetypeCatalog.DefaultValue
+$selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $businessArchetype)[0]
+if ($selectedArchetype.StarterCatalog) {
+  $sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
+    [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
+    [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+  ) "STARTER_CATALOG"
+} else {
+  $sampleMode = "NONE"
+  Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+}
 $adminName = Read-Host "ชื่อผู้ดูแลร้าน"
 $adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
 $adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)

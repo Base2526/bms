@@ -133,7 +133,8 @@ The installer persists only non-secret progress and resumes after a required reb
 1. verify the signed installer and support target;
 2. enable/install the platform runtime and reboot if required;
 3. verify the signed release envelope and stage every component;
-4. verify SHA-256 and OCI digests before any provisioning;
+4. verify SHA-256 and OCI digests before any provisioning, then build the shop-type menu from the
+   signed `shop-archetypes` component belonging to that exact release;
 5. create machine secrets, migrate, and provision exactly once;
 6. pass service and HTTP health checks;
 7. transfer the one-time device token to Electron over a local ACL-bound channel, store it with

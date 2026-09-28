@@ -1,0 +1,119 @@
+{
+  "formatVersion": 1,
+  "catalogVersion": "2026-09-28",
+  "defaultArchetype": "mini_mart",
+  "archetypes": [
+    {
+      "id": "mini_mart",
+      "labels": { "th": "มินิมาร์ท / ร้านขายของชำ", "en": "Mini Mart / Grocery" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "fashion",
+      "labels": { "th": "แฟชั่นและเครื่องแต่งกาย", "en": "Fashion & Apparel" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "home_kitchen",
+      "labels": { "th": "บ้านและเครื่องครัว", "en": "Home & Kitchen" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "beauty_personal_care",
+      "labels": { "th": "ความงามและของใช้ส่วนตัว", "en": "Beauty & Personal Care" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "food_beverage",
+      "labels": { "th": "อาหารและเครื่องดื่ม", "en": "Food & Beverage" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "gadgets_accessories",
+      "labels": { "th": "แกดเจ็ตและอุปกรณ์เสริม", "en": "Gadgets & Accessories" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "b2b_wholesale",
+      "labels": { "th": "ขายส่ง / ธุรกิจ B2B", "en": "B2B / Wholesale" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "gifts_seasonal",
+      "labels": { "th": "ของขวัญและสินค้าตามเทศกาล", "en": "Gifts & Seasonal" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "pharmacy",
+      "labels": { "th": "ร้านขายยา", "en": "Pharmacy" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "pet_supply",
+      "labels": { "th": "ร้านอุปกรณ์สัตว์เลี้ยง", "en": "Pet Supply" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "building_materials",
+      "labels": { "th": "วัสดุก่อสร้างและอุปกรณ์ช่าง", "en": "Building Materials" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "restaurant",
+      "labels": { "th": "ร้านอาหาร", "en": "Restaurant" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "board_game_cafe",
+      "labels": { "th": "บอร์ดเกมคาเฟ่", "en": "Board Game Cafe" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    },
+    {
+      "id": "other",
+      "labels": { "th": "ประเภทร้านอื่น ๆ", "en": "Other" },
+      "enabledForNewInstall": true,
+      "deprecated": false,
+      "starterCatalog": true,
+      "aliases": []
+    }
+  ]
+}

@@ -6,7 +6,13 @@ import { getClient } from "@/lib/db";
 import { normalizeEmail, validateEmail, validateNewPassword } from "@/lib/auth/identity";
 import { isPosPinValid } from "@pos-core/posPin";
 import { DEFAULT_TENANT_ID } from "./tenant";
-import { archetypeToBusinessType, normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import {
+  archetypeToBusinessType,
+  DEFAULT_SHOP_ARCHETYPE,
+  isShopArchetypeAvailableForNewInstall,
+  normalizeShopArchetype,
+  type ShopArchetype,
+} from "./shopArchetypes";
 
 export type RetailLocalProvisionInput = {
   shopName: string;
@@ -48,14 +54,16 @@ export async function provisionRetailLocal(
   const emailResult = validateEmail(input.adminEmail);
   const passwordResult = validateNewPassword(input.adminPassword);
   const adminPin = input.adminPin.trim();
-  const businessArchetype = normalizeShopArchetype(input.businessArchetype ?? "mini_mart");
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype ?? DEFAULT_SHOP_ARCHETYPE);
   if (!shopName || shopName.length > 120) throw new Error("Shop name must be 1-120 characters");
   if (!adminName || adminName.length > 120) throw new Error("Administrator name must be 1-120 characters");
   if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new Error("Slug must contain 3-40 lowercase letters, numbers, or hyphens");
   if (!emailResult.ok) throw new Error(`Invalid administrator email (${emailResult.code})`);
   if (!passwordResult.ok) throw new Error(`Invalid administrator password (${passwordResult.code})`);
   if (!isPosPinValid(adminPin)) throw new Error("Administrator PIN must be 4-8 digits");
-  if (!businessArchetype) throw new Error("Business archetype is invalid");
+  if (!businessArchetype || !isShopArchetypeAvailableForNewInstall(businessArchetype)) {
+    throw new Error("Business archetype is invalid or unavailable for new installations");
+  }
 
   const adminEmail = normalizeEmail(emailResult.value);
   const [passwordHash, pinHash] = await Promise.all([
@@ -89,7 +97,7 @@ export async function provisionRetailLocal(
         adminUserId: installed.rows[0].admin_user_id,
         deviceId: installed.rows[0].pos_device_id,
         deviceToken: null,
-        businessArchetype: normalizeShopArchetype(installed.rows[0].business_archetype) ?? "mini_mart",
+        businessArchetype: normalizeShopArchetype(installed.rows[0].business_archetype) ?? DEFAULT_SHOP_ARCHETYPE,
       };
     }
 

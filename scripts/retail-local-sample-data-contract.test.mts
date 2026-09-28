@@ -6,9 +6,26 @@ import { __sampleDataTest } from "../apps/web/lib/bms/sampleData";
 import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const json = (path: string) => JSON.parse(read(path));
+const archetypeManifest = json("packages/retail-local-contract/shop-archetypes.json");
+
+test("the versioned archetype manifest is the installer catalog authority", () => {
+  const manifest = archetypeManifest;
+  assert.equal(manifest.formatVersion, 1);
+  assert.equal(manifest.defaultArchetype, "mini_mart");
+  const ids = manifest.archetypes.map((entry: { id: string }) => entry.id);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.deepEqual(
+    manifest.archetypes
+      .filter((entry: { enabledForNewInstall: boolean; deprecated: boolean }) => entry.enabledForNewInstall && !entry.deprecated)
+      .map((entry: { id: string }) => entry.id)
+      .sort(),
+    SHOP_ARCHETYPE_OPTIONS.map((option) => option.value).sort()
+  );
+});
 
 test("Starter Catalog covers every supported shop archetype with a bounded draft catalog", () => {
-  const archetypes = SHOP_ARCHETYPE_OPTIONS.map((option) => option.value).sort();
+  const archetypes = archetypeManifest.archetypes.map((entry: { id: string }) => entry.id).sort();
   assert.deepEqual(Object.keys(__sampleDataTest.catalogs).sort(), archetypes);
 
   for (const archetype of archetypes) {
@@ -65,6 +82,10 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
   const managedCompose = read("deploy/retail-local/managed-runtime/compose.managed.yml");
   const windows = read("deploy/retail-local/install.ps1");
   const linux = read("deploy/retail-local/linux-offline/bms-retail-local-setup");
+  const managedWindows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const managedLinux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const pack = read("deploy/retail-local/package.ps1");
+  const signer = read("deploy/retail-local/managed-runtime/sign-release.mjs");
 
   assert.match(service, /normalizeShopArchetype\(input\.businessArchetype/);
   assert.match(service, /archetypeToBusinessType\(businessArchetype\)/);
@@ -76,9 +97,14 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
     assert.match(content, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
     assert.match(content, /BMS_LOCAL_SAMPLE_MODE/);
   }
-  for (const content of [windows, linux]) {
-    assert.match(content, /mini_mart/);
-    assert.match(content, /board_game_cafe/);
+  for (const content of [windows, linux, managedWindows, managedLinux]) {
+    assert.match(content, /shop-archetypes/);
+    assert.match(content, /enabledForNewInstall/);
+    assert.match(content, /deprecated/);
     assert.match(content, /STARTER_CATALOG/);
   }
+  assert.match(pack, /packages\\retail-local-contract\\shop-archetypes\.json/);
+  assert.match(pack, /shopArchetypes/);
+  assert.match(signer, /\["shop-archetypes", "support-file"\]/);
+  assert.doesNotMatch(windows, /ValidateSet\("mini_mart"/);
 });

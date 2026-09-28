@@ -583,8 +583,11 @@ deployment profile. The operator contract and remaining release gates live in
   Web/WS images plus pinned PostgreSQL/Redis images, and writes the archive SHA-256 into
   `release.json`. The Web runtime image contains the matching init schema and migrations; never
   restore the source-tree migration bind mount, which makes a copied installer silently depend on a
-  developer checkout. Installation verifies the archive before `docker load`, then waits for both
-  application health checks and HTTP probes instead of reporting success after `compose up` alone.
+  developer checkout. The shop-archetype catalog is version-coherent too: offline packages carry
+  their embedded `shop-archetypes.json`, while Managed Runtime takes it only from the signed release
+  component. Never feed an old application an unversioned latest catalog. Installation verifies the
+  archive before `docker load`, then waits for both application health checks and HTTP probes instead
+  of reporting success after `compose up` alone.
 - **Release installers are bulk streams, not request buffers.** The platform-admin upload route
   is the Pages API `/api/admin/retail-local/releases-upload`, with `bodyParser: false`, raw Node
   `IncomingMessage`, its own platform-admin cookie guard, and a `middleware.ts` exclusion. This is a

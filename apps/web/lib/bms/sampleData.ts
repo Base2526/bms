@@ -2,7 +2,7 @@ import type { PoolClient } from "pg";
 
 import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import { normalizeShopArchetype, shopArchetypeHasStarterCatalog, type ShopArchetype } from "./shopArchetypes";
 
 export type SampleDataMode = "STARTER_CATALOG" | "FULL_DEMO";
 export type SampleRunStatus = "RUNNING" | "ACTIVE" | "FAILED" | "DELETING" | "DELETED";
@@ -398,7 +398,9 @@ export async function createStarterCatalog(
       [tenantId]
     );
     const archetype = normalizeShopArchetype(profile.rows[0]?.business_archetype);
-    if (!archetype) throw new SampleDataError("กรุณาเลือกประเภทร้านก่อนสร้าง Starter Catalog", "INVALID_ARCHETYPE");
+    if (!archetype || !shopArchetypeHasStarterCatalog(archetype)) {
+      throw new SampleDataError("ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน", "INVALID_ARCHETYPE");
+    }
     const location = await client.query<{ id: string }>(
       `SELECT id FROM bms_locations
         WHERE tenant_id = $1 AND active

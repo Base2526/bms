@@ -6,7 +6,6 @@ param(
   [string]$AdminEmail,
   [Security.SecureString]$AdminPassword,
   [Security.SecureString]$AdminPin,
-  [ValidateSet("mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "food_beverage", "gadgets_accessories", "b2b_wholesale", "gifts_seasonal", "pharmacy", "pet_supply", "building_materials", "restaurant", "board_game_cafe", "other")]
   [string]$BusinessArchetype,
   [ValidateSet("NONE", "STARTER_CATALOG")]
   [string]$SampleMode
@@ -53,6 +52,40 @@ function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue
   }
 }
 
+function Get-ShopArchetypeCatalog([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "ไม่พบ shop-archetypes manifest: $Path"
+  }
+  $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
+    throw "shop-archetypes manifest version ไม่รองรับ"
+  }
+  $seen = @{}
+  $options = @()
+  foreach ($entry in @($manifest.archetypes)) {
+    $id = [string]$entry.id
+    if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
+      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+    }
+    $seen[$id] = $true
+    if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
+      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
+      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $options += [pscustomobject]@{
+        Value = $id
+        Label = $label
+        StarterCatalog = ($entry.starterCatalog -eq $true)
+      }
+    }
+  }
+  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  $defaultValue = [string]$manifest.defaultArchetype
+  if ($defaultValue -notin @($options | ForEach-Object Value)) {
+    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+  }
+  return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
+}
+
 & (Join-Path $localRoot "preflight.ps1")
 
 $release = Get-RetailLocalRelease -ReleaseFile $ctx.ReleaseFile
@@ -86,26 +119,36 @@ if ($release -and ($webPort -ne 3100 -or $wsPort -ne 3101)) {
 }
 
 New-Item -ItemType Directory -Force -Path $ctx.StorageDirectory | Out-Null
+$archetypeManifestPath = Join-Path $localRoot "shop-archetypes.json"
+if (-not (Test-Path -LiteralPath $archetypeManifestPath -PathType Leaf)) {
+  $archetypeManifestPath = Join-Path $localRoot "..\..\packages\retail-local-contract\shop-archetypes.json"
+}
+if ($release) {
+  if ([string]$release.shopArchetypes.file -ne "shop-archetypes.json" -or
+      [string]$release.shopArchetypes.sha256 -notmatch '^[a-f0-9]{64}$') {
+    throw "release.json ขาด shop-archetypes contract"
+  }
+  $actualArchetypeHash = (Get-FileHash -LiteralPath $archetypeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actualArchetypeHash -ne [string]$release.shopArchetypes.sha256) {
+    throw "shop-archetypes manifest checksum ไม่ตรงกับ release"
+  }
+}
+$archetypeCatalog = Get-ShopArchetypeCatalog $archetypeManifestPath
 if (-not $ShopName) { $ShopName = Read-Host "ชื่อร้าน" }
 if (-not $BusinessArchetype) {
-  $BusinessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" @(
-    [pscustomobject]@{ Value = "mini_mart"; Label = "Mini Mart / Grocery" },
-    [pscustomobject]@{ Value = "fashion"; Label = "Fashion & Apparel" },
-    [pscustomobject]@{ Value = "home_kitchen"; Label = "Home & Kitchen" },
-    [pscustomobject]@{ Value = "beauty_personal_care"; Label = "Beauty & Personal Care" },
-    [pscustomobject]@{ Value = "food_beverage"; Label = "Food & Beverage" },
-    [pscustomobject]@{ Value = "gadgets_accessories"; Label = "Gadgets & Accessories" },
-    [pscustomobject]@{ Value = "b2b_wholesale"; Label = "B2B / Wholesale" },
-    [pscustomobject]@{ Value = "gifts_seasonal"; Label = "Gifts & Seasonal" },
-    [pscustomobject]@{ Value = "pharmacy"; Label = "Pharmacy" },
-    [pscustomobject]@{ Value = "pet_supply"; Label = "Pet Supply" },
-    [pscustomobject]@{ Value = "building_materials"; Label = "Building Materials" },
-    [pscustomobject]@{ Value = "restaurant"; Label = "Restaurant" },
-    [pscustomobject]@{ Value = "board_game_cafe"; Label = "Board Game Cafe" },
-    [pscustomobject]@{ Value = "other"; Label = "Other" }
-  ) "mini_mart"
+  $BusinessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+    $archetypeCatalog.Options $archetypeCatalog.DefaultValue
+} elseif ($BusinessArchetype -notin @($archetypeCatalog.Options | ForEach-Object Value)) {
+  throw "ประเภทร้าน '$BusinessArchetype' ไม่เปิดให้ติดตั้งใน release นี้"
 }
-if (-not $SampleMode) {
+$selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $BusinessArchetype)[0]
+if (-not $selectedArchetype.StarterCatalog) {
+  if ($SampleMode -eq "STARTER_CATALOG") {
+    throw "ประเภทร้าน '$BusinessArchetype' ไม่มี Starter Catalog ใน release นี้"
+  }
+  $SampleMode = "NONE"
+  Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+} elseif (-not $SampleMode) {
   $SampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog สำหรับทดลองใช้งานหรือไม่? (สินค้าเป็น Draft, สต็อก 0, ยังขายไม่ได้)" @(
     [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
     [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }

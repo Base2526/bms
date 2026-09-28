@@ -3,7 +3,7 @@
   "channel": "pilot",
   "platformTarget": "ubuntu-24.04-lts-x64",
   "minimumAgentVersion": "0.5.0",
-  "schemaVersion": "10.16",
+  "schemaVersion": "10.26",
   "rollbackSafe": false,
   "createdAt": "2026-09-24T00:00:00Z",
   "sourceCommit": "0000000000000000000000000000000000000000",
@@ -16,6 +16,12 @@
       "url": "https://releases.example.invalid/web.oci.tar",
       "imageRef": "bms/web:1.0.0-pilot.1",
       "ociDigest": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "name": "shop-archetypes",
+      "kind": "support-file",
+      "path": "packages/retail-local-contract/shop-archetypes.json",
+      "url": "https://releases.example.invalid/shop-archetypes.json"
     }
   ]
 }

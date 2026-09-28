@@ -1,42 +1,50 @@
-export const SHOP_ARCHETYPE_OPTIONS = [
-  { value: "mini_mart", label: "Mini Mart / Grocery" },
-  { value: "fashion", label: "Fashion & Apparel" },
-  { value: "home_kitchen", label: "Home & Kitchen" },
-  { value: "beauty_personal_care", label: "Beauty & Personal Care" },
-  { value: "food_beverage", label: "Food & Beverage" },
-  { value: "gadgets_accessories", label: "Gadgets & Accessories" },
-  { value: "b2b_wholesale", label: "B2B / Wholesale" },
-  { value: "gifts_seasonal", label: "Gifts & Seasonal" },
-  { value: "pharmacy", label: "Pharmacy" },
-  { value: "pet_supply", label: "Pet Supply" },
-  { value: "building_materials", label: "Building Materials" },
-  { value: "restaurant", label: "Restaurant" },
-  { value: "board_game_cafe", label: "Board Game Cafe" },
-  { value: "other", label: "Other" },
+import shopArchetypeManifest from "../../../../packages/retail-local-contract/shop-archetypes.json";
+
+const SUPPORTED_SHOP_ARCHETYPES = [
+  "mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "food_beverage",
+  "gadgets_accessories", "b2b_wholesale", "gifts_seasonal", "pharmacy", "pet_supply",
+  "building_materials", "restaurant", "board_game_cafe", "other",
 ] as const;
 
-export type ShopArchetype = typeof SHOP_ARCHETYPE_OPTIONS[number]["value"];
+export type ShopArchetype = typeof SUPPORTED_SHOP_ARCHETYPES[number];
+
+type ShopArchetypeManifestEntry = {
+  id: string;
+  labels: { th: string; en: string };
+  enabledForNewInstall: boolean;
+  deprecated: boolean;
+  starterCatalog: boolean;
+  aliases: string[];
+};
+
+const manifestEntries = shopArchetypeManifest.archetypes as ShopArchetypeManifestEntry[];
+const compiledSet = new Set<string>(SUPPORTED_SHOP_ARCHETYPES);
+const manifestSet = new Set<string>(manifestEntries.map((entry) => entry.id));
+if (shopArchetypeManifest.formatVersion !== 1 ||
+    manifestSet.size !== manifestEntries.length ||
+    SUPPORTED_SHOP_ARCHETYPES.some((value) => !manifestSet.has(value)) ||
+    manifestEntries.some((entry) => !compiledSet.has(entry.id))) {
+  throw new Error("Retail Local shop-archetypes manifest does not match the compiled application contract");
+}
+
+const manifestDefault = manifestEntries.find((entry) => entry.id === shopArchetypeManifest.defaultArchetype);
+if (!manifestDefault?.enabledForNewInstall || manifestDefault.deprecated) {
+  throw new Error("Retail Local default shop archetype is unavailable for new installations");
+}
+
+export const DEFAULT_SHOP_ARCHETYPE = shopArchetypeManifest.defaultArchetype as ShopArchetype;
+
+export const SHOP_ARCHETYPE_OPTIONS: Array<{ value: ShopArchetype; label: string }> = manifestEntries
+  .filter((entry) => entry.enabledForNewInstall && !entry.deprecated)
+  .map((entry) => ({ value: entry.id as ShopArchetype, label: entry.labels.en }));
 
 type Translate = (key: string) => string;
 
 export function localizedShopArchetypeOptions(t: Translate): Array<{ value: ShopArchetype; label: string }> {
-  const labels: Record<ShopArchetype, string> = {
-    mini_mart: t("shop_archetypes.mini_mart"),
-    fashion: t("shop_archetypes.fashion"),
-    home_kitchen: t("shop_archetypes.home_kitchen"),
-    beauty_personal_care: t("shop_archetypes.beauty_personal_care"),
-    food_beverage: t("shop_archetypes.food_beverage"),
-    gadgets_accessories: t("shop_archetypes.gadgets_accessories"),
-    b2b_wholesale: t("shop_archetypes.b2b_wholesale"),
-    gifts_seasonal: t("shop_archetypes.gifts_seasonal"),
-    pharmacy: t("shop_archetypes.pharmacy"),
-    pet_supply: t("shop_archetypes.pet_supply"),
-    building_materials: t("shop_archetypes.building_materials"),
-    restaurant: t("shop_archetypes.restaurant"),
-    board_game_cafe: t("shop_archetypes.board_game_cafe"),
-    other: t("shop_archetypes.other"),
-  };
-  return SHOP_ARCHETYPE_OPTIONS.map(({ value }) => ({ value, label: labels[value] }));
+  return SHOP_ARCHETYPE_OPTIONS.map(({ value }) => ({
+    value,
+    label: t(`shop_archetypes.${value}`),
+  }));
 }
 
 export function localizedShopArchetypeLabel(
@@ -45,19 +53,34 @@ export function localizedShopArchetypeLabel(
 ): string {
   const archetype = normalizeShopArchetype(value);
   if (!archetype) return t("shop_archetypes.general_not_set");
-  return localizedShopArchetypeOptions(t).find((option) => option.value === archetype)?.label
-    ?? t("shop_archetypes.general_not_set");
+  return t(`shop_archetypes.${archetype}`);
 }
 
-export const SHOP_ARCHETYPE_SET = new Set<string>(SHOP_ARCHETYPE_OPTIONS.map((x) => x.value));
+export const SHOP_ARCHETYPE_SET = manifestSet;
+const SHOP_ARCHETYPE_ALIASES = new Map<string, ShopArchetype>();
+for (const entry of manifestEntries) {
+  for (const alias of entry.aliases) SHOP_ARCHETYPE_ALIASES.set(alias, entry.id as ShopArchetype);
+}
 
 export function normalizeShopArchetype(value: string | null | undefined): ShopArchetype | null {
   const normalized = value?.trim() || "";
-  return normalized && SHOP_ARCHETYPE_SET.has(normalized) ? (normalized as ShopArchetype) : null;
+  if (!normalized) return null;
+  if (SHOP_ARCHETYPE_SET.has(normalized)) return normalized as ShopArchetype;
+  return SHOP_ARCHETYPE_ALIASES.get(normalized) ?? null;
 }
 
 export function isValidShopArchetype(value: string | null | undefined): boolean {
-  return value == null || value === "" || SHOP_ARCHETYPE_SET.has(value);
+  return value == null || value === "" || normalizeShopArchetype(value) != null;
+}
+
+export function isShopArchetypeAvailableForNewInstall(value: string | null | undefined): boolean {
+  const normalized = normalizeShopArchetype(value);
+  return normalized != null && SHOP_ARCHETYPE_OPTIONS.some((option) => option.value === normalized);
+}
+
+export function shopArchetypeHasStarterCatalog(value: string | null | undefined): boolean {
+  const normalized = normalizeShopArchetype(value);
+  return normalized != null && manifestEntries.some((entry) => entry.id === normalized && entry.starterCatalog);
 }
 
 export function archetypeToBusinessType(value: string | null | undefined): string {

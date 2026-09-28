@@ -71,6 +71,14 @@ try {
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "ขาดไฟล์ใน package: $name" }
     Copy-Item -LiteralPath $source -Destination (Join-Path $bundle $name)
   }
+  $archetypeManifestSource = Join-Path $repoRoot "packages\retail-local-contract\shop-archetypes.json"
+  if (-not (Test-Path -LiteralPath $archetypeManifestSource -PathType Leaf)) {
+    throw "ขาด Retail Local shop-archetypes manifest"
+  }
+  $archetypeManifestDestination = Join-Path $bundle "shop-archetypes.json"
+  Copy-Item -LiteralPath $archetypeManifestSource -Destination $archetypeManifestDestination
+  $archetypeManifest = Get-Content -LiteralPath $archetypeManifestDestination -Raw | ConvertFrom-Json
+  $archetypeManifestHash = (Get-FileHash -LiteralPath $archetypeManifestDestination -Algorithm SHA256).Hash.ToLowerInvariant()
 
   $commit = (& git -C $repoRoot rev-parse HEAD).Trim()
   $workingTreeStatus = (& git -C $repoRoot status --porcelain --untracked-files=normal)
@@ -85,6 +93,11 @@ try {
     createdAt = [DateTimeOffset]::Now.ToString("o")
     sourceCommit = $commit
     images = $imageNames
+    shopArchetypes = [ordered]@{
+      file = "shop-archetypes.json"
+      catalogVersion = [string]$archetypeManifest.catalogVersion
+      sha256 = $archetypeManifestHash
+    }
   }
   Set-Content -LiteralPath (Join-Path $bundle "release.json") -Value ($release | ConvertTo-Json -Depth 4) -Encoding utf8NoBOM
 

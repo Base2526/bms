@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createSignedRelease } from "../deploy/retail-local/managed-runtime/sign-release.mjs";
 import { verifyReleaseEnvelope } from "../deploy/retail-local/managed-runtime/verify-release.mjs";
 import { verifyPromotionEvidence } from "../deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs";
@@ -174,6 +175,7 @@ test("Managed Runtime keeps authority out of Electron and does not replace the p
 test("release signing derives hashes from artifact bytes and emits a verifiable envelope", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bms-managed-release-"));
   const artifact = join(directory, "component.bin");
+  const archetypeArtifact = fileURLToPath(new URL("../packages/retail-local-contract/shop-archetypes.json", import.meta.url));
   await writeFile(artifact, "signed bytes");
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const digest = "a".repeat(64);
@@ -184,6 +186,7 @@ test("release signing derives hashes from artifact bytes and emits a verifiable 
     { name: "runtime", kind: "runtime", path: artifact, url: "https://release.example/runtime" },
     { name: "compose", kind: "support-file", path: artifact, url: "https://release.example/compose" },
     { name: "desktop", kind: "desktop", path: artifact, url: "https://release.example/desktop" },
+    { name: "shop-archetypes", kind: "support-file", path: archetypeArtifact, url: "https://release.example/shop-archetypes" },
   ] as any);
   const envelope = await createSignedRelease({
     releaseVersion: "1.0.0", channel: "pilot", platformTarget: "ubuntu-24.04-lts-x64",
@@ -271,9 +274,10 @@ test("Linux bootstrap package stays small and never packages a release private k
 
 test("Linux release preparation builds all signed payload components before signing", () => {
   const prepare = read("deploy/retail-local/managed-runtime/linux/prepare-release.sh");
-  for (const name of ["web", "ws", "postgres", "redis", "runtime", "compose", "desktop"]) {
+  for (const name of ["web", "ws", "postgres", "redis", "runtime", "compose", "desktop", "shop-archetypes"]) {
     assert.match(prepare, new RegExp(`${name}\\.artifact`));
   }
+  assert.match(prepare, /packages\/retail-local-contract\/shop-archetypes\.json/);
   assert.match(prepare, /docker buildx build --platform linux\/amd64 --provenance=false --load/);
   assert.match(prepare, /docker image inspect --format '\{\{\.Id\}\}'/);
   assert.match(prepare, /release-descriptor\.json[\s\S]*sign-release\.mjs/);

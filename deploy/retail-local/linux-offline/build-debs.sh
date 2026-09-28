@@ -14,7 +14,9 @@ output_dir=$4
 source_root=$(cd "$(dirname "$0")" && pwd)
 
 [[ $version =~ ^[A-Za-z0-9.+~-]{1,64}$ ]] || { echo "invalid version" >&2; exit 2; }
-[[ -f $bundle_root/compose.yml && -f $bundle_root/release.json ]] || { echo "invalid server bundle" >&2; exit 2; }
+[[ -f $bundle_root/compose.yml && -f $bundle_root/release.json && -f $bundle_root/shop-archetypes.json ]] || {
+  echo "invalid server bundle" >&2; exit 2;
+}
 [[ -f $pos_deb ]] || { echo "missing POS deb" >&2; exit 2; }
 image_archive=$(find "$bundle_root/images" -maxdepth 1 -type f -name '*.tar' -print -quit)
 [[ -n $image_archive ]] || { echo "missing image archive" >&2; exit 2; }
@@ -63,6 +65,7 @@ stage_payload() {
     "$stage/lib/systemd/system"
   install -m 0644 "$bundle_root/compose.yml" "$stage/opt/bms-retail-local/compose.yml"
   install -m 0644 "$bundle_root/release.json" "$stage/opt/bms-retail-local/release.json"
+  install -m 0644 "$bundle_root/shop-archetypes.json" "$stage/opt/bms-retail-local/shop-archetypes.json"
   install -m 0644 "$image_archive" "$stage/opt/bms-retail-local/images/$(basename "$image_archive")"
   (
     cd "$stage/opt/bms-retail-local"

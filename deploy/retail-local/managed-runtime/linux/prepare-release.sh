@@ -79,6 +79,7 @@ docker image save --output "$output_dir/postgres.artifact" "$postgres_ref"
 docker image save --output "$output_dir/redis.artifact" "$redis_ref"
 cp "$managed_root/compose.managed.yml" "$output_dir/compose.artifact"
 cp "$desktop_deb" "$output_dir/desktop.artifact"
+cp "$repo_root/packages/retail-local-contract/shop-archetypes.json" "$output_dir/shop-archetypes.artifact"
 
 commit=$(git -C "$repo_root" rev-parse HEAD)
 created_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -106,7 +107,7 @@ const descriptor = {
   channel: "pilot",
   platformTarget: "ubuntu-24.04-lts-x64",
   minimumAgentVersion: "0.5.0",
-  schemaVersion: "10.16",
+  schemaVersion: "10.26",
   rollbackSafe: false,
   createdAt,
   sourceCommit,
@@ -119,6 +120,7 @@ const descriptor = {
     component("runtime", "runtime"),
     component("compose", "support-file"),
     component("desktop", "desktop"),
+    component("shop-archetypes", "support-file"),
   ],
 };
 writeFileSync(join(output, "release-descriptor.json"), JSON.stringify(descriptor, null, 2) + "\n", { mode: 0o600, flag: "wx" });

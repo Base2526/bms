@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import { verifyPromotionEvidence } from "./verify-promotion-evidence.mjs";
 
 const SEMVER = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[A-Za-z0-9.-]+)?$/;
+const ARCHETYPE_MANIFEST_PATH = fileURLToPath(
+  new URL("../../../packages/retail-local-contract/shop-archetypes.json", import.meta.url)
+);
 
 function fail(message) {
   throw new Error(`sign-release: ${message}`);
@@ -27,6 +30,13 @@ async function componentFromDescriptor(component) {
   const bytes = await readFile(path);
   const metadata = await stat(path);
   if (!metadata.isFile() || metadata.size < 1) fail(`component ${name} ไม่ใช่ไฟล์`);
+  if (name === "shop-archetypes") {
+    if (kind !== "support-file") fail("shop-archetypes ต้องเป็น support-file");
+    const canonical = await readFile(ARCHETYPE_MANIFEST_PATH);
+    if (!bytes.equals(canonical)) {
+      fail("shop-archetypes artifact ต้องตรงกับ versioned catalog ใน source commit ที่กำลังเซ็น");
+    }
+  }
   const result = {
     name,
     kind,
@@ -58,6 +68,7 @@ export async function createSignedRelease(descriptor, privateKeyPem) {
   const requiredKinds = new Map([
     ["web", "oci-image"], ["ws", "oci-image"], ["postgres", "oci-image"], ["redis", "oci-image"],
     ["runtime", "runtime"], ["compose", "support-file"], ["desktop", "desktop"],
+    ["shop-archetypes", "support-file"],
   ]);
   const seen = new Set();
   for (const component of components) {
