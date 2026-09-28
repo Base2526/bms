@@ -129,6 +129,23 @@ try {
       Write-Host "Ready: $destination" -ForegroundColor Green
       Write-Host "SHA-256: $hash"
     }
+
+    $readmeTemplatePath = Join-Path $scriptRoot "README.template.md"
+    if (-not (Test-Path -LiteralPath $readmeTemplatePath -PathType Leaf)) {
+      throw "ไม่พบ distribution README template: $readmeTemplatePath"
+    }
+    $serverPosArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-POS-$Version-windows-x64.exe"
+    $serverArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-$Version-windows-x64.exe"
+    $posX64Artifact = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x64.exe"
+    $posX86Artifact = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x86-legacy.exe"
+    $readme = (Get-Content -LiteralPath $readmeTemplatePath -Raw).
+      Replace("{{VERSION}}", $Version).
+      Replace("{{SERVER_POS_SHA256}}", (Get-FileHash -LiteralPath $serverPosArtifact -Algorithm SHA256).Hash.ToLowerInvariant()).
+      Replace("{{SERVER_SHA256}}", (Get-FileHash -LiteralPath $serverArtifact -Algorithm SHA256).Hash.ToLowerInvariant()).
+      Replace("{{POS_X64_SHA256}}", (Get-FileHash -LiteralPath $posX64Artifact -Algorithm SHA256).Hash.ToLowerInvariant()).
+      Replace("{{POS_X86_SHA256}}", (Get-FileHash -LiteralPath $posX86Artifact -Algorithm SHA256).Hash.ToLowerInvariant())
+    Set-Content -LiteralPath (Join-Path $outputRoot "README.md") -Value $readme -Encoding utf8NoBOM
+    Write-Host "Ready: $(Join-Path $outputRoot 'README.md')" -ForegroundColor Green
   }
 } finally {
   if (Test-Path -LiteralPath $stage) {

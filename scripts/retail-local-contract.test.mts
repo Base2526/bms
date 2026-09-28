@@ -94,6 +94,7 @@ test("portable pilot package contains pinned images and verifies them before ins
 test("Windows offline pilot produces real EXE variants from a verified server payload", () => {
   const builder = read("deploy/retail-local/windows-offline/build-offline-exe.ps1");
   const inno = read("deploy/retail-local/windows-offline/BMSRetailLocalOffline.iss");
+  const readme = read("deploy/retail-local/windows-offline/README.template.md");
   assert.ok(builder.indexOf("Get-FileHash") < builder.indexOf("Expand-Archive"));
   assert.match(builder, /ValidateSet\("server", "server-pos", "all"\)/);
   assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-windows-x64/);
@@ -104,6 +105,13 @@ test("Windows offline pilot produces real EXE variants from a verified server pa
   assert.match(inno, /Check: ServerInstallationCompleted/);
   assert.match(inno, /FileExists\(ExpandConstant\('\{app\}\\installation\.json'\)\)/);
   assert.match(inno, /Uninstallable=no/);
+  assert.match(builder, /README\.template\.md/);
+  assert.match(builder, /Replace\("\{\{SERVER_POS_SHA256\}\}"/);
+  assert.match(readme, /PowerShell 7/);
+  assert.match(readme, /Docker Desktop/);
+  assert.match(readme, /Electron 43[\s\S]{0,120}มกราคม 2027/);
+  assert.match(readme, /ไม่มี Emergency Offline Mode/);
+  assert.match(readme, /ESC\/POS USB\/LAN ยังไม่ผ่านการรับรองทุกรุ่น/);
 });
 
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {
