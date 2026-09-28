@@ -3,8 +3,8 @@ set -Eeuo pipefail
 
 pkg=${1:-}
 [[ -f $pkg ]] || { echo "usage: smoke-test-pkg.sh FULL_INSTALLER.pkg" >&2; exit 2; }
-[[ $(uname -s) == Darwin && $(uname -m) == arm64 ]] || {
-  echo "smoke test ต้องรันบน macOS Apple Silicon" >&2; exit 1;
+[[ $(uname -s) == Darwin ]] || {
+  echo "smoke test ต้องรันบน macOS" >&2; exit 1;
 }
 
 work="/tmp/brl-smoke.$$"
@@ -46,6 +46,13 @@ component_payload=$(find "$expanded" -type d -path '*/BMSRetailLocal.component.p
 [[ -n $component_payload ]] || { echo "ไม่พบ component payload" >&2; exit 1; }
 system_root="$component_payload/Library/Application Support/BMS/RetailLocal"
 [[ -n $system_root ]] || { echo "ไม่พบ Retail Local payload" >&2; exit 1; }
+package_arch=$(cat "$system_root/payload/ARCH" 2>/dev/null || printf 'arm64')
+case "$package_arch:$(uname -m)" in
+  arm64:arm64|x64:x86_64) ;;
+  *)
+    echo "smoke test ต้องรันบน Mac arch เดียวกับ package: $package_arch" >&2; exit 1;
+    ;;
+esac
 control="$system_root/control/bms-retail-local"
 app="$component_payload/Applications/BMS Retail Local.app"
 [[ -x $app/Contents/MacOS/BMS\ Retail\ Local ]] || { echo "ไม่พบ app launcher" >&2; exit 1; }

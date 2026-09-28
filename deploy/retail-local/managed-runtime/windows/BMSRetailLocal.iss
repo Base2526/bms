@@ -50,11 +50,6 @@ Source: "{#BuildRoot}\uninstall-managed-runtime.ps1"; DestDir: "{app}"; Flags: i
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-localctl"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-update-transaction"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 
-[Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\bms-retail-local\install-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"" -ActivationUri ""{#ActivationUri}"""; \
-  StatusMsg: "กำลังติดตั้ง BMS Retail Local..."; Flags: waituntilterminated
-
 [Icons]
 Name: "{commondesktop}\BMS Retail Local Update"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
@@ -75,4 +70,41 @@ Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-managed-runtime.ps1"""; \
-  Flags: runhidden waituntilterminated
+  Flags: waituntilterminated
+
+[Code]
+var
+  ManagedRuntimeNeedsRestart: Boolean;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  PowerShellPath: String;
+  ScriptPath: String;
+  Parameters: String;
+begin
+  if CurStep <> ssPostInstall then
+    exit;
+
+  PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
+  ScriptPath := ExpandConstant('{tmp}\bms-retail-local\install-managed-runtime.ps1');
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) +
+    ' -ManifestUri ' + AddQuotes('{#ManifestUri}') +
+    ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
+  WizardForm.StatusLabel.Caption := 'กำลังติดตั้ง BMS Retail Local และตรวจสุขภาพระบบ...';
+  if not Exec(PowerShellPath, Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+    RaiseException('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+  if ResultCode = 3010 then
+  begin
+    ManagedRuntimeNeedsRestart := True;
+    SuppressibleMsgBox('ต้อง restart Windows หนึ่งครั้ง ระบบจะติดตั้งต่อให้อัตโนมัติ',
+      mbInformation, MB_OK, IDOK);
+  end
+  else if ResultCode <> 0 then
+    RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาอ่านข้อความในหน้าต่าง Setup แล้วลองใหม่');
+end;
+
+function NeedRestart(): Boolean;
+begin
+  Result := ManagedRuntimeNeedsRestart;
+end;

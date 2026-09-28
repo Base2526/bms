@@ -12,6 +12,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+trap {
+  Write-Host "`nBMS Retail Local Setup ยังไม่สำเร็จ" -ForegroundColor Red
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host "แก้ไขตามข้อความด้านบนแล้วเปิด installer อีกครั้ง ระบบจะติดตั้งต่อจากข้อมูลที่ปลอดภัย" -ForegroundColor Yellow
+  if ([Environment]::UserInteractive) { [void](Read-Host "กด Enter เพื่อปิดหน้าต่างนี้") }
+  exit 1
+}
 $distroName = "BMSRuntime"
 $runtimeData = "/var/lib/bms-retail-local"
 $LicenseEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
@@ -49,6 +56,35 @@ function ConvertTo-PlainSecret([Security.SecureString]$Secret) {
 
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
+}
+
+function Write-Step([int]$Number, [string]$Message) {
+  Write-Host "`n[BMS $Number/7] $Message" -ForegroundColor Cyan
+}
+
+function Read-RequiredText([string]$Prompt) {
+  while ($true) {
+    $value = Read-Host $Prompt
+    if (-not [string]::IsNullOrWhiteSpace($value) -and $value -notmatch '[\r\n]') { return $value }
+    Write-Warning "$Prompt ไม่ถูกต้อง กรุณากรอกใหม่"
+  }
+}
+
+function Read-EmailAddress {
+  while ($true) {
+    $value = Read-Host "อีเมลผู้ดูแลร้าน"
+    if ($value -match '^[^\s@]+@[^\s@]+\.[^\s@]+$') { return $value }
+    Write-Warning "อีเมลไม่ถูกต้อง กรุณากรอกใหม่"
+  }
+}
+
+function Read-ConfirmedSecret([string]$Prompt, [string]$ConfirmPrompt, [string]$Pattern, [string]$Failure) {
+  while ($true) {
+    $value = ConvertTo-PlainSecret (Read-Host $Prompt -AsSecureString)
+    $confirmation = ConvertTo-PlainSecret (Read-Host $ConfirmPrompt -AsSecureString)
+    if ($value -ceq $confirmation -and $value -match $Pattern) { return $value }
+    Write-Warning $Failure
+  }
 }
 
 function Get-ArtifactPath($Release, [string]$Name) {
@@ -171,6 +207,25 @@ if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathTy
   exit 0
 }
 
+Write-Step 1 "ตรวจสอบ Windows, CPU, RAM, WSL, Virtualization และพื้นที่ว่าง"
+$preflightOutput = & $installedAgent preflight 2>&1
+$preflightExit = $LASTEXITCODE
+try {
+  $preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
+} catch {
+  throw "อ่านผล preflight ไม่ได้: $($preflightOutput -join ' ')"
+}
+foreach ($message in @($preflight.warnings)) { Write-Warning $message }
+if ($preflightExit -ne 0 -or -not $preflight.ok) {
+  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("preflight ไม่ผ่าน") }
+  throw (($failureMessages + "กรุณาแก้ไขรายการด้านบนแล้วเปิด Setup อีกครั้ง") -join [Environment]::NewLine)
+}
+if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
+  Write-Host "Windows 10 22H2 รองรับเฉพาะเครื่องที่มี Extended Security Updates (ESU) ปัจจุบัน" -ForegroundColor Yellow
+  $esuAnswer = Read-Host "ตรวจหลักฐาน ESU แล้วให้พิมพ์ ESU-VERIFIED"
+  if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
+}
+
 # Activation is a one-time bootstrap only. Failure stays visible but never prevents setup or later
 # shop operations; support can issue a new activation code after installation.
 if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhiteSpace($LicenseId)) {
@@ -200,19 +255,6 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhi
   }
 }
 
-$preflightOutput = & $installedAgent preflight 2>&1
-$preflightExit = $LASTEXITCODE
-$preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
-if ($preflightExit -ne 0 -or -not $preflight.ok) {
-  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("preflight ไม่ผ่าน") }
-  throw ($failureMessages -join [Environment]::NewLine)
-}
-if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
-  Write-Host "Windows 10 22H2 รองรับเฉพาะเครื่องที่มี Extended Security Updates (ESU) ปัจจุบัน" -ForegroundColor Yellow
-  $esuAnswer = Read-Host "ตรวจหลักฐาน ESU แล้วให้พิมพ์ ESU-VERIFIED"
-  if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
-}
-
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
@@ -240,12 +282,35 @@ if ($preflight.requiresReboot) {
   exit 3010
 }
 
+Write-Step 2 "รับข้อมูลร้านและผู้ดูแล"
+$provisionCheckpoint = "$runtimeData/provision-result.json"
+$hasProvisionCheckpoint = $false
+$knownDistros = @(& wsl.exe --list --quiet 2>$null | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
+if ($distroName -in $knownDistros) {
+  & wsl.exe -d $distroName -u root -- test -f $provisionCheckpoint
+  $hasProvisionCheckpoint = $LASTEXITCODE -eq 0
+}
+if ($hasProvisionCheckpoint) {
+  Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
+  $shopName = $adminName = $adminEmail = $adminPassword = $adminPin = ""
+} else {
+  $shopName = Read-RequiredText "ชื่อร้าน"
+  $adminName = Read-RequiredText "ชื่อผู้ดูแลร้าน"
+  $adminEmail = Read-EmailAddress
+  $adminPassword = Read-ConfirmedSecret "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" `
+    "ยืนยันรหัสผ่านอีกครั้ง" '^.{8,}$' "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่"
+  $adminPin = Read-ConfirmedSecret "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" `
+    "ยืนยัน PIN อีกครั้ง" '^\d{4,8}$' "PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่"
+}
+
+Write-Step 3 "ติดตั้งหรืออัปเดต private WSL runtime"
 & wsl.exe --update --web-download
 if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง/อัปเดต WSL ไม่สำเร็จ" }
 
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "release.jws.json"
+Write-Step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
 Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing
 
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
@@ -290,7 +355,12 @@ foreach ($control in @(
   if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $($control.Name) ไม่สำเร็จ" }
 }
 
+$script:loadingImagesShown = $false
 foreach ($component in @($release.components | Where-Object kind -eq "oci-image")) {
+  if (-not $script:loadingImagesShown) {
+    Write-Step 5 "โหลด Web, WS, PostgreSQL และ Redis"
+    $script:loadingImagesShown = $true
+  }
   $artifact = Get-ArtifactPath $release ([string]$component.name)
   & $installedAgent engine-load -engine windows-wsl -distro $distroName -artifact $artifact.path `
     -image-ref ([string]$component.imageRef) -digest ([string]$component.ociDigest)
@@ -326,41 +396,39 @@ if (-not $runtimeEnvExists) {
   Write-RuntimeText "$runtimeData/.env" (($envLines -join "`n") + "`n")
 }
 
-$shopName = Read-Host "ชื่อร้าน"
-$adminName = Read-Host "ชื่อผู้ดูแลร้าน"
-$adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
-$adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)
-$adminPin = ConvertTo-PlainSecret (Read-Host "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" -AsSecureString)
-Assert-NoLineBreak "ชื่อร้าน" $shopName
-Assert-NoLineBreak "ชื่อผู้ดูแล" $adminName
-Assert-NoLineBreak "อีเมล" $adminEmail
-Assert-NoLineBreak "รหัสผ่าน" $adminPassword
-Assert-NoLineBreak "PIN" $adminPin
+& wsl.exe -d $distroName -u root -- test -f $provisionCheckpoint
+if ($LASTEXITCODE -eq 0) {
+  $checkpointOutput = & wsl.exe -d $distroName -u root -- cat $provisionCheckpoint
+  if ($LASTEXITCODE -ne 0) { throw "อ่าน checkpoint ของร้านไม่สำเร็จ" }
+  $provisionResult = (($checkpointOutput -join [Environment]::NewLine) | ConvertFrom-Json)
+  Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
+} else {
+  $provisionScript = @(
+    "#!/bin/sh",
+    "set -eu",
+    (ConvertTo-ShellExport "BMS_LOCAL_SHOP_NAME" $shopName),
+    (ConvertTo-ShellExport "BMS_LOCAL_SHOP_SLUG" "local-shop"),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_NAME" $adminName),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
+    "cd $runtimeData",
+    "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
+  ) -join "`n"
+  Write-RuntimeText "$runtimeData/provision-once.sh" ($provisionScript + "`n") "0700"
+  $adminPassword = $null
+  $adminPin = $null
+  $provisionOutput = & wsl.exe -d $distroName -u root -- "$runtimeData/provision-once.sh" 2>&1
+  $provisionExit = $LASTEXITCODE
+  & wsl.exe -d $distroName -u root -- rm -f "$runtimeData/provision-once.sh"
+  if ($provisionExit -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
+  $resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
+  if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
+  $provisionResult = $resultLine | ConvertFrom-Json
+  Write-RuntimeText $provisionCheckpoint ($resultLine + "`n") "0600"
+}
 
-$provisionScript = @(
-  "#!/bin/sh",
-  "set -eu",
-  (ConvertTo-ShellExport "BMS_LOCAL_SHOP_NAME" $shopName),
-  (ConvertTo-ShellExport "BMS_LOCAL_SHOP_SLUG" "local-shop"),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_NAME" $adminName),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
-  "cd $runtimeData",
-  "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
-) -join "`n"
-Write-RuntimeText "$runtimeData/provision-once.sh" ($provisionScript + "`n") "0700"
-$adminPassword = $null
-$adminPin = $null
-
-$provisionOutput = & wsl.exe -d $distroName -u root -- "$runtimeData/provision-once.sh" 2>&1
-$provisionExit = $LASTEXITCODE
-& wsl.exe -d $distroName -u root -- rm -f "$runtimeData/provision-once.sh"
-if ($provisionExit -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
-$resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
-if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
-$provisionResult = $resultLine | ConvertFrom-Json
-
+Write-Step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
 Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f", "$runtimeData/compose.yml", "up", "-d") | Out-Null
 $healthDeadline = [DateTime]::UtcNow.AddMinutes(4)
 $web = $null
@@ -416,6 +484,7 @@ if ($provisionResult.deviceToken) {
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
   -destination "$runtimeData/installation.json" -mode "0600"
 if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
+& wsl.exe -d $distroName -u root -- rm -f $provisionCheckpoint
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
 # change installation success, runtime startup, sales, payment, data access, backup, or recovery.
@@ -454,4 +523,5 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
 
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
+Write-Step 7 "ติดตั้งสำเร็จ"
 Write-Host "BMS Retail Local พร้อมใช้งาน" -ForegroundColor Green

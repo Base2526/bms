@@ -3,7 +3,7 @@ import { Readable } from "stream";
 import { query, getClient } from "@/lib/db";
 import { openStoredFileStream, persistWebFile, statStoredFile } from "@/lib/storage";
 
-export type RetailLocalPlatform = "windows-x64" | "ubuntu-x64" | "macos-arm64";
+export type RetailLocalPlatform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 export type RetailLocalPackageType = "server-pos" | "server" | "pos";
 export type RetailLocalReleaseStatus = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 export type RetailLocalReleaseChannel = "pilot" | "stable" | "internal";
@@ -34,7 +34,7 @@ export class RetailLocalReleaseError extends Error {
   }
 }
 
-const PLATFORMS = new Set<RetailLocalPlatform>(["windows-x64", "ubuntu-x64", "macos-arm64"]);
+const PLATFORMS = new Set<RetailLocalPlatform>(["windows-x64", "ubuntu-x64", "macos-arm64", "macos-x64"]);
 const PACKAGE_TYPES = new Set<RetailLocalPackageType>(["server-pos", "server", "pos"]);
 const STATUSES = new Set<RetailLocalReleaseStatus>(["latest", "supported", "legacy", "deprecated", "hidden"]);
 const CHANNELS = new Set<RetailLocalReleaseChannel>(["pilot", "stable", "internal"]);
@@ -99,7 +99,9 @@ function mimeForDownload(platform: RetailLocalPlatform, filename: string): strin
   switch (platform) {
     case "windows-x64": return "application/vnd.microsoft.portable-executable";
     case "ubuntu-x64": return "application/vnd.debian.binary-package";
-    case "macos-arm64": return "application/vnd.apple.installer+xml";
+    case "macos-arm64":
+    case "macos-x64":
+      return "application/vnd.apple.installer+xml";
   }
 }
 

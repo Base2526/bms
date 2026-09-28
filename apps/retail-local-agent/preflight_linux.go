@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -39,8 +40,10 @@ func platformPreflight() preflightResult {
 	if _, err := exec.LookPath("systemctl"); err != nil {
 		result.fail("ไม่พบ systemctl")
 	}
-	if memoryKiB, err := linuxMemoryKiB(); err != nil || memoryKiB < 8*1024*1024 {
-		result.fail("ต้องมี RAM อย่างน้อย 8 GiB")
+	if memoryKiB, err := linuxMemoryKiB(); err != nil {
+		result.fail("อ่านขนาด RAM ไม่ได้")
+	} else if memoryKiB < 8*1024*1024 {
+		result.fail(fmt.Sprintf("ต้องมี RAM อย่างน้อย 8 GiB; พบ %.1f GiB", float64(memoryKiB)/float64(1024*1024)))
 	}
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/var/lib", &stat); err != nil {
@@ -48,9 +51,9 @@ func platformPreflight() preflightResult {
 	} else {
 		free := uint64(stat.Bavail) * uint64(stat.Bsize)
 		if free < 8*1024*1024*1024 {
-			result.fail("ต้องมีพื้นที่ว่างอย่างน้อย 8 GiB บน filesystem ของ /var/lib")
+			result.fail(fmt.Sprintf("พื้นที่ว่างบน /var/lib %.1f GiB; ต้องมีอย่างน้อย 8 GiB", float64(free)/float64(1024*1024*1024)))
 		} else if free < 15*1024*1024*1024 {
-			result.warn("ควรมีพื้นที่ว่างอย่างน้อย 15 GiB สำหรับ update และ backup")
+			result.warn(fmt.Sprintf("พื้นที่ว่างบน /var/lib %.1f GiB; แนะนำอย่างน้อย 15 GiB สำหรับ update และ backup", float64(free)/float64(1024*1024*1024)))
 		}
 	}
 	if _, err := os.Stat("/sys/fs/cgroup"); err != nil {

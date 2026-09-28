@@ -12,10 +12,15 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.5.0"
+const agentVersion = "0.5.1"
+
+var errPreflightFailed = errors.New("preflight failed")
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
+		if errors.Is(err, errPreflightFailed) {
+			os.Exit(1)
+		}
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -31,13 +36,20 @@ func run(args []string) error {
 		return nil
 	case "preflight":
 		result := platformPreflight()
-		encoded, err := json.Marshal(result)
-		if err != nil {
-			return err
+		if len(args) == 2 && args[1] == "--human" {
+			result.writeHuman()
+		} else {
+			if len(args) != 1 {
+				return errors.New("usage: bms-runtime-agent preflight [--human]")
+			}
+			encoded, err := json.Marshal(result)
+			if err != nil {
+				return err
+			}
+			fmt.Println(string(encoded))
 		}
-		fmt.Println(string(encoded))
 		if !result.OK {
-			return errors.New("เครื่องนี้ไม่ผ่าน Managed Runtime preflight")
+			return errPreflightFailed
 		}
 		return nil
 	case "verify-release":

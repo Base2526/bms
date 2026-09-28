@@ -6,6 +6,7 @@ readonly BOOTSTRAP_ROOT="/opt/bms-retail-local"
 readonly SERVICE_NAME="bms-retail-local.service"
 
 die() { printf 'BMS Retail Local Setup: %s\n' "$*" >&2; exit 1; }
+step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 require_root() { [[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"; }
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+([/:?#]|$) ]] && [[ ${1:-} != *'@'* ]]; }
 random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
@@ -47,9 +48,55 @@ install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-age
 install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-release-keys.json"
 agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
 
-preflight_json=$($agent preflight) || die "เครื่องนี้ไม่ผ่าน preflight"
+step 1 "ตรวจสอบ Ubuntu, CPU, RAM, systemd และพื้นที่ว่าง"
+if preflight_json=$($agent preflight); then
+  preflight_status=0
+else
+  preflight_status=$?
+fi
+jq -e . >/dev/null <<<"$preflight_json" || die "อ่านผล preflight ไม่ได้"
+jq -r '.warnings[]? | "[คำแนะนำ] \(.)"' <<<"$preflight_json"
+jq -r '.failures[]? | "[ต้องแก้ไข] \(.)"' <<<"$preflight_json" >&2
+(( preflight_status == 0 )) || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วรัน Setup อีกครั้ง"
 target=$(jq -er '.target' <<<"$preflight_json")
 
+if [[ -n ${BMS_ACTIVATION_URI:-} && -z ${BMS_ACTIVATION_CODE:-} ]]; then
+  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' BMS_ACTIVATION_CODE
+  printf '\n'
+  export BMS_ACTIVATION_CODE
+fi
+
+provision_checkpoint="$RUNTIME_ROOT/provision-result.json"
+shop_name=''
+admin_name=''
+admin_email=''
+admin_password=''
+admin_pin=''
+if [[ ! -f $provision_checkpoint ]]; then
+  step 2 "รับข้อมูลร้านและผู้ดูแล"
+  while [[ -z $shop_name ]]; do read -r -p 'ชื่อร้าน: ' shop_name; done
+  while [[ -z $admin_name ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name; done
+  while [[ ! $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
+    read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
+    [[ $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || echo "อีเมลไม่ถูกต้อง กรุณากรอกใหม่" >&2
+  done
+  while :; do
+    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
+    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
+    [[ ${#admin_password} -ge 8 && $admin_password == "$password_confirm" ]] && break
+    echo "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่" >&2
+  done
+  while :; do
+    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
+    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
+    [[ $admin_pin =~ ^[0-9]{4,8}$ && $admin_pin == "$pin_confirm" ]] && break
+    echo "PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่" >&2
+  done
+else
+  step 2 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
+fi
+
+step 3 "ติดตั้ง private runtime และเครื่องมือที่จำเป็น"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
@@ -75,6 +122,7 @@ install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.
   /etc/systemd/system/bms-retail-local-license-evidence.timer
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
+step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
 chmod 0600 "$manifest_path"
 stage_json=$($agent stage-release -manifest "$manifest_path" \
@@ -84,6 +132,7 @@ release_json=$($agent verify-release -manifest "$manifest_path" \
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
 
+step 5 "โหลด Web, WS, PostgreSQL และ Redis"
 while IFS=$'\t' read -r name image_ref digest; do
   artifact=$(artifact_path "$name")
   [[ -f $artifact ]] || die "ไม่พบ artifact $name"
@@ -117,34 +166,33 @@ BMS_REDIS_IMAGE_REF=${image_ref[redis]}
 EOF
 fi
 
-read -r -p 'ชื่อร้าน: ' shop_name
-read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
-read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
-read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
-read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
-for value in "$shop_name" "$admin_name" "$admin_email" "$admin_password" "$admin_pin"; do
-  [[ -n $value && $value != *$'\n'* && $value != *$'\r'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
-done
-
-provision_script="$RUNTIME_ROOT/provision-once.sh"
-{
-  printf '#!/bin/sh\nset -eu\n'
-  shell_export BMS_LOCAL_SHOP_NAME "$shop_name"
-  shell_export BMS_LOCAL_SHOP_SLUG local-shop
-  shell_export BMS_LOCAL_ADMIN_NAME "$admin_name"
-  shell_export BMS_LOCAL_ADMIN_EMAIL "$admin_email"
-  shell_export BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
-  shell_export BMS_LOCAL_ADMIN_PIN "$admin_pin"
-  printf 'cd %s\ndocker compose --env-file .env -f compose.yml --profile setup run --rm provision\n' "$RUNTIME_ROOT"
-} >"$provision_script"
-chmod 0700 "$provision_script"
-unset admin_password admin_pin
-provision_output=$($provision_script) || die "provision ร้านไม่สำเร็จ"
-rm -f -- "$provision_script"; provision_script=
-provision_result=$(grep -E '^\{"status"' <<<"$provision_output" | tail -n 1)
-jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisioning ที่อ่านได้"
+if [[ -f $provision_checkpoint ]]; then
+  provision_result=$(<"$provision_checkpoint")
+  jq -e . >/dev/null <<<"$provision_result" || die "checkpoint ของร้านอ่านไม่ได้ กรุณาติดต่อ Support"
+else
+  provision_script="$RUNTIME_ROOT/provision-once.sh"
+  {
+    printf '#!/bin/sh\nset -eu\n'
+    shell_export BMS_LOCAL_SHOP_NAME "$shop_name"
+    shell_export BMS_LOCAL_SHOP_SLUG local-shop
+    shell_export BMS_LOCAL_ADMIN_NAME "$admin_name"
+    shell_export BMS_LOCAL_ADMIN_EMAIL "$admin_email"
+    shell_export BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
+    shell_export BMS_LOCAL_ADMIN_PIN "$admin_pin"
+    printf 'cd %s\ndocker compose --env-file .env -f compose.yml --profile setup run --rm provision\n' "$RUNTIME_ROOT"
+  } >"$provision_script"
+  chmod 0700 "$provision_script"
+  unset admin_password admin_pin password_confirm pin_confirm
+  provision_output=$($provision_script) || die "provision ร้านไม่สำเร็จ กรุณาตรวจข้อความด้านบนแล้วรัน Setup อีกครั้ง"
+  rm -f -- "$provision_script"; provision_script=
+  provision_result=$(grep -E '^\{"status"' <<<"$provision_output" | tail -n 1)
+  jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisioning ที่อ่านได้"
+  printf '%s\n' "$provision_result" >"$provision_checkpoint"
+  chmod 0600 "$provision_checkpoint"
+fi
 
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
+step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
 systemctl enable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || \
@@ -159,6 +207,7 @@ done
 
 desktop_artifact=$(artifact_path desktop)
 dpkg -i "$desktop_artifact" || { apt-get install -f -y; dpkg -i "$desktop_artifact"; }
+command -v bms-pos >/dev/null 2>&1 || die "ติดตั้ง POS แล้วแต่ไม่พบคำสั่ง bms-pos"
 
 operator=${SUDO_USER:-root}
 operator_uid=$(id -u "$operator")
@@ -199,9 +248,13 @@ if [[ -n $device_token && $operator != root ]]; then
   jq -n --arg token "$device_token" --arg expiresAt "$expires_at" \
     '{version:1,serverUrl:"http://127.0.0.1:3100",token:$token,expiresAt:$expiresAt}' >"$handoff_path"
   chown "$operator_uid:$operator_gid" "$handoff_path"; chmod 0600 "$handoff_path"
+  desktop_log="$RUNTIME_ROOT/desktop-launch.log"
   runuser -u "$operator" -- env DISPLAY="${DISPLAY:-}" WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
     XDG_RUNTIME_DIR="/run/user/$operator_uid" DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$operator_uid/bus" \
-    bms-pos "--pairing-handoff=$handoff_path" >/dev/null 2>&1 &
+    bms-pos "--pairing-handoff=$handoff_path" >"$desktop_log" 2>&1 &
+  desktop_pid=$!
+  sleep 3
+  kill -0 "$desktop_pid" 2>/dev/null || die "เปิด BMS POS ไม่สำเร็จ ดูรายละเอียดที่ $desktop_log"
 fi
 unset device_token provision_result provision_output
 
@@ -214,6 +267,7 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
+rm -f -- "$provision_checkpoint"
 
 # Licensing is evidence-only and deliberately outside the install/runtime success path. A missing
 # endpoint, unreachable control plane, rejected event, or local evidence error must never stop the
@@ -232,4 +286,5 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
     printf 'คำเตือน: เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$license_result" >&2
   fi
 fi
+step 7 "ติดตั้งสำเร็จ"
 printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'

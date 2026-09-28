@@ -11,7 +11,7 @@ until the acceptance gates below have evidence from clean target machines.
 - Windows 10 22H2 x64: transition only, with current ESU evidence;
 - Ubuntu 24.04 LTS x64: primary native-Linux target;
 - Ubuntu 22.04 LTS x64: transition target;
-- macOS 15+ on Apple Silicon: Lima/VZ + private Moby technical pilot.
+- macOS 15+ on Apple Silicon and Intel: Lima/VZ + private Moby technical pilot.
 
 `support-matrix.json` is product policy, not a claim that a target has passed certification. The
 installer must also require a signed release manifest whose `platformTarget` names one of these
@@ -55,7 +55,7 @@ in a signed agent release before manifests start using that id.
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
-- a full macOS Apple Silicon `.pkg` builder that bundles all server/runtime bytes and needs no Docker
+- a full macOS `.pkg` builder for Apple Silicon and Intel that bundles all server/runtime bytes and needs no Docker
   Desktop on the target Mac;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
@@ -118,7 +118,7 @@ Run the Windows candidate check from PowerShell 7 with:
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
 ```
 
-Build the full macOS Apple Silicon technical-pilot package with:
+Build the full macOS technical-pilot package with:
 
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
@@ -130,6 +130,13 @@ package instead; it embeds BMS POS and performs the one-time local pairing autom
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh \
   --version 0.4.0-internal.1 --package-type server-pos
+```
+
+Pass `--arch x64` for Intel Macs. The default is `--arch arm64` for Apple Silicon:
+
+```bash
+deploy/retail-local/managed-runtime/macos/build-pkg.sh \
+  --version 0.4.0-internal.1 --package-type server-pos --arch x64
 ```
 
 Docker is needed only on the release workstation to build the ARM64 OCI images. The target package

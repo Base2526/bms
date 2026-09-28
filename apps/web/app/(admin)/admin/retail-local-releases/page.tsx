@@ -30,7 +30,7 @@ import {
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 
-type Platform = "windows-x64" | "ubuntu-x64" | "macos-arm64";
+type Platform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
 type Status = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 type Channel = "pilot" | "stable" | "internal";
@@ -97,13 +97,17 @@ const PLATFORM_LABELS: Record<Platform, string> = {
   "windows-x64": "Windows x64",
   "ubuntu-x64": "Ubuntu x64",
   "macos-arm64": "macOS Apple Silicon",
+  "macos-x64": "macOS Intel",
 };
 
 function platformFromFilename(filename: string): Platform | null {
   const lower = filename.toLowerCase();
   if (lower.endsWith(".exe")) return "windows-x64";
   if (lower.endsWith(".deb")) return "ubuntu-x64";
-  if (lower.endsWith(".pkg") || lower.endsWith(".dmg")) return "macos-arm64";
+  if (lower.endsWith(".pkg") || lower.endsWith(".dmg")) {
+    if (/(^|[-_])(x64|x86_64|intel)([-_.]|$)/.test(lower)) return "macos-x64";
+    return "macos-arm64";
+  }
   return null;
 }
 
@@ -120,10 +124,12 @@ function defaultMinOs(platform: Platform | null, packageType: PackageType | null
     if (platform === "windows-x64") return "Windows x64";
     if (platform === "ubuntu-x64") return "Ubuntu x64 with Secret Service or KWallet";
     if (platform === "macos-arm64") return "macOS 12 Monterey / Apple Silicon";
+    if (platform === "macos-x64") return "macOS 12 Monterey / Intel";
   }
   if (platform === "windows-x64") return "Windows 11 Pro x64";
   if (platform === "ubuntu-x64") return "Ubuntu 24.04 LTS x64";
   if (platform === "macos-arm64") return "macOS 15 Sequoia / Apple Silicon";
+  if (platform === "macos-x64") return "macOS 15 Sequoia / Intel";
   return "";
 }
 
@@ -439,6 +445,7 @@ export default function RetailLocalReleasesPage() {
                   { value: "windows-x64", label: "Windows x64 (.exe)" },
                   { value: "ubuntu-x64", label: "Ubuntu x64 (.deb)" },
                   { value: "macos-arm64", label: "macOS Apple Silicon (.pkg)" },
+                  { value: "macos-x64", label: "macOS Intel (.pkg)" },
                 ]} />
               </Form.Item>
             </Col>

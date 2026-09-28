@@ -19,9 +19,6 @@ if [[ -f $activation_url_file ]]; then
   activation_uri=$(tr -d '\r\n' <"$activation_url_file")
 fi
 if [[ -n $activation_uri ]]; then
-  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' activation_code
-  printf '\n'
   export BMS_ACTIVATION_URI="$activation_uri"
-  export BMS_ACTIVATION_CODE="$activation_code"
 fi
 exec "$bundle_root/install-managed-runtime.sh" "$manifest_uri" "$bundle_root"

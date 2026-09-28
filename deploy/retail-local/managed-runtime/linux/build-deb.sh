@@ -155,6 +155,8 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
   systemctl disable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
   systemctl disable --now bms-retail-local.service >/dev/null 2>&1 || true
+  echo "ถอน bootstrap แล้ว แต่ข้อมูลร้านและ secrets ยังอยู่ใน /var/lib/bms-retail-local เพื่อ recovery"
+  echo "หากต้องการลบถาวร ให้ backup ก่อน แล้วรัน sudo bms-retail-local-uninstall --erase-data"
 fi
 exit 0
 EOF

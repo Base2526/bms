@@ -3,7 +3,7 @@
 Commercial self-install development is tracked separately in
 [Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
 WSL2/Moby, Ubuntu systemd/Moby, and macOS Apple Virtualization Framework/Lima delivery layer. The
-macOS Apple Silicon full installer is an internal technical pilot whose clean-machine evidence,
+macOS full installer is an internal technical pilot whose clean-machine evidence,
 signing, notarization, update, and recovery gates are still open; none of these
 paths replaces the self-contained technical pilot package until its install, update, backup,
 restore, and failure-mode gates have evidence.
@@ -93,17 +93,19 @@ Restore is intentionally explicit and destructive to the current local database:
 The existing storage directory is moved aside with a timestamp before the restored archive is
 expanded. Do not delete that retained directory until the restored store has been reconciled.
 
-## macOS Apple Silicon full installer
+## macOS full installer
 
-Build the internal full-server package on an Apple Silicon development Mac:
+Build the internal full-server package on a macOS development Mac:
 
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
 ```
 
-The resulting `BMS-Retail-Local-VERSION-arm64.pkg` contains the pinned Ubuntu VM image, Lima runtime,
-private Moby engine, Compose, age, and all ARM64 BMS service images. The target Mac needs macOS 15 or
-newer, Apple Silicon, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
+Pass `--arch x64` for Intel Macs; the default `--arch arm64` builds for Apple Silicon.
+
+The resulting `BMS-Retail-Local-VERSION-ARCH.pkg` contains the pinned Ubuntu VM image, Lima runtime,
+private Moby engine, Compose, age, and all BMS service images for that architecture. The target Mac needs macOS 15 or
+newer, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
 Homebrew, Node.js, or the source repository. This package is intentionally large because it carries
 the server payload instead of downloading it after install.
 
@@ -153,7 +155,7 @@ Commercial self-install release still requires:
 - production deployment/operations evidence for the fail-open licensing evidence receiver,
   duplicate review/device transfer, and a documented support lifecycle;
 - signed/notarized qualification of the private macOS Lima/VZ runtime as the supported replacement
-  for Docker Desktop on Apple Silicon.
+  for Docker Desktop on supported macOS architectures.
 
 Do not advertise Retail Local as generally available until those gates have evidence. In particular,
 do not describe the current Electron package as containing the server: it remains a keystore-backed
@@ -177,9 +179,9 @@ The package type describes delivery, not a new runtime boundary. A combined inst
 the existing server and client components; POS Desktop never owns a database or alternate sales rules.
 
 Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
-experimental `macos-arm64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
+experimental `macos-arm64`/`macos-x64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
 `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
-Desktop disk image (`.dmg`). Intel Mac packages are not currently accepted on this page.
+Desktop disk image (`.dmg`).
 
 The uploaded bytes are stored through the shared storage driver and kept as private `files` rows.
 Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden Retail

@@ -43,6 +43,7 @@ function mapPlatform(platform: string): PlatformKey {
   if (platform === "windows-x64") return "windows";
   if (platform === "ubuntu-x64") return "ubuntu";
   if (platform === "macos-arm64") return "macos";
+  if (platform === "macos-x64") return "macos";
   throw new Error(`Unsupported Retail Local platform: ${platform}`);
 }
 
