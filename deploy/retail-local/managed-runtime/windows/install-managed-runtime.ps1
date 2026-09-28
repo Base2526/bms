@@ -220,7 +220,7 @@ foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
 if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
 
 if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathType Leaf)) {
-  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot
+  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate
   exit 0
 }
 

@@ -167,8 +167,10 @@ The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`
 the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and
 downloads only components authenticated by the packaged public key. A build with no
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
-After installation, update only through `sudo bms-retail-local-update`; rerunning the raw Linux setup
-script still refuses an existing shop.
+After installation, use `sudo bms-retail-local-update --check` for a signed preview, then
+`sudo bms-retail-local-update` to review the same metadata and confirm installation. The `--yes`
+option is only for an operator-facing launcher that already showed the verified preview and captured
+consent. Rerunning the raw Linux setup script still refuses an existing shop.
 
 The setup command securely prompts for the one-use Activation Code. A missing, expired, or
 temporarily unreachable activation service is reported but does not fail installation or restrict

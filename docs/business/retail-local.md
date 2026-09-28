@@ -125,6 +125,12 @@ fall back through rollback/full restore if needed. Early pilot shops may receive
 they still require an operator action such as **Check for update** or **Back up and update**; do not
 ship a silent auto-update path for schema/runtime changes.
 
+On Windows, the installed shortcuts separate **BMS Retail Local Check for Updates** from **BMS Retail
+Local Update**. On Ubuntu, `sudo bms-retail-local-update --check` performs the same signed preview and
+`sudo bms-retail-local-update` asks for `UPDATE` before it stages components. `--yes` is reserved for
+an operator-facing launcher that already displayed the verified preview and captured the same explicit
+consent; it is not permission for a silent schedule.
+
 Restore is intentionally explicit and destructive to the current local database:
 
 ```powershell

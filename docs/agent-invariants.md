@@ -610,8 +610,11 @@ deployment profile. The operator contract and remaining release gates live in
   be tested instead of inferred from a successful `pg_dump`.
 - **Updates are operator-initiated and recoverable.** A Retail Local host may be told that an update
   is available, but it must not silently change application/runtime/schema bytes. The local operator
-  chooses **Check for update** or **Back up and update**, sees the signed release metadata, downtime,
-  migration and rollback notes, passes preflight, gets a verified encrypted backup, then proceeds
+  chooses **Check for update** or **Back up and update**. Check-only passes preflight, verifies the
+  signed release metadata and reports up-to-date/available without staging components, installing
+  runtime controls or stopping services. The release listing provides downtime, migration, rollback
+  and support notes. Applying requires a second explicit confirmation and a verified encrypted backup,
+  then proceeds
   through signature/digest verification, transaction-controlled migration, health-gated commit and
   recorded update evidence. Failure before commit leaves or returns the host to the prior working
   release; schema-incompatible failure restores the database, files and secrets together. License or

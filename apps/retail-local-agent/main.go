@@ -23,7 +23,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bms-runtime-agent <preflight|verify-release|verify-update|stage-release|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
 	}
 	switch args[0] {
 	case "version":
@@ -59,12 +59,43 @@ func run(args []string) error {
 			"ok":             true,
 			"keyId":          verified.Header.KeyID,
 			"releaseVersion": verified.Payload.ReleaseVersion,
+			"channel":        verified.Payload.Channel,
 			"platformTarget": verified.Payload.PlatformTarget,
 			"rollbackSafe":   verified.Payload.RollbackSafe,
 			"schemaVersion":  verified.Payload.SchemaVersion,
 			"createdAt":      verified.Payload.CreatedAt,
 			"sourceCommit":   verified.Payload.SourceCommit,
 			"components":     verified.Payload.Components,
+		})
+	case "check-update":
+		flags := flag.NewFlagSet("check-update", flag.ContinueOnError)
+		manifest := flags.String("manifest", "", "signed release envelope")
+		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
+		target := flags.String("target", "", "expected platform target")
+		currentVersion := flags.String("current-version", "", "currently installed semantic version")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *manifest == "" || *keyring == "" || *target == "" || *currentVersion == "" {
+			return errors.New("check-update ต้องมี -manifest, -keyring, -target และ -current-version")
+		}
+		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
+		if err != nil {
+			return err
+		}
+		comparison, err := compareSemver(verified.Payload.ReleaseVersion, *currentVersion)
+		if err != nil {
+			return err
+		}
+		if comparison < 0 {
+			return fmt.Errorf("ปฏิเสธ release downgrade: ติดตั้ง %s แต่ได้รับ %s", *currentVersion, verified.Payload.ReleaseVersion)
+		}
+		return writeJSON(map[string]any{
+			"ok": true, "updateAvailable": comparison > 0, "releaseVersion": verified.Payload.ReleaseVersion,
+			"channel":        verified.Payload.Channel,
+			"platformTarget": verified.Payload.PlatformTarget, "rollbackSafe": verified.Payload.RollbackSafe,
+			"schemaVersion": verified.Payload.SchemaVersion, "createdAt": verified.Payload.CreatedAt,
+			"sourceCommit": verified.Payload.SourceCommit, "components": verified.Payload.Components,
 		})
 	case "verify-update":
 		flags := flag.NewFlagSet("verify-update", flag.ContinueOnError)
@@ -91,6 +122,7 @@ func run(args []string) error {
 		}
 		return writeJSON(map[string]any{
 			"ok": true, "releaseVersion": verified.Payload.ReleaseVersion,
+			"channel":        verified.Payload.Channel,
 			"platformTarget": verified.Payload.PlatformTarget, "rollbackSafe": verified.Payload.RollbackSafe,
 			"schemaVersion": verified.Payload.SchemaVersion, "createdAt": verified.Payload.CreatedAt,
 			"sourceCommit": verified.Payload.SourceCommit, "components": verified.Payload.Components,

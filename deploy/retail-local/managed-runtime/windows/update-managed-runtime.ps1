@@ -1,7 +1,9 @@
 ﻿[CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ManifestUri,
-  [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal")
+  [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal"),
+  [switch]$CheckOnly,
+  [switch]$ConfirmUpdate
 )
 
 $ErrorActionPreference = "Stop"
@@ -79,12 +81,8 @@ foreach ($required in @($agent, $keyring, (Join-Path $bootstrapRoot "bms-localct
     (Join-Path $bootstrapRoot "bms-update-transaction"))) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "bootstrap updater ไม่ครบ: $required" }
 }
+$null = Invoke-AgentJson @("preflight")
 
-foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
-  & $agent runtime-install-control -engine windows-wsl -distro $distroName `
-    -source (Join-Path $bootstrapRoot $controlName) -name $controlName
-  if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
-}
 Sync-HostReceipt
 $current = Get-Content -LiteralPath $hostReceipt -Raw | ConvertFrom-Json
 $currentVersion = [string]$current.version
@@ -100,8 +98,35 @@ $manifestPath = Join-Path $releaseRoot "update-release.jws.json"
 Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing
 Move-Item -LiteralPath "$manifestPath.tmp" -Destination $manifestPath -Force
 
-$release = Invoke-AgentJson @("verify-update", "-manifest", $manifestPath, "-keyring", $keyring,
+$verifyCommand = if ($CheckOnly) { "check-update" } else { "verify-update" }
+$release = Invoke-AgentJson @($verifyCommand, "-manifest", $manifestPath, "-keyring", $keyring,
   "-target", $target, "-current-version", $currentVersion)
+if ($CheckOnly -and -not [bool]$release.updateAvailable) {
+  Write-Host "BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: $currentVersion" -ForegroundColor Green
+  return
+}
+$totalBytes = [long](($release.components | Measure-Object -Property sizeBytes -Sum).Sum)
+$rollbackMode = if ([bool]$release.rollbackSafe) { "image-only" } else { "full database/files/secrets restore" }
+Write-Host "พบ BMS Retail Local update ที่ตรวจลายเซ็นแล้ว" -ForegroundColor Cyan
+Write-Host "  version: $currentVersion -> $($release.releaseVersion)"
+Write-Host "  channel: $($release.channel)"
+Write-Host "  schema: $($release.schemaVersion)"
+Write-Host "  download: $totalBytes bytes"
+Write-Host "  rollback: $rollbackMode"
+Write-Host "  published: $($release.createdAt)"
+if ($CheckOnly) {
+  Write-Host "ยังไม่ได้ดาวน์โหลด component หรือติดตั้ง update" -ForegroundColor Green
+  return
+}
+if (-not $ConfirmUpdate) {
+  $confirmation = Read-Host "พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง"
+  if ($confirmation -cne "UPDATE") { throw "ยกเลิก update" }
+}
+foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
+  & $agent runtime-install-control -engine windows-wsl -distro $distroName `
+    -source (Join-Path $bootstrapRoot $controlName) -name $controlName
+  if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
+}
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $keyring,
   "-target", $target, "-root", $InstallRoot)
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
