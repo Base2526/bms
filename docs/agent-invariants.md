@@ -585,6 +585,13 @@ deployment profile. The operator contract and remaining release gates live in
   restore the source-tree migration bind mount, which makes a copied installer silently depend on a
   developer checkout. Installation verifies the archive before `docker load`, then waits for both
   application health checks and HTTP probes instead of reporting success after `compose up` alone.
+- **Release installers are bulk streams, not request buffers.** The platform-admin upload route
+  parses multipart input incrementally, writes installer bytes through the storage driver's stream
+  API, and derives size/SHA-256 on that path. Never reintroduce `request.formData()`, browser/server
+  `arrayBuffer()`, or an S3 `Buffer.concat()` over the complete installer. Local storage cleans a
+  failed partial write; S3 uses bounded multipart parts and aborts a failed upload. The private
+  `files` row and release row commit together, and a validation/pre-commit failure removes the
+  unreferenced object.
 - **Local services are local by default.** PostgreSQL and Redis have no published host port; Web and
   WS publish only on `127.0.0.1`. All application and datastore secrets are generated locally and
   remain required—local mode is never permission to fall back to a literal key. Exposing the server

@@ -5,9 +5,14 @@ import {
   listRetailLocalReleaseAssets,
   RetailLocalReleaseError,
 } from "@/lib/bms/retailLocalReleases";
+import {
+  parseRetailLocalReleaseUpload,
+  RetailLocalReleaseUploadError,
+} from "@/lib/bms/retailLocalReleaseUpload";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 async function handleGET() {
   const auth = await authorizePlatformAdminRoute();
@@ -22,27 +27,23 @@ async function handlePOST(request: NextRequest) {
   if (!auth.ok) return NextResponse.json({ error: "unauthorized" }, { status: auth.status });
 
   try {
-    const form = await request.formData();
-    const file = form.get("file");
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: "file is required" }, { status: 400 });
-    }
+    const { fields, storedFile } = await parseRetailLocalReleaseUpload(request);
 
     const release = await createRetailLocalReleaseAsset({
-      file,
-      platform: form.get("platform"),
-      packageType: form.get("packageType"),
-      version: form.get("version"),
-      channel: form.get("channel") || "pilot",
-      status: form.get("status") || "supported",
-      isLatest: form.get("isLatest"),
-      minOs: form.get("minOs"),
-      releaseNotes: form.get("releaseNotes"),
+      storedFile,
+      platform: fields.platform,
+      packageType: fields.packageType,
+      version: fields.version,
+      channel: fields.channel || "pilot",
+      status: fields.status || "supported",
+      isLatest: fields.isLatest,
+      minOs: fields.minOs,
+      releaseNotes: fields.releaseNotes,
       adminId: auth.adminId,
     });
     return NextResponse.json({ release }, { status: 201, headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (error instanceof RetailLocalReleaseError) {
+    if (error instanceof RetailLocalReleaseError || error instanceof RetailLocalReleaseUploadError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     throw error;

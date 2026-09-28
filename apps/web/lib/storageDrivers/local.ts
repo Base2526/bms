@@ -8,7 +8,8 @@ import path from "path";
 import fs from "fs";
 import { mkdir, readFile, writeFile, stat as fsStat, unlink } from "fs/promises";
 import crypto from "crypto";
-import { Readable } from "stream";
+import { Readable, Transform } from "stream";
+import { pipeline } from "stream/promises";
 
 import type { ByteRange, StorageDriver, StoredStat, WriteResult } from "./index";
 import { toStorageKey } from "./index";
@@ -55,21 +56,27 @@ export function createLocalDriver(): StorageDriver {
 
       const hash = crypto.createHash("sha256");
       let size = 0;
-
-      await new Promise<void>((resolve, reject) => {
-        const out = fs.createWriteStream(full);
-        stream.on("error", (err) => {
-          out.destroy();
-          reject(err);
-        });
-        out.on("error", reject);
-        out.on("finish", () => resolve());
-        stream.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          hash.update(chunk);
-        });
-        stream.pipe(out);
+      const meter = new Transform({
+        transform(chunk: Buffer, _encoding, callback) {
+          const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          size += buffer.length;
+          hash.update(buffer);
+          callback(null, buffer);
+        },
       });
+
+      try {
+        await pipeline(stream as any, meter, fs.createWriteStream(full));
+      } catch (error) {
+        try {
+          await unlink(full);
+        } catch (cleanupError: any) {
+          if (cleanupError?.code !== "ENOENT") {
+            console.error("partial local storage upload cleanup failed", cleanupError);
+          }
+        }
+        throw error;
+      }
 
       return { size, checksum: hash.digest("hex") };
     },

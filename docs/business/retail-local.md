@@ -181,7 +181,14 @@ experimental `macos-arm64`. Windows packages use `.exe` and Ubuntu packages use 
 `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
 Desktop disk image (`.dmg`). Intel Mac packages are not currently accepted on this page.
 
-The uploaded bytes are stored through the shared storage driver and kept as private `files` rows.
+The uploaded bytes stream from the multipart request directly through the shared storage driver;
+neither the browser nor the Web process reads the complete installer into an `ArrayBuffer`/`Buffer`.
+The local driver writes incrementally and the S3 driver uses bounded multipart parts, while SHA-256
+and size are computed over that same stream. The default upload ceiling is 4 GiB and may be changed
+with `BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES` (bytes). Keep release files as private `files` rows. The
+file row and its `bms_retail_local_release_assets` owner are committed in one database transaction;
+a validation or pre-commit failure removes the stored bytes.
+
 Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden Retail
 Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Do not point the
 public page at `/api/files/[id]` directly.
