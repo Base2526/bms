@@ -1,7 +1,12 @@
 import path from "path";
 import { Readable } from "stream";
 import { query, getClient } from "@/lib/db";
-import { openStoredFileStream, persistWebFile, statStoredFile } from "@/lib/storage";
+import {
+  deleteStoredFile,
+  openStoredFileStream,
+  type PendingStoredFile,
+  statStoredFile,
+} from "@/lib/storage";
 
 export type RetailLocalPlatform = "windows-x64" | "ubuntu-x64" | "macos-arm64";
 export type RetailLocalPackageType = "server-pos" | "server" | "pos";
@@ -103,8 +108,8 @@ function mimeForDownload(platform: RetailLocalPlatform, filename: string): strin
   }
 }
 
-function validateFileName(file: File, platform: RetailLocalPlatform, packageType: RetailLocalPackageType) {
-  const ext = path.extname(file.name || "").toLowerCase();
+function validateFileName(filename: string, platform: RetailLocalPlatform, packageType: RetailLocalPackageType) {
+  const ext = path.extname(filename || "").toLowerCase();
   const expected = expectedExtensions(platform, packageType);
   if (!expected.includes(ext)) {
     throw new RetailLocalReleaseError(`expected ${expected.join(" or ")} file for ${platform} ${packageType}`);
@@ -142,7 +147,7 @@ export async function getPublicRetailLocalDownloads() {
 }
 
 export async function createRetailLocalReleaseAsset(input: {
-  file: File;
+  storedFile: PendingStoredFile;
   platform: unknown;
   packageType: unknown;
   version: unknown;
@@ -153,62 +158,92 @@ export async function createRetailLocalReleaseAsset(input: {
   releaseNotes?: unknown;
   adminId: string | number;
 }) {
-  const platform = assertPlatform(input.platform);
-  const packageType = assertPackageType(input.packageType);
-  validateFileName(input.file, platform, packageType);
-  const version = trimRequired(input.version, "version", 80);
-  const channel = input.channel ? assertChannel(input.channel) : "pilot";
-  const requestedStatus = input.status ? assertStatus(input.status) : "supported";
-  const isLatest = input.isLatest === true || input.isLatest === "true" || requestedStatus === "latest";
-  const status: RetailLocalReleaseStatus = isLatest ? "latest" : requestedStatus;
-  const minOs = trimRequired(input.minOs, "minimum OS", 200);
-  const releaseNotes = typeof input.releaseNotes === "string" ? input.releaseNotes.trim().slice(0, 5000) : "";
-
-  const stored = await persistWebFile(input.file, input.file.name, "private", null);
-
-  const client = await getClient();
+  let commitAttempted = false;
   try {
-    await client.query("BEGIN");
-    if (isLatest) {
-      await client.query(
-        `UPDATE bms_retail_local_release_assets
-            SET is_latest = FALSE,
-                status = CASE WHEN status = 'latest' THEN 'supported' ELSE status END
-          WHERE platform = $1 AND package_type = $2`,
-        [platform, packageType]
+    const platform = assertPlatform(input.platform);
+    const packageType = assertPackageType(input.packageType);
+    validateFileName(input.storedFile.original_name || input.storedFile.filename, platform, packageType);
+    const version = trimRequired(input.version, "version", 80);
+    const channel = input.channel ? assertChannel(input.channel) : "pilot";
+    const requestedStatus = input.status ? assertStatus(input.status) : "supported";
+    const isLatest = input.isLatest === true || input.isLatest === "true" || requestedStatus === "latest";
+    const status: RetailLocalReleaseStatus = isLatest ? "latest" : requestedStatus;
+    const minOs = trimRequired(input.minOs, "minimum OS", 200);
+    const releaseNotes = typeof input.releaseNotes === "string" ? input.releaseNotes.trim().slice(0, 5000) : "";
+
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      const fileResult = await client.query(
+        `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'private',NULL)
+         RETURNING id`,
+        [
+          input.storedFile.filename,
+          input.storedFile.original_name,
+          input.storedFile.mimetype,
+          input.storedFile.size,
+          input.storedFile.checksum,
+          input.storedFile.relpath,
+        ]
       );
+      if (isLatest) {
+        await client.query(
+          `UPDATE bms_retail_local_release_assets
+              SET is_latest = FALSE,
+                  status = CASE WHEN status = 'latest' THEN 'supported' ELSE status END
+            WHERE platform = $1 AND package_type = $2`,
+          [platform, packageType]
+        );
+      }
+      const { rows } = await client.query(
+        `
+        INSERT INTO bms_retail_local_release_assets
+          (platform, package_type, version, channel, status, is_latest, file_id, original_name, size_bytes, sha256, min_os, release_notes, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        RETURNING id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
+                  size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
+        `,
+        [
+          platform,
+          packageType,
+          version,
+          channel,
+          status,
+          isLatest,
+          fileResult.rows[0].id,
+          input.storedFile.original_name || input.storedFile.filename,
+          input.storedFile.size,
+          input.storedFile.checksum,
+          minOs,
+          releaseNotes,
+          String(input.adminId),
+        ]
+      );
+      commitAttempted = true;
+      await client.query("COMMIT");
+      return serialize(rows[0]);
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original transaction error.
+      }
+      throw error;
+    } finally {
+      client.release();
     }
-    const { rows } = await client.query(
-      `
-      INSERT INTO bms_retail_local_release_assets
-        (platform, package_type, version, channel, status, is_latest, file_id, original_name, size_bytes, sha256, min_os, release_notes, created_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      RETURNING id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-                size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
-      `,
-      [
-        platform,
-        packageType,
-        version,
-        channel,
-        status,
-        isLatest,
-        stored.id,
-        stored.original_name || stored.filename,
-        stored.size,
-        stored.checksum,
-        minOs,
-        releaseNotes,
-        String(input.adminId),
-      ]
-    );
-    await client.query("COMMIT");
-    return serialize(rows[0]);
   } catch (error) {
-    await client.query("ROLLBACK");
+    // Once COMMIT has been attempted its outcome can be ambiguous. Keeping an
+    // orphan is safer than deleting bytes which a committed row may reference.
+    if (!commitAttempted) {
+      try {
+        await deleteStoredFile(input.storedFile.relpath);
+      } catch (cleanupError) {
+        console.error("retail local release cleanup failed", cleanupError);
+      }
+    }
     throw error;
-  } finally {
-    client.release();
   }
 }
 

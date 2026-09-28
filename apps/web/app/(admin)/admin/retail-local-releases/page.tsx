@@ -135,11 +135,6 @@ function inferVersionFromFilename(filename: string): string | null {
   return generic?.[1]?.replace(/_/g, "-") ?? null;
 }
 
-async function sha256Hex(file: File): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 export default function RetailLocalReleasesPage() {
   const { lang } = useI18n();
   const th = lang === "th";
@@ -177,7 +172,8 @@ export default function RetailLocalReleasesPage() {
     uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน POS Desktop บน macOS ใช้ .dmg",
     publicRule: "Latest แยกตามระบบและประเภทติดตั้ง หน้าเว็บจึงมี Server + POS, Server only และ POS Desktop only ได้พร้อมกัน",
     inferred: "อ่านจากไฟล์",
-    inferredHint: "ระบบเดา platform, version, ขนาด และ SHA-256 จากไฟล์ให้ก่อนบันทึก",
+    inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
+    checksumPending: "คำนวณระหว่างอัปโหลด",
     saved: "บันทึกแล้ว",
     uploaded: "อัปโหลดแล้ว",
   } : {
@@ -203,7 +199,8 @@ export default function RetailLocalReleasesPage() {
     uploadHint: "Server and combined packages use .exe, .deb or .pkg. macOS POS Desktop uses .dmg.",
     publicRule: "Latest is tracked per platform and package type, so Server + POS, Server only, and POS Desktop only can be published together.",
     inferred: "Read from file",
-    inferredHint: "The form infers platform, version, size and SHA-256 from the selected installer before saving.",
+    inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
+    checksumPending: "calculated during upload",
     saved: "Saved",
     uploaded: "Uploaded",
   };
@@ -251,7 +248,6 @@ export default function RetailLocalReleasesPage() {
     }
 
     const body = new FormData();
-    body.set("file", file);
     body.set("platform", values.platform);
     body.set("packageType", values.packageType);
     body.set("version", values.version);
@@ -260,6 +256,9 @@ export default function RetailLocalReleasesPage() {
     body.set("isLatest", values.isLatest ? "true" : "false");
     body.set("minOs", values.minOs);
     body.set("releaseNotes", values.releaseNotes || "");
+    // Keep the small metadata first so the streaming parser can validate it
+    // while the installer is sent directly to storage.
+    body.set("file", file);
 
     setUploading(true);
     try {
@@ -274,7 +273,7 @@ export default function RetailLocalReleasesPage() {
     }
   };
 
-  const handleUploadChange = async (nextList: UploadFile[]) => {
+  const handleUploadChange = (nextList: UploadFile[]) => {
     const next = nextList.slice(-1);
     setFileList(next);
     const file = next[0]?.originFileObj;
@@ -299,12 +298,6 @@ export default function RetailLocalReleasesPage() {
       size: file.size,
       sha256: null,
     });
-    try {
-      const sha256 = await sha256Hex(file);
-      setInferredFile((current) => current?.filename === file.name ? { ...current, sha256 } : current);
-    } catch {
-      setInferredFile((current) => current?.filename === file.name ? { ...current, sha256: null } : current);
-    }
   };
 
   const openEdit = (row: ReleaseAsset) => {
@@ -500,7 +493,7 @@ export default function RetailLocalReleasesPage() {
                   <Typography.Text>{copy.version}: {inferredFile.version ?? "-"}</Typography.Text>
                   <Typography.Text>{copy.size}: {formatBytes(inferredFile.size)}</Typography.Text>
                   <Typography.Text copyable={inferredFile.sha256 ? { text: inferredFile.sha256 } : false}>
-                    {copy.checksum}: {inferredFile.sha256 ? `${inferredFile.sha256.slice(0, 24)}...` : "calculating"}
+                    {copy.checksum}: {inferredFile.sha256 ? `${inferredFile.sha256.slice(0, 24)}...` : copy.checksumPending}
                   </Typography.Text>
                 </Space>
               )}
