@@ -19,6 +19,51 @@ install_embedded_pos() {
   fi
 }
 
+choose_archetype() {
+  local manifest="$BMS_PAYLOAD_ROOT/shop-archetypes.json"
+  [[ -f $manifest ]] || die "ไม่พบ shop-archetypes manifest ของ release"
+  jq -e '
+    .defaultArchetype as $default |
+    .formatVersion == 1 and
+    (.defaultArchetype | type == "string") and
+    ([.archetypes[].id] | length == (unique | length)) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
+  ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
+  local labels=() values=() default_value default_index=1 row id label
+  default_value=$(jq -r '.defaultArchetype' "$manifest")
+  while IFS=$'\t' read -r id label; do
+    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
+    values+=("$id"); labels+=("$label")
+    [[ $id == "$default_value" ]] && default_index=${#values[@]}
+  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, (.labels.th // .labels.en)] | @tsv' "$manifest")
+  printf '\nประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)\n' >&2
+  local index
+  for index in "${!labels[@]}"; do printf '  %d. %s\n' "$((index + 1))" "${labels[$index]}" >&2; done
+  while true; do
+    read -r -p "เลือกหมายเลข [$default_index]: " index
+    index=${index:-$default_index}
+    if [[ $index =~ ^[0-9]+$ ]] && (( index >= 1 && index <= ${#values[@]} )); then
+      printf '%s' "${values[$((index - 1))]}"
+      return
+    fi
+    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#values[@]}" >&2
+  done
+}
+
+choose_sample_mode() {
+  local choice
+  printf '\nStarter Catalog จะสร้างสินค้าตัวอย่างเป็น Draft, สต็อก 0 และยังขายไม่ได้\n' >&2
+  while true; do
+    read -r -p 'สร้าง Starter Catalog ตามประเภทร้านหรือไม่? [Y/n]: ' choice
+    case ${choice:-Y} in
+      Y|y) printf 'STARTER_CATALOG'; return ;;
+      N|n) printf 'NONE'; return ;;
+      *) printf 'กรุณาตอบ Y หรือ N\n' >&2 ;;
+    esac
+  done
+}
+
 available_kib=$(df --output=avail /var/lib | tail -n 1 | tr -d ' ')
 (( available_kib >= 8 * 1024 * 1024 )) || die "พื้นที่ว่าง /var/lib ต้องมีอย่างน้อย 8 GiB"
 
@@ -60,6 +105,14 @@ docker load --input "$image_archive"
 compose config --quiet
 
 read -r -p 'ชื่อร้าน: ' shop_name
+business_archetype=$(choose_archetype)
+if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
+    "$BMS_PAYLOAD_ROOT/shop-archetypes.json" >/dev/null; then
+  sample_mode=$(choose_sample_mode)
+else
+  sample_mode=NONE
+  printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
+fi
 read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
 read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
 read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password
@@ -76,7 +129,9 @@ export BMS_LOCAL_ADMIN_NAME=$admin_name
 export BMS_LOCAL_ADMIN_EMAIL=$admin_email
 export BMS_LOCAL_ADMIN_PASSWORD=$admin_password
 export BMS_LOCAL_ADMIN_PIN=$admin_pin
-trap 'unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN' EXIT
+export BMS_LOCAL_BUSINESS_ARCHETYPE=$business_archetype
+export BMS_LOCAL_SAMPLE_MODE=$sample_mode
+trap 'unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN BMS_LOCAL_BUSINESS_ARCHETYPE BMS_LOCAL_SAMPLE_MODE' EXIT
 
 printf 'กำลัง provision ร้าน...\n'
 provision_output=$(compose --profile setup run --rm provision 2>&1) || {
@@ -86,7 +141,7 @@ provision_output=$(compose --profile setup run --rm provision 2>&1) || {
 result=$(printf '%s\n' "$provision_output" | grep '^{' | tail -n 1 || true)
 [[ -n $result ]] || die "provision สำเร็จแต่ไม่พบผลลัพธ์"
 
-unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN
+unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN BMS_LOCAL_BUSINESS_ARCHETYPE BMS_LOCAL_SAMPLE_MODE
 trap - EXIT
 admin_password=
 admin_pin=
@@ -101,7 +156,10 @@ jq -n \
   --arg tenantId "$(printf '%s' "$result" | jq -r '.tenantId')" \
   --arg adminUserId "$(printf '%s' "$result" | jq -r '.adminUserId')" \
   --arg posDeviceId "$(printf '%s' "$result" | jq -r '.deviceId')" \
-  '{product:"BMS Retail Local",version:$version,installedAt:$installedAt,url:$url,tenantId:$tenantId,adminUserId:$adminUserId,posDeviceId:$posDeviceId}' \
+  --arg businessArchetype "$(printf '%s' "$result" | jq -r '.businessArchetype')" \
+  --arg sampleMode "$(printf '%s' "$result" | jq -r '.sample.mode')" \
+  --arg sampleStatus "$(printf '%s' "$result" | jq -r '.sample.status')" \
+  '{product:"BMS Retail Local",version:$version,installedAt:$installedAt,url:$url,tenantId:$tenantId,adminUserId:$adminUserId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus}' \
   >"$BMS_RUNTIME_ROOT/installation.json"
 chmod 0600 "$BMS_RUNTIME_ROOT/installation.json"
 
@@ -111,6 +169,15 @@ systemctl enable bms-retail-local.service >/dev/null 2>&1 || true
 
 printf '\nBMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'
 printf 'Admin: %s\n' "$admin_email"
+printf 'ประเภทร้าน: %s\n' "$(printf '%s' "$result" | jq -r '.businessArchetype')"
+sample_status=$(printf '%s' "$result" | jq -r '.sample.status // "SKIPPED"')
+if [[ $sample_status == FAILED ]]; then
+  printf 'คำเตือน: Starter Catalog สร้างไม่สำเร็จ แต่ระบบหลักพร้อมใช้งาน: %s\n' \
+    "$(printf '%s' "$result" | jq -r '.sample.error')"
+elif [[ $sample_status == ACTIVE ]]; then
+  printf 'สร้าง Starter Catalog แล้ว: %s สินค้า (Draft, สต็อก 0)\n' \
+    "$(printf '%s' "$result" | jq -r '.sample.products')"
+fi
 device_token=$(printf '%s' "$result" | jq -r '.deviceToken // empty')
 if [[ -n $device_token ]]; then
   printf '\nPOS pairing token (แสดงครั้งเดียว):\n%s\n' "$device_token"

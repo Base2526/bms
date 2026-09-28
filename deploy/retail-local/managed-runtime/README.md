@@ -29,6 +29,13 @@ covers the exact ASCII `protected.payload` bytes, avoiding cross-language JSON c
 ambiguity. Each component also has a SHA-256; OCI images additionally require an immutable digest.
 HTTPS alone, tags, and a checksum downloaded beside an artifact are not publisher identity.
 
+Every newly signed release includes `shop-archetypes` as a `support-file` component sourced from
+`packages/retail-local-contract/shop-archetypes.json`. Windows and Ubuntu installers build their
+first-run menu from that verified component, so the catalog comes from the exact application release
+rather than an unversioned latest endpoint. `enabledForNewInstall=false` or `deprecated=true` hides
+an id from new installations without making existing shops unreadable. A genuinely new id still
+requires a compatible application release and Starter Catalog implementation before signing.
+
 `verify-release.mjs` is the dependency-free reference verifier for release tooling and tests.
 `apps/retail-local-agent` is the native single-binary implementation used by the installers. The
 customer bundle contains a release-owned, ACL-protected keyring; the manifest URL cannot replace its

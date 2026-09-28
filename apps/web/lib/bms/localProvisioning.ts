@@ -6,6 +6,13 @@ import { getClient } from "@/lib/db";
 import { normalizeEmail, validateEmail, validateNewPassword } from "@/lib/auth/identity";
 import { isPosPinValid } from "@pos-core/posPin";
 import { DEFAULT_TENANT_ID } from "./tenant";
+import {
+  archetypeToBusinessType,
+  DEFAULT_SHOP_ARCHETYPE,
+  isShopArchetypeAvailableForNewInstall,
+  normalizeShopArchetype,
+  type ShopArchetype,
+} from "./shopArchetypes";
 
 export type RetailLocalProvisionInput = {
   shopName: string;
@@ -14,6 +21,7 @@ export type RetailLocalProvisionInput = {
   adminEmail: string;
   adminPassword: string;
   adminPin: string;
+  businessArchetype?: string;
 };
 
 export type RetailLocalProvisionResult = {
@@ -22,6 +30,7 @@ export type RetailLocalProvisionResult = {
   adminUserId: string;
   deviceId: string;
   deviceToken: string | null;
+  businessArchetype: ShopArchetype;
 };
 
 function hashToken(token: string): string {
@@ -45,12 +54,16 @@ export async function provisionRetailLocal(
   const emailResult = validateEmail(input.adminEmail);
   const passwordResult = validateNewPassword(input.adminPassword);
   const adminPin = input.adminPin.trim();
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype ?? DEFAULT_SHOP_ARCHETYPE);
   if (!shopName || shopName.length > 120) throw new Error("Shop name must be 1-120 characters");
   if (!adminName || adminName.length > 120) throw new Error("Administrator name must be 1-120 characters");
   if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new Error("Slug must contain 3-40 lowercase letters, numbers, or hyphens");
   if (!emailResult.ok) throw new Error(`Invalid administrator email (${emailResult.code})`);
   if (!passwordResult.ok) throw new Error(`Invalid administrator password (${passwordResult.code})`);
   if (!isPosPinValid(adminPin)) throw new Error("Administrator PIN must be 4-8 digits");
+  if (!businessArchetype || !isShopArchetypeAvailableForNewInstall(businessArchetype)) {
+    throw new Error("Business archetype is invalid or unavailable for new installations");
+  }
 
   const adminEmail = normalizeEmail(emailResult.value);
   const [passwordHash, pinHash] = await Promise.all([
@@ -68,9 +81,13 @@ export async function provisionRetailLocal(
       tenant_id: string;
       admin_user_id: string;
       pos_device_id: string;
+      business_archetype: string | null;
     }>(
-      `SELECT tenant_id, admin_user_id, pos_device_id
-         FROM bms_local_installation WHERE singleton = TRUE FOR UPDATE`
+      `SELECT installation.tenant_id, installation.admin_user_id, installation.pos_device_id,
+              profile.business_archetype
+         FROM bms_local_installation installation
+         LEFT JOIN bms_store_profile profile ON profile.tenant_id = installation.tenant_id
+        WHERE installation.singleton = TRUE FOR UPDATE`
     );
     if (installed.rows[0]) {
       await client.query("COMMIT");
@@ -80,6 +97,7 @@ export async function provisionRetailLocal(
         adminUserId: installed.rows[0].admin_user_id,
         deviceId: installed.rows[0].pos_device_id,
         deviceToken: null,
+        businessArchetype: normalizeShopArchetype(installed.rows[0].business_archetype) ?? DEFAULT_SHOP_ARCHETYPE,
       };
     }
 
@@ -102,8 +120,8 @@ export async function provisionRetailLocal(
     );
     await client.query(
       `INSERT INTO bms_store_profile(tenant_id, business_type, business_archetype)
-       VALUES ($1, 'general', 'mini_mart')`,
-      [tenantId]
+       VALUES ($1, $2, $3)`,
+      [tenantId, archetypeToBusinessType(businessArchetype), businessArchetype]
     );
     const location = await client.query<{ id: string }>(
       `INSERT INTO bms_locations(tenant_id, code, name, branch_code, is_head_office)
@@ -138,7 +156,11 @@ export async function provisionRetailLocal(
     await client.query(
       `INSERT INTO bms_audit_log(tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'retail_local.provision', $3, $4::jsonb)`,
-      [tenantId, adminEmail, tenantId, JSON.stringify({ locationCode: "MAIN", deviceCode: "POS-01" })]
+      [tenantId, adminEmail, tenantId, JSON.stringify({
+        locationCode: "MAIN",
+        deviceCode: "POS-01",
+        businessArchetype,
+      })]
     );
     await client.query("COMMIT");
     return {
@@ -147,6 +169,7 @@ export async function provisionRetailLocal(
       adminUserId: admin.rows[0].id,
       deviceId: device.rows[0].id,
       deviceToken,
+      businessArchetype,
     };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);

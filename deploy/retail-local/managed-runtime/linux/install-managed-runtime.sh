@@ -19,6 +19,49 @@ shell_export() {
   encoded=$(printf '%s' "$value" | base64 -w 0)
   printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
 }
+choose_archetype() {
+  local manifest=$archetype_manifest
+  [[ -f $manifest ]] || die "ไม่พบ shop-archetypes manifest ของ signed release"
+  jq -e '
+    .defaultArchetype as $default |
+    .formatVersion == 1 and
+    (.defaultArchetype | type == "string") and
+    ([.archetypes[].id] | length == (unique | length)) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
+  ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
+  local labels=() values=() default_value default_index=1 row id label
+  default_value=$(jq -r '.defaultArchetype' "$manifest")
+  while IFS=$'\t' read -r id label; do
+    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
+    values+=("$id"); labels+=("$label")
+    [[ $id == "$default_value" ]] && default_index=${#values[@]}
+  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, (.labels.th // .labels.en)] | @tsv' "$manifest")
+  printf '\nประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)\n' >&2
+  local index
+  for index in "${!labels[@]}"; do printf '  %d. %s\n' "$((index + 1))" "${labels[$index]}" >&2; done
+  while true; do
+    read -r -p "เลือกหมายเลข [$default_index]: " index
+    index=${index:-$default_index}
+    if [[ $index =~ ^[0-9]+$ ]] && (( index >= 1 && index <= ${#values[@]} )); then
+      printf '%s' "${values[$((index - 1))]}"
+      return
+    fi
+    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#values[@]}" >&2
+  done
+}
+choose_sample_mode() {
+  local choice
+  printf '\nStarter Catalog จะสร้างสินค้าตัวอย่างเป็น Draft, สต็อก 0 และยังขายไม่ได้\n' >&2
+  while true; do
+    read -r -p 'สร้าง Starter Catalog ตามประเภทร้านหรือไม่? [Y/n]: ' choice
+    case ${choice:-Y} in
+      Y|y) printf 'STARTER_CATALOG'; return ;;
+      N|n) printf 'NONE'; return ;;
+      *) printf 'กรุณาตอบ Y หรือ N\n' >&2 ;;
+    esac
+  done
+}
 cleanup() {
   [[ -n ${provision_script:-} ]] && rm -f -- "$provision_script"
   [[ -n ${handoff_path:-} && ! -e ${handoff_path:-} ]] || true
@@ -83,6 +126,8 @@ release_json=$($agent verify-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target")
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
+archetype_manifest=$(artifact_path shop-archetypes)
+[[ -f $archetype_manifest ]] || die "signed release ขาด shop-archetypes component"
 
 while IFS=$'\t' read -r name image_ref digest; do
   artifact=$(artifact_path "$name")
@@ -118,6 +163,14 @@ EOF
 fi
 
 read -r -p 'ชื่อร้าน: ' shop_name
+business_archetype=$(choose_archetype)
+if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
+    "$archetype_manifest" >/dev/null; then
+  sample_mode=$(choose_sample_mode)
+else
+  sample_mode=NONE
+  printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
+fi
 read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
 read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
 read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
@@ -135,6 +188,8 @@ provision_script="$RUNTIME_ROOT/provision-once.sh"
   shell_export BMS_LOCAL_ADMIN_EMAIL "$admin_email"
   shell_export BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
   shell_export BMS_LOCAL_ADMIN_PIN "$admin_pin"
+  shell_export BMS_LOCAL_BUSINESS_ARCHETYPE "$business_archetype"
+  shell_export BMS_LOCAL_SAMPLE_MODE "$sample_mode"
   printf 'cd %s\ndocker compose --env-file .env -f compose.yml --profile setup run --rm provision\n' "$RUNTIME_ROOT"
 } >"$provision_script"
 chmod 0700 "$provision_script"
@@ -166,6 +221,7 @@ operator_gid=$(id -g "$operator")
 device_token=$(jq -er '.deviceToken // empty' <<<"$provision_result" || true)
 tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
 pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
+sample_status=$(jq -r '.sample.status // "SKIPPED"' <<<"$provision_result")
 
 # Redeem the one-time activation code after the authoritative local shop identity exists. The
 # exchange is best-effort and never changes installation success or any local transaction path.
@@ -210,8 +266,10 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
   --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
   --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
+  --arg businessArchetype "$business_archetype" --arg sampleMode "$sample_mode" \
+  --arg sampleStatus "$sample_status" \
   --arg licenseCode "${BMS_LICENSE_ID:-}" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
 
@@ -231,5 +289,8 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
     "$agent" "${license_args[@]}" 2>&1); then
     printf 'คำเตือน: เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$license_result" >&2
   fi
+fi
+if [[ $sample_status == FAILED ]]; then
+  printf 'คำเตือน: Starter Catalog สร้างไม่สำเร็จ แต่ระบบหลักพร้อมใช้งาน\n' >&2
 fi
 printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'

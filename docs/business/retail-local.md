@@ -16,7 +16,16 @@ price, stock, permission, payment, tax documents, and audit.
 ## Current supported boundary
 
 - one installation, one provisioned tenant, one `MAIN` branch, and one initial `POS-01` device;
-- retail archetype (`mini_mart`) only for the first-run profile;
+- first-run selection of one supported shop archetype; the selected archetype is an onboarding
+  preset, never an alternate price, stock, or settlement engine;
+- `packages/retail-local-contract/shop-archetypes.json` is the versioned catalog authority. Offline
+  packages carry that release's snapshot; Managed Runtime receives the same file as a signed,
+  checksummed release component. Installers show only `enabledForNewInstall` entries that are not
+  `deprecated`. Removing a type means deprecating/hiding it for new installs, never invalidating the
+  stable id already stored by an existing shop. SaaS signup and later profile changes enforce the
+  same new-selection rule, while the settings UI keeps an existing deprecated id readable;
+- optional archetype-specific Starter Catalog: four inactive products with zero stock and no online
+  sales surfaces, registered to one tenant-owned sample run for guarded all-or-nothing cleanup;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;
 - portable test ZIP with prebuilt application/PostgreSQL/Redis images and SHA-256 verification;
 - deterministic ordered migrations with checksums and an advisory lock;
@@ -39,9 +48,10 @@ pwsh .\deploy\retail-local\package.ps1 -Version 0.1.0-pilot.1
 
 This produces a ZIP and a `.sha256` file under `artifacts/retail-local/`. The ZIP contains prebuilt
 Web, WS, PostgreSQL and Redis images; the target machine does not need the repository, Node.js, npm,
-or internet access to fetch images. The Web image contains the exact init schema and migrations used
-by its migration runner. The checksum detects corruption or modification but is not a publisher
-signature.
+or internet access to fetch images. It also contains the archetype-catalog snapshot compatible with
+those images. The Web image contains the exact init schema and migrations used by its migration
+runner. The checksum detects corruption or modification but is not a publisher signature. An old
+offline EXE deliberately keeps its old compatible snapshot; publish a new package to add a new type.
 
 For an internal Windows pilot, wrap that verified payload in a single offline Inno Setup executable.
 The combined variant embeds the existing x64 POS installer and starts it only after the server writes
@@ -67,11 +77,21 @@ preflight check, validates and loads the image archive, creates local secrets, m
 waits for both Web and WS to become healthy, then performs HTTP health checks. Running directly from
 source remains supported for development; in that mode the installer builds the images locally.
 
-The installer asks for the shop name, owner identity, password, and POS PIN. It generates every
+The installer asks for the shop name, shop type, whether to create a Starter Catalog, owner identity,
+password, and POS PIN. It generates every
 database/application secret locally, loads the packaged Web/WS images (or builds them in source-dev
 mode), applies all migrations, provisions the shop atomically, and starts the stack. The POS pairing
 token is displayed once and is stored in the database only as a SHA-256 hash. Paste it into BMS POS
 with server URL `http://127.0.0.1:3100`; Electron stores it in the OS keystore.
+
+Starter Catalog generation runs only after the core shop transaction commits, so an optional sample
+failure never makes the installation unusable. Examples are draft products with zero stock and are
+not published to storefront, customer AI, or online ordering. Admin > Getting Started shows the
+registered run and offers explicit whole-set deletion. Cleanup refuses the entire operation if any
+example was edited, activated, converted, or referenced by an order or purchase order; a SKU prefix
+is never treated as ownership evidence. Pharmacy examples are non-clinical supplies only, restaurant
+recipes remain unconfigured drafts, and board-game examples are sellable goods rather than play time
+or library copies.
 
 The generated `.env.local` contains encryption/signing keys. It is ACL-restricted by the installer,
 git-ignored, and must never be emailed or committed.
