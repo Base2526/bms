@@ -25,8 +25,8 @@ price, stock, permission, payment, tax documents, and audit.
   stable id already stored by an existing shop. SaaS signup and later profile changes enforce the
   same new-selection rule, while the settings UI keeps an existing deprecated id readable;
 - optional resumable sample data through the shared onboarding seeder; sample products follow the
-  selected archetype and remain marked as fake data; the restaurant onboarding set uses bundled,
-  menu-specific food photos instead of remote random images and also creates a visibly labelled
+  selected archetype, remain marked as fake data, and use bundled product-specific photos instead of
+  remote random images; the restaurant onboarding set keeps its menu-specific food photos and also creates a visibly labelled
   starter floor with two zones and eight tables, but never mixes sample tables into an existing
   operator-created floor;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;

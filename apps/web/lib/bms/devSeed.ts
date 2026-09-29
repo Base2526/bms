@@ -16,6 +16,7 @@ import { v4 as uuid } from "uuid";
 import bcrypt from "bcryptjs";
 import { nanoid } from "nanoid";
 import type { ShopArchetype } from "./shopArchetypes";
+import { onboardingSampleImageUrl } from "./sampleCatalogImages";
 import { adjustPoints, reviewMemberTier } from "./membership";
 import { resolveDefaultLocationId } from "./locations";
 import { beginTenantTx } from "./tenant";
@@ -246,6 +247,90 @@ const CURATED_SEED_PRODUCTS: Partial<Record<ShopArchetype, CuratedSeedProduct[]>
     { name: "Tablet Sleeve 11-inch", category: "กระเป๋า", brand: "Tomtoc", price: 890, description: "ซองกันกระแทกสำหรับแท็บเล็ตขนาด 11 นิ้ว", keywords: ["tablet sleeve", "กระเป๋าแท็บเล็ต", "11 นิ้ว"], sizes: ["Grey", "Black"] },
     { name: "Adjustable Phone Stand", category: "อุปกรณ์เสริม", brand: "UGREEN", price: 390, description: "ขาตั้งโทรศัพท์ตั้งโต๊ะ ปรับมุมและความสูงได้", keywords: ["ขาตั้งมือถือ", "phone stand", "ตั้งโต๊ะ"], sizes: ["White", "Black"] },
   ],
+  home_kitchen: [
+    { name: "กระทะสเตนเลส 28 ซม.", category: "เครื่องครัว", brand: "BMS Home", price: 890, description: "กระทะสเตนเลสก้นแบนสำหรับเตาทั่วไป", keywords: ["กระทะ", "สเตนเลส", "28 ซม."], sizes: ["28CM"] },
+    { name: "กล่องอาหารแก้วฝาล็อก 1,040 มล.", category: "กล่องเก็บอาหาร", brand: "BMS Home", price: 289, description: "กล่องแก้วทนความร้อนพร้อมฝาล็อกสี่ด้าน", keywords: ["กล่องอาหาร", "กล่องแก้ว", "ฝาล็อก"], sizes: ["1040ML"] },
+    { name: "ชุดจานเซรามิกสีขาว 6 ใบ", category: "จานชาม", brand: "BMS Home", price: 590, description: "จานเซรามิกสีขาวสำหรับโต๊ะอาหาร", keywords: ["ชุดจาน", "จานเซรามิก", "6 ใบ"], sizes: ["6PC"] },
+    { name: "เครื่องปั่นโถแก้ว", category: "เครื่องใช้ไฟฟ้า", brand: "BMS Home", price: 1590, description: "เครื่องปั่นตั้งโต๊ะพร้อมโถแก้ว", keywords: ["เครื่องปั่น", "โถแก้ว", "เครื่องใช้ไฟฟ้า"], sizes: ["STD"] },
+    { name: "หม้อสเตนเลสพร้อมฝา 24 ซม.", category: "เครื่องครัว", brand: "BMS Home", price: 990, description: "หม้อสเตนเลสสองหูพร้อมฝาปิด", keywords: ["หม้อ", "สเตนเลส", "24 ซม."], sizes: ["24CM"] },
+    { name: "มีดเชฟ 8 นิ้ว", category: "อุปกรณ์ครัว", brand: "BMS Home", price: 490, description: "มีดเชฟใบสเตนเลสสำหรับเตรียมอาหาร", keywords: ["มีดเชฟ", "มีดครัว", "8 นิ้ว"], sizes: ["8IN"] },
+    { name: "เขียงไม้สี่เหลี่ยม", category: "อุปกรณ์ครัว", brand: "BMS Home", price: 350, description: "เขียงไม้สำหรับเตรียมวัตถุดิบ", keywords: ["เขียงไม้", "เขียง", "เตรียมอาหาร"], sizes: ["STD"] },
+    { name: "ชุดช้อนส้อมสเตนเลส", category: "ช้อนส้อม", brand: "BMS Home", price: 450, description: "ชุดช้อน ส้อม มีด และช้อนชา", keywords: ["ช้อนส้อม", "สเตนเลส", "ชุดช้อน"], sizes: ["4PC"] },
+    { name: "ชุดแก้วกาแฟเซรามิก 4 ใบ", category: "แก้ว", brand: "BMS Home", price: 520, description: "แก้วกาแฟเซรามิกคละสีสี่ใบ", keywords: ["แก้วกาแฟ", "เซรามิก", "4 ใบ"], sizes: ["4PC"] },
+    { name: "กาต้มน้ำไฟฟ้าสเตนเลส", category: "เครื่องใช้ไฟฟ้า", brand: "BMS Home", price: 790, description: "กาต้มน้ำไฟฟ้าตัดอัตโนมัติ", keywords: ["กาต้มน้ำ", "กาน้ำไฟฟ้า", "สเตนเลส"], sizes: ["1.7L"] },
+    { name: "เครื่องชั่งดิจิทัลในครัว", category: "อุปกรณ์ครัว", brand: "BMS Home", price: 490, description: "เครื่องชั่งอาหารดิจิทัลหน้าเรียบ", keywords: ["เครื่องชั่ง", "ตาชั่งครัว", "ดิจิทัล"], sizes: ["5KG"] },
+    { name: "ที่คว่ำจานพร้อมถาดรอง", category: "อุปกรณ์ครัว", brand: "BMS Home", price: 690, description: "ชั้นคว่ำจานโลหะพร้อมถาดรองน้ำ", keywords: ["ที่คว่ำจาน", "ชั้นวางจาน", "ถาดรอง"], sizes: ["STD"] },
+  ],
+  b2b_wholesale: [
+    { name: "กระดาษถ่ายเอกสาร A4 80 แกรม", category: "กระดาษ", brand: "BMS Office", price: 125, description: "กระดาษ A4 หนึ่งรีมสำหรับสำนักงาน", keywords: ["กระดาษ a4", "80 แกรม", "รีม"], sizes: ["REAM"] },
+    { name: "ถุงมือไนไตรล์ 100 ชิ้น", category: "วัสดุสิ้นเปลือง", brand: "BMS Supply", price: 180, description: "ถุงมือไนไตรล์แบบใช้ครั้งเดียวหนึ่งกล่อง", keywords: ["ถุงมือไนไตรล์", "ถุงมือ", "100 ชิ้น"], sizes: ["BOX"] },
+    { name: "ถุงขยะดำม้วนใหญ่", category: "วัสดุสิ้นเปลือง", brand: "BMS Supply", price: 89, description: "ถุงขยะดำชนิดม้วนสำหรับงานธุรกิจ", keywords: ["ถุงขยะ", "ถุงดำ", "ม้วน"], sizes: ["ROLL"] },
+    { name: "น้ำยาถูพื้น 5 ลิตร", category: "เคมีภัณฑ์", brand: "BMS Supply", price: 390, description: "น้ำยาทำความสะอาดพื้นบรรจุแกลลอน", keywords: ["น้ำยาถูพื้น", "ทำความสะอาด", "5 ลิตร"], sizes: ["5L"] },
+    { name: "แก้วกระดาษยกลัง", category: "บรรจุภัณฑ์", brand: "BMS Pack", price: 720, description: "แก้วกระดาษสำหรับเครื่องดื่มบรรจุลัง", keywords: ["แก้วกระดาษ", "ยกลัง", "บรรจุภัณฑ์"], sizes: ["CARTON"] },
+    { name: "เทปปิดกล่องยกลัง", category: "บรรจุภัณฑ์", brand: "BMS Pack", price: 540, description: "เทปใสปิดกล่องบรรจุแบบยกลัง", keywords: ["เทปปิดกล่อง", "เทปใส", "ยกลัง"], sizes: ["CARTON"] },
+    { name: "กระดาษความร้อน 80 มม. ยกกล่อง", category: "กระดาษ", brand: "BMS Office", price: 690, description: "ม้วนกระดาษความร้อนสำหรับเครื่องพิมพ์ใบเสร็จ", keywords: ["กระดาษความร้อน", "ใบเสร็จ", "80 มม."], sizes: ["BOX"] },
+    { name: "ปากกาลูกลื่นดำยกกล่อง", category: "อุปกรณ์สำนักงาน", brand: "BMS Office", price: 350, description: "ปากกาลูกลื่นหมึกดำบรรจุกล่อง", keywords: ["ปากกาลูกลื่น", "หมึกดำ", "ยกกล่อง"], sizes: ["BOX"] },
+    { name: "สบู่เหลวล้างมือ 5 ลิตร", category: "เคมีภัณฑ์", brand: "BMS Supply", price: 420, description: "สบู่เหลวล้างมือสำหรับเติมเครื่องจ่าย", keywords: ["สบู่เหลว", "ล้างมือ", "5 ลิตร"], sizes: ["5L"] },
+    { name: "กระดาษเช็ดหน้ายกลัง", category: "วัสดุสิ้นเปลือง", brand: "BMS Supply", price: 780, description: "กระดาษเช็ดหน้าบรรจุกล่องขายยกลัง", keywords: ["กระดาษเช็ดหน้า", "ทิชชู", "ยกลัง"], sizes: ["CARTON"] },
+    { name: "น้ำดื่มขวดยกลัง", category: "เครื่องดื่ม", brand: "BMS Supply", price: 115, description: "น้ำดื่มขวดใสบรรจุแพ็กสำหรับธุรกิจ", keywords: ["น้ำดื่ม", "ยกลัง", "ขวด"], sizes: ["CASE"] },
+    { name: "กล่องลูกฟูกพับแบน 20 ใบ", category: "บรรจุภัณฑ์", brand: "BMS Pack", price: 480, description: "กล่องพัสดุลูกฟูกพับแบนมัดรวม", keywords: ["กล่องลูกฟูก", "กล่องพัสดุ", "20 ใบ"], sizes: ["BUNDLE"] },
+  ],
+  gifts_seasonal: [
+    { name: "กล่องของขวัญพร้อมริบบิ้น", category: "บรรจุภัณฑ์", brand: "BMS Gift", price: 120, description: "กล่องของขวัญฝาแยกพร้อมริบบิ้น", keywords: ["กล่องของขวัญ", "ริบบิ้น", "บรรจุภัณฑ์"], sizes: ["M"] },
+    { name: "การ์ดอวยพรพร้อมซอง", category: "การ์ด", brand: "BMS Gift", price: 49, description: "การ์ดอวยพรแบบพับพร้อมซองเปล่า", keywords: ["การ์ดอวยพร", "ซอง", "การ์ด"], sizes: ["STD"] },
+    { name: "ชุดของขวัญ Everyday", category: "Gift Set", brand: "BMS Gift", price: 790, description: "ชุดของขวัญอเนกประสงค์จัดในกล่อง", keywords: ["ชุดของขวัญ", "gift set", "ของขวัญ"], sizes: ["SET"] },
+    { name: "ชุดห่อของขวัญ", category: "บรรจุภัณฑ์", brand: "BMS Gift", price: 99, description: "ชุดกระดาษห่อ ริบบิ้น และป้ายของขวัญ", keywords: ["ชุดห่อของขวัญ", "กระดาษห่อ", "ริบบิ้น"], sizes: ["SET"] },
+    { name: "ช่อดอกไม้สดคละสี", category: "ดอกไม้", brand: "BMS Flowers", price: 590, description: "ช่อดอกไม้สดห่อกระดาษโทนสุภาพ", keywords: ["ช่อดอกไม้", "ดอกไม้สด", "ของขวัญ"], sizes: ["STD"] },
+    { name: "เทียนหอมในแก้ว", category: "ของขวัญ", brand: "BMS Gift", price: 350, description: "เทียนหอมบรรจุแก้วแบบไม่มีลวดลาย", keywords: ["เทียนหอม", "เทียน", "ของขวัญ"], sizes: ["STD"] },
+    { name: "ชุดแก้วเซรามิกคู่", category: "Gift Set", brand: "BMS Gift", price: 490, description: "แก้วเซรามิกสองใบจัดในกล่องของขวัญ", keywords: ["แก้วเซรามิก", "แก้วคู่", "ชุดของขวัญ"], sizes: ["2PC"] },
+    { name: "ช็อกโกแลตคละรสกล่องของขวัญ", category: "ของขวัญ", brand: "BMS Gift", price: 420, description: "ช็อกโกแลตคละชิ้นจัดในกล่อง", keywords: ["ช็อกโกแลต", "กล่องของขวัญ", "คละรส"], sizes: ["BOX"] },
+    { name: "ตุ๊กตาหมีขนาดเล็ก", category: "ตุ๊กตา", brand: "BMS Gift", price: 390, description: "ตุ๊กตาหมีผ้านุ่มสำหรับมอบเป็นของขวัญ", keywords: ["ตุ๊กตาหมี", "ตุ๊กตา", "ของขวัญ"], sizes: ["S"] },
+    { name: "ชุดริบบิ้นคละสี", category: "บรรจุภัณฑ์", brand: "BMS Gift", price: 180, description: "ริบบิ้นหลายสีแบบม้วนสำหรับห่อของขวัญ", keywords: ["ริบบิ้น", "คละสี", "ห่อของขวัญ"], sizes: ["SET"] },
+    { name: "ตะกร้าของขวัญสาน", category: "บรรจุภัณฑ์", brand: "BMS Gift", price: 290, description: "ตะกร้าสานเปล่าสำหรับจัดชุดของขวัญ", keywords: ["ตะกร้าของขวัญ", "ตะกร้าสาน", "จัดชุด"], sizes: ["M"] },
+    { name: "ถุงของชำร่วยกระดาษ 12 ใบ", category: "บรรจุภัณฑ์", brand: "BMS Gift", price: 149, description: "ถุงกระดาษขนาดเล็กสำหรับของชำร่วย", keywords: ["ถุงของชำร่วย", "ถุงกระดาษ", "12 ใบ"], sizes: ["12PC"] },
+  ],
+  pet_supply: [
+    { name: "อาหารแมวชนิดเม็ด 1 กก.", category: "อาหารสัตว์", brand: "BMS Pet", price: 220, description: "อาหารแมวชนิดเม็ดบรรจุถุง", keywords: ["อาหารแมว", "อาหารเม็ด", "1 กก."], sizes: ["1KG"] },
+    { name: "ขนมสุนัขอบแห้ง", category: "ขนมสัตว์เลี้ยง", brand: "BMS Pet", price: 95, description: "ขนมสุนัขแบบชิ้นบรรจุซอง", keywords: ["ขนมสุนัข", "ขนมสัตว์", "ซอง"], sizes: ["100G"] },
+    { name: "ทรายแมวจับตัวเป็นก้อน 5 ลิตร", category: "ทรายและสุขอนามัย", brand: "BMS Pet", price: 180, description: "ทรายแมวชนิดจับตัวเป็นก้อน", keywords: ["ทรายแมว", "จับตัวเป็นก้อน", "5 ลิตร"], sizes: ["5L"] },
+    { name: "ถังเก็บอาหารสัตว์พร้อมที่ตัก", category: "อุปกรณ์ให้อาหาร", brand: "BMS Pet", price: 490, description: "ถังใสเก็บอาหารสัตว์พร้อมช้อนตัก", keywords: ["ถังอาหารสัตว์", "ที่ตัก", "เก็บอาหาร"], sizes: ["10L"] },
+    { name: "ไม้ล่อแมว", category: "ของเล่น", brand: "BMS Pet", price: 120, description: "ของเล่นไม้ล่อแมวแบบก้านยาว", keywords: ["ไม้ล่อแมว", "ของเล่นแมว", "คันเบ็ดแมว"], sizes: ["STD"] },
+    { name: "เชือกกัดสำหรับสุนัข", category: "ของเล่น", brand: "BMS Pet", price: 150, description: "เชือกถักสำหรับสุนัขกัดและเล่นดึง", keywords: ["เชือกกัด", "ของเล่นสุนัข", "เชือกถัก"], sizes: ["M"] },
+    { name: "แชมพูสัตว์เลี้ยง", category: "อุปกรณ์ดูแล", brand: "BMS Pet", price: 190, description: "แชมพูสำหรับอาบน้ำสัตว์เลี้ยง", keywords: ["แชมพูสัตว์เลี้ยง", "อาบน้ำ", "ดูแลขน"], sizes: ["500ML"] },
+    { name: "ชามอาหารสัตว์สเตนเลส", category: "อุปกรณ์ให้อาหาร", brand: "BMS Pet", price: 160, description: "ชามอาหารสเตนเลสทรงเตี้ย", keywords: ["ชามอาหาร", "ชามสัตว์เลี้ยง", "สเตนเลส"], sizes: ["M"] },
+    { name: "ที่ลับเล็บแมวกระดาษลูกฟูก", category: "อุปกรณ์ดูแล", brand: "BMS Pet", price: 250, description: "แผ่นลับเล็บแมวกระดาษลูกฟูก", keywords: ["ที่ลับเล็บ", "แมว", "กระดาษลูกฟูก"], sizes: ["STD"] },
+    { name: "แผ่นรองซับลูกสุนัข", category: "ทรายและสุขอนามัย", brand: "BMS Pet", price: 290, description: "แผ่นรองซับสำหรับฝึกลูกสุนัข", keywords: ["แผ่นรองซับ", "ลูกสุนัข", "ฝึกขับถ่าย"], sizes: ["20PC"] },
+    { name: "กระเป๋าเดินทางสำหรับแมว", category: "อุปกรณ์เดินทาง", brand: "BMS Pet", price: 890, description: "กล่องเดินทางเปลือกแข็งพร้อมช่องระบายอากาศ", keywords: ["กระเป๋าแมว", "กล่องเดินทาง", "สัตว์เลี้ยง"], sizes: ["M"] },
+    { name: "สายจูงพร้อมปลอกคอสุนัข", category: "อุปกรณ์เดินทาง", brand: "BMS Pet", price: 350, description: "ชุดสายจูงและปลอกคอปรับขนาดได้", keywords: ["สายจูง", "ปลอกคอ", "สุนัข"], sizes: ["M", "L"] },
+  ],
+  building_materials: [
+    { name: "ปูนซีเมนต์ 50 กก.", category: "ปูนและวัสดุก่อ", brand: "BMS Build", price: 145, description: "ปูนซีเมนต์บรรจุถุงสำหรับงานก่อทั่วไป", keywords: ["ปูนซีเมนต์", "ปูน", "50 กก."], sizes: ["BAG"] },
+    { name: "ท่อ PVC สีฟ้า", category: "ประปา", brand: "BMS Build", price: 120, description: "ท่อพีวีซีสำหรับงานประปา", keywords: ["ท่อ pvc", "ท่อประปา", "สีฟ้า"], sizes: ["1IN", "2IN"] },
+    { name: "สายไฟฟ้าขด 100 เมตร", category: "ไฟฟ้า", brand: "BMS Build", price: 1250, description: "สายไฟหุ้มฉนวนบรรจุขด", keywords: ["สายไฟ", "ขด", "100 เมตร"], sizes: ["1.5SQMM"] },
+    { name: "สว่านไฟฟ้าแบบมีสาย", category: "เครื่องมือช่าง", brand: "BMS Tool", price: 1890, description: "สว่านไฟฟ้าสำหรับงานเจาะทั่วไป", keywords: ["สว่านไฟฟ้า", "สว่าน", "เครื่องมือช่าง"], sizes: ["STD"] },
+    { name: "สีทาภายในถังใหญ่", category: "สีและเคมีภัณฑ์", brand: "BMS Build", price: 890, description: "สีทาภายในบรรจุถังสีขาว", keywords: ["สีทาภายใน", "ถังสี", "สี"], sizes: ["9L"] },
+    { name: "กระเบื้องปูพื้นเซรามิก", category: "กระเบื้อง", brand: "BMS Build", price: 390, description: "กระเบื้องเซรามิกทรงสี่เหลี่ยมขายเป็นกล่อง", keywords: ["กระเบื้อง", "ปูพื้น", "เซรามิก"], sizes: ["60X60"] },
+    { name: "อิฐมอญก่อสร้าง", category: "ปูนและวัสดุก่อ", brand: "BMS Build", price: 8, description: "อิฐดินเผาสีแดงสำหรับงานก่อ", keywords: ["อิฐมอญ", "อิฐแดง", "ก่อสร้าง"], sizes: ["PIECE"] },
+    { name: "ค้อนหงอนด้ามไฟเบอร์", category: "เครื่องมือช่าง", brand: "BMS Tool", price: 389, description: "ค้อนหงอนสำหรับตอกและถอนตะปู", keywords: ["ค้อนหงอน", "ค้อน", "เครื่องมือ"], sizes: ["16OZ"] },
+    { name: "ประแจเลื่อน", category: "เครื่องมือช่าง", brand: "BMS Tool", price: 290, description: "ประแจเลื่อนปากปรับได้", keywords: ["ประแจเลื่อน", "ประแจ", "เครื่องมือ"], sizes: ["10IN"] },
+    { name: "หลอดไฟ LED 9W", category: "ไฟฟ้า", brand: "BMS Build", price: 89, description: "หลอดไฟ LED ขั้ว E27 แสงขาว", keywords: ["หลอดไฟ", "led", "9w"], sizes: ["9W"] },
+    { name: "ก๊อกน้ำอ่างล้างหน้า", category: "ประปา", brand: "BMS Build", price: 590, description: "ก๊อกน้ำชุบโครเมียมสำหรับอ่างล้างหน้า", keywords: ["ก๊อกน้ำ", "อ่างล้างหน้า", "โครเมียม"], sizes: ["STD"] },
+    { name: "ซิลิโคนยาแนวพร้อมหัวฉีด", category: "สีและเคมีภัณฑ์", brand: "BMS Build", price: 149, description: "ซิลิโคนยาแนวบรรจุหลอดสำหรับปืนยิง", keywords: ["ซิลิโคน", "ยาแนว", "หลอด"], sizes: ["300ML"] },
+  ],
+  board_game_cafe: [
+    { name: "น้ำดื่ม 600 มล.", category: "เครื่องดื่ม", brand: "BMS Cafe", price: 15, description: "น้ำดื่มบรรจุขวดพร้อมขาย", keywords: ["น้ำดื่ม", "น้ำเปล่า", "600 มล."], sizes: ["BOT"] },
+    { name: "มันฝรั่งทอดรสดั้งเดิม", category: "ของทานเล่น", brand: "BMS Cafe", price: 35, description: "มันฝรั่งทอดบรรจุถุงสำหรับขายหน้าร้าน", keywords: ["มันฝรั่งทอด", "ขนม", "ของทานเล่น"], sizes: ["BAG"] },
+    { name: "ซองใส่การ์ดขนาด Standard", category: "อุปกรณ์เกม", brand: "BMS Tabletop", price: 120, description: "ซองใสสำหรับการ์ดบอร์ดเกมขนาดมาตรฐาน", keywords: ["ซองใส่การ์ด", "card sleeve", "standard"], sizes: ["STANDARD"] },
+    { name: "ชุดลูกเต๋าหลายหน้า", category: "อุปกรณ์เกม", brand: "BMS Tabletop", price: 190, description: "ชุดลูกเต๋าหลายขนาดสำหรับเกมบนโต๊ะ", keywords: ["ลูกเต๋า", "dice", "บอร์ดเกม"], sizes: ["SET"] },
+    { name: "กาแฟเย็น", category: "เครื่องดื่ม", brand: "BMS Cafe", price: 55, description: "กาแฟเย็นใส่แก้วพร้อมขาย", keywords: ["กาแฟเย็น", "กาแฟ", "เครื่องดื่ม"], sizes: ["CUP"] },
+    { name: "น้ำอัดลมกระป๋อง", category: "เครื่องดื่ม", brand: "BMS Cafe", price: 25, description: "น้ำอัดลมกระป๋องแช่เย็น", keywords: ["น้ำอัดลม", "กระป๋อง", "เครื่องดื่ม"], sizes: ["CAN"] },
+    { name: "เฟรนช์ฟรายส์", category: "ของทานเล่น", brand: "BMS Cafe", price: 69, description: "มันฝรั่งทอดเสิร์ฟเป็นตะกร้า", keywords: ["เฟรนช์ฟรายส์", "มันฝรั่งทอด", "ของทานเล่น"], sizes: ["STD"] },
+    { name: "นักเก็ตไก่", category: "ของทานเล่น", brand: "BMS Cafe", price: 79, description: "นักเก็ตไก่ทอดพร้อมขาย", keywords: ["นักเก็ตไก่", "ไก่ทอด", "ของทานเล่น"], sizes: ["6PC"] },
+    { name: "บะหมี่ถ้วย", category: "อาหารพร้อมทาน", brand: "BMS Cafe", price: 35, description: "บะหมี่กึ่งสำเร็จรูปแบบถ้วย", keywords: ["บะหมี่ถ้วย", "บะหมี่", "อาหารพร้อมทาน"], sizes: ["CUP"] },
+    { name: "ชุดที่รองแก้วไม้ก๊อก", category: "สินค้าแฟนคลับ", brand: "BMS Tabletop", price: 150, description: "ที่รองแก้วไม้ก๊อกขายเป็นชุด", keywords: ["ที่รองแก้ว", "ไม้ก๊อก", "ชุด"], sizes: ["4PC"] },
+    { name: "สมุดจดคะแนนพร้อมดินสอ", category: "อุปกรณ์เกม", brand: "BMS Tabletop", price: 99, description: "สมุดหน้าว่างสำหรับจดคะแนนพร้อมดินสอ", keywords: ["สมุดจดคะแนน", "score pad", "ดินสอ"], sizes: ["SET"] },
+    { name: "ถาดจัดโทเคนไม้", category: "อุปกรณ์เกม", brand: "BMS Tabletop", price: 250, description: "ถาดไม้แบ่งช่องสำหรับจัดชิ้นส่วนเกม", keywords: ["ถาดโทเคน", "token tray", "อุปกรณ์เกม"], sizes: ["STD"] },
+  ],
   other: [
     { name: "ร่มพับกัน UV ขนาด 21 นิ้ว", category: "ของใช้ประจำวัน", brand: "Everyday", price: 259, description: "ร่มพับเคลือบกัน UV น้ำหนักเบา พร้อมซองเก็บ", keywords: ["ร่มพับ", "กัน uv", "ร่ม"], sizes: ["Black", "Navy", "Cream"] },
     { name: "กระบอกน้ำสเตนเลส 750 มล.", category: "ของใช้ประจำวัน", brand: "Everyday", price: 349, description: "กระบอกน้ำสเตนเลสสองชั้น เก็บอุณหภูมิได้", keywords: ["กระบอกน้ำ", "สเตนเลส", "เก็บความเย็น"], sizes: ["750ml"] },
@@ -276,6 +361,10 @@ const CURATED_SEED_PRODUCTS: Partial<Record<ShopArchetype, CuratedSeedProduct[]>
     { name: "เจลล้างมือกลิ่นซิตรัส", category: "ของใช้ส่วนตัว", brand: "Dettol", price: 59, description: "เจลทำความสะอาดมือแบบไม่ต้องล้างน้ำ", keywords: ["เจลล้างมือ", "ซิตรัส", "ทำความสะอาดมือ"], sizes: ["50ml"] },
     { name: "หน้ากากผ้า UV ทรง 3D", category: "ของใช้ส่วนตัว", brand: "Everyday", price: 129, description: "หน้ากากผ้าทรงสามมิติ ซักและใช้ซ้ำได้", keywords: ["หน้ากากผ้า", "กัน uv", "ซักได้"], sizes: ["M", "L"] },
   ],
+};
+
+export const __devSeedSampleCatalogTest = {
+  catalogs: CURATED_SEED_PRODUCTS,
 };
 
 function substrHash(value: string): string {
@@ -898,7 +987,8 @@ export async function seedFakeProducts(
       const offset = seq.rows[0]?.n ?? 0;
       for (let i = 0; i < count; i++) {
         const n = offset + i;
-        const item = curated[n % curated.length];
+        const catalogIndex = n % curated.length;
+        const item = curated[catalogIndex];
         const sku = `FAKE-${substrHash(`${tenantId}:${archetype}:${item.name}:${n}`)}`;
         const name = curatedCatalogName(item, n, curated.length, archetype!);
         const sizes = item.sizes?.length ? item.sizes : ["STD"];
@@ -916,7 +1006,7 @@ export async function seedFakeProducts(
             name,
             item.price.toFixed(2),
             Array.from(new Set(item.keywords.map((k) => k.toLowerCase()))),
-            `https://picsum.photos/seed/${sku}/400/400`,
+            onboardingSampleImageUrl(archetype!, item.name),
             item.description,
             (item.price * 0.58).toFixed(2),
             item.category,
@@ -1004,7 +1094,7 @@ export async function seedFakeProducts(
     np AS (
       INSERT INTO bms_products (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, barcode)
       SELECT $1::uuid, gen.sku, $5 || ' Item ' || g, true, price, ARRAY[lower(replace($5, ' ', '_'))],
-             'https://picsum.photos/seed/' || gen.sku || '/400/400',
+             NULL,
              'สินค้าทั่วไปสำหรับจำหน่าย — ' || $5 || ' Item ' || g,
              (price * (0.4 + random() * 0.3))::numeric(12,2),
              category, brand,

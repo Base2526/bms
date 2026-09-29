@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { starterSampleImageUrl } from "./sampleCatalogImages";
 import { normalizeShopArchetype, shopArchetypeHasStarterCatalog, type ShopArchetype } from "./shopArchetypes";
 
 export type SampleDataMode = "STARTER_CATALOG" | "FULL_DEMO";
@@ -106,10 +107,10 @@ const STARTER_CATALOGS: Record<ShopArchetype, StarterProduct[]> = {
     { code: "DICE", name: "ชุดลูกเต๋า (ตัวอย่าง)", category: "Board Game Accessories", price: 190, cost: 95, description: "สินค้าเสริม ไม่ใช่เกมที่ให้ยืม" },
   ],
   other: [
-    { code: "ITEM", name: "สินค้าทั่วไป (ตัวอย่าง)", category: "ทั่วไป", price: 100, cost: 60, description: "ตัวอย่างสินค้าสต็อกทั่วไป" },
-    { code: "ITEM-SIZE", name: "สินค้าหลายขนาด (ตัวอย่าง)", category: "ทั่วไป", price: 150, cost: 90, variants: ["S", "M", "L"], description: "ตัวอย่าง variant" },
-    { code: "ITEM-PACK", name: "สินค้าขายเป็นแพ็ก (ตัวอย่าง)", category: "ทั่วไป", price: 250, cost: 140, stockPolicy: "PACK", description: "ตัวอย่างสินค้าที่ต้องตั้ง pack เพิ่มเติม" },
-    { code: "ITEM-SERIAL", name: "สินค้าติด Serial (ตัวอย่าง)", category: "ทั่วไป", price: 990, cost: 620, stockPolicy: "SERIALIZED", description: "ตัวอย่างสินค้าที่ติดตาม serial" },
+    { code: "DESK-ORGANIZER", name: "ที่จัดระเบียบโต๊ะ (ตัวอย่าง)", category: "ของใช้สำนักงาน", price: 100, cost: 60, description: "ตัวอย่างสินค้าสต็อกทั่วไป" },
+    { code: "STORAGE-BOX", name: "กล่องจัดเก็บหลายขนาด (ตัวอย่าง)", category: "ของใช้ในบ้าน", price: 150, cost: 90, variants: ["S", "M", "L"], description: "ตัวอย่าง variant ตามขนาด" },
+    { code: "CLOTH-PACK", name: "ผ้าไมโครไฟเบอร์แพ็ก 4 ผืน (ตัวอย่าง)", category: "ทำความสะอาด", price: 250, cost: 140, stockPolicy: "PACK", description: "ตัวอย่างสินค้าที่ต้องตั้ง pack เพิ่มเติม" },
+    { code: "DESK-FAN", name: "พัดลมตั้งโต๊ะ (ตัวอย่าง)", category: "เครื่องใช้ไฟฟ้า", price: 990, cost: 620, stockPolicy: "SERIALIZED", description: "ตัวอย่างสินค้าที่ติดตาม serial" },
   ],
 };
 
@@ -152,6 +153,7 @@ function uuidOrNull(value: string | number | null | undefined): string | null {
 function productBaseline(
   item: StarterProduct,
   archetype: ShopArchetype,
+  imageUrl: string | null,
   variants: string[],
   surfaces: SalesSurface[],
   stockPolicy: StockPolicy
@@ -166,7 +168,7 @@ function productBaseline(
     costPrice: item.cost.toFixed(2),
     keywords: ["sample", archetype, item.code.toLowerCase()].sort(),
     barcode: null,
-    imageUrl: null,
+    imageUrl,
     weightGrams: null,
     vatCategory: "UNKNOWN",
     isBundle: false,
@@ -422,16 +424,17 @@ export async function createStarterCatalog(
 
     for (const item of items) {
       const sku = skuFor(archetype, item.code);
+      const imageUrl = starterSampleImageUrl(archetype, item.name);
       const variants = item.variants?.length ? item.variants : ["STD"];
       const surfaces = item.surfaces ?? (archetype === "restaurant" ? restaurant : retail);
       const policy = item.stockPolicy ?? "DIRECT";
       const inserted = await client.query(
         `INSERT INTO bms_products
-           (tenant_id, sku, name, active, price, keywords, description, cost_price, category, brand, vat_category)
-         VALUES ($1,$2,$3,FALSE,$4,$5,$6,$7,$8,'BMS Sample','UNKNOWN')
+           (tenant_id, sku, name, active, price, keywords, image_url, description, cost_price, category, brand, vat_category)
+         VALUES ($1,$2,$3,FALSE,$4,$5,$6,$7,$8,$9,'BMS Sample','UNKNOWN')
          ON CONFLICT (tenant_id, sku) DO NOTHING
          RETURNING sku`,
-        [tenantId, sku, item.name, item.price, ["sample", archetype, item.code.toLowerCase()], item.description, item.cost, item.category]
+        [tenantId, sku, item.name, item.price, ["sample", archetype, item.code.toLowerCase()], imageUrl, item.description, item.cost, item.category]
       );
       if (!inserted.rowCount) {
         throw new SampleDataError(`SKU ตัวอย่างชนกับสินค้าที่มีอยู่: ${sku}`, "SKU_CONFLICT");
@@ -479,7 +482,7 @@ export async function createStarterCatalog(
         `INSERT INTO bms_sample_records
            (sample_run_id, tenant_id, entity_type, entity_key, baseline)
          VALUES ($1,$2,'PRODUCT',$3,$4::jsonb)`,
-        [runId, tenantId, sku, JSON.stringify(productBaseline(item, archetype, variants, surfaces, policy))]
+        [runId, tenantId, sku, JSON.stringify(productBaseline(item, archetype, imageUrl, variants, surfaces, policy))]
       );
     }
 
@@ -548,5 +551,6 @@ export async function deleteSampleData(
 
 export const __sampleDataTest = {
   catalogs: STARTER_CATALOGS,
+  imageUrlFor: starterSampleImageUrl,
   skuFor,
 };

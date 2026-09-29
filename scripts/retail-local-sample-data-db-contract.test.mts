@@ -38,9 +38,11 @@ test("Starter Catalog creates only inactive, zero-stock, non-online examples and
   const products = await query<{
     active: boolean;
     current_stock: string;
+    image_url: string | null;
     online_surfaces: string;
   }>(
     `SELECT product.active,
+            product.image_url,
             COALESCE(sum(inventory.current_stock), 0)::text AS current_stock,
             count(surface.*) FILTER (
               WHERE surface.surface IN ('PUBLIC_STOREFRONT','CUSTOMER_AI','ONLINE_ORDER')
@@ -51,13 +53,14 @@ test("Starter Catalog creates only inactive, zero-stock, non-online examples and
        LEFT JOIN bms_product_sales_surfaces surface
          ON surface.tenant_id = product.tenant_id AND surface.product_sku = product.sku
       WHERE product.tenant_id = $1 AND product.sku LIKE 'SAMPLE-%'
-      GROUP BY product.sku, product.active`,
+      GROUP BY product.sku, product.active, product.image_url`,
     [tenantId]
   );
   assert.equal(products.rowCount, 4);
   assert.ok(products.rows.every((row) => row.active === false));
   assert.ok(products.rows.every((row) => Number(row.current_stock) === 0));
   assert.ok(products.rows.every((row) => Number(row.online_surfaces) === 0));
+  assert.ok(products.rows.every((row) => /^\/sample\/starter\/fashion\/\d{2}\.jpg$/.test(row.image_url ?? "")));
 
   const deleted = await deleteSampleData(tenantId);
   assert.equal(deleted.deletedProducts, 4);
