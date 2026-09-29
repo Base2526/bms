@@ -73,6 +73,7 @@ npm run pack:linux
 cp "dist/BMS-POS-${BMS_RELEASE_VERSION}-amd64.deb" \
   "dist/BMS-POS-${BMS_RELEASE_VERSION}-x86_64.AppImage" /out/
 '@
+  $buildCommand = $buildCommand.Replace("`r`n", "`n").Replace("`r", "`n")
   & docker run --rm `
     -e "BMS_RELEASE_VERSION=$Version" `
     -v "${repoMount}:/source:ro" `
