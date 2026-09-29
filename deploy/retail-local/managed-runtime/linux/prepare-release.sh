@@ -107,7 +107,7 @@ const descriptor = {
   channel: "pilot",
   platformTarget: "ubuntu-24.04-lts-x64",
   minimumAgentVersion: "0.5.0",
-  schemaVersion: "10.26",
+  schemaVersion: "10.30",
   rollbackSafe: false,
   createdAt,
   sourceCommit,

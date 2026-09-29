@@ -14,6 +14,29 @@ const EXCLUDED = new Map([
   ["tenant+cough+diarrhea.sql", "tenant-specific pharmacy template"],
   ["1.24__roles.sql", "superseded incompatible role schema; 001 is authoritative"],
 ]);
+// Preserve checksum-ledger continuity for migrations renumbered after parallel branches merged.
+const RENAMED_MIGRATIONS = new Map([
+  [
+    "10.29__bms_retail_local_macos_x64_release_assets.sql",
+    {
+      name: "10.26__bms_retail_local_macos_x64_release_assets.sql",
+      checksums: new Set([
+        "d5a3594cb8e0092395abc5d5f0f73ccada06e26d40789b13035234479b7fb00a",
+        "ea02ed4551ea7b024be8c8fe9f0edba159f3a1604b24a791fa18a3bbea3aeb18",
+      ]),
+    },
+  ],
+  [
+    "10.30__bms_onboarding_seed_archetypes.sql",
+    {
+      name: "10.27__bms_onboarding_seed_archetypes.sql",
+      checksums: new Set([
+        "678faccab66f024719d2b86bc5ec6cb8265fc86d4ffbdfcdfe6a30f9fc82c3d2",
+        "d8a442ffa4f42d790859fa0e7927a080faf4ed4dd94db99175f73d04901305cd",
+      ]),
+    },
+  ],
+]);
 
 function required(name) {
   const value = process.env[name]?.trim();
@@ -79,6 +102,25 @@ async function applyOne(client, name, sql) {
     }
     console.log(`skip  ${name}`);
     return;
+  }
+
+  const renamedFrom = RENAMED_MIGRATIONS.get(name);
+  if (renamedFrom) {
+    const legacy = await client.query(
+      `SELECT checksum FROM bms_local_schema_migrations WHERE name = $1`,
+      [renamedFrom.name],
+    );
+    if (legacy.rows[0]) {
+      if (!renamedFrom.checksums.has(legacy.rows[0].checksum)) {
+        throw new Error(`Migration ${renamedFrom.name} changed after it was applied; refusing to rename it`);
+      }
+      await client.query(
+        `UPDATE bms_local_schema_migrations SET name = $1, checksum = $2 WHERE name = $3`,
+        [name, digest, renamedFrom.name],
+      );
+      console.log(`rename ${renamedFrom.name} -> ${name}`);
+      return;
+    }
   }
 
   console.log(`apply ${name}`);

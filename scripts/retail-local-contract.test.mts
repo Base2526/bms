@@ -34,6 +34,8 @@ test("fresh database bootstrap has no built-in credential and uses the current f
 
 test("local migration runner is ordered, checksummed, locked, and excludes destructive SQL", () => {
   const runner = read("apps/web/scripts/retail-local-migrate.mjs");
+  const linuxRelease = read("deploy/retail-local/managed-runtime/linux/prepare-release.sh");
+  const releaseExample = JSON.parse(read("deploy/retail-local/managed-runtime/release-descriptor.example.json"));
   assert.match(runner, /pg_advisory_lock/);
   assert.match(runner, /bms_local_schema_migrations/);
   assert.match(runner, /changed after it was applied; refusing to continue/);
@@ -41,6 +43,12 @@ test("local migration runner is ordered, checksummed, locked, and excludes destr
   assert.match(runner, /002_normalize_roles_phase3_cleanup\.sql/);
   assert.match(runner, /tenant\+cough\+diarrhea\.sql/);
   assert.match(runner, /1\.24__roles\.sql/);
+  assert.match(runner, /RENAMED_MIGRATIONS/);
+  assert.match(runner, /10\.26__bms_retail_local_macos_x64_release_assets\.sql/);
+  assert.match(runner, /10\.27__bms_onboarding_seed_archetypes\.sql/);
+  assert.match(runner, /UPDATE bms_local_schema_migrations SET name = \$1, checksum = \$2 WHERE name = \$3/);
+  assert.match(linuxRelease, /schemaVersion: "10\.30"/);
+  assert.equal(releaseExample.schemaVersion, "10.30");
 });
 
 test("first-run provisioning is single-tenant, atomic, and never persists the raw device token", () => {

@@ -1,5 +1,5 @@
 -- =============================================================
--- 10.27  Keep onboarding sample-data runs aligned with shop archetypes
+-- 10.30  Keep onboarding sample-data runs aligned with shop archetypes
 -- -------------------------------------------------------------
 -- The store-profile constraints were expanded as new archetypes were added,
 -- but the resumable sample-seed ledger still accepted only the original 7.44
