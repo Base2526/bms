@@ -12,6 +12,13 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+trap {
+  Write-Host "`nBMS Retail Local Setup ยังไม่สำเร็จ" -ForegroundColor Red
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host "แก้ไขตามข้อความด้านบนแล้วเปิด installer อีกครั้ง ระบบจะติดตั้งต่อจากข้อมูลที่ปลอดภัย" -ForegroundColor Yellow
+  if ([Environment]::UserInteractive) { [void](Read-Host "กด Enter เพื่อปิดหน้าต่างนี้") }
+  exit 1
+}
 $distroName = "BMSRuntime"
 $runtimeData = "/var/lib/bms-retail-local"
 $LicenseEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
@@ -102,6 +109,75 @@ function Get-ShopArchetypeCatalog([string]$Path) {
 
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
+}
+
+function Write-Step([int]$Number, [string]$Message) {
+  Write-Host "`n[BMS $Number/7] $Message" -ForegroundColor Cyan
+}
+
+function Read-RequiredText([string]$Prompt) {
+  while ($true) {
+    $value = Read-Host $Prompt
+    if (-not [string]::IsNullOrWhiteSpace($value) -and $value -notmatch '[\r\n]') { return $value }
+    Write-Warning "$Prompt ไม่ถูกต้อง กรุณากรอกใหม่"
+  }
+}
+
+function Read-EmailAddress {
+  while ($true) {
+    $value = Read-Host "อีเมลผู้ดูแลร้าน"
+    if ($value -match '^[^\s@]+@[^\s@]+\.[^\s@]+$') { return $value }
+    Write-Warning "อีเมลไม่ถูกต้อง กรุณากรอกใหม่"
+  }
+}
+
+function Read-ConfirmedSecret([string]$Prompt, [string]$ConfirmPrompt, [string]$Pattern, [string]$Failure) {
+  while ($true) {
+    $value = ConvertTo-PlainSecret (Read-Host $Prompt -AsSecureString)
+    $confirmation = ConvertTo-PlainSecret (Read-Host $ConfirmPrompt -AsSecureString)
+    if ($value -ceq $confirmation -and $value -match $Pattern) { return $value }
+    Write-Warning $Failure
+  }
+}
+
+function Read-BusinessArchetype {
+  $options = @(
+    [pscustomobject]@{ Value = "mini_mart"; Label = "ร้านสะดวกซื้อ / ร้านขายของชำ" },
+    [pscustomobject]@{ Value = "fashion"; Label = "แฟชั่นและเสื้อผ้า" },
+    [pscustomobject]@{ Value = "home_kitchen"; Label = "บ้านและเครื่องครัว" },
+    [pscustomobject]@{ Value = "beauty_personal_care"; Label = "ความงามและของใช้ส่วนตัว" },
+    [pscustomobject]@{ Value = "food_beverage"; Label = "อาหารและเครื่องดื่มพร้อมขาย" },
+    [pscustomobject]@{ Value = "gadgets_accessories"; Label = "อุปกรณ์ไอทีและแกดเจ็ต" },
+    [pscustomobject]@{ Value = "b2b_wholesale"; Label = "ค้าส่ง / B2B" },
+    [pscustomobject]@{ Value = "gifts_seasonal"; Label = "ของขวัญและสินค้าตามเทศกาล" },
+    [pscustomobject]@{ Value = "pharmacy"; Label = "ร้านยา" },
+    [pscustomobject]@{ Value = "pet_supply"; Label = "ร้านอุปกรณ์สัตว์เลี้ยง" },
+    [pscustomobject]@{ Value = "building_materials"; Label = "ร้านวัสดุก่อสร้าง" },
+    [pscustomobject]@{ Value = "restaurant"; Label = "ร้านอาหาร / ระบบครัว" },
+    [pscustomobject]@{ Value = "board_game_cafe"; Label = "คาเฟ่บอร์ดเกม" },
+    [pscustomobject]@{ Value = "other"; Label = "ร้านประเภทอื่น" }
+  )
+  Write-Host "`nประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)"
+  for ($index = 0; $index -lt $options.Count; $index++) {
+    Write-Host ("{0,2}) {1}" -f ($index + 1), $options[$index].Label)
+  }
+  while ($true) {
+    $choice = 0
+    $raw = Read-Host "เลือกประเภทร้าน 1-$($options.Count)"
+    if ([int]::TryParse($raw, [ref]$choice) -and $choice -ge 1 -and $choice -le $options.Count) {
+      return [string]$options[$choice - 1].Value
+    }
+    Write-Warning "กรุณาเลือกหมายเลข 1-$($options.Count)"
+  }
+}
+
+function Read-SampleDataChoice {
+  while ($true) {
+    $answer = (Read-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]").Trim()
+    if ([string]::IsNullOrEmpty($answer) -or $answer -match '^(n|no)$') { return $false }
+    if ($answer -match '^(y|yes)$') { return $true }
+    Write-Warning "กรุณาตอบ y หรือ n"
+  }
 }
 
 function Get-ArtifactPath($Release, [string]$Name) {
@@ -224,6 +300,25 @@ if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathTy
   exit 0
 }
 
+Write-Step 1 "ตรวจสอบ Windows, CPU, RAM, WSL, Virtualization และพื้นที่ว่าง"
+$preflightOutput = & $installedAgent preflight 2>&1
+$preflightExit = $LASTEXITCODE
+try {
+  $preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
+} catch {
+  throw "อ่านผล preflight ไม่ได้: $($preflightOutput -join ' ')"
+}
+foreach ($message in @($preflight.warnings)) { Write-Warning $message }
+if ($preflightExit -ne 0 -or -not $preflight.ok) {
+  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("preflight ไม่ผ่าน") }
+  throw (($failureMessages + "กรุณาแก้ไขรายการด้านบนแล้วเปิด Setup อีกครั้ง") -join [Environment]::NewLine)
+}
+if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
+  Write-Host "Windows 10 22H2 รองรับเฉพาะเครื่องที่มี Extended Security Updates (ESU) ปัจจุบัน" -ForegroundColor Yellow
+  $esuAnswer = Read-Host "ตรวจหลักฐาน ESU แล้วให้พิมพ์ ESU-VERIFIED"
+  if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
+}
+
 # Activation is a one-time bootstrap only. Failure stays visible but never prevents setup or later
 # shop operations; support can issue a new activation code after installation.
 if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhiteSpace($LicenseId)) {
@@ -253,19 +348,6 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhi
   }
 }
 
-$preflightOutput = & $installedAgent preflight 2>&1
-$preflightExit = $LASTEXITCODE
-$preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
-if ($preflightExit -ne 0 -or -not $preflight.ok) {
-  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("preflight ไม่ผ่าน") }
-  throw ($failureMessages -join [Environment]::NewLine)
-}
-if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
-  Write-Host "Windows 10 22H2 รองรับเฉพาะเครื่องที่มี Extended Security Updates (ESU) ปัจจุบัน" -ForegroundColor Yellow
-  $esuAnswer = Read-Host "ตรวจหลักฐาน ESU แล้วให้พิมพ์ ESU-VERIFIED"
-  if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
-}
-
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
   if ($LASTEXITCODE -ne 0) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
@@ -293,12 +375,39 @@ if ($preflight.requiresReboot) {
   exit 3010
 }
 
+Write-Step 2 "รับข้อมูลร้านและผู้ดูแล"
+$provisionCheckpoint = "$runtimeData/provision-result.json"
+$hasProvisionCheckpoint = $false
+$knownDistros = @(& wsl.exe --list --quiet 2>$null | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
+if ($distroName -in $knownDistros) {
+  & wsl.exe -d $distroName -u root -- test -f $provisionCheckpoint
+  $hasProvisionCheckpoint = $LASTEXITCODE -eq 0
+}
+if ($hasProvisionCheckpoint) {
+  Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
+  $shopName = $adminName = $adminEmail = $adminPassword = $adminPin = ""
+  $businessArchetype = ""
+  $createSampleData = $false
+} else {
+  $shopName = Read-RequiredText "ชื่อร้าน"
+  $adminName = Read-RequiredText "ชื่อผู้ดูแลร้าน"
+  $adminEmail = Read-EmailAddress
+  $businessArchetype = Read-BusinessArchetype
+  $createSampleData = Read-SampleDataChoice
+  $adminPassword = Read-ConfirmedSecret "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" `
+    "ยืนยันรหัสผ่านอีกครั้ง" '^.{8,}$' "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่"
+  $adminPin = Read-ConfirmedSecret "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" `
+    "ยืนยัน PIN อีกครั้ง" '^\d{4,8}$' "PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่"
+}
+
+Write-Step 3 "ติดตั้งหรืออัปเดต private WSL runtime"
 & wsl.exe --update --web-download
 if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง/อัปเดต WSL ไม่สำเร็จ" }
 
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "release.jws.json"
+Write-Step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
 Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing
 
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
@@ -345,7 +454,12 @@ foreach ($control in @(
   if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $($control.Name) ไม่สำเร็จ" }
 }
 
+$script:loadingImagesShown = $false
 foreach ($component in @($release.components | Where-Object kind -eq "oci-image")) {
+  if (-not $script:loadingImagesShown) {
+    Write-Step 5 "โหลด Web, WS, PostgreSQL และ Redis"
+    $script:loadingImagesShown = $true
+  }
   $artifact = Get-ArtifactPath $release ([string]$component.name)
   & $installedAgent engine-load -engine windows-wsl -distro $distroName -artifact $artifact.path `
     -image-ref ([string]$component.imageRef) -digest ([string]$component.ociDigest)
@@ -381,55 +495,97 @@ if (-not $runtimeEnvExists) {
   Write-RuntimeText "$runtimeData/.env" (($envLines -join "`n") + "`n")
 }
 
-$shopName = Read-Host "ชื่อร้าน"
-$businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
-  $archetypeCatalog.Options $archetypeCatalog.DefaultValue
-$selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $businessArchetype)[0]
-if ($selectedArchetype.StarterCatalog) {
-  $sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
-    [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
-    [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
-  ) "STARTER_CATALOG"
+& wsl.exe -d $distroName -u root -- test -f $provisionCheckpoint
+if ($LASTEXITCODE -eq 0) {
+  $checkpointOutput = & wsl.exe -d $distroName -u root -- cat $provisionCheckpoint
+  if ($LASTEXITCODE -ne 0) { throw "อ่าน checkpoint ของร้านไม่สำเร็จ" }
+  $provisionResult = (($checkpointOutput -join [Environment]::NewLine) | ConvertFrom-Json)
+  $businessArchetype = [string]$provisionResult.businessArchetype
+  $sampleMode = if ($provisionResult.sampleData.mode) { [string]$provisionResult.sampleData.mode } else { "NONE" }
+  Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
 } else {
-  $sampleMode = "NONE"
-  Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+  $shopName = Read-Host "ชื่อร้าน"
+  $businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+    $archetypeCatalog.Options $archetypeCatalog.DefaultValue
+  $selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $businessArchetype)[0]
+  if ($selectedArchetype.StarterCatalog) {
+    $sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
+      [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
+      [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+    ) "STARTER_CATALOG"
+  } else {
+    $sampleMode = "NONE"
+    Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+  }
+  $adminName = Read-Host "ชื่อผู้ดูแลร้าน"
+  $adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
+  $adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)
+  $adminPin = ConvertTo-PlainSecret (Read-Host "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" -AsSecureString)
+  Assert-NoLineBreak "ชื่อร้าน" $shopName
+  Assert-NoLineBreak "ชื่อผู้ดูแล" $adminName
+  Assert-NoLineBreak "อีเมล" $adminEmail
+  Assert-NoLineBreak "รหัสผ่าน" $adminPassword
+  Assert-NoLineBreak "PIN" $adminPin
+
+  $provisionScript = @(
+    "#!/bin/sh",
+    "set -eu",
+    (ConvertTo-ShellExport "BMS_LOCAL_SHOP_NAME" $shopName),
+    (ConvertTo-ShellExport "BMS_LOCAL_SHOP_SLUG" "local-shop"),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_NAME" $adminName),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
+    (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
+    (ConvertTo-ShellExport "BMS_LOCAL_BUSINESS_ARCHETYPE" $businessArchetype),
+    (ConvertTo-ShellExport "BMS_LOCAL_SAMPLE_MODE" $sampleMode),
+    "cd $runtimeData",
+    "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
+  ) -join "`n"
+  Write-RuntimeText "$runtimeData/provision-once.sh" ($provisionScript + "`n") "0700"
+  $adminPassword = $null
+  $adminPin = $null
+  $provisionOutput = & wsl.exe -d $distroName -u root -- "$runtimeData/provision-once.sh" 2>&1
+  $provisionExit = $LASTEXITCODE
+  & wsl.exe -d $distroName -u root -- rm -f "$runtimeData/provision-once.sh"
+  if ($provisionExit -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
+  $resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
+  if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
+  $provisionResult = $resultLine | ConvertFrom-Json
+  Write-RuntimeText $provisionCheckpoint ($resultLine + "`n") "0600"
 }
-$adminName = Read-Host "ชื่อผู้ดูแลร้าน"
-$adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
-$adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)
-$adminPin = ConvertTo-PlainSecret (Read-Host "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" -AsSecureString)
-Assert-NoLineBreak "ชื่อร้าน" $shopName
-Assert-NoLineBreak "ชื่อผู้ดูแล" $adminName
-Assert-NoLineBreak "อีเมล" $adminEmail
-Assert-NoLineBreak "รหัสผ่าน" $adminPassword
-Assert-NoLineBreak "PIN" $adminPin
 
-$provisionScript = @(
-  "#!/bin/sh",
-  "set -eu",
-  (ConvertTo-ShellExport "BMS_LOCAL_SHOP_NAME" $shopName),
-  (ConvertTo-ShellExport "BMS_LOCAL_SHOP_SLUG" "local-shop"),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_NAME" $adminName),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_EMAIL" $adminEmail),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
-  (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
-  (ConvertTo-ShellExport "BMS_LOCAL_BUSINESS_ARCHETYPE" $businessArchetype),
-  (ConvertTo-ShellExport "BMS_LOCAL_SAMPLE_MODE" $sampleMode),
-  "cd $runtimeData",
-  "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
-) -join "`n"
-Write-RuntimeText "$runtimeData/provision-once.sh" ($provisionScript + "`n") "0700"
-$adminPassword = $null
-$adminPin = $null
+$sampleStatus = "SKIPPED"
+if ($provisionResult.PSObject.Properties.Name -contains "sampleData" -and $null -ne $provisionResult.sampleData) {
+  $sampleStatus = [string]$provisionResult.sampleData.status
+}
+if ($sampleStatus -eq "PENDING") {
+  # The protected checkpoint already contains the one-time token. Sample generation is therefore
+  # safe to retry after an interrupted setup without recreating the shop or losing pairing.
+  try {
+    $sampleOutput = Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f",
+      "$runtimeData/compose.yml", "--profile", "setup", "run", "--rm", "sample-data")
+    $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
+    if (-not $sampleLine) { throw "sample data process did not return a readable result" }
+    $provisionResult.sampleData = $sampleLine | ConvertFrom-Json
+    $provisionResult.sampleData | Add-Member -NotePropertyName mode -NotePropertyValue $sampleMode -Force
+  } catch {
+    $provisionResult.sampleData = [pscustomobject]@{
+      status = "FAILED"
+      requested = $true
+      mode = $sampleMode
+      message = "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน"
+    }
+  }
+  $sampleStatus = [string]$provisionResult.sampleData.status
+  Write-RuntimeText $provisionCheckpoint (($provisionResult | ConvertTo-Json -Compress -Depth 10) + "`n") "0600"
+}
+if ($sampleStatus -in @("COMPLETED", "ALREADY_COMPLETED")) {
+  Write-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" -ForegroundColor Green
+} elseif ($sampleStatus -eq "FAILED") {
+  Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
+}
 
-$provisionOutput = & wsl.exe -d $distroName -u root -- "$runtimeData/provision-once.sh" 2>&1
-$provisionExit = $LASTEXITCODE
-& wsl.exe -d $distroName -u root -- rm -f "$runtimeData/provision-once.sh"
-if ($provisionExit -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
-$resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
-if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
-$provisionResult = $resultLine | ConvertFrom-Json
-
+Write-Step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
 Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f", "$runtimeData/compose.yml", "up", "-d") | Out-Null
 $healthDeadline = [DateTime]::UtcNow.AddMinutes(4)
 $web = $null
@@ -481,13 +637,14 @@ if ($provisionResult.deviceToken) {
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
   businessArchetype = $provisionResult.businessArchetype
-  sampleMode = $provisionResult.sample.mode
-  sampleStatus = $provisionResult.sample.status
+  sampleMode = $provisionResult.sampleData.mode
+  sampleStatus = $provisionResult.sampleData.status
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
   -destination "$runtimeData/installation.json" -mode "0600"
 if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
+& wsl.exe -d $distroName -u root -- rm -f $provisionCheckpoint
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
 # change installation success, runtime startup, sales, payment, data access, backup, or recovery.
@@ -526,7 +683,5 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
 
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
-if ($provisionResult.sample.status -eq "FAILED") {
-  Write-Warning "Starter Catalog สร้างไม่สำเร็จ แต่ระบบหลักพร้อมใช้งาน: $($provisionResult.sample.error)"
-}
+Write-Step 7 "ติดตั้งสำเร็จ"
 Write-Host "BMS Retail Local พร้อมใช้งาน" -ForegroundColor Green

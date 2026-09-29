@@ -16,6 +16,14 @@ readonly CONFIG="$STATE_ROOT/lima.yaml"
 readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
 readonly LOG_PATH="$STATE_ROOT/host-service.log"
 PROVISION_DEVICE_TOKEN=""
+PROVISION_SAMPLE_STATUS=""
+SHOP_NAME=""
+ADMIN_NAME=""
+ADMIN_EMAIL=""
+ADMIN_PASSWORD=""
+ADMIN_PIN=""
+BUSINESS_ARCHETYPE=""
+SAMPLE_MODE="NONE"
 LAUNCH_LABEL="gui/$(id -u)/com.bms.retail-local"
 readonly LAUNCH_LABEL
 
@@ -24,6 +32,7 @@ export PATH="$SYSTEM_ROOT/runtime/lima/bin:$SYSTEM_ROOT/runtime/lima/libexec:/us
 
 die() { printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS] %s\n' "$*"; }
+step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 require_installed_payload() {
   [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
     die "ไฟล์ติดตั้งไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
@@ -46,6 +55,14 @@ verify_payload() {
 render_lima_config() {
   mkdir -p "$STATE_ROOT" "$LIMA_HOME"
   chmod 0700 "$STATE_ROOT" "$LIMA_HOME"
+  local platform_target lima_arch
+  platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
+  case "$platform_target" in
+    macos-15-arm64) lima_arch=aarch64 ;;
+    macos-15-x64) lima_arch=x86_64 ;;
+    *) die "package target ไม่รองรับ: $platform_target" ;;
+  esac
+
   local image_uri payload escaped_uri escaped_payload ubuntu_sha
   image_uri=$(file_uri "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img")
   payload=$(yaml_escape_sed "$PAYLOAD_ROOT")
@@ -54,7 +71,8 @@ render_lima_config() {
   ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
   [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
   [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
-  sed -e "s|__UBUNTU_IMAGE_URI__|$escaped_uri|g" \
+  sed -e "s|__LIMA_ARCH__|$lima_arch|g" \
+      -e "s|__UBUNTU_IMAGE_URI__|$escaped_uri|g" \
       -e "s|__UBUNTU_IMAGE_SHA256__|$ubuntu_sha|g" \
       -e "s|__PAYLOAD_ROOT__|$escaped_payload|g" \
       -e "s|__HOST_WEB_PORT__|$WEB_PORT|g" \
@@ -128,51 +146,178 @@ shell_export_line() {
   printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
 }
 
+select_business_archetype() {
+  local choice
+  while :; do
+    cat <<'EOF'
+
+ประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)
+  1) ร้านสะดวกซื้อ / ร้านขายของชำ
+  2) แฟชั่นและเสื้อผ้า
+  3) บ้านและเครื่องครัว
+  4) ความงามและของใช้ส่วนตัว
+  5) อาหารและเครื่องดื่มพร้อมขาย
+  6) อุปกรณ์ไอทีและแกดเจ็ต
+  7) ค้าส่ง / B2B
+  8) ของขวัญและสินค้าตามเทศกาล
+  9) ร้านยา
+ 10) ร้านอุปกรณ์สัตว์เลี้ยง
+ 11) ร้านวัสดุก่อสร้าง
+ 12) ร้านอาหาร / ระบบครัว
+ 13) คาเฟ่บอร์ดเกม
+ 14) ร้านประเภทอื่น
+EOF
+    read -r -p 'เลือกประเภทร้าน 1-14: ' choice
+    case "$choice" in
+      1) BUSINESS_ARCHETYPE=mini_mart ;;
+      2) BUSINESS_ARCHETYPE=fashion ;;
+      3) BUSINESS_ARCHETYPE=home_kitchen ;;
+      4) BUSINESS_ARCHETYPE=beauty_personal_care ;;
+      5) BUSINESS_ARCHETYPE=food_beverage ;;
+      6) BUSINESS_ARCHETYPE=gadgets_accessories ;;
+      7) BUSINESS_ARCHETYPE=b2b_wholesale ;;
+      8) BUSINESS_ARCHETYPE=gifts_seasonal ;;
+      9) BUSINESS_ARCHETYPE=pharmacy ;;
+      10) BUSINESS_ARCHETYPE=pet_supply ;;
+      11) BUSINESS_ARCHETYPE=building_materials ;;
+      12) BUSINESS_ARCHETYPE=restaurant ;;
+      13) BUSINESS_ARCHETYPE=board_game_cafe ;;
+      14) BUSINESS_ARCHETYPE=other ;;
+      *) printf 'กรุณาเลือกหมายเลข 1-14\n' >&2; continue ;;
+    esac
+    break
+  done
+}
+
+select_sample_data() {
+  local answer
+  while :; do
+    read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
+    case "$answer" in
+      y|Y|yes|YES) SAMPLE_MODE=STARTER_CATALOG; return ;;
+      ''|n|N|no|NO) SAMPLE_MODE=NONE; return ;;
+      *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
+    esac
+  done
+}
+
+collect_shop_details() {
+  local password_confirm pin_confirm
+  printf '\nข้อมูลร้านแรกเริ่ม (เก็บใน private VM เท่านั้น)\n'
+  while [[ -z $SHOP_NAME ]]; do read -r -p 'ชื่อร้าน: ' SHOP_NAME; done
+  while [[ -z $ADMIN_NAME ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' ADMIN_NAME; done
+  while [[ ! $ADMIN_EMAIL =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
+    read -r -p 'อีเมลผู้ดูแลร้าน: ' ADMIN_EMAIL
+    [[ $ADMIN_EMAIL =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
+      printf 'อีเมลไม่ถูกต้อง กรุณากรอกใหม่\n' >&2
+  done
+  select_business_archetype
+  select_sample_data
+  while :; do
+    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' ADMIN_PASSWORD; printf '\n'
+    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
+    if [[ ${#ADMIN_PASSWORD} -ge 8 && $ADMIN_PASSWORD == "$password_confirm" ]]; then break; fi
+    printf 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่\n' >&2
+  done
+  while :; do
+    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' ADMIN_PIN; printf '\n'
+    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
+    if [[ $ADMIN_PIN =~ ^[0-9]{4,8}$ && $ADMIN_PIN == "$pin_confirm" ]]; then break; fi
+    printf 'PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่\n' >&2
+  done
+}
+
+run_sample_data() {
+  # This helper is called under `set -e`; skipping optional sample data is a successful path.
+  # A bare `[[ ... ]] || return` would return status 1 and abort setup after provisioning.
+  if [[ $PROVISION_SAMPLE_STATUS != PENDING ]]; then
+    return 0
+  fi
+  # provision-result.json is already mode 0600 inside the private VM and contains the one-time
+  # token. From this point a sample-data interruption is retryable and cannot lose pairing.
+  guest sudo sh -c '
+    set -eu
+    root=/var/lib/bms-retail-local
+    raw="$root/.sample-result.$$"
+    json="$root/.sample-result-json.$$"
+    trap '\''rm -f "$raw" "$json"'\'' EXIT HUP INT TERM
+    cd "$root"
+    docker compose --env-file .env -f compose.yml --profile setup run --rm sample-data >"$raw" 2>&1 || true
+    if grep -E '\''^\{"status"'\'' "$raw" | tail -n 1 >"$json" && [ -s "$json" ]; then
+      :
+    else
+      printf '\''%s\n'\'' '\''{"status":"FAILED","requested":true,"message":"sample data process did not return a readable result"}'\'' >"$json"
+    fi
+    install -m 0600 "$json" "$root/sample-result.json"
+  ' bms-runtime
+
+  local result_file
+  result_file="$STATE_ROOT/.sample-result-$(random_suffix).json"
+  umask 077
+  guest sudo cat /var/lib/bms-retail-local/sample-result.json >"$result_file" 2>/dev/null || true
+  PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract status raw -o - "$result_file" 2>/dev/null || printf 'FAILED')
+  rm -f -- "$result_file"
+}
+
 provision_shop() {
-  if guest sudo test -f /var/lib/bms-retail-local/provisioned; then
+  if guest sudo test -f /var/lib/bms-retail-local/provision-result.json; then
     note "พบร้านที่ provision แล้ว ดำเนินการ setup ต่อจากครั้งก่อน"
+    local checkpoint_file
+    checkpoint_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
+    umask 077
+    guest sudo cat /var/lib/bms-retail-local/provision-result.json >"$checkpoint_file" 2>/dev/null || true
+    PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$checkpoint_file" 2>/dev/null || true)
+    PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$checkpoint_file" 2>/dev/null || true)
+    rm -f -- "$checkpoint_file"
+    run_sample_data
+    case "$PROVISION_SAMPLE_STATUS" in
+      COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
+      FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+    esac
     return
   fi
-  local shop_name admin_name admin_email admin_password admin_pin
-  printf '\nข้อมูลร้านแรกเริ่ม (เก็บใน private VM เท่านั้น)\n'
-  read -r -p 'ชื่อร้าน: ' shop_name
-  read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
-  read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
-  read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
-  read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
-  [[ -n $shop_name && -n $admin_name && $admin_email == *@* ]] || die "ชื่อร้าน ชื่อผู้ดูแล หรืออีเมลไม่ถูกต้อง"
-  [[ ${#admin_password} -ge 8 ]] || die "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"
-  [[ $admin_pin =~ ^[0-9]{4,8}$ ]] || die "PIN ต้องเป็นตัวเลข 4-8 หลัก"
-  [[ $shop_name != *$'\n'* && $admin_name != *$'\n'* && $admin_email != *$'\n'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
+  [[ -n $SHOP_NAME && -n $ADMIN_NAME && -n $ADMIN_EMAIL && -n $ADMIN_PASSWORD && -n $ADMIN_PIN &&
+     -n $BUSINESS_ARCHETYPE && $SAMPLE_MODE =~ ^(NONE|STARTER_CATALOG)$ ]] || \
+    die "ข้อมูล setup ไม่ครบ กรุณาเปิด Setup ใหม่"
 
   local provision_result result_file
   provision_result=$({
     printf '#!/bin/sh\nset -eu\numask 077\n'
-    shell_export_line BMS_LOCAL_SHOP_NAME "$shop_name"
+    shell_export_line BMS_LOCAL_SHOP_NAME "$SHOP_NAME"
     shell_export_line BMS_LOCAL_SHOP_SLUG local-shop
-    shell_export_line BMS_LOCAL_ADMIN_NAME "$admin_name"
-    shell_export_line BMS_LOCAL_ADMIN_EMAIL "$admin_email"
-    shell_export_line BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
-    shell_export_line BMS_LOCAL_ADMIN_PIN "$admin_pin"
+    shell_export_line BMS_LOCAL_ADMIN_NAME "$ADMIN_NAME"
+    shell_export_line BMS_LOCAL_ADMIN_EMAIL "$ADMIN_EMAIL"
+    shell_export_line BMS_LOCAL_ADMIN_PASSWORD "$ADMIN_PASSWORD"
+    shell_export_line BMS_LOCAL_ADMIN_PIN "$ADMIN_PIN"
+    shell_export_line BMS_LOCAL_BUSINESS_ARCHETYPE "$BUSINESS_ARCHETYPE"
+    shell_export_line BMS_LOCAL_SAMPLE_MODE "$SAMPLE_MODE"
     cat <<'EOF'
 root=/var/lib/bms-retail-local
 result="$root/.provision-result.$$"
 trap 'rm -f "$result"' EXIT HUP INT TERM
 cd "$root"
 docker compose --env-file .env -f compose.yml --profile setup run --rm provision >"$result"
-grep -E '^\{"status"' "$result"
+grep -E '^\{"status"' "$result" | tail -n 1 >"$root/provision-result.json"
+chmod 0600 "$root/provision-result.json"
 install -m 0600 /dev/null "$root/provisioned"
+cat "$root/provision-result.json"
 EOF
   } | "$LIMACTL" shell "$INSTANCE" sudo sh -s)
   result_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
   umask 077
   printf '%s\n' "$provision_result" | grep -E '^\{"status"' | tail -n 1 >"$result_file"
   PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null || true)
+  PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$result_file" 2>/dev/null || true)
   rm -f -- "$result_file"
   [[ -z $PROVISION_DEVICE_TOKEN || $PROVISION_DEVICE_TOKEN =~ ^pos_[A-Za-z0-9_-]{16,}$ ]] || \
     die "ผลลัพธ์ pairing token ไม่ถูกต้อง"
-  unset admin_password admin_pin
+  ADMIN_PASSWORD=""; ADMIN_PIN=""
   note "สร้างร้าน ผู้ดูแล สาขา MAIN และเครื่อง POS-01 แล้ว"
+  run_sample_data
+  case "$PROVISION_SAMPLE_STATUS" in
+    COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
+    FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+  esac
 }
 
 launch_pos_desktop() {
@@ -272,13 +417,23 @@ wait_for_guest_doctor() {
 setup_runtime() {
   require_installed_payload
   [[ ! -f $RECEIPT ]] || die "ติดตั้งเรียบร้อยแล้ว ใช้คำสั่ง status หรือ doctor แทน"
-  "$AGENT" preflight >/dev/null || die "เครื่องนี้ไม่ผ่าน macOS Managed Runtime preflight"
+  step 1 "ตรวจสอบ macOS, CPU, RAM, Virtualization และพื้นที่ว่าง"
+  "$AGENT" preflight --human || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วเปิด BMS Retail Local อีกครั้ง"
+  step 2 "ตรวจสอบไฟล์ติดตั้ง"
   verify_payload
   render_lima_config
+  step 3 "เตรียม private runtime"
   start_setup_vm
+  if ! guest sudo test -f /var/lib/bms-retail-local/provisioned; then
+    step 4 "รับข้อมูลร้านและผู้ดูแล"
+    collect_shop_details
+  else
+    step 4 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
+  fi
+  step 5 "ติดตั้ง Web, WS, PostgreSQL และ Redis"
   install_release
   provision_shop
-  note "เริ่ม Web, WS, PostgreSQL และ Redis"
+  step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
   guest sudo /usr/local/bin/bms-localctl start
   wait_for_http
   wait_for_guest_doctor
@@ -289,6 +444,8 @@ setup_runtime() {
     wait_for_http
     launch_pos_desktop
   fi
+  guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
+  step 7 "ติดตั้งสำเร็จ"
   note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
 }
 
@@ -300,6 +457,54 @@ stop_runtime() {
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
   if [[ $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE"; fi
   note "หยุด Retail Local แล้ว"
+}
+
+uninstall_runtime() {
+  local erase_data=false confirmation=""
+  while (($#)); do
+    case "$1" in
+      --erase-data) erase_data=true; shift ;;
+      --confirm) confirmation=${2:-}; shift 2 ;;
+      *) die "usage: bms-retail-local uninstall [--erase-data --confirm ERASE-BMS-RETAIL-LOCAL]" ;;
+    esac
+  done
+
+  if [[ ${EUID:-$(id -u)} -eq 0 && -z ${BMS_RETAIL_LOCAL_ALLOW_ROOT_UNINSTALL:-} ]]; then
+    die "อย่ารัน uninstall ด้วย sudo โดยตรง เพราะข้อมูลร้านอยู่ใต้ user ที่ setup ให้รันแบบ user ปกติ"
+  fi
+
+  launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
+  if [[ -x $LIMACTL && $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE" || true; fi
+  rm -f -- "$LAUNCH_AGENT"
+
+  if [[ $erase_data != true ]]; then
+    note "หยุดและถอด startup แล้ว"
+    note "ข้อมูลร้าน, private VM และ secrets ยังอยู่ใน: $STATE_ROOT"
+    note "ใช้ bms-retail-local backup ก่อน และใช้ uninstall --erase-data เฉพาะเมื่อต้องการลบถาวร"
+    return
+  fi
+
+  if [[ -z $confirmation ]]; then
+    read -r -p 'การลบถาวรกู้คืนไม่ได้ พิมพ์ ERASE-BMS-RETAIL-LOCAL: ' confirmation
+  fi
+  [[ $confirmation == ERASE-BMS-RETAIL-LOCAL ]] || die "ยกเลิกการลบข้อมูล"
+
+  if [[ -x $LIMACTL ]]; then
+    "$LIMACTL" delete -f "$INSTANCE" >/dev/null 2>&1 || true
+  fi
+  local package_type pos_app_target=""
+  package_type=$(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true)
+  [[ $package_type != server-pos ]] || pos_app_target="/Applications/BMS POS.app"
+  rm -rf -- "$STATE_ROOT" "$LIMA_HOME"
+  if [[ -n $pos_app_target ]]; then
+    sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app" "$pos_app_target"
+  else
+    sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
+  fi
+  sudo rm -f -- "/Applications/BMS Retail Local Uninstall.command"
+  sudo rm -f -- /usr/local/bin/bms-retail-local
+  sudo pkgutil --forget com.base2526.bms.retail-local >/dev/null 2>&1 || true
+  note "ลบ BMS Retail Local และข้อมูลในเครื่องแล้ว"
 }
 
 show_status() {
@@ -350,6 +555,7 @@ case "${1:-}" in
   ensure-running) ensure_runtime ;;
   stop) stop_runtime ;;
   restart) stop_runtime; start_runtime ;;
+  uninstall) shift; uninstall_runtime "$@" ;;
   status) show_status ;;
   doctor) doctor ;;
   backup) shift; backup_runtime "$@" ;;
@@ -360,6 +566,6 @@ case "${1:-}" in
   open) open "http://127.0.0.1:$WEB_PORT/admin/login" ;;
   host-service) host_service ;;
   *)
-    die "usage: bms-retail-local <setup|start|ensure-running|stop|restart|status|doctor|backup|logs|open>"
+    die "usage: bms-retail-local <setup|start|ensure-running|stop|restart|uninstall|status|doctor|backup|logs|open>"
     ;;
 esac

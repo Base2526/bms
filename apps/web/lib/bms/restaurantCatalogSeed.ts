@@ -190,6 +190,8 @@ export type RestaurantMenuSize = {
 export type RestaurantMenuItem = {
   code: string;
   name: string;
+  /** Project-owned photo that depicts this exact sample menu; omit instead of showing an unrelated image. */
+  sampleImageUrl?: string;
   category: string;
   /** กระดานครัวจัดกลุ่มด้วยคีย์นี้ และ SLA ของ 9.53 ตั้งค่าต่อสถานี */
   station: string;
@@ -218,6 +220,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   // ---- อาหารจานเดียว (ครัวร้อน · ปรุงสดตามสูตร) ----
   {
     code: "KAPRAO-PORK", name: "ข้าวกะเพราหมูสับ", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/kaprao-pork.jpg",
     stockPolicy: "RECIPE", price: 79, description: "กะเพราหมูสับรสจัด ผัดไฟแรง เสิร์ฟพร้อมข้าวสวย",
     keywords: ["กะเพรา", "ข้าวกะเพรา", "หมูสับ", "ผัดกะเพรา"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "PORK-MINCE", qty: 90 }, { code: "BASIL", qty: 12 }, { code: "GARLIC", qty: 8 }, { code: "CHILI", qty: 6 }, { code: "FISH-SAUCE", qty: 10 }],
@@ -225,6 +228,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "KAPRAO-CHICKEN", name: "ข้าวกะเพราไก่", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/kaprao-chicken.jpg",
     stockPolicy: "RECIPE", price: 75, description: "กะเพราไก่สับ เผ็ดหอมใบกะเพรา",
     keywords: ["กะเพราไก่", "ข้าวกะเพรา", "ไก่"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "CHICKEN", qty: 90 }, { code: "BASIL", qty: 12 }, { code: "GARLIC", qty: 8 }, { code: "CHILI", qty: 6 }, { code: "FISH-SAUCE", qty: 10 }],
@@ -232,6 +236,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "KAPRAO-SEAFOOD", name: "ข้าวกะเพราทะเล", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/kaprao-seafood.jpg",
     stockPolicy: "RECIPE", price: 99, description: "กะเพรากุ้งและปลาหมึกสด",
     keywords: ["กะเพราทะเล", "กุ้ง", "ปลาหมึก"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "SHRIMP", qty: 60 }, { code: "SQUID", qty: 60 }, { code: "BASIL", qty: 12 }, { code: "GARLIC", qty: 8 }, { code: "CHILI", qty: 6 }],
@@ -239,6 +244,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "FRIEDRICE-PORK", name: "ข้าวผัดหมู", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/friedrice-pork.jpg",
     stockPolicy: "RECIPE", price: 75, description: "ข้าวผัดหมูใส่ไข่ หอมกระทะ",
     keywords: ["ข้าวผัด", "ข้าวผัดหมู", "หมู"],
     recipe: [{ code: "RICE", qty: 260 }, { code: "PORK-SLICE", qty: 80 }, { code: "EGG", qty: 1 }, { code: "VEG-MIX", qty: 40 }, { code: "SAUCE-OYSTER", qty: 12 }],
@@ -246,6 +252,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "FRIEDRICE-SHRIMP", name: "ข้าวผัดกุ้ง", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/friedrice-shrimp.jpg",
     stockPolicy: "RECIPE", price: 95, description: "ข้าวผัดกุ้งสด เสิร์ฟพร้อมมะนาวและแตงกวา",
     keywords: ["ข้าวผัดกุ้ง", "กุ้ง", "ข้าวผัด"],
     recipe: [{ code: "RICE", qty: 260 }, { code: "SHRIMP", qty: 90 }, { code: "EGG", qty: 1 }, { code: "VEG-MIX", qty: 40 }, { code: "LIME", qty: 1 }],
@@ -253,6 +260,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "PORK-GARLIC", name: "ข้าวหมูกระเทียม", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/pork-garlic.jpg",
     stockPolicy: "RECIPE", price: 75, description: "หมูผัดกระเทียมพริกไทย ราดข้าวสวยร้อน ๆ",
     keywords: ["หมูกระเทียม", "ข้าวหมูกระเทียม", "กระเทียม"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "PORK-SLICE", qty: 90 }, { code: "GARLIC", qty: 15 }, { code: "SAUCE-OYSTER", qty: 12 }],
@@ -260,6 +268,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "KALE-CRISPYPORK", name: "ข้าวคะน้าหมูกรอบ", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/kale-crispy-pork.jpg",
     stockPolicy: "RECIPE", price: 85, description: "คะน้าฮ่องกงผัดหมูกรอบ ราดข้าว",
     keywords: ["คะน้าหมูกรอบ", "หมูกรอบ", "คะน้า"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "PORK-CRISPY", qty: 80 }, { code: "KALE", qty: 90 }, { code: "GARLIC", qty: 8 }, { code: "SAUCE-OYSTER", qty: 15 }],
@@ -267,6 +276,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "OMELETTE-RICE", name: "ข้าวไข่เจียวหมูสับ", category: "อาหารจานเดียว", station: STATION_FRY,
+    sampleImageUrl: "/sample/restaurant/omelette-rice.jpg",
     stockPolicy: "RECIPE", price: 69, description: "ไข่เจียวหมูสับฟูกรอบ ราดซอสพริก",
     keywords: ["ไข่เจียว", "ข้าวไข่เจียว", "หมูสับ"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "EGG", qty: 2 }, { code: "PORK-MINCE", qty: 50 }, { code: "FISH-SAUCE", qty: 8 }],
@@ -274,6 +284,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "CURRY-GREEN-CHICKEN", name: "ข้าวแกงเขียวหวานไก่", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/green-curry-chicken.jpg",
     stockPolicy: "RECIPE", price: 89, description: "แกงเขียวหวานไก่กะทิสด ราดข้าว",
     keywords: ["แกงเขียวหวาน", "เขียวหวานไก่", "แกง"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "CHICKEN", qty: 90 }, { code: "COCONUT-MILK", qty: 120 }, { code: "CURRY-GREEN", qty: 30 }, { code: "VEG-MIX", qty: 40 }],
@@ -282,6 +293,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
 
   {
     code: "PRIKKHING-CRISPYPORK", name: "ข้าวผัดพริกแกงหมูกรอบ", category: "อาหารจานเดียว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/prikkhing-crispy-pork.jpg",
     stockPolicy: "RECIPE", price: 85, description: "ผัดพริกแกงหมูกรอบใส่ถั่วฝักยาว ราดข้าว",
     keywords: ["ผัดพริกแกง", "พริกขิง", "หมูกรอบ"],
     recipe: [{ code: "RICE", qty: 250 }, { code: "PORK-CRISPY", qty: 80 }, { code: "CURRY-RED", qty: 25 }, { code: "VEG-MIX", qty: 60 }],
@@ -291,6 +303,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   // ---- กับข้าว (ครัวร้อน · สั่งแยกจานเล็ก/จานใหญ่) ----
   {
     code: "STIRFRY-MORNINGGLORY", name: "ผัดผักบุ้งไฟแดง", category: "กับข้าว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/stirfry-morning-glory.jpg",
     stockPolicy: "RECIPE", price: 79, description: "ผักบุ้งไทยผัดไฟแรง เต้าเจี้ยวและพริกสด",
     keywords: ["ผัดผักบุ้ง", "ผักบุ้งไฟแดง", "ผัดผัก"],
     sizes: [{ code: "จานเล็ก", price: 79 }, { code: "จานใหญ่", price: 129, recipeScale: 1.6 }],
@@ -299,6 +312,7 @@ export const RESTAURANT_MENU: RestaurantMenuItem[] = [
   },
   {
     code: "STIRFRY-VEG", name: "ผัดผักรวมมิตร", category: "กับข้าว", station: STATION_WOK,
+    sampleImageUrl: "/sample/restaurant/stirfry-mixed-vegetables.jpg",
     stockPolicy: "RECIPE", price: 79, description: "ผักรวมผัดน้ำมันหอย ใส่หมูหรือไก่ได้",
     keywords: ["ผัดผักรวม", "ผัดผัก", "ผักรวมมิตร"],
     sizes: [{ code: "จานเล็ก", price: 79 }, { code: "จานใหญ่", price: 129, recipeScale: 1.6 }],

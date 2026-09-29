@@ -11,7 +11,8 @@ chown -R root:wheel "$app"
 chmod -R go-w "$root" "$app"
 chmod 0755 "$root/control/bms-retail-local" "/usr/local/bin/bms-retail-local" \
   "$app/Contents/MacOS/BMS Retail Local" \
-  "$app/Contents/Resources/BMS Retail Local Setup.command"
+  "$app/Contents/Resources/BMS Retail Local Setup.command" \
+  "/Applications/BMS Retail Local Uninstall.command"
 package_type=$(cat "$root/payload/PACKAGE_TYPE" 2>/dev/null || true)
 if [ "$package_type" = server-pos ]; then
   if [ ! -d "$pos_app" ]; then
@@ -24,4 +25,12 @@ if [ "$package_type" = server-pos ]; then
 fi
 if [ -f "$legacy" ]; then unlink "$legacy"; fi
 touch "$app"
-printf '%s\n' 'BMS Retail Local installed. Open Applications/BMS Retail Local.app to provision or start the server.'
+console_user=$(stat -f %Su /dev/console 2>/dev/null || true)
+if [ -n "$console_user" ] && [ "$console_user" != root ]; then
+  console_uid=$(id -u "$console_user" 2>/dev/null || true)
+  if [ -n "$console_uid" ]; then
+    /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+      /usr/bin/open -a "$app" >/dev/null 2>&1 || true
+  fi
+fi
+printf '%s\n' 'BMS Retail Local installed. Setup should open automatically; if it does not, open Applications/BMS Retail Local.app to provision or start the server.'

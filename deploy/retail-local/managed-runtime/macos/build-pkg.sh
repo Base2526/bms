@@ -200,6 +200,7 @@ cp "$macos_root/bms-retail-local" "$install_root/control/bms-retail-local"
 cp "$macos_root/bms-retail-local" "$package_root/usr/local/bin/bms-retail-local"
 cp "$macos_root/bms-retail-local-app" "$app_contents/MacOS/BMS Retail Local"
 cp "$macos_root/bms-retail-local-setup.command" "$app_contents/Resources/BMS Retail Local Setup.command"
+cp "$macos_root/BMS Retail Local Uninstall.command" "$package_root/Applications/BMS Retail Local Uninstall.command"
 cp "$macos_root/BMSRetailLocal.icns" "$app_contents/Resources/BMSRetailLocal.icns"
 cat >"$app_contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -230,7 +231,8 @@ chmod 0755 "$payload/bin/bms-runtime-agent" "$payload/bms-localctl" \
   "$payload/runtime/docker-compose" \
   "$install_root/control/bms-retail-local" "$package_root/usr/local/bin/bms-retail-local" \
   "$app_contents/MacOS/BMS Retail Local" \
-  "$app_contents/Resources/BMS Retail Local Setup.command"
+  "$app_contents/Resources/BMS Retail Local Setup.command" \
+  "$package_root/Applications/BMS Retail Local Uninstall.command"
 chmod -R go-w "$install_root"
 xattr -cr "$package_root"
 checksum_file="$work/SHA256SUMS"

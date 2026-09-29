@@ -110,6 +110,17 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  sample-data:
+    profiles: ["setup"]
+    image: bms-retail-local-web:${BMS_LOCAL_IMAGE_TAG:-dev}
+    environment:
+      <<: *web-runtime
+    command: ["./node_modules/.bin/tsx", "scripts/retail-local-sample-data.mts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   ws:
     image: bms-retail-local-ws:${BMS_LOCAL_IMAGE_TAG:-dev}
     build:
@@ -166,4 +177,3 @@ services:
 volumes:
   postgres_data:
   redis_data:
-

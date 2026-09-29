@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -41,12 +42,12 @@ func platformPreflight() preflightResult {
 		result.fail("Windows build ไม่อยู่ใน support matrix ของ Managed Runtime")
 	}
 	if facts.MemoryGiB < 8 {
-		result.fail("ต้องมี RAM อย่างน้อย 8 GiB")
+		result.fail(fmt.Sprintf("ต้องมี RAM อย่างน้อย 8 GiB; พบ %.1f GiB", facts.MemoryGiB))
 	}
 	if facts.FreeGiB < 8 {
-		result.fail("ต้องมีพื้นที่ว่างอย่างน้อย 8 GiB")
+		result.fail(fmt.Sprintf("พื้นที่ว่างปัจจุบัน %.1f GiB; ต้องมีอย่างน้อย 8 GiB", facts.FreeGiB))
 	} else if facts.FreeGiB < 15 {
-		result.warn("ควรมีพื้นที่ว่างอย่างน้อย 15 GiB สำหรับ update และ backup")
+		result.warn(fmt.Sprintf("พื้นที่ว่างปัจจุบัน %.1f GiB; แนะนำอย่างน้อย 15 GiB สำหรับ update และ backup", facts.FreeGiB))
 	}
 	if facts.VirtualizationFirmware != nil && !*facts.VirtualizationFirmware {
 		result.fail("ยังไม่ได้เปิด hardware virtualization ใน BIOS/UEFI")

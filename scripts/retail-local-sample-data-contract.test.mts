@@ -1,8 +1,16 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
+import { __devSeedSampleCatalogTest } from "../apps/web/lib/bms/devSeed";
 import { __sampleDataTest } from "../apps/web/lib/bms/sampleData";
+import {
+  ONBOARDING_SAMPLE_IMAGE_PRODUCTS,
+  STARTER_SAMPLE_IMAGE_PRODUCTS,
+  onboardingSampleImageUrl,
+} from "../apps/web/lib/bms/sampleCatalogImages";
+import { RESTAURANT_MENU } from "../apps/web/lib/bms/restaurantCatalogSeed";
 import {
   isShopArchetypeAvailableForNewInstall,
   isValidShopArchetype,
@@ -11,6 +19,7 @@ import {
 } from "../apps/web/lib/bms/shopArchetypes";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
+const readBytes = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url));
 const json = (path: string) => JSON.parse(read(path));
 const archetypeManifest = json("packages/retail-local-contract/shop-archetypes.json");
 
@@ -44,6 +53,11 @@ test("Starter Catalog covers every supported shop archetype with a bounded draft
   for (const archetype of archetypes) {
     const products = __sampleDataTest.catalogs[archetype];
     assert.equal(products.length, 4, `${archetype} must have exactly four examples`);
+    assert.deepEqual(
+      products.map((product) => product.name),
+      STARTER_SAMPLE_IMAGE_PRODUCTS[archetype],
+      `${archetype} Starter Catalog names must stay bound to their product images`
+    );
     assert.equal(new Set(products.map((product) => product.code)).size, products.length);
     for (const product of products) {
       assert.ok(product.name.includes("ตัวอย่าง"), `${archetype}/${product.code} must be visibly labelled`);
@@ -53,6 +67,66 @@ test("Starter Catalog covers every supported shop archetype with a bounded draft
       assert.ok(!product.surfaces?.includes("CUSTOMER_AI"));
       assert.ok(!product.surfaces?.includes("ONLINE_ORDER"));
     }
+  }
+});
+
+test("every sample product shown during onboarding has a bundled product-specific image", () => {
+  const archetypes = archetypeManifest.archetypes.map((entry: { id: string }) => entry.id);
+  const hashes = new Set<string>();
+
+  const verifyImage = (imageUrl: string, context: string) => {
+    assert.match(imageUrl, /^\/sample\/(?:catalog|starter)\/[a-z0-9_]+\/\d{2}\.jpg$/, `${context} must use a local sample image`);
+    const bytes = readBytes(`apps/web/public${imageUrl}`);
+    assert.ok(bytes.length > 3_000, `${context} image is unexpectedly small`);
+    assert.deepEqual(Array.from(bytes.subarray(0, 3)), [0xff, 0xd8, 0xff], `${context} must be a JPEG`);
+    const hash = createHash("sha256").update(bytes).digest("hex");
+    assert.ok(!hashes.has(hash), `${context} reuses another product image`);
+    hashes.add(hash);
+  };
+
+  for (const archetype of archetypes) {
+    const starterProducts = __sampleDataTest.catalogs[archetype];
+    starterProducts.forEach((product) => {
+      const imageUrl = __sampleDataTest.imageUrlFor(archetype, product.name);
+      assert.ok(imageUrl, `${archetype}/${product.code} is missing its Starter Catalog image`);
+      verifyImage(imageUrl, `starter ${archetype}/${product.code}`);
+    });
+
+    if (archetype === "restaurant") {
+      assert.ok(RESTAURANT_MENU.length >= 12);
+      RESTAURANT_MENU.slice(0, 12).forEach((product) => {
+        assert.ok(product.sampleImageUrl, `restaurant/${product.code} is missing its onboarding image`);
+        const bytes = readBytes(`apps/web/public${product.sampleImageUrl}`);
+        assert.ok(bytes.length > 4_000, `restaurant/${product.code} image is unexpectedly small`);
+        assert.deepEqual(Array.from(bytes.subarray(0, 3)), [0xff, 0xd8, 0xff]);
+        const hash = createHash("sha256").update(bytes).digest("hex");
+        assert.ok(!hashes.has(hash), `restaurant/${product.code} reuses another product image`);
+        hashes.add(hash);
+      });
+      continue;
+    }
+
+    const catalog = __devSeedSampleCatalogTest.catalogs[archetype];
+    const expectedProductNames = ONBOARDING_SAMPLE_IMAGE_PRODUCTS[archetype];
+    assert.ok(catalog, `${archetype} must have a curated onboarding catalog`);
+    assert.ok(expectedProductNames, `${archetype} must have an onboarding image manifest`);
+    assert.deepEqual(
+      catalog.slice(0, expectedProductNames.length).map((product) => product.name),
+      expectedProductNames,
+      `${archetype} onboarding product names must stay bound to their images`
+    );
+    for (const productName of expectedProductNames) {
+      const imageUrl = onboardingSampleImageUrl(archetype, productName);
+      assert.ok(imageUrl, `${archetype}/${productName} is missing its onboarding image`);
+      verifyImage(imageUrl, `onboarding ${archetype}/${productName}`);
+    }
+  }
+
+  const seed = read("apps/web/lib/bms/devSeed.ts");
+  assert.doesNotMatch(seed, /picsum\.photos/);
+  assert.match(seed, /onboardingSampleImageUrl\(archetype!, item\.name\)/);
+  for (const archetype of archetypes.filter((value: string) => value !== "restaurant")) {
+    assert.match(seed, new RegExp(`\\n  ${archetype}: \\[`), `${archetype} must have a curated onboarding catalog`);
   }
 });
 
@@ -91,6 +165,7 @@ test("sample ownership is registry-backed, tenant-scoped, and cleanup is guarded
 test("first-run installers pass shop type and optional Starter Catalog explicitly", () => {
   const service = read("apps/web/lib/bms/localProvisioning.ts");
   const runner = read("apps/web/scripts/retail-local-provision.mts");
+  const sampleRunner = read("apps/web/scripts/retail-local-sample-data.mts");
   const compose = read("deploy/retail-local/compose.yml");
   const managedCompose = read("deploy/retail-local/managed-runtime/compose.managed.yml");
   const windows = read("deploy/retail-local/install.ps1");
@@ -105,9 +180,9 @@ test("first-run installers pass shop type and optional Starter Catalog explicitl
   assert.match(service, /normalizeShopArchetype\(input\.businessArchetype/);
   assert.match(service, /archetypeToBusinessType\(businessArchetype\)/);
   assert.doesNotMatch(service, /VALUES \(\$1, 'general', 'mini_mart'\)/);
-  assert.match(runner, /createStarterCatalog/);
   assert.match(runner, /sampleMode === "STARTER_CATALOG"/);
-  assert.match(runner, /status: "FAILED"/);
+  assert.match(sampleRunner, /createOnboardingSampleData/);
+  assert.match(sampleRunner, /status: "FAILED"/);
   for (const content of [compose, managedCompose]) {
     assert.match(content, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
     assert.match(content, /BMS_LOCAL_SAMPLE_MODE/);

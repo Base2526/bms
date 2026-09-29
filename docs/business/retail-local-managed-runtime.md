@@ -3,7 +3,8 @@
 Current Commercial/GA evidence status: [Retail Local GA readiness](retail-local-ga-readiness.md).
 
 Managed Runtime is the commercial self-install direction for Retail Local. The customer downloads one
-signed installer, supplies shop/owner/password/PIN details, and reaches a paired POS without handling
+signed installer, supplies shop type/owner/password/PIN details, optionally creates matching sample
+data, and reaches a paired POS without handling
 Docker Desktop, WSL, Compose, ports, environment files, or a raw device token.
 
 It remains a deployment profile of the authoritative BMS stack. It does not create a local-only price,
@@ -108,8 +109,9 @@ Moby and the pinned BMS services. On Ubuntu, the same agent contract manages Mob
 without virtualization. PostgreSQL data stays on the Linux filesystem; it is never run from `/mnt/c`.
 Web and WS remain loopback-only and PostgreSQL, Redis, and the engine socket are never published.
 
-macOS Apple Silicon is an experimental distribution target. Its full `.pkg` bundles Lima, a pinned
-Ubuntu ARM64 image, private Moby/Compose binaries, age, and ARM64 Web/WS/PostgreSQL/Redis images. A
+macOS on Apple Silicon and Intel is an experimental distribution target. Each architecture-specific
+`.pkg` bundles Lima, its matching pinned Ubuntu image, private Moby/Compose binaries, age, and matching
+Web/WS/PostgreSQL/Redis images. A
 per-operator launchd agent keeps the Apple Virtualization Framework VM alive after setup. Web and WS
 are forwarded only to host loopback; PostgreSQL, Redis, their volumes, secrets, and the engine socket
 remain in the private Linux VM. Docker Desktop is neither installed nor used on the target Mac. The
@@ -134,10 +136,10 @@ Hyper-V/appliance product and is not implied by this design.
 ## Supported-target policy
 
 The initial primary targets are serviced Windows 11 x64, Windows 10 IoT Enterprise LTSC 2021 x64,
-and Ubuntu 24.04 LTS x64. macOS 15 on Apple Silicon is experimental and must remain labelled as a
+and Ubuntu 24.04 LTS x64. macOS 15 on Apple Silicon and Intel is experimental and must remain labelled as a
 technical pilot until its native runtime and evidence matrix exist. Windows 10 22H2 is
 transition-only and needs evidence of current ESU; Ubuntu 22.04 is transition-only. Consumer
-Windows 10 without ESU, 32-bit systems, Intel Macs, other ARM64 hosts, arbitrary Linux
+Windows 10 without ESU, 32-bit systems, other ARM64 hosts, arbitrary Linux
 distributions, and Windows Server are not initial targets.
 
 Passing preflight means only that a machine is a candidate. A production claim additionally requires
@@ -153,11 +155,14 @@ The installer persists only non-secret progress and resumes after a required reb
 3. verify the signed release envelope and stage every component;
 4. verify SHA-256 and OCI digests before any provisioning, then build the shop-type menu from the
    signed `shop-archetypes` component belonging to that exact release;
-5. create machine secrets, migrate, and provision exactly once;
-6. pass service and HTTP health checks;
-7. transfer the one-time device token to Electron over a local ACL-bound channel, store it with
+5. ask whether optional sample data should be created, then create machine secrets, migrate,
+   provision exactly once, and persist the protected pairing checkpoint;
+6. create resumable sample data through the shared onboarding service only when requested; a sample
+   failure remains retryable and never discards the usable shop or one-time device token;
+7. pass service and HTTP health checks;
+8. transfer the one-time device token to Electron over a local ACL-bound channel, store it with
    `safeStorage`, then erase transient copies;
-8. mark installation complete and open the PIN screen.
+9. mark installation complete and open the PIN screen.
 
 A failed or interrupted stage resumes idempotently. It must not report success, expose a half-paired
 register, or rerun a completed provision operation.
@@ -223,14 +228,15 @@ shortcut; a restored license reference also selects transfer automatically). Tha
 continues operating before, during, and after that process.
 
 Uninstall keeps shop data by default. Permanent erase is a separate, explicit workflow; unregistering
-the WSL distribution is destructive and must never occur during an ordinary uninstall.
+the WSL distribution, deleting the Ubuntu runtime root, or deleting the macOS Lima VM/user data is
+destructive and must never occur during an ordinary uninstall.
 
 ## Current delivery status
 
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
 Ubuntu systemd install, and a full offline-payload macOS Apple Silicon technical-pilot package using
 Lima/VZ. It also implements the pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
-logical backup/restore, safe default uninstall, release signer, and Windows bootstrap packaging
+logical backup/restore, safe default uninstall including macOS explicit erase, release signer, and Windows bootstrap packaging
 definition. It includes scheduled encrypted off-host export, retention, checksums and stale/failure
 reporting on both supported runtime families. It also implements a signed transactional updater: replay/downgrade refusal, verified
 pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback

@@ -49,20 +49,24 @@ test("Managed Runtime support policy is explicit and does not silently bless eve
   });
 });
 
-test("macOS full installer uses its private VZ runtime instead of Docker Desktop", () => {
+test("macOS full installer uses its private VZ runtime instead of Docker Desktop on both CPU families", () => {
   const hostControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   const vmTemplate = read("deploy/retail-local/managed-runtime/macos/lima.yaml.template");
   const packageBuilder = read("deploy/retail-local/managed-runtime/macos/build-pkg.sh");
   const packageSmokeTest = read("deploy/retail-local/managed-runtime/macos/smoke-test-pkg.sh");
   const packagePostinstall = read("deploy/retail-local/managed-runtime/macos/postinstall");
+  const guidedUninstall = read("deploy/retail-local/managed-runtime/macos/BMS Retail Local Uninstall.command");
   assert.match(vmTemplate, /vmType: vz/);
+  assert.match(vmTemplate, /arch: __LIMA_ARCH__/);
   assert.match(vmTemplate, /guestIP: 127\.0\.0\.1/);
   assert.match(hostControl, /engine-load -engine macos-lima/);
   assert.match(hostControl, /bms-localctl doctor/);
   assert.match(hostControl, /ensure-running\) ensure_runtime/);
   assert.match(hostControl, /launchctl kickstart "\$LAUNCH_LABEL"/);
   assert.match(hostControl, /PACKAGE_TYPE/);
+  assert.match(hostControl, /PLATFORM_TARGET/);
   assert.match(hostControl, /pairing-handoff-/);
+  assert.match(hostControl, /provision-result\.json/);
   assert.match(hostControl, /BMS_RETAIL_LOCAL_LIMA_HOME:-\$HOME\/\.bmsrl/);
   assert.match(packageBuilder, /--architecture/);
   assert.match(packageBuilder, /linux\/amd64/);
@@ -82,6 +86,10 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(packageSmokeTest, /macos-15-x64/);
   assert.match(packageSmokeTest, /<relocate>/);
   assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
+  assert.match(packagePostinstall, /launchctl asuser "\$console_uid"/);
+  assert.match(packagePostinstall, /open -a "\$app"/);
+  assert.match(packageBuilder, /BMS Retail Local Uninstall\.command/);
+  assert.match(guidedUninstall, /BACKUP-VERIFIED[\s\S]*--erase-data/);
   assert.doesNotMatch(hostControl, /Docker Desktop/i);
 });
 
@@ -162,6 +170,35 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
   assert.doesNotMatch(linux, /apt(?:-get)?\s+install|dnf\s+install|systemctl\s+(?:enable|start)/);
 });
 
+test("Managed Runtime setup UX preserves actionable preflight and resumable provisioning", () => {
+  const agentMain = read("apps/retail-local-agent/main.go");
+  const darwin = read("apps/retail-local-agent/preflight_darwin.go");
+  const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const inno = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
+
+  assert.match(agentMain, /errPreflightFailed/);
+  assert.match(agentMain, /preflight \[--human\]/);
+  assert.match(darwin, /case "amd64":[\s\S]*macos-15-x64/);
+  assert.match(darwin, /พื้นที่ว่างปัจจุบัน/);
+  assert.doesNotMatch(darwin, /รองรับเฉพาะ Mac ที่ใช้ Apple Silicon/);
+
+  for (const installer of [windows, linux]) {
+    assert.match(installer, /provision-result\.json/);
+    assert.match(installer, /ยืนยันรหัสผ่านอีกครั้ง/);
+    assert.match(installer, /ยืนยัน PIN อีกครั้ง/);
+    assert.match(installer, /\[BMS/);
+    assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
+    assert.match(installer, /BMS_LOCAL_SAMPLE_MODE/);
+    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้าน|Starter Catalog/);
+  }
+  assert.match(windows, /preflight\.warnings/);
+  assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
+  assert.match(linux, /\.warnings\[\]\?/);
+  assert.match(inno, /ResultCode <> 0[\s\S]*RaiseException/);
+  assert.doesNotMatch(inno, /runhidden waituntilterminated/);
+});
+
 test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
   const windowsRoot = new URL("../deploy/retail-local/managed-runtime/windows/", import.meta.url);
   const scripts = readdirSync(windowsRoot).filter((name) => name.endsWith(".ps1"));
@@ -237,11 +274,17 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
+  const macosControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   assert.match(localctl, /age -p -o/);
   assert.match(localctl, /REPLACE-LOCAL-DATA/);
   assert.match(localctl, /pg_dump[\s\S]*storage\.tar\.gz[\s\S]*\.env/);
   assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
+  assert.match(macosControl, /uninstall\) shift; uninstall_runtime/);
+  assert.match(macosControl, /--erase-data[\s\S]*--confirm[\s\S]*ERASE-BMS-RETAIL-LOCAL/);
+  assert.match(macosControl, /ข้อมูลร้าน, private VM และ secrets ยังอยู่/);
+  assert.match(macosControl, /delete -f "\$INSTANCE"[\s\S]*rm -rf -- "\$STATE_ROOT" "\$LIMA_HOME"/);
+  assert.match(macosControl, /sudo pkgutil --forget com\.base2526\.bms\.retail-local/);
 });
 
 test("scheduled off-host backups are encrypted, separate, retained, and visibly monitored", () => {
@@ -281,7 +324,8 @@ test("Linux bootstrap package stays small and never packages a release private k
   assert.match(builder, /trusted-release-keys\.json/);
   assert.doesNotMatch(builder, /private[-_]key|PRIVATE KEY|sign-release/);
   assert.match(setup, /release-manifest-url/);
-  assert.match(setup, /Activation Code/);
+  assert.match(setup, /BMS_ACTIVATION_URI/);
+  assert.match(read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh"), /Activation Code/);
   assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
   assert.match(builder, /bms-retail-local-activate/);
   assert.match(activation, /TRANSFER_REQUESTED/);

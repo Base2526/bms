@@ -13,7 +13,6 @@ $ErrorActionPreference = "Stop"
 if ($Version -notmatch '^[A-Za-z0-9._-]{1,64}$') {
   throw "Version ใช้ได้เฉพาะ A-Z, a-z, 0-9, dot, underscore และ hyphen"
 }
-
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\..\.."))
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot "artifacts\retail-local" }
@@ -157,4 +156,3 @@ try {
     Remove-Item -LiteralPath $resolvedStage -Recurse -Force
   }
 }
-

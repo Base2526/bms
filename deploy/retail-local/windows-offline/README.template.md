@@ -138,4 +138,3 @@ Get-FileHash .\BMS-Retail-Local-Server-POS-{{VERSION}}-windows-x64.exe -Algorith
 ระบุ version, ชื่อไฟล์, Windows build, CPU/RAM/disk, Docker Desktop version, รุ่น printer/scanner,
 เวลาที่เกิดเหตุ และขั้นตอนล่าสุด สำหรับ Server ให้รัน `doctor.ps1 -Json` แล้วส่งเฉพาะผลที่ตรวจแล้ว
 ห้ามส่ง `.env.local`, pairing token, database dump, secret, ข้อมูลลูกค้า หรือ log ที่ยังไม่ได้ตรวจ PII
-

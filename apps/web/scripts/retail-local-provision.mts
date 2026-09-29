@@ -1,7 +1,6 @@
 import process from "node:process";
 
 import { provisionRetailLocal } from "../lib/bms/localProvisioning";
-import { createStarterCatalog } from "../lib/bms/sampleData";
 import { DEFAULT_SHOP_ARCHETYPE } from "../lib/bms/shopArchetypes";
 import { closeDatabasePool } from "../lib/db";
 
@@ -25,27 +24,15 @@ async function main(): Promise<void> {
     adminPin: required("BMS_LOCAL_ADMIN_PIN"),
     businessArchetype: process.env.BMS_LOCAL_BUSINESS_ARCHETYPE?.trim() || DEFAULT_SHOP_ARCHETYPE,
   });
-  let sample: Record<string, unknown> = { status: "SKIPPED", mode: sampleMode };
-  if (result.status === "PROVISIONED" && sampleMode === "STARTER_CATALOG") {
-    try {
-      const created = await createStarterCatalog(result.tenantId, result.adminUserId);
-      sample = {
-        status: created.status,
-        mode: created.mode,
-        runId: created.id,
-        products: created.products.length,
-      };
-    } catch (error) {
-      // Core provisioning is already committed and must remain usable if optional
-      // examples fail. The installer surfaces the failure and Admin can retry.
-      sample = {
-        status: "FAILED",
-        mode: sampleMode,
-        error: error instanceof Error ? error.message : String(error),
-      };
-    }
-  }
-  console.log(JSON.stringify({ ...result, sample }));
+  // The installer checkpoints this result (including the one-time device token) before invoking
+  // the optional sample-data service. Keeping these as two processes closes the power-loss window
+  // where a long seed could finish after the shop committed but before the token reached the host.
+  console.log(JSON.stringify({
+    ...result,
+    sampleData: sampleMode === "STARTER_CATALOG" && result.status === "PROVISIONED"
+      ? { requested: true, mode: sampleMode, status: "PENDING" }
+      : { requested: sampleMode === "STARTER_CATALOG", mode: sampleMode, status: "SKIPPED" },
+  }));
 }
 
 main()

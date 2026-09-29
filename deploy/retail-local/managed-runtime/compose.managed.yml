@@ -98,6 +98,17 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  sample-data:
+    profiles: ["setup"]
+    image: ${BMS_WEB_IMAGE_REF:?missing BMS_WEB_IMAGE_REF}
+    environment:
+      <<: *web-runtime
+    command: ["./node_modules/.bin/tsx", "scripts/retail-local-sample-data.mts"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
   ws:
     image: ${BMS_WS_IMAGE_REF:?missing BMS_WS_IMAGE_REF}
     restart: unless-stopped

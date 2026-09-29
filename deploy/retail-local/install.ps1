@@ -201,6 +201,35 @@ if ($LASTEXITCODE -ne 0) { throw "เริ่ม BMS Retail Local ไม่ส�
 Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 Test-RetailLocalHttp -WebPort $webPort -WsPort $wsPort
 
+Write-Host ""
+Write-Host "BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:$webPort" -ForegroundColor Green
+Write-Host "Admin: $AdminEmail"
+Write-Host "ประเภทร้าน: $($result.businessArchetype)"
+if ($result.deviceToken) {
+  Write-Host "POS pairing token (แสดงครั้งเดียว):" -ForegroundColor Yellow
+  Write-Host $result.deviceToken
+  Write-Host "นำ token ไปจับคู่ใน BMS POS แล้วเก็บ/ทำลายบันทึกที่มี token อย่างปลอดภัย"
+} else {
+  Write-Host "ร้านนี้ provision แล้ว หากต้องการ token ใหม่ ให้ออกจากหน้า Admin > POS Devices" -ForegroundColor Yellow
+}
+
+# Run optional sample data only after the shop is healthy and the one-time token has been handed to
+# the operator. An interruption here can never make the newly provisioned register unrecoverable.
+if ($result.sampleData.status -eq "PENDING") {
+  $sampleOutput = & docker @composeArgs --profile setup run --rm sample-data 2>&1
+  $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
+  if ($LASTEXITCODE -eq 0 -and $sampleLine) {
+    $result.sampleData = $sampleLine | ConvertFrom-Json
+    $result.sampleData | Add-Member -NotePropertyName mode -NotePropertyValue $SampleMode -Force
+  } else {
+    $result.sampleData.status = "FAILED"
+  }
+}
+if ($result.sampleData.status -in @("COMPLETED", "ALREADY_COMPLETED")) {
+  Write-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" -ForegroundColor Green
+} elseif ($result.sampleData.status -eq "FAILED") {
+  Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
+}
 $receipt = [ordered]@{
   product = "BMS Retail Local"
   version = if ($release) { $release.version } else { "source-dev" }
@@ -210,26 +239,8 @@ $receipt = [ordered]@{
   adminUserId = $result.adminUserId
   posDeviceId = $result.deviceId
   businessArchetype = $result.businessArchetype
-  sampleMode = $result.sample.mode
-  sampleStatus = $result.sample.status
+  sampleMode = $result.sampleData.mode
+  sampleStatus = $result.sampleData.status
 }
 Set-Content -LiteralPath (Join-Path $localRoot "installation.json") -Value ($receipt | ConvertTo-Json) -Encoding utf8NoBOM
-
-Write-Host ""
-Write-Host "BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:$webPort" -ForegroundColor Green
-Write-Host "Admin: $AdminEmail"
-Write-Host "ประเภทร้าน: $($result.businessArchetype)"
-if ($result.sample.status -eq "FAILED") {
-  Write-Host "สร้าง Starter Catalog ไม่สำเร็จ: $($result.sample.error)" -ForegroundColor Yellow
-  Write-Host "ระบบหลักพร้อมใช้งาน และสามารถลองสร้างใหม่จาก Admin > เริ่มต้นใช้งาน"
-} elseif ($result.sample.status -eq "ACTIVE") {
-  Write-Host "สร้าง Starter Catalog แล้ว: $($result.sample.products) สินค้า (Draft, สต็อก 0)" -ForegroundColor Green
-}
-if ($result.deviceToken) {
-  Write-Host "POS pairing token (แสดงครั้งเดียว):" -ForegroundColor Yellow
-  Write-Host $result.deviceToken
-  Write-Host "นำ token ไปจับคู่ใน BMS POS แล้วเก็บ/ทำลายบันทึกที่มี token อย่างปลอดภัย"
-} else {
-  Write-Host "ร้านนี้ provision แล้ว หากต้องการ token ใหม่ ให้ออกจากหน้า Admin > POS Devices" -ForegroundColor Yellow
-}
 Write-Host "รัน .\doctor.ps1 เพื่อตรวจระบบซ้ำได้ทุกเมื่อ"

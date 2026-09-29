@@ -87,7 +87,8 @@ export async function provisionRetailLocal(
               profile.business_archetype
          FROM bms_local_installation installation
          LEFT JOIN bms_store_profile profile ON profile.tenant_id = installation.tenant_id
-        WHERE installation.singleton = TRUE FOR UPDATE`
+        WHERE installation.singleton = TRUE
+        FOR UPDATE OF installation`
     );
     if (installed.rows[0]) {
       await client.query("COMMIT");
@@ -156,11 +157,12 @@ export async function provisionRetailLocal(
     await client.query(
       `INSERT INTO bms_audit_log(tenant_id, actor, action, target, meta)
        VALUES ($1, $2, 'retail_local.provision', $3, $4::jsonb)`,
-      [tenantId, adminEmail, tenantId, JSON.stringify({
-        locationCode: "MAIN",
-        deviceCode: "POS-01",
-        businessArchetype,
-      })]
+      [
+        tenantId,
+        adminEmail,
+        tenantId,
+        JSON.stringify({ locationCode: "MAIN", deviceCode: "POS-01", businessArchetype }),
+      ]
     );
     await client.query("COMMIT");
     return {
@@ -178,4 +180,3 @@ export async function provisionRetailLocal(
     client.release();
   }
 }
-
