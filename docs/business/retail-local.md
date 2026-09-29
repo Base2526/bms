@@ -19,7 +19,10 @@ price, stock, permission, payment, tax documents, and audit.
 - first-run selection of one supported shop archetype; the selection configures the shared BMS
   experience/presets and is not a separate local business-rule implementation;
 - optional resumable sample data using the shared onboarding seeder; sample products follow the
-  selected archetype and remain marked as fake data;
+  selected archetype and remain marked as fake data; the restaurant onboarding set uses bundled,
+  menu-specific food photos instead of remote random images and also creates a visibly labelled
+  starter floor with two zones and eight tables, but never mixes sample tables into an existing
+  operator-created floor;
 - local PostgreSQL, Redis, Web, WebSocket, and file storage packaged with Docker Compose;
 - portable test ZIP with prebuilt application/PostgreSQL/Redis images and SHA-256 verification;
 - deterministic ordered migrations with checksums and an advisory lock;

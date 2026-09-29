@@ -8,10 +8,11 @@ import {
   seedFakePurchase,
   seedFakeRestockSubscriptions,
 } from "./devSeed";
+import { seedRestaurantSampleFloor } from "./restaurantSampleData";
 import { archetypeNeedsRestockEmphasis, normalizeShopArchetype } from "./shopArchetypes";
 
 const BASE_STEPS = ["products", "customers", "orders", "conversations", "coupons", "purchase"] as const;
-type SeedStep = (typeof BASE_STEPS)[number] | "restock";
+type SeedStep = (typeof BASE_STEPS)[number] | "restock" | "restaurant_layout";
 
 export type OnboardingSampleDataResult = {
   status: "COMPLETED" | "ALREADY_COMPLETED";
@@ -26,7 +27,7 @@ export class OnboardingSampleDataError extends Error {
 }
 
 function validCompletedSteps(value: unknown): SeedStep[] {
-  const allowed = new Set<SeedStep>([...BASE_STEPS, "restock"]);
+  const allowed = new Set<SeedStep>([...BASE_STEPS, "restock", "restaurant_layout"]);
   return Array.isArray(value) ? value.filter((step): step is SeedStep => allowed.has(step as SeedStep)) : [];
 }
 
@@ -36,6 +37,22 @@ export async function createOnboardingSampleData(tenantId: string): Promise<Onbo
     [tenantId]
   );
   const archetype = normalizeShopArchetype(profile.rows[0]?.business_archetype ?? null);
+
+  const steps: Array<{ key: SeedStep; run: () => Promise<unknown> }> = [
+    { key: "products", run: () => seedFakeProducts(tenantId, 12, archetype) },
+    { key: "customers", run: () => seedFakeCustomers(tenantId, 10) },
+    { key: "orders", run: () => seedFakeOrders(tenantId, 12, archetype) },
+    { key: "conversations", run: () => seedFakeConversations(tenantId, 8, archetype) },
+    { key: "coupons", run: () => seedFakeCoupons(tenantId, 3, archetype) },
+    { key: "purchase", run: () => seedFakePurchase(tenantId, 6, archetype) },
+  ];
+  if (archetypeNeedsRestockEmphasis(archetype)) {
+    steps.push({ key: "restock", run: () => seedFakeRestockSubscriptions(tenantId, 8) });
+  }
+  if (archetype === "restaurant") {
+    steps.push({ key: "restaurant_layout", run: () => seedRestaurantSampleFloor(tenantId) });
+  }
+  const requiredSteps = steps.map((step) => step.key);
 
   const existingRun = await query<{ status: string; completed_steps: unknown }>(
     `SELECT status, completed_steps FROM bms_onboarding_seed_runs WHERE tenant_id = $1`,
@@ -55,12 +72,14 @@ export async function createOnboardingSampleData(tenantId: string): Promise<Onbo
     `INSERT INTO bms_onboarding_seed_runs (tenant_id, archetype, status)
      VALUES ($1, $2, 'RUNNING')
      ON CONFLICT (tenant_id) DO UPDATE SET
-       status = 'RUNNING', last_error = NULL, updated_at = now()
+       status = 'RUNNING', last_error = NULL, completed_at = NULL, updated_at = now()
      WHERE bms_onboarding_seed_runs.status = 'FAILED'
         OR (bms_onboarding_seed_runs.status = 'RUNNING'
             AND bms_onboarding_seed_runs.updated_at < now() - interval '10 minutes')
+        OR (bms_onboarding_seed_runs.status = 'COMPLETED'
+            AND NOT bms_onboarding_seed_runs.completed_steps @> $3::jsonb)
      RETURNING status, completed_steps`,
-    [tenantId, archetype]
+    [tenantId, archetype, JSON.stringify(requiredSteps)]
   );
 
   if (!claimed.rowCount) {
@@ -75,18 +94,6 @@ export async function createOnboardingSampleData(tenantId: string): Promise<Onbo
   }
 
   const completed = new Set<SeedStep>(validCompletedSteps(claimed.rows[0].completed_steps));
-  const steps: Array<{ key: SeedStep; run: () => Promise<unknown> }> = [
-    { key: "products", run: () => seedFakeProducts(tenantId, 12, archetype) },
-    { key: "customers", run: () => seedFakeCustomers(tenantId, 10) },
-    { key: "orders", run: () => seedFakeOrders(tenantId, 12, archetype) },
-    { key: "conversations", run: () => seedFakeConversations(tenantId, 8, archetype) },
-    { key: "coupons", run: () => seedFakeCoupons(tenantId, 3, archetype) },
-    { key: "purchase", run: () => seedFakePurchase(tenantId, 6, archetype) },
-  ];
-  if (archetypeNeedsRestockEmphasis(archetype)) {
-    steps.push({ key: "restock", run: () => seedFakeRestockSubscriptions(tenantId, 8) });
-  }
-
   try {
     for (const step of steps) {
       if (completed.has(step.key)) continue;

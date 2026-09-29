@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes.ts";
@@ -120,6 +120,42 @@ test("sample products have an explicit preset for every supported shop type", ()
   const productPresets = seed.slice(start, end);
   for (const { value } of SHOP_ARCHETYPE_OPTIONS) {
     assert.match(productPresets, new RegExp(`case ["']${value}["']:`), `${value} falls back to generic sample products`);
+  }
+});
+
+test("restaurant sample data creates an idempotent starter floor without mixing into a real floor", () => {
+  const onboarding = read("apps/web/lib/bms/onboardingSampleData.ts");
+  const floorSeed = read("apps/web/lib/bms/restaurantSampleData.ts");
+  assert.match(onboarding, /restaurant_layout/);
+  assert.match(onboarding, /seedRestaurantSampleFloor\(tenantId\)/);
+  assert.match(onboarding, /status = 'COMPLETED'[\s\S]{0,160}completed_steps @> \$3::jsonb/);
+  assert.match(floorSeed, /createRestaurantArea/);
+  assert.match(floorSeed, /createRestaurantTable/);
+  assert.match(floorSeed, /listRestaurantFloor/);
+  assert.match(floorSeed, /floor\.areas\.length > 0 \|\| floor\.tables\.length > 0/);
+  assert.match(floorSeed, /โซนในร้าน \(ตัวอย่าง\)/);
+  assert.match(floorSeed, /โซนด้านนอก \(ตัวอย่าง\)/);
+  for (let tableNo = 1; tableNo <= 8; tableNo += 1) {
+    assert.match(floorSeed, new RegExp(`โต๊ะ ${tableNo}[^0-9]`));
+  }
+});
+
+test("the resumable sample-data ledger accepts every supported shop type", () => {
+  const migrationFiles = readdirSync(new URL("../db/migrations/", import.meta.url))
+    .filter((file) => file.endsWith(".sql"))
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+  const latestConstraintFile = migrationFiles
+    .filter((file) => read(`db/migrations/${file}`).includes("bms_onboarding_seed_runs_archetype_check"))
+    .at(-1);
+  assert.ok(latestConstraintFile, "cannot find the sample-data archetype constraint");
+  const migration = read(`db/migrations/${latestConstraintFile}`);
+  assert.match(migration, /bms_onboarding_seed_runs_archetype_check/);
+  for (const { value } of SHOP_ARCHETYPE_OPTIONS) {
+    assert.match(
+      migration,
+      new RegExp(`['"]${value}['"]`),
+      `bms_onboarding_seed_runs rejects the supported ${value} archetype`
+    );
   }
 });
 

@@ -10,6 +10,7 @@
 // rollback โดยที่ปุ่มบอกแค่ "insert failed"
 
 import assert from "node:assert/strict";
+import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -179,4 +180,28 @@ test("หน่วยขายที่พิมพ์บนใบเสร็�
   const water = RESTAURANT_MENU.find((item) => item.code === "WATER-600");
   assert.ok(water);
   assert.equal(restaurantPackUnitName(water), "ขวด");
+});
+
+test("เมนู onboarding 12 รายการใช้รูปอาหารเฉพาะเมนู ไม่ใช้รูปสุ่ม", () => {
+  const onboardingMenu = RESTAURANT_MENU.slice(0, 12);
+  assert.equal(onboardingMenu.length, 12);
+  const imageUrls = onboardingMenu.map((item) => {
+    assert.match(
+      item.sampleImageUrl ?? "",
+      /^\/sample\/restaurant\/[a-z0-9-]+\.jpg$/,
+      `${item.code}/${item.name} ไม่มีรูปอาหารเฉพาะเมนู`
+    );
+    const asset = new URL(`../apps/web/public${item.sampleImageUrl}`, import.meta.url);
+    assert.ok(existsSync(asset), `${item.code}/${item.name} อ้างรูปที่ไม่มีใน image build`);
+    return item.sampleImageUrl;
+  });
+  assert.equal(new Set(imageUrls).size, onboardingMenu.length, "เมนูตัวอย่างไม่ควรแชร์รูปเดียวกัน");
+
+  const seed = readFileSync(new URL("../apps/web/lib/bms/devSeed.ts", import.meta.url), "utf8");
+  const start = seed.indexOf("async function seedRestaurantCatalog");
+  const end = seed.indexOf("export async function seedFakeProducts", start);
+  assert.ok(start >= 0 && end > start, "หา restaurant seeder ไม่พบ");
+  const restaurantSeeder = seed.slice(start, end);
+  assert.match(restaurantSeeder, /item\.sampleImageUrl \?\? null/);
+  assert.doesNotMatch(restaurantSeeder, /picsum|source\.unsplash|random/i);
 });

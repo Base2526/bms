@@ -740,7 +740,7 @@ async function seedRestaurantCatalog(
           name,
           item.price.toFixed(2),
           Array.from(new Set(item.keywords.map((keyword) => keyword.toLowerCase()))),
-          `https://picsum.photos/seed/${sku}/400/400`,
+          item.sampleImageUrl ?? null,
           item.description,
           costPrice,
           item.category,
