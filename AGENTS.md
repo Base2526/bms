@@ -7,7 +7,8 @@ BMS is an AI-first business operating system, not a chatbot: `Customer -> AI -> 
 Inventory -> Payment -> Shipping -> Dashboard`. The database and backend services are the source of
 truth; AI interprets intent, selects approved tools, and explains verified results.
 
-Docs index: [CLAUDE.md](CLAUDE.md). **Full per-domain rules:
+Docs index: [CLAUDE.md](CLAUDE.md). Thai customer/sales overview:
+[docs/business/product-overview-th.md](docs/business/product-overview-th.md). **Full per-domain rules:
 [docs/agent-invariants.md](docs/agent-invariants.md)** — this file has the short form; read the
 matching section there before changing that domain. Two are required reading, not optional:
 [docs/AI_GUIDELINES.md](docs/AI_GUIDELINES.md) before changing prompts/AI orchestration/AI
@@ -161,8 +162,11 @@ wrong, and update the doc in the same change.
   span the whole bill, not one line at a time, and the DB write that marks a serial `SOLD` is
   race-safe against two bills claiming it at once. A shift report only answers to the device that
   owns the shift. POS PO receiving derives the branch from the device, re-checks `purchase.receive`,
-  and commits stock/movement/audit/retry result together. Bluetooth HID is globally captured only
-  after a configured positive prefix; timing/focus is never treated as proof of a scanner. Full detail:
+  and commits stock/movement/audit/retry result together. Browser Bluetooth HID is globally captured
+  only after a configured positive prefix; timing/focus is never treated as proof of a scanner. The
+  native app's focused HID mode is different: the cashier explicitly opens the scanner modal, which
+  must keep its input focused, suppress duplicate CR+LF submission, and route modifier/multi-pack
+  items through the existing product-options flow. It is not global capture or authorization. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **The desktop shell is a window, not a register (`apps/desktop`)** — Electron hosts the
   authoritative `/pos` surface on Windows, Linux and macOS. It owns no schema,
@@ -179,6 +183,16 @@ wrong, and update the doc in the same change.
   internal-test builds rather than a distribution channel;
   never give the shell a second money path, offline tender, or an OS-level way around a server
   check. Detail: [apps/desktop/README.md](apps/desktop/README.md).
+- **Mobile Emergency Offline is an encrypted cash queue, not an offline backend.** It accepts only
+  plain retail cash sales after the cashier is already signed in, the original shift is open, and
+  the required product snapshot was loaded. Restaurant, pharmacy, board-game, member/coupon/points,
+  approval, serial/weighted/modifier, credit/deposit, non-cash and stock-operation workflows remain
+  server-required. The temporary reference is not a receipt or tax document; on reconnect the normal
+  settlement service rechecks device/cashier/shift/branch, price, stock, tax and eligibility with the
+  original idempotency key. Accepted cash can never be discarded: unresolved rows block shift close,
+  unpair and pairing replacement. Do not use this boundary to narrow Retail Local—the latter still
+  has an authoritative server in the shop. Detail:
+  [docs/business/cloud-hybrid-pos.md](docs/business/cloud-hybrid-pos.md).
 - **Retail Local is a deployment profile, not a fork.** It runs the same Web/WS services and POS
   settlement path with one local PostgreSQL source of truth; it has no cloud replica, sync queue,
   alternate price/stock logic, or database inside Electron. `bms_local_installation` is a singleton,

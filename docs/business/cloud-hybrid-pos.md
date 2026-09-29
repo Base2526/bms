@@ -29,6 +29,31 @@ Recommended customer-facing phrase:
 > BMS is one cloud business platform with Emergency Offline Mode for basic retail cash continuity on
 > Mobile POS.
 
+## Plain-language explanation and examples
+
+Emergency Offline Mode is best understood as an **encrypted emergency cash-sale queue on the mobile
+device**. It is not a phone-sized copy of the backend. Before an outage, the cashier must already be
+signed in, have the original shift open, and have loaded the product/price snapshot. During the
+outage, the app can record an eligible cash sale and issue a temporary offline reference, but that
+reference is not yet a receipt or tax document.
+
+Example: a customer buys two bottles of water and one snack for THB 85, pays cash, and every item was
+loaded before connectivity failed. Mobile records the accepted cash as `OFF-...` in the encrypted
+Sync Center. When connectivity returns, it sends that exact request with the original idempotency
+key. Only after the server rechecks cashier, device, branch, shift, price, stock, tax, and eligibility
+does the reference become a real POS bill with stock movement and tax document.
+
+If the cached price conflicts with the current server price, or stock can no longer be settled, the
+item stays visible for manager reconciliation. It cannot be silently discarded after cash was
+accepted, retried as a new sale, or moved into a newly opened shift. This is why the mode is limited
+to a bounded retail cash path rather than advertised as full offline POS.
+
+Restaurant tables/kitchen rounds, pharmacy intake/approval, and board-game clocks/groups still need
+the authoritative server and are excluded from this mobile queue. A shop using Retail Local is a
+different case: those workflows may continue while the public internet is down because POS devices
+are still connected to the in-store BMS server. See the Thai product explanation in
+[product-overview-th.md](product-overview-th.md#8-emergency-offline-mode).
+
 Do not claim “works fully offline”, “local server”, “offline restaurant”, or “offline Desktop POS”
 for the Cloud/Hybrid product. `BMS Retail Local` is a separate **deployment mode** of the same
 codebase, currently a single-store technical pilot; it is not the Mobile emergency queue and must

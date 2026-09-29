@@ -67,6 +67,23 @@ selects a merged order from another channel, and Lazada/Shopee remain Seller Cen
 Repeated customer notices reuse an existing active payment instead of inserting another `PENDING`
 payment row.
 
+### Customer-visible memory and “do not ask twice” behavior
+
+Memory is scoped to the canonical customer that the server resolved; the model never chooses a
+customer id. For ordinary commerce, a complete saved delivery profile is reused without asking the
+customer to fill the form again. If it is incomplete, the assistant asks only the next missing field
+and saves only what the customer explicitly supplied. A reorder may use verified order history, but
+the server still composes a fresh itemized basket confirmation before creating the new order.
+
+Pharmacy patient memory is narrower because it is health data. For the same canonical customer and
+`SELF` relationship, intake may reuse only consented, customer-confirmed age (up to 365 days),
+biological sex, allergies, and chronic diseases. Current symptoms, current medications, pregnancy,
+breastfeeding, and every dependent-patient case are collected again. Reuse is disclosed without
+echoing health values early; the final intake summary shows every reused and newly collected value
+for customer confirmation before the case enters the pharmacist queue. Purchase history alone is
+not consent. Full rules and a sample conversation are in
+[the pharmacy README](../../apps/web/lib/bms/pharmacy/README.md#customer-facing-intake-and-final-confirmation-example).
+
 Manual merge preserves customer-level profile fields as well as linked rows: tags are unioned;
 missing phone/email/note/language/timezone values are filled from the merged record; and follow-up
 opt-out is combined conservatively with boolean OR so merging can never silently re-enable messages

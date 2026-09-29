@@ -16,6 +16,7 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 
 | Doc | Covers |
 | --- | --- |
+| [business/product-overview-th.md](docs/business/product-overview-th.md) | ภาพรวมภาษาไทยสำหรับผู้ใช้และทีมขาย: AI Inbox, POS, ร้านเฉพาะทาง, tax reports, delivery platforms, Social Login, Emergency Offline และ Retail Local พร้อมตัวอย่างและขอบเขตคำโฆษณา |
 | [architecture/system.md](docs/architecture/system.md) | Module build status, RBAC model, folder structure, roadmap |
 | [architecture/database.md](docs/architecture/database.md) | Tables per module, RLS/tenant scoping, migration notes |
 | [architecture/api.md](docs/architecture/api.md) | REST routes, GraphQL modules, auth scopes, RBAC gates |
@@ -56,6 +57,11 @@ drawer cash movements, whole-bill serial checks, and shift-report correctness fi
 stock transfers + stock counts (`7.98`), and a keyboard-wedge Scan Manager plus retry-safe PO
 receiving at the register (`9.6`) are otherwise fully built — see
 [business/pos.md](docs/business/pos.md) and [business/inventory.md](docs/business/inventory.md).
+The native iOS/Android register now has one-shot camera scanning and an explicitly opened,
+focused Bluetooth/USB HID mode. It remembers camera versus hardware input on the device, keeps the
+modal open for consecutive scans, suppresses CR+LF duplicates, and preserves the existing
+modifier/pack selection flow. Global hardware-key capture outside that modal and real-device scanner
+certification remain rollout work; this is not the browser Scan Manager's global PREFIX mode.
 The commercial intelligence roadmap is built through **Q3**: Phase 1 bundles the daily Action Center
 and inventory purchasing intelligence (`9.12`–`9.13`), while Phase 2 adds the monthly customer
 retention engine (`9.14`) with RFM/risk scoring, verified next-product evidence, a propose-only
@@ -80,8 +86,8 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (49 capabilities, 110 guides, 20 FAQ answers, 24 limit groups/139
-rules per language — counted from the catalog module on 2026-09-18; counts drift as features ship, so re-count
+deterministic bilingual catalog (51 capabilities, 117 guides, 20 FAQ answers, 24 limit groups/139
+rules per language — counted from the catalog module on 2026-09-29; counts drift as features ship, so re-count
 before quoting them, and note the board-game queue/reservation/offer/renewal work is **not yet** in the catalog)
 covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with

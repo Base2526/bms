@@ -18,8 +18,9 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
 
 - secure device pairing with the device token in Keychain;
 - server bootstrap, cashier selection, PIN verification, and in-memory cashier credentials;
-- retail/pharmacy catalog browse and server-backed search, barcode/SKU resolution, cart, member,
-  coupon and discount preview;
+- retail/pharmacy catalog browse and server-backed search, camera or focused Bluetooth/USB HID
+  barcode/SKU resolution with an on-device scanner-mode preference, cart, member, coupon and
+  discount preview;
 - sale/deposit, split cash/QR/card/bank/wallet/store-credit/credit payment, receipt delivery,
   sale history, partial/full return, exchange cart, refund completion, void, and parked bills;
 - shift open/close, shift report, cash in/out, no-sale, expenses, deposits, petty cash, purchase
@@ -138,6 +139,23 @@ npm run ios:trust-local-ca
 Keep App Transport Security enabled. A physical device or production endpoint must use a CA that
 the device already trusts, or have an organization-managed CA profile installed explicitly.
 
+## Barcode Scanner Modes
+
+The sale-screen scanner modal supports one-shot camera capture and focused Bluetooth/USB HID input.
+Camera is the safe default. Choosing Hardware Scanner stores only that convenience preference in a
+dedicated Keychain service; if it cannot be read, the next open returns to camera.
+
+Hardware mode assumes the scanner is paired with the OS as a keyboard and its terminator submits the
+focused field. The modal remains open for consecutive items, clears and refocuses after each success,
+and guards against a CR+LF pair resolving the same code twice. A failed code remains selected so it
+can be replaced. If the scanner emits Thai characters, switch the hardware keyboard layout to
+English (US); the app deliberately does not guess a character-to-digit remapping. Modifier and
+multi-pack products still open the normal product-options flow before they are added.
+
+This mode captures only while the scanner modal is open and focused. It is separate from the
+browser POS device's FOCUS/PREFIX Scan Manager settings and does not grant any permission or bypass
+the server resolver. Global iOS/Android key capture remains future native work.
+
 ## Native Alerts
 
 Alert tones use `react-native-sound`. After dependency or resource changes, run `pod install` and
@@ -157,8 +175,8 @@ output.
 
 These are not replaced by GraphQL and remain separate rollout work:
 
-- verified global Bluetooth/USB scanner integration (the native one-shot camera scanner is live;
-  manual barcode/SKU input remains its explicit fallback);
+- global Bluetooth/USB key capture outside the explicit scanner modal (camera and focused HID input
+  are live; native `pressesBegan`/`UIKeyCommand` and Android key-event capture remain separate work);
 - ESC/POS printing, cash-drawer kick, and customer display hardware;
 - FCM/APNs push while the app is suspended or terminated;
 - persistence/sync policy for per-device alert preferences;

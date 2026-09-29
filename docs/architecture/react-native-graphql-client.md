@@ -226,6 +226,19 @@ query PosBootstrap {
 Use catalog search for operator text and scan for an exact barcode/PLU. Request images only on a
 screen that renders them; `withImage` otherwise stays false.
 
+`BarcodeScannerModal` offers two native input modes. Camera mode launches the one-shot
+`react-native-data-scanner` flow. Hardware mode is an explicitly opened, focused `TextInput` for a
+Bluetooth/USB HID keyboard wedge; it stays open, clears the JS and native buffers after success,
+and returns focus for the next item. The submit guard prevents a scanner configured with CR+LF from
+resolving the same code twice. Failed lookups remain selected, while Thai keyboard output is stopped
+with an English (US) keyboard instruction rather than guessed into another code.
+
+The mode is convenience state stored by `scannerPreference.ts` in its own Keychain service. Read
+failure or an unknown value means camera. Do not confuse this local choice with the server-returned
+`device.scanner` FOCUS/PREFIX configuration used by the browser Scan Manager; native hardware mode
+does not globally capture keys, prove scanner identity, or grant permission. A resolved product with
+modifiers or multiple packs must still go through `ProductOptionsModal` before it is added.
+
 ```graphql
 query PosCatalogSearch($q: String!) {
   bmsPosCatalogSearch(q: $q) {

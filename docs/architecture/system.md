@@ -95,7 +95,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | POS — parked bills, drawer cash, void, shift report | ✅ | `lib/bms/pos.ts` · `7.97__bms_pos_park_cash_void.sql` · `app/api/pos/{park,cash-movement,void,shift-report}` — a manual discount, a void, and cash out each need a second person's PIN; a void reuses the return machinery under `isVoid` and stamps the bill inside that same transaction |
 | POS — restaurant dine-in (floor, checks, kitchen rounds) | ✅ | `lib/bms/restaurantPos.ts` · `app/(pos)/pos/restaurant` · `app/api/pos/{restaurant,kitchen}/*` · `/admin/kitchen` · migrations `9.44`–`9.45` — a check reserves stock when a kitchen round is sent and settles through the one `recordPosSale()` path; modifier surcharges are server-owned catalog data; floor/kitchen/cancel use `restaurant.*` permissions — see [../business/pos.md](../business/pos.md) |
 | Board game cafe operations | ✅ | `lib/bms/{boardGameCafe,boardGameWaitlist,boardGameOffers,boardGamePassRenewals}.ts` · `/admin/board-game` · `/board-game` · `app/api/{bms,pos}/board-game/*` · `app/api/board-game/bookings/*` · `apps/mobile` · migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7` — timed participants with independent purchased-time boundaries, explicit capacity overrides, per-group tabs, group merge/detach and one-at-a-time settlement while others keep playing, table moves and merges, member passes with branch scope and store-credit renewal, server-chosen play-time offers, encrypted identity holds, guest service calls, waitlists/reservations/deposits, game-copy loans, atomic POS handoff/receipt lines, opt-in aggregate public discovery, and removable dev fixtures — see [../business/board-game-cafe.md](../business/board-game-cafe.md) |
-| Native POS mobile client | ✅ core + Q6B workflows | `apps/mobile/` — bare React Native POS with secure device pairing, cashier PIN/RBAC, generated GraphQL retail/restaurant/board-game/branch-inventory/shift commands and named WS invalidation; hardware and pharmacy-review integrations remain — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
+| Native POS mobile client | ✅ core + Q6B workflows | `apps/mobile/` — bare React Native POS with secure device pairing, cashier PIN/RBAC, generated GraphQL retail/restaurant/board-game/branch-inventory/shift commands and named WS invalidation; one-shot camera plus explicitly focused Bluetooth/USB HID scanning are live with an on-device mode preference. Global key capture, physical-hardware certification, printing/display/push, and pharmacy-review integrations remain — see [../../apps/mobile/README.md](../../apps/mobile/README.md) |
 | Windows/Linux/macOS POS client | 🧪 MVP shell | `apps/desktop/` — Electron shell for the existing authoritative `/pos` surface, packaged as Windows NSIS, Linux AppImage/DEB and unsigned macOS DMG for Intel/Apple Silicon, with first-run server pairing, OS-keystore-backed token storage (Linux fails closed unless Secret Service/KWallet is available), origin-restricted IPC/navigation, and realtime token integration. Release signing/notarization, auto-update, direct ESC/POS/LAN printer and drawer support, offline tender, and production hardware verification remain — see [../../apps/desktop/README.md](../../apps/desktop/README.md) |
 | Kitchen stations (registered work areas, SLA) | ✅ | `lib/bms/kitchenStations.ts` · `9.53`–`9.54` · `/admin/kitchen`, register KDS — a station is a registered row (id, active flag, sort order, optional branch) matched id-first then by a name snapshot, never a free-text label; per-station SLA colors the board; deactivating a station never blocks tickets already routed to it — see [../business/pos.md](../business/pos.md) § Kitchen stations |
 | Restaurant chat ordering + delivery | ✅ | `lib/bms/{menuAvailability,restaurantOrdering}.ts` · `9.55`–`9.57` · `app/api/pos/restaurant/{menu,incoming}` — branch-scoped "sold out today" flag with dual-signal reset (cron + shift-open, both keyed off `resets_at`); an online order needs an explicit branch and `DELIVERY`/`PICKUP` before payment creates any kitchen work; line cancellation reuses the POS return engine with an immutable cause and merchant-absorbed repricing — see [../business/restaurant-chat-delivery.md](../business/restaurant-chat-delivery.md) |
@@ -154,9 +154,8 @@ retail/restaurant/board-game/branch-inventory/shift workflows. The 41 POS REST r
 external-client rollout completes. See the
 [mobile GraphQL/WS architecture and route inventory](mobile-graphql-ws-realtime.md).
 
-**Roadmap remaining:** board-game automatic pass renewal (needs a stored payment instrument),
-reservations/waitlists, and dedicated utilization/profit
-reports · TikTok send API · live Flash/Kerry carrier adapters — the booking/tracking/label
+**Roadmap remaining:** dedicated board-game utilization/profit reports · TikTok send API · live
+Flash/Kerry carrier adapters — the booking/tracking/label
 plumbing and its safety contract are built (`7.76`/`7.77`), what is missing is the carrier-issued
 merchant contract and credentials, then the [carrier checklist](../integrations/carriers.md) ·
 e-Tax XML submission to the Revenue Department (`lib/bms/etax/*`, `7.94`) is built and flag-gated off
@@ -176,13 +175,13 @@ not report yet) and an admin page listing incidents (today they surface only as 
 § i18n coverage for what is deliberately *not* a gap) ·
 Follow-up Automation's Workflow Engine and decision-driving scoring model ·
 **POS Mobile native integrations (iOS/Android)** — the bare React Native counter client is built for
-staff and uses GraphQL with a device token plus cashier PIN. The remaining parts are native rather
-than a second business path: ESC/POS printing and
-cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap above — both need real hardware
-verification), barcode capture (`9.6`'s Scan Manager targets a Bluetooth-HID keyboard typing into a
-browser page, which does not translate to a native app — camera scan or native BLE/Classic pairing
-needs its own design), and the customer-facing display (`/pos/display` uses a same-browser
-`BroadcastChannel`, which does not reach a second device). Every environment must include
+staff and uses GraphQL with a device token plus cashier PIN. One-shot camera scanning and an
+explicitly opened, focused Bluetooth/USB HID modal are implemented; the app remembers that local
+choice in Keychain, falls back to camera when it cannot read it, and keeps catalog modifier/pack
+selection authoritative. Global native key capture outside the modal, physical camera/HID model
+certification, ESC/POS printing and cash-drawer kick over Bluetooth/USB (ties into the WebUSB gap
+above), and the customer-facing display (`/pos/display` uses a same-browser `BroadcastChannel`,
+which does not reach a second device) remain native rollout work. Every environment must include
 `9.5__bms_pos_cash_movement_idempotency.sql`; the RN cash-movement caller keeps one key across an
 unknown network result ·
 **Insurance Sales Inbox (planned, new BMS module)** — policy/premium/claim domain sold primarily

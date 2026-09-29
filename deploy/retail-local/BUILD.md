@@ -16,6 +16,8 @@
 - Node.js 22 และ npm
 - Docker Desktop พร้อม Docker Compose v2
 - Windows ต้องมี Inno Setup 6
+- Linux POS จะ build ใน Linux container ที่สคริปต์กำหนดให้ เพื่อให้สร้าง AppImage symbolic links
+  ได้ถูกต้องบน Windows; ไม่ต้องติดตั้ง WSL หรือ Linux build tools เพิ่ม
 - macOS ต้องมี Xcode Command Line Tools และ Go
 - Windows ต้องมีพื้นที่ว่างอย่างน้อย 20 GB; macOS อย่างน้อย 40 GB เพราะสร้าง VM image สอง architecture
 

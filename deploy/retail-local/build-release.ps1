@@ -52,6 +52,35 @@ function Invoke-Checked {
   if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
 }
 
+function Invoke-LinuxDesktopBuild {
+  # electron-builder creates symbolic links while assembling AppImage. Native Windows Node cannot
+  # create those links reliably, so build the Linux desktop artifacts in a pinned Linux container
+  # and copy only the two finished regular files back to the host.
+  $builderImage = "electronuserland/builder@sha256:b76a82a6c6a8a1dea1abbc93e394f54316744824b64e6a50d959f1e3ba8951a9"
+  $desktopDist = Join-Path $desktopRoot "dist"
+  New-Item -ItemType Directory -Force -Path $desktopDist | Out-Null
+  $repoMount = $repoRoot -replace '\\','/'
+  $outputMount = $desktopDist -replace '\\','/'
+  $buildCommand = @'
+set -euo pipefail
+mkdir -p /work/apps/desktop /work/apps/web/public/icons
+cp /source/apps/desktop/package.json /source/apps/desktop/package-lock.json /work/apps/desktop/
+cp -a /source/apps/desktop/src /source/apps/desktop/renderer /work/apps/desktop/
+cp /source/apps/web/public/icons/playstore-512.png /work/apps/web/public/icons/
+cd /work/apps/desktop
+npm ci
+npm run pack:linux
+cp "dist/BMS-POS-${BMS_RELEASE_VERSION}-amd64.deb" \
+  "dist/BMS-POS-${BMS_RELEASE_VERSION}-x86_64.AppImage" /out/
+'@
+  $buildCommand = $buildCommand.Replace("`r`n", "`n").Replace("`r", "`n")
+  & docker run --rm `
+    -e "BMS_RELEASE_VERSION=$Version" `
+    -v "${repoMount}:/source:ro" `
+    -v "${outputMount}:/out" `
+    $builderImage bash -lc $buildCommand
+}
+
 if ($UpdateVersion) {
   if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw "ไม่พบ npm" }
   Push-Location $desktopRoot
@@ -147,7 +176,7 @@ try {
   } else {
     Invoke-Checked "Build Windows POS x64" { npm run pack:win }
     Invoke-Checked "Build Windows POS x86 Legacy" { npm run pack:win32 }
-    Invoke-Checked "Build Linux POS x64 (DEB + AppImage)" { npm run pack:linux }
+    Invoke-Checked "Build Linux POS x64 (DEB + AppImage)" { Invoke-LinuxDesktopBuild }
   }
 } finally {
   Pop-Location

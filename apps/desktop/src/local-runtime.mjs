@@ -34,7 +34,7 @@ export function managedLocalRuntimePlan({
   if (!isManagedLocalServerUrl(serverUrl) || platform !== "darwin") return null;
   return {
     controllerPath: "/Library/Application Support/BMS/RetailLocal/control/bms-retail-local",
-    receiptPath: path.join(homeDirectory, "Library/Application Support/BMS/RetailLocal/installation.json"),
+    receiptPath: path.posix.join(homeDirectory, "Library/Application Support/BMS/RetailLocal/installation.json"),
   };
 }
 

@@ -76,11 +76,21 @@ server's structured reason code, and parked-bill actions use the resolver's exac
 remain hints: the client deduplicates, batches refetches, reconciles on foreground/reconnect, and
 keeps degraded polling.
 
-Native printing, real camera/HID capture, customer display, background push, pharmacy
-review/evidence, and richer variant/modifier selection remain separate platform/specialist work.
-The barcode overlay resolves against the server but is an input harness, not a camera or verified
-scanner adapter. Unsupported approval-gated sales fail closed on the server. Do not port money,
-stock, refund, pharmacy or tax rules into the client.
+The sale screen has one-shot native camera scanning and a deliberately focused Bluetooth/USB HID
+mode inside `BarcodeScannerModal`. The input choice is remembered on that installation in a
+dedicated Keychain service; unreadable/unknown preference data falls back to camera instead of
+blocking the counter. Hardware mode keeps the modal open for repeated scans, clears both the React
+and native input buffers before refocusing, and suppresses duplicate CR+LF submission while a scan
+is resolving. A failed code remains selected for replacement. Thai keyboard output is rejected with
+an English (US) hardware-keyboard instruction rather than guessed back into digits. Products with
+modifiers or multiple packs still enter `ProductOptionsModal`, so scanning never bypasses catalog
+pricing or required choices.
+
+This is explicit focused input, not global native key capture and not a certified scanner adapter.
+Native `pressesBegan`/`UIKeyCommand` or Android key-event capture outside the open modal, physical
+camera/HID model verification, printing, customer-display hardware, background push, and pharmacy
+review/evidence remain separate platform/specialist work. Unsupported approval-gated sales fail
+closed on the server. Do not port money, stock, refund, pharmacy or tax rules into the client.
 
 Verification for the client is `npm run lint`, `npm test -- --runInBand`, and
 `npm run typecheck` from `apps/mobile/`, plus `xcodebuild` for an iOS Simulator target and

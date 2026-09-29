@@ -3,6 +3,28 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Mobile POS: Bluetooth/USB HID scanner mode — 2026-09-29
+
+branch `fix/mobile-hid-scanner-mode` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ server/GraphQL/
+schema/codegen** · เพิ่มโหมดเครื่องสแกนใน `BarcodeScannerModal` และจำ `camera`/`hardware` บนเครื่องด้วย
+`react-native-keychain` service แยก; อ่านไม่ได้ตกกลับกล้อง · HID ยิงต่อเนื่องแล้ว modal ค้าง ล้างช่อง คืน focus
+และบอกชื่อสินค้าที่เพิ่ม; รหัสไม่พบค้างและ select all · ref กัน CR+LF/submit ซ้ำระหว่าง loading · รหัสที่มี
+อักษรไทยหยุดก่อน resolve และแนะนำให้เปลี่ยน Hardware Keyboard เป็น English (US) โดยไม่เดาแปลงรหัส ·
+สินค้าที่มี modifier/หลาย pack ยังผ่าน `ProductOptionsModal` เดิมก่อนยืนยันว่าเพิ่มแล้ว
+
+- mobile `typecheck` + `lint` ผ่าน; Jest **30/30 suites, 181/181 tests** ผ่าน
+- focused scanner contract **9/9** ผ่าน และอยู่ในไฟล์เดิม `mobile-camera-scanner-contract.test.mts`
+  (ตัดคอมเมนต์ก่อนสแกน source; ไม่เพิ่ม pure-test file)
+- **mutation test 7/7 แดงถูกตัว**: 4 กฎเดิม + read preference ก่อน write จบ · ไม่ล้าง synchronous code ref ·
+  ข้าม product options; recheck พบ regex เดิมจับ `codeRef` คนละ block แล้วเขียวลอย จึงจำกัด source block และ
+  rerun mutation เดิมจนแดง จากนั้นคืน source ครบ
+- `apps/web npm run gate` รันจริงแต่จบ **1,567/1,568** เพราะ baseline ที่อยู่นอก diff:
+  `admin-navigation-contract` พบ alert ปิดไม่ได้ที่ `retail-local-releases/page.tsx:450`; scanner contracts ใน TAP ผ่าน
+  ทั้งหมด · รัน `npm run build` แยกแล้วผ่าน **125/125 pages** (มี warning เดิมว่า local PostgreSQL 5432
+  `ECONNREFUSED` ระหว่าง static generation)
+- **ยังไม่ได้ verify:** iPad + เครื่องยิง Bluetooth/USB HID จริง, CR+LF จริงจากรุ่นเครื่องยิง, native camera/HID
+  สลับโหมดบน binary จริง และ Android hardware
+
 ## ⚠️ เดสก์ท็อปร้านทั่วไป: พิมพ์ใบเสร็จได้กระดาษเปล่า + ขายเมนูสูตร/สินค้าชุดไม่ได้ — 2026-09-23
 
 branch `recheck/retail-desktop-pos` (ต่อจาก `recheck/pharmacy-desktop-pos` เพราะแก้ไฟล์เดียวกัน) ·

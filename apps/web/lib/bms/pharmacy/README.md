@@ -181,6 +181,41 @@ includes `status` in a `SET` clause.
    (`raw_messages`/`structured_answers`/`medical_info`/`complaint`/`ai_summary`) is never
    written into either log.
 
+### Customer-facing intake and final-confirmation example
+
+This example is explanatory copy, not a new protocol or prompt. The actual question set and final
+fields come only from the active, clinically approved protocol. The assistant asks one question per
+turn, discloses reuse without echoing health values early, and shows every reused and newly collected
+value in the final confirmation.
+
+> **Customer:** ปวดหัวเหมือนครั้งก่อนค่ะ<br>
+> **AI:** ระบบพบข้อมูลสุขภาพที่คุณเคยยืนยันและอนุญาตให้จดจำไว้ จะนำมาใช้เพื่อลดการถามซ้ำนะคะ
+> ผู้ที่จะใช้ยาคือคุณเองใช่ไหมคะ?<br>
+> **Customer:** ใช่ค่ะ<br>
+> **AI:** อาการครั้งนี้เริ่มมานานเท่าไรแล้วคะ?<br>
+> **Customer:** ประมาณ 2 ชั่วโมง<br>
+> **AI:** ระดับความปวดจาก 0-10 อยู่ที่ประมาณเท่าไรคะ?<br>
+> **Customer:** ประมาณ 5<br>
+> **AI:** ขณะนี้กำลังใช้ยาหรือเพิ่งรับประทานยาอะไรอยู่หรือไม่คะ?<br>
+> **Customer:** ไม่มีค่ะ
+
+An illustrative final confirmation may then show:
+
+> **กรุณาตรวจสอบข้อมูลก่อนส่งให้เภสัชกร**<br>
+> ผู้ใช้ยา: ลูกค้าเอง · อายุ: 35 ปี · เพศกำเนิด: หญิง<br>
+> อาการหลัก: ปวดศีรษะ · เริ่มมีอาการ: ประมาณ 2 ชั่วโมง · ความรุนแรง: 5/10<br>
+> อาการร่วม: ไม่มี · สัญญาณอันตรายที่รายงาน: ไม่พบ<br>
+> ประวัติแพ้ยา: เพนิซิลลิน · โรคประจำตัว: ความดันโลหิตสูง<br>
+> ยาที่กำลังใช้: ไม่มี · การตั้งครรภ์/ให้นมบุตร: ไม่ได้ตั้งครรภ์และไม่ได้ให้นมบุตร<br>
+> ตอบ `ยืนยันข้อมูล`, `แก้ไขข้อมูล` หรือ `ยกเลิก`
+
+All values above are fictional. Confirmation sends the case to the pharmacist queue; it never
+approves or recommends medication. A customer correction replaces the reused value for this case.
+If a red flag appears at any point, the deterministic emergency path interrupts this normal summary
+flow immediately. Current channels deliver this as plain text; the example does not claim a custom
+button widget. A client may render suggested actions, but the backend confirmation must still belong
+to the current case.
+
 ## AI abstraction
 
 ```ts
