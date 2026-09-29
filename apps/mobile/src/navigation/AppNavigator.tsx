@@ -60,7 +60,6 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
                       <BoardGameServiceProvider>
                         <OrderAlertWatcher />
                         <View style={{ flex: 1 }}>
-                          <OfflineStatusBanner />
                           <Stack.Navigator
                             screenOptions={{ headerShown: false }}
                           >
@@ -113,6 +112,7 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
                               component={BoardGameDetailScreen}
                             />
                           </Stack.Navigator>
+                          <OfflineStatusBanner />
                         </View>
                       </BoardGameServiceProvider>
                     </RestaurantOperationsProvider>

@@ -1,8 +1,11 @@
 import React, { useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   FlatList,
+  Pressable,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -14,6 +17,8 @@ import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { StatusPill } from '../../components/StatusPill';
 import { OrderAlertSettingsModal } from '../../components/OrderAlertSettingsModal';
+import { OrdersIcon } from '../../components/icons/TabIcons';
+import { useOfflineStatusBannerState } from '../../components/OfflineStatusBanner';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { useIncomingOrders } from '../../state/IncomingOrdersContext';
@@ -43,6 +48,7 @@ type Props = NativeStackScreenProps<OrdersStackParamList, 'IncomingOrders'>;
 export default function IncomingOrdersScreen({ navigation }: Props) {
   const { colors, spacing, typography } = useTheme();
   const { isTablet } = useResponsive();
+  const { visible: offlineBannerVisible } = useOfflineStatusBannerState();
   const {
     orders,
     pending,
@@ -174,8 +180,16 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
 
   return (
     <ScreenContainer>
-      <View style={[styles.row, { marginBottom: spacing.md }]}>
-        <View style={{ flex: 1 }}>
+      <View
+        style={[
+          styles.header,
+          {
+            marginBottom: spacing.md,
+            paddingTop: offlineBannerVisible ? 52 : 0,
+          },
+        ]}
+      >
+        <View style={styles.headerText}>
           <Text style={[typography.title, { color: colors.text }]}>
             ออร์เดอร์เข้า
           </Text>
@@ -185,17 +199,69 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
               : `รอรับ ${pending.length} ใบ · ทั้งหมด ${orders.length} ใบ`}
           </Text>
         </View>
-        <Button
-          label={settings.enabled ? 'แจ้งเตือน' : 'ปิดแจ้งเตือน'}
-          variant="secondary"
-          onPress={() => setSettingsOpen(true)}
-        />
-        <Button
-          label={orderingPaused ? 'เปิดรับออนไลน์' : 'พักรับออนไลน์'}
-          variant={orderingPaused ? 'primary' : 'secondary'}
-          loading={workingId === 'pause'}
-          onPress={togglePaused}
-        />
+        <View style={styles.headerTools}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={
+              settings.enabled ? 'ตั้งค่าการแจ้งเตือน' : 'เปิดการแจ้งเตือน'
+            }
+            onPress={() => setSettingsOpen(true)}
+            style={({ pressed }) => [
+              styles.alertControl,
+              {
+                backgroundColor: colors.surface2,
+                borderColor: settings.enabled ? colors.primary : colors.border,
+                opacity: pressed ? 0.82 : 1,
+              },
+            ]}
+          >
+            <OrdersIcon
+              color={settings.enabled ? colors.primary : colors.textMuted}
+              size={22}
+            />
+            <Text style={[styles.toolLabel, { color: colors.text }]}>
+              แจ้งเตือน
+            </Text>
+          </Pressable>
+          <Pressable
+            accessibilityRole="switch"
+            accessibilityLabel="พักรับออร์เดอร์ออนไลน์"
+            accessibilityState={{
+              checked: orderingPaused,
+              disabled: Boolean(workingId),
+            }}
+            disabled={Boolean(workingId)}
+            onPress={() => {
+              togglePaused().catch(() => undefined);
+            }}
+            style={({ pressed }) => [
+              styles.pauseControl,
+              {
+                borderColor: orderingPaused ? colors.primary : colors.border,
+                backgroundColor: colors.surface2,
+                opacity: workingId ? 0.5 : pressed ? 0.82 : 1,
+              },
+            ]}
+          >
+            {workingId === 'pause' ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Switch
+                pointerEvents="none"
+                value={orderingPaused}
+                trackColor={{
+                  false: colors.surface3,
+                  true: colors.primary,
+                }}
+                thumbColor={colors.primaryText}
+                ios_backgroundColor={colors.surface3}
+              />
+            )}
+            <Text style={[styles.toolLabel, { color: colors.text }]}>
+              พักรับออนไลน์
+            </Text>
+          </Pressable>
+        </View>
       </View>
       {orderingPaused ? (
         <Text style={[typography.captionStrong, { color: colors.warning }]}>
@@ -205,34 +271,64 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       {/* คิว · QR · เรียกพนักงาน · คำขอจากแชท เป็นงานชนิดเดียวกับออร์เดอร์เข้า — "มีคนรอเราตอบ"
           จึงอยู่ใต้แท็บเดียวกัน · เลขบนปุ่มคือเลขเดียวกับที่รวมเป็น badge บนแถบล่าง
           ถ้าเลขบนแถบกับที่นี่ไม่ตรงกัน แปลว่ามีถังที่ badge นับแต่กดเข้าไปไม่ถึง */}
-      <View style={[styles.row, { marginBottom: spacing.sm }]}>
-        <Button
-          label={`คิว ${activeWaitlistCount}`}
-          variant="secondary"
+      <View
+        style={[
+          styles.segmented,
+          { borderColor: colors.border, marginBottom: spacing.md },
+        ]}
+      >
+        <Pressable
+          accessibilityRole="button"
           onPress={() =>
             getAppNavigation(navigation).navigate('RestaurantOps', {
               initialView: 'QUEUE',
             })
           }
-        />
-        <Button
-          label={`QR ${pendingQrCount}`}
-          variant="secondary"
+          style={({ pressed }) => [
+            styles.segment,
+            { backgroundColor: pressed ? colors.surface2 : 'transparent' },
+          ]}
+        >
+          <Text style={[typography.bodyStrong, { color: colors.text }]}>
+            คิว {activeWaitlistCount}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           onPress={() =>
             getAppNavigation(navigation).navigate('RestaurantOps', {
               initialView: 'QR',
             })
           }
-        />
-        <Button
-          label={`เรียก ${pendingServiceCallCount}`}
-          variant="secondary"
+          style={({ pressed }) => [
+            styles.segment,
+            styles.segmentDivider,
+            {
+              borderColor: colors.border,
+              backgroundColor: pressed ? colors.surface2 : 'transparent',
+            },
+          ]}
+        >
+          <Text style={[typography.bodyStrong, { color: colors.text }]}>
+            QR {pendingQrCount}
+          </Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           onPress={() =>
             getAppNavigation(navigation).navigate('RestaurantOps', {
               initialView: 'CALLS',
             })
           }
-        />
+          style={({ pressed }) => [
+            styles.segment,
+            { backgroundColor: pressed ? colors.surface2 : 'transparent' },
+          ]}
+        >
+          <Text style={[typography.bodyStrong, { color: colors.text }]}>
+            เรียก {pendingServiceCallCount}
+          </Text>
+        </Pressable>
       </View>
       <View style={{ gap: spacing.sm, marginBottom: spacing.sm }}>
         <TextInput
@@ -286,13 +382,24 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
       <FlatList
         data={orders}
         keyExtractor={order => order.id}
-        contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.md }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          gap: spacing.md,
+          paddingTop: spacing.md,
+          paddingBottom: spacing.lg,
+        }}
         numColumns={isTablet ? 2 : 1}
         columnWrapperStyle={isTablet ? { gap: spacing.md } : undefined}
         ListEmptyComponent={
-          <Text style={[typography.body, { color: colors.textMuted }]}>
-            ไม่มีออร์เดอร์ออนไลน์ในคิว
-          </Text>
+          <View style={styles.emptyState}>
+            <OrdersIcon color={colors.textMuted} size={46} />
+            <Text style={[typography.subtitle, { color: colors.text }]}>
+              ไม่มีออร์เดอร์ออนไลน์ในคิว
+            </Text>
+            <Text style={[typography.caption, { color: colors.textMuted }]}>
+              รายการใหม่จะแสดงที่นี่
+            </Text>
+          </View>
         }
         renderItem={({ item }) => (
           <Card style={{ flex: 1 }}>
@@ -369,6 +476,63 @@ export default function IncomingOrdersScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  headerText: { flexGrow: 1, flexShrink: 1, minWidth: 116 },
+  headerTools: { flexDirection: 'row', alignItems: 'stretch', gap: 8 },
+  alertControl: {
+    minWidth: 64,
+    minHeight: 64,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 3,
+  },
+  pauseControl: {
+    minHeight: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  toolLabel: { fontSize: 12, lineHeight: 16, fontWeight: '600' },
+  segmented: {
+    minHeight: 52,
+    flexDirection: 'row',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  segment: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  segmentDivider: {
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
+  },
+  emptyState: {
+    flex: 1,
+    minHeight: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingBottom: 48,
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
