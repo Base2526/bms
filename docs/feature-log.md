@@ -10,6 +10,32 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Native Mobile POS camera + focused HID scanner (2026-09-29)
+
+- The sale screen now has two real scan inputs behind the same server-side `bmsPosScan` resolver:
+  one-shot `react-native-data-scanner` camera capture and an explicitly selected Bluetooth/USB HID
+  mode whose focused `TextInput` receives keyboard-wedge output. The latter stays open for a run of
+  items; it is not global native key capture and does not inherit the browser Scan Manager's PREFIX
+  semantics.
+- The selected camera/hardware mode is remembered on the installation in a dedicated
+  `react-native-keychain` service. Reads wait for an in-flight write so reopening immediately cannot
+  restore the old mode. Missing, unreadable, or unexpected preference data falls back to camera;
+  convenience state must never prevent a sale.
+- Hardware submissions use synchronous refs as well as React state. This closes the CR+LF race in
+  which the line-feed arrives before the state clear and resolves the same item twice. A successful
+  scan clears the JS/native buffers, restores focus, and names the added product; a failed lookup
+  stays selected for replacement. Thai keyboard output is rejected with an English (US) keyboard
+  instruction rather than being guessed back into digits.
+- Scanning still cannot skip product policy. Items with modifiers or multiple packs pass through the
+  existing `ProductOptionsModal` before the success acknowledgement, so server-derived variant,
+  pack, modifier, price, and availability rules remain authoritative.
+- Unit coverage includes Thai-character detection, option routing, Keychain fallback/read-write
+  ordering, and the source contract guards the lazy native import, cancellation, mode switching,
+  focus/clear behavior, duplicate-submit guard, and product-options handoff. Physical iOS/Android
+  camera/HID models and real scanner terminators remain rollout verification.
+
+---
+
 ## Managed desktop customer display (2026-09-19)
 
 - Desktop register settings now model the normal counter topology explicitly: one cashier display

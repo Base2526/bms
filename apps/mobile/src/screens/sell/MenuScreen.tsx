@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
   FlatList,
@@ -22,6 +22,7 @@ import { ProductOptionsModal } from '../../components/ProductOptionsModal';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useResponsive } from '../../theme/useResponsive';
 import { cartLineVariantLabel } from '../../lib/cartLine';
+import { scannedItemNeedsOptions } from '../../lib/scannerInput';
 import { useCart } from '../../state/CartContext';
 import { useCatalog } from '../../state/CatalogContext';
 import { useShift } from '../../state/ShiftContext';
@@ -168,6 +169,13 @@ export default function MenuScreen({ navigation }: Props) {
     setSearchQuery,
   } = useCatalog();
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [completedHardwareScan, setCompletedHardwareScan] = useState<{
+    sequence: number;
+    name: string;
+  } | null>(null);
+  const completedHardwareScanSequence = useRef(0);
+  const [configuringFromHardwareScan, setConfiguringFromHardwareScan] =
+    useState(false);
   const [parkOpen, setParkOpen] = useState(false);
   const [parkName, setParkName] = useState('');
   const [parkNote, setParkNote] = useState('');
@@ -197,6 +205,22 @@ export default function MenuScreen({ navigation }: Props) {
       return;
     }
     appNavigation.navigate('Checkout', { source: 'retail' });
+  };
+
+  const openScanner = () => {
+    setCompletedHardwareScan(null);
+    setConfiguringFromHardwareScan(false);
+    setScannerOpen(true);
+  };
+
+  const addCompletedHardwareScan = (item: PosMenuItem) => {
+    addItem(item);
+    setLastScanned(item.name);
+    completedHardwareScanSequence.current += 1;
+    setCompletedHardwareScan({
+      sequence: completedHardwareScanSequence.current,
+      name: item.name,
+    });
   };
 
   const grid = (
@@ -249,7 +273,7 @@ export default function MenuScreen({ navigation }: Props) {
                   label="▥ สแกนบาร์โค้ด"
                   accessibilityLabel="เปิดหน้าต่างสแกนบาร์โค้ด"
                   variant="secondary"
-                  onPress={() => setScannerOpen(true)}
+                  onPress={openScanner}
                 />
                 <Button
                   label="ประวัติ"
@@ -265,7 +289,7 @@ export default function MenuScreen({ navigation }: Props) {
                 <MenuActionButton
                   kind="scan"
                   label="เปิดหน้าต่างสแกนบาร์โค้ด"
-                  onPress={() => setScannerOpen(true)}
+                  onPress={openScanner}
                 />
                 <MenuActionButton
                   kind="history"
@@ -504,9 +528,21 @@ export default function MenuScreen({ navigation }: Props) {
         visible={scannerOpen}
         resolveCode={resolveScan}
         onCancel={() => setScannerOpen(false)}
-        onScanned={item => {
-          setConfiguring(item);
+        completedHardwareScan={completedHardwareScan}
+        onScanned={(item, inputMode) => {
+          if (inputMode === 'hardware') {
+            if (scannedItemNeedsOptions(item)) {
+              // สินค้าที่มี modifier/หลาย pack ยังต้องผ่านตัวเลือกเดิม ไม่เช่นนั้นราคาและกฎขั้นต่ำอาจผิด
+              setConfiguringFromHardwareScan(true);
+              setConfiguring(item);
+            } else {
+              addCompletedHardwareScan(item);
+            }
+            return;
+          }
           setLastScanned(item.name);
+          setConfiguringFromHardwareScan(false);
+          setConfiguring(item);
           setScannerOpen(false);
         }}
       />
@@ -514,9 +550,21 @@ export default function MenuScreen({ navigation }: Props) {
         item={configuring}
         restaurant={mode === 'restaurant'}
         resolveVariant={resolveVariant}
-        onClose={() => setConfiguring(null)}
+        onClose={() => {
+          setConfiguring(null);
+          setConfiguringFromHardwareScan(false);
+        }}
         onConfirm={({ item, modifierCodes }) => {
-          addItem({ ...item, selectedModifierCodes: modifierCodes });
+          const configuredItem = {
+            ...item,
+            selectedModifierCodes: modifierCodes,
+          };
+          if (configuringFromHardwareScan) {
+            addCompletedHardwareScan(configuredItem);
+          } else {
+            addItem(configuredItem);
+          }
+          setConfiguringFromHardwareScan(false);
           setConfiguring(null);
         }}
       />

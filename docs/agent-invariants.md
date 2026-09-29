@@ -153,8 +153,9 @@ will not use them. See § "AI tool-calling — example usage" in
 It enforces unique snake_case names, valid surfaces, staff-only sensitive tools, and declared required
 schema fields. Registry-only metadata (`whenToUse`/`whenNotToUse`/`commonMistakes`/`example`) stays out
 of provider payloads and should be added only for a real observed ambiguity, not mechanically to every
-tool. The current snapshot is 66 tools total / 21 customer tools; verify the source rather than
-trusting this count after any catalog change.
+tool. The current snapshot is 77 tools total / 24 default-customer tools / 23 pharmacy-customer
+tools (re-counted from the registry on 2026-09-29); verify the source rather than trusting this count
+after any catalog change.
 
 ## Authentication identity and registration
 
@@ -468,9 +469,20 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   replay the original result, and the same tenant-wide key racing across branches must become an
   idempotency conflict rather than a unique-constraint 500. Authentication, current permission and
   both PIN checks still happen at the route boundary on every retry.
-- **A keyboard-wedge scan is globally captured only after a positive configured prefix.** Timing
-  and focus are not proof that input came from a Bluetooth HID scanner. Camera/manual/HID sources
-  share the same explicit context router and serial queue; scan context never grants permission.
+- **A browser keyboard-wedge scan is globally captured only after a positive configured prefix.**
+  Timing and focus are not proof that input came from a Bluetooth HID scanner. Browser
+  camera/manual/HID sources share the same explicit context router and serial queue; scan context
+  never grants permission.
+- **The native focused-HID modal is explicit capture, not global capture.** The cashier must open
+  the scanner modal, where an explicitly selected or remembered Hardware Scanner mode makes the
+  focused `TextInput` the scan target. Each successful scan clears both the React value and native
+  input buffer, returns focus, and rejects a second CR/LF while resolution is in flight; otherwise
+  one trigger can add the same product twice. A failed lookup stays selected for replacement, and
+  Thai characters fail with an English (US) hardware-keyboard instruction rather than a guessed
+  remapping. Products with
+  modifiers or more than one pack still go through the existing options flow before the success
+  acknowledgement. The on-device camera/hardware preference is convenience state in a dedicated
+  Keychain service: an unreadable or unknown value falls back to camera and never blocks a sale.
 - **Serial-number checks run once, across the whole bill, not per line.** The same serial split
   across two lines is caught by dedup'ing all serials on the bill together, not line-by-line; the
   required count always comes from the server-side pack/base-qty conversion, never a client-supplied
