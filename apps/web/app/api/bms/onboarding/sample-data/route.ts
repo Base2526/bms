@@ -1,40 +1,92 @@
+import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { verifyAdminSession } from "@/lib/auth/server";
-import { query } from "@/lib/db";
-import { createOnboardingSampleData, OnboardingSampleDataError } from "@/lib/bms/onboardingSampleData";
+
+import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
+import { audit } from "@/lib/bms/audit";
+import {
+  createStarterCatalog,
+  deleteSampleData,
+  getSampleDataStatus,
+  SampleDataError,
+} from "@/lib/bms/sampleData";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function handlePOST() {
-  const admin = verifyAdminSession();
-  if (!admin?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+function authError(status: 401 | 403) {
+  return NextResponse.json({ error: status === 401 ? "Unauthorized" : "Forbidden" }, { status });
+}
 
-  const userRes = await query<{ tenant_id: string | null; role: string | null }>(
-    `SELECT tenant_id, role FROM users WHERE id = $1`,
-    [admin.id]
-  );
-  const user = userRes.rows[0];
-  if (!user?.tenant_id) {
-    return NextResponse.json({ error: "ไม่พบร้านของผู้ใช้" }, { status: 400 });
+function sampleError(error: unknown) {
+  if (error instanceof SampleDataError) {
+    const status = error.code === "NOT_FOUND" ? 404 : 409;
+    return NextResponse.json({ error: error.message, code: error.code }, { status });
   }
-  if (!["Administrator", "Manager"].includes(String(user.role || ""))) {
-    return NextResponse.json({ error: "เฉพาะ Administrator หรือ Manager" }, { status: 403 });
-  }
+  console.error("[BMS] onboarding sample data failed:", error);
+  return NextResponse.json({ error: "จัดการข้อมูลตัวอย่างไม่สำเร็จ" }, { status: 500 });
+}
+
+async function handleGET() {
+  const auth = await authorizeAdminRoute("product.edit");
+  if (!auth.ok) return authError(auth.status);
 
   try {
-    const result = await createOnboardingSampleData(user.tenant_id);
-    return NextResponse.json({ ok: true, ...result });
-  } catch (error: any) {
-    if (error instanceof OnboardingSampleDataError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 });
-    }
-    console.error("[BMS] onboarding sample data failed:", error);
-    return NextResponse.json({ error: "สร้าง sample data ไม่สำเร็จ กรุณาลองอีกครั้งเพื่อทำต่อจากจุดเดิม" }, { status: 500 });
+    const sample = await getSampleDataStatus(auth.tenantId);
+    return NextResponse.json({ ok: true, sample });
+  } catch (error) {
+    return sampleError(error);
   }
 }
 
+async function handlePOST(req: NextRequest) {
+  const auth = await authorizeAdminRoute("product.edit");
+  if (!auth.ok) return authError(auth.status);
+
+  const body = await req.json().catch(() => ({}));
+  if ((body?.mode ?? "STARTER_CATALOG") !== "STARTER_CATALOG") {
+    return NextResponse.json(
+      { error: "โหมดข้อมูลตัวอย่างนี้ยังไม่เปิดให้ร้านจริง", code: "UNSUPPORTED_MODE" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const sample = await createStarterCatalog(auth.tenantId, auth.adminId);
+    await audit(auth.ctx, "sample_data.create", sample.id, {
+      mode: sample.mode,
+      archetype: sample.archetype,
+      products: sample.products.length,
+    });
+    return NextResponse.json({ ok: true, sample });
+  } catch (error) {
+    return sampleError(error);
+  }
+}
+
+async function handleDELETE(req: NextRequest) {
+  const auth = await authorizeAdminRoute("product.edit");
+  if (!auth.ok) return authError(auth.status);
+
+  const body = await req.json().catch(() => ({}));
+  if (body?.confirmation !== "DELETE SAMPLE") {
+    return NextResponse.json(
+      { error: "กรุณายืนยันด้วยข้อความ DELETE SAMPLE", code: "CONFIRMATION_REQUIRED" },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const result = await deleteSampleData(auth.tenantId, auth.adminId);
+    await audit(auth.ctx, "sample_data.delete", result.runId, {
+      deletedProducts: result.deletedProducts,
+    });
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    return sampleError(error);
+  }
+}
+
+export const GET = withRouteErrorLog("GET /api/bms/onboarding/sample-data", handleGET);
 export const POST = withRouteErrorLog("POST /api/bms/onboarding/sample-data", handlePOST);
+export const DELETE = withRouteErrorLog("DELETE /api/bms/onboarding/sample-data", handleDELETE);

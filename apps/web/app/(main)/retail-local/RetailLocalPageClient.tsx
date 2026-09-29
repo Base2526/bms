@@ -103,6 +103,7 @@ type PageContent = {
   sizeLabel: string;
   checksumLabel: string;
   minOsLabel: string;
+  releaseNotesLabel: string;
   fallbackFiles: Record<Platform, Record<PackageType, string>>;
   windowsNote: string;
   ubuntuNote: string;
@@ -145,7 +146,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     ],
     setupEyebrow: "RECOMMENDED ENVIRONMENT",
     setupTitle: "เลือก OS ให้ตรงกับวิธีดูแลร้าน",
-    setupDescription: "แนะนำ Windows สำหรับร้านทั่วไป, Ubuntu สำหรับทีมที่ดูแล Linux และ macOS Apple Silicon สำหรับการทดลองที่มีทีม IT ดูแล",
+    setupDescription: "แนะนำ Windows สำหรับร้านทั่วไป, Ubuntu สำหรับทีมที่ดูแล Linux และ macOS Apple Silicon/Intel สำหรับการทดลองที่มีทีม IT ดูแล",
     recommended: "แนะนำ",
     supported: "รองรับ",
     experimental: "ทดลอง",
@@ -165,16 +166,16 @@ const CONTENT: { th: PageContent; en: PageContent } = {
         points: ["ต้องมีสิทธิ์ sudo สำหรับติดตั้ง", "ใช้ Secret Service หรือ KWallet สำหรับ POS token", "ควรมีผู้ดูแล backup และระบบปฏิบัติการ"],
       },
       macos: {
-        name: "macOS 15 Sequoia · Apple Silicon",
+        name: "macOS 15 Sequoia · Apple Silicon / Intel",
         edition: "Experimental technical pilot",
-        summary: "สำหรับร้านที่ใช้ Mac รุ่น Apple Silicon และมีทีม IT ดูแล runtime, backup และข้อกำหนดด้านความปลอดภัยของ macOS",
-        points: ["รองรับเฉพาะ Apple Silicon (arm64)", "ต้องใช้ installer ที่ sign และ notarize ก่อนใช้งาน production", "ต้องทดสอบ sleep, restart, backup และ peripheral กับเครื่องจริง"],
+        summary: "สำหรับร้านที่ใช้ Mac Apple Silicon หรือ Intel และมีทีม IT ดูแล runtime, backup และข้อกำหนดด้านความปลอดภัยของ macOS",
+        points: ["ต้องเลือก installer ให้ตรงกับ arm64 หรือ x64", "ต้องใช้ installer ที่ sign และ notarize ก่อนใช้งาน production", "ต้องทดสอบ sleep, restart, backup และ peripheral กับเครื่องจริง"],
       },
     },
     transitionLabel: "Windows 10 IoT Enterprise LTSC 2021 x64 และ Ubuntu 22.04 LTS",
     transitionItems: "Windows 10 22H2 ใช้ได้เฉพาะเครื่องที่มี ESU ปัจจุบัน",
-    unsupportedLabel: "Intel Mac, ARM64 host อื่น, Windows Server และ Linux distro อื่น",
-    unsupportedItems: "macOS Intel (x64) ยังไม่รองรับ และ macOS Apple Silicon ยังอยู่ในระดับ experimental technical pilot",
+    unsupportedLabel: "ARM64 host อื่น, Windows Server และ Linux distro อื่น",
+    unsupportedItems: "macOS ทั้ง Apple Silicon และ Intel ยังอยู่ในระดับ experimental technical pilot",
     hardwareTitle: "สเปกเครื่องแนะนำ",
     hardware: [
       { label: "CPU", value: "4 cores ขึ้นไป" },
@@ -207,14 +208,15 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "สำหรับแคชเชียร์เพิ่มเติม เลือก Pair กับ Local Server ในร้านหรือ Server ภายนอกได้" },
     },
     downloadNow: { "server-pos": "ดาวน์โหลด Server + POS", server: "ดาวน์โหลด Server", pos: "ดาวน์โหลด POS Desktop" },
-    unavailable: { "server-pos": "ยังไม่เผยแพร่แพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
+    unavailable: { "server-pos": "ขอ Trial เพื่อรับแพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
     available: "พร้อมดาวน์โหลด",
     awaitingArtifact: "รอ publish artifact",
-    includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ให้ตรวจสอบก่อนติดตั้ง",
+    includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ที่บอก backup, downtime และ rollback ให้ตรวจก่อนติดตั้งหรือ update",
     versionLabel: "เวอร์ชัน",
     sizeLabel: "ขนาด",
     checksumLabel: "SHA-256",
     minOsLabel: "OS ขั้นต่ำ",
+    releaseNotesLabel: "ข้อควรรู้ก่อน update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
@@ -222,11 +224,11 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
-    macosNote: "macOS 15 · Apple Silicon · Experimental",
+    macosNote: "macOS 15 · Apple Silicon / Intel · Experimental",
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
       ubuntu: "Ubuntu x64 · ต้องมี Secret Service หรือ KWallet",
-      macos: "macOS 12 ขึ้นไป · Apple Silicon · Keychain",
+      macos: "macOS 12 ขึ้นไป · Apple Silicon / Intel · Keychain",
     },
     warningTitle: "สถานะปัจจุบัน: Technical pilot",
     warningDescription: "ยังไม่ใช่ General Availability และยังไม่ควรใช้แทน production release จนกว่าจะผ่าน code signing, updater/rollback, hardware certification และ recovery drills ตาม release gate",
@@ -260,7 +262,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     ],
     setupEyebrow: "RECOMMENDED ENVIRONMENT",
     setupTitle: "Choose an OS that matches your operations",
-    setupDescription: "Windows is recommended for most stores; Ubuntu suits Linux teams, while macOS Apple Silicon is available as an IT-managed experiment.",
+    setupDescription: "Windows is recommended for most stores; Ubuntu suits Linux teams, while macOS Apple Silicon and Intel are available as an IT-managed experiment.",
     recommended: "Recommended",
     supported: "Supported",
     experimental: "Experimental",
@@ -280,16 +282,16 @@ const CONTENT: { th: PageContent; en: PageContent } = {
         points: ["sudo access is required to install", "Secret Service or KWallet stores the POS token", "An owner is needed for backups and OS maintenance"],
       },
       macos: {
-        name: "macOS 15 Sequoia · Apple Silicon",
+        name: "macOS 15 Sequoia · Apple Silicon / Intel",
         edition: "Experimental technical pilot",
-        summary: "For stores using an Apple Silicon Mac with an IT owner for the runtime, backups and macOS security requirements.",
-        points: ["Apple Silicon (arm64) only", "The installer must be signed and notarized before production use", "Test sleep, restart, backup and peripherals on real hardware"],
+        summary: "For stores using an Apple Silicon or Intel Mac with an IT owner for the runtime, backups and macOS security requirements.",
+        points: ["Select the installer matching arm64 or x64", "The installer must be signed and notarized before production use", "Test sleep, restart, backup and peripherals on real hardware"],
       },
     },
     transitionLabel: "Windows 10 IoT Enterprise LTSC 2021 x64 and Ubuntu 22.04 LTS",
     transitionItems: "Windows 10 22H2 requires evidence of current ESU coverage",
-    unsupportedLabel: "Intel Macs, other ARM64 hosts, Windows Server and other Linux distributions",
-    unsupportedItems: "Intel macOS (x64) is not supported; macOS on Apple Silicon remains an experimental technical pilot",
+    unsupportedLabel: "Other ARM64 hosts, Windows Server and other Linux distributions",
+    unsupportedItems: "macOS on both Apple Silicon and Intel remains an experimental technical pilot",
     hardwareTitle: "Recommended hardware",
     hardware: [
       { label: "CPU", value: "4 cores or more" },
@@ -322,14 +324,15 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "For an additional register. Pair it with an in-store Local Server or an external server." },
     },
     downloadNow: { "server-pos": "Download Server + POS", server: "Download Server", pos: "Download POS Desktop" },
-    unavailable: { "server-pos": "Combined package not published", server: "Server not published", pos: "POS Desktop not published" },
+    unavailable: { "server-pos": "Request a trial for the combined package", server: "Server not published", pos: "POS Desktop not published" },
     available: "Available",
     awaitingArtifact: "Awaiting published artifact",
-    includes: "Every published file must show its version, file size, SHA-256 and release notes before installation.",
+    includes: "Every published file must show its version, file size, SHA-256, and release notes covering backup, downtime, and rollback before install or update.",
     versionLabel: "Version",
     sizeLabel: "Size",
     checksumLabel: "SHA-256",
     minOsLabel: "Minimum OS",
+    releaseNotesLabel: "Before you update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
@@ -337,11 +340,11 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
-    macosNote: "macOS 15 · Apple Silicon · Experimental",
+    macosNote: "macOS 15 · Apple Silicon / Intel · Experimental",
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
       ubuntu: "Ubuntu x64 · Secret Service or KWallet required",
-      macos: "macOS 12 or newer · Apple Silicon · Keychain",
+      macos: "macOS 12 or newer · Apple Silicon / Intel · Keychain",
     },
     warningTitle: "Current status: Technical pilot",
     warningDescription: "This is not General Availability. It should not be presented as a production release until code signing, updater/rollback, hardware certification and recovery drills clear the release gates.",
@@ -569,7 +572,9 @@ export default function RetailLocalPageClient({
                 </div>
                 <div className={styles.downloadMeta}>
                   <Tag color="processing">{content.currentPilot}</Tag>
-                  <Tag color={directDownload ? "success" : "default"}>{directDownload ? content.available : content.awaitingArtifact}</Tag>
+                  <Tag color={directDownload ? "success" : packageType === "server-pos" ? "purple" : "default"}>
+                    {directDownload ? content.available : packageType === "server-pos" ? content.pilot : content.awaitingArtifact}
+                  </Tag>
                   <span><FileProtectOutlined /> SHA-256 + release notes</span>
                 </div>
                 {directDownload?.version && (
@@ -579,6 +584,12 @@ export default function RetailLocalPageClient({
                     <div><dt>{content.checksumLabel}</dt><dd>{directDownload.sha256 ? directDownload.sha256.slice(0, 16) + "..." : "-"}</dd></div>
                   </dl>
                 )}
+                {directDownload?.releaseNotes ? (
+                  <div className={styles.releaseNotes}>
+                    <strong>{content.releaseNotesLabel}</strong>
+                    <p>{directDownload.releaseNotes}</p>
+                  </div>
+                ) : null}
                 {directDownload ? (
                   <a href={directDownload.url} className={styles.downloadLink} download>
                     <Button type={isRecommended ? "primary" : "default"} size="large" block icon={<DownloadOutlined />}>{content.downloadNow[packageType]}</Button>

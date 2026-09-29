@@ -33,6 +33,9 @@ export type StoredFileRow = {
   updated_at: string;
 };
 
+/** Bytes already written to the storage driver but not yet registered in `files`. */
+export type PendingStoredFile = Omit<StoredFileRow, "id" | "created_at" | "updated_at">;
+
 /** คีย์โฟลเดอร์ย่อยตามวันที่: YYYY/MM/DD */
 export function dateKeyPrefix(): string {
   const now = new Date();
@@ -134,22 +137,48 @@ export async function persistUploadStream(
   // ผู้เรียกที่รับไฟล์อ่อนไหวต้องส่ง "private" มาเอง
   visibility: FileVisibility = "public"
 ): Promise<StoredFileRow> {
-  const { key, storedName } = buildKey(renameTo || upload.filename || "file.bin");
-
-  const { size, checksum } = await getStorageDriver().writeStream(
-    key,
-    upload.createReadStream()
+  const stored = await writeWebFileStream(
+    upload.createReadStream(),
+    upload.filename,
+    upload.mimetype,
+    renameTo
   );
 
   return insertFileRow({
-    storedName,
-    originalName: upload.filename || null,
-    mimetype: upload.mimetype || null,
-    size,
-    checksum,
-    key,
+    storedName: stored.filename,
+    originalName: stored.original_name,
+    mimetype: stored.mimetype,
+    size: stored.size,
+    checksum: stored.checksum,
+    key: stored.relpath,
     visibility,
   });
+}
+
+/**
+ * Stream request bytes straight to the configured storage driver without
+ * creating a database row. Bulk-upload callers can then register the file and
+ * the owning domain row in one database transaction. If that transaction
+ * fails, the caller must delete `relpath`.
+ */
+export async function writeWebFileStream(
+  stream: NodeJS.ReadableStream,
+  filename: string,
+  mimetype?: string | null,
+  renameTo?: string
+): Promise<PendingStoredFile> {
+  const originalName = filename || "file.bin";
+  const { key, storedName } = buildKey(renameTo || originalName);
+  const { size, checksum } = await getStorageDriver().writeStream(key, stream);
+
+  return {
+    filename: storedName,
+    original_name: filename || null,
+    mimetype: mimetype || null,
+    size,
+    checksum,
+    relpath: key,
+  };
 }
 
 /**

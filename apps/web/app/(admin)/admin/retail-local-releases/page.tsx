@@ -34,6 +34,7 @@ type Platform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
 type Status = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 type Channel = "pilot" | "stable" | "internal";
+type AccessLevel = "public" | "trial";
 
 type ReleaseAsset = {
   id: string;
@@ -42,6 +43,7 @@ type ReleaseAsset = {
   version: string;
   channel: Channel;
   status: Status;
+  access_level: AccessLevel;
   is_latest: boolean;
   original_name: string;
   size_bytes: number;
@@ -93,6 +95,11 @@ const PACKAGE_LABELS: Record<PackageType, string> = {
   pos: "POS Desktop only",
 };
 
+const ACCESS_LABELS: Record<AccessLevel, string> = {
+  public: "Public",
+  trial: "Trial locked",
+};
+
 const PLATFORM_LABELS: Record<Platform, string> = {
   "windows-x64": "Windows x64",
   "ubuntu-x64": "Ubuntu x64",
@@ -141,11 +148,6 @@ function inferVersionFromFilename(filename: string): string | null {
   return generic?.[1]?.replace(/_/g, "-") ?? null;
 }
 
-async function sha256Hex(file: File): Promise<string> {
-  const hash = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
-  return Array.from(new Uint8Array(hash)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
 export default function RetailLocalReleasesPage() {
   const { lang } = useI18n();
   const th = lang === "th";
@@ -159,6 +161,7 @@ export default function RetailLocalReleasesPage() {
   const [inferredFile, setInferredFile] = useState<InferredFileMeta | null>(null);
   const [uploadForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const uploadPackageType = Form.useWatch("packageType", uploadForm);
 
   const copy = th ? {
     title: "Retail Local Releases",
@@ -169,21 +172,25 @@ export default function RetailLocalReleasesPage() {
     packageType: "ประเภทติดตั้ง",
     version: "เวอร์ชัน",
     status: "สถานะ",
+    access: "การเข้าถึง",
     channel: "ช่องทาง",
     file: "ไฟล์",
     size: "ขนาด",
     checksum: "SHA-256",
     minOs: "OS ขั้นต่ำ",
     notes: "Release notes",
+    notesHint: "ระบุสิ่งที่ user ต้องรู้ก่อนกด update: downtime/restart, backup, migration risk, rollback/restore และช่องทาง support",
     created: "สร้างเมื่อ",
     actions: "จัดการ",
     latest: "Latest",
+    trialLock: "ล็อกด้วย Trial",
     save: "บันทึก",
     download: "ทดสอบดาวน์โหลด",
     uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน POS Desktop บน macOS ใช้ .dmg",
-    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง หน้าเว็บจึงมี Server + POS, Server only และ POS Desktop only ได้พร้อมกัน",
+    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แต่ Server + POS ถูก lock เป็น Trial และไม่แสดงเป็น public download",
     inferred: "อ่านจากไฟล์",
-    inferredHint: "ระบบเดา platform, version, ขนาด และ SHA-256 จากไฟล์ให้ก่อนบันทึก",
+    inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
+    checksumPending: "คำนวณระหว่างอัปโหลด",
     saved: "บันทึกแล้ว",
     uploaded: "อัปโหลดแล้ว",
   } : {
@@ -195,21 +202,25 @@ export default function RetailLocalReleasesPage() {
     packageType: "Package type",
     version: "Version",
     status: "Status",
+    access: "Access",
     channel: "Channel",
     file: "File",
     size: "Size",
     checksum: "SHA-256",
     minOs: "Minimum OS",
     notes: "Release notes",
+    notesHint: "Include what the operator must know before pressing update: downtime/restart, backup, migration risk, rollback/restore, and support notes.",
     created: "Created",
     actions: "Actions",
     latest: "Latest",
+    trialLock: "Trial locked",
     save: "Save",
     download: "Test download",
     uploadHint: "Server and combined packages use .exe, .deb or .pkg. macOS POS Desktop uses .dmg.",
-    publicRule: "Latest is tracked per platform and package type, so Server + POS, Server only, and POS Desktop only can be published together.",
+    publicRule: "Latest is tracked per platform and package type. Server + POS is trial locked and is not listed as a public download.",
     inferred: "Read from file",
-    inferredHint: "The form infers platform, version, size and SHA-256 from the selected installer before saving.",
+    inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
+    checksumPending: "calculated during upload",
     saved: "Saved",
     uploaded: "Uploaded",
   };
@@ -257,19 +268,22 @@ export default function RetailLocalReleasesPage() {
     }
 
     const body = new FormData();
-    body.set("file", file);
     body.set("platform", values.platform);
     body.set("packageType", values.packageType);
     body.set("version", values.version);
     body.set("channel", values.channel);
     body.set("status", values.status);
+    body.set("accessLevel", values.accessLevel);
     body.set("isLatest", values.isLatest ? "true" : "false");
     body.set("minOs", values.minOs);
     body.set("releaseNotes", values.releaseNotes || "");
+    // Keep the small metadata first so the streaming parser can validate it
+    // while the installer is sent directly to storage.
+    body.set("file", file);
 
     setUploading(true);
     try {
-      await jsonRequest("/api/admin/retail-local/releases", { method: "POST", body });
+      await jsonRequest("/api/admin/retail-local/releases-upload", { method: "POST", body });
       message.success(copy.uploaded);
       closeUpload();
       await load();
@@ -280,7 +294,7 @@ export default function RetailLocalReleasesPage() {
     }
   };
 
-  const handleUploadChange = async (nextList: UploadFile[]) => {
+  const handleUploadChange = (nextList: UploadFile[]) => {
     const next = nextList.slice(-1);
     setFileList(next);
     const file = next[0]?.originFileObj;
@@ -295,6 +309,7 @@ export default function RetailLocalReleasesPage() {
     uploadForm.setFieldsValue({
       ...(platform ? { platform, minOs: defaultMinOs(platform, packageType) } : {}),
       ...(packageType ? { packageType } : {}),
+      ...(packageType ? { accessLevel: packageType === "server-pos" ? "trial" : "public" } : {}),
       ...(version ? { version } : {}),
     });
     setInferredFile({
@@ -305,18 +320,13 @@ export default function RetailLocalReleasesPage() {
       size: file.size,
       sha256: null,
     });
-    try {
-      const sha256 = await sha256Hex(file);
-      setInferredFile((current) => current?.filename === file.name ? { ...current, sha256 } : current);
-    } catch {
-      setInferredFile((current) => current?.filename === file.name ? { ...current, sha256: null } : current);
-    }
   };
 
   const openEdit = (row: ReleaseAsset) => {
     setEditing(row);
     editForm.setFieldsValue({
       status: row.status,
+      accessLevel: row.access_level,
       isLatest: row.is_latest,
       minOs: row.min_os,
       releaseNotes: row.release_notes,
@@ -402,6 +412,7 @@ export default function RetailLocalReleasesPage() {
             { title: copy.platform, dataIndex: "platform", width: 140 },
             { title: copy.packageType, dataIndex: "package_type", width: 150, render: (value: PackageType) => PACKAGE_LABELS[value] },
             { title: copy.status, dataIndex: "status", width: 120, render: (value: Status) => <Tag color={STATUS_COLORS[value]}>{value}</Tag> },
+            { title: copy.access, dataIndex: "access_level", width: 130, render: (value: AccessLevel) => <Tag color={value === "trial" ? "purple" : "blue"}>{ACCESS_LABELS[value]}</Tag> },
             { title: copy.channel, dataIndex: "channel", width: 100 },
             { title: copy.file, dataIndex: "original_name", width: 260, ellipsis: true },
             { title: copy.size, dataIndex: "size_bytes", width: 100, render: formatBytes },
@@ -436,8 +447,8 @@ export default function RetailLocalReleasesPage() {
         okText={copy.upload}
         width={720}
       >
-        <Alert showIcon closable type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
-        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server", channel: "pilot", status: "supported", isLatest: false }}>
+        <Alert showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
+        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server-pos", accessLevel: "trial", channel: "pilot", status: "supported", isLatest: false }}>
           <Row gutter={12}>
             <Col xs={24} sm={8}>
               <Form.Item name="platform" label={copy.platform} rules={[{ required: true }]}>
@@ -451,7 +462,12 @@ export default function RetailLocalReleasesPage() {
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="packageType" label={copy.packageType} rules={[{ required: true }]}>
-                <Select options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))} />
+                <Select
+                  options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))}
+                  onChange={(value: PackageType) => {
+                    uploadForm.setFieldValue("accessLevel", value === "server-pos" ? "trial" : "public");
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
@@ -472,6 +488,16 @@ export default function RetailLocalReleasesPage() {
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
+              <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
+                <Select
+                  disabled={uploadPackageType === "server-pos"}
+                  options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col xs={24} sm={8}>
               <Form.Item name="isLatest" label={copy.latest} valuePropName="checked">
                 <Switch />
               </Form.Item>
@@ -480,7 +506,7 @@ export default function RetailLocalReleasesPage() {
           <Form.Item name="minOs" label={copy.minOs} rules={[{ required: true }]}>
             <Input placeholder="Windows 11 Pro x64 / Ubuntu 24.04 LTS x64 / macOS 15 Apple Silicon" />
           </Form.Item>
-          <Form.Item name="releaseNotes" label={copy.notes}>
+          <Form.Item name="releaseNotes" label={copy.notes} extra={copy.notesHint}>
             <Input.TextArea rows={4} />
           </Form.Item>
           <Upload.Dragger
@@ -508,7 +534,7 @@ export default function RetailLocalReleasesPage() {
                   <Typography.Text>{copy.version}: {inferredFile.version ?? "-"}</Typography.Text>
                   <Typography.Text>{copy.size}: {formatBytes(inferredFile.size)}</Typography.Text>
                   <Typography.Text copyable={inferredFile.sha256 ? { text: inferredFile.sha256 } : false}>
-                    {copy.checksum}: {inferredFile.sha256 ? `${inferredFile.sha256.slice(0, 24)}...` : "calculating"}
+                    {copy.checksum}: {inferredFile.sha256 ? `${inferredFile.sha256.slice(0, 24)}...` : copy.checksumPending}
                   </Typography.Text>
                 </Space>
               )}
@@ -528,13 +554,19 @@ export default function RetailLocalReleasesPage() {
           <Form.Item name="status" label={copy.status} rules={[{ required: true }]}>
             <Select options={["latest", "supported", "legacy", "deprecated", "hidden"].map((value) => ({ value, label: value }))} />
           </Form.Item>
+          <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
+            <Select
+              disabled={editing?.package_type === "server-pos"}
+              options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
+            />
+          </Form.Item>
           <Form.Item name="isLatest" label={copy.latest} valuePropName="checked">
             <Switch />
           </Form.Item>
           <Form.Item name="minOs" label={copy.minOs} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="releaseNotes" label={copy.notes}>
+          <Form.Item name="releaseNotes" label={copy.notes} extra={copy.notesHint}>
             <Input.TextArea rows={8} />
           </Form.Item>
         </Form>

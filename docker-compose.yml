@@ -131,6 +131,8 @@ services:
       # s3 = ต้องใช้เมื่อ web กระจายข้ามเครื่อง (ดู lib/storageDrivers/s3.ts)
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_DIR: /app/storage
+      # Installer uploads are streamed; this is a byte ceiling, not a memory allocation.
+      BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES: ${BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES:-4294967296}
       S3_BUCKET: ${S3_BUCKET:-}
       S3_REGION: ${S3_REGION:-}
       S3_ENDPOINT: ${S3_ENDPOINT:-}

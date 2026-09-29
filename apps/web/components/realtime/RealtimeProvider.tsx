@@ -491,7 +491,7 @@ export function PosConnectionStatus({
 }
 
 function PosRealtimeIndicator() {
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const { status } = useRealtimeStatus();
   // Operator surfaces own a persistent compact status control in their header. Customer display
   // and manual pages intentionally stay quiet; an infrastructure message there is not actionable.

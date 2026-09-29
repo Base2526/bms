@@ -13,7 +13,6 @@ readonly LIMACTL="$SYSTEM_ROOT/runtime/lima/bin/limactl"
 readonly AGENT="$PAYLOAD_ROOT/bin/bms-runtime-agent"
 readonly RECEIPT="$STATE_ROOT/installation.json"
 readonly CONFIG="$STATE_ROOT/lima.yaml"
-readonly ARCH_FILE="$PAYLOAD_ROOT/ARCH"
 readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
 readonly LOG_PATH="$STATE_ROOT/host-service.log"
 PROVISION_DEVICE_TOKEN=""
@@ -24,7 +23,7 @@ ADMIN_EMAIL=""
 ADMIN_PASSWORD=""
 ADMIN_PIN=""
 BUSINESS_ARCHETYPE=""
-CREATE_SAMPLE_DATA="0"
+SAMPLE_MODE="NONE"
 LAUNCH_LABEL="gui/$(id -u)/com.bms.retail-local"
 readonly LAUNCH_LABEL
 
@@ -56,32 +55,20 @@ verify_payload() {
 render_lima_config() {
   mkdir -p "$STATE_ROOT" "$LIMA_HOME"
   chmod 0700 "$STATE_ROOT" "$LIMA_HOME"
-  local package_arch lima_arch ubuntu_image docker_archive compose_binary age_archive
-  package_arch=$(cat "$ARCH_FILE" 2>/dev/null || printf 'arm64')
-  case "$package_arch" in
-    arm64)
-      lima_arch=aarch64
-      ubuntu_image=ubuntu-24.04-server-cloudimg-arm64.img
-      docker_archive=docker-aarch64.tgz
-      compose_binary=docker-compose-linux-aarch64
-      age_archive=age-linux-arm64.tar.gz
-      ;;
-    x64)
-      lima_arch=x86_64
-      ubuntu_image=ubuntu-24.04-server-cloudimg-amd64.img
-      docker_archive=docker-x86_64.tgz
-      compose_binary=docker-compose-linux-x86_64
-      age_archive=age-linux-amd64.tar.gz
-      ;;
-    *) die "package arch ไม่รองรับ: $package_arch" ;;
+  local platform_target lima_arch
+  platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
+  case "$platform_target" in
+    macos-15-arm64) lima_arch=aarch64 ;;
+    macos-15-x64) lima_arch=x86_64 ;;
+    *) die "package target ไม่รองรับ: $platform_target" ;;
   esac
 
   local image_uri payload escaped_uri escaped_payload ubuntu_sha
-  image_uri=$(file_uri "$PAYLOAD_ROOT/$ubuntu_image")
+  image_uri=$(file_uri "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img")
   payload=$(yaml_escape_sed "$PAYLOAD_ROOT")
   escaped_uri=$(yaml_escape_sed "$image_uri")
   escaped_payload=$payload
-  ubuntu_sha=$(awk -v image="./$ubuntu_image" '$2 == image {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
+  ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
   [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
   [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
   sed -e "s|__LIMA_ARCH__|$lima_arch|g" \
@@ -90,9 +77,6 @@ render_lima_config() {
       -e "s|__PAYLOAD_ROOT__|$escaped_payload|g" \
       -e "s|__HOST_WEB_PORT__|$WEB_PORT|g" \
       -e "s|__HOST_WS_PORT__|$WS_PORT|g" \
-      -e "s|__DOCKER_ARCHIVE__|$docker_archive|g" \
-      -e "s|__COMPOSE_BINARY__|$compose_binary|g" \
-      -e "s|__AGE_ARCHIVE__|$age_archive|g" \
       "$CONTROL_ROOT/lima.yaml.template" >"$CONFIG.tmp"
   chmod 0600 "$CONFIG.tmp"
   mv -f "$CONFIG.tmp" "$CONFIG"
@@ -210,8 +194,8 @@ select_sample_data() {
   while :; do
     read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
     case "$answer" in
-      y|Y|yes|YES) CREATE_SAMPLE_DATA=1; return ;;
-      ''|n|N|no|NO) CREATE_SAMPLE_DATA=0; return ;;
+      y|Y|yes|YES) SAMPLE_MODE=STARTER_CATALOG; return ;;
+      ''|n|N|no|NO) SAMPLE_MODE=NONE; return ;;
       *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
     esac
   done
@@ -293,7 +277,7 @@ provision_shop() {
     return
   fi
   [[ -n $SHOP_NAME && -n $ADMIN_NAME && -n $ADMIN_EMAIL && -n $ADMIN_PASSWORD && -n $ADMIN_PIN &&
-     -n $BUSINESS_ARCHETYPE && $CREATE_SAMPLE_DATA =~ ^[01]$ ]] || \
+     -n $BUSINESS_ARCHETYPE && $SAMPLE_MODE =~ ^(NONE|STARTER_CATALOG)$ ]] || \
     die "ข้อมูล setup ไม่ครบ กรุณาเปิด Setup ใหม่"
 
   local provision_result result_file
@@ -306,7 +290,7 @@ provision_shop() {
     shell_export_line BMS_LOCAL_ADMIN_PASSWORD "$ADMIN_PASSWORD"
     shell_export_line BMS_LOCAL_ADMIN_PIN "$ADMIN_PIN"
     shell_export_line BMS_LOCAL_BUSINESS_ARCHETYPE "$BUSINESS_ARCHETYPE"
-    shell_export_line BMS_LOCAL_CREATE_SAMPLE_DATA "$CREATE_SAMPLE_DATA"
+    shell_export_line BMS_LOCAL_SAMPLE_MODE "$SAMPLE_MODE"
     cat <<'EOF'
 root=/var/lib/bms-retail-local
 result="$root/.provision-result.$$"
@@ -355,15 +339,10 @@ launch_pos_desktop() {
 }
 
 write_receipt() {
-  local version source_commit now package_arch platform_target
+  local version source_commit platform_target now
   version=$(cat "$PAYLOAD_ROOT/VERSION")
   source_commit=$(cat "$PAYLOAD_ROOT/SOURCE_COMMIT")
-  package_arch=$(cat "$ARCH_FILE" 2>/dev/null || printf 'arm64')
-  case "$package_arch" in
-    arm64) platform_target=macos-15-arm64 ;;
-    x64) platform_target=macos-15-x64 ;;
-    *) die "package arch ไม่รองรับ: $package_arch" ;;
-  esac
+  platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
   now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   guest sudo sh -c 'printf "%s\n" "$1" > /var/lib/bms-retail-local/installation.json; chmod 0600 /var/lib/bms-retail-local/installation.json' \
     bms-runtime "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"$platform_target\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:3100\"}"

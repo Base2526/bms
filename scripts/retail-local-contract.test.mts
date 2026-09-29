@@ -53,7 +53,7 @@ test("first-run provisioning is single-tenant, atomic, and never persists the ra
   assert.match(service, /await client\.query\("BEGIN"\)/);
   assert.match(service, /await client\.query\("COMMIT"\)/);
   assert.match(service, /hashToken\(deviceToken\)/);
-  assert.match(service, /normalizeShopArchetype\(input\.businessArchetype\)/);
+  assert.match(service, /normalizeShopArchetype\(input\.businessArchetype \?\? DEFAULT_SHOP_ARCHETYPE\)/);
   assert.match(service, /VALUES \(\$1, \$2, \$3\)/);
   assert.doesNotMatch(service, /VALUES \(\$1, 'general', 'mini_mart'\)/);
   assert.match(runner, /status: "PENDING"/);
@@ -75,19 +75,17 @@ test("every Retail Local installer asks for shop type and optional archetype sam
     read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh"),
     read("deploy/retail-local/managed-runtime/macos/bms-retail-local"),
   ];
-  const archetypes = SHOP_ARCHETYPE_OPTIONS.map((option) => option.value);
   for (const installer of installers) {
-    for (const archetype of archetypes) assert.match(installer, new RegExp(`\\b${archetype}\\b`));
     assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
-    assert.match(installer, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
-    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่/);
+    assert.match(installer, /BMS_LOCAL_SAMPLE_MODE/);
+    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้าน|Starter Catalog/);
   }
   for (const compose of [
     read("deploy/retail-local/compose.yml"),
     read("deploy/retail-local/managed-runtime/compose.managed.yml"),
   ]) {
     assert.match(compose, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
-    assert.match(compose, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
+    assert.match(compose, /BMS_LOCAL_SAMPLE_MODE/);
     assert.match(compose, /sample-data:/);
     assert.match(compose, /retail-local-sample-data\.mts/);
   }
@@ -193,6 +191,83 @@ test("portable pilot package contains pinned images and verifies them before ins
   assert.match(runtime, /Get-FileHash[\s\S]*checksum ไม่ตรง/);
   assert.match(install, /Wait-RetailLocalHealthy/);
   assert.match(install, /Test-RetailLocalHttp/);
+});
+
+test("Windows offline pilot produces real EXE variants from a verified server payload", () => {
+  const builder = read("deploy/retail-local/windows-offline/build-offline-exe.ps1");
+  const inno = read("deploy/retail-local/windows-offline/BMSRetailLocalOffline.iss");
+  const readme = read("deploy/retail-local/windows-offline/README.template.md");
+  assert.ok(builder.indexOf("Get-FileHash") < builder.indexOf("Expand-Archive"));
+  assert.match(builder, /ValidateSet\("server", "server-pos", "all"\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-windows-x64/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-windows-x86-legacy/);
+  assert.match(builder, /Set-Content[^\n]+\.sha256/);
+  assert.match(inno, /DefaultDirName=\{localappdata\}\\BMS\\Retail Local/);
+  assert.match(inno, /Source: "\{#BundleRoot\}\\\*"[^\n]+recursesubdirs/);
+  assert.match(inno, /Check: ServerInstallationCompleted/);
+  assert.match(inno, /FileExists\(ExpandConstant\('\{app\}\\installation\.json'\)\)/);
+  assert.match(inno, /Uninstallable=no/);
+  assert.match(builder, /README\.template\.md/);
+  assert.match(builder, /Replace\("\{\{SERVER_POS_SHA256\}\}"/);
+  assert.match(readme, /PowerShell 7/);
+  assert.match(readme, /Docker Desktop/);
+  assert.match(readme, /Electron 43[\s\S]{0,120}มกราคม 2027/);
+  assert.match(readme, /ไม่มี Emergency Offline Mode/);
+  assert.match(readme, /ESC\/POS USB\/LAN ยังไม่ผ่านการรับรองทุกรุ่น/);
+});
+
+test("Linux offline pilot produces four x64 installers with verified pinned images", () => {
+  const builder = read("deploy/retail-local/linux-offline/build-offline-linux.ps1");
+  const debBuilder = read("deploy/retail-local/linux-offline/build-debs.sh");
+  const setup = read("deploy/retail-local/linux-offline/bms-retail-local-setup");
+  const backup = read("deploy/retail-local/linux-offline/bms-retail-local-backup");
+  const readme = read("deploy/retail-local/linux-offline/README.template.md");
+  assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
+  assert.match(builder, /imageSha256/);
+  assert.match(builder, /Replace\("`r`n", "`n"\)\.Replace\("`r", "`n"\)/);
+  assert.match(builder, /linuxPackageSourceMount/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-linux-x64\.deb/);
+  assert.match(builder, /BMS-Retail-Local-POS-\$Version-linux-x64\.AppImage/);
+  assert.match(debBuilder, /bms-retail-local-server-pos/);
+  assert.match(debBuilder, /bms-retail-local-server/);
+  assert.match(setup, /sha256sum --check image\.sha256/);
+  assert.match(setup, /openssl rand -hex 48/);
+  assert.match(setup, /compose --profile setup run --rm provision/);
+  assert.match(setup, /127\.0\.0\.1:3100/);
+  assert.match(backup, /pg_dump/);
+  assert.match(backup, /secrets\.env/);
+  assert.match(backup, /SHA256SUMS\.txt/);
+  assert.match(readme, /Ubuntu 22\.04 LTS หรือ 24\.04 LTS/);
+  assert.match(readme, /Linux x86\/32-bit ไม่มี/);
+  assert.match(readme, /basic_text/);
+  assert.match(readme, /internal pilot build แบบ unsigned/);
+});
+
+test("one release command builds every host-supported installer from a clean versioned commit", () => {
+  const builder = read("deploy/retail-local/build-release.ps1");
+  const guide = read("deploy/retail-local/BUILD.md");
+  assert.match(builder, /npm version \$Version --no-git-tag-version/);
+  assert.match(builder, /status --porcelain --untracked-files=normal/);
+  assert.match(builder, /ConvertFrom-Json -AsHashtable/);
+  assert.match(builder, /package\.ps1/);
+  assert.match(builder, /build-offline-exe\.ps1/);
+  assert.match(builder, /build-offline-linux\.ps1/);
+  assert.match(builder, /managed-runtime\/macos\/build-pkg\.sh/);
+  assert.match(builder, /npm run pack:mac/);
+  assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
+  assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);
+  assert.match(builder, /Target MacOS ต้อง build บน macOS/);
+  assert.ok(
+    builder.indexOf("Build Windows installers") < builder.indexOf("Build Linux installers"),
+    "large Windows and Linux packagers must run sequentially"
+  );
+  assert.match(builder, /release\.sourceCommit -ne \$head/);
+  assert.match(builder, /SHA-256 ไม่ตรง/);
+  assert.match(guide, /-UpdateVersion/);
+  assert.match(guide, /git commit -m/);
+  assert.match(guide, /-Version 0\.2\.13/);
+  assert.match(guide, /Apple Silicon\/Intel/);
+  assert.match(guide, /-Target MacOS/);
 });
 
 test("install diagnostics and destructive reset are explicit and secret-safe", () => {

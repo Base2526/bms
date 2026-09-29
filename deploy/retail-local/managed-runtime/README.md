@@ -11,7 +11,7 @@ until the acceptance gates below have evidence from clean target machines.
 - Windows 10 22H2 x64: transition only, with current ESU evidence;
 - Ubuntu 24.04 LTS x64: primary native-Linux target;
 - Ubuntu 22.04 LTS x64: transition target;
-- macOS 15+ on Apple Silicon and Intel: Lima/VZ + private Moby technical pilot.
+- macOS 15+ on Apple Silicon or Intel: architecture-matched Lima/VZ + private Moby technical pilot.
 
 `support-matrix.json` is product policy, not a claim that a target has passed certification. The
 installer must also require a signed release manifest whose `platformTarget` names one of these
@@ -28,6 +28,13 @@ Every downloaded release is a JWS-compatible Ed25519 envelope described by
 covers the exact ASCII `protected.payload` bytes, avoiding cross-language JSON canonicalization
 ambiguity. Each component also has a SHA-256; OCI images additionally require an immutable digest.
 HTTPS alone, tags, and a checksum downloaded beside an artifact are not publisher identity.
+
+Every newly signed release includes `shop-archetypes` as a `support-file` component sourced from
+`packages/retail-local-contract/shop-archetypes.json`. Windows and Ubuntu installers build their
+first-run menu from that verified component, so the catalog comes from the exact application release
+rather than an unversioned latest endpoint. `enabledForNewInstall=false` or `deprecated=true` hides
+an id from new installations without making existing shops unreadable. A genuinely new id still
+requires a compatible application release and Starter Catalog implementation before signing.
 
 `verify-release.mjs` is the dependency-free reference verifier for release tooling and tests.
 `apps/retail-local-agent` is the native single-binary implementation used by the installers. The
@@ -48,9 +55,6 @@ in a signed agent release before manifests start using that id.
   technical-pilot runtime;
 - loopback-only Web/WS, with PostgreSQL, Redis, and engine sockets off host ports;
 - atomic first-run migration/provisioning and ACL/mode-protected secrets;
-- first-run shop-archetype selection plus opt-in, resumable onboarding sample data whose products
-  come from the shared archetype catalog; the pairing checkpoint is persisted before the separate
-  sample process, so a sample failure or interruption never blocks the shop or loses pairing;
 - short-lived pairing handoff into Electron `safeStorage` without displaying a device token;
 - encrypted logical database/files/secrets backup through `bms-localctl backup`;
 - scheduled age-encrypted off-host backup for Windows and Ubuntu, with a separately held recipient
@@ -58,7 +62,7 @@ in a signed agent release before manifests start using that id.
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
-- a full macOS `.pkg` builder for Apple Silicon and Intel that bundles all server/runtime bytes and needs no Docker
+- full macOS Apple Silicon/Intel `.pkg` builders that bundle all server/runtime bytes and need no Docker
   Desktop on the target Mac;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
@@ -121,10 +125,11 @@ Run the Windows candidate check from PowerShell 7 with:
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
 ```
 
-Build the full macOS technical-pilot package with:
+Build both full macOS architecture-specific technical-pilot packages with:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
 ```
 
 That command builds `Server only`. For the recommended single-Mac installation, build the combined
@@ -132,17 +137,10 @@ package instead; it embeds BMS POS and performs the one-time local pairing autom
 
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh \
-  --version 0.4.0-internal.1 --package-type server-pos
+  --version 0.4.0-internal.1 --architecture arm64 --package-type server-pos
 ```
 
-Pass `--arch x64` for Intel Macs. The default is `--arch arm64` for Apple Silicon:
-
-```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh \
-  --version 0.4.0-internal.1 --package-type server-pos --arch x64
-```
-
-Docker is needed only on the release workstation to build the ARM64 OCI images. The target package
+Docker is needed only on the release workstation to build the matching OCI images. The target package
 uses the bundled Lima/VZ private runtime and never calls Docker Desktop. After package installation,
 open `/Applications/BMS Retail Local.app`; do not upload the earlier payload-free `.pkg`
 fixture as a server release.
@@ -170,8 +168,10 @@ The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`
 the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and
 downloads only components authenticated by the packaged public key. A build with no
 `--manifest-url` is an internal bootstrap and requires the signed-manifest URL as its first argument.
-After installation, update only through `sudo bms-retail-local-update`; rerunning the raw Linux setup
-script still refuses an existing shop.
+After installation, use `sudo bms-retail-local-update --check` for a signed preview, then
+`sudo bms-retail-local-update` to review the same metadata and confirm installation. The `--yes`
+option is only for an operator-facing launcher that already showed the verified preview and captured
+consent. Rerunning the raw Linux setup script still refuses an existing shop.
 
 The setup command securely prompts for the one-use Activation Code. A missing, expired, or
 temporarily unreachable activation service is reported but does not fail installation or restrict

@@ -583,8 +583,22 @@ deployment profile. The operator contract and remaining release gates live in
   Web/WS images plus pinned PostgreSQL/Redis images, and writes the archive SHA-256 into
   `release.json`. The Web runtime image contains the matching init schema and migrations; never
   restore the source-tree migration bind mount, which makes a copied installer silently depend on a
-  developer checkout. Installation verifies the archive before `docker load`, then waits for both
-  application health checks and HTTP probes instead of reporting success after `compose up` alone.
+  developer checkout. The shop-archetype catalog is version-coherent too: offline packages carry
+  their embedded `shop-archetypes.json`, while Managed Runtime takes it only from the signed release
+  component. Never feed an old application an unversioned latest catalog. Installation verifies the
+  archive before `docker load`, then waits for both application health checks and HTTP probes instead
+  of reporting success after `compose up` alone.
+- **Release installers are bulk streams, not request buffers.** The platform-admin upload route
+  is the Pages API `/api/admin/retail-local/releases-upload`, with `bodyParser: false`, raw Node
+  `IncomingMessage`, its own platform-admin cookie guard, and a `middleware.ts` exclusion. This is a
+  required isolation boundary: Next.js 14's App Route `NextRequest` adapter expands large bodies in
+  memory even if user code streams them. Never move this upload into an App Route or middleware,
+  and never reintroduce `request.formData()`, browser/server `arrayBuffer()`, or an S3
+  `Buffer.concat()` over the complete installer. The handler parses multipart input incrementally,
+  writes through the storage driver's stream API, and derives size/SHA-256 on that path. Local
+  storage cleans a failed partial write; S3 uses bounded multipart parts and aborts a failed upload.
+  The private `files` row and release row commit together, and a validation/pre-commit failure
+  removes the unreferenced object.
 - **Local services are local by default.** PostgreSQL and Redis have no published host port; Web and
   WS publish only on `127.0.0.1`. All application and datastore secrets are generated locally and
   remain required—local mode is never permission to fall back to a literal key. Exposing the server
@@ -594,6 +608,17 @@ deployment profile. The operator contract and remaining release gates live in
   sensitive and belongs on encrypted off-host media. Update takes a backup before schema/image
   changes; restore is explicit, retains the replaced storage directory, reruns migrations, and must
   be tested instead of inferred from a successful `pg_dump`.
+- **Updates are operator-initiated and recoverable.** A Retail Local host may be told that an update
+  is available, but it must not silently change application/runtime/schema bytes. The local operator
+  chooses **Check for update** or **Back up and update**. Check-only passes preflight, verifies the
+  signed release metadata and reports up-to-date/available without staging components, installing
+  runtime controls or stopping services. The release listing provides downtime, migration, rollback
+  and support notes. Applying requires a second explicit confirmation and a verified encrypted backup,
+  then proceeds
+  through signature/digest verification, transaction-controlled migration, health-gated commit and
+  recorded update evidence. Failure before commit leaves or returns the host to the prior working
+  release; schema-incompatible failure restores the database, files and secrets together. License or
+  trial expiry must never block corrective updates for an already-installed shop.
 - **Availability claims stop at the evidence.** Docker Compose plus PowerShell is a technical-pilot
   install path, not a signed consumer installer. Do not advertise general availability until code
   signing, updater/rollback, supported peripheral certification, power-loss/disk-full/restore drills,
@@ -628,6 +653,12 @@ deployment profile. The operator contract and remaining release gates live in
   never copies an evidence private key or bearer token. Never return trial state from evidence
   ingestion as an entitlement decision that the host could use to sanction the shop, and never put
   trial/commercial state on a customer receipt, bill, tax document, or kitchen ticket.
+- **The combined Server + POS installer is trial-locked distribution, not a runtime lock.**
+  `bms_retail_local_release_assets.access_level` keeps `package_type = 'server-pos'` behind the
+  standard Retail Local license/onboarding flow, so it is omitted from anonymous public downloads.
+  That package lock must never be copied into the installed Retail Local runtime: POS, stock,
+  payment, tax, backup, restore and data access still follow the same fail-open licensing invariant
+  above.
 
 ## Restaurant POS (dine-in)
 

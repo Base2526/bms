@@ -3,7 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useEffect } from "react";
-import { localizedShopArchetypeOptions, onboardingChecklistKeysForArchetype, archetypeToBusinessType } from "@/lib/bms/shopArchetypes";
+import { localizedShopArchetypeLabel, localizedShopArchetypeOptions, onboardingChecklistKeysForArchetype, archetypeToBusinessType, type ShopArchetype } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
@@ -65,7 +65,6 @@ function SectionHeader({ children, note }: { children: React.ReactNode; note?: s
 
 export default function StoreProfileCard() {
   const { t } = useI18n();
-  const archetypeOptions = localizedShopArchetypeOptions(t);
   const SHIPPING_MODE_OPTIONS = [
     { value: "flat", label: t("admin_store_profile.shipping_mode_flat") },
     { value: "zone", label: t("admin_store_profile.shipping_mode_zone") },
@@ -82,6 +81,18 @@ export default function StoreProfileCard() {
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const configuredArchetype = data?.bmsStoreProfile?.businessArchetype as string | null | undefined;
+  const activeArchetypeOptions = localizedShopArchetypeOptions(t);
+  // Keep a deprecated type legible for an existing shop while omitting it from all
+  // new selections. Ant Select would otherwise fall back to displaying the raw id.
+  const archetypeOptions = configuredArchetype &&
+    !activeArchetypeOptions.some((option) => option.value === configuredArchetype)
+    ? [...activeArchetypeOptions, {
+        value: configuredArchetype as ShopArchetype,
+        label: localizedShopArchetypeLabel(configuredArchetype, t),
+        disabled: true,
+      }]
+    : activeArchetypeOptions;
   const archetypeLocked = Boolean(data?.bmsStoreProfile?.businessArchetypeLocked);
   const checklistKeys = onboardingChecklistKeysForArchetype(selectedArchetype);
   const shopExperience = shopExperienceForArchetype(selectedArchetype);

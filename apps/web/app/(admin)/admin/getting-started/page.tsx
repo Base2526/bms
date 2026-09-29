@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Col, Divider, Progress, Row, Space, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Col, Divider, Modal, Progress, Row, Space, Tag, Typography, message } from "antd";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -13,11 +13,12 @@ import {
   RobotOutlined,
   BellOutlined,
 } from "@ant-design/icons";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   archetypeNeedsRestockEmphasis,
   localizedShopArchetypeLabel,
   onboardingChecklistKeysForArchetype,
+  shopArchetypeHasStarterCatalog,
 } from "@/lib/bms/shopArchetypes";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -64,11 +65,24 @@ type StepItem = {
   icon: React.ReactNode;
 };
 
+type SampleStatus = {
+  id: string;
+  mode: "STARTER_CATALOG" | "FULL_DEMO";
+  archetype: string;
+  status: "RUNNING" | "ACTIVE" | "FAILED" | "DELETING" | "DELETED";
+  counts: Record<string, number>;
+  products: Array<{ sku: string; name: string; modified: boolean; referenced: boolean; converted: boolean }>;
+  blocked: boolean;
+};
+
 export default function Page() {
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveProgress] = useMutation(M_PROGRESS);
   const [creatingSample, setCreatingSample] = useState(false);
+  const [deletingSample, setDeletingSample] = useState(false);
+  const [sampleStatus, setSampleStatus] = useState<SampleStatus | null>(null);
+  const [sampleStatusLoaded, setSampleStatusLoaded] = useState(false);
   const syncedProgress = useRef(false);
 
   const tenant = data?.bmsMyTenant;
@@ -78,7 +92,26 @@ export default function Page() {
   const archetype = profile?.businessArchetype || null;
   const checklistKeys = onboardingChecklistKeysForArchetype(archetype);
   const restockFirstClass = archetypeNeedsRestockEmphasis(archetype);
-  const canOfferSampleData = productTotal === 0;
+  const canOfferSampleData = sampleStatusLoaded && !sampleStatus && productTotal === 0 &&
+    shopArchetypeHasStarterCatalog(archetype);
+  const activeSample = sampleStatus?.status === "ACTIVE" ? sampleStatus : null;
+
+  const loadSampleStatus = useCallback(async () => {
+    setSampleStatusLoaded(false);
+    try {
+      const res = await fetch("/api/bms/onboarding/sample-data", { credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body?.error || t("admin_getting_started.sample_status_failed"));
+      setSampleStatus(body?.sample?.status === "DELETED" ? null : (body?.sample ?? null));
+      setSampleStatusLoaded(true);
+    } catch (e: any) {
+      message.error(e?.message || t("admin_getting_started.sample_status_failed"));
+    }
+  }, [t]);
+
+  useEffect(() => {
+    void loadSampleStatus();
+  }, [loadSampleStatus]);
 
   const shopInfoDone = Boolean(
     tenant?.name &&
@@ -171,17 +204,51 @@ export default function Page() {
       const res = await fetch("/api/bms/onboarding/sample-data", {
         method: "POST",
         credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "STARTER_CATALOG" }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body?.error || t("admin_getting_started.sample_failed"));
       message.success(t("admin_getting_started.sample_success"));
       syncedProgress.current = false;
-      await refetch();
+      await Promise.all([refetch(), loadSampleStatus()]);
     } catch (e: any) {
       message.error(e?.message || t("admin_getting_started.sample_failed"));
     } finally {
       setCreatingSample(false);
     }
+  }
+
+  function confirmDeleteSampleData() {
+    Modal.confirm({
+      title: t("admin_getting_started.sample_delete_confirm_title"),
+      content: t("admin_getting_started.sample_delete_confirm_desc"),
+      okText: t("admin_getting_started.btn_delete_sample"),
+      okButtonProps: { danger: true },
+      cancelText: t("common.cancel"),
+      onOk: async () => {
+        setDeletingSample(true);
+        try {
+          const res = await fetch("/api/bms/onboarding/sample-data", {
+            method: "DELETE",
+            credentials: "include",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ confirmation: "DELETE SAMPLE" }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(body?.error || t("admin_getting_started.sample_delete_failed"));
+          message.success(t("admin_getting_started.sample_delete_success"));
+          setSampleStatus(null);
+          syncedProgress.current = false;
+          await Promise.all([refetch(), loadSampleStatus()]);
+        } catch (e: any) {
+          message.error(e?.message || t("admin_getting_started.sample_delete_failed"));
+          throw e;
+        } finally {
+          setDeletingSample(false);
+        }
+      },
+    });
   }
 
   async function skipStep(key: string) {
@@ -259,16 +326,13 @@ export default function Page() {
           <Space direction="vertical" size={8} style={{ width: "100%" }}>
             <Title level={4} style={{ margin: 0 }}>{t("admin_getting_started.sample_card_title")}</Title>
             <Paragraph style={{ marginBottom: 0 }}>
-              {t("admin_getting_started.sample_card_desc_1")}{restockFirstClass ? " restock subscriptions" : t("admin_getting_started.sample_card_desc_workflow")}.
+              {t("admin_getting_started.sample_card_desc")}
             </Paragraph>
             <Space wrap>
               <Tag color="blue">{t("admin_getting_started.tag_products")}</Tag>
-              <Tag color="blue">{t("admin_getting_started.tag_customers")}</Tag>
-              <Tag color="blue">{t("admin_getting_started.tag_orders")}</Tag>
-              <Tag color="blue">{t("admin_getting_started.tag_conversations")}</Tag>
-              <Tag color="blue">{t("admin_getting_started.tag_coupons")}</Tag>
-              <Tag color="cyan">{t("admin_getting_started.tag_purchase_orders")}</Tag>
-              {restockFirstClass ? <Tag color="gold">Restock 8</Tag> : null}
+              <Tag>{t("admin_getting_started.tag_draft")}</Tag>
+              <Tag>{t("admin_getting_started.tag_zero_stock")}</Tag>
+              <Tag>{t("admin_getting_started.tag_offline_only")}</Tag>
             </Space>
             <Space wrap>
               <Button type="primary" loading={creatingSample} onClick={createSampleData}>
@@ -277,6 +341,46 @@ export default function Page() {
               <Link href="/admin/products">
                 <Button>{t("admin_getting_started.btn_start_empty")}</Button>
               </Link>
+            </Space>
+          </Space>
+        </Card>
+      )}
+
+      {activeSample && (
+        <Card style={{ marginBottom: 16 }}>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Title level={4} style={{ margin: 0 }}>{t("admin_getting_started.sample_active_title")}</Title>
+            <Paragraph style={{ marginBottom: 0 }}>
+              {t("admin_getting_started.sample_active_desc")}
+            </Paragraph>
+            <Space wrap>
+              <Tag color="purple">{localizedShopArchetypeLabel(activeSample.archetype, t)}</Tag>
+              <Tag color="blue">{activeSample.products.length} {t("admin_getting_started.sample_products_unit")}</Tag>
+              <Tag color={activeSample.blocked ? "orange" : "green"}>
+                {activeSample.blocked
+                  ? t("admin_getting_started.sample_delete_blocked_tag")
+                  : t("admin_getting_started.sample_delete_ready_tag")}
+              </Tag>
+            </Space>
+            {activeSample.blocked ? (
+              <Alert
+                closable
+                type="warning"
+                showIcon
+                message={t("admin_getting_started.sample_delete_blocked_title")}
+                description={t("admin_getting_started.sample_delete_blocked_desc")}
+              />
+            ) : null}
+            <Space wrap>
+              <Link href="/admin/products"><Button>{t("admin_getting_started.btn_review_sample")}</Button></Link>
+              <Button
+                danger
+                loading={deletingSample}
+                disabled={activeSample.blocked}
+                onClick={confirmDeleteSampleData}
+              >
+                {t("admin_getting_started.btn_delete_sample")}
+              </Button>
             </Space>
           </Space>
         </Card>

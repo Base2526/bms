@@ -3,9 +3,7 @@ set -Eeuo pipefail
 
 pkg=${1:-}
 [[ -f $pkg ]] || { echo "usage: smoke-test-pkg.sh FULL_INSTALLER.pkg" >&2; exit 2; }
-[[ $(uname -s) == Darwin ]] || {
-  echo "smoke test ต้องรันบน macOS" >&2; exit 1;
-}
+[[ $(uname -s) == Darwin ]] || { echo "smoke test ต้องรันบน macOS" >&2; exit 1; }
 
 work="/tmp/brl-smoke.$$"
 [[ ! -e $work ]] || { echo "smoke path มีอยู่แล้ว: $work" >&2; exit 1; }
@@ -46,14 +44,16 @@ component_payload=$(find "$expanded" -type d -path '*/BMSRetailLocal.component.p
 [[ -n $component_payload ]] || { echo "ไม่พบ component payload" >&2; exit 1; }
 system_root="$component_payload/Library/Application Support/BMS/RetailLocal"
 [[ -n $system_root ]] || { echo "ไม่พบ Retail Local payload" >&2; exit 1; }
-package_arch=$(cat "$system_root/payload/ARCH" 2>/dev/null || printf 'arm64')
-case "$package_arch:$(uname -m)" in
-  arm64:arm64|x64:x86_64) ;;
-  *)
-    echo "smoke test ต้องรันบน Mac arch เดียวกับ package: $package_arch" >&2; exit 1;
-    ;;
-esac
 control="$system_root/control/bms-retail-local"
+platform_target=$(cat "$system_root/payload/PLATFORM_TARGET")
+case "$platform_target" in
+  macos-15-arm64) required_host_arch=arm64 ;;
+  macos-15-x64) required_host_arch=x86_64 ;;
+  *) echo "platform target ใน package ไม่ถูกต้อง: $platform_target" >&2; exit 1 ;;
+esac
+[[ $(uname -m) == "$required_host_arch" ]] || {
+  echo "smoke test ต้องรันบน Mac $required_host_arch สำหรับ package นี้" >&2; exit 1;
+}
 app="$component_payload/Applications/BMS Retail Local.app"
 [[ -x $app/Contents/MacOS/BMS\ Retail\ Local ]] || { echo "ไม่พบ app launcher" >&2; exit 1; }
 [[ -f $app/Contents/Resources/BMSRetailLocal.icns ]] || { echo "ไม่พบ app icon" >&2; exit 1; }
@@ -78,17 +78,9 @@ expect "ชื่อผู้ดูแลร้าน: "
 send -- "Smoke Admin\r"
 expect "อีเมลผู้ดูแลร้าน: "
 send -- "smoke@example.invalid\r"
-expect "เลือกประเภทร้าน 1-14: "
-send -- "1\r"
-expect -re {y/N.*: $}
-send -- "n\r"
 expect "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): "
 send -- "RetailLocalSmoke!2026\r"
-expect "ยืนยันรหัสผ่านอีกครั้ง: "
-send -- "RetailLocalSmoke!2026\r"
 expect "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): "
-send -- "2468\r"
-expect "ยืนยัน PIN อีกครั้ง: "
 send -- "2468\r"
 expect eof
 lassign [wait] pid spawnid os_error exit_code

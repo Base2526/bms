@@ -54,6 +54,59 @@ function ConvertTo-PlainSecret([Security.SecureString]$Secret) {
   return [Net.NetworkCredential]::new("", $Secret).Password
 }
 
+function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue) {
+  Write-Host ""
+  Write-Host $Prompt -ForegroundColor Cyan
+  $defaultIndex = 1
+  for ($index = 0; $index -lt $Options.Count; $index++) {
+    Write-Host ("  {0}. {1}" -f ($index + 1), $Options[$index].Label)
+    if ($Options[$index].Value -eq $DefaultValue) { $defaultIndex = $index + 1 }
+  }
+  while ($true) {
+    $answer = Read-Host ("เลือกหมายเลข [{0}]" -f $defaultIndex)
+    if (-not $answer) { return $DefaultValue }
+    $number = 0
+    if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $Options.Count) {
+      return [string]$Options[$number - 1].Value
+    }
+    Write-Host "กรุณาเลือกหมายเลข 1-$($Options.Count)" -ForegroundColor Yellow
+  }
+}
+
+function Get-ShopArchetypeCatalog([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "ไม่พบ shop-archetypes manifest ของ release"
+  }
+  $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
+    throw "shop-archetypes manifest version ไม่รองรับ"
+  }
+  $seen = @{}
+  $options = @()
+  foreach ($entry in @($manifest.archetypes)) {
+    $id = [string]$entry.id
+    if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
+      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+    }
+    $seen[$id] = $true
+    if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
+      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
+      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $options += [pscustomobject]@{
+        Value = $id
+        Label = $label
+        StarterCatalog = ($entry.starterCatalog -eq $true)
+      }
+    }
+  }
+  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  $defaultValue = [string]$manifest.defaultArchetype
+  if ($defaultValue -notin @($options | ForEach-Object Value)) {
+    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+  }
+  return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
+}
+
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
 }
@@ -243,7 +296,7 @@ foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
 if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
 
 if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathType Leaf)) {
-  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot
+  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate
   exit 0
 }
 
@@ -362,6 +415,8 @@ $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyri
 $release = Invoke-AgentJson @("verify-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
   "-target", [string]$preflight.target)
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
+$archetypeArtifact = Get-ArtifactPath $release "shop-archetypes"
+$archetypeCatalog = Get-ShopArchetypeCatalog $archetypeArtifact.path
 
 $runtime = Get-ArtifactPath $release "runtime"
 $installedDistros = @(& wsl.exe --list --quiet | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
@@ -445,9 +500,33 @@ if ($LASTEXITCODE -eq 0) {
   $checkpointOutput = & wsl.exe -d $distroName -u root -- cat $provisionCheckpoint
   if ($LASTEXITCODE -ne 0) { throw "อ่าน checkpoint ของร้านไม่สำเร็จ" }
   $provisionResult = (($checkpointOutput -join [Environment]::NewLine) | ConvertFrom-Json)
+  $businessArchetype = [string]$provisionResult.businessArchetype
+  $sampleMode = if ($provisionResult.sampleData.mode) { [string]$provisionResult.sampleData.mode } else { "NONE" }
   Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
 } else {
-  $sampleDataFlag = if ($createSampleData) { "1" } else { "0" }
+  $shopName = Read-Host "ชื่อร้าน"
+  $businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+    $archetypeCatalog.Options $archetypeCatalog.DefaultValue
+  $selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $businessArchetype)[0]
+  if ($selectedArchetype.StarterCatalog) {
+    $sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
+      [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
+      [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+    ) "STARTER_CATALOG"
+  } else {
+    $sampleMode = "NONE"
+    Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+  }
+  $adminName = Read-Host "ชื่อผู้ดูแลร้าน"
+  $adminEmail = Read-Host "อีเมลผู้ดูแลร้าน"
+  $adminPassword = ConvertTo-PlainSecret (Read-Host "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" -AsSecureString)
+  $adminPin = ConvertTo-PlainSecret (Read-Host "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" -AsSecureString)
+  Assert-NoLineBreak "ชื่อร้าน" $shopName
+  Assert-NoLineBreak "ชื่อผู้ดูแล" $adminName
+  Assert-NoLineBreak "อีเมล" $adminEmail
+  Assert-NoLineBreak "รหัสผ่าน" $adminPassword
+  Assert-NoLineBreak "PIN" $adminPin
+
   $provisionScript = @(
     "#!/bin/sh",
     "set -eu",
@@ -458,7 +537,7 @@ if ($LASTEXITCODE -eq 0) {
     (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PASSWORD" $adminPassword),
     (ConvertTo-ShellExport "BMS_LOCAL_ADMIN_PIN" $adminPin),
     (ConvertTo-ShellExport "BMS_LOCAL_BUSINESS_ARCHETYPE" $businessArchetype),
-    (ConvertTo-ShellExport "BMS_LOCAL_CREATE_SAMPLE_DATA" $sampleDataFlag),
+    (ConvertTo-ShellExport "BMS_LOCAL_SAMPLE_MODE" $sampleMode),
     "cd $runtimeData",
     "docker compose --env-file .env -f compose.yml --profile setup run --rm provision"
   ) -join "`n"
@@ -488,10 +567,12 @@ if ($sampleStatus -eq "PENDING") {
     $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
     if (-not $sampleLine) { throw "sample data process did not return a readable result" }
     $provisionResult.sampleData = $sampleLine | ConvertFrom-Json
+    $provisionResult.sampleData | Add-Member -NotePropertyName mode -NotePropertyValue $sampleMode -Force
   } catch {
     $provisionResult.sampleData = [pscustomobject]@{
       status = "FAILED"
       requested = $true
+      mode = $sampleMode
       message = "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน"
     }
   }
@@ -555,6 +636,9 @@ if ($provisionResult.deviceToken) {
   tenantId = $provisionResult.tenantId
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
+  businessArchetype = $provisionResult.businessArchetype
+  sampleMode = $provisionResult.sampleData.mode
+  sampleStatus = $provisionResult.sampleData.status
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `

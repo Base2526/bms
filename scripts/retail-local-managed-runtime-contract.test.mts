@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { createSignedRelease } from "../deploy/retail-local/managed-runtime/sign-release.mjs";
 import { verifyReleaseEnvelope } from "../deploy/retail-local/managed-runtime/verify-release.mjs";
 import { verifyPromotionEvidence } from "../deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs";
@@ -63,19 +64,15 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(hostControl, /ensure-running\) ensure_runtime/);
   assert.match(hostControl, /launchctl kickstart "\$LAUNCH_LABEL"/);
   assert.match(hostControl, /PACKAGE_TYPE/);
-  assert.match(hostControl, /ARCH/);
-  assert.match(hostControl, /macos-15-x64/);
-  assert.match(hostControl, /preflight --human/);
-  assert.match(hostControl, /ยืนยันรหัสผ่านอีกครั้ง/);
-  assert.match(hostControl, /ยืนยัน PIN อีกครั้ง/);
+  assert.match(hostControl, /PLATFORM_TARGET/);
   assert.match(hostControl, /pairing-handoff-/);
   assert.match(hostControl, /provision-result\.json/);
   assert.match(hostControl, /BMS_RETAIL_LOCAL_LIMA_HOME:-\$HOME\/\.bmsrl/);
-  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg-arm64\.img/);
-  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg-amd64\.img/);
-  assert.match(packageBuilder, /--arch\) arch=/);
-  assert.match(packageBuilder, /docker_platform=linux\/amd64/);
-  assert.match(packageBuilder, /GOARCH="\$goarch"/);
+  assert.match(packageBuilder, /--architecture/);
+  assert.match(packageBuilder, /linux\/amd64/);
+  assert.match(packageBuilder, /lima_guest_arch=x86_64/);
+  assert.match(packageBuilder, /ubuntu-24\.04-server-cloudimg\.img/);
+  assert.match(packageBuilder, /docker-\$DOCKER_VERSION\.tgz/);
   assert.match(packageBuilder, /Applications\/BMS Retail Local\.app/);
   assert.match(packageBuilder, /Applications\/BMS POS\.app/);
   assert.match(packageBuilder, /--package-type/);
@@ -84,7 +81,9 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(packageBuilder, /BMSRetailLocal\.icns/);
   assert.match(packageBuilder, /pkgutil --expand "\$package_path"/);
   assert.match(packageBuilder, /gzip compressed data/);
+  assert.match(packageBuilder, /"sourceCommit":"\$source_commit"/);
   assert.match(packageSmokeTest, /component Payload ต้องเป็น archive ไม่ใช่ directory/);
+  assert.match(packageSmokeTest, /macos-15-x64/);
   assert.match(packageSmokeTest, /<relocate>/);
   assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
   assert.match(packagePostinstall, /launchctl asuser "\$console_uid"/);
@@ -190,8 +189,8 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
     assert.match(installer, /ยืนยัน PIN อีกครั้ง/);
     assert.match(installer, /\[BMS/);
     assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
-    assert.match(installer, /BMS_LOCAL_CREATE_SAMPLE_DATA/);
-    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่/);
+    assert.match(installer, /BMS_LOCAL_SAMPLE_MODE/);
+    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้าน|Starter Catalog/);
   }
   assert.match(windows, /preflight\.warnings/);
   assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
@@ -229,6 +228,7 @@ test("Managed Runtime keeps authority out of Electron and does not replace the p
 test("release signing derives hashes from artifact bytes and emits a verifiable envelope", async () => {
   const directory = await mkdtemp(join(tmpdir(), "bms-managed-release-"));
   const artifact = join(directory, "component.bin");
+  const archetypeArtifact = fileURLToPath(new URL("../packages/retail-local-contract/shop-archetypes.json", import.meta.url));
   await writeFile(artifact, "signed bytes");
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const digest = "a".repeat(64);
@@ -239,6 +239,7 @@ test("release signing derives hashes from artifact bytes and emits a verifiable 
     { name: "runtime", kind: "runtime", path: artifact, url: "https://release.example/runtime" },
     { name: "compose", kind: "support-file", path: artifact, url: "https://release.example/compose" },
     { name: "desktop", kind: "desktop", path: artifact, url: "https://release.example/desktop" },
+    { name: "shop-archetypes", kind: "support-file", path: archetypeArtifact, url: "https://release.example/shop-archetypes" },
   ] as any);
   const envelope = await createSignedRelease({
     releaseVersion: "1.0.0", channel: "pilot", platformTarget: "ubuntu-24.04-lts-x64",
@@ -333,9 +334,10 @@ test("Linux bootstrap package stays small and never packages a release private k
 
 test("Linux release preparation builds all signed payload components before signing", () => {
   const prepare = read("deploy/retail-local/managed-runtime/linux/prepare-release.sh");
-  for (const name of ["web", "ws", "postgres", "redis", "runtime", "compose", "desktop"]) {
+  for (const name of ["web", "ws", "postgres", "redis", "runtime", "compose", "desktop", "shop-archetypes"]) {
     assert.match(prepare, new RegExp(`${name}\\.artifact`));
   }
+  assert.match(prepare, /packages\/retail-local-contract\/shop-archetypes\.json/);
   assert.match(prepare, /docker buildx build --platform linux\/amd64 --provenance=false --load/);
   assert.match(prepare, /docker image inspect --format '\{\{\.Id\}\}'/);
   assert.match(prepare, /release-descriptor\.json[\s\S]*sign-release\.mjs/);
@@ -489,20 +491,43 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const agentMain = read("apps/retail-local-agent/main.go");
   const release = read("apps/retail-local-agent/release.go");
   const transaction = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction");
+  const linuxUpdateCommand = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-update");
   const linuxUpdater = read("deploy/retail-local/managed-runtime/linux/update-managed-runtime.sh");
   const windowsUpdater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
+  const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
   const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
   const wslKeepalive = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive");
+  const managedRuntimeDoc = read("docs/business/retail-local-managed-runtime.md");
+  const invariants = read("docs/agent-invariants.md");
 
   assert.match(agentMain, /case "verify-update"/);
+  assert.match(agentMain, /case "check-update"[\s\S]*"updateAvailable": comparison > 0/);
   assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
   assert.match(release, /compareSemver/);
   assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
   assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
   assert.match(transaction, /rollback_safe[\s\S]*bms-localctl restore/);
   assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
+  const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
+  assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
+  assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
+  assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
+  assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);
+  assert.match(windowsUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*\$CheckOnly[\s\S]*Read-Host[\s\S]*stage-release/);
+  assert.match(windowsInstaller, /Check for Updates[\s\S]*-CheckOnly[\s\S]*BMS Retail Local Update/);
+  assert.ok(linuxUpdater.indexOf("mode == check") < linuxUpdater.indexOf("install -m 0755 -o root -g root \"$localctl_source\""));
+  assert.ok(windowsUpdater.indexOf("if ($CheckOnly)") < windowsUpdater.indexOf("runtime-install-control"));
   assert.match(linuxService, /ExecStartPre=.*bms-update-transaction recover/);
   assert.match(wslKeepalive, /bms-update-transaction recover/);
+  for (const doc of [managedRuntimeDoc, invariants]) {
+    assert.match(doc, /user-initiated|operator-initiated/);
+    assert.match(doc, /signed release (manifest|metadata)/);
+    assert.match(doc, /preflight/);
+    assert.match(doc, /verified encrypted backup|verified backup/);
+    assert.match(doc, /health-gated commit|health checks before committing success/);
+    assert.match(doc, /rollback\/full restore|full data restore|schema-incompatible failure restores/);
+    assert.match(doc, /trial expiry must never block corrective updates|license\/trial state must not block/);
+  }
 });

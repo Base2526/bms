@@ -186,7 +186,7 @@ type ManualMedicationRow = {
 
 export default function PharmacyCaseDetailPage() {
   const { t } = useI18n();
-  const params = useParams<{ caseId: string }>();
+  const params = useParams<{ caseId: string }>()!;
   const router = useRouter();
   const { can, loading: permsLoading } = useBmsPermissions();
   const [pharmacistResponse, setPharmacistResponse] = useState("");

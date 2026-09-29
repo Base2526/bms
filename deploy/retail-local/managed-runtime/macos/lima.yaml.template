@@ -2,7 +2,7 @@ minimumLimaVersion: 2.2.0
 vmType: vz
 arch: __LIMA_ARCH__
 cpus: 4
-memory: 4GiB
+memory: 8GiB
 disk: 60GiB
 
 images:
@@ -51,15 +51,15 @@ provision:
     set -Eeuo pipefail
     if ! command -v docker >/dev/null 2>&1; then
       work=$(mktemp -d)
-      tar -xzf /mnt/bms-payload/runtime/__DOCKER_ARCHIVE__ -C "$work"
+      tar -xzf /mnt/bms-payload/runtime/docker.tgz -C "$work"
       install -m 0755 "$work"/docker/* /usr/local/bin/
     fi
     install -d -m 0755 /usr/local/lib/docker/cli-plugins
-    install -m 0755 /mnt/bms-payload/runtime/__COMPOSE_BINARY__ \
+    install -m 0755 /mnt/bms-payload/runtime/docker-compose \
       /usr/local/lib/docker/cli-plugins/docker-compose
     if ! command -v age >/dev/null 2>&1; then
       work=$(mktemp -d)
-      tar -xzf /mnt/bms-payload/runtime/__AGE_ARCHIVE__ -C "$work"
+      tar -xzf /mnt/bms-payload/runtime/age.tar.gz -C "$work"
       install -m 0755 "$work"/age/age "$work"/age/age-keygen /usr/local/bin/
     fi
     getent group docker >/dev/null || groupadd --system docker

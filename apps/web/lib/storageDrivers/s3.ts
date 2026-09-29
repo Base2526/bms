@@ -3,7 +3,8 @@
 // -------------------------------------------------------------
 // Implemented with fetch + AWS Signature V4 over node:crypto rather than an SDK
 // so this adds no dependency to the web image. The bounded object operations
-// needed here are implemented: PUT, GET (including ranged), HEAD and DELETE.
+// needed here are implemented: PUT/multipart POST, GET (including ranged),
+// HEAD and DELETE.
 //
 // Enable with STORAGE_DRIVER=s3. Required env:
 //   S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY
@@ -22,6 +23,7 @@ import { toStorageKey } from "./index";
 
 const SERVICE = "s3";
 const ALGORITHM = "AWS4-HMAC-SHA256";
+const MULTIPART_PART_BYTES = 8 * 1024 * 1024;
 
 type S3Config = {
   bucket: string;
@@ -121,7 +123,8 @@ function signRequest(
   canonicalPath: string,
   host: string,
   payloadHash: string,
-  extraHeaders: Record<string, string>
+  extraHeaders: Record<string, string>,
+  canonicalQuery = ""
 ): Record<string, string> {
   const { amzDate, dateStamp } = amzDates(new Date());
 
@@ -141,7 +144,7 @@ function signRequest(
   const canonicalRequest = [
     method,
     canonicalPath,
-    "", // no query string is used by any verb here
+    canonicalQuery,
     canonicalHeaders,
     signedHeaders,
     payloadHash,
@@ -164,31 +167,147 @@ function signRequest(
   };
 }
 
+function encodeQuery(query: Record<string, string> | undefined): string {
+  if (!query) return "";
+  return Object.entries(query)
+    .map(([key, value]) => [uriEncode(key), uriEncode(value)] as const)
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue)
+    )
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
 async function s3Fetch(
   cfg: S3Config,
-  method: "PUT" | "GET" | "HEAD" | "DELETE",
+  method: "PUT" | "POST" | "GET" | "HEAD" | "DELETE",
   relpath: string,
-  opts: { body?: Buffer; contentType?: string; range?: ByteRange } = {}
+  opts: {
+    body?: Buffer;
+    contentType?: string;
+    range?: ByteRange;
+    query?: Record<string, string>;
+  } = {}
 ): Promise<Response> {
   const key = objectKey(cfg, relpath);
   const { url, canonicalPath, host } = buildUrl(cfg, key);
+  const canonicalQuery = encodeQuery(opts.query);
+  if (canonicalQuery) url.search = canonicalQuery;
 
   const payloadHash = opts.body ? sha256Hex(opts.body) : sha256Hex("");
   const extra: Record<string, string> = {};
   if (opts.contentType) extra["content-type"] = opts.contentType;
   if (opts.range) extra["range"] = `bytes=${opts.range.start}-${opts.range.end}`;
 
-  const headers = signRequest(cfg, method, canonicalPath, host, payloadHash, extra);
+  const headers = signRequest(cfg, method, canonicalPath, host, payloadHash, extra, canonicalQuery);
 
   return fetch(url.toString(), {
     method,
     headers,
     body: opts.body ? new Uint8Array(opts.body) : undefined,
-    // Streaming a PUT would require chunked signing; bodies here are bounded
-    // (slips ≤8 MB, generated reports) so a single signed payload is fine.
+    // Individual PUT bodies are bounded. Bulk streams use multipart upload.
     // @ts-expect-error — Node's fetch needs this for request bodies.
     duplex: opts.body ? "half" : undefined,
   });
+}
+
+function xmlValue(xml: string, tag: string): string | null {
+  const match = xml.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`));
+  if (!match) return null;
+  return match[1]
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&amp;/g, "&");
+}
+
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+async function multipartUploadStream(
+  cfg: S3Config,
+  relpath: string,
+  stream: NodeJS.ReadableStream
+): Promise<WriteResult> {
+  const initiated = await s3Fetch(cfg, "POST", relpath, { query: { uploads: "" } });
+  if (!initiated.ok) throw await failure(initiated, `initiate multipart ${relpath}`);
+  const uploadId = xmlValue(await initiated.text(), "UploadId");
+  if (!uploadId) throw new Error(`S3 initiate multipart ${relpath} returned no UploadId`);
+
+  const completedParts: Array<{ number: number; etag: string }> = [];
+  const pending: Buffer[] = [];
+  let pendingBytes = 0;
+  let size = 0;
+  const hash = crypto.createHash("sha256");
+
+  const uploadPart = async () => {
+    if (pendingBytes === 0) return;
+    const body = Buffer.concat(pending, pendingBytes);
+    const number = completedParts.length + 1;
+    pending.length = 0;
+    pendingBytes = 0;
+    const response = await s3Fetch(cfg, "PUT", relpath, {
+      body,
+      query: { partNumber: String(number), uploadId },
+    });
+    if (!response.ok) throw await failure(response, `upload part ${number} ${relpath}`);
+    const etag = response.headers.get("etag");
+    if (!etag) throw new Error(`S3 upload part ${number} ${relpath} returned no ETag`);
+    completedParts.push({ number, etag });
+  };
+
+  try {
+    for await (const chunk of stream as AsyncIterable<Buffer | Uint8Array | string>) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.length;
+      hash.update(buffer);
+
+      let offset = 0;
+      while (offset < buffer.length) {
+        const take = Math.min(MULTIPART_PART_BYTES - pendingBytes, buffer.length - offset);
+        pending.push(buffer.subarray(offset, offset + take));
+        pendingBytes += take;
+        offset += take;
+        if (pendingBytes === MULTIPART_PART_BYTES) await uploadPart();
+      }
+    }
+
+    if (size === 0) {
+      await s3Fetch(cfg, "DELETE", relpath, { query: { uploadId } });
+      const response = await s3Fetch(cfg, "PUT", relpath, { body: Buffer.alloc(0) });
+      if (!response.ok) throw await failure(response, `PUT ${relpath}`);
+      return { size, checksum: hash.digest("hex") };
+    }
+
+    await uploadPart();
+    const completeXml = Buffer.from(
+      `<CompleteMultipartUpload>${completedParts
+        .map((part) => `<Part><PartNumber>${part.number}</PartNumber><ETag>${escapeXml(part.etag)}</ETag></Part>`)
+        .join("")}</CompleteMultipartUpload>`
+    );
+    const completed = await s3Fetch(cfg, "POST", relpath, {
+      body: completeXml,
+      contentType: "application/xml",
+      query: { uploadId },
+    });
+    if (!completed.ok) throw await failure(completed, `complete multipart ${relpath}`);
+    return { size, checksum: hash.digest("hex") };
+  } catch (error) {
+    try {
+      await s3Fetch(cfg, "DELETE", relpath, { query: { uploadId } });
+    } catch {
+      // Preserve the upload failure. Bucket lifecycle rules should also expire
+      // abandoned multipart uploads.
+    }
+    throw error;
+  }
 }
 
 async function failure(res: Response, what: string): Promise<Error> {
@@ -219,28 +338,7 @@ export function createS3Driver(): StorageDriver {
     },
 
     async writeStream(relpath, stream): Promise<WriteResult> {
-      // Buffer the stream: a signed single-part PUT needs the payload hash up
-      // front. Uploads that reach this path are avatars/attachments, not bulk
-      // data — switch to multipart if that ever stops being true.
-      const chunks: Buffer[] = [];
-      let size = 0;
-      const hash = crypto.createHash("sha256");
-
-      await new Promise<void>((resolve, reject) => {
-        stream.on("error", reject);
-        stream.on("data", (chunk: Buffer) => {
-          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-          chunks.push(buf);
-          size += buf.length;
-          hash.update(buf);
-        });
-        stream.on("end", () => resolve());
-      });
-
-      const res = await s3Fetch(cfg, "PUT", relpath, { body: Buffer.concat(chunks) });
-      if (!res.ok) throw await failure(res, `PUT ${relpath}`);
-
-      return { size, checksum: hash.digest("hex") };
+      return multipartUploadStream(cfg, relpath, stream);
     },
 
     async read(relpath: string): Promise<Buffer> {

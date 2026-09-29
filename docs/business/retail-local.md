@@ -3,7 +3,7 @@
 Commercial self-install development is tracked separately in
 [Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
 WSL2/Moby, Ubuntu systemd/Moby, and macOS Apple Virtualization Framework/Lima delivery layer. The
-macOS full installer is an internal technical pilot whose clean-machine evidence,
+macOS Apple Silicon and Intel full installers are internal technical pilots whose clean-machine evidence,
 signing, notarization, update, and recovery gates are still open; none of these
 paths replaces the self-contained technical pilot package until its install, update, backup,
 restore, and failure-mode gates have evidence.
@@ -16,9 +16,15 @@ price, stock, permission, payment, tax documents, and audit.
 ## Current supported boundary
 
 - one installation, one provisioned tenant, one `MAIN` branch, and one initial `POS-01` device;
-- first-run selection of one supported shop archetype; the selection configures the shared BMS
-  experience/presets and is not a separate local business-rule implementation;
-- optional resumable sample data using the shared onboarding seeder; sample products follow the
+- first-run selection of one supported shop archetype; the selected archetype is an onboarding
+  preset, never an alternate price, stock, or settlement engine;
+- `packages/retail-local-contract/shop-archetypes.json` is the versioned catalog authority. Offline
+  packages carry that release's snapshot; Managed Runtime receives the same file as a signed,
+  checksummed release component. Installers show only `enabledForNewInstall` entries that are not
+  `deprecated`. Removing a type means deprecating/hiding it for new installs, never invalidating the
+  stable id already stored by an existing shop. SaaS signup and later profile changes enforce the
+  same new-selection rule, while the settings UI keeps an existing deprecated id readable;
+- optional resumable sample data through the shared onboarding seeder; sample products follow the
   selected archetype and remain marked as fake data; the restaurant onboarding set uses bundled,
   menu-specific food photos instead of remote random images and also creates a visibly labelled
   starter floor with two zones and eight tables, but never mixes sample tables into an existing
@@ -39,15 +45,33 @@ configuration. Local deployment is not a promise that those external services wo
 
 On a development machine at the repository root:
 
+For the one-command Windows + Linux or macOS release workflow, including POS version update
+instructions, installer variants, checksums, and generated READMEs, see
+[`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
+
 ```powershell
 pwsh .\deploy\retail-local\package.ps1 -Version 0.1.0-pilot.1
 ```
 
 This produces a ZIP and a `.sha256` file under `artifacts/retail-local/`. The ZIP contains prebuilt
 Web, WS, PostgreSQL and Redis images; the target machine does not need the repository, Node.js, npm,
-or internet access to fetch images. The Web image contains the exact init schema and migrations used
-by its migration runner. The checksum detects corruption or modification but is not a publisher
-signature.
+or internet access to fetch images. It also contains the archetype-catalog snapshot compatible with
+those images. The Web image contains the exact init schema and migrations used by its migration
+runner. The checksum detects corruption or modification but is not a publisher signature. An old
+offline EXE deliberately keeps its old compatible snapshot; publish a new package to add a new type.
+
+For an internal Windows pilot, wrap that verified payload in a single offline Inno Setup executable.
+The combined variant embeds the existing x64 POS installer and starts it only after the server writes
+its installation receipt:
+
+```powershell
+pwsh .\deploy\retail-local\windows-offline\build-offline-exe.ps1 `
+  -Version 0.2.11 -PackageType all
+```
+
+This creates `Server`, `Server + POS`, `POS x64`, and `POS x86 Legacy` `.exe` files plus SHA-256
+sidecars under `artifacts/retail-local/`. It does not turn the pilot into a signed or generally
+available release; the server targets still require Windows x64, PowerShell 7 and Docker Desktop.
 
 ## Install (technical pilot)
 
@@ -98,6 +122,20 @@ or migrating. Backups contain the database, stored files, and the secrets needed
 credentials; the backup directory therefore needs encrypted removable media or another encrypted
 destination.
 
+For managed-runtime installs, updates follow the standard user-initiated flow in
+[retail-local-managed-runtime.md](retail-local-managed-runtime.md#update-and-recovery): show the
+signed release manifest and release notes, run preflight, create a verified encrypted backup, stage
+and verify the new bytes, migrate through the transaction controller, health-check before commit, and
+fall back through rollback/full restore if needed. Early pilot shops may receive frequent updates, but
+they still require an operator action such as **Check for update** or **Back up and update**; do not
+ship a silent auto-update path for schema/runtime changes.
+
+On Windows, the installed shortcuts separate **BMS Retail Local Check for Updates** from **BMS Retail
+Local Update**. On Ubuntu, `sudo bms-retail-local-update --check` performs the same signed preview and
+`sudo bms-retail-local-update` asks for `UPDATE` before it stages components. `--yes` is reserved for
+an operator-facing launcher that already displayed the verified preview and captured the same explicit
+consent; it is not permission for a silent schedule.
+
 Restore is intentionally explicit and destructive to the current local database:
 
 ```powershell
@@ -109,17 +147,16 @@ expanded. Do not delete that retained directory until the restored store has bee
 
 ## macOS full installer
 
-Build the internal full-server package on a macOS development Mac:
+Build an architecture-specific internal full-server package on a development Mac:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
+deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
 ```
 
-Pass `--arch x64` for Intel Macs; the default `--arch arm64` builds for Apple Silicon.
-
-The resulting `BMS-Retail-Local-VERSION-ARCH.pkg` contains the pinned Ubuntu VM image, Lima runtime,
-private Moby engine, Compose, age, and all BMS service images for that architecture. The target Mac needs macOS 15 or
-newer, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
+The resulting architecture-specific package contains the pinned Ubuntu VM image, Lima runtime,
+private Moby engine, Compose, age, and matching BMS service images. The target Mac needs macOS 15 or
+newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
 Homebrew, Node.js, or the source repository. This package is intentionally large because it carries
 the server payload instead of downloading it after install.
 
@@ -169,7 +206,7 @@ Commercial self-install release still requires:
 - production deployment/operations evidence for the fail-open licensing evidence receiver,
   duplicate review/device transfer, and a documented support lifecycle;
 - signed/notarized qualification of the private macOS Lima/VZ runtime as the supported replacement
-  for Docker Desktop on supported macOS architectures.
+  for Docker Desktop on Apple Silicon and Intel.
 
 Do not advertise Retail Local as generally available until those gates have evidence. In particular,
 do not describe the current Electron package as containing the server: it remains a keystore-backed
@@ -191,16 +228,42 @@ Each platform has three independent package types:
 
 The package type describes delivery, not a new runtime boundary. A combined installer still installs
 the existing server and client components; POS Desktop never owns a database or alternate sales rules.
+The combined `server-pos` package is trial-locked distribution: it is stored with
+`access_level = trial`, omitted from anonymous public downloads, and fetched only through
+the standard Retail Local license/onboarding flow. That lock applies to installer distribution only
+and must never become a runtime lease for an installed shop.
+Trial onboarding uses two records together: the trial-locked `server-pos` release asset and a Retail
+Local license whose `customer_reference` names the customer/account the platform issued it to. After
+activation, signed evidence adds the actual tenant/POS references reported by the installed host.
 
 Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
 experimental `macos-arm64`/`macos-x64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
 `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
 Desktop disk image (`.dmg`).
 
-The uploaded bytes are stored through the shared storage driver and kept as private `files` rows.
-Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden Retail
-Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Do not point the
-public page at `/api/files/[id]` directly.
+The browser sends installer bytes to the dedicated
+`/api/admin/retail-local/releases-upload` Pages API route. That route disables the Pages body parser,
+reads the raw Node `IncomingMessage`, and is excluded from `middleware.ts`; do not move it into an App
+Route/`NextRequest`. Next.js 14's request adapter expands large request bodies in memory even when
+application code consumes `request.body` as a stream (`vercel/next.js#59519`), which OOM-killed the
+1.9 GiB production Web process during a 2 GiB upload.
+
+The uploaded bytes stream from that raw multipart request directly through the shared storage driver;
+neither the browser nor the upload handler reads the complete installer into an `ArrayBuffer`/`Buffer`.
+The local driver writes incrementally and the S3 driver uses bounded multipart parts, while SHA-256
+and size are computed over that same stream. The default upload ceiling is 4 GiB and may be changed
+with `BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES` (bytes). Keep release files as private `files` rows. The
+file row and its `bms_retail_local_release_assets` owner are committed in one database transaction;
+a validation or pre-commit failure removes the stored bytes.
+
+Public users download through `/api/retail-local/download/[id]`, which serves only non-hidden public
+Retail Local assets with `Content-Disposition: attachment` and the stored SHA-256 header. Trial-locked
+assets require platform-admin authorization. Do not point the public page at `/api/files/[id]`
+directly.
+
+Release notes are operational instructions, not marketing copy. For every Retail Local installer they
+must call out the expected update path, downtime/restart expectation, backup requirement, migration or
+data-risk notes, and rollback/restore status so the shop owner can decide when to press update.
 
 Release status controls the website:
 

@@ -5,12 +5,14 @@ import bcrypt from "bcryptjs";
 import { getClient } from "@/lib/db";
 import { normalizeEmail, validateEmail, validateNewPassword } from "@/lib/auth/identity";
 import { isPosPinValid } from "@pos-core/posPin";
+import { DEFAULT_TENANT_ID } from "./tenant";
 import {
   archetypeToBusinessType,
+  DEFAULT_SHOP_ARCHETYPE,
+  isShopArchetypeAvailableForNewInstall,
   normalizeShopArchetype,
   type ShopArchetype,
 } from "./shopArchetypes";
-import { DEFAULT_TENANT_ID } from "./tenant";
 
 export type RetailLocalProvisionInput = {
   shopName: string;
@@ -19,7 +21,7 @@ export type RetailLocalProvisionInput = {
   adminEmail: string;
   adminPassword: string;
   adminPin: string;
-  businessArchetype: string;
+  businessArchetype?: string;
 };
 
 export type RetailLocalProvisionResult = {
@@ -28,7 +30,7 @@ export type RetailLocalProvisionResult = {
   adminUserId: string;
   deviceId: string;
   deviceToken: string | null;
-  businessArchetype: ShopArchetype | null;
+  businessArchetype: ShopArchetype;
 };
 
 function hashToken(token: string): string {
@@ -52,15 +54,16 @@ export async function provisionRetailLocal(
   const emailResult = validateEmail(input.adminEmail);
   const passwordResult = validateNewPassword(input.adminPassword);
   const adminPin = input.adminPin.trim();
-  const businessArchetype = normalizeShopArchetype(input.businessArchetype);
+  const businessArchetype = normalizeShopArchetype(input.businessArchetype ?? DEFAULT_SHOP_ARCHETYPE);
   if (!shopName || shopName.length > 120) throw new Error("Shop name must be 1-120 characters");
   if (!adminName || adminName.length > 120) throw new Error("Administrator name must be 1-120 characters");
   if (!/^[a-z0-9-]{3,40}$/.test(slug)) throw new Error("Slug must contain 3-40 lowercase letters, numbers, or hyphens");
   if (!emailResult.ok) throw new Error(`Invalid administrator email (${emailResult.code})`);
   if (!passwordResult.ok) throw new Error(`Invalid administrator password (${passwordResult.code})`);
   if (!isPosPinValid(adminPin)) throw new Error("Administrator PIN must be 4-8 digits");
-  if (!businessArchetype) throw new Error("Business archetype is required and must be supported");
-  const businessType = archetypeToBusinessType(businessArchetype);
+  if (!businessArchetype || !isShopArchetypeAvailableForNewInstall(businessArchetype)) {
+    throw new Error("Business archetype is invalid or unavailable for new installations");
+  }
 
   const adminEmail = normalizeEmail(emailResult.value);
   const [passwordHash, pinHash] = await Promise.all([
@@ -95,7 +98,7 @@ export async function provisionRetailLocal(
         adminUserId: installed.rows[0].admin_user_id,
         deviceId: installed.rows[0].pos_device_id,
         deviceToken: null,
-        businessArchetype: normalizeShopArchetype(installed.rows[0].business_archetype),
+        businessArchetype: normalizeShopArchetype(installed.rows[0].business_archetype) ?? DEFAULT_SHOP_ARCHETYPE,
       };
     }
 
@@ -119,7 +122,7 @@ export async function provisionRetailLocal(
     await client.query(
       `INSERT INTO bms_store_profile(tenant_id, business_type, business_archetype)
        VALUES ($1, $2, $3)`,
-      [tenantId, businessType, businessArchetype]
+      [tenantId, archetypeToBusinessType(businessArchetype), businessArchetype]
     );
     const location = await client.query<{ id: string }>(
       `INSERT INTO bms_locations(tenant_id, code, name, branch_code, is_head_office)

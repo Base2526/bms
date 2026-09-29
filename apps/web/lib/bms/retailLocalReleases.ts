@@ -1,12 +1,18 @@
 import path from "path";
 import { Readable } from "stream";
 import { query, getClient } from "@/lib/db";
-import { openStoredFileStream, persistWebFile, statStoredFile } from "@/lib/storage";
+import {
+  deleteStoredFile,
+  openStoredFileStream,
+  type PendingStoredFile,
+  statStoredFile,
+} from "@/lib/storage";
 
 export type RetailLocalPlatform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 export type RetailLocalPackageType = "server-pos" | "server" | "pos";
 export type RetailLocalReleaseStatus = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 export type RetailLocalReleaseChannel = "pilot" | "stable" | "internal";
+export type RetailLocalReleaseAccessLevel = "public" | "trial";
 
 export type RetailLocalReleaseAsset = {
   id: string;
@@ -15,6 +21,7 @@ export type RetailLocalReleaseAsset = {
   version: string;
   channel: RetailLocalReleaseChannel;
   status: RetailLocalReleaseStatus;
+  access_level: RetailLocalReleaseAccessLevel;
   is_latest: boolean;
   file_id: number;
   original_name: string;
@@ -38,6 +45,7 @@ const PLATFORMS = new Set<RetailLocalPlatform>(["windows-x64", "ubuntu-x64", "ma
 const PACKAGE_TYPES = new Set<RetailLocalPackageType>(["server-pos", "server", "pos"]);
 const STATUSES = new Set<RetailLocalReleaseStatus>(["latest", "supported", "legacy", "deprecated", "hidden"]);
 const CHANNELS = new Set<RetailLocalReleaseChannel>(["pilot", "stable", "internal"]);
+const ACCESS_LEVELS = new Set<RetailLocalReleaseAccessLevel>(["public", "trial"]);
 
 function assertPlatform(value: unknown): RetailLocalPlatform {
   if (typeof value === "string" && PLATFORMS.has(value as RetailLocalPlatform)) return value as RetailLocalPlatform;
@@ -61,6 +69,13 @@ function assertChannel(value: unknown): RetailLocalReleaseChannel {
   throw new RetailLocalReleaseError("invalid channel");
 }
 
+function assertAccessLevel(value: unknown): RetailLocalReleaseAccessLevel {
+  if (typeof value === "string" && ACCESS_LEVELS.has(value as RetailLocalReleaseAccessLevel)) {
+    return value as RetailLocalReleaseAccessLevel;
+  }
+  throw new RetailLocalReleaseError("invalid access level");
+}
+
 function trimRequired(value: unknown, field: string, max = 200): string {
   const text = typeof value === "string" ? value.trim() : "";
   if (!text) throw new RetailLocalReleaseError(`${field} is required`);
@@ -75,6 +90,7 @@ function serialize(row: any): RetailLocalReleaseAsset {
     version: String(row.version),
     channel: row.channel,
     status: row.status,
+    access_level: row.access_level ?? (row.package_type === "server-pos" ? "trial" : "public"),
     is_latest: row.is_latest === true,
     file_id: Number(row.file_id),
     original_name: String(row.original_name || ""),
@@ -105,8 +121,8 @@ function mimeForDownload(platform: RetailLocalPlatform, filename: string): strin
   }
 }
 
-function validateFileName(file: File, platform: RetailLocalPlatform, packageType: RetailLocalPackageType) {
-  const ext = path.extname(file.name || "").toLowerCase();
+function validateFileName(filename: string, platform: RetailLocalPlatform, packageType: RetailLocalPackageType) {
+  const ext = path.extname(filename || "").toLowerCase();
   const expected = expectedExtensions(platform, packageType);
   if (!expected.includes(ext)) {
     throw new RetailLocalReleaseError(`expected ${expected.join(" or ")} file for ${platform} ${packageType}`);
@@ -117,9 +133,9 @@ export async function listRetailLocalReleaseAssets(options: { includeHidden?: bo
   const { rows } = await query(
     `
     SELECT id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-           size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
+           access_level, size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
       FROM bms_retail_local_release_assets
-     WHERE ($1::boolean OR status <> 'hidden')
+     WHERE ($1::boolean OR (status <> 'hidden' AND access_level = 'public'))
      ORDER BY platform ASC, package_type ASC, is_latest DESC, created_at DESC, version DESC
     `,
     [options.includeHidden === true]
@@ -144,78 +160,117 @@ export async function getPublicRetailLocalDownloads() {
 }
 
 export async function createRetailLocalReleaseAsset(input: {
-  file: File;
+  storedFile: PendingStoredFile;
   platform: unknown;
   packageType: unknown;
   version: unknown;
   channel?: unknown;
   status?: unknown;
+  accessLevel?: unknown;
   isLatest?: unknown;
   minOs: unknown;
   releaseNotes?: unknown;
   adminId: string | number;
 }) {
-  const platform = assertPlatform(input.platform);
-  const packageType = assertPackageType(input.packageType);
-  validateFileName(input.file, platform, packageType);
-  const version = trimRequired(input.version, "version", 80);
-  const channel = input.channel ? assertChannel(input.channel) : "pilot";
-  const requestedStatus = input.status ? assertStatus(input.status) : "supported";
-  const isLatest = input.isLatest === true || input.isLatest === "true" || requestedStatus === "latest";
-  const status: RetailLocalReleaseStatus = isLatest ? "latest" : requestedStatus;
-  const minOs = trimRequired(input.minOs, "minimum OS", 200);
-  const releaseNotes = typeof input.releaseNotes === "string" ? input.releaseNotes.trim().slice(0, 5000) : "";
-
-  const stored = await persistWebFile(input.file, input.file.name, "private", null);
-
-  const client = await getClient();
+  let commitAttempted = false;
   try {
-    await client.query("BEGIN");
-    if (isLatest) {
-      await client.query(
-        `UPDATE bms_retail_local_release_assets
-            SET is_latest = FALSE,
-                status = CASE WHEN status = 'latest' THEN 'supported' ELSE status END
-          WHERE platform = $1 AND package_type = $2`,
-        [platform, packageType]
-      );
+    const platform = assertPlatform(input.platform);
+    const packageType = assertPackageType(input.packageType);
+    validateFileName(input.storedFile.original_name || input.storedFile.filename, platform, packageType);
+    const version = trimRequired(input.version, "version", 80);
+    const channel = input.channel ? assertChannel(input.channel) : "pilot";
+    const requestedStatus = input.status ? assertStatus(input.status) : "supported";
+    const requestedAccess = input.accessLevel == null
+      ? (packageType === "server-pos" ? "trial" : "public")
+      : assertAccessLevel(input.accessLevel);
+    if (packageType === "server-pos" && requestedAccess !== "trial") {
+      throw new RetailLocalReleaseError("server-pos package must be trial locked");
     }
-    const { rows } = await client.query(
-      `
-      INSERT INTO bms_retail_local_release_assets
-        (platform, package_type, version, channel, status, is_latest, file_id, original_name, size_bytes, sha256, min_os, release_notes, created_by)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-      RETURNING id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-                size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
-      `,
-      [
-        platform,
-        packageType,
-        version,
-        channel,
-        status,
-        isLatest,
-        stored.id,
-        stored.original_name || stored.filename,
-        stored.size,
-        stored.checksum,
-        minOs,
-        releaseNotes,
-        String(input.adminId),
-      ]
-    );
-    await client.query("COMMIT");
-    return serialize(rows[0]);
+    const isLatest = input.isLatest === true || input.isLatest === "true" || requestedStatus === "latest";
+    const status: RetailLocalReleaseStatus = isLatest ? "latest" : requestedStatus;
+    const minOs = trimRequired(input.minOs, "minimum OS", 200);
+    const releaseNotes = typeof input.releaseNotes === "string" ? input.releaseNotes.trim().slice(0, 5000) : "";
+
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      const fileResult = await client.query(
+        `INSERT INTO files (filename, original_name, mimetype, size, checksum, relpath, visibility, tenant_id)
+         VALUES ($1,$2,$3,$4,$5,$6,'private',NULL)
+         RETURNING id`,
+        [
+          input.storedFile.filename,
+          input.storedFile.original_name,
+          input.storedFile.mimetype,
+          input.storedFile.size,
+          input.storedFile.checksum,
+          input.storedFile.relpath,
+        ]
+      );
+      if (isLatest) {
+        await client.query(
+          `UPDATE bms_retail_local_release_assets
+              SET is_latest = FALSE,
+                  status = CASE WHEN status = 'latest' THEN 'supported' ELSE status END
+            WHERE platform = $1 AND package_type = $2`,
+          [platform, packageType]
+        );
+      }
+      const { rows } = await client.query(
+        `
+        INSERT INTO bms_retail_local_release_assets
+          (platform, package_type, version, channel, status, access_level, is_latest, file_id, original_name, size_bytes, sha256, min_os, release_notes, created_by)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        RETURNING id, platform, package_type, version, channel, status, access_level, is_latest, file_id, original_name,
+                  size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
+        `,
+        [
+          platform,
+          packageType,
+          version,
+          channel,
+          status,
+          requestedAccess,
+          isLatest,
+          fileResult.rows[0].id,
+          input.storedFile.original_name || input.storedFile.filename,
+          input.storedFile.size,
+          input.storedFile.checksum,
+          minOs,
+          releaseNotes,
+          String(input.adminId),
+        ]
+      );
+      commitAttempted = true;
+      await client.query("COMMIT");
+      return serialize(rows[0]);
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original transaction error.
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
   } catch (error) {
-    await client.query("ROLLBACK");
+    // Once COMMIT has been attempted its outcome can be ambiguous. Keeping an
+    // orphan is safer than deleting bytes which a committed row may reference.
+    if (!commitAttempted) {
+      try {
+        await deleteStoredFile(input.storedFile.relpath);
+      } catch (cleanupError) {
+        console.error("retail local release cleanup failed", cleanupError);
+      }
+    }
     throw error;
-  } finally {
-    client.release();
   }
 }
 
 export async function updateRetailLocalReleaseAsset(id: string, input: {
   status?: unknown;
+  accessLevel?: unknown;
   isLatest?: unknown;
   minOs?: unknown;
   releaseNotes?: unknown;
@@ -224,6 +279,10 @@ export async function updateRetailLocalReleaseAsset(id: string, input: {
   if (!current) throw new RetailLocalReleaseError("release asset not found", 404);
 
   const status = input.status == null ? current.status : assertStatus(input.status);
+  const accessLevel = input.accessLevel == null ? current.access_level : assertAccessLevel(input.accessLevel);
+  if (current.package_type === "server-pos" && accessLevel !== "trial") {
+    throw new RetailLocalReleaseError("server-pos package must be trial locked");
+  }
   const isLatest = input.isLatest == null ? current.is_latest : input.isLatest === true;
   const nextLatest = status === "hidden" ? false : isLatest || status === "latest";
   const nextStatus: RetailLocalReleaseStatus = status === "hidden" ? "hidden" : nextLatest ? "latest" : status;
@@ -249,13 +308,14 @@ export async function updateRetailLocalReleaseAsset(id: string, input: {
       UPDATE bms_retail_local_release_assets
          SET status = $2,
              is_latest = $3,
-             min_os = $4,
-             release_notes = $5
+             access_level = $4,
+             min_os = $5,
+             release_notes = $6
        WHERE id = $1
-       RETURNING id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
+       RETURNING id, platform, package_type, version, channel, status, access_level, is_latest, file_id, original_name,
                  size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
       `,
-      [id, nextStatus, nextLatest, minOs, releaseNotes]
+      [id, nextStatus, nextLatest, accessLevel, minOs, releaseNotes]
     );
     await client.query("COMMIT");
     return serialize(rows[0]);
@@ -271,7 +331,7 @@ export async function getRetailLocalReleaseAsset(id: string, options: { includeH
   const { rows } = await query(
     `
     SELECT id, platform, package_type, version, channel, status, is_latest, file_id, original_name,
-           size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
+           access_level, size_bytes, sha256, min_os, release_notes, created_by, created_at, updated_at
       FROM bms_retail_local_release_assets
      WHERE id = $1
        AND ($2::boolean OR status <> 'hidden')
@@ -282,18 +342,19 @@ export async function getRetailLocalReleaseAsset(id: string, options: { includeH
   return rows[0] ? serialize(rows[0]) : null;
 }
 
-export async function openRetailLocalReleaseDownload(id: string) {
+export async function openRetailLocalReleaseDownload(id: string, options: { includeTrialLocked?: boolean } = {}) {
   const { rows } = await query(
     `
-    SELECT a.id, a.platform, a.package_type, a.version, a.status, a.original_name, a.size_bytes,
+    SELECT a.id, a.platform, a.package_type, a.version, a.status, a.access_level, a.original_name, a.size_bytes,
            a.sha256, f.relpath
       FROM bms_retail_local_release_assets a
       JOIN files f ON f.id = a.file_id AND f.deleted_at IS NULL
      WHERE a.id = $1
        AND a.status <> 'hidden'
+       AND ($2::boolean OR a.access_level = 'public')
      LIMIT 1
     `,
-    [id]
+    [id, options.includeTrialLocked === true]
   );
   const row = rows[0];
   if (!row?.relpath) throw new RetailLocalReleaseError("release asset not found", 404);

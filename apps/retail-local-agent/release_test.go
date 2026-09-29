@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -140,5 +142,28 @@ func TestCompareSemverForUpdateReplayProtection(t *testing.T) {
 	}
 	if _, err := compareSemver("latest", "1.0.0"); err == nil {
 		t.Fatal("non-semantic release version must be rejected")
+	}
+}
+
+func TestCheckUpdateAcceptsCurrentReleaseButRejectsDowngrade(t *testing.T) {
+	envelope, keyring := signedReleaseFixture(t, nil)
+	directory := t.TempDir()
+	manifestPath := filepath.Join(directory, "release.jws.json")
+	keyringPath := filepath.Join(directory, "trusted-release-keys.json")
+	if err := os.WriteFile(manifestPath, envelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyringPath, keyring, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	baseArgs := []string{
+		"check-update", "-manifest", manifestPath, "-keyring", keyringPath,
+		"-target", "ubuntu-24.04-lts-x64", "-current-version",
+	}
+	if err := run(append(baseArgs, "1.0.0-test.1")); err != nil {
+		t.Fatalf("current release should report up to date: %v", err)
+	}
+	if err := run(append(baseArgs, "1.1.0")); err == nil || !strings.Contains(err.Error(), "downgrade") {
+		t.Fatalf("older signed release must be rejected, got %v", err)
 	}
 }

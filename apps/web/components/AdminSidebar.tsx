@@ -308,7 +308,7 @@ const WORKSPACE_STORAGE_KEY = 'bms_admin_workspace';
 
 export default function AdminSidebar() {
   const { t, lang } = useI18n();
-  const pathname = usePathname();
+  const pathname = usePathname()!;
   const router = useRouter();
   // จอมือถือไม่มีที่ให้ rail 64px (เหลือเนื้อหา ~272px บนจอ 360px) → ซ่อน Sider ทั้งตัว
   // แล้วเปิดเมนูเดิมใน Drawer จากแถบบนแทน

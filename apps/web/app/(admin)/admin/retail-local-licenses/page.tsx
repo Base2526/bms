@@ -432,10 +432,20 @@ export default function RetailLocalLicensesPage() {
           <Space direction="vertical" size="large" style={{ width: "100%" }}>
             <Descriptions column={1} bordered size="small">
               <Descriptions.Item label="License"><Typography.Text copyable>{detail.license.license_code}</Typography.Text></Descriptions.Item>
+              <Descriptions.Item label={copy.customer}>{detail.license.customer_reference || "—"}</Descriptions.Item>
               <Descriptions.Item label={copy.status}><Tag color={STATUS_COLOR[detail.license.effective_commercial_status as EffectiveStatus]}>{detail.license.effective_commercial_status}</Tag></Descriptions.Item>
               <Descriptions.Item label={copy.expiry}>{formatDate(detail.license.trial_expires_at)}</Descriptions.Item>
               <Descriptions.Item label={copy.installs}>{detail.installations.length}</Descriptions.Item>
             </Descriptions>
+            <div>
+              <Typography.Title level={5}>{th ? "เครื่องที่ผูกกับ License" : "Linked installations"}</Typography.Title>
+              <Table rowKey="installation_id" size="small" pagination={false} dataSource={detail.installations || []} columns={[
+                { title: th ? "ร้าน/tenant จากเครื่อง" : "Tenant reference", dataIndex: "tenant_reference", render: (value: string | null) => value || "—" },
+                { title: th ? "POS device" : "POS device", dataIndex: "pos_device_reference", render: (value: string | null) => value || "—" },
+                { title: th ? "สถานะ" : "Status", dataIndex: "status", render: (value: string) => <Tag>{value}</Tag> },
+                { title: th ? "พบล่าสุด" : "Last seen", dataIndex: "last_seen_at", render: formatDate },
+              ]} />
+            </div>
             <div>
               <Typography.Title level={5}>{th ? "ประวัติเชิงพาณิชย์" : "Commercial history"}</Typography.Title>
               <Timeline items={(detail.commercialEvents || []).map((event: any) => ({

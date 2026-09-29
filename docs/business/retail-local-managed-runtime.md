@@ -86,6 +86,22 @@ expiry is derived at read time rather than by a cron, so a missed scheduler cann
 lie. Evidence review status remains a separate field: suspected duplicate use and an expired trial
 are different conversations and must never be collapsed into one enforcement switch.
 
+The full trial handoff is:
+
+1. Publish the `server-pos` installer as a trial-locked release asset. It does not appear on the
+   anonymous `/retail-local` download list; it is distributed through the standard Retail Local
+   license/onboarding flow.
+2. Issue a Retail Local license with a required `customerReference` and `licenseType: "TRIAL"`.
+   The first activation code is returned once and expires after seven days.
+3. Give the customer the trial-locked installer and the one-time activation code through the normal
+   commercial onboarding channel.
+4. The installer redeems the activation code, receives an ingestion token, then submits signed
+   evidence. The license detail page shows the originally issued `customer_reference` beside the
+   reported `tenant_reference` and `pos_device_reference`, so staff can see who the license was
+   issued to and which shop/device actually activated it.
+5. Staff either acknowledge follow-ups, extend the trial, mark payment review, or convert the same
+   row to paid. Conversion preserves the license/installations and cancels pending trial follow-ups.
+
 ## Platform shape
 
 On Windows, a native signed host agent manages a private `BMSRuntime` WSL2 distribution containing
@@ -102,7 +118,9 @@ remain in the private Linux VM. Docker Desktop is neither installed nor used on 
 existing macOS POS Desktop `.dmg` is only a client and must never be published as this server package.
 
 The macOS builder exposes two explicit products: `--package-type server` contains only the managed
-runtime, while `--package-type server-pos` also embeds `BMS POS.app`. After first-run provisioning,
+runtime, while `--package-type server-pos` also embeds `BMS POS.app`. The combined `server-pos`
+installer is trial-locked in the release control plane: it is not an anonymous public download and is
+distributed through the standard Retail Local trial/paid onboarding flow. After first-run provisioning,
 the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
 handoff that Desktop consumes into Keychain before making a network request. Later launches need only
 open BMS POS: when its saved origin is exactly `http://127.0.0.1:3100` and that origin is unreachable,
@@ -135,9 +153,10 @@ The installer persists only non-secret progress and resumes after a required reb
 1. verify the signed installer and support target;
 2. enable/install the platform runtime and reboot if required;
 3. verify the signed release envelope and stage every component;
-4. verify SHA-256 and OCI digests before any provisioning;
-5. ask for a supported shop archetype and whether optional sample data should be created, then create
-   machine secrets, migrate, provision exactly once, and persist the protected pairing checkpoint;
+4. verify SHA-256 and OCI digests before any provisioning, then build the shop-type menu from the
+   signed `shop-archetypes` component belonging to that exact release;
+5. ask whether optional sample data should be created, then create machine secrets, migrate,
+   provision exactly once, and persist the protected pairing checkpoint;
 6. create resumable sample data through the shared onboarding service only when requested; a sample
    failure remains retryable and never discards the usable shop or one-time device token;
 7. pass service and HTTP health checks;
@@ -155,6 +174,39 @@ all new bytes before stopping the current stack, creates a verified backup befor
 the previous images, and publishes success only after health checks. Image rollback is allowed only
 when the release declares schema compatibility; otherwise recovery restores the pre-update database,
 files, and encryption keys together.
+
+Installed-shop updates are user-initiated by default. The platform may surface an available release,
+its channel, version, size, checksum, minimum runtime, expected downtime, migration notes and rollback
+status, but the operator must explicitly choose **Check for update** or **Back up and update** before
+the local host changes bytes. The updater must not silently apply a runtime or schema change during
+trading hours, and license/trial state must not block the ability to receive a corrective update.
+
+The installed updater enforces that boundary directly. **Check for update** runs host preflight,
+verifies the publisher signature and target, and displays current/target version, channel, schema,
+component download size, publication time, and whether failure can use image rollback or requires a
+full data restore. It downloads only the small manifest and does not stage components, stop services,
+or install runtime controls. Applying the update requires a second explicit confirmation. An
+unattended launcher may use the affirmative flag only after an operator-facing surface has shown the
+same verified preview and captured consent. Customer-readable release notes accompany the release
+listing and must describe expected downtime, migration impact, rollback/restore, and support contact.
+
+The standard update flow is:
+
+1. publish the signed release manifest beside customer-readable release notes;
+2. verify and show what will change, whether the release is pilot/stable/internal, whether rollback
+   is image-only or requires full data restore, and have the operator review the stated downtime;
+3. run preflight checks for supported host, disk space and current runtime health;
+4. verify every package signature, SHA-256 and OCI digest, then stage the new bytes;
+5. create and verify the encrypted logical backup immediately before stopping the stack;
+6. apply migrations and runtime replacement in the transaction controller;
+7. pass Web, WS, PostgreSQL, Redis and HTTP health checks before committing success;
+8. record update evidence and keep the previous release/backup for rollback or support review.
+
+If any step fails before commit, the operator sees the failed phase and the host remains on or returns
+to the previous working release. If the failure happens after an incompatible schema migration,
+recovery must restore the pre-update database, files and secret bundle together rather than trying to
+mix old images with new data. Automatic background retry is limited to recovering an interrupted
+transaction on startup; choosing a newer release remains an explicit operator action.
 
 Live PostgreSQL storage is not backed up by copying a running WSL VHDX. The supported backup is a
 logical database dump plus stored files, installation metadata, and the exact secrets required to

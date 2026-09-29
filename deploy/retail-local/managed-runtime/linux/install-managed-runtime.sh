@@ -20,56 +20,46 @@ shell_export() {
   encoded=$(printf '%s' "$value" | base64 -w 0)
   printf "export %s=\"\$(printf '%%s' '%s' | base64 -d)\"\n" "$name" "$encoded"
 }
-read_business_archetype() {
-  local choice
-  while :; do
-    cat <<'EOF'
-
-ประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)
-  1) ร้านสะดวกซื้อ / ร้านขายของชำ
-  2) แฟชั่นและเสื้อผ้า
-  3) บ้านและเครื่องครัว
-  4) ความงามและของใช้ส่วนตัว
-  5) อาหารและเครื่องดื่มพร้อมขาย
-  6) อุปกรณ์ไอทีและแกดเจ็ต
-  7) ค้าส่ง / B2B
-  8) ของขวัญและสินค้าตามเทศกาล
-  9) ร้านยา
- 10) ร้านอุปกรณ์สัตว์เลี้ยง
- 11) ร้านวัสดุก่อสร้าง
- 12) ร้านอาหาร / ระบบครัว
- 13) คาเฟ่บอร์ดเกม
- 14) ร้านประเภทอื่น
-EOF
-    read -r -p 'เลือกประเภทร้าน 1-14: ' choice
-    case "$choice" in
-      1) business_archetype=mini_mart ;;
-      2) business_archetype=fashion ;;
-      3) business_archetype=home_kitchen ;;
-      4) business_archetype=beauty_personal_care ;;
-      5) business_archetype=food_beverage ;;
-      6) business_archetype=gadgets_accessories ;;
-      7) business_archetype=b2b_wholesale ;;
-      8) business_archetype=gifts_seasonal ;;
-      9) business_archetype=pharmacy ;;
-      10) business_archetype=pet_supply ;;
-      11) business_archetype=building_materials ;;
-      12) business_archetype=restaurant ;;
-      13) business_archetype=board_game_cafe ;;
-      14) business_archetype=other ;;
-      *) printf 'กรุณาเลือกหมายเลข 1-14\n' >&2; continue ;;
-    esac
-    return
+choose_archetype() {
+  local manifest=$archetype_manifest
+  [[ -f $manifest ]] || die "ไม่พบ shop-archetypes manifest ของ signed release"
+  jq -e '
+    .defaultArchetype as $default |
+    .formatVersion == 1 and
+    (.defaultArchetype | type == "string") and
+    ([.archetypes[].id] | length == (unique | length)) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
+    ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
+  ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
+  local labels=() values=() default_value default_index=1 row id label
+  default_value=$(jq -r '.defaultArchetype' "$manifest")
+  while IFS=$'\t' read -r id label; do
+    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
+    values+=("$id"); labels+=("$label")
+    [[ $id == "$default_value" ]] && default_index=${#values[@]}
+  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, (.labels.th // .labels.en)] | @tsv' "$manifest")
+  printf '\nประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)\n' >&2
+  local index
+  for index in "${!labels[@]}"; do printf '  %d. %s\n' "$((index + 1))" "${labels[$index]}" >&2; done
+  while true; do
+    read -r -p "เลือกหมายเลข [$default_index]: " index
+    index=${index:-$default_index}
+    if [[ $index =~ ^[0-9]+$ ]] && (( index >= 1 && index <= ${#values[@]} )); then
+      printf '%s' "${values[$((index - 1))]}"
+      return
+    fi
+    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#values[@]}" >&2
   done
 }
-read_sample_data_choice() {
-  local answer
-  while :; do
-    read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
-    case "$answer" in
-      y|Y|yes|YES) create_sample_data=1; return ;;
-      ''|n|N|no|NO) create_sample_data=0; return ;;
-      *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
+choose_sample_mode() {
+  local choice
+  printf '\nStarter Catalog จะสร้างสินค้าตัวอย่างเป็น Draft, สต็อก 0 และยังขายไม่ได้\n' >&2
+  while true; do
+    read -r -p 'สร้าง Starter Catalog ตามประเภทร้านหรือไม่? [Y/n]: ' choice
+    case ${choice:-Y} in
+      Y|y) printf 'STARTER_CATALOG'; return ;;
+      N|n) printf 'NONE'; return ;;
+      *) printf 'กรุณาตอบ Y หรือ N\n' >&2 ;;
     esac
   done
 }
@@ -188,6 +178,8 @@ release_json=$($agent verify-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target")
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
+archetype_manifest=$(artifact_path shop-archetypes)
+[[ -f $archetype_manifest ]] || die "signed release ขาด shop-archetypes component"
 
 step 5 "โหลด Web, WS, PostgreSQL และ Redis"
 while IFS=$'\t' read -r name image_ref digest; do
@@ -226,7 +218,26 @@ fi
 if [[ -f $provision_checkpoint ]]; then
   provision_result=$(<"$provision_checkpoint")
   jq -e . >/dev/null <<<"$provision_result" || die "checkpoint ของร้านอ่านไม่ได้ กรุณาติดต่อ Support"
+  business_archetype=$(jq -r '.businessArchetype // empty' <<<"$provision_result")
+  sample_mode=$(jq -r '.sampleData.mode // "NONE"' <<<"$provision_result")
 else
+  read -r -p 'ชื่อร้าน: ' shop_name
+  business_archetype=$(choose_archetype)
+  if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
+      "$archetype_manifest" >/dev/null; then
+    sample_mode=$(choose_sample_mode)
+  else
+    sample_mode=NONE
+    printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
+  fi
+  read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
+  read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
+  read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
+  read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
+  for value in "$shop_name" "$admin_name" "$admin_email" "$admin_password" "$admin_pin"; do
+    [[ -n $value && $value != *$'\n'* && $value != *$'\r'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
+  done
+
   provision_script="$RUNTIME_ROOT/provision-once.sh"
   {
     printf '#!/bin/sh\nset -eu\n'
@@ -237,7 +248,7 @@ else
     shell_export BMS_LOCAL_ADMIN_PASSWORD "$admin_password"
     shell_export BMS_LOCAL_ADMIN_PIN "$admin_pin"
     shell_export BMS_LOCAL_BUSINESS_ARCHETYPE "$business_archetype"
-    shell_export BMS_LOCAL_CREATE_SAMPLE_DATA "$create_sample_data"
+    shell_export BMS_LOCAL_SAMPLE_MODE "$sample_mode"
     printf 'cd %s\ndocker compose --env-file .env -f compose.yml --profile setup run --rm provision\n' "$RUNTIME_ROOT"
   } >"$provision_script"
   chmod 0700 "$provision_script"
@@ -260,7 +271,7 @@ if [[ $sample_status == PENDING ]]; then
   if ! jq -e . >/dev/null 2>&1 <<<"$sample_result"; then
     sample_result='{"status":"FAILED","requested":true,"message":"sample data process did not return a readable result"}'
   fi
-  provision_result=$(jq -c --argjson sample "$sample_result" '.sampleData = $sample' <<<"$provision_result")
+  provision_result=$(jq -c --argjson sample "$sample_result" --arg mode "$sample_mode" '.sampleData = ($sample + {mode:$mode})' <<<"$provision_result")
   printf '%s\n' "$provision_result" >"$provision_checkpoint"
   chmod 0600 "$provision_checkpoint"
   sample_status=$(jq -r '.sampleData.status' <<<"$provision_result")
@@ -294,6 +305,7 @@ operator_gid=$(id -g "$operator")
 device_token=$(jq -er '.deviceToken // empty' <<<"$provision_result" || true)
 tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
 pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
+sample_status=$(jq -r '.sample.status // "SKIPPED"' <<<"$provision_result")
 
 # Redeem the one-time activation code after the authoritative local shop identity exists. The
 # exchange is best-effort and never changes installation success or any local transaction path.
@@ -342,8 +354,10 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
   --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
   --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
+  --arg businessArchetype "$business_archetype" --arg sampleMode "$sample_mode" \
+  --arg sampleStatus "$sample_status" \
   --arg licenseCode "${BMS_LICENSE_ID:-}" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
   >"$RUNTIME_ROOT/installation.json"
 chmod 0600 "$RUNTIME_ROOT/installation.json"
 rm -f -- "$provision_checkpoint"

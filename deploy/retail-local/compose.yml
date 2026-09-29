@@ -103,7 +103,7 @@ services:
       BMS_LOCAL_ADMIN_PASSWORD: ${BMS_LOCAL_ADMIN_PASSWORD:-}
       BMS_LOCAL_ADMIN_PIN: ${BMS_LOCAL_ADMIN_PIN:-}
       BMS_LOCAL_BUSINESS_ARCHETYPE: ${BMS_LOCAL_BUSINESS_ARCHETYPE:-}
-      BMS_LOCAL_CREATE_SAMPLE_DATA: ${BMS_LOCAL_CREATE_SAMPLE_DATA:-0}
+      BMS_LOCAL_SAMPLE_MODE: ${BMS_LOCAL_SAMPLE_MODE:-NONE}
     command: ["./node_modules/.bin/tsx", "scripts/retail-local-provision.mts"]
     depends_on:
       migrate:

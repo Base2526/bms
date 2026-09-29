@@ -188,6 +188,9 @@ wrong, and update the doc in the same change.
   stay off host ports, Web/WS bind to loopback, and backups must include both data and the local
   secrets needed to decrypt it. A test release carries pinned Web/WS/PostgreSQL/Redis images and the
   Web image carries its matching migrations; target installs never mount schema from a source tree.
+  Bulk release installers upload only through the raw Pages API stream
+  (`/api/admin/retail-local/releases-upload`, body parser off and excluded from middleware); routing
+  them through Next.js 14 `NextRequest` buffers gigabytes and can kill the Web process.
   Detail: [docs/business/retail-local.md](docs/business/retail-local.md)
   and [agent-invariants.md § Retail Local](docs/agent-invariants.md#retail-local-deployment).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a

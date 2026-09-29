@@ -146,7 +146,7 @@ function errorText(error: unknown, fallback: string) {
 export default function StockModelsPage() {
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams()!;
   const canView = can("product.view");
   const canEdit = can("product.edit");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);

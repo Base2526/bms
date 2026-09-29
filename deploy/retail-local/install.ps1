@@ -6,11 +6,9 @@ param(
   [string]$AdminEmail,
   [Security.SecureString]$AdminPassword,
   [Security.SecureString]$AdminPin,
-  [ValidateSet("mini_mart", "fashion", "home_kitchen", "beauty_personal_care", "food_beverage",
-    "gadgets_accessories", "b2b_wholesale", "gifts_seasonal", "pharmacy", "pet_supply",
-    "building_materials", "restaurant", "board_game_cafe", "other")]
   [string]$BusinessArchetype,
-  [Nullable[bool]]$CreateSampleData
+  [ValidateSet("NONE", "STARTER_CATALOG")]
+  [string]$SampleMode
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,44 +31,59 @@ function ConvertTo-PlainSecret([Security.SecureString]$Secret) {
   return [Net.NetworkCredential]::new("", $Secret).Password
 }
 
-function Read-BusinessArchetype {
-  $options = @(
-    [pscustomobject]@{ Value = "mini_mart"; Label = "ร้านสะดวกซื้อ / ร้านขายของชำ" },
-    [pscustomobject]@{ Value = "fashion"; Label = "แฟชั่นและเสื้อผ้า" },
-    [pscustomobject]@{ Value = "home_kitchen"; Label = "บ้านและเครื่องครัว" },
-    [pscustomobject]@{ Value = "beauty_personal_care"; Label = "ความงามและของใช้ส่วนตัว" },
-    [pscustomobject]@{ Value = "food_beverage"; Label = "อาหารและเครื่องดื่มพร้อมขาย" },
-    [pscustomobject]@{ Value = "gadgets_accessories"; Label = "อุปกรณ์ไอทีและแกดเจ็ต" },
-    [pscustomobject]@{ Value = "b2b_wholesale"; Label = "ค้าส่ง / B2B" },
-    [pscustomobject]@{ Value = "gifts_seasonal"; Label = "ของขวัญและสินค้าตามเทศกาล" },
-    [pscustomobject]@{ Value = "pharmacy"; Label = "ร้านยา" },
-    [pscustomobject]@{ Value = "pet_supply"; Label = "ร้านอุปกรณ์สัตว์เลี้ยง" },
-    [pscustomobject]@{ Value = "building_materials"; Label = "ร้านวัสดุก่อสร้าง" },
-    [pscustomobject]@{ Value = "restaurant"; Label = "ร้านอาหาร / ระบบครัว" },
-    [pscustomobject]@{ Value = "board_game_cafe"; Label = "คาเฟ่บอร์ดเกม" },
-    [pscustomobject]@{ Value = "other"; Label = "ร้านประเภทอื่น" }
-  )
-  Write-Host "`nประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)"
-  for ($index = 0; $index -lt $options.Count; $index++) {
-    Write-Host ("{0,2}) {1}" -f ($index + 1), $options[$index].Label)
+function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue) {
+  Write-Host ""
+  Write-Host $Prompt -ForegroundColor Cyan
+  for ($index = 0; $index -lt $Options.Count; $index++) {
+    Write-Host ("  {0}. {1}" -f ($index + 1), $Options[$index].Label)
+  }
+  $defaultIndex = 1
+  for ($index = 0; $index -lt $Options.Count; $index++) {
+    if ($Options[$index].Value -eq $DefaultValue) { $defaultIndex = $index + 1; break }
   }
   while ($true) {
-    $choice = 0
-    $raw = Read-Host "เลือกประเภทร้าน 1-$($options.Count)"
-    if ([int]::TryParse($raw, [ref]$choice) -and $choice -ge 1 -and $choice -le $options.Count) {
-      return [string]$options[$choice - 1].Value
+    $answer = Read-Host ("เลือกหมายเลข [{0}]" -f $defaultIndex)
+    if (-not $answer) { return $DefaultValue }
+    $number = 0
+    if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $Options.Count) {
+      return [string]$Options[$number - 1].Value
     }
-    Write-Warning "กรุณาเลือกหมายเลข 1-$($options.Count)"
+    Write-Host "กรุณาเลือกหมายเลข 1-$($Options.Count)" -ForegroundColor Yellow
   }
 }
 
-function Read-SampleDataChoice {
-  while ($true) {
-    $answer = (Read-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]").Trim()
-    if ([string]::IsNullOrEmpty($answer) -or $answer -match '^(n|no)$') { return $false }
-    if ($answer -match '^(y|yes)$') { return $true }
-    Write-Warning "กรุณาตอบ y หรือ n"
+function Get-ShopArchetypeCatalog([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "ไม่พบ shop-archetypes manifest: $Path"
   }
+  $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+  if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
+    throw "shop-archetypes manifest version ไม่รองรับ"
+  }
+  $seen = @{}
+  $options = @()
+  foreach ($entry in @($manifest.archetypes)) {
+    $id = [string]$entry.id
+    if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
+      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+    }
+    $seen[$id] = $true
+    if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
+      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
+      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $options += [pscustomobject]@{
+        Value = $id
+        Label = $label
+        StarterCatalog = ($entry.starterCatalog -eq $true)
+      }
+    }
+  }
+  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  $defaultValue = [string]$manifest.defaultArchetype
+  if ($defaultValue -notin @($options | ForEach-Object Value)) {
+    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+  }
+  return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
 }
 
 & (Join-Path $localRoot "preflight.ps1")
@@ -106,11 +119,43 @@ if ($release -and ($webPort -ne 3100 -or $wsPort -ne 3101)) {
 }
 
 New-Item -ItemType Directory -Force -Path $ctx.StorageDirectory | Out-Null
+$archetypeManifestPath = Join-Path $localRoot "shop-archetypes.json"
+if (-not (Test-Path -LiteralPath $archetypeManifestPath -PathType Leaf)) {
+  $archetypeManifestPath = Join-Path $localRoot "..\..\packages\retail-local-contract\shop-archetypes.json"
+}
+if ($release) {
+  if ([string]$release.shopArchetypes.file -ne "shop-archetypes.json" -or
+      [string]$release.shopArchetypes.sha256 -notmatch '^[a-f0-9]{64}$') {
+    throw "release.json ขาด shop-archetypes contract"
+  }
+  $actualArchetypeHash = (Get-FileHash -LiteralPath $archetypeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($actualArchetypeHash -ne [string]$release.shopArchetypes.sha256) {
+    throw "shop-archetypes manifest checksum ไม่ตรงกับ release"
+  }
+}
+$archetypeCatalog = Get-ShopArchetypeCatalog $archetypeManifestPath
 if (-not $ShopName) { $ShopName = Read-Host "ชื่อร้าน" }
+if (-not $BusinessArchetype) {
+  $BusinessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+    $archetypeCatalog.Options $archetypeCatalog.DefaultValue
+} elseif ($BusinessArchetype -notin @($archetypeCatalog.Options | ForEach-Object Value)) {
+  throw "ประเภทร้าน '$BusinessArchetype' ไม่เปิดให้ติดตั้งใน release นี้"
+}
+$selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $BusinessArchetype)[0]
+if (-not $selectedArchetype.StarterCatalog) {
+  if ($SampleMode -eq "STARTER_CATALOG") {
+    throw "ประเภทร้าน '$BusinessArchetype' ไม่มี Starter Catalog ใน release นี้"
+  }
+  $SampleMode = "NONE"
+  Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+} elseif (-not $SampleMode) {
+  $SampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog สำหรับทดลองใช้งานหรือไม่? (สินค้าเป็น Draft, สต็อก 0, ยังขายไม่ได้)" @(
+    [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
+    [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+  ) "STARTER_CATALOG"
+}
 if (-not $AdminName) { $AdminName = Read-Host "ชื่อผู้ดูแลร้าน" }
 if (-not $AdminEmail) { $AdminEmail = Read-Host "อีเมลผู้ดูแลร้าน" }
-if (-not $BusinessArchetype) { $BusinessArchetype = Read-BusinessArchetype }
-if ($null -eq $CreateSampleData) { $CreateSampleData = Read-SampleDataChoice }
 $adminPasswordSecure = Read-RequiredSecureString "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" $AdminPassword
 $adminPinSecure = Read-RequiredSecureString "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" $AdminPin
 $adminPasswordPlain = ConvertTo-PlainSecret $adminPasswordSecure
@@ -133,14 +178,14 @@ $env:BMS_LOCAL_ADMIN_EMAIL = $AdminEmail
 $env:BMS_LOCAL_ADMIN_PASSWORD = $adminPasswordPlain
 $env:BMS_LOCAL_ADMIN_PIN = $adminPinPlain
 $env:BMS_LOCAL_BUSINESS_ARCHETYPE = $BusinessArchetype
-$env:BMS_LOCAL_CREATE_SAMPLE_DATA = if ($CreateSampleData) { "1" } else { "0" }
+$env:BMS_LOCAL_SAMPLE_MODE = $SampleMode
 try {
   $provisionOutput = & docker @composeArgs --profile setup run --rm provision 2>&1
   if ($LASTEXITCODE -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
 } finally {
   Remove-Item Env:BMS_LOCAL_SHOP_NAME, Env:BMS_LOCAL_SHOP_SLUG, Env:BMS_LOCAL_ADMIN_NAME,
     Env:BMS_LOCAL_ADMIN_EMAIL, Env:BMS_LOCAL_ADMIN_PASSWORD, Env:BMS_LOCAL_ADMIN_PIN,
-    Env:BMS_LOCAL_BUSINESS_ARCHETYPE, Env:BMS_LOCAL_CREATE_SAMPLE_DATA -ErrorAction SilentlyContinue
+    Env:BMS_LOCAL_BUSINESS_ARCHETYPE, Env:BMS_LOCAL_SAMPLE_MODE -ErrorAction SilentlyContinue
   $adminPasswordPlain = $null
   $adminPinPlain = $null
   $adminPasswordSecure = $null
@@ -156,20 +201,10 @@ if ($LASTEXITCODE -ne 0) { throw "เริ่ม BMS Retail Local ไม่ส�
 Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 Test-RetailLocalHttp -WebPort $webPort -WsPort $wsPort
 
-$receipt = [ordered]@{
-  product = "BMS Retail Local"
-  version = if ($release) { $release.version } else { "source-dev" }
-  installedAt = [DateTimeOffset]::Now.ToString("o")
-  url = "http://127.0.0.1:$webPort"
-  tenantId = $result.tenantId
-  adminUserId = $result.adminUserId
-  posDeviceId = $result.deviceId
-}
-Set-Content -LiteralPath (Join-Path $localRoot "installation.json") -Value ($receipt | ConvertTo-Json) -Encoding utf8NoBOM
-
 Write-Host ""
 Write-Host "BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:$webPort" -ForegroundColor Green
 Write-Host "Admin: $AdminEmail"
+Write-Host "ประเภทร้าน: $($result.businessArchetype)"
 if ($result.deviceToken) {
   Write-Host "POS pairing token (แสดงครั้งเดียว):" -ForegroundColor Yellow
   Write-Host $result.deviceToken
@@ -185,6 +220,7 @@ if ($result.sampleData.status -eq "PENDING") {
   $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
   if ($LASTEXITCODE -eq 0 -and $sampleLine) {
     $result.sampleData = $sampleLine | ConvertFrom-Json
+    $result.sampleData | Add-Member -NotePropertyName mode -NotePropertyValue $SampleMode -Force
   } else {
     $result.sampleData.status = "FAILED"
   }
@@ -194,4 +230,17 @@ if ($result.sampleData.status -in @("COMPLETED", "ALREADY_COMPLETED")) {
 } elseif ($result.sampleData.status -eq "FAILED") {
   Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
 }
+$receipt = [ordered]@{
+  product = "BMS Retail Local"
+  version = if ($release) { $release.version } else { "source-dev" }
+  installedAt = [DateTimeOffset]::Now.ToString("o")
+  url = "http://127.0.0.1:$webPort"
+  tenantId = $result.tenantId
+  adminUserId = $result.adminUserId
+  posDeviceId = $result.deviceId
+  businessArchetype = $result.businessArchetype
+  sampleMode = $result.sampleData.mode
+  sampleStatus = $result.sampleData.status
+}
+Set-Content -LiteralPath (Join-Path $localRoot "installation.json") -Value ($receipt | ConvertTo-Json) -Encoding utf8NoBOM
 Write-Host "รัน .\doctor.ps1 เพื่อตรวจระบบซ้ำได้ทุกเมื่อ"
