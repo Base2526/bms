@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useMutation, useQuery } from '@apollo/client';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Card } from '../../components/Card';
@@ -67,6 +68,7 @@ function clamp(value: number, min: number, max: number) {
 export default function FloorScreen({ navigation }: Props) {
   const { colors, spacing, typography, radius } = useTheme();
   const { width, isTablet } = useResponsive();
+  const bottomTabBarHeight = useBottomTabBarHeight();
   const { session } = useSession();
   const [areaId, setAreaId] = useState<string | null>(null);
   const [floorAreaHeight, setFloorAreaHeight] = useState(0);
@@ -455,8 +457,8 @@ export default function FloorScreen({ navigation }: Props) {
   return (
     <ScreenContainer padded={false}>
       <View style={{ flex: 1, padding: spacing.lg }}>
-        <View style={styles.header}>
-          <View>
+        <View style={styles.screenHeader}>
+          <View style={styles.screenHeaderText}>
             <Text style={[typography.title, { color: colors.text }]}>
               ผังโต๊ะ
             </Text>
@@ -477,6 +479,7 @@ export default function FloorScreen({ navigation }: Props) {
             label="เปิดบิลกลับบ้าน"
             loading={openingTakeaway}
             disabled={!session || openingTakeaway}
+            style={isTablet ? undefined : styles.takeawayButtonPhone}
             onPress={() => {
               openTakeawayCheck().catch(() => undefined);
             }}
@@ -497,6 +500,7 @@ export default function FloorScreen({ navigation }: Props) {
               gap: spacing.sm,
               paddingTop: spacing.md,
               paddingBottom: spacing.xs,
+              alignItems: 'center',
             }}
           >
             {takeawayChecks.map(check => (
@@ -551,6 +555,7 @@ export default function FloorScreen({ navigation }: Props) {
               gap: spacing.sm,
               paddingTop: spacing.md,
               paddingBottom: spacing.xs,
+              alignItems: 'center',
             }}
           >
             {areas.map(area => {
@@ -561,20 +566,26 @@ export default function FloorScreen({ navigation }: Props) {
                   onPress={() => setAreaId(area.id)}
                   style={{
                     paddingHorizontal: spacing.md,
-                    paddingVertical: spacing.sm,
+                    minHeight: 44,
+                    paddingVertical: spacing.xs,
                     borderRadius: radius.pill,
                     backgroundColor: selected ? colors.primary : colors.surface,
                     borderWidth: StyleSheet.hairlineWidth,
                     borderColor: selected ? colors.primary : colors.border,
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}
                 >
                   <Text
                     style={[
                       typography.bodyStrong,
+                      styles.areaChipText,
                       {
                         color: selected ? colors.primaryText : colors.text,
                       },
                     ]}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
                   >
                     {area.name}
                   </Text>
@@ -633,7 +644,12 @@ export default function FloorScreen({ navigation }: Props) {
             data={data}
             numColumns={columns}
             keyExtractor={(table, index) => table?.id ?? `filler-${index}`}
-            contentContainerStyle={{ gap: spacing.md, paddingTop: spacing.md }}
+            style={styles.gridList}
+            contentContainerStyle={{
+              gap: spacing.md,
+              paddingTop: spacing.md,
+              paddingBottom: bottomTabBarHeight + spacing.lg,
+            }}
             columnWrapperStyle={{ gap: spacing.md }}
             renderItem={({ item }) =>
               item ? renderGridCard(item) : <View style={{ flex: 1 }} />
@@ -702,11 +718,33 @@ export default function FloorScreen({ navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  screenHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  screenHeaderText: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 2,
+  },
+  takeawayButtonPhone: {
+    paddingHorizontal: 18,
+    alignSelf: 'flex-start',
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
+  },
+  areaChipText: {
+    lineHeight: 22,
+    includeFontPadding: false,
+  },
+  gridList: {
+    flex: 1,
   },
   floorCanvas: {
     borderWidth: StyleSheet.hairlineWidth,

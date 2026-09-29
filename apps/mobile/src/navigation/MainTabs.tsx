@@ -26,7 +26,10 @@ import ShiftScreen from '../screens/shift/ShiftScreen';
 import OperationsScreen from '../screens/operations/OperationsScreen';
 import BoardGameScreen from '../screens/boardGame/BoardGameScreen';
 import InventoryScreen from '../screens/inventory/InventoryScreen';
-import { bottomTabBarLayout } from './tabBarLayout';
+import {
+  BOTTOM_TAB_CONTENT_HEIGHT,
+  bottomTabBarLayout,
+} from './tabBarLayout';
 
 import type {
   MainTabParamList,
@@ -169,10 +172,12 @@ function TabsShell() {
           fontWeight: '600',
         },
         tabBarItemStyle: {
-          minHeight: 56,
-          paddingTop: 4,
+          height: BOTTOM_TAB_CONTENT_HEIGHT,
+          minHeight: BOTTOM_TAB_CONTENT_HEIGHT,
+          paddingTop: 2,
+          paddingBottom: 4,
         },
-        tabBarIconStyle: { marginTop: 2 },
+        tabBarIconStyle: { marginTop: 0 },
         tabBarBadgeStyle: { fontSize: 11, lineHeight: 16 },
         tabBarStyle: {
           backgroundColor: colors.surface,
@@ -181,6 +186,7 @@ function TabsShell() {
           // ถ้าปล่อยความสูงเดิม label จะล้นลงไปใน Android navigation bar แบบ 3 ปุ่ม
           // จึงรักษาพื้นที่เนื้อหา 62dp แล้วบวก safe-area ของเครื่องจริงแยกต่างหาก
           ...bottomTabBarLayout(insets.bottom),
+          paddingTop: 0,
           // ผัง Board Game, สต็อก, งาน และกะบน iPad มี sidebar ที่พาไปทุกส่วนหลักอยู่แล้ว
           // จึงใช้พื้นที่เต็มสูงเหมือน mockup; เมื่อออกไปแท็บอื่น bottom bar จะกลับมาเอง
           display:

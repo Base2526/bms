@@ -111,6 +111,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
     current?.hasCurrentOrder ||
       current?.items.some(item => item.status === 'SENT'),
   );
+  const billTabLabel = current ? 'บิล (1)' : 'บิลใหม่';
 
   const qtyBySku = useMemo(() => {
     const quantities: Record<string, number> = {};
@@ -421,96 +422,103 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
           </View>
         )}
       />
-      <Button
-        label={
-          working
-            ? 'กำลังทำรายการ…'
-            : current?.reservationLost
-            ? 'สร้างการจองสต็อกใหม่'
-            : 'ส่งรายการใหม่เข้าครัว'
-        }
-        fullWidth
-        disabled={
-          working ||
-          current?.status !== 'OPEN' ||
-          (!current?.reservationLost &&
-            !current?.items.some(item => item.status === 'NEW'))
-        }
-        onPress={onSend}
-      />
-      {current ? (
-        <View style={styles.actions}>
-          <Button
-            label="จำนวนลูกค้า"
-            variant="secondary"
-            disabled={current.status !== 'OPEN'}
-            onPress={() => {
-              setGuestCount(String(current.guestCount));
-              setAction('GUESTS');
-            }}
-          />
-          {current.serviceMode === 'DINE_IN' && current.status === 'OPEN' ? (
-            <>
-              <Button
-                label="ย้ายโต๊ะ"
-                variant="secondary"
-                onPress={() => {
-                  setTargetId('');
-                  setAction('MOVE');
-                }}
-              />
-              <Button
-                label="แยกบิล"
-                variant="secondary"
-                disabled={splittableItems.length < 2}
-                onPress={() => {
-                  setSelectedItemIds([]);
-                  setGuestCount('1');
-                  setAction('SPLIT');
-                }}
-              />
-              <Button
-                label="รวมบิล"
-                variant="secondary"
-                onPress={() => {
-                  setTargetId('');
-                  setAction('MERGE');
-                }}
-              />
-            </>
-          ) : null}
-          <Button
-            label="ยกเลิกบิล"
-            variant="danger"
-            disabled={!['OPEN', 'CLOSING'].includes(current.status)}
-            onPress={() => {
-              setReason('');
-              setApproverId('');
-              setApproverPin('');
-              setAction('CANCEL');
-            }}
-          />
-        </View>
-      ) : null}
-      <Button
-        label="ไปชำระเงิน"
-        variant="secondary"
-        fullWidth
-        disabled={
-          !current ||
-          !['OPEN', 'CLOSING'].includes(current.status) ||
-          splittableItems.length === 0 ||
-          current.items.some(item => item.status === 'NEW')
-        }
-        onPress={() => {
-          if (!current) return;
-          navigation.navigate('Checkout', {
-            source: 'restaurant',
-            tableId: route.params.tableId,
-            checkId: current.id,
-          });
-        }}
-      />
+      <View style={styles.orderActions}>
+        <Button
+          label={
+            working
+              ? 'กำลังทำรายการ…'
+              : current?.reservationLost
+              ? 'สร้างการจองสต็อกใหม่'
+              : 'ส่งรายการใหม่เข้าครัว'
+          }
+          fullWidth
+          disabled={
+            working ||
+            current?.status !== 'OPEN' ||
+            (!current?.reservationLost &&
+              !current?.items.some(item => item.status === 'NEW'))
+          }
+          onPress={onSend}
+        />
+        {current ? (
+          <View style={styles.secondaryActions}>
+            <Button
+              label="จำนวนลูกค้า"
+              variant="secondary"
+              disabled={current.status !== 'OPEN'}
+              style={!isTablet ? styles.secondaryActionButton : undefined}
+              onPress={() => {
+                setGuestCount(String(current.guestCount));
+                setAction('GUESTS');
+              }}
+            />
+            {current.serviceMode === 'DINE_IN' && current.status === 'OPEN' ? (
+              <>
+                <Button
+                  label="ย้ายโต๊ะ"
+                  variant="secondary"
+                  style={!isTablet ? styles.secondaryActionButton : undefined}
+                  onPress={() => {
+                    setTargetId('');
+                    setAction('MOVE');
+                  }}
+                />
+                <Button
+                  label="แยกบิล"
+                  variant="secondary"
+                  disabled={splittableItems.length < 2}
+                  style={!isTablet ? styles.secondaryActionButton : undefined}
+                  onPress={() => {
+                    setSelectedItemIds([]);
+                    setGuestCount('1');
+                    setAction('SPLIT');
+                  }}
+                />
+                <Button
+                  label="รวมบิล"
+                  variant="secondary"
+                  style={!isTablet ? styles.secondaryActionButton : undefined}
+                  onPress={() => {
+                    setTargetId('');
+                    setAction('MERGE');
+                  }}
+                />
+              </>
+            ) : null}
+            <Button
+              label="ยกเลิกบิล"
+              variant="danger"
+              disabled={!['OPEN', 'CLOSING'].includes(current.status)}
+              style={!isTablet ? styles.secondaryActionButton : undefined}
+              onPress={() => {
+                setReason('');
+                setApproverId('');
+                setApproverPin('');
+                setAction('CANCEL');
+              }}
+            />
+          </View>
+        ) : null}
+        <Button
+          label="ไปชำระเงิน"
+          variant="secondary"
+          fullWidth
+          disabled={
+            !current ||
+            !['OPEN', 'CLOSING'].includes(current.status) ||
+            splittableItems.length === 0 ||
+            current.items.some(item => item.status === 'NEW')
+          }
+          onPress={() => {
+            if (!current) return;
+            navigation.navigate('Checkout', {
+              source: 'restaurant',
+              tableId: route.params.tableId,
+              checkId: current.id,
+            });
+          }}
+        />
+      </View>
     </Card>
   );
 
@@ -568,7 +576,7 @@ export default function CheckDetailScreen({ route, navigation }: Props) {
                 onPress={() => setMobilePane('MENU')}
               />
               <Button
-                label={`บิล (${splittableItems.length})`}
+                label={billTabLabel}
                 variant={mobilePane === 'ORDER' ? 'primary' : 'secondary'}
                 onPress={() => setMobilePane('ORDER')}
               />
@@ -780,7 +788,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  orderActions: { gap: 12 },
+  secondaryActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  secondaryActionButton: {
+    width: '48%',
+    paddingHorizontal: 12,
+  },
   overlay: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   modal: {
     width: '92%',
