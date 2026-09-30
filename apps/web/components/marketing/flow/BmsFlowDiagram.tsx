@@ -229,6 +229,9 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
   })
     .format(new Date(`${FLOW_STATUS_UPDATED_AT}T12:00:00Z`));
 
+  // On /how-it-works this header is the page's own title, so it is the h1 there.
+  const Heading = variant === "full" ? "h1" : "h2";
+
   return (
     <section className={`${styles.flowRoot} ${styles[variant]}`} id="workflow">
       <div className={styles.flowHeader}>
@@ -237,10 +240,10 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
         <span className={styles.eyebrow}>{t("bmsFlow.eyebrow")}</span>
         {/* Thai has no spaces between words, so the browser may break inside
             one ("สต็ / อก"). Each space-separated phrase is kept whole. */}
-        <h2>{t("bmsFlow.subtitle").split(" ").map((phrase, index) => (
+        <Heading>{t("bmsFlow.subtitle").split(" ").map((phrase, index) => (
           // The space stays outside the nowrap span so it remains a break point.
           <Fragment key={index}>{index > 0 ? " " : null}<span className={styles.headingPhrase}>{phrase}</span></Fragment>
-        ))}</h2>
+        ))}</Heading>
         <p>{t("bmsFlow.intro")}</p>
       </div>
 

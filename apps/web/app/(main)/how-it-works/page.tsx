@@ -22,16 +22,12 @@ export async function generateMetadata(): Promise<Metadata> {
   const page = resolveBilingual(content, lang);
   return { title: page.title, description: page.description };
 }
-export default async function HowItWorksPage() {
-  const cookieStore = await cookies();
-  const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
-  const page = resolveBilingual(content, lang);
+// The page title and description stay in <head> for search and the tab; the
+// visible heading is the diagram's own (rendered as this page's h1), so the
+// reader is not met by two stacked titles saying the same thing.
+export default function HowItWorksPage() {
   return (
     <div className={styles.page}>
-      <header className={styles.header}>
-        <h1>{page.title}</h1>
-        <p>{page.description}</p>
-      </header>
       <BmsFlowDiagram variant="full" />
     </div>
   );

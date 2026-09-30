@@ -82,3 +82,22 @@ test("flow section header names the product once, inside the hub", async () => {
     assert.equal(/BMS/.test(getMessage("en", key)), false, `${key} (en) repeats BMS`);
   }
 });
+
+test("/how-it-works has one visible title, the diagram's own h1", async () => {
+  const { readFileSync } = await import("node:fs");
+  const page = readFileSync(new URL("../apps/web/app/(main)/how-it-works/page.tsx", import.meta.url), "utf8")
+    .replace(/\/\/.*$/gm, "");
+  const diagram = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.tsx", import.meta.url), "utf8");
+  // The page used to render its own h1 + description right above the
+  // diagram's eyebrow + heading + intro: two stacked titles for one idea.
+  assert.equal(/<h1[\s>]/.test(page), false, "page must not render a second title above the diagram");
+  assert.ok(page.includes('variant="full"'), "page must render the full diagram");
+  assert.ok(/const Heading = variant === "full" \? "h1" : "h2"/.test(diagram), "full diagram heading must be the page h1");
+});
+
+test("flow diagram draws no dashed strokes", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.module.css", import.meta.url), "utf8");
+  const tsx = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.tsx", import.meta.url), "utf8");
+  assert.equal(/stroke-dasharray|strokeDasharray|\bdashed\b/.test(css + tsx), false, "dashed stroke found");
+});

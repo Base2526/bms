@@ -39,7 +39,7 @@
   text-align: center;
 }
 
-.flowHeader h2 {
+.flowHeader :is(h1, h2) {
   color: var(--flow-ink);
   font-size: clamp(28px, 4vw, 44px);
   line-height: 1.2;
@@ -50,7 +50,8 @@
 .headingPhrase { white-space: nowrap; }
 
 /* Thai glyphs need extra vertical room for stacked vowels and tone marks. */
-:global(html[lang="th"]) .flowHeader h2 { line-height: 1.45; }
+:global(html[lang="th"]) .flowHeader :is(h1, h2) { line-height: 1.45; }
+.full .flowHeader h1 { font-size: clamp(32px, 4.6vw, 52px); }
 
 .flowHeader p {
   color: var(--flow-muted);
@@ -195,7 +196,7 @@
 
 .svgEdges marker path,
 .flowSvg marker path { fill: #9cafcb; }
-.svgEdges .loopEdge { opacity: .82; stroke: var(--flow-retention); stroke-dasharray: 5 9; }
+.svgEdges .loopEdge { opacity: .82; stroke: var(--flow-retention); }
 .svgEdges .edgeActive { opacity: 1; stroke: var(--flow-primary); stroke-width: 3; }
 .svgEdges .edgeDimmed { opacity: .25; }
 .scenarioDot { fill: var(--flow-retention); filter: drop-shadow(0 0 5px var(--flow-retention)); }
@@ -246,7 +247,7 @@
 :global(html.dark) .svgShort { fill: #08101f; }
 :global(html.dark) .svgNode > svg { color: #08101f; }
 
-.svgHubHalo { fill: none; stroke: var(--flow-line); stroke-dasharray: 4 8; stroke-width: 2; }
+.svgHubHalo { fill: none; stroke: var(--flow-line); stroke-width: 1.5; }
 .svgHub { stroke: color-mix(in srgb, var(--flow-primary) 35%, transparent); stroke-width: 4; }
 .svgHubTitle { fill: #fff; font-size: 38px; font-weight: 800; }
 .svgHubShort { fill: #fff; font-size: 15px; font-weight: 700; }
@@ -326,7 +327,7 @@
 .extraCards { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .localCard,
 .connectingCard { background: var(--flow-surface); border: 1px solid var(--flow-line); border-radius: 20px; display: grid; gap: 10px; padding: 22px; }
-.localCard { border: 2px dashed var(--flow-pos); }
+.localCard { border-color: color-mix(in srgb, var(--flow-pos) 45%, transparent); }
 .localCard h3,
 .connectingCard h3 { color: var(--flow-ink); margin: 0; }
 .localCard h3 span { background: #fef3c7; border: 1px solid #eab308; border-radius: 999px; color: #854d0e; font-size: 9px; margin-left: 6px; padding: 3px 7px; }
@@ -386,7 +387,7 @@
 
 @media (max-width: 520px) {
   .flowRoot { gap: 18px; padding-left: 14px; padding-right: 14px; }
-  .flowHeader h2 { font-size: 30px; }
+  .flowHeader :is(h1, h2) { font-size: 30px; }
   .mobileModuleGrid { grid-template-columns: 1fr; }
   .scenarioCaption { align-items: flex-start; flex-direction: column; }
 }
