@@ -1,18 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, Row, Skeleton, Space, Tag, Typography } from "antd";
 import Link from "next/link";
 import {
   ApiOutlined,
-  ArrowRightOutlined,
   AuditOutlined,
-  BarChartOutlined,
   CheckCircleFilled,
-  CheckOutlined,
-  ContactsOutlined,
-  CreditCardOutlined,
   CloudServerOutlined,
   DatabaseOutlined,
   DesktopOutlined,
@@ -23,7 +18,6 @@ import {
   LockOutlined,
   MessageOutlined,
   MobileOutlined,
-  PauseCircleOutlined,
   PlayCircleOutlined,
   RobotOutlined,
   RocketOutlined,
@@ -35,6 +29,7 @@ import {
 } from "@ant-design/icons";
 import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
+import BmsFlowDiagram from "@/components/marketing/flow/BmsFlowDiagram";
 import styles from "./page.module.css";
 
 const { Title, Paragraph, Text } = Typography;
@@ -62,107 +57,6 @@ const CHANNELS = [
 ];
 
 type Translate = (key: string) => string;
-
-function buildFlowSteps(t: Translate) {
-  return [
-  {
-    key: "message",
-    label: "Message",
-    short: t("landing.flow.message.short"),
-    kicker: t("landing.flow.message.kicker"),
-    title: t("landing.flow.message.title"),
-    description: t("landing.flow.message.description"),
-    path: [t("landing.flow.message.path1"), t("landing.flow.message.path2"), t("landing.flow.message.path3")],
-    source: t("landing.flow.message.source"),
-    status: t("landing.flow.message.status"),
-    icon: <MessageOutlined />,
-  },
-  {
-    key: "intent",
-    label: "AI Intent",
-    short: t("landing.flow.intent.short"),
-    kicker: t("landing.flow.intent.kicker"),
-    title: t("landing.flow.intent.title"),
-    description: t("landing.flow.intent.description"),
-    path: [t("landing.flow.intent.path1"), t("landing.flow.intent.path2"), t("landing.flow.intent.path3")],
-    source: t("landing.flow.intent.source"),
-    status: t("landing.flow.intent.status"),
-    icon: <RobotOutlined />,
-  },
-  {
-    key: "crm",
-    label: "CRM",
-    short: t("landing.flow.crm.short"),
-    kicker: t("landing.flow.crm.kicker"),
-    title: t("landing.flow.crm.title"),
-    description: t("landing.flow.crm.description"),
-    path: [t("landing.flow.crm.path1"), t("landing.flow.crm.path2"), t("landing.flow.crm.path3")],
-    source: t("landing.flow.crm.source"),
-    status: t("landing.flow.crm.status"),
-    icon: <ContactsOutlined />,
-  },
-  {
-    key: "order",
-    label: "Order",
-    short: t("landing.flow.order.short"),
-    kicker: t("landing.flow.order.kicker"),
-    title: t("landing.flow.order.title"),
-    description: t("landing.flow.order.description"),
-    path: [t("landing.flow.order.path1"), t("landing.flow.order.path2"), t("landing.flow.order.path3")],
-    source: t("landing.flow.order.source"),
-    status: t("landing.flow.order.status"),
-    icon: <ShoppingCartOutlined />,
-  },
-  {
-    key: "inventory",
-    label: "Inventory",
-    short: t("landing.flow.inventory.short"),
-    kicker: t("landing.flow.inventory.kicker"),
-    title: t("landing.flow.inventory.title"),
-    description: t("landing.flow.inventory.description"),
-    path: [t("landing.flow.inventory.path1"), t("landing.flow.inventory.path2"), t("landing.flow.inventory.path3")],
-    source: t("landing.flow.inventory.source"),
-    status: t("landing.flow.inventory.status"),
-    icon: <DatabaseOutlined />,
-  },
-  {
-    key: "payment",
-    label: "Payment",
-    short: t("landing.flow.payment.short"),
-    kicker: t("landing.flow.payment.kicker"),
-    title: t("landing.flow.payment.title"),
-    description: t("landing.flow.payment.description"),
-    path: [t("landing.flow.payment.path1"), t("landing.flow.payment.path2"), t("landing.flow.payment.path3")],
-    source: t("landing.flow.payment.source"),
-    status: t("landing.flow.payment.status"),
-    icon: <CreditCardOutlined />,
-  },
-  {
-    key: "shipping",
-    label: "Shipping",
-    short: t("landing.flow.shipping.short"),
-    kicker: t("landing.flow.shipping.kicker"),
-    title: t("landing.flow.shipping.title"),
-    description: t("landing.flow.shipping.description"),
-    path: [t("landing.flow.shipping.path1"), t("landing.flow.shipping.path2"), t("landing.flow.shipping.path3")],
-    source: t("landing.flow.shipping.source"),
-    status: t("landing.flow.shipping.status"),
-    icon: <InboxOutlined />,
-  },
-  {
-    key: "dashboard",
-    label: "Dashboard",
-    short: t("landing.flow.dashboard.short"),
-    kicker: t("landing.flow.dashboard.kicker"),
-    title: t("landing.flow.dashboard.title"),
-    description: t("landing.flow.dashboard.description"),
-    path: [t("landing.flow.dashboard.path1"), t("landing.flow.dashboard.path2"), t("landing.flow.dashboard.path3")],
-    source: t("landing.flow.dashboard.source"),
-    status: t("landing.flow.dashboard.status"),
-    icon: <BarChartOutlined />,
-  },
-  ];
-}
 
 function buildSafetyPoints(t: Translate) {
   return [
@@ -231,15 +125,7 @@ export default function HomePage() {
   const { t } = useI18n();
   const { data, loading, error } = useQuery(Q_PLANS, { fetchPolicy: "cache-and-network" });
   const plans: any[] = data?.bmsPublicPlans || [];
-  const flowSteps = useMemo(() => buildFlowSteps(t), [t]);
   const safetyPoints = useMemo(() => buildSafetyPoints(t), [t]);
-  const [activeStep, setActiveStep] = useState(0);
-  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
-  const [running, setRunning] = useState(false);
-
-  const currentStep = flowSteps[activeStep];
-  const isFinished = activeStep === flowSteps.length - 1 && completedSteps.has(activeStep);
-  const isApprovalStep = activeStep === 5 && !running;
 
   const primaryCta = !sessionLoading && admin
     ? { href: "/admin/dashboard", label: t("landing.goToDashboard") }
@@ -247,61 +133,6 @@ export default function HomePage() {
   const planCta = !sessionLoading && admin
     ? { href: "/admin/dashboard", label: t("landing.manageStore") }
     : { href: "/shop-signup", label: t("landing.startUsing") };
-
-  const flowStatus = useMemo(() => {
-    if (isFinished) return t("landing.journeyCompleted");
-    if (isApprovalStep) return t("landing.waitingApproval");
-    if (running) return `${t("landing.running")} · ${currentStep.title}`;
-    return `${t("landing.viewing")} · ${currentStep.title}`;
-  }, [currentStep.title, isApprovalStep, isFinished, running, t]);
-
-  useEffect(() => {
-    if (!running) return;
-
-    if (activeStep === 5) {
-      setRunning(false);
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      if (activeStep >= flowSteps.length - 1) {
-        setCompletedSteps(new Set(flowSteps.map((_, index) => index)));
-        setRunning(false);
-        return;
-      }
-
-      setCompletedSteps((previous) => new Set(previous).add(activeStep));
-      setActiveStep((previous) => previous + 1);
-    }, 950);
-
-    return () => window.clearTimeout(timer);
-  }, [activeStep, flowSteps, running]);
-
-  const selectStep = (index: number) => {
-    setRunning(false);
-    setCompletedSteps(new Set());
-    setActiveStep(index);
-  };
-
-  const toggleSimulation = () => {
-    if (running) {
-      setRunning(false);
-      return;
-    }
-
-    if (isFinished || activeStep === 5) {
-      setCompletedSteps(new Set());
-      setActiveStep(0);
-    }
-
-    setRunning(true);
-  };
-
-  const continueAfterApproval = () => {
-    setCompletedSteps((previous) => new Set(previous).add(5));
-    setActiveStep(6);
-    setRunning(true);
-  };
 
   return (
     <div className={styles.page}>
@@ -379,6 +210,8 @@ export default function HomePage() {
         </div>
       </section>
 
+      <BmsFlowDiagram variant="compact" />
+
       <section className={styles.resilienceSection} id="resilience">
         <div className={styles.sectionHeadingSimple}>
           <Text className={styles.eyebrow}>{t("landing.hybridEyebrow")}</Text>
@@ -410,89 +243,6 @@ export default function HomePage() {
             <small>{t("landing.hybridBoundaryDescription")}</small>
           </span>
           <Link href="/retail-local"><Button>{t("landing.retailLocalCta")}</Button></Link>
-        </div>
-      </section>
-
-      <section className={styles.workflowSection} id="workflow">
-        <div className={styles.sectionHeading}>
-          <div>
-            <Text className={styles.eyebrow}>{t("landing.workflowEyebrow")}</Text>
-            <Title level={2}>{t("landing.workflowTitle")}</Title>
-            <Paragraph>{t("landing.workflowDescription")}</Paragraph>
-          </div>
-          <Space wrap>
-            <span className={styles.flowStatus}><i />{flowStatus}</span>
-            <Button
-              type="primary"
-              icon={running ? <PauseCircleOutlined /> : <PlayCircleOutlined />}
-              onClick={toggleSimulation}
-            >
-              {running
-                ? t("landing.pause")
-                : isFinished
-                  ? t("landing.replay")
-                  : isApprovalStep
-                    ? t("landing.restart")
-                    : t("landing.startSimulation")}
-            </Button>
-          </Space>
-        </div>
-
-        <div className={styles.stepGrid} role="group" aria-label={t("landing.selectStepAria")}>
-          {flowSteps.map((step, index) => {
-            const active = index === activeStep;
-            const complete = completedSteps.has(index);
-            return (
-              <button
-                type="button"
-                key={step.key}
-                className={`${styles.stepButton} ${active ? styles.stepButtonActive : ""}`}
-                aria-pressed={active}
-                onClick={() => selectStep(index)}
-              >
-                <span className={styles.stepTop}>
-                  <span className={styles.stepIcon}>{step.icon}</span>
-                  <span className={`${styles.stepCheck} ${complete ? styles.stepCheckVisible : ""}`}><CheckOutlined /></span>
-                </span>
-                <span className={styles.stepNumber}>STEP {index + 1}</span>
-                <strong>{step.label}</strong>
-                <small>{step.short}</small>
-              </button>
-            );
-          })}
-        </div>
-
-        <Card className={styles.detailCard}>
-          <div className={styles.detailHeader}>
-            <div>
-              <Text className={styles.eyebrow}>{currentStep.kicker}</Text>
-              <Title level={4}>{currentStep.title}</Title>
-              <Paragraph>{currentStep.description}</Paragraph>
-            </div>
-            <Tag color={activeStep === 5 ? "gold" : "blue"}>{currentStep.status}</Tag>
-          </div>
-          <div className={styles.path} aria-label={t("landing.dataPathAria")}>
-            {currentStep.path.map((item, index) => (
-              <span key={item} className={styles.pathGroup}>
-                <span className={styles.pathChip}>{item}</span>
-                {index < currentStep.path.length - 1 && <ArrowRightOutlined />}
-              </span>
-            ))}
-          </div>
-          {activeStep === 5 && (
-            <div className={styles.approvalGate}>
-              <span><UserOutlined /><span><strong>{t("landing.humanConfirmation")}</strong><small>{t("landing.approvalDescription")}</small></span></span>
-              <Button type="primary" icon={<CheckOutlined />} onClick={continueAfterApproval}>{t("landing.continueSimulation")}</Button>
-            </div>
-          )}
-          <div className={styles.detailFooter}>
-            <span><DatabaseOutlined /> {t("landing.source")}: {currentStep.source}</span>
-            <span>{activeStep + 1} / {flowSteps.length}</span>
-          </div>
-        </Card>
-        <div className={styles.demoPrompt}>
-          <span><strong>{t("landing.tryDemo")}</strong><small>{t("landing.tryDemoDescription")}</small></span>
-          <Link href="/demo"><Button type="primary" icon={<MessageOutlined />}>{t("landing.tryDemo")}</Button></Link>
         </div>
       </section>
 

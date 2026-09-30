@@ -69,18 +69,13 @@
   gap: 20px;
 }
 
-:global(html[lang="th"]) .sectionHeading h2,
 :global(html[lang="th"]) .sectionHeadingSimple h2,
-:global(html[lang="th"]) .detailHeader h4,
 :global(html[lang="th"]) .finalCta h3 {
   line-height: 1.45 !important;
 }
 
-:global(html[lang="th"]) .stepButton strong,
-:global(html[lang="th"]) .stepButton small,
 :global(html[lang="th"]) .safetyItem,
-:global(html[lang="th"]) .planFeatures,
-:global(html[lang="th"]) .approvalGate {
+:global(html[lang="th"]) .planFeatures {
   line-height: 1.6;
 }
 
@@ -238,7 +233,6 @@
   line-height: 1.35;
 }
 
-.workflowSection,
 .pricingSection,
 .resilienceSection {
   display: grid;
@@ -354,33 +348,6 @@
   color: #22c55e;
 }
 
-.demoPrompt {
-  align-items: center;
-  background: linear-gradient(110deg, rgba(var(--app-primary-rgb), 0.1), rgba(34, 197, 94, 0.08));
-  border: 1px solid rgba(var(--app-primary-rgb), 0.18);
-  border-radius: 18px;
-  display: flex;
-  gap: 20px;
-  justify-content: space-between;
-  padding: 20px 22px;
-}
-
-.demoPrompt > span {
-  display: grid;
-  gap: 5px;
-}
-
-.demoPrompt small { color: var(--app-muted); }
-
-.sectionHeading {
-  align-items: flex-end;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
-}
-
-.sectionHeading h2,
-.sectionHeading p,
 .sectionHeadingSimple h2,
 .sectionHeadingSimple p {
   margin-bottom: 0 !important;
@@ -395,177 +362,6 @@
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.12em;
-}
-
-.flowStatus {
-  align-items: center;
-  color: var(--app-muted);
-  display: inline-flex;
-  font-size: 13px;
-  gap: 7px;
-}
-
-.flowStatus i {
-  background: #22c55e;
-  border-radius: 999px;
-  height: 8px;
-  width: 8px;
-}
-
-.stepGrid {
-  display: grid;
-  gap: 12px;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-}
-
-.stepButton {
-  appearance: none;
-  background: rgba(var(--app-surface-rgb), 0.7);
-  border: 1px solid var(--app-border);
-  border-radius: 16px;
-  color: var(--app-text);
-  cursor: pointer;
-  display: grid;
-  gap: 5px;
-  min-width: 0;
-  padding: 14px 12px;
-  text-align: left;
-  transition: border-color 160ms ease, background 160ms ease, transform 160ms ease;
-}
-
-.stepButton:hover {
-  background: rgba(var(--app-primary-rgb), 0.06);
-  border-color: rgba(var(--app-primary-rgb), 0.4);
-  transform: translateY(-2px);
-}
-
-.stepButton:focus-visible {
-  outline: 3px solid rgba(var(--app-primary-rgb), 0.25);
-  outline-offset: 2px;
-}
-
-.stepButtonActive {
-  background: rgba(var(--app-primary-rgb), 0.11);
-  border-color: var(--app-primary);
-}
-
-.stepTop {
-  align-items: center;
-  display: flex;
-  justify-content: space-between;
-}
-
-.stepIcon {
-  align-items: center;
-  background: rgba(var(--app-primary-rgb), 0.1);
-  border-radius: 999px;
-  color: var(--app-primary);
-  display: inline-flex;
-  height: 34px;
-  justify-content: center;
-  width: 34px;
-}
-
-.stepCheck {
-  color: #22c55e;
-  opacity: 0;
-}
-
-.stepCheckVisible { opacity: 1; }
-
-.stepNumber {
-  color: var(--app-muted);
-  font-size: 10px;
-  letter-spacing: 0.06em;
-}
-
-.stepButton strong {
-  overflow-wrap: anywhere;
-}
-
-.stepButton small {
-  color: var(--app-muted);
-  font-size: 11px;
-}
-
-.detailCard {
-  border-radius: 20px !important;
-}
-
-.detailHeader {
-  align-items: flex-start;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-}
-
-.detailHeader h4,
-.detailHeader p {
-  margin-bottom: 0 !important;
-}
-
-.path {
-  align-items: center;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 20px;
-}
-
-.pathGroup {
-  align-items: center;
-  display: inline-flex;
-  gap: 8px;
-}
-
-.pathChip {
-  background: rgba(var(--app-primary-rgb), 0.09);
-  border-radius: 999px;
-  padding: 6px 12px;
-}
-
-.pathGroup :global(.anticon) { color: var(--app-muted); }
-
-.approvalGate {
-  align-items: center;
-  background: rgba(245, 158, 11, 0.08);
-  border-left: 3px solid #f59e0b;
-  border-radius: 0 14px 14px 0;
-  display: flex;
-  gap: 18px;
-  justify-content: space-between;
-  margin-top: 20px;
-  padding: 14px;
-}
-
-.approvalGate > span {
-  align-items: flex-start;
-  display: flex;
-  gap: 10px;
-}
-
-.approvalGate > span > span {
-  display: grid;
-  gap: 3px;
-}
-
-.approvalGate small { color: var(--app-muted); }
-
-.detailFooter {
-  align-items: center;
-  border-top: 1px solid var(--app-border);
-  color: var(--app-muted);
-  display: flex;
-  font-size: 12px;
-  justify-content: space-between;
-  margin-top: 20px;
-  padding-top: 14px;
-}
-
-.detailFooter span:first-child {
-  align-items: center;
-  display: inline-flex;
-  gap: 7px;
 }
 
 .safetySection {
@@ -678,7 +474,6 @@
 
 @media (max-width: 1180px) {
   .hero { grid-template-columns: 1fr; }
-  .stepGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
 
 @media (max-width: 767px) {
@@ -686,12 +481,9 @@
   .hero { min-height: auto; padding: 42px 20px; }
   .heroTitle { font-size: clamp(34px, 12vw, 48px) !important; }
   .heroVisual { padding: 18px; }
-  .sectionHeading { align-items: flex-start; flex-direction: column; }
-  .workflowSection, .pricingSection { padding: 0 16px; }
+  .pricingSection { padding: 0 16px; }
   .resilienceSection { border-radius: 0; padding: 34px 20px; }
   .resilienceGrid { grid-template-columns: 1fr; }
-  .demoPrompt { align-items: flex-start; flex-direction: column; }
-  .stepGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .safetySection { border-radius: 0; padding: 34px 20px; }
   .safetyGrid { grid-template-columns: 1fr; }
   .finalCta { align-items: flex-start; border-radius: 0; flex-direction: column; padding: 34px 20px; }
@@ -701,10 +493,5 @@
   .storyFlow { grid-template-columns: 1fr 1fr; }
   .customerBubble, .systemBubble { padding: 16px; }
   .bubbleIcon { width: 34px; height: 34px; }
-  .detailHeader, .approvalGate, .detailFooter { align-items: flex-start; flex-direction: column; }
   .resilienceCard { align-items: flex-start; flex-direction: column; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .stepButton { transition: none; }
 }
