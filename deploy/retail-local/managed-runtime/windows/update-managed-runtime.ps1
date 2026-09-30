@@ -8,6 +8,11 @@ param(
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$utf8 = [Text.UTF8Encoding]::new($false)
+[Console]::InputEncoding = $utf8
+[Console]::OutputEncoding = $utf8
+$global:OutputEncoding = $utf8
+try { & "$env:SystemRoot\System32\chcp.com" 65001 *> $null } catch {}
 $distroName = "BMSRuntime"
 $runtimeData = "/var/lib/bms-retail-local"
 $bootstrapRoot = Join-Path $InstallRoot "bootstrap"
@@ -36,9 +41,78 @@ function Write-Utf8NoBom([string]$Path, [string]$Contents) {
 }
 
 function Invoke-AgentJson([string[]]$Arguments) {
-  $output = & $script:agent @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) { throw ($output -join [Environment]::NewLine) }
+  $output = New-Object System.Collections.Generic.List[string]
+  $script:progressLastBucket = -1
+  $script:progressLastComponent = ""
+  & $script:agent @Arguments 2>&1 | ForEach-Object {
+    $line = [string]$_
+    if ($line.StartsWith("BMS_PROGRESS ")) {
+      Show-AgentProgress ($line.Substring(13) | ConvertFrom-Json)
+    } else {
+      $output.Add($line)
+    }
+  }
+  $exitCode = $LASTEXITCODE
+  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Completed
+  if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
   return (($output -join [Environment]::NewLine) | ConvertFrom-Json)
+}
+
+function Invoke-AgentProgress([string[]]$Arguments) {
+  $output = New-Object System.Collections.Generic.List[string]
+  $script:progressLastBucket = -1
+  $script:progressLastComponent = ""
+  & $script:agent @Arguments 2>&1 | ForEach-Object {
+    $line = [string]$_
+    if ($line.StartsWith("BMS_PROGRESS ")) {
+      Show-AgentProgress ($line.Substring(13) | ConvertFrom-Json)
+    } else {
+      $output.Add($line)
+    }
+  }
+  $exitCode = $LASTEXITCODE
+  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Completed
+  if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
+}
+
+function Show-AgentProgress($Event) {
+  $percent = [Math]::Max(0, [Math]::Min(100, [int]$Event.percent))
+  $component = [string]$Event.component
+  $status = switch ([string]$Event.phase) {
+    "download" { "กำลังดาวน์โหลด $component" }
+    "verify" { "กำลังตรวจ SHA-256 ของ $component" }
+    "cached" { "ตรวจพบไฟล์ $component ที่ดาวน์โหลดครบแล้ว" }
+    "staged" { "ดาวน์โหลดและตรวจสอบ release ครบแล้ว" }
+    "load" { "กำลังโหลด $component เข้า private runtime" }
+    "inspect" { "กำลังตรวจ image id ของ $component" }
+    "loaded" { "โหลด $component สำเร็จ" }
+    default { "กำลังดำเนินการ $component" }
+  }
+  $size = if ([long]$Event.totalBytes -gt 0) {
+    "{0:N1}/{1:N1} MiB" -f ([long]$Event.completedBytes / 1MB), ([long]$Event.totalBytes / 1MB)
+  } else { "กำลังทำงาน" }
+  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Status "$status - $size ($percent%)" -PercentComplete $percent
+  $bucket = [Math]::Floor($percent / 10)
+  if ($component -ne $script:progressLastComponent -or $bucket -gt $script:progressLastBucket -or
+      [string]$Event.phase -in @("verify", "cached", "staged", "inspect", "loaded")) {
+    Write-Host ("  [{0,3}%] {1} - {2}" -f $percent, $status, $size)
+    $script:progressLastBucket = $bucket
+    $script:progressLastComponent = $component
+  }
+}
+
+function Invoke-WslCommand([string[]]$Arguments) {
+  $previousPreference = $ErrorActionPreference
+  try {
+    # Windows PowerShell 5.1 promotes native stderr to a terminating error under Stop even when
+    # WSL exits successfully. The process exit code remains the authority for this boundary.
+    $ErrorActionPreference = "Continue"
+    $output = & wsl.exe @Arguments 2>&1
+    $exitCode = $LASTEXITCODE
+  } finally {
+    $ErrorActionPreference = $previousPreference
+  }
+  return [pscustomobject]@{ Output = @($output); ExitCode = $exitCode }
 }
 
 function Get-ArtifactPath($Release, [string]$Name) {
@@ -54,8 +128,10 @@ function Get-ArtifactPath($Release, [string]$Name) {
 }
 
 function Invoke-Transaction([string[]]$Arguments) {
-  $output = & wsl.exe -d $distroName -u root -- /usr/local/sbin/bms-update-transaction @Arguments 2>&1
-  if ($LASTEXITCODE -ne 0) { throw ($output -join [Environment]::NewLine) }
+  $result = Invoke-WslCommand -Arguments (@(
+    "-d", $distroName, "-u", "root", "--", "/usr/local/sbin/bms-update-transaction"
+  ) + $Arguments)
+  if ($result.ExitCode -ne 0) { throw ($result.Output -join [Environment]::NewLine) }
 }
 
 function Sync-HostReceipt {
@@ -78,7 +154,7 @@ Assert-HttpsUri $ManifestUri
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 if (-not (Test-Path -LiteralPath $hostReceipt -PathType Leaf)) { throw "ยังไม่ได้ติดตั้ง BMS Retail Local" }
 foreach ($required in @($agent, $keyring, (Join-Path $bootstrapRoot "bms-localctl"),
-    (Join-Path $bootstrapRoot "bms-update-transaction"))) {
+    (Join-Path $bootstrapRoot "bms-update-transaction"), (Join-Path $bootstrapRoot "bms-wsl-keepalive"))) {
   if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "bootstrap updater ไม่ครบ: $required" }
 }
 $null = Invoke-AgentJson @("preflight")
@@ -122,21 +198,21 @@ if (-not $ConfirmUpdate) {
   $confirmation = Read-Host "พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง"
   if ($confirmation -cne "UPDATE") { throw "ยกเลิก update" }
 }
-foreach ($controlName in @("bms-localctl", "bms-update-transaction")) {
+foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-keepalive")) {
   & $agent runtime-install-control -engine windows-wsl -distro $distroName `
     -source (Join-Path $bootstrapRoot $controlName) -name $controlName
   if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
 }
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $keyring,
-  "-target", $target, "-root", $InstallRoot)
+  "-target", $target, "-root", $InstallRoot, "-progress")
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
 $version = [string]$release.releaseVersion
 
 foreach ($component in @($release.components | Where-Object kind -eq "oci-image")) {
   $artifact = Get-ArtifactPath $release ([string]$component.name)
-  & $agent engine-load -engine windows-wsl -distro $distroName -artifact $artifact.path `
-    -image-ref ([string]$component.imageRef) -digest ([string]$component.ociDigest)
-  if ($LASTEXITCODE -ne 0) { throw "โหลด image $($component.name) ไม่สำเร็จ" }
+  Invoke-AgentProgress @("engine-load", "-engine", "windows-wsl", "-distro", $distroName,
+    "-artifact", $artifact.path, "-image-ref", [string]$component.imageRef,
+    "-digest", [string]$component.ociDigest, "-progress")
 }
 
 $transactionPath = "$runtimeData/updates/$version"
@@ -165,13 +241,13 @@ try {
   $desktop = Get-ArtifactPath $release "desktop"
   $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Update.exe"
   Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
-  $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S" -Wait -PassThru
+  $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
   if ($desktopProcess.ExitCode -ne 0) {
     try { Invoke-Transaction @("rollback", $version) } catch {}
     try {
       $oldDesktopInstaller = Join-Path (Split-Path -Parent $oldDesktop) "BMS-POS-Rollback.exe"
       Copy-Item -LiteralPath $oldDesktop -Destination $oldDesktopInstaller -Force
-      Start-Process -FilePath $oldDesktopInstaller -ArgumentList "/S" -Wait | Out-Null
+      Start-Process -FilePath $oldDesktopInstaller -ArgumentList "/S", "/allusers" -Wait | Out-Null
     } catch {}
     throw "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
   }

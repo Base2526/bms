@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 )
 
 var (
@@ -52,20 +54,18 @@ func engineCommand(engine, distro string, args ...string) (*exec.Cmd, error) {
 	}
 }
 
-func runtimeShellCommand(engine, distro, script string, args ...string) (*exec.Cmd, error) {
+func runtimeShellCommand(engine, distro, script string) (*exec.Cmd, error) {
 	switch engine {
 	case "windows-wsl":
 		if runtime.GOOS != "windows" || !distroPattern.MatchString(distro) {
 			return nil, errors.New("windows-wsl runtime ไม่ถูกต้อง")
 		}
-		prefix := []string{"-d", distro, "-u", "root", "--", "sh", "-c", script, "bms-runtime"}
-		return exec.Command("wsl.exe", append(prefix, args...)...), nil
+		return exec.Command("wsl.exe", "-d", distro, "-u", "root", "--", "sh", "-c", script), nil
 	case "linux-native":
 		if runtime.GOOS != "linux" {
 			return nil, errors.New("linux-native runtime ใช้ได้เฉพาะ Linux")
 		}
-		prefix := []string{"-c", script, "bms-runtime"}
-		return exec.Command("sh", append(prefix, args...)...), nil
+		return exec.Command("sh", "-c", script), nil
 	case "macos-lima":
 		if runtime.GOOS != "darwin" || !distroPattern.MatchString(distro) {
 			return nil, errors.New("macos-lima runtime ไม่ถูกต้อง")
@@ -74,8 +74,7 @@ func runtimeShellCommand(engine, distro, script string, args ...string) (*exec.C
 		if err != nil {
 			return nil, err
 		}
-		prefix := []string{"--tty=false", "shell", distro, "sudo", "sh", "-c", script, "bms-runtime"}
-		return exec.Command(limactl, append(prefix, args...)...), nil
+		return exec.Command(limactl, "--tty=false", "shell", distro, "sudo", "sh", "-c", script), nil
 	default:
 		return nil, fmt.Errorf("engine %q ไม่รองรับ", engine)
 	}
@@ -95,7 +94,7 @@ func limaCtlPath() (string, error) {
 	return path, nil
 }
 
-func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest string) error {
+func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest string, reporters ...progressReporter) error {
 	if !imageRefPattern.MatchString(imageRef) || !digestPattern.MatchString(expectedDigest) {
 		return errors.New("image reference/digest ไม่ถูกต้อง")
 	}
@@ -104,17 +103,27 @@ func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest strin
 		return err
 	}
 	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return err
+	}
 	load, err := engineCommand(engine, distro, "load")
 	if err != nil {
 		return err
 	}
-	load.Stdin = file
+	reportProgress(reporters, progressEvent{Phase: "load", Component: imageRef, TotalBytes: info.Size()})
+	load.Stdin = &reportingReader{
+		r: file, phase: "load", component: imageRef, total: info.Size(),
+		reporters: reporters, reportInterval: 500 * time.Millisecond,
+	}
 	var loadError bytes.Buffer
 	load.Stderr = &loadError
 	load.Stdout = io.Discard
 	if err := load.Run(); err != nil {
 		return fmt.Errorf("โหลด image ไม่สำเร็จ: %s", strings.TrimSpace(loadError.String()))
 	}
+	reportProgress(reporters, progressEvent{Phase: "inspect", Component: imageRef,
+		CompletedBytes: info.Size(), TotalBytes: info.Size()})
 	inspect, err := engineCommand(engine, distro, "image", "inspect", "--format", "{{.Id}}", imageRef)
 	if err != nil {
 		return err
@@ -127,6 +136,8 @@ func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest strin
 	if actual != expectedDigest {
 		return fmt.Errorf("image id ไม่ตรงสำหรับ %s: ต้องการ %s ได้ %s", imageRef, expectedDigest, actual)
 	}
+	reportProgress(reporters, progressEvent{Phase: "loaded", Component: imageRef,
+		CompletedBytes: info.Size(), TotalBytes: info.Size()})
 	return nil
 }
 
@@ -143,9 +154,12 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 		return err
 	}
 	defer input.Close()
-	command, err := runtimeShellCommand(engine, distro,
-		`set -eu; umask 077; mkdir -p "$(dirname "$1")"; temporary="$1.tmp.$$"; cat > "$temporary"; chmod "$2" "$temporary"; mv -f "$temporary" "$1"`,
-		cleanDestination, mode)
+	destinationArgument := quoteShellArgument(cleanDestination)
+	temporaryArgument := quoteShellArgument(cleanDestination + ".tmp")
+	command, err := runtimeShellCommand(engine, distro, fmt.Sprintf(
+		`set -eu; umask 077; mkdir -p %s; cat > %s; chmod %s %s; mv -f %s %s`,
+		quoteShellArgument(path.Dir(cleanDestination)), temporaryArgument, quoteShellArgument(mode),
+		temporaryArgument, temporaryArgument, destinationArgument))
 	if err != nil {
 		return err
 	}
@@ -162,29 +176,46 @@ func installRuntimeControl(engine, distro, source, name string) error {
 	destinations := map[string]string{
 		"bms-localctl":           "/usr/local/bin/bms-localctl",
 		"bms-update-transaction": "/usr/local/sbin/bms-update-transaction",
+		"bms-wsl-keepalive":      "/usr/local/sbin/bms-wsl-keepalive",
 	}
 	destination, ok := destinations[name]
 	if !ok {
 		return errors.New("runtime control name ไม่ได้รับอนุญาต")
 	}
-	input, err := os.Open(source)
+	contents, err := os.ReadFile(source)
 	if err != nil {
 		return err
 	}
-	defer input.Close()
-	command, err := runtimeShellCommand(engine, distro,
-		`set -eu; temporary="$1.tmp.$$"; cat > "$temporary"; chown root:root "$temporary"; chmod 0755 "$temporary"; mv -f "$temporary" "$1"`,
-		destination)
+	contents, err = normalizeRuntimeControl(contents)
 	if err != nil {
 		return err
 	}
-	command.Stdin = input
+	destinationArgument := quoteShellArgument(destination)
+	temporaryArgument := quoteShellArgument(destination + ".tmp")
+	command, err := runtimeShellCommand(engine, distro, fmt.Sprintf(
+		`set -eu; mkdir -p %s; cat > %s; chown root:root %s; chmod 0755 %s; mv -f %s %s`,
+		quoteShellArgument(path.Dir(destination)), temporaryArgument, temporaryArgument,
+		temporaryArgument, temporaryArgument, destinationArgument))
+	if err != nil {
+		return err
+	}
+	command.Stdin = bytes.NewReader(contents)
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
 		return fmt.Errorf("ติดตั้ง runtime control ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func normalizeRuntimeControl(contents []byte) ([]byte, error) {
+	// Git may materialize these extensionless shell scripts with CRLF on Windows. A CR on the
+	// shebang makes Linux report the otherwise valid script as "required file not found".
+	contents = bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
+	if !bytes.HasPrefix(contents, []byte("#!/bin/sh\n")) {
+		return nil, errors.New("runtime control ต้องเป็น POSIX sh script")
+	}
+	return contents, nil
 }
 
 func readRuntimeFile(engine, distro, source, destination string) error {
@@ -195,7 +226,9 @@ func readRuntimeFile(engine, distro, source, destination string) error {
 	if engine != "windows-wsl" && engine != "macos-lima" {
 		return errors.New("runtime-read ใช้สำหรับส่งออกไฟล์จาก private Windows WSL หรือ macOS Lima เท่านั้น")
 	}
-	command, err := runtimeShellCommand(engine, distro, `set -eu; test -f "$1"; test ! -L "$1"; cat -- "$1"`, cleanSource)
+	command, err := runtimeShellCommand(engine, distro, fmt.Sprintf(
+		`set -eu; test -f %s; test ! -L %s; cat -- %s`,
+		quoteShellArgument(cleanSource), quoteShellArgument(cleanSource), quoteShellArgument(cleanSource)))
 	if err != nil {
 		return err
 	}
@@ -233,4 +266,8 @@ func safeRuntimePath(input string) (string, error) {
 		return clean, nil
 	}
 	return "", errors.New("runtime path อยู่นอก /var/lib/bms-retail-local")
+}
+
+func quoteShellArgument(input string) string {
+	return "'" + strings.ReplaceAll(input, "'", `'"'"'`) + "'"
 }

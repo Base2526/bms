@@ -25,7 +25,7 @@ type installState struct {
 	UpdatedAt           string          `json:"updatedAt"`
 }
 
-func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root string) (map[string]any, error) {
+func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root string, reporters ...progressReporter) (map[string]any, error) {
 	verified, err := verifyReleaseFiles(manifestPath, keyringPath, target)
 	if err != nil {
 		return nil, err
@@ -70,11 +70,17 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 		return nil
 	}, Timeout: 0}
 
+	var totalBytes int64
+	for _, component := range verified.Payload.Components {
+		totalBytes += component.SizeBytes
+	}
+	var completedBytes int64
 	for _, component := range verified.Payload.Components {
 		destination := filepath.Join(releaseRoot, safeArtifactName(component.Name))
-		if err := downloadComponent(ctx, client, component, destination); err != nil {
+		if err := downloadComponent(ctx, client, component, destination, completedBytes, totalBytes, reporters...); err != nil {
 			return nil, fmt.Errorf("download %s ไม่สำเร็จ: %w", component.Name, err)
 		}
+		completedBytes += component.SizeBytes
 		state.CompletedComponents[component.Name] = true
 		state.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		if err := writeState(statePath, state); err != nil {
@@ -85,6 +91,7 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 	if err := writeState(statePath, state); err != nil {
 		return nil, err
 	}
+	reportProgress(reporters, progressEvent{Phase: "staged", CompletedBytes: totalBytes, TotalBytes: totalBytes})
 	return map[string]any{
 		"ok":               true,
 		"phase":            state.Phase,
@@ -94,8 +101,11 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 	}, nil
 }
 
-func downloadComponent(ctx context.Context, client *http.Client, component releaseComponent, destination string) error {
+func downloadComponent(ctx context.Context, client *http.Client, component releaseComponent, destination string,
+	completedBefore, totalBytes int64, reporters ...progressReporter) error {
 	if digest, size, err := fileSHA256(destination); err == nil && digest == component.SHA256 && size == component.SizeBytes {
+		reportProgress(reporters, progressEvent{Phase: "cached", Component: component.Name,
+			CompletedBytes: completedBefore + component.SizeBytes, TotalBytes: totalBytes})
 		return nil
 	}
 	if err := os.Remove(destination); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -113,6 +123,8 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 	}
 	offset := info.Size()
 	if offset == component.SizeBytes {
+		reportProgress(reporters, progressEvent{Phase: "verify", Component: component.Name,
+			CompletedBytes: completedBefore + offset, TotalBytes: totalBytes})
 		digest, size, hashErr := fileSHA256(partial)
 		if hashErr == nil && size == component.SizeBytes && digest == component.SHA256 {
 			if err := file.Close(); err != nil {
@@ -161,8 +173,15 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 	if _, err := file.Seek(offset, io.SeekStart); err != nil {
 		return err
 	}
+	reportProgress(reporters, progressEvent{Phase: "download", Component: component.Name,
+		CompletedBytes: completedBefore + offset, TotalBytes: totalBytes})
 	remaining := component.SizeBytes - offset
-	written, err := io.Copy(file, io.LimitReader(response.Body, remaining+1))
+	progressWriter := &reportingWriter{
+		w: file, phase: "download", component: component.Name,
+		completed: completedBefore + offset, total: totalBytes,
+		reporters: reporters, reportInterval: 500 * time.Millisecond,
+	}
+	written, err := io.Copy(progressWriter, io.LimitReader(response.Body, remaining+1))
 	if err != nil {
 		return err
 	}
@@ -175,6 +194,8 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 	if err := file.Close(); err != nil {
 		return err
 	}
+	reportProgress(reporters, progressEvent{Phase: "verify", Component: component.Name,
+		CompletedBytes: completedBefore + component.SizeBytes, TotalBytes: totalBytes})
 	digest, size, err := fileSHA256(partial)
 	if err != nil {
 		return err
@@ -266,15 +287,6 @@ func acquireInstallLock(root string) (func(), error) {
 	file.Sync()
 	file.Close()
 	return func() { _ = os.Remove(path) }, nil
-}
-
-func syncDirectory(path string) error {
-	directory, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer directory.Close()
-	return directory.Sync()
 }
 
 func hashBytes(input []byte) string {

@@ -3,15 +3,17 @@ set -Eeuo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: build-deb.sh --keyring FILE [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--version VERSION] [--output-dir DIR]
+usage: build-deb.sh --keyring FILE [--agent FILE] [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--version VERSION] [--output-dir DIR]
 
 Builds the small Ubuntu x64 bootstrap package. The keyring must contain only trusted Ed25519 public
-keys. Private keys and application images are never copied into this package.
+keys. Private keys and application images are never copied into this package. When --agent is
+provided, it must be a prebuilt Linux/amd64 bms-runtime-agent; otherwise the builder compiles it.
 EOF
   exit 2
 }
 
 keyring=
+agent=
 manifest_url=
 activation_url=
 version=0.5.0-internal.1
@@ -19,6 +21,7 @@ output_dir=artifacts/retail-local/managed-runtime
 while (($#)); do
   case "$1" in
     --keyring) keyring=${2:-}; shift 2 ;;
+    --agent) agent=${2:-}; shift 2 ;;
     --manifest-url) manifest_url=${2:-}; shift 2 ;;
     --activation-url) activation_url=${2:-}; shift 2 ;;
     --version) version=${2:-}; shift 2 ;;
@@ -28,6 +31,7 @@ while (($#)); do
 done
 
 [[ -f $keyring ]] || usage
+[[ -z $agent || -f $agent ]] || usage
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+~-][A-Za-z0-9.+~-]+)*$ ]] || {
   echo "version ไม่ใช่ Debian-compatible version" >&2; exit 2;
 }
@@ -56,8 +60,13 @@ mkdir -p "$package_root/DEBIAN" \
   "$package_root/etc/bms-retail-local" \
   "$package_root/lib/systemd/system"
 
-(cd "$agent_root" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-  -trimpath -ldflags='-s -w' -o "$package_root/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" .)
+if [[ -n $agent ]]; then
+  install -m 0755 "$agent" \
+    "$package_root/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent"
+else
+  (cd "$agent_root" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+    -trimpath -ldflags='-s -w' -o "$package_root/usr/lib/bms-retail-local/bootstrap/bms-runtime-agent" .)
+fi
 install -m 0755 "$linux_root/install-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/install-managed-runtime.sh"
 install -m 0755 "$linux_root/uninstall-managed-runtime.sh" \

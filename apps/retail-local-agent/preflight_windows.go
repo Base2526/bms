@@ -4,6 +4,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"runtime"
@@ -50,7 +51,11 @@ func platformPreflight() preflightResult {
 		result.warn(fmt.Sprintf("พื้นที่ว่างปัจจุบัน %.1f GiB; แนะนำอย่างน้อย 15 GiB สำหรับ update และ backup", facts.FreeGiB))
 	}
 	if facts.VirtualizationFirmware != nil && !*facts.VirtualizationFirmware {
-		result.fail("ยังไม่ได้เปิด hardware virtualization ใน BIOS/UEFI")
+		if facts.WSLEnabled && facts.VirtualMachinePlatform {
+			result.warn("CIM รายงาน virtualization เป็นปิด แต่ WSL พร้อมใช้งาน; installer จะยืนยันอีกครั้งตอน import WSL2")
+		} else {
+			result.fail("ยังไม่ได้เปิด hardware virtualization ใน BIOS/UEFI")
+		}
 	} else if facts.VirtualizationFirmware == nil {
 		result.warn("ตรวจ virtualization จาก firmware ไม่ได้; installer ต้องยืนยันด้วย WSL2")
 	}
@@ -63,11 +68,18 @@ func platformPreflight() preflightResult {
 }
 
 func collectWindowsFacts() (windowsFacts, error) {
-	script := `$ErrorActionPreference='Stop'; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='"+$os.SystemDrive+"'"); $cpu=@(Get-CimInstance Win32_Processor); $virt=@($cpu|ForEach-Object {$_.VirtualizationFirmwareEnabled}|Where-Object {$null -ne $_}); $wsl=(Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State -eq 'Enabled'; $vmp=(Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State -eq 'Enabled'; [pscustomobject]@{caption=$os.Caption;build=[int]$os.BuildNumber;memoryGiB=[math]::Round($os.TotalVisibleMemorySize/1MB,1);freeGiB=[math]::Round($disk.FreeSpace/1GB,1);virtualizationFirmware=if($virt.Count){[bool]($true -in $virt)}else{$null};wslEnabled=$wsl;virtualMachinePlatform=$vmp}|ConvertTo-Json -Compress`
+	// Get-WindowsOptionalFeature requires elevation on otherwise supported machines. Preflight is
+	// intentionally read-only, so use a working WSL installation as the non-elevated fallback and
+	// leave the later import command as the authoritative WSL2 check.
+	script := `$ErrorActionPreference='Stop'; $os=Get-CimInstance Win32_OperatingSystem; $disk=Get-CimInstance Win32_LogicalDisk -Filter ("DeviceID='"+$os.SystemDrive+"'"); $cpu=@(Get-CimInstance Win32_Processor); $virt=@($cpu|ForEach-Object {$_.VirtualizationFirmwareEnabled}|Where-Object {$null -ne $_}); try{$wsl=(Get-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux).State -eq 'Enabled';$vmp=(Get-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform).State -eq 'Enabled'}catch{& wsl.exe --status *> $null;$wslReady=$LASTEXITCODE -eq 0;$wsl=$wslReady;$vmp=$wslReady}; [pscustomobject]@{caption=$os.Caption;build=[int]$os.BuildNumber;memoryGiB=[math]::Round($os.TotalVisibleMemorySize/1MB,1);freeGiB=[math]::Round($disk.FreeSpace/1GB,1);virtualizationFirmware=if($virt.Count){[bool]($true -in $virt)}else{$null};wslEnabled=$wsl;virtualMachinePlatform=$vmp}|ConvertTo-Json -Compress`
 	command := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
-	output, err := command.Output()
+	output, err := command.CombinedOutput()
 	if err != nil {
-		return windowsFacts{}, err
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			message = err.Error()
+		}
+		return windowsFacts{}, errors.New(message)
 	}
 	var facts windowsFacts
 	if err := json.Unmarshal(output, &facts); err != nil {

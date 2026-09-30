@@ -44,6 +44,8 @@ test("local migration runner is ordered, checksummed, locked, and excludes destr
   assert.match(runner, /tenant\+cough\+diarrhea\.sql/);
   assert.match(runner, /1\.24__roles\.sql/);
   assert.match(runner, /RENAMED_MIGRATIONS/);
+  assert.match(runner, /compatibleMigrationChecksums/);
+  assert.match(runner, /normalize checksum/);
   assert.match(runner, /10\.26__bms_retail_local_macos_x64_release_assets\.sql/);
   assert.match(runner, /10\.27__bms_onboarding_seed_archetypes\.sql/);
   assert.match(runner, /UPDATE bms_local_schema_migrations SET name = \$1, checksum = \$2 WHERE name = \$3/);

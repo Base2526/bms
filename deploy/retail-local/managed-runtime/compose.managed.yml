@@ -92,7 +92,7 @@ services:
       BMS_LOCAL_ADMIN_PIN: ${BMS_LOCAL_ADMIN_PIN:-}
       BMS_LOCAL_BUSINESS_ARCHETYPE: ${BMS_LOCAL_BUSINESS_ARCHETYPE:-}
       BMS_LOCAL_SAMPLE_MODE: ${BMS_LOCAL_SAMPLE_MODE:-NONE}
-    command: ["./node_modules/.bin/tsx", "scripts/retail-local-provision.mts"]
+    command: ["node", "--conditions=react-server", "--import", "tsx", "scripts/retail-local-provision.mts"]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -103,7 +103,7 @@ services:
     image: ${BMS_WEB_IMAGE_REF:?missing BMS_WEB_IMAGE_REF}
     environment:
       <<: *web-runtime
-    command: ["./node_modules/.bin/tsx", "scripts/retail-local-sample-data.mts"]
+    command: ["node", "--conditions=react-server", "--import", "tsx", "scripts/retail-local-sample-data.mts"]
     depends_on:
       migrate:
         condition: service_completed_successfully

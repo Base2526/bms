@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -34,6 +35,24 @@ func TestSafeRuntimePath(t *testing.T) {
 func TestRuntimeControlInstallIsAllowListed(t *testing.T) {
 	if err := installRuntimeControl("windows-wsl", "BMSRuntime", "missing", "../../evil"); err == nil {
 		t.Fatal("unexpected runtime control name was accepted")
+	}
+}
+
+func TestRuntimeControlNormalizesWindowsLineEndings(t *testing.T) {
+	contents, err := normalizeRuntimeControl([]byte("#!/bin/sh\r\nprintf 'line-endings-ok\\n'\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(contents, []byte{'\r'}) || !bytes.HasPrefix(contents, []byte("#!/bin/sh\n")) {
+		t.Fatalf("runtime control was not normalized: %q", contents)
+	}
+}
+
+func TestQuoteShellArgument(t *testing.T) {
+	input := `/var/lib/bms-retail-local/it's $(not-a-command)`
+	quoted := quoteShellArgument(input)
+	if quoted != `'/var/lib/bms-retail-local/it'"'"'s $(not-a-command)'` {
+		t.Fatalf("unexpected shell quoting: %s", quoted)
 	}
 }
 

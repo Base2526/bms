@@ -39,7 +39,9 @@ func TestDownloadComponentResumesAndVerifies(t *testing.T) {
 	if err := os.WriteFile(partial, content[:97], 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := downloadComponent(context.Background(), server.Client(), component, destination); err != nil {
+	var progress []progressEvent
+	if err := downloadComponent(context.Background(), server.Client(), component, destination, 0, component.SizeBytes,
+		func(event progressEvent) { progress = append(progress, event) }); err != nil {
 		t.Fatal(err)
 	}
 	actual, err := os.ReadFile(destination)
@@ -51,6 +53,9 @@ func TestDownloadComponentResumesAndVerifies(t *testing.T) {
 	}
 	if _, err := os.Stat(partial); !os.IsNotExist(err) {
 		t.Fatalf("partial file remains: %v", err)
+	}
+	if len(progress) == 0 || progress[len(progress)-1].Percent != 100 {
+		t.Fatalf("download did not report completion: %#v", progress)
 	}
 }
 
@@ -66,7 +71,7 @@ func TestDownloadComponentDeletesCorruptCompletePartial(t *testing.T) {
 	if err := os.WriteFile(destination+".part", []byte("wrong bytes!!"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := downloadComponent(context.Background(), server.Client(), component, destination); err != nil {
+	if err := downloadComponent(context.Background(), server.Client(), component, destination, 0, component.SizeBytes); err != nil {
 		t.Fatal(err)
 	}
 	actual, _ := os.ReadFile(destination)

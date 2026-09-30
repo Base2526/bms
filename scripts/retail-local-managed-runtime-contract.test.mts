@@ -157,11 +157,15 @@ test("reference release verifier accepts authentic bytes and refuses tampering",
 test("platform preflights are read-only and preserve the Windows 10 support boundary", () => {
   const windows = read("deploy/retail-local/managed-runtime/preflight-windows.ps1");
   const linux = read("deploy/retail-local/managed-runtime/preflight-linux.sh");
+  const windowsAgent = read("apps/retail-local-agent/preflight_windows.go");
 
   assert.match(windows, /19044[\s\S]*Windows 10 IoT Enterprise LTSC 2021/);
   assert.match(windows, /19045[\s\S]*requiresEsuEvidence = \$true/);
   assert.match(windows, /build -ge 22000/);
   assert.doesNotMatch(windows, /Enable-WindowsOptionalFeature|wsl(?:\.exe)?\s+--install|Start-Process/);
+  assert.match(windowsAgent, /Get-WindowsOptionalFeature[\s\S]*catch\{& wsl\.exe --status/);
+  assert.match(windowsAgent, /CIM รายงาน virtualization เป็นปิด แต่ WSL พร้อมใช้งาน/);
+  assert.match(windowsAgent, /command\.CombinedOutput\(\)/);
 
   assert.match(linux, /ubuntu/);
   assert.match(linux, /24\.04/);
@@ -176,6 +180,7 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const inno = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
+  const windowsRunner = read("deploy/retail-local/managed-runtime/windows/run-managed-runtime.ps1");
 
   assert.match(agentMain, /errPreflightFailed/);
   assert.match(agentMain, /preflight \[--human\]/);
@@ -196,7 +201,40 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
   assert.match(linux, /\.warnings\[\]\?/);
   assert.match(inno, /ResultCode <> 0[\s\S]*RaiseException/);
+  assert.match(inno, /run-managed-runtime\.ps1/);
+  assert.match(inno, /setup-error\.txt/);
+  assert.match(inno, /setup-transcript\.log/);
+  assert.match(inno, /if '\{#ActivationUri\}' <> '' then[\s\S]*-ActivationUri/);
+  assert.match(inno, /WizardForm\.Hide;/);
+  assert.match(inno, /SW_SHOWMAXIMIZED/);
+  assert.match(inno, /finally\s+WizardForm\.Show;/);
+  assert.match(windowsRunner, /Start-Transcript/);
+  assert.match(windowsRunner, /Console\]::OutputEncoding = \$utf8[\s\S]*chcp\.com" 65001/);
+  assert.match(windowsRunner, /Administrators:[\s\S]*SYSTEM:[\s\S]*icacls/);
+  assert.match(windowsRunner, /Get-CimInstance Win32_ComputerSystem[\s\S]*\(OI\)\(CI\)RX/);
+  assert.match(windows, /Get-CimInstance Win32_ComputerSystem[\s\S]*\(OI\)\(CI\)RX/);
+  assert.match(windows, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
+  assert.match(windows, /runtime-install-control/);
+  assert.match(inno, /runtime-rootfs\\bms-wsl-keepalive/);
+  assert.equal((windows.match(/Read-RequiredText "ชื่อร้าน"/g) ?? []).length, 1);
+  assert.match(windows, /New-ScheduledTaskTrigger -AtStartup/);
+  assert.match(windows, /New-ScheduledTaskPrincipal[\s\S]*-LogonType S4U/);
+  assert.match(windows, /ArgumentList "\/S", "\/allusers"/);
+  assert.match(windows, /BMS Retail Local POS Pairing[\s\S]*-LogonType Interactive/);
+  assert.match(windows, /IsNullOrWhiteSpace\(\$desktopArguments\)[\s\S]*New-ScheduledTaskAction -Execute \$desktopExecutable/);
+  assert.match(windows, /ReadAllText\(\$Path, \[Text\.Encoding\]::UTF8\)/);
+  assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*ยังทำงานอยู่/);
+  assert.match(windows, /wslVersion[\s\S]*--version[\s\S]*finishing an upgrade/);
   assert.doesNotMatch(inno, /runhidden waituntilterminated/);
+});
+
+test("local Windows smoke release trusts HTTPS for both the user and elevated installer", () => {
+  const prepare = read("deploy/retail-local/managed-runtime/windows/prepare-local-test-release.ps1");
+  const stop = read("deploy/retail-local/managed-runtime/windows/stop-local-test-release.ps1");
+  assert.match(prepare, /StoreLocation\]::CurrentUser/);
+  assert.match(prepare, /-addstore -f Root[\s\S]*certutil\.exe/);
+  assert.match(prepare, /certificateStores = @\("CurrentUser\/Root", "LocalMachine\/Root"\)/);
+  assert.match(stop, /certutil\.exe[\s\S]*-delstore Root/);
 });
 
 test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
@@ -211,6 +249,13 @@ test("Windows PowerShell 5.1 scripts keep a UTF-8 BOM", () => {
       `${name} must be UTF-8 with BOM so Windows PowerShell 5.1 does not parse Thai text as ANSI`,
     );
   }
+});
+
+test("Windows installer exposes an all-users uninstall shortcut", () => {
+  const installer = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
+  assert.match(installer, /\{commonprograms\}\\BMS Retail Local\\Uninstall BMS Retail Local/);
+  assert.match(installer, /Filename: "\{uninstallexe\}"/);
+  assert.match(installer, /RunOnceId: "BMSManagedRuntimeCleanup"/);
 });
 
 test("Managed Runtime keeps authority out of Electron and does not replace the pilot early", () => {
@@ -256,14 +301,22 @@ test("release signing derives hashes from artifact bytes and emits a verifiable 
 
 test("managed compose and installers keep private services off host ports", () => {
   const compose = read("deploy/retail-local/managed-runtime/compose.managed.yml");
+  const daemon = read("deploy/retail-local/managed-runtime/runtime-rootfs/daemon.json");
+  const runtimeDockerfile = read("deploy/retail-local/managed-runtime/runtime-rootfs/Dockerfile");
+  const agentEngine = read("apps/retail-local-agent/engine.go");
   const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   assert.doesNotMatch(compose, /5432:5432|6379:6379/);
+  assert.doesNotMatch(daemon, /"hosts"/);
+  assert.match(runtimeDockerfile, /apt-get install[\s\S]*wget/);
+  assert.match(runtimeDockerfile, /sed -i 's\/\\r\$\/\/'.*bms-wsl-keepalive.*bms-update-transaction.*bms-localctl/);
+  assert.match(agentEngine, /bytes\.ReplaceAll\(contents, \[\]byte\("\\r\\n"\), \[\]byte\("\\n"\)\)/);
   assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WEB_PORT/);
   assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WS_PORT/);
-  assert.match(windows, /engine-load -engine windows-wsl/);
+  assert.equal((compose.match(/--conditions=react-server/g) ?? []).length, 2);
+  assert.match(windows, /Invoke-AgentProgress[\s\S]*"engine-load"[\s\S]*"windows-wsl"/);
   assert.match(windows, /pairing-handoff\.json/);
-  assert.match(windows, /test -f "\$runtimeData\/\.env"[\s\S]*if \(-not \$runtimeEnvExists\)/);
+  assert.match(windows, /"test", "-f", "\$runtimeData\/\.env"[\s\S]*if \(-not \$runtimeEnvExists\)/);
   assert.match(linux, /engine-load -engine linux-native/);
   assert.match(linux, /chmod 0600 "\$handoff_path"/);
   assert.match(linux, /if \[\[ ! -f \$RUNTIME_ROOT\/\.env \]\]/);
@@ -330,6 +383,50 @@ test("Linux bootstrap package stays small and never packages a release private k
   assert.match(builder, /bms-retail-local-activate/);
   assert.match(activation, /TRANSFER_REQUESTED/);
   assert.match(activation, /\.licenseCode = \$licenseCode/);
+});
+
+test("repository release build defaults to online x64 bootstraps and keeps offline explicit", () => {
+  const releaseBuilder = read("deploy/retail-local/build-release.ps1");
+  const onlineBuilder = read("deploy/retail-local/build-online-bootstrap.ps1");
+  assert.match(releaseBuilder, /\[ValidateSet\("Online", "Offline"\)\]\[string\]\$Distribution = "Online"/);
+  assert.match(releaseBuilder, /build-online-bootstrap\.ps1/);
+  assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
+  assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);
+  assert.match(onlineBuilder, /build รองรับเฉพาะ x64/);
+  assert.match(onlineBuilder, /AllowTestEndpoints/);
+  assert.match(onlineBuilder, /SMOKE-ONLY/);
+  assert.match(onlineBuilder, /windows-x64\$artifactQualifier\.exe/);
+  assert.match(onlineBuilder, /linux-x64\$artifactQualifier\.deb/);
+  assert.match(onlineBuilder, /runtime-rootfs\\bms-wsl-keepalive/);
+  assert.match(onlineBuilder, /Length -gt 25MB/);
+  assert.doesNotMatch(onlineBuilder, /docker image save|package\.ps1/);
+});
+
+test("Windows local release test uses production-format signing without serving private keys", () => {
+  const onlineBuilder = read("deploy/retail-local/build-online-bootstrap.ps1");
+  const prepare = read("deploy/retail-local/managed-runtime/windows/prepare-local-test-release.ps1");
+  const stop = read("deploy/retail-local/managed-runtime/windows/stop-local-test-release.ps1");
+  const keyGenerator = read("deploy/retail-local/managed-runtime/create-local-test-signing-key.mjs");
+  const server = read("deploy/retail-local/managed-runtime/serve-local-test-release.mjs");
+
+  assert.match(onlineBuilder, /parsed\.Host -eq "localhost"/);
+  assert.match(prepare, /create-local-test-signing-key\.mjs/);
+  assert.match(prepare, /sign-release\.mjs/);
+  assert.match(prepare, /verify-release\.mjs/);
+  assert.match(prepare, /docker image save/);
+  assert.match(prepare, /docker export/);
+  assert.match(prepare, /publicRoot = Join-Path \$outputRoot "public"/);
+  assert.match(prepare, /secretRoot = Join-Path \$outputRoot "secrets"/);
+  assert.match(prepare, /--range 0-31/);
+  assert.match(prepare, /-AllowTestEndpoints/);
+  assert.match(keyGenerator, /generateKeyPairSync\("ed25519"\)/);
+  assert.match(keyGenerator, /formatVersion: 1/);
+  assert.match(server, /Accept-Ranges/);
+  assert.match(server, /Content-Range/);
+  assert.match(server, /listen\(port, "127\.0\.0\.1"/);
+  assert.doesNotMatch(server, /private|secrets/i);
+  assert.match(stop, /FindByThumbprint/);
+  assert.match(stop, /ไม่ใช่ local test release server/);
 });
 
 test("Linux release preparation builds all signed payload components before signing", () => {
@@ -512,6 +609,8 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
+  assert.match(windowsUpdater, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
+  assert.match(windowsUpdater, /BMS_PROGRESS[\s\S]*Write-Progress/);
   assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
   assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
   assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);

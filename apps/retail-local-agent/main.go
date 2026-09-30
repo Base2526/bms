@@ -145,6 +145,7 @@ func run(args []string) error {
 		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
 		target := flags.String("target", "", "expected platform target")
 		root := flags.String("root", "", "Managed Runtime data root")
+		progress := flags.Bool("progress", false, "emit machine-readable progress events")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
@@ -157,7 +158,11 @@ func run(args []string) error {
 		}
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		result, err := stageRelease(ctx, *manifest, *keyring, *target, absoluteRoot)
+		var reporter progressReporter
+		if *progress {
+			reporter = writeProgressEvent
+		}
+		result, err := stageRelease(ctx, *manifest, *keyring, *target, absoluteRoot, reporter)
 		if err != nil {
 			return err
 		}
@@ -169,13 +174,18 @@ func run(args []string) error {
 		artifact := flags.String("artifact", "", "verified OCI archive")
 		imageRef := flags.String("image-ref", "", "image reference contained in archive")
 		digest := flags.String("digest", "", "expected immutable image id")
+		progress := flags.Bool("progress", false, "emit machine-readable progress events")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if *engine == "" || *artifact == "" || *imageRef == "" || *digest == "" {
 			return errors.New("engine-load ต้องมี -engine, -artifact, -image-ref และ -digest")
 		}
-		return loadAndVerifyImage(*engine, *distro, *artifact, *imageRef, *digest)
+		var reporter progressReporter
+		if *progress {
+			reporter = writeProgressEvent
+		}
+		return loadAndVerifyImage(*engine, *distro, *artifact, *imageRef, *digest, reporter)
 	case "runtime-write":
 		flags := flag.NewFlagSet("runtime-write", flag.ContinueOnError)
 		engine := flags.String("engine", "", "windows-wsl, linux-native, or macos-lima")

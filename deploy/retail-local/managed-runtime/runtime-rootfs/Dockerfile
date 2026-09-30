@@ -12,6 +12,7 @@ RUN apt-get update \
     iptables \
     systemd \
     systemd-sysv \
+    wget \
   && systemctl enable docker.service containerd.service \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
@@ -22,7 +23,8 @@ COPY bms-wsl-keepalive /usr/local/sbin/bms-wsl-keepalive
 COPY bms-localctl /usr/local/bin/bms-localctl
 COPY bms-update-transaction /usr/local/sbin/bms-update-transaction
 
-RUN chmod 0755 /usr/local/sbin/bms-wsl-keepalive /usr/local/sbin/bms-update-transaction /usr/local/bin/bms-localctl \
+RUN sed -i 's/\r$//' /usr/local/sbin/bms-wsl-keepalive /usr/local/sbin/bms-update-transaction /usr/local/bin/bms-localctl \
+  && chmod 0755 /usr/local/sbin/bms-wsl-keepalive /usr/local/sbin/bms-update-transaction /usr/local/bin/bms-localctl \
   && mkdir -p /var/lib/bms-retail-local \
   && chmod 0700 /var/lib/bms-retail-local
 

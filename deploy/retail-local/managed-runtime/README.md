@@ -71,9 +71,55 @@ after publisher verification. The target needs internet access during install; a
 offline bundle is future work. The macOS technical-pilot `.pkg` is the explicit exception: it is a
 large offline payload, currently unsigned and not notarized.
 
+The repository-level release command now uses this online bootstrap path by default for Windows and
+Ubuntu. It requires an externally supplied public-key-only keyring and platform-specific HTTPS
+signed-manifest URLs:
+
+```powershell
+pwsh .\deploy\retail-local\build-release.ps1 `
+  -Version 0.5.0 `
+  -Keyring C:\secure\bms\trusted-release-keys.json `
+  -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
+  -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json
+```
+
+Use `-Distribution Offline` only for the explicit legacy recovery/pilot payload. Managed Runtime
+supports Windows x64 and Ubuntu x64 only. Windows x86 remains a POS-client legacy target; Linux
+32-bit is unsupported by the current Electron/runtime/image stack and is never emitted as a server
+installer.
+
 Production rootfs builds must call `runtime-rootfs/build-rootfs.sh` with an Ubuntu image reference
 pinned by digest. A mutable `ubuntu:24.04` tag is used only by the CI Dockerfile smoke build and is
 never acceptable as a signed release input.
+
+## Local Windows end-to-end release test
+
+Before connecting production object storage and the isolated signing service, a Windows developer
+machine can exercise the same signed-manifest, resumable-download, WSL import, image-digest, and POS
+installation path against loopback:
+
+```powershell
+pwsh .\deploy\retail-local\managed-runtime\windows\prepare-local-test-release.ps1 `
+  -Version 0.2.13-localtest.1 `
+  -SourceImageVersion 0.2.13
+```
+
+The command creates a fresh **test-only** Ed25519 keypair, embeds only its public keyring in an x64
+bootstrap, serves release bytes from `https://localhost:8443`, and trusts a seven-day localhost TLS
+certificate in the current user's root store. Private keys remain under the ignored artifact
+directory and are never served. The generated installer is deliberately named `SMOKE-ONLY`; neither
+the key nor this release is a production trust root.
+
+Keep the local server running while exercising the installer. Afterwards, stop only that recorded
+Node process and remove only its recorded TLS certificate with:
+
+```powershell
+pwsh .\deploy\retail-local\managed-runtime\windows\stop-local-test-release.ps1 `
+  -ReleaseDirectory .\artifacts\retail-local\local-test-release\0.2.13-localtest.1
+```
+
+The stop command preserves release files for diagnosis. Use a new local-test version for each run;
+the preparation command refuses to overwrite an existing key or signed release.
 
 ## Not yet a GA claim
 

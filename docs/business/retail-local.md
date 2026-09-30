@@ -41,12 +41,23 @@ Internet-dependent capabilities (AI providers, email, chat channels, payment ter
 delivery platforms, and e-Tax providers) still require the internet and their real provider
 configuration. Local deployment is not a promise that those external services work offline.
 
-## Build a test package
+## Build installers
 
-On a development machine at the repository root:
+The default Windows/Ubuntu release build is the small online bootstrap. First install requires
+internet access; signed release components are downloaded progressively, resumed after interruption,
+and verified before use. The bootstrap never contains application images, a database, shop secrets,
+or a private release key. Build it with the external public keyring and the platform-specific signed
+manifest URLs documented in [`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
 
-For the one-command Windows + Linux or macOS release workflow, including POS version update
-instructions, installer variants, checksums, and generated READMEs, see
+Retail Local Server supports Windows x64 and Ubuntu x64 only. Windows x86 remains a separate legacy
+POS client option, and Linux 32-bit is unsupported by Electron/runtime dependencies. Do not publish a
+32-bit server installer whose preflight or downloaded components cannot run.
+
+The self-contained image bundle below is the explicit offline recovery/technical-pilot path, not the
+default upload artifact. On a development machine at the repository root:
+
+For the Windows + Linux online workflow, explicit offline fallback, macOS workflow, POS version
+update instructions, checksums, and architecture policy, see
 [`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
 
 ```powershell

@@ -1,9 +1,13 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 
 import pg from "pg";
+
+import {
+  compatibleMigrationChecksums,
+  migrationChecksum,
+} from "./retail-local-migration-checksum.mjs";
 
 const { Client } = pg;
 const VERSIONED = /^(\d+)\.(\d+)__.*\.sql$/;
@@ -54,10 +58,6 @@ function dbConfig() {
   };
 }
 
-function checksum(sql) {
-  return crypto.createHash("sha256").update(sql, "utf8").digest("hex");
-}
-
 function withoutTransactionWrappers(sql) {
   return sql
     .split(/\r?\n/)
@@ -91,14 +91,22 @@ async function migrationFiles(dir) {
 }
 
 async function applyOne(client, name, sql) {
-  const digest = checksum(sql);
+  const digest = migrationChecksum(sql);
   const existing = await client.query(
     `SELECT checksum FROM bms_local_schema_migrations WHERE name = $1`,
     [name],
   );
   if (existing.rows[0]) {
-    if (existing.rows[0].checksum !== digest) {
+    const existingChecksum = existing.rows[0].checksum;
+    if (!compatibleMigrationChecksums(sql).has(existingChecksum)) {
       throw new Error(`Migration ${name} changed after it was applied; refusing to continue`);
+    }
+    if (existingChecksum !== digest) {
+      await client.query(
+        `UPDATE bms_local_schema_migrations SET checksum = $1 WHERE name = $2 AND checksum = $3`,
+        [digest, name, existingChecksum],
+      );
+      console.log(`normalize checksum ${name}`);
     }
     console.log(`skip  ${name}`);
     return;

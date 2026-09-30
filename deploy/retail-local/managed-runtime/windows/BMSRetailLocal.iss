@@ -13,6 +13,9 @@
 #ifndef ActivationUri
   #define ActivationUri ""
 #endif
+#ifndef ArtifactBaseFilename
+  #define ArtifactBaseFilename "BMS-Retail-Local-Setup-" + ProductVersion + "-x64"
+#endif
 
 [Setup]
 AppId={{D6E7A532-27C1-4A69-A2B1-C73B23323431}
@@ -23,7 +26,7 @@ DefaultDirName={autopf}\BMS Retail Local
 DisableDirPage=yes
 DisableProgramGroupPage=yes
 OutputDir={#OutputRoot}
-OutputBaseFilename=BMS-Retail-Local-Setup-{#ProductVersion}-x64
+OutputBaseFilename={#ArtifactBaseFilename}
 Compression=lzma2/max
 SolidCompression=yes
 PrivilegesRequired=admin
@@ -38,6 +41,7 @@ SetupLogging=yes
 Source: "{#BuildRoot}\bms-runtime-agent.exe"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\trusted-release-keys.json"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\install-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
+Source: "{#BuildRoot}\run-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\update-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\backup-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\restore-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
@@ -49,6 +53,7 @@ Source: "{#BuildRoot}\uninstall-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail
 Source: "{#BuildRoot}\uninstall-managed-runtime.ps1"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-localctl"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-update-transaction"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
+Source: "{#BuildRoot}\..\runtime-rootfs\bms-wsl-keepalive"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 
 [Icons]
 Name: "{commondesktop}\BMS Retail Local Check for Updates"; \
@@ -69,11 +74,13 @@ Name: "{commonprograms}\BMS Retail Local\Off-host Backup Status"; \
 Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\activate-managed-runtime.ps1"" -ActivationUri ""{#ActivationUri}"""; Flags: runmaximized
+Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
+  Filename: "{uninstallexe}"
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-managed-runtime.ps1"""; \
-  Flags: waituntilterminated
+  Flags: waituntilterminated; RunOnceId: "BMSManagedRuntimeCleanup"
 
 [Code]
 var
@@ -84,19 +91,37 @@ var
   ResultCode: Integer;
   PowerShellPath: String;
   ScriptPath: String;
+  InstallScriptPath: String;
   Parameters: String;
+  ErrorPath: String;
+  LogPath: String;
+  ErrorText: AnsiString;
 begin
   if CurStep <> ssPostInstall then
     exit;
 
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
-  ScriptPath := ExpandConstant('{tmp}\bms-retail-local\install-managed-runtime.ps1');
+  ScriptPath := ExpandConstant('{tmp}\bms-retail-local\run-managed-runtime.ps1');
+  InstallScriptPath := ExpandConstant('{tmp}\bms-retail-local\install-managed-runtime.ps1');
+  ErrorPath := ExpandConstant('{commonappdata}\BMS\RetailLocal\setup-error.txt');
+  LogPath := ExpandConstant('{commonappdata}\BMS\RetailLocal\setup-transcript.log');
+  ForceDirectories(ExtractFileDir(ErrorPath));
+  DeleteFile(ErrorPath);
   Parameters := '-NoProfile -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) +
-    ' -ManifestUri ' + AddQuotes('{#ManifestUri}') +
-    ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
-  WizardForm.StatusLabel.Caption := 'กำลังติดตั้ง BMS Retail Local และตรวจสุขภาพระบบ...';
-  if not Exec(PowerShellPath, Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-    RaiseException('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+    ' -InstallScript ' + AddQuotes(InstallScriptPath) +
+    ' -ManifestUri ' + AddQuotes('{#ManifestUri}');
+  if '{#ActivationUri}' <> '' then
+    Parameters := Parameters + ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
+  Parameters := Parameters + ' -ErrorFile ' + AddQuotes(ErrorPath) +
+    ' -LogFile ' + AddQuotes(LogPath);
+  WizardForm.StatusLabel.Caption := 'กำลังเปิดหน้าต่างตั้งค่าร้าน...';
+  WizardForm.Hide;
+  try
+    if not Exec(PowerShellPath, Parameters, '', SW_SHOWMAXIMIZED, ewWaitUntilTerminated, ResultCode) then
+      RaiseException('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+  finally
+    WizardForm.Show;
+  end;
   if ResultCode = 3010 then
   begin
     ManagedRuntimeNeedsRestart := True;
@@ -104,7 +129,13 @@ begin
       mbInformation, MB_OK, IDOK);
   end
   else if ResultCode <> 0 then
-    RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาอ่านข้อความในหน้าต่าง Setup แล้วลองใหม่');
+  begin
+    ErrorText := '';
+    if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
+      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(ErrorText))
+    else
+      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
+  end;
 end;
 
 function NeedRestart(): Boolean;

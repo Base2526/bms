@@ -2,6 +2,14 @@
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [ValidateSet("Auto", "WindowsLinux", "MacOS")][string]$Target = "Auto",
+  [ValidateSet("Online", "Offline")][string]$Distribution = "Online",
+  [string]$Keyring,
+  [string]$WindowsManifestUri,
+  [string]$LinuxManifestUri,
+  [string]$ActivationUri = "",
+  [string]$Architecture = "x64",
+  [string]$InnoCompiler,
+  [string]$WslDistribution = "Ubuntu",
   [switch]$UpdateVersion,
   [switch]$Force,
   [switch]$SkipTests
@@ -111,6 +119,38 @@ if ([string]$desktopPackage.version -ne $Version -or
     [string]$desktopLock["version"] -ne $Version -or
     [string]$lockRoot["version"] -ne $Version) {
   throw "POS version ยังไม่ใช่ $Version ให้รัน: pwsh .\deploy\retail-local\build-release.ps1 -Version $Version -UpdateVersion แล้ว commit ก่อน"
+}
+
+if ($Distribution -eq "Online") {
+  if ($Target -ne "WindowsLinux") {
+    throw "Online bootstrap หลักรองรับ Windows และ Ubuntu x64; macOS ยังเป็น offline technical-pilot package"
+  }
+  foreach ($required in @(
+      @{ Name = "Keyring"; Value = $Keyring },
+      @{ Name = "WindowsManifestUri"; Value = $WindowsManifestUri },
+      @{ Name = "LinuxManifestUri"; Value = $LinuxManifestUri }
+    )) {
+    if ([string]::IsNullOrWhiteSpace([string]$required.Value)) {
+      throw "Distribution Online ต้องระบุ -$($required.Name)"
+    }
+  }
+  $onlineArgs = @{
+    Version = $Version
+    Keyring = $Keyring
+    WindowsManifestUri = $WindowsManifestUri
+    LinuxManifestUri = $LinuxManifestUri
+    ActivationUri = $ActivationUri
+    Target = "All"
+    Architecture = $Architecture
+    OutputDirectory = $outputRoot
+    WslDistribution = $WslDistribution
+  }
+  if ($InnoCompiler) { $onlineArgs.InnoCompiler = $InnoCompiler }
+  if ($Force) { $onlineArgs.Force = $true }
+  if ($SkipTests) { $onlineArgs.SkipTests = $true }
+  & (Join-Path $scriptRoot "build-online-bootstrap.ps1") @onlineArgs
+  if ($LASTEXITCODE -ne 0) { throw "Build online bootstrap ไม่สำเร็จ" }
+  exit 0
 }
 
 $requiredCommands = @("git", "node", "npm", "docker")

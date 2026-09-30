@@ -1,5 +1,4 @@
 {
-  "hosts": ["unix:///var/run/docker.sock"],
   "iptables": true,
   "log-driver": "local",
   "log-opts": {
