@@ -177,18 +177,23 @@
 .svgCardTitle { font-size: 18px; font-weight: 800; }
 .svgCardHint { fill: var(--flow-muted); font-size: 12px; }
 
+.svgEdges { pointer-events: none; }
+
 .svgEdges path {
   fill: none;
   marker-end: inherit;
+  stroke-linecap: round;
+  stroke-linejoin: round;
   stroke: #b9c6db;
   stroke-width: 2;
   transition: opacity 180ms ease, stroke 180ms ease, stroke-width 180ms ease;
+  vector-effect: non-scaling-stroke;
 }
 
 .svgEdges marker path,
 .flowSvg marker path { fill: #9cafcb; }
-.svgEdges .loopEdge { stroke: var(--flow-retention); stroke-dasharray: 7 7; }
-.svgEdges .edgeActive { stroke: var(--flow-primary); stroke-width: 3.5; }
+.svgEdges .loopEdge { opacity: .82; stroke: var(--flow-retention); stroke-dasharray: 5 9; }
+.svgEdges .edgeActive { opacity: 1; stroke: var(--flow-primary); stroke-width: 3; }
 .svgEdges .edgeDimmed { opacity: .25; }
 .scenarioDot { fill: var(--flow-retention); filter: drop-shadow(0 0 5px var(--flow-retention)); }
 
@@ -196,10 +201,9 @@
   color: var(--flow-primary);
   cursor: pointer;
   outline: none;
-  scale: 1;
   transform-box: fill-box;
   transform-origin: center;
-  transition: opacity 180ms ease, scale 180ms ease, filter 180ms ease;
+  transition: opacity 180ms ease, filter 180ms ease;
 }
 
 .svgNode:focus-visible { filter: drop-shadow(0 0 5px var(--flow-primary)); }
@@ -208,7 +212,12 @@
 .svgNode:focus-visible .svgModuleCircle,
 .svgNode:focus-visible .svgOutputCircle,
 .svgNode:focus-visible .svgRetention { stroke-width: 4; }
-.svgNode.nodeActive { filter: drop-shadow(0 8px 12px rgba(23, 71, 209, .2)); scale: 1.06; }
+.svgNode.nodeActive { filter: drop-shadow(0 7px 10px rgba(23, 71, 209, .22)); }
+.svgNode.nodeActive .svgInputCircle,
+.svgNode.nodeActive .svgPill,
+.svgNode.nodeActive .svgModuleCircle,
+.svgNode.nodeActive .svgOutputCircle,
+.svgNode.nodeActive .svgRetention { stroke-width: 4; }
 .nodeDimmed { opacity: .35; }
 
 .group_chat { color: var(--flow-chat); }
@@ -254,6 +263,7 @@
 .svgNode.group_loop > svg { color: currentColor; }
 .svgRetentionLabel { font-size: 18px; font-weight: 800; }
 .svgRetentionShort { fill: var(--flow-muted); font-size: 12px; }
+.svgOutputHeadingBg { fill: var(--flow-bg); opacity: .96; }
 .svgVerifyLabel,
 .svgOutputHeading { font-size: 16px; font-weight: 800; }
 
@@ -319,9 +329,10 @@
 .connectingCard p { color: var(--flow-muted); line-height: 1.65; margin: 0; }
 .connectingCard small { color: var(--flow-muted); }
 .trustBar { align-items: center; background: #0f1b2d; border-radius: 20px; color: #fff; display: flex; flex-wrap: wrap; gap: 16px 26px; padding: 22px; }
-.trustBar > strong { color: #6ee7dc; flex: 1 0 100%; }
-.trustBar > span { align-items: center; display: inline-flex; gap: 8px; font-size: 12px; }
+.trustBar > strong { color: #6ee7dc; flex: 1 0 100%; min-width: 0; overflow-wrap: anywhere; }
+.trustBar > span { align-items: center; display: inline-flex; gap: 8px; font-size: 12px; min-width: 0; }
 .trustBar svg { color: #78a6ff; flex: 0 0 auto; }
+.trustItemText { min-width: 0; overflow-wrap: anywhere; }
 .footnotes { color: var(--flow-muted); display: grid; font-size: 11px; gap: 4px; text-align: center; }
 
 .mobileStepper { display: none; }
@@ -365,7 +376,9 @@
   .mobileDetail .noteBox { display: grid; }
   .mobileArrow { color: var(--flow-primary); font-size: 28px; text-align: center; }
   .extraCards { grid-template-columns: 1fr; }
-  .trustBar { align-items: flex-start; flex-direction: column; }
+  .trustBar { align-items: flex-start; flex-direction: column; flex-wrap: nowrap; width: 100%; }
+  .trustBar > strong { flex: none; }
+  .trustBar > span { align-items: flex-start; width: 100%; }
 }
 
 @media (max-width: 520px) {
@@ -379,5 +392,4 @@
   .svgNode,
   .svgEdges path,
   .mobileNode { transition: none; }
-  .svgNode.nodeActive { scale: 1; }
 }

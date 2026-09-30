@@ -30,8 +30,35 @@ const positions: Record<string, Point> = {
 
 const scenarioOrder: ShopScenario[] = ["all", "retail", "restaurant", "boardgame", "pharmacy"];
 
-function edgePath(from: Point, to: Point, kind: "main" | "handoff" | "loop") {
-  if (kind === "loop") return `M ${from.x} ${from.y} C 1030 1080, 24 1080, 24 260 C 24 170, 36 150, ${to.x} ${to.y}`;
+function edgePath(
+  from: Point,
+  to: Point,
+  kind: "main" | "handoff" | "loop",
+  fromId?: string,
+  toId?: string,
+) {
+  // Keep the retention loop around the diagram perimeter. The former wide
+  // cubic crossed the output row and collided with the Action Center edge.
+  if (kind === "loop") return "M 50 990 C 30 990, 20 972, 20 940 L 20 225 C 20 180, 34 150, 50 150";
+
+  // Join Action Center to the retention card along their right edges instead
+  // of drawing a large curve through the middle of the output section.
+  if (fromId === "o-action" && toId === "loop-retention") {
+    return "M 1000 835 C 1025 848, 1028 920, 1000 952";
+  }
+
+  // Fan the output lines out from the lower edge of the hub. A quadratic arc
+  // stays above the output cards and avoids the wide S-curves that looked
+  // distorted when an output was highlighted.
+  if (fromId === "bms-core" && toId?.startsWith("o-")) {
+    const direction = Math.sign(to.x - from.x);
+    const startX = from.x + direction * 22;
+    const startY = from.y + 88;
+    const endY = to.y - 40;
+    const controlX = (startX + to.x) / 2;
+    return `M ${startX} ${startY} Q ${controlX} 710, ${to.x} ${endY}`;
+  }
+
   const midY = from.y + (to.y - from.y) * 0.52;
   return `M ${from.x} ${from.y} C ${from.x} ${midY}, ${to.x} ${midY}, ${to.x} ${to.y}`;
 }
@@ -232,13 +259,13 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
       <div className={`${styles.diagramWithDetail} ${selectedNode ? styles.hasDetail : ""}`}>
         <div className={styles.desktopDiagram}>
           <svg
-            aria-labelledby="bms-flow-svg-title bms-flow-svg-desc"
+            aria-describedby="bms-flow-svg-desc"
+            aria-label={t("bmsFlow.subtitle")}
             className={styles.flowSvg}
             onClick={(event) => { if (!(event.target as Element).closest("[data-flow-node]")) closeDetail(); }}
             role="group"
             viewBox="0 0 1080 1080"
           >
-            <title id="bms-flow-svg-title">{t("bmsFlow.subtitle")}</title>
             <desc id="bms-flow-svg-desc">{t("bmsFlow.intro")}</desc>
             <defs>
               <linearGradient id={`bms-flow-hub-${variant}`} x1="0" x2="1" y1="0" y2="1"><stop stopColor="#0c2a7a" /><stop offset=".55" stopColor="#1747d1" /><stop offset="1" stopColor="#0fb5a6" /></linearGradient>
@@ -256,11 +283,13 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
               {visibleEdges.map((edge) => {
                 const connected = hoveredNodeId && (edge.from === hoveredNodeId || edge.to === hoveredNodeId);
                 const activeEdge = activeNodeId && (edge.from === activeNodeId || edge.to === activeNodeId);
-                return <path className={`${edge.kind === "loop" ? styles.loopEdge : ""} ${connected || activeEdge ? styles.edgeActive : ""} ${hoveredNodeId && !connected ? styles.edgeDimmed : ""}`} d={edgePath(positions[edge.from], positions[edge.to], edge.kind)} key={`${edge.from}-${edge.to}`} markerEnd={edge.kind === "loop" ? undefined : `url(#bms-flow-arrow-${variant})`} />;
+                const retentionConnector = edge.to === "loop-retention";
+                return <path className={`${edge.kind === "loop" ? styles.loopEdge : ""} ${connected || activeEdge ? styles.edgeActive : ""} ${hoveredNodeId && !connected ? styles.edgeDimmed : ""}`} d={edgePath(positions[edge.from], positions[edge.to], edge.kind, edge.from, edge.to)} key={`${edge.from}-${edge.to}`} markerEnd={edge.kind === "loop" || retentionConnector ? undefined : `url(#bms-flow-arrow-${variant})`} />;
               })}
             </g>
             <text className={styles.svgVerifyLabel} textAnchor="middle" x="540" y="337">② {t("bmsFlow.groups.verify")}</text>
-            <text className={styles.svgOutputHeading} textAnchor="middle" x="540" y="742">③ {t("bmsFlow.groups.outputs")}</text>
+            <rect className={styles.svgOutputHeadingBg} height="36" rx="18" width="250" x="415" y="716" />
+            <text className={styles.svgOutputHeading} textAnchor="middle" x="540" y="740">③ {t("bmsFlow.groups.outputs")}</text>
             {scenarioStarted && scenarioStep > 0 && activeNodeId && !reducedMotion && (
               <circle className={styles.scenarioDot} key={`${selectedScenario}-${scenarioStep}`} r="6">
                 <animateMotion
@@ -295,7 +324,7 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
             <article className={styles.localCard}><div><h3>{t("bmsFlow.supplements.localTitle")} <span>PILOT</span></h3><p>{t("bmsFlow.supplements.localBody")}</p></div><Link href="/retail-local">{t("bmsFlow.learnMore")} →</Link></article>
             <article className={styles.connectingCard}><div><h3>{t("bmsFlow.supplements.connectingTitle")}</h3><small>{t("bmsFlow.supplements.connectingHint")}</small></div><p>{t("bmsFlow.supplements.connecting")}</p><Link href="/roadmap">{t("bmsFlow.learnMore")} →</Link></article>
           </div>
-          <div className={styles.trustBar}><strong>{t("bmsFlow.supplements.trustTitle")}</strong>{[1, 2, 3, 4, 5].map((index) => <span key={index}><FlowIcon name={index === 1 ? "ucheck" : index === 2 ? "lock" : index === 3 ? "hist" : index === 4 ? "shield" : "doc"} />{t(`bmsFlow.supplements.trust${index}`)}</span>)}</div>
+          <div className={styles.trustBar}><strong>{t("bmsFlow.supplements.trustTitle")}</strong>{[1, 2, 3, 4, 5].map((index) => <span key={index}><FlowIcon name={index === 1 ? "ucheck" : index === 2 ? "lock" : index === 3 ? "hist" : index === 4 ? "shield" : "doc"} /><span className={styles.trustItemText}>{t(`bmsFlow.supplements.trust${index}`)}</span></span>)}</div>
           <div className={styles.footnotes}><span>* {t("bmsFlow.supplements.pharmacyFootnote")}</span><span>* {t("bmsFlow.supplements.offlineFootnote")}</span><span>* {t("bmsFlow.supplements.updated", { date: formattedDate })}</span></div>
         </div>
       )}
