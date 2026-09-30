@@ -1,6 +1,6 @@
 # Build BMS Retail Local installers
 
-เส้นทาง build หลักสำหรับ Windows และ Ubuntu คือ **online bootstrap** ขนาดเล็ก เครื่องร้านต้องมี
+เส้นทาง build หลักสำหรับ Windows, Ubuntu และ macOS คือ **online bootstrap** ขนาดเล็ก เครื่องร้านต้องมี
 อินเทอร์เน็ตในการติดตั้งครั้งแรก ตัว installer บรรจุเฉพาะ native agent, public release keyring และ
 ตัวควบคุมติดตั้ง แล้วดาวน์โหลด Web, WS, PostgreSQL, Redis, private runtime และ POS Desktop จาก
 signed release manifest แบบ resume ได้ พร้อมตรวจ publisher signature, SHA-256 และ OCI digest ก่อนใช้
@@ -14,7 +14,7 @@ offline bundle ขนาดใหญ่ยังเก็บไว้เป็�
 | --- | --- | --- | --- |
 | Windows | x64 | x64, x86 legacy | Windows x86 รันได้เฉพาะ POS client ไม่ใช่ local server |
 | Ubuntu 22.04/24.04 | x64 | x64 | Electron 43 และ runtime images ไม่มี Linux 32-bit target |
-| macOS 15+ | Apple Silicon/Intel | Apple Silicon/Intel | ยังเป็น full offline technical-pilot package |
+| macOS 15+ | Apple Silicon/Intel | Apple Silicon/Intel | online bootstrap แยกสถาปัตยกรรม; ยังเป็น unsigned technical pilot |
 
 ห้ามสร้างหรือเผยแพร่ Retail Local Server เป็น x86/32-bit เพราะ preflight, support matrix,
 PostgreSQL/Redis images และ Electron รุ่นที่ใช้อยู่ไม่รองรับปลายทางนั้น สคริปต์ build ค่าเริ่มต้นและ
@@ -27,7 +27,7 @@ PostgreSQL/Redis images และ Electron รุ่นที่ใช้อย�
 - Inno Setup 6
 - WSL2 + Ubuntu สำหรับประกอบแพ็กเกจ `.deb`
 - public-key-only Ed25519 keyring จากระบบ release ที่เชื่อถือได้
-- HTTPS URL ของ signed manifest แยก Windows และ Ubuntu
+- HTTPS URL ของ signed manifest แยก Windows, Ubuntu, macOS Apple Silicon และ macOS Intel
 
 private release key ต้องอยู่ใน isolated signing service เท่านั้น ห้ามวางไว้ใน repository,
 installer หรือเครื่องร้าน
@@ -76,9 +76,45 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 เส้นทางนี้สร้าง Server, Server + POS, POS-only และ image archive แบบเดิม จึงใช้พื้นที่ build มากกว่า
 20 GB และ artifact รวมหลาย GB ห้ามใช้เป็นค่าเริ่มต้นสำหรับการ upload release
 
-## 4. Build macOS technical pilot
+## 4. Build macOS online bootstrap
 
-macOS online bootstrap ยังไม่เปิดใช้ จึงต้องระบุ offline ให้ชัดเจนและ build บน Mac จริง:
+เตรียม signed release แยกตาม CPU ก่อน ตัวอย่าง Apple Silicon (Intel เปลี่ยนเป็น `x64` และใช้
+`BMS POS.app` ที่ build สำหรับ Intel):
+
+```bash
+deploy/retail-local/managed-runtime/macos/prepare-release.sh \
+  --version 0.2.13 \
+  --architecture arm64 \
+  --base-url https://releases.example.com/retail-local/0.2.13/macos-15-arm64 \
+  --desktop-app 'apps/desktop/dist/mac-arm64/BMS POS.app' \
+  --private-key /secure/bms-release/release-private.pem \
+  --key-id production-2026-09
+```
+
+จากนั้น upload เฉพาะไฟล์ใน release directory ไปยัง `--base-url` เดิม แล้วสร้าง bootstrap ทั้งสอง CPU
+บน Mac จริง:
+
+```powershell
+pwsh ./deploy/retail-local/build-release.ps1 `
+  -Version 0.2.13 -Target MacOS -Distribution Online `
+  -Keyring /secure/bms-release/trusted-release-keys.json `
+  -MacArm64ManifestUri https://releases.example.com/retail-local/0.2.13/macos-15-arm64/release.jws.json `
+  -MacX64ManifestUri https://releases.example.com/retail-local/0.2.13/macos-15-x64/release.jws.json
+```
+
+ผลลัพธ์รวม 4 ไฟล์: `.pkg` online bootstrap สองไฟล์ และ POS-only `.dmg` online bootstrap สองไฟล์
+สำหรับ `arm64` และ Intel `x64` ตามลำดับ ทั้ง `.pkg` และ `.dmg` ไม่มี Electron, Lima, Ubuntu,
+Moby หรือ service images ฝังอยู่ จึงมีขนาดเล็ก ตัว POS-only จะดาวน์โหลดเฉพาะ signed
+`desktop.artifact` ที่ตรงกับ CPU ในการติดตั้งครั้งแรก ส่วน Server + POS จะดาวน์โหลดทุก component
+ที่จำเป็น หลัง setup ร้านแล้ว private runtime ยังทำงานในเครื่องตามเดิม (Intel คือ x64 ไม่ใช่
+macOS 32-bit)
+
+- `BMS-Retail-Local-Server-POS-<version>-arm64.pkg`
+- `BMS-Retail-Local-Server-POS-<version>-x64.pkg`
+- `BMS-Retail-Local-POS-<version>-macos-arm64.dmg`
+- `BMS-Retail-Local-POS-<version>-macos-x64.dmg`
+
+เมื่อต้องสร้าง full offline recovery package ให้ระบุ Offline อย่างชัดเจน:
 
 ```powershell
 pwsh ./deploy/retail-local/build-release.ps1 `

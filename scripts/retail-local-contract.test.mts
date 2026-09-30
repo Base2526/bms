@@ -114,10 +114,29 @@ test("installers checkpoint or hand off pairing before optional sample generatio
   const macCheckpoint = macos.indexOf('>"$root/provision-result.json"');
   assert.ok(macCheckpoint >= 0 && macCheckpoint < macos.indexOf("\n  run_sample_data", macCheckpoint),
     "macOS must persist the token checkpoint before sample data");
-  assert.match(macos, /if \[\[ \$PROVISION_SAMPLE_STATUS != PENDING \]\]; then\s+return 0/,
-    "macOS must treat skipping optional sample data as a successful setup path under set -e");
+  assert.match(macos, /case "\$PROVISION_SAMPLE_STATUS" in[\s\S]*COMPLETED\|ALREADY_COMPLETED\) return 0/,
+    "macOS must treat skipping completed optional sample data as a successful setup path under set -e");
   assert.ok(pilot.indexOf("Write-Host $result.deviceToken") < pilot.indexOf("run --rm sample-data"),
     "the technical pilot must display the token before sample data");
+});
+
+test("managed installers retry requested sample data and verify restaurant products plus floor", () => {
+  const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const macos = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+
+  assert.doesNotMatch(linux, /read_business_archetype|read_sample_data_choice/,
+    "Linux must not call obsolete setup prompts before the signed archetype catalog is available");
+  assert.match(linux, /sample_mode == STARTER_CATALOG[\s\S]*sample_status != COMPLETED[\s\S]*sample-data/);
+  assert.match(linux, /completedSteps[\s\S]*products[\s\S]*restaurant_layout/);
+  assert.match(linux, /\.sampleData\.status \/\/ "SKIPPED"/);
+
+  assert.match(windows, /sampleMode -eq "STARTER_CATALOG"[\s\S]*sampleStatus -notin[\s\S]*"sample-data"/);
+  assert.match(windows, /Test-CompletedSampleData[\s\S]*"products"[\s\S]*"restaurant_layout"/);
+  assert.match(windows, /sampleMode = \$sampleMode[\s\S]*sampleStatus = \$sampleStatus/);
+
+  assert.match(macos, /completedSteps[\s\S]*"products"[\s\S]*"restaurant_layout"/);
+  assert.match(macos, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
 });
 
 test("sample products have an explicit preset for every supported shop type", () => {
@@ -263,6 +282,10 @@ test("one release command builds every host-supported installer from a clean ver
   assert.match(builder, /build-offline-exe\.ps1/);
   assert.match(builder, /build-offline-linux\.ps1/);
   assert.match(builder, /managed-runtime\/macos\/build-pkg\.sh/);
+  assert.match(builder, /managed-runtime\/macos\/build-bootstrap-pkg\.sh/);
+  assert.match(builder, /managed-runtime\/macos\/build-pos-bootstrap-dmg\.sh/);
+  assert.match(builder, /MacArm64ManifestUri/);
+  assert.match(builder, /MacX64ManifestUri/);
   assert.match(builder, /npm run pack:mac/);
   assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
   assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);

@@ -6,11 +6,14 @@ param(
   [string]$Keyring,
   [string]$WindowsManifestUri,
   [string]$LinuxManifestUri,
+  [string]$MacArm64ManifestUri,
+  [string]$MacX64ManifestUri,
   [string]$ActivationUri = "",
   [string]$Architecture = "x64",
   [string]$InnoCompiler,
   [string]$WslDistribution = "Ubuntu",
   [switch]$UpdateVersion,
+  [switch]$AllowTestEndpoints,
   [switch]$Force,
   [switch]$SkipTests
 )
@@ -58,6 +61,16 @@ function Invoke-Checked {
   Write-Host "`n==> $Title" -ForegroundColor Cyan
   & $Action
   if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
+}
+
+function Assert-HttpsReleaseUri {
+  param([Parameter(Mandatory = $true)][string]$Name, [string]$Value, [switch]$AllowEmpty)
+  if ($AllowEmpty -and [string]::IsNullOrWhiteSpace($Value)) { return }
+  $parsed = $null
+  if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
+      $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
+    throw "$Name ต้องเป็น HTTPS URL ที่ไม่มี credential"
+  }
 }
 
 function Invoke-LinuxDesktopBuild {
@@ -122,17 +135,74 @@ if ([string]$desktopPackage.version -ne $Version -or
 }
 
 if ($Distribution -eq "Online") {
-  if ($Target -ne "WindowsLinux") {
-    throw "Online bootstrap หลักรองรับ Windows และ Ubuntu x64; macOS ยังเป็น offline technical-pilot package"
-  }
-  foreach ($required in @(
+  $onlineRequired = if ($Target -eq "MacOS") {
+    @(
+      @{ Name = "Keyring"; Value = $Keyring },
+      @{ Name = "MacArm64ManifestUri"; Value = $MacArm64ManifestUri },
+      @{ Name = "MacX64ManifestUri"; Value = $MacX64ManifestUri }
+    )
+  } else {
+    @(
       @{ Name = "Keyring"; Value = $Keyring },
       @{ Name = "WindowsManifestUri"; Value = $WindowsManifestUri },
       @{ Name = "LinuxManifestUri"; Value = $LinuxManifestUri }
-    )) {
+    )
+  }
+  foreach ($required in $onlineRequired) {
     if ([string]::IsNullOrWhiteSpace([string]$required.Value)) {
       throw "Distribution Online ต้องระบุ -$($required.Name)"
     }
+  }
+  if ($Target -eq "MacOS") {
+    Assert-HttpsReleaseUri "MacArm64ManifestUri" $MacArm64ManifestUri
+    Assert-HttpsReleaseUri "MacX64ManifestUri" $MacX64ManifestUri
+    Assert-HttpsReleaseUri "ActivationUri" $ActivationUri -AllowEmpty
+    $macKeyring = [IO.Path]::GetFullPath($Keyring)
+    if (-not (Test-Path -LiteralPath $macKeyring -PathType Leaf)) {
+      throw "ไม่พบ public keyring: $macKeyring"
+    }
+    $macKeyringText = Get-Content -LiteralPath $macKeyring -Raw
+    if ($macKeyringText -notmatch 'BEGIN PUBLIC KEY' -or $macKeyringText -match 'PRIVATE KEY') {
+      throw "keyring ต้องมี public key และห้ามมี private key"
+    }
+    foreach ($command in @("bash", "git", "go")) {
+      if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+    }
+    New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
+    $macServerBuilder = Join-Path $scriptRoot "managed-runtime/macos/build-bootstrap-pkg.sh"
+    $macPosBuilder = Join-Path $scriptRoot "managed-runtime/macos/build-pos-bootstrap-dmg.sh"
+    $manifestByArchitecture = @{
+      arm64 = $MacArm64ManifestUri
+      x64 = $MacX64ManifestUri
+    }
+    foreach ($macArchitecture in @("arm64", "x64")) {
+      $commonBuilderArgs = @(
+        "--version", $Version,
+        "--architecture", $macArchitecture,
+        "--manifest-url", $manifestByArchitecture[$macArchitecture],
+        "--keyring", $macKeyring,
+        "--output-dir", $outputRoot
+      )
+      $posBuilderArgs = @($macPosBuilder) + $commonBuilderArgs
+      if ($AllowTestEndpoints) { $posBuilderArgs += "--allow-test-endpoints" }
+      if ($Force) { $posBuilderArgs += "--force" }
+      if ($SkipTests) { $posBuilderArgs += "--skip-tests" }
+      Invoke-Checked "Build macOS $macArchitecture POS online bootstrap" {
+        & bash @posBuilderArgs
+      }
+
+      $builderArgs = @($macServerBuilder) + $commonBuilderArgs
+      if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
+        $builderArgs += @("--activation-url", $ActivationUri)
+      }
+      if ($AllowTestEndpoints) { $builderArgs += "--allow-test-endpoints" }
+      if ($Force) { $builderArgs += "--force" }
+      if ($SkipTests) { $builderArgs += "--skip-tests" }
+      Invoke-Checked "Build macOS $macArchitecture Server + POS online bootstrap" {
+        & bash @builderArgs
+      }
+    }
+    exit 0
   }
   $onlineArgs = @{
     Version = $Version
@@ -147,6 +217,7 @@ if ($Distribution -eq "Online") {
   }
   if ($InnoCompiler) { $onlineArgs.InnoCompiler = $InnoCompiler }
   if ($Force) { $onlineArgs.Force = $true }
+  if ($AllowTestEndpoints) { $onlineArgs.AllowTestEndpoints = $true }
   if ($SkipTests) { $onlineArgs.SkipTests = $true }
   & (Join-Path $scriptRoot "build-online-bootstrap.ps1") @onlineArgs
   if ($LASTEXITCODE -ne 0) { throw "Build online bootstrap ไม่สำเร็จ" }

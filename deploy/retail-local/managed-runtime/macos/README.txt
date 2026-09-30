@@ -1,14 +1,21 @@
 BMS Retail Local Server for macOS
 
-This package installs the complete Retail Local server payload and a private virtual-machine
-runtime. Docker Desktop is not required and is not used on the target Mac.
+The normal package is a small online bootstrap. It contains no Ubuntu image, service image, Docker
+engine, or POS application. The first setup requires an internet connection and downloads those
+components from a signed BMS release. Interrupted downloads resume, and every component is checked
+against the publisher signature and SHA-256 before use. Docker Desktop is not required on the
+target Mac.
+
+A separate full offline recovery package may be issued by Support for an approved no-internet
+installation. It is intentionally much larger and is not the normal customer installer.
 
 After installing the package:
 
 1. Open Applications > BMS Retail Local.
-2. Enter the shop name and initial administrator credentials.
-3. Wait for the Web, WebSocket, PostgreSQL, and Redis health checks.
-4. Open http://127.0.0.1:3100/admin/login.
+2. Keep the Mac online while Setup downloads and verifies the release.
+3. Enter the shop name and initial administrator credentials.
+4. Wait for the Web, WebSocket, PostgreSQL, and Redis health checks.
+5. BMS POS opens automatically after setup.
 
 Useful commands:
 

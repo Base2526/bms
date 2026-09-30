@@ -1747,6 +1747,12 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
   const createdConversations: Array<{ id: string; customerId: string; customerName: string; customerRef: string; channel: string }> = [];
   const inStockKeys = new Set<string>();
   const outOfStockKeys = new Set<string>();
+  // `bms_restock_subscriptions_identity_key` permits only one subscription for the same
+  // channel/customer/product/size. Every fifth fixture intentionally reuses a conversation, but
+  // its randomly selected variant can be the same as an earlier row in that conversation. Keep
+  // that useful multi-subscription scenario while falling back to a fresh conversation whenever
+  // the generated identity would collide inside this batch.
+  const subscriptionIdentityKeys = new Set<string>();
 
   for (let i = 0; i < count; i++) {
     const scenario = pick([...RESTOCK_SCENARIOS]);
@@ -1757,6 +1763,11 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
     else outOfStockKeys.add(variantKey);
 
     let conversation = createdConversations.length && i % 5 === 4 ? pick(createdConversations) : null;
+    if (conversation && subscriptionIdentityKeys.has(
+      `${conversation.channel}::${conversation.customerRef}::${variant.sku}::${variant.size}`
+    )) {
+      conversation = null;
+    }
     if (!conversation) {
       const customer = pick(customers);
       const channel = pick([...RESTOCK_CHANNELS]);
@@ -1816,6 +1827,10 @@ export async function seedFakeRestockSubscriptions(tenantId: string, count: numb
         minutesAgo(29 + R(60 * 24 * 4)),
       ]);
     }
+
+    subscriptionIdentityKeys.add(
+      `${conversation.channel}::${conversation.customerRef}::${variant.sku}::${variant.size}`
+    );
 
     const subscriptionId = uuid();
     const requestedQty = 1 + R(3);
@@ -2390,13 +2405,14 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
           `INSERT INTO bms_board_game_session_participants
              (id, tenant_id, session_id, billing_group_id, rate_id, customer_id, display_name,
               participant_type, billable, hourly_rate_snapshot, minimum_minutes_snapshot,
-              rounding_minutes_snapshot, grace_minutes_snapshot, billing_group_no, joined_at, left_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,$10,$11,$12,$13,$14,$15)`,
+              rounding_minutes_snapshot, grace_minutes_snapshot, rate_code_snapshot,
+              rate_name_snapshot, billing_group_no, joined_at, left_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
           [
             participantId, tenantId, id, billingGroupId, rate.id, memberId,
             memberId ? `FAKE Member ${personIndex + 1}` : `FAKE Guest ${personIndex + 1}`,
             rate.type, rate.price, rate.minimum, rate.rounding, rate.grace,
-            billingGroupNo, startedAt, endedAt,
+            rate.code, rate.name, billingGroupNo, startedAt, endedAt,
           ]
         );
         participants.push({ id: participantId, sessionId: id, rateId: rate.id });

@@ -1,0 +1,13 @@
+#!/bin/bash
+set -Eeuo pipefail
+
+APP_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+readonly APP_ROOT
+readonly SETUP_COMMAND="$APP_ROOT/Resources/BMS POS Online Setup.command"
+
+[[ -x $SETUP_COMMAND ]] || {
+  osascript -e 'display alert "BMS POS" message "ไฟล์ Online Setup ไม่ครบ กรุณาดาวน์โหลด DMG ใหม่" as critical'
+  exit 1
+}
+
+open -a Terminal "$SETUP_COMMAND"

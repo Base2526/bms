@@ -93,6 +93,59 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.doesNotMatch(hostControl, /Docker Desktop/i);
 });
 
+test("macOS normal distribution is a small signed-release bootstrap for Apple Silicon and Intel", () => {
+  const hostControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+  const bootstrapBuilder = read("deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh");
+  const releaseBuilder = read("deploy/retail-local/managed-runtime/macos/prepare-release.sh");
+  const bootstrapSmoke = read("deploy/retail-local/managed-runtime/macos/smoke-test-bootstrap-pkg.sh");
+  const postinstall = read("deploy/retail-local/managed-runtime/macos/postinstall-bootstrap");
+  const posBootstrapBuilder = read("deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh");
+  const posBootstrapSetup = read("deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command");
+  const posBootstrapSmoke = read("deploy/retail-local/managed-runtime/macos/smoke-test-pos-bootstrap-dmg.sh");
+
+  assert.match(bootstrapBuilder, /--architecture arm64\|x64/);
+  assert.match(bootstrapBuilder, /trusted-release-keys\.json/);
+  assert.match(bootstrapBuilder, /manifest-url/);
+  assert.match(bootstrapBuilder, /25 \* 1024 \* 1024/);
+  assert.match(bootstrapBuilder, /firstInstallInternetRequired/);
+  assert.match(bootstrapBuilder, /--test-ca[\s\S]*test_build == true[\s\S]*ห้ามใส่ private key ใน bootstrap/);
+  assert.match(bootstrapBuilder, /chmod 0644 "\$bootstrap_root\/trusted-release-keys\.json"[\s\S]*test-release-ca\.pem/);
+  assert.doesNotMatch(bootstrapBuilder, /ubuntu-24\.04-server-cloudimg\.img|docker image save|BMS POS\.app/);
+  assert.match(bootstrapSmoke, /online bootstrap ฝัง payload ขนาดใหญ่/);
+  assert.match(bootstrapSmoke, /Applications\/BMS POS\.app/);
+  assert.match(bootstrapSmoke, /stat -f %Lp[\s\S]*== 644[\s\S]*test release CA permission/);
+  assert.match(postinstall, /Internet is required for the first setup/);
+  assert.match(postinstall, /chmod 0644 "\$root\/bootstrap\/trusted-release-keys\.json"[\s\S]*test-release-ca\.pem/);
+
+  assert.match(posBootstrapBuilder, /stage-desktop|bms-runtime-agent/);
+  assert.match(posBootstrapBuilder, /electronEmbedded/);
+  assert.doesNotMatch(posBootstrapBuilder, /npm run pack:mac|Electron Framework|desktop\.artifact/);
+  assert.match(posBootstrapSetup, /signed release manifest/);
+  assert.match(posBootstrapSetup, /SHA-256[\s\S]*stage-desktop/);
+  assert.match(posBootstrapSetup, /desktop\.artifact/);
+  assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
+  assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
+
+  assert.match(releaseBuilder, /macos-15-\$architecture/);
+  assert.match(releaseBuilder, /docker image save/);
+  assert.match(releaseBuilder, /BMS_SOURCE_COMMIT[\s\S]*org\.opencontainers\.image\.revision[\s\S]*server-only/);
+  assert.match(releaseBuilder, /desktop\.artifact/);
+  assert.match(releaseBuilder, /shop-archetypes\.artifact/);
+  assert.match(releaseBuilder, /sign-release\.mjs/);
+  assert.match(hostControl, /stage-release[\s\S]*-progress/);
+  assert.match(hostControl, /verify-release/);
+  assert.match(hostControl, /extract_runtime/);
+  assert.match(hostControl, /install_pos_desktop/);
+  assert.match(hostControl, /การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต/);
+  assert.match(hostControl, /test-release-ca\.pem[\s\S]*ใช้ได้เฉพาะ localhost[\s\S]*SSL_CERT_FILE/);
+  assert.match(hostControl, /hw\.optional\.arm64[\s\S]*ไฟล์ติดตั้งไม่ตรงกับ CPU เครื่องนี้/);
+  assert.match(hostControl, /embedded_installation_available[\s\S]*activate_embedded_installation/);
+  assert.match(hostControl, /พบข้อมูลร้านจาก Offline Installer เดิม[\s\S]*ไม่แตะข้อมูลร้าน/);
+  assert.match(hostControl, /runtime release ไม่ครบ[\s\S]*อย่าลบข้อมูลร้าน/);
+  assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
+  assert.match(hostControl, /businessArchetype[\s\S]*sampleMode[\s\S]*sampleStatus/);
+});
+
 test("Managed Runtime release contract requires publisher identity and immutable components", () => {
   const envelopeSchema = json("deploy/retail-local/managed-runtime/release-manifest.schema.json");
   const payloadSchema = json("deploy/retail-local/managed-runtime/release-payload.schema.json");
@@ -415,6 +468,7 @@ test("Windows local release test uses production-format signing without serving 
   assert.match(prepare, /verify-release\.mjs/);
   assert.match(prepare, /docker image save/);
   assert.match(prepare, /docker export/);
+  assert.match(prepare, /BMS_SOURCE_COMMIT[\s\S]*org\.opencontainers\.image\.revision[\s\S]*server-only/);
   assert.match(prepare, /publicRoot = Join-Path \$outputRoot "public"/);
   assert.match(prepare, /secretRoot = Join-Path \$outputRoot "secrets"/);
   assert.match(prepare, /--range 0-31/);
@@ -436,6 +490,7 @@ test("Linux release preparation builds all signed payload components before sign
   }
   assert.match(prepare, /packages\/retail-local-contract\/shop-archetypes\.json/);
   assert.match(prepare, /docker buildx build --platform linux\/amd64 --provenance=false --load/);
+  assert.match(prepare, /BMS_SOURCE_COMMIT[\s\S]*org\.opencontainers\.image\.revision[\s\S]*server-only/);
   assert.match(prepare, /docker image inspect --format '\{\{\.Id\}\}'/);
   assert.match(prepare, /release-descriptor\.json[\s\S]*sign-release\.mjs/);
   assert.match(prepare, /BMS_ALLOW_LOCAL_RELEASE_SIGNING=1/);
@@ -451,6 +506,7 @@ test("Retail Local licensing records evidence but can never stop store operation
   const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const macosInstaller = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
   const controlPlane = read("apps/web/lib/bms/retailLocalLicensing.ts");
   const controlPlaneMigration = read("db/migrations/10.16__bms_retail_local_license_control_plane.sql");
@@ -469,6 +525,8 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(linuxEvidenceTimer, /OnCalendar=\*-\*-\* 03:00:00[\s\S]*Persistent=true/);
   assert.match(linuxInstaller, /enable --now bms-retail-local-license-evidence\.timer[\s\S]*\|\|[\s\S]*ร้านยังใช้งานได้/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
+  assert.match(macosInstaller, /license-record[\s\S]*INSTALLATION_REGISTERED/);
+  assert.match(macosInstaller, /license-pulse[\s\S]*\|\| true/);
   assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
   assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
   assert.ok(schema.properties.event.properties.eventType.enum.includes("RUNTIME_SEEN"));
@@ -484,12 +542,14 @@ test("activation and replacement recovery preserve business continuity without c
   const linuxInstaller = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const linuxActivation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
   const windowsInstaller = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const macosInstaller = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   const windowsActivation = read("deploy/retail-local/managed-runtime/windows/activate-managed-runtime.ps1");
   const activationRoute = read("apps/web/app/api/bms/retail-local/activate/route.ts");
   const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
 
   assert.match(linuxInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านติดตั้งและใช้งานต่อได้/);
   assert.match(windowsInstaller, /Activation ยังไม่สำเร็จ[\s\S]*การติดตั้งและการใช้งานร้านจะดำเนินต่อ/);
+  assert.match(macosInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านจะติดตั้งและใช้งานต่อได้/);
   assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /runtime-read[\s\S]*\/var\/lib\/bms-retail-local\/installation\.json/);
@@ -502,6 +562,7 @@ test("activation and replacement recovery preserve business continuity without c
   assert.doesNotMatch(localctl, /license-evidence|evidenceToken|ingestionToken/);
   assert.match(linuxInstaller, /licenseCode/);
   assert.match(windowsInstaller, /licenseCode/);
+  assert.match(macosInstaller, /licenseCode/);
 });
 
 test("stable promotion requires current external evidence for every GA gate", () => {

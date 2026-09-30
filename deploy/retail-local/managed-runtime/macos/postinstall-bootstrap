@@ -1,0 +1,33 @@
+#!/bin/sh
+set -eu
+
+root="/Library/Application Support/BMS/RetailLocal"
+app="/Applications/BMS Retail Local.app"
+legacy="/Applications/BMS Retail Local Setup.command"
+
+chown -R root:wheel "$root" "$app"
+chmod -R go-w "$root" "$app"
+chmod 0755 "$root/bootstrap/bms-runtime-agent" "$root/control/bms-retail-local" \
+  "/usr/local/bin/bms-retail-local" "$app/Contents/MacOS/BMS Retail Local" \
+  "$app/Contents/Resources/BMS Retail Local Setup.command" \
+  "/Applications/BMS Retail Local Uninstall.command"
+# The signed-in operator launches setup, while the package payload is owned by root. Keep public
+# release verification material and non-secret bootstrap settings readable without widening any
+# runtime state, credentials or shop data permissions.
+chmod 0644 "$root/bootstrap/trusted-release-keys.json" \
+  "$root/bootstrap/manifest-url" "$root/bootstrap/activation-url" \
+  "$root/bootstrap/BOOTSTRAP_VERSION" "$root/bootstrap/PLATFORM_TARGET"
+if [ -f "$root/bootstrap/test-release-ca.pem" ]; then
+  chmod 0644 "$root/bootstrap/test-release-ca.pem"
+fi
+if [ -f "$legacy" ]; then unlink "$legacy"; fi
+touch "$app"
+console_user=$(stat -f %Su /dev/console 2>/dev/null || true)
+if [ -n "$console_user" ] && [ "$console_user" != root ]; then
+  console_uid=$(id -u "$console_user" 2>/dev/null || true)
+  if [ -n "$console_uid" ]; then
+    /bin/launchctl asuser "$console_uid" /usr/bin/sudo -u "$console_user" \
+      /usr/bin/open -a "$app" >/dev/null 2>&1 || true
+  fi
+fi
+printf '%s\n' 'BMS Retail Local Online Setup installed. Internet is required for the first setup; verified downloads resume after interruption.'

@@ -30,6 +30,35 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 	if err != nil {
 		return nil, err
 	}
+	return stageVerifiedComponents(ctx, verified, root, verified.Payload.Components, reporters...)
+}
+
+// stageDesktop verifies the complete publisher-signed release contract before selecting the one
+// desktop component. Keeping the selection inside the agent prevents a bootstrap shell script from
+// treating an untrusted URL or checksum as authority while allowing the POS-only installer to stay
+// small and download Electron only on first install.
+func stageDesktop(ctx context.Context, manifestPath, keyringPath, target, root string, reporters ...progressReporter) (map[string]any, error) {
+	verified, err := verifyReleaseFiles(manifestPath, keyringPath, target)
+	if err != nil {
+		return nil, err
+	}
+	var desktop []releaseComponent
+	for _, component := range verified.Payload.Components {
+		if component.Name == "desktop" {
+			if component.Kind != "desktop" {
+				return nil, errors.New("signed release desktop component มี kind ไม่ถูกต้อง")
+			}
+			desktop = append(desktop, component)
+		}
+	}
+	if len(desktop) != 1 {
+		return nil, errors.New("signed release ต้องมี desktop component หนึ่งรายการ")
+	}
+	return stageVerifiedComponents(ctx, verified, root, desktop, reporters...)
+}
+
+func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root string, components []releaseComponent,
+	reporters ...progressReporter) (map[string]any, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, fmt.Errorf("สร้าง Managed Runtime root ไม่ได้: %w", err)
 	}
@@ -71,11 +100,11 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 	}, Timeout: 0}
 
 	var totalBytes int64
-	for _, component := range verified.Payload.Components {
+	for _, component := range components {
 		totalBytes += component.SizeBytes
 	}
 	var completedBytes int64
-	for _, component := range verified.Payload.Components {
+	for _, component := range components {
 		destination := filepath.Join(releaseRoot, safeArtifactName(component.Name))
 		if err := downloadComponent(ctx, client, component, destination, completedBytes, totalBytes, reporters...); err != nil {
 			return nil, fmt.Errorf("download %s ไม่สำเร็จ: %w", component.Name, err)

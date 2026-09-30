@@ -168,6 +168,12 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   // RESTRICT FKs on purpose (they are the evidence of what was asked for), so they must go
   // before all three or the whole purge fails on this one table.
   await client.query(`DELETE FROM bms_restaurant_order_requests WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Delete the restaurant floor while its tenant still exists. Letting the tenant cascade it is
+  // too late for the floor DELETE trigger: that trigger emits a realtime outbox event whose
+  // tenant FK has already disappeared, rolling back the entire purge. Checks must go first because
+  // they deliberately retain their table FK; their rounds/tickets cascade from the check.
+  await client.query(`DELETE FROM bms_restaurant_checks WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_restaurant_areas WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Board game cafe (9.79-9.83) holds the same kind of evidence with RESTRICT FKs: a session
   // points at the settling order/user/device/shift, a participant at the customer, a title at
   // the product it is sold as, and a copy at the purchase order it arrived on.  `bms_orders`

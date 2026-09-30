@@ -109,17 +109,19 @@ Moby and the pinned BMS services. On Ubuntu, the same agent contract manages Mob
 without virtualization. PostgreSQL data stays on the Linux filesystem; it is never run from `/mnt/c`.
 Web and WS remain loopback-only and PostgreSQL, Redis, and the engine socket are never published.
 
-macOS on Apple Silicon and Intel is an experimental distribution target. Each architecture-specific
-`.pkg` bundles Lima, its matching pinned Ubuntu image, private Moby/Compose binaries, age, and matching
-Web/WS/PostgreSQL/Redis images. A
+macOS on Apple Silicon and Intel is an experimental distribution target. Its normal
+architecture-specific `.pkg` is a small online bootstrap; on first Setup it downloads Lima, the
+matching pinned Ubuntu image, private Moby/Compose binaries, age, Web/WS/PostgreSQL/Redis images and
+the matching Desktop app from a signed, checksummed, resumable release. A
 per-operator launchd agent keeps the Apple Virtualization Framework VM alive after setup. Web and WS
 are forwarded only to host loopback; PostgreSQL, Redis, their volumes, secrets, and the engine socket
 remain in the private Linux VM. Docker Desktop is neither installed nor used on the target Mac. The
 existing macOS POS Desktop `.dmg` is only a client and must never be published as this server package.
 
-The macOS builder exposes two explicit products: `--package-type server` contains only the managed
-runtime, while `--package-type server-pos` also embeds `BMS POS.app`. The combined `server-pos`
-installer is trial-locked in the release control plane: it is not an anonymous public download and is
+The bootstrap product is `server-pos`: POS is a signed downloaded component, not bytes embedded in
+the `.pkg`. The old full-offline builder still exposes `--package-type server` and `server-pos` only
+for approved recovery installs. The normal `server-pos`
+bootstrap is trial-locked in the release control plane: it is not an anonymous public download and is
 distributed through the standard Retail Local trial/paid onboarding flow. After first-run provisioning,
 the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
 handoff that Desktop consumes into Keychain before making a network request. Later launches need only
@@ -234,16 +236,17 @@ destructive and must never occur during an ordinary uninstall.
 ## Current delivery status
 
 The repository now implements the native agent, signed/resumable staging, private Windows WSL rootfs,
-Ubuntu systemd install, and a full offline-payload macOS Apple Silicon technical-pilot package using
-Lima/VZ. It also implements the pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
+Ubuntu systemd install, and small macOS Apple Silicon/Intel online bootstraps backed by signed
+architecture-specific Lima/VZ releases. A full offline macOS payload remains available only for
+approved recovery installs. It also implements the pinned managed Compose contract, one-time Desktop pairing handoff, encrypted
 logical backup/restore, safe default uninstall including macOS explicit erase, release signer, and Windows bootstrap packaging
 definition. It includes scheduled encrypted off-host export, retention, checksums and stale/failure
 reporting on both supported runtime families. It also implements a signed transactional updater: replay/downgrade refusal, verified
 pre-migration encrypted backup, retained previous images, health-gated commit, schema-aware rollback
 or full data restore, and startup recovery for an interrupted runtime transaction. The legacy Docker
 Desktop pilot remains available and unchanged while this path is certified. The macOS pilot has
-manual `age` backup export but does not yet implement signed transactional update, scheduled off-host
-backup, restore orchestration, licensing evidence activation, package signing, or notarization.
+best-effort activation/evidence and manual `age` backup export, but does not yet implement signed
+transactional update, scheduled off-host backup, restore orchestration, package signing, or notarization.
 
 This is release-candidate engineering, not a GA declaration. Promotion to `stable` requires a
 production signing trust root, signed OS packages, evidenced update/rollback and replacement-machine

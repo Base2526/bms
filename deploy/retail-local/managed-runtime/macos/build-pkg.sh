@@ -188,6 +188,7 @@ cp "$docker_archive" "$payload/runtime/docker.tgz"
 cp "$compose_binary" "$payload/runtime/docker-compose"
 cp "$age_archive" "$payload/runtime/age.tar.gz"
 cp "$managed_root/compose.managed.yml" "$payload/compose.artifact"
+cp "$repo_root/packages/retail-local-contract/shop-archetypes.json" "$payload/shop-archetypes.artifact"
 cp "$managed_root/runtime-rootfs/bms-localctl" "$payload/bms-localctl"
 (cd "$agent_root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$go_arch" go build \
   -trimpath -ldflags='-s -w' -o "$payload/bin/bms-runtime-agent" .)
