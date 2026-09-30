@@ -63,6 +63,15 @@ choose_sample_mode() {
     esac
   done
 }
+sample_result_is_complete() {
+  local result=$1 archetype=$2
+  jq -e --arg archetype "$archetype" '
+    (.status == "COMPLETED" or .status == "ALREADY_COMPLETED") and
+    (.completedSteps | type == "array") and
+    (.completedSteps | index("products") != null) and
+    ($archetype != "restaurant" or (.completedSteps | index("restaurant_layout") != null))
+  ' <<<"$result" >/dev/null 2>&1
+}
 cleanup() {
   [[ -n ${provision_script:-} ]] && rm -f -- "$provision_script"
   [[ -n ${handoff_path:-} && ! -e ${handoff_path:-} ]] || true
@@ -116,32 +125,7 @@ admin_email=''
 admin_password=''
 admin_pin=''
 business_archetype=''
-create_sample_data='0'
-if [[ ! -f $provision_checkpoint ]]; then
-  step 2 "รับข้อมูลร้านและผู้ดูแล"
-  while [[ -z $shop_name ]]; do read -r -p 'ชื่อร้าน: ' shop_name; done
-  while [[ -z $admin_name ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name; done
-  while [[ ! $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
-    read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
-    [[ $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || echo "อีเมลไม่ถูกต้อง กรุณากรอกใหม่" >&2
-  done
-  read_business_archetype
-  read_sample_data_choice
-  while :; do
-    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
-    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
-    [[ ${#admin_password} -ge 8 && $admin_password == "$password_confirm" ]] && break
-    echo "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่" >&2
-  done
-  while :; do
-    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
-    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
-    [[ $admin_pin =~ ^[0-9]{4,8}$ && $admin_pin == "$pin_confirm" ]] && break
-    echo "PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่" >&2
-  done
-else
-  step 2 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
-fi
+sample_mode='NONE'
 
 step 3 "ติดตั้ง private runtime และเครื่องมือที่จำเป็น"
 export DEBIAN_FRONTEND=noninteractive
@@ -216,11 +200,13 @@ EOF
 fi
 
 if [[ -f $provision_checkpoint ]]; then
+  step 2 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
   provision_result=$(<"$provision_checkpoint")
   jq -e . >/dev/null <<<"$provision_result" || die "checkpoint ของร้านอ่านไม่ได้ กรุณาติดต่อ Support"
   business_archetype=$(jq -r '.businessArchetype // empty' <<<"$provision_result")
   sample_mode=$(jq -r '.sampleData.mode // "NONE"' <<<"$provision_result")
 else
+  step 2 "รับข้อมูลร้านและผู้ดูแล"
   read -r -p 'ชื่อร้าน: ' shop_name
   business_archetype=$(choose_archetype)
   if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
@@ -230,10 +216,24 @@ else
     sample_mode=NONE
     printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
   fi
-  read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
-  read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
-  read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
-  read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
+  while [[ -z $admin_name ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name; done
+  while [[ ! $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
+    read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
+    [[ $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
+      printf 'อีเมลไม่ถูกต้อง กรุณากรอกใหม่\n' >&2
+  done
+  while :; do
+    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
+    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
+    [[ ${#admin_password} -ge 8 && $admin_password == "$password_confirm" ]] && break
+    printf 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่\n' >&2
+  done
+  while :; do
+    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
+    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
+    [[ $admin_pin =~ ^[0-9]{4,8}$ && $admin_pin == "$pin_confirm" ]] && break
+    printf 'PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่\n' >&2
+  done
   for value in "$shop_name" "$admin_name" "$admin_email" "$admin_password" "$admin_pin"; do
     [[ -n $value && $value != *$'\n'* && $value != *$'\r'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
   done
@@ -262,14 +262,20 @@ else
 fi
 
 sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
-if [[ $sample_status == PENDING ]]; then
+if [[ $sample_mode == STARTER_CATALOG && $sample_status != COMPLETED && $sample_status != ALREADY_COMPLETED ]]; then
   # The provisioning checkpoint above already contains the one-time token. Sample generation may
   # now be retried safely after a process interruption or power loss without recreating the shop.
+  if [[ $sample_status != PENDING ]]; then
+    printf '[คำเตือน] ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่สำเร็จ กำลังลองสร้างตามตัวเลือกของผู้ใช้\n' >&2
+  fi
   sample_output=$(cd "$RUNTIME_ROOT" && \
     docker compose --env-file .env -f compose.yml --profile setup run --rm sample-data 2>&1) || true
   sample_result=$(grep -E '^\{"status"' <<<"$sample_output" | tail -n 1)
   if ! jq -e . >/dev/null 2>&1 <<<"$sample_result"; then
     sample_result='{"status":"FAILED","requested":true,"message":"sample data process did not return a readable result"}'
+  elif [[ $(jq -r '.status // "FAILED"' <<<"$sample_result") =~ ^(COMPLETED|ALREADY_COMPLETED)$ ]] && \
+       ! sample_result_is_complete "$sample_result" "$business_archetype"; then
+    sample_result='{"status":"FAILED","requested":true,"message":"sample data result is incomplete"}'
   fi
   provision_result=$(jq -c --argjson sample "$sample_result" --arg mode "$sample_mode" '.sampleData = ($sample + {mode:$mode})' <<<"$provision_result")
   printf '%s\n' "$provision_result" >"$provision_checkpoint"
@@ -305,7 +311,7 @@ operator_gid=$(id -g "$operator")
 device_token=$(jq -er '.deviceToken // empty' <<<"$provision_result" || true)
 tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
 pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
-sample_status=$(jq -r '.sample.status // "SKIPPED"' <<<"$provision_result")
+sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
 
 # Redeem the one-time activation code after the authoritative local shop identity exists. The
 # exchange is best-effort and never changes installation success or any local transaction path.

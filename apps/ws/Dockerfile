@@ -1,5 +1,8 @@
 FROM node:20-bookworm-slim
 
+ARG BMS_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.revision=$BMS_SOURCE_COMMIT
+
 RUN apt-get update && apt-get install -y \
     python3 \
     make \

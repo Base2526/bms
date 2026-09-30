@@ -151,6 +151,11 @@ function Start-LocalReleaseServer(
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $managedRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot ".."))
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $managedRoot "..\..\.."))
+$dirty = @(& git -C $repoRoot status --porcelain --untracked-files=normal)
+if ($LASTEXITCODE -ne 0) { throw "อ่านสถานะ Git ไม่สำเร็จ" }
+if ($dirty.Count -gt 0) {
+  throw "working tree ต้องสะอาดก่อนสร้าง signed test release`n$($dirty -join "`n")"
+}
 $outputRoot = if ($OutputDirectory) {
   [IO.Path]::GetFullPath($OutputDirectory)
 } else {
@@ -186,11 +191,32 @@ $posPath = if ($PosInstaller) {
 }
 if (-not (Test-Path -LiteralPath $posPath -PathType Leaf)) { throw "ไม่พบ Windows x64 POS installer: $posPath" }
 
+$sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "อ่าน source commit ไม่สำเร็จ" }
+
 $imageRefs = [ordered]@{
   web = "bms-retail-local-web:$SourceImageVersion"
   ws = "bms-retail-local-ws:$SourceImageVersion"
   postgres = "postgres:16-alpine"
   redis = "redis:7-alpine"
+}
+$nextBuildCpus = if ([string]::IsNullOrWhiteSpace($env:NEXT_BUILD_CPUS)) { "2" } else { $env:NEXT_BUILD_CPUS }
+$nodeBuildHeap = if ([string]::IsNullOrWhiteSpace($env:NODE_BUILD_MAX_OLD_SPACE_SIZE)) { "4096" } else { $env:NODE_BUILD_MAX_OLD_SPACE_SIZE }
+Invoke-Checked "สร้าง Web image จาก source commit $sourceCommit" {
+  docker buildx build --platform linux/amd64 --provenance=false --load `
+    --build-arg "BMS_SOURCE_COMMIT=$sourceCommit" `
+    --build-arg "NEXT_BUILD_CPUS=$nextBuildCpus" `
+    --build-arg "NODE_BUILD_MAX_OLD_SPACE_SIZE=$nodeBuildHeap" `
+    --build-arg "NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100" `
+    --build-arg "NEXT_PUBLIC_GRAPHQL_HTTP=http://127.0.0.1:3100/api/graphql" `
+    --build-arg "NEXT_PUBLIC_GRAPHQL_WS=ws://127.0.0.1:3101/graphql" `
+    --build-arg "COOKIE_SECURE=0" --build-arg "WEB_NAME=BMS Retail Local" `
+    -f (Join-Path $repoRoot "apps\web\Dockerfile") -t $imageRefs.web $repoRoot
+}
+Invoke-Checked "สร้าง WS image จาก source commit $sourceCommit" {
+  docker buildx build --platform linux/amd64 --provenance=false --load `
+    --build-arg "BMS_SOURCE_COMMIT=$sourceCommit" `
+    -f (Join-Path $repoRoot "apps\ws\Dockerfile") -t $imageRefs.ws $repoRoot
 }
 foreach ($entry in $imageRefs.GetEnumerator()) {
   Invoke-Checked "ตรวจ image $($entry.Key)" { docker image inspect $entry.Value *> $null }
@@ -199,9 +225,16 @@ foreach ($entry in $imageRefs.GetEnumerator()) {
     throw "image $($entry.Value) ต้องเป็น linux/amd64 (พบ $platform)"
   }
 }
-
-$sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "อ่าน source commit ไม่สำเร็จ" }
+foreach ($name in @("web", "ws")) {
+  $revision = (& docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' $imageRefs[$name]).Trim()
+  if ($LASTEXITCODE -ne 0 -or $revision -ne $sourceCommit) {
+    throw "image $($imageRefs[$name]) ไม่ตรงกับ source commit $sourceCommit (พบ $revision)"
+  }
+}
+Invoke-Checked "ตรวจ runtime สำหรับ provision และ sample data" {
+  docker run --rm --entrypoint sh $imageRefs.web -lc `
+    'test -f scripts/retail-local-provision.mts && test -f scripts/retail-local-sample-data.mts && node --conditions=react-server --input-type=module -e "await import(''server-only'')"'
+}
 $createdAt = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
 $keyId = "local-test-$($Version.Replace('.', '-'))"
 $manifestUrl = "https://localhost:$Port/release.jws.json"

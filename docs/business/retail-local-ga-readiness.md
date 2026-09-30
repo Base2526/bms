@@ -17,6 +17,7 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Resumable per-release staging | Implemented | agent tests; state is release-version scoped |
 | Ubuntu bootstrap package | Implemented candidate | CI builds and inspects `.deb` |
 | Windows bootstrap definition | Implemented candidate | Windows CI parses scripts and smoke-builds unsigned EXE |
+| macOS online bootstrap | Implemented candidate | Apple Silicon/Intel builders emit payload-free `.pkg` files capped at 25 MiB; signed release preparation and package inspection are contract-tested |
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
 | Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |
@@ -33,10 +34,11 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Production release key custody | Operations/security | Key generated and used only by an isolated signing service; rotation and recovery runbook tested |
 | Windows package trust | External signing | Authenticode-sign bootstrap, agent, and Desktop; verify timestamp and SmartScreen installation evidence |
 | Linux package trust | External signing | Signed repository/package metadata and clean-host verification |
+| macOS package trust | External signing | Developer ID-sign and notarize both architecture-specific bootstraps and Desktop components; verify Gatekeeper on clean Apple Silicon and Intel Macs |
 | Replacement-machine restore | Hardware evidence | Restore database, storage and encryption keys to a different supported host and reconcile totals |
 | Failure recovery | Hardware evidence | Power loss, disk full, forced restart and suspend/resume runs with retained data and auditable outcomes |
 | Peripheral certification | Hardware evidence | Named printer, scanner, drawer and customer-display matrix for each supported target |
-| Clean-machine acceptance | Release evidence | Exact signed release on Windows 11, Windows 10 IoT LTSC 2021 and Ubuntu 24.04; transition targets remain separate |
+| Clean-machine acceptance | Release evidence | Exact signed release on Windows 11, Windows 10 IoT LTSC 2021, Ubuntu 24.04, macOS 15 Apple Silicon and macOS 15 Intel; transition/pilot targets remain separate |
 | Encrypted off-host backup qualification | Hardware + operations evidence | Run scheduled export to a real supported destination, alert on a forced failure, restore a retained sample to a replacement host and reconcile totals |
 | Remote diagnostics qualification | Privacy + operations evidence | Verify the existing explicit-consent redacted bundle on the exact local release and approve the support transport/retention procedure |
 | Licensing back-office qualification | Deployment + operations evidence | Deploy the activation/token-bound receiver, restrict platform-admin access, exercise one-use redemption, duplicate/key/chain alerts, retry-safe commercial actions, follow-up acknowledgement and replacement-device transfer, and approve the customer-resolution runbook; never a runtime kill switch |

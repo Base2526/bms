@@ -62,17 +62,17 @@ in a signed agent release before manifests start using that id.
 - signed transactional update with replay protection, pre-migration encrypted backup, health-gated
   commit, schema-aware data restore, and interrupted-update recovery;
 - an Inno Setup definition for the small Windows bootstrap `.exe`;
-- full macOS Apple Silicon/Intel `.pkg` builders that bundle all server/runtime bytes and need no Docker
-  Desktop on the target Mac;
+- small macOS Apple Silicon/Intel `.pkg` builders plus signed architecture-specific release
+  preparation; no server/runtime/POS payload is embedded in the normal bootstrap;
 - release signing tooling that derives hashes from the actual artifact bytes.
 
-The Windows/Ubuntu bootstrap remains small: application images, the private runtime, and Desktop are downloaded
-after publisher verification. The target needs internet access during install; a separately signed
-offline bundle is future work. The macOS technical-pilot `.pkg` is the explicit exception: it is a
-large offline payload, currently unsigned and not notarized.
+The Windows/Ubuntu/macOS bootstrap remains small: application images, the private runtime, and Desktop
+are downloaded after publisher verification. The target needs internet access during first install.
+The old large macOS package is retained only as an explicit offline recovery path. All current macOS
+technical-pilot packages are still unsigned and not notarized.
 
-The repository-level release command now uses this online bootstrap path by default for Windows and
-Ubuntu. It requires an externally supplied public-key-only keyring and platform-specific HTTPS
+The repository-level release command now uses this online bootstrap path by default for Windows,
+Ubuntu and macOS. It requires an externally supplied public-key-only keyring and platform-specific HTTPS
 signed-manifest URLs:
 
 ```powershell
@@ -84,7 +84,8 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 ```
 
 Use `-Distribution Offline` only for the explicit legacy recovery/pilot payload. Managed Runtime
-supports Windows x64 and Ubuntu x64 only. Windows x86 remains a POS-client legacy target; Linux
+supports Windows x64, Ubuntu x64, macOS Apple Silicon and macOS Intel. Windows x86 remains a
+POS-client legacy target; Linux
 32-bit is unsupported by the current Electron/runtime/image stack and is never emitted as a server
 installer.
 
@@ -171,15 +172,30 @@ Run the Windows candidate check from PowerShell 7 with:
 pwsh .\deploy\retail-local\managed-runtime\preflight-windows.ps1 -Json
 ```
 
-Build both full macOS architecture-specific technical-pilot packages with:
+Prepare a signed macOS release and build the small architecture-specific online bootstrap with:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
+deploy/retail-local/managed-runtime/macos/prepare-release.sh \
+  --version 0.4.0-internal.1 --architecture arm64 \
+  --base-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64 \
+  --desktop-app 'apps/desktop/dist/mac-arm64/BMS POS.app' \
+  --private-key /secure/bms-release/release-private.pem --key-id production-2026-09
+
+deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
+  --version 0.4.0-internal.1 --architecture arm64 \
+  --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
+  --keyring /secure/bms-release/trusted-release-keys.json
+
+deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
+  --version 0.4.0-internal.1 --architecture arm64 \
+  --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
+  --keyring /secure/bms-release/trusted-release-keys.json
 ```
 
-That command builds `Server only`. For the recommended single-Mac installation, build the combined
-package instead; it embeds BMS POS and performs the one-time local pairing automatically:
+The POS-only DMG is also an online bootstrap: it contains no Electron payload and stages only the
+signed `desktop` component. Repeat both builders with `x64` and the Intel Desktop app for Intel Macs.
+For an approved no-internet recovery
+installation only, build the old full payload explicitly:
 
 ```bash
 deploy/retail-local/managed-runtime/macos/build-pkg.sh \
@@ -187,9 +203,8 @@ deploy/retail-local/managed-runtime/macos/build-pkg.sh \
 ```
 
 Docker is needed only on the release workstation to build the matching OCI images. The target package
-uses the bundled Lima/VZ private runtime and never calls Docker Desktop. After package installation,
-open `/Applications/BMS Retail Local.app`; do not upload the earlier payload-free `.pkg`
-fixture as a server release.
+uses the downloaded Lima/VZ private runtime and never calls Docker Desktop. After package
+installation, keep the Mac online and open `/Applications/BMS Retail Local.app`.
 
 Developer verification:
 

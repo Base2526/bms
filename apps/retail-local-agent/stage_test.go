@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -126,5 +127,58 @@ func TestReleaseStateIsScopedPerVersion(t *testing.T) {
 	}
 	if _, err := loadOrCreateState(firstPath, second); err == nil {
 		t.Fatal("the same release directory accepted conflicting version state")
+	}
+}
+
+func TestStageDesktopSelectsOnlySignedDesktopComponent(t *testing.T) {
+	desktopBytes := []byte("signed desktop archive")
+	desktopDigest := sha256.Sum256(desktopBytes)
+	envelope, keyring := signedReleaseFixture(t, func(payload *releasePayload) {
+		for index := range payload.Components {
+			if payload.Components[index].Name == "desktop" {
+				payload.Components[index].SHA256 = hex.EncodeToString(desktopDigest[:])
+				payload.Components[index].SizeBytes = int64(len(desktopBytes))
+			}
+		}
+	})
+	directory := t.TempDir()
+	manifestPath := filepath.Join(directory, "release.jws.json")
+	keyringPath := filepath.Join(directory, "trusted-release-keys.json")
+	root := filepath.Join(directory, "state")
+	releaseRoot := filepath.Join(root, "releases", "1.0.0-test.1")
+	if err := os.MkdirAll(releaseRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, envelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyringPath, keyring, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(releaseRoot, "desktop.artifact"), desktopBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := stageDesktop(context.Background(), manifestPath, keyringPath,
+		"ubuntu-24.04-lts-x64", root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result["releaseDirectory"] != releaseRoot {
+		t.Fatalf("unexpected release directory: %#v", result)
+	}
+	if _, err := os.Stat(filepath.Join(releaseRoot, "web.artifact")); !os.IsNotExist(err) {
+		t.Fatalf("POS-only staging downloaded a server component: %v", err)
+	}
+	contents, err := os.ReadFile(filepath.Join(releaseRoot, "install-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state installState
+	if err := json.Unmarshal(contents, &state); err != nil {
+		t.Fatal(err)
+	}
+	if !state.CompletedComponents["desktop"] || len(state.CompletedComponents) != 1 {
+		t.Fatalf("unexpected staged components: %#v", state.CompletedComponents)
 	}
 }

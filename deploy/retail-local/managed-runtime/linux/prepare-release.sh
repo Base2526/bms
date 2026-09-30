@@ -40,6 +40,10 @@ base_url=${base_url%/}
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 managed_root="$repo_root/deploy/retail-local/managed-runtime"
+[[ -z $(git -C "$repo_root" status --porcelain --untracked-files=normal) ]] || {
+  echo "working tree ต้องสะอาดก่อนสร้าง signed release" >&2
+  exit 1
+}
 output_dir=${output_dir:-"$repo_root/artifacts/retail-local/managed-runtime/releases/$version/ubuntu-24.04-lts-x64"}
 mkdir -p "$output_dir"
 output_dir=$(cd "$output_dir" && pwd)
@@ -57,8 +61,11 @@ web_ref="bms/retail-local-web:$version"
 ws_ref="bms/retail-local-ws:$version"
 postgres_ref="bms/retail-local-postgres:16-alpine-$version"
 redis_ref="bms/retail-local-redis:7-alpine-$version"
+commit=$(git -C "$repo_root" rev-parse HEAD)
+[[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "อ่าน source commit ไม่สำเร็จ" >&2; exit 1; }
 
 docker buildx build --platform linux/amd64 --provenance=false --load \
+  --build-arg BMS_SOURCE_COMMIT="$commit" \
   --build-arg NEXT_BUILD_CPUS="${NEXT_BUILD_CPUS:-2}" \
   --build-arg NODE_BUILD_MAX_OLD_SPACE_SIZE="${NODE_BUILD_MAX_OLD_SPACE_SIZE:-4096}" \
   --build-arg NEXT_PUBLIC_BASE_URL=http://127.0.0.1:3100 \
@@ -67,11 +74,25 @@ docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg COOKIE_SECURE=0 --build-arg 'WEB_NAME=BMS Retail Local' \
   -f "$repo_root/apps/web/Dockerfile" -t "$web_ref" "$repo_root"
 docker buildx build --platform linux/amd64 --provenance=false --load \
+  --build-arg BMS_SOURCE_COMMIT="$commit" \
   -f "$repo_root/apps/ws/Dockerfile" -t "$ws_ref" "$repo_root"
 printf 'FROM postgres:16-alpine\n' | docker buildx build --platform linux/amd64 \
   --provenance=false --load -f - -t "$postgres_ref" .
 printf 'FROM redis:7-alpine\n' | docker buildx build --platform linux/amd64 \
   --provenance=false --load -f - -t "$redis_ref" .
+
+for image_ref in "$web_ref" "$ws_ref"; do
+  image_commit=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_ref")
+  [[ $image_commit == "$commit" ]] || {
+    echo "image $image_ref ไม่ตรงกับ source commit $commit (พบ ${image_commit:-ไม่มี label})" >&2
+    exit 1
+  }
+done
+docker run --rm --entrypoint sh "$web_ref" -lc '
+  test -f scripts/retail-local-provision.mts
+  test -f scripts/retail-local-sample-data.mts
+  node --conditions=react-server --input-type=module -e "await import(\"server-only\")"
+' || { echo "Web image ไม่พร้อมรัน Retail Local provision/sample-data" >&2; exit 1; }
 
 docker image save --output "$output_dir/web.artifact" "$web_ref"
 docker image save --output "$output_dir/ws.artifact" "$ws_ref"
@@ -81,7 +102,6 @@ cp "$managed_root/compose.managed.yml" "$output_dir/compose.artifact"
 cp "$desktop_deb" "$output_dir/desktop.artifact"
 cp "$repo_root/packages/retail-local-contract/shop-archetypes.json" "$output_dir/shop-archetypes.artifact"
 
-commit=$(git -C "$repo_root" rev-parse HEAD)
 created_at=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
 cat >"$output_dir/runtime.artifact" <<EOF
 {"formatVersion":1,"platformTarget":"ubuntu-24.04-lts-x64","engine":"ubuntu-docker.io","sourceCommit":"$commit","createdAt":"$created_at"}

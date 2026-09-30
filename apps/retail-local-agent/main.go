@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.5.1"
+const agentVersion = "0.5.2"
 
 var errPreflightFailed = errors.New("preflight failed")
 
@@ -28,7 +28,7 @@ func main() {
 
 func run(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|stage-desktop|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
 	}
 	switch args[0] {
 	case "version":
@@ -163,6 +163,34 @@ func run(args []string) error {
 			reporter = writeProgressEvent
 		}
 		result, err := stageRelease(ctx, *manifest, *keyring, *target, absoluteRoot, reporter)
+		if err != nil {
+			return err
+		}
+		return writeJSON(result)
+	case "stage-desktop":
+		flags := flag.NewFlagSet("stage-desktop", flag.ContinueOnError)
+		manifest := flags.String("manifest", "", "signed release envelope")
+		keyring := flags.String("keyring", "", "trusted Ed25519 public-key ring")
+		target := flags.String("target", "", "expected platform target")
+		root := flags.String("root", "", "POS bootstrap data root")
+		progress := flags.Bool("progress", false, "emit machine-readable progress events")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *manifest == "" || *keyring == "" || *target == "" || *root == "" {
+			return errors.New("stage-desktop ต้องมี -manifest, -keyring, -target และ -root")
+		}
+		absoluteRoot, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		var reporter progressReporter
+		if *progress {
+			reporter = writeProgressEvent
+		}
+		result, err := stageDesktop(ctx, *manifest, *keyring, *target, absoluteRoot, reporter)
 		if err != nil {
 			return err
 		}

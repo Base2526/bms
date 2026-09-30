@@ -1,22 +1,37 @@
 #!/bin/bash
 set -Eeuo pipefail
+umask 077
 
 readonly SYSTEM_ROOT="${BMS_RETAIL_LOCAL_SYSTEM_ROOT:-/Library/Application Support/BMS/RetailLocal}"
-readonly PAYLOAD_ROOT="$SYSTEM_ROOT/payload"
 readonly CONTROL_ROOT="$SYSTEM_ROOT/control"
+readonly BOOTSTRAP_ROOT="$SYSTEM_ROOT/bootstrap"
+readonly EMBEDDED_PAYLOAD_ROOT="$SYSTEM_ROOT/payload"
+readonly EMBEDDED_RUNTIME_ROOT="$SYSTEM_ROOT/runtime"
 readonly STATE_ROOT="${BMS_RETAIL_LOCAL_STATE_ROOT:-$HOME/Library/Application Support/BMS/RetailLocal}"
 readonly LIMA_HOME="${BMS_RETAIL_LOCAL_LIMA_HOME:-$HOME/.bmsrl}"
 readonly INSTANCE="${BMS_RETAIL_LOCAL_INSTANCE:-bms-retail-local}"
 readonly WEB_PORT="${BMS_RETAIL_LOCAL_HOST_WEB_PORT:-3100}"
 readonly WS_PORT="${BMS_RETAIL_LOCAL_HOST_WS_PORT:-3101}"
-readonly LIMACTL="$SYSTEM_ROOT/runtime/lima/bin/limactl"
-readonly AGENT="$PAYLOAD_ROOT/bin/bms-runtime-agent"
 readonly RECEIPT="$STATE_ROOT/installation.json"
 readonly CONFIG="$STATE_ROOT/lima.yaml"
 readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
 readonly LOG_PATH="$STATE_ROOT/host-service.log"
+RELEASE_DIRECTORY=""
+RELEASE_JSON=""
+RUNTIME_ROOT=""
+PAYLOAD_ROOT=""
+LIMACTL=""
+AGENT=""
+KEYRING=""
+MANIFEST_URI_FILE=""
+INSTALL_MODE=""
 PROVISION_DEVICE_TOKEN=""
 PROVISION_SAMPLE_STATUS=""
+PROVISION_TENANT_ID=""
+PROVISION_POS_DEVICE_ID=""
+LICENSE_ID=""
+LICENSE_EVIDENCE_ENDPOINT=""
+LICENSE_EVIDENCE_TOKEN=""
 SHOP_NAME=""
 ADMIN_NAME=""
 ADMIN_EMAIL=""
@@ -27,15 +42,117 @@ SAMPLE_MODE="NONE"
 LAUNCH_LABEL="gui/$(id -u)/com.bms.retail-local"
 readonly LAUNCH_LABEL
 
-export LIMA_HOME BMS_LIMACTL_PATH="$LIMACTL"
-export PATH="$SYSTEM_ROOT/runtime/lima/bin:$SYSTEM_ROOT/runtime/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
+export LIMA_HOME
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+
+if [[ -d $BOOTSTRAP_ROOT ]]; then
+  INSTALL_MODE=online
+  AGENT="$BOOTSTRAP_ROOT/bms-runtime-agent"
+  KEYRING="$BOOTSTRAP_ROOT/trusted-release-keys.json"
+  MANIFEST_URI_FILE="$BOOTSTRAP_ROOT/manifest-url"
+else
+  INSTALL_MODE=offline
+  RUNTIME_ROOT="$EMBEDDED_RUNTIME_ROOT"
+  PAYLOAD_ROOT="$EMBEDDED_PAYLOAD_ROOT"
+  LIMACTL="$RUNTIME_ROOT/lima/bin/limactl"
+  AGENT="$PAYLOAD_ROOT/bin/bms-runtime-agent"
+  export BMS_LIMACTL_PATH="$LIMACTL"
+  export PATH="$RUNTIME_ROOT/lima/bin:$RUNTIME_ROOT/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
+fi
 
 die() { printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS] %s\n' "$*"; }
 step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
+require_bootstrap() {
+  if [[ $INSTALL_MODE == offline ]]; then
+    [[ -x $AGENT && -x $LIMACTL && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
+      die "ไฟล์ Offline Recovery Installer ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+    return
+  fi
+  [[ -x $AGENT && -f $KEYRING && -f $MANIFEST_URI_FILE ]] || \
+    die "ไฟล์ Online Bootstrap ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+}
+is_https_url() {
+  [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-} != *'@'* ]]
+}
+artifact_path() {
+  local name=${1//./-}
+  if [[ $INSTALL_MODE == offline ]]; then
+    case "$name" in
+      web|ws|postgres|redis) printf '%s/images/%s.artifact' "$PAYLOAD_ROOT" "$name" ;;
+      compose|shop-archetypes) printf '%s/%s.artifact' "$PAYLOAD_ROOT" "$name" ;;
+      *) printf '%s/%s.artifact' "$PAYLOAD_ROOT" "$name" ;;
+    esac
+    return
+  fi
+  printf '%s/%s.artifact' "$RELEASE_DIRECTORY" "$name"
+}
+load_release_paths() {
+  local version=${1:-}
+  if [[ $INSTALL_MODE == offline ]]; then
+    return
+  fi
+  [[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "release version ไม่ถูกต้อง"
+  RELEASE_DIRECTORY="$STATE_ROOT/releases/$version"
+  RELEASE_JSON="$RELEASE_DIRECTORY/release.json"
+  RUNTIME_ROOT="$STATE_ROOT/runtimes/$version"
+  PAYLOAD_ROOT="$RUNTIME_ROOT/payload"
+  LIMACTL="$RUNTIME_ROOT/runtime/lima/bin/limactl"
+  export BMS_LIMACTL_PATH="$LIMACTL"
+  export PATH="$RUNTIME_ROOT/runtime/lima/bin:$RUNTIME_ROOT/runtime/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+embedded_installation_available() {
+  [[ -x $EMBEDDED_RUNTIME_ROOT/lima/bin/limactl && \
+     -x $EMBEDDED_PAYLOAD_ROOT/bin/bms-runtime-agent && \
+     -f $EMBEDDED_PAYLOAD_ROOT/SHA256SUMS && \
+     -f $CONFIG && -d $LIMA_HOME/$INSTANCE ]]
+}
+activate_embedded_installation() {
+  INSTALL_MODE=offline
+  RUNTIME_ROOT="$EMBEDDED_RUNTIME_ROOT"
+  PAYLOAD_ROOT="$EMBEDDED_PAYLOAD_ROOT"
+  LIMACTL="$RUNTIME_ROOT/lima/bin/limactl"
+  AGENT="$PAYLOAD_ROOT/bin/bms-runtime-agent"
+  KEYRING=""
+  MANIFEST_URI_FILE=""
+  RELEASE_DIRECTORY=""
+  RELEASE_JSON=""
+  export BMS_LIMACTL_PATH="$LIMACTL"
+  export PATH="$RUNTIME_ROOT/lima/bin:$RUNTIME_ROOT/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
+}
+online_installation_available() {
+  [[ -x $LIMACTL && -f $RELEASE_JSON && -f $RELEASE_DIRECTORY/web.artifact && \
+     -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]]
+}
+load_installed_release() {
+  [[ -f $RECEIPT ]] || die "ยัง setup ไม่เสร็จ"
+  if [[ $INSTALL_MODE == offline ]]; then
+    return
+  fi
+  local version
+  version=$(/usr/bin/plutil -extract version raw -o - "$RECEIPT" 2>/dev/null || true)
+  load_release_paths "$version"
+  if ! online_installation_available && embedded_installation_available; then
+    activate_embedded_installation
+    note "พบข้อมูลร้านจาก Offline Installer เดิม กำลังเปิดระบบเดิมต่อโดยไม่แตะข้อมูลร้าน"
+  fi
+}
 require_installed_payload() {
-  [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
-    die "ไฟล์ติดตั้งไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+  require_bootstrap
+  if [[ $INSTALL_MODE == offline ]]; then
+    if [[ -f $RECEIPT ]]; then
+      [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS && \
+         -f $CONFIG && -d $LIMA_HOME/$INSTANCE ]] || \
+        die "ไฟล์ระบบเดิมไม่ครบ แต่ข้อมูลร้านอาจยังอยู่ กรุณาติดต่อ Support และอย่าลบ private VM"
+    else
+      [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS && \
+         -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]] || \
+        die "ไฟล์ใน Offline Recovery Installer ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+    fi
+    return
+  fi
+  [[ -x $LIMACTL && -f $RELEASE_JSON && -f "$(artifact_path web)" && -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]] || \
+    die "พบข้อมูลการติดตั้งเดิม แต่ runtime release ไม่ครบ กรุณาติดต่อ Support และอย่าลบข้อมูลร้าน"
 }
 instance_status() {
   "$LIMACTL" list "$INSTANCE" --format '{{.Status}}' 2>/dev/null | tr -d '\r' || true
@@ -46,10 +163,189 @@ yaml_escape_sed() { printf '%s' "$1" | sed -e 's/[&|]/\\&/g'; }
 file_uri() { printf 'file://%s' "$1"; }
 random_suffix() { od -An -N 6 -tx1 /dev/urandom | tr -d ' \n'; }
 
-verify_payload() {
+verify_embedded_payload() {
   note "ตรวจ checksum ของ runtime และ server images"
   (cd "$PAYLOAD_ROOT" && shasum -a 256 -c SHA256SUMS >/dev/null) || \
-    die "checksum ของไฟล์ใน installer ไม่ถูกต้อง"
+    die "checksum ของไฟล์ใน Offline Recovery Installer ไม่ถูกต้อง"
+}
+
+require_matching_mac_architecture() {
+  local packaged_target host_arch
+  if [[ $INSTALL_MODE == online ]]; then
+    packaged_target=$(cat "$BOOTSTRAP_ROOT/PLATFORM_TARGET" 2>/dev/null || true)
+  else
+    packaged_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET" 2>/dev/null || true)
+  fi
+  if [[ $(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null || printf '0') == 1 ]]; then
+    host_arch=arm64
+  else
+    host_arch=x64
+  fi
+  [[ $packaged_target == "macos-15-$host_arch" ]] || \
+    die "ไฟล์ติดตั้งไม่ตรงกับ CPU เครื่องนี้ (เครื่องเป็น $host_arch แต่ package เป็น ${packaged_target:-unknown})"
+}
+
+activate_license() {
+  [[ $INSTALL_MODE == online ]] || return 0
+  local activation_uri checkpoint code body response license_id evidence_token origin
+  activation_uri=$(tr -d '\r\n' <"$BOOTSTRAP_ROOT/activation-url" 2>/dev/null || true)
+  [[ -n $activation_uri ]] || return 0
+  if ! is_https_url "$activation_uri"; then
+    printf '[คำเตือน] Activation URL ไม่ปลอดภัย ข้าม Activation และให้ร้านใช้งานต่อ\n' >&2
+    return 0
+  fi
+  checkpoint="$STATE_ROOT/activation.json"
+  if [[ -f $checkpoint ]]; then
+    LICENSE_ID=$(/usr/bin/plutil -extract licenseId raw -o - "$checkpoint" 2>/dev/null || true)
+    LICENSE_EVIDENCE_ENDPOINT=$(/usr/bin/plutil -extract evidenceEndpoint raw -o - "$checkpoint" 2>/dev/null || true)
+    LICENSE_EVIDENCE_TOKEN=$(/usr/bin/plutil -extract evidenceToken raw -o - "$checkpoint" 2>/dev/null || true)
+    [[ -z $LICENSE_ID ]] || return 0
+  fi
+
+  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' code
+  printf '\n'
+  [[ -n $code ]] || return 0
+  body="$STATE_ROOT/.activation-body-$(random_suffix).json"
+  response="$STATE_ROOT/.activation-response-$(random_suffix).json"
+  /usr/bin/plutil -create xml1 "$body"
+  /usr/bin/plutil -insert activationCode -string "$code" "$body"
+  /usr/bin/plutil -convert json "$body"
+  code=""
+  if ! curl --fail --silent --show-error --max-time 15 -H 'Content-Type: application/json' \
+      --data-binary "@$body" --output "$response" "$activation_uri"; then
+    rm -f -- "$body" "$response"
+    printf '[คำเตือน] Activation ยังไม่สำเร็จ แต่ร้านจะติดตั้งและใช้งานต่อได้ กรุณาติดต่อ Support ภายหลัง\n' >&2
+    return 0
+  fi
+  rm -f -- "$body"
+  license_id=$(/usr/bin/plutil -extract licenseCode raw -o - "$response" 2>/dev/null || true)
+  evidence_token=$(/usr/bin/plutil -extract ingestionToken raw -o - "$response" 2>/dev/null || true)
+  rm -f -- "$response"
+  if [[ ! $license_id =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ || \
+        ! $evidence_token =~ ^[A-Za-z0-9_-]{32,256}$ || \
+        ! $activation_uri =~ ^(https://[^/@:]+(:[0-9]{1,5})?)([/?#].*)?$ ]]; then
+    printf '[คำเตือน] Activation response ไม่ถูกต้อง แต่ร้านจะติดตั้งและใช้งานต่อได้\n' >&2
+    return 0
+  fi
+  origin=${BASH_REMATCH[1]}
+  LICENSE_ID=$license_id
+  LICENSE_EVIDENCE_ENDPOINT="$origin/api/bms/retail-local/license-evidence"
+  LICENSE_EVIDENCE_TOKEN=$evidence_token
+  /usr/bin/plutil -create xml1 "$checkpoint"
+  /usr/bin/plutil -insert licenseId -string "$LICENSE_ID" "$checkpoint"
+  /usr/bin/plutil -insert evidenceEndpoint -string "$LICENSE_EVIDENCE_ENDPOINT" "$checkpoint"
+  /usr/bin/plutil -insert evidenceToken -string "$LICENSE_EVIDENCE_TOKEN" "$checkpoint"
+  /usr/bin/plutil -convert json "$checkpoint"
+  chmod 0600 "$checkpoint"
+  note "Activation สำเร็จ"
+}
+
+release_component_value() {
+  local wanted=$1 field=$2 index=0 name
+  if [[ $INSTALL_MODE == offline ]]; then
+    case "$field" in
+      imageRef) awk -F '\t' -v component="$wanted" '$1 == component {print $3}' "$PAYLOAD_ROOT/release-images.tsv" ;;
+      ociDigest) awk -F '\t' -v component="$wanted" '$1 == component {print $4}' "$PAYLOAD_ROOT/release-images.tsv" ;;
+      *) die "offline release ไม่มี field $field" ;;
+    esac
+    return
+  fi
+  while name=$(/usr/bin/plutil -extract "components.$index.name" raw -o - "$RELEASE_JSON" 2>/dev/null); do
+    if [[ $name == "$wanted" ]]; then
+      /usr/bin/plutil -extract "components.$index.$field" raw -o - "$RELEASE_JSON"
+      return
+    fi
+    index=$((index + 1))
+  done
+  die "signed release ขาด component $wanted"
+}
+
+render_stage_output() {
+  local line payload phase component percent
+  while IFS= read -r line; do
+    printf '%s\n' "$line" >>"$1"
+    if [[ $line == 'BMS_PROGRESS '* ]]; then
+      payload=${line#BMS_PROGRESS }
+      phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null || true)
+      component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null || true)
+      percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null || printf '0')
+      case "$phase" in
+        download) printf '\r[BMS] ดาวน์โหลด %-20s %3s%%' "$component" "$percent" ;;
+        cached) printf '\r[BMS] ใช้ไฟล์ที่ดาวน์โหลดแล้ว: %-20s %3s%%\n' "$component" "$percent" ;;
+        verify) printf '\r[BMS] ตรวจสอบ %-20s %3s%%' "$component" "$percent" ;;
+        staged) printf '\r[BMS] ดาวน์โหลดและตรวจสอบครบ                     100%%\n' ;;
+      esac
+    fi
+  done
+}
+
+stage_signed_release() {
+  local manifest_uri manifest_dir manifest_path preflight_file target stage_output version test_ca
+  local -a curl_tls=()
+  manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
+  is_https_url "$manifest_uri" || die "Manifest URL ใน bootstrap ไม่ปลอดภัย"
+  test_ca="$BOOTSTRAP_ROOT/test-release-ca.pem"
+  if [[ -f $test_ca ]]; then
+    [[ $manifest_uri =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:?#]|$) ]] || \
+      die "test release CA ใช้ได้เฉพาะ localhost"
+    grep -q 'BEGIN CERTIFICATE' "$test_ca" && ! grep -q 'PRIVATE KEY' "$test_ca" || \
+      die "test release CA ไม่ถูกต้อง"
+    export CURL_CA_BUNDLE="$test_ca" SSL_CERT_FILE="$test_ca"
+    curl_tls=(--cacert "$test_ca")
+    note "ใช้ public test CA สำหรับ localhost เท่านั้น (SMOKE-ONLY)"
+  fi
+  mkdir -p "$STATE_ROOT/manifest"
+  chmod 0700 "$STATE_ROOT" "$STATE_ROOT/manifest"
+  manifest_dir="$STATE_ROOT/manifest"
+  manifest_path="$manifest_dir/release.jws.json"
+  note "การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
+  if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+      --connect-timeout 20 --retry 3 --output "$manifest_path.part" "$manifest_uri"; then
+    die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
+  fi
+  chmod 0600 "$manifest_path.part"
+  mv -f "$manifest_path.part" "$manifest_path"
+  preflight_file="$STATE_ROOT/preflight.json"
+  "$AGENT" preflight >"$preflight_file"
+  target=$(/usr/bin/plutil -extract target raw -o - "$preflight_file" 2>/dev/null || true)
+  [[ $target == macos-15-arm64 || $target == macos-15-x64 ]] || die "อ่าน platform target ไม่สำเร็จ"
+
+  stage_output="$STATE_ROOT/stage-result.jsonl"
+  : >"$stage_output"
+  chmod 0600 "$stage_output"
+  note "กำลังดาวน์โหลด component แบบ resume และตรวจ SHA-256 ทุกไฟล์"
+  "$AGENT" stage-release -manifest "$manifest_path" -keyring "$KEYRING" \
+    -target "$target" -root "$STATE_ROOT" -progress | render_stage_output "$stage_output"
+  version=$(tail -n 1 "$stage_output" | /usr/bin/plutil -extract releaseVersion raw -o - - 2>/dev/null || true)
+  load_release_paths "$version"
+  "$AGENT" verify-release -manifest "$manifest_path" -keyring "$KEYRING" -target "$target" >"$RELEASE_JSON"
+  chmod 0600 "$RELEASE_JSON"
+}
+
+extract_runtime() {
+  local archive destination temporary entry
+  archive=$(artifact_path runtime)
+  destination="$RUNTIME_ROOT"
+  if [[ -x $destination/runtime/lima/bin/limactl && -f $destination/payload/ubuntu-24.04-server-cloudimg.img ]]; then
+    return
+  fi
+  temporary="$destination.partial"
+  rm -rf -- "$temporary"
+  mkdir -p "$temporary"
+  while IFS= read -r entry; do
+    [[ -n $entry && $entry != /* && $entry != ../* && $entry != */../* ]] || \
+      die "runtime archive มี path ที่ไม่ปลอดภัย"
+  done < <(tar -tzf "$archive")
+  tar -xzf "$archive" -C "$temporary"
+  [[ -x $temporary/runtime/lima/bin/limactl && \
+     -f $temporary/payload/ubuntu-24.04-server-cloudimg.img && \
+     -f $temporary/payload/runtime/docker.tgz && \
+     -x $temporary/payload/runtime/docker-compose && \
+     -f $temporary/payload/runtime/age.tar.gz && \
+     -f $temporary/payload/bms-localctl ]] || die "runtime component ไม่ครบ"
+  rm -rf -- "$destination"
+  mv "$temporary" "$destination"
+  load_release_paths "$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")"
 }
 
 render_lima_config() {
@@ -68,7 +364,7 @@ render_lima_config() {
   payload=$(yaml_escape_sed "$PAYLOAD_ROOT")
   escaped_uri=$(yaml_escape_sed "$image_uri")
   escaped_payload=$payload
-  ubuntu_sha=$(awk '$2 == "./ubuntu-24.04-server-cloudimg.img" {print $1}' "$PAYLOAD_ROOT/SHA256SUMS")
+  ubuntu_sha=$(shasum -a 256 "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img" | awk '{print $1}')
   [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
   [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
   sed -e "s|__LIMA_ARCH__|$lima_arch|g" \
@@ -96,24 +392,35 @@ start_setup_vm() {
 
 install_release() {
   local name artifact image_ref digest
-  while IFS=$'\t' read -r name artifact image_ref digest; do
-    [[ -n $name ]] || continue
-    note "โหลด image: $name"
-    "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
-      -artifact "$PAYLOAD_ROOT/$artifact" -image-ref "$image_ref" -digest "$digest"
-  done <"$PAYLOAD_ROOT/release-images.tsv"
+  if [[ $INSTALL_MODE == offline ]]; then
+    while IFS=$'\t' read -r name artifact image_ref digest; do
+      [[ -n $name ]] || continue
+      note "โหลด image: $name"
+      "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
+        -artifact "$PAYLOAD_ROOT/$artifact" -image-ref "$image_ref" -digest "$digest"
+    done <"$PAYLOAD_ROOT/release-images.tsv"
+  else
+    for name in web ws postgres redis; do
+      artifact=$(artifact_path "$name")
+      image_ref=$(release_component_value "$name" imageRef)
+      digest=$(release_component_value "$name" ociDigest)
+      note "โหลด image: $name"
+      "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
+        -artifact "$artifact" -image-ref "$image_ref" -digest "$digest"
+    done
+  fi
 
   "$AGENT" runtime-write -engine macos-lima -distro "$INSTANCE" \
-    -source "$PAYLOAD_ROOT/compose.artifact" \
+    -source "$(artifact_path compose)" \
     -destination /var/lib/bms-retail-local/compose.yml -mode 0600
   "$AGENT" runtime-install-control -engine macos-lima -distro "$INSTANCE" \
     -source "$PAYLOAD_ROOT/bms-localctl" -name bms-localctl
 
   local web_ref ws_ref postgres_ref redis_ref
-  web_ref=$(awk -F '\t' '$1 == "web" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
-  ws_ref=$(awk -F '\t' '$1 == "ws" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
-  postgres_ref=$(awk -F '\t' '$1 == "postgres" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
-  redis_ref=$(awk -F '\t' '$1 == "redis" {print $3}' "$PAYLOAD_ROOT/release-images.tsv")
+  web_ref=$(release_component_value web imageRef)
+  ws_ref=$(release_component_value ws imageRef)
+  postgres_ref=$(release_component_value postgres imageRef)
+  redis_ref=$(release_component_value redis imageRef)
   guest sudo sh -c '
     set -eu
     root=/var/lib/bms-retail-local
@@ -147,45 +454,33 @@ shell_export_line() {
 }
 
 select_business_archetype() {
-  local choice
+  local manifest choice index=0 default_id default_index=1 id label enabled deprecated
+  local -a ids=() labels=()
+  manifest=$(artifact_path shop-archetypes)
+  [[ -f $manifest ]] || die "signed release ขาด shop-archetypes component"
+  default_id=$(/usr/bin/plutil -extract defaultArchetype raw -o - "$manifest" 2>/dev/null || true)
+  while id=$(/usr/bin/plutil -extract "archetypes.$index.id" raw -o - "$manifest" 2>/dev/null); do
+    enabled=$(/usr/bin/plutil -extract "archetypes.$index.enabledForNewInstall" raw -o - "$manifest" 2>/dev/null || printf 'false')
+    deprecated=$(/usr/bin/plutil -extract "archetypes.$index.deprecated" raw -o - "$manifest" 2>/dev/null || printf 'false')
+    label=$(/usr/bin/plutil -extract "archetypes.$index.labels.th" raw -o - "$manifest" 2>/dev/null || \
+      /usr/bin/plutil -extract "archetypes.$index.labels.en" raw -o - "$manifest" 2>/dev/null || true)
+    if [[ $enabled == true && $deprecated != true && $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]]; then
+      ids+=("$id"); labels+=("$label")
+      [[ $id != "$default_id" ]] || default_index=${#ids[@]}
+    fi
+    index=$((index + 1))
+  done
+  ((${#ids[@]} > 0)) || die "shop-archetypes manifest ไม่มีประเภทร้านที่เปิดให้ติดตั้ง"
   while :; do
-    cat <<'EOF'
-
-ประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)
-  1) ร้านสะดวกซื้อ / ร้านขายของชำ
-  2) แฟชั่นและเสื้อผ้า
-  3) บ้านและเครื่องครัว
-  4) ความงามและของใช้ส่วนตัว
-  5) อาหารและเครื่องดื่มพร้อมขาย
-  6) อุปกรณ์ไอทีและแกดเจ็ต
-  7) ค้าส่ง / B2B
-  8) ของขวัญและสินค้าตามเทศกาล
-  9) ร้านยา
- 10) ร้านอุปกรณ์สัตว์เลี้ยง
- 11) ร้านวัสดุก่อสร้าง
- 12) ร้านอาหาร / ระบบครัว
- 13) คาเฟ่บอร์ดเกม
- 14) ร้านประเภทอื่น
-EOF
-    read -r -p 'เลือกประเภทร้าน 1-14: ' choice
-    case "$choice" in
-      1) BUSINESS_ARCHETYPE=mini_mart ;;
-      2) BUSINESS_ARCHETYPE=fashion ;;
-      3) BUSINESS_ARCHETYPE=home_kitchen ;;
-      4) BUSINESS_ARCHETYPE=beauty_personal_care ;;
-      5) BUSINESS_ARCHETYPE=food_beverage ;;
-      6) BUSINESS_ARCHETYPE=gadgets_accessories ;;
-      7) BUSINESS_ARCHETYPE=b2b_wholesale ;;
-      8) BUSINESS_ARCHETYPE=gifts_seasonal ;;
-      9) BUSINESS_ARCHETYPE=pharmacy ;;
-      10) BUSINESS_ARCHETYPE=pet_supply ;;
-      11) BUSINESS_ARCHETYPE=building_materials ;;
-      12) BUSINESS_ARCHETYPE=restaurant ;;
-      13) BUSINESS_ARCHETYPE=board_game_cafe ;;
-      14) BUSINESS_ARCHETYPE=other ;;
-      *) printf 'กรุณาเลือกหมายเลข 1-14\n' >&2; continue ;;
-    esac
-    break
+    printf '\nประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)\n'
+    for index in "${!labels[@]}"; do printf ' %2d) %s\n' "$((index + 1))" "${labels[$index]}"; done
+    read -r -p "เลือกประเภทร้าน [$default_index]: " choice
+    choice=${choice:-$default_index}
+    if [[ $choice =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#ids[@]})); then
+      BUSINESS_ARCHETYPE=${ids[$((choice - 1))]}
+      return
+    fi
+    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#ids[@]}" >&2
   done
 }
 
@@ -230,9 +525,16 @@ collect_shop_details() {
 run_sample_data() {
   # This helper is called under `set -e`; skipping optional sample data is a successful path.
   # A bare `[[ ... ]] || return` would return status 1 and abort setup after provisioning.
-  if [[ $PROVISION_SAMPLE_STATUS != PENDING ]]; then
-    return 0
-  fi
+  case "$PROVISION_SAMPLE_STATUS" in
+    PENDING) ;;
+    COMPLETED|ALREADY_COMPLETED) return 0 ;;
+    *)
+      if [[ $SAMPLE_MODE != STARTER_CATALOG ]]; then
+        return 0
+      fi
+      printf '[คำเตือน] ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่อ่านได้ กำลังลองสร้างตามตัวเลือกของผู้ใช้\n' >&2
+      ;;
+  esac
   # provision-result.json is already mode 0600 inside the private VM and contains the one-time
   # token. From this point a sample-data interruption is retryable and cannot lose pairing.
   guest sudo sh -c '
@@ -251,11 +553,19 @@ run_sample_data() {
     install -m 0600 "$json" "$root/sample-result.json"
   ' bms-runtime
 
-  local result_file
+  local result_file completed_steps
   result_file="$STATE_ROOT/.sample-result-$(random_suffix).json"
   umask 077
   guest sudo cat /var/lib/bms-retail-local/sample-result.json >"$result_file" 2>/dev/null || true
   PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract status raw -o - "$result_file" 2>/dev/null || printf 'FAILED')
+  if [[ $PROVISION_SAMPLE_STATUS =~ ^(COMPLETED|ALREADY_COMPLETED)$ ]]; then
+    completed_steps=$(/usr/bin/plutil -extract completedSteps json -o - "$result_file" 2>/dev/null || true)
+    if [[ $completed_steps != *'"products"'* ]] || \
+       [[ $BUSINESS_ARCHETYPE == restaurant && $completed_steps != *'"restaurant_layout"'* ]]; then
+      PROVISION_SAMPLE_STATUS=FAILED
+      printf '[คำเตือน] ผลสร้างข้อมูลตัวอย่างไม่ครบตามประเภทร้าน กรุณาลองใหม่จากหน้าเริ่มต้นใช้งาน\n' >&2
+    fi
+  fi
   rm -f -- "$result_file"
 }
 
@@ -268,6 +578,10 @@ provision_shop() {
     guest sudo cat /var/lib/bms-retail-local/provision-result.json >"$checkpoint_file" 2>/dev/null || true
     PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$checkpoint_file" 2>/dev/null || true)
     PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$checkpoint_file" 2>/dev/null || true)
+    SAMPLE_MODE=$(/usr/bin/plutil -extract sampleData.mode raw -o - "$checkpoint_file" 2>/dev/null || printf 'NONE')
+    BUSINESS_ARCHETYPE=$(/usr/bin/plutil -extract businessArchetype raw -o - "$checkpoint_file" 2>/dev/null || true)
+    PROVISION_TENANT_ID=$(/usr/bin/plutil -extract tenantId raw -o - "$checkpoint_file" 2>/dev/null || true)
+    PROVISION_POS_DEVICE_ID=$(/usr/bin/plutil -extract deviceId raw -o - "$checkpoint_file" 2>/dev/null || true)
     rm -f -- "$checkpoint_file"
     run_sample_data
     case "$PROVISION_SAMPLE_STATUS" in
@@ -308,6 +622,13 @@ EOF
   printf '%s\n' "$provision_result" | grep -E '^\{"status"' | tail -n 1 >"$result_file"
   PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null || true)
   PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$result_file" 2>/dev/null || true)
+  local reported_sample_mode reported_archetype
+  reported_sample_mode=$(/usr/bin/plutil -extract sampleData.mode raw -o - "$result_file" 2>/dev/null || true)
+  reported_archetype=$(/usr/bin/plutil -extract businessArchetype raw -o - "$result_file" 2>/dev/null || true)
+  [[ ! $reported_sample_mode =~ ^(NONE|STARTER_CATALOG)$ ]] || SAMPLE_MODE=$reported_sample_mode
+  [[ -z $reported_archetype ]] || BUSINESS_ARCHETYPE=$reported_archetype
+  PROVISION_TENANT_ID=$(/usr/bin/plutil -extract tenantId raw -o - "$result_file" 2>/dev/null || true)
+  PROVISION_POS_DEVICE_ID=$(/usr/bin/plutil -extract deviceId raw -o - "$result_file" 2>/dev/null || true)
   rm -f -- "$result_file"
   [[ -z $PROVISION_DEVICE_TOKEN || $PROVISION_DEVICE_TOKEN =~ ^pos_[A-Za-z0-9_-]{16,}$ ]] || \
     die "ผลลัพธ์ pairing token ไม่ถูกต้อง"
@@ -321,9 +642,11 @@ EOF
 }
 
 launch_pos_desktop() {
-  [[ $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) == server-pos ]] || return
+  if [[ $INSTALL_MODE == offline && $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) != server-pos ]]; then
+    return
+  fi
   local pos_app="/Applications/BMS POS.app"
-  [[ -d $pos_app ]] || die "แพ็กเกจ Server + POS ไม่มี BMS POS.app"
+  [[ -d $pos_app ]] || die "ติดตั้ง POS Desktop จาก signed release ไม่สำเร็จ"
   if [[ -n $PROVISION_DEVICE_TOKEN ]]; then
     local expires_at handoff
     expires_at=$(date -v+10M -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -338,17 +661,90 @@ launch_pos_desktop() {
   fi
 }
 
+install_pos_desktop() {
+  [[ $INSTALL_MODE == online ]] || return
+  local archive temporary app entry
+  archive=$(artifact_path desktop)
+  temporary="$STATE_ROOT/desktop-install.partial"
+  rm -rf -- "$temporary"
+  mkdir -p "$temporary"
+  while IFS= read -r entry; do
+    [[ -n $entry && $entry != /* && $entry != ../* && $entry != */../* ]] || \
+      die "desktop archive มี path ที่ไม่ปลอดภัย"
+  done < <(/usr/bin/zipinfo -1 "$archive")
+  /usr/bin/ditto -x -k "$archive" "$temporary"
+  app="$temporary/BMS POS.app"
+  [[ -x $app/Contents/MacOS/BMS\ POS && -f $app/Contents/Info.plist ]] || \
+    die "desktop component ไม่มี BMS POS.app ที่สมบูรณ์"
+  note "ติดตั้ง BMS POS ใน Applications (macOS อาจถามรหัสผ่านผู้ดูแลเครื่อง)"
+  sudo /usr/bin/ditto "$app" "/Applications/BMS POS.app"
+  sudo chown -R root:wheel "/Applications/BMS POS.app"
+  sudo chmod -R go-w "/Applications/BMS POS.app"
+  rm -rf -- "$temporary"
+}
+
 write_receipt() {
-  local version source_commit platform_target now
-  version=$(cat "$PAYLOAD_ROOT/VERSION")
-  source_commit=$(cat "$PAYLOAD_ROOT/SOURCE_COMMIT")
-  platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
+  local version source_commit platform_target schema_version now
+  if [[ $INSTALL_MODE == online ]]; then
+    version=$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")
+    source_commit=$(/usr/bin/plutil -extract sourceCommit raw -o - "$RELEASE_JSON")
+    platform_target=$(/usr/bin/plutil -extract platformTarget raw -o - "$RELEASE_JSON")
+    schema_version=$(/usr/bin/plutil -extract schemaVersion raw -o - "$RELEASE_JSON")
+  else
+    version=$(cat "$PAYLOAD_ROOT/VERSION")
+    source_commit=$(cat "$PAYLOAD_ROOT/SOURCE_COMMIT")
+    platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
+    schema_version=""
+  fi
   now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
-  guest sudo sh -c 'printf "%s\n" "$1" > /var/lib/bms-retail-local/installation.json; chmod 0600 /var/lib/bms-retail-local/installation.json' \
-    bms-runtime "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"$platform_target\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:3100\"}"
   umask 077
-  printf '%s\n' "{\"product\":\"BMS Retail Local\",\"version\":\"$version\",\"platformTarget\":\"$platform_target\",\"installedAt\":\"$now\",\"sourceCommit\":\"$source_commit\",\"url\":\"http://127.0.0.1:$WEB_PORT\"}" >"$RECEIPT.tmp"
+  /usr/bin/plutil -create xml1 "$RECEIPT.tmp"
+  /usr/bin/plutil -insert product -string 'BMS Retail Local' "$RECEIPT.tmp"
+  /usr/bin/plutil -insert version -string "$version" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert platformTarget -string "$platform_target" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert installedAt -string "$now" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert updatedAt -string "$now" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert sourceCommit -string "$source_commit" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert url -string "http://127.0.0.1:$WEB_PORT" "$RECEIPT.tmp"
+  [[ -z $schema_version ]] || /usr/bin/plutil -insert schemaVersion -string "$schema_version" "$RECEIPT.tmp"
+  [[ -z $PROVISION_TENANT_ID ]] || /usr/bin/plutil -insert tenantId -string "$PROVISION_TENANT_ID" "$RECEIPT.tmp"
+  [[ -z $PROVISION_POS_DEVICE_ID ]] || /usr/bin/plutil -insert posDeviceId -string "$PROVISION_POS_DEVICE_ID" "$RECEIPT.tmp"
+  [[ -z $BUSINESS_ARCHETYPE ]] || /usr/bin/plutil -insert businessArchetype -string "$BUSINESS_ARCHETYPE" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert sampleMode -string "$SAMPLE_MODE" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert sampleStatus -string "${PROVISION_SAMPLE_STATUS:-SKIPPED}" "$RECEIPT.tmp"
+  [[ -z $LICENSE_ID ]] || /usr/bin/plutil -insert licenseCode -string "$LICENSE_ID" "$RECEIPT.tmp"
+  /usr/bin/plutil -convert json "$RECEIPT.tmp"
+  chmod 0600 "$RECEIPT.tmp"
+  "$AGENT" runtime-write -engine macos-lima -distro "$INSTANCE" -source "$RECEIPT.tmp" \
+    -destination /var/lib/bms-retail-local/installation.json -mode 0600
   mv -f "$RECEIPT.tmp" "$RECEIPT"
+}
+
+record_license_evidence() {
+  [[ -n $LICENSE_ID ]] || return 0
+  local version platform_target output
+  if [[ $INSTALL_MODE == online ]]; then
+    version=$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")
+    platform_target=$(/usr/bin/plutil -extract platformTarget raw -o - "$RELEASE_JSON")
+  else
+    version=$(cat "$PAYLOAD_ROOT/VERSION")
+    platform_target=$(cat "$PAYLOAD_ROOT/PLATFORM_TARGET")
+  fi
+  local -a arguments=(license-record -root "$STATE_ROOT" -event INSTALLATION_REGISTERED
+    -license-id "$LICENSE_ID" -target "$platform_target" -release-version "$version")
+  [[ -z $PROVISION_TENANT_ID ]] || arguments+=(-tenant-id "$PROVISION_TENANT_ID")
+  [[ -z $PROVISION_POS_DEVICE_ID ]] || arguments+=(-pos-device-id "$PROVISION_POS_DEVICE_ID")
+  [[ -z $LICENSE_EVIDENCE_ENDPOINT ]] || arguments+=(-endpoint "$LICENSE_EVIDENCE_ENDPOINT")
+  if ! output=$(BMS_LICENSE_EVIDENCE_TOKEN="$LICENSE_EVIDENCE_TOKEN" "$AGENT" "${arguments[@]}" 2>&1); then
+    printf '[คำเตือน] เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$output" >&2
+    return 0
+  fi
+  rm -f -- "$STATE_ROOT/activation.json"
+}
+
+pulse_license_evidence() {
+  [[ -d $STATE_ROOT/license-evidence ]] || return 0
+  "$AGENT" license-pulse -root "$STATE_ROOT" >/dev/null 2>&1 || true
 }
 
 render_launch_agent() {
@@ -384,7 +780,7 @@ wait_for_http() {
 }
 
 ensure_runtime() {
-  [[ -f $RECEIPT ]] || die "ยัง setup ไม่เสร็จ"
+  load_installed_release
   require_installed_payload
   if http_ready; then
     note "Retail Local ทำงานอยู่แล้ว"
@@ -400,6 +796,7 @@ ensure_runtime() {
   fi
   wait_for_http
   note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
+  pulse_license_evidence
 }
 
 wait_for_guest_doctor() {
@@ -415,12 +812,23 @@ wait_for_guest_doctor() {
 }
 
 setup_runtime() {
-  require_installed_payload
+  require_bootstrap
   [[ ! -f $RECEIPT ]] || die "ติดตั้งเรียบร้อยแล้ว ใช้คำสั่ง status หรือ doctor แทน"
+  require_matching_mac_architecture
+  mkdir -p "$STATE_ROOT"
+  chmod 0700 "$STATE_ROOT"
   step 1 "ตรวจสอบ macOS, CPU, RAM, Virtualization และพื้นที่ว่าง"
   "$AGENT" preflight --human || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วเปิด BMS Retail Local อีกครั้ง"
-  step 2 "ตรวจสอบไฟล์ติดตั้ง"
-  verify_payload
+  activate_license
+  if [[ $INSTALL_MODE == online ]]; then
+    step 2 "ดาวน์โหลดและตรวจสอบ signed release"
+    stage_signed_release
+    extract_runtime
+  else
+    step 2 "ตรวจสอบไฟล์ Offline Recovery Installer"
+    verify_embedded_payload
+  fi
+  require_installed_payload
   render_lima_config
   step 3 "เตรียม private runtime"
   start_setup_vm
@@ -437,7 +845,9 @@ setup_runtime() {
   guest sudo /usr/local/bin/bms-localctl start
   wait_for_http
   wait_for_guest_doctor
+  install_pos_desktop
   write_receipt
+  record_license_evidence
   if [[ ${BMS_RETAIL_LOCAL_TEST_MODE:-0} != 1 ]]; then
     "$LIMACTL" stop "$INSTANCE"
     install_launch_agent
@@ -454,13 +864,14 @@ start_runtime() {
 }
 
 stop_runtime() {
+  [[ ! -f $RECEIPT ]] || load_installed_release
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
   if [[ $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE"; fi
   note "หยุด Retail Local แล้ว"
 }
 
 uninstall_runtime() {
-  local erase_data=false confirmation=""
+  local erase_data=false confirmation="" remove_pos=true
   while (($#)); do
     case "$1" in
       --erase-data) erase_data=true; shift ;;
@@ -471,6 +882,11 @@ uninstall_runtime() {
 
   if [[ ${EUID:-$(id -u)} -eq 0 && -z ${BMS_RETAIL_LOCAL_ALLOW_ROOT_UNINSTALL:-} ]]; then
     die "อย่ารัน uninstall ด้วย sudo โดยตรง เพราะข้อมูลร้านอยู่ใต้ user ที่ setup ให้รันแบบ user ปกติ"
+  fi
+
+  [[ ! -f $RECEIPT ]] || load_installed_release
+  if [[ $INSTALL_MODE == offline && $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) != server-pos ]]; then
+    remove_pos=false
   fi
 
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
@@ -489,18 +905,15 @@ uninstall_runtime() {
   fi
   [[ $confirmation == ERASE-BMS-RETAIL-LOCAL ]] || die "ยกเลิกการลบข้อมูล"
 
+  if [[ -x $AGENT && -d $STATE_ROOT/license-evidence ]]; then
+    "$AGENT" license-pulse -root "$STATE_ROOT" -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
+  fi
   if [[ -x $LIMACTL ]]; then
     "$LIMACTL" delete -f "$INSTANCE" >/dev/null 2>&1 || true
   fi
-  local package_type pos_app_target=""
-  package_type=$(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true)
-  [[ $package_type != server-pos ]] || pos_app_target="/Applications/BMS POS.app"
   rm -rf -- "$STATE_ROOT" "$LIMA_HOME"
-  if [[ -n $pos_app_target ]]; then
-    sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app" "$pos_app_target"
-  else
-    sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
-  fi
+  sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
+  [[ $remove_pos != true ]] || sudo rm -rf -- "/Applications/BMS POS.app"
   sudo rm -f -- "/Applications/BMS Retail Local Uninstall.command"
   sudo rm -f -- /usr/local/bin/bms-retail-local
   sudo pkgutil --forget com.base2526.bms.retail-local >/dev/null 2>&1 || true
@@ -508,8 +921,13 @@ uninstall_runtime() {
 }
 
 show_status() {
+  load_installed_release
   require_installed_payload
-  printf 'Version: %s\n' "$(cat "$PAYLOAD_ROOT/VERSION")"
+  if [[ $INSTALL_MODE == online ]]; then
+    printf 'Version: %s\n' "$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")"
+  else
+    printf 'Version: %s\n' "$(cat "$PAYLOAD_ROOT/VERSION")"
+  fi
   printf 'Runtime: %s\n' "$(instance_status | sed 's/^$/Not created/')"
   if [[ $(instance_status) == Running ]]; then
     guest sudo /usr/local/bin/bms-localctl status
@@ -517,6 +935,8 @@ show_status() {
 }
 
 doctor() {
+  load_installed_release
+  require_installed_payload
   [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
   guest sudo /usr/local/bin/bms-localctl doctor
   curl --fail --silent --max-time 5 "http://127.0.0.1:$WEB_PORT/admin/login" >/dev/null
@@ -526,6 +946,8 @@ doctor() {
 
 backup_runtime() {
   local output=${1:-} recipient=${2:-}
+  load_installed_release
+  require_installed_payload
   [[ -n $output && $recipient =~ ^age1[0-9a-z]{58}$ ]] || \
     die "usage: bms-retail-local backup OUTPUT.age AGE_RECIPIENT"
   [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
@@ -545,6 +967,7 @@ backup_runtime() {
 
 host_service() {
   [[ -f $RECEIPT ]] || exit 0
+  load_installed_release
   require_installed_payload
   exec "$LIMACTL" start --foreground --tty=false --timeout 10m "$INSTANCE"
 }
@@ -560,6 +983,7 @@ case "${1:-}" in
   doctor) doctor ;;
   backup) shift; backup_runtime "$@" ;;
   logs)
+    load_installed_release
     tail -n 160 "$LOG_PATH" 2>/dev/null || true
     [[ $(instance_status) == Running ]] && guest sudo sh -c 'cd /var/lib/bms-retail-local && docker compose --env-file .env -f compose.yml logs --tail=160' || true
     ;;

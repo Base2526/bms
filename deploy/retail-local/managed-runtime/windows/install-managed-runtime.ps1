@@ -126,6 +126,20 @@ function Assert-NoLineBreak([string]$Name, [string]$Value) {
   if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
 }
 
+function Test-CompletedSampleData($SampleData, [string]$BusinessArchetype) {
+  if ($null -eq $SampleData -or
+      -not ($SampleData.PSObject.Properties.Name -contains "status") -or
+      -not ($SampleData.PSObject.Properties.Name -contains "completedSteps")) {
+    return $false
+  }
+  $status = [string]$SampleData.status
+  if ($status -notin @("COMPLETED", "ALREADY_COMPLETED")) { return $false }
+  $steps = @($SampleData.completedSteps | ForEach-Object { [string]$_ })
+  if ("products" -notin $steps) { return $false }
+  if ($BusinessArchetype -eq "restaurant" -and "restaurant_layout" -notin $steps) { return $false }
+  return $true
+}
+
 function Write-Step([int]$Number, [string]$Message) {
   Write-Host "`n[BMS $Number/7] $Message" -ForegroundColor Cyan
 }
@@ -578,7 +592,10 @@ if ($checkpointTest.ExitCode -eq 0) {
   if ($checkpointRead.ExitCode -ne 0) { throw "อ่าน checkpoint ของร้านไม่สำเร็จ" }
   $provisionResult = (($checkpointRead.Output -join [Environment]::NewLine) | ConvertFrom-Json)
   $businessArchetype = [string]$provisionResult.businessArchetype
-  $sampleMode = if ($provisionResult.sampleData.mode) { [string]$provisionResult.sampleData.mode } else { "NONE" }
+  $sampleMode = if (($provisionResult.PSObject.Properties.Name -contains "sampleData") -and
+      $null -ne $provisionResult.sampleData -and
+      ($provisionResult.sampleData.PSObject.Properties.Name -contains "mode") -and
+      $provisionResult.sampleData.mode) { [string]$provisionResult.sampleData.mode } else { "NONE" }
   Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
 } else {
   $shopName = Read-RequiredText "ชื่อร้าน"
@@ -638,22 +655,39 @@ $sampleStatus = "SKIPPED"
 if ($provisionResult.PSObject.Properties.Name -contains "sampleData" -and $null -ne $provisionResult.sampleData) {
   $sampleStatus = [string]$provisionResult.sampleData.status
 }
-if ($sampleStatus -eq "PENDING") {
+if ($sampleMode -eq "STARTER_CATALOG" -and $sampleStatus -notin @("COMPLETED", "ALREADY_COMPLETED")) {
   # The protected checkpoint already contains the one-time token. Sample generation is therefore
   # safe to retry after an interrupted setup without recreating the shop or losing pairing.
+  if ($sampleStatus -ne "PENDING") {
+    Write-Warning "ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่สำเร็จ กำลังลองสร้างตามตัวเลือกของผู้ใช้"
+  }
   try {
     $sampleOutput = Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f",
       "$runtimeData/compose.yml", "--profile", "setup", "run", "--rm", "sample-data")
     $sampleLine = $sampleOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
     if (-not $sampleLine) { throw "sample data process did not return a readable result" }
-    $provisionResult.sampleData = $sampleLine | ConvertFrom-Json
+    $parsedSampleData = $sampleLine | ConvertFrom-Json
+    if ($provisionResult.PSObject.Properties.Name -contains "sampleData") {
+      $provisionResult.sampleData = $parsedSampleData
+    } else {
+      $provisionResult | Add-Member -NotePropertyName sampleData -NotePropertyValue $parsedSampleData
+    }
+    if (($provisionResult.sampleData.status -in @("COMPLETED", "ALREADY_COMPLETED")) -and
+        -not (Test-CompletedSampleData $provisionResult.sampleData $businessArchetype)) {
+      throw "sample data result is incomplete"
+    }
     $provisionResult.sampleData | Add-Member -NotePropertyName mode -NotePropertyValue $sampleMode -Force
   } catch {
-    $provisionResult.sampleData = [pscustomobject]@{
+    $failedSampleData = [pscustomobject]@{
       status = "FAILED"
       requested = $true
       mode = $sampleMode
       message = "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน"
+    }
+    if ($provisionResult.PSObject.Properties.Name -contains "sampleData") {
+      $provisionResult.sampleData = $failedSampleData
+    } else {
+      $provisionResult | Add-Member -NotePropertyName sampleData -NotePropertyValue $failedSampleData
     }
   }
   $sampleStatus = [string]$provisionResult.sampleData.status
@@ -750,8 +784,8 @@ if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
   adminUserId = $provisionResult.adminUserId
   posDeviceId = $provisionResult.deviceId
   businessArchetype = $provisionResult.businessArchetype
-  sampleMode = $provisionResult.sampleData.mode
-  sampleStatus = $provisionResult.sampleData.status
+  sampleMode = $sampleMode
+  sampleStatus = $sampleStatus
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `

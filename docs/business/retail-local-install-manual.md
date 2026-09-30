@@ -9,14 +9,14 @@
 | ต้องการติดตั้ง | Windows | Ubuntu Linux | macOS |
 | --- | --- | --- | --- |
 | เครื่องหลักของร้าน รวม Server + POS | `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-POS-<version>-arm64.pkg` หรือ `...-x64.pkg` |
-| เครื่อง Server อย่างเดียว | `BMS-Retail-Local-Server-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-<version>-arm64.pkg` หรือ `...-x64.pkg` |
-| เครื่อง POS เพิ่มเติม | `BMS-Retail-Local-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-POS-<version>-arm64.dmg` หรือ `BMS-POS-<version>-x64.dmg` |
+| เครื่อง Server อย่างเดียว | ติดต่อ Support สำหรับ recovery package | ติดต่อ Support สำหรับ recovery package | ติดต่อ Support สำหรับ offline recovery package |
+| เครื่อง POS เพิ่มเติม | `BMS-Retail-Local-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` หรือ `...-macos-x64.dmg` |
 
 คำแนะนำทั่วไป:
 
 - ร้านที่มีคอมเครื่องเดียวให้ใช้ไฟล์ `Server-POS`
 - ร้านที่มีเครื่อง Server แยก และมีเครื่องแคชเชียร์หลายเครื่อง ให้ติดตั้ง `Server` ที่เครื่องหลักก่อน แล้วติดตั้ง `POS` บนเครื่องแคชเชียร์เพิ่มเติม
-- macOS full Server เลือกไฟล์ตาม CPU: Apple Silicon ใช้ `arm64`, Intel Mac ใช้ `x64`
+- macOS Server+POS online bootstrap เลือกไฟล์ตาม CPU: Apple Silicon ใช้ `arm64`, Intel Mac ใช้ `x64`
 - macOS POS อย่างเดียวมีทั้ง Apple Silicon (`arm64`) และ Intel (`x64`)
 - ห้ามติดตั้ง Server ซ้ำหลายเครื่องสำหรับร้านเดียวกัน ถ้าต้องย้ายเครื่องให้ติดต่อ Support เพื่อทำขั้นตอน transfer/restore
 
@@ -31,8 +31,8 @@
 ตัวอย่างชื่อไฟล์ macOS Intel รุ่น `0.2.12`:
 
 - เครื่องหลักรวม Server + POS: `BMS-Retail-Local-Server-POS-0.2.12-x64.pkg`
-- เครื่อง Server อย่างเดียว: `BMS-Retail-Local-Server-0.2.12-x64.pkg`
-- เครื่อง POS อย่างเดียว: `BMS-POS-0.2.12-x64.dmg`
+- เครื่อง Server อย่างเดียวแบบ offline recovery: ติดต่อ Support
+- เครื่อง POS อย่างเดียว: `BMS-Retail-Local-POS-0.2.12-macos-x64.dmg`
 
 ## 2. สิ่งที่ต้องเตรียมก่อนติดตั้ง
 
@@ -161,9 +161,9 @@ sudo bms-retail-local-backup-status
 
 ## 5. ติดตั้งบน macOS
 
-macOS มี 2 แบบ:
+macOS มี 2 แบบสำหรับลูกค้าทั่วไป:
 
-- Retail Local Server หรือ Server+POS: ใช้ `.pkg` และเลือก `arm64` สำหรับ Apple Silicon หรือ `x64` สำหรับ Intel Mac บน macOS 15 ขึ้นไป
+- Retail Local Server+POS: ใช้ online bootstrap `.pkg` และเลือก `arm64` สำหรับ Apple Silicon หรือ `x64` สำหรับ Intel Mac บน macOS 15 ขึ้นไป
 - POS Desktop อย่างเดียว: ใช้ `.dmg` และเลือก `arm64` สำหรับ Apple Silicon หรือ `x64` สำหรับ Intel Mac
 
 เลือกไฟล์ macOS ให้ถูก:
@@ -171,10 +171,10 @@ macOS มี 2 แบบ:
 | เครื่อง | Apple Silicon | Intel Mac |
 | --- | --- | --- |
 | Server + POS | `BMS-Retail-Local-Server-POS-<version>-arm64.pkg` | `BMS-Retail-Local-Server-POS-<version>-x64.pkg` |
-| Server อย่างเดียว | `BMS-Retail-Local-Server-<version>-arm64.pkg` | `BMS-Retail-Local-Server-<version>-x64.pkg` |
-| POS อย่างเดียว | `BMS-POS-<version>-arm64.dmg` | `BMS-POS-<version>-x64.dmg` |
+| Server อย่างเดียว | ติดต่อ Support (offline recovery เท่านั้น) | ติดต่อ Support (offline recovery เท่านั้น) |
+| POS อย่างเดียว | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` | `BMS-Retail-Local-POS-<version>-macos-x64.dmg` |
 
-### macOS Server หรือ Server+POS
+### macOS Server+POS online bootstrap
 
 1. ดาวน์โหลดไฟล์ `.pkg` ที่ได้รับจาก BMS
 2. ดับเบิลคลิกไฟล์ `.pkg`
@@ -196,15 +196,14 @@ xattr -dr com.apple.quarantine ~/Downloads/BMS-Retail-Local-Server-POS-0.2.12-x6
 open ~/Downloads/BMS-Retail-Local-Server-POS-0.2.12-x64.pkg
 ```
 
-ถ้าเครื่อง Intel เป็น Server อย่างเดียว ให้เปลี่ยนชื่อไฟล์เป็น `BMS-Retail-Local-Server-0.2.12-x64.pkg`
-
-8. ทำตามหน้าจอ Installer
+8. ตรวจว่าอินเทอร์เน็ตใช้งานได้ แล้วทำตามหน้าจอ Installer ตัว `.pkg` มีเฉพาะโปรแกรมติดตั้งขนาดเล็ก ไม่มี Ubuntu, Docker engine, service image หรือ POS ฝังอยู่
 9. หลังติดตั้งเสร็จ ระบบจะพยายามเปิด `/Applications/BMS Retail Local.app` ให้อัตโนมัติ และเปิด Terminal สำหรับ setup
 10. ถ้า Terminal ไม่เด้งขึ้นมา ให้เปิด `/Applications/BMS Retail Local.app` เอง
-11. รอระบบเริ่ม runtime, migrate database และ health check
-12. Setup จะแสดงขั้นตอน `[BMS 1/7]` ถึง `[BMS 7/7]` และแสดงค่า RAM/พื้นที่ว่างจริงเมื่อ preflight ไม่ผ่าน
-13. ตั้งค่าร้านครั้งแรก เลือกประเภทร้าน เลือกว่าจะสร้างข้อมูลตัวอย่างตามประเภทร้านหรือไม่ และยืนยันรหัสผ่าน/PIN ซ้ำ
-14. ถ้าเป็น package แบบ `Server-POS` ระบบจะเปิดและ pair BMS POS ให้อัตโนมัติ
+11. ถ้าระบบถาม Activation Code ให้กรอกรหัสจาก BMS; ถ้ายังไม่มีให้เว้นว่างและติดตั้งต่อได้ การตรวจ Licensing ไม่หยุดการทำงานของร้าน
+12. อย่าปิดอินเทอร์เน็ตระหว่างครั้งแรก ระบบจะดาวน์โหลด component แบบต่อจากจุดเดิมได้และตรวจ publisher signature กับ SHA-256 ทุกไฟล์ก่อนเริ่ม runtime จากนั้นจึง migrate database และ health check
+13. Setup จะแสดงขั้นตอน `[BMS 1/7]` ถึง `[BMS 7/7]` และแสดงค่า RAM/พื้นที่ว่างจริงเมื่อ preflight ไม่ผ่าน
+14. ตั้งค่าร้านครั้งแรก เลือกประเภทร้าน เลือกว่าจะสร้างข้อมูลตัวอย่างตามประเภทร้านหรือไม่ และยืนยันรหัสผ่าน/PIN ซ้ำ
+15. เมื่อระบบพร้อม จะติดตั้ง เปิด และ pair BMS POS ให้อัตโนมัติ หลัง setup สำเร็จ การขายหน้าร้านใน local runtime ไม่ได้บังคับให้ต่ออินเทอร์เน็ตตลอดเวลา
 
 คำสั่งที่ใช้บ่อยบน macOS:
 
@@ -242,9 +241,14 @@ bms-retail-local uninstall --erase-data --confirm ERASE-BMS-RETAIL-LOCAL
 
 ### macOS POS Desktop อย่างเดียว
 
+ไฟล์ `.dmg` รุ่น Online เป็นตัวติดตั้งขนาดเล็กและไม่ฝัง Electron/BMS POS ตัวเต็มไว้ในไฟล์
+จึงต้องต่ออินเทอร์เน็ตตอนติดตั้งครั้งแรก ตัว Setup จะตรวจ signed release manifest และ SHA-256
+แล้วดาวน์โหลดเฉพาะ POS ที่ตรงกับ Apple Silicon หรือ Intel ก่อนติดตั้งลง `/Applications/BMS POS.app`
+หากเน็ตหลุดให้เปิด Setup ซ้ำ ระบบจะ resume ไฟล์ที่ดาวน์โหลดไว้
+
 1. เลือกไฟล์ให้ตรงกับเครื่อง:
-   - Apple Silicon: `BMS-POS-<version>-arm64.dmg`
-   - Intel Mac: `BMS-POS-<version>-x64.dmg` เช่น `BMS-POS-0.2.12-x64.dmg`
+   - Apple Silicon: `BMS-Retail-Local-POS-<version>-macos-arm64.dmg`
+   - Intel Mac: `BMS-Retail-Local-POS-<version>-macos-x64.dmg` เช่น `BMS-Retail-Local-POS-0.2.12-macos-x64.dmg`
 2. เปิดไฟล์ `.dmg`
 3. ลาก `BMS POS.app` ไปที่ `Applications`
 4. เปิด `BMS POS.app`

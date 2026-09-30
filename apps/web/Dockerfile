@@ -78,6 +78,9 @@ FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app/apps/web
 
+ARG BMS_SOURCE_COMMIT=unknown
+LABEL org.opencontainers.image.revision=$BMS_SOURCE_COMMIT
+
 ENV NODE_ENV=production
 
 COPY --from=builder /app/apps/web ./

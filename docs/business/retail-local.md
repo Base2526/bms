@@ -3,13 +3,13 @@
 Commercial self-install development is tracked separately in
 [Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
 WSL2/Moby, Ubuntu systemd/Moby, and macOS Apple Virtualization Framework/Lima delivery layer. The
-macOS Apple Silicon and Intel full installers are internal technical pilots whose clean-machine evidence,
+macOS Apple Silicon and Intel online bootstraps are internal technical pilots whose clean-machine evidence,
 signing, notarization, update, and recovery gates are still open; none of these
 paths replaces the self-contained technical pilot package until its install, update, backup,
 restore, and failure-mode gates have evidence.
 
 `BMS Retail Local` is a deployment profile of the existing BMS codebase, not a second POS, database
-model, or settlement engine. The technical pilot runs one shop on one Windows host. Electron or a
+model, or settlement engine. The technical pilot runs one shop on one supported host. Electron or a
 browser connects to `http://127.0.0.1:3100`; the same Web/API services remain authoritative for
 price, stock, permission, payment, tax documents, and audit.
 
@@ -43,7 +43,7 @@ configuration. Local deployment is not a promise that those external services wo
 
 ## Build installers
 
-The default Windows/Ubuntu release build is the small online bootstrap. First install requires
+The default Windows/Ubuntu/macOS release build is the small online bootstrap. First install requires
 internet access; signed release components are downloaded progressively, resumed after interruption,
 and verified before use. The bootstrap never contains application images, a database, shop secrets,
 or a private release key. Build it with the external public keyring and the platform-specific signed
@@ -56,7 +56,7 @@ POS client option, and Linux 32-bit is unsupported by Electron/runtime dependenc
 The self-contained image bundle below is the explicit offline recovery/technical-pilot path, not the
 default upload artifact. On a development machine at the repository root:
 
-For the Windows + Linux online workflow, explicit offline fallback, macOS workflow, POS version
+For the Windows, Linux and macOS online workflow, explicit offline fallback, POS version
 update instructions, checksums, and architecture policy, see
 [`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
 
@@ -106,8 +106,15 @@ Archetype is committed in the same transaction as the shop. The installer writes
 provisioning checkpoint containing the one-time pairing result before it starts optional sample
 data. Seeding then runs in a separate process through `createOnboardingSampleData()`, so products
 match the selected archetype and a seed crash or power loss cannot strand the new register without
-its token. If optional seeding fails, the usable shop is preserved and the operator can resume the
-seed safely from Getting Started.
+its token. The macOS, Windows, and Linux installers retry a requested Starter Catalog when the
+provisioning status is missing or incomplete, and accept restaurant completion only when the result
+contains both the product step and `restaurant_layout`; the installation receipt records the actual
+sample status. If optional seeding fails, the usable shop is preserved and the operator can resume
+the seed safely from Getting Started. The database-backed
+`retail-local-onboarding-all-archetypes-db-contract` walks this same installer entry point for every
+enabled archetype, verifies the matching 12-product/photo catalog and sales surface, verifies the
+restaurant's two zones and eight tables, then replays the seed and requires all row counts to remain
+unchanged.
 
 The generated `.env.local` contains encryption/signing keys. It is ACL-restricted by the installer,
 git-ignored, and must never be emailed or committed.
@@ -156,20 +163,34 @@ Restore is intentionally explicit and destructive to the current local database:
 The existing storage directory is moved aside with a timestamp before the restored archive is
 expanded. Do not delete that retained directory until the restored store has been reconciled.
 
-## macOS full installer
+## macOS online bootstrap
 
-Build an architecture-specific internal full-server package on a development Mac:
+The normal customer `.pkg` is architecture-specific and contains only the native agent, trusted
+public keyring, manifest URL, controller, and setup UI. Build it on a development Mac after publishing
+the matching signed release:
 
 ```bash
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture arm64
-deploy/retail-local/managed-runtime/macos/build-pkg.sh --version 0.4.0-internal.1 --architecture x64
+deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
+  --version 0.4.0-internal.1 --architecture arm64 \
+  --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
+  --keyring /secure/bms-release/trusted-release-keys.json
+
+deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
+  --version 0.4.0-internal.1 --architecture arm64 \
+  --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
+  --keyring /secure/bms-release/trusted-release-keys.json
 ```
 
-The resulting architecture-specific package contains the pinned Ubuntu VM image, Lima runtime,
-private Moby engine, Compose, age, and matching BMS service images. The target Mac needs macOS 15 or
-newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need Docker Desktop,
-Homebrew, Node.js, or the source repository. This package is intentionally large because it carries
-the server payload instead of downloading it after install.
+The first Setup requires internet and progressively downloads the pinned Ubuntu VM image, Lima,
+private Moby/Compose/age runtime, BMS service images, archetype contract, and matching BMS POS app.
+Downloads resume after interruption; the signed manifest, byte sizes, SHA-256 hashes and OCI image
+IDs are verified before execution. The target Mac needs macOS 15 or newer, matching Apple Silicon or
+Intel architecture, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need
+Docker Desktop, Homebrew, Node.js, or the source repository.
+
+The POS-only `.dmg` uses the same trust chain but downloads only `desktop.artifact`. It intentionally
+does not embed Electron, so it stays a few megabytes while still verifying the signed manifest,
+target architecture, byte size and SHA-256 before installing `/Applications/BMS POS.app`.
 
 After installing the `.pkg`, the operator opens `Applications/BMS Retail Local.app`, enters
 the first shop/admin details, and waits for migration, provisioning, and health checks. Runtime data
@@ -178,12 +199,13 @@ only immutable runtime/payload bytes. The launchd agent starts the private VM fo
 login. Operational commands are `bms-retail-local status`, `doctor`, `start`, `stop`, `logs`, and
 `backup OUTPUT.age AGE_RECIPIENT`.
 
-For a `server-pos` install, the operator then opens `BMS POS` and selects
-**เปิดระบบหลังบ้านบนเครื่องนี้**. Desktop starts the trusted local runtime if necessary and opens the
-POS-device administration page in the system browser (through login when required). The operator
-creates a pairing link there, returns to BMS POS, and pastes it into the first-run form. No localhost
-URL needs to be memorized; a cashier using an off-machine server keeps the normal explicit server URL
-and pairing-token flow.
+The signed Desktop component is installed after the server passes health checks. Setup hands the
+one-time `POS-01` credential to BMS POS automatically, so the operator does not need to paste a local
+URL or pairing token. Later launches can still use **เปิดระบบหลังบ้านบนเครื่องนี้** to start or open
+the trusted local runtime.
+
+`build-pkg.sh` remains an explicit, large full-offline recovery builder. It is not the default
+customer artifact and must be selected only for an approved no-internet installation.
 
 ## Migration authority
 
