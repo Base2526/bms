@@ -101,3 +101,22 @@ test("flow diagram draws no dashed strokes", async () => {
   const tsx = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.tsx", import.meta.url), "utf8");
   assert.equal(/stroke-dasharray|strokeDasharray|\bdashed\b/.test(css + tsx), false, "dashed stroke found");
 });
+
+test("detail panel can stick: the flow section clips instead of becoming a scroll container", async () => {
+  const { readFileSync } = await import("node:fs");
+  const css = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.module.css", import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+  const rule = (selector: string) => {
+    const start = css.search(new RegExp(`^\\${selector} \\{`, "m"));
+    assert.ok(start >= 0, `${selector} rule not found`);
+    return css.slice(start, css.indexOf("}", start));
+  };
+  // overflow: hidden on the section made it the panel's sticky scroll
+  // container, so the panel scrolled off-screen with the diagram.
+  const root = rule(".flowRoot");
+  const overflows = [...root.matchAll(/overflow:\s*([a-z]+)/g)].map((m) => m[1]);
+  assert.equal(overflows.at(-1), "clip", "the last overflow declaration on .flowRoot must be clip");
+  const panel = rule(".detailPanel");
+  assert.match(panel, /position:\s*sticky/);
+  assert.match(panel, /top:\s*\d+px/);
+});

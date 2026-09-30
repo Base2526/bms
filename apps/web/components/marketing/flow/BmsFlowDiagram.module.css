@@ -15,7 +15,12 @@
   color: var(--flow-ink);
   display: grid;
   gap: 22px;
+  /* clip, not hidden: hidden makes this section a scroll container, which
+     captures the detail panel's position: sticky and lets it scroll away with
+     the diagram. clip still trims the rounded corners without doing that.
+     hidden stays first as the fallback for browsers without clip (Safari < 16). */
   overflow: hidden;
+  overflow: clip;
   padding: 34px;
   scroll-margin-top: 96px;
 }
