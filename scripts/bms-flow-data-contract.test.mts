@@ -61,3 +61,24 @@ test("node links point only at verified public routes", () => {
   for (const node of flowNodes) if (node.href) assert.ok(routes.has(node.href), node.href);
 });
 
+
+test("flow section header names the product once, inside the hub", async () => {
+  const { readFileSync } = await import("node:fs");
+  const source = readFileSync(new URL("../apps/web/components/marketing/flow/BmsFlowDiagram.tsx", import.meta.url), "utf8");
+  const start = source.indexOf("styles.flowHeader");
+  assert.ok(start > 0, "flow header not found");
+  const header = source.slice(start, source.indexOf("</div>", start));
+  assert.ok(header.length > 0, "flow header slice is empty");
+  // The eyebrow used to spell out "BUSINESS MANAGEMENT SYSTEM" right above a
+  // heading that said "BMS" again, with the hub naming it a third time.
+  assert.equal(/BUSINESS MANAGEMENT SYSTEM/.test(header), false, "eyebrow must not spell the product name");
+  assert.equal(header.includes('t("bmsFlow.title")'), false, "heading must not repeat the product name");
+  assert.ok(header.includes('t("bmsFlow.eyebrow")'), "eyebrow must come from i18n");
+  assert.ok(header.includes('t("bmsFlow.subtitle")'), "heading must state the outcome");
+  for (const key of ["bmsFlow.eyebrow", "bmsFlow.subtitle"]) {
+    assert.notEqual(getMessage("th", key), key, `missing Thai key ${key}`);
+    assert.notEqual(getMessage("en", key), key, `missing English key ${key}`);
+    assert.equal(/BMS/.test(getMessage("th", key)), false, `${key} (th) repeats BMS`);
+    assert.equal(/BMS/.test(getMessage("en", key)), false, `${key} (en) repeats BMS`);
+  }
+});

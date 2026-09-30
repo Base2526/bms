@@ -33,18 +33,24 @@
 }
 
 .flowHeader {
-  align-items: flex-start;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
 }
 
 .flowHeader h2 {
   color: var(--flow-ink);
-  font-size: clamp(28px, 4vw, 46px);
+  font-size: clamp(28px, 4vw, 44px);
   line-height: 1.2;
-  margin: 5px 0 6px;
+  margin: 0;
+  text-wrap: balance;
 }
+
+.headingPhrase { white-space: nowrap; }
+
+/* Thai glyphs need extra vertical room for stacked vowels and tone marks. */
+:global(html[lang="th"]) .flowHeader h2 { line-height: 1.45; }
 
 .flowHeader p {
   color: var(--flow-muted);
@@ -58,15 +64,6 @@
   letter-spacing: .14em;
 }
 
-.updatedChip {
-  background: var(--flow-surface);
-  border: 1px solid var(--flow-line);
-  border-radius: 999px;
-  color: var(--flow-muted);
-  flex: 0 0 auto;
-  font-size: 12px;
-  padding: 8px 14px;
-}
 
 .scenarioBar {
   display: flex;
@@ -75,6 +72,12 @@
   padding: 2px;
   scrollbar-width: thin;
 }
+
+/* Centre the chips without clipping the first one when the row overflows:
+   justify-content: center pushes overflow past the left edge, where it cannot
+   be scrolled to. Auto margins collapse to zero once the row is full. */
+.scenarioBar > :first-child { margin-inline-start: auto; }
+.scenarioBar > :last-child { margin-inline-end: auto; }
 
 .scenarioBar button,
 .playerBar button {
@@ -313,6 +316,8 @@
 .scenarioCaption strong { flex: 1 1 360px; }
 .scenarioCaption em { background: #fef3c7; border-radius: 999px; color: #713f12; font-size: 11px; font-style: normal; padding: 5px 9px; }
 
+.compactFooter { display: grid; gap: 8px; justify-items: center; }
+.compactFooter small { color: var(--flow-muted); font-size: 12px; }
 .detailedCta { align-items: center; background: var(--flow-primary); border-radius: 999px; color: #fff; display: inline-flex; font-weight: 800; justify-self: center; min-height: 46px; padding: 9px 20px; }
 .detailedCta:hover { color: #fff; filter: brightness(1.08); }
 :global(html.dark) .detailedCta { color: #08101f; }
@@ -345,8 +350,6 @@
 
 @media (max-width: 991px) {
   .flowRoot { border-left: 0; border-radius: 0; border-right: 0; padding: 28px 18px; }
-  .flowHeader { flex-direction: column; }
-  .updatedChip { align-self: flex-start; }
   .desktopDiagram { display: none; }
   .diagramWithDetail,
   .diagramWithDetail.hasDetail { display: block; }

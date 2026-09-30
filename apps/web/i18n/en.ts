@@ -5899,6 +5899,7 @@ const en = {
   },
   bmsFlow: {
     title: "How BMS works",
+    eyebrow: "HOW IT WORKS",
     subtitle: "Every chat, sale, and stock movement in one system",
     intro: "Choose a shop type to follow a real workflow, then select any point for details.",
     all: "All",
