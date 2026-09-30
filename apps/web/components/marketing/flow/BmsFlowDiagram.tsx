@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/lib/i18nContext";
 import { flowEdges, flowNodes, flowScenarios, FLOW_STATUS_UPDATED_AT } from "./flowData";
@@ -229,11 +229,22 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
   })
     .format(new Date(`${FLOW_STATUS_UPDATED_AT}T12:00:00Z`));
 
+  // On /how-it-works this header is the page's own title, so it is the h1 there.
+  const Heading = variant === "full" ? "h1" : "h2";
+
   return (
     <section className={`${styles.flowRoot} ${styles[variant]}`} id="workflow">
       <div className={styles.flowHeader}>
-        <div><span className={styles.eyebrow}>BUSINESS MANAGEMENT SYSTEM</span><h2>{t("bmsFlow.title")}</h2><p>{t("bmsFlow.intro")}</p></div>
-        <span className={styles.updatedChip}>{t("bmsFlow.supplements.updated", { date: formattedDate })}</span>
+        {/* The product name appears once, inside the hub. The eyebrow and the
+            heading say what the reader gets instead of naming BMS again. */}
+        <span className={styles.eyebrow}>{t("bmsFlow.eyebrow")}</span>
+        {/* Thai has no spaces between words, so the browser may break inside
+            one ("สต็ / อก"). Each space-separated phrase is kept whole. */}
+        <Heading>{t("bmsFlow.subtitle").split(" ").map((phrase, index) => (
+          // The space stays outside the nowrap span so it remains a break point.
+          <Fragment key={index}>{index > 0 ? " " : null}<span className={styles.headingPhrase}>{phrase}</span></Fragment>
+        ))}</Heading>
+        <p>{t("bmsFlow.intro")}</p>
       </div>
 
       <div aria-label={t("bmsFlow.title")} className={styles.scenarioBar} role="group">
@@ -318,7 +329,12 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
         </div>
       )}
 
-      {variant === "compact" ? <Link className={styles.detailedCta} href="/how-it-works">{t("bmsFlow.detailedCta")}</Link> : (
+      {variant === "compact" ? (
+        <div className={styles.compactFooter}>
+          <Link className={styles.detailedCta} href="/how-it-works">{t("bmsFlow.detailedCta")}</Link>
+          <small>{t("bmsFlow.supplements.updated", { date: formattedDate })}</small>
+        </div>
+      ) : (
         <div className={styles.fullExtras}>
           <div className={styles.extraCards}>
             <article className={styles.localCard}><div><h3>{t("bmsFlow.supplements.localTitle")} <span>PILOT</span></h3><p>{t("bmsFlow.supplements.localBody")}</p></div><Link href="/retail-local">{t("bmsFlow.learnMore")} →</Link></article>

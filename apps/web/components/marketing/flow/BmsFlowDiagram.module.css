@@ -15,7 +15,12 @@
   color: var(--flow-ink);
   display: grid;
   gap: 22px;
+  /* clip, not hidden: hidden makes this section a scroll container, which
+     captures the detail panel's position: sticky and lets it scroll away with
+     the diagram. clip still trims the rounded corners without doing that.
+     hidden stays first as the fallback for browsers without clip (Safari < 16). */
   overflow: hidden;
+  overflow: clip;
   padding: 34px;
   scroll-margin-top: 96px;
 }
@@ -33,18 +38,25 @@
 }
 
 .flowHeader {
-  align-items: flex-start;
-  display: flex;
-  gap: 24px;
-  justify-content: space-between;
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
 }
 
-.flowHeader h2 {
+.flowHeader :is(h1, h2) {
   color: var(--flow-ink);
-  font-size: clamp(28px, 4vw, 46px);
+  font-size: clamp(28px, 4vw, 44px);
   line-height: 1.2;
-  margin: 5px 0 6px;
+  margin: 0;
+  text-wrap: balance;
 }
+
+.headingPhrase { white-space: nowrap; }
+
+/* Thai glyphs need extra vertical room for stacked vowels and tone marks. */
+:global(html[lang="th"]) .flowHeader :is(h1, h2) { line-height: 1.45; }
+.full .flowHeader h1 { font-size: clamp(32px, 4.6vw, 52px); }
 
 .flowHeader p {
   color: var(--flow-muted);
@@ -58,15 +70,6 @@
   letter-spacing: .14em;
 }
 
-.updatedChip {
-  background: var(--flow-surface);
-  border: 1px solid var(--flow-line);
-  border-radius: 999px;
-  color: var(--flow-muted);
-  flex: 0 0 auto;
-  font-size: 12px;
-  padding: 8px 14px;
-}
 
 .scenarioBar {
   display: flex;
@@ -75,6 +78,12 @@
   padding: 2px;
   scrollbar-width: thin;
 }
+
+/* Centre the chips without clipping the first one when the row overflows:
+   justify-content: center pushes overflow past the left edge, where it cannot
+   be scrolled to. Auto margins collapse to zero once the row is full. */
+.scenarioBar > :first-child { margin-inline-start: auto; }
+.scenarioBar > :last-child { margin-inline-end: auto; }
 
 .scenarioBar button,
 .playerBar button {
@@ -192,7 +201,7 @@
 
 .svgEdges marker path,
 .flowSvg marker path { fill: #9cafcb; }
-.svgEdges .loopEdge { opacity: .82; stroke: var(--flow-retention); stroke-dasharray: 5 9; }
+.svgEdges .loopEdge { opacity: .82; stroke: var(--flow-retention); }
 .svgEdges .edgeActive { opacity: 1; stroke: var(--flow-primary); stroke-width: 3; }
 .svgEdges .edgeDimmed { opacity: .25; }
 .scenarioDot { fill: var(--flow-retention); filter: drop-shadow(0 0 5px var(--flow-retention)); }
@@ -243,7 +252,7 @@
 :global(html.dark) .svgShort { fill: #08101f; }
 :global(html.dark) .svgNode > svg { color: #08101f; }
 
-.svgHubHalo { fill: none; stroke: var(--flow-line); stroke-dasharray: 4 8; stroke-width: 2; }
+.svgHubHalo { fill: none; stroke: var(--flow-line); stroke-width: 1.5; }
 .svgHub { stroke: color-mix(in srgb, var(--flow-primary) 35%, transparent); stroke-width: 4; }
 .svgHubTitle { fill: #fff; font-size: 38px; font-weight: 800; }
 .svgHubShort { fill: #fff; font-size: 15px; font-weight: 700; }
@@ -313,6 +322,8 @@
 .scenarioCaption strong { flex: 1 1 360px; }
 .scenarioCaption em { background: #fef3c7; border-radius: 999px; color: #713f12; font-size: 11px; font-style: normal; padding: 5px 9px; }
 
+.compactFooter { display: grid; gap: 8px; justify-items: center; }
+.compactFooter small { color: var(--flow-muted); font-size: 12px; }
 .detailedCta { align-items: center; background: var(--flow-primary); border-radius: 999px; color: #fff; display: inline-flex; font-weight: 800; justify-self: center; min-height: 46px; padding: 9px 20px; }
 .detailedCta:hover { color: #fff; filter: brightness(1.08); }
 :global(html.dark) .detailedCta { color: #08101f; }
@@ -321,7 +332,7 @@
 .extraCards { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .localCard,
 .connectingCard { background: var(--flow-surface); border: 1px solid var(--flow-line); border-radius: 20px; display: grid; gap: 10px; padding: 22px; }
-.localCard { border: 2px dashed var(--flow-pos); }
+.localCard { border-color: color-mix(in srgb, var(--flow-pos) 45%, transparent); }
 .localCard h3,
 .connectingCard h3 { color: var(--flow-ink); margin: 0; }
 .localCard h3 span { background: #fef3c7; border: 1px solid #eab308; border-radius: 999px; color: #854d0e; font-size: 9px; margin-left: 6px; padding: 3px 7px; }
@@ -345,8 +356,6 @@
 
 @media (max-width: 991px) {
   .flowRoot { border-left: 0; border-radius: 0; border-right: 0; padding: 28px 18px; }
-  .flowHeader { flex-direction: column; }
-  .updatedChip { align-self: flex-start; }
   .desktopDiagram { display: none; }
   .diagramWithDetail,
   .diagramWithDetail.hasDetail { display: block; }
@@ -383,7 +392,7 @@
 
 @media (max-width: 520px) {
   .flowRoot { gap: 18px; padding-left: 14px; padding-right: 14px; }
-  .flowHeader h2 { font-size: 30px; }
+  .flowHeader :is(h1, h2) { font-size: 30px; }
   .mobileModuleGrid { grid-template-columns: 1fr; }
   .scenarioCaption { align-items: flex-start; flex-direction: column; }
 }
