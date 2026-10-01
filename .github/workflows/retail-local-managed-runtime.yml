@@ -21,6 +21,9 @@ on:
       - "docker-compose.prod.yml"
       - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
+      - "scripts/retail-local-bootstrap-behavior.test.mjs"
+      - "scripts/retail-local-uninstall-container.test.sh"
+      - ".gitattributes"
       - "scripts/retail-local-license-*.test.mts"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
@@ -57,7 +60,7 @@ jobs:
       - name: Test and cross-build native agent
         working-directory: apps/retail-local-agent
         run: |
-          go test ./...
+          go test -race ./...
           go vet ./...
           GOOS=linux GOARCH=amd64 go build -o /tmp/bms-runtime-agent .
           GOOS=windows GOARCH=amd64 go build -o /tmp/bms-runtime-agent.exe .
@@ -87,7 +90,7 @@ jobs:
           node scripts/run-contract-tests.mjs db retail-local-license-db-contract
       - name: Validate shell and release contracts
         run: |
-          bash -n deploy/retail-local/managed-runtime/linux/*.sh
+          for script in deploy/retail-local/managed-runtime/linux/*.sh; do bash -n "$script"; done
           bash -n deploy/retail-local/managed-runtime/linux/bms-retail-local-update
           bash -n deploy/retail-local/pos-online/linux/build-deb.sh
           bash -n deploy/retail-local/pos-online/linux/bms-pos-online-setup
@@ -106,6 +109,7 @@ jobs:
           node --check deploy/retail-local/managed-runtime/verify-release.mjs
           node --check deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+          node --test scripts/retail-local-bootstrap-behavior.test.mjs
           scripts/retail-local-update-transaction.test.sh
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
@@ -154,6 +158,13 @@ jobs:
             echo 'POS online bootstrap contains application payload' >&2
             exit 1
           fi
+      - name: Uninstall preserves shop data even when service stop hangs
+        run: |
+          dpkg-deb --control "$RUNNER_TEMP/bms-package/"*.deb "$RUNNER_TEMP/bms-package/extracted/DEBIAN"
+          docker run --rm \
+            --mount "type=bind,source=$PWD,target=/workspace,readonly" \
+            --mount "type=bind,source=$RUNNER_TEMP/bms-package/extracted,target=/package,readonly" \
+            ubuntu:24.04 bash /workspace/scripts/retail-local-uninstall-container.test.sh
 
   windows-bootstrap:
     runs-on: windows-2022
@@ -241,6 +252,10 @@ jobs:
             $artifact = Get-Item "$output\*.exe"
             if ($artifact.Length -gt 25MB) { throw "POS online bootstrap exceeds 25 MiB: $($artifact.FullName)" }
           }
+      - name: Execute setup failure and cancellation tests
+        env:
+          BMS_INNO_COMPILER: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+        run: node --test scripts/retail-local-bootstrap-behavior.test.mjs
 
   macos-bootstrap:
     runs-on: macos-latest
@@ -257,13 +272,15 @@ jobs:
       - name: Test agent and validate macOS scripts
         run: |
           (cd apps/retail-local-agent && go test ./... && go vet ./...)
-          bash -n deploy/retail-local/managed-runtime/macos/*.sh
-          bash -n deploy/retail-local/managed-runtime/macos/*.command
+          for script in deploy/retail-local/managed-runtime/macos/*.sh deploy/retail-local/managed-runtime/macos/*.command; do
+            bash -n "$script"
+          done
           bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local
           bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local-app
           bash -n deploy/retail-local/managed-runtime/macos/bms-pos-online-app
           bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local-setup.command
           bash -n deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command
+          node --test scripts/retail-local-bootstrap-behavior.test.mjs
       - name: Generate CI-only public release keyring
         run: |
           mkdir -p "$RUNNER_TEMP/bms-signing" "$RUNNER_TEMP/bms-macos-package"

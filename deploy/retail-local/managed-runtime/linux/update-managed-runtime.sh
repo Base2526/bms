@@ -76,7 +76,9 @@ target=$(jq -er '.platformTarget' "$RUNTIME_ROOT/installation.json")
 old_desktop="$RUNTIME_ROOT/releases/$current_version/desktop.artifact"
 [[ -f $old_desktop ]] || die "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
 manifest_path="$RUNTIME_ROOT/release/update-release.jws.json"
-curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path.tmp" "$manifest_uri"
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+  --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+  --retry 2 --retry-max-time 180 --output "$manifest_path.tmp" "$manifest_uri"
 chmod 0600 "$manifest_path.tmp"
 mv -f "$manifest_path.tmp" "$manifest_path"
 

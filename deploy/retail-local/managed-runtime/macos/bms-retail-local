@@ -294,13 +294,13 @@ render_stage_output() {
     printf '%s\n' "$line" >>"$1"
     if [[ $line == 'BMS_PROGRESS '* ]]; then
       payload=${line#BMS_PROGRESS }
-      phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null || true)
-      component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null || printf 'release')
-      percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null || printf '0')
-      completed=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentCompletedBytes raw -o - - 2>/dev/null || printf '0')
-      total=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentTotalBytes raw -o - - 2>/dev/null || printf '0')
-      heartbeat=$(printf '%s' "$payload" | /usr/bin/plutil -extract heartbeat raw -o - - 2>/dev/null || printf 'false')
-      retry_after=$(printf '%s' "$payload" | /usr/bin/plutil -extract retryAfterSeconds raw -o - - 2>/dev/null || printf '0')
+      phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null) || phase=''
+      component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null) || component='release'
+      percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null) || percent='0'
+      completed=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentCompletedBytes raw -o - - 2>/dev/null) || completed='0'
+      total=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentTotalBytes raw -o - - 2>/dev/null) || total='0'
+      heartbeat=$(printf '%s' "$payload" | /usr/bin/plutil -extract heartbeat raw -o - - 2>/dev/null) || heartbeat='false'
+      retry_after=$(printf '%s' "$payload" | /usr/bin/plutil -extract retryAfterSeconds raw -o - - 2>/dev/null) || retry_after='0'
       progress_size="$((completed / 1048576))/$((total / 1048576)) MiB"
       [[ $heartbeat != true ]] || progress_size="$progress_size; ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
       case "$phase" in
@@ -336,7 +336,8 @@ stage_signed_release() {
   manifest_path="$manifest_dir/release.jws.json"
   note "การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
   if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
-      --connect-timeout 20 --retry 3 --output "$manifest_path.part" "$manifest_uri"; then
+      --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+      --retry 2 --retry-max-time 180 --output "$manifest_path.part" "$manifest_uri"; then
     die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
   fi
   chmod 0600 "$manifest_path.part"

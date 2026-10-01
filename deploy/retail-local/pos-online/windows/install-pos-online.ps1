@@ -3,11 +3,22 @@ param(
   [Parameter(Mandatory = $true)][string]$ManifestUri,
   [Parameter(Mandatory = $true)][string]$PlatformTarget,
   [Parameter(Mandatory = $true)][string]$AgentPath,
-  [Parameter(Mandatory = $true)][string]$KeyringPath
+  [Parameter(Mandatory = $true)][string]$KeyringPath,
+  [string]$ErrorFile
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+$utf8 = [Text.UTF8Encoding]::new($false)
+[Console]::OutputEncoding = $utf8
+$global:OutputEncoding = $utf8
+trap {
+  if (-not [string]::IsNullOrWhiteSpace($ErrorFile)) {
+    [IO.File]::WriteAllText($ErrorFile, $_.Exception.Message, $utf8)
+  }
+  Write-Host $_.Exception.Message -ForegroundColor Red
+  exit 1
+}
 
 function Assert-HttpsUri([string]$Value) {
   $parsed = $null
@@ -37,7 +48,7 @@ Write-Host "BMS POS Online Setup"
 Write-Host "An internet connection is required for the first installation."
 Write-Host "Downloading the signed release manifest..."
 try {
-  Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.part" -UseBasicParsing
+  Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.part" -UseBasicParsing -TimeoutSec 60
   Move-Item -LiteralPath "$manifestPath.part" -Destination $manifestPath -Force
 } catch {
   throw "Cannot download the signed release manifest. Check the internet connection and try again: $($_.Exception.Message)"

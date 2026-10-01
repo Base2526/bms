@@ -197,7 +197,9 @@ install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
-curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+  --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+  --retry 2 --retry-max-time 180 --output "$manifest_path" "$manifest_uri"
 chmod 0600 "$manifest_path"
 stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)

@@ -230,7 +230,7 @@ if (-not (Test-Path -LiteralPath $oldDesktop -PathType Leaf)) {
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "update-release.jws.json"
-Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing
+Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing -TimeoutSec 60
 Move-Item -LiteralPath "$manifestPath.tmp" -Destination $manifestPath -Force
 
 $verifyCommand = if ($CheckOnly) { "check-update" } else { "verify-update" }

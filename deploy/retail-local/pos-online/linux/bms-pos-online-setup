@@ -20,7 +20,8 @@ platform_target=$(tr -d '\r\n' <"$PLATFORM_TARGET_FILE")
 install -d -m 0700 "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
 printf 'BMS POS Online Setup\nAn internet connection is required for the first installation.\n'
-curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --connect-timeout 20 --retry 3 \
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --connect-timeout 20 \
+  --max-time 60 --speed-limit 1 --speed-time 20 --retry 2 --retry-max-time 180 \
   --output "$manifest_path.part" "$manifest_uri" || die "cannot download the signed release manifest"
 chmod 0600 "$manifest_path.part"
 mv -f "$manifest_path.part" "$manifest_path"

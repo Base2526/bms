@@ -132,7 +132,7 @@ begin
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(ErrorText))
+      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(UTF8Decode(ErrorText)))
     else
       RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
   end;

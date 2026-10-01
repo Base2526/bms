@@ -112,6 +112,7 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 	}
 
 	client := &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 20 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
@@ -210,6 +211,19 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 			return statErr
 		}
 		offset = info.Size()
+		// The last byte can arrive before a connection stalls while waiting for EOF.
+		// Verify it locally rather than requesting an impossible bytes=<size>- range.
+		if offset == component.SizeBytes {
+			digest, size, hashErr := fileSHA256(partial)
+			if hashErr == nil && size == component.SizeBytes && digest == component.SHA256 {
+				downloadComplete = true
+				break
+			}
+			if err := file.Truncate(0); err != nil {
+				return err
+			}
+			offset = 0
+		}
 		if offset < 0 || offset > component.SizeBytes {
 			if err := file.Truncate(0); err != nil {
 				return err

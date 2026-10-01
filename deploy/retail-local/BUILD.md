@@ -148,6 +148,18 @@ clean-machine, update/rollback, backup/restore และ hardware acceptance gat
 payload ฝังอยู่ การติดตั้งครั้งแรกจึงต้องต่ออินเทอร์เน็ตเพื่อดาวน์โหลด signed manifest และ payload
 ที่ตรงกับ OS/CPU แบบ resume ได้
 
+The native CI jobs also execute `scripts/retail-local-bootstrap-behavior.test.mjs`: Windows POS
+must return failure when its child setup fails or is cancelled, and macOS progress must handle
+events without optional fields. Linux runs data-preserving uninstall in a disposable container
+with a deliberately stuck service. Manifest requests have a 60-second request limit; Unix
+installers additionally stop a stalled response and retry within a bounded window. Payload
+downloads retain their separate idle timeout so a large download can continue while bytes arrive.
+
+These are controlled failure tests, not evidence that a production signed release has completed
+first-run provisioning on every supported machine. CI smoke artifacts use test endpoints and
+must never be uploaded as customer installers. Existing published pilot files are not rebuilt
+by this workflow.
+
 CI นี้เป็น package-level gate ไม่แทน clean-machine acceptance ก่อนส่งลูกค้า รุ่นที่จะปล่อยจริงยังต้อง
 ติดตั้งและอัปเดตบนเครื่องจริงตามรายการใน `docs/business/retail-local-ga-readiness.md`; macOS ยังเป็น
 technical pilot จนกว่าจะลง Developer ID, notarize และผ่าน Gatekeeper บน Apple Silicon/Intel

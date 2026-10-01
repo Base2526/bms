@@ -1,5 +1,9 @@
 *.sh text eol=lf
 *.command text eol=lf
+deploy/retail-local/managed-runtime/linux/bms-* text eol=lf
+deploy/retail-local/pos-online/linux/bms-* text eol=lf
+deploy/retail-local/managed-runtime/macos/bms-* text eol=lf
+deploy/retail-local/managed-runtime/macos/postinstall* text eol=lf
 deploy/retail-local/managed-runtime/macos/bms-retail-local text eol=lf
 deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl text eol=lf
 deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction text eol=lf

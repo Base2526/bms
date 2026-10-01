@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -155,6 +156,84 @@ func TestSafeInstallRootRejectsFilesystemRoot(t *testing.T) {
 	root, err := safeInstallRoot(filepath.Join(t.TempDir(), "bms"))
 	if err != nil || root == "" {
 		t.Fatalf("safe root rejected: %v", err)
+	}
+}
+
+func TestDownloadCompleteBodyWithoutEOFDoesNotRequestPastEnd(t *testing.T) {
+	content := []byte("complete signed payload")
+	var requests atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		if r.Header.Get("Range") != "" {
+			w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+			return
+		}
+		w.Write(content)
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	previous := downloadIdleTimeout
+	downloadIdleTimeout = 75 * time.Millisecond
+	t.Cleanup(func() { downloadIdleTimeout = previous })
+	sum := sha256.Sum256(content)
+	component := releaseComponent{Name: "desktop", URL: server.URL,
+		SHA256: hex.EncodeToString(sum[:]), SizeBytes: int64(len(content))}
+	destination := filepath.Join(t.TempDir(), "desktop.artifact")
+	if err := downloadComponent(context.Background(), server.Client(), component, destination, 0, component.SizeBytes); err != nil {
+		t.Fatal(err)
+	}
+	if requests.Load() != 1 {
+		t.Fatalf("requested past a complete, verified body: %d requests", requests.Load())
+	}
+	actual, err := os.ReadFile(destination)
+	if err != nil || string(actual) != string(content) {
+		t.Fatalf("wrong installed bytes: %q, %v", actual, err)
+	}
+}
+
+func TestDownloadCancellationPreservesPartialAndCanResume(t *testing.T) {
+	content := []byte(strings.Repeat("resume", 1024))
+	var requests atomic.Int32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			w.Write(content[:128])
+			w.(http.Flusher).Flush()
+			<-r.Context().Done()
+			return
+		}
+		// A server ignoring Range must restart at zero without duplicating bytes.
+		w.Write(content)
+	}))
+	defer server.Close()
+	sum := sha256.Sum256(content)
+	component := releaseComponent{Name: "desktop", URL: server.URL,
+		SHA256: hex.EncodeToString(sum[:]), SizeBytes: int64(len(content))}
+	destination := filepath.Join(t.TempDir(), "desktop.artifact")
+	err := downloadComponent(ctx, server.Client(), component, destination, 0, component.SizeBytes,
+		func(event progressEvent) {
+			if event.Phase == "download" && event.ComponentCompletedBytes >= 128 {
+				cancel()
+			}
+		})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected cancellation, got %v", err)
+	}
+	partial, err := os.ReadFile(destination + ".part")
+	if err != nil || string(partial) != string(content[:128]) {
+		t.Fatalf("lost resumable bytes: %d, %v", len(partial), err)
+	}
+	if _, err := os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatal("cancelled download was promoted")
+	}
+	if err := downloadComponent(context.Background(), server.Client(), component, destination, 0, component.SizeBytes); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(destination)
+	if err != nil || string(actual) != string(content) {
+		t.Fatalf("restart corrupted the payload: %v", err)
 	}
 }
 

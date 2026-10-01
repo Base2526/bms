@@ -541,7 +541,7 @@ New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "release.jws.json"
 Write-Step 3 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
 try {
-  Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing
+  Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing -TimeoutSec 60
 } catch {
   throw "ดาวน์โหลด signed release manifest ไม่สำเร็จจาก $ManifestUri : $($_.Exception.Message)"
 }

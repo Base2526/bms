@@ -43,7 +43,34 @@ Source: "{#BuildRoot}\bms-runtime-agent.exe"; DestDir: "{tmp}\bms-pos-bootstrap"
 Source: "{#BuildRoot}\trusted-release-keys.json"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 Source: "{#BuildRoot}\install-pos-online.ps1"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 
-[Run]
-Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{tmp}\bms-pos-bootstrap\install-pos-online.ps1"" -ManifestUri ""{#ManifestUri}"" -PlatformTarget ""{#PlatformTarget}"" -AgentPath ""{tmp}\bms-pos-bootstrap\bms-runtime-agent.exe"" -KeyringPath ""{tmp}\bms-pos-bootstrap\trusted-release-keys.json"""; \
-  StatusMsg: "Downloading and verifying BMS POS..."; Flags: waituntilterminated
+[Code]
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+  Parameters, ErrorPath: String;
+  ErrorText: AnsiString;
+begin
+  if CurStep <> ssPostInstall then exit;
+  ErrorPath := ExpandConstant('{localappdata}\BMS\POSBootstrap\setup-error.txt');
+  ForceDirectories(ExtractFileDir(ErrorPath));
+  DeleteFile(ErrorPath);
+  Parameters := '-NoProfile -ExecutionPolicy Bypass -File ' +
+    AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\install-pos-online.ps1')) +
+    ' -ManifestUri ' + AddQuotes('{#ManifestUri}') +
+    ' -PlatformTarget ' + AddQuotes('{#PlatformTarget}') +
+    ' -AgentPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\bms-runtime-agent.exe')) +
+    ' -KeyringPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\trusted-release-keys.json')) +
+    ' -ErrorFile ' + AddQuotes(ErrorPath);
+  WizardForm.StatusLabel.Caption := 'Downloading and verifying BMS POS...';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
+    RaiseException('Could not start BMS POS setup.');
+  if ResultCode <> 0 then
+  begin
+    ErrorText := '';
+    if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
+      RaiseException('BMS POS setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
+    else
+      RaiseException('BMS POS setup did not complete. Run this installer again to resume.');
+  end;
+end;
