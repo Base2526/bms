@@ -128,6 +128,22 @@ runner is where executable permissions, desktop integration, dependencies, and l
 can be verified together. `.github/workflows/desktop-linux.yml` provides a manual build and uploads
 both packages as a 14-day workflow artifact; it deliberately does not publish or sign a release.
 
+The DEB must not rely on anything a minimal Debian/Ubuntu install lacks, because `apt` then reports
+success while the app cannot start or cannot be read:
+
+- `build.deb.depends` restates electron-builder's default Depends list (setting the key replaces it)
+  and adds `libasound2t64 | libasound2`. The Electron binary links `libasound.so.2`, the default list
+  omits it, and Ubuntu 24.04 renamed the package with the `t64` suffix.
+- The setup and startup pages ship IBM Plex Sans Thai (SIL OFL 1.1, `renderer/fonts/`) instead of
+  naming a font the OS may not have; without it every Thai glyph renders as an empty box. It is the
+  same face `/pos` self-hosts through `next/font`.
+
+`test/packaging.test.mjs` pins both rules. Verified 2026-10-01 on WSL Ubuntu 24.04 with no Thai
+font and no ALSA preinstalled: `apt` pulled `libasound2t64`, `ldd` reported no missing library,
+both pages loaded the bundled Thai faces, and install → remove → purge left no files behind.
+WSL does not run AppArmor, so the profile install/removal in the maintainer scripts is still
+unverified there.
+
 Linux release acceptance still needs a supported-distro matrix covering GNOME/KDE, Wayland/X11,
 CUPS receipt printing, keyboard-wedge scanners, a second customer display, suspend/reconnect, and
 keyring locked/unavailable states. AppImage/DEB packaging does not add offline tender or direct
