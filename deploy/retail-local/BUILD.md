@@ -167,6 +167,21 @@ diagnosis/restore rather than an automatic erase. Linux configures interrupted p
 before installing dependencies; unrecoverable package-manager errors still stop visibly. A complete
 Linux/macOS receipt takes a service/health recovery path instead of provisioning a second shop.
 
+Reopening the Windows installer with an existing receipt restores the runtime startup task and
+checks the signed manifest. The same version repairs the signed POS component and checks the
+existing server health without changing its schema, images, secrets, or shop receipt; a newer
+version still uses the backup-first update transaction. Downgrades remain rejected. Check-only
+never installs components, and a failed POS repair remains a setup failure. A missing registered
+WSL runtime is a diagnostic error, not permission to create a replacement shop over preserved data.
+Linux repeat setup reinstalls its runtime controls and service unit and re-enables startup, which
+uninstall had disabled. The macOS app launcher always enters the idempotent setup path so a receipt
+written before the final pairing/launch step cannot bypass recovery.
+
+Each update attempt creates a separate encrypted pre-update backup. Retrying a version after
+rollback or an interrupted backup no longer collides with the previous attempt's filename, and
+previous recovery backups are retained. The transaction regression suite verifies rollback,
+retry of that same version, successful commit, and preservation of the first backup.
+
 Provisioning is database-idempotent. If power is lost after its database commit but before the
 one-time POS token is checkpointed, the shop/admin remain intact; the operator may need to pair POS
 using the existing administrator account. Setup must never reset the owner's credentials to get

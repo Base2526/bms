@@ -127,8 +127,9 @@ case "${1:-}" in
       mv -f "$root/update-recovery.agekey.tmp" "$root/update-recovery.agekey"
     fi
     recipient=$(age-keygen -y "$root/update-recovery.agekey")
-    backup="$root/backups/pre-update-$version.age"
-    [ ! -e "$backup" ] || die "pre-update backup มีอยู่แล้ว"
+    # A rolled-back or interrupted attempt keeps its backup; a retry needs a fresh snapshot.
+    backup_directory=$(mktemp -d "$root/backups/pre-update-$version.XXXXXX")
+    backup="$backup_directory/backup.age"
     bms-localctl backup "$backup" --recipient "$recipient" >/dev/null
     age -d -i "$root/update-recovery.agekey" -o /dev/null "$backup" || die "ตรวจสอบ pre-update backup ไม่ผ่าน"
     printf '%s\n' "$backup" >"$directory/backup-path"

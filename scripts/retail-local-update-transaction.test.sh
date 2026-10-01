@@ -122,6 +122,19 @@ grep -Fqx old-compose "$runtime_root/compose.yml"
 test -f "$runtime_root/restore-called"
 test ! -e "$runtime_root/update-active"
 
+# Retry the same version after rollback without discarding the previous recovery snapshot.
+first_backup=$(cat "$runtime_root/updates/1.1.0/backup-path")
+printf 'previous snapshot\n' >"$first_backup"
+rm "$runtime_root/fail-migrate"
+PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" begin 1.1.0 0 \
+  bms/web:1.1.0 bms/ws:1.1.0 bms/postgres:1.1.0 bms/redis:1.1.0
+second_backup=$(cat "$runtime_root/updates/1.1.0/backup-path")
+test "$first_backup" != "$second_backup"
+grep -Fqx 'previous snapshot' "$first_backup"
+test -f "$second_backup"
+PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" commit 1.1.0
+grep -Fq '"version":"1.1.0"' "$runtime_root/installation.json"
+
 rm -rf -- "$runtime_root"
 mkdir -p "$runtime_root/updates/1.1.0" "$runtime_root/backups"
 write_old_runtime

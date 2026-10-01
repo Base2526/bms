@@ -3,12 +3,8 @@ set -u
 
 clear
 printf 'BMS Retail Local Server (macOS)\n\n'
-receipt="$HOME/Library/Application Support/BMS/RetailLocal/installation.json"
-if [[ -f $receipt ]]; then
-  /usr/local/bin/bms-retail-local start
-else
-  /usr/local/bin/bms-retail-local setup
-fi
+# Setup also completes pairing and health checks after a late installation interruption.
+/usr/local/bin/bms-retail-local setup
 exit_code=$?
 if (( exit_code == 0 )); then
   printf '\nเปิด BMS Retail Local ที่ http://127.0.0.1:3100\n'

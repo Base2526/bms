@@ -22,6 +22,7 @@ on:
       - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
       - "scripts/retail-local-bootstrap-behavior.test.mjs"
+      - "scripts/retail-local-update-transaction.test.sh"
       - "scripts/retail-local-uninstall-container.test.sh"
       - ".gitattributes"
       - "scripts/retail-local-license-*.test.mts"

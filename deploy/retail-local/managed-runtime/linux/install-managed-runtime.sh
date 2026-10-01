@@ -136,10 +136,21 @@ operator_uid_preflight=$(id -u "$SUDO_USER")
 manifest_uri=${1:-}
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
+localctl_source="$bundle_root/bms-localctl"
+[[ -f $localctl_source ]] || localctl_source="$bundle_root/../runtime-rootfs/bms-localctl"
+transaction_source="$bundle_root/bms-update-transaction"
+[[ -f $transaction_source ]] || transaction_source="$bundle_root/../runtime-rootfs/bms-update-transaction"
 if [[ -f $RUNTIME_ROOT/installation.json ]]; then
   jq -e '.version and .tenantId and .posDeviceId' "$RUNTIME_ROOT/installation.json" >/dev/null || \
     die "installation receipt อ่านไม่ได้; เก็บข้อมูลร้านไว้และติดต่อ Support ห้ามลบฐานข้อมูลหรือ .env"
-  systemctl start bms-retail-local.service
+  # Uninstall removes these controls and disables startup while keeping the receipt and data.
+  install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
+  install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
+  install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
+  systemctl daemon-reload
+  systemctl enable --now docker.service
+  systemctl enable --now "$SERVICE_NAME"
+  systemctl enable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
   for attempt in {1..60}; do
     if bms-localctl doctor; then
       printf 'BMS Retail Local ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้\n'
@@ -152,10 +163,6 @@ if [[ -f $RUNTIME_ROOT/installation.json ]]; then
 fi
 agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
-localctl_source="$bundle_root/bms-localctl"
-[[ -f $localctl_source ]] || localctl_source="$bundle_root/../runtime-rootfs/bms-localctl"
-transaction_source="$bundle_root/bms-update-transaction"
-[[ -f $transaction_source ]] || transaction_source="$bundle_root/../runtime-rootfs/bms-update-transaction"
 [[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || die "installer bundle ไม่มี agent/keyring/runtime controls"
 
 install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT" "$RUNTIME_ROOT" "$RUNTIME_ROOT/release"
