@@ -540,7 +540,7 @@ test("POS-only online bootstraps download one signed desktop component for suppo
   assert.match(linuxSetup, /stage-desktop/);
   assert.match(linuxSetup, /BMS_PROGRESS /);
   assert.match(linuxSetup, /heartbeat/);
-  assert.match(linuxSetup, /apt-get install -y/);
+  assert.match(linuxSetup, /dpkg --configure -a[\s\S]*apt-get -o DPkg::Lock::Timeout=60 install -y/);
   assert.match(linuxBuilder, /Architecture: amd64/);
   assert.match(builder, /keyringText -match 'PRIVATE KEY'/);
   for (const source of [windowsSetup, windowsIss, linuxSetup, linuxBuilder]) {
