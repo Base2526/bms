@@ -161,9 +161,35 @@ cat >"$package_root/DEBIAN/prerm" <<'EOF'
 #!/bin/sh
 set -e
 if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
-  systemctl disable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
-  systemctl disable --now bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
-  systemctl disable --now bms-retail-local.service >/dev/null 2>&1 || true
+  echo "[BMS Uninstall 1/3] ปิด startup, timer และงานเบื้องหลัง"
+  systemctl disable bms-retail-local.service >/dev/null 2>&1 || true
+  systemctl disable bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
+  systemctl disable bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
+  timeout 3s systemctl stop bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
+  timeout 3s systemctl stop bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
+  timeout 5s systemctl stop bms-retail-local-license-evidence.service >/dev/null 2>&1 || \
+    systemctl kill --kill-who=all bms-retail-local-license-evidence.service >/dev/null 2>&1 || true
+  timeout 5s systemctl stop bms-retail-local-offhost-backup.service >/dev/null 2>&1 || \
+    systemctl kill --kill-who=all bms-retail-local-offhost-backup.service >/dev/null 2>&1 || true
+
+  echo "[BMS Uninstall 2/3] บันทึกการถอนการติดตั้งและหยุดบริการ"
+  timeout 3s /opt/bms-retail-local/bms-runtime-agent license-pulse \
+    -root /var/lib/bms-retail-local -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
+  if ! timeout 10s systemctl stop bms-retail-local.service >/dev/null 2>&1; then
+    systemctl kill --kill-who=all bms-retail-local.service >/dev/null 2>&1 || true
+    if [ -f /var/lib/bms-retail-local/compose.yml ] && [ -f /var/lib/bms-retail-local/.env ]; then
+      timeout 5s docker compose --env-file /var/lib/bms-retail-local/.env \
+        -f /var/lib/bms-retail-local/compose.yml kill >/dev/null 2>&1 || true
+    fi
+  fi
+  systemctl reset-failed bms-retail-local.service >/dev/null 2>&1 || true
+  rm -f /etc/systemd/system/bms-retail-local.service \
+    /etc/systemd/system/bms-retail-local-license-evidence.service \
+    /etc/systemd/system/bms-retail-local-license-evidence.timer \
+    /etc/systemd/system/bms-retail-local-offhost-backup.service \
+    /etc/systemd/system/bms-retail-local-offhost-backup.timer
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  echo "[BMS Uninstall 3/3] ถอน bootstrap เสร็จแล้วและเก็บข้อมูลร้านไว้"
   echo "ถอน bootstrap แล้ว แต่ข้อมูลร้านและ secrets ยังอยู่ใน /var/lib/bms-retail-local เพื่อ recovery"
   echo "หากต้องการลบถาวร ให้ backup ก่อน แล้วรัน sudo bms-retail-local-uninstall --erase-data"
 fi

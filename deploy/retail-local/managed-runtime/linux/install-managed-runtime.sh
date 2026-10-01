@@ -15,6 +15,49 @@ artifact_path() {
   jq -er --arg name "$name" '.components[] | select(.name == $name) | .name' <<<"$release_json" >/dev/null
   printf '%s/%s.artifact' "$release_directory" "${name//./-}"
 }
+run_agent_json_progress() {
+  local agent_path=$1
+  shift
+  local output_file status
+  output_file=$(mktemp)
+  set +e
+  "$agent_path" "$@" 2>&1 | {
+    local line event phase component percent completed total heartbeat now_epoch
+    local last_percent=-1 last_print=0
+    while IFS= read -r line; do
+      if [[ $line == BMS_PROGRESS\ * ]]; then
+        event=${line#BMS_PROGRESS }
+        phase=$(jq -r '.phase // "working"' <<<"$event" 2>/dev/null) || continue
+        component=$(jq -r '.component // "release"' <<<"$event")
+        percent=$(jq -r '.percent // 0' <<<"$event")
+        completed=$(jq -r '.componentCompletedBytes // .completedBytes // 0' <<<"$event")
+        total=$(jq -r '.componentTotalBytes // .totalBytes // 0' <<<"$event")
+        heartbeat=$(jq -r '.heartbeat // false' <<<"$event")
+        now_epoch=$(date +%s)
+        if (( percent > last_percent || now_epoch - last_print >= 5 )) ||
+            [[ $phase == retry || $phase == verify || $phase == staged ]]; then
+          printf '  [%3d%%] %s %s - %d/%d MiB%s - %s\n' \
+            "$percent" "$phase" "$component" "$((completed / 1048576))" "$((total / 1048576))" \
+            "$([[ $heartbeat == true ]] && printf ' - ยังทำงานอยู่ รอข้อมูลจากเครือข่าย')" \
+            "$(date '+%H:%M:%S')" >&2
+          last_percent=$percent
+          last_print=$now_epoch
+        fi
+      else
+        printf '%s\n' "$line" >>"$output_file"
+      fi
+    done
+  }
+  status=${PIPESTATUS[0]}
+  set -e
+  if (( status != 0 )); then
+    cat "$output_file" >&2
+    rm -f -- "$output_file"
+    return "$status"
+  fi
+  cat "$output_file"
+  rm -f -- "$output_file"
+}
 shell_export() {
   local name=$1 value=$2 encoded
   encoded=$(printf '%s' "$value" | base64 -w 0)
@@ -31,7 +74,7 @@ choose_archetype() {
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
   ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
-  local labels=() values=() default_value default_index=1 row id label
+  local labels=() values=() default_value default_index=1 id label
   default_value=$(jq -r '.defaultArchetype' "$manifest")
   while IFS=$'\t' read -r id label; do
     [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
@@ -76,6 +119,13 @@ cleanup() {
   [[ -n ${provision_script:-} ]] && rm -f -- "$provision_script"
   [[ -n ${handoff_path:-} && ! -e ${handoff_path:-} ]] || true
 }
+write_runtime_text() {
+  local destination=$1 temporary
+  temporary=$(mktemp "$RUNTIME_ROOT/.setup-write.XXXXXX")
+  cat >"$temporary"
+  "$agent" runtime-write -engine linux-native -source "$temporary" -destination "$destination" -mode 0600
+  rm -f -- "$temporary"
+}
 trap cleanup EXIT
 
 require_root
@@ -86,7 +136,20 @@ operator_uid_preflight=$(id -u "$SUDO_USER")
 manifest_uri=${1:-}
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
-[[ ! -f $RUNTIME_ROOT/installation.json ]] || die "ติดตั้งอยู่แล้ว; ห้ามรัน installer ซ้ำ ให้ใช้ updater ที่ผ่านการ verify"
+if [[ -f $RUNTIME_ROOT/installation.json ]]; then
+  jq -e '.version and .tenantId and .posDeviceId' "$RUNTIME_ROOT/installation.json" >/dev/null || \
+    die "installation receipt อ่านไม่ได้; เก็บข้อมูลร้านไว้และติดต่อ Support ห้ามลบฐานข้อมูลหรือ .env"
+  systemctl start bms-retail-local.service
+  for attempt in {1..60}; do
+    if bms-localctl doctor; then
+      printf 'BMS Retail Local ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้\n'
+      exit 0
+    fi
+    printf 'กำลังรอบริการของร้านเดิม (%s/60)...\n' "$attempt"
+    sleep 3
+  done
+  die "บริการร้านเดิมยังไม่พร้อม ข้อมูลถูกเก็บไว้ กรุณาตรวจ service log"
+fi
 agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
 localctl_source="$bundle_root/bms-localctl"
@@ -129,8 +192,9 @@ sample_mode='NONE'
 
 step 3 "ติดตั้ง private runtime และเครื่องมือที่จำเป็น"
 export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a
 apt-get update
-apt-get install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
+apt-get -o DPkg::Lock::Timeout=60 install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
 if ! docker compose version >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose-v2 || \
     apt-get install -y --no-install-recommends docker-compose-plugin || \
@@ -154,10 +218,12 @@ install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
-curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path" "$manifest_uri"
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+  --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+  --retry 2 --retry-max-time 180 --output "$manifest_path" "$manifest_uri"
 chmod 0600 "$manifest_path"
-stage_json=$($agent stage-release -manifest "$manifest_path" \
-  -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT")
+stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
+  -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_json=$($agent verify-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target")
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
@@ -181,7 +247,7 @@ while IFS=$'\t' read -r name ref; do image_ref[$name]=$ref; done \
   < <(jq -r '.components[] | select(.kind == "oci-image") | [.name,.imageRef] | @tsv' <<<"$release_json")
 umask 077
 if [[ ! -f $RUNTIME_ROOT/.env ]]; then
-cat >"$RUNTIME_ROOT/.env" <<EOF
+cat <<EOF | write_runtime_text "$RUNTIME_ROOT/.env"
 POSTGRES_DB=bms_local
 POSTGRES_PASSWORD=$(random_hex 24)
 REDIS_PASSWORD=$(random_hex 24)
@@ -257,8 +323,7 @@ else
   rm -f -- "$provision_script"; provision_script=
   provision_result=$(grep -E '^\{"status"' <<<"$provision_output" | tail -n 1)
   jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisioning ที่อ่านได้"
-  printf '%s\n' "$provision_result" >"$provision_checkpoint"
-  chmod 0600 "$provision_checkpoint"
+  printf '%s\n' "$provision_result" | write_runtime_text "$provision_checkpoint"
 fi
 
 sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
@@ -278,8 +343,7 @@ if [[ $sample_mode == STARTER_CATALOG && $sample_status != COMPLETED && $sample_
     sample_result='{"status":"FAILED","requested":true,"message":"sample data result is incomplete"}'
   fi
   provision_result=$(jq -c --argjson sample "$sample_result" --arg mode "$sample_mode" '.sampleData = ($sample + {mode:$mode})' <<<"$provision_result")
-  printf '%s\n' "$provision_result" >"$provision_checkpoint"
-  chmod 0600 "$provision_checkpoint"
+  printf '%s\n' "$provision_result" | write_runtime_text "$provision_checkpoint"
   sample_status=$(jq -r '.sampleData.status' <<<"$provision_result")
 fi
 case "$sample_status" in
@@ -364,8 +428,7 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg sampleStatus "$sample_status" \
   --arg licenseCode "${BMS_LICENSE_ID:-}" \
   '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
-  >"$RUNTIME_ROOT/installation.json"
-chmod 0600 "$RUNTIME_ROOT/installation.json"
+  | write_runtime_text "$RUNTIME_ROOT/installation.json"
 rm -f -- "$provision_checkpoint"
 
 # Licensing is evidence-only and deliberately outside the install/runtime success path. A missing

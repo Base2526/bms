@@ -5,6 +5,7 @@ param(
   [ValidateSet("Online", "Offline")][string]$Distribution = "Online",
   [string]$Keyring,
   [string]$WindowsManifestUri,
+  [string]$WindowsX86ManifestUri,
   [string]$LinuxManifestUri,
   [string]$MacArm64ManifestUri,
   [string]$MacX64ManifestUri,
@@ -13,6 +14,7 @@ param(
   [string]$InnoCompiler,
   [string]$WslDistribution = "Ubuntu",
   [switch]$UpdateVersion,
+  [switch]$AllowOfflineRecovery,
   [switch]$AllowTestEndpoints,
   [switch]$Force,
   [switch]$SkipTests
@@ -24,6 +26,12 @@ if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
 }
 if ($PSVersionTable.PSVersion.Major -lt 7) {
   throw "ต้องรันด้วย PowerShell 7: pwsh"
+}
+if ($Distribution -eq "Offline" -and -not $AllowOfflineRecovery) {
+  throw "Offline recovery ถูกล็อก: build ปกติต้องใช้ Distribution Online เท่านั้น หากผู้ใช้ร้องขอ offline โดยตรง ให้ระบุทั้ง -Distribution Offline -AllowOfflineRecovery"
+}
+if ($AllowOfflineRecovery -and $Distribution -ne "Offline") {
+  throw "-AllowOfflineRecovery ใช้ได้เฉพาะเมื่อระบุ -Distribution Offline"
 }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -135,6 +143,7 @@ if ([string]$desktopPackage.version -ne $Version -or
 }
 
 if ($Distribution -eq "Online") {
+  Write-Host "Distribution: Online bootstrap (ดาวน์โหลด signed payload ตอนติดตั้งครั้งแรก)" -ForegroundColor Cyan
   $onlineRequired = if ($Target -eq "MacOS") {
     @(
       @{ Name = "Keyring"; Value = $Keyring },
@@ -145,6 +154,7 @@ if ($Distribution -eq "Online") {
     @(
       @{ Name = "Keyring"; Value = $Keyring },
       @{ Name = "WindowsManifestUri"; Value = $WindowsManifestUri },
+      @{ Name = "WindowsX86ManifestUri"; Value = $WindowsX86ManifestUri },
       @{ Name = "LinuxManifestUri"; Value = $LinuxManifestUri }
     )
   }
@@ -221,8 +231,25 @@ if ($Distribution -eq "Online") {
   if ($SkipTests) { $onlineArgs.SkipTests = $true }
   & (Join-Path $scriptRoot "build-online-bootstrap.ps1") @onlineArgs
   if ($LASTEXITCODE -ne 0) { throw "Build online bootstrap ไม่สำเร็จ" }
+  $posOnlineArgs = @{
+    Version = $Version
+    Keyring = $Keyring
+    WindowsManifestUri = $WindowsManifestUri
+    WindowsX86ManifestUri = $WindowsX86ManifestUri
+    LinuxManifestUri = $LinuxManifestUri
+    OutputDirectory = $outputRoot
+    WslDistribution = $WslDistribution
+  }
+  if ($InnoCompiler) { $posOnlineArgs.InnoCompiler = $InnoCompiler }
+  if ($Force) { $posOnlineArgs.Force = $true }
+  if ($AllowTestEndpoints) { $posOnlineArgs.AllowTestEndpoints = $true }
+  if ($SkipTests) { $posOnlineArgs.SkipTests = $true }
+  & (Join-Path $scriptRoot "build-online-pos-bootstrap.ps1") @posOnlineArgs
+  if ($LASTEXITCODE -ne 0) { throw "Build POS online bootstrap ไม่สำเร็จ" }
   exit 0
 }
+
+Write-Warning "Distribution: OFFLINE RECOVERY ตามคำขอโดยตรง; artifact จะฝัง payload เต็มและมีขนาดใหญ่"
 
 $requiredCommands = @("git", "node", "npm", "docker")
 if ($Target -eq "MacOS") { $requiredCommands += @("bash", "go") }

@@ -29,7 +29,7 @@ func engineCommand(engine, distro string, args ...string) (*exec.Cmd, error) {
 		if !distroPattern.MatchString(distro) {
 			return nil, errors.New("ชื่อ WSL distribution ไม่ถูกต้อง")
 		}
-		prefix := []string{"-d", distro, "-u", "root", "--", "docker"}
+		prefix := []string{"-d", distro, "-u", "root", "--exec", "docker"}
 		return exec.Command("wsl.exe", append(prefix, args...)...), nil
 	case "linux-native":
 		if runtime.GOOS != "linux" {
@@ -60,7 +60,8 @@ func runtimeShellCommand(engine, distro, script string) (*exec.Cmd, error) {
 		if runtime.GOOS != "windows" || !distroPattern.MatchString(distro) {
 			return nil, errors.New("windows-wsl runtime ไม่ถูกต้อง")
 		}
-		return exec.Command("wsl.exe", "-d", distro, "-u", "root", "--", "sh", "-c", script), nil
+		// Bypass WSL's default shell: it expands $(...) before our script creates its files.
+		return exec.Command("wsl.exe", "-d", distro, "-u", "root", "--exec", "sh", "-c", script), nil
 	case "linux-native":
 		if runtime.GOOS != "linux" {
 			return nil, errors.New("linux-native runtime ใช้ได้เฉพาะ Linux")
@@ -149,17 +150,16 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 	if !modePattern.MatchString(mode) {
 		return errors.New("runtime file mode ไม่ถูกต้อง")
 	}
+	digest, size, err := fileSHA256(source)
+	if err != nil {
+		return err
+	}
 	input, err := os.Open(source)
 	if err != nil {
 		return err
 	}
 	defer input.Close()
-	destinationArgument := quoteShellArgument(cleanDestination)
-	temporaryArgument := quoteShellArgument(cleanDestination + ".tmp")
-	command, err := runtimeShellCommand(engine, distro, fmt.Sprintf(
-		`set -eu; umask 077; mkdir -p %s; cat > %s; chmod %s %s; mv -f %s %s`,
-		quoteShellArgument(path.Dir(cleanDestination)), temporaryArgument, quoteShellArgument(mode),
-		temporaryArgument, temporaryArgument, destinationArgument))
+	command, err := runtimeShellCommand(engine, distro, runtimeWriteScript(cleanDestination, mode, digest, size))
 	if err != nil {
 		return err
 	}
@@ -170,6 +170,15 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 		return fmt.Errorf("เขียน runtime file ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
+}
+
+func runtimeWriteScript(destination, mode, digest string, size int64) string {
+	temporary := quoteShellArgument(destination + ".tmp")
+	directory := quoteShellArgument(path.Dir(destination))
+	// An interrupted host pipe is ordinary EOF to cat. Verify before replacing a live secret file.
+	return fmt.Sprintf(`set -eu; umask 077; mkdir -p %s; cat > %s; test "$(wc -c < %s)" -eq %d; test "$(sha256sum %s | cut -d ' ' -f 1)" = %s; chmod %s %s; sync -f %s; mv -f %s %s; sync -f %s`,
+		directory, temporary, temporary, size, temporary, quoteShellArgument(digest), quoteShellArgument(mode),
+		temporary, temporary, temporary, quoteShellArgument(destination), directory)
 }
 
 func installRuntimeControl(engine, distro, source, name string) error {

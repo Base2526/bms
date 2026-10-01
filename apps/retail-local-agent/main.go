@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.5.2"
+const agentVersion = "0.5.4"
 
 var errPreflightFailed = errors.New("preflight failed")
 
@@ -27,6 +27,8 @@ func main() {
 }
 
 func run(args []string) error {
+	restoreConsole := preventConsoleSelectionPause()
+	defer restoreConsole()
 	if len(args) == 0 {
 		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|stage-desktop|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
 	}

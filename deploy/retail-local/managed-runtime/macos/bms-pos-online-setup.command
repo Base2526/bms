@@ -67,7 +67,8 @@ chmod 0700 "$STATE_ROOT" "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
 note "ครั้งแรกต้องต่ออินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
 if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
-    --connect-timeout 20 --retry 3 --output "$manifest_path.part" "$manifest_uri"; then
+    --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+    --retry 2 --retry-max-time 180 --output "$manifest_path.part" "$manifest_uri"; then
   die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
 fi
 chmod 0600 "$manifest_path.part"
@@ -78,13 +79,23 @@ stage_output="$STATE_ROOT/stage-desktop-result.jsonl"
 chmod 0600 "$stage_output"
 note "กำลังดาวน์โหลดเฉพาะ BMS POS และตรวจ SHA-256 (สามารถ resume ได้)"
 "$AGENT" stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
-  -target "$host_target" -root "$STATE_ROOT" -progress | while IFS= read -r payload; do
-    printf '%s\n' "$payload" >>"$stage_output"
-    phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null || true)
-    component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null || true)
-    percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null || printf '0')
+  -target "$host_target" -root "$STATE_ROOT" -progress | while IFS= read -r line; do
+    printf '%s\n' "$line" >>"$stage_output"
+    [[ $line == 'BMS_PROGRESS '* ]] || continue
+    payload=${line#BMS_PROGRESS }
+    phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null) || phase=''
+    component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null) || component='desktop'
+    percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null) || percent='0'
+    completed=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentCompletedBytes raw -o - - 2>/dev/null) || completed='0'
+    total=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentTotalBytes raw -o - - 2>/dev/null) || total='0'
+    heartbeat=$(printf '%s' "$payload" | /usr/bin/plutil -extract heartbeat raw -o - - 2>/dev/null) || heartbeat='false'
+    retry_after=$(printf '%s' "$payload" | /usr/bin/plutil -extract retryAfterSeconds raw -o - - 2>/dev/null) || retry_after='0'
+    progress_size="$((completed / 1048576))/$((total / 1048576)) MiB"
+    [[ $heartbeat != true ]] || progress_size="$progress_size; ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
     case "$phase" in
-      download) printf '\r[BMS POS] ดาวน์โหลด %-10s %3s%%' "$component" "$percent" ;;
+      connect) printf '\r[BMS POS] เชื่อมต่อ %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+      download) printf '\r[BMS POS] ดาวน์โหลด %-10s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+      retry) printf '\r[BMS POS] เครือข่ายหยุด จะลอง %-10s ใหม่ใน %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
       cached) printf '\r[BMS POS] ใช้ไฟล์เดิมที่ตรวจแล้ว %-10s %3s%%\n' "$component" "$percent" ;;
       verify) printf '\r[BMS POS] ตรวจสอบ %-10s %3s%%' "$component" "$percent" ;;
       staged) printf '\r[BMS POS] ดาวน์โหลดและตรวจสอบครบ       100%%\n' ;;

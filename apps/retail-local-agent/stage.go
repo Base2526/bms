@@ -13,8 +13,36 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 )
+
+const downloadMaxAttempts = 5
+
+var (
+	downloadIdleTimeout      = 45 * time.Second
+	downloadProgressInterval = 500 * time.Millisecond
+)
+
+var errDownloadIdle = errors.New("download ไม่มีข้อมูลใหม่เกินเวลาที่กำหนด")
+var errComponentChecksum = errors.New("component checksum/size ไม่ตรง")
+
+type downloadProgressWriter struct {
+	w        io.Writer
+	written  atomic.Int64
+	activity chan<- struct{}
+}
+
+func (writer *downloadProgressWriter) Write(buffer []byte) (int, error) {
+	written, err := writer.w.Write(buffer)
+	writer.written.Add(int64(written))
+	select {
+	case writer.activity <- struct{}{}:
+	default:
+	}
+	return written, err
+}
 
 type installState struct {
 	FormatVersion       int             `json:"formatVersion"`
@@ -86,6 +114,7 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 	}
 
 	client := &http.Client{Transport: &http.Transport{
+		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 20 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
@@ -132,6 +161,18 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 
 func downloadComponent(ctx context.Context, client *http.Client, component releaseComponent, destination string,
 	completedBefore, totalBytes int64, reporters ...progressReporter) error {
+	// A power loss can leave a corrupt prefix. Retry from zero once, never trust partial bytes.
+	for repair := 0; repair < 2; repair++ {
+		err := downloadComponentAttempt(ctx, client, component, destination, completedBefore, totalBytes, reporters...)
+		if !errors.Is(err, errComponentChecksum) || repair == 1 {
+			return err
+		}
+	}
+	return errComponentChecksum
+}
+
+func downloadComponentAttempt(ctx context.Context, client *http.Client, component releaseComponent, destination string,
+	completedBefore, totalBytes int64, reporters ...progressReporter) error {
 	if digest, size, err := fileSHA256(destination); err == nil && digest == component.SHA256 && size == component.SizeBytes {
 		reportProgress(reporters, progressEvent{Phase: "cached", Component: component.Name,
 			CompletedBytes: completedBefore + component.SizeBytes, TotalBytes: totalBytes})
@@ -176,46 +217,141 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 		offset = 0
 	}
 
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, component.URL, nil)
-	if err != nil {
-		return err
-	}
-	if offset > 0 {
-		request.Header.Set("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
-	}
-	response, err := client.Do(request)
-	if err != nil {
-		return err
-	}
-	defer response.Body.Close()
-	if response.StatusCode == http.StatusOK && offset > 0 {
-		if err := file.Truncate(0); err != nil {
+	var lastDownloadErr error
+	downloadComplete := false
+	for attempt := 1; attempt <= downloadMaxAttempts; attempt++ {
+		info, statErr := file.Stat()
+		if statErr != nil {
+			return statErr
+		}
+		offset = info.Size()
+		// The last byte can arrive before a connection stalls while waiting for EOF.
+		// Verify it locally rather than requesting an impossible bytes=<size>- range.
+		if offset == component.SizeBytes {
+			digest, size, hashErr := fileSHA256(partial)
+			if hashErr == nil && size == component.SizeBytes && digest == component.SHA256 {
+				downloadComplete = true
+				break
+			}
+			if err := file.Truncate(0); err != nil {
+				return err
+			}
+			offset = 0
+		}
+		if offset < 0 || offset > component.SizeBytes {
+			if err := file.Truncate(0); err != nil {
+				return err
+			}
+			offset = 0
+		}
+
+		reportProgress(reporters, progressEvent{
+			Phase: "connect", Component: component.Name, Attempt: attempt,
+			CompletedBytes: completedBefore + offset, TotalBytes: totalBytes,
+			ComponentCompletedBytes: offset, ComponentTotalBytes: component.SizeBytes, Heartbeat: true,
+		})
+		attemptContext, cancelAttempt := context.WithCancel(ctx)
+		request, requestErr := http.NewRequestWithContext(attemptContext, http.MethodGet, component.URL, nil)
+		if requestErr != nil {
+			cancelAttempt()
+			return requestErr
+		}
+		if offset > 0 {
+			request.Header.Set("Range", "bytes="+strconv.FormatInt(offset, 10)+"-")
+		}
+		response, requestErr := client.Do(request)
+		if requestErr != nil {
+			cancelAttempt()
+			lastDownloadErr = requestErr
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if err := waitBeforeDownloadRetry(ctx, reporters, component, completedBefore, totalBytes, offset, attempt); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if response.StatusCode == http.StatusOK && offset > 0 {
+			if err := file.Truncate(0); err != nil {
+				response.Body.Close()
+				cancelAttempt()
+				return err
+			}
+			offset = 0
+		} else if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
+			response.Body.Close()
+			cancelAttempt()
+			lastDownloadErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			if response.StatusCode == http.StatusRequestedRangeNotSatisfiable && offset > 0 {
+				if err := file.Truncate(0); err != nil {
+					return err
+				}
+				offset = 0
+			}
+			if err := waitBeforeDownloadRetry(ctx, reporters, component, completedBefore, totalBytes, offset, attempt); err != nil {
+				return err
+			}
+			continue
+		}
+		if response.StatusCode == http.StatusPartialContent && offset == 0 {
+			response.Body.Close()
+			cancelAttempt()
+			return errors.New("server ส่ง partial response โดยไม่ได้ร้องขอ")
+		}
+		if response.StatusCode == http.StatusPartialContent {
+			var start, end, size int64
+			_, rangeErr := fmt.Sscanf(response.Header.Get("Content-Range"), "bytes %d-%d/%d", &start, &end, &size)
+			if rangeErr != nil || start != offset || end < start || end >= size || size != component.SizeBytes ||
+				(response.ContentLength >= 0 && response.ContentLength != end-start+1) {
+				response.Body.Close()
+				cancelAttempt()
+				if err := file.Truncate(0); err != nil {
+					return err
+				}
+				lastDownloadErr = errors.New("invalid Content-Range; restarting component")
+				continue
+			}
+		}
+		if _, err := file.Seek(offset, io.SeekStart); err != nil {
+			response.Body.Close()
+			cancelAttempt()
 			return err
 		}
-		offset = 0
-	} else if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("HTTP %d", response.StatusCode)
+
+		remaining := component.SizeBytes - offset
+		written, copyErr := copyDownloadBody(attemptContext, cancelAttempt, response.Body, file,
+			component, completedBefore, totalBytes, offset, remaining, attempt, reporters...)
+		response.Body.Close()
+		cancelAttempt()
+		if copyErr == nil && written == remaining {
+			downloadComplete = true
+			break
+		}
+		if copyErr == nil {
+			copyErr = io.ErrUnexpectedEOF
+		}
+		lastDownloadErr = copyErr
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if err := file.Sync(); err != nil {
+			return err
+		}
+		current, statErr := file.Stat()
+		if statErr != nil {
+			return statErr
+		}
+		if current.Size() > component.SizeBytes {
+			return fmt.Errorf("ขนาด download เกิน manifest: ต้องการ %d ได้ %d", component.SizeBytes, current.Size())
+		}
+		if err := waitBeforeDownloadRetry(ctx, reporters, component, completedBefore, totalBytes,
+			current.Size(), attempt); err != nil {
+			return err
+		}
 	}
-	if response.StatusCode == http.StatusPartialContent && offset == 0 {
-		return errors.New("server ส่ง partial response โดยไม่ได้ร้องขอ")
-	}
-	if _, err := file.Seek(offset, io.SeekStart); err != nil {
-		return err
-	}
-	reportProgress(reporters, progressEvent{Phase: "download", Component: component.Name,
-		CompletedBytes: completedBefore + offset, TotalBytes: totalBytes})
-	remaining := component.SizeBytes - offset
-	progressWriter := &reportingWriter{
-		w: file, phase: "download", component: component.Name,
-		completed: completedBefore + offset, total: totalBytes,
-		reporters: reporters, reportInterval: 500 * time.Millisecond,
-	}
-	written, err := io.Copy(progressWriter, io.LimitReader(response.Body, remaining+1))
-	if err != nil {
-		return err
-	}
-	if written != remaining {
-		return fmt.Errorf("ขนาด download ไม่ตรง: ต้องการ %d ได้ %d", remaining, written)
+	if !downloadComplete {
+		return fmt.Errorf("download ล้มเหลวหลังลอง %d ครั้ง: %w", downloadMaxAttempts, lastDownloadErr)
 	}
 	if err := file.Sync(); err != nil {
 		return err
@@ -231,12 +367,103 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 	}
 	if size != component.SizeBytes || digest != component.SHA256 {
 		_ = os.Remove(partial)
-		return errors.New("component checksum/size ไม่ตรง")
+		return errComponentChecksum
 	}
 	if err := os.Rename(partial, destination); err != nil {
 		return err
 	}
 	return syncDirectory(filepath.Dir(destination))
+}
+
+func copyDownloadBody(ctx context.Context, cancel context.CancelFunc, body io.ReadCloser, destination io.Writer,
+	component releaseComponent, completedBefore, totalBytes, offset, remaining int64, attempt int,
+	reporters ...progressReporter) (int64, error) {
+	activity := make(chan struct{}, 1)
+	writer := &downloadProgressWriter{w: destination, activity: activity}
+	type copyResult struct {
+		written int64
+		err     error
+	}
+	result := make(chan copyResult, 1)
+	go func() {
+		written, err := io.Copy(writer, io.LimitReader(body, remaining+1))
+		result <- copyResult{written: written, err: err}
+	}()
+
+	progressTicker := time.NewTicker(downloadProgressInterval)
+	defer progressTicker.Stop()
+	idleTimer := time.NewTimer(downloadIdleTimeout)
+	defer idleTimer.Stop()
+	resetIdle := func() {
+		if !idleTimer.Stop() {
+			select {
+			case <-idleTimer.C:
+			default:
+			}
+		}
+		idleTimer.Reset(downloadIdleTimeout)
+	}
+	lastReported := int64(-1)
+	report := func(heartbeat bool) {
+		attemptWritten := writer.written.Load()
+		componentCompleted := offset + attemptWritten
+		reportProgress(reporters, progressEvent{
+			Phase: "download", Component: component.Name, Attempt: attempt, Heartbeat: heartbeat,
+			CompletedBytes: completedBefore + componentCompleted, TotalBytes: totalBytes,
+			ComponentCompletedBytes: componentCompleted, ComponentTotalBytes: component.SizeBytes,
+		})
+		lastReported = attemptWritten
+	}
+	report(false)
+
+	for {
+		select {
+		case copy := <-result:
+			report(false)
+			return copy.written, copy.err
+		case <-activity:
+			resetIdle()
+		case <-progressTicker.C:
+			current := writer.written.Load()
+			report(current == lastReported)
+		case <-idleTimer.C:
+			cancel()
+			_ = body.Close()
+			select {
+			case <-result:
+			case <-time.After(5 * time.Second):
+			}
+			return writer.written.Load(), errDownloadIdle
+		case <-ctx.Done():
+			_ = body.Close()
+			select {
+			case <-result:
+			case <-time.After(5 * time.Second):
+			}
+			return writer.written.Load(), ctx.Err()
+		}
+	}
+}
+
+func waitBeforeDownloadRetry(ctx context.Context, reporters []progressReporter, component releaseComponent,
+	completedBefore, totalBytes, componentCompleted int64, attempt int) error {
+	if attempt >= downloadMaxAttempts {
+		return nil
+	}
+	retryAfter := 1 << (attempt - 1)
+	reportProgress(reporters, progressEvent{
+		Phase: "retry", Component: component.Name, Attempt: attempt, RetryAfterSeconds: retryAfter,
+		CompletedBytes: completedBefore + componentCompleted, TotalBytes: totalBytes,
+		ComponentCompletedBytes: componentCompleted, ComponentTotalBytes: component.SizeBytes,
+	})
+	timer := time.NewTimer(time.Duration(retryAfter) * time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func loadOrCreateState(path string, payload releasePayload) (installState, error) {
@@ -253,7 +480,11 @@ func loadOrCreateState(path string, payload releasePayload) (installState, error
 	}
 	var existing installState
 	if err := json.Unmarshal(contents, &existing); err != nil {
-		return installState{}, errors.New("install-state.json เสียหาย")
+		// This file is only a progress cache. Signed hashes, not this cache, authorize reuse.
+		if err := os.Rename(path, path+".corrupt-"+strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
+			return installState{}, err
+		}
+		return state, nil
 	}
 	if existing.FormatVersion != 1 || existing.PlatformTarget != payload.PlatformTarget || existing.ReleaseVersion != payload.ReleaseVersion {
 		return installState{}, errors.New("มี installation state ของ release/target อื่น ต้อง recovery ให้เสร็จก่อน")
@@ -293,29 +524,42 @@ func writeState(path string, state installState) error {
 
 func acquireInstallLock(root string) (func(), error) {
 	path := filepath.Join(root, ".install.lock")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		contents, readErr := os.ReadFile(path)
-		var pid int
-		if readErr == nil {
-			_, _ = fmt.Sscanf(string(contents), "pid=%d", &pid)
-		}
-		if pid > 0 && !processAlive(pid) {
-			if removeErr := os.Remove(path); removeErr == nil {
-				file, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			}
-		}
-		if errors.Is(err, os.ErrExist) {
-			return nil, errors.New("มี Managed Runtime install/update อื่นกำลังทำงาน")
-		}
-	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(file, "pid=%d\nstarted=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
-	file.Sync()
-	file.Close()
-	return func() { _ = os.Remove(path) }, nil
+	if err := lockInstallFile(file); err != nil {
+		file.Close()
+		return nil, errors.New("มี Managed Runtime install/update อื่นกำลังทำงาน")
+	}
+	// Keep the inode: deleting it would allow a second process to lock a different file.
+	// The OS releases this lock even on forced termination or a reboot.
+	contents, err := io.ReadAll(file)
+	if err == nil && !strings.HasPrefix(string(contents), "lockVersion=2\n") {
+		var pid int
+		_, _ = fmt.Sscanf(string(contents), "pid=%d", &pid)
+		if pid > 0 && processAlive(pid) {
+			file.Close()
+			return nil, errors.New("มี Managed Runtime รุ่นก่อนกำลังทำงาน")
+		}
+	}
+	if err == nil {
+		err = file.Truncate(0)
+	}
+	if err == nil {
+		_, err = file.Seek(0, io.SeekStart)
+	}
+	if err == nil {
+		_, err = fmt.Fprintf(file, "lockVersion=2\npid=%d\nstarted=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	return func() { _ = file.Close() }, nil
 }
 
 func hashBytes(input []byte) string {

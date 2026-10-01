@@ -10,6 +10,49 @@ artifact_path() {
   jq -er --arg name "$name" '.components[] | select(.name == $name) | .name' <<<"$release_json" >/dev/null
   printf '%s/%s.artifact' "$release_directory" "${name//./-}"
 }
+run_agent_json_progress() {
+  local agent_path=$1
+  shift
+  local output_file status
+  output_file=$(mktemp)
+  set +e
+  "$agent_path" "$@" 2>&1 | {
+    local line event phase component percent completed total heartbeat now_epoch
+    local last_percent=-1 last_print=0
+    while IFS= read -r line; do
+      if [[ $line == BMS_PROGRESS\ * ]]; then
+        event=${line#BMS_PROGRESS }
+        phase=$(jq -r '.phase // "working"' <<<"$event" 2>/dev/null) || continue
+        component=$(jq -r '.component // "release"' <<<"$event")
+        percent=$(jq -r '.percent // 0' <<<"$event")
+        completed=$(jq -r '.componentCompletedBytes // .completedBytes // 0' <<<"$event")
+        total=$(jq -r '.componentTotalBytes // .totalBytes // 0' <<<"$event")
+        heartbeat=$(jq -r '.heartbeat // false' <<<"$event")
+        now_epoch=$(date +%s)
+        if (( percent > last_percent || now_epoch - last_print >= 5 )) ||
+            [[ $phase == retry || $phase == verify || $phase == staged ]]; then
+          printf '  [%3d%%] %s %s - %d/%d MiB%s - %s\n' \
+            "$percent" "$phase" "$component" "$((completed / 1048576))" "$((total / 1048576))" \
+            "$([[ $heartbeat == true ]] && printf ' - ยังทำงานอยู่ รอข้อมูลจากเครือข่าย')" \
+            "$(date '+%H:%M:%S')" >&2
+          last_percent=$percent
+          last_print=$now_epoch
+        fi
+      else
+        printf '%s\n' "$line" >>"$output_file"
+      fi
+    done
+  }
+  status=${PIPESTATUS[0]}
+  set -e
+  if (( status != 0 )); then
+    cat "$output_file" >&2
+    rm -f -- "$output_file"
+    return "$status"
+  fi
+  cat "$output_file"
+  rm -f -- "$output_file"
+}
 
 [[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"
 manifest_uri=${1:-}
@@ -33,7 +76,9 @@ target=$(jq -er '.platformTarget' "$RUNTIME_ROOT/installation.json")
 old_desktop="$RUNTIME_ROOT/releases/$current_version/desktop.artifact"
 [[ -f $old_desktop ]] || die "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
 manifest_path="$RUNTIME_ROOT/release/update-release.jws.json"
-curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --output "$manifest_path.tmp" "$manifest_uri"
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+  --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+  --retry 2 --retry-max-time 180 --output "$manifest_path.tmp" "$manifest_uri"
 chmod 0600 "$manifest_path.tmp"
 mv -f "$manifest_path.tmp" "$manifest_path"
 
@@ -73,8 +118,9 @@ install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-relea
 install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
-stage_json=$($agent stage-release -manifest "$manifest_path" \
-  -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT")
+/usr/local/sbin/bms-update-transaction prepare
+stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
+  -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
 

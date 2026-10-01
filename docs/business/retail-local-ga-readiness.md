@@ -16,8 +16,11 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Signed release envelope and immutable component hashes | Implemented | agent + JS verifier tests |
 | Resumable per-release staging | Implemented | agent tests; state is release-version scoped |
 | Ubuntu bootstrap package | Implemented candidate | CI builds and inspects `.deb` |
-| Windows bootstrap definition | Implemented candidate | Windows CI parses scripts and smoke-builds unsigned EXE |
-| macOS online bootstrap | Implemented candidate | Apple Silicon/Intel builders emit payload-free `.pkg` files capped at 25 MiB; signed release preparation and package inspection are contract-tested |
+| Windows bootstrap definition | Implemented candidate | Windows CI builds unsigned EXEs and executes POS/Server child-success, failure, cancellation and Server reboot-required scenarios; offline/signature/download failures are exercised through the POS setup script; DISM 3010 and WSL NUL-name handling have regression tests |
+| macOS online bootstrap | Implemented candidate | Native macOS CI builds payload-free Apple Silicon/Intel `.pkg` and POS-only `.dmg` files capped at 25 MiB; hardware acceptance and signing remain open |
+| Bootstrap failure handling | Automated scenarios | Native macOS progress renderer receives omitted fields, retry and heartbeat events; Go tests exercise interrupted downloads, ignored Range and a complete body without EOF; these fixtures do not qualify a full shop install |
+| Interrupted first-install retry | Automated scenarios | Agent 0.5.3 subprocess-kill/resume, OS lock release, corrupt-state/prefix repair, Range validation and atomic runtime-file checks; Windows receipt/import-directory and Linux/macOS late-setup retry fixtures. Physical power-loss, registered-VM corruption and lost one-time pairing-token recovery still need clean-host acceptance |
+| Data-preserving uninstall | Automated scenarios | Disposable Linux container exercises both uninstall and DEB removal with a stuck service; macOS VM-stop fixture and Windows partial-install cleanup preserve sentinel data/secrets |
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
 | Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |

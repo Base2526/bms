@@ -71,6 +71,14 @@ are downloaded after publisher verification. The target needs internet access du
 The old large macOS package is retained only as an explicit offline recovery path. All current macOS
 technical-pilot packages are still unsigned and not notarized.
 
+Uninstall on all three hosts removes every BMS startup/timer source before it stops the private runtime,
+shows numbered progress, and bounds licensing evidence plus runtime-stop commands so an unavailable
+runtime cannot leave the uninstaller apparently frozen. Windows runs cleanup PowerShell hidden; Linux
+also stops any active evidence or off-host-backup job; macOS unloads the KeepAlive LaunchAgent before
+calling Lima. A normal uninstall keeps shop data, secrets, and the private runtime for recovery.
+Permanent deletion still requires the explicit `-EraseData`/`--erase-data` confirmation flow and refuses
+to delete host data when container/VM cleanup fails.
+
 The repository-level release command now uses this online bootstrap path by default for Windows,
 Ubuntu and macOS. It requires an externally supplied public-key-only keyring and platform-specific HTTPS
 signed-manifest URLs:
@@ -80,12 +88,14 @@ pwsh .\deploy\retail-local\build-release.ps1 `
   -Version 0.5.0 `
   -Keyring C:\secure\bms\trusted-release-keys.json `
   -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
+  -WindowsX86ManifestUri https://releases.example.com/retail-local/windows-10-x86-pos/release.jws.json `
   -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json
 ```
 
-Use `-Distribution Offline` only for the explicit legacy recovery/pilot payload. Managed Runtime
+Use `-Distribution Offline -AllowOfflineRecovery` only for the explicit legacy recovery/pilot
+payload. Managed Runtime
 supports Windows x64, Ubuntu x64, macOS Apple Silicon and macOS Intel. Windows x86 remains a
-POS-client legacy target; Linux
+POS-only online-bootstrap legacy target; Linux
 32-bit is unsupported by the current Electron/runtime/image stack and is never emitted as a server
 installer.
 

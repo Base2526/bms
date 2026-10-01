@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly BOOTSTRAP_ROOT=/usr/lib/bms-pos-bootstrap
+readonly AGENT="$BOOTSTRAP_ROOT/bms-runtime-agent"
+readonly KEYRING="$BOOTSTRAP_ROOT/trusted-release-keys.json"
+readonly MANIFEST_URI_FILE="$BOOTSTRAP_ROOT/manifest-url"
+readonly PLATFORM_TARGET_FILE="$BOOTSTRAP_ROOT/platform-target"
+readonly STATE_ROOT=/var/lib/bms-pos-bootstrap
+
+die() { printf '\nBMS POS setup failed: %s\n' "$*" >&2; exit 1; }
+[[ $EUID -eq 0 ]] || die "run with sudo"
+[[ -x $AGENT && -f $KEYRING && -s $MANIFEST_URI_FILE && -s $PLATFORM_TARGET_FILE ]] || die "bootstrap files are incomplete"
+
+manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
+platform_target=$(tr -d '\r\n' <"$PLATFORM_TARGET_FILE")
+[[ $manifest_uri =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $manifest_uri != *'@'* ]] || die "manifest URL is not safe HTTPS"
+
+install -d -m 0700 "$STATE_ROOT/manifest"
+manifest_path="$STATE_ROOT/manifest/release.jws.json"
+printf 'BMS POS Online Setup\nAn internet connection is required for the first installation.\n'
+curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --connect-timeout 20 \
+  --max-time 60 --speed-limit 1 --speed-time 20 --retry 2 --retry-max-time 180 \
+  --output "$manifest_path.part" "$manifest_uri" || die "cannot download the signed release manifest"
+chmod 0600 "$manifest_path.part"
+mv -f "$manifest_path.part" "$manifest_path"
+
+release_json=$($AGENT verify-release -manifest "$manifest_path" -keyring "$KEYRING" -target "$platform_target")
+version=$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["releaseVersion"])')
+[[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "release version is invalid"
+
+printf 'Downloading and verifying BMS POS (completed bytes are kept for resume)...\n'
+$AGENT stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
+  -target "$platform_target" -root "$STATE_ROOT" -progress | while IFS= read -r event; do
+    printf '%s\n' "$event" | python3 -c '
+import datetime,json,sys
+try:
+    raw=sys.stdin.read().strip()
+    if not raw.startswith("BMS_PROGRESS "):
+        raise ValueError("not progress")
+    event=json.loads(raw[len("BMS_PROGRESS "):])
+    component=event.get("component") or "desktop"
+    completed=event.get("componentCompletedBytes") or event.get("completedBytes") or 0
+    total=event.get("componentTotalBytes") or event.get("totalBytes") or 0
+    phase=event.get("phase") or "download"
+    status={
+        "connect": "connecting",
+        "retry": "connection paused; retrying",
+        "verify": "verifying",
+        "staged": "verified",
+    }.get(phase, "downloading")
+    heartbeat="; still working, waiting for network data" if event.get("heartbeat") else ""
+    print("  [{:3d}%] {} {} - {:.1f}/{:.1f} MiB{} - {}".format(
+        int(event.get("percent",0)), status, component, completed/1048576, total/1048576,
+        heartbeat, datetime.datetime.now().strftime("%H:%M:%S")), flush=True)
+except Exception:
+    pass
+'
+  done
+
+desktop="$STATE_ROOT/releases/$version/desktop.artifact"
+[[ -f $desktop ]] || die "signed release has no complete desktop artifact"
+desktop_deb="$STATE_ROOT/releases/$version/BMS-POS.deb"
+ln -f -- "$desktop" "$desktop_deb"
+dpkg --configure -a
+apt-get -o DPkg::Lock::Timeout=60 install -y "$desktop_deb"
+rm -rf -- "$STATE_ROOT/releases/$version"
+printf 'BMS POS installation completed.\n'

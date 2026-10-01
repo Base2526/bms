@@ -6,7 +6,9 @@
 signed release manifest แบบ resume ได้ พร้อมตรวจ publisher signature, SHA-256 และ OCI digest ก่อนใช้
 
 offline bundle ขนาดใหญ่ยังเก็บไว้เป็นทางเลือกสำหรับ recovery หรือร้านที่ได้รับอนุมัติให้ติดตั้งแบบ
-ไม่มีอินเทอร์เน็ตเท่านั้น โดยต้องระบุ `-Distribution Offline` อย่างชัดเจน
+ไม่มีอินเทอร์เน็ตเท่านั้น โดยต้องระบุทั้ง `-Distribution Offline` และ `-AllowOfflineRecovery`
+อย่างชัดเจน ห้าม fallback จาก Online ไป Offline อัตโนมัติเมื่อ URL, keyring หรือ target ที่ต้องการ
+ยังไม่พร้อม; build ต้องหยุดและแก้ prerequisite ของ Online แทน
 
 ## Architecture ที่รองรับ
 
@@ -47,6 +49,7 @@ pwsh .\deploy\retail-local\build-release.ps1 `
   -Version 0.2.13 `
   -Keyring C:\secure\bms\trusted-release-keys.json `
   -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
+  -WindowsX86ManifestUri https://releases.example.com/retail-local/windows-10-x86-pos/release.jws.json `
   -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json `
   -ActivationUri https://control.example.com/api/bms/retail-local/activate
 ```
@@ -55,10 +58,17 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 
 - `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe`
 - `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb`
+- `BMS-Retail-Local-POS-<version>-windows-x64.exe`
+- `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe`
+- `BMS-Retail-Local-POS-<version>-linux-x64.deb`
 - `.sha256` และ `.json` metadata ของแต่ละไฟล์
 
 ชื่อ `server-pos` หมายถึง signed manifest มี POS Desktop เป็น component ที่ดาวน์โหลดหลังตรวจสอบ
 ไม่ได้หมายความว่า Electron มี database หรือ business logic ของตัวเอง
+
+POS-only ทั้งสามไฟล์เป็น bootstrap ขนาดเล็กเช่นกัน ไม่ได้ฝัง Electron ไว้ใน installer และใช้
+`stage-desktop` ดาวน์โหลดเฉพาะ Desktop component แบบ resume ได้ Windows x86 ใช้ signed manifest
+แยกจาก x64 เพราะตัว Electron installer คนละสถาปัตยกรรม ส่วน Linux x86 ไม่มี target ที่รองรับ
 
 Builder ปกติปฏิเสธโดเมนตัวอย่างและ `.invalid` เพื่อไม่ให้ไฟล์ทดสอบถูกส่งให้ร้านโดยบังเอิญ
 `-AllowTestEndpoints` มีไว้สำหรับ smoke test ภายในเท่านั้น และเติม `SMOKE-ONLY` ในชื่อ artifact
@@ -70,7 +80,7 @@ Builder ปกติปฏิเสธโดเมนตัวอย่างแ
 
 ```powershell
 pwsh .\deploy\retail-local\build-release.ps1 `
-  -Version 0.2.13 -Distribution Offline
+  -Version 0.2.13 -Distribution Offline -AllowOfflineRecovery
 ```
 
 เส้นทางนี้สร้าง Server, Server + POS, POS-only และ image archive แบบเดิม จึงใช้พื้นที่ build มากกว่า
@@ -118,9 +128,90 @@ macOS 32-bit)
 
 ```powershell
 pwsh ./deploy/retail-local/build-release.ps1 `
-  -Version 0.2.13 -Target MacOS -Distribution Offline
+  -Version 0.2.13 -Target MacOS -Distribution Offline -AllowOfflineRecovery
 ```
 
 ทุก installer ปัจจุบันยัง unsigned internal technical pilot จนกว่าจะผ่าน code signing,
 clean-machine, update/rollback, backup/restore และ hardware acceptance gates ห้ามใช้ `-SkipTests`
 กับไฟล์ที่จะส่งให้ร้าน
+
+## Release gate สำหรับ Online Installer
+
+### Interrupted first installation
+
+Run the same online installer/setup again after reconnecting the network or restarting the machine.
+Do not uninstall, erase shop data, remove the private VM, or delete `.env` to retry installation.
+The retry still fetches and verifies the signed release manifest. It reuses complete components
+only after checking size and SHA-256, resumes `.part` files using validated HTTP Range responses,
+and restarts an individual corrupt component once instead of trusting its partial prefix.
+
+Agent 0.5.3 uses an OS-held download lock that is released on process death/reboot, including when
+lock metadata is incomplete. Corrupt download-progress JSON is preserved as diagnostic evidence
+and rebuilt from verified component files; it is not an installation receipt or business data.
+Runtime-file transfers check length/hash before atomic replacement and flush before/after rename.
+Secrets and provisioning checkpoints must survive retries without regeneration or another shop.
+
+Agent 0.5.4 executes WSL commands with `--exec`: otherwise WSL's default shell evaluates
+`$(...)` before the runtime write creates its temporary file, breaking nested receipt/config writes.
+An opt-in integration test (`BMS_TEST_WSL_DISTRO=Ubuntu`, `go test -run TestWSLRuntimeWriteQuoting`)
+checks real Windows-to-WSL byte transfer in an isolated `/tmp` directory, including UTF-8 content.
+Windows/Linux updates now check the existing shop before downloading/loading new images. If it is
+stopped, preparation starts only existing containers (no `compose up`, migration or secret reset),
+then waits at most 180 seconds for health with visible status. An unhealthy database still blocks
+updates and needs diagnostics; the encrypted backup and transaction health gates remain mandatory.
+
+Windows preserves unregistered disks left by an interrupted WSL import and uses a new directory
+for another import. It never unregisters a potentially data-bearing VM automatically. A registered
+but damaged VM, damaged database, invalid existing secrets, or unreadable final receipt requires
+diagnosis/restore rather than an automatic erase. Linux configures interrupted package operations
+before installing dependencies; unrecoverable package-manager errors still stop visibly. A complete
+Linux/macOS receipt takes a service/health recovery path instead of provisioning a second shop.
+
+Provisioning is database-idempotent. If power is lost after its database commit but before the
+one-time POS token is checkpointed, the shop/admin remain intact; the operator may need to pair POS
+using the existing administrator account. Setup must never reset the owner's credentials to get
+past that case. Re-entering details does not replace the already-provisioned shop or its password.
+
+Automated tests kill a real download subprocess, reopen the lock, resume bytes and verify the final
+hash. Additional tests cover corrupt prefixes, wrong Range responses, torn state, interrupted
+runtime-file input, failed Windows metadata replacement and late Linux/macOS setup retries.
+These tests do not simulate storage-controller failure or prove recovery from every physical power
+loss. Perform hard-power-off acceptance in disposable VMs/snapshots, not on a live shop machine.
+
+การ build สำเร็จอย่างเดียวไม่ถือว่าพร้อมปล่อย Workflow
+`.github/workflows/retail-local-managed-runtime.yml` ต้องผ่านทั้งสามระบบก่อนสร้าง release:
+
+- Windows: build Server + POS x64 และ POS-only x64/x86 ด้วย Inno Setup จริง
+- Ubuntu: build และ inspect Server + POS กับ POS-only `.deb` จริง
+- macOS: build Server + POS `.pkg` และ POS-only `.dmg` สำหรับ Apple Silicon/Intel บน runner macOS จริง
+
+ทุก online bootstrap ต้องไม่เกิน 25 MiB และต้องไม่มี service image, Electron หรือ application
+payload ฝังอยู่ การติดตั้งครั้งแรกจึงต้องต่ออินเทอร์เน็ตเพื่อดาวน์โหลด signed manifest และ payload
+ที่ตรงกับ OS/CPU แบบ resume ได้
+
+The native CI jobs also execute `scripts/retail-local-bootstrap-behavior.test.mjs`: Windows POS
+and Server EXEs must return failure when their child setup fails or is cancelled; the Server
+accepts reboot-required status without reporting an installation error. Windows prerequisites
+accept DISM status 3010 and WSL discovery normalizes embedded NUL characters. macOS progress must handle
+events without optional fields. Linux runs data-preserving uninstall in a disposable container
+with a deliberately stuck service. Manifest requests have a 60-second request limit; Unix
+installers additionally stop a stalled response and retry within a bounded window. Payload
+downloads retain their separate idle timeout so a large download can continue while bytes arrive.
+The Windows native agent temporarily disables console Quick Edit during its work, then restores
+the original input mode. This prevents an accidental text selection from pausing progress output;
+it does not change the user's persistent terminal settings.
+
+Windows uninstall tests inspect the second-phase uninstaller log, not only the launcher exit
+code: Inno can return success while a script callback raises `Could not call proc`. Inno destroys
+`UninstallProgressForm` before `usPostUninstall`, so that callback must log completion without
+accessing the form. The native regression test compiles the production callback into an isolated
+disposable installer; it never stops or removes an existing shop.
+
+These are controlled failure tests, not evidence that a production signed release has completed
+first-run provisioning on every supported machine. CI smoke artifacts use test endpoints and
+must never be uploaded as customer installers. Existing published pilot files are not rebuilt
+by this workflow.
+
+CI นี้เป็น package-level gate ไม่แทน clean-machine acceptance ก่อนส่งลูกค้า รุ่นที่จะปล่อยจริงยังต้อง
+ติดตั้งและอัปเดตบนเครื่องจริงตามรายการใน `docs/business/retail-local-ga-readiness.md`; macOS ยังเป็น
+technical pilot จนกว่าจะลง Developer ID, notarize และผ่าน Gatekeeper บน Apple Silicon/Intel

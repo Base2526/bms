@@ -10,11 +10,16 @@ import (
 const progressPrefix = "BMS_PROGRESS "
 
 type progressEvent struct {
-	Phase          string `json:"phase"`
-	Component      string `json:"component,omitempty"`
-	CompletedBytes int64  `json:"completedBytes"`
-	TotalBytes     int64  `json:"totalBytes"`
-	Percent        int    `json:"percent"`
+	Phase                   string `json:"phase"`
+	Component               string `json:"component,omitempty"`
+	CompletedBytes          int64  `json:"completedBytes"`
+	TotalBytes              int64  `json:"totalBytes"`
+	ComponentCompletedBytes int64  `json:"componentCompletedBytes,omitempty"`
+	ComponentTotalBytes     int64  `json:"componentTotalBytes,omitempty"`
+	Attempt                 int    `json:"attempt,omitempty"`
+	RetryAfterSeconds       int    `json:"retryAfterSeconds,omitempty"`
+	Heartbeat               bool   `json:"heartbeat,omitempty"`
+	Percent                 int    `json:"percent"`
 }
 
 type progressReporter func(progressEvent)

@@ -42,8 +42,7 @@ function Write-Utf8NoBom([string]$Path, [string]$Contents) {
 
 function Invoke-AgentJson([string[]]$Arguments) {
   $output = New-Object System.Collections.Generic.List[string]
-  $script:progressLastBucket = -1
-  $script:progressLastComponent = ""
+  Reset-AgentProgressState
   & $script:agent @Arguments 2>&1 | ForEach-Object {
     $line = [string]$_
     if ($line.StartsWith("BMS_PROGRESS ")) {
@@ -60,8 +59,7 @@ function Invoke-AgentJson([string[]]$Arguments) {
 
 function Invoke-AgentProgress([string[]]$Arguments) {
   $output = New-Object System.Collections.Generic.List[string]
-  $script:progressLastBucket = -1
-  $script:progressLastComponent = ""
+  Reset-AgentProgressState
   & $script:agent @Arguments 2>&1 | ForEach-Object {
     $line = [string]$_
     if ($line.StartsWith("BMS_PROGRESS ")) {
@@ -75,11 +73,29 @@ function Invoke-AgentProgress([string[]]$Arguments) {
   if ($exitCode -ne 0) { throw ($output -join [Environment]::NewLine) }
 }
 
+function Reset-AgentProgressState {
+  $script:progressLastPercent = -1
+  $script:progressLastComponent = ""
+  $script:progressLastPrintedAt = [DateTime]::MinValue
+  $script:progressSampleAt = [DateTime]::MinValue
+  $script:progressSampleBytes = 0L
+  $script:progressBytesPerSecond = 0.0
+}
+
 function Show-AgentProgress($Event) {
-  $percent = [Math]::Max(0, [Math]::Min(100, [int]$Event.percent))
-  $component = [string]$Event.component
-  $status = switch ([string]$Event.phase) {
+  $properties = @($Event.PSObject.Properties.Name)
+  $percent = if ($properties -contains "percent") {
+    [Math]::Max(0, [Math]::Min(100, [int]$Event.percent))
+  } else { 0 }
+  $component = if ($properties -contains "component") { [string]$Event.component } else { "" }
+  $phase = if ($properties -contains "phase") { [string]$Event.phase } else { "working" }
+  $attempt = if ($properties -contains "attempt") { [int]$Event.attempt } else { 0 }
+  $retryAfter = if ($properties -contains "retryAfterSeconds") { [int]$Event.retryAfterSeconds } else { 0 }
+  $heartbeat = ($properties -contains "heartbeat") -and [bool]$Event.heartbeat
+  $status = switch ($phase) {
+    "connect" { "กำลังเชื่อมต่อเพื่อดาวน์โหลด $component (ครั้งที่ $attempt)" }
     "download" { "กำลังดาวน์โหลด $component" }
+    "retry" { "การเชื่อมต่อหยุดชั่วคราว จะลอง $component ใหม่ใน $retryAfter วินาที" }
     "verify" { "กำลังตรวจ SHA-256 ของ $component" }
     "cached" { "ตรวจพบไฟล์ $component ที่ดาวน์โหลดครบแล้ว" }
     "staged" { "ดาวน์โหลดและตรวจสอบ release ครบแล้ว" }
@@ -88,26 +104,73 @@ function Show-AgentProgress($Event) {
     "loaded" { "โหลด $component สำเร็จ" }
     default { "กำลังดำเนินการ $component" }
   }
-  $size = if ([long]$Event.totalBytes -gt 0) {
-    "{0:N1}/{1:N1} MiB" -f ([long]$Event.completedBytes / 1MB), ([long]$Event.totalBytes / 1MB)
+  $completedBytes = if ($properties -contains "completedBytes") { [long]$Event.completedBytes } else { 0L }
+  $totalBytes = if ($properties -contains "totalBytes") { [long]$Event.totalBytes } else { 0L }
+  $componentCompleted = if ($properties -contains "componentCompletedBytes") {
+    [long]$Event.componentCompletedBytes
+  } else { 0L }
+  $componentTotal = if ($properties -contains "componentTotalBytes") {
+    [long]$Event.componentTotalBytes
+  } else { 0L }
+  $size = if ($componentTotal -gt 0) {
+    "ไฟล์ {0:N1}/{1:N1} MiB | รวม {2:N1}/{3:N1} MiB" -f `
+      ($componentCompleted / 1MB), ($componentTotal / 1MB), ($completedBytes / 1MB), ($totalBytes / 1MB)
+  } elseif ($totalBytes -gt 0) {
+    "{0:N1}/{1:N1} MiB" -f ($completedBytes / 1MB), ($totalBytes / 1MB)
   } else { "กำลังทำงาน" }
-  Write-Progress -Id 17 -Activity "BMS Retail Local Update" -Status "$status - $size ($percent%)" -PercentComplete $percent
-  $bucket = [Math]::Floor($percent / 10)
-  if ($component -ne $script:progressLastComponent -or $bucket -gt $script:progressLastBucket -or
-      [string]$Event.phase -in @("verify", "cached", "staged", "inspect", "loaded")) {
-    Write-Host ("  [{0,3}%] {1} - {2}" -f $percent, $status, $size)
-    $script:progressLastBucket = $bucket
+
+  $now = [DateTime]::UtcNow
+  if ($script:progressSampleAt -ne [DateTime]::MinValue -and $completedBytes -gt $script:progressSampleBytes) {
+    $seconds = ($now - $script:progressSampleAt).TotalSeconds
+    if ($seconds -gt 0.1) {
+      $currentSpeed = ($completedBytes - $script:progressSampleBytes) / $seconds
+      $script:progressBytesPerSecond = if ($script:progressBytesPerSecond -le 0) {
+        $currentSpeed
+      } else { ($script:progressBytesPerSecond * 0.7) + ($currentSpeed * 0.3) }
+    }
+  }
+  if ($completedBytes -ne $script:progressSampleBytes) {
+    $script:progressSampleBytes = $completedBytes
+    $script:progressSampleAt = $now
+  } elseif ($script:progressSampleAt -eq [DateTime]::MinValue) {
+    $script:progressSampleAt = $now
+  }
+  $telemetry = ""
+  if ($heartbeat) {
+    $telemetry = " | ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
+  } elseif ($script:progressBytesPerSecond -gt 0 -and $totalBytes -gt $completedBytes) {
+    $etaSeconds = [Math]::Min(359999, [Math]::Max(0, ($totalBytes - $completedBytes) / $script:progressBytesPerSecond))
+    $eta = [TimeSpan]::FromSeconds($etaSeconds)
+    $telemetry = " | {0:N1} MiB/s | เหลือประมาณ {1:hh\:mm\:ss}" -f `
+      ($script:progressBytesPerSecond / 1MB), $eta
+  }
+  Write-Progress -Id 17 -Activity "BMS Retail Local Update" `
+    -Status "$status - $size$telemetry ($percent%)" -PercentComplete $percent
+
+  $terminalPhase = $phase -in @("retry", "verify", "cached", "staged", "inspect", "loaded")
+  $printDue = $script:progressLastPrintedAt -eq [DateTime]::MinValue -or
+    ($now - $script:progressLastPrintedAt).TotalSeconds -ge 5
+  if ($component -ne $script:progressLastComponent -or $percent -gt $script:progressLastPercent -or
+      $terminalPhase -or $printDue) {
+    Write-Host ("  [{0,3}%] {1} - {2}{3} - {4}" -f `
+      $percent, $status, $size, $telemetry, $now.ToLocalTime().ToString("HH:mm:ss"))
+    $script:progressLastPercent = $percent
     $script:progressLastComponent = $component
+    $script:progressLastPrintedAt = $now
   }
 }
 
-function Invoke-WslCommand([string[]]$Arguments) {
+function Invoke-WslCommand([string[]]$Arguments, [switch]$ShowOutput) {
   $previousPreference = $ErrorActionPreference
   try {
     # Windows PowerShell 5.1 promotes native stderr to a terminating error under Stop even when
     # WSL exits successfully. The process exit code remains the authority for this boundary.
     $ErrorActionPreference = "Continue"
-    $output = & wsl.exe @Arguments 2>&1
+    $output = @(& wsl.exe @Arguments 2>&1 | ForEach-Object {
+      $line = [string]$_
+      if ($ShowOutput) { Write-Host $line }
+      $line
+    })
     $exitCode = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $previousPreference
@@ -129,8 +192,8 @@ function Get-ArtifactPath($Release, [string]$Name) {
 
 function Invoke-Transaction([string[]]$Arguments) {
   $result = Invoke-WslCommand -Arguments (@(
-    "-d", $distroName, "-u", "root", "--", "/usr/local/sbin/bms-update-transaction"
-  ) + $Arguments)
+    "-d", $distroName, "-u", "root", "--exec", "/usr/local/sbin/bms-update-transaction"
+  ) + $Arguments) -ShowOutput
   if ($result.ExitCode -ne 0) { throw ($result.Output -join [Environment]::NewLine) }
 }
 
@@ -171,7 +234,7 @@ if (-not (Test-Path -LiteralPath $oldDesktop -PathType Leaf)) {
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "update-release.jws.json"
-Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing
+Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing -TimeoutSec 60
 Move-Item -LiteralPath "$manifestPath.tmp" -Destination $manifestPath -Force
 
 $verifyCommand = if ($CheckOnly) { "check-update" } else { "verify-update" }
@@ -203,6 +266,7 @@ foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-ke
     -source (Join-Path $bootstrapRoot $controlName) -name $controlName
   if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
 }
+Invoke-Transaction @("prepare")
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $keyring,
   "-target", $target, "-root", $InstallRoot, "-progress")
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)

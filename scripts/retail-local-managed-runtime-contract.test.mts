@@ -123,6 +123,8 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(posBootstrapSetup, /signed release manifest/);
   assert.match(posBootstrapSetup, /SHA-256[\s\S]*stage-desktop/);
   assert.match(posBootstrapSetup, /desktop\.artifact/);
+  assert.match(posBootstrapSetup, /BMS_PROGRESS [\s\S]*payload=\$\{line#BMS_PROGRESS \}/);
+  assert.match(posBootstrapSetup, /retryAfterSeconds[\s\S]*heartbeat/);
   assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
   assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
 
@@ -144,6 +146,20 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(hostControl, /runtime release ไม่ครบ[\s\S]*อย่าลบข้อมูลร้าน/);
   assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
   assert.match(hostControl, /businessArchetype[\s\S]*sampleMode[\s\S]*sampleStatus/);
+  assert.match(hostControl, /render_stage_output[\s\S]*retryAfterSeconds[\s\S]*heartbeat/);
+});
+
+test("managed runtime CI smoke-builds online bootstraps on Windows, Ubuntu, and macOS", () => {
+  const workflow = read(".github/workflows/retail-local-managed-runtime.yml");
+
+  assert.match(workflow, /linux-contract:[\s\S]*runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /windows-bootstrap:[\s\S]*runs-on: windows-2022/);
+  assert.match(workflow, /macos-bootstrap:[\s\S]*runs-on: macos-latest/);
+  assert.match(workflow, /deploy\/retail-local\/pos-online\/\*\*/);
+  assert.match(workflow, /BMSPOSOnline\.iss/);
+  assert.match(workflow, /pos-online\/linux\/build-deb\.sh/);
+  assert.match(workflow, /build-bootstrap-pkg\.sh[\s\S]*build-pos-bootstrap-dmg\.sh/);
+  assert.match(workflow, /25 \* 1024 \* 1024/);
 });
 
 test("Managed Runtime release contract requires publisher identity and immutable components", () => {
@@ -229,11 +245,13 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
 
 test("Managed Runtime setup UX preserves actionable preflight and resumable provisioning", () => {
   const agentMain = read("apps/retail-local-agent/main.go");
+  const agentStage = read("apps/retail-local-agent/stage.go");
   const darwin = read("apps/retail-local-agent/preflight_darwin.go");
   const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const inno = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
   const windowsRunner = read("deploy/retail-local/managed-runtime/windows/run-managed-runtime.ps1");
+  const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
 
   assert.match(agentMain, /errPreflightFailed/);
   assert.match(agentMain, /preflight \[--human\]/);
@@ -253,7 +271,9 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /preflight\.warnings/);
   assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
   assert.match(linux, /\.warnings\[\]\?/);
-  assert.match(inno, /ResultCode <> 0[\s\S]*RaiseException/);
+  assert.match(inno, /ResultCode <> 0[\s\S]*ReportBootstrapFailure[\s\S]*exit;/);
+  assert.match(inno, /function GetCustomSetupExitCode\(\): Integer;[\s\S]*if BootstrapFailed then Result := 1/);
+  assert.match(inno, /CurPageID = wpFinished[\s\S]*BootstrapFailed[\s\S]*FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete'/);
   assert.match(inno, /run-managed-runtime\.ps1/);
   assert.match(inno, /setup-error\.txt/);
   assert.match(inno, /setup-transcript\.log/);
@@ -277,8 +297,21 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /IsNullOrWhiteSpace\(\$desktopArguments\)[\s\S]*New-ScheduledTaskAction -Execute \$desktopExecutable/);
   assert.match(windows, /ReadAllText\(\$Path, \[Text\.Encoding\]::UTF8\)/);
   assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*ยังทำงานอยู่/);
+  assert.match(agentStage, /downloadMaxAttempts\s*=\s*5/);
+  assert.match(agentStage, /downloadIdleTimeout\s*=\s*45 \* time\.Second/);
+  assert.match(agentStage, /Header\.Set\("Range", "bytes="\+strconv\.FormatInt\(offset, 10\)\+"-"\)/);
+  assert.match(agentStage, /Heartbeat:\s+heartbeat/);
+  assert.match(linux, /run_agent_json_progress[\s\S]*-progress/);
   assert.match(windows, /wslVersion[\s\S]*--version[\s\S]*finishing an upgrade/);
-  assert.doesNotMatch(inno, /runhidden waituntilterminated/);
+  assert.match(inno, /SW_SHOWMAXIMIZED/);
+  assert.match(inno, /\[UninstallRun\][\s\S]*-NonInteractive -WindowStyle Hidden[\s\S]*runhidden waituntilterminated/);
+  assert.match(inno, /CurUninstallStepChanged[\s\S]*ปกติไม่เกิน 15 วินาที/);
+  assert.match(windowsUninstall, /Stop-ScheduledTask[\s\S]*Unregister-ScheduledTask/);
+  assert.match(windowsUninstall, /BMS Retail Local POS Pairing/);
+  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED" 3[\s\S]*--terminate BMSRuntime" 10/);
+  assert.doesNotMatch(windowsUninstall, /bms-localctl stop/);
+  assert.ok(windowsUninstall.indexOf("Stop-AndRemoveScheduledTask $taskName") <
+    windowsUninstall.indexOf('Invoke-BoundedProcess $wsl "--terminate BMSRuntime"'));
 });
 
 test("local Windows smoke release trusts HTTPS for both the user and elevated installer", () => {
@@ -385,12 +418,41 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(localctl, /REPLACE-LOCAL-DATA/);
   assert.match(localctl, /pg_dump[\s\S]*storage\.tar\.gz[\s\S]*\.env/);
   assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
-  assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
+  assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down[\s\S]*--volumes/);
   assert.match(macosControl, /uninstall\) shift; uninstall_runtime/);
   assert.match(macosControl, /--erase-data[\s\S]*--confirm[\s\S]*ERASE-BMS-RETAIL-LOCAL/);
   assert.match(macosControl, /ข้อมูลร้าน, private VM และ secrets ยังอยู่/);
   assert.match(macosControl, /delete -f "\$INSTANCE"[\s\S]*rm -rf -- "\$STATE_ROOT" "\$LIMA_HOME"/);
   assert.match(macosControl, /sudo pkgutil --forget com\.base2526\.bms\.retail-local/);
+});
+
+test("Linux and macOS uninstall disable relaunch sources and bound slow cleanup", () => {
+  const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
+  const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const linuxDeb = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
+  const macosControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+  const macosLauncher = read("deploy/retail-local/managed-runtime/macos/BMS Retail Local Uninstall.command");
+
+  assert.doesNotMatch(linuxUninstall, /disable --now/);
+  assert.ok(linuxUninstall.indexOf('systemctl disable "$unit"') <
+    linuxUninstall.indexOf("INSTALLATION_DEACTIVATED"));
+  assert.match(linuxUninstall, /stop_unit_bounded bms-retail-local-offhost-backup\.service 5/);
+  assert.match(linuxUninstall, /timeout 3s .*license-pulse[\s\S]*stop_unit_bounded bms-retail-local\.service 10/);
+  assert.match(linuxUninstall, /timeout 45s docker compose[\s\S]*down --timeout 5 --volumes/);
+  assert.match(linuxService, /ExecStop=.*stop --timeout 10[\s\S]*TimeoutStopSec=20/);
+  assert.doesNotMatch(linuxDeb, /disable --now bms-retail-local/);
+  assert.match(linuxDeb, /timeout 5s systemctl stop bms-retail-local-offhost-backup\.service/);
+  assert.match(linuxDeb, /timeout 10s systemctl stop bms-retail-local\.service/);
+  assert.match(linuxDeb, /rm -f \/etc\/systemd\/system\/bms-retail-local\.service[\s\S]*systemctl daemon-reload/);
+
+  assert.match(macosControl, /run_with_timeout\(\)/);
+  assert.match(macosControl, /timeout_marker=.*mktemp[\s\S]*: >"\$timeout_marker"[\s\S]*return 124/);
+  assert.ok(macosControl.indexOf('rm -f -- "$LAUNCH_AGENT"') <
+    macosControl.indexOf('run_with_timeout 3 "$AGENT" license-pulse'));
+  assert.match(macosControl, /run_with_timeout 5 launchctl bootout "\$LAUNCH_LABEL"/);
+  assert.match(macosControl, /run_with_timeout 10 "\$LIMACTL" stop "\$INSTANCE"/);
+  assert.match(macosControl, /run_with_timeout 60 "\$LIMACTL" delete -f "\$INSTANCE"[\s\S]*die "ลบ private VM ไม่สำเร็จ/);
+  assert.match(macosLauncher, /trap finish EXIT/);
 });
 
 test("scheduled off-host backups are encrypted, separate, retained, and visibly monitored", () => {
@@ -442,7 +504,12 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   const releaseBuilder = read("deploy/retail-local/build-release.ps1");
   const onlineBuilder = read("deploy/retail-local/build-online-bootstrap.ps1");
   assert.match(releaseBuilder, /\[ValidateSet\("Online", "Offline"\)\]\[string\]\$Distribution = "Online"/);
+  assert.match(releaseBuilder, /\[switch\]\$AllowOfflineRecovery/);
+  assert.match(releaseBuilder, /\$Distribution -eq "Offline" -and -not \$AllowOfflineRecovery/);
+  assert.match(releaseBuilder, /-Distribution Offline -AllowOfflineRecovery/);
   assert.match(releaseBuilder, /build-online-bootstrap\.ps1/);
+  assert.match(releaseBuilder, /build-online-pos-bootstrap\.ps1/);
+  assert.match(releaseBuilder, /WindowsX86ManifestUri/);
   assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
   assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);
   assert.match(onlineBuilder, /build รองรับเฉพาะ x64/);
@@ -453,6 +520,32 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(onlineBuilder, /runtime-rootfs\\bms-wsl-keepalive/);
   assert.match(onlineBuilder, /Length -gt 25MB/);
   assert.doesNotMatch(onlineBuilder, /docker image save|package\.ps1/);
+});
+
+test("POS-only online bootstraps download one signed desktop component for supported architectures", () => {
+  const builder = read("deploy/retail-local/build-online-pos-bootstrap.ps1");
+  const windowsSetup = read("deploy/retail-local/pos-online/windows/install-pos-online.ps1");
+  const windowsIss = read("deploy/retail-local/pos-online/windows/BMSPOSOnline.iss");
+  const linuxSetup = read("deploy/retail-local/pos-online/linux/bms-pos-online-setup");
+  const linuxBuilder = read("deploy/retail-local/pos-online/linux/build-deb.sh");
+  assert.match(builder, /GoArch = "386"/);
+  assert.match(builder, /GoArch = "amd64"/);
+  assert.match(builder, /windows-10-x86-pos/);
+  assert.match(builder, /ubuntu-24\.04-lts-x64/);
+  assert.match(builder, /Length -gt 25MB/);
+  assert.match(windowsSetup, /stage-desktop/);
+  assert.match(windowsSetup, /Write-Progress/);
+  assert.match(windowsSetup, /StartsWith\("BMS_PROGRESS "\)[\s\S]*Substring\(13\)[\s\S]*ConvertFrom-Json/);
+  assert.match(windowsIss, /PrivilegesRequired=lowest/);
+  assert.match(linuxSetup, /stage-desktop/);
+  assert.match(linuxSetup, /BMS_PROGRESS /);
+  assert.match(linuxSetup, /heartbeat/);
+  assert.match(linuxSetup, /dpkg --configure -a[\s\S]*apt-get -o DPkg::Lock::Timeout=60 install -y/);
+  assert.match(linuxBuilder, /Architecture: amd64/);
+  assert.match(builder, /keyringText -match 'PRIVATE KEY'/);
+  for (const source of [windowsSetup, windowsIss, linuxSetup, linuxBuilder]) {
+    assert.doesNotMatch(source, /PRIVATE KEY|private[-_]key/i);
+  }
 });
 
 test("Windows local release test uses production-format signing without serving private keys", () => {
@@ -528,7 +621,10 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(macosInstaller, /license-record[\s\S]*INSTALLATION_REGISTERED/);
   assert.match(macosInstaller, /license-pulse[\s\S]*\|\| true/);
   assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
-  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
+  assert.match(windowsUninstall, /BMS Retail Local License Evidence/);
+  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED/);
+  assert.ok(windowsUninstall.indexOf("Stop-AndRemoveScheduledTask $taskName") <
+    windowsUninstall.indexOf("INSTALLATION_DEACTIVATED"));
   assert.ok(schema.properties.event.properties.eventType.enum.includes("RUNTIME_SEEN"));
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);
@@ -669,9 +765,15 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
   assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
+  assert.match(linuxUpdater, /bms-update-transaction prepare[\s\S]*stage-release/);
+  assert.match(windowsUpdater, /if \(\$CheckOnly\)[\s\S]*return[\s\S]*Invoke-Transaction @\("prepare"\)[\s\S]*stage-release/);
+  const prepare = transaction.slice(transaction.indexOf("  prepare)"), transaction.indexOf("  begin)"));
+  assert.match(prepare, /start postgres redis web ws/);
+  assert.doesNotMatch(prepare, /compose up|compose run|replace_ref|bms-localctl restore/);
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
   assert.match(windowsUpdater, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
   assert.match(windowsUpdater, /BMS_PROGRESS[\s\S]*Write-Progress/);
+  assert.match(linuxUpdater, /run_agent_json_progress[\s\S]*stage-release[\s\S]*-progress/);
   assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
   assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
   assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);

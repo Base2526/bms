@@ -14,9 +14,16 @@ on:
       - "db/migrations/10.17__bms_retail_local_trial_lifecycle.sql"
       - "db/migrations/10.18__bms_retail_local_activation_and_followup.sql"
       - "deploy/retail-local/managed-runtime/**"
+      - "deploy/retail-local/pos-online/**"
+      - "deploy/retail-local/build-online-bootstrap.ps1"
+      - "deploy/retail-local/build-online-pos-bootstrap.ps1"
+      - "deploy/retail-local/build-release.ps1"
       - "docker-compose.prod.yml"
       - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
+      - "scripts/retail-local-bootstrap-behavior.test.mjs"
+      - "scripts/retail-local-uninstall-container.test.sh"
+      - ".gitattributes"
       - "scripts/retail-local-license-*.test.mts"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
@@ -53,7 +60,7 @@ jobs:
       - name: Test and cross-build native agent
         working-directory: apps/retail-local-agent
         run: |
-          go test ./...
+          go test -race ./...
           go vet ./...
           GOOS=linux GOARCH=amd64 go build -o /tmp/bms-runtime-agent .
           GOOS=windows GOARCH=amd64 go build -o /tmp/bms-runtime-agent.exe .
@@ -73,6 +80,7 @@ jobs:
           POSTGRES_PORT: 5432
           POSTGRES_DB: bms_test
           POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: testpass
         run: |
           psql -v ON_ERROR_STOP=1 -c 'CREATE ROLE bms_app;'
           psql -v ON_ERROR_STOP=1 < db/init.sql
@@ -82,8 +90,10 @@ jobs:
           node scripts/run-contract-tests.mjs db retail-local-license-db-contract
       - name: Validate shell and release contracts
         run: |
-          bash -n deploy/retail-local/managed-runtime/linux/*.sh
+          for script in deploy/retail-local/managed-runtime/linux/*.sh; do bash -n "$script"; done
           bash -n deploy/retail-local/managed-runtime/linux/bms-retail-local-update
+          bash -n deploy/retail-local/pos-online/linux/build-deb.sh
+          bash -n deploy/retail-local/pos-online/linux/bms-pos-online-setup
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
@@ -92,11 +102,14 @@ jobs:
             deploy/retail-local/managed-runtime/runtime-rootfs/build-rootfs.sh \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction \
-            deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
+            deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive \
+            deploy/retail-local/pos-online/linux/build-deb.sh \
+            deploy/retail-local/pos-online/linux/bms-pos-online-setup
           node --check deploy/retail-local/managed-runtime/sign-release.mjs
           node --check deploy/retail-local/managed-runtime/verify-release.mjs
           node --check deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
+          node --test scripts/retail-local-bootstrap-behavior.test.mjs
           scripts/retail-local-update-transaction.test.sh
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
@@ -106,9 +119,11 @@ jobs:
           node --input-type=module -e 'import {generateKeyPairSync} from "node:crypto"; import {writeFileSync} from "node:fs"; const {publicKey}=generateKeyPairSync("ed25519"); writeFileSync(process.argv[1],JSON.stringify({formatVersion:1,keys:{"ci-only":publicKey.export({type:"spki",format:"pem"}).toString()}}));' "$RUNNER_TEMP/bms-signing/keyring.json"
           deploy/retail-local/managed-runtime/linux/build-deb.sh \
             --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+            --manifest-url https://release.example.invalid/ubuntu-24.04-lts-x64/release.jws.json \
             --activation-url https://control.example.com/api/bms/retail-local/activate \
             --version 0.2.0-ci.1 --output-dir "$RUNNER_TEMP/bms-package"
           package=$(find "$RUNNER_TEMP/bms-package" -name '*.deb' -type f -print -quit)
+          test "$(stat -c %s "$package")" -le $((25 * 1024 * 1024))
           dpkg-deb --info "$package"
           dpkg-deb --contents "$package"
           dpkg-deb --extract "$package" "$RUNNER_TEMP/bms-package/extracted"
@@ -124,6 +139,32 @@ jobs:
           test -f "$RUNNER_TEMP/bms-package/extracted/lib/systemd/system/bms-retail-local-license-evidence.timer"
           test -x "$RUNNER_TEMP/bms-package/extracted/usr/lib/bms-retail-local/bootstrap/bms-update-transaction"
           if grep -R -E 'BEGIN .*PRIVATE KEY' "$RUNNER_TEMP/bms-package/extracted"; then exit 1; fi
+      - name: Build and inspect Ubuntu POS-only online bootstrap
+        run: |
+          deploy/retail-local/pos-online/linux/build-deb.sh \
+            0.2.0-ci.1 /tmp/bms-runtime-agent "$RUNNER_TEMP/bms-signing/keyring.json" \
+            https://release.example.invalid/ubuntu-24.04-lts-x64/release.jws.json \
+            ubuntu-24.04-lts-x64 "$RUNNER_TEMP/bms-pos-package"
+          package=$(find "$RUNNER_TEMP/bms-pos-package" -name '*.deb' -type f -print -quit)
+          test -n "$package"
+          test "$(stat -c %s "$package")" -le $((25 * 1024 * 1024))
+          dpkg-deb --extract "$package" "$RUNNER_TEMP/bms-pos-package/extracted"
+          test -x "$RUNNER_TEMP/bms-pos-package/extracted/usr/bin/bms-pos-online-setup"
+          test -x "$RUNNER_TEMP/bms-pos-package/extracted/usr/lib/bms-pos-bootstrap/bms-runtime-agent"
+          grep -Fx 'https://release.example.invalid/ubuntu-24.04-lts-x64/release.jws.json' \
+            "$RUNNER_TEMP/bms-pos-package/extracted/usr/lib/bms-pos-bootstrap/manifest-url"
+          if find "$RUNNER_TEMP/bms-pos-package/extracted" -type f \
+              \( -name '*.artifact' -o -name '*.AppImage' -o -name '*.asar' \) -print -quit | grep -q .; then
+            echo 'POS online bootstrap contains application payload' >&2
+            exit 1
+          fi
+      - name: Uninstall preserves shop data even when service stop hangs
+        run: |
+          dpkg-deb --control "$RUNNER_TEMP/bms-package/"*.deb "$RUNNER_TEMP/bms-package/extracted/DEBIAN"
+          docker run --rm \
+            --mount "type=bind,source=$PWD,target=/workspace,readonly" \
+            --mount "type=bind,source=$RUNNER_TEMP/bms-package/extracted,target=/package,readonly" \
+            ubuntu:24.04 bash /workspace/scripts/retail-local-uninstall-container.test.sh
 
   windows-bootstrap:
     runs-on: windows-2022
@@ -133,11 +174,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: apps/retail-local-agent/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Parse Windows PowerShell 5.1 scripts
         shell: powershell
         run: |
           $errors = @()
-          Get-ChildItem deploy/retail-local/managed-runtime/windows/*.ps1 | ForEach-Object {
+          Get-ChildItem deploy/retail-local/managed-runtime/windows/*.ps1, `
+            deploy/retail-local/pos-online/windows/*.ps1 | ForEach-Object {
             $tokens = $null
             $parseErrors = $null
             [Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
@@ -146,16 +191,127 @@ jobs:
           if ($errors.Count) { $errors | Format-List; exit 1 }
       - name: Build Windows agent
         working-directory: apps/retail-local-agent
-        run: go test ./...; go build -o ../../deploy/retail-local/managed-runtime/windows/bms-runtime-agent.exe .
+        run: |
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go build -o ../../deploy/retail-local/managed-runtime/windows/bms-runtime-agent.exe .
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Smoke-build unsigned bootstrap EXE
         shell: powershell
         run: |
           choco install innosetup --no-progress -y
           $bundle = (Resolve-Path deploy/retail-local/managed-runtime/windows).Path
-          '{"formatVersion":1,"keys":{}}' | Set-Content "$bundle\trusted-release-keys.json" -Encoding ascii
+          @'
+          import { generateKeyPairSync } from "node:crypto";
+          import { writeFileSync } from "node:fs";
+          const { publicKey } = generateKeyPairSync("ed25519");
+          writeFileSync(process.argv[2], JSON.stringify({
+            formatVersion: 1,
+            keys: { "ci-only": publicKey.export({ type: "spki", format: "pem" }).toString() },
+          }));
+          '@ | Set-Content "$env:RUNNER_TEMP\create-ci-keyring.mjs" -Encoding utf8
+          node "$env:RUNNER_TEMP\create-ci-keyring.mjs" "$bundle\trusted-release-keys.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DBuildRoot=$bundle" "/DOutputRoot=$env:RUNNER_TEMP" "/DProductVersion=0.0.0-ci" `
             "/DManifestUri=https://release.example.invalid/release.jws.json" `
             "/DActivationUri=https://control.example.com/api/bms/retail-local/activate" `
             "$bundle\BMSRetailLocal.iss"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $artifact = Get-Item "$env:RUNNER_TEMP\BMS-Retail-Local-Setup-0.0.0-ci-x64.exe"
+          if ($artifact.Length -gt 25MB) { throw "Server + POS online bootstrap exceeds 25 MiB: $($artifact.FullName)" }
+      - name: Smoke-build Windows x64 and x86 POS-only online bootstraps
+        shell: powershell
+        run: |
+          $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          $source = (Resolve-Path deploy/retail-local/pos-online/windows).Path
+          foreach ($target in @(
+            @{ Name = 'x64'; GoArch = 'amd64'; Platform = 'windows-11-x64' },
+            @{ Name = 'x86'; GoArch = '386'; Platform = 'windows-10-x86-pos' }
+          )) {
+            $bundle = Join-Path $env:RUNNER_TEMP "bms-pos-$($target.Name)"
+            $output = Join-Path $env:RUNNER_TEMP "bms-pos-$($target.Name)-output"
+            New-Item -ItemType Directory -Force -Path $bundle, $output | Out-Null
+            Copy-Item "$source\install-pos-online.ps1" $bundle
+            Copy-Item "deploy\retail-local\managed-runtime\windows\trusted-release-keys.json" $bundle
+            Push-Location apps/retail-local-agent
+            $env:CGO_ENABLED = '0'
+            $env:GOOS = 'windows'
+            $env:GOARCH = $target.GoArch
+            go build -trimpath -ldflags '-s -w' -o "$bundle\bms-runtime-agent.exe" .
+            $goExit = $LASTEXITCODE
+            Pop-Location
+            if ($goExit -ne 0) { exit $goExit }
+            & $compiler "/DBuildRoot=$bundle" "/DOutputRoot=$output" `
+              "/DProductVersion=0.0.0-ci" `
+              "/DManifestUri=https://release.example.invalid/$($target.Platform)/release.jws.json" `
+              "/DPlatformTarget=$($target.Platform)" `
+              "/DArtifactBaseFilename=BMS-POS-$($target.Name)-SMOKE-ONLY" `
+              "$source\BMSPOSOnline.iss"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            $artifact = Get-Item "$output\*.exe"
+            if ($artifact.Length -gt 25MB) { throw "POS online bootstrap exceeds 25 MiB: $($artifact.FullName)" }
+          }
+      - name: Execute setup failure and cancellation tests
+        env:
+          BMS_INNO_COMPILER: C:\Program Files (x86)\Inno Setup 6\ISCC.exe
+        run: node --test scripts/retail-local-bootstrap-behavior.test.mjs
+
+  macos-bootstrap:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: apps/retail-local-agent/go.mod
+          cache-dependency-path: apps/retail-local-agent/go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test agent and validate macOS scripts
+        run: |
+          (cd apps/retail-local-agent && go test ./... && go vet ./...)
+          for script in deploy/retail-local/managed-runtime/macos/*.sh deploy/retail-local/managed-runtime/macos/*.command; do
+            bash -n "$script"
+          done
+          bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local
+          bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local-app
+          bash -n deploy/retail-local/managed-runtime/macos/bms-pos-online-app
+          bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local-setup.command
+          bash -n deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command
+          node --test scripts/retail-local-bootstrap-behavior.test.mjs
+      - name: Generate CI-only public release keyring
+        run: |
+          mkdir -p "$RUNNER_TEMP/bms-signing" "$RUNNER_TEMP/bms-macos-package"
+          node --input-type=module -e 'import {generateKeyPairSync} from "node:crypto"; import {writeFileSync} from "node:fs"; const {publicKey}=generateKeyPairSync("ed25519"); writeFileSync(process.argv[1],JSON.stringify({formatVersion:1,keys:{"ci-only":publicKey.export({type:"spki",format:"pem"}).toString()}}));' "$RUNNER_TEMP/bms-signing/keyring.json"
+      - name: Build and inspect macOS arm64 and Intel online bootstraps
+        run: |
+          for architecture in arm64 x64; do
+            manifest="https://release.example.invalid/macos-15-$architecture/release.jws.json"
+            deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
+              --version 0.2.0-ci.1 --architecture "$architecture" \
+              --manifest-url "$manifest" --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+              --output-dir "$RUNNER_TEMP/bms-macos-package" --allow-test-endpoints
+            deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
+              --version 0.2.0-ci.1 --architecture "$architecture" \
+              --manifest-url "$manifest" --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+              --output-dir "$RUNNER_TEMP/bms-macos-package" --allow-test-endpoints
+          done
+          for artifact in "$RUNNER_TEMP/bms-macos-package"/*.pkg "$RUNNER_TEMP/bms-macos-package"/*.dmg; do
+            test "$(stat -f %z "$artifact")" -le $((25 * 1024 * 1024))
+            test -f "$artifact.sha256"
+            test -f "$artifact.json"
+            grep -q '"distribution":"online-bootstrap"' "$artifact.json"
+            grep -q '"firstInstallInternetRequired":true' "$artifact.json"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retail-local-macos-online-smoke-${{ github.sha }}
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/bms-macos-package/*.pkg
+            ${{ runner.temp }}/bms-macos-package/*.dmg
+            ${{ runner.temp }}/bms-macos-package/*.sha256
+            ${{ runner.temp }}/bms-macos-package/*.json
+          retention-days: 7

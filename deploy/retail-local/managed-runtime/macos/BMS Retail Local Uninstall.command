@@ -1,5 +1,14 @@
 #!/bin/bash
-set -u
+set -Eeuo pipefail
+
+finish() {
+  local status=$?
+  trap - EXIT
+  printf '\nกด Enter เพื่อปิดหน้าต่างนี้...'
+  read -r || true
+  exit "$status"
+}
+trap finish EXIT
 
 clear
 printf 'ถอนการติดตั้ง BMS Retail Local\n\n'
@@ -25,6 +34,3 @@ case "$choice" in
     printf 'ยกเลิก\n'
     ;;
 esac
-
-printf '\nกด Enter เพื่อปิดหน้าต่างนี้...'
-read -r

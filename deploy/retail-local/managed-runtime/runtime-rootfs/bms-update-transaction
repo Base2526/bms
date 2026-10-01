@@ -75,6 +75,31 @@ rollback() {
 }
 
 case "${1:-}" in
+  prepare)
+    for file in .env compose.yml installation.json; do
+      [ -f "$root/$file" ] || die "Existing installation is incomplete: $file. Preserve shop data and collect diagnostics."
+    done
+    take_lock
+    [ ! -e "$active" ] || die "An interrupted update needs recovery before another update can start."
+    timeout 20 docker info >/dev/null 2>&1 || die "Docker is not ready. Restart the private runtime and retry."
+    if timeout 10 bms-localctl doctor >/dev/null 2>&1; then exit 0; fi
+    echo "Starting existing shop containers; no image, database or secret changes."
+    # Never use up here: tags may have moved, and dependencies can include migrations.
+    timeout 120 docker compose --env-file "$root/.env" -f "$root/compose.yml" \
+      start postgres redis web ws || die "Could not start existing containers. No update was applied; collect runtime diagnostics."
+    started=$(date +%s)
+    deadline=$((started + 180))
+    while [ "$(date +%s)" -lt "$deadline" ]; do
+      if timeout 10 bms-localctl doctor >/dev/null 2>&1; then
+        echo "Existing shop is healthy; update preparation can continue."
+        exit 0
+      fi
+      echo "Waiting for existing shop health ($(( $(date +%s) - started ))/180 seconds)..."
+      sleep 3
+    done
+    timeout 10 bms-localctl doctor >&2 || true
+    die "Existing shop is still unhealthy. No update was applied. Preserve data and collect PostgreSQL/runtime diagnostics."
+    ;;
   begin)
     shift
     [ "$#" -eq 6 ] || die "usage: begin VERSION ROLLBACK_SAFE WEB_REF WS_REF POSTGRES_REF REDIS_REF"
@@ -160,6 +185,6 @@ case "${1:-}" in
     rollback "$version"
     ;;
   *)
-    die "usage: bms-update-transaction <begin|commit|rollback|recover> ..."
+    die "usage: bms-update-transaction <prepare|begin|commit|rollback|recover> ..."
     ;;
 esac

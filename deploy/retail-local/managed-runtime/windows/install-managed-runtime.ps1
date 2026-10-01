@@ -58,7 +58,18 @@ function New-HexSecret([int]$Bytes) {
 }
 
 function Write-Utf8NoBom([string]$Path, [string]$Contents) {
-  [IO.File]::WriteAllText($Path, $Contents, [Text.UTF8Encoding]::new($false))
+  $temporary = "$Path.pending"
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Contents)
+  $stream = [IO.File]::Open($temporary, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush($true)
+  } finally { $stream.Dispose() }
+  if ([IO.File]::Exists($Path)) {
+    [IO.File]::Replace($temporary, $Path, [NullString]::Value)
+  } else {
+    [IO.File]::Move($temporary, $Path)
+  }
 }
 
 function Read-Utf8Text([string]$Path) {
@@ -183,8 +194,7 @@ function Get-ArtifactPath($Release, [string]$Name) {
 
 function Invoke-AgentJson([string[]]$Arguments) {
   $output = New-Object System.Collections.Generic.List[string]
-  $script:progressLastBucket = -1
-  $script:progressLastComponent = ""
+  Reset-AgentProgressState
   & $script:installedAgent @Arguments 2>&1 | ForEach-Object {
     $line = [string]$_
     if ($line.StartsWith("BMS_PROGRESS ")) {
@@ -201,8 +211,7 @@ function Invoke-AgentJson([string[]]$Arguments) {
 
 function Invoke-AgentProgress([string[]]$Arguments) {
   $output = New-Object System.Collections.Generic.List[string]
-  $script:progressLastBucket = -1
-  $script:progressLastComponent = ""
+  Reset-AgentProgressState
   & $script:installedAgent @Arguments 2>&1 | ForEach-Object {
     $line = [string]$_
     if ($line.StartsWith("BMS_PROGRESS ")) {
@@ -219,11 +228,29 @@ function Invoke-AgentProgress([string[]]$Arguments) {
   }
 }
 
+function Reset-AgentProgressState {
+  $script:progressLastPercent = -1
+  $script:progressLastComponent = ""
+  $script:progressLastPrintedAt = [DateTime]::MinValue
+  $script:progressSampleAt = [DateTime]::MinValue
+  $script:progressSampleBytes = 0L
+  $script:progressBytesPerSecond = 0.0
+}
+
 function Show-AgentProgress($Event) {
-  $percent = [Math]::Max(0, [Math]::Min(100, [int]$Event.percent))
-  $component = [string]$Event.component
-  $status = switch ([string]$Event.phase) {
+  $properties = @($Event.PSObject.Properties.Name)
+  $percent = if ($properties -contains "percent") {
+    [Math]::Max(0, [Math]::Min(100, [int]$Event.percent))
+  } else { 0 }
+  $component = if ($properties -contains "component") { [string]$Event.component } else { "" }
+  $phase = if ($properties -contains "phase") { [string]$Event.phase } else { "working" }
+  $attempt = if ($properties -contains "attempt") { [int]$Event.attempt } else { 0 }
+  $retryAfter = if ($properties -contains "retryAfterSeconds") { [int]$Event.retryAfterSeconds } else { 0 }
+  $heartbeat = ($properties -contains "heartbeat") -and [bool]$Event.heartbeat
+  $status = switch ($phase) {
+    "connect" { "กำลังเชื่อมต่อเพื่อดาวน์โหลด $component (ครั้งที่ $attempt)" }
     "download" { "กำลังดาวน์โหลด $component" }
+    "retry" { "การเชื่อมต่อหยุดชั่วคราว จะลอง $component ใหม่ใน $retryAfter วินาที" }
     "verify" { "กำลังตรวจ SHA-256 ของ $component" }
     "cached" { "ตรวจพบไฟล์ $component ที่ดาวน์โหลดครบแล้ว" }
     "staged" { "ดาวน์โหลดและตรวจสอบ release ครบแล้ว" }
@@ -232,16 +259,59 @@ function Show-AgentProgress($Event) {
     "loaded" { "โหลด $component สำเร็จ" }
     default { "กำลังดำเนินการ $component" }
   }
-  $size = if ([long]$Event.totalBytes -gt 0) {
-    "{0:N1}/{1:N1} MiB" -f ([long]$Event.completedBytes / 1MB), ([long]$Event.totalBytes / 1MB)
+  $completedBytes = if ($properties -contains "completedBytes") { [long]$Event.completedBytes } else { 0L }
+  $totalBytes = if ($properties -contains "totalBytes") { [long]$Event.totalBytes } else { 0L }
+  $componentCompleted = if ($properties -contains "componentCompletedBytes") {
+    [long]$Event.componentCompletedBytes
+  } else { 0L }
+  $componentTotal = if ($properties -contains "componentTotalBytes") {
+    [long]$Event.componentTotalBytes
+  } else { 0L }
+  $size = if ($componentTotal -gt 0) {
+    "ไฟล์ {0:N1}/{1:N1} MiB | รวม {2:N1}/{3:N1} MiB" -f `
+      ($componentCompleted / 1MB), ($componentTotal / 1MB), ($completedBytes / 1MB), ($totalBytes / 1MB)
+  } elseif ($totalBytes -gt 0) {
+    "{0:N1}/{1:N1} MiB" -f ($completedBytes / 1MB), ($totalBytes / 1MB)
   } else { "กำลังทำงาน" }
-  Write-Progress -Id 17 -Activity "BMS Retail Local Setup" -Status "$status - $size ($percent%)" -PercentComplete $percent
-  $bucket = [Math]::Floor($percent / 10)
-  if ($component -ne $script:progressLastComponent -or $bucket -gt $script:progressLastBucket -or
-      [string]$Event.phase -in @("verify", "cached", "staged", "inspect", "loaded")) {
-    Write-Host ("  [{0,3}%] {1} - {2}" -f $percent, $status, $size)
-    $script:progressLastBucket = $bucket
+
+  $now = [DateTime]::UtcNow
+  if ($script:progressSampleAt -ne [DateTime]::MinValue -and $completedBytes -gt $script:progressSampleBytes) {
+    $seconds = ($now - $script:progressSampleAt).TotalSeconds
+    if ($seconds -gt 0.1) {
+      $currentSpeed = ($completedBytes - $script:progressSampleBytes) / $seconds
+      $script:progressBytesPerSecond = if ($script:progressBytesPerSecond -le 0) {
+        $currentSpeed
+      } else { ($script:progressBytesPerSecond * 0.7) + ($currentSpeed * 0.3) }
+    }
+  }
+  if ($completedBytes -ne $script:progressSampleBytes) {
+    $script:progressSampleBytes = $completedBytes
+    $script:progressSampleAt = $now
+  } elseif ($script:progressSampleAt -eq [DateTime]::MinValue) {
+    $script:progressSampleAt = $now
+  }
+  $telemetry = ""
+  if ($heartbeat) {
+    $telemetry = " | ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
+  } elseif ($script:progressBytesPerSecond -gt 0 -and $totalBytes -gt $completedBytes) {
+    $etaSeconds = [Math]::Min(359999, [Math]::Max(0, ($totalBytes - $completedBytes) / $script:progressBytesPerSecond))
+    $eta = [TimeSpan]::FromSeconds($etaSeconds)
+    $telemetry = " | {0:N1} MiB/s | เหลือประมาณ {1:hh\:mm\:ss}" -f `
+      ($script:progressBytesPerSecond / 1MB), $eta
+  }
+  Write-Progress -Id 17 -Activity "BMS Retail Local Setup" `
+    -Status "$status - $size$telemetry ($percent%)" -PercentComplete $percent
+
+  $terminalPhase = $phase -in @("retry", "verify", "cached", "staged", "inspect", "loaded")
+  $printDue = $script:progressLastPrintedAt -eq [DateTime]::MinValue -or
+    ($now - $script:progressLastPrintedAt).TotalSeconds -ge 5
+  if ($component -ne $script:progressLastComponent -or $percent -gt $script:progressLastPercent -or
+      $terminalPhase -or $printDue) {
+    Write-Host ("  [{0,3}%] {1} - {2}{3} - {4}" -f `
+      $percent, $status, $size, $telemetry, $now.ToLocalTime().ToString("HH:mm:ss"))
+    $script:progressLastPercent = $percent
     $script:progressLastComponent = $component
+    $script:progressLastPrintedAt = $now
   }
 }
 
@@ -256,7 +326,7 @@ function Invoke-WslCommand([string[]]$Arguments, [switch]$Quiet) {
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
   }
-  $lines = @($output | ForEach-Object { [string]$_ })
+  $lines = @($output | ForEach-Object { ([string]$_).Replace([string][char]0, '') })
   if (-not $Quiet) {
     foreach ($line in $lines) { Write-Host $line }
   }
@@ -427,9 +497,9 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhi
 
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
   & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
   $resumePath = Join-Path $bootstrapRoot "resume.json"
   $resumeJson = [ordered]@{
     manifestUri = $ManifestUri
@@ -482,7 +552,7 @@ New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "release.jws.json"
 Write-Step 3 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
 try {
-  Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing
+  Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing -TimeoutSec 60
 } catch {
   throw "ดาวน์โหลด signed release manifest ไม่สำเร็จจาก $ManifestUri : $($_.Exception.Message)"
 }
@@ -498,9 +568,11 @@ $archetypeCatalog = Get-ShopArchetypeCatalog $archetypeArtifact.path
 Write-Step 4 "ติดตั้ง private WSL runtime"
 $runtime = Get-ArtifactPath $release "runtime"
 $installedDistroResult = Invoke-WslCommand -Arguments @("--list", "--quiet") -Quiet
+if ($installedDistroResult.ExitCode -ne 0) { throw "อ่านรายชื่อ WSL ไม่สำเร็จ กรุณา restart Windows แล้วเปิด Setup อีกครั้ง; ระบบจะไม่ลบ runtime เดิม" }
 $installedDistros = @($installedDistroResult.Output | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
 if ($distroName -notin $installedDistros) {
-  $wslRoot = Join-Path $InstallRoot "wsl"
+  # A cancelled import can leave an unregistered VHD. Preserve it and use a fresh directory.
+  $wslRoot = Join-Path $InstallRoot ("wsl-import-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $wslRoot | Out-Null
   Write-Host "  กำลังแตก private runtime ลง WSL2 อาจใช้เวลา 1-3 นาที กรุณาอย่าปิดหน้าต่างนี้..."
   $wslImport = Invoke-WslCommand -Arguments @("--import", $distroName, $wslRoot, $runtime.path, "--version", "2")
@@ -787,10 +859,12 @@ if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
   sampleMode = $sampleMode
   sampleStatus = $sampleStatus
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
-} | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
-& $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
+} | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom "$installationReceipt.prepared" $_ }
+& $installedAgent runtime-write -engine windows-wsl -distro $distroName -source "$installationReceipt.prepared" `
   -destination "$runtimeData/installation.json" -mode "0600"
 if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
+Write-Utf8NoBom $installationReceipt (Read-Utf8Text "$installationReceipt.prepared")
+Remove-Item -LiteralPath "$installationReceipt.prepared" -Force
 [void](Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "rm", "-f", $provisionCheckpoint) -Quiet)
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
