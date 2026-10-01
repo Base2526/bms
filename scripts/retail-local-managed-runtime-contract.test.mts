@@ -271,7 +271,9 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /preflight\.warnings/);
   assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
   assert.match(linux, /\.warnings\[\]\?/);
-  assert.match(inno, /ResultCode <> 0[\s\S]*RaiseException/);
+  assert.match(inno, /ResultCode <> 0[\s\S]*ReportBootstrapFailure[\s\S]*exit;/);
+  assert.match(inno, /function GetCustomSetupExitCode\(\): Integer;[\s\S]*if BootstrapFailed then Result := 1/);
+  assert.match(inno, /CurPageID = wpFinished[\s\S]*BootstrapFailed[\s\S]*FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete'/);
   assert.match(inno, /run-managed-runtime\.ps1/);
   assert.match(inno, /setup-error\.txt/);
   assert.match(inno, /setup-transcript\.log/);
