@@ -42,6 +42,7 @@ Source: "{#BuildRoot}\bms-runtime-agent.exe"; DestDir: "{tmp}\bms-retail-local";
 Source: "{#BuildRoot}\trusted-release-keys.json"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\install-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\run-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
+Source: "{#BuildRoot}\setup-diagnostics.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\update-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\backup-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 Source: "{#BuildRoot}\restore-managed-runtime.ps1"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
@@ -87,6 +88,29 @@ var
   ManagedRuntimeNeedsRestart: Boolean;
   BootstrapFailed: Boolean;
   BootstrapError: String;
+  DiagnosticsButton: TNewButton;
+
+procedure OpenDiagnostics(Sender: TObject);
+var
+  ResultCode: Integer;
+begin
+  ShellExec('', ExpandConstant('{win}\explorer.exe'),
+    AddQuotes(ExpandConstant('{commonappdata}\BMS\RetailLocal\diagnostics')),
+    '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+  ShellExec('open', 'https://bms.jachoei.com/installer-report', '', '',
+    SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
+procedure InitializeWizard();
+begin
+  DiagnosticsButton := TNewButton.Create(WizardForm);
+  DiagnosticsButton.Parent := WizardForm;
+  DiagnosticsButton.SetBounds(ScaleX(16), WizardForm.CancelButton.Top,
+    ScaleX(170), WizardForm.CancelButton.Height);
+  DiagnosticsButton.Caption := 'Send error report';
+  DiagnosticsButton.OnClick := @OpenDiagnostics;
+  DiagnosticsButton.Visible := False;
+end;
 
 procedure ReportBootstrapFailure(Message: String);
 begin
@@ -96,6 +120,8 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  DiagnosticsButton.Visible := (CurPageID = wpFinished) and BootstrapFailed and
+    DirExists(ExpandConstant('{commonappdata}\BMS\RetailLocal\diagnostics'));
   if (CurPageID = wpFinished) and BootstrapFailed then
   begin
     WizardForm.FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete';
@@ -139,7 +165,7 @@ begin
   if '{#ActivationUri}' <> '' then
     Parameters := Parameters + ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
   Parameters := Parameters + ' -ErrorFile ' + AddQuotes(ErrorPath) +
-    ' -LogFile ' + AddQuotes(LogPath);
+    ' -LogFile ' + AddQuotes(LogPath) + ' -InstallerVersion ' + AddQuotes('{#ProductVersion}');
   WizardForm.StatusLabel.Caption := 'กำลังเปิดหน้าต่างตั้งค่าร้าน...';
   WizardForm.Hide;
   try

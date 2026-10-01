@@ -45,6 +45,10 @@ component_payload=$(find "$expanded" -type d -path '*/BMSRetailLocal.component.p
 system_root="$component_payload/Library/Application Support/BMS/RetailLocal"
 [[ -n $system_root ]] || { echo "ไม่พบ Retail Local payload" >&2; exit 1; }
 control="$system_root/control/bms-retail-local"
+[[ -s $system_root/control/setup-diagnostics.sh && -s $system_root/control/BOOTSTRAP_VERSION ]] || {
+  echo "package is missing error reporting files" >&2; exit 1;
+}
+bash -n "$system_root/control/setup-diagnostics.sh"
 platform_target=$(cat "$system_root/payload/PLATFORM_TARGET")
 case "$platform_target" in
   macos-15-arm64) required_host_arch=arm64 ;;

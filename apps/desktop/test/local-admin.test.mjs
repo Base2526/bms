@@ -5,7 +5,7 @@ import test from "node:test";
 const root = new URL("../", import.meta.url);
 const read = (path) => readFile(new URL(path, root), "utf8");
 
-test("first-run setup can start only the installed local server and open POS device management", async () => {
+test("first-run setup can open local POS device management on every desktop platform", async () => {
   const [main, preload, setup] = await Promise.all([
     read("src/main.mjs"),
     read("src/preload.cjs"),
@@ -22,4 +22,10 @@ test("first-run setup can start only the installed local server and open POS dev
     main,
     /async function openInstalledLocalAdmin\(\)[\s\S]+startManagedLocalRuntime\(\)[\s\S]+managedLocalPosDevicesUrl\(\)/,
   );
+  assert.doesNotMatch(setup, /id="local-admin-section"[^>]*hidden/);
+  const renderer = await read("renderer/setup.js");
+  assert.doesNotMatch(renderer, /platform\s*!==\s*["']darwin/);
+  assert.match(main, /await checkManagedLocalAdminReady/);
+  assert.match(main, /await shell\.openExternal\(managedLocalPosDevicesUrl\(\)\)/);
+  assert.doesNotMatch(main, /if \(!result\?\.attempted\) return false/);
 });

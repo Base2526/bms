@@ -34,10 +34,14 @@ recovery guarantees, and its own failure-mode evidence.
 - paired startup paints a local connection screen before probing the server, bounds the compatibility
   probe and page navigation with timeouts, and offers retry or re-pair recovery instead of leaving the
   native window on its background colour when the network or web deployment stalls;
-- on macOS first-run setup, **เปิดระบบหลังบ้านบนเครื่องนี้** validates the installed Retail Local
-  receipt and root-owned controller, starts the managed server when needed, and opens
-  `/admin/pos-devices` in the system browser so the operator can create the pairing link without
-  knowing a localhost URL; remote-server pairing remains the explicit URL/token flow;
+- first-run setup on **Windows, Linux and macOS** always shows **เปิดระบบหลังบ้านบนเครื่องนี้**.
+  It checks the fixed local `/admin/login` endpoint (eight-second limit, no credentials or
+  redirects) and opens `/admin/pos-devices` in the system browser, which still requires the
+  normal admin login. On macOS it first validates the receipt/root-owned controller and starts
+  the managed server when needed; Windows/Linux use the service already started by the installer,
+  never elevate or execute a user-writable startup script. Unavailable servers show a retry/repair
+  message; POS-only users can still supply their shop's remote URL/token. Opening the browser
+  fills an empty Server URL but never overwrites a remote URL or pairing link;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
 - one register owns at most one customer-display window: settings can keep it off, automatically use

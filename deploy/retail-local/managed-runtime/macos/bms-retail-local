@@ -60,9 +60,9 @@ else
   export PATH="$RUNTIME_ROOT/lima/bin:$RUNTIME_ROOT/lima/libexec:/usr/bin:/bin:/usr/sbin:/sbin"
 fi
 
-die() { printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS] %s\n' "$*"; }
-step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
+step() { BMS_DIAG_STAGE="step-$1-of-7"; printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 uninstall_step() { printf '\n[BMS Uninstall %s/4] %s\n' "$1" "$2"; }
 run_with_timeout() {
   local seconds=$1 command_pid timer_pid status=0 timeout_marker
@@ -1044,7 +1044,14 @@ host_service() {
 }
 
 case "${1:-}" in
-  setup) setup_runtime ;;
+  setup)
+    # shellcheck source=../setup-diagnostics.sh
+    source "$CONTROL_ROOT/setup-diagnostics.sh"
+    bms_diagnostics_init server-pos "$STATE_ROOT" "$CONTROL_ROOT/BOOTSTRAP_VERSION"
+    trap 'status=$?; trap - EXIT ERR; bms_diagnostics_finish "$status"; exit "$status"' EXIT
+    trap 'exit 130' HUP INT TERM
+    setup_runtime
+    ;;
   start) start_runtime ;;
   ensure-running) ensure_runtime ;;
   stop) stop_runtime ;;

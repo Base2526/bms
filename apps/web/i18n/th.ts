@@ -1,5 +1,17 @@
 // i18n/th.ts
 const th = {
+  installer_reports: {
+    title: "รายงานปัญหาการติดตั้ง", submit_title: "ส่งรายงานการติดตั้ง BMS", choose_file: "ไฟล์รายงาน (.zip, .tar.gz, .json, .txt)",
+    consent: "ฉันตรวจสอบรายงานแล้ว และยินยอมส่งรายละเอียดข้อผิดพลาดกับข้อมูลระบบให้ทีม BMS เก็บไว้ 90 วัน โดยไม่แนบ log ดิบหรือข้อมูลร้าน",
+    send: "ส่งรายงาน", sent: "รับรายงานแล้ว หมายเลขอ้างอิง:", invalid_report: "ไฟล์นี้ไม่ใช่รายงานการติดตั้ง BMS ที่รองรับ",
+    payload_too_large: "ไฟล์รายงานต้องไม่เกิน 64 KiB", rate_limited: "ส่งรายงานถี่เกินไป กรุณาลองใหม่ภายหลัง",
+    consent_required: "กรุณายืนยันความยินยอมก่อนส่ง", reports_unavailable: "ระบบรายงานยังไม่พร้อม กรุณาเก็บไฟล์ไว้แล้วลองใหม่ภายหลัง",
+    unauthorized: "เฉพาะผู้ดูแลระบบแพลตฟอร์มเท่านั้น", invalid_date: "ช่วงวันที่ไม่ถูกต้อง", report_changed_reload: "มีผู้ดูแลคนอื่นแก้ไขรายงานนี้ กรุณาปิดแล้วเปิดใหม่ก่อนบันทึก",
+    platform: "แพลตฟอร์ม", architecture: "สถาปัตยกรรม", product: "ผลิตภัณฑ์", version: "รุ่น installer", os_version: "รุ่น OS", stage: "ขั้นตอนที่ล้มเหลว", error: "ข้อผิดพลาด",
+    status: "สถานะ", NEW: "ใหม่", INVESTIGATING: "กำลังตรวจสอบ", RESOLVED: "แก้ไขแล้ว", received: "เวลารับรายงาน", refresh: "โหลดใหม่", search: "ข้อผิดพลาดหรือหมายเลขอ้างอิง", from: "ตั้งแต่", to: "ถึง",
+    total: "จำนวนรายงาน", groups: "กลุ่มข้อผิดพลาดตรงกัน (10 อันดับ)", group_filter: "กรองกลุ่มข้อผิดพลาดตรงกัน", detail: "รายละเอียดรายงาน", loading: "กำลังโหลด...",
+    unverified: "ข้อมูลที่ผู้ใช้ส่งมา รายละเอียดระบบและเวลาจากเครื่องยังไม่ได้ตรวจสอบยืนยันแยกต่างหาก", download: "ดาวน์โหลดรายงานที่กรองแล้ว", note: "บันทึกการวิเคราะห์", save: "บันทึก",
+  },
   common: {
     back: "ย้อนกลับ",
     home: "หน้าแรก",
@@ -654,6 +666,7 @@ const th = {
     auth_settings: "Social Login",
     retail_local_licenses: "License Retail Local",
     retail_local_releases: "ดาวน์โหลด Retail Local",
+    installer_reports: "รายงานปัญหาการติดตั้ง",
     board_game: "โต๊ะบอร์ดเกม",
     pos_manual: "คู่มือแคชเชียร์",
     products: "สินค้า",

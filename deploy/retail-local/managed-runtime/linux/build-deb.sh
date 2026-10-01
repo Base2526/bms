@@ -69,6 +69,9 @@ else
 fi
 install -m 0755 "$linux_root/install-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/install-managed-runtime.sh"
+install -m 0644 "$linux_root/../setup-diagnostics.sh" \
+  "$package_root/usr/lib/bms-retail-local/bootstrap/setup-diagnostics.sh"
+printf '%s\n' "$version" >"$package_root/usr/lib/bms-retail-local/bootstrap/BOOTSTRAP_VERSION"
 install -m 0755 "$linux_root/uninstall-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/uninstall-managed-runtime.sh"
 install -m 0755 "$linux_root/update-managed-runtime.sh" \

@@ -1,5 +1,17 @@
 // i18n/en.ts
 const en = {
+  installer_reports: {
+    title: "Installer error reports", submit_title: "BMS installation report", choose_file: "Report file (.zip, .tar.gz, .json, .txt)",
+    consent: "I have reviewed this report and agree to send its error details and system information to BMS support. Reports are kept for 90 days. Do not attach raw logs or shop data.",
+    send: "Send report", sent: "Report received. Reference:", invalid_report: "This file is not a supported BMS installation report.",
+    payload_too_large: "The report must be 64 KiB or smaller.", rate_limited: "Too many reports. Please try again later.",
+    consent_required: "Consent is required before sending.", reports_unavailable: "Reports are unavailable. Keep the file and try again later.",
+    unauthorized: "Platform administrator access is required.", invalid_date: "Invalid date range.", report_changed_reload: "Another administrator changed this report. Close and reopen it before saving.",
+    platform: "Platform", architecture: "Architecture", product: "Product", version: "Installer version", os_version: "OS version", stage: "Failed stage", error: "Error",
+    status: "Status", NEW: "New", INVESTIGATING: "Investigating", RESOLVED: "Resolved", received: "Received", refresh: "Refresh", search: "Error or reference", from: "From", to: "To",
+    total: "Reports", groups: "Matching failures (top 10)", group_filter: "Matching failure filter", detail: "Report details", loading: "Loading...",
+    unverified: "User-submitted evidence. System details and client timestamps are not independently verified.", download: "Download sanitized report", note: "Investigation notes", save: "Save",
+  },
   common: {
     back: "Back",
     home: "Home",
@@ -652,6 +664,7 @@ const en = {
     auth_settings: "Social Login",
     retail_local_licenses: "Retail Local licenses",
     retail_local_releases: "Retail Local downloads",
+    installer_reports: "Installer error reports",
     board_game: "Board Game Tables",
     pos_manual: "Cashier Manual",
     products: "Products",

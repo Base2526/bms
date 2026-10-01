@@ -126,6 +126,110 @@ by default; its permanent test reset requires both `-EraseData` and the exact co
 
 ## Operations
 
+### After installation
+
+After installation, the POS first-run screen exposes **เปิดระบบหลังบ้านบนเครื่องนี้**
+on Windows, Linux and macOS, including when automatic pairing was not completed.
+It opens the fixed local `/admin/pos-devices` page in the system browser after an
+eight-second-bounded login-page readiness check; normal administrator authentication
+is still required. macOS first uses its verified managed-runtime controller to start
+the service. Windows/Linux do not execute privileged startup commands from Electron;
+an unavailable service produces a repair/setup message instead. An empty Server URL is
+filled after opening successfully, but existing remote URLs and pairing links are preserved.
+
+### Installation error reports
+
+The Windows, Linux and macOS POS and Server + POS setup scripts create a local
+support archive when installation fails. Review the archive and submit it through
+`https://bms.jachoei.com/installer-report` with explicit consent. There is no automatic
+upload. The same form accepts Windows ZIP, Linux/macOS TAR.GZ, or the contained
+`diagnostics.json` / `diagnostics.txt`. Keep the file and retry when offline; a failed
+submission never changes the installation or deletes the local report.
+
+| Platform | Location and access |
+| --- | --- |
+| Windows Server + POS | `%ProgramData%\BMS\RetailLocal\diagnostics\bms-install-error-*.zip`; **Send error report** opens the report folder and browser form |
+| Windows POS | `%LOCALAPPDATA%\BMS\POSBootstrap\diagnostics\bms-install-error-*.zip`; **Send error report** opens the report folder and browser form |
+| Linux POS / Server + POS | `/var/tmp/bms-install-report.*/report.tar.gz`; the exact path is printed on failure, with the private report directory/archive assigned to the sudo operator |
+| macOS Server + POS | `~/Library/Application Support/BMS/RetailLocal/diagnostics/report.*/report.tar.gz`; the setup launcher offers to open Finder |
+| macOS POS | `~/Library/Application Support/BMS/POSBootstrap/diagnostics/report.*/report.tar.gz`; setup offers to open Finder |
+
+Windows `diagnostics.json` includes the bootstrap version, failed stage, redacted exception,
+Windows version/build/architecture, RAM, system-disk capacity/free space,
+virtualization flags, selected WSL/Docker service states and the current user's WSL
+package version/BMSRuntime registration when available. Inventory has an eight-second
+wait limit; a timed-out or unavailable check stays explicitly unknown. It does not
+start WSL, Docker or the shop. Reporting failure does not replace the setup error.
+
+Linux/macOS `diagnostics.txt` includes the bootstrap version, failed stage, exit code,
+source line and a redacted setup reason. Command failures without a setup-specific reason
+are identified by their stage/exit code/line; raw stderr is not exported. System fields
+include OS version/build or distribution/kernel, architecture, RAM, processor count and
+disk space. Linux adds CPU virtualization flags and selected systemd service states;
+macOS adds Hypervisor support and the selected private Lima VM state when available.
+Each external inventory probe has a two-second limit and reports unavailable on failure.
+The archive uses system `tar`, so reporting does not require Python, jq, zip, a running
+VM, or an internet connection. Linux reports are placed outside the root-only shop
+directory so sharing one does not require granting access to shop data.
+
+Only the diagnostic summary and a review note enter the archive. Raw transcripts, shop/customer data,
+database/backups, environment files, machine/user names, hardware serials, credentials
+and command lines are excluded. Known credential patterns, URLs, email addresses and
+local paths are removed from exception text; users should still review the report
+before sharing because error text may contain unexpected information. Existing
+raw setup logs remain local and must not be attached without separate review.
+Each failure gets a unique report; a later retry does not overwrite it. Unix setup
+handles HUP/INT/TERM while preserving a nonzero exit. Power loss, SIGKILL or force-closing
+PowerShell cannot run the failure handler; these reports do not replace the installer's
+existing resume/checkpoint mechanism. Native package-manager failures before setup starts
+still use the operating system's package logs.
+
+#### Central report inbox
+
+Platform administrators use **Platform > Installer error reports** at
+`/admin/installer-reports`. The inbox filters platform, architecture, product, installer
+version, OS version, failed stage, status and received date; search accepts error text
+or a report reference. Matching sanitized failures are grouped by platform, architecture,
+installer version, stage, error text and exit/HRESULT code. Counts represent reports,
+not unique computers. The details drawer exposes the allow-listed system evidence and
+sanitized failure, JSON download, investigation notes and New/Investigating/Resolved
+status. Concurrent edits are rejected rather than overwriting another administrator.
+
+These are **unverified, user-submitted pre-install reports**, not authenticated machine
+identity, tenant data, an automatic root-cause diagnosis, or proof that a fix was tested.
+No shop account is required to submit. Only platform-admin authenticated APIs can read
+or update reports; no public report lookup exists, even with a receipt UUID.
+
+Deployment prerequisites (not enabled by a source change alone):
+
+1. Apply migration `10.31__bms_installer_reports.sql` on the central BMS database.
+2. Set `BMS_INSTALLER_REPORTS_ENABLED=true` on **central BMS only**, not shop installs.
+   Missing/false returns 503 and preserves the user's local report.
+3. Serve the central host over trusted HTTPS. Configure the ingress to replace
+   `X-Forwarded-For`, cap request bodies at 64 KiB and impose a body timeout. Redis
+   limits submissions to 10/source/hour and 1,000/fleet/day; the shared limiter's
+   existing per-process fallback applies when Redis is unavailable.
+4. Keep the existing daily `support-diagnostics-retention` cron enabled with its
+   `BMS_CRON_SECRET`. It now also deletes up to 1,000 expired installer reports per
+   run. Reports become inaccessible after 90 days even if cron is delayed; physical
+   deletion requires the worker to run successfully. Monitor its run history.
+5. Deploy the web app before distributing newly built installers with the send link.
+
+`POST /api/installer-reports` accepts a bounded binary/text body with
+`X-BMS-Report-Consent: 1`. It returns a receipt only after persistence succeeds.
+The server re-redacts and allow-lists fields, never persists the original archive,
+rejects unexpected archive entries/links/paths, and bounds decompression in memory.
+Retries of identical normalized reports return the original receipt without adding
+another row or extending retention. Neither IP addresses nor submitted filenames are
+stored. Existing authenticated tenant support bundles remain a separate feature at
+`/admin/support-diagnostics`; this inbox also works before a tenant has been created.
+
+Verification: `node scripts/run-contract-tests.mjs pure installer-reports`; isolated
+DB tests use `POSTGRES_DB=bms_installer_reports_test` and a loopback PostgreSQL server
+via `node scripts/run-contract-tests.mjs db installer-reports`. The browser smoke
+script `scripts/installer-reports-browser-smoke.mjs` targets only localhost:3107 with
+that disposable database and a test-only signing secret, never a live deployment.
+
 ```powershell
 .\start.ps1
 .\status.ps1

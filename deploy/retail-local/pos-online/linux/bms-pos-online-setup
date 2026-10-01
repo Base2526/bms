@@ -9,7 +9,22 @@ readonly MANIFEST_URI_FILE="$BOOTSTRAP_ROOT/manifest-url"
 readonly PLATFORM_TARGET_FILE="$BOOTSTRAP_ROOT/platform-target"
 readonly STATE_ROOT=/var/lib/bms-pos-bootstrap
 
-die() { printf '\nBMS POS setup failed: %s\n' "$*" >&2; exit 1; }
+diagnostics_helper="$BOOTSTRAP_ROOT/setup-diagnostics.sh"
+if [[ ! -f $diagnostics_helper ]]; then
+  diagnostics_helper="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../managed-runtime" && pwd)/setup-diagnostics.sh"
+fi
+# shellcheck source=../../managed-runtime/setup-diagnostics.sh
+source "$diagnostics_helper"
+bms_diagnostics_init pos "$STATE_ROOT" "$BOOTSTRAP_ROOT/BOOTSTRAP_VERSION"
+finish_setup() {
+  local status=$?
+  trap - EXIT ERR
+  bms_diagnostics_finish "$status" || true
+  exit "$status"
+}
+trap finish_setup EXIT
+trap 'exit 130' HUP INT TERM
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf '\nBMS POS setup failed: %s\n' "$*" >&2; exit 1; }
 [[ $EUID -eq 0 ]] || die "run with sudo"
 [[ -x $AGENT && -f $KEYRING && -s $MANIFEST_URI_FILE && -s $PLATFORM_TARGET_FILE ]] || die "bootstrap files are incomplete"
 
@@ -20,17 +35,20 @@ platform_target=$(tr -d '\r\n' <"$PLATFORM_TARGET_FILE")
 install -d -m 0700 "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
 printf 'BMS POS Online Setup\nAn internet connection is required for the first installation.\n'
+BMS_DIAG_STAGE=download-manifest
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 --connect-timeout 20 \
   --max-time 60 --speed-limit 1 --speed-time 20 --retry 2 --retry-max-time 180 \
   --output "$manifest_path.part" "$manifest_uri" || die "cannot download the signed release manifest"
 chmod 0600 "$manifest_path.part"
 mv -f "$manifest_path.part" "$manifest_path"
 
+BMS_DIAG_STAGE=verify-manifest
 release_json=$($AGENT verify-release -manifest "$manifest_path" -keyring "$KEYRING" -target "$platform_target")
 version=$(printf '%s' "$release_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["releaseVersion"])')
 [[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "release version is invalid"
 
 printf 'Downloading and verifying BMS POS (completed bytes are kept for resume)...\n'
+BMS_DIAG_STAGE=download-desktop
 $AGENT stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
   -target "$platform_target" -root "$STATE_ROOT" -progress | while IFS= read -r event; do
     printf '%s\n' "$event" | python3 -c '
@@ -63,6 +81,7 @@ desktop="$STATE_ROOT/releases/$version/desktop.artifact"
 [[ -f $desktop ]] || die "signed release has no complete desktop artifact"
 desktop_deb="$STATE_ROOT/releases/$version/BMS-POS.deb"
 ln -f -- "$desktop" "$desktop_deb"
+BMS_DIAG_STAGE=install-desktop
 dpkg --configure -a
 apt-get -o DPkg::Lock::Timeout=60 install -y "$desktop_deb"
 rm -rf -- "$STATE_ROOT/releases/$version"

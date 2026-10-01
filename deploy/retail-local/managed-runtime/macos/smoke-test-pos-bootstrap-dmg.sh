@@ -18,6 +18,10 @@ bootstrap="$app/Contents/Resources/bootstrap"
 [[ -x $app/Contents/MacOS/Install\ BMS\ POS ]] || { echo "DMG ขาด setup app" >&2; exit 1; }
 [[ -x $app/Contents/Resources/BMS\ POS\ Online\ Setup.command ]] || { echo "DMG ขาด setup command" >&2; exit 1; }
 [[ -x $bootstrap/bms-runtime-agent ]] || { echo "DMG ขาด runtime agent" >&2; exit 1; }
+[[ -s $bootstrap/setup-diagnostics.sh && -s $bootstrap/BOOTSTRAP_VERSION ]] || {
+  echo "POS bootstrap is missing error reporting files" >&2; exit 1;
+}
+bash -n "$bootstrap/setup-diagnostics.sh"
 [[ -f $bootstrap/trusted-release-keys.json && -s $bootstrap/manifest-url ]] || {
   echo "DMG ขาด release trust/config" >&2; exit 1;
 }

@@ -384,6 +384,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "platform_shops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },
   {
+    id: "platform.installer-reports", route: "/admin/installer-reports", labelKey: "admin_nav.installer_reports",
+    section: "platform_ops", workspace: "PLATFORM", visible: ctx => ctx.isPlatformAdmin,
+  },
+  {
     id: "platform.retail-local-releases", route: "/admin/retail-local-releases", labelKey: "admin_nav.retail_local_releases",
     section: "platform_shops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },

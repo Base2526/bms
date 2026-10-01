@@ -5,8 +5,8 @@ readonly RUNTIME_ROOT="/var/lib/bms-retail-local"
 readonly BOOTSTRAP_ROOT="/opt/bms-retail-local"
 readonly SERVICE_NAME="bms-retail-local.service"
 
-die() { printf 'BMS Retail Local Setup: %s\n' "$*" >&2; exit 1; }
-step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS Retail Local Setup: %s\n' "$*" >&2; exit 1; }
+step() { BMS_DIAG_STAGE="step-$1-of-7"; printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
 require_root() { [[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"; }
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+([/:?#]|$) ]] && [[ ${1:-} != *'@'* ]]; }
 random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
@@ -126,7 +126,21 @@ write_runtime_text() {
   "$agent" runtime-write -engine linux-native -source "$temporary" -destination "$destination" -mode 0600
   rm -f -- "$temporary"
 }
-trap cleanup EXIT
+bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
+diagnostics_helper="$bundle_root/setup-diagnostics.sh"
+[[ -f $diagnostics_helper ]] || diagnostics_helper="$bundle_root/../setup-diagnostics.sh"
+# shellcheck source=../setup-diagnostics.sh
+source "$diagnostics_helper"
+bms_diagnostics_init server-pos "$RUNTIME_ROOT" "$bundle_root/BOOTSTRAP_VERSION"
+finish_setup() {
+  local status=$?
+  trap - EXIT ERR
+  bms_diagnostics_finish "$status" || true
+  cleanup || true
+  exit "$status"
+}
+trap finish_setup EXIT
+trap 'exit 130' HUP INT TERM
 
 require_root
 [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || die "ให้ผู้ใช้หน้าเครื่องรันผ่าน sudo; ห้าม login เป็น root โดยตรง"
@@ -134,13 +148,13 @@ operator_uid_preflight=$(id -u "$SUDO_USER")
 [[ -d /run/user/$operator_uid_preflight ]] || die "ไม่พบ graphical user session ของ $SUDO_USER"
 [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || die "ต้องติดตั้งจาก Ubuntu Desktop session"
 manifest_uri=${1:-}
-bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
 localctl_source="$bundle_root/bms-localctl"
 [[ -f $localctl_source ]] || localctl_source="$bundle_root/../runtime-rootfs/bms-localctl"
 transaction_source="$bundle_root/bms-update-transaction"
 [[ -f $transaction_source ]] || transaction_source="$bundle_root/../runtime-rootfs/bms-update-transaction"
 if [[ -f $RUNTIME_ROOT/installation.json ]]; then
+  BMS_DIAG_STAGE=repair-existing-install
   jq -e '.version and .tenantId and .posDeviceId' "$RUNTIME_ROOT/installation.json" >/dev/null || \
     die "installation receipt อ่านไม่ได้; เก็บข้อมูลร้านไว้และติดต่อ Support ห้ามลบฐานข้อมูลหรือ .env"
   # Uninstall removes these controls and disables startup while keeping the receipt and data.

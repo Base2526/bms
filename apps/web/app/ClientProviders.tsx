@@ -37,7 +37,7 @@ function isAuthPath(pathname: string) {
 }
 
 function skipsSessionLayer(pathname: string) {
-  return isAuthPath(pathname) || pathname === "/checkout" || pathname === "/pos"
+  return isAuthPath(pathname) || pathname === "/installer-report" || pathname === "/checkout" || pathname === "/pos"
     || pathname.startsWith("/pos/restaurant") || pathname.startsWith("/q/");
 }
 

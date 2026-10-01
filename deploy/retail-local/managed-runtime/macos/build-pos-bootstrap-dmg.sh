@@ -112,6 +112,7 @@ mkdir -p "$contents/MacOS" "$bootstrap"
 (cd "$agent_root" && CGO_ENABLED=0 GOOS=darwin GOARCH="$go_arch" go build \
   -trimpath -ldflags='-s -w' -o "$bootstrap/bms-runtime-agent" .)
 cp "$keyring" "$bootstrap/trusted-release-keys.json"
+install -m 0644 "$macos_root/../setup-diagnostics.sh" "$bootstrap/setup-diagnostics.sh"
 printf '%s\n' "$manifest_url" >"$bootstrap/manifest-url"
 printf '%s\n' "$version" >"$bootstrap/BOOTSTRAP_VERSION"
 printf '%s\n' "macos-15-$architecture" >"$bootstrap/PLATFORM_TARGET"

@@ -42,11 +42,35 @@ ArchitecturesInstallIn64BitMode=x64compatible
 Source: "{#BuildRoot}\bms-runtime-agent.exe"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 Source: "{#BuildRoot}\trusted-release-keys.json"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 Source: "{#BuildRoot}\install-pos-online.ps1"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
+Source: "{#BuildRoot}\setup-diagnostics.ps1"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 
 [Code]
 var
   BootstrapFailed: Boolean;
   BootstrapError: String;
+  DiagnosticsButton: TNewButton;
+
+procedure OpenDiagnostics(Sender: TObject);
+var
+  ResultCode: Integer;
+begin
+  ShellExec('', ExpandConstant('{win}\explorer.exe'),
+    AddQuotes(ExpandConstant('{localappdata}\BMS\POSBootstrap\diagnostics')),
+    '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+  ShellExec('open', 'https://bms.jachoei.com/installer-report', '', '',
+    SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;
+
+procedure InitializeWizard();
+begin
+  DiagnosticsButton := TNewButton.Create(WizardForm);
+  DiagnosticsButton.Parent := WizardForm;
+  DiagnosticsButton.SetBounds(ScaleX(16), WizardForm.CancelButton.Top,
+    ScaleX(170), WizardForm.CancelButton.Height);
+  DiagnosticsButton.Caption := 'Send error report';
+  DiagnosticsButton.OnClick := @OpenDiagnostics;
+  DiagnosticsButton.Visible := False;
+end;
 
 procedure ReportBootstrapFailure(Message: String);
 begin
@@ -56,6 +80,8 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  DiagnosticsButton.Visible := (CurPageID = wpFinished) and BootstrapFailed and
+    DirExists(ExpandConstant('{localappdata}\BMS\POSBootstrap\diagnostics'));
   if (CurPageID = wpFinished) and BootstrapFailed then
   begin
     WizardForm.FinishedHeadingLabel.Caption := 'BMS POS setup did not complete';
@@ -88,7 +114,7 @@ begin
     ' -PlatformTarget ' + AddQuotes('{#PlatformTarget}') +
     ' -AgentPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\bms-runtime-agent.exe')) +
     ' -KeyringPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\trusted-release-keys.json')) +
-    ' -ErrorFile ' + AddQuotes(ErrorPath);
+    ' -ErrorFile ' + AddQuotes(ErrorPath) + ' -InstallerVersion ' + AddQuotes('{#ProductVersion}');
   WizardForm.StatusLabel.Caption := 'Downloading and verifying BMS POS...';
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then

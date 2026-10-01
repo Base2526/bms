@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, copyFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,78 @@ function workspace(t) {
 function run(command, args, options = {}) {
   return spawnSync(command, args, { encoding: 'utf8', timeout: 60000, ...options });
 }
+
+for (const shell of ['powershell.exe', join(process.env.SystemRoot || 'C:\\Windows', 'SysWOW64/WindowsPowerShell/v1.0/powershell.exe')]) {
+test(`Windows diagnostics redact sensitive errors, bound inventory and preserve failures (${shell})`, {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const result = run(shell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+    join(repo, 'scripts/retail-local-setup-diagnostics.test.ps1'),
+    join(repo, 'deploy/retail-local/managed-runtime/windows/setup-diagnostics.ps1'), root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /diagnostics checks passed/);
+});
+}
+
+test('Windows x86 POS, x64 POS and server setup compile with the error-report button', {
+  skip: process.platform !== 'win32' || !process.env.BMS_INNO_COMPILER,
+}, t => {
+  const root = workspace(t);
+  for (const [name, directory, filename, target] of [
+    ['pos-x86', 'pos-online/windows', 'BMSPOSOnline.iss', 'windows-10-x86-pos'],
+    ['pos-x64', 'pos-online/windows', 'BMSPOSOnline.iss', 'windows-11-x64'],
+    ['server-x64', 'managed-runtime/windows', 'BMSRetailLocal.iss', 'windows-11-x64'],
+  ]) {
+    const sourceDir = join(repo, 'deploy/retail-local', directory);
+    const iss = join(sourceDir, filename);
+    const bundle = join(root, name, 'bundle');
+    mkdirSync(bundle, { recursive: true });
+    for (const match of readFileSync(iss, 'utf8').matchAll(/Source: "\{#BuildRoot\}\\([^"]+)"/g)) {
+      const destination = resolve(bundle, ...match[1].split('\\'));
+      mkdirSync(resolve(destination, '..'), { recursive: true });
+      const original = resolve(sourceDir, ...match[1].split('\\'));
+      if (existsSync(original)) copyFileSync(original, destination);
+      else writeFileSync(destination, 'compile fixture');
+    }
+    copyFileSync(join(repo, 'deploy/retail-local/managed-runtime/windows/setup-diagnostics.ps1'), join(bundle, 'setup-diagnostics.ps1'));
+    const compiled = run(process.env.BMS_INNO_COMPILER, [
+      `/DBuildRoot=${bundle}`, `/DOutputRoot=${root}`, '/DProductVersion=0.0.0-test',
+      '/DManifestUri=https://example.invalid/release.json', `/DPlatformTarget=${target}`,
+      `/DArtifactBaseFilename=${name}`, iss,
+    ]);
+    assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
+    assert.ok(existsSync(join(root, `${name}.exe`)));
+  }
+});
+
+test('Windows server failure trap exports a report and retains the original error', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  copyFileSync(join(repo, 'deploy/retail-local/managed-runtime/windows/setup-diagnostics.ps1'), join(root, 'setup-diagnostics.ps1'));
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const trap = source.slice(0, source.indexOf('$distroName ='));
+  assert.ok(trap.includes('New-BmsSetupDiagnostics'));
+  const fixture = join(root, 'install.ps1');
+  writeFileSync(fixture, '\ufeff' + trap.replace(/^\ufeff/, '') + `
+function Read-Host { return '' }
+$script:BmsSetupStage = 'step-4-of-7'
+throw 'compose failed: postgres is not running'
+`, 'utf8');
+  const error = join(root, 'setup-error.txt');
+  const harness = join(root, 'run.ps1');
+  writeFileSync(harness, `param($Script, $Root, $ErrorFile)
+& $Script -InstallRoot $Root -ErrorFile $ErrorFile -InstallerVersion '1.2.3-test'
+exit $LASTEXITCODE
+`);
+  const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+    harness, fixture, root, error]);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.ok(existsSync(error), result.stdout + result.stderr);
+  assert.match(readFileSync(error, 'utf8'), /postgres is not running[\s\S]*Support report/);
+  assert.equal(readdirSync(join(root, 'diagnostics')).filter(name => name.endsWith('.zip')).length, 1);
+});
 
 async function uninstallAndCheck(executable, log) {
   const removed = run(executable, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', `/LOG=${log}`]);
@@ -133,7 +205,12 @@ exit $LASTEXITCODE
     assert.equal(result.status === 0, success, result.stdout + result.stderr);
     assert.equal(result.stdout.includes('BMS POS installation completed.'), success);
     assert.equal(existsSync(join(root, 'launched')), ['success', 'child-failure', 'cancel'].includes(scenario));
-    if (!success) assert.ok(readFileSync(errorFile, 'utf8').length > 0, 'missing actionable error');
+    if (!success) {
+      assert.match(readFileSync(errorFile, 'utf8'), /Support report .*\.zip/, 'missing diagnostic report path');
+      assert.equal(readdirSync(join(root, 'BMS/POSBootstrap/diagnostics')).filter(name => name.endsWith('.zip')).length, 1);
+    } else {
+      assert.equal(existsSync(join(root, 'BMS/POSBootstrap/diagnostics')), false);
+    }
     if (scenario === 'download') assert.ok(existsSync(join(root, 'BMS/POSBootstrap/releases/1.0.0-test/desktop.artifact.part')));
   });
 }
@@ -147,6 +224,7 @@ test(`compiled Windows ${product} EXE fails when its child setup fails or is can
   mkdirSync(bundle);
   writeFileSync(join(bundle, 'bms-runtime-agent.exe'), 'packaging fixture');
   writeFileSync(join(bundle, 'trusted-release-keys.json'), '{}');
+  copyFileSync(join(repo, 'deploy/retail-local/managed-runtime/windows/setup-diagnostics.ps1'), join(bundle, 'setup-diagnostics.ps1'));
   const iss = product === 'pos'
     ? 'deploy/retail-local/pos-online/windows/BMSPOSOnline.iss'
     : 'deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss';
@@ -159,7 +237,7 @@ test(`compiled Windows ${product} EXE fails when its child setup fails or is can
     writeFileSync(join(bundle, 'uninstall-managed-runtime.ps1'), 'exit 0');
   }
   writeFileSync(join(bundle, product === 'pos' ? 'install-pos-online.ps1' : 'run-managed-runtime.ps1'), `
-param($ManifestUri, $PlatformTarget, $AgentPath, $KeyringPath, $ErrorFile, $InstallScript, $LogFile)
+param($ManifestUri, $PlatformTarget, $AgentPath, $KeyringPath, $ErrorFile, $InstallScript, $LogFile, $InstallerVersion)
 [IO.File]::WriteAllText($ErrorFile, 'Child setup was executed ' + [char]0x0E17 + [char]0x0E14 + [char]0x0E2A + [char]0x0E2D + [char]0x0E1A, [Text.UTF8Encoding]::new($false))
 exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
 `);

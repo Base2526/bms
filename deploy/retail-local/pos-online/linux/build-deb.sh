@@ -26,6 +26,10 @@ install -d -m 0755 "$stage/DEBIAN" "$stage/usr/bin" "$stage/usr/lib/bms-pos-boot
 install -m 0755 "$agent" "$stage/usr/lib/bms-pos-bootstrap/bms-runtime-agent"
 install -m 0644 "$keyring" "$stage/usr/lib/bms-pos-bootstrap/trusted-release-keys.json"
 install -m 0755 "$source_root/bms-pos-online-setup" "$stage/usr/bin/bms-pos-online-setup"
+diagnostics_helper="$source_root/setup-diagnostics.sh"
+[[ -f $diagnostics_helper ]] || diagnostics_helper="$source_root/../../managed-runtime/setup-diagnostics.sh"
+install -m 0644 "$diagnostics_helper" "$stage/usr/lib/bms-pos-bootstrap/setup-diagnostics.sh"
+printf '%s\n' "$version" >"$stage/usr/lib/bms-pos-bootstrap/BOOTSTRAP_VERSION"
 printf '%s\n' "$manifest_url" >"$stage/usr/lib/bms-pos-bootstrap/manifest-url"
 printf '%s\n' "$platform_target" >"$stage/usr/lib/bms-pos-bootstrap/platform-target"
 cat >"$stage/DEBIAN/control" <<EOF

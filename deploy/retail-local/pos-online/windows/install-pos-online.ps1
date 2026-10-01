@@ -4,7 +4,8 @@ param(
   [Parameter(Mandatory = $true)][string]$PlatformTarget,
   [Parameter(Mandatory = $true)][string]$AgentPath,
   [Parameter(Mandatory = $true)][string]$KeyringPath,
-  [string]$ErrorFile
+  [string]$ErrorFile,
+  [string]$InstallerVersion = 'unknown'
 )
 
 $ErrorActionPreference = "Stop"
@@ -12,11 +13,25 @@ Set-StrictMode -Version Latest
 $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::OutputEncoding = $utf8
 $global:OutputEncoding = $utf8
+$script:BmsSetupStage = 'preflight'
 trap {
+  $failure = $_
+  $message = $failure.Exception.Message
+  try {
+    $helper = Join-Path $PSScriptRoot 'setup-diagnostics.ps1'
+    if (-not (Test-Path -LiteralPath $helper)) {
+      $helper = Join-Path $PSScriptRoot '..\..\managed-runtime\windows\setup-diagnostics.ps1'
+    }
+    . $helper
+    Write-Host 'Preparing installation error report...'
+    $report = New-BmsSetupDiagnostics -Root (Join-Path $env:LOCALAPPDATA 'BMS\POSBootstrap') `
+      -Failure $failure -Product pos -InstallerVersion $InstallerVersion -Stage $script:BmsSetupStage
+    if ($report) { $message += "`nSupport report (review before sending): $report" }
+  } catch {}
   if (-not [string]::IsNullOrWhiteSpace($ErrorFile)) {
-    [IO.File]::WriteAllText($ErrorFile, $_.Exception.Message, $utf8)
+    try { [IO.File]::WriteAllText($ErrorFile, $message, $utf8) } catch {}
   }
-  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host $message -ForegroundColor Red
   exit 1
 }
 
@@ -47,6 +62,7 @@ $manifestPath = Join-Path $manifestRoot "release.jws.json"
 Write-Host "BMS POS Online Setup"
 Write-Host "An internet connection is required for the first installation."
 Write-Host "Downloading the signed release manifest..."
+$script:BmsSetupStage = 'download-manifest'
 try {
   Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.part" -UseBasicParsing -TimeoutSec 60
   Move-Item -LiteralPath "$manifestPath.part" -Destination $manifestPath -Force
@@ -54,12 +70,14 @@ try {
   throw "Cannot download the signed release manifest. Check the internet connection and try again: $($_.Exception.Message)"
 }
 
+$script:BmsSetupStage = 'verify-manifest'
 $release = Invoke-AgentJson @(
   "verify-release", "-manifest", $manifestPath, "-keyring", $KeyringPath, "-target", $PlatformTarget
 )
 $lastPercent = -1
 $lastPrintedAt = [DateTime]::MinValue
 Write-Host "Downloading BMS POS. Completed bytes are kept for resume..."
+$script:BmsSetupStage = 'download-desktop'
 & $AgentPath stage-desktop -manifest $manifestPath -keyring $KeyringPath `
   -target $PlatformTarget -root $stateRoot -progress 2>&1 | ForEach-Object {
     $line = [string]$_
@@ -116,6 +134,7 @@ if (-not (Test-Path -LiteralPath $desktopInstaller -PathType Leaf)) {
 }
 
 Write-Host "Opening the verified BMS POS installer..."
+$script:BmsSetupStage = 'install-desktop'
 $executableInstaller = Join-Path $stateRoot "releases\$version\BMS-POS-Setup.exe"
 Copy-Item -LiteralPath $desktopInstaller -Destination $executableInstaller -Force
 $process = Start-Process -FilePath $executableInstaller -Wait -PassThru

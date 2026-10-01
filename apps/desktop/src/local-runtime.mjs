@@ -26,6 +26,25 @@ export function managedLocalPosDevicesUrl() {
   return new URL(MANAGED_LOCAL_POS_DEVICES_PATH, MANAGED_LOCAL_SERVER_URL).toString();
 }
 
+export async function checkManagedLocalAdminReady({ fetch: request = globalThis.fetch } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    // Probe the same login surface as the installer, without credentials or redirects.
+    const response = await request(new URL("/admin/login", MANAGED_LOCAL_SERVER_URL).toString(), {
+      method: "GET", redirect: "manual", credentials: "omit", signal: controller.signal,
+    });
+    if (response.body) await response.body.cancel();
+    if (response.status !== 200) throw new Error("local admin unavailable");
+  } catch (error) {
+    throw new LocalRuntimeError(
+      "LOCAL_ADMIN_UNAVAILABLE",
+      "ยังติดต่อ Retail Local Server บนเครื่องนี้ไม่ได้ กรุณาเปิดตัวติดตั้ง Server + POS เพื่อตรวจสอบหรือซ่อมแซม หากติดตั้งเฉพาะ POS ให้ใช้ Server URL และลิงก์จับคู่จากผู้ดูแลร้าน",
+      error,
+    );
+  } finally { clearTimeout(timer); }
+}
+
 export function managedLocalRuntimePlan({
   serverUrl,
   platform = process.platform,

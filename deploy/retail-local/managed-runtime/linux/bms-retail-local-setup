@@ -5,11 +5,19 @@ readonly bundle_root=/usr/lib/bms-retail-local/bootstrap
 readonly release_url_file=/etc/bms-retail-local/release-manifest-url
 readonly activation_url_file=/etc/bms-retail-local/activation-url
 
+# shellcheck source=../setup-diagnostics.sh
+source "$bundle_root/setup-diagnostics.sh"
+bms_diagnostics_init server-pos /var/lib/bms-retail-local "$bundle_root/BOOTSTRAP_VERSION"
+BMS_DIAG_STAGE=read-release-config
+trap 'status=$?; trap - EXIT ERR; bms_diagnostics_finish "$status"; exit "$status"' EXIT
+trap 'exit 130' HUP INT TERM
+
 manifest_uri=${1:-}
 if [[ -z $manifest_uri && -f $release_url_file ]]; then
   manifest_uri=$(tr -d '\r\n' <"$release_url_file")
 fi
 if [[ -z $manifest_uri ]]; then
+  BMS_DIAG_REASON='No release channel URL is configured.'
   echo "ยังไม่ได้กำหนด release channel URL" >&2
   echo "usage: sudo bms-retail-local-setup https://release.example/release.jws.json" >&2
   exit 2
@@ -21,4 +29,5 @@ fi
 if [[ -n $activation_uri ]]; then
   export BMS_ACTIVATION_URI="$activation_uri"
 fi
+BMS_DIAG_STAGE=launch-setup
 exec "$bundle_root/install-managed-runtime.sh" "$manifest_uri" "$bundle_root"

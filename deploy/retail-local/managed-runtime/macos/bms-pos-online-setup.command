@@ -11,7 +11,10 @@ readonly MANIFEST_URI_FILE="$BOOTSTRAP_ROOT/manifest-url"
 readonly PACKAGED_TARGET_FILE="$BOOTSTRAP_ROOT/PLATFORM_TARGET"
 readonly STATE_ROOT="$HOME/Library/Application Support/BMS/POSBootstrap"
 
-die() { printf '\n[ต้องแก้ไข] BMS POS: %s\n' "$*" >&2; exit 1; }
+# shellcheck source=../setup-diagnostics.sh
+source "$BOOTSTRAP_ROOT/setup-diagnostics.sh"
+bms_diagnostics_init pos "$STATE_ROOT" "$BOOTSTRAP_ROOT/BOOTSTRAP_VERSION"
+die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf '\n[ต้องแก้ไข] BMS POS: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS POS] %s\n' "$*"; }
 is_https_url() {
   [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-} != *'@'* ]]
@@ -21,14 +24,20 @@ cleanup() {
 }
 finish() {
   exit_code=$?
-  cleanup
+  trap - EXIT ERR
+  bms_diagnostics_finish "$exit_code" || true
+  cleanup || true
   if ((exit_code == 0)); then
     printf '\nติดตั้ง BMS POS สำเร็จ และเปิดแอปให้แล้ว\n'
   else
     printf '\nติดตั้งยังไม่สำเร็จ ไฟล์ที่ดาวน์โหลดครบแล้วจะถูกเก็บไว้เพื่อ resume ครั้งถัดไป\n'
+    if [[ -t 0 && -d $STATE_ROOT/diagnostics ]]; then
+      read -r -p 'Open error reports in Finder? [y/N]: ' show_report || true
+      [[ ${show_report:-} != [yY] ]] || open "$STATE_ROOT/diagnostics" || true
+    fi
   fi
   printf 'กด Enter เพื่อปิดหน้าต่างนี้...'
-  read -r
+  read -r || true
   exit "$exit_code"
 }
 trap finish EXIT
@@ -66,6 +75,7 @@ mkdir -p "$STATE_ROOT/manifest"
 chmod 0700 "$STATE_ROOT" "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
 note "ครั้งแรกต้องต่ออินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
+BMS_DIAG_STAGE=download-manifest
 if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
     --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
     --retry 2 --retry-max-time 180 --output "$manifest_path.part" "$manifest_uri"; then
@@ -78,6 +88,7 @@ stage_output="$STATE_ROOT/stage-desktop-result.jsonl"
 : >"$stage_output"
 chmod 0600 "$stage_output"
 note "กำลังดาวน์โหลดเฉพาะ BMS POS และตรวจ SHA-256 (สามารถ resume ได้)"
+BMS_DIAG_STAGE=download-desktop
 "$AGENT" stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
   -target "$host_target" -root "$STATE_ROOT" -progress | while IFS= read -r line; do
     printf '%s\n' "$line" >>"$stage_output"
@@ -107,6 +118,7 @@ version=$(tail -n 1 "$stage_output" | /usr/bin/plutil -extract releaseVersion ra
 archive="$STATE_ROOT/releases/$version/desktop.artifact"
 [[ -f $archive ]] || die "signed release ไม่มี desktop artifact ที่ดาวน์โหลดครบ"
 
+BMS_DIAG_STAGE=extract-desktop
 temporary="$STATE_ROOT/desktop-install.partial"
 rm -rf -- "$temporary"
 mkdir -p "$temporary"
@@ -120,6 +132,7 @@ downloaded_app="$temporary/BMS POS.app"
   die "desktop component ไม่มี BMS POS.app ที่สมบูรณ์"
 
 note "กำลังติดตั้ง BMS POS ใน Applications (macOS อาจถามรหัสผ่านผู้ดูแลเครื่อง)"
+BMS_DIAG_STAGE=install-desktop
 sudo /usr/bin/ditto "$downloaded_app" "/Applications/BMS POS.app"
 sudo chown -R root:wheel "/Applications/BMS POS.app"
 sudo chmod -R go-w "/Applications/BMS POS.app"

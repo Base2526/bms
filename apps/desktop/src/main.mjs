@@ -16,6 +16,7 @@ import {
 } from "./pairing-server.mjs";
 import {
   ensureManagedLocalRuntime,
+  checkManagedLocalAdminReady,
   isManagedLocalServerUrl,
   managedLocalPosDevicesUrl,
   MANAGED_LOCAL_SERVER_URL,
@@ -262,9 +263,9 @@ function startManagedLocalRuntime() {
 }
 
 async function openInstalledLocalAdmin() {
-  const result = await startManagedLocalRuntime();
-  if (!result?.attempted) return false;
-  openExternalHttp(managedLocalPosDevicesUrl());
+  await startManagedLocalRuntime();
+  await checkManagedLocalAdminReady({ fetch: (url, options) => net.fetch(url, options) });
+  await shell.openExternal(managedLocalPosDevicesUrl());
   return true;
 }
 
@@ -815,7 +816,7 @@ function registerIpc() {
   ipcMain.handle("bms-pos:open-local-admin", async (event) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดระบบหลังบ้าน" };
     try {
-      return { ok: await openInstalledLocalAdmin() };
+      return { ok: await openInstalledLocalAdmin(), serverUrl: MANAGED_LOCAL_SERVER_URL };
     } catch (error) {
       return {
         ok: false,
