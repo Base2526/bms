@@ -46,6 +46,24 @@ Source: "{#BuildRoot}\install-pos-online.ps1"; DestDir: "{tmp}\bms-pos-bootstrap
 [Code]
 var
   BootstrapFailed: Boolean;
+  BootstrapError: String;
+
+procedure ReportBootstrapFailure(Message: String);
+begin
+  BootstrapError := Message;
+  Log(Message);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and BootstrapFailed then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS POS setup did not complete';
+    WizardForm.FinishedLabel.Caption := BootstrapError + #13#10 + #13#10 +
+      'Run this installer again to resume. Details: ' +
+      ExpandConstant('{localappdata}\BMS\POSBootstrap\setup-error.txt');
+  end;
+end;
 
 function GetCustomSetupExitCode(): Integer;
 begin
@@ -74,14 +92,18 @@ begin
   WizardForm.StatusLabel.Caption := 'Downloading and verifying BMS POS...';
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
     Parameters, '', SW_SHOW, ewWaitUntilTerminated, ResultCode) then
-    RaiseException('Could not start BMS POS setup.');
+  begin
+    ReportBootstrapFailure('Could not start BMS POS setup.');
+    exit;
+  end;
   if ResultCode <> 0 then
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      RaiseException('BMS POS setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
+      ReportBootstrapFailure('BMS POS setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
     else
-      RaiseException('BMS POS setup did not complete. Run this installer again to resume.');
+      ReportBootstrapFailure('BMS POS setup did not complete. Run this installer again to resume.');
+    exit;
   end;
   BootstrapFailed := False;
 end;

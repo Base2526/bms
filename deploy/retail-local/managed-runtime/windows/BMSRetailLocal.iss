@@ -86,6 +86,24 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 var
   ManagedRuntimeNeedsRestart: Boolean;
   BootstrapFailed: Boolean;
+  BootstrapError: String;
+
+procedure ReportBootstrapFailure(Message: String);
+begin
+  BootstrapError := Message;
+  Log(Message);
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and BootstrapFailed then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS Retail Local setup did not complete';
+    WizardForm.FinishedLabel.Caption := BootstrapError + #13#10 + #13#10 +
+      'Run this installer again to resume. Details: ' +
+      ExpandConstant('{commonappdata}\BMS\RetailLocal\setup-transcript.log');
+  end;
+end;
 
 function GetCustomSetupExitCode(): Integer;
 begin
@@ -126,7 +144,10 @@ begin
   WizardForm.Hide;
   try
     if not Exec(PowerShellPath, Parameters, '', SW_SHOWMAXIMIZED, ewWaitUntilTerminated, ResultCode) then
-      RaiseException('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+    begin
+      ReportBootstrapFailure('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+      exit;
+    end;
   finally
     WizardForm.Show;
   end;
@@ -140,9 +161,10 @@ begin
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(UTF8Decode(ErrorText)))
+      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(UTF8Decode(ErrorText)))
     else
-      RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
+      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
+    exit;
   end;
   BootstrapFailed := False;
 end;

@@ -161,7 +161,11 @@ exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
       const result = run(join(root, `${name}.exe`), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', `/DIR=${installed}`, `/LOG=${log}`]);
       assert.equal(result.error, undefined, String(result.error));
       assert.equal(result.status === 0, code === 0 || code === 3010, readFileSync(log, 'utf8'));
-      if (code === 23 || code === 1602) assert.match(readFileSync(log, 'utf8'), /Child setup was executed/);
+      if (code === 23 || code === 1602) {
+        const output = readFileSync(log, 'utf8');
+        assert.match(output, /Child setup was executed/);
+        assert.doesNotMatch(output, /Runtime error|raised an exception/);
+      }
     } finally {
       const uninstaller = join(installed, 'unins000.exe');
       if (existsSync(uninstaller)) run(uninstaller, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']);
