@@ -765,6 +765,11 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
   assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);
+  assert.match(linuxUpdater, /bms-update-transaction prepare[\s\S]*stage-release/);
+  assert.match(windowsUpdater, /if \(\$CheckOnly\)[\s\S]*return[\s\S]*Invoke-Transaction @\("prepare"\)[\s\S]*stage-release/);
+  const prepare = transaction.slice(transaction.indexOf("  prepare)"), transaction.indexOf("  begin)"));
+  assert.match(prepare, /start postgres redis web ws/);
+  assert.doesNotMatch(prepare, /compose up|compose run|replace_ref|bms-localctl restore/);
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
   assert.match(windowsUpdater, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
   assert.match(windowsUpdater, /BMS_PROGRESS[\s\S]*Write-Progress/);

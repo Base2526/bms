@@ -160,13 +160,17 @@ function Show-AgentProgress($Event) {
   }
 }
 
-function Invoke-WslCommand([string[]]$Arguments) {
+function Invoke-WslCommand([string[]]$Arguments, [switch]$ShowOutput) {
   $previousPreference = $ErrorActionPreference
   try {
     # Windows PowerShell 5.1 promotes native stderr to a terminating error under Stop even when
     # WSL exits successfully. The process exit code remains the authority for this boundary.
     $ErrorActionPreference = "Continue"
-    $output = & wsl.exe @Arguments 2>&1
+    $output = @(& wsl.exe @Arguments 2>&1 | ForEach-Object {
+      $line = [string]$_
+      if ($ShowOutput) { Write-Host $line }
+      $line
+    })
     $exitCode = $LASTEXITCODE
   } finally {
     $ErrorActionPreference = $previousPreference
@@ -188,8 +192,8 @@ function Get-ArtifactPath($Release, [string]$Name) {
 
 function Invoke-Transaction([string[]]$Arguments) {
   $result = Invoke-WslCommand -Arguments (@(
-    "-d", $distroName, "-u", "root", "--", "/usr/local/sbin/bms-update-transaction"
-  ) + $Arguments)
+    "-d", $distroName, "-u", "root", "--exec", "/usr/local/sbin/bms-update-transaction"
+  ) + $Arguments) -ShowOutput
   if ($result.ExitCode -ne 0) { throw ($result.Output -join [Environment]::NewLine) }
 }
 
@@ -262,6 +266,7 @@ foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-ke
     -source (Join-Path $bootstrapRoot $controlName) -name $controlName
   if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
 }
+Invoke-Transaction @("prepare")
 $stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $keyring,
   "-target", $target, "-root", $InstallRoot, "-progress")
 $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)

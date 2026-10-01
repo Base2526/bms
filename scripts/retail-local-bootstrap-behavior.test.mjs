@@ -144,7 +144,7 @@ test(`compiled Windows ${product} EXE fails when its child setup fails or is can
   }
   writeFileSync(join(bundle, product === 'pos' ? 'install-pos-online.ps1' : 'run-managed-runtime.ps1'), `
 param($ManifestUri, $PlatformTarget, $AgentPath, $KeyringPath, $ErrorFile, $InstallScript, $LogFile)
-[IO.File]::WriteAllText($ErrorFile, 'Child setup was executed')
+[IO.File]::WriteAllText($ErrorFile, 'Child setup was executed ' + [char]0x0E17 + [char]0x0E14 + [char]0x0E2A + [char]0x0E2D + [char]0x0E1A, [Text.UTF8Encoding]::new($false))
 exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
 `);
   for (const code of product === 'server' ? [0, 23, 1602, 3010] : [0, 23, 1602]) {
@@ -164,6 +164,7 @@ exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
       if (code === 23 || code === 1602) {
         const output = readFileSync(log, 'utf8');
         assert.match(output, /Child setup was executed/);
+        assert.ok(output.includes('\u0e17\u0e14\u0e2a\u0e2d\u0e1a'), 'Inno must preserve Thai error text');
         assert.doesNotMatch(output, /Runtime error|raised an exception/);
       }
     } finally {

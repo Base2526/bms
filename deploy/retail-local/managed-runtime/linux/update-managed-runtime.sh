@@ -118,6 +118,7 @@ install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-relea
 install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
+/usr/local/sbin/bms-update-transaction prepare
 stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")

@@ -151,6 +151,15 @@ and rebuilt from verified component files; it is not an installation receipt or 
 Runtime-file transfers check length/hash before atomic replacement and flush before/after rename.
 Secrets and provisioning checkpoints must survive retries without regeneration or another shop.
 
+Agent 0.5.4 executes WSL commands with `--exec`: otherwise WSL's default shell evaluates
+`$(...)` before the runtime write creates its temporary file, breaking nested receipt/config writes.
+An opt-in integration test (`BMS_TEST_WSL_DISTRO=Ubuntu`, `go test -run TestWSLRuntimeWriteQuoting`)
+checks real Windows-to-WSL byte transfer in an isolated `/tmp` directory, including UTF-8 content.
+Windows/Linux updates now check the existing shop before downloading/loading new images. If it is
+stopped, preparation starts only existing containers (no `compose up`, migration or secret reset),
+then waits at most 180 seconds for health with visible status. An unhealthy database still blocks
+updates and needs diagnostics; the encrypted backup and transaction health gates remain mandatory.
+
 Windows preserves unregistered disks left by an interrupted WSL import and uses a new directory
 for another import. It never unregisters a potentially data-bearing VM automatically. A registered
 but damaged VM, damaged database, invalid existing secrets, or unreadable final receipt requires

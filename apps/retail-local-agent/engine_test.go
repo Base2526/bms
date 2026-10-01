@@ -6,8 +6,45 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
+
+func TestWSLRuntimeWriteQuoting(t *testing.T) {
+	if runtime.GOOS != "windows" || os.Getenv("BMS_TEST_WSL_DISTRO") == "" {
+		t.Skip("opt-in integration test requires a disposable WSL test directory")
+	}
+	distro := os.Getenv("BMS_TEST_WSL_DISTRO")
+	if !distroPattern.MatchString(distro) {
+		t.Fatal("invalid test distro")
+	}
+	output, err := exec.Command("wsl.exe", "-d", distro, "--exec", "mktemp", "-d", "/tmp/bms-runtime-write-test.XXXXXXXX").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	directory := strings.TrimSpace(string(output))
+	if !strings.HasPrefix(directory, "/tmp/bms-runtime-write-test.") || strings.ContainsAny(directory, "\r\n") {
+		t.Fatal("unexpected test directory")
+	}
+	destination := directory + "/nested/receipt.json"
+	t.Cleanup(func() {
+		exec.Command("wsl.exe", "-d", distro, "-u", "root", "--exec", "rm", "-f", destination, destination+".tmp").Run()
+		exec.Command("wsl.exe", "-d", distro, "-u", "root", "--exec", "rmdir", directory+"/nested", directory).Run()
+	})
+	body := []byte("{\"message\":\"ทดสอบ\",\"literal\":\"$HOME\"}\n")
+	command, err := runtimeShellCommand("windows-wsl", distro, runtimeWriteScript(destination, "0600", hashBytes(body), int64(len(body))))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command.Stdin = bytes.NewReader(body)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("WSL write: %v: %s", err, output)
+	}
+	got, err := exec.Command("wsl.exe", "-d", distro, "-u", "root", "--exec", "cat", destination).Output()
+	if err != nil || !bytes.Equal(got, body) {
+		t.Fatalf("WSL changed bytes: %v %q", err, got)
+	}
+}
 
 func TestRuntimeWriteInterruptedPipePreservesSecretsAndRetries(t *testing.T) {
 	if runtime.GOOS != "linux" {

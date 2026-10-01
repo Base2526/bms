@@ -161,7 +161,7 @@ begin
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + Trim(UTF8Decode(ErrorText)))
+      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + UTF8Decode(ErrorText))
     else
       ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
     exit;

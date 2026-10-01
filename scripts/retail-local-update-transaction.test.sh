@@ -13,6 +13,10 @@ mkdir -p "$fake_bin" "$runtime_root/updates/1.1.0"
 cat >"$fake_bin/docker" <<'EOF'
 #!/bin/sh
 case " $* " in
+  *" start postgres redis web ws "*)
+    : >"$BMS_RUNTIME_ROOT/start-called"
+    [ -f "$BMS_RUNTIME_ROOT/still-unhealthy" ] || rm -f "$BMS_RUNTIME_ROOT/stopped"
+    ;;
   *" run --rm migrate "*) [ ! -f "$BMS_RUNTIME_ROOT/fail-migrate" ] ;;
   *) exit 0 ;;
 esac
@@ -20,7 +24,8 @@ EOF
 cat >"$fake_bin/bms-localctl" <<'EOF'
 #!/bin/sh
 case "${1:-}" in
-  doctor|start) exit 0 ;;
+  doctor) [ ! -f "$BMS_RUNTIME_ROOT/stopped" ] ;;
+  start) exit 0 ;;
   backup) : >"$2" ;;
   restore) : >"$BMS_RUNTIME_ROOT/restore-called" ;;
   *) exit 1 ;;
@@ -35,6 +40,18 @@ EOF
 cat >"$fake_bin/age" <<'EOF'
 #!/bin/sh
 exit 0
+EOF
+cat >"$fake_bin/sleep" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+cat >"$fake_bin/date" <<'EOF'
+#!/bin/sh
+clock="$BMS_RUNTIME_ROOT/test-clock"
+now=$(cat "$clock" 2>/dev/null || echo 0)
+now=$((now + 10))
+echo "$now" >"$clock"
+echo "$now"
 EOF
 chmod +x "$fake_bin"/*
 
@@ -52,6 +69,36 @@ EOF
 }
 
 write_old_runtime
+# Preparation may restart existing containers, but cannot switch images, run migrations or back up.
+: >"$runtime_root/stopped"
+PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" prepare
+test -f "$runtime_root/start-called"
+test ! -f "$runtime_root/stopped"
+test ! -e "$runtime_root/backups"
+grep -Fqx 'BMS_WEB_IMAGE_REF=bms/web:1.0.0' "$runtime_root/.env"
+grep -Fqx old-compose "$runtime_root/compose.yml"
+rm "$runtime_root/start-called"
+PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" prepare
+test ! -e "$runtime_root/start-called"
+
+: >"$runtime_root/stopped"
+: >"$runtime_root/still-unhealthy"
+if PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" prepare >"$work/prepare.log" 2>&1; then
+  echo "unhealthy old runtime must block updates" >&2
+  exit 1
+fi
+grep -Fq 'No update was applied' "$work/prepare.log"
+grep -Fq 'Waiting for existing shop health' "$work/prepare.log"
+test ! -e "$runtime_root/backups"
+grep -Fqx old-compose "$runtime_root/compose.yml"
+rm "$runtime_root/start-called" "$runtime_root/stopped" "$runtime_root/still-unhealthy"
+printf '1.1.0\n' >"$runtime_root/update-active"
+if PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" prepare; then
+  echo "active transaction must not be restarted by prepare" >&2
+  exit 1
+fi
+test ! -e "$runtime_root/start-called"
+rm "$runtime_root/update-active"
 PATH="$fake_bin:$PATH" BMS_RUNTIME_ROOT="$runtime_root" "$transaction" begin 1.1.0 0 \
   bms/web:1.1.0 bms/ws:1.1.0 bms/postgres:1.1.0 bms/redis:1.1.0
 grep -Fqx runtime-healthy "$runtime_root/updates/1.1.0/phase"
