@@ -74,7 +74,7 @@ choose_archetype() {
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
   ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
-  local labels=() values=() default_value default_index=1 row id label
+  local labels=() values=() default_value default_index=1 id label
   default_value=$(jq -r '.defaultArchetype' "$manifest")
   while IFS=$'\t' read -r id label; do
     [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
