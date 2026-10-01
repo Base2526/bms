@@ -189,7 +189,17 @@ jobs:
         run: |
           choco install innosetup --no-progress -y
           $bundle = (Resolve-Path deploy/retail-local/managed-runtime/windows).Path
-          node --input-type=module -e 'import {generateKeyPairSync} from "node:crypto"; import {writeFileSync} from "node:fs"; const {publicKey}=generateKeyPairSync("ed25519"); writeFileSync(process.argv[1],JSON.stringify({formatVersion:1,keys:{"ci-only":publicKey.export({type:"spki",format:"pem"}).toString()}}));' "$bundle\trusted-release-keys.json"
+          @'
+          import { generateKeyPairSync } from "node:crypto";
+          import { writeFileSync } from "node:fs";
+          const { publicKey } = generateKeyPairSync("ed25519");
+          writeFileSync(process.argv[2], JSON.stringify({
+            formatVersion: 1,
+            keys: { "ci-only": publicKey.export({ type: "spki", format: "pem" }).toString() },
+          }));
+          '@ | Set-Content "$env:RUNNER_TEMP\create-ci-keyring.mjs" -Encoding utf8
+          node "$env:RUNNER_TEMP\create-ci-keyring.mjs" "$bundle\trusted-release-keys.json"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" `
             "/DBuildRoot=$bundle" "/DOutputRoot=$env:RUNNER_TEMP" "/DProductVersion=0.0.0-ci" `
             "/DManifestUri=https://release.example.invalid/release.jws.json" `
