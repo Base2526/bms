@@ -85,6 +85,13 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
 [Code]
 var
   ManagedRuntimeNeedsRestart: Boolean;
+  BootstrapFailed: Boolean;
+
+function GetCustomSetupExitCode(): Integer;
+begin
+  Result := 0;
+  if BootstrapFailed then Result := 1;
+end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -100,6 +107,7 @@ begin
   if CurStep <> ssPostInstall then
     exit;
 
+  BootstrapFailed := True;
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   ScriptPath := ExpandConstant('{tmp}\bms-retail-local\run-managed-runtime.ps1');
   InstallScriptPath := ExpandConstant('{tmp}\bms-retail-local\install-managed-runtime.ps1');
@@ -136,6 +144,7 @@ begin
     else
       RaiseException('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
   end;
+  BootstrapFailed := False;
 end;
 
 function NeedRestart(): Boolean;

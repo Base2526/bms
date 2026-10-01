@@ -44,6 +44,15 @@ Source: "{#BuildRoot}\trusted-release-keys.json"; DestDir: "{tmp}\bms-pos-bootst
 Source: "{#BuildRoot}\install-pos-online.ps1"; DestDir: "{tmp}\bms-pos-bootstrap"; Flags: ignoreversion deleteafterinstall
 
 [Code]
+var
+  BootstrapFailed: Boolean;
+
+function GetCustomSetupExitCode(): Integer;
+begin
+  Result := 0;
+  if BootstrapFailed then Result := 1;
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
@@ -51,6 +60,7 @@ var
   ErrorText: AnsiString;
 begin
   if CurStep <> ssPostInstall then exit;
+  BootstrapFailed := True;
   ErrorPath := ExpandConstant('{localappdata}\BMS\POSBootstrap\setup-error.txt');
   ForceDirectories(ExtractFileDir(ErrorPath));
   DeleteFile(ErrorPath);
@@ -73,4 +83,5 @@ begin
     else
       RaiseException('BMS POS setup did not complete. Run this installer again to resume.');
   end;
+  BootstrapFailed := False;
 end;

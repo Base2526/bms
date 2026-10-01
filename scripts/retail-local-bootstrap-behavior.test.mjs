@@ -122,7 +122,8 @@ exit $LASTEXITCODE
   });
 }
 
-test('compiled Windows POS EXE fails when its child setup fails or is cancelled', {
+for (const product of ['pos', 'server']) {
+test(`compiled Windows ${product} EXE fails when its child setup fails or is cancelled`, {
   skip: process.platform !== 'win32' || !process.env.CI || !process.env.BMS_INNO_COMPILER,
 }, t => {
   const root = workspace(t);
@@ -130,26 +131,44 @@ test('compiled Windows POS EXE fails when its child setup fails or is cancelled'
   mkdirSync(bundle);
   writeFileSync(join(bundle, 'bms-runtime-agent.exe'), 'packaging fixture');
   writeFileSync(join(bundle, 'trusted-release-keys.json'), '{}');
-  writeFileSync(join(bundle, 'install-pos-online.ps1'), `
-param($ManifestUri, $PlatformTarget, $AgentPath, $KeyringPath, $ErrorFile)
+  const iss = product === 'pos'
+    ? 'deploy/retail-local/pos-online/windows/BMSPOSOnline.iss'
+    : 'deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss';
+  if (product === 'server') {
+    for (const match of read(iss).matchAll(/Source: "\{#BuildRoot\}\\([^"]+)"/g)) {
+      const path = resolve(bundle, ...match[1].split('\\'));
+      mkdirSync(resolve(path, '..'), { recursive: true });
+      writeFileSync(path, 'packaging fixture');
+    }
+    writeFileSync(join(bundle, 'uninstall-managed-runtime.ps1'), 'exit 0');
+  }
+  writeFileSync(join(bundle, product === 'pos' ? 'install-pos-online.ps1' : 'run-managed-runtime.ps1'), `
+param($ManifestUri, $PlatformTarget, $AgentPath, $KeyringPath, $ErrorFile, $InstallScript, $LogFile)
 [IO.File]::WriteAllText($ErrorFile, 'Child setup was executed')
 exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
 `);
-  for (const code of [0, 23, 1602]) {
+  for (const code of product === 'server' ? [0, 23, 1602, 3010] : [0, 23, 1602]) {
     const name = `probe-${code}`;
     const compiled = run(process.env.BMS_INNO_COMPILER, [
       `/DBuildRoot=${bundle}`, `/DOutputRoot=${root}`, '/DProductVersion=0.0.0-ci',
       `/DManifestUri=https://example.invalid/${code}`, '/DPlatformTarget=windows-11-x64',
-      `/DArtifactBaseFilename=${name}`, resolve(repo, 'deploy/retail-local/pos-online/windows/BMSPOSOnline.iss'),
+      `/DArtifactBaseFilename=${name}`, resolve(repo, iss),
     ]);
     assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
     const log = join(root, `${name}.log`);
-    const result = run(join(root, `${name}.exe`), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', `/LOG=${log}`]);
-    assert.equal(result.error, undefined, String(result.error));
-    assert.equal(result.status === 0, code === 0, readFileSync(log, 'utf8'));
-    if (code !== 0) assert.match(readFileSync(log, 'utf8'), /Child setup was executed/);
+    const installed = join(root, `installed-${code}`);
+    try {
+      const result = run(join(root, `${name}.exe`), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', `/DIR=${installed}`, `/LOG=${log}`]);
+      assert.equal(result.error, undefined, String(result.error));
+      assert.equal(result.status === 0, code === 0 || code === 3010, readFileSync(log, 'utf8'));
+      if (code === 23 || code === 1602) assert.match(readFileSync(log, 'utf8'), /Child setup was executed/);
+    } finally {
+      const uninstaller = join(installed, 'unins000.exe');
+      if (existsSync(uninstaller)) run(uninstaller, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']);
+    }
   }
 });
+}
 
 test('Windows uninstall completes on a partial installation and preserves data', {
   skip: process.platform !== 'win32' || !process.env.CI,
@@ -165,6 +184,39 @@ test('Windows uninstall completes on a partial installation and preserves data',
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(readFileSync(join(state, 'data-sentinel'), 'utf8'), 'keep shop data');
   assert.equal(readFileSync(join(state, '.env'), 'utf8'), 'keep secrets');
+});
+
+test('Windows first-install accepts reboot-required DISM and recognizes UTF-16 WSL names', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const enableFeatures = source.match(/if \(\$preflight.requiresReboot\) \{\r?\n([\s\S]+?)  \$resumePath/)?.[1];
+  const wsl = source.match(/function Invoke-WslCommand\([\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(enableFeatures && wsl);
+  const script = join(root, 'features.ps1');
+  // The source contains Thai messages, so Windows PowerShell 5.1 needs a BOM.
+  writeFileSync(script, '\uFEFF' + `
+$ErrorActionPreference='Stop'
+function dism.exe { $global:LASTEXITCODE=[int]$env:BMS_DISM_RESULT }
+${enableFeatures}
+${wsl}
+function wsl.exe {
+  [string]::Join([char]0, [char[]]'BMSRuntime') + [char]0
+  $global:LASTEXITCODE=0
+}
+$result=Invoke-WslCommand -Arguments @('--list', '--quiet') -Quiet
+if ($result.ExitCode -ne 0 -or $result.Output.Count -ne 1 -or $result.Output[0] -cne 'BMSRuntime') {
+  throw 'Existing WSL distribution was not recognized'
+}
+exit 0
+`);
+  for (const code of [0, 3010, 5]) {
+    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script], {
+      env: { ...process.env, BMS_DISM_RESULT: String(code) },
+    });
+    assert.equal(result.status === 0, code !== 5, result.stdout + result.stderr);
+  }
 });
 
 test('macOS uninstall bounds a stuck VM stop and preserves shop data', {

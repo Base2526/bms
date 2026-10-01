@@ -315,7 +315,7 @@ function Invoke-WslCommand([string[]]$Arguments, [switch]$Quiet) {
   } finally {
     $ErrorActionPreference = $previousErrorActionPreference
   }
-  $lines = @($output | ForEach-Object { [string]$_ })
+  $lines = @($output | ForEach-Object { ([string]$_).Replace([string][char]0, '') })
   if (-not $Quiet) {
     foreach ($line in $lines) { Write-Host $line }
   }
@@ -486,9 +486,9 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhi
 
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
   & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
   $resumePath = Join-Path $bootstrapRoot "resume.json"
   $resumeJson = [ordered]@{
     manifestUri = $ManifestUri
