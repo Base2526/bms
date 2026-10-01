@@ -46,21 +46,47 @@ try {
 $release = Invoke-AgentJson @(
   "verify-release", "-manifest", $manifestPath, "-keyring", $KeyringPath, "-target", $PlatformTarget
 )
-$lastBucket = -1
+$lastPercent = -1
+$lastPrintedAt = [DateTime]::MinValue
 Write-Host "Downloading BMS POS. Completed bytes are kept for resume..."
 & $AgentPath stage-desktop -manifest $manifestPath -keyring $KeyringPath `
   -target $PlatformTarget -root $stateRoot -progress 2>&1 | ForEach-Object {
     $line = [string]$_
     try {
-      $event = $line | ConvertFrom-Json
+      if (-not $line.StartsWith("BMS_PROGRESS ")) { throw "not a progress event" }
+      $event = $line.Substring(13) | ConvertFrom-Json
       if ($null -ne $event.percent) {
+        $properties = @($event.PSObject.Properties.Name)
         $percent = [Math]::Max(0, [Math]::Min(100, [int]$event.percent))
-        $component = if ($event.component) { [string]$event.component } else { "desktop" }
-        Write-Progress -Id 31 -Activity "BMS POS download" -Status "$component ($percent%)" -PercentComplete $percent
-        $bucket = [Math]::Floor($percent / 10)
-        if ($bucket -gt $lastBucket -or $percent -eq 100) {
-          Write-Host ("  [{0,3}%] {1}" -f $percent, $component)
-          $lastBucket = $bucket
+        $component = if ($properties -contains "component" -and $event.component) {
+          [string]$event.component
+        } else { "desktop" }
+        $phase = [string]$event.phase
+        $status = switch ($phase) {
+          "connect" { "Connecting to download $component" }
+          "retry" { "Connection paused; retrying $component in $([int]$event.retryAfterSeconds) seconds" }
+          "verify" { "Verifying $component" }
+          "staged" { "Download verified" }
+          default { "Downloading $component" }
+        }
+        $componentTotal = if ($properties -contains "componentTotalBytes") {
+          [long]$event.componentTotalBytes
+        } else { 0L }
+        $details = if ($componentTotal -gt 0) {
+          "{0:N1}/{1:N1} MiB" -f `
+            ([long]$event.componentCompletedBytes / 1MB), ($componentTotal / 1MB)
+        } else { "{0:N1}/{1:N1} MiB" -f ([long]$event.completedBytes / 1MB), ([long]$event.totalBytes / 1MB) }
+        $heartbeat = ($properties -contains "heartbeat") -and [bool]$event.heartbeat
+        if ($heartbeat) { $details += " - still working; waiting for network data" }
+        Write-Progress -Id 31 -Activity "BMS POS download" `
+          -Status "$status - $details ($percent%)" -PercentComplete $percent
+        $now = [DateTime]::UtcNow
+        if ($percent -gt $lastPercent -or $phase -in @("connect", "retry", "verify", "staged") -or
+            $lastPrintedAt -eq [DateTime]::MinValue -or ($now - $lastPrintedAt).TotalSeconds -ge 5) {
+          Write-Host ("  [{0,3}%] {1} - {2} - {3}" -f `
+            $percent, $status, $details, $now.ToLocalTime().ToString("HH:mm:ss"))
+          $lastPercent = $percent
+          $lastPrintedAt = $now
         }
       }
     } catch {

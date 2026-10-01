@@ -11,7 +11,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestDownloadComponentResumesAndVerifies(t *testing.T) {
@@ -57,6 +59,71 @@ func TestDownloadComponentResumesAndVerifies(t *testing.T) {
 	}
 	if len(progress) == 0 || progress[len(progress)-1].Percent != 100 {
 		t.Fatalf("download did not report completion: %#v", progress)
+	}
+}
+
+func TestDownloadComponentRetriesAnIdleBodyAndResumes(t *testing.T) {
+	content := []byte(strings.Repeat("retryable-download-", 1024))
+	var requests atomic.Int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requestNumber := requests.Add(1)
+		offset := 0
+		if rangeValue := request.Header.Get("Range"); rangeValue != "" {
+			if _, err := fmt.Sscanf(rangeValue, "bytes=%d-", &offset); err != nil {
+				t.Errorf("bad Range: %s", rangeValue)
+				return
+			}
+			response.WriteHeader(http.StatusPartialContent)
+		}
+		if requestNumber == 1 {
+			_, _ = response.Write(content[:128])
+			if flusher, ok := response.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			<-request.Context().Done()
+			return
+		}
+		_, _ = response.Write(content[offset:])
+	}))
+	defer server.Close()
+
+	previousIdle := downloadIdleTimeout
+	previousProgress := downloadProgressInterval
+	downloadIdleTimeout = 75 * time.Millisecond
+	downloadProgressInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		downloadIdleTimeout = previousIdle
+		downloadProgressInterval = previousProgress
+	})
+
+	sum := sha256.Sum256(content)
+	component := releaseComponent{
+		Name: "runtime", Kind: "runtime", URL: server.URL + "/runtime",
+		SHA256: hex.EncodeToString(sum[:]), SizeBytes: int64(len(content)),
+	}
+	destination := filepath.Join(t.TempDir(), "runtime.artifact")
+	var progress []progressEvent
+	if err := downloadComponent(context.Background(), server.Client(), component, destination, 0, component.SizeBytes,
+		func(event progressEvent) { progress = append(progress, event) }); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actual) != string(content) {
+		t.Fatal("resumed bytes changed")
+	}
+	if requests.Load() < 2 {
+		t.Fatalf("idle response was not retried: %d requests", requests.Load())
+	}
+	var sawHeartbeat, sawRetry bool
+	for _, event := range progress {
+		sawHeartbeat = sawHeartbeat || event.Heartbeat
+		sawRetry = sawRetry || event.Phase == "retry"
+	}
+	if !sawHeartbeat || !sawRetry {
+		t.Fatalf("missing heartbeat/retry progress: %#v", progress)
 	}
 }
 

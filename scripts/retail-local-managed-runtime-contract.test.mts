@@ -229,6 +229,7 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
 
 test("Managed Runtime setup UX preserves actionable preflight and resumable provisioning", () => {
   const agentMain = read("apps/retail-local-agent/main.go");
+  const agentStage = read("apps/retail-local-agent/stage.go");
   const darwin = read("apps/retail-local-agent/preflight_darwin.go");
   const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
@@ -278,6 +279,11 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /IsNullOrWhiteSpace\(\$desktopArguments\)[\s\S]*New-ScheduledTaskAction -Execute \$desktopExecutable/);
   assert.match(windows, /ReadAllText\(\$Path, \[Text\.Encoding\]::UTF8\)/);
   assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*ยังทำงานอยู่/);
+  assert.match(agentStage, /downloadMaxAttempts\s*=\s*5/);
+  assert.match(agentStage, /downloadIdleTimeout\s*=\s*45 \* time\.Second/);
+  assert.match(agentStage, /Header\.Set\("Range", "bytes="\+strconv\.FormatInt\(offset, 10\)\+"-"\)/);
+  assert.match(agentStage, /Heartbeat:\s+heartbeat/);
+  assert.match(linux, /run_agent_json_progress[\s\S]*-progress/);
   assert.match(windows, /wslVersion[\s\S]*--version[\s\S]*finishing an upgrade/);
   assert.match(inno, /SW_SHOWMAXIMIZED/);
   assert.match(inno, /\[UninstallRun\][\s\S]*-NonInteractive -WindowStyle Hidden[\s\S]*runhidden waituntilterminated/);
@@ -511,8 +517,11 @@ test("POS-only online bootstraps download one signed desktop component for suppo
   assert.match(builder, /Length -gt 25MB/);
   assert.match(windowsSetup, /stage-desktop/);
   assert.match(windowsSetup, /Write-Progress/);
+  assert.match(windowsSetup, /StartsWith\("BMS_PROGRESS "\)[\s\S]*Substring\(13\)[\s\S]*ConvertFrom-Json/);
   assert.match(windowsIss, /PrivilegesRequired=lowest/);
   assert.match(linuxSetup, /stage-desktop/);
+  assert.match(linuxSetup, /BMS_PROGRESS /);
+  assert.match(linuxSetup, /heartbeat/);
   assert.match(linuxSetup, /apt-get install -y/);
   assert.match(linuxBuilder, /Architecture: amd64/);
   assert.match(builder, /keyringText -match 'PRIVATE KEY'/);
@@ -741,6 +750,7 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.match(windowsUpdater, /verify-update[\s\S]*engine-load[\s\S]*Invoke-Transaction @\("begin"/);
   assert.match(windowsUpdater, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
   assert.match(windowsUpdater, /BMS_PROGRESS[\s\S]*Write-Progress/);
+  assert.match(linuxUpdater, /run_agent_json_progress[\s\S]*stage-release[\s\S]*-progress/);
   assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
   assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
   assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);

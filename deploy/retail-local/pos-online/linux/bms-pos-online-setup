@@ -33,10 +33,26 @@ printf 'Downloading and verifying BMS POS (completed bytes are kept for resume).
 $AGENT stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
   -target "$platform_target" -root "$STATE_ROOT" -progress | while IFS= read -r event; do
     printf '%s\n' "$event" | python3 -c '
-import json,sys
+import datetime,json,sys
 try:
-    event=json.load(sys.stdin)
-    print("  [{:3d}%] {}".format(int(event.get("percent",0)), event.get("component") or "desktop"))
+    raw=sys.stdin.read().strip()
+    if not raw.startswith("BMS_PROGRESS "):
+        raise ValueError("not progress")
+    event=json.loads(raw[len("BMS_PROGRESS "):])
+    component=event.get("component") or "desktop"
+    completed=event.get("componentCompletedBytes") or event.get("completedBytes") or 0
+    total=event.get("componentTotalBytes") or event.get("totalBytes") or 0
+    phase=event.get("phase") or "download"
+    status={
+        "connect": "connecting",
+        "retry": "connection paused; retrying",
+        "verify": "verifying",
+        "staged": "verified",
+    }.get(phase, "downloading")
+    heartbeat="; still working, waiting for network data" if event.get("heartbeat") else ""
+    print("  [{:3d}%] {} {} - {:.1f}/{:.1f} MiB{} - {}".format(
+        int(event.get("percent",0)), status, component, completed/1048576, total/1048576,
+        heartbeat, datetime.datetime.now().strftime("%H:%M:%S")), flush=True)
 except Exception:
     pass
 '
