@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: build-deb.sh --keyring FILE [--agent FILE] [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--version VERSION] [--output-dir DIR]
+usage: build-deb.sh --keyring FILE [--agent FILE] [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--package-type server-pos|server] [--version VERSION] [--output-dir DIR]
 
 Builds the small Ubuntu x64 bootstrap package. The keyring must contain only trusted Ed25519 public
 keys. Private keys and application images are never copied into this package. When --agent is
@@ -17,6 +17,7 @@ agent=
 manifest_url=
 activation_url=
 version=0.5.0-internal.1
+package_type=server-pos
 output_dir=artifacts/retail-local/managed-runtime
 while (($#)); do
   case "$1" in
@@ -24,6 +25,7 @@ while (($#)); do
     --agent) agent=${2:-}; shift 2 ;;
     --manifest-url) manifest_url=${2:-}; shift 2 ;;
     --activation-url) activation_url=${2:-}; shift 2 ;;
+    --package-type) package_type=${2:-}; shift 2 ;;
     --version) version=${2:-}; shift 2 ;;
     --output-dir) output_dir=${2:-}; shift 2 ;;
     *) usage ;;
@@ -32,6 +34,7 @@ done
 
 [[ -f $keyring ]] || usage
 [[ -z $agent || -f $agent ]] || usage
+[[ $package_type == server-pos || $package_type == server ]] || usage
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([.+~-][A-Za-z0-9.+~-]+)*$ ]] || {
   echo "version ไม่ใช่ Debian-compatible version" >&2; exit 2;
 }
@@ -72,6 +75,7 @@ install -m 0755 "$linux_root/install-managed-runtime.sh" \
 install -m 0644 "$linux_root/../setup-diagnostics.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/setup-diagnostics.sh"
 printf '%s\n' "$version" >"$package_root/usr/lib/bms-retail-local/bootstrap/BOOTSTRAP_VERSION"
+printf '%s\n' "$package_type" >"$package_root/usr/lib/bms-retail-local/bootstrap/PACKAGE_TYPE"
 install -m 0755 "$linux_root/uninstall-managed-runtime.sh" \
   "$package_root/usr/lib/bms-retail-local/bootstrap/uninstall-managed-runtime.sh"
 install -m 0755 "$linux_root/update-managed-runtime.sh" \
@@ -200,7 +204,11 @@ exit 0
 EOF
 chmod 0755 "$package_root/DEBIAN/prerm"
 
-package_name="bms-retail-local-bootstrap_${version}_amd64.deb"
+case "$package_type" in
+  server-pos) package_slug=bms-retail-local-server-pos-bootstrap ;;
+  server) package_slug=bms-retail-local-server-bootstrap ;;
+esac
+package_name="${package_slug}_${version}_amd64.deb"
 package_path="$output_dir/$package_name"
 rm -f -- "$package_path"
 
@@ -217,5 +225,5 @@ fi
 
 sha256=$(shasum -a 256 "$package_path" | awk '{print $1}')
 size=$(wc -c <"$package_path" | tr -d ' ')
-printf '{"artifact":"%s","sha256":"%s","sizeBytes":%s,"version":"%s","architecture":"amd64"}\n' \
-  "$package_path" "$sha256" "$size" "$version"
+printf '{"artifact":"%s","sha256":"%s","sizeBytes":%s,"version":"%s","architecture":"amd64","packageType":"%s","distribution":"online-bootstrap","firstInstallInternetRequired":true}\n' \
+  "$package_path" "$sha256" "$size" "$version" "$package_type"

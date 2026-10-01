@@ -73,8 +73,12 @@ agent="$agent_source"
 
 current_version=$(jq -er '.version' "$RUNTIME_ROOT/installation.json")
 target=$(jq -er '.platformTarget' "$RUNTIME_ROOT/installation.json")
-old_desktop="$RUNTIME_ROOT/releases/$current_version/desktop.artifact"
-[[ -f $old_desktop ]] || die "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
+package_type=$(jq -r '.packageType // "server-pos"' "$RUNTIME_ROOT/installation.json")
+[[ $package_type == server-pos || $package_type == server ]] || die "installation package type ไม่ถูกต้อง"
+if [[ $package_type == server-pos ]]; then
+  old_desktop="$RUNTIME_ROOT/releases/$current_version/desktop.artifact"
+  [[ -f $old_desktop ]] || die "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
+fi
 manifest_path="$RUNTIME_ROOT/release/update-release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
   --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
@@ -94,7 +98,11 @@ version=$(jq -er '.releaseVersion' <<<"$release_json")
 channel=$(jq -er '.channel' <<<"$release_json")
 schema_version=$(jq -er '.schemaVersion' <<<"$release_json")
 created_at=$(jq -er '.createdAt' <<<"$release_json")
-total_bytes=$(jq -er '[.components[].sizeBytes] | add' <<<"$release_json")
+if [[ $package_type == server-pos ]]; then
+  total_bytes=$(jq -er '[.components[].sizeBytes] | add' <<<"$release_json")
+else
+  total_bytes=$(jq -er '[.components[] | select(.name != "desktop") | .sizeBytes] | add' <<<"$release_json")
+fi
 rollback_mode=$(jq -r 'if .rollbackSafe then "image-only" else "full database/files/secrets restore" end' <<<"$release_json")
 printf 'พบ BMS Retail Local update ที่ตรวจลายเซ็นแล้ว\n'
 printf '  version: %s -> %s\n' "$current_version" "$version"
@@ -119,7 +127,9 @@ install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
 /usr/local/sbin/bms-update-transaction prepare
-stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
+stage_command=stage-release
+[[ $package_type == server-pos ]] || stage_command=stage-server
+stage_json=$(run_agent_json_progress "$agent" "$stage_command" -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
 [[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
@@ -149,12 +159,14 @@ if ! /usr/local/sbin/bms-update-transaction begin "$version" "$rollback_safe" \
   die "runtime update ไม่สำเร็จ; ระบบ rollback แล้วหรือเก็บ transaction ไว้ให้ recover"
 fi
 
-desktop_artifact=$(artifact_path desktop)
-if ! dpkg -i "$desktop_artifact"; then
-  if ! apt-get install -f -y || ! dpkg -i "$desktop_artifact"; then
-    /usr/local/sbin/bms-update-transaction rollback "$version" || true
-    dpkg -i "$old_desktop" >/dev/null 2>&1 || true
-    die "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
+if [[ $package_type == server-pos ]]; then
+  desktop_artifact=$(artifact_path desktop)
+  if ! dpkg -i "$desktop_artifact"; then
+    if ! apt-get install -f -y || ! dpkg -i "$desktop_artifact"; then
+      /usr/local/sbin/bms-update-transaction rollback "$version" || true
+      dpkg -i "$old_desktop" >/dev/null 2>&1 || true
+      die "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
+    fi
   fi
 fi
 /usr/local/sbin/bms-update-transaction commit "$version"

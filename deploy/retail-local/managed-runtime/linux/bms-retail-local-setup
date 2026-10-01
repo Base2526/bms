@@ -5,9 +5,18 @@ readonly bundle_root=/usr/lib/bms-retail-local/bootstrap
 readonly release_url_file=/etc/bms-retail-local/release-manifest-url
 readonly activation_url_file=/etc/bms-retail-local/activation-url
 
+package_type=server-pos
+if [[ -f $bundle_root/PACKAGE_TYPE ]]; then
+  package_type=$(tr -d '\r\n' <"$bundle_root/PACKAGE_TYPE")
+fi
+[[ $package_type == server-pos || $package_type == server ]] || {
+  echo "bootstrap package type ไม่ถูกต้อง: $package_type" >&2
+  exit 2
+}
+
 # shellcheck source=../setup-diagnostics.sh
 source "$bundle_root/setup-diagnostics.sh"
-bms_diagnostics_init server-pos /var/lib/bms-retail-local "$bundle_root/BOOTSTRAP_VERSION"
+bms_diagnostics_init "$package_type" /var/lib/bms-retail-local "$bundle_root/BOOTSTRAP_VERSION"
 BMS_DIAG_STAGE=read-release-config
 trap 'status=$?; trap - EXIT ERR; bms_diagnostics_finish "$status"; exit "$status"' EXIT
 trap 'exit 130' HUP INT TERM

@@ -50,4 +50,14 @@ echo "Run: sudo bms-pos-online-setup"
 EOF
 chmod 0755 "$stage/DEBIAN/postinst"
 mkdir -p "$output_dir"
-dpkg-deb --root-owner-group -Zxz --build "$stage" "$output_dir/bms-pos-online-bootstrap_${version}_amd64.deb"
+package_path="$output_dir/bms-pos-online-bootstrap_${version}_amd64.deb"
+if command -v dpkg-deb >/dev/null 2>&1; then
+  dpkg-deb --root-owner-group -Zxz --build "$stage" "$package_path"
+else
+  tar_flags=(--format=ustar --uid=0 --gid=0 --uname=root --gname=root)
+  printf '2.0\n' >"$work/debian-binary"
+  (cd "$stage/DEBIAN" && COPYFILE_DISABLE=1 tar "${tar_flags[@]}" -czf "$work/control.tar.gz" .)
+  rm -rf -- "$stage/DEBIAN"
+  (cd "$stage" && COPYFILE_DISABLE=1 tar "${tar_flags[@]}" -czf "$work/data.tar.gz" .)
+  (cd "$work" && ZERO_AR_DATE=1 ar -rc "$package_path" debian-binary control.tar.gz data.tar.gz)
+fi
