@@ -63,6 +63,34 @@ fi
 die() { printf 'BMS Retail Local: %s\n' "$*" >&2; exit 1; }
 note() { printf '[BMS] %s\n' "$*"; }
 step() { printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
+uninstall_step() { printf '\n[BMS Uninstall %s/4] %s\n' "$1" "$2"; }
+run_with_timeout() {
+  local seconds=$1 command_pid timer_pid status=0 timeout_marker
+  shift
+  timeout_marker=$(mktemp "${TMPDIR:-/tmp}/bms-retail-local-timeout.XXXXXX")
+  rm -f -- "$timeout_marker"
+  "$@" &
+  command_pid=$!
+  (
+    sleep "$seconds"
+    if kill -0 "$command_pid" 2>/dev/null; then
+      : >"$timeout_marker"
+      kill -TERM "$command_pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL "$command_pid" 2>/dev/null || true
+    fi
+  ) &
+  timer_pid=$!
+  wait "$command_pid" || status=$?
+  kill "$timer_pid" 2>/dev/null || true
+  wait "$timer_pid" 2>/dev/null || true
+  if [[ -f $timeout_marker ]]; then
+    rm -f -- "$timeout_marker"
+    return 124
+  fi
+  rm -f -- "$timeout_marker"
+  return "$status"
+}
 require_bootstrap() {
   if [[ $INSTALL_MODE == offline ]]; then
     [[ -x $AGENT && -x $LIMACTL && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
@@ -889,11 +917,24 @@ uninstall_runtime() {
     remove_pos=false
   fi
 
-  launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
-  if [[ -x $LIMACTL && $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE" || true; fi
+  uninstall_step 1 "ปิดการเริ่มอัตโนมัติ"
   rm -f -- "$LAUNCH_AGENT"
+  run_with_timeout 5 launchctl bootout "$LAUNCH_LABEL" >/dev/null 2>&1 || true
+
+  uninstall_step 2 "บันทึกการถอนการติดตั้งและหยุด private VM"
+  if [[ -x $AGENT && -d $STATE_ROOT/license-evidence ]]; then
+    run_with_timeout 3 "$AGENT" license-pulse -root "$STATE_ROOT" \
+      -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
+  fi
+  if [[ -x $LIMACTL && -d $LIMA_HOME/$INSTANCE ]]; then
+    if ! run_with_timeout 10 "$LIMACTL" stop "$INSTANCE" >/dev/null 2>&1; then
+      printf '[คำเตือน] private VM หยุดไม่ทัน 10 วินาที กำลังดำเนินการถอน startup ต่อ\n' >&2
+    fi
+  fi
 
   if [[ $erase_data != true ]]; then
+    uninstall_step 3 "เก็บข้อมูลร้านและ private VM สำหรับ recovery"
+    uninstall_step 4 "เสร็จสิ้น"
     note "หยุดและถอด startup แล้ว"
     note "ข้อมูลร้าน, private VM และ secrets ยังอยู่ใน: $STATE_ROOT"
     note "ใช้ bms-retail-local backup ก่อน และใช้ uninstall --erase-data เฉพาะเมื่อต้องการลบถาวร"
@@ -905,11 +946,10 @@ uninstall_runtime() {
   fi
   [[ $confirmation == ERASE-BMS-RETAIL-LOCAL ]] || die "ยกเลิกการลบข้อมูล"
 
-  if [[ -x $AGENT && -d $STATE_ROOT/license-evidence ]]; then
-    "$AGENT" license-pulse -root "$STATE_ROOT" -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
-  fi
-  if [[ -x $LIMACTL ]]; then
-    "$LIMACTL" delete -f "$INSTANCE" >/dev/null 2>&1 || true
+  uninstall_step 3 "ลบ private VM และข้อมูลร้าน"
+  if [[ -x $LIMACTL && -d $LIMA_HOME/$INSTANCE ]]; then
+    run_with_timeout 60 "$LIMACTL" delete -f "$INSTANCE" >/dev/null 2>&1 || \
+      die "ลบ private VM ไม่สำเร็จ จึงยังไม่ลบข้อมูลร้าน กรุณาลองใหม่หรือติดต่อ Support"
   fi
   rm -rf -- "$STATE_ROOT" "$LIMA_HOME"
   sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
@@ -917,6 +957,7 @@ uninstall_runtime() {
   sudo rm -f -- "/Applications/BMS Retail Local Uninstall.command"
   sudo rm -f -- /usr/local/bin/bms-retail-local
   sudo pkgutil --forget com.base2526.bms.retail-local >/dev/null 2>&1 || true
+  uninstall_step 4 "ลบระบบและข้อมูลร้านแล้ว"
   note "ลบ BMS Retail Local และข้อมูลในเครื่องแล้ว"
 }
 

@@ -79,8 +79,8 @@ Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
 
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\uninstall-managed-runtime.ps1"""; \
-  Flags: waituntilterminated; RunOnceId: "BMSManagedRuntimeCleanup"
+  Parameters: "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\uninstall-managed-runtime.ps1"""; \
+  Flags: runhidden waituntilterminated; RunOnceId: "BMSManagedRuntimeCleanup"
 
 [Code]
 var
@@ -141,4 +141,13 @@ end;
 function NeedRestart(): Boolean;
 begin
   Result := ManagedRuntimeNeedsRestart;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+    UninstallProgressForm.StatusLabel.Caption :=
+      'กำลังหยุดบริการและยกเลิกรายการเปิดอัตโนมัติ (ปกติไม่เกิน 15 วินาที)...'
+  else if CurUninstallStep = usPostUninstall then
+    UninstallProgressForm.StatusLabel.Caption := 'กำลังลบไฟล์โปรแกรม...';
 end;

@@ -234,6 +234,7 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
   const inno = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
   const windowsRunner = read("deploy/retail-local/managed-runtime/windows/run-managed-runtime.ps1");
+  const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
 
   assert.match(agentMain, /errPreflightFailed/);
   assert.match(agentMain, /preflight \[--human\]/);
@@ -278,7 +279,15 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /ReadAllText\(\$Path, \[Text\.Encoding\]::UTF8\)/);
   assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*ยังทำงานอยู่/);
   assert.match(windows, /wslVersion[\s\S]*--version[\s\S]*finishing an upgrade/);
-  assert.doesNotMatch(inno, /runhidden waituntilterminated/);
+  assert.match(inno, /SW_SHOWMAXIMIZED/);
+  assert.match(inno, /\[UninstallRun\][\s\S]*-NonInteractive -WindowStyle Hidden[\s\S]*runhidden waituntilterminated/);
+  assert.match(inno, /CurUninstallStepChanged[\s\S]*ปกติไม่เกิน 15 วินาที/);
+  assert.match(windowsUninstall, /Stop-ScheduledTask[\s\S]*Unregister-ScheduledTask/);
+  assert.match(windowsUninstall, /BMS Retail Local POS Pairing/);
+  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED" 3[\s\S]*--terminate BMSRuntime" 10/);
+  assert.doesNotMatch(windowsUninstall, /bms-localctl stop/);
+  assert.ok(windowsUninstall.indexOf("Stop-AndRemoveScheduledTask $taskName") <
+    windowsUninstall.indexOf('Invoke-BoundedProcess $wsl "--terminate BMSRuntime"'));
 });
 
 test("local Windows smoke release trusts HTTPS for both the user and elevated installer", () => {
@@ -385,12 +394,41 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(localctl, /REPLACE-LOCAL-DATA/);
   assert.match(localctl, /pg_dump[\s\S]*storage\.tar\.gz[\s\S]*\.env/);
   assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
-  assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down --volumes/);
+  assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down[\s\S]*--volumes/);
   assert.match(macosControl, /uninstall\) shift; uninstall_runtime/);
   assert.match(macosControl, /--erase-data[\s\S]*--confirm[\s\S]*ERASE-BMS-RETAIL-LOCAL/);
   assert.match(macosControl, /ข้อมูลร้าน, private VM และ secrets ยังอยู่/);
   assert.match(macosControl, /delete -f "\$INSTANCE"[\s\S]*rm -rf -- "\$STATE_ROOT" "\$LIMA_HOME"/);
   assert.match(macosControl, /sudo pkgutil --forget com\.base2526\.bms\.retail-local/);
+});
+
+test("Linux and macOS uninstall disable relaunch sources and bound slow cleanup", () => {
+  const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
+  const linuxService = read("deploy/retail-local/managed-runtime/linux/bms-retail-local.service");
+  const linuxDeb = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
+  const macosControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
+  const macosLauncher = read("deploy/retail-local/managed-runtime/macos/BMS Retail Local Uninstall.command");
+
+  assert.doesNotMatch(linuxUninstall, /disable --now/);
+  assert.ok(linuxUninstall.indexOf('systemctl disable "$unit"') <
+    linuxUninstall.indexOf("INSTALLATION_DEACTIVATED"));
+  assert.match(linuxUninstall, /stop_unit_bounded bms-retail-local-offhost-backup\.service 5/);
+  assert.match(linuxUninstall, /timeout 3s .*license-pulse[\s\S]*stop_unit_bounded bms-retail-local\.service 10/);
+  assert.match(linuxUninstall, /timeout 45s docker compose[\s\S]*down --timeout 5 --volumes/);
+  assert.match(linuxService, /ExecStop=.*stop --timeout 10[\s\S]*TimeoutStopSec=20/);
+  assert.doesNotMatch(linuxDeb, /disable --now bms-retail-local/);
+  assert.match(linuxDeb, /timeout 5s systemctl stop bms-retail-local-offhost-backup\.service/);
+  assert.match(linuxDeb, /timeout 10s systemctl stop bms-retail-local\.service/);
+  assert.match(linuxDeb, /rm -f \/etc\/systemd\/system\/bms-retail-local\.service[\s\S]*systemctl daemon-reload/);
+
+  assert.match(macosControl, /run_with_timeout\(\)/);
+  assert.match(macosControl, /timeout_marker=.*mktemp[\s\S]*: >"\$timeout_marker"[\s\S]*return 124/);
+  assert.ok(macosControl.indexOf('rm -f -- "$LAUNCH_AGENT"') <
+    macosControl.indexOf('run_with_timeout 3 "$AGENT" license-pulse'));
+  assert.match(macosControl, /run_with_timeout 5 launchctl bootout "\$LAUNCH_LABEL"/);
+  assert.match(macosControl, /run_with_timeout 10 "\$LIMACTL" stop "\$INSTANCE"/);
+  assert.match(macosControl, /run_with_timeout 60 "\$LIMACTL" delete -f "\$INSTANCE"[\s\S]*die "ลบ private VM ไม่สำเร็จ/);
+  assert.match(macosLauncher, /trap finish EXIT/);
 });
 
 test("scheduled off-host backups are encrypted, separate, retained, and visibly monitored", () => {
@@ -528,7 +566,10 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(macosInstaller, /license-record[\s\S]*INSTALLATION_REGISTERED/);
   assert.match(macosInstaller, /license-pulse[\s\S]*\|\| true/);
   assert.match(linuxUninstall, /INSTALLATION_DEACTIVATED[\s\S]*\|\| true/);
-  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED[\s\S]*Unregister-ScheduledTask -TaskName "BMS Retail Local License Evidence"/);
+  assert.match(windowsUninstall, /BMS Retail Local License Evidence/);
+  assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED/);
+  assert.ok(windowsUninstall.indexOf("Stop-AndRemoveScheduledTask $taskName") <
+    windowsUninstall.indexOf("INSTALLATION_DEACTIVATED"));
   assert.ok(schema.properties.event.properties.eventType.enum.includes("RUNTIME_SEEN"));
   assert.equal(JSON.stringify(schema).includes("hardwareSerial"), false);
   assert.equal(JSON.stringify(schema).includes("macAddress"), false);
