@@ -338,7 +338,7 @@ test('Windows retries unregistered WSL imports without deleting an orphaned disk
 }, t => {
   const root = workspace(t);
   const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
-  const block = source.match(/\$installedDistroResult = Invoke-WslCommand[\s\S]*?(?=\$taskName =)/)?.[0];
+  const block = source.match(/\$installedDistroResult = Invoke-WslCommand[\s\S]*?(?=Start-ManagedRuntime)/)?.[0];
   assert.ok(block);
   mkdirSync(join(root, 'wsl'));
   writeFileSync(join(root, 'wsl/ext4.vhdx'), 'preserve orphaned disk');
@@ -374,7 +374,10 @@ test('Linux repeat setup recognizes a completed shop without provisioning it aga
   writeFileSync(join(root, 'installation.json'), receipt);
   const result = run('/bin/bash', ['-c', `set -euo pipefail
 RUNTIME_ROOT=$1
+bundle_root=$1; SERVICE_NAME=bms-retail-local.service
+localctl_source="$1/bms-localctl"; transaction_source="$1/bms-update-transaction"
 die() { echo "$*" >&2; exit 1; }
+install() { echo "install:$*"; }
 systemctl() { echo "service:$*"; }
 bms-localctl() { echo "health:$*"; }
 ${block}
@@ -382,12 +385,16 @@ echo 'must-not-reprovision'
 `, 'test', root]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /health:doctor/);
+  assert.match(result.stdout, /install:.*bms-localctl/);
+  assert.match(result.stdout, /install:.*bms-update-transaction/);
+  assert.match(result.stdout, /install:.*bms-retail-local.service/);
+  assert.match(result.stdout, /service:daemon-reload[\s\S]*service:enable --now docker.service[\s\S]*service:enable --now bms-retail-local.service/);
   assert.doesNotMatch(result.stdout, /must-not-reprovision/);
   assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), receipt);
 });
 
 test('macOS resumes the final launch step after a receipt has already been written', {
-  skip: process.platform !== 'darwin',
+  skip: process.platform === 'win32',
 }, t => {
   const root = workspace(t);
   const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local');
@@ -408,6 +415,133 @@ setup_runtime
 `, 'test', root]);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.match(result.stdout, /resumed-runtime[\s\S]*checked-health[\s\S]*reused-checkpoint[\s\S]*opened-pos/);
+});
+
+test('macOS app entrypoint runs setup recovery even when a receipt exists', {
+  skip: process.platform === 'win32',
+}, t => {
+  const root = workspace(t);
+  mkdirSync(join(root, 'Library/Application Support/BMS/RetailLocal'), { recursive: true });
+  writeFileSync(join(root, 'Library/Application Support/BMS/RetailLocal/installation.json'), '{}');
+  const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local-setup.command')
+    .replaceAll('/usr/local/bin/bms-retail-local', 'fixture_control');
+  for (const status of [0, 1]) {
+    const result = run('/bin/bash', ['-c', `
+clear() { :; }
+fixture_control() { echo "control:$*"; return ${status}; }
+open() { echo "open:$*"; }
+${source}`, 'test'], { env: { ...process.env, HOME: root }, input: '\n' });
+    assert.equal(result.status, status, result.stdout + result.stderr);
+    assert.match(result.stdout, /control:setup/);
+    if (status) assert.doesNotMatch(result.stdout, /open:http/);
+    else assert.match(result.stdout, /open:http/);
+  }
+});
+
+test('Windows receipt recovery restores startup before repair and refuses a missing runtime', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const startup = source.match(/function Start-ManagedRuntime \{[\s\S]*?\r?\n\}/)?.[0];
+  const recovery = source.match(/if \(Test-Path -LiteralPath \$installationReceipt -PathType Leaf\) \{[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(startup && recovery);
+  writeFileSync(join(root, 'installation.json'), '{}');
+  writeFileSync(join(root, 'update.ps1'), `param($ManifestUri, $InstallRoot, [switch]$ConfirmUpdate, [switch]$RepairSameVersion)
+if (-not $ConfirmUpdate -or -not $RepairSameVersion) { throw 'missing repair flags' }
+Write-Host 'repair-called'
+`);
+  const harness = join(root, 'resume.ps1');
+  writeFileSync(harness, '\uFEFF' + `param($Root, $Scenario)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$InstallRoot=$Root; $installationReceipt=Join-Path $Root 'installation.json'
+$installedUpdateScript=Join-Path $Root 'update.ps1'; $ManifestUri='https://example.invalid/release'
+$distroName='BMSRuntime'; $ResumeConfig='resume.json'
+function Invoke-WslCommand {
+  param($Arguments, [switch]$Quiet)
+  if ($Arguments[0] -eq '--list') { return @{ExitCode=0; Output=@($(if ($Scenario -eq 'present') { 'BMSRuntime' }))} }
+  Write-Host 'engine-ready'; return @{ExitCode=0; Output=@()}
+}
+function New-ScheduledTaskAction { param($Execute, $Argument); return 'action' }
+function New-ScheduledTaskTrigger { param([switch]$AtStartup, [switch]$AtLogOn); return 'trigger' }
+function New-ScheduledTaskPrincipal { param($UserId, $LogonType, $RunLevel); return 'principal' }
+function New-ScheduledTaskSettingsSet { param($ExecutionTimeLimit, $RestartCount, $RestartInterval); return 'settings' }
+function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force); Write-Host "registered:$TaskName" }
+function Start-ScheduledTask { param($TaskName); Write-Host "started:$TaskName" }
+function Unregister-ScheduledTask { param($TaskName, $Confirm, $ErrorAction); Write-Host "removed:$TaskName" }
+${startup}
+${recovery}
+throw 'fell through to first install'
+`);
+  for (const scenario of ['present', 'missing']) {
+    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', harness, root, scenario]);
+    assert.equal(result.status === 0, scenario === 'present', result.stdout + result.stderr);
+    if (scenario === 'present') assert.match(result.stdout, /registered:BMS Retail Local Runtime[\s\S]*started:BMS Retail Local Runtime[\s\S]*engine-ready[\s\S]*repair-called[\s\S]*removed:BMS Retail Local Setup Resume/);
+    else assert.doesNotMatch(result.stdout, /registered:|repair-called/);
+  }
+});
+
+test('Windows same-version repair verifies and reinstalls POS without a server update', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1');
+  const body = source.match(/\n(Assert-Administrator\r?\n[\s\S]*)/)?.[1];
+  assert.ok(body.startsWith('Assert-Administrator'));
+  const harness = join(root, 'repair.ps1');
+  writeFileSync(harness, '\uFEFF' + `param($Root, $Scenario)
+$ErrorActionPreference='Stop'
+Set-StrictMode -Version Latest
+$InstallRoot=$Root; $bootstrapRoot=$Root; $hostReceipt=Join-Path $Root 'installation.json'
+$agent=Join-Path $Root 'agent.ps1'; $keyring=Join-Path $Root 'keyring.json'
+$distroName='fixture'; $runtimeData='/fixture'; $ManifestUri='https://example.invalid/release'
+$CheckOnly=$Scenario -eq 'check'; $RepairSameVersion=$true; $ConfirmUpdate=$true
+function Assert-Administrator {}
+function Assert-HttpsUri($Value) {}
+function Sync-HostReceipt {}
+function Invoke-WebRequest { param($Uri, $OutFile, [switch]$UseBasicParsing, $TimeoutSec); [IO.File]::WriteAllText($OutFile, '{}') }
+function Invoke-AgentJson($Arguments) {
+  Write-Host ('agent:' + ($Arguments -join ' '))
+  switch ($Arguments[0]) {
+    'preflight' { return @{} }
+    'check-update' {
+      if ($Scenario -eq 'rejected') { throw 'manifest rejected' }
+      return [pscustomobject]@{updateAvailable=($Scenario -eq 'newer'); releaseVersion='1.0.0'; components=@([pscustomobject]@{name='desktop';sizeBytes=1}); rollbackSafe=$true; channel='pilot'; schemaVersion='1'; createdAt='fixture'}
+    }
+    'stage-desktop' { return @{releaseDirectory=$Root} }
+    'stage-release' { throw 'newer-update-path' }
+    default { throw ('unexpected agent command: ' + $Arguments[0]) }
+  }
+}
+function Invoke-Transaction($Arguments) { Write-Host ('transaction:' + ($Arguments -join ' ')) }
+function Get-ArtifactPath($Release, $Name) { return @{path=(Join-Path $Root 'desktop.artifact')} }
+function Start-Process {
+  param($FilePath, $ArgumentList, $WindowStyle, [switch]$Wait, [switch]$PassThru)
+  Write-Host 'desktop-installed'
+  return @{ExitCode=$(if ($Scenario -eq 'desktop-failed') { 7 } else { 0 })}
+}
+${body}
+`);
+  writeFileSync(join(root, 'installation.json'), JSON.stringify({version: '1.0.0', platformTarget: 'windows-11-x64'}));
+  writeFileSync(join(root, 'agent.ps1'), '$global:LASTEXITCODE=0\n');
+  for (const file of ['keyring.json', 'bms-localctl', 'bms-update-transaction', 'bms-wsl-keepalive', 'desktop.artifact']) {
+    writeFileSync(join(root, file), 'fixture');
+  }
+  mkdirSync(join(root, 'releases/1.0.0'), { recursive: true });
+  writeFileSync(join(root, 'releases/1.0.0/desktop.artifact'), 'rollback');
+  const receipt = readFileSync(join(root, 'installation.json'), 'utf8');
+  for (const scenario of ['repair', 'check', 'desktop-failed', 'rejected', 'newer']) {
+    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', harness, root, scenario]);
+    assert.equal(result.status === 0, ['repair', 'check'].includes(scenario), result.stdout + result.stderr);
+    if (scenario === 'repair' || scenario === 'desktop-failed') {
+      assert.match(result.stdout, /agent:check-update[\s\S]*transaction:prepare[\s\S]*agent:stage-desktop[\s\S]*desktop-installed/);
+      assert.doesNotMatch(result.stdout, /stage-release|transaction:begin|transaction:commit/);
+    }
+    if (scenario === 'check' || scenario === 'rejected') assert.doesNotMatch(result.stdout, /transaction:|stage-desktop|desktop-installed/);
+    if (scenario === 'newer') assert.match(result.stderr, /newer-update-path/);
+    assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), receipt);
+  }
 });
 
 test('macOS does not use null or plutil diagnostics as a recovered device token', {

@@ -356,6 +356,36 @@ function ConvertTo-ShellExport([string]$Name, [string]$Value) {
   return "export $Name=`"`$(printf '%s' '$encoded' | base64 -d)`""
 }
 
+function Start-ManagedRuntime {
+  $taskName = "BMS Retail Local Runtime"
+  $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wsl.exe" `
+    -Argument "-d $distroName -u root -- /usr/local/sbin/bms-wsl-keepalive"
+  $triggers = @(
+    (New-ScheduledTaskTrigger -AtStartup)
+    (New-ScheduledTaskTrigger -AtLogOn)
+  )
+  # Over-the-shoulder UAC can register BMSRuntime under a separate administrator account that is not
+  # interactively logged on. S4U keeps that user's WSL registration available without storing a password.
+  $script:principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
+  $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+  Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
+  Start-ScheduledTask -TaskName $taskName
+
+  $deadline = [DateTime]::UtcNow.AddMinutes(2)
+  $dockerAttempt = 0
+  do {
+    $dockerAttempt++
+    $dockerInfo = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "docker", "info") -Quiet
+    if ($dockerInfo.ExitCode -eq 0) { break }
+    $dockerPercent = [Math]::Min(99, [int](($dockerAttempt / 60) * 100))
+    Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Status "รอ Docker engine ($dockerPercent%)" -PercentComplete $dockerPercent
+    if ($dockerAttempt % 5 -eq 0) { Write-Host "  ยังทำงานอยู่: กำลังรอ Docker engine ($($dockerAttempt * 2) วินาที)..." }
+    Start-Sleep -Seconds 2
+  } while ([DateTime]::UtcNow -lt $deadline)
+  Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Completed
+  if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
+}
+
 Assert-Administrator
 
 if ($ResumeConfig) {
@@ -442,8 +472,14 @@ if (-not [string]::IsNullOrWhiteSpace($interactiveUser) -and $interactiveUser -n
 & icacls @installAclArguments *> $null
 if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
 
-if (-not $ResumeConfig -and (Test-Path -LiteralPath $installationReceipt -PathType Leaf)) {
-  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate
+if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
+  $existingDistro = Invoke-WslCommand -Arguments @("--list", "--quiet") -Quiet
+  if ($existingDistro.ExitCode -ne 0 -or $distroName -notin @($existingDistro.Output | ForEach-Object { ([string]$_).Trim() })) {
+    throw "Existing shop runtime is unavailable. Preserve shop data and collect diagnostics."
+  }
+  Start-ManagedRuntime
+  & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate -RepairSameVersion
+  Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
   return
 }
 
@@ -579,33 +615,7 @@ if ($distroName -notin $installedDistros) {
   if ($wslImport.ExitCode -ne 0) { throw "Import private BMSRuntime WSL distribution ไม่สำเร็จ: $($wslImport.Output -join ' ')" }
 }
 
-$taskName = "BMS Retail Local Runtime"
-$action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\wsl.exe" `
-  -Argument "-d $distroName -u root -- /usr/local/sbin/bms-wsl-keepalive"
-$triggers = @(
-  (New-ScheduledTaskTrigger -AtStartup)
-  (New-ScheduledTaskTrigger -AtLogOn)
-)
-# Over-the-shoulder UAC can register BMSRuntime under a separate administrator account that is not
-# interactively logged on. S4U keeps that user's WSL registration available without storing a password.
-$principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $triggers -Principal $principal -Settings $settings -Force | Out-Null
-Start-ScheduledTask -TaskName $taskName
-
-$deadline = [DateTime]::UtcNow.AddMinutes(2)
-$dockerAttempt = 0
-do {
-  $dockerAttempt++
-  $dockerInfo = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "docker", "info") -Quiet
-  if ($dockerInfo.ExitCode -eq 0) { break }
-  $dockerPercent = [Math]::Min(99, [int](($dockerAttempt / 60) * 100))
-  Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Status "รอ Docker engine ($dockerPercent%)" -PercentComplete $dockerPercent
-  if ($dockerAttempt % 5 -eq 0) { Write-Host "  ยังทำงานอยู่: กำลังรอ Docker engine ($($dockerAttempt * 2) วินาที)..." }
-  Start-Sleep -Seconds 2
-} while ([DateTime]::UtcNow -lt $deadline)
-Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Completed
-if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
+Start-ManagedRuntime
 
 foreach ($control in @(
   @{ Source = $installedLocalCtl; Name = "bms-localctl" },

@@ -3,6 +3,7 @@ param(
   [Parameter(Mandatory = $true)][string]$ManifestUri,
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal"),
   [switch]$CheckOnly,
+  [switch]$RepairSameVersion,
   [switch]$ConfirmUpdate
 )
 
@@ -227,9 +228,6 @@ $current = Get-Content -LiteralPath $hostReceipt -Raw | ConvertFrom-Json
 $currentVersion = [string]$current.version
 $target = [string]$current.platformTarget
 $oldDesktop = Join-Path (Join-Path (Join-Path $InstallRoot "releases") $currentVersion) "desktop.artifact"
-if (-not (Test-Path -LiteralPath $oldDesktop -PathType Leaf)) {
-  throw "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
-}
 
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
@@ -237,11 +235,32 @@ $manifestPath = Join-Path $releaseRoot "update-release.jws.json"
 Invoke-WebRequest -Uri $ManifestUri -OutFile "$manifestPath.tmp" -UseBasicParsing -TimeoutSec 60
 Move-Item -LiteralPath "$manifestPath.tmp" -Destination $manifestPath -Force
 
-$verifyCommand = if ($CheckOnly) { "check-update" } else { "verify-update" }
+$verifyCommand = if ($CheckOnly -or $RepairSameVersion) { "check-update" } else { "verify-update" }
 $release = Invoke-AgentJson @($verifyCommand, "-manifest", $manifestPath, "-keyring", $keyring,
   "-target", $target, "-current-version", $currentVersion)
-if ($CheckOnly -and -not [bool]$release.updateAvailable) {
-  Write-Host "BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: $currentVersion" -ForegroundColor Green
+if ($CheckOnly) {
+  if (-not [bool]$release.updateAvailable) {
+    Write-Host "BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: $currentVersion" -ForegroundColor Green
+    return
+  }
+}
+if ($RepairSameVersion -and -not $CheckOnly -and -not [bool]$release.updateAvailable) {
+  Write-Host "Repairing the existing BMS Retail Local installation: $currentVersion" -ForegroundColor Cyan
+  foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-keepalive")) {
+    & $agent runtime-install-control -engine windows-wsl -distro $distroName `
+      -source (Join-Path $bootstrapRoot $controlName) -name $controlName
+    if ($LASTEXITCODE -ne 0) { throw "Could not install runtime control: $controlName" }
+  }
+  Invoke-Transaction @("prepare")
+  $stage = Invoke-AgentJson @("stage-desktop", "-manifest", $manifestPath, "-keyring", $keyring,
+    "-target", $target, "-root", $InstallRoot, "-progress")
+  $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
+  $desktop = Get-ArtifactPath $release "desktop"
+  $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Repair.exe"
+  Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
+  $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -WindowStyle Hidden -Wait -PassThru
+  if ($desktopProcess.ExitCode -ne 0) { throw "BMS POS repair failed; run Setup again." }
+  Write-Host "BMS Retail Local repair completed. Existing shop data was preserved." -ForegroundColor Green
   return
 }
 $totalBytes = [long](($release.components | Measure-Object -Property sizeBytes -Sum).Sum)
@@ -260,6 +279,9 @@ if ($CheckOnly) {
 if (-not $ConfirmUpdate) {
   $confirmation = Read-Host "พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง"
   if ($confirmation -cne "UPDATE") { throw "ยกเลิก update" }
+}
+if (-not (Test-Path -LiteralPath $oldDesktop -PathType Leaf)) {
+  throw "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
 }
 foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-keepalive")) {
   & $agent runtime-install-control -engine windows-wsl -distro $distroName `
