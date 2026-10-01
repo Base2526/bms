@@ -7,13 +7,20 @@ import { useI18n } from "@/lib/i18nContext";
 
 type Row = { id: string; received_at: string; platform: string; architecture: string; product: string; installer_version: string; os_version: string; stage: string; status: string; message: string; fingerprint: string };
 type Detail = Row & { report: Record<string, any>; note: string; revision: number; updated_at: string };
-type Results = { reports: Row[]; counts: { total: number; new: number; investigating: number; resolved: number }; groups: { fingerprint: string; platform: string; installer_version: string; stage: string; count: number }[]; facets: { installer_version: string; os_version: string; stage: string }[] };
+type Results = { reports: Row[]; counts: { total: number; new: number; investigating: number; resolved: number }; groups: { fingerprint: string; platform: string; architecture: string; product: string; installer_version: string; stage: string; count: number }[]; facets: { installer_version: string; os_version: string; stage: string }[] };
 const statuses = ["NEW", "INVESTIGATING", "RESOLVED"];
 async function request(url: string, options?: RequestInit) {
-  const response = await fetch(url, { cache: "no-store", ...options });
-  const data = await response.json();
-  if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "unauthorized" : data.error || "reports_unavailable");
-  return data;
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  const timer = setTimeout(abort, 30_000);
+  options?.signal?.addEventListener("abort", abort, { once: true });
+  if (options?.signal?.aborted) abort();
+  try {
+    const response = await fetch(url, { cache: "no-store", ...options, signal: controller.signal });
+    const data = await response.json();
+    if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "unauthorized" : data.error || "reports_unavailable");
+    return data;
+  } finally { clearTimeout(timer); options?.signal?.removeEventListener("abort", abort); }
 }
 
 export default function InstallerReports() {
@@ -39,10 +46,11 @@ export default function InstallerReports() {
   useEffect(() => { const controller = new AbortController(); void load(controller.signal); return () => controller.abort(); }, [load]);
   const filter = (key: string, value?: string) => { setPage(1); setFilters(previous => ({ ...previous, [key]: value || "" })); };
   async function open(id: string) {
+    if (saving) return;
     const sequence = ++detailSequence.current;
     setDetail(null); setDetailBusy(true); setError("");
     try { const result = await request(`/api/admin/installer-reports/${id}`); if (sequence === detailSequence.current) { setDetail(result); setNote(result.note); setStatus(result.status); } }
-    catch (e) { setError(e instanceof Error ? e.message : "reports_unavailable"); }
+    catch (e) { if (sequence === detailSequence.current) setError(e instanceof Error ? e.message : "reports_unavailable"); }
     finally { if (sequence === detailSequence.current) setDetailBusy(false); }
   }
   async function save() {
@@ -79,7 +87,7 @@ export default function InstallerReports() {
     <Space wrap style={{ marginBottom: 16 }}>
       <Select aria-label={tr("platform")} placeholder={tr("platform")} style={{ width: 150 }} allowClear options={options(["windows", "linux", "macos", "unknown"])} onChange={value => filter("platform", value)} />
       <Select aria-label={tr("architecture")} placeholder={tr("architecture")} style={{ width: 140 }} allowClear options={options(["x64", "x86", "arm64", "unknown"])} onChange={value => filter("architecture", value)} />
-      <Select aria-label={tr("product")} placeholder={tr("product")} style={{ width: 140 }} allowClear options={options(["pos", "server-pos"])} onChange={value => filter("product", value)} />
+      <Select aria-label={tr("product")} placeholder={tr("product")} value={filters.product || undefined} style={{ width: 140 }} allowClear options={options(["pos", "server-pos"])} onChange={value => filter("product", value)} />
       <Select aria-label={tr("version")} placeholder={tr("version")} style={{ width: 190 }} allowClear showSearch options={options(data?.facets.map(v => v.installer_version) || [])} onChange={value => filter("version", value)} />
       <Select aria-label={tr("os_version")} placeholder={tr("os_version")} style={{ width: 150 }} allowClear showSearch options={options(data?.facets.map(v => v.os_version) || [])} onChange={value => filter("osVersion", value)} />
       <Select aria-label={tr("stage")} placeholder={tr("stage")} style={{ width: 200 }} allowClear showSearch options={options(data?.facets.map(v => v.stage) || [])} onChange={value => filter("stage", value)} />
@@ -93,11 +101,14 @@ export default function InstallerReports() {
     <Table<Row> rowKey="id" loading={busy} columns={columns} dataSource={data?.reports || []} scroll={{ x: 1290 }} size="small"
       pagination={{ current: page, pageSize: 25, total: data?.counts.total || 0, showSizeChanger: false, onChange: setPage }} />
     <Typography.Title level={4}>{tr("groups")}</Typography.Title>
-    <Table rowKey="fingerprint" size="small" pagination={false} scroll={{ x: 700 }} dataSource={data?.groups || []} columns={[
-      { title: tr("platform"), dataIndex: "platform" }, { title: tr("version"), dataIndex: "installer_version" }, { title: tr("stage"), dataIndex: "stage" },
-      { title: tr("total"), key: "count", render: (_, row) => <Button type="link" onClick={() => filter("fingerprint", row.fingerprint)}>{row.count}</Button> },
+    <Table rowKey={row => `${row.fingerprint}:${row.product}`} size="small" pagination={false} scroll={{ x: 700 }} dataSource={data?.groups || []} columns={[
+      { title: tr("platform"), key: "platform", render: (_, row) => `${row.platform} / ${row.architecture}` },
+      { title: tr("product"), dataIndex: "product" }, { title: tr("version"), dataIndex: "installer_version" }, { title: tr("stage"), dataIndex: "stage" },
+      { title: tr("total"), key: "count", render: (_, row) => <Button type="link" onClick={() => { setPage(1); setFilters(previous => ({ ...previous, fingerprint: row.fingerprint, product: row.product })); }}>{row.count}</Button> },
     ]} />
-    <Drawer width="min(680px, 100vw)" title={tr("detail")} open={!!detail || detailBusy} onClose={() => { if (!saving) { detailSequence.current++; setDetail(null); setDetailBusy(false); } }}>
+    <Drawer width="min(680px, 100vw)" title={tr("detail")} open={!!detail || detailBusy}
+      extra={detail && <Tooltip title={tr("refresh")}><Button aria-label={tr("refresh")} disabled={saving} icon={<ReloadOutlined />} onClick={() => void open(detail.id)} /></Tooltip>}
+      onClose={() => { if (!saving) { detailSequence.current++; setDetail(null); setDetailBusy(false); } }}>
       {error && <Alert closable onClose={() => setError("")} type="error" showIcon message={tr(error === "report_changed_reload" ? error : "reports_unavailable")} style={{ marginBottom: 16 }} />}
       {detailBusy && <Typography.Text>{tr("loading")}</Typography.Text>}
       {detail && <Space direction="vertical" size="large" style={{ width: "100%" }}>

@@ -26,11 +26,14 @@ export async function listInstallerReports(params: URLSearchParams) {
   for (const key of ["from", "to"]) {
     const date = params.get(key);
     if (date) {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !Number.isFinite(Date.parse(date))) throw new InstallerReportError("invalid_date");
+      const parsed = Date.parse(date);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || date.startsWith("0000-") || !Number.isFinite(parsed)
+          || new Date(parsed).toISOString().slice(0, 10) !== date) throw new InstallerReportError("invalid_date");
       values.push(date);
       where.push(key === "from" ? `received_at >= $${values.length}::date` : `received_at < $${values.length}::date + interval '1 day'`);
     }
   }
+  if (params.get("from") && params.get("to") && params.get("from")! > params.get("to")!) throw new InstallerReportError("invalid_date");
   const page = Math.min(10000, Math.max(1, Number(params.get("page")) || 1));
   const filter = where.join(" AND ");
   const [rows, counts, groups, facets] = await Promise.all([
@@ -40,9 +43,9 @@ export async function listInstallerReports(params: URLSearchParams) {
     query(`SELECT count(*)::int AS total, count(*) FILTER (WHERE status='NEW')::int AS new,
       count(*) FILTER (WHERE status='INVESTIGATING')::int AS investigating, count(*) FILTER (WHERE status='RESOLVED')::int AS resolved
       FROM bms_installer_reports WHERE ${filter}`, values),
-    query(`SELECT fingerprint,platform,installer_version,stage,count(*)::int AS count,
+    query(`SELECT fingerprint,platform,architecture,product,installer_version,stage,count(*)::int AS count,
       max(received_at) AS last_seen FROM bms_installer_reports WHERE ${filter}
-      GROUP BY fingerprint,platform,installer_version,stage ORDER BY count(*) DESC,max(received_at) DESC LIMIT 10`, values),
+      GROUP BY fingerprint,platform,architecture,product,installer_version,stage ORDER BY count(*) DESC,max(received_at) DESC LIMIT 10`, values),
     query(`SELECT DISTINCT installer_version,os_version,stage FROM bms_installer_reports WHERE expires_at>now()
       ORDER BY installer_version DESC LIMIT 200`),
   ]);

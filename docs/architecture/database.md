@@ -1064,7 +1064,8 @@ only a normalized allow-listed JSON report (database constraint: <=32 KiB), not 
 archives, transcripts, client filenames, IP addresses or environment variables.
 
 - UUID receipt; unique SHA-256 `content_hash` provides retry deduplication. `fingerprint`
-  groups matching sanitized failures, not devices or independently verified causes.
+  together with `product` groups matching sanitized failures, not devices or independently
+  verified causes; POS and Server + POS never share an aggregate or drill-down count.
 - Indexed platform, architecture, product, installer version, OS version, stage and
   server receipt time; client occurrence time is unverified evidence inside the JSON.
 - `NEW`, `INVESTIGATING`, `RESOLVED` are support workflow states. A bounded sanitized

@@ -27,6 +27,18 @@ test("isolated installer intake/list/detail/triage/retention round trip", { skip
   assert.equal(list.counts.total, 3); assert.equal(list.groups[0].count, 2);
   assert.equal((await service.listInstallerReports(new URLSearchParams({ platform: "macos", version: "0.2.14" }))).counts.total, 1);
   assert.equal((await service.listInstallerReports(new URLSearchParams({ q: "' OR true --" }))).counts.total, 0);
+  for (const params of [{ from: "2026-02-30" }, { to: "2026-02-29" }, { from: "0000-01-01" }, { from: "2026-10-02", to: "2026-10-01" }]) {
+    await assert.rejects(service.listInstallerReports(new URLSearchParams(params)), /invalid_date/);
+  }
+  assert.equal((await service.listInstallerReports(new URLSearchParams({ from: "2024-02-29" }))).counts.total, 3);
+  const server = await service.submitInstallerReport(Buffer.from(payload("Linux 6.8", "0.2.13").toString().replace("product=pos", "product=server-pos")));
+  const grouped = await service.listInstallerReports(new URLSearchParams());
+  assert.equal(grouped.groups.length, 3);
+  assert.equal(grouped.groups.find((group: any) => group.product === "server-pos")?.count, 1);
+  const group = grouped.groups.find((group: any) => group.product === "server-pos")!;
+  const selected = await service.listInstallerReports(new URLSearchParams({ fingerprint: group.fingerprint, product: group.product }));
+  assert.equal(selected.counts.total, 1); assert.equal(selected.reports[0].id, server.reportId);
+  await query("DELETE FROM bms_installer_reports WHERE id=$1", [server.reportId]);
   let detail = await service.getInstallerReport(a.reportId);
   assert.equal(detail.status, "NEW"); assert.ok(!("content_hash" in detail));
   detail = await service.updateInstallerReport(a.reportId, { status: "INVESTIGATING", note: "Download timed out", revision: 0 }, admin);

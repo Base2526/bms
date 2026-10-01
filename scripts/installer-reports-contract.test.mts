@@ -4,7 +4,10 @@ import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { gzipSync } from "node:zlib";
 import { execFileSync } from "node:child_process";
+import { PassThrough } from "node:stream";
+import type { IncomingMessage } from "node:http";
 import { normalizeInstallerReport, unpackInstallerReport, readInstallerReportBody, redactInstallerText } from "../apps/web/lib/bms/installerReportFormat.ts";
+import { readInstallerReportUpload } from "../apps/web/lib/bms/installerReportUpload.ts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const tar = require("tar-stream");
@@ -96,16 +99,51 @@ test("request limits apply to streaming bodies without Content-Length", async ()
   assert.equal((await readInstallerReportBody(new Request("http://localhost", { method: "POST", body: "test" }))).toString(), "test");
 });
 test("intake has consent, deployment opt-in, rate limits and no public GET; admin APIs always guard", async () => {
-  const route = await read("apps/web/app/api/installer-reports/route.ts");
+  const route = await read("apps/web/pages/api/installer-reports.ts");
   assert.match(route, /BMS_INSTALLER_REPORTS_ENABLED !== "true"/);
   assert.match(route, /x-bms-report-consent/); assert.match(route, /installer-report:fleet/); assert.match(route, /installer-report:source/);
   assert.doesNotMatch(route, /export.*GET|request\.text\(|request\.json\(/);
+  assert.match(route, /bodyParser: false/);
+  assert.match(route, /req.method !== "POST"/);
+  assert.match(route, /readInstallerReportUpload\(req\)/);
+  assert.match(route, /setHeader\("Connection", "close"\)/);
   assert.match(await read("apps/web/middleware.ts"), /releases-upload\|api\/installer-reports\|/);
   for (const path of ["apps/web/app/api/admin/installer-reports/route.ts", "apps/web/app/api/admin/installer-reports/[id]/route.ts"]) {
     const source = await read(path); assert.match(source, /await authorizePlatformAdminRoute\(\)/); assert.match(source, /if \(!auth.ok\)/); assert.match(source, /no-store/);
   }
   const mutation = await read("apps/web/app/api/admin/installer-reports/[id]/route.ts");
   assert.match(mutation, /get\("origin"\) !== request.nextUrl.origin/);
+});
+
+const uploadStream = (headers = {}) => Object.assign(new PassThrough(), { headers }) as unknown as IncomingMessage;
+test("raw Node uploads are bounded without buffering through the Next Request adapter", async () => {
+  const normal = uploadStream();
+  const body = readInstallerReportUpload(normal);
+  (normal as any).end("report");
+  assert.equal((await body).toString(), "report");
+  assert.equal(normal.listenerCount("data"), 0);
+  const declared = uploadStream({ "content-length": "65537" });
+  await assert.rejects(readInstallerReportUpload(declared), /payload_too_large/);
+  const chunked = uploadStream();
+  const oversized = assert.rejects(readInstallerReportUpload(chunked), /payload_too_large/);
+  (chunked as any).write(Buffer.alloc(40000));
+  (chunked as any).write(Buffer.alloc(40000));
+  await oversized;
+  assert.equal(chunked.isPaused(), true);
+  assert.equal(chunked.listenerCount("data"), 0);
+});
+test("raw uploads reject a disconnect and time out when no data arrives", async (t) => {
+  const aborted = uploadStream();
+  const disconnected = assert.rejects(readInstallerReportUpload(aborted), /request_aborted/);
+  aborted.emit("aborted");
+  await disconnected;
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const stalled = uploadStream();
+  const timeout = assert.rejects(readInstallerReportUpload(stalled), /request_timeout/);
+  t.mock.timers.tick(15000);
+  await timeout;
+  assert.equal(stalled.isPaused(), true);
+  assert.equal(stalled.listenerCount("data"), 0);
 });
 test("retention and platform isolation cannot fall back to tenant access", async () => {
   const migration = await read("db/migrations/10.31__bms_installer_reports.sql");

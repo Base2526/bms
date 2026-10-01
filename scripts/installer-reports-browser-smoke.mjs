@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { mkdir } from "node:fs/promises";
+import { request as httpRequest } from "node:http";
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const { chromium } = require(process.env.BMS_PLAYWRIGHT_PACKAGE || "playwright");
 const jwt = require("jsonwebtoken");
@@ -11,9 +12,20 @@ const cookieFor = id => `ADMIN_COOKIE=${jwt.sign({ id, role: "Administrator" }, 
 const adminId = "11111111-1111-4111-8111-111111111111";
 const adminCookie = cookieFor(adminId);
 const api = async (path, options) => fetch(base + path, options);
+assert.equal((await api("/api/installer-reports")).status, 405);
 assert.equal((await api("/api/admin/installer-reports")).status, 401);
 assert.equal((await api("/api/admin/installer-reports", { headers: { Cookie: cookieFor("22222222-2222-4222-8222-222222222222") } })).status, 403);
 assert.equal((await api("/api/admin/installer-reports", { headers: { Cookie: adminCookie } })).status, 200);
+assert.equal((await api("/api/admin/installer-reports?from=2026-02-30", { headers: { Cookie: adminCookie } })).status, 400);
+// No Content-Length: exercise the actual Pages API receiving a chunked body.
+await new Promise((resolve, reject) => {
+  const req = httpRequest(base + "/api/installer-reports", { method: "POST", headers: { "Content-Type": "application/octet-stream", "X-BMS-Report-Consent": "1" } }, res => {
+    try { assert.equal(res.statusCode, 413); assert.equal(res.headers.connection, "close"); } catch (error) { reject(error); }
+    res.resume(); res.on("end", resolve);
+  });
+  req.on("error", reject);
+  req.write(Buffer.alloc(40000)); req.end(Buffer.alloc(40000));
+});
 const payload = Buffer.from(JSON.stringify({ formatVersion: 1, product: "server-pos", installerVersion: "0.2.13-pilot.1", stage: "start-postgres", createdAt: new Date().toISOString(),
   failure: { message: "PostgreSQL service did not become healthy", hresult: -1, scriptLine: 320 },
   machine: { windows: { name: "Windows 11", version: "10.0", build: "26100", architecture: "64-bit" }, hardware: { ramBytes: 8589934592 }, wsl: { packageVersion: "2.5.0" } } }));
@@ -30,6 +42,7 @@ await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
   const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  await context.route("**/*", route => new URL(route.request().url()).origin === base ? route.continue() : route.abort());
   await context.addCookies([{ name: "lang", value: "en", url: base }, { name: "theme", value: "light", url: base }]);
   const page = await context.newPage();
   await page.goto(base + "/installer-report");
@@ -61,6 +74,15 @@ try {
   assert.equal((await saved).status(), 200);
   const detail = await (await api(`/api/admin/installer-reports/${reportId}`, { headers: { Cookie: adminCookie } })).json();
   assert.equal(detail.note, "Investigated with isolated test evidence");
+  // Another platform admin saves while this drawer still holds the previous revision.
+  const concurrent = await api(`/api/admin/installer-reports/${reportId}`, { method: "PATCH", headers: { Cookie: adminCookie, "Content-Type": "application/json", Origin: base }, body: JSON.stringify({ revision: detail.revision, status: "INVESTIGATING", note: "Updated by another investigator" }) });
+  assert.equal(concurrent.status, 200);
+  await page.locator("textarea").fill("Stale draft must not overwrite");
+  const conflict = page.waitForResponse(response => response.url().endsWith(reportId) && response.request().method() === "PATCH");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  assert.equal((await conflict).status(), 409);
+  await page.locator(".ant-drawer").getByRole("button", { name: "Refresh", exact: true }).click();
+  await page.waitForFunction(() => document.querySelector("textarea")?.value === "Updated by another investigator");
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForFunction(() => {
     const panel = document.querySelector('.ant-drawer-content-wrapper')?.getBoundingClientRect();

@@ -189,11 +189,14 @@ still use the operating system's package logs.
 Platform administrators use **Platform > Installer error reports** at
 `/admin/installer-reports`. The inbox filters platform, architecture, product, installer
 version, OS version, failed stage, status and received date; search accepts error text
-or a report reference. Matching sanitized failures are grouped by platform, architecture,
+or a report reference. Matching sanitized failures are grouped by product, platform, architecture,
 installer version, stage, error text and exit/HRESULT code. Counts represent reports,
 not unique computers. The details drawer exposes the allow-listed system evidence and
 sanitized failure, JSON download, investigation notes and New/Investigating/Resolved
-status. Concurrent edits are rejected rather than overwriting another administrator.
+status. Concurrent edits are rejected rather than overwriting another administrator;
+the drawer refresh button reloads the current revision before editing again. Requests
+time out after 30 seconds and can be retried. Received-date filters reject nonexistent
+dates and reversed ranges.
 
 These are **unverified, user-submitted pre-install reports**, not authenticated machine
 identity, tenant data, an automatic root-cause diagnosis, or proof that a fix was tested.
@@ -217,6 +220,9 @@ Deployment prerequisites (not enabled by a source change alone):
 
 `POST /api/installer-reports` accepts a bounded binary/text body with
 `X-BMS-Report-Consent: 1`. It returns a receipt only after persistence succeeds.
+The endpoint uses a raw Pages API stream with body parsing disabled and a middleware
+exclusion, enforcing 64 KiB while receiving even without Content-Length. A stalled body
+times out after 15 seconds; rejected partial bodies close their connection without draining.
 The server re-redacts and allow-lists fields, never persists the original archive,
 rejects unexpected archive entries/links/paths, and bounds decompression in memory.
 Retries of identical normalized reports return the original receipt without adding
