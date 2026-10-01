@@ -6,7 +6,9 @@
 signed release manifest แบบ resume ได้ พร้อมตรวจ publisher signature, SHA-256 และ OCI digest ก่อนใช้
 
 offline bundle ขนาดใหญ่ยังเก็บไว้เป็นทางเลือกสำหรับ recovery หรือร้านที่ได้รับอนุมัติให้ติดตั้งแบบ
-ไม่มีอินเทอร์เน็ตเท่านั้น โดยต้องระบุ `-Distribution Offline` อย่างชัดเจน
+ไม่มีอินเทอร์เน็ตเท่านั้น โดยต้องระบุทั้ง `-Distribution Offline` และ `-AllowOfflineRecovery`
+อย่างชัดเจน ห้าม fallback จาก Online ไป Offline อัตโนมัติเมื่อ URL, keyring หรือ target ที่ต้องการ
+ยังไม่พร้อม; build ต้องหยุดและแก้ prerequisite ของ Online แทน
 
 ## Architecture ที่รองรับ
 
@@ -70,7 +72,7 @@ Builder ปกติปฏิเสธโดเมนตัวอย่างแ
 
 ```powershell
 pwsh .\deploy\retail-local\build-release.ps1 `
-  -Version 0.2.13 -Distribution Offline
+  -Version 0.2.13 -Distribution Offline -AllowOfflineRecovery
 ```
 
 เส้นทางนี้สร้าง Server, Server + POS, POS-only และ image archive แบบเดิม จึงใช้พื้นที่ build มากกว่า
@@ -118,7 +120,7 @@ macOS 32-bit)
 
 ```powershell
 pwsh ./deploy/retail-local/build-release.ps1 `
-  -Version 0.2.13 -Target MacOS -Distribution Offline
+  -Version 0.2.13 -Target MacOS -Distribution Offline -AllowOfflineRecovery
 ```
 
 ทุก installer ปัจจุบันยัง unsigned internal technical pilot จนกว่าจะผ่าน code signing,

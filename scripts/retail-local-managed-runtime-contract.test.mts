@@ -480,6 +480,9 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   const releaseBuilder = read("deploy/retail-local/build-release.ps1");
   const onlineBuilder = read("deploy/retail-local/build-online-bootstrap.ps1");
   assert.match(releaseBuilder, /\[ValidateSet\("Online", "Offline"\)\]\[string\]\$Distribution = "Online"/);
+  assert.match(releaseBuilder, /\[switch\]\$AllowOfflineRecovery/);
+  assert.match(releaseBuilder, /\$Distribution -eq "Offline" -and -not \$AllowOfflineRecovery/);
+  assert.match(releaseBuilder, /-Distribution Offline -AllowOfflineRecovery/);
   assert.match(releaseBuilder, /build-online-bootstrap\.ps1/);
   assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
   assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);

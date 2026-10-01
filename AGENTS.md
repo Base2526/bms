@@ -205,6 +205,9 @@ wrong, and update the doc in the same change.
   Bulk release installers upload only through the raw Pages API stream
   (`/api/admin/retail-local/releases-upload`, body parser off and excluded from middleware); routing
   them through Next.js 14 `NextRequest` buffers gigabytes and can kill the Web process.
+  Release builds use the small online bootstrap by default and must never fall back to an offline
+  bundle because a manifest URL, keyring, or requested target is missing. Build offline only after
+  an explicit user request, with both `-Distribution Offline` and `-AllowOfflineRecovery`.
   Detail: [docs/business/retail-local.md](docs/business/retail-local.md)
   and [agent-invariants.md § Retail Local](docs/agent-invariants.md#retail-local-deployment).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
