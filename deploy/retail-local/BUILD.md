@@ -149,11 +149,16 @@ payload ฝังอยู่ การติดตั้งครั้งแ�
 ที่ตรงกับ OS/CPU แบบ resume ได้
 
 The native CI jobs also execute `scripts/retail-local-bootstrap-behavior.test.mjs`: Windows POS
-must return failure when its child setup fails or is cancelled, and macOS progress must handle
+and Server EXEs must return failure when their child setup fails or is cancelled; the Server
+accepts reboot-required status without reporting an installation error. Windows prerequisites
+accept DISM status 3010 and WSL discovery normalizes embedded NUL characters. macOS progress must handle
 events without optional fields. Linux runs data-preserving uninstall in a disposable container
 with a deliberately stuck service. Manifest requests have a 60-second request limit; Unix
 installers additionally stop a stalled response and retry within a bounded window. Payload
 downloads retain their separate idle timeout so a large download can continue while bytes arrive.
+The Windows native agent temporarily disables console Quick Edit during its work, then restores
+the original input mode. This prevents an accidental text selection from pausing progress output;
+it does not change the user's persistent terminal settings.
 
 These are controlled failure tests, not evidence that a production signed release has completed
 first-run provisioning on every supported machine. CI smoke artifacts use test endpoints and
