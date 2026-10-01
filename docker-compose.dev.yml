@@ -47,6 +47,8 @@ services:
   web:
     command: >
       sh -c "test -f node_modules/.package-lock.json || npm ci &&
+             test -f ../../packages/realtime/node_modules/.package-lock.json || npm --prefix ../../packages/realtime ci &&
+             test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci &&
              npm run dev"
     environment:
       NODE_ENV: development
@@ -107,6 +109,8 @@ services:
       - web_node_modules:/app/apps/web/node_modules
       - web_next_cache:/app/apps/web/.next
       - ./packages:/app/packages
+      - realtime_node_modules:/app/packages/realtime/node_modules
+      - graphql_core_node_modules:/app/packages/graphql-core/node_modules
       - ./storage:/app/storage
 
   caddy:
