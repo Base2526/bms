@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
 
 const repo = fileURLToPath(new URL('../', import.meta.url));
 const read = path => readFileSync(join(repo, path), 'utf8');
@@ -15,6 +16,21 @@ function workspace(t) {
 }
 function run(command, args, options = {}) {
   return spawnSync(command, args, { encoding: 'utf8', timeout: 60000, ...options });
+}
+
+async function uninstallAndCheck(executable, log) {
+  const removed = run(executable, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', `/LOG=${log}`]);
+  // Inno runs a copied second-phase uninstaller; the launcher can exit before its log closes.
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline && (!existsSync(log) || !readFileSync(log, 'utf8').includes('Log closed.'))) {
+    await delay(100);
+  }
+  const output = existsSync(log) ? readFileSync(log, 'utf8') : removed.stdout + removed.stderr;
+  assert.equal(removed.error, undefined, String(removed.error));
+  assert.equal(removed.status, 0, output);
+  assert.match(output, /Log closed\./, 'second-phase uninstaller did not finish');
+  assert.match(output, /Uninstallation process succeeded\./);
+  assert.doesNotMatch(output, /Runtime error|Could not call proc|raised an exception/);
 }
 
 test('Unix bootstrap entrypoints have LF shebangs, including extensionless commands', () => {
@@ -125,7 +141,7 @@ exit $LASTEXITCODE
 for (const product of ['pos', 'server']) {
 test(`compiled Windows ${product} EXE fails when its child setup fails or is cancelled`, {
   skip: process.platform !== 'win32' || !process.env.CI || !process.env.BMS_INNO_COMPILER,
-}, t => {
+}, async t => {
   const root = workspace(t);
   const bundle = join(root, 'bundle');
   mkdirSync(bundle);
@@ -169,11 +185,47 @@ exit ([int]([Uri]$ManifestUri).AbsolutePath.Trim('/'))
       }
     } finally {
       const uninstaller = join(installed, 'unins000.exe');
-      if (existsSync(uninstaller)) run(uninstaller, ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART']);
+      if (existsSync(uninstaller)) await uninstallAndCheck(uninstaller, join(root, `uninstall-${code}.log`));
     }
   }
 });
 }
+
+test('compiled Windows uninstaller executes its production progress callback', {
+  skip: process.platform !== 'win32' || !process.env.BMS_INNO_COMPILER,
+}, async t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss');
+  const callback = source.match(/procedure CurUninstallStepChanged[\s\S]*?\r?\nend;/)?.[0];
+  assert.ok(callback);
+  const script = join(root, 'uninstall-probe.iss');
+  const installed = join(root, 'installed');
+  writeFileSync(join(root, 'payload.txt'), 'disposable test payload');
+  writeFileSync(script, `
+[Setup]
+AppId=BMS-Uninstall-Callback-Test
+AppName=BMS Uninstall Callback Test
+AppVersion=0.0.0-test
+DefaultDirName=${installed}
+PrivilegesRequired=lowest
+Uninstallable=yes
+CreateUninstallRegKey=no
+DisableProgramGroupPage=yes
+OutputDir=${root}
+OutputBaseFilename=uninstall-probe
+[Files]
+Source: "${join(root, 'payload.txt')}"; DestDir: "{app}"
+[Code]
+${callback}
+`);
+  const compiled = run(process.env.BMS_INNO_COMPILER, [script]);
+  assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
+  const setup = run(join(root, 'uninstall-probe.exe'), ['/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-']);
+  assert.equal(setup.status, 0, setup.stdout + setup.stderr);
+  const log = join(root, 'uninstall.log');
+  await uninstallAndCheck(join(installed, 'unins000.exe'), log);
+  assert.equal(existsSync(join(installed, 'payload.txt')), false, 'uninstaller did not remove test payload');
+});
 
 test('Windows uninstall completes on a partial installation and preserves data', {
   skip: process.platform !== 'win32' || !process.env.CI,

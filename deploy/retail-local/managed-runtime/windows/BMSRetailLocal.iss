@@ -180,5 +180,6 @@ begin
     UninstallProgressForm.StatusLabel.Caption :=
       'กำลังหยุดบริการและยกเลิกรายการเปิดอัตโนมัติ (ปกติไม่เกิน 15 วินาที)...'
   else if CurUninstallStep = usPostUninstall then
-    UninstallProgressForm.StatusLabel.Caption := 'กำลังลบไฟล์โปรแกรม...';
+    { Inno has already destroyed UninstallProgressForm at usPostUninstall. }
+    Log('BMS Retail Local uninstall file cleanup completed.');
 end;

@@ -201,6 +201,12 @@ The Windows native agent temporarily disables console Quick Edit during its work
 the original input mode. This prevents an accidental text selection from pausing progress output;
 it does not change the user's persistent terminal settings.
 
+Windows uninstall tests inspect the second-phase uninstaller log, not only the launcher exit
+code: Inno can return success while a script callback raises `Could not call proc`. Inno destroys
+`UninstallProgressForm` before `usPostUninstall`, so that callback must log completion without
+accessing the form. The native regression test compiles the production callback into an isolated
+disposable installer; it never stops or removes an existing shop.
+
 These are controlled failure tests, not evidence that a production signed release has completed
 first-run provisioning on every supported machine. CI smoke artifacts use test endpoints and
 must never be uploaded as customer installers. Existing published pilot files are not rebuilt
