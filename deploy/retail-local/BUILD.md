@@ -134,3 +134,20 @@ pwsh ./deploy/retail-local/build-release.ps1 `
 ทุก installer ปัจจุบันยัง unsigned internal technical pilot จนกว่าจะผ่าน code signing,
 clean-machine, update/rollback, backup/restore และ hardware acceptance gates ห้ามใช้ `-SkipTests`
 กับไฟล์ที่จะส่งให้ร้าน
+
+## Release gate สำหรับ Online Installer
+
+การ build สำเร็จอย่างเดียวไม่ถือว่าพร้อมปล่อย Workflow
+`.github/workflows/retail-local-managed-runtime.yml` ต้องผ่านทั้งสามระบบก่อนสร้าง release:
+
+- Windows: build Server + POS x64 และ POS-only x64/x86 ด้วย Inno Setup จริง
+- Ubuntu: build และ inspect Server + POS กับ POS-only `.deb` จริง
+- macOS: build Server + POS `.pkg` และ POS-only `.dmg` สำหรับ Apple Silicon/Intel บน runner macOS จริง
+
+ทุก online bootstrap ต้องไม่เกิน 25 MiB และต้องไม่มี service image, Electron หรือ application
+payload ฝังอยู่ การติดตั้งครั้งแรกจึงต้องต่ออินเทอร์เน็ตเพื่อดาวน์โหลด signed manifest และ payload
+ที่ตรงกับ OS/CPU แบบ resume ได้
+
+CI นี้เป็น package-level gate ไม่แทน clean-machine acceptance ก่อนส่งลูกค้า รุ่นที่จะปล่อยจริงยังต้อง
+ติดตั้งและอัปเดตบนเครื่องจริงตามรายการใน `docs/business/retail-local-ga-readiness.md`; macOS ยังเป็น
+technical pilot จนกว่าจะลง Developer ID, notarize และผ่าน Gatekeeper บน Apple Silicon/Intel

@@ -123,6 +123,8 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(posBootstrapSetup, /signed release manifest/);
   assert.match(posBootstrapSetup, /SHA-256[\s\S]*stage-desktop/);
   assert.match(posBootstrapSetup, /desktop\.artifact/);
+  assert.match(posBootstrapSetup, /BMS_PROGRESS [\s\S]*payload=\$\{line#BMS_PROGRESS \}/);
+  assert.match(posBootstrapSetup, /retryAfterSeconds[\s\S]*heartbeat/);
   assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
   assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
 
@@ -144,6 +146,20 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(hostControl, /runtime release ไม่ครบ[\s\S]*อย่าลบข้อมูลร้าน/);
   assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
   assert.match(hostControl, /businessArchetype[\s\S]*sampleMode[\s\S]*sampleStatus/);
+  assert.match(hostControl, /render_stage_output[\s\S]*retryAfterSeconds[\s\S]*heartbeat/);
+});
+
+test("managed runtime CI smoke-builds online bootstraps on Windows, Ubuntu, and macOS", () => {
+  const workflow = read(".github/workflows/retail-local-managed-runtime.yml");
+
+  assert.match(workflow, /linux-contract:[\s\S]*runs-on: ubuntu-24\.04/);
+  assert.match(workflow, /windows-bootstrap:[\s\S]*runs-on: windows-2022/);
+  assert.match(workflow, /macos-bootstrap:[\s\S]*runs-on: macos-latest/);
+  assert.match(workflow, /deploy\/retail-local\/pos-online\/\*\*/);
+  assert.match(workflow, /BMSPOSOnline\.iss/);
+  assert.match(workflow, /pos-online\/linux\/build-deb\.sh/);
+  assert.match(workflow, /build-bootstrap-pkg\.sh[\s\S]*build-pos-bootstrap-dmg\.sh/);
+  assert.match(workflow, /25 \* 1024 \* 1024/);
 });
 
 test("Managed Runtime release contract requires publisher identity and immutable components", () => {

@@ -17,7 +17,7 @@ remain open. Pilot artifacts must not use the `stable` channel or be represented
 | Resumable per-release staging | Implemented | agent tests; state is release-version scoped |
 | Ubuntu bootstrap package | Implemented candidate | CI builds and inspects `.deb` |
 | Windows bootstrap definition | Implemented candidate | Windows CI parses scripts and smoke-builds unsigned EXE |
-| macOS online bootstrap | Implemented candidate | Apple Silicon/Intel builders emit payload-free `.pkg` files capped at 25 MiB; signed release preparation and package inspection are contract-tested |
+| macOS online bootstrap | Implemented candidate | Native macOS CI builds payload-free Apple Silicon/Intel `.pkg` and POS-only `.dmg` files capped at 25 MiB; hardware acceptance and signing remain open |
 | Private runtime and loopback-only services | Implemented | Compose/installer contract tests |
 | Encrypted logical backup and guarded restore | Implemented candidate | lifecycle contract tests; replacement drill still required |
 | Scheduled encrypted off-host backup | Implemented candidate | Windows/Ubuntu scheduler, separate-destination guard, age recipient encryption, checksums, retention and stale/failure status; restore sampling still required |

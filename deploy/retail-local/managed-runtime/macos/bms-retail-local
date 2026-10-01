@@ -289,16 +289,24 @@ release_component_value() {
 }
 
 render_stage_output() {
-  local line payload phase component percent
+  local line payload phase component percent completed total heartbeat retry_after progress_size
   while IFS= read -r line; do
     printf '%s\n' "$line" >>"$1"
     if [[ $line == 'BMS_PROGRESS '* ]]; then
       payload=${line#BMS_PROGRESS }
       phase=$(printf '%s' "$payload" | /usr/bin/plutil -extract phase raw -o - - 2>/dev/null || true)
-      component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null || true)
+      component=$(printf '%s' "$payload" | /usr/bin/plutil -extract component raw -o - - 2>/dev/null || printf 'release')
       percent=$(printf '%s' "$payload" | /usr/bin/plutil -extract percent raw -o - - 2>/dev/null || printf '0')
+      completed=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentCompletedBytes raw -o - - 2>/dev/null || printf '0')
+      total=$(printf '%s' "$payload" | /usr/bin/plutil -extract componentTotalBytes raw -o - - 2>/dev/null || printf '0')
+      heartbeat=$(printf '%s' "$payload" | /usr/bin/plutil -extract heartbeat raw -o - - 2>/dev/null || printf 'false')
+      retry_after=$(printf '%s' "$payload" | /usr/bin/plutil -extract retryAfterSeconds raw -o - - 2>/dev/null || printf '0')
+      progress_size="$((completed / 1048576))/$((total / 1048576)) MiB"
+      [[ $heartbeat != true ]] || progress_size="$progress_size; ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
       case "$phase" in
-        download) printf '\r[BMS] ดาวน์โหลด %-20s %3s%%' "$component" "$percent" ;;
+        connect) printf '\r[BMS] เชื่อมต่อ %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+        download) printf '\r[BMS] ดาวน์โหลด %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+        retry) printf '\r[BMS] เครือข่ายหยุด จะลอง %-20s ใหม่ใน %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
         cached) printf '\r[BMS] ใช้ไฟล์ที่ดาวน์โหลดแล้ว: %-20s %3s%%\n' "$component" "$percent" ;;
         verify) printf '\r[BMS] ตรวจสอบ %-20s %3s%%' "$component" "$percent" ;;
         staged) printf '\r[BMS] ดาวน์โหลดและตรวจสอบครบ                     100%%\n' ;;
