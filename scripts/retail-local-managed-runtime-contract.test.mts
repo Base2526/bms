@@ -104,6 +104,9 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   const posBootstrapSmoke = read("deploy/retail-local/managed-runtime/macos/smoke-test-pos-bootstrap-dmg.sh");
 
   assert.match(bootstrapBuilder, /--architecture arm64\|x64/);
+  assert.match(bootstrapBuilder, /--package-type server-pos\|server/);
+  assert.match(bootstrapBuilder, /packageType":"\$package_type"/);
+  assert.match(bootstrapBuilder, /PACKAGE_TYPE/);
   assert.match(bootstrapBuilder, /trusted-release-keys\.json/);
   assert.match(bootstrapBuilder, /manifest-url/);
   assert.match(bootstrapBuilder, /25 \* 1024 \* 1024/);
@@ -113,9 +116,10 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.doesNotMatch(bootstrapBuilder, /ubuntu-24\.04-server-cloudimg\.img|docker image save|BMS POS\.app/);
   assert.match(bootstrapSmoke, /online bootstrap ฝัง payload ขนาดใหญ่/);
   assert.match(bootstrapSmoke, /Applications\/BMS POS\.app/);
+  assert.match(bootstrapSmoke, /package_type == server \|\| \$package_type == server-pos/);
   assert.match(bootstrapSmoke, /stat -f %Lp[\s\S]*== 644[\s\S]*test release CA permission/);
   assert.match(postinstall, /Internet is required for the first setup/);
-  assert.match(postinstall, /chmod 0644 "\$root\/bootstrap\/trusted-release-keys\.json"[\s\S]*test-release-ca\.pem/);
+  assert.match(postinstall, /chmod 0644 "\$root\/bootstrap\/trusted-release-keys\.json"[\s\S]*PACKAGE_TYPE[\s\S]*test-release-ca\.pem/);
 
   assert.match(posBootstrapBuilder, /stage-desktop|bms-runtime-agent/);
   assert.match(posBootstrapBuilder, /electronEmbedded/);
@@ -125,6 +129,8 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(posBootstrapSetup, /desktop\.artifact/);
   assert.match(posBootstrapSetup, /BMS_PROGRESS [\s\S]*payload=\$\{line#BMS_PROGRESS \}/);
   assert.match(posBootstrapSetup, /retryAfterSeconds[\s\S]*heartbeat/);
+  assert.doesNotMatch(posBootstrapSetup, /curl_tls\[@\]/);
+  assert.match(posBootstrapSetup, /curl_args=\(--fail[\s\S]*curl "\$\{curl_args\[@\]\}"/);
   assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
   assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
 
@@ -135,6 +141,9 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(releaseBuilder, /shop-archetypes\.artifact/);
   assert.match(releaseBuilder, /sign-release\.mjs/);
   assert.match(hostControl, /stage-release[\s\S]*-progress/);
+  assert.match(hostControl, /stage_command=stage-release[\s\S]*stage_command=stage-server/);
+  assert.match(hostControl, /package_type\(\)[\s\S]*server\|server-pos/);
+  assert.match(hostControl, /install_pos_desktop\(\)[\s\S]*package_type[\s\S]*server-pos/);
   assert.match(hostControl, /verify-release/);
   assert.match(hostControl, /extract_runtime/);
   assert.match(hostControl, /install_pos_desktop/);
@@ -147,6 +156,8 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
   assert.match(hostControl, /businessArchetype[\s\S]*sampleMode[\s\S]*sampleStatus/);
   assert.match(hostControl, /render_stage_output[\s\S]*retryAfterSeconds[\s\S]*heartbeat/);
+  assert.doesNotMatch(hostControl, /curl_tls\[@\]/);
+  assert.match(hostControl, /curl_args=\(--fail[\s\S]*curl "\$\{curl_args\[@\]\}"/);
 });
 
 test("managed runtime CI smoke-builds online bootstraps on Windows, Ubuntu, and macOS", () => {

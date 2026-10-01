@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -496,5 +497,71 @@ func TestStageDesktopSelectsOnlySignedDesktopComponent(t *testing.T) {
 	}
 	if !state.CompletedComponents["desktop"] || len(state.CompletedComponents) != 1 {
 		t.Fatalf("unexpected staged components: %#v", state.CompletedComponents)
+	}
+}
+
+func TestServerComponentsExcludeOnlyDesktop(t *testing.T) {
+	components := []releaseComponent{
+		{Name: "web"}, {Name: "ws"}, {Name: "postgres"}, {Name: "redis"},
+		{Name: "runtime"}, {Name: "compose"}, {Name: "desktop"}, {Name: "shop-archetypes"},
+	}
+	selected := serverComponents(components)
+	if len(selected) != len(components)-1 {
+		t.Fatalf("unexpected server component count: %d", len(selected))
+	}
+	for _, component := range selected {
+		if component.Name == "desktop" {
+			t.Fatal("Server-only staging retained the Desktop component")
+		}
+	}
+}
+
+func TestStageDesktopUsesExplicitLoopbackTestCA(t *testing.T) {
+	desktopBytes := []byte(strings.Repeat("desktop-archive-", 128))
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/desktop" {
+			http.NotFound(response, request)
+			return
+		}
+		_, _ = response.Write(desktopBytes)
+	}))
+	defer server.Close()
+
+	digest := sha256.Sum256(desktopBytes)
+	envelope, keyring := signedReleaseFixture(t, func(payload *releasePayload) {
+		for index := range payload.Components {
+			if payload.Components[index].Name == "desktop" {
+				payload.Components[index].URL = server.URL + "/desktop"
+				payload.Components[index].SHA256 = hex.EncodeToString(digest[:])
+				payload.Components[index].SizeBytes = int64(len(desktopBytes))
+			}
+		}
+	})
+	directory := t.TempDir()
+	manifestPath := filepath.Join(directory, "release.jws.json")
+	keyringPath := filepath.Join(directory, "trusted-release-keys.json")
+	caPath := filepath.Join(directory, "test-ca.pem")
+	if err := os.WriteFile(manifestPath, envelope, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(keyringPath, keyring, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	certificate := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw})
+	if err := os.WriteFile(caPath, certificate, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(directory, "state")
+	if _, err := stageDesktopWithTestCA(context.Background(), manifestPath, keyringPath,
+		"ubuntu-24.04-lts-x64", root, caPath); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(filepath.Join(root, "releases", "1.0.0-test.1", "desktop.artifact"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(actual) != string(desktopBytes) {
+		t.Fatal("explicit test CA download changed desktop bytes")
 	}
 }

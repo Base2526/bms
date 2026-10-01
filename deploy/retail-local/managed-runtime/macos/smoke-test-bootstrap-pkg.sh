@@ -23,11 +23,15 @@ app="$payload/Applications/BMS Retail Local.app"
 [[ $(stat -f %Lp "$bootstrap/bms-runtime-agent") == 755 ]] || {
   echo "runtime agent permission ต้องเป็น 0755" >&2; exit 1;
 }
-for public_file in trusted-release-keys.json manifest-url activation-url BOOTSTRAP_VERSION PLATFORM_TARGET; do
+for public_file in trusted-release-keys.json manifest-url activation-url BOOTSTRAP_VERSION PLATFORM_TARGET PACKAGE_TYPE; do
   [[ $(stat -f %Lp "$bootstrap/$public_file") == 644 ]] || {
     echo "bootstrap public file permission ต้องเป็น 0644: $public_file" >&2; exit 1;
   }
 done
+package_type=$(cat "$bootstrap/PACKAGE_TYPE")
+[[ $package_type == server || $package_type == server-pos ]] || {
+  echo "bootstrap package type ไม่ถูกต้อง: $package_type" >&2; exit 1;
+}
 if [[ -f $bootstrap/test-release-ca.pem ]]; then
   manifest_uri=$(tr -d '\r\n' <"$bootstrap/manifest-url")
   [[ $manifest_uri =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:?#]|$) ]] || {

@@ -498,6 +498,38 @@
   gap: 7px;
 }
 
+.macArchitectureChooser {
+  align-items: center;
+  background: rgba(var(--app-primary-rgb), 0.055);
+  border: 1px solid rgba(var(--app-primary-rgb), 0.22);
+  border-radius: 8px;
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1fr) minmax(380px, 0.9fr);
+  padding: 18px 20px;
+}
+
+.macArchitectureChooser > div:first-child,
+.macArchitectureControl {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.macArchitectureChooser strong {
+  font-size: 16px;
+}
+
+.macArchitectureChooser small {
+  color: var(--app-muted);
+  line-height: 1.5;
+}
+
+.macArchitectureControl > small {
+  color: var(--app-primary);
+  font-weight: 650;
+}
+
 .downloadGrid {
   display: grid;
   gap: 18px;
@@ -773,6 +805,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .macArchitectureChooser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .flowStep:nth-child(3) .stepArrow {
     display: none;
   }
@@ -884,5 +920,14 @@
 
   .downloadChooser :global(.ant-segmented-item-label) {
     padding-inline: 6px;
+  }
+
+  .macArchitectureChooser {
+    padding: 16px;
+  }
+
+  .macArchitectureControl :global(.ant-segmented-item-label) {
+    font-size: 12px;
+    padding-inline: 5px;
   }
 }

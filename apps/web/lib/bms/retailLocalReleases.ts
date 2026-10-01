@@ -90,7 +90,7 @@ function serialize(row: any): RetailLocalReleaseAsset {
     version: String(row.version),
     channel: row.channel,
     status: row.status,
-    access_level: row.access_level ?? (row.package_type === "server-pos" ? "trial" : "public"),
+    access_level: row.access_level ?? "public",
     is_latest: row.is_latest === true,
     file_id: Number(row.file_id),
     original_name: String(row.original_name || ""),
@@ -180,12 +180,7 @@ export async function createRetailLocalReleaseAsset(input: {
     const version = trimRequired(input.version, "version", 80);
     const channel = input.channel ? assertChannel(input.channel) : "pilot";
     const requestedStatus = input.status ? assertStatus(input.status) : "supported";
-    const requestedAccess = input.accessLevel == null
-      ? (packageType === "server-pos" ? "trial" : "public")
-      : assertAccessLevel(input.accessLevel);
-    if (packageType === "server-pos" && requestedAccess !== "trial") {
-      throw new RetailLocalReleaseError("server-pos package must be trial locked");
-    }
+    const requestedAccess = input.accessLevel == null ? "public" : assertAccessLevel(input.accessLevel);
     const isLatest = input.isLatest === true || input.isLatest === "true" || requestedStatus === "latest";
     const status: RetailLocalReleaseStatus = isLatest ? "latest" : requestedStatus;
     const minOs = trimRequired(input.minOs, "minimum OS", 200);
@@ -280,9 +275,6 @@ export async function updateRetailLocalReleaseAsset(id: string, input: {
 
   const status = input.status == null ? current.status : assertStatus(input.status);
   const accessLevel = input.accessLevel == null ? current.access_level : assertAccessLevel(input.accessLevel);
-  if (current.package_type === "server-pos" && accessLevel !== "trial") {
-    throw new RetailLocalReleaseError("server-pos package must be trial locked");
-  }
   const isLatest = input.isLatest == null ? current.is_latest : input.isLatest === true;
   const nextLatest = status === "hidden" ? false : isLatest || status === "latest";
   const nextStatus: RetailLocalReleaseStatus = status === "hidden" ? "hidden" : nextLatest ? "latest" : status;

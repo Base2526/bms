@@ -60,14 +60,12 @@ packaged_target=$(tr -d '\r\n' <"$PACKAGED_TARGET_FILE")
 manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
 is_https_url "$manifest_uri" || die "Manifest URL ใน bootstrap ไม่ปลอดภัย"
 local_test_ca="$BOOTSTRAP_ROOT/test-release-ca.pem"
-curl_tls=()
 if [[ -f $local_test_ca ]]; then
   [[ $manifest_uri =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:?#]|$) ]] || \
     die "test release CA ใช้ได้เฉพาะ localhost"
   grep -q 'BEGIN CERTIFICATE' "$local_test_ca" && ! grep -q 'PRIVATE KEY' "$local_test_ca" || \
     die "test release CA ไม่ถูกต้อง"
   export CURL_CA_BUNDLE="$local_test_ca" SSL_CERT_FILE="$local_test_ca"
-  curl_tls=(--cacert "$local_test_ca")
   note "ใช้ public test CA สำหรับ localhost เท่านั้น (SMOKE-ONLY)"
 fi
 
@@ -76,9 +74,11 @@ chmod 0700 "$STATE_ROOT" "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
 note "ครั้งแรกต้องต่ออินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
 BMS_DIAG_STAGE=download-manifest
-if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
-    --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
-    --retry 2 --retry-max-time 180 --output "$manifest_path.part" "$manifest_uri"; then
+curl_args=(--fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+  --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+  --retry 2 --retry-max-time 180 --output "$manifest_path.part")
+[[ ! -f $local_test_ca ]] || curl_args=(--cacert "$local_test_ca" "${curl_args[@]}")
+if ! curl "${curl_args[@]}" "$manifest_uri"; then
   die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
 fi
 chmod 0600 "$manifest_path.part"
@@ -89,8 +89,10 @@ stage_output="$STATE_ROOT/stage-desktop-result.jsonl"
 chmod 0600 "$stage_output"
 note "กำลังดาวน์โหลดเฉพาะ BMS POS และตรวจ SHA-256 (สามารถ resume ได้)"
 BMS_DIAG_STAGE=download-desktop
-"$AGENT" stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
-  -target "$host_target" -root "$STATE_ROOT" -progress | while IFS= read -r line; do
+stage_args=(stage-desktop -manifest "$manifest_path" -keyring "$KEYRING" \
+  -target "$host_target" -root "$STATE_ROOT" -progress)
+[[ ! -f $local_test_ca ]] || stage_args+=(-test-ca "$local_test_ca")
+"$AGENT" "${stage_args[@]}" | while IFS= read -r line; do
     printf '%s\n' "$line" >>"$stage_output"
     [[ $line == 'BMS_PROGRESS '* ]] || continue
     payload=${line#BMS_PROGRESS }

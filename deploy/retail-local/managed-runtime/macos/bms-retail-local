@@ -100,6 +100,23 @@ require_bootstrap() {
   [[ -x $AGENT && -f $KEYRING && -f $MANIFEST_URI_FILE ]] || \
     die "ไฟล์ Online Bootstrap ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
 }
+package_type() {
+  local value=""
+  if [[ -f $RECEIPT ]]; then
+    value=$(/usr/bin/plutil -extract packageType raw -o - "$RECEIPT" 2>/dev/null || true)
+  fi
+  if [[ -z $value ]]; then
+    if [[ $INSTALL_MODE == online ]]; then
+      value=$(cat "$BOOTSTRAP_ROOT/PACKAGE_TYPE" 2>/dev/null || true)
+    else
+      value=$(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true)
+    fi
+  fi
+  case "$value" in
+    server|server-pos) printf '%s\n' "$value" ;;
+    *) printf '%s\n' server-pos ;;
+  esac
+}
 is_https_url() {
   [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-} != *'@'* ]]
 }
@@ -316,8 +333,8 @@ render_stage_output() {
 }
 
 stage_signed_release() {
-  local manifest_uri manifest_dir manifest_path preflight_file target stage_output version test_ca
-  local -a curl_tls=()
+  local manifest_uri manifest_dir manifest_path preflight_file target stage_output version test_ca stage_command
+  local -a curl_args
   manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
   is_https_url "$manifest_uri" || die "Manifest URL ใน bootstrap ไม่ปลอดภัย"
   test_ca="$BOOTSTRAP_ROOT/test-release-ca.pem"
@@ -327,7 +344,6 @@ stage_signed_release() {
     grep -q 'BEGIN CERTIFICATE' "$test_ca" && ! grep -q 'PRIVATE KEY' "$test_ca" || \
       die "test release CA ไม่ถูกต้อง"
     export CURL_CA_BUNDLE="$test_ca" SSL_CERT_FILE="$test_ca"
-    curl_tls=(--cacert "$test_ca")
     note "ใช้ public test CA สำหรับ localhost เท่านั้น (SMOKE-ONLY)"
   fi
   mkdir -p "$STATE_ROOT/manifest"
@@ -335,9 +351,11 @@ stage_signed_release() {
   manifest_dir="$STATE_ROOT/manifest"
   manifest_path="$manifest_dir/release.jws.json"
   note "การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
-  if ! curl "${curl_tls[@]}" --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
-      --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
-      --retry 2 --retry-max-time 180 --output "$manifest_path.part" "$manifest_uri"; then
+  curl_args=(--fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
+    --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
+    --retry 2 --retry-max-time 180 --output "$manifest_path.part")
+  [[ ! -f $test_ca ]] || curl_args=(--cacert "$test_ca" "${curl_args[@]}")
+  if ! curl "${curl_args[@]}" "$manifest_uri"; then
     die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
   fi
   chmod 0600 "$manifest_path.part"
@@ -351,8 +369,12 @@ stage_signed_release() {
   : >"$stage_output"
   chmod 0600 "$stage_output"
   note "กำลังดาวน์โหลด component แบบ resume และตรวจ SHA-256 ทุกไฟล์"
-  "$AGENT" stage-release -manifest "$manifest_path" -keyring "$KEYRING" \
-    -target "$target" -root "$STATE_ROOT" -progress | render_stage_output "$stage_output"
+  stage_command=stage-release
+  [[ $(package_type) != server ]] || stage_command=stage-server
+  local -a stage_args=("$stage_command" -manifest "$manifest_path" -keyring "$KEYRING" \
+    -target "$target" -root "$STATE_ROOT" -progress)
+  [[ ! -f $test_ca ]] || stage_args+=(-test-ca "$test_ca")
+  "$AGENT" "${stage_args[@]}" | render_stage_output "$stage_output"
   version=$(tail -n 1 "$stage_output" | /usr/bin/plutil -extract releaseVersion raw -o - - 2>/dev/null || true)
   load_release_paths "$version"
   "$AGENT" verify-release -manifest "$manifest_path" -keyring "$KEYRING" -target "$target" >"$RELEASE_JSON"
@@ -688,9 +710,7 @@ EOF
 }
 
 launch_pos_desktop() {
-  if [[ $INSTALL_MODE == offline && $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) != server-pos ]]; then
-    return
-  fi
+  [[ $(package_type) == server-pos ]] || return
   local pos_app="/Applications/BMS POS.app"
   [[ -d $pos_app ]] || die "ติดตั้ง POS Desktop จาก signed release ไม่สำเร็จ"
   if [[ -n $PROVISION_DEVICE_TOKEN ]]; then
@@ -709,6 +729,7 @@ launch_pos_desktop() {
 
 install_pos_desktop() {
   [[ $INSTALL_MODE == online ]] || return
+  [[ $(package_type) == server-pos ]] || return
   local archive temporary app entry
   archive=$(artifact_path desktop)
   temporary="$STATE_ROOT/desktop-install.partial"
@@ -730,7 +751,7 @@ install_pos_desktop() {
 }
 
 write_receipt() {
-  local version source_commit platform_target schema_version now
+  local version source_commit platform_target schema_version now installed_package_type
   if [[ $INSTALL_MODE == online ]]; then
     version=$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")
     source_commit=$(/usr/bin/plutil -extract sourceCommit raw -o - "$RELEASE_JSON")
@@ -743,6 +764,7 @@ write_receipt() {
     schema_version=""
   fi
   now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+  installed_package_type=$(package_type)
   umask 077
   rm -f -- "$RECEIPT.tmp"
   /usr/bin/plutil -create xml1 "$RECEIPT.tmp"
@@ -752,6 +774,7 @@ write_receipt() {
   /usr/bin/plutil -insert installedAt -string "$now" "$RECEIPT.tmp"
   /usr/bin/plutil -insert updatedAt -string "$now" "$RECEIPT.tmp"
   /usr/bin/plutil -insert sourceCommit -string "$source_commit" "$RECEIPT.tmp"
+  /usr/bin/plutil -insert packageType -string "$installed_package_type" "$RECEIPT.tmp"
   /usr/bin/plutil -insert url -string "http://127.0.0.1:$WEB_PORT" "$RECEIPT.tmp"
   [[ -z $schema_version ]] || /usr/bin/plutil -insert schemaVersion -string "$schema_version" "$RECEIPT.tmp"
   [[ -z $PROVISION_TENANT_ID ]] || /usr/bin/plutil -insert tenantId -string "$PROVISION_TENANT_ID" "$RECEIPT.tmp"
@@ -943,7 +966,7 @@ uninstall_runtime() {
   fi
 
   [[ ! -f $RECEIPT ]] || load_installed_release
-  if [[ $INSTALL_MODE == offline && $(cat "$PAYLOAD_ROOT/PACKAGE_TYPE" 2>/dev/null || true) != server-pos ]]; then
+  if [[ $(package_type) != server-pos ]]; then
     remove_pos=false
   fi
 
@@ -1047,7 +1070,7 @@ case "${1:-}" in
   setup)
     # shellcheck source=../setup-diagnostics.sh
     source "$CONTROL_ROOT/setup-diagnostics.sh"
-    bms_diagnostics_init server-pos "$STATE_ROOT" "$CONTROL_ROOT/BOOTSTRAP_VERSION"
+    bms_diagnostics_init "$(package_type)" "$STATE_ROOT" "$CONTROL_ROOT/BOOTSTRAP_VERSION"
     trap 'status=$?; trap - EXIT ERR; bms_diagnostics_finish "$status"; exit "$status"' EXIT
     trap 'exit 130' HUP INT TERM
     setup_runtime

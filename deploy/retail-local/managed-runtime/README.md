@@ -196,6 +196,12 @@ deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
   --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
   --keyring /secure/bms-release/trusted-release-keys.json
 
+# Dedicated host: omit the POS Desktop component.
+deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
+  --version 0.4.0-internal.1 --architecture arm64 --package-type server \
+  --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
+  --keyring /secure/bms-release/trusted-release-keys.json
+
 deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
   --version 0.4.0-internal.1 --architecture arm64 \
   --manifest-url https://releases.example.com/retail-local/0.4.0/macos-15-arm64/release.jws.json \
