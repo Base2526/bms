@@ -5,6 +5,7 @@ param(
   [ValidateSet("Online", "Offline")][string]$Distribution = "Online",
   [string]$Keyring,
   [string]$WindowsManifestUri,
+  [string]$WindowsX86ManifestUri,
   [string]$LinuxManifestUri,
   [string]$MacArm64ManifestUri,
   [string]$MacX64ManifestUri,
@@ -153,6 +154,7 @@ if ($Distribution -eq "Online") {
     @(
       @{ Name = "Keyring"; Value = $Keyring },
       @{ Name = "WindowsManifestUri"; Value = $WindowsManifestUri },
+      @{ Name = "WindowsX86ManifestUri"; Value = $WindowsX86ManifestUri },
       @{ Name = "LinuxManifestUri"; Value = $LinuxManifestUri }
     )
   }
@@ -229,6 +231,21 @@ if ($Distribution -eq "Online") {
   if ($SkipTests) { $onlineArgs.SkipTests = $true }
   & (Join-Path $scriptRoot "build-online-bootstrap.ps1") @onlineArgs
   if ($LASTEXITCODE -ne 0) { throw "Build online bootstrap ไม่สำเร็จ" }
+  $posOnlineArgs = @{
+    Version = $Version
+    Keyring = $Keyring
+    WindowsManifestUri = $WindowsManifestUri
+    WindowsX86ManifestUri = $WindowsX86ManifestUri
+    LinuxManifestUri = $LinuxManifestUri
+    OutputDirectory = $outputRoot
+    WslDistribution = $WslDistribution
+  }
+  if ($InnoCompiler) { $posOnlineArgs.InnoCompiler = $InnoCompiler }
+  if ($Force) { $posOnlineArgs.Force = $true }
+  if ($AllowTestEndpoints) { $posOnlineArgs.AllowTestEndpoints = $true }
+  if ($SkipTests) { $posOnlineArgs.SkipTests = $true }
+  & (Join-Path $scriptRoot "build-online-pos-bootstrap.ps1") @posOnlineArgs
+  if ($LASTEXITCODE -ne 0) { throw "Build POS online bootstrap ไม่สำเร็จ" }
   exit 0
 }
 

@@ -88,13 +88,14 @@ pwsh .\deploy\retail-local\build-release.ps1 `
   -Version 0.5.0 `
   -Keyring C:\secure\bms\trusted-release-keys.json `
   -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
+  -WindowsX86ManifestUri https://releases.example.com/retail-local/windows-10-x86-pos/release.jws.json `
   -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json
 ```
 
 Use `-Distribution Offline -AllowOfflineRecovery` only for the explicit legacy recovery/pilot
 payload. Managed Runtime
 supports Windows x64, Ubuntu x64, macOS Apple Silicon and macOS Intel. Windows x86 remains a
-POS-client legacy target; Linux
+POS-only online-bootstrap legacy target; Linux
 32-bit is unsupported by the current Electron/runtime/image stack and is never emitted as a server
 installer.
 

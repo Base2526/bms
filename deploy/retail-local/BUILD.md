@@ -49,6 +49,7 @@ pwsh .\deploy\retail-local\build-release.ps1 `
   -Version 0.2.13 `
   -Keyring C:\secure\bms\trusted-release-keys.json `
   -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
+  -WindowsX86ManifestUri https://releases.example.com/retail-local/windows-10-x86-pos/release.jws.json `
   -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json `
   -ActivationUri https://control.example.com/api/bms/retail-local/activate
 ```
@@ -57,10 +58,17 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 
 - `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe`
 - `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb`
+- `BMS-Retail-Local-POS-<version>-windows-x64.exe`
+- `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe`
+- `BMS-Retail-Local-POS-<version>-linux-x64.deb`
 - `.sha256` และ `.json` metadata ของแต่ละไฟล์
 
 ชื่อ `server-pos` หมายถึง signed manifest มี POS Desktop เป็น component ที่ดาวน์โหลดหลังตรวจสอบ
 ไม่ได้หมายความว่า Electron มี database หรือ business logic ของตัวเอง
+
+POS-only ทั้งสามไฟล์เป็น bootstrap ขนาดเล็กเช่นกัน ไม่ได้ฝัง Electron ไว้ใน installer และใช้
+`stage-desktop` ดาวน์โหลดเฉพาะ Desktop component แบบ resume ได้ Windows x86 ใช้ signed manifest
+แยกจาก x64 เพราะตัว Electron installer คนละสถาปัตยกรรม ส่วน Linux x86 ไม่มี target ที่รองรับ
 
 Builder ปกติปฏิเสธโดเมนตัวอย่างและ `.invalid` เพื่อไม่ให้ไฟล์ทดสอบถูกส่งให้ร้านโดยบังเอิญ
 `-AllowTestEndpoints` มีไว้สำหรับ smoke test ภายในเท่านั้น และเติม `SMOKE-ONLY` ในชื่อ artifact

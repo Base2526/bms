@@ -484,6 +484,8 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(releaseBuilder, /\$Distribution -eq "Offline" -and -not \$AllowOfflineRecovery/);
   assert.match(releaseBuilder, /-Distribution Offline -AllowOfflineRecovery/);
   assert.match(releaseBuilder, /build-online-bootstrap\.ps1/);
+  assert.match(releaseBuilder, /build-online-pos-bootstrap\.ps1/);
+  assert.match(releaseBuilder, /WindowsX86ManifestUri/);
   assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
   assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);
   assert.match(onlineBuilder, /build รองรับเฉพาะ x64/);
@@ -494,6 +496,29 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(onlineBuilder, /runtime-rootfs\\bms-wsl-keepalive/);
   assert.match(onlineBuilder, /Length -gt 25MB/);
   assert.doesNotMatch(onlineBuilder, /docker image save|package\.ps1/);
+});
+
+test("POS-only online bootstraps download one signed desktop component for supported architectures", () => {
+  const builder = read("deploy/retail-local/build-online-pos-bootstrap.ps1");
+  const windowsSetup = read("deploy/retail-local/pos-online/windows/install-pos-online.ps1");
+  const windowsIss = read("deploy/retail-local/pos-online/windows/BMSPOSOnline.iss");
+  const linuxSetup = read("deploy/retail-local/pos-online/linux/bms-pos-online-setup");
+  const linuxBuilder = read("deploy/retail-local/pos-online/linux/build-deb.sh");
+  assert.match(builder, /GoArch = "386"/);
+  assert.match(builder, /GoArch = "amd64"/);
+  assert.match(builder, /windows-10-x86-pos/);
+  assert.match(builder, /ubuntu-24\.04-lts-x64/);
+  assert.match(builder, /Length -gt 25MB/);
+  assert.match(windowsSetup, /stage-desktop/);
+  assert.match(windowsSetup, /Write-Progress/);
+  assert.match(windowsIss, /PrivilegesRequired=lowest/);
+  assert.match(linuxSetup, /stage-desktop/);
+  assert.match(linuxSetup, /apt-get install -y/);
+  assert.match(linuxBuilder, /Architecture: amd64/);
+  assert.match(builder, /keyringText -match 'PRIVATE KEY'/);
+  for (const source of [windowsSetup, windowsIss, linuxSetup, linuxBuilder]) {
+    assert.doesNotMatch(source, /PRIVATE KEY|private[-_]key/i);
+  }
 });
 
 test("Windows local release test uses production-format signing without serving private keys", () => {
