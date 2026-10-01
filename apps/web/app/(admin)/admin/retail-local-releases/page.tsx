@@ -97,7 +97,7 @@ const PACKAGE_LABELS: Record<PackageType, string> = {
 
 const ACCESS_LABELS: Record<AccessLevel, string> = {
   public: "Public",
-  trial: "Trial locked",
+  trial: "Onboarding only",
 };
 
 const PLATFORM_LABELS: Record<Platform, string> = {
@@ -162,6 +162,7 @@ export default function RetailLocalReleasesPage() {
   const [uploadForm] = Form.useForm();
   const [editForm] = Form.useForm();
   const uploadPackageType = Form.useWatch("packageType", uploadForm);
+  const macUploadExtension = uploadPackageType === "pos" ? ".dmg" : ".pkg";
 
   const copy = th ? {
     title: "Retail Local Releases",
@@ -183,11 +184,11 @@ export default function RetailLocalReleasesPage() {
     created: "สร้างเมื่อ",
     actions: "จัดการ",
     latest: "Latest",
-    trialLock: "ล็อกด้วย Trial",
+    trialLock: "แจกผ่าน Onboarding",
     save: "บันทึก",
     download: "ทดสอบดาวน์โหลด",
     uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน POS Desktop บน macOS ใช้ .dmg",
-    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แต่ Server + POS ถูก lock เป็น Trial และไม่แสดงเป็น public download",
+    publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แพ็กเกจทุกประเภทเลือก Public เพื่อแสดงในหน้าดาวน์โหลด หรือ Onboarding only เพื่อส่งให้ผู้รับที่ระบุได้",
     inferred: "อ่านจากไฟล์",
     inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
     checksumPending: "คำนวณระหว่างอัปโหลด",
@@ -213,11 +214,11 @@ export default function RetailLocalReleasesPage() {
     created: "Created",
     actions: "Actions",
     latest: "Latest",
-    trialLock: "Trial locked",
+    trialLock: "Onboarding only",
     save: "Save",
     download: "Test download",
     uploadHint: "Server and combined packages use .exe, .deb or .pkg. macOS POS Desktop uses .dmg.",
-    publicRule: "Latest is tracked per platform and package type. Server + POS is trial locked and is not listed as a public download.",
+    publicRule: "Latest is tracked per platform and package type. Any package may be Public or Onboarding only; first-install activation remains separate from download access.",
     inferred: "Read from file",
     inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
     checksumPending: "calculated during upload",
@@ -309,7 +310,7 @@ export default function RetailLocalReleasesPage() {
     uploadForm.setFieldsValue({
       ...(platform ? { platform, minOs: defaultMinOs(platform, packageType) } : {}),
       ...(packageType ? { packageType } : {}),
-      ...(packageType ? { accessLevel: packageType === "server-pos" ? "trial" : "public" } : {}),
+      ...(packageType ? { accessLevel: "public" } : {}),
       ...(version ? { version } : {}),
     });
     setInferredFile({
@@ -448,15 +449,15 @@ export default function RetailLocalReleasesPage() {
         width={720}
       >
         <Alert closable showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
-        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server-pos", accessLevel: "trial", channel: "pilot", status: "supported", isLatest: false }}>
+        <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server-pos", accessLevel: "public", channel: "pilot", status: "supported", isLatest: false }}>
           <Row gutter={12}>
             <Col xs={24} sm={8}>
               <Form.Item name="platform" label={copy.platform} rules={[{ required: true }]}>
                 <Select options={[
                   { value: "windows-x64", label: "Windows x64 (.exe)" },
                   { value: "ubuntu-x64", label: "Ubuntu x64 (.deb)" },
-                  { value: "macos-arm64", label: "macOS Apple Silicon (.pkg)" },
-                  { value: "macos-x64", label: "macOS Intel (.pkg)" },
+                  { value: "macos-arm64", label: `macOS Apple Silicon (${macUploadExtension})` },
+                  { value: "macos-x64", label: `macOS Intel (${macUploadExtension})` },
                 ]} />
               </Form.Item>
             </Col>
@@ -464,8 +465,8 @@ export default function RetailLocalReleasesPage() {
               <Form.Item name="packageType" label={copy.packageType} rules={[{ required: true }]}>
                 <Select
                   options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))}
-                  onChange={(value: PackageType) => {
-                    uploadForm.setFieldValue("accessLevel", value === "server-pos" ? "trial" : "public");
+                  onChange={() => {
+                    uploadForm.setFieldValue("accessLevel", "public");
                   }}
                 />
               </Form.Item>
@@ -490,7 +491,6 @@ export default function RetailLocalReleasesPage() {
             <Col xs={24} sm={8}>
               <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
                 <Select
-                  disabled={uploadPackageType === "server-pos"}
                   options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
                 />
               </Form.Item>
@@ -556,7 +556,6 @@ export default function RetailLocalReleasesPage() {
           </Form.Item>
           <Form.Item name="accessLevel" label={copy.access} rules={[{ required: true }]}>
             <Select
-              disabled={editing?.package_type === "server-pos"}
               options={(Object.keys(ACCESS_LABELS) as AccessLevel[]).map((value) => ({ value, label: ACCESS_LABELS[value] }))}
             />
           </Form.Item>

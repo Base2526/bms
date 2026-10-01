@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -10,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -54,11 +57,40 @@ type installState struct {
 }
 
 func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root string, reporters ...progressReporter) (map[string]any, error) {
+	return stageReleaseWithTestCA(ctx, manifestPath, keyringPath, target, root, "", reporters...)
+}
+
+func stageReleaseWithTestCA(ctx context.Context, manifestPath, keyringPath, target, root, testCAPath string, reporters ...progressReporter) (map[string]any, error) {
 	verified, err := verifyReleaseFiles(manifestPath, keyringPath, target)
 	if err != nil {
 		return nil, err
 	}
-	return stageVerifiedComponents(ctx, verified, root, verified.Payload.Components, reporters...)
+	return stageVerifiedComponents(ctx, verified, root, verified.Payload.Components, testCAPath, reporters...)
+}
+
+// stageServer verifies the complete signed release before excluding the Desktop component. The
+// manifest remains the authority for every URL, size, checksum and OCI digest; Server-only merely
+// narrows which authenticated components are downloaded to this machine.
+func stageServer(ctx context.Context, manifestPath, keyringPath, target, root string, reporters ...progressReporter) (map[string]any, error) {
+	return stageServerWithTestCA(ctx, manifestPath, keyringPath, target, root, "", reporters...)
+}
+
+func stageServerWithTestCA(ctx context.Context, manifestPath, keyringPath, target, root, testCAPath string, reporters ...progressReporter) (map[string]any, error) {
+	verified, err := verifyReleaseFiles(manifestPath, keyringPath, target)
+	if err != nil {
+		return nil, err
+	}
+	return stageVerifiedComponents(ctx, verified, root, serverComponents(verified.Payload.Components), testCAPath, reporters...)
+}
+
+func serverComponents(components []releaseComponent) []releaseComponent {
+	selected := make([]releaseComponent, 0, len(components)-1)
+	for _, component := range components {
+		if component.Name != "desktop" {
+			selected = append(selected, component)
+		}
+	}
+	return selected
 }
 
 // stageDesktop verifies the complete publisher-signed release contract before selecting the one
@@ -66,6 +98,10 @@ func stageRelease(ctx context.Context, manifestPath, keyringPath, target, root s
 // treating an untrusted URL or checksum as authority while allowing the POS-only installer to stay
 // small and download Electron only on first install.
 func stageDesktop(ctx context.Context, manifestPath, keyringPath, target, root string, reporters ...progressReporter) (map[string]any, error) {
+	return stageDesktopWithTestCA(ctx, manifestPath, keyringPath, target, root, "", reporters...)
+}
+
+func stageDesktopWithTestCA(ctx context.Context, manifestPath, keyringPath, target, root, testCAPath string, reporters ...progressReporter) (map[string]any, error) {
 	verified, err := verifyReleaseFiles(manifestPath, keyringPath, target)
 	if err != nil {
 		return nil, err
@@ -82,11 +118,11 @@ func stageDesktop(ctx context.Context, manifestPath, keyringPath, target, root s
 	if len(desktop) != 1 {
 		return nil, errors.New("signed release ต้องมี desktop component หนึ่งรายการ")
 	}
-	return stageVerifiedComponents(ctx, verified, root, desktop, reporters...)
+	return stageVerifiedComponents(ctx, verified, root, desktop, testCAPath, reporters...)
 }
 
 func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root string, components []releaseComponent,
-	reporters ...progressReporter) (map[string]any, error) {
+	testCAPath string, reporters ...progressReporter) (map[string]any, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return nil, fmt.Errorf("สร้าง Managed Runtime root ไม่ได้: %w", err)
 	}
@@ -113,9 +149,28 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 		return nil, err
 	}
 
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if testCAPath != "" {
+		certificate, err := os.ReadFile(testCAPath)
+		if err != nil {
+			return nil, fmt.Errorf("อ่าน test release CA ไม่ได้: %w", err)
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(certificate) {
+			return nil, errors.New("test release CA ไม่ใช่ PEM certificate ที่ถูกต้อง")
+		}
+		tlsConfig.RootCAs = roots
+		for _, component := range components {
+			parsed, parseErr := url.Parse(component.URL)
+			if parseErr != nil || parsed.Scheme != "https" || !isLoopbackReleaseHost(parsed.Hostname()) {
+				return nil, fmt.Errorf("test release CA ใช้ได้เฉพาะ component URL บน loopback: %s", component.Name)
+			}
+		}
+	}
 	client := &http.Client{Transport: &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 20 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		TLSClientConfig:       tlsConfig,
 		TLSHandshakeTimeout:   20 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
 	}, CheckRedirect: func(request *http.Request, via []*http.Request) error {
@@ -157,6 +212,14 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 		"platformTarget":   state.PlatformTarget,
 		"releaseDirectory": releaseRoot,
 	}, nil
+}
+
+func isLoopbackReleaseHost(host string) bool {
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func downloadComponent(ctx context.Context, client *http.Client, component releaseComponent, destination string,

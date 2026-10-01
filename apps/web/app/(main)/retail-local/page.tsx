@@ -26,7 +26,7 @@ function downloadUrl(value: string | undefined): string | null {
   }
 }
 
-type PlatformKey = "windows" | "ubuntu" | "macos";
+type PlatformKey = "windows" | "ubuntu" | "macos-arm64" | "macos-x64";
 type DownloadAssetData = {
   id?: string;
   url: string;
@@ -42,8 +42,8 @@ type DownloadAssetData = {
 function mapPlatform(platform: string): PlatformKey {
   if (platform === "windows-x64") return "windows";
   if (platform === "ubuntu-x64") return "ubuntu";
-  if (platform === "macos-arm64") return "macos";
-  if (platform === "macos-x64") return "macos";
+  if (platform === "macos-arm64") return "macos-arm64";
+  if (platform === "macos-x64") return "macos-x64";
   throw new Error(`Unsupported Retail Local platform: ${platform}`);
 }
 
@@ -57,7 +57,8 @@ export default async function RetailLocalPage() {
   const releaseDownloads: Record<PlatformKey, Record<RetailLocalPackageType, DownloadAssetData | null>> = {
     windows: emptyDownloads(),
     ubuntu: emptyDownloads(),
-    macos: emptyDownloads(),
+    "macos-arm64": emptyDownloads(),
+    "macos-x64": emptyDownloads(),
   };
   for (const [platform, packages] of Object.entries(releases.latest)) {
     if (!packages) continue;
@@ -80,7 +81,9 @@ export default async function RetailLocalPage() {
   const fallbackDownloads = {
     windows: downloadUrl(process.env.RETAIL_LOCAL_WINDOWS_DOWNLOAD_URL),
     ubuntu: downloadUrl(process.env.RETAIL_LOCAL_UBUNTU_DOWNLOAD_URL),
-    macos: downloadUrl(process.env.RETAIL_LOCAL_MACOS_DOWNLOAD_URL),
+    macosArm64: downloadUrl(process.env.RETAIL_LOCAL_MACOS_ARM64_DOWNLOAD_URL)
+      ?? downloadUrl(process.env.RETAIL_LOCAL_MACOS_DOWNLOAD_URL),
+    macosX64: downloadUrl(process.env.RETAIL_LOCAL_MACOS_X64_DOWNLOAD_URL),
   };
 
   return (
@@ -94,9 +97,15 @@ export default async function RetailLocalPage() {
           ...releaseDownloads.ubuntu,
           server: releaseDownloads.ubuntu.server ?? (fallbackDownloads.ubuntu ? { url: fallbackDownloads.ubuntu } : null),
         },
-        macos: {
-          ...releaseDownloads.macos,
-          server: releaseDownloads.macos.server ?? (fallbackDownloads.macos ? { url: fallbackDownloads.macos } : null),
+        "macos-arm64": {
+          ...releaseDownloads["macos-arm64"],
+          server: releaseDownloads["macos-arm64"].server
+            ?? (fallbackDownloads.macosArm64 ? { url: fallbackDownloads.macosArm64 } : null),
+        },
+        "macos-x64": {
+          ...releaseDownloads["macos-x64"],
+          server: releaseDownloads["macos-x64"].server
+            ?? (fallbackDownloads.macosX64 ? { url: fallbackDownloads.macosX64 } : null),
         },
       }}
       archive={releases.archive.map((asset) => ({

@@ -371,13 +371,15 @@ Each platform has three independent package types:
 
 The package type describes delivery, not a new runtime boundary. A combined installer still installs
 the existing server and client components; POS Desktop never owns a database or alternate sales rules.
-The combined `server-pos` package is trial-locked distribution: it is stored with
-`access_level = trial`, omitted from anonymous public downloads, and fetched only through
-the standard Retail Local license/onboarding flow. That lock applies to installer distribution only
-and must never become a runtime lease for an installed shop.
-Trial onboarding uses two records together: the trial-locked `server-pos` release asset and a Retail
-Local license whose `customer_reference` names the customer/account the platform issued it to. After
-activation, signed evidence adds the actual tenant/POS references reported by the installed host.
+Download access and first-install activation are separate controls. A combined `server-pos` package
+may use `access_level = public` and appear on the anonymous download page, while the bootstrap still
+offers its configured one-time activation flow during first-run onboarding. Skipping activation or
+an activation exchange failure must remain visible to support but must not block setup or runtime. Use
+`access_level = trial` only when the installer itself must be delivered to a named recipient. Neither
+choice may become a runtime lease for an installed shop. Trial onboarding uses the release asset and
+a Retail Local license whose `customer_reference` names the customer/account the platform issued it
+to. After activation, signed evidence adds the actual tenant/POS references reported by the installed
+host.
 
 Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
 experimental `macos-arm64`/`macos-x64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,

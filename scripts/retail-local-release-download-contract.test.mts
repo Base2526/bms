@@ -7,8 +7,10 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 test("Retail Local releases distinguish combined, server, and POS packages", () => {
   const migration = read("db/migrations/10.20__bms_retail_local_release_package_types.sql");
   const trialLockMigration = read("db/migrations/10.27__bms_retail_local_release_trial_lock.sql");
+  const publicCombinedMigration = read("db/migrations/10.32__bms_retail_local_public_combined_installers.sql");
   const service = read("apps/web/lib/bms/retailLocalReleases.ts");
   const publicPage = read("apps/web/app/(main)/retail-local/RetailLocalPageClient.tsx");
+  const publicServerPage = read("apps/web/app/(main)/retail-local/page.tsx");
   const adminPage = read("apps/web/app/(admin)/admin/retail-local-releases/page.tsx");
   const uploadRoute = read("apps/web/pages/api/admin/retail-local/releases-upload.ts");
   const downloadRoute = read("apps/web/app/api/retail-local/download/[id]/route.ts");
@@ -18,12 +20,15 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(migration, /\(platform, package_type\)[\s\S]*WHERE is_latest/);
   assert.match(trialLockMigration, /access_level TEXT NOT NULL DEFAULT 'public'/);
   assert.match(trialLockMigration, /package_type = 'server-pos'[\s\S]*access_level = 'trial'/);
-  assert.match(trialLockMigration, /package_type <> 'server-pos' OR access_level = 'trial'/);
+  assert.match(publicCombinedMigration, /DROP CONSTRAINT IF EXISTS bms_retail_local_release_assets_server_pos_trial_lock_check/);
+  assert.match(publicCombinedMigration, /public assets appear on \/retail-local/);
 
   assert.match(service, /packageType === "pos" \? \["\.dmg"\] : \["\.pkg"\]/);
   assert.match(service, /WHERE platform = \$1 AND package_type = \$2/);
   assert.match(service, /access_level = 'public'/);
-  assert.match(service, /server-pos package must be trial locked/);
+  assert.match(service, /input\.accessLevel == null \? "public" : assertAccessLevel/);
+  assert.match(service, /access_level: row\.access_level \?\? "public"/);
+  assert.doesNotMatch(service, /server-pos package must be trial locked/);
   assert.match(downloadRoute, /authorizePlatformAdminRoute/);
   assert.match(downloadRoute, /includeTrialLocked: auth\.ok/);
   assert.match(uploadRoute, /parseRetailLocalReleaseUploadStream\(req, req\.headers\)/);
@@ -38,9 +43,20 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(adminPage, /notesHint/);
   assert.match(adminPage, /rollback\/restore/);
   assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
+  assert.match(adminPage, /uploadPackageType === "pos" \? "\.dmg" : "\.pkg"/);
+  assert.match(adminPage, /macOS Apple Silicon \(\$\{macUploadExtension\}\)/);
+  assert.match(adminPage, /accessLevel: "public"/);
+  assert.doesNotMatch(adminPage, /disabled=\{uploadPackageType === "server-pos"\}/);
   assert.match(publicPage, /releaseNotesLabel/);
   assert.match(publicPage, /directDownload\?\.releaseNotes/);
   assert.match(publicPage, /backup, downtime, and rollback/);
+  assert.match(publicServerPage, /"macos-arm64": emptyDownloads\(\)/);
+  assert.match(publicServerPage, /"macos-x64": emptyDownloads\(\)/);
+  assert.doesNotMatch(publicServerPage, /return "macos"/);
+  assert.match(publicPage, /macArchitectureTitle/);
+  assert.match(publicPage, /downloads\[downloadPlatform\]/);
+  assert.match(publicPage, /macOS Apple Silicon \(arm64\)/);
+  assert.match(publicPage, /macOS Intel \(x64\)/);
 });
 
 test("Retail Local installer upload streams to storage with bounded memory", () => {
@@ -64,6 +80,7 @@ test("Retail Local installer upload streams to storage with bounded memory", () 
   assert.doesNotMatch(uploadRoute, /NextRequest|Readable\.fromWeb|request\.formData/);
   assert.match(nodeAuth, /verifyTokenString\(token\)/);
   assert.match(nodeAuth, /is_platform_admin/);
+  assert.doesNotMatch(nodeAuth, /^import ["']server-only["'];?$/m);
   assert.match(middleware, /\(\?!api\/admin\/retail-local\/releases-upload\|/);
   assert.match(upload, /Busboy\(/);
   assert.match(upload, /parseRetailLocalReleaseUploadStream/);

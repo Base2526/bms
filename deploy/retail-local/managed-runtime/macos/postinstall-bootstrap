@@ -16,7 +16,8 @@ chmod 0755 "$root/bootstrap/bms-runtime-agent" "$root/control/bms-retail-local" 
 # runtime state, credentials or shop data permissions.
 chmod 0644 "$root/bootstrap/trusted-release-keys.json" \
   "$root/bootstrap/manifest-url" "$root/bootstrap/activation-url" \
-  "$root/bootstrap/BOOTSTRAP_VERSION" "$root/bootstrap/PLATFORM_TARGET"
+  "$root/bootstrap/BOOTSTRAP_VERSION" "$root/bootstrap/PLATFORM_TARGET" \
+  "$root/bootstrap/PACKAGE_TYPE"
 if [ -f "$root/bootstrap/test-release-ca.pem" ]; then
   chmod 0644 "$root/bootstrap/test-release-ca.pem"
 fi

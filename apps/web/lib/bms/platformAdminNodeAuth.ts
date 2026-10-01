@@ -1,9 +1,14 @@
-import "server-only";
-
 import { parse as parseCookieHeader } from "cookie";
 
 import { ADMIN_COOKIE, verifyTokenString } from "@/lib/auth/token";
 import { query } from "@/lib/db";
+
+// Do not add `import "server-only"` here. This helper is consumed by a Pages
+// API route so it can authenticate the raw IncomingMessage without buffering a
+// multi-gigabyte upload. Next's `server-only` marker is supported by the App
+// Router compiler, but its runtime package deliberately throws when bundled by
+// the legacy Pages API compiler. The Node-only filename and imports keep this
+// module out of client code while allowing that streaming route to start.
 
 export type PlatformAdminNodeAuth =
   | { ok: true; adminId: string | number }

@@ -88,14 +88,15 @@ are different conversations and must never be collapsed into one enforcement swi
 
 The full trial handoff is:
 
-1. Publish the `server-pos` installer as a trial-locked release asset. It does not appear on the
-   anonymous `/retail-local` download list; it is distributed through the standard Retail Local
-   license/onboarding flow.
+1. Publish the `server-pos` installer as either a public release asset for anonymous download or an
+   onboarding-only asset delivered to a named recipient. Download access does not replace activation.
 2. Issue a Retail Local license with a required `customerReference` and `licenseType: "TRIAL"`.
    The first activation code is returned once and expires after seven days.
-3. Give the customer the trial-locked installer and the one-time activation code through the normal
-   commercial onboarding channel.
-4. The installer redeems the activation code, receives an ingestion token, then submits signed
+3. Give the customer the installer URL and the one-time activation code through the normal commercial
+   onboarding channel. A publicly downloadable installer offers this registration during first-run,
+   but a missing, expired, or unreachable activation code is reported and may be retried later; it
+   does not block installation or runtime.
+4. When a valid code is supplied, the installer redeems it, receives an ingestion token, then submits signed
    evidence. The license detail page shows the originally issued `customer_reference` beside the
    reported `tenant_reference` and `pos_device_reference`, so staff can see who the license was
    issued to and which shop/device actually activated it.
@@ -121,7 +122,7 @@ existing macOS POS Desktop `.dmg` is only a client and must never be published a
 The bootstrap product is `server-pos`: POS is a signed downloaded component, not bytes embedded in
 the `.pkg`. The old full-offline builder still exposes `--package-type server` and `server-pos` only
 for approved recovery installs. The normal `server-pos`
-bootstrap is trial-locked in the release control plane: it is not an anonymous public download and is
+bootstrap may be public or onboarding-only in the release control plane and is
 distributed through the standard Retail Local trial/paid onboarding flow. After first-run provisioning,
 the combined package passes the one-time `POS-01` credential through a mode-`0600`, short-lived
 handoff that Desktop consumes into Keychain before making a network request. Later launches need only

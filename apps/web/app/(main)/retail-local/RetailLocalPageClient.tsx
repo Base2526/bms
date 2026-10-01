@@ -28,6 +28,8 @@ import styles from "./page.module.css";
 const { Title, Paragraph, Text } = Typography;
 
 type Platform = "windows" | "ubuntu" | "macos";
+type MacArchitecture = "arm64" | "x64";
+type DownloadPlatform = "windows" | "ubuntu" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
 
 type DownloadAsset = {
@@ -44,7 +46,7 @@ type DownloadAsset = {
 
 type ArchiveAsset = {
   id: string;
-  platform: Platform;
+  platform: DownloadPlatform;
   packageType: PackageType;
   version: string;
   filename: string;
@@ -93,6 +95,9 @@ type PageContent = {
   currentPilot: string;
   choosePackageTitle: string;
   choosePackageDescription: string;
+  macArchitectureTitle: string;
+  macArchitectureDescription: string;
+  macArchitectures: Record<MacArchitecture, { name: string; description: string }>;
   packageTypes: Record<PackageType, { name: string; description: string }>;
   downloadNow: Record<PackageType, string>;
   unavailable: Record<PackageType, string>;
@@ -104,11 +109,11 @@ type PageContent = {
   checksumLabel: string;
   minOsLabel: string;
   releaseNotesLabel: string;
-  fallbackFiles: Record<Platform, Record<PackageType, string>>;
+  fallbackFiles: Record<DownloadPlatform, Record<PackageType, string>>;
   windowsNote: string;
   ubuntuNote: string;
-  macosNote: string;
-  posNotes: Record<Platform, string>;
+  macosNotes: Record<MacArchitecture, string>;
+  posNotes: Record<DownloadPlatform, string>;
   warningTitle: string;
   warningDescription: string;
   archiveTitle: string;
@@ -200,8 +205,14 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesDescription: "ร้านที่ใช้เครื่องเดียวควรเลือก Server + POS ส่วนเครื่องแม่ข่ายและเครื่องแคชเชียร์เพิ่มเติมสามารถติดตั้งแยกกันได้",
     installer: "ไฟล์ติดตั้ง",
     currentPilot: "Technical pilot",
-    choosePackageTitle: "เครื่องนี้ใช้ทำอะไร?",
-    choosePackageDescription: "เลือกหนึ่งแบบต่อเครื่อง ระบบจะแสดงไฟล์ล่าสุดของ OS ที่เลือก",
+    choosePackageTitle: "เครื่องนี้ใช้ระบบปฏิบัติการอะไร?",
+    choosePackageDescription: "เลือก OS ก่อน แล้วเลือกบทบาท Server + POS, Server only หรือ POS Desktop จากการ์ดด้านล่าง",
+    macArchitectureTitle: "Mac เครื่องนี้ใช้ชิปอะไร?",
+    macArchitectureDescription: "เลือกให้ตรงกับเครื่องก่อนดาวน์โหลด ไฟล์ Apple Silicon และ Intel ใช้แทนกันไม่ได้",
+    macArchitectures: {
+      arm64: { name: "Apple Silicon", description: "Mac ชิป M1, M2, M3 หรือ M4 · arm64" },
+      x64: { name: "Intel Mac", description: "Mac ที่ใช้หน่วยประมวลผล Intel · x64" },
+    },
     packageTypes: {
       "server-pos": { name: "Server + POS Desktop", description: "แนะนำสำหรับร้านทั่วไป เปิด POS โปรแกรมเดียว ระบบจะเริ่ม Local Server ให้อัตโนมัติ" },
       server: { name: "Server only", description: "สำหรับเครื่องแม่ข่ายที่เก็บข้อมูลและรันบริการของร้าน โดยไม่ใช้เป็นจุดขาย" },
@@ -220,15 +231,20 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
-      macos: { "server-pos": "BMS-Retail-Local-Full-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-<version>-arm64.dmg" },
+      "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
+      "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
-    macosNote: "macOS 15 · Apple Silicon / Intel · Experimental",
+    macosNotes: {
+      arm64: "macOS 15 · Apple Silicon arm64 · Experimental",
+      x64: "macOS 15 · Intel x64 · Experimental",
+    },
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
       ubuntu: "Ubuntu x64 · ต้องมี Secret Service หรือ KWallet",
-      macos: "macOS 12 ขึ้นไป · Apple Silicon / Intel · Keychain",
+      "macos-arm64": "macOS 12 ขึ้นไป · Apple Silicon arm64 · Keychain",
+      "macos-x64": "macOS 12 ขึ้นไป · Intel x64 · Keychain",
     },
     warningTitle: "สถานะปัจจุบัน: Technical pilot",
     warningDescription: "ยังไม่ใช่ General Availability และยังไม่ควรใช้แทน production release จนกว่าจะผ่าน code signing, updater/rollback, hardware certification และ recovery drills ตาม release gate",
@@ -316,8 +332,14 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesDescription: "Most single-computer stores should choose Server + POS. Dedicated servers and additional cashier devices can install each component separately.",
     installer: "Installer",
     currentPilot: "Technical pilot",
-    choosePackageTitle: "What will this machine do?",
-    choosePackageDescription: "Choose one role per machine. The latest file for the selected OS is shown below.",
+    choosePackageTitle: "Which operating system does this machine use?",
+    choosePackageDescription: "Choose the OS first, then select Server + POS, Server only, or POS Desktop from the cards below.",
+    macArchitectureTitle: "Which chip does this Mac use?",
+    macArchitectureDescription: "Choose the exact architecture before downloading. Apple Silicon and Intel installers are not interchangeable.",
+    macArchitectures: {
+      arm64: { name: "Apple Silicon", description: "Mac with an M1, M2, M3, or M4 chip · arm64" },
+      x64: { name: "Intel Mac", description: "Mac with an Intel processor · x64" },
+    },
     packageTypes: {
       "server-pos": { name: "Server + POS Desktop", description: "Recommended for most stores. Open POS and it starts the Local Server automatically." },
       server: { name: "Server only", description: "For a dedicated host that stores data and runs shop services without acting as a checkout." },
@@ -336,15 +358,20 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
-      macos: { "server-pos": "BMS-Retail-Local-Full-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-POS-<version>-arm64.dmg" },
+      "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
+      "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
     },
     windowsNote: "Windows 11 x64 · WSL2 Managed Runtime",
     ubuntuNote: "Ubuntu 24.04 LTS x64 · systemd / Moby",
-    macosNote: "macOS 15 · Apple Silicon / Intel · Experimental",
+    macosNotes: {
+      arm64: "macOS 15 · Apple Silicon arm64 · Experimental",
+      x64: "macOS 15 · Intel x64 · Experimental",
+    },
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
       ubuntu: "Ubuntu x64 · Secret Service or KWallet required",
-      macos: "macOS 12 or newer · Apple Silicon / Intel · Keychain",
+      "macos-arm64": "macOS 12 or newer · Apple Silicon arm64 · Keychain",
+      "macos-x64": "macOS 12 or newer · Intel x64 · Keychain",
     },
     warningTitle: "Current status: Technical pilot",
     warningDescription: "This is not General Availability. It should not be presented as a production release until code signing, updater/rollback, hardware certification and recovery drills clear the release gates.",
@@ -369,13 +396,17 @@ export default function RetailLocalPageClient({
   downloads,
   archive,
 }: {
-  downloads: Record<Platform, Record<PackageType, DownloadAsset | null>>;
+  downloads: Record<DownloadPlatform, Record<PackageType, DownloadAsset | null>>;
   archive: ArchiveAsset[];
 }) {
   const { lang } = useI18n();
   const content = resolveBilingual(CONTENT, lang);
   const [platform, setPlatform] = useState<Platform>("windows");
+  const [macArchitecture, setMacArchitecture] = useState<MacArchitecture>("arm64");
   const selected = content.os[platform];
+  const downloadPlatform: DownloadPlatform = platform === "macos"
+    ? (macArchitecture === "arm64" ? "macos-arm64" : "macos-x64")
+    : platform;
 
   const platformOptions = useMemo(
     () => [
@@ -396,7 +427,13 @@ export default function RetailLocalPageClient({
   }> = archive.length
     ? archive.map((item) => ({
       version: item.version,
-      platform: item.platform === "windows" ? "Windows x64" : item.platform === "ubuntu" ? "Ubuntu x64" : "macOS Apple Silicon",
+      platform: item.platform === "windows"
+        ? "Windows x64"
+        : item.platform === "ubuntu"
+          ? "Ubuntu x64"
+          : item.platform === "macos-arm64"
+            ? "macOS Apple Silicon (arm64)"
+            : "macOS Intel (x64)",
       packageType: content.packageTypes[item.packageType].name,
       status: item.status,
       compatibility: item.compatibility,
@@ -547,14 +584,40 @@ export default function RetailLocalPageClient({
           />
         </div>
 
+        {platform === "macos" ? (
+          <div className={styles.macArchitectureChooser}>
+            <div>
+              <strong>{content.macArchitectureTitle}</strong>
+              <small>{content.macArchitectureDescription}</small>
+            </div>
+            <div className={styles.macArchitectureControl}>
+              <Segmented
+                block
+                aria-label={content.macArchitectureTitle}
+                options={([
+                  { value: "arm64", label: `${content.macArchitectures.arm64.name} · arm64` },
+                  { value: "x64", label: `${content.macArchitectures.x64.name} · x64` },
+                ] as Array<{ value: MacArchitecture; label: string }>)}
+                value={macArchitecture}
+                onChange={(value) => setMacArchitecture(value as MacArchitecture)}
+              />
+              <small>{content.macArchitectures[macArchitecture].description}</small>
+            </div>
+          </div>
+        ) : null}
+
         <div className={styles.downloadGrid}>
           {(["server-pos", "server", "pos"] as PackageType[]).map((packageType) => {
             const isRecommended = packageType === "server-pos";
-            const directDownload = downloads[platform][packageType];
-            const filename = directDownload?.filename || content.fallbackFiles[platform][packageType];
+            const directDownload = downloads[downloadPlatform][packageType];
+            const filename = directDownload?.filename || content.fallbackFiles[downloadPlatform][packageType];
             const platformNote = packageType === "pos"
-              ? content.posNotes[platform]
-              : platform === "windows" ? content.windowsNote : platform === "ubuntu" ? content.ubuntuNote : content.macosNote;
+              ? content.posNotes[downloadPlatform]
+              : platform === "windows"
+                ? content.windowsNote
+                : platform === "ubuntu"
+                  ? content.ubuntuNote
+                  : content.macosNotes[macArchitecture];
             const role = content.packageTypes[packageType];
             return (
               <article className={`${styles.downloadCard} ${isRecommended ? styles.downloadCardPrimary : ""}`} key={packageType}>

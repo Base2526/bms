@@ -6,11 +6,13 @@ usage() {
   cat >&2 <<'EOF'
 usage: build-bootstrap-pkg.sh --version VERSION --architecture arm64|x64 \
   --manifest-url HTTPS_URL --keyring FILE [--activation-url HTTPS_URL] \
+  [--package-type server-pos|server] \
   [--output-dir DIR] [--allow-test-endpoints] [--test-ca FILE] [--force] [--skip-tests]
 
 Builds the small macOS Retail Local online bootstrap. It contains only the native agent,
-public release keyring and installer controls. Lima, Ubuntu, Moby, service images and POS Desktop
-are downloaded from the signed release manifest during first-run setup.
+public release keyring and installer controls. Lima, Ubuntu, Moby and service images are downloaded
+from the signed release manifest during first-run setup. Server + POS also downloads POS Desktop;
+Server-only does not.
 EOF
   exit 2
 }
@@ -20,6 +22,7 @@ architecture=
 manifest_url=
 activation_url=
 keyring=
+package_type=server-pos
 output_dir=artifacts/retail-local
 allow_test_endpoints=false
 test_ca=
@@ -32,6 +35,7 @@ while (($#)); do
     --manifest-url) manifest_url=${2:-}; shift 2 ;;
     --activation-url) activation_url=${2:-}; shift 2 ;;
     --keyring) keyring=${2:-}; shift 2 ;;
+    --package-type) package_type=${2:-}; shift 2 ;;
     --output-dir) output_dir=${2:-}; shift 2 ;;
     --allow-test-endpoints) allow_test_endpoints=true; shift ;;
     --test-ca) test_ca=${2:-}; shift 2 ;;
@@ -43,6 +47,7 @@ done
 
 [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] || usage
 [[ $architecture == arm64 || $architecture == x64 ]] || usage
+[[ $package_type == server-pos || $package_type == server ]] || usage
 [[ -f $keyring ]] || usage
 
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-} != *'@'* ]]; }
@@ -102,7 +107,11 @@ case "$architecture" in
 esac
 qualifier=
 [[ $test_build != true ]] || qualifier=-SMOKE-ONLY
-package_name="BMS-Retail-Local-Server-POS-$version-$architecture$qualifier.pkg"
+case "$package_type" in
+  server-pos) package_label=Server-POS ;;
+  server) package_label=Server ;;
+esac
+package_name="BMS-Retail-Local-$package_label-$version-$architecture$qualifier.pkg"
 package_path="$output_dir/$package_name"
 for candidate in "$package_path" "$package_path.sha256" "$package_path.json"; do
   [[ ! -e $candidate || $force == true ]] || { echo "artifact มีอยู่แล้ว: $candidate" >&2; exit 1; }
@@ -133,6 +142,7 @@ printf '%s\n' "$manifest_url" >"$bootstrap_root/manifest-url"
 printf '%s\n' "$activation_url" >"$bootstrap_root/activation-url"
 printf '%s\n' "$version" >"$bootstrap_root/BOOTSTRAP_VERSION"
 printf '%s\n' "macos-15-$architecture" >"$bootstrap_root/PLATFORM_TARGET"
+printf '%s\n' "$package_type" >"$bootstrap_root/PACKAGE_TYPE"
 
 cp "$macos_root/lima.yaml.template" "$control_root/lima.yaml.template"
 cp "$macos_root/com.bms.retail-local.plist.template" "$control_root/com.bms.retail-local.plist.template"
@@ -145,7 +155,9 @@ cp "$macos_root/bms-retail-local-app" "$app_contents/MacOS/BMS Retail Local"
 cp "$macos_root/bms-retail-local-setup.command" "$app_contents/Resources/BMS Retail Local Setup.command"
 cp "$macos_root/BMS Retail Local Uninstall.command" "$package_root/Applications/BMS Retail Local Uninstall.command"
 cp "$macos_root/BMSRetailLocal.icns" "$app_contents/Resources/BMSRetailLocal.icns"
-cp "$macos_root/README.txt" "$install_root/README.txt"
+readme_path="$macos_root/README.txt"
+[[ $package_type != server ]] || readme_path="$macos_root/README-Server.txt"
+cp "$readme_path" "$install_root/README.txt"
 cp "$macos_root/THIRD_PARTY_NOTICES.txt" "$install_root/THIRD_PARTY_NOTICES.txt"
 
 pkg_version=$(printf '%s' "$version" | awk -F '[^0-9]+' '{out=""; for(i=1;i<=NF;i++) if($i!="") out=out (out==""?"":".") $i; print out}')
@@ -175,7 +187,7 @@ chmod 0755 "$bootstrap_root/bms-runtime-agent" "$control_root/bms-retail-local" 
 # when the package builder's source files were created with a restrictive umask (for example 0600).
 chmod 0644 "$bootstrap_root/trusted-release-keys.json" "$bootstrap_root/manifest-url" \
   "$bootstrap_root/activation-url" "$bootstrap_root/BOOTSTRAP_VERSION" \
-  "$bootstrap_root/PLATFORM_TARGET"
+  "$bootstrap_root/PLATFORM_TARGET" "$bootstrap_root/PACKAGE_TYPE"
 if [[ -f $bootstrap_root/test-release-ca.pem ]]; then
   chmod 0644 "$bootstrap_root/test-release-ca.pem"
 fi
@@ -207,7 +219,7 @@ pkgbuild --root "$package_root" --scripts "$scripts" --component-plist "$compone
 cat >"$work/distribution.xml" <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-  <title>BMS Retail Local Online Setup $version</title>
+  <title>BMS Retail Local $package_label Online Setup $version</title>
   <organization>com.base2526.bms</organization>
   <domains enable_localSystem="true" enable_currentUserHome="false" enable_anywhere="false"/>
   <options customize="never" require-scripts="true" hostArchitectures="$installer_host_arch"/>
@@ -219,7 +231,7 @@ cat >"$work/distribution.xml" <<EOF
   <pkg-ref id="com.base2526.bms.retail-local" version="$pkg_version">BMSRetailLocal.component.pkg</pkg-ref>
 </installer-gui-script>
 EOF
-cp "$macos_root/README.txt" "$work/README.txt"
+cp "$readme_path" "$work/README.txt"
 cp "$macos_root/THIRD_PARTY_NOTICES.txt" "$work/THIRD_PARTY_NOTICES.txt"
 productbuild --distribution "$work/distribution.xml" --resources "$work" \
   --package-path "$work" "$package_path" >/dev/null
@@ -234,7 +246,7 @@ embedded_test_ca=false
 printf '%s  %s\n' "$sha256" "$package_name" >"$package_path.sha256"
 source_commit=$(git -C "$repo_root" rev-parse HEAD)
 cat >"$package_path.json" <<EOF
-{"artifact":"$package_path","version":"$version","sourceCommit":"$source_commit","platform":"macos-$architecture","architecture":"$architecture","packageType":"server-pos","distribution":"online-bootstrap","testBuild":$test_build,"embeddedTestCa":$embedded_test_ca,"manifestUri":"$manifest_url","sizeBytes":$size,"sha256":"$sha256","signed":false,"notarized":false,"dockerDesktopRequired":false,"firstInstallInternetRequired":true}
+{"artifact":"$package_path","version":"$version","sourceCommit":"$source_commit","platform":"macos-$architecture","architecture":"$architecture","packageType":"$package_type","distribution":"online-bootstrap","testBuild":$test_build,"embeddedTestCa":$embedded_test_ca,"manifestUri":"$manifest_url","sizeBytes":$size,"sha256":"$sha256","signed":false,"notarized":false,"dockerDesktopRequired":false,"firstInstallInternetRequired":true}
 EOF
 
 build_complete=true
