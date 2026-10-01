@@ -254,3 +254,121 @@ uninstall_runtime
   assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'keep secrets');
   assert.ok(existsSync(join(root, 'vm/instance')));
 });
+
+test('Windows atomic metadata replaces torn pending files and preserves the old file on failure', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const writer = source.match(/function Write-Utf8NoBom\([\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(writer);
+  const harness = join(root, 'atomic.ps1');
+  writeFileSync(harness, `param($Root)
+$ErrorActionPreference='Stop'
+${writer}
+$path=Join-Path $Root 'installation.json'
+[IO.File]::WriteAllText("$path.pending", 'torn')
+Write-Utf8NoBom $path 'original'
+$locked=[IO.File]::Open($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::None)
+$failed=$false
+try { Write-Utf8NoBom $path 'new-value' } catch { $failed=$true } finally { $locked.Dispose() }
+if (-not $failed -or [IO.File]::ReadAllText($path) -ne 'original') { throw 'Previous receipt was lost' }
+Write-Utf8NoBom $path 'new-value'
+if ([IO.File]::ReadAllText($path) -ne 'new-value' -or (Test-Path "$path.pending")) { throw 'Retry failed' }
+`);
+  const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', harness, root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+});
+
+test('Windows retries unregistered WSL imports without deleting an orphaned disk', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const block = source.match(/\$installedDistroResult = Invoke-WslCommand[\s\S]*?(?=\$taskName =)/)?.[0];
+  assert.ok(block);
+  mkdirSync(join(root, 'wsl'));
+  writeFileSync(join(root, 'wsl/ext4.vhdx'), 'preserve orphaned disk');
+  const harness = join(root, 'import.ps1');
+  writeFileSync(harness, '\uFEFF' + `param($InstallRoot)
+$ErrorActionPreference='Stop'
+$distroName='BMSRuntime'; $runtime=@{path='verified-runtime.artifact'}
+function Invoke-WslCommand {
+  param($Arguments, [switch]$Quiet)
+  if ($Arguments[0] -eq '--list') { return @{ExitCode=0; Output=@()} }
+  [IO.File]::WriteAllText((Join-Path $Arguments[2] 'partial.vhdx'), 'partial import')
+  return @{ExitCode=1; Output=@('simulated interruption')}
+}
+foreach ($attempt in 1..2) {
+  try { & { ${block} }; throw 'Expected import failure' }
+  catch { if ($_.Exception.Message -notmatch 'simulated interruption') { throw } }
+}
+if (@(Get-ChildItem $InstallRoot -Directory -Filter 'wsl-import-*').Count -ne 2) { throw 'Retry reused a partial import directory' }
+`);
+  const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', harness, root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(readFileSync(join(root, 'wsl/ext4.vhdx'), 'utf8'), 'preserve orphaned disk');
+});
+
+test('Linux repeat setup recognizes a completed shop without provisioning it again', {
+  skip: process.platform !== 'linux',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh');
+  const block = source.match(/if \[\[ -f \$RUNTIME_ROOT\/installation.json \]\]; then[\s\S]*?\nfi/)?.[0];
+  assert.ok(block);
+  const receipt = JSON.stringify({version: '1.0.0', tenantId: 'shop', posDeviceId: 'register'});
+  writeFileSync(join(root, 'installation.json'), receipt);
+  const result = run('/bin/bash', ['-c', `set -euo pipefail
+RUNTIME_ROOT=$1
+die() { echo "$*" >&2; exit 1; }
+systemctl() { echo "service:$*"; }
+bms-localctl() { echo "health:$*"; }
+${block}
+echo 'must-not-reprovision'
+`, 'test', root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /health:doctor/);
+  assert.doesNotMatch(result.stdout, /must-not-reprovision/);
+  assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), receipt);
+});
+
+test('macOS resumes the final launch step after a receipt has already been written', {
+  skip: process.platform !== 'darwin',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local');
+  const setup = source.match(/setup_runtime\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(setup);
+  writeFileSync(join(root, 'installation.json'), '{}');
+  const result = run('/bin/bash', ['-c', `set -euo pipefail
+RECEIPT="$1/installation.json"
+require_bootstrap() { :; }
+ensure_runtime() { echo resumed-runtime; }
+wait_for_guest_doctor() { echo checked-health; }
+guest() { return 0; }
+provision_shop() { echo reused-checkpoint; }
+launch_pos_desktop() { echo opened-pos; }
+note() { :; }
+${setup}
+setup_runtime
+`, 'test', root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /resumed-runtime[\s\S]*checked-health[\s\S]*reused-checkpoint[\s\S]*opened-pos/);
+});
+
+test('macOS does not use null or plutil diagnostics as a recovered device token', {
+  skip: process.platform !== 'darwin',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local');
+  const assignment = source.match(/    PROVISION_DEVICE_TOKEN=\$\([^\n]+\n    \[\[ \$PROVISION_DEVICE_TOKEN[^\n]+/)?.[0];
+  assert.ok(assignment);
+  for (const value of [{}, {deviceToken: null}, {deviceToken: 'pos_verified'}]) {
+    const path = join(root, 'checkpoint.json');
+    writeFileSync(path, JSON.stringify(value));
+    const result = run('/bin/bash', ['-c', `set -euo pipefail\ncheckpoint_file=$1\n${assignment}\nprintf '%s' "$PROVISION_DEVICE_TOKEN"`, 'test', path]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stdout, value.deviceToken || '');
+  }
+});

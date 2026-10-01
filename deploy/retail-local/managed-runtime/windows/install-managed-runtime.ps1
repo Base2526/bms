@@ -58,7 +58,18 @@ function New-HexSecret([int]$Bytes) {
 }
 
 function Write-Utf8NoBom([string]$Path, [string]$Contents) {
-  [IO.File]::WriteAllText($Path, $Contents, [Text.UTF8Encoding]::new($false))
+  $temporary = "$Path.pending"
+  $bytes = [Text.UTF8Encoding]::new($false).GetBytes($Contents)
+  $stream = [IO.File]::Open($temporary, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::None)
+  try {
+    $stream.Write($bytes, 0, $bytes.Length)
+    $stream.Flush($true)
+  } finally { $stream.Dispose() }
+  if ([IO.File]::Exists($Path)) {
+    [IO.File]::Replace($temporary, $Path, [NullString]::Value)
+  } else {
+    [IO.File]::Move($temporary, $Path)
+  }
 }
 
 function Read-Utf8Text([string]$Path) {
@@ -557,9 +568,11 @@ $archetypeCatalog = Get-ShopArchetypeCatalog $archetypeArtifact.path
 Write-Step 4 "ติดตั้ง private WSL runtime"
 $runtime = Get-ArtifactPath $release "runtime"
 $installedDistroResult = Invoke-WslCommand -Arguments @("--list", "--quiet") -Quiet
+if ($installedDistroResult.ExitCode -ne 0) { throw "อ่านรายชื่อ WSL ไม่สำเร็จ กรุณา restart Windows แล้วเปิด Setup อีกครั้ง; ระบบจะไม่ลบ runtime เดิม" }
 $installedDistros = @($installedDistroResult.Output | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
 if ($distroName -notin $installedDistros) {
-  $wslRoot = Join-Path $InstallRoot "wsl"
+  # A cancelled import can leave an unregistered VHD. Preserve it and use a fresh directory.
+  $wslRoot = Join-Path $InstallRoot ("wsl-import-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $wslRoot | Out-Null
   Write-Host "  กำลังแตก private runtime ลง WSL2 อาจใช้เวลา 1-3 นาที กรุณาอย่าปิดหน้าต่างนี้..."
   $wslImport = Invoke-WslCommand -Arguments @("--import", $distroName, $wslRoot, $runtime.path, "--version", "2")
@@ -846,10 +859,12 @@ if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
   sampleMode = $sampleMode
   sampleStatus = $sampleStatus
   licenseCode = if ([string]::IsNullOrWhiteSpace($LicenseId)) { $null } else { $LicenseId }
-} | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom $installationReceipt $_ }
-& $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $installationReceipt `
+} | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom "$installationReceipt.prepared" $_ }
+& $installedAgent runtime-write -engine windows-wsl -distro $distroName -source "$installationReceipt.prepared" `
   -destination "$runtimeData/installation.json" -mode "0600"
 if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
+Write-Utf8NoBom $installationReceipt (Read-Utf8Text "$installationReceipt.prepared")
+Remove-Item -LiteralPath "$installationReceipt.prepared" -Force
 [void](Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "rm", "-f", $provisionCheckpoint) -Quiet)
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not

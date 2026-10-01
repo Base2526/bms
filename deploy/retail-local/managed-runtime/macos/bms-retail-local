@@ -464,7 +464,7 @@ install_release() {
     if [ ! -f "$root/.env" ]; then
       umask 077
       random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d " \\n"; }
-      cat >"$root/.env" <<EOF
+      cat >"$root/.env.pending" <<EOF
 POSTGRES_DB=bms_local
 POSTGRES_PASSWORD=$(random_hex 24)
 REDIS_PASSWORD=$(random_hex 24)
@@ -480,6 +480,9 @@ BMS_WS_IMAGE_REF=$2
 BMS_POSTGRES_IMAGE_REF=$3
 BMS_REDIS_IMAGE_REF=$4
 EOF
+      sync -f "$root/.env.pending"
+      mv -f "$root/.env.pending" "$root/.env"
+      sync -f "$root"
     fi
   ' bms-runtime "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"
 }
@@ -613,7 +616,8 @@ provision_shop() {
     checkpoint_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
     umask 077
     guest sudo cat /var/lib/bms-retail-local/provision-result.json >"$checkpoint_file" 2>/dev/null || true
-    PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$checkpoint_file" 2>/dev/null || true)
+    PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$checkpoint_file" 2>/dev/null) || PROVISION_DEVICE_TOKEN=''
+    [[ $PROVISION_DEVICE_TOKEN == pos_* ]] || PROVISION_DEVICE_TOKEN=''
     PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$checkpoint_file" 2>/dev/null || true)
     SAMPLE_MODE=$(/usr/bin/plutil -extract sampleData.mode raw -o - "$checkpoint_file" 2>/dev/null || printf 'NONE')
     BUSINESS_ARCHETYPE=$(/usr/bin/plutil -extract businessArchetype raw -o - "$checkpoint_file" 2>/dev/null || true)
@@ -648,8 +652,12 @@ result="$root/.provision-result.$$"
 trap 'rm -f "$result"' EXIT HUP INT TERM
 cd "$root"
 docker compose --env-file .env -f compose.yml --profile setup run --rm provision >"$result"
-grep -E '^\{"status"' "$result" | tail -n 1 >"$root/provision-result.json"
-chmod 0600 "$root/provision-result.json"
+grep -E '^\{"status"' "$result" | tail -n 1 >"$root/provision-result.json.pending"
+test -s "$root/provision-result.json.pending"
+chmod 0600 "$root/provision-result.json.pending"
+sync -f "$root/provision-result.json.pending"
+mv -f "$root/provision-result.json.pending" "$root/provision-result.json"
+sync -f "$root"
 install -m 0600 /dev/null "$root/provisioned"
 cat "$root/provision-result.json"
 EOF
@@ -657,7 +665,8 @@ EOF
   result_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
   umask 077
   printf '%s\n' "$provision_result" | grep -E '^\{"status"' | tail -n 1 >"$result_file"
-  PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null || true)
+  PROVISION_DEVICE_TOKEN=$(/usr/bin/plutil -extract deviceToken raw -o - "$result_file" 2>/dev/null) || PROVISION_DEVICE_TOKEN=''
+  [[ $PROVISION_DEVICE_TOKEN == pos_* ]] || PROVISION_DEVICE_TOKEN=''
   PROVISION_SAMPLE_STATUS=$(/usr/bin/plutil -extract sampleData.status raw -o - "$result_file" 2>/dev/null || true)
   local reported_sample_mode reported_archetype
   reported_sample_mode=$(/usr/bin/plutil -extract sampleData.mode raw -o - "$result_file" 2>/dev/null || true)
@@ -735,6 +744,7 @@ write_receipt() {
   fi
   now=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
   umask 077
+  rm -f -- "$RECEIPT.tmp"
   /usr/bin/plutil -create xml1 "$RECEIPT.tmp"
   /usr/bin/plutil -insert product -string 'BMS Retail Local' "$RECEIPT.tmp"
   /usr/bin/plutil -insert version -string "$version" "$RECEIPT.tmp"
@@ -850,7 +860,18 @@ wait_for_guest_doctor() {
 
 setup_runtime() {
   require_bootstrap
-  [[ ! -f $RECEIPT ]] || die "ติดตั้งเรียบร้อยแล้ว ใช้คำสั่ง status หรือ doctor แทน"
+  if [[ -f $RECEIPT ]]; then
+    # The receipt precedes launch-agent registration; a reboot may interrupt that last step.
+    ensure_runtime
+    wait_for_guest_doctor
+    if guest sudo test -f /var/lib/bms-retail-local/provision-result.json; then
+      provision_shop
+    fi
+    launch_pos_desktop
+    guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
+    note "ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้"
+    return
+  fi
   require_matching_mac_architecture
   mkdir -p "$STATE_ROOT"
   chmod 0700 "$STATE_ROOT"

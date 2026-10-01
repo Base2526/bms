@@ -3,9 +3,44 @@ package main
 import (
 	"bytes"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+func TestRuntimeWriteInterruptedPipePreservesSecretsAndRetries(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("runtime shell executes in the Linux host or private guest")
+	}
+	path := filepath.Join(t.TempDir(), ".env")
+	old := []byte("original secret file")
+	next := []byte("replacement secret file")
+	if err := os.WriteFile(path, old, 0600); err != nil {
+		t.Fatal(err)
+	}
+	script := runtimeWriteScript(path, "0600", hashBytes(next), int64(len(next)))
+	for _, body := range [][]byte{next[:5], bytes.Repeat([]byte("x"), len(next)), next} {
+		command := exec.Command("sh", "-c", script)
+		command.Stdin = bytes.NewReader(body)
+		output, err := command.CombinedOutput()
+		valid := bytes.Equal(body, next)
+		if (err == nil) != valid {
+			t.Fatalf("unexpected write result: %v %s", err, output)
+		}
+		got, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		expected := old
+		if valid {
+			expected = next
+		}
+		if !bytes.Equal(got, expected) {
+			t.Fatal("interrupted transfer replaced the live secret file")
+		}
+	}
+}
 
 func TestRuntimeWriteRejectsPathOutsidePrivateRoot(t *testing.T) {
 	source := filepath.Join(t.TempDir(), "source")

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -25,6 +26,7 @@ func TestDownloadComponentResumesAndVerifies(t *testing.T) {
 			if _, err := fmt.Sscanf(rangeValue, "bytes=%d-", &offset); err != nil {
 				t.Fatalf("bad Range: %s", rangeValue)
 			}
+			response.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(content)-1, len(content)))
 			response.WriteHeader(http.StatusPartialContent)
 			_, _ = response.Write(content[offset:])
 			return
@@ -74,6 +76,7 @@ func TestDownloadComponentRetriesAnIdleBodyAndResumes(t *testing.T) {
 				t.Errorf("bad Range: %s", rangeValue)
 				return
 			}
+			response.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(content)-1, len(content)))
 			response.WriteHeader(http.StatusPartialContent)
 		}
 		if requestNumber == 1 {
@@ -247,6 +250,173 @@ func TestAcquireInstallLockRecoversDeadOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	unlock()
+}
+
+func TestInstallLockRejectsConcurrentOwnerAndRecoversEmptyLock(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".install.lock"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	unlock, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second, err := acquireInstallLock(root); err == nil {
+		second()
+		t.Fatal("concurrent installer acquired lock")
+	}
+	unlock()
+	second, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second()
+}
+
+func TestTornProgressStateIsRebuiltButCachedBytesAreStillVerified(t *testing.T) {
+	root := t.TempDir()
+	statePath := filepath.Join(root, "install-state.json")
+	if err := os.WriteFile(statePath, []byte(`{"formatVersion":`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	state, err := loadOrCreateState(statePath, releasePayload{ReleaseVersion: "1.0.0", PlatformTarget: "windows-11-x64"})
+	if err != nil || len(state.CompletedComponents) != 0 {
+		t.Fatalf("recovery: %+v %v", state, err)
+	}
+	if err := writeState(statePath, state); err != nil {
+		t.Fatal(err)
+	}
+	backups, _ := filepath.Glob(statePath + ".corrupt-*")
+	if len(backups) != 1 {
+		t.Fatal("missing corrupt-state evidence")
+	}
+	content := []byte("verified cached artifact")
+	path := filepath.Join(root, "desktop.artifact")
+	if err := os.WriteFile(path, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	component := releaseComponent{Name: "desktop", SizeBytes: int64(len(content)), SHA256: hashBytes(content), URL: "https://unreachable.invalid"}
+	if err := downloadComponent(context.Background(), &http.Client{}, component, path, 0, component.SizeBytes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDownloadRepairsCorruptPrefixAndWrongRange(t *testing.T) {
+	for _, wrongRange := range []bool{false, true} {
+		t.Run(fmt.Sprint(wrongRange), func(t *testing.T) {
+			content := []byte("complete verified download content")
+			var requests atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if r.Header.Get("Range") != "" {
+					offset := 4
+					if wrongRange {
+						offset = 2
+					}
+					w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(content)-1, len(content)))
+					w.WriteHeader(206)
+					_, _ = w.Write(content[offset:])
+					return
+				}
+				_, _ = w.Write(content)
+			}))
+			defer server.Close()
+			path := filepath.Join(t.TempDir(), "desktop.artifact")
+			if err := os.WriteFile(path+".part", []byte("BAD!"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			component := releaseComponent{Name: "desktop", URL: server.URL, SizeBytes: int64(len(content)), SHA256: hashBytes(content)}
+			if err := downloadComponent(context.Background(), server.Client(), component, path, 0, component.SizeBytes); err != nil {
+				t.Fatal(err)
+			}
+			if requests.Load() != 2 {
+				t.Fatalf("expected resume then repair: %d requests", requests.Load())
+			}
+			got, _ := os.ReadFile(path)
+			if string(got) != string(content) {
+				t.Fatal("corrupted prefix was trusted")
+			}
+		})
+	}
+}
+
+func TestDownloadCrashHelper(t *testing.T) {
+	root := os.Getenv("BMS_CRASH_TEST_ROOT")
+	if root == "" {
+		t.Skip("subprocess helper")
+	}
+	unlock, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer unlock()
+	content := []byte(strings.Repeat("crash-recovery-", 8192))
+	component := releaseComponent{Name: "runtime", URL: os.Getenv("BMS_CRASH_TEST_URL"), SizeBytes: int64(len(content)), SHA256: hashBytes(content)}
+	if err := downloadComponent(context.Background(), &http.Client{}, component, filepath.Join(root, "runtime.artifact"), 0, component.SizeBytes); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestKilledDownloadProcessResumesOnSecondInstall(t *testing.T) {
+	content := []byte(strings.Repeat("crash-recovery-", 8192))
+	var resumed atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if value := r.Header.Get("Range"); value != "" {
+			var offset int
+			if _, err := fmt.Sscanf(value, "bytes=%d-", &offset); err != nil || offset < 4096 || offset >= len(content) {
+				t.Errorf("unexpected resume range %s", value)
+				w.WriteHeader(416)
+				return
+			}
+			resumed.Store(true)
+			w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(content)-1, len(content)))
+			w.WriteHeader(206)
+			_, _ = w.Write(content[offset:])
+			return
+		}
+		_, _ = w.Write(content[:4096])
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	root := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestDownloadCrashHelper$")
+	cmd.Env = append(os.Environ(), "BMS_CRASH_TEST_ROOT="+root, "BMS_CRASH_TEST_URL="+server.URL)
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill() })
+	path := filepath.Join(root, "runtime.artifact")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		info, err := os.Stat(path + ".part")
+		if err == nil && info.Size() >= 4096 {
+			break
+		}
+		if time.Now().After(deadline) {
+			_ = cmd.Process.Kill()
+			_ = cmd.Wait()
+			t.Fatal("child did not download partial bytes")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := cmd.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = cmd.Wait()
+	unlock, err := acquireInstallLock(root)
+	if err != nil {
+		t.Fatalf("dead process blocked reinstall: %v", err)
+	}
+	defer unlock()
+	component := releaseComponent{Name: "runtime", URL: server.URL, SizeBytes: int64(len(content)), SHA256: hashBytes(content)}
+	if err := downloadComponent(context.Background(), server.Client(), component, path, 0, component.SizeBytes); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(path)
+	if !resumed.Load() || string(got) != string(content) {
+		t.Fatal("second install did not resume verified bytes")
+	}
 }
 
 func TestReleaseStateIsScopedPerVersion(t *testing.T) {

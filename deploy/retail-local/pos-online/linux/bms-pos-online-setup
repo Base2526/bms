@@ -63,6 +63,7 @@ desktop="$STATE_ROOT/releases/$version/desktop.artifact"
 [[ -f $desktop ]] || die "signed release has no complete desktop artifact"
 desktop_deb="$STATE_ROOT/releases/$version/BMS-POS.deb"
 ln -f -- "$desktop" "$desktop_deb"
-apt-get install -y "$desktop_deb"
+dpkg --configure -a
+apt-get -o DPkg::Lock::Timeout=60 install -y "$desktop_deb"
 rm -rf -- "$STATE_ROOT/releases/$version"
 printf 'BMS POS installation completed.\n'

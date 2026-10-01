@@ -12,7 +12,7 @@ import (
 	"syscall"
 )
 
-const agentVersion = "0.5.2"
+const agentVersion = "0.5.3"
 
 var errPreflightFailed = errors.New("preflight failed")
 

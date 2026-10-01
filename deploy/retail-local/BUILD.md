@@ -137,6 +137,38 @@ clean-machine, update/rollback, backup/restore และ hardware acceptance gat
 
 ## Release gate สำหรับ Online Installer
 
+### Interrupted first installation
+
+Run the same online installer/setup again after reconnecting the network or restarting the machine.
+Do not uninstall, erase shop data, remove the private VM, or delete `.env` to retry installation.
+The retry still fetches and verifies the signed release manifest. It reuses complete components
+only after checking size and SHA-256, resumes `.part` files using validated HTTP Range responses,
+and restarts an individual corrupt component once instead of trusting its partial prefix.
+
+Agent 0.5.3 uses an OS-held download lock that is released on process death/reboot, including when
+lock metadata is incomplete. Corrupt download-progress JSON is preserved as diagnostic evidence
+and rebuilt from verified component files; it is not an installation receipt or business data.
+Runtime-file transfers check length/hash before atomic replacement and flush before/after rename.
+Secrets and provisioning checkpoints must survive retries without regeneration or another shop.
+
+Windows preserves unregistered disks left by an interrupted WSL import and uses a new directory
+for another import. It never unregisters a potentially data-bearing VM automatically. A registered
+but damaged VM, damaged database, invalid existing secrets, or unreadable final receipt requires
+diagnosis/restore rather than an automatic erase. Linux configures interrupted package operations
+before installing dependencies; unrecoverable package-manager errors still stop visibly. A complete
+Linux/macOS receipt takes a service/health recovery path instead of provisioning a second shop.
+
+Provisioning is database-idempotent. If power is lost after its database commit but before the
+one-time POS token is checkpointed, the shop/admin remain intact; the operator may need to pair POS
+using the existing administrator account. Setup must never reset the owner's credentials to get
+past that case. Re-entering details does not replace the already-provisioned shop or its password.
+
+Automated tests kill a real download subprocess, reopen the lock, resume bytes and verify the final
+hash. Additional tests cover corrupt prefixes, wrong Range responses, torn state, interrupted
+runtime-file input, failed Windows metadata replacement and late Linux/macOS setup retries.
+These tests do not simulate storage-controller failure or prove recovery from every physical power
+loss. Perform hard-power-off acceptance in disposable VMs/snapshots, not on a live shop machine.
+
 การ build สำเร็จอย่างเดียวไม่ถือว่าพร้อมปล่อย Workflow
 `.github/workflows/retail-local-managed-runtime.yml` ต้องผ่านทั้งสามระบบก่อนสร้าง release:
 

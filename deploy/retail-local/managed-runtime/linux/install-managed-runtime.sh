@@ -119,6 +119,13 @@ cleanup() {
   [[ -n ${provision_script:-} ]] && rm -f -- "$provision_script"
   [[ -n ${handoff_path:-} && ! -e ${handoff_path:-} ]] || true
 }
+write_runtime_text() {
+  local destination=$1 temporary
+  temporary=$(mktemp "$RUNTIME_ROOT/.setup-write.XXXXXX")
+  cat >"$temporary"
+  "$agent" runtime-write -engine linux-native -source "$temporary" -destination "$destination" -mode 0600
+  rm -f -- "$temporary"
+}
 trap cleanup EXIT
 
 require_root
@@ -129,7 +136,20 @@ operator_uid_preflight=$(id -u "$SUDO_USER")
 manifest_uri=${1:-}
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
-[[ ! -f $RUNTIME_ROOT/installation.json ]] || die "ติดตั้งอยู่แล้ว; ห้ามรัน installer ซ้ำ ให้ใช้ updater ที่ผ่านการ verify"
+if [[ -f $RUNTIME_ROOT/installation.json ]]; then
+  jq -e '.version and .tenantId and .posDeviceId' "$RUNTIME_ROOT/installation.json" >/dev/null || \
+    die "installation receipt อ่านไม่ได้; เก็บข้อมูลร้านไว้และติดต่อ Support ห้ามลบฐานข้อมูลหรือ .env"
+  systemctl start bms-retail-local.service
+  for attempt in {1..60}; do
+    if bms-localctl doctor; then
+      printf 'BMS Retail Local ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้\n'
+      exit 0
+    fi
+    printf 'กำลังรอบริการของร้านเดิม (%s/60)...\n' "$attempt"
+    sleep 3
+  done
+  die "บริการร้านเดิมยังไม่พร้อม ข้อมูลถูกเก็บไว้ กรุณาตรวจ service log"
+fi
 agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
 localctl_source="$bundle_root/bms-localctl"
@@ -172,8 +192,9 @@ sample_mode='NONE'
 
 step 3 "ติดตั้ง private runtime และเครื่องมือที่จำเป็น"
 export DEBIAN_FRONTEND=noninteractive
+dpkg --configure -a
 apt-get update
-apt-get install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
+apt-get -o DPkg::Lock::Timeout=60 install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
 if ! docker compose version >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose-v2 || \
     apt-get install -y --no-install-recommends docker-compose-plugin || \
@@ -226,7 +247,7 @@ while IFS=$'\t' read -r name ref; do image_ref[$name]=$ref; done \
   < <(jq -r '.components[] | select(.kind == "oci-image") | [.name,.imageRef] | @tsv' <<<"$release_json")
 umask 077
 if [[ ! -f $RUNTIME_ROOT/.env ]]; then
-cat >"$RUNTIME_ROOT/.env" <<EOF
+cat <<EOF | write_runtime_text "$RUNTIME_ROOT/.env"
 POSTGRES_DB=bms_local
 POSTGRES_PASSWORD=$(random_hex 24)
 REDIS_PASSWORD=$(random_hex 24)
@@ -302,8 +323,7 @@ else
   rm -f -- "$provision_script"; provision_script=
   provision_result=$(grep -E '^\{"status"' <<<"$provision_output" | tail -n 1)
   jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisioning ที่อ่านได้"
-  printf '%s\n' "$provision_result" >"$provision_checkpoint"
-  chmod 0600 "$provision_checkpoint"
+  printf '%s\n' "$provision_result" | write_runtime_text "$provision_checkpoint"
 fi
 
 sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
@@ -323,8 +343,7 @@ if [[ $sample_mode == STARTER_CATALOG && $sample_status != COMPLETED && $sample_
     sample_result='{"status":"FAILED","requested":true,"message":"sample data result is incomplete"}'
   fi
   provision_result=$(jq -c --argjson sample "$sample_result" --arg mode "$sample_mode" '.sampleData = ($sample + {mode:$mode})' <<<"$provision_result")
-  printf '%s\n' "$provision_result" >"$provision_checkpoint"
-  chmod 0600 "$provision_checkpoint"
+  printf '%s\n' "$provision_result" | write_runtime_text "$provision_checkpoint"
   sample_status=$(jq -r '.sampleData.status' <<<"$provision_result")
 fi
 case "$sample_status" in
@@ -409,8 +428,7 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg sampleStatus "$sample_status" \
   --arg licenseCode "${BMS_LICENSE_ID:-}" \
   '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
-  >"$RUNTIME_ROOT/installation.json"
-chmod 0600 "$RUNTIME_ROOT/installation.json"
+  | write_runtime_text "$RUNTIME_ROOT/installation.json"
 rm -f -- "$provision_checkpoint"
 
 # Licensing is evidence-only and deliberately outside the install/runtime success path. A missing

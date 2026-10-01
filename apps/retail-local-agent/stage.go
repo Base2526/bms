@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 )
@@ -25,6 +26,7 @@ var (
 )
 
 var errDownloadIdle = errors.New("download ไม่มีข้อมูลใหม่เกินเวลาที่กำหนด")
+var errComponentChecksum = errors.New("component checksum/size ไม่ตรง")
 
 type downloadProgressWriter struct {
 	w        io.Writer
@@ -159,6 +161,18 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 
 func downloadComponent(ctx context.Context, client *http.Client, component releaseComponent, destination string,
 	completedBefore, totalBytes int64, reporters ...progressReporter) error {
+	// A power loss can leave a corrupt prefix. Retry from zero once, never trust partial bytes.
+	for repair := 0; repair < 2; repair++ {
+		err := downloadComponentAttempt(ctx, client, component, destination, completedBefore, totalBytes, reporters...)
+		if !errors.Is(err, errComponentChecksum) || repair == 1 {
+			return err
+		}
+	}
+	return errComponentChecksum
+}
+
+func downloadComponentAttempt(ctx context.Context, client *http.Client, component releaseComponent, destination string,
+	completedBefore, totalBytes int64, reporters ...progressReporter) error {
 	if digest, size, err := fileSHA256(destination); err == nil && digest == component.SHA256 && size == component.SizeBytes {
 		reportProgress(reporters, progressEvent{Phase: "cached", Component: component.Name,
 			CompletedBytes: completedBefore + component.SizeBytes, TotalBytes: totalBytes})
@@ -269,6 +283,12 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 			response.Body.Close()
 			cancelAttempt()
 			lastDownloadErr = fmt.Errorf("HTTP %d", response.StatusCode)
+			if response.StatusCode == http.StatusRequestedRangeNotSatisfiable && offset > 0 {
+				if err := file.Truncate(0); err != nil {
+					return err
+				}
+				offset = 0
+			}
 			if err := waitBeforeDownloadRetry(ctx, reporters, component, completedBefore, totalBytes, offset, attempt); err != nil {
 				return err
 			}
@@ -278,6 +298,20 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 			response.Body.Close()
 			cancelAttempt()
 			return errors.New("server ส่ง partial response โดยไม่ได้ร้องขอ")
+		}
+		if response.StatusCode == http.StatusPartialContent {
+			var start, end, size int64
+			_, rangeErr := fmt.Sscanf(response.Header.Get("Content-Range"), "bytes %d-%d/%d", &start, &end, &size)
+			if rangeErr != nil || start != offset || end < start || end >= size || size != component.SizeBytes ||
+				(response.ContentLength >= 0 && response.ContentLength != end-start+1) {
+				response.Body.Close()
+				cancelAttempt()
+				if err := file.Truncate(0); err != nil {
+					return err
+				}
+				lastDownloadErr = errors.New("invalid Content-Range; restarting component")
+				continue
+			}
 		}
 		if _, err := file.Seek(offset, io.SeekStart); err != nil {
 			response.Body.Close()
@@ -333,7 +367,7 @@ func downloadComponent(ctx context.Context, client *http.Client, component relea
 	}
 	if size != component.SizeBytes || digest != component.SHA256 {
 		_ = os.Remove(partial)
-		return errors.New("component checksum/size ไม่ตรง")
+		return errComponentChecksum
 	}
 	if err := os.Rename(partial, destination); err != nil {
 		return err
@@ -446,7 +480,11 @@ func loadOrCreateState(path string, payload releasePayload) (installState, error
 	}
 	var existing installState
 	if err := json.Unmarshal(contents, &existing); err != nil {
-		return installState{}, errors.New("install-state.json เสียหาย")
+		// This file is only a progress cache. Signed hashes, not this cache, authorize reuse.
+		if err := os.Rename(path, path+".corrupt-"+strconv.FormatInt(time.Now().UnixNano(), 10)); err != nil {
+			return installState{}, err
+		}
+		return state, nil
 	}
 	if existing.FormatVersion != 1 || existing.PlatformTarget != payload.PlatformTarget || existing.ReleaseVersion != payload.ReleaseVersion {
 		return installState{}, errors.New("มี installation state ของ release/target อื่น ต้อง recovery ให้เสร็จก่อน")
@@ -486,29 +524,42 @@ func writeState(path string, state installState) error {
 
 func acquireInstallLock(root string) (func(), error) {
 	path := filepath.Join(root, ".install.lock")
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-	if errors.Is(err, os.ErrExist) {
-		contents, readErr := os.ReadFile(path)
-		var pid int
-		if readErr == nil {
-			_, _ = fmt.Sscanf(string(contents), "pid=%d", &pid)
-		}
-		if pid > 0 && !processAlive(pid) {
-			if removeErr := os.Remove(path); removeErr == nil {
-				file, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
-			}
-		}
-		if errors.Is(err, os.ErrExist) {
-			return nil, errors.New("มี Managed Runtime install/update อื่นกำลังทำงาน")
-		}
-	}
+	file, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0600)
 	if err != nil {
 		return nil, err
 	}
-	fmt.Fprintf(file, "pid=%d\nstarted=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
-	file.Sync()
-	file.Close()
-	return func() { _ = os.Remove(path) }, nil
+	if err := lockInstallFile(file); err != nil {
+		file.Close()
+		return nil, errors.New("มี Managed Runtime install/update อื่นกำลังทำงาน")
+	}
+	// Keep the inode: deleting it would allow a second process to lock a different file.
+	// The OS releases this lock even on forced termination or a reboot.
+	contents, err := io.ReadAll(file)
+	if err == nil && !strings.HasPrefix(string(contents), "lockVersion=2\n") {
+		var pid int
+		_, _ = fmt.Sscanf(string(contents), "pid=%d", &pid)
+		if pid > 0 && processAlive(pid) {
+			file.Close()
+			return nil, errors.New("มี Managed Runtime รุ่นก่อนกำลังทำงาน")
+		}
+	}
+	if err == nil {
+		err = file.Truncate(0)
+	}
+	if err == nil {
+		_, err = file.Seek(0, io.SeekStart)
+	}
+	if err == nil {
+		_, err = fmt.Fprintf(file, "lockVersion=2\npid=%d\nstarted=%s\n", os.Getpid(), time.Now().UTC().Format(time.RFC3339))
+	}
+	if err == nil {
+		err = file.Sync()
+	}
+	if err != nil {
+		file.Close()
+		return nil, err
+	}
+	return func() { _ = file.Close() }, nil
 }
 
 func hashBytes(input []byte) string {
