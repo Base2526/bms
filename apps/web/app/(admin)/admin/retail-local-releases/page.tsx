@@ -447,7 +447,7 @@ export default function RetailLocalReleasesPage() {
         okText={copy.upload}
         width={720}
       >
-        <Alert showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
+        <Alert closable showIcon type="warning" message={copy.uploadHint} style={{ marginBottom: 16 }} />
         <Form form={uploadForm} layout="vertical" initialValues={{ platform: "windows-x64", packageType: "server-pos", accessLevel: "trial", channel: "pilot", status: "supported", isLatest: false }}>
           <Row gutter={12}>
             <Col xs={24} sm={8}>

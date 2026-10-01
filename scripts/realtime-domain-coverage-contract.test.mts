@@ -182,6 +182,8 @@ const OPS_TELEMETRY = [
   "bms_retail_local_license_reviews", "bms_retail_local_license_commercial_events",
   "bms_retail_local_license_bootstrap_tokens", "bms_retail_local_trial_followups",
   "bms_delivery_provider_setting_events", "bms_social_auth_setting_events",
+  // Pre-install platform evidence has no tenant audience; the inbox explicitly refreshes.
+  "bms_installer_reports",
 ];
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */

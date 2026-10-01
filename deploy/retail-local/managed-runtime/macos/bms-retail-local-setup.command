@@ -12,6 +12,11 @@ if (( exit_code == 0 )); then
 else
   printf '\nSetup ยังไม่สำเร็จ กรุณาอ่านข้อความ [ต้องแก้ไข] ด้านบน\n'
   printf 'เมื่อแก้ไขแล้ว ให้เปิด Applications > BMS Retail Local อีกครั้ง\n'
+  reports="${BMS_RETAIL_LOCAL_STATE_ROOT:-$HOME/Library/Application Support/BMS/RetailLocal}/diagnostics"
+  if [[ -t 0 && -d $reports ]]; then
+    read -r -p 'Open error reports in Finder? [y/N]: ' show_report || true
+    [[ ${show_report:-} != [yY] ]] || open "$reports" || true
+  fi
 fi
 printf '\nกด Enter เพื่อปิดหน้าต่างนี้...'
 read -r

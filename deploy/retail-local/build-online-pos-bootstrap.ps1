@@ -135,6 +135,7 @@ try {
     $built = Join-Path $workRoot "$($spec.Name)-output"
     New-Item -ItemType Directory -Force -Path $stage, $built | Out-Null
     Copy-Item -LiteralPath (Join-Path $sourceRoot "windows\install-pos-online.ps1") -Destination $stage
+    Copy-Item -LiteralPath (Join-Path $scriptRoot "managed-runtime\windows\setup-diagnostics.ps1") -Destination $stage
     Copy-Item -LiteralPath $keyringPath -Destination (Join-Path $stage "trusted-release-keys.json")
     $env:GOOS = "windows"
     $env:GOARCH = $spec.GoArch
@@ -162,6 +163,8 @@ try {
     $text = [IO.File]::ReadAllText((Join-Path $sourceRoot "linux\$name")).Replace("`r`n", "`n").Replace("`r", "`n")
     [IO.File]::WriteAllText((Join-Path $linuxSource $name), $text, [Text.UTF8Encoding]::new($false))
   }
+  $diagnosticsText = [IO.File]::ReadAllText((Join-Path $scriptRoot "managed-runtime\setup-diagnostics.sh")).Replace("`r`n", "`n")
+  [IO.File]::WriteAllText((Join-Path $linuxSource "setup-diagnostics.sh"), $diagnosticsText, [Text.UTF8Encoding]::new($false))
   $linuxBuilt = Join-Path $workRoot "linux-output"
   New-Item -ItemType Directory -Force -Path $linuxBuilt | Out-Null
   Invoke-Checked "Build Linux x64 POS online bootstrap" {

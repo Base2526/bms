@@ -1053,3 +1053,32 @@ with both device `occurred_at` and server `received_at`; and `reviews` records h
 limit, key, chain and transfer conflicts. These tables are read and mutated only by the token-bound
 ingestion service and platform-admin routes. No POS, payment, inventory, startup, backup or restore
 query reads them, so an outage or `REVIEW_REQUIRED` state cannot disable a shop.
+
+## Installer error reports (`10.31`)
+
+`bms_installer_reports` stores platform-global pre-install evidence; an installation may
+not have a tenant or device yet. It has no tenant authority, cloud replica, or effect on
+local POS/runtime availability. Public ingestion is deployment-opt-in, consent-gated,
+rate-limited and bounded to 64 KiB. The service in `lib/bms/installerReports.ts` stores
+only a normalized allow-listed JSON report (database constraint: <=32 KiB), not raw
+archives, transcripts, client filenames, IP addresses or environment variables.
+
+- UUID receipt; unique SHA-256 `content_hash` provides retry deduplication. `fingerprint`
+  together with `product` groups matching sanitized failures, not devices or independently
+  verified causes; POS and Server + POS never share an aggregate or drill-down count.
+- Indexed platform, architecture, product, installer version, OS version, stage and
+  server receipt time; client occurrence time is unverified evidence inside the JSON.
+- `NEW`, `INVESTIGATING`, `RESOLVED` are support workflow states. A bounded sanitized
+  note, `updated_by` (`users.id`, nullable after user deletion), timestamp and optimistic
+  `revision` identify the latest human edit; this is not an append-only investigation history.
+- Platform-admin routes alone expose reads/triage. No public lookup and no `bms_app`
+  or `PUBLIC` table privileges. There is no tenant realtime audience; the inbox refreshes
+  on request and after edits rather than broadcasting uploaded errors to shop clients.
+- Expiry is 90 days from first receipt. Reads exclude expired rows immediately, retries
+  do not renew expiry, and the existing authenticated support-diagnostics retention cron
+  physically deletes up to 1,000 expired rows per run.
+
+Archive parsing depends on `yauzl` (lazy ZIP reads with validated entry sizes) and
+`tar-stream` (in-memory TAR parsing after bounded gzip decompression). Unexpected names,
+links and duplicate entries are rejected; no uploaded entry is written to disk.
+Deployment and operator workflow: [Retail Local installation reports](../business/retail-local.md#installation-error-reports).

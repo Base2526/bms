@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { authorizeCronRequest } from "@/lib/bms/cronRouteAuth";
 import { recordJobRun } from "@/lib/bms/jobRuns";
 import { purgeExpiredSupportBundles } from "@/lib/bms/supportDiagnostics";
+import { purgeExpiredInstallerReports } from "@/lib/bms/installerReports";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -17,7 +18,7 @@ async function handlePOST(req: NextRequest) {
     const result = await recordJobRun(
       "support-diagnostics-retention",
       "cron",
-      () => purgeExpiredSupportBundles(100)
+      async () => ({ ...(await purgeExpiredSupportBundles(100)), installerReportsDeleted: await purgeExpiredInstallerReports() })
     );
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {

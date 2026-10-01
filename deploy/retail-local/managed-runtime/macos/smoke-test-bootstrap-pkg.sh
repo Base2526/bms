@@ -40,6 +40,10 @@ if [[ -f $bootstrap/test-release-ca.pem ]]; then
   }
 fi
 [[ -x $root/control/bms-retail-local ]] || { echo "bootstrap ขาด host control" >&2; exit 1; }
+[[ -s $root/control/setup-diagnostics.sh && -s $root/control/BOOTSTRAP_VERSION ]] || {
+  echo "bootstrap is missing error reporting files" >&2; exit 1;
+}
+bash -n "$root/control/setup-diagnostics.sh"
 [[ -x $app/Contents/MacOS/BMS\ Retail\ Local ]] || { echo "bootstrap ขาด setup app" >&2; exit 1; }
 plutil -lint "$app/Contents/Info.plist" >/dev/null
 

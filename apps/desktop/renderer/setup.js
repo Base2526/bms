@@ -7,7 +7,6 @@ const statusClose = document.querySelector("#status-close");
 const button = document.querySelector("#pair-button");
 const buttonLabel = button.querySelector(".button-label");
 const buttonProgress = button.querySelector(".button-progress");
-const localAdminSection = document.querySelector("#local-admin-section");
 const localAdminButton = document.querySelector("#local-admin-button");
 const localAdminLabel = localAdminButton.querySelector(".button-label");
 const localAdminProgress = localAdminButton.querySelector(".button-progress");
@@ -61,6 +60,9 @@ localAdminButton.addEventListener("click", async () => {
   try {
     const result = await window.bmsDesktop.openLocalAdmin();
     if (!result?.ok) showError(result?.error || "เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ");
+    else if (!serverInput.value.trim() && !pairingInput.value.trim() && result.serverUrl) {
+      serverInput.value = result.serverUrl;
+    }
   } catch {
     showError("แอปไม่สามารถเปิดระบบหลังบ้านได้ กรุณาปิดแล้วเปิดใหม่");
   } finally {
@@ -72,10 +74,11 @@ window.bmsDesktop.getAppInfo().then((info) => {
   if (info?.version) version.textContent = `v${info.version}`;
   if (info?.clientLabel) clientLabel.textContent = info.clientLabel;
   if (info?.securityNote) securityNote.textContent = info.securityNote;
-  localAdminSection.hidden = info?.platform !== "darwin";
   if (info?.secureStorageReady === false) {
     storageBlocked = true;
     button.disabled = true;
     showError(info.secureStorageError || "ระบบปฏิบัติการไม่มีที่เก็บ Device Token ที่ปลอดภัย");
   }
+}).catch(() => {
+  showError("อ่านข้อมูลแอปไม่สำเร็จ กรุณาปิดแล้วเปิด BMS POS ใหม่");
 });

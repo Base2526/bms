@@ -8,7 +8,8 @@ param(
   [string]$LicenseId,
   [string]$LicenseEvidenceUri,
   [string]$ResumeConfig,
-  [string]$ErrorFile
+  [string]$ErrorFile,
+  [string]$InstallerVersion = 'unknown'
 )
 
 $ErrorActionPreference = "Stop"
@@ -17,15 +18,25 @@ $utf8 = [Text.UTF8Encoding]::new($false)
 [Console]::InputEncoding = $utf8
 [Console]::OutputEncoding = $utf8
 $global:OutputEncoding = $utf8
+$script:BmsSetupStage = 'startup'
 try { & "$env:SystemRoot\System32\chcp.com" 65001 *> $null } catch {}
 trap {
+  $failure = $_
+  $message = $failure.Exception.Message
+  try {
+    . (Join-Path $PSScriptRoot 'setup-diagnostics.ps1')
+    Write-Host 'Preparing installation error report...'
+    $report = New-BmsSetupDiagnostics -Root $InstallRoot -Failure $failure -Product server-pos `
+      -InstallerVersion $InstallerVersion -Stage $script:BmsSetupStage
+    if ($report) { $message += "`nSupport report (review before sending): $report" }
+  } catch {}
   if (-not [string]::IsNullOrWhiteSpace($ErrorFile)) {
     try {
-      [IO.File]::WriteAllText($ErrorFile, $_.Exception.Message, [Text.UTF8Encoding]::new($false))
+      [IO.File]::WriteAllText($ErrorFile, $message, [Text.UTF8Encoding]::new($false))
     } catch {}
   }
   Write-Host "`nBMS Retail Local Setup ยังไม่สำเร็จ" -ForegroundColor Red
-  Write-Host $_.Exception.Message -ForegroundColor Red
+  Write-Host $message -ForegroundColor Red
   Write-Host "แก้ไขตามข้อความด้านบนแล้วเปิด installer อีกครั้ง ระบบจะติดตั้งต่อจากข้อมูลที่ปลอดภัย" -ForegroundColor Yellow
   if ([Environment]::UserInteractive) { [void](Read-Host "กด Enter เพื่อปิดหน้าต่างนี้") }
   exit 1
@@ -152,6 +163,7 @@ function Test-CompletedSampleData($SampleData, [string]$BusinessArchetype) {
 }
 
 function Write-Step([int]$Number, [string]$Message) {
+  $script:BmsSetupStage = "step-$Number-of-7"
   Write-Host "`n[BMS $Number/7] $Message" -ForegroundColor Cyan
 }
 
@@ -392,6 +404,9 @@ if ($ResumeConfig) {
   $resume = Get-Content -LiteralPath $ResumeConfig -Raw | ConvertFrom-Json
   $ManifestUri = [string]$resume.manifestUri
   $InstallRoot = [string]$resume.installRoot
+  if ($resume.PSObject.Properties.Name -contains 'installerVersion') {
+    $InstallerVersion = [string]$resume.installerVersion
+  }
   $ActivationUri = if ($resume.PSObject.Properties.Name -contains "activationUri") {
     [string]$resume.activationUri
   } else { "" }
@@ -429,6 +444,7 @@ if ([IO.Path]::GetFullPath($PSCommandPath) -ne [IO.Path]::GetFullPath($installed
   Copy-Item -LiteralPath $PSCommandPath -Destination $installedScript -Force
 }
 foreach ($scriptCopy in @(
+  @{ Source = (Join-Path $PSScriptRoot "setup-diagnostics.ps1"); Destination = (Join-Path $bootstrapRoot "setup-diagnostics.ps1") },
   @{ Source = (Join-Path $PSScriptRoot "update-managed-runtime.ps1"); Destination = $installedUpdateScript },
   @{ Source = (Join-Path $PSScriptRoot "backup-managed-runtime.ps1"); Destination = $installedBackupScript },
   @{ Source = (Join-Path $PSScriptRoot "restore-managed-runtime.ps1"); Destination = $installedRestoreScript },
@@ -473,6 +489,7 @@ if (-not [string]::IsNullOrWhiteSpace($interactiveUser) -and $interactiveUser -n
 if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
 
 if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
+  $script:BmsSetupStage = 'repair-existing-install'
   $existingDistro = Invoke-WslCommand -Arguments @("--list", "--quiet") -Quiet
   if ($existingDistro.ExitCode -ne 0 -or $distroName -notin @($existingDistro.Output | ForEach-Object { ([string]$_).Trim() })) {
     throw "Existing shop runtime is unavailable. Preserve shop data and collect diagnostics."
@@ -538,6 +555,7 @@ if ($preflight.requiresReboot) {
   if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
   $resumePath = Join-Path $bootstrapRoot "resume.json"
   $resumeJson = [ordered]@{
+    installerVersion = $InstallerVersion
     manifestUri = $ManifestUri
     installRoot = $InstallRoot
     activationUri = $ActivationUri
@@ -639,6 +657,7 @@ foreach ($component in @($release.components | Where-Object kind -eq "oci-image"
     "-digest", [string]$component.ociDigest, "-progress")
 }
 
+$script:BmsSetupStage = 'configure-compose'
 $compose = Get-ArtifactPath $release "compose"
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $compose.path `
   -destination "$runtimeData/compose.yml" -mode "0600"
@@ -668,6 +687,7 @@ if (-not $runtimeEnvExists) {
   Write-RuntimeText "$runtimeData/.env" (($envLines -join "`n") + "`n")
 }
 
+$script:BmsSetupStage = 'provision-shop'
 $checkpointTest = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "test", "-f", $provisionCheckpoint) -Quiet
 if ($checkpointTest.ExitCode -eq 0) {
   $checkpointRead = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "cat", $provisionCheckpoint) -Quiet
@@ -806,6 +826,7 @@ if (-not $web -or -not $ws -or $web.StatusCode -ne 200 -or $ws.StatusCode -ne 20
 $desktop = Get-ArtifactPath $release "desktop"
 $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Setup.exe"
 Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
+$script:BmsSetupStage = 'install-desktop'
 $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
 if ($desktopProcess.ExitCode -ne 0) { throw "ติดตั้ง BMS POS Desktop ไม่สำเร็จ" }
 $desktopExecutable = @(

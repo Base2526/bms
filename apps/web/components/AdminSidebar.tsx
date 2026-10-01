@@ -288,6 +288,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'platform.tenants': <BankOutlined />,
   'platform.retail-local-licenses': <SafetyCertificateOutlined />,
   'platform.retail-local-releases': <DownloadOutlined />,
+  'platform.installer-reports': <BugOutlined />,
   'platform.roles': <SnippetsOutlined />,
   'platform.report-schedule': <ScheduleOutlined />,
   'platform.support-tickets': <CustomerServiceOutlined />,

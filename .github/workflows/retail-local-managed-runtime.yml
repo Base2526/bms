@@ -22,6 +22,8 @@ on:
       - "docs/business/retail-local*.md"
       - "scripts/retail-local-managed-runtime-contract.test.mts"
       - "scripts/retail-local-bootstrap-behavior.test.mjs"
+      - "scripts/retail-local-setup-diagnostics.test.ps1"
+      - "scripts/retail-local-unix-diagnostics.test.mjs"
       - "scripts/retail-local-update-transaction.test.sh"
       - "scripts/retail-local-uninstall-container.test.sh"
       - ".gitattributes"
@@ -98,8 +100,10 @@ jobs:
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction
           sh -n deploy/retail-local/managed-runtime/runtime-rootfs/bms-wsl-keepalive
-          shellcheck deploy/retail-local/managed-runtime/linux/*.sh \
+          shellcheck -x -P SCRIPTDIR deploy/retail-local/managed-runtime/setup-diagnostics.sh \
+            deploy/retail-local/managed-runtime/linux/*.sh \
             deploy/retail-local/managed-runtime/linux/bms-retail-local-update \
+            deploy/retail-local/managed-runtime/linux/bms-retail-local-setup \
             deploy/retail-local/managed-runtime/runtime-rootfs/build-rootfs.sh \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl \
             deploy/retail-local/managed-runtime/runtime-rootfs/bms-update-transaction \
@@ -111,6 +115,7 @@ jobs:
           node --check deploy/retail-local/managed-runtime/verify-promotion-evidence.mjs
           node --test --experimental-strip-types scripts/retail-local-managed-runtime-contract.test.mts
           node --test scripts/retail-local-bootstrap-behavior.test.mjs
+          node --test scripts/retail-local-unix-diagnostics.test.mjs
           scripts/retail-local-update-transaction.test.sh
       - name: Build private WSL root filesystem image
         run: docker build --build-arg UBUNTU_IMAGE=ubuntu:24.04 deploy/retail-local/managed-runtime/runtime-rootfs
@@ -234,6 +239,7 @@ jobs:
             $output = Join-Path $env:RUNNER_TEMP "bms-pos-$($target.Name)-output"
             New-Item -ItemType Directory -Force -Path $bundle, $output | Out-Null
             Copy-Item "$source\install-pos-online.ps1" $bundle
+            Copy-Item "deploy\retail-local\managed-runtime\windows\setup-diagnostics.ps1" $bundle
             Copy-Item "deploy\retail-local\managed-runtime\windows\trusted-release-keys.json" $bundle
             Push-Location apps/retail-local-agent
             $env:CGO_ENABLED = '0'
@@ -282,6 +288,7 @@ jobs:
           bash -n deploy/retail-local/managed-runtime/macos/bms-retail-local-setup.command
           bash -n deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command
           node --test scripts/retail-local-bootstrap-behavior.test.mjs
+          node --test scripts/retail-local-unix-diagnostics.test.mjs
       - name: Generate CI-only public release keyring
         run: |
           mkdir -p "$RUNNER_TEMP/bms-signing" "$RUNNER_TEMP/bms-macos-package"

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   ensureManagedLocalRuntime,
+  checkManagedLocalAdminReady,
   isManagedLocalServerUrl,
   managedLocalPosDevicesUrl,
   managedLocalRuntimePlan,
@@ -26,6 +27,43 @@ test("recognizes only the managed Retail Local origin", () => {
 
 test("opens the managed local POS device page without requiring users to know its URL", () => {
   assert.equal(managedLocalPosDevicesUrl(), "http://127.0.0.1:3100/admin/pos-devices");
+});
+
+test("local admin readiness checks only the fixed login URL without credentials or redirects", async () => {
+  let cancelled = false;
+  await checkManagedLocalAdminReady({ fetch: async (url, options) => {
+    assert.equal(url, `${LOCAL_URL}/admin/login`);
+    assert.equal(options.redirect, "manual");
+    assert.equal(options.credentials, "omit");
+    assert.ok(options.signal instanceof AbortSignal);
+    return { status: 200, body: { cancel: async () => { cancelled = true; } } };
+  } });
+  assert.equal(cancelled, true);
+});
+
+test("local admin rejects redirects, server failures and offline instead of claiming it opened", async () => {
+  for (const status of [302, 404, 500]) {
+    await assert.rejects(checkManagedLocalAdminReady({ fetch: async () => ({ status }) }), error => error.code === "LOCAL_ADMIN_UNAVAILABLE");
+  }
+  await assert.rejects(checkManagedLocalAdminReady({ fetch: async () => { throw new Error("offline"); } }), error => error.code === "LOCAL_ADMIN_UNAVAILABLE");
+});
+
+test("a stalled local login request is cancelled after eight seconds", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const result = checkManagedLocalAdminReady({ fetch: async (_, { signal }) => new Promise((resolve, reject) => {
+    signal.addEventListener("abort", () => reject(new Error("timeout")), { once: true });
+  }) });
+  const rejected = assert.rejects(result, error => error.code === "LOCAL_ADMIN_UNAVAILABLE");
+  t.mock.timers.tick(8000);
+  await rejected;
+});
+
+test("Windows/Linux admin recovery never executes a local startup script", async () => {
+  for (const platform of ["win32", "linux"]) {
+    assert.deepEqual(await ensureManagedLocalRuntime(LOCAL_URL, {
+      platform, execFile: async () => { assert.fail("must not run a privileged script"); },
+    }), { attempted: false });
+  }
 });
 
 test("builds a macOS launch plan only for the managed local origin", () => {

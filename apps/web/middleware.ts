@@ -9,11 +9,11 @@ const PUBLIC = ["/admin/login"];
 const PROTECTED_PREFIXES = ['/chat']; // ต้องล็อกอินก่อนเข้าดู
 
 export const config = {
-  // Bulk release upload is excluded before NextRequest exists. Its Pages API
-  // route authenticates itself and consumes the raw IncomingMessage stream.
+  // Upload intake is excluded so middleware cannot buffer bodies before each
+  // route enforces its own authorization/consent and streaming size bounds.
   matcher: [
     "/admin/:path*",
-    "/((?!api/admin/retail-local/releases-upload|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
+    "/((?!api/admin/retail-local/releases-upload|api/installer-reports|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
 
     '/chat/:path*', 
     '/profile/:path*',

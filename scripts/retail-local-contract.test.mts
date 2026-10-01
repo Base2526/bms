@@ -107,16 +107,21 @@ test("installers checkpoint or hand off pairing before optional sample generatio
   const macos = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   const pilot = read("deploy/retail-local/install.ps1");
 
-  assert.ok(linux.indexOf('>"$provision_checkpoint"') < linux.indexOf("run --rm sample-data"),
+  const linuxCheckpoint = linux.indexOf('write_runtime_text "$provision_checkpoint"');
+  assert.ok(linuxCheckpoint >= 0 && linuxCheckpoint < linux.indexOf("run --rm sample-data"),
     "Linux must persist the token checkpoint before sample data");
-  assert.ok(windows.indexOf("Write-RuntimeText $provisionCheckpoint") < windows.indexOf('"sample-data"'),
+  const windowsCheckpoint = windows.indexOf("Write-RuntimeText $provisionCheckpoint");
+  assert.ok(windowsCheckpoint >= 0 && windowsCheckpoint < windows.indexOf('"sample-data"'),
     "Windows must persist the token checkpoint before sample data");
-  const macCheckpoint = macos.indexOf('>"$root/provision-result.json"');
+  const macCheckpoint = macos.indexOf('mv -f "$root/provision-result.json.pending" "$root/provision-result.json"');
+  const macFlush = macos.indexOf('sync -f "$root/provision-result.json.pending"');
+  assert.ok(macFlush >= 0 && macFlush < macCheckpoint, "macOS must flush the pending checkpoint before publishing it");
   assert.ok(macCheckpoint >= 0 && macCheckpoint < macos.indexOf("\n  run_sample_data", macCheckpoint),
     "macOS must persist the token checkpoint before sample data");
   assert.match(macos, /case "\$PROVISION_SAMPLE_STATUS" in[\s\S]*COMPLETED\|ALREADY_COMPLETED\) return 0/,
     "macOS must treat skipping completed optional sample data as a successful setup path under set -e");
-  assert.ok(pilot.indexOf("Write-Host $result.deviceToken") < pilot.indexOf("run --rm sample-data"),
+  const pilotHandoff = pilot.indexOf("Write-Host $result.deviceToken");
+  assert.ok(pilotHandoff >= 0 && pilotHandoff < pilot.indexOf("run --rm sample-data"),
     "the technical pilot must display the token before sample data");
 });
 
