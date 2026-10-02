@@ -423,12 +423,14 @@ test("managed compose and installers keep private services off host ports", () =
 test("managed lifecycle keeps backups encrypted and permanent erase explicit", () => {
   const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
   const windowsUninstall = read("deploy/retail-local/managed-runtime/windows/uninstall-managed-runtime.ps1");
+  const installManual = read("docs/business/retail-local-install-manual.md");
   const linuxUninstall = read("deploy/retail-local/managed-runtime/linux/uninstall-managed-runtime.sh");
   const macosControl = read("deploy/retail-local/managed-runtime/macos/bms-retail-local");
   assert.match(localctl, /age -p -o/);
   assert.match(localctl, /REPLACE-LOCAL-DATA/);
   assert.match(localctl, /pg_dump[\s\S]*storage\.tar\.gz[\s\S]*\.env/);
   assert.match(windowsUninstall, /-EraseData[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*--unregister/);
+  assert.match(installManual, /WindowsPowerShell\\v1\.0\\powershell\.exe[\s\S]*-ExecutionPolicy Bypass[\s\S]*-EraseData/);
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down[\s\S]*--volumes/);
   assert.match(macosControl, /uninstall\) shift; uninstall_runtime/);
   assert.match(macosControl, /--erase-data[\s\S]*--confirm[\s\S]*ERASE-BMS-RETAIL-LOCAL/);

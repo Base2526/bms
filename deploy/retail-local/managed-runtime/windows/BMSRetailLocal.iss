@@ -60,6 +60,10 @@ Source: "{#BuildRoot}\..\runtime-rootfs\bms-update-transaction"; DestDir: "{tmp}
 Source: "{#BuildRoot}\..\runtime-rootfs\bms-wsl-keepalive"; DestDir: "{tmp}\bms-retail-local"; Flags: ignoreversion
 
 [Icons]
+Name: "{commondesktop}\BMS Retail Local Admin"; \
+  Filename: "http://127.0.0.1:3100/admin/login"
+Name: "{commonprograms}\BMS Retail Local\Open Admin"; \
+  Filename: "http://127.0.0.1:3100/admin/login"
 Name: "{commondesktop}\BMS Retail Local Check for Updates"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\update-managed-runtime.ps1"" -ManifestUri ""{#ManifestUri}"" -CheckOnly"
@@ -81,6 +85,11 @@ Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
 Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
   Filename: "{uninstallexe}"
 
+[Run]
+Filename: "http://127.0.0.1:3100/admin/login"; \
+  Description: "เปิด BMS Retail Local Admin"; \
+  Flags: postinstall shellexec runasoriginaluser skipifsilent nowait; Check: CanOpenAdmin
+
 [UninstallRun]
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
   Parameters: "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File ""{app}\uninstall-managed-runtime.ps1"""; \
@@ -92,6 +101,14 @@ var
   BootstrapFailed: Boolean;
   BootstrapError: String;
   DiagnosticsButton: TNewButton;
+  CompletionText: TNewMemo;
+
+function CanOpenAdmin(): Boolean;
+begin
+  Result := ('{#PackageType}' = 'server') and (not BootstrapFailed) and
+    (not ManagedRuntimeNeedsRestart) and
+    FileExists(ExpandConstant('{commonappdata}\BMS\RetailLocal\installation.json'));
+end;
 
 procedure OpenDiagnostics(Sender: TObject);
 var
@@ -131,6 +148,40 @@ begin
     WizardForm.FinishedLabel.Caption := BootstrapError + #13#10 + #13#10 +
       'Run this installer again to resume. Details: ' +
       ExpandConstant('{commonappdata}\BMS\RetailLocal\setup-transcript.log');
+  end
+  else if (CurPageID = wpFinished) and ManagedRuntimeNeedsRestart then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'ต้อง restart Windows เพื่อติดตั้งต่อ';
+    WizardForm.FinishedLabel.Caption :=
+      'การติดตั้งยังไม่เสร็จ กรุณา restart แล้วเข้าสู่ระบบ Windows ด้วยบัญชีเดิม' + #13#10 + #13#10 +
+      'Setup จะทำงานต่อให้อัตโนมัติ เมื่อเสร็จแล้วจะแสดงวิธีเปิด BMS Retail Local Admin';
+  end
+  else if (CurPageID = wpFinished) and ('{#PackageType}' = 'server') then
+  begin
+    WizardForm.FinishedHeadingLabel.Caption := 'ติดตั้ง BMS Retail Local Server สำเร็จ';
+    { A scrollable summary keeps all next steps readable at large font sizes. }
+    if CompletionText = nil then
+    begin
+      CompletionText := TNewMemo.Create(WizardForm);
+      CompletionText.Parent := WizardForm.FinishedLabel.Parent;
+      CompletionText.ReadOnly := True;
+      CompletionText.ScrollBars := ssVertical;
+      CompletionText.WordWrap := True;
+      WizardForm.RunList.Top := WizardForm.FinishedPage.ClientHeight - ScaleY(40);
+      WizardForm.RunList.Height := ScaleY(36);
+      CompletionText.SetBounds(WizardForm.FinishedLabel.Left, WizardForm.FinishedLabel.Top,
+        WizardForm.FinishedLabel.Width,
+        WizardForm.RunList.Top - WizardForm.FinishedLabel.Top - ScaleY(8));
+    end;
+    WizardForm.FinishedLabel.Visible := False;
+    CompletionText.Text :=
+      'ระบบทำงานเบื้องหลัง ปิดหน้าต่างนี้ได้ และระบบจะเริ่มอัตโนมัติหลังเปิดเครื่อง' + #13#10 + #13#10 +
+      '1. เปิด Admin: http://127.0.0.1:3100/admin/login' + #13#10 +
+      '   เข้าสู่ระบบด้วยอีเมลและรหัสผ่านผู้ดูแลที่สร้างระหว่างติดตั้ง' + #13#10 +
+      '2. ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup' + #13#10 +
+      '3. จับคู่ POS: Admin > POS Devices > ออก token' + #13#10 + #13#10 +
+      'เปิดอีกครั้งได้จาก Desktop: BMS Retail Local Admin' + #13#10 +
+      'URL นี้ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน';
   end;
 end;
 

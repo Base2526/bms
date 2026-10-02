@@ -63,18 +63,25 @@
 4. ทำตามหน้าจอติดตั้งจนเสร็จ
 5. หน้าต่าง Setup จะแสดงความคืบหน้า `[BMS 1/7]` ถึง `[BMS 7/7]`; ถ้า preflight ไม่ผ่าน ระบบจะแสดงค่าที่พบ สาเหตุ และวิธีให้เปิด installer ใหม่หลังแก้ไข
 6. ถ้าเป็นเครื่อง `Server` หรือ `Server-POS` ให้รอจนระบบดาวน์โหลด component, สร้าง runtime, migrate database และ health check สำเร็จ
-7. เปิดเมนู **BMS Retail Local**
-8. เปิด **BMS Retail Local** หรือ **BMS POS**
-9. ถ้าระบบถาม Activation Code ให้กรอกรหัสที่ได้รับจาก BMS
-10. ตั้งค่าร้านครั้งแรก ได้แก่ชื่อร้าน, ประเภทร้าน, ผู้ดูแลระบบ, รหัสผ่าน และ PIN แคชเชียร์ โดยต้องยืนยันรหัสผ่านและ PIN ซ้ำ
-11. เลือกว่าจะสร้างข้อมูลตัวอย่างหรือไม่ ค่าเริ่มต้นคือ **ไม่สร้าง**; ถ้าเลือกสร้าง สินค้า ลูกค้า และรายการตัวอย่างจะใช้ชุดที่เหมาะกับประเภทร้านและมีเครื่องหมายข้อมูลทดสอบ
-12. เข้าหน้า POS แล้วทดสอบเปิดกะและขายสินค้าทดสอบหนึ่งรายการ
+7. ระหว่าง Setup ให้กรอก Activation Code ถ้ามี และตั้งค่าร้าน ประเภทร้าน ผู้ดูแล รหัสผ่าน และ PIN โดยยืนยันรหัสผ่าน/PIN ซ้ำ
+8. เลือกว่าจะสร้าง Starter Catalog หรือไม่ตามตัวเลือกที่ Setup แสดง สินค้าเริ่มเป็น Draft และสต็อก 0
+9. **Server only:** เมื่อ PowerShell ปิด จะกลับมาหน้าจบ Installer พร้อมขั้นตอนถัดไป เลือก **เปิด BMS Retail Local Admin** แล้วกด Finish เพื่อเปิด browser บนเครื่อง Server และ login ด้วยบัญชีที่เพิ่งสร้าง
+10. **Server + POS:** ระบบติดตั้งและเปิด BMS POS เพื่อจับคู่ให้อัตโนมัติ ทดสอบเปิดกะและขายเมื่อเตรียมสินค้า/สต็อกพร้อมแล้ว
+11. ตั้งค่า **Start > BMS Retail Local > Configure Off-host Backup** และตรวจผล backup
+
+เปิด Admin ภายหลังได้จาก **BMS Retail Local Admin** บน Desktop หรือ **Start > BMS Retail Local > Open Admin**
+ที่ `http://127.0.0.1:3100/admin/login` ระบบทำงานเบื้องหลัง ปิดหน้าต่าง Setup ได้ และเริ่มอัตโนมัติหลังเปิดเครื่อง
+ถ้า Setup ติดตั้งต่อหลัง restart จะมีข้อความสรุปพร้อม URL ค้างไว้จนกด Enter เพราะไม่มีหน้าต่าง Installer เดิมอยู่แล้ว
+
+สำหรับการจับคู่ POS ให้เข้า **Admin > POS Devices > ออก token** ด้วยบัญชีที่มีสิทธิ์
+URL `127.0.0.1` ใช้เฉพาะบนเครื่อง Server; installer ปัจจุบันยังไม่ได้เปิดการเชื่อมต่อจากเครื่อง POS อื่นผ่าน LAN
+ต้องให้ผู้ดูแลระบบจัดเตรียมการเชื่อมต่อที่ปลอดภัยและทดสอบก่อนนำ URL ไปใช้บนเครื่อง POS อื่น
 
 ถ้า Setup หยุดหลังสร้างร้านแล้ว ให้เปิด installer เดิมอีกครั้ง ระบบจะใช้ checkpoint ที่ป้องกันไว้และติดตั้งต่อโดยไม่สร้างร้านหรือเครื่อง POS ซ้ำ
 
 คำสั่ง/เมนูที่ใช้บ่อยบน Windows:
 
-- **BMS Retail Local**: เปิดระบบ
+- **BMS Retail Local Admin / Open Admin**: เปิดหน้าผู้ดูแลบนเครื่อง Server
 - **Activate or Transfer**: activate license หรือ transfer หลัง restore
 - **Configure Off-host Backup**: ตั้งค่า backup ไปยังปลายทางนอกเครื่อง
 - **Off-host Backup Status**: ตรวจสถานะ backup
@@ -82,7 +89,10 @@
 การถอนผ่าน Windows Apps/Installed apps จะหยุดระบบและเก็บข้อมูลร้านไว้สำหรับ recovery พร้อมแสดงผลในหน้าต่าง PowerShell ถ้าต้องการลบถาวร ให้เปิด PowerShell แบบ Administrator หลังตรวจสอบ backup แล้วรัน:
 
 ```powershell
-& "$env:ProgramData\BMS\RetailLocal\bootstrap\uninstall-managed-runtime.ps1" -EraseData
+& "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
+  -NoProfile -ExecutionPolicy Bypass `
+  -File "$env:ProgramData\BMS\RetailLocal\bootstrap\uninstall-managed-runtime.ps1" `
+  -EraseData
 ```
 
 ## 4. ติดตั้งบน Ubuntu Linux

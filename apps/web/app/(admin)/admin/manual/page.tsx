@@ -814,7 +814,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "ดูและจัดการร้านทั้งหมดในมุม platform admin" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "ออก Trial 30 วัน ต่ออายุ แปลงเป็น Paid และดูหลักฐานการใช้งาน โดยไม่ปิดกั้นร้าน" },
-      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "อัปโหลด ตรวจ checksum กำหนดสถานะ และเผยแพร่ installer แยกตาม OS/ชนิดแพ็กเกจ" },
+      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "อัปโหลด ตรวจ checksum และเผยแพร่ installer แยก OS/แพ็กเกจ; Windows Server only จบแล้วเปิด Admin จากหน้า Finish หรือ shortcut BMS Retail Local Admin บนเครื่อง Server" },
       { label: "รายงานปัญหาการติดตั้ง", href: ROUTES.installerReports, note: "ดูรายงานที่ผู้ใช้ยินยอมส่ง กรอง OS/รุ่น installer ตรวจรายละเอียดและบันทึกผลการวิเคราะห์ เฉพาะผู้ดูแลแพลตฟอร์ม" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "ตั้งหรือตรวจงานส่งรายงานแบบตามเวลา" },
       { label: "Roles", href: ROUTES.roles, note: "จัดการ role กลางของทั้งระบบ" },
@@ -2033,7 +2033,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "Review or manage shops across the platform fleet" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "Issue 30-day trials, extend or convert them to paid, and review evidence without blocking a store" },
-      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "Upload, checksum, classify, and publish installers by OS and package type" },
+      { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "Upload, checksum, and publish installers by OS/package; after Windows Server-only setup, open Admin from Finish or the BMS Retail Local Admin shortcut on the server" },
       { label: "Installer error reports", href: ROUTES.installerReports, note: "Review consented reports, filter OS/installer versions, inspect evidence and record findings; platform administrators only" },
       { label: "Report Schedule", href: ROUTES.reportSchedule, note: "Recurring report delivery configuration and review" },
       { label: "Roles", href: ROUTES.roles, note: "Global role definitions used by the wider system" },

@@ -275,11 +275,25 @@ export default function RetailLocalLicensesPage() {
     {
       title: copy.customer,
       key: "customer",
+      width: 280,
       render: (_: unknown, row: LicenseRow) => (
-        <Space direction="vertical" size={0}>
-          <Typography.Text strong>{row.customer_reference || "—"}</Typography.Text>
-          <Typography.Text code copyable>{row.license_code}</Typography.Text>
-        </Space>
+        <div style={{ minWidth: 0, width: 256 }}>
+          <Typography.Text
+            strong
+            ellipsis={{ tooltip: row.customer_reference || "—" }}
+            style={{ display: "block" }}
+          >
+            {row.customer_reference || "—"}
+          </Typography.Text>
+          <Typography.Text
+            code
+            copyable={{ text: row.license_code }}
+            ellipsis={{ tooltip: row.license_code }}
+            style={{ display: "block", whiteSpace: "nowrap" }}
+          >
+            {row.license_code}
+          </Typography.Text>
+        </div>
       ),
     },
     { title: copy.type, dataIndex: "license_type", width: 90, render: (value: string) => <Tag>{value}</Tag> },
@@ -292,7 +306,7 @@ export default function RetailLocalLicensesPage() {
     {
       title: copy.expiry,
       key: "expiry",
-      width: 280,
+      width: 210,
       render: (_: unknown, row: LicenseRow) => row.license_type === "TRIAL" ? (
         <Space direction="vertical" size={0}>
           <span>{formatDate(row.trial_expires_at)}</span>
@@ -309,9 +323,9 @@ export default function RetailLocalLicensesPage() {
       title: "",
       key: "actions",
       fixed: "right" as const,
-      width: 190,
+      width: 250,
       render: (_: unknown, row: LicenseRow) => (
-        <Space>
+        <Space size={4}>
           <Button size="small" onClick={() => void openDetails(row)}>{copy.details}</Button>
           <Button size="small" loading={activationBusyId === row.id} disabled={row.commercial_status === "CANCELLED"}
             onClick={() => Modal.confirm({
@@ -335,7 +349,7 @@ export default function RetailLocalLicensesPage() {
   ];
 
   return (
-    <div>
+    <div style={{ minWidth: 0 }}>
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
         <div>
           <Typography.Title level={3} style={{ margin: 0 }}><SafetyCertificateOutlined /> {copy.title}</Typography.Title>
@@ -358,7 +372,16 @@ export default function RetailLocalLicensesPage() {
         <Col xs={12} md={4}><Card size="small"><Statistic title={th ? "รอตรวจสอบ" : "Open reviews"} value={stats.review} /></Card></Col>
       </Row>
 
-      <Table rowKey="id" loading={loading} dataSource={rows} columns={columns} scroll={{ x: 1150 }} pagination={{ pageSize: 20 }} />
+      <Table
+        rowKey="id"
+        loading={loading}
+        dataSource={rows}
+        columns={columns}
+        size="middle"
+        tableLayout="fixed"
+        scroll={{ x: 1390 }}
+        pagination={{ pageSize: 20, showSizeChanger: false }}
+      />
 
       <Modal title={copy.issueTitle} open={createOpen} onCancel={() => setCreateOpen(false)}
         onOk={() => void issueLicense()} confirmLoading={createBusy} destroyOnClose>

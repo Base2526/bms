@@ -399,6 +399,24 @@ function Start-ManagedRuntime {
   if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
 }
 
+function Show-SetupCompletion {
+  Write-Step 7 "ติดตั้งสำเร็จ"
+  Write-Host "BMS Retail Local พร้อมใช้งาน ระบบทำงานเบื้องหลังและเริ่มอัตโนมัติหลังเปิดเครื่อง" -ForegroundColor Green
+  Write-Host "เปิด Admin บนเครื่องนี้: http://127.0.0.1:3100/admin/login"
+  Write-Host "เข้าสู่ระบบด้วยอีเมลและรหัสผ่านผู้ดูแลที่สร้างระหว่างติดตั้ง"
+  Write-Host "เปิดครั้งต่อไป: Desktop > BMS Retail Local Admin หรือ Start > BMS Retail Local > Open Admin"
+  Write-Host "ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup"
+  if ($PackageType -eq 'server') {
+    Write-Host "จับคู่ POS: Admin > POS Devices > ออก token"
+    Write-Host "URL 127.0.0.1 ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน"
+  }
+  # After reboot there is no Inno wizard to return to. Keep the next steps visible
+  # until the operator acknowledges them; a normal installer run uses its Finish page.
+  if ($ResumeConfig -and [Environment]::UserInteractive) {
+    [void](Read-Host "จด URL หรือเปิด BMS Retail Local Admin แล้วกด Enter เพื่อปิด Setup (ระบบยังทำงานต่อ)")
+  }
+}
+
 Assert-Administrator
 
 if ($ResumeConfig) {
@@ -502,6 +520,7 @@ if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
   Start-ManagedRuntime
   & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate -RepairSameVersion
   Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
+  Show-SetupCompletion
   return
 }
 
@@ -945,5 +964,4 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
 
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
-Write-Step 7 "ติดตั้งสำเร็จ"
-Write-Host "BMS Retail Local พร้อมใช้งาน" -ForegroundColor Green
+Show-SetupCompletion
