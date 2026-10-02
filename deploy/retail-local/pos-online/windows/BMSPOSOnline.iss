@@ -13,6 +13,9 @@
 #ifndef PlatformTarget
   #error PlatformTarget preprocessor define is required
 #endif
+#ifndef ControlUri
+  #define ControlUri ""
+#endif
 #ifndef ArtifactBaseFilename
   #error ArtifactBaseFilename preprocessor define is required
 #endif
@@ -111,6 +114,7 @@ begin
   Parameters := '-NoProfile -ExecutionPolicy Bypass -File ' +
     AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\install-pos-online.ps1')) +
     ' -ManifestUri ' + AddQuotes('{#ManifestUri}') +
+    ' -ControlUri ' + AddQuotes('{#ControlUri}') +
     ' -PlatformTarget ' + AddQuotes('{#PlatformTarget}') +
     ' -AgentPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\bms-runtime-agent.exe')) +
     ' -KeyringPath ' + AddQuotes(ExpandConstant('{tmp}\bms-pos-bootstrap\trusted-release-keys.json')) +

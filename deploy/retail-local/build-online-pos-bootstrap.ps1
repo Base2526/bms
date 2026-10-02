@@ -2,9 +2,11 @@
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [Parameter(Mandatory = $true)][string]$Keyring,
-  [Parameter(Mandatory = $true)][string]$WindowsManifestUri,
-  [Parameter(Mandatory = $true)][string]$WindowsX86ManifestUri,
-  [Parameter(Mandatory = $true)][string]$LinuxManifestUri,
+  [string]$ReleaseBaseUri = "https://releases.jachoei.com/retail-local",
+  [string]$WindowsManifestUri,
+  [string]$WindowsX86ManifestUri,
+  [string]$LinuxManifestUri,
+  [string]$ControlUri = "",
   [ValidateSet("All", "Windows", "Linux")][string]$Target = "All",
   [string]$OutputDirectory,
   [string]$InnoCompiler,
@@ -71,13 +73,21 @@ function Write-Metadata([string]$Path, [string]$Platform, [string]$ManifestUri, 
 
 if ($PSVersionTable.PSVersion.Major -lt 7) { throw "ต้องรันด้วย PowerShell 7: pwsh" }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version ต้องเป็น Semantic Version" }
+. (Join-Path $PSScriptRoot "release-urls.ps1")
+$releaseUrls = Get-RetailLocalReleaseUrls -Version $Version -BaseUri $ReleaseBaseUri
+if ([string]::IsNullOrWhiteSpace($WindowsManifestUri)) { $WindowsManifestUri = $releaseUrls.WindowsManifestUri }
+if ([string]::IsNullOrWhiteSpace($WindowsX86ManifestUri)) { $WindowsX86ManifestUri = $releaseUrls.WindowsX86ManifestUri }
+if ([string]::IsNullOrWhiteSpace($LinuxManifestUri)) { $LinuxManifestUri = $releaseUrls.LinuxManifestUri }
 foreach ($item in @{
   WindowsManifestUri = $WindowsManifestUri
   WindowsX86ManifestUri = $WindowsX86ManifestUri
   LinuxManifestUri = $LinuxManifestUri
 }.GetEnumerator()) { Assert-HttpsUri $item.Key $item.Value }
+$controlUriConfigured = -not [string]::IsNullOrWhiteSpace($ControlUri)
+if ($controlUriConfigured) { Assert-HttpsUri "ControlUri" $ControlUri }
 $testBuild = (Test-PlaceholderUri $WindowsManifestUri) -or
-  (Test-PlaceholderUri $WindowsX86ManifestUri) -or (Test-PlaceholderUri $LinuxManifestUri)
+  (Test-PlaceholderUri $WindowsX86ManifestUri) -or (Test-PlaceholderUri $LinuxManifestUri) -or
+  ($controlUriConfigured -and (Test-PlaceholderUri $ControlUri))
 if ($testBuild -and -not $AllowTestEndpoints) { throw "production POS bootstrap ต้องใช้ release URL จริง" }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -155,6 +165,7 @@ try {
       Invoke-Checked "Build $($spec.Name) POS online bootstrap" {
         & $InnoCompiler "/DBuildRoot=$stage" "/DOutputRoot=$built" "/DProductVersion=$Version" `
           "/DManifestUri=$($spec.Uri)" "/DPlatformTarget=$($spec.Target)" `
+          "/DControlUri=$ControlUri" `
           "/DArtifactBaseFilename=$artifactBase" (Join-Path $sourceRoot "windows\BMSPOSOnline.iss")
       }
       Copy-Item -LiteralPath (Join-Path $built "$artifactBase.exe") -Destination $outputs[$spec.Name] -Force
@@ -182,7 +193,7 @@ try {
     Invoke-Checked "Build Linux x64 POS online bootstrap" {
       & wsl.exe -d $WslDistribution -- bash (ConvertTo-WslPath (Join-Path $linuxSource "build-deb.sh")) `
         $Version (ConvertTo-WslPath $linuxAgent) (ConvertTo-WslPath $keyringPath) $LinuxManifestUri `
-        "ubuntu-24.04-lts-x64" (ConvertTo-WslPath $linuxBuilt)
+        "ubuntu-24.04-lts-x64" (ConvertTo-WslPath $linuxBuilt) $ControlUri
     }
     Copy-Item -LiteralPath (Join-Path $linuxBuilt "bms-pos-online-bootstrap_${Version}_amd64.deb") -Destination $outputs.linuxX64 -Force
     $results += Write-Metadata $outputs.linuxX64 "ubuntu-x64" $LinuxManifestUri $sourceCommit

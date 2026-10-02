@@ -38,12 +38,14 @@ wrong, and update the doc in the same change.
 | `apps/web/lib/bms/tools/` | AI tool catalog + runtime, shared by customer pipeline and staff assistant |
 | `apps/web/lib/bms/assistantKnowledge/` | Deterministic bilingual capability/guide catalog + retrieval (no DB, no network) |
 | `apps/web/lib/bms/pharmacy/` | Flag-gated pharmacy intake |
+| `apps/web/lib/bms/deliveryPlatforms/` | Delivery-platform adapters, capability matrix, webhook inbox and command outbox workers (foodpanda sandbox/shadow; GrabFood and LINE MAN contract-blocked) |
 | `apps/web/app/api/bms/` · `apps/web/graphql/` | REST/webhooks/cron · GraphQL schema + resolvers |
 | `apps/web/app/(admin)/admin/` | Admin UI (incl. `assistant`, `revisions`, `manual`, `system-health`) |
 | `apps/web/components/work-assistant/` | Global admin assistant Drawer, shared confirm mutations, POS register guide surface |
 | `apps/web/app/(main)/` · `(auth)/` · `(checkout)/` | Public landing/products/`live-dashboard` · auth+signup · signed-link checkout |
 | `apps/mobile/` | Bare React Native POS — secure device pairing, generated Apollo GraphQL reads/commands, cashier PIN/RBAC, and named WS invalidation for retail/restaurant/board-game/branch-inventory/shift workflows |
 | `apps/desktop/` | Electron POS shell for Windows/Linux/macOS — first-run pairing, OS-keystore device token, origin-restricted IPC bridge; it hosts `/pos` and owns no business rule |
+| `apps/retail-local-agent/` · `deploy/retail-local/` | Go host agent (resumable staging, update transaction, signed licence evidence, local licence UI, installation telemetry) · Retail Local Compose profile, Managed Runtime and online/offline installer builds — a delivery layer that owns no business rule |
 | `apps/ws/` · `packages/graphql-core/` | Subscription-only WebSocket gateway (no database connection, ever) · shared typeDefs/resolvers used by both web and ws |
 | `packages/realtime/` | The one realtime contract: event union + per-event audience/permission rules, topic builders, validation/redaction, ticket claims, `subscriptionAuth`, `NAMED_REALTIME_SUBSCRIPTIONS` |
 | `schema.graphql` | Committed SDL artifact used by in-repo RN codegen and external clients (`npm run schema:export`) |
@@ -166,7 +168,17 @@ wrong, and update the doc in the same change.
   only after a configured positive prefix; timing/focus is never treated as proof of a scanner. The
   native app's focused HID mode is different: the cashier explicitly opens the scanner modal, which
   must keep its input focused, suppress duplicate CR+LF submission, and route modifier/multi-pack
-  items through the existing product-options flow. It is not global capture or authorization. Full detail:
+  items through the existing product-options flow. It is not global capture or authorization.
+  Since `10.13` a sale line's money is `bms_order_items.line_amount` (a promotion discount is
+  allocated per line in satang, remainder on the last line); sales, tax and report readers use it,
+  never `unit_price × qty`. A full tax invoice issues only for a `COMPLETED`, never-voided,
+  never-returned bill, and back-office cancel/return/refund refuses a bill with an active tax
+  document — return it at the register so a credit note is issued. A tax document snapshots the
+  seller's name/tax id/branch/address at issue (`10.24`) and carries the Bangkok issue date
+  (`10.8`); an unsent e-Tax row of a cancelled document becomes `CANCELLED` (`10.25`). Expense
+  documents (`10.11`, `expense.view`/`expense.manage`) claim input VAT only on a `TAX_INVOICE`
+  with a document number and a checksum-valid payee tax id, the duplicate-invoice key is the
+  normalised number + branch, and a correction is `VOID` with a reason, never a delete. Full detail:
   [agent-invariants.md § POS and tax](docs/agent-invariants.md#pos-and-tax).
 - **The desktop shell is a window, not a register (`apps/desktop`)** — Electron hosts the
   authoritative `/pos` surface on Windows, Linux and macOS. It owns no schema,
@@ -208,6 +220,19 @@ wrong, and update the doc in the same change.
   Release builds use the small online bootstrap by default and must never fall back to an offline
   bundle because a manifest URL, keyring, or requested target is missing. Build offline only after
   an explicit user request, with both `-Distribution Offline` and `-AllowOfflineRecovery`.
+  **Licensing is evidence-only and fail-open** (`10.16`–`10.18`, `10.35`): licence, trial or review
+  state never blocks POS, payment, stock, tax, backup, restore, data access or a corrective update,
+  and there is no kill switch or lease. Setup never prompts for or redeems an Activation Code —
+  downloading or installing creates no licence or trial; activation is an explicit post-install
+  action from `/admin/retail-local-license` (`retail_local.license.view`/`.manage`, seeded to no
+  role, so only Administrator holds them until granted). Web has only a request mailbox and a
+  read-only status mount; the host agent owns credentials and signed evidence. The installation
+  registry (`10.36`) counts instances by a random UUID and never stores a hardware serial, MAC,
+  hostname or source IP; installer error reports (`10.31`) are consent-gated, opt-in
+  (`BMS_INSTALLER_REPORTS_ENABLED=true`), size/rate-bounded, allow-listed JSON that only platform
+  admins read. Server runs on Windows x64 and Ubuntu x64; `windows-x86-legacy` is POS-only; macOS
+  packages are experimental. The product is a **technical pilot, not Commercial/GA**
+  ([retail-local-ga-readiness.md](docs/business/retail-local-ga-readiness.md)).
   Detail: [docs/business/retail-local.md](docs/business/retail-local.md)
   and [agent-invariants.md § Retail Local](docs/agent-invariants.md#retail-local-deployment).
 - **Restaurant dine-in (`9.44`–`9.60`)** — `/pos/restaurant` is a second operating surface, never a
@@ -307,7 +332,7 @@ wrong, and update the doc in the same change.
   (never a second money path), writes an immutable cancellation cause, and reprices/absorbs/queues a
   refund exactly like a counter partial return. Full detail:
   [agent-invariants.md § Restaurant online ordering](docs/agent-invariants.md#restaurant-online-ordering-chat-delivery-sold-out).
-- **Delivery platforms (`10.12`)** — provider contracts are capability-gated: never invent an
+- **Delivery platforms (`10.12`, `10.14`, `10.21`)** — provider contracts are capability-gated: never invent an
   endpoint, signature header, payload, status or retry guarantee. The opaque integration id derives
   tenant and a verified store mapping derives branch. Platform partner contracts and encrypted
   credentials live only in the platform-admin `/admin/delivery-provider-settings` control plane;
@@ -331,6 +356,20 @@ wrong, and update the doc in the same change.
   as unknown, never sums mixed currencies and never allocates statement-wide fees to a branch without
   provider evidence. Full detail:
   [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).
+- **Social Login (`10.22`)** — Google/Facebook availability is a platform-admin switch per surface
+  (`PUBLIC_LOGIN`, `ADMIN_LOGIN`, `SHOP_SIGNUP`, all default off) in `bms_social_auth_settings`,
+  changed only at `/admin/auth-settings` with an explicit confirm and an append-only event row. A
+  surface is available only when its switch is on **and** its runtime config is ready; client
+  ids/secrets stay in environment variables, never the database, and each `NEXT_PUBLIC_*` id must
+  equal its server twin. One `(lower(provider), provider_id)` maps to one user (partial unique
+  index), and the public `socialAuthAvailability` query returns booleans only. Detail:
+  [agent-invariants.md § Authentication identity and registration](docs/agent-invariants.md#authentication-identity-and-registration).
+- **Sample data is a ledger, not a name prefix (`10.26`, `10.30`)** — `bms_sample_runs` and
+  `bms_sample_records` record exactly which root rows a run created; only those rows may be
+  removed, and a `FAKE-`/`SAMPLE-` prefix never authorises a delete. One live run per tenant;
+  `/api/bms/onboarding/sample-data` requires `product.edit`, its POST seeds `STARTER_CATALOG` only,
+  and DELETE requires the typed confirmation `DELETE SAMPLE`. Onboarding seeds accept every
+  archetype (`10.30` — restaurant seeding failed before it).
 - **Branch inventory ops (`7.98`)** — a transfer is two steps (send, then receive) so goods in
   transit belong to no branch; that is what keeps a count at the source correct while the van moves.
   A send never moves reserved stock, and a short receive books the shortfall as lost in transit at
@@ -692,6 +731,14 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 | `mobile-graphql-contract` · `graphql-schema-artifact-contract` | typed inputs/outputs read from the parsed SDL, field↔resolver both ways, no caller-supplied authority, JSON countdown · committed `schema.graphql` matches the executable schema |
 | `graphql-action-alias-contract` · `graphql-error-contract` · `react-native-graphql-doc-contract` | named actions delegate to the kept `@deprecated` field with a fixed action and no duplicated service call · every client error carries a code while business status stays in `data` · every documented example validates against the real schema |
 | `mobile-transport-compat-contract` | Android reaches HTTP GraphQL and mints a ticket with a Bearer token, user-scope tickets never carry the POS permission set, and the REST routes the browser still depends on exist and still authenticate |
+| `tax-leak-contract` · `tax-report-contract` · `tax-document-number-contract` · `vat-contract` | `line_amount` money authority and per-line promotion allocation, full-invoice eligibility, back-office refusal of taxed bills · VAT report arithmetic (base excludes VAT, credit notes negative, exempt/rounding separate, Thai-era dates) · document numbering · VAT rounding against hand-computed golden invoices |
+| `expense-documents-contract` | input-VAT eligibility, Thai tax-id checksum, withholding-tax fields, void-not-delete, normalised duplicate invoice key |
+| `pos-offline-tender-contract` · `offline-continuity-contract` | Emergency Offline evidence columns and the cash-only, original-idempotency-key replay boundary |
+| `delivery-platform-contract` · `delivery-platform-hardening-contract` · `restaurant-delivery-readiness-contract` | capability matrix and verified-mapping intake · OAuth token cache and single 401 refresh, logical webhook id vs payload hash, transport-decided lifecycle · restaurant onboarding defaults to no-recipe menus and delivery reuses flat shipping, prepaid packing and `OTHER` rider tracking |
+| `social-auth-settings-contract` · `bms-flow-data-contract` | per-surface switch AND config readiness, env-only secrets · `/how-it-works` flow data (unique ids, edges/scenarios resolve, no unverified provider names) |
+| `retail-local-contract` · `retail-local-managed-runtime-contract` · `retail-local-release-download-contract` · `retail-local-release-upload-contract` · `retail-local-request-body` | local profile shape (loopback, no seeded admin, migration ledger) · installer/runtime scripts per platform · public vs onboarding download access · raw streamed release upload · licensing APIs bound chunked JSON before buffering |
+| `retail-local-license-control-plane` · `retail-local-license-mailbox` · `retail-local-license-ui` · `retail-local-optional-activation` · `retail-local-activation-retry` · `retail-local-installation-registry` | evidence-only signed licence ingestion · Web-to-host request mailbox · shop licence page · setup never redeems a code · exact code + request-id replay only · instance registry without hardware identity |
+| `installer-reports-contract` · `retail-local-sample-data-contract` | consent-gated, size/rate-bounded, allow-listed installer report intake · versioned archetype manifest, a Starter Catalog per archetype, registry-backed sample cleanup |
 
   Suites that need a real Postgres **write to it** — dev only, never production. They create and
   remove their own rows (`scripts/variant-reservations-db-contract.test.mts` covers reservation
@@ -699,7 +746,11 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
   covers cross-shop/cross-branch reservation, the ledger row, and rollback). Run them from
   `apps/web` with the `next-runtime-shim` import and `--test-concurrency=1`; the exact command lives
   in [CLAUDE.local.md](CLAUDE.local.md). `gate.yml` does **not** run this mode, so "pure is green"
-  never means the database path was exercised.
+  never means the database path was exercised. Newer DB suites follow the same rule:
+  `tax-backoffice-guards-`, `tax-sales-report-`, `tax-document-numbering-`, `stock-ledger-`,
+  `expense-documents-`, `delivery-platform-hardening-`, `retail-local-license-`,
+  `retail-local-sample-data-`, `retail-local-onboarding-all-archetypes-` and
+  `installer-reports-db-contract`.
 
   `realtime-outbox-db-contract` and `realtime-domain-db-contract` additionally need migrations
   `9.70`–`9.74` and `9.84`–`9.86`. They have local DB contract coverage, but production-like rollout still uses the throwaway instance in
@@ -710,9 +761,17 @@ PR. (`apps/ws`, `packages/graphql-core`, `packages/realtime` each have their own
 
   `apps/mobile` and `apps/desktop` each carry their own suite — Jest for the RN client, `node --test`
   for the desktop pairing/keystore units — and `gate.yml` runs neither, so run them from that app
-  when you touch it. `.github/workflows/desktop-{linux,macos}.yml` lint and test the desktop app and
-  build that platform's packages on its own runner — a Linux runner for AppImage/DEB, a macOS runner
-  for the two DMGs — then upload a 14-day artifact. Neither signs, notarizes nor publishes.
+  when you touch it. `.github/workflows/desktop-{windows,linux,macos}.yml` lint and test the desktop app
+  and build that platform's packages on its own runner — NSIS on Windows, AppImage/DEB on Linux,
+  the two DMGs on macOS — then upload a 14-day artifact. None signs, notarizes or publishes.
+
+  The contract runner only picks up `*.test.mts`. `.github/workflows/retail-local-managed-runtime.yml`
+  runs the Go agent tests (`apps/retail-local-agent`) and the Retail Local shell/Node suites on
+  Ubuntu, Windows and macOS runners: `retail-local-bootstrap-behavior.test.mjs`,
+  `retail-local-unix-diagnostics.test.mjs`, `retail-local-update-transaction.test.sh` and
+  `retail-local-uninstall-container.test.sh`. `retail-local-setup-diagnostics.test.ps1`,
+  `retail-local-migration-checksum.test.mjs` and `installer-reports-browser-smoke.mjs` run only by
+  hand.
 
   The **live-model** suite (`scripts/ai-eval/run.mjs`) writes real data — development/sandbox tenants
   only. See [scripts/ai-eval/README.md](scripts/ai-eval/README.md).

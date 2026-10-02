@@ -1381,8 +1381,9 @@ The rules that follow from it:
 - **Public by design still means bounded.** `/api/bms/demo-chat` and the web-widget webhook are open
   on purpose, and both carry a `rateLimit()` ceiling. An open endpoint that calls a model is an open
   invoice.
-- `onboarding/sample-data` deliberately gates on the user's **role** read from the database rather
-  than a permission. Moving it to the helper would change who is allowed in, so it stays as it is.
+- `onboarding/sample-data` now uses `authorizeAdminRoute("product.edit")` (it previously gated on
+  the role read from the database). What it may delete is decided by the `10.26` run ledger
+  (`bms_sample_runs`/`bms_sample_records`), never by a `FAKE-`/`SAMPLE-` name prefix.
 
 `scripts/inventory-tenant-scope-contract.test.mts` walks every `route.ts` under `app/api/bms` and
 fails when one carries no guard from an explicit allowlist, and requires a `rateLimit()` call on the

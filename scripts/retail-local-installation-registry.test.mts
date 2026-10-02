@@ -19,6 +19,20 @@ test("all online installer families report success and the dashboard exposes OS 
   assert.doesNotMatch(service, /serial|mac_address|hostname|transaction|customer/i);
 });
 
+test("POS-only bootstraps keep release downloads and installation reporting on separate origins", () => {
+  const windows = read("deploy/retail-local/pos-online/windows/install-pos-online.ps1");
+  const linux = read("deploy/retail-local/pos-online/linux/bms-pos-online-setup");
+  const macos = read("deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command");
+  assert.match(windows, /installation-report[\s\S]*-control-uri \$ControlUri/);
+  assert.doesNotMatch(windows, /installation-report[\s\S]{0,160}-control-uri \$ManifestUri/);
+  assert.match(linux, /installation-report[\s\S]*-control-uri "\$control_uri"/);
+  assert.match(macos, /installation-report[\s\S]*-control-uri "\$control_uri"/);
+  const builder = read("deploy/retail-local/build-online-pos-bootstrap.ps1");
+  assert.match(builder, /DControlUri=\$ControlUri/);
+  assert.match(builder, /build-deb\.sh[\s\S]*\$ControlUri/);
+  assert.match(read("deploy/retail-local/build-release.ps1"), /ControlUri = \$ActivationUri/);
+});
+
 test("successful install registry authenticates random installation identities without hardware fingerprints", async () => {
   const global = globalThis as typeof globalThis & { __bmsPostgresPool?: unknown };
   const previous = global.__bmsPostgresPool;

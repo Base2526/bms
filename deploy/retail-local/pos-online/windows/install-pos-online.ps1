@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
   [Parameter(Mandatory = $true)][string]$ManifestUri,
+  [string]$ControlUri = "",
   [Parameter(Mandatory = $true)][string]$PlatformTarget,
   [Parameter(Mandatory = $true)][string]$AgentPath,
   [Parameter(Mandatory = $true)][string]$KeyringPath,
@@ -50,6 +51,7 @@ function Invoke-AgentJson([string[]]$Arguments) {
 }
 
 Assert-HttpsUri $ManifestUri
+if (-not [string]::IsNullOrWhiteSpace($ControlUri)) { Assert-HttpsUri $ControlUri }
 foreach ($path in @($AgentPath, $KeyringPath)) {
   if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Bootstrap file is missing: $path" }
 }
@@ -141,11 +143,13 @@ $process = Start-Process -FilePath $executableInstaller -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "BMS POS installer failed (exit $($process.ExitCode))." }
 
 # Best-effort anonymous successful-install inventory; no hardware fingerprint.
-try {
-  & $AgentPath installation-report -root $stateRoot -control-uri $ManifestUri -event INSTALLED `
-    -package-type pos -target $PlatformTarget -release-version $version -force *> $null
-  if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
-} catch { Write-Warning "Installation inventory is unavailable; POS installation still succeeded." }
+if (-not [string]::IsNullOrWhiteSpace($ControlUri)) {
+  try {
+    & $AgentPath installation-report -root $stateRoot -control-uri $ControlUri -event INSTALLED `
+      -package-type pos -target $PlatformTarget -release-version $version -force *> $null
+    if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
+  } catch { Write-Warning "Installation inventory is unavailable; POS installation still succeeded." }
+}
 
 Remove-Item -LiteralPath (Join-Path $stateRoot "releases\$version") -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "BMS POS installation completed."

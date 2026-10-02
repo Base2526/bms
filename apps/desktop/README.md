@@ -218,6 +218,12 @@ xattr -dr com.apple.quarantine "/Applications/BMS POS.app"
 
 ## Build the Windows installer
 
+Every electron-builder target runs `scripts/verify-packaged-app.cjs` after packing. It compares
+the actual `app.asar` renderer/IPC source bytes and app version against the build source and fails
+on drift. This does not refresh an already published online payload: a desktop change also needs
+a new `desktop.artifact`, newly signed manifest with its new digest, and publication of that release.
+Rebuilding only the small online bootstrap still downloads the old app from the old manifest.
+
 ```powershell
 cd apps/desktop
 npm run pack:win

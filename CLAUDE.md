@@ -29,11 +29,14 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [business/order.md](docs/business/order.md) · [inventory.md](docs/business/inventory.md) · [payment.md](docs/business/payment.md) · [pos.md](docs/business/pos.md) · [board-game-cafe.md](docs/business/board-game-cafe.md) · [crm.md](docs/business/crm.md) | Order lifecycle/coupons · stock/PO/import + branch transfers/counts · payment + slip verify · counter/native POS · Board Game Cafe · customer identity/inbox |
 | [business/cloud-hybrid-pos.md](docs/business/cloud-hybrid-pos.md) | One-product Cloud + Hybrid POS positioning, current Emergency Offline Mode boundary, and claim/rollout contract |
 | [business/retail-local.md](docs/business/retail-local.md) | Single-store Retail Local technical-pilot deployment: bootstrap, migration/provisioning, backup/restore, security boundary, and release gates |
+| [business/retail-local-install-manual.md](docs/business/retail-local-install-manual.md) · [retail-local-managed-runtime.md](docs/business/retail-local-managed-runtime.md) · [retail-local-ga-readiness.md](docs/business/retail-local-ga-readiness.md) · [deploy/retail-local/BUILD.md](deploy/retail-local/BUILD.md) | Operator install, optional activation and update manual · Managed Runtime host agent and platform matrix · the GA evidence boundary (verdict: **not Commercial/GA**) · how release installers are built |
+| [integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md) · [lineman-partner-intake.md](docs/integrations/lineman-partner-intake.md) | Delivery-platform capability matrix, webhook inbox/command outbox, settlement analytics · LINE MAN partner intake checklist |
+| [business/support-diagnostics.md](docs/business/support-diagnostics.md) · [feature-inventory.md](docs/feature-inventory.md) | Consent-gated diagnostics export/send to Support · Thai register of what the system does and what is actually proven |
 | [apps/mobile/README.md](apps/mobile/README.md) | Bare React Native POS scaffold: screens, device pairing, native build commands, and the explicit mock/backend boundary |
 | [apps/desktop/README.md](apps/desktop/README.md) | Windows/Linux/macOS POS Electron shell: encrypted device pairing, installer builds, security boundary, and remaining hardware/release work |
 | [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) | Restaurant chat ordering + delivery (`9.55`–`9.57`): closed decisions, sold-out flag, human accept, line cancellation/refund |
 | [AI_GUIDELINES.md](docs/AI_GUIDELINES.md) | Rules for AI features and approval boundaries |
-| [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals |
+| [ai/workflow.md](docs/ai/workflow.md) · [tools.md](docs/ai/tools.md) · [prompts.md](docs/ai/prompts.md) · [quality.md](docs/ai/quality.md) · [usage-accounting.md](docs/ai/usage-accounting.md) | Pipeline + provider routing + usage accounting · tool catalog · prompts · quality signals · credits vs provider calls vs tokens vs cost |
 | [ai/work-assistant-coverage.md](docs/ai/work-assistant-coverage.md) | Global staff assistant: capability/guide catalog, what each status word means, coverage + regression gates |
 | [pharmacy/README.md](apps/web/lib/bms/pharmacy/README.md) | Pharmacy intake: flags, migrations `7.57`–`7.73` + `7.83`, pharmacist-decides contract |
 | [integrations/](docs/integrations/) · [ui/](docs/ui/) | LINE · TikTok · Lazada/Shopee (beta) · carriers — Customer 360 · checkout wireframe · dashboard · retention engine |
@@ -41,15 +44,19 @@ This file is the **navigation index + AI rules**. Working rules for agents are i
 | [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | Deterministic contract suites + live-model evals |
 | [agent-invariants.md](docs/agent-invariants.md) | Per-domain rules in full (AGENTS.md has the short form) |
 | [feature-log.md](docs/feature-log.md) · [local-notes-archive.md](docs/local-notes-archive.md) | Why each built feature works the way it does (EN · TH) |
+| [design/flow-diagram/](docs/design/flow-diagram/CODEX_PROMPT.md) | Design reference for the public interactive BMS flow diagram (`/how-it-works`, compact on `/`) |
 
-## Current status (2026-09)
+## Current status (2026-10)
 
 Fully built except: **Shopee/Lazada** (🧪 beta, signatures unverified) · **Flash/Kerry carriers**
 (🧪 safety layer done, adapters await a real merchant contract) · **AI Pharmacy Intake** (🧪
 flag-gated off) · **e-Tax submission**
 (🧪 built, gated off by default, no signing/submission provider verified yet) · **POS ESC/POS
 printing/cash-drawer** (🧪 written, never run against real hardware) · **Windows/Linux/macOS desktop
-POS client** (🧪 MVP shell — every package is unsigned, with no auto-update and no offline tender).
+POS client** (🧪 MVP shell — every package is unsigned, with no auto-update and no offline tender)
+· **Delivery platforms** (🧪 foodpanda sandbox/shadow only; GrabFood and LINE MAN contract-blocked;
+no provider is live-ready) · **Retail Local** (🧪 technical pilot, not Commercial/GA — installers are
+unsigned and clean-machine/restore/failure drills are still open).
 POS counter sale/return/refund
 and Thai tax invoicing (migrations `7.84`–`7.95`), membership/tiers/loyalty points (`7.96`), parked
 bills + drawer movements + void + shift report (`7.97`, hardened through `9.5` with idempotent
@@ -86,8 +93,8 @@ stock". Details: [business/inventory.md](docs/business/inventory.md) and
 
 **Global AI Work Assistant (2026-08-28, no migration, no new permission)** — the staff tool-calling
 runtime now also serves `bmsWorkAssistant` from a Drawer on every back-office page, grounded on a
-deterministic bilingual catalog (51 capabilities, 117 guides, 20 FAQ answers, 24 limit groups/139
-rules per language — counted from the catalog module on 2026-09-29; counts drift as features ship, so re-count
+deterministic bilingual catalog (51 capabilities, 119 guides, 20 FAQ answers, 24 limit groups/139
+rules per language — counted from the catalog module on 2026-10-02; counts drift as features ship, so re-count
 before quoting them, and note the board-game queue/reservation/offer/renewal work is **not yet** in the catalog)
 covering every Sidebar
 destination and every routable Admin page. `/pos` gets the same catalog as offline guide search with
@@ -401,7 +408,90 @@ multiplexers (`bmsPosDeposit`, `bmsPosExpense`, `bmsPosPark`, `bmsPosShift`) are
 business workflows retain compatibility routes until their parity tests land — see
 [architecture/graphql-client-readiness-brief.md](docs/architecture/graphql-client-readiness-brief.md).
 
-Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-09).
+**Emergency Offline Mode is an encrypted cash queue on the phone, not an offline backend (`10.5`).**
+`apps/mobile` may accept a plain retail cash sale while the server is unreachable, but only after
+the cashier is signed in, the original shift is open and the product snapshot is loaded. The
+temporary reference is not a receipt or tax document. On reconnect the normal `recordPosSale()`
+rechecks device/cashier/shift/branch, price, stock, tax and eligibility under the original
+idempotency key; `bms_orders.pos_offline_tendered_at`/`pos_offline_synced_at` are evidence only.
+Accepted cash is never discarded — an unresolved row blocks shift close, unpair and re-pair.
+Restaurant, pharmacy, board-game, member/coupon, approval, serial/weighted/modifier, credit/deposit
+and non-cash work stay server-required, and the desktop shell has no offline tender. See
+[business/cloud-hybrid-pos.md](docs/business/cloud-hybrid-pos.md).
+
+**A board-game bill keeps the words it was sold with, and a person keeps their own clock (`10.6`–
+`10.7`).** Participants freeze the rate code/name at sale so renaming a rate never rewrites an old
+receipt. Each participant has a `time_mode` (`ACTUAL`/`SESSION_END`/`DURATION`) and an optional
+`planned_end_at` charged at least through that time; billing groups can merge (`MERGED` +
+`merged_into_group_id`) and detach while open, and seating past capacity is an explicit,
+server-checked override.
+
+**Thai tax evidence cannot drift after the sale (`10.8`–`10.11`, `10.13`, `10.23`–`10.25`).** A
+sale line's money is `bms_order_items.line_amount` — a promotion discount is allocated per line in
+satang — and every sales, tax and report reader uses it instead of `unit_price × qty`. A full tax
+invoice issues only for a completed bill that was never voided or returned, and the back office
+refuses to cancel/return/refund a bill with an active tax document (return it at the register so a
+credit note is issued). Documents carry the Bangkok issue date (`10.8`) and a seller snapshot taken
+at issue (`10.24`); an unsent e-Tax row of a cancelled document becomes `CANCELLED` (`10.25`).
+Pricing excluding VAT is no longer configurable. Expense documents (`10.11`, `/admin/expenses`,
+`expense.view`/`expense.manage` seeded to Manager) claim input VAT only on a `TAX_INVOICE` with a
+document number and a checksum-valid payee tax id, record withholding tax, are corrected by `VOID`
+with a reason, and the duplicate-invoice key is the normalised number + branch. `VAT_SALES`,
+`VAT_PURCHASE` and `STOCK_LEDGER` are persisted report types. `10.13` has **not** been verified
+against a database — see [CLAUDE.local.md](CLAUDE.local.md) § Tax leak guards — and
+[business/pos.md](docs/business/pos.md).
+
+**Delivery platforms are capability-gated, never guessed (`10.12`, `10.14`, `10.21`).** Webhooks write a
+sanitized durable inbox; order, payment and reservation commit together; every provider call runs
+after commit from a command outbox. The opaque integration id derives the tenant and a `VERIFIED`
+store mapping derives the branch; only verified item/variant/modifier mappings create an order.
+Platform partner contracts and encrypted credentials live in the platform-admin
+`/admin/delivery-provider-settings`; tenants authorize stores and map menus at
+`/admin/delivery-platforms` (nine `delivery.*`/`restaurant.*` permissions, seeded to Manager, with
+review/handoff also to Sales and Cashier). foodpanda uses OAuth client credentials and is the only
+adapter that calls a network, in sandbox/shadow; accept/reject/pause still need partner
+confirmation. GrabFood and LINE MAN are contract-blocked. `PLATFORM_SETTLEMENT` is server-only. See
+[integrations/delivery-platforms.md](docs/integrations/delivery-platforms.md).
+
+**Social Login is a platform-admin switch on top of real configuration (`10.22`).** Google and Facebook
+are enabled per surface (`PUBLIC_LOGIN`, `ADMIN_LOGIN`, `SHOP_SIGNUP`, all off by default) at
+`/admin/auth-settings`; a surface works only when its switch is on **and** its runtime config is
+ready. Client ids/secrets live in environment variables, never the database, and one
+`(provider, provider_id)` maps to one user.
+
+**Sample data is removed by ledger, never by name (`10.26`, `10.30`).** `bms_sample_runs` and
+`bms_sample_records` record exactly which root rows a run created; a `FAKE-`/`SAMPLE-` prefix
+never authorises a delete. `/api/bms/onboarding/sample-data` needs `product.edit`, seeds the
+Starter Catalog only, and deletes only after the typed confirmation `DELETE SAMPLE`. Onboarding
+seeds now accept every archetype.
+
+**Retail Local runs the same BMS on one shop's own host (`10.15`–`10.20`, `10.27`–`10.29`,
+`10.31`–`10.36`).** It is a deployment profile, not a fork: one local PostgreSQL is the only source of
+truth, `bms_local_installation` is a singleton, first-run provisioning creates tenant/admin/`MAIN`/
+`POS-01` atomically, services bind to loopback, and `retail-local-migrate.mjs` applies the chain in
+order with checksums. Packages are Server + POS, Server and POS-only: Server runs on Windows x64 and
+Ubuntu x64 (Linux has a server-only bootstrap), `windows-x86-legacy` is POS-only, and macOS
+Apple Silicon/Intel packages are experimental; every online bootstrap is a small signed-manifest
+downloader with no embedded payload, and offline bundles are built only on explicit request.
+Updates are operator-initiated (check, then back up and update) with a verified encrypted backup,
+transactional migration and health-gated commit or rollback. **Licensing is evidence-only and
+fail-open**: setup never asks for an Activation Code, installing creates no licence or trial,
+activation is an optional post-install step from `/admin/retail-local-license`
+(`retail_local.license.view`/`.manage`, seeded to no role), retries replay only the exact code +
+request id (`10.35`), and no licence, trial or review state may ever stop POS, payment, stock, tax,
+backup, restore or data access. Platform admins manage licences, releases
+(`/admin/retail-local-releases`, streamed through the Pages API upload route) and installer error
+reports (`/admin/installer-reports`, `10.31`, consent-gated and opt-in); the installation registry
+(`10.36`) counts instances by a random UUID and never stores hardware identity or source IP. The
+public download page is `/retail-local`. See [business/retail-local.md](docs/business/retail-local.md)
+and [business/retail-local-ga-readiness.md](docs/business/retail-local-ga-readiness.md).
+
+**The public site explains the flow it actually ships.** `/how-it-works` (and a compact version on
+`/`) renders an interactive BMS flow diagram from `components/marketing/flow/flowData.ts`; frontend
+only, bilingual through `bmsFlow.*` keys, and `bms-flow-data-contract` forbids naming an unverified
+provider integration.
+
+Build table + roadmap: [architecture/system.md](docs/architecture/system.md#build-status-2026-10).
 Migrations written but not yet applied to production are listed in
 [CLAUDE.local.md](CLAUDE.local.md) § ก่อน production — check the target database, several features
 look done in code but need their migration first.
@@ -458,6 +548,9 @@ look done in code but need their migration first.
 - High-impact records use revision history for before/after snapshots; the audit log remains the
   source for who/when/action. Sensitive writes record their audit row **inside the same transaction**
   as the money or stock they move, so a committed movement can never lack one.
+- **Licensing never sanctions a shop.** Retail Local licence, trial, review or download-access state
+  is commercial evidence only; it must never block POS, payment, stock, tax, backup, restore, a
+  corrective update or access to the shop's data, and there is no kill switch or runtime lease.
 - **A REST route is not protected by being under `/api`.** `middleware.ts` guards `/admin/**` only.
   Every `/api/bms/*` route authenticates itself — `authorizeAdminRoute(permission)` for staff routes,
   a verified signature for webhooks, a job token for cron — and **derives the tenant server-side**.

@@ -2,8 +2,9 @@
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [Parameter(Mandatory = $true)][string]$Keyring,
-  [Parameter(Mandatory = $true)][string]$WindowsManifestUri,
-  [Parameter(Mandatory = $true)][string]$LinuxManifestUri,
+  [string]$ReleaseBaseUri = "https://releases.jachoei.com/retail-local",
+  [string]$WindowsManifestUri,
+  [string]$LinuxManifestUri,
   [string]$ActivationUri = "",
   [ValidateSet("All", "Windows", "Linux")][string]$Target = "All",
   [ValidateSet("server", "server-pos", "all")][string]$PackageType = "all",
@@ -102,6 +103,10 @@ function Write-ChecksumAndMetadata(
   }
 }
 
+. (Join-Path $PSScriptRoot "release-urls.ps1")
+$releaseUrls = Get-RetailLocalReleaseUrls -Version $Version -BaseUri $ReleaseBaseUri
+if ([string]::IsNullOrWhiteSpace($WindowsManifestUri)) { $WindowsManifestUri = $releaseUrls.WindowsManifestUri }
+if ([string]::IsNullOrWhiteSpace($LinuxManifestUri)) { $LinuxManifestUri = $releaseUrls.LinuxManifestUri }
 Assert-HttpsUri "WindowsManifestUri" $WindowsManifestUri
 Assert-HttpsUri "LinuxManifestUri" $LinuxManifestUri
 Assert-HttpsUri "ActivationUri" $ActivationUri $true

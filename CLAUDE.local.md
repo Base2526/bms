@@ -3,6 +3,26 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## อัปเดตเอกสารรวมให้ตรง `10.5`–`10.36` — 2026-10-02
+
+**เอกสารอย่างเดียว ไม่แตะโค้ด/migration/permission** · แก้ `CLAUDE.md` (สารบัญเอกสาร + สถานะ `10.5`–`10.36`
++ กฎ licensing fail-open) · `AGENTS.md` (repo map, POS/tax, Retail Local licensing/registry/reports,
+Social Login, sample-data ledger, ตารางเทส, CI ของ Retail Local) · `architecture/{system,api,database}.md`
+· `scripts/README.md` · `ai/work-assistant-coverage.md` · `feature-inventory.md` · `agent-invariants.md`
+· ลิงก์ relative ทุกตัวตรวจแล้วไม่เสีย
+
+- **⚠️ pure แดง 1 ตัวบน `develop` ตั้งแต่ก่อนแก้ (ของโค้ด ไม่ใช่ของเอกสาร):** `realtime-domain-coverage-contract`
+  → `bms_restaurant_checks:DELETE` ไม่มี trigger/เหตุผล · ต้นเหตุ `DELETE FROM bms_restaurant_checks` ใน
+  `lib/bms/platform.ts:175` (ลบร้าน) จากคอมมิต `3554faed` · **ยังไม่ได้แก้** — ทางที่น่าจะถูกคือประกาศเหตุผลใน
+  ลิสต์ของเทส (การลบทั้งร้านไม่ใช่ event ที่จอไหนต้องรู้) ไม่ใช่เพิ่ม trigger
+- ผลรัน pure: 1,612/1,613 ก่อนแก้ → 1,613/1,614 หลังแก้ (+1 มาจากอีก session ที่แก้ `deploy/retail-local/*` และ
+  `retail-local-installation-registry.test.mts` พร้อมกันใน working tree เดียวกัน — **ไม่ใช่ของรอบนี้ ไม่ได้แตะ**)
+- **ข้อสังเกตที่จดลง `database.md`:** `10.23` สร้าง CHECK `report_type` ใหม่โดย **ไม่มี** `EXPENSES`/`WHT`/
+  `ACCOUNTING_PACK` ที่ `10.11` เพิ่ม — วันนี้ไม่พังเพราะ `REPORT_TYPES` ไม่ใช้ แต่ถ้าจะเก็บรายงานชนิดนั้นต้องขยาย CHECK ก่อน
+- **drift ที่แก้แล้ว:** `api.md`/`agent-invariants.md` เคยเขียนว่า `onboarding/sample-data` gate ด้วย role — ของจริงคือ
+  `authorizeAdminRoute("product.edit")` ตั้งแต่ `10.26`
+- นับแคตตาล็อกผู้ช่วยใหม่: 51 capability · **119 guide** (จาก 117) · 20 FAQ · 24 กลุ่ม/139 กฎต่อภาษา · corpus 229 (จริง 99)
+
 ## Mobile POS: Bluetooth/USB HID scanner mode — 2026-09-29
 
 branch `fix/mobile-hid-scanner-mode` · **ไม่มี migration · ไม่มี permission ใหม่ · ไม่แตะ server/GraphQL/

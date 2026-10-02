@@ -8,6 +8,7 @@ readonly BOOTSTRAP_ROOT="$APP_ROOT/Resources/bootstrap"
 readonly AGENT="$BOOTSTRAP_ROOT/bms-runtime-agent"
 readonly KEYRING="$BOOTSTRAP_ROOT/trusted-release-keys.json"
 readonly MANIFEST_URI_FILE="$BOOTSTRAP_ROOT/manifest-url"
+readonly CONTROL_URI_FILE="$BOOTSTRAP_ROOT/control-url"
 readonly PACKAGED_TARGET_FILE="$BOOTSTRAP_ROOT/PLATFORM_TARGET"
 readonly STATE_ROOT="$HOME/Library/Application Support/BMS/POSBootstrap"
 
@@ -58,7 +59,9 @@ packaged_target=$(tr -d '\r\n' <"$PACKAGED_TARGET_FILE")
   die "ไฟล์ติดตั้งไม่ตรงกับ CPU เครื่องนี้ (เครื่องเป็น $host_target แต่ DMG เป็น ${packaged_target:-unknown})"
 
 manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
+control_uri=$(tr -d '\r\n' <"$CONTROL_URI_FILE" 2>/dev/null || true)
 is_https_url "$manifest_uri" || die "Manifest URL ใน bootstrap ไม่ปลอดภัย"
+[[ -z $control_uri ]] || is_https_url "$control_uri" || die "Control URL ใน bootstrap ไม่ปลอดภัย"
 local_test_ca="$BOOTSTRAP_ROOT/test-release-ca.pem"
 if [[ -f $local_test_ca ]]; then
   [[ $manifest_uri =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:?#]|$) ]] || \
@@ -141,6 +144,8 @@ sudo chmod -R go-w "/Applications/BMS POS.app"
 rm -rf -- "$temporary"
 temporary=
 open -a "/Applications/BMS POS.app"
-"$AGENT" installation-report -root "$STATE_ROOT" -control-uri "$manifest_uri" -event INSTALLED \
-  -package-type pos -target "$host_target" -release-version "$version" -force \
-  >/dev/null 2>&1 || note "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; POS ยังติดตั้งสำเร็จ"
+if [[ -n $control_uri ]]; then
+  "$AGENT" installation-report -root "$STATE_ROOT" -control-uri "$control_uri" -event INSTALLED \
+    -package-type pos -target "$host_target" -release-version "$version" -force \
+    >/dev/null 2>&1 || note "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; POS ยังติดตั้งสำเร็จ"
+fi

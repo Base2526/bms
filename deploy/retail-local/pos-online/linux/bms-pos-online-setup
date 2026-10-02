@@ -29,8 +29,10 @@ die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf '\nBMS POS s
 [[ -x $AGENT && -f $KEYRING && -s $MANIFEST_URI_FILE && -s $PLATFORM_TARGET_FILE ]] || die "bootstrap files are incomplete"
 
 manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
+control_uri=$(tr -d '\r\n' <"$BOOTSTRAP_ROOT/control-url" 2>/dev/null || true)
 platform_target=$(tr -d '\r\n' <"$PLATFORM_TARGET_FILE")
 [[ $manifest_uri =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $manifest_uri != *'@'* ]] || die "manifest URL is not safe HTTPS"
+[[ -z $control_uri || ( $control_uri =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $control_uri != *'@'* ) ]] || die "control URL is not safe HTTPS"
 
 install -d -m 0700 "$STATE_ROOT/manifest"
 manifest_path="$STATE_ROOT/manifest/release.jws.json"
@@ -84,8 +86,10 @@ ln -f -- "$desktop" "$desktop_deb"
 BMS_DIAG_STAGE=install-desktop
 dpkg --configure -a
 apt-get -o DPkg::Lock::Timeout=60 install -y "$desktop_deb"
-$AGENT installation-report -root "$STATE_ROOT" -control-uri "$manifest_uri" -event INSTALLED \
-  -package-type pos -target "$platform_target" -release-version "$version" -force \
-  >/dev/null 2>&1 || printf 'Warning: installation inventory unavailable; POS installation still succeeded.\n' >&2
+if [[ -n $control_uri ]]; then
+  $AGENT installation-report -root "$STATE_ROOT" -control-uri "$control_uri" -event INSTALLED \
+    -package-type pos -target "$platform_target" -release-version "$version" -force \
+    >/dev/null 2>&1 || printf 'Warning: installation inventory unavailable; POS installation still succeeded.\n' >&2
+fi
 rm -rf -- "$STATE_ROOT/releases/$version"
 printf 'BMS POS installation completed.\n'
