@@ -35,10 +35,11 @@ test('Windows x86 POS, x64 POS and server setup compile with the error-report bu
   skip: process.platform !== 'win32' || !process.env.BMS_INNO_COMPILER,
 }, t => {
   const root = workspace(t);
-  for (const [name, directory, filename, target] of [
+  for (const [name, directory, filename, target, packageType = 'server-pos'] of [
     ['pos-x86', 'pos-online/windows', 'BMSPOSOnline.iss', 'windows-10-x86-pos'],
     ['pos-x64', 'pos-online/windows', 'BMSPOSOnline.iss', 'windows-11-x64'],
-    ['server-x64', 'managed-runtime/windows', 'BMSRetailLocal.iss', 'windows-11-x64'],
+    ['server-x64', 'managed-runtime/windows', 'BMSRetailLocal.iss', 'windows-11-x64', 'server'],
+    ['server-pos-x64', 'managed-runtime/windows', 'BMSRetailLocal.iss', 'windows-11-x64', 'server-pos'],
   ]) {
     const sourceDir = join(repo, 'deploy/retail-local', directory);
     const iss = join(sourceDir, filename);
@@ -55,10 +56,42 @@ test('Windows x86 POS, x64 POS and server setup compile with the error-report bu
     const compiled = run(process.env.BMS_INNO_COMPILER, [
       `/DBuildRoot=${bundle}`, `/DOutputRoot=${root}`, '/DProductVersion=0.0.0-test',
       '/DManifestUri=https://example.invalid/release.json', `/DPlatformTarget=${target}`,
+      `/DPackageType=${packageType}`,
       `/DArtifactBaseFilename=${name}`, iss,
     ]);
     assert.equal(compiled.status, 0, compiled.stdout + compiled.stderr);
     assert.ok(existsSync(join(root, `${name}.exe`)));
+  }
+});
+
+test('Windows completion shows the local admin handoff and waits only after reboot resume', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const completion = source.match(/function Show-SetupCompletion \{[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(completion);
+  const fixture = join(root, 'complete.ps1');
+  writeFileSync(fixture, '\ufeff' + `
+param($PackageType, $ResumeConfig)
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+function Write-Step { param($Step, $Message) }
+function Read-Host { param($Prompt) Write-Output 'ACKNOWLEDGED' | Out-Host }
+${completion}
+Show-SetupCompletion
+`);
+  for (const packageType of ['server', 'server-pos']) {
+    for (const resume of ['', 'resume.json']) {
+      const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+        '-File', fixture, '-PackageType', packageType, ...(resume ? ['-ResumeConfig', resume] : [])]);
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      assert.match(result.stdout, /http:\/\/127\.0\.0\.1:3100\/admin\/login/);
+      assert.match(result.stdout, /BMS Retail Local Admin/);
+      assert.match(result.stdout, /Configure Off-host Backup/);
+      assert.equal(result.stdout.includes('POS Devices'), packageType === 'server');
+      assert.equal(result.stdout.includes('ACKNOWLEDGED'), Boolean(resume));
+    }
   }
 });
 
