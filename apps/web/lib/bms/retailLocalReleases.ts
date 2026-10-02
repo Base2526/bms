@@ -8,7 +8,7 @@ import {
   statStoredFile,
 } from "@/lib/storage";
 
-export type RetailLocalPlatform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
+export type RetailLocalPlatform = "windows-x64" | "windows-x86-legacy" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 export type RetailLocalPackageType = "server-pos" | "server" | "pos";
 export type RetailLocalReleaseStatus = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 export type RetailLocalReleaseChannel = "pilot" | "stable" | "internal";
@@ -41,7 +41,13 @@ export class RetailLocalReleaseError extends Error {
   }
 }
 
-const PLATFORMS = new Set<RetailLocalPlatform>(["windows-x64", "ubuntu-x64", "macos-arm64", "macos-x64"]);
+const PLATFORMS = new Set<RetailLocalPlatform>([
+  "windows-x64",
+  "windows-x86-legacy",
+  "ubuntu-x64",
+  "macos-arm64",
+  "macos-x64",
+]);
 const PACKAGE_TYPES = new Set<RetailLocalPackageType>(["server-pos", "server", "pos"]);
 const STATUSES = new Set<RetailLocalReleaseStatus>(["latest", "supported", "legacy", "deprecated", "hidden"]);
 const CHANNELS = new Set<RetailLocalReleaseChannel>(["pilot", "stable", "internal"]);
@@ -105,7 +111,7 @@ function serialize(row: any): RetailLocalReleaseAsset {
 }
 
 function expectedExtensions(platform: RetailLocalPlatform, packageType: RetailLocalPackageType): string[] {
-  if (platform === "windows-x64") return [".exe"];
+  if (platform === "windows-x64" || platform === "windows-x86-legacy") return [".exe"];
   if (platform === "ubuntu-x64") return [".deb"];
   return packageType === "pos" ? [".dmg"] : [".pkg"];
 }
@@ -113,11 +119,23 @@ function expectedExtensions(platform: RetailLocalPlatform, packageType: RetailLo
 function mimeForDownload(platform: RetailLocalPlatform, filename: string): string {
   if (filename.toLowerCase().endsWith(".dmg")) return "application/x-apple-diskimage";
   switch (platform) {
-    case "windows-x64": return "application/vnd.microsoft.portable-executable";
+    case "windows-x64":
+    case "windows-x86-legacy":
+      return "application/vnd.microsoft.portable-executable";
     case "ubuntu-x64": return "application/vnd.debian.binary-package";
     case "macos-arm64":
     case "macos-x64":
       return "application/vnd.apple.installer+xml";
+  }
+}
+
+function isWindowsX86Filename(filename: string): boolean {
+  return /(?:^|[-_])(?:windows[-_])?(?:x86(?![_-]?64)|ia32)(?:[-_.]|$)/i.test(filename);
+}
+
+function assertPlatformPackageCompatibility(platform: RetailLocalPlatform, packageType: RetailLocalPackageType) {
+  if (platform === "windows-x86-legacy" && packageType !== "pos") {
+    throw new RetailLocalReleaseError("windows-x86-legacy supports POS Desktop only");
   }
 }
 
@@ -126,6 +144,12 @@ function validateFileName(filename: string, platform: RetailLocalPlatform, packa
   const expected = expectedExtensions(platform, packageType);
   if (!expected.includes(ext)) {
     throw new RetailLocalReleaseError(`expected ${expected.join(" or ")} file for ${platform} ${packageType}`);
+  }
+  if (platform === "windows-x86-legacy" && !isWindowsX86Filename(filename)) {
+    throw new RetailLocalReleaseError("windows-x86-legacy filename must include x86 or ia32");
+  }
+  if (platform === "windows-x64" && isWindowsX86Filename(filename)) {
+    throw new RetailLocalReleaseError("x86 installer must use the windows-x86-legacy platform");
   }
 }
 
@@ -176,6 +200,7 @@ export async function createRetailLocalReleaseAsset(input: {
   try {
     const platform = assertPlatform(input.platform);
     const packageType = assertPackageType(input.packageType);
+    assertPlatformPackageCompatibility(platform, packageType);
     validateFileName(input.storedFile.original_name || input.storedFile.filename, platform, packageType);
     const version = trimRequired(input.version, "version", 80);
     const channel = input.channel ? assertChannel(input.channel) : "pilot";

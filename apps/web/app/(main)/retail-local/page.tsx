@@ -26,7 +26,7 @@ function downloadUrl(value: string | undefined): string | null {
   }
 }
 
-type PlatformKey = "windows" | "ubuntu" | "macos-arm64" | "macos-x64";
+type PlatformKey = "windows" | "windows-x86-legacy" | "ubuntu" | "macos-arm64" | "macos-x64";
 type DownloadAssetData = {
   id?: string;
   url: string;
@@ -41,6 +41,7 @@ type DownloadAssetData = {
 
 function mapPlatform(platform: string): PlatformKey {
   if (platform === "windows-x64") return "windows";
+  if (platform === "windows-x86-legacy") return "windows-x86-legacy";
   if (platform === "ubuntu-x64") return "ubuntu";
   if (platform === "macos-arm64") return "macos-arm64";
   if (platform === "macos-x64") return "macos-x64";
@@ -56,6 +57,7 @@ export default async function RetailLocalPage() {
   });
   const releaseDownloads: Record<PlatformKey, Record<RetailLocalPackageType, DownloadAssetData | null>> = {
     windows: emptyDownloads(),
+    "windows-x86-legacy": emptyDownloads(),
     ubuntu: emptyDownloads(),
     "macos-arm64": emptyDownloads(),
     "macos-x64": emptyDownloads(),
@@ -93,6 +95,7 @@ export default async function RetailLocalPage() {
           ...releaseDownloads.windows,
           server: releaseDownloads.windows.server ?? (fallbackDownloads.windows ? { url: fallbackDownloads.windows } : null),
         },
+        "windows-x86-legacy": releaseDownloads["windows-x86-legacy"],
         ubuntu: {
           ...releaseDownloads.ubuntu,
           server: releaseDownloads.ubuntu.server ?? (fallbackDownloads.ubuntu ? { url: fallbackDownloads.ubuntu } : null),

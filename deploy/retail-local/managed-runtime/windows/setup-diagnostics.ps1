@@ -74,7 +74,7 @@ function New-BmsSetupDiagnostics {
   param(
     [Parameter(Mandatory = $true)][string]$Root,
     [Parameter(Mandatory = $true)][System.Management.Automation.ErrorRecord]$Failure,
-    [ValidateSet('server-pos', 'pos')][string]$Product = 'server-pos',
+    [ValidateSet('server-pos', 'server', 'pos')][string]$Product = 'server-pos',
     [string]$InstallerVersion = 'unknown',
     [string]$Stage = 'startup'
   )

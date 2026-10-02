@@ -13,6 +13,9 @@
 #ifndef ActivationUri
   #define ActivationUri ""
 #endif
+#ifndef PackageType
+  #define PackageType "server-pos"
+#endif
 #ifndef ArtifactBaseFilename
   #define ArtifactBaseFilename "BMS-Retail-Local-Setup-" + ProductVersion + "-x64"
 #endif
@@ -161,7 +164,8 @@ begin
   DeleteFile(ErrorPath);
   Parameters := '-NoProfile -ExecutionPolicy Bypass -File ' + AddQuotes(ScriptPath) +
     ' -InstallScript ' + AddQuotes(InstallScriptPath) +
-    ' -ManifestUri ' + AddQuotes('{#ManifestUri}');
+    ' -ManifestUri ' + AddQuotes('{#ManifestUri}') +
+    ' -PackageType ' + AddQuotes('{#PackageType}');
   if '{#ActivationUri}' <> '' then
     Parameters := Parameters + ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
   Parameters := Parameters + ' -ErrorFile ' + AddQuotes(ErrorPath) +

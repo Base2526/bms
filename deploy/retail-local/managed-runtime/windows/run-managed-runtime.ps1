@@ -2,6 +2,7 @@
 param(
   [Parameter(Mandatory = $true)][string]$InstallScript,
   [Parameter(Mandatory = $true)][string]$ManifestUri,
+  [ValidateSet('server', 'server-pos')][string]$PackageType = 'server-pos',
   [string]$ActivationUri = "",
   [Parameter(Mandatory = $true)][string]$ErrorFile,
   [Parameter(Mandatory = $true)][string]$LogFile,
@@ -41,7 +42,8 @@ try {
   & icacls @aclArguments *> $null
   if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ setup diagnostics ไม่สำเร็จ" }
 
-  & $InstallScript -ManifestUri $ManifestUri -ActivationUri $ActivationUri -ErrorFile $ErrorFile -InstallerVersion $InstallerVersion
+  & $InstallScript -ManifestUri $ManifestUri -PackageType $PackageType -ActivationUri $ActivationUri `
+    -ErrorFile $ErrorFile -InstallerVersion $InstallerVersion
   $result = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
   if ($result -eq 0 -and (Test-Path -LiteralPath $ErrorFile)) {
     Remove-Item -LiteralPath $ErrorFile -Force
@@ -52,7 +54,7 @@ try {
   $message = $_.Exception.Message
   try {
     . (Join-Path $PSScriptRoot 'setup-diagnostics.ps1')
-    $report = New-BmsSetupDiagnostics -Root $diagnosticRoot -Failure $failure -Product server-pos `
+    $report = New-BmsSetupDiagnostics -Root $diagnosticRoot -Failure $failure -Product $PackageType `
       -InstallerVersion $InstallerVersion -Stage 'runner-startup'
     if ($report) { $message += "`nSupport report (review before sending): $report" }
   } catch {}

@@ -30,7 +30,7 @@ import {
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 
-type Platform = "windows-x64" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
+type Platform = "windows-x64" | "windows-x86-legacy" | "ubuntu-x64" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
 type Status = "latest" | "supported" | "legacy" | "deprecated" | "hidden";
 type Channel = "pilot" | "stable" | "internal";
@@ -102,6 +102,7 @@ const ACCESS_LABELS: Record<AccessLevel, string> = {
 
 const PLATFORM_LABELS: Record<Platform, string> = {
   "windows-x64": "Windows x64",
+  "windows-x86-legacy": "Windows x86 Legacy (POS only)",
   "ubuntu-x64": "Ubuntu x64",
   "macos-arm64": "macOS Apple Silicon",
   "macos-x64": "macOS Intel",
@@ -109,6 +110,9 @@ const PLATFORM_LABELS: Record<Platform, string> = {
 
 function platformFromFilename(filename: string): Platform | null {
   const lower = filename.toLowerCase();
+  if (lower.endsWith(".exe") && /(?:^|[-_])(?:windows[-_])?(?:x86(?![_-]?64)|ia32)(?:[-_.]|$)/.test(lower)) {
+    return "windows-x86-legacy";
+  }
   if (lower.endsWith(".exe")) return "windows-x64";
   if (lower.endsWith(".deb")) return "ubuntu-x64";
   if (lower.endsWith(".pkg") || lower.endsWith(".dmg")) {
@@ -128,6 +132,7 @@ function packageTypeFromFilename(filename: string): PackageType | null {
 
 function defaultMinOs(platform: Platform | null, packageType: PackageType | null): string {
   if (packageType === "pos") {
+    if (platform === "windows-x86-legacy") return "Windows 10 x86 LTSC/ESU · legacy POS only";
     if (platform === "windows-x64") return "Windows x64";
     if (platform === "ubuntu-x64") return "Ubuntu x64 with Secret Service or KWallet";
     if (platform === "macos-arm64") return "macOS 12 Monterey / Apple Silicon";
@@ -161,6 +166,7 @@ export default function RetailLocalReleasesPage() {
   const [inferredFile, setInferredFile] = useState<InferredFileMeta | null>(null);
   const [uploadForm] = Form.useForm();
   const [editForm] = Form.useForm();
+  const uploadPlatform = Form.useWatch("platform", uploadForm);
   const uploadPackageType = Form.useWatch("packageType", uploadForm);
   const macUploadExtension = uploadPackageType === "pos" ? ".dmg" : ".pkg";
 
@@ -187,7 +193,7 @@ export default function RetailLocalReleasesPage() {
     trialLock: "แจกผ่าน Onboarding",
     save: "บันทึก",
     download: "ทดสอบดาวน์โหลด",
-    uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน POS Desktop บน macOS ใช้ .dmg",
+    uploadHint: "Server/แพ็กเกจรวมใช้ .exe, .deb หรือ .pkg ส่วน Windows x86 Legacy รับเฉพาะ POS Desktop .exe และ POS Desktop บน macOS ใช้ .dmg",
     publicRule: "Latest แยกตามระบบและประเภทติดตั้ง แพ็กเกจทุกประเภทเลือก Public เพื่อแสดงในหน้าดาวน์โหลด หรือ Onboarding only เพื่อส่งให้ผู้รับที่ระบุได้",
     inferred: "อ่านจากไฟล์",
     inferredHint: "ระบบเดา platform กับ version จากชื่อไฟล์และอ่านขนาดไฟล์ ส่วน SHA-256 คำนวณบนเซิร์ฟเวอร์ระหว่างอัปโหลดแบบ streaming",
@@ -217,7 +223,7 @@ export default function RetailLocalReleasesPage() {
     trialLock: "Onboarding only",
     save: "Save",
     download: "Test download",
-    uploadHint: "Server and combined packages use .exe, .deb or .pkg. macOS POS Desktop uses .dmg.",
+    uploadHint: "Server and combined packages use .exe, .deb or .pkg. Windows x86 Legacy accepts POS Desktop .exe only; macOS POS Desktop uses .dmg.",
     publicRule: "Latest is tracked per platform and package type. Any package may be Public or Onboarding only; first-install activation remains separate from download access.",
     inferred: "Read from file",
     inferredHint: "The form infers platform, version, and size. SHA-256 is calculated by the server while streaming the upload.",
@@ -305,7 +311,8 @@ export default function RetailLocalReleasesPage() {
     }
 
     const platform = platformFromFilename(file.name);
-    const packageType = packageTypeFromFilename(file.name);
+    const inferredPackageType = packageTypeFromFilename(file.name);
+    const packageType = platform === "windows-x86-legacy" ? "pos" : inferredPackageType;
     const version = inferVersionFromFilename(file.name);
     uploadForm.setFieldsValue({
       ...(platform ? { platform, minOs: defaultMinOs(platform, packageType) } : {}),
@@ -376,7 +383,10 @@ export default function RetailLocalReleasesPage() {
             <Col xs={24} lg={8} key={platform}>
               <Card size="small" title={PLATFORM_LABELS[platform]}>
                 <Space direction="vertical" size={10} style={{ width: "100%" }}>
-                  {(Object.keys(PACKAGE_LABELS) as PackageType[]).map((packageType) => {
+                  {(platform === "windows-x86-legacy"
+                    ? (["pos"] as PackageType[])
+                    : (Object.keys(PACKAGE_LABELS) as PackageType[])
+                  ).map((packageType) => {
                     const release = latestByPlatform.get(`${platform}:${packageType}`);
                     return (
                       <div key={packageType} style={{ display: "grid", gap: 2, minWidth: 0 }}>
@@ -410,7 +420,7 @@ export default function RetailLocalReleasesPage() {
                 </Space>
               ),
             },
-            { title: copy.platform, dataIndex: "platform", width: 140 },
+            { title: copy.platform, dataIndex: "platform", width: 190, render: (value: Platform) => PLATFORM_LABELS[value] },
             { title: copy.packageType, dataIndex: "package_type", width: 150, render: (value: PackageType) => PACKAGE_LABELS[value] },
             { title: copy.status, dataIndex: "status", width: 120, render: (value: Status) => <Tag color={STATUS_COLORS[value]}>{value}</Tag> },
             { title: copy.access, dataIndex: "access_level", width: 130, render: (value: AccessLevel) => <Tag color={value === "trial" ? "purple" : "blue"}>{ACCESS_LABELS[value]}</Tag> },
@@ -453,18 +463,33 @@ export default function RetailLocalReleasesPage() {
           <Row gutter={12}>
             <Col xs={24} sm={8}>
               <Form.Item name="platform" label={copy.platform} rules={[{ required: true }]}>
-                <Select options={[
+                <Select
+                  options={[
                   { value: "windows-x64", label: "Windows x64 (.exe)" },
+                  { value: "windows-x86-legacy", label: "Windows x86 Legacy · POS only (.exe)" },
                   { value: "ubuntu-x64", label: "Ubuntu x64 (.deb)" },
                   { value: "macos-arm64", label: `macOS Apple Silicon (${macUploadExtension})` },
                   { value: "macos-x64", label: `macOS Intel (${macUploadExtension})` },
-                ]} />
+                  ]}
+                  onChange={(value: Platform) => {
+                    if (value === "windows-x86-legacy") {
+                      uploadForm.setFieldsValue({
+                        packageType: "pos",
+                        accessLevel: "public",
+                        minOs: defaultMinOs(value, "pos"),
+                      });
+                    }
+                  }}
+                />
               </Form.Item>
             </Col>
             <Col xs={24} sm={8}>
               <Form.Item name="packageType" label={copy.packageType} rules={[{ required: true }]}>
                 <Select
-                  options={(Object.keys(PACKAGE_LABELS) as PackageType[]).map((value) => ({ value, label: PACKAGE_LABELS[value] }))}
+                  options={(uploadPlatform === "windows-x86-legacy"
+                    ? (["pos"] as PackageType[])
+                    : (Object.keys(PACKAGE_LABELS) as PackageType[])
+                  ).map((value) => ({ value, label: PACKAGE_LABELS[value] }))}
                   onChange={() => {
                     uploadForm.setFieldValue("accessLevel", "public");
                   }}

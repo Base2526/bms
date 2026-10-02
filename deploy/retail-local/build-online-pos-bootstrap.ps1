@@ -5,6 +5,7 @@ param(
   [Parameter(Mandatory = $true)][string]$WindowsManifestUri,
   [Parameter(Mandatory = $true)][string]$WindowsX86ManifestUri,
   [Parameter(Mandatory = $true)][string]$LinuxManifestUri,
+  [ValidateSet("All", "Windows", "Linux")][string]$Target = "All",
   [string]$OutputDirectory,
   [string]$InnoCompiler,
   [string]$WslDistribution = "Ubuntu",
@@ -88,17 +89,22 @@ $keyringPath = [IO.Path]::GetFullPath($Keyring)
 if (-not (Test-Path -LiteralPath $keyringPath -PathType Leaf)) { throw "ไม่พบ public keyring: $keyringPath" }
 $keyringText = Get-Content -LiteralPath $keyringPath -Raw
 if ($keyringText -match 'PRIVATE KEY' -or $keyringText -notmatch 'BEGIN PUBLIC KEY') { throw "keyring ต้องมี public key เท่านั้น" }
-foreach ($command in @("git", "go", "wsl.exe")) {
+foreach ($command in @("git", "go")) {
   if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
 }
-if (-not $InnoCompiler) {
-  $InnoCompiler = @(
-    (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
-    (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
-    (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
-  ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if ($Target -in @("All", "Linux") -and -not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
+  throw "การ build Linux POS bootstrap บน Windows ต้องมี WSL2"
 }
-if (-not $InnoCompiler) { throw "ไม่พบ Inno Setup 6 compiler" }
+if ($Target -in @("All", "Windows")) {
+  if (-not $InnoCompiler) {
+    $InnoCompiler = @(
+      (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+      (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe"),
+      (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
+    ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+  }
+  if (-not $InnoCompiler) { throw "ไม่พบ Inno Setup 6 compiler" }
+}
 
 $qualifier = if ($testBuild) { "-SMOKE-ONLY" } else { "" }
 $outputs = [ordered]@{
@@ -106,7 +112,10 @@ $outputs = [ordered]@{
   windowsX86 = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-windows-x86-legacy$qualifier.exe"
   linuxX64 = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-linux-x64$qualifier.deb"
 }
-foreach ($path in $outputs.Values) {
+$targetOutputs = @()
+if ($Target -in @("All", "Windows")) { $targetOutputs += @($outputs.windowsX64, $outputs.windowsX86) }
+if ($Target -in @("All", "Linux")) { $targetOutputs += $outputs.linuxX64 }
+foreach ($path in $targetOutputs) {
   $existing = @(@($path, "$path.sha256", "$path.json") |
     Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
   if ($existing.Count -gt 0 -and -not $Force) { throw "artifact มีอยู่แล้ว ใช้ -Force: $path" }
@@ -127,53 +136,57 @@ try {
   $env:CGO_ENABLED = "0"
   $results = @()
 
-  foreach ($spec in @(
+  if ($Target -in @("All", "Windows")) {
+    foreach ($spec in @(
     @{ Name = "windowsX64"; GoArch = "amd64"; Target = "windows-11-x64"; Uri = $WindowsManifestUri },
     @{ Name = "windowsX86"; GoArch = "386"; Target = "windows-10-x86-pos"; Uri = $WindowsX86ManifestUri }
-  )) {
-    $stage = Join-Path $workRoot $spec.Name
-    $built = Join-Path $workRoot "$($spec.Name)-output"
-    New-Item -ItemType Directory -Force -Path $stage, $built | Out-Null
-    Copy-Item -LiteralPath (Join-Path $sourceRoot "windows\install-pos-online.ps1") -Destination $stage
-    Copy-Item -LiteralPath (Join-Path $scriptRoot "managed-runtime\windows\setup-diagnostics.ps1") -Destination $stage
-    Copy-Item -LiteralPath $keyringPath -Destination (Join-Path $stage "trusted-release-keys.json")
-    $env:GOOS = "windows"
-    $env:GOARCH = $spec.GoArch
-    Push-Location $agentRoot
-    try { Invoke-Checked "Build $($spec.Name) POS agent" { go build -trimpath '-ldflags=-s -w' -o (Join-Path $stage "bms-runtime-agent.exe") . } } finally { Pop-Location }
-    $artifactBase = [IO.Path]::GetFileNameWithoutExtension($outputs[$spec.Name])
-    Invoke-Checked "Build $($spec.Name) POS online bootstrap" {
-      & $InnoCompiler "/DBuildRoot=$stage" "/DOutputRoot=$built" "/DProductVersion=$Version" `
-        "/DManifestUri=$($spec.Uri)" "/DPlatformTarget=$($spec.Target)" `
-        "/DArtifactBaseFilename=$artifactBase" (Join-Path $sourceRoot "windows\BMSPOSOnline.iss")
+    )) {
+      $stage = Join-Path $workRoot $spec.Name
+      $built = Join-Path $workRoot "$($spec.Name)-output"
+      New-Item -ItemType Directory -Force -Path $stage, $built | Out-Null
+      Copy-Item -LiteralPath (Join-Path $sourceRoot "windows\install-pos-online.ps1") -Destination $stage
+      Copy-Item -LiteralPath (Join-Path $scriptRoot "managed-runtime\windows\setup-diagnostics.ps1") -Destination $stage
+      Copy-Item -LiteralPath $keyringPath -Destination (Join-Path $stage "trusted-release-keys.json")
+      $env:GOOS = "windows"
+      $env:GOARCH = $spec.GoArch
+      Push-Location $agentRoot
+      try { Invoke-Checked "Build $($spec.Name) POS agent" { go build -trimpath '-ldflags=-s -w' -o (Join-Path $stage "bms-runtime-agent.exe") . } } finally { Pop-Location }
+      $artifactBase = [IO.Path]::GetFileNameWithoutExtension($outputs[$spec.Name])
+      Invoke-Checked "Build $($spec.Name) POS online bootstrap" {
+        & $InnoCompiler "/DBuildRoot=$stage" "/DOutputRoot=$built" "/DProductVersion=$Version" `
+          "/DManifestUri=$($spec.Uri)" "/DPlatformTarget=$($spec.Target)" `
+          "/DArtifactBaseFilename=$artifactBase" (Join-Path $sourceRoot "windows\BMSPOSOnline.iss")
+      }
+      Copy-Item -LiteralPath (Join-Path $built "$artifactBase.exe") -Destination $outputs[$spec.Name] -Force
+      $platform = if ($spec.Name -eq "windowsX86") { "windows-x86-legacy" } else { "windows-x64" }
+      $results += Write-Metadata $outputs[$spec.Name] $platform $spec.Uri $sourceCommit
     }
-    Copy-Item -LiteralPath (Join-Path $built "$artifactBase.exe") -Destination $outputs[$spec.Name] -Force
-    $platform = if ($spec.Name -eq "windowsX86") { "windows-x86-legacy" } else { "windows-x64" }
-    $results += Write-Metadata $outputs[$spec.Name] $platform $spec.Uri $sourceCommit
   }
 
-  $env:GOOS = "linux"
-  $env:GOARCH = "amd64"
-  $linuxAgent = Join-Path $workRoot "bms-runtime-agent-linux-amd64"
-  Push-Location $agentRoot
-  try { Invoke-Checked "Build Linux x64 POS agent" { go build -trimpath '-ldflags=-s -w' -o $linuxAgent . } } finally { Pop-Location }
-  $linuxSource = Join-Path $workRoot "linux-source"
-  New-Item -ItemType Directory -Force -Path $linuxSource | Out-Null
-  foreach ($name in @("build-deb.sh", "bms-pos-online-setup")) {
-    $text = [IO.File]::ReadAllText((Join-Path $sourceRoot "linux\$name")).Replace("`r`n", "`n").Replace("`r", "`n")
-    [IO.File]::WriteAllText((Join-Path $linuxSource $name), $text, [Text.UTF8Encoding]::new($false))
+  if ($Target -in @("All", "Linux")) {
+    $env:GOOS = "linux"
+    $env:GOARCH = "amd64"
+    $linuxAgent = Join-Path $workRoot "bms-runtime-agent-linux-amd64"
+    Push-Location $agentRoot
+    try { Invoke-Checked "Build Linux x64 POS agent" { go build -trimpath '-ldflags=-s -w' -o $linuxAgent . } } finally { Pop-Location }
+    $linuxSource = Join-Path $workRoot "linux-source"
+    New-Item -ItemType Directory -Force -Path $linuxSource | Out-Null
+    foreach ($name in @("build-deb.sh", "bms-pos-online-setup")) {
+      $text = [IO.File]::ReadAllText((Join-Path $sourceRoot "linux\$name")).Replace("`r`n", "`n").Replace("`r", "`n")
+      [IO.File]::WriteAllText((Join-Path $linuxSource $name), $text, [Text.UTF8Encoding]::new($false))
+    }
+    $diagnosticsText = [IO.File]::ReadAllText((Join-Path $scriptRoot "managed-runtime\setup-diagnostics.sh")).Replace("`r`n", "`n")
+    [IO.File]::WriteAllText((Join-Path $linuxSource "setup-diagnostics.sh"), $diagnosticsText, [Text.UTF8Encoding]::new($false))
+    $linuxBuilt = Join-Path $workRoot "linux-output"
+    New-Item -ItemType Directory -Force -Path $linuxBuilt | Out-Null
+    Invoke-Checked "Build Linux x64 POS online bootstrap" {
+      & wsl.exe -d $WslDistribution -- bash (ConvertTo-WslPath (Join-Path $linuxSource "build-deb.sh")) `
+        $Version (ConvertTo-WslPath $linuxAgent) (ConvertTo-WslPath $keyringPath) $LinuxManifestUri `
+        "ubuntu-24.04-lts-x64" (ConvertTo-WslPath $linuxBuilt)
+    }
+    Copy-Item -LiteralPath (Join-Path $linuxBuilt "bms-pos-online-bootstrap_${Version}_amd64.deb") -Destination $outputs.linuxX64 -Force
+    $results += Write-Metadata $outputs.linuxX64 "ubuntu-x64" $LinuxManifestUri $sourceCommit
   }
-  $diagnosticsText = [IO.File]::ReadAllText((Join-Path $scriptRoot "managed-runtime\setup-diagnostics.sh")).Replace("`r`n", "`n")
-  [IO.File]::WriteAllText((Join-Path $linuxSource "setup-diagnostics.sh"), $diagnosticsText, [Text.UTF8Encoding]::new($false))
-  $linuxBuilt = Join-Path $workRoot "linux-output"
-  New-Item -ItemType Directory -Force -Path $linuxBuilt | Out-Null
-  Invoke-Checked "Build Linux x64 POS online bootstrap" {
-    & wsl.exe -d $WslDistribution -- bash (ConvertTo-WslPath (Join-Path $linuxSource "build-deb.sh")) `
-      $Version (ConvertTo-WslPath $linuxAgent) (ConvertTo-WslPath $keyringPath) $LinuxManifestUri `
-      "ubuntu-24.04-lts-x64" (ConvertTo-WslPath $linuxBuilt)
-  }
-  Copy-Item -LiteralPath (Join-Path $linuxBuilt "bms-pos-online-bootstrap_${Version}_amd64.deb") -Destination $outputs.linuxX64 -Force
-  $results += Write-Metadata $outputs.linuxX64 "ubuntu-x64" $LinuxManifestUri $sourceCommit
 
   Write-Host "`nBuild POS online bootstrap สำเร็จ" -ForegroundColor Green
   $results | Format-Table -AutoSize

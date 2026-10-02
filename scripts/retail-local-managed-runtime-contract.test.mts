@@ -535,6 +535,9 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
   assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);
   assert.match(onlineBuilder, /build รองรับเฉพาะ x64/);
+  assert.match(onlineBuilder, /ValidateSet\("server", "server-pos", "all"\)/);
+  assert.match(onlineBuilder, /BMS-Retail-Local-\$label-\$Version-windows-x64/);
+  assert.match(onlineBuilder, /DPackageType=\$\(\$spec\.PackageType\)/);
   assert.match(onlineBuilder, /AllowTestEndpoints/);
   assert.match(onlineBuilder, /SMOKE-ONLY/);
   assert.match(onlineBuilder, /windows-x64\$artifactQualifier\.exe/);
@@ -542,6 +545,23 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(onlineBuilder, /runtime-rootfs\\bms-wsl-keepalive/);
   assert.match(onlineBuilder, /Length -gt 25MB/);
   assert.doesNotMatch(onlineBuilder, /docker image save|package\.ps1/);
+});
+
+test("Windows online server-only excludes Desktop across install, receipt, repair, and update", () => {
+  const installer = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
+  const updater = read("deploy/retail-local/managed-runtime/windows/update-managed-runtime.ps1");
+  const runner = read("deploy/retail-local/managed-runtime/windows/run-managed-runtime.ps1");
+  const iss = read("deploy/retail-local/managed-runtime/windows/BMSRetailLocal.iss");
+  const diagnostics = read("deploy/retail-local/managed-runtime/windows/setup-diagnostics.ps1");
+  assert.match(installer, /ValidateSet\('server', 'server-pos'\)/);
+  assert.match(installer, /stageCommand = if \(\$PackageType -eq 'server'\) \{ 'stage-server' \}/);
+  assert.match(installer, /if \(\$PackageType -eq 'server-pos'\) \{[\s\S]*BMS-POS-Setup\.exe/);
+  assert.match(installer, /packageType = \$PackageType/);
+  assert.match(updater, /stageCommand = if \(\$packageType -eq 'server'\) \{ 'stage-server' \}/);
+  assert.match(updater, /if \(\$packageType -eq 'server-pos'\)[\s\S]*BMS-POS-Update\.exe/);
+  assert.match(runner, /-PackageType \$PackageType/);
+  assert.match(iss, /DPackageType|\{#PackageType\}/);
+  assert.match(diagnostics, /'server-pos', 'server', 'pos'/);
 });
 
 test("POS-only online bootstraps download one signed desktop component for supported architectures", () => {
@@ -553,6 +573,7 @@ test("POS-only online bootstraps download one signed desktop component for suppo
   assert.match(builder, /GoArch = "386"/);
   assert.match(builder, /GoArch = "amd64"/);
   assert.match(builder, /windows-10-x86-pos/);
+  assert.match(builder, /ValidateSet\("All", "Windows", "Linux"\)/);
   assert.match(builder, /ubuntu-24\.04-lts-x64/);
   assert.match(builder, /Length -gt 25MB/);
   assert.match(windowsSetup, /stage-desktop/);
