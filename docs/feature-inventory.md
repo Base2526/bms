@@ -1,6 +1,6 @@
 # ทะเบียนฟีเจอร์ BMS
 
-> ปรับปรุง **29 ก.ย. 2026** · สเปกรายโดเมนอยู่ใน [business/](business/) · สถาปัตยกรรม [architecture/system.md](architecture/system.md)
+> ปรับปรุง **2 ต.ค. 2026** · สเปกรายโดเมนอยู่ใน [business/](business/) · สถาปัตยกรรม [architecture/system.md](architecture/system.md)
 >
 > เอกสารนี้ตอบคำถามเดียว: **"ระบบทำอะไรได้บ้าง และอะไรที่พิสูจน์แล้วจริง ๆ"**
 > ไม่ใช่คู่มือใช้งาน (ดู `/admin/manual`) และไม่ใช่สเปก (ดู `docs/business/`)
@@ -297,6 +297,7 @@ AI ซักประวัติได้ แต่**การตัดสิ�
 | Social Login — Google/Facebook เปิดแยก Public/Admin/Shop Signup ได้ ตรวจ token ฝั่ง server และ Password Login ยังใช้ได้ | ⚙️ | `10.22` · `bms_social_auth_settings` · Platform Admin |
 | Mobile Emergency Offline — คิวเข้ารหัสสำหรับบิลขายปลีกเงินสดธรรมดาในกะเดิม สินค้าต้องโหลดก่อนขาดการเชื่อมต่อ และสร้างบิล/เอกสารจริงหลัง Server ตรวจตอน sync | ⚙️ | `apps/mobile` · [ขอบเขต](business/cloud-hybrid-pos.md) |
 | Retail Local — backend/ฐานข้อมูลอยู่ในร้าน ใช้ workflow ภายในผ่าน Local Server ได้เมื่ออินเทอร์เน็ตภายนอกล่ม แต่ยังเป็น Technical Pilot ไม่ใช่ Commercial/GA | 🧪 | [สถานะ](business/retail-local-ga-readiness.md) |
+| Retail Local — ลงทะเบียนสิทธิ์ (Activation) เป็นขั้นตอนหลังติดตั้งที่เลือกได้ ตัวติดตั้งไม่ถามรหัส · หน้า `/admin/retail-local-license` ในร้าน · สถานะสิทธิ์/ทดลองใช้ **ไม่เคยหยุดการขายหรือข้อมูลของร้าน** · นับจำนวนเครื่องที่ติดตั้งด้วย UUID สุ่ม ไม่เก็บข้อมูลฮาร์ดแวร์ · รายงานปัญหาการติดตั้งแบบยินยอมก่อนส่ง | 🧪 | `10.16`–`10.18` `10.31` `10.35` `10.36` · [ขอบเขต](business/retail-local.md) |
 | Delivery Platforms — mapping/webhook/inbox-outbox/POS handoff foundation; foodpanda ตรวจ public contract แล้ว ส่วน GrabFood/LINE MAN ยัง contract-blocked | 🧪 | `10.12` `10.14` `10.21` · `/admin/delivery-platforms` |
 | Fake data seeder (dev เท่านั้น) | ✅ | `/admin/dev/fake` |
 

@@ -1043,6 +1043,83 @@ count and oldest unpublished lag through a narrow read function used by System H
 [ADR 001](decisions/001-transactional-realtime-invalidation.md)
 and the [realtime production audit](realtime-production-audit.md).
 
+## Emergency Offline evidence and board-game receipt snapshots (`10.5`–`10.7`)
+
+- `10.5` adds `bms_orders.pos_offline_tendered_at` (when the phone took the cash) and
+  `pos_offline_synced_at` (when the server committed the sale); a CHECK forbids a synced time
+  without a tendered time. These columns are evidence only — the sale still settles through
+  `recordPosSale()` with its original idempotency key, and there is no second payment or tax path.
+- `10.6` freezes `rate_code_snapshot` / `rate_name_snapshot` on board-game participants; a billable
+  row must carry a label, so renaming a rate never rewrites an old receipt.
+- `10.7` adds participant `time_mode` (`ACTUAL`/`SESSION_END`/`DURATION`) and `planned_end_at`
+  (charged at least through that time; old fixed-duration rows are backfilled) and lets a billing
+  group become `MERGED` with `merged_into_group_id` (FK + shape CHECK) so open bills merge/detach.
+
+## Tax evidence and report types (`10.8`–`10.10`, `10.23`–`10.25`)
+
+- `10.8`: `bms_tax_documents.issue_date` defaults to the Bangkok date; existing rows were backfilled
+  from `issued_at` with a revoked backup table `bms_tax_documents_issue_date_backup_10_8`; `doc_no`
+  is untouched.
+- `10.9` / `10.11` / `10.23`: the `bms_generated_reports.report_type` CHECK adds `VAT_SALES`,
+  `STOCK_LEDGER` and `VAT_PURCHASE`. **Note:** `10.23` re-creates the list without the `EXPENSES`,
+  `WHT` and `ACCOUNTING_PACK` values that `10.11` added. Nothing writes those types today
+  (`REPORT_TYPES` does not include them); a future persisted export of those kinds needs the CHECK
+  widened again first.
+- `10.10`: `bms_stock_movements.direction` (`IN`/`OUT`) for `COUNT_ADJUST` movements, backfilled
+  from the note; the requiring constraint is `NOT VALID`.
+- `10.24`: `seller_name/tax_id/branch_code/address/phone` on `bms_tax_documents`, written at issue;
+  older rows were backfilled from the current store profile (no rollback provided).
+- `10.25`: e-Tax submission status `CANCELLED`; unsent rows of cancelled documents were repaired,
+  `SENT`/`ACCEPTED` rows are left as they are.
+
+## Delivery platforms (`10.12`, `10.14`, `10.21`)
+
+`10.12` creates sixteen tenant tables with RLS — `bms_delivery_integrations`,
+`_location_mappings`, `_menu_mappings`, `_orders`, `_order_lines`, `_order_modifiers`, `_events`
+(durable webhook inbox), `_commands` (post-commit outbox), `_intake_controls`, `_order_events`,
+`_handoffs`, `_settlements`, `_settlement_lines`, `_adjustments`, `_disputes`, `_dispute_evidence` —
+plus the `PLATFORM_SETTLEMENT` payment/refund method, a delivery return cause, the NOLOGIN
+BYPASSRLS `bms_delivery_worker` role with narrow claim grants, and the definer function
+`bms_resolve_delivery_webhook_integration(uuid)`. It seeds nine `delivery.*`/`restaurant.*`
+permissions (Manager all; Sales and Cashier `restaurant.delivery.review` and `.handoff`). `10.14`
+adds `bms_delivery_integrations.config_version`, `bms_delivery_orders.transport_type` and
+`provider_call_attempts` on events and commands. `10.21` adds platform-global
+`bms_delivery_provider_settings` (one row per provider + `SANDBOX`/`LIVE`, AES-GCM `*_encrypted`
+credentials) and append-only `bms_delivery_provider_setting_events`; tenants never read them.
+
+## Social Login settings (`10.22`)
+
+Aborts if `users` already has a duplicate `(provider, provider_id)`, then adds the partial unique
+index `users_social_provider_identity_uidx` on `(lower(provider), provider_id)` for Google/Facebook.
+`bms_social_auth_settings` (PK `provider`; `public_login_enabled`, `admin_login_enabled`,
+`shop_signup_enabled`, all default `FALSE`) and `bms_social_auth_setting_events` (previous/next
+booleans) are platform-global. Client ids and secrets are environment variables, never columns.
+
+## Sample data ledger (`10.26`, `10.30`)
+
+`bms_sample_runs` (one live run per tenant, mode `STARTER_CATALOG` or `FULL_DEMO`) and
+`bms_sample_records` (the exact root records a run created, plus a baseline) are tenant tables with
+forced RLS. These rows — never a `FAKE-`/`SAMPLE-` prefix — decide what removal may delete. `10.30`
+widens the `bms_onboarding_seed_runs` archetype CHECK to every archetype (restaurant seeding failed
+before it).
+
+## Retail Local installation and releases (`10.15`, `10.17`–`10.20`, `10.27`–`10.29`, `10.32`–`10.34`)
+
+- `10.15` `bms_local_installation`: database singleton written once by first-run provisioning, with RLS.
+- `10.17` adds licence type, commercial status, trial start/expiry and conversion columns to
+  `bms_retail_local_licenses` plus `bms_retail_local_license_commercial_events` (actor/reason audit).
+  Trial expiry is derived commercial metadata, never a runtime lease.
+- `10.18` `bms_retail_local_license_bootstrap_tokens` (one-use activation codes, hashes only) and
+  `bms_retail_local_trial_followups`; commercial events gain `operation_id`/`details`.
+- `10.19` `bms_retail_local_release_assets` (platform, channel, status, an `is_latest` trigger, a
+  private `files` FK); `10.20` adds `package_type` (`server-pos`/`server`/`pos`) and makes "latest"
+  unique per platform + package type.
+- `10.27` adds `access_level` (`public`/`trial`); `10.32` drops the CHECK that forced combined
+  installers to `trial`, so they may be public. Access level controls downloads only, never activation.
+- `10.28` requires a well-formed `customer_reference` (CHECK `NOT VALID`); `10.29` adds `macos-x64`;
+  `10.33` adds `windows-x86-legacy` restricted to `package_type = 'pos'`; `10.34` re-labels x86 POS
+  installers that had been stored as `windows-x64`.
+
 ## Retail Local license evidence control plane (`10.16`)
 
 The five `bms_retail_local_license_*` tables are platform-global operational evidence, not

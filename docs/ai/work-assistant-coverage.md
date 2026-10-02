@@ -1,8 +1,8 @@
 # Global Work Assistant — full-system V1 coverage
 
-Status: implemented and contract-checked. The deterministic catalog currently contains 46 verified
-capabilities, 101 bilingual guides, 20 verified FAQ answers, and 21 groups of limits and traps
-(111 rules) — counts drift as features ship; re-count from `lib/bms/assistantKnowledge/*` before
+Status: implemented and contract-checked. The deterministic catalog currently contains 51 verified
+capabilities, 119 bilingual guides, 20 verified FAQ answers, and 24 groups of limits and traps
+(139 rules per language; 229 corpus entries, 99 of them real questions — counted 2026-10-02) — counts drift as features ship; re-count from `lib/bms/assistantKnowledge/*` before
 quoting them elsewhere. Every Admin Sidebar
 destination — read from `ADMIN_NAV_ITEMS`/`ADMIN_NAV_FOOTER_ROUTES` in `lib/bms/adminNavigation.ts`,
 not scraped from the component, so the coverage set cannot silently empty out when the menu moves —

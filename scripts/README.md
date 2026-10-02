@@ -8,9 +8,13 @@
 | `*.test.mts` อื่น ๆ (รวม `ai-eval/`) | เทส pure — อ่านซอร์ส/ตรรกะ/fake provider | ไม่ต้อง |
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
+| `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — **ตัวรันกลางไม่หยิบ** (หยิบเฉพาะ `*.test.mts`) ดู § 9 | ไม่ต้อง |
 
-ตอนนี้: **177 ไฟล์เทส** = pure 131 ไฟล์ (**1,347 เทส · รันแล้วเขียวครบ 2026-09-18**)
-+ DB 46 ไฟล์ (จำนวนเทสยังไม่ได้นับใหม่ — เครื่องที่นับไม่มี Postgres ให้รัน) — นับไฟล์ใหม่ 2026-09-18
+ตอนนี้: **214 ไฟล์เทส** = pure 158 ไฟล์ (141 ใน `scripts/` + 17 ใน `scripts/ai-eval/` ·
+**1,613 เทส — รันบน `develop` 2026-10-02 ได้ 1,612 ผ่าน / 1 แดง**: `realtime-domain-coverage-contract`
+เจอ `DELETE FROM bms_restaurant_checks` ใน `lib/bms/platform.ts` (การลบร้าน) ที่ยังไม่มี trigger
+หรือเหตุผลประกาศไว้ — เป็นของโค้ด ไม่ใช่ของเทส) + DB 56 ไฟล์ (จำนวนเทสยังไม่ได้นับใหม่ —
+เครื่องที่นับไม่มี Postgres ให้รัน) — นับไฟล์ใหม่ 2026-10-02
 ด้วยตัวรันเอง (`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง)
 `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
 
@@ -256,7 +260,7 @@ not ok 1 - restaurant intake -> callback -> atomic order; original demand, retri
 **แยกให้ออก**: exit `2` = ด่านปฏิเสธ ยังไม่ได้แตะฐาน · exit `1` = รันแล้วมีอะไรแดง
 (รวมกรณีต่อฐานไม่ได้) — อย่างหลังไม่ได้แปลว่าโค้ดผิด ให้ดูว่า Postgres ขึ้นอยู่หรือยัง
 
-### `npm run test:all` = pure + db (144 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
+### `npm run test:all` = pure + db (214 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
 
 ---
 
@@ -504,6 +508,26 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 **⚠️ ยังไม่มีเทสของตัวเอง** และยังไม่เคยเห็นเส้นทาง exit `0` (เครื่องที่เขียนไม่มี Postgres)
 
 ---
+
+## 9. เทสของตัวติดตั้ง Retail Local ที่อยู่นอกตัวรันกลาง
+
+`run-contract-tests.mjs` หยิบเฉพาะ `*.test.mts` ไฟล์พวกนี้จึง **ไม่อยู่ใน `npm run gate`**:
+
+| ไฟล์ | รันที่ไหน |
+| --- | --- |
+| `retail-local-bootstrap-behavior.test.mjs` | `.github/workflows/retail-local-managed-runtime.yml` (Ubuntu · Windows · macOS) — `node --test` |
+| `retail-local-unix-diagnostics.test.mjs` | workflow เดียวกัน (Ubuntu · macOS) |
+| `retail-local-update-transaction.test.sh` | workflow เดียวกัน (Ubuntu) |
+| `retail-local-uninstall-container.test.sh` | workflow เดียวกัน — ใน container `ubuntu:24.04` |
+| `retail-local-setup-diagnostics.test.ps1` · `retail-local-migration-checksum.test.mjs` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
+
+workflow เดียวกันรัน `go test` ของ `apps/retail-local-agent` และสร้างตัวติดตั้งแบบ unsigned เพื่อตรวจ
+(smoke) — **ผลของ CI ไม่ใช่หลักฐานการติดตั้งจริงบนเครื่องสะอาด** ดู
+[docs/business/retail-local-ga-readiness.md](../docs/business/retail-local-ga-readiness.md)
+
+ส่วนชุด `*.test.mts` ของ Retail Local (`retail-local-contract`, `-managed-runtime-contract`,
+`-release-{download,upload}-contract`, `-license-*`, `-optional-activation`, `-activation-retry`,
+`-installation-registry`, `-request-body`, `-sample-data-*`, `installer-reports-*`) อยู่ในตัวรันกลางตามปกติ
 
 ## ตารางสรุป exit code
 

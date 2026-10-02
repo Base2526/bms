@@ -383,9 +383,9 @@ helper instead of repeating the session + acting-tenant + permission dance local
 was the reason `authorizeAdminRoute()` exists, and each copy was a place to forget the drill-down
 check that keeps one shop's admin out of another's data. The helper also returns the `ctx` object that
 services like `generateReport()` expect, and accepts `null` for a route that needs a session but has
-no matching permission in the catalog. `onboarding/sample-data` is deliberately left alone: it gates
-on *role* read from the database rather than on a permission, so moving it would change who is
-allowed in. The two upload endpoints (`products/upload`, `inbox/upload`) previously accepted any
+no matching permission in the catalog. `onboarding/sample-data` was left out of that sweep because it
+gated on the role read from the database; since the `10.26` sample-data ledger it uses
+`authorizeAdminRoute("product.edit")` like the rest. The two upload endpoints (`products/upload`, `inbox/upload`) previously accepted any
 logged-in user — they now require `product.edit` and `inbox.reply`, the permissions the steps that
 consume the file already need.
 
@@ -485,6 +485,36 @@ REST route from a resolver or tool is not an acceptable shortcut. Audit actions
 inside the same transaction as the stock movement, with `actor` stored as a raw `users.id` that
 `listAudit()` resolves to an email on read. Full rationale and the audit-meta table:
 [../business/inventory.md](../business/inventory.md).
+
+## REST — delivery platforms (`10.12`, `10.14`, `10.21`)
+
+| Route | Guard | Purpose |
+| --- | --- | --- |
+| `POST /api/bms/delivery/[provider]/webhook/[integrationId]` | provider verification + `rateLimit()`; the opaque integration id derives the tenant | Writes a sanitized durable inbox row only; no order is created in the request |
+| `GET`/`POST /api/bms/delivery/integrations` | `delivery.integration.view` / `.manage` | Tenant store authorization and integration state |
+| `GET`/`POST /api/bms/delivery/mappings` | `delivery.integration.view` / `delivery.mapping.manage` | Store, item, variant and modifier mappings (only `VERIFIED` ones create orders) |
+| `/api/bms/delivery/operations` | `delivery.integration.view` + per-action permission | Intake pause/resume, review, handoff |
+| `/api/bms/delivery/settlements` · `/analytics` | `delivery.settlement.view` (+ `.manage` for writes) | Statement import/reconciliation · provider analytics that keep sales date separate from payout |
+| `POST /api/bms/delivery/{events/process,commands/process,intake/auto-resume,scheduled-preparation,acceptance-timeout}` | `authorizeCronRequest()` | Inbox worker, post-commit command outbox, intake auto-resume, scheduled prep and acceptance timeout |
+| `GET`/`POST /api/admin/delivery-providers` | `authorizePlatformAdminRoute()` | Platform partner contracts and encrypted credentials (`bms_delivery_provider_settings`); tenants never receive these secrets |
+
+## REST — Retail Local and installer reports (`10.15`–`10.36`)
+
+| Route | Guard | Purpose |
+| --- | --- | --- |
+| `GET /api/retail-local/releases` | public | Published release listing for the `/retail-local` download page |
+| `GET /api/retail-local/download/[id]` | public assets open; onboarding/trial assets need a platform admin | Installer download; downloading creates no licence or trial |
+| `GET /api/admin/retail-local/releases` · `PATCH .../releases/[id]` | `authorizePlatformAdminRoute()` | Release asset listing/state (`POST` answers 410 — uploads go through the route below) |
+| `POST /api/admin/retail-local/releases-upload` | Pages API, `bodyParser: false`, own platform-admin cookie guard, excluded from `middleware.ts` | Streams a multi-GB installer to storage with bounded memory; must never move to an App Route |
+| `GET`/`POST /api/admin/retail-local/licenses` · `GET .../licenses/[id]` · `POST .../[id]/{activation,commercial,resolve,token}` · `POST .../[id]/follow-ups/[followUpId]/acknowledge` | `authorizePlatformAdminRoute()` | Licence control plane: activation codes, trial/paid lifecycle with actor/reason audit, evidence review, ingestion tokens, follow-ups |
+| `GET /api/admin/retail-local/installations` | `authorizePlatformAdminRoute()` | Installation registry (instances, never people or hardware) |
+| `GET`/`POST /api/admin/retail-local/local-license` | `retail_local.license.view` / `.manage`; 404 outside Retail Local mode | Shop-side licence page: reads status, queues an activation/transfer request into the host mailbox |
+| `POST /api/bms/retail-local/activate` | one-use activation code, `rateLimit()` | Exchanges a code for evidence delivery; a retry replays only the exact code + request id (`10.35`) |
+| `POST /api/bms/retail-local/license-evidence` | Bearer ingestion token (hash stored), `rateLimit()` | Ed25519-signed, hash-chained evidence ingestion; never returns an entitlement decision |
+| `POST /api/bms/retail-local/license-status` | Bearer token, `rateLimit()` | Commercial status snapshot for the local page; stale status never becomes a runtime lock |
+| `POST /api/bms/retail-local/installations` | Bearer `bmsit_…` installation secret, `rateLimit()` | Best-effort instance heartbeat; stores no source IP |
+| `POST /api/installer-reports` | Pages API; `BMS_INSTALLER_REPORTS_ENABLED=true`, `X-BMS-Report-Consent: 1`, 64 KiB, 10/source/hour, 1000/day | Opt-in installer failure report; only allow-listed normalised JSON is kept |
+| `GET /api/admin/installer-reports` · `GET`/`PATCH .../[id]` | `authorizePlatformAdminRoute()` | Triage reports (`NEW`/`INVESTIGATING`/`RESOLVED`) on `/admin/installer-reports` |
 
 ## GraphQL modules
 
@@ -924,10 +954,12 @@ when the dataset is larger than the currently loaded page.
   allowlist before storing it.
 - `bmsRestockMetrics` includes recovered subscriptions, customers, orders, and revenue. Revenue
   comes from the linked order-item price snapshot, never from a client-supplied amount.
-- `POST /api/bms/onboarding/sample-data` is an authenticated Administrator/Manager onboarding
-  action, available in production for an empty tenant. A tenant-scoped seed-run ledger prevents
-  concurrent runs and resumes failed runs stage by stage; unlike `/api/dev/fake/*`, it does not use
-  the development fake-seed feature flag.
+- `GET`/`POST`/`DELETE /api/bms/onboarding/sample-data` require `product.edit`
+  (`authorizeAdminRoute`) and work in production. POST seeds the `STARTER_CATALOG` only; a
+  tenant-scoped run ledger (`bms_sample_runs`/`bms_sample_records`, `10.26`) allows one live run,
+  resumes a failed run stage by stage, and is the only authority for what DELETE may remove — a
+  `FAKE-`/`SAMPLE-` prefix never is. DELETE requires the body confirmation `DELETE SAMPLE`. Unlike
+  `/api/dev/fake/*`, it does not use the development fake-seed feature flag.
 - `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.
 
 ## Fake-store ground truth
