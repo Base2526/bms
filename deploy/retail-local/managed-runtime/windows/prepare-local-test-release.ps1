@@ -386,7 +386,7 @@ try {
   $bootstrapOutput = Join-Path $outputRoot "bootstrap"
   & (Join-Path $repoRoot "deploy\retail-local\build-online-bootstrap.ps1") -Version $Version `
     -Keyring $keyringPath -WindowsManifestUri $manifestUrl -LinuxManifestUri $manifestUrl `
-    -Target Windows -Architecture x64 -OutputDirectory $bootstrapOutput -InnoCompiler $InnoCompiler `
+    -Target Windows -PackageType server-pos -Architecture x64 -OutputDirectory $bootstrapOutput -InnoCompiler $InnoCompiler `
     -AllowTestEndpoints -SkipTests
   if ($LASTEXITCODE -ne 0) { throw "build Windows x64 local-test bootstrap ไม่สำเร็จ" }
 

@@ -1,6 +1,7 @@
 ﻿[CmdletBinding()]
 param(
   [string]$ManifestUri,
+  [ValidateSet('server', 'server-pos')][string]$PackageType = 'server-pos',
   [string]$AgentPath = (Join-Path $PSScriptRoot "bms-runtime-agent.exe"),
   [string]$KeyringPath = (Join-Path $PSScriptRoot "trusted-release-keys.json"),
   [string]$InstallRoot = (Join-Path $env:ProgramData "BMS\RetailLocal"),
@@ -26,7 +27,7 @@ trap {
   try {
     . (Join-Path $PSScriptRoot 'setup-diagnostics.ps1')
     Write-Host 'Preparing installation error report...'
-    $report = New-BmsSetupDiagnostics -Root $InstallRoot -Failure $failure -Product server-pos `
+    $report = New-BmsSetupDiagnostics -Root $InstallRoot -Failure $failure -Product $PackageType `
       -InstallerVersion $InstallerVersion -Stage $script:BmsSetupStage
     if ($report) { $message += "`nSupport report (review before sending): $report" }
   } catch {}
@@ -407,6 +408,9 @@ if ($ResumeConfig) {
   if ($resume.PSObject.Properties.Name -contains 'installerVersion') {
     $InstallerVersion = [string]$resume.installerVersion
   }
+  if ($resume.PSObject.Properties.Name -contains 'packageType') {
+    $PackageType = [string]$resume.packageType
+  }
   $ActivationUri = if ($resume.PSObject.Properties.Name -contains "activationUri") {
     [string]$resume.activationUri
   } else { "" }
@@ -418,6 +422,7 @@ if ($ResumeConfig) {
   $AgentPath = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
   $KeyringPath = Join-Path $InstallRoot "bootstrap\trusted-release-keys.json"
 }
+if ($PackageType -notin @('server', 'server-pos')) { throw "bootstrap packageType ไม่ถูกต้อง: $PackageType" }
 
 Assert-HttpsUri $ManifestUri
 if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) { Assert-HttpsUri $ActivationUri }
@@ -556,6 +561,7 @@ if ($preflight.requiresReboot) {
   $resumePath = Join-Path $bootstrapRoot "resume.json"
   $resumeJson = [ordered]@{
     installerVersion = $InstallerVersion
+    packageType = $PackageType
     manifestUri = $ManifestUri
     installRoot = $InstallRoot
     activationUri = $ActivationUri
@@ -611,7 +617,8 @@ try {
   throw "ดาวน์โหลด signed release manifest ไม่สำเร็จจาก $ManifestUri : $($_.Exception.Message)"
 }
 
-$stage = Invoke-AgentJson @("stage-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
+$stageCommand = if ($PackageType -eq 'server') { 'stage-server' } else { 'stage-release' }
+$stage = Invoke-AgentJson @($stageCommand, "-manifest", $manifestPath, "-keyring", $installedKeyring,
   "-target", [string]$preflight.target, "-root", $InstallRoot, "-progress")
 $release = Invoke-AgentJson @("verify-release", "-manifest", $manifestPath, "-keyring", $installedKeyring,
   "-target", [string]$preflight.target)
@@ -823,59 +830,62 @@ do {
 Write-Progress -Id 20 -Activity "กำลังตรวจสุขภาพ BMS Retail Local" -Completed
 if (-not $web -or -not $ws -or $web.StatusCode -ne 200 -or $ws.StatusCode -ne 200) { throw "บริการไม่ผ่าน HTTP health check" }
 
-$desktop = Get-ArtifactPath $release "desktop"
-$desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Setup.exe"
-Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
-$script:BmsSetupStage = 'install-desktop'
-$desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
-if ($desktopProcess.ExitCode -ne 0) { throw "ติดตั้ง BMS POS Desktop ไม่สำเร็จ" }
-$desktopExecutable = @(
-  (Join-Path $env:ProgramFiles "BMS POS\BMS POS.exe")
-  $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS\BMS POS.exe" })
-  (Join-Path $env:LOCALAPPDATA "Programs\BMS POS\BMS POS.exe")
-) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-if (-not $desktopExecutable) { throw "ติดตั้งแล้วแต่ไม่พบ BMS POS.exe" }
+if ($PackageType -eq 'server-pos') {
+  $desktop = Get-ArtifactPath $release "desktop"
+  $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Setup.exe"
+  Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
+  $script:BmsSetupStage = 'install-desktop'
+  $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
+  if ($desktopProcess.ExitCode -ne 0) { throw "ติดตั้ง BMS POS Desktop ไม่สำเร็จ" }
+  $desktopExecutable = @(
+    (Join-Path $env:ProgramFiles "BMS POS\BMS POS.exe")
+    $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS\BMS POS.exe" })
+    (Join-Path $env:LOCALAPPDATA "Programs\BMS POS\BMS POS.exe")
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
+  if (-not $desktopExecutable) { throw "ติดตั้งแล้วแต่ไม่พบ BMS POS.exe" }
 
-$desktopArguments = ""
-if ($provisionResult.deviceToken -and -not [string]::IsNullOrWhiteSpace($interactiveUser)) {
-  $handoffPath = Join-Path $InstallRoot "pairing-handoff.json"
-  [ordered]@{
-    version = 1
-    serverUrl = "http://127.0.0.1:3100"
-    token = [string]$provisionResult.deviceToken
-    expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString("o")
-  } | ConvertTo-Json -Compress | ForEach-Object { Write-Utf8NoBom $handoffPath $_ }
-  & icacls $handoffPath /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "${interactiveUser}:F" *> $null
-  if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ pairing handoff ไม่สำเร็จ" }
-  $desktopArguments = "--pairing-handoff=`"$handoffPath`""
-} elseif ($provisionResult.deviceToken) {
-  Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; ไม่เขียน pairing token ลงดิสก์"
-}
-
-if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
-  Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; เปิด BMS POS จาก Public Desktop เพื่อจับคู่ภายหลัง"
-} else {
-  $pairingTaskName = "BMS Retail Local POS Pairing"
-  $pairingAction = if ([string]::IsNullOrWhiteSpace($desktopArguments)) {
-    New-ScheduledTaskAction -Execute $desktopExecutable
-  } else {
-    New-ScheduledTaskAction -Execute $desktopExecutable -Argument $desktopArguments
+  $desktopArguments = ""
+  if ($provisionResult.deviceToken -and -not [string]::IsNullOrWhiteSpace($interactiveUser)) {
+    $handoffPath = Join-Path $InstallRoot "pairing-handoff.json"
+    [ordered]@{
+      version = 1
+      serverUrl = "http://127.0.0.1:3100"
+      token = [string]$provisionResult.deviceToken
+      expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString("o")
+    } | ConvertTo-Json -Compress | ForEach-Object { Write-Utf8NoBom $handoffPath $_ }
+    & icacls $handoffPath /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "${interactiveUser}:F" *> $null
+    if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ pairing handoff ไม่สำเร็จ" }
+    $desktopArguments = "--pairing-handoff=`"$handoffPath`""
+  } elseif ($provisionResult.deviceToken) {
+    Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; ไม่เขียน pairing token ลงดิสก์"
   }
-  $pairingTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddHours(1))
-  $pairingPrincipal = New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType Interactive -RunLevel Limited
-  $pairingSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
-  Register-ScheduledTask -TaskName $pairingTaskName -Action $pairingAction -Trigger $pairingTrigger `
-    -Principal $pairingPrincipal -Settings $pairingSettings -Force | Out-Null
-  try {
-    Start-ScheduledTask -TaskName $pairingTaskName
-    Start-Sleep -Seconds 5
-  } finally {
-    Unregister-ScheduledTask -TaskName $pairingTaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+  if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
+    Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; เปิด BMS POS จาก Public Desktop เพื่อจับคู่ภายหลัง"
+  } else {
+    $pairingTaskName = "BMS Retail Local POS Pairing"
+    $pairingAction = if ([string]::IsNullOrWhiteSpace($desktopArguments)) {
+      New-ScheduledTaskAction -Execute $desktopExecutable
+    } else {
+      New-ScheduledTaskAction -Execute $desktopExecutable -Argument $desktopArguments
+    }
+    $pairingTrigger = New-ScheduledTaskTrigger -Once -At ([DateTime]::Now.AddHours(1))
+    $pairingPrincipal = New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType Interactive -RunLevel Limited
+    $pairingSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+    Register-ScheduledTask -TaskName $pairingTaskName -Action $pairingAction -Trigger $pairingTrigger `
+      -Principal $pairingPrincipal -Settings $pairingSettings -Force | Out-Null
+    try {
+      Start-ScheduledTask -TaskName $pairingTaskName
+      Start-Sleep -Seconds 5
+    } finally {
+      Unregister-ScheduledTask -TaskName $pairingTaskName -Confirm:$false -ErrorAction SilentlyContinue
+    }
   }
 }
 
 [ordered]@{
   product = "BMS Retail Local"
+  packageType = $PackageType
   version = [string]$release.releaseVersion
   platformTarget = [string]$release.platformTarget
   installedAt = [DateTimeOffset]::Now.ToString("o")

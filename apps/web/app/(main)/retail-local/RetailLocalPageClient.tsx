@@ -28,8 +28,9 @@ import styles from "./page.module.css";
 const { Title, Paragraph, Text } = Typography;
 
 type Platform = "windows" | "ubuntu" | "macos";
+type WindowsArchitecture = "x64" | "x86-legacy";
 type MacArchitecture = "arm64" | "x64";
-type DownloadPlatform = "windows" | "ubuntu" | "macos-arm64" | "macos-x64";
+type DownloadPlatform = "windows" | "windows-x86-legacy" | "ubuntu" | "macos-arm64" | "macos-x64";
 type PackageType = "server-pos" | "server" | "pos";
 
 type DownloadAsset = {
@@ -95,6 +96,9 @@ type PageContent = {
   currentPilot: string;
   choosePackageTitle: string;
   choosePackageDescription: string;
+  windowsArchitectureTitle: string;
+  windowsArchitectureDescription: string;
+  windowsArchitectures: Record<WindowsArchitecture, { name: string; description: string }>;
   macArchitectureTitle: string;
   macArchitectureDescription: string;
   macArchitectures: Record<MacArchitecture, { name: string; description: string }>;
@@ -206,7 +210,13 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     installer: "ไฟล์ติดตั้ง",
     currentPilot: "Technical pilot",
     choosePackageTitle: "เครื่องนี้ใช้ระบบปฏิบัติการอะไร?",
-    choosePackageDescription: "เลือก OS ก่อน แล้วเลือกบทบาท Server + POS, Server only หรือ POS Desktop จากการ์ดด้านล่าง",
+    choosePackageDescription: "เลือก OS และสถาปัตยกรรมก่อน แล้วเลือกบทบาทที่เครื่องรองรับจากการ์ดด้านล่าง",
+    windowsArchitectureTitle: "Windows เครื่องนี้เป็นแบบใด?",
+    windowsArchitectureDescription: "x86 Legacy รองรับเฉพาะ POS Desktop ที่เชื่อมกับ Server เครื่องอื่น ไม่สามารถติดตั้ง Local Server ได้",
+    windowsArchitectures: {
+      x64: { name: "Windows x64", description: "Windows 11/10 x64 · รองรับ Server + POS, Server only และ POS Desktop" },
+      "x86-legacy": { name: "Windows x86 Legacy", description: "Windows 32-bit รุ่นเดิม · รองรับ POS Desktop only เท่านั้น" },
+    },
     macArchitectureTitle: "Mac เครื่องนี้ใช้ชิปอะไร?",
     macArchitectureDescription: "เลือกให้ตรงกับเครื่องก่อนดาวน์โหลด ไฟล์ Apple Silicon และ Intel ใช้แทนกันไม่ได้",
     macArchitectures: {
@@ -230,6 +240,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releaseNotesLabel: "ข้อควรรู้ก่อน update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
+      "windows-x86-legacy": { "server-pos": "ไม่รองรับ", server: "ไม่รองรับ", pos: "BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
       "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
       "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
@@ -242,6 +253,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     },
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
+      "windows-x86-legacy": "Windows x86 32-bit · Legacy POS Desktop client only",
       ubuntu: "Ubuntu x64 · ต้องมี Secret Service หรือ KWallet",
       "macos-arm64": "macOS 12 ขึ้นไป · Apple Silicon arm64 · Keychain",
       "macos-x64": "macOS 12 ขึ้นไป · Intel x64 · Keychain",
@@ -333,7 +345,13 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     installer: "Installer",
     currentPilot: "Technical pilot",
     choosePackageTitle: "Which operating system does this machine use?",
-    choosePackageDescription: "Choose the OS first, then select Server + POS, Server only, or POS Desktop from the cards below.",
+    choosePackageDescription: "Choose the OS and architecture first, then select a supported machine role from the cards below.",
+    windowsArchitectureTitle: "Which Windows architecture does this machine use?",
+    windowsArchitectureDescription: "x86 Legacy supports POS Desktop connected to another server only; it cannot host the Local Server.",
+    windowsArchitectures: {
+      x64: { name: "Windows x64", description: "Windows 11/10 x64 · Server + POS, Server only, and POS Desktop" },
+      "x86-legacy": { name: "Windows x86 Legacy", description: "Legacy 32-bit Windows · POS Desktop only" },
+    },
     macArchitectureTitle: "Which chip does this Mac use?",
     macArchitectureDescription: "Choose the exact architecture before downloading. Apple Silicon and Intel installers are not interchangeable.",
     macArchitectures: {
@@ -357,6 +375,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releaseNotesLabel: "Before you update",
     fallbackFiles: {
       windows: { "server-pos": "BMS-Retail-Local-Full-Setup.exe", server: "BMS-Retail-Local-Server-Setup.exe", pos: "BMS-POS-Setup-x64.exe" },
+      "windows-x86-legacy": { "server-pos": "Not supported", server: "Not supported", pos: "BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe" },
       ubuntu: { "server-pos": "bms-retail-local-full_<version>_amd64.deb", server: "bms-retail-local-server_<version>_amd64.deb", pos: "bms-pos_<version>_amd64.deb" },
       "macos-arm64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-arm64.pkg", server: "BMS-Retail-Local-Server-<version>-arm64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-arm64.dmg" },
       "macos-x64": { "server-pos": "BMS-Retail-Local-Server-POS-<version>-x64.pkg", server: "BMS-Retail-Local-Server-<version>-x64.pkg", pos: "BMS-Retail-Local-POS-<version>-macos-x64.dmg" },
@@ -369,6 +388,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     },
     posNotes: {
       windows: "Windows x64 · POS Desktop client",
+      "windows-x86-legacy": "Windows x86 32-bit · Legacy POS Desktop client only",
       ubuntu: "Ubuntu x64 · Secret Service or KWallet required",
       "macos-arm64": "macOS 12 or newer · Apple Silicon arm64 · Keychain",
       "macos-x64": "macOS 12 or newer · Intel x64 · Keychain",
@@ -402,11 +422,17 @@ export default function RetailLocalPageClient({
   const { lang } = useI18n();
   const content = resolveBilingual(CONTENT, lang);
   const [platform, setPlatform] = useState<Platform>("windows");
+  const [windowsArchitecture, setWindowsArchitecture] = useState<WindowsArchitecture>("x64");
   const [macArchitecture, setMacArchitecture] = useState<MacArchitecture>("arm64");
   const selected = content.os[platform];
-  const downloadPlatform: DownloadPlatform = platform === "macos"
-    ? (macArchitecture === "arm64" ? "macos-arm64" : "macos-x64")
-    : platform;
+  const downloadPlatform: DownloadPlatform = platform === "windows"
+    ? (windowsArchitecture === "x64" ? "windows" : "windows-x86-legacy")
+    : platform === "macos"
+      ? (macArchitecture === "arm64" ? "macos-arm64" : "macos-x64")
+      : platform;
+  const availablePackageTypes: PackageType[] = downloadPlatform === "windows-x86-legacy"
+    ? ["pos"]
+    : ["server-pos", "server", "pos"];
 
   const platformOptions = useMemo(
     () => [
@@ -429,6 +455,8 @@ export default function RetailLocalPageClient({
       version: item.version,
       platform: item.platform === "windows"
         ? "Windows x64"
+        : item.platform === "windows-x86-legacy"
+          ? "Windows x86 Legacy"
         : item.platform === "ubuntu"
           ? "Ubuntu x64"
           : item.platform === "macos-arm64"
@@ -584,6 +612,28 @@ export default function RetailLocalPageClient({
           />
         </div>
 
+        {platform === "windows" ? (
+          <div className={styles.macArchitectureChooser}>
+            <div>
+              <strong>{content.windowsArchitectureTitle}</strong>
+              <small>{content.windowsArchitectureDescription}</small>
+            </div>
+            <div className={styles.macArchitectureControl}>
+              <Segmented
+                block
+                aria-label={content.windowsArchitectureTitle}
+                options={([
+                  { value: "x64", label: content.windowsArchitectures.x64.name },
+                  { value: "x86-legacy", label: content.windowsArchitectures["x86-legacy"].name },
+                ] as Array<{ value: WindowsArchitecture; label: string }>)}
+                value={windowsArchitecture}
+                onChange={(value) => setWindowsArchitecture(value as WindowsArchitecture)}
+              />
+              <small>{content.windowsArchitectures[windowsArchitecture].description}</small>
+            </div>
+          </div>
+        ) : null}
+
         {platform === "macos" ? (
           <div className={styles.macArchitectureChooser}>
             <div>
@@ -607,7 +657,7 @@ export default function RetailLocalPageClient({
         ) : null}
 
         <div className={styles.downloadGrid}>
-          {(["server-pos", "server", "pos"] as PackageType[]).map((packageType) => {
+          {availablePackageTypes.map((packageType) => {
             const isRecommended = packageType === "server-pos";
             const directDownload = downloads[downloadPlatform][packageType];
             const filename = directDownload?.filename || content.fallbackFiles[downloadPlatform][packageType];

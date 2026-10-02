@@ -57,7 +57,9 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 ผลลัพธ์หลักอยู่ใน `artifacts/retail-local/`:
 
 - `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe`
+- `BMS-Retail-Local-Server-<version>-windows-x64.exe`
 - `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb`
+- `BMS-Retail-Local-Server-<version>-linux-x64.deb`
 - `BMS-Retail-Local-POS-<version>-windows-x64.exe`
 - `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe`
 - `BMS-Retail-Local-POS-<version>-linux-x64.deb`
@@ -65,6 +67,8 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 
 ชื่อ `server-pos` หมายถึง signed manifest มี POS Desktop เป็น component ที่ดาวน์โหลดหลังตรวจสอบ
 ไม่ได้หมายความว่า Electron มี database หรือ business logic ของตัวเอง
+`server` ใช้ signed manifest ชุดเดียวกัน แต่ `stage-server` จะไม่ดาวน์โหลด ติดตั้ง หรืออัปเดต
+Desktop component บนเครื่อง Server-only
 
 POS-only ทั้งสามไฟล์เป็น bootstrap ขนาดเล็กเช่นกัน ไม่ได้ฝัง Electron ไว้ใน installer และใช้
 `stage-desktop` ดาวน์โหลดเฉพาะ Desktop component แบบ resume ได้ Windows x86 ใช้ signed manifest

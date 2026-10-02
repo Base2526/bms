@@ -381,10 +381,12 @@ a Retail Local license whose `customer_reference` names the customer/account the
 to. After activation, signed evidence adds the actual tenant/POS references reported by the installed
 host.
 
-Release platforms are deliberately architecture-specific: `windows-x64`, `ubuntu-x64`, and the
-experimental `macos-arm64`/`macos-x64`. Windows packages use `.exe` and Ubuntu packages use `.deb`. On macOS,
-`server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos` uses the existing POS
-Desktop disk image (`.dmg`).
+Release platforms are deliberately architecture-specific: `windows-x64`, `windows-x86-legacy`,
+`ubuntu-x64`, and the experimental `macos-arm64`/`macos-x64`. `windows-x86-legacy` is restricted to
+the `pos` package type: a 32-bit Windows machine may run the legacy POS Desktop client but must never
+be presented as a Local Server or Server + POS host. Windows packages use `.exe` and Ubuntu packages
+use `.deb`. On macOS, `server` and `server-pos` use Apple Installer packages (`.pkg`), while `pos`
+uses the existing POS Desktop disk image (`.dmg`).
 
 The browser sends installer bytes to the dedicated
 `/api/admin/retail-local/releases-upload` Pages API route. That route disables the Pages body parser,

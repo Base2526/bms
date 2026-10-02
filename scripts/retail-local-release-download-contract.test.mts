@@ -8,6 +8,8 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   const migration = read("db/migrations/10.20__bms_retail_local_release_package_types.sql");
   const trialLockMigration = read("db/migrations/10.27__bms_retail_local_release_trial_lock.sql");
   const publicCombinedMigration = read("db/migrations/10.32__bms_retail_local_public_combined_installers.sql");
+  const windowsX86Migration = read("db/migrations/10.33__bms_retail_local_windows_x86_legacy_release_assets.sql");
+  const windowsX86RepairMigration = read("db/migrations/10.34__bms_retail_local_reclassify_windows_x86_legacy_assets.sql");
   const service = read("apps/web/lib/bms/retailLocalReleases.ts");
   const publicPage = read("apps/web/app/(main)/retail-local/RetailLocalPageClient.tsx");
   const publicServerPage = read("apps/web/app/(main)/retail-local/page.tsx");
@@ -22,8 +24,17 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(trialLockMigration, /package_type = 'server-pos'[\s\S]*access_level = 'trial'/);
   assert.match(publicCombinedMigration, /DROP CONSTRAINT IF EXISTS bms_retail_local_release_assets_server_pos_trial_lock_check/);
   assert.match(publicCombinedMigration, /public assets appear on \/retail-local/);
+  assert.match(windowsX86Migration, /'windows-x86-legacy'/);
+  assert.match(windowsX86Migration, /platform <> 'windows-x86-legacy' OR package_type = 'pos'/);
+  assert.match(windowsX86RepairMigration, /SET platform = 'windows-x86-legacy'/);
+  assert.match(windowsX86RepairMigration, /platform = 'windows-x64'/);
+  assert.match(windowsX86RepairMigration, /package_type = 'pos'/);
+  assert.match(windowsX86RepairMigration, /x86\|ia32/);
+  assert.match(windowsX86RepairMigration, /x86\[_-\]\?64/);
 
   assert.match(service, /packageType === "pos" \? \["\.dmg"\] : \["\.pkg"\]/);
+  assert.match(service, /windows-x86-legacy supports POS Desktop only/);
+  assert.match(service, /x86 installer must use the windows-x86-legacy platform/);
   assert.match(service, /WHERE platform = \$1 AND package_type = \$2/);
   assert.match(service, /access_level = 'public'/);
   assert.match(service, /input\.accessLevel == null \? "public" : assertAccessLevel/);
@@ -45,6 +56,8 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(adminPage, /lower\.endsWith\("\.dmg"\)/);
   assert.match(adminPage, /uploadPackageType === "pos" \? "\.dmg" : "\.pkg"/);
   assert.match(adminPage, /macOS Apple Silicon \(\$\{macUploadExtension\}\)/);
+  assert.match(adminPage, /Windows x86 Legacy · POS only/);
+  assert.match(adminPage, /platform === "windows-x86-legacy" \? "pos"/);
   assert.match(adminPage, /accessLevel: "public"/);
   assert.doesNotMatch(adminPage, /disabled=\{uploadPackageType === "server-pos"\}/);
   assert.match(publicPage, /releaseNotesLabel/);
@@ -52,11 +65,16 @@ test("Retail Local releases distinguish combined, server, and POS packages", () 
   assert.match(publicPage, /backup, downtime, and rollback/);
   assert.match(publicServerPage, /"macos-arm64": emptyDownloads\(\)/);
   assert.match(publicServerPage, /"macos-x64": emptyDownloads\(\)/);
+  assert.match(publicServerPage, /"windows-x86-legacy": emptyDownloads\(\)/);
+  assert.match(publicServerPage, /platform === "windows-x86-legacy"/);
   assert.doesNotMatch(publicServerPage, /return "macos"/);
   assert.match(publicPage, /macArchitectureTitle/);
   assert.match(publicPage, /downloads\[downloadPlatform\]/);
   assert.match(publicPage, /macOS Apple Silicon \(arm64\)/);
   assert.match(publicPage, /macOS Intel \(x64\)/);
+  assert.match(publicPage, /downloadPlatform === "windows-x86-legacy"/);
+  assert.match(publicPage, /Windows x86 Legacy/);
+  assert.match(publicPage, /availablePackageTypes\.map/);
 });
 
 test("Retail Local installer upload streams to storage with bounded memory", () => {

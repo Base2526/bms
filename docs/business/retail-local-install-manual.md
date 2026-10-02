@@ -9,12 +9,13 @@
 | ต้องการติดตั้ง | Windows | Ubuntu Linux | macOS |
 | --- | --- | --- | --- |
 | เครื่องหลักของร้าน รวม Server + POS | `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-POS-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-POS-<version>-arm64.pkg` หรือ `...-x64.pkg` |
-| เครื่อง Server อย่างเดียว | ติดต่อ Support สำหรับ recovery package | ติดต่อ Support สำหรับ recovery package | ติดต่อ Support สำหรับ offline recovery package |
-| เครื่อง POS เพิ่มเติม | `BMS-Retail-Local-POS-<version>-windows-x64.exe` | `BMS-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` หรือ `...-macos-x64.dmg` |
+| เครื่อง Server อย่างเดียว | `BMS-Retail-Local-Server-<version>-windows-x64.exe` | `BMS-Retail-Local-Server-<version>-linux-x64.deb` | `BMS-Retail-Local-Server-<version>-arm64.pkg` หรือ `...-x64.pkg` |
+| เครื่อง POS เพิ่มเติม | `BMS-Retail-Local-POS-<version>-windows-x64.exe` หรือ `BMS-Retail-Local-POS-<version>-windows-x86-legacy.exe` สำหรับ Windows 32-bit รุ่นเดิม | `BMS-Retail-Local-POS-<version>-linux-x64.deb` หรือ `.AppImage` | `BMS-Retail-Local-POS-<version>-macos-arm64.dmg` หรือ `...-macos-x64.dmg` |
 
 คำแนะนำทั่วไป:
 
 - ร้านที่มีคอมเครื่องเดียวให้ใช้ไฟล์ `Server-POS`
+- `windows-x86-legacy` ใช้ได้เฉพาะ POS Desktop only และต้องเชื่อมกับ Server x64 เครื่องอื่น ห้ามใช้เป็น Server หรือ Server + POS
 - ร้านที่มีเครื่อง Server แยก และมีเครื่องแคชเชียร์หลายเครื่อง ให้ติดตั้ง `Server` ที่เครื่องหลักก่อน แล้วติดตั้ง `POS` บนเครื่องแคชเชียร์เพิ่มเติม
 - macOS Server+POS online bootstrap เลือกไฟล์ตาม CPU: Apple Silicon ใช้ `arm64`, Intel Mac ใช้ `x64`
 - macOS POS อย่างเดียวมีทั้ง Apple Silicon (`arm64`) และ Intel (`x64`)

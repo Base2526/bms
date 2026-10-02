@@ -6,6 +6,7 @@ param(
   [Parameter(Mandatory = $true)][string]$LinuxManifestUri,
   [string]$ActivationUri = "",
   [ValidateSet("All", "Windows", "Linux")][string]$Target = "All",
+  [ValidateSet("server", "server-pos", "all")][string]$PackageType = "all",
   [string]$Architecture = "x64",
   [string]$OutputDirectory,
   [string]$InnoCompiler,
@@ -64,6 +65,7 @@ function ConvertTo-WslPath([string]$WindowsPath) {
 function Write-ChecksumAndMetadata(
   [string]$Path,
   [string]$Platform,
+  [string]$PackageType,
   [string]$ManifestUri,
   [string]$SourceCommit
 ) {
@@ -83,7 +85,7 @@ function Write-ChecksumAndMetadata(
     sourceCommit = $SourceCommit
     platform = $Platform
     architecture = "x64"
-    packageType = "server-pos"
+    packageType = $PackageType
     distribution = "online-bootstrap"
     testBuild = $testBuild
     manifestUri = $ManifestUri
@@ -154,11 +156,18 @@ if ($Target -in @("All", "Linux") -and -not (Get-Command wsl.exe -ErrorAction Si
 }
 
 $artifactQualifier = if ($testBuild) { "-SMOKE-ONLY" } else { "" }
-$windowsArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-POS-$Version-windows-x64$artifactQualifier.exe"
-$linuxArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-POS-$Version-linux-x64$artifactQualifier.deb"
+$packageTypes = if ($PackageType -eq "all") { @("server", "server-pos") } else { @($PackageType) }
+$packageSpecs = @($packageTypes | ForEach-Object {
+  $label = if ($_ -eq "server") { "Server" } else { "Server-POS" }
+  [pscustomobject]@{
+    PackageType = $_
+    WindowsArtifact = Join-Path $outputRoot "BMS-Retail-Local-$label-$Version-windows-x64$artifactQualifier.exe"
+    LinuxArtifact = Join-Path $outputRoot "BMS-Retail-Local-$label-$Version-linux-x64$artifactQualifier.deb"
+  }
+})
 $artifacts = @()
-if ($Target -in @("All", "Windows")) { $artifacts += $windowsArtifact }
-if ($Target -in @("All", "Linux")) { $artifacts += $linuxArtifact }
+if ($Target -in @("All", "Windows")) { $artifacts += @($packageSpecs.WindowsArtifact) }
+if ($Target -in @("All", "Linux")) { $artifacts += @($packageSpecs.LinuxArtifact) }
 foreach ($path in $artifacts) {
   $existing = @(@($path, "$path.sha256", "$path.json") |
     Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
@@ -222,19 +231,23 @@ try {
       }
     } finally { Pop-Location }
 
-    $artifactBase = [IO.Path]::GetFileNameWithoutExtension($windowsArtifact)
-    Invoke-Checked "Build Windows x64 online bootstrap" {
-      & $InnoCompiler "/DBuildRoot=$windowsStage" "/DOutputRoot=$windowsOutput" `
-        "/DProductVersion=$Version" "/DManifestUri=$WindowsManifestUri" `
-        "/DActivationUri=$ActivationUri" "/DArtifactBaseFilename=$artifactBase" `
-        (Join-Path $managedRoot "windows\BMSRetailLocal.iss")
+    foreach ($spec in $packageSpecs) {
+      $artifactBase = [IO.Path]::GetFileNameWithoutExtension($spec.WindowsArtifact)
+      Invoke-Checked "Build Windows x64 $($spec.PackageType) online bootstrap" {
+        & $InnoCompiler "/DBuildRoot=$windowsStage" "/DOutputRoot=$windowsOutput" `
+          "/DProductVersion=$Version" "/DManifestUri=$WindowsManifestUri" `
+          "/DActivationUri=$ActivationUri" "/DPackageType=$($spec.PackageType)" `
+          "/DArtifactBaseFilename=$artifactBase" `
+          (Join-Path $managedRoot "windows\BMSRetailLocal.iss")
+      }
+      $builtWindows = Join-Path $windowsOutput "$artifactBase.exe"
+      if (-not (Test-Path -LiteralPath $builtWindows -PathType Leaf)) {
+        throw "Inno Setup สำเร็จแต่ไม่พบ artifact: $builtWindows"
+      }
+      Copy-Item -LiteralPath $builtWindows -Destination $spec.WindowsArtifact -Force
+      $results += Write-ChecksumAndMetadata $spec.WindowsArtifact "windows-x64" $spec.PackageType `
+        $WindowsManifestUri $sourceCommit
     }
-    $builtWindows = Join-Path $windowsOutput "$artifactBase.exe"
-    if (-not (Test-Path -LiteralPath $builtWindows -PathType Leaf)) {
-      throw "Inno Setup สำเร็จแต่ไม่พบ artifact: $builtWindows"
-    }
-    Copy-Item -LiteralPath $builtWindows -Destination $windowsArtifact -Force
-    $results += Write-ChecksumAndMetadata $windowsArtifact "windows-x64" $WindowsManifestUri $sourceCommit
   }
 
   if ($Target -in @("All", "Linux")) {
@@ -268,17 +281,26 @@ try {
     foreach ($mapped in @($builderWsl, $keyringWsl, $agentWsl, $outputWsl)) {
       if ([string]::IsNullOrWhiteSpace($mapped)) { throw "แปลง path สำหรับ WSL ไม่สำเร็จ" }
     }
-    Invoke-Checked "Build Ubuntu x64 online bootstrap" {
-      & wsl.exe -d $WslDistribution -- bash $builderWsl `
-        --keyring $keyringWsl --agent $agentWsl --manifest-url $LinuxManifestUri `
-        --activation-url $ActivationUri --version $Version --output-dir $outputWsl
+    foreach ($spec in $packageSpecs) {
+      Invoke-Checked "Build Ubuntu x64 $($spec.PackageType) online bootstrap" {
+        & wsl.exe -d $WslDistribution -- bash $builderWsl `
+          --keyring $keyringWsl --agent $agentWsl --manifest-url $LinuxManifestUri `
+          --activation-url $ActivationUri --package-type $spec.PackageType `
+          --version $Version --output-dir $outputWsl
+      }
+      $packageSlug = if ($spec.PackageType -eq "server") {
+        "bms-retail-local-server-bootstrap"
+      } else {
+        "bms-retail-local-server-pos-bootstrap"
+      }
+      $builtLinux = Join-Path $linuxStage "${packageSlug}_${Version}_amd64.deb"
+      if (-not (Test-Path -LiteralPath $builtLinux -PathType Leaf)) {
+        throw "Linux builder สำเร็จแต่ไม่พบ artifact: $builtLinux"
+      }
+      Copy-Item -LiteralPath $builtLinux -Destination $spec.LinuxArtifact -Force
+      $results += Write-ChecksumAndMetadata $spec.LinuxArtifact "ubuntu-x64" $spec.PackageType `
+        $LinuxManifestUri $sourceCommit
     }
-    $builtLinux = Join-Path $linuxStage "bms-retail-local-bootstrap_${Version}_amd64.deb"
-    if (-not (Test-Path -LiteralPath $builtLinux -PathType Leaf)) {
-      throw "Linux builder สำเร็จแต่ไม่พบ artifact: $builtLinux"
-    }
-    Copy-Item -LiteralPath $builtLinux -Destination $linuxArtifact -Force
-    $results += Write-ChecksumAndMetadata $linuxArtifact "ubuntu-x64" $LinuxManifestUri $sourceCommit
   }
 
   Write-Host "`nBuild online bootstrap สำเร็จ" -ForegroundColor Green
