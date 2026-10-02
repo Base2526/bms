@@ -238,8 +238,13 @@ deploy/retail-local/managed-runtime/linux/build-deb.sh \
   --keyring /secure/release/trusted-release-keys.json \
   --manifest-url https://releases.example.com/retail-local/ubuntu-24.04/release.jws.json \
   --activation-url https://control.example.com/api/bms/retail-local/activate \
+  --package-type server-pos \
   --version 0.5.0
 ```
+
+Use `--package-type server` for the Server-only bootstrap. It downloads and updates only the signed
+server components, does not require a graphical desktop session, and never installs or launches the
+POS Desktop component. The default remains `server-pos` for backward compatibility.
 
 The result is a roughly 3 MB `.deb`. Installing it adds `bms-retail-local-setup`; it does not start
 the runtime or mutate shop data during `dpkg` installation. The setup command performs preflight and

@@ -497,6 +497,8 @@ test("scheduled off-host backups are encrypted, separate, retained, and visibly 
 test("Linux bootstrap package stays small and never packages a release private key", () => {
   const builder = read("deploy/retail-local/managed-runtime/linux/build-deb.sh");
   const setup = read("deploy/retail-local/managed-runtime/linux/bms-retail-local-setup");
+  const installer = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const updater = read("deploy/retail-local/managed-runtime/linux/update-managed-runtime.sh");
   const activation = read("deploy/retail-local/managed-runtime/linux/activate-managed-runtime.sh");
   assert.match(builder, /CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build/);
   assert.match(builder, /Architecture: amd64/);
@@ -504,8 +506,17 @@ test("Linux bootstrap package stays small and never packages a release private k
   assert.doesNotMatch(builder, /private[-_]key|PRIVATE KEY|sign-release/);
   assert.match(setup, /release-manifest-url/);
   assert.match(setup, /BMS_ACTIVATION_URI/);
-  assert.match(read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh"), /Activation Code/);
+  assert.match(installer, /Activation Code/);
   assert.match(setup, /exec "\$bundle_root\/install-managed-runtime\.sh"/);
+  assert.match(builder, /--package-type\) package_type=/);
+  assert.match(builder, /PACKAGE_TYPE/);
+  assert.match(builder, /packageType":"%s"[\s\S]*"\$package_type"/);
+  assert.match(setup, /bms_diagnostics_init "\$package_type"/);
+  assert.match(installer, /stage_command=stage-release[\s\S]*stage_command=stage-server/);
+  assert.match(installer, /if \[\[ \$package_type == server-pos \]\]; then[\s\S]*desktop_artifact=/);
+  assert.match(installer, /--arg packageType "\$package_type"/);
+  assert.match(updater, /stage_command=stage-release[\s\S]*stage_command=stage-server/);
+  assert.match(updater, /if \[\[ \$package_type == server-pos \]\]; then[\s\S]*desktop_artifact=/);
   assert.match(builder, /bms-retail-local-activate/);
   assert.match(activation, /TRANSFER_REQUESTED/);
   assert.match(activation, /\.licenseCode = \$licenseCode/);

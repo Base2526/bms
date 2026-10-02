@@ -127,11 +127,19 @@ write_runtime_text() {
   rm -f -- "$temporary"
 }
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
+package_type=server-pos
+if [[ -f $RUNTIME_ROOT/installation.json ]]; then
+  installed_package_type=$(jq -r '.packageType // empty' "$RUNTIME_ROOT/installation.json" 2>/dev/null || true)
+  [[ -z $installed_package_type ]] || package_type=$installed_package_type
+elif [[ -f $bundle_root/PACKAGE_TYPE ]]; then
+  package_type=$(tr -d '\r\n' <"$bundle_root/PACKAGE_TYPE")
+fi
+[[ $package_type == server-pos || $package_type == server ]] || die "bootstrap package type ไม่ถูกต้อง: $package_type"
 diagnostics_helper="$bundle_root/setup-diagnostics.sh"
 [[ -f $diagnostics_helper ]] || diagnostics_helper="$bundle_root/../setup-diagnostics.sh"
 # shellcheck source=../setup-diagnostics.sh
 source "$diagnostics_helper"
-bms_diagnostics_init server-pos "$RUNTIME_ROOT" "$bundle_root/BOOTSTRAP_VERSION"
+bms_diagnostics_init "$package_type" "$RUNTIME_ROOT" "$bundle_root/BOOTSTRAP_VERSION"
 finish_setup() {
   local status=$?
   trap - EXIT ERR
@@ -145,8 +153,10 @@ trap 'exit 130' HUP INT TERM
 require_root
 [[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || die "ให้ผู้ใช้หน้าเครื่องรันผ่าน sudo; ห้าม login เป็น root โดยตรง"
 operator_uid_preflight=$(id -u "$SUDO_USER")
-[[ -d /run/user/$operator_uid_preflight ]] || die "ไม่พบ graphical user session ของ $SUDO_USER"
-[[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || die "ต้องติดตั้งจาก Ubuntu Desktop session"
+if [[ $package_type == server-pos ]]; then
+  [[ -d /run/user/$operator_uid_preflight ]] || die "ไม่พบ graphical user session ของ $SUDO_USER"
+  [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || die "ต้องติดตั้ง Server + POS จาก Ubuntu Desktop session"
+fi
 manifest_uri=${1:-}
 is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
 localctl_source="$bundle_root/bms-localctl"
@@ -215,7 +225,11 @@ step 3 "ติดตั้ง private runtime และเครื่องม�
 export DEBIAN_FRONTEND=noninteractive
 dpkg --configure -a
 apt-get update
-apt-get -o DPkg::Lock::Timeout=60 install -y --no-install-recommends age ca-certificates curl gnome-keyring jq libsecret-1-0 docker.io
+runtime_packages=(age ca-certificates curl jq docker.io)
+if [[ $package_type == server-pos ]]; then
+  runtime_packages+=(gnome-keyring libsecret-1-0)
+fi
+apt-get -o DPkg::Lock::Timeout=60 install -y --no-install-recommends "${runtime_packages[@]}"
 if ! docker compose version >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose-v2 || \
     apt-get install -y --no-install-recommends docker-compose-plugin || \
@@ -243,7 +257,9 @@ curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
   --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
   --retry 2 --retry-max-time 180 --output "$manifest_path" "$manifest_uri"
 chmod 0600 "$manifest_path"
-stage_json=$(run_agent_json_progress "$agent" stage-release -manifest "$manifest_path" \
+stage_command=stage-release
+[[ $package_type == server-pos ]] || stage_command=stage-server
+stage_json=$(run_agent_json_progress "$agent" "$stage_command" -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_json=$($agent verify-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target")
@@ -386,9 +402,11 @@ until curl --fail --silent --max-time 5 http://127.0.0.1:3100/admin/login >/dev/
   sleep 3
 done
 
-desktop_artifact=$(artifact_path desktop)
-dpkg -i "$desktop_artifact" || { apt-get install -f -y; dpkg -i "$desktop_artifact"; }
-command -v bms-pos >/dev/null 2>&1 || die "ติดตั้ง POS แล้วแต่ไม่พบคำสั่ง bms-pos"
+if [[ $package_type == server-pos ]]; then
+  desktop_artifact=$(artifact_path desktop)
+  dpkg -i "$desktop_artifact" || { apt-get install -f -y; dpkg -i "$desktop_artifact"; }
+  command -v bms-pos >/dev/null 2>&1 || die "ติดตั้ง POS แล้วแต่ไม่พบคำสั่ง bms-pos"
+fi
 
 operator=${SUDO_USER:-root}
 operator_uid=$(id -u "$operator")
@@ -423,7 +441,7 @@ if [[ -z ${BMS_LICENSE_ID:-} && -n ${BMS_ACTIVATION_URI:-} && -n ${BMS_ACTIVATIO
   fi
 fi
 unset BMS_ACTIVATION_CODE activation_result license_id evidence_endpoint evidence_token
-if [[ -n $device_token && $operator != root ]]; then
+if [[ $package_type == server-pos && -n $device_token && $operator != root ]]; then
   handoff_path="/run/user/$operator_uid/bms-pairing-handoff.json"
   install -d -m 0700 -o "$operator_uid" -g "$operator_gid" "/run/user/$operator_uid"
   expires_at=$(date -u -d '+10 minutes' '+%Y-%m-%dT%H:%M:%SZ')
@@ -447,8 +465,9 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   --arg tenantId "$tenant_id" --arg posDeviceId "$pos_device_id" \
   --arg businessArchetype "$business_archetype" --arg sampleMode "$sample_mode" \
   --arg sampleStatus "$sample_status" \
+  --arg packageType "$package_type" \
   --arg licenseCode "${BMS_LICENSE_ID:-}" \
-  '{product:"BMS Retail Local",version:$version,platformTarget:$target,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
+  '{product:"BMS Retail Local",version:$version,platformTarget:$target,packageType:$packageType,installedAt:$installedAt,updatedAt:$installedAt,sourceCommit:$sourceCommit,schemaVersion:$schemaVersion,url:"http://127.0.0.1:3100",tenantId:$tenantId,posDeviceId:$posDeviceId,businessArchetype:$businessArchetype,sampleMode:$sampleMode,sampleStatus:$sampleStatus,licenseCode:(if $licenseCode == "" then null else $licenseCode end)}' \
   | write_runtime_text "$RUNTIME_ROOT/installation.json"
 rm -f -- "$provision_checkpoint"
 
@@ -471,3 +490,6 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
 fi
 step 7 "ติดตั้งสำเร็จ"
 printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'
+if [[ $package_type == server ]]; then
+  printf 'ติดตั้งแบบ Server only: ไม่ได้ติดตั้งหรือเปิด BMS POS Desktop\n'
+fi
