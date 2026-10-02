@@ -665,13 +665,28 @@ deployment profile. The operator contract and remaining release gates live in
   never copies an evidence private key or bearer token. Never return trial state from evidence
   ingestion as an entitlement decision that the host could use to sanction the shop, and never put
   trial/commercial state on a customer receipt, bill, tax document, or kitchen ticket.
+  The shop-facing `/admin/retail-local-license` uses tenant-checked view/manage permissions and
+  explicit confirmation. Web has only a request mailbox plus a read-only status mount; the host
+  owns credentials, receipt reconciliation and signed evidence. Never mount the host secret root
+  or engine socket into Web. Commercial snapshots use the separate token-authenticated status
+  endpoint and show their last verification time; stale status never becomes a runtime lock.
+  Activation retries reuse the exact code/request UUID and a domain-separated derived token
+  (migration `10.35`); a new request must not replay a consumed code.
 - **Installer download access is not activation and is never a runtime lock.**
   `bms_retail_local_release_assets.access_level` decides only whether an installer is public or
-  delivered through onboarding. A public combined Server + POS bootstrap still offers the configured
-  one-time activation flow on first setup; downloading bytes does not create a license, and missing or
-  failed activation must not block setup. Once
+  delivered through onboarding. Server and Server + POS setup never prompt for or redeem an
+  Activation Code; registration is an explicit post-install action. Setup may recover a credential
+  already redeemed by an older interrupted install. Downloading or installing bytes does not create
+  a license or start a 30-day trial, and failed activation must not block setup. Once
   installed, neither download access nor trial/commercial state may block POS, stock, payment, tax,
   backup, restore or data access; those remain fail-open under the licensing invariant above.
+- **Installation inventory counts instances, never people or hardware.** A successful online POS,
+  Server, or Server + POS bootstrap may report one random installation UUID, package type, OS/version,
+  architecture, release, and last-seen time to the platform registry. The locally stored random secret
+  authenticates later updates. Never derive this identity from a disk/CPU/BIOS serial, MAC address,
+  hostname, account, tenant data, sales, or customer data; the registry never persists source IP. A wiped/reinstalled machine is
+  a new installation instance; downloads are not installs; `ACTIVE` is registry state and only a recent
+  `last_seen_at` indicates recent contact. Reporting is best-effort and can never fail setup or runtime.
 
 ## Restaurant POS (dine-in)
 

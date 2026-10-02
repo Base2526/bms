@@ -688,8 +688,10 @@ test("activation and replacement recovery preserve business continuity without c
   const activationRoute = read("apps/web/app/api/bms/retail-local/activate/route.ts");
   const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
 
-  assert.match(linuxInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านติดตั้งและใช้งานต่อได้/);
-  assert.match(windowsInstaller, /Activation ยังไม่สำเร็จ[\s\S]*การติดตั้งและการใช้งานร้านจะดำเนินต่อ/);
+  assert.doesNotMatch(linuxInstaller, /read[^\n]*Activation Code|activation_result=\$\(curl/);
+  assert.doesNotMatch(windowsInstaller, /Read-Host[^\n]*Activation Code|Invoke-RestMethod -Uri \$ActivationUri/);
+  assert.match(linuxActivation, /แลก Activation Code ไม่สำเร็จ; ร้านยังใช้งานได้/);
+  assert.match(windowsActivation, /ร้านยังใช้งานได้/);
   assert.match(macosInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านจะติดตั้งและใช้งานต่อได้/);
   assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
@@ -806,6 +808,13 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
   assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
   assert.match(transaction, /rollback_safe[\s\S]*bms-localctl restore/);
+  assert.match(transaction, /exec 9>"\$root\/\.license-ui.lock"[\s\S]*flock -w 60 9/);
+  assert.match(transaction, /BMS_LICENSE_LOCK_HELD=1 bms-localctl restore/);
+  const localctl = read("deploy/retail-local/managed-runtime/runtime-rootfs/bms-localctl");
+  assert.match(localctl, /BMS_LICENSE_LOCK_HELD[\s\S]*flock -w 60 9[\s\S]*update-active/);
+  const nextReceipt = linuxUpdater.indexOf('>"$transaction_dir/installation.next.json"');
+  assert.ok(nextReceipt > linuxUpdater.indexOf('bms-update-transaction begin'));
+  assert.match(windowsUpdater, /Invoke-Transaction @\("begin"[\s\S]*runtime-read[\s\S]*\$current = Get-Content -LiteralPath \$nextReceiptPath/);
   assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
   const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
   assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));

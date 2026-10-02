@@ -2,6 +2,7 @@ import "server-only";
 import crypto from "node:crypto";
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
+import { deriveRetailLocalActivationToken } from "./crypto";
 
 const ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -366,8 +367,13 @@ function newLicenseToken() {
   return `bmslt_${crypto.randomBytes(32).toString("base64url")}`;
 }
 
-export async function redeemRetailLocalActivationCode(rawCode: string) {
+export async function redeemRetailLocalActivationCode(rawCode: string, requestId?: string, currentLicenseCode?: string) {
   if (!ACTIVATION_CODE.test(rawCode)) throw new RetailLocalLicenseError("activation code ไม่ถูกต้อง", 401);
+  if (requestId !== undefined && (typeof requestId !== "string" || !UUID.test(requestId))) throw new RetailLocalLicenseError("request id ไม่ถูกต้อง");
+  requestId = requestId?.toLowerCase();
+  if (currentLicenseCode !== undefined && (typeof currentLicenseCode !== "string" || !ID.test(currentLicenseCode))) {
+    throw new RetailLocalLicenseError("current license ไม่ถูกต้อง");
+  }
   const bootstrapHash = crypto.createHash("sha256").update(rawCode).digest("hex");
   const client = await getClient();
   try {
@@ -375,9 +381,10 @@ export async function redeemRetailLocalActivationCode(rawCode: string) {
     const found = await client.query<{
       bootstrap_id: string; license_id: string; license_code: string; commercial_status: string;
       expires_at: string; consumed_at: string | null; revoked_at: string | null;
+      redemption_request_id: string | null;
     }>(
       `SELECT b.id AS bootstrap_id, b.license_id, b.expires_at, b.consumed_at, b.revoked_at,
-              l.license_code, l.commercial_status
+              l.license_code, l.commercial_status, b.redemption_request_id
        FROM bms_retail_local_license_bootstrap_tokens b
        JOIN bms_retail_local_licenses l ON l.id = b.license_id
        WHERE b.token_hash = $1
@@ -386,7 +393,11 @@ export async function redeemRetailLocalActivationCode(rawCode: string) {
     );
     const bootstrap = found.rows[0];
     if (!bootstrap) throw new RetailLocalLicenseError("activation code ไม่ถูกต้อง", 401);
-    if (bootstrap.consumed_at) throw new RetailLocalLicenseError("activation code ถูกใช้แล้ว", 409);
+    // A transfer moves an installation within one license. The review workflow cannot
+    // rebind an existing signing identity to another license; refuse before consuming.
+    if (currentLicenseCode && bootstrap.license_code !== currentLicenseCode) {
+      throw new RetailLocalLicenseError("license_mismatch", 409);
+    }
     if (bootstrap.revoked_at) throw new RetailLocalLicenseError("activation code ถูกยกเลิกแล้ว", 409);
     if (new Date(bootstrap.expires_at).getTime() <= Date.now()) {
       throw new RetailLocalLicenseError("activation code หมดอายุ", 409);
@@ -394,7 +405,22 @@ export async function redeemRetailLocalActivationCode(rawCode: string) {
     if (bootstrap.commercial_status === "CANCELLED") {
       throw new RetailLocalLicenseError("commercial record ถูกยกเลิก; กรุณาติดต่อ support", 409);
     }
-    const ingestionToken = newLicenseToken();
+    if (bootstrap.consumed_at) {
+      if (requestId && bootstrap.redemption_request_id === requestId) {
+        const recovered = deriveRetailLocalActivationToken(rawCode, requestId);
+        if (recovered) {
+          const active = await client.query(`SELECT id FROM bms_retail_local_license_tokens
+            WHERE license_id = $1 AND token_hash = $2 AND revoked_at IS NULL`,
+            [bootstrap.license_id, crypto.createHash("sha256").update(recovered).digest("hex")]);
+          if (active.rows.length) {
+            await client.query("COMMIT");
+            return { licenseCode: bootstrap.license_code, ingestionToken: recovered };
+          }
+        }
+      }
+      throw new RetailLocalLicenseError("activation code ถูกใช้แล้ว", 409);
+    }
+    const ingestionToken = requestId ? deriveRetailLocalActivationToken(rawCode, requestId) : newLicenseToken();
     const tokenHash = crypto.createHash("sha256").update(ingestionToken).digest("hex");
     await client.query(
       `INSERT INTO bms_retail_local_license_tokens (license_id, token_hash, label)
@@ -402,8 +428,9 @@ export async function redeemRetailLocalActivationCode(rawCode: string) {
       [bootstrap.license_id, tokenHash]
     );
     await client.query(
-      `UPDATE bms_retail_local_license_bootstrap_tokens SET consumed_at = now() WHERE id = $1`,
-      [bootstrap.bootstrap_id]
+      `UPDATE bms_retail_local_license_bootstrap_tokens SET consumed_at = now(),
+         redemption_request_id = $2 WHERE id = $1`,
+      [bootstrap.bootstrap_id, requestId ?? null]
     );
     await client.query("COMMIT");
     return { licenseCode: bootstrap.license_code, ingestionToken };
@@ -413,6 +440,32 @@ export async function redeemRetailLocalActivationCode(rawCode: string) {
   } finally {
     client.release();
   }
+}
+
+/** Informational snapshot for the authenticated host; never consulted by POS. */
+export async function getRetailLocalHostLicenseStatus(token: string, installationId: string) {
+  if (!TOKEN.test(token) || !UUID.test(installationId)) throw new RetailLocalLicenseError("unauthorized", 401);
+  const { rows } = await query<CommercialRow & {
+    license_code: string; status: string; installation_status: string | null;
+  }>(`SELECT l.license_code, l.license_type, l.commercial_status, l.trial_expires_at, l.status,
+        i.status AS installation_status
+      FROM bms_retail_local_license_tokens t
+      JOIN bms_retail_local_licenses l ON l.id = t.license_id
+      LEFT JOIN bms_retail_local_license_installations i ON i.license_id = l.id AND i.installation_id = $2
+      WHERE t.token_hash = $1 AND t.revoked_at IS NULL`,
+    [crypto.createHash("sha256").update(token).digest("hex"), installationId]);
+  const row = rows[0];
+  if (!row) throw new RetailLocalLicenseError("unauthorized", 401);
+  const now = new Date();
+  const effective = withEffectiveCommercialState(row, now);
+  return {
+    licenseCode: row.license_code, licenseType: row.license_type,
+    commercialStatus: effective.effective_commercial_status,
+    trialExpiresAt: row.trial_expires_at, trialDaysRemaining: effective.trial_days_remaining,
+    registrationStatus: row.installation_status ?? "PENDING",
+    reviewRequired: row.status !== "ACTIVE" || (row.installation_status !== null && row.installation_status !== "ACTIVE"),
+    checkedAt: now.toISOString(),
+  };
 }
 
 export async function issueRetailLocalActivationCode(licenseId: string, adminId: string | number) {

@@ -1054,6 +1054,29 @@ limit, key, chain and transfer conflicts. These tables are read and mutated only
 ingestion service and platform-admin routes. No POS, payment, inventory, startup, backup or restore
 query reads them, so an outage or `REVIEW_REQUIRED` state cannot disable a shop.
 
+Migration `10.35` adds nullable `redemption_request_id UUID` to the existing
+`bms_retail_local_license_bootstrap_tokens` table. Code redemption locks the bootstrap and
+license rows, consumes the one-use code, records the caller's retry UUID and inserts the ingestion
+token hash in the same transaction. An exact code/UUID retry can recover the same host token while
+the code remains unexpired/unrevoked and the token remains active; another UUID is refused. Recovery
+derives a domain-separated token from `BMS_SECRET_KEY`; neither raw codes nor recoverable token
+plaintext are stored in these tables. Existing consumed rows have NULL and remain non-replayable.
+Key rotation ends retry recovery for old requests without revoking previously issued host tokens.
+
+Migration `10.36` adds `bms_retail_local_installation_registry`, a platform-global inventory of
+successful online installation instances. Its UUID and bearer are generated randomly on the host;
+only the bearer SHA-256 is stored centrally. Rows contain the allow-listed package type, OS/version,
+architecture, release, optional tenant/license references, install time and last-seen time. They do
+not contain hardware serials, MAC addresses, hostnames, source IP addresses, customer or transaction data.
+The table is operational telemetry, not license authority: ingestion is best-effort and no local
+availability or business path reads it. A wipe/reinstall creates a new instance; a download creates none.
+
+The host-only `license-status` endpoint authenticates that token hash and joins an installation only
+within its license. The shop-facing `/admin/retail-local-license` uses a sanitized host snapshot,
+not direct cloud-table access. Its `retail_local.license.view` / `.manage` permissions, singleton
+local-tenant check and explicit confirmation guard access to a file mailbox; the host alone owns
+the signing identity and ingestion credential. No new tenant-owned table or POS license gate is added.
+
 ## Installer error reports (`10.31`)
 
 `bms_installer_reports` stores platform-global pre-install evidence; an installation may

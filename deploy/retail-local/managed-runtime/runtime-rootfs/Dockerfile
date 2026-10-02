@@ -12,6 +12,7 @@ RUN apt-get update \
     iptables \
     systemd \
     systemd-sysv \
+    util-linux \
     wget \
   && systemctl enable docker.service containerd.service \
   && apt-get clean \

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import AdminLayoutClient from "@/components/AdminLayoutClient";
+import { isRetailLocalDeployment } from "@/lib/bms/deploymentMode";
 
 export const metadata: Metadata = {
   robots: {
@@ -13,5 +14,5 @@ export default async function AdminLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <AdminLayoutClient>{children}</AdminLayoutClient>;
+  return <AdminLayoutClient retailLocal={isRetailLocalDeployment()}>{children}</AdminLayoutClient>;
 }

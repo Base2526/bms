@@ -10,9 +10,10 @@ import (
 	"os/signal"
 	"path/filepath"
 	"syscall"
+	"time"
 )
 
-const agentVersion = "0.5.4"
+const agentVersion = "0.5.6"
 
 var errPreflightFailed = errors.New("preflight failed")
 
@@ -30,9 +31,54 @@ func run(args []string) error {
 	restoreConsole := preventConsoleSelectionPause()
 	defer restoreConsole()
 	if len(args) == 0 {
-		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|stage-server|stage-desktop|engine-load|runtime-write|runtime-install-control|runtime-read|license-record|license-pulse|license-flush|version>")
+		return errors.New("usage: bms-runtime-agent <preflight|verify-release|check-update|verify-update|stage-release|stage-server|stage-desktop|engine-load|runtime-write|runtime-install-control|runtime-read|installation-report|license-record|license-pulse|license-flush|license-ui|version>")
 	}
 	switch args[0] {
+	case "installation-report":
+		flags := flag.NewFlagSet("installation-report", flag.ContinueOnError)
+		root := flags.String("root", "", "private installation state root")
+		controlURI := flags.String("control-uri", "", "trusted BMS HTTPS origin")
+		event := flags.String("event", "SEEN", "INSTALLED, SEEN, UPDATED, or UNINSTALLED")
+		packageType := flags.String("package-type", "", "pos, server, or server-pos")
+		target := flags.String("target", "", "platform target")
+		releaseVersion := flags.String("release-version", "", "installed release version")
+		tenant := flags.String("tenant-reference", "", "optional local tenant reference")
+		license := flags.String("license-reference", "", "optional commercial license reference")
+		force := flags.Bool("force", false, "report even inside the heartbeat interval")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" || *controlURI == "" || *packageType == "" || *target == "" || *releaseVersion == "" {
+			return errors.New("installation-report requires -root, -control-uri, -package-type, -target and -release-version")
+		}
+		absolute, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		return reportInstallationTelemetry(ctx, installationTelemetryInput{Root: absolute, ControlURI: *controlURI,
+			Event: *event, PackageType: *packageType, PlatformTarget: *target, ReleaseVersion: *releaseVersion,
+			TenantReference: *tenant, LicenseReference: *license, Force: *force})
+	case "license-ui":
+		flags := flag.NewFlagSet("license-ui", flag.ContinueOnError)
+		root := flags.String("root", "", "Managed Runtime data root")
+		engine := flags.String("engine", "", "host engine")
+		distro := flags.String("distro", "", "private VM name")
+		activation := flags.String("activation-uri", "", "trusted activation endpoint")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if *root == "" {
+			return errors.New("license-ui requires -root")
+		}
+		absolute, err := safeInstallRoot(*root)
+		if err != nil {
+			return err
+		}
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+		return runLicenseUI(ctx, absolute, *engine, *distro, *activation)
 	case "version":
 		fmt.Println(agentVersion)
 		return nil

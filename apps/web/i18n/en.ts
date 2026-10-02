@@ -1,7 +1,8 @@
 // i18n/en.ts
 const en = {
   installer_reports: {
-    title: "Installer error reports", submit_title: "BMS installation report", choose_file: "Report file (.zip, .tar.gz, .json, .txt)",
+    title: "Installations and installer reports", submit_title: "BMS installation report", choose_file: "Report file (.zip, .tar.gz, .json, .txt)",
+    installations: "Retail Local installation registry", installs_note: "Counts successfully reported installation instances, not downloads or hardware fingerprints", install_total: "Total installations", active_installs: "Active status", seen_30d: "Seen in 30 days", unregistered_installs: "Not linked to a license", installed_at: "Installed", last_seen: "Last seen", package_type: "Install type", license: "License", install_id: "Installation ID", install_breakdown: "By OS / install type / release", error_reports: "Installer error reports",
     consent: "I have reviewed this report and agree to send its error details and system information to BMS support. Reports are kept for 90 days. Do not attach raw logs or shop data.",
     send: "Send report", sent: "Report received. Reference:", invalid_report: "This file is not a supported BMS installation report.",
     payload_too_large: "The report must be 64 KiB or smaller.", rate_limited: "Too many reports. Please try again later.",
@@ -662,9 +663,10 @@ const en = {
     delivery_platforms: "Delivery Platforms",
     delivery_provider_settings: "Delivery Partner APIs",
     auth_settings: "Social Login",
+    local_license: "This installation’s license",
     retail_local_licenses: "Retail Local licenses",
     retail_local_releases: "Retail Local downloads",
-    installer_reports: "Installer error reports",
+    installer_reports: "Installations / installer reports",
     board_game: "Board Game Tables",
     pos_manual: "Cashier Manual",
     products: "Products",

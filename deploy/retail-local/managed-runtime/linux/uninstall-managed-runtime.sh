@@ -25,18 +25,31 @@ progress 1 "ปิด startup, timer และงานเบื้องหล�
 for unit in \
   bms-retail-local.service \
   bms-retail-local-license-evidence.timer \
+  bms-retail-local-license-ui.timer \
   bms-retail-local-offhost-backup.timer; do
   systemctl disable "$unit" >/dev/null 2>&1 || true
 done
 stop_unit_bounded bms-retail-local-license-evidence.timer 3 || true
+stop_unit_bounded bms-retail-local-license-ui.timer 3 || true
 stop_unit_bounded bms-retail-local-offhost-backup.timer 3 || true
 stop_unit_bounded bms-retail-local-license-evidence.service 5 || true
+stop_unit_bounded bms-retail-local-license-ui.service 5 || true
 stop_unit_bounded bms-retail-local-offhost-backup.service 5 || true
 
 progress 2 "บันทึกการถอนการติดตั้งและหยุดบริการ"
 # Commercial evidence is best-effort and must never hold up uninstall.
 timeout 3s /opt/bms-retail-local/bms-runtime-agent license-pulse \
   -root /var/lib/bms-retail-local -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
+if [[ -s /etc/bms-retail-local/activation-url && -f /var/lib/bms-retail-local/installation.json ]]; then
+  timeout 5s /opt/bms-retail-local/bms-runtime-agent installation-report \
+    -root /var/lib/bms-retail-local -control-uri "$(tr -d '\r\n' </etc/bms-retail-local/activation-url)" \
+    -event UNINSTALLED -package-type "$(jq -r '.packageType // "server-pos"' /var/lib/bms-retail-local/installation.json)" \
+    -target "$(jq -r '.platformTarget' /var/lib/bms-retail-local/installation.json)" \
+    -release-version "$(jq -r '.version' /var/lib/bms-retail-local/installation.json)" \
+    -tenant-reference "$(jq -r '.tenantId // empty' /var/lib/bms-retail-local/installation.json)" \
+    -license-reference "$(jq -r '.licenseCode // empty' /var/lib/bms-retail-local/installation.json)" -force \
+    >/dev/null 2>&1 || true
+fi
 if ! stop_unit_bounded bms-retail-local.service 10; then
   force_stop_containers
 fi
@@ -46,6 +59,8 @@ rm -f /etc/systemd/system/bms-retail-local.service
 rm -f /etc/systemd/system/bms-retail-local-offhost-backup.service \
   /etc/systemd/system/bms-retail-local-offhost-backup.timer \
   /etc/systemd/system/bms-retail-local-license-evidence.service \
+  /etc/systemd/system/bms-retail-local-license-ui.service \
+  /etc/systemd/system/bms-retail-local-license-ui.timer \
   /etc/systemd/system/bms-retail-local-license-evidence.timer
 systemctl daemon-reload
 

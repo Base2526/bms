@@ -123,7 +123,7 @@ export default function RetailLocalLicensesPage() {
     noExpiry: "ไม่มีวันหมดอายุ",
     issueTitle: "ออก License ใหม่",
     tokenTitle: "เก็บ Activation Code นี้ทันที",
-    tokenWarning: "Activation Code แสดงครั้งเดียวและหมดอายุภายใน 7 วัน ให้ลูกค้ากรอกในตัวติดตั้งเท่านั้น ห้ามส่งใน log หรืออีเมล",
+    tokenWarning: "Activation Code แสดงครั้งเดียวและหมดอายุภายใน 7 วัน ลูกค้าติดตั้งได้โดยไม่ต้องใช้ Code แล้วลงทะเบียนภายหลังผ่าน Activate or Transfer (Windows), sudo bms-retail-local-activate (Ubuntu) หรือ bms-retail-local activate (macOS) ห้ามส่งใน log หรืออีเมล",
     failOpen: "Trial หมดอายุหรืออยู่ระหว่างตรวจสอบจะไม่หยุด POS, การชำระเงิน, สต็อก, รายงาน, backup, restore หรือการเข้าถึงข้อมูลของร้าน",
     saved: "บันทึกเรียบร้อย",
   } : {
@@ -143,7 +143,7 @@ export default function RetailLocalLicensesPage() {
     noExpiry: "No expiry",
     issueTitle: "Issue a license",
     tokenTitle: "Save this activation code now",
-    tokenWarning: "The one-time activation code expires in seven days. Enter it only in the installer; never put it in logs or email.",
+    tokenWarning: "This one-time code expires in seven days. Setup needs no code. Register afterwards using Activate or Transfer (Windows), sudo bms-retail-local-activate (Ubuntu), or bms-retail-local activate (macOS). Never put the code in logs or email.",
     failOpen: "Trial expiry or review never interrupts POS, payments, stock, reports, backup, restore, or access to the shop's data.",
     saved: "Saved",
   };

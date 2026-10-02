@@ -49,8 +49,9 @@ test("local migration runner is ordered, checksummed, locked, and excludes destr
   assert.match(runner, /10\.26__bms_retail_local_macos_x64_release_assets\.sql/);
   assert.match(runner, /10\.27__bms_onboarding_seed_archetypes\.sql/);
   assert.match(runner, /UPDATE bms_local_schema_migrations SET name = \$1, checksum = \$2 WHERE name = \$3/);
-  assert.match(linuxRelease, /schemaVersion: "10\.30"/);
-  assert.equal(releaseExample.schemaVersion, "10.30");
+  assert.match(linuxRelease, /schemaVersion: "10\.36"/);
+  assert.equal(releaseExample.schemaVersion, "10.36");
+  assert.equal(releaseExample.minimumAgentVersion, "0.5.6");
 });
 
 test("first-run provisioning is single-tenant, atomic, and never persists the raw device token", () => {

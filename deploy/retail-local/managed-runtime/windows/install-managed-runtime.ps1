@@ -399,6 +399,35 @@ function Start-ManagedRuntime {
   if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
 }
 
+function Register-LicenseEvidenceTask {
+  # Register before activation as well: a missing profile is a harmless agent no-op.
+  # Activating from Admin later must not depend on running the CLI shortcut.
+  try {
+    $licenseAction = New-ScheduledTaskAction -Execute $installedAgent `
+      -Argument "license-pulse -root `"$InstallRoot`""
+    $licenseTrigger = New-ScheduledTaskTrigger -Daily -At 3am
+    $licenseSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
+    $licensePrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Action $licenseAction `
+      -Trigger $licenseTrigger -Principal $licensePrincipal -Settings $licenseSettings -Force | Out-Null
+  } catch { Write-Warning "ตั้งเวลาหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้" }
+}
+
+function Register-LicenseUIBridge {
+  Register-LicenseEvidenceTask
+  if ([string]::IsNullOrWhiteSpace($ActivationUri)) { return }
+  try {
+    $bridgeAction = New-ScheduledTaskAction -Execute $installedAgent -Argument `
+      "license-ui -root `"$InstallRoot`" -engine windows-wsl -distro $distroName -activation-uri `"$ActivationUri`""
+    $bridgeTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+    $bridgePrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType S4U -RunLevel Highest
+    $bridgeSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Seconds 55)
+    Register-ScheduledTask -TaskName "BMS Retail Local License UI" -Action $bridgeAction -Trigger $bridgeTrigger `
+      -Principal $bridgePrincipal -Settings $bridgeSettings -Force | Out-Null
+    Start-ScheduledTask -TaskName "BMS Retail Local License UI"
+  } catch { Write-Warning "ตั้งระบบลงทะเบียนผ่าน Admin ไม่สำเร็จ ร้านยังใช้งานได้" }
+}
+
 function Show-SetupCompletion {
   Write-Step 7 "ติดตั้งสำเร็จ"
   Write-Host "BMS Retail Local พร้อมใช้งาน ระบบทำงานเบื้องหลังและเริ่มอัตโนมัติหลังเปิดเครื่อง" -ForegroundColor Green
@@ -406,6 +435,10 @@ function Show-SetupCompletion {
   Write-Host "เข้าสู่ระบบด้วยอีเมลและรหัสผ่านผู้ดูแลที่สร้างระหว่างติดตั้ง"
   Write-Host "เปิดครั้งต่อไป: Desktop > BMS Retail Local Admin หรือ Start > BMS Retail Local > Open Admin"
   Write-Host "ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup"
+  Write-Host "ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
+  if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
+    Write-Host "ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ (หรือ Start > BMS Retail Local > Activate or Transfer)"
+  }
   if ($PackageType -eq 'server') {
     Write-Host "จับคู่ POS: Admin > POS Devices > ออก token"
     Write-Host "URL 127.0.0.1 ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน"
@@ -519,6 +552,7 @@ if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
   }
   Start-ManagedRuntime
   & $installedUpdateScript -ManifestUri $ManifestUri -InstallRoot $InstallRoot -ConfirmUpdate -RepairSameVersion
+  Register-LicenseUIBridge
   Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
   Show-SetupCompletion
   return
@@ -543,34 +577,9 @@ if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
   if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
 }
 
-# Activation is a one-time bootstrap only. Failure stays visible but never prevents setup or later
-# shop operations; support can issue a new activation code after installation.
-if (-not [string]::IsNullOrWhiteSpace($ActivationUri) -and [string]::IsNullOrWhiteSpace($LicenseId)) {
-  $activationCode = ConvertTo-PlainSecret (Read-Host "Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง)" -AsSecureString)
-  if (-not [string]::IsNullOrWhiteSpace($activationCode)) {
-    try {
-      $activationBody = @{ activationCode = $activationCode } | ConvertTo-Json -Compress
-      $activation = Invoke-RestMethod -Uri $ActivationUri -Method Post -ContentType "application/json" `
-        -Body $activationBody -TimeoutSec 15
-      $LicenseId = [string]$activation.licenseCode
-      $activationUrl = [Uri]$ActivationUri
-      $LicenseEvidenceUri = "$($activationUrl.GetLeftPart([UriPartial]::Authority))/api/bms/retail-local/license-evidence"
-      $LicenseEvidenceToken = [string]$activation.ingestionToken
-      Assert-NoLineBreak "License ID" $LicenseId
-      Assert-HttpsUri $LicenseEvidenceUri
-      Assert-NoLineBreak "License evidence token" $LicenseEvidenceToken
-      Write-Host "Activation สำเร็จ" -ForegroundColor Green
-    } catch {
-      Write-Warning "Activation ยังไม่สำเร็จ แต่การติดตั้งและการใช้งานร้านจะดำเนินต่อ: $($_.Exception.Message)"
-      $LicenseId = ""
-      $LicenseEvidenceUri = ""
-      $LicenseEvidenceToken = ""
-    } finally {
-      $activationCode = $null
-      $activationBody = $null
-    }
-  }
-}
+# Public setup never asks for or redeems an activation code. Keep any license
+# already redeemed by an older reboot-resume flow; new registrations use Activate or Transfer.
+Write-Host "ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
 
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
@@ -927,8 +936,21 @@ Write-Utf8NoBom $installationReceipt (Read-Utf8Text "$installationReceipt.prepar
 Remove-Item -LiteralPath "$installationReceipt.prepared" -Force
 [void](Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "rm", "-f", $provisionCheckpoint) -Quiet)
 
+# Anonymous successful-install inventory. Random local identity only: no serial,
+# MAC address, customer data, or business transactions. Never fail setup on it.
+if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
+  try {
+    & $installedAgent installation-report -root $InstallRoot -control-uri $ActivationUri `
+      -event INSTALLED -package-type $PackageType -target ([string]$release.platformTarget) `
+      -release-version ([string]$release.releaseVersion) -tenant-reference ([string]$provisionResult.tenantId) `
+      -license-reference $LicenseId -force *> $null
+    if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
+  } catch { Write-Warning "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; การติดตั้งยังสำเร็จและจะลองใหม่ภายหลัง" }
+}
+
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
 # change installation success, runtime startup, sales, payment, data access, backup, or recovery.
+Register-LicenseUIBridge
 if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
   try {
     $licenseArguments = @(
@@ -951,12 +973,6 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
     } finally {
       [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $previousEvidenceToken, "Process")
     }
-    $licenseAction = New-ScheduledTaskAction -Execute $installedAgent `
-      -Argument "license-pulse -root `"$InstallRoot`""
-    $licenseTrigger = New-ScheduledTaskTrigger -Daily -At 3am
-    $licenseSettings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 2)
-    Register-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Action $licenseAction `
-      -Trigger $licenseTrigger -Principal $principal -Settings $licenseSettings -Force | Out-Null
   } catch {
     Write-Warning "เก็บ/ตั้งเวลาหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: $($_.Exception.Message)"
   }

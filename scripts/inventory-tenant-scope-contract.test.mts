@@ -133,6 +133,7 @@ const ROUTE_GUARDS = [
   "channel_secret",
   "getCheckoutByToken",         // ลิงก์ checkout ที่เซ็นไว้ (ลูกค้าเปิดเอง ไม่มี session)
   "ingestRetailLocalLicenseEvidence", // issued bearer token + signed device evidence; license id from token binding
+  "getRetailLocalHostLicenseStatus", // validates issued bearer hash; installation join is scoped to that token's license
   "mockWebhookDisabled",        // mock ยุคร้านเดียว — 404 ใน production ยิงได้แค่ dev
 ];
 
@@ -143,6 +144,7 @@ const PUBLIC_BY_DESIGN = new Map([
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
   ["app/api/bms/retail-local/activate/route.ts", "ตัวติดตั้งแลก one-use activation code ที่ entropy สูง; ไม่รู้ tenant และมี rate limit"],
+  ["app/api/bms/retail-local/installations/route.ts", "ตัวติดตั้งส่งทะเบียนเทคนิคขั้นต่ำด้วย random bearer ประจำ installation; ไม่รับ tenant authority และมี rate limit"],
   ["app/api/bms/restaurant-qr/[token]/route.ts", "ลูกค้าสแกนรหัสโต๊ะเพื่อเริ่ม session ที่ผูกกับบิล OPEN"],
   ["app/api/bms/restaurant-qr/menu/route.ts", "ลูกค้าที่มี table session อ่านเมนูสาขา"],
   ["app/api/bms/restaurant-qr/menu-item/route.ts", "ลูกค้าที่มี table session อ่านตัวเลือกเมนู"],

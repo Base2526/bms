@@ -49,6 +49,7 @@ provision:
   script: |
     #!/bin/bash
     set -Eeuo pipefail
+    command -v flock >/dev/null || { echo 'Ubuntu runtime requires util-linux (flock).' >&2; exit 1; }
     if ! command -v docker >/dev/null 2>&1; then
       work=$(mktemp -d)
       tar -xzf /mnt/bms-payload/runtime/docker.tgz -C "$work"

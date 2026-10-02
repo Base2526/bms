@@ -84,5 +84,8 @@ ln -f -- "$desktop" "$desktop_deb"
 BMS_DIAG_STAGE=install-desktop
 dpkg --configure -a
 apt-get -o DPkg::Lock::Timeout=60 install -y "$desktop_deb"
+$AGENT installation-report -root "$STATE_ROOT" -control-uri "$manifest_uri" -event INSTALLED \
+  -package-type pos -target "$platform_target" -release-version "$version" -force \
+  >/dev/null 2>&1 || printf 'Warning: installation inventory unavailable; POS installation still succeeded.\n' >&2
 rm -rf -- "$STATE_ROOT/releases/$version"
 printf 'BMS POS installation completed.\n'

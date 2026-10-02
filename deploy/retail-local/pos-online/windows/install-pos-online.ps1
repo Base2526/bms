@@ -140,5 +140,12 @@ Copy-Item -LiteralPath $desktopInstaller -Destination $executableInstaller -Forc
 $process = Start-Process -FilePath $executableInstaller -Wait -PassThru
 if ($process.ExitCode -ne 0) { throw "BMS POS installer failed (exit $($process.ExitCode))." }
 
+# Best-effort anonymous successful-install inventory; no hardware fingerprint.
+try {
+  & $AgentPath installation-report -root $stateRoot -control-uri $ManifestUri -event INSTALLED `
+    -package-type pos -target $PlatformTarget -release-version $version -force *> $null
+  if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
+} catch { Write-Warning "Installation inventory is unavailable; POS installation still succeeded." }
+
 Remove-Item -LiteralPath (Join-Path $stateRoot "releases\$version") -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "BMS POS installation completed."

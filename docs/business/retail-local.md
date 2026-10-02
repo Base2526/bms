@@ -372,9 +372,13 @@ Each platform has three independent package types:
 The package type describes delivery, not a new runtime boundary. A combined installer still installs
 the existing server and client components; POS Desktop never owns a database or alternate sales rules.
 Download access and first-install activation are separate controls. A combined `server-pos` package
-may use `access_level = public` and appear on the anonymous download page, while the bootstrap still
-offers its configured one-time activation flow during first-run onboarding. Skipping activation or
-an activation exchange failure must remain visible to support but must not block setup or runtime. Use
+may use `access_level = public` and appear on the anonymous download page. Server and Server + POS
+install without asking for or redeeming an Activation Code. After setup, users who have a code can
+register using Windows **Start > BMS Retail Local > Activate or Transfer**,
+`sudo bms-retail-local-activate` on Ubuntu, or `bms-retail-local activate` on macOS.
+The Activation URL and trusted release keyring remain packaged; signature verification is unchanged.
+Downloading or installing without registration creates no cloud license and starts no 30-day trial.
+An activation exchange failure must remain visible but must not block runtime. Use
 `access_level = trial` only when the installer itself must be delivered to a named recipient. Neither
 choice may become a runtime lease for an installed shop. Trial onboarding uses the release asset and
 a Retail Local license whose `customer_reference` names the customer/account the platform issued it

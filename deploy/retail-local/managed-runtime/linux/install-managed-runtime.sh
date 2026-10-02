@@ -171,10 +171,15 @@ if [[ -f $RUNTIME_ROOT/installation.json ]]; then
   install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
   install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
   install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
+  install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
+  for unit in bms-retail-local-license-ui.service bms-retail-local-license-ui.timer; do
+    install -m 0644 -o root -g root "$bundle_root/$unit" "/etc/systemd/system/$unit"
+  done
   systemctl daemon-reload
   systemctl enable --now docker.service
   systemctl enable --now "$SERVICE_NAME"
   systemctl enable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
+  systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
   for attempt in {1..60}; do
     if bms-localctl doctor; then
       printf 'BMS Retail Local ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้\n'
@@ -206,11 +211,8 @@ jq -r '.failures[]? | "[ต้องแก้ไข] \(.)"' <<<"$preflight_json"
 (( preflight_status == 0 )) || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วรัน Setup อีกครั้ง"
 target=$(jq -er '.target' <<<"$preflight_json")
 
-if [[ -n ${BMS_ACTIVATION_URI:-} && -z ${BMS_ACTIVATION_CODE:-} ]]; then
-  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' BMS_ACTIVATION_CODE
-  printf '\n'
-  export BMS_ACTIVATION_CODE
-fi
+# Registration is an explicit post-install action, including on setup retries.
+printf 'ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code\n'
 
 provision_checkpoint="$RUNTIME_ROOT/provision-result.json"
 shop_name=''
@@ -225,7 +227,7 @@ step 3 "ติดตั้ง private runtime และเครื่องม�
 export DEBIAN_FRONTEND=noninteractive
 dpkg --configure -a
 apt-get update
-runtime_packages=(age ca-certificates curl jq docker.io)
+runtime_packages=(age ca-certificates curl jq docker.io util-linux)
 if [[ $package_type == server-pos ]]; then
   runtime_packages+=(gnome-keyring libsecret-1-0)
 fi
@@ -250,6 +252,9 @@ install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.
   /etc/systemd/system/bms-retail-local-license-evidence.service
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local-license-evidence.timer" \
   /etc/systemd/system/bms-retail-local-license-evidence.timer
+for unit in bms-retail-local-license-ui.service bms-retail-local-license-ui.timer; do
+  install -m 0644 -o root -g root "$bundle_root/$unit" "/etc/systemd/system/$unit"
+done
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
 step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
@@ -416,31 +421,6 @@ tenant_id=$(jq -er '.tenantId' <<<"$provision_result")
 pos_device_id=$(jq -er '.deviceId' <<<"$provision_result")
 sample_status=$(jq -r '.sampleData.status // "SKIPPED"' <<<"$provision_result")
 
-# Redeem the one-time activation code after the authoritative local shop identity exists. The
-# exchange is best-effort and never changes installation success or any local transaction path.
-if [[ -z ${BMS_LICENSE_ID:-} && -n ${BMS_ACTIVATION_URI:-} && -n ${BMS_ACTIVATION_CODE:-} ]]; then
-  if ! is_https_url "$BMS_ACTIVATION_URI"; then
-    printf 'คำเตือน: Activation URL ไม่ปลอดภัย; ข้าม Activation และให้ร้านใช้งานต่อ\n' >&2
-  elif activation_result=$(curl --fail --silent --show-error --max-time 15 \
-      -H 'Content-Type: application/json' \
-      --data "$(jq -cn --arg activationCode "$BMS_ACTIVATION_CODE" '{activationCode:$activationCode}')" \
-      "$BMS_ACTIVATION_URI" 2>/dev/null); then
-    if license_id=$(jq -er '.licenseCode' <<<"$activation_result") && \
-       evidence_token=$(jq -er '.ingestionToken' <<<"$activation_result") && \
-       [[ $BMS_ACTIVATION_URI =~ ^(https://[^/@:]+)([/:?#]|$) ]]; then
-      evidence_endpoint="${BASH_REMATCH[1]}/api/bms/retail-local/license-evidence"
-      export BMS_LICENSE_ID="$license_id"
-      export BMS_LICENSE_EVIDENCE_ENDPOINT="$evidence_endpoint"
-      export BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token"
-      printf 'Activation สำเร็จ\n'
-    else
-      printf 'คำเตือน: Activation response ไม่ถูกต้อง แต่ร้านติดตั้งและใช้งานต่อได้\n' >&2
-    fi
-  else
-    printf 'คำเตือน: Activation ยังไม่สำเร็จ แต่ร้านติดตั้งและใช้งานต่อได้; ติดต่อ Support ภายหลัง\n' >&2
-  fi
-fi
-unset BMS_ACTIVATION_CODE activation_result license_id evidence_endpoint evidence_token
 if [[ $package_type == server-pos && -n $device_token && $operator != root ]]; then
   handoff_path="/run/user/$operator_uid/bms-pairing-handoff.json"
   install -d -m 0700 -o "$operator_uid" -g "$operator_gid" "/run/user/$operator_uid"
@@ -471,6 +451,16 @@ jq -n --arg version "$(jq -r '.releaseVersion' <<<"$release_json")" --arg target
   | write_runtime_text "$RUNTIME_ROOT/installation.json"
 rm -f -- "$provision_checkpoint"
 
+# Best-effort anonymous installation inventory. It uses a random local id and
+# never collects hardware serials, MAC addresses, customer or transaction data.
+if [[ -n ${BMS_ACTIVATION_URI:-} ]]; then
+  "$agent" installation-report -root "$RUNTIME_ROOT" -control-uri "$BMS_ACTIVATION_URI" \
+    -event INSTALLED -package-type "$package_type" -target "$target" \
+    -release-version "$(jq -r '.releaseVersion' <<<"$release_json")" \
+    -tenant-reference "$tenant_id" -license-reference "${BMS_LICENSE_ID:-}" -force \
+    >/dev/null 2>&1 || printf 'คำเตือน: ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; ระบบจะลองใหม่ภายหลัง\n' >&2
+fi
+
 # Licensing is evidence-only and deliberately outside the install/runtime success path. A missing
 # endpoint, unreachable control plane, rejected event, or local evidence error must never stop the
 # shop. Set these variables through the commercial bootstrap when licensing has been issued.
@@ -489,7 +479,12 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
   fi
 fi
 step 7 "ติดตั้งสำเร็จ"
+systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
 printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'
+printf 'ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code\n'
+if [[ -n ${BMS_ACTIVATION_URI:-} ]]; then
+  printf 'ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ หรือ sudo bms-retail-local-activate\n'
+fi
 if [[ $package_type == server ]]; then
   printf 'ติดตั้งแบบ Server only: ไม่ได้ติดตั้งหรือเปิด BMS POS Desktop\n'
 fi

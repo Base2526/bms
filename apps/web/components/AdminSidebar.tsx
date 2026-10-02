@@ -287,6 +287,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'settings.manual': <BookOutlined />,
   'platform.tenants': <BankOutlined />,
   'platform.retail-local-licenses': <SafetyCertificateOutlined />,
+  'settings.local-license': <SafetyCertificateOutlined />,
   'platform.retail-local-releases': <DownloadOutlined />,
   'platform.installer-reports': <BugOutlined />,
   'platform.roles': <SnippetsOutlined />,
@@ -307,7 +308,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
 
 const WORKSPACE_STORAGE_KEY = 'bms_admin_workspace';
 
-export default function AdminSidebar() {
+export default function AdminSidebar({ retailLocal = false }: { retailLocal?: boolean }) {
   const { t, lang } = useI18n();
   const pathname = usePathname()!;
   const router = useRouter();
@@ -467,6 +468,7 @@ export default function AdminSidebar() {
   // ไฟล์นี้เหลือหน้าที่ 3 อย่าง: ผูกไอคอน, ผูก badge จากตัวนับที่ poll อยู่แล้ว, และเรนเดอร์
   // ⚠️ การซ่อนเมนูไม่ใช่การกันสิทธิ์ — ทุกหน้ายังตรวจสิทธิ์ของตัวเองฝั่ง server เหมือนเดิม
   const navContext: AdminNavContext = {
+    retailLocal,
     can,
     isPlatformAdmin,
     isAdministrator,

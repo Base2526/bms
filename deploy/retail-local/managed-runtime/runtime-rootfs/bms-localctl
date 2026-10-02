@@ -71,6 +71,14 @@ case "${1:-}" in
     ;;
   restore)
     require_runtime
+    # Rollback inherits descriptor 9 from bms-update-transaction; a manual restore
+    # acquires it itself. Never replace a receipt while registration is in flight.
+    if [ "${BMS_LICENSE_LOCK_HELD:-}" != 1 ]; then
+      umask 077
+      exec 9>"$root/.license-ui.lock"
+      flock -w 60 9 || die "License registration or update is still running; retry later."
+      [ ! -e "$root/update-active" ] || die "Recover the interrupted update before restoring."
+    fi
     source_file=${2:-}
     confirmation=${3:-}
     option=${4:-}

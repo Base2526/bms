@@ -38,6 +38,7 @@ export type AdminNavBadge =
   | "aiProviderHealth";
 
 export type AdminNavContext = {
+  retailLocal?: boolean;
   can: (permission: string) => boolean;
   isPlatformAdmin: boolean;
   isAdministrator: boolean;
@@ -374,6 +375,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "settings", workspace: "SHOP", visible: canManageAccess,
   },
 
+  {
+    id: "settings.local-license", route: "/admin/retail-local-license", labelKey: "admin_nav.local_license",
+    section: "settings", workspace: "SHOP", visible: ctx => ctx.retailLocal === true && ctx.can("retail_local.license.view"),
+  },
   // ---- พื้นที่แพลตฟอร์ม ----
   {
     id: "platform.tenants", route: "/admin/tenants", labelKey: "admin_nav.tenants",

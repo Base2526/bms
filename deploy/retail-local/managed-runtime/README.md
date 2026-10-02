@@ -255,9 +255,10 @@ After installation, use `sudo bms-retail-local-update --check` for a signed prev
 option is only for an operator-facing launcher that already showed the verified preview and captured
 consent. Rerunning the raw Linux setup script still refuses an existing shop.
 
-The setup command securely prompts for the one-use Activation Code. A missing, expired, or
-temporarily unreachable activation service is reported but does not fail installation or restrict
-the store. Activate later with `sudo bms-retail-local-activate`; after restoring a backup to a
+Setup never prompts for an Activation Code; users can install and try the store immediately.
+Registration is optional after installation and does not start automatically as a 30-day trial.
+Activate later with `sudo bms-retail-local-activate`; an expired code or unreachable service is
+reported without restricting the store. After restoring a backup to a
 replacement host, use `sudo bms-retail-local-activate --transfer`. The encrypted backup keeps only
 the non-secret license reference, not the evidence signing key or bearer token. A restored license
 reference also makes the activation helper choose the transfer event automatically.

@@ -8,6 +8,9 @@ import { useI18n } from "@/lib/i18nContext";
 type Row = { id: string; received_at: string; platform: string; architecture: string; product: string; installer_version: string; os_version: string; stage: string; status: string; message: string; fingerprint: string };
 type Detail = Row & { report: Record<string, any>; note: string; revision: number; updated_at: string };
 type Results = { reports: Row[]; counts: { total: number; new: number; investigating: number; resolved: number }; groups: { fingerprint: string; platform: string; architecture: string; product: string; installer_version: string; stage: string; count: number }[]; facets: { installer_version: string; os_version: string; stage: string }[] };
+type Installation = { installation_id: string; package_type: string; platform: string; architecture: string; os_version: string; release_version: string; license_reference: string | null; status: string; installed_at: string; last_seen_at: string };
+type InstallationGroup = { platform: string; architecture: string; package_type: string; release_version: string; count: number };
+type InstallationResults = { installations: Installation[]; groups: InstallationGroup[]; counts: { total: number; active: number; seen_30d: number; unregistered: number; pos: number; server: number; server_pos: number } };
 const statuses = ["NEW", "INVESTIGATING", "RESOLVED"];
 async function request(url: string, options?: RequestInit) {
   const controller = new AbortController();
@@ -28,6 +31,7 @@ export default function InstallerReports() {
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [page, setPage] = useState(1);
   const [data, setData] = useState<Results | null>(null);
+  const [installations, setInstallations] = useState<InstallationResults | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -39,7 +43,13 @@ export default function InstallerReports() {
   const load = useCallback(async (signal?: AbortSignal) => {
     const sequence = ++listSequence.current;
     setBusy(true); setError("");
-    try { const result = await request(`/api/admin/installer-reports?${new URLSearchParams({ ...filters, page: String(page) })}`, { signal }); if (!signal?.aborted && sequence === listSequence.current) setData(result); }
+    try {
+      const [result, installs] = await Promise.all([
+        request(`/api/admin/installer-reports?${new URLSearchParams({ ...filters, page: String(page) })}`, { signal }),
+        request("/api/admin/retail-local/installations?page=1", { signal }),
+      ]);
+      if (!signal?.aborted && sequence === listSequence.current) { setData(result); setInstallations(installs); }
+    }
     catch (e) { if (!signal?.aborted && sequence === listSequence.current) { setData(null); setError(e instanceof Error ? e.message : "reports_unavailable"); } }
     finally { if (!signal?.aborted && sequence === listSequence.current) setBusy(false); }
   }, [filters, page]);
@@ -84,6 +94,34 @@ export default function InstallerReports() {
       <Space><Button href="/installer-report" target="_blank" icon={<LinkOutlined />}>{tr("submit_title")}</Button><Tooltip title={tr("refresh")}><Button aria-label={tr("refresh")} icon={<ReloadOutlined />} onClick={() => void load()} loading={busy} /></Tooltip></Space>
     </Space>
     {error && <Alert closable onClose={() => setError("")} type="error" showIcon message={tr(["unauthorized", "invalid_date", "report_changed_reload"].includes(error) ? error : "reports_unavailable")} style={{ marginBottom: 16 }} />}
+    <Typography.Title level={4}>{tr("installations")}</Typography.Title>
+    <Alert closable type="info" showIcon message={tr("installs_note")} style={{ marginBottom: 16 }} />
+    {installations && <Space wrap style={{ marginBottom: 16 }}>
+      <Tag>{tr("install_total")}: {installations.counts.total}</Tag>
+      <Tag color="green">{tr("active_installs")}: {installations.counts.active}</Tag>
+      <Tag color="blue">{tr("seen_30d")}: {installations.counts.seen_30d}</Tag>
+      <Tag color="gold">{tr("unregistered_installs")}: {installations.counts.unregistered}</Tag>
+      <Tag>POS: {installations.counts.pos}</Tag><Tag>Server: {installations.counts.server}</Tag><Tag>Server + POS: {installations.counts.server_pos}</Tag>
+    </Space>}
+    <Table<Installation> rowKey="installation_id" loading={busy} dataSource={installations?.installations || []} size="small" pagination={false} scroll={{ x: 1150 }} columns={[
+      { title: tr("install_id"), dataIndex: "installation_id", width: 180, render: (value: string) => <Typography.Text copyable>{value.slice(0, 8)}…</Typography.Text> },
+      { title: tr("package_type"), dataIndex: "package_type", width: 120 },
+      { title: tr("platform"), key: "platform", width: 170, render: (_: unknown, row: Installation) => `${row.platform} / ${row.architecture}` },
+      { title: tr("os_version"), dataIndex: "os_version", width: 150 },
+      { title: tr("version"), dataIndex: "release_version", width: 130 },
+      { title: tr("license"), dataIndex: "license_reference", width: 160, render: (value: string | null) => value || "—" },
+      { title: tr("status"), dataIndex: "status", width: 110, render: (value: string) => <Tag color={value === "ACTIVE" ? "green" : "default"}>{value}</Tag> },
+      { title: tr("installed_at"), dataIndex: "installed_at", width: 180, render: (value: string) => new Date(value).toLocaleString() },
+      { title: tr("last_seen"), dataIndex: "last_seen_at", width: 180, render: (value: string) => new Date(value).toLocaleString() },
+    ]} />
+    <Typography.Title level={5} style={{ marginTop: 20 }}>{tr("install_breakdown")}</Typography.Title>
+    <Table<InstallationGroup> rowKey={row => `${row.platform}:${row.architecture}:${row.package_type}:${row.release_version}`} size="small" pagination={false} dataSource={installations?.groups || []} scroll={{ x: 650 }} columns={[
+      { title: tr("platform"), key: "platform", render: (_: unknown, row: InstallationGroup) => `${row.platform} / ${row.architecture}` },
+      { title: tr("package_type"), dataIndex: "package_type" },
+      { title: tr("version"), dataIndex: "release_version" },
+      { title: tr("install_total"), dataIndex: "count" },
+    ]} />
+    <Typography.Title level={4} style={{ marginTop: 28 }}>{tr("error_reports")}</Typography.Title>
     <Space wrap style={{ marginBottom: 16 }}>
       <Select aria-label={tr("platform")} placeholder={tr("platform")} style={{ width: 150 }} allowClear options={options(["windows", "linux", "macos", "unknown"])} onChange={value => filter("platform", value)} />
       <Select aria-label={tr("architecture")} placeholder={tr("architecture")} style={{ width: 140 }} allowClear options={options(["x64", "x86", "arm64", "unknown"])} onChange={value => filter("architecture", value)} />

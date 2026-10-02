@@ -6,11 +6,40 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestLicenseEvidenceNeverFollowsRedirectWithCredential(t *testing.T) {
+	root := t.TempDir()
+	input := licenseEvidenceInput{Root: root, EventType: "INSTALLATION_REGISTERED", LicenseID: "LIC-test",
+		PlatformTarget: "windows-11-x64", ReleaseVersion: "1.2.3"}
+	if _, err := recordLicenseEvidence(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	redirected := 0
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected++
+		w.WriteHeader(200)
+	}))
+	defer receiver.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") == "" {
+			t.Error("test origin must receive the credential")
+		}
+		http.Redirect(w, r, receiver.URL, http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	// Call the delivery primitive on loopback HTTP; the public entry requires HTTPS.
+	result, err := flushLicenseEvidenceUnlocked(t.Context(), filepath.Join(root, "license-evidence", "outbox"), origin.URL, strings.Repeat("x", 43))
+	if err != nil || redirected != 0 || result.Queued != 1 {
+		t.Fatalf("redirect must leave the event queued: calls=%d result=%+v err=%v", redirected, result, err)
+	}
+}
 
 func TestLicenseEvidenceIsSignedAndHashChained(t *testing.T) {
 	root := t.TempDir()

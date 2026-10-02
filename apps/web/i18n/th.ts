@@ -1,7 +1,8 @@
 // i18n/th.ts
 const th = {
   installer_reports: {
-    title: "รายงานปัญหาการติดตั้ง", submit_title: "ส่งรายงานการติดตั้ง BMS", choose_file: "ไฟล์รายงาน (.zip, .tar.gz, .json, .txt)",
+    title: "เครื่องที่ติดตั้งและรายงานปัญหา", submit_title: "ส่งรายงานการติดตั้ง BMS", choose_file: "ไฟล์รายงาน (.zip, .tar.gz, .json, .txt)",
+    installations: "ทะเบียนการติดตั้ง Retail Local", installs_note: "นับ installation instance ที่รายงานสำเร็จ ไม่ใช่ยอดดาวน์โหลดหรือ hardware fingerprint", install_total: "ติดตั้งทั้งหมด", active_installs: "สถานะ Active", seen_30d: "พบใน 30 วัน", unregistered_installs: "ยังไม่ผูก License", installed_at: "ติดตั้งเมื่อ", last_seen: "พบล่าสุด", package_type: "รูปแบบติดตั้ง", license: "License", install_id: "Installation ID", install_breakdown: "สรุปตาม OS / รูปแบบ / เวอร์ชัน", error_reports: "รายงานปัญหาการติดตั้ง",
     consent: "ฉันตรวจสอบรายงานแล้ว และยินยอมส่งรายละเอียดข้อผิดพลาดกับข้อมูลระบบให้ทีม BMS เก็บไว้ 90 วัน โดยไม่แนบ log ดิบหรือข้อมูลร้าน",
     send: "ส่งรายงาน", sent: "รับรายงานแล้ว หมายเลขอ้างอิง:", invalid_report: "ไฟล์นี้ไม่ใช่รายงานการติดตั้ง BMS ที่รองรับ",
     payload_too_large: "ไฟล์รายงานต้องไม่เกิน 64 KiB", rate_limited: "ส่งรายงานถี่เกินไป กรุณาลองใหม่ภายหลัง",
@@ -664,9 +665,10 @@ const th = {
     delivery_platforms: "แพลตฟอร์มเดลิเวอรี",
     delivery_provider_settings: "Partner API เดลิเวอรี",
     auth_settings: "Social Login",
+    local_license: "License ของเครื่องนี้",
     retail_local_licenses: "License Retail Local",
     retail_local_releases: "ดาวน์โหลด Retail Local",
-    installer_reports: "รายงานปัญหาการติดตั้ง",
+    installer_reports: "เครื่องที่ติดตั้ง / ปัญหา Installer",
     board_game: "โต๊ะบอร์ดเกม",
     pos_manual: "คู่มือแคชเชียร์",
     products: "สินค้า",
