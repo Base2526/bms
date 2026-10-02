@@ -95,6 +95,71 @@ Show-SetupCompletion
   }
 });
 
+test('Windows runner reports successful setup despite optional native failures, preserving failures and reboot', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const tail = source.slice(source.indexOf('# Anonymous successful-install inventory.'));
+  const repair = source.slice(source.indexOf('if (Test-Path -LiteralPath $installationReceipt -PathType Leaf)'), source.indexOf('Write-Step 1'));
+  const runner = join(repo, 'deploy/retail-local/managed-runtime/windows/run-managed-runtime.ps1');
+  const harness = join(root, 'harness.ps1');
+  writeFileSync(harness, `param($Runner, $Install, $ErrorFile, $LogFile, $Package)
+function icacls { $global:LASTEXITCODE = 0 }
+function Get-CimInstance { [pscustomobject]@{UserName=''} }
+& $Runner -InstallScript $Install -ManifestUri 'https://release.example.invalid/release.json' -ActivationUri 'https://control.example.invalid/activate' -PackageType $Package -ErrorFile $ErrorFile -LogFile $LogFile
+exit $LASTEXITCODE
+`);
+  for (const packageType of ['server', 'server-pos']) {
+    for (const scenario of ['inventory-failed', 'repair', 'failed', 'failed-with-message', 'reboot']) {
+      const dir = join(root, `${packageType}-${scenario}`);
+      mkdirSync(dir);
+      const installer = join(dir, 'install.ps1');
+      const errorFile = join(dir, 'setup-error.txt');
+      const logFile = join(dir, 'transcript.log');
+      // A real native failure leaves LASTEXITCODE=1 on Windows PowerShell 5.1.
+      writeFileSync(join(dir, 'agent.cmd'), '@echo off\r\necho %* > "%~dp0arguments.txt"\r\nexit /b 1\r\n');
+      const body = scenario === 'inventory-failed' ? tail : scenario === 'repair' ? repair :
+        scenario === 'reboot' ? 'exit 3010' : scenario === 'failed-with-message' ?
+          "[IO.File]::WriteAllText($ErrorFile, 'verified setup failure'); exit 23" : 'exit 23';
+      writeFileSync(installer, '\ufeff' + `param($ManifestUri,$PackageType,$ActivationUri,$ErrorFile,$InstallerVersion)
+$ErrorActionPreference='Stop'
+$InstallRoot=$PSScriptRoot; $installedAgent=Join-Path $PSScriptRoot 'agent.cmd'
+$LicenseId=''; $ResumeConfig=''; $distroName='BMSRuntime'
+$release=[pscustomobject]@{platformTarget='windows-11-x64';releaseVersion='1.2.3'}
+$provisionResult=[pscustomobject]@{tenantId='123'}
+function Register-LicenseUIBridge { & $env:ComSpec /d /c 'exit 1' }
+function Unregister-ScheduledTask { param($TaskName,[switch]$Confirm,$ErrorAction) }
+function Show-SetupCompletion { Write-Host 'SETUP_COMPLETED' }
+function Start-ManagedRuntime {}
+function Invoke-WslCommand { param($Arguments,[switch]$Quiet); [pscustomobject]@{ExitCode=0;Output=@('BMSRuntime')} }
+$installationReceipt=Join-Path $PSScriptRoot 'receipt.json'
+[IO.File]::WriteAllText($installationReceipt, '{}')
+$installedUpdateScript=Join-Path $PSScriptRoot 'update.ps1'
+${body}
+`);
+      writeFileSync(join(dir, 'update.ps1'), 'param($ManifestUri,$InstallRoot,[switch]$ConfirmUpdate,[switch]$RepairSameVersion)\n');
+      const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
+        harness, runner, installer, errorFile, logFile, packageType]);
+      const expected = scenario === 'reboot' ? 3010 : scenario.startsWith('failed') ? 23 : 0;
+      assert.equal(result.status, expected, `${packageType}/${scenario}: ${result.stdout}${result.stderr}`);
+      if (expected === 0) {
+        assert.match(result.stdout, /SETUP_COMPLETED/);
+        assert.equal(existsSync(errorFile), false, 'success must clear the pending error');
+      } else if (scenario === 'failed') {
+        assert.match(readFileSync(errorFile, 'utf8'), /exit code 23/);
+      } else if (scenario === 'failed-with-message') {
+        assert.equal(readFileSync(errorFile, 'utf8'), 'verified setup failure');
+      }
+      if (scenario === 'inventory-failed') {
+        const args = readFileSync(join(dir, 'arguments.txt'), 'utf8');
+        assert.match(args, /-force/);
+        assert.doesNotMatch(args, /-license-reference/, 'an absent license must not consume the next flag');
+      }
+    }
+  }
+});
+
 test('Windows server failure trap exports a report and retains the original error', {
   skip: process.platform !== 'win32',
 }, t => {

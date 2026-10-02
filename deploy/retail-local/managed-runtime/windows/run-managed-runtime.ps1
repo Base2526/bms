@@ -19,11 +19,12 @@ $global:OutputEncoding = $utf8
 try { & "$env:SystemRoot\System32\chcp.com" 65001 *> $null } catch {}
 
 $diagnosticRoot = Split-Path -Parent $LogFile
+$pendingMessage = 'Setup started but did not return an installation result.'
 try {
   New-Item -ItemType Directory -Force -Path $diagnosticRoot | Out-Null
   [IO.File]::WriteAllText(
     $ErrorFile,
-    "Managed Runtime runner เริ่มแล้ว แต่ยังไม่ได้รับผลจาก install script",
+    $pendingMessage,
     [Text.UTF8Encoding]::new($false)
   )
   Start-Transcript -LiteralPath $LogFile -Append -Force | Out-Null
@@ -42,11 +43,18 @@ try {
   & icacls @aclArguments *> $null
   if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ setup diagnostics ไม่สำเร็จ" }
 
+  $global:LASTEXITCODE = 0
   & $InstallScript -ManifestUri $ManifestUri -PackageType $PackageType -ActivationUri $ActivationUri `
     -ErrorFile $ErrorFile -InstallerVersion $InstallerVersion
   $result = if ($null -eq $LASTEXITCODE) { 0 } else { $LASTEXITCODE }
   if ($result -eq 0 -and (Test-Path -LiteralPath $ErrorFile)) {
     Remove-Item -LiteralPath $ErrorFile -Force
+  } elseif ($result -ne 0 -and $result -ne 3010) {
+    if (-not (Test-Path -LiteralPath $ErrorFile) -or
+        [IO.File]::ReadAllText($ErrorFile, [Text.Encoding]::UTF8) -eq $pendingMessage) {
+      [IO.File]::WriteAllText($ErrorFile,
+        "Setup ended with exit code $result. See $LogFile for the last completed step.", $utf8)
+    }
   }
   exit $result
 } catch {

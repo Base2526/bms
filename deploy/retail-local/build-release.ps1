@@ -4,6 +4,7 @@ param(
   [ValidateSet("Auto", "WindowsLinux", "MacOS")][string]$Target = "Auto",
   [ValidateSet("Online", "Offline")][string]$Distribution = "Online",
   [string]$Keyring,
+  [string]$ReleaseBaseUri = "https://releases.jachoei.com/retail-local",
   [string]$WindowsManifestUri,
   [string]$WindowsX86ManifestUri,
   [string]$LinuxManifestUri,
@@ -40,6 +41,16 @@ $desktopRoot = Join-Path $repoRoot "apps\desktop"
 $desktopPackagePath = Join-Path $desktopRoot "package.json"
 $desktopLockPath = Join-Path $desktopRoot "package-lock.json"
 $outputRoot = Join-Path $repoRoot "artifacts\retail-local"
+
+if ($Distribution -eq "Online") {
+  . (Join-Path $scriptRoot "release-urls.ps1")
+  $releaseUrls = Get-RetailLocalReleaseUrls -Version $Version -BaseUri $ReleaseBaseUri
+  foreach ($name in $releaseUrls.Keys) {
+    if ([string]::IsNullOrWhiteSpace((Get-Variable -Name $name -ValueOnly))) {
+      Set-Variable -Name $name -Value $releaseUrls[$name]
+    }
+  }
+}
 
 if ($Target -eq "Auto") {
   if ($IsWindows) {
@@ -94,7 +105,7 @@ function Invoke-LinuxDesktopBuild {
 set -euo pipefail
 mkdir -p /work/apps/desktop /work/apps/web/public/icons
 cp /source/apps/desktop/package.json /source/apps/desktop/package-lock.json /work/apps/desktop/
-cp -a /source/apps/desktop/src /source/apps/desktop/renderer /work/apps/desktop/
+cp -a /source/apps/desktop/src /source/apps/desktop/renderer /source/apps/desktop/scripts /work/apps/desktop/
 cp /source/apps/web/public/icons/playstore-512.png /work/apps/web/public/icons/
 cd /work/apps/desktop
 npm ci
@@ -194,6 +205,9 @@ if ($Distribution -eq "Online") {
         "--output-dir", $outputRoot
       )
       $posBuilderArgs = @($macPosBuilder) + $commonBuilderArgs
+      if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
+        $posBuilderArgs += @("--control-url", $ActivationUri)
+      }
       if ($AllowTestEndpoints) { $posBuilderArgs += "--allow-test-endpoints" }
       if ($Force) { $posBuilderArgs += "--force" }
       if ($SkipTests) { $posBuilderArgs += "--skip-tests" }
@@ -237,6 +251,7 @@ if ($Distribution -eq "Online") {
     WindowsManifestUri = $WindowsManifestUri
     WindowsX86ManifestUri = $WindowsX86ManifestUri
     LinuxManifestUri = $LinuxManifestUri
+    ControlUri = $ActivationUri
     OutputDirectory = $outputRoot
     WslDistribution = $WslDistribution
   }

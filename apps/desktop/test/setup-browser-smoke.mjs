@@ -1,24 +1,30 @@
 // Renderer interaction/viewport check with a stub IPC bridge; no real server is opened.
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
-import { mkdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { mkdir, readFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.BMS_PLAYWRIGHT_PACKAGE || "playwright");
+// CI/release QA can point at an extracted app.asar rather than the working tree.
+const appRoot = process.env.BMS_DESKTOP_SMOKE_APP_ROOT
+  ? pathToFileURL(path.resolve(process.env.BMS_DESKTOP_SMOKE_APP_ROOT) + path.sep)
+  : new URL("../", import.meta.url);
+const { version } = JSON.parse(await readFile(new URL("package.json", appRoot), "utf8"));
 const output = new URL("../dist-smoke/", import.meta.url);
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 try {
   for (const platform of ["win32", "linux", "darwin"]) {
     const page = await browser.newPage({ viewport: { width: 1035, height: 702 } });
-    await page.addInitScript(platform => {
+    await page.addInitScript(({ platform, version }) => {
       window.bmsDesktop = {
-        getAppInfo: async () => ({ platform, version: "test", clientLabel: `${platform} Client`, secureStorageReady: true }),
+        getAppInfo: async () => ({ platform, version, clientLabel: `${platform} Client`, secureStorageReady: true }),
         openLocalAdmin: async () => { await new Promise(resolve => setTimeout(resolve, 100)); return { ok: true, serverUrl: "http://127.0.0.1:3100" }; },
         pair: async () => ({ ok: false, error: "test" }),
       };
-    }, platform);
-    await page.goto(new URL("../renderer/setup.html", import.meta.url).href);
+    }, { platform, version });
+    await page.goto(new URL("renderer/setup.html", appRoot).href);
     await page.evaluate(() => document.fonts.ready);
     const button = page.locator("#local-admin-button");
     assert.ok(await button.isVisible());

@@ -1,5 +1,10 @@
 # Build BMS Retail Local installers
 
+Windows setup explicitly returns exit code 0 after successful install or repair. Optional
+installation inventory and license reporting failures must not become the installer's result via
+PowerShell's inherited `LASTEXITCODE`. Reboot-required setup still returns 3010; real setup failures
+retain their error report. Empty optional native arguments are omitted for Windows PowerShell 5.1.
+
 เส้นทาง build หลักสำหรับ Windows, Ubuntu และ macOS คือ **online bootstrap** ขนาดเล็ก เครื่องร้านต้องมี
 อินเทอร์เน็ตในการติดตั้งครั้งแรก ตัว installer บรรจุเฉพาะ native agent, public release keyring และ
 ตัวควบคุมติดตั้ง แล้วดาวน์โหลด Web, WS, PostgreSQL, Redis, private runtime และ POS Desktop จาก
@@ -23,6 +28,14 @@ PostgreSQL/Redis images และ Electron รุ่นที่ใช้อย�
 ผลลัพธ์ทั้งหมดเป็น x64; การส่ง `-Architecture x86` จะหยุดพร้อม error
 
 ## สิ่งที่ต้องมีสำหรับ online bootstrap
+
+**Desktop changes require a new payload release.** Building the small bootstrap does not build
+Electron and does not update a manifest's `desktop` component. Build the desktop packages from the
+new source (the afterPack gate checks the actual archive), prepare new component digests, obtain a
+new manifest signature through the existing signing authority, and publish to a new versioned URL.
+Do not label a bootstrap pointing at an older manifest as containing the new Admin-button fix.
+Unsigned staging candidates are not install-ready online releases; keep them separate from public
+downloads until signing, publication, and real download/installation verification are complete.
 
 - Windows 11 x64 และ PowerShell 7 (`pwsh`)
 - Go ตาม `apps/retail-local-agent/go.mod`
@@ -48,13 +61,20 @@ git commit -m "build: bump Retail Local to 0.2.13"
 pwsh .\deploy\retail-local\build-release.ps1 `
   -Version 0.2.13 `
   -Keyring C:\secure\bms\trusted-release-keys.json `
-  -WindowsManifestUri https://releases.example.com/retail-local/windows-11-x64/release.jws.json `
-  -WindowsX86ManifestUri https://releases.example.com/retail-local/windows-10-x86-pos/release.jws.json `
-  -LinuxManifestUri https://releases.example.com/retail-local/ubuntu-24.04-lts-x64/release.jws.json `
-  -ActivationUri https://control.example.com/api/bms/retail-local/activate
+  -ReleaseBaseUri https://releases.jachoei.com/retail-local `
+  -ActivationUri https://bms.jachoei.com/api/bms/retail-local/activate
 ```
 
 ผลลัพธ์หลักอยู่ใน `artifacts/retail-local/`:
+
+All three PowerShell builders default to `https://releases.jachoei.com/retail-local`.
+`release-urls.ps1` derives `<base>/<version>/<folder>/release.jws.json` for Windows x64,
+Windows x86 POS, Linux x64 and both macOS CPUs. The x86 folder is **windows-10-x86**;
+the signed target remains **windows-10-x86-pos**. Explicit per-target manifest arguments
+remain available for controlled tests/other release channels; there is no automatic GitHub fallback.
+Activation/inventory still use the separate BMS control-plane URL, not the static release host.
+Changing the hosting base requires rebuilding bootstraps AND changing component URLs in newly
+signed manifests. Copying files does not change embedded URLs or make unsigned drafts installable.
 
 - `BMS-Retail-Local-Server-POS-<version>-windows-x64.exe`
 - `BMS-Retail-Local-Server-<version>-windows-x64.exe`
@@ -73,6 +93,9 @@ Desktop component บนเครื่อง Server-only
 POS-only ทั้งสามไฟล์เป็น bootstrap ขนาดเล็กเช่นกัน ไม่ได้ฝัง Electron ไว้ใน installer และใช้
 `stage-desktop` ดาวน์โหลดเฉพาะ Desktop component แบบ resume ได้ Windows x86 ใช้ signed manifest
 แยกจาก x64 เพราะตัว Electron installer คนละสถาปัตยกรรม ส่วน Linux x86 ไม่มี target ที่รองรับ
+`-ActivationUri` ยังเป็น control-plane origin สำหรับ installation inventory ของ POS-only ด้วย
+และต้องไม่ใช้โดเมนของ release manifest แทน เพราะ payload อาจอยู่บน GitHub หรือ object storage;
+การรายงานยังเป็น best-effort และไม่ทำให้การติดตั้งล้ม
 
 Builder ปกติปฏิเสธโดเมนตัวอย่างและ `.invalid` เพื่อไม่ให้ไฟล์ทดสอบถูกส่งให้ร้านโดยบังเอิญ
 `-AllowTestEndpoints` มีไว้สำหรับ smoke test ภายในเท่านั้น และเติม `SMOKE-ONLY` ในชื่อ artifact
@@ -99,7 +122,7 @@ pwsh .\deploy\retail-local\build-release.ps1 `
 deploy/retail-local/managed-runtime/macos/prepare-release.sh \
   --version 0.2.13 \
   --architecture arm64 \
-  --base-url https://releases.example.com/retail-local/0.2.13/macos-15-arm64 \
+  --base-url https://releases.jachoei.com/retail-local/0.2.13/macos-15-arm64 \
   --desktop-app 'apps/desktop/dist/mac-arm64/BMS POS.app' \
   --private-key /secure/bms-release/release-private.pem \
   --key-id production-2026-09
@@ -112,8 +135,7 @@ deploy/retail-local/managed-runtime/macos/prepare-release.sh \
 pwsh ./deploy/retail-local/build-release.ps1 `
   -Version 0.2.13 -Target MacOS -Distribution Online `
   -Keyring /secure/bms-release/trusted-release-keys.json `
-  -MacArm64ManifestUri https://releases.example.com/retail-local/0.2.13/macos-15-arm64/release.jws.json `
-  -MacX64ManifestUri https://releases.example.com/retail-local/0.2.13/macos-15-x64/release.jws.json
+  -ReleaseBaseUri https://releases.jachoei.com/retail-local
 ```
 
 ผลลัพธ์รวม 4 ไฟล์: `.pkg` online bootstrap สองไฟล์ และ POS-only `.dmg` online bootstrap สองไฟล์

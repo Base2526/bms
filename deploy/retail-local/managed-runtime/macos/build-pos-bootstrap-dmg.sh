@@ -5,7 +5,7 @@ export COPYFILE_DISABLE=1
 usage() {
   cat >&2 <<'EOF'
 usage: build-pos-bootstrap-dmg.sh --version VERSION --architecture arm64|x64 \
-  --manifest-url HTTPS_URL --keyring FILE [--output-dir DIR] \
+  --manifest-url HTTPS_URL --keyring FILE [--control-url HTTPS_URL] [--output-dir DIR] \
   [--allow-test-endpoints] [--test-ca FILE] [--force] [--skip-tests]
 
 Builds the small POS-only macOS online bootstrap DMG. Electron is not embedded; first launch
@@ -18,6 +18,7 @@ version=
 architecture=
 manifest_url=
 keyring=
+control_url=
 output_dir=artifacts/retail-local
 allow_test_endpoints=false
 test_ca=
@@ -29,6 +30,7 @@ while (($#)); do
     --architecture) architecture=${2:-}; shift 2 ;;
     --manifest-url) manifest_url=${2:-}; shift 2 ;;
     --keyring) keyring=${2:-}; shift 2 ;;
+    --control-url) control_url=${2:-}; shift 2 ;;
     --output-dir) output_dir=${2:-}; shift 2 ;;
     --allow-test-endpoints) allow_test_endpoints=true; shift ;;
     --test-ca) test_ca=${2:-}; shift 2 ;;
@@ -46,8 +48,9 @@ is_placeholder_url() {
   [[ ${1:-} =~ ^https://(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.example\.(com|invalid)|example\.(com|invalid)|[^/]*\.invalid)([/:?#]|$) ]]
 }
 is_https_url "$manifest_url" || { echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
+[[ -z $control_url ]] || is_https_url "$control_url" || { echo "control URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
 test_build=false
-if is_placeholder_url "$manifest_url"; then
+if is_placeholder_url "$manifest_url" || { [[ -n $control_url ]] && is_placeholder_url "$control_url"; }; then
   test_build=true
   [[ $allow_test_endpoints == true ]] || {
     echo "ปฏิเสธ localhost/example endpoint; ใช้ --allow-test-endpoints ได้เฉพาะ smoke test" >&2; exit 2;
@@ -114,6 +117,7 @@ mkdir -p "$contents/MacOS" "$bootstrap"
 cp "$keyring" "$bootstrap/trusted-release-keys.json"
 install -m 0644 "$macos_root/../setup-diagnostics.sh" "$bootstrap/setup-diagnostics.sh"
 printf '%s\n' "$manifest_url" >"$bootstrap/manifest-url"
+printf '%s\n' "$control_url" >"$bootstrap/control-url"
 printf '%s\n' "$version" >"$bootstrap/BOOTSTRAP_VERSION"
 printf '%s\n' "macos-15-$architecture" >"$bootstrap/PLATFORM_TARGET"
 if [[ -n $test_ca ]]; then cp "$test_ca" "$bootstrap/test-release-ca.pem"; fi
@@ -151,7 +155,7 @@ EOF
 chmod 0755 "$contents/MacOS/Install BMS POS" "$resources/BMS POS Online Setup.command" \
   "$bootstrap/bms-runtime-agent"
 chmod 0644 "$bootstrap/trusted-release-keys.json" "$bootstrap/manifest-url" \
-  "$bootstrap/BOOTSTRAP_VERSION" "$bootstrap/PLATFORM_TARGET" "$resources/BMSPOS.png" \
+  "$bootstrap/control-url" "$bootstrap/BOOTSTRAP_VERSION" "$bootstrap/PLATFORM_TARGET" "$resources/BMSPOS.png" \
   "$contents/Info.plist" "$image_root/README.txt"
 if [[ -f $bootstrap/test-release-ca.pem ]]; then chmod 0644 "$bootstrap/test-release-ca.pem"; fi
 chmod -R go-w "$app"

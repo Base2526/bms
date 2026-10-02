@@ -555,7 +555,7 @@ if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
   Register-LicenseUIBridge
   Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
   Show-SetupCompletion
-  return
+  exit 0
 }
 
 Write-Step 1 "ตรวจสอบ Windows, CPU, RAM, WSL, Virtualization และพื้นที่ว่าง"
@@ -940,10 +940,17 @@ Remove-Item -LiteralPath "$installationReceipt.prepared" -Force
 # MAC address, customer data, or business transactions. Never fail setup on it.
 if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
   try {
-    & $installedAgent installation-report -root $InstallRoot -control-uri $ActivationUri `
-      -event INSTALLED -package-type $PackageType -target ([string]$release.platformTarget) `
-      -release-version ([string]$release.releaseVersion) -tenant-reference ([string]$provisionResult.tenantId) `
-      -license-reference $LicenseId -force *> $null
+    $inventoryArguments = @(
+      'installation-report', '-root', $InstallRoot, '-control-uri', $ActivationUri,
+      '-event', 'INSTALLED', '-package-type', $PackageType, '-target', [string]$release.platformTarget,
+      '-release-version', [string]$release.releaseVersion,
+      '-tenant-reference', [string]$provisionResult.tenantId, '-force'
+    )
+    # Windows PowerShell drops empty native arguments; omit absent optional flags.
+    if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
+      $inventoryArguments += @('-license-reference', $LicenseId)
+    }
+    & $installedAgent @inventoryArguments *> $null
     if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
   } catch { Write-Warning "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; การติดตั้งยังสำเร็จและจะลองใหม่ภายหลัง" }
 }
@@ -981,3 +988,5 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
 if ($ResumeConfig -and (Test-Path -LiteralPath $ResumeConfig)) { Remove-Item -LiteralPath $ResumeConfig -Force }
 Unregister-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Confirm:$false -ErrorAction SilentlyContinue
 Show-SetupCompletion
+# The runner needs the installation result, not the last optional native command's exit code.
+exit 0

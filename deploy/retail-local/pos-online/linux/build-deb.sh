@@ -2,21 +2,23 @@
 set -Eeuo pipefail
 
 usage() {
-  echo "usage: build-deb.sh VERSION AGENT KEYRING MANIFEST_URL PLATFORM_TARGET OUTPUT_DIR" >&2
+  echo "usage: build-deb.sh VERSION AGENT KEYRING MANIFEST_URL PLATFORM_TARGET OUTPUT_DIR [CONTROL_URL]" >&2
   exit 2
 }
-[[ $# -eq 6 ]] || usage
+[[ $# -eq 6 || $# -eq 7 ]] || usage
 version=$1
 agent=$2
 keyring=$3
 manifest_url=$4
 platform_target=$5
 output_dir=$6
+control_url=${7:-}
 source_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 [[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._+-]{0,63}$ ]] || usage
 [[ -f $agent && -f $keyring ]] || usage
 [[ $manifest_url =~ ^https://[^/@:]+([/:?#]|$) && $manifest_url != *'@'* ]] || usage
+[[ -z $control_url || ( $control_url =~ ^https://[^/@:]+([/:?#]|$) && $control_url != *'@'* ) ]] || usage
 [[ $platform_target =~ ^[a-z0-9._-]{1,80}$ ]] || usage
 
 work=$(mktemp -d)
@@ -31,6 +33,7 @@ diagnostics_helper="$source_root/setup-diagnostics.sh"
 install -m 0644 "$diagnostics_helper" "$stage/usr/lib/bms-pos-bootstrap/setup-diagnostics.sh"
 printf '%s\n' "$version" >"$stage/usr/lib/bms-pos-bootstrap/BOOTSTRAP_VERSION"
 printf '%s\n' "$manifest_url" >"$stage/usr/lib/bms-pos-bootstrap/manifest-url"
+printf '%s\n' "$control_url" >"$stage/usr/lib/bms-pos-bootstrap/control-url"
 printf '%s\n' "$platform_target" >"$stage/usr/lib/bms-pos-bootstrap/platform-target"
 cat >"$stage/DEBIAN/control" <<EOF
 Package: bms-pos-online-bootstrap

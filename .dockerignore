@@ -11,6 +11,10 @@
 **/dist
 **/build
 **/out
+artifacts
+**/dist-smoke
+**/.env
+**/.env.*
 **/*.tsbuildinfo
 storage/*
 db/*.dump
