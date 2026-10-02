@@ -6,6 +6,7 @@ import {
   ingestRetailLocalLicenseEvidence,
   issueRetailLocalActivationCode,
   redeemRetailLocalActivationCode,
+  getRetailLocalHostLicenseStatus,
   RetailLocalLicenseError,
   updateRetailLocalLicenseCommercialState,
 } from "../apps/web/lib/bms/retailLocalLicensing.ts";
@@ -138,9 +139,22 @@ test("activation is one-use and commercial retries are idempotent", async (t) =>
   await assert.rejects(() => redeemRetailLocalActivationCode(activationCode),
     (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
 
-  const activation = await redeemRetailLocalActivationCode(reissued.activationCode);
+  const activationRequestId = crypto.randomUUID();
+  await assert.rejects(() => redeemRetailLocalActivationCode(reissued.activationCode, activationRequestId, "LIC-WRONG"),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.message === "license_mismatch");
+  const activation = await redeemRetailLocalActivationCode(reissued.activationCode, activationRequestId.toUpperCase(), licenseCode);
+  assert.deepEqual(await redeemRetailLocalActivationCode(reissued.activationCode, activationRequestId), activation);
+  await assert.rejects(() => redeemRetailLocalActivationCode(reissued.activationCode, crypto.randomUUID()),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
   assert.equal(activation.licenseCode, licenseCode);
   assert.match(activation.ingestionToken, /^bmslt_/);
+  const snapshot = await getRetailLocalHostLicenseStatus(activation.ingestionToken, crypto.randomUUID());
+  assert.equal(snapshot.licenseType, "TRIAL");
+  assert.equal(snapshot.commercialStatus, "TRIAL_ACTIVE");
+  assert.equal(snapshot.registrationStatus, "PENDING");
+  assert.doesNotMatch(JSON.stringify(snapshot), /ingestionToken|customer_reference|token_hash/);
+  await assert.rejects(() => getRetailLocalHostLicenseStatus(`bmslt_${crypto.randomBytes(32).toString("base64url")}`, crypto.randomUUID()),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 401);
   await assert.rejects(() => redeemRetailLocalActivationCode(reissued.activationCode),
     (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
 

@@ -1,0 +1,10 @@
+[Unit]
+Description=Read Retail Local license registration requests
+
+[Timer]
+OnBootSec=30
+OnUnitInactiveSec=15
+Unit=bms-retail-local-license-ui.service
+
+[Install]
+WantedBy=timers.target

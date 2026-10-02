@@ -81,7 +81,7 @@ Name: "{commonprograms}\BMS Retail Local\Off-host Backup Status"; \
   Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\offhost-backup-status.ps1"""; Flags: runmaximized
 Name: "{commonprograms}\BMS Retail Local\Activate or Transfer"; \
   Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
-  Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\activate-managed-runtime.ps1"" -ActivationUri ""{#ActivationUri}"""; Flags: runmaximized
+  Parameters: "-NoExit -NoProfile -ExecutionPolicy Bypass -File ""{commonappdata}\BMS\RetailLocal\bootstrap\activate-managed-runtime.ps1"" -ActivationUri ""{#ActivationUri}"""; Flags: runmaximized; Check: HasActivation
 Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
   Filename: "{uninstallexe}"
 
@@ -102,6 +102,11 @@ var
   BootstrapError: String;
   DiagnosticsButton: TNewButton;
   CompletionText: TNewMemo;
+
+function HasActivation(): Boolean;
+begin
+  Result := '{#ActivationUri}' <> '';
+end;
 
 function CanOpenAdmin(): Boolean;
 begin
@@ -181,7 +186,19 @@ begin
       '2. ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup' + #13#10 +
       '3. จับคู่ POS: Admin > POS Devices > ออก token' + #13#10 + #13#10 +
       'เปิดอีกครั้งได้จาก Desktop: BMS Retail Local Admin' + #13#10 +
+      'ทดลองได้ทันทีโดยไม่ต้องมี Activation Code' + #13#10 +
       'URL นี้ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน';
+    if HasActivation then
+      CompletionText.Text := CompletionText.Text + #13#10 +
+        'หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้';
+  end
+  else if (CurPageID = wpFinished) then
+  begin
+    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10 + #13#10 +
+      'ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code';
+    if HasActivation then
+      WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10 +
+        'หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้';
   end;
 end;
 

@@ -141,3 +141,6 @@ sudo chmod -R go-w "/Applications/BMS POS.app"
 rm -rf -- "$temporary"
 temporary=
 open -a "/Applications/BMS POS.app"
+"$AGENT" installation-report -root "$STATE_ROOT" -control-uri "$manifest_uri" -event INSTALLED \
+  -package-type pos -target "$host_target" -release-version "$version" -force \
+  >/dev/null 2>&1 || note "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; POS ยังติดตั้งสำเร็จ"

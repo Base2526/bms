@@ -224,7 +224,7 @@ const component = (name, kind, extra = {}) => ({
 });
 const descriptor = {
   releaseVersion: version, channel: "pilot", platformTarget: `macos-15-${architecture}`,
-  minimumAgentVersion: "0.5.1", schemaVersion: "10.30", rollbackSafe: false,
+  minimumAgentVersion: "0.5.6", schemaVersion: "10.36", rollbackSafe: false,
   createdAt, sourceCommit, keyId,
   components: [
     component("web", "oci-image", { imageRef: webRef, ociDigest: webDigest }),

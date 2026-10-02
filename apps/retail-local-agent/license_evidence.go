@@ -261,7 +261,7 @@ func flushLicenseEvidenceUnlocked(ctx context.Context, outboxRoot, endpoint, evi
 		return licenseEvidenceResult{}, err
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-	client := &http.Client{Timeout: 8 * time.Second}
+	client := &http.Client{Timeout: 8 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	delivered := 0
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {

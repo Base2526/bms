@@ -2,6 +2,70 @@
 
 Current Commercial/GA evidence status: [Retail Local GA readiness](retail-local-ga-readiness.md).
 
+## Local Admin registration
+
+`/admin/retail-local-license` is the shop-facing registration page. It is enabled only in
+Retail Local, matches the authenticated tenant to `bms_local_installation`, and requires
+`retail_local.license.view` to read or `retail_local.license.manage` to submit a confirmed
+activation. Administrator inherits both; other roles need an explicit grant. The Local Admin
+header and Settings menu link to it. POS and customer documents do not show commercial badges.
+
+The web container mounts `license-ui/status` read-only and `license-ui/requests` read-write.
+It writes one bounded request under a transaction advisory lock. The host polls the mailbox
+(Windows scheduled task: one minute; Ubuntu timer: 15 seconds; macOS LaunchAgent: 30 seconds),
+validates the request against the authoritative runtime receipt, and saves a private retry
+checkpoint before clearing the activation code from the mailbox. The host exchanges the code,
+records signed evidence, updates guest and host receipts, and publishes an allow-listed status.
+The browser never receives the evidence bearer, private key, or host paths. No engine socket or
+host control HTTP port is exposed. Uninstall stops the worker before removing its runtime.
+Windows installs its daily evidence task even before a license exists (the agent then does
+nothing); later registration from Admin must not depend on running the activation shortcut.
+
+The host holds the guest's `.license-ui.lock` (util-linux `flock`) while processing a poll;
+update transactions and manual restore share that lock. `update-active` pauses polling between
+update begin and commit, and updaters re-read the receipt after begin instead of copying a
+pre-download license snapshot. A poll is bounded to 45 seconds, including guest commands. Host
+receipt copies are reconciled from the guest on subsequent polls after update/restore.
+
+Re-registration and replacement-machine recovery use a code for the **same license**. The host
+passes the receipt's current license reference to the exchange, which rejects another license
+before consuming its code. It also refuses a mismatched response/checkpoint without overwriting
+the existing receipt or evidence profile. Cross-license reassignment is not the transfer workflow;
+Trial-to-Paid conversion updates the existing commercial record, with no new activation code.
+The activation/status APIs bound JSON input to 4 KiB, status reads have source and token rate
+limits, and host evidence delivery never follows HTTP redirects with its bearer credential.
+
+The separate authenticated `/api/bms/retail-local/license-status` endpoint returns informational
+commercial state and installation-review state. Only the host calls it with its ingestion token;
+the tenant UI does not query platform-global licensing tables. Successful snapshots are refreshed
+every five minutes. Stale/missing host heartbeat or failed checks display “Status unavailable”
+with the last confirmed status/time. A `LIC-` receipt alone never becomes Trial or Licensed.
+Trial remains a 30-day period starting at platform issuance, and expiry never blocks the shop.
+
+Migration `10.35` binds an activation exchange to a retry UUID. The exact original code and UUID
+can recover the same token until code expiry/revocation; different requests remain one-use.
+Tokens are derived with a domain-separated key from `BMS_SECRET_KEY`, and only their hashes are
+stored in the control plane. Rotating that key can require issuing a new code for an interrupted
+exchange; already issued host tokens remain valid. Local retry credentials stay only in the
+protected `license-ui-host` directory and must not be included in diagnostics or recovery exports.
+
+Rollout requires the cloud migration/API, a matching Web image and signed Compose component with
+the two mailbox mounts, and updated host bootstrap/agent on each platform. Rebuilding a small
+installer against an old signed payload cannot add this page to the installed application.
+Server payload builders declare minimum agent `0.5.6` and schema `10.36`; upgrade the host
+bootstrap as well as the application payload. POS-only packages do not need this host worker.
+Older payloads keep their command-line activation path; they must not be advertised as supporting
+web registration. Do not edit an already published signed manifest in place.
+
+Online bootstraps report successful POS, Server, and Server + POS installation instances to the
+platform registry. The agent creates a random UUID and private `bmsit_` credential under its local
+state root, sends only package/OS/architecture/release and timestamps, and refreshes Server records
+at most once per 23 hours through the existing host worker. It never sends hardware serials, MAC
+addresses, hostname, account identity, customer data, or transactions, and the registry does not
+persist the source IP. Reporting is
+best-effort and never changes installer/runtime success. The platform dashboard distinguishes total,
+registry-active, seen within 30 days, and not-yet-linked-to-License; none is a download count.
+
 Managed Runtime is the commercial self-install direction for Retail Local. The customer downloads one
 signed installer, supplies shop type/owner/password/PIN details, optionally creates matching sample
 data, and reaches a paired POS without handling
@@ -39,10 +103,13 @@ thumbprint. The canonical event is signed with the installation's Ed25519 key. T
 under the Managed Runtime data ACL and is never included in evidence or backup telemetry.
 
 Events are appended locally and placed in an outbox before delivery. Platform staff issue a
-seven-day, one-use activation code; the installer exchanges it over HTTPS for the license reference
+seven-day, one-use activation code; the post-install activation helper exchanges it over HTTPS for the license reference
 and evidence ingestion token. Only hashes of both credentials are stored by the control plane,
-while the root-only Managed Runtime profile keeps the ingestion token. Activation can be skipped or
-retried after install and an exchange failure never changes installation success. The evidence
+while the protected Managed Runtime profile keeps the ingestion token. Initial setup never asks for
+or redeems a code. Use Windows **Activate or Transfer**, `sudo bms-retail-local-activate` on Ubuntu,
+or `bms-retail-local activate` on macOS after installation; an exchange failure never changes
+installation success. Setup preserves already-redeemed credentials when resuming older installs.
+An unregistered installation does not create a cloud license or start the 30-day trial. The evidence
 endpoint is derived locally from the trusted HTTPS Activation URL packaged into the bootstrap; it
 is never accepted from the activation response. HTTPS failure, timeout, or a non-2xx response
 preserves the event for a later attempt and returns a queued result; it never stops
@@ -63,7 +130,7 @@ bms-runtime-agent license-flush ...    # retry queued events in sequence order
 ```
 
 Linux records a pulse after a Managed Runtime service start and through a best-effort daily timer.
-Windows installs a best-effort daily task after licensing is configured. Both are explicitly outside
+Windows installs a best-effort daily task even before licensing is configured. Both are explicitly outside
 service readiness and sales paths.
 Until the commercial bootstrap supplies a license id and HTTPS evidence endpoint, the pulse is a
 harmless no-op; absence of licensing configuration is visible to release operations but does not
@@ -93,10 +160,9 @@ The full trial handoff is:
 2. Issue a Retail Local license with a required `customerReference` and `licenseType: "TRIAL"`.
    The first activation code is returned once and expires after seven days.
 3. Give the customer the installer URL and the one-time activation code through the normal commercial
-   onboarding channel. A publicly downloadable installer offers this registration during first-run,
-   but a missing, expired, or unreachable activation code is reported and may be retried later; it
-   does not block installation or runtime.
-4. When a valid code is supplied, the installer redeems it, receives an ingestion token, then submits signed
+   onboarding channel. The customer installs without a code and registers afterwards through the
+   platform's activation helper. Missing or expired codes and network errors never block runtime.
+4. When a valid code is supplied, the activation helper redeems it, receives an ingestion token, then submits signed
    evidence. The license detail page shows the originally issued `customer_reference` beside the
    reported `tenant_reference` and `pos_device_reference`, so staff can see who the license was
    issued to and which shop/device actually activated it.

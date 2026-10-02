@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { redeemRetailLocalActivationCode, RetailLocalLicenseError } from "@/lib/bms/retailLocalLicensing";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readRetailLocalJSON, RetailLocalRequestBodyError } from "@/lib/bms/retailLocalRequestBody";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,16 +18,16 @@ async function handlePOST(request: NextRequest) {
       headers: { "retry-after": String(limited.retryAfter), "Cache-Control": "no-store" },
     });
   }
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > 4096) {
-    return NextResponse.json({ error: "payload_too_large" }, { status: 413 });
-  }
   try {
-    const body = JSON.parse(text);
-    const activated = await redeemRetailLocalActivationCode(String(body?.activationCode ?? ""));
+    const body = await readRetailLocalJSON(request) as Record<string, unknown> | null;
+    if (body?.requestId !== undefined && typeof body.requestId !== "string" ||
+        body?.currentLicenseCode !== undefined && typeof body.currentLicenseCode !== "string") {
+      return NextResponse.json({ error: "invalid_json" }, { status: 400, headers: { "Cache-Control": "no-store" } });
+    }
+    const activated = await redeemRetailLocalActivationCode(String(body?.activationCode ?? ""), body?.requestId, body?.currentLicenseCode);
     return NextResponse.json(activated, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    if (error instanceof SyntaxError) return NextResponse.json({ error: "invalid_json" }, { status: 400 });
+    if (error instanceof RetailLocalRequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
     if (error instanceof RetailLocalLicenseError) {
       return NextResponse.json({ error: error.message }, { status: error.status, headers: { "Cache-Control": "no-store" } });
     }

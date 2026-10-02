@@ -11,6 +11,8 @@ import { query } from "@/lib/db";
 import { getTenantId } from "./tenant";
 
 export const BMS_PERMISSIONS = [
+  "retail_local.license.view",
+  "retail_local.license.manage",
   "product.view",
   "product.edit",
   "product.delete",

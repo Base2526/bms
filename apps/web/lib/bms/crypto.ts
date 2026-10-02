@@ -25,6 +25,13 @@ function getKey(): Buffer {
   return crypto.createHash("sha256").update("bms-dev-secret-key").digest();
 }
 
+/** Stable for an exact activation retry. Domain-separated from encryption keys;
+ * rotation deliberately ends replay recovery, but never revokes issued host tokens. */
+export function deriveRetailLocalActivationToken(code: string, requestId: string): string {
+  const key = crypto.hkdfSync("sha256", getKey(), Buffer.alloc(0), "bms/retail-local/activation-retry/v1", 32);
+  return `bmslt_${crypto.createHmac("sha256", Buffer.from(key)).update(JSON.stringify([code, requestId])).digest("base64url")}`;
+}
+
 export function encryptSecret(plain: string | null | undefined): string | null {
   if (!plain) return null;
   const iv = crypto.randomBytes(12);

@@ -61,6 +61,7 @@ $taskNames = @(
   "BMS Retail Local Runtime",
   "BMS Retail Local Setup Resume",
   "BMS Retail Local License Evidence",
+  "BMS Retail Local License UI",
   "BMS Retail Local Off-host Backup",
   "BMS Retail Local POS Pairing"
 )
@@ -78,6 +79,23 @@ if (Test-Path -LiteralPath $installedAgent -PathType Leaf) {
   } catch {
     Write-Warning "ข้ามการส่งสถานะ licensing; การถอนการติดตั้งยังทำต่อได้"
   }
+  try {
+    $receiptPath = Join-Path $InstallRoot "installation.json"
+    $resumePath = Join-Path $InstallRoot "bootstrap\resume.json"
+    if ((Test-Path -LiteralPath $receiptPath -PathType Leaf) -and (Test-Path -LiteralPath $resumePath -PathType Leaf)) {
+      $receipt = Get-Content -LiteralPath $receiptPath -Raw | ConvertFrom-Json
+      $resume = Get-Content -LiteralPath $resumePath -Raw | ConvertFrom-Json
+      if (-not [string]::IsNullOrWhiteSpace([string]$resume.activationUri)) {
+        $packageType = if ($receipt.PSObject.Properties.Name -contains 'packageType') { [string]$receipt.packageType } else { 'server-pos' }
+        $arguments = "installation-report -root `"$InstallRoot`" -control-uri `"$([string]$resume.activationUri)`" " +
+          "-event UNINSTALLED -package-type `"$packageType`" -target `"$([string]$receipt.platformTarget)`" " +
+          "-release-version `"$([string]$receipt.version)`" -tenant-reference `"$([string]$receipt.tenantId)`" " +
+          "-license-reference `"$([string]$receipt.licenseCode)`" -force"
+        $registry = Invoke-BoundedProcess $installedAgent $arguments 5
+        if ($registry.TimedOut) { Write-Warning "ข้ามการส่งสถานะ installation registry เพราะเกิน 5 วินาที" }
+      }
+    }
+  } catch { Write-Warning "ข้ามการส่งสถานะ installation registry; การถอนการติดตั้งยังทำต่อได้" }
 }
 
 Write-UninstallStep 3 4 "หยุด private WSL runtime"

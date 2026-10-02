@@ -116,6 +116,10 @@ install -m 0644 "$linux_root/bms-retail-local-license-evidence.service" \
   "$package_root/lib/systemd/system/bms-retail-local-license-evidence.service"
 install -m 0644 "$linux_root/bms-retail-local-license-evidence.timer" \
   "$package_root/lib/systemd/system/bms-retail-local-license-evidence.timer"
+for unit in bms-retail-local-license-ui.service bms-retail-local-license-ui.timer; do
+  install -m 0644 "$linux_root/$unit" "$package_root/lib/systemd/system/$unit"
+  install -m 0644 "$linux_root/$unit" "$package_root/usr/lib/bms-retail-local/bootstrap/$unit"
+done
 
 if [[ -n $manifest_url ]]; then
   printf '%s\n' "$manifest_url" >"$package_root/etc/bms-retail-local/release-manifest-url"
@@ -146,7 +150,7 @@ Priority: optional
 Architecture: amd64
 Installed-Size: $installed_size
 Maintainer: BMS <release@bms.local>
-Depends: bash, ca-certificates, curl, jq, systemd
+Depends: bash, ca-certificates, curl, jq, systemd, util-linux
 Description: BMS Retail Local Managed Runtime bootstrap
  Small signed-release bootstrap for supported Ubuntu x64 shop computers.
 EOF
@@ -171,6 +175,9 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
   echo "[BMS Uninstall 1/3] ปิด startup, timer และงานเบื้องหลัง"
   systemctl disable bms-retail-local.service >/dev/null 2>&1 || true
   systemctl disable bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
+  systemctl disable bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
+  timeout 3s systemctl stop bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
+  timeout 5s systemctl stop bms-retail-local-license-ui.service >/dev/null 2>&1 || true
   systemctl disable bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
   timeout 3s systemctl stop bms-retail-local-license-evidence.timer >/dev/null 2>&1 || true
   timeout 3s systemctl stop bms-retail-local-offhost-backup.timer >/dev/null 2>&1 || true
@@ -191,6 +198,8 @@ if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
   fi
   systemctl reset-failed bms-retail-local.service >/dev/null 2>&1 || true
   rm -f /etc/systemd/system/bms-retail-local.service \
+    /etc/systemd/system/bms-retail-local-license-ui.service \
+    /etc/systemd/system/bms-retail-local-license-ui.timer \
     /etc/systemd/system/bms-retail-local-license-evidence.service \
     /etc/systemd/system/bms-retail-local-license-evidence.timer \
     /etc/systemd/system/bms-retail-local-offhost-backup.service \

@@ -92,6 +92,7 @@ type PageContent = {
   releasesEyebrow: string;
   releasesTitle: string;
   releasesDescription: string;
+  activationNote: string;
   installer: string;
   currentPilot: string;
   choosePackageTitle: string;
@@ -207,6 +208,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesEyebrow: "RELEASES",
     releasesTitle: "เลือก OS และหน้าที่ของเครื่อง",
     releasesDescription: "ร้านที่ใช้เครื่องเดียวควรเลือก Server + POS ส่วนเครื่องแม่ข่ายและเครื่องแคชเชียร์เพิ่มเติมสามารถติดตั้งแยกกันได้",
+    activationNote: "Server และ Server + POS ติดตั้งและทดลองได้ทันที ไม่ต้องมี Activation Code หากได้รับ Code จาก BMS สามารถลงทะเบียนภายหลังได้ การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต",
     installer: "ไฟล์ติดตั้ง",
     currentPilot: "Technical pilot",
     choosePackageTitle: "เครื่องนี้ใช้ระบบปฏิบัติการอะไร?",
@@ -229,7 +231,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "สำหรับแคชเชียร์เพิ่มเติม เลือก Pair กับ Local Server ในร้านหรือ Server ภายนอกได้" },
     },
     downloadNow: { "server-pos": "ดาวน์โหลด Server + POS", server: "ดาวน์โหลด Server", pos: "ดาวน์โหลด POS Desktop" },
-    unavailable: { "server-pos": "ขอ Trial เพื่อรับแพ็กเกจรวม", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
+    unavailable: { "server-pos": "ยังไม่เผยแพร่ Server + POS", server: "ยังไม่เผยแพร่ Server", pos: "ยังไม่เผยแพร่ POS Desktop" },
     available: "พร้อมดาวน์โหลด",
     awaitingArtifact: "รอ publish artifact",
     includes: "ไฟล์ที่เผยแพร่ต้องระบุ version, ขนาดไฟล์, SHA-256 และ release notes ที่บอก backup, downtime และ rollback ให้ตรวจก่อนติดตั้งหรือ update",
@@ -342,6 +344,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     releasesEyebrow: "RELEASES",
     releasesTitle: "Choose the OS and machine role",
     releasesDescription: "Most single-computer stores should choose Server + POS. Dedicated servers and additional cashier devices can install each component separately.",
+    activationNote: "Install and try Server or Server + POS without an Activation Code. If BMS has given you a code, you can register after setup. The first installation requires internet access.",
     installer: "Installer",
     currentPilot: "Technical pilot",
     choosePackageTitle: "Which operating system does this machine use?",
@@ -364,7 +367,7 @@ const CONTENT: { th: PageContent; en: PageContent } = {
       pos: { name: "POS Desktop only", description: "For an additional register. Pair it with an in-store Local Server or an external server." },
     },
     downloadNow: { "server-pos": "Download Server + POS", server: "Download Server", pos: "Download POS Desktop" },
-    unavailable: { "server-pos": "Request a trial for the combined package", server: "Server not published", pos: "POS Desktop not published" },
+    unavailable: { "server-pos": "Server + POS not published", server: "Server not published", pos: "POS Desktop not published" },
     available: "Available",
     awaitingArtifact: "Awaiting published artifact",
     includes: "Every published file must show its version, file size, SHA-256, and release notes covering backup, downtime, and rollback before install or update.",
@@ -589,6 +592,7 @@ export default function RetailLocalPageClient({
           <Text className={styles.eyebrow}>{content.releasesEyebrow}</Text>
           <Title level={2}>{content.releasesTitle}</Title>
           <Paragraph>{content.releasesDescription}</Paragraph>
+          <Paragraph>{content.activationNote}</Paragraph>
         </div>
 
         <Alert

@@ -1,0 +1,9 @@
+[Unit]
+Description=BMS Retail Local license registration mailbox
+After=bms-retail-local.service network-online.target
+ConditionPathExists=/var/lib/bms-retail-local/installation.json
+
+[Service]
+Type=oneshot
+TimeoutStartSec=50
+ExecStart=/bin/sh -c 'exec /opt/bms-retail-local/bms-runtime-agent license-ui -root /var/lib/bms-retail-local -engine linux-native -activation-uri "$(cat /etc/bms-retail-local/activation-url)"'

@@ -15,6 +15,7 @@ readonly WS_PORT="${BMS_RETAIL_LOCAL_HOST_WS_PORT:-3101}"
 readonly RECEIPT="$STATE_ROOT/installation.json"
 readonly CONFIG="$STATE_ROOT/lima.yaml"
 readonly LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.plist"
+readonly LICENSE_UI_AGENT="$HOME/Library/LaunchAgents/com.bms.retail-local.license-ui.plist"
 readonly LOG_PATH="$STATE_ROOT/host-service.log"
 RELEASE_DIRECTORY=""
 RELEASE_JSON=""
@@ -247,7 +248,10 @@ activate_license() {
     [[ -z $LICENSE_ID ]] || return 0
   fi
 
-  read -r -s -p 'Activation Code (เว้นว่างเพื่อติดตั้งและติดต่อ Support ภายหลัง): ' code
+  # Setup may recover an already-redeemed code after interruption, but only the
+  # explicit post-install activate command can prompt or contact the control plane.
+  [[ ${1:-} == interactive ]] || return 0
+  read -r -s -p 'Activation Code จาก BMS (เว้นว่างเพื่อยกเลิก): ' code
   printf '\n'
   [[ -n $code ]] || return 0
   body="$STATE_ROOT/.activation-body-$(random_suffix).json"
@@ -283,6 +287,57 @@ activate_license() {
   /usr/bin/plutil -convert json "$checkpoint"
   chmod 0600 "$checkpoint"
   note "Activation สำเร็จ"
+}
+
+activate_installed_license() {
+  local event=INSTALLATION_REGISTERED runtime_receipt tenant_id device_id target version old_license
+  [[ ${1:-} == --transfer || -z ${1:-} ]] || die "usage: bms-retail-local activate [--transfer]"
+  [[ -f $RECEIPT ]] || die "กรุณาติดตั้ง BMS Retail Local ก่อนลงทะเบียน"
+  [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]] || die "bootstrap ไม่มี Activation URL"
+  ensure_runtime
+  # Validate the authoritative shop receipt before consuming a one-use code.
+  runtime_receipt=$(mktemp "$STATE_ROOT/.activation-receipt.XXXXXX")
+  rm -f -- "$runtime_receipt" # runtime-read creates the destination exclusively.
+  if ! "$AGENT" runtime-read -engine macos-lima -distro "$INSTANCE" \
+      -source /var/lib/bms-retail-local/installation.json -destination "$runtime_receipt" >/dev/null; then
+    rm -f -- "$runtime_receipt"
+    die "อ่าน installation receipt ไม่สำเร็จ ร้านยังใช้งานได้"
+  fi
+  tenant_id=$(/usr/bin/plutil -extract tenantId raw -o - "$runtime_receipt" 2>/dev/null || true)
+  device_id=$(/usr/bin/plutil -extract posDeviceId raw -o - "$runtime_receipt" 2>/dev/null || true)
+  target=$(/usr/bin/plutil -extract platformTarget raw -o - "$runtime_receipt" 2>/dev/null || true)
+  version=$(/usr/bin/plutil -extract version raw -o - "$runtime_receipt" 2>/dev/null || true)
+  old_license=$(/usr/bin/plutil -extract licenseCode raw -o - "$runtime_receipt" 2>/dev/null || true)
+  if [[ -z $tenant_id || -z $device_id || -z $target || -z $version ]]; then
+    rm -f -- "$runtime_receipt"
+    die "installation receipt ไม่ครบ กรุณาติดต่อ Support"
+  fi
+  [[ ${1:-} != --transfer && -z $old_license ]] || event=TRANSFER_REQUESTED
+  activate_license interactive
+  if [[ -z $LICENSE_ID ]]; then
+    rm -f -- "$runtime_receipt"
+    note "ยังไม่ได้ลงทะเบียน ร้านยังใช้งานได้ ลงทะเบียนภายหลังด้วย bms-retail-local activate"
+    return 0
+  fi
+  if ! BMS_LICENSE_EVIDENCE_TOKEN="$LICENSE_EVIDENCE_TOKEN" "$AGENT" license-record \
+      -root "$STATE_ROOT" -event "$event" -license-id "$LICENSE_ID" \
+      -tenant-id "$tenant_id" -pos-device-id "$device_id" -target "$target" \
+      -release-version "$version" -endpoint "$LICENSE_EVIDENCE_ENDPOINT" >/dev/null; then
+    rm -f -- "$runtime_receipt"
+    die "บันทึกการลงทะเบียนยังไม่สำเร็จ ร้านยังใช้งานได้ ลอง bms-retail-local activate อีกครั้ง"
+  fi
+  /usr/bin/plutil -remove licenseCode "$runtime_receipt" 2>/dev/null || true
+  /usr/bin/plutil -insert licenseCode -string "$LICENSE_ID" "$runtime_receipt"
+  /usr/bin/plutil -convert json "$runtime_receipt"
+  if ! "$AGENT" runtime-write -engine macos-lima -distro "$INSTANCE" -source "$runtime_receipt" \
+      -destination /var/lib/bms-retail-local/installation.json -mode 0600 >/dev/null; then
+    rm -f -- "$runtime_receipt"
+    die "บันทึก receipt ยังไม่สำเร็จ ร้านยังใช้งานได้ ลอง bms-retail-local activate อีกครั้ง"
+  fi
+  mv -f "$runtime_receipt" "$RECEIPT"
+  rm -f -- "$STATE_ROOT/activation.json"
+  LICENSE_EVIDENCE_TOKEN=""
+  note "ลงทะเบียนสำเร็จ ร้านและข้อมูลเดิมพร้อมใช้งาน"
 }
 
 release_component_value() {
@@ -829,11 +884,38 @@ render_launch_agent() {
   mv -f "$LAUNCH_AGENT.tmp" "$LAUNCH_AGENT"
 }
 
+install_license_ui_agent() {
+  [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]] || return 0
+  mkdir -p "$HOME/Library/LaunchAgents"
+  local temporary="$LICENSE_UI_AGENT.tmp"
+  rm -f -- "$temporary"
+  /usr/bin/plutil -create xml1 "$temporary"
+  /usr/bin/plutil -insert Label -string com.bms.retail-local.license-ui "$temporary"
+  /usr/bin/plutil -insert ProgramArguments -array "$temporary"
+  /usr/bin/plutil -insert ProgramArguments.0 -string "$CONTROL_ROOT/bms-retail-local" "$temporary"
+  /usr/bin/plutil -insert ProgramArguments.1 -string license-ui "$temporary"
+  /usr/bin/plutil -insert StartInterval -integer 30 "$temporary"
+  /usr/bin/plutil -insert RunAtLoad -bool YES "$temporary"
+  chmod 0600 "$temporary"
+  mv -f "$temporary" "$LICENSE_UI_AGENT"
+  launchctl bootout "gui/$(id -u)" "$LICENSE_UI_AGENT" >/dev/null 2>&1 || true
+  launchctl bootstrap "gui/$(id -u)" "$LICENSE_UI_AGENT"
+}
+
+poll_license_ui() {
+  [[ -f $RECEIPT ]] || return 0
+  load_installed_release
+  [[ $INSTALL_MODE == online && $(instance_status) == Running ]] || return 0
+  "$AGENT" license-ui -root "$STATE_ROOT" -engine macos-lima -distro "$INSTANCE" \
+    -activation-uri "$(tr -d '\r\n' < "$BOOTSTRAP_ROOT/activation-url")"
+}
+
 install_launch_agent() {
   render_launch_agent
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT"
   launchctl kickstart -k "$LAUNCH_LABEL"
+  install_license_ui_agent || note "ยังตั้งระบบลงทะเบียนผ่าน Admin ไม่สำเร็จ ร้านยังใช้งานได้"
 }
 
 http_ready() {
@@ -886,6 +968,7 @@ setup_runtime() {
   if [[ -f $RECEIPT ]]; then
     # The receipt precedes launch-agent registration; a reboot may interrupt that last step.
     ensure_runtime
+    install_license_ui_agent || true
     wait_for_guest_doctor
     if guest sudo test -f /var/lib/bms-retail-local/provision-result.json; then
       provision_shop
@@ -899,6 +982,7 @@ setup_runtime() {
   mkdir -p "$STATE_ROOT"
   chmod 0700 "$STATE_ROOT"
   step 1 "ตรวจสอบ macOS, CPU, RAM, Virtualization และพื้นที่ว่าง"
+  note "ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
   "$AGENT" preflight --human || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วเปิด BMS Retail Local อีกครั้ง"
   activate_license
   if [[ $INSTALL_MODE == online ]]; then
@@ -928,6 +1012,15 @@ setup_runtime() {
   wait_for_guest_doctor
   install_pos_desktop
   write_receipt
+  if [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]]; then
+    "$AGENT" installation-report -root "$STATE_ROOT" \
+      -control-uri "$(tr -d '\r\n' < "$BOOTSTRAP_ROOT/activation-url")" -event INSTALLED \
+      -package-type "$(/usr/bin/plutil -extract packageType raw -o - "$RECEIPT")" \
+      -target "$(/usr/bin/plutil -extract platformTarget raw -o - "$RECEIPT")" \
+      -release-version "$(/usr/bin/plutil -extract version raw -o - "$RECEIPT")" \
+      -tenant-reference "$PROVISION_TENANT_ID" -license-reference "$LICENSE_ID" -force \
+      >/dev/null 2>&1 || note "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; ระบบจะลองใหม่ภายหลัง"
+  fi
   record_license_evidence
   if [[ ${BMS_RETAIL_LOCAL_TEST_MODE:-0} != 1 ]]; then
     "$LIMACTL" stop "$INSTANCE"
@@ -938,15 +1031,21 @@ setup_runtime() {
   guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
   step 7 "ติดตั้งสำเร็จ"
   note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
+  note "ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
+  if [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]]; then
+    note "หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ หรือ bms-retail-local activate"
+  fi
 }
 
 start_runtime() {
   ensure_runtime
+  install_license_ui_agent || true
 }
 
 stop_runtime() {
   [[ ! -f $RECEIPT ]] || load_installed_release
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
+  launchctl bootout "gui/$(id -u)" "$LICENSE_UI_AGENT" >/dev/null 2>&1 || true
   if [[ $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE"; fi
   note "หยุด Retail Local แล้ว"
 }
@@ -972,12 +1071,24 @@ uninstall_runtime() {
 
   uninstall_step 1 "ปิดการเริ่มอัตโนมัติ"
   rm -f -- "$LAUNCH_AGENT"
+  run_with_timeout 5 launchctl bootout "gui/$(id -u)/com.bms.retail-local.license-ui" >/dev/null 2>&1 || true
+  rm -f -- "$LICENSE_UI_AGENT"
   run_with_timeout 5 launchctl bootout "$LAUNCH_LABEL" >/dev/null 2>&1 || true
 
   uninstall_step 2 "บันทึกการถอนการติดตั้งและหยุด private VM"
   if [[ -x $AGENT && -d $STATE_ROOT/license-evidence ]]; then
     run_with_timeout 3 "$AGENT" license-pulse -root "$STATE_ROOT" \
       -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
+  fi
+  if [[ -x $AGENT && -f $RECEIPT && -s $BOOTSTRAP_ROOT/activation-url ]]; then
+    run_with_timeout 5 "$AGENT" installation-report -root "$STATE_ROOT" \
+      -control-uri "$(tr -d '\r\n' < "$BOOTSTRAP_ROOT/activation-url")" -event UNINSTALLED \
+      -package-type "$(/usr/bin/plutil -extract packageType raw -o - "$RECEIPT")" \
+      -target "$(/usr/bin/plutil -extract platformTarget raw -o - "$RECEIPT")" \
+      -release-version "$(/usr/bin/plutil -extract version raw -o - "$RECEIPT")" \
+      -tenant-reference "$(/usr/bin/plutil -extract tenantId raw -o - "$RECEIPT" 2>/dev/null || true)" \
+      -license-reference "$(/usr/bin/plutil -extract licenseCode raw -o - "$RECEIPT" 2>/dev/null || true)" \
+      -force >/dev/null 2>&1 || true
   fi
   if [[ -x $LIMACTL && -d $LIMA_HOME/$INSTANCE ]]; then
     if ! run_with_timeout 10 "$LIMACTL" stop "$INSTANCE" >/dev/null 2>&1; then
@@ -1076,6 +1187,8 @@ case "${1:-}" in
     setup_runtime
     ;;
   start) start_runtime ;;
+  activate) shift; activate_installed_license "$@" ;;
+  license-ui) poll_license_ui ;;
   ensure-running) ensure_runtime ;;
   stop) stop_runtime ;;
   restart) stop_runtime; start_runtime ;;
@@ -1091,6 +1204,6 @@ case "${1:-}" in
   open) open "http://127.0.0.1:$WEB_PORT/admin/login" ;;
   host-service) host_service ;;
   *)
-    die "usage: bms-retail-local <setup|start|ensure-running|stop|restart|uninstall|status|doctor|backup|logs|open>"
+    die "usage: bms-retail-local <setup|activate|start|ensure-running|stop|restart|uninstall|status|doctor|backup|logs|open>"
     ;;
 esac

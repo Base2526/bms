@@ -36,6 +36,10 @@ wait_healthy() {
 }
 unlock() { rm -f "$lock/pid" 2>/dev/null || true; rmdir "$lock" 2>/dev/null || true; }
 take_lock() {
+  # Serialize registration with both the receipt snapshot and final replacement.
+  umask 077
+  exec 9>"$root/.license-ui.lock"
+  flock -w 60 9 || die "License registration or restore is still running; retry later."
   if ! mkdir "$lock" 2>/dev/null; then
     owner=$(cat "$lock/pid" 2>/dev/null || true)
     case "$owner" in *[!0-9]*|'') owner=0;; esac
@@ -65,7 +69,7 @@ rollback() {
     wait_healthy || die "rollback image สำเร็จแต่บริการเดิมไม่กลับมา healthy"
   else
     [ -f "$backup" ] || die "ไม่พบ pre-update backup สำหรับ rollback"
-    bms-localctl restore "$backup" REPLACE-LOCAL-DATA --identity "$root/update-recovery.agekey"
+    BMS_LICENSE_LOCK_HELD=1 bms-localctl restore "$backup" REPLACE-LOCAL-DATA --identity "$root/update-recovery.agekey"
   fi
   if [ -f "$directory/old.installation.json" ]; then
     install -m 0600 "$directory/old.installation.json" "$root/installation.json"

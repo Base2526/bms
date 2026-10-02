@@ -8,6 +8,7 @@ import { useI18n } from "@/lib/i18nContext";
 import WorkAssistantDrawer from "@/components/work-assistant/WorkAssistantDrawer";
 import { useRealtimeStatus } from "@/components/realtime/RealtimeProvider";
 import { useSessionCtx } from "@/lib/session-context";
+import { LocalLicenseBadge } from "@/components/retail-local/LocalLicense";
 
 const { Content } = Layout;
 
@@ -68,7 +69,7 @@ function RealtimeStatusBanner() {
   );
 }
 
-export default function AdminLayoutClient({ children }: { children: React.ReactNode }) {
+export default function AdminLayoutClient({ children, retailLocal = false }: { children: React.ReactNode; retailLocal?: boolean }) {
   const pathname = usePathname()!;
   const hideHeader = pathname === "/admin/login";
 
@@ -76,11 +77,12 @@ export default function AdminLayoutClient({ children }: { children: React.ReactN
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <AdminSidebar />
+      <AdminSidebar retailLocal={retailLocal} />
       <Layout style={{ minWidth: 0 }}>
         <Content style={{ padding: "clamp(12px, 4vw, 24px)", minWidth: 0, overflowX: "auto" }}>
           <ImpersonationBanner />
           <RealtimeStatusBanner />
+          {retailLocal && <LocalLicenseBadge />}
           {children}
         </Content>
         <WorkAssistantDrawer />

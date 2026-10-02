@@ -326,6 +326,18 @@ if ($LASTEXITCODE -ne 0) { throw "stage compose update ไม่สำเร็�
 
 $nextReceiptPath = Join-Path $InstallRoot ".installation-next-$([Guid]::NewGuid().ToString('N')).json"
 try {
+  $byName = @{}
+  foreach ($component in $release.components) { $byName[[string]$component.name] = $component }
+  $rollbackSafe = if ([bool]$release.rollbackSafe) { "1" } else { "0" }
+  Invoke-Transaction @("begin", $version, $rollbackSafe, [string]$byName.web.imageRef,
+    [string]$byName.ws.imageRef, [string]$byName.postgres.imageRef, [string]$byName.redis.imageRef)
+
+  # begin owns the receipt snapshot and update-active now excludes registration.
+  # Do not reuse the pre-download receipt: its license may have changed meanwhile.
+  & $agent runtime-read -engine windows-wsl -distro $distroName `
+    -source "$runtimeData/installation.json" -destination $nextReceiptPath
+  if ($LASTEXITCODE -ne 0) { throw "Could not read the current installation receipt." }
+  $current = Get-Content -LiteralPath $nextReceiptPath -Raw | ConvertFrom-Json
   $current | Add-Member -NotePropertyName version -NotePropertyValue $version -Force
   $current | Add-Member -NotePropertyName updatedAt -NotePropertyValue ([DateTimeOffset]::UtcNow.ToString("o")) -Force
   $current | Add-Member -NotePropertyName sourceCommit -NotePropertyValue ([string]$release.sourceCommit) -Force
@@ -335,23 +347,17 @@ try {
     -destination "$transactionPath/installation.next.json" -mode "0600"
   if ($LASTEXITCODE -ne 0) { throw "stage installation receipt ไม่สำเร็จ" }
 
-  $byName = @{}
-  foreach ($component in $release.components) { $byName[[string]$component.name] = $component }
-  $rollbackSafe = if ([bool]$release.rollbackSafe) { "1" } else { "0" }
-  Invoke-Transaction @("begin", $version, $rollbackSafe, [string]$byName.web.imageRef,
-    [string]$byName.ws.imageRef, [string]$byName.postgres.imageRef, [string]$byName.redis.imageRef)
-
   if ($packageType -eq 'server-pos') {
     $desktop = Get-ArtifactPath $release "desktop"
     $desktopInstaller = Join-Path $releaseDirectory "BMS-POS-Update.exe"
     Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
-    $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
+    $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -WindowStyle Hidden -Wait -PassThru
     if ($desktopProcess.ExitCode -ne 0) {
       try { Invoke-Transaction @("rollback", $version) } catch {}
       try {
         $oldDesktopInstaller = Join-Path (Split-Path -Parent $oldDesktop) "BMS-POS-Rollback.exe"
         Copy-Item -LiteralPath $oldDesktop -Destination $oldDesktopInstaller -Force
-        Start-Process -FilePath $oldDesktopInstaller -ArgumentList "/S", "/allusers" -Wait | Out-Null
+        Start-Process -FilePath $oldDesktopInstaller -ArgumentList "/S", "/allusers" -WindowStyle Hidden -Wait | Out-Null
       } catch {}
       throw "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
     }

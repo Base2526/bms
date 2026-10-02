@@ -142,13 +142,6 @@ done < <(jq -r '.components[] | select(.kind == "oci-image") | [.name,.imageRef,
 transaction_dir="$RUNTIME_ROOT/updates/$version"
 install -d -m 0700 -o root -g root "$transaction_dir"
 install -m 0600 "$(artifact_path compose)" "$transaction_dir/compose.next.yml"
-jq --arg version "$version" --arg updatedAt "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
-  --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
-  --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
-  '.version=$version | .updatedAt=$updatedAt | .sourceCommit=$sourceCommit | .schemaVersion=$schemaVersion' \
-  "$RUNTIME_ROOT/installation.json" >"$transaction_dir/installation.next.json"
-chmod 0600 "$transaction_dir/installation.next.json"
-
 declare -A ref
 while IFS=$'\t' read -r name image_ref; do ref[$name]=$image_ref; done \
   < <(jq -r '.components[] | select(.kind == "oci-image") | [.name,.imageRef] | @tsv' <<<"$release_json")
@@ -158,6 +151,15 @@ if ! /usr/local/sbin/bms-update-transaction begin "$version" "$rollback_safe" \
   "${ref[web]}" "${ref[ws]}" "${ref[postgres]}" "${ref[redis]}"; then
   die "runtime update ไม่สำเร็จ; ระบบ rollback แล้วหรือเก็บ transaction ไว้ให้ recover"
 fi
+
+# begin serializes the snapshot with registration; update-active now keeps the
+# receipt stable. A snapshot taken before downloads could lose a new license.
+jq --arg version "$version" --arg updatedAt "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+  --arg sourceCommit "$(jq -r '.sourceCommit' <<<"$release_json")" \
+  --arg schemaVersion "$(jq -r '.schemaVersion' <<<"$release_json")" \
+  '.version=$version | .updatedAt=$updatedAt | .sourceCommit=$sourceCommit | .schemaVersion=$schemaVersion' \
+  "$RUNTIME_ROOT/installation.json" >"$transaction_dir/installation.next.json"
+chmod 0600 "$transaction_dir/installation.next.json"
 
 if [[ $package_type == server-pos ]]; then
   desktop_artifact=$(artifact_path desktop)

@@ -45,6 +45,8 @@ deploy/retail-local/backups/
 deploy/retail-local/images/
 deploy/retail-local/release.json
 deploy/retail-local/installation.json
+deploy/retail-local/license-ui/
+deploy/retail-local/license-ui-host/
 deploy/retail-local/doctor.json
 artifacts/retail-local/
 /secure/

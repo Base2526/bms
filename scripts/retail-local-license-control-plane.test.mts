@@ -84,7 +84,10 @@ test("one-time activation and trial follow-ups are control-plane only", () => {
   assert.match(migration, /trial_followups[\s\S]*14, 7, 1, 0/);
   assert.match(migration, /never an entitlement, receipt or tax-document input/i);
   assert.match(activationRoute, /rateLimit/);
-  assert.match(activationRoute, /payload_too_large/);
+  assert.match(activationRoute, /readRetailLocalJSON\(request\)/);
+  const boundedBody = readFileSync(new URL("../apps/web/lib/bms/retailLocalRequestBody.ts", import.meta.url), "utf8");
+  assert.match(boundedBody, /payload_too_large/);
+  assert.match(boundedBody, /getReader\(\)/);
   assert.match(issueRoute, /authorizePlatformAdminRoute/);
   assert.match(issueRoute, /ISSUE-RETAIL-LOCAL-ACTIVATION/);
   assert.match(followUpRoute, /authorizePlatformAdminRoute/);

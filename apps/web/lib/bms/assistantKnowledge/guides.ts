@@ -43,6 +43,15 @@ function menuGuide(input: {
 
 /** Verified bilingual guides for every routable Admin sidebar surface plus POS workflows. */
 export const SYSTEM_GUIDES: readonly SystemGuide[] = [
+  menuGuide({
+    id: "retail-local.register-installation", module: "settings", route: "/admin/retail-local-license",
+    title: ["ลงทะเบียน License ของเครื่องนี้", "Register this installation's license"],
+    summary: ["ดูสถานะการลงทะเบียน Trial และ Licensed ของ Retail Local และกรอก Activation Code หลังติดตั้ง", "View Retail Local registration, Trial and Licensed status, and enter an Activation Code after installation."],
+    requiredPermissions: ["retail_local.license.view"],
+    prerequisites: [["ใช้ได้ใน Retail Local เท่านั้น", "ผู้ลงทะเบียนต้องมี retail_local.license.manage และได้รับ Activation Code จาก BMS"], ["Available only in Retail Local.", "Registration requires retail_local.license.manage and an Activation Code issued by BMS."]],
+    steps: [["เปิดการตั้งค่า > License ของเครื่องนี้ หรือกดป้าย License ด้านบน", "ตรวจสถานะและวันตรวจสอบกับ BMS ล่าสุด", "กรอก Code ที่ขึ้นต้นด้วย bmsla_ ในหน้า License โดยตรง แล้วตรวจและยืนยันลงทะเบียน", "รอระบบบนเครื่องรับคำขอ หากการเชื่อมต่อขัดข้องระบบจะลองต่ออัตโนมัติ"], ["Open Settings > This installation's license or select the header badge.", "Review the status and last BMS check time.", "Enter the bmsla_ code directly on the License page, review, and confirm registration.", "Wait for the host runtime to process the request; connection failures are retried automatically."]],
+    warnings: [["ห้ามส่ง Activation Code ในแชทผู้ช่วย", "เลข LIC- เป็นเลขอ้างอิง ไม่ใช่ Activation Code", "การติดตั้งไม่เริ่ม Trial; Trial เริ่มเมื่อ BMS ออก License", "เมื่อออฟไลน์ให้ดูเวลาตรวจล่าสุด ไม่สรุปสถานะใหม่เอง", "สถานะ License ไม่ได้ปิดกั้นการทำงานของร้าน"], ["Never send an Activation Code to the assistant.", "A LIC- reference is not an Activation Code.", "Installation does not start a trial; BMS license issuance does.", "When offline, use the last check time; do not infer a new status.", "License status does not block shop operations."]],
+  }),
   {
     id: "reports.create-export", module: "reports", pageId: "reports", route: "/admin/reports",
     title: both("สร้างและส่งออกรายงาน", "Create and export a report"),
