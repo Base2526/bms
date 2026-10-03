@@ -5,6 +5,7 @@ import { query } from "../apps/web/lib/db.ts";
 import {
   createExpenseDocument,
   getExpenseTaxSummary,
+  getInputVatReport,
   listExpenseDocuments,
   voidExpenseDocument,
 } from "../apps/web/lib/bms/expenseDocuments.ts";
@@ -29,7 +30,7 @@ test("setup creates its own VAT-registered tenant, branch and actor", async () =
     `INSERT INTO users (name,username,email,role,role_id,tenant_id,password_hash,fake_test)
      SELECT $2,$3,$3,'Administrator',r.id,$1,'x',TRUE FROM roles r
       WHERE r.name='Administrator' ORDER BY r.id LIMIT 1 RETURNING id`,
-    [tenantId, tag, `${tag}@example.invalid`]
+    [tenantId, tag, `${tag.toLowerCase()}@example.invalid`]
   )).rows[0].id;
 });
 
@@ -69,7 +70,7 @@ test("one document lands expense, input VAT and WHT in their own authority perio
   );
   assert.equal(duplicates.rows[0]?.count, "1", "concurrent retries must not duplicate financial evidence");
   await assert.rejects(
-    createExpenseDocument(tenantId, actorId, { ...input, amountBeforeVat: 101 }),
+    createExpenseDocument(tenantId, actorId, { ...input, amountBeforeVat: 101, vatAmount: 7.07 }),
     /คนละชุด/,
   );
 
@@ -121,11 +122,38 @@ test("a non-VAT-registered shop cannot record positive input VAT", async () => {
   await query(`UPDATE bms_store_profile SET vat_registered=TRUE WHERE tenant_id=$1`, [tenantId]);
 });
 
+test("supplier notes replay once, use receipt month, sign reports, exclude VOID and enforce scope", async () => {
+  const common = { locationId, category: "OTHER" as const, payeeName: tag, payeeTaxId: "0105555555554", payeeBranchCode: "00000",
+    documentDate: "2026-04-15", receivedDate: "2026-05-01", referenceDocumentNo: "INV-original", adjustmentReason: "FAKE returned goods" };
+  const input = { ...common, documentKind: "SUPPLIER_CREDIT_NOTE" as const, documentNo: "CN-001", amountBeforeVat: 2000, vatAmount: 140, idempotencyKey: `${tag}-cn` };
+  const [credit, replay] = await Promise.all([createExpenseDocument(tenantId,actorId,input),createExpenseDocument(tenantId,actorId,input)]);
+  assert.equal(credit.id,replay.id);
+  assert.equal(credit.vatClaimMonth,"2026-05-01");
+  assert.equal(credit.documentDate,"2026-04-15");
+  assert.equal(credit.receivedDate,"2026-05-01");
+  assert.equal(credit.amountBeforeVat,2000,"stored evidence remains positive");
+  await assert.rejects(createExpenseDocument(tenantId,actorId,{...input,documentNo:" cn 001 ",idempotencyKey:`${tag}-cn-duplicate`}),/ใบนี้ถูกบันทึกแล้ว/);
+  await assert.rejects(createExpenseDocument(tenantId,actorId,{...input,amountBeforeVat:1000,vatAmount:70}),/คนละชุด/);
+  await createExpenseDocument(tenantId,actorId,{...common,documentKind:"SUPPLIER_DEBIT_NOTE",documentNo:"DN-001",amountBeforeVat:500,vatAmount:35,idempotencyKey:`${tag}-dn`});
+  const may={from:"2026-05-01",to:"2026-05-31",locationId};
+  const report=await getInputVatReport(tenantId,may);
+  assert.equal(report.rows.length,2);
+  assert.deepEqual(report.totals,{documentCount:2,amountBeforeVat:-1500,vatAmount:-105,totalAmount:-1605});
+  assert.match(report.rows.find(r=>r.documentNo==="CN-001")!.note!,/ใบลดหนี้.*INV-original/);
+  assert.equal((await getInputVatReport(tenantId,{from:"2026-04-01",to:"2026-04-30",locationId})).rows.length,0);
+  assert.equal((await getExpenseTaxSummary(tenantId,may)).grandTotal.vatPurchase,-105);
+  assert.equal((await getInputVatReport(tenantId,{from:may.from,to:may.to,allowedLocationIds:[]})).rows.length,0);
+  assert.equal((await getInputVatReport("00000000-0000-0000-0000-000000000000",{from:may.from,to:may.to})).rows.length,0);
+  await voidExpenseDocument(tenantId,actorId,credit.id,"FAKE correction",[locationId]);
+  assert.equal((await getInputVatReport(tenantId,may)).totals.vatAmount,35);
+});
+
 test("void preserves the row but removes it from active accounting totals", async () => {
   const result = await voidExpenseDocument(tenantId, actorId, documentId, "contract cleanup", [locationId]);
   assert.equal(result.status, "VOID");
   const january = await getExpenseTaxSummary(tenantId, { from: "2026-01-01", to: "2026-01-31", locationId });
-  assert.deepEqual(january.grandTotal, { documentCount: 0, expenseBase: 0, vatPurchase: 0, wht: 0 });
+  // The normalized-duplicate test above retained a separate active January invoice.
+  assert.deepEqual(january.grandTotal, { documentCount: 1, expenseBase: 100, vatPurchase: 7, wht: 0 });
   const row = await query<{ status: string; void_reason: string }>(
     `SELECT status,void_reason FROM bms_expense_documents WHERE tenant_id=$1 AND id=$2`, [tenantId,documentId],
   );

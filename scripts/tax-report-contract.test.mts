@@ -18,7 +18,7 @@ import {
   taxMonthOf,
 } from "../apps/web/lib/bms/taxReportMath.ts";
 import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
-import { buildCsv, buildInputVatReportDoc, buildXlsx } from "../apps/web/lib/bms/documentGenerator.ts";
+import { buildCsv, buildInputVatReportDoc, buildSalesTaxReportDoc, buildXlsx } from "../apps/web/lib/bms/documentGenerator.ts";
 import { isValidThaiTaxId } from "../apps/web/lib/bms/thaiTaxId.ts";
 
 const root = new URL("../", import.meta.url);
@@ -121,25 +121,108 @@ test("the input VAT report uses claim-month evidence and exports accountant-read
   assert.match(expense, /d\.vat_claim_month BETWEEN date_trunc\('month', \$2::date\)::date/);
   assert.match(expense, /รายงานภาษีซื้อต้องออกครั้งละหนึ่งเดือนภาษี/);
   assert.match(expense, /d\.status = 'ACTIVE'/);
-  assert.match(expense, /d\.document_kind = 'TAX_INVOICE'/);
+  assert.match(expense, /d\.document_kind IN \('TAX_INVOICE', 'SUPPLIER_CREDIT_NOTE', 'SUPPLIER_DEBIT_NOTE'\)/);
   assert.match(expense, /d\.location_id = ANY\(\$5::uuid\[\]\)/);
 
   const report = buildInputVatReportDoc({
     buyer: { name: "FAKE buyer", taxId: "0105555555554" },
     period: { from: "2026-09-01", to: "2026-09-30" },
-    establishments: [{ locationId: "loc", code: "MAIN", name: "HQ", branchCode: "00000", isHeadOffice: true }],
+    establishments: [{ locationId: "loc", code: "MAIN", name: "HQ", branchCode: "00000", isHeadOffice: true, address: "FAKE buyer address" }],
     rows: [{
       locationId: "loc", branchCode: "00000", documentDate: "2026-08-31", documentNo: "INV-1",
       payeeName: "FAKE vendor", payeeTaxId: "0105555555554", payeeBranchCode: "00000",
-      amountBeforeVat: 100, vatAmount: 7, totalAmount: 107,
+      amountBeforeVat: 100, vatAmount: 7, totalAmount: 107, note: "FAKE note",
     }],
     totals: { documentCount: 1, amountBeforeVat: 100, vatAmount: 7, totalAmount: 107 },
-  }, (date) => date);
-  const workbook = XLSX.read(buildXlsx(report), { type: "buffer" });
-  assert.deepEqual(workbook.SheetNames, ["Summary", "รายงานภาษีซื้อ"]);
-  const rows = XLSX.utils.sheet_to_json<any>(workbook.Sheets["รายงานภาษีซื้อ"]);
-  assert.equal(rows[0]["เลขที่ใบกำกับภาษี"], "INV-1");
-  assert.equal(rows[0]["ภาษีมูลค่าเพิ่ม"], 7);
+  }, (date) => formatTaxDate(date, "BE"));
+  const workbook = XLSX.read(buildXlsx(report), { type: "buffer", cellNF: true });
+  assert.deepEqual(workbook.SheetNames, ["Summary", "ภาษีซื้อ-00000-1", "กระทบยอดภายใน"]);
+  const rows = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets["ภาษีซื้อ-00000-1"], { header: 1, defval: "" });
+  assert.equal(rows[0][0], "รายงานภาษีซื้อ");
+  assert.equal(rows[1][0], "เดือนภาษี กันยายน ปี 2569");
+  assert.deepEqual(rows[2].slice(0, 7), ["ชื่อผู้ประกอบการ :", "FAKE buyer", "", "", "", "เลขประจำตัวผู้เสียภาษีอากร", "0105555555554"]);
+  assert.deepEqual(rows[3].slice(0, 9), ["ที่อยู่สถานประกอบการ :", "FAKE buyer address", "", "", "", "สถานประกอบการ", "[X] สำนักงานใหญ่", "[ ] สาขา", ""]);
+  const headerIndex = rows.findIndex((row) => row[0] === "ลำดับที่");
+  assert.deepEqual(rows[headerIndex].slice(0, 9), [
+    "ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ขายสินค้า/ผู้ให้บริการ", "เลขประจำตัวผู้เสียภาษี",
+    "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ",
+  ]);
+  assert.deepEqual(rows[headerIndex + 1].slice(0, 3), ["", "วัน เดือน ปี", "เลขที่"]);
+  assert.deepEqual(rows[headerIndex + 2].slice(0, 8), [
+    1, "31/08/2569", "INV-1", "FAKE vendor", "0105555555554", "00000", 100, 7,
+  ]);
+  assert.equal(rows[headerIndex + 2][8], "FAKE note");
+  assert.deepEqual(rows.at(-2)?.slice(5, 8), ["รวม", 100, 7]);
+  assert.deepEqual(rows.at(-1)?.slice(5, 8), ["รวมทั้งสิ้น", 100, 7]);
+  const baseCell = workbook.Sheets["ภาษีซื้อ-00000-1"][XLSX.utils.encode_cell({ r: headerIndex + 2, c: 6 })];
+  assert.equal(baseCell.t, "n");
+  assert.equal(baseCell.z, "#,##0.00");
+  const reconciliation = XLSX.utils.sheet_to_json<any>(workbook.Sheets["กระทบยอดภายใน"]);
+  assert.equal(reconciliation[0]["เลขที่ใบกำกับภาษี"], "INV-1");
+  assert.equal(reconciliation[0]["ภาษีมูลค่าเพิ่ม"], 7);
+  assert.equal(reconciliation[0]["หมายเหตุ"], "FAKE note");
+});
+
+test("the sales-tax workbook mirrors the statutory form per establishment", () => {
+  const report = buildSalesTaxReportDoc({
+    seller: { name: "FAKE seller", taxId: "0105555555554", vatRegistered: true, calendarEra: "BE" },
+    period: { from: "2026-06-01", to: "2026-06-30" },
+    establishments: [
+      { locationId: "hq", code: "MAIN", name: "สำนักงานใหญ่", branchCode: "00000", isHeadOffice: true, address: "FAKE HQ address" },
+      { locationId: "br", code: "BR01", name: "สาขาทดสอบ", branchCode: "00002", isHeadOffice: false, address: "FAKE branch address" },
+    ],
+    rows: [{
+      kind: "FULL", issueDate: "2026-06-14", locationId: "hq", branchCode: "00000", deviceCode: null,
+      docNoFrom: "TAX-1", docNoTo: "TAX-1", docCount: 1, cancelledCount: 0,
+      buyerName: "FAKE buyer", buyerTaxId: "0105555555554", buyerBranchCode: "00000",
+      referenceDocNo: null, base: 100, exempt: 0, vat: 7, total: 107, rounding: 0,
+    }],
+    totals: [
+      { locationId: "hq", branchCode: "00000", documentCount: 1, base: 100, exempt: 0, vat: 7, total: 107, rounding: 0 },
+      { locationId: "br", branchCode: "00002", documentCount: 0, base: 0, exempt: 0, vat: 0, total: 0, rounding: 0 },
+    ],
+    grandTotal: { documentCount: 1, base: 100, exempt: 0, vat: 7, total: 107, rounding: 0 },
+    exceptions: [],
+    exceptionCounts: { PAID_WITHOUT_TAX_DOCUMENT: 0, RETURN_WITHOUT_CREDIT_NOTE: 0, FULL_REPLACES_OTHER_MONTH: 0 },
+    cancelled: [],
+  }, (date) => formatTaxDate(date, "BE"));
+  const workbook = XLSX.read(buildXlsx(report), { type: "buffer", cellNF: true });
+  assert.deepEqual(workbook.SheetNames, [
+    "Summary", "สรุปรายสถานประกอบการ", "ภาษีขาย-00000-1", "ภาษีขาย-00002-2", "กระทบยอดภายใน",
+  ]);
+
+  const rows = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets["ภาษีขาย-00000-1"], { header: 1, defval: "" });
+  assert.equal(rows[0][0], "รายงานภาษีขาย");
+  assert.equal(rows[1][0], "เดือนภาษี มิถุนายน ปี 2569");
+  assert.deepEqual(rows[2].slice(0, 7), ["ชื่อผู้ประกอบการ :", "FAKE seller", "", "", "", "เลขประจำตัวผู้เสียภาษีอากร", "0105555555554"]);
+  assert.deepEqual(rows[3].slice(0, 9), ["ที่อยู่สถานประกอบการ :", "FAKE HQ address", "", "", "", "สถานประกอบการ", "[X] สำนักงานใหญ่", "[ ] สาขา", ""]);
+
+  const headerIndex = rows.findIndex((row) => row[0] === "ลำดับที่");
+  assert.deepEqual(rows[headerIndex].slice(0, 9), [
+    "ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ", "เลขประจำตัวผู้เสียภาษี",
+    "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ",
+  ]);
+  assert.deepEqual(rows[headerIndex + 1].slice(0, 3), ["", "วัน เดือน ปี", "เลขที่"]);
+  assert.deepEqual(rows[headerIndex + 2].slice(0, 8), [
+    1, "14/06/2569", "TAX-1", "FAKE buyer", "0105555555554", "00000", 100, 7,
+  ]);
+  assert.deepEqual(rows.at(-2)?.slice(5, 8), ["รวม", 100, 7]);
+  assert.deepEqual(rows.at(-1)?.slice(5, 8), ["รวมทั้งสิ้น", 100, 7]);
+  const baseCell = workbook.Sheets["ภาษีขาย-00000-1"][XLSX.utils.encode_cell({ r: headerIndex + 2, c: 6 })];
+  const vatCell = workbook.Sheets["ภาษีขาย-00000-1"][XLSX.utils.encode_cell({ r: headerIndex + 2, c: 7 })];
+  assert.equal(baseCell.t, "n");
+  assert.equal(baseCell.z, "#,##0.00");
+  assert.equal(vatCell.z, "#,##0.00");
+
+  const emptyBranchRows = XLSX.utils.sheet_to_json<any[]>(workbook.Sheets["ภาษีขาย-00002-2"], { header: 1, defval: "" });
+  assert.deepEqual(emptyBranchRows.at(-1)?.slice(5, 8), ["รวมทั้งสิ้น", 0, 0], "a zero-activity branch still gets a statutory sheet");
+});
+
+test("the sales-tax service normalizes a requested day range to one complete tax month", () => {
+  const tax = read("apps/web/lib/bms/taxReports.ts");
+  assert.match(tax, /รายงานภาษีขายต้องออกครั้งละหนึ่งเดือนภาษี/);
+  assert.match(tax, /const from = `\$\{month\}-01`/);
+  assert.match(tax, /new Date\(Date\.UTC\(year, monthNumber, 0\)\)/);
 });
 
 test("tax periods are cut by the Thai issue_date, never by the UTC issued_at", () => {

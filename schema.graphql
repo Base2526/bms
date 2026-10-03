@@ -675,6 +675,7 @@ type BmsCouponSummary {
 }
 
 input BmsCreateExpenseDocumentInput {
+  adjustmentReason: String
   amountBeforeVat: Float!
   category: String!
   documentDate: String!
@@ -691,6 +692,8 @@ input BmsCreateExpenseDocumentInput {
   payeeTaxId: String
   payeeType: String
   purchaseOrderId: ID
+  receivedDate: String
+  referenceDocumentNo: String
   supplierId: ID
   vatAmount: Float
   vatClaimMonth: String
@@ -1004,6 +1007,7 @@ type BmsEtaxSummary {
 }
 
 type BmsExpenseDocument {
+  adjustmentReason: String
   amountBeforeVat: Float!
   branchCode: String!
   category: String!
@@ -1024,6 +1028,8 @@ type BmsExpenseDocument {
   payeeTaxId: String
   payeeType: String
   purchaseOrderId: ID
+  receivedDate: String
+  referenceDocumentNo: String
   status: String!
   supplierId: ID
   vatAmount: Float!

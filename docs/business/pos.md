@@ -1201,10 +1201,38 @@ exports the sales-tax report and the goods/materials ledger; both include the op
 tax ID. The goods/materials workbook includes the actual voucher-by-voucher receipt, issue and
 running-balance ledger plus a reconciliation summary, and remains explicit that closing value uses
 current cost rather than FIFO or average cost. `/admin/expenses` exports one input-VAT month at a
-time from active tax invoices with positive VAT, using the recorded `vat_claim_month` as the filing
+time from active tax invoices and supplier credit/debit notes, using the recorded `vat_claim_month` as the filing
 period rather than the invoice or payment date. Export requires `report.view` plus the source-data permission (`tax.document.view` for sales
 tax, `expense.view` for input VAT), and generated-file history/download/email repeat both permission
 and branch-scope checks.
+
+The sales-tax export also accepts only one tax month and expands the selection to that complete
+month. Its workbook has one statutory sheet per establishment, including a zero-activity sheet,
+with tax period, seller identity, establishment address/head-office or branch code, the buyer's
+five-digit establishment code, and taxable-base/VAT totals. A separate internal-reconciliation
+sheet retains document kind, exempt sales, references, counts and rounding without crowding the
+statutory layout.
+
+The input-VAT workbook follows the same one-sheet-per-establishment form, including the buyer's
+identity/address and head-office or branch marker, the supplier's five-digit establishment code,
+grouped invoice headings, and pre-VAT/input-VAT totals. Its separate reconciliation sheet retains
+the internal buyer location and gross amount.
+
+Migration `10.37` adds supplier credit/debit notes to `/admin/expenses`. Enter positive **difference**
+amounts, original invoice reference(s), adjustment reason and received date. These are records of
+received supplier documents, not an issuer for new notes or a refund/stock/WHT operation. Credit notes
+subtract base/VAT; debit notes add them. Their tax period is the month received (not the ordinary
+invoice's six-month deferred-claim window), per [Revenue Department P.80/2542 clause 5](https://www.rd.go.th/3574.html).
+The same tax-ID, branch and VAT-registration checks apply. Active note identity is unique per tenant,
+supplier tax ID/branch, kind and normalized document number; retries return the same evidence and
+corrections still require `VOID` with a reason. Retain the original supplier document for accountant review.
+
+Both tax pages offer **Print tax report**: `/api/bms/reports/tax-print` repeats source/report permissions
+and branch scope, serves no-store HTML, and uses the same statutory rows as XLSX. The A4 landscape form
+has seller tax-ID boxes, head-office/branch marker, repeated headings, page numbers per establishment,
+per-page totals and a final establishment grand total. Browser fonts must support Thai; use 100% scale
+and disable browser headers/footers. Oversized single rows fail visibly rather than clipping evidence.
+This does not enable the existing server-generated tax PDF option, which remains unavailable.
 
 An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
 buyer identity and issue a full invoice with `tax.document.issue`. The service still owns the

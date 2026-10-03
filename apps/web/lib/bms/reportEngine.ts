@@ -245,6 +245,23 @@ async function allowedReportLocationIds(tenantId: string, ctx: any): Promise<str
   return (await listLocationsForUser(tenantId, userId)).map((location) => location.id);
 }
 
+/** Interactive print has the same source and branch permissions as saved tax exports. */
+export async function getTaxPrintReport(tenantId: string, ctx: any, input: {
+  reportType: string; from: string; to: string; locationId?: string | null;
+}): Promise<ReportDoc> {
+  await requirePermission(ctx, "report.view");
+  if (input.reportType !== "VAT_SALES" && input.reportType !== "VAT_PURCHASE") throw new Error("ชนิดรายงานภาษีไม่ถูกต้อง");
+  await requirePermission(ctx, input.reportType === "VAT_SALES" ? "tax.document.view" : "expense.view");
+  const allowedLocationIds = await allowedReportLocationIds(tenantId, ctx);
+  if (input.locationId && allowedLocationIds && !allowedLocationIds.includes(input.locationId)) throw new Error("ไม่มีสิทธิ์ดูสถานประกอบการนี้");
+  const filter = { from: input.from, to: input.to, locationId: input.locationId, allowedLocationIds };
+  if (input.reportType === "VAT_SALES") {
+    const report = await getSalesTaxReport(tenantId, filter);
+    return buildSalesTaxReportDoc(report, iso => formatTaxDate(iso, report.seller.calendarEra));
+  }
+  return buildInputVatReportDoc(await getInputVatReport(tenantId, filter), iso => formatTaxDate(iso, "BE"));
+}
+
 async function reportPermissionFlags(ctx: any): Promise<{ salesTax: boolean; purchaseTax: boolean }> {
   // งานระบบภายในที่ไม่มี admin context ใช้ service ได้ตามเดิม; ทุก HTTP/GraphQL/tool entry
   // point ส่ง ctx มาและต้องผ่านสิทธิ์จริง

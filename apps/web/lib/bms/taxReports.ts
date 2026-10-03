@@ -277,7 +277,14 @@ export async function getSalesTaxReport(
   tenantId: string,
   input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
 ): Promise<SalesTaxReport> {
-  const { from, to } = assertTaxPeriod(input.from, input.to);
+  const requested = assertTaxPeriod(input.from, input.to);
+  if (requested.from.slice(0, 7) !== requested.to.slice(0, 7)) {
+    throw new Error("รายงานภาษีขายต้องออกครั้งละหนึ่งเดือนภาษี");
+  }
+  const month = requested.from.slice(0, 7);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const from = `${month}-01`;
+  const to = `${month}-${String(new Date(Date.UTC(year, monthNumber, 0)).getUTCDate()).padStart(2, "0")}`;
   const locationId = input.locationId ?? null;
   const allowedLocationIds = input.allowedLocationIds ?? null;
 

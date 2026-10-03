@@ -275,7 +275,7 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 Expense evidence (`10.11`) is append-only financial history: creation uses an exact idempotency
 key plus request hash, and corrections set `VOID` with a reason instead of deleting a row. Supplier,
 purchase-order, location and private evidence-file references must belong to the same tenant. Input
-VAT is non-zero only for a tax invoice with document number and vendor tax ID; withholding requires
+VAT is non-zero only for a tax invoice or supplier adjustment note with document number and vendor tax ID; withholding requires
 payee type, tax ID, payment date and rate. These reports support an accountant but never claim to
 file PP.30, PND.3 or PND.53. Tax-document lists, sales-tax summaries, stock-ledger exports and the
 generated tax-report files themselves respect `bms_user_allowed_locations`; checking only the
@@ -295,8 +295,15 @@ upper-casing and removing whitespace/hyphens, and treats blank/`NULL` branch as 
 `00000`; a `23505` is reported as an already-recorded invoice. The migration aborts rather than
 deleting evidence if existing rows collide after normalization.
 
+Supplier adjustments (`10.37`) retain positive stored difference amounts; only report/summaries apply
+the negative sign for `SUPPLIER_CREDIT_NOTE` (`SUPPLIER_DEBIT_NOTE` stays positive). Require received
+date, invoice reference and reason, derive the claim month from receipt, and reject WHT fields. Do not
+apply the normal invoice's six-month deferral to these notes. These records never issue a tax document
+or change cash/stock. Tax print HTML uses the same statutory sheet data and source/branch permissions
+as exports; each establishment paginates separately with page totals and a final grand total.
+
 The generated `VAT_PURCHASE` workbook is one tax month at a time, follows `vat_claim_month` rather
-than document or payment date, and contains only active tax invoices with positive input VAT. The
+than document or payment date, and contains active tax invoices plus supplier credit/debit notes. The
 goods/materials workbook contains the actual voucher-by-voucher movement ledger (opening, receipt,
 issue and running balance) as well as the reconciliation summary; reservations, quarantine and lost
 transfers are not legal stock movements and never enter those columns. Both workbooks identify the
@@ -525,6 +532,16 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   issue time; changing tax settings (`tax.setting.manage`) only affects bills issued afterward.
   Cash rounding (`7.95`) applies only to fully-cash bills, is its own receipt line, and never
   changes the VAT base.
+- **The sales-tax export is one complete tax month and one statutory sheet per establishment.**
+  Each sheet carries the tax month/year, seller tax identity, establishment address and
+  head-office/branch code above the rows; the buyer's establishment is its five-digit code, and
+  taxable base/VAT totals close the sheet. The richer combined fields stay on a separate internal
+  reconciliation sheet and must not replace or be mixed into the statutory per-establishment form.
+- **The input-VAT export uses the same per-establishment statutory layout.** Its period is the
+  recorded `vat_claim_month`, not payment or invoice month. Each sheet identifies the buyer's
+  establishment and records the supplier name, tax id, five-digit establishment code, invoice
+  date/number, pre-VAT amount and input VAT; internal buyer-location and gross-total fields remain
+  on a separate reconciliation sheet.
 - **Only VAT-inclusive catalog prices are currently sellable.** The setting mutation refuses
   `price_includes_vat = false`, the form disables that choice, and a legacy false value blocks POS
   readiness until a human changes it. Do not silently rewrite an existing shop setting and do not

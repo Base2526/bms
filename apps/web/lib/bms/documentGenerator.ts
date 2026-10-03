@@ -18,8 +18,25 @@
 import * as XLSX from "xlsx";
 import PDFDocument from "pdfkit";
 
-export type ReportColumn = { key: string; label: string };
-export type ReportSheet = { name: string; columns: ReportColumn[]; rows: Record<string, any>[] };
+export type ReportColumn = { key: string; label: string; numberFormat?: string };
+type ReportCell = string | number | boolean | null | undefined;
+export type ReportSheet = {
+  name: string;
+  columns: ReportColumn[];
+  rows: Record<string, any>[];
+  /** Rows printed above the column header, for statutory identity/period fields. */
+  preamble?: ReportCell[][];
+  /** Rows printed below the data, for statutory totals. */
+  footer?: ReportCell[][];
+  /** Optional multi-row column heading (for grouped statutory headings). */
+  headerRows?: ReportCell[][];
+  /** Zero-based merge ranges relative to headerRows. */
+  headerMerges?: Array<{ startRow: number; startColumn: number; endRow: number; endColumn: number }>;
+  /** A zero-activity statutory report still needs its identity, header and zero total. */
+  includeWhenEmpty?: boolean;
+  /** Only statutory sheets carry print identity; reconciliation sheets are not tax forms. */
+  taxPrintIdentity?: { title: string; period: string; name: string; taxId: string; address: string; branchCode: string; isHeadOffice: boolean };
+};
 export type ReportDoc = {
   title: string;
   subtitle: string;
@@ -549,6 +566,31 @@ function establishmentLabel(e: { isHeadOffice: boolean; branchCode: string; name
   return e.isHeadOffice ? `สำนักงานใหญ่ (${e.branchCode}) — ${e.name}` : `สาขาที่ ${e.branchCode} — ${e.name}`;
 }
 
+const THAI_MONTHS = [
+  "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+  "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+];
+
+function taxPeriodLabel(period: { from: string }, calendarEra: "BE" | "CE"): string {
+  const year = Number(period.from.slice(0, 4));
+  const month = Number(period.from.slice(5, 7));
+  const displayYear = calendarEra === "BE" ? year + 543 : year;
+  return `เดือนภาษี ${THAI_MONTHS[month - 1] ?? period.from.slice(5, 7)} ปี ${displayYear}`;
+}
+
+function salesTaxNote(row: import("./taxReports").SalesTaxRow): string {
+  if (row.kind === "ABBREVIATED_DAY") {
+    return ["ใบกำกับภาษีอย่างย่อรวมรายวัน", row.deviceCode ? `เครื่อง ${row.deviceCode}` : ""]
+      .filter(Boolean).join(" · ");
+  }
+  if (row.kind === "CREDIT_NOTE") {
+    return row.referenceDocNo ? `ใบลดหนี้ อ้างอิง ${row.referenceDocNo}` : "ใบลดหนี้";
+  }
+  return row.referenceDocNo
+    ? `ใบกำกับภาษีเต็มรูปออกแทน ${row.referenceDocNo}`
+    : "ใบกำกับภาษีเต็มรูป";
+}
+
 export function buildSalesTaxReportDoc(
   report: import("./taxReports").SalesTaxReport,
   formatDate: (iso: string) => string
@@ -559,6 +601,65 @@ export function buildSalesTaxReportDoc(
     return e ? establishmentLabel(e) : "";
   };
   const exceptionTotal = Object.values(report.exceptionCounts).reduce((a, b) => a + b, 0);
+
+  const statutoryColumns: ReportColumn[] = [
+    { key: "seq", label: "ลำดับที่" },
+    { key: "date", label: "วัน เดือน ปี" },
+    { key: "docNo", label: "เลขที่" },
+    { key: "buyerName", label: "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ" },
+    { key: "buyerTaxId", label: "เลขประจำตัวผู้เสียภาษี" },
+    { key: "buyerEstablishment", label: "สถานประกอบการ" },
+    { key: "base", label: "มูลค่าสินค้าหรือบริการ", numberFormat: "#,##0.00" },
+    { key: "vat", label: "จำนวนเงินภาษีมูลค่าเพิ่ม", numberFormat: "#,##0.00" },
+    { key: "note", label: "หมายเหตุ" },
+  ];
+  const statutorySheets: ReportSheet[] = report.establishments.map((establishment, index) => {
+    const rows = report.rows.filter((row) => row.locationId === establishment.locationId);
+    const total = report.totals.find((item) => item.locationId === establishment.locationId);
+    return {
+      name: `ภาษีขาย-${establishment.branchCode}-${index + 1}`,
+      taxPrintIdentity: { title: "รายงานภาษีขาย", period: taxPeriodLabel(report.period, report.seller.calendarEra), name: report.seller.name, taxId: report.seller.taxId ?? "", address: establishment.address ?? "", branchCode: establishment.branchCode, isHeadOffice: establishment.isHeadOffice },
+      includeWhenEmpty: true,
+      preamble: [
+        ["รายงานภาษีขาย"],
+        [taxPeriodLabel(report.period, report.seller.calendarEra)],
+        ["ชื่อผู้ประกอบการ :", report.seller.name, "", "", "", "เลขประจำตัวผู้เสียภาษีอากร", report.seller.taxId ?? ""],
+        [
+          "ที่อยู่สถานประกอบการ :", establishment.address ?? "", "", "", "", "สถานประกอบการ",
+          establishment.isHeadOffice ? "[X] สำนักงานใหญ่" : "[ ] สำนักงานใหญ่",
+          establishment.isHeadOffice ? "[ ] สาขา" : "[X] สาขา",
+          establishment.isHeadOffice ? "" : establishment.branchCode,
+        ],
+      ],
+      headerRows: [
+        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ", "เลขประจำตัวผู้เสียภาษี", "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
+        ["", "วัน เดือน ปี", "เลขที่", "", "", "", "", "", ""],
+      ],
+      headerMerges: [
+        { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 },
+        { startRow: 0, startColumn: 1, endRow: 0, endColumn: 2 },
+        ...Array.from({ length: 6 }, (_, offset) => ({
+          startRow: 0, startColumn: offset + 3, endRow: 1, endColumn: offset + 3,
+        })),
+      ],
+      columns: statutoryColumns,
+      rows: rows.map((row, rowIndex) => ({
+        seq: rowIndex + 1,
+        date: formatDate(row.issueDate),
+        docNo: row.docNoFrom === row.docNoTo ? row.docNoFrom : `${row.docNoFrom} – ${row.docNoTo}`,
+        buyerName: row.kind === "ABBREVIATED_DAY" ? "ขายปลีก (ใบกำกับภาษีอย่างย่อ)" : row.buyerName ?? "",
+        buyerTaxId: row.buyerTaxId ?? "",
+        buyerEstablishment: row.buyerBranchCode ?? "",
+        base: row.base,
+        vat: row.vat,
+        note: salesTaxNote(row),
+      })),
+      footer: [
+        ["", "", "", "", "", "รวม", total?.base ?? 0, total?.vat ?? 0, ""],
+        ["", "", "", "", "", "รวมทั้งสิ้น", total?.base ?? 0, total?.vat ?? 0, ""],
+      ],
+    };
+  });
 
   return {
     title: "รายงานภาษีขาย",
@@ -591,8 +692,9 @@ export function buildSalesTaxReportDoc(
         ],
         rows: report.totals.map((t) => ({ ...t, place: place(t.locationId) })),
       },
+      ...statutorySheets,
       {
-        name: "รายงานภาษีขาย",
+        name: "กระทบยอดภายใน",
         columns: [
           { key: "seq", label: "ลำดับ" },
           { key: "date", label: "วันที่" },
@@ -685,6 +787,65 @@ export function buildInputVatReportDoc(
     const establishment = byId.get(locationId);
     return establishment ? establishmentLabel(establishment) : "";
   };
+  const statutoryColumns: ReportColumn[] = [
+    { key: "seq", label: "ลำดับที่" },
+    { key: "documentDate", label: "วัน เดือน ปี" },
+    { key: "documentNo", label: "เลขที่" },
+    { key: "payeeName", label: "ชื่อผู้ขายสินค้า/ผู้ให้บริการ" },
+    { key: "payeeTaxId", label: "เลขประจำตัวผู้เสียภาษี" },
+    { key: "payeeEstablishment", label: "สถานประกอบการ" },
+    { key: "amountBeforeVat", label: "มูลค่าสินค้าหรือบริการ", numberFormat: "#,##0.00" },
+    { key: "vatAmount", label: "จำนวนเงินภาษีมูลค่าเพิ่ม", numberFormat: "#,##0.00" },
+    { key: "note", label: "หมายเหตุ" },
+  ];
+  const statutorySheets: ReportSheet[] = report.establishments.map((establishment, index) => {
+    const rows = report.rows.filter((row) => row.locationId === establishment.locationId);
+    const amountBeforeVat = Math.round(rows.reduce((sum, row) => sum + row.amountBeforeVat, 0) * 100) / 100;
+    const vatAmount = Math.round(rows.reduce((sum, row) => sum + row.vatAmount, 0) * 100) / 100;
+    return {
+      name: `ภาษีซื้อ-${establishment.branchCode}-${index + 1}`,
+      taxPrintIdentity: { title: "รายงานภาษีซื้อ", period: taxPeriodLabel(report.period, "BE"), name: report.buyer.name, taxId: report.buyer.taxId ?? "", address: establishment.address ?? "", branchCode: establishment.branchCode, isHeadOffice: establishment.isHeadOffice },
+      includeWhenEmpty: true,
+      preamble: [
+        ["รายงานภาษีซื้อ"],
+        [taxPeriodLabel(report.period, "BE")],
+        ["ชื่อผู้ประกอบการ :", report.buyer.name, "", "", "", "เลขประจำตัวผู้เสียภาษีอากร", report.buyer.taxId ?? ""],
+        [
+          "ที่อยู่สถานประกอบการ :", establishment.address ?? "", "", "", "", "สถานประกอบการ",
+          establishment.isHeadOffice ? "[X] สำนักงานใหญ่" : "[ ] สำนักงานใหญ่",
+          establishment.isHeadOffice ? "[ ] สาขา" : "[X] สาขา",
+          establishment.isHeadOffice ? "" : establishment.branchCode,
+        ],
+      ],
+      headerRows: [
+        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ขายสินค้า/ผู้ให้บริการ", "เลขประจำตัวผู้เสียภาษี", "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
+        ["", "วัน เดือน ปี", "เลขที่", "", "", "", "", "", ""],
+      ],
+      headerMerges: [
+        { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 },
+        { startRow: 0, startColumn: 1, endRow: 0, endColumn: 2 },
+        ...Array.from({ length: 6 }, (_, offset) => ({
+          startRow: 0, startColumn: offset + 3, endRow: 1, endColumn: offset + 3,
+        })),
+      ],
+      columns: statutoryColumns,
+      rows: rows.map((row, rowIndex) => ({
+        seq: rowIndex + 1,
+        documentDate: formatDate(row.documentDate),
+        documentNo: row.documentNo,
+        payeeName: row.payeeName,
+        payeeTaxId: row.payeeTaxId,
+        payeeEstablishment: row.payeeBranchCode,
+        amountBeforeVat: row.amountBeforeVat,
+        vatAmount: row.vatAmount,
+        note: row.note ?? "",
+      })),
+      footer: [
+        ["", "", "", "", "", "รวม", amountBeforeVat, vatAmount, ""],
+        ["", "", "", "", "", "รวมทั้งสิ้น", amountBeforeVat, vatAmount, ""],
+      ],
+    };
+  });
   return {
     title: "รายงานภาษีซื้อ",
     subtitle: `${formatDate(report.period.from)} – ${formatDate(report.period.to)}`,
@@ -697,33 +858,38 @@ export function buildInputVatReportDoc(
       { label: "ยอดรวม", value: report.totals.totalAmount.toFixed(2) },
       { label: "หมายเหตุ", value: "ใช้งวดตามเดือนที่บันทึกใช้สิทธิ์ภาษีซื้อ · รายงานนี้ไม่ใช่แบบ ภ.พ.30 และต้องให้นักบัญชีตรวจสอบ" },
     ],
-    sheets: [{
-      name: "รายงานภาษีซื้อ",
-      columns: [
-        { key: "seq", label: "ลำดับ" },
-        { key: "documentDate", label: "วันที่" },
-        { key: "documentNo", label: "เลขที่ใบกำกับภาษี" },
-        { key: "payeeName", label: "ชื่อผู้ขายสินค้าหรือผู้ให้บริการ" },
-        { key: "payeeTaxId", label: "เลขประจำตัวผู้เสียภาษีผู้ขาย" },
-        { key: "payeeBranch", label: "สถานประกอบการผู้ขาย" },
-        { key: "buyerPlace", label: "สถานประกอบการผู้ซื้อ" },
-        { key: "amountBeforeVat", label: "มูลค่าสินค้าหรือบริการ" },
-        { key: "vatAmount", label: "ภาษีมูลค่าเพิ่ม" },
-        { key: "totalAmount", label: "รวม" },
-      ],
-      rows: report.rows.map((row, index) => ({
-        seq: index + 1,
-        documentDate: formatDate(row.documentDate),
-        documentNo: row.documentNo,
-        payeeName: row.payeeName,
-        payeeTaxId: row.payeeTaxId,
-        payeeBranch: row.payeeBranchCode === "00000" ? "สำนักงานใหญ่" : `สาขาที่ ${row.payeeBranchCode}`,
-        buyerPlace: place(row.locationId),
-        amountBeforeVat: row.amountBeforeVat,
-        vatAmount: row.vatAmount,
-        totalAmount: row.totalAmount,
-      })),
-    }],
+    sheets: [
+      ...statutorySheets,
+      {
+        name: "กระทบยอดภายใน",
+        columns: [
+          { key: "seq", label: "ลำดับ" },
+          { key: "documentDate", label: "วันที่" },
+          { key: "documentNo", label: "เลขที่ใบกำกับภาษี" },
+          { key: "payeeName", label: "ชื่อผู้ขายสินค้าหรือผู้ให้บริการ" },
+          { key: "payeeTaxId", label: "เลขประจำตัวผู้เสียภาษีผู้ขาย" },
+          { key: "payeeBranch", label: "สถานประกอบการผู้ขาย" },
+          { key: "buyerPlace", label: "สถานประกอบการผู้ซื้อ" },
+          { key: "amountBeforeVat", label: "มูลค่าสินค้าหรือบริการ" },
+          { key: "vatAmount", label: "ภาษีมูลค่าเพิ่ม" },
+          { key: "totalAmount", label: "รวม" },
+          { key: "note", label: "หมายเหตุ" },
+        ],
+        rows: report.rows.map((row, index) => ({
+          seq: index + 1,
+          documentDate: formatDate(row.documentDate),
+          documentNo: row.documentNo,
+          payeeName: row.payeeName,
+          payeeTaxId: row.payeeTaxId,
+          payeeBranch: row.payeeBranchCode === "00000" ? "สำนักงานใหญ่" : `สาขาที่ ${row.payeeBranchCode}`,
+          buyerPlace: place(row.locationId),
+          amountBeforeVat: row.amountBeforeVat,
+          vatAmount: row.vatAmount,
+          totalAmount: row.totalAmount,
+          note: row.note ?? "",
+        })),
+      },
+    ],
   };
 }
 
@@ -855,12 +1021,40 @@ export function buildXlsx(doc: ReportDoc): Buffer {
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryAoa), "Summary");
 
   for (const sheet of doc.sheets) {
-    if (sheet.rows.length === 0) continue;
-    const header = sheet.columns.map((c) => c.label);
+    if (sheet.rows.length === 0 && !sheet.includeWhenEmpty) continue;
+    const headerRows = sheet.headerRows ?? [sheet.columns.map((c) => c.label)];
     const body = sheet.rows.map((row) => sheet.columns.map((c) => row[c.key] ?? ""));
-    const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
+    const preamble = sheet.preamble ?? [];
+    const spacer = preamble.length ? [[]] : [];
+    const ws = XLSX.utils.aoa_to_sheet([...preamble, ...spacer, ...headerRows, ...body, ...(sheet.footer ?? [])]);
     // best-effort auto width — spec asks for it, this is the cheap version
     ws["!cols"] = sheet.columns.map((c) => ({ wch: Math.max(c.label.length + 2, 12) }));
+    if (preamble.length && sheet.columns.length > 1) {
+      ws["!merges"] = preamble.flatMap((row, rowIndex) =>
+        row.filter((cell) => cell !== "" && cell != null).length === 1
+          ? [{ s: { r: rowIndex, c: 0 }, e: { r: rowIndex, c: sheet.columns.length - 1 } }]
+          : []
+      );
+    }
+    const headerStartRow = preamble.length + spacer.length;
+    if (sheet.headerMerges?.length) {
+      ws["!merges"] = [
+        ...(ws["!merges"] ?? []),
+        ...sheet.headerMerges.map((merge) => ({
+          s: { r: headerStartRow + merge.startRow, c: merge.startColumn },
+          e: { r: headerStartRow + merge.endRow, c: merge.endColumn },
+        })),
+      ];
+    }
+    const firstBodyRow = headerStartRow + headerRows.length;
+    const lastDataOrFooterRow = firstBodyRow + body.length + (sheet.footer?.length ?? 0) - 1;
+    sheet.columns.forEach((column, columnIndex) => {
+      if (!column.numberFormat) return;
+      for (let rowIndex = firstBodyRow; rowIndex <= lastDataOrFooterRow; rowIndex += 1) {
+        const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: columnIndex })];
+        if (cell?.t === "n") cell.z = column.numberFormat;
+      }
+    });
     XLSX.utils.book_append_sheet(wb, ws, safeSheetName(sheet.name));
   }
 
@@ -891,13 +1085,17 @@ export function buildCsv(doc: ReportDoc): Buffer {
     ...doc.meta.map((m) => [m.label, m.value].map(csvEscape).join(",")),
   ];
   for (const sheet of doc.sheets) {
-    if (sheet.rows.length === 0) continue;
+    if (sheet.rows.length === 0 && !sheet.includeWhenEmpty) continue;
     lines.push("");
     lines.push(`# ${sheet.name}`);
-    lines.push(sheet.columns.map((c) => csvEscape(c.label)).join(","));
+    for (const row of sheet.preamble ?? []) lines.push(row.map(csvEscape).join(","));
+    if (sheet.preamble?.length) lines.push("");
+    const headerRows = sheet.headerRows ?? [sheet.columns.map((c) => c.label)];
+    for (const row of headerRows) lines.push(row.map(csvEscape).join(","));
     for (const row of sheet.rows) {
       lines.push(sheet.columns.map((c) => csvEscape(row[c.key])).join(","));
     }
+    for (const row of sheet.footer ?? []) lines.push(row.map(csvEscape).join(","));
   }
   // UTF-8 BOM กัน Excel เปิดภาษาไทยเพี้ยน
   return Buffer.from("﻿" + lines.join("\n"), "utf8");

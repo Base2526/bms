@@ -182,6 +182,7 @@ test("normal full-invoice issuance cancels the abbreviated document and audits a
 
 test("a partially returned order cannot receive a full tax invoice", async () => {
   const orderId = await newOrder(hqId);
+  orders.partiallyReturned = orderId;
   await posReturn(orderId, 20, "before-full");
   const result = await issueFullTaxInvoice({
     tenantId,
@@ -253,14 +254,14 @@ test("totals are per establishment and add up to the grand total", async () => {
 test("the report lists what would make it incomplete", async () => {
   const r = await getSalesTaxReport(tenantId, period);
   const noDoc = r.exceptions.filter((x) => x.kind === "PAID_WITHOUT_TAX_DOCUMENT");
-  assert.deepEqual(noDoc.map((x) => x.orderId), [orders.noDoc]);
+  assert.deepEqual(noDoc.map((x) => x.orderId).sort(), [orders.noDoc, orders.partiallyReturned].sort());
   const noNote = r.exceptions.filter((x) => x.kind === "RETURN_WITHOUT_CREDIT_NOTE");
   assert.deepEqual(
     noNote.map((x) => x.orderId).sort(),
     [orders.a1, orders.inconsistent].sort(),
     "returns and historical cancelled/invoiced rows are flagged, but a return with a credit note is not"
   );
-  assert.equal(r.exceptionCounts.PAID_WITHOUT_TAX_DOCUMENT, 1);
+  assert.equal(r.exceptionCounts.PAID_WITHOUT_TAX_DOCUMENT, 2);
   assert.equal(r.exceptionCounts.RETURN_WITHOUT_CREDIT_NOTE, 2);
   assert.equal(r.exceptionCounts.FULL_REPLACES_OTHER_MONTH, 0);
   assert.equal(r.cancelled.length, 1);
@@ -314,12 +315,27 @@ test("the XLSX export has every sheet and Thai-dated rows", async () => {
   const r = await getSalesTaxReport(tenantId, period);
   const buf = buildXlsx(buildSalesTaxReportDoc(r, (d) => formatTaxDate(d, "BE")));
   const wb = XLSX.read(buf, { type: "buffer" });
-  assert.deepEqual(wb.SheetNames, ["Summary", "สรุปรายสถานประกอบการ", "รายงานภาษีขาย", "ต้องตรวจสอบ", "เอกสารที่ยกเลิก"]);
-  const rows = XLSX.utils.sheet_to_json<any>(wb.Sheets["รายงานภาษีขาย"]);
+  assert.deepEqual(wb.SheetNames, [
+    "Summary", "สรุปรายสถานประกอบการ", "ภาษีขาย-00000-1", "ภาษีขาย-00001-2",
+    "กระทบยอดภายใน", "ต้องตรวจสอบ", "เอกสารที่ยกเลิก",
+  ]);
+  const rows = XLSX.utils.sheet_to_json<any>(wb.Sheets["กระทบยอดภายใน"]);
   const year = Number(today.slice(0, 4)) + 543;
   assert.ok(rows.some((row) => String(row["วันที่"]).endsWith(`/${year}`)));
   const vatSum = rows.reduce((n, row) => n + Number(row["ภาษีมูลค่าเพิ่ม"]), 0);
   assert.equal(Math.round(vatSum * 100) / 100, 24.5, "numbers stay numeric so the accountant can sum them");
+
+  const hqRows = XLSX.utils.sheet_to_json<any[]>(wb.Sheets["ภาษีขาย-00000-1"], { header: 1, defval: "" });
+  assert.equal(hqRows[0][0], "รายงานภาษีขาย");
+  assert.match(String(hqRows[1][0]), /^เดือนภาษี /);
+  const headerIndex = hqRows.findIndex((row) => row[0] === "ลำดับที่");
+  assert.ok(headerIndex > 0);
+  assert.equal(hqRows[headerIndex][1], "ใบกำกับภาษี");
+  assert.equal(hqRows[headerIndex][5], "สถานประกอบการ");
+  const total = hqRows.at(-1)!;
+  assert.equal(total[5], "รวมทั้งสิ้น");
+  assert.equal(total[6], 300);
+  assert.equal(total[7], 21);
 });
 
 test("teardown", async () => {
