@@ -1153,8 +1153,8 @@ function ProductThumb({
         height: size,
         flex: `0 0 ${size}px`,
         borderRadius: 6,
-        border: "1px solid #eee",
-        background: "#fff",
+        border: "1px solid var(--posx-line, #eee)",
+        background: "var(--posx-surface, #fff)",
         overflow: "hidden",
         display: "flex",
         alignItems: "center",
@@ -1175,7 +1175,7 @@ function ProductThumb({
           width={size * 0.5}
           height={size * 0.5}
           fill="none"
-          stroke="#d9d9d9"
+          stroke="var(--posx-muted, #d9d9d9)"
           strokeWidth="1.8"
         >
           <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -6419,13 +6419,13 @@ export default function PosPage() {
     return (
       <div style={{ maxWidth: 460, margin: "0 auto", padding: 32 }}>
         <h1 style={{ fontSize: 20, fontWeight: 500 }}>ตั้งค่าเครื่องขาย</h1>
-        <div style={{ background: "#e6f4ff", color: "#003a8c", padding: 12, borderRadius: 8, margin: "12px 0", fontSize: 14 }}>
+        <div style={{ background: "var(--posx-info-bg, #e6f4ff)", color: "var(--posx-info-text, #003a8c)", padding: 12, borderRadius: 8, margin: "12px 0", fontSize: 14 }}>
           <b>ผู้จัดการทำครั้งเดียวตอนตั้งเครื่อง</b> — เหมือนต่อ Wi-Fi ให้แท็บเล็ต
           <br />
           พนักงานขาย <b>ไม่ต้องใช้ลิงก์หรือ token นี้เลย</b> เปิดเครื่องมาก็เลือกชื่อตัวเองแล้วใส่ PIN ได้ทันที
         </div>
         {tokenRejected && (
-          <PosDismissibleAlert style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8, margin: "12px 0" }}>
+          <PosDismissibleAlert style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8, margin: "12px 0" }}>
             <div style={{ fontWeight: 500 }}>ระบบไม่รับ token ของเครื่องนี้</div>
             <div style={{ marginTop: 4 }}>
               สาเหตุที่พบบ่อยที่สุดคือมีการกด &quot;ออก token&quot; ใหม่ให้เครื่องนี้ระหว่างที่จอขายเปิดอยู่ —
@@ -6451,7 +6451,7 @@ export default function PosPage() {
         )}
         {hasDesktopPosBridge() ? (
           <>
-            <p style={{ color: "#666", fontSize: 14 }}>
+            <p style={{ color: "var(--posx-muted, #666)", fontSize: 14 }}>
               กลับไปหน้าตั้งค่า BMS POS Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
             </p>
             <button
@@ -6463,7 +6463,7 @@ export default function PosPage() {
           </>
         ) : (
           <>
-            <p style={{ color: "#666", fontSize: 14 }}>
+            <p style={{ color: "var(--posx-muted, #666)", fontSize: 14 }}>
               {tokenRejected
                 ? "ถ้าออก token ใหม่มาแล้ว วางลิงก์หรือ token ตัวใหม่ที่นี่"
                 : "ใส่ token ที่ออกจากหน้าแอดมิน (ออกให้ครั้งเดียว ถ้าหายต้องออกใหม่)"}
@@ -6495,7 +6495,7 @@ export default function PosPage() {
             </button>
           </>
         )}
-        <p style={{ color: "#888", fontSize: 12, marginTop: 16 }}>
+        <p style={{ color: "var(--posx-muted, #888)", fontSize: 12, marginTop: 16 }}>
           เครื่องนี้จะจำ token ไว้จนกว่าจะกดเลิกจับคู่ — ไม่ต้องใส่ใหม่ทุกวัน
         </p>
       </div>
@@ -6517,9 +6517,9 @@ export default function PosPage() {
            (แถบงานด้านล่าง) ถูกดันต่ำกว่าพื้นที่ที่มองเห็นจนตัวหนังสือโดนตัด
            dvh หดตามจริง จึงเป็นค่าที่ถูกสำหรับ app-shell ที่มีแถบติดขอบล่าง */
         .pos-page { height: 100vh; height: 100dvh; overflow: hidden; }
-        .pos-page--restaurant-context {
-          /* ค่า fallback ใช้เฉพาะเมื่อเปิด /pos ตรง ๆ; เมื่อฝังใน /pos/restaurant
-             selector ของ shell จะส่ง semantic tokens ของ preset ปัจจุบันลงมาแทน */
+        .pos-page--restaurant-context:not(.pos-page--embedded) {
+          /* ค่า fallback ใช้เฉพาะเมื่อเปิด /pos ตรง ๆ · ตอนฝังใน /pos/restaurant ต้องไม่ประกาศซ้ำ
+             เพราะกฎบน element นี้ชนะค่าที่สืบทอดจาก shell เสมอ — เคยทำให้โหมดมืดได้ปุ่มสีเขียวอ่อน */
           --pos-accent: #1f604c; --pos-accent-hover: #2d745f;
           --pos-accent-active: #174a3b; --pos-accent-bg: #e8f3ee;
         }
@@ -6531,10 +6531,10 @@ export default function PosPage() {
            จึงอยู่ที่เดิมเสมอแม้ตะกร้าจะยาว */
         .pos-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: hidden; }
         .pos-rail { width: 64px; flex: none; display: flex; flex-direction: column; gap: 5px; padding: 12px 7px;
-                    background: #fff; border-right: 1px solid var(--pos-line, #e5e7eb); box-shadow: 1px 0 0 rgba(15,23,42,.02); }
+                    background: var(--posx-surface, #fff); border-right: 1px solid var(--pos-line, var(--posx-line, #e5e7eb)); box-shadow: 1px 0 0 rgba(15,23,42,.02); }
         .pos-rail button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
                            height: 58px; width: 100%; border-radius: 8px; font-size: 11px; white-space: nowrap;
-                           border: 1px solid transparent; background: transparent; color: #475467; cursor: pointer; box-shadow: none; }
+                           border: 1px solid transparent; background: transparent; color: var(--posx-ink2, #475467); cursor: pointer; box-shadow: none; }
         .pos-rail button[aria-current="true"] { background: var(--pos-accent-bg); color: var(--pos-accent); border-color: var(--pos-accent-hover); font-weight: 600; box-shadow: inset 3px 0 0 var(--pos-accent); }
         /* ไอคอนเป็น SVG แล้ว — font-size คุมขนาดไม่ได้ ต้องกำหนดที่ตัว svg เอง
            display:block กัน baseline gap ที่ทำให้ไอคอนกับ label ห่างไม่เท่ากันทุกแท็บ */
@@ -6554,7 +6554,7 @@ export default function PosPage() {
           flex-wrap: wrap;
         }
         .pos-ret-card--highlight {
-          border-color: #faad14 !important;
+          border-color: var(--posx-warn-line, #faad14) !important;
           box-shadow: 0 0 0 3px rgba(250, 173, 20, 0.18);
         }
         .pos-help { position: relative; display: inline-flex; margin-inline-start: 5px; vertical-align: middle; }
@@ -6565,12 +6565,12 @@ export default function PosPage() {
         .pos-help > summary:focus-visible { outline: 2px solid var(--pos-accent); outline-offset: 2px; }
         .pos-help[open] > summary { color: #fff; background: var(--pos-accent); }
         .pos-help-popover { position: absolute; z-index: 80; top: calc(100% + 7px); left: 0;
-          width: min(310px, calc(100vw - 32px)); padding: 11px 12px; border: 1px solid #b5d4f4;
-          border-radius: 8px; background: #fff; color: #263238; box-shadow: 0 8px 24px rgba(0,0,0,.16);
+          width: min(310px, calc(100vw - 32px)); padding: 11px 12px; border: 1px solid var(--posx-info-line, #b5d4f4);
+          border-radius: 8px; background: var(--posx-surface, #fff); color: var(--posx-ink, #263238); box-shadow: 0 8px 24px rgba(0,0,0,.16);
           font-size: 12px; line-height: 1.55; font-weight: 400; text-align: left; }
         .pos-help--right .pos-help-popover { left: auto; right: 0; }
         .pos-help-popover strong, .pos-help-popover span { display: block; }
-        .pos-help-popover strong { margin-bottom: 3px; font-size: 13px; color: #163b66; }
+        .pos-help-popover strong { margin-bottom: 3px; font-size: 13px; color: var(--posx-info-text, #163b66); }
         .pos-rail-count {
           font-size: 10px;
           line-height: 1;
@@ -6581,14 +6581,14 @@ export default function PosPage() {
           text-align: center;
         }
         .pos-rail-count--pending {
-          background: #fff1b8;
-          color: #8a6100;
-          border: 1px solid #ffd666;
+          background: var(--posx-warn-bg, #fff1b8);
+          color: var(--posx-warn-text, #8a6100);
+          border: 1px solid var(--posx-warn-line, #ffd666);
         }
         .pos-rail-count--normal {
-          background: #f0f0f0;
-          color: #595959;
-          border: 1px solid #d9d9d9;
+          background: var(--posx-soft, #f0f0f0);
+          color: var(--posx-ink2, #595959);
+          border: 1px solid var(--posx-line, #d9d9d9);
         }
         @media (max-width: 767px) {
           /* คงโครง app-shell เหมือนจอใหญ่ (height/overflow ตั้งไว้แล้วด้านบน) —
@@ -6602,7 +6602,7 @@ export default function PosPage() {
           /* จอเล็ก = แท็บเล็ต/มือถือ ย้ายแถบไปล่างให้นิ้วโป้งถึง
              ต้องเผื่อ safe-area: บนมือถือจริงแถบระบบ/ปุ่มย้อนกลับทับพื้นที่ล่างของ
              viewport อยู่ ถ้าชิด bottom:0 เฉย ๆ ตัวหนังสือใต้ไอคอนจะโดนกินหายไปครึ่ง */
-          .pos-rail { width: 100%; flex-direction: row; border-right: none; border-top: 1px solid var(--pos-line, #eee);
+          .pos-rail { width: 100%; flex-direction: row; border-right: none; border-top: 1px solid var(--pos-line, var(--posx-line, #eee));
                       position: sticky; bottom: 0; z-index: 20;
                       padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
           /* ปล่อยให้สูงตามเนื้อหา — ความสูงตายตัว 56px เหลือที่ให้บรรทัดล่างแค่ 2px
@@ -6705,7 +6705,7 @@ export default function PosPage() {
           {hasDesktopPosBridge() && (
             <button
               onClick={() => window.location.assign("/pos/app")}
-              style={{ flex: "none", height: 44, padding: "0 12px", color: "#1677ff" }}
+              style={{ flex: "none", height: 44, padding: "0 12px", color: "var(--posx-info-text, #1677ff)" }}
             >
               ← หน้า POS ใหม่
             </button>
@@ -6754,7 +6754,7 @@ export default function PosPage() {
       </header>
 
       {sessionError && !tokenRejected && (
-        <PosDismissibleAlert key={sessionError} style={{ background: "#fdecea", color: "#611a15", padding: 12, borderRadius: 8 }} onClose={() => setSessionError("")}>
+        <PosDismissibleAlert key={sessionError} style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8 }} onClose={() => setSessionError("")}>
           เชื่อมต่อไม่ได้: {sessionError} — ตรวจอินเทอร์เน็ตแล้วลอง{" "}
           <button onClick={() => void loadSession()} style={{ padding: "2px 10px" }}>เชื่อมต่อใหม่</button>
         </PosDismissibleAlert>
@@ -6764,7 +6764,7 @@ export default function PosPage() {
           ช่องเลือกผู้ขาย/PIN อยู่ในนี้เลย เพราะรีเฟรชหน้าทีไร PIN หายจากหน่วยความจำ
           ถ้าให้ไปหาในแท็บตั้งค่าคือเพิ่มคลิกให้กับสิ่งที่ต้องทำบ่อยที่สุดหลังรีเฟรช */}
       {session && !canSell && tab !== "boardgame" && (
-        <PosDismissibleAlert style={{ background: "#fff", padding: 12, borderRadius: 8 }}>
+        <PosDismissibleAlert style={{ background: "var(--posx-surface, #fff)", padding: 12, borderRadius: 8 }}>
           <div style={{ fontWeight: 500, marginBottom: 6 }}>ยังขายไม่ได้ — เหลืออีก:</div>
           <ol style={{ margin: 0, paddingLeft: 20, fontSize: 14, lineHeight: 1.9 }}>
             {!anyCashierHasPin && (
@@ -6796,7 +6796,7 @@ export default function PosPage() {
         </PosDismissibleAlert>
       )}
       {hasPendingOrderWrite && (
-        <PosDismissibleAlert style={{ background: "#fff7e6", color: "#874d00", padding: 12, borderRadius: 8, border: "1px solid #ffd591" }}>
+        <PosDismissibleAlert style={{ background: "var(--posx-warn-bg, #fff7e6)", color: "var(--posx-warn-text, #874d00)", padding: 12, borderRadius: 8, border: "1px solid var(--posx-warn-line, #ffd591)" }}>
           ล็อกรายการไว้เพื่อกู้รายการเดิม กรุณากด {hasPendingDepositSale ? "“สร้างบิล + รับมัดจำ”" : "“ชำระเงิน”"} ซ้ำ
           ระบบจะตรวจคีย์เดิมก่อนและไม่สร้างบิลหรือรับเงินซ้ำ
         </PosDismissibleAlert>
@@ -6822,7 +6822,7 @@ export default function PosPage() {
             </PosHelp>
           </span>
           {session?.shift && (
-            <span style={{ color: "#666" }}>
+            <span style={{ color: "var(--posx-muted, #666)" }}>
               กะนี้คืนแล้ว {shiftReturnSummary.count} บิล · ฿{baht(shiftReturnSummary.total)}
             </span>
           )}
@@ -6843,7 +6843,7 @@ export default function PosPage() {
             {returnPanelOpen ? "▾" : "▸"} ผู้อนุมัติ
           </button>
           {approvalUserId && approvalPin && !returnPanelOpen && (
-            <span style={{ color: "#237804" }}>ตั้งผู้อนุมัติไว้แล้ว</span>
+            <span style={{ color: "var(--posx-ok-text, #237804)" }}>ตั้งผู้อนุมัติไว้แล้ว</span>
           )}
         </div>
 
@@ -6862,21 +6862,21 @@ export default function PosPage() {
             </button>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <div style={{ fontSize: 12, color: "#8a6100" }}>
+              <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)" }}>
                 โหมดนี้ใช้เมื่อหาใบเสร็จไม่เจอจริง ๆ เท่านั้น · ยิงบาร์โค้ดสินค้าได้จากหน้านี้เลย
                 ระบบจะใส่ของลงตะกร้าและพยายามค้นบิลที่เคยขายสินค้านี้ให้ด้านล่างพร้อมกัน ·
                 ถ้ายังหาใบเสร็จไม่ได้จึงค่อยให้หัวหน้าอนุมัติคืนตามราคาป้ายวันนี้ ({cart.length} รายการในตะกร้า) ·
                 จ่ายเป็นเงินสดจากลิ้นชัก · ไม่มีใบกำกับต้นทางให้อ้าง จึงออกใบลดหนี้ไม่ได้
               </div>
-              <PosDismissibleAlert style={{ background: "#fff7e6", border: "1px solid #ffd591", color: "#874d00", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
+              <PosDismissibleAlert style={{ background: "var(--posx-warn-bg, #fff7e6)", border: "1px solid var(--posx-warn-line, #ffd591)", color: "var(--posx-warn-text, #874d00)", borderRadius: 10, padding: "10px 12px", fontSize: 13 }}>
                 <div style={{ fontWeight: 700, marginBottom: 4 }}>ขั้นที่ 2 — ถ้ายังหาใบเสร็จไม่เจอจริง ค่อยกรอกส่วนนี้เพื่อคืนไม่มีใบเสร็จ</div>
                 <div>ส่วนนี้ไม่ใช่ช่องค้นบิล ใช้กรอกเหตุผลและผู้อนุมัติก่อนกด “ยืนยันคืน + จ่ายเงินสด” เท่านั้น</div>
               </PosDismissibleAlert>
-              <div style={{ fontSize: 12, color: "#555", background: "#fafafa", border: "1px dashed #d9d9d9", borderRadius: 8, padding: "8px 10px" }}>
+              <div style={{ fontSize: 12, color: "var(--posx-ink2, #555)", background: "var(--posx-soft, #fafafa)", border: "1px dashed var(--posx-line, #d9d9d9)", borderRadius: 8, padding: "8px 10px" }}>
                 Scanner ตอนนี้ = รับของคืน · ถ้าต้องการหาใบเสร็จเดิม ให้ใช้ช่องค้นบิลด้านล่างได้ทั้งเลขใบเสร็จ,
                 order id, barcode สินค้า, SKU, รหัสสมาชิก หรือเบอร์โทร
               </div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>เหตุผลคืนไม่มีใบเสร็จ</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>เหตุผลคืนไม่มีใบเสร็จ</div>
               <input
                 ref={blindReasonRef}
                 value={blindReason}
@@ -6885,7 +6885,7 @@ export default function PosPage() {
                 placeholder="เหตุผล เช่น ใบเสร็จหาย ของอยู่ในสภาพเดิม ซื้อเมื่อวาน"
                 style={{ padding: 9, fontSize: 13 }}
               />
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#8a6100" }}>ผู้อนุมัติคืนไม่มีใบเสร็จ</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--posx-warn-text, #8a6100)" }}>ผู้อนุมัติคืนไม่มีใบเสร็จ</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <select
                   ref={blindApproverSelectRef}
@@ -6918,7 +6918,7 @@ export default function PosPage() {
 
         {returnPanelOpen && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 10 }}>
-            <span style={{ color: "#666" }}>ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):</span>
+            <span style={{ color: "var(--posx-muted, #666)" }}>ผู้อนุมัติ (ใช้เมื่อระบบร้องขอ):</span>
             <select
               ref={approvalUserSelectRef}
               value={approvalUserId}
@@ -6938,7 +6938,7 @@ export default function PosPage() {
               placeholder="PIN ผู้อนุมัติ"
               style={{ padding: 8, fontSize: 13, width: 130 }}
             />
-            <span style={{ fontSize: 12, color: "#888" }}>
+            <span style={{ fontSize: 12, color: "var(--posx-muted, #888)" }}>
               คืนตั้งแต่ ฿500 ขึ้นไปเริ่มมี approval flow · ตั้งแต่ ฿2,000 ถือเป็น high-value return
             </span>
           </div>
@@ -6946,15 +6946,15 @@ export default function PosPage() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
         <div style={{
-          border: shiftReturnSummary.pendingCount > 0 ? "1px solid #ffd591" : "1px solid var(--pos-line)",
-          background: shiftReturnSummary.pendingCount > 0 ? "#fff7e6" : "#f8fafc",
+          border: shiftReturnSummary.pendingCount > 0 ? "1px solid var(--posx-warn-line, #ffd591)" : "1px solid var(--pos-line)",
+          background: shiftReturnSummary.pendingCount > 0 ? "var(--posx-warn-bg, #fff7e6)" : "var(--posx-soft, #f8fafc)",
           borderRadius: 12,
           padding: 12,
         }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 14, fontWeight: 700, color: "#262626" }}>งานที่ต้องทำตอนนี้</div>
-              <div style={{ fontSize: 12, color: shiftReturnSummary.pendingCount > 0 ? "#8a6100" : "var(--pos-muted)" }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: "var(--posx-ink, #262626)" }}>งานที่ต้องทำตอนนี้</div>
+              <div style={{ fontSize: 12, color: shiftReturnSummary.pendingCount > 0 ? "var(--posx-warn-text, #8a6100)" : "var(--pos-muted)" }}>
                 {shiftReturnSummary.pendingCount > 0
                   ? `รอยืนยันคืนเงินจริง ${shiftReturnSummary.pendingCount} รายการ · ฿${baht(shiftReturnSummary.pendingTotal)}`
                   : "ไม่มีรายการคืนเงินจริงค้างยืนยัน"}
@@ -6987,8 +6987,8 @@ export default function PosPage() {
                 <div key={refund.id} className="pos-ret-pending-row" style={{
                   padding: 10,
                   borderRadius: 10,
-                  background: "#fff",
-                  border: "1px solid #ffe7ba",
+                  background: "var(--posx-surface, #fff)",
+                  border: "1px solid var(--posx-warn-line, #ffe7ba)",
                 }}>
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontWeight: 700, fontSize: 13 }}>
@@ -6999,7 +6999,7 @@ export default function PosPage() {
                       {refundSummary.remainingAfterRefund >= 0 ? ` · คงเหลือหลังคืน ฿${baht(refundSummary.remainingAfterRefund)}` : ""}
                     </div>
                   </div>
-                  <div style={{ fontSize: 12, color: "#8a6100", fontWeight: 700 }}>
+                  <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)", fontWeight: 700 }}>
                     รอยืนยันคืนเงินจริง
                   </div>
                   <input
@@ -7029,12 +7029,12 @@ export default function PosPage() {
               ))}
             </div>
           ) : shiftReturnSummary.pendingCount > 0 ? (
-            <div style={{ marginTop: 10, fontSize: 12, color: "#8a6100" }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--posx-warn-text, #8a6100)" }}>
               ยังไม่พบรายละเอียดครบทุกใบในรายการด้านล่าง ลองค้นเลขบิลหรือกดกลับมาที่แท็บนี้ใหม่เพื่อโหลดรายการล่าสุด
             </div>
           ) : null}
           {missingPendingTaskCount > 0 && (
-            <div style={{ marginTop: 10, fontSize: 12, color: "#8a6100" }}>
+            <div style={{ marginTop: 10, fontSize: 12, color: "var(--posx-warn-text, #8a6100)" }}>
               ยังมีรายการค้างอีก {missingPendingTaskCount} รายการที่ยังไม่ได้โหลดขึ้นจอนี้
             </div>
           )}
@@ -7100,7 +7100,7 @@ export default function PosPage() {
                 : deliveryIntakeState === "PARTIAL" ? "หยุดรับบาง provider" : "กำลังรับออร์เดอร์"}
             </div>
             {deliveryPauseNeedsManualAction ? (
-              <div className="pos-block-hint" style={{ marginTop: 8, color: "#b54708" }}>
+              <div className="pos-block-hint" style={{ marginTop: 8, color: "var(--posx-warn-text, #b54708)" }}>
                 สถานะบาง provider ยังไม่ยืนยันหรือซิงก์ไม่สำเร็จ — ตรวจและทำรายการบน provider tablet ด้วย
               </div>
             ) : null}
@@ -7135,13 +7135,13 @@ export default function PosPage() {
                     {order.providerCommandStatus ? ` · command ${order.providerCommandStatus}` : ""}
                   </div>
                   {order.acceptanceDeadlineAt ? (
-                    <div className="pos-block-hint" style={{ color: new Date(order.acceptanceDeadlineAt).getTime() <= Date.now() ? "#b42318" : undefined }}>
+                    <div className="pos-block-hint" style={{ color: new Date(order.acceptanceDeadlineAt).getTime() <= Date.now() ? "var(--posx-danger-text, #b42318)" : undefined }}>
                       รับภายใน {new Date(order.acceptanceDeadlineAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                     </div>
                   ) : null}
-                  {order.providerCommandError ? <div className="pos-block-hint" style={{ color: "#b42318" }}>{order.providerCommandError}</div> : null}
+                  {order.providerCommandError ? <div className="pos-block-hint" style={{ color: "var(--posx-danger-text, #b42318)" }}>{order.providerCommandError}</div> : null}
                   {order.providerCommandStatus === "MANUAL_ACTION_REQUIRED" ? (
-                    <div className="pos-block-hint" style={{ color: "#b54708" }}>
+                    <div className="pos-block-hint" style={{ color: "var(--posx-warn-text, #b54708)" }}>
                       สถานะฝั่ง provider ยังไม่ยืนยัน — ทำรายการเดียวกันบน provider tablet และตรวจเลขออร์เดอร์ให้ตรงกัน
                     </div>
                   ) : null}
@@ -7416,7 +7416,7 @@ export default function PosPage() {
 
           <div className="pos-block">
             <div className="pos-block-title">ทำรายการ</div>
-            <div style={{ background: "#f0f7ff", border: "1px solid #91caff", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+            <div style={{ background: "var(--posx-info-bg, #f0f7ff)", border: "1px solid var(--posx-info-line, #91caff)", borderRadius: 8, padding: 10, marginBottom: 10 }}>
               <b>ลูกค้าหน้าร้าน:</b> ใส่สินค้าในตะกร้าตามปกติ ใส่ยอดมัดจำในช่องนี้ แล้วกดสร้างบิล
               ระบบจะสร้าง Order ID, คำนวณราคาล่าสุด และจองสต็อกให้อัตโนมัติ
               {/* ช่องยอดอยู่ในกล่องนี้ ไม่ใช่กลุ่ม "บิลที่ต้องการทำรายการ" ข้างล่าง —
@@ -8249,8 +8249,8 @@ export default function PosPage() {
                     key={row.id}
                     style={{
                       display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
-                      border: shiftReport?.shiftId === row.id ? "1px solid #91caff" : "1px solid var(--pos-line)",
-                      background: shiftReport?.shiftId === row.id ? "#e6f4ff" : "#fff",
+                      border: shiftReport?.shiftId === row.id ? "1px solid var(--posx-info-line, #91caff)" : "1px solid var(--pos-line)",
+                      background: shiftReport?.shiftId === row.id ? "var(--posx-info-bg, #e6f4ff)" : "var(--posx-surface, #fff)",
                       borderRadius: 10, padding: "9px 10px",
                     }}
                   >
@@ -8331,7 +8331,7 @@ export default function PosPage() {
           {session?.businessArchetype === "restaurant" && (
             <div>
               <div style={{ fontWeight: 500, marginBottom: 8 }}>เสียงเตือนออร์เดอร์เข้า</div>
-              <div style={{ fontSize: 13, color: "#555", marginBottom: 8 }}>
+              <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", marginBottom: 8 }}>
                 ตั้งค่าเฉพาะเครื่องนี้ — เครื่องขายกับจอครัวตั้งคนละแบบได้
               </div>
               <button type="button" className="pos-btn" onClick={() => setAlertSettingsOpen(true)}>
@@ -8342,11 +8342,11 @@ export default function PosPage() {
           <div>
             <div style={{ fontWeight: 500, marginBottom: 8 }}>ผู้ขายที่เครื่องนี้</div>
             {/* ช่องจริงอยู่แถบบนช่องเดียว — มีสองที่แล้วสับสนว่าต้องกรอกอันไหน */}
-            <div style={{ fontSize: 13, color: "#555" }}>
+            <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)" }}>
               {currentCashierName ? `กำลังขายในชื่อ ${currentCashierName}` : "ยังไม่ได้เลือกผู้ขาย"}
               {currentCashierName && !pin ? " · ยังไม่ใส่ PIN" : ""}
             </div>
-            <div style={{ fontSize: 12, color: "#888", marginTop: 6 }}>
+            <div style={{ fontSize: 12, color: "var(--posx-muted, #888)", marginTop: 6 }}>
               เปลี่ยนผู้ขาย/ใส่ PIN ได้ที่แถบด้านบน · PIN เก็บในหน่วยความจำเท่านั้น รีเฟรชหน้าแล้วต้องใส่ใหม่
             </div>
           </div>
@@ -8359,7 +8359,7 @@ export default function PosPage() {
                   {printerReady ? "เครื่องพิมพ์ ✓ — เปลี่ยนเครื่อง" : "ตั้งค่าเครื่องพิมพ์"}
                 </button>
               ) : (
-                <span style={{ fontSize: 13, color: "#888" }}>
+                <span style={{ fontSize: 13, color: "var(--posx-muted, #888)" }}>
                   เบราว์เซอร์นี้ไม่รองรับ WebUSB — จะพิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์แทน
                 </span>
               )}
@@ -8402,7 +8402,7 @@ export default function PosPage() {
 
           <div>
             <div style={{ fontWeight: 500, marginBottom: 8 }}>เครื่องขาย</div>
-            <div style={{ fontSize: 13, color: "#555", lineHeight: 1.9 }}>
+            <div style={{ fontSize: 13, color: "var(--posx-ink2, #555)", lineHeight: 1.9 }}>
               <div>{session?.location?.name ?? "—"} · สาขา {session?.location?.branchCode ?? "—"}</div>
               <div>{session?.device.code}{session?.device.registeredPosNo ? ` · POS#${session.device.registeredPosNo}` : ""}</div>
             </div>
@@ -8502,9 +8502,9 @@ export default function PosPage() {
           </div>
           {(searching || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
-              {searching && <div style={{ fontSize: 12, color: "#666" }}>กำลังค้นสินค้า…</div>}
+              {searching && <div style={{ fontSize: 12, color: "var(--posx-muted, #666)" }}>กำลังค้นสินค้า…</div>}
               {!searching && searchResults.length === 0 && searchTerm.trim().length >= 2 && (
-                <div style={{ fontSize: 12, color: "#999" }}>ไม่พบสินค้าที่พร้อมขายจากคำค้นนี้</div>
+                <div style={{ fontSize: 12, color: "var(--posx-muted, #999)" }}>ไม่พบสินค้าที่พร้อมขายจากคำค้นนี้</div>
               )}
               {searchResults.map((item) => (
                 <button
@@ -8519,9 +8519,9 @@ export default function PosPage() {
                     }
                   }}
                   style={{
-                    border: "1px solid #eee",
+                    border: "1px solid var(--posx-line, #eee)",
                     borderRadius: 8,
-                    background: "#fafafa",
+                    background: "var(--posx-soft, #fafafa)",
                     padding: "10px 12px",
                     textAlign: "left",
                   }}
@@ -8534,7 +8534,7 @@ export default function PosPage() {
                     />
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 500 }}>{item.name}</div>
-                      <div style={{ fontSize: 12, color: "#666" }}>
+                      <div style={{ fontSize: 12, color: "var(--posx-muted, #666)" }}>
                         {item.sku} · ฿{baht(item.price)} · เหลือ {item.availableTotal}
                         {item.availableSizes.length > 0
                           ? ` · ${item.availableSizes.map((v) => `${v.size}:${v.available}`).join(" / ")}`
@@ -8557,9 +8557,9 @@ export default function PosPage() {
                         style={{
                           padding: "4px 8px",
                           borderRadius: 999,
-                          border: "1px solid #d9d9d9",
+                          border: "1px solid var(--posx-line, #d9d9d9)",
                           fontSize: 12,
-                          background: "#fff",
+                          background: "var(--posx-surface, #fff)",
                           cursor: "pointer",
                         }}
                       >
@@ -8610,7 +8610,7 @@ export default function PosPage() {
           </div>
 
           {lookup && (
-            <div style={{ marginTop: 10, border: "1px solid #ffe58f", background: "#fffbe6", borderRadius: 8, padding: 12 }}>
+            <div style={{ marginTop: 10, border: "1px solid var(--posx-warn-line, #ffe58f)", background: "var(--posx-warn-bg, #fffbe6)", borderRadius: 8, padding: 12 }}>
               <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
                 <ProductThumb
                   url={lookup.imageUrl}
@@ -8620,13 +8620,13 @@ export default function PosPage() {
                 />
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 500 }}>{lookup.productName}</div>
-                  <div style={{ fontSize: 13, color: "#666", marginTop: 2 }}>
+                  <div style={{ fontSize: 13, color: "var(--posx-muted, #666)", marginTop: 2 }}>
                     {lookup.sku}
                     {lookup.size && lookup.size !== "-" ? ` · ไซซ์ ${lookup.size}` : ""} · {lookup.unitName}
                   </div>
                   <div style={{ marginTop: 8, display: "flex", gap: 20, alignItems: "baseline" }}>
                     <span style={{ fontSize: 20, fontWeight: 500 }}>฿{baht(lookup.packPrice)}</span>
-                    <span style={{ fontSize: 15, color: lookup.available > 0 ? "#237804" : "#a8071a" }}>
+                    <span style={{ fontSize: 15, color: lookup.available > 0 ? "var(--posx-ok-text, #237804)" : "var(--posx-danger-text, #a8071a)" }}>
                       {lookup.available > 0 ? `เหลือ ${lookup.available}` : "หมด"}
                     </span>
                   </div>
@@ -8698,7 +8698,7 @@ export default function PosPage() {
                     )}
                   </div>
                   {(l.modifierCodes?.length ?? 0) > 0 && (
-                    <div style={{ marginTop: 4, color: "#176b52", fontSize: 12, fontWeight: 600 }}>
+                    <div style={{ marginTop: 4, color: "var(--posx-ok-text, #176b52)", fontSize: 12, fontWeight: 600 }}>
                       ตัวเลือก: {l.modifierCodes!.map((code) =>
                         l.modifiers?.find((modifier) => modifier.code === code)?.name ?? code
                       ).join(" · ")}
@@ -9294,11 +9294,11 @@ export default function PosPage() {
                 {(memberPreview?.reservationDepositApplied ?? 0) > 0 && (
                   <div>ใช้มัดจำการจอง −฿{baht(memberPreview!.reservationDepositApplied!)}</div>
                 )}
-                {memberPreview?.capped && <div style={{ color: "#c9455a" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
+                {memberPreview?.capped && <div style={{ color: "var(--posx-danger-text, #c9455a)" }}>ส่วนลดถูกตัดเพราะชนเพดานของร้าน</div>}
               </div>
             )}
             {memberPreview?.status && memberPreview.status !== "READY" && (
-              <div className="pos-total-break" style={{ color: "#c9455a", borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
+              <div className="pos-total-break" style={{ color: "var(--posx-danger-text, #c9455a)", borderTop: "1px solid var(--pos-line)", paddingTop: 7, marginTop: 8 }}>
                 {memberPreview.reason || memberPreview.couponError || "ตรวจราคาบิลล่าสุดไม่สำเร็จ"}
               </div>
             )}
@@ -9444,7 +9444,7 @@ export default function PosPage() {
                       style={{ width: 110 }}
                     />
                   </div>
-                  {discountError && <span style={{ fontSize: 12, color: "#c9455a" }}>{discountError}</span>}
+                  {discountError && <span style={{ fontSize: 12, color: "var(--posx-danger-text, #c9455a)" }}>{discountError}</span>}
                   <div style={{ display: "flex", gap: 8 }}>
                     <button type="button" className="pos-btn-primary" style={{ flex: 1 }} onClick={applyManualDiscount}>
                       ใช้ส่วนลด
@@ -9504,7 +9504,7 @@ export default function PosPage() {
                     <span
                       style={{
                         fontSize: 12,
-                        color: memberPreview.pointsWillEarn > 0 ? "var(--pos-muted)" : "#c9455a",
+                        color: memberPreview.pointsWillEarn > 0 ? "var(--pos-muted)" : "var(--posx-danger-text, #c9455a)",
                       }}
                     >
                       {memberPreview.pointsWillEarn > 0
@@ -9636,7 +9636,7 @@ export default function PosPage() {
                   )}
 
                   {member.pointsBalance < 0 && (
-                    <span style={{ fontSize: 12, color: "#c9455a" }}>
+                    <span style={{ fontSize: 12, color: "var(--posx-danger-text, #c9455a)" }}>
                       แต้มติดลบ {member.pointsBalance} (จากการคืนสินค้า) — แต้มที่ได้ครั้งถัดไปจะกลบยอดนี้ก่อน
                     </span>
                   )}
@@ -9804,8 +9804,8 @@ export default function PosPage() {
             <div
               style={{
                 marginTop: 12, padding: "8px 10px", borderRadius: 8, fontSize: 13,
-                background: arAccount.overdueAmount > 0 ? "#fff1f0" : "#f6f8fa",
-                border: `1px solid ${arAccount.overdueAmount > 0 ? "#ffccc7" : "#e3e8ee"}`,
+                background: arAccount.overdueAmount > 0 ? "var(--posx-danger-bg, #fff1f0)" : "var(--posx-soft, #f6f8fa)",
+                border: `1px solid ${arAccount.overdueAmount > 0 ? "var(--posx-danger-line, #ffccc7)" : "var(--posx-line, #e3e8ee)"}`,
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
@@ -9815,7 +9815,7 @@ export default function PosPage() {
                     ขายเชื่อจะตัดสต็อกและสร้างหนี้ลูกค้า แต่ไม่เพิ่มเงินสดในลิ้นชัก เครดิตคืนสินค้าใช้หักยอดขายเชื่อก่อน แล้วจึงใช้วงเงินที่เหลือ
                   </PosHelp>
                   {arAccount.status !== "ACTIVE" && (
-                    <span style={{ color: "#cf1322", marginInlineStart: 6 }}>
+                    <span style={{ color: "var(--posx-danger-text, #cf1322)", marginInlineStart: 6 }}>
                       {arAccount.status === "ON_HOLD" ? "· ถูกระงับการขายเชื่อ" : "· ปิดบัญชีแล้ว"}
                     </span>
                   )}
@@ -9831,13 +9831,13 @@ export default function PosPage() {
                 <span>วงเงินเหลือ <strong>฿{baht(arAccount.creditLineAvailable)}</strong></span>
               </div>
               {arAccount.creditBalance > 0 && (
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, flexWrap: "wrap", color: "#237804" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, flexWrap: "wrap", color: "var(--posx-ok-text, #237804)" }}>
                   <span>เครดิตคืนสินค้า ฿{baht(arAccount.creditBalance)}</span>
                   <span>ขายเชื่อได้รวม ฿{baht(arAccount.availableCredit)}</span>
                 </div>
               )}
               {arAccount.overdueAmount > 0 && (
-                <div style={{ marginTop: 4, color: "#cf1322", fontWeight: 500 }}>
+                <div style={{ marginTop: 4, color: "var(--posx-danger-text, #cf1322)", fontWeight: 500 }}>
                   เลยกำหนดชำระ ฿{baht(arAccount.overdueAmount)}
                 </div>
               )}
@@ -9892,7 +9892,7 @@ export default function PosPage() {
             <div
               style={{
                 marginTop: 8, padding: "8px 10px", borderRadius: 8, fontSize: 13,
-                background: "#fffbe6", border: "1px solid #ffe58f",
+                background: "var(--posx-warn-bg, #fffbe6)", border: "1px solid var(--posx-warn-line, #ffe58f)",
               }}
             >
               <div style={{ marginBottom: 6 }}>
@@ -9981,7 +9981,7 @@ export default function PosPage() {
               return (
                 <div
                   key={payment.id}
-                  style={{ border: "1px solid #eee", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}
+                  style={{ border: "1px solid var(--posx-line, #eee)", borderRadius: 8, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}
                 >
                   {/* จ่ายวิธีเดียว: วิธีเลือกจากแถบปุ่มด้านบนแล้ว และยอดต้องเท่ายอดบิล
                       เสมอ (server ปฏิเสธถ้าไม่ตรง) — ไม่ต้องมีช่องให้พิมพ์ผิด */}
@@ -10031,7 +10031,7 @@ export default function PosPage() {
                         style={{ width: "100%", padding: 10, fontSize: 14 }}
                       />
                       {normalized?.numericTendered > 0 && (
-                        <div style={{ marginTop: 6, fontSize: 13, color: "#444" }}>
+                        <div style={{ marginTop: 6, fontSize: 13, color: "var(--posx-ink2, #444)" }}>
                           เงินทอนรายการนี้ <strong>฿{baht(normalized.numericChange)}</strong>
                         </div>
                       )}
@@ -10054,7 +10054,7 @@ export default function PosPage() {
                   + เพิ่มวิธีจ่าย
                 </button>
               )}
-              <div style={{ fontSize: 13, textAlign: "right", color: paymentSummary.remaining === 0 ? "#1e4620" : "#8a6100" }}>
+              <div style={{ fontSize: 13, textAlign: "right", color: paymentSummary.remaining === 0 ? "var(--posx-ok-text, #1e4620)" : "var(--posx-warn-text, #8a6100)" }}>
                 รับแล้ว ฿{baht(paymentSummary.paid)} ·
                 {paymentSummary.remaining > 0
                   ? ` คงเหลือ ฿${baht(paymentSummary.remaining)}`
@@ -10070,10 +10070,10 @@ export default function PosPage() {
               marginTop: 10,
               padding: "10px 12px",
               borderRadius: 10,
-              border: "1px solid #cfe6ff",
-              background: pharmacyReviewLink.status === "APPROVED" ? "#eef8ee" : "#f5f9ff",
+              border: "1px solid var(--posx-info-line, #cfe6ff)",
+              background: pharmacyReviewLink.status === "APPROVED" ? "var(--posx-ok-bg, #eef8ee)" : "var(--posx-soft, #f5f9ff)",
               fontSize: 13,
-              color: "#234",
+              color: "var(--posx-ink2, #234)",
               lineHeight: 1.5,
             }}>
               เคสเภสัช {pharmacyReviewLink.caseCode} · {pharmacyReviewStatusLabel(pharmacyReviewLink.status)}
@@ -10081,8 +10081,8 @@ export default function PosPage() {
 
               {/* แนบหลักฐาน — ไม่บังคับ ตามที่ตกลงว่าให้เภสัชกรเป็นคนตัดสิน
                   แนบแล้วไม่แสดงย้อนหลังที่เครื่องขายโดยตั้งใจ (ไม่มีสิทธิ์อ่าน) */}
-              <div style={{ marginTop: 8, borderTop: "1px dashed #cfe6ff", paddingTop: 8 }}>
-                <div style={{ fontSize: 12, color: "#567", marginBottom: 6, display: "flex", alignItems: "center" }}>
+              <div style={{ marginTop: 8, borderTop: "1px dashed var(--posx-info-line, #cfe6ff)", paddingTop: 8 }}>
+                <div style={{ fontSize: 12, color: "var(--posx-ink2, #567)", marginBottom: 6, display: "flex", alignItems: "center" }}>
                   แนบหลักฐานให้เภสัชกร (ไม่บังคับ)
                   <PosHelp title="หลักฐานสุขภาพ" align="right">
                     รูปใบสั่งยาและบันทึกคำแนะนำเป็นข้อมูลสุขภาพ จำกัดสิทธิ์การเปิดดูและไม่แสดงไฟล์ย้อนหลังบนเครื่องขายทั่วไป
@@ -10129,7 +10129,7 @@ export default function PosPage() {
                   </button>
                 </div>
                 {!pin && (
-                  <div style={{ fontSize: 11, color: "#a15", marginTop: 4 }}>
+                  <div style={{ fontSize: 11, color: "var(--posx-danger-text, #a15)", marginTop: 4 }}>
                     ใส่ PIN ของคนขายก่อนจึงแนบได้
                   </div>
                 )}
@@ -10144,15 +10144,15 @@ export default function PosPage() {
               marginTop: 10,
               padding: 12,
               borderRadius: 10,
-              border: `1px solid ${pharmacistAuth ? "#b7eb8f" : "#91caff"}`,
-              background: pharmacistAuth ? "#f6ffed" : "#f0f7ff",
+              border: `1px solid ${pharmacistAuth ? "var(--posx-ok-line, #b7eb8f)" : "var(--posx-info-line, #91caff)"}`,
+              background: pharmacistAuth ? "var(--posx-ok-bg, #f6ffed)" : "var(--posx-info-bg, #f0f7ff)",
               display: "flex",
               flexDirection: "column",
               gap: 8,
             }}>
               {pharmacistAuth ? (
                 <>
-                  <div style={{ fontSize: 13, color: "#245", lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 13, color: "var(--posx-ink2, #245)", lineHeight: 1.5 }}>
                     เภสัชกร <b>{pharmacistAuth.name}</b> อนุมัติจ่ายยาของบิลนี้แล้ว — กดชำระเงินได้เลย
                     {pharmacistAuth.note ? <><br />บันทึก: {pharmacistAuth.note}</> : null}
                   </div>
@@ -10166,7 +10166,7 @@ export default function PosPage() {
                 </>
               ) : (
                 <>
-                  <div style={{ fontSize: 13, color: "#234", lineHeight: 1.5 }}>
+                  <div style={{ fontSize: 13, color: "var(--posx-ink2, #234)", lineHeight: 1.5 }}>
                     <span style={{ display: "inline-flex", alignItems: "center" }}>
                       การอนุมัติของเภสัชกร
                       <PosHelp title="อนุมัติเฉพาะบิลนี้" align="right">
@@ -10222,12 +10222,12 @@ export default function PosPage() {
                     </button>
                   </div>
                   {(session?.cashiers ?? []).every((c) => !c.isPharmacist) && (
-                    <div style={{ fontSize: 11, color: "#a15" }}>
+                    <div style={{ fontSize: 11, color: "var(--posx-danger-text, #a15)" }}>
                       ยังไม่มีใครถูกบันทึกว่าเป็นเภสัชกรผู้มีใบอนุญาตในร้านนี้ — ตั้งค่าที่หน้าผู้ใช้ก่อน
                     </div>
                   )}
                   {pharmacistAuthError && (
-                    <div style={{ fontSize: 12, color: "#c00" }}>{pharmacistAuthError}</div>
+                    <div style={{ fontSize: 12, color: "var(--posx-danger-text, #c00)" }}>{pharmacistAuthError}</div>
                   )}
                 </>
               )}
@@ -10239,13 +10239,13 @@ export default function PosPage() {
               marginTop: 10,
               padding: 12,
               borderRadius: 10,
-              border: "1px solid #ffd591",
-              background: "#fff7e6",
+              border: "1px solid var(--posx-warn-line, #ffd591)",
+              background: "var(--posx-warn-bg, #fff7e6)",
               display: "flex",
               flexDirection: "column",
               gap: 8,
             }}>
-              <div style={{ fontSize: 13, color: "#7a4b00", lineHeight: 1.5 }}>
+              <div style={{ fontSize: 13, color: "var(--posx-warn-text, #7a4b00)", lineHeight: 1.5 }}>
                 บิลนี้ต้องส่งให้เภสัชกรตรวจ{pharmacyReviewOffer.requiresSafetyCheck ? "และซักประวัติก่อน" : ""}ก่อนรับเงิน
               </div>
               <button
@@ -10374,7 +10374,7 @@ export default function PosPage() {
                 const checked = selectedModifierCodes.includes(modifier.code);
                 return <label key={modifier.code} style={{
                   display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
-                  border: `1px solid ${checked ? "#2b9b74" : "var(--pos-line)"}`,
+                  border: `1px solid ${checked ? "var(--posx-ok-line, #2b9b74)" : "var(--pos-line)"}`,
                   borderRadius: 10, background: checked ? "rgba(43,155,116,.1)" : "var(--pos-sunken)", cursor: "pointer",
                 }}>
                   <input type="checkbox" checked={checked} onChange={() => setSelectedModifierCodes((current) =>
@@ -10391,7 +10391,7 @@ export default function PosPage() {
                 setModifierHit(null);
                 setSelectedModifierCodes([]);
                 scanRef.current?.focus();
-              }} style={{ minHeight: 44, background: "#176b52", color: "#fff", border: 0, borderRadius: 7, fontWeight: 700 }}>
+              }} style={{ minHeight: 44, background: "var(--posx-ok-bg, #176b52)", color: "#fff", border: 0, borderRadius: 7, fontWeight: 700 }}>
                 เพิ่มลงตะกร้า{selectedModifierCodes.length ? ` · ${selectedModifierCodes.length} ตัวเลือก` : ""}
               </button>
             </div>
@@ -10428,7 +10428,7 @@ export default function PosPage() {
               <span>สมัครสมาชิก · {enrollStep === "phone" ? "1/2 เบอร์โทร" : "2/2 ชื่อลูกค้า"}</span>
               <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 {/* บอกสถานะ PIN ตั้งแต่หัวกล่อง ไม่ให้กรอกจนจบแล้วเจอ 403 */}
-                <span style={{ fontSize: 12, color: cashierId && pin ? "#12805c" : "#c9455a" }}>
+                <span style={{ fontSize: 12, color: cashierId && pin ? "var(--posx-ok-text, #12805c)" : "var(--posx-danger-text, #c9455a)" }}>
                   {cashierId && pin ? "PIN พร้อม" : "ยังไม่ได้ใส่ PIN"}
                 </span>
                 <button
@@ -10448,7 +10448,7 @@ export default function PosPage() {
                   <div
                     aria-live="polite"
                     style={{
-                      background: "var(--pos-sunken)", border: "1px solid #5dcaa5", borderRadius: 8,
+                      background: "var(--pos-sunken)", border: "1px solid var(--posx-ok-line, #5dcaa5)", borderRadius: 8,
                       padding: "10px 12px", fontSize: 22, letterSpacing: 1, minHeight: 46,
                       fontVariantNumeric: "tabular-nums", wordBreak: "break-all",
                     }}
@@ -10528,7 +10528,7 @@ export default function PosPage() {
                 </span>
                 {/* สมัครสมาชิก = เขียน CRM จริง ต้องมีคนรับผิดชอบ (PIN) เสมอ */}
                 {(!cashierId || !pin) && (
-                  <span style={{ fontSize: 12, color: "#c9455a" }}>
+                  <span style={{ fontSize: 12, color: "var(--posx-danger-text, #c9455a)" }}>
                     เลือกผู้ขายและใส่ PIN ที่แถบด้านบนก่อน จึงสมัครสมาชิกได้
                   </span>
                 )}
@@ -10575,7 +10575,7 @@ export default function PosPage() {
             aria-modal="true"
             aria-label={`รูปสินค้า ${imagePreview.label}`}
             style={{
-              background: "#111", color: "#fff", borderRadius: 12,
+              background: "var(--posx-inkbg, #111)", color: "#fff", borderRadius: 12,
               maxWidth: "min(560px, 100%)", overflow: "hidden",
             }}
           >
@@ -10603,7 +10603,7 @@ export default function PosPage() {
               alt={imagePreview.label}
               style={{
                 display: "block", width: "100%", maxHeight: "70vh",
-                objectFit: "contain", background: "#000",
+                objectFit: "contain", background: "var(--posx-inkbg, #000)",
               }}
             />
           </div>
@@ -10624,7 +10624,7 @@ export default function PosPage() {
             aria-modal="true"
             aria-label="สแกนด้วยกล้องมือถือ"
             style={{
-              background: "#111", color: "#fff", borderRadius: 12, width: 340, maxWidth: "100%",
+              background: "var(--posx-inkbg, #111)", color: "#fff", borderRadius: 12, width: 340, maxWidth: "100%",
               overflow: "hidden",
             }}
           >
@@ -10645,7 +10645,7 @@ export default function PosPage() {
                 ✕
               </button>
             </div>
-            <div style={{ position: "relative", background: "#000", lineHeight: 0 }}>
+            <div style={{ position: "relative", background: "var(--posx-inkbg, #000)", lineHeight: 0 }}>
               {/* muted+playsInline บังคับสำหรับ autoplay บนมือถือ — ขาดตัวใดตัวหนึ่งแล้ว
                   Safari/Chrome บนมือถือจะไม่เล่นวิดีโอให้เอง */}
               <video
@@ -10661,10 +10661,10 @@ export default function PosPage() {
                   alignItems: "center", justifyContent: "center", pointerEvents: "none",
                 }}
               >
-                <div style={{ width: 160, height: 160, border: "2px solid #f0a468", borderRadius: 10 }} />
+                <div style={{ width: 160, height: 160, border: "2px solid var(--posx-warn-line, #f0a468)", borderRadius: 10 }} />
               </div>
             </div>
-            <div style={{ padding: "10px 14px", fontSize: 12, color: cameraError ? "#ffb4a3" : "#c7cdc3" }}>
+            <div style={{ padding: "10px 14px", fontSize: 12, color: cameraError ? "var(--posx-danger-text, #ffb4a3)" : "var(--posx-muted, #c7cdc3)" }}>
               {cameraError
                 || (cameraPreparing ? "กำลังเตรียมตัวอ่านบาร์โค้ดสำหรับเบราว์เซอร์นี้…" : null)
                 || "ส่องกล้องให้เห็นบาร์โค้ด/QR ชัด ๆ — เจอแล้วเพิ่มลงตะกร้าให้อัตโนมัติ"}
@@ -10694,7 +10694,7 @@ export default function PosPage() {
             aria-modal="true"
             aria-label="ใบเสร็จ"
             style={{
-              background: "#fff", color: "#111", borderRadius: 12, width: 380, maxWidth: "100%",
+              background: "var(--posx-surface, #fff)", color: "var(--posx-ink, #111)", borderRadius: 12, width: 380, maxWidth: "100%",
               maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
             }}
           >
@@ -10703,12 +10703,12 @@ export default function PosPage() {
               (พร้อมคำสั่งเปิดลิ้นชัก) ค่อยทำเมื่อได้เครื่องจริงมาทดสอบ */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
-            padding: "12px 14px", borderBottom: "1px solid #e5e5e5",
+            padding: "12px 14px", borderBottom: "1px solid var(--posx-line, #e5e5e5)",
           }}>
             <span style={{
               fontSize: 12, padding: "3px 10px", borderRadius: 8, whiteSpace: "nowrap",
-              background: receipt.receiptType === "return" ? "#fdecec" : "#e7f6ec",
-              color: receipt.receiptType === "return" ? "#a32d2d" : "#1a6b3c",
+              background: receipt.receiptType === "return" ? "var(--posx-danger-bg, #fdecec)" : "var(--posx-ok-bg, #e7f6ec)",
+              color: receipt.receiptType === "return" ? "var(--posx-danger-text, #a32d2d)" : "var(--posx-ok-text, #1a6b3c)",
             }}>
               {receipt.receiptType === "return" ? "รับคืน" : receipt.receiptType === "exchange" ? "เปลี่ยนสินค้า" : "สำเร็จ"}
             </span>
@@ -10718,7 +10718,7 @@ export default function PosPage() {
                   ? receipt.docNo ? `ใบลดหนี้ ${receipt.docNo}` : "ใบรับคืนสินค้า"
                   : receipt.docNo ?? (receipt.receiptType === "exchange" ? "ใบเตรียมเปลี่ยนสินค้า" : "(ไม่มีเลขใบกำกับ)")}
               </div>
-              <div style={{ fontSize: 12, color: "#666", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <div style={{ fontSize: 12, color: "var(--posx-muted, #666)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 ฿{baht(receipt.refundTotal ?? receipt.total)} · {receipt.receiptType === "return"
                   ? (getReturnPaymentLabel(receipt) ?? "คืนเงินตามบิลเดิม")
                   : receipt.paymentLabel}
@@ -10727,12 +10727,12 @@ export default function PosPage() {
                   : ""}
               </div>
               {receipt.receiptType === "return" && (
-                <div style={{ fontSize: 12, color: "#8a6100", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   เอกสารรับคืนแยกจากบิลขายเดิม{receipt.referenceDocNo ? ` · อ้างอิง ${receipt.referenceDocNo}` : ""}
                 </div>
               )}
               {(!receipt.receiptType || receipt.receiptType === "sale") && activeReceiptRefundSummary?.hasReturnActivity && (
-                <div style={{ fontSize: 12, color: "#8a6100", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ fontSize: 12, color: "var(--posx-warn-text, #8a6100)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   นี่คือใบขายเดิม · คืนแล้ว ฿{baht(activeReceiptRefundSummary.refundedTotal)} · คงเหลือหลังคืน ฿{baht(activeReceiptRefundSummary.remainingAfterRefund)}
                 </div>
               )}
@@ -10747,14 +10747,14 @@ export default function PosPage() {
           </div>
 
             <div style={{
-            overflowY: "auto", background: "#f4f4f4",
+            overflowY: "auto", background: "var(--posx-soft, #f4f4f4)",
             padding: 14, display: "flex", justifyContent: "center",
           }}>
           <div style={{ width: 280, maxWidth: "100%" }}>
             {(!receipt.receiptType || receipt.receiptType === "sale") && activeReceiptRefundSummary?.hasReturnActivity && (
               <PosDismissibleAlert style={{
                 marginBottom: 10, padding: "10px 12px", borderRadius: 8,
-                background: "#fff7e6", color: "#8a6100", fontSize: 12, lineHeight: 1.5,
+                background: "var(--posx-warn-bg, #fff7e6)", color: "var(--posx-warn-text, #8a6100)", fontSize: 12, lineHeight: 1.5,
               }}>
                 ใบนี้คือใบขายเดิม ยอดสุทธิบนกระดาษยังเป็นยอดตอนขายจริง
                 <br />
@@ -10773,7 +10773,7 @@ export default function PosPage() {
               ทำให้ปุ่มพิมพ์ถูกบีบจนข้อความตกบรรทัดและปุ่มปิดหลุดขอบ */}
           <div style={{
             display: "flex", flexDirection: "column", gap: 8,
-            padding: "12px 14px", borderTop: "1px solid #e5e5e5",
+            padding: "12px 14px", borderTop: "1px solid var(--posx-line, #e5e5e5)",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button
@@ -10782,7 +10782,7 @@ export default function PosPage() {
               >
                 {receipt.receiptType === "return"
                   ? "พิมพ์ใบรับคืน"
-                  : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "#888" }}>Enter</span>
+                  : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "var(--posx-muted, #888)" }}>Enter</span>
               </button>
               {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
               {printerReady && (
@@ -10798,7 +10798,7 @@ export default function PosPage() {
                 onClick={() => setReceiptModalOpen(false)}
                 style={{ padding: "10px 16px", whiteSpace: "nowrap", marginLeft: "auto" }}
               >
-                ปิด <span style={{ fontSize: 11, color: "#888" }}>Esc</span>
+                ปิด <span style={{ fontSize: 11, color: "var(--posx-muted, #888)" }}>Esc</span>
               </button>
             </div>
             {/* ส่งสำเนาให้ลูกค้า (8.6) — ไม่ใช่เอกสารภาษีใบใหม่ อ่านเลขจากใบที่ออกแล้ว

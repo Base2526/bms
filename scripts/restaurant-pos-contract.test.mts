@@ -2477,3 +2477,16 @@ test("the restaurant register has a settings screen that reuses the retail setti
   assert.match(section, /suppressCustomerDisplay: true/, "the panel must not overwrite the open check on the customer display");
   assert.doesNotMatch(page, /<CustomerDisplaySettings/, "no second copy of the customer-display settings");
 });
+
+test("the restaurant register recovers from a revoked device token without a runtime overlay", async () => {
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /class RestaurantApiError extends Error/);
+  assert.match(page, /cause instanceof RestaurantApiError && cause\.status === 401/);
+  assert.match(page, /if \(tokenRejected\) return/);
+  assert.match(page, /enabled: Boolean\(token\) && !tokenRejected/);
+
+  const start = page.indexOf("async function unpairFromSettings()");
+  const section = page.slice(start, page.indexOf("async function loadFloor", start));
+  assert.ok(section.indexOf('setToken("")') < section.indexOf("await clearPosDeviceToken()"),
+    "polling must stop before the native shell invalidates its credential");
+});

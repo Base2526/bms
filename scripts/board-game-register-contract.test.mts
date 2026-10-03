@@ -381,9 +381,10 @@ test("the desktop floor follows the compact board-game operations mockup", () =>
     "sticky",
     "the action bar must remain reachable while the selected table scrolls",
   );
+  // Light value stays #f4f8ff; the wrapper lets the dark restaurant theme recolour it.
   assert.equal(
     declaration(".pos-bg-session-hero", "background"),
-    "#f4f8ff",
+    "var(--posx-info-bg, #f4f8ff)",
     "the selected table summary must be visually separated from editable work",
   );
 });

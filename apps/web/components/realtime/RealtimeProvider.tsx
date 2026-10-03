@@ -525,6 +525,14 @@ export function useRealtimeInvalidation(input: {
   const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   callback.current = input.onInvalidate;
   const eventTypes = input.eventTypes.join("|");
+  const invoke = (events: RealtimeEvent[]) => {
+    // Realtime is an invalidation hint and every caller retains an authoritative polling path.
+    // A rejected refetch (offline, revoked token, navigation teardown) must not become an
+    // unhandled promise that opens Next.js' runtime overlay over the register.
+    void Promise.resolve()
+      .then(() => callback.current(events))
+      .catch(() => undefined);
+  };
 
   React.useEffect(() => {
     if (!event || !input.eventTypes.includes(event.eventType)) return;
@@ -533,7 +541,7 @@ export function useRealtimeInvalidation(input: {
     timer.current = setTimeout(() => {
       const batch = pending.current.splice(0);
       timer.current = null;
-      void callback.current(batch);
+      invoke(batch);
     }, input.debounceMs ?? 150);
     return () => {
       if (timer.current) clearTimeout(timer.current);
@@ -543,13 +551,13 @@ export function useRealtimeInvalidation(input: {
 
   React.useEffect(() => {
     if (status !== "connected") return;
-    if (connectedOnce.current) void callback.current([]);
+    if (connectedOnce.current) invoke([]);
     connectedOnce.current = true;
   }, [status]);
 
   React.useEffect(() => {
     const reconcile = () => {
-      if (document.visibilityState === "visible") void callback.current([]);
+      if (document.visibilityState === "visible") invoke([]);
     };
     window.addEventListener("focus", reconcile);
     document.addEventListener("visibilitychange", reconcile);

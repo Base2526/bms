@@ -130,9 +130,9 @@
 .pos-root select[aria-invalid="true"]:focus {
   outline: none;
   border-color: var(--pos-danger);
-  box-shadow: 0 0 0 3px #f7b7b2;
+  box-shadow: 0 0 0 3px var(--posx-danger-line, #f7b7b2);
 }
-.pos-root input::placeholder { color: #9aa1ab; }
+.pos-root input::placeholder { color: var(--posx-muted, #9aa1ab); }
 
 .pos-card {
   background: var(--pos-surface);
@@ -195,9 +195,9 @@
   padding: 16px 16px 12px;
   border-bottom: 1px solid var(--pos-line);
   border-radius: 12px 12px 0 0;
-  background: #f7fbff;
+  background: var(--posx-soft, #f7fbff);
 }
-.pos-sale-total-label { color: #344054; font-size: 13px; font-weight: 600; }
+.pos-sale-total-label { color: var(--posx-ink2, #344054); font-size: 13px; font-weight: 600; }
 .pos-sale-totalbar > .pos-total-row {
   align-items: flex-end;
   padding-bottom: 12px;
@@ -436,7 +436,7 @@
   padding: 2px 6px;
   border: 0;
   border-radius: 5px;
-  background: #f0f5ff;
+  background: var(--posx-info-bg, #f0f5ff);
   color: var(--pos-muted);
   font: inherit;
   font-size: 11px;
@@ -564,7 +564,7 @@
   gap: 5px;
 }
 .pos-root .pos-sale-method[aria-pressed="true"] {
-  border-color: #69b1ff;
+  border-color: var(--posx-info-line, #69b1ff);
   background: var(--pos-accent-bg);
   color: var(--pos-accent);
   font-weight: 600;
@@ -643,13 +643,13 @@
   font-size: 12px;
 }
 .pos-sale-status[data-state="blocked"] {
-  border: 1px solid #ffccc7;
+  border: 1px solid var(--posx-danger-line, #ffccc7);
   background: var(--pos-danger-bg);
   color: var(--pos-danger);
   font-weight: 600;
 }
 .pos-sale-status[data-state="ready"] {
-  border: 1px solid #b7eb8f;
+  border: 1px solid var(--posx-ok-line, #b7eb8f);
   background: var(--pos-money-bg);
   color: var(--pos-money);
 }
@@ -750,7 +750,7 @@
 /* ---- ตะกร้า ---- */
 .pos-scan {
   display: flex; align-items: center; gap: 10px;
-  border: 1px solid #91caff; border-radius: 10px;
+  border: 1px solid var(--posx-info-line, #91caff); border-radius: 10px;
   background: var(--pos-surface); padding: 0 12px;
   box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.08);
 }
@@ -840,7 +840,7 @@
 .pos-quick { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
 .pos-root .pos-quick button { padding: 13px 0; font-size: 14px; font-weight: 500; }
 .pos-quick .pos-exact {
-  background: var(--pos-money-bg); border-color: #b7eb8f;
+  background: var(--pos-money-bg); border-color: var(--posx-ok-line, #b7eb8f);
   color: var(--pos-money); font-weight: 700;
 }
 .pos-quick .pos-clear { color: var(--pos-danger); }
@@ -855,7 +855,7 @@
   border-radius: 12px; border-color: transparent;
   background: var(--pos-money); color: #fff; min-height: 58px;
 }
-.pos-root .pos-pay:hover:not(:disabled) { background: #15682c; }
+.pos-root .pos-pay:hover:not(:disabled) { background: var(--posx-ok-bg, #15682c); }
 .pos-root .pos-pay:disabled {
   background: var(--pos-sunken); color: var(--pos-muted);
   border: 1px solid var(--pos-line-strong); opacity: 1; font-weight: 600;
@@ -863,7 +863,7 @@
 
 /* ---- หลังขายจบ ---- */
 .pos-success {
-  background: var(--pos-money-bg); border: 1px solid #b7e3c5;
+  background: var(--pos-money-bg); border: 1px solid var(--posx-ok-line, #b7e3c5);
   border-radius: 14px; padding: 16px;
 }
 .pos-success-head {
@@ -879,7 +879,7 @@
 
 /* ---- แถบแจ้งเตือน ---- */
 .pos-note { border-radius: 12px; padding: 12px 14px; font-size: 14px; }
-.pos-note--ok { background: var(--pos-money-bg); color: #12602b; }
+.pos-note--ok { background: var(--pos-money-bg); color: var(--posx-ok-text, #12602b); }
 .pos-note--err { background: var(--pos-danger-bg); color: var(--pos-danger); }
 .pos-note--warn { background: var(--pos-warn-bg); color: var(--pos-warn); }
 
@@ -923,23 +923,23 @@
 .pos-root .pos-shift-btn-primary {
   background: var(--pos-accent); border-color: var(--pos-accent); color: #fff; font-weight: 500;
 }
-.pos-root .pos-shift-btn-primary:hover:not(:disabled) { background: #1a5fd0; }
+.pos-root .pos-shift-btn-primary:hover:not(:disabled) { background: var(--posx-info-bg, #1a5fd0); }
 
 /* กล่องผู้อนุมัติ: เดิมช่อง PIN โผล่มาเฉย ๆ ตอนเลือก "นำเงินออก"
    โดยไม่บอกว่าทำไมต้องมีคนที่สอง */
 .pos-approve {
-  background: var(--pos-warn-bg); border: 1px solid #f2dfa8;
+  background: var(--pos-warn-bg); border: 1px solid var(--posx-warn-line, #f2dfa8);
   border-radius: var(--pos-radius); padding: 10px 12px; margin-top: 8px;
 }
 .pos-approve-why { font-size: 12px; color: var(--pos-warn); margin-bottom: 8px; }
 .pos-approve-row { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 8px; }
 .pos-approve--personal {
-  background: var(--pos-accent-bg); border-color: #bfd8ff;
+  background: var(--pos-accent-bg); border-color: var(--posx-info-line, #bfd8ff);
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
 }
 .pos-approve--personal .pos-approve-why { color: var(--pos-accent); margin-bottom: 0; }
 .pos-approve--petty {
-  background: var(--pos-money-bg); border-color: #b7e3c5;
+  background: var(--pos-money-bg); border-color: var(--posx-ok-line, #b7e3c5);
   display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
 }
 .pos-approve--petty .pos-approve-why { color: var(--pos-money); margin-bottom: 0; }
@@ -1041,13 +1041,13 @@
 .pos-ret {
   /* เขียวของแท็บนี้มีอยู่เดิมแล้ว (กล่อง "ขั้นที่ 1") — ยกมาเป็นตัวแปรให้ทั้งบล็อกใช้ร่วม
      แทนที่จะเขียนสีดิบซ้ำหลายที่แบบเดิม */
-  --ret-accent: #1f6f5c;
-  --ret-accent-ink: #0f4437;
-  --ret-accent-bg: #e2efe9;
-  --ret-accent-line: #bcdccd;
-  --ret-faint: #9aa1ab;
-  --ret-void: #6f7364;
-  --ret-void-bg: #ececeb;
+  --ret-accent: var(--posx-ok-text, #1f6f5c);
+  --ret-accent-ink: var(--posx-ok-text, #0f4437);
+  --ret-accent-bg: var(--posx-ok-bg, #e2efe9);
+  --ret-accent-line: var(--posx-ok-line, #bcdccd);
+  --ret-faint: var(--posx-muted, #9aa1ab);
+  --ret-void: var(--posx-muted, #6f7364);
+  --ret-void-bg: var(--posx-soft, #ececeb);
   /* ตัวเลขเรียงหลักเท่ากันโดยไม่โหลดเว็บฟอนต์ (จอนี้อยู่หน้าเคาน์เตอร์ เน็ตร้านหลุดได้)
      ต่อท้ายด้วยฟอนต์ไทย เพราะสตริงพวกนี้มี ฿ และคำไทยปนอยู่ ถ้าไม่ใส่ เบราว์เซอร์จะตก
      ไปที่ serif ปริยาย แล้วครึ่งบรรทัดกลายเป็นคนละแบบอักษรกับทั้งจอ */
@@ -1142,14 +1142,14 @@
 /* แถบสรุปการคืน: สีส้มเพราะเป็นตัวเลขที่ "ต้องดู" ไม่ใช่ยอดขายปกติ */
 .pos-ret-summary {
   margin: 0 14px 10px; padding: 8px 11px;
-  background: var(--pos-warn-bg); border: 1px solid #f2dfa8;
+  background: var(--pos-warn-bg); border: 1px solid var(--posx-warn-line, #f2dfa8);
   border-radius: 8px; color: var(--pos-warn);
   font-family: var(--ret-mono); font-variant-numeric: tabular-nums; font-size: 12px;
   display: flex; flex-wrap: wrap; gap: 5px 10px;
 }
 .pos-ret-summary b { font-weight: 700; }
 .pos-ret-summary .pos-ret-summary-ok { color: var(--pos-money); }
-.pos-ret-summary-sep { color: #dcc68d; }
+.pos-ret-summary-sep { color: var(--posx-warn-text, #dcc68d); }
 
 .pos-ret-refunds {
   margin: 0 14px 10px; padding: 8px 11px;
@@ -1208,7 +1208,7 @@
   background: var(--ret-accent-bg, var(--pos-accent-bg));
 }
 .pos-root .pos-ret-btn--warn { color: var(--pos-warn); }
-.pos-root .pos-ret-btn--danger { color: var(--pos-danger); border-color: #e8bdb8; }
+.pos-root .pos-ret-btn--danger { color: var(--pos-danger); border-color: var(--posx-danger-line, #e8bdb8); }
 .pos-root .pos-ret-btn--danger:hover:not(:disabled) {
   background: var(--pos-danger-bg); border-color: var(--pos-danger); color: var(--pos-danger);
 }
@@ -1217,7 +1217,7 @@
   background: var(--pos-text); border-color: var(--pos-text); color: var(--pos-surface);
 }
 .pos-root .pos-ret-btn--solid:hover:not(:disabled) {
-  background: #33363c; border-color: #33363c; color: var(--pos-surface);
+  background: var(--posx-inkbg, #33363c); border-color: var(--posx-line, #33363c); color: var(--pos-surface);
 }
 .pos-root .pos-ret-btn--sm { font-size: 11.5px; padding: 6px 10px; min-height: 34px; }
 .pos-ret-note { font-size: 12px; color: var(--ret-faint); align-self: center; padding: 8px 2px; }
@@ -1240,7 +1240,7 @@
 }
 
 .pos-ret-method {
-  border: 1px solid #b5d4f4; background: var(--pos-accent-bg);
+  border: 1px solid var(--posx-info-line, #b5d4f4); background: var(--pos-accent-bg);
   border-radius: 8px; padding: 8px 10px; margin-bottom: 10px;
 }
 .pos-ret-method-label {
@@ -1346,7 +1346,7 @@
 /* ---- กล่องยกเลิกบิล ---- */
 .pos-ret-void {
   margin: 0 14px 14px; padding: 11px 12px; border-radius: 9px;
-  background: var(--pos-danger-bg); border: 1px solid #f2d0d4;
+  background: var(--pos-danger-bg); border: 1px solid var(--posx-danger-line, #f2d0d4);
   display: flex; flex-direction: column; gap: 8px;
 }
 .pos-ret-void-why { font-size: 12px; color: var(--pos-danger); line-height: 1.55; }
@@ -1369,12 +1369,12 @@
    กฎ `@media print` ที่เล็ง `#pos-receipt` อยู่ใน globals.css (CSS module ประกาศ
    `body *` ไม่ได้) — ที่นี่คุมแค่หน้าตาบนจอ */
 .pos-receipt-paper {
-  background: #fff; color: #111;
+  background: var(--posx-surface, #fff); color: var(--posx-ink, #111);
   font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px; line-height: 1.6;
   width: 100%; max-width: 320px; margin: 0 auto;
   padding: 14px 16px; border-radius: 6px;
-  border: 1px solid #e3e3e3;
+  border: 1px solid var(--posx-line, #e3e3e3);
   /* ใบยาว ๆ ต้องเลื่อนดูได้ในกล่อง ไม่ใช่ดันกล่องจนปุ่มพิมพ์หลุดจอ */
   max-height: 46vh; overflow-y: auto;
 }
@@ -1384,10 +1384,10 @@
   display: block; width: auto; height: auto; max-width: 96px; max-height: 56px;
   object-fit: contain; margin: 0 auto 6px;
 }
-.pos-receipt-muted { color: #333; font-size: 11px; line-height: 1.35; word-break: break-word; }
+.pos-receipt-muted { color: var(--posx-ink, #333); font-size: 11px; line-height: 1.35; word-break: break-word; }
 .pos-receipt-foot { margin-top: 10px; }
 .pos-receipt-foot .pos-receipt-row { text-align: left; }
-.pos-receipt-rule { border-top: 1px dashed #bbb; margin: 8px 0; }
+.pos-receipt-rule { border-top: 1px dashed var(--posx-line, #bbb); margin: 8px 0; }
 .pos-receipt-row {
   display: flex; justify-content: space-between; gap: 12px;
   align-items: baseline;
@@ -1404,7 +1404,7 @@
     max-width: none !important; padding: 0 !important;
   }
 }
-.pos-receipt-note { color: #555; font-size: 11px; line-height: 1.5; margin: 4px 0; }
+.pos-receipt-note { color: var(--posx-ink2, #555); font-size: 11px; line-height: 1.5; margin: 4px 0; }
 
 /* ---- แท็บโต๊ะ/เวลาเล่น (components/pos/BoardGamePanel.tsx) ---------------
    บล็อกนี้เคยเป็น inline style ล้วนทั้งแท็บ ซึ่งพังสองอย่างที่วัดได้บนจอโทรศัพท์:
@@ -1469,25 +1469,25 @@
 }
 
 .pos-bg-stat-pill--on {
-  border-color: #b9d6ff;
+  border-color: var(--posx-info-line, #b9d6ff);
   background: var(--pos-accent-bg);
   color: var(--pos-accent);
   font-weight: 650;
 }
-.pos-bg-stat-pill--playing { color: #1f69c8; background: #eef6ff; }
+.pos-bg-stat-pill--playing { color: var(--posx-info-text, #1f69c8); background: var(--posx-info-bg, #eef6ff); }
 .pos-bg-stat-pill--warn { color: var(--pos-warn); background: var(--pos-warn-bg); }
 .pos-bg-stat-pill--danger { color: var(--pos-danger); background: var(--pos-danger-bg); }
 
 .pos-bg-attention {
   margin-top: 10px;
   padding: 12px 14px;
-  border: 1px solid #e6c46d;
+  border: 1px solid var(--posx-warn-line, #e6c46d);
   border-radius: 10px;
   background: var(--pos-warn-bg);
 }
 .pos-bg-attention--critical {
-  border-color: #df8b82;
-  background: #fff7f6;
+  border-color: var(--posx-danger-line, #df8b82);
+  background: var(--posx-danger-bg, #fff7f6);
 }
 .pos-bg-attention-head {
   display: grid;
@@ -1515,8 +1515,8 @@
   font-size: 12px;
 }
 .pos-root .pos-bg-attention-filter {
-  border-color: #f2a7a0;
-  background: #fff;
+  border-color: var(--posx-danger-line, #f2a7a0);
+  background: var(--posx-surface, #fff);
   color: var(--pos-danger);
 }
 .pos-bg-area { order: 0; margin-top: 14px; }
@@ -1566,7 +1566,7 @@
   text-align: center;
 }
 .pos-bg-floor-loading strong { color: var(--pos-text); }
-.pos-bg-floor-loading--error { border-color: #df8b82; background: var(--pos-danger-bg); }
+.pos-bg-floor-loading--error { border-color: var(--posx-danger-line, #df8b82); background: var(--pos-danger-bg); }
 .pos-bg-floor-loading--error strong { color: var(--pos-danger); }
 .pos-bg-loading-spinner {
   width: 28px;
@@ -1643,9 +1643,9 @@
 
 .pos-bg-session-hero {
   padding: 14px;
-  border: 1px solid #d8e8ff;
+  border: 1px solid var(--posx-info-line, #d8e8ff);
   border-radius: 12px;
-  background: #f4f8ff;
+  background: var(--posx-info-bg, #f4f8ff);
 }
 .pos-bg-session-hero-top,
 .pos-bg-session-heading,
@@ -1668,9 +1668,9 @@
   font-size: 12px;
   font-weight: 650;
 }
-.pos-bg-zone-badge { background: #e9eef6; color: var(--pos-muted); }
-.pos-bg-session-status--playing { background: #e5f1ff; color: var(--pos-accent); }
-.pos-bg-session-status--overdue { background: #ffe7e5; color: var(--pos-danger); }
+.pos-bg-zone-badge { background: var(--posx-info-bg, #e9eef6); color: var(--pos-muted); }
+.pos-bg-session-status--playing { background: var(--posx-info-bg, #e5f1ff); color: var(--pos-accent); }
+.pos-bg-session-status--overdue { background: var(--posx-danger-bg, #ffe7e5); color: var(--pos-danger); }
 .pos-bg-session-status--ending_soon { background: var(--pos-warn-bg); color: var(--pos-warn); }
 .pos-bg-session-meta { margin-top: 5px; color: var(--pos-muted); font-size: 12px; }
 .pos-bg-session-money-note {
@@ -1681,7 +1681,7 @@
   gap: 10px;
   align-items: center;
   border-radius: 10px;
-  background: #e7f1ff;
+  background: var(--posx-info-bg, #e7f1ff);
 }
 .pos-bg-session-money-icon {
   width: 32px;
@@ -1689,7 +1689,7 @@
   display: grid;
   place-items: center;
   border-radius: 8px;
-  background: #fff;
+  background: var(--posx-surface, #fff);
   color: var(--pos-accent);
   font-weight: 700;
 }
@@ -1811,15 +1811,15 @@
   margin: 12px -14px -14px;
   padding: 10px 14px 14px;
   border-top: 1px solid var(--pos-line);
-  background: #fff;
+  background: var(--posx-surface, #fff);
   box-shadow: 0 -8px 18px rgba(30, 42, 60, 0.05);
 }
 .pos-bg-add-player-form {
   margin-top: 8px;
   padding: 10px;
-  border: 1px solid #cfe2ff;
+  border: 1px solid var(--posx-info-line, #cfe2ff);
   border-radius: 10px;
-  background: #f5f9ff;
+  background: var(--posx-soft, #f5f9ff);
 }
 .pos-bg-close-choices {
   margin-top: 8px;
@@ -1868,7 +1868,7 @@
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: #e7edf5;
+  background: var(--posx-info-bg, #e7edf5);
   color: var(--pos-muted);
   font-size: 11px;
   font-weight: 650;
@@ -1903,7 +1903,7 @@
   padding: 5px;
   border: 1px solid var(--pos-line);
   border-radius: 8px;
-  background: #fff;
+  background: var(--posx-surface, #fff);
   box-shadow: 0 10px 24px rgba(30, 42, 60, 0.14);
 }
 .pos-bg-player-menu button {
@@ -1928,11 +1928,11 @@
   border-radius: 10px;
   background: var(--pos-surface);
 }
-.pos-root .pos-bg-table--playing { border-color: #9fc4f8; background: var(--pos-accent-bg); }
-.pos-root .pos-bg-table--ending { border-color: #e6c46d; background: var(--pos-warn-bg); }
-.pos-root .pos-bg-table--overdue { border-color: #df8b82; background: var(--pos-danger-bg); }
-.pos-root .pos-bg-table--paying { border-color: #e6c46d; background: var(--pos-warn-bg); }
-.pos-root .pos-bg-table--on { padding: 10px; border: 2px solid var(--pos-accent); box-shadow: 0 0 0 2px #dceaff; }
+.pos-root .pos-bg-table--playing { border-color: var(--posx-info-line, #9fc4f8); background: var(--pos-accent-bg); }
+.pos-root .pos-bg-table--ending { border-color: var(--posx-warn-line, #e6c46d); background: var(--pos-warn-bg); }
+.pos-root .pos-bg-table--overdue { border-color: var(--posx-danger-line, #df8b82); background: var(--pos-danger-bg); }
+.pos-root .pos-bg-table--paying { border-color: var(--posx-warn-line, #e6c46d); background: var(--pos-warn-bg); }
+.pos-root .pos-bg-table--on { padding: 10px; border: 2px solid var(--pos-accent); box-shadow: 0 0 0 2px var(--posx-info-line, #dceaff); }
 .pos-bg-table:disabled { opacity: 0.5; cursor: not-allowed; }
 .pos-bg-table-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .pos-bg-table-code { min-width: 0; font-weight: 650; line-height: 1.25; }
@@ -1946,12 +1946,12 @@
   font-weight: 650;
   text-align: center;
 }
-.pos-bg-table-badge--available { background: #eaf8e8; color: #30972a; }
-.pos-bg-table-badge--playing { background: #dfedff; color: var(--pos-accent); }
+.pos-bg-table-badge--available { background: var(--posx-ok-bg, #eaf8e8); color: var(--posx-ok-text, #30972a); }
+.pos-bg-table-badge--playing { background: var(--posx-info-bg, #dfedff); color: var(--pos-accent); }
 .pos-bg-table-badge--ending,
-.pos-bg-table-badge--paying { background: #fff1ca; color: var(--pos-warn); }
-.pos-bg-table-badge--overdue { background: #ffe3e1; color: var(--pos-danger); }
-.pos-bg-table-badge--blocked { background: #e9edf2; color: var(--pos-muted); }
+.pos-bg-table-badge--paying { background: var(--posx-warn-bg, #fff1ca); color: var(--pos-warn); }
+.pos-bg-table-badge--overdue { background: var(--posx-danger-bg, #ffe3e1); color: var(--pos-danger); }
+.pos-bg-table-badge--blocked { background: var(--posx-soft, #e9edf2); color: var(--pos-muted); }
 .pos-bg-table-sub { color: var(--pos-muted); font-size: 11px; }
 .pos-bg-table-body { margin-top: 6px; font-size: 12px; }
 .pos-bg-table-state { display: flex; gap: 5px; align-items: center; color: var(--pos-muted); font-size: 11px; }
@@ -2031,11 +2031,11 @@
   box-shadow: none;
 }
 .pos-root .pos-bg-reservation-day:hover:not(:disabled) {
-  border-color: #9cc7ff;
-  background: #f5f9ff;
+  border-color: var(--posx-info-line, #9cc7ff);
+  background: var(--posx-soft, #f5f9ff);
   box-shadow: none;
 }
-.pos-root .pos-bg-reservation-day--outside { color: #aab3c2; background: var(--pos-sunken); }
+.pos-root .pos-bg-reservation-day--outside { color: var(--posx-muted, #aab3c2); background: var(--pos-sunken); }
 .pos-root .pos-bg-reservation-day--today .pos-bg-reservation-day-number {
   color: var(--pos-accent);
   text-decoration: underline;
@@ -2053,8 +2053,8 @@
   overflow: hidden;
   padding: 2px 4px;
   border-radius: 999px;
-  background: #eaf8e8;
-  color: #237b20;
+  background: var(--posx-ok-bg, #eaf8e8);
+  color: var(--posx-ok-text, #237b20);
   font-size: 9px;
   font-weight: 650;
   line-height: 1.2;
@@ -2134,7 +2134,7 @@
   position: absolute;
   inset: 0 auto 0 0;
   width: 4px;
-  background: #2d9a37;
+  background: var(--posx-ok-bg, #2d9a37);
 }
 .pos-bg-reservation-card--requested::before { background: var(--pos-warn); }
 .pos-bg-reservation-card-status,
@@ -2151,8 +2151,8 @@
   padding: 3px 7px;
   overflow: hidden;
   border-radius: 999px;
-  background: #eaf8e8;
-  color: #237b20;
+  background: var(--posx-ok-bg, #eaf8e8);
+  color: var(--posx-ok-text, #237b20);
   font-size: 10px;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -2248,7 +2248,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border: 1px solid #9cc7ff;
+  border: 1px solid var(--posx-info-line, #9cc7ff);
   border-radius: 10px;
   background: var(--pos-surface);
   color: var(--pos-accent);
@@ -2310,7 +2310,7 @@
   padding: 10px;
   border: 1px solid var(--pos-line);
   border-radius: 14px;
-  background: #fff;
+  background: var(--posx-surface, #fff);
   color: var(--pos-muted);
   font-size: 12px;
 }

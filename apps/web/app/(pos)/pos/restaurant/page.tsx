@@ -118,6 +118,14 @@ const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
   order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", settings: "SETTINGS", setup: "SETTINGS", other: "OTHER",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
+
+class RestaurantApiError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "RestaurantApiError";
+  }
+}
+
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 const queueStatusLabels = (t: Translate): Record<string, string> => ({
   WAITING: t("pos_restaurant.queue_waiting"), CALLED: t("pos_restaurant.queue_called"),
@@ -146,7 +154,7 @@ type CheckItem = { id: string; sku: string; productName: string; size: string; p
 type RestaurantCheck = { id: string;
   serviceMode: RestaurantServiceMode;
   tableId: string | null;
-  tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
+  tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; unsentAmount?: number | null; estimatedTotal?: number | null; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -524,6 +532,7 @@ export default function RestaurantPosPage() {
   const MENU_SOLD_OUT_REASONS = useMemo(() => menuSoldOutReasons(t), [t]);
   const KITCHEN_NOTE_SHORTCUTS = useMemo(() => kitchenNoteShortcuts(t), [t]);
   const [token, setToken] = useState("");
+  const [tokenRejected, setTokenRejected] = useState(false);
   const [deviceStorageNamespace, setDeviceStorageNamespace] = useState("");
   const [ready, setReady] = useState(false);
   const [session, setSession] = useState<Session | null>(null);
@@ -1094,11 +1103,11 @@ export default function RestaurantPosPage() {
     // ไม่มีทั้ง status และ error = ตอบมาไม่ใช่ JSON ของ service (proxy ตอบ HTML ตอน 502
     // หรือเน็ตหลุด) → ต้องแปลเป็นคำที่บอกได้ว่าให้ทำอะไรต่อ ไม่ใช่โชว์ "HTTP 502" ดิบ ๆ
     if (!response.ok && typeof body?.status !== "string" && !body?.error && !body?.reason) {
-      throw new Error(describeTransportFailure(response.status, navigator.onLine));
+      throw new RestaurantApiError(describeTransportFailure(response.status, navigator.onLine), response.status);
     }
-    if (!response.ok) throw new Error(typeof body?.status === "string"
+    if (!response.ok) throw new RestaurantApiError(typeof body?.status === "string"
       ? describePosFailure(body)
-      : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`));
+      : String(body?.error ?? body?.reason ?? `HTTP ${response.status}`), response.status);
     return body;
   }
   function auth(extra: Record<string, unknown> = {}) { if (!actorUserId || !actorPin) throw new Error(t("pos_restaurant.need_operator_pin")); return { ...extra, cashierUserId: actorUserId, cashierPin: actorPin }; }
@@ -1111,11 +1120,21 @@ export default function RestaurantPosPage() {
     finally { workingRef.current = false; setWorking(false); }
   }
   async function loadSession() {
-    const data: Session = await json("/api/pos/session");
+    let data: Session;
+    try {
+      data = await json("/api/pos/session");
+    } catch (cause) {
+      // A single 401 can be a short-lived proxy/session edge. Match the retail register: only
+      // send the operator back to pairing after the authoritative session check fails twice.
+      if (!(cause instanceof RestaurantApiError) || cause.status !== 401) throw cause;
+      await new Promise((resolve) => window.setTimeout(resolve, 400));
+      data = await json("/api/pos/session");
+    }
     if (data.businessArchetype !== "restaurant") {
       router.replace(window.bmsDesktop ? "/pos/app" : "/pos?surface=retail");
       return null;
     }
+    setTokenRejected(false);
     setSession(data);
     setOperatorDraftId((current) => current
       || rememberedOperator?.cashier.id
@@ -1190,6 +1209,16 @@ export default function RestaurantPosPage() {
         window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
       } catch { /* โหมดส่วนตัว */ }
     }
+    // Stop every poll before invalidating the credential. Otherwise a focus/realtime callback can
+    // race the native setup window and surface the expected 401 as a Next.js runtime overlay.
+    setToken("");
+    setDeviceStorageNamespace("");
+    setTokenRejected(false);
+    setSession(null);
+    setError("");
+    clearOperator();
+    setActorUserId("");
+    setActorPin("");
     await clearPosDeviceToken();
     // Desktop shows its own setup window after unpair; a browser register returns to pairing.
     if (!window.bmsDesktop) router.replace("/pos");
@@ -1414,7 +1443,13 @@ export default function RestaurantPosPage() {
       if (check?.id) await loadCheck(check.id).then((row) => { if (!isOpenCheckStatus(row?.status)) setCheck(null); }).catch(() => setCheck(null));
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      if (cause instanceof RestaurantApiError && cause.status === 401) {
+        setTokenRejected(true);
+        setSession(null);
+        setError("");
+      } else {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      }
     } finally {
       refreshingRef.current = false;
       setRefreshing(false);
@@ -1547,7 +1582,7 @@ export default function RestaurantPosPage() {
   // ตอนเปิดแท็บคิวอยู่ = ป้ายไม่มีวันขึ้นตอนพนักงานยืนหน้าผังโต๊ะ แล้วคนที่รออยู่หน้าร้าน
   // ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น
   useLiveRefresh({
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !tokenRejected,
     intervalMs: alertPollIntervalMs({ focused: screen === "QUEUE", visible: pageVisible }),
     onRefresh: (signal) => loadWaitlist(signal),
   });
@@ -1559,7 +1594,7 @@ export default function RestaurantPosPage() {
   // เป็นกับดักเดียวกับที่โค้ดนี้เขียนคอมเมนต์เตือนไว้เองแล้วสำหรับป้าย QR และป้ายคิว
   const ticketPollMs = alertPollIntervalMs({ focused: screen === "KITCHEN", visible: pageVisible });
   const ticketFeed = useLiveRefresh({
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !tokenRejected,
     intervalMs: ticketPollMs,
     // hook เก็บ callback ไว้ใน ref จึงส่ง arrow ตรง ๆ ได้ — ไม่ต้อง memo และไม่ทำให้
     // interval ถูกสร้างใหม่ทุก render (ซึ่งจะทำให้ไม่มีรอบไหนเดินครบเวลาเลย)
@@ -1569,7 +1604,7 @@ export default function RestaurantPosPage() {
   // ซึ่งชนเพดาน 6 connection ต่อโดเมนของเบราว์เซอร์เร็วเป็นสองเท่าเมื่อฝั่ง server ช้า
   // จอครัวไม่ต้องการผังโต๊ะใหม่ทุก 5 วินาที (ใช้แค่ป้ายจำนวนบนแถบซ้ายกับแถบสรุป)
   useLiveRefresh({
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !tokenRejected,
     intervalMs: alertPollIntervalMs({ focused: screen === "FLOOR", visible: pageVisible }),
     onRefresh: (signal) => loadFloor(signal),
   });
@@ -1577,13 +1612,13 @@ export default function RestaurantPosPage() {
   // เฉพาะตอนเปิดแท็บ QR อยู่ ป้ายจะไม่มีวันขึ้นเลยตอนพนักงานยืนอยู่หน้าผังโต๊ะ (ที่ยืนจริง)
   // แล้วลูกค้าที่สั่งผ่าน QR ต้องรอจนกว่าจะมีคนเผลอกดเข้าแท็บนั้น = ป้ายไม่มีความหมาย
   useLiveRefresh({
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !tokenRejected,
     intervalMs: alertPollIntervalMs({ focused: screen === "QR", visible: pageVisible }),
     onRefresh: (signal) => loadQrSubmissions(signal),
   });
   // คำเรียกพนักงานมี badge บนแถบซ้ายและต้องเด้งขณะยืนอยู่ทุกจอ เช่นเดียวกับออร์เดอร์ QR
   useLiveRefresh({
-    enabled: Boolean(token),
+    enabled: Boolean(token) && !tokenRejected,
     intervalMs: alertPollIntervalMs({ focused: screen === "CALLS", visible: pageVisible }),
     onRefresh: (signal) => loadServiceCalls(signal),
   });
@@ -1591,13 +1626,15 @@ export default function RestaurantPosPage() {
   // หรือจอครัว จึงต้องอัปเดตทุกหน้าจอเหมือนคำเรียกโต๊ะ ไม่ใช่รอจนเปิดเมนูออร์เดอร์เข้า
   // Realtime เป็นเพียง hint; polling นี้คงอยู่เป็น reconciliation path ตามสัญญาระบบเดิม
   useLiveRefresh({
-    enabled: Boolean(token) && screen !== "INCOMING",
+    enabled: Boolean(token) && !tokenRejected && screen !== "INCOMING",
     intervalMs: alertPollIntervalMs({ focused: screen === "INCOMING", visible: pageVisible }),
     onRefresh: (signal) => loadIncomingOrders(signal),
   });
   useRealtimeInvalidation({
     eventTypes: INCOMING_ORDER_REALTIME_EVENTS,
-    onInvalidate: () => { if (screenRef.current !== "INCOMING") void loadIncomingOrders(); },
+    onInvalidate: async () => {
+      if (screenRef.current !== "INCOMING" && !tokenRejected) await loadIncomingOrders();
+    },
     // WebSocket เป็นทางลัดให้เห็นงานทันที ส่วน polling ด้านบนยังเป็น reconciliation path
     // เมื่อ event หลุด/มาซ้ำ/ต่อ WebSocket ไม่ได้ตามสัญญา realtime ของระบบ
     debounceMs: 0,
@@ -2445,6 +2482,16 @@ export default function RestaurantPosPage() {
       <p>{t("pos_restaurant.app_loading_description")}</p>
     </div>
   </main>;
+  if (tokenRejected) return <main className={`${styles.page} ${styles.pagePlain}`}>
+    <Alert
+      closable
+      type="error"
+      showIcon
+      message={t("pos_restaurant.token_rejected_title")}
+      description={t("pos_restaurant.token_rejected_desc")}
+      action={<Button onClick={() => void unpairFromSettings()}>{t("pos_restaurant.token_rejected_reset")}</Button>}
+    />
+  </main>;
   if (!token) return <main className={`${styles.page} ${styles.pagePlain}`}><Alert closable type="warning" showIcon message={t("pos_restaurant.no_token_title")} description={t("pos_restaurant.no_token_desc")} /></main>;
 
   const waitingIncomingOrders = incomingOrders.filter((order) => order.status === "PAID");
@@ -3155,7 +3202,20 @@ export default function RestaurantPosPage() {
             {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
                 ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
             {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{t("pos_restaurant.kitchen_cancelled_count", { count: kitchenCancelled.length })}</b> — {t("pos_restaurant.kitchen_cancelled_action")}</span></div>}
-            <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
+            {/* ยอดที่ส่งครัวแล้วอย่างเดียวขึ้น ฿0.00 ทั้งที่บิลมีอาหารรออยู่ — ตอนมีรายการยังไม่ส่ง
+                ให้ยอดหลักเป็นยอดประมาณของทั้งบิลที่ server คิดให้ (ห้ามรวมเองที่จอ) แล้วแยกสองก้อนไว้ข้างใต้
+                ยอดที่คิดเงินจริงยังเป็น check.amountDue หลังส่งครัวแล้วเสมอ */}
+            {hasUnsent && check.estimatedTotal != null ? (
+              <div className={styles.total}>
+                <span className={styles.totalLabel}>
+                  {t("pos_restaurant.amount_estimated")}
+                  <small className={styles.totalBreakdown}>{t("pos_restaurant.amount_breakdown", { sent: money(check.amountDue), unsent: money(check.unsentAmount ?? 0) })}</small>
+                </span>
+                <strong><span className={styles.baht}>฿</span>{money(check.estimatedTotal)}</strong>
+              </div>
+            ) : (
+              <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
+            )}
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> {t("pos_restaurant.send_kitchen")}{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
               <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setDiscountApproverId(discountApprovers[0]?.id ?? ""); setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>
