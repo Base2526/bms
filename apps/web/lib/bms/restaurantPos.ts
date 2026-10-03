@@ -953,6 +953,30 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
       ORDER BY ci.created_at, ci.id`,
     [tenantId, checkId]
   );
+  // Lines not yet sent to the kitchen have no order snapshot, so `amount_due` ignores them and a
+  // bill full of fresh orders read ฿0.00. This is an estimate at list price + modifier deltas
+  // (quantity tiers and promotions are applied when the kitchen round reserves the order); it is
+  // for display only and is never charged — checkout still uses `amount_due` after sending.
+  const unsentResult = await query<{ amount: string; lines: string; unpriced: string }>(
+    `SELECT COALESCE(SUM(ci.pack_qty * (ci.pack_price + COALESCE(md.delta, 0))), 0) AS amount,
+            COUNT(*) AS lines,
+            COUNT(*) FILTER (WHERE ci.pack_price IS NULL) AS unpriced
+       FROM bms_restaurant_check_items ci
+       LEFT JOIN LATERAL (
+         SELECT SUM(m.price_delta) AS delta
+           FROM bms_product_modifiers m
+          WHERE m.tenant_id = ci.tenant_id AND m.product_sku = ci.product_sku AND m.size = ci.size
+            AND m.code = ANY(COALESCE(ci.modifier_codes, ARRAY[]::text[]))
+       ) md ON TRUE
+      WHERE ci.tenant_id = $1 AND ci.check_id = $2 AND ci.status = 'NEW'`,
+    [tenantId, checkId]
+  );
+  const unsent = unsentResult.rows[0];
+  const unsentLines = Number(unsent?.lines ?? 0);
+  // One unpriced line makes any sum a lie, so report "unknown" rather than a too-small number.
+  const unsentAmount = unsentLines === 0 ? 0
+    : Number(unsent?.unpriced ?? 0) > 0 ? null
+    : Math.round(Number(unsent.amount) * 100) / 100;
   const row = result.rows[0];
   const serviceMode = normalizeRestaurantServiceMode(row.service_mode);
   const fallbackLabel = serviceMode === "TAKEAWAY" ? takeawayLabel(row.id) : "Table";
@@ -967,6 +991,10 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
     guestCount: Number(row.guest_count),
     note: row.note,
     amountDue: Number(row.amount_due),
+    /** Estimated value of lines not yet sent to the kitchen; `null` when a line has no price. */
+    unsentAmount,
+    /** `amountDue` + `unsentAmount` — display only, never a checkout amount. */
+    estimatedTotal: unsentAmount == null ? null : Math.round((Number(row.amount_due) + unsentAmount) * 100) / 100,
     // บิลใบที่เท่าไรของโต๊ะ (9.63) — จอต้องบอกให้ชัดว่ากำลังยืนอยู่บนบิลไหน ไม่งั้น
     // โต๊ะที่แยกบิลแล้วจะมีสองหน้าจอที่หน้าตาเหมือนกันทุกอย่างแต่คิดเงินคนละก้อน
     splitGroupNo: Number(row.split_group_no ?? 1),

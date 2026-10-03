@@ -146,7 +146,7 @@ type CheckItem = { id: string; sku: string; productName: string; size: string; p
 type RestaurantCheck = { id: string;
   serviceMode: RestaurantServiceMode;
   tableId: string | null;
-  tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
+  tableCode: string; tableName: string; areaName: string; status: string; guestCount: number; amountDue: number; unsentAmount?: number | null; estimatedTotal?: number | null; version: number; reservedVersion: number | null; hasCurrentOrder: boolean; reservationStatus: string | null; reservationLost: boolean; openedAt: string; splitGroupNo: number; splitFromCheckId: string | null; items: CheckItem[] };
 type SearchItem = { sku: string; name: string; price: number; availableTotal: number; availableSizes: Array<{ size: string; available: number; price?: number }> };
 type MenuItem = SearchItem & {
   kitchenStation: string | null;
@@ -3155,7 +3155,20 @@ export default function RestaurantPosPage() {
             {/* ปกติครัวยกเลิกแล้วบรรทัดจะหลุดจากบิลทันที เหลือค้างได้เฉพาะกรณีบิลไม่ได้เปิดอยู่
                 ตอนที่ครัวกด (กำลังคิดเงิน/ปิดแล้ว) ซึ่งแตะยอดที่ออกใบเสร็จไปแล้วไม่ได้ */}
             {kitchenCancelled.length > 0 && <div className={styles.warn}><span aria-hidden="true">⚠</span><span><b>{t("pos_restaurant.kitchen_cancelled_count", { count: kitchenCancelled.length })}</b> — {t("pos_restaurant.kitchen_cancelled_action")}</span></div>}
-            <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
+            {/* ยอดที่ส่งครัวแล้วอย่างเดียวขึ้น ฿0.00 ทั้งที่บิลมีอาหารรออยู่ — ตอนมีรายการยังไม่ส่ง
+                ให้ยอดหลักเป็นยอดประมาณของทั้งบิลที่ server คิดให้ (ห้ามรวมเองที่จอ) แล้วแยกสองก้อนไว้ข้างใต้
+                ยอดที่คิดเงินจริงยังเป็น check.amountDue หลังส่งครัวแล้วเสมอ */}
+            {hasUnsent && check.estimatedTotal != null ? (
+              <div className={styles.total}>
+                <span className={styles.totalLabel}>
+                  {t("pos_restaurant.amount_estimated")}
+                  <small className={styles.totalBreakdown}>{t("pos_restaurant.amount_breakdown", { sent: money(check.amountDue), unsent: money(check.unsentAmount ?? 0) })}</small>
+                </span>
+                <strong><span className={styles.baht}>฿</span>{money(check.estimatedTotal)}</strong>
+              </div>
+            ) : (
+              <div className={styles.total}><span className={styles.totalLabel}>{hasUnsent ? t("pos_restaurant.amount_sent") : t("pos_restaurant.amount_current")}</span><strong><span className={styles.baht}>฿</span>{money(check.amountDue)}</strong></div>
+            )}
             <div className={styles.footerButtons}>
               <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} disabled={!hasUnsent && !reservationLost} onClick={() => void action("send_kitchen")}><CoffeeOutlined /> {t("pos_restaurant.send_kitchen")}{unsentInCheck > 0 ? ` (${unsentInCheck})` : ""}</button>
               <button type="button" className={styles.btn} disabled={!check.items.length || hasUnsent || reservationLost || check.amountDue <= 0} onClick={() => { const cashDue = Math.round((check.amountDue + cashRoundingForPayments(check.amountDue, session?.vat.cashRounding ?? "NONE", [{ method: "CASH", amount: check.amountDue }])) * 100) / 100; setDiscountApproverId(discountApprovers[0]?.id ?? ""); setPayments([{ id: `pay-${Date.now()}`, method: "CASH", amount: String(cashDue), tendered: String(cashDue), ref: "" }]); setCheckoutOpen(true); }}><WalletOutlined /> {t("pos_restaurant.checkout")}</button>

@@ -157,6 +157,30 @@
   --tint-3: #2f2819;
   --tint-4: #1a2e24;
 
+  /* หน้าค้าปลีกที่ฝังอยู่ (งานอื่น/ตั้งค่า) ระบายสีดิบไว้หลายร้อยจุดสำหรับโหมดสว่าง
+     ทุกจุดถูกห่อเป็น var(--posx-<role>, <สีเดิม>) — ตัวแปรชุดนี้ประกาศ **ที่นี่ที่เดียว**
+     /pos ตรง ๆ และร้านอาหารโหมดสว่างจึงได้สีเดิมทุกพิกเซล มีแต่โหมดมืดที่สลับ
+     · info (สีฟ้าของค้าปลีก) ผูกกับสีหลักของร้านอาหาร ไม่ให้มีฟ้าโผล่กลางธีมเขียว
+     · --posx-inkbg (ป้ายพื้นดำ) ไม่ประกาศโดยตั้งใจ — พื้นดำบนโหมดมืดยังอ่านได้ */
+  --posx-ink: var(--ink);
+  --posx-ink2: var(--ink-2);
+  --posx-muted: var(--ink-3);
+  --posx-surface: var(--panel);
+  --posx-soft: var(--panel-2);
+  --posx-line: var(--line-2);
+  --posx-warn-text: var(--amber);
+  --posx-warn-bg: var(--amber-bg);
+  --posx-warn-line: #6b5426;
+  --posx-danger-text: var(--red);
+  --posx-danger-bg: var(--red-bg);
+  --posx-danger-line: #7a3a2c;
+  --posx-ok-text: var(--green);
+  --posx-ok-bg: var(--green-bg);
+  --posx-ok-line: #2f6650;
+  --posx-info-text: var(--accent);
+  --posx-info-bg: rgba(84, 195, 152, .16);
+  --posx-info-line: #2f6650;
+
   /* pos.css: ปุ่ม/ช่องกรอกมาตรฐานที่หน้านี้ไม่ได้ทาสีเอง */
   --pos-bg: var(--ground);
   --pos-surface: var(--panel);
@@ -713,6 +737,7 @@
 .warn b { color: var(--red); }
 .total { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .totalLabel { font-size: 13.5px; color: var(--ink-2); }
+.totalBreakdown { display: block; margin-top: 2px; font-size: 12px; color: var(--ink-3); }
 .total strong { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .footerButtons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .footerButtons .btn { height: 56px; justify-content: center; font-size: 16px; font-weight: 700; }
