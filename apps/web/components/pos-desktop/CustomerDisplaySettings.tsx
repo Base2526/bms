@@ -58,28 +58,28 @@ export default function CustomerDisplaySettings() {
   };
 
   if (!state) {
-    return <div style={{ color: "#667085", fontSize: 13 }}>กำลังตรวจสอบจอที่เชื่อมต่อ…</div>;
+    return <div style={{ color: "var(--posx-muted, #667085)", fontSize: 13 }}>กำลังตรวจสอบจอที่เชื่อมต่อ…</div>;
   }
 
   return (
     <section style={{
       padding: 14,
-      border: "1px solid #d9e2ef",
+      border: "1px solid var(--posx-line, #d9e2ef)",
       borderRadius: 12,
-      background: "#f8fbff",
+      background: "var(--posx-soft, #f8fbff)",
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div style={{ fontWeight: 700 }}>จอลูกค้า</div>
-          <div style={{ marginTop: 4, color: "#667085", fontSize: 12 }}>
+          <div style={{ marginTop: 4, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
             เครื่องขายนี้ใช้จอแคชเชียร์ 1 จอ และจอลูกค้าได้สูงสุด 1 จอ · ตรวจพบ {state.displays.length} จอ
           </div>
         </div>
         <span style={{
           padding: "4px 9px",
           borderRadius: 999,
-          color: state.open ? "#237804" : state.mode === "off" ? "#667085" : "#ad6800",
-          background: state.open ? "#f6ffed" : state.mode === "off" ? "#f2f4f7" : "#fffbe6",
+          color: state.open ? "var(--posx-ok-text, #237804)" : state.mode === "off" ? "var(--posx-muted, #667085)" : "var(--posx-warn-text, #ad6800)",
+          background: state.open ? "var(--posx-ok-bg, #f6ffed)" : state.mode === "off" ? "var(--posx-soft, #f2f4f7)" : "var(--posx-warn-bg, #fffbe6)",
           fontSize: 12,
           fontWeight: 600,
         }}>
@@ -129,10 +129,10 @@ export default function CustomerDisplaySettings() {
         {state.displays.map((display, index) => (
           <span key={display.id} style={{
             padding: "5px 8px",
-            border: "1px solid #d9e2ef",
+            border: "1px solid var(--posx-line, #d9e2ef)",
             borderRadius: 8,
-            background: "#fff",
-            color: "#475467",
+            background: "var(--posx-surface, #fff)",
+            color: "var(--posx-ink2, #475467)",
             fontSize: 12,
           }}>
             จอ {index + 1}: {display.label} · {display.width}×{display.height}
@@ -142,11 +142,11 @@ export default function CustomerDisplaySettings() {
       </div>
 
       {state.positioningLimited && (
-        <div style={{ marginTop: 10, color: "#ad6800", fontSize: 12 }}>
+        <div style={{ marginTop: 10, color: "var(--posx-warn-text, #ad6800)", fontSize: 12 }}>
           Linux Wayland อาจไม่ยอมให้แอปย้ายหน้าต่างอัตโนมัติ หากเปิดผิดจอให้ลากหน้าต่างไปยังจอลูกค้าด้วยระบบปฏิบัติการ
         </div>
       )}
-      {error && <div role="alert" style={{ marginTop: 10, color: "#cf1322", fontSize: 12 }}>{error}</div>}
+      {error && <div role="alert" style={{ marginTop: 10, color: "var(--posx-danger-text, #cf1322)", fontSize: 12 }}>{error}</div>}
     </section>
   );
 }

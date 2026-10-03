@@ -166,3 +166,36 @@ test("แผ่นผู้ช่วยคู่มืออ่านตัว�
   assert.doesNotMatch(src, /background: "#fff"/,
     "พื้นแผ่นห้ามเป็นสีคงที่ ไม่งั้นโหมดมืดได้แผ่นขาวเต็มจอ");
 });
+
+test("retail screens embedded in the restaurant shell follow its dark theme without changing retail /pos", async () => {
+  // The embedded workspace (other work / settings) painted hundreds of raw light colours, so the
+  // dark restaurant shell showed white cards with near-invisible text. Each raw colour is wrapped
+  // as var(--posx-<role>, <original>) and the --posx-* tokens are declared only in the restaurant
+  // dark block: retail /pos and the light restaurant theme keep every original pixel.
+  const root = new URL("../", import.meta.url);
+  const read = (path: string) => readFile(new URL(path, root), "utf8");
+  const [page, posCss, display, moduleCss] = await Promise.all([
+    read("apps/web/app/(pos)/pos/page.tsx"),
+    read("apps/web/app/(pos)/pos/pos.css"),
+    read("apps/web/components/pos-desktop/CustomerDisplaySettings.tsx"),
+    read("apps/web/app/(pos)/pos/restaurant/restaurant.module.css"),
+  ]);
+  const surfaces = /(?:background(?:Color)?|background-color)\s*:\s*["']?(#(?:f[0-9a-f]{2}|e[0-9a-f]{2})[0-9a-f]{0,3}|#fff)\b/gi;
+  for (const [name, source] of [["page.tsx", page], ["pos.css", posCss], ["CustomerDisplaySettings.tsx", display]] as const) {
+    const bare = [...source.matchAll(surfaces)].map((m) => m[0]);
+    assert.deepEqual(bare, [], `${name} paints a light surface the dark theme cannot reach`);
+  }
+  const used = new Set([...`${page}\n${posCss}\n${display}`.matchAll(/var\(--posx-([a-z0-9-]+),/g)].map((m) => m[1]));
+  const darkStart = moduleCss.indexOf(':global(html.dark) .page');
+  const darkBlock = moduleCss.slice(darkStart, moduleCss.indexOf("}", darkStart));
+  for (const token of used) {
+    if (token === "inkbg") continue; // dark chips stay dark on purpose
+    assert.match(darkBlock, new RegExp(`--posx-${token}:`), `--posx-${token} has no dark value`);
+  }
+  // Declared anywhere else, the token would change retail /pos or the light restaurant theme.
+  for (const [name, source] of [["page.tsx", page], ["pos.css", posCss]] as const) {
+    assert.doesNotMatch(source, /--posx-[a-z0-9-]+\s*:/, `${name} must not declare --posx-* tokens`);
+  }
+  assert.match(page, /\.pos-page--restaurant-context:not\(\.pos-page--embedded\)/,
+    "standalone accent defaults must not override the shell's tokens when embedded");
+});
