@@ -40,6 +40,9 @@ export const bmsExpenseDocumentsTypeDefs = /* GraphQL */ `
     payeeType: String
     documentNo: String
     documentDate: String!
+    receivedDate: String
+    referenceDocumentNo: String
+    adjustmentReason: String
     paidAt: String
     amountBeforeVat: Float!
     vatAmount: Float
@@ -68,6 +71,9 @@ export const bmsExpenseDocumentsTypeDefs = /* GraphQL */ `
     payeeType: String
     documentNo: String
     documentDate: String!
+    receivedDate: String
+    referenceDocumentNo: String
+    adjustmentReason: String
     paidAt: String
     amountBeforeVat: Float!
     vatAmount: Float!

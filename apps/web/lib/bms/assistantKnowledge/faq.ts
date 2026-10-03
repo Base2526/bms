@@ -258,6 +258,22 @@ export const SYSTEM_FAQ: readonly SystemFaq[] = [
     ),
   },
   {
+    id: "faq.board-game-single-checkin-split-payment",
+    guideId: "pos.board-game-table",
+    question: both(
+      "ร้านบอร์ดเกมเช็คอินกลุ่มเดียว แต่แยกจ่ายรายคนได้ไหม",
+      "Can a board-game group check in once but pay separately per person?"
+    ),
+    answer: both(
+      "ได้ — เปิดโต๊ะครั้งเดียว แล้วตอนเพิ่มผู้เล่นให้กำหนดเลขกลุ่มบิลของแต่ละคน เช่น บิล 1, บิล 2, บิล 3 คนที่ใช้เลขเดียวกันจะจ่ายรวมกัน ระหว่างเล่นให้เพิ่มสินค้าเข้ากลุ่มบิลที่ถูกต้อง และตอนเก็บเงินให้กดปิดบิล/เก็บเงินเฉพาะกลุ่มนั้น กลุ่มอื่นยังเล่นต่อได้ โต๊ะจะว่างเมื่อทุกกลุ่มชำระครบ",
+      "Yes. Open the table once, then assign each participant a bill group such as Bill 1, Bill 2, or Bill 3. People sharing the same number pay together. During play, add tab items to the correct bill group. At payment time, close and collect only that group; the other groups keep playing. The table becomes free only after every group has settled."
+    ),
+    aliases: lists(
+      ["เช็คอินครั้งเดียวแยกจ่าย", "ลงโต๊ะครั้งเดียวแยกบิล", "แยกจ่ายรายคนบอร์ดเกม", "มากลุ่มเดียวจ่ายแยก", "โต๊ะเดียวแยกจ่าย", "จ่ายแยกเป็นรายคน"],
+      ["check in once pay separately", "single check-in split payment", "split payment per person board game", "one group paying separately", "one table separate payments"]
+    ),
+  },
+  {
     id: "faq.missing-button",
     guideId: "permissions.action-unavailable",
     question: both(

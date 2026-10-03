@@ -89,9 +89,9 @@ test("normalized invoice uniqueness and friendly duplicate handling are migratio
 
 test("tax summaries use each authority date instead of forcing every figure into document month", () => {
   const src = read("apps/web/lib/bms/expenseDocuments.ts");
-  assert.match(src, /sum\(vat_amount\) FILTER \(WHERE vat_claim_month BETWEEN/);
+  assert.match(src, /sum\(vat_amount \* CASE WHEN document_kind='SUPPLIER_CREDIT_NOTE' THEN -1 ELSE 1 END\) FILTER \(WHERE vat_claim_month BETWEEN/);
   assert.match(src, /sum\(wht_amount\) FILTER \(WHERE paid_at BETWEEN/);
-  assert.match(src, /sum\(amount_before_vat\) FILTER \(WHERE document_date BETWEEN/);
+  assert.match(src, /sum\(amount_before_vat \* CASE WHEN document_kind='SUPPLIER_CREDIT_NOTE' THEN -1 ELSE 1 END\) FILTER \(WHERE document_date BETWEEN/);
 });
 
 test("expense GraphQL reads and writes have separate permissions", () => {

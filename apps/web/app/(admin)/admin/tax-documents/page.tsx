@@ -232,6 +232,9 @@ export default function TaxDocumentsPage() {
             <Button type="primary" icon={<FileExcelOutlined />} loading={generating} onClick={() => exportXlsx("VAT_SALES")}>
               {t("admin_tax_documents.export_xlsx")}
             </Button>
+            <Button target="_blank" rel="noopener noreferrer" href={`/api/bms/reports/tax-print?${new URLSearchParams({reportType:"VAT_SALES",from,to,...(locationId?{locationId}:{})})}`}>
+              {t("admin_expenses.print_report")}
+            </Button>
             <Button icon={<FileExcelOutlined />} loading={generating} onClick={() => exportXlsx("STOCK_LEDGER")}>
               {t("admin_tax_documents.export_stock_ledger")}
             </Button>

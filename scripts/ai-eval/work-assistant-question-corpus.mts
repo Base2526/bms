@@ -191,6 +191,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ค่าเล่นตามเวลา", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
   { q: "แยกบิลโต๊ะบอร์ดเกม", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
   { q: "split a board game table bill", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
+  { q: "เช็คอินครั้งเดียวแต่แยกจ่ายรายคน", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
+  { q: "check in once but pay separately per person", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
   { q: "โต๊ะยังไม่ว่างทั้งที่จ่ายแล้ว", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
   { q: "ย้ายโต๊ะบอร์ดเกม", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },
   { q: "move a board game table", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.board-game-table" },

@@ -3,6 +3,7 @@ import type { PoolClient } from "pg";
 import { query, runInTransaction } from "@/lib/db";
 import { assertTaxPeriod, isIsoCalendarDate, round2 } from "./taxReportMath";
 import { isValidThaiTaxId } from "./thaiTaxId";
+import { expenseDocumentSign, isExpenseAdjustment, normalizeExpenseAdjustment } from "./expenseAdjustments";
 
 export { isValidThaiTaxId } from "./thaiTaxId";
 
@@ -10,7 +11,7 @@ export const EXPENSE_CATEGORIES = [
   "INVENTORY", "RENT", "UTILITIES", "INTERNET", "ADVERTISING", "TRANSPORT",
   "REPAIRS", "PROFESSIONAL_FEE", "WAGES", "OTHER",
 ] as const;
-export const EXPENSE_DOCUMENT_KINDS = ["TAX_INVOICE", "RECEIPT", "CASH_BILL", "PAYMENT_VOUCHER"] as const;
+export const EXPENSE_DOCUMENT_KINDS = ["TAX_INVOICE", "RECEIPT", "CASH_BILL", "PAYMENT_VOUCHER", "SUPPLIER_CREDIT_NOTE", "SUPPLIER_DEBIT_NOTE"] as const;
 export const EXPENSE_PAYEE_TYPES = ["INDIVIDUAL", "JURISTIC"] as const;
 export const EXPENSE_WHT_TYPES = ["RENT", "SERVICE", "PROFESSIONAL", "TRANSPORT", "ADVERTISING", "OTHER"] as const;
 
@@ -31,6 +32,9 @@ export type ExpenseDocumentInput = {
   payeeType?: PayeeType | null;
   documentNo?: string | null;
   documentDate: string;
+  receivedDate?: string | null;
+  referenceDocumentNo?: string | null;
+  adjustmentReason?: string | null;
   paidAt?: string | null;
   amountBeforeVat: number;
   vatAmount?: number | null;
@@ -95,6 +99,8 @@ export function validateInputVatAmount(
 }
 
 function normalizedInput(input: ExpenseDocumentInput) {
+  const adjustment = normalizeExpenseAdjustment(input);
+  if (adjustment) input = { ...input, ...adjustment };
   if (!input.locationId) throw new Error("ต้องระบุสถานประกอบการ");
   if (!isOneOf(input.category, EXPENSE_CATEGORIES)) throw new Error("หมวดค่าใช้จ่ายไม่ถูกต้อง");
   if (!isOneOf(input.documentKind, EXPENSE_DOCUMENT_KINDS)) throw new Error("ชนิดเอกสารไม่ถูกต้อง");
@@ -118,13 +124,13 @@ function normalizedInput(input: ExpenseDocumentInput) {
   }
   const key = clean(input.idempotencyKey);
   if (!key || key.length > 200) throw new Error("idempotencyKey ไม่ถูกต้อง");
-  if (vatAmount > 0 && input.documentKind !== "TAX_INVOICE") throw new Error("ขอภาษีซื้อได้เฉพาะใบกำกับภาษี");
+  if (vatAmount > 0 && input.documentKind !== "TAX_INVOICE" && !adjustment) throw new Error("ขอภาษีซื้อได้เฉพาะใบกำกับภาษี หรือใบลดหนี้/ใบเพิ่มหนี้");
   validateInputVatAmount(amountBeforeVat, vatAmount);
   if ((vatAmount > 0) !== Boolean(input.vatClaimMonth)) throw new Error("VAT และเดือนที่ใช้สิทธิ์ภาษีซื้อต้องระบุคู่กัน");
   if (input.vatClaimMonth && (input.vatClaimMonth.slice(8) !== "01" || input.vatClaimMonth.slice(0, 7) < input.documentDate.slice(0, 7))) {
     throw new Error("เดือนที่ใช้สิทธิ์ภาษีซื้อต้องเป็นวันแรกของเดือนและไม่ก่อนเดือนเอกสาร");
   }
-  validateExpenseTaxDates(input.documentDate, input.vatClaimMonth);
+  validateExpenseTaxDates(input.documentDate, adjustment ? null : input.vatClaimMonth);
   if ((whtAmount > 0) !== Boolean(whtIncomeType)) throw new Error("ข้อมูลหัก ณ ที่จ่ายไม่ครบ");
   if (whtAmount > 0 && (whtRate == null || !input.paidAt)) throw new Error("หัก ณ ที่จ่ายต้องมีวันที่จ่ายและอัตรา");
   if (whtAmount === 0 && whtRate != null) throw new Error("ระบุอัตราหัก ณ ที่จ่ายได้เมื่อมียอดหักเท่านั้น");
@@ -151,6 +157,7 @@ function mapRow(r: any) {
     supplierId: r.supplier_id, payeeName: r.payee_name, payeeTaxId: r.payee_tax_id,
     payeeBranchCode: r.payee_branch_code, payeeAddress: r.payee_address, payeeType: r.payee_type,
     documentNo: r.document_no, documentDate: r.document_date, paidAt: r.paid_at,
+    receivedDate: r.received_date, referenceDocumentNo: r.reference_document_no, adjustmentReason: r.adjustment_reason,
     amountBeforeVat: Number(r.amount_before_vat), vatAmount: Number(r.vat_amount),
     vatClaimMonth: r.vat_claim_month, whtIncomeType: r.wht_income_type,
     whtRate: r.wht_rate == null ? null : Number(r.wht_rate), whtAmount: Number(r.wht_amount),
@@ -160,7 +167,10 @@ function mapRow(r: any) {
   };
 }
 
-const selectColumns = `d.*, l.code AS location_code, l.name AS location_name, l.branch_code`;
+// PostgreSQL DATE must reach GraphQL as an ISO calendar date, not a JS Date shifted by timezone.
+const selectColumns = `d.*, d.document_date::text AS document_date, d.paid_at::text AS paid_at,
+  d.vat_claim_month::text AS vat_claim_month, d.received_date::text AS received_date,
+  l.code AS location_code, l.name AS location_name, l.branch_code`;
 
 export async function listExpenseDocuments(tenantId: string, filter: {
   from: string; to: string; locationId?: string | null; category?: string | null;
@@ -226,7 +236,7 @@ export async function createExpenseDocument(tenantId: string, actorUserId: strin
     const payeeBranchCode = n.payeeBranchCode ?? supplier?.branch_code ?? null;
     const payeeType = n.payeeType ?? supplier?.entity_type ?? null;
     if (!payeeName) throw new Error("ต้องระบุชื่อผู้ขายหรือผู้รับเงิน");
-    if (n.documentKind === "TAX_INVOICE" && (!n.documentNo || !payeeTaxId)) throw new Error("ใบกำกับภาษีต้องมีเลขที่เอกสารและเลขผู้เสียภาษีผู้ขาย");
+    if ((n.documentKind === "TAX_INVOICE" || isExpenseAdjustment(n.documentKind)) && (!n.documentNo || !payeeTaxId)) throw new Error("ใบกำกับภาษี/ใบปรับปรุงต้องมีเลขที่เอกสารและเลขผู้เสียภาษีผู้ขาย");
     if (n.vatAmount > 0) {
       if (!payeeTaxId || !isValidThaiTaxId(payeeTaxId)) {
         throw new Error("ใบกำกับภาษีที่ขอภาษีซื้อต้องมีเลขผู้เสียภาษี 13 หลักที่ checksum ถูกต้อง");
@@ -243,11 +253,12 @@ export async function createExpenseDocument(tenantId: string, actorUserId: strin
     }
     if (n.whtAmount > 0 && (!payeeType || !payeeTaxId)) throw new Error("หัก ณ ที่จ่ายต้องมีประเภทและเลขผู้เสียภาษีผู้รับเงิน");
     const values = [tenantId,n.locationId,n.category,n.documentKind,n.supplierId ?? null,payeeName,payeeTaxId,payeeBranchCode,n.payeeAddress ?? supplier?.address ?? null,payeeType,n.documentNo,n.documentDate,n.paidAt ?? null,n.amountBeforeVat,n.vatAmount,n.vatClaimMonth ?? null,n.whtIncomeType ?? null,n.whtRate ?? null,n.whtAmount,n.purchaseOrderId ?? null,n.evidenceFileId ?? null,n.note,actorUserId,n.idempotencyKey,requestHash];
+    const insertValues = [...values, n.receivedDate ?? null, n.referenceDocumentNo ?? null, n.adjustmentReason ?? null];
     const created = await client.query(
-      `INSERT INTO bms_expense_documents (tenant_id,location_id,category,document_kind,supplier_id,payee_name,payee_tax_id,payee_branch_code,payee_address,payee_type,document_no,document_date,paid_at,amount_before_vat,vat_amount,vat_claim_month,wht_income_type,wht_rate,wht_amount,purchase_order_id,evidence_file_id,note,created_by,idempotency_key,request_hash) VALUES (${values.map((_,i)=>`$${i+1}`).join(",")}) RETURNING id`,
-      values
+      `INSERT INTO bms_expense_documents (tenant_id,location_id,category,document_kind,supplier_id,payee_name,payee_tax_id,payee_branch_code,payee_address,payee_type,document_no,document_date,paid_at,amount_before_vat,vat_amount,vat_claim_month,wht_income_type,wht_rate,wht_amount,purchase_order_id,evidence_file_id,note,created_by,idempotency_key,request_hash,received_date,reference_document_no,adjustment_reason) VALUES (${insertValues.map((_,i)=>`$${i+1}`).join(",")}) RETURNING id`,
+      insertValues
     ).catch((error: any) => {
-      if (error?.code === "23505" && error?.constraint === "uq_bms_expense_documents_tax_invoice_normalized") {
+      if (error?.code === "23505" && ["uq_bms_expense_documents_tax_invoice_normalized", "uq_bms_expense_documents_adjustment_normalized"].includes(error?.constraint)) {
         throw new Error("ใบนี้ถูกบันทึกแล้ว");
       }
       throw error;
@@ -277,8 +288,8 @@ export async function getExpenseTaxSummary(tenantId: string, input: { from: stri
   const res = await query(`
     SELECT location_id,
            count(*) FILTER (WHERE document_date BETWEEN $2::date AND $3::date)::int AS document_count,
-           COALESCE(sum(amount_before_vat) FILTER (WHERE document_date BETWEEN $2::date AND $3::date),0)::text AS expense_base,
-           COALESCE(sum(vat_amount) FILTER (WHERE vat_claim_month BETWEEN date_trunc('month',$2::date)::date AND date_trunc('month',$3::date)::date),0)::text AS vat_purchase,
+           COALESCE(sum(amount_before_vat * CASE WHEN document_kind='SUPPLIER_CREDIT_NOTE' THEN -1 ELSE 1 END) FILTER (WHERE document_date BETWEEN $2::date AND $3::date),0)::text AS expense_base,
+           COALESCE(sum(vat_amount * CASE WHEN document_kind='SUPPLIER_CREDIT_NOTE' THEN -1 ELSE 1 END) FILTER (WHERE vat_claim_month BETWEEN date_trunc('month',$2::date)::date AND date_trunc('month',$3::date)::date),0)::text AS vat_purchase,
            COALESCE(sum(wht_amount) FILTER (WHERE paid_at BETWEEN $2::date AND $3::date),0)::text AS wht
       FROM bms_expense_documents
      WHERE tenant_id=$1 AND status='ACTIVE'
@@ -303,12 +314,13 @@ export type InputVatReportRow = {
   amountBeforeVat: number;
   vatAmount: number;
   totalAmount: number;
+  note: string | null;
 };
 
 export type InputVatReport = {
   buyer: { name: string; taxId: string | null };
   period: { from: string; to: string };
-  establishments: Array<{ locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean }>;
+  establishments: Array<{ locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean; address: string | null }>;
   rows: InputVatReportRow[];
   totals: { documentCount: number; amountBeforeVat: number; vatAmount: number; totalAmount: number };
 };
@@ -339,7 +351,7 @@ export async function getInputVatReport(
       [tenantId]
     ),
     query<any>(
-      `SELECT id, code, name, branch_code, is_head_office FROM bms_locations
+      `SELECT id, code, name, branch_code, is_head_office, address FROM bms_locations
         WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
           AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
         ORDER BY is_head_office DESC, branch_code, code`,
@@ -349,11 +361,11 @@ export async function getInputVatReport(
       `SELECT d.location_id, l.branch_code, d.document_date::text AS document_date,
               d.document_no, d.payee_name, d.payee_tax_id,
               COALESCE(NULLIF(btrim(d.payee_branch_code), ''), '00000') AS payee_branch_code,
-              d.amount_before_vat, d.vat_amount
+              d.amount_before_vat, d.vat_amount, d.note, d.document_kind, d.reference_document_no, d.adjustment_reason
          FROM bms_expense_documents d
          JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
         WHERE d.tenant_id = $1 AND d.status = 'ACTIVE'
-          AND d.document_kind = 'TAX_INVOICE' AND d.vat_amount > 0
+          AND d.document_kind IN ('TAX_INVOICE', 'SUPPLIER_CREDIT_NOTE', 'SUPPLIER_DEBIT_NOTE') AND d.vat_amount > 0
           AND d.vat_claim_month BETWEEN date_trunc('month', $2::date)::date
                                     AND date_trunc('month', $3::date)::date
           AND ($4::uuid IS NULL OR d.location_id = $4::uuid)
@@ -365,8 +377,9 @@ export async function getInputVatReport(
   if (locationId && !locRes.rowCount) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
 
   const rows: InputVatReportRow[] = rowRes.rows.map((row: any) => {
-    const amountBeforeVat = Number(row.amount_before_vat);
-    const vatAmount = Number(row.vat_amount);
+    const sign = expenseDocumentSign(row.document_kind);
+    const amountBeforeVat = sign * Number(row.amount_before_vat);
+    const vatAmount = sign * Number(row.vat_amount);
     return {
       locationId: row.location_id,
       branchCode: row.branch_code,
@@ -378,6 +391,9 @@ export async function getInputVatReport(
       amountBeforeVat,
       vatAmount,
       totalAmount: round2(amountBeforeVat + vatAmount),
+      note: isExpenseAdjustment(row.document_kind)
+        ? [row.document_kind === "SUPPLIER_CREDIT_NOTE" ? "ใบลดหนี้" : "ใบเพิ่มหนี้", `อ้างอิง ${row.reference_document_no}`, row.adjustment_reason, row.note].filter(Boolean).join(" · ")
+        : row.note ?? null,
     };
   });
   const totals = rows.reduce(
@@ -399,6 +415,7 @@ export async function getInputVatReport(
       name: row.name,
       branchCode: row.branch_code,
       isHeadOffice: Boolean(row.is_head_office),
+      address: row.address ?? null,
     })),
     rows,
     totals,
