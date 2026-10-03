@@ -66,6 +66,22 @@ async function run() {
     const image = await window.webContents.capturePage();
     await writeFile(screenshotPath, image.toPNG());
 
+    // The dismiss button must sit inside the error box; the global button rule once pushed it below.
+    const alertGeometry = await window.webContents.executeJavaScript(`(async () => {
+      document.querySelector('#pairing-form').requestSubmit();
+      await new Promise((resolve) => { const tick = () => document.querySelector('#status').hidden ? setTimeout(tick, 20) : resolve(); tick(); });
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const box = document.querySelector('#status').getBoundingClientRect();
+      const close = document.querySelector('#status-close').getBoundingClientRect();
+      return { inside: close.top >= box.top && close.bottom <= box.bottom && close.right <= box.right && close.left >= box.left,
+        centred: Math.abs((close.top + close.bottom) / 2 - (box.top + box.bottom) / 2) <= 1 };
+    })()`);
+    if (!alertGeometry.inside || !alertGeometry.centred) {
+      throw new Error(`Alert close button is outside its box: ${JSON.stringify(alertGeometry)}`);
+    }
+    await writeFile(path.join(outputDir, "setup-error.png"), (await window.webContents.capturePage()).toPNG());
+    await window.webContents.executeJavaScript("document.querySelector('#status-close').click()");
+
     window.setContentSize(700, 900);
     await window.webContents.executeJavaScript(
       "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",

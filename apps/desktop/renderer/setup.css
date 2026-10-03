@@ -79,10 +79,13 @@ input:focus, textarea:focus { border-color: #1677ff; box-shadow: 0 0 0 3px rgba(
 .status.error { color: #cf1322; border: 1px solid #ffccc7; background: #fff2f0; }
 .status-close {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
   width: 28px;
   height: 28px;
+  min-height: 0;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 6px;
