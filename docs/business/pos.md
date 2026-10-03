@@ -1213,10 +1213,24 @@ five-digit establishment code, and taxable-base/VAT totals. A separate internal-
 sheet retains document kind, exempt sales, references, counts and rounding without crowding the
 statutory layout.
 
+Selecting **all establishments** adds a grouped **seller establishment (our shop)** heading with
+separate head-office and branch columns on every sales-tax row in XLSX/CSV and browser print.
+The seller's code is text (`00000` for head office); only its matching column is filled. These
+columns come from the row's seller location, never the buyer's branch code, which remains separate
+and explicitly labelled buyer establishment. Per-establishment sheets/pages and totals remain
+separate. Selecting one establishment keeps the compact original form; an all-establishment
+selection still shows the new columns even when permissions allow only one branch.
+
 The input-VAT workbook follows the same one-sheet-per-establishment form, including the buyer's
 identity/address and head-office or branch marker, the supplier's five-digit establishment code,
 grouped invoice headings, and pre-VAT/input-VAT totals. Its separate reconciliation sheet retains
 the internal buyer location and gross amount.
+
+As with sales tax, selecting **all establishments** adds our shop's head-office/branch columns
+to every input-VAT row in XLSX/CSV and browser print, here grouped as **buyer establishment
+(our shop)**. Supplier establishment remains a separate, explicitly labelled column. The shop's
+codes come from the scoped buyer location, not the supplier; per-establishment pages/sheets and
+totals remain separate, and choosing one establishment keeps the compact original form.
 
 Migration `10.37` adds supplier credit/debit notes to `/admin/expenses`. Enter positive **difference**
 amounts, original invoice reference(s), adjustment reason and received date. These are records of
@@ -1232,6 +1246,9 @@ and branch scope, serves no-store HTML, and uses the same statutory rows as XLSX
 has seller tax-ID boxes, head-office/branch marker, repeated headings, page numbers per establishment,
 per-page totals and a final establishment grand total. Browser fonts must support Thai; use 100% scale
 and disable browser headers/footers. Oversized single rows fail visibly rather than clipping evidence.
+Large monetary values use compact 7pt text only when needed, including page/grand totals; if a value
+still cannot fit its own cell, printing is blocked with an XLSX fallback message instead of overlapping
+the adjacent amount. This layout check does not change any amount or round away digits.
 This does not enable the existing server-generated tax PDF option, which remains unavailable.
 
 An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
@@ -1242,6 +1259,81 @@ and never rewrites an issued document. Seller identity is snapshotted on issue s
 cannot rewrite history. In the sales-tax report the original abbreviated value stays in its daily
 total and the replacing full invoice is a zero-value reference row. An unsent e-Tax queue row for a
 superseded or voided document is marked `CANCELLED` inside the same transaction.
+
+## Cloud receipt QR → full tax invoice request (10.38)
+
+This is **Cloud-only and opt-in**, not an e-Tax delivery implementation. Apply migration
+`10.38__bms_cloud_tax_invoice_requests.sql` and `10.39__bms_tax_request_submission_limits.sql`
+before enabling these server environment variables:
+
+```dotenv
+BMS_DEPLOYMENT_MODE=cloud
+BMS_TAX_REQUESTS_ENABLED=true
+BMS_PUBLIC_ORIGIN=https://your-public-bms-origin.example
+BMS_TAX_REQUEST_SECRET=<a-long-random-server-secret-shared-by-all-web-instances>
+```
+
+The origin must be public HTTPS (origin only, at most 150 characters). A dedicated secret is preferred;
+if absent, the existing `BMS_CHECKOUT_SECRET`, `AUTH_SECRET`, or `JWT_SECRET` is used in that order.
+With no secret/origin, the feature stays off without breaking a completed sale. `retail-local` always
+disables generation **and** public/staff service execution, even if the flag is true. Keep the origin
+and signing key stable: rotation invalidates previously printed request QR codes. Configure the reverse
+proxy to replace client-supplied forwarding headers, and keep the existing shared Redis rate limiter
+healthy. Never log request bodies or URL fragments for this page.
+
+Eligible completed POS sales with an abbreviated tax document carry a signed request link. It appears
+as QR on browser/desktop print previews, ESC/POS byte output, and native mobile receipt screens. Email
+receipts include a PNG QR attachment and link; text-only LINE receipts include the same tappable link.
+Deposits, unconfirmed Emergency Offline references, non-VAT receipts, voids and returned bills are not
+invoice-claimable. Reprints use the same link; the server always rechecks eligibility when scanned.
+Native hardware printing remains outside the current RN integration, and physical printers still need
+per-model QR scan verification before rollout.
+
+The customer scans without signing in, enters buyer name, checksum-valid 13-digit tax ID, five-digit
+branch (`00000` for head office), address, and optional phone, then explicitly submits. Staff review
+the queue at `/admin/tax-documents` (`tax.document.view`, scoped to their allowed branches). The review
+dialog shows the receipt/amount and exact buyer details; `tax.document.issue` plus explicit confirmation
+can issue, ask for corrected information, or reject with a reason. Polling refreshes status every 15
+seconds. Approval rechecks the sale and uses the existing full-invoice issuer in the **same** transaction
+as request completion, including cancellation of the abbreviated document and its unsent e-Tax queue
+row. Replacement preserves the original receipt's VAT amounts/rate, not current settings. Normal sales-tax
+report replacement rules continue to apply; this creates neither another sale nor another payment.
+
+One receipt has one request. Retries with the same independently generated browser secret recover the
+same request; a different bearer cannot overwrite it. After submission, the customer must save the
+**private tracking link** (copy button). The printed receipt QR is request-only and cannot reveal an
+existing buyer or invoice. Tracking uses a separate 256-bit secret whose hash alone is stored; tokens
+travel in fragments and POST bodies, not URL queries. The original browser tab can recover a lost
+response from session storage. Closing that tab without saving the private link requires contacting
+the shop. Treat the tracking link as confidential: anyone possessing it can read the buyer details.
+There is no email/OTP identity verification, automatic notification, public reset, or automatic issuance.
+Staff must verify the purchase and buyer before confirming, especially for disputed/lost receipts.
+
+Self-service submission and corrections close exactly **168 hours (7 days) after the abbreviated
+receipt was issued in the successful sale transaction**, not after scanning or reprinting. The deadline
+is frozen on the request and checked against the database clock after locking; equality is expired.
+Each receipt permits **3 successful submissions total: initial + 2 corrections**. Staff actions, invalid
+input, viewing/tracking and printing copies do not count. An identical retry with the same reviewed
+version replays its committed submission even after exhaustion, expiry or issuance; a different payload
+with that version is a conflict. Independent tabs cannot race past the per-receipt limit. All accepted
+buyer snapshots are append-only in `bms_tax_request_submissions`; the `version` is not the usage counter.
+Migration 10.39 derives existing usage from the recorded revision audits (capped at 3) and marks the
+only known current buyer snapshot as legacy rather than fabricating earlier buyer details.
+Staff can still approve a request submitted in time after the deadline or after all three submissions
+are used; requesting more information does not reset either limit. Customers needing further changes
+contact the shop. Private tracking retains its independent 180-day expiry from request creation,
+so the seven-day submission cutoff does not remove issued copies. These are technical access windows,
+**not legal claim or retention limits**. An expired/rejected request is not silently deleted or reopened.
+Pending/needs-info buyer edits also use a version check so staff approval cannot be overwritten.
+Issued buyer details are immutable; corrections follow the existing staff document workflow. Tracking
+stops exposing a cancelled invoice. Customer printouts are clearly marked **copies, not e-Tax Invoice**;
+the shop supplies the original through its established process. Enabling this flag does not enable the
+separately gated e-Tax provider/signing queue. Have the accountant approve that original-delivery process
+and the shop's privacy/retention policy before enabling customer access.
+
+Verification: `npm run test:pure -- cloud-tax-request`, and the guarded DB runner's
+`db cloud-tax-request` filter against a disposable local schema with migrations 10.38 and 10.39. Never run DB
+contracts against customer/production data.
 
 ## Product VAT category
 

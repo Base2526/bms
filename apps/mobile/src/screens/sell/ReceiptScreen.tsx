@@ -1,4 +1,5 @@
 import React from 'react';
+import QRCode from 'react-native-qrcode-svg';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
@@ -115,6 +116,12 @@ export default function ReceiptScreen({ route, navigation }: Props) {
             ฿{sale.total.toFixed(2)}
           </Text>
         </View>
+        {sale.taxRequestUrl ? (
+          <View style={{ alignItems: 'center', padding: spacing.md, backgroundColor: 'white' }}>
+            <Text style={{ color: '#111', marginBottom: spacing.sm }}>สแกนขอใบกำกับภาษีเต็มรูป</Text>
+            <QRCode value={sale.taxRequestUrl} size={180} quietZone={12} ecl="M" />
+          </View>
+        ) : null}
       </ScrollView>
     </Card>
   );

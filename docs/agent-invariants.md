@@ -272,6 +272,22 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 
 ## POS and tax
 
+Cloud receipt requests (`10.38`) are purpose-bound capabilities, not checkout/payment authorization.
+`BMS_TAX_REQUESTS_ENABLED` plus HTTPS origin/secret is opt-in; `retail-local` refuses generation and
+service execution. Receipt QR never reads a previously submitted buyer: a separate 256-bit tracking
+secret (hash stored) owns that access. Public requests are bounded/rate-limited and tenant/order derive
+from the verified signature, never body IDs. Staff approval needs `tax.document.issue`, allowed branch,
+explicit confirmation and the reviewed version. Lock order is order → request → tax document; issuance
+and request completion share one tenant transaction. Replacing an abbreviated invoice preserves its
+VAT snapshot rather than recomputing with today's settings. Tracking exposes a copy, never claims to
+deliver e-Tax, and refuses a cancelled document. `10.39` limits initial submission + corrections to
+three successes per receipt and strictly before 168 hours from the sale's abbreviated receipt issue.
+The DB clock checks a frozen deadline after locking; an append-only buyer snapshot keyed by the
+reviewed client version makes committed retries free even after expiry/issuance. Staff actions never
+spend/reset quota or extend the deadline; timely submissions remain approvable afterward. Tracking
+keeps its independent 180-day lifetime. These windows are not statutory deadlines. See
+[Cloud receipt QR](business/pos.md#cloud-receipt-qr--full-tax-invoice-request-1038).
+
 Expense evidence (`10.11`) is append-only financial history: creation uses an exact idempotency
 key plus request hash, and corrections set `VOID` with a reason instead of deleting a row. Supplier,
 purchase-order, location and private evidence-file references must belong to the same tenant. Input
@@ -535,12 +551,17 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
 - **The sales-tax export is one complete tax month and one statutory sheet per establishment.**
   Each sheet carries the tax month/year, seller tax identity, establishment address and
   head-office/branch code above the rows; the buyer's establishment is its five-digit code, and
-  taxable base/VAT totals close the sheet. The richer combined fields stay on a separate internal
+  taxable base/VAT totals close the sheet. An all-establishment selection additionally labels each
+  row with separate seller head-office/branch columns from its scoped seller location, never from
+  the buyer's branch code. This does not merge establishments or change totals; an explicitly selected
+  single establishment retains the compact form. The richer combined fields stay on a separate internal
   reconciliation sheet and must not replace or be mixed into the statutory per-establishment form.
 - **The input-VAT export uses the same per-establishment statutory layout.** Its period is the
   recorded `vat_claim_month`, not payment or invoice month. Each sheet identifies the buyer's
   establishment and records the supplier name, tax id, five-digit establishment code, invoice
-  date/number, pre-VAT amount and input VAT; internal buyer-location and gross-total fields remain
+  date/number, pre-VAT amount and input VAT. All-establishment selection adds separate buyer
+  head-office/branch columns for our shop from its scoped location, not the supplier's code;
+  single-establishment selection keeps the compact form. Detailed buyer-location and gross-total fields remain
   on a separate reconciliation sheet.
 - **Only VAT-inclusive catalog prices are currently sellable.** The setting mutation refuses
   `price_includes_vat = false`, the form disables that choice, and a legacy false value blocks POS

@@ -20,6 +20,7 @@ import {
 } from "./receiptI18n";
 
 export type PosSaleReceiptRow = {
+  taxRequestUrl?: string | null;
   orderId: string;
   receiptNo: string | null;
   billNo: string | null;
@@ -100,6 +101,7 @@ export function receiptPayloadFromPosSale(
   }));
   const rounding = Number(row.roundingAmount ?? row.vat?.roundingAmount ?? 0);
   return {
+    taxRequestUrl: row.taxRequestUrl ?? null,
     languageMode: mode,
     storeName: row.locationName ?? store.fallbackStoreName ?? "",
     storeAddress: store.address,

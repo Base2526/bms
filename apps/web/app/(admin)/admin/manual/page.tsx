@@ -774,8 +774,8 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     items: [
       { label: "Payment", href: ROUTES.payment, note: "ตรวจสลิป, confirm/reject และ refund ตามสิทธิ์" },
       { label: "ลูกหนี้การค้า", href: ROUTES.receivables, note: "ยอดค้างต่อลูกค้า อายุหนี้ และการรับชำระที่เคาน์เตอร์" },
-      { label: "ภาษีขาย", href: ROUTES.taxDocuments, note: "ใบกำกับภาษีรายเดือน รายงานภาษีขายประกอบ ภ.พ.30 และรายการที่ต้องตรวจก่อนส่งนักบัญชี" },
-      { label: "รายจ่ายและภาษีซื้อ", href: ROUTES.expenses, note: "บันทึกหลักฐานรายจ่าย ภาษีซื้อ และหัก ณ ที่จ่าย โดยยกเลิกเป็นประวัติแทนการลบ" },
+      { label: "ภาษีขาย", href: ROUTES.taxDocuments, note: "ใบกำกับภาษีรายเดือน รายงานภาษีขายประกอบ ภ.พ.30 และรายการที่ต้องตรวจก่อนส่งนักบัญชี — เลือกทุกสถานประกอบการจะเพิ่มช่องสำนักงานใหญ่/สาขาของร้านเราในฐานะผู้ขายในหน้าพิมพ์และไฟล์ส่งออก แยกจากสาขาลูกค้า โดยยังแยกหน้า/ชีตและยอดรวมรายสาขา; เลือกสาขาเดียวใช้รูปแบบเดิม" },
+      { label: "รายจ่ายและภาษีซื้อ", href: ROUTES.expenses, note: "บันทึกหลักฐานรายจ่าย ภาษีซื้อ และหัก ณ ที่จ่าย โดยยกเลิกเป็นประวัติแทนการลบ — เลือกทุกสถานประกอบการจะเพิ่มช่องสำนักงานใหญ่/สาขาของร้านเราในฐานะผู้ซื้อในหน้าพิมพ์และไฟล์ส่งออก แยกจากสาขาซัพพลายเออร์ โดยยังแยกหน้า/ชีตและยอดรวมรายสาขา; เลือกสาขาเดียวใช้รูปแบบเดิม" },
       { label: "Commission", href: ROUTES.commission, note: "อัตราคอม, ผลตามรอบ และ clawback หลัง return" },
       { label: "Reports", href: ROUTES.reports, note: "KPI ย้อนหลัง, รายงานยอดขาย/สต็อก และ AI Report Generator" },
     ],
@@ -1994,8 +1994,8 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     items: [
       { label: "Payment", href: ROUTES.payment, note: "Review slips, confirm/reject payments, and handle refunds when allowed" },
       { label: "Receivables", href: ROUTES.receivables, note: "Outstanding balance per customer, ageing, and counter collections" },
-      { label: "Sales tax", href: ROUTES.taxDocuments, note: "Monthly tax invoices, the sales tax report for PP.30, and what to check before sending to the accountant" },
-      { label: "Expenses & input VAT", href: ROUTES.expenses, note: "Record expense evidence, input VAT and withholding tax; voiding preserves history instead of deleting it" },
+      { label: "Sales tax", href: ROUTES.taxDocuments, note: "Monthly tax invoices, the sales tax report for PP.30, and checks before sending to the accountant. All establishments adds our shop's seller head-office/branch columns to print and exports, separately from the customer's branch. Pages/sheets and totals remain per establishment; selecting one branch keeps the compact form." },
+      { label: "Expenses & input VAT", href: ROUTES.expenses, note: "Record expense evidence, input VAT and withholding tax; voiding preserves history. All establishments adds our shop's buyer head-office/branch columns to print and exports, separately from the supplier's branch. Pages/sheets and totals remain per establishment; selecting one branch keeps the compact form." },
       { label: "Commission", href: ROUTES.commission, note: "Commission rules, results, and clawbacks after returns" },
       { label: "Reports", href: ROUTES.reports, note: "Historical KPIs, sales/inventory reporting, and AI Report Generator" },
     ],
@@ -2883,7 +2883,7 @@ function buildManualMarkdown(c: ManualContent): string {
 }
 
 export default function Page() {
-  const { lang } = useI18n();
+  const { lang, t } = useI18n();
   const c = resolveBilingual(MANUAL, lang);
 
   const [persona, setPersona] = useState<PersonaKey>("owner");
@@ -3522,6 +3522,9 @@ export default function Page() {
               subtitle={c.posSubtitle}
             >
               <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Alert type="info" showIcon closable
+                  message={<Link href="/admin/tax-documents">{t("tax_requests.title")}</Link>}
+                  description={t("tax_requests.manual")}/>
                 <Alert
                   type="warning"
                   showIcon

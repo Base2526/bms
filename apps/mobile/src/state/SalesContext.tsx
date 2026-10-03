@@ -25,6 +25,7 @@ export interface SaleReturnRecord {
 
 export interface SaleSnapshot {
   id: string;
+  taxRequestUrl?: string | null;
   receiptNo: string;
   createdAt: string;
   offlineTenderedAt: string | null;
@@ -101,6 +102,7 @@ export function SalesProvider({ children }: { children: React.ReactNode }) {
         }));
         return {
           id: receipt.orderId,
+          taxRequestUrl: receipt.taxRequestUrl,
           receiptNo: receipt.receiptNo ?? receipt.billNo ?? receipt.orderId,
           createdAt: receipt.soldAt,
           offlineTenderedAt: receipt.offlineTenderedAt,

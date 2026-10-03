@@ -120,6 +120,7 @@ mutation VerifyPosCashier($input: BmsPosCredentialsInput!) {
 
 fragment MobilePosReceiptFields on BmsPosReceipt {
   orderId
+  taxRequestUrl
   receiptNo
   billNo
   soldAt

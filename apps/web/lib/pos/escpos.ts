@@ -146,6 +146,8 @@ export type ReceiptLine = {
 };
 
 export type ReceiptPayload = {
+  /** Server-issued Cloud request capability; omitted on return/exchange/offline slips. */
+  taxRequestUrl?: string | null;
   languageMode?: ReceiptLanguageMode;
   storeName: string;
   storeAddress?: string | null;
@@ -336,6 +338,17 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   // บาร์โค้ดเลขบิลไว้สแกนตอนรับคืนของ — สลิปคืนต้องใช้บิลขายต้นทาง ไม่ใช่เลข CN
   const barcodeValue = payload.barcodeValue ?? payload.docNo;
   if (barcodeValue) b.feed(1).align(1).barcode39(barcodeValue).align(0);
+
+  if (payload.taxRequestUrl && /^https:\/\/[\x21-\x7e]{1,300}$/.test(payload.taxRequestUrl)) {
+    // Epson GS ( k QR model 2, module size 4, ECC M, store then print.
+    const data=Array.from(payload.taxRequestUrl,c=>c.charCodeAt(0)),length=data.length+3;
+    b.feed(1).align(1).line(label("สแกนขอใบกำกับภาษีเต็มรูป", "Scan to request a tax invoice"))
+      .raw(GS,0x28,0x6b,4,0,49,65,50,0)
+      .raw(GS,0x28,0x6b,3,0,49,67,4)
+      .raw(GS,0x28,0x6b,3,0,49,69,49)
+      .raw(GS,0x28,0x6b,length&255,length>>8,49,80,48,...data)
+      .raw(GS,0x28,0x6b,3,0,49,81,48).feed(1).align(0);
+  }
 
   b.cut();
   return b.build();

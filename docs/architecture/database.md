@@ -162,6 +162,19 @@ cannot toggle its own flag or an Administrator's.
 **Pack sizes v2 (`7.93__bms_product_packs_per_size.sql`)** — reworks `bms_product_packs` to carry a
 barcode/price per pack size rather than one conversion factor per product.
 
+**Cloud receipt requests (`10.38`, `10.39`)** — `bms_tax_invoice_requests` is unique per tenant/order,
+scoped to its sale branch, with `PENDING → NEEDS_INFO → PENDING` corrections or terminal `REJECTED` /
+`ISSUED`. Buyer details and a hashed independent tracking secret belong to the request; an issued
+document FK is tenant-bound. `request_deadline` freezes abbreviated receipt issuance + 168 hours;
+`submission_count` (CHECK 1–3) is separate from the staff/customer optimistic-lock `version`.
+`bms_tax_request_submissions` stores immutable buyer snapshots: PK `(tenant_id,request_id,submission_no)`,
+unique `(tenant_id,request_id,client_version)` makes identical retries free. Initial submission uses
+client version 0; migrated last-known snapshots have NULL client version and `legacy_snapshot=TRUE`.
+Both tables use strict tenant RLS. History grants only SELECT/INSERT to `bms_app`; request updates,
+history insert and sanitized audit commit together. Tenant/order teardown cascades, but normal issued
+documents remain immutable. The server checks deadlines with `clock_timestamp()` after row locks;
+staff approval and independent 180-day private tracking do not consume customer submission quota.
+
 **e-Tax submission queue (`7.94__bms_etax_submissions.sql`)** — `bms_etax_submissions`, one row per
 issued tax document, tracks `PENDING → BUILT → SIGNED → SENT → ACCEPTED/REJECTED/FAILED` with
 `attempts`/`next_attempt_at` for backoff retry. Written only through `lib/bms/etax/queue.ts`,

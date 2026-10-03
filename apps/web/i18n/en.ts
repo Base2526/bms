@@ -3613,6 +3613,15 @@ const en = {
     collected_total: "Collected",
     of_amount_due: "of bill total",
   },
+  tax_requests: {
+    online_policy: "Submit or correct buyer details within 7 days (168 hours) of the completed sale, at most 3 submissions per receipt. Viewing status and printing copies do not count. Staff can review timely requests after the deadline.",
+    manual: "Cloud only: when configured and enabled, customers scan their receipt QR and submit up to 3 times (initial + 2 corrections) within 168 hours of the completed sale. Review on Sales tax with tax.document.view; confirm issuance with tax.document.issue. Expiry or exhausted quota does not prevent approving a timely request. Never issue duplicate invoices to reset quota. Online copies are not e-Tax invoices.",
+    deadline: "Online submission deadline", usage: "Submissions used", remaining: "Remaining",
+    expired: "The 7-day window has closed. Contact the shop for further changes. Staff can still review your existing request.",
+    exhausted: "All 3 submissions for this receipt have been used. Contact the shop for further changes. Your latest request can still be reviewed.",
+    title:"Online tax invoice requests",refresh:"Refresh",disabled:"Cloud requests are off: configure BMS_TAX_REQUESTS_ENABLED=true, a public HTTPS origin and a server secret",
+    pending:"Pending review",needs_info:"More information needed",rejected:"Rejected",issued:"Issued",saved:"Saved",date:"Submitted",branch:"Branch",buyer:"Buyer",feedback:"Customer feedback",action:"Action",review:"Review request",previous:"Previous",next:"Next",confirm:"Confirm action",cancel:"Cancel",confirm_hint:"Check buyer name, tax ID, address and original sale before issuing. Issued documents cannot be overwritten.",order:"Original order",issue:"Issue full tax invoice with these details",reject:"Reject request",reason:"Customer-visible reason (no internal information)",
+  },
   admin_expenses: {
     page_title: "Expenses, input VAT & withholding tax",
     no_permission: "Your role cannot view expense documents (expense.view is required)",

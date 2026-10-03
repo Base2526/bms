@@ -23,6 +23,7 @@
 
 import type { ReceiptPayload } from "@/lib/pos/escpos";
 import { code39Bars } from "@/lib/pos/barcode";
+import ReceiptTaxQr from "./ReceiptTaxQr";
 import { receiptLabel, receiptLocale } from "@/lib/pos/receiptI18n";
 
 const money = (value: number, locale: string) =>
@@ -143,6 +144,7 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
         {payload.cashier && <div>{label("แคชเชียร์", "Cashier")} {payload.cashier}</div>}
       </div>
 
+      {payload.taxRequestUrl && <ReceiptTaxQr url={payload.taxRequestUrl} label={label("สแกนขอใบกำกับภาษีเต็มรูป", "Scan to request a tax invoice")}/>}
       {payload.member && <div className="pos-receipt-foot">
         {[payload.member.memberNo, payload.member.name].filter(Boolean).length > 0 && (
           <div>{label("สมาชิก", "Member")} {[payload.member.memberNo, payload.member.name].filter(Boolean).join(" ")}</div>

@@ -593,8 +593,11 @@ function salesTaxNote(row: import("./taxReports").SalesTaxRow): string {
 
 export function buildSalesTaxReportDoc(
   report: import("./taxReports").SalesTaxReport,
-  formatDate: (iso: string) => string
+  formatDate: (iso: string) => string,
+  options: { includeSellerEstablishment?: boolean } = {}
 ): ReportDoc {
+  // Selection, not number of returned branches: an all-branch user may only be allowed one.
+  const includeSeller = options.includeSellerEstablishment === true;
   const byId = new Map(report.establishments.map((e) => [e.locationId, e]));
   const place = (id: string | null) => {
     const e = id ? byId.get(id) : null;
@@ -608,7 +611,11 @@ export function buildSalesTaxReportDoc(
     { key: "docNo", label: "เลขที่" },
     { key: "buyerName", label: "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ" },
     { key: "buyerTaxId", label: "เลขประจำตัวผู้เสียภาษี" },
-    { key: "buyerEstablishment", label: "สถานประกอบการ" },
+    { key: "buyerEstablishment", label: includeSeller ? "สถานประกอบการผู้ซื้อ" : "สถานประกอบการ" },
+    ...(includeSeller ? [
+      { key: "sellerHeadOffice", label: "สำนักงานใหญ่ผู้ขาย (ร้านเรา)" },
+      { key: "sellerBranch", label: "สาขาผู้ขาย (ร้านเรา)" },
+    ] : []),
     { key: "base", label: "มูลค่าสินค้าหรือบริการ", numberFormat: "#,##0.00" },
     { key: "vat", label: "จำนวนเงินภาษีมูลค่าเพิ่ม", numberFormat: "#,##0.00" },
     { key: "note", label: "หมายเหตุ" },
@@ -632,15 +639,18 @@ export function buildSalesTaxReportDoc(
         ],
       ],
       headerRows: [
-        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ", "เลขประจำตัวผู้เสียภาษี", "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
-        ["", "วัน เดือน ปี", "เลขที่", "", "", "", "", "", ""],
+        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ซื้อสินค้า/ผู้รับบริการ", "เลขประจำตัวผู้เสียภาษี", includeSeller ? "สถานประกอบการผู้ซื้อ" : "สถานประกอบการ", ...(includeSeller ? ["สถานประกอบการผู้ขาย (ร้านเรา)", ""] : []), "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
+        ["", "วัน เดือน ปี", "เลขที่", "", "", "", ...(includeSeller ? ["สำนักงานใหญ่", "สาขา"] : []), "", "", ""],
       ],
       headerMerges: [
         { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 },
         { startRow: 0, startColumn: 1, endRow: 0, endColumn: 2 },
-        ...Array.from({ length: 6 }, (_, offset) => ({
-          startRow: 0, startColumn: offset + 3, endRow: 1, endColumn: offset + 3,
-        })),
+        ...statutoryColumns.flatMap((column, columnIndex) => columnIndex < 3 || column.key === "sellerHeadOffice" || column.key === "sellerBranch" ? [] : [{
+          startRow: 0, startColumn: columnIndex, endRow: 1, endColumn: columnIndex,
+        }]),
+        ...(includeSeller ? [{
+          startRow: 0, startColumn: 6, endRow: 0, endColumn: 7,
+        }] : []),
       ],
       columns: statutoryColumns,
       rows: rows.map((row, rowIndex) => ({
@@ -650,13 +660,17 @@ export function buildSalesTaxReportDoc(
         buyerName: row.kind === "ABBREVIATED_DAY" ? "ขายปลีก (ใบกำกับภาษีอย่างย่อ)" : row.buyerName ?? "",
         buyerTaxId: row.buyerTaxId ?? "",
         buyerEstablishment: row.buyerBranchCode ?? "",
+        ...(includeSeller ? {
+          sellerHeadOffice: establishment.isHeadOffice ? establishment.branchCode : "",
+          sellerBranch: establishment.isHeadOffice ? "" : establishment.branchCode,
+        } : {}),
         base: row.base,
         vat: row.vat,
         note: salesTaxNote(row),
       })),
       footer: [
-        ["", "", "", "", "", "รวม", total?.base ?? 0, total?.vat ?? 0, ""],
-        ["", "", "", "", "", "รวมทั้งสิ้น", total?.base ?? 0, total?.vat ?? 0, ""],
+        [...Array(includeSeller ? 7 : 5).fill(""), "รวม", total?.base ?? 0, total?.vat ?? 0, ""],
+        [...Array(includeSeller ? 7 : 5).fill(""), "รวมทั้งสิ้น", total?.base ?? 0, total?.vat ?? 0, ""],
       ],
     };
   });
@@ -780,8 +794,10 @@ export function buildSalesTaxReportDoc(
 
 export function buildInputVatReportDoc(
   report: import("./expenseDocuments").InputVatReport,
-  formatDate: (iso: string) => string
+  formatDate: (iso: string) => string,
+  options: { includeBuyerEstablishment?: boolean } = {}
 ): ReportDoc {
+  const includeBuyer = options.includeBuyerEstablishment === true;
   const byId = new Map(report.establishments.map((establishment) => [establishment.locationId, establishment]));
   const place = (locationId: string) => {
     const establishment = byId.get(locationId);
@@ -793,7 +809,11 @@ export function buildInputVatReportDoc(
     { key: "documentNo", label: "เลขที่" },
     { key: "payeeName", label: "ชื่อผู้ขายสินค้า/ผู้ให้บริการ" },
     { key: "payeeTaxId", label: "เลขประจำตัวผู้เสียภาษี" },
-    { key: "payeeEstablishment", label: "สถานประกอบการ" },
+    { key: "payeeEstablishment", label: includeBuyer ? "สถานประกอบการผู้ขาย" : "สถานประกอบการ" },
+    ...(includeBuyer ? [
+      { key: "buyerHeadOffice", label: "สำนักงานใหญ่ผู้ซื้อ (ร้านเรา)" },
+      { key: "buyerBranch", label: "สาขาผู้ซื้อ (ร้านเรา)" },
+    ] : []),
     { key: "amountBeforeVat", label: "มูลค่าสินค้าหรือบริการ", numberFormat: "#,##0.00" },
     { key: "vatAmount", label: "จำนวนเงินภาษีมูลค่าเพิ่ม", numberFormat: "#,##0.00" },
     { key: "note", label: "หมายเหตุ" },
@@ -818,15 +838,18 @@ export function buildInputVatReportDoc(
         ],
       ],
       headerRows: [
-        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ขายสินค้า/ผู้ให้บริการ", "เลขประจำตัวผู้เสียภาษี", "สถานประกอบการ", "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
-        ["", "วัน เดือน ปี", "เลขที่", "", "", "", "", "", ""],
+        ["ลำดับที่", "ใบกำกับภาษี", "", "ชื่อผู้ขายสินค้า/ผู้ให้บริการ", "เลขประจำตัวผู้เสียภาษี", includeBuyer ? "สถานประกอบการผู้ขาย" : "สถานประกอบการ", ...(includeBuyer ? ["สถานประกอบการผู้ซื้อ (ร้านเรา)", ""] : []), "มูลค่าสินค้าหรือบริการ", "จำนวนเงินภาษีมูลค่าเพิ่ม", "หมายเหตุ"],
+        ["", "วัน เดือน ปี", "เลขที่", "", "", "", ...(includeBuyer ? ["สำนักงานใหญ่", "สาขา"] : []), "", "", ""],
       ],
       headerMerges: [
         { startRow: 0, startColumn: 0, endRow: 1, endColumn: 0 },
         { startRow: 0, startColumn: 1, endRow: 0, endColumn: 2 },
-        ...Array.from({ length: 6 }, (_, offset) => ({
-          startRow: 0, startColumn: offset + 3, endRow: 1, endColumn: offset + 3,
-        })),
+        ...statutoryColumns.flatMap((column, columnIndex) => columnIndex < 3 || column.key === "buyerHeadOffice" || column.key === "buyerBranch" ? [] : [{
+          startRow: 0, startColumn: columnIndex, endRow: 1, endColumn: columnIndex,
+        }]),
+        ...(includeBuyer ? [{
+          startRow: 0, startColumn: 6, endRow: 0, endColumn: 7,
+        }] : []),
       ],
       columns: statutoryColumns,
       rows: rows.map((row, rowIndex) => ({
@@ -836,13 +859,17 @@ export function buildInputVatReportDoc(
         payeeName: row.payeeName,
         payeeTaxId: row.payeeTaxId,
         payeeEstablishment: row.payeeBranchCode,
+        ...(includeBuyer ? {
+          buyerHeadOffice: establishment.isHeadOffice ? establishment.branchCode : "",
+          buyerBranch: establishment.isHeadOffice ? "" : establishment.branchCode,
+        } : {}),
         amountBeforeVat: row.amountBeforeVat,
         vatAmount: row.vatAmount,
         note: row.note ?? "",
       })),
       footer: [
-        ["", "", "", "", "", "รวม", amountBeforeVat, vatAmount, ""],
-        ["", "", "", "", "", "รวมทั้งสิ้น", amountBeforeVat, vatAmount, ""],
+        [...Array(includeBuyer ? 7 : 5).fill(""), "รวม", amountBeforeVat, vatAmount, ""],
+        [...Array(includeBuyer ? 7 : 5).fill(""), "รวมทั้งสิ้น", amountBeforeVat, vatAmount, ""],
       ],
     };
   });
