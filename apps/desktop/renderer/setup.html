@@ -42,6 +42,14 @@
             <div class="field-hint">เว้นว่างได้เมื่อวางลิงก์จับคู่แบบเต็ม</div>
             <label for="pairing-input">ลิงก์จับคู่ หรือ Device Token</label>
             <textarea id="pairing-input" name="pairingInput" rows="3" autocomplete="off" spellcheck="false" placeholder="https://shop.example.com/pos?t=pos_..."></textarea>
+            <p id="admin-link-row" class="admin-link-row" hidden>
+              ยังไม่มีลิงก์?
+              <button id="admin-link" class="admin-link" type="button">
+                <span id="admin-link-label" class="button-label">สร้างจากระบบหลังบ้าน</span>
+                <span class="button-progress" hidden>กำลังเปิด...</span>
+                <svg class="admin-link-icon" aria-hidden="true" viewBox="0 0 16 16" width="12" height="12"><path d="M9 3h4v4M13 3 7.5 8.5M12 9.5V13H3V4h3.5" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </p>
             <div id="status" class="status" role="status" aria-live="polite" hidden>
               <span id="status-message"></span>
               <button id="status-close" class="status-close" type="button" aria-label="ปิดการแจ้งเตือน" title="ปิด">×</button>
@@ -51,14 +59,6 @@
                 <span class="button-label">ตรวจสอบและเชื่อมต่อ</span>
                 <span class="button-progress" hidden>กำลังตรวจสอบ...</span>
               </button>
-              <div id="local-admin-section" class="local-admin-section">
-                <div class="action-divider"><span>หรือ</span></div>
-                <button id="local-admin-button" class="local-admin-button" type="button">
-                  <span class="button-label">เปิดระบบหลังบ้านบนเครื่องนี้</span>
-                  <span class="button-progress" hidden>กำลังเปิดระบบหลังบ้าน...</span>
-                </button>
-                <p>สำหรับเครื่องที่ติดตั้ง BMS Retail Local เพื่อสร้างลิงก์จับคู่เครื่อง POS</p>
-              </div>
             </div>
           </form>
           <footer>

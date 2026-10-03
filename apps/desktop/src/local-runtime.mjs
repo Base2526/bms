@@ -26,23 +26,58 @@ export function managedLocalPosDevicesUrl() {
   return new URL(MANAGED_LOCAL_POS_DEVICES_PATH, MANAGED_LOCAL_SERVER_URL).toString();
 }
 
-export async function checkManagedLocalAdminReady({ fetch: request = globalThis.fetch } = {}) {
+async function probeManagedLocalAdmin(request, timeoutMs) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     // Probe the same login surface as the installer, without credentials or redirects.
     const response = await request(new URL("/admin/login", MANAGED_LOCAL_SERVER_URL).toString(), {
       method: "GET", redirect: "manual", credentials: "omit", signal: controller.signal,
     });
     if (response.body) await response.body.cancel();
-    if (response.status !== 200) throw new Error("local admin unavailable");
+    return response.status === 200;
+  } finally { clearTimeout(timer); }
+}
+
+export async function checkManagedLocalAdminReady({ fetch: request = globalThis.fetch } = {}) {
+  let ready = false;
+  let cause;
+  try {
+    ready = await probeManagedLocalAdmin(request, 8000);
   } catch (error) {
+    cause = error;
+  }
+  if (!ready) {
     throw new LocalRuntimeError(
       "LOCAL_ADMIN_UNAVAILABLE",
       "ยังติดต่อ Retail Local Server บนเครื่องนี้ไม่ได้ กรุณาเปิดตัวติดตั้ง Server + POS เพื่อตรวจสอบหรือซ่อมแซม หากติดตั้งเฉพาะ POS ให้ใช้ Server URL และลิงก์จับคู่จากผู้ดูแลร้าน",
-      error,
+      cause ?? new Error("local admin unavailable"),
     );
-  } finally { clearTimeout(timer); }
+  }
+}
+
+// Decides which back office the first-run setup links to. A macOS installation receipt counts even
+// when the server is stopped, because opening it starts the managed runtime. Elsewhere (and as a
+// macOS fallback) a short probe of the fixed loopback admin decides; anything else is a POS-only
+// machine, which gets its pairing link from the cloud back office instead.
+export async function detectManagedLocalInstallation({
+  platform = process.platform,
+  homeDirectory = os.homedir(),
+  lstat: inspect = lstat,
+  fetch: request = globalThis.fetch,
+  probeTimeoutMs = 1500,
+} = {}) {
+  const plan = managedLocalRuntimePlan({ serverUrl: MANAGED_LOCAL_SERVER_URL, platform, homeDirectory });
+  if (plan) {
+    try {
+      if ((await inspect(plan.receiptPath)).isFile()) return true;
+    } catch {}
+  }
+  try {
+    return await probeManagedLocalAdmin(request, probeTimeoutMs);
+  } catch {
+    return false;
+  }
 }
 
 export function managedLocalRuntimePlan({

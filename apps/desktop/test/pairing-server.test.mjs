@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   adminUrlForServer,
+  cloudAdminUrl,
   assertPairingServerResponse,
   canRecoverByStartingManagedLocalRuntime,
   PairingServerResponseError,
@@ -44,4 +45,8 @@ test("managed local runtime retries transport and server failures, not rejected 
     canRecoverByStartingManagedLocalRuntime(new PairingServerResponseError(401, "unauthorized")),
     false,
   );
+});
+
+test("POS-only setup sends people to the cloud BMS login", () => {
+  assert.equal(cloudAdminUrl(), "https://bms.jachoei.com/admin/login");
 });

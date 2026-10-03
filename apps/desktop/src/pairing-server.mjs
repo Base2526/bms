@@ -43,3 +43,10 @@ export function canRecoverByStartingManagedLocalRuntime(error) {
 export function adminUrlForServer(serverUrl) {
   return new URL("/admin/login", serverUrl).toString();
 }
+
+// Where a POS-only machine (no Retail Local server) creates its pairing link.
+export const BMS_CLOUD_SERVER_URL = "https://bms.jachoei.com";
+
+export function cloudAdminUrl() {
+  return adminUrlForServer(BMS_CLOUD_SERVER_URL);
+}

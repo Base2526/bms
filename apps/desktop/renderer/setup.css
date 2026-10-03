@@ -79,10 +79,13 @@ input:focus, textarea:focus { border-color: #1677ff; box-shadow: 0 0 0 3px rgba(
 .status.error { color: #cf1322; border: 1px solid #ffccc7; background: #fff2f0; }
 .status-close {
   position: absolute;
-  top: 5px;
-  right: 5px;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
   width: 28px;
   height: 28px;
+  min-height: 0;
+  margin: 0;
   padding: 0;
   border: 0;
   border-radius: 6px;
@@ -116,27 +119,31 @@ button:disabled { background: #91caff; cursor: wait; }
 
 .setup-actions { display: grid; margin-top: 20px; }
 .setup-actions > button { margin-top: 0; }
-.local-admin-section { display: grid; }
-.local-admin-section[hidden] { display: none; }
-.action-divider {
+.admin-link-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
-  margin: 12px 0;
-  color: #98a2b3;
-  font-size: 11px;
+  gap: 4px;
+  margin: 7px 0 0;
+  color: #667085;
+  font-size: 12px;
 }
-.action-divider::before,
-.action-divider::after { content: ""; flex: 1; height: 1px; background: #e4e7ec; }
-.local-admin-button {
-  margin-top: 0;
-  border: 1px solid #84adf4;
-  background: #eef5ff;
+.admin-link-row[hidden] { display: none; }
+.admin-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 0;
+  margin: 0;
+  padding: 2px 0;
+  border: 0;
+  background: none;
   color: #0958d9;
+  font-size: 12px;
+  font-weight: 600;
 }
-.local-admin-button:hover { background: #dceaff; }
-.local-admin-button:disabled { border-color: #c8daf7; background: #f3f7fd; color: #7ba5e6; }
-.local-admin-section p { margin: 7px 4px 0; color: #667085; font-size: 10px; line-height: 1.45; text-align: center; }
+.admin-link:hover { background: none; color: #1677ff; text-decoration: underline; }
+.admin-link:disabled { background: none; color: #7ba5e6; }
 
 footer {
   display: flex;
