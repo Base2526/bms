@@ -138,7 +138,7 @@ cat >"$contents/Info.plist" <<EOF
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$pkg_version</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 EOF
@@ -149,6 +149,7 @@ BMS POS Online Setup
 2. Keep the Mac connected to the internet during first installation.
 3. Setup verifies the signed BMS release and SHA-256 before installing BMS POS in Applications.
 
+POS Desktop supports macOS 12 Monterey or newer. Retail Local Server has separate requirements.
 The DMG intentionally does not contain Electron or the full POS application.
 EOF
 
@@ -173,7 +174,7 @@ source_commit=$(git -C "$repo_root" rev-parse HEAD)
 embedded_test_ca=false
 [[ -z $test_ca ]] || embedded_test_ca=true
 cat >"$dmg_path.json" <<EOF
-{"artifact":"$dmg_path","version":"$version","sourceCommit":"$source_commit","platform":"macos-$architecture","architecture":"$architecture","packageType":"pos","distribution":"online-bootstrap","testBuild":$test_build,"embeddedTestCa":$embedded_test_ca,"manifestUri":"$manifest_url","sizeBytes":$size,"sha256":"$sha256","signed":false,"notarized":false,"electronEmbedded":false,"firstInstallInternetRequired":true}
+{"artifact":"$dmg_path","version":"$version","sourceCommit":"$source_commit","platform":"macos-$architecture","architecture":"$architecture","packageType":"pos","distribution":"online-bootstrap","minimumOs":"macOS 12","testBuild":$test_build,"embeddedTestCa":$embedded_test_ca,"manifestUri":"$manifest_url","sizeBytes":$size,"sha256":"$sha256","signed":false,"notarized":false,"electronEmbedded":false,"firstInstallInternetRequired":true}
 EOF
 
 build_complete=true

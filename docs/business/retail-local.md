@@ -294,13 +294,18 @@ deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
 The first Setup requires internet and progressively downloads the pinned Ubuntu VM image, Lima,
 private Moby/Compose/age runtime, BMS service images, archetype contract, and matching BMS POS app.
 Downloads resume after interruption; the signed manifest, byte sizes, SHA-256 hashes and OCI image
-IDs are verified before execution. The target Mac needs macOS 15 or newer, matching Apple Silicon or
-Intel architecture, at least 8 GiB RAM and 12 GiB free disk (30 GiB recommended); it does not need
-Docker Desktop, Homebrew, Node.js, or the source repository.
+IDs are verified before execution. A Retail Local Server or Server + POS target Mac needs macOS 15
+or newer, matching Apple Silicon or Intel architecture, at least 8 GiB RAM and 12 GiB free disk
+(30 GiB recommended); it does not need Docker Desktop, Homebrew, Node.js, or the source repository.
 
 The POS-only `.dmg` uses the same trust chain but downloads only `desktop.artifact`. It intentionally
 does not embed Electron, so it stays a few megabytes while still verifying the signed manifest,
-target architecture, byte size and SHA-256 before installing `/Applications/BMS POS.app`.
+target architecture, byte size and SHA-256 before installing `/Applications/BMS POS.app`. POS-only
+supports macOS 12 Monterey or newer; that broader client support does not lower the Server runtime
+requirement. Because a quarantined app opened from a downloaded DMG may be assigned a temporary
+App Translocation path, the launcher first copies its small bootstrap to private per-user
+Application Support storage before opening Terminal. Payload trust still comes from the signed
+manifest and verified component hash, not from that local copy.
 
 After installing the `.pkg`, the operator opens `Applications/BMS Retail Local.app`, enters
 the first shop/admin details, and waits for migration, provisioning, and health checks. Runtime data

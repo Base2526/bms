@@ -1,13 +1,51 @@
 #!/bin/bash
 set -Eeuo pipefail
+umask 077
 
-APP_ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-readonly APP_ROOT
-readonly SETUP_COMMAND="$APP_ROOT/Resources/BMS POS Online Setup.command"
+SOURCE_CONTENTS=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+readonly SOURCE_CONTENTS
+SOURCE_APP=$(cd -- "$SOURCE_CONTENTS/.." && pwd)
+readonly SOURCE_APP
+readonly SOURCE_BOOTSTRAP="$SOURCE_CONTENTS/Resources/bootstrap"
+readonly SOURCE_SETUP="$SOURCE_CONTENTS/Resources/BMS POS Online Setup.command"
+readonly LAUNCHERS_ROOT="$HOME/Library/Application Support/BMS/POSBootstrap/Launchers"
 
-[[ -x $SETUP_COMMAND ]] || {
+[[ -x $SOURCE_SETUP && -s $SOURCE_BOOTSTRAP/BOOTSTRAP_VERSION && -s $SOURCE_BOOTSTRAP/PLATFORM_TARGET ]] || {
   osascript -e 'display alert "BMS POS" message "ไฟล์ Online Setup ไม่ครบ กรุณาดาวน์โหลด DMG ใหม่" as critical'
   exit 1
 }
 
-open -a Terminal "$SETUP_COMMAND"
+bootstrap_version=$(tr -d '\r\n' <"$SOURCE_BOOTSTRAP/BOOTSTRAP_VERSION")
+platform_target=$(tr -d '\r\n' <"$SOURCE_BOOTSTRAP/PLATFORM_TARGET")
+[[ $bootstrap_version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ && $platform_target =~ ^macos-15-(arm64|x64)$ ]] || {
+  osascript -e 'display alert "BMS POS" message "ข้อมูล Online Setup ไม่ถูกต้อง กรุณาดาวน์โหลด DMG ใหม่" as critical'
+  exit 1
+}
+
+# A quarantined app opened directly from a downloaded DMG may run from AppTranslocation. Opening
+# the bundled .command asynchronously lets that temporary path disappear before Terminal reads it.
+# Copy the already user-approved bootstrap to durable per-user state first; signed-manifest and
+# SHA-256 verification still happen inside the setup command before any downloaded payload is used.
+launcher_id="$bootstrap_version-$platform_target"
+launcher_root="$LAUNCHERS_ROOT/$launcher_id"
+stable_app="$launcher_root/Install BMS POS.app"
+partial_app="$launcher_root/Install BMS POS.app.partial.$$"
+previous_app="$launcher_root/Install BMS POS.app.previous.$$"
+mkdir -p "$launcher_root"
+chmod 0700 "$HOME/Library/Application Support/BMS" \
+  "$HOME/Library/Application Support/BMS/POSBootstrap" "$LAUNCHERS_ROOT" "$launcher_root"
+rm -rf -- "$partial_app" "$previous_app"
+trap 'rm -rf -- "$partial_app" "$previous_app"' EXIT HUP INT TERM
+/usr/bin/ditto --noqtn "$SOURCE_APP" "$partial_app"
+[[ -x $partial_app/Contents/Resources/BMS\ POS\ Online\ Setup.command ]] || {
+  osascript -e 'display alert "BMS POS" message "เตรียม Online Setup ไม่สำเร็จ กรุณาลองใหม่" as critical'
+  exit 1
+}
+if [[ -e $stable_app ]]; then
+  mv "$stable_app" "$previous_app"
+fi
+mv "$partial_app" "$stable_app"
+rm -rf -- "$previous_app"
+trap - EXIT HUP INT TERM
+
+open -a Terminal "$stable_app/Contents/Resources/BMS POS Online Setup.command"

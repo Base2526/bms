@@ -21,6 +21,7 @@ offline bundle ขนาดใหญ่ยังเก็บไว้เป็�
 | --- | --- | --- | --- |
 | Windows | x64 | x64, x86 legacy | Windows x86 รันได้เฉพาะ POS client ไม่ใช่ local server |
 | Ubuntu 22.04/24.04 | x64 | x64 | Electron 43 และ runtime images ไม่มี Linux 32-bit target |
+| macOS 12–14 | — | Apple Silicon/Intel | รองรับเฉพาะ POS Desktop; ต้องเชื่อม Retail Local Server เครื่องอื่น |
 | macOS 15+ | Apple Silicon/Intel | Apple Silicon/Intel | online bootstrap แยกสถาปัตยกรรม; ยังเป็น unsigned technical pilot |
 
 ห้ามสร้างหรือเผยแพร่ Retail Local Server เป็น x86/32-bit เพราะ preflight, support matrix,
@@ -143,7 +144,8 @@ pwsh ./deploy/retail-local/build-release.ps1 `
 Moby หรือ service images ฝังอยู่ จึงมีขนาดเล็ก ตัว POS-only จะดาวน์โหลดเฉพาะ signed
 `desktop.artifact` ที่ตรงกับ CPU ในการติดตั้งครั้งแรก ส่วน Server + POS จะดาวน์โหลดทุก component
 ที่จำเป็น หลัง setup ร้านแล้ว private runtime ยังทำงานในเครื่องตามเดิม (Intel คือ x64 ไม่ใช่
-macOS 32-bit)
+macOS 32-bit) POS-only รองรับ macOS 12 Monterey ขึ้นไปตาม Electron Desktop shell ส่วน Server และ
+Server + POS ยังคงต้องใช้ macOS 15 ขึ้นไปตาม Managed Runtime support matrix
 
 - `BMS-Retail-Local-Server-POS-<version>-arm64.pkg`
 - `BMS-Retail-Local-Server-POS-<version>-x64.pkg`

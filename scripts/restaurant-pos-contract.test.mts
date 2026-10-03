@@ -2459,3 +2459,21 @@ test("บิลโต๊ะใช้คูปอง แต้ม และส่
     assert.match(screen, /manualDiscount/);
   }
 });
+
+test("the restaurant register has a settings screen that reuses the retail settings panel", async () => {
+  // Desktop retail has customer display / printer / manual / unpair under "ตั้งค่า"; the restaurant
+  // shell had none, so a restaurant register could not reach them at all. One implementation only:
+  // the panel is the retail workspace's own settings tab, embedded — never a second copy.
+  const page = code(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
+  assert.match(page, /type RestaurantScreen = [^;]*"SETTINGS"/);
+  assert.match(page, /RESTAURANT_SCREENS: RestaurantScreen\[\] = \[[^\]]*"SETTINGS"/);
+  assert.match(page, /onClick=\{\(\) => setScreen\("SETTINGS"\)\}/, "the rail must open the settings screen");
+  const start = page.indexOf('{screen === "SETTINGS" &&');
+  assert.ok(start > 0, "settings screen must render");
+  const section = page.slice(start, page.indexOf("</section>}", start));
+  assert.match(section, /initialTab: "settings"/);
+  assert.match(section, /<RetailPosWorkspace \/>/);
+  assert.match(section, /onUnpair: unpairFromSettings/, "unpair must also clear this shell's remembered screen/check");
+  assert.match(section, /suppressCustomerDisplay: true/, "the panel must not overwrite the open check on the customer display");
+  assert.doesNotMatch(page, /<CustomerDisplaySettings/, "no second copy of the customer-display settings");
+});
