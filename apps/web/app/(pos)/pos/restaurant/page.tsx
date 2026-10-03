@@ -16,7 +16,7 @@ import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modi
 import { isEnrollablePhone, normalizeEnrollPhone } from "@/lib/pos/memberEnroll";
 import { buildDrawerKick, buildReceipt, type ReceiptLine, type ReceiptPayload } from "@/lib/pos/escpos";
 import { findRememberedPrinter, isWebUsbSupported, requestPrinter, sendToPrinter } from "@/lib/pos/printerClient";
-import { posDeviceStorageNamespace, readPosDeviceToken, requestDesktopOperationalAttention } from "@/lib/pos/deviceTokenClient";
+import { clearPosDeviceToken, posDeviceStorageNamespace, readPosDeviceToken, requestDesktopOperationalAttention } from "@/lib/pos/deviceTokenClient";
 import { incomingOrderAttentionKeys, incomingOrderNeedsAttention, incomingOrderOperationalState } from "@/lib/pos/incomingOrderAttention";
 import { summarizeDeliveryIntakeControls } from "@/lib/pos/deliveryIntakePresentation";
 import {
@@ -104,10 +104,10 @@ const LOCAL_CHECK_KEY_PREFIX = "bms.pos.restaurantCheck.";
 // กันแท็บเล็ตที่ถูกหยิบมาเช้าวันถัดไปแล้วเปิดบิลค้างของเมื่อวานขึ้นมาเงียบ ๆ
 // ค่าเท่ากับ LOCAL_CART_DRAFT_MAX_AGE_MS ของหน้าค้าปลีก (ครอบหนึ่งกะเต็ม)
 const LOCAL_CHECK_MAX_AGE_MS = 8 * 60 * 60 * 1000;
-type RestaurantScreen = "ORDER" | "FLOOR" | "INCOMING" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "OTHER";
+type RestaurantScreen = "ORDER" | "FLOOR" | "INCOMING" | "QUEUE" | "QR" | "CALLS" | "KITCHEN" | "BILLS" | "SHIFT" | "SETTINGS" | "OTHER";
 type OtherWorkTab = Extract<PosTab, "sell" | "returns" | "stock" | "deposits">;
 const OTHER_WORK_TABS: readonly OtherWorkTab[] = ["sell", "returns", "stock", "deposits"];
-const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "OTHER"];
+const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "QUEUE", "QR", "CALLS", "KITCHEN", "BILLS", "SHIFT", "SETTINGS", "OTHER"];
 // จอครัวที่ติดผนังต้องปักหมุดลิงก์ได้ — ?screen=kitchen ชนะค่าที่จำไว้เสมอ จึงตรงแม้
 // เครื่องนั้นล้าง site data หรือเปิดในโหมดส่วนตัว (ล้อรูปแบบ ?surface=retail ที่มีอยู่แล้ว)
 //
@@ -115,7 +115,7 @@ const RESTAURANT_SCREENS: RestaurantScreen[] = ["ORDER", "FLOOR", "INCOMING", "Q
 // ทุกครั้งที่สลับจอ การโหลดครั้งถัดไป *ทุกครั้ง* จะดูเหมือนลิงก์ที่คนตั้งใจปักหมุด แล้ว
 // การคืนค่าอื่น (บิลที่ทำอยู่) ถูกข้ามไปเงียบ ๆ · พารามิเตอร์นี้ต้องมีเมื่อ "คนตั้งใจใส่" เท่านั้น
 const SCREEN_FROM_URL: Record<string, RestaurantScreen> = {
-  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", other: "OTHER",
+  order: "ORDER", sell: "ORDER", floor: "FLOOR", table: "FLOOR", tables: "FLOOR", incoming: "INCOMING", delivery: "INCOMING", queue: "QUEUE", waitlist: "QUEUE", booking: "QUEUE", qr: "QR", qrorders: "QR", calls: "CALLS", service: "CALLS", kitchen: "KITCHEN", kds: "KITCHEN", bills: "BILLS", receipts: "BILLS", shift: "SHIFT", settings: "SETTINGS", setup: "SETTINGS", other: "OTHER",
 };
 const OPEN_CHECK_STATUSES = ["OPEN", "CLOSING"];
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
@@ -1177,6 +1177,23 @@ export default function RestaurantPosPage() {
       setScreen("SHIFT");
     }
   }, []);
+  // The settings panel is the retail workspace's own "settings" tab, embedded so customer display,
+  // printer, manual and unpair have one implementation. Its "open drawer → shift" shortcut lands
+  // on this shell's shift screen; any other tab request stays here instead of leaving the shell.
+  const followSettingsTab = useCallback((tab: PosTab) => {
+    if (tab === "shift") setScreen("SHIFT");
+  }, []);
+  async function unpairFromSettings() {
+    if (deviceStorageNamespace) {
+      try {
+        window.localStorage.removeItem(LOCAL_SCREEN_KEY_PREFIX + deviceStorageNamespace);
+        window.localStorage.removeItem(LOCAL_CHECK_KEY_PREFIX + deviceStorageNamespace);
+      } catch { /* โหมดส่วนตัว */ }
+    }
+    await clearPosDeviceToken();
+    // Desktop shows its own setup window after unpair; a browser register returns to pairing.
+    if (!window.bmsDesktop) router.replace("/pos");
+  }
   async function loadFloor(signal?: AbortSignal) { const data: Floor = await json("/api/pos/restaurant/floor", { signal }); setFloor(data); setActiveArea((current) => current && data.areas.some((area) => area.id === current) ? current : data.areas[0]?.id ?? ""); return data; }
   async function loadWaitlist(signal?: AbortSignal) { setWaitlist(await json("/api/pos/restaurant/waitlist", { signal })); }
   /** ทุก action ของคิวคืนกระดานใหม่ให้เสมอ เพื่อไม่ให้จอถือสถานะที่ server ปฏิเสธไปแล้ว */
@@ -2496,6 +2513,15 @@ export default function RestaurantPosPage() {
           <span className={styles.railIcon} aria-hidden="true"><ShopOutlined /></span>
           <span className={styles.railLabel} aria-hidden="true">{t("pos_restaurant.retail_mode")}</span>
         </button>
+        <button type="button"
+          className={`${styles.railBtn} ${screen === "SETTINGS" ? styles.railBtnActive : ""}`}
+          onClick={() => setScreen("SETTINGS")}
+          aria-pressed={screen === "SETTINGS"}
+          title={t("pos_restaurant.rail_settings")}
+          aria-label={t("pos_restaurant.rail_settings")}>
+          <span className={styles.railIcon} aria-hidden="true"><SettingOutlined /></span>
+          <span className={styles.railLabel} aria-hidden="true">{t("pos_restaurant.rail_settings_short")}</span>
+        </button>
         <PosGuideAssistant variant="rail" className={styles.railBtn} />
       </div>
     </nav>
@@ -2616,6 +2642,30 @@ export default function RestaurantPosPage() {
               setDeliveryPauseControlledElsewhere(snapshot.deliveryPauseControlledElsewhere);
               setDeliveryPauseNeedsManualAction(snapshot.deliveryPauseNeedsManualAction);
             },
+          }}>
+            <RetailPosWorkspace />
+          </PosWorkspaceContext.Provider>
+        </div>
+      </section>}
+
+      {screen === "SETTINGS" && <section className={styles.otherWorkWorkspace}>
+        <div className={styles.otherWorkToolbar}>
+          <div>
+            <h2>{t("pos_restaurant.settings_title")}</h2>
+            <p>{t("pos_restaurant.settings_desc")}</p>
+          </div>
+        </div>
+        <div className={styles.otherWorkHost}>
+          <PosWorkspaceContext.Provider value={{
+            embedded: true,
+            initialTab: "settings",
+            initialToken: token,
+            initialCashierId: actorUserId,
+            initialPin: actorPin,
+            onTabChange: followSettingsTab,
+            onUnpair: unpairFromSettings,
+            // This shell keeps broadcasting the open check; the settings panel must not overwrite it.
+            suppressCustomerDisplay: true,
           }}>
             <RetailPosWorkspace />
           </PosWorkspaceContext.Provider>
