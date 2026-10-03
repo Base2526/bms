@@ -34,14 +34,17 @@ recovery guarantees, and its own failure-mode evidence.
 - paired startup paints a local connection screen before probing the server, bounds the compatibility
   probe and page navigation with timeouts, and offers retry or re-pair recovery instead of leaving the
   native window on its background colour when the network or web deployment stalls;
-- first-run setup on **Windows, Linux and macOS** always shows **เปิดระบบหลังบ้านบนเครื่องนี้**.
-  It checks the fixed local `/admin/login` endpoint (eight-second limit, no credentials or
-  redirects) and opens `/admin/pos-devices` in the system browser, which still requires the
-  normal admin login. On macOS it first validates the receipt/root-owned controller and starts
-  the managed server when needed; Windows/Linux use the service already started by the installer,
-  never elevate or execute a user-writable startup script. Unavailable servers show a retry/repair
-  message; POS-only users can still supply their shop's remote URL/token. Opening the browser
-  fills an empty Server URL but never overwrites a remote URL or pairing link;
+- first-run setup on **Windows, Linux and macOS** shows a quiet link under the pairing field,
+  "ยังไม่มีลิงก์? …", whose target is decided by the main process, never the renderer. When this
+  machine runs BMS Retail Local (macOS installation receipt, or a 1.5-second probe of the fixed
+  loopback `/admin/login`) it reads **สร้างจากระบบหลังบ้านบนเครื่องนี้**: the app checks the local
+  `/admin/login` (eight-second limit, no credentials or redirects) and opens `/admin/pos-devices`
+  in the system browser, which still requires the normal admin login. On macOS it first validates
+  the receipt/root-owned controller and starts the managed server when needed; Windows/Linux use
+  the service already started by the installer, never elevate or execute a user-writable startup
+  script. Otherwise (a POS-only machine) it reads **สร้างจากระบบหลังบ้าน BMS** and opens the cloud
+  login `https://bms.jachoei.com/admin/login`. Only the local target fills an empty Server URL, and
+  neither ever overwrites a remote URL or pairing link;
 - retail, restaurant, board-game, customer-display, and cashier-manual POS routes remain hosted in
   the desktop shell;
 - one register owns at most one customer-display window: settings can keep it off, automatically use

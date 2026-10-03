@@ -28,12 +28,15 @@ async function run() {
   try {
     await window.loadFile(path.join(__dirname, "../renderer/setup.html"));
     console.log("smoke: setup renderer loaded");
+    await window.webContents.executeJavaScript(
+      "new Promise((resolve) => { const tick = () => document.querySelector('#admin-link-row')?.hidden === false ? resolve() : setTimeout(tick, 20); tick(); })",
+    );
     const state = await window.webContents.executeJavaScript(`({
       title: document.title,
       heading: document.querySelector('h1')?.textContent,
       fields: document.querySelectorAll('input, textarea').length,
       button: document.querySelector('#pair-button')?.textContent?.trim(),
-      localAdminButton: document.querySelector('#local-admin-button')?.textContent?.trim(),
+      adminLink: document.querySelector('#admin-link-label')?.textContent?.trim(),
       alertCloseLabel: document.querySelector('#status-close')?.getAttribute('aria-label'),
       clientLabel: document.querySelector('#client-label')?.textContent,
       securityNote: document.querySelector('#security-note')?.textContent,
@@ -46,7 +49,7 @@ async function run() {
     if (
       state.fields !== 2
       || !state.button?.includes("ตรวจสอบและเชื่อมต่อ")
-      || !state.localAdminButton?.includes("เปิดระบบหลังบ้านบนเครื่องนี้")
+      || !state.adminLink?.includes("สร้างจากระบบหลังบ้านบนเครื่องนี้")
       || state.alertCloseLabel !== "ปิดการแจ้งเตือน"
       || state.clientLabel !== "macOS Client"
       || !state.securityNote?.includes("macOS Keychain")
@@ -68,11 +71,11 @@ async function run() {
       "new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))",
     );
     const compactState = await window.webContents.executeJavaScript(`({
-      localAdminVisible: !document.querySelector('#local-admin-section')?.hidden,
+      adminLinkVisible: !document.querySelector('#admin-link-row')?.hidden,
       overflowX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
       overflowY: document.documentElement.scrollHeight > document.documentElement.clientHeight
     })`);
-    if (!compactState.localAdminVisible || compactState.overflowX || compactState.overflowY) {
+    if (!compactState.adminLinkVisible || compactState.overflowX || compactState.overflowY) {
       throw new Error(`Invalid compact setup layout: ${JSON.stringify(compactState)}`);
     }
     const compactImage = await window.webContents.capturePage();

@@ -2,7 +2,8 @@ const { contextBridge } = require("electron/renderer");
 
 contextBridge.exposeInMainWorld("bmsDesktop", {
   pair: async () => ({ ok: false, error: "smoke test" }),
-  openLocalAdmin: async () => ({ ok: true }),
+  getSetupAdminTarget: async () => ({ kind: "local" }),
+  openSetupAdmin: async () => ({ ok: true, kind: "local" }),
   retryStartup: async () => ({ ok: true }),
   changeServer: async () => ({ ok: true }),
   getAppInfo: async () => ({

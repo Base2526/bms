@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   ensureManagedLocalRuntime,
   checkManagedLocalAdminReady,
+  detectManagedLocalInstallation,
   isManagedLocalServerUrl,
   managedLocalPosDevicesUrl,
   managedLocalRuntimePlan,
@@ -120,4 +121,41 @@ test("rejects a writable controller without executing it", async () => {
     execFile: async () => { executed = true; },
   }), (error) => error?.code === "LOCAL_RUNTIME_UNTRUSTED");
   assert.equal(executed, false);
+});
+
+test("setup detects Retail Local from the macOS receipt even while the server is stopped", async () => {
+  let probed = false;
+  const local = await detectManagedLocalInstallation({
+    platform: "darwin",
+    homeDirectory: "/Users/cashier",
+    lstat: async (target) => {
+      assert.equal(target, "/Users/cashier/Library/Application Support/BMS/RetailLocal/installation.json");
+      return { isFile: () => true };
+    },
+    fetch: async () => { probed = true; return { status: 503 }; },
+  });
+  assert.equal(local, true);
+  assert.equal(probed, false);
+});
+
+test("setup falls back to probing the loopback admin, and treats silence as POS-only", async () => {
+  const missing = async () => { throw Object.assign(new Error("missing"), { code: "ENOENT" }); };
+  assert.equal(await detectManagedLocalInstallation({ platform: "darwin", lstat: missing, fetch: async () => ({ status: 200 }) }), true);
+  assert.equal(await detectManagedLocalInstallation({ platform: "win32", fetch: async () => ({ status: 200 }) }), true);
+  assert.equal(await detectManagedLocalInstallation({ platform: "linux", fetch: async () => ({ status: 404 }) }), false);
+  assert.equal(await detectManagedLocalInstallation({ platform: "win32", fetch: async () => { throw new Error("offline"); } }), false);
+  assert.equal(await detectManagedLocalInstallation({ platform: "darwin", lstat: missing, fetch: async () => { throw new Error("refused"); } }), false);
+});
+
+test("the setup probe is short so a POS-only machine labels its link quickly", async () => {
+  const started = Date.now();
+  const result = await detectManagedLocalInstallation({
+    platform: "linux",
+    probeTimeoutMs: 50,
+    fetch: async (_, { signal }) => new Promise((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason));
+    }),
+  });
+  assert.equal(result, false);
+  assert.ok(Date.now() - started < 1000);
 });

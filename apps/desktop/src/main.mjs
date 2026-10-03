@@ -11,12 +11,14 @@ import {
 import { parsePairingHandoff, parsePairingInput } from "./pairing.mjs";
 import {
   adminUrlForServer,
+  cloudAdminUrl,
   assertPairingServerResponse,
   canRecoverByStartingManagedLocalRuntime,
 } from "./pairing-server.mjs";
 import {
   ensureManagedLocalRuntime,
   checkManagedLocalAdminReady,
+  detectManagedLocalInstallation,
   isManagedLocalServerUrl,
   managedLocalPosDevicesUrl,
   MANAGED_LOCAL_SERVER_URL,
@@ -267,6 +269,11 @@ async function openInstalledLocalAdmin() {
   await checkManagedLocalAdminReady({ fetch: (url, options) => net.fetch(url, options) });
   await shell.openExternal(managedLocalPosDevicesUrl());
   return true;
+}
+
+async function setupAdminTarget() {
+  const local = await detectManagedLocalInstallation({ fetch: (url, options) => net.fetch(url, options) });
+  return local ? "local" : "cloud";
 }
 
 function installApplicationMenu() {
@@ -813,13 +820,26 @@ function registerIpc() {
     return { ok: openAdminBackoffice() };
   });
 
-  ipcMain.handle("bms-pos:open-local-admin", async (event) => {
+  ipcMain.handle("bms-pos:setup-admin-target", async (event) => {
+    if (!isSetupFrame(event)) return null;
+    return { kind: await setupAdminTarget() };
+  });
+
+  // The setup screen's "no pairing link yet?" shortcut: the local Retail Local back office when this
+  // machine runs one, otherwise the cloud BMS login. Only the setup frame may ask.
+  ipcMain.handle("bms-pos:open-setup-admin", async (event) => {
     if (!isSetupFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดระบบหลังบ้าน" };
+    const kind = await setupAdminTarget();
+    if (kind === "cloud") {
+      await shell.openExternal(cloudAdminUrl());
+      return { ok: true, kind };
+    }
     try {
-      return { ok: await openInstalledLocalAdmin(), serverUrl: MANAGED_LOCAL_SERVER_URL };
+      return { ok: await openInstalledLocalAdmin(), kind, serverUrl: MANAGED_LOCAL_SERVER_URL };
     } catch (error) {
       return {
         ok: false,
+        kind,
         error: error?.userMessage
           ?? "เปิดระบบหลังบ้านบนเครื่องนี้ไม่สำเร็จ กรุณาตรวจสอบการติดตั้ง Retail Local Server",
       };
