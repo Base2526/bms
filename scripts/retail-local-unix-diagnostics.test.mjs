@@ -159,8 +159,11 @@ test('Linux DEBs include the diagnostics helper and bootstrap version', { skip: 
       'https://example.invalid/release', 'ubuntu-24.04-lts-x64', root],
       'bms-pos-online-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-pos-bootstrap'],
     ['server', [join(managed, 'linux/build-deb.sh'), '--version', '1.2.3-test', '--agent', agent,
-      '--keyring', keyring, '--manifest-url', 'https://example.invalid/release', '--output-dir', root],
-      'bms-retail-local-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-retail-local/bootstrap'],
+      '--keyring', keyring, '--manifest-url', 'https://example.invalid/release', '--package-type', 'server', '--output-dir', root],
+      'bms-retail-local-server-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-retail-local/bootstrap'],
+    ['server-pos', [join(managed, 'linux/build-deb.sh'), '--version', '1.2.3-test', '--agent', agent,
+      '--keyring', keyring, '--manifest-url', 'https://example.invalid/release', '--package-type', 'server-pos', '--output-dir', root],
+      'bms-retail-local-server-pos-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-retail-local/bootstrap'],
   ]) {
     const built = run('bash', args);
     assert.equal(built.status, 0, built.stdout + built.stderr);

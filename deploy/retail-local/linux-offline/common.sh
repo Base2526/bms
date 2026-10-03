@@ -13,18 +13,18 @@ die() {
 }
 
 require_root() {
-  [[ ${EUID:-$(id -u)} -eq 0 ]] || die "กรุณารันด้วย sudo"
+  [[ ${EUID:-$(id -u)} -eq 0 ]] || die "Run this command with sudo"
 }
 
 require_installed() {
   [[ -f $BMS_ENV_FILE && -f $BMS_COMPOSE_FILE ]] || \
-    die "ยังไม่ได้ตั้งค่าระบบ กรุณารัน sudo bms-retail-local-setup"
+    die "Setup is not complete. Run sudo bms-retail-local-setup"
 }
 
 require_docker() {
-  command -v docker >/dev/null 2>&1 || die "ไม่พบ Docker Engine"
-  docker info >/dev/null 2>&1 || die "Docker Engine ยังไม่พร้อม"
-  docker compose version >/dev/null 2>&1 || die "ไม่พบ Docker Compose v2"
+  command -v docker >/dev/null 2>&1 || die "Docker Engine was not found"
+  docker info >/dev/null 2>&1 || die "Docker Engine is not ready"
+  docker compose version >/dev/null 2>&1 || die "Docker Compose v2 was not found"
 }
 
 compose() {
@@ -51,5 +51,5 @@ wait_healthy() {
     sleep 3
   done
   compose ps >&2 || true
-  die "ระบบไม่ healthy ภายใน 240 วินาที กรุณารัน sudo bms-retail-local-doctor"
+  die "System health check timed out after 240 seconds. Run sudo bms-retail-local-doctor"
 }

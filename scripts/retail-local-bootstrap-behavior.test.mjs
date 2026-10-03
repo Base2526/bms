@@ -18,6 +18,87 @@ function run(command, args, options = {}) {
   return spawnSync(command, args, { encoding: 'utf8', timeout: 60000, ...options });
 }
 
+const shopTypeFixture = {
+  formatVersion: 1,
+  defaultArchetype: 'retail',
+  archetypes: [
+    { id: 'retail', enabledForNewInstall: true, deprecated: false, starterCatalog: true,
+      labels: { en: 'Retail shop', th: 'ร้านค้าปลีก' } },
+    { id: 'cafe', enabledForNewInstall: true, deprecated: false, starterCatalog: true,
+      labels: { en: '', th: 'คาเฟ่' } },
+    { id: 'restaurant', enabledForNewInstall: true, deprecated: false, starterCatalog: true,
+      labels: { th: 'ร้านอาหาร' } },
+    { id: 'disabled', enabledForNewInstall: false, deprecated: false, starterCatalog: false,
+      labels: { en: 'Disabled shop', th: 'ปิดใช้งาน' } },
+  ],
+};
+
+for (const path of [
+  'deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh',
+  'deploy/retail-local/linux-offline/bms-retail-local-setup',
+  'deploy/retail-local/managed-runtime/macos/bms-retail-local',
+]) {
+  const mac = path.includes('/macos/');
+  test(`English shop-type choices preserve IDs and default selection: ${path}`, {
+    skip: process.platform === 'win32' || (mac && process.platform !== 'darwin') ||
+      (!mac && run('jq', ['--version']).status !== 0),
+  }, t => {
+    const root = workspace(t);
+    const manifest = join(root, 'shop-archetypes.json');
+    writeFileSync(manifest, JSON.stringify(shopTypeFixture));
+    const name = mac ? 'select_business_archetype' : 'choose_archetype';
+    const fn = read(path).match(new RegExp(`${name}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
+    assert.ok(fn);
+    const script = `set -euo pipefail
+archetype_manifest=$1
+BMS_PAYLOAD_ROOT=$(dirname "$1")
+artifact_path() { printf '%s' "$archetype_manifest"; }
+die() { echo "$*" >&2; exit 1; }
+${fn}
+${mac ? `${name}; printf '\\nSELECTED=%s\\n' "$BUSINESS_ARCHETYPE"` : `selected=$(${name}); printf '\\nSELECTED=%s\\n' "$selected"`}
+`;
+    for (const [input, id] of [['\n', 'retail'], ['2\n', 'cafe'], ['99\n3\n', 'restaurant']]) {
+      const result = run('bash', ['-c', script, 'test', manifest], { input });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+      const output = result.stdout + result.stderr;
+      assert.match(output, /Retail shop/);
+      assert.match(output, /cafe/);
+      assert.match(output, /restaurant/);
+      assert.doesNotMatch(output, /[\u0e00-\u0e7f]|Disabled shop|Could not extract/);
+      assert.match(result.stdout, new RegExp(`SELECTED=${id}\\n`));
+    }
+  });
+}
+
+for (const path of [
+  'deploy/retail-local/install.ps1',
+  'deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1',
+]) {
+  test(`Windows English shop-type choices preserve IDs: ${path}`, {
+    skip: process.platform !== 'win32',
+  }, t => {
+    const root = workspace(t);
+    const manifest = join(root, 'shop-archetypes.json');
+    writeFileSync(manifest, JSON.stringify(shopTypeFixture));
+    const fn = read(path).match(/function Get-ShopArchetypeCatalog\([^\n]*\) \{[\s\S]*?\r?\n\}/)?.[0];
+    assert.ok(fn);
+    const script = join(root, 'catalog.ps1');
+    writeFileSync(script, '\ufeff' + `param($Manifest)
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+function Read-Utf8Text([string]$Path) { [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8) }
+${fn}
+Get-ShopArchetypeCatalog $Manifest | ConvertTo-Json -Depth 5
+`);
+    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', script, manifest]);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    const catalog = JSON.parse(result.stdout);
+    assert.equal(catalog.DefaultValue, 'retail');
+    assert.deepEqual(catalog.Options.map(({ Value, Label }) => [Value, Label]),
+      [['retail', 'Retail shop'], ['cafe', 'cafe'], ['restaurant', 'restaurant']]);
+  });
+}
+
 for (const shell of ['powershell.exe', join(process.env.SystemRoot || 'C:\\Windows', 'SysWOW64/WindowsPowerShell/v1.0/powershell.exe')]) {
 test(`Windows diagnostics redact sensitive errors, bound inventory and preserve failures (${shell})`, {
   skip: process.platform !== 'win32',
@@ -468,7 +549,8 @@ test('macOS uninstall bounds a stuck VM stop and preserves shop data', {
   const result = run('/bin/bash', ['-c', `set -euo pipefail
 STATE_ROOT=$1; LIMA_HOME="$1/vm"; INSTANCE=instance; LIMACTL="$1/limactl"
 RECEIPT="$1/no-receipt"; INSTALL_MODE=online; AGENT="$1/missing-agent"
-LAUNCH_AGENT="$1/launch.plist"; LAUNCH_LABEL=fixture
+LAUNCH_AGENT="$1/launch.plist"; LAUNCH_LABEL=fixture; LICENSE_UI_AGENT="$1/license-ui.plist"
+package_type() { printf server; }
 die() { echo "$*" >&2; exit 1; }
 note() { echo "$*"; }
 uninstall_step() { echo "$*"; }
@@ -544,13 +626,13 @@ test('Linux repeat setup recognizes a completed shop without provisioning it aga
 }, t => {
   const root = workspace(t);
   const source = read('deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh');
-  const block = source.match(/if \[\[ -f \$RUNTIME_ROOT\/installation.json \]\]; then[\s\S]*?\nfi/)?.[0];
+  const block = source.match(/agent_source="\$bundle_root\/bms-runtime-agent"\r?\n[\s\S]*?\nfi/)?.[0];
   assert.ok(block);
   const receipt = JSON.stringify({version: '1.0.0', tenantId: 'shop', posDeviceId: 'register'});
   writeFileSync(join(root, 'installation.json'), receipt);
   const result = run('/bin/bash', ['-c', `set -euo pipefail
 RUNTIME_ROOT=$1
-bundle_root=$1; SERVICE_NAME=bms-retail-local.service
+bundle_root=$1; BOOTSTRAP_ROOT="$1/bootstrap"; SERVICE_NAME=bms-retail-local.service
 localctl_source="$1/bms-localctl"; transaction_source="$1/bms-update-transaction"
 die() { echo "$*" >&2; exit 1; }
 install() { echo "install:$*"; }
@@ -564,6 +646,7 @@ echo 'must-not-reprovision'
   assert.match(result.stdout, /install:.*bms-localctl/);
   assert.match(result.stdout, /install:.*bms-update-transaction/);
   assert.match(result.stdout, /install:.*bms-retail-local.service/);
+  assert.match(result.stdout, /install:.*bms-runtime-agent/);
   assert.match(result.stdout, /service:daemon-reload[\s\S]*service:enable --now docker.service[\s\S]*service:enable --now bms-retail-local.service/);
   assert.doesNotMatch(result.stdout, /must-not-reprovision/);
   assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), receipt);

@@ -95,11 +95,11 @@ run_with_timeout() {
 require_bootstrap() {
   if [[ $INSTALL_MODE == offline ]]; then
     [[ -x $AGENT && -x $LIMACTL && -f $PAYLOAD_ROOT/SHA256SUMS ]] || \
-      die "ไฟล์ Offline Recovery Installer ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+      die "Offline Recovery Installer files are incomplete. Reinstall the .pkg"
     return
   fi
   [[ -x $AGENT && -f $KEYRING && -f $MANIFEST_URI_FILE ]] || \
-    die "ไฟล์ Online Bootstrap ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+    die "Online Bootstrap files are incomplete. Reinstall the .pkg"
 }
 package_type() {
   local value=""
@@ -138,7 +138,7 @@ load_release_paths() {
   if [[ $INSTALL_MODE == offline ]]; then
     return
   fi
-  [[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "release version ไม่ถูกต้อง"
+  [[ $version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || die "Invalid release version"
   RELEASE_DIRECTORY="$STATE_ROOT/releases/$version"
   RELEASE_JSON="$RELEASE_DIRECTORY/release.json"
   RUNTIME_ROOT="$STATE_ROOT/runtimes/$version"
@@ -171,7 +171,7 @@ online_installation_available() {
      -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]]
 }
 load_installed_release() {
-  [[ -f $RECEIPT ]] || die "ยัง setup ไม่เสร็จ"
+  [[ -f $RECEIPT ]] || die "Setup is not complete"
   if [[ $INSTALL_MODE == offline ]]; then
     return
   fi
@@ -180,7 +180,7 @@ load_installed_release() {
   load_release_paths "$version"
   if ! online_installation_available && embedded_installation_available; then
     activate_embedded_installation
-    note "พบข้อมูลร้านจาก Offline Installer เดิม กำลังเปิดระบบเดิมต่อโดยไม่แตะข้อมูลร้าน"
+    note "Existing shop data from an Offline Installer was found. Starting the existing system and preserving shop data"
   fi
 }
 require_installed_payload() {
@@ -189,16 +189,16 @@ require_installed_payload() {
     if [[ -f $RECEIPT ]]; then
       [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS && \
          -f $CONFIG && -d $LIMA_HOME/$INSTANCE ]] || \
-        die "ไฟล์ระบบเดิมไม่ครบ แต่ข้อมูลร้านอาจยังอยู่ กรุณาติดต่อ Support และอย่าลบ private VM"
+        die "Existing system files are incomplete, but shop data may remain. Contact Support and do not delete the private VM"
     else
       [[ -x $LIMACTL && -x $AGENT && -f $PAYLOAD_ROOT/SHA256SUMS && \
          -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]] || \
-        die "ไฟล์ใน Offline Recovery Installer ไม่ครบ กรุณาติดตั้ง .pkg ใหม่"
+        die "Offline Recovery Installer files are incomplete. Reinstall the .pkg"
     fi
     return
   fi
   [[ -x $LIMACTL && -f $RELEASE_JSON && -f "$(artifact_path web)" && -f $PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img ]] || \
-    die "พบข้อมูลการติดตั้งเดิม แต่ runtime release ไม่ครบ กรุณาติดต่อ Support และอย่าลบข้อมูลร้าน"
+    die "An existing installation was found, but its runtime release is incomplete. Contact Support and do not delete shop data"
 }
 instance_status() {
   "$LIMACTL" list "$INSTANCE" --format '{{.Status}}' 2>/dev/null | tr -d '\r' || true
@@ -210,9 +210,9 @@ file_uri() { printf 'file://%s' "$1"; }
 random_suffix() { od -An -N 6 -tx1 /dev/urandom | tr -d ' \n'; }
 
 verify_embedded_payload() {
-  note "ตรวจ checksum ของ runtime และ server images"
+  note "Checking runtime and server image checksums"
   (cd "$PAYLOAD_ROOT" && shasum -a 256 -c SHA256SUMS >/dev/null) || \
-    die "checksum ของไฟล์ใน Offline Recovery Installer ไม่ถูกต้อง"
+    die "Offline Recovery Installer file checksum mismatch"
 }
 
 require_matching_mac_architecture() {
@@ -228,7 +228,7 @@ require_matching_mac_architecture() {
     host_arch=x64
   fi
   [[ $packaged_target == "macos-15-$host_arch" ]] || \
-    die "ไฟล์ติดตั้งไม่ตรงกับ CPU เครื่องนี้ (เครื่องเป็น $host_arch แต่ package เป็น ${packaged_target:-unknown})"
+    die "Installer does not match this CPU (computer: $host_arch; package: ${packaged_target:-unknown})"
 }
 
 activate_license() {
@@ -237,7 +237,7 @@ activate_license() {
   activation_uri=$(tr -d '\r\n' <"$BOOTSTRAP_ROOT/activation-url" 2>/dev/null || true)
   [[ -n $activation_uri ]] || return 0
   if ! is_https_url "$activation_uri"; then
-    printf '[คำเตือน] Activation URL ไม่ปลอดภัย ข้าม Activation และให้ร้านใช้งานต่อ\n' >&2
+    printf '[WARN] Unsafe Activation URL. Skipping activation; the shop can continue operating\n' >&2
     return 0
   fi
   checkpoint="$STATE_ROOT/activation.json"
@@ -251,7 +251,7 @@ activate_license() {
   # Setup may recover an already-redeemed code after interruption, but only the
   # explicit post-install activate command can prompt or contact the control plane.
   [[ ${1:-} == interactive ]] || return 0
-  read -r -s -p 'Activation Code จาก BMS (เว้นว่างเพื่อยกเลิก): ' code
+  read -r -s -p 'Activation Code from BMS (leave blank to cancel): ' code
   printf '\n'
   [[ -n $code ]] || return 0
   body="$STATE_ROOT/.activation-body-$(random_suffix).json"
@@ -263,7 +263,7 @@ activate_license() {
   if ! curl --fail --silent --show-error --max-time 15 -H 'Content-Type: application/json' \
       --data-binary "@$body" --output "$response" "$activation_uri"; then
     rm -f -- "$body" "$response"
-    printf '[คำเตือน] Activation ยังไม่สำเร็จ แต่ร้านจะติดตั้งและใช้งานต่อได้ กรุณาติดต่อ Support ภายหลัง\n' >&2
+    printf '[WARN] Activation did not complete. Installation and shop operations can continue; contact Support later\n' >&2
     return 0
   fi
   rm -f -- "$body"
@@ -273,7 +273,7 @@ activate_license() {
   if [[ ! $license_id =~ ^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$ || \
         ! $evidence_token =~ ^[A-Za-z0-9_-]{32,256}$ || \
         ! $activation_uri =~ ^(https://[^/@:]+(:[0-9]{1,5})?)([/?#].*)?$ ]]; then
-    printf '[คำเตือน] Activation response ไม่ถูกต้อง แต่ร้านจะติดตั้งและใช้งานต่อได้\n' >&2
+    printf '[WARN] Invalid activation response. Installation and shop operations can continue\n' >&2
     return 0
   fi
   origin=${BASH_REMATCH[1]}
@@ -286,14 +286,14 @@ activate_license() {
   /usr/bin/plutil -insert evidenceToken -string "$LICENSE_EVIDENCE_TOKEN" "$checkpoint"
   /usr/bin/plutil -convert json "$checkpoint"
   chmod 0600 "$checkpoint"
-  note "Activation สำเร็จ"
+  note "Activation complete"
 }
 
 activate_installed_license() {
   local event=INSTALLATION_REGISTERED runtime_receipt tenant_id device_id target version old_license
   [[ ${1:-} == --transfer || -z ${1:-} ]] || die "usage: bms-retail-local activate [--transfer]"
-  [[ -f $RECEIPT ]] || die "กรุณาติดตั้ง BMS Retail Local ก่อนลงทะเบียน"
-  [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]] || die "bootstrap ไม่มี Activation URL"
+  [[ -f $RECEIPT ]] || die "Install BMS Retail Local before registering"
+  [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]] || die "Bootstrap has no Activation URL"
   ensure_runtime
   # Validate the authoritative shop receipt before consuming a one-use code.
   runtime_receipt=$(mktemp "$STATE_ROOT/.activation-receipt.XXXXXX")
@@ -301,7 +301,7 @@ activate_installed_license() {
   if ! "$AGENT" runtime-read -engine macos-lima -distro "$INSTANCE" \
       -source /var/lib/bms-retail-local/installation.json -destination "$runtime_receipt" >/dev/null; then
     rm -f -- "$runtime_receipt"
-    die "อ่าน installation receipt ไม่สำเร็จ ร้านยังใช้งานได้"
+    die "Could not read the installation receipt. The shop can continue operating"
   fi
   tenant_id=$(/usr/bin/plutil -extract tenantId raw -o - "$runtime_receipt" 2>/dev/null || true)
   device_id=$(/usr/bin/plutil -extract posDeviceId raw -o - "$runtime_receipt" 2>/dev/null || true)
@@ -310,13 +310,13 @@ activate_installed_license() {
   old_license=$(/usr/bin/plutil -extract licenseCode raw -o - "$runtime_receipt" 2>/dev/null || true)
   if [[ -z $tenant_id || -z $device_id || -z $target || -z $version ]]; then
     rm -f -- "$runtime_receipt"
-    die "installation receipt ไม่ครบ กรุณาติดต่อ Support"
+    die "Installation receipt is incomplete. Contact Support"
   fi
   [[ ${1:-} != --transfer && -z $old_license ]] || event=TRANSFER_REQUESTED
   activate_license interactive
   if [[ -z $LICENSE_ID ]]; then
     rm -f -- "$runtime_receipt"
-    note "ยังไม่ได้ลงทะเบียน ร้านยังใช้งานได้ ลงทะเบียนภายหลังด้วย bms-retail-local activate"
+    note "Not registered yet. The shop can continue operating; register later with bms-retail-local activate"
     return 0
   fi
   if ! BMS_LICENSE_EVIDENCE_TOKEN="$LICENSE_EVIDENCE_TOKEN" "$AGENT" license-record \
@@ -324,7 +324,7 @@ activate_installed_license() {
       -tenant-id "$tenant_id" -pos-device-id "$device_id" -target "$target" \
       -release-version "$version" -endpoint "$LICENSE_EVIDENCE_ENDPOINT" >/dev/null; then
     rm -f -- "$runtime_receipt"
-    die "บันทึกการลงทะเบียนยังไม่สำเร็จ ร้านยังใช้งานได้ ลอง bms-retail-local activate อีกครั้ง"
+    die "Could not save registration. The shop can continue operating; retry bms-retail-local activate"
   fi
   /usr/bin/plutil -remove licenseCode "$runtime_receipt" 2>/dev/null || true
   /usr/bin/plutil -insert licenseCode -string "$LICENSE_ID" "$runtime_receipt"
@@ -332,12 +332,12 @@ activate_installed_license() {
   if ! "$AGENT" runtime-write -engine macos-lima -distro "$INSTANCE" -source "$runtime_receipt" \
       -destination /var/lib/bms-retail-local/installation.json -mode 0600 >/dev/null; then
     rm -f -- "$runtime_receipt"
-    die "บันทึก receipt ยังไม่สำเร็จ ร้านยังใช้งานได้ ลอง bms-retail-local activate อีกครั้ง"
+    die "Could not save the receipt. The shop can continue operating; retry bms-retail-local activate"
   fi
   mv -f "$runtime_receipt" "$RECEIPT"
   rm -f -- "$STATE_ROOT/activation.json"
   LICENSE_EVIDENCE_TOKEN=""
-  note "ลงทะเบียนสำเร็จ ร้านและข้อมูลเดิมพร้อมใช้งาน"
+  note "Registration complete. The existing shop and data are ready"
 }
 
 release_component_value() {
@@ -346,7 +346,7 @@ release_component_value() {
     case "$field" in
       imageRef) awk -F '\t' -v component="$wanted" '$1 == component {print $3}' "$PAYLOAD_ROOT/release-images.tsv" ;;
       ociDigest) awk -F '\t' -v component="$wanted" '$1 == component {print $4}' "$PAYLOAD_ROOT/release-images.tsv" ;;
-      *) die "offline release ไม่มี field $field" ;;
+      *) die "Offline release is missing field $field" ;;
     esac
     return
   fi
@@ -357,7 +357,7 @@ release_component_value() {
     fi
     index=$((index + 1))
   done
-  die "signed release ขาด component $wanted"
+  die "Signed release is missing component $wanted"
 }
 
 render_stage_output() {
@@ -374,14 +374,14 @@ render_stage_output() {
       heartbeat=$(printf '%s' "$payload" | /usr/bin/plutil -extract heartbeat raw -o - - 2>/dev/null) || heartbeat='false'
       retry_after=$(printf '%s' "$payload" | /usr/bin/plutil -extract retryAfterSeconds raw -o - - 2>/dev/null) || retry_after='0'
       progress_size="$((completed / 1048576))/$((total / 1048576)) MiB"
-      [[ $heartbeat != true ]] || progress_size="$progress_size; ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
+      [[ $heartbeat != true ]] || progress_size="$progress_size; Still working; waiting for network data"
       case "$phase" in
-        connect) printf '\r[BMS] เชื่อมต่อ %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
-        download) printf '\r[BMS] ดาวน์โหลด %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
-        retry) printf '\r[BMS] เครือข่ายหยุด จะลอง %-20s ใหม่ใน %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
-        cached) printf '\r[BMS] ใช้ไฟล์ที่ดาวน์โหลดแล้ว: %-20s %3s%%\n' "$component" "$percent" ;;
-        verify) printf '\r[BMS] ตรวจสอบ %-20s %3s%%' "$component" "$percent" ;;
-        staged) printf '\r[BMS] ดาวน์โหลดและตรวจสอบครบ                     100%%\n' ;;
+        connect) printf '\r[BMS] Connecting %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+        download) printf '\r[BMS] Downloading %-20s %3s%% (%s)' "$component" "$percent" "$progress_size" ;;
+        retry) printf '\r[BMS] Connection interrupted. Retrying %-20s in %ss (%s)\n' "$component" "$retry_after" "$progress_size" ;;
+        cached) printf '\r[BMS] Using cached download: %-20s %3s%%\n' "$component" "$percent" ;;
+        verify) printf '\r[BMS] Verifying %-20s %3s%%' "$component" "$percent" ;;
+        staged) printf '\r[BMS] Download and verification complete                     100%%\n' ;;
       esac
     fi
   done
@@ -391,39 +391,39 @@ stage_signed_release() {
   local manifest_uri manifest_dir manifest_path preflight_file target stage_output version test_ca stage_command
   local -a curl_args
   manifest_uri=$(tr -d '\r\n' <"$MANIFEST_URI_FILE")
-  is_https_url "$manifest_uri" || die "Manifest URL ใน bootstrap ไม่ปลอดภัย"
+  is_https_url "$manifest_uri" || die "Unsafe Manifest URL in bootstrap"
   test_ca="$BOOTSTRAP_ROOT/test-release-ca.pem"
   if [[ -f $test_ca ]]; then
     [[ $manifest_uri =~ ^https://(localhost|127\.0\.0\.1|\[::1\])([/:?#]|$) ]] || \
-      die "test release CA ใช้ได้เฉพาะ localhost"
+      die "Test release CA is allowed only for localhost"
     grep -q 'BEGIN CERTIFICATE' "$test_ca" && ! grep -q 'PRIVATE KEY' "$test_ca" || \
-      die "test release CA ไม่ถูกต้อง"
+      die "Invalid test release CA"
     export CURL_CA_BUNDLE="$test_ca" SSL_CERT_FILE="$test_ca"
-    note "ใช้ public test CA สำหรับ localhost เท่านั้น (SMOKE-ONLY)"
+    note "Using public test CA for localhost only (SMOKE-ONLY)"
   fi
   mkdir -p "$STATE_ROOT/manifest"
   chmod 0700 "$STATE_ROOT" "$STATE_ROOT/manifest"
   manifest_dir="$STATE_ROOT/manifest"
   manifest_path="$manifest_dir/release.jws.json"
-  note "การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต กำลังดาวน์โหลด signed release manifest"
+  note "First installation requires internet access. Downloading the signed release manifest"
   curl_args=(--fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
     --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
     --retry 2 --retry-max-time 180 --output "$manifest_path.part")
   [[ ! -f $test_ca ]] || curl_args=(--cacert "$test_ca" "${curl_args[@]}")
   if ! curl "${curl_args[@]}" "$manifest_uri"; then
-    die "ดาวน์โหลด release manifest ไม่สำเร็จ กรุณาตรวจอินเทอร์เน็ตแล้วเปิด Setup อีกครั้ง"
+    die "Failed to download the release manifest. Check your internet connection and run Setup again"
   fi
   chmod 0600 "$manifest_path.part"
   mv -f "$manifest_path.part" "$manifest_path"
   preflight_file="$STATE_ROOT/preflight.json"
   "$AGENT" preflight >"$preflight_file"
   target=$(/usr/bin/plutil -extract target raw -o - "$preflight_file" 2>/dev/null || true)
-  [[ $target == macos-15-arm64 || $target == macos-15-x64 ]] || die "อ่าน platform target ไม่สำเร็จ"
+  [[ $target == macos-15-arm64 || $target == macos-15-x64 ]] || die "Could not read platform target"
 
   stage_output="$STATE_ROOT/stage-result.jsonl"
   : >"$stage_output"
   chmod 0600 "$stage_output"
-  note "กำลังดาวน์โหลด component แบบ resume และตรวจ SHA-256 ทุกไฟล์"
+  note "Downloading components with resume support and verifying SHA-256 for every file"
   stage_command=stage-release
   [[ $(package_type) != server ]] || stage_command=stage-server
   local -a stage_args=("$stage_command" -manifest "$manifest_path" -keyring "$KEYRING" \
@@ -448,7 +448,7 @@ extract_runtime() {
   mkdir -p "$temporary"
   while IFS= read -r entry; do
     [[ -n $entry && $entry != /* && $entry != ../* && $entry != */../* ]] || \
-      die "runtime archive มี path ที่ไม่ปลอดภัย"
+      die "Runtime archive contains an unsafe path"
   done < <(tar -tzf "$archive")
   tar -xzf "$archive" -C "$temporary"
   [[ -x $temporary/runtime/lima/bin/limactl && \
@@ -456,7 +456,7 @@ extract_runtime() {
      -f $temporary/payload/runtime/docker.tgz && \
      -x $temporary/payload/runtime/docker-compose && \
      -f $temporary/payload/runtime/age.tar.gz && \
-     -f $temporary/payload/bms-localctl ]] || die "runtime component ไม่ครบ"
+     -f $temporary/payload/bms-localctl ]] || die "Runtime component is incomplete"
   rm -rf -- "$destination"
   mv "$temporary" "$destination"
   load_release_paths "$(/usr/bin/plutil -extract releaseVersion raw -o - "$RELEASE_JSON")"
@@ -470,7 +470,7 @@ render_lima_config() {
   case "$platform_target" in
     macos-15-arm64) lima_arch=aarch64 ;;
     macos-15-x64) lima_arch=x86_64 ;;
-    *) die "package target ไม่รองรับ: $platform_target" ;;
+    *) die "Unsupported package target: $platform_target" ;;
   esac
 
   local image_uri payload escaped_uri escaped_payload ubuntu_sha
@@ -479,8 +479,8 @@ render_lima_config() {
   escaped_uri=$(yaml_escape_sed "$image_uri")
   escaped_payload=$payload
   ubuntu_sha=$(shasum -a 256 "$PAYLOAD_ROOT/ubuntu-24.04-server-cloudimg.img" | awk '{print $1}')
-  [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "ไม่พบ checksum ของ Ubuntu runtime"
-  [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "port ไม่ถูกต้อง"
+  [[ $ubuntu_sha =~ ^[a-f0-9]{64}$ ]] || die "Ubuntu runtime checksum was not found"
+  [[ $WEB_PORT =~ ^[0-9]{2,5}$ && $WS_PORT =~ ^[0-9]{2,5}$ ]] || die "Invalid port"
   sed -e "s|__LIMA_ARCH__|$lima_arch|g" \
       -e "s|__UBUNTU_IMAGE_URI__|$escaped_uri|g" \
       -e "s|__UBUNTU_IMAGE_SHA256__|$ubuntu_sha|g" \
@@ -496,10 +496,10 @@ start_setup_vm() {
   local status
   status=$(instance_status)
   if [[ -z $status ]]; then
-    note "สร้าง private VM ด้วย Apple Virtualization Framework (ครั้งแรกอาจใช้เวลาหลายนาที)"
+    note "Creating the private VM with Apple Virtualization Framework (first setup may take several minutes)"
     "$LIMACTL" start --name "$INSTANCE" --tty=false --timeout 15m "$CONFIG"
   elif [[ $status != Running ]]; then
-    note "เริ่ม private VM"
+    note "Starting the private VM"
     "$LIMACTL" start --tty=false --timeout 10m "$INSTANCE"
   fi
 }
@@ -509,7 +509,7 @@ install_release() {
   if [[ $INSTALL_MODE == offline ]]; then
     while IFS=$'\t' read -r name artifact image_ref digest; do
       [[ -n $name ]] || continue
-      note "โหลด image: $name"
+      note "Loading image: $name"
       "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
         -artifact "$PAYLOAD_ROOT/$artifact" -image-ref "$image_ref" -digest "$digest"
     done <"$PAYLOAD_ROOT/release-images.tsv"
@@ -518,7 +518,7 @@ install_release() {
       artifact=$(artifact_path "$name")
       image_ref=$(release_component_value "$name" imageRef)
       digest=$(release_component_value "$name" ociDigest)
-      note "โหลด image: $name"
+      note "Loading image: $name"
       "$AGENT" engine-load -engine macos-lima -distro "$INSTANCE" \
         -artifact "$artifact" -image-ref "$image_ref" -digest "$digest"
     done
@@ -574,68 +574,68 @@ select_business_archetype() {
   local manifest choice index=0 default_id default_index=1 id label enabled deprecated
   local -a ids=() labels=()
   manifest=$(artifact_path shop-archetypes)
-  [[ -f $manifest ]] || die "signed release ขาด shop-archetypes component"
+  [[ -f $manifest ]] || die "Signed release is missing the shop-archetypes component"
   default_id=$(/usr/bin/plutil -extract defaultArchetype raw -o - "$manifest" 2>/dev/null || true)
   while id=$(/usr/bin/plutil -extract "archetypes.$index.id" raw -o - "$manifest" 2>/dev/null); do
     enabled=$(/usr/bin/plutil -extract "archetypes.$index.enabledForNewInstall" raw -o - "$manifest" 2>/dev/null || printf 'false')
     deprecated=$(/usr/bin/plutil -extract "archetypes.$index.deprecated" raw -o - "$manifest" 2>/dev/null || printf 'false')
-    label=$(/usr/bin/plutil -extract "archetypes.$index.labels.th" raw -o - "$manifest" 2>/dev/null || \
-      /usr/bin/plutil -extract "archetypes.$index.labels.en" raw -o - "$manifest" 2>/dev/null || true)
+    label=$(/usr/bin/plutil -extract "archetypes.$index.labels.en" raw -o - "$manifest" 2>/dev/null) || label=$id
+    [[ -n $label ]] || label=$id
     if [[ $enabled == true && $deprecated != true && $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]]; then
       ids+=("$id"); labels+=("$label")
       [[ $id != "$default_id" ]] || default_index=${#ids[@]}
     fi
     index=$((index + 1))
   done
-  ((${#ids[@]} > 0)) || die "shop-archetypes manifest ไม่มีประเภทร้านที่เปิดให้ติดตั้ง"
+  ((${#ids[@]} > 0)) || die "The shop-archetypes manifest has no shop types enabled for installation"
   while :; do
-    printf '\nประเภทร้าน (ใช้กำหนดหน้าจอ ความสามารถ และสินค้าในข้อมูลตัวอย่าง)\n'
+    printf '\nShop type (used for screens, capabilities, and sample products)\n'
     for index in "${!labels[@]}"; do printf ' %2d) %s\n' "$((index + 1))" "${labels[$index]}"; done
-    read -r -p "เลือกประเภทร้าน [$default_index]: " choice
+    read -r -p "Select a shop type [$default_index]: " choice
     choice=${choice:-$default_index}
     if [[ $choice =~ ^[0-9]+$ ]] && ((choice >= 1 && choice <= ${#ids[@]})); then
       BUSINESS_ARCHETYPE=${ids[$((choice - 1))]}
       return
     fi
-    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#ids[@]}" >&2
+    printf 'Enter a number from 1 to %d\n' "${#ids[@]}" >&2
   done
 }
 
 select_sample_data() {
   local answer
   while :; do
-    read -r -p 'สร้างข้อมูลตัวอย่างตามประเภทร้านนี้หรือไม่? [y/N]: ' answer
+    read -r -p 'Create sample data for this shop type? [y/N]: ' answer
     case "$answer" in
       y|Y|yes|YES) SAMPLE_MODE=STARTER_CATALOG; return ;;
       ''|n|N|no|NO) SAMPLE_MODE=NONE; return ;;
-      *) printf 'กรุณาตอบ y หรือ n\n' >&2 ;;
+      *) printf 'Enter y or n\n' >&2 ;;
     esac
   done
 }
 
 collect_shop_details() {
   local password_confirm pin_confirm
-  printf '\nข้อมูลร้านแรกเริ่ม (เก็บใน private VM เท่านั้น)\n'
-  while [[ -z $SHOP_NAME ]]; do read -r -p 'ชื่อร้าน: ' SHOP_NAME; done
-  while [[ -z $ADMIN_NAME ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' ADMIN_NAME; done
+  printf '\nInitial shop details (stored only in the private VM)\n'
+  while [[ -z $SHOP_NAME ]]; do read -r -p 'Shop name: ' SHOP_NAME; done
+  while [[ -z $ADMIN_NAME ]]; do read -r -p 'Shop administrator name: ' ADMIN_NAME; done
   while [[ ! $ADMIN_EMAIL =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
-    read -r -p 'อีเมลผู้ดูแลร้าน: ' ADMIN_EMAIL
+    read -r -p 'Shop administrator email: ' ADMIN_EMAIL
     [[ $ADMIN_EMAIL =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
-      printf 'อีเมลไม่ถูกต้อง กรุณากรอกใหม่\n' >&2
+      printf 'Invalid email address. Please try again\n' >&2
   done
   select_business_archetype
   select_sample_data
   while :; do
-    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' ADMIN_PASSWORD; printf '\n'
-    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
+    read -r -s -p 'Administrator password (at least 8 characters): ' ADMIN_PASSWORD; printf '\n'
+    read -r -s -p 'Confirm password: ' password_confirm; printf '\n'
     if [[ ${#ADMIN_PASSWORD} -ge 8 && $ADMIN_PASSWORD == "$password_confirm" ]]; then break; fi
-    printf 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่\n' >&2
+    printf 'Passwords must match and contain at least 8 characters. Please try again\n' >&2
   done
   while :; do
-    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' ADMIN_PIN; printf '\n'
-    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
+    read -r -s -p 'POS PIN (4-8 digits): ' ADMIN_PIN; printf '\n'
+    read -r -s -p 'Confirm PIN: ' pin_confirm; printf '\n'
     if [[ $ADMIN_PIN =~ ^[0-9]{4,8}$ && $ADMIN_PIN == "$pin_confirm" ]]; then break; fi
-    printf 'PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่\n' >&2
+    printf 'PINs must match and contain 4-8 digits. Please try again\n' >&2
   done
 }
 
@@ -649,7 +649,7 @@ run_sample_data() {
       if [[ $SAMPLE_MODE != STARTER_CATALOG ]]; then
         return 0
       fi
-      printf '[คำเตือน] ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่อ่านได้ กำลังลองสร้างตามตัวเลือกของผู้ใช้\n' >&2
+      printf '[WARN] Provisioning did not report readable sample data status. Retrying the selected sample data setup\n' >&2
       ;;
   esac
   # provision-result.json is already mode 0600 inside the private VM and contains the one-time
@@ -680,7 +680,7 @@ run_sample_data() {
     if [[ $completed_steps != *'"products"'* ]] || \
        [[ $BUSINESS_ARCHETYPE == restaurant && $completed_steps != *'"restaurant_layout"'* ]]; then
       PROVISION_SAMPLE_STATUS=FAILED
-      printf '[คำเตือน] ผลสร้างข้อมูลตัวอย่างไม่ครบตามประเภทร้าน กรุณาลองใหม่จากหน้าเริ่มต้นใช้งาน\n' >&2
+      printf '[WARN] Sample data is incomplete for this shop type. Retry from the onboarding page\n' >&2
     fi
   fi
   rm -f -- "$result_file"
@@ -688,7 +688,7 @@ run_sample_data() {
 
 provision_shop() {
   if guest sudo test -f /var/lib/bms-retail-local/provision-result.json; then
-    note "พบร้านที่ provision แล้ว ดำเนินการ setup ต่อจากครั้งก่อน"
+    note "Found a provisioned shop. Resuming the previous setup"
     local checkpoint_file
     checkpoint_file="$STATE_ROOT/.provision-result-$(random_suffix).json"
     umask 077
@@ -703,14 +703,14 @@ provision_shop() {
     rm -f -- "$checkpoint_file"
     run_sample_data
     case "$PROVISION_SAMPLE_STATUS" in
-      COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
-      FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+      COMPLETED|ALREADY_COMPLETED) note "Sample data created for the selected shop type" ;;
+      FAILED) printf '[WARN] Sample data setup is incomplete. The shop is usable; retry from the onboarding page\n' >&2 ;;
     esac
     return
   fi
   [[ -n $SHOP_NAME && -n $ADMIN_NAME && -n $ADMIN_EMAIL && -n $ADMIN_PASSWORD && -n $ADMIN_PIN &&
      -n $BUSINESS_ARCHETYPE && $SAMPLE_MODE =~ ^(NONE|STARTER_CATALOG)$ ]] || \
-    die "ข้อมูล setup ไม่ครบ กรุณาเปิด Setup ใหม่"
+    die "Setup data is incomplete. Run Setup again"
 
   local provision_result result_file
   provision_result=$({
@@ -754,20 +754,20 @@ EOF
   PROVISION_POS_DEVICE_ID=$(/usr/bin/plutil -extract deviceId raw -o - "$result_file" 2>/dev/null || true)
   rm -f -- "$result_file"
   [[ -z $PROVISION_DEVICE_TOKEN || $PROVISION_DEVICE_TOKEN =~ ^pos_[A-Za-z0-9_-]{16,}$ ]] || \
-    die "ผลลัพธ์ pairing token ไม่ถูกต้อง"
+    die "Invalid pairing token result"
   ADMIN_PASSWORD=""; ADMIN_PIN=""
-  note "สร้างร้าน ผู้ดูแล สาขา MAIN และเครื่อง POS-01 แล้ว"
+  note "Created the shop, administrator, MAIN branch, and POS-01 device"
   run_sample_data
   case "$PROVISION_SAMPLE_STATUS" in
-    COMPLETED|ALREADY_COMPLETED) note "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" ;;
-    FAILED) printf '[คำแนะนำ] ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+    COMPLETED|ALREADY_COMPLETED) note "Sample data created for the selected shop type" ;;
+    FAILED) printf '[WARN] Sample data setup is incomplete. The shop is usable; retry from the onboarding page\n' >&2 ;;
   esac
 }
 
 launch_pos_desktop() {
   [[ $(package_type) == server-pos ]] || return
   local pos_app="/Applications/BMS POS.app"
-  [[ -d $pos_app ]] || die "ติดตั้ง POS Desktop จาก signed release ไม่สำเร็จ"
+  [[ -d $pos_app ]] || die "Failed to install POS Desktop from the signed release"
   if [[ -n $PROVISION_DEVICE_TOKEN ]]; then
     local expires_at handoff
     expires_at=$(date -v+10M -u '+%Y-%m-%dT%H:%M:%SZ')
@@ -792,13 +792,13 @@ install_pos_desktop() {
   mkdir -p "$temporary"
   while IFS= read -r entry; do
     [[ -n $entry && $entry != /* && $entry != ../* && $entry != */../* ]] || \
-      die "desktop archive มี path ที่ไม่ปลอดภัย"
+      die "Desktop archive contains an unsafe path"
   done < <(/usr/bin/zipinfo -1 "$archive")
   /usr/bin/ditto -x -k "$archive" "$temporary"
   app="$temporary/BMS POS.app"
   [[ -x $app/Contents/MacOS/BMS\ POS && -f $app/Contents/Info.plist ]] || \
-    die "desktop component ไม่มี BMS POS.app ที่สมบูรณ์"
-  note "ติดตั้ง BMS POS ใน Applications (macOS อาจถามรหัสผ่านผู้ดูแลเครื่อง)"
+    die "Desktop component does not contain a complete BMS POS.app"
+  note "Installing BMS POS in Applications (macOS may ask for the computer administrator password)"
   sudo /usr/bin/ditto "$app" "/Applications/BMS POS.app"
   sudo chown -R root:wheel "/Applications/BMS POS.app"
   sudo chmod -R go-w "/Applications/BMS POS.app"
@@ -861,7 +861,7 @@ record_license_evidence() {
   [[ -z $PROVISION_POS_DEVICE_ID ]] || arguments+=(-pos-device-id "$PROVISION_POS_DEVICE_ID")
   [[ -z $LICENSE_EVIDENCE_ENDPOINT ]] || arguments+=(-endpoint "$LICENSE_EVIDENCE_ENDPOINT")
   if ! output=$(BMS_LICENSE_EVIDENCE_TOKEN="$LICENSE_EVIDENCE_TOKEN" "$AGENT" "${arguments[@]}" 2>&1); then
-    printf '[คำเตือน] เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$output" >&2
+    printf '[WARN] Could not store licensing evidence. The shop can continue operating: %s\n' "$output" >&2
     return 0
   fi
   rm -f -- "$STATE_ROOT/activation.json"
@@ -915,7 +915,7 @@ install_launch_agent() {
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$(id -u)" "$LAUNCH_AGENT"
   launchctl kickstart -k "$LAUNCH_LABEL"
-  install_license_ui_agent || note "ยังตั้งระบบลงทะเบียนผ่าน Admin ไม่สำเร็จ ร้านยังใช้งานได้"
+  install_license_ui_agent || note "Could not configure registration through Admin. The shop can continue operating"
 }
 
 http_ready() {
@@ -926,7 +926,7 @@ http_ready() {
 wait_for_http() {
   local deadline=$((SECONDS + 300))
   until http_ready; do
-    (( SECONDS < deadline )) || die "บริการไม่ผ่าน HTTP health check ดู log ด้วย: bms-retail-local logs"
+    (( SECONDS < deadline )) || die "Services failed the HTTP health check. View logs with: bms-retail-local logs"
     sleep 3
   done
 }
@@ -935,7 +935,7 @@ ensure_runtime() {
   load_installed_release
   require_installed_payload
   if http_ready; then
-    note "Retail Local ทำงานอยู่แล้ว"
+    note "Retail Local is already running"
     return
   fi
   render_launch_agent
@@ -947,7 +947,7 @@ ensure_runtime() {
     launchctl kickstart "$LAUNCH_LABEL"
   fi
   wait_for_http
-  note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
+  note "Ready: http://127.0.0.1:$WEB_PORT"
   pulse_license_evidence
 }
 
@@ -956,7 +956,7 @@ wait_for_guest_doctor() {
   until guest sudo /usr/local/bin/bms-localctl doctor >/dev/null 2>&1; do
     if (( SECONDS >= deadline )); then
       guest sudo /usr/local/bin/bms-localctl status || true
-      die "บริการใน private VM ไม่ผ่าน health check ดู log ด้วย: bms-retail-local logs"
+      die "Private VM services failed the health check. View logs with: bms-retail-local logs"
     fi
     sleep 3
   done
@@ -975,38 +975,38 @@ setup_runtime() {
     fi
     launch_pos_desktop
     guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
-    note "ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้"
+    note "Installed and ready. Existing shop data has been preserved"
     return
   fi
   require_matching_mac_architecture
   mkdir -p "$STATE_ROOT"
   chmod 0700 "$STATE_ROOT"
-  step 1 "ตรวจสอบ macOS, CPU, RAM, Virtualization และพื้นที่ว่าง"
-  note "ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
-  "$AGENT" preflight --human || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วเปิด BMS Retail Local อีกครั้ง"
+  step 1 "Checking macOS, CPU, RAM, virtualization, and free disk space"
+  note "You can install and try the system without an Activation Code"
+  "$AGENT" preflight --human || die "Cannot install yet. Resolve the preflight issues above, then open BMS Retail Local again"
   activate_license
   if [[ $INSTALL_MODE == online ]]; then
-    step 2 "ดาวน์โหลดและตรวจสอบ signed release"
+    step 2 "Downloading and verifying the signed release"
     stage_signed_release
     extract_runtime
   else
-    step 2 "ตรวจสอบไฟล์ Offline Recovery Installer"
+    step 2 "Checking Offline Recovery Installer files"
     verify_embedded_payload
   fi
   require_installed_payload
   render_lima_config
-  step 3 "เตรียม private runtime"
+  step 3 "Preparing the private runtime"
   start_setup_vm
   if ! guest sudo test -f /var/lib/bms-retail-local/provisioned; then
-    step 4 "รับข้อมูลร้านและผู้ดูแล"
+    step 4 "Collecting shop and administrator details"
     collect_shop_details
   else
-    step 4 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
+    step 4 "Existing shop data found. Resuming setup from the checkpoint"
   fi
-  step 5 "ติดตั้ง Web, WS, PostgreSQL และ Redis"
+  step 5 "Installing Web, WS, PostgreSQL, and Redis"
   install_release
   provision_shop
-  step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
+  step 6 "Starting services and checking system health"
   guest sudo /usr/local/bin/bms-localctl start
   wait_for_http
   wait_for_guest_doctor
@@ -1019,7 +1019,7 @@ setup_runtime() {
       -target "$(/usr/bin/plutil -extract platformTarget raw -o - "$RECEIPT")" \
       -release-version "$(/usr/bin/plutil -extract version raw -o - "$RECEIPT")" \
       -tenant-reference "$PROVISION_TENANT_ID" -license-reference "$LICENSE_ID" -force \
-      >/dev/null 2>&1 || note "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; ระบบจะลองใหม่ภายหลัง"
+      >/dev/null 2>&1 || note "Could not send minimal installation data; reporting will retry later"
   fi
   record_license_evidence
   if [[ ${BMS_RETAIL_LOCAL_TEST_MODE:-0} != 1 ]]; then
@@ -1029,11 +1029,11 @@ setup_runtime() {
     launch_pos_desktop
   fi
   guest sudo rm -f /var/lib/bms-retail-local/provision-result.json /var/lib/bms-retail-local/sample-result.json
-  step 7 "ติดตั้งสำเร็จ"
-  note "พร้อมใช้งาน: http://127.0.0.1:$WEB_PORT"
-  note "ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
+  step 7 "Installation complete"
+  note "Ready: http://127.0.0.1:$WEB_PORT"
+  note "You can try the system immediately without an Activation Code"
   if [[ $INSTALL_MODE == online && -s $BOOTSTRAP_ROOT/activation-url ]]; then
-    note "หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ หรือ bms-retail-local activate"
+    note "If you receive a code from BMS, register later: Admin > License or bms-retail-local activate"
   fi
 }
 
@@ -1047,7 +1047,7 @@ stop_runtime() {
   launchctl bootout "gui/$(id -u)" "$LAUNCH_AGENT" >/dev/null 2>&1 || true
   launchctl bootout "gui/$(id -u)" "$LICENSE_UI_AGENT" >/dev/null 2>&1 || true
   if [[ $(instance_status) == Running ]]; then "$LIMACTL" stop "$INSTANCE"; fi
-  note "หยุด Retail Local แล้ว"
+  note "Retail Local stopped"
 }
 
 uninstall_runtime() {
@@ -1061,7 +1061,7 @@ uninstall_runtime() {
   done
 
   if [[ ${EUID:-$(id -u)} -eq 0 && -z ${BMS_RETAIL_LOCAL_ALLOW_ROOT_UNINSTALL:-} ]]; then
-    die "อย่ารัน uninstall ด้วย sudo โดยตรง เพราะข้อมูลร้านอยู่ใต้ user ที่ setup ให้รันแบบ user ปกติ"
+    die "Run uninstall as the user who set up the shop, without sudo, because that user owns the shop data"
   fi
 
   [[ ! -f $RECEIPT ]] || load_installed_release
@@ -1069,13 +1069,13 @@ uninstall_runtime() {
     remove_pos=false
   fi
 
-  uninstall_step 1 "ปิดการเริ่มอัตโนมัติ"
+  uninstall_step 1 "Disabling automatic startup"
   rm -f -- "$LAUNCH_AGENT"
   run_with_timeout 5 launchctl bootout "gui/$(id -u)/com.bms.retail-local.license-ui" >/dev/null 2>&1 || true
   rm -f -- "$LICENSE_UI_AGENT"
   run_with_timeout 5 launchctl bootout "$LAUNCH_LABEL" >/dev/null 2>&1 || true
 
-  uninstall_step 2 "บันทึกการถอนการติดตั้งและหยุด private VM"
+  uninstall_step 2 "Recording uninstallation and stopping the private VM"
   if [[ -x $AGENT && -d $STATE_ROOT/license-evidence ]]; then
     run_with_timeout 3 "$AGENT" license-pulse -root "$STATE_ROOT" \
       -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
@@ -1092,28 +1092,28 @@ uninstall_runtime() {
   fi
   if [[ -x $LIMACTL && -d $LIMA_HOME/$INSTANCE ]]; then
     if ! run_with_timeout 10 "$LIMACTL" stop "$INSTANCE" >/dev/null 2>&1; then
-      printf '[คำเตือน] private VM หยุดไม่ทัน 10 วินาที กำลังดำเนินการถอน startup ต่อ\n' >&2
+      printf '[WARN] Private VM did not stop within 10 seconds. Continuing startup removal\n' >&2
     fi
   fi
 
   if [[ $erase_data != true ]]; then
-    uninstall_step 3 "เก็บข้อมูลร้านและ private VM สำหรับ recovery"
-    uninstall_step 4 "เสร็จสิ้น"
-    note "หยุดและถอด startup แล้ว"
-    note "ข้อมูลร้าน, private VM และ secrets ยังอยู่ใน: $STATE_ROOT"
-    note "ใช้ bms-retail-local backup ก่อน และใช้ uninstall --erase-data เฉพาะเมื่อต้องการลบถาวร"
+    uninstall_step 3 "Preserving shop data and the private VM for recovery"
+    uninstall_step 4 "Done"
+    note "Stopped and removed automatic startup"
+    note "Shop data, private VM, and secrets are preserved in: $STATE_ROOT"
+    note "Run bms-retail-local backup first. Use uninstall --erase-data only for permanent deletion"
     return
   fi
 
   if [[ -z $confirmation ]]; then
-    read -r -p 'การลบถาวรกู้คืนไม่ได้ พิมพ์ ERASE-BMS-RETAIL-LOCAL: ' confirmation
+    read -r -p 'Permanent deletion cannot be undone. Type ERASE-BMS-RETAIL-LOCAL: ' confirmation
   fi
-  [[ $confirmation == ERASE-BMS-RETAIL-LOCAL ]] || die "ยกเลิกการลบข้อมูล"
+  [[ $confirmation == ERASE-BMS-RETAIL-LOCAL ]] || die "Data deletion cancelled"
 
-  uninstall_step 3 "ลบ private VM และข้อมูลร้าน"
+  uninstall_step 3 "Deleting the private VM and shop data"
   if [[ -x $LIMACTL && -d $LIMA_HOME/$INSTANCE ]]; then
     run_with_timeout 60 "$LIMACTL" delete -f "$INSTANCE" >/dev/null 2>&1 || \
-      die "ลบ private VM ไม่สำเร็จ จึงยังไม่ลบข้อมูลร้าน กรุณาลองใหม่หรือติดต่อ Support"
+      die "Could not delete the private VM. Shop data has been preserved; retry or contact Support"
   fi
   rm -rf -- "$STATE_ROOT" "$LIMA_HOME"
   sudo rm -rf -- "$SYSTEM_ROOT" "/Applications/BMS Retail Local.app"
@@ -1121,8 +1121,8 @@ uninstall_runtime() {
   sudo rm -f -- "/Applications/BMS Retail Local Uninstall.command"
   sudo rm -f -- /usr/local/bin/bms-retail-local
   sudo pkgutil --forget com.base2526.bms.retail-local >/dev/null 2>&1 || true
-  uninstall_step 4 "ลบระบบและข้อมูลร้านแล้ว"
-  note "ลบ BMS Retail Local และข้อมูลในเครื่องแล้ว"
+  uninstall_step 4 "System and shop data deleted"
+  note "BMS Retail Local and local data deleted"
 }
 
 show_status() {
@@ -1142,7 +1142,7 @@ show_status() {
 doctor() {
   load_installed_release
   require_installed_payload
-  [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
+  [[ $(instance_status) == Running ]] || die "Runtime is not running"
   guest sudo /usr/local/bin/bms-localctl doctor
   curl --fail --silent --max-time 5 "http://127.0.0.1:$WEB_PORT/admin/login" >/dev/null
   curl --fail --silent --max-time 5 "http://127.0.0.1:$WS_PORT/readyz" >/dev/null
@@ -1155,8 +1155,8 @@ backup_runtime() {
   require_installed_payload
   [[ -n $output && $recipient =~ ^age1[0-9a-z]{58}$ ]] || \
     die "usage: bms-retail-local backup OUTPUT.age AGE_RECIPIENT"
-  [[ $(instance_status) == Running ]] || die "runtime ไม่ได้ทำงาน"
-  [[ ! -e $output ]] || die "ไฟล์ปลายทางมีอยู่แล้ว"
+  [[ $(instance_status) == Running ]] || die "Runtime is not running"
+  [[ ! -e $output ]] || die "Destination file already exists"
   local name guest_path temporary
   name="backup-$(date -u '+%Y%m%dT%H%M%SZ')-$(random_suffix).age"
   guest_path="/var/lib/bms-retail-local/backups/$name"
@@ -1167,7 +1167,7 @@ backup_runtime() {
   mv "$temporary" "$output"
   guest sudo sh -c 'rm -f -- "$1"' bms-runtime "$guest_path"
   shasum -a 256 "$output" >"$output.sha256"
-  note "backup พร้อม: $output"
+  note "Backup ready: $output"
 }
 
 host_service() {

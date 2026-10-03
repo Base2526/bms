@@ -16,48 +16,48 @@ import (
 func platformPreflight() preflightResult {
 	result := preflightResult{OK: true, Platform: "linux", Target: "unsupported", Architecture: runtime.GOARCH, Failures: []string{}, Warnings: []string{}}
 	if runtime.GOARCH != "amd64" {
-		result.fail("รองรับเฉพาะ Linux x86_64 ใน milestone แรก")
+		result.fail("Only Linux x86_64 is supported in this milestone")
 	}
 	metadata, err := readOSRelease("/etc/os-release")
 	if err != nil {
-		result.fail("อ่าน /etc/os-release ไม่ได้")
+		result.fail("Could not read /etc/os-release")
 	} else if metadata["ID"] != "ubuntu" {
-		result.fail("milestone แรกรองรับ Ubuntu เท่านั้น")
+		result.fail("Only Ubuntu is supported in this milestone")
 	} else {
 		switch metadata["VERSION_ID"] {
 		case "24.04":
 			result.Target = "ubuntu-24.04-lts-x64"
 		case "22.04":
 			result.Target = "ubuntu-22.04-lts-x64"
-			result.warn("Ubuntu 22.04 เป็น transition target")
+			result.warn("Ubuntu 22.04 is a transition target")
 		default:
-			result.fail("รองรับ Ubuntu 24.04 LTS หรือ 22.04 LTS เท่านั้น")
+			result.fail("Only Ubuntu 24.04 LTS or 22.04 LTS is supported")
 		}
 	}
 	if pidOne, err := os.ReadFile("/proc/1/comm"); err != nil || strings.TrimSpace(string(pidOne)) != "systemd" {
-		result.fail("PID 1 ไม่ใช่ systemd")
+		result.fail("PID 1 is not systemd")
 	}
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		result.fail("ไม่พบ systemctl")
+		result.fail("systemctl was not found")
 	}
 	if memoryKiB, err := linuxMemoryKiB(); err != nil {
-		result.fail("อ่านขนาด RAM ไม่ได้")
+		result.fail("Could not read RAM size")
 	} else if memoryKiB < 8*1024*1024 {
-		result.fail(fmt.Sprintf("ต้องมี RAM อย่างน้อย 8 GiB; พบ %.1f GiB", float64(memoryKiB)/float64(1024*1024)))
+		result.fail(fmt.Sprintf("At least 8 GiB of RAM is required; detected %.1f GiB", float64(memoryKiB)/float64(1024*1024)))
 	}
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs("/var/lib", &stat); err != nil {
-		result.fail("อ่านพื้นที่ว่างของ /var/lib ไม่ได้")
+		result.fail("Could not read free disk space on /var/lib")
 	} else {
 		free := uint64(stat.Bavail) * uint64(stat.Bsize)
 		if free < 8*1024*1024*1024 {
-			result.fail(fmt.Sprintf("พื้นที่ว่างบน /var/lib %.1f GiB; ต้องมีอย่างน้อย 8 GiB", float64(free)/float64(1024*1024*1024)))
+			result.fail(fmt.Sprintf("Free disk space on /var/lib: %.1f GiB; at least 8 GiB is required", float64(free)/float64(1024*1024*1024)))
 		} else if free < 15*1024*1024*1024 {
-			result.warn(fmt.Sprintf("พื้นที่ว่างบน /var/lib %.1f GiB; แนะนำอย่างน้อย 15 GiB สำหรับ update และ backup", float64(free)/float64(1024*1024*1024)))
+			result.warn(fmt.Sprintf("Free disk space on /var/lib: %.1f GiB; at least 15 GiB is recommended for updates and backups", float64(free)/float64(1024*1024*1024)))
 		}
 	}
 	if _, err := os.Stat("/sys/fs/cgroup"); err != nil {
-		result.fail("ไม่พบ Linux cgroup filesystem")
+		result.fail("Linux cgroup filesystem was not found")
 	}
 	result.OK = len(result.Failures) == 0
 	return result

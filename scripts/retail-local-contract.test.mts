@@ -89,7 +89,7 @@ test("every Retail Local installer asks for shop type and optional archetype sam
   for (const installer of installers) {
     assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
     assert.match(installer, /BMS_LOCAL_SAMPLE_MODE/);
-    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้าน|Starter Catalog/);
+    assert.match(installer, /Create sample data for this shop type|Starter Catalog/);
   }
   for (const compose of [
     read("deploy/retail-local/compose.yml"),
@@ -142,7 +142,7 @@ test("managed installers retry requested sample data and verify restaurant produ
   assert.match(windows, /sampleMode = \$sampleMode[\s\S]*sampleStatus = \$sampleStatus/);
 
   assert.match(macos, /completedSteps[\s\S]*"products"[\s\S]*"restaurant_layout"/);
-  assert.match(macos, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
+  assert.match(macos, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*Retrying the selected sample data setup/);
 });
 
 test("sample products have an explicit preset for every supported shop type", () => {
@@ -223,7 +223,7 @@ test("portable pilot package contains pinned images and verifies them before ins
   }
   assert.match(pack, /imageSha256/);
   assert.match(install, /Import-RetailLocalReleaseImages/);
-  assert.match(runtime, /Get-FileHash[\s\S]*checksum ไม่ตรง/);
+  assert.match(runtime, /Get-FileHash[\s\S]*checksum mismatch/);
   assert.match(install, /Wait-RetailLocalHealthy/);
   assert.match(install, /Test-RetailLocalHttp/);
 });

@@ -23,7 +23,7 @@ main()
     console.log(JSON.stringify({
       status: "FAILED",
       requested: true,
-      message: "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน",
+      message: "Sample data setup did not complete. Retry from the onboarding page",
     }));
   })
   .finally(() => closeDatabasePool().catch(() => undefined));

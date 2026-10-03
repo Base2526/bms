@@ -108,18 +108,18 @@ type licenseEvidenceResult struct {
 
 func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (licenseEvidenceResult, error) {
 	if !licenseEventTypes[input.EventType] {
-		return licenseEvidenceResult{}, fmt.Errorf("license event type ไม่รองรับ: %s", input.EventType)
+		return licenseEvidenceResult{}, fmt.Errorf("Unsupported license event type: %s", input.EventType)
 	}
 	for name, value := range map[string]string{
 		"license-id": input.LicenseID, "target": input.PlatformTarget, "release-version": input.ReleaseVersion,
 	} {
 		if !licenseFieldPattern.MatchString(value) {
-			return licenseEvidenceResult{}, fmt.Errorf("%s ไม่ถูกต้อง", name)
+			return licenseEvidenceResult{}, fmt.Errorf("Invalid %s", name)
 		}
 	}
 	for name, value := range map[string]string{"tenant-id": input.TenantID, "pos-device-id": input.POSDeviceID} {
 		if value != "" && !licenseFieldPattern.MatchString(value) {
-			return licenseEvidenceResult{}, fmt.Errorf("%s ไม่ถูกต้อง", name)
+			return licenseEvidenceResult{}, fmt.Errorf("Invalid %s", name)
 		}
 	}
 	if input.Endpoint != "" {
@@ -127,14 +127,14 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 			return licenseEvidenceResult{}, err
 		}
 		if !licenseEvidenceTokenPattern.MatchString(input.EvidenceToken) {
-			return licenseEvidenceResult{}, errors.New("license evidence token ไม่ถูกต้อง")
+			return licenseEvidenceResult{}, errors.New("Invalid license evidence token")
 		}
 	}
 
 	evidenceRoot := filepath.Join(input.Root, "license-evidence")
 	outboxRoot := filepath.Join(evidenceRoot, "outbox")
 	if err := os.MkdirAll(outboxRoot, 0700); err != nil {
-		return licenseEvidenceResult{}, fmt.Errorf("สร้าง license evidence directory ไม่ได้: %w", err)
+		return licenseEvidenceResult{}, fmt.Errorf("Could not create license evidence directory: %w", err)
 	}
 	unlock, err := acquireInstallLock(evidenceRoot)
 	if err != nil {
@@ -148,7 +148,7 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 		EvidenceToken: input.EvidenceToken,
 	}
 	if err := writePrivateJSON(filepath.Join(evidenceRoot, "profile.json"), profile); err != nil {
-		return licenseEvidenceResult{}, fmt.Errorf("เขียน license evidence profile ไม่ได้: %w", err)
+		return licenseEvidenceResult{}, fmt.Errorf("Could not write license evidence profile: %w", err)
 	}
 
 	privateKey, publicKey, err := loadOrCreateEvidenceKey(filepath.Join(evidenceRoot, "device-key.pem"))
@@ -188,16 +188,16 @@ func recordLicenseEvidence(ctx context.Context, input licenseEvidenceInput) (lic
 		return licenseEvidenceResult{}, err
 	}
 	if err := appendSynced(filepath.Join(evidenceRoot, "ledger.jsonl"), append(envelopeBytes, '\n')); err != nil {
-		return licenseEvidenceResult{}, fmt.Errorf("เขียน license evidence ledger ไม่ได้: %w", err)
+		return licenseEvidenceResult{}, fmt.Errorf("Could not write license evidence ledger: %w", err)
 	}
 	outboxPath := filepath.Join(outboxRoot, fmt.Sprintf("%020d-%s.json", event.Sequence, event.EventID))
 	if err := writePrivateFile(outboxPath, append(envelopeBytes, '\n')); err != nil {
-		return licenseEvidenceResult{}, fmt.Errorf("เขียน license evidence outbox ไม่ได้: %w", err)
+		return licenseEvidenceResult{}, fmt.Errorf("Could not write license evidence outbox: %w", err)
 	}
 	state.Sequence = event.Sequence
 	state.PreviousEventHash = eventHash
 	if err := writePrivateJSON(statePath, state); err != nil {
-		return licenseEvidenceResult{}, fmt.Errorf("เขียน license evidence state ไม่ได้: %w", err)
+		return licenseEvidenceResult{}, fmt.Errorf("Could not write license evidence state: %w", err)
 	}
 
 	queued, err := countEvidenceQueue(outboxRoot)
@@ -226,7 +226,7 @@ func pulseLicenseEvidence(ctx context.Context, root, eventType string) (licenseE
 	}
 	var profile licenseEvidenceProfile
 	if err := decodeStrict(contents, &profile); err != nil || profile.FormatVersion != licenseEvidenceFormatVersion {
-		return licenseEvidenceResult{}, errors.New("license evidence profile ไม่ถูกต้อง")
+		return licenseEvidenceResult{}, errors.New("Invalid license evidence profile")
 	}
 	return recordLicenseEvidence(ctx, licenseEvidenceInput{
 		Root: root, EventType: eventType, LicenseID: profile.LicenseID, TenantID: profile.TenantID,
@@ -241,7 +241,7 @@ func flushLicenseEvidence(ctx context.Context, root, endpoint, evidenceToken str
 		return licenseEvidenceResult{}, err
 	}
 	if !licenseEvidenceTokenPattern.MatchString(evidenceToken) {
-		return licenseEvidenceResult{}, errors.New("license evidence token ไม่ถูกต้อง")
+		return licenseEvidenceResult{}, errors.New("Invalid license evidence token")
 	}
 	evidenceRoot := filepath.Join(root, "license-evidence")
 	if err := os.MkdirAll(filepath.Join(evidenceRoot, "outbox"), 0700); err != nil {
@@ -307,7 +307,7 @@ func flushLicenseEvidenceUnlocked(ctx context.Context, outboxRoot, endpoint, evi
 func validateEvidenceEndpoint(value string) error {
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.User != nil || parsed.Fragment != "" {
-		return errors.New("license evidence endpoint ต้องเป็น HTTPS โดยไม่มี credential/fragment")
+		return errors.New("License evidence endpoint must use HTTPS without credentials or a fragment")
 	}
 	return nil
 }
@@ -334,15 +334,15 @@ func loadOrCreateEvidenceKey(path string) (ed25519.PrivateKey, ed25519.PublicKey
 	}
 	block, rest := pem.Decode(contents)
 	if block == nil || len(bytes.TrimSpace(rest)) != 0 || block.Type != "PRIVATE KEY" {
-		return nil, nil, errors.New("license device key ไม่ถูกต้อง")
+		return nil, nil, errors.New("Invalid license device key")
 	}
 	parsed, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		return nil, nil, errors.New("license device key อ่านไม่ได้")
+		return nil, nil, errors.New("Could not parse license device key")
 	}
 	privateKey, ok := parsed.(ed25519.PrivateKey)
 	if !ok {
-		return nil, nil, errors.New("license device key ต้องเป็น Ed25519")
+		return nil, nil, errors.New("License device key must be Ed25519")
 	}
 	return privateKey, privateKey.Public().(ed25519.PublicKey), nil
 }
@@ -361,7 +361,7 @@ func loadOrCreateLicenseState(path string) (licenseEvidenceState, error) {
 	}
 	var state licenseEvidenceState
 	if err := decodeStrict(contents, &state); err != nil || state.FormatVersion != licenseEvidenceFormatVersion || state.InstallationID == "" {
-		return licenseEvidenceState{}, errors.New("license evidence state ไม่ถูกต้อง")
+		return licenseEvidenceState{}, errors.New("Invalid license evidence state")
 	}
 	return state, nil
 }

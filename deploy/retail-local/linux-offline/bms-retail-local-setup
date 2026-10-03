@@ -4,24 +4,24 @@ set -euo pipefail
 . /usr/lib/bms-retail-local/common.sh
 
 require_root
-[[ $(uname -m) == x86_64 ]] || die "แพ็กเกจนี้รองรับ Linux x86_64 เท่านั้น"
+[[ $(uname -m) == x86_64 ]] || die "This package supports Linux x86_64 only"
 require_docker
-command -v openssl >/dev/null 2>&1 || die "ไม่พบ openssl"
-command -v jq >/dev/null 2>&1 || die "ไม่พบ jq"
-command -v sha256sum >/dev/null 2>&1 || die "ไม่พบ sha256sum"
+command -v openssl >/dev/null 2>&1 || die "openssl was not found"
+command -v jq >/dev/null 2>&1 || die "jq was not found"
+command -v sha256sum >/dev/null 2>&1 || die "sha256sum was not found"
 
 install_embedded_pos() {
   if [[ -f $BMS_PAYLOAD_ROOT/BMS-POS.deb ]] && \
      ! dpkg-query -W -f='${Status}' bms-pos 2>/dev/null | grep -q 'install ok installed'; then
-    printf 'กำลังติดตั้ง BMS POS...\n'
+    printf 'Installing BMS POS...\n'
     dpkg --install "$BMS_PAYLOAD_ROOT/BMS-POS.deb" || \
-      die "ติดตั้ง POS ไม่สำเร็จ กรุณารัน sudo apt install -f แล้วรัน setup ซ้ำ"
+      die "POS installation failed. Run sudo apt install -f, then run setup again"
   fi
 }
 
 choose_archetype() {
   local manifest="$BMS_PAYLOAD_ROOT/shop-archetypes.json"
-  [[ -f $manifest ]] || die "ไม่พบ shop-archetypes manifest ของ release"
+  [[ -f $manifest ]] || die "The release shop-archetypes manifest was not found"
   jq -e '
     .defaultArchetype as $default |
     .formatVersion == 1 and
@@ -29,52 +29,52 @@ choose_archetype() {
     ([.archetypes[].id] | length == (unique | length)) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
-  ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
+  ' "$manifest" >/dev/null || die "Invalid shop-archetypes manifest"
   local labels=() values=() default_value default_index=1 row id label
   default_value=$(jq -r '.defaultArchetype' "$manifest")
   while IFS=$'\t' read -r id label; do
-    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
+    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "Invalid data in shop-archetypes manifest"
     values+=("$id"); labels+=("$label")
     [[ $id == "$default_value" ]] && default_index=${#values[@]}
-  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, (.labels.th // .labels.en)] | @tsv' "$manifest")
-  printf '\nประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)\n' >&2
+  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, ((.labels.en | select(type == "string" and test("\\S"))) // .id)] | @tsv' "$manifest")
+  printf '\nShop type (used for defaults and sample products)\n' >&2
   local index
   for index in "${!labels[@]}"; do printf '  %d. %s\n' "$((index + 1))" "${labels[$index]}" >&2; done
   while true; do
-    read -r -p "เลือกหมายเลข [$default_index]: " index
+    read -r -p "Select a number [$default_index]: " index
     index=${index:-$default_index}
     if [[ $index =~ ^[0-9]+$ ]] && (( index >= 1 && index <= ${#values[@]} )); then
       printf '%s' "${values[$((index - 1))]}"
       return
     fi
-    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#values[@]}" >&2
+    printf 'Enter a number from 1 to %d\n' "${#values[@]}" >&2
   done
 }
 
 choose_sample_mode() {
   local choice
-  printf '\nStarter Catalog จะสร้างสินค้าตัวอย่างเป็น Draft, สต็อก 0 และยังขายไม่ได้\n' >&2
+  printf '\nStarter Catalog creates draft sample products with zero stock, not ready for sale\n' >&2
   while true; do
-    read -r -p 'สร้าง Starter Catalog ตามประเภทร้านหรือไม่? [Y/n]: ' choice
+    read -r -p 'Create a Starter Catalog for this shop type? [Y/n]: ' choice
     case ${choice:-Y} in
       Y|y) printf 'STARTER_CATALOG'; return ;;
       N|n) printf 'NONE'; return ;;
-      *) printf 'กรุณาตอบ Y หรือ N\n' >&2 ;;
+      *) printf 'Enter Y or N\n' >&2 ;;
     esac
   done
 }
 
 available_kib=$(df --output=avail /var/lib | tail -n 1 | tr -d ' ')
-(( available_kib >= 8 * 1024 * 1024 )) || die "พื้นที่ว่าง /var/lib ต้องมีอย่างน้อย 8 GiB"
+(( available_kib >= 8 * 1024 * 1024 )) || die "At least 8 GiB of free disk space is required on /var/lib"
 
 if [[ -f $BMS_RUNTIME_ROOT/installation.json ]]; then
   install_embedded_pos
-  printf 'ระบบติดตั้งแล้ว ใช้ sudo bms-retail-local-start เพื่อเริ่มบริการ\n'
+  printf 'System is already installed. Run sudo bms-retail-local-start to start services\n'
   exit 0
 fi
 
 image_archive=$(find "$BMS_PAYLOAD_ROOT/images" -maxdepth 1 -type f -name '*.tar' -print -quit)
-[[ -n $image_archive ]] || die "ไม่พบ Docker image archive ในแพ็กเกจ"
+[[ -n $image_archive ]] || die "Docker image archive was not found in the package"
 (cd "$BMS_PAYLOAD_ROOT" && sha256sum --check image.sha256)
 
 install -d -m 0700 "$BMS_RUNTIME_ROOT" "$BMS_RUNTIME_ROOT/data/storage" "$BMS_RUNTIME_ROOT/backups"
@@ -100,28 +100,28 @@ EOF
 fi
 chmod 0600 "$BMS_ENV_FILE"
 
-printf 'กำลังโหลด Docker images แบบ offline...\n'
+printf 'Loading offline Docker images...\n'
 docker load --input "$image_archive"
 compose config --quiet
 
-read -r -p 'ชื่อร้าน: ' shop_name
+read -r -p 'Shop name: ' shop_name
 business_archetype=$(choose_archetype)
 if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
     "$BMS_PAYLOAD_ROOT/shop-archetypes.json" >/dev/null; then
   sample_mode=$(choose_sample_mode)
 else
   sample_mode=NONE
-  printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
+  printf 'This release has no Starter Catalog for this shop type; starting with an empty shop\n'
 fi
-read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name
-read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
-read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password
+read -r -p 'Shop administrator name: ' admin_name
+read -r -p 'Shop administrator email: ' admin_email
+read -r -s -p 'Administrator password (at least 8 characters): ' admin_password
 printf '\n'
-read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin
+read -r -s -p 'POS PIN (4-8 digits): ' admin_pin
 printf '\n'
-[[ -n $shop_name && -n $admin_name && -n $admin_email ]] || die "ข้อมูลร้านและผู้ดูแลห้ามว่าง"
-(( ${#admin_password} >= 8 )) || die "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร"
-[[ $admin_pin =~ ^[0-9]{4,8}$ ]] || die "PIN ต้องเป็นตัวเลข 4-8 หลัก"
+[[ -n $shop_name && -n $admin_name && -n $admin_email ]] || die "Shop and administrator details must not be empty"
+(( ${#admin_password} >= 8 )) || die "Password must contain at least 8 characters"
+[[ $admin_pin =~ ^[0-9]{4,8}$ ]] || die "PIN must contain 4-8 digits"
 
 export BMS_LOCAL_SHOP_NAME=$shop_name
 export BMS_LOCAL_SHOP_SLUG=local-shop
@@ -133,13 +133,13 @@ export BMS_LOCAL_BUSINESS_ARCHETYPE=$business_archetype
 export BMS_LOCAL_SAMPLE_MODE=$sample_mode
 trap 'unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN BMS_LOCAL_BUSINESS_ARCHETYPE BMS_LOCAL_SAMPLE_MODE' EXIT
 
-printf 'กำลัง provision ร้าน...\n'
+printf 'Provisioning the shop...\n'
 provision_output=$(compose --profile setup run --rm provision 2>&1) || {
   printf '%s\n' "$provision_output" >&2
-  die "provision ร้านไม่สำเร็จ"
+  die "Shop provisioning failed"
 }
 result=$(printf '%s\n' "$provision_output" | grep '^{' | tail -n 1 || true)
-[[ -n $result ]] || die "provision สำเร็จแต่ไม่พบผลลัพธ์"
+[[ -n $result ]] || die "Provisioning completed but no result was found"
 
 unset BMS_LOCAL_SHOP_NAME BMS_LOCAL_SHOP_SLUG BMS_LOCAL_ADMIN_NAME BMS_LOCAL_ADMIN_EMAIL BMS_LOCAL_ADMIN_PASSWORD BMS_LOCAL_ADMIN_PIN BMS_LOCAL_BUSINESS_ARCHETYPE BMS_LOCAL_SAMPLE_MODE
 trap - EXIT
@@ -167,20 +167,20 @@ install_embedded_pos
 
 systemctl enable bms-retail-local.service >/dev/null 2>&1 || true
 
-printf '\nBMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'
+printf '\nBMS Retail Local is ready: http://127.0.0.1:3100\n'
 printf 'Admin: %s\n' "$admin_email"
-printf 'ประเภทร้าน: %s\n' "$(printf '%s' "$result" | jq -r '.businessArchetype')"
+printf 'Shop type: %s\n' "$(printf '%s' "$result" | jq -r '.businessArchetype')"
 sample_status=$(printf '%s' "$result" | jq -r '.sample.status // "SKIPPED"')
 if [[ $sample_status == FAILED ]]; then
-  printf 'คำเตือน: Starter Catalog สร้างไม่สำเร็จ แต่ระบบหลักพร้อมใช้งาน: %s\n' \
+  printf 'Warning: Starter Catalog creation failed, but the main system is ready: %s\n' \
     "$(printf '%s' "$result" | jq -r '.sample.error')"
 elif [[ $sample_status == ACTIVE ]]; then
-  printf 'สร้าง Starter Catalog แล้ว: %s สินค้า (Draft, สต็อก 0)\n' \
+  printf 'Starter Catalog created: %s products (Draft, zero stock)\n' \
     "$(printf '%s' "$result" | jq -r '.sample.products')"
 fi
 device_token=$(printf '%s' "$result" | jq -r '.deviceToken // empty')
 if [[ -n $device_token ]]; then
-  printf '\nPOS pairing token (แสดงครั้งเดียว):\n%s\n' "$device_token"
-  printf 'นำ token ไปจับคู่ใน BMS POS แล้วเก็บหรือทำลายบันทึกอย่างปลอดภัย\n'
+  printf '\nPOS pairing token (shown once):\n%s\n' "$device_token"
+  printf 'Use the token to pair BMS POS, then securely store or destroy any record of it\n'
 fi
-printf 'ตรวจระบบ: sudo bms-retail-local-doctor\n'
+printf 'Check system: sudo bms-retail-local-doctor\n'

@@ -7,7 +7,7 @@ readonly SERVICE_NAME="bms-retail-local.service"
 
 die() { BMS_DIAG_REASON=$*; BMS_DIAG_LINE=${BASH_LINENO[0]}; printf 'BMS Retail Local Setup: %s\n' "$*" >&2; exit 1; }
 step() { BMS_DIAG_STAGE="step-$1-of-7"; printf '\n[BMS %s/7] %s\n' "$1" "$2"; }
-require_root() { [[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"; }
+require_root() { [[ ${EUID} -eq 0 ]] || die "Run this command with sudo"; }
 is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+([/:?#]|$) ]] && [[ ${1:-} != *'@'* ]]; }
 random_hex() { od -An -N "$1" -tx1 /dev/urandom | tr -d ' \n'; }
 artifact_path() {
@@ -38,7 +38,7 @@ run_agent_json_progress() {
             [[ $phase == retry || $phase == verify || $phase == staged ]]; then
           printf '  [%3d%%] %s %s - %d/%d MiB%s - %s\n' \
             "$percent" "$phase" "$component" "$((completed / 1048576))" "$((total / 1048576))" \
-            "$([[ $heartbeat == true ]] && printf ' - ยังทำงานอยู่ รอข้อมูลจากเครือข่าย')" \
+            "$([[ $heartbeat == true ]] && printf ' - Still working; waiting for network data')" \
             "$(date '+%H:%M:%S')" >&2
           last_percent=$percent
           last_print=$now_epoch
@@ -65,7 +65,7 @@ shell_export() {
 }
 choose_archetype() {
   local manifest=$archetype_manifest
-  [[ -f $manifest ]] || die "ไม่พบ shop-archetypes manifest ของ signed release"
+  [[ -f $manifest ]] || die "The signed release shop-archetypes manifest was not found"
   jq -e '
     .defaultArchetype as $default |
     .formatVersion == 1 and
@@ -73,36 +73,36 @@ choose_archetype() {
     ([.archetypes[].id] | length == (unique | length)) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true)] | length > 0) and
     ([.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | .id] | index($default) != null)
-  ' "$manifest" >/dev/null || die "shop-archetypes manifest ไม่ถูกต้อง"
+  ' "$manifest" >/dev/null || die "Invalid shop-archetypes manifest"
   local labels=() values=() default_value default_index=1 id label
   default_value=$(jq -r '.defaultArchetype' "$manifest")
   while IFS=$'\t' read -r id label; do
-    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "shop-archetypes manifest มีข้อมูลไม่ถูกต้อง"
+    [[ $id =~ ^[a-z][a-z0-9_]{1,63}$ && -n $label ]] || die "Invalid data in shop-archetypes manifest"
     values+=("$id"); labels+=("$label")
     [[ $id == "$default_value" ]] && default_index=${#values[@]}
-  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, (.labels.th // .labels.en)] | @tsv' "$manifest")
-  printf '\nประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)\n' >&2
+  done < <(jq -r '.archetypes[] | select(.enabledForNewInstall == true and .deprecated != true) | [.id, ((.labels.en | select(type == "string" and test("\\S"))) // .id)] | @tsv' "$manifest")
+  printf '\nShop type (used for defaults and sample products)\n' >&2
   local index
   for index in "${!labels[@]}"; do printf '  %d. %s\n' "$((index + 1))" "${labels[$index]}" >&2; done
   while true; do
-    read -r -p "เลือกหมายเลข [$default_index]: " index
+    read -r -p "Select a number [$default_index]: " index
     index=${index:-$default_index}
     if [[ $index =~ ^[0-9]+$ ]] && (( index >= 1 && index <= ${#values[@]} )); then
       printf '%s' "${values[$((index - 1))]}"
       return
     fi
-    printf 'กรุณาเลือกหมายเลข 1-%d\n' "${#values[@]}" >&2
+    printf 'Enter a number from 1 to %d\n' "${#values[@]}" >&2
   done
 }
 choose_sample_mode() {
   local choice
-  printf '\nStarter Catalog จะสร้างสินค้าตัวอย่างเป็น Draft, สต็อก 0 และยังขายไม่ได้\n' >&2
+  printf '\nStarter Catalog creates draft sample products with zero stock, not ready for sale\n' >&2
   while true; do
-    read -r -p 'สร้าง Starter Catalog ตามประเภทร้านหรือไม่? [Y/n]: ' choice
+    read -r -p 'Create a Starter Catalog for this shop type? [Y/n]: ' choice
     case ${choice:-Y} in
       Y|y) printf 'STARTER_CATALOG'; return ;;
       N|n) printf 'NONE'; return ;;
-      *) printf 'กรุณาตอบ Y หรือ N\n' >&2 ;;
+      *) printf 'Enter Y or N\n' >&2 ;;
     esac
   done
 }
@@ -134,7 +134,7 @@ if [[ -f $RUNTIME_ROOT/installation.json ]]; then
 elif [[ -f $bundle_root/PACKAGE_TYPE ]]; then
   package_type=$(tr -d '\r\n' <"$bundle_root/PACKAGE_TYPE")
 fi
-[[ $package_type == server-pos || $package_type == server ]] || die "bootstrap package type ไม่ถูกต้อง: $package_type"
+[[ $package_type == server-pos || $package_type == server ]] || die "Invalid bootstrap package type: $package_type"
 diagnostics_helper="$bundle_root/setup-diagnostics.sh"
 [[ -f $diagnostics_helper ]] || diagnostics_helper="$bundle_root/../setup-diagnostics.sh"
 # shellcheck source=../setup-diagnostics.sh
@@ -151,14 +151,15 @@ trap finish_setup EXIT
 trap 'exit 130' HUP INT TERM
 
 require_root
-[[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || die "ให้ผู้ใช้หน้าเครื่องรันผ่าน sudo; ห้าม login เป็น root โดยตรง"
+[[ -n ${SUDO_USER:-} && $SUDO_USER != root ]] || die "Run through sudo from the desktop user account; do not sign in directly as root"
 operator_uid_preflight=$(id -u "$SUDO_USER")
 if [[ $package_type == server-pos ]]; then
-  [[ -d /run/user/$operator_uid_preflight ]] || die "ไม่พบ graphical user session ของ $SUDO_USER"
-  [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || die "ต้องติดตั้ง Server + POS จาก Ubuntu Desktop session"
+  [[ -d /run/user/$operator_uid_preflight ]] || die "No graphical user session found for $SUDO_USER"
+  [[ -n ${DISPLAY:-} || -n ${WAYLAND_DISPLAY:-} ]] || die "Install Server + POS from an Ubuntu Desktop session"
 fi
 manifest_uri=${1:-}
-is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential เป็น argument แรก"
+is_https_url "$manifest_uri" || die "The first argument must be an HTTPS release-manifest URL without credentials"
+agent_source="$bundle_root/bms-runtime-agent"
 localctl_source="$bundle_root/bms-localctl"
 [[ -f $localctl_source ]] || localctl_source="$bundle_root/../runtime-rootfs/bms-localctl"
 transaction_source="$bundle_root/bms-update-transaction"
@@ -166,7 +167,7 @@ transaction_source="$bundle_root/bms-update-transaction"
 if [[ -f $RUNTIME_ROOT/installation.json ]]; then
   BMS_DIAG_STAGE=repair-existing-install
   jq -e '.version and .tenantId and .posDeviceId' "$RUNTIME_ROOT/installation.json" >/dev/null || \
-    die "installation receipt อ่านไม่ได้; เก็บข้อมูลร้านไว้และติดต่อ Support ห้ามลบฐานข้อมูลหรือ .env"
+    die "Could not read the installation receipt. Preserve shop data and contact Support; do not delete the database or .env"
   # Uninstall removes these controls and disables startup while keeping the receipt and data.
   install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
   install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
@@ -182,37 +183,36 @@ if [[ -f $RUNTIME_ROOT/installation.json ]]; then
   systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
   for attempt in {1..60}; do
     if bms-localctl doctor; then
-      printf 'BMS Retail Local ติดตั้งแล้วและพร้อมใช้งาน ข้อมูลร้านเดิมถูกเก็บไว้\n'
+      printf 'BMS Retail Local is installed and ready. Existing shop data has been preserved\n'
       exit 0
     fi
-    printf 'กำลังรอบริการของร้านเดิม (%s/60)...\n' "$attempt"
+    printf 'Waiting for existing shop services (%s/60)...\n' "$attempt"
     sleep 3
   done
-  die "บริการร้านเดิมยังไม่พร้อม ข้อมูลถูกเก็บไว้ กรุณาตรวจ service log"
+  die "Existing shop services are not ready. Data has been preserved; check the service log"
 fi
-agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
-[[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || die "installer bundle ไม่มี agent/keyring/runtime controls"
+[[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || die "Installer bundle is missing the agent, keyring, or runtime controls"
 
 install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT" "$RUNTIME_ROOT" "$RUNTIME_ROOT/release"
 install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
 install -m 0644 -o root -g root "$keyring_source" "$BOOTSTRAP_ROOT/trusted-release-keys.json"
 agent="$BOOTSTRAP_ROOT/bms-runtime-agent"
 
-step 1 "ตรวจสอบ Ubuntu, CPU, RAM, systemd และพื้นที่ว่าง"
+step 1 "Checking Ubuntu, CPU, RAM, systemd, and free disk space"
 if preflight_json=$($agent preflight); then
   preflight_status=0
 else
   preflight_status=$?
 fi
-jq -e . >/dev/null <<<"$preflight_json" || die "อ่านผล preflight ไม่ได้"
-jq -r '.warnings[]? | "[คำแนะนำ] \(.)"' <<<"$preflight_json"
-jq -r '.failures[]? | "[ต้องแก้ไข] \(.)"' <<<"$preflight_json" >&2
-(( preflight_status == 0 )) || die "ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการ preflight ด้านบนแล้วรัน Setup อีกครั้ง"
+jq -e . >/dev/null <<<"$preflight_json" || die "Could not read preflight results"
+jq -r '.warnings[]? | "[WARN] \(.)"' <<<"$preflight_json"
+jq -r '.failures[]? | "[FAIL] \(.)"' <<<"$preflight_json" >&2
+(( preflight_status == 0 )) || die "Cannot install yet. Resolve the preflight issues above, then run Setup again"
 target=$(jq -er '.target' <<<"$preflight_json")
 
 # Registration is an explicit post-install action, including on setup retries.
-printf 'ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code\n'
+printf 'You can install and try the system without an Activation Code\n'
 
 provision_checkpoint="$RUNTIME_ROOT/provision-result.json"
 shop_name=''
@@ -223,7 +223,7 @@ admin_pin=''
 business_archetype=''
 sample_mode='NONE'
 
-step 3 "ติดตั้ง private runtime และเครื่องมือที่จำเป็น"
+step 3 "Installing the private runtime and required tools"
 export DEBIAN_FRONTEND=noninteractive
 dpkg --configure -a
 apt-get update
@@ -235,10 +235,10 @@ apt-get -o DPkg::Lock::Timeout=60 install -y --no-install-recommends "${runtime_
 if ! docker compose version >/dev/null 2>&1; then
   apt-get install -y --no-install-recommends docker-compose-v2 || \
     apt-get install -y --no-install-recommends docker-compose-plugin || \
-    die "ติดตั้ง Docker Compose v2 จาก Ubuntu repository ไม่สำเร็จ"
+    die "Failed to install Docker Compose v2 from the Ubuntu repository"
 fi
 systemctl enable --now docker.service
-docker info >/dev/null 2>&1 || die "Moby/Docker runtime ไม่พร้อม"
+docker info >/dev/null 2>&1 || die "Moby/Docker runtime is not ready"
 install -m 0755 -o root -g root "$localctl_source" /usr/local/bin/bms-localctl
 install -m 0755 -o root -g root "$transaction_source" /usr/local/sbin/bms-update-transaction
 install -m 0755 -o root -g root "$bundle_root/uninstall-managed-runtime.sh" /usr/local/sbin/bms-retail-local-uninstall
@@ -257,7 +257,7 @@ for unit in bms-retail-local-license-ui.service bms-retail-local-license-ui.time
 done
 
 manifest_path="$RUNTIME_ROOT/release/release.jws.json"
-step 4 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
+step 4 "Downloading and verifying the signed release"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
   --connect-timeout 20 --max-time 60 --speed-limit 1 --speed-time 20 \
   --retry 2 --retry-max-time 180 --output "$manifest_path" "$manifest_uri"
@@ -269,14 +269,14 @@ stage_json=$(run_agent_json_progress "$agent" "$stage_command" -manifest "$manif
 release_json=$($agent verify-release -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target")
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
-[[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
+[[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "Release directory is outside the runtime root"
 archetype_manifest=$(artifact_path shop-archetypes)
-[[ -f $archetype_manifest ]] || die "signed release ขาด shop-archetypes component"
+[[ -f $archetype_manifest ]] || die "Signed release is missing the shop-archetypes component"
 
-step 5 "โหลด Web, WS, PostgreSQL และ Redis"
+step 5 "Loading Web, WS, PostgreSQL, and Redis"
 while IFS=$'\t' read -r name image_ref digest; do
   artifact=$(artifact_path "$name")
-  [[ -f $artifact ]] || die "ไม่พบ artifact $name"
+  [[ -f $artifact ]] || die "Artifact not found: $name"
   "$agent" engine-load -engine linux-native -artifact "$artifact" -image-ref "$image_ref" -digest "$digest"
 done < <(jq -r '.components[] | select(.kind == "oci-image") | [.name,.imageRef,.ociDigest] | @tsv' <<<"$release_json")
 
@@ -308,42 +308,42 @@ EOF
 fi
 
 if [[ -f $provision_checkpoint ]]; then
-  step 2 "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง"
+  step 2 "Existing shop data found. Resuming setup from the checkpoint"
   provision_result=$(<"$provision_checkpoint")
-  jq -e . >/dev/null <<<"$provision_result" || die "checkpoint ของร้านอ่านไม่ได้ กรุณาติดต่อ Support"
+  jq -e . >/dev/null <<<"$provision_result" || die "Could not read the shop checkpoint. Contact Support"
   business_archetype=$(jq -r '.businessArchetype // empty' <<<"$provision_result")
   sample_mode=$(jq -r '.sampleData.mode // "NONE"' <<<"$provision_result")
 else
-  step 2 "รับข้อมูลร้านและผู้ดูแล"
-  read -r -p 'ชื่อร้าน: ' shop_name
+  step 2 "Collecting shop and administrator details"
+  read -r -p 'Shop name: ' shop_name
   business_archetype=$(choose_archetype)
   if jq -e --arg id "$business_archetype" '.archetypes[] | select(.id == $id) | .starterCatalog == true' \
       "$archetype_manifest" >/dev/null; then
     sample_mode=$(choose_sample_mode)
   else
     sample_mode=NONE
-    printf 'ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า\n'
+    printf 'This release has no Starter Catalog for this shop type; starting with an empty shop\n'
   fi
-  while [[ -z $admin_name ]]; do read -r -p 'ชื่อผู้ดูแลร้าน: ' admin_name; done
+  while [[ -z $admin_name ]]; do read -r -p 'Shop administrator name: ' admin_name; done
   while [[ ! $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]]; do
-    read -r -p 'อีเมลผู้ดูแลร้าน: ' admin_email
+    read -r -p 'Shop administrator email: ' admin_email
     [[ $admin_email =~ ^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$ ]] || \
-      printf 'อีเมลไม่ถูกต้อง กรุณากรอกใหม่\n' >&2
+      printf 'Invalid email address. Please try again\n' >&2
   done
   while :; do
-    read -r -s -p 'รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): ' admin_password; printf '\n'
-    read -r -s -p 'ยืนยันรหัสผ่านอีกครั้ง: ' password_confirm; printf '\n'
+    read -r -s -p 'Administrator password (at least 8 characters): ' admin_password; printf '\n'
+    read -r -s -p 'Confirm password: ' password_confirm; printf '\n'
     [[ ${#admin_password} -ge 8 && $admin_password == "$password_confirm" ]] && break
-    printf 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่\n' >&2
+    printf 'Passwords must match and contain at least 8 characters. Please try again\n' >&2
   done
   while :; do
-    read -r -s -p 'PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): ' admin_pin; printf '\n'
-    read -r -s -p 'ยืนยัน PIN อีกครั้ง: ' pin_confirm; printf '\n'
+    read -r -s -p 'POS PIN (4-8 digits): ' admin_pin; printf '\n'
+    read -r -s -p 'Confirm PIN: ' pin_confirm; printf '\n'
     [[ $admin_pin =~ ^[0-9]{4,8}$ && $admin_pin == "$pin_confirm" ]] && break
-    printf 'PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่\n' >&2
+    printf 'PINs must match and contain 4-8 digits. Please try again\n' >&2
   done
   for value in "$shop_name" "$admin_name" "$admin_email" "$admin_password" "$admin_pin"; do
-    [[ -n $value && $value != *$'\n'* && $value != *$'\r'* ]] || die "ข้อมูล setup ไม่ถูกต้อง"
+    [[ -n $value && $value != *$'\n'* && $value != *$'\r'* ]] || die "Invalid setup data"
   done
 
   provision_script="$RUNTIME_ROOT/provision-once.sh"
@@ -361,10 +361,10 @@ else
   } >"$provision_script"
   chmod 0700 "$provision_script"
   unset admin_password admin_pin password_confirm pin_confirm
-  provision_output=$($provision_script) || die "provision ร้านไม่สำเร็จ กรุณาตรวจข้อความด้านบนแล้วรัน Setup อีกครั้ง"
+  provision_output=$($provision_script) || die "Shop provisioning failed. Review the messages above, then run Setup again"
   rm -f -- "$provision_script"; provision_script=
   provision_result=$(grep -E '^\{"status"' <<<"$provision_output" | tail -n 1)
-  jq -e . >/dev/null <<<"$provision_result" || die "ไม่พบผล provisioning ที่อ่านได้"
+  jq -e . >/dev/null <<<"$provision_result" || die "No readable provisioning result was found"
   printf '%s\n' "$provision_result" | write_runtime_text "$provision_checkpoint"
 fi
 
@@ -373,7 +373,7 @@ if [[ $sample_mode == STARTER_CATALOG && $sample_status != COMPLETED && $sample_
   # The provisioning checkpoint above already contains the one-time token. Sample generation may
   # now be retried safely after a process interruption or power loss without recreating the shop.
   if [[ $sample_status != PENDING ]]; then
-    printf '[คำเตือน] ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่สำเร็จ กำลังลองสร้างตามตัวเลือกของผู้ใช้\n' >&2
+    printf '[WARN] Provisioning did not report completed sample data. Retrying the selected sample data setup\n' >&2
   fi
   sample_output=$(cd "$RUNTIME_ROOT" && \
     docker compose --env-file .env -f compose.yml --profile setup run --rm sample-data 2>&1) || true
@@ -389,28 +389,28 @@ if [[ $sample_mode == STARTER_CATALOG && $sample_status != COMPLETED && $sample_
   sample_status=$(jq -r '.sampleData.status' <<<"$provision_result")
 fi
 case "$sample_status" in
-  COMPLETED|ALREADY_COMPLETED) printf '[BMS] สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว\n' ;;
-  FAILED) printf 'คำแนะนำ: ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้\n' >&2 ;;
+  COMPLETED|ALREADY_COMPLETED) printf '[BMS] Sample data created for the selected shop type\n' ;;
+  FAILED) printf 'Note: Sample data setup is incomplete. The shop is usable; retry from the onboarding page\n' >&2 ;;
 esac
 
 install -m 0644 -o root -g root "$bundle_root/bms-retail-local.service" "/etc/systemd/system/$SERVICE_NAME"
-step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
+step 6 "Starting services and checking system health"
 systemctl daemon-reload
 systemctl enable --now "$SERVICE_NAME"
 systemctl enable --now bms-retail-local-license-evidence.timer >/dev/null 2>&1 || \
-  printf 'คำเตือน: ตั้งเวลา Licensing evidence ไม่สำเร็จ; ร้านยังใช้งานได้\n' >&2
+  printf 'Warning: Could not schedule licensing evidence; the shop can continue operating\n' >&2
 
 deadline=$((SECONDS + 240))
 until curl --fail --silent --max-time 5 http://127.0.0.1:3100/admin/login >/dev/null && \
       curl --fail --silent --max-time 5 http://127.0.0.1:3101/readyz >/dev/null; do
-  (( SECONDS < deadline )) || die "บริการไม่ผ่าน HTTP health check"
+  (( SECONDS < deadline )) || die "Services failed the HTTP health check"
   sleep 3
 done
 
 if [[ $package_type == server-pos ]]; then
   desktop_artifact=$(artifact_path desktop)
   dpkg -i "$desktop_artifact" || { apt-get install -f -y; dpkg -i "$desktop_artifact"; }
-  command -v bms-pos >/dev/null 2>&1 || die "ติดตั้ง POS แล้วแต่ไม่พบคำสั่ง bms-pos"
+  command -v bms-pos >/dev/null 2>&1 || die "POS was installed but the bms-pos command was not found"
 fi
 
 operator=${SUDO_USER:-root}
@@ -434,7 +434,7 @@ if [[ $package_type == server-pos && -n $device_token && $operator != root ]]; t
     bms-pos "--pairing-handoff=$handoff_path" >"$desktop_log" 2>&1 &
   desktop_pid=$!
   sleep 3
-  kill -0 "$desktop_pid" 2>/dev/null || die "เปิด BMS POS ไม่สำเร็จ ดูรายละเอียดที่ $desktop_log"
+  kill -0 "$desktop_pid" 2>/dev/null || die "Could not open BMS POS. See $desktop_log for details"
 fi
 unset device_token provision_result provision_output
 
@@ -458,7 +458,7 @@ if [[ -n ${BMS_ACTIVATION_URI:-} ]]; then
     -event INSTALLED -package-type "$package_type" -target "$target" \
     -release-version "$(jq -r '.releaseVersion' <<<"$release_json")" \
     -tenant-reference "$tenant_id" -license-reference "${BMS_LICENSE_ID:-}" -force \
-    >/dev/null 2>&1 || printf 'คำเตือน: ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; ระบบจะลองใหม่ภายหลัง\n' >&2
+    >/dev/null 2>&1 || printf 'Warning: Could not send minimal installation data; reporting will retry later\n' >&2
 fi
 
 # Licensing is evidence-only and deliberately outside the install/runtime success path. A missing
@@ -471,20 +471,20 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
   if [[ -n ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} && -n ${BMS_LICENSE_EVIDENCE_TOKEN:-} ]]; then
     license_args+=(-endpoint "$BMS_LICENSE_EVIDENCE_ENDPOINT")
   elif [[ -n ${BMS_LICENSE_EVIDENCE_ENDPOINT:-} ]]; then
-    printf 'คำเตือน: มี Licensing endpoint แต่ไม่มี ingestion token; เก็บหลักฐานไว้ในเครื่องเท่านั้น\n' >&2
+    printf 'Warning: Licensing endpoint configured without an ingestion token; evidence will be stored locally only\n' >&2
   fi
   if ! license_result=$(BMS_LICENSE_EVIDENCE_TOKEN="${BMS_LICENSE_EVIDENCE_TOKEN:-}" \
     "$agent" "${license_args[@]}" 2>&1); then
-    printf 'คำเตือน: เก็บหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: %s\n' "$license_result" >&2
+    printf 'Warning: Could not store licensing evidence. The shop can continue operating: %s\n' "$license_result" >&2
   fi
 fi
-step 7 "ติดตั้งสำเร็จ"
+step 7 "Installation complete"
 systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
-printf 'BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:3100\n'
-printf 'ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code\n'
+printf 'BMS Retail Local is ready: http://127.0.0.1:3100\n'
+printf 'You can try the system immediately without an Activation Code\n'
 if [[ -n ${BMS_ACTIVATION_URI:-} ]]; then
-  printf 'ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ หรือ sudo bms-retail-local-activate\n'
+  printf 'Register later: Admin > License or sudo bms-retail-local-activate\n'
 fi
 if [[ $package_type == server ]]; then
-  printf 'ติดตั้งแบบ Server only: ไม่ได้ติดตั้งหรือเปิด BMS POS Desktop\n'
+  printf 'Server-only installation: BMS POS Desktop was not installed or launched\n'
 fi

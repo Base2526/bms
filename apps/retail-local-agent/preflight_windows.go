@@ -24,11 +24,11 @@ type windowsFacts struct {
 func platformPreflight() preflightResult {
 	result := preflightResult{OK: true, Platform: "windows", Target: "unsupported", Architecture: runtime.GOARCH, Failures: []string{}, Warnings: []string{}}
 	if runtime.GOARCH != "amd64" {
-		result.fail("รองรับเฉพาะ Windows x64 ใน milestone แรก")
+		result.fail("Only Windows x64 is supported in this milestone")
 	}
 	facts, err := collectWindowsFacts()
 	if err != nil {
-		result.fail("อ่านข้อมูล Windows ไม่ได้: " + err.Error())
+		result.fail("Could not read Windows system information: " + err.Error())
 		return result
 	}
 	switch {
@@ -38,30 +38,30 @@ func platformPreflight() preflightResult {
 		result.Target = "windows-10-iot-enterprise-ltsc-2021-x64"
 	case facts.Build == 19045:
 		result.Target = "windows-10-22h2-esu-x64"
-		result.warn("Windows 10 22H2 ต้องมีหลักฐาน ESU ที่ยังใช้งานอยู่ก่อนรับรอง production")
+		result.warn("Windows 10 22H2 requires evidence of current ESU coverage before production approval")
 	default:
-		result.fail("Windows build ไม่อยู่ใน support matrix ของ Managed Runtime")
+		result.fail("This Windows build is not in the Managed Runtime support matrix")
 	}
 	if facts.MemoryGiB < 8 {
-		result.fail(fmt.Sprintf("ต้องมี RAM อย่างน้อย 8 GiB; พบ %.1f GiB", facts.MemoryGiB))
+		result.fail(fmt.Sprintf("At least 8 GiB of RAM is required; detected %.1f GiB", facts.MemoryGiB))
 	}
 	if facts.FreeGiB < 8 {
-		result.fail(fmt.Sprintf("พื้นที่ว่างปัจจุบัน %.1f GiB; ต้องมีอย่างน้อย 8 GiB", facts.FreeGiB))
+		result.fail(fmt.Sprintf("Free disk space: %.1f GiB; at least 8 GiB is required", facts.FreeGiB))
 	} else if facts.FreeGiB < 15 {
-		result.warn(fmt.Sprintf("พื้นที่ว่างปัจจุบัน %.1f GiB; แนะนำอย่างน้อย 15 GiB สำหรับ update และ backup", facts.FreeGiB))
+		result.warn(fmt.Sprintf("Free disk space: %.1f GiB; at least 15 GiB is recommended for updates and backups", facts.FreeGiB))
 	}
 	if facts.VirtualizationFirmware != nil && !*facts.VirtualizationFirmware {
 		if facts.WSLEnabled && facts.VirtualMachinePlatform {
-			result.warn("CIM รายงาน virtualization เป็นปิด แต่ WSL พร้อมใช้งาน; installer จะยืนยันอีกครั้งตอน import WSL2")
+			result.warn("CIM reports virtualization as disabled, but WSL is available; setup will verify it during WSL2 import")
 		} else {
-			result.fail("ยังไม่ได้เปิด hardware virtualization ใน BIOS/UEFI")
+			result.fail("Hardware virtualization is not enabled in BIOS/UEFI")
 		}
 	} else if facts.VirtualizationFirmware == nil {
-		result.warn("ตรวจ virtualization จาก firmware ไม่ได้; installer ต้องยืนยันด้วย WSL2")
+		result.warn("Could not detect firmware virtualization; setup must verify WSL2")
 	}
 	if !facts.WSLEnabled || !facts.VirtualMachinePlatform {
 		result.RequiresReboot = true
-		result.warn("installer ต้องเปิด WSL และ Virtual Machine Platform แล้ว restart")
+		result.warn("Setup needs to enable WSL and Virtual Machine Platform, then restart Windows")
 	}
 	result.OK = len(result.Failures) == 0
 	return result

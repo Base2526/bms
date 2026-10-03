@@ -81,25 +81,25 @@ type verifiedRelease struct {
 func verifyReleaseFiles(manifestPath, keyringPath, expectedTarget string) (verifiedRelease, error) {
 	manifest, err := os.ReadFile(manifestPath)
 	if err != nil {
-		return verifiedRelease{}, fmt.Errorf("อ่าน release manifest ไม่ได้: %w", err)
+		return verifiedRelease{}, fmt.Errorf("Could not read release manifest: %w", err)
 	}
 	keys, err := os.ReadFile(keyringPath)
 	if err != nil {
-		return verifiedRelease{}, fmt.Errorf("อ่าน trusted keyring ไม่ได้: %w", err)
+		return verifiedRelease{}, fmt.Errorf("Could not read trusted keyring: %w", err)
 	}
 	return verifyRelease(manifest, keys, expectedTarget)
 }
 
 func verifyRelease(envelopeBytes, keyringBytes []byte, expectedTarget string) (verifiedRelease, error) {
 	if len(envelopeBytes) == 0 || len(envelopeBytes) > maxEnvelopeBytes {
-		return verifiedRelease{}, errors.New("release envelope มีขนาดไม่ถูกต้อง")
+		return verifiedRelease{}, errors.New("Invalid release envelope size")
 	}
 	var envelope releaseEnvelope
 	if err := decodeStrict(envelopeBytes, &envelope); err != nil {
-		return verifiedRelease{}, fmt.Errorf("release envelope ไม่ถูกต้อง: %w", err)
+		return verifiedRelease{}, fmt.Errorf("Invalid release envelope: %w", err)
 	}
 	if envelope.FormatVersion != 1 {
-		return verifiedRelease{}, errors.New("release envelope version ไม่รองรับ")
+		return verifiedRelease{}, errors.New("Unsupported release envelope version")
 	}
 	protectedBytes, err := decodeBase64URL(envelope.Protected, "protected")
 	if err != nil {
@@ -114,24 +114,24 @@ func verifyRelease(envelopeBytes, keyringBytes []byte, expectedTarget string) (v
 		return verifiedRelease{}, err
 	}
 	if len(signature) != ed25519.SignatureSize {
-		return verifiedRelease{}, errors.New("Ed25519 signature ต้องยาว 64 bytes")
+		return verifiedRelease{}, errors.New("Ed25519 signature must be 64 bytes")
 	}
 
 	var header releaseHeader
 	if err := decodeStrict(protectedBytes, &header); err != nil {
-		return verifiedRelease{}, fmt.Errorf("protected header ไม่ถูกต้อง: %w", err)
+		return verifiedRelease{}, fmt.Errorf("Invalid protected header: %w", err)
 	}
 	if header.Algorithm != "EdDSA" || header.Type != "application/vnd.bms.retail-local.release+json" || !versionPattern.MatchString(header.KeyID) {
-		return verifiedRelease{}, errors.New("protected header ไม่อยู่ใน BMS release contract")
+		return verifiedRelease{}, errors.New("Protected header does not match the BMS release contract")
 	}
 
 	var keyring publicKeyring
 	if err := decodeStrict(keyringBytes, &keyring); err != nil || keyring.FormatVersion != 1 {
-		return verifiedRelease{}, errors.New("trusted keyring ไม่ถูกต้อง")
+		return verifiedRelease{}, errors.New("Invalid trusted keyring")
 	}
 	publicKeyPEM, ok := keyring.Keys[header.KeyID]
 	if !ok {
-		return verifiedRelease{}, fmt.Errorf("ไม่เชื่อถือ release key id %q", header.KeyID)
+		return verifiedRelease{}, fmt.Errorf("Untrusted release key ID %q", header.KeyID)
 	}
 	publicKey, err := parseEd25519PublicKey(publicKeyPEM)
 	if err != nil {
@@ -139,13 +139,13 @@ func verifyRelease(envelopeBytes, keyringBytes []byte, expectedTarget string) (v
 	}
 	signingInput := []byte(envelope.Protected + "." + envelope.Payload)
 	if !ed25519.Verify(publicKey, signingInput, signature) {
-		return verifiedRelease{}, errors.New("release signature ไม่ถูกต้อง")
+		return verifiedRelease{}, errors.New("Invalid release signature")
 	}
 
 	// Interpret URLs and component metadata only after publisher authentication.
 	var payload releasePayload
 	if err := decodeStrict(payloadBytes, &payload); err != nil {
-		return verifiedRelease{}, fmt.Errorf("release payload ไม่ถูกต้อง: %w", err)
+		return verifiedRelease{}, fmt.Errorf("Invalid release payload: %w", err)
 	}
 	if err := validatePayload(payload, expectedTarget); err != nil {
 		return verifiedRelease{}, err
@@ -161,7 +161,7 @@ func decodeStrict(input []byte, target any) error {
 	}
 	var extra any
 	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
-		return errors.New("พบข้อมูลต่อท้าย JSON")
+		return errors.New("Unexpected data after JSON")
 	}
 	return nil
 }
@@ -169,7 +169,7 @@ func decodeStrict(input []byte, target any) error {
 func decodeBase64URL(input, name string) ([]byte, error) {
 	decoded, err := base64.RawURLEncoding.DecodeString(input)
 	if err != nil || base64.RawURLEncoding.EncodeToString(decoded) != input {
-		return nil, fmt.Errorf("%s ไม่ใช่ canonical base64url", name)
+		return nil, fmt.Errorf("%s is not canonical base64url", name)
 	}
 	return decoded, nil
 }
@@ -177,41 +177,41 @@ func decodeBase64URL(input, name string) ([]byte, error) {
 func parseEd25519PublicKey(input string) (ed25519.PublicKey, error) {
 	block, rest := pem.Decode([]byte(input))
 	if block == nil || len(bytes.TrimSpace(rest)) != 0 || block.Type != "PUBLIC KEY" {
-		return nil, errors.New("release public key PEM ไม่ถูกต้อง")
+		return nil, errors.New("Invalid release public key PEM")
 	}
 	parsed, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil, errors.New("release public key อ่านไม่ได้")
+		return nil, errors.New("Could not parse release public key")
 	}
 	key, ok := parsed.(ed25519.PublicKey)
 	if !ok {
-		return nil, errors.New("release public key ต้องเป็น Ed25519")
+		return nil, errors.New("Release public key must be Ed25519")
 	}
 	return key, nil
 }
 
 func validatePayload(payload releasePayload, expectedTarget string) error {
 	if payload.Product != "BMS Retail Local" || !semverPattern.MatchString(payload.ReleaseVersion) {
-		return errors.New("release product/version ไม่ถูกต้อง")
+		return errors.New("Invalid release product or version")
 	}
 	if payload.Channel != "pilot" && payload.Channel != "stable" {
-		return errors.New("release channel ไม่ถูกต้อง")
+		return errors.New("Invalid release channel")
 	}
 	if !targetPattern.MatchString(payload.PlatformTarget) || payload.PlatformTarget != expectedTarget {
-		return fmt.Errorf("release target ไม่ตรงกับเครื่อง: %s", payload.PlatformTarget)
+		return fmt.Errorf("Release target does not match this computer: %s", payload.PlatformTarget)
 	}
 	if !versionPattern.MatchString(payload.MinimumAgentVersion) || payload.SchemaVersion == "" || len(payload.SchemaVersion) > 64 {
-		return errors.New("release agent/schema version ไม่ถูกต้อง")
+		return errors.New("Invalid release agent or schema version")
 	}
 	compatible, err := agentVersionAtLeast(agentVersion, payload.MinimumAgentVersion)
 	if err != nil || !compatible {
-		return fmt.Errorf("release ต้องการ agent %s แต่เครื่องมี %s", payload.MinimumAgentVersion, agentVersion)
+		return fmt.Errorf("Release requires agent %s; installed agent is %s", payload.MinimumAgentVersion, agentVersion)
 	}
 	if _, err := time.Parse(time.RFC3339, payload.CreatedAt); err != nil || !commitPattern.MatchString(payload.SourceCommit) {
-		return errors.New("release provenance ไม่ถูกต้อง")
+		return errors.New("Invalid release provenance")
 	}
 	if len(payload.Components) < 7 {
-		return errors.New("release components ไม่ครบ")
+		return errors.New("Incomplete release components")
 	}
 	required := map[string]bool{"web": false, "ws": false, "postgres": false, "redis": false, "runtime": false, "compose": false, "desktop": false}
 	requiredKinds := map[string]string{"web": "oci-image", "ws": "oci-image", "postgres": "oci-image", "redis": "oci-image", "runtime": "runtime", "compose": "support-file", "desktop": "desktop"}
@@ -221,19 +221,19 @@ func validatePayload(payload releasePayload, expectedTarget string) error {
 			return fmt.Errorf("components[%d]: %w", index, err)
 		}
 		if seen[component.Name] {
-			return fmt.Errorf("release มี component name ซ้ำ: %s", component.Name)
+			return fmt.Errorf("Duplicate release component name: %s", component.Name)
 		}
 		seen[component.Name] = true
 		if _, ok := required[component.Name]; ok {
 			if component.Kind != requiredKinds[component.Name] {
-				return fmt.Errorf("component %s ต้องเป็น kind %s", component.Name, requiredKinds[component.Name])
+				return fmt.Errorf("Component %s must have kind %s", component.Name, requiredKinds[component.Name])
 			}
 			required[component.Name] = true
 		}
 	}
 	for name, present := range required {
 		if !present {
-			return fmt.Errorf("release ขาด component %s", name)
+			return fmt.Errorf("Release is missing component %s", name)
 		}
 	}
 	return nil
@@ -243,7 +243,7 @@ func compareSemver(left, right string) (int, error) {
 	leftParts := semverPattern.FindStringSubmatch(left)
 	rightParts := semverPattern.FindStringSubmatch(right)
 	if leftParts == nil || rightParts == nil {
-		return 0, errors.New("release version ไม่ใช่ semantic version")
+		return 0, errors.New("Release version is not a semantic version")
 	}
 	for index := 1; index <= 3; index++ {
 		var leftNumber, rightNumber int
@@ -312,7 +312,7 @@ func agentVersionAtLeast(current, minimum string) (bool, error) {
 	currentParts := semverPattern.FindStringSubmatch(current)
 	minimumParts := semverPattern.FindStringSubmatch(minimum)
 	if currentParts == nil || minimumParts == nil {
-		return false, errors.New("agent version ไม่ใช่ semantic version")
+		return false, errors.New("Agent version is not a semantic version")
 	}
 	for index := 1; index <= 3; index++ {
 		var currentNumber, minimumNumber int
@@ -339,24 +339,24 @@ func agentVersionAtLeast(current, minimum string) (bool, error) {
 
 func validateComponent(component releaseComponent) error {
 	if !componentPattern.MatchString(component.Name) {
-		return errors.New("name ไม่ถูกต้อง")
+		return errors.New("Invalid name")
 	}
 	if component.Kind != "oci-image" && component.Kind != "runtime" && component.Kind != "desktop" && component.Kind != "support-file" {
-		return errors.New("kind ไม่ถูกต้อง")
+		return errors.New("Invalid kind")
 	}
 	parsedURL, err := url.Parse(component.URL)
 	if err != nil || parsedURL.Scheme != "https" || parsedURL.Host == "" || parsedURL.User != nil || parsedURL.Fragment != "" {
-		return errors.New("url ต้องเป็น HTTPS โดยไม่มี credential/fragment")
+		return errors.New("URL must use HTTPS without credentials or a fragment")
 	}
 	if !hexPattern.MatchString(component.SHA256) || component.SizeBytes <= 0 {
-		return errors.New("SHA-256/size ไม่ถูกต้อง")
+		return errors.New("Invalid SHA-256 or size")
 	}
 	if component.Kind == "oci-image" {
 		if !digestPattern.MatchString(component.OCIDigest) {
-			return errors.New("ขาด immutable OCI digest")
+			return errors.New("Missing immutable OCI digest")
 		}
 		if !imageRefPattern.MatchString(component.ImageRef) {
-			return errors.New("ขาด imageRef")
+			return errors.New("Missing imageRef")
 		}
 	}
 	return nil

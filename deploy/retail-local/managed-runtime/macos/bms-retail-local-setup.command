@@ -7,17 +7,17 @@ printf 'BMS Retail Local Server (macOS)\n\n'
 /usr/local/bin/bms-retail-local setup
 exit_code=$?
 if (( exit_code == 0 )); then
-  printf '\nเปิด BMS Retail Local ที่ http://127.0.0.1:3100\n'
+  printf '\nOpen BMS Retail Local at http://127.0.0.1:3100\n'
   open http://127.0.0.1:3100/admin/login
 else
-  printf '\nSetup ยังไม่สำเร็จ กรุณาอ่านข้อความ [ต้องแก้ไข] ด้านบน\n'
-  printf 'เมื่อแก้ไขแล้ว ให้เปิด Applications > BMS Retail Local อีกครั้ง\n'
+  printf '\nSetup did not complete. Read the [FAIL] messages above\n'
+  printf 'After resolving the issues, open Applications > BMS Retail Local again\n'
   reports="${BMS_RETAIL_LOCAL_STATE_ROOT:-$HOME/Library/Application Support/BMS/RetailLocal}/diagnostics"
   if [[ -t 0 && -d $reports ]]; then
     read -r -p 'Open error reports in Finder? [y/N]: ' show_report || true
     [[ ${show_report:-} != [yY] ]] || open "$reports" || true
   fi
 fi
-printf '\nกด Enter เพื่อปิดหน้าต่างนี้...'
+printf '\nPress Enter to close this window...'
 read -r
 exit "$exit_code"
