@@ -483,7 +483,47 @@ type BillingGroupRow = {
   cancel_request_hash: string | null;
 };
 
-function mapBillingGroupRow(row: BillingGroupRow): BoardGameBillingGroup {
+type ChargeLineEvidence = {
+  participant_type?: BoardGameParticipantType | string | null;
+  rate_code_snapshot?: string | null;
+  rate_name_snapshot?: string | null;
+  joined_at?: Date | string | null;
+  left_at?: Date | string | null;
+};
+
+function normalizeChargeLine(
+  raw: any,
+  evidence?: ChargeLineEvidence | null,
+): BoardGameChargeLine {
+  const rawParticipantType = raw?.participantType ?? raw?.participant_type
+    ?? evidence?.participant_type ?? null;
+  return {
+    ...raw,
+    participantId: String(raw?.participantId ?? raw?.participant_id),
+    displayName: raw?.displayName ?? raw?.display_name ?? null,
+    participantType: participantType(rawParticipantType, "GENERAL"),
+    billingGroupNo: Number(raw?.billingGroupNo ?? raw?.billing_group_no),
+    rateCode: raw?.rateCode ?? raw?.rate_code ?? evidence?.rate_code_snapshot ?? null,
+    rateName: raw?.rateName ?? raw?.rate_name ?? evidence?.rate_name_snapshot ?? null,
+    joinedAt: raw?.joinedAt ?? raw?.joined_at ?? iso(evidence?.joined_at) ?? null,
+    actualEndedAt: raw?.actualEndedAt ?? raw?.actual_ended_at ?? iso(evidence?.left_at) ?? null,
+    chargedUntil: raw?.chargedUntil ?? raw?.charged_until ?? null,
+    actualMinutes: raw?.actualMinutes == null ? undefined : Number(raw.actualMinutes),
+    billableMinutes: Number(raw?.billableMinutes ?? raw?.billable_minutes),
+    hourlyRate: Number(raw?.hourlyRate ?? raw?.hourly_rate),
+    amount: Number(raw?.amount),
+    grossAmount: raw?.grossAmount == null ? undefined : Number(raw.grossAmount),
+    coveredMinutes: raw?.coveredMinutes == null ? undefined : Number(raw.coveredMinutes),
+    coveredAmount: raw?.coveredAmount == null ? undefined : Number(raw.coveredAmount),
+    offerDiscountAmount: raw?.offerDiscountAmount == null
+      ? undefined : Number(raw.offerDiscountAmount),
+  };
+}
+
+function mapBillingGroupRow(
+  row: BillingGroupRow,
+  evidenceByParticipant?: Map<string, ChargeLineEvidence>,
+): BoardGameBillingGroup {
   return {
     id: row.id,
     groupNo: Number(row.group_no),
@@ -493,7 +533,10 @@ function mapBillingGroupRow(row: BillingGroupRow): BoardGameBillingGroup {
     endedAt: iso(row.ended_at),
     currentOrderId: row.current_order_id,
     chargeSnapshot: Array.isArray(row.charge_snapshot)
-      ? (row.charge_snapshot as BoardGameChargeLine[])
+      ? row.charge_snapshot.map((line: any) => normalizeChargeLine(
+        line,
+        evidenceByParticipant?.get(line?.participantId ?? line?.participant_id),
+      ))
       : [],
   };
 }
@@ -2096,7 +2139,10 @@ export async function getBoardGameSession(tenantId: string, sessionIdInput: stri
   ]);
   if (!session.rowCount) throw new Error("ไม่พบ session");
   const row = session.rows[0];
-  const groups = billingGroups.rows.map(mapBillingGroupRow);
+  const evidenceByParticipant = new Map(participants.rows.map((participant: any) => (
+    [participant.id, participant] as const
+  )));
+  const groups = billingGroups.rows.map((group) => mapBillingGroupRow(group, evidenceByParticipant));
   const itemsByGroup = new Map<string, BoardGameTabItem[]>();
   for (const row of tabItems.rows as any[]) {
     const list = itemsByGroup.get(row.billing_group_id) ?? [];
@@ -2626,7 +2672,7 @@ export async function getBoardGameCheckoutForPos(
   // ยังเป็นหลักฐานเดิมอยู่ จึงเติมเฉพาะ field ที่ขาดเพื่อให้บิลเก่าเปิดดูได้ โดยไม่คำนวณยอดใหม่
   // และไม่แตะ amount/billableMinutes ที่แช่ไว้แล้วเด็ดขาด
   const participantEvidence = await query<any>(
-    `SELECT id, rate_code_snapshot, rate_name_snapshot, joined_at, left_at
+    `SELECT id, participant_type, rate_code_snapshot, rate_name_snapshot, joined_at, left_at
        FROM bms_board_game_session_participants
       WHERE tenant_id = $1 AND billing_group_id = $2`,
     [tenantId, billingGroupId]
@@ -2636,11 +2682,12 @@ export async function getBoardGameCheckoutForPos(
   )));
   const chargeLines: BoardGameChargeLine[] = (Array.isArray(row.charge_snapshot)
     ? row.charge_snapshot : []).map((raw: any) => {
-    const evidence = evidenceByParticipant.get(raw.participantId);
-    const joinedAt = raw.joinedAt ?? iso(evidence?.joined_at) ?? null;
-    const actualEndedAt = raw.actualEndedAt ?? iso(evidence?.left_at ?? row.ended_at) ?? null;
+    const evidence = evidenceByParticipant.get(raw.participantId ?? raw.participant_id);
+    const normalized = normalizeChargeLine(raw, evidence);
+    const joinedAt = normalized.joinedAt ?? iso(evidence?.joined_at) ?? null;
+    const actualEndedAt = normalized.actualEndedAt ?? iso(evidence?.left_at ?? row.ended_at) ?? null;
     const expectedEndAt = iso(row.expected_end_at);
-    const chargedUntil = raw.chargedUntil ?? (
+    const chargedUntil = normalized.chargedUntil ?? (
       row.billing_mode === "FIXED_DURATION"
       && expectedEndAt
       && actualEndedAt
@@ -2649,27 +2696,13 @@ export async function getBoardGameCheckoutForPos(
         : actualEndedAt
     );
     return {
-      ...raw,
-      participantId: String(raw.participantId),
-      displayName: raw.displayName ?? null,
-      participantType: raw.participantType as BoardGameParticipantType,
-      billingGroupNo: Number(raw.billingGroupNo),
-      rateCode: raw.rateCode ?? evidence?.rate_code_snapshot ?? null,
-      rateName: raw.rateName ?? evidence?.rate_name_snapshot ?? null,
+      ...normalized,
       joinedAt,
       actualEndedAt,
       chargedUntil,
-      actualMinutes: raw.actualMinutes == null && joinedAt && actualEndedAt
+      actualMinutes: normalized.actualMinutes == null && joinedAt && actualEndedAt
         ? boardGameActualMinutes(joinedAt, actualEndedAt)
-        : Number(raw.actualMinutes ?? 0),
-      billableMinutes: Number(raw.billableMinutes),
-      hourlyRate: Number(raw.hourlyRate),
-      amount: Number(raw.amount),
-      grossAmount: raw.grossAmount == null ? undefined : Number(raw.grossAmount),
-      coveredMinutes: raw.coveredMinutes == null ? undefined : Number(raw.coveredMinutes),
-      coveredAmount: raw.coveredAmount == null ? undefined : Number(raw.coveredAmount),
-      offerDiscountAmount: raw.offerDiscountAmount == null
-        ? undefined : Number(raw.offerDiscountAmount),
+        : Number(normalized.actualMinutes ?? 0),
     };
   });
 
@@ -4004,7 +4037,7 @@ export async function closeBoardGameSessionForBilling(
       await client.query("COMMIT");
       return {
         sessionId: scopedSessionId,
-        groups: mine.map(mapBillingGroupRow),
+        groups: mine.map((group) => mapBillingGroupRow(group)),
         amountDue: money(mine.reduce((sum, group) => sum + Number(group.amount_due), 0)),
         lines: mine.flatMap((group) => mapBillingGroupRow(group).chargeSnapshot),
         endedAt: iso(mine.reduce<Date | null>(
