@@ -511,8 +511,32 @@ test("closing again with the same key replays; a different key is a conflict", a
 
 test("the checkout read is keyed by the bill and says whether the table has other bills waiting", async () => {
   const session = await openSplitTable(tableB, 4);
+  const legacyStudent = (await query<{ id: string }>(
+    `UPDATE bms_board_game_session_participants
+        SET participant_type = 'STUDENT'
+      WHERE tenant_id = $1 AND id = (
+        SELECT p.id
+          FROM bms_board_game_session_participants p
+          JOIN bms_board_game_billing_groups g
+            ON g.tenant_id = p.tenant_id AND g.id = p.billing_group_id
+         WHERE p.tenant_id = $1 AND p.session_id = $2 AND g.group_no = 2
+         ORDER BY p.created_at, p.id
+         LIMIT 1
+      )
+      RETURNING id`,
+    [tenantId, session.id]
+  )).rows[0];
   await closeBoardGameSessionForBilling(tenantId, session.id, { idempotencyKey: key("close") }, staffId);
   const groups = await groupRows(session.id);
+  await query(
+    `UPDATE bms_board_game_billing_groups
+        SET charge_snapshot = (
+          SELECT jsonb_agg(line.value - 'participantType' ORDER BY line.ordinality)
+            FROM jsonb_array_elements(charge_snapshot) WITH ORDINALITY AS line(value, ordinality)
+        )
+      WHERE tenant_id = $1 AND id = $2`,
+    [tenantId, groups[1].id]
+  );
   const checkout = await getBoardGameCheckoutForPos(tenantId, locationId, groups[1].id);
   assert.equal(checkout.id, groups[1].id);
   assert.equal(checkout.sessionId, session.id);
@@ -520,6 +544,17 @@ test("the checkout read is keyed by the bill and says whether the table has othe
   assert.equal(checkout.sessionGroupCount, 2, "พนักงานต้องรู้ว่าโต๊ะนี้ยังมีบิลอีกใบ");
   assert.equal(checkout.amountDue, Number(groups[1].amount_due));
   assert.equal(checkout.chargeLines.length, 2, "checkout ต้องอธิบายค่าเล่นเป็นรายคน ไม่ใช่แค่ยอดรวม");
+  assert.equal(
+    checkout.chargeLines.find((line) => line.participantId === legacyStudent.id)?.participantType,
+    "STUDENT",
+    "snapshot เก่าที่ไม่มี participantType ต้องอ่านชนิดผู้เล่นจากหลักฐานเดิม ไม่คืน null",
+  );
+  const sessionDetail = await getBoardGameSession(tenantId, session.id);
+  assert.equal(
+    sessionDetail.chargeSnapshot.find((line) => line.participantId === legacyStudent.id)?.participantType,
+    "STUDENT",
+    "session query ต้อง normalize snapshot เก่าด้วย ไม่เช่นนั้น GraphQL non-null จะล้ม",
+  );
   for (const line of checkout.chargeLines) {
     assert.ok(line.rateName, "ชื่อเรทต้องถูกแช่ไว้เพื่อไม่ให้การเปลี่ยนชื่อแก้ใบเสร็จเก่า");
     assert.ok(line.joinedAt, "ต้องมีเวลาเข้าของผู้เล่น");
