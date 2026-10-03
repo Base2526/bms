@@ -5594,6 +5594,9 @@ const th = {
     // แถบนำทางและหัวจอ
     no_token_title: "ยังไม่พบ device token",
     no_token_desc: "จับคู่เครื่อง POS จากหลังบ้านก่อนเปิดหน้านี้",
+    token_rejected_title: "เครื่องนี้ไม่ได้จับคู่กับระบบแล้ว",
+    token_rejected_desc: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว กรุณากลับไปตั้งค่าแอปและจับคู่เครื่องใหม่",
+    token_rejected_reset: "ตั้งค่าแอปใหม่",
     rail_order_short: "สั่ง",
     rail_order: "สั่งอาหาร",
     rail_floor_short: "โต๊ะ",

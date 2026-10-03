@@ -5593,6 +5593,9 @@ const en = {
     // แถบนำทางและหัวจอ
     no_token_title: "No device token found",
     no_token_desc: "Pair this register from the back office before opening this screen",
+    token_rejected_title: "This register is no longer paired",
+    token_rejected_desc: "The device token is invalid or has been revoked. Return to app setup and pair this register again.",
+    token_rejected_reset: "Set up the app again",
     rail_order_short: "Order",
     rail_order: "Take an order",
     rail_floor_short: "Tables",

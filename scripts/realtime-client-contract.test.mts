@@ -102,6 +102,8 @@ test("reconnect and focus reconcile through the registered authoritative refetch
   assert.match(apollo, /retryWait/);
   assert.match(apollo, /resetRealtimeConnections/);
   assert.match(provider, /refetchQueries/);
+  assert.match(provider, /\.then\(\(\) => callback\.current\(events\)\)\s*\.catch\(\(\) => undefined\)/,
+    "a failed best-effort refetch must not become an unhandled browser rejection");
 });
 
 test("routine realtime ticket rotation does not flash the admin reconnect banner", () => {
