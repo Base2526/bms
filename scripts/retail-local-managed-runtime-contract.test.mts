@@ -100,6 +100,7 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   const bootstrapSmoke = read("deploy/retail-local/managed-runtime/macos/smoke-test-bootstrap-pkg.sh");
   const postinstall = read("deploy/retail-local/managed-runtime/macos/postinstall-bootstrap");
   const posBootstrapBuilder = read("deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh");
+  const posBootstrapLauncher = read("deploy/retail-local/managed-runtime/macos/bms-pos-online-app");
   const posBootstrapSetup = read("deploy/retail-local/managed-runtime/macos/bms-pos-online-setup.command");
   const posBootstrapSmoke = read("deploy/retail-local/managed-runtime/macos/smoke-test-pos-bootstrap-dmg.sh");
 
@@ -123,7 +124,12 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
 
   assert.match(posBootstrapBuilder, /stage-desktop|bms-runtime-agent/);
   assert.match(posBootstrapBuilder, /electronEmbedded/);
+  assert.match(posBootstrapBuilder, /LSMinimumSystemVersion<\/key><string>12\.0<\/string>/);
+  assert.match(posBootstrapBuilder, /"minimumOs":"macOS 12"/);
   assert.doesNotMatch(posBootstrapBuilder, /npm run pack:mac|Electron Framework|desktop\.artifact/);
+  assert.match(posBootstrapLauncher, /AppTranslocation/);
+  assert.match(posBootstrapLauncher, /POSBootstrap\/Launchers[\s\S]*ditto --noqtn[\s\S]*open -a Terminal/);
+  assert.match(posBootstrapLauncher, /signed-manifest and[\s\S]*SHA-256 verification/);
   assert.match(posBootstrapSetup, /signed release manifest/);
   assert.match(posBootstrapSetup, /SHA-256[\s\S]*stage-desktop/);
   assert.match(posBootstrapSetup, /desktop\.artifact/);
@@ -132,6 +138,7 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.doesNotMatch(posBootstrapSetup, /curl_tls\[@\]/);
   assert.match(posBootstrapSetup, /curl_args=\(--fail[\s\S]*curl "\$\{curl_args\[@\]\}"/);
   assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
+  assert.match(posBootstrapSmoke, /LSMinimumSystemVersion[\s\S]*minimum_os == 12\.0/);
   assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
 
   assert.match(releaseBuilder, /macos-15-\$architecture/);
