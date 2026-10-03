@@ -1,10 +1,9 @@
-/** Bounded JSON for the small activation/status APIs, never for installer uploads. */
+/** Bounded JSON; 4 KiB by default. A server-owned limit may allow larger UTF-8 forms. Never for installer uploads. */
 export class RetailLocalRequestBodyError extends Error {
   constructor(message: string, readonly status: 400 | 413) { super(message); }
 }
 
-export async function readRetailLocalJSON(request: Request): Promise<unknown> {
-  const limit = 4096;
+export async function readRetailLocalJSON(request: Request, limit = 4096): Promise<unknown> {
   if (Number(request.headers.get("content-length")) > limit) {
     throw new RetailLocalRequestBodyError("payload_too_large", 413);
   }

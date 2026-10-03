@@ -77,6 +77,7 @@ import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscription
 import { sendStaffMessage } from "./inbox";
 import { reportBmsFailure } from "./failureAlert";
 import { normalizeReceiptPrefix } from "./taxDocumentNumber";
+import { taxRequestUrl } from "./taxRequestToken";
 import { cancelQueuedTaxDocumentInTx } from "./etax/queue";
 import {
   composeDiscounts,
@@ -2405,6 +2406,7 @@ function mapReceiptVat(row: {
 export type PosSaleResult =
   | {
       status: "SOLD";
+      taxRequestUrl?: string | null;
       orderId: string;
       saleLocationId: string;
       posDeviceId: string;
@@ -2479,6 +2481,7 @@ export type PosSaleResult =
   | { status: string; [k: string]: unknown };
 
 export type PosRecentReceipt = {
+  taxRequestUrl?: string | null;
   orderId: string;
   docNo: string | null;
   /** เลขใบเสร็จที่มนุษย์ใช้ค้นหา/สแกนคืนของ — ตอนนี้ map จาก docNo เพื่อแยกจาก orderId ชัดเจน */
@@ -4454,6 +4457,7 @@ async function finalizePosSale(args: {
       cashTendered,
       cashChange,
       docNo: fulfilled.docNo,
+      taxRequestUrl: fulfilled.docNo ? taxRequestUrl(input.tenantId, orderId) : null,
       receiptNo: fulfilled.docNo,
       billNo: fulfilled.docNo,
       vat: fulfilled.vat,
@@ -4573,6 +4577,7 @@ async function findSaleByIdempotencyKey(
     cashTendered: row.cash_tendered == null ? null : Number(row.cash_tendered),
     cashChange: row.cash_change == null ? null : Number(row.cash_change),
     docNo: row.doc_no ?? null,
+    taxRequestUrl: row.doc_no ? taxRequestUrl(tenantId, row.id) : null,
     vat: mapReceiptVat(row),
     roundingAmount: rounding,
     discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
@@ -5057,6 +5062,7 @@ export async function listRecentPosSales(
   }
 
   return orderRes.rows.map((row) => ({
+    taxRequestUrl: row.doc_no && row.status === "COMPLETED" && !row.voided_at && !returnEventsByOrder.get(row.id)?.length ? taxRequestUrl(tenantId, row.id) : null,
     orderId: row.id,
     docNo: row.doc_no ?? null,
     receiptNo: row.doc_no ?? null,

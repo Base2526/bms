@@ -159,7 +159,7 @@ async function collectReportDoc(
         locationId,
         allowedLocationIds,
       });
-      return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra));
+      return buildSalesTaxReportDoc(report, (iso) => formatTaxDate(iso, report.seller.calendarEra), { includeSellerEstablishment: !locationId });
     }
     case "VAT_PURCHASE": {
       const month = currentTaxMonth();
@@ -169,7 +169,7 @@ async function collectReportDoc(
         locationId,
         allowedLocationIds,
       });
-      return buildInputVatReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
+      return buildInputVatReportDoc(report, (iso) => formatTaxDate(iso, "BE"), { includeBuyerEstablishment: !locationId });
     }
     case "STOCK_LEDGER": {
       const month = currentTaxMonth();
@@ -257,9 +257,9 @@ export async function getTaxPrintReport(tenantId: string, ctx: any, input: {
   const filter = { from: input.from, to: input.to, locationId: input.locationId, allowedLocationIds };
   if (input.reportType === "VAT_SALES") {
     const report = await getSalesTaxReport(tenantId, filter);
-    return buildSalesTaxReportDoc(report, iso => formatTaxDate(iso, report.seller.calendarEra));
+    return buildSalesTaxReportDoc(report, iso => formatTaxDate(iso, report.seller.calendarEra), { includeSellerEstablishment: !input.locationId });
   }
-  return buildInputVatReportDoc(await getInputVatReport(tenantId, filter), iso => formatTaxDate(iso, "BE"));
+  return buildInputVatReportDoc(await getInputVatReport(tenantId, filter), iso => formatTaxDate(iso, "BE"), { includeBuyerEstablishment: !input.locationId });
 }
 
 async function reportPermissionFlags(ctx: any): Promise<{ salesTax: boolean; purchaseTax: boolean }> {

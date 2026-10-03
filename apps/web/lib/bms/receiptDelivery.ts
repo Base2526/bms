@@ -18,6 +18,8 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import QRCode from "qrcode";
+import { taxRequestUrl } from "./taxRequestToken";
 import { sendEmail } from "@/lib/mailer";
 import { deliverToChannel } from "./inbox";
 import {
@@ -38,6 +40,7 @@ export type ReceiptDeliveryResult =
 
 type ReceiptData = {
   orderId: string;
+  taxRequestUrl: string | null;
   docNo: string | null;
   soldAt: string;
   total: number;
@@ -55,6 +58,8 @@ type ReceiptData = {
 async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptData | null> {
   const head = await query<any>(
     `SELECT o.id, o.total_amount, o.shipping_fee, o.discount_amount, o.created_at,
+            o.status, o.voided_at,
+            EXISTS(SELECT 1 FROM bms_pos_returns pr WHERE pr.tenant_id=o.tenant_id AND pr.order_id=o.id AND pr.is_void=FALSE) AS has_return,
             COALESCE((SELECT SUM(extra.qty * extra.unit_amount)
                         FROM bms_order_extra_lines extra
                        WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id), 0) AS extra_total,
@@ -99,6 +104,7 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
 
   return {
     orderId: r.id,
+    taxRequestUrl: r.doc_no && r.status === "COMPLETED" && !r.voided_at && !r.has_return ? taxRequestUrl(tenantId, orderId) : null,
     docNo: r.doc_no ?? null,
     soldAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     total: Number(r.total_amount) + Number(r.shipping_fee ?? 0),
@@ -156,6 +162,7 @@ function receiptText(data: ReceiptData): string {
     lines.push(`  VAT ${data.vat.rate}% ฿${money(data.vat.vat, data.languageMode)}`);
     if (data.vat.rounding !== 0) lines.push(`  ${label("ปัดเศษเงินสด", "Cash rounding")} ฿${money(data.vat.rounding, data.languageMode)}`);
   }
+  if (data.taxRequestUrl) lines.push("", label("ขอใบกำกับภาษีเต็มรูป", "Request full tax invoice"), data.taxRequestUrl);
   return lines.join("\n");
 }
 
@@ -187,6 +194,7 @@ function receiptHtml(data: ReceiptData): string {
       <tr><td><strong>${label("รวม", "Total")}</strong></td><td align="right"><strong>฿${money(data.total, data.languageMode)}</strong></td></tr>
       ${vatBlock}
     </table>
+    ${data.taxRequestUrl ? `<p><a href="${escapeHtml(data.taxRequestUrl)}">${label("ขอใบกำกับภาษีเต็มรูป (หรือสแกน QR ในไฟล์แนบ)", "Request full tax invoice (or scan the attached QR)")}</a></p>` : ""}
   </div>`;
 }
 
@@ -229,6 +237,8 @@ export async function sendReceipt(input: {
             : `${receiptLabel(data.languageMode, "ใบเสร็จการซื้อ", "Purchase receipt")}${data.storeName ? ` - ${data.storeName}` : ""}`,
           html: receiptHtml(data),
           text: receiptText(data),
+          attachments: data.taxRequestUrl ? [{ filename: "tax-invoice-request-qr.png", mimeType: "image/png",
+            content: await QRCode.toBuffer(data.taxRequestUrl, { errorCorrectionLevel: "M", margin: 4, width: 400 }) }] : undefined,
         },
         { tenantId: input.tenantId, category: "order" }
       );

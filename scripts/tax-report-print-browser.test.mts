@@ -44,10 +44,32 @@ test("browser paginates Thai rows without losing signs, identity, sequence or br
     await page.emulateMedia({media:'print'});
     assert.ok(await page.locator('.page').evaluateAll((pages:Element[])=>pages.every(p=>p.querySelector('table')!.getBoundingClientRect().bottom<=p.getBoundingClientRect().bottom)));
     if(process.env.TAX_PRINT_SCREENSHOT) await page.locator('.page').first().screenshot({path:process.env.TAX_PRINT_SCREENSHOT});
+    const allPurchase={...report,rows:[...rows,{...rows[0],locationId:'branch',branchCode:'00001',payeeBranchCode:'00000',note:''}],totals:{documentCount:76,amountBeforeVat:35500,vatAmount:2485,totalAmount:37985}};
+    html=renderTaxReportPrint(buildInputVatReportDoc(allPurchase,date,{includeBuyerEstablishment:true}),'test');
+    for (const width of [1200,390]) {
+      await page.setViewportSize({width,height:850});
+      await page.emulateMedia({media:'screen'});
+      await page.goto(url); await page.waitForSelector('body[data-ready="true"]');
+      assert.equal(await page.locator('tbody tr').count(),76);
+      assert.equal(await page.locator('table.all-establishments').count(),await page.locator('.page').count());
+      assert.ok(await page.locator('thead').evaluateAll((heads:Element[])=>heads.every(h=>h.textContent!.includes('สถานประกอบการผู้ซื้อ (ร้านเรา)')&&h.textContent!.includes('สถานประกอบการผู้ขาย'))));
+      assert.deepEqual((await page.locator('tbody tr').first().locator('td').allTextContents()).slice(5,10),['00054','00000','','500.00','35.00']);
+      assert.deepEqual((await page.locator('tbody tr').last().locator('td').allTextContents()).slice(5,10),['00000','','00001','500.00','35.00']);
+      assert.equal(await page.locator('thead th[colspan="2"]').count(),await page.locator('.page').count()*2);
+      assert.deepEqual(await page.locator('.grand:not(.pending) .grand-base').allTextContents(),['35,000.00','500.00']);
+      assert.deepEqual(await page.locator('.grand:not(.pending) .grand-vat').allTextContents(),['2,450.00','35.00']);
+      assert.ok((await page.locator('td[data-key="amountBeforeVat"]').allTextContents()).includes('-2,000.00'));
+      assert.equal((await page.locator('.page-base').allTextContents()).reduce((sum:number,v:string)=>sum+Number(v.replaceAll(',','')),0),35500);
+      await page.emulateMedia({media:'print'});
+      assert.ok(await page.locator('.page').evaluateAll((pages:Element[])=>pages.every(p=>p.querySelector('table')!.getBoundingClientRect().bottom<=p.getBoundingClientRect().bottom)));
+      if(process.env.TAX_PRINT_SCREENSHOT) await page.locator('.page').first().screenshot({path:process.env.TAX_PRINT_SCREENSHOT.replace(/\.png$/,`-purchase-all-${width}.png`)});
+      assert.deepEqual(errors,[]);
+    }
     const salesTotal={base:35000,vat:2450,exempt:0,rounding:0,total:37450,documentCount:75};
-    html=renderTaxReportPrint(buildSalesTaxReportDoc({seller:{...report.buyer,vatRegistered:true,calendarEra:'BE'},period:report.period,establishments:report.establishments,
+    const salesReport: Parameters<typeof buildSalesTaxReportDoc>[0] = {seller:{...report.buyer,vatRegistered:true,calendarEra:'BE'},period:report.period,establishments:report.establishments,
       rows:rows.map((r,index)=>({kind:index===8?'CREDIT_NOTE':'FULL',issueDate:r.documentDate,locationId:r.locationId,branchCode:r.branchCode,deviceCode:null,docNoFrom:r.documentNo,docNoTo:r.documentNo,docCount:1,cancelledCount:0,buyerName:r.payeeName,buyerTaxId:r.payeeTaxId,buyerBranchCode:r.payeeBranchCode,referenceDocNo:index===8?'INV-original':null,base:r.amountBeforeVat,vat:r.vatAmount,total:r.totalAmount,exempt:0,rounding:0})),
-      totals:[{...salesTotal,locationId:'hq',branchCode:'00000'}],grandTotal:salesTotal,exceptions:[],cancelled:[],exceptionCounts:{PAID_WITHOUT_TAX_DOCUMENT:0,RETURN_WITHOUT_CREDIT_NOTE:0,FULL_REPLACES_OTHER_MONTH:0}},date),'test');
+      totals:[{...salesTotal,locationId:'hq',branchCode:'00000'}],grandTotal:salesTotal,exceptions:[],cancelled:[],exceptionCounts:{PAID_WITHOUT_TAX_DOCUMENT:0,RETURN_WITHOUT_CREDIT_NOTE:0,FULL_REPLACES_OTHER_MONTH:0}};
+    html=renderTaxReportPrint(buildSalesTaxReportDoc(salesReport,date),'test');
     await page.goto(url); await page.waitForSelector('body[data-ready="true"]');
     assert.equal(await page.locator('tbody tr').count(),75);
     assert.ok((await page.locator('body').textContent()).includes('ชื่อผู้ซื้อสินค้า/ผู้รับบริการ'));
@@ -55,6 +77,46 @@ test("browser paginates Thai rows without losing signs, identity, sequence or br
     assert.deepEqual(await page.locator('.grand:not(.pending) .grand-base').allTextContents(),['35,000.00','0.00']);
     assert.ok(await page.locator('.page').evaluateAll((pages:Element[])=>pages.every(p=>p.querySelector('table')!.getBoundingClientRect().bottom<=p.getBoundingClientRect().bottom)));
     assert.deepEqual(errors,[]);
+    salesReport.rows.push({...salesReport.rows[0],locationId:'branch',branchCode:'00001',buyerBranchCode:'00000'});
+    salesReport.totals.push({locationId:'branch',branchCode:'00001',documentCount:1,base:500,vat:35,total:535,exempt:0,rounding:0});
+    salesReport.grandTotal={...salesTotal,base:35500,vat:2485,total:37985,documentCount:76};
+    html=renderTaxReportPrint(buildSalesTaxReportDoc(salesReport,date,{includeSellerEstablishment:true}),'test');
+    for (const width of [1200,390]) {
+      await page.setViewportSize({width,height:850});
+      await page.emulateMedia({media:'screen'});
+      await page.goto(url); await page.waitForSelector('body[data-ready="true"]');
+      assert.equal(await page.locator('tbody tr').count(),76);
+      assert.ok(await page.locator('thead').evaluateAll((heads:Element[])=>heads.every(h=>h.textContent!.includes('สถานประกอบการผู้ขาย (ร้านเรา)')&&h.textContent!.includes('สถานประกอบการผู้ซื้อ'))));
+      assert.deepEqual(await page.locator('tbody tr').first().locator('td').allTextContents(),['1','01/09/2569','INV-1','บริษัท ทดสอบภาษาไทย จำกัด','0105555555554','00054','00000','','500.00','35.00','ใบกำกับภาษีเต็มรูป']);
+      assert.deepEqual((await page.locator('tbody tr').last().locator('td').allTextContents()).slice(5,10),['00000','','00001','500.00','35.00']);
+      assert.equal(await page.locator('thead th[colspan="2"]').count(),await page.locator('.page').count()*2);
+      assert.deepEqual(await page.locator('.grand:not(.pending) .grand-base').allTextContents(),['35,000.00','500.00']);
+      assert.deepEqual(await page.locator('.grand:not(.pending) .grand-vat').allTextContents(),['2,450.00','35.00']);
+      assert.ok((await page.locator('td[data-key="base"]').allTextContents()).includes('-2,000.00'));
+      await page.emulateMedia({media:'print'});
+      assert.ok(await page.locator('.page').evaluateAll((pages:Element[])=>pages.every(p=>p.querySelector('table')!.getBoundingClientRect().bottom<=p.getBoundingClientRect().bottom)));
+      if(process.env.TAX_PRINT_SCREENSHOT) await page.locator('.page').first().screenshot({path:process.env.TAX_PRINT_SCREENSHOT.replace(/\.png$/,`-sales-all-${width}.png`)});
+      assert.deepEqual(errors,[]);
+    }
+    // Large supported NUMERIC amounts must not cross into the adjacent VAT/notes cell.
+    const largeRow={...rows[0],amountBeforeVat:999999999999.99,vatAmount:69999999999.99,totalAmount:1069999999999.98,note:''};
+    html=renderTaxReportPrint(buildInputVatReportDoc({...report,rows:[largeRow]},date,{includeBuyerEstablishment:true}),'test');
+    await page.goto(url); await page.waitForSelector('body[data-ready="true"]');
+    assert.ok(await page.locator('.money').evaluateAll((cells:HTMLElement[])=>cells.every(c=>c.scrollWidth<=c.clientWidth)), 'large monetary values must fit their own cells');
+    assert.equal(await page.locator('td[data-key="amountBeforeVat"]').textContent(),'999,999,999,999.99');
+    assert.equal(await page.locator('.grand:not(.pending) .grand-base').first().textContent(),'999,999,999,999.99');
+    assert.ok(await page.locator('.money.compact').count()>0);
+    if(process.env.TAX_PRINT_SCREENSHOT) await page.locator('.page').first().screenshot({path:process.env.TAX_PRINT_SCREENSHOT.replace(/\.png$/,'-large-amount.png')});
+    html=renderTaxReportPrint(buildInputVatReportDoc({...report,rows:[{...largeRow,amountBeforeVat:-largeRow.amountBeforeVat,vatAmount:-largeRow.vatAmount}]},date,{includeBuyerEstablishment:true}),'test');
+    await page.goto(url); await page.waitForSelector('body[data-ready="true"]');
+    assert.equal(await page.locator('td[data-key="amountBeforeVat"]').textContent(),'-999,999,999,999.99');
+    assert.ok(await page.locator('.money').evaluateAll((cells:HTMLElement[])=>cells.every(c=>c.scrollWidth<=c.clientWidth)));
+    // An unsupported oversized value fails visibly rather than overlapping or truncating evidence.
+    html=renderTaxReportPrint(buildInputVatReportDoc({...report,rows:[{...largeRow,amountBeforeVat:1e30}]},date,{includeBuyerEstablishment:true}),'test');
+    await page.goto(url); await page.waitForSelector('body.failed');
+    assert.ok((await page.locator('#status').textContent()).includes('ยอดเงินยาวเกินช่องพิมพ์'));
+    assert.equal(await page.locator('#print').isDisabled(),true);
+    assert.equal(await page.locator('.page').first().isVisible(),false,'Ctrl+P must also hide invalid output');
     html=renderTaxReportPrint(buildInputVatReportDoc({...report,rows:[{...rows[0],note:'ข้อความยาว '.repeat(4000)}]},v=>v),'test');
     await page.goto(url); await page.waitForSelector('body.failed');
     assert.equal(await page.locator('#print').isDisabled(),true);

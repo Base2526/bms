@@ -21,8 +21,12 @@ export function renderTaxReportPrint(doc: ReportDoc, nonce: string): string {
 .box { display: inline-block; border: 1px solid; width: 4mm; height: 4mm; line-height: 3.5mm; text-align: center; margin: 1mm; }
 table { border-collapse: collapse; width: 100%; table-layout: fixed; } th, td { border-left: 1px solid; border-right: 1px solid; padding: 1px 4px; overflow-wrap: anywhere; vertical-align: top; }
 col:nth-child(1) { width:4%; } col:nth-child(2) { width:8%; } col:nth-child(3) { width:10%; } col:nth-child(4) { width:25%; } col:nth-child(5) { width:12%; } col:nth-child(6) { width:10%; } col:nth-child(7), col:nth-child(8) { width:9%; } col:nth-child(9) { width:13%; }
+.all-establishments col:nth-child(4) { width:19%; } .all-establishments col:nth-child(6) { width:7%; }
+.all-establishments col:nth-child(7), .all-establishments col:nth-child(8) { width:6%; }
+.all-establishments col:nth-child(9), .all-establishments col:nth-child(10) { width:9%; } .all-establishments col:nth-child(11) { width:10%; }
 thead th { font-weight: normal; vertical-align: middle; border-top: 1px solid; border-bottom: 1px solid; text-align: center; }
 tbody td { border-top: 0; border-bottom: 0; } tbody tr { break-inside: avoid; } .center { text-align: center; } .money { text-align: right; white-space: nowrap; }
+.money.compact { font-size: 7pt; }
 tfoot td { border-top: 1px solid; border-bottom: 1px solid; } .grand { border-bottom: 3px double; } .grand.pending { visibility: hidden; }
 .error { color: #a00; } body.failed .page { outline: 2px solid #a00; }
 @media print { body { background: white; } .toolbar { display: none; } .page { margin: 0; } body.failed .page { display: none; } body.failed .toolbar { display: block; } }
@@ -33,20 +37,40 @@ const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt
 const money = n => (n / 100).toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
 const digits = (value, length) => '<span class="digits">' + Array.from({length}, (_, i) => '<span class="digit">' + esc(String(value ?? '')[i] ?? '') + '</span>').join('') + '</span>';
 const pages = document.getElementById('pages');
+const baseIndex = sheet => sheet.columns.findIndex(c => c.key === 'base' || c.key === 'amountBeforeVat');
+const isMoney = c => c.key === 'base' || c.key === 'vat' || c.key === 'amountBeforeVat' || c.key === 'vatAmount';
+const isShopEstablishment = c => ['sellerHeadOffice','sellerBranch','buyerHeadOffice','buyerBranch'].includes(c.key);
+// Use the same grouped headings/merge ranges as XLSX, including our shop's establishment.
+function heading(sheet) {
+  return sheet.headerRows.map((row,r) => '<tr>' + row.map((value,c) => {
+    const merge = (sheet.headerMerges || []).find(m => r>=m.startRow && r<=m.endRow && c>=m.startColumn && c<=m.endColumn);
+    if (merge && (r!==merge.startRow || c!==merge.startColumn)) return '';
+    return '<th' + (merge ? ' rowspan="' + (merge.endRow-merge.startRow+1) + '" colspan="' + (merge.endColumn-merge.startColumn+1) + '"' : '') + '>' + esc(value) + '</th>';
+  }).join('') + '</tr>').join('');
+}
 function makePage(sheet) {
   const i = sheet.taxPrintIdentity;
   const page = document.createElement('section'); page.className = 'page';
   page.innerHTML = '<header><div class="title"><h1>' + esc(i.title) + '</h1><div>' + esc(i.period) + '</div><div>ชื่อผู้ประกอบการ : ' + esc(i.name) + '</div></div><span class="page-number"></span>' +
     '<div class="identity"><div class="address">ที่อยู่สถานประกอบการ : ' + esc(i.address) + '</div><div class="seller-id">เลขประจำตัวผู้เสียภาษีอากร<br>' + digits(i.taxId,13) + '<br><span class="box">' + (i.isHeadOffice?'X':'') + '</span> สำนักงานใหญ่ <span class="box">' + (i.isHeadOffice?'':'X') + '</span> สาขา ' + digits(i.isHeadOffice?'':i.branchCode,5) + '</div></div></header>' +
-    '<table><colgroup>' + '<col>'.repeat(9) + '</colgroup><thead><tr><th rowspan="2">ลำดับที่</th><th colspan="2">ใบกำกับภาษี</th>' + sheet.columns.slice(3).map(c => '<th rowspan="2">' + esc(c.label) + '</th>').join('') + '</tr><tr><th>วัน เดือน ปี</th><th>เลขที่</th></tr></thead><tbody></tbody><tfoot><tr><td colspan="6" class="money">รวม</td><td class="money page-base">0.00</td><td class="money page-vat">0.00</td><td></td></tr><tr class="grand pending"><td colspan="6" class="money">รวมทั้งสิ้น</td><td class="money grand-base">0.00</td><td class="money grand-vat">0.00</td><td></td></tr></tfoot></table>';
+    '<table class="' + (sheet.columns.some(isShopEstablishment) ? 'all-establishments' : '') + '"><colgroup>' + '<col>'.repeat(sheet.columns.length) + '</colgroup><thead>' + heading(sheet) + '</thead><tbody></tbody><tfoot><tr><td colspan="' + baseIndex(sheet) + '" class="money">รวม</td><td class="money page-base">0.00</td><td class="money page-vat">0.00</td><td></td></tr><tr class="grand pending"><td colspan="' + baseIndex(sheet) + '" class="money">รวมทั้งสิ้น</td><td class="money grand-base">0.00</td><td class="money grand-vat">0.00</td><td></td></tr></tfoot></table>';
   pages.append(page); return page;
 }
 function rowElement(sheet, row) {
   const tr = document.createElement('tr');
-  tr.innerHTML = sheet.columns.map((c,j) => '<td class="' + (j===6||j===7?'money':j===0||j===1||j===4||j===5?'center':'') + '">' + (j===6||j===7?money(Math.round(Number(row[c.key])*100)):esc(row[c.key])) + '</td>').join('');
+  tr.innerHTML = sheet.columns.map((c,j) => '<td data-key="' + esc(c.key) + '" class="' + (isMoney(c)?'money':j===0||j===1||j===4||j===5||isShopEstablishment(c)?'center':'') + '">' + (isMoney(c)?money(Math.round(Number(row[c.key])*100)):esc(row[c.key])) + '</td>').join('');
   return tr;
 }
-function setTotals(page, base, vat) { page.querySelector('.page-base').textContent=money(base); page.querySelector('.page-vat').textContent=money(vat); }
+function fitMoney(page) {
+  for (const cell of page.querySelectorAll('.money')) {
+    if (cell.scrollWidth > cell.clientWidth) cell.classList.add('compact');
+    if (cell.scrollWidth > cell.clientWidth) throw new Error('ยอดเงินยาวเกินช่องพิมพ์ กรุณาใช้ไฟล์ XLSX หรือตรวจสอบยอดก่อนพิมพ์');
+  }
+}
+function setTotals(page, base, vat) {
+  page.querySelector('.page-base').textContent=money(base); page.querySelector('.page-vat').textContent=money(vat);
+  fitMoney(page);
+}
 async function paginate() {
   await document.fonts.ready;
   try {
@@ -56,7 +80,8 @@ async function paginate() {
       const fits = () => page.querySelector('table').getBoundingClientRect().bottom <= page.getBoundingClientRect().bottom;
       if (!fits()) throw new Error('หัวรายงานยาวเกินพื้นที่หน้า');
       for (const row of sheet.rows) {
-        const b=Math.round(Number(row[sheet.columns[6].key])*100), v=Math.round(Number(row[sheet.columns[7].key])*100);
+        const amountColumn = baseIndex(sheet);
+        const b=Math.round(Number(row[sheet.columns[amountColumn].key])*100), v=Math.round(Number(row[sheet.columns[amountColumn+1].key])*100);
         const tr=rowElement(sheet,row); page.querySelector('tbody').append(tr); setTotals(page,base+b,vat+v);
         if (!fits()) {
           tr.remove(); setTotals(page,base,vat);
@@ -69,6 +94,7 @@ async function paginate() {
       }
       page.querySelector('.grand').classList.remove('pending');
       page.querySelector('.grand-base').textContent=money(grandBase); page.querySelector('.grand-vat').textContent=money(grandVat);
+      fitMoney(page);
       branchPages.forEach((p,index) => p.querySelector('.page-number').textContent='Page ' + (index+1) + ' of ' + branchPages.length);
     }
     document.getElementById('print').disabled=false;

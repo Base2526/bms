@@ -1234,6 +1234,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosReceipt {
+    taxRequestUrl: String
     orderId: ID!
     docNo: String
     receiptNo: String

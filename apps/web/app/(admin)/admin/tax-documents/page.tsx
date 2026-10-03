@@ -18,6 +18,7 @@ import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import { isValidThaiTaxId } from "@/lib/bms/thaiTaxId";
+import TaxInvoiceRequestsPanel from "@/components/admin/TaxInvoiceRequestsPanel";
 
 const Q_ESTABLISHMENTS = gql`
   query TaxEstablishments {
@@ -241,6 +242,7 @@ export default function TaxDocumentsPage() {
           </>
         )}
       </AdminPageHeader>
+      <TaxInvoiceRequestsPanel canIssue={can("tax.document.issue")} onIssued={()=>window.location.reload()}/>
 
       <Alert
         closable

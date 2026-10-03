@@ -141,6 +141,7 @@ const ROUTE_GUARDS = [
  * เปิดสาธารณะโดยตั้งใจ — ต้องมีเหตุผลเขียนไว้ และต้องมีเพดานการใช้
  */
 const PUBLIC_BY_DESIGN = new Map([
+  ["app/api/bms/tax-invoice-request/route.ts", "Cloud receipt-only capability for submission; independent private tracking secret; bounded body and IP/token rate limits"],
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
   ["app/api/bms/retail-local/activate/route.ts", "ตัวติดตั้งแลก one-use activation code ที่ entropy สูง; ไม่รู้ tenant และมี rate limit"],

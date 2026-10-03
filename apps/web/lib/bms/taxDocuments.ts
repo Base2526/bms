@@ -218,8 +218,8 @@ export type TenantVatSettings = VatSettings & {
   blindClose: boolean;
 };
 
-export async function getVatSettings(tenantId: string): Promise<TenantVatSettings> {
-  const res = await query<any>(
+export async function getVatSettings(tenantId: string, reader: { query: typeof query } = { query }): Promise<TenantVatSettings> {
+  const res = await reader.query<any>(
     `SELECT vat_registered, price_includes_vat, vat_rate, vat_rounding, calendar_era,
             abbreviated_tax_invoice_approved, cash_rounding, pos_blind_close
        FROM bms_store_profile WHERE tenant_id = $1`,
@@ -519,12 +519,28 @@ export type IssueFullResult =
  * ออกใบกำกับเต็มรูปแทนใบย่อ — ทั้งสองขั้นอยู่ในทรานแซกชันเดียว
  * ยกเลิกใบย่อแล้วออกใบเต็มไม่สำเร็จ = ลูกค้าเหลือแค่ใบที่ถูกยกเลิกในมือ
  */
-export async function issueFullTaxInvoice(args: {
+export type IssueFullInvoiceArgs = {
   tenantId: string;
   orderId: string;
   buyer: FullInvoiceBuyer;
   issuedBy?: string | null;
-}): Promise<IssueFullResult> {
+};
+
+export async function issueFullTaxInvoice(args: IssueFullInvoiceArgs): Promise<IssueFullResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, args.tenantId, { editorId: args.issuedBy ?? null });
+    const result = await issueFullTaxInvoiceInTx(client, args);
+    await client.query(result.status === "ISSUED" ? "COMMIT" : "ROLLBACK");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally { client.release(); }
+}
+
+/** Caller owns the transaction: request review and tax issuance must commit together. */
+export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFullInvoiceArgs): Promise<IssueFullResult> {
   const { tenantId, orderId, buyer } = args;
   if (!buyer?.name?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุชื่อผู้ซื้อ" };
   if (!buyer?.taxId?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุเลขประจำตัวผู้เสียภาษี" };
@@ -539,12 +555,9 @@ export async function issueFullTaxInvoice(args: {
     return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุที่อยู่ผู้ซื้อสำหรับใบกำกับภาษีเต็มรูป" };
   }
 
-  const settings = await getVatSettings(tenantId);
+  const settings = await getVatSettings(tenantId, client);
   if (!settings.vatRegistered) return { status: "NOT_VAT_REGISTERED" };
 
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId, { editorId: args.issuedBy ?? null });
 
     const ord = await client.query<{ location_id: string; status: string; voided_at: Date | null }>(
       `SELECT location_id, status, voided_at
@@ -552,11 +565,9 @@ export async function issueFullTaxInvoice(args: {
       [tenantId, orderId]
     );
     if (!ord.rowCount) {
-      await client.query("ROLLBACK");
       return { status: "ORDER_NOT_FOUND" };
     }
     if (ord.rows[0].status !== "COMPLETED" || ord.rows[0].voided_at != null) {
-      await client.query("ROLLBACK");
       return {
         status: "ORDER_NOT_INVOICEABLE",
         reason: ord.rows[0].voided_at != null
@@ -572,7 +583,6 @@ export async function issueFullTaxInvoice(args: {
       [tenantId, orderId]
     );
     if (returned.rowCount) {
-      await client.query("ROLLBACK");
       return {
         status: "ORDER_NOT_INVOICEABLE",
         reason: "บิลนี้มีการคืนสินค้าบางส่วนแล้ว กรุณาใช้เอกสารเดิมและใบลดหนี้",
@@ -583,7 +593,6 @@ export async function issueFullTaxInvoice(args: {
     const sellerIdentity = await taxDocumentSellerInTx(client, tenantId, locationId);
     if (!sellerIdentity.name || !sellerIdentity.address || !sellerIdentity.branchCode
         || !sellerIdentity.taxId || !isValidThaiTaxId(sellerIdentity.taxId)) {
-      await client.query("ROLLBACK");
       return {
         status: "SELLER_INCOMPLETE",
         reason: "กรุณาตั้งชื่อ ที่อยู่สถานประกอบการ และเลขผู้เสียภาษีของร้านที่ checksum ถูกต้องก่อนออกใบเต็ม",
@@ -596,14 +605,19 @@ export async function issueFullTaxInvoice(args: {
       [tenantId, orderId]
     );
     if (already.rowCount) {
-      await client.query("ROLLBACK");
       return { status: "ALREADY_ISSUED", document: mapDoc(already.rows[0]) };
     }
 
-    const { breakdown, lines } = await applyOrderVatInTx(client, tenantId, orderId, settings);
+    // Replacing an issued receipt must preserve sale-time tax, even if settings changed later.
+    const original = await client.query(
+      `SELECT * FROM bms_tax_documents WHERE tenant_id=$1 AND order_id=$2
+        AND doc_type='ABBREVIATED' AND cancelled_at IS NULL FOR UPDATE`, [tenantId, orderId]
+    );
+    const { breakdown, lines } = original.rows[0]
+      ? { breakdown: mapDoc(original.rows[0]), lines: await loadOrderLinesInTx(client, tenantId, orderId) }
+      : await applyOrderVatInTx(client, tenantId, orderId, settings);
     const missing = unresolvedVatSkus(lines);
     if (missing.length > 0) {
-      await client.query("ROLLBACK");
       return { status: "VAT_CATEGORY_MISSING", skus: missing };
     }
 
@@ -664,14 +678,7 @@ export async function issueFullTaxInvoice(args: {
         replaces: cancelled?.docNo ?? null,
       })]
     );
-    await client.query("COMMIT");
     return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 // ---------------------------------------------------------------
@@ -880,9 +887,10 @@ export type FullTaxInvoiceView = {
 export async function getFullTaxInvoiceView(
   tenantId: string,
   documentId: string,
-  allowedLocationIds?: string[] | null
+  allowedLocationIds?: string[] | null,
+  reader: { query: typeof query } = { query }
 ): Promise<FullTaxInvoiceView | null> {
-  const res = await query<any>(
+  const res = await reader.query<any>(
     `SELECT d.*, prev.doc_no AS replaces_doc_no,
             COALESCE(d.seller_name, t.name) AS seller_name,
             COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
@@ -903,11 +911,10 @@ export async function getFullTaxInvoiceView(
   );
   const d = res.rows[0];
   if (!d) return null;
-  const items = await query<any>(
+  const items = await reader.query<any>(
     `SELECT oi.product_sku, oi.size, oi.qty, oi.line_amount, oi.pack_qty, oi.pack_unit_name,
-            COALESCE(NULLIF(oi.receipt_name, ''), NULLIF(oi.product_name, ''), p.name, oi.product_sku) AS item_name
+            COALESCE(NULLIF(oi.product_name, ''), oi.product_sku) AS item_name
        FROM bms_order_items oi
-       LEFT JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND oi.order_id = $2
       ORDER BY oi.id`,
     [tenantId, d.order_id]
@@ -925,6 +932,14 @@ export async function getFullTaxInvoiceView(
       amount,
     };
   });
+  const extras = await reader.query<any>(
+    `SELECT label,qty,unit_amount FROM bms_order_extra_lines
+      WHERE tenant_id=$1 AND order_id=$2 ORDER BY id`, [tenantId, d.order_id]
+  );
+  for (const row of extras.rows) {
+    lines.push({ sku: "", name: row.label, size: "", qty: Number(row.qty), unit: "หน่วย",
+      unitPrice: Number(row.unit_amount), amount: Math.round(Number(row.qty) * Number(row.unit_amount) * 100) / 100 });
+  }
   const subtotal = Math.round(lines.reduce((sum: number, line: any) => sum + line.amount, 0) * 100) / 100;
   const taxableAmount = Number(d.taxable_amount);
   const exemptAmount = Number(d.exempt_amount);

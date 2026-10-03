@@ -4184,6 +4184,7 @@ type BmsPosReceipt {
   shiftId: ID
   soldAt: String!
   sourceChannel: String!
+  taxRequestUrl: String
   total: Float!
   vat: BmsPosReceiptVat
   voidedAt: String

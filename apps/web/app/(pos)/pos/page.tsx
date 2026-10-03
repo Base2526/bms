@@ -810,6 +810,7 @@ type ReceiptVat = {
 };
 
 type Receipt = {
+  taxRequestUrl?: string | null;
   orderId?: string | null;
   receiptNo?: string | null;
   billNo?: string | null;
@@ -4710,6 +4711,7 @@ export default function PosPage() {
       }
       const serverReceipt: Receipt = {
         orderId: data.sale.orderId ?? null,
+        taxRequestUrl: data.sale.taxRequestUrl ?? null,
         docNo: data.sale.docNo ?? null,
         receiptNo: data.sale.receiptNo ?? data.sale.docNo ?? null,
         billNo: data.sale.billNo ?? data.sale.docNo ?? null,
@@ -4797,6 +4799,7 @@ export default function PosPage() {
         sales.map((sale: any, saleIndex: number) => ({
           orderId: sale.orderId ?? null,
           docNo: sale.docNo ?? null,
+          taxRequestUrl: sale.taxRequestUrl ?? null,
           receiptNo: sale.receiptNo ?? sale.docNo ?? null,
           billNo: sale.billNo ?? sale.docNo ?? null,
           sourceChannel: sale.sourceChannel ?? "pos",
@@ -5246,6 +5249,7 @@ export default function PosPage() {
       change: r.change,
     }];
     return ({
+      taxRequestUrl: nonSaleReceipt ? null : r.taxRequestUrl ?? null,
       languageMode: receiptLanguageMode,
       storeName: r.storeName ?? session?.location?.name ?? "",
       storeAddress: session?.store?.address ?? null,
@@ -5831,6 +5835,7 @@ export default function PosPage() {
           receiptNo: data.receiptNo ?? data.docNo ?? null,
           billNo: data.billNo ?? data.docNo ?? null,
           docNo: data.docNo ?? null,
+          taxRequestUrl: data.taxRequestUrl ?? null,
           saleLocationId: data.saleLocationId ?? session.location?.id ?? null,
           posDeviceId: data.posDeviceId ?? session.device.id ?? null,
           shiftId: data.shiftId ?? session.shift.id ?? null,
