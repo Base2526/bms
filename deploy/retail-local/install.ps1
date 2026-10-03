@@ -42,35 +42,35 @@ function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue
     if ($Options[$index].Value -eq $DefaultValue) { $defaultIndex = $index + 1; break }
   }
   while ($true) {
-    $answer = Read-Host ("เลือกหมายเลข [{0}]" -f $defaultIndex)
+    $answer = Read-Host ("Select a number [{0}]" -f $defaultIndex)
     if (-not $answer) { return $DefaultValue }
     $number = 0
     if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $Options.Count) {
       return [string]$Options[$number - 1].Value
     }
-    Write-Host "กรุณาเลือกหมายเลข 1-$($Options.Count)" -ForegroundColor Yellow
+    Write-Host "Enter a number from 1 to $($Options.Count)" -ForegroundColor Yellow
   }
 }
 
 function Get-ShopArchetypeCatalog([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    throw "ไม่พบ shop-archetypes manifest: $Path"
+    throw "shop-archetypes manifest not found: $Path"
   }
   $manifest = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
   if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
-    throw "shop-archetypes manifest version ไม่รองรับ"
+    throw "Unsupported shop-archetypes manifest version"
   }
   $seen = @{}
   $options = @()
   foreach ($entry in @($manifest.archetypes)) {
     $id = [string]$entry.id
     if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
-      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+      throw "Invalid or duplicate shop-archetypes manifest ID: $id"
     }
     $seen[$id] = $true
     if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
-      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
-      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $label = if (($entry.labels.PSObject.Properties.Name -contains 'en') -and
+          -not [string]::IsNullOrWhiteSpace([string]$entry.labels.en)) { [string]$entry.labels.en } else { $id }
       $options += [pscustomobject]@{
         Value = $id
         Label = $label
@@ -78,10 +78,10 @@ function Get-ShopArchetypeCatalog([string]$Path) {
       }
     }
   }
-  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  if ($options.Count -eq 0) { throw "The shop-archetypes manifest has no types enabled for installation" }
   $defaultValue = [string]$manifest.defaultArchetype
   if ($defaultValue -notin @($options | ForEach-Object Value)) {
-    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+    throw "defaultArchetype is not enabled for installation: $defaultValue"
   }
   return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
 }
@@ -113,9 +113,9 @@ if (-not (Test-Path -LiteralPath $ctx.EnvFile)) {
 Protect-RetailLocalSecretFile -Path $ctx.EnvFile
 $webPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WEB_PORT")
 $wsPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WS_PORT")
-if ($webPort -lt 1 -or $wsPort -lt 1) { throw "ค่า BMS_LOCAL_WEB_PORT/BMS_LOCAL_WS_PORT ไม่ถูกต้อง" }
+if ($webPort -lt 1 -or $wsPort -lt 1) { throw "Invalid BMS_LOCAL_WEB_PORT/BMS_LOCAL_WS_PORT" }
 if ($release -and ($webPort -ne 3100 -or $wsPort -ne 3101)) {
-  throw "portable package นี้ build สำหรับพอร์ต 3100/3101 เท่านั้น"
+  throw "This portable package was built for ports 3100/3101 only"
 }
 
 New-Item -ItemType Directory -Force -Path $ctx.StorageDirectory | Out-Null
@@ -126,50 +126,50 @@ if (-not (Test-Path -LiteralPath $archetypeManifestPath -PathType Leaf)) {
 if ($release) {
   if ([string]$release.shopArchetypes.file -ne "shop-archetypes.json" -or
       [string]$release.shopArchetypes.sha256 -notmatch '^[a-f0-9]{64}$') {
-    throw "release.json ขาด shop-archetypes contract"
+    throw "release.json is missing the shop-archetypes contract"
   }
   $actualArchetypeHash = (Get-FileHash -LiteralPath $archetypeManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
   if ($actualArchetypeHash -ne [string]$release.shopArchetypes.sha256) {
-    throw "shop-archetypes manifest checksum ไม่ตรงกับ release"
+    throw "shop-archetypes manifest checksum does not match the release"
   }
 }
 $archetypeCatalog = Get-ShopArchetypeCatalog $archetypeManifestPath
-if (-not $ShopName) { $ShopName = Read-Host "ชื่อร้าน" }
+if (-not $ShopName) { $ShopName = Read-Host "Shop name" }
 if (-not $BusinessArchetype) {
-  $BusinessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+  $BusinessArchetype = Read-MenuChoice "Shop type (used for defaults and sample products)" `
     $archetypeCatalog.Options $archetypeCatalog.DefaultValue
 } elseif ($BusinessArchetype -notin @($archetypeCatalog.Options | ForEach-Object Value)) {
-  throw "ประเภทร้าน '$BusinessArchetype' ไม่เปิดให้ติดตั้งใน release นี้"
+  throw "Shop type '$BusinessArchetype' is not enabled for installation in this release"
 }
 $selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $BusinessArchetype)[0]
 if (-not $selectedArchetype.StarterCatalog) {
   if ($SampleMode -eq "STARTER_CATALOG") {
-    throw "ประเภทร้าน '$BusinessArchetype' ไม่มี Starter Catalog ใน release นี้"
+    throw "Shop type '$BusinessArchetype' has no Starter Catalog in this release"
   }
   $SampleMode = "NONE"
-  Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+  Write-Host "This release has no Starter Catalog for this shop type; starting with an empty shop" -ForegroundColor Yellow
 } elseif (-not $SampleMode) {
-  $SampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog สำหรับทดลองใช้งานหรือไม่? (สินค้าเป็น Draft, สต็อก 0, ยังขายไม่ได้)" @(
-    [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
-    [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+  $SampleMode = Read-MenuChoice "Create a Starter Catalog to try the system? (Draft products, zero stock, not ready for sale)" @(
+    [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "Create sample data for this shop type" },
+    [pscustomobject]@{ Value = "NONE"; Label = "Do not create sample data" }
   ) "STARTER_CATALOG"
 }
-if (-not $AdminName) { $AdminName = Read-Host "ชื่อผู้ดูแลร้าน" }
-if (-not $AdminEmail) { $AdminEmail = Read-Host "อีเมลผู้ดูแลร้าน" }
-$adminPasswordSecure = Read-RequiredSecureString "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" $AdminPassword
-$adminPinSecure = Read-RequiredSecureString "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" $AdminPin
+if (-not $AdminName) { $AdminName = Read-Host "Shop administrator name" }
+if (-not $AdminEmail) { $AdminEmail = Read-Host "Shop administrator email" }
+$adminPasswordSecure = Read-RequiredSecureString "Administrator password (at least 8 characters)" $AdminPassword
+$adminPinSecure = Read-RequiredSecureString "POS PIN (4-8 digits)" $AdminPin
 $adminPasswordPlain = ConvertTo-PlainSecret $adminPasswordSecure
 $adminPinPlain = ConvertTo-PlainSecret $adminPinSecure
 
 $composeArgs = Get-RetailLocalComposeArgs -Context $ctx
 if (-not $release) {
-  Write-Host "กำลัง build จาก source (อาจใช้เวลาหลายนาที)..." -ForegroundColor Cyan
+  Write-Host "Building from source (this may take several minutes)..." -ForegroundColor Cyan
   & docker @composeArgs build migrate ws
-  if ($LASTEXITCODE -ne 0) { throw "Build BMS Retail Local ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "BMS Retail Local build failed" }
 }
 
 & docker @composeArgs config --quiet
-if ($LASTEXITCODE -ne 0) { throw "Docker Compose configuration ไม่ถูกต้อง" }
+if ($LASTEXITCODE -ne 0) { throw "Invalid Docker Compose configuration" }
 
 $env:BMS_LOCAL_SHOP_NAME = $ShopName
 $env:BMS_LOCAL_SHOP_SLUG = $ShopSlug
@@ -193,24 +193,24 @@ try {
 }
 
 $resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
-if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
+if (-not $resultLine) { throw "Provisioning completed but no readable result was found" }
 $result = $resultLine | ConvertFrom-Json
 
 & docker @composeArgs up -d
-if ($LASTEXITCODE -ne 0) { throw "เริ่ม BMS Retail Local ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to start BMS Retail Local" }
 Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 Test-RetailLocalHttp -WebPort $webPort -WsPort $wsPort
 
 Write-Host ""
-Write-Host "BMS Retail Local พร้อมใช้งาน: http://127.0.0.1:$webPort" -ForegroundColor Green
+Write-Host "BMS Retail Local is ready: http://127.0.0.1:$webPort" -ForegroundColor Green
 Write-Host "Admin: $AdminEmail"
-Write-Host "ประเภทร้าน: $($result.businessArchetype)"
+Write-Host "Shop type: $($result.businessArchetype)"
 if ($result.deviceToken) {
-  Write-Host "POS pairing token (แสดงครั้งเดียว):" -ForegroundColor Yellow
+  Write-Host "POS pairing token (shown once):" -ForegroundColor Yellow
   Write-Host $result.deviceToken
-  Write-Host "นำ token ไปจับคู่ใน BMS POS แล้วเก็บ/ทำลายบันทึกที่มี token อย่างปลอดภัย"
+  Write-Host "Use the token to pair BMS POS, then securely store or destroy any record containing the token"
 } else {
-  Write-Host "ร้านนี้ provision แล้ว หากต้องการ token ใหม่ ให้ออกจากหน้า Admin > POS Devices" -ForegroundColor Yellow
+  Write-Host "This shop is already provisioned. Issue a new token from Admin > POS Devices" -ForegroundColor Yellow
 }
 
 # Run optional sample data only after the shop is healthy and the one-time token has been handed to
@@ -226,9 +226,9 @@ if ($result.sampleData.status -eq "PENDING") {
   }
 }
 if ($result.sampleData.status -in @("COMPLETED", "ALREADY_COMPLETED")) {
-  Write-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" -ForegroundColor Green
+  Write-Host "Sample data created for the selected shop type" -ForegroundColor Green
 } elseif ($result.sampleData.status -eq "FAILED") {
-  Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
+  Write-Warning "Sample data setup is incomplete. The shop is usable; retry from the onboarding page"
 }
 $receipt = [ordered]@{
   product = "BMS Retail Local"
@@ -243,4 +243,4 @@ $receipt = [ordered]@{
   sampleStatus = $result.sampleData.status
 }
 Set-Content -LiteralPath (Join-Path $localRoot "installation.json") -Value ($receipt | ConvertTo-Json) -Encoding utf8NoBOM
-Write-Host "รัน .\doctor.ps1 เพื่อตรวจระบบซ้ำได้ทุกเมื่อ"
+Write-Host "Run .\doctor.ps1 to check the system at any time"

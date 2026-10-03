@@ -28,8 +28,8 @@ var (
 	downloadProgressInterval = 500 * time.Millisecond
 )
 
-var errDownloadIdle = errors.New("download ไม่มีข้อมูลใหม่เกินเวลาที่กำหนด")
-var errComponentChecksum = errors.New("component checksum/size ไม่ตรง")
+var errDownloadIdle = errors.New("Download timed out while waiting for data")
+var errComponentChecksum = errors.New("Component checksum or size mismatch")
 
 type downloadProgressWriter struct {
 	w        io.Writer
@@ -110,13 +110,13 @@ func stageDesktopWithTestCA(ctx context.Context, manifestPath, keyringPath, targ
 	for _, component := range verified.Payload.Components {
 		if component.Name == "desktop" {
 			if component.Kind != "desktop" {
-				return nil, errors.New("signed release desktop component มี kind ไม่ถูกต้อง")
+				return nil, errors.New("Invalid desktop component kind in signed release")
 			}
 			desktop = append(desktop, component)
 		}
 	}
 	if len(desktop) != 1 {
-		return nil, errors.New("signed release ต้องมี desktop component หนึ่งรายการ")
+		return nil, errors.New("Signed release must contain exactly one desktop component")
 	}
 	return stageVerifiedComponents(ctx, verified, root, desktop, testCAPath, reporters...)
 }
@@ -124,7 +124,7 @@ func stageDesktopWithTestCA(ctx context.Context, manifestPath, keyringPath, targ
 func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root string, components []releaseComponent,
 	testCAPath string, reporters ...progressReporter) (map[string]any, error) {
 	if err := os.MkdirAll(root, 0700); err != nil {
-		return nil, fmt.Errorf("สร้าง Managed Runtime root ไม่ได้: %w", err)
+		return nil, fmt.Errorf("Could not create Managed Runtime root: %w", err)
 	}
 	releaseRoot := filepath.Join(root, "releases", verified.Payload.ReleaseVersion)
 	if err := os.MkdirAll(releaseRoot, 0700); err != nil {
@@ -153,17 +153,17 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 	if testCAPath != "" {
 		certificate, err := os.ReadFile(testCAPath)
 		if err != nil {
-			return nil, fmt.Errorf("อ่าน test release CA ไม่ได้: %w", err)
+			return nil, fmt.Errorf("Could not read test release CA: %w", err)
 		}
 		roots := x509.NewCertPool()
 		if !roots.AppendCertsFromPEM(certificate) {
-			return nil, errors.New("test release CA ไม่ใช่ PEM certificate ที่ถูกต้อง")
+			return nil, errors.New("Test release CA is not a valid PEM certificate")
 		}
 		tlsConfig.RootCAs = roots
 		for _, component := range components {
 			parsed, parseErr := url.Parse(component.URL)
 			if parseErr != nil || parsed.Scheme != "https" || !isLoopbackReleaseHost(parsed.Hostname()) {
-				return nil, fmt.Errorf("test release CA ใช้ได้เฉพาะ component URL บน loopback: %s", component.Name)
+				return nil, fmt.Errorf("Test release CA is allowed only for loopback component URLs: %s", component.Name)
 			}
 		}
 	}
@@ -175,10 +175,10 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 		ResponseHeaderTimeout: 30 * time.Second,
 	}, CheckRedirect: func(request *http.Request, via []*http.Request) error {
 		if request.URL.Scheme != "https" || request.URL.User != nil {
-			return errors.New("ปฏิเสธ redirect ที่ไม่ใช่ HTTPS หรือมี credential")
+			return errors.New("Redirect refused: HTTPS without credentials is required")
 		}
 		if len(via) >= 5 {
-			return errors.New("redirect มากเกินไป")
+			return errors.New("Too many redirects")
 		}
 		return nil
 	}, Timeout: 0}
@@ -191,7 +191,7 @@ func stageVerifiedComponents(ctx context.Context, verified verifiedRelease, root
 	for _, component := range components {
 		destination := filepath.Join(releaseRoot, safeArtifactName(component.Name))
 		if err := downloadComponent(ctx, client, component, destination, completedBytes, totalBytes, reporters...); err != nil {
-			return nil, fmt.Errorf("download %s ไม่สำเร็จ: %w", component.Name, err)
+			return nil, fmt.Errorf("Failed to download %s: %w", component.Name, err)
 		}
 		completedBytes += component.SizeBytes
 		state.CompletedComponents[component.Name] = true
@@ -360,7 +360,7 @@ func downloadComponentAttempt(ctx context.Context, client *http.Client, componen
 		if response.StatusCode == http.StatusPartialContent && offset == 0 {
 			response.Body.Close()
 			cancelAttempt()
-			return errors.New("server ส่ง partial response โดยไม่ได้ร้องขอ")
+			return errors.New("Server sent an unsolicited partial response")
 		}
 		if response.StatusCode == http.StatusPartialContent {
 			var start, end, size int64
@@ -406,7 +406,7 @@ func downloadComponentAttempt(ctx context.Context, client *http.Client, componen
 			return statErr
 		}
 		if current.Size() > component.SizeBytes {
-			return fmt.Errorf("ขนาด download เกิน manifest: ต้องการ %d ได้ %d", component.SizeBytes, current.Size())
+			return fmt.Errorf("Download exceeds manifest size: expected %d, received %d", component.SizeBytes, current.Size())
 		}
 		if err := waitBeforeDownloadRetry(ctx, reporters, component, completedBefore, totalBytes,
 			current.Size(), attempt); err != nil {
@@ -414,7 +414,7 @@ func downloadComponentAttempt(ctx context.Context, client *http.Client, componen
 		}
 	}
 	if !downloadComplete {
-		return fmt.Errorf("download ล้มเหลวหลังลอง %d ครั้ง: %w", downloadMaxAttempts, lastDownloadErr)
+		return fmt.Errorf("Download failed after %d attempts: %w", downloadMaxAttempts, lastDownloadErr)
 	}
 	if err := file.Sync(); err != nil {
 		return err
@@ -550,7 +550,7 @@ func loadOrCreateState(path string, payload releasePayload) (installState, error
 		return state, nil
 	}
 	if existing.FormatVersion != 1 || existing.PlatformTarget != payload.PlatformTarget || existing.ReleaseVersion != payload.ReleaseVersion {
-		return installState{}, errors.New("มี installation state ของ release/target อื่น ต้อง recovery ให้เสร็จก่อน")
+		return installState{}, errors.New("Installation state exists for another release or target; complete recovery first")
 	}
 	if existing.CompletedComponents == nil {
 		existing.CompletedComponents = map[string]bool{}
@@ -593,7 +593,7 @@ func acquireInstallLock(root string) (func(), error) {
 	}
 	if err := lockInstallFile(file); err != nil {
 		file.Close()
-		return nil, errors.New("มี Managed Runtime install/update อื่นกำลังทำงาน")
+		return nil, errors.New("Another Managed Runtime installation or update is running")
 	}
 	// Keep the inode: deleting it would allow a second process to lock a different file.
 	// The OS releases this lock even on forced termination or a reboot.
@@ -603,7 +603,7 @@ func acquireInstallLock(root string) (func(), error) {
 		_, _ = fmt.Sscanf(string(contents), "pid=%d", &pid)
 		if pid > 0 && processAlive(pid) {
 			file.Close()
-			return nil, errors.New("มี Managed Runtime รุ่นก่อนกำลังทำงาน")
+			return nil, errors.New("An earlier Managed Runtime version is running")
 		}
 	}
 	if err == nil {

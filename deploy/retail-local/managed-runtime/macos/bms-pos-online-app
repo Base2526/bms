@@ -11,14 +11,14 @@ readonly SOURCE_SETUP="$SOURCE_CONTENTS/Resources/BMS POS Online Setup.command"
 readonly LAUNCHERS_ROOT="$HOME/Library/Application Support/BMS/POSBootstrap/Launchers"
 
 [[ -x $SOURCE_SETUP && -s $SOURCE_BOOTSTRAP/BOOTSTRAP_VERSION && -s $SOURCE_BOOTSTRAP/PLATFORM_TARGET ]] || {
-  osascript -e 'display alert "BMS POS" message "ไฟล์ Online Setup ไม่ครบ กรุณาดาวน์โหลด DMG ใหม่" as critical'
+  osascript -e 'display alert "BMS POS" message "Online Setup files are incomplete. Download the DMG again" as critical'
   exit 1
 }
 
 bootstrap_version=$(tr -d '\r\n' <"$SOURCE_BOOTSTRAP/BOOTSTRAP_VERSION")
 platform_target=$(tr -d '\r\n' <"$SOURCE_BOOTSTRAP/PLATFORM_TARGET")
 [[ $bootstrap_version =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ && $platform_target =~ ^macos-15-(arm64|x64)$ ]] || {
-  osascript -e 'display alert "BMS POS" message "ข้อมูล Online Setup ไม่ถูกต้อง กรุณาดาวน์โหลด DMG ใหม่" as critical'
+  osascript -e 'display alert "BMS POS" message "Invalid Online Setup data. Download the DMG again" as critical'
   exit 1
 }
 
@@ -38,7 +38,7 @@ rm -rf -- "$partial_app" "$previous_app"
 trap 'rm -rf -- "$partial_app" "$previous_app"' EXIT HUP INT TERM
 /usr/bin/ditto --noqtn "$SOURCE_APP" "$partial_app"
 [[ -x $partial_app/Contents/Resources/BMS\ POS\ Online\ Setup.command ]] || {
-  osascript -e 'display alert "BMS POS" message "เตรียม Online Setup ไม่สำเร็จ กรุณาลองใหม่" as critical'
+  osascript -e 'display alert "BMS POS" message "Could not prepare Online Setup. Please try again" as critical'
   exit 1
 }
 if [[ -e $stable_app ]]; then

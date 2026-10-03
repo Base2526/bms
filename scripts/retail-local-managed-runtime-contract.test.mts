@@ -154,13 +154,13 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(hostControl, /verify-release/);
   assert.match(hostControl, /extract_runtime/);
   assert.match(hostControl, /install_pos_desktop/);
-  assert.match(hostControl, /การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต/);
-  assert.match(hostControl, /test-release-ca\.pem[\s\S]*ใช้ได้เฉพาะ localhost[\s\S]*SSL_CERT_FILE/);
-  assert.match(hostControl, /hw\.optional\.arm64[\s\S]*ไฟล์ติดตั้งไม่ตรงกับ CPU เครื่องนี้/);
+  assert.match(hostControl, /First installation requires internet access/);
+  assert.match(hostControl, /test-release-ca\.pem[\s\S]*allowed only for localhost[\s\S]*SSL_CERT_FILE/);
+  assert.match(hostControl, /hw\.optional\.arm64[\s\S]*Installer does not match this CPU/);
   assert.match(hostControl, /embedded_installation_available[\s\S]*activate_embedded_installation/);
-  assert.match(hostControl, /พบข้อมูลร้านจาก Offline Installer เดิม[\s\S]*ไม่แตะข้อมูลร้าน/);
-  assert.match(hostControl, /runtime release ไม่ครบ[\s\S]*อย่าลบข้อมูลร้าน/);
-  assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*กำลังลองสร้างตามตัวเลือกของผู้ใช้/);
+  assert.match(hostControl, /Existing shop data from an Offline Installer[\s\S]*preserving shop data/);
+  assert.match(hostControl, /runtime release is incomplete[\s\S]*do not delete shop data/);
+  assert.match(hostControl, /SAMPLE_MODE != STARTER_CATALOG[\s\S]*Retrying the selected sample data setup/);
   assert.match(hostControl, /businessArchetype[\s\S]*sampleMode[\s\S]*sampleStatus/);
   assert.match(hostControl, /render_stage_output[\s\S]*retryAfterSeconds[\s\S]*heartbeat/);
   assert.doesNotMatch(hostControl, /curl_tls\[@\]/);
@@ -251,13 +251,13 @@ test("platform preflights are read-only and preserve the Windows 10 support boun
   assert.match(windows, /build -ge 22000/);
   assert.doesNotMatch(windows, /Enable-WindowsOptionalFeature|wsl(?:\.exe)?\s+--install|Start-Process/);
   assert.match(windowsAgent, /Get-WindowsOptionalFeature[\s\S]*catch\{& wsl\.exe --status/);
-  assert.match(windowsAgent, /CIM รายงาน virtualization เป็นปิด แต่ WSL พร้อมใช้งาน/);
+  assert.match(windowsAgent, /CIM reports virtualization as disabled, but WSL is available/);
   assert.match(windowsAgent, /command\.CombinedOutput\(\)/);
 
   assert.match(linux, /ubuntu/);
   assert.match(linux, /24\.04/);
   assert.match(linux, /22\.04/);
-  assert.match(linux, /PID 1 ไม่ใช่ systemd/);
+  assert.match(linux, /PID 1 is not systemd/);
   assert.doesNotMatch(linux, /apt(?:-get)?\s+install|dnf\s+install|systemctl\s+(?:enable|start)/);
 });
 
@@ -274,20 +274,20 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(agentMain, /errPreflightFailed/);
   assert.match(agentMain, /preflight \[--human\]/);
   assert.match(darwin, /case "amd64":[\s\S]*macos-15-x64/);
-  assert.match(darwin, /พื้นที่ว่างปัจจุบัน/);
+  assert.match(darwin, /Free disk space:/);
   assert.doesNotMatch(darwin, /รองรับเฉพาะ Mac ที่ใช้ Apple Silicon/);
 
   for (const installer of [windows, linux]) {
     assert.match(installer, /provision-result\.json/);
-    assert.match(installer, /ยืนยันรหัสผ่านอีกครั้ง/);
-    assert.match(installer, /ยืนยัน PIN อีกครั้ง/);
+    assert.match(installer, /Confirm password/);
+    assert.match(installer, /Confirm PIN/);
     assert.match(installer, /\[BMS/);
     assert.match(installer, /BMS_LOCAL_BUSINESS_ARCHETYPE/);
     assert.match(installer, /BMS_LOCAL_SAMPLE_MODE/);
-    assert.match(installer, /สร้างข้อมูลตัวอย่างตามประเภทร้าน|Starter Catalog/);
+    assert.match(installer, /Create sample data for this shop type|Starter Catalog/);
   }
   assert.match(windows, /preflight\.warnings/);
-  assert.match(windows, /กด Enter เพื่อปิดหน้าต่างนี้/);
+  assert.match(windows, /Press Enter to close this window/);
   assert.match(linux, /\.warnings\[\]\?/);
   assert.match(inno, /ResultCode <> 0[\s\S]*ReportBootstrapFailure[\s\S]*exit;/);
   assert.match(inno, /function GetCustomSetupExitCode\(\): Integer;[\s\S]*if BootstrapFailed then Result := 1/);
@@ -307,14 +307,14 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /function Invoke-WslCommand[\s\S]*ExitCode = \$exitCode/);
   assert.match(windows, /runtime-install-control/);
   assert.match(inno, /runtime-rootfs\\bms-wsl-keepalive/);
-  assert.equal((windows.match(/Read-RequiredText "ชื่อร้าน"/g) ?? []).length, 1);
+  assert.equal((windows.match(/Read-RequiredText "Shop name"/g) ?? []).length, 1);
   assert.match(windows, /New-ScheduledTaskTrigger -AtStartup/);
   assert.match(windows, /New-ScheduledTaskPrincipal[\s\S]*-LogonType S4U/);
   assert.match(windows, /ArgumentList "\/S", "\/allusers"/);
   assert.match(windows, /BMS Retail Local POS Pairing[\s\S]*-LogonType Interactive/);
   assert.match(windows, /IsNullOrWhiteSpace\(\$desktopArguments\)[\s\S]*New-ScheduledTaskAction -Execute \$desktopExecutable/);
   assert.match(windows, /ReadAllText\(\$Path, \[Text\.Encoding\]::UTF8\)/);
-  assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*ยังทำงานอยู่/);
+  assert.match(windows, /BMS_PROGRESS[\s\S]*Write-Progress[\s\S]*Still working/);
   assert.match(agentStage, /downloadMaxAttempts\s*=\s*5/);
   assert.match(agentStage, /downloadIdleTimeout\s*=\s*45 \* time\.Second/);
   assert.match(agentStage, /Header\.Set\("Range", "bytes="\+strconv\.FormatInt\(offset, 10\)\+"-"\)/);
@@ -323,7 +323,7 @@ test("Managed Runtime setup UX preserves actionable preflight and resumable prov
   assert.match(windows, /wslVersion[\s\S]*--version[\s\S]*finishing an upgrade/);
   assert.match(inno, /SW_SHOWMAXIMIZED/);
   assert.match(inno, /\[UninstallRun\][\s\S]*-NonInteractive -WindowStyle Hidden[\s\S]*runhidden waituntilterminated/);
-  assert.match(inno, /CurUninstallStepChanged[\s\S]*ปกติไม่เกิน 15 วินาที/);
+  assert.match(inno, /CurUninstallStepChanged[\s\S]*usually within 15 seconds/);
   assert.match(windowsUninstall, /Stop-ScheduledTask[\s\S]*Unregister-ScheduledTask/);
   assert.match(windowsUninstall, /BMS Retail Local POS Pairing/);
   assert.match(windowsUninstall, /INSTALLATION_DEACTIVATED" 3[\s\S]*--terminate BMSRuntime" 10/);
@@ -441,7 +441,7 @@ test("managed lifecycle keeps backups encrypted and permanent erase explicit", (
   assert.match(linuxUninstall, /--erase-data[\s\S]*ERASE-BMS-RETAIL-LOCAL[\s\S]*down[\s\S]*--volumes/);
   assert.match(macosControl, /uninstall\) shift; uninstall_runtime/);
   assert.match(macosControl, /--erase-data[\s\S]*--confirm[\s\S]*ERASE-BMS-RETAIL-LOCAL/);
-  assert.match(macosControl, /ข้อมูลร้าน, private VM และ secrets ยังอยู่/);
+  assert.match(macosControl, /Shop data, private VM, and secrets are preserved/);
   assert.match(macosControl, /delete -f "\$INSTANCE"[\s\S]*rm -rf -- "\$STATE_ROOT" "\$LIMA_HOME"/);
   assert.match(macosControl, /sudo pkgutil --forget com\.base2526\.bms\.retail-local/);
 });
@@ -471,7 +471,7 @@ test("Linux and macOS uninstall disable relaunch sources and bound slow cleanup"
     macosControl.indexOf('run_with_timeout 3 "$AGENT" license-pulse'));
   assert.match(macosControl, /run_with_timeout 5 launchctl bootout "\$LAUNCH_LABEL"/);
   assert.match(macosControl, /run_with_timeout 10 "\$LIMACTL" stop "\$INSTANCE"/);
-  assert.match(macosControl, /run_with_timeout 60 "\$LIMACTL" delete -f "\$INSTANCE"[\s\S]*die "ลบ private VM ไม่สำเร็จ/);
+  assert.match(macosControl, /run_with_timeout 60 "\$LIMACTL" delete -f "\$INSTANCE"[\s\S]*die "Could not delete the private VM/);
   assert.match(macosLauncher, /trap finish EXIT/);
 });
 
@@ -668,7 +668,7 @@ test("Retail Local licensing records evidence but can never stop store operation
   assert.match(linuxService, /ExecStartPost=-.*license-pulse/);
   assert.match(linuxEvidenceService, /ExecStart=-.*license-pulse/);
   assert.match(linuxEvidenceTimer, /OnCalendar=\*-\*-\* 03:00:00[\s\S]*Persistent=true/);
-  assert.match(linuxInstaller, /enable --now bms-retail-local-license-evidence\.timer[\s\S]*\|\|[\s\S]*ร้านยังใช้งานได้/);
+  assert.match(linuxInstaller, /enable --now bms-retail-local-license-evidence\.timer[\s\S]*\|\|[\s\S]*shop can continue operating/);
   assert.match(windowsInstaller, /New-ScheduledTaskTrigger -Daily[\s\S]*License Evidence/);
   assert.match(macosInstaller, /license-record[\s\S]*INSTALLATION_REGISTERED/);
   assert.match(macosInstaller, /license-pulse[\s\S]*\|\| true/);
@@ -699,7 +699,7 @@ test("activation and replacement recovery preserve business continuity without c
   assert.doesNotMatch(windowsInstaller, /Read-Host[^\n]*Activation Code|Invoke-RestMethod -Uri \$ActivationUri/);
   assert.match(linuxActivation, /แลก Activation Code ไม่สำเร็จ; ร้านยังใช้งานได้/);
   assert.match(windowsActivation, /ร้านยังใช้งานได้/);
-  assert.match(macosInstaller, /Activation ยังไม่สำเร็จ[\s\S]*ร้านจะติดตั้งและใช้งานต่อได้/);
+  assert.match(macosInstaller, /Activation did not complete[\s\S]*Installation and shop operations can continue/);
   assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /runtime-read[\s\S]*\/var\/lib\/bms-retail-local\/installation\.json/);
@@ -810,7 +810,7 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
 
   assert.match(agentMain, /case "verify-update"/);
   assert.match(agentMain, /case "check-update"[\s\S]*"updateAvailable": comparison > 0/);
-  assert.match(agentMain, /ปฏิเสธ release replay\/downgrade/);
+  assert.match(agentMain, /Release replay or downgrade refused/);
   assert.match(release, /compareSemver/);
   assert.match(transaction, /bms-localctl backup[\s\S]*write_phase "\$version" backed-up/);
   assert.match(transaction, /compose run --rm migrate[\s\S]*wait_healthy/);
@@ -822,7 +822,7 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   const nextReceipt = linuxUpdater.indexOf('>"$transaction_dir/installation.next.json"');
   assert.ok(nextReceipt > linuxUpdater.indexOf('bms-update-transaction begin'));
   assert.match(windowsUpdater, /Invoke-Transaction @\("begin"[\s\S]*runtime-read[\s\S]*\$current = Get-Content -LiteralPath \$nextReceiptPath/);
-  assert.match(transaction, /พบ update ที่ถูกขัดจังหวะ[\s\S]*rollback "\$version"/);
+  assert.match(transaction, /Found an interrupted update[\s\S]*rollback "\$version"/);
   const commitBlock = transaction.slice(transaction.indexOf("  commit)"), transaction.indexOf("  rollback)"));
   assert.ok(commitBlock.indexOf("take_lock") < commitBlock.indexOf("read_phase"));
   assert.match(linuxUpdater, /verify-update[\s\S]*engine-load[\s\S]*bms-update-transaction begin/);

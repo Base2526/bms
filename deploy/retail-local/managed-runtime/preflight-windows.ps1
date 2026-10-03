@@ -9,14 +9,14 @@ function Add-Failure([string]$Message) { $script:failures.Add($Message) }
 function Add-Warning([string]$Message) { $script:warnings.Add($Message) }
 
 if (-not $IsWindows) {
-  Add-Failure "preflight นี้ใช้สำหรับ Windows เท่านั้น"
+  Add-Failure "This preflight check runs on Windows only"
   $os = $null
 } else {
   $os = Get-CimInstance Win32_OperatingSystem
 }
 
 $architecture = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
-if ($architecture -ne "x64") { Add-Failure "รองรับเฉพาะ Windows x64 ใน milestone แรก (พบ $architecture)" }
+if ($architecture -ne "x64") { Add-Failure "Only Windows x64 is supported in this milestone (detected $architecture)" }
 
 $target = "unsupported"
 $requiresEsuEvidence = $false
@@ -30,26 +30,26 @@ if ($os) {
   } elseif ($build -eq 19045) {
     $target = "windows-10-22h2-esu-x64"
     $requiresEsuEvidence = $true
-    Add-Warning "Windows 10 22H2 ต้องมีหลักฐาน ESU ที่ยังใช้งานอยู่ก่อนรับรอง production"
+    Add-Warning "Windows 10 22H2 requires evidence of current ESU coverage before production approval"
   } else {
-    Add-Failure "Windows build $build ไม่อยู่ใน support matrix ของ Managed Runtime"
+    Add-Failure "Windows build $build is not in the Managed Runtime support matrix"
   }
 
   $memoryGiB = [Math]::Round($os.TotalVisibleMemorySize / 1MB, 1)
-  if ($memoryGiB -lt 8) { Add-Failure "ต้องมี RAM อย่างน้อย 8 GiB (พบ $memoryGiB GiB)" }
+  if ($memoryGiB -lt 8) { Add-Failure "At least 8 GiB of RAM is required (detected $memoryGiB GiB)" }
 
   $systemDrive = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$($os.SystemDrive)'"
   $freeGiB = [Math]::Round($systemDrive.FreeSpace / 1GB, 1)
-  if ($freeGiB -lt 8) { Add-Failure "ต้องมีพื้นที่ว่างอย่างน้อย 8 GiB (พบ $freeGiB GiB)" }
-  elseif ($freeGiB -lt 15) { Add-Warning "ควรมีพื้นที่ว่างอย่างน้อย 15 GiB สำหรับ update และ backup" }
+  if ($freeGiB -lt 8) { Add-Failure "At least 8 GiB of free disk space is required (detected $freeGiB GiB)" }
+  elseif ($freeGiB -lt 15) { Add-Warning "At least 15 GiB of free disk space is recommended for updates and backups" }
 
   $processors = @(Get-CimInstance Win32_Processor)
   $firmwareValues = @($processors | ForEach-Object { $_.VirtualizationFirmwareEnabled } |
       Where-Object { $null -ne $_ })
   if ($firmwareValues.Count -eq 0) {
-    Add-Warning "ตรวจ virtualization จาก firmware ไม่ได้; installer ขั้นถัดไปต้องตรวจ WSL2 จริง"
+    Add-Warning "Could not detect firmware virtualization; setup must verify WSL2 in the next step"
   } elseif ($true -notin $firmwareValues) {
-    Add-Failure "ยังไม่ได้เปิด hardware virtualization ใน BIOS/UEFI"
+    Add-Failure "Hardware virtualization is not enabled in BIOS/UEFI"
   }
 }
 
@@ -73,7 +73,7 @@ if ($Json) {
   foreach ($message in $failures) { Write-Host "[FAIL] $message" -ForegroundColor Red }
   if ($result.ok) {
     Write-Host "result=candidate" -ForegroundColor Green
-    Write-Host "หมายเหตุ: candidate ยังไม่ใช่การรับรอง production จนกว่าจะผ่าน hardware/failure matrix"
+    Write-Host "A candidate result is not production approval; hardware and failure testing must also pass"
   } else {
     Write-Host "result=unsupported" -ForegroundColor Red
   }

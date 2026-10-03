@@ -6,7 +6,7 @@ compose="docker compose --env-file $root/.env -f $root/compose.yml"
 die() { echo "bms-localctl: $*" >&2; exit 1; }
 require_runtime() {
   if [ ! -f "$root/.env" ] || [ ! -f "$root/compose.yml" ]; then
-    die "runtime ยังไม่ติดตั้งครบ"
+    die "Runtime installation is incomplete"
   fi
 }
 
@@ -25,16 +25,16 @@ case "${1:-}" in
     ;;
   doctor)
     require_runtime
-    docker info >/dev/null 2>&1 || die "Moby/Docker ไม่พร้อม"
+    docker info >/dev/null 2>&1 || die "Moby/Docker is not ready"
     $compose config --quiet
     for service in postgres redis web ws; do
       service_id=$($compose ps --status running -q "$service")
-      [ -n "$service_id" ] || die "service $service ไม่ได้ทำงาน"
+      [ -n "$service_id" ] || die "Service $service is not running"
       health=$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$service_id")
-      case "$health" in running|healthy) ;; *) die "service $service ไม่พร้อม: $health";; esac
+      case "$health" in running|healthy) ;; *) die "Service $service is not ready: $health";; esac
     done
-    wget -q -T 5 -O /dev/null http://127.0.0.1:3100/admin/login || die "Web health check ไม่ผ่าน"
-    wget -q -T 5 -O /dev/null http://127.0.0.1:3101/readyz || die "WS health check ไม่ผ่าน"
+    wget -q -T 5 -O /dev/null http://127.0.0.1:3100/admin/login || die "Web health check failed"
+    wget -q -T 5 -O /dev/null http://127.0.0.1:3101/readyz || die "WS health check failed"
     echo "BMS Retail Local: healthy"
     ;;
   backup)
@@ -43,12 +43,12 @@ case "${1:-}" in
     option=${3:-}
     recipient=${4:-}
     [ -n "$destination" ] || die "usage: bms-localctl backup OUTPUT.age [--recipient AGE_RECIPIENT]"
-    case "$destination" in "$root"/backups/*.age) ;; *) die "backup path ต้องอยู่ใต้ $root/backups และลงท้าย .age";; esac
+    case "$destination" in "$root"/backups/*.age) ;; *) die "Backup path must be under $root/backups and end in .age";; esac
     if [ -n "$option" ]; then
-      [ "$option" = "--recipient" ] || die "backup option ไม่ถูกต้อง"
-      echo "$recipient" | grep -Eq '^age1[0-9a-z]{58}$' || die "age recipient ไม่ถูกต้อง"
+      [ "$option" = "--recipient" ] || die "Invalid backup option"
+      echo "$recipient" | grep -Eq '^age1[0-9a-z]{58}$' || die "Invalid age recipient"
     fi
-    command -v age >/dev/null 2>&1 || die "ไม่พบ age encryption tool"
+    command -v age >/dev/null 2>&1 || die "The age encryption tool was not found"
     mkdir -p "$root/backups"
     chmod 0700 "$root/backups"
     work=$(mktemp -d "$root/.backup.XXXXXX")
@@ -84,13 +84,13 @@ case "${1:-}" in
     option=${4:-}
     identity=${5:-}
     [ -f "$source_file" ] || die "usage: bms-localctl restore BACKUP.age REPLACE-LOCAL-DATA"
-    [ "$confirmation" = "REPLACE-LOCAL-DATA" ] || die "restore ต้องยืนยันด้วย REPLACE-LOCAL-DATA"
+    [ "$confirmation" = "REPLACE-LOCAL-DATA" ] || die "Restore requires confirmation with REPLACE-LOCAL-DATA"
     if [ -n "$option" ]; then
       if [ "$option" != "--identity" ] || [ "$identity" != "$root/update-recovery.agekey" ] || [ ! -f "$identity" ]; then
-        die "restore identity ไม่ถูกต้อง"
+        die "Invalid restore identity"
       fi
     fi
-    command -v age >/dev/null 2>&1 || die "ไม่พบ age encryption tool"
+    command -v age >/dev/null 2>&1 || die "The age encryption tool was not found"
     work=$(mktemp -d "$root/.restore.XXXXXX")
     trap 'rm -rf -- "$work"' EXIT HUP INT TERM
     if [ -n "$identity" ]; then
@@ -99,21 +99,21 @@ case "${1:-}" in
       age -d -o "$work/backup.tar" "$source_file"
     fi
     members=$(tar -tf "$work/backup.tar")
-    echo "$members" | grep -Fqx 'database.dump' || die "backup ไม่มี database.dump"
-    echo "$members" | grep -Fqx 'storage.tar.gz' || die "backup ไม่มี storage.tar.gz"
-    echo "$members" | grep -Fqx '.env' || die "backup ไม่มี secrets"
+    echo "$members" | grep -Fqx 'database.dump' || die "Backup is missing database.dump"
+    echo "$members" | grep -Fqx 'storage.tar.gz' || die "Backup is missing storage.tar.gz"
+    echo "$members" | grep -Fqx '.env' || die "Backup is missing secrets"
     for member in database.dump storage.tar.gz .env compose.yml; do
-      [ "$(echo "$members" | grep -Fxc "$member")" -eq 1 ] || die "backup member $member ซ้ำหรือหาย"
+      [ "$(echo "$members" | grep -Fxc "$member")" -eq 1 ] || die "Backup member $member is duplicated or missing"
     done
     if echo "$members" | grep -Ev '^(database\.dump|storage\.tar\.gz|\.env|compose\.yml|installation\.json)$' | grep -q .; then
-      die "backup มี outer path ที่ไม่อนุญาต"
+      die "Backup contains a disallowed outer path"
     fi
     if tar -tvf "$work/backup.tar" | grep -Ev '^-' | grep -q .; then
-      die "backup ต้องมี regular files เท่านั้น"
+      die "Backup must contain regular files only"
     fi
     tar --no-same-owner --no-same-permissions -xf "$work/backup.tar" -C "$work"
     restored_password=$(sed -n 's/^POSTGRES_PASSWORD=//p' "$work/.env")
-    echo "$restored_password" | grep -Eq '^[a-f0-9]{48}$' || die "POSTGRES_PASSWORD ใน backup ไม่ถูกต้อง"
+    echo "$restored_password" | grep -Eq '^[a-f0-9]{48}$' || die "Invalid POSTGRES_PASSWORD in backup"
     $compose stop web ws >/dev/null
     $compose exec -T postgres psql -U app -d postgres -v ON_ERROR_STOP=1 \
       -c "DROP DATABASE IF EXISTS bms_local WITH (FORCE)" >/dev/null
@@ -129,7 +129,7 @@ case "${1:-}" in
     $compose run --rm migrate
     $compose up -d --remove-orphans
     "$0" doctor
-    echo "restore สำเร็จ"
+    echo "Restore complete"
     ;;
   *)
     die "usage: bms-localctl <start|stop|status|doctor|backup|restore>"

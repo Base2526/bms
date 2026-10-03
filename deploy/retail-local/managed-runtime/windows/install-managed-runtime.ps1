@@ -36,10 +36,10 @@ trap {
       [IO.File]::WriteAllText($ErrorFile, $message, [Text.UTF8Encoding]::new($false))
     } catch {}
   }
-  Write-Host "`nBMS Retail Local Setup ยังไม่สำเร็จ" -ForegroundColor Red
+  Write-Host "`nBMS Retail Local Setup did not complete" -ForegroundColor Red
   Write-Host $message -ForegroundColor Red
-  Write-Host "แก้ไขตามข้อความด้านบนแล้วเปิด installer อีกครั้ง ระบบจะติดตั้งต่อจากข้อมูลที่ปลอดภัย" -ForegroundColor Yellow
-  if ([Environment]::UserInteractive) { [void](Read-Host "กด Enter เพื่อปิดหน้าต่างนี้") }
+  Write-Host "Resolve the issues above, then run the installer again to resume setup" -ForegroundColor Yellow
+  if ([Environment]::UserInteractive) { [void](Read-Host "Press Enter to close this window") }
   exit 1
 }
 $distroName = "BMSRuntime"
@@ -50,7 +50,7 @@ function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = [Security.Principal.WindowsPrincipal]::new($identity)
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "BMS Retail Local Setup ต้องเปิดด้วยสิทธิ์ Administrator"
+    throw "Run BMS Retail Local Setup as Administrator"
   }
 }
 
@@ -58,7 +58,7 @@ function Assert-HttpsUri([string]$Value) {
   $parsed = $null
   if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-    throw "Release manifest ต้องมาจาก HTTPS URL ที่ไม่มี credential"
+    throw "The release manifest must use an HTTPS URL without credentials"
   }
 }
 
@@ -101,35 +101,35 @@ function Read-MenuChoice([string]$Prompt, [array]$Options, [string]$DefaultValue
     if ($Options[$index].Value -eq $DefaultValue) { $defaultIndex = $index + 1 }
   }
   while ($true) {
-    $answer = Read-Host ("เลือกหมายเลข [{0}]" -f $defaultIndex)
+    $answer = Read-Host ("Select a number [{0}]" -f $defaultIndex)
     if (-not $answer) { return $DefaultValue }
     $number = 0
     if ([int]::TryParse($answer, [ref]$number) -and $number -ge 1 -and $number -le $Options.Count) {
       return [string]$Options[$number - 1].Value
     }
-    Write-Host "กรุณาเลือกหมายเลข 1-$($Options.Count)" -ForegroundColor Yellow
+    Write-Host "Enter a number from 1 to $($Options.Count)" -ForegroundColor Yellow
   }
 }
 
 function Get-ShopArchetypeCatalog([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-    throw "ไม่พบ shop-archetypes manifest ของ release"
+    throw "The release shop-archetypes manifest was not found"
   }
   $manifest = Read-Utf8Text $Path | ConvertFrom-Json
   if ([int]$manifest.formatVersion -ne 1 -or -not $manifest.defaultArchetype) {
-    throw "shop-archetypes manifest version ไม่รองรับ"
+    throw "Unsupported shop-archetypes manifest version"
   }
   $seen = @{}
   $options = @()
   foreach ($entry in @($manifest.archetypes)) {
     $id = [string]$entry.id
     if ($id -notmatch '^[a-z][a-z0-9_]{1,63}$' -or $seen.ContainsKey($id)) {
-      throw "shop-archetypes manifest มี id ไม่ถูกต้องหรือซ้ำ: $id"
+      throw "Invalid or duplicate shop-archetypes manifest ID: $id"
     }
     $seen[$id] = $true
     if ($entry.enabledForNewInstall -eq $true -and $entry.deprecated -ne $true) {
-      $label = if ($entry.labels.th) { [string]$entry.labels.th } else { [string]$entry.labels.en }
-      if (-not $label) { throw "shop-archetypes manifest ขาด label: $id" }
+      $label = if (($entry.labels.PSObject.Properties.Name -contains 'en') -and
+          -not [string]::IsNullOrWhiteSpace([string]$entry.labels.en)) { [string]$entry.labels.en } else { $id }
       $options += [pscustomobject]@{
         Value = $id
         Label = $label
@@ -137,16 +137,16 @@ function Get-ShopArchetypeCatalog([string]$Path) {
       }
     }
   }
-  if ($options.Count -eq 0) { throw "shop-archetypes manifest ไม่มีประเภทที่เปิดให้ติดตั้ง" }
+  if ($options.Count -eq 0) { throw "The shop-archetypes manifest has no types enabled for installation" }
   $defaultValue = [string]$manifest.defaultArchetype
   if ($defaultValue -notin @($options | ForEach-Object Value)) {
-    throw "defaultArchetype ไม่ได้เปิดให้ติดตั้ง: $defaultValue"
+    throw "defaultArchetype is not enabled for installation: $defaultValue"
   }
   return [pscustomobject]@{ Options = $options; DefaultValue = $defaultValue }
 }
 
 function Assert-NoLineBreak([string]$Name, [string]$Value) {
-  if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "$Name ไม่ถูกต้อง" }
+  if ([string]::IsNullOrWhiteSpace($Value) -or $Value -match '[\r\n]') { throw "Invalid $Name" }
 }
 
 function Test-CompletedSampleData($SampleData, [string]$BusinessArchetype) {
@@ -172,15 +172,15 @@ function Read-RequiredText([string]$Prompt) {
   while ($true) {
     $value = Read-Host $Prompt
     if (-not [string]::IsNullOrWhiteSpace($value) -and $value -notmatch '[\r\n]') { return $value }
-    Write-Warning "$Prompt ไม่ถูกต้อง กรุณากรอกใหม่"
+    Write-Warning "Invalid $Prompt. Please try again"
   }
 }
 
 function Read-EmailAddress {
   while ($true) {
-    $value = Read-Host "อีเมลผู้ดูแลร้าน"
+    $value = Read-Host "Shop administrator email"
     if ($value -match '^[^\s@]+@[^\s@]+\.[^\s@]+$') { return $value }
-    Write-Warning "อีเมลไม่ถูกต้อง กรุณากรอกใหม่"
+    Write-Warning "Invalid email address. Please try again"
   }
 }
 
@@ -195,12 +195,12 @@ function Read-ConfirmedSecret([string]$Prompt, [string]$ConfirmPrompt, [string]$
 
 function Get-ArtifactPath($Release, [string]$Name) {
   $component = @($Release.components | Where-Object name -eq $Name)
-  if ($component.Count -ne 1) { throw "Release ต้องมี component $Name exactly once" }
+  if ($component.Count -ne 1) { throw "The release must contain component $Name exactly once" }
   $fileName = "$($Name.Replace('.', '-')).artifact"
   $path = [IO.Path]::GetFullPath((Join-Path $script:releaseDirectory $fileName))
   if (-not $path.StartsWith($script:releaseDirectory + [IO.Path]::DirectorySeparatorChar,
       [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
-    throw "ไม่พบ staged artifact: $Name"
+    throw "Staged artifact not found: $Name"
   }
   return [pscustomobject]@{ component = $component[0]; path = $path }
 }
@@ -261,16 +261,16 @@ function Show-AgentProgress($Event) {
   $retryAfter = if ($properties -contains "retryAfterSeconds") { [int]$Event.retryAfterSeconds } else { 0 }
   $heartbeat = ($properties -contains "heartbeat") -and [bool]$Event.heartbeat
   $status = switch ($phase) {
-    "connect" { "กำลังเชื่อมต่อเพื่อดาวน์โหลด $component (ครั้งที่ $attempt)" }
-    "download" { "กำลังดาวน์โหลด $component" }
-    "retry" { "การเชื่อมต่อหยุดชั่วคราว จะลอง $component ใหม่ใน $retryAfter วินาที" }
-    "verify" { "กำลังตรวจ SHA-256 ของ $component" }
-    "cached" { "ตรวจพบไฟล์ $component ที่ดาวน์โหลดครบแล้ว" }
-    "staged" { "ดาวน์โหลดและตรวจสอบ release ครบแล้ว" }
-    "load" { "กำลังโหลด $component เข้า private runtime" }
-    "inspect" { "กำลังตรวจ image id ของ $component" }
-    "loaded" { "โหลด $component สำเร็จ" }
-    default { "กำลังดำเนินการ $component" }
+    "connect" { "Connecting to download $component (attempt $attempt)" }
+    "download" { "Downloading $component" }
+    "retry" { "Connection interrupted. Retrying $component in $retryAfter seconds" }
+    "verify" { "Verifying SHA-256 for $component" }
+    "cached" { "Found a complete cached download for $component" }
+    "staged" { "Release download and verification complete" }
+    "load" { "Loading $component into the private runtime" }
+    "inspect" { "Checking the image ID for $component" }
+    "loaded" { "Loaded $component" }
+    default { "Processing $component" }
   }
   $completedBytes = if ($properties -contains "completedBytes") { [long]$Event.completedBytes } else { 0L }
   $totalBytes = if ($properties -contains "totalBytes") { [long]$Event.totalBytes } else { 0L }
@@ -281,11 +281,11 @@ function Show-AgentProgress($Event) {
     [long]$Event.componentTotalBytes
   } else { 0L }
   $size = if ($componentTotal -gt 0) {
-    "ไฟล์ {0:N1}/{1:N1} MiB | รวม {2:N1}/{3:N1} MiB" -f `
+    "File {0:N1}/{1:N1} MiB | Total {2:N1}/{3:N1} MiB" -f `
       ($componentCompleted / 1MB), ($componentTotal / 1MB), ($completedBytes / 1MB), ($totalBytes / 1MB)
   } elseif ($totalBytes -gt 0) {
     "{0:N1}/{1:N1} MiB" -f ($completedBytes / 1MB), ($totalBytes / 1MB)
-  } else { "กำลังทำงาน" }
+  } else { "Working" }
 
   $now = [DateTime]::UtcNow
   if ($script:progressSampleAt -ne [DateTime]::MinValue -and $completedBytes -gt $script:progressSampleBytes) {
@@ -305,11 +305,11 @@ function Show-AgentProgress($Event) {
   }
   $telemetry = ""
   if ($heartbeat) {
-    $telemetry = " | ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
+    $telemetry = " | Still working; waiting for network data"
   } elseif ($script:progressBytesPerSecond -gt 0 -and $totalBytes -gt $completedBytes) {
     $etaSeconds = [Math]::Min(359999, [Math]::Max(0, ($totalBytes - $completedBytes) / $script:progressBytesPerSecond))
     $eta = [TimeSpan]::FromSeconds($etaSeconds)
-    $telemetry = " | {0:N1} MiB/s | เหลือประมาณ {1:hh\:mm\:ss}" -f `
+    $telemetry = " | {0:N1} MiB/s | About {1:hh\:mm\:ss} remaining" -f `
       ($script:progressBytesPerSecond / 1MB), $eta
   }
   Write-Progress -Id 17 -Activity "BMS Retail Local Setup" `
@@ -358,7 +358,7 @@ function Write-RuntimeText([string]$Destination, [string]$Contents, [string]$Mod
     Write-Utf8NoBom $temporary $Contents
     & $script:installedAgent runtime-write -engine windows-wsl -distro $distroName `
       -source $temporary -destination $Destination -mode $Mode
-    if ($LASTEXITCODE -ne 0) { throw "เขียน $Destination เข้า private runtime ไม่สำเร็จ" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to write $Destination to the private runtime" }
   } finally {
     if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force }
   }
@@ -391,12 +391,12 @@ function Start-ManagedRuntime {
     $dockerInfo = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "docker", "info") -Quiet
     if ($dockerInfo.ExitCode -eq 0) { break }
     $dockerPercent = [Math]::Min(99, [int](($dockerAttempt / 60) * 100))
-    Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Status "รอ Docker engine ($dockerPercent%)" -PercentComplete $dockerPercent
-    if ($dockerAttempt % 5 -eq 0) { Write-Host "  ยังทำงานอยู่: กำลังรอ Docker engine ($($dockerAttempt * 2) วินาที)..." }
+    Write-Progress -Id 19 -Activity "Starting the private runtime" -Status "Waiting for Docker engine ($dockerPercent%)" -PercentComplete $dockerPercent
+    if ($dockerAttempt % 5 -eq 0) { Write-Host "  Still working: waiting for Docker engine ($($dockerAttempt * 2) seconds)..." }
     Start-Sleep -Seconds 2
   } while ([DateTime]::UtcNow -lt $deadline)
-  Write-Progress -Id 19 -Activity "กำลังเริ่ม private runtime" -Completed
-  if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime ไม่พร้อม" }
+  Write-Progress -Id 19 -Activity "Starting the private runtime" -Completed
+  if ($dockerInfo.ExitCode -ne 0) { throw "BMS private Moby runtime is not ready" }
 }
 
 function Register-LicenseEvidenceTask {
@@ -410,7 +410,7 @@ function Register-LicenseEvidenceTask {
     $licensePrincipal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
     Register-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Action $licenseAction `
       -Trigger $licenseTrigger -Principal $licensePrincipal -Settings $licenseSettings -Force | Out-Null
-  } catch { Write-Warning "ตั้งเวลาหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้" }
+  } catch { Write-Warning "Could not schedule licensing evidence. The shop can continue operating" }
 }
 
 function Register-LicenseUIBridge {
@@ -425,28 +425,28 @@ function Register-LicenseUIBridge {
     Register-ScheduledTask -TaskName "BMS Retail Local License UI" -Action $bridgeAction -Trigger $bridgeTrigger `
       -Principal $bridgePrincipal -Settings $bridgeSettings -Force | Out-Null
     Start-ScheduledTask -TaskName "BMS Retail Local License UI"
-  } catch { Write-Warning "ตั้งระบบลงทะเบียนผ่าน Admin ไม่สำเร็จ ร้านยังใช้งานได้" }
+  } catch { Write-Warning "Could not configure registration through Admin. The shop can continue operating" }
 }
 
 function Show-SetupCompletion {
-  Write-Step 7 "ติดตั้งสำเร็จ"
-  Write-Host "BMS Retail Local พร้อมใช้งาน ระบบทำงานเบื้องหลังและเริ่มอัตโนมัติหลังเปิดเครื่อง" -ForegroundColor Green
-  Write-Host "เปิด Admin บนเครื่องนี้: http://127.0.0.1:3100/admin/login"
-  Write-Host "เข้าสู่ระบบด้วยอีเมลและรหัสผ่านผู้ดูแลที่สร้างระหว่างติดตั้ง"
-  Write-Host "เปิดครั้งต่อไป: Desktop > BMS Retail Local Admin หรือ Start > BMS Retail Local > Open Admin"
-  Write-Host "ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup"
-  Write-Host "ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
+  Write-Step 7 "Installation complete"
+  Write-Host "BMS Retail Local is ready. It runs in the background and starts automatically with Windows" -ForegroundColor Green
+  Write-Host "Open Admin on this computer: http://127.0.0.1:3100/admin/login"
+  Write-Host "Sign in with the administrator email and password created during setup"
+  Write-Host "To open later: Desktop > BMS Retail Local Admin or Start > BMS Retail Local > Open Admin"
+  Write-Host "Configure backups: Start > BMS Retail Local > Configure Off-host Backup"
+  Write-Host "You can try the system immediately without an Activation Code"
   if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
-    Write-Host "ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้ (หรือ Start > BMS Retail Local > Activate or Transfer)"
+    Write-Host "Register later: Admin > This installation's license (or Start > BMS Retail Local > Activate or Transfer)"
   }
   if ($PackageType -eq 'server') {
-    Write-Host "จับคู่ POS: Admin > POS Devices > ออก token"
-    Write-Host "URL 127.0.0.1 ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน"
+    Write-Host "Pair POS: Admin > POS Devices > Issue token"
+    Write-Host "The 127.0.0.1 URL works only on the server computer. Ask your administrator to configure networking before connecting another POS computer"
   }
   # After reboot there is no Inno wizard to return to. Keep the next steps visible
   # until the operator acknowledges them; a normal installer run uses its Finish page.
   if ($ResumeConfig -and [Environment]::UserInteractive) {
-    [void](Read-Host "จด URL หรือเปิด BMS Retail Local Admin แล้วกด Enter เพื่อปิด Setup (ระบบยังทำงานต่อ)")
+    [void](Read-Host "Note the URL or open BMS Retail Local Admin, then press Enter to close Setup (the system will keep running)")
   }
 }
 
@@ -473,12 +473,12 @@ if ($ResumeConfig) {
   $AgentPath = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
   $KeyringPath = Join-Path $InstallRoot "bootstrap\trusted-release-keys.json"
 }
-if ($PackageType -notin @('server', 'server-pos')) { throw "bootstrap packageType ไม่ถูกต้อง: $PackageType" }
+if ($PackageType -notin @('server', 'server-pos')) { throw "Invalid bootstrap packageType: $PackageType" }
 
 Assert-HttpsUri $ManifestUri
 if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) { Assert-HttpsUri $ActivationUri }
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw "InstallRoot ห้ามเป็น root drive" }
+if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot)) { throw "InstallRoot must not be a drive root" }
 $bootstrapRoot = Join-Path $InstallRoot "bootstrap"
 New-Item -ItemType Directory -Force -Path $bootstrapRoot | Out-Null
 $installationReceipt = Join-Path $InstallRoot "installation.json"
@@ -542,7 +542,7 @@ if (-not [string]::IsNullOrWhiteSpace($interactiveUser) -and $interactiveUser -n
   $installAclArguments += "${interactiveUser}:(OI)(CI)RX"
 }
 & icacls @installAclArguments *> $null
-if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ installation directory ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to restrict installation directory permissions" }
 
 if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
   $script:BmsSetupStage = 'repair-existing-install'
@@ -558,34 +558,34 @@ if (Test-Path -LiteralPath $installationReceipt -PathType Leaf) {
   exit 0
 }
 
-Write-Step 1 "ตรวจสอบ Windows, CPU, RAM, WSL, Virtualization และพื้นที่ว่าง"
+Write-Step 1 "Checking Windows, CPU, RAM, WSL, virtualization, and free disk space"
 $preflightOutput = & $installedAgent preflight 2>&1
 $preflightExit = $LASTEXITCODE
 try {
   $preflight = (($preflightOutput -join [Environment]::NewLine) | ConvertFrom-Json)
 } catch {
-  throw "อ่านผล preflight ไม่ได้: $($preflightOutput -join ' ')"
+  throw "Could not read preflight results: $($preflightOutput -join ' ')"
 }
 foreach ($message in @($preflight.warnings)) { Write-Warning $message }
 if ($preflightExit -ne 0 -or -not $preflight.ok) {
-  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("preflight ไม่ผ่าน") }
-  throw (($failureMessages + "กรุณาแก้ไขรายการด้านบนแล้วเปิด Setup อีกครั้ง") -join [Environment]::NewLine)
+  $failureMessages = if ($null -ne $preflight.failures) { @($preflight.failures) } else { @("Preflight checks failed") }
+  throw (($failureMessages + "Resolve the issues above, then run Setup again") -join [Environment]::NewLine)
 }
 if ([string]$preflight.target -eq "windows-10-22h2-esu-x64") {
-  Write-Host "Windows 10 22H2 รองรับเฉพาะเครื่องที่มี Extended Security Updates (ESU) ปัจจุบัน" -ForegroundColor Yellow
-  $esuAnswer = Read-Host "ตรวจหลักฐาน ESU แล้วให้พิมพ์ ESU-VERIFIED"
-  if ($esuAnswer -cne "ESU-VERIFIED") { throw "ไม่ติดตั้งบน Windows 10 22H2 ที่ไม่มีหลักฐาน ESU" }
+  Write-Host "Windows 10 22H2 requires current Extended Security Updates (ESU) coverage" -ForegroundColor Yellow
+  $esuAnswer = Read-Host "Check the ESU evidence, then type ESU-VERIFIED"
+  if ($esuAnswer -cne "ESU-VERIFIED") { throw "Cannot install on Windows 10 22H2 without verified ESU evidence" }
 }
 
 # Public setup never asks for or redeems an activation code. Keep any license
 # already redeemed by an older reboot-resume flow; new registrations use Activate or Transfer.
-Write-Host "ติดตั้งและทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code"
+Write-Host "You can install and try the system without an Activation Code"
 
 if ($preflight.requiresReboot) {
   & dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart | Out-Null
-  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Windows Subsystem for Linux ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "Failed to enable Windows Subsystem for Linux" }
   & dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart | Out-Null
-  if ($LASTEXITCODE -notin @(0, 3010)) { throw "เปิด Virtual Machine Platform ไม่สำเร็จ" }
+  if ($LASTEXITCODE -notin @(0, 3010)) { throw "Failed to enable Virtual Machine Platform" }
   $resumePath = Join-Path $bootstrapRoot "resume.json"
   $resumeJson = [ordered]@{
     installerVersion = $InstallerVersion
@@ -604,45 +604,45 @@ if ($preflight.requiresReboot) {
   $resumePrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
   Register-ScheduledTask -TaskName "BMS Retail Local Setup Resume" -Action $resumeAction `
     -Trigger $resumeTrigger -Principal $resumePrincipal -Force | Out-Null
-  Write-Host "ต้อง restart Windows หนึ่งครั้ง ระบบจะติดตั้งต่อให้อัตโนมัติ" -ForegroundColor Yellow
-  $answer = Read-Host "พิมพ์ RESTART เพื่อ restart ตอนนี้"
+  Write-Host "Restart Windows once. Setup will resume automatically" -ForegroundColor Yellow
+  $answer = Read-Host "Type RESTART to restart now"
   if ($answer -ceq "RESTART") { Restart-Computer -Force }
   exit 3010
 }
 
 $provisionCheckpoint = "$runtimeData/provision-result.json"
-Write-Step 2 "ติดตั้งหรืออัปเดต private WSL runtime"
+Write-Step 2 "Installing or updating the private WSL runtime"
 $wslVersion = $null
 for ($attempt = 1; $attempt -le 6; $attempt++) {
   $wslVersion = Invoke-WslCommand -Arguments @("--version") -Quiet
   if ($wslVersion.ExitCode -eq 0) { break }
   if (($wslVersion.Output -join " ") -notmatch 'finishing an upgrade|กำลัง.*อัปเกรด') { break }
-  Write-Progress -Id 18 -Activity "กำลังรอ Windows Subsystem for Linux" `
-    -Status "WSL กำลังปิดงานอัปเกรดเดิม ($attempt/6)" -PercentComplete ([int](($attempt / 6) * 100))
-  Write-Host "  WSL กำลังปิดงานอัปเกรดเดิม รอ 10 วินาทีแล้วตรวจใหม่ ($attempt/6)..." -ForegroundColor Yellow
+  Write-Progress -Id 18 -Activity "Waiting for Windows Subsystem for Linux" `
+    -Status "WSL is finishing an earlier upgrade ($attempt/6)" -PercentComplete ([int](($attempt / 6) * 100))
+  Write-Host "  WSL is finishing an earlier upgrade. Checking again in 10 seconds ($attempt/6)..." -ForegroundColor Yellow
   Start-Sleep -Seconds 10
 }
-Write-Progress -Id 18 -Activity "กำลังรอ Windows Subsystem for Linux" -Completed
+Write-Progress -Id 18 -Activity "Waiting for Windows Subsystem for Linux" -Completed
 if ($wslVersion.ExitCode -eq 0) {
   $versionLine = @($wslVersion.Output | Where-Object { -not [string]::IsNullOrWhiteSpace([string]$_) } | Select-Object -First 1)
   $versionSuffix = if ($versionLine.Count) { ": $([string]$versionLine[0])" } else { "" }
-  Write-Host "  WSL พร้อมใช้งาน$versionSuffix" -ForegroundColor Green
+  Write-Host "  WSL is ready$versionSuffix" -ForegroundColor Green
 } else {
-  Write-Host "  กำลังติดตั้งหรืออัปเดต WSL อาจใช้เวลาหลายนาที..."
+  Write-Host "  Installing or updating WSL. This may take several minutes..."
   $wslUpdate = Invoke-WslCommand -Arguments @("--update", "--web-download")
   if ($wslUpdate.ExitCode -ne 0) {
-    throw "ติดตั้ง/อัปเดต WSL ไม่สำเร็จ: $($wslUpdate.Output -join ' ')"
+    throw "Failed to install or update WSL: $($wslUpdate.Output -join ' ')"
   }
 }
 
 $releaseRoot = Join-Path $InstallRoot "release"
 New-Item -ItemType Directory -Force -Path $releaseRoot | Out-Null
 $manifestPath = Join-Path $releaseRoot "release.jws.json"
-Write-Step 3 "ดาวน์โหลดและตรวจสอบ release ที่ลงลายเซ็น"
+Write-Step 3 "Downloading and verifying the signed release"
 try {
   Invoke-WebRequest -Uri $ManifestUri -OutFile $manifestPath -UseBasicParsing -TimeoutSec 60
 } catch {
-  throw "ดาวน์โหลด signed release manifest ไม่สำเร็จจาก $ManifestUri : $($_.Exception.Message)"
+  throw "Failed to download the signed release manifest from $ManifestUri : $($_.Exception.Message)"
 }
 
 $stageCommand = if ($PackageType -eq 'server') { 'stage-server' } else { 'stage-release' }
@@ -654,18 +654,18 @@ $releaseDirectory = [IO.Path]::GetFullPath([string]$stage.releaseDirectory)
 $archetypeArtifact = Get-ArtifactPath $release "shop-archetypes"
 $archetypeCatalog = Get-ShopArchetypeCatalog $archetypeArtifact.path
 
-Write-Step 4 "ติดตั้ง private WSL runtime"
+Write-Step 4 "Installing the private WSL runtime"
 $runtime = Get-ArtifactPath $release "runtime"
 $installedDistroResult = Invoke-WslCommand -Arguments @("--list", "--quiet") -Quiet
-if ($installedDistroResult.ExitCode -ne 0) { throw "อ่านรายชื่อ WSL ไม่สำเร็จ กรุณา restart Windows แล้วเปิด Setup อีกครั้ง; ระบบจะไม่ลบ runtime เดิม" }
+if ($installedDistroResult.ExitCode -ne 0) { throw "Failed to list WSL distributions. Restart Windows and run Setup again; the existing runtime will be preserved" }
 $installedDistros = @($installedDistroResult.Output | ForEach-Object { ([string]$_).Trim([char]0).Trim() })
 if ($distroName -notin $installedDistros) {
   # A cancelled import can leave an unregistered VHD. Preserve it and use a fresh directory.
   $wslRoot = Join-Path $InstallRoot ("wsl-import-" + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Force -Path $wslRoot | Out-Null
-  Write-Host "  กำลังแตก private runtime ลง WSL2 อาจใช้เวลา 1-3 นาที กรุณาอย่าปิดหน้าต่างนี้..."
+  Write-Host "  Extracting the private runtime into WSL2. This may take 1-3 minutes. Keep this window open..."
   $wslImport = Invoke-WslCommand -Arguments @("--import", $distroName, $wslRoot, $runtime.path, "--version", "2")
-  if ($wslImport.ExitCode -ne 0) { throw "Import private BMSRuntime WSL distribution ไม่สำเร็จ: $($wslImport.Output -join ' ')" }
+  if ($wslImport.ExitCode -ne 0) { throw "Failed to import the private BMSRuntime WSL distribution: $($wslImport.Output -join ' ')" }
 }
 
 Start-ManagedRuntime
@@ -674,16 +674,16 @@ foreach ($control in @(
   @{ Source = $installedLocalCtl; Name = "bms-localctl" },
   @{ Source = $installedTransaction; Name = "bms-update-transaction" }
 )) {
-  if (-not (Test-Path -LiteralPath $control.Source -PathType Leaf)) { throw "ไม่พบ runtime control $($control.Source)" }
+  if (-not (Test-Path -LiteralPath $control.Source -PathType Leaf)) { throw "Runtime control not found: $($control.Source)" }
   & $installedAgent runtime-install-control -engine windows-wsl -distro $distroName `
     -source $control.Source -name $control.Name
-  if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $($control.Name) ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to install runtime control $($control.Name)" }
 }
 
 $script:loadingImagesShown = $false
 foreach ($component in @($release.components | Where-Object kind -eq "oci-image")) {
   if (-not $script:loadingImagesShown) {
-    Write-Step 5 "โหลด Web, WS, PostgreSQL และ Redis"
+    Write-Step 5 "Loading Web, WS, PostgreSQL, and Redis"
     $script:loadingImagesShown = $true
   }
   $artifact = Get-ArtifactPath $release ([string]$component.name)
@@ -696,7 +696,7 @@ $script:BmsSetupStage = 'configure-compose'
 $compose = Get-ArtifactPath $release "compose"
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source $compose.path `
   -destination "$runtimeData/compose.yml" -mode "0600"
-if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง Compose contract ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to install the Compose contract" }
 
 $byName = @{}
 foreach ($component in $release.components) { $byName[[string]$component.name] = $component }
@@ -726,38 +726,38 @@ $script:BmsSetupStage = 'provision-shop'
 $checkpointTest = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "test", "-f", $provisionCheckpoint) -Quiet
 if ($checkpointTest.ExitCode -eq 0) {
   $checkpointRead = Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "cat", $provisionCheckpoint) -Quiet
-  if ($checkpointRead.ExitCode -ne 0) { throw "อ่าน checkpoint ของร้านไม่สำเร็จ" }
+  if ($checkpointRead.ExitCode -ne 0) { throw "Failed to read the shop checkpoint" }
   $provisionResult = (($checkpointRead.Output -join [Environment]::NewLine) | ConvertFrom-Json)
   $businessArchetype = [string]$provisionResult.businessArchetype
   $sampleMode = if (($provisionResult.PSObject.Properties.Name -contains "sampleData") -and
       $null -ne $provisionResult.sampleData -and
       ($provisionResult.sampleData.PSObject.Properties.Name -contains "mode") -and
       $provisionResult.sampleData.mode) { [string]$provisionResult.sampleData.mode } else { "NONE" }
-  Write-Host "พบข้อมูลร้านเดิม กำลังติดตั้งต่อจากจุดที่ค้าง" -ForegroundColor Yellow
+  Write-Host "Existing shop data found. Resuming setup from the checkpoint" -ForegroundColor Yellow
 } else {
-  $shopName = Read-RequiredText "ชื่อร้าน"
-  $businessArchetype = Read-MenuChoice "ประเภทร้าน (ใช้กำหนดค่าเริ่มต้นและตัวอย่างสินค้า)" `
+  $shopName = Read-RequiredText "Shop name"
+  $businessArchetype = Read-MenuChoice "Shop type (used for defaults and sample products)" `
     $archetypeCatalog.Options $archetypeCatalog.DefaultValue
   $selectedArchetype = @($archetypeCatalog.Options | Where-Object Value -eq $businessArchetype)[0]
   if ($selectedArchetype.StarterCatalog) {
-    $sampleMode = Read-MenuChoice "ต้องการสร้าง Starter Catalog หรือไม่? (Draft, สต็อก 0, ยังขายไม่ได้)" @(
-      [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "สร้างข้อมูลตัวอย่างตามประเภทร้าน" },
-      [pscustomobject]@{ Value = "NONE"; Label = "ไม่สร้างข้อมูลตัวอย่าง" }
+    $sampleMode = Read-MenuChoice "Create a Starter Catalog? (Draft products, zero stock, not ready for sale)" @(
+      [pscustomobject]@{ Value = "STARTER_CATALOG"; Label = "Create sample data for this shop type" },
+      [pscustomobject]@{ Value = "NONE"; Label = "Do not create sample data" }
     ) "STARTER_CATALOG"
   } else {
     $sampleMode = "NONE"
-    Write-Host "ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน; เริ่มจากร้านเปล่า" -ForegroundColor Yellow
+    Write-Host "This release has no Starter Catalog for this shop type; starting with an empty shop" -ForegroundColor Yellow
   }
-  $adminName = Read-RequiredText "ชื่อผู้ดูแลร้าน"
+  $adminName = Read-RequiredText "Shop administrator name"
   $adminEmail = Read-EmailAddress
-  $adminPassword = Read-ConfirmedSecret "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร)" `
-    "ยืนยันรหัสผ่านอีกครั้ง" '^.{8,}$' "รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษรและตรงกัน กรุณากรอกใหม่"
-  $adminPin = Read-ConfirmedSecret "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก)" `
-    "ยืนยัน PIN อีกครั้ง" '^\d{4,8}$' "PIN ต้องเป็นตัวเลข 4-8 หลักและตรงกัน กรุณากรอกใหม่"
-  Assert-NoLineBreak "ชื่อร้าน" $shopName
-  Assert-NoLineBreak "ชื่อผู้ดูแล" $adminName
-  Assert-NoLineBreak "อีเมล" $adminEmail
-  Assert-NoLineBreak "รหัสผ่าน" $adminPassword
+  $adminPassword = Read-ConfirmedSecret "Administrator password (at least 8 characters)" `
+    "Confirm password" '^.{8,}$' "Passwords must match and contain at least 8 characters. Please try again"
+  $adminPin = Read-ConfirmedSecret "POS PIN (4-8 digits)" `
+    "Confirm PIN" '^\d{4,8}$' "PINs must match and contain 4-8 digits. Please try again"
+  Assert-NoLineBreak "Shop name" $shopName
+  Assert-NoLineBreak "Administrator name" $adminName
+  Assert-NoLineBreak "Email" $adminEmail
+  Assert-NoLineBreak "Password" $adminPassword
   Assert-NoLineBreak "PIN" $adminPin
 
   $provisionScript = @(
@@ -783,7 +783,7 @@ if ($checkpointTest.ExitCode -eq 0) {
   [void](Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "rm", "-f", "$runtimeData/provision-once.sh") -Quiet)
   if ($provisionExit -ne 0) { throw ($provisionOutput -join [Environment]::NewLine) }
   $resultLine = $provisionOutput | Where-Object { $_ -match '^\{"status"' } | Select-Object -Last 1
-  if (-not $resultLine) { throw "Provisioning สำเร็จแต่ไม่พบผลลัพธ์ที่อ่านได้" }
+  if (-not $resultLine) { throw "Provisioning completed but no readable result was found" }
   $provisionResult = $resultLine | ConvertFrom-Json
   Write-RuntimeText $provisionCheckpoint ($resultLine + "`n") "0600"
 }
@@ -796,7 +796,7 @@ if ($sampleMode -eq "STARTER_CATALOG" -and $sampleStatus -notin @("COMPLETED", "
   # The protected checkpoint already contains the one-time token. Sample generation is therefore
   # safe to retry after an interrupted setup without recreating the shop or losing pairing.
   if ($sampleStatus -ne "PENDING") {
-    Write-Warning "ผล provisioning ไม่มีสถานะข้อมูลตัวอย่างที่สำเร็จ กำลังลองสร้างตามตัวเลือกของผู้ใช้"
+    Write-Warning "Provisioning did not report completed sample data. Retrying the selected sample data setup"
   }
   try {
     $sampleOutput = Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f",
@@ -819,7 +819,7 @@ if ($sampleMode -eq "STARTER_CATALOG" -and $sampleStatus -notin @("COMPLETED", "
       status = "FAILED"
       requested = $true
       mode = $sampleMode
-      message = "สร้างข้อมูลตัวอย่างยังไม่สำเร็จ สามารถลองใหม่จากหน้าเริ่มต้นใช้งาน"
+      message = "Sample data setup did not complete. Retry from the onboarding page"
     }
     if ($provisionResult.PSObject.Properties.Name -contains "sampleData") {
       $provisionResult.sampleData = $failedSampleData
@@ -831,12 +831,12 @@ if ($sampleMode -eq "STARTER_CATALOG" -and $sampleStatus -notin @("COMPLETED", "
   Write-RuntimeText $provisionCheckpoint (($provisionResult | ConvertTo-Json -Compress -Depth 10) + "`n") "0600"
 }
 if ($sampleStatus -in @("COMPLETED", "ALREADY_COMPLETED")) {
-  Write-Host "สร้างข้อมูลตัวอย่างตามประเภทร้านแล้ว" -ForegroundColor Green
+  Write-Host "Sample data created for the selected shop type" -ForegroundColor Green
 } elseif ($sampleStatus -eq "FAILED") {
-  Write-Warning "ข้อมูลตัวอย่างยังสร้างไม่ครบ ร้านยังใช้งานได้ และลองใหม่จากหน้าเริ่มต้นใช้งานได้"
+  Write-Warning "Sample data setup is incomplete. The shop is usable; retry from the onboarding page"
 }
 
-Write-Step 6 "เริ่มบริการและตรวจสุขภาพระบบ"
+Write-Step 6 "Starting services and checking system health"
 Invoke-WslDocker @("compose", "--env-file", "$runtimeData/.env", "-f", "$runtimeData/compose.yml", "up", "-d") | Out-Null
 $healthDeadline = [DateTime]::UtcNow.AddMinutes(4)
 $web = $null
@@ -850,13 +850,13 @@ do {
     if ($web.StatusCode -eq 200 -and $ws.StatusCode -eq 200) { break }
   } catch {}
   $healthPercent = [Math]::Min(99, [int](($healthAttempt / 80) * 100))
-  Write-Progress -Id 20 -Activity "กำลังตรวจสุขภาพ BMS Retail Local" `
-    -Status "รอ Web และ Realtime service ($healthPercent%)" -PercentComplete $healthPercent
-  if ($healthAttempt % 5 -eq 0) { Write-Host "  ยังทำงานอยู่: กำลังรอ Web และ Realtime service ($($healthAttempt * 3) วินาที)..." }
+  Write-Progress -Id 20 -Activity "Checking BMS Retail Local health" `
+    -Status "Waiting for Web and Realtime services ($healthPercent%)" -PercentComplete $healthPercent
+  if ($healthAttempt % 5 -eq 0) { Write-Host "  Still working: waiting for Web and Realtime services ($($healthAttempt * 3) seconds)..." }
   Start-Sleep -Seconds 3
 } while ([DateTime]::UtcNow -lt $healthDeadline)
-Write-Progress -Id 20 -Activity "กำลังตรวจสุขภาพ BMS Retail Local" -Completed
-if (-not $web -or -not $ws -or $web.StatusCode -ne 200 -or $ws.StatusCode -ne 200) { throw "บริการไม่ผ่าน HTTP health check" }
+Write-Progress -Id 20 -Activity "Checking BMS Retail Local health" -Completed
+if (-not $web -or -not $ws -or $web.StatusCode -ne 200 -or $ws.StatusCode -ne 200) { throw "Services failed the HTTP health check" }
 
 if ($PackageType -eq 'server-pos') {
   $desktop = Get-ArtifactPath $release "desktop"
@@ -864,13 +864,13 @@ if ($PackageType -eq 'server-pos') {
   Copy-Item -LiteralPath $desktop.path -Destination $desktopInstaller -Force
   $script:BmsSetupStage = 'install-desktop'
   $desktopProcess = Start-Process -FilePath $desktopInstaller -ArgumentList "/S", "/allusers" -Wait -PassThru
-  if ($desktopProcess.ExitCode -ne 0) { throw "ติดตั้ง BMS POS Desktop ไม่สำเร็จ" }
+  if ($desktopProcess.ExitCode -ne 0) { throw "Failed to install BMS POS Desktop" }
   $desktopExecutable = @(
     (Join-Path $env:ProgramFiles "BMS POS\BMS POS.exe")
     $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} "BMS POS\BMS POS.exe" })
     (Join-Path $env:LOCALAPPDATA "Programs\BMS POS\BMS POS.exe")
   ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-  if (-not $desktopExecutable) { throw "ติดตั้งแล้วแต่ไม่พบ BMS POS.exe" }
+  if (-not $desktopExecutable) { throw "Installation completed but BMS POS.exe was not found" }
 
   $desktopArguments = ""
   if ($provisionResult.deviceToken -and -not [string]::IsNullOrWhiteSpace($interactiveUser)) {
@@ -882,14 +882,14 @@ if ($PackageType -eq 'server-pos') {
       expiresAt = [DateTimeOffset]::UtcNow.AddMinutes(10).ToString("o")
     } | ConvertTo-Json -Compress | ForEach-Object { Write-Utf8NoBom $handoffPath $_ }
     & icacls $handoffPath /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "${interactiveUser}:F" *> $null
-    if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ pairing handoff ไม่สำเร็จ" }
+    if ($LASTEXITCODE -ne 0) { throw "Failed to restrict pairing handoff permissions" }
     $desktopArguments = "--pairing-handoff=`"$handoffPath`""
   } elseif ($provisionResult.deviceToken) {
-    Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; ไม่เขียน pairing token ลงดิสก์"
+    Write-Warning "No signed-in Windows user found; the pairing token will not be written to disk"
   }
 
   if ([string]::IsNullOrWhiteSpace($interactiveUser)) {
-    Write-Warning "ไม่พบผู้ใช้ Windows ที่ล็อกอินอยู่; เปิด BMS POS จาก Public Desktop เพื่อจับคู่ภายหลัง"
+    Write-Warning "No signed-in Windows user found; open BMS POS from the Public Desktop to pair later"
   } else {
     $pairingTaskName = "BMS Retail Local POS Pairing"
     $pairingAction = if ([string]::IsNullOrWhiteSpace($desktopArguments)) {
@@ -931,7 +931,7 @@ if ($PackageType -eq 'server-pos') {
 } | ConvertTo-Json | ForEach-Object { Write-Utf8NoBom "$installationReceipt.prepared" $_ }
 & $installedAgent runtime-write -engine windows-wsl -distro $distroName -source "$installationReceipt.prepared" `
   -destination "$runtimeData/installation.json" -mode "0600"
-if ($LASTEXITCODE -ne 0) { throw "บันทึก installation receipt ใน private runtime ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to save the installation receipt in the private runtime" }
 Write-Utf8NoBom $installationReceipt (Read-Utf8Text "$installationReceipt.prepared")
 Remove-Item -LiteralPath "$installationReceipt.prepared" -Force
 [void](Invoke-WslCommand -Arguments @("-d", $distroName, "-u", "root", "--", "rm", "-f", $provisionCheckpoint) -Quiet)
@@ -952,7 +952,7 @@ if (-not [string]::IsNullOrWhiteSpace($ActivationUri)) {
     }
     & $installedAgent @inventoryArguments *> $null
     if ($LASTEXITCODE -ne 0) { throw "installation registry unavailable" }
-  } catch { Write-Warning "ส่งข้อมูลการติดตั้งขั้นต่ำไม่สำเร็จ; การติดตั้งยังสำเร็จและจะลองใหม่ภายหลัง" }
+  } catch { Write-Warning "Could not send minimal installation data; installation succeeded and reporting will retry later" }
 }
 
 # License evidence is administrative telemetry only. It is intentionally best-effort and must not
@@ -970,7 +970,7 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
         -not [string]::IsNullOrWhiteSpace($LicenseEvidenceToken)) {
       $licenseArguments += @("-endpoint", $LicenseEvidenceUri)
     } elseif (-not [string]::IsNullOrWhiteSpace($LicenseEvidenceUri)) {
-      Write-Warning "มี Licensing endpoint แต่ไม่มี ingestion token; เก็บหลักฐานไว้ในเครื่องเท่านั้น"
+      Write-Warning "Licensing endpoint configured without an ingestion token; evidence will be stored locally only"
     }
     $previousEvidenceToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", "Process")
     try {
@@ -981,7 +981,7 @@ if (-not [string]::IsNullOrWhiteSpace($LicenseId)) {
       [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $previousEvidenceToken, "Process")
     }
   } catch {
-    Write-Warning "เก็บ/ตั้งเวลาหลักฐาน Licensing ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: $($_.Exception.Message)"
+    Write-Warning "Could not store or schedule licensing evidence. The shop can continue operating: $($_.Exception.Message)"
   }
 }
 

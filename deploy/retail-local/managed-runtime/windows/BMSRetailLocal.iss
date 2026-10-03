@@ -87,7 +87,7 @@ Name: "{commonprograms}\BMS Retail Local\Uninstall BMS Retail Local"; \
 
 [Run]
 Filename: "http://127.0.0.1:3100/admin/login"; \
-  Description: "เปิด BMS Retail Local Admin"; \
+  Description: "Open BMS Retail Local Admin"; \
   Flags: postinstall shellexec runasoriginaluser skipifsilent nowait; Check: CanOpenAdmin
 
 [UninstallRun]
@@ -156,14 +156,14 @@ begin
   end
   else if (CurPageID = wpFinished) and ManagedRuntimeNeedsRestart then
   begin
-    WizardForm.FinishedHeadingLabel.Caption := 'ต้อง restart Windows เพื่อติดตั้งต่อ';
+    WizardForm.FinishedHeadingLabel.Caption := 'Restart Windows to continue setup';
     WizardForm.FinishedLabel.Caption :=
-      'การติดตั้งยังไม่เสร็จ กรุณา restart แล้วเข้าสู่ระบบ Windows ด้วยบัญชีเดิม' + #13#10 + #13#10 +
-      'Setup จะทำงานต่อให้อัตโนมัติ เมื่อเสร็จแล้วจะแสดงวิธีเปิด BMS Retail Local Admin';
+      'Setup is not finished. Restart Windows and sign in with the same account' + #13#10 + #13#10 +
+      'Setup will resume automatically and show how to open BMS Retail Local Admin when finished';
   end
   else if (CurPageID = wpFinished) and ('{#PackageType}' = 'server') then
   begin
-    WizardForm.FinishedHeadingLabel.Caption := 'ติดตั้ง BMS Retail Local Server สำเร็จ';
+    WizardForm.FinishedHeadingLabel.Caption := 'BMS Retail Local Server installation complete';
     { A scrollable summary keeps all next steps readable at large font sizes. }
     if CompletionText = nil then
     begin
@@ -180,25 +180,25 @@ begin
     end;
     WizardForm.FinishedLabel.Visible := False;
     CompletionText.Text :=
-      'ระบบทำงานเบื้องหลัง ปิดหน้าต่างนี้ได้ และระบบจะเริ่มอัตโนมัติหลังเปิดเครื่อง' + #13#10 + #13#10 +
-      '1. เปิด Admin: http://127.0.0.1:3100/admin/login' + #13#10 +
-      '   เข้าสู่ระบบด้วยอีเมลและรหัสผ่านผู้ดูแลที่สร้างระหว่างติดตั้ง' + #13#10 +
-      '2. ตั้งค่า backup: Start > BMS Retail Local > Configure Off-host Backup' + #13#10 +
-      '3. จับคู่ POS: Admin > POS Devices > ออก token' + #13#10 + #13#10 +
-      'เปิดอีกครั้งได้จาก Desktop: BMS Retail Local Admin' + #13#10 +
-      'ทดลองได้ทันทีโดยไม่ต้องมี Activation Code' + #13#10 +
-      'URL นี้ใช้บนเครื่อง Server เท่านั้น การเชื่อม POS เครื่องอื่นต้องตั้งค่าเครือข่ายกับผู้ดูแลระบบก่อน';
+      'The system runs in the background and starts automatically with Windows. You can close this window' + #13#10 + #13#10 +
+      '1. Open Admin: http://127.0.0.1:3100/admin/login' + #13#10 +
+      '   Sign in with the administrator email and password created during setup' + #13#10 +
+      '2. Configure backups: Start > BMS Retail Local > Configure Off-host Backup' + #13#10 +
+      '3. Pair POS: Admin > POS Devices > Issue token' + #13#10 + #13#10 +
+      'Open later from Desktop: BMS Retail Local Admin' + #13#10 +
+      'You can try the system immediately without an Activation Code' + #13#10 +
+      'This URL works only on the server computer. Ask your administrator to configure networking before connecting another POS computer';
     if HasActivation then
       CompletionText.Text := CompletionText.Text + #13#10 +
-        'หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้';
+        'If you receive a code from BMS, register later in Admin > License';
   end
   else if (CurPageID = wpFinished) then
   begin
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10 + #13#10 +
-      'ทดลองใช้งานได้ทันทีโดยไม่ต้องมี Activation Code';
+      'You can try the system immediately without an Activation Code';
     if HasActivation then
       WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10 +
-        'หากได้รับ Code จาก BMS ให้ลงทะเบียนภายหลัง: Admin > License ของเครื่องนี้';
+        'If you receive a code from BMS, register later in Admin > License';
   end;
 end;
 
@@ -238,12 +238,12 @@ begin
     Parameters := Parameters + ' -ActivationUri ' + AddQuotes('{#ActivationUri}');
   Parameters := Parameters + ' -ErrorFile ' + AddQuotes(ErrorPath) +
     ' -LogFile ' + AddQuotes(LogPath) + ' -InstallerVersion ' + AddQuotes('{#ProductVersion}');
-  WizardForm.StatusLabel.Caption := 'กำลังเปิดหน้าต่างตั้งค่าร้าน...';
+  WizardForm.StatusLabel.Caption := 'Opening the shop setup window...';
   WizardForm.Hide;
   try
     if not Exec(PowerShellPath, Parameters, '', SW_SHOWMAXIMIZED, ewWaitUntilTerminated, ResultCode) then
     begin
-      ReportBootstrapFailure('เปิด BMS Retail Local Setup ไม่สำเร็จ');
+      ReportBootstrapFailure('Failed to open BMS Retail Local Setup');
       exit;
     end;
   finally
@@ -252,16 +252,16 @@ begin
   if ResultCode = 3010 then
   begin
     ManagedRuntimeNeedsRestart := True;
-    SuppressibleMsgBox('ต้อง restart Windows หนึ่งครั้ง ระบบจะติดตั้งต่อให้อัตโนมัติ',
+    SuppressibleMsgBox('Restart Windows once. Setup will resume automatically',
       mbInformation, MB_OK, IDOK);
   end
   else if ResultCode <> 0 then
   begin
     ErrorText := '';
     if LoadStringFromFile(ErrorPath, ErrorText) and (Trim(ErrorText) <> '') then
-      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ:' + #13#10 + UTF8Decode(ErrorText))
+      ReportBootstrapFailure('BMS Retail Local Setup did not complete:' + #13#10 + UTF8Decode(ErrorText))
     else
-      ReportBootstrapFailure('BMS Retail Local Setup ยังไม่สำเร็จ กรุณาตรวจ ' + LogPath + ' แล้วลองใหม่');
+      ReportBootstrapFailure('BMS Retail Local Setup did not complete. Check ' + LogPath + ' and try again');
     exit;
   end;
   BootstrapFailed := False;
@@ -276,7 +276,7 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
     UninstallProgressForm.StatusLabel.Caption :=
-      'กำลังหยุดบริการและยกเลิกรายการเปิดอัตโนมัติ (ปกติไม่เกิน 15 วินาที)...'
+      'Stopping services and removing automatic startup entries (usually within 15 seconds)...'
   else if CurUninstallStep = usPostUninstall then
     { Inno has already destroyed UninstallProgressForm at usPostUninstall. }
     Log('BMS Retail Local uninstall file cleanup completed.');

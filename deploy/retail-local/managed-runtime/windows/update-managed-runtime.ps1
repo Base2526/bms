@@ -25,7 +25,7 @@ function Assert-Administrator {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
   $principal = [Security.Principal.WindowsPrincipal]::new($identity)
   if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
-    throw "BMS Retail Local Update ต้องเปิดด้วยสิทธิ์ Administrator"
+    throw "Run BMS Retail Local Update as Administrator"
   }
 }
 
@@ -33,7 +33,7 @@ function Assert-HttpsUri([string]$Value) {
   $parsed = $null
   if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-    throw "Release manifest ต้องมาจาก HTTPS URL ที่ไม่มี credential"
+    throw "The release manifest must use an HTTPS URL without credentials"
   }
 }
 
@@ -94,16 +94,16 @@ function Show-AgentProgress($Event) {
   $retryAfter = if ($properties -contains "retryAfterSeconds") { [int]$Event.retryAfterSeconds } else { 0 }
   $heartbeat = ($properties -contains "heartbeat") -and [bool]$Event.heartbeat
   $status = switch ($phase) {
-    "connect" { "กำลังเชื่อมต่อเพื่อดาวน์โหลด $component (ครั้งที่ $attempt)" }
-    "download" { "กำลังดาวน์โหลด $component" }
-    "retry" { "การเชื่อมต่อหยุดชั่วคราว จะลอง $component ใหม่ใน $retryAfter วินาที" }
-    "verify" { "กำลังตรวจ SHA-256 ของ $component" }
-    "cached" { "ตรวจพบไฟล์ $component ที่ดาวน์โหลดครบแล้ว" }
-    "staged" { "ดาวน์โหลดและตรวจสอบ release ครบแล้ว" }
-    "load" { "กำลังโหลด $component เข้า private runtime" }
-    "inspect" { "กำลังตรวจ image id ของ $component" }
-    "loaded" { "โหลด $component สำเร็จ" }
-    default { "กำลังดำเนินการ $component" }
+    "connect" { "Connecting to download $component (attempt $attempt)" }
+    "download" { "Downloading $component" }
+    "retry" { "Connection interrupted. Retrying $component in $retryAfter seconds" }
+    "verify" { "Verifying SHA-256 for $component" }
+    "cached" { "Found a complete cached download for $component" }
+    "staged" { "Release download and verification complete" }
+    "load" { "Loading $component into the private runtime" }
+    "inspect" { "Checking the image ID for $component" }
+    "loaded" { "Loaded $component" }
+    default { "Processing $component" }
   }
   $completedBytes = if ($properties -contains "completedBytes") { [long]$Event.completedBytes } else { 0L }
   $totalBytes = if ($properties -contains "totalBytes") { [long]$Event.totalBytes } else { 0L }
@@ -114,11 +114,11 @@ function Show-AgentProgress($Event) {
     [long]$Event.componentTotalBytes
   } else { 0L }
   $size = if ($componentTotal -gt 0) {
-    "ไฟล์ {0:N1}/{1:N1} MiB | รวม {2:N1}/{3:N1} MiB" -f `
+    "File {0:N1}/{1:N1} MiB | Total {2:N1}/{3:N1} MiB" -f `
       ($componentCompleted / 1MB), ($componentTotal / 1MB), ($completedBytes / 1MB), ($totalBytes / 1MB)
   } elseif ($totalBytes -gt 0) {
     "{0:N1}/{1:N1} MiB" -f ($completedBytes / 1MB), ($totalBytes / 1MB)
-  } else { "กำลังทำงาน" }
+  } else { "Working" }
 
   $now = [DateTime]::UtcNow
   if ($script:progressSampleAt -ne [DateTime]::MinValue -and $completedBytes -gt $script:progressSampleBytes) {
@@ -138,11 +138,11 @@ function Show-AgentProgress($Event) {
   }
   $telemetry = ""
   if ($heartbeat) {
-    $telemetry = " | ยังทำงานอยู่ รอข้อมูลจากเครือข่าย"
+    $telemetry = " | Still working; waiting for network data"
   } elseif ($script:progressBytesPerSecond -gt 0 -and $totalBytes -gt $completedBytes) {
     $etaSeconds = [Math]::Min(359999, [Math]::Max(0, ($totalBytes - $completedBytes) / $script:progressBytesPerSecond))
     $eta = [TimeSpan]::FromSeconds($etaSeconds)
-    $telemetry = " | {0:N1} MiB/s | เหลือประมาณ {1:hh\:mm\:ss}" -f `
+    $telemetry = " | {0:N1} MiB/s | About {1:hh\:mm\:ss} remaining" -f `
       ($script:progressBytesPerSecond / 1MB), $eta
   }
   Write-Progress -Id 17 -Activity "BMS Retail Local Update" `
@@ -181,12 +181,12 @@ function Invoke-WslCommand([string[]]$Arguments, [switch]$ShowOutput) {
 
 function Get-ArtifactPath($Release, [string]$Name) {
   $component = @($Release.components | Where-Object name -eq $Name)
-  if ($component.Count -ne 1) { throw "Release ต้องมี component $Name exactly once" }
+  if ($component.Count -ne 1) { throw "The release must contain component $Name exactly once" }
   $fileName = "$($Name.Replace('.', '-')).artifact"
   $path = [IO.Path]::GetFullPath((Join-Path $script:releaseDirectory $fileName))
   if (-not $path.StartsWith($script:releaseDirectory + [IO.Path]::DirectorySeparatorChar,
       [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $path -PathType Leaf)) {
-    throw "ไม่พบ staged artifact: $Name"
+    throw "Staged artifact not found: $Name"
   }
   return [pscustomobject]@{ component = $component[0]; path = $path }
 }
@@ -205,7 +205,7 @@ function Sync-HostReceipt {
       -source "$runtimeData/installation.json" -destination $temporary
     if ($LASTEXITCODE -eq 0) {
       $parsed = Get-Content -LiteralPath $temporary -Raw | ConvertFrom-Json
-      if ([string]$parsed.product -ne "BMS Retail Local") { throw "runtime installation receipt ไม่ถูกต้อง" }
+      if ([string]$parsed.product -ne "BMS Retail Local") { throw "Invalid runtime installation receipt" }
       Move-Item -LiteralPath $temporary -Destination $hostReceipt -Force
     }
   } finally {
@@ -216,10 +216,10 @@ function Sync-HostReceipt {
 Assert-Administrator
 Assert-HttpsUri $ManifestUri
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
-if (-not (Test-Path -LiteralPath $hostReceipt -PathType Leaf)) { throw "ยังไม่ได้ติดตั้ง BMS Retail Local" }
+if (-not (Test-Path -LiteralPath $hostReceipt -PathType Leaf)) { throw "BMS Retail Local is not installed" }
 foreach ($required in @($agent, $keyring, (Join-Path $bootstrapRoot "bms-localctl"),
     (Join-Path $bootstrapRoot "bms-update-transaction"), (Join-Path $bootstrapRoot "bms-wsl-keepalive"))) {
-  if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "bootstrap updater ไม่ครบ: $required" }
+  if (-not (Test-Path -LiteralPath $required -PathType Leaf)) { throw "Bootstrap updater is incomplete: $required" }
 }
 $null = Invoke-AgentJson @("preflight")
 
@@ -232,7 +232,7 @@ $packageType = if ($current.PSObject.Properties.Name -contains 'packageType') {
 } else {
   'server-pos'
 }
-if ($packageType -notin @('server', 'server-pos')) { throw "installation packageType ไม่ถูกต้อง: $packageType" }
+if ($packageType -notin @('server', 'server-pos')) { throw "Invalid installation packageType: $packageType" }
 $oldDesktop = Join-Path (Join-Path (Join-Path $InstallRoot "releases") $currentVersion) "desktop.artifact"
 
 $releaseRoot = Join-Path $InstallRoot "release"
@@ -246,7 +246,7 @@ $release = Invoke-AgentJson @($verifyCommand, "-manifest", $manifestPath, "-keyr
   "-target", $target, "-current-version", $currentVersion)
 if ($CheckOnly) {
   if (-not [bool]$release.updateAvailable) {
-    Write-Host "BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: $currentVersion" -ForegroundColor Green
+    Write-Host "BMS Retail Local is up to date: $currentVersion" -ForegroundColor Green
     return
   }
 }
@@ -281,7 +281,7 @@ $downloadComponents = if ($packageType -eq 'server') {
 }
 $totalBytes = [long](($downloadComponents | Measure-Object -Property sizeBytes -Sum).Sum)
 $rollbackMode = if ([bool]$release.rollbackSafe) { "image-only" } else { "full database/files/secrets restore" }
-Write-Host "พบ BMS Retail Local update ที่ตรวจลายเซ็นแล้ว" -ForegroundColor Cyan
+Write-Host "A signature-verified BMS Retail Local update is available" -ForegroundColor Cyan
 Write-Host "  version: $currentVersion -> $($release.releaseVersion)"
 Write-Host "  channel: $($release.channel)"
 Write-Host "  schema: $($release.schemaVersion)"
@@ -289,20 +289,20 @@ Write-Host "  download: $totalBytes bytes"
 Write-Host "  rollback: $rollbackMode"
 Write-Host "  published: $($release.createdAt)"
 if ($CheckOnly) {
-  Write-Host "ยังไม่ได้ดาวน์โหลด component หรือติดตั้ง update" -ForegroundColor Green
+  Write-Host "No components have been downloaded and no update has been installed" -ForegroundColor Green
   return
 }
 if (-not $ConfirmUpdate) {
-  $confirmation = Read-Host "พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง"
-  if ($confirmation -cne "UPDATE") { throw "ยกเลิก update" }
+  $confirmation = Read-Host "Type UPDATE to create a backup and begin installation"
+  if ($confirmation -cne "UPDATE") { throw "Update cancelled" }
 }
 if ($packageType -eq 'server-pos' -and -not (Test-Path -LiteralPath $oldDesktop -PathType Leaf)) {
-  throw "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
+  throw "Previous Desktop artifact was not found for rollback"
 }
 foreach ($controlName in @("bms-localctl", "bms-update-transaction", "bms-wsl-keepalive")) {
   & $agent runtime-install-control -engine windows-wsl -distro $distroName `
     -source (Join-Path $bootstrapRoot $controlName) -name $controlName
-  if ($LASTEXITCODE -ne 0) { throw "ติดตั้ง runtime control $controlName ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to install runtime control $controlName" }
 }
 Invoke-Transaction @("prepare")
 $stageCommand = if ($packageType -eq 'server') { 'stage-server' } else { 'stage-release' }
@@ -322,7 +322,7 @@ $transactionPath = "$runtimeData/updates/$version"
 $compose = Get-ArtifactPath $release "compose"
 & $agent runtime-write -engine windows-wsl -distro $distroName -source $compose.path `
   -destination "$transactionPath/compose.next.yml" -mode "0600"
-if ($LASTEXITCODE -ne 0) { throw "stage compose update ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to stage Compose update" }
 
 $nextReceiptPath = Join-Path $InstallRoot ".installation-next-$([Guid]::NewGuid().ToString('N')).json"
 try {
@@ -345,7 +345,7 @@ try {
   Write-Utf8NoBom $nextReceiptPath ($current | ConvertTo-Json)
   & $agent runtime-write -engine windows-wsl -distro $distroName -source $nextReceiptPath `
     -destination "$transactionPath/installation.next.json" -mode "0600"
-  if ($LASTEXITCODE -ne 0) { throw "stage installation receipt ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to stage installation receipt" }
 
   if ($packageType -eq 'server-pos') {
     $desktop = Get-ArtifactPath $release "desktop"
@@ -359,7 +359,7 @@ try {
         Copy-Item -LiteralPath $oldDesktop -Destination $oldDesktopInstaller -Force
         Start-Process -FilePath $oldDesktopInstaller -ArgumentList "/S", "/allusers" -WindowStyle Hidden -Wait | Out-Null
       } catch {}
-      throw "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
+      throw "Desktop update failed; runtime was rolled back"
     }
   }
   Invoke-Transaction @("commit", $version)
@@ -392,8 +392,8 @@ if (Test-Path -LiteralPath $profilePath -PathType Leaf) {
       [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $previousEvidenceToken, "Process")
     }
   } catch {
-    Write-Warning "บันทึก license update evidence ไม่สำเร็จ แต่ร้านยังใช้งานต่อได้: $($_.Exception.Message)"
+    Write-Warning "Could not record license update evidence. The shop can continue operating: $($_.Exception.Message)"
   }
 }
 
-Write-Host "BMS Retail Local update สำเร็จ: $currentVersion -> $version" -ForegroundColor Green
+Write-Host "BMS Retail Local update complete: $currentVersion -> $version" -ForegroundColor Green

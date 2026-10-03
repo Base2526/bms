@@ -41,7 +41,7 @@ try {
     $aclArguments += "${interactiveUser}:(OI)(CI)RX"
   }
   & icacls @aclArguments *> $null
-  if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ setup diagnostics ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to restrict setup diagnostics permissions" }
 
   $global:LASTEXITCODE = 0
   & $InstallScript -ManifestUri $ManifestUri -PackageType $PackageType -ActivationUri $ActivationUri `

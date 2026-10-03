@@ -22,17 +22,17 @@ func (result *preflightResult) warn(message string) {
 }
 
 func (result preflightResult) writeHuman() {
-	fmt.Printf("ตรวจสอบเครื่องสำหรับ BMS Retail Local\n")
-	fmt.Printf("ระบบ: %s  สถาปัตยกรรม: %s  เป้าหมาย: %s\n", result.Platform, result.Architecture, result.Target)
+	fmt.Printf("BMS Retail Local system check\n")
+	fmt.Printf("Platform: %s  Architecture: %s  Target: %s\n", result.Platform, result.Architecture, result.Target)
 	for _, message := range result.Warnings {
-		fmt.Printf("[คำแนะนำ] %s\n", message)
+		fmt.Printf("[WARN] %s\n", message)
 	}
 	for _, message := range result.Failures {
-		fmt.Printf("[ต้องแก้ไข] %s\n", message)
+		fmt.Printf("[FAIL] %s\n", message)
 	}
 	if result.OK {
-		fmt.Println("ผลตรวจ: พร้อมติดตั้ง")
+		fmt.Println("Result: ready to install")
 	} else {
-		fmt.Println("ผลตรวจ: ยังติดตั้งไม่ได้ กรุณาแก้ไขรายการด้านบนแล้วเปิด Setup อีกครั้ง")
+		fmt.Println("Result: cannot install yet. Resolve the issues above, then run Setup again")
 	}
 }

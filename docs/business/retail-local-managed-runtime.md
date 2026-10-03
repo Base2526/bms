@@ -71,6 +71,13 @@ signed installer, supplies shop type/owner/password/PIN details, optionally crea
 data, and reaches a paired POS without handling
 Docker Desktop, WSL, Compose, ports, environment files, or a raw device token.
 
+Windows, Linux, and macOS Setup use English prompts, progress, preflight results, error messages,
+and completion instructions, including Server, Server + POS, POS-only, and existing offline setup paths.
+This keeps setup readable in consoles without Thai fonts. Shop-type choices use the release catalog's
+English labels (or the stable ID when absent). Shop names and other entered data still support Unicode;
+OS tools and backend services may return messages in their own language. This applies to newly built
+installers and agents; previously downloaded packages keep their original text.
+
 It remains a deployment profile of the authoritative BMS stack. It does not create a local-only price,
 stock, payment, permission, tax, or settlement implementation, and Electron remains a keystore-backed
 client rather than a server.

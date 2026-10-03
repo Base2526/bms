@@ -10,7 +10,7 @@ if [[ -f $bundle_root/PACKAGE_TYPE ]]; then
   package_type=$(tr -d '\r\n' <"$bundle_root/PACKAGE_TYPE")
 fi
 [[ $package_type == server-pos || $package_type == server ]] || {
-  echo "bootstrap package type ไม่ถูกต้อง: $package_type" >&2
+  echo "Invalid bootstrap package type: $package_type" >&2
   exit 2
 }
 
@@ -27,7 +27,7 @@ if [[ -z $manifest_uri && -f $release_url_file ]]; then
 fi
 if [[ -z $manifest_uri ]]; then
   BMS_DIAG_REASON='No release channel URL is configured.'
-  echo "ยังไม่ได้กำหนด release channel URL" >&2
+  echo "Release channel URL is not configured" >&2
   echo "usage: sudo bms-retail-local-setup https://release.example/release.jws.json" >&2
   exit 2
 fi

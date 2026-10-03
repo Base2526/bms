@@ -24,24 +24,24 @@ func engineCommand(engine, distro string, args ...string) (*exec.Cmd, error) {
 	switch engine {
 	case "windows-wsl":
 		if runtime.GOOS != "windows" {
-			return nil, errors.New("windows-wsl engine ใช้ได้เฉพาะ Windows")
+			return nil, errors.New("The windows-wsl engine runs on Windows only")
 		}
 		if !distroPattern.MatchString(distro) {
-			return nil, errors.New("ชื่อ WSL distribution ไม่ถูกต้อง")
+			return nil, errors.New("Invalid WSL distribution name")
 		}
 		prefix := []string{"-d", distro, "-u", "root", "--exec", "docker"}
 		return exec.Command("wsl.exe", append(prefix, args...)...), nil
 	case "linux-native":
 		if runtime.GOOS != "linux" {
-			return nil, errors.New("linux-native engine ใช้ได้เฉพาะ Linux")
+			return nil, errors.New("The linux-native engine runs on Linux only")
 		}
 		return exec.Command("docker", args...), nil
 	case "macos-lima":
 		if runtime.GOOS != "darwin" {
-			return nil, errors.New("macos-lima engine ใช้ได้เฉพาะ macOS")
+			return nil, errors.New("The macos-lima engine runs on macOS only")
 		}
 		if !distroPattern.MatchString(distro) {
-			return nil, errors.New("ชื่อ Lima instance ไม่ถูกต้อง")
+			return nil, errors.New("Invalid Lima instance name")
 		}
 		limactl, err := limaCtlPath()
 		if err != nil {
@@ -50,7 +50,7 @@ func engineCommand(engine, distro string, args ...string) (*exec.Cmd, error) {
 		prefix := []string{"--tty=false", "shell", distro, "sudo", "docker"}
 		return exec.Command(limactl, append(prefix, args...)...), nil
 	default:
-		return nil, fmt.Errorf("engine %q ไม่รองรับ", engine)
+		return nil, fmt.Errorf("Unsupported engine %q", engine)
 	}
 }
 
@@ -58,18 +58,18 @@ func runtimeShellCommand(engine, distro, script string) (*exec.Cmd, error) {
 	switch engine {
 	case "windows-wsl":
 		if runtime.GOOS != "windows" || !distroPattern.MatchString(distro) {
-			return nil, errors.New("windows-wsl runtime ไม่ถูกต้อง")
+			return nil, errors.New("Invalid windows-wsl runtime")
 		}
 		// Bypass WSL's default shell: it expands $(...) before our script creates its files.
 		return exec.Command("wsl.exe", "-d", distro, "-u", "root", "--exec", "sh", "-c", script), nil
 	case "linux-native":
 		if runtime.GOOS != "linux" {
-			return nil, errors.New("linux-native runtime ใช้ได้เฉพาะ Linux")
+			return nil, errors.New("The linux-native runtime runs on Linux only")
 		}
 		return exec.Command("sh", "-c", script), nil
 	case "macos-lima":
 		if runtime.GOOS != "darwin" || !distroPattern.MatchString(distro) {
-			return nil, errors.New("macos-lima runtime ไม่ถูกต้อง")
+			return nil, errors.New("Invalid macos-lima runtime")
 		}
 		limactl, err := limaCtlPath()
 		if err != nil {
@@ -77,27 +77,27 @@ func runtimeShellCommand(engine, distro, script string) (*exec.Cmd, error) {
 		}
 		return exec.Command(limactl, "--tty=false", "shell", distro, "sudo", "sh", "-c", script), nil
 	default:
-		return nil, fmt.Errorf("engine %q ไม่รองรับ", engine)
+		return nil, fmt.Errorf("Unsupported engine %q", engine)
 	}
 }
 
 func limaCtlPath() (string, error) {
 	if configured := os.Getenv("BMS_LIMACTL_PATH"); configured != "" {
 		if !filepath.IsAbs(configured) {
-			return "", errors.New("BMS_LIMACTL_PATH ต้องเป็น absolute path")
+			return "", errors.New("BMS_LIMACTL_PATH must be an absolute path")
 		}
 		return configured, nil
 	}
 	path, err := exec.LookPath("limactl")
 	if err != nil {
-		return "", errors.New("ไม่พบ limactl สำหรับ private macOS runtime")
+		return "", errors.New("limactl was not found for the private macOS runtime")
 	}
 	return path, nil
 }
 
 func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest string, reporters ...progressReporter) error {
 	if !imageRefPattern.MatchString(imageRef) || !digestPattern.MatchString(expectedDigest) {
-		return errors.New("image reference/digest ไม่ถูกต้อง")
+		return errors.New("Invalid image reference or digest")
 	}
 	file, err := os.Open(artifact)
 	if err != nil {
@@ -121,7 +121,7 @@ func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest strin
 	load.Stderr = &loadError
 	load.Stdout = io.Discard
 	if err := load.Run(); err != nil {
-		return fmt.Errorf("โหลด image ไม่สำเร็จ: %s", strings.TrimSpace(loadError.String()))
+		return fmt.Errorf("Failed to load image: %s", strings.TrimSpace(loadError.String()))
 	}
 	reportProgress(reporters, progressEvent{Phase: "inspect", Component: imageRef,
 		CompletedBytes: info.Size(), TotalBytes: info.Size()})
@@ -131,11 +131,11 @@ func loadAndVerifyImage(engine, distro, artifact, imageRef, expectedDigest strin
 	}
 	output, err := inspect.Output()
 	if err != nil {
-		return fmt.Errorf("ตรวจ image id ไม่สำเร็จ: %w", err)
+		return fmt.Errorf("Failed to inspect image ID: %w", err)
 	}
 	actual := strings.TrimSpace(string(output))
 	if actual != expectedDigest {
-		return fmt.Errorf("image id ไม่ตรงสำหรับ %s: ต้องการ %s ได้ %s", imageRef, expectedDigest, actual)
+		return fmt.Errorf("Image ID mismatch for %s: expected %s, received %s", imageRef, expectedDigest, actual)
 	}
 	reportProgress(reporters, progressEvent{Phase: "loaded", Component: imageRef,
 		CompletedBytes: info.Size(), TotalBytes: info.Size()})
@@ -148,7 +148,7 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 		return err
 	}
 	if !modePattern.MatchString(mode) {
-		return errors.New("runtime file mode ไม่ถูกต้อง")
+		return errors.New("Invalid runtime file mode")
 	}
 	digest, size, err := fileSHA256(source)
 	if err != nil {
@@ -167,7 +167,7 @@ func writeRuntimeFile(engine, distro, source, destination, mode string) error {
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("เขียน runtime file ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("Failed to write runtime file: %s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -189,7 +189,7 @@ func installRuntimeControl(engine, distro, source, name string) error {
 	}
 	destination, ok := destinations[name]
 	if !ok {
-		return errors.New("runtime control name ไม่ได้รับอนุญาต")
+		return errors.New("Runtime control name is not allowed")
 	}
 	contents, err := os.ReadFile(source)
 	if err != nil {
@@ -212,7 +212,7 @@ func installRuntimeControl(engine, distro, source, name string) error {
 	var stderr bytes.Buffer
 	command.Stderr = &stderr
 	if err := command.Run(); err != nil {
-		return fmt.Errorf("ติดตั้ง runtime control ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
+		return fmt.Errorf("Failed to install runtime control: %s", strings.TrimSpace(stderr.String()))
 	}
 	return nil
 }
@@ -222,7 +222,7 @@ func normalizeRuntimeControl(contents []byte) ([]byte, error) {
 	// shebang makes Linux report the otherwise valid script as "required file not found".
 	contents = bytes.ReplaceAll(contents, []byte("\r\n"), []byte("\n"))
 	if !bytes.HasPrefix(contents, []byte("#!/bin/sh\n")) {
-		return nil, errors.New("runtime control ต้องเป็น POSIX sh script")
+		return nil, errors.New("Runtime control must be a POSIX sh script")
 	}
 	return contents, nil
 }
@@ -233,7 +233,7 @@ func readRuntimeFile(engine, distro, source, destination string) error {
 		return err
 	}
 	if engine != "windows-wsl" && engine != "macos-lima" {
-		return errors.New("runtime-read ใช้สำหรับส่งออกไฟล์จาก private Windows WSL หรือ macOS Lima เท่านั้น")
+		return errors.New("runtime-read exports files only from private Windows WSL or macOS Lima")
 	}
 	command, err := runtimeShellCommand(engine, distro, fmt.Sprintf(
 		`set -eu; test -f %s; test ! -L %s; cat -- %s`,
@@ -243,7 +243,7 @@ func readRuntimeFile(engine, distro, source, destination string) error {
 	}
 	destination = filepath.Clean(destination)
 	if _, err := os.Stat(destination); err == nil {
-		return errors.New("destination มีอยู่แล้ว")
+		return errors.New("Destination already exists")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -262,7 +262,7 @@ func readRuntimeFile(engine, distro, source, destination string) error {
 	if runErr != nil || closeErr != nil {
 		_ = os.Remove(destination)
 		if runErr != nil {
-			return fmt.Errorf("อ่าน runtime file ไม่สำเร็จ: %s", strings.TrimSpace(stderr.String()))
+			return fmt.Errorf("Failed to read runtime file: %s", strings.TrimSpace(stderr.String()))
 		}
 		return closeErr
 	}
@@ -274,7 +274,7 @@ func safeRuntimePath(input string) (string, error) {
 	if clean == "/var/lib/bms-retail-local" || strings.HasPrefix(clean, "/var/lib/bms-retail-local/") {
 		return clean, nil
 	}
-	return "", errors.New("runtime path อยู่นอก /var/lib/bms-retail-local")
+	return "", errors.New("Runtime path is outside /var/lib/bms-retail-local")
 }
 
 func quoteShellArgument(input string) string {

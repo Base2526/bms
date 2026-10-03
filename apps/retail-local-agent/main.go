@@ -109,7 +109,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" {
-			return errors.New("verify-release ต้องมี -manifest, -keyring และ -target")
+			return errors.New("verify-release requires -manifest, -keyring, and -target")
 		}
 		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
 		if err != nil {
@@ -137,7 +137,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" || *currentVersion == "" {
-			return errors.New("check-update ต้องมี -manifest, -keyring, -target และ -current-version")
+			return errors.New("check-update requires -manifest, -keyring, -target, and -current-version")
 		}
 		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
 		if err != nil {
@@ -148,7 +148,7 @@ func run(args []string) error {
 			return err
 		}
 		if comparison < 0 {
-			return fmt.Errorf("ปฏิเสธ release downgrade: ติดตั้ง %s แต่ได้รับ %s", *currentVersion, verified.Payload.ReleaseVersion)
+			return fmt.Errorf("Release downgrade refused: installed %s, received %s", *currentVersion, verified.Payload.ReleaseVersion)
 		}
 		return writeJSON(map[string]any{
 			"ok": true, "updateAvailable": comparison > 0, "releaseVersion": verified.Payload.ReleaseVersion,
@@ -167,7 +167,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" || *currentVersion == "" {
-			return errors.New("verify-update ต้องมี -manifest, -keyring, -target และ -current-version")
+			return errors.New("verify-update requires -manifest, -keyring, -target, and -current-version")
 		}
 		verified, err := verifyReleaseFiles(*manifest, *keyring, *target)
 		if err != nil {
@@ -178,7 +178,7 @@ func run(args []string) error {
 			return err
 		}
 		if comparison <= 0 {
-			return fmt.Errorf("ปฏิเสธ release replay/downgrade: ติดตั้ง %s แต่ได้รับ %s", *currentVersion, verified.Payload.ReleaseVersion)
+			return fmt.Errorf("Release replay or downgrade refused: installed %s, received %s", *currentVersion, verified.Payload.ReleaseVersion)
 		}
 		return writeJSON(map[string]any{
 			"ok": true, "releaseVersion": verified.Payload.ReleaseVersion,
@@ -199,7 +199,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" || *root == "" {
-			return errors.New("stage-release ต้องมี -manifest, -keyring, -target และ -root")
+			return errors.New("stage-release requires -manifest, -keyring, -target, and -root")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -228,7 +228,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" || *root == "" {
-			return errors.New("stage-server ต้องมี -manifest, -keyring, -target และ -root")
+			return errors.New("stage-server requires -manifest, -keyring, -target, and -root")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -257,7 +257,7 @@ func run(args []string) error {
 			return err
 		}
 		if *manifest == "" || *keyring == "" || *target == "" || *root == "" {
-			return errors.New("stage-desktop ต้องมี -manifest, -keyring, -target และ -root")
+			return errors.New("stage-desktop requires -manifest, -keyring, -target, and -root")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -286,7 +286,7 @@ func run(args []string) error {
 			return err
 		}
 		if *engine == "" || *artifact == "" || *imageRef == "" || *digest == "" {
-			return errors.New("engine-load ต้องมี -engine, -artifact, -image-ref และ -digest")
+			return errors.New("engine-load requires -engine, -artifact, -image-ref, and -digest")
 		}
 		var reporter progressReporter
 		if *progress {
@@ -304,7 +304,7 @@ func run(args []string) error {
 			return err
 		}
 		if *engine == "" || *source == "" || *destination == "" {
-			return errors.New("runtime-write ต้องมี -engine, -source และ -destination")
+			return errors.New("runtime-write requires -engine, -source, and -destination")
 		}
 		return writeRuntimeFile(*engine, *distro, *source, *destination, *mode)
 	case "runtime-read":
@@ -317,7 +317,7 @@ func run(args []string) error {
 			return err
 		}
 		if *engine == "" || *source == "" || *destination == "" {
-			return errors.New("runtime-read ต้องมี -engine, -source และ -destination")
+			return errors.New("runtime-read requires -engine, -source, and -destination")
 		}
 		return readRuntimeFile(*engine, *distro, *source, *destination)
 	case "runtime-install-control":
@@ -330,7 +330,7 @@ func run(args []string) error {
 			return err
 		}
 		if *engine == "" || *source == "" || *name == "" {
-			return errors.New("runtime-install-control ต้องมี -engine, -source และ -name")
+			return errors.New("runtime-install-control requires -engine, -source, and -name")
 		}
 		return installRuntimeControl(*engine, *distro, *source, *name)
 	case "license-record":
@@ -347,7 +347,7 @@ func run(args []string) error {
 			return err
 		}
 		if *root == "" || *eventType == "" || *licenseID == "" || *target == "" || *releaseVersion == "" {
-			return errors.New("license-record ต้องมี -root, -event, -license-id, -target และ -release-version")
+			return errors.New("license-record requires -root, -event, -license-id, -target, and -release-version")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -370,7 +370,7 @@ func run(args []string) error {
 			return err
 		}
 		if *root == "" || *endpoint == "" {
-			return errors.New("license-flush ต้องมี -root และ -endpoint")
+			return errors.New("license-flush requires -root and -endpoint")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -390,7 +390,7 @@ func run(args []string) error {
 			return err
 		}
 		if *root == "" {
-			return errors.New("license-pulse ต้องมี -root")
+			return errors.New("license-pulse requires -root")
 		}
 		absoluteRoot, err := safeInstallRoot(*root)
 		if err != nil {
@@ -402,7 +402,7 @@ func run(args []string) error {
 		}
 		return writeJSON(result)
 	default:
-		return fmt.Errorf("ไม่รู้จักคำสั่ง %q", args[0])
+		return fmt.Errorf("Unknown command %q", args[0])
 	}
 }
 
@@ -415,12 +415,12 @@ func writeJSON(value any) error {
 func safeInstallRoot(input string) (string, error) {
 	root, err := filepath.Abs(input)
 	if err != nil {
-		return "", fmt.Errorf("อ่าน install root ไม่ได้: %w", err)
+		return "", fmt.Errorf("Could not read install root: %w", err)
 	}
 	clean := filepath.Clean(root)
 	volume := filepath.VolumeName(clean)
 	if clean == string(filepath.Separator) || (volume != "" && clean == volume+string(filepath.Separator)) {
-		return "", errors.New("ปฏิเสธ install root ที่เป็น filesystem root")
+		return "", errors.New("Install root must not be a filesystem root")
 	}
 	return clean, nil
 }
