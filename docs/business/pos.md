@@ -872,8 +872,37 @@ display field from silently becoming payment authority and also makes split tend
 portion rather than the whole bill. Because a POS tender currently chooses a method, not an account,
 the first configured PromptPay/QR account with a payload is the deterministic display account.
 
-Only the last eight lines are shown. A customer is watching what was just scanned, and auto-scrolling
-a screen nobody can touch reads worse than truncating.
+The display has four states: welcome, recent items, payment, and completed sale. The header uses the
+tenant name, branch and uploaded shop logo from the authenticated POS session (REST and GraphQL).
+Logo uploads decode the actual PNG/JPEG/WebP bytes before publishing, reject empty/corrupt/animated
+images and inputs above 20 million pixels, and produce an orientation-correct PNG bounded to
+1024 pixels per side with transparency retained. The upload remains admin-authenticated,
+tenant-owned and public; existing URL logos are not rewritten.
+Welcome can show the configured business hours and website/social URL as a QR. These are shop profile
+fields, not invented branch hours, a membership enrolment link or a LINE OA integration.
+
+The latest three to eight lines are shown according to monitor height, with the newest highlighted
+and a count of earlier lines. Restaurant publishing still includes only SENT items. Names are masked
+before broadcasting; phone/email are not member labels. Existing server previews supply expected
+points, while earned/balance points and change come from the completed sale. A pending manual
+discount or a price preview that does not match the current bill hides the payable total and payment
+QR. Restaurant checkout reuses the cashier's rounded amount, not the unrounded preview. Locking the
+cashier or moving to non-selling work clears the customer view. A new service-only bill takes
+precedence over the previous receipt even when its retail cart is empty. A receipt
+tax-request QR appears only when the current completed sale supplies its real purpose-bound URL;
+it is labelled as a tax-invoice request, not an online receipt download.
+
+The completed state clears ten seconds after the cashier received settlement success. This local
+presentation timestamp is not a financial issue date. Repeated snapshots, workspace switching and
+reopening the display cannot restart that timer; a different sale ID or new bill takes precedence
+immediately. The display sends a local hello every two seconds
+to recover late-opened cashier windows. After eight seconds without a valid snapshot, it hides the
+cart, money, member and payment QR, keeping only public branding and a neutral waiting message.
+This detects a lost cashier window, not internet connectivity or payment status.
+
+Promotional carousels, wholesale nudges, enrolment/review QR codes and pharmacy-name preferences from
+the design reference are not connected in this version. No mock offer, savings calculation, QR
+expiry, VAT or points rule is substituted for missing authoritative data.
 
 ### Sending a receipt
 

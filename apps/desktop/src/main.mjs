@@ -1,4 +1,6 @@
 import electronMain from "electron/main";
+import { createReceiptPrinter, DEFAULT_PRINTER_CONFIG, isReceiptPrinterCaller, normalizePrinterConfig } from "./receipt-printer.mjs";
+import { printerReadiness } from "./printer-health.mjs";
 import { createHash } from "node:crypto";
 import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -36,7 +38,7 @@ import {
   installGlobalZoomPolicy,
 } from "./zoom-policy.mjs";
 
-const { app, BrowserWindow, ipcMain, Menu, net, Notification, safeStorage, screen, shell } = electronMain;
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, safeStorage, screen, shell } = electronMain;
 
 installGlobalZoomPolicy(app);
 
@@ -51,6 +53,11 @@ let activePairing = null;
 let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
 let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
+let printerConfig = { ...DEFAULT_PRINTER_CONFIG };
+let printerProblem = "";
+let pendingPrinterTest = null;
+let printerOperationBusy = false;
+let displaySetupPromptOpen = false;
 let displayReconcileTimer = null;
 let refreshRequestSequence = 0;
 let pendingRefreshRequest = null;
@@ -67,6 +74,51 @@ function configPath() {
 function customerDisplayConfigPath() {
   return path.join(app.getPath("userData"), "customer-display.json");
 }
+
+function printerConfigPath() {
+  return path.join(app.getPath("userData"), "receipt-printer.json");
+}
+
+async function installedPrinters() {
+  let timer;
+  try {
+    return await Promise.race([
+      mainWindow.webContents.getPrintersAsync(),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจระบบพิมพ์แล้วลองใหม่")), 8000); }),
+    ]);
+  } finally { clearTimeout(timer); }
+}
+
+async function printerState() {
+  const printers = await installedPrinters();
+  return {
+    ...printerConfig,
+    ...printerReadiness(printerConfig, printers, printerProblem, pendingPrinterTest === printerConfig),
+    busy: printerOperationBusy,
+    printers: printers.map(({ name, displayName, isDefault }) => ({ name, displayName, isDefault })),
+  };
+}
+
+async function savePrinterConfig(next) {
+  const target = printerConfigPath();
+  await writeFile(`${target}.tmp`, JSON.stringify(next), { encoding: "utf8", mode: 0o600 });
+  await rename(`${target}.tmp`, target);
+  printerConfig = next;
+}
+
+const printDesktopReceipt = createReceiptPrinter({
+  getConfig: () => ({ ...printerConfig }),
+  getPrinters: installedPrinters,
+  createWindow: () => {
+    const window = new BrowserWindow({
+      show: false,
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    });
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+    window.webContents.on("will-navigate", (event) => event.preventDefault());
+    return window;
+  },
+});
 
 function currentSecureStorageStatus() {
   const backend = process.platform === "linux"
@@ -419,6 +471,7 @@ function createCustomerDisplayWindow(targetDisplay) {
 }
 
 function reconcileCustomerDisplay() {
+  void offerCustomerDisplaySetup();
   if (!activePairing || customerDisplayConfig.mode === "off") {
     closeCustomerDisplayWindow();
     broadcastCustomerDisplayState();
@@ -429,6 +482,35 @@ function reconcileCustomerDisplay() {
   if (target) createCustomerDisplayWindow(target);
   else closeCustomerDisplayWindow();
   broadcastCustomerDisplayState();
+}
+
+async function offerCustomerDisplaySetup() {
+  if (!activePairing || customerDisplayConfig.configured || displaySetupPromptOpen
+    || !mainWindow || mainWindow.isDestroyed() || screen.getAllDisplays().length < 2) return;
+  // Wait until the cashier page is loaded; never interrupt pairing or connection recovery.
+  try {
+    if (new URL(mainWindow.webContents.getURL()).origin !== activePairing.serverUrl) return;
+  } catch { return; }
+  displaySetupPromptOpen = true;
+  const pairing = activePairing;
+  const previousConfig = customerDisplayConfig;
+  try {
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "question", title: "จอลูกค้า", message: "พบจอเพิ่มเติม ใช้เป็นจอลูกค้าหรือไม่?",
+      detail: "เมื่อเปิดใช้งาน ระบบจะเปิดจอลูกค้าให้อัตโนมัติทุกครั้งที่เปิด POS เปลี่ยนจอได้ในตั้งค่า",
+      buttons: ["เปิดจอลูกค้า", "ยังไม่ใช้"], defaultId: 0, cancelId: 1,
+    });
+    if (activePairing !== pairing || customerDisplayConfig !== previousConfig
+      || !mainWindow || mainWindow.isDestroyed()) return;
+    const next = normalizeCustomerDisplayConfig({ mode: result.response === 0 ? "auto" : "off", configured: true });
+    await writeCustomerDisplayConfig(next);
+    customerDisplayConfig = next;
+    reconcileCustomerDisplay();
+  } catch {
+    console.error("Unable to save customer-display setup");
+  } finally {
+    displaySetupPromptOpen = false;
+  }
 }
 
 function scheduleCustomerDisplayReconcile() {
@@ -752,6 +834,73 @@ async function verifyPairing(pairing) {
 }
 
 function registerIpc() {
+  const isPrinterCaller = (event) => isReceiptPrinterCaller(event, mainWindow, activePairing?.serverUrl);
+  ipcMain.handle("bms-pos:get-printer-state", async (event) => {
+    if (!isPrinterCaller(event)) return null;
+    return printerState();
+  });
+  ipcMain.handle("bms-pos:set-printer-config", async (event, input) => {
+    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์ตั้งค่าเครื่องพิมพ์" };
+    if (printerOperationBusy) return { ok: false, error: "กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่" };
+    printerOperationBusy = true;
+    const pairing = activePairing;
+    try {
+      if (![58, 80].includes(input?.paperWidth)) throw new Error("ขนาดกระดาษไม่ถูกต้อง");
+      const next = normalizePrinterConfig(input);
+      const { printers } = await printerState();
+      if (activePairing !== pairing || !isPrinterCaller(event)) throw new Error("หน้าขายเปลี่ยนแล้ว กรุณาลองใหม่");
+      if (!next.deviceName || !printers.some((printer) => printer.name === next.deviceName)) {
+        throw new Error("ไม่พบเครื่องพิมพ์ที่เลือก");
+      }
+      if (next.deviceName !== printerConfig.deviceName || next.paperWidth !== printerConfig.paperWidth) {
+        next.tested = false;
+        await savePrinterConfig(next);
+        printerProblem = "";
+        pendingPrinterTest = null;
+      }
+      return { ok: true, state: await printerState() };
+    } catch (error) {
+      return { ok: false, error: error?.message || "บันทึกเครื่องพิมพ์ไม่สำเร็จ" };
+    } finally { printerOperationBusy = false; }
+  });
+  const runPrinterJob = async (event, testPage) => {
+    if (printerOperationBusy) return { ok: false, error: "กำลังใช้เครื่องพิมพ์ กรุณารอสักครู่" };
+    printerOperationBusy = true;
+    const pairing = activePairing;
+    try {
+      const state = await printerState();
+      if (!(testPage ? state.canTest : state.canPrint)) return { ok: false, error: state.message };
+      pendingPrinterTest = null;
+      const result = await printDesktopReceipt(event.sender, testPage, () => activePairing === pairing && isPrinterCaller(event));
+      if (!result.ok) printerProblem = result.error;
+      else if (testPage) pendingPrinterTest = printerConfig;
+      return result;
+    } catch {
+      printerProblem = "ตรวจสอบเครื่องพิมพ์ไม่สำเร็จ กรุณาตรวจสอบและพิมพ์ทดสอบอีกครั้ง";
+      return { ok: false, error: printerProblem };
+    }
+    finally { printerOperationBusy = false; }
+  };
+  ipcMain.handle("bms-pos:print-receipt", async (event) => {
+    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ใบเสร็จ" };
+    return runPrinterJob(event, false);
+  });
+  ipcMain.handle("bms-pos:test-receipt-printer", async (event) => {
+    if (!isPrinterCaller(event)) return { ok: false, error: "ไม่มีสิทธิ์พิมพ์ทดสอบ" };
+    return runPrinterJob(event, true);
+  });
+  ipcMain.handle("bms-pos:confirm-printer-test", async (event, printed) => {
+    if (!isPrinterCaller(event) || printerOperationBusy || !pendingPrinterTest || pendingPrinterTest !== printerConfig
+      || typeof printed !== "boolean") return { ok: false, error: "กรุณาพิมพ์ทดสอบก่อนยืนยัน" };
+    printerOperationBusy = true;
+    try {
+      await savePrinterConfig({ ...printerConfig, tested: printed });
+      pendingPrinterTest = null;
+      printerProblem = printed ? "" : "กระดาษทดสอบไม่ออกหรือไม่ถูกต้อง ตรวจเครื่องและคิวพิมพ์ แล้วทดสอบใหม่";
+      return { ok: true };
+    } catch { return { ok: false, error: "บันทึกผลทดสอบไม่สำเร็จ" }; }
+    finally { printerOperationBusy = false; }
+  });
   ipcMain.on("bms-pos:refresh-data-result", (event, result) => {
     if (!isPairedCashierFrame(event) || !pendingRefreshRequest) return;
     if (Number(result?.requestId) !== pendingRefreshRequest.requestId) return;
@@ -938,6 +1087,11 @@ if (!singleInstance) {
     registerIpc();
     mainWindow = createMainWindow();
     customerDisplayConfig = await readCustomerDisplayConfig();
+    try {
+      printerConfig = normalizePrinterConfig(JSON.parse(await readFile(printerConfigPath(), "utf8")));
+    } catch (error) {
+      if (error?.code !== "ENOENT") console.error("Unable to read receipt printer configuration");
+    }
     activePairing = await readPairing();
     if (!activePairing) activePairing = await consumePairingHandoff();
     installApplicationMenu();

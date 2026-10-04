@@ -1457,7 +1457,7 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
   );
 
   // ปุ่มที่ทาพื้นทึบแล้วใช้ตัวหนังสือสีอ่อน **ต้องประกาศ :hover ของตัวเองเสมอ** —
-  // pos.css เปลี่ยนพื้นเป็น --pos-sunken ตอน hover แล้วตัวหนังสือสีขาวจะหายไปกับพื้น
+  // pos.css เปลี่ยนทั้งพื้นและสีข้อความตอน hover ต้องรักษาคู่สีที่ตัดกันไว้ครบ
   // และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุด = เห็นปุ่มว่างเปล่าเป็นปกติ
   const rules = [...css.matchAll(/(^|\n)\s*([^\n{@}]+?)\s*\{([^}]*)\}/g)].map(
     ([, , sel, body]) => ({
@@ -1466,8 +1466,9 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
     }),
   );
   const LIGHT_INK =
-    /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--panel\))\s*(?:;|$)/i;
+    /(?<![-\w])color\s*:\s*(?:white|#fff(?:fff)?|var\(--(?:panel|on-solid)\))\s*(?:;|$)/i;
   const missingHover: string[] = [];
+  let paintedCount = 0;
   // ตัด :not(...) ออกก่อนถามว่า "กฎนี้เป็นของปุ่มตัวไหน" — `.railBtn:hover:not(.railBtnActive)`
   // เอ่ยถึง railBtnActive เพื่อ *ยกเว้น* มัน ไม่ใช่เพื่อทาสีให้มัน (รอบแรกเทสเขียวเพราะข้อนี้)
   const withoutNot = (sel: string) => sel.replace(/:not\([^)]*\)/g, "");
@@ -1482,18 +1483,21 @@ test("ทุกกฎที่ทาสีปุ่มต้องเจาะ�
         LIGHT_INK.test(rule.body),
     );
     if (!painted) continue;
+    paintedCount += 1;
     const hovered = rules.some(
       (rule) =>
         owns(rule.sel) &&
         rule.sel.includes(":hover") &&
-        /(?:^|;|\{)\s*background\s*:/.test(rule.body),
+        /(?:^|;|\{)\s*background\s*:/.test(rule.body) &&
+        LIGHT_INK.test(rule.body),
     );
     if (!hovered) missingHover.push(name);
   }
+  assert.ok(paintedCount >= 7, "ต้องตรวจพบปุ่มพื้นทึบ รวมถึงปุ่มที่ใช้ --on-solid");
   assert.deepEqual(
     missingHover,
     [],
-    `ปุ่มพื้นทึบตัวหนังสือสีอ่อนที่ไม่มีกฎ :hover ของตัวเอง (ตัวหนังสือจะหายตอน hover): ${missingHover.join(" · ")}`,
+    `ปุ่มพื้นทึบต้องคงทั้งสีพื้นและสีข้อความที่ตัดกันตอน hover: ${missingHover.join(" · ")}`,
   );
 
   // พื้นอย่างเดียวไม่พอ: pos.css เปลี่ยนทั้ง background และ color ตอน hover เคยทำให้

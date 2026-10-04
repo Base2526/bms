@@ -18,6 +18,10 @@ import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import BoardGamePanel from "@/components/pos/BoardGamePanel";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
+import ReceiptPrinterSettings from "@/components/pos-desktop/ReceiptPrinterSettings";
+import ReceiptPrinterStatus from "@/components/pos-desktop/ReceiptPrinterStatus";
+import { useReceiptPrinter } from "@/components/pos-desktop/useReceiptPrinter";
+import { hasDesktopPrinterBridge, printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
 import { incomingOrderAttentionKeys, incomingOrderOperationalState, incomingOrderProblemReason } from "@/lib/pos/incomingOrderAttention";
 import { summarizeDeliveryIntakeControls } from "@/lib/pos/deliveryIntakePresentation";
@@ -60,6 +64,8 @@ import { isEnrollablePhone } from "@/lib/pos/memberEnroll";
 import { describePosFailure as describeFailure } from "@/lib/pos/failureMessage";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
+  EMPTY_CUSTOMER_DISPLAY,
+  displayBrand, displayMemberName,
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
 import {
@@ -1039,6 +1045,9 @@ type Session = {
   }>;
   purchaseReceivers: Array<{ id: string; name: string | null; email: string | null; role: string | null; hasPin: boolean }>;
   store?: {
+    name?: string | null;
+    businessHours?: string | null;
+    website?: string | null;
     taxId: string | null;
     receiptLanguageMode: ReceiptLanguageMode;
     address?: string | null;
@@ -1435,6 +1444,7 @@ type IncomingRestaurantOrder = {
 type IncomingRefund = { id: string; orderId: string; amount: number; method: string; channel: string; customerRef: string | null; cancelledBy: string | null; createdAt: string };
 
 export default function PosPage() {
+  const receiptPrinter = useReceiptPrinter();
   const {
     embedded,
     initialTab,
@@ -1583,7 +1593,9 @@ export default function PosPage() {
   // บิลที่เพิ่งขายจบ — แสดงผลในคอลัมน์ขวาแทนแผงจ่ายเงิน (จุดที่เพิ่งกดปุ่ม)
   // ไม่ใช้ modal เพราะต้องกดปิดทุกบิล = เพิ่ม 1 แตะต่อลูกค้า 1 คน
   const [justSold, setJustSold] = useState<
-    { docNo: string | null; change: number | null; total: number; kitchenTickets: number } | null
+    { docNo: string | null; change: number | null; total: number; kitchenTickets: number;
+      id: string; completedAt: number; tendered: number | null; memberName: string | null;
+      pointsEarned: number | null; pointsBalance: number | null; taxRequestUrl: string | null } | null
   >(null);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
   // ---- สมาชิก + แต้ม (7.96) ----
@@ -4366,7 +4378,20 @@ export default function PosPage() {
     if (suppressCustomerDisplay) return;
     const ch = displayChannel.current;
     if (!ch) return;
+    if (!token || tokenRejected || !session?.shift || !cashierId || !pin || tab !== "sell") {
+      const idle = { ...EMPTY_CUSTOMER_DISPLAY, brand: displayBrand(session) };
+      displayPayload.current = idle;
+      ch.postMessage(idle);
+      return;
+    }
+    const completed = cart.length === 0 && extraTotal === 0 && !boardGameCheckout ? justSold : null;
+    const needsPreview = Boolean(boardGameCheckout || member || pointsToRedeem || couponCode.trim() || approvedDiscount);
+    const pendingPricing = (needsPreview || Boolean(memberPreview)) && (!memberPreview || memberPreview.status !== "READY"
+      || memberPreviewAppliedKey !== memberPreviewRequestKey);
     const payload = {
+      brand: displayBrand(session),
+      pendingApproval: Boolean(approvedDiscount?.amount),
+      pendingPricing,
       lines: [
         ...cart.map((l) => ({
           name: l.receiptName,
@@ -4395,25 +4420,27 @@ export default function PosPage() {
       total,
       discountTotal,
       amountDue,
-      memberName: member?.name ?? null,
-      pointsEarned: null,
+      memberName: displayMemberName(completed ? completed.memberName : member?.name),
+      pointsEarned: completed ? completed.pointsEarned : null,
+      pointsBalance: completed ? completed.pointsBalance : member?.pointsBalance ?? null,
+      pointsWillEarn: memberPreview?.pointsWillEarn ?? null,
       paymentQr: (() => {
         const configuredQr = session?.store?.paymentQr;
         const qrAmount = Math.round(payments
           .filter((payment) => payment.method === "QR")
           .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
-        return configuredQr && qrAmount > 0
+        return !pendingPricing && !approvedDiscount?.amount && configuredQr && qrAmount > 0
           ? { ...configuredQr, amount: qrAmount }
           : null;
       })(),
-      // บิลที่ปิดแล้วค้างบนจอให้ลูกค้านับเงินทอนตาม จนกว่าจะเริ่มยิงบิลถัดไป
-      finished: cart.length === 0 && justSold
-        ? { total: justSold.total, tendered: null, change: justSold.change }
+      // A stable sale ID keeps display heartbeats from restarting the thank-you timer.
+      finished: completed
+        ? { id: completed.id, completedAt: completed.completedAt, total: completed.total, tendered: completed.tendered, change: completed.change, taxRequestUrl: completed.taxRequestUrl }
         : null,
     };
     displayPayload.current = payload;
     ch.postMessage(payload);
-  }, [suppressCustomerDisplay, cart, extraLines, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, justSold, tierPriceByKey, payments, session?.store?.paymentQr]);
+  }, [suppressCustomerDisplay, token, tokenRejected, cashierId, pin, tab, cart, extraLines, extraTotal, boardGameCheckout, itemCount, total, discountTotal, amountDue, member, memberPreview, memberPreviewAppliedKey, memberPreviewRequestKey, pointsToRedeem, couponCode, approvedDiscount, justSold, tierPriceByKey, payments, session]);
 
   const pharmacyReviewOfferCartKey = useMemo(
     () => JSON.stringify(cart.map((line) => [line.key, line.packQty, line.size, line.packCode])),
@@ -5396,8 +5423,21 @@ export default function PosPage() {
     fallbackTimer = window.setTimeout(cleanup, 30_000);
   }
 
-  /** พิมพ์จริง: ลอง ESC/POS ก่อน ถ้าไม่ได้ค่อยตกไป print dialog */
+  /** Desktop uses its saved OS printer; browser keeps the existing USB/dialog path. */
   async function printReceipt(openDrawer = true) {
+    if (receiptPrinter.disabled) return;
+    try {
+      if (await printDesktopReceipt()) {
+        if (openDrawer && printerReady && isWebUsbSupported()) {
+          try { await sendToPrinter(buildDrawerKick()); }
+          catch { setNotice({ type: "error", text: "ส่งใบเสร็จเข้าคิวแล้ว แต่เปิดลิ้นชัก USB ไม่สำเร็จ" }); }
+        }
+        return;
+      }
+    } catch (cause) {
+      setNotice({ type: "error", text: cause instanceof Error ? cause.message : "พิมพ์ใบเสร็จไม่สำเร็จ" });
+      return;
+    }
     if (!receipt || !isWebUsbSupported() || !printerReady) {
       printBrowserTarget("receipt");
       return;
@@ -5460,7 +5500,7 @@ export default function PosPage() {
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [receiptModalOpen, receipt, printerReady]);
+  }, [receiptModalOpen, receipt, printerReady, receiptPrinter.disabled]);
 
   // Esc ปิดกล่องสมัครสมาชิก — ทางเดียวคู่กับปุ่ม ✕ (แตะฉากหลังปิดไม่ได้โดยตั้งใจ:
   // จอทัชโดนขอบง่ายมาก และการปิดจะทิ้งเบอร์ที่พิมพ์ค้างไว้ทั้งหมด)
@@ -5869,6 +5909,13 @@ export default function PosPage() {
         };
         setReceipt(nextReceipt);
         setJustSold({
+          id: data.orderId,
+          completedAt: Date.now(),
+          tendered: data.cashTendered ?? null,
+          memberName: member?.name ?? null,
+          pointsEarned: data.pointsEarned ?? null,
+          pointsBalance: data.pointsBalance ?? null,
+          taxRequestUrl: data.taxRequestUrl ?? null,
           docNo: data.docNo ?? null,
           change: data.cashChange ?? null,
           total: soldTotal,
@@ -6751,13 +6798,14 @@ export default function PosPage() {
             ใช้ยืนยันตัวผู้ทำรายการและตรวจสิทธิ์ทุกครั้ง ไม่ใช่ PIN ของเครื่อง และจะไม่ถูกเก็บไว้หลังรีเฟรชหน้า
           </PosHelp>
           {receipt && (
-            <button onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
+            <button disabled={receiptPrinter.disabled} title={receiptPrinter.state?.message} onClick={() => void printReceipt(false)} style={{ padding: "8px 12px", fontSize: 12 }}>
               พิมพ์บิลล่าสุด
             </button>
           )}
         </div>
       </header>
 
+      {receipt && receiptPrinter.disabled && !receiptModalOpen && !justSold && <ReceiptPrinterStatus />}
       {sessionError && !tokenRejected && (
         <PosDismissibleAlert key={sessionError} style={{ background: "var(--posx-danger-bg, #fdecea)", color: "var(--posx-danger-text, #611a15)", padding: 12, borderRadius: 8 }} onClose={() => setSessionError("")}>
           เชื่อมต่อไม่ได้: {sessionError} — ตรวจอินเทอร์เน็ตแล้วลอง{" "}
@@ -8357,14 +8405,15 @@ export default function PosPage() {
           </div>
 
           <div>
-            <div style={{ fontWeight: 500, marginBottom: 8 }}>เครื่องพิมพ์และลิ้นชัก</div>
+            {hasDesktopPrinterBridge() && <ReceiptPrinterSettings />}
+            <div style={{ fontWeight: 500, marginBottom: 8 }}>{hasDesktopPrinterBridge() ? "อุปกรณ์ USB และเครื่องมือ" : "เครื่องพิมพ์และลิ้นชัก"}</div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               {isWebUsbSupported() ? (
                 <button onClick={() => void setupPrinter()} style={{ padding: "8px 14px", fontSize: 13 }}>
-                  {printerReady ? "เครื่องพิมพ์ ✓ — เปลี่ยนเครื่อง" : "ตั้งค่าเครื่องพิมพ์"}
+                  {hasDesktopPrinterBridge() ? "ตั้งค่าลิ้นชัก USB" : printerReady ? "เครื่องพิมพ์ ✓ — เปลี่ยนเครื่อง" : "ตั้งค่าเครื่องพิมพ์"}
                 </button>
               ) : (
-                <span style={{ fontSize: 13, color: "var(--posx-muted, #888)" }}>
+                !hasDesktopPrinterBridge() && <span style={{ fontSize: 13, color: "var(--posx-muted, #888)" }}>
                   เบราว์เซอร์นี้ไม่รองรับ WebUSB — จะพิมพ์ผ่านหน้าต่างพิมพ์ของเบราว์เซอร์แทน
                 </span>
               )}
@@ -9730,8 +9779,9 @@ export default function PosPage() {
                 </>
               )}
 
-              <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-                <button onClick={() => void printReceipt(true)} style={{ flex: 1 }}>พิมพ์ใบเสร็จ</button>
+              <div style={{ display: "flex", gap: 6, marginTop: 14, flexWrap: "wrap" }}>
+                <ReceiptPrinterStatus />
+                <button disabled={receiptPrinter.disabled} onClick={() => void printReceipt(true)} style={{ flex: 1 }}>พิมพ์ใบเสร็จ</button>
                 <button onClick={() => setReceiptModalOpen(true)} style={{ flex: 1 }}>ดูใบเสร็จ</button>
                 <button onClick={() => setJustSold(null)} aria-label="ปิด" style={{ width: 52 }}>✕</button>
               </div>
@@ -10783,12 +10833,14 @@ export default function PosPage() {
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => void printReceipt(false)}
+                disabled={receiptPrinter.disabled}
                 style={{ flex: "1 1 200px", minWidth: 160, padding: "10px 16px", whiteSpace: "nowrap" }}
               >
                 {receipt.receiptType === "return"
                   ? "พิมพ์ใบรับคืน"
                   : receipt.receiptType === "exchange" ? "พิมพ์ใบเตรียมเปลี่ยน" : "พิมพ์ใบเสร็จ"} <span style={{ fontSize: 11, color: "var(--posx-muted, #888)" }}>Enter</span>
               </button>
+              <ReceiptPrinterStatus />
               {/* ปุ่มลิ้นชักโผล่เฉพาะตอนต่อเครื่องพิมพ์ ESC/POS ได้จริง — print dialog เปิดลิ้นชักไม่ได้ */}
               {printerReady && (
                 <button

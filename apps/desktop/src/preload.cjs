@@ -27,6 +27,14 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   getDeviceToken: () => ipcRenderer.invoke("bms-pos:get-device-token"),
   getStorageNamespace: () => ipcRenderer.invoke("bms-pos:get-storage-namespace"),
   openAdmin: () => ipcRenderer.invoke("bms-pos:open-admin"),
+  getPrinterState: () => ipcRenderer.invoke("bms-pos:get-printer-state"),
+  setPrinterConfig: (input) => ipcRenderer.invoke("bms-pos:set-printer-config", {
+    deviceName: typeof input?.deviceName === "string" ? input.deviceName : "",
+    paperWidth: input?.paperWidth,
+  }),
+  printReceipt: () => ipcRenderer.invoke("bms-pos:print-receipt"),
+  testReceiptPrinter: () => ipcRenderer.invoke("bms-pos:test-receipt-printer"),
+  confirmPrinterTest: (printed) => ipcRenderer.invoke("bms-pos:confirm-printer-test", printed === true),
   getCustomerDisplayState: () => ipcRenderer.invoke("bms-pos:get-customer-display-state"),
   setCustomerDisplayConfig: (input) => ipcRenderer.invoke("bms-pos:set-customer-display-config", {
     mode: typeof input?.mode === "string" ? input.mode : "",

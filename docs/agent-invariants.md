@@ -396,7 +396,15 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   to resume a tenant-wide pause.
   Provider/customer/order detail must never be copied into an OS lock-screen notification. The
   payment QR on that display comes only from a bounded provider-issued `qrPayload` on a
-  configured PromptPay/QR receiving account. A visible PromptPay ID is never enough to synthesize
+  configured PromptPay/QR receiving account. Customer-display snapshots contain masked member names,
+  never phone/email, and only server-backed preview/settlement figures. Pending manual-discount
+  approval or a stale pricing-preview key suppresses payable totals and QR. Restaurant display reuses
+  the rounded checkout amount. Locked cashiers and non-selling workspaces publish idle state; a new
+  service-only bill must not inherit a preceding receipt. The completed-sale ID and cashier-observed
+  completion time anchor the ten-second privacy reset; local hello retries and reopening never renew it.
+  Eight seconds without a valid cashier snapshot clears
+  monetary and customer data, not public branding. The screen itself remains API/IPC-free.
+  A visible PromptPay ID is never enough to synthesize
   an EMV payload, and split tender displays only the amount assigned to QR. Media permission is
   granted only for video on the paired origin. **Linux fails
   closed:** `basic_text` is Electron's unencrypted fallback, so `secureStorageStatus()` treats it and
@@ -410,7 +418,16 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   platform on its own runner and upload an artifact instead of publishing a release, and a platform
   can only be certified by the runner that owns it — DPAPI, the Linux keyring check and Gatekeeper
   are each invisible to the other two. Direct ESC/POS printing, cash-drawer control and offline
-  tender are not in the shell. See
+  tender are not in the shell. OS-driver receipt printing is supported: a cashier-main-frame-only
+  IPC snapshots the existing server-backed receipt into an isolated, no-preload print window and
+  queues one silent copy to the explicitly saved system printer. IPC accepts no HTML or URL;
+  it never recalculates money, picks a replacement printer, or retries an uncertain job. Missing
+  printers and image/driver failures remain visible. Printer readiness gates receipt/reprint buttons,
+  keyboard actions and native preflight; a failed health read also disables test printing rather than
+  trusting an earlier `canTest`. A queued test still needs cashier confirmation of readable
+  paper. Unknown driver status needs a confirmed test and a known fault cannot be overridden by that
+  confirmation. Printer trouble never blocks a sale or settlement. Customer-display first-run detection asks once,
+  preserves explicit off choices, and restores an enabled display on startup/reconnect. See
   [apps/desktop/README.md](../apps/desktop/README.md) and
   [business/pos.md § Desktop POS client](business/pos.md#desktop-pos-client-windows-linux-and-macos).
 - **`users.pos_only` (`7.92`) is a hard login gate, not a hidden menu item.** `loginAdmin` rejects a
