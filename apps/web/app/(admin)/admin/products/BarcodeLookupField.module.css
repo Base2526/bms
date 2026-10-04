@@ -1,0 +1,9 @@
+.field { margin-bottom: 24px; min-width: 0; }
+.controls { display: flex; gap: 8px; align-items: center; }
+.controls > input { flex: 1; min-width: 0; }
+.match { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 12px 0; }
+.details { flex: 1; min-width: 120px; overflow-wrap: anywhere; }
+@media (max-width: 576px) {
+  .controls { flex-wrap: wrap; }
+  .controls > input { flex-basis: calc(100% - 48px); }
+}

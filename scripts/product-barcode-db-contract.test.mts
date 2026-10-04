@@ -27,6 +27,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { checkBarcode, inStoreBarcode } from "../apps/web/lib/bms/barcode.ts";
 import { generateInStoreBarcode, upsertProduct } from "../apps/web/lib/bms/products.ts";
+import { lookupProductBarcode } from "../apps/web/lib/bms/productBarcodeLookup.ts";
 
 const TAG = "barcode-test";
 const SKU_A = `FAKE-${TAG}-A`;
@@ -108,6 +109,49 @@ test("the generator steps over a number the shop typed by hand out of order", as
   assert.notEqual(next, ahead);
   assert.equal(next, inStoreBarcode(baselineMaxSeq + 51),
     "ต้องเดินต่อจากเลขสูงสุดที่มีอยู่ ไม่ใช่เติมช่องว่างแล้วชนของเดิม");
+});
+
+test("lookup finds inactive products and equivalent GTINs, and never another shop's pack", async () => {
+  const direct = await lookupProductBarcode(tenantA, `0${SHARED}`);
+  assert.equal(direct.status, "LOCAL");
+  assert.equal(direct.matches[0].sku, SKU_A);
+  assert.equal(direct.matches[0].active, false);
+  const packBarcode = `FAKE-${TAG}-PACK`;
+  await query(
+    `INSERT INTO bms_product_packs (tenant_id, product_sku, pack_code, size, unit_name, base_qty, barcode)
+     VALUES ($1,$2,'BOX','STD','box',6,$3)`,
+    [tenantA, SKU_A, packBarcode],
+  );
+  const pack = await lookupProductBarcode(tenantA, packBarcode);
+  assert.equal(pack.status, "LOCAL");
+  assert.equal(pack.matches[0].sku, SKU_A);
+  const other = await lookupProductBarcode(tenantB, packBarcode);
+  assert.equal(other.status, "UNSUPPORTED");
+  assert.deepEqual(other.matches, []);
+  await assert.rejects(() => upsertProduct(tenantA, {
+    ...base(`FAKE-${TAG}-PACK-DUPLICATE`), barcode: packBarcode,
+  }), /Barcode already belongs/);
+  await assert.rejects(() => upsertProduct(tenantA, {
+    ...base(`FAKE-${TAG}-GTIN-DUPLICATE`), barcode: `0${SHARED}`,
+  }), /Barcode already belongs/);
+});
+
+test("in-store generation skips numbers held only by packs, including padded codes", async () => {
+  const packOnly = inStoreBarcode(baselineMaxSeq + 100);
+  await query(
+    `INSERT INTO bms_product_packs (tenant_id, product_sku, pack_code, size, unit_name, base_qty, barcode)
+     VALUES ($1,$2,'PADDED-BOX','STD','box',6,$3)`,
+    [tenantA, SKU_A, `0${packOnly}`],
+  );
+  assert.equal(await generateInStoreBarcode(tenantA), inStoreBarcode(baselineMaxSeq + 101));
+  assert.equal((await lookupProductBarcode(tenantA, packOnly)).matches[0].sku, SKU_A);
+  const custom = "FAKE/ชุดที่:๑+X";
+  await query(
+    `INSERT INTO bms_product_packs (tenant_id, product_sku, pack_code, size, unit_name, base_qty, barcode)
+     VALUES ($1,$2,'CUSTOM-BOX','STD','box',6,$3)`,
+    [tenantA, SKU_A, custom],
+  );
+  assert.equal((await lookupProductBarcode(tenantA, custom)).matches[0].sku, SKU_A);
 });
 
 test("teardown", async () => {

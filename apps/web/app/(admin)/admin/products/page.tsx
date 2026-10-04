@@ -23,7 +23,7 @@ import {
   Popconfirm,
   Card,
 } from "antd";
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import {
   PlusOutlined,
   EditOutlined,
@@ -47,6 +47,8 @@ import { additionalProductTemplates, productFormFieldVisibility, shopExperienceF
 import { productStockPolicyOptions } from "@/lib/bms/productStockPolicyOptions";
 import debounce from "lodash/debounce";
 import ImportModal from "./ImportModal";
+import BarcodeLookupField from "./BarcodeLookupField";
+import { barcodeAutofillPatch, barcodeAutofillRestore, sameProductBarcode, type BarcodeAutofillField } from "@/lib/bms/productBarcodeLookupContract";
 
 // ---- Types --------------------------------------------------
 type Variant = {
@@ -184,6 +186,13 @@ const Q_PRODUCT_CONFIGURATION = gql`
   query BmsProductConfiguration($sku: String!) {
     bmsProductBySku(sku: $sku) {
       sku
+      name active price keywords barcode imageUrl description costPrice weightGrams category brand vatCategory
+      images { id url }
+      priceTiers { minQty scope size unitPrice discountPct }
+      variants {
+        locationId locationName branchCode size current_stock reserved_stock quarantine_stock
+        inTransitQty transferLostQty available reorder_point low price priceOverride basePackId
+      }
       catalogVariants { code displayName active sortOrder }
       salesSurfaces
       readiness {
@@ -342,6 +351,9 @@ function ProductsManagement() {
   const creationTemplate = Form.useWatch("creationTemplate", form);
   const stockPolicyDraft = Form.useWatch("stockPolicy", form);
   const [modalOpen, setModalOpen] = useState(false);
+  const draftRevision = useRef(0);
+  const editRequest = useRef(0);
+  const barcodeAutofill = useRef<{ code: string; fields: BarcodeAutofillField[]; imageUrl: string | null } | null>(null);
   const [editing, setEditing] = useState<Product | null>(null);
   const [variantPriceDrafts, setVariantPriceDrafts] = useState<Record<string, number | null>>({});
   const [savingVariantPrices, setSavingVariantPrices] = useState(false);
@@ -545,6 +557,16 @@ function ProductsManagement() {
   // เก็บค่าที่พิมพ์แยกไว้ใน state เพื่อคำนวณคำเตือนสด ๆ · อ่านจาก form ตรง ๆ ไม่ได้
   // เพราะ Form.Item ไม่ re-render ตัว label/help ให้เมื่อค่าเปลี่ยน
   const [barcodeDraft, setBarcodeDraft] = useState("");
+  const changeBarcodeDraft = useCallback((code: string) => {
+    draftRevision.current += 1;
+    const previous = barcodeAutofill.current;
+    if (previous && !sameProductBarcode(previous.code, code)) {
+      form.setFields(barcodeAutofillRestore(previous.fields, form.getFieldsValue()));
+      if (previous.imageUrl) setImageUrls((images) => images.filter((url) => url !== previous.imageUrl));
+      barcodeAutofill.current = null;
+    }
+    setBarcodeDraft(code);
+  }, [form]);
   // ขั้นราคาส่ง (8.1) — เก็บนอก Form เพราะเป็นรายการที่เพิ่ม/ลบแถวได้
   const [priceTiers, setPriceTiers] = useState<Array<{
     minQty: string;
@@ -561,14 +583,17 @@ function ProductsManagement() {
   const [genBarcode, { loading: generatingBarcode }] = useMutation(M_GENERATE_BARCODE);
 
   const generateBarcode = async () => {
+    const revision = draftRevision.current;
     try {
       const res = await genBarcode();
+      if (draftRevision.current !== revision) return;
       const code = res.data?.bmsGenerateInStoreBarcode;
       if (!code) throw new Error(t("admin_products.barcode_generate_failed"));
       form.setFieldsValue({ barcode: code });
-      setBarcodeDraft(code);
+      changeBarcodeDraft(code);
       message.success(t("admin_products.barcode_generated").replace("{code}", code));
     } catch (e: any) {
+      if (draftRevision.current !== revision) return;
       message.error(e?.message || t("admin_products.barcode_generate_failed"));
     }
   };
@@ -597,6 +622,9 @@ function ProductsManagement() {
   }, [barcodeDraft, t]);
 
   const openCreate = () => {
+    draftRevision.current += 1;
+    editRequest.current += 1;
+    barcodeAutofill.current = null;
     setEditing(null);
     setVariantPriceDrafts({});
     setImageUrls([]);
@@ -617,20 +645,27 @@ function ProductsManagement() {
       salesSurfaces: [...shopExperience.primarySalesSurfaces],
       kitchenStation: "",
     });
+    // setFieldsValue marks defaults as touched; the initial STD is still an unedited suggestion.
+    form.setFields([{ name: "variantCodes", touched: false }]);
     setBarcodeDraft("");
     setPriceTiers([]);
     setModalOpen(true);
   };
-  const openEdit = async (p: Product) => {
-    let configuredProduct = p;
+  const openEdit = async (p: Pick<Product, "sku">) => {
+    const request = ++editRequest.current;
+    const revision = ++draftRevision.current;
+    let configuredProduct: Product;
     try {
       const result = await loadProductConfiguration({ variables: { sku: p.sku } });
+      if (editRequest.current !== request || draftRevision.current !== revision) return;
       if (!result.data?.bmsProductBySku) throw new Error(t("admin_products.product_not_found"));
-      configuredProduct = { ...p, ...result.data.bmsProductBySku };
+      configuredProduct = result.data.bmsProductBySku;
     } catch (error: any) {
+      if (editRequest.current !== request || draftRevision.current !== revision) return;
       message.error(error?.message || t("admin_products.action_failed"));
       return;
     }
+    barcodeAutofill.current = null;
     setEditing(configuredProduct);
     setShowRestaurantAdditionalFields(Boolean(
       configuredProduct.barcode
@@ -776,6 +811,9 @@ function ProductsManagement() {
       }
 
       message.success(t("admin_products.product_saved"));
+      draftRevision.current += 1;
+      editRequest.current += 1;
+      barcodeAutofill.current = null;
       setModalOpen(false);
       setEditing(null);
       setVariantPriceDrafts({});
@@ -1029,7 +1067,7 @@ function ProductsManagement() {
       <Modal
         title={editing ? t("admin_products.modal_edit_title", { sku: editing.sku }) : t("admin_products.btn_add_product")}
         open={modalOpen}
-        onCancel={() => { setModalOpen(false); setEditing(null); setVariantPriceDrafts({}); setImageUrls([]); form.resetFields(); }}
+        onCancel={() => { draftRevision.current += 1; editRequest.current += 1; barcodeAutofill.current = null; setModalOpen(false); setEditing(null); setVariantPriceDrafts({}); setImageUrls([]); form.resetFields(); }}
         onOk={submit} confirmLoading={saving || savingVariantPrices}
         okText={editing ? t("admin_products.btn_save") : t("admin_products.btn_create")} width={680}
       >
@@ -1199,6 +1237,34 @@ function ProductsManagement() {
             />
           )}
 
+          {modalOpen && productFieldVisibility.barcode && <BarcodeLookupField
+            key={editing?.sku ?? "new-product"}
+            form={form} editingSku={editing?.sku} generating={generatingBarcode}
+            onGenerate={() => void generateBarcode()} onChange={changeBarcodeDraft} notice={barcodeNotice}
+            onApply={(suggestion) => {
+              const current = form.getFieldsValue();
+              const patch = barcodeAutofillPatch(suggestion, current,
+                Boolean(editing) || form.isFieldTouched("variantCodes"));
+              const imageUrl = suggestion.imageUrl && imageUrls.length === 0 && !uploadingImage ? suggestion.imageUrl : null;
+              const previous = barcodeAutofill.current;
+              barcodeAutofill.current = {
+                code: String(current.barcode ?? ""),
+                fields: [...(previous?.fields ?? []).filter((field) => !(field.name in patch)),
+                  ...Object.entries(patch).map(([name, filled]) => ({ name, before: current[name], filled, touched: form.isFieldTouched(name) }))],
+                imageUrl: imageUrl ?? previous?.imageUrl ?? null,
+              };
+              form.setFieldsValue(patch);
+              if (imageUrl) setImageUrls([imageUrl]);
+            }}
+            onOpen={(sku) => Modal.confirm({
+              title: t("admin_products.lookup_open"),
+              content: t("admin_products.lookup_discard"),
+              okText: t("admin_products.lookup_open"),
+              cancelText: t("common.cancel"),
+              onOk: () => openEdit({ sku }),
+            })}
+          />}
+
           <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
             <Space align="start" wrap>
               {imageUrls.length > 0 ? (
@@ -1253,30 +1319,6 @@ function ProductsManagement() {
           <Form.Item label="SKU" name="sku" rules={[{ required: true, message: t("admin_products.rule_sku") }]}>
             <Input placeholder={t("admin_products.placeholder_sku")} disabled={!!editing} />
           </Form.Item>
-          {/* Barcode — เจตนาของช่องนี้คือ "ยิงเข้า" ไม่ใช่ "พิมพ์เอง"
-              ของที่โรงงานติดบาร์โค้ดมาแล้ว เลขนั้นเป็นของ GS1 สร้างใหม่ทับไม่ได้
-              ปุ่มสร้างเลขมีไว้สำหรับของแบ่งขาย/ของทำเองที่ไม่มีบาร์โค้ดเท่านั้น */}
-          {productFieldVisibility.barcode && <Form.Item label="Barcode" tooltip={t("admin_products.barcode_scan_hint")}>
-            <Space.Compact style={{ width: "100%" }}>
-              <Form.Item name="barcode" noStyle>
-                <Input
-                  placeholder={t("admin_products.placeholder_barcode")}
-                  onChange={(e) => setBarcodeDraft(e.target.value)}
-                />
-              </Form.Item>
-              <Button loading={generatingBarcode} onClick={() => void generateBarcode()}>
-                {t("admin_products.barcode_generate")}
-              </Button>
-            </Space.Compact>
-            {barcodeNotice && (
-              <Typography.Text
-                type={barcodeNotice.tone}
-                style={{ fontSize: 12, display: "block", marginTop: 4 }}
-              >
-                {barcodeNotice.text}
-              </Typography.Text>
-            )}
-          </Form.Item>}
           <Form.Item label={t("admin_products.label_name")} name="name" rules={[{ required: true, message: t("admin_products.rule_name") }]}>
             <Input placeholder={t("admin_products.placeholder_name")} />
           </Form.Item>
