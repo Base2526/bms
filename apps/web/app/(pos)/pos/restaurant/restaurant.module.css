@@ -1129,7 +1129,100 @@
 .receiptHero strong { color: var(--accent); font-size: 28px; }
 .receiptActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* ---------- ปิดบิลสำเร็จ / พรีวิวใบเสร็จ ----------
+   ใบยาวเลื่อนเฉพาะ viewport นี้ กระดาษด้านในไม่มี scroll ของตัวเอง จึงไม่มี scrollbar
+   ซ้อนกัน และ @media print ยังเห็น DOM ของใบเสร็จครบทั้งใบเหมือนเดิม */
+.settlementModal :global(.ant-modal-body) { min-height: 0; }
+.settlementModal :global(.ant-modal-content) { padding: 24px; }
+.settlementModal :global(.ant-modal-header) { margin-bottom: 22px; }
+.settlementModalTitle { display: inline-flex; align-items: center; gap: 18px; padding-right: 24px; font-size: 28px; line-height: 1.3; }
+.settlementModalTitle > :first-child { flex: none; color: var(--green); font-size: 56px; }
+.settlementModalTitle small { display: block; margin-top: 3px; color: var(--ink-2); font-size: 16px; font-weight: 400; }
+.settlementLayout {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: auto minmax(0, 1fr);
+  height: min(800px, calc(100dvh - 150px)); gap: 16px; min-width: 0; min-height: 0;
+}
+.settlementOverview { grid-column: 1 / -1; display: grid; gap: 16px; }
+.settlementOverview .receiptHero { flex-wrap: wrap; padding: 16px 20px; }
+.settlementOverview .receiptHero > span { display: block; min-width: 0; font-size: 17px; font-weight: 400; overflow-wrap: anywhere; }
+.settlementOverview .receiptHero strong { max-width: 100%; font-size: 36px; line-height: 1.2; overflow-wrap: anywhere; }
+.settlementSummary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.settlementSummary > span { padding: 14px 16px; font-size: 16px; overflow-wrap: anywhere; }
+.settlementSummary b { font-size: 23px; }
+.receiptPreviewPane {
+  display: grid; grid-template-rows: auto minmax(0, 1fr);
+  min-width: 0; min-height: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel);
+}
+.receiptPreviewHead {
+  min-height: 54px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 5px 8px 5px 14px; border-bottom: 1px solid var(--line); background: var(--panel);
+}
+.receiptPreviewHead > span { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-weight: 700; }
+.receiptPreviewHead small {
+  display: inline-flex; align-items: center; min-height: 24px; padding: 2px 8px;
+  border-radius: 4px; background: var(--quiet); color: var(--ink-2); font-size: 12px; font-weight: 600;
+}
+.page .receiptExpandButton { width: 44px; height: 44px; min-height: 44px; color: var(--ink-2); }
+.page .receiptExpandButton:hover:not(:disabled) { background: var(--panel-2); color: var(--ink); }
+.receiptPreviewScroll {
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 12px; scrollbar-gutter: stable; outline: none;
+}
+.receiptPreviewScroll:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.receiptPreviewScroll :global(.pos-receipt-paper) {
+  max-width: 430px; max-height: none; overflow: visible; margin: 0 auto;
+  padding: 10px 6px; border: 0; border-radius: 0; font-size: 16px;
+}
+.receiptNextActions {
+  display: flex; flex-direction: column; gap: 16px;
+  min-width: 0; min-height: 0; padding: 24px; border: 1px solid var(--line-2);
+  border-radius: 8px; background: var(--quiet);
+}
+.receiptNextActions h3 { margin: 0; font-size: 24px; line-height: 1.4; }
+.receiptPrinterDetails { min-height: 0; overflow-y: auto; overflow-wrap: anywhere; }
+.receiptBrowserStatus { display: flex; align-items: center; gap: 10px; margin: 20px 0 0; color: var(--ink-2); }
+.receiptCommands { display: grid; flex: none; gap: 14px; }
+.page .receiptActionButton { width: 100%; height: auto; min-height: 60px; padding: 12px; justify-content: center; white-space: normal; font-size: 20px; }
+.page .receiptActionButton > :global(.anticon) { font-size: 26px; }
+.receiptReturn { display: grid; gap: 20px; margin-top: 14px; padding-top: 22px; border-top: 1px solid var(--line); }
+.receiptReturn p { margin: 0; color: var(--ink-2); text-align: center; font-size: 15px; }
+.page .receiptReturnButton { border-color: var(--accent); color: var(--accent); }
+.settlementLayoutExpanded {
+  grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto;
+}
+.settlementLayoutExpanded .settlementOverview { display: none; }
+.settlementLayoutExpanded .receiptNextActions { max-height: 32dvh; padding: 12px; gap: 8px; }
+.settlementLayoutExpanded .receiptNextActions h3 { display: none; }
+.settlementLayoutExpanded .receiptCommands { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settlementLayoutExpanded .receiptReturn { margin: 0; padding: 0; border: 0; }
+.settlementLayoutExpanded .receiptReturn p { display: none; }
+.settlementLayoutExpanded .receiptActionButton { min-height: 44px; font-size: 16px; padding: 8px; }
+
+/* Browser printing must release every clipping ancestor, not only the paper. */
+@media print {
+  :global(body[data-pos-print-target="receipt"]) .page:has(.settlementModal :global(#pos-receipt)),
+  :global(body[data-pos-print-target="receipt"]) .page :global(*):has(.settlementModal :global(#pos-receipt)),
+  :global(body[data-pos-print-target="receipt"]) .settlementModal,
+  :global(body[data-pos-print-target="receipt"]) .settlementModal :global(*):has(:global(#pos-receipt)) {
+    display: block !important; position: static !important; transform: none !important;
+    height: auto !important; min-height: 0 !important; max-height: none !important;
+    overflow: visible !important; contain: none !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important;
+  }
+  .settlementOverview, .receiptPreviewHead, .receiptNextActions { display: none !important; }
+}
+
 /* ---------- responsive ---------- */
+@media (min-width: 901px) and (max-height: 850px) {
+  .receiptNextActions { padding: 16px; gap: 12px; }
+  .receiptNextActions h3 { font-size: 20px; }
+  .receiptCommands { gap: 10px; }
+  .page .receiptActionButton { min-height: 48px; padding: 8px; font-size: 18px; }
+  .receiptReturn { gap: 12px; margin-top: 4px; padding-top: 12px; }
+  .receiptReturn p { font-size: 13px; }
+}
 @media (max-width: 1180px) {
   .workspace { grid-template-columns: minmax(0, 1fr) 320px; }
 }
@@ -1147,6 +1240,17 @@
   .counterGrid { grid-template-columns: 1fr; }
   .qrWorkspace { grid-template-columns: 1fr; }
   .reportCard { grid-column: auto; }
+  .settlementLayout { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 10px; }
+  .settlementOverview, .receiptNextActions { grid-column: 1; }
+  .receiptNextActions { max-height: 32dvh; padding: 10px; gap: 8px; }
+  .receiptNextActions h3 { display: none; }
+  .receiptCommands { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .receiptReturn { margin: 0; padding: 0; border: 0; }
+  .receiptReturn p { display: none; }
+  .receiptBrowserStatus { margin: 0; }
+  .page .receiptActionButton { min-height: 44px; font-size: 16px; padding: 8px; }
+  .receiptPreviewScroll { padding: 12px; }
+  .settlementLayoutExpanded { grid-template-rows: minmax(0, 1fr) auto; }
   .panel { border-inline-end: 0; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
   .checkFooter { position: sticky; bottom: 0; z-index: 5; box-shadow: 0 -8px 16px var(--shadow-2); }
   .lanes { grid-template-columns: repeat(4, 260px); }
@@ -1205,6 +1309,26 @@
   .panel { padding-inline: 10px; }
   .footerButtons { grid-template-columns: 1fr; }
   .summaryGrid { grid-template-columns: 1fr 1fr; }
+  .settlementSummary { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+  .settlementSummary > span { padding: 8px; font-size: 12px; overflow-wrap: anywhere; }
+  .settlementSummary b { font-size: 16px; }
+  .settlementModal :global(.ant-modal-content) { padding: 14px; }
+  .settlementModal :global(.ant-modal-header) { margin-bottom: 12px; }
+  .settlementModalTitle { font-size: 22px; gap: 12px; }
+  .settlementModalTitle > :first-child { font-size: 40px; }
+  .settlementModalTitle small { font-size: 14px; }
+  .settlementLayout { height: min(800px, calc(100dvh - 118px)); }
+  .settlementOverview { gap: 8px; }
+  .receiptPreviewScroll { padding: 8px; }
+  .receiptPreviewScroll :global(.pos-receipt-paper) { font-size: 12px; }
+  .page .receiptActionButton, .settlementLayoutExpanded .receiptActionButton { font-size: 14px; padding: 6px; }
+  .page .receiptActionButton > :global(.anticon) { font-size: 18px; }
+  .receiptNextActions .receiptCommands { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .receiptReturn { display: none; }
+  .receiptNextActions, .settlementLayoutExpanded .receiptNextActions { max-height: 26dvh; }
+  .settlementOverview .receiptHero { align-items: flex-start; padding: 10px; gap: 6px; }
+  .settlementOverview .receiptHero > span { font-size: 13px; }
+  .settlementOverview .receiptHero strong { font-size: 24px; }
   .lanes { grid-template-columns: repeat(4, 82vw); }
   .lane { min-height: 340px; }
 }

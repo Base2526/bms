@@ -2,6 +2,9 @@
   width: 100%;
 }
 
+.librarySearch { width: 100%; margin-bottom: 16px; }
+.librarySearch > :first-child { flex: 1 1 280px; min-width: 0; }
+
 .center {
   min-height: 320px;
   display: grid;

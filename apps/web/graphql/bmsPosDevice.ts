@@ -1238,7 +1238,15 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosReceipt {
+    pointsEarned: Float
+    pointsBalance: Float
+    pointsExpiring: Float
+    pointsExpireAt: String
+    promotionNotes: [String!]
+    boardGameTimeNotes: [String!]
+    extraLines: [BmsPosReceiptExtraLine!]
     taxRequestUrl: String
+    taxRequestUnavailableReason: String
     orderId: ID!
     docNo: String
     receiptNo: String
@@ -1279,6 +1287,13 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosRecentSalesResult {
     sales: [BmsPosReceipt!]!
     depositMatches: [BmsPosDeposit!]!
+  }
+
+  type BmsPosReceiptExtraLine {
+    label: String!
+    qty: Float!
+    unitAmount: Float!
+    amount: Float!
   }
 
   type BmsPosParkedPharmacyReview {

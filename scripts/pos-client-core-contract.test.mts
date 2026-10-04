@@ -532,6 +532,34 @@ test("a split payment prints every tender, and a store without VAT prints a plai
   assert.equal(plain.notes, null);
 });
 
+test("desktop receipt includes saved play-time charges and member details on reprint", () => {
+  const payload = receiptPayloadFromPosSale({
+    ...saleRow, total: 2505, discountLines: [],
+    lines: [{ receiptName: "Snack", size: "-", packQty: 1, packPrice: 25 },
+      { receiptName: "Drink", size: "-", packQty: 1, packPrice: 50 }],
+    extraLines: [{ label: "Play time", qty: 1, amount: 2430 }],
+    memberNo: "TEST-001", memberName: "Test member",
+    pointsEarned: 25, pointsBalance: 506, pointsExpiring: 31, pointsExpireAt: "2026-12-31T16:59:59Z",
+    promotionNotes: ["Saved promotion"],
+    boardGameTimeNotes: ["Saved rate: 50 THB/h; billed 120 min"],
+  }, saleStore);
+  assert.equal(payload.lines.reduce((sum, line) => sum + line.amount, 0), 2505);
+  assert.equal(payload.lines[2].name, "Play time");
+  assert.equal(payload.member?.pointsEarned, 25);
+  assert.equal(payload.member?.pointsBalance, 506);
+  assert.equal(payload.member?.pointsExpiring, 31);
+  assert.deepEqual(payload.promotionNotes, ["Saved promotion"]);
+  assert.deepEqual(payload.boardGameTimeNotes, ["Saved rate: 50 THB/h; billed 120 min"]);
+});
+
+test("explicit server null points override stale sale response and guests have no member block", () => {
+  const payload = receiptPayloadFromPosSale({ ...saleRow, memberNo: "TEST-001",
+    pointsEarned: null, pointsBalance: null }, saleStore, { pointsEarned: 10, pointsBalance: 20 });
+  assert.equal(payload.member?.pointsEarned, null);
+  assert.equal(payload.member?.pointsBalance, null);
+  assert.equal(receiptPayloadFromPosSale({ ...saleRow, pointsEarned: 10 }, saleStore).member, null);
+});
+
 test("desktop print reveals the receipt paper instead of printing a blank page", () => {
   assert.match(
     globalsCss,

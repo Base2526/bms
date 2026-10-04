@@ -862,6 +862,10 @@ type Receipt = {
   memberPhone?: string | null;
   pointsEarned?: number | null;
   pointsBalance?: number | null;
+  pointsExpiring?: number | null;
+  pointsExpireAt?: string | null;
+  promotionNotes?: string[];
+  boardGameTimeNotes?: string[];
   /** ส่วนลดแยกบรรทัดตามที่มา (tier / คูปอง / แต้ม) — ยอดรวมมาจาก server */
   discountLines?: Array<{ source: string; label: string; amount: number; pointsUsed: number }>;
   /** ค่าบริการที่ server บันทึกไว้ รวมค่าเวลาเล่นบอร์ดเกม */
@@ -4802,6 +4806,14 @@ export default function PosPage() {
         returnEvents: Array.isArray(data.sale.returnEvents) ? data.sale.returnEvents : [],
         discountLines: Array.isArray(data.sale.discountLines) ? data.sale.discountLines : [],
         extraLines: Array.isArray(data.sale.extraLines) ? data.sale.extraLines : [],
+        memberNo: data.sale.memberNo ?? null,
+        memberName: data.sale.memberName ?? null,
+        pointsEarned: data.sale.pointsEarned ?? null,
+        pointsBalance: data.sale.pointsBalance ?? null,
+        pointsExpiring: data.sale.pointsExpiring ?? null,
+        pointsExpireAt: data.sale.pointsExpireAt ?? null,
+        promotionNotes: data.sale.promotionNotes ?? [],
+        boardGameTimeNotes: data.sale.boardGameTimeNotes ?? [],
       };
       setReceipt(serverReceipt);
       window.localStorage.setItem(LAST_RECEIPT_KEY, JSON.stringify(serverReceipt));
@@ -4892,6 +4904,12 @@ export default function PosPage() {
           returnEvents: Array.isArray(sale.returnEvents) ? sale.returnEvents : [],
           discountLines: Array.isArray(sale.discountLines) ? sale.discountLines : [],
           extraLines: Array.isArray(sale.extraLines) ? sale.extraLines : [],
+          pointsEarned: sale.pointsEarned ?? null,
+          pointsBalance: sale.pointsBalance ?? null,
+          pointsExpiring: sale.pointsExpiring ?? null,
+          pointsExpireAt: sale.pointsExpireAt ?? null,
+          promotionNotes: sale.promotionNotes ?? [],
+          boardGameTimeNotes: sale.boardGameTimeNotes ?? [],
         }))
       );
     } catch {}
@@ -5364,6 +5382,8 @@ export default function PosPage() {
             : null,
       // ส่วนลด/แต้มพิมพ์เฉพาะใบขาย — ใบรับคืนมีใบลดหนี้ของตัวเองอยู่แล้ว
       discountLines: r.receiptType && r.receiptType !== "sale" ? null : (r.discountLines ?? null),
+      promotionNotes: nonSaleReceipt ? null : r.promotionNotes ?? null,
+      boardGameTimeNotes: nonSaleReceipt ? null : r.boardGameTimeNotes ?? null,
       member:
         (r.receiptType && r.receiptType !== "sale") || !r.memberNo
           ? null
@@ -5372,6 +5392,8 @@ export default function PosPage() {
               memberNo: r.memberNo ?? null,
               pointsEarned: r.pointsEarned ?? null,
               pointsBalance: r.pointsBalance ?? null,
+              pointsExpiring: r.pointsExpiring ?? null,
+              pointsExpireAt: r.pointsExpireAt ?? null,
             },
     });
   }
@@ -5906,6 +5928,8 @@ export default function PosPage() {
           pointsBalance: data.pointsBalance ?? null,
           discountLines: Array.isArray(data.discountLines) ? data.discountLines : [],
           extraLines: Array.isArray(data.extraLines) ? data.extraLines : [],
+          promotionNotes: data.promotionNotes ?? [],
+          boardGameTimeNotes: data.boardGameTimeNotes ?? [],
         };
         setReceipt(nextReceipt);
         setJustSold({

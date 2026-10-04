@@ -12,10 +12,12 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
+import { CloseOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useLiveRefresh, usePageVisible } from '@/app/hooks/useLiveRefresh';
 import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
 import { copyTextToClipboard } from '@/lib/pos/clipboard';
 import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
+import BoardGameCopyPicker from '@/components/pos/BoardGameCopyPicker';
 import type { PosServiceCallNotice } from '@/components/pos/PosWorkspaceContext';
 import { usePosStartupPreparation } from '@/components/pos/PosStartupPreparation';
 
@@ -489,6 +491,9 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const [draftPersonalMinutes, setDraftPersonalMinutes] = useState('60');
   const [memberQuery, setMemberQuery] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
+  const [memberSearchStatus, setMemberSearchStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
+  const [memberSearchError, setMemberSearchError] = useState('');
+  const [memberSearchAttempt, setMemberSearchAttempt] = useState(0);
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
 
   // ฟอร์มในหน้า session
@@ -703,20 +708,38 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   // ค้นสมาชิกใช้ route เดิมของเครื่องขาย (ต้องพิมพ์อย่างน้อย 3 ตัวอักษรตามด่านของ route นั้น)
   useEffect(() => {
     const q = memberQuery.trim();
-    if (!ready || q.length < 3) { setMembers([]); return; }
+    setMembers([]);
+    setMemberSearchError('');
+    if (!ready || !openingTable || q.length < 3) { setMemberSearchStatus('idle'); return; }
     const controller = new AbortController();
+    setMemberSearchStatus('loading');
     const timer = setTimeout(() => {
-      void fetch(`/api/pos/member?q=${encodeURIComponent(q)}`, {
-        headers: { 'x-pos-device-token': token },
-        cache: 'no-store',
-        signal: controller.signal,
-      })
-        .then((r) => r.json())
-        .then((d) => setMembers(Array.isArray(d?.members) ? d.members : []))
-        .catch(() => { /* ค้นไม่เจอไม่ใช่ความล้มของทั้งจอ */ });
+      void (async () => {
+        try {
+          const response = await fetch(`/api/pos/member?q=${encodeURIComponent(q)}`, {
+            headers: { 'x-pos-device-token': token },
+            cache: 'no-store',
+            signal: controller.signal,
+          });
+          const data = await response.json().catch(() => null);
+          if (!response.ok || !Array.isArray(data?.members)) {
+            throw new Error(response.status === 401
+              ? 'การเชื่อมต่อเครื่องขายหมดอายุ กรุณาเชื่อมต่อเครื่องใหม่'
+              : 'ค้นหาสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง');
+          }
+          // A superseded request must not restore a result from the previous query or table.
+          if (controller.signal.aborted) return;
+          setMembers(data.members);
+          setMemberSearchStatus('success');
+        } catch (cause) {
+          if (controller.signal.aborted) return;
+          setMemberSearchError(cause instanceof Error ? cause.message : 'ค้นหาสมาชิกไม่สำเร็จ กรุณาลองอีกครั้ง');
+          setMemberSearchStatus('error');
+        }
+      })();
     }, 300);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [memberQuery, ready, token]);
+  }, [memberQuery, ready, token, openingTable?.id, memberSearchAttempt]);
 
   const rates = useMemo(
     () => (workspace?.rates ?? []).filter((rate) => rate.active),
@@ -1608,16 +1631,46 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
           <div className="pos-block" style={{ marginTop: 12 }}>
             <div className="pos-block-title">ผู้เล่น</div>
             <div className="pos-bg-form" style={{ marginTop: 0 }}>
-              <label className="pos-bg-field">
+              <label className="pos-bg-field" style={{ alignSelf: 'flex-start' }}>
                 ชื่อผู้เล่น
-                <input value={selectedMember?.name ?? draftName} disabled={Boolean(selectedMember)}
+                <input value={selectedMember?.name || draftName} disabled={Boolean(selectedMember?.name)}
                   onChange={(e) => setDraftName(e.target.value)} />
               </label>
-              <label className="pos-bg-field">
-                ค้นสมาชิก (ไม่บังคับ)
-                <input value={memberQuery} onChange={(e) => setMemberQuery(e.target.value)}
-                  placeholder="เบอร์โทร / ชื่อ" />
-              </label>
+              <div className="pos-bg-field pos-bg-member-search">
+                <label>
+                  ค้นสมาชิก (ไม่บังคับ)
+                  <input value={memberQuery} autoComplete="off"
+                    onChange={(e) => {
+                      setMemberQuery(e.target.value); setSelectedMember(null); setMembers([]);
+                      setMemberSearchStatus('idle'); setMemberSearchError('');
+                    }}
+                    placeholder="เบอร์โทร / ชื่อ / เลขสมาชิก" />
+                </label>
+                {selectedMember ? <div className="pos-bg-member-selected">
+                  <span><b>{selectedMember.name || 'สมาชิกไม่มีชื่อ'}</b><small>{[selectedMember.phone, selectedMember.memberNo].filter(Boolean).join(' · ')}</small></span>
+                  <button type="button" className="pos-ret-btn" aria-label="ยกเลิกการเลือกสมาชิก" title="ยกเลิกการเลือกสมาชิก"
+                    onClick={() => { setSelectedMember(null); setDraftName(''); }}><CloseOutlined /></button>
+                </div> : <>
+                  <div role="status" aria-live="polite" className="pos-bg-member-status">
+                    {!ready ? 'กรุณาเลือกพนักงานและใส่ PIN ก่อนค้นสมาชิก'
+                      : memberQuery.trim().length > 0 && memberQuery.trim().length < 3 ? 'กรอกอย่างน้อย 3 ตัวอักษร'
+                      : memberSearchStatus === 'loading' ? 'กำลังค้นหาสมาชิก…'
+                      : memberSearchStatus === 'success' && members.length === 0 ? 'ไม่พบสมาชิกที่ตรงกับคำค้น'
+                      : ''}
+                  </div>
+                  {memberSearchStatus === 'error' && <div className="pos-bg-member-error" role="alert">
+                    <span>{memberSearchError}</span>
+                    <button type="button" className="pos-ret-btn" onClick={() => setMemberSearchAttempt((value) => value + 1)}><ReloadOutlined /> ลองอีกครั้ง</button>
+                  </div>}
+                  {members.length > 0 && <div className="pos-bg-member-results" aria-label="ผลค้นหาสมาชิก">
+                    {members.map((member) => <button key={member.customerId} type="button" className="pos-ret-btn pos-bg-member-option"
+                      onClick={() => { setSelectedMember(member); setDraftName(''); setMemberQuery(''); setMembers([]); }}>
+                      <b>{member.name || 'สมาชิกไม่มีชื่อ'}</b>
+                      <small>{[member.phone, member.memberNo].filter(Boolean).join(' · ')}</small>
+                    </button>)}
+                  </div>}
+                </>}
+              </div>
               <label className="pos-bg-field">
                 อัตรา
                 <select value={draftRateId} onChange={(e) => setDraftRateId(e.target.value)}>
@@ -1645,18 +1698,6 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
               </label>}
               <button type="button" className="pos-ret-btn pos-ret-btn--open" onClick={addDraft}>เพิ่มผู้เล่น</button>
             </div>
-
-            {members.length > 0 && (
-              <div className="pos-chips" style={{ marginTop: 8 }}>
-                {members.map((member) => (
-                  <button key={member.customerId} type="button" className="pos-chip"
-                    style={{ border: 'none', cursor: 'pointer' }}
-                    onClick={() => { setSelectedMember(member); setMembers([]); }}>
-                    {member.name ?? 'ไม่มีชื่อ'} {member.memberNo ? `· ${member.memberNo}` : ''}
-                  </button>
-                ))}
-              </div>
-            )}
 
             {drafts.length > 0 && (
               <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -2348,22 +2389,17 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
               <div className="pos-bg-form">
                 <label className="pos-bg-field">
                   ให้ยืมกล่องเกม{sharedSeating ? `แก่ชุดเดิม ${session.originTableCode}` : ''}
-                  <select value={copyId} onChange={(e) => setCopyId(e.target.value)}>
-                    <option value="">เลือกกล่องที่ว่าง</option>
-                    {(workspace?.library ?? []).map((title) => (
-                      title.copies
-                        .filter((copy) => copy.status === 'AVAILABLE')
-                        .map((copy) => (
-                          <option key={copy.id} value={copy.id}>{title.title} · {copy.copyCode}</option>
-                        ))
-                    ))}
-                  </select>
+                  <BoardGameCopyPicker key={session.id} titles={workspace?.library ?? []}
+                    value={copyId} onChange={setCopyId} disabled={Boolean(busy)}
+                    placeholder="ค้นหาชื่อเกม / รหัสกล่อง / สแกนบาร์โค้ด"
+                    emptyText="ไม่พบเกมหรือรหัสกล่องนี้"
+                    statusLabel={(status) => ({ AVAILABLE: 'พร้อมให้ยืม', IN_USE: 'กำลังยืม', NEEDS_CHECK: 'รอตรวจ', DAMAGED: 'เสียหาย', MISSING_PARTS: 'อุปกรณ์ไม่ครบ', REPAIRING: 'กำลังซ่อม', LOST: 'สูญหาย', RETIRED: 'เลิกใช้งาน' }[status] ?? status)} />
                 </label>
                 <label className="pos-bg-field">
                   โน้ตตอนคืน
                   <input value={returnNote} onChange={(e) => setReturnNote(e.target.value)} />
                 </label>
-                <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={!copyId || busy === 'checkout-copy'}
+                <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={Boolean(busy) || !(workspace?.library ?? []).some((title) => title.copies.some((copy) => copy.id === copyId && copy.status === 'AVAILABLE'))}
                   onClick={() => void run('checkout-copy', 'copy.checkout', {
                     sessionId: session.id, copyId,
                   }, () => { setCopyId(''); setNotice('ให้ยืมกล่องเกมแล้ว'); })}>

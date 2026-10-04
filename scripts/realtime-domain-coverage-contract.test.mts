@@ -253,6 +253,7 @@ const OPERATION_EXEMPTIONS = new Map<string, string>([
   ["bms_products:INSERT", "draft/config creation; publish is the active-state UPDATE"],
   ["bms_purchase_orders:DELETE", "platform tenant teardown"],
   ["bms_restaurant_order_requests:DELETE", "platform tenant teardown"],
+  ["bms_restaurant_checks:DELETE", "platform tenant teardown before restaurant floor cascade"],
   ["bms_stock_counts:INSERT", "draft count creation does not change inventory"],
   ["bms_stock_transfers:INSERT", "draft transfer creation does not move inventory"],
 ]);

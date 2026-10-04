@@ -1,0 +1,5 @@
+.picker { width: 100%; min-width: 0; }
+.option { height: 48px; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+.option strong, .option span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.option strong { font-size: 14px; font-weight: 600; }
+.option span { font-size: 12px; }

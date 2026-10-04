@@ -3,6 +3,8 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ReloadOutlined } from "@ant-design/icons";
+import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
 import {
   initialPosClientFlow,
   transitionPosClientFlow,
@@ -429,6 +431,7 @@ export default function DesktopPosRenderer() {
   const [receiptPaper, setReceiptPaper] = useState<ReceiptPayload | null>(null);
   const [receiptPaperState, setReceiptPaperState] = useState<"idle" | "loading" | "failed">("idle");
   const [receiptPrinting, setReceiptPrinting] = useState(false);
+  const receiptPrintingRef = useRef(false);
   const [busy, setBusy] = useState(false);
   const [addingProductKey, setAddingProductKey] = useState("");
   const [notice, setNotice] = useState("");
@@ -466,6 +469,7 @@ export default function DesktopPosRenderer() {
   const [contentRefreshing, setContentRefreshing] = useState(false);
   const contentRefreshingRef = useRef(false);
   const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
+  const saleSubmittingRef = useRef(false);
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const catalogRequestVersion = useRef(0);
@@ -852,7 +856,14 @@ export default function DesktopPosRenderer() {
     }
   };
 
+  const paymentNavigationBlocked = useCallback(() => {
+    if (!saleSubmittingRef.current && !saleAttemptRef.current && !receiptPrintingRef.current) return false;
+    setError("กำลังรับชำระหรือพิมพ์ใบเสร็จ กรุณาทำรายการเดิมให้ทราบผลก่อนเปลี่ยนหน้าหรือพนักงาน");
+    return true;
+  }, []);
+
   const legacy = (tab: string) => {
+    if (paymentNavigationBlocked()) return;
     if (tab === "restaurant") {
       router.push("/pos/restaurant");
       return;
@@ -861,11 +872,12 @@ export default function DesktopPosRenderer() {
   };
 
   const openModule = useCallback((module: DesktopModule) => {
+    if (paymentNavigationBlocked()) return;
     if (module === "mobile_sell") sendFlow("BACK_TO_CATALOG");
     setActiveModule(module);
     setError("");
     setNotice("");
-  }, [sendFlow]);
+  }, [paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceTab = useCallback((tab: PosTab) => {
     setActiveModule(tab);
@@ -929,7 +941,7 @@ export default function DesktopPosRenderer() {
     if (!currentToken || contentRefreshingRef.current) return;
     // A refresh must never race a money/stock write or turn an unknown payment result into a new
     // attempt. Keep the current screen intact and tell the operator why the shortcut was deferred.
-    if (busy || saleAttemptRef.current) {
+    if (busy || saleSubmittingRef.current || saleAttemptRef.current) {
       setNotice("กำลังบันทึกรายการอยู่ — ระบบจะไม่รีเฟรชจนกว่างานนี้จะทราบผล");
       return;
     }
@@ -1070,6 +1082,7 @@ export default function DesktopPosRenderer() {
   }, []);
 
   const unpair = useCallback(async () => {
+    if (paymentNavigationBlocked()) return;
     await clearPosDeviceToken();
     clearOperator();
     clearPreparedWorkspaces();
@@ -1090,7 +1103,7 @@ export default function DesktopPosRenderer() {
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("UNPAIR");
-  }, [clearOperator, clearPreparedWorkspaces, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
     if (open) return;
@@ -1106,6 +1119,7 @@ export default function DesktopPosRenderer() {
   }, []);
 
   const signOutCashier = useCallback(() => {
+    if (paymentNavigationBlocked()) return;
     clearOperator();
     clearPreparedWorkspaces();
     setCashier(null);
@@ -1116,7 +1130,7 @@ export default function DesktopPosRenderer() {
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("SIGN_OUT");
-  }, [clearOperator, clearPreparedWorkspaces, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, paymentNavigationBlocked, sendFlow]);
 
   const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
     if (!cashier || !pin || busy) return;
@@ -1270,7 +1284,13 @@ export default function DesktopPosRenderer() {
     [cart],
   );
   const pricingSavings = Math.max(0, Math.round((retailListSubtotal - retailSubtotal) * 100) / 100);
-  const payableBeforeRounding = boardGameCheckout?.totalDue ?? retailSubtotal;
+  const benefits = useCheckoutBenefits(token, boardGameCheckout?.totalDue ?? retailSubtotal,
+    boardGameCheckout?.id ?? null, flow.stage === "CHECKOUT", contentRefreshSignal);
+  useEffect(() => {
+    if (!cashier || !bootstrap?.shift) benefits.clear();
+  }, [cashier?.id, bootstrap?.shift?.id]);
+  const payableBeforeRounding = (benefits.ready ? benefitsPayable(benefits.preview) : null)
+    ?? boardGameCheckout?.totalDue ?? retailSubtotal;
   const cashMode = isCashRounding(bootstrap?.vat.cashRounding)
     ? bootstrap.vat.cashRounding
     : "NONE";
@@ -1294,7 +1314,7 @@ export default function DesktopPosRenderer() {
 
   const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
   const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);
-  const canConfirmPayment = validation.canConfirm || zeroDueBoardGameBill;
+  const canConfirmPayment = Boolean(saleAttemptRef.current) || (benefits.ready && (validation.canConfirm || zeroDueBoardGameBill));
   const itemCount = boardGameCheckout ? 0 : cart.reduce((sum, line) => sum + line.qty, 0);
   const billCountLabel = boardGameCheckout
     ? "ค่าบริการ 1 รายการ"
@@ -1363,13 +1383,15 @@ export default function DesktopPosRenderer() {
           })),
       itemCount: boardGameCheckout ? boardGameDisplayLines.length : itemCount,
       total: boardGameCheckout
-        ? Math.round((payableBeforeRounding + boardGameTotalDiscountAmount) * 100) / 100
+        ? Math.round((boardGameCheckout.totalDue + boardGameTotalDiscountAmount) * 100) / 100
         : retailListSubtotal,
-      discountTotal: boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings,
+      discountTotal: (boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings) + (benefits.ready ? benefits.preview?.totalDiscount ?? 0 : 0),
       amountDue: receipt?.total ?? total,
-      memberName: displayMemberName(receiptPaper?.orderId === receipt?.orderId ? receiptPaper?.member?.name : null),
-      pointsEarned: receipt?.pointsEarned ?? null,
-      pointsBalance: receipt?.pointsBalance ?? null,
+      memberName: displayMemberName(receipt
+        ? receiptPaper?.orderId === receipt.orderId ? receiptPaper?.member?.name : null
+        : benefits.member?.name ?? null),
+      pointsEarned: receipt ? receipt.pointsEarned ?? null : benefits.ready ? benefits.preview?.pointsWillEarn ?? null : null,
+      pointsBalance: receipt ? receipt.pointsBalance ?? null : benefits.member?.pointsBalance ?? null,
       paymentQr: flow.stage === "CHECKOUT" && qrPaymentAmount > 0 && configuredQr
         ? { ...configuredQr, amount: qrPaymentAmount }
         : null,
@@ -1397,10 +1419,11 @@ export default function DesktopPosRenderer() {
     receiptPaper,
     retailListSubtotal,
     total,
+    benefits.ready, benefits.preview, benefits.member,
   ]);
 
   const backFromCheckout = () => {
-    if (saleAttemptRef.current) return;
+    if (paymentNavigationBlocked()) return;
     if (boardGameCheckout) {
       setBoardGameCheckout(null);
       setPayments([{ id: "payment-1", method: "cash", amount: 0, tendered: 0 }]);
@@ -1412,7 +1435,7 @@ export default function DesktopPosRenderer() {
   };
 
   const chooseMethod = (method: PosPaymentMethod) => {
-    if (saleAttemptRef.current) return;
+    if (saleSubmittingRef.current || saleAttemptRef.current) return;
     setPayments([
       {
         id: "payment-1",
@@ -1425,14 +1448,14 @@ export default function DesktopPosRenderer() {
   };
 
   const updatePayment = (id: string, patch: Partial<PosPaymentInput>) => {
-    if (saleAttemptRef.current) return;
+    if (saleSubmittingRef.current || saleAttemptRef.current) return;
     setPayments((current) =>
       current.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)),
     );
   };
 
   const addSplitPayment = () => {
-    if (saleAttemptRef.current) return;
+    if (saleSubmittingRef.current || saleAttemptRef.current) return;
     setPayments((current) => [
       ...current,
       {
@@ -1442,6 +1465,11 @@ export default function DesktopPosRenderer() {
         reference: "",
       },
     ]);
+  };
+
+  const removePayment = (id: string) => {
+    if (saleSubmittingRef.current || saleAttemptRef.current) return;
+    setPayments((current) => current.filter((payment) => payment.id !== id));
   };
 
   const recheckCartPricing = async (): Promise<boolean> => {
@@ -1491,9 +1519,7 @@ export default function DesktopPosRenderer() {
         cashTendered: payment.method === "cash" ? payment.tendered ?? payment.amount : null,
         ref: payment.reference?.trim() || null,
       })),
-      customerId: null,
-      couponCode: null,
-      pointsToRedeem: 0,
+      ...benefits.saleFields,
       manualDiscount: null,
       discountReason: null,
       discountApproverUserId: null,
@@ -1553,37 +1579,56 @@ export default function DesktopPosRenderer() {
    * hidden window, so a timeout races it and the dialog opens exactly once.
    */
   const printReceiptPaper = async () => {
-    if (!receiptPaper || receiptPrinting || receiptPrinter.disabled) return;
+    if (!receiptPaper || receiptPrintingRef.current || receiptPrinting || receiptPrinter.disabled) return;
     setError("");
+    receiptPrintingRef.current = true;
     setReceiptPrinting(true);
+    const releasePrint = () => {
+      receiptPrintingRef.current = false;
+      setReceiptPrinting(false);
+    };
     try {
-      if (await printDesktopReceipt()) return;
+      if (await printDesktopReceipt()) {
+        releasePrint();
+        if (boardGameCheckout) newSale();
+        return;
+      }
     } catch (cause) {
+      releasePrint();
       setError(cause instanceof Error ? cause.message : "พิมพ์ใบเสร็จไม่สำเร็จ");
       return;
-    } finally {
-      setReceiptPrinting(false);
     }
     document.body.setAttribute("data-pos-print-target", "receipt");
     let fallbackTimer = 0;
+    let cleaned = false;
     const cleanup = () => {
+      if (cleaned) return;
+      cleaned = true;
       document.body.removeAttribute("data-pos-print-target");
+      window.removeEventListener("afterprint", cleanup);
       if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      releasePrint();
     };
     window.addEventListener("afterprint", cleanup, { once: true });
     let printed = false;
     const fire = () => {
       if (printed) return;
       printed = true;
-      window.print();
-      fallbackTimer = window.setTimeout(cleanup, 1_000);
+      try {
+        window.print();
+        if (!cleaned) fallbackTimer = window.setTimeout(cleanup, 1_000);
+      } catch (cause) {
+        cleanup();
+        setError(cause instanceof Error ? cause.message : "เปิดหน้าพิมพ์ไม่สำเร็จ");
+      }
     };
     window.requestAnimationFrame(fire);
     window.setTimeout(fire, 120);
   };
 
   const submitSale = async () => {
-    if (!cashier || busy || !canConfirmPayment || (!boardGameCheckout && cart.length === 0)) return;
+    if (!cashier || busy || saleSubmittingRef.current || !canConfirmPayment || (!boardGameCheckout && cart.length === 0)) return;
+    saleSubmittingRef.current = true;
     setBusy(true);
     setError("");
     setNotice("");
@@ -1599,20 +1644,22 @@ export default function DesktopPosRenderer() {
         POS_SALE_MUTATION,
         saleAttemptRef.current.payload,
       );
-      if (data.bmsPosSale.status !== "SOLD" || !data.bmsPosSale.orderId) {
+      if (!data.bmsPosSale?.status) throw new Error("ผลรับชำระไม่ครบถ้วน");
+      if (data.bmsPosSale.status !== "SOLD") {
         saleAttemptRef.current = null;
-        throw new Error(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`);
+        throw new PosGraphqlError(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`, "BAD_USER_INPUT");
       }
+      if (!data.bmsPosSale.orderId) throw new Error("ผลรับชำระไม่ครบถ้วน");
       setReceipt({ ...data.bmsPosSale, completedAt: Date.now() });
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
       setConnection("online");
       void loadReceiptPaper(data.bmsPosSale);
     } catch (cause) {
-      const decided =
-        cause instanceof PosGraphqlError &&
-        ((cause.code != null && decidedCodes.has(cause.code)) ||
-          (cause.httpStatus != null && cause.httpStatus >= 400 && cause.httpStatus < 500));
+      // A proxy timeout (including HTTP 408) cannot prove the transaction rolled back.
+      const decided = saleAttemptRef.current === null || (
+        cause instanceof PosGraphqlError && cause.code != null && decidedCodes.has(cause.code)
+      );
       if (decided) saleAttemptRef.current = null;
       setError(
         decided
@@ -1621,11 +1668,13 @@ export default function DesktopPosRenderer() {
       );
       setConnection("offline");
     } finally {
+      saleSubmittingRef.current = false;
       setBusy(false);
     }
   };
 
   const newSale = () => {
+    benefits.clear();
     const completedBoardGameBill = Boolean(boardGameCheckout);
     if (!completedBoardGameBill) setCart([]);
     setBoardGameCheckout(null);
@@ -1804,9 +1853,12 @@ export default function DesktopPosRenderer() {
             </details>
           )}
           <ReceiptPrinterStatus />
+          {receiptPaper && !receiptPaper.taxRequestUrl && receiptPaper.taxRequestUnavailableReason ? (
+            <p role="status" className={styles.receiptPaperStatus}>{receiptPaper.taxRequestUnavailableReason}</p>
+          ) : null}
           <div className={styles.receiptActions}>
             <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}>{receiptPrinting ? "กำลังส่งพิมพ์…" : "พิมพ์ใบเสร็จ"}</button>
-            <button className={styles.primaryButton} onClick={newSale}>
+            <button className={styles.primaryButton} disabled={receiptPrinting} onClick={newSale}>
               {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
             </button>
           </div>
@@ -1878,6 +1930,9 @@ export default function DesktopPosRenderer() {
           </div>
           <div className={styles.topMeta}>
             <PosConnectionStatus apiStatus={connection} />
+            <button type="button" className={styles.alertBell} aria-label="รีเฟรชข้อมูล" title="รีเฟรชข้อมูล"
+              disabled={contentRefreshing || busy || Boolean(saleAttemptRef.current)}
+              onClick={() => void refreshDesktopContent()}><ReloadOutlined spin={contentRefreshing} /></button>
             <details className={styles.alertMenu} data-desktop-popup>
               <summary
                 className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}
@@ -2062,6 +2117,7 @@ export default function DesktopPosRenderer() {
                     </>
                   )}
                   {rounding !== 0 ? <div><span>ปัดเศษเงินสด</span><strong>{money(rounding)}</strong></div> : null}
+                  {benefits.ready && Number(benefits.preview?.totalDiscount) > 0 ? <div className={styles.savingsRow}><span>สมาชิก / คูปอง / แต้ม</span><strong>−{money(benefits.preview!.totalDiscount)}</strong></div> : null}
                   <div className={styles.grandTotal}><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
                 </div>
               </>
@@ -2169,6 +2225,7 @@ export default function DesktopPosRenderer() {
               </>
             ) : (
               <div className={styles.paymentArea}>
+                <CheckoutBenefits benefits={benefits} disabled={busy || Boolean(saleAttemptRef.current)} />
                 {zeroDueBoardGameBill ? (
                   <PosDismissibleAlert className={styles.zeroDueNotice} role="status">
                     <span aria-hidden="true">✓</span>
@@ -2182,7 +2239,7 @@ export default function DesktopPosRenderer() {
                     </div>
                   </PosDismissibleAlert>
                 ) : (
-                  <>
+                  <fieldset className={styles.paymentControls} disabled={busy || Boolean(saleAttemptRef.current)}>
                 <div className={styles.paymentTitle}><div><h2>วิธีชำระเงิน</h2><p>เลือกหนึ่งวิธี หรือแบ่งชำระหลายช่องทาง</p></div><button onClick={addSplitPayment}>＋ จ่ายผสม</button></div>
                 <div className={styles.methodGrid}>
                   {primaryMethods.map((method) => (
@@ -2202,7 +2259,7 @@ export default function DesktopPosRenderer() {
                             </select>
                           </label>
                           <label>ยอดช่องทางนี้<input inputMode="decimal" value={payment.amount || ""} onChange={(event) => updatePayment(payment.id, { amount: Math.max(0, Number(event.target.value) || 0) })} /></label>
-                          <button className={styles.removePayment} onClick={() => setPayments((current) => current.filter((item) => item.id !== payment.id))}>ลบ</button>
+                          <button className={styles.removePayment} onClick={() => removePayment(payment.id)}>ลบ</button>
                         </div>
                       ) : null}
                       {payment.method === "cash" ? (
@@ -2218,7 +2275,7 @@ export default function DesktopPosRenderer() {
                     </section>
                   ))}
                 </div>
-                  </>
+                  </fieldset>
                 )}
                 {(error || notice || (!zeroDueBoardGameBill && validation.errors.length > 0)) ? <PosDismissibleAlert key={error || notice || validation.errors[0]} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice || validation.errors[0]?.replace("ทดสอบ", "")}</PosDismissibleAlert> : null}
                 <div className={styles.paymentFooter}>

@@ -916,6 +916,10 @@ own dine-in service. Operator detail:
 
 ## Board game cafe
 
+`10.40` time buy/get offers repeat per participant over already-rounded billable minutes, using
+the frozen hourly rate. They compete with other offers and member passes, never stack with them,
+and freeze their net amount/discount at group close. A fixed-price cap is not an equivalent rule.
+
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
 and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, and `10.0`–`10.7` own timed play sessions, where a party is sitting,
 what a bill settles, and the
@@ -1343,6 +1347,13 @@ numbers, tiers, discounts, and points. Operator detail and the go-live checklist
 - **The ledger is truth; `points_balance` is a cache.** Every earn, redeem, adjustment, expiry, and
   return reversal appends to `bms_loyalty_ledger` and updates the cached balance in the same tenant
   transaction. Negative balances are valid after returning goods whose earned points were spent.
+- Receipt history reads earned points from that order's ledger, with the current member balance
+  and next unconsumed grant expiry labelled as current, not an immutable sale-time balance.
+  A guest bill has no member block; disabled loyalty with no earned points has no points block.
+  Desktop receipts include saved `bms_order_extra_lines` (including board-game time), discounts
+  and promotion descriptions from `SALE` pricing snapshots. Included gifts are described, never
+  inserted again as extra quantities or money. A participant's membership is not authority to
+  award a whole billing group's points to that participant; receipt membership follows the order.
 - **Discount composition has one implementation.** `composeDiscounts()` applies tier discount,
   coupon, points redemption, then manual discount under the configured per-bill cap. When the cap
   binds it trims manual first, then points, coupon and tier; POS previews
@@ -1352,7 +1363,7 @@ numbers, tiers, discounts, and points. Operator detail and the go-live checklist
   earned and redeemed points, keyed to the POS return so replay cannot create a second ledger entry.
 - **Customer AI may read only its own balance.** `get_loyalty_points` resolves identity from the
   server-established `(tenant_id, channel, customer_ref)` and never redeems or adjusts points.
-  Staff writes require `member.manage`, `loyalty.settings`, or `loyalty.adjust` as appropriate; a
+Staff writes require `member.manage`, `loyalty.settings`, or `loyalty.adjust` as appropriate; a
   manual adjustment requires a reason and audit.
 - **Maintenance is scheduled work, not a read side effect.**
   `POST /api/bms/loyalty/maintenance` expires grants FIFO and re-reviews tiers. The GitHub workflow

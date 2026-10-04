@@ -3799,6 +3799,7 @@ export async function calculateBoardGameGroupCharges(
   const offer = applyBestBoardGameOffer(
     passLines.map((line) => ({
       billableMinutes: line.billableMinutes,
+      hourlyRate: line.hourlyRate,
       grossAmount: Number(line.grossAmount ?? line.amount),
     })),
     offerContext.offers,

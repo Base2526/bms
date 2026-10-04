@@ -66,9 +66,12 @@ export const POS_SALE_MUTATION = `
 export const POS_LAST_SALE_QUERY = `
   query DesktopPosLastSale {
     bmsPosLastSale {
-      orderId receiptNo billNo docNo taxRequestUrl soldAt total cashierName branchCode locationName posLabel
+      orderId receiptNo billNo docNo taxRequestUrl taxRequestUnavailableReason soldAt total cashierName branchCode locationName posLabel
       posDeviceId shiftId saleLocationId roundingAmount paymentMethod paymentRef cashTendered
       cashChange memberName memberNo
+      pointsEarned pointsBalance pointsExpiring pointsExpireAt promotionNotes
+      boardGameTimeNotes
+      extraLines { label qty unitAmount amount }
       lines { receiptName size packQty packPrice }
       payments { method amount ref cashTendered cashChange }
       discountLines { label amount }

@@ -16,7 +16,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { buildReceipt, type ReceiptPayload } from "../apps/web/lib/pos/escpos.ts";
+import { buildReceipt, toTis620, type ReceiptPayload } from "../apps/web/lib/pos/escpos.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), "utf8");
@@ -32,6 +32,24 @@ const ESCPOS = "apps/web/lib/pos/escpos.ts";
 const RETAIL = "apps/web/app/(pos)/pos/page.tsx";
 const RESTAURANT = "apps/web/app/(pos)/pos/restaurant/page.tsx";
 
+test("ESC/POS prints saved promotion and loyalty expiry at both paper widths", () => {
+  const payload: ReceiptPayload = {
+    storeName: "FAKE Shop", docTitle: "Receipt", at: "2026-10-04", cashier: null,
+    lines: [{ name: "Play time", qty: 1, amount: 2430 }], itemCount: 1, total: 2430,
+    tendered: 2430, change: 0, paymentLabel: "Cash",
+    promotionNotes: ["PROMO: buy 2 get 1 included"],
+    boardGameTimeNotes: ["FAKE Player = 100.00", "50.00 THB/h; billed 120 min"],
+    member: { name: "FAKE Member", memberNo: "TEST-001", pointsEarned: 25, pointsBalance: 506,
+      pointsExpiring: 31, pointsExpireAt: "2026-12-31T16:59:59Z" },
+  };
+  for (const columns of [32, 42]) {
+    const bytes = Buffer.from(buildReceipt(payload, { columns }));
+    for (const text of ["Play time", "FAKE Player = 100.00", "50.00 THB/h; billed 120 min", "PROMO: buy 2 get 1 included", "TEST-001", "แต้มหมดอายุครั้งถัดไป", "31/12/2569"]) {
+      assert.ok(bytes.includes(Buffer.from(toTis620(text))), `missing printed detail: ${text}`);
+    }
+  }
+});
+
 test("ใบเสร็จมี renderer สองตัวแต่ payload ก้อนเดียว และทั้งคู่ต้องอ่านฟิลด์เดียวกัน", async () => {
   const paper = code(await read(PAPER));
   const escpos = code(await read(ESCPOS));
@@ -40,7 +58,7 @@ test("ใบเสร็จมี renderer สองตัวแต่ payload �
   // กระดาษบอกคนละเรื่อง ซึ่งเป็นอาการที่ทำให้ต้องรวม renderer ตั้งแต่แรก
   for (const field of [
     "storeName", "branchCode", "taxId", "posNo", "docTitle", "billNo", "notes",
-    "lines", "discountLines", "vat", "roundingAmount", "itemCount", "total",
+    "lines", "discountLines", "promotionNotes", "boardGameTimeNotes", "vat", "roundingAmount", "itemCount", "total",
     "returnReason", "refundLines", "payments", "paymentLabel", "tendered", "change",
     "docNo", "at", "cashier", "member", "barcodeValue", "referenceDocNo", "taxRequestUrl",
   ]) {

@@ -354,6 +354,14 @@ export const MIGRATIONS: Migration[] = [
     needs: [{ kind: "table", name: "bms_board_game_offers" }],
   },
   {
+    file: "10.40__bms_board_game_time_buy_get.sql",
+    impact: "ร้านบอร์ดเกมอ่านโปรโมชันและปิดบิลไม่ได้ — ต้องมีคอลัมน์นาทีซื้อและนาทีแถม",
+    needs: [
+      { kind: "column", table: "bms_board_game_offers", name: "buy_minutes" },
+      { kind: "column", table: "bms_board_game_offers", name: "free_minutes" },
+    ],
+  },
+  {
     // The pass screen loads renewal agreements together with the pass catalogue.
     file: "10.4__bms_board_game_pass_renewals.sql",
     impact: "หน้าจัดการแพ็กเกจสมาชิกและงานต่ออายุอัตโนมัติใช้ไม่ได้",

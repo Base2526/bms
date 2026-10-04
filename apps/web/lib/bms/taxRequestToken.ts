@@ -35,6 +35,14 @@ export function taxRequestConfiguration() {
     origin,
   };
 }
+
+/** Operator-facing readiness only; never expose signing material or manufacture an ineligible QR. */
+export function taxRequestUnavailableReason(hasDocument: boolean, eligible = true): string | null {
+  if (!hasDocument) return "บิลนี้ไม่มีใบกำกับภาษีอย่างย่อ จึงยังขอใบกำกับภาษีเต็มรูปผ่าน QR ไม่ได้";
+  if (!eligible) return "บิลนี้ถูกยกเลิกหรือมีการคืนสินค้า จึงขอใบกำกับภาษีออนไลน์ไม่ได้";
+  if (!taxRequestConfiguration().enabled) return "บริการ QR ขอใบกำกับภาษีออนไลน์ยังไม่พร้อม ให้ผู้ดูแลตรวจการเปิดบริการและ URL HTTPS สาธารณะ";
+  return null;
+}
 const signature = (tenantId: string, orderId: string) =>
   createHmac("sha256", secret()!)
     .update(`bms-tax-request:v1:${tenantId}:${orderId}`)

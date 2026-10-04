@@ -145,8 +145,16 @@ test("a board-game table cannot be opened or closed against a database the check
 
 test("the generated readiness SQL still carries every board-game migration", () => {
   const sql = read("db/checks/schema-readiness.sql");
-  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93", "9.94", "9.96"]) {
+  for (const file of ["9.89", "9.90", "9.91", "9.92", "9.93", "9.94", "9.96", "10.40"]) {
     has(sql, new RegExp(`'${file.replace(".", "\\.")}__`), `${file} หายจากไฟล์ที่ generate ไว้`);
+  }
+});
+
+test("time-buy-get columns are required before deploying offer readers", () => {
+  const migration = MIGRATIONS.find((entry) => entry.file === "10.40__bms_board_game_time_buy_get.sql");
+  assert.ok(migration);
+  for (const name of ["buy_minutes", "free_minutes"]) {
+    assert.ok(migration.needs.some((need) => need.kind === "column" && need.table === "bms_board_game_offers" && need.name === name));
   }
 });
 
