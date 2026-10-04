@@ -67,7 +67,8 @@
    = (0,2,0)) ทั้งหน้า · `:where()` นับเป็น 0 ผลรวมจึงเท่าเดิมเป๊ะ (0,1,1) — เปลี่ยนแค่ว่า
    ปุ่มของ antd ไม่โดน ไม่ได้เปลี่ยนลำดับกับใครอีกเลย
    (ปุ่มของหน้าจอเองใช้คลาสจาก CSS module ซึ่งมี `.page` นำหน้าอยู่แล้ว ไม่กระทบ) */
-:where(.pos-root) button:not(.ant-btn) {
+/* Switch owns its track/thumb geometry. :where keeps the existing button specificity. */
+:where(.pos-root) button:not(.ant-btn):not(:where(.ant-switch)) {
   font: inherit;
   border: 1px solid var(--pos-line-strong);
   background: var(--pos-surface);
@@ -79,14 +80,14 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
   transition: border-color 120ms ease, box-shadow 120ms ease, color 120ms ease, background 120ms ease, transform 60ms ease;
 }
-:where(.pos-root) button:not(.ant-btn):hover:not(:disabled) {
+:where(.pos-root) button:not(.ant-btn):not(:where(.ant-switch)):hover:not(:disabled) {
   border-color: var(--pos-accent-hover);
   background: var(--pos-surface);
   color: var(--pos-accent);
 }
-:where(.pos-root) button:not(.ant-btn):active:not(:disabled) { transform: scale(0.97); }
-:where(.pos-root) button:not(.ant-btn):disabled { opacity: 0.55; cursor: not-allowed; }
-:where(.pos-root) button:not(.ant-btn):focus-visible {
+:where(.pos-root) button:not(.ant-btn):not(:where(.ant-switch)):active:not(:disabled) { transform: scale(0.97); }
+:where(.pos-root) button:not(.ant-btn):not(:where(.ant-switch)):disabled { opacity: 0.55; cursor: not-allowed; }
+:where(.pos-root) button:not(.ant-btn):not(:where(.ant-switch)):focus-visible {
   outline: 2px solid rgba(22, 119, 255, 0.32);
   outline-offset: 2px;
 }
@@ -1381,8 +1382,8 @@
 .pos-receipt-head, .pos-receipt-foot { text-align: center; }
 .pos-receipt-head b { display: block; font-size: 13.5px; }
 .pos-receipt-logo {
-  display: block; width: auto; height: auto; max-width: 96px; max-height: 56px;
-  object-fit: contain; margin: 0 auto 6px;
+  display: block; width: 96px; height: 72px; max-width: 100%;
+  object-fit: contain; margin: 0 auto 12px;
 }
 .pos-receipt-muted { color: var(--posx-ink, #333); font-size: 11px; line-height: 1.35; word-break: break-word; }
 .pos-receipt-foot { margin-top: 10px; }

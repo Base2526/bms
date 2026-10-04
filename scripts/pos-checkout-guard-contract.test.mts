@@ -73,6 +73,8 @@ test("ปุ่มของ antd ต้องไม่ถูก pos.css ทา�
   for (const selector of blanket) {
     assert.ok(selector.includes(":not(.ant-btn)"),
       `กฎ "${selector}" ยังทาปุ่มของ antd ด้วย — ครึ่งหนึ่งของปุ่มจะมาจากธีมของ pos.css อีกครึ่งจาก antd`);
+    assert.ok(selector.includes(":not(:where(.ant-switch))"),
+      `กฎ "${selector}" ต้องไม่ยืด Switch เป็นปุ่มสี่เหลี่ยม และต้องคง specificity เดิม`);
     // `:not(.ant-btn)` เพิ่ม specificity หนึ่งคลาส ถ้าไม่ห่อ .pos-root ด้วย :where()
     // กฎนี้จะไปทับสีปุ่มของ CSS module (`.page .btnDanger`) ทั้งหน้า
     assert.ok(selector.includes(":where(.pos-root)"),

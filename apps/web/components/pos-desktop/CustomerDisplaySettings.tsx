@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Button, Select, Switch } from "antd";
+import { DesktopOutlined, ReloadOutlined } from "@ant-design/icons";
 import type {
   DesktopCustomerDisplayMode,
   DesktopCustomerDisplayState,
@@ -23,8 +25,10 @@ export default function CustomerDisplaySettings() {
   const [error, setError] = useState("");
 
   const refresh = async () => {
-    const next = await window.bmsDesktop?.getCustomerDisplayState?.();
-    if (next) setState(next);
+    try {
+      const next = await window.bmsDesktop?.getCustomerDisplayState?.();
+      if (next) setState(next);
+    } catch { setError("ตรวจสอบจอลูกค้าไม่สำเร็จ"); }
   };
 
   useEffect(() => {
@@ -58,15 +62,12 @@ export default function CustomerDisplaySettings() {
   };
 
   if (!state) {
-    return <div style={{ color: "var(--posx-muted, #667085)", fontSize: 13 }}>กำลังตรวจสอบจอที่เชื่อมต่อ…</div>;
+    return <div style={{ color: "var(--posx-muted, #667085)", fontSize: 13 }}>{error || "กำลังตรวจสอบจอที่เชื่อมต่อ…"}</div>;
   }
 
   return (
     <section style={{
-      padding: 14,
-      border: "1px solid var(--posx-line, #d9e2ef)",
-      borderRadius: 12,
-      background: "var(--posx-soft, #f8fbff)",
+      padding: "14px 0",
     }}>
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
         <div>
@@ -87,42 +88,43 @@ export default function CustomerDisplaySettings() {
         </span>
       </div>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-        <button type="button" disabled={busy || state.mode === "off"} onClick={() => void configure("off")}>ปิด</button>
-        <button type="button" disabled={busy || state.mode === "auto"} onClick={() => void configure("auto")}>
-          เลือกจออื่นอัตโนมัติ
-        </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+        <label style={{ display: "inline-flex", alignItems: "center", minHeight: 44, gap: 12, cursor: busy ? "wait" : "pointer" }}>
+          <Switch aria-label="เปิดจอลูกค้าเมื่อเปิด POS" checked={state.mode !== "off"} loading={busy}
+            style={{ flex: "0 0 auto" }}
+            onChange={(checked) => void configure(checked ? "auto" : "off")} />
+          <span>เปิดจอลูกค้าเมื่อเปิด POS</span>
+        </label>
         {state.mode !== "off" && !state.open && state.targetAvailable && (
-          <button
-            type="button"
+          <Button
+            icon={<ReloadOutlined />}
             disabled={busy}
             onClick={() => void configure(state.mode, state.targetDisplayId)}
           >
             เปิดจอลูกค้าอีกครั้ง
-          </button>
+          </Button>
         )}
-        <select
+        <Select
           aria-label="เลือกจอลูกค้า"
-          value={state.mode === "selected" ? state.targetDisplayId ?? "" : ""}
-          disabled={busy || selectableDisplays.length === 0}
-          onChange={(event) => {
-            if (event.target.value) void configure("selected", event.target.value);
+          style={{ width: "100%", maxWidth: 400 }}
+          value={state.mode === "selected" ? state.targetDisplayId : "auto"}
+          disabled={busy || state.mode === "off"}
+          onChange={(value) => {
+            void configure(value === "auto" ? "auto" : "selected", value === "auto" ? null : value);
           }}
-        >
-          <option value="">เลือกจอลูกค้าเอง…</option>
-          {selectableDisplays.map((display) => (
-            <option key={display.id} value={display.id}>
-              {display.label} · {display.width}×{display.height}{display.primary ? " · จอหลักของระบบ" : ""}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
+          options={[
+            { value: "auto", label: "เลือกจออื่นอัตโนมัติ" },
+            ...selectableDisplays.map((display) => ({ value: display.id, label: `${display.label} · ${display.width}×${display.height}` })),
+            ...(state.mode === "selected" && !state.targetAvailable ? [{ value: state.targetDisplayId!, label: "จอที่บันทึกไว้ (ไม่ได้เชื่อมต่อ)", disabled: true }] : []),
+          ]}
+        />
+        <Button
+          icon={<DesktopOutlined />}
           disabled={busy}
           onClick={() => void window.bmsDesktop?.identifyDisplays?.()}
         >
           ระบุหมายเลขจอ
-        </button>
+        </Button>
       </div>
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>

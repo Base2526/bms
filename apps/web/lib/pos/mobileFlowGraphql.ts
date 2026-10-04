@@ -9,7 +9,7 @@ export const POS_BOOTSTRAP_QUERY = `
       shiftReturnSummary { returnCount returnTotal settledTotal pendingTotal pendingCount }
       cashiers { id name email role isPharmacist hasPin posOnly }
       approvers { id name email role isPharmacist hasPin posOnly approvals }
-      store { taxId receiptLanguageMode address phone logoUrl paymentQr { payload accountName promptpayId } }
+      store { name businessHours website taxId receiptLanguageMode address phone logoUrl paymentQr { payload accountName promptpayId } }
       surface
       businessArchetype
       vat { registered priceIncludesVat rate calendarEra cashRounding }
@@ -142,6 +142,9 @@ export type PosBootstrap = {
   cashiers: PosCashier[];
   approvers: Array<PosCashier & { approvals: string[] }>;
   store: {
+    name?: string | null;
+    businessHours?: string | null;
+    website?: string | null;
     taxId: string | null;
     receiptLanguageMode: string;
     logoUrl: string | null;

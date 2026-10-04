@@ -90,7 +90,10 @@ shell.
 ## Customer display
 
 Connect the customer monitor as an **extended** desktop, not a mirrored screen. In the register,
-open **Settings → Customer display** and choose off, automatic, or a specific connected display.
+open **Settings → Customer display**, enable **เปิดจอลูกค้าเมื่อเปิด POS**, and choose automatic
+or a specific connected display. On an unconfigured installation, the shell offers to enable the
+customer display once after detecting a second monitor. Both acceptance and refusal are remembered;
+an existing explicit off setting is never overridden. Enabled displays reopen on app startup.
 "Identify displays" places a temporary number on every screen. The shell detects display
 add/remove/metric changes and restores the configured customer window when its target is available.
 
@@ -107,6 +110,56 @@ When the cashier selects QR payment, the display can show the exact provider-iss
 under **Admin → Settings → Receiving accounts**, together with the amount assigned to that QR
 tender. A PromptPay ID by itself is display text, not authority to invent an EMV payload, so no QR
 is generated until the shop supplies the real payload from its bank/payment provider.
+
+The web-owned display uses a branded welcome, recent items, payment and completed-sale layout.
+It clears completed bills after ten seconds and hides sensitive data after eight seconds without
+a valid cashier snapshot. No shell rebuild is needed for these web layouts. Run
+`npm run test:customer-display` for a sandboxed Electron check of all four states, responsive
+viewports, QR rendering, local reconnection, completion expiry and member privacy.
+
+## Receipt printer
+
+In **Settings → เครื่องพิมพ์ใบเสร็จ**, select an OS-installed printer and 58 or 80 mm paper, then
+save. The receipt screen also exposes these settings. Print sends one copy directly to that exact
+printer without the OS selection dialog. Settings are local to the workstation and survive restart.
+Save changes before using **พิมพ์ทดสอบ** to queue a clearly labelled non-receipt test page.
+The cashier then confirms whether the paper actually came out and is readable. A spool callback
+alone never confirms that. A printer whose driver exposes no status requires that confirmation
+before receipt printing; it is remembered for the saved printer/paper combination.
+
+The cashier surfaces share one status poll (every five seconds and on window focus), disable
+receipt/reprint buttons while checking, busy, missing, unhealthy or awaiting a test result, and
+show the reason with **ตรวจสอบอีกครั้ง** and **พิมพ์ทดสอบ** beside the receipt. Keyboard-triggered
+printing follows the same guard. Known offline/paper-out/jam/paused states block test jobs too;
+after fixing the device, refresh its status to re-enable testing. A failed receipt job stays blocked
+until a new test is confirmed. Sales/payment remain available regardless of printer readiness.
+
+Native preflight repeats this check before queuing, even if the UI was stale. Windows status uses
+the [Winspool flags](https://learn.microsoft.com/en-us/windows/win32/printdocs/printer-info-2);
+macOS/Linux use [CUPS state/reasons](https://www.cups.org/doc/cupspm.html). Driver reports can lag
+or omit physical failures; neither polling nor a successful test guarantees a future job. The UI
+does not claim real-time hardware certification. Older native bridges lacking health reporting
+show an update-required warning and disable direct receipt printing.
+
+Only the paired cashier main frame (`/pos`, `/pos/app`, `/pos/restaurant`) may call printer IPC.
+No HTML, URL, credential, or document payload is accepted from IPC arguments: the shell captures
+only the existing server-backed `#pos-receipt` DOM, waits for images/fonts, and prints a sandboxed
+hidden window with no preload or POS storage partition. It never calculates or settles money.
+The print document embeds the app's bundled Thai font and does not depend on OS Thai font support.
+A missing saved printer, failed image load, or driver error is visible and never silently selects
+another printer or opens a fallback dialog. Concurrent jobs are rejected; timeouts instruct the
+cashier to inspect the queue before retrying, because a spool acknowledgement is not proof of paper.
+Existing authorized WebUSB drawer kicks remain separate from native receipt printing.
+
+Older shells and ordinary browsers keep the existing WebUSB/browser-dialog flow. Deploying only
+the web app cannot add native printer support: rebuild/update the desktop shell too. Direct ESC/POS
+USB/LAN from the main process remains a separate milestone. Physical printer/driver combinations
+still require hardware acceptance testing on each supported OS.
+
+`npm test` includes mocked print failures, timeouts, duplicate clicks and frame authorization.
+`npm run test:receipt-smoke` renders the real receipt/settings in Electron at 58/80 mm and
+desktop/mobile widths, exercises mock controls, and writes screenshots to `dist-smoke/` without
+sending anything to a physical printer (requires the web app's development dependencies).
 
 For local development, the setup screen accepts `http://localhost:<port>`. Non-loopback servers must
 use HTTPS because the device token is a bearer credential.

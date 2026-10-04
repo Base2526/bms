@@ -18,6 +18,7 @@ import {
 } from "@/lib/bms/pos";
 import { getLocation } from "@/lib/bms/locations";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import { getTenantName } from "@/lib/bms/platform";
 import { configuredPosPaymentQr } from "@/lib/bms/paymentConfiguration";
 import { getVatSettings } from "@/lib/bms/taxDocuments";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -31,7 +32,7 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ error: "device token ไม่ถูกต้องหรือถูกยกเลิกแล้ว" }, { status: 401 });
   }
 
-  const [shift, location, cashiers, purchaseReceivers, approvers, kitchenOperators, vat, store] = await Promise.all([
+  const [shift, location, cashiers, purchaseReceivers, approvers, kitchenOperators, vat, store, storeName] = await Promise.all([
     getOpenPosShift(device.tenantId, device.id),
     getLocation(device.tenantId, device.locationId),
     listPosCashiers(device.tenantId),
@@ -42,6 +43,7 @@ async function handleGET(req: NextRequest) {
     // เลขผู้เสียภาษีของร้าน — ใบกำกับภาษีอย่างย่อต้องมี ไม่ใช่ข้อมูลรายบิล
     // จึงส่งมากับ session แล้วจอขายใช้ซ้ำได้ทุกใบ (มี cache อยู่แล้วใน storeProfile)
     getStoreProfile(device.tenantId),
+    getTenantName(device.tenantId),
   ]);
   const shiftReturnSummary = shift
     ? await getPosShiftReturnSummary(device.tenantId, device.id, shift.id)
@@ -77,6 +79,9 @@ async function handleGET(req: NextRequest) {
     approvers,
     kitchenOperators,
     store: {
+      name: storeName,
+      businessHours: store.businessHours,
+      website: store.website,
       taxId: store.taxId,
       receiptLanguageMode: store.receiptLanguageMode,
       address: store.address,

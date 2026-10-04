@@ -162,6 +162,7 @@ import {
 import { setMenuTemporarilyUnavailable } from "@/lib/bms/menuAvailability";
 import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
+import { getTenantName } from "@/lib/bms/platform";
 import { configuredPosPaymentQr } from "@/lib/bms/paymentConfiguration";
 import { getBranchStockOverview } from "@/lib/bms/stock";
 import {
@@ -779,6 +780,9 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosStoreReceiptSettings {
+    name: String
+    businessHours: String
+    website: String
     taxId: String
     receiptLanguageMode: String!
     address: String
@@ -3329,6 +3333,7 @@ export const bmsPosDeviceResolvers = {
         kitchenOperators,
         vat,
         store,
+        storeName,
       ] = await Promise.all([
         getOpenPosShift(device.tenantId, device.id),
         getLocation(device.tenantId, device.locationId),
@@ -3338,6 +3343,7 @@ export const bmsPosDeviceResolvers = {
         listPosKitchenOperators(device.tenantId),
         getVatSettings(device.tenantId),
         getStoreProfile(device.tenantId),
+        getTenantName(device.tenantId),
       ]);
       const shiftReturnSummary = shift
         ? await getPosShiftReturnSummary(device.tenantId, device.id, shift.id)
@@ -3377,6 +3383,9 @@ export const bmsPosDeviceResolvers = {
         approvers,
         kitchenOperators,
         store: {
+          name: storeName,
+          businessHours: store.businessHours,
+          website: store.website,
           taxId: store.taxId,
           receiptLanguageMode: store.receiptLanguageMode,
           address: store.address,

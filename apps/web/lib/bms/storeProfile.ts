@@ -192,6 +192,22 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
 
 export type StoreProfileInput = Partial<StoreProfile>;
 
+const NON_NULL_PROFILE_KEYS = [
+  "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
+  "aiHandoffAfterFailedTurns", "receiptLanguageMode", "restaurantOrderHours",
+  "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "paymentAccounts",
+  "enabledCarriers", "shippingMode", "shippingZoneRates", "shippingWeightTiers",
+] as const satisfies ReadonlyArray<keyof StoreProfile>;
+
+/** GraphQL nullable fields may arrive as null, but these domain values map to NOT NULL columns. */
+export function mergeStoreProfileInput(current: StoreProfile, input: StoreProfileInput): StoreProfile {
+  const merged = { ...current, ...input } as StoreProfile;
+  for (const key of NON_NULL_PROFILE_KEYS) {
+    if (input[key] == null) (merged as any)[key] = current[key];
+  }
+  return merged;
+}
+
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const BUSINESS_TYPES = new Set(["fashion", "beauty", "food", "electronics", "home", "general"]);
 const AI_LANGUAGES = new Set(["th", "en", "th-en"]);
@@ -239,7 +255,7 @@ export async function upsertStoreProfile(
     // Merge from the transaction's fresh row, never from the read-through cache. Otherwise
     // an unrelated concurrent save can write a stale archetype back over the locked value.
     const cur = await fetchStoreProfileWithClient(tenantId, client);
-    const merged: StoreProfile = { ...cur, ...input };
+    const merged = mergeStoreProfileInput(cur, input);
 
     const rawBusinessArchetype = merged.businessArchetype?.trim?.() ?? merged.businessArchetype;
     const normalizedBusinessArchetype = normalizeShopArchetype(rawBusinessArchetype);

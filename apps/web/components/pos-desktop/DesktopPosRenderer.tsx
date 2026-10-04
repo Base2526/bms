@@ -62,6 +62,7 @@ import {
 } from "@/lib/pos/deviceTokenClient";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
+  displayBrand, displayMemberName,
   EMPTY_CUSTOMER_DISPLAY,
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
@@ -83,6 +84,10 @@ import {
 import { ALERT_KINDS, newAlertIds } from "@/lib/pos/orderAlertSound";
 import { copyTextToClipboard } from "@/lib/pos/clipboard";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import { hasDesktopPrinterBridge, printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
+import ReceiptPrinterSettings from "./ReceiptPrinterSettings";
+import ReceiptPrinterStatus from "./ReceiptPrinterStatus";
+import { useReceiptPrinter } from "./useReceiptPrinter";
 import type { ReceiptPayload } from "@/lib/pos/escpos";
 import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { receiptPayloadFromPosSale, type PosSaleReceiptRow } from "@/lib/pos/posSaleReceipt";
@@ -128,6 +133,7 @@ const ADVANCED_ITEM_NOTICE =
   "สินค้านี้ต้องกรอก serial / น้ำหนัก / ตัวเลือกเพิ่มเติม จึงต้องขายในหน้าขายแบบเต็มเพื่อไม่ข้ามการตรวจสอบ";
 
 type SaleResult = {
+  completedAt?: number;
   status: string;
   reason: string | null;
   orderId: string | null;
@@ -383,6 +389,7 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export default function DesktopPosRenderer() {
+  const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
   const {
@@ -421,6 +428,7 @@ export default function DesktopPosRenderer() {
   // no lines, discounts, tax-document number or VAT split. Null while it loads or when it failed.
   const [receiptPaper, setReceiptPaper] = useState<ReceiptPayload | null>(null);
   const [receiptPaperState, setReceiptPaperState] = useState<"idle" | "loading" | "failed">("idle");
+  const [receiptPrinting, setReceiptPrinting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [addingProductKey, setAddingProductKey] = useState("");
   const [notice, setNotice] = useState("");
@@ -1303,6 +1311,9 @@ export default function DesktopPosRenderer() {
   useEffect(() => {
     const finished = receipt
       ? {
+          id: receipt.orderId ?? receipt.receiptNo ?? undefined,
+          completedAt: receipt.completedAt,
+          taxRequestUrl: receiptPaper?.orderId === receipt.orderId ? receiptPaper?.taxRequestUrl : null,
           total: receipt.total ?? total,
           tendered: receipt.cashTendered,
           change: receipt.cashChange,
@@ -1330,7 +1341,14 @@ export default function DesktopPosRenderer() {
           })),
         ]
       : [];
-    const payload: CustomerDisplayPayload = {
+    const displayActive = Boolean(token && cashier && bootstrap?.shift && (
+      flow.stage === "RECEIPT" || flow.stage === "CHECKOUT"
+      || (flow.stage === "CATALOG" && shownModule === "mobile_sell")
+    ));
+    const payload: CustomerDisplayPayload = !displayActive
+      ? { ...EMPTY_CUSTOMER_DISPLAY, brand: displayBrand(bootstrap) } : {
+      brand: displayBrand(bootstrap),
+      checkout: flow.stage === "CHECKOUT",
       lines: boardGameCheckout
         ? boardGameDisplayLines
         : cart.map((line) => ({
@@ -1349,8 +1367,9 @@ export default function DesktopPosRenderer() {
         : retailListSubtotal,
       discountTotal: boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings,
       amountDue: receipt?.total ?? total,
-      memberName: null,
-      pointsEarned: null,
+      memberName: displayMemberName(receiptPaper?.orderId === receipt?.orderId ? receiptPaper?.member?.name : null),
+      pointsEarned: receipt?.pointsEarned ?? null,
+      pointsBalance: receipt?.pointsBalance ?? null,
       paymentQr: flow.stage === "CHECKOUT" && qrPaymentAmount > 0 && configuredQr
         ? { ...configuredQr, amount: qrPaymentAmount }
         : null,
@@ -1361,17 +1380,21 @@ export default function DesktopPosRenderer() {
     customerDisplayChannelRef.current?.postMessage(payload);
   }, [
     desktopOwnsCustomerDisplay,
+    token,
+    cashier,
+    shownModule,
     boardGameBenefitAmount,
     boardGameCheckout,
     boardGameTotalDiscountAmount,
     cart,
-    bootstrap?.store.paymentQr,
+    bootstrap,
     flow.stage,
     itemCount,
     payments,
     payableBeforeRounding,
     pricingSavings,
     receipt,
+    receiptPaper,
     retailListSubtotal,
     total,
   ]);
@@ -1529,8 +1552,18 @@ export default function DesktopPosRenderer() {
    * carries this marker. Printing without it produces a blank sheet. rAF alone never fires in a
    * hidden window, so a timeout races it and the dialog opens exactly once.
    */
-  const printReceiptPaper = () => {
-    if (!receiptPaper) return;
+  const printReceiptPaper = async () => {
+    if (!receiptPaper || receiptPrinting || receiptPrinter.disabled) return;
+    setError("");
+    setReceiptPrinting(true);
+    try {
+      if (await printDesktopReceipt()) return;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "พิมพ์ใบเสร็จไม่สำเร็จ");
+      return;
+    } finally {
+      setReceiptPrinting(false);
+    }
     document.body.setAttribute("data-pos-print-target", "receipt");
     let fallbackTimer = 0;
     const cleanup = () => {
@@ -1570,7 +1603,7 @@ export default function DesktopPosRenderer() {
         saleAttemptRef.current = null;
         throw new Error(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`);
       }
-      setReceipt(data.bmsPosSale);
+      setReceipt({ ...data.bmsPosSale, completedAt: Date.now() });
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
       setConnection("online");
@@ -1763,8 +1796,16 @@ export default function DesktopPosRenderer() {
           ) : receiptPaperState === "loading" ? (
             <p className={styles.receiptPaperStatus} role="status">กำลังโหลดใบเสร็จ…</p>
           ) : null}
+          {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
+          {hasDesktopPrinterBridge() && (
+            <details style={{ textAlign: "left", marginBottom: 12 }}>
+              <summary style={{ cursor: "pointer" }}>ตั้งค่าเครื่องพิมพ์</summary>
+              <ReceiptPrinterSettings showStatus={false} />
+            </details>
+          )}
+          <ReceiptPrinterStatus />
           <div className={styles.receiptActions}>
-            <button disabled={!receiptPaper} onClick={printReceiptPaper}>พิมพ์ใบเสร็จ</button>
+            <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}>{receiptPrinting ? "กำลังส่งพิมพ์…" : "พิมพ์ใบเสร็จ"}</button>
             <button className={styles.primaryButton} onClick={newSale}>
               {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
             </button>

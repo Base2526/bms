@@ -32,6 +32,19 @@ export type DesktopAppInfo = {
   secureStorageBackend: string | null;
 };
 
+export type DesktopPrinterState = {
+  deviceName: string;
+  paperWidth: 58 | 80;
+  available: boolean;
+  canPrint?: boolean;
+  canTest?: boolean;
+  busy?: boolean;
+  awaitingConfirmation?: boolean;
+  message?: string;
+  health?: "ready" | "unknown" | "blocked";
+  printers: Array<{ name: string; displayName: string; isDefault: boolean }>;
+};
+
 declare global {
   interface Window {
     bmsDesktop?: {
@@ -41,6 +54,13 @@ declare global {
       getAppInfo?(): Promise<DesktopAppInfo | null>;
       /** Opens the paired server's admin login in the system browser without POS credentials. */
       openAdmin?(): Promise<{ ok: boolean }>;
+      getPrinterState?(): Promise<DesktopPrinterState | null>;
+      setPrinterConfig?(input: { deviceName: string; paperWidth: 58 | 80 }): Promise<{
+        ok: boolean; error?: string; state?: DesktopPrinterState;
+      }>;
+      printReceipt?(): Promise<{ ok: boolean; error?: string }>;
+      testReceiptPrinter?(): Promise<{ ok: boolean; error?: string }>;
+      confirmPrinterTest?(printed: boolean): Promise<{ ok: boolean; error?: string }>;
       /** Added in desktop 0.2.3; optional so a newer server remains usable from an older shell. */
       getCustomerDisplayState?(): Promise<DesktopCustomerDisplayState | null>;
       setCustomerDisplayConfig?(input: {

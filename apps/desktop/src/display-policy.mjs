@@ -4,10 +4,12 @@ export const DEFAULT_CUSTOMER_DISPLAY_CONFIG = Object.freeze({
   version: 1,
   mode: "off",
   targetDisplayId: null,
+  configured: false,
 });
 
 export function normalizeCustomerDisplayConfig(value) {
   if (!value || typeof value !== "object") return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
+  if (!CUSTOMER_DISPLAY_MODES.has(value.mode)) return { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
   const mode = CUSTOMER_DISPLAY_MODES.has(value.mode) ? value.mode : "off";
   const targetDisplayId = value.targetDisplayId == null
     ? null
@@ -19,6 +21,7 @@ export function normalizeCustomerDisplayConfig(value) {
     version: 1,
     mode,
     targetDisplayId: mode === "selected" ? targetDisplayId : null,
+    configured: value.configured !== false,
   };
 }
 

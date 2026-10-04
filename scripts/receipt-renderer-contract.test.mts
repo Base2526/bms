@@ -42,7 +42,7 @@ test("ใบเสร็จมี renderer สองตัวแต่ payload �
     "storeName", "branchCode", "taxId", "posNo", "docTitle", "billNo", "notes",
     "lines", "discountLines", "vat", "roundingAmount", "itemCount", "total",
     "returnReason", "refundLines", "payments", "paymentLabel", "tendered", "change",
-    "docNo", "at", "cashier", "member", "barcodeValue", "referenceDocNo",
+    "docNo", "at", "cashier", "member", "barcodeValue", "referenceDocNo", "taxRequestUrl",
   ]) {
     assert.match(paper, new RegExp(`payload\\.${field}\\b`), `กระดาษบนจอไม่ได้อ่าน ${field}`);
     assert.match(escpos, new RegExp(`payload\\.${field}\\b`), `ตัวพิมพ์ไม่ได้อ่าน ${field}`);
@@ -67,6 +67,10 @@ test("ทั้งสองเครื่องขายประกอบ payl
   assert.match(retail, /<ReceiptPaper payload=\{receiptPayloadOf\(receipt\)\} \/>/);
 
   assert.match(restaurant, /function receiptPayload\(receipt: ReceiptSelection\): ReceiptPayload \| null/);
+  assert.match(restaurant, /taxRequestUrl: result\.taxRequestUrl \?\? null/,
+    "ใบเสร็จร้านอาหารต้องส่งลิงก์ QR จาก server ทั้งบิลใหม่และบิลพิมพ์ซ้ำ");
+  assert.match(restaurant, /taxRequestUrl: settlementReceipt\.result\.taxRequestUrl/,
+    "จอลูกค้าหลังปิดบิลร้านอาหารต้องได้รับลิงก์ QR ใบเดียวกัน");
   assert.match(restaurant, /return buildReceipt\(payload\)/);
   assert.match(restaurant, /<ReceiptPaper payload=/);
 

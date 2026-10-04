@@ -359,7 +359,7 @@
 .page .btn:focus-visible{ outline: 2px solid var(--accent); outline-offset: 2px; }
 .page .btn:disabled{ opacity: .4; cursor: not-allowed; }
 .page .btnPrimary{ background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 600; }
-.page .btnPrimary:hover:not(:disabled){ background: var(--accent); filter: brightness(1.12); }
+.page .btnPrimary:hover:not(:disabled){ background: var(--accent); color: var(--on-solid); filter: brightness(1.12); }
 .page .btnDanger{ color: var(--red); }
 /* flex: none — .btnIcon นั่งอยู่ในแถว flex ที่มีตัวหนังสือยาวข้าง ๆ (.checkHeadRow, .topActions,
    .panelHeader) และปริยายของ flex item คือ shrink ได้ · วัดจริงที่ 320px: ปุ่ม ⋯ ของแผงบิล
@@ -416,7 +416,7 @@
   background: var(--panel); color: var(--ink-2); border-radius: 6px; cursor: pointer; white-space: nowrap;
 }
 .page .areaButtonActive{ background: var(--ink); border-color: var(--ink); color: var(--panel); font-weight: 600; }
-.page .areaButtonActive:hover:not(:disabled) { background: var(--ink); filter: brightness(1.25); }
+.page .areaButtonActive:hover:not(:disabled) { background: var(--ink); color: var(--panel); filter: brightness(1.25); }
 
 /* จุดสีที่มุมโต๊ะ (tableDot) ไม่มีคำอธิบายกำกับเลย — แถบนี้แปลความหมายให้ครบทั้ง 4 สี
    ในบรรทัดเดียว ตั้งใจวางไว้ "ท้ายผัง" ไม่ใช่บนสุด: กริดโต๊ะที่พนักงานต้องกดใช้งานจริงต้อง
@@ -538,7 +538,7 @@
 }
 .page .catCard:hover { border-color: var(--ink-3); }
 .page .catCardActive { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
-.page .catCardActive:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .catCardActive:hover:not(:disabled) { background: var(--accent); color: var(--on-solid); filter: brightness(1.12); }
 .catName { display: block; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .catCount { display: block; font-size: 11px; opacity: .78; font-variant-numeric: tabular-nums; }
 
@@ -596,11 +596,11 @@
    คลาสเดี่ยว ๆ ปุ่มที่ active จึงกลายเป็นสีขาวพร้อมตัวหนังสือสีขาว = อ่านไม่ออก
    และบนจอสัมผัส :hover ค้างอยู่กับปุ่มที่แตะล่าสุดจนไปแตะที่อื่น (แบบเดียวกับ .btnPrimary) */
 .page .menuToolOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
-.page .menuToolOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .menuToolOn:hover:not(:disabled) { background: var(--accent); color: var(--on-solid); filter: brightness(1.12); }
 .page .menuToolAlert { border-color: var(--amber); background: var(--amber-bg); color: var(--amber); }
 .page .menuToolAlert:hover:not(:disabled) { background: var(--amber-bg); }
 .page .menuToolAlert.menuToolOn { background: var(--amber); border-color: var(--amber); color: var(--on-solid); }
-.page .menuToolAlert.menuToolOn:hover:not(:disabled) { background: var(--amber); filter: brightness(1.08); }
+.page .menuToolAlert.menuToolOn:hover:not(:disabled) { background: var(--amber); color: var(--on-solid); filter: brightness(1.08); }
 .menuToolNote { font-size: 11.5px; color: var(--ink-3); margin-inline-start: auto; }
 .page .dishCard:hover { border-color: var(--accent); }
 .dishArt { height: 96px; display: grid; place-items: center; }
@@ -789,7 +789,7 @@
    รอบปุ่ม · สีอย่างเดียวยังแยกจาก focus ring ของเบราว์เซอร์ไม่ออกตอนเพิ่งกดเสร็จ */
 .page .kitchenFilterOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); font-weight: 700;
   box-shadow: 0 0 0 3px var(--green-bg); }
-.page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .kitchenFilterOn:hover:not(:disabled) { background: var(--accent); color: var(--on-solid); filter: brightness(1.12); }
 .kitchenBarEnd { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 .kitchenLive { display: inline-flex; align-items: center; gap: 5px; color: var(--ink-2); font-size: 12.5px; }
 .kitchenLiveDot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
@@ -947,7 +947,7 @@
   font-weight: 600; cursor: pointer; }
 .page .quickQtyBtn:hover:not(:disabled) { background: var(--panel-2); }
 .page .quickQtyOn { background: var(--accent); border-color: var(--accent); color: var(--on-solid); }
-.page .quickQtyOn:hover:not(:disabled) { background: var(--accent); filter: brightness(1.12); }
+.page .quickQtyOn:hover:not(:disabled) { background: var(--accent); color: var(--on-solid); filter: brightness(1.12); }
 .modifierGroup { border: 0; padding: 0; margin: 0; }
 .modifierChips { display: flex; flex-wrap: wrap; gap: 7px; }
 .modifierChip { display: inline-flex !important; align-items: center; gap: 6px; height: 40px; min-height: 40px;

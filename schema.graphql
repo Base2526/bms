@@ -5336,11 +5336,14 @@ type BmsPosStoreCreditSummary {
 
 type BmsPosStoreReceiptSettings {
   address: String
+  businessHours: String
   logoUrl: String
+  name: String
   paymentQr: BmsPosPaymentQr
   phone: String
   receiptLanguageMode: String!
   taxId: String
+  website: String
 }
 
 type BmsPosVatSettings {

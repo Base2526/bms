@@ -60,6 +60,8 @@ test("ทุกจุดที่บันทึกไฟล์ระบุ visi
   const expected: Record<string, "public" | "private"> = {
     // หน้าร้านสาธารณะโหลดรูปสินค้าโดยไม่มี session
     "app/api/bms/products/upload/route.ts": "public",
+    // โลโก้ร้านแสดงบนใบเสร็จและหน้าร้านสาธารณะ
+    "app/api/bms/store-profile/logo/upload/route.ts": "public",
     // seeder สร้างโพสต์ปลอมที่แสดงบนหน้าเว็บสาธารณะ
     "app/api/dev/fake/posts/route.ts": "public",
     // สลิปมีชื่อ+เลขบัญชีผู้โอน
@@ -143,6 +145,7 @@ test("ไฟล์ private ที่มีเจ้าของต้องเ�
 test("ทุกจุดที่อัปโหลดไฟล์ของร้านต้องผูกเจ้าของ", () => {
   const expected: Record<string, string> = {
     "app/api/bms/products/upload/route.ts": "auth.tenantId",
+    "app/api/bms/store-profile/logo/upload/route.ts": "auth.tenantId",
     "app/api/bms/inbox/upload/route.ts": "auth.tenantId",
     "app/api/bms/pharmacy/evidence/upload/route.ts": "auth.tenantId",
     // POS ใช้ tenant ของเครื่องที่ authenticate แล้ว ไม่ใช่ค่าจาก client
@@ -163,4 +166,15 @@ test("ทุกจุดที่อัปโหลดไฟล์ของร�
     /persistBuffer\([^)]*tenantId\)/s,
     "ไฟล์รายงานต้องผูก tenant ของร้านที่สั่งสร้าง"
   );
+});
+
+test("อัปโหลดโลโก้ร้านต้องยืนยัน admin และจำกัดไฟล์รูป", () => {
+  const src = read("app/api/bms/store-profile/logo/upload/route.ts");
+  assert.match(src, /authorizeAdminRoute\(null\)/, "ต้องใช้ขอบเขตเดียวกับ store profile mutation");
+  assert.match(src, /image\/jpeg/, "ต้องรองรับ JPG");
+  assert.match(src, /image\/png/, "ต้องรองรับ PNG");
+  assert.match(src, /image\/webp/, "ต้องรองรับ WebP");
+  assert.match(src, /5 \* 1024 \* 1024/, "ต้องจำกัดขนาดไฟล์ไว้ที่ 5MB");
+  assert.match(src, /await prepareStoreLogo\(/, "ต้องตรวจและ decode รูปจริงก่อนบันทึก");
+  assert.match(src, /persistWebFile\(normalizedLogo, undefined, "public", auth.tenantId\)/);
 });

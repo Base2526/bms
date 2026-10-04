@@ -10,6 +10,8 @@ import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, typ
 import { describePosFailure, describeTransportFailure } from "@/lib/pos/failureMessage";
 import {
   CUSTOMER_DISPLAY_CHANNEL,
+  EMPTY_CUSTOMER_DISPLAY,
+  displayBrand, displayMemberName,
   type CustomerDisplayPayload,
 } from "@/lib/pos/customerDisplay";
 import { describeUnmetModifierGroups, unmetModifierGroups } from "@/lib/pos/modifierSelection";
@@ -33,6 +35,9 @@ import { usePosOperatorSession } from "@/components/pos/PosOperatorSession";
 import { usePosStartupPreparation } from "@/components/pos/PosStartupPreparation";
 import { PosWorkspaceContext, type PosIncomingOrderNotice, type PosTab } from "@/components/pos/PosWorkspaceContext";
 import ReceiptPaper from "@/components/pos/ReceiptPaper";
+import { printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
+import ReceiptPrinterStatus from "@/components/pos-desktop/ReceiptPrinterStatus";
+import { useReceiptPrinter } from "@/components/pos-desktop/useReceiptPrinter";
 import { posPaymentMethodLabel, receiptDocumentTitle,
   receiptLabel,
   receiptLocale,
@@ -133,7 +138,7 @@ const queueStatusLabels = (t: Translate): Record<string, string> => ({
   NO_SHOW: t("pos_restaurant.queue_no_show"),
 });
 type Staff = { id: string; name: string | null; email: string | null; hasPin: boolean };
-type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null; paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
+type Session = { device: { id: string; code: string; name: string | null; registeredPosNo?: string | null }; location: { id: string; name: string; branchCode: string } | null; shift: { id: string; openedAt: string; openingFloat: number } | null; cashiers: Staff[]; approvers: Array<Staff & { approvals: string[] }>; kitchenOperators: Staff[]; businessArchetype?: string | null; store?: { name?: string | null; businessHours?: string | null; website?: string | null; taxId: string | null; receiptLanguageMode: ReceiptLanguageMode; address?: string | null; phone?: string | null; logoUrl?: string | null; paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null }; vat: { registered?: boolean; priceIncludesVat?: boolean; rate?: number; cashRounding?: CashRounding } };
 type RestaurantServiceMode = "DINE_IN" | "TAKEAWAY";
 type FloorCheck = { id: string; status: string; guestCount: number; amountDue: number; openedAt: string; itemCount: number; unsentCount: number; version: number; reservedVersion: number | null; splitGroupNo: number;
   serviceMode?: RestaurantServiceMode;
@@ -231,7 +236,7 @@ type RestaurantPricingPreview = {
 };
 type SettlementResult = {
   status: "SOLD"; orderId: string; total: number; cashTendered: number | null; cashChange: number | null;
-  docNo: string | null; receiptNo: string | null; billNo: string | null;
+  docNo: string | null; receiptNo: string | null; billNo: string | null; taxRequestUrl: string | null;
   vat: { rate: number; vatAmount: number; netBeforeVat: number; exemptAmount?: number; roundingAmount?: number } | null;
   roundingAmount: number; discountLines: Array<{ source?: string; label: string; amount: number; pointsUsed?: number }>;
   pointsEarned: number | null; pointsBalance: number | null; kitchenTickets: number; replayed: boolean;
@@ -246,7 +251,7 @@ type SettlementReceipt = {
   payments: Array<{ method: string; amount: number; ref: string | null; cashTendered: number | null; cashChange: number | null }>;
 };
 type RecentReceipt = {
-  orderId: string; docNo: string | null; receiptNo: string | null; billNo: string | null;
+  orderId: string; docNo: string | null; receiptNo: string | null; billNo: string | null; taxRequestUrl: string | null;
   total: number; cashTendered: number | null; cashChange: number | null; soldAt: string;
   cashierName: string | null; locationName: string | null; branchCode: string | null; posLabel: string | null;
   posDeviceId: string | null; shiftId: string | null; orderStatus: string; voidedAt: string | null;
@@ -520,6 +525,7 @@ const lineKitchenStates = (t: Translate): Record<string, { label: string; color:
 });
 
 export default function RestaurantPosPage() {
+  const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
   const { takeRestaurantStartupResponse } = usePosStartupPreparation();
@@ -650,6 +656,7 @@ export default function RestaurantPosPage() {
   const [discountApproverId, setDiscountApproverId] = useState("");
   const [discountApproverPin, setDiscountApproverPin] = useState("");
   const [pricingPreview, setPricingPreview] = useState<RestaurantPricingPreview | null>(null);
+  const [pricingDisplayKey, setPricingDisplayKey] = useState<string | null>(null);
   const [pricingError, setPricingError] = useState<string | null>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
   // ⚠️ "ค้นแล้วไม่พบ" ต้องแยกจาก "ยังไม่ได้ค้น" ให้ออก — `memberResults.length === 0` เป็นจริง
@@ -706,6 +713,15 @@ export default function RestaurantPosPage() {
   // of a newly selected table from inheriting the previous table's customer before the cleanup
   // effect below runs.
   const checkMember = memberCheckIdRef.current === (check?.id ?? null) ? selectedMember : null;
+  const pricingDisplayRequestKey = JSON.stringify([check?.id, check?.version, check?.amountDue,
+    checkMember?.customerId, couponCode.trim(), pointsToRedeem, manualDiscount]);
+  // Reuse the checkout's existing rounding result on both screens.
+  const checkoutBaseDue = pricingPreview?.amountDue ?? check?.amountDue ?? 0;
+  const checkoutDue = check == null ? 0 : Math.round((checkoutBaseDue + cashRoundingForPayments(
+    checkoutBaseDue,
+    session?.vat.cashRounding ?? "NONE",
+    payments
+  )) * 100) / 100;
   // จอฝั่งลูกค้าต้องมีเจ้าของเพียงคนเดียว: เมื่อเปิดงานขายทั่วไป workspace ที่ฝังจะส่ง
   // ตะกร้าของมันเอง ส่วน shell ร้านอาหารหยุดตอบ hello/ส่งบิลโต๊ะชั่วคราว ไม่อย่างนั้นสอง
   // BroadcastChannel จะผลัดกันเขียนคนละยอดบนจอลูกค้า
@@ -766,36 +782,66 @@ export default function RestaurantPosPage() {
   }, [embeddedOtherWorkActive]);
   useEffect(() => {
     if (embeddedOtherWorkActive) return;
-    if (!check) {
-      if (settlementReceipt) return;
-      const empty: CustomerDisplayPayload = {
-        lines: [], itemCount: 0, total: 0, discountTotal: 0, amountDue: 0,
-        memberName: null, pointsEarned: null, paymentQr: null, finished: null,
-      };
-      displayPayloadRef.current = empty;
-      displayChannel.current?.postMessage(empty);
+    const publish = (payload: CustomerDisplayPayload) => {
+      displayPayloadRef.current = payload;
+      displayChannel.current?.postMessage(payload);
+    };
+    const idle = { ...EMPTY_CUSTOMER_DISPLAY, brand: displayBrand(session) };
+    if (!token || tokenRejected || !session?.shift || !actorUserId || !actorPin) {
+      publish(idle);
       return;
     }
+    if (!check && settlementReceipt) {
+      publish({
+        ...idle,
+        total: settlementReceipt.result.total,
+        amountDue: settlementReceipt.result.total,
+        memberName: displayMemberName(settlementReceipt.member?.name),
+        pointsBalance: settlementReceipt.result.pointsBalance,
+        pointsEarned: settlementReceipt.result.pointsEarned,
+        finished: {
+          id: settlementReceipt.result.orderId,
+          completedAt: Date.parse(settlementReceipt.at),
+          taxRequestUrl: settlementReceipt.result.taxRequestUrl,
+          total: settlementReceipt.result.total,
+          tendered: settlementReceipt.result.cashTendered,
+          change: settlementReceipt.result.cashChange,
+        },
+      });
+      return;
+    }
+    if (!check || (screen !== "ORDER" && !checkoutOpen)) {
+      publish(idle);
+      return;
+    }
+    const pendingPricing = checkoutOpen && (pricingLoading || Boolean(pricingError)
+      || pricingDisplayKey !== pricingDisplayRequestKey || pricingPreview?.status !== "READY");
     const sentItems = check.items.filter((item) => item.status === "SENT" && item.lineAmount != null);
     let itemCount = 0;
     for (const item of sentItems) itemCount += item.packQty;
     const payload: CustomerDisplayPayload = {
+      brand: displayBrand(session),
+      checkout: checkoutOpen,
+      pendingApproval: checkoutOpen && Number(manualDiscount) > 0,
+      pendingPricing,
       lines: sentItems.map((item) => ({
         name: item.productName, size: item.size && item.size !== "-" ? item.size : null,
         qty: item.packQty, unitName: item.unitName ?? "", amount: item.lineAmount!,
       })),
       itemCount,
-      total: pricingPreview?.subtotal ?? check.amountDue,
-      discountTotal: pricingPreview?.totalDiscount ?? 0,
-      amountDue: pricingPreview?.amountDue ?? check.amountDue,
-      memberName: checkMember?.name ?? null,
+      total: checkoutOpen ? pricingPreview?.subtotal ?? check.amountDue : check.amountDue,
+      discountTotal: checkoutOpen ? pricingPreview?.totalDiscount ?? 0 : 0,
+      amountDue: checkoutOpen ? checkoutDue : check.amountDue,
+      memberName: displayMemberName(checkMember?.name),
+      pointsBalance: checkMember?.pointsBalance ?? null,
+      pointsWillEarn: checkoutOpen ? pricingPreview?.pointsWillEarn ?? null : null,
       pointsEarned: null,
       paymentQr: (() => {
         const configuredQr = session?.store?.paymentQr;
         const qrAmount = Math.round(payments
           .filter((payment) => payment.method === "QR")
           .reduce((sum, payment) => sum + Math.max(0, Number(payment.amount) || 0), 0) * 100) / 100;
-        return checkoutOpen && configuredQr && qrAmount > 0
+        return checkoutOpen && !pendingPricing && !(Number(manualDiscount) > 0) && configuredQr && qrAmount > 0
           ? { ...configuredQr, amount: qrAmount }
           : null;
       })(),
@@ -803,27 +849,7 @@ export default function RestaurantPosPage() {
     };
     displayPayloadRef.current = payload;
     displayChannel.current?.postMessage(payload);
-  }, [check, checkMember, pricingPreview, settlementReceipt, checkoutOpen, payments, session?.store?.paymentQr, embeddedOtherWorkActive]);
-  useEffect(() => {
-    if (embeddedOtherWorkActive) return;
-    if (!settlementReceipt) return;
-    const payload: CustomerDisplayPayload = {
-      lines: [], itemCount: 0,
-      total: settlementReceipt.result.total + settlementReceipt.result.discountLines.reduce((sum, line) => sum + line.amount, 0),
-      discountTotal: settlementReceipt.result.discountLines.reduce((sum, line) => sum + line.amount, 0),
-      amountDue: settlementReceipt.result.total,
-      memberName: settlementReceipt.member?.name ?? null,
-      pointsEarned: settlementReceipt.result.pointsEarned,
-      paymentQr: null,
-      finished: {
-        total: settlementReceipt.result.total,
-        tendered: settlementReceipt.result.cashTendered,
-        change: settlementReceipt.result.cashChange,
-      },
-    };
-    displayPayloadRef.current = payload;
-    displayChannel.current?.postMessage(payload);
-  }, [settlementReceipt, embeddedOtherWorkActive]);
+  }, [check, checkMember, pricingPreview, pricingLoading, pricingError, pricingDisplayKey, pricingDisplayRequestKey, settlementReceipt, checkoutOpen, checkoutDue, payments, manualDiscount, session, embeddedOtherWorkActive, token, tokenRejected, actorUserId, actorPin, screen]);
   useEffect(() => {
     const checkId = check?.id ?? null;
     if (memberCheckIdRef.current === checkId) return;
@@ -1029,14 +1055,6 @@ export default function RestaurantPosPage() {
   // แล้วเจอ error ต่อหน้าลูกค้า (เกณฑ์มาจาก server ที่เดียว ไม่ให้จอเดาเอง)
   const reservationLost = Boolean(check?.reservationLost);
   const paymentTotal = Math.round(payments.reduce((sum, payment) => sum + (Number(payment.amount) || 0), 0) * 100) / 100;
-  // ⚠️ เดิมปัดเศษเฉพาะตอนมีช่องทางเดียว ขณะที่ server ปัดเมื่อ **ทุกช่องทาง** เป็นเงินสด
-  // → บิลที่แบ่งจ่ายเงินสดสองช่องทางจอไม่ปัดแต่ server ปัด แล้วบิลถูกทิ้งทั้งใบ
-  const checkoutBaseDue = pricingPreview?.amountDue ?? check?.amountDue ?? 0;
-  const checkoutDue = check == null ? 0 : Math.round((checkoutBaseDue + cashRoundingForPayments(
-    checkoutBaseDue,
-    session?.vat.cashRounding ?? "NONE",
-    payments
-  )) * 100) / 100;
   // เหตุผลเดียวที่ทั้งปุ่มยืนยัน แถบสรุป และ settle() ใช้ร่วมกัน — สามที่ตัดสินเองจะ drift
   // แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ (หรือแย่กว่า: กดได้แล้ว server ปฏิเสธกลางบิล)
   const paymentBlock = check == null ? null : checkoutBlockReason(payments, checkoutDue);
@@ -2009,6 +2027,7 @@ export default function RestaurantPosPage() {
     let itemCount = 0;
     for (const line of lines) itemCount += line.qty;
     return {
+      taxRequestUrl: result.taxRequestUrl ?? null,
       languageMode: mode,
       storeName: session?.location?.name ?? "BMS Restaurant",
       storeAddress: session?.store?.address ?? null,
@@ -2117,9 +2136,19 @@ export default function RestaurantPosPage() {
     return buildReceipt(payload);
   }
   async function printReceipt(receipt: ReceiptSelection, openDrawer = false) {
+    if (receiptPrinter.disabled) return;
     await run(async () => {
       if (!receiptPayload(receipt)) {
         throw new Error(t("pos_restaurant.receipt_missing_prices"));
+      }
+      if (await printDesktopReceipt()) {
+        if (openDrawer && isWebUsbSupported()) {
+          try {
+            const drawerPrinter = await findRememberedPrinter();
+            if (drawerPrinter) await sendToPrinter(buildDrawerKick(), drawerPrinter);
+          } catch { message.warning("ส่งใบเสร็จเข้าคิวแล้ว แต่เปิดลิ้นชัก USB ไม่สำเร็จ"); }
+        }
+        return;
       }
       const fallback = (reason: string) => {
         message.info(t("pos_restaurant.print_browser_fallback", { reason, drawer: openDrawer ? t("pos_restaurant.print_drawer_hint") : "" }));
@@ -2172,6 +2201,7 @@ export default function RestaurantPosPage() {
       }
       if (requestId === pricingRequestRef.current) {
         setPricingPreview(preview);
+        setPricingDisplayKey(pricingDisplayRequestKey);
         setPricingError(previewError);
       }
       if (requestId === pricingRequestRef.current && !previewError && preview.amountDue != null && payments.length === 1) {
@@ -3526,7 +3556,8 @@ export default function RestaurantPosPage() {
         {receiptPayload(settlementReceipt)
           ? <ReceiptPaper payload={receiptPayload(settlementReceipt)!} />
           : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_retry_from_bills")} />}
-        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> {t("pos_restaurant.print_receipt")}</button></div>
+        <ReceiptPrinterStatus />
+        <div className={styles.receiptActions}><button disabled={receiptPrinter.disabled} type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> {t("pos_restaurant.print_receipt")}</button></div>
         <button type="button" className={styles.btn} onClick={() => setSettlementReceipt(null)}>{t("pos_restaurant.back_to_floor")}</button>
       </div>}
     </Modal>
@@ -3539,7 +3570,8 @@ export default function RestaurantPosPage() {
         {receiptPayload(selectedReceipt)
           ? <ReceiptPaper payload={receiptPayload(selectedReceipt)!} />
           : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_incomplete_prices")} />}
-        <div className={styles.receiptActions}><button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt, t) ? t("pos_restaurant.print_original_sale") : t("pos_restaurant.reprint")}</button></div>
+        <ReceiptPrinterStatus />
+        <div className={styles.receiptActions}><button disabled={receiptPrinter.disabled} type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(selectedReceipt)}><PrinterOutlined /> {billHistoryNote(selectedReceipt, t) ? t("pos_restaurant.print_original_sale") : t("pos_restaurant.reprint")}</button></div>
       </div>}
     </Modal>
     <Modal

@@ -1,8 +1,8 @@
 'use client';
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse } from "antd";
-import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
-import { useEffect } from "react";
+import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse, Upload, Image } from "antd";
+import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, UploadOutlined, PictureOutlined, LinkOutlined, CheckOutlined } from "@ant-design/icons";
+import { useEffect, useState } from "react";
 import { localizedShopArchetypeLabel, localizedShopArchetypeOptions, onboardingChecklistKeysForArchetype, archetypeToBusinessType, type ShopArchetype } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
@@ -53,6 +53,8 @@ const PROFILE_KEYS = [
 ] as const;
 
 const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
+const MAX_LOGO_BYTES = 5 * 1024 * 1024;
+const ALLOWED_LOGO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function SectionHeader({ children, note }: { children: React.ReactNode; note?: string }) {
   return (
@@ -80,7 +82,11 @@ export default function StoreProfileCard() {
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [showLogoUrlInput, setShowLogoUrlInput] = useState(false);
+  const [logoUrlDraft, setLogoUrlDraft] = useState("");
   const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const logoUrl = Form.useWatch("logoUrl", form) as string | null | undefined;
   const configuredArchetype = data?.bmsStoreProfile?.businessArchetype as string | null | undefined;
   const activeArchetypeOptions = localizedShopArchetypeOptions(t);
   // Keep a deprecated type legible for an existing shop while omitting it from all
@@ -142,6 +148,11 @@ export default function StoreProfileCard() {
       // 2) ข้อมูลร้านที่เหลือ → bms_store_profile
       const input: any = {};
       for (const k of PROFILE_KEYS) input[k] = v[k] ?? null;
+      // This field is a NOT NULL boolean. Conditional form rendering may omit it while the
+      // archetype data is loading, so preserve the server value instead of sending null.
+      input.restaurantOrdersPaused = v.restaurantOrdersPaused
+        ?? data?.bmsStoreProfile?.restaurantOrdersPaused
+        ?? false;
       // Archetype is now the single visible driver, but older shops may have only the
       // legacy AI business type. Preserve that value until the operator actually picks
       // an archetype; saving an unrelated profile field must not silently reset AI context.
@@ -167,6 +178,57 @@ export default function StoreProfileCard() {
     } catch (e: any) {
       message.error(e?.message || t("admin_store_profile.save_failed"));
     }
+  };
+
+  const uploadLogo = async (file: File) => {
+    if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+      message.error(t("admin_store_profile.logo_upload_type_error"));
+      return false;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      message.error(t("admin_store_profile.logo_upload_size_error"));
+      return false;
+    }
+
+    setUploadingLogo(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/bms/store-profile/logo/upload", {
+        method: "POST",
+        body,
+        credentials: "include",
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.url) {
+        throw new Error(result?.error || t("admin_store_profile.logo_upload_failed"));
+      }
+      form.setFieldsValue({ logoUrl: result.url });
+      setShowLogoUrlInput(false);
+      setLogoUrlDraft("");
+      message.success(t("admin_store_profile.logo_upload_success"));
+    } catch (error: any) {
+      message.error(error?.message || t("admin_store_profile.logo_upload_failed"));
+    } finally {
+      setUploadingLogo(false);
+    }
+    return false;
+  };
+
+  const openLogoUrlInput = () => {
+    setLogoUrlDraft(logoUrl?.startsWith("/api/files/") ? "" : (logoUrl ?? ""));
+    setShowLogoUrlInput(true);
+  };
+
+  const applyLogoUrl = () => {
+    form.setFieldsValue({ logoUrl: logoUrlDraft.trim() || null });
+    setShowLogoUrlInput(false);
+  };
+
+  const removeLogo = () => {
+    form.setFieldsValue({ logoUrl: null });
+    setLogoUrlDraft("");
+    setShowLogoUrlInput(false);
   };
 
   return (
@@ -360,7 +422,80 @@ export default function StoreProfileCard() {
                       <Col xs={24} sm={12} md={8}><Form.Item name="phone" label={t("admin_store_profile.phone_label")}><Input placeholder={t("admin_store_profile.phone_placeholder")} /></Form.Item></Col>
                       <Col xs={24} sm={12} md={8}><Form.Item name="contactEmail" label={t("admin_store_profile.contact_email_label")}><Input type="email" placeholder={t("admin_store_profile.contact_email_placeholder")} /></Form.Item></Col>
                       <Col xs={24} sm={12} md={8}><Form.Item name="website" label={t("admin_store_profile.website_label")}><Input placeholder="https://..." /></Form.Item></Col>
-                      <Col xs={24} sm={12} md={12}><Form.Item name="logoUrl" label={t("admin_store_profile.logo_url_label")}><Input placeholder="https://.../logo.png" /></Form.Item></Col>
+                      <Col xs={24} sm={12} md={12}>
+                        <Form.Item name="logoUrl" hidden><Input /></Form.Item>
+                        <Form.Item
+                          label={t("admin_store_profile.logo_url_label")}
+                          extra={t("admin_store_profile.logo_upload_hint")}
+                        >
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 12, width: "100%" }}>
+                            <div
+                              style={{
+                                width: 80,
+                                height: 80,
+                                flex: "0 0 80px",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                overflow: "hidden",
+                                border: "1px solid var(--border-color, #d9d9d9)",
+                                borderRadius: 6,
+                                background: "var(--background-color, #fff)",
+                              }}
+                            >
+                              {logoUrl ? (
+                                <Image
+                                  src={logoUrl}
+                                  alt={t("admin_store_profile.logo_preview_alt")}
+                                  preview={false}
+                                  width={78}
+                                  height={78}
+                                  style={{ objectFit: "contain" }}
+                                />
+                              ) : (
+                                <PictureOutlined style={{ fontSize: 28, color: "#bfbfbf" }} />
+                              )}
+                            </div>
+                            <Space direction="vertical" size={8} style={{ minWidth: 0, flex: 1, width: "100%" }}>
+                              <Space wrap size={8}>
+                                <Upload
+                                  accept="image/png,image/jpeg,image/webp"
+                                  showUploadList={false}
+                                  beforeUpload={uploadLogo}
+                                >
+                                  <Button icon={<UploadOutlined />} loading={uploadingLogo}>
+                                    {logoUrl
+                                      ? t("admin_store_profile.logo_change_button")
+                                      : t("admin_store_profile.logo_upload_button")}
+                                  </Button>
+                                </Upload>
+                                <Button icon={<LinkOutlined />} onClick={openLogoUrlInput}>
+                                  {t("admin_store_profile.logo_use_url_button")}
+                                </Button>
+                                {logoUrl && (
+                                  <Button type="text" danger icon={<DeleteOutlined />} onClick={removeLogo}>
+                                    {t("admin_store_profile.logo_remove_button")}
+                                  </Button>
+                                )}
+                              </Space>
+                              {showLogoUrlInput && (
+                                <Space.Compact style={{ width: "100%" }}>
+                                  <Input
+                                    autoFocus
+                                    value={logoUrlDraft}
+                                    placeholder="https://.../logo.png"
+                                    onChange={(event) => setLogoUrlDraft(event.target.value)}
+                                    onPressEnter={applyLogoUrl}
+                                  />
+                                  <Button icon={<CheckOutlined />} onClick={applyLogoUrl}>
+                                    {t("admin_store_profile.logo_url_apply_button")}
+                                  </Button>
+                                </Space.Compact>
+                              )}
+                            </Space>
+                          </div>
+                        </Form.Item>
+                      </Col>
                       <Col xs={24} sm={12} md={12}><Form.Item name="taxId" label={t("admin_store_profile.tax_id_label")}><Input /></Form.Item></Col>
                     </Row>
                     <Row gutter={16}>
