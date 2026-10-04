@@ -14,6 +14,7 @@ import { enforceProductQuota } from "./plans";
 import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
 import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
+import { productBarcodeAliases } from "./productBarcodeLookupContract";
 import type { PriceTier } from "./pricing";
 import {
   normalizeProductSalesSurfaces,
@@ -1437,6 +1438,21 @@ export async function upsertProduct(
     // (เดิมเช็ค quota แยก connection นอก transaction — race ได้ถ้าสร้างพร้อมกันตอนใกล้เต็มโควตา)
     await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
 
+    // Scan suggestions are not authority. Recheck other products AND their pack codes at save.
+    if (barcode) {
+      const duplicate = await client.query(
+        `SELECT p.sku FROM bms_products p
+          WHERE p.tenant_id = $1 AND p.sku <> $2
+            AND (p.barcode = ANY($3::text[]) OR EXISTS (
+              SELECT 1 FROM bms_product_packs k
+               WHERE k.tenant_id = p.tenant_id AND k.product_sku = p.sku
+                 AND k.barcode = ANY($3::text[])
+            )) LIMIT 1`,
+        [tenantId, sku, productBarcodeAliases(barcode)],
+      );
+      if (duplicate.rowCount) throw new Error("บาร์โค้ดซ้ำกับสินค้าอื่นในร้าน / Barcode already belongs to another product");
+    }
+
     // quota: เฉพาะสินค้าใหม่ (sku ยังไม่มีในร้าน) ต้องไม่เกินแพ็กเกจ
     const existing = await client.query<{ active: boolean }>(
       `SELECT active FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
@@ -1871,8 +1887,11 @@ export async function setVatCategoryForUnknown(
  */
 export async function generateInStoreBarcode(tenantId: string): Promise<string> {
   const used = await query<{ barcode: string }>(
-    `SELECT barcode FROM bms_products
-      WHERE tenant_id = $1 AND barcode ~ '^2[0-9]{12}$'`,
+    `SELECT right(barcode, 13) AS barcode FROM bms_products
+      WHERE tenant_id = $1 AND barcode ~ '^0?2[0-9]{12}$'
+     UNION
+     SELECT right(barcode, 13) AS barcode FROM bms_product_packs
+      WHERE tenant_id = $1 AND barcode ~ '^0?2[0-9]{12}$'`,
     [tenantId]
   );
   const taken = new Set(used.rows.map((r) => r.barcode));
