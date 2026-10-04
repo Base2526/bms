@@ -67,9 +67,12 @@ test("every desktop header popup closes outside, on Escape, and when a sibling o
   assert.match(desktopRenderer, /event\.key !== 'Escape'/);
   assert.match(desktopRenderer, /document\.addEventListener\('toggle',\s*onToggle,\s*true\)/);
   assert.match(desktopRenderer, /closePopups\(popup\)/);
+  const topbar = desktopRenderer.slice(desktopRenderer.indexOf("<header className={styles.topbar}>"));
+  const header = topbar.slice(0, topbar.indexOf("</header>"));
+  assert.ok(header.includes("<details"), "inspect the real desktop header");
   assert.equal(
-    (desktopRenderer.match(/<details[^>]*data-desktop-popup/g) ?? []).length,
-    (desktopRenderer.match(/<details\s/g) ?? []).length,
+    (header.match(/<details[^>]*data-desktop-popup/g) ?? []).length,
+    (header.match(/<details\s/g) ?? []).length,
     "every desktop-shell details popup must opt into the shared dismissal behavior",
   );
 });

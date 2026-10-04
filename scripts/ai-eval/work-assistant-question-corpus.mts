@@ -118,6 +118,10 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   // (บันไดของสาขาแทนที่ของทั้งร้าน) ไม่ใช่ฟอร์มสินค้าซึ่งแก้ได้แค่บันไดของทั้งร้าน
   { q: "แต่ละสาขาตั้งราคาส่งของตัวเองได้ไหม", locale: "th", expect: "answer", expectTop: "products.branch-promotions" },
   { q: "branch quantity pricing", locale: "en", expect: "answer", expectTop: "products.branch-promotions" },
+  { q: "ซื้อ A แถม B คนละสินค้า", locale: "th", context: GUIDES, expect: "answer", expectTop: "products.cross-sku-gift", origin: "coverage" },
+  { q: "buy A get B different SKU", locale: "en", context: GUIDES, expect: "answer", expectTop: "products.cross-sku-gift", origin: "coverage" },
+  { q: "เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.time-offer-limits", origin: "coverage" },
+  { q: "buy two hours get one free", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.time-offer-limits", origin: "coverage" },
   {
     q: "ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", locale: "th", expect: "answer", expectTop: "inventory.stock-sale-blockers",
     expectTool: { name: "check_stock", permission: "product.view" },

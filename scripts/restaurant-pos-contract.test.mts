@@ -758,7 +758,7 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   );
   assert.match(
     page,
-    /if \(openDrawer\) await sendToPrinter\(buildDrawerKick\(\), printer\)/,
+    /if \(openDrawer\) \{\s*try \{ await sendToPrinter\(buildDrawerKick\(\), printer\); \}\s*catch \{ message\.warning\(t\("pos_restaurant\.printed_but_drawer_failed"\)\); \}/,
   );
   assert.match(
     page,
@@ -791,8 +791,13 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   assert.match(page, /return buildReceipt\(payload\)/);
   assert.match(
     page,
-    /<ReceiptPaper payload=\{receiptPayload\(settlementReceipt\)!\} \/>/,
+    /const settledReceiptPayload = settlementReceipt \? receiptPayload\(settlementReceipt\) : null/,
   );
+  assert.match(
+    page,
+    /<ReceiptPaper payload=\{settledReceiptPayload\} \/>/,
+  );
+  assert.match(page, /const settledReceiptLineCount = settledReceiptPayload\?\.lines\.length/);
   assert.match(
     page,
     /<ReceiptPaper payload=\{receiptPayload\(selectedReceipt\)!\} \/>/,
@@ -816,7 +821,7 @@ test("restaurant register keeps settlement receipts and counter screens on the s
   // ต้องผูกกับ "กล่องใบเสร็จสองใบนี้" ไม่ใช่แค่นับจำนวนคำในไฟล์ — modal อื่นก็มีคำนี้
   assert.match(
     page,
-    /open=\{Boolean\(settlementReceipt\)\}[\s\S]{0,240}?destroyOnClose>/,
+    /open=\{Boolean\(settlementReceipt\)\}[\s\S]{0,520}?destroyOnClose>/,
   );
   assert.match(
     page,

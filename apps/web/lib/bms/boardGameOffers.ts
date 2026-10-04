@@ -2,7 +2,7 @@ import type { QueryResult, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 
-export type BoardGameOfferKind = "TIME_PERCENT" | "TIME_FIXED_PER_PERSON" | "GROUP_FIXED";
+export type BoardGameOfferKind = "TIME_PERCENT" | "TIME_FIXED_PER_PERSON" | "GROUP_FIXED" | "TIME_BUY_GET";
 
 export type BoardGameOffer = {
   id: string;
@@ -12,6 +12,8 @@ export type BoardGameOffer = {
   kind: BoardGameOfferKind;
   percentOff: number | null;
   fixedPrice: number | null;
+  buyMinutes?: number | null;
+  freeMinutes?: number | null;
   minPlayers: number;
   maxPlayers: number | null;
   minimumMinutes: number;
@@ -29,6 +31,7 @@ export type BoardGameOffer = {
 export type BoardGameOfferChargeLine = {
   billableMinutes: number;
   grossAmount: number;
+  hourlyRate?: number;
 };
 
 export type AppliedBoardGameOfferLine = {
@@ -84,7 +87,7 @@ function code(value: unknown): string {
 }
 
 function kind(value: unknown): BoardGameOfferKind {
-  if (value === "TIME_PERCENT" || value === "TIME_FIXED_PER_PERSON" || value === "GROUP_FIXED") return value;
+  if (value === "TIME_PERCENT" || value === "TIME_FIXED_PER_PERSON" || value === "GROUP_FIXED" || value === "TIME_BUY_GET") return value;
   throw new Error("ชนิดโปรโมชันไม่ถูกต้อง");
 }
 
@@ -111,6 +114,8 @@ function mapOffer(row: any): BoardGameOffer {
     kind: row.kind,
     percentOff: row.percent_off == null ? null : Number(row.percent_off),
     fixedPrice: row.fixed_price == null ? null : Number(row.fixed_price),
+    buyMinutes: row.buy_minutes == null ? null : Number(row.buy_minutes),
+    freeMinutes: row.free_minutes == null ? null : Number(row.free_minutes),
     minPlayers: Number(row.min_players),
     maxPlayers: row.max_players == null ? null : Number(row.max_players),
     minimumMinutes: Number(row.minimum_minutes),
@@ -128,7 +133,7 @@ function mapOffer(row: any): BoardGameOffer {
 
 const OFFER_COLUMNS = `id, location_id, code, name, kind, percent_off, fixed_price,
   min_players, max_players, minimum_minutes, required_product_sku, valid_from, valid_until,
-  weekdays, starts_local_time, ends_local_time, active, sort_order, note`;
+  weekdays, starts_local_time, ends_local_time, active, sort_order, note, buy_minutes, free_minutes`;
 
 export async function listBoardGameOffers(
   tenantId: string,
@@ -161,6 +166,7 @@ export async function upsertBoardGameOffer(
   input: {
     id?: string | null; locationId?: string | null; code?: string | null; name: string; kind: string;
     percentOff?: number | null; fixedPrice?: number | null; minPlayers?: number | null;
+    buyMinutes?: number | null; freeMinutes?: number | null;
     maxPlayers?: number | null; minimumMinutes?: number | null; requiredProductSku?: string | null;
     validFrom?: string | null; validUntil?: string | null; weekdays?: number[] | null;
     startsLocalTime?: string | null; endsLocalTime?: string | null; active?: boolean | null;
@@ -174,7 +180,9 @@ export async function upsertBoardGameOffer(
   const name = text(input.name, "ชื่อโปรโมชัน", 120);
   const offerCode = code(input.code || name);
   const percentOff = offerKind === "TIME_PERCENT" ? amount(input.percentOff, "เปอร์เซ็นต์", 0.01, 100) : null;
-  const fixedPrice = offerKind === "TIME_PERCENT" ? null : amount(input.fixedPrice, "ราคาพิเศษ");
+  const fixedPrice = offerKind === "TIME_PERCENT" || offerKind === "TIME_BUY_GET" ? null : amount(input.fixedPrice, "ราคาพิเศษ");
+  const buyMinutes = offerKind === "TIME_BUY_GET" ? integer(input.buyMinutes, "เวลาที่คิดเงิน", 1, 1440) : null;
+  const freeMinutes = offerKind === "TIME_BUY_GET" ? integer(input.freeMinutes, "เวลาแถม", 1, 1440) : null;
   const minPlayers = integer(input.minPlayers ?? 1, "จำนวนผู้เล่นขั้นต่ำ", 1, 100);
   const maxPlayers = input.maxPlayers == null ? null
     : integer(input.maxPlayers, "จำนวนผู้เล่นสูงสุด", minPlayers, 100);
@@ -212,22 +220,23 @@ export async function upsertBoardGameOffer(
     }
     const params = [tenantId, id, locationId, offerCode, name, offerKind, percentOff, fixedPrice,
       minPlayers, maxPlayers, minimumMinutes, requiredProductSku, validFrom, validUntil, weekdays,
-      startsLocalTime, endsLocalTime, active, sortOrder, note];
+      startsLocalTime, endsLocalTime, active, sortOrder, note, buyMinutes, freeMinutes];
     const result = await client.query(
       id
         ? `UPDATE bms_board_game_offers SET location_id=$3, code=$4, name=$5, kind=$6,
              percent_off=$7, fixed_price=$8, min_players=$9, max_players=$10,
              minimum_minutes=$11, required_product_sku=$12, valid_from=$13, valid_until=$14,
              weekdays=$15, starts_local_time=$16, ends_local_time=$17, active=$18,
-             sort_order=$19, note=$20, version=version+1, updated_at=now()
+             sort_order=$19, note=$20, buy_minutes=$21, free_minutes=$22, version=version+1, updated_at=now()
            WHERE tenant_id=$1 AND id=$2 RETURNING ${OFFER_COLUMNS}`
         : `INSERT INTO bms_board_game_offers
              (tenant_id, location_id, code, name, kind, percent_off, fixed_price, min_players,
               max_players, minimum_minutes, required_product_sku, valid_from, valid_until,
-              weekdays, starts_local_time, ends_local_time, active, sort_order, note)
-           VALUES ($1,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+              weekdays, starts_local_time, ends_local_time, active, sort_order, note, buy_minutes, free_minutes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
            RETURNING ${OFFER_COLUMNS}`,
-      params,
+      // An insert has no offer id; do not leave an unused, untyped $2 parameter.
+      id ? params : [tenantId, ...params.slice(2)],
     );
     if (!result.rowCount) throw new Error("ไม่พบโปรโมชันที่ต้องการแก้ไข");
     await client.query("COMMIT");
@@ -259,6 +268,12 @@ export function applyBestBoardGameOffer(
   const clock = localClock(context.at, context.timezone);
   const eligible = offers.filter((offer) => {
     if (!offer.active || lines.length < offer.minPlayers || (offer.maxPlayers != null && lines.length > offer.maxPlayers)) return false;
+    if (offer.kind === "TIME_BUY_GET" && (
+      !Number.isInteger(offer.buyMinutes) || Number(offer.buyMinutes) <= 0
+      || !Number.isInteger(offer.freeMinutes) || Number(offer.freeMinutes) <= 0
+      || lines.some((line) => !Number.isFinite(line.hourlyRate) || Number(line.hourlyRate) < 0
+        || !Number.isFinite(line.billableMinutes) || line.billableMinutes < 0)
+    )) return false;
     if (offer.minimumMinutes > 0 && lines.some((line) => line.billableMinutes < offer.minimumMinutes)) return false;
     if (offer.requiredProductSku && !context.productSkus.has(offer.requiredProductSku)) return false;
     if (offer.validFrom && context.at < new Date(offer.validFrom)) return false;
@@ -276,6 +291,14 @@ export function applyBestBoardGameOffer(
       amounts = lines.map((line) => money(line.grossAmount * (1 - Number(offer.percentOff) / 100)));
     } else if (offer.kind === "TIME_FIXED_PER_PERSON") {
       amounts = lines.map((line) => money(Math.min(line.grossAmount, Number(offer.fixedPrice))));
+    } else if (offer.kind === "TIME_BUY_GET") {
+      const paid = Number(offer.buyMinutes), cycle = paid + Number(offer.freeMinutes);
+      amounts = lines.map((line) => {
+        // Apply per participant to the already-rounded duration, not the group's combined time.
+        const paidMinutes = Math.floor(line.billableMinutes / cycle) * paid
+          + Math.min(line.billableMinutes % cycle, paid);
+        return money(Math.min(line.grossAmount, Number(line.hourlyRate) * paidMinutes / 60));
+      });
     } else {
       const target = money(Math.min(grossTotal, Number(offer.fixedPrice)));
       let allocated = 0;

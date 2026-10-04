@@ -10,6 +10,8 @@ import {
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import BoardGameCopyPicker from "@/components/pos/BoardGameCopyPicker";
+import { searchGameLibrary } from "@/lib/pos/boardGameLibrarySearch";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
@@ -101,7 +103,8 @@ type MemberPass = {
 };
 type BoardGameOffer = {
   id: string; locationId: string | null; code: string; name: string;
-  kind: "TIME_PERCENT" | "TIME_FIXED_PER_PERSON" | "GROUP_FIXED";
+  kind: "TIME_PERCENT" | "TIME_FIXED_PER_PERSON" | "GROUP_FIXED" | "TIME_BUY_GET";
+  buyMinutes: number | null; freeMinutes: number | null;
   percentOff: number | null; fixedPrice: number | null; minPlayers: number;
   maxPlayers: number | null; minimumMinutes: number; requiredProductSku: string | null;
   validFrom: string | null; validUntil: string | null; weekdays: number[];
@@ -142,6 +145,12 @@ export default function BoardGamePage() {
   const [floor, setFloor] = useState<Floor>(emptyFloor);
   const [rates, setRates] = useState<Rate[]>([]);
   const [library, setLibrary] = useState<GameTitle[]>([]);
+  const [librarySearch, setLibrarySearch] = useState("");
+  const [libraryPage, setLibraryPage] = useState(1);
+  const [availableOnly, setAvailableOnly] = useState(false);
+  const [loanSelection, setLoanSelection] = useState({ sessionId: "", copyId: "" });
+  const [loanSaving, setLoanSaving] = useState(false);
+  const loanSavingRef = useRef(false);
   const [loading, setLoading] = useState(false);
   const [openTable, setOpenTable] = useState<FloorTable | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -185,11 +194,7 @@ export default function BoardGamePage() {
       .filter((renewal) => renewal.status !== "CANCELLED")
       .map((renewal) => [renewal.sourcePassId, renewal] as const),
   ), [renewals]);
-  const availableCopies = useMemo(() => library.flatMap((title) =>
-    title.copies.filter((copy) => copy.status === "AVAILABLE").map((copy) => ({
-      value: copy.id, label: `${title.title} · ${copy.copyCode}`,
-    }))
-  ), [library]);
+  const filteredLibrary = useMemo(() => searchGameLibrary(library, librarySearch, availableOnly), [library, librarySearch, availableOnly]);
 
   // แพ็กเกจสมาชิก (`9.92`) — แคตตาล็อกที่ร้านขาย และสัญญาที่สมาชิกถืออยู่
   const refreshPasses = useCallback(async () => {
@@ -222,7 +227,9 @@ export default function BoardGamePage() {
           id: offerModal === "new" ? null : offerModal?.id ?? null,
           maxPlayers: values.maxPlayers || null,
           percentOff: values.kind === "TIME_PERCENT" ? values.percentOff : null,
-          fixedPrice: values.kind === "TIME_PERCENT" ? null : values.fixedPrice,
+          fixedPrice: ["TIME_PERCENT", "TIME_BUY_GET"].includes(values.kind) ? null : values.fixedPrice,
+          buyMinutes: values.kind === "TIME_BUY_GET" ? values.buyMinutes : null,
+          freeMinutes: values.kind === "TIME_BUY_GET" ? values.freeMinutes : null,
         }),
       });
       setOfferModal(null);
@@ -546,13 +553,23 @@ export default function BoardGamePage() {
   }
 
   async function checkoutGame(copyId: string) {
-    if (!detail) return;
-    await api("/api/bms/board-game/library/loans", {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "checkout", sessionId: detail.id, copyId, idempotencyKey: key("checkout") }),
-    });
-    await Promise.all([refreshDetail(detail.id), refreshLocation()]);
-    message.success(t("admin_board_game.game_checked_out"));
+    if (!detail || loanSavingRef.current || !library.some((title) => title.copies.some((copy) => copy.id === copyId && copy.status === "AVAILABLE"))) return;
+    loanSavingRef.current = true;
+    setLoanSaving(true);
+    try {
+      await api("/api/bms/board-game/library/loans", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "checkout", sessionId: detail.id, copyId, idempotencyKey: key("checkout") }),
+      });
+      setLoanSelection({ sessionId: "", copyId: "" });
+      await Promise.all([refreshDetail(detail.id), refreshLocation()]);
+      message.success(t("admin_board_game.game_checked_out"));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t("admin_board_game.loan_failed"));
+    } finally {
+      loanSavingRef.current = false;
+      setLoanSaving(false);
+    }
   }
 
   async function returnGame(loanId: string) {
@@ -852,7 +869,15 @@ export default function BoardGamePage() {
               <div className={styles.panelHeader}><Typography.Title level={4}>{t("admin_board_game.library_title")}</Typography.Title>
                 {canManageLibrary && <Button icon={<PlusOutlined />} type="primary" onClick={() => setTitleModal(true)}>{t("admin_board_game.add_title")}</Button>}
               </div>
-              <List dataSource={library} locale={{ emptyText: t("admin_board_game.no_games") }} renderItem={(title) => (
+              <Space wrap className={styles.librarySearch}>
+                <Input.Search allowClear value={librarySearch} aria-label={t("admin_board_game.search_games")}
+                  placeholder={t("admin_board_game.search_games")}
+                  onChange={(event) => { setLibrarySearch(event.target.value); setLibraryPage(1); }}
+                  onSearch={() => setLibraryPage(1)} />
+                <Space><Switch aria-label={t("admin_board_game.available_only")} checked={availableOnly} onChange={(checked) => { setAvailableOnly(checked); setLibraryPage(1); }} />{t("admin_board_game.available_only")}</Space>
+                <Typography.Text type="secondary">{t("admin_board_game.game_count", { count: filteredLibrary.length })}</Typography.Text>
+              </Space>
+              <List dataSource={filteredLibrary} pagination={{ current: Math.min(libraryPage, Math.max(1, Math.ceil(filteredLibrary.length / 20))), pageSize: 20, showSizeChanger: false, onChange: setLibraryPage }} locale={{ emptyText: t(librarySearch || availableOnly ? "admin_board_game.search_games_empty" : "admin_board_game.no_games") }} renderItem={(title) => (
                 <List.Item actions={canManageLibrary ? [<Button key="copy" icon={<PlusOutlined />} onClick={() => setCopyTitle(title)}>{t("admin_board_game.add_copy")}</Button>] : []}>
                   <List.Item.Meta title={title.title} description={`${title.minPlayers ?? "-"}-${title.maxPlayers ?? "-"} ${t("admin_board_game.players")} · ${title.typicalMinutes ?? "-"} ${t("admin_board_game.minutes")}`} />
                   <Space wrap>{title.copies.map((copy) => <Tag key={copy.id} color={copy.status === "AVAILABLE" ? "green" : copy.status === "IN_USE" ? "blue" : "orange"}>{copy.copyCode} · {t(`admin_board_game.copy_${copy.status.toLowerCase()}`)}</Tag>)}</Space>
@@ -1074,7 +1099,7 @@ export default function BoardGamePage() {
               <Table rowKey="id" size="small" pagination={false} dataSource={offers} columns={[
                 { title: t("admin_board_game.offer_name"), render: (_, row) => <>{row.name}{row.active ? null : <Tag>{t("admin_board_game.inactive")}</Tag>}</> },
                 { title: t("admin_board_game.offer_kind"), render: (_, row) => t(`admin_board_game.offer_kind_${row.kind.toLowerCase()}`) },
-                { title: t("admin_board_game.offer_value"), render: (_, row) => row.kind === "TIME_PERCENT" ? `${row.percentOff}%` : `฿${Number(row.fixedPrice).toFixed(2)}` },
+                { title: t("admin_board_game.offer_value"), render: (_, row) => row.kind === "TIME_BUY_GET" ? `${row.buyMinutes} + ${row.freeMinutes} ${t("admin_board_game.minutes")}` : row.kind === "TIME_PERCENT" ? `${row.percentOff}%` : `฿${Number(row.fixedPrice).toFixed(2)}` },
                 { title: t("admin_board_game.offer_conditions"), render: (_, row) => [
                   `${row.minPlayers}${row.maxPlayers ? `-${row.maxPlayers}` : "+"} ${t("admin_board_game.people")}`,
                   row.minimumMinutes ? `${row.minimumMinutes} ${t("admin_board_game.minutes")}` : null,
@@ -1209,7 +1234,7 @@ export default function BoardGamePage() {
         </Form>
       </Modal>
 
-      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => { setDetail(null); setRelocateTargetId(""); }} width={1040}>
+      <Modal open={Boolean(detail)} title={detail ? t("admin_board_game.session_title", { table: floor.tables.find((row) => row.id === detail.tableId)?.name ?? "" }) : ""} footer={null} onCancel={() => { setDetail(null); setRelocateTargetId(""); setLoanSelection({ sessionId: "", copyId: "" }); }} width={1040}>
         {detailLoading || !detail ? <Spin /> : <div className={styles.sessionLayout}>
           {(() => {
             const currentTable = floor.tables.find((row) => row.id === detail.tableId);
@@ -1275,7 +1300,18 @@ export default function BoardGamePage() {
           <section className={`${styles.sessionSection} ${styles.sessionGames}`}>
             <Typography.Title level={5}>{t("admin_board_game.games_at_table")}</Typography.Title>
             <List size="small" locale={{ emptyText: t("admin_board_game.no_games_at_table") }} dataSource={detail.games} renderItem={(game) => <List.Item actions={game.status === "CHECKED_OUT" ? [<Button key="return" icon={<SwapOutlined />} onClick={() => void returnGame(game.id)}>{t("admin_board_game.return_game")}</Button>] : []}>{game.title} · {game.copyCode} · {t(`admin_board_game.loan_${game.status.toLowerCase()}`)}</List.Item>} />
-            {detail.status === "OPEN" && <Select showSearch optionFilterProp="label" className={styles.gameSelect} placeholder={t("admin_board_game.checkout_game")} options={availableCopies} onSelect={(copyId) => void checkoutGame(copyId)} />}
+            {detail.status === "OPEN" && <Space.Compact block>
+              <BoardGameCopyPicker key={detail.id} titles={library}
+                value={loanSelection.sessionId === detail.id ? loanSelection.copyId : ""}
+                onChange={(copyId) => setLoanSelection({ sessionId: detail.id, copyId })}
+                disabled={loanSaving}
+                placeholder={t("admin_board_game.search_games")}
+                emptyText={t("admin_board_game.search_games_empty")}
+                statusLabel={(status) => t(`admin_board_game.copy_${status.toLowerCase()}`)} />
+              <Button type="primary" loading={loanSaving}
+                disabled={loanSelection.sessionId !== detail.id || !library.some((title) => title.copies.some((copy) => copy.id === loanSelection.copyId && copy.status === "AVAILABLE"))}
+                onClick={() => void checkoutGame(loanSelection.copyId)}>{t("admin_board_game.lend_game")}</Button>
+            </Space.Compact>}
           </section>
           {/* บัตรที่รับไว้ค้ำกล่องเกม (`9.93`)
               คืนบัตร = ล้างชื่อ/เลข/สี่ตัวท้ายทิ้งในทรานแซกชันเดียวกัน แถวที่เหลือตอบได้แค่ว่า
@@ -1380,13 +1416,17 @@ export default function BoardGamePage() {
           </div>
           <div className={styles.formGrid}>
             <Form.Item name="kind" label={t("admin_board_game.offer_kind")}>
-              <Select options={["TIME_PERCENT", "TIME_FIXED_PER_PERSON", "GROUP_FIXED"].map((value) => ({
+              <Select onChange={(value) => { if (value === "TIME_BUY_GET") offerForm.setFieldsValue({ buyMinutes: 120, freeMinutes: 60 }); }} options={["TIME_PERCENT", "TIME_FIXED_PER_PERSON", "GROUP_FIXED", "TIME_BUY_GET"].map((value) => ({
                 value, label: t(`admin_board_game.offer_kind_${value.toLowerCase()}`),
               }))} />
             </Form.Item>
             <Form.Item noStyle shouldUpdate={(prev, next) => prev.kind !== next.kind}>
               {({ getFieldValue }) => getFieldValue("kind") === "TIME_PERCENT"
                 ? <Form.Item name="percentOff" label={t("admin_board_game.offer_percent")} rules={[{ required: true }]}><InputNumber min={0.01} max={100} /></Form.Item>
+                : getFieldValue("kind") === "TIME_BUY_GET" ? <>
+                  <Form.Item name="buyMinutes" label={t("admin_board_game.offer_buy_minutes")} rules={[{ required: true }]}><InputNumber min={1} max={1440} precision={0} /></Form.Item>
+                  <Form.Item name="freeMinutes" label={t("admin_board_game.offer_free_minutes")} rules={[{ required: true }]}><InputNumber min={1} max={1440} precision={0} /></Form.Item>
+                </>
                 : <Form.Item name="fixedPrice" label={t("admin_board_game.offer_fixed_price")} rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>}
             </Form.Item>
           </div>

@@ -31,6 +31,7 @@ import { parseScaleBarcode } from "./barcode";
 import { POS_APPROVAL_PERMISSIONS } from "./posApprovals";
 import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { normalizePosReceiptName } from "./posReceiptDisplay";
+import { boardGameReceiptNotes } from "./boardGameReceiptNotes";
 import { type PaymentMethod } from "./payments";
 import { orderRefundPaymentsForAllocation } from "@/lib/pos/refundAllocation";
 import { recordMovement, recordOrderMovements } from "./movements";
@@ -77,7 +78,7 @@ import { markRestockSubscriptionsPurchasedForOrder } from "./restockSubscription
 import { sendStaffMessage } from "./inbox";
 import { reportBmsFailure } from "./failureAlert";
 import { normalizeReceiptPrefix } from "./taxDocumentNumber";
-import { taxRequestUrl } from "./taxRequestToken";
+import { taxRequestUrl, taxRequestUnavailableReason } from "./taxRequestToken";
 import { cancelQueuedTaxDocumentInTx } from "./etax/queue";
 import {
   composeDiscounts,
@@ -95,6 +96,8 @@ import {
   shouldPrintMemberPoints,
   type OrderDiscountLine,
 } from "./membership";
+
+import { receiptPromotionNotes } from "./receiptPromotionNotes";
 
 export const POS_CHANNEL = "pos" as const;
 const COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set([
@@ -2381,6 +2384,34 @@ async function loadPosReceiptExtraLines(
   });
 }
 
+async function loadBoardGameReceiptNotes(
+  db: { query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> },
+  tenantId: string,
+  orderId: string,
+): Promise<string[]> {
+  const result = await db.query<{ charge_snapshot: unknown }>(
+    `SELECT g.charge_snapshot FROM bms_orders o
+       JOIN bms_board_game_billing_groups g
+         ON g.tenant_id = o.tenant_id AND g.id = o.board_game_billing_group_id
+      WHERE o.tenant_id = $1 AND o.id = $2`,
+    [tenantId, orderId],
+  );
+  return boardGameReceiptNotes(result.rows[0]?.charge_snapshot);
+}
+
+async function loadPosReceiptPromotionNotes(
+  db: { query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>> },
+  tenantId: string,
+  orderId: string,
+): Promise<string[]> {
+  const result = await db.query<Parameters<typeof receiptPromotionNotes>[0][number]>(
+    `SELECT product_sku, product_name, size, qty, pack_unit_price, receipt_unit_price, pricing_snapshot
+       FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`,
+    [tenantId, orderId],
+  );
+  return receiptPromotionNotes(result.rows);
+}
+
 /** แถวจาก bms_tax_documents → ตัวเลขที่ใบเสร็จใช้ · null = บิลนี้ไม่มีใบกำกับ */
 function mapReceiptVat(row: {
   vat_rate?: string | number | null;
@@ -2424,6 +2455,8 @@ export type PosSaleResult =
       discountLines: PosReceiptDiscountLine[];
       /** ค่าบริการ/ค่าถุง/ค่าเวลา ตาม snapshot ที่ถูกบันทึกในออร์เดอร์ */
       extraLines: PosReceiptExtraLine[];
+      promotionNotes?: string[];
+      boardGameTimeNotes?: string[];
       /**
        * จำนวนรายการที่เข้าคิวครัวจากบิลนี้ (9.40) · 0 = ไม่มี
        * หน้าขายต้องบอกแคชเชียร์ว่าครัวรับไปแล้วกี่รายการ ไม่งั้นไม่มีทางรู้ว่าตั๋วออกหรือยัง
@@ -2481,7 +2514,13 @@ export type PosSaleResult =
   | { status: string; [k: string]: unknown };
 
 export type PosRecentReceipt = {
+  pointsEarned?: number | null;
+  pointsBalance?: number | null;
+  pointsExpiring?: number | null;
+  pointsExpireAt?: string | null;
+  promotionNotes?: string[];
   taxRequestUrl?: string | null;
+  taxRequestUnavailableReason?: string | null;
   orderId: string;
   docNo: string | null;
   /** เลขใบเสร็จที่มนุษย์ใช้ค้นหา/สแกนคืนของ — ตอนนี้ map จาก docNo เพื่อแยกจาก orderId ชัดเจน */
@@ -2526,6 +2565,7 @@ export type PosRecentReceipt = {
   discountLines: PosReceiptDiscountLine[];
   /** ค่าบริการที่ไม่ใช่สินค้า รวมค่าเวลาเล่นบอร์ดเกม */
   extraLines: PosReceiptExtraLine[];
+  boardGameTimeNotes?: string[];
   payments: Array<{
     id: string;
     method: PaymentMethod;
@@ -4433,9 +4473,11 @@ async function finalizePosSale(args: {
         WHERE o.tenant_id = $1 AND o.id = $2`,
       [input.tenantId, orderId]
     );
-    const [receiptDiscountLines, receiptExtraLines] = await Promise.all([
+    const [receiptDiscountLines, receiptExtraLines, promotionNotes, boardGameTimeNotes] = await Promise.all([
       loadPosReceiptDiscountLines(client, input.tenantId, orderId),
       loadPosReceiptExtraLines(client, input.tenantId, orderId),
+      loadPosReceiptPromotionNotes(client, input.tenantId, orderId),
+      loadBoardGameReceiptNotes(client, input.tenantId, orderId),
     ]);
 
     await client.query("COMMIT");
@@ -4466,6 +4508,8 @@ async function finalizePosSale(args: {
       kitchenTickets: fulfilled.kitchenTickets,
       discountLines: receiptDiscountLines,
       extraLines: receiptExtraLines,
+      promotionNotes,
+      boardGameTimeNotes,
       pointsEarned: hasMember ? Number(loyaltyRow?.earned ?? 0) : null,
       pointsBalance: hasMember ? Number(loyaltyRow?.balance ?? 0) : null,
       // ผู้เรียกที่รู้ค่าปัดเศษจริงจะเขียนทับให้ (recordPosSale) — ทางที่มาถึงตรงนี้
@@ -4582,6 +4626,8 @@ async function findSaleByIdempotencyKey(
     roundingAmount: rounding,
     discountLines: await loadPosReceiptDiscountLines({ query }, tenantId, row.id),
     extraLines: await loadPosReceiptExtraLines({ query }, tenantId, row.id),
+    promotionNotes: await loadPosReceiptPromotionNotes({ query }, tenantId, row.id),
+    boardGameTimeNotes: await loadBoardGameReceiptNotes({ query }, tenantId, row.id),
     kitchenTickets: 0,
     // พิมพ์ซ้ำต้องบอกความจริงของ "ตอนขาย" ไม่ใช่ของการตั้งค่าวันนี้ — บิลที่ได้แต้ม
     // ไปแล้วยังโชว์แต้มแม้ร้านปิดโปรแกรมทีหลัง (กฎเดียวกับตอนขาย)
@@ -4678,6 +4724,12 @@ export async function listRecentPosSales(
     member_no: string | null;
     member_name: string | null;
     member_phone: string | null;
+    points_earned: string | null;
+    points_balance: number | null;
+    loyalty_enabled: boolean;
+    points_expiring: string | null;
+    points_expire_at: Date | string | null;
+    board_game_charge_snapshot: unknown;
     voided_at: Date | null;
     pos_shift_id: string | null;
     pos_offline_tendered_at: Date | string | null;
@@ -4717,12 +4769,29 @@ export async function listRecentPosSales(
             extras.extra_total,
             cust.member_no,
             cust.name AS member_name,
-            cust.phone AS member_phone
+            cust.phone AS member_phone,
+            cust.points_balance,
+            COALESCE(ls.enabled, FALSE) AS loyalty_enabled,
+            (SELECT COALESCE(SUM(l.points), 0) FROM bms_loyalty_ledger l
+              WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id AND l.kind = 'EARN') AS points_earned,
+            expiry.points_expiring,
+            expiry.points_expire_at,
+            bg.charge_snapshot AS board_game_charge_snapshot
        FROM bms_orders o
        LEFT JOIN bms_pos_devices dev ON dev.tenant_id = o.tenant_id AND dev.id = o.pos_device_id
        LEFT JOIN bms_locations loc ON loc.tenant_id = o.tenant_id AND loc.id = o.location_id
        LEFT JOIN users u ON u.id = o.cashier_user_id AND u.tenant_id = o.tenant_id
        LEFT JOIN bms_customers cust ON cust.tenant_id = o.tenant_id AND cust.id = o.customer_id
+       LEFT JOIN bms_loyalty_settings ls ON ls.tenant_id = o.tenant_id
+       LEFT JOIN bms_board_game_billing_groups bg
+         ON bg.tenant_id = o.tenant_id AND bg.id = o.board_game_billing_group_id
+       LEFT JOIN LATERAL (
+         SELECT SUM(l.points - l.consumed_points) AS points_expiring, l.expires_at AS points_expire_at
+           FROM bms_loyalty_ledger l
+          WHERE l.tenant_id = o.tenant_id AND l.customer_id = o.customer_id
+            AND l.points > 0 AND l.points > l.consumed_points AND l.expires_at > now()
+          GROUP BY l.expires_at ORDER BY l.expires_at LIMIT 1
+       ) expiry ON TRUE
        LEFT JOIN LATERAL (
          SELECT COALESCE(SUM(extra.qty * extra.unit_amount), 0) AS extra_total
            FROM bms_order_extra_lines extra
@@ -4797,6 +4866,7 @@ export async function listRecentPosSales(
     unit_price: string;
     receipt_unit_price: string;
     returned_pack_qty: string | null;
+    pricing_snapshot: unknown;
   }>(
     `SELECT oi.id,
             oi.order_id,
@@ -4810,6 +4880,7 @@ export async function listRecentPosSales(
             oi.pack_unit_price,
             oi.unit_price,
             oi.receipt_unit_price,
+            oi.pricing_snapshot,
             COALESCE((
               SELECT SUM(pri.pack_qty)
                 FROM bms_pos_return_items pri
@@ -5062,6 +5133,7 @@ export async function listRecentPosSales(
   }
 
   return orderRes.rows.map((row) => ({
+    taxRequestUnavailableReason: taxRequestUnavailableReason(Boolean(row.doc_no), row.status === "COMPLETED" && !row.voided_at && !returnEventsByOrder.get(row.id)?.length),
     taxRequestUrl: row.doc_no && row.status === "COMPLETED" && !row.voided_at && !returnEventsByOrder.get(row.id)?.length ? taxRequestUrl(tenantId, row.id) : null,
     orderId: row.id,
     docNo: row.doc_no ?? null,
@@ -5105,6 +5177,18 @@ export async function listRecentPosSales(
     memberNo: row.member_no ?? null,
     memberName: row.member_no ? (row.member_name ?? null) : null,
     memberPhone: row.member_phone ?? null,
+    ...(shouldPrintMemberPoints({
+      loyaltyEnabled: Boolean(row.loyalty_enabled),
+      isMember: Boolean(row.member_no),
+      pointsEarned: Number(row.points_earned ?? 0),
+    }) ? {
+      pointsEarned: Number(row.points_earned ?? 0),
+      pointsBalance: row.points_balance == null ? null : Number(row.points_balance),
+      pointsExpiring: row.points_expiring == null ? null : Number(row.points_expiring),
+      pointsExpireAt: row.points_expire_at ? toISO(row.points_expire_at) : null,
+    } : { pointsEarned: null, pointsBalance: null, pointsExpiring: null, pointsExpireAt: null }),
+    promotionNotes: receiptPromotionNotes(linesRes.rows.filter((line) => line.order_id === row.id)),
+    boardGameTimeNotes: boardGameReceiptNotes(row.board_game_charge_snapshot),
     discountLines: discountLinesByOrder.get(row.id) ?? [],
     extraLines: extraLinesByOrder.get(row.id) ?? [],
     payments: paymentsByOrder.get(row.id) ?? [],

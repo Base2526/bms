@@ -40,6 +40,24 @@ const context = {
   productSkus: new Set<string>(),
 };
 
+test("buy two hours get one repeats per player without turning into a flat cap", () => {
+  const offer = baseOffer({ kind: "TIME_BUY_GET", percentOff: null, buyMinutes: 120, freeMinutes: 60 });
+  for (const [minutes, expected] of [[0, 0], [60, 50], [120, 100], [150, 100], [180, 100], [181, 100.83], [240, 150], [300, 200], [360, 200], [510, 300]]) {
+    const result = applyBestBoardGameOffer([{ billableMinutes: minutes, hourlyRate: 50, grossAmount: Math.round(minutes * 50 / 60 * 100) / 100 }], [offer], context);
+    assert.equal(result?.total ?? 0, expected, `${minutes} minutes`);
+  }
+  const mixed = applyBestBoardGameOffer([
+    { billableMinutes: 180, hourlyRate: 50, grossAmount: 150 },
+    { billableMinutes: 60, hourlyRate: 30, grossAmount: 30 },
+  ], [offer], context);
+  assert.deepEqual(mixed?.lines.map((line) => line.amount), [100, 30]);
+  assert.equal(mixed?.total, 130);
+  assert.equal(applyBestBoardGameOffer([{ billableMinutes: 180, grossAmount: 150 }], [offer], context), null);
+  assert.equal(applyBestBoardGameOffer([{ billableMinutes: 180, hourlyRate: 50, grossAmount: 150 }], [
+    { ...offer, freeMinutes: 0 },
+  ], context), null);
+});
+
 test("percentage and per-person offers calculate from frozen gross time", () => {
   const percent = applyBestBoardGameOffer(
     [{ billableMinutes: 60, grossAmount: 100 }, { billableMinutes: 90, grossAmount: 150 }],

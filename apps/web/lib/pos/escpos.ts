@@ -148,6 +148,8 @@ export type ReceiptLine = {
 export type ReceiptPayload = {
   /** Server-issued Cloud request capability; omitted on return/exchange/offline slips. */
   taxRequestUrl?: string | null;
+  /** Cashier status only; never printed as if it were a customer tax document. */
+  taxRequestUnavailableReason?: string | null;
   languageMode?: ReceiptLanguageMode;
   storeName: string;
   storeAddress?: string | null;
@@ -220,12 +222,16 @@ export type ReceiptPayload = {
   } | null;
   /** ส่วนลดแยกที่มา (7.96) — พิมพ์ก่อนยอดสุทธิ ลูกค้าตรวจได้ว่าลดจากอะไร */
   discountLines?: Array<{ label: string; amount: number }> | null;
+  promotionNotes?: string[] | null;
+  boardGameTimeNotes?: string[] | null;
   /** สมาชิก + แต้ม (7.96) — ไม่ส่งมา = บิลนี้ไม่ผูกสมาชิก ไม่พิมพ์ท้ายบิล */
   member?: {
     name: string | null;
     memberNo: string | null;
     pointsEarned: number | null;
     pointsBalance: number | null;
+    pointsExpiring?: number | null;
+    pointsExpireAt?: string | null;
   } | null;
 };
 
@@ -273,7 +279,17 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
   }
   b.divider();
 
+  if (payload.boardGameTimeNotes?.length) {
+    for (const line of wrappedLines(label("รายละเอียดค่าเวลา (รวมในยอดแล้ว)", "Play time details (included)"), opts.columns ?? 42)) b.line(line);
+    for (const note of payload.boardGameTimeNotes) {
+      for (const line of wrappedLines(note, opts.columns ?? 42)) b.line(line);
+    }
+    b.divider();
+  }
   // ส่วนลดแยกบรรทัดก่อนยอด VAT — ยอดพวกนี้รวมอยู่ใน total แล้ว
+  for (const note of payload.promotionNotes ?? []) {
+    for (const line of wrappedLines(note, opts.columns ?? 42)) b.line(line);
+  }
   for (const d of payload.discountLines ?? []) {
     if (d.amount > 0) b.columnsLine(d.label, `-${money(d.amount, mode)}`);
   }
@@ -331,7 +347,11 @@ export function buildReceipt(payload: ReceiptPayload, opts: EscPosOptions = {}):
       b.columnsLine(label("แต้มที่ได้บิลนี้", "Points earned"), `+${payload.member.pointsEarned}`);
     }
     if (payload.member.pointsBalance != null) {
-      b.columnsLine(label("แต้มคงเหลือ", "Points balance"), String(payload.member.pointsBalance));
+      b.columnsLine(label("แต้มคงเหลือปัจจุบัน", "Current points balance"), String(payload.member.pointsBalance));
+    }
+    if (payload.member.pointsExpiring != null && payload.member.pointsExpireAt) {
+      b.line(label("แต้มหมดอายุครั้งถัดไป", "Next points expiry"));
+      b.columnsLine(new Date(payload.member.pointsExpireAt).toLocaleDateString(receiptLocale(mode), { timeZone: "Asia/Bangkok" }), String(payload.member.pointsExpiring));
     }
   }
 

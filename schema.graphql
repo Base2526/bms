@@ -4153,12 +4153,14 @@ type BmsPosPurchaseOrdersResult {
 
 type BmsPosReceipt {
   billNo: String
+  boardGameTimeNotes: [String!]
   branchCode: String
   cashChange: Float
   cashTendered: Float
   cashierName: String
   discountLines: [BmsPosDiscountLine!]!
   docNo: String
+  extraLines: [BmsPosReceiptExtraLine!]
   lines: [BmsPosReceiptLine!]!
   locationName: String
   memberName: String
@@ -4171,8 +4173,13 @@ type BmsPosReceipt {
   paymentMethod: String
   paymentRef: String
   payments: [BmsPosReceiptPayment!]!
+  pointsBalance: Float
+  pointsEarned: Float
+  pointsExpireAt: String
+  pointsExpiring: Float
   posDeviceId: ID
   posLabel: String
+  promotionNotes: [String!]
   receiptNo: String
   refunds: [BmsPosRefundAllocation!]!
   restaurantServiceMode: String
@@ -4184,6 +4191,7 @@ type BmsPosReceipt {
   shiftId: ID
   soldAt: String!
   sourceChannel: String!
+  taxRequestUnavailableReason: String
   taxRequestUrl: String
   total: Float!
   vat: BmsPosReceiptVat
@@ -4195,6 +4203,13 @@ type BmsPosReceiptDeliveryResult {
   reason: String
   status: String!
   to: String
+}
+
+type BmsPosReceiptExtraLine {
+  amount: Float!
+  label: String!
+  qty: Float!
+  unitAmount: Float!
 }
 
 type BmsPosReceiptLine {

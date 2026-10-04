@@ -410,11 +410,47 @@ making the whole cleanup fail or deleting that history.
 - Products are only for things the shop sells.
 - Time rates are configured in a board-game settings surface, not in the product form.
 - Play-library copies have copy codes and condition/status, not sellable SKU stock.
+- Admin library search matches game names and copy codes, with an availability filter and 20-title
+  pages. POS and Admin lending share a virtualized searchable copy picker. A keyboard scanner must
+  read the unique `copyCode` registered for that physical box, not a retail product barcode shared
+  by multiple boxes. Scanning is focused-input only and selects a copy; the operator still confirms
+  lending. Unavailable copies remain discoverable but cannot be selected, and the existing backend
+  checkout transaction remains authoritative for branch, session, permissions and availability.
 - Public discovery must be opt-in and read only published/aggregate data.
 - Any action that changes money, such as editing `started_at`, waiving overtime, changing a rate, or discounting a session, needs permission and audit.
 - A bill is always addressed by its billing group id. Handing the register a table id is ambiguous the moment a table is split, and an operation that guesses will one day charge the wrong people.
 
 ## Register surfaces (browser and native)
+
+Printed receipts include the saved time-charge total plus per-player details from the billing
+group's frozen `charge_snapshot`: rate label, hourly rate, billed minutes, actual minutes when
+recorded, net charge and applied pass/offer benefits. These are explanatory notes, not additional
+charge lines; printing never recalculates the fee or reads today's rate catalog. Missing legacy
+evidence stays omitted. Desktop returns to the board-game floor after the native printer reports
+success. Failure leaves the receipt available for retry; browser print dialogs also leave it open
+because `afterprint` cannot distinguish printing from cancellation.
+The browser path keeps its print lock until the dialog ends (or its cleanup fallback runs), so
+double clicks cannot open multiple dialogs and an old cleanup cannot unlock a later print.
+
+Desktop checkout exposes member search, coupon entry and points redemption through
+`bmsPosMemberPreview`. Board-game previews pass the billing-group id so the server includes its
+frozen time, tab, benefits and reservation deposit. Pending or failed previews block a new sale;
+an unknown sale outcome keeps its original idempotent payload for retry. A synchronous submit lock
+also covers price revalidation before the first request, not only the network write. While that
+write is pending or uncertain, changing tender, leaving checkout, switching cashier and unpairing
+are blocked. A proxy HTTP timeout or incomplete success is still uncertain, not a rejection.
+These checkout discounts
+do not replace time offers. Migration `10.40` adds `TIME_BUY_GET`: each player's already-rounded
+billable minutes run through repeating paid/free cycles (default 120 paid + 60 free minutes).
+Partial free intervals are free; time beyond a cycle starts its paid interval again. At a hypothetical
+50/hour, 3 hours costs 100, 4 hours 150, and 6 hours 200. The server uses the frozen hourly rate,
+compares the offer against other eligible offers and passes, and snapshots the winner without
+stacking benefits. Existing percentage and fixed-price caps remain unchanged. Product buy-X-get-Y
+remains same-SKU only; buy-A-get-B is not implemented.
+The deploy readiness checks require both `10.40` columns before enabling this version's offer readers.
+The desktop refresh button refreshes data in place without clearing the operator, shift or cart.
+Receipt QR requires the Cloud tax-request service and a public HTTPS origin; missing readiness or
+an ineligible receipt is reported to the cashier rather than printing an unusable link.
 
 ### Guest service bell (`9.96`, scope hardened by `9.98`)
 

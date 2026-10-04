@@ -40,8 +40,8 @@ export default function ReceiptPrinterSettings({ showStatus = true }: { showStat
         <Button icon={<SaveOutlined />} type="primary" disabled={busy || !selectedExists || !dirty} onClick={() => void save()}>บันทึก</Button>
         <Button icon={<ReloadOutlined />} disabled={busy} onClick={() => void refreshPrinterState()}>ค้นหาเครื่องพิมพ์</Button>
       </Space>
-      {dirty && selectedExists ? <Alert type="info" message="บันทึกเครื่องพิมพ์และขนาดกระดาษก่อนพิมพ์ทดสอบ" /> : showStatus && <ReceiptPrinterStatus />}
-      {error && <Alert type="error" showIcon message={error} />}
+      {dirty && selectedExists ? <Alert key={`${deviceName}:${paperWidth}`} closable type="info" message="บันทึกเครื่องพิมพ์และขนาดกระดาษก่อนพิมพ์ทดสอบ" /> : showStatus && <ReceiptPrinterStatus />}
+      {error && <Alert closable onClose={() => setError("")} type="error" showIcon message={error} />}
     </Space>
   </section>;
 }

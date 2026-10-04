@@ -20,7 +20,15 @@ import {
 } from "./receiptI18n";
 
 export type PosSaleReceiptRow = {
+  extraLines?: Array<{ label: string; qty: number; amount: number }>;
+  pointsEarned?: number | null;
+  pointsBalance?: number | null;
+  pointsExpiring?: number | null;
+  pointsExpireAt?: string | null;
+  promotionNotes?: string[] | null;
+  boardGameTimeNotes?: string[] | null;
   taxRequestUrl?: string | null;
+  taxRequestUnavailableReason?: string | null;
   orderId: string;
   receiptNo: string | null;
   billNo: string | null;
@@ -71,7 +79,7 @@ export type PosSaleReceiptStore = {
   fallbackPosNo: string | null;
 };
 
-/** แต้มของบิลนี้มาจากผลการขาย (บิลยังไม่ถูกอ่านกลับมาพร้อมแต้ม) — null = ไม่ผูกสมาชิก */
+/** Legacy callers may supply sale points; explicit receipt-history values, including null, win. */
 export type PosSaleReceiptPoints = {
   pointsEarned: number | null;
   pointsBalance: number | null;
@@ -100,8 +108,12 @@ export function receiptPayloadFromPosSale(
     amount: line.packPrice * line.packQty,
   }));
   const rounding = Number(row.roundingAmount ?? row.vat?.roundingAmount ?? 0);
+  const extraLines = (row.extraLines ?? []).map((line) => ({
+    name: line.label, qty: line.qty, amount: line.amount,
+  }));
   return {
     taxRequestUrl: row.taxRequestUrl ?? null,
+    taxRequestUnavailableReason: row.taxRequestUnavailableReason ?? null,
     languageMode: mode,
     storeName: row.locationName ?? store.fallbackStoreName ?? "",
     storeAddress: store.address,
@@ -139,8 +151,11 @@ export function receiptPayloadFromPosSale(
       tendered: payment.cashTendered,
       change: payment.cashChange,
     })),
-    lines,
-    itemCount: row.lines.reduce((sum, line) => sum + line.packQty, 0),
+    lines: [...lines, ...extraLines],
+    itemCount: row.lines.reduce((sum, line) => sum + line.packQty, 0)
+      + extraLines.reduce((sum, line) => sum + line.qty, 0),
+    promotionNotes: row.promotionNotes ?? null,
+    boardGameTimeNotes: row.boardGameTimeNotes ?? null,
     total: row.total,
     tendered: row.cashTendered,
     change: row.cashChange,
@@ -153,8 +168,10 @@ export function receiptPayloadFromPosSale(
       ? {
           name: row.memberName,
           memberNo: row.memberNo,
-          pointsEarned: points?.pointsEarned ?? null,
-          pointsBalance: points?.pointsBalance ?? null,
+          pointsEarned: row.pointsEarned !== undefined ? row.pointsEarned : points?.pointsEarned ?? null,
+          pointsBalance: row.pointsBalance !== undefined ? row.pointsBalance : points?.pointsBalance ?? null,
+          pointsExpiring: row.pointsExpiring ?? null,
+          pointsExpireAt: row.pointsExpireAt ?? null,
         }
       : null,
   };

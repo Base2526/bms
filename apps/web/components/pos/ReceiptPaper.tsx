@@ -88,6 +88,14 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
       ))}
       <div className="pos-receipt-rule" />
 
+      {Boolean(payload.boardGameTimeNotes?.length) && <strong>{label("รายละเอียดค่าเวลา (รวมในยอดแล้ว)", "Play time details (included)")}</strong>}
+      {(payload.boardGameTimeNotes ?? []).map((note, index) => (
+        <div key={`play-time-${index}`} style={{ overflowWrap: "anywhere" }}>{note}</div>
+      ))}
+      {Boolean(payload.boardGameTimeNotes?.length) && <div className="pos-receipt-rule" />}
+      {(payload.promotionNotes ?? []).map((note, index) => (
+        <div key={`promotion-${index}`} style={{ overflowWrap: "anywhere" }}>{note}</div>
+      ))}
       {(payload.discountLines ?? []).filter((line) => line.amount > 0).map((line, index) => (
         <Row key={`${line.label}-${index}`} left={line.label} right={`-${baht(line.amount)}`} />
       ))}
@@ -153,7 +161,13 @@ export default function ReceiptPaper({ payload }: { payload: ReceiptPayload }) {
           <Row left={label("แต้มที่ได้บิลนี้", "Points earned")} right={`+${payload.member.pointsEarned}`} />
         )}
         {payload.member.pointsBalance != null && (
-          <Row left={label("แต้มคงเหลือ", "Points balance")} right={String(payload.member.pointsBalance)} />
+          <Row left={label("แต้มคงเหลือปัจจุบัน", "Current points balance")} right={String(payload.member.pointsBalance)} />
+        )}
+        {payload.member.pointsExpiring != null && payload.member.pointsExpireAt && (
+          <>
+            <div>{label("แต้มหมดอายุครั้งถัดไป", "Next points expiry")}</div>
+            <Row left={new Date(payload.member.pointsExpireAt).toLocaleDateString(receiptLocale(mode), { timeZone: "Asia/Bangkok" })} right={String(payload.member.pointsExpiring)} />
+          </>
         )}
       </div>}
 

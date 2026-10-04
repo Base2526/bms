@@ -129,6 +129,23 @@ test("กริด auto-fill ทุกอันต้องยอมแคบก
   assert.match(ruleFor(".serviceCallGrid")[0].body, /minmax\(min\(260px,\s*100%\),\s*1fr\)/);
 });
 
+test("ใบเสร็จยาวเลื่อนในกรอบพรีวิวและคำสั่งยังอยู่ให้กดได้", () => {
+  const preview = bodyFor(".receiptPreviewScroll");
+  assert.match(preview, /overflow-y:\s*auto/, "พรีวิวต้องเป็นพื้นที่เลื่อนของใบเสร็จยาว");
+  assert.match(bodyFor(".settlementLayout"), /height:\s*min\(/, "Modal ต้องมีความสูงจำกัด ไม่ดันคำสั่งพ้นจอ");
+
+  const paper = bodyFor(".receiptPreviewScroll :global(.pos-receipt-paper)");
+  assert.match(paper, /max-height:\s*none/, "กระดาษด้านในต้องไม่สร้าง scrollbar ซ้อน");
+  assert.match(paper, /overflow:\s*visible/, "DOM ใบเสร็จต้องอยู่ครบเพื่อพิมพ์ทั้งใบ");
+
+  assert.match(bodyFor(".receiptCommands"), /flex:\s*none/, "ปุ่มต้องไม่หดหายเมื่อสถานะเครื่องพิมพ์ยาว");
+  assert.match(bodyFor(".receiptPrinterDetails"), /overflow-y:\s*auto/);
+  const printRules = css.slice(css.indexOf("@media print"), css.indexOf("@media (max-width: 1180px)"));
+  assert.match(printRules, /#pos-receipt/);
+  assert.match(printRules, /overflow:\s*visible\s*!important/);
+  assert.match(printRules, /max-height:\s*none\s*!important/);
+});
+
 test("แผงบิลที่จอแคบมากต้องคืนความกว้างให้ชื่อเมนู", () => {
   // วัดจริงที่ 320px ก่อนแก้: คอลัมน์ชื่อเหลือ 54px และแถวสูง 387px ต่อหนึ่งรายการ
   // (ชื่อไทยตกบรรทัดละ 1-2 ตัวอักษร) เพราะ .itemSide กินคอลัมน์ที่สามตาม min-content

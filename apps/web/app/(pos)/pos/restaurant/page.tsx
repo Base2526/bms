@@ -3,7 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, ArrowLeftOutlined, ArrowRightOutlined, AudioMutedOutlined, BellOutlined, CheckCircleFilled, ClockCircleOutlined, CloseCircleOutlined, CoffeeOutlined, CustomerServiceOutlined, DownloadOutlined, FileTextOutlined, FullscreenExitOutlined, FullscreenOutlined, MergeCellsOutlined, MoreOutlined, PrinterOutlined, QrcodeOutlined, ReloadOutlined, ScissorOutlined, SettingOutlined, ShopOutlined, SoundOutlined, SwapOutlined, TeamOutlined, UserAddOutlined, WalletOutlined } from "@ant-design/icons";
 import { Alert, Button, Checkbox, Input, Modal, Segmented, Spin, Tag, message } from "antd";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
 import { appendSplitPaymentRow, checkoutBlockReason, rebalanceSplitPayments, type PosPaymentDraft } from "@/lib/pos/paymentDraft";
@@ -669,6 +669,7 @@ export default function RestaurantPosPage() {
   const [enrollPhone, setEnrollPhone] = useState("");
   const [enrollName, setEnrollName] = useState("");
   const [settlementReceipt, setSettlementReceipt] = useState<SettlementReceipt | null>(null);
+  const [settlementReceiptExpanded, setSettlementReceiptExpanded] = useState(false);
   const [recentReceipts, setRecentReceipts] = useState<RecentReceipt[]>([]);
   const [recentQuery, setRecentQuery] = useState("");
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptSelection | null>(null);
@@ -2137,16 +2138,18 @@ export default function RestaurantPosPage() {
   }
   async function printReceipt(receipt: ReceiptSelection, openDrawer = false) {
     if (receiptPrinter.disabled) return;
+    let sent = false;
     await run(async () => {
       if (!receiptPayload(receipt)) {
         throw new Error(t("pos_restaurant.receipt_missing_prices"));
       }
       if (await printDesktopReceipt()) {
+        sent = true;
         if (openDrawer && isWebUsbSupported()) {
           try {
             const drawerPrinter = await findRememberedPrinter();
             if (drawerPrinter) await sendToPrinter(buildDrawerKick(), drawerPrinter);
-          } catch { message.warning("ส่งใบเสร็จเข้าคิวแล้ว แต่เปิดลิ้นชัก USB ไม่สำเร็จ"); }
+          } catch { message.warning(t("pos_restaurant.printed_but_drawer_failed")); }
         }
         return;
       }
@@ -2169,13 +2172,23 @@ export default function RestaurantPosPage() {
       }
       try {
         await sendToPrinter(receiptBytes(receipt), printer);
-        if (openDrawer) await sendToPrinter(buildDrawerKick(), printer);
       } catch (cause) {
         fallback(t("pos_restaurant.print_failed", { reason: cause instanceof Error ? cause.message : String(cause) }));
         return;
       }
+      if (openDrawer) {
+        try { await sendToPrinter(buildDrawerKick(), printer); }
+        catch { message.warning(t("pos_restaurant.printed_but_drawer_failed")); }
+      }
       message.success(t("pos_restaurant.toast_receipt_printed"));
+      sent = true;
     });
+    if (sent && receipt === settlementReceipt) closeSettlementReceipt();
+  }
+  function closeSettlementReceipt() {
+    setSettlementReceipt(null);
+    setSettlementReceiptExpanded(false);
+    setScreen("FLOOR");
   }
   async function loadPricingPreview(): Promise<RestaurantPricingPreview> {
     if (!check) throw new Error(t("pos_restaurant.discount_preview_failed"));
@@ -2272,6 +2285,7 @@ export default function RestaurantPosPage() {
           })),
         })),
       });
+      setSettlementReceiptExpanded(false);
       setSettlementReceipt({
         result,
         payments: settledPayments,
@@ -2551,6 +2565,10 @@ export default function RestaurantPosPage() {
       : "",
     incomingIntakeLabel,
   ].filter(Boolean).join(" · ");
+  const settledReceiptPayload = settlementReceipt ? receiptPayload(settlementReceipt) : null;
+  const settledReceiptLineCount = settledReceiptPayload?.lines.length
+    ?? settlementReceipt?.check.items.filter((item) => item.status === "SENT").length
+    ?? 0;
 
   // ป้ายในแถบกว้าง 64px ต้องสั้นพอไม่ตัดคำ ("สั่งอาหาร" เหลือ "สั่ง" แล้วอ่านเป็นคำอื่น)
   // ชื่อเต็มอยู่ที่ title/aria-label เพื่อให้ screen reader และ tooltip ยังได้ความหมายครบ
@@ -3549,16 +3567,58 @@ export default function RestaurantPosPage() {
         กระดาษที่เดียว ไม่ซ้ำกับแถบสรุป เพราะเลขเดียวกันสองที่คือจุดที่เริ่ม drift
         destroyOnClose เพราะกฎพิมพ์เล็งที่ `#pos-receipt` — ปล่อยให้ค้างสองใบใน DOM
         แล้ว print dialog จะไม่รู้ว่าต้องพิมพ์ใบไหน */}
-    <Modal title={t("pos_restaurant.settled_title")} open={Boolean(settlementReceipt)} onCancel={() => setSettlementReceipt(null)} footer={null} width={620} getContainer={modalContainer} destroyOnClose>
-      {settlementReceipt && <div className={styles.modalGrid}>
-        <div className={styles.receiptHero}><span>{settlementReceipt.result.docNo ?? settlementReceipt.result.receiptNo ?? t("pos_restaurant.receipt")}<small>{settlementReceipt.check.tableName} · {settlementReceipt.member?.name ?? t("pos_restaurant.walk_in_customer")}</small></span><strong>฿{money(settlementReceipt.result.total)}</strong></div>
-        <div className={styles.summaryGrid}><span>{t("pos_restaurant.change_due")}<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>{t("pos_restaurant.kitchen_tickets")}<b>{settlementReceipt.result.kitchenTickets}</b></span><span>{t("pos_restaurant.status")}<b>{settlementReceipt.result.replayed ? t("pos_restaurant.replayed") : t("pos_restaurant.amount_received")}</b></span></div>
-        {receiptPayload(settlementReceipt)
-          ? <ReceiptPaper payload={receiptPayload(settlementReceipt)!} />
-          : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_retry_from_bills")} />}
-        <ReceiptPrinterStatus />
-        <div className={styles.receiptActions}><button disabled={receiptPrinter.disabled} type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> {t("pos_restaurant.print_receipt")}</button></div>
-        <button type="button" className={styles.btn} onClick={() => setSettlementReceipt(null)}>{t("pos_restaurant.back_to_floor")}</button>
+    <Modal
+      title={<span className={styles.settlementModalTitle}><CheckCircleFilled /><span>{t("pos_restaurant.settled_title")}<small>{t(settlementReceipt?.result.replayed ? "pos_restaurant.replayed" : "pos_restaurant.settled_subtitle")}</small></span></span>}
+      open={Boolean(settlementReceipt)}
+      onCancel={() => { if (!working) closeSettlementReceipt(); }}
+      afterClose={() => setSettlementReceiptExpanded(false)}
+      footer={null}
+      centered
+      closable={!working}
+      width={settlementReceiptExpanded ? 1040 : 1000}
+      className={styles.settlementModal}
+      getContainer={modalContainer}
+      destroyOnClose>
+      {settlementReceipt && <div className={`${styles.settlementLayout} ${settlementReceiptExpanded ? styles.settlementLayoutExpanded : ""}`}>
+        <div className={styles.settlementOverview}>
+          <div className={styles.receiptHero}><span><b>{settlementReceipt.check.serviceMode === "TAKEAWAY" ? restaurantServiceLabel(lang, "TAKEAWAY") : settlementReceipt.check.tableName}</b><span> · Order #{settlementReceipt.result.orderId.slice(0, 8)} · {settlementReceipt.member?.name ?? t("pos_restaurant.walk_in_customer")}</span></span><strong>฿{money(settlementReceipt.result.total)}</strong></div>
+          <div className={`${styles.summaryGrid} ${styles.settlementSummary}`}><span>{t("pos_restaurant.change_due")}<b>{settlementReceipt.result.cashChange == null ? "—" : `฿${money(settlementReceipt.result.cashChange)}`}</b></span><span>{t("pos_restaurant.kitchen_tickets")}<b>{settlementReceipt.result.kitchenTickets}</b></span><span>{t("pos_restaurant.receipt_paid_by")}<b>{settlementReceipt.payments.map((payment) => posPaymentMethodLabel(payment.method, lang)).join(" + ")}</b></span></div>
+        </div>
+
+        <section className={styles.receiptPreviewPane} aria-label={t("pos_restaurant.receipt_preview")}>
+          <div className={styles.receiptPreviewHead}>
+            <span><FileTextOutlined />{t("pos_restaurant.receipt_preview")}<small>{t("pos_restaurant.receipt_item_count", { count: settledReceiptLineCount })}</small></span>
+            <button
+              type="button"
+              className={`${styles.btn} ${styles.btnIcon} ${styles.receiptExpandButton}`}
+              onClick={() => setSettlementReceiptExpanded((current) => !current)}
+              aria-pressed={settlementReceiptExpanded}
+              aria-label={t(settlementReceiptExpanded ? "pos_restaurant.collapse_receipt" : "pos_restaurant.expand_receipt")}
+              title={t(settlementReceiptExpanded ? "pos_restaurant.collapse_receipt" : "pos_restaurant.expand_receipt")}>
+              {settlementReceiptExpanded ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+            </button>
+          </div>
+          <div className={styles.receiptPreviewScroll} tabIndex={0} role="region" aria-label={t("pos_restaurant.receipt_preview")}>
+            {settledReceiptPayload
+              ? <ReceiptPaper payload={settledReceiptPayload} />
+              : <Alert closable type="warning" showIcon message={t("pos_restaurant.receipt_unavailable")} description={t("pos_restaurant.receipt_retry_from_bills")} />}
+          </div>
+        </section>
+
+        <aside className={styles.receiptNextActions}>
+          <div className={styles.receiptPrinterDetails}>
+            <h3>{t("pos_restaurant.next_steps")}</h3>
+            {receiptPrinter.native ? <ReceiptPrinterStatus compactReady /> : <p className={styles.receiptBrowserStatus}><PrinterOutlined />{t("pos_restaurant.receipt_browser_print")}</p>}
+          </div>
+          <div className={styles.receiptCommands}>
+          <button disabled={working || receiptPrinter.disabled || !settledReceiptPayload} type="button" className={`${styles.btn} ${styles.btnPrimary} ${styles.receiptActionButton}`} onClick={() => void printReceipt(settlementReceipt, settlementReceipt.result.cashTendered != null)}><PrinterOutlined /> {t("pos_restaurant.print_receipt")}</button>
+          <button disabled={working} type="button" className={`${styles.btn} ${styles.receiptActionButton}`} onClick={closeSettlementReceipt}>{t("pos_restaurant.skip_print")}</button>
+          <div className={styles.receiptReturn}>
+            {receiptPrinter.native && <p>{t("pos_restaurant.receipt_return_hint")}</p>}
+            <button disabled={working} type="button" className={`${styles.btn} ${styles.receiptActionButton} ${styles.receiptReturnButton}`} onClick={closeSettlementReceipt}>{t("pos_restaurant.back_to_floor")}</button>
+          </div>
+          </div>
+        </aside>
       </div>}
     </Modal>
     {/* กล่องนี้เคยโชว์รายการสินค้าอย่างเดียว ไม่โชว์ส่วนลด/VAT ทั้งที่ response มีให้แล้ว

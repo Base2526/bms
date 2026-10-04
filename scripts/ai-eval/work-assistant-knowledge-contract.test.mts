@@ -18,6 +18,17 @@ import {
 const WEB = path.resolve(import.meta.dirname, "../../apps/web");
 const validPermissions = new Set<string>(BMS_PERMISSIONS);
 
+test("promotion questions retrieve verified product and recurring-time rules", () => {
+  for (const [query, id] of [
+    ["ซื้อ A แถม B คนละสินค้า", "products.cross-sku-gift"],
+    ["buy A get B different SKU", "products.cross-sku-gift"],
+    ["เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", "board-game.time-offer-limits"],
+  ]) {
+    const results = searchAssistantKnowledge(query, { locale: "th", permissions: validPermissions, kind: "guide", limit: 5 });
+    assert.ok(results.some((entry) => entry.id === id), `${query} misses ${id}`);
+  }
+});
+
 test("current-page help is explicit and does not swallow named workflows", () => {
   for (const message of [
     "หน้านี้ใช้งานอย่างไร",

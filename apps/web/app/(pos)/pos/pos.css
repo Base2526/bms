@@ -2339,6 +2339,17 @@
 .pos-bg-field > input, .pos-bg-field > select { display: block; width: 100%; }
 /* ช่องตัวเลขสั้น ๆ (นาที/จำนวน/กลุ่มบิล) — ยังหดได้ ไม่ตรึงความกว้าง */
 .pos-bg-field--num { flex: 0 1 120px; }
+.pos-bg-member-search { align-self: flex-start; }
+.pos-bg-member-search label > input { display: block; width: 100%; }
+.pos-bg-member-status { color: var(--pos-muted); margin-top: 4px; }
+.pos-bg-member-status:empty { display: none; }
+.pos-bg-member-results { display: grid; gap: 6px; max-height: 240px; overflow-y: auto; margin-top: 6px; }
+.pos-root .pos-bg-member-option { display: flex; flex-direction: column; align-items: flex-start; width: 100%; min-height: 44px; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.pos-bg-member-option small, .pos-bg-member-selected small { display: block; color: var(--pos-muted); font-size: 12px; }
+.pos-bg-member-selected { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px; margin-top: 6px; background: var(--pos-accent-bg); border-radius: 6px; overflow-wrap: anywhere; }
+.pos-bg-member-selected > span { min-width: 0; }
+.pos-bg-member-selected > button { flex: none; }
+.pos-bg-member-error { display: grid; justify-items: start; gap: 6px; margin-top: 6px; color: var(--pos-danger); }
 
 /* ปุ่มที่จบงานของทั้งบล็อก — กินเต็มแถวและ **ตัดบรรทัดได้**
    `.pos-ret-btn` เป็น nowrap ซึ่งถูกสำหรับปุ่มในแถว แต่ป้ายอย่าง
