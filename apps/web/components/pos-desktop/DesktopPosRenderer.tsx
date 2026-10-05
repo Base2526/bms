@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReloadOutlined } from "@ant-design/icons";
+import { ConfigProvider, theme as antdTheme } from "antd";
 import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
 import {
   initialPosClientFlow,
@@ -89,6 +90,7 @@ import ReceiptPaper from "@/components/pos/ReceiptPaper";
 import { hasDesktopPrinterBridge, printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
 import ReceiptPrinterSettings from "./ReceiptPrinterSettings";
 import ReceiptPrinterStatus from "./ReceiptPrinterStatus";
+import DesktopUpdateMenu from "./DesktopUpdateMenu";
 import { useReceiptPrinter } from "./useReceiptPrinter";
 import type { ReceiptPayload } from "@/lib/pos/escpos";
 import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
@@ -391,6 +393,16 @@ function NavIcon({ name }: { name: string }) {
 }
 
 export default function DesktopPosRenderer() {
+  // This register has a light-only palette. Keep Ant controls and body-portalled
+  // selects on that palette without changing the user's admin/restaurant theme.
+  return <ConfigProvider theme={{ algorithm: antdTheme.defaultAlgorithm }}
+    select={{ classNames: { popup: { root: styles.lightTheme } } }}
+    modal={{ classNames: { wrapper: styles.lightTheme } }}>
+    <DesktopPosContent />
+  </ConfigProvider>;
+}
+
+function DesktopPosContent() {
   const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
@@ -1691,7 +1703,7 @@ export default function DesktopPosRenderer() {
 
   if (flow.stage === "PAIRING") {
     return (
-      <main className={styles.centerPage}>
+      <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={styles.gateCard}>
           <div className={styles.brandMark}>B</div>
           <p className={styles.eyebrow}>BMS POS DESKTOP</p>
@@ -1707,7 +1719,7 @@ export default function DesktopPosRenderer() {
 
   if (flow.stage === "VERIFYING_DEVICE" || !bootstrap) {
     return (
-      <main className={styles.centerPage}>
+      <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={styles.gateCard}>
           <div className={styles.spinner} />
           <h1>กำลังโหลดแอปใหม่ทั้งหมด…</h1>
@@ -1727,7 +1739,7 @@ export default function DesktopPosRenderer() {
 
   if (flow.stage === "CASHIER_LOGIN") {
     return (
-      <main className={styles.loginPage}>
+      <main className={`${styles.loginPage} ${styles.lightTheme}`}>
         <section className={styles.loginAside}>
           <div className={styles.logoLockup}><span>B</span><strong>BMS POS</strong></div>
           <div>
@@ -1803,7 +1815,7 @@ export default function DesktopPosRenderer() {
 
   if (flow.stage === "SHIFT_REQUIRED") {
     return (
-      <main className={styles.centerPage}>
+      <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <form className={styles.shiftCard} onSubmit={openShift}>
           <div className={styles.stepBadge}>2</div>
           <p className={styles.eyebrow}>ก่อนเริ่มขาย</p>
@@ -1822,7 +1834,7 @@ export default function DesktopPosRenderer() {
 
   if (flow.stage === "RECEIPT" && receipt) {
     return (
-      <main className={styles.centerPage}>
+      <main className={`${styles.centerPage} ${styles.lightTheme}`}>
         <section className={`${styles.receiptCard} ${boardGameCheckout ? styles.boardGameReceiptCard : ""}`.trim()}>
           <div className={styles.successMark}>✓</div>
           <p className={styles.eyebrow}>ชำระเงินสำเร็จ</p>
@@ -1894,7 +1906,7 @@ export default function DesktopPosRenderer() {
   ] satisfies Array<{ key: DesktopModule; label: string; enabled: boolean }>).filter((item) => item.enabled);
 
   return (
-    <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell}${bootstrap.businessArchetype === "restaurant" ? ` ${styles.restaurantTheme}` : ""}`}>
+    <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell} ${styles.lightTheme}${bootstrap.businessArchetype === "restaurant" ? ` ${styles.restaurantTheme}` : ""}`}>
       <aside className={styles.rail}>
         <div className={styles.railLogo}>B</div>
         <nav>
@@ -1933,6 +1945,7 @@ export default function DesktopPosRenderer() {
             <button type="button" className={styles.alertBell} aria-label="รีเฟรชข้อมูล" title="รีเฟรชข้อมูล"
               disabled={contentRefreshing || busy || Boolean(saleAttemptRef.current)}
               onClick={() => void refreshDesktopContent()}><ReloadOutlined spin={contentRefreshing} /></button>
+            <DesktopUpdateMenu />
             <details className={styles.alertMenu} data-desktop-popup>
               <summary
                 className={`${styles.alertBell}${alerts.settings.enabled ? ` ${styles.alertBellOn}` : ""}${alerts.blocked ? ` ${styles.alertBellBlocked}` : ""}`}

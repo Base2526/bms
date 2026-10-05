@@ -25,6 +25,8 @@ export type DesktopCustomerDisplayState = {
 export type DesktopAppInfo = {
   version: string;
   platform: string;
+  /** Missing on older shells; the update menu asks the operator to choose instead. */
+  arch?: string;
   clientLabel: string;
   securityNote: string;
   secureStorageReady: boolean;

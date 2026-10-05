@@ -1,3 +1,35 @@
+.lightTheme {
+  color-scheme: light;
+  /* Global Ant harmonization reads these even inside a nested ConfigProvider. */
+  --app-surface: #fff;
+  --app-text: #1f2329;
+  --app-text-rgb: 31, 35, 41;
+  --app-muted: #667085;
+  --app-border: #d9d9d9;
+  --text: var(--app-text);
+  --text-muted: var(--app-muted);
+}
+
+.lightTheme:global(.ant-select-dropdown) :global(.ant-select-item-option-disabled) {
+  color: #8c8c8c;
+}
+
+.lightTheme :global(.ant-select:not(.ant-select-disabled) .ant-select-selector),
+.lightTheme :global(.ant-input-affix-wrapper:not(.ant-input-affix-wrapper-disabled)),
+.lightTheme :global(.ant-input:not(:disabled)) {
+  background: #fff;
+}
+
+/* The Select owns its input geometry and focus ring, not the native POS input rule. */
+.lightTheme :global(.ant-select .ant-select-selection-search-input) {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
 .shell {
   min-height: 100dvh;
   display: grid;
@@ -154,8 +186,10 @@
   align-items: center;
 }
 
-.storeIdentity { gap: 12px; }
+.storeIdentity { gap: 12px; min-width: 0; }
+.storeIdentity > div:last-child { min-width: 0; overflow-wrap: anywhere; }
 .storeMark {
+  flex-shrink: 0;
   width: 48px;
   height: 48px;
   display: grid;
@@ -194,6 +228,9 @@
 .alertBell svg {
   width: 21px;
   height: 21px;
+}
+/* Only the direct-child bell uses strokes; Ant icons use filled 1024-unit paths. */
+.alertBell > svg {
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -981,6 +1018,15 @@
   .accountMenu > summary { min-width: 52px; grid-template-columns: 34px auto; }
   .accountCopy { display: none; }
   .productGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .workspace { grid-template-rows: auto minmax(0, 1fr); }
+  .topbar { flex-wrap: wrap; gap: 10px; padding: 10px; }
+  .storeIdentity strong { font-size: 14px; }
+  .storeMark { width: 36px; height: 36px; }
+  .topMeta { width: 100%; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .topMeta > [data-pos-connection] { margin-right: auto; }
 }
 
 @media print {

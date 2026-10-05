@@ -20,6 +20,7 @@ import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
 import ReceiptPrinterSettings from "@/components/pos-desktop/ReceiptPrinterSettings";
 import ReceiptPrinterStatus from "@/components/pos-desktop/ReceiptPrinterStatus";
+import DesktopUpdateMenu from "@/components/pos-desktop/DesktopUpdateMenu";
 import { useReceiptPrinter } from "@/components/pos-desktop/useReceiptPrinter";
 import { hasDesktopPrinterBridge, printDesktopReceipt } from "@/lib/pos/desktopPrinterClient";
 import { alertPollIntervalMs, evaluateAlertRepeat, newAlertIds, IDLE_ALERT_REPEAT, type AlertKind, type AlertRepeatState } from "@/lib/pos/orderAlertSound";
@@ -1477,6 +1478,7 @@ export default function PosPage() {
   // token ที่เก็บไว้ใช้ไม่ได้แล้ว (เครื่องถูกปิด/ออก token ใหม่/ใส่ผิด)
   const [tokenRejected, setTokenRejected] = useState(false);
   const [loadingSession, setLoadingSession] = useState(true);
+  const [desktopClient, setDesktopClient] = useState(false);
   const [cashierId, setCashierId] = useState<string>(initialCashierId);
   const [cart, setCart] = useState<CartLine[]>([]);
   const [hidCapturing, setHidCapturing] = useState(false);
@@ -1901,6 +1903,7 @@ export default function PosPage() {
     // เป็นสิ่งที่เกิดขึ้นจริง (เจอมาแล้ว) — วางลิงก์ในช่อง URL แล้วต้องทำงานเลย
     let disposed = false;
     const initialize = async () => {
+      setDesktopClient(hasDesktopPosBridge());
       const url = new URL(window.location.href);
       setBoardGameCheckoutId((url.searchParams.get("boardGameBillingGroupId") ?? "").trim());
       const fromUrl = (url.searchParams.get("t") ?? url.searchParams.get("token") ?? "").trim();
@@ -6525,7 +6528,7 @@ export default function PosPage() {
             </div>
           </PosDismissibleAlert>
         )}
-        {hasDesktopPosBridge() ? (
+        {desktopClient ? (
           <>
             <p style={{ color: "var(--posx-muted, #666)", fontSize: 14 }}>
               กลับไปหน้าตั้งค่า BMS POS Desktop เพื่อเปลี่ยน Server URL หรือจับคู่ด้วย token ใหม่
@@ -6770,6 +6773,7 @@ export default function PosPage() {
             ตัวเดียว → server ตอบ "PIN ไม่ถูกต้อง" ทั้งที่พนักงานพิมพ์ถูก */}
         <div className="pos-header-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           {!embedded && <PosConnectionStatus />}
+          {!embedded && <DesktopUpdateMenu />}
           {!embedded && session?.businessArchetype === "restaurant" && (
             <button
               onClick={() => window.location.assign("/pos/restaurant")}
@@ -6778,7 +6782,7 @@ export default function PosPage() {
               ← กลับโต๊ะร้านอาหาร
             </button>
           )}
-          {hasDesktopPosBridge() && (
+          {desktopClient && (
             <button
               onClick={() => window.location.assign("/pos/app")}
               style={{ flex: "none", height: 44, padding: "0 12px", color: "var(--posx-info-text, #1677ff)" }}

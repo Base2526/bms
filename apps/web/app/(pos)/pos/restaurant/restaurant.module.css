@@ -306,6 +306,7 @@
 .title { margin: 0; font-size: 14px; font-weight: 600; line-height: 1.2; }
 .subtitle { margin: 0; font-size: 12px; color: var(--ink-3); line-height: 1.2; }
 .topActions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.desktopUpdate { --update-size: 40px; --update-radius: 6px; }
 .shiftStatus {
   display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 10px;
   border-radius: 18px; background: var(--quiet); color: var(--ink-2); font-size: 12px; font-weight: 600;

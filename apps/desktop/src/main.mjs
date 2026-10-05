@@ -1028,6 +1028,7 @@ function registerIpc() {
     return {
       version: app.getVersion(),
       platform: process.platform,
+      arch: process.arch,
       clientLabel: platformClientLabel(process.platform),
       securityNote: platformSecurityNote(process.platform),
       secureStorageReady: storage.ok,

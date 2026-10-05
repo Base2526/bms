@@ -1,6 +1,7 @@
 import path from "path";
 import { Readable } from "stream";
 import { query, getClient } from "@/lib/db";
+import { selectDesktopUpdates } from "./desktopReleasePolicy";
 import {
   deleteStoredFile,
   openStoredFileStream,
@@ -181,6 +182,10 @@ export async function getPublicRetailLocalDownloads() {
   }
 
   return { latest, archive };
+}
+
+export async function getDesktopReleaseUpdates(client: { version: string; platform: string; arch?: string }) {
+  return selectDesktopUpdates(await listRetailLocalReleaseAssets(), client);
 }
 
 export async function createRetailLocalReleaseAsset(input: {
