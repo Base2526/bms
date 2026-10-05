@@ -281,7 +281,7 @@ test("a card recorded against a game box follows the same rules as the box", asy
   const other = await openTable(tables.T6, 5);
   await assert.rejects(
     () => take(other.id, { loanId: loan.id }),
-    /ไม่ใช่ของโต๊ะนี้/,
+    /รายการยืมเกมไม่ใช่กล่องที่โต๊ะนี้กำลังยืมอยู่/,
   );
 
   // รับเกมคืนแล้วบัตรยังอยู่ในลิ้นชัก — ระบบบันทึกได้แค่ว่าใครยื่นให้ ไม่ได้ยื่นแทนคน

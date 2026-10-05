@@ -264,6 +264,17 @@ per SKU + size.
 
 ## Membership, tier discounts, and loyalty points
 
+The customer administration page refreshes its existing read every 15 seconds while visible,
+and on focus/reconnection. Expanding a purchase loads saved product and service lines (including
+board-game time) and that order's EARN/REDEEM/REVERSE ledger entries, scoped to both tenant and
+customer. It does not reconstruct old points from current loyalty settings or award points while
+reading. Desktop checkout shows the server's reason when a selected member earns zero points.
+Restaurant checkout uses the current reserved-order quote, including discounts and saved
+non-discountable service charges, for its points message. A changed member clears requested
+redemption; a stale quote cannot enable settlement. The full retail/pharmacy workspace hides
+an old points message while its current cart/member quote is pending. Pharmacy approval gates
+are unchanged.
+
 Added by migration `7.96`. Before it, POS sales were always anonymous — `createOrder` received
 `channel='pos'` with no `customerRef`, so `bms_orders.customer_id` was `NULL` on every counter bill.
 A side effect was that coupon `per_customer_limit` never applied at the counter. Attaching a

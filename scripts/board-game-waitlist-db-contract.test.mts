@@ -280,7 +280,7 @@ test("capacity rejection rolls back, then seating opens and links the real sessi
       entryId: entry!.id, tableId: smallTableId, idempotencyKey: key("seat-small"),
       billingMode: "OPEN_ENDED", participants: players(4),
     }),
-    /รองรับจำนวนผู้เล่นจริงไม่พอ/,
+    /กรุณายืนยันการใช้โต๊ะเกินความจุ/,
   );
   const afterReject = (await query<{ status: string }>(
     `SELECT status FROM bms_board_game_waitlist WHERE tenant_id = $1 AND id = $2`,

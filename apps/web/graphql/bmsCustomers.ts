@@ -7,6 +7,7 @@ import {
   listCustomers,
   getCustomer,
   customerOrders,
+  customerOrderDetail,
   customerAddresses,
   customerIdentities,
   upsertCustomer,
@@ -64,6 +65,13 @@ export const bmsCustomersResolvers = {
     async bmsCustomer(_p: unknown, args: { id: string }, ctx: any) {
       await requirePermission(ctx, "customer.view");
       return getCustomer(getTenantId(ctx), args.id);
+    },
+    async bmsCustomerOrderDetail(_p: unknown, args: { customerId: string; orderId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.view");
+      if (!UUID_RE.test(args.customerId) || !UUID_RE.test(args.orderId)) {
+        throw new GraphQLError("Invalid customer or order ID", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      return customerOrderDetail(getTenantId(ctx), args.customerId, args.orderId);
     },
   },
 

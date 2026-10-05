@@ -517,7 +517,7 @@ test("พรีวิวคิดแต้มจากยอดหลังส�
   const body = src.slice(start, start + end);
   // ต้องใช้ netTotal/totalDiscount ของ breakdown ไม่ใช่ args.subtotal ดิบ —
   // earnPointsForOrderInTx อ่าน total_amount กับ discount_amount ของบิล
-  assert.match(body, /evaluatePointsEarn\(settings, \{\s*netTotal: breakdown\.netTotal,\s*discountAmount: breakdown\.totalDiscount,/);
+  assert.match(body, /evaluatePointsEarn\(settings, \{\s*netTotal: Math.round\(\(breakdown.netTotal \+ Math.max\(0, args.earnExtraAmount \?\? 0\)\) \* 100\) \/ 100,\s*discountAmount: breakdown\.totalDiscount,/);
   assert.doesNotMatch(body, /evaluatePointsEarn\(settings, \{\s*netTotal: args\.subtotal/);
   // ลูกค้าที่ไม่ได้สมัครสมาชิกต้องได้ null ไม่ใช่ 0 (0 อ่านว่า "สมัครแล้วแต่ไม่ได้แต้ม")
   assert.match(body, /const isMember = Boolean\(member\?\.memberNo\)/);
@@ -555,6 +555,20 @@ test("ทั้งสองจอเตือนเรื่องแต้ม�
   // ฐานคิดแต้มคือ total_amount ซึ่งไม่รวมยอดปัดเศษ — ส่ง checkoutDue คือสัญญาผิดตัวเลข
   assert.match(rest, /const earnBasisAmount = check\?\.amountDue \?\? null/);
   assert.doesNotMatch(rest, /amount=\$\{encodeURIComponent\(String\(checkoutDue\)\)\}/);
+});
+
+test("all desktop workspaces show only current member quotes and clear another member's redemption", () => {
+  const restaurant = readFileSync(new URL("../apps/web/app/(pos)/pos/restaurant/page.tsx", import.meta.url), "utf8");
+  assert.match(restaurant, /const currentPricingPreview = pricingDisplayKey === pricingDisplayRequestKey && !pricingLoading && !pricingError/);
+  assert.match(restaurant, /pointsForAmount: currentPricingPreview.pointsWillEarn/);
+  assert.match(restaurant, /block: currentPricingPreview.pointsEarnBlock/);
+  assert.match(restaurant, /memberLoyalty\?\.block === "PROGRAM_DISABLED" \? memberLoyalty : null/);
+  assert.match(restaurant, /function chooseCheckoutMember\(member: PosMember \| null\) \{\s*setSelectedMember\(member\);\s*setPointsToRedeem\(""\);/);
+  const fullWorkspace = readFileSync(new URL("../apps/web/app/(pos)/pos/page.tsx", import.meta.url), "utf8");
+  assert.match(fullWorkspace, /memberPreview\?\.pointsWillEarn != null && memberPreview.status === "READY"\s*&& memberPreviewAppliedKey === memberPreviewRequestKey/);
+  const pos = readFileSync(new URL("../apps/web/lib/bms/pos.ts", import.meta.url), "utf8");
+  const restaurantPreview = pos.slice(pos.indexOf("export async function previewRestaurantPosPricing"), pos.indexOf("async function applyRestaurant", pos.indexOf("export async function previewRestaurantPosPricing")));
+  assert.match(restaurantPreview, /earnExtraAmount: extraTotal/);
 });
 
 test("ทุกด่านมีข้อความครบทั้งไทยและอังกฤษ", () => {

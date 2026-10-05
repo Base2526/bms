@@ -923,12 +923,25 @@ export type SchemaBmsCustomerNote360 = {
   id: Scalars['ID']['output'];
 };
 
+export type SchemaBmsCustomerOrderDetail = {
+  __typename?: 'BmsCustomerOrderDetail';
+  id: Scalars['ID']['output'];
+  lines: Array<SchemaBmsCustomerPurchaseLine>;
+  points: Array<SchemaBmsCustomerOrderPoints>;
+};
+
 export type SchemaBmsCustomerOrderItem360 = {
   __typename?: 'BmsCustomerOrderItem360';
   qty: Scalars['Int']['output'];
   size: Scalars['String']['output'];
   sku: Scalars['String']['output'];
   unitPrice: Scalars['Float']['output'];
+};
+
+export type SchemaBmsCustomerOrderPoints = {
+  __typename?: 'BmsCustomerOrderPoints';
+  kind: Scalars['String']['output'];
+  points: Scalars['Int']['output'];
 };
 
 export type SchemaBmsCustomerProductStat = {
@@ -965,6 +978,15 @@ export type SchemaBmsCustomerProfile360 = {
   tags: Array<Scalars['String']['output']>;
   timezone: Maybe<Scalars['String']['output']>;
   totalSpent: Scalars['Float']['output'];
+};
+
+export type SchemaBmsCustomerPurchaseLine = {
+  __typename?: 'BmsCustomerPurchaseLine';
+  kind: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  qty: Scalars['Float']['output'];
+  size: Maybe<Scalars['String']['output']>;
+  sku: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsCustomerRecentOrder = {
@@ -3470,6 +3492,7 @@ export type SchemaBmsPosBoardGameTitle = {
   copies: Array<SchemaBmsPosBoardGameCopy>;
   difficulty: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
+  imageUrl: Maybe<Scalars['String']['output']>;
   language: Maybe<Scalars['String']['output']>;
   maxPlayers: Maybe<Scalars['Int']['output']>;
   minPlayers: Maybe<Scalars['Int']['output']>;
@@ -5412,6 +5435,7 @@ export type SchemaBmsPosSaleResult = {
 export type SchemaBmsPosScanResult = {
   __typename?: 'BmsPosScanResult';
   available: Scalars['Float']['output'];
+  barcode: Maybe<Scalars['String']['output']>;
   basePrice: Scalars['Float']['output'];
   baseQty: Scalars['Float']['output'];
   imageUrl: Maybe<Scalars['String']['output']>;
@@ -10291,6 +10315,7 @@ export type SchemaQuery = {
   bmsCustomer360: Maybe<SchemaBmsCustomer360>;
   bmsCustomerInsights: Maybe<SchemaBmsCustomerInsights>;
   bmsCustomerLocations: Array<SchemaBmsLocation>;
+  bmsCustomerOrderDetail: Maybe<SchemaBmsCustomerOrderDetail>;
   bmsCustomerTimeline: Array<SchemaBmsCustomerTimelineEntry>;
   bmsCustomers: Array<SchemaBmsCustomer>;
   bmsDashboard: SchemaBmsDashboard;
@@ -10675,6 +10700,12 @@ export type SchemaQueryBmsCustomer360Args = {
 
 export type SchemaQueryBmsCustomerInsightsArgs = {
   customerId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsCustomerOrderDetailArgs = {
+  customerId: Scalars['ID']['input'];
+  orderId: Scalars['ID']['input'];
 };
 
 

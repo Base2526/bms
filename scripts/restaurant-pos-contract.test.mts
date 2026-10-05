@@ -2377,7 +2377,8 @@ test("สมัครสมาชิกจากบิลโต๊ะส่ง P
     /!actorUserId \|\| !actorPin[\s\S]{0,120}need_operator_pin/,
   );
   // สมัครแล้วผูกเข้าบิลที่กำลังคิดเงินทันที พนักงานไม่ต้องกลับไปค้นซ้ำ
-  assert.match(enroll, /setSelectedMember\(member\)/);
+  assert.match(enroll, /chooseCheckoutMember\(member\)/);
+  assert.match(page, /function chooseCheckoutMember\(member: PosMember \| null\) \{\s*setSelectedMember\(member\);\s*setPointsToRedeem\(""\);/);
   // เลขสมาชิกมาจาก server เท่านั้น — จอห้ามคิดเอง
   assert.ok(
     !/memberNo\s*[:=]\s*[`"']/.test(enroll),

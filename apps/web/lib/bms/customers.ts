@@ -529,6 +529,28 @@ export async function customerOrders(tenantId: string, customerId: string) {
   return res.rows;
 }
 
+/** Read saved bill lines and ledger evidence, never today's catalog or earn settings. */
+export async function customerOrderDetail(tenantId: string, customerId: string, orderId: string) {
+  const res = await query(
+    `SELECT o.id,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object(
+         'kind', 'PRODUCT', 'label', COALESCE(i.product_name, i.product_sku),
+         'sku', i.product_sku, 'size', i.size, 'qty', i.qty) ORDER BY i.id)
+         FROM bms_order_items i WHERE i.tenant_id = o.tenant_id AND i.order_id = o.id), '[]'::jsonb)
+       || COALESCE((SELECT jsonb_agg(jsonb_build_object(
+         'kind', 'SERVICE', 'label', e.label, 'sku', NULL, 'size', NULL, 'qty', e.qty) ORDER BY e.id)
+         FROM bms_order_extra_lines e WHERE e.tenant_id = o.tenant_id AND e.order_id = o.id), '[]'::jsonb) AS lines,
+       COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', l.kind, 'points', l.points) ORDER BY l.created_at, l.id)
+         FROM bms_loyalty_ledger l WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id
+           AND l.customer_id = o.customer_id AND l.kind IN ('EARN', 'REDEEM', 'REVERSE')), '[]'::jsonb) AS points
+     FROM bms_orders o
+     JOIN bms_customers c ON c.tenant_id = o.tenant_id AND c.id = o.customer_id AND c.deleted_at IS NULL
+     WHERE o.tenant_id = $1 AND o.customer_id = $2 AND o.id = $3`,
+    [tenantId, customerId, orderId]
+  );
+  return res.rows[0] ?? null;
+}
+
 /** Bounded purchase history for AI/read summaries; the Customer UI keeps the full resolver above. */
 export async function customerOrderHistory(
   tenantId: string,

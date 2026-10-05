@@ -410,6 +410,26 @@ making the whole cleanup fail or deleting that history.
 - Products are only for things the shop sells.
 - Time rates are configured in a board-game settings surface, not in the product form.
 - Play-library copies have copy codes and condition/status, not sellable SKU stock.
+- Migration `10.42` adds an optional title-level catalogue image, shared by its copies.
+  Admin library managers upload PNG/JPEG/WebP up to 5MB; the server decodes, strips metadata
+  and resizes to at most 1200px before publishing. These are public catalogue images, never
+  customer documents. Ownership comes from the authenticated tenant; no client file ID is accepted.
+  Older databases still list titles without images, but image writes require this migration.
+- The Admin library prints selectable QR labels containing the existing physical `copyCode`.
+  A 2D scanner is required for QR labels; existing text codes still work with focused HID input.
+  Browser/Desktop returns can search or scan only outstanding loans on the current seating,
+  then explicitly confirm normal return or inspection. Scanning alone never writes a loan/return.
+  Return notes appear with outstanding loans, not in the lending form. The lending picker uses
+  the remaining row width beside its confirmation button; both have 44px touch targets.
+- Desktop product details are read-only and available from the catalogue card's info icon.
+  The scan bar contains only the focused input and its F12 shortcut; Enter adds the typed code.
+  Regular sale scans still add items without opening a modal. Barcode, size,
+  unit price and availability come from the existing branch-scoped scan service; no new sale path.
+  Catalogue info buttons show only a 20px information icon with no button background or border,
+  inside a transparent 44px touch target,
+  independent of the general POS button padding. F12 focuses the visible desktop catalogue scan
+  field without stealing focus from a dialog. A pending scan response cannot clear a newer draft,
+  and clicking a catalogue card preserves any text in the scan field.
 - Admin library search matches game names and copy codes, with an availability filter and 20-title
   pages. POS and Admin lending share a virtualized searchable copy picker. A keyboard scanner must
   read the unique `copyCode` registered for that physical box, not a retail product barcode shared
@@ -446,7 +466,8 @@ Partial free intervals are free; time beyond a cycle starts its paid interval ag
 50/hour, 3 hours costs 100, 4 hours 150, and 6 hours 200. The server uses the frozen hourly rate,
 compares the offer against other eligible offers and passes, and snapshots the winner without
 stacking benefits. Existing percentage and fixed-price caps remain unchanged. Product buy-X-get-Y
-remains same-SKU only; buy-A-get-B is not implemented.
+is separate from time offers; `10.41` supports cross-SKU buy-A-get-B for eligible retail stock
+products, not play time or playable library copies.
 The deploy readiness checks require both `10.40` columns before enabling this version's offer readers.
 The desktop refresh button refreshes data in place without clearing the operator, shift or cart.
 Receipt QR requires the Cloud tax-request service and a public HTTPS origin; missing readiness or

@@ -34,6 +34,16 @@ test("large catalog retains all copy identities and searchable codes", () => {
   assert.equal(searchGameLibrary(catalog, "BOX-04999")[0].id, "title-4999");
 });
 
+test("return picker selects only outstanding loans and retains catalogue artwork", () => {
+  const options = gameCopyOptions([{ id: "game", title: "FAKE game", imageUrl: "/api/files/12", copies: [
+    { id: "loan-1", copyCode: "BOX-1", status: "CHECKED_OUT" },
+    { id: "loan-2", copyCode: "BOX-2", status: "RETURNED" },
+  ] }], "CHECKED_OUT");
+  assert.equal(options.find((option) => option.value === "loan-1")?.disabled, false);
+  assert.equal(options.find((option) => option.value === "loan-2")?.disabled, true);
+  assert.ok(options.every((option) => option.imageUrl === "/api/files/12"));
+});
+
 test("Enter selects an exact available copy without submitting the surrounding form", () => {
   const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
   const ts = require("typescript");

@@ -234,6 +234,8 @@ type RestaurantPricingPreview = {
   manualDiscount: number;
   totalDiscount: number;
   pointsWillEarn: number | null;
+  pointsEarnBlock: PosLoyaltyStatus["block"];
+  loyaltyEnabled: boolean;
 };
 type SettlementResult = {
   status: "SOLD"; orderId: string; total: number; cashTendered: number | null; cashChange: number | null;
@@ -717,6 +719,13 @@ export default function RestaurantPosPage() {
   const checkMember = memberCheckIdRef.current === (check?.id ?? null) ? selectedMember : null;
   const pricingDisplayRequestKey = JSON.stringify([check?.id, check?.version, check?.amountDue,
     checkMember?.customerId, couponCode.trim(), pointsToRedeem, manualDiscount]);
+  const currentPricingPreview = pricingDisplayKey === pricingDisplayRequestKey && !pricingLoading && !pricingError
+    && pricingPreview?.status === "READY" ? pricingPreview : null;
+  const checkoutLoyalty = checkMember ? (currentPricingPreview ? {
+    enabled: currentPricingPreview.loyaltyEnabled,
+    pointsForAmount: currentPricingPreview.pointsWillEarn,
+    block: currentPricingPreview.pointsEarnBlock,
+  } : null) : memberLoyalty?.block === "PROGRAM_DISABLED" ? memberLoyalty : null;
   // Reuse the checkout's existing rounding result on both screens.
   const checkoutBaseDue = pricingPreview?.amountDue ?? check?.amountDue ?? 0;
   const checkoutDue = check == null ? 0 : Math.round((checkoutBaseDue + cashRoundingForPayments(
@@ -885,7 +894,7 @@ export default function RestaurantPosPage() {
       void loadPricingPreview().catch(() => undefined);
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [checkoutOpen, check?.id, check?.amountDue, checkMember?.customerId, couponCode, pointsToRedeem, manualDiscount]);
+  }, [checkoutOpen, check?.id, check?.version, check?.amountDue, checkMember?.customerId, couponCode, pointsToRedeem, manualDiscount]);
   const staff = useMemo(() => { const map = new Map<string, Staff>(); for (const person of [...(session?.cashiers ?? []), ...(session?.approvers ?? []), ...(session?.kitchenOperators ?? [])]) map.set(person.id, person); return [...map.values()]; }, [session]);
   const visibleTables = activeArea ? floor.tables.filter((table) => table.areaId === activeArea) : floor.tables;
   // พิกัดเป็นข้อมูลผังจริงจากหลังบ้าน จึงต้องรักษาหน่วย px เดียวกับ editor และให้ viewport
@@ -1065,7 +1074,7 @@ export default function RestaurantPosPage() {
     : Number(manualDiscount) > 0 && (!discountApproverId || !discountApproverPin)
       ? t("pos_restaurant.discount_approver_required")
       : null;
-  const checkoutBlock = checkoutOpen && !pricingPreview
+  const checkoutBlock = checkoutOpen && (!pricingPreview || pricingDisplayKey !== pricingDisplayRequestKey)
     ? t("pos_restaurant.discount_preview_loading")
     : pricingLoading
       ? t("pos_restaurant.discount_preview_loading")
@@ -1949,7 +1958,7 @@ export default function RestaurantPosPage() {
       });
       const member = body.member as PosMember | undefined;
       if (!member) throw new Error(t("pos_restaurant.member_enroll_failed"));
-      setSelectedMember(member);
+      chooseCheckoutMember(member);
       setEnrollOpen(false);
       setEnrollPhone("");
       setEnrollName("");
@@ -1990,6 +1999,10 @@ export default function RestaurantPosPage() {
       case "NO_VISIT_POINTS": return t("pos_restaurant.points_off_visit");
       default: return "";
     }
+  }
+  function chooseCheckoutMember(member: PosMember | null) {
+    setSelectedMember(member);
+    setPointsToRedeem("");
   }
   async function loadRecentReceipts() {
     await run(async () => {
@@ -3652,7 +3665,7 @@ export default function RestaurantPosPage() {
       <Checkbox style={{ marginTop: 12 }} checked={supportConfirmed} onChange={(event) => setSupportConfirmed(event.target.checked)}>{t("pos_restaurant.support_consent")}</Checkbox>
     </Modal>
     <Modal title={t("pos_restaurant.take_payment_title", { table: check?.tableName ?? "" })} open={checkoutOpen} onCancel={() => setCheckoutOpen(false)} onOk={() => void settle()} confirmLoading={working} okText={t("pos_restaurant.confirm_payment")} okButtonProps={{ disabled: Boolean(checkoutBlock) }} width={680} getContainer={modalContainer}>{check && <div className={styles.modalGrid}>
-      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{memberLoyalty && memberLoyalty.pointsForAmount != null && memberLoyalty.pointsForAmount > 0 ? <small className={styles.memberEarnHint}>{t("pos_restaurant.points_will_earn", { points: memberLoyalty.pointsForAmount })}</small> : memberLoyalty?.block ? <small className={styles.memberEarnWarn}>{earnBlockText(memberLoyalty.block)}</small> : null}{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => setSelectedMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => setSelectedMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}
+      <div className={styles.memberBox}><b>{t("pos_restaurant.member_optional")}</b>{checkoutLoyalty && checkoutLoyalty.pointsForAmount != null && checkoutLoyalty.pointsForAmount > 0 ? <small className={styles.memberEarnHint}>{t("pos_restaurant.points_will_earn", { points: checkoutLoyalty.pointsForAmount })}</small> : checkoutLoyalty?.block ? <small className={styles.memberEarnWarn}>{earnBlockText(checkoutLoyalty.block)}</small> : null}{checkMember ? <div className={styles.memberSelected}><span>{checkMember.name} · {checkMember.memberNo ?? checkMember.phone ?? t("pos_restaurant.member")}<small>{t("pos_restaurant.points_available", { points: checkMember.pointsUsable })}</small></span><button type="button" className={styles.btn} onClick={() => chooseCheckoutMember(null)}>{t("pos_restaurant.remove")}</button></div> : <><div className={styles.searchRow}><input value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void searchMembers(); } }} placeholder={t("pos_restaurant.member_search_placeholder")} /><button type="button" className={styles.btn} onClick={() => void searchMembers()}>{t("pos_restaurant.search")}</button></div>{memberResults.map((member) => <button type="button" className={styles.memberResult} key={member.customerId} onClick={() => chooseCheckoutMember(member)}><span>{member.name}<small>{member.memberNo ?? member.phone ?? ""}</small></span><b>{t("pos_restaurant.points_count", { points: member.pointsUsable })}</b></button>)}
         {/* ทางไปต่อของ "ค้นแล้วไม่พบ" — เดิมกล่องนี้ตัน พนักงานได้แค่ปล่อยขายแบบไม่ผูกสมาชิก
             แล้วจดชื่อไว้เอง · ปุ่มขึ้นเฉพาะตอน server ยืนยันแล้วว่าไม่มีเบอร์นี้ (memberNotFound)
             ไม่ใช่ตอนที่ผลค้นว่างเพราะยังไม่ได้ค้นหรือค้นล้ม */}
@@ -3677,7 +3690,7 @@ export default function RestaurantPosPage() {
         <b>{t("pos_restaurant.discount_benefits")}</b>
         <div className={styles.modalGrid}>
           <label>{t("pos_restaurant.coupon_code")}<input value={couponCode} onChange={(event) => setCouponCode(event.target.value.toUpperCase())} /></label>
-          <label>{t("pos_restaurant.points_redeem")}<input type="number" min={0} step={1} disabled={!checkMember} value={pointsToRedeem} onChange={(event) => setPointsToRedeem(event.target.value)} /></label>
+          <label>{t("pos_restaurant.points_redeem")}<input type="number" min={0} step={1} disabled={!checkMember || currentPricingPreview?.loyaltyEnabled === false} value={pointsToRedeem} onChange={(event) => setPointsToRedeem(event.target.value)} /></label>
           <label>{t("pos_restaurant.manual_discount")}<input type="number" min={0} step="0.01" value={manualDiscount} onChange={(event) => setManualDiscount(event.target.value)} /></label>
           {Number(manualDiscount) > 0 && <>
             <label>{t("pos_restaurant.discount_reason")}<input maxLength={200} value={discountReason} onChange={(event) => setDiscountReason(event.target.value)} /></label>
