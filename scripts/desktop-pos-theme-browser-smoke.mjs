@@ -1,0 +1,187 @@
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
+
+// Real POS route, browser-only fixtures. Never sends a sale or a loan to a server.
+const { chromium } = await import(process.env.BMS_PLAYWRIGHT_MODULE || "playwright");
+const browser = await chromium.launch({ channel: "chrome", headless: true });
+const baseUrl = process.env.BMS_SMOKE_URL || "http://127.0.0.1:3000";
+const output = "apps/desktop/dist-smoke/desktop-theme";
+await mkdir(output, { recursive: true });
+const cashier = { id: "FAKE-cashier", name: "FAKE Cashier", hasPin: true, role: "Cashier", posOnly: true };
+const startedAt = new Date(Date.now() - 3_600_000).toISOString();
+const session = {
+  id: "FAKE-session", status: "OPEN", billingMode: "HOURLY", guestCount: 2, startedAt,
+  tableId: "FAKE-table", originTableId: "FAKE-table", originTableCode: "T01", originTableName: "FAKE Table",
+  seatingId: "FAKE-seating", expectedEndAt: null, nextAlertAt: null, alertStatus: "NONE", amountDue: 100,
+  participants: [], games: [], identityHolds: [],
+  billingGroups: [
+    { id: "FAKE-open", groupNo: 1, status: "OPEN", amountDue: 0, tabAmount: 0, chargeSnapshot: [], tabItems: [] },
+    { id: "FAKE-closing", groupNo: 2, status: "CLOSING", amountDue: 100, tabAmount: 0, chargeSnapshot: [], tabItems: [] },
+  ],
+};
+const workspace = {
+  floor: { areas: [{ id: "FAKE-area", name: "FAKE Area", sortOrder: 0 }], tables: [{
+    id: "FAKE-table", areaId: "FAKE-area", code: "T01", name: "FAKE Table", seats: 4, sortOrder: 0,
+    blocked: false, openSession: { ...session, sessionIds: [session.id], sessionCount: 1, billingGroupCount: 2, awaitingPaymentCount: 1 },
+  }] },
+  rates: [], serviceCalls: [],
+  library: [{ id: "FAKE-title", title: "FAKE Azul", copies: [
+    { id: "FAKE-copy", copyCode: "FAKE-AZ-01", status: "AVAILABLE" },
+    { id: "FAKE-unavailable", copyCode: "FAKE-AZ-02", status: "IN_USE" },
+  ] }],
+  waitlist: { entries: [], tables: [], waitingCount: 0, calledCount: 0, waitingGuests: 0 },
+};
+const member = { customerId: "FAKE-member", name: "FAKE Member", phone: "0000000000", memberNo: "FAKE-001", pointsBalance: 10, pointsUsable: 10 };
+const bootstrap = {
+  device: { id: "FAKE-device", code: "POS-01", name: "FAKE register", scanner: { mode: "OFF" } },
+  location: { id: "FAKE-location", name: "FAKE Board Game Cafe", branchCode: "MAIN" },
+  shift: { id: "FAKE-shift", status: "OPEN", openingFloat: 0, openedAt: startedAt },
+  cashiers: [cashier], approvers: [], store: { name: "FAKE shop", receiptLanguageMode: "th", paymentQr: null },
+  surface: "retail", businessArchetype: "board_game_cafe",
+  vat: { registered: false, priceIncludesVat: true, rate: 7, calendarEra: "BE", cashRounding: "NONE" },
+};
+
+async function assertLight(locator, label) {
+  const paint = await locator.evaluate((el) => {
+    const css = getComputedStyle(el);
+    return { bg: css.backgroundColor, fg: css.color };
+  });
+  const channels = paint.bg.match(/[\d.]+/g)?.map(Number);
+  assert.ok(channels && channels.slice(0, 3).every((n) => n > 220) && (channels[3] ?? 1) > 0.9,
+    `${label}: expected an opaque light surface, got ${JSON.stringify(paint)}`);
+}
+
+async function screenshot(page, name) {
+  await page.waitForFunction(() => {
+    const popup = [...document.querySelectorAll(".ant-select-dropdown")].find((el) => el.getBoundingClientRect().height > 0 && getComputedStyle(el).display !== "none");
+    return popup && getComputedStyle(popup).opacity === "1"
+      && !/ant-slide-(?:up|down)-(?:appear|enter|leave)/.test(popup.className);
+  });
+  await page.screenshot({ path: `${output}/${name}.png` });
+}
+
+async function centerInput(input) {
+  await input.evaluate((el) => el.scrollIntoView({ block: "center", inline: "nearest" }));
+  await input.click();
+}
+
+try {
+  for (const mode of ["dark", "system", "light"]) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, colorScheme: "dark" });
+    await context.addCookies([{ name: "theme", value: mode, url: baseUrl }, { name: "lang", value: "th", url: baseUrl }]);
+    await context.addInitScript(() => {
+      window.bmsDesktop = {
+        isDesktop: true, getDeviceToken: async () => "FAKE-token",
+        getStorageNamespace: async () => "FAKE-theme-smoke",
+        getAppInfo: async () => ({ version: "0.2.14-pilot.2", platform: "darwin", arch: "arm64" }),
+      };
+    });
+    const unexpected = [];
+    await context.route("**/api/**", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      const body = route.request().postDataJSON();
+      if (path === "/api/graphql") {
+        const query = body?.query || "";
+        let data = {};
+        if (query.includes("query PosBootstrap")) data = { bmsPosSession: bootstrap };
+        else if (query.includes("mutation VerifyPosCashier")) data = { bmsPosVerifyCashier: cashier };
+        else if (query.includes("query MobilePosCatalog")) data = { bmsPosCatalogSearch: { items: [] } };
+        else if (query.includes("query DesktopPosBoardGameCheckout")) data = { bmsPosBoardGameCheckout: {
+          id: "FAKE-closing", sessionId: session.id, groupNo: 2, sessionGroupCount: 2,
+          tableCode: "T01", tableName: "FAKE Table", billingMode: "HOURLY", startedAt,
+          endedAt: new Date().toISOString(), amountDue: 100, totalDue: 100, tabAmount: 0,
+          tabPricingDiscountAmount: 0, tabItemCount: 0, chargeLineCount: 0, passCoveredAmount: 0,
+          offerDiscountAmount: 0, chargeLines: [], tabItems: [],
+        } };
+        else if (query.includes("query DesktopMemberSearch")) data = { bmsPosMemberSearch: { members: body.variables.q.includes("zzz") ? [] : [member] } };
+        else if (query.includes("query DesktopBenefitsPreview")) data = { bmsPosMemberPreview: {
+          status: "READY", netTotal: 100, amountDue: 100, totalDiscount: 0, tierDiscount: 0,
+          couponDiscount: 0, pointsDiscount: 0, pointsUsed: 0, loyaltyEnabled: true,
+          member: body.variables.input.customerId ? member : null,
+        } };
+        else if (query.includes("mutation")) unexpected.push(query);
+        return route.fulfill({ json: { data } });
+      }
+      if (path === "/api/pos/board-game") {
+        if (body.action === "workspace") return route.fulfill({ json: workspace });
+        if (body.action === "session") return route.fulfill({ json: { session } });
+        if (body.action === "service.calls") return route.fulfill({ json: { serviceCalls: [] } });
+        unexpected.push(body.action);
+      }
+      if (path === "/api/retail-local/desktop-update") return route.fulfill({ json: { status: "unavailable", releases: [] } });
+      return route.fulfill({ json: {} });
+    });
+    const page = await context.newPage();
+    page.setDefaultTimeout(20_000);
+    const errors = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.goto(`${baseUrl}/pos/app`, { waitUntil: "domcontentloaded", timeout: 120_000 });
+    await page.getByLabel("PIN พนักงาน 4–8 หลัก").fill("1234");
+    await page.getByRole("button", { name: "เข้าสู่ระบบ", exact: true }).click();
+    await page.getByRole("button", { name: "บอร์ดเกม", exact: true }).click();
+    await page.getByRole("button", { name: /FAKE Table/ }).click();
+    await page.getByRole("tab", { name: /เกมและบัตร/ }).click();
+    const game = page.getByRole("combobox", { name: "ค้นหาชื่อเกม / รหัสกล่อง / สแกนบาร์โค้ด" });
+    await game.fill("FAKE");
+    const popup = page.locator(".ant-select-dropdown:visible");
+    await popup.waitFor();
+    await popup.locator(".ant-select-item-option-disabled").waitFor();
+    await assertLight(popup, `${mode}: game dropdown`);
+    await assertLight(game.locator("xpath=ancestor::*[contains(@class,'ant-select-selector')]"), `${mode}: game input`);
+    await screenshot(page, `${mode}-games`);
+    await game.press("Escape");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await centerInput(game);
+    await game.fill("FAKE-AZ");
+    await popup.waitFor();
+    await assertLight(popup, `${mode}: mobile game dropdown`);
+    await screenshot(page, `${mode}-games-mobile`);
+    const gameBounds = await popup.boundingBox();
+    assert.ok(gameBounds && gameBounds.x >= 0 && gameBounds.x + gameBounds.width <= 391 && gameBounds.y >= 0 && gameBounds.y + gameBounds.height <= 845, JSON.stringify(gameBounds));
+    await game.press("Escape");
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await game.fill("FAKE-AZ-01");
+    await game.press("Enter");
+    assert.equal(await page.getByRole("button", { name: "ให้ยืม", exact: true }).isEnabled(), true);
+    await page.getByRole("button", { name: /ไปเก็บเงินกลุ่ม 2/ }).click();
+    const search = page.getByRole("combobox", { name: "ค้นหาสมาชิก" });
+    await search.fill("FAKE");
+    await popup.getByText("FAKE Member", { exact: false }).first().waitFor();
+    await assertLight(popup, `${mode}: member dropdown`);
+    await assertLight(search.locator("xpath=ancestor::*[contains(@class,'ant-select-selector')]"), `${mode}: member input`);
+    for (const input of [search]) {
+      const geometry = await input.evaluate((el) => ({
+        height: el.getBoundingClientRect().height,
+        containerHeight: el.closest(".ant-select-selector").getBoundingClientRect().height,
+        shadow: getComputedStyle(el).boxShadow,
+      }));
+      assert.ok(geometry.height <= geometry.containerHeight, JSON.stringify(geometry));
+      assert.equal(geometry.shadow, "none", "Select must not get a second native-input focus ring");
+    }
+    await screenshot(page, `${mode}-member`);
+    await popup.getByText("FAKE Member", { exact: false }).first().click();
+    await page.getByText("แต้มคงเหลือ", { exact: false }).waitFor();
+    const memberSelect = page.locator(".ant-select").filter({ has: search });
+    await memberSelect.hover();
+    await memberSelect.locator(".ant-select-clear").click();
+    await search.fill("zzz");
+    await popup.getByText("ไม่พบสมาชิก", { exact: true }).waitFor();
+    await assertLight(popup, `${mode}: empty member dropdown`);
+    await search.press("Escape");
+    await page.setViewportSize({ width: 390, height: 844 });
+    await centerInput(search);
+    await search.fill("FAKE");
+    await popup.getByText("FAKE Member", { exact: false }).first().waitFor();
+    await assertLight(popup, `${mode}: mobile member dropdown`);
+    const bounds = await popup.boundingBox();
+    assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 391, JSON.stringify(bounds));
+    await screenshot(page, `${mode}-member-mobile`);
+    assert.equal(await page.locator("html").getAttribute("data-theme"), mode === "light" ? "light" : "dark", "POS must not change the global theme");
+    assert.deepEqual(errors, []);
+    assert.deepEqual(unexpected, []);
+    await context.close();
+    console.log(`PASS ${mode}: member/game controls, body portals, selection, empty/disabled states, mobile, no global theme change`);
+  }
+} finally {
+  await browser.close();
+}

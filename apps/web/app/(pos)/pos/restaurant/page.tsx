@@ -67,6 +67,7 @@ import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useWakeLock } from "@/app/hooks/useWakeLock";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import { PosConnectionStatus, useRealtimeInvalidation } from "@/components/realtime/RealtimeProvider";
+import DesktopUpdateMenu from "@/components/pos-desktop/DesktopUpdateMenu";
 import {
   alertPollIntervalMs,
   describeAgo,
@@ -2634,6 +2635,7 @@ export default function RestaurantPosPage() {
             {incomingActionOrders.length > 0 && <b className={styles.incomingBellBadge}>{incomingActionOrders.length}</b>}
           </button>
           <PosConnectionStatus />
+          <DesktopUpdateMenu className={styles.desktopUpdate} />
           <span className={`${styles.shiftStatus} ${session?.shift ? styles.shiftStatusOpen : ""}`}>
             <i aria-hidden="true" />
             {session?.shift ? t("pos_restaurant.shift_open_status") : t("pos_restaurant.shift_closed_status")}

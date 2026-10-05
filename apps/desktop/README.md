@@ -74,6 +74,45 @@ recovery guarantees, and its own failure-mode evidence.
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and extending Emergency
 Offline Mode to Desktop are separate rollout milestones.
 
+### Operator-initiated update notification
+
+The `/pos/app`, `/pos/restaurant` and standalone `/pos` headers have a download icon in Desktop
+only. Pharmacy uses the full sell workspace embedded in `/pos/app`; embedded workspaces do not
+mount a second update menu. Restaurant keeps the menu across floor, kitchen and settings screens,
+using its existing light/dark palette. The shared menu supports Thai and English and owns its
+outside-click/Escape dismissal independently of the host header. A coloured dot indicates a newer public,
+non-internal `pos` installer marked `latest` in `/admin/retail-local-releases` on the paired server.
+The read-only `/api/retail-local/desktop-update` endpoint compares semantic versions (including
+pilot versions), excludes server/combined, hidden and trial-only packages, and matches the shell's
+OS and architecture. The uploaded POS version must match the packaged Electron app version;
+a bootstrap or server release number is not a Desktop version.
+
+Checks run at startup, every 30 minutes while visible, and on focus/reconnect (five-minute
+throttle). The icon and popover are rendered only after a check finds a newer eligible release.
+No release, an up-to-date version, an unknown version, or a failed check hides the entire control;
+background checks continue so a later published update can appear without restarting the app.
+Operators can check again in the available-update popover. Older shells without architecture
+metadata require an explicit platform choice. No user-agent CPU guessing.
+
+The operator's download link opens the existing public release download in the system browser.
+It does not stop the register, install bytes, change pairing or restart the app. The cashier
+finishes selling and opens the installer themselves. This is a manual-download notification,
+not an in-app updater or a Retail Local server/runtime update. No forced minimum version is added.
+Local installations see releases published on their paired server; no cloud fallback is assumed.
+
+`scripts/desktop-update-browser-smoke.mjs` exercises the real Next routes with browser-only fixtures:
+retail, pharmacy embedded/standalone, restaurant PIN-to-floor navigation and operational screens,
+mobile bounds, explicit downloads, errors, old shells, browser-only hiding and English/dark mode.
+Run with the dev server on port 3000 and Playwright available (or set `BMS_PLAYWRIGHT_MODULE` to
+its module path). This does not test native installation or write shop data.
+
+The `/pos/app` register uses a light-only palette. Its nested Ant theme and select popups
+stay light even when the saved app theme or OS preference is dark; the global preference and
+Restaurant POS theme are unchanged. `scripts/desktop-pos-theme-browser-smoke.mjs` verifies
+member search and board-game copy selection on that real route using browser-only fixtures,
+including light/dark/system preferences, desktop/mobile widths and portalled dropdowns.
+It uses the same dev-server and Playwright environment as the update smoke above.
+
 ## Develop
 
 ```powershell

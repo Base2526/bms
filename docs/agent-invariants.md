@@ -417,7 +417,12 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   rather than a distribution channel; `desktop-linux.yml` and `desktop-macos.yml` build each
   platform on its own runner and upload an artifact instead of publishing a release, and a platform
   can only be certified by the runner that owns it — DPAPI, the Linux keyring check and Gatekeeper
-  are each invisible to the other two. Direct ESC/POS printing, cash-drawer control and offline
+  are each invisible to the other two. The Desktop header's update indicator is read-only release
+  discovery plus an operator-clicked installer download, not auto-update. It uses public,
+  non-internal, latest POS-only releases on the paired server and semantic Desktop versions;
+  unknown CPU architecture requires a choice instead of a guessed download. It never installs,
+  restarts, changes server runtime/schema or blocks sales. Direct ESC/POS printing, cash-drawer
+  control and offline
   tender are not in the shell. OS-driver receipt printing is supported: a cashier-main-frame-only
   IPC snapshots the existing server-backed receipt into an isolated, no-preload print window and
   queues one silent copy to the explicitly saved system printer. IPC accepts no HTML or URL;
