@@ -13,13 +13,13 @@ const Q_PROMOTIONS = gql`
     bmsPromotionLocations { id code name branchCode active }
     bmsProductPromotions(locationId: $locationId, includeInactive: $includeInactive) {
       id productSku productName locationId locationName
-      kind buyQty getQty bundlePrice active startsAt endsAt note updatedAt
+      kind buyQty getQty bundlePrice buySize giftSku giftSize active startsAt endsAt note updatedAt
     }
   }
 `;
 const Q_PRODUCTS = gql`
   query PromotionProducts($search: String) {
-    bmsProducts(search: $search, limit: 30, offset: 0) { items { sku name } }
+    bmsProducts(search: $search, limit: 30, offset: 0) { items { sku name catalogVariants { code displayName active } } }
   }
 `;
 const M_UPSERT = gql`
@@ -52,10 +52,12 @@ type PriceTierRow = {
 type PromotionRow = {
   id: string; productSku: string; productName: string | null;
   locationId: string | null; locationName: string | null;
-  kind: "BUY_X_GET_Y" | "N_FOR_PRICE";
+  kind: "BUY_X_GET_Y" | "N_FOR_PRICE" | "BUY_A_GET_B";
+  buySize: string | null; giftSku: string | null; giftSize: string | null;
   buyQty: number; getQty: number | null; bundlePrice: number | null;
   active: boolean; startsAt: string | null; endsAt: string | null; note: string | null; updatedAt: string;
 };
+type ProductOption = { sku: string; name: string; catalogVariants: Array<{ code: string; displayName: string | null; active: boolean }> };
 
 const ALL_BRANCHES = "__ALL__";
 
@@ -68,6 +70,8 @@ export default function PromotionsPage() {
   const [includeInactive, setIncludeInactive] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<ProductOption>();
+  const [selectedGift, setSelectedGift] = useState<ProductOption>();
   const [form] = Form.useForm();
   const [tierSku, setTierSku] = useState<string | null>(null);
   const [tierLocation, setTierLocation] = useState<string>(ALL_BRANCHES);
@@ -79,6 +83,7 @@ export default function PromotionsPage() {
     fetchPolicy: "cache-and-network",
   });
   const [loadProducts, products] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
+  const [loadGifts, gifts] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
   const [upsert, upsertState] = useMutation(M_UPSERT);
   const [deactivate] = useMutation(M_DEACTIVATE);
   // ราคาส่งแยกสาขา (9.65) — อยู่หน้าเดียวกับโปรโมชันเพราะเป็นคำถามเดียวกัน
@@ -91,6 +96,7 @@ export default function PromotionsPage() {
   const [replaceTiers, replaceTiersState] = useMutation(M_REPLACE_TIERS);
 
   const kind = Form.useWatch("kind", form) ?? "N_FOR_PRICE";
+  const giftSku = Form.useWatch("giftSku", form);
 
   if (!permsLoading && !canView) {
     return <Alert closable type="error" showIcon message={t("admin_promotions.no_permission")} />;
@@ -98,7 +104,12 @@ export default function PromotionsPage() {
 
   const locations = (list.data?.bmsPromotionLocations ?? []).filter((l: any) => l.active);
   const rows: PromotionRow[] = list.data?.bmsProductPromotions ?? [];
-  const productRows: Array<{ sku: string; name: string }> = products.data?.bmsProducts?.items ?? [];
+  const withSelected = (rows: ProductOption[], selected?: ProductOption) =>
+    selected && !rows.some((p) => p.sku === selected.sku) ? [selected, ...rows] : rows;
+  const productRows = withSelected(products.data?.bmsProducts?.items ?? [], selectedProduct);
+  const giftRows = withSelected(gifts.data?.bmsProducts?.items ?? [], selectedGift);
+  const sizeOptions = (p?: ProductOption) => (p?.catalogVariants ?? []).filter((v) => v.active)
+    .map((v) => ({ value: v.code, label: v.displayName ? `${v.code} · ${v.displayName}` : v.code }));
 
   async function submit() {
     const values = await form.validateFields().catch(() => null);
@@ -112,15 +123,18 @@ export default function PromotionsPage() {
             locationId,
             kind: values.kind,
             buyQty: values.buyQty,
-            getQty: values.kind === "BUY_X_GET_Y" ? values.getQty : null,
+            getQty: values.kind !== "N_FOR_PRICE" ? values.getQty : null,
             bundlePrice: values.kind === "N_FOR_PRICE" ? values.bundlePrice : null,
+            buySize: values.kind === "BUY_A_GET_B" ? values.buySize : null,
+            giftSku: values.kind === "BUY_A_GET_B" ? values.giftSku : null,
+            giftSize: values.kind === "BUY_A_GET_B" ? values.giftSize : null,
             startsAt: values.startsAt ? values.startsAt.toISOString() : null,
             endsAt: values.endsAt ? values.endsAt.toISOString() : null,
             note: values.note?.trim() || null,
           },
         },
       });
-      form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note"]);
+      form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note", "buySize", "giftSku", "giftSize"]);
       await list.refetch();
       message.success(t("admin_promotions.saved"));
     } catch (error) {
@@ -166,6 +180,9 @@ export default function PromotionsPage() {
   }
 
   function describe(row: PromotionRow) {
+    if (row.kind === "BUY_A_GET_B") return t("admin_promotions.describe_cross_sku")
+      .replace("{buy}", String(row.buyQty)).replace("{buySize}", row.buySize ?? "")
+      .replace("{gift}", row.giftSku ?? "").replace("{giftSize}", row.giftSize ?? "").replace("{get}", String(row.getQty ?? 0));
     return row.kind === "BUY_X_GET_Y"
       ? t("admin_promotions.describe_buy_x").replace("{buy}", String(row.buyQty)).replace("{get}", String(row.getQty ?? 0))
       : t("admin_promotions.describe_n_for").replace("{qty}", String(row.buyQty)).replace("{price}", Number(row.bundlePrice ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 }));
@@ -190,9 +207,14 @@ export default function PromotionsPage() {
           <Button icon={<SearchOutlined />} loading={products.loading} onClick={() => loadProducts({ variables: { search: search.trim() } })} />
         </Space.Compact>
         {productRows.length > 0 && <Select
+          aria-label={t("admin_promotions.select_product")}
           style={{ width: "100%", marginBottom: 14 }} showSearch optionFilterProp="label"
           placeholder={t("admin_promotions.select_product")} value={selectedSku}
-          onChange={(sku) => setSelectedSku(sku)}
+          onChange={(sku) => {
+            setSelectedSku(sku); setSelectedProduct(productRows.find((p) => p.sku === sku));
+            form.resetFields(["buySize"]);
+            if (sku === giftSku) { form.resetFields(["giftSku", "giftSize"]); setSelectedGift(undefined); }
+          }}
           options={productRows.map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))}
         />}
         <Form form={form} layout="vertical" disabled={!canEdit || !selectedSku} initialValues={{ kind: "N_FOR_PRICE", locationId: ALL_BRANCHES, buyQty: 3 }}>
@@ -206,12 +228,28 @@ export default function PromotionsPage() {
             <Select options={[
               { value: "N_FOR_PRICE", label: t("admin_promotions.kind_n_for") },
               { value: "BUY_X_GET_Y", label: t("admin_promotions.kind_buy_x") },
+              { value: "BUY_A_GET_B", label: t("admin_promotions.kind_cross_sku") },
             ]} />
           </Form.Item>
-          <Form.Item name="buyQty" label={kind === "BUY_X_GET_Y" ? t("admin_promotions.buy_qty") : t("admin_promotions.bundle_qty")} rules={[{ required: true }]}>
+          {kind === "BUY_A_GET_B" && <>
+            <Form.Item name="buySize" label={t("admin_promotions.buy_size")} rules={[{ required: true }]}>
+              <Select options={sizeOptions(productRows.find((p) => p.sku === selectedSku))} />
+            </Form.Item>
+            <Form.Item name="giftSku" label={t("admin_promotions.gift_product")} rules={[{ required: true }]}>
+              <Select showSearch filterOption={false} loading={gifts.loading}
+                onSearch={(search) => { void loadGifts({ variables: { search: search.trim() } }); }}
+                onChange={(sku) => { setSelectedGift(giftRows.find((p) => p.sku === sku)); form.resetFields(["giftSize"]); }}
+                options={giftRows.filter((p) => p.sku !== selectedSku).map((p) => ({ value: p.sku, label: `${p.sku} · ${p.name}` }))} />
+            </Form.Item>
+            <Form.Item name="giftSize" label={t("admin_promotions.gift_size")} rules={[{ required: true }]}>
+              <Select options={sizeOptions(giftRows.find((p) => p.sku === giftSku))} />
+            </Form.Item>
+            <Alert type="info" showIcon closable message={t("admin_promotions.cross_sku_policy")} style={{ marginBottom: 16 }} />
+          </>}
+          <Form.Item name="buyQty" label={kind !== "N_FOR_PRICE" ? t("admin_promotions.buy_qty") : t("admin_promotions.bundle_qty")} rules={[{ required: true }]}>
             <InputNumber min={1} precision={0} style={{ width: "100%" }} />
           </Form.Item>
-          {kind === "BUY_X_GET_Y"
+          {kind !== "N_FOR_PRICE"
             ? <Form.Item name="getQty" label={t("admin_promotions.get_qty")} rules={[{ required: true }]}>
                 <InputNumber min={1} precision={0} style={{ width: "100%" }} />
               </Form.Item>
@@ -247,7 +285,7 @@ export default function PromotionsPage() {
         />
         <Table
           rowKey={(row: PriceTierRow) => `${row.locationId ?? "all"}-${row.scope}-${row.size ?? ""}-${row.minQty}`}
-          size="small" loading={tierList.loading} pagination={false}
+          size="small" loading={tierList.loading} pagination={false} scroll={{ x: 320 }}
           dataSource={(tierList.data?.bmsProductPriceTiers ?? []).filter((row: PriceTierRow) =>
             (tierLocation === ALL_BRANCHES ? row.locationId == null : row.locationId === tierLocation))}
           locale={{ emptyText: t("admin_promotions.tier_empty") }}
@@ -284,6 +322,7 @@ export default function PromotionsPage() {
       </Card>
 
       <Card
+        className={styles.promotionList}
         title={t("admin_promotions.list_title")}
         extra={<Space>
           <Select
@@ -301,7 +340,7 @@ export default function PromotionsPage() {
         </Space>}
       >
         {list.error && <Alert closable type="error" showIcon message={list.error.message} style={{ marginBottom: 12 }} />}
-        <Table rowKey="id" loading={list.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
+        <Table rowKey="id" scroll={{ x: 700 }} loading={list.loading} dataSource={rows} pagination={{ pageSize: 20, showSizeChanger: false }} columns={[
           {
             title: t("admin_promotions.product"),
             render: (_: unknown, row: PromotionRow) => <><strong>{row.productName ?? row.productSku}</strong><br /><small>{row.productSku}</small></>,

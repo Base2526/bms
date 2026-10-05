@@ -1,0 +1,6 @@
+.root { padding: 12px 0; border-block: 1px solid #dde2e9; }
+.row { display: flex; align-items: center; gap: 8px; color: #237346; min-width: 0; }
+.row + .row { margin-top: 10px; }
+.row > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.row strong, .row span { display: block; font-size: 13px; }
+.row > button { flex: none; font-size: 12px; }

@@ -4143,7 +4143,12 @@ type BmsPosPriceTier {
 type BmsPosPromotion {
   bundlePrice: Float
   buyQty: Int!
+  buySize: String
+  buySku: String
   getQty: Int
+  giftSize: String
+  giftSku: String
+  id: ID
   kind: String!
 }
 
@@ -5612,8 +5617,11 @@ type BmsProductPromotion {
   active: Boolean!
   bundlePrice: Float
   buyQty: Int!
+  buySize: String
   endsAt: String
   getQty: Int
+  giftSize: String
+  giftSku: String
   id: ID!
   kind: String!
 
@@ -5632,8 +5640,11 @@ type BmsProductPromotion {
 input BmsProductPromotionInput {
   bundlePrice: Float
   buyQty: Int!
+  buySize: String
   endsAt: String
   getQty: Int
+  giftSize: String
+  giftSku: String
   kind: String!
   locationId: ID
   note: String

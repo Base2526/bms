@@ -404,6 +404,19 @@ written with `source: "SALE"` while creating a new order can trigger retained-ba
 Migration `9.24` enforces that provenance marker and updates the database comment so support tools do
 not mistake legacy reconstruction for an exact historical snapshot.
 
+Migration `10.41` adds `BUY_A_GET_B` to `bms_product_promotions`, with `buy_size`,
+`gift_sku` and `gift_size`. Its CHECK requires positive purchase/gift quantities, different SKUs,
+both variant codes and no bundle price; the gift foreign key includes `tenant_id`. Existing
+scope uniqueness and RLS remain unchanged. Only direct-stock RETAIL_POS variants qualify.
+Both participating loose-unit order lines snapshot `crossSkuGifts: [{ rule, awardedQty }]`;
+the rule includes its ID, SKUs, variants and quantities. Named packs keep their own prices and
+do not earn or consume gifts. The gift is a normal stock-backed line with an exact `line_amount`,
+not an order-level discount. Partial returns use frozen evidence and refuse
+`GIFT_RETURN_REQUIRED` before writes when a gift losing entitlement has not been returned.
+Refund allocation preserves paid B retained by the customer and a previously refunded paid B
+cannot stand in for a free gift on a subsequent return. No additional financial ledger is created.
+Legacy promotion reads/writes and sales also work before `10.41`; only the new kind requires it.
+
 **Input-tax identity (`10.13__bms_tax_leak_guards.sql`)** — the active tax-invoice unique index uses
 tenant, supplier tax ID, normalized supplier branch (`NULL`/blank → `00000`) and a document number
 normalized by upper-casing and removing whitespace/hyphens. Its preflight aborts when historical

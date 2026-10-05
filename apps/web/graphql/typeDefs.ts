@@ -4474,7 +4474,10 @@ export const typeDefs = /* GraphQL */ `
     """null = โปรทั้งร้าน · มีค่า = โปรของสาขานั้น และทับโปรทั้งร้านของ SKU เดียวกัน"""
     locationId: ID
     locationName: String
-    kind: String!          # BUY_X_GET_Y | N_FOR_PRICE
+    kind: String!          # BUY_X_GET_Y | N_FOR_PRICE | BUY_A_GET_B
+    buySize: String
+    giftSku: String
+    giftSize: String
     buyQty: Int!
     getQty: Int
     bundlePrice: Float
@@ -4491,6 +4494,9 @@ export const typeDefs = /* GraphQL */ `
     buyQty: Int!
     getQty: Int
     bundlePrice: Float
+    buySize: String
+    giftSku: String
+    giftSize: String
     startsAt: String
     endsAt: String
     note: String

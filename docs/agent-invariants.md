@@ -272,6 +272,16 @@ obtained. Do not "finish" an adapter by guessing endpoints, payload fields, or s
 
 ## POS and tax
 
+- **Cross-SKU gifts (`10.41`) are real inventory lines.** `BUY_A_GET_B` applies only to direct-stock
+  RETAIL_POS variants, with no overlapping/chained product deals. The shared pure basket engine
+  previews the same gift discount that `createOrderInTx()` commits as `line_amount`. Gift quantity
+  must exist in the cart; never invent a stock-free gift line. Save rule plus awarded quantity in
+  sale-time `pricing_snapshot.crossSkuGifts`. Returns require gifts that lose entitlement, use
+  frozen rules rather than today's promotions, and never give a free gift shelf-price weight on
+  a credit note. Cross-branch approval, receiving-branch stock and idempotency remain unchanged.
+  Named packs keep their fixed price and never qualify. Paid B retained after a return keeps its
+  value; a paid B refunded earlier cannot replace the free gift required on a later return.
+
 Cloud receipt requests (`10.38`) are purpose-bound capabilities, not checkout/payment authorization.
 `BMS_TAX_REQUESTS_ENABLED` plus HTTPS origin/secret is opt-in; `retail-local` refuses generation and
 service execution. Receipt QR never reads a previously submitted buyer: a separate 256-bit tracking

@@ -82,6 +82,8 @@ import {
   type ResolvedStockConsumption,
 } from "./stockConsumption";
 export { validateOrderItems } from "./orderValidation";
+import { crossSkuGiftPricing, type CrossSkuPromotion, type GiftSaleEvidence } from "@pos-core/crossSkuPromotion";
+import { promotionFromRow, validateCrossSkuProducts } from "./crossSkuPromotions";
 
 /**
  * qty คือ "หน่วยฐาน" เสมอ (สต็อกนับเป็นหน่วยฐาน) — ถ้าลูกค้าซื้อเป็นกล่อง
@@ -212,6 +214,7 @@ export type CreatedLine = {
     priceTiers: PriceTier[];
     promotion: Promotion | null;
     modifierUnitPrice: number;
+    crossSkuGifts?: GiftSaleEvidence[];
   };
   /** null means this menu intentionally does not expose a counted stock number. */
   availableAfter: number | null;
@@ -994,9 +997,9 @@ export async function createOrderInTx(
     // pickPromotionForLocation() ตัดสิน — ต้องเป็นฟังก์ชันตัวเดียวกับที่ resolvePosScan
     // ใช้พรีวิวที่จอ ไม่งั้นจอกับ server คิดคนละยอดแล้วบิลถูกทิ้งทั้งใบหน้าลูกค้า
     const promoRows = await client.query<any>(
-      `SELECT product_sku, location_id, kind, buy_qty, get_qty, bundle_price
-         FROM bms_product_promotions
-        WHERE tenant_id = $1 AND product_sku = ANY($2::text[]) AND active
+      `SELECT promo.*
+         FROM bms_product_promotions promo
+        WHERE tenant_id = $1 AND (product_sku = ANY($2::text[]) OR to_jsonb(promo)->>'gift_sku' = ANY($2::text[])) AND active
           AND (location_id IS NULL OR location_id = $3)
           AND (starts_at IS NULL OR starts_at <= now())
           AND (ends_at   IS NULL OR ends_at   >  now())`,
@@ -1004,12 +1007,12 @@ export async function createOrderInTx(
     );
     const scopedPromosBySku = new Map<string, ScopedPromotion[]>();
     for (const row of promoRows.rows) {
+      const promotion = promotionFromRow(row);
+      if (!promotion || (promotion.kind === "BUY_A_GET_B" && salesSurface !== "RETAIL_POS")) continue;
       const scoped = scopedPromosBySku.get(row.product_sku) ?? [];
       scoped.push({
         locationId: row.location_id ?? null,
-        promotion: row.kind === "BUY_X_GET_Y"
-          ? { kind: "BUY_X_GET_Y", buyQty: Number(row.buy_qty), getQty: Number(row.get_qty) }
-          : { kind: "N_FOR_PRICE", buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price) },
+        promotion,
       });
       scopedPromosBySku.set(row.product_sku, scoped);
     }
@@ -1033,7 +1036,7 @@ export async function createOrderInTx(
     for (const [key, indexes] of looseIndexesByVariant) {
       const first = items[indexes[0]];
       const promo = promoBySku.get(first.sku) ?? null;
-      if (!promo) continue;
+      if (!promo || promo.kind === "BUY_A_GET_B") continue;
       const qty = promoQtyByVariant.get(key) ?? 0;
       const promotedCents = Math.round(applyPromotion(
         await getVariantBasePriceInTx(client, tenantId, first.sku, first.size) ?? 0,
@@ -1209,7 +1212,7 @@ export async function createOrderInTx(
         pricingSnapshot: {
           source: "SALE",
           priceTiers: canonicalPriceTiers(tiersBySku.get(it.sku) ?? []),
-          promotion: promo,
+          promotion: promo?.kind === "BUY_A_GET_B" ? null : promo,
           modifierUnitPrice,
         },
         availableAfter: resolvedConsumption[itemIndex].derived
@@ -1227,6 +1230,29 @@ export async function createOrderInTx(
         costSnapshotSource: costAmountSnapshot == null ? "MISSING" : "CATALOG_AT_SALE",
       });
     }
+
+    const giftRules = [...promoBySku.values()].filter((p): p is CrossSkuPromotion => p.kind === "BUY_A_GET_B")
+      .filter((rule) => lines.some((line) => line.packUnitPrice == null && !line.modifierCodes?.length
+        && ((line.sku === rule.buySku && line.size === rule.buySize)
+          || (line.sku === rule.giftSku && line.size === rule.giftSize))));
+    for (const rule of giftRules) {
+      try { await validateCrossSkuProducts(client, tenantId, rule); }
+      catch (error) { return { status: "INVALID_ITEM", index: 0, reason: error instanceof Error ? error.message : "สินค้าไม่ร่วมโปรของแถม" }; }
+    }
+    const gifts = crossSkuGiftPricing(lines.map((l) => ({ sku: l.sku, size: l.size, qty: l.qty,
+      unitPrice: l.receiptUnitPrice, eligible: l.packUnitPrice == null && !l.modifierCodes?.length })), giftRules);
+    const giftEvidence = giftRules.map((rule) => ({ rule, awardedQty: gifts.awarded.get(rule.id) ?? 0 }));
+    lines.forEach((line, index) => {
+      if (line.packUnitPrice != null || line.modifierCodes?.length) return;
+      const related = giftEvidence.filter(({ rule }) =>
+        (line.sku === rule.buySku && line.size === rule.buySize) || (line.sku === rule.giftSku && line.size === rule.giftSize));
+      if (!related.length) return;
+      const amount = Math.round((line.receiptUnitPrice * line.qty - gifts.discounts[index]) * 100) / 100;
+      total = Math.round((total - line.lineAmount + amount) * 100) / 100;
+      line.lineAmount = amount;
+      line.unitPrice = Math.round(amount / line.qty * 100) / 100;
+      line.pricingSnapshot = { ...line.pricingSnapshot, priceTiers: [], promotion: null, crossSkuGifts: related };
+    });
 
     // CRM: ลูกค้าที่รู้ตัวตนแล้ว (POS ค้นสมาชิกที่เคาน์เตอร์) มาก่อน
     // ถ้าไม่มีจึงหา/สร้างจาก (tenant, channel, customerRef) ตามเดิม

@@ -327,6 +327,11 @@ query MobilePosScan(
       discountPct
     }
     promotion {
+      id
+      buySku
+      buySize
+      giftSku
+      giftSize
       kind
       buyQty
       getQty

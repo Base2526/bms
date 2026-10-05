@@ -98,6 +98,9 @@ import {
 } from "./membership";
 
 import { receiptPromotionNotes } from "./receiptPromotionNotes";
+import { promotionFromRow } from "./crossSkuPromotions";
+import { missingGiftReturns } from "@pos-core/crossSkuPromotion";
+import { normalizePricingSnapshot } from "./pricing";
 
 export const POS_CHANNEL = "pos" as const;
 const COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set([
@@ -714,20 +717,20 @@ export async function resolvePosScan(
   // 9.61: โปรของสาขาทับโปรทั้งร้าน · `LIMIT 1` เดิมใช้ไม่ได้แล้ว เพราะตอนนี้ SKU เดียว
   // มีได้สองแถว (ทั้งร้าน + สาขานี้) แล้วแถวที่ได้จะขึ้นกับลำดับที่ Postgres บังเอิญคืนมา
   const promoRes = await query<any>(
-    `SELECT location_id, kind, buy_qty, get_qty, bundle_price FROM bms_product_promotions
-      WHERE tenant_id = $1 AND product_sku = $2 AND active
+    `SELECT promo.* FROM bms_product_promotions promo
+      WHERE tenant_id = $1 AND (product_sku = $2 OR to_jsonb(promo)->>'gift_sku' = $2) AND active
         AND (location_id IS NULL OR location_id = $3)
         AND (starts_at IS NULL OR starts_at <= now())
         AND (ends_at   IS NULL OR ends_at   >  now())`,
     [tenantId, row.sku, opts.locationId ?? null]
   );
   const promotion: Promotion | null = pickPromotionForLocation(
-    promoRes.rows.map((promoRow: any) => ({
+    promoRes.rows.flatMap((promoRow: any) => {
+      const promotion = promotionFromRow(promoRow);
+      return !promotion || (promotion.kind === "BUY_A_GET_B" && salesSurface !== "RETAIL_POS") ? [] : [{
       locationId: promoRow.location_id ?? null,
-      promotion: promoRow.kind === "BUY_X_GET_Y"
-        ? { kind: "BUY_X_GET_Y" as const, buyQty: Number(promoRow.buy_qty), getQty: Number(promoRow.get_qty) }
-        : { kind: "N_FOR_PRICE" as const, buyQty: Number(promoRow.buy_qty), bundlePrice: Number(promoRow.bundle_price) },
-    })),
+      promotion,
+    }]; }),
     opts.locationId ?? null
   );
 
@@ -5199,6 +5202,7 @@ export async function listRecentPosSales(
 }
 
 export type PosReturnResult =
+  | { status: "GIFT_RETURN_REQUIRED"; reason: string }
   | {
       status: "RETURNED";
       /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
@@ -5247,6 +5251,7 @@ export type PosRefundAllocation = {
 };
 
 export type PosPartialReturnResult =
+  | { status: "GIFT_RETURN_REQUIRED"; reason: string }
   | {
       status: "PARTIAL_RETURNED";
       /** เลขใบลดหนี้ที่ออกให้การคืนครั้งนี้ — null เมื่อร้านไม่ได้จด VAT */
@@ -5500,6 +5505,10 @@ export async function processPosReturn(input: {
   let clientReleased = false;
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+
+    // Lock before the replay lookup: two concurrent retries must observe one committed return.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 1042))`,
+      [JSON.stringify(["pos-return", input.tenantId, input.idempotencyKey])]);
 
     const replay = await client.query<{
       id: string;
@@ -5814,10 +5823,16 @@ export async function processPosReturn(input: {
     const grossTotal = orderItems.reduce((sum, item) => sum + Number(item.line_amount), 0);
     if (!(grossTotal > 0) || !(orderAmount >= 0)) throw new Error("ยอดบิลสำหรับคำนวณคืนเงินไม่ถูกต้อง");
 
+    const hasGiftEvidence = orderItems.some((item) =>
+      normalizePricingSnapshot(item.pricing_snapshot).crossSkuGifts?.length);
     const lineNetTotals = new Map<number, number>();
     let allocatedNet = 0;
+    let cumulativeGross = 0;
     orderItems.forEach((item, index) => {
-      const lineNet = index === orderItems.length - 1
+      cumulativeGross += Number(item.line_amount);
+      const lineNet = hasGiftEvidence
+        ? Math.round((Math.round(orderAmount * cumulativeGross / grossTotal * 100) / 100 - allocatedNet) * 100) / 100
+        : index === orderItems.length - 1
         ? Math.round((orderAmount - allocatedNet) * 100) / 100
         : Math.round((orderAmount * (Number(item.line_amount) / grossTotal)) * 100) / 100;
       lineNetTotals.set(item.id, lineNet);
@@ -5842,8 +5857,7 @@ export async function processPosReturn(input: {
     // ประเมิน "สินค้าที่ลูกค้าเก็บไว้" ใหม่ด้วยกติกาที่ snapshot ตอนขาย
     // ตัวอย่าง: 5 × 100 ได้ราคาส่ง 90 = 450; คืน 1 แล้วเหลือ 4 ไม่ถึงขั้นต่ำ
     // มูลค่าคงเหลือจึงเป็น 400 และคืนได้ 50 ไม่ใช่รักษาราคาส่งแล้วคืน 90
-    const remainingPricing = priceRemainingLines(
-      orderItems.map((item) => ({
+    const returnPricingLines = orderItems.map((item) => ({
         id: item.id,
         sku: item.product_sku,
         size: item.size,
@@ -5853,9 +5867,35 @@ export async function processPosReturn(input: {
         receiptUnitPrice: Number(item.receipt_unit_price),
         packUnitPrice: item.pack_unit_price == null ? null : Number(item.pack_unit_price),
         pricingSnapshot: item.pricing_snapshot,
-      })),
-      requestedMap
-    );
+      }));
+    const remainingPricing = priceRemainingLines(returnPricingLines, requestedMap);
+    const giftOriginal = orderItems.map((l) => ({ sku: l.product_sku, size: l.size, qty: Number(l.qty),
+      unitPrice: Number(l.receipt_unit_price), eligible: l.pack_unit_price == null }));
+    const giftRemaining = giftOriginal.map((l, i) => ({ ...l,
+      qty: remainingPricing.lines[i].remainingPackQty * Number(orderItems[i].qty) / Number(orderItems[i].pack_qty ?? orderItems[i].qty) }));
+    const missingGifts = missingGiftReturns(giftOriginal, giftRemaining,
+      orderItems.flatMap((l) => normalizePricingSnapshot(l.pricing_snapshot).crossSkuGifts ?? []));
+    // A previously refunded paid B cannot subsequently be counted as a returned free gift.
+    // Require the retained gift back instead of shifting tax value between A and B.
+    if (hasGiftEvidence) {
+      const beforePricing = priceRemainingLines(returnPricingLines);
+      orderItems.forEach((item, index) => {
+        const evidence = normalizePricingSnapshot(item.pricing_snapshot).crossSkuGifts ?? [];
+        if (item.pack_unit_price != null || !evidence.some(({ rule }) =>
+          rule.giftSku === item.product_sku && rule.giftSize === item.size)) return;
+        const increaseCents = Math.round((remainingPricing.lines[index].amount - beforePricing.lines[index].amount) * 100);
+        if (increaseCents > 0) {
+          const qty = Math.ceil(increaseCents / Math.max(1, Math.round(Number(item.receipt_unit_price) * 100)));
+          const missing = missingGifts.find((g) => g.sku === item.product_sku && g.size === item.size);
+          if (missing) missing.qty = Math.max(missing.qty, qty);
+          else missingGifts.push({ sku: item.product_sku, size: item.size, qty });
+        }
+      });
+    }
+    if (missingGifts.length) {
+      await client.query("ROLLBACK");
+      return { status: "GIFT_RETURN_REQUIRED", reason: `ต้องคืนของแถมที่เสียสิทธิ์พร้อมสินค้า: ${missingGifts.map((g) => `${g.sku} (${g.size}) ${g.qty} ชิ้น`).join(", ")}` };
+    }
     const allReturned = remainingPricing.lines.every((line) => line.remainingPackQty === 0);
     if (crossBranch && !allReturned) {
       const serialSelection = await client.query(
@@ -5979,17 +6019,25 @@ export async function processPosReturn(input: {
       Math.round((orderAmount - previousRefundAmount - roundedRefundAmount) * 100) / 100);
 
     // ใบลดหนี้ต้องแจกยอดคืนลงแต่ละบรรทัด และผลรวมต้องตรงยอดเงินจริง
-    const weightTotal = rawCalculated.reduce((sum, line) => (
-      sum + (line.refundAmount > 0
-        ? line.refundAmount
-        : line.packQty * Number(line.item.receipt_unit_price))
-    ), 0);
+    // Allocate only the value no longer retained, not the average price of paid + free B.
+    const retainedById = new Map(remainingPricing.lines.map((line) => [line.id, line.amount]));
+    const refundWeight = (line: typeof rawCalculated[number]) => hasGiftEvidence
+      ? Math.max(0, Math.round(((lineNetTotals.get(line.item.id) ?? 0)
+          - Number(line.item.returned_refund_amount ?? 0)
+          - (retainedById.get(line.item.id) ?? 0) * orderDiscountRatio) * 100) / 100)
+      : line.refundAmount > 0 ? line.refundAmount : line.packQty * Number(line.item.receipt_unit_price);
+    const weightTotal = rawCalculated.reduce((sum, line) => sum + refundWeight(line), 0);
+    if (hasGiftEvidence && roundedRefundAmount > 0 && weightTotal <= 0) {
+      throw new Error("ไม่สามารถจัดสรรยอดคืนตามหลักฐานราคาตอนขายได้");
+    }
     let allocatedRefund = 0;
+    let cumulativeWeight = 0;
     const calculated = rawCalculated.map((line, index) => {
-      const weight = line.refundAmount > 0
-        ? line.refundAmount
-        : line.packQty * Number(line.item.receipt_unit_price);
-      const refundAmount = index === rawCalculated.length - 1
+      const weight = refundWeight(line);
+      cumulativeWeight += weight;
+      const refundAmount = hasGiftEvidence
+        ? Math.round((Math.round(roundedRefundAmount * (weightTotal > 0 ? cumulativeWeight / weightTotal : 0) * 100) / 100 - allocatedRefund) * 100) / 100
+        : index === rawCalculated.length - 1
         ? Math.round((roundedRefundAmount - allocatedRefund) * 100) / 100
         : Math.round((roundedRefundAmount * (weightTotal > 0 ? weight / weightTotal : 0)) * 100) / 100;
       allocatedRefund += refundAmount;

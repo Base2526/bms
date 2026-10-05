@@ -1495,6 +1495,43 @@ old proportional-refund behavior: a migration-time reconstruction is useful evid
 but is never trusted to alter a legacy customer's real refund. New rows carry `source: "SALE"` in
 their pricing snapshot and are the only rows eligible for retained-basket repricing.
 
+### Cross-SKU gifts (10.41)
+
+`/admin/promotions` supports `BUY_A_GET_B`: choose one purchase SKU/active catalog variant,
+one different gift SKU/variant, purchase quantity, gift quantity, branch scope and dates.
+It repeats for every qualifying set. The gift must be present as a real basket line; the
+Desktop/browser counter offers an explicit add-gift action, never silently hands out stock.
+Excess gifts are charged at shelf price. The server computes and persists exact `line_amount`
+and moves gift stock through the ordinary sale/FEFO/tax transaction.
+
+Initial scope is RETAIL_POS with direct stocked goods. Pharmacy-policy products, bundles,
+recipes, serials and weighted goods are excluded. Named packs and modifier lines do not qualify
+and retain their normal prices even alongside qualifying loose units. Restaurant/online ordering does not apply this promotion. The selected
+variants use shelf prices, not wholesale tiers; other variants retain normal pricing.
+Overlapping active product promotions involving either SKU in an overlapping branch scope
+are rejected, including store-wide/branch overrides and chained gifts. Order-level benefits
+still use their existing rules. Stop an overlapping promotion before replacing its scope.
+
+Both participating variants save the rule and awarded quantity in `pricing_snapshot.crossSkuGifts`.
+Returns use that frozen evidence even if the promotion changes or stops. A purchase return must
+include any gift quantity that loses eligibility (`GIFT_RETURN_REQUIRED`); returning a free gift
+alone refunds zero. Paid extra units of the gift SKU remain refundable. Refund allocation never
+uses the average paid/free B price as credit-note weight: it uses value no longer retained.
+A paid B already refunded on an earlier return cannot substitute for a free gift on a later
+purchase return; return the remaining gift if losing eligibility would increase its retained price.
+Cross-branch returns use the same rule
+and require the existing second-person approval; returned stock belongs to the receiving branch.
+This requires branches in the same tenant/database, not separate Retail Local installations.
+Return requests lock their tenant-scoped idempotency key before checking for a replay, so
+concurrent retries return the original result instead of reaching the unique constraint.
+
+Apply migration `10.41` and update native clients before enabling the promotion. During a staged
+rollout, legacy promotion reads/writes and sales continue without the new columns; creating a
+cross-SKU promotion refuses with an explicit migration-required error. Older native clients do not understand the new preview metadata; server payment
+validation still refuses a mismatched total. Electron loads the Web POS and owns no pricing logic.
+Regression coverage: `cross-sku-promotion.test.mts`, `cross-sku-promotion-db-contract.test.mts`
+(disposable `bms_gift_test_*` database only), and `cross-sku-promotion-browser-smoke.mjs`.
+
 ### Cross-branch and cross-channel returns (9.34)
 
 With a search term, the Returns tab searches completed bills across the tenant rather than only the
