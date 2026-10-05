@@ -91,6 +91,7 @@ import { hasDesktopPrinterBridge, printDesktopReceipt } from "@/lib/pos/desktopP
 import ReceiptPrinterSettings from "./ReceiptPrinterSettings";
 import ReceiptPrinterStatus from "./ReceiptPrinterStatus";
 import DesktopUpdateMenu from "./DesktopUpdateMenu";
+import GiftPromotionSummary from "@/components/pos/GiftPromotionSummary";
 import { useReceiptPrinter } from "./useReceiptPrinter";
 import type { ReceiptPayload } from "@/lib/pos/escpos";
 import { isReceiptLanguageMode } from "@/lib/pos/receiptI18n";
@@ -2221,6 +2222,7 @@ function DesktopPosContent() {
             {!checkout ? (
               <>
                 <div className={styles.cartLines}>
+                  <GiftPromotionSummary lines={cart} disabled={busy || Boolean(addingProductKey)} onAdd={(sku, size) => { void addProduct(sku, size); }} />
                   {cart.map((line) => (
                     <article key={line.key}>
                       <div className={styles.cartName}><strong>{line.name}</strong><span>{line.sku}{line.size ? ` · ${line.size}` : ""}</span></div>
@@ -2238,6 +2240,7 @@ function DesktopPosContent() {
               </>
             ) : (
               <div className={styles.paymentArea}>
+                <GiftPromotionSummary lines={cart} />
                 <CheckoutBenefits benefits={benefits} disabled={busy || Boolean(saleAttemptRef.current)} />
                 {zeroDueBoardGameBill ? (
                   <PosDismissibleAlert className={styles.zeroDueNotice} role="status">

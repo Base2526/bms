@@ -25,7 +25,10 @@ export type PriceTier = {
   discountPct?: number | null;
 };
 
+import { crossSkuGiftPricing, normalizeCrossSkuPromotion, type CrossSkuPromotion } from './crossSkuPromotion';
+
 export type Promotion =
+  | CrossSkuPromotion
   | { kind: 'BUY_X_GET_Y'; buyQty: number; getQty: number }
   | { kind: 'N_FOR_PRICE'; buyQty: number; bundlePrice: number };
 
@@ -87,6 +90,7 @@ export function normalizePriceTiers(raw: unknown): PriceTier[] {
 export function normalizePromotion(raw: unknown): Promotion | null {
   if (!raw || typeof raw !== 'object') return null;
   const promo = raw as Record<string, unknown>;
+  if (promo.kind === 'BUY_A_GET_B') return normalizeCrossSkuPromotion(promo);
   const buyQty = Number(promo.buyQty);
   if (!Number.isInteger(buyQty) || buyQty < 1) return null;
   if (promo.kind === 'BUY_X_GET_Y') {
@@ -175,7 +179,7 @@ export function applyPromotion(
   promo: Promotion | null,
 ): PromotionOutcome {
   const full = round2(Math.max(0, basePrice) * Math.max(0, qty));
-  if (!promo || qty <= 0 || basePrice < 0) {
+  if (!promo || promo.kind === 'BUY_A_GET_B' || qty <= 0 || basePrice < 0) {
     return { amount: full, freeQty: 0, saved: 0 };
   }
 
@@ -284,6 +288,9 @@ function resolveLine(line: PricedCartLine): ResolvedLine {
  */
 export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
   const resolved = lines.map(resolveLine);
+  const giftRules = resolved.flatMap((l) => l.promotion?.kind === 'BUY_A_GET_B' ? [l.promotion] : []);
+  const giftParticipant = (l: ResolvedLine) => !l.fixedPack && giftRules.some((p) =>
+    (l.sku === p.buySku && l.size === p.buySize) || (l.sku === p.giftSku && l.size === p.giftSize));
 
   const qtyByVariant = new Map<string, number>();
   const qtyBySku = new Map<string, number>();
@@ -302,12 +309,16 @@ export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
       );
     }
     if (line.tiers.length) tiersBySku.set(line.sku, line.tiers);
-    if (line.promotion) promoBySku.set(line.sku, line.promotion);
+    if (line.promotion && line.promotion.kind !== 'BUY_A_GET_B') promoBySku.set(line.sku, line.promotion);
   }
 
   const promoCharged = new Set<string>();
   let total = 0;
   for (const line of resolved) {
+    if (giftParticipant(line)) {
+      total += line.listPrice * line.baseUnits + line.modifierUnitPrice * line.soldUnits;
+      continue;
+    }
     const baseUnitPrice = line.fixedPack
       ? line.listPrice
       : unitPriceForQty(
@@ -332,7 +343,9 @@ export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
     }
     total += line.modifierUnitPrice * line.soldUnits;
   }
-  return round2(total);
+  const gifts = crossSkuGiftPricing(resolved.map((l) => ({ sku: l.sku, size: l.size, qty: l.baseUnits,
+    unitPrice: l.listPrice, eligible: !l.fixedPack && l.modifierUnitPrice === 0 })), giftRules);
+  return round2(total - gifts.totalDiscount);
 }
 
 /**

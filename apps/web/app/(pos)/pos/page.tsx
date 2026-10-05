@@ -11,11 +11,13 @@
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
 import { Fragment, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import { crossSkuGiftPricing } from "@pos-core/crossSkuPromotion";
 import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
 import { useLiveRefresh, usePageVisible } from "@/app/hooks/useLiveRefresh";
 import { useOrderAlerts } from "@/app/hooks/useOrderAlerts";
 import OrderAlertSettingsModal from "@/components/pos/OrderAlertSettingsModal";
 import BoardGamePanel from "@/components/pos/BoardGamePanel";
+import GiftPromotionSummary from "@/components/pos/GiftPromotionSummary";
 import PosDismissibleAlert from "@/components/pos/PosDismissibleAlert";
 import CustomerDisplaySettings from "@/components/pos-desktop/CustomerDisplaySettings";
 import ReceiptPrinterSettings from "@/components/pos-desktop/ReceiptPrinterSettings";
@@ -341,10 +343,7 @@ type ScanHit = {
   /** true = สินค้านี้ต้องระบุเลขเครื่องครบทุกชิ้นก่อนขาย (8.3) */
   serialTracked?: boolean;
   /** โปรที่ใช้งานอยู่ (8.7) — จอคิดด้วย applyPromotion ตัวเดียวกับ createOrder */
-  promotion?:
-    | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
-    | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number }
-    | null;
+  promotion?: import("@/lib/bms/pricing").Promotion | null;
   /**
    * ตัวเลือกที่ server อนุญาตสำหรับ SKU+size นี้
    *
@@ -2319,7 +2318,7 @@ export default function PosPage() {
     const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
     const priceOf = new Map<string, number>();
     for (const line of cart) {
-      if (isFixedPricePack(line.packCode) || !line.promotion) continue;
+      if (isFixedPricePack(line.packCode) || !line.promotion || line.promotion.kind === "BUY_A_GET_B") continue;
       const key = variantPricingKey(line.sku, line.size);
       const baseQuantity = line.packQty * line.baseQty;
       qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + baseQuantity);
@@ -2329,6 +2328,20 @@ export default function PosPage() {
     const out = new Map<string, { amount: number; freeQty: number; saved: number }>();
     for (const [key, promo] of promoOf) {
       out.set(key, applyPromotion(priceOf.get(key) ?? 0, qtyByVariant.get(key) ?? 0, promo));
+    }
+    const rules = cart.flatMap((l) => l.promotion?.kind === "BUY_A_GET_B" ? [l.promotion] : []);
+    const giftLines = cart.map((l) => ({ sku: l.sku, size: l.size, qty: l.packQty * l.baseQty,
+      unitPrice: l.basePrice, eligible: !isFixedPricePack(l.packCode) && !l.modifierCodes?.length }));
+    const gifts = crossSkuGiftPricing(giftLines, rules);
+    const giftKeys = new Set(rules.flatMap((r) => [variantPricingKey(r.buySku, r.buySize), variantPricingKey(r.giftSku, r.giftSize)]));
+    for (const key of giftKeys) {
+      let full = 0; let saved = 0; let freeQty = 0;
+      giftLines.forEach((l, i) => {
+        if (!l.eligible || variantPricingKey(l.sku, l.size) !== key) return;
+        full += l.qty * l.unitPrice; saved += gifts.discounts[i];
+        freeQty += gifts.freeQuantities[i];
+      });
+      out.set(key, { amount: Math.round((full - saved) * 100) / 100, freeQty, saved });
     }
     return out;
   }, [cart]);
@@ -6236,7 +6249,8 @@ export default function PosPage() {
         : data?.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? `บิล ${data.channel} ต้องคืนผ่าน marketplace ต้นทาง`
         : data?.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? "สินค้ามี serial คืนข้ามสาขาแบบบางส่วนยังไม่ได้ ต้องคืนครบรายการ/ทั้งบิล"
         :
-        data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่คืนเกินกว่าที่ยังคืนได้"
+        data?.status === "GIFT_RETURN_REQUIRED" ? data.reason
+        : data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่คืนเกินกว่าที่ยังคืนได้"
         : data?.status === "REPRICE_PAYMENT_REQUIRED"
           ? `คืนรายการนี้ไม่ได้ในขั้นตอนคืนเงิน: เมื่อประเมินราคาตามจำนวนใหม่ ยอดสินค้าที่เหลือสูงกว่ายอดหลังคืน ฿${baht(Number(data.additionalAmount ?? 0))}`
         : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการคืน"
@@ -6378,6 +6392,7 @@ export default function PosPage() {
           : data?.status === "CHANNEL_RETURN_MANAGED_EXTERNALLY" ? `บิล ${data.channel} ต้องคืนผ่าน marketplace ต้นทาง`
           : data?.status === "CROSS_BRANCH_SERIAL_PARTIAL_UNSUPPORTED" ? "สินค้ามี serial คืนข้ามสาขาแบบบางส่วนยังไม่ได้ ต้องคืนครบรายการ/ทั้งบิล"
           : data?.status === "RETURN_QTY_EXCEEDED" ? "จำนวนที่เปลี่ยนเกินกว่าที่ยังคืนได้"
+          : data?.status === "GIFT_RETURN_REQUIRED" ? data.reason
           : data?.status === "REPRICE_PAYMENT_REQUIRED"
             ? `เปลี่ยนรายการนี้ไม่ได้: เมื่อประเมินราคาตามจำนวนใหม่ ต้องรับเงินเพิ่มก่อน ฿${baht(Number(data.additionalAmount ?? 0))}`
           : data?.status === "ITEM_NOT_FOUND" ? "ไม่พบรายการสินค้าที่ต้องการเปลี่ยน"
@@ -8733,6 +8748,7 @@ export default function PosPage() {
             </div>
           )}
           <div className="pos-sale-lines">
+            <GiftPromotionSummary lines={cart.map((line) => ({ ...line, qty: line.packQty }))} onAdd={(sku, size) => enqueueScan(sku, "manual", size)} />
             {cart.length > 0 && (
               <div className="pos-sale-line-header" aria-hidden="true">
                 <span>สินค้า</span>

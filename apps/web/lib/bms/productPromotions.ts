@@ -15,8 +15,9 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { validateCrossSkuProducts } from "./crossSkuPromotions";
 
-export type PromotionKind = "BUY_X_GET_Y" | "N_FOR_PRICE";
+export type PromotionKind = "BUY_X_GET_Y" | "N_FOR_PRICE" | "BUY_A_GET_B";
 
 export type ProductPromotionRow = {
   id: string;
@@ -28,6 +29,9 @@ export type ProductPromotionRow = {
   buyQty: number;
   getQty: number | null;
   bundlePrice: number | null;
+  buySize: string | null;
+  giftSku: string | null;
+  giftSize: string | null;
   active: boolean;
   startsAt: string | null;
   endsAt: string | null;
@@ -49,6 +53,9 @@ function mapRow(row: any): ProductPromotionRow {
     buyQty: Number(row.buy_qty),
     getQty: row.get_qty == null ? null : Number(row.get_qty),
     bundlePrice: row.bundle_price == null ? null : Number(row.bundle_price),
+    buySize: row.buy_size ?? null,
+    giftSku: row.gift_sku ?? null,
+    giftSize: row.gift_size ?? null,
     active: Boolean(row.active),
     startsAt: iso(row.starts_at),
     endsAt: iso(row.ends_at),
@@ -69,10 +76,7 @@ export async function listProductPromotions(
 ): Promise<ProductPromotionRow[]> {
   const limit = Math.min(Math.max(Math.trunc(Number(opts.limit) || 200), 1), 500);
   const res = await query(
-    `SELECT promo.id, promo.product_sku, product.name AS product_name,
-            promo.location_id, loc.name AS location_name,
-            promo.kind, promo.buy_qty, promo.get_qty, promo.bundle_price,
-            promo.active, promo.starts_at, promo.ends_at, promo.note, promo.updated_at
+    `SELECT promo.*, product.name AS product_name, loc.name AS location_name
        FROM bms_product_promotions promo
        LEFT JOIN bms_products product
          ON product.tenant_id = promo.tenant_id AND product.sku = promo.product_sku
@@ -105,6 +109,9 @@ export type UpsertProductPromotionInput = {
   buyQty: number;
   getQty?: number | null;
   bundlePrice?: number | null;
+  buySize?: string | null;
+  giftSku?: string | null;
+  giftSize?: string | null;
   startsAt?: string | null;
   endsAt?: string | null;
   note?: string | null;
@@ -119,16 +126,16 @@ export type UpsertProductPromotionInput = {
 function normalizeInput(input: UpsertProductPromotionInput) {
   const productSku = String(input.productSku ?? "").trim();
   if (!productSku) throw new Error("ต้องระบุสินค้า");
-  if (input.kind !== "BUY_X_GET_Y" && input.kind !== "N_FOR_PRICE") {
+  if (!["BUY_X_GET_Y", "N_FOR_PRICE", "BUY_A_GET_B"].includes(input.kind)) {
     throw new Error("ชนิดโปรโมชันไม่ถูกต้อง");
   }
-  const buyQty = Math.trunc(Number(input.buyQty));
+  const buyQty = Number(input.buyQty);
   if (!Number.isSafeInteger(buyQty) || buyQty < 1) throw new Error("จำนวนที่ต้องซื้อต้องเป็นจำนวนเต็มตั้งแต่ 1");
 
   let getQty: number | null = null;
   let bundlePrice: number | null = null;
-  if (input.kind === "BUY_X_GET_Y") {
-    getQty = Math.trunc(Number(input.getQty));
+  if (input.kind !== "N_FOR_PRICE") {
+    getQty = Number(input.getQty);
     if (!Number.isSafeInteger(getQty) || getQty < 1) throw new Error("จำนวนที่แถมต้องเป็นจำนวนเต็มตั้งแต่ 1");
   } else {
     bundlePrice = Math.round(Number(input.bundlePrice) * 100) / 100;
@@ -143,6 +150,12 @@ function normalizeInput(input: UpsertProductPromotionInput) {
     throw new Error("วันสิ้นสุดโปรต้องอยู่หลังวันเริ่ม");
   }
 
+  const buySize = input.kind === "BUY_A_GET_B" ? input.buySize?.trim() || null : null;
+  const giftSku = input.kind === "BUY_A_GET_B" ? input.giftSku?.trim() || null : null;
+  const giftSize = input.kind === "BUY_A_GET_B" ? input.giftSize?.trim() || null : null;
+  if (input.kind === "BUY_A_GET_B" && (!buySize || !giftSku || !giftSize || giftSku === productSku)) {
+    throw new Error("เลือกสินค้าที่ซื้อและของแถมคนละ SKU พร้อมระบุไซซ์ทั้งสองสินค้า");
+  }
   return {
     productSku,
     locationId: input.locationId ?? null,
@@ -150,6 +163,7 @@ function normalizeInput(input: UpsertProductPromotionInput) {
     buyQty,
     getQty,
     bundlePrice,
+    buySize, giftSku, giftSize,
     startsAt,
     endsAt,
     note: input.note?.trim() || null,
@@ -168,6 +182,29 @@ export async function upsertProductPromotion(
   const client = await getClient();
   try {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    // Serialize all promotion edits, including a legacy promo racing with a gift promo.
+    await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 1041))`, [input.tenantId]);
+    // Keep legacy promotions writable during a staged rollout before migration 10.41.
+    const schema = await client.query<{ ready: boolean }>(`SELECT COUNT(*) = 3 AS ready
+      FROM pg_attribute WHERE attrelid = 'bms_product_promotions'::regclass
+        AND attname IN ('buy_size','gift_sku','gift_size') AND NOT attisdropped`);
+    const giftSchemaReady = schema.rows[0].ready;
+    if (data.kind === "BUY_A_GET_B" && !giftSchemaReady) {
+      throw new Error("ต้องอัปเดตฐานข้อมูล 10.41 ก่อนตั้งโปรซื้อ A แถม B");
+    }
+    if (data.kind === "BUY_A_GET_B") await validateCrossSkuProducts(client, input.tenantId, {
+      buySku: data.productSku, buySize: data.buySize!, giftSku: data.giftSku!, giftSize: data.giftSize!,
+    });
+    const conflict = await client.query(
+      `SELECT id FROM bms_product_promotions promo
+       WHERE tenant_id=$1 AND active
+         AND (location_id IS NULL OR $3::uuid IS NULL OR location_id=$3)
+         AND NOT (product_sku=$2 AND location_id IS NOT DISTINCT FROM $3::uuid)
+         AND (kind='BUY_A_GET_B' OR $5='BUY_A_GET_B')
+         AND (product_sku=ANY($4::text[]) OR to_jsonb(promo)->>'gift_sku'=ANY($4::text[])) LIMIT 1`,
+      [input.tenantId, data.productSku, data.locationId, [data.productSku, data.giftSku].filter(Boolean), data.kind],
+    );
+    if (conflict.rowCount) throw new Error("สินค้านี้อยู่ในโปรที่ทับซ้อนกับโปรแถมข้ามสินค้า กรุณาหยุดโปรเดิมก่อน");
 
     const product = await client.query(
       `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
@@ -186,12 +223,13 @@ export async function upsertProductPromotion(
     const params = [
       input.tenantId, data.productSku, data.locationId, data.kind, data.buyQty,
       data.getQty, data.bundlePrice, data.startsAt, data.endsAt, data.note,
+      ...(giftSchemaReady ? [data.buySize, data.giftSku, data.giftSize] : []),
     ];
     const updated = await client.query(
       `UPDATE bms_product_promotions
           SET kind = $4, buy_qty = $5, get_qty = $6, bundle_price = $7,
               starts_at = $8::timestamptz, ends_at = $9::timestamptz,
-              note = $10, updated_at = now()
+              note = $10, ${giftSchemaReady ? "buy_size=$11, gift_sku=$12, gift_size=$13," : ""} updated_at = now()
         WHERE tenant_id = $1 AND product_sku = $2 AND active
           AND location_id IS NOT DISTINCT FROM $3::uuid
         RETURNING id`,
@@ -202,8 +240,8 @@ export async function upsertProductPromotion(
       : (await client.query(
           `INSERT INTO bms_product_promotions
              (tenant_id, product_sku, location_id, kind, buy_qty, get_qty,
-              bundle_price, starts_at, ends_at, note)
-           VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10)
+              bundle_price, starts_at, ends_at, note${giftSchemaReady ? ", buy_size, gift_sku, gift_size" : ""})
+           VALUES ($1,$2,$3::uuid,$4,$5,$6,$7,$8::timestamptz,$9::timestamptz,$10${giftSchemaReady ? ",$11,$12,$13" : ""})
            RETURNING id`,
           params
         )).rows[0].id;
@@ -215,15 +253,13 @@ export async function upsertProductPromotion(
         JSON.stringify({
           sku: data.productSku, locationId: data.locationId, kind: data.kind,
           buyQty: data.buyQty, getQty: data.getQty, bundlePrice: data.bundlePrice,
+          buySize: data.buySize, giftSku: data.giftSku, giftSize: data.giftSize,
           created: !updated.rowCount,
         })]
     );
 
     const saved = await client.query(
-      `SELECT promo.id, promo.product_sku, product.name AS product_name,
-              promo.location_id, loc.name AS location_name,
-              promo.kind, promo.buy_qty, promo.get_qty, promo.bundle_price,
-              promo.active, promo.starts_at, promo.ends_at, promo.note, promo.updated_at
+      `SELECT promo.*, product.name AS product_name, loc.name AS location_name
          FROM bms_product_promotions promo
          LEFT JOIN bms_products product
            ON product.tenant_id = promo.tenant_id AND product.sku = promo.product_sku

@@ -37,7 +37,7 @@ export const POS_SCAN_QUERY = `
       sku size productName receiptName baseQty packCode unitName packPrice basePrice available
       stockTracked serialTracked scaleBarcode imageUrl
       priceTiers { minQty scope size unitPrice discountPct }
-      promotion { kind buyQty getQty bundlePrice }
+      promotion { kind buyQty getQty bundlePrice id buySku buySize giftSku giftSize }
       modifiers { code name priceDelta groupCode groupName selectionType minSelect maxSelect defaultSelected }
       packs { code unitName baseQty price }
     }
@@ -187,7 +187,8 @@ export type PosScanHit = {
   scaleBarcode: string | null;
   imageUrl: string | null;
   priceTiers: Array<{ minQty: number; scope: string | null; size: string | null; unitPrice: number | null; discountPct: number | null }>;
-  promotion: { kind: string; buyQty: number; getQty: number | null; bundlePrice: number | null } | null;
+  promotion: { kind: string; buyQty: number; getQty: number | null; bundlePrice: number | null;
+    id?: string | null; buySku?: string | null; buySize?: string | null; giftSku?: string | null; giftSize?: string | null } | null;
   modifiers: Array<{ code: string; name: string; priceDelta: number; groupCode: string; groupName: string; selectionType: string; minSelect: number; maxSelect: number | null; defaultSelected: boolean }>;
   packs: Array<{ code: string; unitName: string; baseQty: number; price: number }>;
 };

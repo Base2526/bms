@@ -849,6 +849,11 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosPromotion {
+    id: ID
+    buySku: String
+    buySize: String
+    giftSku: String
+    giftSize: String
     kind: String!
     buyQty: Int!
     getQty: Int

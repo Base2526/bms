@@ -1,7 +1,7 @@
 // =============================================================
 // BMS — ราคาตามจำนวน (8.1)
 // -------------------------------------------------------------
-// ไฟล์นี้ตั้งใจไม่ import อะไรเลย (เหมือน loyaltyMath.ts / barcode.ts)
+// Pure pricing only; the basket gift engine is shared with POS previews.
 //
 // เหตุผลเดียวกับ composeDiscounts: จอ POS คิดราคาบรรทัดเพื่อโชว์ยอดให้ลูกค้าเห็น
 // ก่อนรับเงิน แล้ว createOrder คิดใหม่อีกครั้งตอน commit · ถ้าสองทางได้เลขต่างกัน
@@ -10,6 +10,8 @@
 //
 // จอไม่ได้ "ตัดสิน" ราคา — server ตัดสินเสมอตอน commit · จอแค่พรีวิวด้วยกฎเดียวกัน
 // =============================================================
+
+import { crossSkuGiftPricing, normalizeCrossSkuPromotion, type CrossSkuPromotion, type GiftSaleEvidence } from "@pos-core/crossSkuPromotion";
 
 export type PriceTier = {
   /** ซื้อครบกี่หน่วยฐานถึงได้ราคานี้ */
@@ -27,6 +29,7 @@ export type PricingSnapshot = {
   promotion: Promotion | null;
   /** Sale-time surcharge per displayed menu unit; added after tier/promotion pricing. */
   modifierUnitPrice: number;
+  crossSkuGifts?: GiftSaleEvidence[];
 };
 
 /**
@@ -81,7 +84,7 @@ export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
   const promo = record.promotion && typeof record.promotion === "object"
     ? record.promotion as Record<string, unknown>
     : null;
-  const promotion: Promotion | null = promo?.kind === "BUY_X_GET_Y"
+  const promotion: Promotion | null = promo?.kind === "BUY_A_GET_B" ? normalizeCrossSkuPromotion(promo) : promo?.kind === "BUY_X_GET_Y"
     && Number.isInteger(Number(promo.buyQty)) && Number(promo.buyQty) >= 1
     && Number.isInteger(Number(promo.getQty)) && Number(promo.getQty) >= 1
       ? { kind: "BUY_X_GET_Y", buyQty: Number(promo.buyQty), getQty: Number(promo.getQty) }
@@ -94,7 +97,12 @@ export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
   const modifierUnitPrice = Number.isFinite(rawModifierUnitPrice) && rawModifierUnitPrice >= 0
     ? rawModifierUnitPrice
     : 0;
-  return { priceTiers: canonicalPriceTiers(priceTiers), promotion, modifierUnitPrice };
+  const crossSkuGifts = Array.isArray(record.crossSkuGifts) ? record.crossSkuGifts.flatMap((e: any) => {
+    const rule = normalizeCrossSkuPromotion(e?.rule);
+    return rule && Number.isSafeInteger(e.awardedQty) && e.awardedQty >= 0 ? [{ rule, awardedQty: e.awardedQty }] : [];
+  }) : [];
+  return { priceTiers: canonicalPriceTiers(priceTiers), promotion, modifierUnitPrice,
+    ...(crossSkuGifts.length ? { crossSkuGifts } : {}) };
 }
 
 export type RemainingPricingLine = {
@@ -169,6 +177,10 @@ export function priceRemainingLines(
     const amount = round2(baseAmount + snapshot.modifierUnitPrice * line.remainingPackQty);
     return { id: line.id, remainingPackQty: line.remainingPackQty, amount, shelfAmount };
   });
+  const giftRules = remaining.flatMap((l) => normalizePricingSnapshot(l.pricingSnapshot).crossSkuGifts?.map((e) => e.rule) ?? []);
+  const gifts = crossSkuGiftPricing(remaining.map((l) => ({ sku: l.sku, size: l.size,
+    qty: l.remainingBaseQty, unitPrice: l.receiptUnitPrice, eligible: l.packUnitPrice == null })), giftRules);
+  priced.forEach((l, index) => { l.amount = round2(Math.max(0, l.amount - gifts.discounts[index])); });
   const pricingSubtotal = round2(priced.reduce((sum, line) => sum + line.amount, 0));
   const shelfSubtotal = round2(priced.reduce((sum, line) => sum + line.shelfAmount, 0));
   return {
@@ -306,6 +318,7 @@ export function priceLinesByQty<T extends { sku: string; size?: string; qty: num
 // =============================================================
 
 export type Promotion =
+  | CrossSkuPromotion
   | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
   | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number };
 
@@ -359,7 +372,7 @@ export type PromotionOutcome = {
  */
 export function applyPromotion(basePrice: number, qty: number, promo: Promotion | null): PromotionOutcome {
   const full = round2(Math.max(0, basePrice) * Math.max(0, qty));
-  if (!promo || qty <= 0 || basePrice < 0) return { amount: full, freeQty: 0, saved: 0 };
+  if (!promo || promo.kind === "BUY_A_GET_B" || qty <= 0 || basePrice < 0) return { amount: full, freeQty: 0, saved: 0 };
 
   if (promo.kind === "BUY_X_GET_Y") {
     const groupSize = promo.buyQty + promo.getQty;
