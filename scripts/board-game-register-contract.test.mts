@@ -323,7 +323,8 @@ test("merged tables keep every party's games visible without letting a stale ses
     /Promise\.all\(ids\.map[\s\S]{0,1200}setSharedSessionDetails/,
     "a merged seating must load every underlying session instead of showing only the selected party",
   );
-  assert.match(panel, /seatingLoans\.map\(/, "the games tab must render the merged seating's loans");
+  assert.match(panel, /seatingLoans\.filter\(\(\{ loan \}\) => !returnLoanId \|\| loan\.id === returnLoanId\)\.map\(/,
+    "the games tab renders all merged seating loans unless the operator selected a return loan");
   assert.match(panel, /`เดิม \$\{detail\.originTableCode\}`/,
     "party selectors must identify the original table");
   assert.match(panel, /` · \$\{people\} คน · \$\{games\} เกม`/,

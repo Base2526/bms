@@ -3,7 +3,9 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ReloadOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { useI18n } from "@/lib/i18nContext";
+import ProductDetailsModal from "./ProductDetailsModal";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
 import {
@@ -404,6 +406,7 @@ export default function DesktopPosRenderer() {
 }
 
 function DesktopPosContent() {
+  const { t } = useI18n();
   const receiptPrinter = useReceiptPrinter();
   const router = useRouter();
   const { operator: rememberedOperator, rememberOperator, clearOperator } = usePosOperatorSession();
@@ -431,6 +434,7 @@ function DesktopPosContent() {
   const [catalogError, setCatalogError] = useState("");
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
+  const [inspectedProduct, setInspectedProduct] = useState<{ code: string; size?: string; packCode?: string } | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
   // the retail cart so collecting one group never consumes or discards a sale in progress.
@@ -2141,6 +2145,8 @@ function DesktopPosContent() {
                   <span className={styles.barcode}>▥</span>
                   <input autoFocus value={scanCode} onChange={(event) => setScanCode(event.target.value)} placeholder="ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter" />
                   <kbd>F12</kbd>
+                  <button type="button" className={styles.scanInfo} title={t("admin_board_game.product_details")} aria-label={t("admin_board_game.product_details")}
+                    disabled={!scanCode.trim() || busy} onClick={() => setInspectedProduct({ code: scanCode.trim() })}><InfoCircleOutlined /></button>
                   <button disabled={!scanCode.trim() || busy || Boolean(addingProductKey)}>เพิ่ม</button>
                 </form>
                 <div className={styles.catalogHeader}>
@@ -2172,8 +2178,8 @@ function DesktopPosContent() {
                         ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
                         : "พร้อมขาย";
                     return (
+                    <div key={item.sku} className={styles.productCardWrap}>
                     <button
-                      key={item.sku}
                       className={styles.productCard}
                       disabled={!sellable || busy}
                       aria-busy={addingProductKey === addingKey}
@@ -2189,6 +2195,9 @@ function DesktopPosContent() {
                         </span>
                       </div>
                     </button>
+                    <button type="button" className={styles.productInfo} title={t("admin_board_game.product_details")} aria-label={t("admin_board_game.product_details")}
+                      disabled={busy} onClick={() => setInspectedProduct({ code: item.sku, size: selectedVariant?.size, packCode: "BASE" })}><InfoCircleOutlined /></button>
+                    </div>
                     );
                   })}
                   {!catalog.length && catalogLoading ? (
@@ -2388,6 +2397,7 @@ function DesktopPosContent() {
           </section>
         </div>
       ) : null}
+      {inspectedProduct && <ProductDetailsModal token={token} target={inspectedProduct} onClose={() => setInspectedProduct(null)} />}
       {!hasDesktopPosBridge() ? <div className={styles.browserBadge}>Browser preview · Electron จะเก็บ device token ใน OS keychain</div> : null}
     </main>
   );

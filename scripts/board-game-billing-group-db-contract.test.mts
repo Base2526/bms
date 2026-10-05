@@ -40,7 +40,9 @@ import {
   openBoardGameSession,
   removeBoardGameGroupItem,
 } from "../apps/web/lib/bms/boardGameCafe.ts";
-import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
+import { recordPosSale, previewBoardGamePosPricing } from "../apps/web/lib/bms/pos.ts";
+import { getMember, updateLoyaltySettings } from "../apps/web/lib/bms/membership.ts";
+import { customerOrders, customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
 
 const TAG = "bg-group-test";
 const SIZE = "BASE";
@@ -945,6 +947,78 @@ test("one open group can detach to a free table while the other stays", async ()
   );
 });
 
+for (const scenario of [
+  { name: "time only", snacks: 0, checkoutMember: true, enabled: true, min: 0, rate: 1, expected: 60, block: null },
+  { name: "time and snacks", snacks: 2, checkoutMember: true, enabled: true, min: 0, rate: 1, expected: 110, block: null },
+  { name: "participant membership alone", snacks: 2, checkoutMember: false, enabled: true, min: 0, rate: 1, expected: 0, block: null },
+  { name: "disabled programme", snacks: 2, checkoutMember: true, enabled: false, min: 0, rate: 1, expected: 0, block: "PROGRAM_DISABLED" },
+  { name: "below minimum spend", snacks: 2, checkoutMember: true, enabled: true, min: 200, rate: 1, expected: 0, block: "BELOW_MIN_SPEND" },
+  { name: "fractional earn rounds down", snacks: 0, checkoutMember: true, enabled: true, min: 0, rate: 0.01, expected: 0, block: "RATE_TOO_LOW" },
+]) {
+  test(`board-game loyalty: ${scenario.name}; preview, payment, history and replay agree`, async () => {
+    await updateLoyaltySettings(tenantId, {
+      enabled: scenario.enabled, earnMode: "SPEND", earnPointsPerBaht: scenario.rate,
+      earnMinSpend: scenario.min, earnBase: "AFTER_DISCOUNT",
+    });
+    const memberId = (await query(`INSERT INTO bms_customers(tenant_id,name,member_no)
+      VALUES($1,'FAKE loyalty player',$2) RETURNING id`, [tenantId, key("member")])).rows[0].id;
+    const tableId = (await query(`INSERT INTO bms_board_game_tables(tenant_id,location_id,area_id,code,name,seats)
+      VALUES($1,$2,$3,$4,'FAKE loyalty table',2) RETURNING id`, [tenantId, locationId, areaId, `FAKE-L${++seq}`])).rows[0].id;
+    const session = await openBoardGameSession(tenantId, {
+      idempotencyKey: key("loyalty-open"), locationId, tableId, billingMode: "OPEN_ENDED",
+      startedAt: new Date(Date.now() - 5 * 60_000), posDeviceId: deviceId, posShiftId: shiftId,
+      participants: [{ rateId, customerId: memberId, displayName: "FAKE member player", billingGroupNo: 1 }],
+    }, staffId);
+    const [group] = await groupRows(session.id);
+    if (scenario.snacks) await addSnack(group.id, scenario.snacks);
+    await closeBoardGameBillingGroupForBilling(tenantId, group.id, { idempotencyKey: key("loyalty-close") }, staffId);
+    const customerId = scenario.checkoutMember ? memberId : null;
+    const preview = await previewBoardGamePosPricing({
+      tenantId, locationId, deviceId, shiftId, actorUserId: staffId,
+      billingGroupId: group.id, lines: [], customerId,
+    });
+    assert.equal(preview.status, "READY", JSON.stringify(preview));
+    assert.equal(preview.netTotal, 60 + scenario.snacks * 25);
+    assert.equal(preview.pointsWillEarn, scenario.checkoutMember ? scenario.expected : null);
+    assert.equal(preview.pointsEarnBlock, scenario.block);
+    assert.equal((await getMember(tenantId, memberId))?.pointsBalance, 0, "preview must not award points");
+    const input = {
+      tenantId, deviceId, shiftId, cashierUserId: staffId, idempotencyKey: key("loyalty-pay"),
+      boardGameBillingGroupId: group.id, customerId, lines: [],
+      payments: [{ method: "CASH" as const, amount: preview.netTotal! }],
+    };
+    const sale = await recordPosSale(input);
+    assert.equal(sale.status, "SOLD", JSON.stringify(sale));
+    if (sale.status !== "SOLD") return;
+    assert.equal((await getMember(tenantId, memberId))?.pointsBalance, scenario.expected);
+    const order = (await query(`SELECT customer_id,total_amount FROM bms_orders WHERE tenant_id=$1 AND id=$2`, [tenantId, sale.orderId])).rows[0];
+    assert.equal(order.customer_id, customerId);
+    assert.equal(Number(order.total_amount), preview.netTotal);
+    const history = await customerOrders(tenantId, memberId);
+    assert.equal(history.some((row) => row.id === sale.orderId), scenario.checkoutMember);
+    const detail = await customerOrderDetail(tenantId, memberId, sale.orderId);
+    if (scenario.checkoutMember) {
+      assert.ok(detail);
+      assert.equal(detail.lines.filter((line: any) => line.kind === "PRODUCT").length, scenario.snacks ? 1 : 0);
+      assert.ok(detail.lines.some((line: any) => line.kind === "SERVICE" && line.label && line.sku === null));
+      if (scenario.snacks) {
+        assert.ok(detail.lines.some((line: any) => line.sku === SNACK && line.qty === scenario.snacks));
+      }
+      assert.equal(detail.points.length, scenario.expected > 0 ? 1 : 0);
+      if (scenario.expected > 0) assert.deepEqual(detail.points[0], { kind: "EARN", points: scenario.expected });
+    } else assert.equal(detail, null, "participant identity cannot read a guest bill as their purchase");
+    assert.equal(await customerOrderDetail("00000000-0000-4000-8000-000000000000", memberId, sale.orderId), null);
+    assert.equal(await customerOrderDetail(tenantId, "00000000-0000-4000-8000-000000000000", sale.orderId), null);
+    const replay = await recordPosSale(input);
+    assert.equal(replay.status, "SOLD", JSON.stringify(replay));
+    assert.equal((await getMember(tenantId, memberId))?.pointsBalance, scenario.expected, "a retry must not earn again");
+    const ledger = (await query(`SELECT count(*)::int AS n, COALESCE(sum(points),0)::int AS points
+      FROM bms_loyalty_ledger WHERE tenant_id=$1 AND order_id=$2 AND kind='EARN'`, [tenantId, sale.orderId])).rows[0];
+    assert.equal(ledger.n, scenario.expected > 0 ? 1 : 0);
+    assert.equal(ledger.points, scenario.expected);
+  });
+}
+
 test("the session's own money columns stay untouched history", async () => {
   // `9.89` ย้ายเงินไปที่กลุ่มทั้งหมด · ถ้ามีโค้ดไหนยังเขียนคอลัมน์เดิมอยู่ สองแถวจะเริ่ม
   // ตอบไม่ตรงกันว่าโต๊ะนี้เป็นหนี้เท่าไร ซึ่งเป็นสิ่งที่ไล่ต้นเหตุได้ยากที่สุด
@@ -975,6 +1049,7 @@ test("teardown: the throwaway cafe leaves nothing behind", async () => {
     "bms_board_game_session_participants",
     "bms_board_game_billing_groups",
     "bms_payments",
+    "bms_loyalty_ledger",
     "bms_order_items",
     "bms_order_discounts",
     "bms_tax_documents",
@@ -995,6 +1070,7 @@ test("teardown: the throwaway cafe leaves nothing behind", async () => {
     "bms_inventory",
     "bms_products",
     "bms_customers",
+    "bms_loyalty_settings",
     "bms_store_profile",
     "bms_locations",
     "bms_audit_log",

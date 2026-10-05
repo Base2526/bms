@@ -1069,6 +1069,13 @@ count and oldest unpublished lag through a narrow read function used by System H
 [ADR 001](decisions/001-transactional-realtime-invalidation.md)
 and the [realtime production audit](realtime-production-audit.md).
 
+## Board-game catalogue images (`10.42`)
+
+`bms_board_game_titles.image_file_id` is a nullable FK to `files(id)` with `ON DELETE SET NULL`.
+The server uploads normalized public artwork owned by the title's tenant. All physical copies
+share that title image. Copy codes, loans, inventory, rates and settlement schemas are unchanged.
+Reads tolerate pre-migration databases; image mutations fail visibly until `10.42` is applied.
+
 ## Emergency Offline evidence and board-game receipt snapshots (`10.5`–`10.7`)
 
 - `10.5` adds `bms_orders.pos_offline_tendered_at` (when the phone took the cash) and

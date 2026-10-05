@@ -1262,6 +1262,7 @@ export const typeDefs = /* GraphQL */ `
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0, enrolledLocationId: ID): [BmsCustomer!]!
     bmsCustomerLocations: [BmsLocation!]!
     bmsCustomer(id: ID!): BmsCustomer
+    bmsCustomerOrderDetail(customerId: ID!, orderId: ID!): BmsCustomerOrderDetail
 
     # ===== BMS Customer 360 (Inbox right panel) =====
     # bmsCustomer360 = eager read (summary/contact/stats/recentOrders/products/draftOrder/notes)
@@ -2254,6 +2255,25 @@ export const typeDefs = /* GraphQL */ `
   type BmsCustomerIdentity {
     channel: String!
     external_ref: String!
+  }
+
+  type BmsCustomerOrderDetail {
+    id: ID!
+    lines: [BmsCustomerPurchaseLine!]!
+    points: [BmsCustomerOrderPoints!]!
+  }
+
+  type BmsCustomerPurchaseLine {
+    kind: String!
+    label: String!
+    sku: String
+    size: String
+    qty: Float!
+  }
+
+  type BmsCustomerOrderPoints {
+    kind: String!
+    points: Int!
   }
 
   type BmsCustomer {

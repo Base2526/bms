@@ -880,6 +880,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   }
 
   type BmsPosScanResult {
+    barcode: String
     sku: String!
     productName: String!
     receiptName: String!
@@ -2478,6 +2479,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
   type BmsPosBoardGameTitle {
     id: ID!
     title: String!
+    imageUrl: String
     minPlayers: Int
     maxPlayers: Int
     typicalMinutes: Int

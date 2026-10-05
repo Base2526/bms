@@ -35,7 +35,7 @@ export const POS_SCAN_QUERY = `
   query MobilePosScan($code: String!, $size: String, $packCode: String, $surface: String = "RETAIL_POS") {
     bmsPosScan(code: $code, size: $size, packCode: $packCode, surface: $surface, withImage: true) {
       sku size productName receiptName baseQty packCode unitName packPrice basePrice available
-      stockTracked serialTracked scaleBarcode imageUrl
+      stockTracked serialTracked scaleBarcode imageUrl barcode
       priceTiers { minQty scope size unitPrice discountPct }
       promotion { kind buyQty getQty bundlePrice id buySku buySize giftSku giftSize }
       modifiers { code name priceDelta groupCode groupName selectionType minSelect maxSelect defaultSelected }
@@ -171,6 +171,7 @@ export type PosCatalogItem = {
 };
 
 export type PosScanHit = {
+  barcode?: string | null;
   sku: string;
   size: string;
   productName: string;

@@ -836,11 +836,22 @@ type BmsCustomerNote360 {
   id: ID!
 }
 
+type BmsCustomerOrderDetail {
+  id: ID!
+  lines: [BmsCustomerPurchaseLine!]!
+  points: [BmsCustomerOrderPoints!]!
+}
+
 type BmsCustomerOrderItem360 {
   qty: Int!
   size: String!
   sku: String!
   unitPrice: Float!
+}
+
+type BmsCustomerOrderPoints {
+  kind: String!
+  points: Int!
 }
 
 type BmsCustomerProductStat {
@@ -874,6 +885,14 @@ type BmsCustomerProfile360 {
   tags: [String!]!
   timezone: String
   totalSpent: Float!
+}
+
+type BmsCustomerPurchaseLine {
+  kind: String!
+  label: String!
+  qty: Float!
+  size: String
+  sku: String
 }
 
 type BmsCustomerRecentOrder {
@@ -3282,6 +3301,7 @@ type BmsPosBoardGameTitle {
   copies: [BmsPosBoardGameCopy!]!
   difficulty: String
   id: ID!
+  imageUrl: String
   language: String
   maxPlayers: Int
   minPlayers: Int
@@ -5109,6 +5129,7 @@ type BmsPosSaleResult {
 
 type BmsPosScanResult {
   available: Float!
+  barcode: String
   basePrice: Float!
   baseQty: Float!
   imageUrl: String
@@ -7970,6 +7991,7 @@ type Query {
   bmsCustomer360(channel: String, conversationId: ID, customerId: ID, customerRef: String): BmsCustomer360
   bmsCustomerInsights(customerId: ID!): BmsCustomerInsights
   bmsCustomerLocations: [BmsLocation!]!
+  bmsCustomerOrderDetail(customerId: ID!, orderId: ID!): BmsCustomerOrderDetail
   bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
   bmsCustomers(enrolledLocationId: ID, limit: Int = 50, offset: Int = 0, search: String): [BmsCustomer!]!
   bmsDashboard: BmsDashboard!

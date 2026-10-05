@@ -39,7 +39,8 @@ import { cancelOrder, cancelOrderInTx, createOrder, releaseExpiredOrders } from 
 import { getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { RESERVATION_LOST } from "../apps/web/lib/bms/restaurantPosErrors.ts";
-import { listRecentPosSales, resolvePosScan } from "../apps/web/lib/bms/pos.ts";
+import { listRecentPosSales, resolvePosScan, previewRestaurantPosPricing } from "../apps/web/lib/bms/pos.ts";
+import { customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
 import { setMenuTemporarilyUnavailable } from "../apps/web/lib/bms/menuAvailability.ts";
 import { acceptRestaurantQrSubmission } from "../apps/web/lib/bms/restaurantPos.ts";
 import {
@@ -1239,6 +1240,38 @@ test("เมนูเดิมสั่งซ้ำคนละรอบ ยอ�
     tenantId, locationId, checkId: check.id, actorUserId: cashierId,
     reason: "ปิดหลังเทส", approvedByUserId: waiterId,
   });
+});
+
+test("restaurant points quote follows discounts and saved service charges, matching payment and customer history", async () => {
+  const check = await openSentMemberCheck(tables[0].id);
+  const threshold = check.amountDue;
+  await query(`UPDATE bms_loyalty_settings SET earn_min_spend=$2, max_discount_pct=100 WHERE tenant_id=$1`, [tenantId, threshold]);
+  try {
+    const discounted = await previewRestaurantPosPricing({ tenantId, locationId, checkId: check.id, customerId: memberId, manualDiscount: 5 });
+    assert.equal(discounted.pointsWillEarn, 0);
+    assert.equal(discounted.pointsEarnBlock, "BELOW_MIN_SPEND");
+    const orderId = (await query(`SELECT current_order_id FROM bms_restaurant_checks WHERE tenant_id=$1 AND id=$2`, [tenantId, check.id])).rows[0].current_order_id;
+    await query(`INSERT INTO bms_order_extra_lines (tenant_id,order_id,label,qty,unit_amount,vat_category)
+      VALUES ($1,$2,'FAKE service',1,10,'V')`, [tenantId, orderId]);
+    await query(`UPDATE bms_orders SET total_amount=total_amount+10 WHERE tenant_id=$1 AND id=$2`, [tenantId, orderId]);
+    await query(`UPDATE bms_restaurant_checks SET amount_due=amount_due+10 WHERE tenant_id=$1 AND id=$2`, [tenantId, check.id]);
+    const withService = await previewRestaurantPosPricing({ tenantId, locationId, checkId: check.id, customerId: memberId, manualDiscount: 5 });
+    assert.equal(withService.pointsWillEarn, check.amountDue + 5);
+    assert.equal(withService.pointsEarnBlock, null);
+    assert.equal(withService.manualDiscount, 5, "service charge is not discounted");
+    const preview = await previewRestaurantPosPricing({ tenantId, locationId, checkId: check.id, customerId: memberId });
+    const result = await settleRestaurantCheck({ tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id,
+      actorUserId: cashierId, customerId: memberId, payments: [{ method: "CASH", amount: preview.amountDue! }] });
+    assert.equal(result.status, "SOLD");
+    if (result.status !== "SOLD") return;
+    assert.equal(result.pointsEarned, preview.pointsWillEarn);
+    const detail = await customerOrderDetail(tenantId, memberId, result.orderId);
+    assert.ok(detail.lines.some((line: any) => line.sku === DRINK));
+    assert.ok(detail.lines.some((line: any) => line.kind === "SERVICE" && line.label === "FAKE service"));
+    assert.deepEqual(detail.points, [{ kind: "EARN", points: result.pointsEarned }]);
+  } finally {
+    await query(`UPDATE bms_loyalty_settings SET earn_min_spend=0 WHERE tenant_id=$1`, [tenantId]);
+  }
 });
 
 test("ปิดบิลโต๊ะพร้อมสมาชิกต้องประทับ customer และให้แต้มใน transaction เดียวกัน", async () => {

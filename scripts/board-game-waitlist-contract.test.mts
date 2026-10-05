@@ -249,7 +249,7 @@ test("queue history is removed before sessions during fixture and test-tenant cl
 test("the DB suite exercises concurrency, rollback and the atomic link", () => {
   assert.match(dbContract, /Promise\.all\(\[add\(2\), add\(3\), add\(4\), add\(5\)\]\)/);
   assert.match(dbContract, /isIdempotencyConflictError/);
-  assert.match(dbContract, /รองรับจำนวนผู้เล่นจริงไม่พอ/);
+  assert.match(dbContract, /กรุณายืนยันการใช้โต๊ะเกินความจุ/);
   assert.match(dbContract, /queue_status: "SEATED", session_status: "OPEN"/);
   assert.match(dbContract, /node scripts\/run-contract-tests\.mjs db board-game-waitlist/);
 });

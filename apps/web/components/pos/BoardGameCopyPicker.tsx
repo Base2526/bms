@@ -6,7 +6,7 @@ import { SearchOutlined } from "@ant-design/icons";
 import { gameCopyOptions, matchesGameSearch, normalizeGameSearch, type SearchableGame } from "@/lib/pos/boardGameLibrarySearch";
 import styles from "./BoardGameCopyPicker.module.css";
 
-export default function BoardGameCopyPicker({ titles, value, onChange, disabled, placeholder, emptyText, statusLabel }: {
+export default function BoardGameCopyPicker({ titles, value, onChange, disabled, placeholder, emptyText, statusLabel, selectableStatus = "AVAILABLE" }: {
   titles: SearchableGame[];
   value: string;
   onChange: (id: string) => void;
@@ -14,9 +14,10 @@ export default function BoardGameCopyPicker({ titles, value, onChange, disabled,
   placeholder: string;
   emptyText: string;
   statusLabel: (status: string) => string;
+  selectableStatus?: string;
 }) {
   const [search, setSearch] = useState("");
-  const options = useMemo(() => gameCopyOptions(titles), [titles]);
+  const options = useMemo(() => gameCopyOptions(titles, selectableStatus), [titles, selectableStatus]);
   return <Select
     className={styles.picker}
     aria-label={placeholder}
@@ -49,8 +50,8 @@ export default function BoardGameCopyPicker({ titles, value, onChange, disabled,
       }
     }}
     optionRender={({ data }) => <div className={styles.option} title={`${data.label} · ${statusLabel(data.status)}`}>
-      <strong>{data.title}</strong>
-      <span>{data.copyCode} · {statusLabel(data.status)}</span>
+      {data.imageUrl && <img src={data.imageUrl} alt="" />}
+      <div><strong>{data.title}</strong><span>{data.copyCode} · {statusLabel(data.status)}</span></div>
     </div>}
   />;
 }

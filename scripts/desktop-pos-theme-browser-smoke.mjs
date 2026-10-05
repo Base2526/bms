@@ -13,7 +13,7 @@ const session = {
   id: "FAKE-session", status: "OPEN", billingMode: "HOURLY", guestCount: 2, startedAt,
   tableId: "FAKE-table", originTableId: "FAKE-table", originTableCode: "T01", originTableName: "FAKE Table",
   seatingId: "FAKE-seating", expectedEndAt: null, nextAlertAt: null, alertStatus: "NONE", amountDue: 100,
-  participants: [], games: [], identityHolds: [],
+  participants: [], games: [{ id: 'FAKE-loan', copyId: 'FAKE-unavailable', copyCode: 'FAKE-AZ-02', title: 'FAKE Azul', status: 'CHECKED_OUT', returnedAt: null }], identityHolds: [],
   billingGroups: [
     { id: "FAKE-open", groupNo: 1, status: "OPEN", amountDue: 0, tabAmount: 0, chargeSnapshot: [], tabItems: [] },
     { id: "FAKE-closing", groupNo: 2, status: "CLOSING", amountDue: 100, tabAmount: 0, chargeSnapshot: [], tabItems: [] },
@@ -25,13 +25,15 @@ const workspace = {
     blocked: false, openSession: { ...session, sessionIds: [session.id], sessionCount: 1, billingGroupCount: 2, awaitingPaymentCount: 1 },
   }] },
   rates: [], serviceCalls: [],
-  library: [{ id: "FAKE-title", title: "FAKE Azul", copies: [
+  library: [{ id: "FAKE-title", title: "FAKE Azul", imageUrl: "/api/files/FAKE-image", copies: [
     { id: "FAKE-copy", copyCode: "FAKE-AZ-01", status: "AVAILABLE" },
     { id: "FAKE-unavailable", copyCode: "FAKE-AZ-02", status: "IN_USE" },
   ] }],
   waitlist: { entries: [], tables: [], waitingCount: 0, calledCount: 0, waitingGuests: 0 },
 };
 const member = { customerId: "FAKE-member", name: "FAKE Member", phone: "0000000000", memberNo: "FAKE-001", pointsBalance: 10, pointsUsable: 10 };
+const product = { sku: "FAKE-product", name: "FAKE Product", price: 100, availability: "AVAILABLE", availableTotal: 10,
+  imageUrl: "/api/files/FAKE-image", availableSizes: [{ size: "M", price: 100, available: 10 }] };
 const bootstrap = {
   device: { id: "FAKE-device", code: "POS-01", name: "FAKE register", scanner: { mode: "OFF" } },
   location: { id: "FAKE-location", name: "FAKE Board Game Cafe", branchCode: "MAIN" },
@@ -79,13 +81,19 @@ try {
     const unexpected = [];
     await context.route("**/api/**", async (route) => {
       const path = new URL(route.request().url()).pathname;
+      if (path === "/api/files/FAKE-image") return route.fulfill({ contentType: "image/png", body: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==", "base64") });
       const body = route.request().postDataJSON();
       if (path === "/api/graphql") {
         const query = body?.query || "";
         let data = {};
         if (query.includes("query PosBootstrap")) data = { bmsPosSession: bootstrap };
         else if (query.includes("mutation VerifyPosCashier")) data = { bmsPosVerifyCashier: cashier };
-        else if (query.includes("query MobilePosCatalog")) data = { bmsPosCatalogSearch: { items: [] } };
+        else if (query.includes("query MobilePosCatalog")) data = { bmsPosCatalogSearch: { items: [product] } };
+        else if (query.includes("query MobilePosScan")) data = { bmsPosScan: {
+          sku: product.sku, productName: product.name, size: "M", unitName: "ชิ้น", barcode: "8850000000011", packPrice: 100,
+          baseQty: 1, packCode: "BASE", basePrice: 100, available: 10, stockTracked: true, serialTracked: false,
+          imageUrl: product.imageUrl, priceTiers: [], promotion: null, modifiers: [], packs: [],
+        } };
         else if (query.includes("query DesktopPosBoardGameCheckout")) data = { bmsPosBoardGameCheckout: {
           id: "FAKE-closing", sessionId: session.id, groupNo: 2, sessionGroupCount: 2,
           tableCode: "T01", tableName: "FAKE Table", billingMode: "HOURLY", startedAt,
@@ -96,7 +104,9 @@ try {
         else if (query.includes("query DesktopMemberSearch")) data = { bmsPosMemberSearch: { members: body.variables.q.includes("zzz") ? [] : [member] } };
         else if (query.includes("query DesktopBenefitsPreview")) data = { bmsPosMemberPreview: {
           status: "READY", netTotal: 100, amountDue: 100, totalDiscount: 0, tierDiscount: 0,
-          couponDiscount: 0, pointsDiscount: 0, pointsUsed: 0, loyaltyEnabled: true,
+          couponDiscount: 0, pointsDiscount: 0, pointsUsed: 0, loyaltyEnabled: body.variables.input.couponCode !== "PROGRAM_DISABLED",
+          pointsWillEarn: body.variables.input.customerId ? 0 : null,
+          pointsEarnBlock: body.variables.input.customerId ? body.variables.input.couponCode || "BELOW_MIN_SPEND" : null,
           member: body.variables.input.customerId ? member : null,
         } };
         else if (query.includes("mutation")) unexpected.push(query);
@@ -118,9 +128,35 @@ try {
     await page.goto(`${baseUrl}/pos/app`, { waitUntil: "domcontentloaded", timeout: 120_000 });
     await page.getByLabel("PIN พนักงาน 4–8 หลัก").fill("1234");
     await page.getByRole("button", { name: "เข้าสู่ระบบ", exact: true }).click();
+    await page.getByRole("button", { name: "ขาย", exact: true }).click();
+    await page.getByRole("button", { name: "รายละเอียดสินค้า", exact: true }).last().click();
+    const details = page.getByRole("dialog");
+    await details.getByText("8850000000011", { exact: true }).waitFor();
+    assert.equal(await details.locator("img").evaluate((img) => img.complete && img.naturalWidth > 0), true);
+    await assertLight(details.locator(".ant-modal-content"), `${mode}: product details`);
+    await page.waitForFunction(() => {
+      const modal = document.querySelector('.ant-modal');
+      return modal && !/ant-zoom-(appear|enter|leave)/.test(modal.className);
+    });
+    await page.screenshot({ path: `${output}/${mode}-product-details.png` });
+    await page.setViewportSize({ width: 390, height: 844 });
+    const detailsBounds = await details.boundingBox();
+    assert.ok(detailsBounds.x >= 0 && detailsBounds.x + detailsBounds.width <= 391);
+    await page.screenshot({ path: `${output}/${mode}-product-details-mobile.png` });
+    await details.getByRole("button", { name: "Close", exact: true }).click();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+    await page.getByText("ยังไม่มีสินค้าในบิล", { exact: true }).waitFor();
     await page.getByRole("button", { name: "บอร์ดเกม", exact: true }).click();
     await page.getByRole("button", { name: /FAKE Table/ }).click();
     await page.getByRole("tab", { name: /เกมและบัตร/ }).click();
+    const returnScan = page.getByRole("combobox", { name: "ค้นหาหรือสแกนรหัสกล่องที่ต้องการคืน" });
+    await returnScan.fill("FAKE-AZ-02");
+    await returnScan.press("Enter");
+    await returnScan.press("Enter");
+    assert.equal(await page.getByRole("button", { name: "รับคืน", exact: true }).count(), 1);
+    assert.deepEqual(unexpected, [], "scanning and duplicate Enter never return a copy automatically");
+    await returnScan.press("Escape");
+    await page.locator(".ant-select-dropdown:visible").waitFor({ state: "hidden" });
     const game = page.getByRole("combobox", { name: "ค้นหาชื่อเกม / รหัสกล่อง / สแกนบาร์โค้ด" });
     await game.fill("FAKE");
     const popup = page.locator(".ant-select-dropdown:visible");
@@ -161,6 +197,16 @@ try {
     await screenshot(page, `${mode}-member`);
     await popup.getByText("FAKE Member", { exact: false }).first().click();
     await page.getByText("แต้มคงเหลือ", { exact: false }).waitFor();
+    for (const [block, text] of [
+      ["BELOW_MIN_SPEND", "ยอดบิลยังไม่ถึงขั้นต่ำสำหรับสะสมแต้ม"],
+      ["RATE_TOO_LOW", "ยอดบิลนี้คำนวณตามอัตราของร้านแล้วได้ไม่ถึง 1 แต้ม"],
+      ["NO_VISIT_POINTS", "ร้านตั้งแต้มต่อการซื้อไว้ 0 แต้ม"],
+      ["PROGRAM_DISABLED", "ร้านยังไม่เปิดใช้แต้มสะสม"],
+    ]) {
+      await page.getByRole("textbox", { name: "รหัสคูปอง", exact: true }).fill(block);
+      await page.getByText(text, { exact: true }).waitFor();
+    }
+    await page.screenshot({ path: `${output}/${mode}-zero-points.png` });
     const memberSelect = page.locator(".ant-select").filter({ has: search });
     await memberSelect.hover();
     await memberSelect.locator(".ant-select-clear").click();

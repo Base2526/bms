@@ -45,6 +45,7 @@ import {
   upsertMembershipTier,
 } from "../apps/web/lib/bms/membership.ts";
 import { upsertCoupon } from "../apps/web/lib/bms/coupons.ts";
+import { customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
 import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
 
 const TAG = "pos-loyalty-test";
@@ -244,6 +245,12 @@ test("counter sale: tier + coupon + points on one bill, receipt agrees with the 
   assert.equal(Number(order.rows[0].total_amount), 830);
   assert.equal(order.rows[0].status, "COMPLETED");
   assert.equal(order.rows[0].customer_id, memberId, "บิล POS ต้องผูกลูกค้าแล้ว (เดิมเป็น NULL ทุกใบ)");
+  const detail = await customerOrderDetail(tenantId, memberId, soldOrderId);
+  assert.equal(detail?.lines.length, 1);
+  assert.equal(detail.lines[0].kind, "PRODUCT");
+  assert.equal(detail.lines[0].sku, SKU);
+  assert.equal(detail.lines[0].qty, 10);
+  assert.deepEqual(detail.points.map((entry: any) => [entry.kind, entry.points]).sort(), [["EARN", 830], ["REDEEM", -200]]);
 
   // ใบกำกับอย่างย่อ (ถ้าร้านจด VAT) ต้องคิดฐานจากยอดหลังส่วนลด ไม่ใช่ 1000
   if (sale.vat) {
@@ -327,6 +334,9 @@ test("partial return: half the bill reverses half the points both ways", async (
   assert.equal(ret.pointsReturned, 100, "คืนแต้มที่แลกไปครึ่งหนึ่ง");
   // 950 − 415 + 100 = 635
   assert.equal((await getMember(tenantId, memberId))?.pointsUsable, 635);
+  const detail = await customerOrderDetail(tenantId, memberId, soldOrderId);
+  assert.equal(detail?.lines[0].qty, 10, "purchase history retains the original saved quantity");
+  assert.deepEqual(detail.points.filter((entry: any) => entry.kind === "REVERSE"), [{ kind: "REVERSE", points: -315 }]);
 
   // ยิงคีย์เดิมซ้ำต้องได้ผลเดิมและไม่คิดแต้มใหม่
   const replay = await partiallyReturnPosSale({

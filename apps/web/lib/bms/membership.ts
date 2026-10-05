@@ -617,6 +617,8 @@ export async function previewMemberDiscount(args: {
   couponDiscount?: number;
   /** ส่วนลดมือที่หัวหน้าอนุมัติ — พรีวิวต้องรวมด้วย ไม่งั้นยอดที่จอโชว์ไม่ตรงกับที่ createOrder คิด */
   manualDiscount?: number;
+  /** Saved non-discountable service charges still belong to the order's earn basis. */
+  earnExtraAmount?: number;
 }): Promise<MemberDiscountBreakdown & { member: MemberSummary | null } & MemberPreviewLoyalty> {
   const settings = await getLoyaltySettings(args.tenantId);
   const member = args.customerId ? await getMember(args.tenantId, args.customerId) : null;
@@ -632,7 +634,7 @@ export async function previewMemberDiscount(args: {
   // ต้องใช้ฐานเดียวกับ earnPointsForOrderInTx ตอน commit: total_amount (= netTotal)
   // กับ discount_amount (= totalDiscount) ไม่ใช่ subtotal ดิบ
   const earn = evaluatePointsEarn(settings, {
-    netTotal: breakdown.netTotal,
+    netTotal: Math.round((breakdown.netTotal + Math.max(0, args.earnExtraAmount ?? 0)) * 100) / 100,
     discountAmount: breakdown.totalDiscount,
   });
   // ลูกค้าที่มีแถวใน CRM แต่ยังไม่สมัครสมาชิกไม่ได้แต้ม (earnPointsForOrderInTx

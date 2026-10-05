@@ -25,6 +25,9 @@ import { query } from "../apps/web/lib/db.ts";
 import { createOrder } from "../apps/web/lib/bms/orders.ts";
 import { listPharmacistCounterAuthorizations } from "../apps/web/lib/bms/pharmacy/counterAuthorizations.ts";
 import { DECLARE_FAKE_SALES_SURFACES_SQL } from "./testing/salesSurfaces.mts";
+import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
+import { customerOrderDetail } from "../apps/web/lib/bms/customers.ts";
+import { updateLoyaltySettings, getMember } from "../apps/web/lib/bms/membership.ts";
 
 const TAG = "rxcounter-test";
 const RX_SKU = `FAKE-${TAG}-RX`;      // PRESCRIPTION_REQUIRED, policy APPROVED
@@ -447,6 +450,31 @@ test("บันทึกการจ่ายยาที่เคาน์เ�
 });
 
 
+test("pharmacy POS earns only on a settled member bill; replay and customer history agree", async () => {
+  await updateLoyaltySettings(tenantId, { enabled: true, earnMode: "SPEND", earnPointsPerBaht: 1, earnMinSpend: 0 });
+  const memberId = (await query(`INSERT INTO bms_customers(tenant_id,name,member_no)
+    VALUES($1,'FAKE pharmacy member','FAKE-RX-MEMBER') RETURNING id`, [tenantId])).rows[0].id;
+  const input = { tenantId, deviceId, shiftId, cashierUserId: clerkId, customerId: memberId,
+    idempotencyKey: `${TAG}-member-${process.pid}`, lines: [{ sku: RX_SKU, size: SIZE, packQty: 1 }],
+    payments: [{ method: "CASH" as const, amount: 100 }],
+  };
+  const blocked = await recordPosSale(input);
+  assert.equal(blocked.status, "PHARMACY_PRESCRIPTION_REQUIRED");
+  assert.equal((await getMember(tenantId, memberId))?.pointsBalance, 0);
+  const approved = { ...input, idempotencyKey: `${TAG}-approved-member-${process.pid}`,
+    pharmacistCounterAuthorization: { pharmacistUserId: pharmacistId, note: "FAKE approval" } };
+  const sold = await recordPosSale(approved);
+  assert.equal(sold.status, "SOLD", JSON.stringify(sold));
+  if (sold.status !== "SOLD") return;
+  assert.equal(sold.pointsEarned, 100);
+  const replay = await recordPosSale(approved);
+  assert.equal(replay.status, "SOLD");
+  assert.equal((await getMember(tenantId, memberId))?.pointsBalance, 100);
+  const detail = await customerOrderDetail(tenantId, memberId, sold.orderId);
+  assert.equal(detail.lines[0].sku, RX_SKU);
+  assert.deepEqual(detail.points, [{ kind: "EARN", points: 100 }]);
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`,
@@ -458,6 +486,9 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_pos_pharmacist_authorizations",
     "bms_pharmacy_assessment_events",
     "bms_pharmacy_assessments",
+    "bms_payments",
+    "bms_loyalty_ledger",
+    "bms_tax_documents",
     "bms_order_items",
     "bms_order_discounts",
     // bms_orders.pos_shift_id is NO ACTION, so the bills have to go before the shift they were
@@ -470,6 +501,8 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_stock_movements",
     "bms_inventory",
     "bms_products",
+    "bms_customers",
+    "bms_loyalty_settings",
     "bms_store_profile",
     "bms_locations",
     "bms_audit_log",

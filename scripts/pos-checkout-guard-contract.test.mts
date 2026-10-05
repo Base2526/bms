@@ -54,7 +54,7 @@ test("เงินสดที่รับมาน้อยกว่ายอ�
 test("ปุ่มยืนยัน แถบสรุป และ settle() ต้องใช้ตัวตัดสินเดียวกัน", async () => {
   const page = strip(await read("apps/web/app/(pos)/pos/restaurant/page.tsx"));
   assert.match(page, /const paymentBlock = check == null \? null : checkoutBlockReason\(payments, checkoutDue\)/);
-  assert.match(page, /const checkoutBlock = checkoutOpen && !pricingPreview/);
+  assert.match(page, /const checkoutBlock = checkoutOpen && \(!pricingPreview \|\| pricingDisplayKey !== pricingDisplayRequestKey\)/);
   assert.match(page, /okButtonProps=\{\{ disabled: Boolean\(checkoutBlock\) \}\}/);
   assert.match(page, /if \(checkoutBlock\) \{ message\.error\(checkoutBlock\); return; \}/);
   // สามที่ตัดสินเองจะ drift แล้ววันหนึ่งปุ่มกดได้แต่ settle ปฏิเสธ

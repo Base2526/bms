@@ -9598,7 +9598,8 @@ export default function PosPage() {
 
                   {/* แต้มที่บิลนี้จะได้ ต้องเห็น "ก่อนรับเงิน" ไม่ใช่ไปรู้ตอนใบเสร็จออกจาก
                       เครื่องพิมพ์ · server เป็นคนคิดและเป็นคนบอกเหตุผลเมื่อได้ 0 จอไม่เดาเอง */}
-                  {memberPreview?.pointsWillEarn != null && (
+                  {memberPreview?.pointsWillEarn != null && memberPreview.status === "READY"
+                    && memberPreviewAppliedKey === memberPreviewRequestKey && (
                     <span
                       style={{
                         fontSize: 12,

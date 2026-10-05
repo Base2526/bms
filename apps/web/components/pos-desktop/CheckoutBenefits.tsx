@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Button, Input, InputNumber, Select } from "antd";
 import { posGraphqlRequest } from "@/lib/pos/mobileFlowGraphql";
+import { pointsEarnMessage } from "@/lib/pos/pointsEarnMessage";
 import styles from "./CheckoutBenefits.module.css";
 
 type Member = { customerId: string; name: string; phone: string | null; memberNo: string | null; pointsBalance: number; pointsUsable: number };
@@ -11,7 +12,7 @@ export type BenefitsPreview = {
   netTotal: number | null; amountDue: number | null; totalDiscount: number;
   tierDiscount: number; couponDiscount: number; pointsDiscount: number; pointsUsed: number;
   reservationDepositApplied: number | null;
-  loyaltyEnabled: boolean; pointsWillEarn: number | null; member: Member | null;
+  loyaltyEnabled: boolean; pointsWillEarn: number | null; pointsEarnBlock?: string | null; member: Member | null;
 };
 export const MEMBER_SEARCH = `query DesktopMemberSearch($q: String) {
   bmsPosMemberSearch(q: $q) { members { customerId name phone memberNo pointsBalance pointsUsable } }
@@ -19,7 +20,7 @@ export const MEMBER_SEARCH = `query DesktopMemberSearch($q: String) {
 export const BENEFITS_PREVIEW = `query DesktopBenefitsPreview($input: BmsPosMemberPreviewInput!) {
   bmsPosMemberPreview(input: $input) {
     status reason couponError netTotal amountDue totalDiscount tierDiscount couponDiscount pointsDiscount pointsUsed
-    reservationDepositApplied loyaltyEnabled pointsWillEarn
+    reservationDepositApplied loyaltyEnabled pointsWillEarn pointsEarnBlock
     member { customerId name phone memberNo pointsBalance pointsUsable }
   }
 }`;
@@ -119,7 +120,8 @@ export default function CheckoutBenefits({ benefits, disabled }: { benefits: Ret
         disabled={disabled || !benefits.member || preview?.loyaltyEnabled === false}
         value={benefits.points} onChange={(value) => benefits.setPoints(value ?? 0)} /></label>
     </div>
-    {benefits.member && preview && !preview.loyaltyEnabled ? <div>ร้านยังไม่เปิดใช้แต้มสะสม</div> : null}
+    {benefits.ready && preview && selected && (preview.pointsWillEarn === 0 || !preview.loyaltyEnabled)
+      ? <div role="status">{pointsEarnMessage(preview.loyaltyEnabled ? preview.pointsEarnBlock : "PROGRAM_DISABLED")}</div> : null}
     {benefits.pending ? <div role="status">กำลังตรวจสอบยอดและส่วนลด…</div> : null}
     {benefits.error ? <div role="alert" className={styles.error}>{benefits.error} <Button disabled={disabled} onClick={benefits.retry}>ลองใหม่</Button></div> : null}
     {benefits.ready && preview ? <div className={styles.discounts}>

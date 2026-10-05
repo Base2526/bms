@@ -6,6 +6,8 @@ import {
 import { useState, useMemo } from "react";
 import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import { useVisibleQueryRefresh } from "@/lib/useVisibleQueryRefresh";
+import CustomerOrderDetail from "@/components/customers/CustomerOrderDetail";
 
 const { Text } = Typography;
 
@@ -147,10 +149,12 @@ function CustomersManagement() {
   const [mergeFor, setMergeFor] = useState<Customer | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
 
-  const { data, loading, error, refetch } = useQuery(Q_CUSTOMERS, {
+  const customersQuery = useQuery(Q_CUSTOMERS, {
     variables: { search: search || null, enrolledLocationId },
     fetchPolicy: "cache-and-network",
   });
+  useVisibleQueryRefresh(customersQuery);
+  const { data, loading, error, refetch } = customersQuery;
   const { data: locationData } = useQuery(Q_CUSTOMER_LOCATIONS, { fetchPolicy: "cache-and-network" });
   const onErr = (e: any) => message.error(e?.message || t("admin_customers.action_failed"));
 
@@ -351,7 +355,7 @@ function CustomersManagement() {
         rowKey="id" loading={loading} dataSource={customers} columns={columns}
         scroll={{ x: "max-content" }}
         expandable={{
-          expandedRowRender: (c: Customer) => (
+          expandedRowRender: (c: Customer, _index, _indent, expanded) => expanded ? (
             <CustomerDetail
               c={c}
               onAddAddress={() => openAddAddress(c)}
@@ -361,7 +365,7 @@ function CustomersManagement() {
               reorderingId={reorderingId}
               onReorder={(orderId) => { setReorderingId(orderId); reorder({ variables: { id: orderId } }); }}
             />
-          ),
+          ) : null,
         }}
         pagination={{ pageSize: 20, showTotal: (t) => `Total ${t} customer(s)` }}
       />
@@ -524,6 +528,8 @@ function CustomerDetail({
       <Divider style={{ margin: "8px 0" }} />
       <Text strong>🧾 {t("admin_customers.section_history", { count: c.orders?.length || 0 })}</Text>
       <Table style={{ marginTop: 8 }} rowKey="id" dataSource={c.orders || []} columns={orderCols}
+        expandable={{ expandedRowRender: (order: Order, _index, _indent, expanded) => expanded
+          ? <CustomerOrderDetail customerId={c.id} orderId={order.id} /> : null }}
         size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: t("admin_customers.no_history") }} />
     </div>
   );

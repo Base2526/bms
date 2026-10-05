@@ -437,3 +437,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.gameImage { width: 64px; height: 64px; object-fit: contain; display: flex; align-items: center; justify-content: center; font-size: 24px; }
+.libraryItem { flex-wrap: wrap; gap: 12px; }
+.libraryItem :global(.ant-list-item-meta) { min-width: 200px; }
+.libraryItem :global(.ant-list-item-action) { margin-inline-start: 0; }

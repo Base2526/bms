@@ -18,6 +18,7 @@ import { describeAgo, feedHealth } from '@/lib/pos/orderAlertSound';
 import { copyTextToClipboard } from '@/lib/pos/clipboard';
 import PosDismissibleAlert from '@/components/pos/PosDismissibleAlert';
 import BoardGameCopyPicker from '@/components/pos/BoardGameCopyPicker';
+import { useI18n } from '@/lib/i18nContext';
 import type { PosServiceCallNotice } from '@/components/pos/PosWorkspaceContext';
 import { usePosStartupPreparation } from '@/components/pos/PosStartupPreparation';
 
@@ -92,7 +93,7 @@ type Rate = {
   graceMinutes: number; active: boolean; sortOrder: number;
 };
 type Copy = { id: string; locationId: string; copyCode: string; status: string; conditionNote: string | null };
-type Title = { id: string; title: string; copies: Copy[] };
+type Title = { id: string; title: string; imageUrl?: string | null; copies: Copy[] };
 type ServiceCall = {
   id: string; sessionId: string; tableCode: string; tableName: string;
   requestCode: string; requestNote: string | null; status: 'PENDING' | 'ACKNOWLEDGED';
@@ -424,6 +425,7 @@ function newKey() {
 }
 
 export default function BoardGamePanel({ token, cashierUserId, pin, refreshSignal = 0, onCheckout, onServiceCallsChange }: Props) {
+  const { t } = useI18n();
   const { takeBoardGameWorkspace } = usePosStartupPreparation();
   const ready = Boolean(token && cashierUserId && pin);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -501,6 +503,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
   const [planAlert, setPlanAlert] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [copyId, setCopyId] = useState('');
+  const [returnLoanId, setReturnLoanId] = useState('');
   const [returnNote, setReturnNote] = useState('');
   // สั่งของเข้าบิลระหว่างเล่น (`9.90`) — ต่อกลุ่ม เพราะแต่ละกลุ่มจ่ายคนละใบ
   const [tabGroupId, setTabGroupId] = useState('');
@@ -538,6 +541,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
       setSharedSessionsLoading(false);
       setSharedSessionsError('');
       setCopyId('');
+      setReturnLoanId('');
       setReturnNote('');
       setIdLoanId('');
       setSeatingTargetId('');
@@ -2355,7 +2359,17 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
             {!sharedSessionsLoading && seatingLoans.length === 0 && (
               <div className="pos-block-hint">ยังไม่ได้ยืมกล่องเกม</div>
             )}
-            {seatingLoans.map(({ detail, loan }) => (
+            {seatingLoans.some(({ loan }) => !loan.returnedAt) && <BoardGameCopyPicker
+              key={`return-${session.id}`} value={returnLoanId} onChange={setReturnLoanId}
+              disabled={Boolean(busy) || sharedSessionsLoading} selectableStatus="CHECKED_OUT"
+              titles={seatingLoans.filter(({ loan }) => !loan.returnedAt).map(({ loan }) => ({
+                id: loan.id, title: loan.title ?? '',
+                imageUrl: workspace?.library.find((title) => title.copies.some((copy) => copy.id === loan.copyId))?.imageUrl,
+                copies: [{ id: loan.id, copyCode: loan.copyCode ?? '', status: 'CHECKED_OUT' }],
+              }))}
+              placeholder={t('admin_board_game.return_scan')} emptyText={t('admin_board_game.return_scan_empty')}
+              statusLabel={() => t('admin_board_game.return_scan_status')} />}
+            {seatingLoans.filter(({ loan }) => !returnLoanId || loan.id === returnLoanId).map(({ detail, loan }) => (
               <div key={loan.id} className="pos-bg-row">
                 <div className="pos-bg-row-main">
                   {loan.title ?? 'เกม'}
@@ -2368,16 +2382,16 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                 </div>
                 {!loan.returnedAt && (
                   <div className="pos-bg-row-actions">
-                    <button type="button" className="pos-ret-btn" disabled={busy === `return-${loan.id}`}
+                    <button type="button" className="pos-ret-btn" disabled={Boolean(busy)}
                       onClick={() => void run(`return-${loan.id}`, 'copy.return', {
                         loanId: loan.id, status: 'RETURNED', copyStatus: 'AVAILABLE', returnNote,
-                      }, () => { setReturnNote(''); setNotice('รับเกมคืนแล้ว'); })}>
+                      }, () => { setReturnNote(''); setReturnLoanId(''); setNotice('รับเกมคืนแล้ว'); })}>
                       รับคืน
                     </button>
-                    <button type="button" className="pos-ret-btn pos-ret-btn--warn" disabled={busy === `issue-${loan.id}`}
+                    <button type="button" className="pos-ret-btn pos-ret-btn--warn" disabled={Boolean(busy)}
                       onClick={() => void run(`issue-${loan.id}`, 'copy.return', {
                         loanId: loan.id, status: 'ISSUE', copyStatus: 'NEEDS_CHECK', returnNote,
-                      }, () => { setReturnNote(''); setNotice('บันทึกว่าต้องตรวจกล่องนี้แล้ว'); })}>
+                      }, () => { setReturnNote(''); setReturnLoanId(''); setNotice('บันทึกว่าต้องตรวจกล่องนี้แล้ว'); })}>
                       คืนแบบมีปัญหา
                     </button>
                   </div>

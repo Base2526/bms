@@ -1,0 +1,4 @@
+.labels { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-top: 16px; }
+.label { border: 1px solid #d5d9de; padding: 12px; display: flex; align-items: center; flex-direction: column; text-align: center; min-width: 0; }
+.label strong, .label span { font-size: 13px; overflow-wrap: anywhere; }
+.label img { width: 140px; height: 140px; max-width: 100%; object-fit: contain; }

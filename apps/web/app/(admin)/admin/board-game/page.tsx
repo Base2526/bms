@@ -6,11 +6,13 @@ import {
 } from "antd";
 import {
   ClockCircleOutlined, DollarOutlined, EditOutlined, EyeOutlined, PlusOutlined,
-  EnvironmentOutlined, ReloadOutlined, StopOutlined, SwapOutlined,
+  EnvironmentOutlined, ReloadOutlined, StopOutlined, SwapOutlined, PictureOutlined, QrcodeOutlined,
 } from "@ant-design/icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import BoardGameCopyPicker from "@/components/pos/BoardGameCopyPicker";
+import BoardGameImageEditor from "@/components/pos/BoardGameImageEditor";
+import BoardGameCopyLabels from "@/components/pos/BoardGameCopyLabels";
 import { searchGameLibrary } from "@/lib/pos/boardGameLibrarySearch";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
@@ -75,6 +77,7 @@ type IdentityHold = {
   takenAt: string; returnedAt: string | null;
 };
 type GameTitle = {
+  imageUrl?: string | null;
   id: string; title: string; minPlayers: number | null; maxPlayers: number | null;
   typicalMinutes: number | null; difficulty: string | null; language: string | null;
   publicVisible: boolean;
@@ -145,6 +148,8 @@ export default function BoardGamePage() {
   const [floor, setFloor] = useState<Floor>(emptyFloor);
   const [rates, setRates] = useState<Rate[]>([]);
   const [library, setLibrary] = useState<GameTitle[]>([]);
+  const [imageTitle, setImageTitle] = useState<GameTitle | null>(null);
+  const [labelTitle, setLabelTitle] = useState<GameTitle | null>(null);
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryPage, setLibraryPage] = useState(1);
   const [availableOnly, setAvailableOnly] = useState(false);
@@ -878,8 +883,14 @@ export default function BoardGamePage() {
                 <Typography.Text type="secondary">{t("admin_board_game.game_count", { count: filteredLibrary.length })}</Typography.Text>
               </Space>
               <List dataSource={filteredLibrary} pagination={{ current: Math.min(libraryPage, Math.max(1, Math.ceil(filteredLibrary.length / 20))), pageSize: 20, showSizeChanger: false, onChange: setLibraryPage }} locale={{ emptyText: t(librarySearch || availableOnly ? "admin_board_game.search_games_empty" : "admin_board_game.no_games") }} renderItem={(title) => (
-                <List.Item actions={canManageLibrary ? [<Button key="copy" icon={<PlusOutlined />} onClick={() => setCopyTitle(title)}>{t("admin_board_game.add_copy")}</Button>] : []}>
-                  <List.Item.Meta title={title.title} description={`${title.minPlayers ?? "-"}-${title.maxPlayers ?? "-"} ${t("admin_board_game.players")} · ${title.typicalMinutes ?? "-"} ${t("admin_board_game.minutes")}`} />
+                <List.Item className={styles.libraryItem} actions={[
+                  ...(title.copies.length ? [<Button key="labels" icon={<QrcodeOutlined />} title={t("admin_board_game.copy_labels")} aria-label={t("admin_board_game.copy_labels")} onClick={() => setLabelTitle(title)} />] : []),
+                  ...(canManageLibrary ? [
+                    <Button key="image" icon={<PictureOutlined />} title={t("admin_board_game.game_image")} aria-label={t("admin_board_game.game_image")} onClick={() => setImageTitle(title)} />,
+                    <Button key="copy" icon={<PlusOutlined />} onClick={() => setCopyTitle(title)}>{t("admin_board_game.add_copy")}</Button>,
+                  ] : []),
+                ]}>
+                  <List.Item.Meta avatar={title.imageUrl ? <img className={styles.gameImage} src={title.imageUrl} alt="" /> : <PictureOutlined className={styles.gameImage} />} title={title.title} description={`${title.minPlayers ?? "-"}-${title.maxPlayers ?? "-"} ${t("admin_board_game.players")} · ${title.typicalMinutes ?? "-"} ${t("admin_board_game.minutes")}`} />
                   <Space wrap>{title.copies.map((copy) => <Tag key={copy.id} color={copy.status === "AVAILABLE" ? "green" : copy.status === "IN_USE" ? "blue" : "orange"}>{copy.copyCode} · {t(`admin_board_game.copy_${copy.status.toLowerCase()}`)}</Tag>)}</Space>
                 </List.Item>
               )} />
@@ -1490,6 +1501,8 @@ export default function BoardGamePage() {
           <Form.Item name="active" label={t("common.active")} valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>
+      {imageTitle && <BoardGameImageEditor title={imageTitle} onClose={() => setImageTitle(null)} onSaved={refreshLocation} />}
+      {labelTitle && <BoardGameCopyLabels title={labelTitle} onClose={() => setLabelTitle(null)} />}
       <Modal open={areaModal} title={t("admin_board_game.add_area")} onCancel={() => setAreaModal(false)} onOk={() => void saveFloor("area")}><Form form={areaForm} layout="vertical"><Form.Item name="name" label={t("admin_board_game.area_name")} rules={[{ required: true }]}><Input /></Form.Item></Form></Modal>
       <Modal open={tableModal} title={t("admin_board_game.add_table")} onCancel={() => setTableModal(false)} onOk={() => void saveFloor("table")}><Form form={tableForm} layout="vertical" initialValues={{ seats: 4 }}><Form.Item name="areaId" label={t("admin_board_game.area_name")} rules={[{ required: true }]}><Select options={floor.areas.map((area) => ({ value: area.id, label: area.name }))} /></Form.Item><Form.Item name="code" label={t("admin_board_game.table_code")} rules={[{ required: true }]}><Input /></Form.Item><Form.Item name="name" label={t("admin_board_game.table_name")}><Input /></Form.Item><Form.Item name="seats" label={t("admin_board_game.seats")}><InputNumber min={1} max={100} /></Form.Item></Form></Modal>
       <Modal open={titleModal} title={t("admin_board_game.add_title")} onCancel={() => setTitleModal(false)} onOk={() => void saveTitle()}><Form form={titleForm} layout="vertical"><Form.Item name="title" label={t("admin_board_game.game_title")} rules={[{ required: true }]}><Input /></Form.Item><div className={styles.formGrid}><Form.Item name="minPlayers" label={t("admin_board_game.min_players")}><InputNumber min={1} /></Form.Item><Form.Item name="maxPlayers" label={t("admin_board_game.max_players")}><InputNumber min={1} /></Form.Item><Form.Item name="typicalMinutes" label={t("admin_board_game.typical_minutes")}><InputNumber min={1} /></Form.Item></div><Form.Item name="difficulty" label={t("admin_board_game.difficulty")}><Select allowClear options={["LIGHT", "MEDIUM", "HEAVY", "CUSTOM"].map((value) => ({ value, label: t(`admin_board_game.difficulty_${value.toLowerCase()}`) }))} /></Form.Item><Form.Item name="publicVisible" label={t("admin_board_game.public_visible")} valuePropName="checked"><Switch /></Form.Item></Form></Modal>

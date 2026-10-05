@@ -533,7 +533,7 @@
 
 .scanBar {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr) auto auto;
+  grid-template-columns: 30px minmax(0, 1fr) auto 40px auto;
   align-items: center;
   gap: 10px;
   min-height: 58px;
@@ -1038,3 +1038,8 @@
   .receiptActions { display: none; }
 }
 .paymentControls { border: 0; padding: 0; margin: 0; min-width: 0; }
+.productCardWrap { position: relative; min-width: 0; }
+.scanBar .scanInfo { min-width: 40px; width: 40px; flex-shrink: 0; padding: 0; }
+.productCardWrap > .productCard { width: 100%; height: 100%; }
+.productInfo { position: absolute; right: 20px; top: 20px; width: 32px; height: 32px; display: grid; place-items: center; background: #fff; color: #135ddd; border: 1px solid #dce1eb; border-radius: 6px; cursor: pointer; }
+.productInfo:focus-visible { outline: 2px solid #135ddd; outline-offset: 2px; }

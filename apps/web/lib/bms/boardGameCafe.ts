@@ -4241,7 +4241,7 @@ export async function listBoardGameLibrary(tenantId: string, locationId?: string
   await requireBoardGameCafeTenant({ query }, tenantId);
   const scopedLocationId = locationId ? uuid(locationId, "locationId") : null;
   const result = await query(
-    `SELECT t.id, t.title, t.min_players, t.max_players, t.typical_minutes,
+    `SELECT t.id, t.title, to_jsonb(t)->>'image_file_id' AS image_file_id, t.min_players, t.max_players, t.typical_minutes,
             t.difficulty, t.language, t.tags, t.public_visible, t.linked_product_sku,
             COALESCE(
               jsonb_agg(
@@ -4269,6 +4269,7 @@ export async function listBoardGameLibrary(tenantId: string, locationId?: string
   return result.rows.map((row: any) => ({
     id: row.id,
     title: row.title,
+    imageUrl: row.image_file_id ? `/api/files/${Number(row.image_file_id)}` : null,
     minPlayers: row.min_players == null ? null : Number(row.min_players),
     maxPlayers: row.max_players == null ? null : Number(row.max_players),
     typicalMinutes: row.typical_minutes == null ? null : Number(row.typical_minutes),

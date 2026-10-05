@@ -464,6 +464,7 @@ export async function upsertPosDevice(
 // ---------------------------------------------------------------
 
 export type PosScanHit = {
+  barcode?: string | null;
   sku: string;
   productName: string;
   /** ชื่อสั้นสำหรับพิมพ์ใบเสร็จ (ยังไม่มีคอลัมน์แยก — ใช้ชื่อเต็มไปก่อน) */
@@ -641,11 +642,14 @@ export async function resolvePosScan(
     unit_name: string | null;
     base_qty: number | null;
     pack_price: string | null;
+    barcode: string | null;
     size: string | null;
   }>(
     `SELECT p.sku,
             p.name,
             p.price                                  AS base_price,
+            CASE WHEN k.pack_code IS NOT NULL AND k.pack_code <> 'BASE'
+              THEN k.barcode ELSE COALESCE(k.barcode, p.barcode) END AS barcode,
             p.serial_tracked,
             k.pack_code,
             k.unit_name,
@@ -812,6 +816,7 @@ export async function resolvePosScan(
     sku: row.sku,
     productName: row.name,
     receiptName: row.name,
+    barcode: row.barcode ?? null,
     size: row.size,
     packCode: resolvedPackCode,
     unitName: scaleUnitName ?? row.unit_name ?? "ชิ้น",
@@ -2912,6 +2917,7 @@ export async function previewRestaurantPosPricing(input: {
     pointsRequested: input.pointsToRedeem ?? 0,
     couponDiscount,
     manualDiscount: input.manualDiscount ?? 0,
+    earnExtraAmount: extraTotal,
   });
   const requestedManual = Math.max(
     0,

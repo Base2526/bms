@@ -1,6 +1,7 @@
 export type SearchableGame = {
   id: string;
   title: string;
+  imageUrl?: string | null;
   copies: Array<{ id: string; copyCode: string; status: string }>;
 };
 
@@ -20,9 +21,9 @@ export function searchGameLibrary<T extends SearchableGame>(titles: T[], query: 
   });
 }
 
-export function gameCopyOptions(titles: SearchableGame[]) {
+export function gameCopyOptions(titles: SearchableGame[], selectableStatus = "AVAILABLE") {
   return titles.flatMap((title) => title.copies.map((copy) => ({
     value: copy.id, label: `${title.title} · ${copy.copyCode}`, title: title.title,
-    copyCode: copy.copyCode, status: copy.status, disabled: copy.status !== "AVAILABLE",
+    copyCode: copy.copyCode, status: copy.status, imageUrl: title.imageUrl ?? null, disabled: copy.status !== selectableStatus,
   }))).sort((a, b) => Number(a.disabled) - Number(b.disabled) || a.title.localeCompare(b.title) || a.copyCode.localeCompare(b.copyCode));
 }
