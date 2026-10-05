@@ -419,9 +419,17 @@ making the whole cleanup fail or deleting that history.
   A 2D scanner is required for QR labels; existing text codes still work with focused HID input.
   Browser/Desktop returns can search or scan only outstanding loans on the current seating,
   then explicitly confirm normal return or inspection. Scanning alone never writes a loan/return.
-- Desktop product details are read-only and available from a catalogue info button or the scan
-  field's info button. Regular sale scans still add items without opening a modal. Barcode, size,
+  Return notes appear with outstanding loans, not in the lending form. The lending picker uses
+  the remaining row width beside its confirmation button; both have 44px touch targets.
+- Desktop product details are read-only and available from the catalogue card's info icon.
+  The scan bar contains only the focused input and its F12 shortcut; Enter adds the typed code.
+  Regular sale scans still add items without opening a modal. Barcode, size,
   unit price and availability come from the existing branch-scoped scan service; no new sale path.
+  Catalogue info buttons show only a 20px information icon with no button background or border,
+  inside a transparent 44px touch target,
+  independent of the general POS button padding. F12 focuses the visible desktop catalogue scan
+  field without stealing focus from a dialog. A pending scan response cannot clear a newer draft,
+  and clicking a catalogue card preserves any text in the scan field.
 - Admin library search matches game names and copy codes, with an availability filter and 20-title
   pages. POS and Admin lending share a virtualized searchable copy picker. A keyboard scanner must
   read the unique `copyCode` registered for that physical box, not a retail product barcode shared

@@ -1,4 +1,8 @@
-.picker { width: 100%; min-width: 0; }
+.picker { width: 100%; min-width: 0; height: 44px; }
+/* Ant owns the search input; native POS input padding must not stretch it. */
+.picker :global(.ant-select-selection-search-input) {
+  min-height: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none;
+}
 .option { height: 48px; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .option img { width: 44px; height: 44px; flex: 0 0 44px; object-fit: contain; background: #fff; border-radius: 4px; }
 .option div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }

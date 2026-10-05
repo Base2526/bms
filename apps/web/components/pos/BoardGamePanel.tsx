@@ -2359,7 +2359,8 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
             {!sharedSessionsLoading && seatingLoans.length === 0 && (
               <div className="pos-block-hint">ยังไม่ได้ยืมกล่องเกม</div>
             )}
-            {seatingLoans.some(({ loan }) => !loan.returnedAt) && <BoardGameCopyPicker
+            {seatingLoans.some(({ loan }) => !loan.returnedAt) && <>
+            <BoardGameCopyPicker
               key={`return-${session.id}`} value={returnLoanId} onChange={setReturnLoanId}
               disabled={Boolean(busy) || sharedSessionsLoading} selectableStatus="CHECKED_OUT"
               titles={seatingLoans.filter(({ loan }) => !loan.returnedAt).map(({ loan }) => ({
@@ -2368,7 +2369,14 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                 copies: [{ id: loan.id, copyCode: loan.copyCode ?? '', status: 'CHECKED_OUT' }],
               }))}
               placeholder={t('admin_board_game.return_scan')} emptyText={t('admin_board_game.return_scan_empty')}
-              statusLabel={() => t('admin_board_game.return_scan_status')} />}
+              statusLabel={() => t('admin_board_game.return_scan_status')} />
+            <div className="pos-bg-form">
+              <label className="pos-bg-field">
+                โน้ตตอนคืน
+                <input value={returnNote} disabled={Boolean(busy)} onChange={(e) => setReturnNote(e.target.value)} />
+              </label>
+            </div>
+            </>}
             {seatingLoans.filter(({ loan }) => !returnLoanId || loan.id === returnLoanId).map(({ detail, loan }) => (
               <div key={loan.id} className="pos-bg-row">
                 <div className="pos-bg-row-main">
@@ -2400,7 +2408,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
             ))}
 
             {session.status === 'OPEN' && (
-              <div className="pos-bg-form">
+              <div className="pos-bg-form pos-bg-loan-form">
                 <label className="pos-bg-field">
                   ให้ยืมกล่องเกม{sharedSeating ? `แก่ชุดเดิม ${session.originTableCode}` : ''}
                   <BoardGameCopyPicker key={session.id} titles={workspace?.library ?? []}
@@ -2408,10 +2416,6 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                     placeholder="ค้นหาชื่อเกม / รหัสกล่อง / สแกนบาร์โค้ด"
                     emptyText="ไม่พบเกมหรือรหัสกล่องนี้"
                     statusLabel={(status) => ({ AVAILABLE: 'พร้อมให้ยืม', IN_USE: 'กำลังยืม', NEEDS_CHECK: 'รอตรวจ', DAMAGED: 'เสียหาย', MISSING_PARTS: 'อุปกรณ์ไม่ครบ', REPAIRING: 'กำลังซ่อม', LOST: 'สูญหาย', RETIRED: 'เลิกใช้งาน' }[status] ?? status)} />
-                </label>
-                <label className="pos-bg-field">
-                  โน้ตตอนคืน
-                  <input value={returnNote} onChange={(e) => setReturnNote(e.target.value)} />
                 </label>
                 <button type="button" className="pos-ret-btn pos-ret-btn--open" disabled={Boolean(busy) || !(workspace?.library ?? []).some((title) => title.copies.some((copy) => copy.id === copyId && copy.status === 'AVAILABLE'))}
                   onClick={() => void run('checkout-copy', 'copy.checkout', {

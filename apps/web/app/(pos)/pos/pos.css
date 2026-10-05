@@ -2337,6 +2337,8 @@
 }
 .pos-bg-field { font-size: 12px; flex: 1 1 180px; min-width: 0; }
 .pos-bg-field > input, .pos-bg-field > select { display: block; width: 100%; }
+.pos-bg-loan-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.pos-root .pos-bg-loan-form > button { min-height: 44px; }
 /* ช่องตัวเลขสั้น ๆ (นาที/จำนวน/กลุ่มบิล) — ยังหดได้ ไม่ตรึงความกว้าง */
 .pos-bg-field--num { flex: 0 1 120px; }
 .pos-bg-member-search { align-self: flex-start; }

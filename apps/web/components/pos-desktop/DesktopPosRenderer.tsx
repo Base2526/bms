@@ -434,6 +434,8 @@ function DesktopPosContent() {
   const [catalogError, setCatalogError] = useState("");
   const [query, setQuery] = useState("");
   const [scanCode, setScanCode] = useState("");
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+  const scanDraftRevision = useRef(0);
   const [inspectedProduct, setInspectedProduct] = useState<{ code: string; size?: string; packCode?: string } | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
@@ -477,6 +479,20 @@ function DesktopPosContent() {
   const pharmacyRegister = bootstrap?.businessArchetype === "pharmacy";
   const shownModule: DesktopModule =
     pharmacyRegister && activeModule === "mobile_sell" ? "sell" : activeModule;
+  useEffect(() => {
+    if (shownModule !== "mobile_sell" || flow.stage !== "CATALOG") return;
+    const focusScan = (event: KeyboardEvent) => {
+      if (event.key !== "F12" || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.isComposing) return;
+      // Do not pull focus out of a product, payment, or settings dialog.
+      if (Array.from(document.querySelectorAll('[role="dialog"]')).some((dialog) => dialog.getClientRects().length > 0)) return;
+      const input = scanInputRef.current;
+      if (!input || input.disabled || !input.getClientRects().length) return;
+      event.preventDefault();
+      input.focus();
+    };
+    document.addEventListener("keydown", focusScan);
+    return () => document.removeEventListener("keydown", focusScan);
+  }, [flow.stage, shownModule]);
   // Whichever workspace is visibly selling owns the customer display. Two publishers on one
   // BroadcastChannel would let the empty desktop cart overwrite the bill the customer is paying.
   const desktopOwnsCustomerDisplay = shownModule !== "sell";
@@ -1203,9 +1219,10 @@ function DesktopPosContent() {
     }
   }, [bootstrap?.vat.cashRounding, busy, cashier, pin, sendFlow, token]);
 
-  const addProduct = async (code: string, size?: string | null) => {
+  const addProduct = async (code: string, size?: string | null, fromScan = false) => {
     const clean = code.trim();
     if (!clean || busy || addProductPendingRef.current) return;
+    const submittedRevision = scanDraftRevision.current;
     addProductPendingRef.current = true;
     setAddingProductKey(`${clean}\u0000${size ?? ""}`);
     setError("");
@@ -1259,7 +1276,8 @@ function DesktopPosContent() {
             : line,
         );
       });
-      setScanCode("");
+      // A delayed lookup must not erase the next code or an unrelated scan draft after a card click.
+      if (fromScan && scanDraftRevision.current === submittedRevision) setScanCode("");
     } catch (cause) {
       setError(messageOf(cause));
     } finally {
@@ -2141,13 +2159,10 @@ function DesktopPosContent() {
               </>
             ) : (
               <>
-                <form className={styles.scanBar} onSubmit={(event) => { event.preventDefault(); void addProduct(scanCode); }}>
+                <form className={styles.scanBar} onSubmit={(event) => { event.preventDefault(); scanInputRef.current?.focus(); void addProduct(scanCode, undefined, true); }}>
                   <span className={styles.barcode}>▥</span>
-                  <input autoFocus value={scanCode} onChange={(event) => setScanCode(event.target.value)} placeholder="ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter" />
+                  <input ref={scanInputRef} autoFocus aria-label="สแกนบาร์โค้ดหรือรหัสสินค้า" value={scanCode} onChange={(event) => { scanDraftRevision.current += 1; setScanCode(event.target.value); }} placeholder="ยิงบาร์โค้ด หรือพิมพ์รหัสสินค้า แล้วกด Enter" />
                   <kbd>F12</kbd>
-                  <button type="button" className={styles.scanInfo} title={t("admin_board_game.product_details")} aria-label={t("admin_board_game.product_details")}
-                    disabled={!scanCode.trim() || busy} onClick={() => setInspectedProduct({ code: scanCode.trim() })}><InfoCircleOutlined /></button>
-                  <button disabled={!scanCode.trim() || busy || Boolean(addingProductKey)}>เพิ่ม</button>
                 </form>
                 <div className={styles.catalogHeader}>
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
