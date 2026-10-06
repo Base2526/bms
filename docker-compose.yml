@@ -138,6 +138,10 @@ services:
       BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON: ${BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON:-}
       BMS_RETAIL_LOCAL_COMPONENT_MAX_BYTES: ${BMS_RETAIL_LOCAL_COMPONENT_MAX_BYTES:-17179869184}
       BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES: ${BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES:-34359738368}
+      # Node defaults to a five-minute total request-body deadline. Managed Runtime release sets
+      # are streamed and can exceed that on a healthy connection; the route's idle timeout below
+      # still aborts a connection that stops delivering bytes.
+      BMS_HTTP_REQUEST_TIMEOUT_MS: ${BMS_HTTP_REQUEST_TIMEOUT_MS:-1800000}
       BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS: ${BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS:-120000}
       # Installer uploads are streamed; this is a byte ceiling, not a memory allocation.
       BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES: ${BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES:-4294967296}

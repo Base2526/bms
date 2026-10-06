@@ -63,10 +63,16 @@ RETAIL_LOCAL_RELEASE_HOST_DIR=/mnt/volume_sgp1_01/releases
 BMS_RETAIL_LOCAL_RELEASE_BASE_URL=https://releases.jachoei.com/retail-local
 BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON={"formatVersion":1,"keys":{"production-key-id":"-----BEGIN PUBLIC KEY-----..."}}
 BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES=34359738368
+BMS_HTTP_REQUEST_TIMEOUT_MS=1800000
 BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS=120000
 ```
 
 The keyring contains public keys only. Signing and private keys remain isolated from the Web host.
+`BMS_HTTP_REQUEST_TIMEOUT_MS` is the Web server's total request-body deadline. It must be long
+enough for the largest release set at the slowest supported upload speed; 30 minutes avoids Node's
+five-minute default terminating a healthy multi-gigabyte stream. This does not replace
+`BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS`: the upload parser still aborts and cleans up a partial
+staging directory when no bytes arrive for two minutes.
 Set `BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON` to the complete JSON content of the signing job's
 `metadata/trusted-release-keys.json`, compacted onto one line; do not set it to the PEM file itself,
 the private key, a filename, or the example placeholder above. For example, on the deployment host:
