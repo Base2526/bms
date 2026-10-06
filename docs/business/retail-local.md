@@ -67,9 +67,22 @@ BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS=120000
 ```
 
 The keyring contains public keys only. Signing and private keys remain isolated from the Web host.
+Set `BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON` to the complete JSON content of the signing job's
+`metadata/trusted-release-keys.json`, compacted onto one line; do not set it to the PEM file itself,
+the private key, a filename, or the example placeholder above. For example, on the deployment host:
+
+```bash
+export BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON="$(jq -c . /secure/bms-release/trusted-release-keys.json)"
+docker compose -f docker-compose.prod.yml up -d --force-recreate web
+```
+
+The Managed Runtime release page checks this verifier configuration before enabling a multi-gigabyte
+upload and shows only the trusted key IDs, never the public-key contents.
 `release-descriptor.json` and promotion evidence are build/signing records rather than runtime
 payloads and are deliberately not copied into the public release tree; descriptors can contain
-absolute paths from the isolated builder.
+absolute paths from the isolated builder. If the build's `SHA256SUMS` includes those records or
+absolute build paths, publication validates the required public entries and writes a canonical
+runtime-only `SHA256SUMS` containing basenames for `release.jws.json` and signed artifacts.
 The `windows-10-x86` public folder remains a POS-only compatibility alias whose signed target is
 `windows-10-x86-pos`; it must never be described or selected as a Retail Local Server target.
 The existing `/admin/retail-local-releases` page separately uploads the small customer-facing

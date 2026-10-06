@@ -10,6 +10,7 @@ import {
   assertManagedRuntimeUploadFilename,
   listManagedRuntimeReleases,
   MANAGED_RUNTIME_TARGETS,
+  managedRuntimeReleaseReadiness,
   publishManagedRuntimeRelease,
   verifyManagedRuntimeManifest,
   type ManagedRuntimeTarget,
@@ -201,10 +202,41 @@ test("the web keyring rejects extra fields so private signing material cannot be
     const candidate = await fixture(root);
     const configured = JSON.parse(process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON || "{}");
     process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON = JSON.stringify({ ...configured, privateKey: "must-not-be-here" });
+    assert.equal(managedRuntimeReleaseReadiness().ready, false);
     assert.throws(
       () => verifyManagedRuntimeManifest(candidate.manifestBytes, candidate.version, candidate.target),
       /trusted release keyring มี field ที่ไม่รองรับ: privateKey/,
     );
+  } finally {
+    if (previous.root === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT;
+    else process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT = previous.root;
+    if (previous.base === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_BASE_URL;
+    else process.env.BMS_RETAIL_LOCAL_RELEASE_BASE_URL = previous.base;
+    if (previous.keys === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON;
+    else process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON = previous.keys;
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("readiness validates the complete Ed25519 public keyring before a large upload starts", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "bms-runtime-readiness-"));
+  const previous = {
+    root: process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT,
+    base: process.env.BMS_RETAIL_LOCAL_RELEASE_BASE_URL,
+    keys: process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON,
+  };
+  try {
+    await fixture(root);
+    const ready = managedRuntimeReleaseReadiness();
+    assert.equal(ready.ready, true);
+    assert.deepEqual(ready.keyIds, ["test-release-key"]);
+    process.env.BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON = JSON.stringify({
+      formatVersion: 1,
+      keys: { "test-release-key": "not-a-pem" },
+    });
+    const invalid = managedRuntimeReleaseReadiness();
+    assert.equal(invalid.ready, false);
+    assert.match(invalid.message, /test-release-key.*trusted-release-keys\.json/);
   } finally {
     if (previous.root === undefined) delete process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT;
     else process.env.BMS_RETAIL_LOCAL_RELEASE_ROOT = previous.root;
@@ -226,6 +258,11 @@ test("publishes a complete signed component set atomically and lists it", async 
   try {
     await mkdir(root, { recursive: true });
     const candidate = await fixture(root);
+    const sumsFile = candidate.files.find((file) => file.filename === "SHA256SUMS");
+    assert.ok(sumsFile);
+    await writeFile(sumsFile.fullPath, `${await readFile(sumsFile.fullPath, "utf8")}`
+      + `${"c".repeat(64)}  /isolated/build/release-descriptor.json\n`
+      + `${"d".repeat(64)}  C:\\private\\promotion-evidence.json\n`);
     const published = await publishManagedRuntimeRelease({
       ...candidate,
       releaseVersion: candidate.version,
@@ -236,6 +273,10 @@ test("publishes a complete signed component set atomically and lists it", async 
     assert.match(published.manifestUrl, /0\.2\.14-pilot\.2\/macos-15-x64\/release\.jws\.json$/);
     const finalManifest = path.join(root, "retail-local", candidate.version, candidate.target, "release.jws.json");
     assert.deepEqual(await readFile(finalManifest), candidate.manifestBytes);
+    const publicSums = await readFile(path.join(root, "retail-local", candidate.version, candidate.target, "SHA256SUMS"), "utf8");
+    assert.doesNotMatch(publicSums, /release-descriptor|promotion-evidence|isolated|C:\\/);
+    assert.match(publicSums, /^[a-f0-9]{64}  desktop\.artifact$/m);
+    assert.match(publicSums, /^[a-f0-9]{64}  release\.jws\.json$/m);
     const listed = await listManagedRuntimeReleases();
     assert.equal(listed.length, 1);
     assert.equal(listed[0].managed, true);
@@ -319,6 +360,7 @@ test("runtime upload route stays raw-streamed and excluded from middleware buffe
   assert.match(route, /bodyParser: false/);
   assert.match(route, /hasSameOrigin\(req\)/);
   assert.match(route, /invalid_origin/);
+  assert.match(route, /keyId/);
   assert.match(parser, /Busboy\(/);
   assert.match(parser, /pipeline\(/);
   assert.match(parser, /UPLOAD_IDLE_TIMEOUT/);
