@@ -213,6 +213,7 @@ services:
       - ./apps/web/Caddyfile:/etc/caddy/Caddyfile:ro
       # แนะนำให้เก็บ cert/key ไว้ในโฟลเดอร์ certs
       - ./apps/web/certs:/certs:ro
+      - ${RETAIL_LOCAL_RELEASE_HOST_DIR:-./releases}:/srv/bms-releases:ro
       - caddy_data:/data
       - caddy_config:/config
 
