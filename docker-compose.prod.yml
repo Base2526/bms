@@ -178,6 +178,14 @@ services:
         aliases:
           - web_b
 
+  # The VM currently uses the shared front proxy from next-apollo-pg-ws. If this
+  # stack owns Caddy, mount the tracked production config and the exact same
+  # release directory used by Web; never copy releases into a second tree.
+  caddy:
+    volumes:
+      - ./apps/web/Caddyfile.server:/etc/caddy/Caddyfile:ro
+      - ${RETAIL_LOCAL_RELEASE_HOST_DIR:-./releases}:/srv/bms-releases:ro
+
 networks:
   bms_shared:
     external: true
