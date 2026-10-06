@@ -18,6 +18,7 @@ import {
   visiblePosPinSlots,
 } from "../packages/pos-client-core/src/posPin.ts";
 import { receiptPayloadFromPosSale } from "../apps/web/lib/pos/posSaleReceipt.ts";
+import { buildReceipt } from "../apps/web/lib/pos/escpos.ts";
 
 const desktopRenderer = readFileSync(
   new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url),
@@ -498,6 +499,38 @@ const saleStore = {
   fallbackBranchCode: null,
   fallbackPosNo: null,
 };
+
+test("A-gives-B receipt deducts 1458 exactly once and preserves saved cash evidence", () => {
+  for (const cash of [{ tendered: 9559, change: 0 }, { tendered: 12354, change: 2795 }]) {
+    const row = { ...saleRow, total: 9559, vat: null, cashTendered: cash.tendered, cashChange: cash.change,
+      lines: [
+        { receiptName: "Item 355", size: "L", packQty: 1, packPrice: 1963 },
+        { receiptName: "Item 100", size: "L", packQty: 1, packPrice: 4000 },
+        { receiptName: "Item 100", size: "S", packQty: 1, packPrice: 3596 },
+        { receiptName: "Item 102", size: "S", packQty: 1, packPrice: 1458 },
+      ],
+      discountLines: [{ label: "Promotion", amount: 1458 }],
+      promotionNotes: ["Gift is included in quantity and deducted below"],
+      payments: [{ method: "CASH", amount: 9559, ref: null, cashTendered: cash.tendered, cashChange: cash.change }],
+    };
+    const payload = receiptPayloadFromPosSale(row, { ...saleStore, languageMode: "en", vatRegistered: false });
+    assert.equal(payload.lines.length, 4);
+    assert.equal(payload.itemCount, 4);
+    assert.equal(payload.lines.reduce((sum, l) => sum + l.amount, 0), 11017);
+    assert.equal(payload.discountLines!.reduce((sum, d) => sum + d.amount, 0), 1458);
+    assert.equal(payload.total, 9559);
+    assert.equal(payload.tendered, cash.tendered);
+    assert.equal(payload.change, cash.change);
+    assert.equal(payload.payments![0].tendered, cash.tendered);
+    assert.equal(payload.payments![0].change, cash.change);
+    for (const columns of [32, 42]) {
+      const text = Buffer.from(buildReceipt(payload, { columns })).toString("latin1");
+      assert.equal(text.match(/-1,458\.00/g)?.length, 1, "never deduct the gift twice");
+      assert.ok(text.includes("9,559.00"));
+      assert.ok(text.includes(cash.change ? "12,354.00 / 2,795.00" : "9,559.00 / 0.00"));
+    }
+  }
+});
 
 test("the desktop receipt is the saved bill: list-price lines, discount lines and the tax split", () => {
   const payload = receiptPayloadFromPosSale(saleRow, saleStore);

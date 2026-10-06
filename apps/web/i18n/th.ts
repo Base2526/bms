@@ -5251,6 +5251,10 @@ const th = {
     tier_empty: "ยังไม่มีขั้นราคาของขอบเขตนี้",
   },
   pos_gifts: {
+    shelf_amount: "ราคาป้าย",
+    line_free_quantity: "ของแถม {qty} หน่วยฐาน",
+    pricing_discount: "ราคาส่ง / โปรโมชัน",
+    after_promotion: "หลังโปร",
     title: "ของแถมตามโปรโมชัน",
     quantity: "ของแถมในบิล {qty} / สิทธิ์ {allowed} ชิ้น",
     not_qualified: "ยังไม่ครบเงื่อนไข ของแถมคิดราคาปกติ",

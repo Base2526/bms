@@ -37,7 +37,11 @@ export function receiptPromotionNotes(lines: SavedLine[]): string[] {
     .map((e) => [e.rule.id, e]));
   for (const { rule, awardedQty } of gifts.values()) {
     if (awardedQty <= 0) continue;
-    notes.push(`ซื้อ ${rule.buySku} (${rule.buySize}) ${rule.buyQty} แถม ${rule.giftSku} (${rule.giftSize}) ${rule.getQty} · ได้แถม ${awardedQty} ชิ้น (รวมในจำนวนสินค้าแล้ว)`);
+    // Use sale-time names, including the rule's exact size. Never look up today's
+    // catalogue, or mistake another size of the same SKU for the qualifying item.
+    const savedName = (sku: string, size: string) =>
+      lines.find((item) => item.product_sku === sku && item.size === size)?.product_name?.trim() || sku;
+    notes.push(`ซื้อ ${savedName(rule.buySku, rule.buySize)} (${rule.buySize}) ${rule.buyQty} แถม ${savedName(rule.giftSku, rule.giftSize)} (${rule.giftSize}) ${rule.getQty} · ได้แถม ${awardedQty} ชิ้น (รวมในจำนวนสินค้าแล้ว; มูลค่าของแถมหักในส่วนลดด้านล่างแล้ว)`);
   }
   return notes;
 }

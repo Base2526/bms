@@ -253,7 +253,7 @@ function resolveLine(line: PricedCartLine): ResolvedLine {
   const baseUnits = packQty * perPack;
   const rawPackPrice = Number(line.packBasePrice ?? line.unitPrice ?? 0);
   const packBasePrice = Number.isFinite(rawPackPrice) ? rawPackPrice : 0;
-  const rawBasePrice = Number(line.basePrice);
+  const rawBasePrice = line.basePrice == null ? Number.NaN : Number(line.basePrice);
   // ⚠️ ไม่มีราคาป้ายต่อหน่วยฐานติดมา (บรรทัดยุคก่อน snapshot) ต้องหารกลับจากราคาหน่วยขาย
   // ห้ามใช้ราคาหน่วยขายตรง ๆ — บรรทัดชั่งขายมี baseQty = จำนวนกรัม ถ้าใช้ตรง ๆ จะกลายเป็น
   // (ราคาทั้งถุง × จำนวนกรัม) ซึ่งเกินความจริงหลายร้อยเท่า
@@ -286,7 +286,11 @@ function resolveLine(line: PricedCartLine): ResolvedLine {
  *    แต่จำนวนยังนับเข้าขั้นราคาส่งของ SKU+ไซซ์เดียวกัน
  * 4. ตัวเลือกบวกท้ายสุดตามจำนวนหน่วยขายที่คิดเงิน
  */
-export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
+export function cartProductPricing(lines: readonly PricedCartLine[]): {
+  subtotal: number;
+  listSubtotal: number;
+  lines: { listAmount: number; amount: number; discountAmount: number; freeQty: number }[];
+} {
   const resolved = lines.map(resolveLine);
   const giftRules = resolved.flatMap((l) => l.promotion?.kind === 'BUY_A_GET_B' ? [l.promotion] : []);
   const giftParticipant = (l: ResolvedLine) => !l.fixedPack && giftRules.some((p) =>
@@ -313,10 +317,12 @@ export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
   }
 
   const promoCharged = new Set<string>();
+  const amounts = resolved.map(() => 0);
   let total = 0;
-  for (const line of resolved) {
+  for (const [index, line] of resolved.entries()) {
     if (giftParticipant(line)) {
-      total += line.listPrice * line.baseUnits + line.modifierUnitPrice * line.soldUnits;
+      amounts[index] = line.listPrice * line.baseUnits + line.modifierUnitPrice * line.soldUnits;
+      total += amounts[index];
       continue;
     }
     const baseUnitPrice = line.fixedPack
@@ -331,21 +337,56 @@ export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
     const promo = line.fixedPack ? null : promoBySku.get(line.sku) ?? null;
     if (promo && !promoCharged.has(line.key)) {
       promoCharged.add(line.key);
-      total += applyPromotion(
+      const promoted = applyPromotion(
         line.listPrice,
         promoQtyByVariant.get(line.key) ?? line.baseUnits,
         promo,
       ).amount;
+      total += promoted;
+      // Display the same per-variant promotion allocation as order line_amount:
+      // whole satang, with the last loose line receiving the rounding remainder.
+      const indexes = resolved.flatMap((other, i) =>
+        !other.fixedPack && !giftParticipant(other) && other.key === line.key ? [i] : []);
+      const qty = promoQtyByVariant.get(line.key) ?? line.baseUnits;
+      let allocated = 0;
+      indexes.forEach((i, position) => {
+        const cents = position === indexes.length - 1
+          ? Math.round(promoted * 100) - allocated
+          : qty > 0 ? Math.round(promoted * 100 * resolved[i].baseUnits / qty) : 0;
+        allocated += cents;
+        amounts[i] += cents / 100;
+      });
     } else if (!promo) {
-      total += line.fixedPack
+      const amount = line.fixedPack
         ? line.packBasePrice * line.packQty
         : baseUnitPrice * line.baseUnits;
+      amounts[index] += amount;
+      total += amount;
     }
+    amounts[index] += line.modifierUnitPrice * line.soldUnits;
     total += line.modifierUnitPrice * line.soldUnits;
   }
   const gifts = crossSkuGiftPricing(resolved.map((l) => ({ sku: l.sku, size: l.size, qty: l.baseUnits,
     unitPrice: l.listPrice, eligible: !l.fixedPack && l.modifierUnitPrice === 0 })), giftRules);
-  return round2(total - gifts.totalDiscount);
+  const subtotal = round2(total - gifts.totalDiscount);
+  let runningAmount = 0;
+  let displayedAmount = 0;
+  const pricedLines = resolved.map((line, index) => {
+    const listAmount = round2((line.fixedPack ? line.packBasePrice * line.packQty
+      : line.listPrice * line.baseUnits) + line.modifierUnitPrice * line.soldUnits);
+    // Fractional weighted quantities must not create a penny difference between
+    // the displayed lines and the existing basket preview's rounded total.
+    runningAmount += amounts[index] - gifts.discounts[index];
+    const nextDisplayedAmount = round2(runningAmount);
+    const amount = round2(nextDisplayedAmount - displayedAmount);
+    displayedAmount = nextDisplayedAmount;
+    return { listAmount, amount, discountAmount: round2(listAmount - amount), freeQty: gifts.freeQuantities[index] };
+  });
+  return { subtotal, listSubtotal: round2(pricedLines.reduce((sum, line) => sum + line.listAmount, 0)), lines: pricedLines };
+}
+
+export function cartProductSubtotal(lines: readonly PricedCartLine[]): number {
+  return cartProductPricing(lines).subtotal;
 }
 
 /**

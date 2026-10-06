@@ -561,6 +561,7 @@ const MENU_CARDS_TH: MenuCard[] = [
       "ราคาส่งเลือกได้ 2 แบบที่หน้า Products: ราคาคงที่เลือกไซซ์ M/XL ฯลฯ แยกกันได้ (หรือเลือกทุกไซซ์ให้ราคาเดียวกัน) และตั้งขั้นต่ำเท่ากันแต่ราคาคนละค่าได้; แบบรวมทุกไซซ์จะรวมจำนวนแล้วลดเปอร์เซ็นต์จากราคาปกติของแต่ละไซซ์ เช่น S/M/L รวมครบ 10 ชิ้น ลด 20% แต่ละไซซ์จึงยังมีราคาต่างกัน",
       "การแลกแต้มพิมพ์จำนวนในช่องกลางได้ หรือใช้ปุ่ม +/- ซึ่งขยับครั้งละ 1 หน่วยตามอัตราร้าน; ระบบใช้เฉพาะหน่วยเต็มและเก็บเศษไว้ เช่น มี 3,045 แต้ม อัตรา 100 แต้มต่อหน่วย ระบบใช้ 3,000 และคงเหลือ 45 แต้ม",
       "ก่อนรับเงิน ระบบจะตรวจราคาปกติ ราคาส่ง pack และโปรโมชันล่าสุดอีกครั้ง หากมีการแก้สินค้าหลังยิงเข้าตะกร้า ระบบจะอัปเดตยอดและให้ตรวจรับเงินใหม่แทนการขายด้วยราคาเก่า",
+      "หน้าสรุปขาย Desktop แสดงราคาป้าย ส่วนลด และยอดหลังโปรต่อรายการ ของแถมระบุจำนวนที่ได้ฟรี ส่วนลดสมาชิก/คูปอง/แต้มและปัดเศษแยกท้ายบิล ช่องรับเงินมาเริ่มที่ยอดพอดีและตามยอดบิลอัตโนมัติจนกว่าจะกรอกเงินรับจริงหรือเลือกยอดธนบัตร ระบบจะไม่ทับเงินที่กรอกเองแม้ยอดบิลเปลี่ยน กดพอดีเพื่อกลับไปใช้ยอดอัตโนมัติ",
       "พักบิลได้ไม่เกิน 20 บิลต่อกะ แต่ไม่จอง stock และไม่ล็อกราคา; ตอนกลับมาขายระบบใช้ราคาและ stock ปัจจุบัน",
       "แท็บมัดจำใช้รับเงินครั้งแรก/รับเพิ่ม/รับยอดคงเหลือ/ปิดมัดจำของสาขานี้; รับครบต้องใช้ปุ่มรับยอดคงเหลือเพื่อส่งของ ตัด stock และออกเอกสารในขั้นเดียว — ถ้ามีสินค้าบังคับเลขเครื่อง ให้ยิงสินค้ากับ serial จริงใส่ตะกร้าก่อนกดรับยอดคงเหลือ",
       "ยอดขายเงินสดถูกนับเข้าลิ้นชักอัตโนมัติเมื่อขายสำเร็จ ห้ามบันทึกเป็นเงินเข้าซ้ำ; เมนูเงินเข้าใช้เฉพาะเงินจากนอกยอดขาย เช่น เติมเงินทอนจากเจ้าของหรือรับจากลิ้นชักอื่น ทุกเงินเข้า/ออกต้องมีเหตุผล และเงินออกต้องใช้ PIN ผู้อนุมัติคนที่สองเสมอ",
@@ -2543,6 +2544,7 @@ const EN: ManualContent = {
       title: "Take payment and split tender",
       desc: "All payment rows must equal the server-computed total.",
       steps: [
+        "Desktop checkout shows each item's shelf amount, promotion/wholesale saving, gift quantity, and post-promotion amount. Member/coupon/points discounts and cash rounding remain separate bill-level rows. Cash tender follows the payable until you type an actual amount or select a banknote; repricing preserves that input, even when insufficient. Exact opts back into automatic cash.",
         "For a normal sale choose Cash, QR, Card, or Wallet. For cash, enter tendered money or use Exact/quick-note buttons and verify change.",
         "QR, card, and wallet stay locked to the bill total and may carry a reference or approval code.",
         "Press + Split payment to add rows, allocate each amount, and enter the actual cash tender on cash rows.",

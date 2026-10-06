@@ -26,3 +26,18 @@ test("bundle promotion uses saved list price excluding modifiers, not current ti
   assert.match(receiptPromotionNotes([bundle])[0], /3 ชิ้น 100.00 บาท จำนวน 1 ชุด/);
   assert.deepEqual(receiptPromotionNotes([{ ...bundle, receipt_unit_price: "30" }]), []);
 });
+
+test("cross-SKU receipt names the saved variants and explains the gift deduction once", () => {
+  const rule = { kind: "BUY_A_GET_B", id: "FAKE-promo", buySku: "FAKE-A", buySize: "S", buyQty: 1,
+    giftSku: "FAKE-B", giftSize: "S", getQty: 1 };
+  const snapshot = { source: "SALE", crossSkuGifts: [{ rule, awardedQty: 1 }] };
+  const buy = { ...line, product_sku: "FAKE-A", product_name: "Saved A", size: "S", qty: 1, pricing_snapshot: snapshot };
+  const gift = { ...buy, product_sku: "FAKE-B", product_name: "Saved B" };
+  const notes = receiptPromotionNotes([{ ...buy, size: "L", product_name: "Wrong size" }, buy, gift]);
+  assert.equal(notes.length, 1);
+  assert.match(notes[0], /ซื้อ Saved A \(S\) 1 แถม Saved B \(S\) 1/);
+  assert.match(notes[0], /มูลค่าของแถมหักในส่วนลดด้านล่างแล้ว/);
+  assert.doesNotMatch(notes[0], /Wrong size/);
+  assert.match(receiptPromotionNotes([{ ...buy, product_name: null }, gift])[0], /ซื้อ FAKE-A/);
+  assert.deepEqual(receiptPromotionNotes([{ ...buy, pricing_snapshot: { source: "BACKFILL", crossSkuGifts: snapshot.crossSkuGifts } }]), []);
+});

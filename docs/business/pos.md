@@ -1441,10 +1441,26 @@ without the `TAX#` line, which is not a valid abbreviated tax invoice.
 
 ### Line prices on a reprint (9.22)
 
+Desktop checkout previews each retail line's shelf amount, wholesale/promotion saving, and
+post-promotion amount using the shared cart pricing preview. Cross-SKU gifts are labelled with
+the awarded base-unit quantity (partially free lines retain their paid remainder). These line
+amounts reconcile to the product subtotal; member/coupon/points discounts and cash rounding
+remain separate bill-level rows. Settlement still rechecks prices on the server.
+The cash field follows the current payable automatically until the cashier enters a received
+amount or selects a banknote amount. That explicit amount is preserved on repricing, even if it
+becomes insufficient; **พอดี** opts back into automatic exact cash. Split allocations and pending
+or unknown settlement attempts are never automatically rewritten.
+
 A line prints at its **shelf price**, and any wholesale step or promotion appears as its own
 `ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer
 paid. That price is snapshotted onto the order line at sale time (`bms_order_items.receipt_unit_price`),
 separately from `unit_price`, which is the effective price the order arithmetic uses.
+Cross-SKU gift notes use the saved product name and exact size and explicitly say that the gift
+value is already deducted below. They never add another free-item line or deduct the gift twice.
+For example, shelf lines totalling 11,017 with a 1,458 gift discount produce a 9,559 receipt.
+A recorded cash tender of 12,354 produces change of 2,795; reprinting preserves that payment
+evidence even after a client-side tender-default bug is fixed. Never replace a historical tender
+with today's basket/default amount or infer what cash was physically handed over.
 
 Migration `10.13` adds `line_amount` as the exact monetary result of that arithmetic. A promotion
 such as 3 for 100 cannot be represented by `qty × NUMERIC(12,2) unit_price` without losing a satang,
