@@ -71,6 +71,7 @@ import {
   ControlOutlined,
   MoreOutlined,
   DownloadOutlined,
+  CloudUploadOutlined,
 } from '@ant-design/icons';
 import { usePathname, useRouter } from 'next/navigation';
 import { gql, useQuery } from '@apollo/client';
@@ -289,6 +290,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'platform.retail-local-licenses': <SafetyCertificateOutlined />,
   'settings.local-license': <SafetyCertificateOutlined />,
   'platform.retail-local-releases': <DownloadOutlined />,
+  'platform.retail-local-runtime-releases': <CloudUploadOutlined />,
   'platform.installer-reports': <BugOutlined />,
   'platform.roles': <SnippetsOutlined />,
   'platform.report-schedule': <ScheduleOutlined />,

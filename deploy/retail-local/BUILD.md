@@ -48,6 +48,15 @@ downloads until signing, publication, and real download/installation verificatio
 private release key ต้องอยู่ใน isolated signing service เท่านั้น ห้ามวางไว้ใน repository,
 installer หรือเครื่องร้าน
 
+หลัง isolated signing job สร้างโฟลเดอร์ของ target ครบแล้ว platform administrator เลือกทั้ง
+โฟลเดอร์ที่ `/admin/retail-local-runtime-releases` หน้าเว็บจะส่งเฉพาะ `release.jws.json`,
+`SHA256SUMS` และ `*.artifact` ที่เป็น public payload (ไม่ส่ง `release-descriptor.json`,
+promotion evidence หรือไฟล์ key) ระบบจะ stream ไฟล์ ตรวจ Ed25519 signature
+ด้วย public keyring ตรวจ URL/size/SHA-256 ของ component ทุกตัว แล้ว publish ไปยัง
+`<release-root>/retail-local/<version>/<target>` แบบ atomic และแก้ทับไม่ได้ หน้า
+`/admin/retail-local-releases` ยังใช้สำหรับไฟล์ bootstrap installer ที่ลูกค้าดาวน์โหลดเท่านั้น
+ห้ามอัปโหลด private signing key, build-only metadata หรือ unsigned draft ผ่านหน้าใดก็ตาม
+
 ## 1. เปลี่ยน version
 
 ```powershell

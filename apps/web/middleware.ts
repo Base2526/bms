@@ -13,7 +13,7 @@ export const config = {
   // route enforces its own authorization/consent and streaming size bounds.
   matcher: [
     "/admin/:path*",
-    "/((?!api/admin/retail-local/releases-upload|api/installer-reports|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
+    "/((?!api/admin/retail-local/releases-upload|api/installer-reports|api/admin/retail-local/runtime-release-upload|_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|svg|gif|webp)$).*)",
 
     '/chat/:path*', 
     '/profile/:path*',

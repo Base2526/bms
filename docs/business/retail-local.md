@@ -49,6 +49,32 @@ and verified before use. The bootstrap never contains application images, a data
 or a private release key. Build it with the external public keyring and the platform-specific signed
 manifest URLs documented in [`deploy/retail-local/BUILD.md`](../../deploy/retail-local/BUILD.md).
 
+Platform administrators publish an already-signed component directory from
+`/admin/retail-local-runtime-releases`. The folder picker sends the complete public target set
+(`release.jws.json`, `SHA256SUMS`, and the signed manifest's `*.artifact` files) through a raw,
+streaming Pages API. Publication fails closed unless the configured public keyring validates the
+signature and every target, URL, size and checksum matches. A successful set is immutable under
+`BMS_RETAIL_LOCAL_RELEASE_ROOT/retail-local/<version>/<target>` and is served from
+`BMS_RETAIL_LOCAL_RELEASE_BASE_URL`; the static release host must map that URL to the same host
+directory and support ranged downloads. Configure production with:
+
+```env
+RETAIL_LOCAL_RELEASE_HOST_DIR=/mnt/volume_sgp1_01/releases
+BMS_RETAIL_LOCAL_RELEASE_BASE_URL=https://releases.jachoei.com/retail-local
+BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON={"formatVersion":1,"keys":{"production-key-id":"-----BEGIN PUBLIC KEY-----..."}}
+BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES=34359738368
+BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS=120000
+```
+
+The keyring contains public keys only. Signing and private keys remain isolated from the Web host.
+`release-descriptor.json` and promotion evidence are build/signing records rather than runtime
+payloads and are deliberately not copied into the public release tree; descriptors can contain
+absolute paths from the isolated builder.
+The `windows-10-x86` public folder remains a POS-only compatibility alias whose signed target is
+`windows-10-x86-pos`; it must never be described or selected as a Retail Local Server target.
+The existing `/admin/retail-local-releases` page separately uploads the small customer-facing
+`.exe`/`.deb`/`.pkg`/`.dmg` bootstrap installers after their component manifests are published.
+
 Retail Local Server supports Windows x64 and Ubuntu x64 only. Windows x86 remains a separate legacy
 POS client option, and Linux 32-bit is unsupported by Electron/runtime dependencies. Do not publish a
 32-bit server installer whose preflight or downloaded components cannot run.

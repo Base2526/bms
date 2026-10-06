@@ -112,6 +112,7 @@ services:
       - realtime_node_modules:/app/packages/realtime/node_modules
       - graphql_core_node_modules:/app/packages/graphql-core/node_modules
       - ./storage:/app/storage
+      - ./releases:/app/releases
 
   caddy:
     ports:

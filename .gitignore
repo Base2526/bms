@@ -21,6 +21,9 @@ apps/web/Caddyfile
 /storage/*
 !/storage/.gitkeep
 
+# Signed Retail Local release payloads are large deployment artifacts, never source files.
+/releases/
+
 RN/MyApp/node_modules
 
 # DB dumps/backups — ไฟล์ข้อมูลจริง อาจมี PII ห้าม commit (schema เก็บที่ db/migrations/ แทน)
