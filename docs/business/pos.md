@@ -1455,6 +1455,12 @@ A line prints at its **shelf price**, and any wholesale step or promotion appear
 `ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer
 paid. That price is snapshotted onto the order line at sale time (`bms_order_items.receipt_unit_price`),
 separately from `unit_price`, which is the effective price the order arithmetic uses.
+Cross-SKU gift notes use the saved product name and exact size and explicitly say that the gift
+value is already deducted below. They never add another free-item line or deduct the gift twice.
+For example, shelf lines totalling 11,017 with a 1,458 gift discount produce a 9,559 receipt.
+A recorded cash tender of 12,354 produces change of 2,795; reprinting preserves that payment
+evidence even after a client-side tender-default bug is fixed. Never replace a historical tender
+with today's basket/default amount or infer what cash was physically handed over.
 
 Migration `10.13` adds `line_amount` as the exact monetary result of that arithmetic. A promotion
 such as 3 for 100 cannot be represented by `qty × NUMERIC(12,2) unit_price` without losing a satang,
