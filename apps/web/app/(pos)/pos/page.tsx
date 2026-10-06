@@ -940,6 +940,18 @@ type SearchItem = {
   imageUrl?: string | null;
 };
 
+type VariantSelectionPrompt = {
+  sku: string;
+  productName: string;
+  imageUrl?: string | null;
+  variants: Array<{
+    size: string;
+    available: number;
+    price: number;
+    stockTracked: boolean;
+  }>;
+};
+
 /**
  * Keep raw keystrokes outside the register-wide component. Barcode wedges still submit
  * immediately on Enter, while human searches update the parent only after a short pause.
@@ -1823,6 +1835,7 @@ export default function PosPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [searchResults, setSearchResults] = useState<SearchItem[]>([]);
   const [searching, setSearching] = useState(false);
+  const [variantSelection, setVariantSelection] = useState<VariantSelectionPrompt | null>(null);
   // ---- รับสินค้าเข้าโดย Scanner (9.6) ----
   const [receivableOrders, setReceivableOrders] = useState<PosPurchaseHeader[]>([]);
   const [stockOrder, setStockOrder] = useState<PosPurchaseDetail | null>(null);
@@ -4587,6 +4600,7 @@ export default function PosPage() {
     const trimmed = code.trim();
     if (!trimmed || !token) return;
     scanRef.current?.clear();
+    setVariantSelection(null);
     try {
       const params = new URLSearchParams({ code: trimmed });
       if (size?.trim()) params.set("size", size.trim().toUpperCase());
@@ -4598,6 +4612,16 @@ export default function PosPage() {
       });
       const data = await res.json();
       if (!res.ok) {
+        if (
+          res.status === 409
+          && data?.reason === "VARIANT_SELECTION_REQUIRED"
+          && data?.selection
+          && Array.isArray(data.selection.variants)
+        ) {
+          setVariantSelection(data.selection as VariantSelectionPrompt);
+          setNotice({ type: "error", text: data?.error ?? "สินค้านี้มีหลายไซซ์ กรุณาเลือกไซซ์" });
+          return;
+        }
         setNotice({ type: "error", text: data?.error ?? "ยิงไม่สำเร็จ" });
         return;
       }
@@ -8597,6 +8621,61 @@ export default function PosPage() {
             </button>
           )}
           </div>
+          {variantSelection && (
+            <div
+              role="group"
+              aria-label={`เลือกไซซ์ ${variantSelection.productName}`}
+              style={{
+                marginTop: 8,
+                border: "1px solid var(--posx-warn-line, #d97706)",
+                borderRadius: 10,
+                background: "var(--posx-soft, #fffaf0)",
+                padding: "10px 12px",
+              }}
+            >
+              <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                <ProductThumb
+                  url={variantSelection.imageUrl}
+                  alt={variantSelection.productName}
+                  onPreview={(url) => setImagePreview({ url, label: variantSelection.productName })}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{variantSelection.productName}</div>
+                  <div style={{ fontSize: 12, color: "var(--posx-muted, #666)" }}>
+                    {variantSelection.sku} · รหัสนี้ใช้ร่วมกันหลายไซซ์ กรุณาเลือกไซซ์ที่ลูกค้าถือ
+                  </div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                {variantSelection.variants.map((variant) => {
+                  const disabled = variant.stockTracked && variant.available <= 0;
+                  return (
+                    <button
+                      type="button"
+                      key={`${variantSelection.sku}-${variant.size}`}
+                      disabled={disabled}
+                      onClick={() => {
+                        enqueueScan(variantSelection.sku, "manual", variant.size);
+                        setVariantSelection(null);
+                        setNotice(null);
+                      }}
+                      style={{
+                        padding: "6px 10px",
+                        borderRadius: 999,
+                        border: "1px solid var(--posx-line, #d9d9d9)",
+                        background: "var(--posx-surface, #fff)",
+                        cursor: disabled ? "not-allowed" : "pointer",
+                        opacity: disabled ? 0.5 : 1,
+                      }}
+                    >
+                      {variant.size} · ฿{baht(variant.price)}
+                      {variant.stockTracked ? ` · ${disabled ? "หมด" : `เหลือ ${variant.available}`}` : ""}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {(searching || searchResults.length > 0 || searchTerm.trim().length >= 2) && (
             <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
               {searching && <div style={{ fontSize: 12, color: "var(--posx-muted, #666)" }}>กำลังค้นสินค้า…</div>}

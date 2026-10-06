@@ -10,7 +10,13 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { authenticatePosDevice, getPosVariantAvailable, resolvePosScan } from "@/lib/bms/pos";
+import {
+  authenticatePosDevice,
+  getPosVariantAvailable,
+  isPosVariantSelectionRequiredError,
+  listPosVariantChoices,
+  resolvePosScan,
+} from "@/lib/bms/pos";
 import { listPrimaryProductImages } from "@/lib/bms/products";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
@@ -33,12 +39,31 @@ async function handleGET(req: NextRequest) {
   const surface = requestedSurface === "RESTAURANT_POS" ? "RESTAURANT_POS" : "RETAIL_POS";
   if (!code) return NextResponse.json({ error: "ต้องระบุ code" }, { status: 400 });
 
-  const hit = await resolvePosScan(device.tenantId, code, {
-    size,
-    locationId: device.locationId,
-    packCode,
-    surface,
-  });
+  let hit: Awaited<ReturnType<typeof resolvePosScan>>;
+  try {
+    hit = await resolvePosScan(device.tenantId, code, {
+      size,
+      locationId: device.locationId,
+      packCode,
+      surface,
+    });
+  } catch (error) {
+    if (!isPosVariantSelectionRequiredError(error)) throw error;
+    const [variants, images] = await Promise.all([
+      listPosVariantChoices(device.tenantId, error.sku, device.locationId),
+      listPrimaryProductImages(device.tenantId, [error.sku]),
+    ]);
+    return NextResponse.json({
+      error: error.message,
+      reason: "VARIANT_SELECTION_REQUIRED",
+      selection: {
+        sku: error.sku,
+        productName: error.productName,
+        imageUrl: images.get(error.sku) ?? null,
+        variants,
+      },
+    }, { status: 409 });
+  }
   if (!hit) return NextResponse.json({ error: "ไม่พบสินค้าจากรหัสนี้", code }, { status: 404 });
 
   // ของคงเหลือของสาขานี้ — จอขายต้องเห็นก่อนกดเพิ่มลงตะกร้า

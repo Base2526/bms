@@ -2032,9 +2032,10 @@ test("กลุ่มตัวเลือกแบบเลือกได้�
   // `bms_product_variants` (upsertProduct ไม่เคยสร้างแถวสต็อก) ถ้าไม่มีกิ่งนี้ การขอไซซ์
   // ที่ไม่ใช่ min(code) จะได้ไซซ์อื่นกลับมาเงียบ ๆ (พิสูจน์กับ dev DB แล้ว: ขอ 'L' ได้ 'S')
   const pos = code(await read("apps/web/lib/bms/pos.ts"));
-  const sizeCoalesce = pos.slice(
-    pos.indexOf("            COALESCE("),
-    pos.indexOf("AS size"),
+  const resolvePosScan = pos.slice(pos.indexOf("export async function resolvePosScan"));
+  const sizeCoalesce = resolvePosScan.slice(
+    resolvePosScan.indexOf("            COALESCE("),
+    resolvePosScan.indexOf("AS size"),
   );
   assert.match(
     sizeCoalesce,

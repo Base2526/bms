@@ -517,6 +517,110 @@ export type PosScanHit = {
 };
 
 /**
+ * A product-level barcode/SKU identifies the product, but not one of several active variants.
+ *
+ * This is intentionally different from "not found": adapters must ask the cashier to choose the
+ * real catalog variant instead of silently picking an alphabetical minimum. Exact pack barcodes
+ * still resolve immediately because `bms_product_packs.size` already identifies the variant.
+ */
+export class PosVariantSelectionRequiredError extends Error {
+  readonly code = "POS_VARIANT_SELECTION_REQUIRED";
+
+  constructor(
+    readonly sku: string,
+    readonly productName: string,
+  ) {
+    super(`${productName} (${sku}) มีหลายไซซ์ กรุณาเลือกไซซ์ก่อนเพิ่มสินค้า`);
+    this.name = "PosVariantSelectionRequiredError";
+  }
+}
+
+export function isPosVariantSelectionRequiredError(
+  error: unknown,
+): error is PosVariantSelectionRequiredError {
+  return error instanceof PosVariantSelectionRequiredError
+    || (error instanceof Error
+      && (error as Error & { code?: unknown }).code === "POS_VARIANT_SELECTION_REQUIRED");
+}
+
+export type PosVariantChoice = {
+  size: string;
+  available: number;
+  price: number;
+  stockTracked: boolean;
+};
+
+/**
+ * Catalog-authoritative choices shown only after a generic code matches a multi-variant product.
+ * A variant does not need an inventory row: RECIPE/NON_STOCK products deliberately keep their own
+ * inventory at zero, while DIRECT products remain visibly disabled when the branch has no stock.
+ */
+export async function listPosVariantChoices(
+  tenantId: string,
+  productSku: string,
+  locationId: string,
+): Promise<PosVariantChoice[]> {
+  const result = await query<{
+    size: string;
+    available: string;
+    price: string;
+    stock_tracked: boolean;
+  }>(
+    `WITH product AS (
+       SELECT p.tenant_id, p.sku, p.price, p.is_bundle,
+              COALESCE(policy.stock_policy, 'DIRECT') AS stock_policy
+         FROM bms_products p
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+        WHERE p.tenant_id = $1 AND p.sku = $2 AND p.active
+     ), choices AS (
+       SELECT variant.code AS size, variant.sort_order
+         FROM bms_product_variants variant
+        WHERE variant.tenant_id = $1 AND variant.product_sku = $2 AND variant.active
+       UNION ALL
+       SELECT DISTINCT inventory.size, 2147483647 AS sort_order
+         FROM bms_inventory inventory
+        WHERE inventory.tenant_id = $1 AND inventory.product_sku = $2
+          AND NOT EXISTS (
+            SELECT 1 FROM bms_product_variants variant
+             WHERE variant.tenant_id = $1 AND variant.product_sku = $2 AND variant.active
+          )
+     )
+     SELECT choices.size,
+            COALESCE(SUM(GREATEST(inventory.current_stock - inventory.reserved_stock, 0)), 0)::text
+              AS available,
+            COALESCE(sized.price, shared.price, product.price)::text AS price,
+            NOT (
+              COALESCE(product.is_bundle, FALSE)
+              OR product.stock_policy IN ('RECIPE', 'NON_STOCK')
+            ) AS stock_tracked
+       FROM product
+       JOIN choices ON TRUE
+       LEFT JOIN bms_inventory inventory
+         ON inventory.tenant_id = product.tenant_id
+        AND inventory.product_sku = product.sku
+        AND upper(inventory.size) = upper(choices.size)
+        AND inventory.location_id = $3
+       LEFT JOIN bms_product_packs sized
+         ON sized.tenant_id = product.tenant_id AND sized.product_sku = product.sku
+        AND upper(sized.size) = upper(choices.size) AND sized.is_base AND sized.active
+       LEFT JOIN bms_product_packs shared
+         ON shared.tenant_id = product.tenant_id AND shared.product_sku = product.sku
+        AND shared.size IS NULL AND shared.is_base AND shared.active
+      GROUP BY choices.size, choices.sort_order, sized.price, shared.price, product.price,
+               product.is_bundle, product.stock_policy
+      ORDER BY choices.sort_order, choices.size`,
+    [tenantId, productSku, locationId],
+  );
+  return result.rows.map((row) => ({
+    size: row.size,
+    available: Math.max(0, Number(row.available) || 0),
+    price: Number(row.price),
+    stockTracked: row.stock_tracked,
+  }));
+}
+
+/**
  * Whether a variant's own `bms_inventory` row is the real selling ceiling.
  *
  * A bundle (8.8) keeps its own row at 0 and consumes components; a RECIPE/NON_STOCK menu
@@ -672,20 +776,32 @@ export async function resolvePosScan(
                   AND variant.active AND upper(variant.code) = upper($3::text)
                 LIMIT 1),
               -- 2. บาร์โค้ดที่ยิงมาเป็นของหน่วยขายที่ผูกไซซ์ไว้แล้ว (7.93)
-              --    นี่คือทางปกติของระบบค้าปลีก: 1 บาร์โค้ด = 1 หน่วยขาย
-              k.size,
-              -- 3. ตกมาถึงนี่คือบาร์โค้ดเก่าที่ยังผูกกับสินค้าไม่ใช่หน่วยขาย
-              --    เลือกไซซ์แรกตามตัวอักษร — ต้องนิ่ง ห้ามขึ้นกับสต็อก ไม่งั้น
-              --    ยิงขวดเดิมวันนี้กับพรุ่งนี้ได้คนละขนาด
-              (SELECT min(i.size) FROM bms_inventory i
-                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
-                  AND ($4::uuid IS NULL OR i.location_id = $4)),
-              -- 4. ยังไม่มีแถวสต็อกเลย (เมนู NON_STOCK/RECIPE ที่ยังไม่เคยขาย) —
-              --    ตัวเลือกในแคตตาล็อก (9.51) คือความจริงของไซซ์ ไม่ใช่ตารางสต็อก
-              --    กิ่งนี้ทำงานเฉพาะตอนสามกิ่งบนได้ NULL ซึ่งวันนี้แปลว่าสแกนไม่ได้อยู่แล้ว
+              --    ใช้ได้ทันทีเมื่อเป็นบาร์โค้ด pack ที่แยกจากรหัสระดับสินค้า หรือเมื่อ
+              --    ผู้เรียกระบุ packCode ตอน revalidate ตะกร้าแล้ว · ข้อมูล legacy เคย copy
+              --    p.barcode ไปไว้ที่ base pack ของไซซ์แรกตามตัวอักษร ถ้ายอมให้แถวนั้นชนะ
+              --    สินค้า S/L จะยังถูกตีความเป็น L โดยไม่มีหลักฐานว่าคนยิงต้องการ L
+              CASE
+                WHEN $5::text IS NOT NULL OR p.barcode IS DISTINCT FROM $2 THEN k.size
+                ELSE NULL
+              END,
+              -- 3. รหัสระดับสินค้าเลือกเองได้เฉพาะเมื่อ catalog มีไซซ์เดียวจริง ๆ
+              --    min(code) แบบเดิมทำให้สินค้า S/L ถูกเลือกเป็น L ตามตัวอักษร ทั้งที่
+              --    โปรโมชั่นหรือชิ้นที่ลูกค้าถืออาจเป็น S — หลายไซซ์ต้องให้คนเลือก
               (SELECT min(variant.code) FROM bms_product_variants variant
                 WHERE variant.tenant_id = p.tenant_id AND variant.product_sku = p.sku
-                  AND variant.active)
+                  AND variant.active
+                HAVING count(DISTINCT upper(variant.code)) = 1),
+              -- 4. รองรับฐาน legacy ที่ยังไม่มี catalog variant: เลือกได้เมื่อสาขานี้มี
+              --    แถวไซซ์เดียวเท่านั้น และห้าม fallback กิ่งนี้ถ้ามี catalog หลายไซซ์
+              (SELECT min(i.size) FROM bms_inventory i
+                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
+                  AND ($4::uuid IS NULL OR i.location_id = $4)
+                  AND NOT EXISTS (
+                    SELECT 1 FROM bms_product_variants variant
+                     WHERE variant.tenant_id = p.tenant_id
+                       AND variant.product_sku = p.sku AND variant.active
+                  )
+                HAVING count(DISTINCT upper(i.size)) = 1)
             )                                        AS size
        FROM bms_products p
        LEFT JOIN bms_product_packs k
@@ -716,7 +832,10 @@ export async function resolvePosScan(
   );
 
   const row = res.rows[0];
-  if (!row || !row.size) return null;
+  if (!row) return null;
+  if (!row.size) {
+    throw new PosVariantSelectionRequiredError(row.sku, row.name);
+  }
 
   // 9.61: โปรของสาขาทับโปรทั้งร้าน · `LIMIT 1` เดิมใช้ไม่ได้แล้ว เพราะตอนนี้ SKU เดียว
   // มีได้สองแถว (ทั้งร้าน + สาขานี้) แล้วแถวที่ได้จะขึ้นกับลำดับที่ Postgres บังเอิญคืนมา
