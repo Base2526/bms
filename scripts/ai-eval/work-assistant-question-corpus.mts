@@ -122,6 +122,11 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "buy A get B different SKU", locale: "en", context: GUIDES, expect: "answer", expectTop: "products.cross-sku-gift", origin: "coverage" },
   { q: "เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.time-offer-limits", origin: "coverage" },
   { q: "buy two hours get one free", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.time-offer-limits", origin: "coverage" },
+  { q: "เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", locale: "th", context: CAPABILITIES, expect: "answer", expectTop: "board-game.time-promotions", expectStatus: "CONDITIONAL", origin: "coverage" },
+  { q: "buy two hours get one free", locale: "en", context: CAPABILITIES, expect: "answer", expectTop: "board-game.time-promotions", expectStatus: "CONDITIONAL", origin: "coverage" },
+  { q: "เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-time-promotion", origin: "coverage" },
+  { q: "buy two hours get one free", locale: "en", context: REGISTER, expect: "answer", expectTop: "pos.board-game-time-promotion", origin: "coverage" },
+  { q: "โปรไม่ลดค่าเล่น", locale: "th", context: REGISTER, expect: "answer", expectTop: "pos.board-game-time-promotion", origin: "coverage" },
   {
     q: "ทำไมสินค้ามีสต็อกแต่ขายไม่ได้", locale: "th", expect: "answer", expectTop: "inventory.stock-sale-blockers",
     expectTool: { name: "check_stock", permission: "product.view" },

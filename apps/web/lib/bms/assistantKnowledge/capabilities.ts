@@ -35,6 +35,15 @@ function featureCapability(input: {
  */
 export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
+    id: "board-game.time-promotions", module: "board-game",
+    title: both("โปรโมชันเวลาเล่นบอร์ดเกม", "Board-game play-time promotions"),
+    description: both("รองรับเล่น 2 ชั่วโมง แถม 1 ชั่วโมง โดยตั้งเวลาคิดเงิน 120 นาทีและเวลาแถม 60 นาที วนรอบแยกต่อผู้เล่น ระบบเลือกสิทธิ์ที่ประหยัดที่สุดตอนปิดเวลาและส่งยอดสุทธิให้ POS", "Supports buy two play hours and get one free: configure 120 paid minutes and 60 free minutes, repeating per player. The server selects the cheapest eligible benefit at time close and sends the net charge to POS."),
+    aliases: aliases(["เล่น 2 ชั่วโมง แถม 1 ชั่วโมง", "2 ชั่วโมงแถม 1 ชั่วโมง", "2 แถม 1", "โปรเวลาเล่น", "โปรชั่วโมงเล่น", "โปรโมชั่นบอร์ดเกม"], ["buy two hours get one free", "2 hours get 1 free", "play time promotion", "board game promotion"]),
+    status: "CONDITIONAL", route: "/admin/board-game", requiredPermissions: ["board_game.session.manage"],
+    configurationDependencies: ["Board-game cafe setup, migration 10.40, and an active eligible TIME_BUY_GET offer with buyMinutes=120 and freeMinutes=60 for the 2+1 promotion."],
+    limitations: both("ต้องตั้งที่แพ็กเกจ/โปรโมชันในหน้าโต๊ะบอร์ดเกม การมีฟีเจอร์ไม่ได้ยืนยันว่าร้านตั้งโปรแล้ว 2 ชั่วโมงจ่าย 2 ชั่วโมง; 3 ชั่วโมงจ่าย 2 ชั่วโมง ใช้เวลาหลังปัดตามกติการ้าน ไม่ซ้อนแพ็กเกจสมาชิก และไม่เปลี่ยนบิลที่ปิดเวลาแล้ว", "Configure it under Board Game packages/promotions. Product support does not confirm a shop has configured it. Two hours pays for two; three hours pays for two, using rounded billable time. It does not stack with a member pass or change already-closed bills."),
+  },
+  {
     id: "dashboard.overview", module: "dashboard",
     title: both("ภาพรวมร้าน", "Store overview"),
     description: both("ดูยอดขาย งานค้าง และตัวชี้วัดการดำเนินงาน", "View sales, pending work, and operating indicators."),

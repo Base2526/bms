@@ -1831,6 +1831,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                       ? 'ค่าเล่นของกลุ่มที่ยังเล่นอยู่จะคิดตอนปิดเวลา'
                       : 'ค่าเล่นและของที่สั่งถูกปิดยอดแล้ว'}
                 </span>
+                {money.stillPlaying && <span>{t('admin_board_game.running_offer_hint')}</span>}
               </div>
             </div>
           </div>

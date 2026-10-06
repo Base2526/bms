@@ -49,6 +49,7 @@ import {
   getPosShiftReport,
   getPosShiftReturnSummary,
   getPosVariantAvailable,
+  isPosVariantSelectionRequiredError,
   isPosVariantStockTracked,
   blindReturnPosSale,
   cancelRestaurantOrderLines,
@@ -3474,15 +3475,25 @@ export const bmsPosDeviceResolvers = {
       const device = requirePosDevice(ctx);
       const code = String(args.code ?? "").trim();
       if (!code) return badPosInput("ต้องระบุ code");
-      const hit = await resolvePosScan(device.tenantId, code, {
-        size: args.size?.trim() || null,
-        locationId: device.locationId,
-        packCode: args.packCode?.trim() || null,
-        surface:
-          args.surface?.trim().toUpperCase() === "RESTAURANT_POS"
-            ? "RESTAURANT_POS"
-            : "RETAIL_POS",
-      });
+      let hit: Awaited<ReturnType<typeof resolvePosScan>>;
+      try {
+        hit = await resolvePosScan(device.tenantId, code, {
+          size: args.size?.trim() || null,
+          locationId: device.locationId,
+          packCode: args.packCode?.trim() || null,
+          surface:
+            args.surface?.trim().toUpperCase() === "RESTAURANT_POS"
+              ? "RESTAURANT_POS"
+              : "RETAIL_POS",
+        });
+      } catch (error) {
+        if (!isPosVariantSelectionRequiredError(error)) throw error;
+        throw mobileGraphqlError(error.message, "CONFLICT", {
+          reason: "VARIANT_SELECTION_REQUIRED",
+          scanCode: code,
+          sku: error.sku,
+        });
+      }
       if (!hit) {
         throw mobileGraphqlError("ไม่พบสินค้าจากรหัสนี้", "NOT_FOUND", {
           scanCode: code,

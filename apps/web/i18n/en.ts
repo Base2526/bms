@@ -773,6 +773,8 @@ const en = {
     offer_kind_time_buy_get: "Buy time, get free time (repeating per player)",
     offer_buy_minutes: "Paid minutes per cycle",
     offer_free_minutes: "Free minutes per cycle",
+    offer_buy_get_hint: "Buy two hours, get one free: set 120 paid and 60 free minutes per player. For a fixed playing duration, enter all 180 minutes; the timer is not extended automatically. The discount uses the shop's rounded billable time at close and does not change already-closed bills.",
+    running_offer_hint: "The hourly rate remains unchanged. Eligible play-time offers or passes are selected when time is closed, with the discount shown at checkout.",
     offer_value: "Benefit",
     offer_conditions: "Conditions",
     offer_percent: "Play-time discount (%)",
