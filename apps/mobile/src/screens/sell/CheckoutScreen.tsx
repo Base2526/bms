@@ -56,6 +56,9 @@ import {
   paymentMethodLabel,
   quickCashAmounts,
   validateMockPayments,
+  editCheckoutPayment,
+  syncSingleCheckoutPayment,
+  type CheckoutPayment,
   type MockPaymentInput,
   type MockPaymentMethod,
 } from '../../lib/paymentMath';
@@ -340,7 +343,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       : cart;
   const bootstrap = useQuery(PosBootstrapDocument);
   const [saleMode, setSaleMode] = useState<'SALE' | 'DEPOSIT'>('SALE');
-  const [payments, setPayments] = useState<MockPaymentInput[]>([
+  const [payments, setPayments] = useState<CheckoutPayment[]>([
     {
       id: 'payment-1',
       method: 'cash',
@@ -365,35 +368,22 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         );
   const total = payableWithRounding(payableBeforeRounding, roundingDelta);
   // ยอดของบิลที่จ่ายช่องทางเดียวต้องเดินตามยอดสุทธิเสมอ เพราะ layout ใหม่ไม่แสดงช่อง
-  // "ยอดช่องทางนี้" ซ้ำกับยอดบิลอีกแล้ว; `paymentsTouched` ใช้จำเฉพาะเงินสดที่รับจริง
+  // "ยอดช่องทางนี้" ซ้ำกับยอดบิลอีกแล้ว; แต่ละแถวจำเฉพาะเงินสดที่รับจริง
   // เพื่อไม่เขียนทับสิ่งที่แคชเชียร์พิมพ์เมื่อสิทธิ์หรือราคาเปลี่ยน
   //
   // ⚠️ หน้านี้แก้จำนวนสินค้า/ใส่สมาชิก/ใส่คูปองได้ **ในหน้าเดียวกับที่กรอกเงิน** ของเดิมตั้งยอด
   // ช่องทางไว้ครั้งเดียวตอน mount แล้วไม่ตามอีกเลย → ขยับจำนวนทีเดียวปุ่มยืนยันก็ล็อกด้วย
   // "ยังขาด ฿x" จนกว่าจะพิมพ์ยอดใหม่เองทุกครั้ง
-  const [paymentsTouched, setPaymentsTouched] = useState(false);
-  useEffect(() => {
-    if (saleMode !== 'SALE') return;
-    setPayments(prev => {
-      if (prev.length !== 1) return prev;
-      const payment = prev[0];
-      return [
-        {
-          ...payment,
-          amount: total,
-          tendered:
-            payment.method === 'cash'
-              ? paymentsTouched
-                ? payment.tendered
-                : total
-              : undefined,
-        },
-      ];
-    });
-  }, [paymentsTouched, saleMode, total]);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
+  const paymentCount = payments.length;
+  useEffect(() => {
+    if (saleMode !== 'SALE') return;
+    setPayments(current =>
+      syncSingleCheckoutPayment(current, total, submittedRef.current),
+    );
+  }, [paymentCount, saleMode, total, submitting]);
   const idempotencyRef = useRef<string | null>(null);
   const pharmacyReviewKeyRef = useRef<string | null>(null);
   const [sell] = useMutation(MobilePosSaleDocument);
@@ -411,19 +401,21 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [pharmacistNote, setPharmacistNote] = useState('');
   const [otherMethodsOpen, setOtherMethodsOpen] = useState(false);
   const [splitOptionsOpen, setSplitOptionsOpen] = useState(false);
+  const checkoutBillKey = JSON.stringify([
+    source,
+    boardGameParams?.boardGameBillingGroupId ?? null,
+    restaurantCheckId ?? null,
+  ]);
+  const previousCheckoutBillKey = useRef(checkoutBillKey);
   useEffect(() => {
-    if (source === 'retail') return;
+    // A refreshed total is not a new bill: preserve split allocations and actual cash.
+    if (previousCheckoutBillKey.current === checkoutBillKey) return;
+    previousCheckoutBillKey.current = checkoutBillKey;
     setSaleMode('SALE');
-    setPaymentsTouched(false);
     setPayments([
       { id: 'payment-1', method: 'cash', amount: total, tendered: total },
     ]);
-  }, [
-    boardGameParams?.boardGameBillingGroupId,
-    restaurantCheckId,
-    source,
-    total,
-  ]);
+  }, [checkoutBillKey, total]);
   const paymentTarget =
     saleMode === 'DEPOSIT' ? Number(depositAmount) || 0 : total;
   const validation = useMemo(
@@ -552,17 +544,19 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     pointsToRedeem: 0 as const,
   });
 
-  const updatePayment = (id: string, patch: Partial<MockPaymentInput>) => {
-    setPaymentsTouched(true);
+  const updatePayment = (
+    id: string, patch: Partial<MockPaymentInput>, exactCash = false,
+  ) => {
+    if (submittedRef.current) return;
     setPayments(prev =>
       prev.map(payment =>
-        payment.id === id ? { ...payment, ...patch } : payment,
+        payment.id === id ? editCheckoutPayment(payment, patch, exactCash) : payment,
       ),
     );
   };
 
   const addPayment = (method: MockPaymentMethod) => {
-    setPaymentsTouched(true);
+    if (submittedRef.current) return;
     setPayments(prev => [
       ...prev,
       {
@@ -668,10 +662,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         submittedRef.current = false;
         setSubmitting(false);
         setConfirmOpen(false);
-        if (recheck.changed) {
-          setPaymentsTouched(false);
-          setPayments([{ id: 'payment-1', method: 'cash', amount: 0 }]);
-        }
+        // Keep explicitly received cash and split allocations for cashier review.
         Alert.alert(
           recheck.error ? 'ตรวจราคาไม่สำเร็จ' : 'ราคามีการเปลี่ยนแปลง',
           recheck.error ??
@@ -705,10 +696,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           submittedRef.current = false;
           setSubmitting(false);
           setConfirmOpen(false);
-          setPaymentsTouched(false);
-          setPayments([
-            { id: 'payment-1', method: 'cash', amount: 0, tendered: 0 },
-          ]);
           Alert.alert(
             'ยอดบิลมีการเปลี่ยนแปลง',
             'ยอดสินค้า ส่วนลด หรือเวลาเล่นเปลี่ยนไป · อัปเดตยอดล่าสุดแล้ว กรุณาตรวจและรับเงินใหม่',
@@ -753,10 +740,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           submittedRef.current = false;
           setSubmitting(false);
           setConfirmOpen(false);
-          setPaymentsTouched(false);
-          setPayments([
-            { id: 'payment-1', method: 'cash', amount: 0, tendered: 0 },
-          ]);
           Alert.alert(
             'ยอดบิลมีการเปลี่ยนแปลง',
             'ยอดอาหาร ส่วนลด หรือแต้มเปลี่ยนไป · กรุณาตรวจและรับเงินใหม่',
@@ -1268,7 +1251,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             style={styles.saleModeButton}
             onPress={() => {
               setSaleMode('SALE');
-              setPaymentsTouched(false);
               setPayments([
                 {
                   id: 'payment-1',
@@ -1286,7 +1268,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             onPress={() => {
               setSaleMode('DEPOSIT');
               setDepositAmount('');
-              setPaymentsTouched(true);
               setPayments([
                 { id: 'payment-1', method: 'cash', amount: 0, tendered: 0 },
               ]);
@@ -1301,7 +1282,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             onChangeText={value => {
               setDepositAmount(value);
               const parsed = Number(value) || 0;
-              setPaymentsTouched(true);
               setPayments(previous => [
                 {
                   ...(previous[0] ?? {
@@ -1309,6 +1289,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     method: 'cash' as const,
                   }),
                   amount: parsed,
+                  manualTender: false,
                   tendered:
                     (previous[0]?.method ?? 'cash') === 'cash'
                       ? parsed
@@ -1387,7 +1368,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                       accessibilityLabel={`ลบช่องทางชำระเงินที่ ${index + 1}`}
                       variant="ghost"
                       onPress={() => {
-                        setPaymentsTouched(true);
+                        if (submittedRef.current) return;
                         setPayments(prev =>
                           prev.filter(p => p.id !== payment.id),
                         );
@@ -1531,7 +1512,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                           variant="secondary"
                           style={styles.quickCashButton}
                           onPress={() =>
-                            updatePayment(payment.id, { tendered: amount })
+                            updatePayment(payment.id, { tendered: amount }, amount === payment.amount)
                           }
                         />
                       ))}

@@ -1454,6 +1454,12 @@ Changing a split row's method to cash starts a new automatic tender; changing it
 then follows that amount until the cashier explicitly enters cash. Removing the other row restores
 the single-payment automatic total. After an explicitly refused settlement, reconcile any payable
 change received while locked; an unknown result keeps the original retry payload and tender frozen.
+Native checkout uses the same per-row cash-default helper: editing a QR reference does not mark
+cash as manually received, and collapsing a split rechecks the remaining single allocation.
+A restaurant/board-game preview refresh is not a new bill and must not reset cash or split rows.
+Only switching bill identity resets those rows. A changed-price preflight keeps explicit cash for
+review; insufficient cash still blocks confirmation. Deposit allocations remain separate from the
+full-sale automatic total.
 
 A line prints at its **shelf price**, and any wholesale step or promotion appears as its own
 `ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer
