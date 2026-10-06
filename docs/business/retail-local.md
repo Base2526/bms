@@ -67,6 +67,13 @@ BMS_HTTP_REQUEST_TIMEOUT_MS=1800000
 BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS=120000
 ```
 
+The production Compose overlay mounts `RETAIL_LOCAL_RELEASE_HOST_DIR` into Web at `/app/releases`
+and into this repository's Caddy at `/srv/bms-releases`; `apps/web/Caddyfile.server` serves the
+latter. If another stack owns ports 80/443 (as on the current shared VM), that front proxy must bind
+the same host directory read-only at `/srv/bms-releases`. Do not hard-code a second release path in
+either Compose project: a successful Admin publish followed by a public 404 means the publisher and
+the front proxy are looking at different directories.
+
 The keyring contains public keys only. Signing and private keys remain isolated from the Web host.
 `BMS_HTTP_REQUEST_TIMEOUT_MS` is the Web server's total request-body deadline. It must be long
 enough for the largest release set at the slowest supported upload speed; 30 minutes avoids Node's

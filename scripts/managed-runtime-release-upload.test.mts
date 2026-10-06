@@ -351,11 +351,13 @@ test("rejects a manifest whose signature was changed", async () => {
 
 test("runtime upload route stays raw-streamed and excluded from middleware buffering", async () => {
   const repo = path.resolve(import.meta.dirname, "..");
-  const [route, parser, middleware, compose] = await Promise.all([
+  const [route, parser, middleware, baseCompose, productionCompose, productionCaddy] = await Promise.all([
     readFile(path.join(repo, "apps/web/pages/api/admin/retail-local/runtime-release-upload.ts"), "utf8"),
     readFile(path.join(repo, "apps/web/lib/bms/managedRuntimeReleaseUpload.ts"), "utf8"),
     readFile(path.join(repo, "apps/web/middleware.ts"), "utf8"),
+    readFile(path.join(repo, "docker-compose.yml"), "utf8"),
     readFile(path.join(repo, "docker-compose.prod.yml"), "utf8"),
+    readFile(path.join(repo, "apps/web/Caddyfile.server"), "utf8"),
   ]);
   assert.match(route, /bodyParser: false/);
   assert.match(route, /hasSameOrigin\(req\)/);
@@ -366,6 +368,27 @@ test("runtime upload route stays raw-streamed and excluded from middleware buffe
   assert.match(parser, /UPLOAD_IDLE_TIMEOUT/);
   assert.doesNotMatch(parser, /arrayBuffer\(|Buffer\.concat/);
   assert.match(middleware, /runtime-release-upload/);
-  assert.match(compose, /RETAIL_LOCAL_RELEASE_HOST_DIR/);
-  assert.match(compose, /BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON/);
+  assert.match(
+    productionCompose,
+    /\$\{RETAIL_LOCAL_RELEASE_HOST_DIR:-\.\/releases\}:\/app\/releases/,
+    "Web must publish into the configured host release directory",
+  );
+  for (const compose of [baseCompose, productionCompose]) {
+    assert.match(
+      compose,
+      /\$\{RETAIL_LOCAL_RELEASE_HOST_DIR:-\.\/releases\}:\/srv\/bms-releases:ro/,
+      "Caddy must read the same host release directory as Web",
+    );
+  }
+  assert.match(
+    productionCompose,
+    /\.\/apps\/web\/Caddyfile\.server:\/etc\/caddy\/Caddyfile:ro/,
+    "production must mount the tracked Caddy source instead of an ignored copy",
+  );
+  assert.match(productionCaddy, /releases\.jachoei\.com\s*\{/);
+  assert.match(productionCaddy, /root \* \/srv\/bms-releases/);
+  assert.match(productionCaddy, /@versionedRelease path \/retail-local\/\*/);
+  assert.match(productionCaddy, /Cache-Control "public, max-age=31536000, immutable"/);
+  assert.match(productionCaddy, /file_server/);
+  assert.match(productionCompose, /BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON/);
 });

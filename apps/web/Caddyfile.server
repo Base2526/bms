@@ -29,6 +29,24 @@ bms.jachoei.com {
    reverse_proxy web:3000
 }
 
+# Immutable Retail Local payloads published by the Web service. Compose mounts
+# the same RETAIL_LOCAL_RELEASE_HOST_DIR at /srv/bms-releases read-only.
+releases.jachoei.com {
+   tls whosscam.io@gmail.com
+
+   root * /srv/bms-releases
+   encode zstd gzip
+
+   header {
+     X-Content-Type-Options "nosniff"
+   }
+
+   @versionedRelease path /retail-local/*
+   header @versionedRelease Cache-Control "public, max-age=31536000, immutable"
+
+   file_server
+}
+
 jachoei.com {
    redir https://bms.jachoei.com{uri} 308
 }
