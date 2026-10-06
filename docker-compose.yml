@@ -131,6 +131,14 @@ services:
       # s3 = ต้องใช้เมื่อ web กระจายข้ามเครื่อง (ดู lib/storageDrivers/s3.ts)
       STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
       STORAGE_DIR: /app/storage
+      # Signed Managed Runtime component sets are published as immutable folders on the
+      # dedicated release host. The keyring contains public keys only; signing never runs here.
+      BMS_RETAIL_LOCAL_RELEASE_ROOT: /app/releases
+      BMS_RETAIL_LOCAL_RELEASE_BASE_URL: ${BMS_RETAIL_LOCAL_RELEASE_BASE_URL:-https://releases.jachoei.com/retail-local}
+      BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON: ${BMS_RETAIL_LOCAL_RELEASE_KEYRING_JSON:-}
+      BMS_RETAIL_LOCAL_COMPONENT_MAX_BYTES: ${BMS_RETAIL_LOCAL_COMPONENT_MAX_BYTES:-17179869184}
+      BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES: ${BMS_RETAIL_LOCAL_RELEASE_SET_MAX_BYTES:-34359738368}
+      BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS: ${BMS_RETAIL_LOCAL_UPLOAD_IDLE_TIMEOUT_MS:-120000}
       # Installer uploads are streamed; this is a byte ceiling, not a memory allocation.
       BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES: ${BMS_RETAIL_LOCAL_RELEASE_MAX_BYTES:-4294967296}
       S3_BUCKET: ${S3_BUCKET:-}

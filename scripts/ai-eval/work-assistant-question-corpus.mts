@@ -372,6 +372,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ออก Trial Retail Local 30 วันยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.retail-local-licenses", origin: "coverage" },
   { q: "ลงทะเบียน License ของเครื่องนี้", locale: "th", context: GUIDES, expect: "answer", expectTop: "retail-local.register-installation", origin: "coverage" },
   { q: "อัปโหลด installer Retail Local ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.retail-local-releases", origin: "coverage" },
+  { q: "อัปโหลด signed component artifacts ของ Managed Runtime ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.retail-local-runtime-releases", origin: "coverage" },
   { q: "รายงานปัญหา installer ดูที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.installer-reports", origin: "coverage" },
   { q: "Where are installer errors?", locale: "en", context: GUIDES, expect: "answer", expectTop: "platform.installer-reports", origin: "coverage" },
   { q: "ตั้งตารางส่งรายงานอัตโนมัติ", locale: "th", context: GUIDES, expect: "answer", expectTop: "platform.report-schedule", origin: "coverage" },

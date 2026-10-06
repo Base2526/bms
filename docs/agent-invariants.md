@@ -681,6 +681,18 @@ deployment profile. The operator contract and remaining release gates live in
   storage cleans a failed partial write; S3 uses bounded multipart parts and aborts a failed upload.
   The private `files` row and release row commit together, and a validation/pre-commit failure
   removes the unreferenced object.
+- **Managed Runtime components publish as one signed immutable set, not as installer rows.**
+  `/admin/retail-local-runtime-releases` uploads `release.jws.json`, `SHA256SUMS` and the referenced
+  `*.artifact` files through the raw Pages API
+  `/api/admin/retail-local/runtime-release-upload`; it has the same middleware/body-buffering
+  boundary as the installer uploader. The server trusts only the configured public-key ring,
+  verifies the Ed25519 envelope, exact release version/target/base URLs, and every component's
+  byte size and SHA-256 before atomically renaming the staging directory into the public release
+  tree. It never accepts a private key, signs a release, publishes a partial directory, or
+  overwrites an existing version/target; the platform administrator reviews version, target,
+  file count and size in an explicit confirmation first. Build-only descriptors and promotion
+  evidence are not copied into the public tree. `/admin/retail-local-releases` remains the separate
+  control plane for customer-facing `.exe`/`.deb`/`.pkg`/`.dmg` bootstrap installers.
 - **Local services are local by default.** PostgreSQL and Redis have no published host port; Web and
   WS publish only on `127.0.0.1`. All application and datastore secrets are generated locally and
   remain required—local mode is never permission to fall back to a literal key. Exposing the server

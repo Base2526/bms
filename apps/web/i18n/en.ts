@@ -666,6 +666,7 @@ const en = {
     local_license: "This installation’s license",
     retail_local_licenses: "Retail Local licenses",
     retail_local_releases: "Retail Local downloads",
+    retail_local_runtime_releases: "Managed Runtime releases",
     installer_reports: "Installations / installer reports",
     board_game: "Board Game Tables",
     pos_manual: "Cashier Manual",

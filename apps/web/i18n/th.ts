@@ -668,6 +668,7 @@ const th = {
     local_license: "License ของเครื่องนี้",
     retail_local_licenses: "License Retail Local",
     retail_local_releases: "ดาวน์โหลด Retail Local",
+    retail_local_runtime_releases: "Managed Runtime Releases",
     installer_reports: "เครื่องที่ติดตั้ง / ปัญหา Installer",
     board_game: "โต๊ะบอร์ดเกม",
     pos_manual: "คู่มือแคชเชียร์",

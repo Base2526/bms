@@ -22,6 +22,7 @@ import {
 } from "antd";
 import type { UploadFile } from "antd/es/upload/interface";
 import {
+  CloudUploadOutlined,
   DownloadOutlined,
   EditOutlined,
   InboxOutlined,
@@ -370,6 +371,9 @@ export default function RetailLocalReleasesPage() {
           </Col>
           <Col>
             <Space wrap>
+              <Button href="/admin/retail-local-runtime-releases" icon={<CloudUploadOutlined />}>
+                Managed Runtime files
+              </Button>
               <Button icon={<ReloadOutlined />} onClick={() => load()} loading={loading}>{copy.refresh}</Button>
               <Button type="primary" icon={<UploadOutlined />} onClick={openUpload}>{copy.upload}</Button>
             </Space>
