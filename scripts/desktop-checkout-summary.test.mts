@@ -87,3 +87,19 @@ test("split payments and uncertain attempts stay frozen; fresh/noncash payments 
   assert.equal(syncSingleCheckoutPayment([{ id: "new", method: "cash", amount: 0, tendered: 0 }], 50, false)[0].tendered, 50);
   assert.equal(syncSingleCheckoutPayment([{ ...cash(), method: "qr" }], 9559, false)[0].tendered, undefined);
 });
+
+test("switching a split row to cash seeds automatic tender, not cashier evidence", () => {
+  const qr: CheckoutPayment = { id: "qr", method: "qr", amount: 4000, reference: "FAKE" };
+  // Same patch supplied by the split-row method selector.
+  let payment = editCheckoutPayment(qr, { method: "cash", reference: undefined, tendered: 4000 });
+  assert.equal(payment.manualTender, false);
+  payment = editCheckoutPayment(payment, { amount: 5000 });
+  assert.equal(payment.tendered, 5000);
+  // Removing the other split row restores automatic full-bill cash.
+  assert.equal(syncSingleCheckoutPayment([payment], 9559, false)[0].tendered, 9559);
+  payment = editCheckoutPayment(payment, { tendered: 10000 });
+  assert.equal(editCheckoutPayment(payment, { amount: 6000 }).tendered, 10000);
+  const noncash = editCheckoutPayment(payment, { method: "qr", tendered: undefined, reference: "" });
+  assert.equal(noncash.manualTender, false);
+  assert.equal(noncash.tendered, undefined);
+});

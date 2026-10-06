@@ -19,7 +19,11 @@ export function editCheckoutPayment(
   payment: CheckoutPayment, patch: Partial<PosPaymentInput>, exactCash = false,
 ): CheckoutPayment {
   const next = { ...payment, ...patch };
-  if (Object.prototype.hasOwnProperty.call(patch, "tendered")) next.manualTender = !exactCash;
+  // The method selector seeds a default tender; only a cash-field/banknote edit
+  // is evidence of money received. A new method must not inherit that evidence.
+  if (next.method !== payment.method) next.manualTender = false;
+  else if (Object.prototype.hasOwnProperty.call(patch, "tendered")) next.manualTender = !exactCash;
   if (next.method === "cash" && !next.manualTender) next.tendered = next.amount;
+  if (next.method !== "cash") next.tendered = undefined;
   return next;
 }

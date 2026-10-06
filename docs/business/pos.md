@@ -1450,6 +1450,10 @@ The cash field follows the current payable automatically until the cashier enter
 amount or selects a banknote amount. That explicit amount is preserved on repricing, even if it
 becomes insufficient; **พอดี** opts back into automatic exact cash. Split allocations and pending
 or unknown settlement attempts are never automatically rewritten.
+Changing a split row's method to cash starts a new automatic tender; changing its allocation
+then follows that amount until the cashier explicitly enters cash. Removing the other row restores
+the single-payment automatic total. After an explicitly refused settlement, reconcile any payable
+change received while locked; an unknown result keeps the original retry payload and tender frozen.
 
 A line prints at its **shelf price**, and any wholesale step or promotion appears as its own
 `ส่วนลดราคาส่ง/โปรโมชั่น` line, so the printed lines always add up to the net total the customer

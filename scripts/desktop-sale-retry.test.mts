@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { syncSingleCheckoutPayment, type CheckoutPayment } from "../apps/web/components/pos-desktop/checkoutPayment.ts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
@@ -86,6 +87,41 @@ test("changed prices release the click lock without submitting", async () => {
   await h.submit();
   assert.equal(h.requests.length, 0);
   assert.equal(h.submitting.current, false);
+});
+
+test("a total changed while submitting resyncs after a decided failure, but not an unknown result", () => {
+  const start = source.indexOf("  const paymentCount = payments.length;");
+  const end = source.indexOf("  const validation =", start);
+  const js = ts.transpileModule(source.slice(start, end), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
+  for (const manualTender of [false, true]) {
+    let payments: CheckoutPayment[] = [{ id: "cash", method: "cash", amount: 11017, tendered: 12354, manualTender }];
+    let previous: unknown[] | undefined;
+    const submitting = { current: false }, attempt = { current: null as unknown };
+    const render = (busy: boolean, total: number) => new Function(
+      "payments", "busy", "total", "saleSubmittingRef", "saleAttemptRef", "useEffect", "setPayments", "syncSingleCheckoutPayment", js,
+    )(payments, busy, total, submitting, attempt, (effect: () => void, deps: unknown[]) => {
+      if (!previous || deps.some((value, i) => !Object.is(value, previous![i]))) effect();
+      previous = deps;
+    }, (update: (value: CheckoutPayment[]) => CheckoutPayment[]) => { payments = update(payments); }, syncSingleCheckoutPayment);
+    render(false, 11017);
+    submitting.current = true;
+    render(true, 11017);
+    render(true, 9559);
+    assert.equal(payments[0].amount, 11017);
+    // Unknown outcome: unlocking controls must NOT rewrite the retry payload's tender.
+    submitting.current = false;
+    attempt.current = { key: "FAKE-pending" };
+    render(false, 9559);
+    assert.equal(payments[0].amount, 11017);
+    submitting.current = true;
+    render(true, 9559);
+    // Retry is explicitly refused; the cashier may now review the current due.
+    submitting.current = false;
+    attempt.current = null;
+    render(false, 9559);
+    assert.equal(payments[0].amount, 9559);
+    assert.equal(payments[0].tendered, manualTender ? 12354 : 9559);
+  }
 });
 
 test("leaving checkout or changing cashier cannot discard an unresolved payment", () => {
