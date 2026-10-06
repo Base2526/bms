@@ -468,6 +468,12 @@ compares the offer against other eligible offers and passes, and snapshots the w
 stacking benefits. Existing percentage and fixed-price caps remain unchanged. Product buy-X-get-Y
 is separate from time offers; `10.41` supports cross-SKU buy-A-get-B for eligible retail stock
 products, not play time or playable library copies.
+For a fixed-duration 2+1 visit, enter the full 180-minute playing duration. The offer discounts
+billable minutes at close; it does not extend the timer from 120 to 180 minutes. The running table
+still shows the frozen hourly rate, while checkout shows the winning discount and net amount.
+Offer edits never reprice groups whose time has already been closed. Both the assistant capability
+search and register guide explain this distinction; capability support is not evidence that a
+particular shop configured an eligible offer.
 The deploy readiness checks require both `10.40` columns before enabling this version's offer readers.
 The desktop refresh button refreshes data in place without clearing the operator, shift or cart.
 Receipt QR requires the Cloud tax-request service and a public HTTPS origin; missing readiness or

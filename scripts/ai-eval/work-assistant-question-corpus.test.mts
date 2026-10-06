@@ -66,7 +66,7 @@ test("the pinned corpus still covers the questions it was written for", () => {
 
   const seen = new Set<string>();
   for (const item of WORK_ASSISTANT_QUESTION_CORPUS) {
-    const key = `${item.locale}|${item.context?.pageId ?? ""}|${item.context?.currentPath ?? ""}|${item.q}`;
+    const key = `${item.locale}|${item.context?.kind ?? "all"}|${item.context?.pageId ?? ""}|${item.context?.currentPath ?? ""}|${item.q}`;
     assert.ok(!seen.has(key), `duplicate corpus case: ${describe(item)}`);
     seen.add(key);
     if (item.expect === "no-match") {

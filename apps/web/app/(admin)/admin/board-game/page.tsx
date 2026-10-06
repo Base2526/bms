@@ -1437,6 +1437,7 @@ export default function BoardGamePage() {
                 : getFieldValue("kind") === "TIME_BUY_GET" ? <>
                   <Form.Item name="buyMinutes" label={t("admin_board_game.offer_buy_minutes")} rules={[{ required: true }]}><InputNumber min={1} max={1440} precision={0} /></Form.Item>
                   <Form.Item name="freeMinutes" label={t("admin_board_game.offer_free_minutes")} rules={[{ required: true }]}><InputNumber min={1} max={1440} precision={0} /></Form.Item>
+                  <Typography.Paragraph type="secondary">{t("admin_board_game.offer_buy_get_hint")}</Typography.Paragraph>
                 </>
                 : <Form.Item name="fixedPrice" label={t("admin_board_game.offer_fixed_price")} rules={[{ required: true }]}><InputNumber min={0} /></Form.Item>}
             </Form.Item>

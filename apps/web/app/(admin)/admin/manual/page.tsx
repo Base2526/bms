@@ -1276,7 +1276,7 @@ const TH: ManualContent = {
     },
     {
       title: "ร้านบอร์ดเกม: เปิด session จนส่งยอดไปเก็บเงิน",
-      desc: "จัดการเวลา คน เกม และกลุ่มค่าเล่นที่ /admin/board-game แล้วชำระผ่าน POS เดิม",
+      desc: "จัดการเวลา คน เกม และกลุ่มค่าเล่นที่ /admin/board-game แล้วชำระผ่าน POS เดิม โปรเล่น 2 ชั่วโมงแถม 1 ชั่วโมงตั้งที่แพ็กเกจ/โปรโมชันเป็นซื้อเวลาแถมเวลา 120+60 นาที ถ้ากำหนดเวลาเล่นล่วงหน้าให้ใส่รวม 180 นาที ตรวจส่วนลดที่หน้าชำระหลังปิดเวลา บิลที่ปิดแล้วจะไม่เปลี่ยนตามโปรที่แก้ภายหลัง",
       steps: [
         "เลือกรูปแบบร้าน Board Game Cafe ก่อนมีออเดอร์จริง จากนั้นสร้างโซน โต๊ะ และอัตราค่าเวลาที่หน้า โต๊ะบอร์ดเกม; สิทธิ์จัด session, ผัง, เรต และคลังเกมแยกจากกัน",
         "ตั้งเรตทั่วไป นักเรียน เด็ก หรือสมาชิกแยกจาก Products พร้อมราคาต่อชั่วโมง เวลาขั้นต่ำ ช่วงปัดเวลา และ grace period; ขนม เครื่องดื่ม อุปกรณ์ หรือเกมที่ขายขาดยังเป็นสินค้าและสต็อกปกติ",
@@ -2499,7 +2499,7 @@ const EN: ManualContent = {
     },
     {
       title: "Board-game cafe: from opening a session to POS settlement",
-      desc: "Run time, people, games, and play-charge groups in /admin/board-game, then settle through the existing POS.",
+      desc: "Run time, people, games, and play-charge groups in /admin/board-game, then settle through the existing POS. Configure buy-two-get-one play time under packages/promotions as 120 paid + 60 free minutes. Enter all 180 minutes for a prepaid duration and review the discount at checkout after closing time. Later offer edits do not change closed bills.",
       steps: [
         "Choose the Board Game Cafe archetype before the first real order, then create areas, tables, and time rates under Board Game Tables. Session, floor, rate, and library permissions remain separate.",
         "Configure general, student, child, or member rates outside Products, including hourly price, minimum time, rounding interval, and grace period. Snacks, drinks, accessories, and games sold outright remain normal products and inventory.",
