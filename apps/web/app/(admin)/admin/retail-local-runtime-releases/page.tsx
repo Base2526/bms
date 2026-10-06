@@ -45,6 +45,12 @@ type ReleaseSummary = {
   publishedAt: string | null;
 };
 
+type ReleaseReadiness = {
+  ready: boolean;
+  message: string;
+  keyIds: string[];
+};
+
 const REQUIRED_FILES = [
   ...MANAGED_RUNTIME_PUBLIC_METADATA_FILES,
   ...Object.keys(MANAGED_RUNTIME_REQUIRED_COMPONENTS).map((name) => `${name}.artifact`),
@@ -85,6 +91,7 @@ function uploadRelease(body: FormData, onProgress: (value: number) => void): Pro
 export default function RetailLocalRuntimeReleasesPage() {
   const [rows, setRows] = useState<ReleaseSummary[]>([]);
   const [baseUrl, setBaseUrl] = useState("");
+  const [readiness, setReadiness] = useState<ReleaseReadiness | null>(null);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -99,6 +106,7 @@ export default function RetailLocalRuntimeReleasesPage() {
       if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
       setRows(payload.releases || []);
       setBaseUrl(payload.baseUrl || "");
+      setReadiness(payload.readiness || null);
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error));
     } finally {
@@ -181,6 +189,17 @@ export default function RetailLocalRuntimeReleasesPage() {
           message="Online Bootstrap ใช้ไฟล์หน้านี้ แต่ปุ่ม Update ใน Desktop ใช้ Installer releases"
           description="หลัง publish ให้เปิด Manifest link จากตารางเพื่อตรวจว่า release host มองเห็น storage แล้ว ส่วนตัวติดตั้ง .exe/.deb/.pkg/.dmg และแจ้งเตือนอัปเดตใน Desktop ยังจัดการที่หน้า Installer releases"
         />
+        {readiness ? (
+          <Alert
+            type={readiness.ready ? "success" : "error"}
+            showIcon
+            closable
+            message={readiness.ready ? "Release verifier พร้อมใช้งาน" : "Release verifier ยังไม่พร้อม — ยังไม่ส่งไฟล์ขึ้น server"}
+            description={readiness.ready
+              ? `${readiness.message} · trusted key: ${readiness.keyIds.join(", ")}`
+              : readiness.message}
+          />
+        ) : null}
 
         <Card title={<Space><CloudUploadOutlined />Publish component set</Space>}>
           <Form form={form} layout="vertical">
@@ -231,7 +250,7 @@ export default function RetailLocalRuntimeReleasesPage() {
 
             {uploading ? <Progress percent={progress} status="active" style={{ marginTop: 16 }} /> : null}
             <Button type="primary" size="large" icon={<CloudUploadOutlined />}
-              loading={uploading} disabled={!files.length || missing.length > 0}
+              loading={uploading} disabled={!readiness?.ready || !files.length || missing.length > 0}
               onClick={() => void submit()} style={{ marginTop: 16 }}>
               ตรวจสอบและ Publish
             </Button>

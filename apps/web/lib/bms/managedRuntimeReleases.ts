@@ -21,6 +21,7 @@ const BASE64URL = /^[A-Za-z0-9_-]+$/;
 const REQUIRED_COMPONENTS = new Map(Object.entries(MANAGED_RUNTIME_REQUIRED_COMPONENTS));
 const COMPONENT_KINDS = new Set(["oci-image", "runtime", "desktop", "support-file"]);
 const AUXILIARY_FILES = new Set<string>(MANAGED_RUNTIME_PUBLIC_METADATA_FILES);
+const BUILD_ONLY_CHECKSUM_FILES = new Set(["release-descriptor.json", "promotion-evidence.json"]);
 
 const TARGETS = new Set<string>(MANAGED_RUNTIME_TARGETS);
 const PUBLISH_LOCK_STALE_MS = 10 * 60 * 1000;
@@ -63,6 +64,12 @@ export type ManagedRuntimeReleaseSummary = {
   componentCount: number;
   totalBytes: number;
   publishedAt: string | null;
+};
+
+export type ManagedRuntimeReleaseReadiness = {
+  ready: boolean;
+  message: string;
+  keyIds: string[];
 };
 
 export class ManagedRuntimeReleaseError extends Error {
@@ -210,11 +217,46 @@ function configuredKeyring(): Record<string, string> {
   if (keyring.formatVersion !== 1 || !Object.keys(keys).length) {
     throw new ManagedRuntimeReleaseError("trusted release keyring ต้องเป็น formatVersion 1 และมี public key", 503);
   }
-  if (Object.entries(keys).some(([keyId, key]) => !VERSION_ID.test(keyId)
-    || typeof key !== "string" || !key.includes("BEGIN PUBLIC KEY") || key.includes("PRIVATE KEY"))) {
-    throw new ManagedRuntimeReleaseError("trusted release keyring ต้องมีเฉพาะ PEM public key", 503);
+  for (const [keyId, key] of Object.entries(keys)) {
+    if (!VERSION_ID.test(keyId)) {
+      throw new ManagedRuntimeReleaseError(`trusted release keyring มี key id ไม่ถูกต้อง: ${keyId}`, 503);
+    }
+    if (typeof key !== "string" || key.includes("PRIVATE KEY")) {
+      throw new ManagedRuntimeReleaseError(`trusted release keyring entry ${keyId} ต้องไม่มี private key`, 503);
+    }
+    if (!key.includes("-----BEGIN PUBLIC KEY-----") || !key.includes("-----END PUBLIC KEY-----")) {
+      throw new ManagedRuntimeReleaseError(
+        `trusted release keyring entry ${keyId} ต้องเป็น PEM public key จาก trusted-release-keys.json`,
+        503,
+      );
+    }
+    try {
+      const parsed = createPublicKey(key);
+      if (parsed.asymmetricKeyType !== "ed25519") throw new Error("not Ed25519");
+    } catch {
+      throw new ManagedRuntimeReleaseError(`trusted release keyring entry ${keyId} ไม่ใช่ Ed25519 public key ที่อ่านได้`, 503);
+    }
   }
   return keys as Record<string, string>;
+}
+
+export function managedRuntimeReleaseReadiness(): ManagedRuntimeReleaseReadiness {
+  try {
+    managedRuntimeReleaseRoot();
+    managedRuntimeReleaseBaseUrl();
+    const keys = configuredKeyring();
+    return {
+      ready: true,
+      message: "พร้อมตรวจและเผยแพร่ signed release",
+      keyIds: Object.keys(keys).sort(),
+    };
+  } catch (error) {
+    return {
+      ready: false,
+      message: error instanceof Error ? error.message : "Managed Runtime release configuration ไม่พร้อม",
+      keyIds: [],
+    };
+  }
 }
 
 export function verifyManagedRuntimeManifest(
@@ -335,7 +377,7 @@ function parseChecksumFile(bytes: Buffer): Map<string, string> {
     const match = rawLine.match(/^([a-f0-9]{64})\s+\*?(.+?)\s*$/);
     if (!match) throw new ManagedRuntimeReleaseError("SHA256SUMS มีบรรทัดที่ไม่ถูกต้อง");
     const filename = path.posix.basename(match[2].replace(/\\/g, "/"));
-    assertManagedRuntimeUploadFilename(filename);
+    if (!BUILD_ONLY_CHECKSUM_FILES.has(filename)) assertManagedRuntimeUploadFilename(filename);
     if (filename === "SHA256SUMS") throw new ManagedRuntimeReleaseError("SHA256SUMS ต้องไม่ checksum ตัวเอง");
     if (result.has(filename)) throw new ManagedRuntimeReleaseError(`SHA256SUMS มีชื่อซ้ำ: ${filename}`);
     result.set(filename, match[1]);
@@ -375,6 +417,7 @@ export async function publishManagedRuntimeRelease(input: {
 
   const sums = parseChecksumFile(await readFile(sumsFile.fullPath));
   for (const [filename, checksum] of sums) {
+    if (BUILD_ONLY_CHECKSUM_FILES.has(filename)) continue;
     const uploaded = files.get(filename);
     if (!uploaded || uploaded.sha256 !== checksum) throw new ManagedRuntimeReleaseError(`${filename} ไม่ตรงกับ SHA256SUMS`);
   }
@@ -382,6 +425,18 @@ export async function publishManagedRuntimeRelease(input: {
     if (!sums.has(`${component.name}.artifact`)) throw new ManagedRuntimeReleaseError(`SHA256SUMS ขาด ${component.name}.artifact`);
   }
   if (!sums.has("release.jws.json")) throw new ManagedRuntimeReleaseError("SHA256SUMS ขาด release.jws.json");
+
+  // Build jobs may checksum their private descriptor/evidence and use absolute isolated-builder
+  // paths. Publish a canonical runtime-only checksum list so neither build metadata nor host paths
+  // become part of the public release tree.
+  const publicChecksumNames = [
+    ...verified.components.map((component) => `${component.name}.artifact`),
+    "release.jws.json",
+  ].sort();
+  const publicChecksums = publicChecksumNames
+    .map((filename) => `${files.get(filename)!.sha256}  ${filename}`)
+    .join("\n") + "\n";
+  await writeFile(sumsFile.fullPath, publicChecksums, { encoding: "utf8", mode: 0o600, flag: "w" });
 
   const marker = {
     formatVersion: 1,
