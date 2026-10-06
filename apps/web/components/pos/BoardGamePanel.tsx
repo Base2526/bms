@@ -1831,7 +1831,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                       ? 'ค่าเล่นของกลุ่มที่ยังเล่นอยู่จะคิดตอนปิดเวลา'
                       : 'ค่าเล่นและของที่สั่งถูกปิดยอดแล้ว'}
                 </span>
-                {money.stillPlaying && <span>อัตราต่อชั่วโมงยังเป็นอัตราปกติ ระบบเลือกโปรค่าเล่นหรือแพ็กเกจที่เข้าเงื่อนไขตอนปิดเวลา และแสดงส่วนลดที่หน้าชำระเงิน</span>}
+                {money.stillPlaying && <span>{t('admin_board_game.running_offer_hint')}</span>}
               </div>
             </div>
           </div>

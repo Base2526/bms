@@ -52,6 +52,27 @@ const retrieve = (item: CorpusCase) => {
 const describe = (item: CorpusCase) =>
   `${item.locale}${item.context?.pageId ? `/${item.context.pageId}` : ""} "${item.q}"`;
 
+test("the actual capability tool reports 2+1 as conditional, without granting access or claiming shop setup", async () => {
+  for (const locale of ["th", "en"] as const) {
+    for (const allowed of [false, true]) {
+      const permissions = new Set(allowed ? ["board_game.session.manage"] : []);
+      const tool = staffTools(permissions).find(entry => entry.name === "search_system_capabilities")!;
+      const result = await tool.execute({
+        query: locale === "th" ? "เล่น 2 ชั่วโมง แถม 1 ชั่วโมง" : "buy two hours get one free", locale,
+      }, { tenantId: "fake-tenant", surface: "staff", actor: "ai:test", permissions });
+      assert.equal(result.ok, true);
+      if (!result.ok) throw new Error("capability tool failed");
+      const capability = (result.data as any).capabilities[0];
+      assert.equal(capability.id, "board-game.time-promotions");
+      assert.equal(capability.status, "CONDITIONAL");
+      assert.equal(capability.configurationRequired, true);
+      assert.equal(capability.accessible, allowed);
+      assert.deepEqual(capability.missingPermissions, allowed ? [] : ["board_game.session.manage"]);
+      assert.match(capability.limitations, locale === "th" ? /ไม่ได้ยืนยันว่าร้านตั้งโปรแล้ว/ : /does not confirm a shop has configured/);
+    }
+  }
+});
+
 test("the pinned corpus still covers the questions it was written for", () => {
   // 82 questions people actually ask (chips + hand-verified), plus coverage questions for the
   // rest of the catalog, plus 2 guards that must stay unanswerable.

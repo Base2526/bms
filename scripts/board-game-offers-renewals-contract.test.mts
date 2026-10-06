@@ -83,6 +83,38 @@ test("a group price allocates cents without changing the exact frozen total", ()
   assert.equal(Math.round((applied?.lines.reduce((sum, line) => sum + line.offerDiscountAmount, 0) ?? 0) * 100) / 100, 50.01);
 });
 
+test("group-price rounding never creates a negative charge or charges a free player", () => {
+  for (const gross of [[0.01, 0.01, 0.01, 0.01], [0.01, 0.01, 0.01, 0]]) {
+    const applied = applyBestBoardGameOffer(
+      gross.map((grossAmount) => ({ billableMinutes: 180, grossAmount })),
+      [baseOffer({ kind: "GROUP_FIXED", percentOff: null, fixedPrice: 0.02 })], context,
+    )!;
+    assert.equal(applied.total, 0.02);
+    applied.lines.forEach((line, i) => {
+      assert.ok(line.amount >= 0 && line.amount <= gross[i], `line ${i}: ${line.amount} outside 0..${gross[i]}`);
+      assert.ok(line.offerDiscountAmount >= 0);
+    });
+  }
+});
+
+test("group-price satang allocation conserves every cap across uneven and zero-cost lines", () => {
+  for (const cents of [[1, 1, 1, 1], [1, 2, 3, 0], [0, 7, 1, 0, 3], [33, 5, 1, 9]]) {
+    const total = cents.reduce((sum, value) => sum + value, 0);
+    for (let cap = 0; cap <= total + 2; cap++) {
+      const result = applyBestBoardGameOffer(
+        cents.map(value => ({ billableMinutes: 180, grossAmount: value / 100 })),
+        [baseOffer({ kind: "GROUP_FIXED", percentOff: null, fixedPrice: cap / 100 })], context,
+      )!;
+      assert.equal(Math.round(result.total * 100), Math.min(cap, total));
+      assert.equal(result.lines.reduce((sum, line) => sum + Math.round(line.amount * 100), 0), Math.min(cap, total));
+      result.lines.forEach((line, i) => {
+        assert.ok(line.amount >= 0 && Math.round(line.amount * 100) <= cents[i]);
+        assert.equal(Math.round((line.amount + line.offerDiscountAmount) * 100), cents[i]);
+      });
+    }
+  }
+});
+
 test("eligibility requires every participant duration and a real tab SKU", () => {
   const offer = baseOffer({ minimumMinutes: 120, requiredProductSku: "DRINK-01" });
   assert.equal(applyBestBoardGameOffer(

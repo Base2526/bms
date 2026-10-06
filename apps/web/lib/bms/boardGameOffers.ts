@@ -300,14 +300,19 @@ export function applyBestBoardGameOffer(
         return money(Math.min(line.grossAmount, Number(line.hourlyRate) * paidMinutes / 60));
       });
     } else {
-      const target = money(Math.min(grossTotal, Number(offer.fixedPrice)));
+      const targetSatang = Math.round(Math.min(grossTotal, Number(offer.fixedPrice)) * 100);
+      const grossSatang = Math.round(grossTotal * 100);
+      let cumulativeGross = 0;
       let allocated = 0;
-      amounts = lines.map((line, index) => {
-        const value = index === lines.length - 1
-          ? money(target - allocated)
-          : money(target * line.grossAmount / grossTotal);
-        allocated = money(allocated + value);
-        return value;
+      amounts = lines.map((line) => {
+        // Round cumulative shares in satang, not each line independently. Otherwise
+        // earlier round-ups can exceed the target and leave the last player negative.
+        // A zero-cost line advances neither total and therefore stays exactly zero.
+        cumulativeGross += Math.round(line.grossAmount * 100);
+        const cumulativeAllocation = Math.round(targetSatang * cumulativeGross / grossSatang);
+        const value = cumulativeAllocation - allocated;
+        allocated = cumulativeAllocation;
+        return value / 100;
       });
     }
     const total = money(amounts.reduce((sum, value) => sum + value, 0));

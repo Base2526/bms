@@ -465,7 +465,9 @@ billable minutes run through repeating paid/free cycles (default 120 paid + 60 f
 Partial free intervals are free; time beyond a cycle starts its paid interval again. At a hypothetical
 50/hour, 3 hours costs 100, 4 hours 150, and 6 hours 200. The server uses the frozen hourly rate,
 compares the offer against other eligible offers and passes, and snapshots the winner without
-stacking benefits. Existing percentage and fixed-price caps remain unchanged. Product buy-X-get-Y
+stacking benefits. Group fixed-price caps allocate cumulative proportional shares in satang,
+so their lines sum to the capped total without negative charges or charging a zero-cost participant.
+Already-frozen bills are not recalculated. Product buy-X-get-Y
 is separate from time offers; `10.41` supports cross-SKU buy-A-get-B for eligible retail stock
 products, not play time or playable library copies.
 For a fixed-duration 2+1 visit, enter the full 180-minute playing duration. The offer discounts
@@ -474,6 +476,10 @@ still shows the frozen hourly rate, while checkout shows the winning discount an
 Offer edits never reprice groups whose time has already been closed. Both the assistant capability
 search and register guide explain this distinction; capability support is not evidence that a
 particular shop configured an eligible offer.
+Rounding, minimum time and grace are applied before the paid/free cycles: with 30-minute
+rounding and no grace, 181 actual minutes becomes 210 billable minutes (150 paid minutes
+under 120+60), not a flat two-hour charge. The promotion is evaluated per billable participant,
+not by pooling time from different players.
 The deploy readiness checks require both `10.40` columns before enabling this version's offer readers.
 The desktop refresh button refreshes data in place without clearing the operator, shift or cart.
 Receipt QR requires the Cloud tax-request service and a public HTTPS origin; missing readiness or
