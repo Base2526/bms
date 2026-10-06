@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { InfoCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import ProductDetailsModal from "./ProductDetailsModal";
+import { editCheckoutPayment, syncSingleCheckoutPayment, type CheckoutPayment } from "./checkoutPayment";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
 import {
@@ -25,7 +26,7 @@ import {
 } from "@pos-core/payment";
 import {
   cartLinePricingSignature,
-  cartProductSubtotal,
+  cartProductPricing,
   cashRoundingForPayments,
   isCashRounding,
   normalizePriceTiers,
@@ -441,7 +442,7 @@ function DesktopPosContent() {
   // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
   // the retail cart so collecting one group never consumes or discards a sale in progress.
   const [boardGameCheckout, setBoardGameCheckout] = useState<PosBoardGameCheckout | null>(null);
-  const [payments, setPayments] = useState<PosPaymentInput[]>([
+  const [payments, setPayments] = useState<CheckoutPayment[]>([
     { id: "payment-1", method: "cash", amount: 0, tendered: 0 },
   ]);
   const [receipt, setReceipt] = useState<SaleResult | null>(null);
@@ -1308,16 +1309,9 @@ function DesktopPosContent() {
     );
   };
 
-  const retailSubtotal = useMemo(() => cartProductSubtotal(cart), [cart]);
-  const retailListSubtotal = useMemo(
-    () => Math.round(cart.reduce((sum, line) => {
-      const packPrice = Number(line.packBasePrice ?? line.unitPrice ?? 0);
-      const modifierPrice = Number(line.modifierUnitPrice ?? 0);
-      return sum + (Number.isFinite(packPrice) ? packPrice : 0) * line.qty
-        + (Number.isFinite(modifierPrice) ? modifierPrice : 0) * line.qty;
-    }, 0) * 100) / 100,
-    [cart],
-  );
+  const retailPricing = useMemo(() => cartProductPricing(cart), [cart]);
+  const retailSubtotal = retailPricing.subtotal;
+  const retailListSubtotal = retailPricing.listSubtotal;
   const pricingSavings = Math.max(0, Math.round((retailListSubtotal - retailSubtotal) * 100) / 100);
   const benefits = useCheckoutBenefits(token, boardGameCheckout?.totalDue ?? retailSubtotal,
     boardGameCheckout?.id ?? null, flow.stage === "CHECKOUT", contentRefreshSignal);
@@ -1334,17 +1328,9 @@ function DesktopPosContent() {
   const paymentCount = payments.length;
 
   useEffect(() => {
-    setPayments((current) => {
-      if (current.length !== 1) return current;
-      const payment = current[0];
-      return [
-        {
-          ...payment,
-          amount: total,
-          tendered: payment.method === "cash" ? Math.max(payment.tendered ?? 0, total) : undefined,
-        },
-      ];
-    });
+    setPayments((current) => syncSingleCheckoutPayment(
+      current, total, saleSubmittingRef.current || Boolean(saleAttemptRef.current),
+    ));
   }, [paymentCount, total]);
 
   const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
@@ -1482,10 +1468,10 @@ function DesktopPosContent() {
     ]);
   };
 
-  const updatePayment = (id: string, patch: Partial<PosPaymentInput>) => {
+  const updatePayment = (id: string, patch: Partial<PosPaymentInput>, exactCash = false) => {
     if (saleSubmittingRef.current || saleAttemptRef.current) return;
     setPayments((current) =>
-      current.map((payment) => (payment.id === id ? { ...payment, ...patch } : payment)),
+      current.map((payment) => (payment.id === id ? editCheckoutPayment(payment, patch, exactCash) : payment)),
     );
   };
 
@@ -2113,11 +2099,18 @@ function DesktopPosContent() {
                         </div>
                       ) : null}
                     </>
-                  ) : cart.map((line) => (
+                  ) : cart.map((line, index) => (
                     <article key={line.key}>
                       <div className={styles.productThumb}>{line.imageUrl ? <img src={line.imageUrl} alt="" /> : line.name.slice(0, 1)}</div>
                       <div><strong>{line.name}</strong><span>{line.sku}{line.size ? ` · ${line.size}` : ""}</span></div>
-                      <span>{line.qty} × {money(Number(line.packBasePrice ?? line.unitPrice ?? 0))}</span>
+                      <div className={styles.summaryLinePrice}>
+                        <span>{line.qty} {line.unitName} · {t("pos_gifts.shelf_amount")} {money(retailPricing.lines[index].listAmount)}</span>
+                        {retailPricing.lines[index].discountAmount > 0 ? <span className={styles.savingsRow}>
+                          {retailPricing.lines[index].freeQty > 0 ? t("pos_gifts.line_free_quantity").replace("{qty}", String(retailPricing.lines[index].freeQty)) : t("pos_gifts.pricing_discount")}
+                          {` −${money(retailPricing.lines[index].discountAmount)}`}
+                        </span> : null}
+                        <strong>{t("pos_gifts.after_promotion")} {money(retailPricing.lines[index].amount)}</strong>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -2305,7 +2298,7 @@ function DesktopPosContent() {
                       {payment.method === "cash" ? (
                         <>
                           <label className={styles.receivedInput}>รับเงินมา<input inputMode="decimal" value={payment.tendered ?? ""} onChange={(event) => updatePayment(payment.id, { tendered: Math.max(0, Number(event.target.value) || 0) })} /></label>
-                          <div className={styles.quickCash}>{quickCashAmounts(payment.amount).map((amount) => <button key={amount} onClick={() => updatePayment(payment.id, { tendered: amount })}>{amount === payment.amount ? "พอดี" : `฿${amount}`}</button>)}</div>
+                          <div className={styles.quickCash}>{quickCashAmounts(payment.amount).map((amount) => <button key={amount} onClick={() => updatePayment(payment.id, { tendered: amount }, amount === payment.amount)}>{amount === payment.amount ? "พอดี" : `฿${amount}`}</button>)}</div>
                           <div className={styles.change}><span>เงินทอน</span><strong>{money(calculateCashChange(payment.amount, payment.tendered ?? 0))}</strong></div>
                         </>
                       ) : (

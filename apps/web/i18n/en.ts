@@ -5249,6 +5249,10 @@ const en = {
     tier_empty: "No rungs for this scope yet",
   },
   pos_gifts: {
+    shelf_amount: "Shelf amount",
+    line_free_quantity: "Gift: {qty} base units",
+    pricing_discount: "Wholesale / promotion",
+    after_promotion: "After promotion",
     title: "Promotional gifts",
     quantity: "Gifts in basket: {qty} / eligible: {allowed}",
     not_qualified: "Not qualified; gift items are charged at the regular price",
