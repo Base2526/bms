@@ -13,8 +13,10 @@
   (ไม่ใช่พจนานุกรมยาครบทุกตัว) และตัดคำสั่งหยุด/ใช้/ชดเชยยาออกจากร่างตั้งต้น
 - ไม่แก้แม่แบบที่ร้านบันทึกไว้ ไม่อนุมัติข้อความ ไม่เปิด flag/protocol; พรีวิวใช้ข้อมูลร้านจริง
   ปุ่มอนุมัติแสดงเฉพาะผู้มีสิทธิ์และ license hint แต่ server ตรวจซ้ำเสมอ
-- gate ผ่านก่อนเพิ่ม editor-context test สุดท้าย: typecheck + build และ pure **1,997/1,999**, skip 2;
-  focused ล่าสุด **23/23**; ผล mutation และ full pure รอบสุดท้ายบันทึกหลังรันด้านล่าง
+- gate ผ่าน: typecheck + production build; หลังเพิ่ม editor-context test สุดท้าย รัน full pure ซ้ำ
+  **1,998 ผ่าน / 2,000 ข้อ / skip 2 / fail 0**; focused **23/23**
+- guidance mutation **7/7 killed**: DRAFT customer read, licence bypass, raw placeholder, approved seed,
+  medicine-stop draft, tenant guard และ fabricated preview; คืนไฟล์ byte-exact และ baseline ผ่าน
 - เฟส 1 mutation ทดสอบซ้ำ **5/5 killed**, คืนไฟล์ byte-exact และ baseline emergency **46/46**
 - Browser เปิด `/admin/pharmacy-guidance` แล้ว redirect ไป login; ยังไม่ได้ตรวจ authenticated
   form/desktop-mobile CRUD; ปิด server และแท็บทดสอบชั่วคราวแล้ว
