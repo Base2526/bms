@@ -12,6 +12,8 @@
 // =============================================================
 
 import { readFileSync, writeFileSync } from "node:fs";
+import { BOARD_GAME_CUSTOMER_CORPUS, boardGameReplyChecks } from "./board-game-customer-corpus.mjs";
+import { BOARD_GAME_GUARD_CORPUS, boardGameGuardChecks } from "./board-game-guard-corpus.mjs";
 
 const CUSTOMER_TOOL_CATALOG = [
   "search_products",
@@ -26,6 +28,9 @@ const CUSTOMER_TOOL_CATALOG = [
   "check_coupon",
   "get_order_status",
   "get_store_info",
+  "get_board_game_rates",
+  "search_board_game_library",
+  "get_board_game_availability",
   "get_payment_info",
   "get_shipping_estimate",
   "get_customer_checkout",
@@ -234,6 +239,8 @@ function archetypePolicyCaseId(archetype) {
 
 function matchesCaseSelector(caseId, selector) {
   return caseId === selector ||
+    (selector === "board-game-guard" && caseId.startsWith("board-game-guard-")) ||
+    (selector === "board-game" && caseId.startsWith("board-game-")) ||
     (selector === "archetype-commerce-policy" &&
       caseId.startsWith("archetype-commerce-policy-"));
 }
@@ -846,7 +853,7 @@ async function resolveTenantFixtures(label) {
     { optional: true }
   );
   const storeProfileResult = await graphqlRequest(
-    `query{ bmsStoreProfile{ businessArchetype businessType } }`,
+    `query{ bmsStoreProfile{ businessArchetype businessType businessHours address phone contactEmail website } }`,
     undefined,
     { optional: true }
   );
@@ -1066,6 +1073,7 @@ async function resolveTenantFixtures(label) {
     permissions: [...permissions].sort(),
     businessArchetype: storeProfile?.businessArchetype ?? null,
     businessType: storeProfile?.businessType ?? null,
+    storeProfile,
     optionalErrors: [categoriesResult.error, couponsResult.error, storeProfileResult.error].filter(Boolean),
   };
 }
@@ -1177,6 +1185,20 @@ function standardReadChecks(result, tools, keyword) {
 function buildCases(fixtures, suiteState) {
   const cases = [];
   const base = fixtures.base;
+
+  if (fixtures.businessArchetype === "board_game_cafe") {
+    for (const item of BOARD_GAME_GUARD_CORPUS) cases.push({
+      id: `board-game-guard-${item.id}`, title: item.message, area: "board-game-guard", channel: "web",
+      turns: [{ message: item.message, checks: async (result) => boardGameGuardChecks(item, result, [...WRITE_TOOLS]) }],
+    });
+    for (const item of BOARD_GAME_CUSTOMER_CORPUS) cases.push({
+      id: `board-game-${item.id}`, title: item.message, area: "board-game", channel: "web",
+      turns: [item, ...(item.followUps ?? [])].map((turn) => ({
+        message: turn.message,
+        checks: async (result) => boardGameReplyChecks(turn, result, [...WRITE_TOOLS]),
+      })),
+    });
+  }
 
   cases.push({
     id: "greeting-no-side-effect",
@@ -2189,9 +2211,33 @@ function buildCases(fixtures, suiteState) {
         },
       ],
     });
+
+    cases.push({
+      id: "broad-game-catalog-question",
+      title: "ถามว่ามีเกมไหมต้องเปิด catalog จริง ไม่ตอบว่าร้านไม่มีข้อมูล",
+      area: "natural-discovery",
+      channel: "web",
+      turns: [
+        {
+          message: "มีเกมไหม",
+          checks: async (result) => [
+            check("เรียก browse_catalog", toolSucceeded(result, "browse_catalog")),
+            check("เสนอสินค้าจริง", mentionsAnyProduct(result.reply, distinctSellableProducts), "functional", `reply=${result.reply}`),
+            check(
+              "ไม่ตอบว่าระบบไม่มีข้อมูลร้าน",
+              !/(?:ยังไม่มีข้อมูลชื่อร้าน|ยังไม่มีข้อมูล.*รายละเอียดร้าน|ยังไม่ได้ระบุ.*ร้าน|รอแอดมินยืนยัน.*ร้าน)/i.test(result.reply),
+              "functional",
+              `reply=${result.reply}`
+            ),
+            check("ไม่มี write side effect", noToolsCalled(result, [...WRITE_TOOLS]), "safety"),
+          ],
+        },
+      ],
+    });
   } else {
     cases.push(skipCase("alternative-catalog-followup", "ขอดูอย่างอื่นแล้วเสนอสินค้าอื่นจริงโดยไม่ถามชื่อหรือไซซ์ซ้ำ", "ต้องมีสินค้าพร้อมขายอย่างน้อยสอง SKU", "natural-discovery"));
     cases.push(skipCase("browse-ordinal-followup", "เสนอหลายสินค้าแล้วเข้าใจคำอ้างอิงตัวที่สอง", "ต้องมีสินค้าพร้อมขายอย่างน้อยสอง SKU", "natural-discovery"));
+    cases.push(skipCase("broad-game-catalog-question", "ถามว่ามีเกมไหมต้องเปิด catalog จริง ไม่ตอบว่าร้านไม่มีข้อมูล", "ต้องมีสินค้าพร้อมขายอย่างน้อยสอง SKU", "natural-discovery"));
   }
 
   if (distinctSellableProducts.length > 0) {
@@ -2316,6 +2362,45 @@ function buildCases(fixtures, suiteState) {
       tool: "get_store_info",
     },
     {
+      id: "store-info-natural-shop-type",
+      title: "ถามว่าร้านอะไรต้องตอบจาก get_store_info",
+      area: "store",
+      message: "ร้านอะไรครับนี้",
+      tool: "get_store_info",
+    },
+    {
+      id: "store-info-natural-hours",
+      title: "ถามเวลาเปิด ปิดต้องอ่านข้อมูลร้าน",
+      area: "store",
+      message: "เวลาเปิด ปิด",
+      tool: "get_store_info",
+      factFields: ["businessHours"],
+    },
+    {
+      id: "store-info-closing-time",
+      title: "ถามปิดกี่โมงต้องอ่านข้อมูลร้าน",
+      area: "store",
+      message: "ปิดกี่โมงครับ",
+      tool: "get_store_info",
+      factFields: ["businessHours"],
+    },
+    {
+      id: "store-info-natural-website",
+      title: "คำถามนอก keyword ต้องตอบเว็บไซต์ที่บันทึกไว้",
+      area: "store",
+      message: "มีเว็บให้เข้าไปดูไหมครับ ขอ URL ด้วย",
+      tool: "get_store_info",
+      factFields: ["website"],
+    },
+    {
+      id: "store-info-contact-multiple-parts",
+      title: "ตอบเบอร์โทรและอีเมลครบในข้อความเดียว",
+      area: "store",
+      message: "ขอเบอร์ติดต่อกับอีเมลหน่อยครับ",
+      tool: "get_store_info",
+      factFields: ["phone", "contactEmail"],
+    },
+    {
       id: "payment-info",
       title: "ข้อมูลบัญชีรับเงินมาจาก get_payment_info",
       area: "store",
@@ -2345,6 +2430,9 @@ function buildCases(fixtures, suiteState) {
           message: definition.message,
           checks: async (result) => [
             check(`เรียก ${definition.tool}`, toolSucceeded(result, definition.tool)),
+            ...(definition.factFields ?? []).filter((field) => fixtures.storeProfile?.[field]?.trim()).map((field) =>
+              check(`คำตอบมีข้อมูลจริง ${field}`, result.reply.includes(fixtures.storeProfile[field].trim()), "functional", `reply=${result.reply}`)
+            ),
             check("ไม่มี write side effect", noToolsCalled(result, [...WRITE_TOOLS]), "safety"),
           ],
         },

@@ -5,6 +5,8 @@ import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
   isAlternativeCatalogRequest,
+  hasUnsupportedBoardGameActionClaim,
+  storeInfoReply,
   suppressUnconfiguredPaymentAdvice,
 } from "../../apps/web/lib/bms/customerReplyPolicy.ts";
 import {
@@ -19,6 +21,44 @@ import {
   normalizeCustomerIdentity,
   reorderTargetIdentity,
 } from "../../apps/web/lib/bms/customerIdentity.ts";
+
+test("board-game replies cannot claim unsupported reservations, refunds or staff notifications", () => {
+  for (const reply of ["จองโต๊ะให้แล้วค่ะ", "ต่อเวลาให้เรียบร้อยค่ะ", "คืนมัดจำสำเร็จแล้ว", "แจ้งพนักงานแล้วค่ะ", "ส่งเรื่องให้แอดมินแล้วค่ะ", "Your booking is confirmed", "Staff have been notified"]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(reply), true, reply);
+  }
+  for (const reply of ["ยังไม่ได้จองโต๊ะให้ค่ะ", "ยังไม่สามารถแจ้งพนักงานได้ค่ะ", "การจองต้องให้พนักงานยืนยันค่ะ", "The booking is not confirmed", "Staff have not been notified", "ค่าเล่นชั่วโมงละ 50 บาท"]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(reply), false, reply);
+  }
+});
+
+test("opening hours replies reproduce saved hours including closed days", () => {
+  const info = { storeName: "FAKE Cafe", businessHours: "อังคาร–อาทิตย์ 10:00–22:00 หยุดวันจันทร์" };
+  for (const question of ["เวลาเปิด ปิด", "ปิดกี่โมงครับ", "หยุดวันไหน"]) {
+    const reply = storeInfoReply(info, question);
+    assert.match(reply, /เวลาทำการ: อังคาร–อาทิตย์ 10:00–22:00 หยุดวันจันทร์/);
+    assert.doesNotMatch(reply, /แอดมิน|รอสักครู่|สินค้า/);
+  }
+  assert.match(storeInfoReply(info, "closing hours", true), /Opening hours:/);
+});
+
+test("a known shop name does not hide missing hours or invent open-now status", () => {
+  for (const businessHours of [null, "", "   "]) {
+    const reply = storeInfoReply({ storeName: "FAKE Cafe", businessHours }, "วันนี้เปิดไหม");
+    assert.match(reply, /ยังไม่ได้ระบุเวลาเปิด–ปิด/);
+    assert.doesNotMatch(reply, /เปิดอยู่|ปิดอยู่|รอสักครู่/);
+  }
+});
+
+test("play interest uses the saved description and schedule without promising games or tables", () => {
+  const reply = storeInfoReply({
+    storeName: "FAKE Cafe", about: "คาเฟ่บอร์ดเกม", businessHours: "10:00–22:00", address: "FAKE address",
+  }, "อยากเล่นเกม", false, true);
+  assert.match(reply, /คาเฟ่บอร์ดเกม/);
+  assert.match(reply, /10:00–22:00/);
+  assert.match(reply, /มากี่ท่าน/);
+  assert.doesNotMatch(reply, /สินค้า|โต๊ะว่าง|จองแล้ว|บาท|Catan/);
+  assert.match(storeInfoReply({ about: "คาเฟ่บอร์ดเกม" }, "ร้านอะไรครับนี้"), /คาเฟ่บอร์ดเกม/);
+});
 
 test("general and pharmacy flows normalize the same channel customer identity", () => {
   assert.deepEqual(normalizeCustomerIdentity(" LINE ", "  U123  "), {
