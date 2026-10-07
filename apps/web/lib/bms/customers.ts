@@ -650,6 +650,17 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       throw new Error("ไม่พบลูกค้าที่จะผสาน");
     }
 
+    // Both customer rows are locked, the same authority used by CHAT request creation.
+    // Do not merge identities into a state that bypasses the three-pending-request cap.
+    const chatPending = await client.query<{ count: number }>(
+      `SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist
+        WHERE tenant_id = $1 AND customer_id = ANY($2::uuid[])
+          AND source = 'CHAT' AND status = 'REQUESTED'`,
+      [tenantId, [keepId, mergeId]]
+    );
+    if (Number(chatPending.rows[0].count) > 3) {
+      throw new Error("กรุณาจัดการคำขอจองจากแชทให้เหลือรวมไม่เกิน 3 รายการก่อนผสานลูกค้า");
+    }
     // Keep every reservation attached to the surviving identity. Two live requests for the
     // same appointment need staff resolution first; merging must not silently cancel either.
     const reservationConflict = await client.query(
@@ -761,6 +772,13 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
     await client.query(
       `UPDATE bms_board_game_member_passes SET customer_id = $3, updated_at = now()
         WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+    // 10.48: identities move to keepId below; their CHAT requests must remain readable by that
+    // same customer. Preserve both histories and retry hashes, never cancel a request on merge.
+    await client.query(
+      `UPDATE bms_board_game_waitlist SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2 AND source = 'CHAT'`,
       [tenantId, mergeId, keepId]
     );
     // A member may already have renewal enabled on the kept identity. Preserve that live agreement

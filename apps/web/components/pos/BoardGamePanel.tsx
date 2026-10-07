@@ -107,7 +107,7 @@ type WaitlistEntry = {
   reservedFor: string | null; reservedDurationMinutes: number | null;
   reservedTableId: string | null; reservedTableCode: string | null;
   confirmedAt: string | null; checkedInAt: string | null;
-  source: 'STAFF' | 'PUBLIC'; reviewedAt: string | null; rejectionReason: string | null;
+  source: 'STAFF' | 'PUBLIC' | 'CHAT'; reviewedAt: string | null; rejectionReason: string | null;
   reminderStatus: string; reminderSentAt: string | null;
   decisionNotificationStatus: string; depositPolicy: string; depositAmount: number;
   depositStatus: string; depositDueAt: string | null; depositRefundEligibleUntil: string | null;
@@ -1205,6 +1205,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                     <strong>{timeLabel(entry.reservedFor)}</strong>
                   </div>
                   <div className="pos-bg-reservation-card-person">
+                    {entry.source === 'CHAT' && <span>{t('admin_board_game.source_chat')}</span>}
                     <strong>{entry.guestName || 'ไม่ระบุชื่อ'}</strong>
                     <span>โทร. {entry.guestPhone || '-'}</span>
                     {entry.guestEmail && <span>{entry.guestEmail}</span>}
@@ -1221,6 +1222,7 @@ export default function BoardGamePanel({ token, cashierUserId, pin, refreshSigna
                     <span aria-hidden="true">◷</span>
                     <strong>{entry.reservedDurationMinutes ?? 0} นาที</strong>
                   </div>
+                  {entry.source === 'CHAT' && <div className="pos-bg-reservation-card-note">{t('admin_board_game.chat_contact_staff')}</div>}
                   {(entry.depositAmount > 0 || entry.source === 'PUBLIC') && (
                     <div className="pos-bg-reservation-card-note">
                       {entry.depositAmount > 0 ? `มัดจำ ฿${entry.depositAmount.toFixed(2)} (${entry.depositStatus})` : ''}

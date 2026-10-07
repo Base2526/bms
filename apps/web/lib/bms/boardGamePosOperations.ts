@@ -51,6 +51,7 @@ import {
 } from "./boardGameServiceCalls";
 import {
   addBoardGameReservation,
+  ChatBoardGameReservationRejection,
   addBoardGameWaitlistEntry,
   callBoardGameWaitlistEntry,
   checkInBoardGameReservation,
@@ -114,6 +115,7 @@ function text(value: unknown): string {
  */
 export function boardGameRejectionFrom(error: unknown): BoardGamePosError | null {
   if (isBoardGamePosError(error)) return error;
+  if (error instanceof ChatBoardGameReservationRejection) return new BoardGamePosError(error.message, "REJECTED");
   // คีย์ซ้ำที่เนื้อในเปลี่ยน — มีคลาสและรหัสของตัวเองอยู่แล้ว ปล่อยผ่านให้ adapter จัดประเภท
   if (isIdempotencyConflictError(error)) return null;
   // SQLSTATE ของ pg (เช่น 23505, 42P01) = ฐานข้อมูลปฏิเสธ ไม่ใช่กติกาธุรกิจ

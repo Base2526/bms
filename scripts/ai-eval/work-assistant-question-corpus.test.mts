@@ -82,7 +82,8 @@ test("the pinned corpus still covers the questions it was written for", () => {
   //  +3 จาก `9.89` โต๊ะบอร์ดเกมออกได้หลายบิล: "แยกบิล" เป็นคำที่พนักงานพูดเอง และ
   //  "โต๊ะยังไม่ว่างทั้งที่จ่ายแล้ว" คืออาการที่อ่านเหมือนระบบพัง ทั้งที่เป็นกติกาที่ตั้งใจ
   //  +2 จากคำถามหน้าร้านจริง: เช็คอินกลุ่มเดียว/ลงโต๊ะครั้งเดียว แต่แยกจ่ายรายคน
-  assert.equal(CORPUS_REAL_QUESTIONS.length, 101, "a pinned question disappeared or was added without review");
+  // +2 bilingual CHAT reservation review questions (10.48).
+  assert.equal(CORPUS_REAL_QUESTIONS.length, 103, "a pinned question disappeared or was added without review");
   assert.equal(WORK_ASSISTANT_QUESTION_CORPUS.filter((item) => item.expect === "no-match").length, 2, "empty-answer guards changed");
 
   const seen = new Set<string>();

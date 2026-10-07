@@ -1,5 +1,14 @@
 /** Customer boundaries only; no diagnosis, dosing rule, protocol activation or clinical inference. */
-import { normalizePharmacySafetyText, pharmacyEmergencyKind } from "./emergency";
+import { normalizePharmacySafetyText, pharmacyEmergencyKind, isPharmacyAnimalMedicationQuestion } from "./emergency";
+
+// Require a medicine/context plus usage wording; a drug name or a purchase quantity alone is not advice.
+const DOSAGE_QUESTION = /(?:ยา|พารา(?:เซตามอล)?|ไอบู(?:โพรเฟน)?|แอสไพริน|ตัวนี้)(?:(?!แผงละ|กล่องละ|ขวดละ|บรรจุ).){0,20}(?:วันละกี่|กี่เม็ด|กี่ครั้ง|กี่ชั่วโมง|ห่างกันกี่)|\b(?:paracetamol|acetaminophen|ibuprofen|aspirin|medicine|medication|this).{0,20}\bhow (?:many|often).{0,12}\b(?:a|per) day\b/i;
+const ALTERNATING_MEDICINES = /(?:กิน|ทาน|ยา|พารา|ไอบู).{0,25}สลับกัน|\balternate\b.{0,35}\b(?:ibuprofen|paracetamol|acetaminophen|medicines?|medications?|pills?|tablets?)\b/i;
+const TABLET_MANIPULATION = /(?:ยา|เม็ดนี้).{0,15}หักครึ่ง|บดยา|แกะแคปซูล|\b(?:crush|split|open)\b.{0,20}\b(?:pills?|tablets?|capsules?)\b/i;
+const PERSISTENT_PAIN = /(?:กิน|ทาน)ยา.{0,25}(?:แล้ว|มา).{0,20}ยังปวด/;
+const SYMPTOM_DISCLOSURE = /ท้อง\s*\d+\s*เดือน.{0,20}(?:ปวดหัว|ปวดท้อง|มีไข้)|\bmy (?:son|daughter) has (?:a )?(?:fever|cough)\b|ขอยาแก้ปวดแรงๆ|(?:เป็นสิว|ปวดหัว|ปวดท้อง|ท้องเสีย|เจ็บคอ|ผื่นคัน).{0,15}ใช้อะไร(?:ดี)?/i;
+// Anchor bare complaints, and require advice/duration on embedded complaints. Product names are not symptoms.
+const SHORT_SYMPTOM = /^(?:ปวดฟัน|ตาแดง|ผื่นคัน|ปัสสาวะแสบ|ตกขาว|นอนไม่หลับ)(?:ครับ|ค่ะ|คะ)?$|(?<!ยาแก้|ยาหยอด)(?:ปวดฟัน|ตาแดง|ผื่นคัน|ปัสสาวะแสบ|ตกขาว|นอนไม่หลับ)(?:ทำไง|ทำอย่างไร|ใช้อะไร|กินอะไร|มา\s*\d+\s*วัน)/;
 
 /** Contextual short-reply expansion must never erase safety text or an explicit case selector. */
 export function shouldPreservePharmacyCustomerMessage(message: string, isPharmacy: boolean): boolean {
@@ -10,6 +19,7 @@ export function shouldPreservePharmacyCustomerMessage(message: string, isPharmac
 
 export function isPharmacyMedicationAdviceQuestion(message: string): boolean {
   message = normalizePharmacySafetyText(message);
+  if (DOSAGE_QUESTION.test(message) || ALTERNATING_MEDICINES.test(message) || TABLET_MANIPULATION.test(message) || PERSISTENT_PAIN.test(message)) return true;
   // Short suitability/stop/restart questions are still clinical even without a SKU.
   // Keep shopping uses of "ใช้" (coupon/payment) and alcohol-gel catalog reads outside this gate.
   if (/(?:กิน|ทาน).{0,30}(?:ได้ไหม|ได้มั้ย|ได้หรือเปล่า|ได้หรือไม่)|(?:ตัวนี้|ยานี้|อันนี้)(?:ใช้)?(?:ได้ไหม|ได้มั้ย|ปลอดภัย)|(?:หยุด|เลิก|เริ่ม|เปลี่ยน)(?:กิน|ทาน|ใช้|ขนาด)?ยา|(?:กิน|ทาน|ใช้).{0,25}พร้อมกัน|(?:กิน|ทาน).{0,30}(?:ดื่ม|กิน)(?:เหล้า|เบียร์|ไวน์|แอลกอฮอล์)/i.test(message)) return true;
@@ -30,13 +40,14 @@ export function isPharmacyMedicationAdviceQuestion(message: string): boolean {
 
 export function isPharmacySymptomAdviceQuestion(message: string): boolean {
   message = normalizePharmacySafetyText(message);
+  if (SYMPTOM_DISCLOSURE.test(message) || SHORT_SYMPTOM.test(message)) return true;
   // Disclosures may still be collected by an active, approved intake. Without one, hand off.
   if (/\bi(?:'m|’m| am) (?:pregnant|breastfeeding)\b|\bi have (?:kidney disease|diabetes|asthma)\b/i.test(message)) return true;
   return /(?:กินอะไรดี|ใช้ยาอะไร|ควร(?:กิน|ทาน|ใช้)|แนะนำยา|(?:ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|เจ็บคอ|ไอ).{0,35}(?:ทำไง|ทำอย่างไร|เป็นมา|มา\s*\d|ไม่หาย)|^(?:ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|เจ็บคอ|ไอ)(?:ครับ|ค่ะ|คะ)?$|(?:what|which).{0,25}(?:medicine|medication).{0,25}(?:for|should)|recommend.{0,20}(?:medicine|medication)|i have (?:a )?(?:headache|cough|fever|diarrhea))/i.test(message);
 }
 
 export function pharmacyClinicalHandoffReply(english = false, message = ""): string {
-  if (/(?:สัตว์เลี้ยง|สุนัข|หมา|แมว|\b(?:dogs?|cats?|pets?|puppy|kitten)\b)/i.test(normalizePharmacySafetyText(message))) {
+  if (isPharmacyAnimalMedicationQuestion(message)) {
     return english
       ? "Please contact a veterinarian about giving medicine to an animal. I cannot assess suitability or convert a human dose for a pet. This reply does not approve medication or confirm a sale."
       : "เรื่องการให้ยาแก่สัตว์เลี้ยง กรุณาติดต่อสัตวแพทย์ค่ะ AI ประเมินความเหมาะสมหรือแปลงขนาดยาคนให้สัตว์ไม่ได้ ข้อความนี้ไม่ใช่การอนุมัติยาหรือยืนยันการขายนะคะ";

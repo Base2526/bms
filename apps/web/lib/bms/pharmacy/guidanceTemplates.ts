@@ -1,7 +1,7 @@
 /**
  * Pharmacist-approved guidance for clinical questions the customer AI must not answer itself.
  *
- * This module is pure on purpose (no imports): the classifier, the renderer and the content
+ * This module is pure on purpose (only the dependency-free emergency leaf): classifier and content
  * checks run in the pipeline, in the admin page and in tests, and every one must agree.
  *
  * What a template may contain (and what the default drafts below contain):
@@ -12,6 +12,9 @@
  * It must never name a medicine, give a dose, or call something safe. The text a customer sees
  * is always a body a licensed pharmacist approved; the model never writes or rephrases it.
  */
+// Keep one safety normalizer and animal discriminator. The existing emergency leaf has no
+// imports/IO, so sharing it preserves purity without another normalizer or a dependency cycle.
+import { normalizePharmacySafetyText, isPharmacyAnimalMedicationQuestion } from "./emergency";
 
 export const PHARMACY_GUIDANCE_CODES = [
   "SYMPTOM_TO_DRUG",
@@ -56,25 +59,25 @@ export function isPharmacyGuidanceLocale(value: unknown): value is PharmacyGuida
  *
  * "ท้อง" alone is deliberately NOT a pregnancy signal: it is also in ท้องเสีย and ปวดท้อง.
  */
-const RULES: ReadonlyArray<readonly [PharmacyGuidanceCode, RegExp]> = [
-  ["ANIMAL", /(?:สัตว์เลี้ยง|สุนัข|หมา|แมว|\b(?:dogs?|cats?|pets?|puppy|kitten)\b)/i],
-  ["ALLERGY_SUBSTITUTE", /(?:แพ้ยา|แพ้.{0,25}(?:แทน|ตัวไหน|อะไร)|\ballerg)/i],
+const RULES: ReadonlyArray<readonly [PharmacyGuidanceCode, RegExp | ((text: string) => boolean)]> = [
+  ["ANIMAL", isPharmacyAnimalMedicationQuestion],
+  ["ALLERGY_SUBSTITUTE", /(?:แพ้ยา|แพ้(?!อากาศ|ฝุ่น|อาหาร|เกสร).{0,25}(?:แทน|ตัวไหน|อะไร)|\ballerg(?!ic\s+(?:rhinitis|to\s+(?:dust|pollen|food))))/i],
   ["SIDE_EFFECT", /(?:ผลข้างเคียง|อาการข้างเคียง|(?:กิน|ทาน|ใช้).{0,25}(?:แล้ว|ไป).{0,25}(?:ผื่น|คัน|เวียนหัว|มึน|ง่วงมาก|ใจสั่น|คลื่นไส้|อาเจียน|ปวดท้อง|ท้องเสีย)|side[- ]?effects?|(?:took|taking|after).{0,30}(?:rash|itch|dizzy|nause|vomit|palpitation)|(?:rash|itch|dizzy|nause|vomit|palpitation).{0,30}(?:after|since).{0,15}(?:taking|took|using))/i],
-  ["DRUG_INTERACTION", /(?:ยาตีกัน|(?:กิน|ทาน|ใช้).{0,35}(?:คู่กับ|ร่วมกับ|พร้อมกับ|ด้วยกัน|พร้อมกัน)|(?:คู่กับ|ร่วมกับ)ยา|interaction|(?:take|use|mix).{0,30}(?:with|together)|together with)/i],
-  ["SPECIAL_POPULATION", /(?:ตั้งครรภ์|คนท้อง|ท้องอยู่|ตอนท้อง|กำลังท้อง|ให้นม(?:ลูก|บุตร)?|ทารก|เด็ก|ลูก(?:อายุ|\s*\d|ชาย|สาว|น้อย)|ผู้สูงอายุ|คนแก่|pregnan|breast-?feed|nursing|infant|baby|toddler|\bchild(?:ren)?\b|\bkids?\b|elderly)/i],
+  ["DRUG_INTERACTION", /(?:ยาตีกัน|(?:กิน|ทาน|ยา|พารา|ไอบู).{0,25}สลับกัน|\balternate\b.{0,35}\b(?:ibuprofen|paracetamol|acetaminophen|medicines?|medications?|pills?|tablets?)\b|(?:กิน|ทาน|ใช้).{0,35}(?:คู่กับ|ร่วมกับ|พร้อมกับ|ด้วยกัน|พร้อมกัน)|(?:คู่กับ|ร่วมกับ)ยา|interaction|(?:take|use|mix).{0,30}(?:with|together)|together with)/i],
+  ["SPECIAL_POPULATION", /(?:ตั้งครรภ์|คนท้อง|ท้องอยู่|ตอนท้อง(?!ว่าง|อืด|ผูก|เสีย)|กำลังท้อง|ให้นม(?:ลูก|บุตร)?|ทารก|เด็ก|ลูก(?:อายุ|\s*\d|ชาย|สาว|น้อย)|ผู้สูงอายุ|คนแก่|pregnan|breast-?feed|nursing|infant|baby|toddler|\bchild(?:ren)?\b|\bkids?\b|elderly)/i],
   ["CHRONIC_CONDITION", /(?:โรคประจำตัว|โรคไต|ไตวาย|เบาหวาน|ความดัน|โรคหัวใจ|โรคตับ|หอบหืด|ไทรอยด์|kidney|renal|diabet|blood pressure|hypertension|heart (?:disease|condition)|liver|asthma|thyroid)/i],
   ["MISSED_DOSE", /(?:ลืม(?:กิน|ทาน|ใช้|หยอด)|missed.{0,12}dose|forgot.{0,15}(?:take|dose|pill))/i],
   ["COMPARE_WITH_PRESCRIBED", /(?:หมอสั่ง|แพทย์สั่ง|ยาจากหมอ|ยาจากโรงพยาบาล|ยาโรงพยาบาล|prescribed|doctor (?:gave|prescribed)|from (?:the|my) doctor)/i],
-  ["NOT_IMPROVING", /(?:ไม่หาย|ไม่ดีขึ้น|ไม่ทุเลา|ยังไม่หาย|not (?:getting )?better|still (?:sick|hurts|have)|hasn't improved|not improving)/i],
+  ["NOT_IMPROVING", /(?:ไม่หาย(?!ใจ)|ไม่ดีขึ้น|ไม่ทุเลา|not (?:getting )?better|still (?:sick|hurts|have)|hasn't improved|not improving)/i],
   ["RESTRICTED_PRODUCT", /(?:ใบสั่งแพทย์|ยาคุมฉุกเฉิน|ยานอนหลับ|ยาลดน้ำหนัก|ยาควบคุม|ยาแก้อักเสบ|ยาฆ่าเชื้อ|antibiotic|prescription|sleeping pill|morning.?after|emergency contracepti|weight.?loss pill|controlled (?:drug|medicine))/i],
-  ["SYMPTOM_TO_DRUG", /(?:กินอะไรดี|ทานอะไรดี|ใช้ยาอะไร|ยาอะไร|แนะนำยา|ควร(?:กิน|ทาน|ใช้)|ตัวไหนดี|ตัวไหนเหมาะ|ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|ไข้|เจ็บคอ|ไอ|น้ำมูก|(?:what|which).{0,25}(?:medicine|medication|take)|recommend.{0,20}(?:medicine|medication)|i have (?:a )?(?:headache|cough|fever|diarrh|sore throat|cold))/i],
+  ["SYMPTOM_TO_DRUG", /(?:กินอะไรดี|ทานอะไรดี|ใช้ยาอะไร|ยาอะไร|แนะนำยา|ควร(?:กิน|ทาน|ใช้)|ตัวไหนดี|ตัวไหนเหมาะ|ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|เจ็บคอ|(?:^|[^ก-๙])(?:ไอ(?!บู)|ไข้)(?=$|[\s!?.]|ครับ|ค่ะ|คะ|มา|ไม่หาย|ทำไง|กิน|ทาน|ควร)|น้ำมูก|(?:what|which).{0,25}(?:medicine|medication|take)|recommend.{0,20}(?:medicine|medication)|i have (?:a )?(?:headache|cough|fever|diarrh|sore throat|cold))/i],
 ];
 
 /** Deterministic. The model never chooses which pharmacist text a customer reads. */
 export function classifyPharmacyGuidanceQuestion(message: string): PharmacyGuidanceCode | null {
-  const text = String(message ?? "").normalize("NFC").replace(/ํา/g, "ำ").replace(/\s+/g, " ").trim();
+  const text = normalizePharmacySafetyText(message);
   if (!text) return null;
-  for (const [code, pattern] of RULES) if (pattern.test(text)) return code;
+  for (const [code, pattern] of RULES) if (typeof pattern === "function" ? pattern(text) : pattern.test(text)) return code;
   return null;
 }
 

@@ -42,6 +42,9 @@ import {
   requestRestaurantReservation,
 } from "../restaurantCustomer";
 import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
+import { executeBoardGameReservationRequest } from "../boardGameReservationPolicy";
+import { previewChatBoardGameReservation, requestChatBoardGameReservation, listChatBoardGameReservationsForCustomer, ChatBoardGameReservationRejection } from "../boardGameWaitlist";
+import { isIdempotencyConflictError } from "../idempotencyErrors";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
@@ -3002,8 +3005,52 @@ const A3_TOOLS: BmsTool[] = [
 // =============================================================
 
 const BOARD_GAME_CUSTOMER_TOOLS = new Set([
+  "request_board_game_reservation", "get_board_game_reservation_status",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability",
 ]);
+
+
+const requestBoardGameReservationTool: BmsTool = {
+  name: "request_board_game_reservation", surfaces: ["customer"], permission: "order.create",
+  description: "Prepare a board-game table REQUEST for staff review, never a confirmed booking. First call returns a server summary for customer confirmation and writes nothing. Requires saved name/phone (get_customer_checkout and save_customer_checkout_details). Use only the exact branch name and date/time/duration/party size stated by the customer. Deposits require staff. No PII in note.",
+  inputSchema: { type: "object", properties: {
+    branch: { type: "string", maxLength: 120 },
+    reservedLocal: { type: "string", description: "YYYY-MM-DDTHH:mm in the branch timezone; never infer a missing date or time." },
+    durationMinutes: { type: "integer", minimum: 30, maximum: 720 },
+    partySize: { type: "integer", minimum: 1, maximum: 500 },
+    note: { type: "string", maxLength: 300, description: "Non-PII note only; no name, phone or email." },
+  }, required: ["branch", "reservedLocal", "durationMinutes", "partySize"] },
+  execute: async (args, ec) => {
+    try {
+      return await executeBoardGameReservationRequest({
+        branch: reqString(args, "branch"), reservedLocal: reqString(args, "reservedLocal"),
+        durationMinutes: reqInt(args, "durationMinutes", 30), partySize: reqInt(args, "partySize", 1),
+        note: optString(args, "note"),
+      }, ec, {
+        resolveCustomer: () => findCustomerIdByIdentity(ec.tenantId, ec.channel!, ec.customerRef!),
+        contact: () => getCustomerCheckoutStatus(ec.tenantId, ec.channel!, ec.customerRef!),
+        preview: draft => previewChatBoardGameReservation({ ...draft, tenantId: ec.tenantId }),
+        create: input => requestChatBoardGameReservation({ ...input, tenantId: ec.tenantId }),
+      });
+    } catch (error) {
+      if (error instanceof ChatBoardGameReservationRejection) return { ok: false, error: `${error.code}: ${error.message}` };
+      if (isIdempotencyConflictError(error)) return { ok: false, error: "REQUEST_CONFLICT: Please check your existing requests." };
+      throw error;
+    }
+  },
+};
+const getBoardGameReservationStatusTool: BmsTool = {
+  name: "get_board_game_reservation_status", surfaces: ["customer"], permission: "order.view",
+  description: "Read this customer's latest five chat table requests only. REQUESTED awaits staff review; CONFIRMED means staff confirmed the time, never expose a table number. Rejected/expired/cancelled requests are not bookings. No automatic decision messages, rescheduling or cancellation through chat.",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec) => {
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "CUSTOMER_IDENTITY_REQUIRED" };
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, ec.channel, ec.customerRef);
+    const requests = customerId ? await listChatBoardGameReservationsForCustomer({ tenantId: ec.tenantId, customerId }) : [];
+    ec.boardGameReservationStatuses = requests;
+    return { ok: true, data: { requests } };
+  },
+};
 
 function boardGameCustomerReadTool(name: string, kind: BoardGameCustomerRead, description: string): BmsTool {
   return {
@@ -3011,7 +3058,7 @@ function boardGameCustomerReadTool(name: string, kind: BoardGameCustomerRead, de
     inputSchema: {
       type: "object",
       properties: {
-        branch: { type: "string", maxLength: 120, description: "Exact published branch name. Omit unless the customer selected a branch; multiple branches require clarification." },
+        branch: { type: "string", maxLength: 120, description: "Exact branch name returned by this shop's chat tools. Omit unless the customer selected a branch; multiple branches require clarification." },
         ...(kind === "library" ? {
           keyword: { type: "string", maxLength: 120, description: "Title or tag, e.g. Catan. Omit for a general recommendation; never substitute retail catalog." },
           players: { type: "integer", minimum: 1, maximum: 100, description: "Party size, or minimum party size for a range." },
@@ -3037,11 +3084,11 @@ function boardGameCustomerReadTool(name: string, kind: BoardGameCustomerRead, de
   };
 }
 const getBoardGameRatesTool = boardGameCustomerReadTool("get_board_game_rates", "rates",
-  "Read this shop's published play-time hourly rates by participant type, minimum/rounding/grace minutes. Not retail prices. Offers, passes and final bill calculations are not exposed. NOT_PUBLISHED means unavailable to chat, not free or no rates. BRANCH_REQUIRED means ask which listed branch.");
+  "Read this shop's chat-enabled play-time hourly rates by participant type, minimum/rounding/grace minutes, independently of public-directory listing. Not retail prices. Offers, passes and final bill calculations are not exposed. NOT_PUBLISHED means not enabled for chat, not free or no rates. BRANCH_REQUIRED means ask which listed branch.");
 const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_library", "library",
-  "Search this shop's published playable game library by title/tag and player count. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
+  "Search this shop's publicly visible playable titles by title/tag and player count, independently of public-directory listing. A saved active branch profile is required; NOT_PUBLISHED means not enabled for chat, not no games. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
-  "Read this shop's published branch information/hours, current aggregate table counts and published booking/deposit policy. Use for visits, booking questions and branch hours missing from get_store_info. Not a reservation: cannot book, confirm, reschedule or cancel, predict waiting time, report queue length or guarantee a party fits. Null counts mean unpublished, not zero. Do not claim staff were notified.");
+  "Read this shop's branch information/hours, current aggregate table counts and booking/deposit policy, independently of public-directory listing. When booking.canSubmitViaChat is true, collect branch-local date/time, duration and party size, then use request_board_game_reservation to preview a request for customer confirmation. This read never submits or confirms a booking. Cannot reschedule, cancel, predict waiting time or guarantee future availability. NOT_PUBLISHED or null counts mean not enabled for chat, not zero. Do not claim staff were notified.");
 
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
@@ -3491,6 +3538,8 @@ export const ALL_TOOLS: BmsTool[] = [
   // B1 — store profile (read)
   getStoreInfoTool,
   getBoardGameRatesTool,
+  requestBoardGameReservationTool,
+  getBoardGameReservationStatusTool,
   searchBoardGameLibraryTool,
   getBoardGameAvailabilityTool,
   getPaymentInfoTool,

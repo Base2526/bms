@@ -578,6 +578,186 @@ The register is also used one-handed on a phone, so two layout rules hold for th
 
 Both rules are pinned by `scripts/board-game-register-contract.test.mts`.
 
+## Customer chat safety boundaries
+
+### Directory visibility versus shop chat
+
+The branch profile has two separate audiences. `public_visible` is the opt-in for the
+nearby directory (`/board-game`, `/api/board-game/nearby`) only. It is **not** a chat-off
+switch. A saved profile on an active branch of an active board-game tenant lets that
+shop's chat read the profile name, summary, address, phone and opening hours even when
+the branch is hidden from the directory. No profile still means `NOT_PUBLISHED`;
+the service never creates one automatically.
+
+| Existing switch | Public directory | Shop chat |
+| --- | --- | --- |
+| Branch `public_visible` | Required to list the branch | Not required |
+| `publish_rates` | Controls hourly rates on a listed branch | Controls hourly rates; off = `NOT_PUBLISHED`, not free |
+| `publish_availability` | Controls aggregate table counts | Controls table and available-copy counts; off = unknown/null, not zero |
+| Title `public_visible` | Controls game highlights | Controls library search results |
+
+Lost/retired copies remain excluded. Since `10.48`, `canSubmitViaChat` is true only when
+booking is enabled and the branch's deposit policy is `NONE`. Multiple matching branches still require clarification.
+The tenant-scoped `listBoardGameChatBranches` and public `listPublicBoardGameCafes`
+share the same SQL projection but have separate WHERE clauses. Chat has no coordinate
+input, returns `distanceKm: null`, and reads at most 100 branches ordered by display name
+and location ID. The public reader keeps its existing filtering, distance calculation,
+ordering and limits. Internal IDs are stripped before a customer tool returns data.
+
+#### Release note — แยกข้อมูลแชทจากรายชื่อร้านใกล้คุณ
+
+ตั้งแต่เวอร์ชันนี้ แชทของร้านตอบค่าเล่น จำนวนโต๊ะว่าง และเกมที่ติ๊กแสดงได้ตาม
+สวิตช์ “เผยแพร่ค่าเล่น / เผยแพร่โต๊ะว่าง” และ “แสดงต่อสาธารณะ” ของแต่ละเกม
+โดยไม่ต้องเปิดร้านในรายชื่อร้านใกล้คุณ ชื่อสาขา คำอธิบาย ที่อยู่ เบอร์โทร และเวลาเปิดปิด
+ในโปรไฟล์สาขาถูกใช้ตอบลูกค้าในแชทด้วย
+
+**สวิตช์เผยแพร่ค่าเล่นและโต๊ะว่างมีค่าปริยายเป็นเปิด (`TRUE` ตั้งแต่ migration `9.83`)**
+ร้านที่มีโปรไฟล์อยู่แล้วแต่ซ่อนจากรายชื่อสาธารณะจึงอาจเริ่มตอบข้อมูลนี้หลัง deploy
+หากไม่ต้องการให้แชทตอบเรื่องใด ให้ปิดสวิตช์นั้นที่ `/admin/board-game`
+หน้าค้นหาสาธารณะยังไม่แสดงร้านที่ปิด “แสดงในรายชื่อร้านใกล้คุณ” เหมือนเดิม
+การแยกตัวอ่านไม่มี migration หรือสวิตช์ใหม่ ส่วนคำขอจองผ่านแชทเพิ่มแยกใน `10.48` ด้านล่าง
+
+Read-only impact count before deployment (distinct shops versus branch profiles; a rate-enabled
+shop may still have no active rates, so this measures eligibility, not promised answers):
+
+```sql
+SELECT COUNT(DISTINCT profile.tenant_id) AS affected_shops,
+       COUNT(*) AS affected_branches,
+       COUNT(DISTINCT profile.tenant_id) FILTER (WHERE profile.publish_rates) AS rate_enabled_shops,
+       COUNT(DISTINCT profile.tenant_id) FILTER (WHERE profile.publish_availability) AS availability_enabled_shops
+FROM bms_board_game_public_locations profile
+JOIN bms_locations location
+  ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
+JOIN bms_tenants tenant ON tenant.id = profile.tenant_id AND tenant.active
+JOIN bms_store_profile store
+  ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
+WHERE profile.public_visible = FALSE
+  AND (profile.publish_rates OR profile.publish_availability)
+  AND location.active;
+```
+
+Verification: `scripts/ai-eval/board-game-customer-contract.test.mts` pins the independent
+readers, mandatory chat tenant and the pre-split public SQL fingerprint. The rollback-only
+fixture in `scripts/board-game-seating-db-contract.test.mts` exercises four rates, six
+public titles, hidden/lost copies, occupied/blocked tables, both publication flags, tenant
+isolation, inactive branches/tenants and absent profiles against real PostgreSQL when configured.
+It rolls back only its own fixtures and checks their exact IDs/slugs are gone. Pure tests do
+not establish real database, provider, customer-chat or browser-form behavior.
+
+### Chat reservation requests (`10.48`, 2026-10-07)
+
+Chat reuses `bms_board_game_waitlist`, not a second reservation system. The branch must be active,
+have a saved profile, enable booking and use deposit policy `NONE`. A hidden directory branch can
+qualify. The tool resolves a branch name, converts local time using the same PostgreSQL timezone
+helper as PUBLIC, and applies the same advance-time, duration, party-size and request-TTL rules.
+CRM contact is required. The server previews every detail and waits for a short affirmative after
+that exact latest summary. Changed details, stale summaries and intervening messages never grant
+consent. A CRM row lock serializes the three-pending-request cap; a tenant-unique hashed retry key
+replays identical input and rejects changed input. Request and domain audit commit together.
+
+**Review:** Admin now shows reservation cards, channel, CRM contact snapshot and a link to POS.
+Admin did not previously have a PIN reservation-review form; no second review endpoint was added.
+Browser and RN POS keep their existing review controls/PIN. CHAT cards tell staff to call the
+customer because this phase sends no decision message. The existing table lock/capacity/live-session/
+overlap checks still decide confirmation, and deposit policy is checked again at that time.
+`source` is already GraphQL `String!`, so CHAT requires no SDL change. A codegen check also found
+pre-existing emergency/pharmacy type drift against the unchanged committed SDL; RN types were
+regenerated from that SDL and a repeat generation was byte-identical (no schema change).
+
+#### Source decisions (all source-sensitive paths in `boardGameWaitlist.ts`)
+
+| Path | CHAT decision | Reason |
+| --- | --- | --- |
+| Waitlist row type, SELECT/map, staff list | Include | Same review queue; CRM name/phone snapshot is staff-only. |
+| Public request configuration, insertion, token retry | Exclude | Original PUBLIC behavior/required email and hashes remain unchanged. |
+| Chat preview/write/retry/pending cap | CHAT only | Server identity, customer lock, REQUESTED without a table. |
+| Customer chat status | CHAT only, tenant + customer | Never expose another customer's requests or a table number. |
+| Public token read (`getPublicBoardGameReservation`) | Exclude | CHAT has no public token or email. |
+| Public deposit owner lookup | Exclude | No public manage token. |
+| Deposit submission token lookup and locked active row | Exclude | No deposit or money path from CHAT. |
+| Public cancellation token lookup and locked row | Exclude | Chat cancellation remains staff-only. |
+| Staff reschedule reminder reset (all five CASE fields) | Leave PUBLIC-only | Staff may change a confirmed CHAT row; email state remains NONE. No customer tool. |
+| Staff review selector | PUBLIC + CHAT | Existing POS permission/PIN and same table advisory lock. |
+| Staff rejection notification state | CHAT → NONE | No automatic decision message. |
+| Staff confirmation policy | CHAT requires NONE again | A later branch deposit change must not create unpayable CHAT deposits. |
+| Staff confirmation reminder and decision state | CHAT → NONE | Null email; no retry queue entry. |
+| Single decision sender and retry selector | Leave PUBLIC-only | CHAT is never claimed, no attempts/error increments. |
+| Due reminder tenant scan and locked row claim | Null email excluded twice | CHAT is never claimed, even if its reminder lead would be due. |
+| TTL expiry / unpaid expiry / no-show | Existing source-independent rules | REQUESTED CHAT expires by TTL; no money is created. |
+| Check-in, staff close/cancel, seating | Existing source-independent rules | Same arrival window/queue number/session transaction; no new clock/bill path. |
+
+Revision triggers serialize the row generically; the existing realtime trigger in `9.99` references
+only tenant/location/id/status/updated_at and emits allow-listed status hints. No new column is added
+to its payload. RLS/table grants are inherited; actual trigger execution still requires DB verification.
+The composite customer FK uses CASCADE for hard erasure, so test-shop/customer deletion is not blocked.
+Normal CRM soft deletion does not delete a reservation.
+CRM merge moves CHAT requests to the surviving customer in the existing merge transaction, preserving
+status and retry hashes; moving channel identities must not make their old requests unreadable.
+The merge refuses while the two identities together have more than three pending CHAT requests;
+staff must resolve those requests first, never silently cancel them to fit the limit.
+
+#### Reproducible bilingual flow
+
+Pure dependency-injected tests use FAKE Main, 10 January 2027 18:00 Asia/Bangkok, 120 minutes, 4 people.
+They exercise the real request policy and server formatters, not a live AI provider or chat channel.
+
+| Stage | Thai | English |
+| --- | --- | --- |
+| Request details supplied | จอง FAKE Main วันที่ 10 ม.ค. 2027 เวลา 18:00 น. 2 ชั่วโมง 4 คน | Request FAKE Main on 10 Jan 2027 at 18:00 for 120 minutes, 4 people |
+| Server summary, zero writes | กรุณาตรวจคำขอจองโต๊ะ … นี่เป็นคำขอ ร้านต้องยืนยันก่อน ยังไม่ได้ยืนยันโต๊ะ ตอบตกลงเพื่อส่งคำขอค่ะ | Please confirm this table request … This is a request for staff review, not a confirmed table. Reply yes to submit. |
+| Customer affirmation | ตกลงค่ะ | yes please |
+| Server receipt, exactly one injected write | ส่งคำขอจองโต๊ะ #12345678 ให้ร้านตรวจแล้วค่ะ ตอนนี้ยังไม่ได้ยืนยันโต๊ะ … | Booking request #12345678 was sent for staff review. No table is confirmed yet. … |
+| Own status | #12345678 … รอร้านตรวจ ยังไม่ได้ยืนยันโต๊ะ | #12345678 … Awaiting staff review; no table is confirmed |
+
+Dates are rendered in branch timezone (Thai locale uses the Buddhist year). Confirmed status comes
+only from a later authoritative staff-reviewed status read, never the submission message.
+
+#### Deployment and rollback (not executed in this task)
+
+1. Back up the target PostgreSQL database and verify that backup can be restored to an isolated test
+   database. Do not rebuild BMS by blindly replaying historical migrations into an empty database.
+2. Run `psql -v ON_ERROR_STOP=1 -f db/checks/schema-readiness.sql` on that restored test DB. Before
+   migration only the three new `10.48` columns should be missing; resolve other gaps separately.
+3. Apply `psql -1 -v ON_ERROR_STOP=1 -f db/migrations/10.48__bms_board_game_chat_reservations.sql`.
+   Repeat readiness; inspect `pg_constraint` and `information_schema.columns` (DB contract checks both).
+4. Configure the isolated DB for the guarded runner and run
+   `node scripts/run-contract-tests.mjs db board-game-waitlist` and the existing seating DB suite.
+   Confirm fixture cleanup and revision/realtime inserts. These tests write only FAKE fixtures and
+   invoke the real scheduled services; the configured database must be dedicated to testing.
+5. Only after authorization and successful DB proof: back up production, apply `10.48`, recheck
+   readiness, deploy code, verify the real chat summary/consent/status and staff queue with test identities.
+
+Prefer a forward fix or code rollback retaining the additive schema. Full schema rollback is allowed
+only when `SELECT count(*) FROM bms_board_game_waitlist WHERE source='CHAT'` is zero. Stop chat writes,
+deploy previous code, lock the waitlist during rollback, verify zero again, restore the named kind
+CHECK from `10.2` and public shape/text CHECKs from `10.1`, then drop only the new customer FK/chat
+CHECK/indexes/three columns. Never delete customer requests to make rollback pass. If CHAT rows exist,
+retain schema and preserve a staff review path until requests are resolved; do not silently strand them.
+
+Deliberately out of scope: automatic decision messages, chat deposits, chat reschedule/cancel, live
+provider/channel verification and authenticated browser appearance. DB apply/tests are not established
+by pure tests or a production build; see the latest `CLAUDE.local.md` result for actual execution.
+
+### Deterministic reply boundaries
+
+Customer chat can read published rates, game-library metadata and aggregate availability. It
+can submit a customer-confirmed REQUESTED reservation through the approved tool, but cannot
+confirm/change/cancel a board-game reservation, extend play time, issue a refund, grant a
+discount or notify staff. A successful slip submission is not payment confirmation. The
+board-game response guard must not exempt these claims because an unrelated tool succeeded.
+
+`boardGameUrgentGuard()` is a pure, shop-neutral emergency/safety boundary, called on the actual
+message before profile, conversation or history reads. It follows the existing pharmacy emergency
+fast path without changing that path's fixed copy. Other board-game guards remain archetype-scoped.
+A missing profile fails closed; failed optional context must not erase a known store archetype.
+Ordinary questions about prices, booking policy, child/observer charges, game names and merchandise
+must still reach approved read tools, not a blanket refusal.
+
+The new Thai/English safety reply is an **unreviewed draft**. Deterministic phrase matching does not
+cover every possible wording and does not establish live-provider, live-chat or database behavior.
+See [the detailed recheck](../ai/board-game-guards-recheck.md) for literal cases, validation results,
+copy requiring human review and remaining booking-link decisions.
+
 ## Reuse Existing BMS
 
 Reuse existing services for:

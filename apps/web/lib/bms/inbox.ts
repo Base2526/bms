@@ -716,6 +716,7 @@ export type AiConversationState = {
   pendingQuoteFingerprint?: string | null;
   /** Server-resolved restaurant request; confirmation revalidates the catalog, never infers lost notes. */
   pendingRestaurantRequest?: import('./restaurantRequestPolicy').RestaurantRequestDraft | null;
+  pendingBoardGameReservation?: import('./boardGameReservationPolicy').BoardGameReservationQuote | null;
   updatedAt?: string;
 };
 

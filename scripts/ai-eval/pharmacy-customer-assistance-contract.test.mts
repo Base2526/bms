@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { PHARMACY_CUSTOMER_CORPUS } from "./pharmacy-customer-corpus.mjs";
+import { PHARMACY_CUSTOMER_CORPUS, PHARMACY_GUARD_BITE_GOLDENS, PHARMACY_GUARD_HUMAN_GOLDENS } from "./pharmacy-customer-corpus.mjs";
 import { PHARMACY_QUESTION_MATRIX, renderPharmacyQuestionMatrix } from "./pharmacy-question-matrix.mjs";
 import { pharmacyEmergencyReply } from "../../apps/web/lib/bms/pharmacy/emergency.ts";
 import { isPharmacyMedicationAdviceQuestion, isPharmacySymptomAdviceQuestion,
@@ -14,6 +14,15 @@ import { routePharmacyConversationMessage } from "../../apps/web/lib/bms/pharmac
 import { normalizeMedicineLabel } from "../../apps/web/lib/bms/productMedicineLabel.ts";
 
 const source = (file: string) => readFileSync(path.resolve(import.meta.dirname, "../..", file), "utf8");
+for (const message of PHARMACY_GUARD_HUMAN_GOLDENS) test(`guard D human: ${message}`, () => {
+  assert.equal(routePharmacyConversationMessage(message).intent, "HUMAN_HANDOFF");
+  assert.equal(pharmacyCustomerReadIntent(message), null);
+});
+for (const message of PHARMACY_GUARD_BITE_GOLDENS) test(`guard D human injury: ${message}`, () => {
+  assert.equal(routePharmacyConversationMessage(message).intent, "EMERGENCY");
+  assert.equal(pharmacyClinicalHandoffReply(false, message), pharmacyClinicalHandoffReply(false));
+  assert.equal(pharmacyClinicalHandoffReply(true, message), pharmacyClinicalHandoffReply(true));
+});
 test("58-question matrix is complete, has one primary status per question, and does not enable label advice", () => {
   assert.deepEqual(PHARMACY_QUESTION_MATRIX.map((row) => row.id), Array.from({ length: 58 }, (_, i) => i + 1));
   const counts = PHARMACY_QUESTION_MATRIX.reduce((counts, row) => {
@@ -86,6 +95,7 @@ for (const row of PHARMACY_CUSTOMER_CORPUS) {
 
 test("explicit commerce and label questions remain non-clinical; no approval is inferred", () => {
   for (const text of ["ขอพารา 500 2 แผง", "มีพาราไหม แผงละเท่าไร", "มีแมสก์ไหม",
+    "ยานี้แผงละกี่เม็ด", "พารากล่องละกี่เม็ด", "ยานี้บรรจุกี่เม็ด", "ตัวนี้ขวดละกี่เม็ด", "ใช้อะไรดี",
     "ตัวนี้มีส่วนประกอบสำคัญอะไร ความแรงเท่าไร", "Paracetamol 500 mg price?",
     "มีเครื่องวัดความดันไหม", "มีผ้าอ้อมเด็กไหม", "มียาคุมฉุกเฉินไหม", "ขอยานอนหลับ",
     "Pregnancy test price?", "Do you sell sleeping pills?", "มีอาหารแมวไหม",

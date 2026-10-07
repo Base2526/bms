@@ -9,6 +9,21 @@ the authoritative registry. AI MUST call only registered tools.
 
 ## Wiring status (2026-07 — AI tool-calling)
 
+### Board-game chat requests (`10.48`)
+
+| Tool | Customer permission | Authority and result |
+| --- | --- | --- |
+| `request_board_game_reservation` | `order.create` | Board-game archetype only. Branch name, branch-local date/time, duration 30–720 minutes, party 1–500 and non-contact note ≤300 characters. First call is a read-only preview, never an insert. Pipeline saves a 15-minute fingerprint and displays its own summary. Exact latest-summary consent is server-only in ExecCtx; changed fields/config require confirmation again. Inserts CHAT/REQUESTED only, using CRM name/phone and a server retry key. |
+| `get_board_game_reservation_status` | `order.view` | No arguments. Latest five CHAT requests of the channel-derived CRM customer, scoped to the acting tenant. Short reference, branch/time/timezone, party, duration, status and bounded rejection reason; no table, staff or customer identity. Pipeline composes the reply. |
+| `get_board_game_availability` | Read | `booking.canSubmitViaChat = bookingEnabled && reservationDepositPolicy === 'NONE'`; directory listing is independent. Current free tables are not future availability. |
+
+Contact completeness uses `get_customer_checkout`; missing name/phone use the existing
+`save_customer_checkout_details`. Neither customer/tenant IDs nor a confirmation flag are model
+arguments. Booking-disabled/deposit branches return typed business rejections rather than incidents.
+No chat table confirmation, deposit payment, reschedule, cancellation or automatic staff/customer
+notification is exposed. Staff must review at POS with the existing PIN and call the customer.
+Migration `10.48` must be applied before deploying these tools.
+
 These tools are now actually reachable by Claude via a tool-use runtime, not just documented.
 Registry + surface/RBAC filtering: [`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)
 (`customerTools()` / `staffTools(perms)`); loop: [`lib/bms/tools/runtime.ts`](../../apps/web/lib/bms/tools/runtime.ts).

@@ -371,6 +371,15 @@ export const MIGRATIONS: Migration[] = [
     needs: [{ kind: "table", name: "bms_board_game_offers" }],
   },
   {
+    file: "10.48__bms_board_game_chat_reservations.sql",
+    impact: "คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด",
+    needs: [
+      { kind: "column", table: "bms_board_game_waitlist", name: "customer_id" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "chat_request_key_hash" },
+      { kind: "column", table: "bms_board_game_waitlist", name: "chat_request_hash" },
+    ],
+  },
+  {
     file: "10.40__bms_board_game_time_buy_get.sql",
     impact: "ร้านบอร์ดเกมอ่านโปรโมชันและปิดบิลไม่ได้ — ต้องมีคอลัมน์นาทีซื้อและนาทีแถม",
     needs: [

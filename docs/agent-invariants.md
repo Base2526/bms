@@ -983,6 +983,30 @@ own dine-in service. Operator detail:
 
 ## Board game cafe
 
+**Chat booking is a customer-confirmed request (`10.48`), never a confirmed table.** The customer
+tool previews server-resolved branch/time/duration/party details without writing; the pipeline saves
+the fingerprint and accepts a short affirmative only after that exact latest assistant summary.
+Consent expires after 15 minutes and any intervening message consumes it. The server rechecks all
+fields/configuration inside the write transaction, locks the CRM customer to enforce at most three
+pending CHAT requests, and inserts `REQUESTED` with no table/confirmed timestamp. Tenant and CRM
+identity are server-derived; contact name/phone are CRM snapshots, never tool arguments. A composite
+customer FK cascades hard erasure (normal CRM soft deletion preserves history). Only active,
+booking-enabled, no-deposit branches qualify; public-directory visibility does not apply. Staff
+review retains the existing POS PIN/table locks. Chat has no email/public token/deposit, no automatic
+decision notification, and no chat reschedule/cancel. Status reads are tenant + customer scoped.
+Every request/summary/status reply is server-composed, including after a model/provider failure.
+
+**Keep chat and public discovery readers separate.** Customer chat reads only through
+`listBoardGameChatBranches({ tenantId, client })`; `/board-game` and `/api/board-game/nearby`
+read only through `listPublicBoardGameCafes()`. Never swap them or add an `includeHidden`
+escape to the public reader. Chat requires a non-optional, validated tenant and unconditional
+`profile.tenant_id = $1`, a saved branch profile, active branch/tenant and board-game archetype.
+`profile.public_visible` controls only directory discovery; `publish_rates`,
+`publish_availability`, title visibility and lost/retired-copy exclusions still govern chat.
+Both readers share one SQL projection for rates, current seating counts and game highlights;
+the public reader alone retains the directory visibility and optional-tenant predicates.
+Customer tool results must continue to omit internal branch/table/copy identifiers.
+
 `10.40` time buy/get offers repeat per participant over already-rounded billable minutes, using
 the frozen hourly rate. They compete with other offers and member passes, never stack with them,
 and freeze their net amount/discount at group close. A fixed-price cap is not an equivalent rule.

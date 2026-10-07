@@ -7,6 +7,17 @@ const SELF_HARM_PATTERN = /(?:ฆ่าตัวตาย|ทำร้าย(?:�
 const MEDICAL_PATTERN = /(?:หมดสติ|ชัก|หายใจไม่ออก|หายใจลำบากมาก|หอบเหนื่อยมาก|เจ็บหน้าอก|แน่นหน้าอก|หน้าเบี้ยว|ปากเบี้ยว|แขนขาอ่อนแรง|พูดไม่ชัด|อาเจียนเป็นเลือด|ถ่ายดำ|ถ่ายเป็นเลือด|แพ้(?:ยา)?รุนแรง|คอบวม|ลิ้นบวม|ปากบวม|หน้าบวม|ผื่น(?:ขึ้น)?ทั้งตัว|chest pain|can(?:not|'t|’t) breathe|unconscious|vomiting blood|swollen (?:tongue|lips|face)|seizure|anaphylax)/i;
 const POISONING_PATTERN = /(?:ยาเกินขนาด|(?:กิน|ทาน|กลืน|ดื่ม).{0,25}(?:ยาเกิน|สารเคมี|ยาฆ่าแมลง|น้ำยาล้าง|น้ำยาฟอก|ยาพิษ)|(?:เด็ก|ลูก|หลาน).{0,20}(?:เผลอ|แอบ|หยิบ).{0,20}(?:กิน|กลืน|ดื่ม).{0,20}(?:ยา|สาร)|(?:เด็ก|ลูก|หลาน).{0,15}(?:กิน|กลืน|ดื่ม).{0,15}(?:ยา|สารเคมี).{0,10}(?:เข้าไป|ผิด|เกิน)|overdos\w*|(?:swallowed|drank|ingested).{0,30}(?:chemical|poison|bleach|pesticide)|(?:child|baby|toddler).{0,30}(?:swallowed|ate).{0,20}(?:pills|tablets|medicine))/i;
 
+// Routing additions from the 2026-10-07 supplied task matrix, not diagnosis or dose thresholds.
+// Supplemental source review 2026-10-07: https://www.nhs.uk/symptoms/blue-skin-or-lips-cyanosis/
+// https://www.nhs.uk/conditions/snake-bites/ and https://www.nhs.uk/symptoms/fever-in-children/
+// Infant fever is conservatively routed to existing urgent copy; clinical review remains required.
+const SELF_HARM_ADDITIONAL = /\b(?:i\s+)?(?:want to|wanna)\s+die\b|อยากหลับไปไม่ตื่น|อยากหายไปจากโลกนี้|เหนื่อยกับชีวิต.{0,20}อยากหายไป|ไม่อยากตื่นขึ้นมาอีก/i;
+// Require ingestion, not buying/counting a pack. English quantity must be a count, not mg/ml.
+const LARGE_INGESTION = /(?:กิน|ทาน|กลืน)ยา.{0,30}(?:ทั้งแผง|ทั้งขวด|หมดขวด|หมดแผง|\d{2,}\s*เม็ด|หลายสิบเม็ด)|\b(?:took|swallowed|ingested)\s+(?:\d{2,}\s+(?!mg\b|mcg\b|ml\b|milligrams?\b|millilit(?:er|re)s?\b|minutes?\b|hours?\b|seconds?\b|days?\b)[a-z][a-z-]*|(?:a\s+)?whole\s+(?:bottle|pack)\s+of\s+(?:pills|tablets|medicine|medication))\b/i;
+const TOXIN_INGESTION = /(?:กิน|ทาน|กลืน|ดื่ม).{0,20}(?:ยาฆ่าหญ้า|ยาเบื่อหนู|ยาฆ่าแมลง|น้ำยาล้างห้องน้ำ|ไฮเตอร์|โซดาไฟ|น้ำมันก๊าด)/i;
+const MEDICAL_ADDITIONAL = /หายใจลำบาก|ปากเขียว|ตัวเขียว|ปลุกไม่ตื่น|เลือดออกไม่หยุด|heart attack|having a stroke|can(?:not|'t|’t) stop bleeding|ไม่หายใจ|งูกัด|ปวดหัวรุนแรงที่สุดในชีวิต|ปวดท้องรุนแรงมาก.{0,15}ท้องแข็ง/i;
+const YOUNG_INFANT_FEVER = /(?:ลูก|เด็ก|ทารก)\s*(?:อายุ)?\s*(?:[012]|หนึ่ง|สอง)\s*เดือน.{0,15}(?:มี)?ไข้/;
+
 export type EmergencyKind = "SELF_HARM" | "MEDICAL" | "POISONING";
 
 /** Match a display-equivalent safety view only; never rewrite stored evidence or SKU input. */
@@ -20,14 +31,30 @@ export function normalizePharmacySafetyText(message: string): string {
     .replace(/\s+/g, " ").replace(/([ก-๙]) +(?=[ก-๙])/g, "$1").trim();
 }
 
+/** Human injury is not a request to medicate an animal. Shared by all routing consumers. */
+export function isPharmacyAnimalBiteMessage(message: string): boolean {
+  return /(?:สุนัข|หมา|แมว)(?:มา)?(?:กัด|ข่วน)|\b(?:dog|cat)\s+(?:bite|scratch)|\b(?:bitten|scratched)\s+by\s+(?:(?:a|the|my)\s+)?(?:dog|cat)\b/i.test(normalizePharmacySafetyText(message));
+}
+
+export function isPharmacyAnimalMedicationQuestion(message: string): boolean {
+  const text = normalizePharmacySafetyText(message);
+  if (isPharmacyAnimalBiteMessage(text)) return false;
+  return /(?:สัตว์เลี้ยง|สุนัข|หมา|แมว).{0,20}(?:กิน|ทาน|ใช้|ให้ยา)|(?:ให้|สำหรับ).{0,15}(?:สัตว์เลี้ยง|สุนัข|หมา|แมว).{0,15}(?:ยา|กิน|ทาน|ใช้)|\b(?:dogs?|cats?|pets?|puppy|kitten)\b.{0,25}\b(?:take|use|have|medicine|medication)\b|\b(?:safe|suitable|ok|okay|medicine|medication)\b.{0,20}\bfor\s+(?:my\s+)?(?:dogs?|cats?|pets?|puppy|kitten)\b/i.test(text);
+}
+
 export function pharmacyEmergencyKind(message: string): EmergencyKind | null {
   const text = normalizePharmacySafetyText(message);
-  if (SELF_HARM_PATTERN.test(text)) return "SELF_HARM";
+  if (SELF_HARM_PATTERN.test(text) || SELF_HARM_ADDITIONAL.test(text)) return "SELF_HARM";
   // Same poisoning/breathing escalation, including reports without the word "overdose".
   if (/(?:กิน|ทาน|กลืน)ยาผิด|\b(?:took|taken|swallowed)\s+(?:the\s+)?wrong\s+(?:medicine|medication|pills?|tablets?)\b/i.test(text)) return "POISONING";
-  if (/หายใจไม่ค่อยออก|\b(?:struggling|struggle|difficulty|trouble)\s+(?:to\s+breathe|breathing)\b/i.test(text)) return "MEDICAL";
+  if (LARGE_INGESTION.test(text) || TOXIN_INGESTION.test(text)) return "POISONING";
   if (POISONING_PATTERN.test(text) || /(?:เด็ก|ลูก|หลาน).{0,15}(?:กิน|กลืน|ทาน).{0,20}ยา.{0,20}\d+\s*(?:เม็ด|แผง|ขวด)/i.test(text)) return "POISONING";
   if (/\b(?:took|taken|swallowed|ate)\s+too many\s+(?:pills|tablets|capsules)\b|\b(?:child|baby|toddler).{0,30}\b(?:drank|ingested)\s+(?:the |my |some )?(?:medicine|medication)\b/i.test(text)) return "POISONING";
+  // User-confirmed conservative routing (2026-10-07): reuse MEDICAL copy, never vet advice.
+  // Background: https://www.nhs.uk/conditions/animal-and-human-bites/ — severity still needs clinical review.
+  if (isPharmacyAnimalBiteMessage(text)) return "MEDICAL";
+  if (MEDICAL_ADDITIONAL.test(text) || YOUNG_INFANT_FEVER.test(text)) return "MEDICAL";
+  if (/หายใจไม่ค่อยออก|\b(?:struggling|struggle|difficulty|trouble)\s+(?:to\s+breathe|breathing)\b/i.test(text)) return "MEDICAL";
   if (/\b(?:lips|tongue|face)\s+(?:(?:is|are)\s+)?(?:swelling|swollen)\b|\bshortness of breath\b/i.test(text)) return "MEDICAL";
   return MEDICAL_PATTERN.test(text) ? "MEDICAL" : null;
 }

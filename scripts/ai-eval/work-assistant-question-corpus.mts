@@ -295,6 +295,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เปิดโต๊ะบอร์ดเกมและคิดค่าเล่นยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe", origin: "coverage" },
   { q: "how do I manage board-game time rates and game loans", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe", origin: "coverage" },
   { q: "ย้ายโต๊ะบอร์ดเกม", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },
+  { q: "คำขอจองจากแชทร้านบอร์ดเกม", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },
+  { q: "board-game chat booking request", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },
   { q: "merge board-game tables", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },
   { q: "ขายแพ็กเกจสมาชิก", locale: "th", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },
   { q: "sell a member pass", locale: "en", context: GUIDES, expect: "answer", expectTop: "board-game.run-cafe" },

@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { BOARD_GAME_CLAIM_GOLDENS, BOARD_GAME_CLAIM_NEGATIVES, BOARD_GAME_RECHECK_NEGATIVES, BOARD_GAME_GUARD_CORPUS } from "./board-game-guard-corpus.mjs";
+import { boardGameCustomerGuard } from "../../apps/web/lib/bms/boardGameCustomerGuard.ts";
 
 import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
   isAlternativeCatalogRequest,
   hasUnsupportedBoardGameActionClaim,
+  boardGameCheckoutFallback,
   storeInfoReply,
   suppressUnconfiguredPaymentAdvice,
 } from "../../apps/web/lib/bms/customerReplyPolicy.ts";
@@ -21,6 +25,49 @@ import {
   normalizeCustomerIdentity,
   reorderTargetIdentity,
 } from "../../apps/web/lib/bms/customerIdentity.ts";
+
+for (const text of BOARD_GAME_CLAIM_GOLDENS) test(`BG claim golden: ${text}`, () => {
+  assert.equal(hasUnsupportedBoardGameActionClaim(text), true);
+});
+for (const text of [...BOARD_GAME_CLAIM_NEGATIVES, ...BOARD_GAME_RECHECK_NEGATIVES]) test(`BG claim negative: ${text}`, () => {
+  assert.equal(hasUnsupportedBoardGameActionClaim(text), false);
+});
+test("BG claim refusals cannot hide another affirmative clause", () => {
+  for (const text of ["ไม่สามารถลดได้ แต่จองโต๊ะให้แล้วนะคะ", "I cannot refund you. Your table is booked", "ยังไม่ได้แจ้งพนักงาน\nได้รับเงินแล้วค่ะ"]) assert.equal(hasUnsupportedBoardGameActionClaim(text), true, text);
+  for (const text of ["ไม่สามารถดำเนินการผ่านระบบนี้หรือรับปากว่าจะจองโต๊ะไว้ให้แล้วได้", "I cannot arrange it or promise that your table is booked"]) assert.equal(hasUnsupportedBoardGameActionClaim(text), false, text);
+});
+
+test("BG normalized contrast cannot hide an affirmative claim", () => {
+  for (const text of ["ไม่สามารถลดได้ แ**ต่**จองโต๊ะให้แล้วนะคะ", "I cannot refund you b\u200but your table is booked"]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(text), true, text);
+  }
+});
+
+test("BG created-order checkout fallback cannot reuse an unsupported model claim", () => {
+  for (const english of [false, true]) for (const claim of BOARD_GAME_CLAIM_GOLDENS) {
+    assert.equal(boardGameCheckoutFallback(claim, english), english ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ");
+  }
+  assert.equal(boardGameCheckoutFallback("Safe retail order details"), "Safe retail order details");
+  const source = readFileSync(new URL("../../apps/web/lib/bms/pipeline.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const start = source.indexOf("} else if (execCtx.createdOrderId) {");
+  const end = source.indexOf("} else if (execCtx.pharmacyReviewCaseId)", start);
+  const block = source.slice(start, end);
+  assert.match(block, /profile.businessArchetype === "board_game_cafe"\s*\? boardGameCheckoutFallback\(loop.reply, englishReply\)/);
+});
+test("BG own guard replies and pipeline fallback never count as completed actions", () => {
+  for (const item of BOARD_GAME_GUARD_CORPUS.filter(item => item.guard)) for (const english of [false, true]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(boardGameCustomerGuard(item.message, english)!.reply), false, item.id);
+  }
+  const src = readFileSync(new URL("../../apps/web/lib/bms/pipeline.ts", import.meta.url), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const segment = src.slice(src.indexOf('} else if (profile.businessArchetype === "board_game_cafe" && hasUnsupportedBoardGameActionClaim('));
+  const block = segment.slice(0, segment.indexOf("} else if (hasUnverifiedFacts"));
+  assert.ok(block.length > 0);
+  const replies = [...block.matchAll(/[?:]\s*"([^"]+)"/g)].map(match => match[1]);
+  assert.equal(replies.length, 2);
+  for (const reply of replies) assert.equal(hasUnsupportedBoardGameActionClaim(reply), false, reply);
+  assert.ok(block.includes("hasUnsupportedBoardGameActionClaim(loop.reply)"));
+  assert.equal(block.includes("submit_payment"), false, "slip submission must not authorize a received-money claim");
+});
 
 test("board-game replies cannot claim unsupported reservations, refunds or staff notifications", () => {
   for (const reply of ["จองโต๊ะให้แล้วค่ะ", "ต่อเวลาให้เรียบร้อยค่ะ", "คืนมัดจำสำเร็จแล้ว", "แจ้งพนักงานแล้วค่ะ", "ส่งเรื่องให้แอดมินแล้วค่ะ", "Your booking is confirmed", "Staff have been notified"]) {
@@ -309,4 +356,14 @@ test("English checkout copy and continuation stay on the same deterministic cont
     { type: "BANK", bankName: "Example Bank", accountNo: "123" },
     { type: "PROMPTPAY", promptpayId: "0812345678" },
   ], true), ["bank transfer", "PromptPay"]);
+});
+test("reservation requests are not confirmed bookings: phase zero bilingual goldens", () => {
+  for (const text of ["รับจองไว้ให้แล้ว", "บันทึกการจองไว้แล้ว", "เก็บโต๊ะไว้ให้แล้ว", "กันโต๊ะไว้ให้แล้ว", "จองโต๊ะให้เรียบร้อยแล้ว", "ยืนยันการจองแล้ว", "โต๊ะของคุณพร้อมแล้ว", "Your table is booked", "I've reserved a table for you", "your booking is confirmed"]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(text), true, text);
+  }
+  for (const text of ["ส่งคำขอจองแล้ว รอร้านยืนยัน", "ยังไม่ได้จองหรือยืนยันโต๊ะ", "I cannot confirm the booking", "ส่งคำขอจองโต๊ะ #12345678 ให้ร้านตรวจแล้วค่ะ ตอนนี้ยังไม่ได้ยืนยันโต๊ะ", "Booking request #12345678 was sent for staff review. No table is confirmed yet."]) {
+    assert.equal(hasUnsupportedBoardGameActionClaim(text), false, text);
+  }
+  assert.equal(hasUnsupportedBoardGameActionClaim("ส่งคำขอจองแล้ว และยืนยันการจองแล้ว"), true);
+  assert.equal(hasUnsupportedBoardGameActionClaim("Your booking is confirmed, not a confirmed table"), true);
 });

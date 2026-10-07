@@ -728,8 +728,19 @@ question type and language, with a text **its own licensed pharmacist approved**
 - **11 question types** (`PHARMACY_GUIDANCE_CODES` in `guidanceTemplates.ts`) chosen by a
   deterministic classifier, ordered most specific/risky first. The model never chooses the type
   and never writes or rephrases the text.
+  The 2026-10-07 guard recheck shares `normalizePharmacySafetyText()` from the existing
+  dependency-free `emergency.ts` leaf (the classifier's only import). Formatting/zero-width
+  characters cannot select a different template. Empty-stomach wording is not pregnancy,
+  environmental/food allergy is not drug substitution, and medicine names are not cough/fever
+  symptoms. Animal medication uses one shared predicate that excludes human bite/scratch reports.
 - **Emergency routing runs first**, unchanged. A message that is both an emergency and a clinical
   question gets the emergency reply.
+  The 2026-10-07 recheck expands deterministic crisis/ingestion/medical matching and, by explicit
+  user decision, routes dog/cat bite/scratch reports to the existing MEDICAL copy, never the
+  veterinarian copy. Medication-use guards cover implicit dosing, alternating medicines and
+  tablet manipulation while keeping pack-content questions in commerce. No reply text, flag,
+  protocol or approval is changed. See [guard report](../../../../../docs/ai/pharmacy-guards-recheck.md)
+  for literal before/after goldens, verification counts and read-only follow-ups.
 - **Only `APPROVED` rows reach a customer.** No row, a draft, a retired row, a slow database
   (> 500 ms) or any read error all mean the existing handoff, byte for byte.
 - **Approval is a fact about the person**: `bms_is_licensed_pharmacist`, no Administrator

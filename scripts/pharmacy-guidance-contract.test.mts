@@ -14,6 +14,7 @@ import {
   type PharmacyGuidanceCode,
 } from "../apps/web/lib/bms/pharmacy/guidanceTemplates.ts";
 import { pharmacyEmergencyKind } from "../apps/web/lib/bms/pharmacy/emergency.ts";
+import { PHARMACY_GUARD_CLASSIFIER_GOLDENS } from "./ai-eval/pharmacy-customer-corpus.mjs";
 import { isPharmacyMedicationAdviceQuestion, isPharmacySymptomAdviceQuestion } from "../apps/web/lib/bms/pharmacy/customerAssistancePolicy.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -28,6 +29,13 @@ function block(src: string, start: string, end: string): string {
   return src.slice(i, j);
 }
 
+test("pure safety consumers import only the dependency-free emergency leaf", () => {
+  for (const name of ["guidanceTemplates", "customerAssistancePolicy", "conversationRouter"]) {
+    const imports = [...stripComments(read(`apps/web/lib/bms/pharmacy/${name}.ts`)).matchAll(/^import[^;]*from\s+"([^"]+)"/gm)].map(match => match[1]);
+    assert.deepEqual(imports, ["./emergency"], name);
+  }
+});
+
 const CORPUS: Record<PharmacyGuidanceCode, string[]> = {
   SYMPTOM_TO_DRUG: ["ปวดหัวกินอะไรดี", "เจ็บคอควรกินยาอะไร", "แนะนำยาแก้ไอหน่อย", "what medicine should I take for a headache", "I have a fever"],
   DRUG_INTERACTION: ["กินคู่กับยาความดันได้ไหม", "ยาตีกันไหม", "ทานพร้อมกับยาฆ่าเชื้อได้มั้ย", "can I take it together with my other pills", "is there a drug interaction"],
@@ -41,6 +49,23 @@ const CORPUS: Record<PharmacyGuidanceCode, string[]> = {
   ANIMAL: ["ให้แมวกินได้ไหม", "หมากินยาคนได้ไหม", "can my dog take it", "is it ok for pets"],
   RESTRICTED_PRODUCT: ["ขอยานอนหลับ", "มียาคุมฉุกเฉินไหม", "ซื้อยาที่ต้องมีใบสั่งแพทย์", "do you sell sleeping pills", "morning after pill"],
 };
+
+for (const [q, expected] of PHARMACY_GUARD_CLASSIFIER_GOLDENS) test(`guard C: ${q}`, () => {
+  assert.equal(classifyPharmacyGuidanceQuestion(q!), expected);
+});
+for (const [q, expected] of [
+  ["ตอนท้องอืด", null], ["ตอนท้องผูก", null], ["คนท้องกินยาได้ไหม", "SPECIAL_POPULATION"],
+  ["แพ้ฝุ่นกินยาอะไรดี", "SYMPTOM_TO_DRUG"], ["แพ้อาหารกินยาอะไรดี", "SYMPTOM_TO_DRUG"],
+  ["แพ้เกสรกินยาอะไรดี", "SYMPTOM_TO_DRUG"], ["allergic rhinitis what medicine should I take", "SYMPTOM_TO_DRUG"],
+  ["hay fever what medicine should I take", "SYMPTOM_TO_DRUG"],
+  ["แพ้ฝุ่นและแพ้ยา กินอะไรแทน", "ALLERGY_SUBSTITUTE"],
+  ["หมากัด กินยาอะไรดี", "SYMPTOM_TO_DRUG"], ["อาหารแมวมีไหม", null],
+  ["กินยาแล้วอาการไม่หาย", "NOT_IMPROVING"], ["ไอ", "SYMPTOM_TO_DRUG"], ["ไข้", "SYMPTOM_TO_DRUG"],
+  ["ไอบูกับพารา**สลับ**กันได้ไหม", "DRUG_INTERACTION"],
+  ["ไอบูกับพาราสลับ\u200bกันได้ไหม", "DRUG_INTERACTION"],
+] as const) test(`guard C boundary: ${q}`, () => {
+  assert.equal(classifyPharmacyGuidanceQuestion(q), expected);
+});
 
 test("every guidance code is classified from real Thai and English questions", () => {
   assert.deepEqual(Object.keys(CORPUS).sort(), [...PHARMACY_GUIDANCE_CODES].sort());

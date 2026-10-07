@@ -1600,7 +1600,7 @@ function BoardGameFloor({
             return (
               <View key={entry.id} style={{ gap: spacing.xs }}>
                 <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                  {entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
+                  {entry.source === 'CHAT' ? 'แชท / Chat · ' : entry.status === 'REQUESTED' ? 'คำขอออนไลน์ · ' : ''}
                   {entry.guestName || 'ไม่ระบุชื่อ'} · {entry.partySize} คน ·{' '}
                   {entry.reservedTableCode || 'รอจัดโต๊ะ'}
                 </Text>
@@ -1610,6 +1610,7 @@ function BoardGameFloor({
                     : '-'}{' '}
                   · {entry.reservedDurationMinutes ?? 0} นาที
                   {entry.guestEmail ? ` · ${entry.guestEmail}` : ''}
+                  {entry.source === 'CHAT' ? ` · ${entry.guestPhone ?? '—'} · กรุณาโทรแจ้งผล / Call customer; no automatic notification` : ''}
                 </Text>
                 {entry.depositAmount > 0 ? (
                   <Text

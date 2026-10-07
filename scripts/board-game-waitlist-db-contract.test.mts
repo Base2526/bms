@@ -13,6 +13,7 @@ import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
+import { mergeCustomers } from "../apps/web/lib/bms/customers.ts";
 import {
   addBoardGameReservation,
   addBoardGameWaitlistEntry,
@@ -26,6 +27,11 @@ import {
   reviewPublicBoardGameReservation,
   seatBoardGameWaitlistEntry,
   updateBoardGameReservation,
+  requestChatBoardGameReservation,
+  listChatBoardGameReservationsForCustomer,
+  ChatBoardGameReservationRejection,
+  expireOverdueBoardGameReservations,
+  sendDueBoardGameReservationReminders,
 } from "../apps/web/lib/bms/boardGameWaitlist.ts";
 
 const TAG = "bg-waitlist-test";
@@ -41,6 +47,8 @@ let rateId = "";
 let smallTableId = "";
 let largeTableId = "";
 let sequence = 0;
+let chatCustomerId = "";
+let otherCustomerId = "";
 
 const key = (label: string) => `fake-${TAG}-${label}-${Date.now()}-${++sequence}`;
 const players = (count: number) => Array.from({ length: count }, (_, index) => ({
@@ -268,6 +276,92 @@ test("public request owns no table until staff review and its opaque token can c
   assert.equal((await cancelPublicBoardGameReservation(token)).status, "CANCELLED");
 });
 
+test("CHAT migration has customer FK, source checks and unique retry index in PostgreSQL", async () => {
+  const columns = await query(`SELECT column_name FROM information_schema.columns
+    WHERE table_schema='public' AND table_name='bms_board_game_waitlist'
+      AND column_name IN ('customer_id','chat_request_key_hash','chat_request_hash')`);
+  assert.equal(columns.rowCount, 3);
+  const fk = await query(`SELECT pg_get_constraintdef(oid) AS definition FROM pg_constraint
+    WHERE conrelid='bms_board_game_waitlist'::regclass AND conname='bms_board_game_waitlist_customer_fk'`);
+  assert.match(fk.rows[0].definition, /FOREIGN KEY \(tenant_id, customer_id\).*ON DELETE CASCADE/);
+  assert.equal((await query(`SELECT 1 FROM pg_indexes WHERE indexname='uq_bms_board_game_waitlist_chat_request'`)).rowCount, 1);
+});
+
+test("CHAT transactions, rejection, retry, cap, isolation, review and notification lifecycle", async () => {
+  const customers = await query<{ id: string }>(`INSERT INTO bms_customers (tenant_id,name,phone)
+    VALUES ($1,'FAKE chat customer','0800000000'),($1,'FAKE other customer','0800000001') RETURNING id`, [tenantId]);
+  [chatCustomerId, otherCustomerId] = customers.rows.map(row => row.id);
+  const local = new Date(Date.now() + 48 * 3600000 + 7 * 3600000).toISOString().slice(0,16);
+  const input = { tenantId, locationId, customerId: chatCustomerId, reservedLocal: local,
+    durationMinutes: 120, partySize: 2, requestKey: key("chat") };
+  await query(`UPDATE bms_board_game_public_locations SET public_visible=FALSE,
+    booking_enabled=TRUE, reservation_deposit_policy='NONE' WHERE tenant_id=$1 AND location_id=$2`, [tenantId,locationId]);
+  const count = async () => Number((await query(`SELECT count(*)::int AS n FROM bms_board_game_waitlist WHERE tenant_id=$1 AND source='CHAT'`,[tenantId])).rows[0].n);
+  const rejects = async (overrides: Partial<typeof input>, code: string) => {
+    const before = await count();
+    await assert.rejects(requestChatBoardGameReservation({ ...input, ...overrides, requestKey: key("chat-reject") }),
+      e => e instanceof ChatBoardGameReservationRejection && e.code === code);
+    assert.equal(await count(), before);
+  };
+  for (const durationMinutes of [29,721]) await rejects({ durationMinutes }, "INVALID_RESERVATION");
+  await rejects({ partySize: 0 }, "INVALID_RESERVATION");
+  await rejects({ reservedLocal: new Date(Date.now()+7*3600000).toISOString().slice(0,16) }, "INVALID_RESERVATION");
+  await query(`UPDATE bms_board_game_public_locations SET booking_enabled=FALSE WHERE tenant_id=$1`,[tenantId]);
+  await rejects({},"BOOKING_DISABLED");
+  await query(`UPDATE bms_board_game_public_locations SET booking_enabled=TRUE WHERE tenant_id=$1`,[tenantId]);
+  await query(`UPDATE bms_locations SET active=FALSE WHERE tenant_id=$1 AND id=$2`,[tenantId,locationId]);
+  await rejects({},"BOOKING_DISABLED");
+  await query(`UPDATE bms_locations SET active=TRUE WHERE tenant_id=$1 AND id=$2`,[tenantId,locationId]);
+  for (const policy of ["FIXED","PERCENT"]) {
+    await query(`UPDATE bms_board_game_public_locations SET reservation_deposit_policy=$2,
+      reservation_deposit_amount=CASE WHEN $2='FIXED' THEN 100 ELSE 0 END,
+      reservation_deposit_percent=CASE WHEN $2='PERCENT' THEN 10 ELSE 0 END WHERE tenant_id=$1`,[tenantId,policy]);
+    await rejects({},"DEPOSIT_REQUIRES_STAFF");
+  }
+  await query(`UPDATE bms_board_game_public_locations SET reservation_deposit_policy='NONE',
+    reservation_deposit_amount=0,reservation_deposit_percent=0 WHERE tenant_id=$1`,[tenantId]);
+  const first = await requestChatBoardGameReservation(input);
+  const row = (await query(`SELECT source,status,customer_id,reserved_table_id,confirmed_at,guest_email,
+    guest_name,guest_phone,reminder_attempts,decision_notification_attempts FROM bms_board_game_waitlist WHERE tenant_id=$1 AND id=$2`,[tenantId,first.requestId])).rows[0];
+  assert.deepEqual([row.source,row.status,row.customer_id,row.reserved_table_id,row.confirmed_at,row.guest_email],
+    ["CHAT","REQUESTED",chatCustomerId,null,null,null]);
+  assert.equal(row.guest_name,"FAKE chat customer"); assert.equal(row.guest_phone,"0800000000");
+  assert.equal((await query(`SELECT 1 FROM bms_audit_log WHERE tenant_id=$1 AND target=$2 AND action='board_game.chat_reservation_request'`,[tenantId,first.requestId])).rowCount,1);
+  assert.deepEqual(await requestChatBoardGameReservation(input),first);
+  await assert.rejects(requestChatBoardGameReservation({ ...input, partySize:3 }), isIdempotencyConflictError);
+  const raced = await Promise.allSettled(Array.from({length:4},()=>requestChatBoardGameReservation({...input,requestKey:key("chat-cap")})));
+  assert.equal(raced.filter(r=>r.status==="fulfilled").length,2);
+  assert.equal(raced.filter(r=>r.status==="rejected" && r.reason instanceof ChatBoardGameReservationRejection && r.reason.code==="PENDING_LIMIT").length,2);
+  assert.equal(await count(),3);
+  const own = await listChatBoardGameReservationsForCustomer({tenantId,customerId:chatCustomerId});
+  assert.equal(own.length,3);
+  assert.doesNotMatch(JSON.stringify(own),/0800000000|FAKE chat customer|reservedTable|customerId/);
+  assert.deepEqual(await listChatBoardGameReservationsForCustomer({tenantId,customerId:otherCustomerId}),[]);
+  assert.deepEqual(await listChatBoardGameReservationsForCustomer({tenantId:"00000000-0000-4000-8000-000000000000",customerId:chatCustomerId}),[]);
+  const another = await requestChatBoardGameReservation({...input,customerId:otherCustomerId,requestKey:key("chat-other")});
+  await assert.rejects(mergeCustomers(tenantId,chatCustomerId,otherCustomerId),/ไม่เกิน 3/);
+  const confirmed = await reviewPublicBoardGameReservation({tenantId,locationId,entryId:first.requestId,
+    actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-review")});
+  assert.equal(confirmed!.status,"CONFIRMED");
+  await assert.rejects(reviewPublicBoardGameReservation({tenantId,locationId,entryId:another.requestId,
+    actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-overlap")}),/เวลาทับกัน/);
+  await reviewPublicBoardGameReservation({tenantId,locationId,entryId:another.requestId,
+    actorUserId:staffId,decision:"REJECT",reason:"FAKE unavailable",idempotencyKey:key("chat-reject")});
+  await query(`UPDATE bms_board_game_waitlist SET reminder_minutes_before=10080 WHERE tenant_id=$1 AND id=$2`,[tenantId,first.requestId]);
+  await sendDueBoardGameReservationReminders();
+  const delivery = (await query(`SELECT reminder_attempts,reminder_error,decision_notification_attempts,
+    decision_notification_status FROM bms_board_game_waitlist WHERE tenant_id=$1 AND id=$2`,[tenantId,first.requestId])).rows[0];
+  assert.deepEqual(delivery,{reminder_attempts:0,reminder_error:null,decision_notification_attempts:0,decision_notification_status:"NONE"});
+  await query(`UPDATE bms_board_game_waitlist SET request_expires_at='2000-01-01' WHERE tenant_id=$1 AND source='CHAT' AND status='REQUESTED'`,[tenantId]);
+  await expireOverdueBoardGameReservations(new Date("2000-01-02T00:00:00Z"));
+  assert.equal(Number((await query(`SELECT count(*)::int AS n FROM bms_board_game_waitlist WHERE tenant_id=$1 AND source='CHAT' AND status='EXPIRED'`,[tenantId])).rows[0].n),2);
+  await mergeCustomers(tenantId,chatCustomerId,otherCustomerId);
+  const mergedRequests = await listChatBoardGameReservationsForCustomer({tenantId,customerId:chatCustomerId});
+  assert.ok(mergedRequests.some(r => r.reference === another.requestId.slice(0,8) && r.status === "REJECTED"));
+  await query(`DELETE FROM bms_customers WHERE tenant_id=$1 AND id=ANY($2::uuid[])`,[tenantId,[chatCustomerId,otherCustomerId]]);
+  assert.equal((await query(`SELECT 1 FROM bms_board_game_waitlist WHERE tenant_id=$1 AND id=$2`,[tenantId,another.requestId])).rowCount,0);
+});
+
 test("capacity rejection rolls back, then seating opens and links the real session atomically", async () => {
   const entry = await add(4);
   const sessionCountBefore = Number((await query<{ n: string }>(
@@ -326,6 +420,7 @@ test("teardown: the throwaway cafe leaves nothing behind", async () => {
   if (!ids.length) return;
   for (const table of [
     "bms_board_game_waitlist",
+    "bms_customers",
     "bms_board_game_session_participants",
     "bms_board_game_billing_groups",
     "bms_board_game_sessions",

@@ -1,0 +1,717 @@
+{
+  "commit": "91b3cc74",
+  "rows": [
+    {
+      "phase": "A",
+      "q": "i want to die",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "I wanna die",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "อยากหลับไปไม่ตื่น",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "อยากหายไปจากโลกนี้",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "เหนื่อยกับชีวิต อยากหายไป",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ไม่อยากตื่นขึ้นมาอีก",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "แม่กินยานอนหลับไปทั้งแผง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "RESTRICTED_PRODUCT",
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "กินยาไปหมดขวด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "took 20 paracetamol",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "swallowed a whole bottle of pills",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "กินยาฆ่าหญ้า",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "กินยาเบื่อหนู",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ดื่มน้ำยาล้างห้องน้ำ",
+      "emergency": "POISONING",
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ผื่นขึ้นตาบวมหายใจลำบาก",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "หายใจลำบาก",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ตาบวม ปากบวม",
+      "emergency": "MEDICAL",
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ปากเขียว",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ตัวเขียว",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ซึม ปลุกไม่ตื่น",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "เลือดออกไม่หยุด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "heart attack",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "having a stroke",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "can't stop bleeding",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ไม่หายใจ",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "NOT_IMPROVING",
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "งูกัด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ปวดหัวรุนแรงที่สุดในชีวิต",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ปวดท้องรุนแรงมาก ท้องแข็ง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "A",
+      "q": "ลูก 2 เดือน ไข้สูง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SPECIAL_POPULATION",
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "พาราวันละกี่เม็ด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "พาราได้วันละกี่ครั้ง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "ยาคุมฉุกเฉินกินกี่ชั่วโมง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "RESTRICTED_PRODUCT",
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "ibuprofen how many a day",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "ไอบูกับพาราสลับกันได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "กินสลับกันได้ไหม",
+      "emergency": null,
+      "med": true,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "alternate ibuprofen and paracetamol",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "ยาเม็ดนี้หักครึ่งได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "บดยาได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "แกะแคปซูลได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "can I crush this pill",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "can I split this tablet",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "กินยาแล้วยังปวดอยู่",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-med",
+      "q": "ทานยามา 3 วันยังไม่ดีขึ้น",
+      "emergency": null,
+      "med": true,
+      "sym": false,
+      "code": "NOT_IMPROVING",
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ท้อง 3 เดือนปวดหัว",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "my son has a fever",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "my daughter has a cough",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "เป็นสิว ใช้อะไรดี",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ขอยาแก้ปวดแรงๆ",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ปวดฟัน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ตาแดง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ผื่นคัน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ปัสสาวะแสบ",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "ตกขาว",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "B-sym",
+      "q": "นอนไม่หลับ",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "แอสไพรินกินตอนท้องว่างได้ไหม",
+      "emergency": null,
+      "med": true,
+      "sym": false,
+      "code": "SPECIAL_POPULATION",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "ไอบูกับพาราสลับกันได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "แพ้อากาศ กินยาอะไรดี",
+      "emergency": null,
+      "med": true,
+      "sym": false,
+      "code": "ALLERGY_SUBSTITUTE",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "โดนสุนัขกัด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "ANIMAL",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "แมวข่วน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "ANIMAL",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "ไม่หายใจ",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "NOT_IMPROVING",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "ยาไข้หวัดใหญ่",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "C",
+      "q": "ไอบูโพรเฟน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "พาราราคาเท่าไร",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "มีพาราไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "สั่งพารา 2 แผง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ซื้อพารา 20 เม็ด",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "เจลแอลกอฮอล์มีไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ใช้คูปองได้ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ร้านเปิดกี่โมง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "หน้ากากอนามัยมีไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "มียาฆ่าแมลงขายไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ยาเบื่อหนูราคาเท่าไร",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ขอซื้อยานอนหลับ 1 แผง",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "RESTRICTED_PRODUCT",
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ยาแก้ปวดฟันมีไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ยาหยอดตาแดงราคาเท่าไร",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ไอบูโพรเฟน 400 มีไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "SYMPTOM_TO_DRUG",
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "อาหารแมวมีไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": "ANIMAL",
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "ส่งของถึงไหน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": null
+    },
+    {
+      "phase": "negative",
+      "q": "เภสัชกรอยู่ไหม",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": "service"
+    },
+    {
+      "phase": "negative",
+      "q": "เคส #1a2b3c4d ถึงไหน",
+      "emergency": null,
+      "med": false,
+      "sym": false,
+      "code": null,
+      "read": "case"
+    }
+  ],
+  "copyHash": "a9a22c4a17dfa526189644a9ac5678360e30774bdc4410bebe7f90f5226a4f04"
+}

@@ -23,8 +23,10 @@
  */
 import assert from "node:assert/strict";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
+import { readBoardGameCustomerInfoInTx } from "../apps/web/lib/bms/boardGameCustomerInfo.ts";
 
-import { query } from "../apps/web/lib/db.ts";
+import { query, getClient } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import {
   addBoardGameParticipant,
@@ -37,6 +39,8 @@ import {
   createBoardGameTitle,
   getBoardGameSession,
   listBoardGameFloor,
+  listBoardGameChatBranches,
+  listPublicBoardGameCafes,
   mergeBoardGameSeating,
   moveBoardGameSeating,
   openBoardGameSession,
@@ -45,6 +49,144 @@ import {
 import { recordPosSale } from "../apps/web/lib/bms/pos.ts";
 
 const TAG = "bg-seat-test";
+
+
+test("chat publication is independent of directory visibility against real PostgreSQL", async () => {
+  // One rollback-only fixture transaction: never change or clean up a pre-existing shop.
+  const client = await getClient();
+  const fixtureIds: string[] = [];
+  const fixtureSlugs: string[] = [];
+  try {
+    await client.query("BEGIN");
+    for (let i = 0; i < 2; i++) {
+      const slug = `fake-bg-chat-${randomUUID()}`;
+      fixtureSlugs.push(slug);
+      fixtureIds.push((await client.query(
+        "INSERT INTO bms_tenants (name, slug) VALUES ($1, $2) RETURNING id",
+        [`FAKE chat visibility ${i}`, slug]
+      )).rows[0].id);
+    }
+    const [shop, otherShop] = fixtureIds;
+    await client.query("SELECT set_config('bms.tenant_id', $1, true)", [shop]);
+    await client.query("INSERT INTO bms_store_profile (tenant_id, business_archetype) VALUES ($1, 'board_game_cafe')", [shop]);
+    const branch = (await client.query(
+      "INSERT INTO bms_locations (tenant_id, code, name, branch_code) VALUES ($1, 'MAIN', 'FAKE Chat branch', '00000') RETURNING id",
+      [shop]
+    )).rows[0].id;
+    await client.query(
+      `INSERT INTO bms_board_game_public_locations
+        (tenant_id, location_id, public_visible, publish_rates, publish_availability, booking_enabled, latitude, longitude)
+       VALUES ($1, $2, FALSE, TRUE, TRUE, FALSE, 13.75, 100.5)`, [shop, branch]
+    );
+    for (let i = 0; i < 4; i++) {
+      await client.query(
+        `INSERT INTO bms_board_game_time_rates (tenant_id, code, name, price_per_hour)
+         VALUES ($1, $2, $3, $4)`, [shop, `FAKE_RATE_${i}`, `FAKE rate ${i}`, 40 + i]
+      );
+    }
+    const area = (await client.query(
+      "INSERT INTO bms_board_game_areas (tenant_id, location_id, name) VALUES ($1, $2, 'FAKE chat area') RETURNING id",
+      [shop, branch]
+    )).rows[0].id;
+    for (let i = 0; i < 4; i++) {
+      const table = (await client.query(
+        `INSERT INTO bms_board_game_tables (tenant_id, location_id, area_id, code, name, blocked)
+         VALUES ($1, $2, $3, $4, $4, $5) RETURNING id`,
+        [shop, branch, area, `FAKE_CHAT_${i}`, i === 3]
+      )).rows[0].id;
+      if (i === 0) await client.query(
+        "INSERT INTO bms_board_game_seatings (tenant_id, location_id, table_id) VALUES ($1, $2, $3)",
+        [shop, branch, table]
+      );
+    }
+    for (let i = 0; i < 7; i++) {
+      const title = (await client.query(
+        `INSERT INTO bms_board_game_titles (tenant_id, title, public_visible, min_players, max_players)
+         VALUES ($1, $2, $3, 2, 6) RETURNING id`, [shop, `FAKE chat title ${i}`, i < 6]
+      )).rows[0].id;
+      await client.query(
+        `INSERT INTO bms_board_game_copies (tenant_id, title_id, location_id, copy_code)
+         VALUES ($1, $2, $3, $4)`, [shop, title, branch, `FAKE_CHAT_COPY_${i}`]
+      );
+      if (i === 0) await client.query(
+        `INSERT INTO bms_board_game_copies (tenant_id, title_id, location_id, copy_code, status)
+         VALUES ($1, $2, $3, 'FAKE_CHAT_LOST', 'LOST')`, [shop, title, branch]
+      );
+    }
+
+    // Exercise the same RLS role as the production wrapper, inside this fixture transaction.
+    await client.query("SET LOCAL ROLE bms_app");
+    const read = (kind: "rates" | "availability" | "library") =>
+      readBoardGameCustomerInfoInTx(client, shop, kind, { limit: 20 });
+    const rates = await read("rates");
+    assert.equal(rates.status, "OK");
+    assert.equal(rates.rates.length, 4);
+    const floor = await read("availability");
+    assert.equal(floor.status, "OK");
+    assert.equal(floor.totalTables, 3, "blocked table is excluded");
+    assert.equal(floor.availableTables, 2, "active seating occupies one table");
+    assert.equal(floor.booking.canSubmitViaChat, true);
+    const library = await read("library");
+    assert.equal(library.status, "OK");
+    assert.equal(library.games.length, 6);
+    assert.ok(library.games.every((game) => game.totalCopies === 1 && game.availableCopies === 1));
+    assert.ok(!library.games.some((game) => game.title === "FAKE chat title 6"));
+    assert.doesNotMatch(JSON.stringify([rates, floor, library]), /locationId|tableId|copyId|FAKE_CHAT_LOST/);
+    for (const input of [{}, { latitude: 13.75, longitude: 100.5 }]) {
+      assert.deepEqual(await listPublicBoardGameCafes(input, { tenantId: shop, client }), []);
+    }
+
+    await client.query("RESET ROLE");
+    await client.query("SELECT set_config('bms.tenant_id', $1, true)", [otherShop]);
+    await client.query("INSERT INTO bms_store_profile (tenant_id, business_archetype) VALUES ($1, 'board_game_cafe')", [otherShop]);
+    const otherBranch = (await client.query(
+      "INSERT INTO bms_locations (tenant_id, code, name, branch_code) VALUES ($1, 'MAIN', 'FAKE Other chat branch', '00000') RETURNING id",
+      [otherShop]
+    )).rows[0].id;
+    await client.query("SET LOCAL ROLE bms_app");
+    assert.deepEqual(await listBoardGameChatBranches({ tenantId: otherShop, client }), []);
+    assert.equal((await readBoardGameCustomerInfoInTx(client, otherShop, "rates")).status, "NOT_PUBLISHED");
+    await client.query("RESET ROLE");
+    await client.query(
+      "INSERT INTO bms_board_game_public_locations (tenant_id, location_id) VALUES ($1, $2)", [otherShop, otherBranch]
+    );
+    await client.query("SET LOCAL ROLE bms_app");
+    assert.deepEqual((await listBoardGameChatBranches({ tenantId: otherShop, client })).map((c) => c.locationId), [otherBranch]);
+    // Also test the mandatory SQL tenant predicate without RLS masking a missing WHERE.
+    await client.query("RESET ROLE");
+    await client.query("SELECT set_config('bms.tenant_id', '', true)");
+    assert.deepEqual((await listBoardGameChatBranches({ tenantId: otherShop, client })).map((c) => c.locationId), [otherBranch]);
+    await client.query("SELECT set_config('bms.tenant_id', $1, true)", [shop]);
+
+    await client.query("UPDATE bms_board_game_public_locations SET publish_rates = FALSE, publish_availability = FALSE WHERE tenant_id = $1", [shop]);
+    assert.equal((await read("rates")).status, "NOT_PUBLISHED");
+    const unpublished = await read("availability");
+    assert.equal(unpublished.status, "NOT_PUBLISHED");
+    assert.equal(unpublished.totalTables, null);
+    assert.equal(unpublished.availableTables, null);
+    assert.ok((await read("library")).games.every((game) => game.availableCopies === null));
+    await client.query("UPDATE bms_locations SET active = FALSE WHERE tenant_id = $1 AND id = $2", [shop, branch]);
+    assert.deepEqual(await listBoardGameChatBranches({ tenantId: shop, client }), []);
+    assert.equal((await read("rates")).status, "NOT_PUBLISHED");
+    await client.query("UPDATE bms_locations SET active = TRUE WHERE tenant_id = $1 AND id = $2", [shop, branch]);
+    await client.query("UPDATE bms_tenants SET active = FALSE WHERE id = $1", [shop]);
+    assert.deepEqual(await listBoardGameChatBranches({ tenantId: shop, client }), []);
+    await client.query("UPDATE bms_tenants SET active = TRUE WHERE id = $1", [shop]);
+    await client.query("UPDATE bms_store_profile SET business_archetype = 'restaurant' WHERE tenant_id = $1", [shop]);
+    assert.deepEqual(await listBoardGameChatBranches({ tenantId: shop, client }), []);
+  } finally {
+    try {
+      await client.query("ROLLBACK");
+      assert.deepEqual((await client.query(
+        "SELECT id FROM bms_tenants WHERE id = ANY($1::uuid[]) OR slug = ANY($2::text[])",
+        [fixtureIds, fixtureSlugs]
+      )).rows, [], "all of this test's fake tenants must disappear; never delete unrelated fake-% rows");
+    } finally {
+      client.release();
+    }
+  }
+});
+
 const SIZE = "BASE";
 const SNACK = `FAKE-${TAG}-SNACK`;
 

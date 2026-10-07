@@ -3,6 +3,111 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## คำขอจองโต๊ะจากแชท `10.48` — 2026-10-07
+
+- ต่อบน `codex/pharmacy-deterministic-guards`; ไม่ commit/push/deploy และไม่แก้ข้อมูลร้านจริง
+- เพิ่ม CHAT ใน waitlist เดิม + composite customer FK (hard-delete CASCADE), retry hashes/index,
+  CHECK แยก PUBLIC/CHAT; ไม่มีตารางหรือ permission ใหม่ ประกาศ readiness และ regenerate SQL แล้ว
+- ครั้งแรกเป็น preview ไม่มี reservation write; pipeline เก็บ fingerprint อายุ 15 นาทีและแสดง
+  สรุป server ก่อนรับคำตอบตกลง ต้องตรงสรุปล่าสุด; เปลี่ยนรายละเอียด/มีข้อความอื่นคั่น/บันทึก
+  consent ไม่สำเร็จจะไม่สร้างคำขอ สร้างได้เฉพาะ REQUESTED ไม่มีโต๊ะหรือ confirmed_at
+- สาขาต้อง active + booking enabled + deposit NONE ไม่ขึ้นกับ public_visible; lock ลูกค้า
+  กันเกิน 3 pending ต่อร้าน และ request/audit อยู่ transaction เดียว; CRM merge ย้ายประวัติ CHAT ตาม identity
+- Staff review ใช้ PIN/table lock/overlap checks เดิม ตรวจ deposit ซ้ำ; CHAT ไม่เข้าคิวอีเมลหรือ
+  decision notification; status อ่าน tenant+customer เท่านั้นและตอบโดย server
+- POS/RN เพิ่มป้าย CHAT/ชื่อ/เบอร์; Admin เดิมไม่มีคิว review/PIN จึงเพิ่มการ์ดอ่านและลิงก์ไป
+  POS ไม่สร้างทางยืนยันที่ข้าม PIN; i18n th/en และ assistant guide/corpus อัปเดตแล้ว
+- RED ก่อนแก้: phase-zero customer policy 86/87 (หลุดคำว่าโต๊ะของคุณพร้อมแล้ว), capability 21/22
+  (ร้านเปิดจองไม่เก็บมัดจำยัง canSubmitViaChat=false); หลักฐาน `.test-output/bg-booking-red/`
+  และ `.test-output/bg-booking-capability-red/`
+- Gate: typecheck ผ่าน, pure **2385 ผ่าน / 2387 ทั้งหมด / skip 2 / fail 0**, build **132/132**,
+  exit 0; log `.test-output/bg-booking-gate-final.log` มี ECONNREFUSED จากหน้าที่อ่าน DB ตอน build
+  เพราะไม่มี Postgres ไม่ใช่หลักฐานว่า DB ใช้ได้; mobile typecheck ผ่าน
+- Focused board-game **290/291, skip 1, fail 0**; customer policy **87/87**; guard **109/109**;
+  waitlist **18/18**; assistant question corpus **11/11**; shared restaurant/CRM **16/16**
+- POS typed refusal เพิ่ม RED **17/18** ก่อนแก้: class มี `code` จึงถูกเข้าใจว่าเป็น SQLSTATE;
+  adapter กลางรองรับ class แล้ว โดย SQLSTATE จริงยังเป็น 500 ไม่กลบเป็น business rejection
+- Mutation **6/6 killed**: bypass consent, insert CONFIRMED, remove cap, cross-customer status,
+  fake confirmed claim, stale summary. สำรอง stash `a2d6dc30c597b9f07589cb2115447d816b76956a`
+  ก่อน mutate คืน Buffer และตรวจ SHA-256 byte-exact ทุกครั้ง; ผล `.test-output/bg-booking-mutations/summary.json`
+- เคยสงสัย deterministic tool registry ไม่รวมทูลบอร์ดเกม แต่ mutation พิสูจน์ว่าไม่จริง:
+  `customerTools()` แบบ undefined รวม customer tools ทั้งหมดโดยตั้งใจ เอาการแก้ส่วนนี้ออกแล้ว
+  และเก็บเทส pipeline จริงเพื่อพิสูจน์การเรียกทูลโดยไม่ใช้ provider
+- **ยังไม่ apply 10.48 และไม่รัน DB:** guarded runner ปฏิเสธก่อนเริ่มเพราะไม่มี POSTGRES_HOST/DB
+  ขยาย DB suite ไว้แล้ว: constraints, scoped insert/audit, typed refusals, concurrent cap, replay/conflict,
+  staff overlap, TTL, reminders, customer/tenant isolation, merge/cascade และ cleanup; ยังห้ามอ้างว่าผ่าน
+- SDL source เป็น String อยู่แล้ว ไม่ต้องเปลี่ยน SDL สำหรับ CHAT; ตรวจ `graphql:check` เพิ่มแล้ว
+  พบ baseline drift: SDL/operations ไม่ต่างจาก HEAD แต่ generated RN ขาด emergency/pharmacy types
+  116 บรรทัดจากงานก่อน จึง regenerate ให้ตรง SDL ปัจจุบัน; คำสั่ง check exit 1 เพราะตรวจเทียบ git HEAD
+  (ไฟล์แก้แล้วยังไม่ commit) ไม่ใช่ generation ล้ม รัน codegen ซ้ำ hash คงเดิม
+  `0591e5b6c041011014eaefc8f8dd7b3feffbfc326663fb4d5f2d82dc9dd9bc02`, mobile typecheck ผ่าน
+- ไม่ได้เปิด authenticated browser, provider หรือแชทจริง และยังไม่ทำ auto decision message,
+  chat deposit, chat reschedule/cancel
+- รายงาน flow ไทย/อังกฤษ, source decision matrix ทุกเส้นทาง และ deploy/rollback:
+  `docs/business/board-game-cafe.md` § Chat reservation requests; ก่อน deploy ต้องพิสูจน์ DB บน
+  isolated restored database แล้วสำรองฐาน/apply migration/readiness ก่อนปล่อยโค้ด
+
+## แยกตัวอ่านแชทบอร์ดเกมจากรายชื่อสาธารณะ — 2026-10-07
+
+- ต่อบน `codex/pharmacy-deterministic-guards`; ไม่แตะ guard/system prompt/งานร้านยาเดิม
+  (ตรวจ SHA-256 ตรงก่อนเริ่ม) ไม่เพิ่ม migration/permission/flag และไม่ commit/push/deploy
+- RED ก่อนแก้: customer contract 16/20 ผ่าน, 4 fail; default reader กับ client จำลองร้านซ่อน
+  คืน `NOT_PUBLISHED` แทน `OK`; อีก 3 จุดคือ library visibility, reader ใหม่ และการแยก entry point
+- เพิ่ม `listBoardGameChatBranches` บังคับ UUID tenant + SQL tenant ตรง ๆ; share SELECT/subqueries/mapper
+  กับ public reader แต่ public WHERE เดิมไม่เปลี่ยน (normalized SQL SHA-256
+  `adf1572c06fe9081f3e7ff2cc30a553e7ff02ec55d62690f549bda8eeeb9217a`)
+- gate ผ่าน: typecheck + pure **2,365/2,367, skip 2, fail 0** + build exit 0
+  (build มี ECONNREFUSED จาก DB local ที่ไม่ได้เปิด ไม่ใช่หลักฐานว่า runtime/DB ผ่าน)
+  เพิ่ม public mapping/distance regression อีก 1 เทสหลัง gate เริ่มโหลดชุด pure;
+  focused หลัง mutation **273/274, skip 1, fail 0**, รวม customer **21/21** และ guard ai-eval เดิม
+- mutation **4/4 killed** ด้วย intended witnesses; คืน source แบบ Buffer byte-exact SHA-256
+  `38b99bcf772441596b20fe9029514d1fe8c07782e9959f90529fed0aad444a13`;
+  backup stash `8f2b062ccedb3df19323c73f0a7f344c5e848d56` apply กลับแล้วและเก็บไว้
+  รันซ้ำ: `node scripts/testing/board-game-chat-readers-mutations.mjs <current-backup-stash-sha>`
+- ขยาย `board-game-seating-db-contract` ด้วย fixture 2 ร้าน rollback-only (4 เรต/6 public games/
+  hidden title/LOST copy/blocked+occupied tables/cross-tenant/flags/inactive/no-profile)
+  แต่ **ยังไม่ได้รัน DB**: runner ปฏิเสธเพราะไม่มี POSTGRES_HOST/POSTGRES_DB; syntax diagnostics 0
+  Docker เปิดอยู่แต่ไม่มี BMS/Postgres และไม่มี config ฐานทดสอบใน session; ไม่แตะร้าน TESTING-DEV จริง
+- browser ผ่าน skill computer-use: เปิด route `/admin/board-game` จาก build local แล้ว redirect ไป login;
+  จึงยังไม่ verify ฟอร์ม desktop/mobile, provider หรือแชทจริง; ปิดแท็บและ server ทดสอบหลังตรวจ
+- [สวิตช์แยกตามช่องทาง + release note ไทย + impact count SQL](docs/business/board-game-cafe.md#directory-visibility-versus-shop-chat)
+  ต้องแจ้งร้านว่า publish_rates/publish_availability default TRUE ตั้งแต่ 9.83;
+  ตรวจ assistantKnowledge แล้วข้อความ nearby discovery ถูกต้อง ไม่ต้องแก้ corpus/guide
+
+## ด่านบอร์ดเกม deterministic และคำอ้างทำรายการ — 2026-10-07
+
+- ต่อใน `codex/pharmacy-deterministic-guards` โดยรักษางานร้านยาเดิม; A–D ผ่าน gate ตามลำดับ
+  ไม่เพิ่ม chat write, migration, permission หรือ flag และยังไม่ commit/push/deploy
+- คำอ้างจับได้ 1/21 → 21/21; guard goldens ใหม่ 0/65 → 65/65; FAQ ห้ามจับ 33 ข้อยัง null/false
+  เพิ่ม urgent shop-neutral ก่อน profile หลัง pharmacy fast path เดิม; context ล้ม 5 จุดไม่เข้า model/tools/orders
+- ปิดช่อง checkout fallback คืนข้อความโมเดลที่อ้างจอง/รับเงิน; ไม่เปลี่ยน ACTION_CLAIM_PATTERN กลาง
+  scorer ต้องมีขอบคำอังกฤษ: `have notified` ไม่ใช่ `have not`; normalize ก่อนแยก contrast แต่เก็บ newline
+- gate สุดท้าย typecheck + pure **2,359/2,361, skip 2, fail 0** + build **132/132**;
+  หลัง mutation: board-game **266/267, skip 1**, customer-policy **86/86**, emergency **110/110**, pharmacy **366/366**
+- mutation **19/19 killed**, คืน 3 source files byte-exact; backup stash
+  `981ca84914cadb8014d0a2e11f658987daca4645` apply กลับแล้วและเก็บไว้ ไม่ใช้ checkout/reset
+- [รายงาน 127 ประโยคและข้อความใหม่](docs/ai/board-game-guards-recheck.md): safety/booking copy ยังไม่มีคนตรวจ;
+  E1 รออนุญาตฟิลด์ลิงก์ และ `/board-game` ยังไม่อ่าน slug จาก URL; E2 คงข้อความเภสัชกรเดิม เสนอ 3 ทางเลือกไว้
+  ยังไม่ได้ verify DB/provider/แชทจริง และไม่อ้างว่าครอบทุกถ้อยคำ
+
+## ด่านร้านยา deterministic ตามชุดคำถามที่หลุด — 2026-10-07
+
+- branch `codex/pharmacy-deterministic-guards` จาก `develop` (`91b3cc74`); แก้ A → B → C → D
+  โดยผ่าน gate ก่อนเปลี่ยนเฟส ไม่เพิ่ม migration/permission ไม่เปิด flag/protocol/approval และไม่ commit/push
+- เพิ่ม emergency, implicit dosage, สลับยา, บด/หักเม็ด, อาการสั้น และ human handoff aliases;
+  classifier ใช้ normalizer จาก `emergency.ts` leaf ตัวเดียว และใช้ animal-medication predicate
+  ร่วมกับ handoff ผู้ใช้ยืนยันสัตว์กัด/ข่วน → MEDICAL เดิม ไม่ใช่สัตวแพทย์
+- เทสอยู่ในไฟล์ pure เดิมทั้งหมด ตรึงข้อความตอบ/ร่าง/footers ด้วย SHA-256 และเพิ่ม negative
+  ขนาดบรรจุ/หน่วย mg/เวลา เพื่อไม่ให้คำถามซื้อของกลายเป็นคลินิก
+- [รายงานพร้อมตารางก่อน–หลังและผลตรวจ D4](docs/ai/pharmacy-guards-recheck.md);
+  DB, provider, แชทจริงและการตรวจทางคลินิกยังไม่ได้ verify ไม่มีการ deploy
+- gate A/B/C/D ผ่านตามลำดับ; รอบสุดท้าย typecheck + pure **2,214/2,216, skip 2, fail 0**
+  + build **132 pages**; หลังคืน mutation emergency **110/110**, customer **211/211**,
+  guidance **48/48**, pharmacy ทั้งชุด **366/366** ผ่าน
+- mutation **23/23 killed**, คืนโค้ดทั้ง 4 ไฟล์ SHA-256 ตรงก่อน/หลัง; สำรอง stash
+  `58e85cb573f9cd496d2d5386efb873757e145ecd` (apply กลับแล้วและเก็บ backup ไว้)
+  ตัวขับ `scripts/testing/pharmacy-guards-mutations.mjs` ต้องรับ backup stash SHA ก่อนทำงาน
+
 ## Recheck รอบถัดมา: คำถามสั้นและ context outage — 2026-10-07
 
 - ต่อใน `codex/pharmacy-guidance-recheck` / Draft PR #304; ไม่เพิ่ม migration ไม่เปิด flag/protocol

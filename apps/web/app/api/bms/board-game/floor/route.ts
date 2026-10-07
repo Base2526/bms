@@ -9,6 +9,7 @@ import {
 } from "@/lib/bms/boardGameCafe";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 import { canAccessBoardGameLocation } from "../access";
+import { listBoardGameWaitlist } from "@/lib/bms/boardGameWaitlist";
 
 export const dynamic = "force-dynamic";
 
@@ -21,8 +22,11 @@ async function handleGET(req: NextRequest) {
     return NextResponse.json({ error: "ไม่มีสิทธิ์ดูสาขานี้" }, { status: 403 });
   }
   try {
-    const floor = await listBoardGameFloor(auth.tenantId, locationId);
-    return NextResponse.json({ floor });
+    const [floor, waitlist] = await Promise.all([
+      listBoardGameFloor(auth.tenantId, locationId),
+      listBoardGameWaitlist(auth.tenantId, locationId),
+    ]);
+    return NextResponse.json({ floor, reservations: waitlist.entries.filter(entry => entry.kind === "RESERVATION") });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "โหลดผังโต๊ะไม่สำเร็จ" },

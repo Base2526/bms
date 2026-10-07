@@ -4,6 +4,7 @@ import { getClient, query } from "@/lib/db";
 import { sendEmail } from "@/lib/mailer";
 import {
   boardGameBillableMinutes,
+  listBoardGameChatBranches,
   openBoardGameSessionInTx,
   requireBoardGameCafeTenant,
   type BoardGameBillingMode,
@@ -18,6 +19,8 @@ import {
   storeBoardGameResult,
 } from "./boardGameIdempotency";
 import { beginTenantTx } from "./tenant";
+import { IdempotencyConflictError } from "./idempotencyErrors";
+import { boardGameReservationFingerprint } from "./boardGameReservationPolicy";
 
 export type BoardGameWaitlistStatus =
   | "REQUESTED" | "CONFIRMED" | "WAITING" | "CALLED" | "SEATED" | "CANCELLED"
@@ -42,7 +45,7 @@ type WaitlistRow = {
   reserved_table_code: string | null;
   confirmed_at: Date | string | null;
   checked_in_at: Date | string | null;
-  source: "STAFF" | "PUBLIC";
+  source: "STAFF" | "PUBLIC" | "CHAT";
   reviewed_at: Date | string | null;
   rejection_reason: string | null;
   reminder_status: "NONE" | "PENDING" | "SENDING" | "SENT" | "FAILED";
@@ -366,6 +369,37 @@ async function sendPublicRequestAcknowledgement(input: {
   }, { tenantId: input.tenantId, category: "other", triggeredBy: "public:reservation" });
 }
 
+async function resolveReservationTime(
+  input: { reservedLocal?: string; reservedFor?: string },
+  config: { timezone: string; min_advance_minutes: number },
+  read: typeof query = query
+): Promise<Date> {
+  let reservedFor: Date;
+  if (input.reservedLocal != null) {
+    const local = String(input.reservedLocal).trim();
+    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) throw new Error("เวลาจองไม่ถูกต้อง");
+    const converted = await read<{ instant: Date | string; round_trip: string }>(
+      `SELECT ($1::timestamp AT TIME ZONE $2) AS instant,
+              to_char((($1::timestamp AT TIME ZONE $2) AT TIME ZONE $2), 'YYYY-MM-DD"T"HH24:MI') AS round_trip`,
+      [local, config.timezone],
+    );
+    if (converted.rows[0]?.round_trip !== local) throw new Error("เวลาจองนี้ไม่มีอยู่ในเขตเวลาของสาขา");
+    reservedFor = reservationInstant(converted.rows[0]?.instant);
+  } else {
+    reservedFor = reservationInstant(input.reservedFor);
+  }
+  if (reservedFor.getTime() < Date.now() + Number(config.min_advance_minutes) * 60_000) {
+    throw new Error(`กรุณาจองล่วงหน้าอย่างน้อย ${config.min_advance_minutes} นาที`);
+  }
+  return reservedFor;
+}
+
+function reservationSize(duration: number, people: number) {
+  const durationMinutes = positiveInteger(duration, "ระยะเวลาจอง", 720);
+  if (durationMinutes < 30) throw new Error("ระยะเวลาจองต้องอย่างน้อย 30 นาที");
+  return { durationMinutes, partySize: positiveInteger(people, "จำนวนผู้เล่น") };
+}
+
 /** Public self-service creates a review request only; it never chooses or promises a table. */
 export async function requestPublicBoardGameReservation(input: {
   tenantSlug: string; locationId: string; requestToken: string; reservedLocal?: string;
@@ -376,9 +410,7 @@ export async function requestPublicBoardGameReservation(input: {
 }) {
   const token = publicToken(input.requestToken);
   const tokenHash = sha256(token);
-  const durationMinutes = positiveInteger(input.durationMinutes, "ระยะเวลาจอง", 720);
-  if (durationMinutes < 30) throw new Error("ระยะเวลาจองต้องอย่างน้อย 30 นาที");
-  const partySize = positiveInteger(input.partySize, "จำนวนผู้เล่น");
+  const { durationMinutes, partySize } = reservationSize(input.durationMinutes, input.partySize);
   const guestName = boundedText(input.guestName, 120);
   if (!guestName) throw new Error("กรุณาระบุชื่อผู้จอง");
   const guestEmail = emailAddress(input.guestEmail);
@@ -405,23 +437,7 @@ export async function requestPublicBoardGameReservation(input: {
   if (!tenant.rowCount) throw new Error("สาขานี้ยังไม่เปิดรับคำขอจองออนไลน์");
   const config = tenant.rows[0];
   const tenantId = config.tenant_id;
-  let reservedFor: Date;
-  if (input.reservedLocal != null) {
-    const local = String(input.reservedLocal).trim();
-    if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(local)) throw new Error("เวลาจองไม่ถูกต้อง");
-    const converted = await query<{ instant: Date | string; round_trip: string }>(
-      `SELECT ($1::timestamp AT TIME ZONE $2) AS instant,
-              to_char((($1::timestamp AT TIME ZONE $2) AT TIME ZONE $2), 'YYYY-MM-DD"T"HH24:MI') AS round_trip`,
-      [local, config.timezone],
-    );
-    if (converted.rows[0]?.round_trip !== local) throw new Error("เวลาจองนี้ไม่มีอยู่ในเขตเวลาของสาขา");
-    reservedFor = reservationInstant(converted.rows[0]?.instant);
-  } else {
-    reservedFor = reservationInstant(input.reservedFor);
-  }
-  if (reservedFor.getTime() < Date.now() + Number(config.min_advance_minutes) * 60_000) {
-    throw new Error(`กรุณาจองล่วงหน้าอย่างน้อย ${config.min_advance_minutes} นาที`);
-  }
+  const reservedFor = await resolveReservationTime(input, config);
   const normalized = {
     reservedFor: reservedFor.toISOString(), durationMinutes, partySize, guestName,
     guestPhone: boundedText(input.guestPhone, 40), guestEmail, note: boundedText(input.note, 300),
@@ -515,6 +531,157 @@ export async function requestPublicBoardGameReservation(input: {
     }).catch((error) => console.error("[board-game-reservation] acknowledgement failed", error));
   }
   return getPublicBoardGameReservation(token);
+}
+
+
+export class ChatBoardGameReservationRejection extends Error {
+  constructor(readonly code: string, message: string) { super(message); this.name = "ChatBoardGameReservationRejection"; }
+}
+type ChatReservationInput = {
+  tenantId: string; customerId: string; locationId: string; reservedLocal: string;
+  durationMinutes: number; partySize: number; note?: string | null; requestKey: string;
+  expectedFingerprint?: string;
+};
+
+async function prepareChatReservationInTx(client: PoolClient, input: Omit<ChatReservationInput, "customerId" | "requestKey">) {
+  const config = (await client.query<{
+    timezone: string; min_advance_minutes: number; request_ttl_minutes: number;
+    branch: string; booking_enabled: boolean; deposit_policy: string;
+  }>(
+    `SELECT COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone,
+            profile.reservation_min_advance_minutes AS min_advance_minutes,
+            profile.reservation_request_ttl_minutes AS request_ttl_minutes,
+            COALESCE(profile.display_name, location.name) AS branch,
+            profile.booking_enabled, profile.reservation_deposit_policy AS deposit_policy
+       FROM bms_board_game_public_locations profile
+       JOIN bms_locations location ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
+       JOIN bms_tenants tenant ON tenant.id = profile.tenant_id AND tenant.active
+       JOIN bms_store_profile store ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
+      WHERE profile.tenant_id = $1 AND profile.location_id = $2 AND location.active
+      FOR SHARE OF profile, location, tenant, store`, [input.tenantId, input.locationId]
+  )).rows[0];
+  if (!config?.booking_enabled) throw new ChatBoardGameReservationRejection("BOOKING_DISABLED", "สาขานี้ยังไม่เปิดรับคำขอจอง");
+  if (config.deposit_policy !== "NONE") throw new ChatBoardGameReservationRejection("DEPOSIT_REQUIRES_STAFF", "สาขานี้เก็บมัดจำ กรุณาติดต่อร้าน");
+  let size: { durationMinutes: number; partySize: number };
+  let reservedFor: Date;
+  const note = (input.note ?? "").trim();
+  if (note.length > 300 || /[\w.+-]+@[\w.-]+\.[a-z]{2,}|(?:\+?\d[\s().-]*){8,}/i.test(note)) {
+    throw new ChatBoardGameReservationRejection("INVALID_NOTE", "หมายเหตุต้องไม่เกิน 300 ตัวอักษรและไม่มีข้อมูลติดต่อ");
+  }
+  try {
+    size = reservationSize(input.durationMinutes, input.partySize);
+    if (typeof input.reservedLocal !== "string") throw new Error("กรุณาระบุวันและเวลาสาขา");
+    reservedFor = await resolveReservationTime(input, config, client.query.bind(client));
+  } catch (error) {
+    if ((error as any)?.code && !["22007", "22008"].includes((error as any).code)) throw error;
+    throw new ChatBoardGameReservationRejection("INVALID_RESERVATION", error instanceof Error ? error.message : "เวลาจองไม่ถูกต้อง");
+  }
+  return { locationId: input.locationId, branch: config.branch, reservedLocal: input.reservedLocal.trim(),
+    reservedFor: reservedFor.toISOString(), timezone: config.timezone, ...size, note: note || undefined,
+    requestTtlMinutes: Number(config.request_ttl_minutes) };
+}
+
+export async function previewChatBoardGameReservation(input: {
+  tenantId: string; branch: string; reservedLocal: string; durationMinutes: number; partySize: number; note?: string;
+}) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId);
+    const branches = await listBoardGameChatBranches({ tenantId: input.tenantId, client });
+    const matches = branches.filter((b) => b.displayName.toLocaleLowerCase() === input.branch.trim().toLocaleLowerCase());
+    if (matches.length !== 1) throw new ChatBoardGameReservationRejection("BRANCH_REQUIRED", "กรุณาเลือกชื่อสาขาที่แน่นอนจากข้อมูลร้าน");
+    const preview = await prepareChatReservationInTx(client, { ...input, locationId: matches[0].locationId });
+    await client.query("COMMIT");
+    const { requestTtlMinutes: _ttl, ...result } = preview;
+    return result;
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
+/** CHAT creates a REQUESTED row only. Staff review remains a separate PIN-authorized entry point. */
+export async function requestChatBoardGameReservation(input: ChatReservationInput) {
+  if (!input.requestKey?.trim() || input.requestKey.length > 256) throw new ChatBoardGameReservationRejection("INVALID_REQUEST_KEY", "รหัสคำขอไม่ถูกต้อง");
+  const requestHash = sha256(JSON.stringify([input.customerId, input.locationId, input.reservedLocal,
+    input.durationMinutes, input.partySize, input.note?.trim() || ""]));
+  const keyHash = sha256(input.requestKey);
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId);
+    // Serialise this customer's pending-count check and all retries across conversations.
+    const customer = (await client.query<{ name: string; phone: string | null }>(
+      "SELECT name, phone FROM bms_customers WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL FOR UPDATE",
+      [input.tenantId, input.customerId]
+    )).rows[0];
+    if (!customer?.name?.trim() || !customer.phone?.trim()) throw new ChatBoardGameReservationRejection("CONTACT_REQUIRED", "กรุณาบันทึกชื่อและเบอร์โทรก่อนส่งคำขอ");
+    const existing = (await client.query<{ id: string; status: string; chat_request_hash: string }>(
+      "SELECT id, status, chat_request_hash FROM bms_board_game_waitlist WHERE tenant_id = $1 AND source = 'CHAT' AND chat_request_key_hash = $2",
+      [input.tenantId, keyHash]
+    )).rows[0];
+    if (existing) {
+      if (existing.chat_request_hash !== requestHash) throw new IdempotencyConflictError("คำขอเดิมมีรายละเอียดต่างกัน", "board_game.chat_reservation");
+      await client.query("COMMIT");
+      return { requestId: existing.id, status: existing.status };
+    }
+    const preview = await prepareChatReservationInTx(client, input);
+    if (input.expectedFingerprint && boardGameReservationFingerprint(preview, input.customerId) !== input.expectedFingerprint) {
+      throw new ChatBoardGameReservationRejection("CONFIRMATION_REQUIRED", "รายละเอียดสาขาเปลี่ยน กรุณาตรวจสรุปและยืนยันใหม่");
+    }
+    const pending = await client.query<{ count: number }>(
+      "SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist WHERE tenant_id = $1 AND customer_id = $2 AND source = 'CHAT' AND status = 'REQUESTED'",
+      [input.tenantId, input.customerId]
+    );
+    if (Number(pending.rows[0].count) >= 3) throw new ChatBoardGameReservationRejection("PENDING_LIMIT", "มีคำขอที่รอตรวจครบ 3 รายการแล้ว กรุณาติดต่อร้าน");
+    const result = await client.query<{ id: string; status: string }>(
+      `INSERT INTO bms_board_game_waitlist
+        (tenant_id, location_id, kind, source, customer_id, service_date, status, party_size,
+         guest_name, guest_phone, note, reserved_for, reserved_duration_minutes,
+         chat_request_key_hash, chat_request_hash, request_expires_at, created_by)
+       VALUES ($1, $2, 'RESERVATION', 'CHAT', $3,
+         (($4::timestamptz AT TIME ZONE $5) - INTERVAL '4 hours')::date, 'REQUESTED', $6,
+         $7, $8, $9, $4, $10, $11, $12,
+         LEAST($4::timestamptz, now() + make_interval(mins => $13)), NULL)
+       RETURNING id, status`,
+      [input.tenantId, input.locationId, input.customerId, preview.reservedFor, preview.timezone,
+        preview.partySize, customer.name.slice(0, 120), customer.phone.slice(0, 40), preview.note ?? null,
+        preview.durationMinutes, keyHash, requestHash, preview.requestTtlMinutes]
+    );
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, 'ai:customer', 'board_game.chat_reservation_request', $2, $3::jsonb)`,
+      [input.tenantId, result.rows[0].id, JSON.stringify({ locationId: input.locationId, partySize: preview.partySize,
+        reservedFor: preview.reservedFor, durationMinutes: preview.durationMinutes })]
+    );
+    await client.query("COMMIT");
+    return { requestId: result.rows[0].id, status: result.rows[0].status };
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
+}
+
+export async function listChatBoardGameReservationsForCustomer(input: { tenantId: string; customerId: string; limit?: number }) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId);
+    const result = await client.query(
+      `SELECT left(w.id::text, 8) AS reference, w.status, w.party_size, w.reserved_for,
+              w.reserved_duration_minutes, left(w.rejection_reason, 300) AS rejection_reason,
+              COALESCE(profile.display_name, location.name) AS branch,
+              COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone
+       FROM bms_board_game_waitlist w
+       JOIN bms_locations location ON location.tenant_id = w.tenant_id AND location.id = w.location_id
+       JOIN bms_store_profile store ON store.tenant_id = w.tenant_id AND store.business_archetype = 'board_game_cafe'
+       LEFT JOIN bms_board_game_public_locations profile ON profile.tenant_id = w.tenant_id AND profile.location_id = w.location_id
+       WHERE w.tenant_id = $1 AND w.customer_id = $2 AND w.source = 'CHAT'
+       ORDER BY w.created_at DESC, w.id LIMIT $3`,
+      [input.tenantId, input.customerId, Math.min(5, Math.max(1, Math.trunc(input.limit ?? 5)))]
+    );
+    await client.query("COMMIT");
+    return result.rows.map(row => ({
+      reference: row.reference, branch: row.branch, status: row.status, partySize: Number(row.party_size),
+      reservedFor: iso(row.reserved_for), timezone: row.timezone, durationMinutes: Number(row.reserved_duration_minutes),
+      rejectionReason: row.status === "REJECTED" ? row.rejection_reason : null,
+    }));
+  } catch (error) { await client.query("ROLLBACK"); throw error; }
+  finally { client.release(); }
 }
 
 export async function getPublicBoardGameReservation(tokenInput: string) {
@@ -966,12 +1133,12 @@ export async function reviewPublicBoardGameReservation(input: {
     }
     const current = await client.query<{
       party_size: number; reserved_for: Date | string; reserved_duration_minutes: number;
-      guest_email: string; guest_name: string | null; customer_locale: "th" | "en";
+      guest_email: string; guest_name: string | null; customer_locale: "th" | "en"; source: string;
       deposit_policy: "NONE" | "FIXED" | "PERCENT"; deposit_amount: string;
       deposit_percent: string; deposit_window_minutes: number; refund_cutoff_hours: number;
     }>(
       `SELECT w.party_size, w.reserved_for, w.reserved_duration_minutes,
-              w.guest_email, w.guest_name, w.customer_locale,
+              w.guest_email, w.guest_name, w.customer_locale, w.source,
               profile.reservation_deposit_policy AS deposit_policy,
               profile.reservation_deposit_amount AS deposit_amount,
               profile.reservation_deposit_percent AS deposit_percent,
@@ -981,7 +1148,7 @@ export async function reviewPublicBoardGameReservation(input: {
          JOIN bms_board_game_public_locations profile
            ON profile.tenant_id = w.tenant_id AND profile.location_id = w.location_id
         WHERE w.tenant_id = $1 AND w.location_id = $2 AND w.id = $3
-          AND w.kind = 'RESERVATION' AND w.source = 'PUBLIC' AND w.status = 'REQUESTED'
+          AND w.kind = 'RESERVATION' AND w.source IN ('PUBLIC', 'CHAT') AND w.status = 'REQUESTED'
         FOR UPDATE`,
       [input.tenantId, input.locationId, input.entryId],
     );
@@ -991,13 +1158,16 @@ export async function reviewPublicBoardGameReservation(input: {
         `UPDATE bms_board_game_waitlist
             SET status = 'REJECTED', reviewed_at = now(), reviewed_by = $4,
                 rejection_reason = $5, closed_at = now(), updated_by = $4,
-                decision_notification_status = 'PENDING', updated_at = now()
+                decision_notification_status = CASE WHEN source = 'CHAT' THEN 'NONE' ELSE 'PENDING' END, updated_at = now()
           WHERE tenant_id = $1 AND location_id = $2 AND id = $3`,
         [input.tenantId, input.locationId, input.entryId, input.actorUserId, reason],
       );
     } else {
       const reservedFor = reservationInstant(current.rows[0].reserved_for);
       const policy = current.rows[0].deposit_policy;
+      if (current.rows[0].source === "CHAT" && policy !== "NONE") {
+        throw new ChatBoardGameReservationRejection("DEPOSIT_REQUIRES_STAFF", "คำขอจากแชทไม่รองรับมัดจำ กรุณาปฏิเสธคำขอแล้วให้ลูกค้าติดต่อร้าน");
+      }
       let depositAmount = 0;
       if (policy === "FIXED") {
         depositAmount = Number(current.rows[0].deposit_amount);
@@ -1078,7 +1248,7 @@ export async function reviewPublicBoardGameReservation(input: {
             SET status = 'CONFIRMED', reserved_table_id = $4, confirmed_at = now(),
                 reviewed_at = now(), reviewed_by = $5, rejection_reason = NULL,
                 reminder_status = CASE WHEN guest_email IS NULL THEN 'NONE' ELSE 'PENDING' END,
-                decision_notification_status = 'PENDING',
+                decision_notification_status = CASE WHEN source = 'CHAT' THEN 'NONE' ELSE 'PENDING' END,
                 deposit_policy_snapshot = $6, deposit_amount = $7,
                 deposit_status = CASE WHEN $6 = 'NONE' THEN 'NOT_REQUIRED' ELSE 'PENDING' END,
                 deposit_due_at = $8, deposit_refund_eligible_until = $9,
