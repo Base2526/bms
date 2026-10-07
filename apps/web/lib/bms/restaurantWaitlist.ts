@@ -15,7 +15,7 @@ import { beginTenantTx } from "./tenant";
 import { RestaurantCheckError } from "./restaurantPosErrors";
 import { getRestaurantCheck, openRestaurantCheckInTx } from "./restaurantPos";
 
-export const WAITLIST_OPEN_STATUSES = ["WAITING", "CALLED"] as const;
+export const WAITLIST_OPEN_STATUSES = ["REQUESTED", "WAITING", "CALLED"] as const;
 export type WaitlistCloseStatus = "CANCELLED" | "NO_SHOW";
 
 /**
@@ -34,6 +34,7 @@ type WaitlistRow = {
   id: string;
   kind: "WALK_IN" | "RESERVATION";
   status: string;
+  source: "STAFF" | "CUSTOMER_AI";
   service_date: string;
   queue_no: number | null;
   reserved_for: Date | string | null;
@@ -60,6 +61,7 @@ function mapEntry(row: WaitlistRow) {
     id: row.id,
     kind: row.kind,
     status: row.status,
+    source: row.source,
     serviceDate: String(row.service_date).slice(0, 10),
     queueNo: row.queue_no == null ? null : Number(row.queue_no),
     reservedFor: iso(row.reserved_for),
@@ -79,7 +81,7 @@ function mapEntry(row: WaitlistRow) {
   };
 }
 
-const SELECT_COLUMNS = `w.id, w.kind, w.status, w.service_date, w.queue_no, w.reserved_for,
+const SELECT_COLUMNS = `w.id, w.kind, w.status, w.source, w.service_date, w.queue_no, w.reserved_for,
         w.party_size, w.guest_name, w.guest_phone, w.note, w.preferred_table_id,
         w.seated_table_id, w.check_id, w.called_at, w.seated_at, w.closed_at, w.created_at,
         pt.code AS preferred_table_code, st.code AS seated_table_code`;
@@ -102,8 +104,9 @@ export async function listRestaurantWaitlist(tenantId: string, locationId: strin
        ${SELECT_JOINS}
        LEFT JOIN bms_store_profile profile ON profile.tenant_id = w.tenant_id
       WHERE w.tenant_id = $1 AND w.location_id = $2
-        AND (w.status IN ('WAITING','CALLED') OR w.service_date = ${SERVICE_DATE_SQL})
-      ORDER BY (w.status IN ('WAITING','CALLED')) DESC,
+        AND (w.status IN ('REQUESTED','WAITING','CALLED') OR w.service_date = ${SERVICE_DATE_SQL})
+      ORDER BY (w.status = 'REQUESTED') DESC,
+               (w.status IN ('WAITING','CALLED')) DESC,
                COALESCE(w.reserved_for, w.created_at),
                w.created_at`,
     [tenantId, locationId]
@@ -112,11 +115,26 @@ export async function listRestaurantWaitlist(tenantId: string, locationId: strin
   const open = entries.filter((entry) => entry.status === "WAITING" || entry.status === "CALLED");
   return {
     entries,
+    requestedCount: entries.filter((entry) => entry.status === "REQUESTED").length,
     waitingCount: open.filter((entry) => entry.status === "WAITING").length,
     calledCount: open.filter((entry) => entry.status === "CALLED").length,
     // จำนวนคนที่รออยู่จริง ไม่ใช่จำนวนคิว — โต๊ะที่ว่างพอสำหรับ 2 คนไม่ได้แปลว่ารับคิวถัดไปได้
     waitingGuests: open.reduce((sum, entry) => sum + entry.partySize, 0),
   };
+}
+
+/** A customer chat creates REQUESTED only; a PIN-authenticated staff action admits it to the board. */
+export async function acceptRestaurantReservationRequest(input: {
+  tenantId: string; locationId: string; entryId: string; actorUserId: string;
+}) {
+  const updated = await runWaitlistUpdate(input, `
+    UPDATE bms_restaurant_waitlist
+       SET status = 'WAITING', updated_by = $4, updated_at = now()
+     WHERE tenant_id = $1 AND id = $2 AND location_id = $3
+       AND kind = 'RESERVATION' AND source = 'CUSTOMER_AI' AND status = 'REQUESTED'
+     RETURNING id`, "restaurant.reservation_request_accept", {});
+  if (!updated) throw new RestaurantCheckError("คำขอนี้ถูกรับหรือปิดไปแล้ว");
+  return getRestaurantWaitlistEntry(input.tenantId, input.entryId);
 }
 
 export async function addRestaurantWaitlistEntry(input: {
@@ -238,7 +256,7 @@ export async function closeRestaurantWaitlistEntry(input: {
     UPDATE bms_restaurant_waitlist
        SET status = $5, closed_at = now(), updated_by = $4, updated_at = now(),
            note = CASE WHEN $6::text IS NULL THEN note ELSE concat_ws(E'\\n', note, $6::text) END
-     WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status IN ('WAITING','CALLED')
+     WHERE tenant_id = $1 AND id = $2 AND location_id = $3 AND status IN ('REQUESTED','WAITING','CALLED')
      RETURNING id`, "restaurant.waitlist_close",
     { extra: [input.status, String(input.reason ?? "").trim().slice(0, 200) || null],
       meta: { status: input.status } });

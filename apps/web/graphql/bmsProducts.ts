@@ -445,6 +445,11 @@ export const bmsProductsResolvers = {
     vatCategory: (p: any) => p.vat_category ?? "UNKNOWN",
     category: (p: any) => p.category ?? null,
     brand: (p: any) => p.brand ?? null,
+    allergenCodes: (p: any) => p.allergen_codes ?? [],
+    allergenInformationProvided: (p: any) => p.allergen_information_provided === true,
+    dietaryTags: (p: any) => p.dietary_tags ?? [],
+    foodSafetyNote: (p: any) => p.food_safety_note ?? null,
+    medicineLabel: (p: any) => p.medicine_label ?? {},
     async variants(parent: { sku: string; tenant_id: string }) {
       const rows = await listVariants(parent.tenant_id, parent.sku);
       return rows.map(shapeVariant);

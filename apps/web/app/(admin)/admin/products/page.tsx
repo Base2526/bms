@@ -49,6 +49,7 @@ import debounce from "lodash/debounce";
 import ImportModal from "./ImportModal";
 import BarcodeLookupField from "./BarcodeLookupField";
 import { barcodeAutofillPatch, barcodeAutofillRestore, sameProductBarcode, type BarcodeAutofillField } from "@/lib/bms/productBarcodeLookupContract";
+import { DIETARY_TAGS, FOOD_ALLERGEN_CODES } from "@/lib/bms/productFoodSafety";
 
 // ---- Types --------------------------------------------------
 type Variant = {
@@ -90,6 +91,11 @@ type Product = {
   weightGrams: number | null;
   category: string | null;
   brand: string | null;
+  allergenCodes: string[];
+  allergenInformationProvided: boolean;
+  dietaryTags: string[];
+  foodSafetyNote: string | null;
+  medicineLabel: { activeIngredients?: string[]; strength?: string | null; dosageForm?: string | null };
   vatCategory: string | null;
   priceTiers: Array<{
     minQty: number;
@@ -159,6 +165,11 @@ const Q_PRODUCTS = gql`
         weightGrams
         category
         brand
+        allergenCodes
+        allergenInformationProvided
+        dietaryTags
+        foodSafetyNote
+        medicineLabel
         vatCategory
         priceTiers { minQty scope size unitPrice discountPct }
         variants {
@@ -187,6 +198,8 @@ const Q_PRODUCT_CONFIGURATION = gql`
     bmsProductBySku(sku: $sku) {
       sku
       name active price keywords barcode imageUrl description costPrice weightGrams category brand vatCategory
+      allergenCodes allergenInformationProvided dietaryTags foodSafetyNote
+      medicineLabel
       images { id url }
       priceTiers { minQty scope size unitPrice discountPct }
       variants {
@@ -477,6 +490,7 @@ function ProductsManagement() {
     .map((row: { name: string }) => ({ value: row.name }));
   const shopExperience = shopExperienceForArchetype(data?.bmsStoreProfile?.businessArchetype);
   const isRestaurantShop = shopExperience.specialMode === "RESTAURANT";
+  const isPharmacyShop = shopExperience.specialMode === "PHARMACY";
   // ร้านที่ไม่จด VAT ไม่ต้องตอบคำถามเรื่องประเภทภาษี — และ readiness ก็ไม่บล็อกด้วย
   // (blocker VAT_CATEGORY_REQUIRED ยิงเฉพาะร้านที่ vat_registered)
   const vatRegistered = data?.bmsStoreProfile?.vatRegistered === true;
@@ -644,6 +658,11 @@ function ProductsManagement() {
       variantCodes: ["STD"],
       salesSurfaces: [...shopExperience.primarySalesSurfaces],
       kitchenStation: "",
+      allergenCodes: [],
+      allergenInformationProvided: false,
+      dietaryTags: [],
+      foodSafetyNote: "",
+      medicineIngredients: [], medicineStrength: "", medicineForm: "",
     });
     // setFieldsValue marks defaults as touched; the initial STD is still an unedited suggestion.
     form.setFields([{ name: "variantCodes", touched: false }]);
@@ -689,6 +708,13 @@ function ProductsManagement() {
       description: configuredProduct.description || "", costPrice: configuredProduct.costPrice ?? undefined,
       weightGrams: configuredProduct.weightGrams ?? undefined,
       category: configuredProduct.category || "", brand: configuredProduct.brand || "",
+      allergenCodes: configuredProduct.allergenCodes ?? [],
+      allergenInformationProvided: configuredProduct.allergenInformationProvided === true,
+      dietaryTags: configuredProduct.dietaryTags ?? [],
+      foodSafetyNote: configuredProduct.foodSafetyNote || "",
+      medicineIngredients: configuredProduct.medicineLabel?.activeIngredients ?? [],
+      medicineStrength: configuredProduct.medicineLabel?.strength ?? "",
+      medicineForm: configuredProduct.medicineLabel?.dosageForm ?? "",
       vatCategory: configuredProduct.vatCategory || "UNKNOWN",
       creationTemplate: inferProductCreationTemplate(
         configuredProduct.stockPolicy?.stockPolicy,
@@ -767,6 +793,17 @@ function ProductsManagement() {
             weight_grams: v.weightGrams != null && v.weightGrams !== "" ? Number(v.weightGrams) : null,
             category: v.category?.trim() || null,
             brand: v.brand?.trim() || null,
+            ...(isPharmacyShop ? { medicine_label: {
+              activeIngredients: v.medicineIngredients ?? [],
+              strength: v.medicineStrength?.trim() || null,
+              dosageForm: v.medicineForm?.trim() || null,
+            } } : {}),
+            ...(isRestaurantShop ? {
+              allergen_codes: v.allergenCodes || [],
+              allergen_information_provided: Boolean(v.allergenInformationProvided),
+              dietary_tags: v.dietaryTags || [],
+              food_safety_note: v.foodSafetyNote?.trim() || null,
+            } : {}),
             // ส่งเสมอเมื่อเปิดจากฟอร์มนี้ — ลบขั้นสุดท้ายทิ้งแล้วกดบันทึกต้องลบจริง
             price_tiers: normalizedPriceTiers,
             creation_template: editing ? null : v.creationTemplate,
@@ -1325,6 +1362,61 @@ function ProductsManagement() {
           <Form.Item label={t("admin_products.label_description")} name="description">
             <Input.TextArea rows={3} placeholder={t("admin_products.placeholder_description")} />
           </Form.Item>
+
+          {isRestaurantShop && (
+            <Card size="small" title={t("admin_products.food_safety_title")} style={{ marginBottom: 16 }}>
+              <Form.Item
+                label={t("admin_products.label_allergens")}
+                name="allergenCodes"
+                extra={t("admin_products.allergens_hint")}
+              >
+                <Select
+                  mode="multiple"
+                  options={FOOD_ALLERGEN_CODES.map((code) => ({
+                    value: code,
+                    label: t(`admin_products.allergen_${code.toLowerCase()}`),
+                  }))}
+                  placeholder={t("admin_products.allergens_placeholder")}
+                />
+              </Form.Item>
+              <Form.Item
+                label={t("admin_products.label_allergen_reviewed")}
+                name="allergenInformationProvided"
+                valuePropName="checked"
+                extra={t("admin_products.allergen_reviewed_hint")}
+              >
+                <Switch />
+              </Form.Item>
+              <Form.Item label={t("admin_products.label_dietary_tags")} name="dietaryTags">
+                <Select
+                  mode="multiple"
+                  options={DIETARY_TAGS.map((tag) => ({
+                    value: tag,
+                    label: t(`admin_products.dietary_${tag.toLowerCase()}`),
+                  }))}
+                  placeholder={t("admin_products.dietary_tags_placeholder")}
+                />
+              </Form.Item>
+              <Form.Item
+                label={t("admin_products.label_food_safety_note")}
+                name="foodSafetyNote"
+                extra={t("admin_products.food_safety_note_hint")}
+              >
+                <Input.TextArea rows={2} maxLength={500} />
+              </Form.Item>
+            </Card>
+          )}
+
+          {isPharmacyShop && (
+            <Card size="small" title={t("admin_products.medicine_label_title")} style={{ marginBottom: 16 }}>
+              <Alert type="info" closable message={t("admin_products.medicine_label_hint")} style={{ marginBottom: 12 }} />
+              <Form.Item name="medicineIngredients" label={t("admin_products.medicine_ingredients")}>
+                <Select mode="tags" maxCount={20} />
+              </Form.Item>
+              <Form.Item name="medicineStrength" label={t("admin_products.medicine_strength")}><Input maxLength={120} /></Form.Item>
+              <Form.Item name="medicineForm" label={t("admin_products.medicine_form")}><Input maxLength={120} /></Form.Item>
+            </Card>
+          )}
 
           <Space.Compact block>
             <Form.Item label={editing?.variants.length ? t("admin_products.label_base_price") : t("admin_products.label_price")} name="price" rules={[{ required: true, message: t("admin_products.rule_price") }]} style={{ flex: 1, marginInlineEnd: 8 }}>

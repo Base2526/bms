@@ -343,6 +343,12 @@ Migration `7.70` adds `display_label` and `trigger_terms` to `bms_pharmacy_proto
 protocol reads require `status = 'APPROVED'`, `clinically_approved = true`, and `enabled = true`;
 the ENV allowlist remains an independent platform kill switch.
 
+Migration `10.44` adds `bms_products.medicine_label`, a bounded JSON object for shop-transcribed
+active ingredients, labelled strength and dosage form. Absent fields remain unknown; there is no
+dose, therapeutic-equivalence inference or sale approval in this data. Existing tenant RLS and
+product management permissions apply. Customer reads require an active `CUSTOMER_AI` SKU;
+optional stock-expiry summaries require a tenant-owned active branch and exact active variant.
+
 Migration `7.71` adds tenant/SKU-scoped `bms_pharmacy_product_policies`. Product names and free-text
 categories are never regulatory authority: a policy starts as `DRAFT`, must be reviewed by a user
 verified through `bms_is_licensed_pharmacist`, and only `APPROVED` rows participate in order
@@ -949,13 +955,26 @@ rule unique index had to take the branch into the key (with `COALESCE` for the N
 NULL never collides with NULL) or a branch could not set a rung at a quantity the store already uses
 — the most common case there is.
 
-`bms_restaurant_waitlist` (`9.64`) holds parties that do not have a table yet — walk-in queue
+`bms_restaurant_waitlist` (`9.64`, extended by `10.43`) holds parties that do not have a table yet — walk-in queue
 tickets and advance reservations in one table, because seating them is the same action and a second
 seating path would be free to drift. `kind` selects which of `queue_no` / `reserved_for` must be
 present, and a `SEATED` row is required to name both the table and the check it opened, so the wait a
 shop actually delivered stays measurable. `service_date` is stamped server-side from the shop
 timezone and is part of the queue-number unique index, so a shop open past midnight keeps counting
 instead of restarting at 1.
+
+Migration `10.43` adds `source` and a tenant-bound `customer_id`. Customer chat may insert only a
+`CUSTOMER_AI` / `RESERVATION` / `REQUESTED` row with no staff creator; existing and manually entered
+rows remain `STAFF` with a required creator. A partial unique index deduplicates unresolved retries
+for the same customer, branch and appointment. The staff accept action is the only transition from
+`REQUESTED` to `WAITING`; the existing seating transaction remains the only path to `SEATED`.
+An exact retry returns stored values; different party sizes or notes for the same appointment are
+rejected for staff correction. CRM merge transfers the request history to the surviving customer,
+but refuses conflicting live appointments until staff resolves them. Customer deletion clears only
+the ownership link and preserves the operational entry; an orphan is not readable through chat.
+The same migration adds positive allergen declarations, a reviewed flag, dietary menu labels and a
+bounded safety note to `bms_products`. Empty arrays remain unknown unless the reviewed flag is true,
+and no database value asserts freedom from kitchen cross-contact.
 
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order

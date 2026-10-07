@@ -182,6 +182,20 @@ constraint, and the same "read `bms_inventory` instead of the catalog variant" m
 above — see [business/restaurant-chat-delivery.md](docs/business/restaurant-chat-delivery.md) for
 the full brief and [CLAUDE.local.md](CLAUDE.local.md) for the incident-by-incident record.
 
+**Pharmacy non-clinical customer assistance (`10.44`, 2026-10-07)** — fixed medication-advice
+handoff remains active with intake disabled. Pharmacy-only reads expose shop-transcribed label
+facts, bounded expiry snapshots, historical shift evidence (not confirmed presence) and own-case
+status/expiry without health content. No invented reply ETA or clinical activation. See
+[pharmacy README](apps/web/lib/bms/pharmacy/README.md#non-clinical-customer-assistance-1044).
+
+**Restaurant customer answers + reservation requests (`10.43`, 2026-10-07)** — customer product
+tools now read structured, shop-maintained positive allergen declarations and dietary labels; an
+empty/unreviewed declaration remains unknown and cross-contact is never guaranteed. A branch-safe
+aggregate tool reports current table/queue/kitchen counts but deliberately returns no invented
+wait/preparation estimate. Chat may submit a table `REQUESTED` row linked to the canonical customer,
+but only a PIN-authenticated `pos.sell` operator can accept it into the operational waitlist; the
+server-built reply always says the table is not reserved or confirmed yet.
+
 **Restaurant floor editor + table QR self-ordering (`9.59`–`9.60`, `9.62`, 2026-09-06)** —
 `/admin/restaurant-floor` lays out zones and tables by drag-and-drop and prints one rotatable QR per
 table; a guest who scans it gets a menu bound to that table's **already-open** check and can only

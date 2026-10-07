@@ -33,6 +33,9 @@ export type ExecCtx = {
    */
   createdOrderId?: string;
   restaurantRequestId?: string;
+  /** Server-only signal: a restaurant table request was recorded, not accepted or confirmed. */
+  restaurantReservationRequestId?: string;
+  restaurantReservationRequestStatus?: "REQUESTED" | "WAITING" | "CALLED";
   restaurantRequestQuote?: {
     draft: import('../restaurantRequestPolicy').RestaurantRequestDraft;
     fingerprint: string; lines: OrderQuoteLine[]; locationName: string;

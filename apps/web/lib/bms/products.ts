@@ -16,6 +16,13 @@ import type { VatCategory } from "./vat";
 import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
 import { productBarcodeAliases } from "./productBarcodeLookupContract";
 import type { PriceTier } from "./pricing";
+import { normalizeMedicineLabel, type MedicineLabel } from "./productMedicineLabel";
+import {
+  normalizeDietaryTags,
+  normalizeFoodAllergenCodes,
+  type DietaryTag,
+  type FoodAllergenCode,
+} from "./productFoodSafety";
 import {
   normalizeProductSalesSurfaces,
   normalizeProductVariantCode,
@@ -40,6 +47,11 @@ export type ProductRowFull = {
   weight_grams: number | null;
   category: string | null;
   brand: string | null;
+  allergen_codes: FoodAllergenCode[];
+  allergen_information_provided: boolean;
+  dietary_tags: DietaryTag[];
+  food_safety_note: string | null;
+  medicine_label: MedicineLabel | Record<string, never>;
   /** 7.88 · เขียนได้ตั้งแต่มีช่องในฟอร์มสินค้า */
   vat_category?: VatCategory;
   created_at: Date | string;
@@ -68,6 +80,10 @@ export type PublicProduct = {
     description: string | null;
     category: string | null;
     brand: string | null;
+    allergen_codes: FoodAllergenCode[];
+    allergen_information_provided: boolean;
+    dietary_tags: DietaryTag[];
+    food_safety_note: string | null;
     images: string[];
     variants: Array<{ size: string; available: number; price: number }>;
     updatedAt: string | null;
@@ -198,7 +214,9 @@ export async function listProducts(
     : `0 AS search_rank`;
   const itemsRes = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
-            image_url, description, cost_price, weight_grams, category, brand, vat_category, created_at, updated_at,
+            image_url, description, cost_price, weight_grams, category, brand, vat_category,
+            allergen_codes, allergen_information_provided, dietary_tags, food_safety_note, medicine_label,
+            created_at, updated_at,
             ${rankSql}
        FROM bms_products WHERE ${where}
       ORDER BY ${
@@ -226,7 +244,8 @@ export async function getProductBySku(
   const result = await query<ProductRowFull>(
     `SELECT tenant_id, sku, name, active, price, keywords, barcode,
             image_url, description, cost_price, weight_grams, category, brand,
-            vat_category, created_at, updated_at
+            vat_category, allergen_codes, allergen_information_provided, dietary_tags,
+            food_safety_note, medicine_label, created_at, updated_at
        FROM bms_products
       WHERE tenant_id = $1 AND sku = $2
       LIMIT 1`,
@@ -243,6 +262,10 @@ export type SellableProduct = {
   description: string | null;
   category: string | null;
   brand: string | null;
+  allergenCodes: FoodAllergenCode[];
+  allergenInformationProvided: boolean;
+  dietaryTags: DietaryTag[];
+  foodSafetyNote: string | null;
   createdAt: string;
   updatedAt: string;
   availableTotal: number;
@@ -366,6 +389,10 @@ export async function listSellableProducts(
     description: string | null;
     category: string | null;
     brand: string | null;
+    allergen_codes: FoodAllergenCode[];
+    allergen_information_provided: boolean;
+    dietary_tags: DietaryTag[];
+    food_safety_note: string | null;
     created_at: Date | string;
     updated_at: Date | string;
     available_total: string;
@@ -382,6 +409,10 @@ export async function listSellableProducts(
               p.description,
               p.category,
               p.brand,
+              p.allergen_codes,
+              p.allergen_information_provided,
+              p.dietary_tags,
+              p.food_safety_note,
               p.created_at,
               p.updated_at,
               CASE
@@ -434,6 +465,10 @@ export async function listSellableProducts(
             m.description,
             m.category,
             m.brand,
+            m.allergen_codes,
+            m.allergen_information_provided,
+            m.dietary_tags,
+            m.food_safety_note,
             m.created_at,
             m.updated_at,
             COALESCE(sp.stock_policy, 'DIRECT') AS stock_policy,
@@ -465,6 +500,7 @@ export async function listSellableProducts(
         AND i.product_sku = m.sku
         AND ($${locationParam}::uuid IS NULL OR i.location_id = $${locationParam})
       GROUP BY m.tenant_id, m.sku, m.name, m.price, m.description, m.category, m.brand,
+               m.allergen_codes, m.allergen_information_provided, m.dietary_tags, m.food_safety_note,
                m.created_at, m.updated_at, m.search_rank, sp.stock_policy
       ORDER BY ${orderBy}
       LIMIT $${limitParam}`,
@@ -510,6 +546,10 @@ export async function listSellableProducts(
       description: row.description,
       category: row.category,
       brand: row.brand,
+      allergenCodes: row.allergen_codes ?? [],
+      allergenInformationProvided: row.allergen_information_provided === true,
+      dietaryTags: row.dietary_tags ?? [],
+      foodSafetyNote: row.food_safety_note ?? null,
       createdAt: isoDate(row.created_at),
       updatedAt: isoDate(row.updated_at),
       availableTotal: Math.max(0, Number(row.available_total) || 0),
@@ -762,6 +802,13 @@ export type UpsertProductInput = {
   weight_grams?: number | null;
   category?: string | null;
   brand?: string | null;
+  /** Positive declarations only; absence is not proof of allergen safety. */
+  allergen_codes?: FoodAllergenCode[] | null;
+  allergen_information_provided?: boolean | null;
+  /** Shop-maintained menu labels, not third-party certifications. */
+  dietary_tags?: DietaryTag[] | null;
+  food_safety_note?: string | null;
+  medicine_label?: MedicineLabel | null;
   image_urls?: string[] | null;
   /**
    * ประเภท VAT (7.88) — 'V' = คิด VAT · 'N' = ยกเว้น VAT · 'UNKNOWN' = ยังไม่ระบุ
@@ -955,7 +1002,8 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
 
   const res = await query<any>(
     `SELECT p.tenant_id, p.sku, p.name, p.price, p.image_url, p.description,
-            p.category, p.brand, p.updated_at,
+            p.category, p.brand, p.allergen_codes, p.allergen_information_provided,
+            p.dietary_tags, p.food_safety_note, p.updated_at,
             t.name AS tenant_name, t.slug AS tenant_slug,
             sp.logo_url, sp.website, sp.phone, sp.currency
        FROM bms_products p
@@ -1006,6 +1054,10 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
       description: row.description ?? null,
       category: row.category ?? null,
       brand: row.brand ?? null,
+      allergen_codes: row.allergen_codes ?? [],
+      allergen_information_provided: row.allergen_information_provided === true,
+      dietary_tags: row.dietary_tags ?? [],
+      food_safety_note: row.food_safety_note ?? null,
       images,
       variants: variants.map((variant) => ({
         size: variant.size,
@@ -1324,6 +1376,12 @@ export type NormalizedProductFields = {
   description: string | null;
   category: string | null;
   brand: string | null;
+  allergenCodes: FoodAllergenCode[] | null;
+  allergenInformationProvided: boolean | null;
+  dietaryTags: DietaryTag[] | null;
+  /** null = omitted/preserve; empty string = clear. */
+  foodSafetyNote: string | null;
+  medicineLabel: MedicineLabel | null;
   costPrice: number | null;
   weightGrams: number | null;
   /** null = ผู้เรียกไม่ได้ส่งมา → คงค่าเดิมในฐาน (ไม่ใช่ตั้งเป็น UNKNOWN) */
@@ -1349,7 +1407,15 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   const description = input.description?.trim() || null;
   const category = input.category?.trim() || null;
   const brand = input.brand?.trim() || null;
-
+  const allergenCodes = normalizeFoodAllergenCodes(input.allergen_codes);
+  const dietaryTags = normalizeDietaryTags(input.dietary_tags);
+  const allergenInformationProvided = input.allergen_information_provided == null
+    ? null
+    : Boolean(input.allergen_information_provided);
+  const foodSafetyNote = input.food_safety_note === undefined
+    ? null
+    : String(input.food_safety_note ?? "").trim().slice(0, 500);
+  const medicineLabel = normalizeMedicineLabel(input.medicine_label);
   let costPrice: number | null = null;
   if (input.cost_price != null && input.cost_price !== ("" as any)) {
     costPrice = Number(input.cost_price);
@@ -1371,7 +1437,11 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   const vatCategory: VatCategory | null =
     rawVat === "V" || rawVat === "N" || rawVat === "UNKNOWN" ? (rawVat as VatCategory) : null;
 
-  return { sku, name, price, keywords, active, barcode, description, category, brand, costPrice, weightGrams, vatCategory };
+  return {
+    sku, name, price, keywords, active, barcode, description, category, brand,
+    costPrice, weightGrams, vatCategory, allergenCodes, allergenInformationProvided,
+    dietaryTags, foodSafetyNote, medicineLabel,
+  };
 }
 
 export type NormalizedProductConfigurationFields = {
@@ -1420,8 +1490,10 @@ export async function upsertProduct(
   editorId?: string | number | null,
   revisionId?: string | null
 ): Promise<ProductRowFull> {
-  const { sku, name, price, keywords, barcode, description, category, brand, costPrice, weightGrams, vatCategory } =
-    validateProductFields(input);
+  const {
+    sku, name, price, keywords, barcode, description, category, brand, costPrice, weightGrams,
+    vatCategory, allergenCodes, allergenInformationProvided, dietaryTags, foodSafetyNote, medicineLabel,
+  } = validateProductFields(input);
   const normalizedPriceTiers = Array.isArray(input.price_tiers)
     ? normalizePriceTiers(input.price_tiers)
     : null;
@@ -1466,8 +1538,12 @@ export async function upsertProduct(
 
     const res = await client.query<ProductRowFull>(
       `INSERT INTO bms_products
-         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category)
-       VALUES ($1, $2, $3, $4, $5, COALESCE($6,FALSE), $7, $8, $9, $10, $11, $12, $13, COALESCE($14, 'UNKNOWN'))
+         (tenant_id, sku, name, price, keywords, active, barcode, image_url, description, cost_price,
+          category, brand, weight_grams, vat_category, allergen_codes,
+          allergen_information_provided, dietary_tags, food_safety_note, medicine_label)
+       VALUES ($1, $2, $3, $4, $5, COALESCE($6,FALSE), $7, $8, $9, $10, $11, $12, $13,
+               COALESCE($14, 'UNKNOWN'), COALESCE($15, '{}'), COALESCE($16, FALSE),
+               COALESCE($17, '{}'), NULLIF($18, ''), COALESCE($19::jsonb, '{}'::jsonb))
        ON CONFLICT (tenant_id, sku) DO UPDATE
          SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
              active = COALESCE($6, bms_products.active), barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
@@ -1478,9 +1554,22 @@ export async function upsertProduct(
              -- INSERT ข้างบน COALESCE เป็น 'UNKNOWN' ไปแล้ว การอ้าง EXCLUDED จะทับ
              -- ค่าที่ตั้งไว้ของสินค้าเดิมทุกครั้งที่มีใครกดบันทึกจากฟอร์มที่ไม่มีช่องนี้
              vat_category = COALESCE($14, bms_products.vat_category),
+             allergen_codes = COALESCE($15, bms_products.allergen_codes),
+             allergen_information_provided = COALESCE($16, bms_products.allergen_information_provided),
+             dietary_tags = COALESCE($17, bms_products.dietary_tags),
+             food_safety_note = CASE
+               WHEN $18::text IS NULL THEN bms_products.food_safety_note
+               ELSE NULLIF($18, '')
+             END,
+             medicine_label = COALESCE($19::jsonb, bms_products.medicine_label),
              updated_at = now()
-       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description, cost_price, category, brand, weight_grams, vat_category`,
-      [tenantId, sku, name, price, keywords, effectiveActive, barcode, imageUrl, description, costPrice, category, brand, weightGrams, vatCategory]
+       RETURNING tenant_id, sku, name, active, price, keywords, barcode, image_url, description,
+                 cost_price, category, brand, weight_grams, vat_category, allergen_codes,
+                 allergen_information_provided, dietary_tags, food_safety_note, medicine_label`,
+      [tenantId, sku, name, price, keywords, effectiveActive, barcode, imageUrl, description,
+        costPrice, category, brand, weightGrams, vatCategory, allergenCodes,
+        allergenInformationProvided, dietaryTags, foodSafetyNote,
+        medicineLabel === null ? null : JSON.stringify(medicineLabel)]
     );
 
     if (isNew) {

@@ -24,6 +24,23 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.44__bms_pharmacy_customer_label_facts.sql",
+    impact: "อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้",
+    needs: [{ kind: "column", table: "bms_products", name: "medicine_label" }],
+  },
+  {
+    file: "10.43__bms_restaurant_customer_assistance.sql",
+    impact: "ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้",
+    needs: [
+      { kind: "column", table: "bms_products", name: "allergen_codes" },
+      { kind: "column", table: "bms_products", name: "allergen_information_provided" },
+      { kind: "column", table: "bms_products", name: "dietary_tags" },
+      { kind: "column", table: "bms_products", name: "food_safety_note" },
+      { kind: "column", table: "bms_restaurant_waitlist", name: "source" },
+      { kind: "column", table: "bms_restaurant_waitlist", name: "customer_id" },
+    ],
+  },
+  {
     file: "10.14__bms_delivery_platform_hardening.sql",
     impact: "รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้",
     needs: [

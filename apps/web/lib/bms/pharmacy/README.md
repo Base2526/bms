@@ -13,17 +13,63 @@ strength/dosage candidates, but *only* as a pharmacist-only draft the pharmacist
 review, edit, and explicitly choose to use — this never reaches the customer on its own
 and never bypasses the approve gate below.
 
+This clinical boundary does not prohibit factual catalog reads. Customer label facts are distinct
+from clinical advice and from the **not-yet-implemented** pharmacist-approved publication workflow
+for quoting indications, usage, warnings or storage instructions (including household remedies).
+
 ## Status
 
 Code + `tsc`/lint pass. **Not yet verified against a live Postgres or a live AI provider**
 on this machine (no docker/DB running while this module was built) — see "Before relying on
 this in production" below before treating any of it as verified end-to-end.
 
+## Non-clinical customer assistance (`10.44`)
+
+Apply `10.44__bms_pharmacy_customer_label_facts.sql` before this app version. Products may carry
+bounded `medicine_label` JSON (active ingredients, labelled strength, dosage form), edited in the
+pharmacy product form. Omitted input preserves the label; missing fields mean unknown. This never
+changes product sale policy, creates an approval, or establishes suitability/equivalence.
+
+Customer tools are pharmacy-only: `get_pharmacy_product_facts` requires an exact visible SKU and,
+for an optional unallocated expiry snapshot, both branch and variant. Pack counts come from the
+catalog; expiry does not promise the lot eventually dispensed. `get_pharmacy_service_status`
+exposes branch names/IDs and a boolean shift stamp, never staff identities. A pharmacist recorded
+on an open shift may have authorised an earlier sale: current presence, consultation hours and
+reply ETA are **unknown**, even when the stamp exists. `get_pharmacy_case_status` reads only the
+server-established channel identity's recent short references/status/expiry, with no complaint,
+patient fields or clinical decision text. Expiry is not a response SLA; pharmacist re-evaluation
+remains required rather than extending an approval automatically.
+
+Explicit medication-advice questions return a fixed pharmacist handoff before catalog/order or
+model paths (also during an active intake). Emergencies retain priority; symptom-only questions
+may enter an approved intake, but otherwise get the same non-clinical handoff. A refusal does not
+claim that a case or staff notification was created. These guards do not activate any feature flag
+or approve any seeded protocol; the wording matcher is conservative, not proof of understanding
+every possible clinical phrasing. The model prompt separately prohibits clinical advice.
+
+Recheck of the [58 customer questions](../../../../../scripts/ai-eval/README.md#รายการร้านยา-58-ข้อ--ผล-recheck-2026-10-07)
+distinguishes implemented reads from partial answers, missing data and human-only tasks. Product
+facts now expose `approvedPolicy` only for `APPROVED` rows; `approvedUsageQuotationAvailable:false`
+explicitly prevents confusing sale-policy review with approval to publish clinical label text.
+Neither emergency contraception nor sleeping/weight-loss medicines are classified from a common
+name: exact SKU + pharmacist-approved policy remain authoritative. The case-status tool accepts an
+optional short reference/UUID **within** the existing tenant/channel/customer identity filter;
+unknown references return no case and ambiguous short references require staff clarification.
+
+`emergency.ts` shares fixed Thai/English routing copy for overdose, accidental ingestion, severe
+allergy terms and self-harm wording across pipeline, active intake and Lab. It names Thailand's
+1669 for immediate danger and 1323 for mental-health support without substituting it for emergency
+care; outside Thailand it points to local services. Lab checks emergency wording before protocol
+database discovery. No model, protocol approval, sale or invented staff-notification claim is used
+to compose the reply. Raw-message matching is conservative, not diagnosis or complete triage; have
+a licensed clinician review the wording/test matrix before production. Contact sources are in the
+eval README and `emergency.ts`. Existing active-case persistence remains best-effort.
+
 ## Config (env)
 
 | Var | Default | Meaning |
 | --- | --- | --- |
-| `PHARMACY_INTAKE_ENABLED` | `false` | Master switch. Every entry point (pipeline branch, GraphQL resolvers, cron route) checks this first. |
+| `PHARMACY_INTAKE_ENABLED` | `false` | Intake switch (pipeline intake branch, clinical GraphQL resolvers, cron). Emergency/clinical refusal guards, product sale policy and non-clinical customer reads remain active independently. |
 | `PHARMACY_AI_ENABLED` | `false` | Whether the AI (extraction/next-question/summary) may run at all. `false` forces every turn straight to manual pharmacist review — no guessing. |
 | `PHARMACY_PROTOCOLS_ENABLED` | *(empty)* | Comma list of `protocol_key`s allowed to run, e.g. `headache,cough,diarrhea`. A protocol also needs its own DB `enabled=true` — **both** gates must agree. |
 | `PHARMACY_AI_PROVIDER` | *(unset → shared routing)* | Force `anthropic` or `deepseek` for pharmacy calls specifically. |
@@ -284,8 +330,8 @@ call sites listed below are what currently enforces the boundary):
 - **Catalog matching is factual but non-clinical.** Each AI draft is searched against the
   tenant's current active, in-stock catalog through `listSellableProducts()`. Bounded matches
   show SKU, price, and availability to the pharmacist, but are labelled as name matches only:
-  the product schema does not yet model active ingredient/dosage form/strength well enough to
-  claim therapeutic equivalence.
+  the shop-transcribed ingredient/form/strength fields added in `10.44` are label facts only,
+  not validated therapeutic-equivalence data.
 - **Not available to Manager/Administrator via a role shortcut** — same
   `is_licensed_pharmacist` boundary as approve/reject/refer still applies at the point the
   *case* is actually approved; generating a suggestion doesn't itself authorize anything.
@@ -309,6 +355,12 @@ directly. Every fallback is logged via `recordPharmacyEvent(action:"ai.fallback"
 alerting pipe).
 
 ## Testing
+
+Customer safety/read regressions: `node scripts/run-contract-tests.mjs pure pharmacy` from the
+repo root. `scripts/ai-eval/pharmacy-customer-corpus.mjs` shares synthetic clinical refusal,
+symptom, emergency, service and own-case questions between pure contracts and the live runner.
+Pure tests use a fake database pool for service scoping/redaction: they do not prove SQL validity,
+RLS or provider behavior. Run the live eval only against a disposable, migrated sandbox.
 
 ```bash
 cd apps/web && npx tsx ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
@@ -670,7 +722,8 @@ Covered by `scripts/pharmacy-clinical-evidence-db-contract.test.mts`.
 - End-to-end rollout workflow and the migration/protocol/LINE/Lab/compound-rule QA matrix
   are documented in `docs/testing/pharmacy-protocol-workflow-and-test-cases.md`.
 - **`PHARMACY_INTAKE_ENABLED`/`PHARMACY_AI_ENABLED`/`PHARMACY_PROTOCOLS_ENABLED` default to
-  off/empty** — nothing in this module runs until a shop/ops explicitly turns it on, and
+  off/empty** — clinical intake does not run until a shop/ops explicitly turns it on (emergency,
+  refusal guards, non-clinical reads and Product Policy checks remain active independently), and
   even then the 3 seeded protocols ship `enabled=false`/`clinically_approved=false` — a
   pharmacist must review and flip a protocol's `enabled` flag (via
   `bmsSetPharmacyProtocolEnabled`) before any live intake can start.

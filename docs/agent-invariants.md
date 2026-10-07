@@ -153,9 +153,23 @@ will not use them. See § "AI tool-calling — example usage" in
 It enforces unique snake_case names, valid surfaces, staff-only sensitive tools, and declared required
 schema fields. Registry-only metadata (`whenToUse`/`whenNotToUse`/`commonMistakes`/`example`) stays out
 of provider payloads and should be added only for a real observed ambiguity, not mechanically to every
-tool. The current snapshot is 77 tools total / 24 default-customer tools / 23 pharmacy-customer
-tools (re-counted from the registry on 2026-09-29); verify the source rather than trusting this count
-after any catalog change.
+tool. The current snapshot is 86 tools total / 33 unfiltered customer tools / 23 ordinary /
+26 pharmacy-customer tools / 26 restaurant-customer tools (re-counted from the registry on
+2026-10-07); verify the source rather than trusting this count after any catalog change.
+
+Pharmacy customer assistance (`10.44`) stays non-clinical even with intake disabled. Medication
+advice gets a deterministic pharmacist handoff; emergencies have priority. Shop-transcribed label
+facts are not equivalence/suitability or sale authorization. Customer case status derives its owner
+from the channel identity and omits health/decision text. A pharmacist's open-shift stamp is not
+attendance: current presence, consultation hours and reply ETA remain unknown. Never turn case
+expiry into a response promise or automatically extend an approval to cover waiting time.
+Approval of sale policy is **not** approval to publish clinical label instructions: customer
+`medicine_label` has no pharmacist publication/version/withdrawal workflow, so usage quotations
+remain disabled, including household remedies. Regulatory classification may be returned only
+from an approved SKU policy, never guessed from a common medicine-group name. A case reference is
+a selector inside the server-established identity, never authority to read another customer's case.
+Fixed emergency responses for overdose/ingestion/severe-allergy/self-harm wording do not depend on
+enabling intake or on a model; conservative wording guards are not complete clinical triage.
 
 ## Authentication identity and registration
 
@@ -937,9 +951,9 @@ own dine-in service. Operator detail:
   scope; the branch picker reads the same scoped list so the UI cannot offer what the server refuses.
   Rotating another branch's QR invalidates the sticker physically on its table and cuts the guests
   seated at it, which is the widest blast radius on this surface.
-- **Not built, and not to be faked**: split/merge of checks across tables (splitting _payment_ is
-  supported), reservations/queue numbers, per-station printer routing,
-  offline-first sync, and delivery-aggregator integrations.
+- **Not built, and not to be faked**: per-station printer routing and offline-first dine-in sync.
+  Split/merge and the queue/reservation board are implemented above; delivery-platform support is
+  governed separately by the provider-contract gates below.
 
 ## Board game cafe
 
@@ -1284,6 +1298,16 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
   (`PAID -> PACKING`) is the human-accept boundary, and it enqueues kitchen tickets only when the
   order carries a `fulfillment_type` — an ordinary retail bill that happens to contain a product
   with a kitchen station must never get a kitchen ticket just because it was packed.
+- **Restaurant customer assistance (`10.43`) is evidence-first and propose-only where a table is
+  involved.** Product tools expose shop-maintained positive allergen declarations and dietary menu
+  labels with an explicit reviewed flag; a missing/empty declaration is unknown, and a reviewed list
+  still never proves freedom from cross-contact. `get_restaurant_availability` may expose only
+  current branch aggregates (free tables/seats, waiting counts, open kitchen tickets and configured
+  SLA), never table/guest/ticket ids or a fabricated wait/preparation time. A chat booking writes a
+  customer-owned `REQUESTED` waitlist row; only a PIN-authenticated `pos.sell` action may accept it
+  into `WAITING`, and only seating opens the authoritative check. The customer reply must never call
+  `REQUESTED`, `WAITING` or `CALLED` a confirmed/reserved table. These columns are read on the common
+  product path, so apply `10.43` before deploying the matching application code.
 - **Line cancellation (`9.57`) reuses the POS return engine; it is not a second money path.**
   `cancelRestaurantOrderLines()` calls `processPosReturn()` with a `restaurantCancellation` payload
   (`deviceId: null`, expected branch, per-line cause) instead of forking a parallel refund/stock

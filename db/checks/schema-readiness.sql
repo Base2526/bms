@@ -2,6 +2,13 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.44__bms_pharmacy_customer_label_facts.sql', 'column', 'bms_products', 'medicine_label', 'อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_codes', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_information_provided', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'dietary_tags', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'food_safety_note', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_restaurant_waitlist', 'source', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
+    ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_restaurant_waitlist', 'customer_id', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
     ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_integrations', 'config_version', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
     ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_orders', 'transport_type', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),
     ('10.14__bms_delivery_platform_hardening.sql', 'column', 'bms_delivery_events', 'provider_call_attempts', 'รับออเดอร์ delivery platform ไม่ได้อย่างปลอดภัย — แยกชนิดขนส่งและตรวจ config หลังเรียก provider ไม่ได้'),

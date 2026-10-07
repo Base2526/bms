@@ -1876,7 +1876,7 @@ reprints and history do not infer it later from mutable floor state. Takeaway ch
 fake table or table QR session; they appear in the open-check rail and kitchen board with a takeaway
 label, and table-only actions such as move, split and merge stay dine-in only.
 
-### Walk-in queue and table reservations (`9.64`)
+### Walk-in queue and table reservations (`9.64`, customer requests `10.43`)
 
 A restaurant with full tables always has people waiting, and a restaurant that takes bookings gets
 phone calls all day. Before `9.64` the system had nowhere to put **a party without a table**, so
@@ -1908,8 +1908,12 @@ At the counter:
   that question unanswerable forever.
 - **Seating a table that already has an open check fails and leaves the queue entry waiting** —
   including a double tap on an unresponsive screen, which cannot open a second bill for one party.
-- Customers cannot take a number themselves and there is no SMS/LINE notification when a party is
-  called; both are staff screen actions.
+- A restaurant customer may now submit an advance reservation **request** through chat. It enters
+  the same list as `REQUESTED`, with canonical customer identity resolved server-side. It does not
+  hold a table, receive a queue number, or become callable/seatable until a PIN-authenticated
+  `pos.sell` operator presses **Accept request**, which moves it to `WAITING`.
+- Customers still cannot take a walk-in queue number themselves and there is no SMS/LINE
+  notification when a party is called; both remain staff screen actions.
 
 ### Splitting and merging bills (`9.63`)
 
