@@ -1053,6 +1053,16 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["ห้ามให้โมเดลสร้าง clinical decision แทน protocol และเภสัชกร"], ["Never let the model replace protocols or pharmacist decisions."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
+    id: "pharmacy.manage-guidance", module: "pharmacy", route: "/admin/pharmacy-guidance",
+    title: ["อนุมัติคำแนะนำที่ AI ตอบลูกค้าร้านยา", "Approve pharmacy customer guidance"],
+    summary: ["ให้เภสัชกรเขียนและอนุมัติข้อความที่ AI ตอบเมื่อลูกค้าถามเรื่องที่ต้องให้เภสัชกรตัดสิน เช่น ยาตีกัน แพ้ยา ลืมกินยา", "Let a pharmacist write and approve what the AI says when a customer asks something only a pharmacist may decide, such as interactions, allergies or missed doses."],
+    aliases: [["ข้อความตอบคำถามยา", "คำแนะนำเภสัชกร", "อนุมัติข้อความ AI ร้านยา", "AI ตอบเรื่องยาตีกัน", "แม่แบบคำตอบเภสัชกร"], ["pharmacist guidance", "approve AI medicine replies", "pharmacy reply templates", "drug interaction reply"]],
+    requiredPermissions: ["pharmacy.assessment.read"],
+    steps: [["เปิด Pharmacist guidance", "กดสร้างร่างจากแม่แบบตั้งต้น หรือแก้ข้อความของคำถามแต่ละชนิด", "ตรวจคำเตือนและตัวอย่างที่ลูกค้าจะเห็น", "ให้เภสัชกรผู้มีใบอนุญาตกดอนุมัติ"], ["Open Pharmacist guidance.", "Create drafts from the starting templates, or edit the text for each question type.", "Check the warnings and the customer preview.", "Have a licensed pharmacist approve it."]],
+    warnings: [["ลูกค้าเห็นเฉพาะข้อความที่อนุมัติแล้ว ถ้ายังไม่อนุมัติจะได้ข้อความส่งต่อเภสัชกรแบบเดิม", "Administrator ที่ไม่มีใบอนุญาตอนุมัติไม่ได้", "แก้ข้อความที่อนุมัติแล้วจะกลับเป็นร่างทันที", "ข้อความฉุกเฉินทำงานก่อนเสมอ และ AI ไม่แต่งหรือเรียบเรียงข้อความนี้"], ["Customers only see approved text; without it they get the existing pharmacist handoff.", "An Administrator without a pharmacist licence cannot approve.", "Editing approved text returns it to draft immediately.", "Emergency replies always run first, and the AI never writes or rephrases this text."]],
+    relatedCapabilityIds: ["pharmacy.workflow"],
+  }),
+  menuGuide({
     id: "pharmacy.manage-licenses", module: "pharmacy", route: "/admin/pharmacy-protocols/licenses",
     title: ["จัดการใบอนุญาตเภสัชกร", "Manage pharmacist licenses"], summary: ["ผูกและตรวจข้อมูลผู้มีใบอนุญาตที่ใช้ตัดสินใจใน pharmacy workflow", "Maintain licensed-pharmacist records used by the pharmacy workflow."],
     aliases: [["ใบอนุญาตเภสัชกร", "บันทึกเลขใบอนุญาต", "ผูกเภสัชกรกับร้าน"], ["pharmacist license", "license records"]],

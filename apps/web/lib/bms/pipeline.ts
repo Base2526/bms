@@ -101,9 +101,10 @@ import {
   pharmacyEmergencyReply,
 } from "./pharmacy/trigger";
 import { routePharmacyConversationMessage } from "./pharmacy/conversationRouter";
+import { pharmacyClinicalGuidanceReply } from "./pharmacy/guidanceTemplateStore";
 import {
   isPharmacyMedicationAdviceQuestion, isPharmacySymptomAdviceQuestion,
-  pharmacyClinicalHandoffReply, pharmacyCustomerReadIntent, pharmacyCaseStatusReply,
+  pharmacyCustomerReadIntent, pharmacyCaseStatusReply,
   pharmacyCaseReferenceFromMessage,
   shouldPreservePharmacyCustomerMessage,
   type PharmacyCaseStatus,
@@ -1766,9 +1767,11 @@ export async function runPipeline(
   // Explicit medication advice never enters a catalog/order flow, even with a named SKU.
   // Keep emergencies first and let symptom-only intake continue through approved protocols below.
   if (isPharmacyTenant && !isPharmacyEmergency && isPharmacyMedicationAdviceQuestion(aiInputMessage)) {
+    const guidance = await pharmacyClinicalGuidanceReply(tenantId, aiInputMessage);
     return customerSafe({ channel, incoming: message, understanding,
-      tool: "pharmacy:clinical_handoff", data: { status: "NOT_FOUND", query: "" },
-      reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(aiInputMessage), aiInputMessage) });
+      tool: guidance.approved ? `pharmacy:guidance:${guidance.code}` : "pharmacy:clinical_handoff",
+      data: { status: "NOT_FOUND", query: "" },
+      reply: guidance.reply });
   }
   const pharmacyReadIntent = isPharmacyTenant && !isPharmacyEmergency
     ? pharmacyCustomerReadIntent(aiInputMessage) : null;
@@ -1938,9 +1941,11 @@ export async function runPipeline(
     });
   }
   if (isPharmacyTenant && (isPharmacySymptomAdviceQuestion(aiInputMessage) || pharmacyTrigger?.intent === "clinical_advice")) {
+    const guidance = await pharmacyClinicalGuidanceReply(tenantId, aiInputMessage);
     return customerSafe({ channel, incoming: message, understanding,
-      tool: "pharmacy:clinical_handoff", data: { status: "NOT_FOUND", query: "" },
-      reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(aiInputMessage), aiInputMessage) });
+      tool: guidance.approved ? `pharmacy:guidance:${guidance.code}` : "pharmacy:clinical_handoff",
+      data: { status: "NOT_FOUND", query: "" },
+      reply: guidance.reply });
   }
   if (isPharmacyTenant && pharmacyConversationRoute.intent === "HUMAN_HANDOFF") {
     const handoffConvId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);

@@ -65,6 +65,7 @@ const ROUTES = {
   pharmacyIntakeLab: "/admin/pharmacy-intake-lab",
   pharmacyQueue: "/admin/pharmacy-queue",
   pharmacyProtocols: "/admin/pharmacy-protocols",
+  pharmacyGuidance: "/admin/pharmacy-guidance",
   pharmacistLicenses: "/admin/pharmacy-protocols/licenses",
   settings: "/admin/settings",
   reports: "/admin/reports",
@@ -791,6 +792,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     items: [
       { label: "Pharmacy Intake Lab", href: ROUTES.pharmacyIntakeLab, note: "ซ้อมหรือกรอก intake เพื่อตรวจว่าต้องถามอะไรและต้องส่งต่อไหม" },
       { label: "Pharmacy Protocols", href: ROUTES.pharmacyProtocols, note: "ตั้งคำถาม กฎคัดกรอง และ protocol ของ flow ร้านยา" },
+      { label: "Pharmacist Guidance", href: ROUTES.pharmacyGuidance, note: "ข้อความที่ AI ตอบลูกค้าเรื่องที่ต้องให้เภสัชกรตัดสิน ลูกค้าเห็นเฉพาะที่เภสัชกรอนุมัติแล้ว" },
       { label: "Pharmacist Licenses", href: ROUTES.pharmacistLicenses, note: "ข้อมูลผู้มีใบอนุญาตสำหรับร้านที่ใช้ pharmacy workflow" },
       { label: "คู่มือเภสัชกร", href: ROUTES.pharmacyManual, note: "ขั้นตอนคิวเภสัชกรรมและการอนุมัติจ่ายยา" },
     ],
@@ -2022,6 +2024,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     items: [
       { label: "Pharmacy Intake Lab", href: ROUTES.pharmacyIntakeLab, note: "Practice or enter intake cases and see what data or escalation is needed" },
       { label: "Pharmacy Protocols", href: ROUTES.pharmacyProtocols, note: "The screening rules and question sets behind the pharmacy flow" },
+      { label: "Pharmacist Guidance", href: ROUTES.pharmacyGuidance, note: "What the AI tells customers about questions a pharmacist must decide; customers only see approved text" },
       { label: "Pharmacist Licenses", href: ROUTES.pharmacistLicenses, note: "Licensed-pharmacist records for shops using the pharmacy workflow" },
       { label: "Pharmacist Manual", href: ROUTES.pharmacyManual, note: "Pharmacy queue procedure and dispensing approval" },
     ],
