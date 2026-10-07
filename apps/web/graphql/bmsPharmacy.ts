@@ -65,6 +65,7 @@ import {
   retirePharmacyGuidance,
   savePharmacyGuidanceDraft,
   seedPharmacyGuidanceDrafts,
+  pharmacyGuidanceEditorContext,
 } from "@/lib/bms/pharmacy/guidanceTemplateStore";
 import { PHARMACY_GUIDANCE_DEFAULT_DRAFTS, pharmacyGuidanceWarnings } from "@/lib/bms/pharmacy/guidanceTemplates";
 
@@ -314,6 +315,10 @@ export const bmsPharmacyResolvers = {
       await requirePermission(ctx, "pharmacy.assessment.read");
       return Object.entries(PHARMACY_GUIDANCE_DEFAULT_DRAFTS).flatMap(([code, byLocale]) =>
         Object.entries(byLocale).map(([locale, body]) => ({ code, locale, body, warnings: pharmacyGuidanceWarnings(body) })));
+    },
+    async bmsPharmacyGuidanceEditorContext(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return pharmacyGuidanceEditorContext(getTenantId(ctx), actorId(ctx));
     },
     async bmsPharmacyProtocols(_p: unknown, _args: unknown, ctx: any) {
       await requirePermission(ctx, "pharmacy.assessment.read");

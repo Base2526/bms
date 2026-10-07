@@ -190,17 +190,18 @@ export async function approvePharmacyGuidance(
   id: string,
   expectedVersion: number,
 ): Promise<PharmacyGuidanceTemplate> {
-  const license = await query<{ ok: boolean; license_no: string | null }>(
-    `SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok,
-            (SELECT NULLIF(btrim(pharmacist_license_no), '') FROM users WHERE tenant_id = $1 AND id = $2) AS license_no`,
-    [tenantId, actorId]
-  );
-  if (license.rows[0]?.ok !== true) {
-    throw new PharmacyGuidanceError("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
-  }
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorId });
+    // 10.47 checks bms_is_licensed_pharmacist and pins the user row until commit.
+    // Never reuse the UI hint or a pre-transaction licence read as authority.
+    const license = await client.query<{ ok: boolean; license_no: string | null }>(
+      `SELECT ok, license_no FROM public.bms_lock_guidance_pharmacist_license($1, $2)`,
+      [tenantId, actorId]
+    );
+    if (license.rows[0]?.ok !== true) {
+      throw new PharmacyGuidanceError("ผู้อนุมัติต้องเป็นเภสัชกรที่มีใบประกอบวิชาชีพ");
+    }
     const res = await client.query(
       `UPDATE bms_pharmacy_guidance_templates
           SET status = 'APPROVED', approved_by = $3, approved_at = now(),
@@ -255,6 +256,17 @@ export async function retirePharmacyGuidance(tenantId: string, actorId: string, 
 }
 
 export const PHARMACY_GUIDANCE_READ_TIMEOUT_MS = 500;
+
+/** Display-only context; approval always re-checks the licence in its own transaction. */
+export async function pharmacyGuidanceEditorContext(tenantId: string, actorId: string) {
+  const [license, values] = await Promise.all([
+    query<{ ok: boolean }>(`SELECT public.bms_is_licensed_pharmacist($1, $2) AS ok`, [tenantId, actorId]),
+    pharmacyGuidanceShopValues(tenantId),
+  ]);
+  return { licensedPharmacist: license.rows[0]?.ok === true,
+    shopPhone: values.shop_phone ?? null, businessHours: values.business_hours ?? null,
+    shopAddress: values.shop_address ?? null };
+}
 
 /**
  * The approved body for a customer reply, or null. Never throws and never waits longer than
