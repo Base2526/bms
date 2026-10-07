@@ -1010,6 +1010,9 @@ Customer tool results must continue to omit internal branch/table/copy identifie
 `10.40` time buy/get offers repeat per participant over already-rounded billable minutes, using
 the frozen hourly rate. They compete with other offers and member passes, never stack with them,
 and freeze their net amount/discount at group close. A fixed-price cap is not an equivalent rule.
+Actual-time visits qualify without buying time in advance. New snapshots retain the close-time
+offer decision and buy/get paid/free minutes; checkout reads that evidence, never today's offer
+configuration to explain a frozen bill. Missing legacy evidence remains unknown.
 
 `lib/bms/boardGameCafe.ts`, `/admin/board-game`, `/board-game`, `app/api/{bms,pos}/board-game/*`,
 and migrations `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`, `9.99`, and `10.0`–`10.7` own timed play sessions, where a party is sitting,

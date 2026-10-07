@@ -2276,6 +2276,12 @@ export const typeDefs = /* GraphQL */ `
 
   type BmsCustomerOrderDetail {
     id: ID!
+    orderAmount: Float!
+    discountAmount: Float!
+    shippingAmount: Float!
+    vatAmount: Float!
+    roundingAmount: Float!
+    totalAmount: Float!
     lines: [BmsCustomerPurchaseLine!]!
     points: [BmsCustomerOrderPoints!]!
   }
@@ -2286,6 +2292,10 @@ export const typeDefs = /* GraphQL */ `
     sku: String
     size: String
     qty: Float!
+    saleQty: Float!
+    unitName: String
+    unitAmount: Float!
+    lineAmount: Float!
   }
 
   type BmsCustomerOrderPoints {

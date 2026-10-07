@@ -15,6 +15,9 @@ import {
 import {
   applyBestBoardGameOffer,
   eligibleBoardGameOffersInTx,
+  evaluateBoardGameOfferResult,
+  readBoardGameOfferEvaluation,
+  type BoardGameOfferEvaluation,
 } from "./boardGameOffers";
 import {
   refreshBoardGameSeatingInTx,
@@ -86,6 +89,10 @@ export type BoardGameChargeLine = {
   offerCode?: string | null;
   offerName?: string | null;
   offerDiscountAmount?: number;
+  offerPaidMinutes?: number | null;
+  offerFreeMinutes?: number | null;
+  /** Group-level close-time evidence, stored once on the first charge line. */
+  offerEvaluation?: BoardGameOfferEvaluation;
 };
 
 /**
@@ -2761,6 +2768,7 @@ export async function getBoardGameCheckoutForPos(
     offerCode: row.offer_code ?? null,
     offerName: row.offer_name ?? null,
     offerDiscountAmount: money(Number(row.offer_discount_amount ?? 0)),
+    offerEvaluation: readBoardGameOfferEvaluation(chargeLines[0]?.offerEvaluation),
   };
 }
 
@@ -3828,14 +3836,16 @@ export async function calculateBoardGameGroupCharges(
   // โปรโมชันและ pass เป็นสิทธิ์ค่าเวลาสองชนิดที่ไม่ซ้อนกัน: เลือกยอดที่ต่ำกว่าให้ลูกค้า
   // อัตโนมัติ และเมื่อเสมอกันเลือกโปรโมชันเพื่อไม่เผาโควตา pass โดยไม่เกิดประโยชน์เพิ่ม
   const offerContext = await eligibleBoardGameOffersInTx(client, tenantId, billingGroupId);
-  const offer = applyBestBoardGameOffer(
-    passLines.map((line) => ({
-      billableMinutes: line.billableMinutes,
-      hourlyRate: line.hourlyRate,
-      grossAmount: Number(line.grossAmount ?? line.amount),
-    })),
-    offerContext.offers,
-    { at: new Date(endedAt), timezone: offerContext.timezone, productSkus: offerContext.productSkus },
+  const offerInput = passLines.map((line) => ({
+    billableMinutes: line.billableMinutes,
+    hourlyRate: line.hourlyRate,
+    grossAmount: Number(line.grossAmount ?? line.amount),
+  }));
+  const context = { at: new Date(endedAt), timezone: offerContext.timezone, productSkus: offerContext.productSkus };
+  const offer = applyBestBoardGameOffer(offerInput, offerContext.offers, context);
+  // Freeze the decision with the charge, including unsuccessful eligibility checks.
+  if (passLines[0]) passLines[0].offerEvaluation = evaluateBoardGameOfferResult(
+    offerInput, offerContext.offers, context, offer, passTotal,
   );
   if (!offer || offer.total > passTotal) return { lines: passLines, total: passTotal };
 
@@ -3849,6 +3859,8 @@ export async function calculateBoardGameGroupCharges(
     offerCode: offer.lines[index].offerCode,
     offerName: offer.lines[index].offerName,
     offerDiscountAmount: offer.lines[index].offerDiscountAmount,
+    offerPaidMinutes: offer.lines[index].offerPaidMinutes,
+    offerFreeMinutes: offer.lines[index].offerFreeMinutes,
   }));
   return { lines: offerLines, total: offer.total };
 }

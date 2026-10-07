@@ -51,6 +51,7 @@ import {
   getPosVariantAvailable,
   isPosVariantSelectionRequiredError,
   isPosVariantStockTracked,
+  listPosVariantChoices,
   blindReturnPosSale,
   cancelRestaurantOrderLines,
   cashierHasPermission,
@@ -2643,6 +2644,21 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     coveredMinutes: Int
     coveredAmount: Float
     offerDiscountAmount: Float
+    offerPaidMinutes: Int
+    offerFreeMinutes: Int
+  }
+
+  type BmsPosBoardGameOfferCheck {
+    offerCode: String!
+    offerName: String!
+    reason: String!
+  }
+
+  type BmsPosBoardGameOfferEvaluation {
+    status: String!
+    evaluatedAt: String!
+    checks: [BmsPosBoardGameOfferCheck!]!
+    omittedCount: Int!
   }
 
   """รายการสินค้าบนบิลพร้อมราคาที่แช่ไว้ใน order ไม่ใช่ราคาปัจจุบันใน catalogue"""
@@ -2808,6 +2824,8 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     offerName: String
     "ยอดค่าเล่นที่โปรโมชันช่วยลดแล้ว · 0 = ไม่มีโปรโมชัน"
     offerDiscountAmount: Float!
+    "Close-time eligibility evidence; null on older frozen bills."
+    offerEvaluation: BmsPosBoardGameOfferEvaluation
   }
 
   extend type Query {
@@ -3488,10 +3506,21 @@ export const bmsPosDeviceResolvers = {
         });
       } catch (error) {
         if (!isPosVariantSelectionRequiredError(error)) throw error;
+        const [variants, images] = await Promise.all([
+          listPosVariantChoices(device.tenantId, error.sku, device.locationId),
+          listPrimaryProductImages(device.tenantId, [error.sku]),
+        ]);
         throw mobileGraphqlError(error.message, "CONFLICT", {
           reason: "VARIANT_SELECTION_REQUIRED",
           scanCode: code,
           sku: error.sku,
+          selection: {
+            scanCode: code,
+            sku: error.sku,
+            productName: error.productName,
+            imageUrl: images.get(error.sku) ?? null,
+            variants,
+          },
         });
       }
       if (!hit) {

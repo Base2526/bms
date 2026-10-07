@@ -742,6 +742,28 @@
 }
 .serviceBenefit span { font-size: 12px; }
 .boardGameBreakdown { width: 100%; text-align: left; }
+.scannedProduct { width: 100%; min-width: 0; padding: 16px 0; }
+.productGrid[hidden] { display: none; }
+.scannedProduct header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.scannedProduct h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
+.scannedProduct header button { flex: 0 0 36px; height: 36px; border: 1px solid #d9dfe8; border-radius: 6px; background: #fff; cursor: pointer; }
+.scannedImage { height: 240px; max-width: 100%; margin: 12px 0; display: grid; place-items: center; background: #f7f9fb; border-radius: 6px; color: #697386; }
+.scannedImage img { width: 100%; height: 240px; object-fit: contain; }
+.scannedSku { color: #697386; overflow-wrap: anywhere; font-size: 12px; }
+.scanVariants { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
+.scanVariants legend { font-weight: 600; font-size: 14px; }
+.scanVariants label { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid #e5e9f0; cursor: pointer; }
+.scanVariants label strong { overflow-wrap: anywhere; }
+.scanVariants label small { grid-column: 2 / -1; color: #697386; }
+.scanVariants label[data-disabled="true"] { color: #8c8c8c; cursor: not-allowed; }
+.scanVariants input[type="radio"] { margin: 0; width: 18px; height: 18px; min-height: 18px; padding: 0; accent-color: #1677ff; }
+.scannedSummary { display: grid; gap: 8px; font-size: 14px; overflow-wrap: anywhere; }
+.boardGameOfferEvaluation { margin-top: 12px; padding: 10px 0; border-top: 1px solid #eaedf2; font-size: 12px; color: #595959; overflow-wrap: anywhere; }
+.boardGameOfferEvaluation:empty { display: none; }
+.boardGameOfferEvaluation summary { cursor: pointer; margin-top: 6px; color: #0958d9; }
+.boardGameOfferEvaluation ul { margin: 8px 0; padding-left: 20px; }
+.boardGameOfferEvaluation li + li { margin-top: 4px; }
+.boardGameBreakdownRow > div { min-width: 0; overflow-wrap: anywhere; }
 .boardGameBreakdownSection { padding: 14px 2px; border-bottom: 1px solid #eaedf2; }
 .boardGameBreakdownHead {
   display: grid;

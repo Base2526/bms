@@ -425,7 +425,7 @@ test("desktop collects a frozen board-game group in its native checkout instead 
     "product promotions must stay visible instead of making item rows disagree with the payable total");
   assert.match(
     desktopRenderer,
-    /function BoardGameBillBreakdown[\s\S]{0,4000}เล่นจริง[\s\S]{0,1000}คิดเงิน[\s\S]{0,2500}อาหารและเครื่องดื่ม[\s\S]{0,2500}ส่วนลดสินค้า/,
+    /function BoardGameBillBreakdown[\s\S]{0,4000}เล่นจริง[\s\S]{0,1000}เวลาก่อนสิทธิ์[\s\S]{0,5000}อาหารและเครื่องดื่ม[\s\S]{0,2500}ส่วนลดสินค้า/,
     "the confirmation and receipt breakdown must explain actual time, billed time and tab products",
   );
   assert.match(

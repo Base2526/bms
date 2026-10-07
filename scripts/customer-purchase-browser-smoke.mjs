@@ -23,9 +23,10 @@ await context.route("**/api/**", async (route) => {
       assert.equal(variables.customerId, "FAKE-customer");
       assert.equal(variables.orderId, "FAKE-order");
       if (detailFails) return route.fulfill({ json: { errors: [{ message: "FAKE read error" }] } });
-      data = { bmsCustomerOrderDetail: { id: "FAKE-order", lines: [
-        { kind: "PRODUCT", label: "FAKE ขนม", sku: "FAKE-SNACK", size: "BASE", qty: 2 },
-        { kind: "SERVICE", label: "FAKE ค่าเล่นบอร์ดเกม 60 นาที", sku: null, size: null, qty: 1 },
+      data = { bmsCustomerOrderDetail: { id: "FAKE-order", orderAmount: 110, discountAmount: 10,
+        shippingAmount: 0, vatAmount: 7.20, roundingAmount: 0, totalAmount: 110, lines: [
+        { kind: "PRODUCT", label: "FAKE ขนม", sku: "FAKE-SNACK", size: "BASE", qty: 2, saleQty: 2, unitName: null, unitAmount: 30, lineAmount: 60 },
+        { kind: "SERVICE", label: "FAKE ค่าเล่นบอร์ดเกม 60 นาที", sku: null, size: null, qty: 1, saleQty: 1, unitName: null, unitAmount: 60, lineAmount: 60 },
       ], points: [{ kind: "EARN", points: 110 }, { kind: "REVERSE", points: -10 }] } };
     } else if (query.includes("bmsCustomers(")) {
       customerReads++;
@@ -58,11 +59,16 @@ try {
   assert.ok(customerReads > beforeFocus);
   await member.locator("button.ant-table-row-expand-icon").click();
   const order = page.locator('tr[data-row-key="FAKE-order"]');
-  await order.locator("button.ant-table-row-expand-icon").click();
+  await order.getByRole("button", { name: /ดูบิล/ }).click();
   await page.getByText("FAKE ค่าเล่นบอร์ดเกม 60 นาที", { exact: true }).waitFor();
   await page.getByText("FAKE ขนม", { exact: true }).waitFor();
   await page.getByText("ได้รับ: +110", { exact: true }).waitFor();
   await page.getByText("ปรับคืนจากการคืน/ยกเลิก: -10", { exact: true }).waitFor();
+  await page.getByRole("columnheader", { name: "ราคา/หน่วย", exact: true }).waitFor();
+  await page.getByText("ยอดรวมพร้อมค่าจัดส่ง", { exact: true }).waitFor();
+  await page.getByText("110.00 ฿", { exact: true }).first().waitFor();
+  const desktopBounds = await page.getByRole("region", { name: "รายละเอียดรายการ", exact: true }).boundingBox();
+  assert.ok(desktopBounds && desktopBounds.x >= 220 && desktopBounds.x + desktopBounds.width <= 1440, JSON.stringify(desktopBounds));
   await page.screenshot({ path: `${output}/desktop.png`, fullPage: true });
   // Apollo polling uses browser timers; advance them without a real 15-second wait.
   const beforePoll = customerReads;
@@ -97,4 +103,7 @@ try {
   assert.deepEqual(errors, []);
   assert.deepEqual(mutations, []);
   console.log("PASS details, saved service/product labels, ledger, focus refresh, visible polling, hidden/collapsed stop, retry, desktop/mobile; no mutations");
+} catch (error) {
+  await page.screenshot({ path: `${output}/failure.png`, fullPage: true });
+  throw error;
 } finally { await browser.close(); }

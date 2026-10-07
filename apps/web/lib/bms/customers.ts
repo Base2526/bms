@@ -531,14 +531,38 @@ export async function customerOrders(tenantId: string, customerId: string) {
 
 /** Read saved bill lines and ledger evidence, never today's catalog or earn settings. */
 export async function customerOrderDetail(tenantId: string, customerId: string, orderId: string) {
-  const res = await query(
-    `SELECT o.id,
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const detail = await customerOrderDetailInTx(client, tenantId, customerId, orderId);
+    await client.query("COMMIT");
+    return detail;
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function customerOrderDetailInTx(
+  client: Pick<PoolClient, "query">, tenantId: string, customerId: string, orderId: string
+) {
+  const res = await client.query(
+    `SELECT o.id, o.total_amount AS "orderAmount", o.discount_amount AS "discountAmount",
+       o.shipping_fee AS "shippingAmount", o.vat_amount AS "vatAmount",
+       o.rounding_amount AS "roundingAmount",
+       o.total_amount + COALESCE(o.shipping_fee, 0) AS "totalAmount",
        COALESCE((SELECT jsonb_agg(jsonb_build_object(
          'kind', 'PRODUCT', 'label', COALESCE(i.product_name, i.product_sku),
-         'sku', i.product_sku, 'size', i.size, 'qty', i.qty) ORDER BY i.id)
+         'sku', i.product_sku, 'size', i.size, 'qty', i.qty,
+         'saleQty', COALESCE(i.pack_qty, i.qty), 'unitName', i.pack_unit_name,
+         'unitAmount', i.receipt_unit_price, 'lineAmount', i.line_amount) ORDER BY i.id)
          FROM bms_order_items i WHERE i.tenant_id = o.tenant_id AND i.order_id = o.id), '[]'::jsonb)
        || COALESCE((SELECT jsonb_agg(jsonb_build_object(
-         'kind', 'SERVICE', 'label', e.label, 'sku', NULL, 'size', NULL, 'qty', e.qty) ORDER BY e.id)
+         'kind', 'SERVICE', 'label', e.label, 'sku', NULL, 'size', NULL, 'qty', e.qty,
+         'saleQty', e.qty, 'unitName', NULL,
+         'unitAmount', e.unit_amount, 'lineAmount', e.qty * e.unit_amount) ORDER BY e.id)
          FROM bms_order_extra_lines e WHERE e.tenant_id = o.tenant_id AND e.order_id = o.id), '[]'::jsonb) AS lines,
        COALESCE((SELECT jsonb_agg(jsonb_build_object('kind', l.kind, 'points', l.points) ORDER BY l.created_at, l.id)
          FROM bms_loyalty_ledger l WHERE l.tenant_id = o.tenant_id AND l.order_id = o.id
