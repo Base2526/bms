@@ -216,6 +216,19 @@ test("desktop refresh uses one in-place contract across retail, restaurant, and 
   assert.match(desktopRenderer, /Command\/Ctrl \+ Shift \+ R[\s\S]*?โหลดแอปใหม่ทั้งหมด ใช้เมื่อหน้าค้าง/);
 });
 
+test("desktop refresh status stays in the header without a workspace overlay", () => {
+  const header = desktopRenderer.slice(desktopRenderer.indexOf("<header className={styles.topbar}>"),
+    desktopRenderer.indexOf("</header>", desktopRenderer.indexOf("<header className={styles.topbar}>")));
+  assert.match(header, /styles\.refreshStatus[\s\S]*?role="status"[\s\S]*?aria-live="polite"/);
+  assert.match(header, /contentRefreshing \? "กำลังอัปเดตข้อมูล…" : ""/);
+  assert.match(header, /contentRefreshing \? <div className=\{styles\.refreshProgress\} aria-hidden="true"/);
+  assert.doesNotMatch(desktopRenderer, /contentRefreshOverlay|เมนู ผู้ปฏิบัติงาน และกะจะยังคงอยู่/);
+  const css = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.module.css", import.meta.url), "utf8");
+  assert.match(css, /\.refreshProgress \{[^}]*position: absolute;[^}]*height: 3px;/);
+  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*?\.refreshProgress::after \{ animation: none;/);
+  assert.doesNotMatch(css, /\.contentRefreshOverlay/);
+});
+
 test("desktop header keeps cashier identity without a permanent legacy-sales escape button", () => {
   assert.doesNotMatch(
     desktopRenderer,
