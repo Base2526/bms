@@ -188,8 +188,8 @@ test("every write left an audit row", async () => {
 });
 
 test("teardown: drop the throwaway tenants", async () => {
-  const stale = await query<{ id: string }>(`SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]);
-  const ids = [...new Set([tenantId, otherTenantId, ...stale.rows.map((r) => r.id)].filter(Boolean))];
+  // A name prefix is not ownership: never delete fixtures belonging to another run.
+  const ids = [tenantId, otherTenantId].filter(Boolean);
   if (ids.length) {
     for (const table of [
       "bms_pharmacy_guidance_templates_revisions",
@@ -202,6 +202,6 @@ test("teardown: drop the throwaway tenants", async () => {
     await query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [ids]);
     await query(`DELETE FROM bms_tenants WHERE id = ANY($1::uuid[])`, [ids]);
   }
-  const left = await query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]);
+  const left = await query<{ n: string }>(`SELECT COUNT(*)::text AS n FROM bms_tenants WHERE id = ANY($1::uuid[])`, [ids]);
   assert.equal(left.rows[0].n, "0");
 });

@@ -301,12 +301,24 @@ export async function pharmacyClinicalGuidanceReply(
 ): Promise<{ reply: string; code: PharmacyGuidanceCode | null; approved: boolean }> {
   const code = classifyPharmacyGuidanceQuestion(message);
   const locale = pharmacyGuidanceLocaleOf(message);
-  if (code) {
-    const body = await getApprovedPharmacyGuidanceBody(tenantId, code, locale);
-    // Shop facts are only read when an approved body exists to use them.
-    if (body) return { reply: renderPharmacyGuidance(body, await loadValues(), locale), code, approved: true };
-  }
-  return { reply: pharmacyClinicalHandoffReply(locale === "en", message), code, approved: false };
+  const fallback = { reply: pharmacyClinicalHandoffReply(locale === "en", message), code, approved: false };
+  if (!code) return fallback;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // One budget covers BOTH the approved text and its optional shop placeholders.
+    // Previously a fast body read followed by a stuck profile read could wait indefinitely.
+    const render = (async () => {
+      const body = await getApprovedPharmacyGuidanceBody(tenantId, code, locale);
+      if (!body) return fallback;
+      return { reply: renderPharmacyGuidance(body, await loadValues(), locale), code, approved: true };
+    })().catch((error: unknown) => {
+      console.error("[BMS] pharmacy guidance rendering unavailable", (error as { code?: string })?.code ?? "UNKNOWN");
+      return fallback;
+    });
+    return await Promise.race([render, new Promise<typeof fallback>((resolve) => {
+      timer = setTimeout(() => resolve(fallback), PHARMACY_GUIDANCE_READ_TIMEOUT_MS);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
 }
 
 /** Shop facts a template may reference. A failed read leaves every placeholder line out. */

@@ -986,6 +986,31 @@ type BmsEmailReportResult {
   to: String!
 }
 
+type BmsEmergencyFacility {
+  active: Boolean!
+  address: String
+  distanceKm: Float
+  emergencyPhone: String!
+  has24hEmergency: Boolean!
+  id: ID!
+  locationId: ID
+  mapUrl: String
+  name: String!
+  sortOrder: Int!
+}
+
+input BmsEmergencyFacilityInput {
+  address: String
+  distanceKm: Float
+  emergencyPhone: String!
+  has24hEmergency: Boolean!
+  id: ID
+  locationId: ID
+  mapUrl: String
+  name: String!
+  sortOrder: Int!
+}
+
 type BmsEnrollMemberResult {
   member: BmsMember
   reason: String
@@ -7424,6 +7449,7 @@ type Mutation {
   bmsCreateShipment(carrier: BmsCarrier!, note: String, orderId: ID!, trackingNo: String): BmsShipmentResult!
   bmsCreateStockCount(input: BmsCreateStockCountInput!): BmsMobileStockCountActionResult!
   bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): BmsMobileStockTransferActionResult!
+  bmsDeactivateEmergencyFacility(confirmed: Boolean!, id: ID!): Boolean!
   bmsDeactivateProductPromotion(id: ID!): Boolean!
   bmsDeleteCoupon(id: ID!): Boolean!
   bmsDeleteCustomer(id: ID!): Boolean!
@@ -7670,6 +7696,7 @@ type Mutation {
   bmsUpsertChannel(accessToken: String, active: Boolean, channel: String!, channelSecret: String): Boolean!
   bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!
   bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
+  bmsUpsertEmergencyFacility(input: BmsEmergencyFacilityInput!): BmsEmergencyFacility!
   bmsUpsertFollowupRule(input: BmsFollowupRuleInput!): BmsFollowupRule!
   bmsUpsertInventoryPolicy(input: BmsInventoryPolicyInput!): Boolean!
   bmsUpsertKitchenStationSla(lateMinutes: Int!, station: String!, warnMinutes: Int!): BmsKitchenStationSla!
@@ -8035,6 +8062,8 @@ type Query {
   bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
   bmsCustomers(enrolledLocationId: ID, limit: Int = 50, offset: Int = 0, search: String): [BmsCustomer!]!
   bmsDashboard: BmsDashboard!
+  bmsEmergencyFacilities(locationId: ID): [BmsEmergencyFacility!]!
+  bmsEmergencyFacilityLocations: [BmsLocation!]!
   bmsEtaxSubmissions(limit: Int = 100, status: String): [BmsEtaxSubmission!]!
   bmsEtaxSummary: BmsEtaxSummary!
   bmsExpenseDocuments(input: BmsExpenseDocumentListInput!): BmsExpenseDocumentList!

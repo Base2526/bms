@@ -20,7 +20,7 @@
 import { query } from "@/lib/db";
 import { isPharmacyMedicationAdviceQuestion } from "./customerAssistancePolicy";
 import { pharmacyClinicalGuidanceReply } from "./guidanceTemplateStore";
-import { pharmacyEmergencyReply } from "./emergency";
+import { emergencyCustomerReply } from "../emergencyFacilities";
 import {
   getAssessment,
   appendRawMessage,
@@ -495,6 +495,29 @@ async function clinicalResumePrompt(
   return `รบกวนแจ้ง${field.label}ด้วยค่ะ`;
 }
 
+/** Best-effort evidence only. Never await this before delivering emergency instructions. */
+export async function persistPharmacyEmergency(
+  tenantId: string, convId: string, message: string,
+  state: Exclude<PharmacyIntakeConvState, { stage: "NONE" }>
+): Promise<void> {
+  try {
+    if (state.stage !== "AWAITING_CONSENT") {
+      await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
+    }
+    await recordPharmacyEvent({ tenantId, assessmentId: state.caseId,
+      actor: "system:conversation-router", action: "assessment.red_flag_detected",
+      meta: { code: "ROUTER_EMERGENCY", severity: "EMERGENCY" } });
+    const transitioned = await routeProtocolEscalation(tenantId, state.caseId, "EMERGENCY_REFERRAL",
+      "พบข้อความฉุกเฉินระหว่างบทสนทนา", "EMERGENCY", undefined, false);
+    if (!transitioned) throw new Error("Emergency assessment transition was rejected");
+  } catch (error) {
+    console.error("[BMS] pharmacy emergency persistence failed:", (error as { code?: string })?.code ?? "UNKNOWN");
+    await reportBmsFailure({ tenantId, code: "pharmacy_intake.persistence_failed", error,
+      surface: "customer", conversationId: convId,
+      meta: { assessmentId: state.caseId, step: "emergency_transition" } });
+  }
+}
+
 /** Called from lib/bms/pipeline.ts as an early-return, before the normal AI tool loop runs. */
 export async function runPharmacyIntakeTurn(
   tenantId: string,
@@ -508,41 +531,8 @@ export async function runPharmacyIntakeTurn(
 
   const conversationRoute = routePharmacyConversationMessage(message);
   if (conversationRoute.intent === "EMERGENCY") {
-    // Safety copy must not depend on database availability. Persist/audit the
-    // escalation best-effort, but always return the emergency instruction.
-    try {
-      if (state.stage !== "AWAITING_CONSENT") {
-        await appendRawMessage(tenantId, state.caseId, { role: "customer", text: message });
-      }
-      await recordPharmacyEvent({
-        tenantId,
-        assessmentId: state.caseId,
-        actor: "system:conversation-router",
-        action: "assessment.red_flag_detected",
-        meta: { code: "ROUTER_EMERGENCY", severity: "EMERGENCY" },
-      });
-      const transitioned = await routeProtocolEscalation(
-        tenantId,
-        state.caseId,
-        "EMERGENCY_REFERRAL",
-        "พบข้อความฉุกเฉินระหว่างบทสนทนา",
-        "EMERGENCY",
-        undefined,
-        false
-      );
-      if (!transitioned) throw new Error("Emergency assessment transition was rejected");
-    } catch (error) {
-      console.error("[BMS] pharmacy emergency persistence failed:", error);
-      await reportBmsFailure({
-        tenantId,
-        code: "pharmacy_intake.persistence_failed",
-        error,
-        surface: "customer",
-        conversationId: convId,
-        meta: { assessmentId: state.caseId, step: "emergency_transition" },
-      });
-    }
-    return reply(tenantId, convId, state.caseId, pharmacyEmergencyReply(message));
+    void persistPharmacyEmergency(tenantId, convId, message, state).catch(() => void 0);
+    return reply(tenantId, convId, state.caseId, await emergencyCustomerReply(tenantId, message));
   }
 
   // A medication-advice detour is never interpreted as an intake answer.

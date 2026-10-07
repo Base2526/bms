@@ -25,6 +25,16 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Optional emergency directory (`10.46`)
+
+`bms_emergency_facilities` stores tenant, optional shop branch, public name/phone/address/HTTPS map,
+24-hour emergency flag, shop distance/order, active flag and actor/timestamps. Composite branch FK
+depends on `9.37`; forced tenant RLS and `bms_app` SELECT/INSERT/UPDATE grants apply. Updates create
+revision snapshots; both save and soft-deactivation audit atomically. Null branch means all branches.
+No customer coordinates or store-profile columns are added. This optional table is intentionally
+absent from schema readiness: missing/slow DB reads return standard emergency copy within a 500 ms
+response budget. Migration idempotency and real RLS/CRUD remain unverified until the DB suite runs.
+
 | Module | Tables | Key migration |
 | --- | --- | --- |
 | Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55` |

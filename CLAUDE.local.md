@@ -3,6 +3,24 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## ต่อจาก Claude: emergency directory `10.46` — 2026-10-07
+
+branch `codex/emergency-facilities` ต่อจาก `feat/pharmacy-guidance-templates` · ไม่เปิด flag/ไม่อนุมัติข้อความทางคลินิก
+
+- เพิ่ม MEDICAL/POISONING/SELF_HARM, 1669 บรรทัดแรก, 1367/1323 ตามเหตุ และ 1155 ท้ายภาษาอังกฤษ
+- เพิ่ม directory ใน Settings ผ่าน service/GraphQL/RLS/revision/audit; ไม่เก็บตำแหน่งลูกค้า
+- ฉุกเฉินตรวจข้อความดิบก่อน context DB; directory รอรวมไม่เกิน 500 ms, SQL statement 400 ms
+- แชทไม่ทราบสาขาใช้เฉพาะรายการทุกสาขา; active + 24h ไม่เกิน 3 แห่ง; Lab ใช้ข้อความมาตรฐานไม่แนบรายชื่อ
+- fallback ตรงกับ `pharmacyEmergencyReply` รุ่นใหม่ทุกตัวอักษร ไม่ได้อ้างว่าข้อความเหมือนก่อนเพิ่มเบอร์/จัดบรรทัด
+- แก้เฟส 2 ให้ timeout ครอบ placeholder/profile และ cleanup DB test เฉพาะ UUID ของรอบนั้น
+- แก้เทส Windows 3 จุด (fileURLToPath / CRLF) ไม่แตะ runtime POS
+- pure suite ล่าสุด **1,956 ผ่าน / 1,958 ข้อ / skip 2 / fail 0**; typecheck ผ่าน; build ก่อนหน้าผ่าน
+  กำลังรัน gate รอบรวม/ตรวจ mutation และ browser (บันทึกผลเพิ่มเติมหลังจบ)
+- DB runner ของทั้ง `pharmacy-guidance` และ `emergency-facilities` หยุดที่ env guard:
+  ไม่มี POSTGRES_HOST/POSTGRES_DB และ Docker daemon ไม่ทำงาน; **ไม่ได้รัน DB tests และไม่ได้ apply 10.45/10.46**
+- Draft PR เดิม: #301 (`10.43/10.44` -> develop), #302 (`10.45` -> branch #301)
+- ข้อความทั้งหมดที่เป็นร่างยัง **ไม่ได้ตรวจโดยเภสัชกรผู้มีใบอนุญาต**; ไม่พร้อมอ้าง production verification
+
 ## `10.45` คำแนะนำที่เภสัชกรอนุมัติ สำหรับคำถามทางคลินิกของลูกค้า — 2026-10-07
 
 branch `feat/pharmacy-guidance-templates` (ต่อจาก `feat/customer-assistance-restaurant-pharmacy`
