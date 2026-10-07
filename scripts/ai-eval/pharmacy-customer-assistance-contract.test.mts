@@ -147,16 +147,23 @@ test("customer reads execute tenant/identity-scoped queries and redact all priva
       }
       assert.equal(calls.length, 0);
     });
-    await t.test("active intake advice detours preserve the case and make no DB/provider call", async () => {
+    await t.test("active intake advice detours preserve the case and read only approved guidance", async () => {
       const { runPharmacyIntakeTurn } = await import("../../apps/web/lib/bms/pharmacy/intake.ts");
       calls.length = 0;
+      rows = [];
       for (const row of PHARMACY_CUSTOMER_CORPUS.filter((row) => row.kind === "clinical")) {
         const state = { stage: "WAITING", caseId: "case-a" } as const;
         const result = await runPharmacyIntakeTurn("tenant-a", "web", "ref", "conversation-a", row.message, state);
+        // No approved text in the shop → the existing handoff, byte for byte.
         assert.deepEqual(result, { reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(row.message), row.message), caseId: "case-a" });
         assert.deepEqual(state, { stage: "WAITING", caseId: "case-a" });
       }
-      assert.equal(calls.length, 0);
+      // 10.45: the only query allowed here is the tenant-scoped read of APPROVED guidance.
+      for (const call of calls) {
+        assert.match(call.sql, /FROM bms_pharmacy_guidance_templates/);
+        assert.match(call.sql, /status = 'APPROVED'/);
+        assert.equal(call.params[0], "tenant-a");
+      }
     });
     await t.test("shift evidence never means present or absent and has no staff identifiers", async () => {
       rows = [{ id: "branch-a", name: "FAKE branch", recorded: true, pharmacist_user_id: "private-user" },

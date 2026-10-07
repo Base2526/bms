@@ -270,6 +270,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'shopfloor.pharmacy-queue': <AlertOutlined />,
   'shopfloor.pharmacy-intake-lab': <FileSearchOutlined />,
   'shopfloor.pharmacy-protocols': <FileProtectOutlined />,
+  'shopfloor.pharmacy-guidance': <MedicineBoxOutlined />,
   'shopfloor.pharmacist-licenses': <IdcardOutlined />,
   'shopfloor.pharmacist-manual': <ReadOutlined />,
   'settings.store': <ApiOutlined />,

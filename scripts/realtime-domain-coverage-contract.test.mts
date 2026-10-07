@@ -192,7 +192,7 @@ const CONFIGURATION = [
   "bms_followup_rules", "bms_inventory_policies", "bms_kitchen_stations",
   "bms_kitchen_station_slas", "bms_locations", "bms_loyalty_settings",
   "bms_membership_tiers", "bms_pending_shop_signups", "bms_pharmacy_product_policies",
-  "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
+  "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
   "bms_product_modifier_groups", "bms_product_modifiers", "bms_product_packs",
   "bms_product_price_tiers", "bms_product_promotions", "bms_product_recipes",
   "bms_product_sales_surfaces", "bms_product_stock_policies", "bms_product_variants",

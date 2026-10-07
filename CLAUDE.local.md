@@ -3,6 +3,31 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## `10.45` คำแนะนำที่เภสัชกรอนุมัติ สำหรับคำถามทางคลินิกของลูกค้า — 2026-10-07
+
+branch `feat/pharmacy-guidance-templates` (ต่อจาก `feat/customer-assistance-restaurant-pharmacy`
+ซึ่งเป็นงาน `10.43`/`10.44` ของ session อื่นที่ผู้ใช้สั่งให้ commit+push แทน) · **ไม่มี permission ใหม่** ·
+**`10.45` ยังไม่ได้ apply ที่ไหนเลย** · typecheck ผ่าน · pure **1,917/1,922** (แดง 3 ตัวเดิมชุดเดียวกับ
+develop: `desktop-checkout-benefits` · `desktop-sale-retry` · `pos-receipt-details`) · build ผ่าน 132/132 ·
+**mutation 11 แบบ แดงถูกตัวทุกครั้ง** · **เทส DB เขียนแล้วแต่ยังไม่ได้รัน** (เครื่องนี้ไม่มี Postgres/Docker)
+· **ยังไม่เคยเปิดดูหน้า `/admin/pharmacy-guidance` ในเบราว์เซอร์**
+
+- คำถามทางคลินิก 11 ชนิด จัดชนิดแบบ deterministic → ถ้าร้านมีข้อความที่เภสัชกรอนุมัติของชนิด+ภาษานั้น
+  ลูกค้าได้ข้อความนั้น ไม่งั้นได้ข้อความส่งต่อเดิมทุกตัวอักษร · ข้อความฉุกเฉินยังทำงานก่อนเสมอ
+- **ออกแบบต่างจาก prompt ที่ร่างไว้ 1 จุด: ไม่มีแม่แบบกลางระดับแพลตฟอร์มในฐาน (`tenant_id NULL`)**
+  เพราะ RLS policy ของ repo ตัด `tenant_id IS NULL` ทิ้ง และการอนุมัติควรเป็นของเภสัชกรของร้านเอง ·
+  ร่างตั้งต้นอยู่ในโค้ดแล้วร้านกด "สร้างร่าง" คัดลอกเป็นแถว DRAFT ของตัวเอง
+- **ไม่มี `{{pharmacist_hours}}`** — `get_pharmacy_service_status` ของ `10.44` เป็นหลักฐานกะย้อนหลัง
+  ไม่ใช่การยืนยันว่าเภสัชกรอยู่ จึงใช้แค่เบอร์/เวลาทำการ/ที่อยู่ของร้าน
+- **เทสเดิม 1 ตัวต้องเล็งใหม่:** `pharmacy-customer-assistance-contract` ตรึงว่า advice detour ใน intake
+  "ไม่มี DB call เลย" · ตอนนี้อนุญาตเฉพาะ query อ่าน `bms_pharmacy_guidance_templates` ที่ `status='APPROVED'`
+  ของ tenant นั้น และยังบังคับว่าไม่มีแถว = ข้อความเดิมทุกตัวอักษร
+- เติม `bms_pharmacy_guidance_templates` เข้า `CONFIGURATION` ของ `realtime-domain-coverage-contract`
+  และเติมหน้าใหม่ใน sidebar map ของ `/admin/manual`
+- **ก่อน deploy:** apply `10.45` (ไม่ apply ก็ไม่พัง — อ่านแบบ fail-safe จึงไม่อยู่ใน schemaReadiness) ·
+  รัน `node scripts/run-contract-tests.mjs db pharmacy-guidance` กับฐาน dev · ข้อความตั้งต้นต้องให้
+  เภสัชกรผู้มีใบอนุญาตตรวจ — **ยังไม่ได้รับการตรวจทางคลินิก**
+
 ## อัปเดตเอกสารรวมให้ตรง `10.5`–`10.36` — 2026-10-02
 
 **เอกสารอย่างเดียว ไม่แตะโค้ด/migration/permission** · แก้ `CLAUDE.md` (สารบัญเอกสาร + สถานะ `10.5`–`10.36`

@@ -18,7 +18,8 @@
 // =============================================================
 
 import { query } from "@/lib/db";
-import { isPharmacyMedicationAdviceQuestion, pharmacyClinicalHandoffReply } from "./customerAssistancePolicy";
+import { isPharmacyMedicationAdviceQuestion } from "./customerAssistancePolicy";
+import { pharmacyClinicalGuidanceReply } from "./guidanceTemplateStore";
 import { pharmacyEmergencyReply } from "./emergency";
 import {
   getAssessment,
@@ -546,7 +547,8 @@ export async function runPharmacyIntakeTurn(
 
   // A medication-advice detour is never interpreted as an intake answer.
   if (isPharmacyMedicationAdviceQuestion(message)) {
-    return { reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(message), message), caseId: state.caseId };
+    const guidance = await pharmacyClinicalGuidanceReply(tenantId, message);
+    return { reply: guidance.reply, caseId: state.caseId };
   }
 
   // Mid-conversation expiry remains independent of the batch cron sweep.
