@@ -23,6 +23,17 @@ userId)` → `logConversation()` (best-effort, records both the incoming message
 in the Omnichannel Inbox) → if the shop's `access_token` is set and the event had a `replyToken`,
 reply immediately via LINE's `reply` API (`pushLineReply`).
 
+Events within one webhook request are awaited sequentially so the next text sees the preceding
+turn's saved history. The route does not acknowledge background work with an early `200`:
+`claimInboundEvent()` is a deduplication marker, not a durable processing queue. A claim error
+propagates to the route's error response before success is acknowledged. This does not serialize
+separate concurrent webhook requests or provide recovery after a process restart.
+
+Inbox persistence remains best-effort, but `logConversation()` now reports `inbox.message_lost`
+from its own database error handler; callers cannot detect that swallowed error with `.catch()`.
+An `aborted` / `ECONNRESET` error while reading the request body occurs before signature
+verification and AI processing. It is not, by itself, evidence of a slow AI provider.
+
 Health wording is guarded before the general AI/tool loop. An unclear phrase such as
 `มีปวดหัวไหม` or `มียาแก้ปวดหัวไหม` never starts a pharmacy assessment by itself: a pharmacy OA asks
 whether the customer already has a named product/brand or wants a pharmacist to assess the symptom,

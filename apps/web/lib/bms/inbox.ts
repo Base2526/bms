@@ -26,6 +26,7 @@ import { assignCouponToCustomer, couponCodeFromShareText, createCouponWalletToke
 import { beginTenantTx } from "./tenant";
 import { enqueueAiQualityReview, type AiTurnQuality } from "./aiQuality";
 import { ensureCustomerForIdentity } from "./customers";
+import { reportBmsFailure } from "./failureAlert";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -123,6 +124,7 @@ export async function logConversation(
   incomingMeta?: InboundMessageMeta | null
 ): Promise<void> {
   if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return;
+  let messagesPersisted = false;
   try {
     // best-effort link ลูกค้า (ถ้าเคยสั่งซื้อ/มี identity แล้ว)
     const cust = await query<{ customer_id: string }>(
@@ -181,6 +183,7 @@ export async function logConversation(
         inboundMeta,
       ]
     );
+    messagesPersisted = true;
     const aiMessage = messages.rows.find((message) => message.direction === "OUT");
     const incomingMessage = messages.rows.find((message) => message.direction === "IN");
     if (quality && aiMessage) {
@@ -198,6 +201,19 @@ export async function logConversation(
     publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED", "customer", incomingMessage?.id);
   } catch (e) {
     console.error("[BMS] logConversation failed:", e);
+    // Callers cannot observe this best-effort failure. Report it before swallowing it,
+    // but do not call saved messages lost when only assignment/realtime failed.
+    if (!messagesPersisted) {
+      await reportBmsFailure({
+        tenantId,
+        code: "inbox.message_lost",
+        error: e,
+        surface: "customer",
+        channel,
+        customerRef,
+        meta: { stage: "log_conversation" },
+      });
+    }
   }
 }
 
