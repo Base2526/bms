@@ -14,8 +14,12 @@ branch `codex/emergency-facilities` ต่อจาก `feat/pharmacy-guidance-t
 - fallback ตรงกับ `pharmacyEmergencyReply` รุ่นใหม่ทุกตัวอักษร ไม่ได้อ้างว่าข้อความเหมือนก่อนเพิ่มเบอร์/จัดบรรทัด
 - แก้เฟส 2 ให้ timeout ครอบ placeholder/profile และ cleanup DB test เฉพาะ UUID ของรอบนั้น
 - แก้เทส Windows 3 จุด (fileURLToPath / CRLF) ไม่แตะ runtime POS
-- pure suite ล่าสุด **1,956 ผ่าน / 1,958 ข้อ / skip 2 / fail 0**; typecheck ผ่าน; build ก่อนหน้าผ่าน
-  กำลังรัน gate รอบรวม/ตรวจ mutation และ browser (บันทึกผลเพิ่มเติมหลังจบ)
+- `npm run gate` ผ่าน: **1,956 ผ่าน / 1,958 ข้อ / skip 2 / fail 0**, typecheck และ build ผ่าน
+  (ระหว่าง build มี ECONNREFUSED จากหน้าอื่นที่อ่าน DB; ไม่ใช่ผลทดสอบ DB)
+- mutation **5/5 killed**: เลื่อน 1669 ลง, ลบ 1367, แสดง non-24h, เอา timeout ออก, rethrow DB error;
+  คืนไฟล์ byte-exact และ baseline emergency suite **35/35 ผ่าน** หลังคืนแล้ว
+- เปิด browser `/admin/pharmacy-guidance` และ `/admin/settings` แล้ว redirect ไป login;
+  **ยังไม่ได้ตรวจฟอร์มหลังล็อกอิน/desktop-mobile CRUD** เพราะไม่มี session และฐานทดสอบ
 - DB runner ของทั้ง `pharmacy-guidance` และ `emergency-facilities` หยุดที่ env guard:
   ไม่มี POSTGRES_HOST/POSTGRES_DB และ Docker daemon ไม่ทำงาน; **ไม่ได้รัน DB tests และไม่ได้ apply 10.45/10.46**
 - Draft PR เดิม: #301 (`10.43/10.44` -> develop), #302 (`10.45` -> branch #301)

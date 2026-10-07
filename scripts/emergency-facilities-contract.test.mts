@@ -96,7 +96,9 @@ test("runtime: DB error, saturation, query timeout and raw pipeline emergency us
     const service = await import("../apps/web/lib/bms/emergencyFacilities.ts");
     await t.test("missing table/error is caught, rolled back, and released", async () => {
       mode = "error"; calls.length = 0;
-      assert.deepEqual(await service.listEmergencyFacilitiesForReply("tenant-test"), []);
+      let result: unknown;
+      await assert.doesNotReject(async () => { result = await service.listEmergencyFacilitiesForReply("tenant-test"); });
+      assert.deepEqual(result, []);
       assert.ok(calls.includes("ROLLBACK")); assert.equal(releases, 1);
       assert.equal(await service.emergencyCustomerReply("tenant-test", "กินยาเกินขนาด"), pharmacyEmergencyReply("กินยาเกินขนาด"));
     });

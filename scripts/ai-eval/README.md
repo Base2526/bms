@@ -1,5 +1,13 @@
 # AI Pipeline Evaluation
 
+Emergency directory follow-up (`10.46`, 2026-10-07):
+`node scripts/run-contract-tests.mjs pure emergency-facilities` covers kind routing, 1669-first,
+1367/1323/1155, 24h-only/max-three composition, no-import composer, and real pipeline execution
+against a fake unavailable/slow pool. `node scripts/testing/emergency-facilities-mutations.mjs`
+requires committed target files, kills five safety regressions, restores original bytes, then
+reruns the baseline. These are **not** live database/provider tests. Run the separate
+`node scripts/run-contract-tests.mjs db emergency-facilities` against a disposable migrated local DB.
+
 <!-- pharmacy-question-matrix:start -->
 ## รายการร้านยา 58 ข้อ — ผล recheck 2026-10-07
 
