@@ -84,9 +84,23 @@ for (const row of PHARMACY_CUSTOMER_CORPUS) {
 
 test("explicit commerce and label questions remain non-clinical; no approval is inferred", () => {
   for (const text of ["ขอพารา 500 2 แผง", "มีพาราไหม แผงละเท่าไร", "มีแมสก์ไหม",
-    "ตัวนี้มีส่วนประกอบสำคัญอะไร ความแรงเท่าไร", "Paracetamol 500 mg price?"]) {
+    "ตัวนี้มีส่วนประกอบสำคัญอะไร ความแรงเท่าไร", "Paracetamol 500 mg price?",
+    "มีเครื่องวัดความดันไหม", "มีผ้าอ้อมเด็กไหม", "มียาคุมฉุกเฉินไหม", "ขอยานอนหลับ",
+    "Pregnancy test price?", "Do you sell sleeping pills?", "มีอาหารแมวไหม"]) {
     assert.equal(isPharmacyMedicationAdviceQuestion(text), false, text);
     assert.equal(isPharmacySymptomAdviceQuestion(text), false, text);
+  }
+});
+
+test("mixed service/case questions cannot swallow clinical or emergency wording", () => {
+  for (const text of ["เคส abcdef12 ถึงไหนแล้ว ปวดหัวกินอะไรดี", "มีเภสัชกรอยู่ไหม อาการไม่ดีขึ้นเลย",
+    "case abcdef12: forgot to take my pill", "มีเภสัชกรอยู่ไหม หายใจไม่ ออก"]) {
+    assert.equal(pharmacyCustomerReadIntent(text), null, text);
+    assert.equal(shouldPreservePharmacyCustomerMessage(text, true), true, text);
+  }
+  for (const text of ["I'm pregnant", "I have kidney disease"]) {
+    assert.equal(isPharmacyMedicationAdviceQuestion(text), false, "a disclosure can still answer an active intake");
+    assert.equal(isPharmacySymptomAdviceQuestion(text), true, "without intake a disclosure cannot go to commerce");
   }
 });
 
@@ -146,6 +160,52 @@ test("customer reads execute tenant/identity-scoped queries and redact all priva
         assert.equal(result.reply, pharmacyEmergencyReply(row.message));
       }
       assert.equal(calls.length, 0);
+    });
+    await t.test("Lab medication questions keep the session and never discover protocols or call a provider", async () => {
+      const { runPharmacyTestHarness } = await import("../../apps/web/lib/bms/pharmacy/testHarness.ts");
+      calls.length = 0;
+      for (const phase of ["NONE", "PRODUCT_PURCHASE", "WAITING"] as const) {
+        for (const row of PHARMACY_CUSTOMER_CORPUS.filter((row) => row.kind === "clinical")) {
+          const result = await runPharmacyTestHarness("tenant-a", row.message, { phase, answers: {} });
+          assert.equal(result.reply, pharmacyClinicalHandoffReply(!/[ก-๙]/.test(row.message), row.message), row.id);
+          assert.equal(result.session.phase, phase);
+        }
+      }
+      assert.equal(calls.length, 0);
+    });
+    await t.test("real pipeline routes clinical and mixed case questions to fixed handoff with intake off", async (sub) => {
+      const oldFlag = process.env.PHARMACY_INTAKE_ENABLED;
+      const oldProtocols = process.env.PHARMACY_PROTOCOLS_ENABLED;
+      const oldRespond = respond;
+      process.env.PHARMACY_INTAKE_ENABLED = "false";
+      process.env.PHARMACY_PROTOCOLS_ENABLED = "";
+      respond = (sql) => {
+        if (sql.includes("FROM bms_store_profile")) return [{ business_archetype: "pharmacy" }];
+        if (sql.includes("FROM bms_pharmacy_guidance_templates")) return [];
+        throw new Error(`unexpected pipeline query: ${sql}`);
+      };
+      try {
+        const { sharedRedisClient } = await import("../../apps/web/lib/cache.ts");
+        sub.mock.method(sharedRedisClient, "get", async () => null);
+        sub.mock.method(sharedRedisClient, "set", async () => "OK");
+        const provider = sub.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected provider/network call"); });
+        const { runPipeline } = await import("../../apps/web/lib/bms/pipeline.ts");
+        calls.length = 0;
+        const messages = PHARMACY_CUSTOMER_CORPUS.filter((row) => ["clinical", "symptom"].includes(row.kind)).map((row) => row.message);
+        messages.push("เคส abcdef12 ถึงไหนแล้ว ปวดหัวกินอะไรดี", "มีเภสัชกรอยู่ไหม อาการไม่ดีขึ้นเลย");
+        for (const message of messages) {
+          const result = await runPipeline(message, "test", "tenant-clinical-routing-test", "FAKE");
+          assert.equal(result.tool, "pharmacy:clinical_handoff", message);
+          assert.equal(result.reply, pharmacyClinicalHandoffReply(!/[ก-๙]/.test(message), message), message);
+        }
+        assert.ok(calls.length > 0);
+        assert.equal(provider.mock.callCount(), 0);
+        for (const { sql } of calls) assert.match(sql, /FROM bms_(?:store_profile|pharmacy_guidance_templates)/);
+      } finally {
+        respond = oldRespond;
+        if (oldFlag === undefined) delete process.env.PHARMACY_INTAKE_ENABLED; else process.env.PHARMACY_INTAKE_ENABLED = oldFlag;
+        if (oldProtocols === undefined) delete process.env.PHARMACY_PROTOCOLS_ENABLED; else process.env.PHARMACY_PROTOCOLS_ENABLED = oldProtocols;
+      }
     });
     await t.test("active intake advice detours preserve the case and read only approved guidance", async () => {
       const { runPharmacyIntakeTurn } = await import("../../apps/web/lib/bms/pharmacy/intake.ts");

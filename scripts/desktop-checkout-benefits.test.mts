@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { taxRequestUnavailableReason } from "../apps/web/lib/bms/taxRequestToken.ts";
 
@@ -32,7 +33,7 @@ test("checkout uses only a ready server quote, including deposits and zero-due g
 });
 
 test("member and quote queries conform to the committed API", () => {
-  const { buildSchema, parse, validate } = require(new URL("../apps/web/node_modules/graphql/index.js", import.meta.url).pathname);
+  const { buildSchema, parse, validate } = require(fileURLToPath(new URL("../apps/web/node_modules/graphql/index.js", import.meta.url)));
   const schema = buildSchema(read("schema.graphql"));
   for (const name of ["MEMBER_SEARCH", "BENEFITS_PREVIEW"]) {
     const query = source.match(new RegExp(`export const ${name} = \x60([\\s\\S]*?)\x60;`))?.[1];

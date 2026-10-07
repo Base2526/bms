@@ -1325,6 +1325,8 @@ export const typeDefs = /* GraphQL */ `
     bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail
     bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
+    bmsEmergencyFacilities(locationId: ID): [BmsEmergencyFacility!]!
+    bmsEmergencyFacilityLocations: [BmsLocation!]!
     bmsStoreProfile: BmsStoreProfile!   # ข้อมูลร้าน + ค่าส่ง (สำหรับหน้า Settings)
     bmsOnboardingProgress: BmsOnboardingProgress!
     bmsStoreCapabilities: [BmsStoreCapability!]!
@@ -4027,6 +4029,29 @@ export const typeDefs = /* GraphQL */ `
     qrPayload: String
     note: String
   }
+  type BmsEmergencyFacility {
+    id: ID!
+    locationId: ID
+    name: String!
+    emergencyPhone: String!
+    address: String
+    mapUrl: String
+    has24hEmergency: Boolean!
+    distanceKm: Float
+    sortOrder: Int!
+    active: Boolean!
+  }
+  input BmsEmergencyFacilityInput {
+    id: ID
+    locationId: ID
+    name: String!
+    emergencyPhone: String!
+    address: String
+    mapUrl: String
+    has24hEmergency: Boolean!
+    distanceKm: Float
+    sortOrder: Int!
+  }
   type BmsStoreProfile {
     businessArchetype: String
     businessArchetypeLocked: Boolean!
@@ -4895,6 +4920,8 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyAssistantTest(message: String!, session: BmsPharmacyAssistantSessionInput): BmsPharmacyAssistantResult!
     bmsCreatePharmacyLabOrder(items: [BmsPharmacyLabCartItemInput!]!): BmsReorderResult!
     bmsSeedPharmacyQueueDemo(protocolKey: String, answers: JSON, transcript: JSON): BmsSeedPharmacyQueueDemoResult!
+    bmsUpsertEmergencyFacility(input: BmsEmergencyFacilityInput!): BmsEmergencyFacility!
+    bmsDeactivateEmergencyFacility(id: ID!, confirmed: Boolean!): Boolean!
     bmsUpsertStoreProfile(input: BmsStoreProfileInput!): BmsStoreProfile!   # ตั้งค่าข้อมูลร้าน/ค่าส่ง
     bmsUpdateOnboardingProgress(completed: [String!], skipped: [String!], dismissed: Boolean): BmsOnboardingProgress!
     bmsUpsertStoreCapability(capability: String!, enabled: Boolean!, config: JSON): BmsStoreCapability!

@@ -47,6 +47,17 @@ claim that a case or staff notification was created. These guards do not activat
 or approve any seeded protocol; the wording matcher is conservative, not proof of understanding
 every possible clinical phrasing. The model prompt separately prohibits clinical advice.
 
+Routing recheck (2026-10-07): every clinical example in the guidance corpus must reach an entry
+guard, not merely classify correctly after entry. Follow-ups about adverse effects, missed pills,
+non-improvement, prescribed-drug comparisons and pet suitability also bypass commerce. Safety
+matching removes invisible formatting, normalizes Thai digits and tolerates Thai word spacing;
+the original message, SKU input and evidence remain unchanged. Clinical/emergency wording wins
+over a case/status/presence question in the same message. Bare pregnancy/chronic-condition
+disclosures may still answer an active approved intake; without intake they get a handoff.
+Restricted-product names, pregnancy tests, child products and blood-pressure devices do not by
+themselves authorize clinical advice or bypass the existing SKU sale policy. Tests invoke the
+actual pipeline, active-intake handler and Lab with fake dependencies, not a live provider/DB.
+
 Recheck of the [58 customer questions](../../../../../scripts/ai-eval/README.md#รายการร้านยา-58-ข้อ--ผล-recheck-2026-10-07)
 distinguishes implemented reads from partial answers, missing data and human-only tasks. Product
 facts now expose `approvedPolicy` only for `APPROVED` rows; `approvedUsageQuotationAvailable:false`
@@ -66,6 +77,31 @@ a licensed clinician review the wording/test matrix before production. Contact s
 eval README and `emergency.ts`. Existing active-case persistence remains best-effort.
 
 ## Config (env)
+
+### Emergency contacts and nearby shop facilities (`10.46`)
+
+All store types inspect raw emergency text before context/profile/identity reads. `emergency.ts`
+separates MEDICAL / POISONING / SELF_HARM and composes static Thai/English copy without imports.
+1669/immediate emergency care is always the first line. Poisoning adds Ramathibodi Poison Center
+1367; self-harm retains supportive language and 1323; English adds Tourist Police 1155 last.
+Official contact sources were checked on 2026-10-07:
+[Ramathibodi](https://www.rama.mahidol.ac.th/poisoncenter/sites/default/files/public/pdf/books/Antidote_book4.pdf)
+and [Tourist Police](https://www.touristpolice.go.th/contact-us). These are fixed constants, never a
+runtime web request. Wording is still **not clinically reviewed**, and matching is not complete triage.
+
+Settings → store tab maintains public emergency departments near the **shop**, not the customer.
+Only active 24h entries supplement the reply (max 3, sort order then distance). An unknown chat
+branch uses all-branch rows only; no customer location is requested or stored. SQL work runs with
+tenant RLS, a 400 ms statement timeout and a 500 ms wall-clock response budget including pool wait.
+Missing table/error/timeout returns `pharmacyEmergencyReply(message)` exactly. This canonical copy
+changes from pre-10.46 to meet the new first-line/contact requirements; “unchanged fallback” means
+the same new standard copy with or without optional directory availability, not the old wording.
+Late read completion is discarded and the client released; existing-case persistence runs
+best-effort without blocking urgent instructions. A process exit can still lose that evidence.
+
+`10.46` is optional for customer replies but required to manage the directory. No feature flag,
+protocol approval or sale policy changes. Pure tests: `emergency-facilities-contract`; DB tests:
+`emergency-facilities-db-contract` (not yet run). The Lab retains the standard directory-free copy.
 
 | Var | Default | Meaning |
 | --- | --- | --- |

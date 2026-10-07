@@ -90,6 +90,7 @@ import { isPharmacyIntakeEnabled } from "./pharmacy/config";
 import {
   getPharmacyIntakeState,
   runPharmacyIntakeTurn,
+  persistPharmacyEmergency,
   startPharmacyIntake,
 } from "./pharmacy/intake";
 import { listActivePharmacyTriggerDefinitions, type PharmacyTriggerDefinition } from "./pharmacy/protocols";
@@ -98,8 +99,9 @@ import {
   isExplicitPharmacyProductRequest,
   normalizePharmacyClarificationReply,
   pharmacyAmbiguousClarificationReply,
-  pharmacyEmergencyReply,
 } from "./pharmacy/trigger";
+import { pharmacyEmergencyKind } from "./pharmacy/emergency";
+import { emergencyCustomerReply } from "./emergencyFacilities";
 import { routePharmacyConversationMessage } from "./pharmacy/conversationRouter";
 import { pharmacyClinicalGuidanceReply } from "./pharmacy/guidanceTemplateStore";
 import {
@@ -1668,12 +1670,31 @@ async function orderReplyWithCheckout(
   }
 }
 
+// No store/profile/history read may stand ahead of the emergency fast path.
 export async function runPipeline(
   message: string,
   channel: Channel,
   tenantId: string,
   customerRef?: string | null
 ): Promise<PipelineResult> {
+  const emergencyMessage = stripMarkdownEmphasis(message);
+  if (pharmacyEmergencyKind(emergencyMessage)) {
+    // Existing-case escalation is best-effort evidence, never a prerequisite for urgent copy.
+    // No new case or customer identity is created here and no notification is promised.
+    if (isPharmacyIntakeEnabled()) {
+      void (async () => {
+        const existingConvId = await resolveConversationId(tenantId, channel, customerRef);
+        if (!existingConvId) return;
+        const state = await getPharmacyIntakeState(tenantId, existingConvId);
+        if (state.stage !== "NONE") await persistPharmacyEmergency(tenantId, existingConvId, emergencyMessage, state);
+      })().catch((error: unknown) => {
+        console.error("[BMS] emergency existing-case persistence failed", (error as { code?: string })?.code ?? "UNKNOWN");
+      });
+    }
+    return customerSafe({ channel, incoming: message, understanding: understand(emergencyMessage),
+      tool: "pharmacy:emergency:router", data: { status: "NOT_FOUND", query: "" },
+      reply: await emergencyCustomerReply(tenantId, emergencyMessage) });
+  }
   let convId: string | null = null;
   let history: Awaited<ReturnType<typeof getRecentAiHistory>> = [];
   let storedState: AiConversationState = {};
@@ -1809,7 +1830,7 @@ export async function runPipeline(
       understanding,
       tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: pharmacyEmergencyReply(aiInputMessage),
+      reply: await emergencyCustomerReply(tenantId, aiInputMessage),
     });
   }
 
@@ -1878,7 +1899,7 @@ export async function runPipeline(
           understanding,
           tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
           data: { status: "NOT_FOUND", query: aiInputMessage },
-          reply: pharmacyEmergencyReply(aiInputMessage),
+          reply: await emergencyCustomerReply(tenantId, aiInputMessage),
         });
       }
       if (
@@ -1937,7 +1958,7 @@ export async function runPipeline(
       understanding,
       tool: `pharmacy:emergency:${pharmacyTrigger?.protocolKey ?? "router"}`,
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: pharmacyEmergencyReply(aiInputMessage),
+      reply: await emergencyCustomerReply(tenantId, aiInputMessage),
     });
   }
   if (isPharmacyTenant && (isPharmacySymptomAdviceQuestion(aiInputMessage) || pharmacyTrigger?.intent === "clinical_advice")) {

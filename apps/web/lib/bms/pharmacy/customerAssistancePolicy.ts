@@ -1,5 +1,5 @@
 /** Customer boundaries only; no diagnosis, dosing rule, protocol activation or clinical inference. */
-import { pharmacyEmergencyKind } from "./emergency";
+import { normalizePharmacySafetyText, pharmacyEmergencyKind } from "./emergency";
 
 /** Contextual short-reply expansion must never erase safety text or an explicit case selector. */
 export function shouldPreservePharmacyCustomerMessage(message: string, isPharmacy: boolean): boolean {
@@ -9,6 +9,12 @@ export function shouldPreservePharmacyCustomerMessage(message: string, isPharmac
 }
 
 export function isPharmacyMedicationAdviceQuestion(message: string): boolean {
+  message = normalizePharmacySafetyText(message);
+  // Explicit advice and adverse-effect wording, including follow-ups without a drug name.
+  // Do not use the guidance classifier as this guard: it also matches ordinary catalog words.
+  if (/(?:ผลข้างเคียง|อาการข้างเคียง|(?:กิน|ทาน|ใช้).{0,25}(?:แล้ว|ไป).{0,25}(?:ผื่น|คัน|เวียนหัว|มึน|คลื่นไส้|อาเจียน)|(?:อาการ|กิน|ทาน|ใช้).{0,25}(?:ไม่ดีขึ้น|ไม่ทุเลา)|ลืม(?:กิน|ทาน|ใช้|หยอด)|\bforgot.{0,20}(?:take|dose|pill)|\b(?:rash|itch\w*|dizz\w*|nause\w*|vomit\w*).{0,30}(?:after|since).{0,15}(?:taking|took|using)|\bside[- ]effects?\b|\bnot (?:getting )?better\b|\bstill (?:sick|hurts)\b)/i.test(message)) return true;
+  if (/(?:หมอสั่ง|แพทย์สั่ง|ยาจากหมอ|ยาจากโรงพยาบาล|ยาโรงพยาบาล).{0,30}(?:ดีกว่า|เปลี่ยน|แทน|กิน|ใช้)|\b(?:better|replace|switch).{0,45}(?:prescribed|doctor)|\b(?:the|my) doctor gave me\b/i.test(message)) return true;
+  if (/(?:โรคไต|เบาหวาน|ความดัน|โรคประจำตัว|ผู้สูงอายุ|คนแก่|คนท้อง|ตั้งครรภ์|ให้นม).{0,35}(?:กิน|ทาน|ใช้).{0,20}(?:ได้หรือเปล่า|ได้หรือไม่)|ให้ลูกอายุ.{0,20}ได้ไหม|\b(?:can|may|should).{0,20}(?:baby|child|toddler|puppy|kitten).{0,15}(?:have|take|use)|\b(?:ok|okay|safe|suitable).{0,15}(?:for|with).{0,15}(?:pets?|dogs?|cats?|puppy|kitten|asthma|diabetes|kidney disease)|หมากินยาคน/i.test(message)) return true;
   if (/เก็บรักษา|ต้องแช่เย็น/i.test(message)) return true;
   // Label-use quotations are NOT enabled: the catalog's label facts have no pharmacist
   // publication approval/version/withdrawal workflow. Do not let "quote the label" bypass this.
@@ -19,11 +25,14 @@ export function isPharmacyMedicationAdviceQuestion(message: string): boolean {
 }
 
 export function isPharmacySymptomAdviceQuestion(message: string): boolean {
+  message = normalizePharmacySafetyText(message);
+  // Disclosures may still be collected by an active, approved intake. Without one, hand off.
+  if (/\bi(?:'m|’m| am) (?:pregnant|breastfeeding)\b|\bi have (?:kidney disease|diabetes|asthma)\b/i.test(message)) return true;
   return /(?:กินอะไรดี|ใช้ยาอะไร|ควร(?:กิน|ทาน|ใช้)|แนะนำยา|(?:ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|เจ็บคอ|ไอ).{0,35}(?:ทำไง|ทำอย่างไร|เป็นมา|มา\s*\d|ไม่หาย)|^(?:ปวดหัว|ปวดท้อง|ท้องเสีย|มีไข้|เจ็บคอ|ไอ)(?:ครับ|ค่ะ|คะ)?$|(?:what|which).{0,25}(?:medicine|medication).{0,25}(?:for|should)|recommend.{0,20}(?:medicine|medication)|i have (?:a )?(?:headache|cough|fever|diarrhea))/i.test(message);
 }
 
 export function pharmacyClinicalHandoffReply(english = false, message = ""): string {
-  if (/(?:สัตว์เลี้ยง|สุนัข|หมา|แมว|\b(?:dog|cat|pet)\b)/i.test(message)) {
+  if (/(?:สัตว์เลี้ยง|สุนัข|หมา|แมว|\b(?:dogs?|cats?|pets?|puppy|kitten)\b)/i.test(normalizePharmacySafetyText(message))) {
     return english
       ? "Please contact a veterinarian about giving medicine to an animal. I cannot assess suitability or convert a human dose for a pet. This reply does not approve medication or confirm a sale."
       : "เรื่องการให้ยาแก่สัตว์เลี้ยง กรุณาติดต่อสัตวแพทย์ค่ะ AI ประเมินความเหมาะสมหรือแปลงขนาดยาคนให้สัตว์ไม่ได้ ข้อความนี้ไม่ใช่การอนุมัติยาหรือยืนยันการขายนะคะ";
@@ -34,6 +43,8 @@ export function pharmacyClinicalHandoffReply(english = false, message = ""): str
 }
 
 export function pharmacyCustomerReadIntent(message: string): "service" | "case" | null {
+  // A status/presence query in the same message must not swallow a clinical question.
+  if (pharmacyEmergencyKind(message) || isPharmacyMedicationAdviceQuestion(message) || isPharmacySymptomAdviceQuestion(message)) return null;
   if (pharmacyCaseReferenceFromMessage(message)) return "case";
   if (/(?:เภสัชกร).{0,35}(?:ช่วงไหน|เวลาไหน|ตารางเวร)/i.test(message)) return "service";
   if (/(?:เภสัชกร|pharmacist).{0,35}(?:อยู่ไหม|อยู่มั้ย|อยู่ร้าน|อยู่กี่โมง|มากี่โมง|ถึงกี่โมง|พร้อมไหม|available|on duty)|(?:มีเภสัชกร|ไปปรึกษาได้กี่โมง|is.{0,15}pharmacist|when.{0,20}pharmacist)/i.test(message)) return "service";

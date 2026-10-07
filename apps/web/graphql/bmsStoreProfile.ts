@@ -13,6 +13,22 @@ import { getVatSettings } from "@/lib/bms/taxDocuments";
 import { updateTenantIdentity } from "@/lib/bms/platform";
 import { audit } from "@/lib/bms/audit";
 import { getOnboardingProgress, updateOnboardingProgress } from "@/lib/bms/onboarding";
+import { listLocationsForUser } from "@/lib/bms/locations";
+import { listEmergencyFacilities, upsertEmergencyFacility, deactivateEmergencyFacility,
+  EmergencyFacilityError, type EmergencyFacilityInput } from "@/lib/bms/emergencyFacilities";
+
+function facilityActor(ctx: any): string {
+  requireTenantAdmin(ctx);
+  if (!ctx?.admin?.id) throw new GraphQLError("Unauthenticated", { extensions: { code: "UNAUTHENTICATED" } });
+  return String(ctx.admin.id);
+}
+async function facilityMutation<T>(work: () => Promise<T>): Promise<T> {
+  try { return await work(); }
+  catch (error) {
+    if (error instanceof EmergencyFacilityError) throw new GraphQLError(error.message, { extensions: { code: "BAD_USER_INPUT" } });
+    throw error;
+  }
+}
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
@@ -23,6 +39,14 @@ function requireTenantAdmin(ctx: any) {
 
 export const bmsStoreProfileResolvers = {
   Query: {
+    async bmsEmergencyFacilities(_p: unknown, args: { locationId?: string }, ctx: any) {
+      const actorId = facilityActor(ctx);
+      return listEmergencyFacilities(getTenantId(ctx), args.locationId, actorId);
+    },
+    async bmsEmergencyFacilityLocations(_p: unknown, _a: unknown, ctx: any) {
+      const actorId = facilityActor(ctx);
+      return listLocationsForUser(getTenantId(ctx), actorId);
+    },
     async bmsStoreProfile(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
       const tenantId = getTenantId(ctx);
@@ -45,6 +69,15 @@ export const bmsStoreProfileResolvers = {
     },
   },
   Mutation: {
+    async bmsUpsertEmergencyFacility(_p: unknown, args: { input: EmergencyFacilityInput }, ctx: any) {
+      const actorId = facilityActor(ctx);
+      return facilityMutation(() => upsertEmergencyFacility(getTenantId(ctx), actorId, args.input));
+    },
+    async bmsDeactivateEmergencyFacility(_p: unknown, args: { id: string; confirmed: boolean }, ctx: any) {
+      const actorId = facilityActor(ctx);
+      if (args.confirmed !== true) throw new GraphQLError("Confirmation required", { extensions: { code: "BAD_USER_INPUT" } });
+      return facilityMutation(() => deactivateEmergencyFacility(getTenantId(ctx), actorId, args.id));
+    },
     async bmsUpsertStoreProfile(_p: unknown, args: { input: StoreProfileInput }, ctx: any) {
       requireTenantAdmin(ctx);
       try {

@@ -77,7 +77,7 @@ test("an emergency in a clinical question is caught by the emergency router, whi
   assert.ok(second.includes("pharmacyClinicalGuidanceReply"));
 
   const intake = stripComments(read("apps/web/lib/bms/pharmacy/intake.ts"));
-  const emergencyAt = intake.indexOf("pharmacyEmergencyReply(message)");
+  const emergencyAt = intake.indexOf("emergencyCustomerReply(tenantId, message)");
   const guidanceAt = intake.indexOf("pharmacyClinicalGuidanceReply(tenantId, message)");
   assert.ok(emergencyAt > 0 && guidanceAt > emergencyAt, "intake must answer an emergency before any guidance");
 });
@@ -98,13 +98,35 @@ test("the guidance branches never hand the text to a model", () => {
 test("no approved text falls back to the existing handoff; approved text is rendered, not rewritten", () => {
   const store = stripComments(read("apps/web/lib/bms/pharmacy/guidanceTemplateStore.ts"));
   const fn = block(store, "export async function pharmacyClinicalGuidanceReply(", "export async function pharmacyGuidanceShopValues(");
-  assert.match(fn, /return \{ reply: pharmacyClinicalHandoffReply\(locale === "en", message\), code, approved: false \}/);
+  assert.match(fn, /const fallback = \{ reply: pharmacyClinicalHandoffReply\(locale === "en", message\), code, approved: false \}/);
+  assert.match(fn, /Promise\.race/);
   assert.match(fn, /renderPharmacyGuidance\(body, await loadValues\(\), locale\)/);
   assert.match(fn, /getApprovedPharmacyGuidanceBody\(tenantId, code, locale\)/);
   const reader = block(store, "export async function getApprovedPharmacyGuidanceBody(", "export async function pharmacyClinicalGuidanceReply(");
   assert.match(reader, /status = 'APPROVED'/, "only APPROVED rows may reach a customer");
   assert.match(reader, /Promise\.race/, "the read must be bounded by a timeout");
   assert.match(reader, /\.catch\(/, "a failed read must not throw into the pipeline");
+});
+
+test("approved guidance cannot hang or throw when optional shop placeholders are unavailable", async () => {
+  const global = globalThis as any;
+  const previous = global.__bmsPostgresPool, oldMode = process.env.NODE_ENV;
+  process.env.NODE_ENV = "test";
+  global.__bmsPostgresPool = { query: async () => ({ rows: [{ body: "Contact {{shop_phone}}" }] }) };
+  try {
+    const { pharmacyClinicalGuidanceReply } = await import("../apps/web/lib/bms/pharmacy/guidanceTemplateStore.ts");
+    const { pharmacyClinicalHandoffReply } = await import("../apps/web/lib/bms/pharmacy/customerAssistancePolicy.ts");
+    for (const load of [() => new Promise<never>(() => {}), async () => { throw new Error("FAKE profile failure"); }]) {
+      const started = performance.now();
+      const got = await pharmacyClinicalGuidanceReply("tenant-test", "กินคู่กับยาความดันได้ไหม", load);
+      assert.equal(got.approved, false);
+      assert.equal(got.reply, pharmacyClinicalHandoffReply(false, "กินคู่กับยาความดันได้ไหม"));
+      assert.ok(performance.now() - started < 620);
+    }
+  } finally {
+    global.__bmsPostgresPool = previous;
+    if (oldMode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldMode;
+  }
 });
 
 test("rendering fills known shop facts, drops lines with holes and always appends the footer", () => {
@@ -144,13 +166,15 @@ test("starting drafts raise no warning, name no medicine and point to 1669 where
   }
 });
 
-test("a clinical question the pipeline hands off is one the classifier can usually name", () => {
+test("every clinical guidance example reaches a safety guard, not only the already-recognized subset", () => {
   // Not every hand-off has a template (storage questions keep the generic reply), but the
   // common clinical questions must reach a pharmacist-approved text once one exists.
   for (const [code, questions] of Object.entries(CORPUS)) {
     if (code === "RESTRICTED_PRODUCT") continue; // reaches the classifier via the symptom/advice gates only sometimes
-    const handedOff = questions.filter((q) => isPharmacyMedicationAdviceQuestion(q) || isPharmacySymptomAdviceQuestion(q));
-    for (const q of handedOff) assert.equal(classifyPharmacyGuidanceQuestion(q), code, q);
+    for (const q of questions) {
+      assert.ok(isPharmacyMedicationAdviceQuestion(q) || isPharmacySymptomAdviceQuestion(q), `unguarded: ${q}`);
+      assert.equal(classifyPharmacyGuidanceQuestion(q), code, q);
+    }
   }
 });
 

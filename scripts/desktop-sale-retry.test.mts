@@ -6,7 +6,7 @@ import { syncSingleCheckoutPayment, type CheckoutPayment } from "../apps/web/com
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
-const source = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url), "utf8");
+const source = readFileSync(new URL("../apps/web/components/pos-desktop/DesktopPosRenderer.tsx", import.meta.url), "utf8").replace(/\r\n/g, "\n");
 const handler = source.slice(source.indexOf("  const submitSale = async"), source.indexOf("  const newSale ="));
 const compiled = ts.transpileModule(handler, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
 class PosGraphqlError extends Error {

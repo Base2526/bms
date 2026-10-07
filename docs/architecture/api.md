@@ -4,6 +4,16 @@
 
 ## Mobile GraphQL primary API
 
+### Emergency directory (`10.46`)
+
+`bmsEmergencyFacilities(locationId)` and `bmsEmergencyFacilityLocations` read the Settings
+directory/allowed branches. `bmsUpsertEmergencyFacility(input)` creates or updates;
+`bmsDeactivateEmergencyFacility(id, confirmed:true)` soft-deactivates. These use the existing
+store-profile admin-scope guard (no new permission), server-derived tenant and authenticated actor.
+The service checks both old/new branch scope, audits inside the tenant transaction and never deletes.
+They are **not AI tools**. The customer pipeline reads active 24-hour entries via the bounded service,
+not GraphQL, and never accepts a customer location or model-selected tenant.
+
 The accepted mobile contract uses GraphQL queries and mutations over HTTPS for normal React Native,
 Android, iOS, browser admin, and future POS workflows. Resolvers remain thin and call the same
 `apps/web/lib/bms/*.ts` services as compatible REST routes. GraphQL WebSocket subscriptions carry
