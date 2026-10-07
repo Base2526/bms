@@ -1275,7 +1275,7 @@ export const typeDefs = /* GraphQL */ `
     bmsDashboard: BmsDashboard!
     bmsOperationalAlerts: BmsOperationalAlerts!
     bmsInventoryActionCenter(windowDays: Int = 30, coverageDays: Int = 30, limit: Int = 5): BmsInventoryActionCenter!
-    bmsActions(limit: Int = 50): [BmsAction!]!
+    bmsActions(limit: Int = 50, group: String = "ALL", offset: Int = 0): [BmsAction!]!
     bmsActionMetrics(days: Int = 30): BmsActionMetrics!
     bmsRetentionCases(limit: Int = 100): [BmsRetentionCase!]!
     bmsRetentionAnalytics: BmsRetentionAnalytics!

@@ -1,5 +1,4 @@
 'use client';
-import { useEffect, useRef } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, Row, Space, Table, Tag, Typography } from "antd";
 import {
@@ -22,6 +21,7 @@ import Link from "next/link";
 import { useI18n } from "@/lib/i18nContext";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import styles from "./dashboard.module.css";
+import DashboardActions from "@/components/dashboard/DashboardActions";
 
 const { Text, Title } = Typography;
 
@@ -82,9 +82,6 @@ const Q_INVENTORY_ACTION = gql`
     }
   }
 `;
-const Q_ACTIONS = gql`query { bmsActions { id category priority title titleEn evidence expectedImpact expectedImpactEn confidence ownerName dueAt deepLink status statusReason measuredOutcome } bmsActionMetrics { days total accepted completed acceptanceRate completionRate avgTimeToActionMinutes measuredOutcomeCount } }`;
-const M_REFRESH_ACTIONS = gql`mutation { bmsRefreshActions }`;
-const M_TRANSITION_ACTION = gql`mutation($id: ID!, $status: String!, $reason: String, $measuredOutcome: JSON) { bmsTransitionAction(id:$id,status:$status,reason:$reason,measuredOutcome:$measuredOutcome) { id status } }`;
 const M_RECORD_DEMAND = gql`mutation($input: BmsInventoryDemandInput!) { bmsRecordInventoryDemand(input:$input) }`;
 const M_POLICY = gql`mutation($input: BmsInventoryPolicyInput!) { bmsUpsertInventoryPolicy(input:$input) }`;
 const Q_AI_FAILURES = gql`
@@ -144,7 +141,7 @@ function channelState(cfg: any, health: any, t: (key: string) => string): { tone
 
 function KpiCard({ title, value, hint, icon }: { title: string; value: string | number; hint: string; icon: React.ReactNode }) {
   return (
-    <Card style={{ height: "100%", borderRadius: 10 }} styles={{ body: { padding: "10px 12px" } }}>
+    <Card style={{ height: "100%", borderRadius: 8 }} styles={{ body: { padding: "10px 12px" } }}>
       <Space direction="vertical" size={2} style={{ width: "100%" }}>
         <div className={styles.kpiHead}>
           <Text type="secondary" className={styles.kpiLabel}>{title}</Text>
@@ -236,27 +233,9 @@ export default function Page() {
     skip: shouldSkipReportQueries,
   });
   const inventoryAction = inventoryActionData?.bmsInventoryActionCenter;
-  const { data: actionData, loading: actionsLoading, refetch: refetchActions } = useQuery(Q_ACTIONS, { skip: shouldSkipReportQueries });
-  const [refreshActions, { loading: refreshingActions }] = useMutation(M_REFRESH_ACTIONS, { onCompleted: () => refetchActions() });
-  const [transitionAction, { loading: transitioningAction }] = useMutation(M_TRANSITION_ACTION, { onCompleted: () => refetchActions() });
   const [recordDemand, { loading: recordingDemand }] = useMutation(M_RECORD_DEMAND, { onCompleted: () => refetchInventoryAction() });
   const [savePolicy, { loading: savingPolicy }] = useMutation(M_POLICY, { onCompleted: () => refetchInventoryAction() });
-  const actions = actionData?.bmsActions || [];
-  const actionMetrics = actionData?.bmsActionMetrics;
   const recommendationText = (code: string) => t(`admin_dashboard.recommendation_${String(code || "monitor").toLowerCase()}`);
-  const initialActionRefresh = useRef(false);
-  useEffect(() => {
-    if (permsLoading || !canManageActions || initialActionRefresh.current) return;
-    initialActionRefresh.current = true;
-    void refreshActions();
-  }, [canManageActions, permsLoading, refreshActions]);
-  const changeAction = async (id: string, status: string) => {
-    const needsReason = status === "DISMISSED";
-    const reason = needsReason ? window.prompt(t("admin_dashboard.action_reason_prompt")) : null;
-    if (needsReason && !reason?.trim()) return;
-    const outcomeText = status === "COMPLETED" ? window.prompt(t("admin_dashboard.action_outcome_prompt")) : null;
-    await transitionAction({ variables: { id, status, reason, measuredOutcome: outcomeText?.trim() ? { note: outcomeText.trim() } : null } });
-  };
   const { data: aiFailureData } = useQuery(Q_AI_FAILURES, {
     fetchPolicy: "cache-first",
     pollInterval: 120000,
@@ -383,7 +362,7 @@ export default function Page() {
     <div>
       <div className={styles.pageHead}>
         <div className={styles.pageHeadMain}>
-          <Title level={2} className={styles.pageTitle}>Dashboard</Title>
+          <Title level={2} className={styles.pageTitle}>{t("admin_dashboard.page_heading")}</Title>
           <Text type="secondary">{t("admin_dashboard.subtitle")}</Text>
         </div>
         <div className={styles.pageHeadActions}>
@@ -404,63 +383,6 @@ export default function Page() {
         </div>
       </div>
 
-      <Text strong style={{ display: "block", marginBottom: 4 }}>{t("admin_dashboard.channel_status_heading")}</Text>
-      <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 10 }}>
-        {t("admin_dashboard.channel_status_subtitle")}
-      </Text>
-      <div className={styles.channelGrid}>
-        {channelStates.map((c) => {
-          const clickable = c.tone !== "ok";
-          const dotColor = c.tone === "ok" ? "#0f7a4d" : c.tone === "bad" ? "#b3261e" : "var(--app-muted)";
-          const textColor = c.tone === "ok" ? "#0f7a4d" : c.tone === "bad" ? "#b3261e" : "var(--app-muted)";
-          const content = (
-            <>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flex: "none" }} />
-              <span className={styles.channelBody}>
-                <div className={styles.channelName}>{CHANNEL_LABEL[c.key]}</div>
-                <div className={styles.channelText} style={{ color: textColor }}>{c.text}</div>
-              </span>
-              {clickable && <span style={{ marginLeft: "auto", flex: "none", fontSize: 12, color: "var(--app-muted)" }}>{t("admin_dashboard.go_to_settings")}</span>}
-            </>
-          );
-          const style: React.CSSProperties = { borderStyle: clickable ? "dashed" : "solid" };
-          return clickable
-            ? <Link key={c.key} href={`/admin/settings?focus=channel&channel=${c.key}`} className={styles.channelCard} style={style}>{content}</Link>
-            : <div key={c.key} className={styles.channelCard} style={style}>{content}</div>;
-        })}
-      </div>
-
-      <Card
-        title={t("admin_dashboard.action_feed_title")}
-        extra={canManageActions ? <Button size="small" icon={<ReloadOutlined />} loading={refreshingActions} onClick={() => refreshActions()}>{t("admin_dashboard.action_refresh")}</Button> : null}
-        className={styles.sectionCard}
-        style={{ marginBottom: 12, borderRadius: 12 }}
-      >
-        <Row gutter={[8,8]} style={{ marginBottom: 12 }}>
-          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_acceptance")} value={`${Math.round((actionMetrics?.acceptanceRate || 0)*100)}%`} hint={t("admin_dashboard.metric_acceptance_hint")} icon={<CheckCircleOutlined />} /></Col>
-          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_completion")} value={`${Math.round((actionMetrics?.completionRate || 0)*100)}%`} hint={t("admin_dashboard.metric_completion_hint")} icon={<CheckCircleOutlined />} /></Col>
-          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_time")} value={`${Math.round(actionMetrics?.avgTimeToActionMinutes || 0)} min`} hint={t("admin_dashboard.metric_time_hint")} icon={<ClockCircleOutlined />} /></Col>
-          <Col xs={12} lg={6}><KpiCard title={t("admin_dashboard.metric_outcomes")} value={actionMetrics?.measuredOutcomeCount || 0} hint={t("admin_dashboard.metric_outcomes_hint")} icon={<DollarOutlined />} /></Col>
-        </Row>
-        <Table
-          rowKey="id" size="small" pagination={{ pageSize: 10 }} loading={actionsLoading}
-          scroll={{ x: 830 }}
-          dataSource={actions}
-          locale={{ emptyText: t("admin_dashboard.action_empty") }}
-          columns={[
-            { title: t("admin_dashboard.col_priority"), dataIndex:"priority", width:100, render:(v:string)=><Tag color={v === "CRITICAL" ? "red" : v === "HIGH" ? "orange" : v === "MEDIUM" ? "blue" : "default"}>{v}</Tag> },
-            { title: t("admin_dashboard.col_action"), key:"action", render:(_:any,a:any)=><Space direction="vertical" size={0}><Link href={a.deepLink}><Text strong>{lang === "en" ? a.titleEn : a.title}</Text></Link><Text type="secondary" style={{fontSize:12}}>{lang === "en" ? a.expectedImpactEn : a.expectedImpact} · {Math.round(a.confidence*100)}%</Text><Text type="secondary" style={{fontSize:11}}>{t("admin_dashboard.action_evidence")}: {JSON.stringify(a.evidence)}</Text></Space> },
-            { title: t("admin_dashboard.col_owner_due"), key:"owner", width:180, render:(_:any,a:any)=><Space direction="vertical" size={0}><Text>{a.ownerName || t("admin_dashboard.action_unassigned")}</Text><Text type="secondary" style={{fontSize:12}}>{a.dueAt ? new Date(a.dueAt).toLocaleString() : "—"}</Text></Space> },
-            { title: t("admin_dashboard.col_status"), dataIndex:"status", width:110, render:(v:string)=><Tag>{v}</Tag> },
-            { title: t("admin_dashboard.col_manage"), key:"manage", width:220, render:(_:any,a:any)=>canManageActions ? <Space wrap>
-              {a.status === "NEW" && <Button size="small" type="primary" loading={transitioningAction} onClick={()=>changeAction(a.id,"ACCEPTED")}>{t("admin_dashboard.action_accept")}</Button>}
-              {a.status === "ACCEPTED" && <Button size="small" type="primary" loading={transitioningAction} onClick={()=>changeAction(a.id,"COMPLETED")}>{t("admin_dashboard.action_complete")}</Button>}
-              {["NEW","ACCEPTED"].includes(a.status) && <Button size="small" danger loading={transitioningAction} onClick={()=>changeAction(a.id,"DISMISSED")}>{t("admin_dashboard.action_dismiss")}</Button>}
-            </Space> : null },
-          ]}
-        />
-      </Card>
-
       <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
         <Col xs={12} xl={6}>
           <KpiCard title={t("admin_dashboard.kpi_revenue_today")} value={baht(d?.revenueToday)} hint={t("admin_dashboard.kpi_revenue_total_hint", { value: baht(d?.revenueTotal) })} icon={<DollarOutlined />} />
@@ -476,11 +398,32 @@ export default function Page() {
         </Col>
       </Row>
 
-      <div style={{ background: "var(--app-surface)", border: "1px solid var(--app-border)", borderRadius: 12, padding: 12, marginTop: 12 }}>
-        <Text strong style={{ display: "block", marginBottom: 4, fontSize: 12.5 }}>{t("admin_dashboard.phase1_heading")}</Text>
-        <Text type="secondary" style={{ fontSize: 12.5, display: "block", marginBottom: 12 }}>
-          {t("admin_dashboard.phase1_subtitle")}
-        </Text>
+      <Text strong style={{ display: "block", marginBottom: 8 }}>{t("admin_dashboard.channel_status_heading")}</Text>
+      <div className={styles.channelGrid}>
+        {channelStates.map((c) => {
+          const clickable = c.tone !== "ok";
+          const dotColor = c.tone === "ok" ? "#0f7a4d" : c.tone === "bad" ? "#b3261e" : "var(--app-muted)";
+          const textColor = c.tone === "ok" ? "#0f7a4d" : c.tone === "bad" ? "#b3261e" : "var(--app-muted)";
+          const content = (
+            <>
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flex: "none" }} />
+              <span className={styles.channelBody}>
+                <div className={styles.channelName}>{CHANNEL_LABEL[c.key]}</div>
+                <div className={styles.channelText} style={{ color: textColor }}>{c.text}</div>
+              </span>
+            </>
+          );
+          const style: React.CSSProperties = { borderStyle: clickable ? "dashed" : "solid" };
+          return clickable
+            ? <Link key={c.key} href={`/admin/settings?focus=channel&channel=${c.key}`} title={t("admin_dashboard.go_to_settings")} className={styles.channelCard} style={style}>{content}</Link>
+            : <div key={c.key} className={styles.channelCard} style={style}>{content}</div>;
+        })}
+      </div>
+
+      <DashboardActions enabled={!shouldSkipReportQueries} canManage={canManageActions} />
+
+      <div className={styles.inventorySection}>
+        <h2>{t("admin_dashboard.phase1_heading")}</h2>
 
         <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
           <Col xs={12} xl={6}>

@@ -32,7 +32,7 @@
   padding: 4px 6px !important;
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0;
   color: var(--app-muted, #64748b);
   background: transparent;
 }
@@ -47,6 +47,8 @@
   gap: 8px;
   align-items: stretch;
 }
+.inventorySection { background: var(--app-surface); border-block: 1px solid var(--app-border); padding: 16px 18px; margin-top: 12px; }
+.inventorySection h2 { margin: 0 0 12px; font-size: 18px; }
 
 .inventoryGrid > * {
   min-width: 0;
@@ -93,10 +95,12 @@
 }
 
 .channelGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr));
-  gap: 10px;
-  margin-bottom: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin-bottom: 12px;
+  background: var(--app-surface);
+  border-block: 1px solid var(--app-border);
 }
 
 .channelCard {
@@ -104,10 +108,9 @@
   align-items: center;
   gap: 10px;
   min-width: 0;
-  background: var(--app-surface);
-  border: 1px solid var(--app-border);
-  border-radius: 10px;
-  padding: 10px 14px;
+  flex: 1 1 135px;
+  border: 0;
+  padding: 8px 12px;
   text-decoration: none;
   color: inherit;
 }
@@ -150,10 +153,10 @@
 }
 
 .kpiValue {
-  font-size: 17px;
+  font-size: 22px;
   font-weight: 800;
   line-height: 1.15;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
   overflow-wrap: anywhere;
 }
 
@@ -202,8 +205,8 @@
   }
 
   .channelGrid {
-    gap: 8px;
-    margin-bottom: 16px;
+    gap: 0;
+    margin-bottom: 12px;
   }
 
   .sectionCard :global(.ant-card-body) {
@@ -215,8 +218,9 @@
   }
 
   .kpiValue {
-    font-size: 15.5px;
+    font-size: 20px;
   }
+  .inventorySection { padding: 12px; }
 
   .compactCard :global(.ant-card-body) {
     padding: 10px !important;

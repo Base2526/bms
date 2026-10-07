@@ -8057,7 +8057,7 @@ type Query {
   bankDetail(accountNo: String!, bankCode: String!): BankEntityDetail!
   bmsActingTenant: BmsActingTenant
   bmsActionMetrics(days: Int = 30): BmsActionMetrics!
-  bmsActions(limit: Int = 50): [BmsAction!]!
+  bmsActions(group: String = "ALL", limit: Int = 50, offset: Int = 0): [BmsAction!]!
   bmsAiConfig: BmsAiConfig!
   bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
   bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
