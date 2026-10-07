@@ -170,6 +170,10 @@ from an approved SKU policy, never guessed from a common medicine-group name. A 
 a selector inside the server-established identity, never authority to read another customer's case.
 Fixed emergency responses for overdose/ingestion/severe-allergy/self-harm wording do not depend on
 enabling intake or on a model; conservative wording guards are not complete clinical triage.
+Clinical/emergency wording must outrank service/case reads in mixed messages. Normalize only the
+safety matching view (invisible formatting, Thai digits/spacing), never stored evidence or product
+input. Guidance-classifier coverage alone is not routing coverage: each clinical example must also
+reach an entry guard. Bare patient disclosures may still be collected by an approved active intake.
 
 Emergency directory (`10.46`): inspect raw emergency wording **before** history/profile/identity DB
 reads for every archetype. `MEDICAL`, `POISONING`, `SELF_HARM` share a pure no-import composer;

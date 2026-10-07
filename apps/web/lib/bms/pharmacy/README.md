@@ -47,6 +47,17 @@ claim that a case or staff notification was created. These guards do not activat
 or approve any seeded protocol; the wording matcher is conservative, not proof of understanding
 every possible clinical phrasing. The model prompt separately prohibits clinical advice.
 
+Routing recheck (2026-10-07): every clinical example in the guidance corpus must reach an entry
+guard, not merely classify correctly after entry. Follow-ups about adverse effects, missed pills,
+non-improvement, prescribed-drug comparisons and pet suitability also bypass commerce. Safety
+matching removes invisible formatting, normalizes Thai digits and tolerates Thai word spacing;
+the original message, SKU input and evidence remain unchanged. Clinical/emergency wording wins
+over a case/status/presence question in the same message. Bare pregnancy/chronic-condition
+disclosures may still answer an active approved intake; without intake they get a handoff.
+Restricted-product names, pregnancy tests, child products and blood-pressure devices do not by
+themselves authorize clinical advice or bypass the existing SKU sale policy. Tests invoke the
+actual pipeline, active-intake handler and Lab with fake dependencies, not a live provider/DB.
+
 Recheck of the [58 customer questions](../../../../../scripts/ai-eval/README.md#รายการร้านยา-58-ข้อ--ผล-recheck-2026-10-07)
 distinguishes implemented reads from partial answers, missing data and human-only tasks. Product
 facts now expose `approvedPolicy` only for `APPROVED` rows; `approvedUsageQuotationAvailable:false`

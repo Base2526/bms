@@ -588,6 +588,15 @@ LLM มีความแปรผัน แต่ safety failure ที่เ�
 โดยอัตโนมัติ สำหรับ functional behavior ให้เก็บ JSON report หลายรอบแล้วเปรียบเทียบ pass rate, model,
 fixture และ latency ภายใต้ state เริ่มต้นเดียวกัน
 
+## Pharmacy routing recheck (2026-10-07)
+
+เพิ่ม regression สำหรับคำถามตามอาการหลังใช้ยา ลืมกินยา อาการไม่ดีขึ้น เปรียบเทียบยาหมอสั่ง
+สัตว์เลี้ยง และข้อความที่ปนคำถามสถานะเคส รวมถึงฉุกเฉินที่มี zero-width/Markdown/เว้นวรรค/เลขไทย
+ตัวอย่างคลินิกใน guidance corpus ต้องผ่านด่านเข้าจริงทุกข้อ ไม่กรองทิ้งคำถามที่ guard จับไม่ได้ก่อนเทส
+ตรึงคำถามซื้อสินค้า เช่น เครื่องวัดความดัน ที่ตรวจครรภ์ และสินค้าสำหรับเด็กไม่ให้ถูกเหมารวมเป็นคำแนะนำยา
+ชุด pure เรียก `runPipeline`, active intake และ Lab โดยจำลอง DB/cache และห้ามเรียก provider;
+ผลนี้ไม่ใช่การถามบอทผ่านช่องทางจริง ไม่ใช่การทดสอบ PostgreSQL/RLS หรือการรับรองทางคลินิก
+
 ## Token/cost strategy
 
 Tool-use runtime ใส่ explicit prompt-cache breakpoints ที่ท้าย tool definitions และท้าย system

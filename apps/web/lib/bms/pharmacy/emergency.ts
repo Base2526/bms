@@ -9,11 +9,23 @@ const POISONING_PATTERN = /(?:ยาเกินขนาด|(?:กิน|ทา
 
 export type EmergencyKind = "SELF_HARM" | "MEDICAL" | "POISONING";
 
-export function pharmacyEmergencyKind(message: string): EmergencyKind | null {
+/** Match a display-equivalent safety view only; never rewrite stored evidence or SKU input. */
+export function normalizePharmacySafetyText(message: string): string {
   // NFKC decomposes Thai sara am (ำ), which would break literal ทำร้าย/ลำบาก matches.
-  const text = String(message ?? "").normalize("NFC").replace(/\u0e4d\u0e32/g, "ำ").replace(/\s+/g, " ").trim();
+  return String(message ?? "").normalize("NFC")
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2060-\u206f\ufeff]/g, "")
+    .replace(/\*\*|__|`/g, "")
+    .replace(/\u0e4d\u0e32/g, "ำ")
+    .replace(/[๐-๙]/g, (digit) => String(digit.charCodeAt(0) - 0x0e50))
+    .replace(/\s+/g, " ").replace(/([ก-๙]) +(?=[ก-๙])/g, "$1").trim();
+}
+
+export function pharmacyEmergencyKind(message: string): EmergencyKind | null {
+  const text = normalizePharmacySafetyText(message);
   if (SELF_HARM_PATTERN.test(text)) return "SELF_HARM";
   if (POISONING_PATTERN.test(text) || /(?:เด็ก|ลูก|หลาน).{0,15}(?:กิน|กลืน|ทาน).{0,20}ยา.{0,20}\d+\s*(?:เม็ด|แผง|ขวด)/i.test(text)) return "POISONING";
+  if (/\b(?:took|taken|swallowed|ate)\s+too many\s+(?:pills|tablets|capsules)\b|\b(?:child|baby|toddler).{0,30}\b(?:drank|ingested)\s+(?:the |my |some )?(?:medicine|medication)\b/i.test(text)) return "POISONING";
+  if (/\b(?:lips|tongue|face)\s+(?:(?:is|are)\s+)?(?:swelling|swollen)\b|\bshortness of breath\b/i.test(text)) return "MEDICAL";
   return MEDICAL_PATTERN.test(text) ? "MEDICAL" : null;
 }
 

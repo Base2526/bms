@@ -3,6 +3,21 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Recheck คำถามหลุดจากด่านร้านยา — 2026-10-07
+
+- ต่อบน `codex/emergency-facilities` / draft PR #303; ไม่เปลี่ยน flag, protocol, migration หรือ approval
+- พบเทส guidance เดิมกรองเฉพาะคำถามที่ guard จับได้ก่อน assertion จึงซ่อนช่องหลุด;
+  เปลี่ยนให้ทุกตัวอย่างคลินิกต้องผ่านด่านจริง (ชื่อสินค้าควบคุมยังยึด SKU policy ไม่เหมารวม)
+- เพิ่ม guard คำถามผลข้างเคียง/ลืมยา/ไม่ดีขึ้น/เทียบยาหมอสั่ง/สัตว์เลี้ยง และไม่ให้สถานะเคสกลบคำถามคลินิก
+- safety view รองรับอักขระแฝง/Markdown/เว้นวรรคไทย/เลขไทย และรูปประโยค overdose/swelling ภาษาอังกฤษ;
+  ไม่แก้ข้อความหลักฐานหรือ input สินค้า และไม่เปลี่ยนข้อความฉุกเฉินที่ตรวจร่างไว้เดิม
+- เทสเรียก pipeline, active intake และ Lab โดยจำลอง DB/cache/provider; คำบอกข้อมูลผู้ป่วยเฉย ๆ
+  ยังตอบ intake ได้ แต่เมื่อไม่มี intake จะส่งต่อ ไม่ให้เข้า commerce
+- `npm run gate` ผ่าน: **1,987 ผ่าน / 1,989 ข้อ / skip 2 / fail 0**, typecheck + production build ผ่าน
+  (build ยังมี ECONNREFUSED ของหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบฐานข้อมูล)
+- focused: customer assistance **84/84**, guidance **12/12**, emergency **46/46**
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และข้อความยังต้องให้เภสัชกรตรวจ; ไม่อ้างว่าครอบทุกถ้อยคำ
+
 ## ต่อจาก Claude: emergency directory `10.46` — 2026-10-07
 
 branch `codex/emergency-facilities` ต่อจาก `feat/pharmacy-guidance-templates` · ไม่เปิด flag/ไม่อนุมัติข้อความทางคลินิก

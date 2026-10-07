@@ -11,6 +11,11 @@ const corpus: Array<[string, EmergencyKind | null]> = [
   ["ชัก", "MEDICAL"], ["แพ้ยา ปากบวม", "MEDICAL"], ["I can't breathe", "MEDICAL"], ["I have chest pain", "MEDICAL"],
   ["ไม่อยากอยู่แล้ว", "SELF_HARM"], ["มีความคิดทำร้ายตัวเอง", "SELF_HARM"], ["I want to kill myself", "SELF_HARM"],
   ["I don't want to live", "SELF_HARM"], ["ปวดหัวนิดหน่อย", null], ["มียาคุมฉุกเฉินไหม", null], ["เด็กกินยาอะไรดี", null],
+  ["I took too many pills", "POISONING"], ["My child drank medicine", "POISONING"],
+  ["My lips are swelling", "MEDICAL"], ["I have shortness of breath", "MEDICAL"],
+  ["หายใจไม่\u200bออก", "MEDICAL"], ["หายใจ**ไม่**ออก", "MEDICAL"], ["หายใจไม่ ออก", "MEDICAL"],
+  ["ลูกกินยาพาราไป ๑๐ เม็ด", "POISONING"], ["I don’t want to live", "SELF_HARM"],
+  ["มีน้ำยาล้างห้องน้ำไหม", null], ["Do you sell pill containers?", null],
 ];
 for (const [text, expected] of corpus) test(`emergency kind: ${text}`, () => {
   assert.equal(pharmacyEmergencyKind(text), expected);

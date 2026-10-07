@@ -166,13 +166,15 @@ test("starting drafts raise no warning, name no medicine and point to 1669 where
   }
 });
 
-test("a clinical question the pipeline hands off is one the classifier can usually name", () => {
+test("every clinical guidance example reaches a safety guard, not only the already-recognized subset", () => {
   // Not every hand-off has a template (storage questions keep the generic reply), but the
   // common clinical questions must reach a pharmacist-approved text once one exists.
   for (const [code, questions] of Object.entries(CORPUS)) {
     if (code === "RESTRICTED_PRODUCT") continue; // reaches the classifier via the symptom/advice gates only sometimes
-    const handedOff = questions.filter((q) => isPharmacyMedicationAdviceQuestion(q) || isPharmacySymptomAdviceQuestion(q));
-    for (const q of handedOff) assert.equal(classifyPharmacyGuidanceQuestion(q), code, q);
+    for (const q of questions) {
+      assert.ok(isPharmacyMedicationAdviceQuestion(q) || isPharmacySymptomAdviceQuestion(q), `unguarded: ${q}`);
+      assert.equal(classifyPharmacyGuidanceQuestion(q), code, q);
+    }
   }
 });
 
