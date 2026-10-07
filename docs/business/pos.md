@@ -49,6 +49,15 @@ recoverable only by hand. The `pos.return` entry additionally carries an `isVoid
 void travels through the return machinery and reports counting genuine returns must not also count
 bills rung up by mistake.
 
+### Desktop refresh status
+
+The desktop `/pos/app` refresh status stays in the header beside the refresh controls, with a
+3px indeterminate track along its bottom edge. It does not cover or dim the selling workspace.
+The status slot remains reserved when idle (a separate header row on narrow screens), so starting
+or finishing a refresh does not move the scanner or bill. Reduced-motion settings stop the progress
+animation. Refresh failures still use the existing dismissible error; cashier, shift, navigation,
+and pending-sale protections are unchanged.
+
 ## Native POS client
 
 `apps/mobile/` is the bare React Native 0.87 client for staff-operated iOS and Android registers.

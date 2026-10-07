@@ -2035,7 +2035,10 @@ function DesktopPosContent() {
             <div><strong>{bootstrap.location?.name ?? "สาขาหลัก"}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} · กะเปิดอยู่</span></div>
           </div>
           <div className={styles.topMeta}>
-            <PosConnectionStatus apiStatus={connection} />
+            <span className={styles.refreshStatus} role="status" aria-label="สถานะการอัปเดตข้อมูล" aria-live="polite" aria-atomic="true">
+              {contentRefreshing ? "กำลังอัปเดตข้อมูล…" : ""}
+            </span>
+            <div className={styles.connectionSlot}><PosConnectionStatus apiStatus={connection} /></div>
             <button type="button" className={styles.alertBell} aria-label="รีเฟรชข้อมูล" title="รีเฟรชข้อมูล"
               disabled={contentRefreshing || busy || Boolean(saleAttemptRef.current)}
               onClick={() => void refreshDesktopContent()}><ReloadOutlined spin={contentRefreshing} /></button>
@@ -2115,6 +2118,7 @@ function DesktopPosContent() {
               </div>
             </details>
           </div>
+          {contentRefreshing ? <div className={styles.refreshProgress} aria-hidden="true" /> : null}
         </header>
 
         {shownModule !== "mobile_sell" && shownModule !== "restaurant" ? (
@@ -2413,13 +2417,6 @@ function DesktopPosContent() {
           </aside>
         </div>
         )}
-        {contentRefreshing ? (
-          <div className={styles.contentRefreshOverlay} role="status" aria-live="polite">
-            <span className={styles.catalogSpinner} aria-hidden="true" />
-            <strong>กำลังรีเฟรชข้อมูลหน้าปัจจุบัน…</strong>
-            <small>เมนู ผู้ปฏิบัติงาน และกะจะยังคงอยู่</small>
-          </div>
-        ) : null}
       </section>
       <OrderAlertSettingsModal
         open={alertSettingsOpen}
