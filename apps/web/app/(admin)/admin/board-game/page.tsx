@@ -19,6 +19,8 @@ import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
 
 type Location = { id: string; code: string; name: string; active: boolean };
+type Reservation = { id: string; source: string; status: string; guestName: string | null;
+  guestPhone: string | null; reservedFor: string | null; partySize: number };
 type Rate = {
   id: string; code: string; name: string; customerType: string; pricePerHour: number;
   minimumMinutes: number; roundingMinutes: number; graceMinutes: number; active: boolean; sortOrder: number;
@@ -146,6 +148,7 @@ export default function BoardGamePage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [locationId, setLocationId] = useState("");
   const [floor, setFloor] = useState<Floor>(emptyFloor);
+  const [reservations, setReservations] = useState<Reservation[]>([]);
   const [rates, setRates] = useState<Rate[]>([]);
   const [library, setLibrary] = useState<GameTitle[]>([]);
   const [imageTitle, setImageTitle] = useState<GameTitle | null>(null);
@@ -356,7 +359,7 @@ export default function BoardGamePage() {
     setLoading(true);
     try {
       const [floorData, libraryData, holdsData] = await Promise.all([
-        api<{ floor: Floor }>(`/api/bms/board-game/floor?locationId=${encodeURIComponent(selectedLocationId)}`),
+        api<{ floor: Floor; reservations: Reservation[] }>(`/api/bms/board-game/floor?locationId=${encodeURIComponent(selectedLocationId)}`),
         api<{ titles: GameTitle[] }>(`/api/bms/board-game/library?locationId=${encodeURIComponent(selectedLocationId)}`),
         // "ตอนนี้เราถือบัตรใครอยู่บ้าง" เป็นคำถามของลิ้นชัก ไม่ใช่ของโต๊ะใดโต๊ะหนึ่ง — ดูทีละโต๊ะ
         // แปลว่าต้องเปิดทุกโต๊ะเพื่อจะรู้ว่ามีบัตรค้างไหม ซึ่งไม่มีใครทำตอนปิดร้าน
@@ -365,6 +368,7 @@ export default function BoardGamePage() {
         ),
       ]);
       setFloor(floorData.floor);
+      setReservations(floorData.reservations ?? []);
       setLibrary(libraryData.titles);
       setHeldCards(holdsData.holds);
     } catch (error) {
@@ -753,6 +757,22 @@ export default function BoardGamePage() {
 
       {!locations.length ? <Empty description={t("admin_board_game.no_locations")} /> : (
         <Tabs items={[
+          { key: "reservations", label: t("admin_board_game.tab_reservations"), children: (
+            <Space direction="vertical" style={{ width: "100%" }}>
+              <Alert closable type="info" message={t("admin_board_game.review_at_pos")} />
+              <Button href="/pos">{t("admin_board_game.review_at_pos")}</Button>
+              <List dataSource={reservations} renderItem={entry => (
+                <List.Item key={entry.id}>
+                  <Space direction="vertical">
+                    <Space><Tag>{entry.source === "CHAT" ? t("admin_board_game.source_chat") : entry.source}</Tag><Tag>{entry.status}</Tag></Space>
+                    <Typography.Text>{entry.guestName} · {entry.guestPhone} · {entry.partySize}</Typography.Text>
+                    <Typography.Text>{entry.reservedFor ? time(entry.reservedFor) : "—"}</Typography.Text>
+                    {entry.source === "CHAT" && <Typography.Text type="secondary">{t("admin_board_game.chat_contact_staff")}</Typography.Text>}
+                  </Space>
+                </List.Item>
+              )} />
+            </Space>
+          ) },
           { key: "floor", label: t("admin_board_game.tab_floor"), children: (
             <>
               <div className={styles.metrics}>
@@ -1154,6 +1174,8 @@ export default function BoardGamePage() {
                   </div>
                   <Button type="link" href="/board-game" target="_blank">{t("admin_board_game.discovery_preview")}</Button>
                 </div>
+                <Typography.Paragraph type="secondary">{t("admin_board_game.discovery_chat_data")}</Typography.Paragraph>
+                <Typography.Paragraph type="secondary">{t("admin_board_game.discovery_chat_controls")}</Typography.Paragraph>
                 <Form form={discoveryForm} layout="vertical">
                   <div className={styles.formGrid}>
                     <Form.Item name="displayName" label={t("admin_board_game.discovery_name")}><Input maxLength={120} /></Form.Item>

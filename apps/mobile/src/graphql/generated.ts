@@ -1089,6 +1089,32 @@ export type SchemaBmsEmailReportResult = {
   to: Scalars['String']['output'];
 };
 
+export type SchemaBmsEmergencyFacility = {
+  __typename?: 'BmsEmergencyFacility';
+  active: Scalars['Boolean']['output'];
+  address: Maybe<Scalars['String']['output']>;
+  distanceKm: Maybe<Scalars['Float']['output']>;
+  emergencyPhone: Scalars['String']['output'];
+  has24hEmergency: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  mapUrl: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  sortOrder: Scalars['Int']['output'];
+};
+
+export type SchemaBmsEmergencyFacilityInput = {
+  address: InputMaybe<Scalars['String']['input']>;
+  distanceKm: InputMaybe<Scalars['Float']['input']>;
+  emergencyPhone: Scalars['String']['input'];
+  has24hEmergency: Scalars['Boolean']['input'];
+  id: InputMaybe<Scalars['ID']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  mapUrl: InputMaybe<Scalars['String']['input']>;
+  name: Scalars['String']['input'];
+  sortOrder: Scalars['Int']['input'];
+};
+
 export type SchemaBmsEnrollMemberResult = {
   __typename?: 'BmsEnrollMemberResult';
   member: Maybe<SchemaBmsMember>;
@@ -2688,6 +2714,38 @@ export type SchemaBmsPharmacyConversationHistoryMessage = {
   id: Scalars['ID']['output'];
   sender: Maybe<Scalars['String']['output']>;
   status: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsPharmacyGuidanceDefault = {
+  __typename?: 'BmsPharmacyGuidanceDefault';
+  body: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  locale: Scalars['String']['output'];
+  warnings: Array<Scalars['String']['output']>;
+};
+
+export type SchemaBmsPharmacyGuidanceEditorContext = {
+  __typename?: 'BmsPharmacyGuidanceEditorContext';
+  businessHours: Maybe<Scalars['String']['output']>;
+  licensedPharmacist: Scalars['Boolean']['output'];
+  shopAddress: Maybe<Scalars['String']['output']>;
+  shopPhone: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsPharmacyGuidanceTemplate = {
+  __typename?: 'BmsPharmacyGuidanceTemplate';
+  approvedAt: Maybe<Scalars['String']['output']>;
+  approvedBy: Maybe<Scalars['ID']['output']>;
+  approvedByName: Maybe<Scalars['String']['output']>;
+  approvedLicenseNo: Maybe<Scalars['String']['output']>;
+  body: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  locale: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+  warnings: Array<Scalars['String']['output']>;
 };
 
 export type SchemaBmsPharmacyLabCartItemInput = {
@@ -5756,15 +5814,20 @@ export type SchemaBmsPriceTierRowInput = {
 export type SchemaBmsProduct = {
   __typename?: 'BmsProduct';
   active: Scalars['Boolean']['output'];
+  allergenCodes: Array<Scalars['String']['output']>;
+  allergenInformationProvided: Scalars['Boolean']['output'];
   barcode: Maybe<Scalars['String']['output']>;
   brand: Maybe<Scalars['String']['output']>;
   catalogVariants: Array<SchemaBmsProductCatalogVariant>;
   category: Maybe<Scalars['String']['output']>;
   costPrice: Maybe<Scalars['Float']['output']>;
   description: Maybe<Scalars['String']['output']>;
+  dietaryTags: Array<Scalars['String']['output']>;
+  foodSafetyNote: Maybe<Scalars['String']['output']>;
   imageUrl: Maybe<Scalars['String']['output']>;
   images: Array<SchemaImage>;
   keywords: Array<Scalars['String']['output']>;
+  medicineLabel: Scalars['JSON']['output'];
   name: Scalars['String']['output'];
   price: Scalars['Float']['output'];
   priceTiers: Array<SchemaBmsPriceTier>;
@@ -5850,6 +5913,8 @@ export type SchemaBmsProductImportRowResult = {
 
 export type SchemaBmsProductInput = {
   active: InputMaybe<Scalars['Boolean']['input']>;
+  allergen_codes: InputMaybe<Array<Scalars['String']['input']>>;
+  allergen_information_provided: InputMaybe<Scalars['Boolean']['input']>;
   barcode: InputMaybe<Scalars['String']['input']>;
   base_unit: InputMaybe<Scalars['String']['input']>;
   brand: InputMaybe<Scalars['String']['input']>;
@@ -5857,12 +5922,15 @@ export type SchemaBmsProductInput = {
   cost_price: InputMaybe<Scalars['Float']['input']>;
   creation_template: InputMaybe<Scalars['String']['input']>;
   description: InputMaybe<Scalars['String']['input']>;
+  dietary_tags: InputMaybe<Array<Scalars['String']['input']>>;
+  food_safety_note: InputMaybe<Scalars['String']['input']>;
   image_url: InputMaybe<Scalars['String']['input']>;
   image_urls: InputMaybe<Array<Scalars['String']['input']>>;
   keywords: InputMaybe<Array<Scalars['String']['input']>>;
   kitchen_station: InputMaybe<Scalars['String']['input']>;
   /** 9.54 — id ของสถานีจาก bmsKitchenStations · ชนะ kitchen_station เมื่อส่งมาทั้งคู่ */
   kitchen_station_id: InputMaybe<Scalars['ID']['input']>;
+  medicine_label: InputMaybe<Scalars['JSON']['input']>;
   name: Scalars['String']['input'];
   price: Scalars['Float']['input'];
   price_tiers: InputMaybe<Array<SchemaBmsPriceTierInput>>;
@@ -7761,6 +7829,8 @@ export type SchemaMutation = {
   bmsAdjustStock: SchemaBmsVariant;
   bmsApplyStockCount: SchemaBmsMobileStockCountActionResult;
   bmsApproveAssessment: SchemaBmsPharmacyAssessment;
+  /** Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read */
+  bmsApprovePharmacyGuidance: SchemaBmsPharmacyGuidanceTemplate;
   /** ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่ */
   bmsArchiveKitchenStation: SchemaBmsKitchenStation;
   bmsAssignConversation: Scalars['Boolean']['output'];
@@ -7794,6 +7864,7 @@ export type SchemaMutation = {
   bmsCreateShipment: SchemaBmsShipmentResult;
   bmsCreateStockCount: SchemaBmsMobileStockCountActionResult;
   bmsCreateStockTransfer: SchemaBmsMobileStockTransferActionResult;
+  bmsDeactivateEmergencyFacility: Scalars['Boolean']['output'];
   bmsDeactivateProductPromotion: Scalars['Boolean']['output'];
   bmsDeleteCoupon: Scalars['Boolean']['output'];
   bmsDeleteCustomer: Scalars['Boolean']['output'];
@@ -7955,6 +8026,7 @@ export type SchemaMutation = {
   bmsReplaceProductPriceTiers: Array<SchemaBmsProductPriceTier>;
   bmsRequestMoreInformation: SchemaBmsPharmacyAssessment;
   bmsResetStoreCapability: SchemaBmsStoreCapability;
+  bmsRetirePharmacyGuidance: SchemaBmsPharmacyGuidanceTemplate;
   bmsRetryMessage: SchemaBmsSendResult;
   bmsReturnOrder: Scalars['Boolean']['output'];
   bmsReviewAiQualityCase: SchemaBmsAiQualityCaseDetail;
@@ -7968,7 +8040,9 @@ export type SchemaMutation = {
   bmsRunReadOnlySql: SchemaBmsSqlResult;
   bmsRunSandboxedJs: SchemaBmsJsConsoleResult;
   bmsRunSql: SchemaBmsSqlResult;
+  bmsSavePharmacyGuidanceDraft: SchemaBmsPharmacyGuidanceTemplate;
   bmsSaveRestaurantFloorLayout: Scalars['Boolean']['output'];
+  bmsSeedPharmacyGuidanceDrafts: Scalars['Int']['output'];
   bmsSeedPharmacyQueueDemo: SchemaBmsSeedPharmacyQueueDemoResult;
   bmsSendAllReadyRestockNotifications: SchemaBmsRestockSendAllResult;
   bmsSendMessage: SchemaBmsSendResult;
@@ -8032,6 +8106,7 @@ export type SchemaMutation = {
   bmsUpsertChannel: Scalars['Boolean']['output'];
   bmsUpsertCoupon: SchemaBmsCoupon;
   bmsUpsertCustomer: SchemaBmsCustomer;
+  bmsUpsertEmergencyFacility: SchemaBmsEmergencyFacility;
   bmsUpsertFollowupRule: SchemaBmsFollowupRule;
   bmsUpsertInventoryPolicy: Scalars['Boolean']['output'];
   bmsUpsertKitchenStationSla: SchemaBmsKitchenStationSla;
@@ -8196,6 +8271,12 @@ export type SchemaMutationBmsApproveAssessmentArgs = {
   expectedVersion: Scalars['Int']['input'];
   orderDraft: InputMaybe<Scalars['JSON']['input']>;
   pharmacistResponse: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsApprovePharmacyGuidanceArgs = {
+  id: Scalars['ID']['input'];
+  version: Scalars['Int']['input'];
 };
 
 
@@ -8379,6 +8460,12 @@ export type SchemaMutationBmsCreateStockCountArgs = {
 
 export type SchemaMutationBmsCreateStockTransferArgs = {
   input: SchemaBmsCreateStockTransferInput;
+};
+
+
+export type SchemaMutationBmsDeactivateEmergencyFacilityArgs = {
+  confirmed: Scalars['Boolean']['input'];
+  id: Scalars['ID']['input'];
 };
 
 
@@ -9158,6 +9245,11 @@ export type SchemaMutationBmsResetStoreCapabilityArgs = {
 };
 
 
+export type SchemaMutationBmsRetirePharmacyGuidanceArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type SchemaMutationBmsRetryMessageArgs = {
   id: Scalars['ID']['input'];
 };
@@ -9222,6 +9314,13 @@ export type SchemaMutationBmsRunSandboxedJsArgs = {
 
 export type SchemaMutationBmsRunSqlArgs = {
   sql: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsSavePharmacyGuidanceDraftArgs = {
+  body: Scalars['String']['input'];
+  code: Scalars['String']['input'];
+  locale: Scalars['String']['input'];
 };
 
 
@@ -9573,6 +9672,11 @@ export type SchemaMutationBmsUpsertCouponArgs = {
 
 export type SchemaMutationBmsUpsertCustomerArgs = {
   input: SchemaBmsCustomerInput;
+};
+
+
+export type SchemaMutationBmsUpsertEmergencyFacilityArgs = {
+  input: SchemaBmsEmergencyFacilityInput;
 };
 
 
@@ -10319,6 +10423,8 @@ export type SchemaQuery = {
   bmsCustomerTimeline: Array<SchemaBmsCustomerTimelineEntry>;
   bmsCustomers: Array<SchemaBmsCustomer>;
   bmsDashboard: SchemaBmsDashboard;
+  bmsEmergencyFacilities: Array<SchemaBmsEmergencyFacility>;
+  bmsEmergencyFacilityLocations: Array<SchemaBmsLocation>;
   bmsEtaxSubmissions: Array<SchemaBmsEtaxSubmission>;
   bmsEtaxSummary: SchemaBmsEtaxSummary;
   bmsExpenseDocuments: SchemaBmsExpenseDocumentList;
@@ -10386,6 +10492,11 @@ export type SchemaQuery = {
   bmsPharmacyAssessments: Array<SchemaBmsPharmacyAssessment>;
   bmsPharmacyCatalog: Array<SchemaBmsPharmacyCatalogItem>;
   bmsPharmacyClinicalEvidence: Array<SchemaBmsPharmacyClinicalEvidence>;
+  /** Built-in starting drafts; never shown to a customer until a licensed pharmacist approves a copy */
+  bmsPharmacyGuidanceDefaults: Array<SchemaBmsPharmacyGuidanceDefault>;
+  bmsPharmacyGuidanceEditorContext: SchemaBmsPharmacyGuidanceEditorContext;
+  /** Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read */
+  bmsPharmacyGuidanceTemplates: Array<SchemaBmsPharmacyGuidanceTemplate>;
   bmsPharmacyLicenseCandidates: Array<SchemaBmsPharmacyLicenseUser>;
   bmsPharmacyPolicyReadiness: SchemaBmsPharmacyPolicyReadiness;
   bmsPharmacyProductPolicies: SchemaBmsPharmacyProductPolicyPage;
@@ -10719,6 +10830,11 @@ export type SchemaQueryBmsCustomersArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
   search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsEmergencyFacilitiesArgs = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
 };
 
 

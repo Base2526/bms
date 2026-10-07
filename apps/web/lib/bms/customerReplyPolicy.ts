@@ -1,14 +1,33 @@
 import type { PaymentAccount } from "./storeProfile";
 import { customerPaymentAccountLines } from "./paymentConfiguration";
 import { isStoreHoursQuestion } from "./customerMessageRouting";
+import { normalizePharmacySafetyText } from "./pharmacy/emergency";
+
+// Scope denials to a sentence/contrast clause, not a fixed-size prefix. A later "but ... done"
+// must still be checked. Preserve sentence separators before taking the shared safety view.
+const BOARD_GAME_CLAIM_DENIAL = /ยังไม่ได้|ไม่ได้|ยังไม่|ไม่สามารถ|\b(?:cannot|can['’]t|could not|couldn['’]t|have not|has not|had not|haven['’]t|hasn['’]t|is not|are not|was not|were not|not yet|never)\b|\bno\s+(?:booking|reservation|action|payment|refund)\b/i;
+const BOARD_GAME_THAI_ACTION = /(?:จอง(?:โต๊ะ)?|รับจอง|บันทึกการจอง|(?:เก็บ|กัน|ล็อก)โต๊ะ|(?:เพิ่ม|ต่อ)เวลา|ต่อให้(?:อีก)?|เลื่อน(?:การจอง|วันจอง)|ยกเลิกการจอง|คืน(?:เงิน|มัดจำ)|(?:แจ้ง|ประสาน).{0,18}(?:พนักงาน|แอดมิน|ทีมงาน)|ส่งต่อ.{0,18}(?:ทีมงาน|พนักงาน)|ส่ง(?:เรื่อง|คำขอ)(?:ให้|ถึง)?(?:พนักงาน|แอดมิน)?|ได้รับเงิน|ยืนยัน(?:การชำระเงิน|การจอง)|ลดให้).{0,45}(?:แล้ว|เรียบร้อย|สำเร็จ|ไว้ให้)/i;
+const BOARD_GAME_FUTURE_ACTION = /(?:เดี๋ยว|จะ).{0,15}(?:จอง|เก็บโต๊ะ|กันโต๊ะ|ล็อกโต๊ะ|ต่อเวลา|เพิ่มเวลา|คืนเงิน|แจ้งพนักงาน|ลดราคา).{0,40}ให้/i;
+const BOARD_GAME_ENGLISH_ACTION = /\b(?:table|booking|reservation|refund|extension|payment|discount|staff|admin)\b.{0,60}\b(?:booked|reserved|confirmed|completed|cancelled|processed|received|notified|applied|extended)\b|\b(?:i|we)(?:['’](?:ve|ll)| have| will)?\s+(?:book(?:ed)?|reserv(?:e|ed)|notif(?:y|ied)|extend(?:ed)?|appl(?:y|ied)|process(?:ed)?|confirm(?:ed)?).{0,45}\b(?:table|booking|reservation|refund|time|payment|discount|staff|admin)\b/i;
 
 export function hasUnsupportedBoardGameActionClaim(reply: string): boolean {
-  const claims = /(?:จอง(?:โต๊ะ)?|ยืนยันการจอง|เลื่อน(?:การจอง|วันจอง)|ยกเลิกการจอง|ต่อเวลา|คืน(?:เงิน|มัดจำ)|แจ้ง(?:พนักงาน|แอดมิน)|ส่ง(?:เรื่อง|คำขอ)(?:ให้|ถึง)?(?:พนักงาน|แอดมิน)?)(?:ให้)?(?:เรียบร้อย(?:แล้ว)?|สำเร็จ(?:แล้ว)?|แล้ว)|(?:booking|reservation|refund|extension)\s+(?:is\s+|has been\s+)?(?:confirmed|completed|cancelled)|(?:staff|admin)\s+(?:has been\s+|have been\s+)?notified/gi;
-  for (const match of reply.matchAll(claims)) {
-    const prefix = reply.slice(Math.max(0, match.index! - 24), match.index);
-    if (!/(?:ยังไม่ได้|ไม่ได้|ยังไม่|ไม่สามารถ|ยังไม่สามารถ|cannot|not|is not|has not been)\s*$/i.test(prefix)) return true;
+  // Keep hard line boundaries before the shared normalizer collapses whitespace.
+  const normalized = String(reply ?? "").split(/[\r\n]+/).map(normalizePharmacySafetyText).join("\n");
+  for (const clause of normalized.split(/[\r\n.!?。;]+|แต่|ทว่า|\b(?:but|however)\b/i)) {
+    // Remove only a narrowly worded request receipt, never a following confirmation claim.
+    const text = clause.replace(/(?:ส่ง|รับ|บันทึก)คำขอจอง(?:โต๊ะ)?\s*(?:#[a-f0-9]{8}\s*)?(?:ให้ร้านตรวจ)?(?:เรียบร้อยแล้ว|แล้ว|สำเร็จ)/gi, "")
+      .replace(/\bnot a confirmed table\b|\bno table is confirmed(?: yet)?\b/gi, "");
+    if (BOARD_GAME_CLAIM_DENIAL.test(text)) continue;
+    if (/โต๊ะ(?:ของคุณ)?พร้อมแล้ว|\byour table is ready\b/i.test(text)) return true;
+    if (BOARD_GAME_THAI_ACTION.test(text) || BOARD_GAME_FUTURE_ACTION.test(text) || BOARD_GAME_ENGLISH_ACTION.test(text)) return true;
   }
   return false;
+}
+
+/** Called only after the server has created a real retail-goods order. Never proves a table booking. */
+export function boardGameCheckoutFallback(reply: string, english = false): string {
+  return reply && !hasUnsupportedBoardGameActionClaim(reply)
+    ? reply : english ? "Your order has been received." : "รับออร์เดอร์แล้วค่ะ";
 }
 
 export function storeInfoReply(

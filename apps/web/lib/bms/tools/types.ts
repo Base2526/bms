@@ -35,6 +35,10 @@ export type ExecCtx = {
   restaurantRequestId?: string;
   /** Server-only signal: a restaurant table request was recorded, not accepted or confirmed. */
   restaurantReservationRequestId?: string;
+  boardGameReservationRequestId?: string;
+  boardGameReservationStatuses?: Awaited<ReturnType<typeof import('../boardGameWaitlist').listChatBoardGameReservationsForCustomer>>;
+  pendingBoardGameReservation?: import('../boardGameReservationPolicy').BoardGameReservationQuote;
+  confirmedBoardGameReservation?: { fingerprint: string; expiresAt: number };
   restaurantReservationRequestStatus?: "REQUESTED" | "WAITING" | "CALLED";
   restaurantRequestQuote?: {
     draft: import('../restaurantRequestPolicy').RestaurantRequestDraft;

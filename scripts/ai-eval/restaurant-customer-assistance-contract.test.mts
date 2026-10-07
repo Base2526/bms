@@ -194,7 +194,8 @@ test("reservation services validate input, replay stored evidence, and preserve 
     });
 
     const mergeResponse = (sql: string) => sql.includes("SELECT id, name, phone, email")
-      ? ["keep", "merge"].map((id) => ({ id, tags: [], followup_opt_out: false })) : [];
+      ? ["keep", "merge"].map((id) => ({ id, tags: [], followup_opt_out: false }))
+      : sql.includes("SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist") ? [{ count: 0 }] : [];
     await t.test("CRM merge moves all reservation history to the surviving customer", async () => {
       reset(); response = mergeResponse;
       assert.equal(await mergeCustomers("tenant-a", "keep", "merge"), true);
@@ -207,6 +208,13 @@ test("reservation services validate input, replay stored evidence, and preserve 
       reset(); response = (sql) => sql.includes("FROM bms_restaurant_waitlist source") ? [{ id: "conflict" }] : mergeResponse(sql);
       await assert.rejects(mergeCustomers("tenant-a", "keep", "merge"), /คำขอจองร้านอาหารซ้ำ/);
       assert.ok(!calls.some((call) => call.sql.includes("UPDATE bms_customer_identities")));
+      assert.equal(calls.at(-1)?.sql, "ROLLBACK");
+    });
+    await t.test("shared CRM merge refuses more than three pending CHAT requests without moving identities", async () => {
+      reset(); response = sql => sql.includes("SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist")
+        ? [{ count: 4 }] : mergeResponse(sql);
+      await assert.rejects(mergeCustomers("tenant-a", "keep", "merge"), /ไม่เกิน 3/);
+      assert.ok(!calls.some(call => call.sql.includes("UPDATE bms_customer_identities")));
       assert.equal(calls.at(-1)?.sql, "ROLLBACK");
     });
     await t.test("tool boundary returns actionable refusals but propagates unexpected failures", async () => {

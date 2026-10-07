@@ -357,8 +357,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "ตั้งราคาเด็กนักเรียนสมาชิก", "เช็คอินครั้งเดียว", "ลงโต๊ะครั้งเดียว", "แยกจ่ายรายคน",
       "แยกบิลรายคน", "มากลุ่มเดียวจ่ายแยก", "ร้านบอร์ดเกมใกล้ฉัน", "เผยแพร่ร้านบอร์ดเกม",
       "ย้ายโต๊ะบอร์ดเกม", "รวมโต๊ะบอร์ดเกม",
-      "ขายแพ็กเกจสมาชิก", "แพ็กรายเดือนบอร์ดเกม", "เล่นไม่อั้นรายเดือน", "แพ็กชั่วโมง",
+      "ขายแพ็กเกจสมาชิก", "แพ็กรายเดือนบอร์ดเกม", "เล่นไม่อั้นรายเดือน", "แพ็กชั่วโมง", "คำขอจองจากแชท", "คำขอจองจากแชทร้านบอร์ดเกม",
     ], [
+      "chat booking request", "board-game chat booking request",
       "open a board-game table", "hourly play charge", "time alert", "split play bill", "check out a game", "return a game",
       "student member child rates", "single check-in", "check in once", "split payment per person",
       "separate payment per person", "one group paying separately", "board-game cafe near me", "publish board-game cafe",
@@ -392,11 +393,13 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     ]),
     warnings: lists([
       "ค่าเวลาเป็น snapshot ต่อผู้เล่นตอนเปิดหรือเพิ่มคน การแก้เรตภายหลังไม่เปลี่ยน session เดิม",
+      "คำขอจองจากแชทเข้าคิวเดียวกับเว็บ ต้องยืนยันหรือปฏิเสธที่ POS ด้วย PIN พนักงาน ไม่มีการแจ้งผลอัตโนมัติ ให้โทรแจ้งลูกค้าจากชื่อและเบอร์บนการ์ด; แชทรับเฉพาะสาขาที่เปิดจองและไม่เก็บมัดจำ",
       "CLOSING ตรึงยอดแล้ว ห้ามเพิ่มคน ย้ายกลุ่ม หรือยืมเกม; การชำระสำเร็จต้องเกิดผ่าน POS เท่านั้น",
       "ระบบค้นหาร้านใกล้ฉันเผยแพร่เฉพาะสาขาที่ร้านเปิด public และกรอกพิกัดเอง ไม่เปิดข้อมูลสมาชิกหรือข้อมูลส่วนตัว",
       "หน้าผัง refresh หลังทุกคำสั่งและทุก 15 วินาที จึงควรตรวจยอดและสถานะล่าสุดก่อนรับเงิน",
     ], [
       "Each participant keeps a rate snapshot when opened or added; later rate edits do not rewrite an existing session.",
+      "Chat booking requests share the web request queue. Review at POS with the existing cashier PIN; no automatic decision message is sent, so call the name/phone on the card. Chat accepts only booking-enabled branches without deposits.",
       "CLOSING freezes the charge, so participants, bill groups and loans can no longer change; successful payment must go through POS.",
       "Nearby discovery exposes only branches explicitly published with shop-managed coordinates, never member or personal data.",
       "The floor refreshes after every command and every 15 seconds, so verify the latest amount and state before taking payment.",

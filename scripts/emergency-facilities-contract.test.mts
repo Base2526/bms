@@ -1,10 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { PHARMACY_GUIDANCE_FOOTER, PHARMACY_GUIDANCE_DEFAULT_DRAFTS } from "../apps/web/lib/bms/pharmacy/guidanceTemplates.ts";
+import { pharmacyClinicalHandoffReply } from "../apps/web/lib/bms/pharmacy/customerAssistancePolicy.ts";
 import { composeEmergencyReply, pharmacyEmergencyKind, pharmacyEmergencyReply, type EmergencyKind } from "../apps/web/lib/bms/pharmacy/emergency.ts";
 import { routePharmacyConversationMessage } from "../apps/web/lib/bms/pharmacy/conversationRouter.ts";
+import { PHARMACY_GUARD_EMERGENCY_GOLDENS, PHARMACY_GUARD_COMMERCE_GOLDENS, PHARMACY_GUARD_BITE_GOLDENS } from "./ai-eval/pharmacy-customer-corpus.mjs";
+import { isPharmacyMedicationAdviceQuestion, isPharmacySymptomAdviceQuestion, pharmacyCustomerReadIntent } from "../apps/web/lib/bms/pharmacy/customerAssistancePolicy.ts";
 const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8").replace(/\r\n/g, "\n");
+test("customer response copy stays byte-exact against the pre-guard-change baseline", () => {
+  const copy = [
+    ...(["SELF_HARM", "POISONING", "MEDICAL"] as const).flatMap(kind => [true, false].map(english => composeEmergencyReply({ kind, english, facilities: [] }))),
+    ...[true, false].flatMap(en => [pharmacyClinicalHandoffReply(en), pharmacyClinicalHandoffReply(en, en ? "Can my dog take it?" : "ให้แมวกินได้ไหม")]),
+    PHARMACY_GUIDANCE_FOOTER, PHARMACY_GUIDANCE_DEFAULT_DRAFTS,
+  ];
+  assert.equal(createHash("sha256").update(JSON.stringify(copy)).digest("hex"), "a9a22c4a17dfa526189644a9ac5678360e30774bdc4410bebe7f90f5226a4f04");
+});
 const corpus: Array<[string, EmergencyKind | null]> = [
+  ...PHARMACY_GUARD_BITE_GOLDENS.map((q): [string, EmergencyKind] => [q, "MEDICAL"]),
+  ...PHARMACY_GUARD_EMERGENCY_GOLDENS as Array<[string, EmergencyKind]>,
   ["ลูกกินยาพาราไป 10 เม็ด", "POISONING"], ["กินยาเกินขนาด", "POISONING"], ["เด็กกลืนน้ำยาล้างห้องน้ำ", "POISONING"],
   ["ลูกแอบกินยา", "POISONING"], ["I took an overdose", "POISONING"], ["My toddler swallowed tablets", "POISONING"],
   ["I drank bleach", "POISONING"], ["เจ็บหน้าอกมาก", "MEDICAL"], ["หายใจไม่ออก", "MEDICAL"], ["หมดสติ", "MEDICAL"],
@@ -16,7 +31,17 @@ const corpus: Array<[string, EmergencyKind | null]> = [
   ["หายใจไม่\u200bออก", "MEDICAL"], ["หายใจ**ไม่**ออก", "MEDICAL"], ["หายใจไม่ ออก", "MEDICAL"],
   ["ลูกกินยาพาราไป ๑๐ เม็ด", "POISONING"], ["I don’t want to live", "SELF_HARM"],
   ["มีน้ำยาล้างห้องน้ำไหม", null], ["Do you sell pill containers?", null],
+  ["took 20 mg paracetamol", null], ["took 20 minutes to arrive", null],
+  ["อาการไม่หาย", null], ["ยาแก้ปวดหัว", null], ["ลูกไอมา 2 วัน", null], ["ลูก 12 เดือน ไข้สูง", null],
+  ["กินไฮเตอร์", "POISONING"], ["ดื่มโซดาไฟ", "POISONING"], ["กลืนน้ำมันก๊าด", "POISONING"],
+  ["อยากตาย กินยาไปทั้งแผง หายใจลำบาก", "SELF_HARM"], ["กินยาฆ่าหญ้า หายใจลำบาก", "POISONING"],
 ];
+for (const message of PHARMACY_GUARD_COMMERCE_GOLDENS) test(`guard negative: ${message}`, () => {
+  assert.equal(pharmacyEmergencyKind(message), null);
+  assert.equal(isPharmacyMedicationAdviceQuestion(message), false);
+  assert.equal(isPharmacySymptomAdviceQuestion(message), false);
+  assert.equal(pharmacyCustomerReadIntent(message), message === "เภสัชกรอยู่ไหม" ? "service" : message.startsWith("เคส") ? "case" : null);
+});
 for (const [text, expected] of corpus) test(`emergency kind: ${text}`, () => {
   assert.equal(pharmacyEmergencyKind(text), expected);
   assert.equal(routePharmacyConversationMessage(text).intent === "EMERGENCY", expected !== null);
@@ -113,14 +138,19 @@ test("runtime: DB error, saturation, query timeout and raw pipeline emergency us
       assert.deepEqual(await service.listEmergencyFacilitiesForReply("tenant-test"), []);
       assert.ok(performance.now() - started < 620, "500ms budget with scheduling tolerance");
     });
-    await t.test("pipeline returns before context reads, intake flags and any provider", async () => {
+    await t.test("pipeline returns before context reads, intake flags and any provider", async (sub) => {
       mode = "error";
+      let generalReads = 0;
+      sub.mock.method(state.__bmsPostgresPool, "query", () => { generalReads++; throw new Error("No general DB reads"); });
+      const provider = sub.mock.method(globalThis, "fetch", async () => { throw new Error("No provider/network calls"); });
       const { runPipeline } = await import("../apps/web/lib/bms/pipeline.ts");
-      for (const message of ["ลูกกินยาพาราไป 10 เม็ด", "เจ็บหน้าอกมาก", "I want to kill myself"]) {
+      for (const message of ["ลูกกินยาพาราไป 10 เม็ด", "เจ็บหน้าอกมาก", "I want to kill myself", ...PHARMACY_GUARD_EMERGENCY_GOLDENS.map(([text]) => text), ...PHARMACY_GUARD_BITE_GOLDENS]) {
         const result = await runPipeline(message, "test", "tenant-test");
         assert.equal(result.reply, pharmacyEmergencyReply(message));
         assert.equal(result.tool, "pharmacy:emergency:router");
       }
+      assert.equal(generalReads, 0);
+      assert.equal(provider.mock.callCount(), 0);
     });
   } finally { state.__bmsPostgresPool = previous;
     if (oldMode === undefined) delete process.env.NODE_ENV; else process.env.NODE_ENV = oldMode;

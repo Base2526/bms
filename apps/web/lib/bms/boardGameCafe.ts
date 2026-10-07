@@ -2999,28 +2999,8 @@ function haversineDistanceKm(lat1: number, lng1: number, lat2: number, lng2: num
   return 6371 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-export async function listPublicBoardGameCafes(input: {
-  latitude?: number | null;
-  longitude?: number | null;
-  radiusKm?: number | null;
-  limit?: number | null;
-} = {}, scope?: { tenantId: string; client: QueryClient }): Promise<PublicBoardGameCafe[]> {
-  const hasOrigin = input.latitude != null && input.longitude != null;
-  const latitude = hasOrigin ? Number(input.latitude) : null;
-  const longitude = hasOrigin ? Number(input.longitude) : null;
-  if (hasOrigin && (!Number.isFinite(latitude) || !Number.isFinite(longitude)
-    || latitude! < -90 || latitude! > 90 || longitude! < -180 || longitude! > 180)) {
-    throw new Error("พิกัดค้นหาไม่ถูกต้อง");
-  }
-  const requestedRadiusKm = Number(input.radiusKm ?? 50);
-  const requestedLimit = Number(input.limit ?? 60);
-  if (!Number.isFinite(requestedRadiusKm)) throw new Error("รัศมีค้นหาไม่ถูกต้อง");
-  if (!Number.isFinite(requestedLimit)) throw new Error("จำนวนผลลัพธ์ไม่ถูกต้อง");
-  const radiusKm = Math.min(Math.max(requestedRadiusKm, 1), 500);
-  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 100);
-  const read = scope ? scope.client.query.bind(scope.client) : query;
-  const result = await read(
-    `SELECT profile.location_id, profile.public_visible, profile.display_name,
+// One projection for both readers; channel-specific WHERE clauses stay at their entry points.
+const BOARD_GAME_CAFE_SELECT = `SELECT profile.location_id, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
             profile.publish_rates, profile.publish_availability, profile.booking_enabled,
@@ -3089,7 +3069,72 @@ export async function listPublicBoardGameCafes(input: {
        JOIN bms_tenants tenant
          ON tenant.id = profile.tenant_id AND tenant.active
        JOIN bms_store_profile store
-         ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
+         ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'`;
+
+function mapBoardGameCafe(row: any, distanceKm: number | null = null): PublicBoardGameCafe {
+  const profile = mapPublicLocationProfile(row);
+  return {
+    ...profile,
+    tenantSlug: row.tenant_slug,
+    shopName: row.shop_name,
+    logoUrl: row.logo_url ?? null,
+    distanceKm: distanceKm == null ? null : money(distanceKm),
+    totalTables: row.total_tables == null ? null : Number(row.total_tables),
+    availableTables: row.available_tables == null ? null : Number(row.available_tables),
+    rates: (row.rates ?? []).map((rate: any) => ({
+      name: String(rate.name),
+      customerType: String(rate.customerType),
+      pricePerHour: Number(rate.pricePerHour),
+      minimumMinutes: Number(rate.minimumMinutes),
+      roundingMinutes: Number(rate.roundingMinutes),
+      graceMinutes: Number(rate.graceMinutes),
+    })),
+    games: (row.games ?? []).map((game: any) => ({
+      title: String(game.title),
+      minPlayers: game.minPlayers == null ? null : Number(game.minPlayers),
+      maxPlayers: game.maxPlayers == null ? null : Number(game.maxPlayers),
+      typicalMinutes: game.typicalMinutes == null ? null : Number(game.typicalMinutes),
+    })),
+  };
+}
+
+/** Shop chat is tenant-scoped, independently of the nearby-directory opt-in. */
+export async function listBoardGameChatBranches(
+  scope: { tenantId: string; client: QueryClient }
+): Promise<PublicBoardGameCafe[]> {
+  const tenantId = uuid(scope.tenantId, "tenantId");
+  const result = await scope.client.query(
+    `${BOARD_GAME_CAFE_SELECT}
+      WHERE profile.tenant_id = $1::uuid AND location.active
+      ORDER BY COALESCE(profile.display_name, location.name), profile.location_id
+      LIMIT 100`,
+    [tenantId]
+  );
+  return result.rows.map((row) => mapBoardGameCafe(row));
+}
+
+export async function listPublicBoardGameCafes(input: {
+  latitude?: number | null;
+  longitude?: number | null;
+  radiusKm?: number | null;
+  limit?: number | null;
+} = {}, scope?: { tenantId: string; client: QueryClient }): Promise<PublicBoardGameCafe[]> {
+  const hasOrigin = input.latitude != null && input.longitude != null;
+  const latitude = hasOrigin ? Number(input.latitude) : null;
+  const longitude = hasOrigin ? Number(input.longitude) : null;
+  if (hasOrigin && (!Number.isFinite(latitude) || !Number.isFinite(longitude)
+    || latitude! < -90 || latitude! > 90 || longitude! < -180 || longitude! > 180)) {
+    throw new Error("พิกัดค้นหาไม่ถูกต้อง");
+  }
+  const requestedRadiusKm = Number(input.radiusKm ?? 50);
+  const requestedLimit = Number(input.limit ?? 60);
+  if (!Number.isFinite(requestedRadiusKm)) throw new Error("รัศมีค้นหาไม่ถูกต้อง");
+  if (!Number.isFinite(requestedLimit)) throw new Error("จำนวนผลลัพธ์ไม่ถูกต้อง");
+  const radiusKm = Math.min(Math.max(requestedRadiusKm, 1), 500);
+  const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 100);
+  const read = scope ? scope.client.query.bind(scope.client) : query;
+  const result = await read(
+    `${BOARD_GAME_CAFE_SELECT}
       WHERE profile.public_visible AND location.active
         AND ($1::uuid IS NULL OR profile.tenant_id = $1::uuid)
       ORDER BY profile.updated_at DESC
@@ -3101,29 +3146,7 @@ export async function listPublicBoardGameCafes(input: {
     const distanceKm = hasOrigin
       ? haversineDistanceKm(latitude!, longitude!, profile.latitude!, profile.longitude!)
       : null;
-    return {
-      ...profile,
-      tenantSlug: row.tenant_slug,
-      shopName: row.shop_name,
-      logoUrl: row.logo_url ?? null,
-      distanceKm: distanceKm == null ? null : money(distanceKm),
-      totalTables: row.total_tables == null ? null : Number(row.total_tables),
-      availableTables: row.available_tables == null ? null : Number(row.available_tables),
-      rates: (row.rates ?? []).map((rate: any) => ({
-        name: String(rate.name),
-        customerType: String(rate.customerType),
-        pricePerHour: Number(rate.pricePerHour),
-        minimumMinutes: Number(rate.minimumMinutes),
-        roundingMinutes: Number(rate.roundingMinutes),
-        graceMinutes: Number(rate.graceMinutes),
-      })),
-      games: (row.games ?? []).map((game: any) => ({
-        title: String(game.title),
-        minPlayers: game.minPlayers == null ? null : Number(game.minPlayers),
-        maxPlayers: game.maxPlayers == null ? null : Number(game.maxPlayers),
-        typicalMinutes: game.typicalMinutes == null ? null : Number(game.typicalMinutes),
-      })),
-    };
+    return mapBoardGameCafe(row, distanceKm);
   });
   return cafes
     .filter((cafe) => cafe.distanceKm == null || cafe.distanceKm <= radiusKm)

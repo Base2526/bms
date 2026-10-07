@@ -266,7 +266,8 @@ test("board-game API routes are admin guarded and scoped by board-game permissio
 
 test("public board-game discovery is explicit, aggregate-only and rate limited", () => {
   const sql = read("db/migrations/9.83__bms_board_game_public_discovery.sql");
-  const service = read("apps/web/lib/bms/boardGameCafe.ts");
+  const service = read("apps/web/lib/bms/boardGameCafe.ts")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const publicRoute = read("apps/web/app/api/board-game/nearby/route.ts");
   const adminRoute = read("apps/web/app/api/bms/board-game/discovery/route.ts");
 
@@ -276,25 +277,31 @@ test("public board-game discovery is explicit, aggregate-only and rate limited",
   assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
   assert.match(sql, /FORCE ROW LEVEL SECURITY/);
   assert.match(sql, /TO bms_app/);
-  assert.match(service, /profile\.public_visible AND location\.active/);
-  assert.match(service, /store\.business_archetype = 'board_game_cafe'/);
-  assert.match(service, /title\.public_visible/);
   // ตัดเฉพาะตัวฟังก์ชัน ไม่ใช่ตั้งแต่ตรงนั้นจนจบไฟล์ — ของที่เขียนทีหลังในไฟล์เดียวกัน
   // (เช่นแพ็กเกจสมาชิกที่อ่าน customer_id) จะทำให้ด่านนี้แดงด้วยเหตุผลที่ไม่ใช่ของมัน
   const publicFn = functionBody(service, /export async function listPublicBoardGameCafes\(/);
+  const chatFn = functionBody(service, /export async function listBoardGameChatBranches\(/);
+  const projection = service.match(/const BOARD_GAME_CAFE_SELECT = `([\s\S]*?)`;/)?.[1];
+  assert.ok(projection, "both channels share exactly one bounded projection");
+  assert.match(publicFn, /profile\.public_visible AND location\.active/);
+  assert.match(projection, /store\.business_archetype = 'board_game_cafe'/);
+  assert.match(projection, /title\.public_visible/);
+  assert.match(publicFn, /\$\{BOARD_GAME_CAFE_SELECT\}/);
+  assert.match(chatFn, /\$\{BOARD_GAME_CAFE_SELECT\}/);
   // `9.91`: โต๊ะว่างตัดสินจาก "ที่นั่ง" ไม่ใช่จาก session — หลังรวมโต๊ะ session หลายก้อนนั่งที่เดียวกัน
   // การนับจาก session จึงบอกคนนอกร้านว่าโต๊ะว่างทั้งที่มีคนนั่งอยู่
   assert.match(
-    publicFn,
+    projection,
     /NOT EXISTS \(\s*SELECT 1 FROM bms_board_game_seatings[\s\S]{0,400}?seating\.status = 'ACTIVE'/,
     "public availability must exclude tables held by an active seating"
   );
   assert.doesNotMatch(
-    publicFn,
+    projection,
     /session\.status IN/,
     "occupancy is the seating's, not the session's"
   );
   assert.doesNotMatch(publicFn, /customer_id|display_name AS customer/i);
+  assert.doesNotMatch(projection, /customer_id|display_name AS customer/i);
   assert.match(publicRoute, /rateLimit\(`/);
   assert.doesNotMatch(publicRoute, /authorizeAdminRoute/);
   assert.match(adminRoute, /authorizeAdminRoute\("board_game\.floor\.manage"\)/);

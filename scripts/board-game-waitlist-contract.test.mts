@@ -31,6 +31,106 @@ const cronWorkflow = read(".github/workflows/bms-cron.yml");
 const cleanup = read("apps/web/app/api/dev/fake/cleanup/route.ts");
 const platform = read("apps/web/lib/bms/platform.ts");
 const dbContract = read("scripts/board-game-waitlist-db-contract.test.mts");
+const chatMigration = read("db/migrations/10.48__bms_board_game_chat_reservations.sql");
+const chatWrite = service.split("export async function requestChatBoardGameReservation")[1].split("export async function listChatBoardGameReservationsForCustomer")[0];
+
+test("CHAT migration binds customer authority and keeps public constraints plus trigger shape", () => {
+  assert.match(chatMigration, /FOREIGN KEY \(tenant_id, customer_id\) REFERENCES bms_customers\(tenant_id, id\) ON DELETE CASCADE/);
+  assert.match(chatMigration, /source = 'CHAT'[\s\S]*customer_id IS NOT NULL[\s\S]*guest_email IS NULL/);
+  assert.match(chatMigration, /source = 'PUBLIC'[\s\S]*guest_email IS NOT NULL/);
+  assert.match(chatMigration, /\(tenant_id, chat_request_key_hash\) WHERE source = 'CHAT'/);
+  assert.match(chatMigration, /reminder_status = 'NONE' AND decision_notification_status = 'NONE'/);
+  assert.doesNotMatch(chatMigration, /DROP TABLE|DISABLE.*TRIGGER|DISABLE ROW LEVEL SECURITY/);
+  const realtime = migration.split("CREATE OR REPLACE FUNCTION public.bms_realtime_board_game_waitlist_trigger")[1];
+  assert.doesNotMatch(realtime, /customer_id|guest_name|guest_phone|chat_request/);
+  for (const column of ["customer_id", "chat_request_key_hash", "chat_request_hash"]) {
+    assert.ok(read("scripts/schemaReadiness.mts").includes(`"${column}"`));
+    assert.ok(read("db/checks/schema-readiness.sql").includes(column));
+  }
+});
+
+test("CHAT write inserts only REQUESTED with no table, confirmation, payment or public authority", () => {
+  assert.match(chatWrite, /'RESERVATION', 'CHAT'[\s\S]*'REQUESTED'/);
+  assert.doesNotMatch(chatWrite, /'CONFIRMED'|reserved_table_id|confirmed_at|reviewPublicBoardGameReservation|bms_payments|bms_orders|guest_email|public_manage_token/);
+  assert.match(chatWrite, /FOR UPDATE/);
+  assert.ok(chatWrite.indexOf("board_game.chat_reservation_request") < chatWrite.lastIndexOf('client.query("COMMIT")'));
+});
+
+test("CHAT status is always customer AND tenant scoped, short and private", () => {
+  const status = service.split("export async function listChatBoardGameReservationsForCustomer")[1].split("export async function getPublicBoardGameReservation")[0];
+  assert.match(status, /WHERE w.tenant_id = \$1 AND w.customer_id = \$2 AND w.source = 'CHAT'/);
+  assert.match(status, /left\(w.id::text, 8\)/);
+  assert.match(status, /left\(w.rejection_reason, 300\)/);
+  assert.doesNotMatch(status, /guest_name|guest_phone|guest_email|table_id|reviewed_by/);
+  assert.match(read("apps/web/lib/bms/customers.ts"), /UPDATE bms_board_game_waitlist SET customer_id = \$3[\s\S]{0,100}WHERE tenant_id = \$1 AND customer_id = \$2 AND source = 'CHAT'/,
+    "a CRM merge must not orphan the moved identity's request history");
+  assert.match(read("apps/web/lib/bms/customers.ts"), /Number\(chatPending.rows\[0\].count\) > 3/,
+    "merging two identities cannot bypass the pending-request cap");
+});
+
+test("CHAT review uses the existing locks; notification jobs cannot claim email-less requests", () => {
+  const review = service.split("export async function reviewPublicBoardGameReservation")[1].split("async function send")[0];
+  assert.match(review, /source IN \('PUBLIC', 'CHAT'\)/);
+  assert.match(review, /pg_advisory_xact_lock/);
+  assert.match(review, /source === "CHAT" && policy !== "NONE"/);
+  assert.match(review, /source = 'CHAT' THEN 'NONE' ELSE 'PENDING'/);
+  const reminders = service.split("export async function sendDueBoardGameReservationReminders")[1].split("export async function expireOverdueBoardGameReservations")[0];
+  assert.equal((reminders.match(/guest_email IS NOT NULL/g) ?? []).length, 2);
+  assert.match(browser, /entry.source === 'CHAT'/);
+  assert.match(mobile, /entry.source === 'CHAT'/);
+});
+
+test("CHAT pending cap and transaction failures execute against the real service with a fake SQL boundary", async () => {
+  const globals = globalThis as any;
+  const oldPool = globals.__bmsPostgresPool;
+  let pending = 3;
+  let failAudit = false;
+  let bookingEnabled = true;
+  let deposit = "NONE";
+  const calls: string[] = [];
+  const client = { release() {}, query: async (sql: string, args: any[] = []) => {
+    calls.push(sql);
+    let rows: any[] = [];
+    if (sql.includes("SELECT name, phone")) rows = [{ name: "FAKE customer", phone: "0800000000" }];
+    else if (sql.includes("SELECT COUNT(*)")) rows = [{ count: pending }];
+    else if (sql.includes("FOR SHARE OF profile")) rows = [{ timezone: "Asia/Bangkok", min_advance_minutes: 30,
+      request_ttl_minutes: 60, branch: "FAKE", booking_enabled: bookingEnabled, deposit_policy: deposit }];
+    else if (sql.includes("AS round_trip")) rows = [{ instant: new Date(Date.now() + 86400000), round_trip: args[0] }];
+    else if (sql.includes("INSERT INTO bms_board_game_waitlist")) rows = [{ id: "fake-request", status: "REQUESTED" }];
+    else if (sql.includes("INSERT INTO bms_audit_log") && failAudit) throw new Error("FAKE audit failure");
+    return { rows, rowCount: rows.length };
+  } };
+  globals.__bmsPostgresPool = { connect: async () => client };
+  try {
+    const { requestChatBoardGameReservation: request, ChatBoardGameReservationRejection: Rejection } = await import("../apps/web/lib/bms/boardGameWaitlist.ts");
+    const input = { tenantId: "fake-tenant", customerId: "fake-customer", locationId: "fake-location",
+      reservedLocal: "2027-01-10T18:00", durationMinutes: 120, partySize: 4, requestKey: "fake-key" };
+    await assert.rejects(request(input), e => e instanceof Rejection && e.code === "PENDING_LIMIT");
+    assert.ok(!calls.some(sql => sql.includes("INSERT INTO bms_board_game_waitlist")), "CHAT cap prevents the insert");
+    assert.ok(calls.includes("ROLLBACK"));
+    pending = 0;
+    for (const code of ["BOOKING_DISABLED", "DEPOSIT_REQUIRES_STAFF"]) {
+      calls.length = 0;
+      bookingEnabled = code !== "BOOKING_DISABLED";
+      deposit = code === "DEPOSIT_REQUIRES_STAFF" ? "FIXED" : "NONE";
+      await assert.rejects(request(input), e => e instanceof Rejection && e.code === code);
+      assert.ok(!calls.some(sql => sql.includes("INSERT INTO bms_board_game_waitlist")));
+    }
+    bookingEnabled = true; deposit = "NONE"; calls.length = 0; failAudit = true;
+    await assert.rejects(request(input), /FAKE audit failure/);
+    assert.ok(calls.includes("ROLLBACK")); assert.ok(!calls.includes("COMMIT"));
+    calls.length = 0; failAudit = false;
+    assert.deepEqual(await request(input), { requestId: "fake-request", status: "REQUESTED" });
+    assert.ok(calls.includes("COMMIT"));
+  } finally { globals.__bmsPostgresPool = oldPool; }
+});
+
+test("CHAT typed staff-review refusal is a POS rejection, never a database incident", async () => {
+  const { ChatBoardGameReservationRejection } = await import("../apps/web/lib/bms/boardGameWaitlist.ts");
+  const { boardGameRejectionFrom } = await import("../apps/web/lib/bms/boardGamePosOperations.ts");
+  assert.equal(boardGameRejectionFrom(new ChatBoardGameReservationRejection("DEPOSIT_REQUIRES_STAFF", "deposit requires staff"))?.reason, "REJECTED");
+  assert.equal(boardGameRejectionFrom(Object.assign(new Error("missing column"), { code: "42703" })), null);
+});
 
 test("9.99 stores one tenant/branch service-day queue with honest terminal shapes", () => {
   assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_board_game_waitlist/);

@@ -1,6 +1,6 @@
 import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { listPublicBoardGameCafes, requireBoardGameCafeTenant, type PublicBoardGameCafe, type QueryClient } from "./boardGameCafe";
+import { listBoardGameChatBranches, requireBoardGameCafeTenant, type PublicBoardGameCafe, type QueryClient } from "./boardGameCafe";
 
 export type BoardGameCustomerQuery = {
   branch?: string;
@@ -31,7 +31,7 @@ export async function readBoardGameCustomerInfoInTx(
   tenantId: string,
   kind: BoardGameCustomerRead,
   input: BoardGameCustomerQuery = {},
-  readCafes = listPublicBoardGameCafes
+  readCafes = listBoardGameChatBranches
 ) {
   const branch = boundedText(input.branch, 120);
   const keyword = boundedText(input.keyword, 120);
@@ -44,7 +44,7 @@ export async function readBoardGameCustomerInfoInTx(
   if (difficulty !== null && !["LIGHT", "MEDIUM", "HEAVY", "CUSTOM"].includes(difficulty)) throw new Error("Invalid difficulty");
   if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error("Invalid result limit");
   await requireBoardGameCafeTenant(client, tenantId);
-  const published = await readCafes({ limit: 100 }, { tenantId, client });
+  const published = await readCafes({ tenantId, client });
   if (!published.length) return { status: "NOT_PUBLISHED", branches: [] };
   const matches = branch
     ? published.filter((cafe) => cafe.displayName.toLocaleLowerCase() === branch.toLocaleLowerCase())
@@ -70,7 +70,7 @@ export async function readBoardGameCustomerInfoInTx(
       depositAmount: cafe.reservationDepositPolicy === "FIXED" ? cafe.reservationDepositAmount : null,
       depositPercent: cafe.reservationDepositPolicy === "PERCENT" ? cafe.reservationDepositPercent : null,
       refundCutoffHours: cafe.reservationDepositRefundCutoffHours,
-      canSubmitViaChat: false,
+      canSubmitViaChat: cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
     },
     waitMinutes: null, waitingParties: null, partyCapacity: null,
     note: "Current aggregate only, not a reservation or a guarantee of space for a party. Queue, wait time and party capacity are not available through this tool.",
@@ -85,7 +85,7 @@ export async function readBoardGameCustomerInfoInTx(
        JOIN bms_board_game_public_locations profile ON profile.tenant_id = copy.tenant_id AND profile.location_id = copy.location_id
        JOIN bms_locations location ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
       WHERE title.tenant_id = $1 AND copy.location_id = $2
-        AND profile.public_visible AND location.active AND title.public_visible
+        AND location.active AND title.public_visible
         AND copy.status NOT IN ('RETIRED', 'LOST')
         AND ($3::text IS NULL OR POSITION(lower($3) IN lower(title.title)) > 0
              OR EXISTS (SELECT 1 FROM unnest(title.tags) tag WHERE POSITION(lower($3) IN lower(tag)) > 0))
