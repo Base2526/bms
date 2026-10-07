@@ -52,9 +52,12 @@ export const bmsDashboardResolvers = {
       await requirePermission(ctx, "report.view");
       return getAiFailureSummary(getTenantId(ctx), args.days ?? 7);
     },
-    async bmsActions(_p: unknown, args: { limit?: number }, ctx: any) {
+    async bmsActions(_p: unknown, args: { limit?: number; group?: string; offset?: number }, ctx: any) {
       await requirePermission(ctx, "report.view");
-      return listActions(getTenantId(ctx), args.limit ?? 50);
+      if (!["ALL", "NEW", "ACCEPTED", "HISTORY"].includes(args.group ?? "ALL") || (args.offset ?? 0) < 0) {
+        throw new GraphQLError("invalid action filter", { extensions: { code: "BAD_USER_INPUT" } });
+      }
+      return listActions(getTenantId(ctx), args.limit ?? 50, args.group ?? "ALL", args.offset ?? 0);
     },
     async bmsActionMetrics(_p: unknown, args: { days?: number }, ctx: any) {
       await requirePermission(ctx, "report.view");

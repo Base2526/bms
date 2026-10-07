@@ -1,0 +1,30 @@
+.section { margin: 12px 0; padding: 16px 18px; background: var(--app-surface); border-block: 1px solid var(--app-border); min-width: 0; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.heading h2 { margin: 0; font-size: 18px; }
+.section :global(.ant-tabs-nav) { margin-bottom: 0; }
+.rows { min-width: 0; }
+.row { display: grid; grid-template-columns: 86px minmax(0, 1fr) minmax(140px, 190px) 120px; align-items: center; gap: 12px; min-height: 60px; padding: 8px 0; border-bottom: 1px solid var(--app-border); }
+.row > :global(.ant-tag) { justify-self: start; margin: 0; }
+.taskTitle { border: 0; background: transparent; color: var(--app-text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; padding: 0; overflow-wrap: anywhere; }
+.taskTitle:hover { color: #1677ff; }
+.taskTitle:focus-visible { outline: 2px solid #1677ff; outline-offset: 3px; }
+.owner { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.owner small { color: var(--app-muted); font-size: 12px; }
+.overdue { color: #b42318; }
+.controls { display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.loadingSpace { height: 100px; }
+.details { overflow-wrap: anywhere; }
+.details h3 { font-size: 20px; }
+.details pre { padding: 12px; background: var(--app-bg); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.metrics summary { cursor: pointer; color: var(--app-muted); padding: 8px 0; }
+.metrics dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.metrics dt { color: var(--app-muted); }
+.metrics dd { margin: 4px 0; font-size: 18px; font-weight: 600; }
+.pagination { display: flex; align-items: center; justify-content: flex-end; gap: 12px; margin-top: 16px; }
+@media (max-width: 767px) {
+  .section { padding: 12px; }
+  .row { grid-template-columns: 78px minmax(0, 1fr); gap: 8px; padding: 12px 0; }
+  .owner { grid-column: 2; }
+  .controls { grid-column: 2; justify-content: flex-start; }
+  .heading h2 { font-size: 16px; }
+}

@@ -31,8 +31,16 @@ As of 2026-08-22, `/admin/dashboard` carries the complete **Q1 + Q2 Phase 1** op
 - **Q1 / action center** materializes daily POS, stock, margin, retention, sales and operational
   signals with priority, evidence, expected impact, confidence, owner, due date and deep link.
   Staff can accept, complete or dismiss with a reason; transitions and audit evidence persist in
-  `bms_actions`/`bms_action_events`. The dashboard reports acceptance, completion, time-to-action and
-  measured-outcome coverage. Users with `action.manage` automatically refresh today's signals when
+  `bms_actions`/`bms_action_events`. Overview KPIs now precede the compact channel strip and task
+  preview. The preview shows up to three NEW or ACCEPTED tasks, ordered by priority and due time;
+  an overdue open task remains actionable, never becomes history solely because of its date.
+  View all/History opens a responsive drawer with server-side group filtering and 20-row pages
+  (one extra row determines whether Next is available). Terminal actions are ordered newest first.
+  Evidence, expected impact and recorded outcomes live in task details rather than dashboard rows.
+  The drawer's collapsible 30-day summary reports acceptance, completion, time-to-action and
+  measured-outcome coverage; its metrics load only on opening the drawer. Counts are not inferred
+  from a capped preview. Reads still require `report.view`, mutations `action.manage`.
+  Users with `action.manage` automatically refresh today's signals when
   the dashboard opens; manual refresh remains available. Signal-cleared actions expire with both an
   append-only event and an `action.expired` audit row. Migration `9.13` keeps Thai and English action
   copy together so the per-user language preference does not leak the other language.

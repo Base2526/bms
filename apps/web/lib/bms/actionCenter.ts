@@ -253,12 +253,18 @@ export async function refreshActions(tenantId: string): Promise<number> {
   } finally { client.release(); }
 }
 
-export async function listActions(tenantId: string, limit = 50) {
+export async function listActions(tenantId: string, limit = 50, group = "ALL", offset = 0) {
+  if (!["ALL", "NEW", "ACCEPTED", "HISTORY"].includes(group)) throw new Error("invalid action group");
+  if (!Number.isInteger(offset) || offset < 0) throw new Error("invalid action offset");
   const res = await query<any>(
     `SELECT a.*, u.name AS owner_name FROM bms_actions a LEFT JOIN users u ON u.id=a.owner_id
-     WHERE a.tenant_id=$1 ORDER BY CASE a.status WHEN 'NEW' THEN 0 WHEN 'ACCEPTED' THEN 1 ELSE 2 END,
-       CASE a.priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END, a.due_at NULLS LAST LIMIT $2`,
-    [tenantId, Math.min(Math.max(limit, 1), 100)]
+     WHERE a.tenant_id=$1 AND ($3='ALL' OR a.status=$3
+       OR ($3='HISTORY' AND a.status IN ('COMPLETED','DISMISSED','EXPIRED')))
+     ORDER BY CASE a.status WHEN 'NEW' THEN 0 WHEN 'ACCEPTED' THEN 1 ELSE 2 END,
+       CASE WHEN a.status IN ('COMPLETED','DISMISSED','EXPIRED') THEN a.updated_at END DESC,
+       CASE a.priority WHEN 'CRITICAL' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'MEDIUM' THEN 2 ELSE 3 END,
+       a.due_at NULLS LAST, a.id LIMIT $2 OFFSET $4`,
+    [tenantId, Math.min(Math.max(limit, 1), 100), group, offset]
   );
   return res.rows.map(row);
 }
