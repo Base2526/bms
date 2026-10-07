@@ -2,6 +2,25 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Pipeline: [workflow.md](workflow.md) · Tools: [tools.md](tools.md)
 
+## Pharmacy customer boundary (`10.44`)
+
+Medication advice (dose, interactions, vulnerable patients and choosing/substituting medicines)
+returns a fixed licensed-pharmacist handoff before the general model/catalog path. Emergencies
+have priority; symptom-only questions may enter an approved intake, otherwise get the handoff.
+This is not clinical approval and does not claim a case/notification was created. The prompt
+separately forbids clinical advice. Read label facts only through `get_pharmacy_product_facts`:
+missing fields are unknown, not therapeutic equivalence. Open-shift evidence is not current
+pharmacist presence; case expiry is not a reply deadline. Both response and consultation-time
+estimates remain unknown. No intake flag or seeded protocol was activated.
+
+The 58-question recheck keeps label-use quoting disabled: Product Policy approval is not approval
+to publish indications/dose/warnings/storage, even for household remedies. Clinical detours include
+missed doses, adverse effects, persistent symptoms, chronic conditions and pets (refer to a vet).
+Emergency copy is shared and deterministic for overdose/ingestion/severe-allergy/self-harm wording;
+Thailand's 1323 supports mental-health concerns, not a substitute for 1669 in immediate danger.
+Exact-case references narrow the current identity only. No nearest-branch, restock-date, same-day
+dispatch, pharmacist-roster or enrollment claim is made without a supporting tool/result.
+
 ## Legacy deterministic fallback prompt
 
 `generateResponse()` in [`lib/bms/ai.ts`](../../apps/web/lib/bms/ai.ts) is the older single-shot path
@@ -103,6 +122,12 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   missing/ambiguous quantities or variants stay pending, and no partial basket is written. Pack
   wording such as blister/bottle/box uses only a backend-returned `packCode`; dosage-form text such
   as `500mg 10 เม็ด` remains part of product identity and is not silently interpreted as order qty.
+  Restaurant food-safety answers use only the structured `foodProfile`; missing declarations are
+  stated as unknown, never inferred from a dish name or description, and even reviewed declarations
+  do not prove freedom from cross-contact. Table/queue/kitchen answers require an exact branch and
+  `get_restaurant_availability`; null estimates stay unknown and kitchen SLA is not a promise.
+  `request_restaurant_reservation` creates `REQUESTED` only. The deterministic post-tool reply says
+  explicitly that no table is reserved or confirmed until staff accepts it.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):
   back-office assistant; sensitive actions are prepared as *proposals* the human must confirm — the
   model is told to say "prepared, awaiting confirmation", never "done". A request whose ambiguity

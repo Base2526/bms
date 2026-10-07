@@ -71,7 +71,10 @@ Restaurant menus use the same catalog boundary. A menu must explicitly enable `C
 `create_order.items[].modifierCodes` accepts codes only. Names and price deltas are re-read
 server-side and included in the pre-write confirmation summary and its fingerprint. `NON_STOCK`
 and `RECIPE` return availability states rather than invented stock quantities; a branch-level
-`SOLD_OUT_TODAY` flag remains visible so the assistant explains that the dish is sold out.
+`SOLD_OUT_TODAY` flag remains visible so the assistant explains that the dish is sold out. Product
+reads also return `foodProfile`: shop-maintained positive allergen declarations, dietary menu labels,
+an explicit `allergenInformationProvided` flag, and `crossContactUnknown:true`. An empty declaration
+is never permission to say a dish is allergen-free.
 
 ## Authoritative runtime registry and gates
 
@@ -89,8 +92,11 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `list_customer_coupons`, `list_available_coupons`, `check_coupon` | A1 | yes | `coupon.view` | read / backend validation |
 | `get_loyalty_points` | A1 | own `(channel, customer_ref)` only | `member.view` | read; never redeems |
 | `get_order_status` | A1 | own `(channel, customer_ref)` only | `order.view` | read |
+| `get_pharmacy_product_facts`, `get_pharmacy_service_status` | A1/pharmacy | pharmacy customers only | `product.view` | exact visible SKU label/pack facts, approved regulatory/sale policy (null if unapproved), optional branch/variant expiry snapshot; no approved usage quotations; shift evidence is not current presence and expiry is not the promised dispatched lot |
+| `get_pharmacy_case_status` | A1/pharmacy | pharmacy customer's own `(channel, customer_ref)` only | `order.view` | latest short references/status/expiry, optionally filtered by explicit caseReference (8 hex characters or UUID) inside the same identity scope; ambiguous references expose no case; no health/decision text, staff identity or invented reply ETA |
 | `get_customer_checkout` | A1 | own `(channel, customer_ref)` only | — | completeness read; no raw PII |
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
+| `list_restaurant_order_locations`, `get_restaurant_availability`, `get_restaurant_reservation_status` | A1/restaurant | restaurant customers only | `product.view` / `order.view` | exact branch ids, current aggregate table/queue/kitchen facts, and own request status; no guest/table/ticket identities and no promised wait time |
 | `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard`, `generate_report` | A1 | no | `report.view` | read / file export; dashboard results include the live-query fetch time, not a fabricated last-change time |
 | `analyze_pos_shift` | A1/POS | no | `pos.shift.report.all` | read-only shift/order/bill diagnostics from verified POS shift report + export ledgers; compares counted cash when supplied but never closes a shift or writes cash records |
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read; `customer_orders` returns 1–10 rows plus all-status `totalCount`, `successfulCount`, and bounded `nextOffset`/`truncated`, never an unbounded ledger; if provider prose is empty/token-truncated after this verified read, runtime shows a server-formatted page and “show next” guidance instead of `—` or a broken table |
@@ -102,6 +108,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
 | `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order; pharmacy SKU must pass approved backend Product Policy | `order.create` | execute + domain audit + deterministic signed checkout link |
+| `request_restaurant_reservation` | A2/restaurant | own identity, restaurant customers only | `order.create` | creates `REQUESTED` for staff review; never reserves or confirms a table |
 | `subscribe_restock_notification` | A2 | explicit opt-in for own channel identity | — | save waitlist entry; staff reviews before outbound |
 | `save_customer_checkout_details` | A2 | own `(channel, customer_ref)` only | — | save only delivery fields explicitly supplied by that customer |
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
@@ -1176,6 +1183,22 @@ Confidence
   These three tools use `boardGameCustomerInfo.ts` inside tenant/RLS transactions. Branch selection
   accepts a published name, never an operational id. Multiple/mismatched branches return
   `BRANCH_REQUIRED`; unpublished data returns `NOT_PUBLISHED`, not zero or proof of absence.
+- `list_restaurant_order_locations` — restaurant-only active branches and their exact ids; the id is
+  authority for the next read/write tool and must not be invented or printed to the customer.
+- `get_restaurant_availability` — current aggregate free tables/seats, walk-in waiting parties/guests,
+  unseated reservation-request counts, open kitchen tickets and configured station SLA for one exact
+  branch. Accepted reservations are reported separately and are not evidence that a party is
+  physically waiting. Kitchen work separates `NEW`/`PREPARING` from `READY` so finished dishes do
+  not inflate prep load. It exposes no table, guest or ticket identity. `estimatedWaitMinutes` and
+  `estimatedPrepMinutes` remain null because queue fit,
+  station capacity and dish mix are not known; SLA is a threshold, not a pickup-time promise.
+- `request_restaurant_reservation` / `get_restaurant_reservation_status` — submit a customer-owned
+  `REQUESTED` reservation and read that customer's latest five requests. The write derives customer
+  identity, name and phone server-side and refuses until a meaningful saved name and phone exist;
+  the model reads completeness and saves only values the customer explicitly supplies, never PII in
+  reservation arguments. Staff must PIN-authenticate and accept the request before it becomes
+  operational. `REQUESTED`, `WAITING` and `CALLED` never mean a table is guaranteed; only `SEATED`
+  names an actual table/check.
 - `get_payment_info` — บัญชีรับเงินของร้านที่กรอกข้อมูลใช้งานได้จริง (ธนาคาร/พร้อมเพย์) พร้อม
   `configured`; แถวว่างถูกตัดออก และเมื่อ `configured=false` AI ห้ามยกตัวอย่างช่องทางเอง
 - `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)

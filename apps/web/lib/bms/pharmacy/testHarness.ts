@@ -1,4 +1,5 @@
 import { getActivePharmacyProtocolByKey, listActivePharmacyTriggerDefinitions } from "./protocols";
+import { isPharmacyMedicationAdviceQuestion, pharmacyClinicalHandoffReply } from "./customerAssistancePolicy";
 import { computeMissingFields, evaluateAnswer, type KnownFields, type ProtocolDefinition } from "./ruleEngine";
 import {
   detectPharmacyIntakeTrigger,
@@ -951,12 +952,11 @@ export async function runPharmacyTestHarness(
 
   const text = String(message ?? "").trim();
   if (!text) return { reply: "พิมพ์อาการหรือคำตอบสั้นๆ ได้เลยค่ะ", session };
-  const triggerDefinitions = resolvedTriggerDefinitions(await listActivePharmacyTriggerDefinitions(tenantId));
   const conversationRoute = routePharmacyConversationMessage(text);
 
   if (conversationRoute.intent === "EMERGENCY") {
     return {
-      reply: pharmacyEmergencyReply(),
+      reply: pharmacyEmergencyReply(text),
       session: session.phase === "NONE"
         ? { phase: "NONE", answers: {} }
         : { ...session, phase: "WAITING" },
@@ -966,6 +966,12 @@ export async function runPharmacyTestHarness(
   if (conversationRoute.intent === "HUMAN_HANDOFF" && session.phase !== "NONE") {
     return { reply: CUSTOMER_REQUESTED_TEXT, session: { ...session, phase: "WAITING" } };
   }
+
+  if (isPharmacyMedicationAdviceQuestion(text)) {
+    return { reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(text), text), session };
+  }
+
+  const triggerDefinitions = resolvedTriggerDefinitions(await listActivePharmacyTriggerDefinitions(tenantId));
 
   if (["GREETING", "THANKS", "SMALL_TALK", "PRODUCT_SIDE_INTENT", "ORDER_STATUS"].includes(conversationRoute.intent)) {
     const routedReply = pharmacyRouterReply(conversationRoute, {
@@ -991,7 +997,7 @@ export async function runPharmacyTestHarness(
     }
     const trigger = detectPharmacyIntakeTrigger(text, triggerDefinitions);
     if (trigger?.intent === "emergency") {
-      return { reply: pharmacyEmergencyReply(), session: { phase: "NONE", answers: {} } };
+      return { reply: pharmacyEmergencyReply(text), session: { phase: "NONE", answers: {} } };
     }
     if (trigger?.intent === "ambiguous" || trigger?.intent === "medicine_product") {
       return {

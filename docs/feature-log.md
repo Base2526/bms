@@ -10,6 +10,57 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Pharmacy customer assistance (`10.44`, 2026-10-07)
+
+- Second recheck maps all 58 customer questions to a single counted capability status in
+  `scripts/ai-eval/pharmacy-question-matrix.mjs` and a checked generated table in the eval README.
+  It corrects unsupported nearest-branch/restock ETA/dispatch/membership-enrollment claims and
+  leaves approved label-use quoting unimplemented, not implicitly enabled by Product Policy.
+- Shared fixed emergency copy adds overdose, ingestion, severe-allergy and self-harm routes;
+  mental-health support is distinct from emergency response. Clinical detours add missed doses,
+  adverse effects, chronic conditions, persistent symptoms, storage/label questions and pets.
+  Safety text and explicit case selectors are preserved before short-reply/context expansion, so
+  a clarification such as "ข้อแรก" cannot erase an overdose or self-harm report in the same message.
+- Product facts expose only APPROVED regulatory/sale policy; explicit case references remain
+  tenant/channel/identity-scoped and a colliding short reference is not arbitrarily resolved.
+
+- Deterministic medication-advice refusal now precedes the general customer AI/order path and
+  remains active when intake is disabled. Emergency routing retains priority (Thai/English);
+  symptom-only questions fall back to a pharmacist when no approved intake can handle them.
+- Pharmacy-only customer reads expose shop-transcribed label facts, configured packs, optional
+  branch/variant expiry snapshots, open-shift evidence and the chat identity's own case status.
+  Missing data remains unknown; no clinical decision text or staff/patient identity is exposed.
+- An open-shift pharmacist stamp is historical evidence, not a live presence guarantee. No reply
+  ETA is invented and case expiry still requires pharmacist re-evaluation.
+- Product form + GraphQL + migration `10.44` add bounded ingredient/strength/form label data;
+  these never authorize a sale or establish clinical equivalence. Existing product policy remains
+  authoritative. Clinical feature flags and protocol approvals are unchanged.
+- Shared synthetic customer corpus runs as pure contracts and live-eval cases. Pure tests do not
+  constitute DB/RLS/provider verification; no clinical activation is implied by their passing.
+
+## Restaurant customer assistance (`10.43`, 2026-10-07)
+
+- Restaurant product forms now store bounded, structured positive allergen declarations and dietary
+  menu labels. Customer product tools expose an explicit unknown/reviewed state and always mark
+  kitchen cross-contact as unknown, so a missing description can no longer become a safety claim.
+- Customer AI can read one branch's current aggregate free-table, queue and kitchen load without
+  receiving operational ids or personal data. The service deliberately returns null wait/preparation
+  estimates: ticket count and SLA thresholds do not encode table fit, station capacity or dish mix.
+- A chat booking enters the existing restaurant waitlist as `REQUESTED`, linked to the canonical
+  channel customer. The POS queue shows it separately; a PIN-authenticated operator must accept it
+  before call/seat actions are enabled. The pipeline replaces model prose with a server-built receipt
+  that says the table is not reserved or confirmed yet.
+- AI evaluation inventory and contract coverage pin the new tools, food-safety unknown state,
+  request-only wording and aggregate-data boundary.
+- Recheck: reservation input rejects fractional party sizes, missing timezones and impossible dates;
+  changed retry payloads cannot claim an unpersisted change. Branch SLA excludes other branches.
+  CRM merges preserve request ownership and refuse conflicting live appointments; customer deletion
+  can clear the ownership FK without violating the historical-row constraint.
+  Expected reservation refusals retain actionable messages through the AI tool boundary instead of
+  becoming generic tool-failure incidents.
+
+---
+
 ## Native Mobile POS camera + focused HID scanner (2026-09-29)
 
 - The sale screen now has two real scan inputs behind the same server-side `bmsPosScan` resolver:

@@ -134,6 +134,7 @@ class RestaurantApiError extends Error {
 
 const isOpenCheckStatus = (status: string | null | undefined) => OPEN_CHECK_STATUSES.includes(status ?? "");
 const queueStatusLabels = (t: Translate): Record<string, string> => ({
+  REQUESTED: t("pos_restaurant.queue_requested"),
   WAITING: t("pos_restaurant.queue_waiting"), CALLED: t("pos_restaurant.queue_called"),
   SEATED: t("pos_restaurant.queue_seated"), CANCELLED: t("pos_restaurant.queue_cancelled"),
   NO_SHOW: t("pos_restaurant.queue_no_show"),
@@ -150,8 +151,8 @@ type TakeawayCheck = FloorCheck & { label: string; serviceMode: "TAKEAWAY" };
 type Floor = { areas: Array<{ id: string; name: string; sortOrder: number }>; tables: DiningTable[];
   takeawayChecks?: TakeawayCheck[];
 };
-type WaitlistEntry = { id: string; kind: "WALK_IN" | "RESERVATION"; status: string; serviceDate: string; queueNo: number | null; reservedFor: string | null; partySize: number; guestName: string | null; guestPhone: string | null; note: string | null; preferredTableId: string | null; preferredTableCode: string | null; seatedTableId: string | null; seatedTableCode: string | null; checkId: string | null; calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string };
-type WaitlistBoard = { entries: WaitlistEntry[]; waitingCount: number; calledCount: number; waitingGuests: number };
+type WaitlistEntry = { id: string; kind: "WALK_IN" | "RESERVATION"; status: string; source: "STAFF" | "CUSTOMER_AI"; serviceDate: string; queueNo: number | null; reservedFor: string | null; partySize: number; guestName: string | null; guestPhone: string | null; note: string | null; preferredTableId: string | null; preferredTableCode: string | null; seatedTableId: string | null; seatedTableCode: string | null; checkId: string | null; calledAt: string | null; seatedAt: string | null; closedAt: string | null; createdAt: string };
+type WaitlistBoard = { entries: WaitlistEntry[]; requestedCount: number; waitingCount: number; calledCount: number; waitingGuests: number };
 const FLOOR_TABLE_SIZE = {
   round: { width: 96, height: 96 },
   rect: { width: 128, height: 76 },
@@ -630,7 +631,7 @@ export default function RestaurantPosPage() {
   const [openTable, setOpenTable] = useState<DiningTable | null>(null);
   // โต๊ะที่แยกบิลแล้วมีบิลเปิดอยู่หลายใบ — แตะโต๊ะต้องถามก่อนว่าจะเปิดใบไหน
   const [billPickerTable, setBillPickerTable] = useState<DiningTable | null>(null);
-  const [waitlist, setWaitlist] = useState<WaitlistBoard>({ entries: [], waitingCount: 0, calledCount: 0, waitingGuests: 0 });
+  const [waitlist, setWaitlist] = useState<WaitlistBoard>({ entries: [], requestedCount: 0, waitingCount: 0, calledCount: 0, waitingGuests: 0 });
   const [queueFormOpen, setQueueFormOpen] = useState<"WALK_IN" | "RESERVATION" | null>(null);
   const [queueParty, setQueueParty] = useState(2);
   const [queueName, setQueueName] = useState("");
@@ -2590,7 +2591,7 @@ export default function RestaurantPosPage() {
     { key: "ORDER" as const, short: t("pos_restaurant.rail_order_short"), full: t("pos_restaurant.rail_order"), icon: <WalletOutlined />, badge: 0 },
     { key: "FLOOR" as const, short: t("pos_restaurant.rail_floor_short"), full: t("pos_restaurant.rail_floor"), icon: <AppstoreOutlined />, badge: unsentTableCount },
     { key: "INCOMING" as const, short: t("pos_restaurant.rail_incoming_short"), full: t("pos_restaurant.rail_incoming"), icon: <BellOutlined />, badge: incomingActionOrders.length },
-    { key: "QUEUE" as const, short: t("pos_restaurant.rail_queue_short"), full: t("pos_restaurant.rail_queue"), icon: <TeamOutlined />, badge: waitlist.waitingCount + waitlist.calledCount },
+    { key: "QUEUE" as const, short: t("pos_restaurant.rail_queue_short"), full: t("pos_restaurant.rail_queue"), icon: <TeamOutlined />, badge: waitlist.requestedCount + waitlist.waitingCount + waitlist.calledCount },
     { key: "QR" as const, short: "QR", full: t("pos_restaurant.rail_qr"), icon: <QrcodeOutlined />, badge: pendingQrSubmissions.length },
     { key: "CALLS" as const, short: t("pos_restaurant.rail_calls_short"), full: t("pos_restaurant.rail_calls"), icon: <span aria-hidden="true">🔔</span>, badge: pendingServiceCalls.length },
     { key: "KITCHEN" as const, short: t("pos_restaurant.rail_kitchen_short"), full: t("pos_restaurant.rail_kitchen"), icon: <CoffeeOutlined />, badge: kitchenCooking + kitchenReady },
@@ -2852,7 +2853,7 @@ export default function RestaurantPosPage() {
           {waitlist.entries.length === 0 && <div className={styles.empty}><p>{t("pos_restaurant.queue_empty")}</p></div>}
           <div className={styles.queueList}>
             {waitlist.entries.map((entry) => {
-              const open = entry.status === "WAITING" || entry.status === "CALLED";
+              const open = entry.status === "REQUESTED" || entry.status === "WAITING" || entry.status === "CALLED";
               // ⚠️ "รอมากี่นาที" ใช้ได้กับคิวเดินเข้าเท่านั้น — การจองที่รับไว้เมื่อวานจะกลายเป็น
               // "รอมา 1,400 นาที" ซึ่งไม่ใช่ความจริงของใครเลย · สิ่งที่คนถามถึงการจองคือเวลานัด
               // และถ้าเลยเวลานัดแล้ว เลยไปนานแค่ไหน (นั่นคือจังหวะที่ต้องตัดสินว่าจะรออีกไหม)
@@ -2880,12 +2881,14 @@ export default function RestaurantPosPage() {
                   {entry.note && <small className={styles.queueNote}>{entry.note}</small>}
                 </div>
                 {open && <div className={styles.queueActions}>
+                  {entry.status === "REQUESTED" && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`}
+                    onClick={() => void waitlistAction("accept_request", { entryId: entry.id })}>{t("pos_restaurant.queue_accept_request")}</button>}
                   {entry.status === "WAITING" && <button type="button" className={styles.btn}
                     onClick={() => void waitlistAction("call", { entryId: entry.id })}>{t("pos_restaurant.queue_call")}</button>}
-                  <button type="button" className={`${styles.btn} ${styles.btnPrimary}`}
+                  {entry.status !== "REQUESTED" && <button type="button" className={`${styles.btn} ${styles.btnPrimary}`}
                     disabled={!session?.shift || availableTables.length === 0}
                     title={availableTables.length === 0 ? t("pos_restaurant.queue_no_free_table") : t("pos_restaurant.queue_seat_hint")}
-                    onClick={() => { setSeatEntry(entry); setSeatTableId(availableTables[0]?.id ?? ""); }}>{t("pos_restaurant.queue_seat")}</button>
+                    onClick={() => { setSeatEntry(entry); setSeatTableId(availableTables[0]?.id ?? ""); }}>{t("pos_restaurant.queue_seat")}</button>}
                   <button type="button" className={styles.btn}
                     onClick={() => void waitlistAction(entry.status === "CALLED" ? "no_show" : "cancel", { entryId: entry.id })}>
                     {entry.status === "CALLED" ? t("pos_restaurant.queue_mark_no_show") : t("pos_restaurant.cancel")}

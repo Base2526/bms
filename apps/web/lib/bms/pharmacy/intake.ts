@@ -18,6 +18,8 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import { isPharmacyMedicationAdviceQuestion, pharmacyClinicalHandoffReply } from "./customerAssistancePolicy";
+import { pharmacyEmergencyReply } from "./emergency";
 import {
   getAssessment,
   appendRawMessage,
@@ -539,10 +541,15 @@ export async function runPharmacyIntakeTurn(
         meta: { assessmentId: state.caseId, step: "emergency_transition" },
       });
     }
-    return reply(tenantId, convId, state.caseId, RED_FLAG_TEXT);
+    return reply(tenantId, convId, state.caseId, pharmacyEmergencyReply(message));
   }
 
-  // Expiry check first — mid-conversation, independent of the batch cron sweep.
+  // A medication-advice detour is never interpreted as an intake answer.
+  if (isPharmacyMedicationAdviceQuestion(message)) {
+    return { reply: pharmacyClinicalHandoffReply(!/[ก-๙]/.test(message), message), caseId: state.caseId };
+  }
+
+  // Mid-conversation expiry remains independent of the batch cron sweep.
   const expired = await closeAssessmentIfExpired(tenantId, state.caseId);
   if (expired) {
     await clearConversationLink(tenantId, convId);

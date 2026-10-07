@@ -2,8 +2,7 @@
 // The router recognizes messages that must not be treated as clinical answers.
 // It deliberately does not mutate workflow state or infer medical facts.
 
-const EMERGENCY_PATTERN =
-  /(หมดสติ|ชัก|หายใจไม่ออก|หายใจลำบากมาก|หอบเหนื่อยมาก|เจ็บหน้าอก|แน่นหน้าอก|หน้าเบี้ยว|ปากเบี้ยว|แขนขาอ่อนแรง|พูดไม่ชัด|อาเจียนเป็นเลือด|ถ่ายดำ|ถ่ายเป็นเลือด|แพ้รุนแรง|คอบวม|ลิ้นบวม)/i;
+import { pharmacyEmergencyKind } from "./emergency";
 const GREETING_PATTERN = /^(?:สวัสดี|หวัดดี|ดีครับ|ดีค่ะ|hello|hi|hey)(?:\s*(?:ครับ|ค่ะ|คะ|นะครับ|นะคะ))?[\s!?.]*$/i;
 const THANKS_PATTERN = /^(?:ขอบคุณ|ขอบใจ|thank\s*you|thanks)(?:\s*มาก)?(?:\s*(?:ครับ|ค่ะ|คะ|นะครับ|นะคะ))?[\s!?.]*$/i;
 const SMALL_TALK_PATTERN = /^(?:เป็นอย่างไรบ้าง|สบายดีไหม|ทำอะไรอยู่|มีใครอยู่ไหม)(?:\s*(?:ครับ|ค่ะ|คะ))?[\s!?.]*$/i;
@@ -38,7 +37,7 @@ export type PharmacyConversationRoute = {
  */
 export function routePharmacyConversationMessage(message: string): PharmacyConversationRoute {
   const text = String(message ?? "").trim();
-  if (EMERGENCY_PATTERN.test(text)) return { intent: "EMERGENCY", interruptsClinicalAnswer: true };
+  if (pharmacyEmergencyKind(text)) return { intent: "EMERGENCY", interruptsClinicalAnswer: true };
   if (HUMAN_HANDOFF_PATTERN.test(text)) return { intent: "HUMAN_HANDOFF", interruptsClinicalAnswer: true };
   if (CANCEL_PATTERN.test(text)) return { intent: "CANCEL_OR_RESTART", interruptsClinicalAnswer: true };
   if (CORRECTION_PATTERN.test(text)) return { intent: "CORRECTION", interruptsClinicalAnswer: true };

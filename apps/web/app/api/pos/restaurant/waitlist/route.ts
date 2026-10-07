@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import {
   addRestaurantWaitlistEntry,
+  acceptRestaurantReservationRequest,
   callRestaurantWaitlistEntry,
   closeRestaurantWaitlistEntry,
   listRestaurantWaitlist,
@@ -52,6 +53,9 @@ async function handlePOST(req: NextRequest) {
 
   if (action === "call") {
     return NextResponse.json({ entry: await callRestaurantWaitlistEntry({ ...common, entryId }) });
+  }
+  if (action === "accept_request") {
+    return NextResponse.json({ entry: await acceptRestaurantReservationRequest({ ...common, entryId }) });
   }
   if (action === "cancel" || action === "no_show") {
     return NextResponse.json({

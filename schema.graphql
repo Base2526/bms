@@ -5432,15 +5432,20 @@ input BmsPriceTierRowInput {
 
 type BmsProduct {
   active: Boolean!
+  allergenCodes: [String!]!
+  allergenInformationProvided: Boolean!
   barcode: String
   brand: String
   catalogVariants: [BmsProductCatalogVariant!]!
   category: String
   costPrice: Float
   description: String
+  dietaryTags: [String!]!
+  foodSafetyNote: String
   imageUrl: String
   images: [Image!]!
   keywords: [String!]!
+  medicineLabel: JSON!
   name: String!
   price: Float!
   priceTiers: [BmsPriceTier!]!
@@ -5520,6 +5525,8 @@ type BmsProductImportRowResult {
 
 input BmsProductInput {
   active: Boolean
+  allergen_codes: [String!]
+  allergen_information_provided: Boolean
   barcode: String
   base_unit: String
   brand: String
@@ -5527,6 +5534,8 @@ input BmsProductInput {
   cost_price: Float
   creation_template: String
   description: String
+  dietary_tags: [String!]
+  food_safety_note: String
   image_url: String
   image_urls: [String!]
   keywords: [String!]
@@ -5536,6 +5545,7 @@ input BmsProductInput {
   9.54 — id ของสถานีจาก bmsKitchenStations · ชนะ kitchen_station เมื่อส่งมาทั้งคู่
   """
   kitchen_station_id: ID
+  medicine_label: JSON
   name: String!
   price: Float!
   price_tiers: [BmsPriceTierInput!]

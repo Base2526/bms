@@ -650,6 +650,32 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       throw new Error("ไม่พบลูกค้าที่จะผสาน");
     }
 
+    // Keep every reservation attached to the surviving identity. Two live requests for the
+    // same appointment need staff resolution first; merging must not silently cancel either.
+    const reservationConflict = await client.query(
+      `SELECT source.id
+         FROM bms_restaurant_waitlist source
+         JOIN bms_restaurant_waitlist destination
+           ON destination.tenant_id = source.tenant_id
+          AND destination.location_id = source.location_id
+          AND destination.reserved_for = source.reserved_for
+        WHERE source.tenant_id = $1 AND source.customer_id = $2
+          AND destination.customer_id = $3
+          AND source.source = 'CUSTOMER_AI' AND destination.source = 'CUSTOMER_AI'
+          AND source.status IN ('REQUESTED','WAITING','CALLED')
+          AND destination.status IN ('REQUESTED','WAITING','CALLED')
+        LIMIT 1`,
+      [tenantId, mergeId, keepId]
+    );
+    if (reservationConflict.rowCount) {
+      throw new Error("ลูกค้าทั้งสองมีคำขอจองร้านอาหารซ้ำเวลาเดียวกัน กรุณาให้พนักงานตรวจและปิดคำขอซ้ำก่อนรวมข้อมูล");
+    }
+    await client.query(
+      `UPDATE bms_restaurant_waitlist SET customer_id = $3, updated_at = now()
+        WHERE tenant_id = $1 AND customer_id = $2`,
+      [tenantId, mergeId, keepId]
+    );
+
     await client.query(
       `UPDATE bms_customer_identities SET customer_id = $3
         WHERE tenant_id = $1 AND customer_id = $2`,

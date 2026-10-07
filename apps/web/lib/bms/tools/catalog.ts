@@ -33,7 +33,14 @@ import {
   type SellableProduct,
 } from "../products";
 import { listProductModifiers } from "../productRecipes";
+import { customerFoodProfile } from "../productFoodSafety";
+import { getPharmacyCustomerServiceStatus, getCustomerPharmacyCaseStatus, getPharmacyProductFacts } from "../pharmacyCustomer";
 import { listRestaurantOrderLocations } from "../restaurantOrdering";
+import {
+  getRestaurantCustomerAvailability,
+  listCustomerRestaurantReservations,
+  requestRestaurantReservation,
+} from "../restaurantCustomer";
 import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
@@ -165,6 +172,12 @@ function safeCatalogProduct(product: SellableProduct, tenantSlug: string | null)
     description: product.description?.slice(0, 400) ?? null,
     category: product.category,
     brand: product.brand,
+    foodProfile: customerFoodProfile({
+      allergenCodes: product.allergenCodes,
+      allergenInformationProvided: product.allergenInformationProvided,
+      dietaryTags: product.dietaryTags,
+      foodSafetyNote: product.foodSafetyNote,
+    }),
     availability: product.availability,
     ...(product.stockPolicy === "NON_STOCK" || product.stockPolicy === "RECIPE"
       ? {}
@@ -700,6 +713,12 @@ const getProduct: BmsTool = {
         description: p.description?.slice(0, 800) ?? null,
         category: p.category,
         brand: p.brand,
+        foodProfile: customerFoodProfile({
+          allergenCodes: p.allergen_codes,
+          allergenInformationProvided: p.allergen_information_provided,
+          dietaryTags: p.dietary_tags,
+          foodSafetyNote: p.food_safety_note,
+        }),
         active: p.active,
         createdAt: p.created_at instanceof Date ? p.created_at.toISOString() : String(p.created_at),
         updatedAt: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at),
@@ -931,6 +950,134 @@ const listRestaurantOrderLocationsTool: BmsTool = {
     ok: true,
     data: { locations: await listRestaurantOrderLocations(ec.tenantId), verifiedAt: new Date().toISOString() },
   }),
+};
+
+const getPharmacyProductFactsTool: BmsTool = {
+  name: "get_pharmacy_product_facts",
+  description: "Read exact SKU label facts maintained by the shop: active ingredients, labelled strength, dosage form, selling packs, registration number and regulatory/sale classification ONLY from APPROVED Product Policy (null means unknown). No approved usage quotations exist, even for household remedies. Optional expiry snapshot needs BOTH branch ID from get_pharmacy_service_status and exact size from check_stock. NEVER infer clinical equivalence, recommend a substitute/dose, or promise the dispatched lot. Product Policy is not permission to publish label instructions.",
+  surfaces: ["customer"], permission: "product.view",
+  inputSchema: { type: "object", properties: {
+    sku: { type: "string" }, locationId: { type: "string" }, size: { type: "string" },
+  }, required: ["sku"] },
+  execute: async (args, ec) => {
+    const locationId = optString(args, "locationId");
+    const size = optString(args, "size");
+    if (Boolean(locationId) !== Boolean(size)) throw new ToolArgError("ต้องระบุสาขาและตัวเลือกสินค้าให้ครบเพื่อตรวจวันหมดอายุ");
+    if (locationId && !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(locationId)) throw new ToolArgError("เลือก locationId จาก get_pharmacy_service_status");
+    const data = await getPharmacyProductFacts(ec.tenantId, reqString(args, "sku"), locationId, size);
+    return data ? { ok: true, data } : { ok: false, error: "ไม่พบสินค้าที่เปิดให้ลูกค้าดู" };
+  },
+};
+
+const getPharmacyServiceStatusTool: BmsTool = {
+  name: "get_pharmacy_service_status",
+  description: "Read pharmacy branch IDs/names and whether a licensed pharmacist is recorded on an open POS shift. This is historical shift evidence, NOT confirmed current presence or availability. No record does not prove absence. Consultation hours and reply estimates are unknown; ask the shop before travelling.",
+  surfaces: ["customer"], permission: "product.view",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec) => ({ ok: true, data: await getPharmacyCustomerServiceStatus(ec.tenantId) }),
+};
+
+const getPharmacyCaseStatusTool: BmsTool = {
+  name: "get_pharmacy_case_status",
+  description: "Read this chat customer's pharmacy case statuses, short references and expiry only. Optionally narrow by the customer's explicit caseReference (8 hex characters or UUID); a reference never authorizes access to another identity's case. No clinical text. No reply ETA; expiry is not a response promise. Ambiguous references require contacting staff, never choosing a case.",
+  surfaces: ["customer"], permission: "order.view",
+  inputSchema: { type: "object", properties: { caseReference: { type: "string" } } },
+  execute: async (args, ec) => {
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    const reference = optString(args, "caseReference");
+    if (reference && !/^(?:[0-9a-f]{8}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/i.test(reference)) throw new ToolArgError("เลขเคสไม่ถูกต้อง");
+    const cases = await getCustomerPharmacyCaseStatus(ec.tenantId, ec.channel, ec.customerRef, reference);
+    const referenceAmbiguous = Boolean(reference && cases.length > 1);
+    return { ok: true, data: { cases: referenceAmbiguous ? [] : cases, referenceAmbiguous, estimatedResponseMinutes: null } };
+  },
+};
+
+const getRestaurantAvailabilityTool: BmsTool = {
+  name: "get_restaurant_availability",
+  description:
+    "Read current customer-safe restaurant branch aggregates: available tables/seats, walk-in queue counts, unseated reservation-request counts, open kitchen tickets and configured kitchen SLA. Accepted reservations are not counted as a live physical queue. It never returns identities or a promised wait/preparation time. Call list_restaurant_order_locations first and pass its exact locationId.",
+  surfaces: ["customer"],
+  permission: "product.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      locationId: { type: "string", description: "Exact active branch UUID returned by list_restaurant_order_locations." },
+    },
+    required: ["locationId"],
+  },
+  execute: async (args, ec) => {
+    try {
+      return { ok: true, data: await getRestaurantCustomerAvailability(ec.tenantId, reqString(args, "locationId")) };
+    } catch (error) {
+      if (isRestaurantRequestRejection(error)) return { ok: false, error: error.message };
+      throw error;
+    }
+  },
+};
+
+const requestRestaurantReservationTool: BmsTool = {
+  name: "request_restaurant_reservation",
+  description:
+    "Submit a restaurant table REQUEST for staff review. This never reserves or confirms a table. Requires an exact branch locationId, party size, an ISO-8601 desired time with timezone, and a saved customer name and phone. Read completeness with get_customer_checkout and save only name/phone explicitly supplied by the customer; never put PII in this tool's arguments.",
+  surfaces: ["customer"],
+  permission: "order.create",
+  inputSchema: {
+    type: "object",
+    properties: {
+      locationId: { type: "string", description: "Exact active branch UUID returned by list_restaurant_order_locations." },
+      partySize: { type: "integer", minimum: 1, maximum: 100 },
+      desiredAt: { type: "string", description: "ISO-8601 appointment time including timezone offset, after the customer states date and time." },
+      note: { type: "string", maxLength: 300, description: "Optional non-PII customer note; name and phone must not be passed here." },
+    },
+    required: ["locationId", "partySize", "desiredAt"],
+  },
+  execute: async (args, ec) => {
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, ec.channel, ec.customerRef);
+    if (!customerId) return { ok: false, error: "ยังไม่มีข้อมูลติดต่อของลูกค้า กรุณาเก็บชื่อและเบอร์ก่อนส่งคำขอจอง" };
+    const contact = await getCustomerCheckoutStatus(ec.tenantId, ec.channel, ec.customerRef);
+    const missingContact = [
+      ...(!contact.hasRecipientName ? ["recipientName"] : []),
+      ...(!contact.hasPhone ? ["phone"] : []),
+    ];
+    if (missingContact.length) {
+      return {
+        ok: false,
+        error: `ข้อมูลติดต่อยังไม่ครบ: ${missingContact.join(", ")} กรุณาขอเฉพาะข้อมูลที่ขาด แล้วใช้ save_customer_checkout_details ก่อนส่งคำขอจอง`,
+      };
+    }
+    try {
+      const result = await requestRestaurantReservation({
+        tenantId: ec.tenantId,
+        locationId: reqString(args, "locationId"),
+        customerId,
+        partySize: reqInt(args, "partySize", 1),
+        desiredAt: reqString(args, "desiredAt"),
+        note: optString(args, "note") ?? null,
+      });
+      ec.restaurantReservationRequestId = result.requestId;
+      ec.restaurantReservationRequestStatus = result.status;
+      return { ok: true, data: result };
+    } catch (error) {
+      if (isRestaurantRequestRejection(error)) return { ok: false, error: error.message };
+      throw error;
+    }
+  },
+};
+
+const getRestaurantReservationStatusTool: BmsTool = {
+  name: "get_restaurant_reservation_status",
+  description:
+    "List this customer's five latest restaurant table requests and their real status. REQUESTED is awaiting staff review; WAITING/CALLED means accepted into the restaurant board; it is never a guaranteed table until SEATED.",
+  surfaces: ["customer"],
+  permission: "order.view",
+  inputSchema: { type: "object", properties: {} },
+  execute: async (_args, ec) => {
+    if (!ec.channel || !ec.customerRef) return { ok: false, error: "ไม่พบตัวตนลูกค้าจากช่องทางนี้" };
+    const customerId = await findCustomerIdByIdentity(ec.tenantId, ec.channel, ec.customerRef);
+    if (!customerId) return { ok: true, data: { requests: [] } };
+    return { ok: true, data: { requests: await listCustomerRestaurantReservations(ec.tenantId, customerId) } };
+  },
 };
 
 const getVariantReservationsTool: BmsTool = {
@@ -3293,6 +3440,11 @@ export const ALL_TOOLS: BmsTool[] = [
   checkStockTool,
   listMenuModifiersTool,
   listRestaurantOrderLocationsTool,
+  getRestaurantAvailabilityTool,
+  getRestaurantReservationStatusTool,
+  getPharmacyServiceStatusTool,
+  getPharmacyCaseStatusTool,
+  getPharmacyProductFactsTool,
   getVariantReservationsTool,
   subscribeRestockNotificationTool,
   listCustomerCouponsTool,
@@ -3318,6 +3470,7 @@ export const ALL_TOOLS: BmsTool[] = [
   listSuppliersTool,
   // A2
   createOrderTool,
+  requestRestaurantReservationTool,
   saveCustomerCheckoutDetailsTool,
   submitPaymentTool,
   reorderTool,
@@ -3370,8 +3523,14 @@ export function customerTools(businessArchetype?: string | null): BmsTool[] {
     // No archetype passed = "just the customer-surface names" (progress counters, direct
     // deterministic calls). Only the list actually handed to the model is narrowed.
     if (businessArchetype === undefined) return true;
+    if (["get_pharmacy_service_status", "get_pharmacy_case_status", "get_pharmacy_product_facts"].includes(tool.name)) return businessArchetype === "pharmacy";
     if (BOARD_GAME_CUSTOMER_TOOLS.has(tool.name)) return businessArchetype === "board_game_cafe";
-    if (tool.name === "list_restaurant_order_locations") return restaurant;
+    if ([
+      "list_restaurant_order_locations",
+      "get_restaurant_availability",
+      "request_restaurant_reservation",
+      "get_restaurant_reservation_status",
+    ].includes(tool.name)) return restaurant;
     // 9.66: reorder writes an order and reserves stock from a previous one. A restaurant takes
     // demand as a request a human reviews, so the model must never be offered a second door to
     // the write path — see reorderTool.execute for the direct-call refusal.

@@ -2031,6 +2031,11 @@ export const typeDefs = /* GraphQL */ `
     weightGrams: Int   # น้ำหนักต่อชิ้น (กรัม) — ใช้คิดค่าส่งตามน้ำหนัก (7.47)
     category: String
     brand: String
+    allergenCodes: [String!]!
+    allergenInformationProvided: Boolean!
+    dietaryTags: [String!]!
+    foodSafetyNote: String
+    medicineLabel: JSON!
     # ประเภท VAT (7.88) — 'V' คิด VAT · 'N' ยกเว้น VAT · 'UNKNOWN' ยังไม่ระบุ
     # ร้านที่จด VAT ต้องไม่มี UNKNOWN เหลือ ไม่งั้นติด blocker ที่ /admin/pos-readiness
     vatCategory: String
@@ -2118,6 +2123,11 @@ export const typeDefs = /* GraphQL */ `
     weight_grams: Int
     category: String
     brand: String
+    allergen_codes: [String!]
+    medicine_label: JSON
+    allergen_information_provided: Boolean
+    dietary_tags: [String!]
+    food_safety_note: String
     # ไม่ส่งมา = คงค่าเดิม (ไม่รีเซ็ตเป็น UNKNOWN)
     vat_category: String
     # ส่งมา = แทนที่ขั้นราคาทั้งชุด · ไม่ส่ง = ไม่แตะของเดิม

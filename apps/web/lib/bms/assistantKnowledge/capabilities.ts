@@ -251,9 +251,9 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "restaurant.waitlist", module: "pos",
     title: both("บัตรคิวหน้าร้านและการจองโต๊ะ", "Walk-in queue and table reservations"),
-    description: both("รายการเดียวสำหรับคนที่ยังไม่มีโต๊ะ — ออกบัตรคิว รับจองล่วงหน้า เรียกคิว และพาไปนั่งซึ่งเปิดบิลโต๊ะให้ในทรานแซกชันเดียวกัน", "One list of parties without a table yet: issue queue numbers, take advance bookings, call a party, and seat them — which opens the dine-in check in the same transaction."),
+    description: both("รายการเดียวสำหรับคนที่ยังไม่มีโต๊ะ — ออกบัตรคิว รับจองล่วงหน้าหรือคำขอจองจากแชท เรียกคิว และพาไปนั่งซึ่งเปิดบิลโต๊ะให้ในทรานแซกชันเดียวกัน", "One list of parties without a table yet: issue queue numbers, take advance bookings or chat booking requests, call a party, and seat them — which opens the dine-in check in the same transaction."),
     aliases: aliases([
-      "บัตรคิว", "คิวหน้าร้าน", "รับคิว", "เรียกคิว", "จองโต๊ะ", "จองล่วงหน้า", "รอโต๊ะ",
+      "บัตรคิว", "คิวหน้าร้าน", "รับคิว", "เรียกคิว", "จองโต๊ะ", "จองล่วงหน้า", "คำขอจองจากแชท", "รอโต๊ะ",
       "ระบบมีบัตรคิวไหม", "ระบบรับจองโต๊ะได้ไหม",
     ], [
       "queue ticket", "waitlist", "walk-in queue", "call a party", "table reservation",
@@ -266,8 +266,8 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
       "The branch needs a floor plan, a paired POS device and an open shift — seating opens a real check.",
     ],
     limitations: both(
-      "เลขคิวเริ่มใหม่ตามวันบริการของร้าน ไม่ใช่เที่ยงคืน · โต๊ะที่ลูกค้าขอเป็นคำขอ ไม่ได้กันโต๊ะไว้ให้ · ลูกค้ากดรับคิวเองไม่ได้ พนักงานเป็นคนออกให้ทุกใบ · ไม่มีการแจ้ง SMS/LINE ตอนเรียกคิว",
-      "Queue numbers restart with the shop's service day, not at midnight. A requested table is a preference, not a hold. Customers cannot take a number themselves — staff issue every one. Calling a party is a screen action; there is no SMS/LINE notification."
+      "เลขคิวเริ่มใหม่ตามวันบริการของร้าน ไม่ใช่เที่ยงคืน · โต๊ะที่ลูกค้าขอไม่ได้กันโต๊ะไว้ให้ · ลูกค้ากดรับคิวเดินเข้าเองไม่ได้ ส่วนคำขอจองจากแชทจะค้าง REQUESTED จนพนักงานยืนยัน PIN และกดรับ · ไม่มีการแจ้ง SMS/LINE ตอนเรียกคิว",
+      "Queue numbers restart with the shop's service day, not at midnight. A requested table is a preference, not a hold. Customers cannot take a walk-in number themselves; a chat booking stays REQUESTED until PIN-verified staff accept it. Calling a party is a screen action; there is no SMS/LINE notification."
     ),
   },
   {
@@ -288,8 +288,8 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
       "Kitchen tickets require the KITCHEN_WORKFLOW store capability.",
     ],
     limitations: both(
-      "ยังไม่รองรับแยกบิล/รวมบิล ลูกค้าสั่งเองผ่าน QR การจองโต๊ะ/บัตรคิว และการส่งงานเข้าเครื่องพิมพ์ครัวแยกสถานี",
-      "Split/merge checks, customer QR self-ordering, reservations/queue numbers and per-station printer routing are not supported."
+      "ยังไม่มีการส่งงานเข้าเครื่องพิมพ์ครัวแยกสถานี — ใช้จอครัวเป็นแหล่งงานจริง",
+      "Per-station kitchen printer routing is not supported; the kitchen display remains the work source of truth."
     ),
   },
   {
@@ -324,7 +324,7 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
     aliases: aliases(["ร้านขายยา", "เภสัชกร", "เคสยา", "ใบสั่งยา"], ["pharmacy", "pharmacist", "medicine case", "prescription"]),
     status: "CONDITIONAL", route: "/admin/pharmacy-manual", requiredPermissions: ["pharmacy.assessment.read"],
     configurationDependencies: ["Pharmacy intake is feature-gated and requires licensed-pharmacist setup."],
-    limitations: both("AI ไม่ตัดสินใจทางคลินิกและหลักฐานมีสิทธิ์แยก", "AI makes no clinical decisions and evidence has narrower access."),
+    limitations: both("AI ไม่ตัดสินใจทางคลินิกและหลักฐานมีสิทธิ์แยก อ่านฉลากที่ร้านกรอกและสถานะเคสตัวเองได้ แต่ข้อมูลกะไม่ยืนยันว่าเภสัชกรอยู่ร้าน และไม่มีเวลารอตอบที่ยืนยันได้", "AI makes no clinical decisions and evidence has narrower access. Customer reads cover shop-transcribed labels and own-case status; shift records do not confirm current pharmacist presence and no reply ETA is available."),
   },
   {
     id: "audit.revisions", module: "audit",

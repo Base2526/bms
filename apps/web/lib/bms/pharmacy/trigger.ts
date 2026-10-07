@@ -3,6 +3,7 @@
 // entry points classify the same wording before any assessment is created.
 
 import type { PharmacyTriggerDefinition } from "./protocols";
+export { pharmacyEmergencyReply } from "./emergency";
 // requestedItems imports nothing, so importing it keeps this module's
 // side-effect-free contract intact while removing a second copy of the unit list.
 import {
@@ -119,10 +120,6 @@ export function detectPharmacyIntakeTrigger(
     return { protocolKey: definition.protocolKey, intent: "clinical_advice" };
   }
   return null;
-}
-
-export function pharmacyEmergencyReply(): string {
-  return "จากอาการที่พิมพ์มาอาจมีสัญญาณที่ควรให้แพทย์ประเมินทันทีนะคะ แนะนำติดต่อฉุกเฉินหรือไปโรงพยาบาลใกล้ที่สุดก่อนค่ะ";
 }
 
 export function pharmacyAmbiguousClarificationReply(
