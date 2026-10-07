@@ -675,6 +675,35 @@ reference number, which are health data.
 
 Covered by `scripts/pharmacy-clinical-evidence-db-contract.test.mts`.
 
+## Pharmacist-approved guidance for clinical customer questions (10.45)
+
+Before 10.45 every clinical question (which medicine, interactions, allergies, missed doses,
+pregnancy, ...) got one fixed handoff. That stays the default. A shop can now replace it, per
+question type and language, with a text **its own licensed pharmacist approved**.
+
+- **11 question types** (`PHARMACY_GUIDANCE_CODES` in `guidanceTemplates.ts`) chosen by a
+  deterministic classifier, ordered most specific/risky first. The model never chooses the type
+  and never writes or rephrases the text.
+- **Emergency routing runs first**, unchanged. A message that is both an emergency and a clinical
+  question gets the emergency reply.
+- **Only `APPROVED` rows reach a customer.** No row, a draft, a retired row, a slow database
+  (> 500 ms) or any read error all mean the existing handoff, byte for byte.
+- **Approval is a fact about the person**: `bms_is_licensed_pharmacist`, no Administrator
+  shortcut, and it pins the version that was read. The licence number is snapshotted on the row.
+- **Editing approved text returns it to `DRAFT`** in the service and in a DB trigger, so an
+  approved text cannot change under a pharmacist's name.
+- **Rendering** fills `{{shop_phone}}`, `{{business_hours}}`, `{{shop_address}}` from the store
+  profile; a line whose value is unset (or whose placeholder is unknown) is dropped; the
+  "not a medication approval" footer is always appended by the server.
+- **Starting drafts live in code**, never seeded as rows. They contain only red-flag screening
+  (→ 1669), what to prepare for the pharmacist, when to see a doctor, and how to reach the shop;
+  no medicine names, doses or safety claims (pinned by tests). Content warnings are shown to the
+  pharmacist but do not block approval: the pharmacist is the authority on the text.
+- Page: `/admin/pharmacy-guidance` · read `pharmacy.assessment.read` · write
+  `pharmacy.protocol.manage` (approve additionally needs the licence). No new permission.
+- Tests: `scripts/pharmacy-guidance-contract.test.mts` (pure) and
+  `scripts/pharmacy-guidance-db-contract.test.mts` (**not yet run against a database**).
+
 ## Known limitations (MVP scope, decided with the user)
 
 - The queue detail's manual medication picker reads through the pharmacy-scoped

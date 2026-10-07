@@ -303,6 +303,11 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     visible: (ctx) => isPharmacyShop(ctx) && ctx.can("pharmacy.protocol.manage"),
   },
   {
+    id: "shopfloor.pharmacy-guidance", route: "/admin/pharmacy-guidance", labelKey: "admin_nav.pharmacy_guidance",
+    section: "shopfloor", workspace: "SHOP",
+    visible: (ctx) => isPharmacyShop(ctx) && ctx.can("pharmacy.assessment.read"),
+  },
+  {
     id: "shopfloor.pharmacist-licenses", route: "/admin/pharmacy-protocols/licenses", labelKey: "admin_nav.pharmacist_licenses",
     section: "shopfloor", workspace: "SHOP",
     visible: (ctx) => isPharmacyShop(ctx) && ctx.isAdministrator,

@@ -1304,6 +1304,10 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacistCounterAuthorizations(from: String, to: String, limit: Int, offset: Int): BmsPharmacistCounterAuthorizationPage!
     bmsPharmacyCatalog(search: String, limit: Int, assessmentId: ID): [BmsPharmacyCatalogItem!]!
     bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
+    "Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read"
+    bmsPharmacyGuidanceTemplates: [BmsPharmacyGuidanceTemplate!]!
+    "Built-in starting drafts; never shown to a customer until a licensed pharmacist approves a copy"
+    bmsPharmacyGuidanceDefaults: [BmsPharmacyGuidanceDefault!]!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
     bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
@@ -3470,6 +3474,28 @@ export const typeDefs = /* GraphQL */ `
     updatedAt: String!
   }
 
+  type BmsPharmacyGuidanceTemplate {
+    id: ID!
+    code: String!
+    locale: String!
+    body: String!
+    status: String!
+    version: Int!
+    approvedBy: ID
+    approvedByName: String
+    approvedAt: String
+    approvedLicenseNo: String
+    updatedAt: String!
+    warnings: [String!]!
+  }
+
+  type BmsPharmacyGuidanceDefault {
+    code: String!
+    locale: String!
+    body: String!
+    warnings: [String!]!
+  }
+
   type BmsPharmacyProductPolicy {
     id: ID!
     tenantId: ID!
@@ -4945,6 +4971,11 @@ export const typeDefs = /* GraphQL */ `
     bmsSubmitPharmacyProtocolForReview(id: ID!): BmsPharmacyProtocol!
     bmsReviewPharmacyProtocol(id: ID!, decision: String!): BmsPharmacyProtocol!
     bmsSetPharmacyProtocolEnabled(id: ID!, enabled: Boolean!): BmsPharmacyProtocol!
+    bmsSavePharmacyGuidanceDraft(code: String!, locale: String!, body: String!): BmsPharmacyGuidanceTemplate!
+    bmsSeedPharmacyGuidanceDrafts: Int!
+    "Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read"
+    bmsApprovePharmacyGuidance(id: ID!, version: Int!): BmsPharmacyGuidanceTemplate!
+    bmsRetirePharmacyGuidance(id: ID!): BmsPharmacyGuidanceTemplate!
     bmsUpsertPharmacyProductPolicy(input: BmsPharmacyProductPolicyInput!): BmsPharmacyProductPolicy!
     bmsSubmitPharmacyProductPolicyForReview(productSku: String!): BmsPharmacyProductPolicy!
     bmsReviewPharmacyProductPolicy(productSku: String!, decision: String!): BmsPharmacyProductPolicy!

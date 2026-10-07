@@ -58,6 +58,27 @@ import {
   upsertPharmacyProductPolicyDraft,
   type UpsertPharmacyProductPolicyInput,
 } from "@/lib/bms/pharmacy/productPolicy";
+import {
+  PharmacyGuidanceError,
+  approvePharmacyGuidance,
+  listPharmacyGuidanceTemplates,
+  retirePharmacyGuidance,
+  savePharmacyGuidanceDraft,
+  seedPharmacyGuidanceDrafts,
+} from "@/lib/bms/pharmacy/guidanceTemplateStore";
+import { PHARMACY_GUIDANCE_DEFAULT_DRAFTS, pharmacyGuidanceWarnings } from "@/lib/bms/pharmacy/guidanceTemplates";
+
+/** Rule rejections read as input errors; anything else stays a server error with its log. */
+async function guidanceMutation<T>(run: () => Promise<T>): Promise<T> {
+  try {
+    return await run();
+  } catch (err) {
+    if (err instanceof PharmacyGuidanceError) {
+      throw new GraphQLError(err.message, { extensions: { code: "BAD_USER_INPUT" } });
+    }
+    throw err;
+  }
+}
 
 const PHARMACY_SEARCH_ALIAS_GROUPS: Array<{ match: RegExp; aliases: string[] }> = [
   {
@@ -284,6 +305,15 @@ export const bmsPharmacyResolvers = {
         salePolicy: policyBySku.get(item.sku)?.salePolicy ?? "UNKNOWN",
         policyStatus: policyBySku.get(item.sku)?.status ?? "MISSING",
       }));
+    },
+    async bmsPharmacyGuidanceTemplates(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return listPharmacyGuidanceTemplates(getTenantId(ctx));
+    },
+    async bmsPharmacyGuidanceDefaults(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "pharmacy.assessment.read");
+      return Object.entries(PHARMACY_GUIDANCE_DEFAULT_DRAFTS).flatMap(([code, byLocale]) =>
+        Object.entries(byLocale).map(([locale, body]) => ({ code, locale, body, warnings: pharmacyGuidanceWarnings(body) })));
     },
     async bmsPharmacyProtocols(_p: unknown, _args: unknown, ctx: any) {
       await requirePermission(ctx, "pharmacy.assessment.read");
@@ -768,6 +798,24 @@ export const bmsPharmacyResolvers = {
       const ok = await recordConsent(getTenantId(ctx), args.assessmentId, args.status, requireNonEmpty(args.consentVersion, "consentVersion"));
       if (!ok) throw new GraphQLError("ไม่พบเคสนี้", { extensions: { code: "BAD_USER_INPUT" } });
       return getAssessment(getTenantId(ctx), args.assessmentId);
+    },
+    async bmsSavePharmacyGuidanceDraft(_p: unknown, args: { code: string; locale: string; body: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      return guidanceMutation(() => savePharmacyGuidanceDraft(getTenantId(ctx), actorId(ctx), args));
+    },
+    async bmsSeedPharmacyGuidanceDrafts(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      return guidanceMutation(() => seedPharmacyGuidanceDrafts(getTenantId(ctx), actorId(ctx)));
+    },
+    async bmsApprovePharmacyGuidance(_p: unknown, args: { id: string; version: number }, ctx: any) {
+      // The permission opens the page; approval itself also requires a licensed pharmacist,
+      // checked in the service with no Administrator shortcut.
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      return guidanceMutation(() => approvePharmacyGuidance(getTenantId(ctx), actorId(ctx), args.id, args.version));
+    },
+    async bmsRetirePharmacyGuidance(_p: unknown, args: { id: string }, ctx: any) {
+      await requirePermission(ctx, "pharmacy.protocol.manage");
+      return guidanceMutation(() => retirePharmacyGuidance(getTenantId(ctx), actorId(ctx), args.id));
     },
     async bmsUpsertPharmacyProtocol(_p: unknown, args: { input: UpsertPharmacyProtocolInput }, ctx: any) {
       await requirePermission(ctx, "pharmacy.protocol.manage");

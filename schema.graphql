@@ -2494,6 +2494,28 @@ type BmsPharmacyConversationHistoryMessage {
   status: String
 }
 
+type BmsPharmacyGuidanceDefault {
+  body: String!
+  code: String!
+  locale: String!
+  warnings: [String!]!
+}
+
+type BmsPharmacyGuidanceTemplate {
+  approvedAt: String
+  approvedBy: ID
+  approvedByName: String
+  approvedLicenseNo: String
+  body: String!
+  code: String!
+  id: ID!
+  locale: String!
+  status: String!
+  updatedAt: String!
+  version: Int!
+  warnings: [String!]!
+}
+
 input BmsPharmacyLabCartItemInput {
   qty: Int!
   size: String
@@ -7364,6 +7386,11 @@ type Mutation {
   bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
   bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, orderDraft: JSON, pharmacistResponse: String!): BmsPharmacyAssessment!
 
+  """
+  Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read
+  """
+  bmsApprovePharmacyGuidance(id: ID!, version: Int!): BmsPharmacyGuidanceTemplate!
+
   """ปิดใช้งาน ไม่ใช่ลบ — force = ปิดทั้งที่ยังมีสินค้าเปิดขายผูกอยู่"""
   bmsArchiveKitchenStation(force: Boolean = false, id: ID!): BmsKitchenStation!
   bmsAssignConversation(id: ID!, userId: ID!): Boolean!
@@ -7559,6 +7586,7 @@ type Mutation {
   bmsReplaceProductPriceTiers(input: BmsReplacePriceTiersInput!): [BmsProductPriceTier!]!
   bmsRequestMoreInformation(assessmentId: ID!, expectedVersion: Int!, fields: [String!]!, note: String): BmsPharmacyAssessment!
   bmsResetStoreCapability(capability: String!): BmsStoreCapability!
+  bmsRetirePharmacyGuidance(id: ID!): BmsPharmacyGuidanceTemplate!
   bmsRetryMessage(id: ID!): BmsSendResult!
   bmsReturnOrder(id: ID!): Boolean!
   bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
@@ -7572,7 +7600,9 @@ type Mutation {
   bmsRunReadOnlySql(sql: String!): BmsSqlResult!
   bmsRunSandboxedJs(code: String!): BmsJsConsoleResult!
   bmsRunSql(sql: String!): BmsSqlResult!
+  bmsSavePharmacyGuidanceDraft(body: String!, code: String!, locale: String!): BmsPharmacyGuidanceTemplate!
   bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
+  bmsSeedPharmacyGuidanceDrafts: Int!
   bmsSeedPharmacyQueueDemo(answers: JSON, protocolKey: String, transcript: JSON): BmsSeedPharmacyQueueDemoResult!
   bmsSendAllReadyRestockNotifications: BmsRestockSendAllResult!
   bmsSendMessage(attachment: BmsAttachmentInput, body: String, id: ID!): BmsSendResult!
@@ -8078,6 +8108,16 @@ type Query {
   bmsPharmacyAssessments(assignedPharmacistId: ID, channelId: String, createdAfter: String, limit: Int, offset: Int, riskLevel: String, status: String): [BmsPharmacyAssessment!]!
   bmsPharmacyCatalog(assessmentId: ID, limit: Int, search: String): [BmsPharmacyCatalogItem!]!
   bmsPharmacyClinicalEvidence(assessmentId: ID!): [BmsPharmacyClinicalEvidence!]!
+
+  """
+  Built-in starting drafts; never shown to a customer until a licensed pharmacist approves a copy
+  """
+  bmsPharmacyGuidanceDefaults: [BmsPharmacyGuidanceDefault!]!
+
+  """
+  Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read
+  """
+  bmsPharmacyGuidanceTemplates: [BmsPharmacyGuidanceTemplate!]!
   bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
   bmsPharmacyPolicyReadiness: BmsPharmacyPolicyReadiness!
   bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
