@@ -88,7 +88,7 @@ export const PHARMACY_GUIDANCE_FOOTER: Record<PharmacyGuidanceLocale, string> = 
   en: "This reply does not approve medication or confirm a sale.",
 };
 
-const PLACEHOLDER = /\{\{\s*([a-zA-Z_]+)\s*\}\}/g;
+const PLACEHOLDER = /\{\{[ \t]*([a-zA-Z_]+)[ \t]*\}\}/g;
 
 /**
  * Fill known placeholders from server values. A line that still contains a placeholder after
@@ -101,16 +101,18 @@ export function renderPharmacyGuidance(
   locale: PharmacyGuidanceLocale,
 ): string {
   const known = new Set<string>(PHARMACY_GUIDANCE_PLACEHOLDERS);
-  const lines = String(body ?? "").replace(/\r\n?/g, "\n").split("\n").flatMap((line) => {
-    let unresolved = false;
+  const lines = String(body ?? "").replace(/\r\n?/g, "\n")
+    .replace(/\{\{[^{}]*\n[^{}]*\}\}/g, "{{invalid_multiline}}")
+    .split("\n").flatMap((line) => {
+    let unresolved = /\{\{\{|\}\}\}/.test(line);
     const filled = line.replace(PLACEHOLDER, (_match, rawName: string) => {
       const name = rawName.toLowerCase();
       const value = known.has(name) ? values[name as PharmacyGuidancePlaceholder] : null;
-      const text = typeof value === "string" ? value.trim() : "";
+      const text = typeof value === "string" ? value.replace(/[\r\n]+/g, " ").trim() : "";
       if (!text) { unresolved = true; return ""; }
       return text;
     });
-    return unresolved ? [] : [filled.trimEnd()];
+    return unresolved || /\{\{|\}\}/.test(filled) ? [] : [filled.trimEnd()];
   });
   const collapsed: string[] = [];
   for (const line of lines) {
@@ -123,6 +125,7 @@ export function renderPharmacyGuidance(
 
 export type PharmacyGuidanceWarning =
   | "DOSE_NUMBER"
+  | "MEDICINE_NAME"
   | "SAFETY_CLAIM"
   | "UNKNOWN_PLACEHOLDER"
   | "TOO_LONG"
@@ -131,6 +134,8 @@ export type PharmacyGuidanceWarning =
 const DOSE_NUMBER = /\d+(?:[.,]\d+)?\s*(?:mg|มก\.?|มิลลิกรัม|ml|มล\.?|มิลลิลิตร|ซีซี|cc|เม็ด|แคปซูล|capsules?|tablets?|ช้อน(?:ชา|โต๊ะ)?|teaspoons?|หยด|drops?|ครั้ง\s*(?:ต่อ|\/)\s*วัน|times? (?:a|per) day)/i;
 // "ไม่ปลอดภัย" is caught on purpose: a template must not make a safety judgement in either direction.
 const SAFETY_CLAIM = /(?:ปลอดภัย|กินได้|ทานได้|ใช้ได้เลย|กินคู่กันได้|ไม่เป็นไร|ไม่อันตราย|\bsafe\b|\bsafely\b|you can take|it'?s fine to|no problem|harmless)/i;
+// Bounded examples, not an exhaustive drug dictionary or a clinical classifier.
+export const PHARMACY_GUIDANCE_MEDICINE_NAME_PATTERN = /(?:พารา|paracetamol|acetaminophen|ibuprofen|ไอบู|aspirin|แอสไพริน|loratadine|cetirizine|amoxicillin|อะม็อก|domperidone|omeprazole|diclofenac|antacid|ยาแก้แพ้|ยาลดกรด)/i;
 
 /**
  * Content checks shown to the pharmacist before approval. They are warnings, not a gate: the
@@ -142,11 +147,11 @@ export function pharmacyGuidanceWarnings(body: string): PharmacyGuidanceWarning[
   if (!text.trim()) out.push("EMPTY");
   if (text.length > PHARMACY_GUIDANCE_MAX_BODY) out.push("TOO_LONG");
   if (DOSE_NUMBER.test(text)) out.push("DOSE_NUMBER");
+  if (PHARMACY_GUIDANCE_MEDICINE_NAME_PATTERN.test(text)) out.push("MEDICINE_NAME");
   if (SAFETY_CLAIM.test(text)) out.push("SAFETY_CLAIM");
   const known = new Set<string>(PHARMACY_GUIDANCE_PLACEHOLDERS);
-  for (const match of text.matchAll(PLACEHOLDER)) {
-    if (!known.has(match[1].toLowerCase())) { out.push("UNKNOWN_PLACEHOLDER"); break; }
-  }
+  const unrecognized = text.replace(PLACEHOLDER, (match, name: string) => known.has(name.toLowerCase()) ? "" : match);
+  if (/\{\{|\}\}/.test(unrecognized) || /\{\{\{|\}\}\}/.test(text)) out.push("UNKNOWN_PLACEHOLDER");
   return out;
 }
 
@@ -173,28 +178,28 @@ export const PHARMACY_GUIDANCE_DEFAULT_DRAFTS: Record<PharmacyGuidanceCode, Reco
     en: ["Choosing a medicine for a symptom needs the pharmacist to assess your details first.", RED_FLAG_EN, PREPARE_EN, "If the symptom has lasted several days or is getting worse, please see a doctor.", CONTACT_EN].join("\n"),
   },
   DRUG_INTERACTION: {
-    th: ["การใช้ยาหลายตัวร่วมกันต้องให้เภสัชกรตรวจจากรายชื่อยาจริงทุกตัวค่ะ", "กรุณาส่งชื่อยาหรือรูปฉลากของยาทุกตัวที่ใช้อยู่ รวมถึงวิตามิน อาหารเสริม และสมุนไพร หรือถือยาทั้งหมดมาที่ร้าน", "ระหว่างรอคำตอบ อย่าเพิ่มยาตัวใหม่เองค่ะ", CONTACT_TH].join("\n"),
-    en: ["Using several medicines together needs the pharmacist to check the full list.", "Please send the name or a photo of the label of every medicine in use, including vitamins, supplements and herbal products, or bring them all to the shop.", "Please do not start a new medicine while waiting for an answer.", CONTACT_EN].join("\n"),
+    th: ["การใช้ยาหลายตัวร่วมกันต้องให้เภสัชกรตรวจจากรายชื่อยาจริงทุกตัวค่ะ", "กรุณาเตรียมชื่อยาหรือรูปฉลากของยาทุกตัวที่ใช้อยู่ รวมถึงวิตามิน อาหารเสริม และสมุนไพร เพื่อปรึกษาเภสัชกร", CONTACT_TH].join("\n"),
+    en: ["Using several medicines together needs the pharmacist to check the full list.", "Please prepare the name or a photo of the label of every medicine in use, including vitamins, supplements and herbal products, for the pharmacist.", CONTACT_EN].join("\n"),
   },
   ALLERGY_SUBSTITUTE: {
-    th: ["เรื่องแพ้ยาและการเลือกยาทดแทนต้องให้เภสัชกรประเมินค่ะ เพราะยาบางกลุ่มแพ้ข้ามกันได้", RED_FLAG_TH, "กรุณาแจ้งชื่อยาที่แพ้ อาการที่เคยเกิด และเกิดเมื่อไร", CONTACT_TH].join("\n"),
-    en: ["A drug allergy and the choice of an alternative need the pharmacist's assessment, because some medicine groups cross-react.", RED_FLAG_EN, "Please share the name of the medicine, the reaction you had and when it happened.", CONTACT_EN].join("\n"),
+    th: ["เรื่องแพ้ยาและการเลือกยาทดแทนต้องให้เภสัชกรประเมินค่ะ", RED_FLAG_TH, "กรุณาเตรียมชื่อยาที่แพ้ อาการที่เคยเกิด และเกิดเมื่อไร เพื่อปรึกษาเภสัชกร", CONTACT_TH].join("\n"),
+    en: ["A drug allergy and the choice of an alternative need the pharmacist's assessment.", RED_FLAG_EN, "Please prepare the name of the medicine, the reaction you had and when it happened, for the pharmacist.", CONTACT_EN].join("\n"),
   },
   SIDE_EFFECT: {
-    th: [RED_FLAG_TH, "หากอาการไม่รุนแรง กรุณาหยุดและปรึกษาเภสัชกรหรือแพทย์โดยเร็ว พร้อมแจ้งชื่อยา เวลาที่เริ่มใช้ และอาการที่เกิด", CONTACT_TH].join("\n"),
-    en: [RED_FLAG_EN, "If the symptoms are mild, please stop and contact a pharmacist or doctor soon, with the medicine name, when you started it and what happened.", CONTACT_EN].join("\n"),
+    th: [RED_FLAG_TH, "กรุณาปรึกษาเภสัชกรหรือแพทย์เรื่องอาการที่เกิด พร้อมเตรียมชื่อยา เวลาที่เริ่มใช้ และรายละเอียดอาการ", CONTACT_TH].join("\n"),
+    en: [RED_FLAG_EN, "Please contact a pharmacist or doctor about the reaction. Have the medicine name, when you started it and what happened ready.", CONTACT_EN].join("\n"),
   },
   MISSED_DOSE: {
-    th: ["วิธีปฏิบัติเมื่อลืมใช้ยาแตกต่างกันไปตามชนิดของยาค่ะ กรุณาอย่าเพิ่มยาเพื่อชดเชยเอง", "แจ้งชื่อยาและเวลาที่ควรใช้ครั้งล่าสุดให้เภสัชกร", CONTACT_TH].join("\n"),
-    en: ["What to do after a missed dose depends on the medicine. Please do not take extra to make up for it.", "Tell the pharmacist the medicine name and when the missed dose was due.", CONTACT_EN].join("\n"),
+    th: ["เรื่องการจัดการเมื่อลืมใช้ยาต้องให้เภสัชกรประเมินค่ะ", "เตรียมชื่อยา เวลาที่ใช้จริงครั้งล่าสุด และเวลาที่ลืมใช้ เพื่อปรึกษาเภสัชกร", CONTACT_TH].join("\n"),
+    en: ["Please ask a pharmacist what to do about a missed dose.", "Have the medicine name, when you last took it and when the missed dose was due ready.", CONTACT_EN].join("\n"),
   },
   NOT_IMPROVING: {
     th: ["หากใช้ยามาแล้วอาการไม่ดีขึ้นหรือแย่ลง ควรพบแพทย์ค่ะ", RED_FLAG_TH, "แจ้งเภสัชกรได้ว่าใช้ยาอะไรมาและนานเท่าไร", CONTACT_TH].join("\n"),
     en: ["If the symptoms have not improved, or are getting worse, please see a doctor.", RED_FLAG_EN, "You can tell the pharmacist which medicine you used and for how long.", CONTACT_EN].join("\n"),
   },
   COMPARE_WITH_PRESCRIBED: {
-    th: ["ยาที่แพทย์สั่งเลือกมาสำหรับคุณโดยเฉพาะค่ะ กรุณาใช้ตามที่แพทย์สั่ง", "หากมีข้อสงสัยหรืออยากเปลี่ยนยา กรุณาปรึกษาแพทย์ผู้สั่งยาหรือเภสัชกร", CONTACT_TH].join("\n"),
-    en: ["A prescribed medicine was chosen for you specifically. Please use it as the doctor prescribed.", "If you have a question or want to change it, please ask the prescribing doctor or a pharmacist.", CONTACT_EN].join("\n"),
+    th: ["กรุณาเตรียมชื่อยา รูปฉลาก และใบสั่งแพทย์ถ้ามี เพื่อให้เภสัชกรตรวจสอบ", "หากมีข้อสงสัยหรืออยากเปลี่ยนยา กรุณาปรึกษาแพทย์ผู้สั่งยาหรือเภสัชกร", CONTACT_TH].join("\n"),
+    en: ["Please prepare the medicine names, label photos and prescription if available for the pharmacist to review.", "If you have a question or want to change it, please ask the prescribing doctor or a pharmacist.", CONTACT_EN].join("\n"),
   },
   CHRONIC_CONDITION: {
     th: ["ผู้ที่มีโรคประจำตัวควรให้เภสัชกรตรวจก่อนใช้ยาทุกครั้งค่ะ", PREPARE_TH, CONTACT_TH].join("\n"),
@@ -205,8 +210,8 @@ export const PHARMACY_GUIDANCE_DEFAULT_DRAFTS: Record<PharmacyGuidanceCode, Reco
     en: ["Medicine for children, pregnancy, breastfeeding and older adults needs the pharmacist to assess each person.", "Please share the age, the weight (for a child), the stage of pregnancy, or any existing conditions.", CONTACT_EN].join("\n"),
   },
   ANIMAL: {
-    th: ["เรื่องการให้ยาแก่สัตว์ กรุณาปรึกษาสัตวแพทย์ค่ะ ยาของคนบางชนิดเป็นอันตรายต่อสัตว์", "หากสัตว์เลี้ยงกินยาของคนเข้าไปโดยไม่ตั้งใจ ให้ติดต่อสัตวแพทย์ทันที"].join("\n"),
-    en: ["Please ask a veterinarian about giving medicine to an animal; some human medicines are dangerous to pets.", "If a pet has swallowed a human medicine by accident, contact a veterinarian now."].join("\n"),
+    th: ["เรื่องการให้ยาแก่สัตว์ กรุณาปรึกษาสัตวแพทย์ค่ะ", "หากสัตว์เลี้ยงกินยาของคนเข้าไปโดยไม่ตั้งใจ ให้ติดต่อสัตวแพทย์ทันที"].join("\n"),
+    en: ["Please ask a veterinarian about giving medicine to an animal.", "If a pet has swallowed a human medicine by accident, contact a veterinarian now."].join("\n"),
   },
   RESTRICTED_PRODUCT: {
     th: ["ยากลุ่มนี้ต้องให้เภสัชกรซักถามก่อนจ่าย และบางชนิดต้องมีใบสั่งแพทย์ค่ะ จึงไม่สามารถยืนยันทางแชทได้", "กรุณาติดต่อหรือมาที่ร้านในเวลาที่เภสัชกรอยู่", CONTACT_TH].join("\n"),

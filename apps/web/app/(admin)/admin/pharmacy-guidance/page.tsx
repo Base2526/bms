@@ -19,6 +19,7 @@ const Q_GUIDANCE = gql`
       id code locale body status version approvedByName approvedAt approvedLicenseNo updatedAt warnings
     }
     bmsPharmacyGuidanceDefaults { code locale body warnings }
+    bmsPharmacyGuidanceEditorContext { licensedPharmacist shopPhone businessHours shopAddress }
   }
 `;
 const M_SAVE = gql`
@@ -46,9 +47,6 @@ type DefaultDraft = { code: PharmacyGuidanceCode; locale: PharmacyGuidanceLocale
 const LOCALES: PharmacyGuidanceLocale[] = ["th", "en"];
 const STATUS_COLOR: Record<Template["status"], string> = { DRAFT: "gold", APPROVED: "green", RETIRED: "default" };
 
-// Preview fills placeholders with sample values so the pharmacist sees the shape of the reply.
-const PREVIEW_VALUES = { shop_phone: "02-000-0000", business_hours: "09:00–21:00", shop_address: "—" };
-
 export default function PharmacyGuidancePage() {
   const { t } = useI18n();
   const { can } = useBmsPermissions();
@@ -65,6 +63,10 @@ export default function PharmacyGuidancePage() {
   const byKey = useMemo(() => new Map(rows.map((row) => [`${row.code}:${row.locale}`, row])), [rows]);
   const defaultByKey = useMemo(() => new Map(defaults.map((row) => [`${row.code}:${row.locale}`, row])), [defaults]);
   const approvedCount = rows.filter((row) => row.status === "APPROVED").length;
+  const editorContext = data?.bmsPharmacyGuidanceEditorContext;
+  const canApprove = canManage && editorContext?.licensedPharmacist === true;
+  const previewValues = { shop_phone: editorContext?.shopPhone, business_hours: editorContext?.businessHours,
+    shop_address: editorContext?.shopAddress };
 
   const run = async (work: () => Promise<unknown>, ok: string) => {
     try {
@@ -135,7 +137,7 @@ export default function PharmacyGuidancePage() {
                     <Button size="small" onClick={() => setEditing({ code, locale, body: row?.body ?? fallback?.body ?? "" })}>
                       {row ? t("admin_pharmacy_guidance.edit") : t("admin_pharmacy_guidance.create")}
                     </Button>
-                    {row?.status === "DRAFT" ? (
+                    {canApprove && row?.status === "DRAFT" ? (
                       <Popconfirm title={t("admin_pharmacy_guidance.approve_confirm")}
                         onConfirm={() => run(() => approve({ variables: { id: row.id, version: row.version } }), t("admin_pharmacy_guidance.approved"))}>
                         <Button size="small" type="primary">{t("admin_pharmacy_guidance.approve")}</Button>
@@ -175,7 +177,8 @@ export default function PharmacyGuidancePage() {
             ) : null}
             <Typography.Text strong style={{ display: "block", marginTop: 12 }}>{t("admin_pharmacy_guidance.preview")}</Typography.Text>
             <Typography.Paragraph style={{ whiteSpace: "pre-wrap", background: "var(--ant-color-fill-tertiary, #f5f5f5)", padding: 8, borderRadius: 6 }}>
-              {renderPharmacyGuidance(editing.body, PREVIEW_VALUES, editing.locale)}
+              {editorContext ? renderPharmacyGuidance(editing.body, previewValues, editing.locale)
+                : t("admin_pharmacy_guidance.preview_unavailable")}
             </Typography.Paragraph>
           </>
         ) : null}

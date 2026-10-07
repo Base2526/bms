@@ -3,6 +3,44 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Recheck รอบถัดมา: คำถามสั้นและ context outage — 2026-10-07
+
+- ต่อใน `codex/pharmacy-guidance-recheck` / Draft PR #304; ไม่เพิ่ม migration ไม่เปิด flag/protocol
+  และคงการอนุมัติแม่แบบแยกแต่ละร้าน
+- เพิ่ม regression 21 ประโยค: suitability/safety/หยุด-เริ่มยา/ยืนยันขนาด/แอลกอฮอล์/คำถามปนเลขเคส
+  และรายงานกินยาผิด/หายใจลำบาก; เทสแดงกับโค้ดเดิมก่อนแก้ shared guard
+- แยกโหลด profile ออกจาก optional identity/history/state/protocol context เพื่อไม่ให้ context
+  ล้มแล้วทิ้ง archetype ร้านยา; profile อ่านไม่ได้ให้ fixed unavailable ก่อน model/tools/orders
+  ด่านฉุกเฉินยังอยู่ก่อนการอ่าน profile ทุกกรณี
+- runtime จำลอง DB/cache/provider ทดสอบ context ล้ม 5 จุด, pipeline, active intake และ Lab;
+  ตรึงคำถามคูปอง/บัตรเครดิต/เจลแอลกอฮอล์/เพิ่มสินค้าให้ยังไม่ถูกเข้าใจเป็นคำถามคลินิก
+- focused customer assistance **106/106**, pharmacy ทั้งชุด **236/236** ผ่าน; `npm run gate` ผ่าน:
+  typecheck + pure **2,020 ผ่าน / 2,022 ข้อ / skip 2 / fail 0** + production build 132 pages
+  (build มี ECONNREFUSED จากหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบ DB)
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และไม่ได้ตรวจทางคลินิก; guard เป็น conservative matching
+  ไม่ใช่หลักฐานว่าครอบทุกถ้อยคำ ไม่มี deploy หรืออนุมัติข้อความ
+
+## Recheck แม่แบบคำแนะนำและการอนุมัติ `10.47` — 2026-10-07
+
+- branch `codex/pharmacy-guidance-recheck` ต่อจาก `codex/emergency-facilities`; ผู้ใช้ยืนยันให้คง
+  การอนุมัติแยกแต่ละร้าน ไม่มีแม่แบบกลางที่อนุมัติครั้งเดียวใช้ข้ามร้าน
+- ตรวจใบอนุญาตและ snapshot ใน transaction เดียวกับ approval/audit ผ่าน helper `10.47`
+  ที่ตรวจ tenant GUC และล็อก user row จน commit; ไม่มี Administrator bypass หรือ grant แก้ users เพิ่ม
+- ตัด placeholder ผิดรูปแบบ/ข้ามบรรทัด/ค่าร้านที่มี placeholder; เตือนชื่อยาจากรายการตัวอย่าง
+  (ไม่ใช่พจนานุกรมยาครบทุกตัว) และตัดคำสั่งหยุด/ใช้/ชดเชยยาออกจากร่างตั้งต้น
+- ไม่แก้แม่แบบที่ร้านบันทึกไว้ ไม่อนุมัติข้อความ ไม่เปิด flag/protocol; พรีวิวใช้ข้อมูลร้านจริง
+  ปุ่มอนุมัติแสดงเฉพาะผู้มีสิทธิ์และ license hint แต่ server ตรวจซ้ำเสมอ
+- gate ผ่าน: typecheck + production build; หลังเพิ่ม editor-context test สุดท้าย รัน full pure ซ้ำ
+  **1,998 ผ่าน / 2,000 ข้อ / skip 2 / fail 0**; focused **23/23**
+- guidance mutation **7/7 killed**: DRAFT customer read, licence bypass, raw placeholder, approved seed,
+  medicine-stop draft, tenant guard และ fabricated preview; คืนไฟล์ byte-exact และ baseline ผ่าน
+- เฟส 1 mutation ทดสอบซ้ำ **5/5 killed**, คืนไฟล์ byte-exact และ baseline emergency **46/46**
+- Browser เปิด `/admin/pharmacy-guidance` แล้ว redirect ไป login; ยังไม่ได้ตรวจ authenticated
+  form/desktop-mobile CRUD; ปิด server และแท็บทดสอบชั่วคราวแล้ว
+- DB runner ทั้งสองเฟสหยุดที่ env guard (ไม่มี POSTGRES_HOST/POSTGRES_DB): **ยังไม่ได้รัน SQL/DB tests**
+  หรือ apply `10.45`/`10.46`/`10.47`; ต้อง apply `10.47` ก่อนอนุมัติแม่แบบใหม่
+- ยังไม่ได้ทดสอบกับ AI provider/แชทจริง และข้อความยังไม่ได้รับการตรวจทางคลินิกโดยเภสัชกร
+
 ## Recheck คำถามหลุดจากด่านร้านยา — 2026-10-07
 
 - ต่อบน `codex/emergency-facilities` / draft PR #303; ไม่เปลี่ยน flag, protocol, migration หรือ approval

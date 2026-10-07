@@ -23,6 +23,9 @@ export function normalizePharmacySafetyText(message: string): string {
 export function pharmacyEmergencyKind(message: string): EmergencyKind | null {
   const text = normalizePharmacySafetyText(message);
   if (SELF_HARM_PATTERN.test(text)) return "SELF_HARM";
+  // Same poisoning/breathing escalation, including reports without the word "overdose".
+  if (/(?:กิน|ทาน|กลืน)ยาผิด|\b(?:took|taken|swallowed)\s+(?:the\s+)?wrong\s+(?:medicine|medication|pills?|tablets?)\b/i.test(text)) return "POISONING";
+  if (/หายใจไม่ค่อยออก|\b(?:struggling|struggle|difficulty|trouble)\s+(?:to\s+breathe|breathing)\b/i.test(text)) return "MEDICAL";
   if (POISONING_PATTERN.test(text) || /(?:เด็ก|ลูก|หลาน).{0,15}(?:กิน|กลืน|ทาน).{0,20}ยา.{0,20}\d+\s*(?:เม็ด|แผง|ขวด)/i.test(text)) return "POISONING";
   if (/\b(?:took|taken|swallowed|ate)\s+too many\s+(?:pills|tablets|capsules)\b|\b(?:child|baby|toddler).{0,30}\b(?:drank|ingested)\s+(?:the |my |some )?(?:medicine|medication)\b/i.test(text)) return "POISONING";
   if (/\b(?:lips|tongue|face)\s+(?:(?:is|are)\s+)?(?:swelling|swollen)\b|\bshortness of breath\b/i.test(text)) return "MEDICAL";

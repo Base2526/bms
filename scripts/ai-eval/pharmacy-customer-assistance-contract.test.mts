@@ -64,6 +64,8 @@ for (const row of PHARMACY_CUSTOMER_CORPUS) {
   test(`customer pharmacy corpus: ${row.id}`, () => {
     if (row.kind === "clinical") {
       assert.equal(isPharmacyMedicationAdviceQuestion(row.message), true);
+      assert.equal(shouldPreservePharmacyCustomerMessage(row.message, true), true);
+      assert.equal(pharmacyCustomerReadIntent(row.message), null);
       const reply = pharmacyClinicalHandoffReply(!/[ก-๙]/.test(row.message), row.message);
       assert.match(reply, /เภสัชกร|licensed pharmacist|สัตวแพทย์|veterinarian/);
       assert.doesNotMatch(reply, /\d+\s*(?:mg|เม็ด|มิลลิกรัม)/);
@@ -86,7 +88,9 @@ test("explicit commerce and label questions remain non-clinical; no approval is 
   for (const text of ["ขอพารา 500 2 แผง", "มีพาราไหม แผงละเท่าไร", "มีแมสก์ไหม",
     "ตัวนี้มีส่วนประกอบสำคัญอะไร ความแรงเท่าไร", "Paracetamol 500 mg price?",
     "มีเครื่องวัดความดันไหม", "มีผ้าอ้อมเด็กไหม", "มียาคุมฉุกเฉินไหม", "ขอยานอนหลับ",
-    "Pregnancy test price?", "Do you sell sleeping pills?", "มีอาหารแมวไหม"]) {
+    "Pregnancy test price?", "Do you sell sleeping pills?", "มีอาหารแมวไหม",
+    "ใช้คูปองได้ไหม", "ใช้บัตรเครดิตได้ไหม", "มีเจลแอลกอฮอล์ไหม", "Alcohol gel price?",
+    "ขอเพิ่มยา 2 แผง", "เอาพาราเพิ่มอีก 1 แผง"]) {
     assert.equal(isPharmacyMedicationAdviceQuestion(text), false, text);
     assert.equal(isPharmacySymptomAdviceQuestion(text), false, text);
   }
@@ -201,6 +205,61 @@ test("customer reads execute tenant/identity-scoped queries and redact all priva
         assert.ok(calls.length > 0);
         assert.equal(provider.mock.callCount(), 0);
         for (const { sql } of calls) assert.match(sql, /FROM bms_(?:store_profile|pharmacy_guidance_templates)/);
+      } finally {
+        respond = oldRespond;
+        if (oldFlag === undefined) delete process.env.PHARMACY_INTAKE_ENABLED; else process.env.PHARMACY_INTAKE_ENABLED = oldFlag;
+        if (oldProtocols === undefined) delete process.env.PHARMACY_PROTOCOLS_ENABLED; else process.env.PHARMACY_PROTOCOLS_ENABLED = oldProtocols;
+      }
+    });
+    await t.test("context failures never erase pharmacy boundaries or execute a provider", async (sub) => {
+      const oldFlag = process.env.PHARMACY_INTAKE_ENABLED, oldProtocols = process.env.PHARMACY_PROTOCOLS_ENABLED;
+      const oldRespond = respond;
+      process.env.PHARMACY_INTAKE_ENABLED = "false";
+      try {
+        const { sharedRedisClient } = await import("../../apps/web/lib/cache.ts");
+        sub.mock.method(sharedRedisClient, "get", async () => null);
+        sub.mock.method(sharedRedisClient, "set", async () => "OK");
+        sub.mock.method(console, "error", () => {});
+        const provider = sub.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected provider/network call"); });
+        const { runPipeline } = await import("../../apps/web/lib/bms/pipeline.ts");
+        for (const failure of ["profile", "conversation", "history", "state", "protocols"]) {
+          calls.length = 0;
+          process.env.PHARMACY_PROTOCOLS_ENABLED = failure === "protocols" ? "headache" : "";
+          respond = (sql) => {
+            if (sql.includes("FROM bms_store_profile")) {
+              if (failure === "profile") throw new Error("FAKE profile outage");
+              return [{ business_archetype: "pharmacy" }];
+            }
+            if (sql.includes("SELECT id FROM bms_conversations")) {
+              if (failure === "conversation") throw new Error("FAKE conversation outage");
+              return [{ id: "FAKE-conversation" }];
+            }
+            if (sql.includes("FROM bms_messages")) {
+              if (failure === "history") throw new Error("FAKE history outage");
+              return [];
+            }
+            if (sql.includes("SELECT ai_state")) {
+              if (failure === "state") throw new Error("FAKE state outage");
+              return [];
+            }
+            if (sql.includes("FROM bms_pharmacy_protocols")) throw new Error("FAKE protocols outage");
+            if (sql.includes("FROM bms_pharmacy_guidance_templates")) return [];
+            // Prevent failure reporting from touching notifications or a real provider.
+            if (sql.includes("INSERT INTO bms_failure_incidents")) throw new Error("FAKE incident store unavailable");
+            throw new Error(`unexpected fallback query: ${sql}`);
+          };
+          const result = await runPipeline("พารา 500 กินกี่เม็ด", "web", "tenant-context-failure-test", "FAKE");
+          assert.equal(result.tool, failure === "profile" ? "context:unavailable" : "pharmacy:clinical_handoff", failure);
+          if (failure !== "profile") assert.equal(result.reply, pharmacyClinicalHandoffReply(false), failure);
+          else assert.match(result.reply, /ติดต่อร้าน/);
+          if (failure === "profile") {
+            const purchase = await runPipeline("Paracetamol 500 mg, 2 packs please", "web", "tenant-context-failure-test", "FAKE");
+            assert.equal(purchase.tool, "context:unavailable");
+            assert.match(purchase.reply, /No action has been taken/);
+          }
+          assert.ok(!calls.some(({ sql }) => /FROM bms_products|INSERT INTO bms_orders/.test(sql)), failure);
+        }
+        assert.equal(provider.mock.callCount(), 0);
       } finally {
         respond = oldRespond;
         if (oldFlag === undefined) delete process.env.PHARMACY_INTAKE_ENABLED; else process.env.PHARMACY_INTAKE_ENABLED = oldFlag;

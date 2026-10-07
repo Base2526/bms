@@ -4,6 +4,15 @@
 
 ## Mobile GraphQL primary API
 
+### Pharmacy guidance editor
+
+`bmsPharmacyGuidanceEditorContext` has no client arguments and requires `pharmacy.assessment.read`.
+It derives tenant and actor from the session and returns recorded shop phone/business hours/address
+plus a display-only `licensedPharmacist` hint. The preview renders these facts with the same pure
+renderer used for customers. Unknown/malformed placeholders omit lines. The existing approval
+mutation still requires `pharmacy.protocol.manage`, version matching and the transaction-locked
+licence check from `10.47`; the UI hint never authorizes approval. No new AI tool or permission.
+
 ### Emergency directory (`10.46`)
 
 `bmsEmergencyFacilities(locationId)` and `bmsEmergencyFacilityLocations` read the Settings

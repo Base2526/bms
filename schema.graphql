@@ -2526,6 +2526,13 @@ type BmsPharmacyGuidanceDefault {
   warnings: [String!]!
 }
 
+type BmsPharmacyGuidanceEditorContext {
+  businessHours: String
+  licensedPharmacist: Boolean!
+  shopAddress: String
+  shopPhone: String
+}
+
 type BmsPharmacyGuidanceTemplate {
   approvedAt: String
   approvedBy: ID
@@ -8142,6 +8149,7 @@ type Query {
   Built-in starting drafts; never shown to a customer until a licensed pharmacist approves a copy
   """
   bmsPharmacyGuidanceDefaults: [BmsPharmacyGuidanceDefault!]!
+  bmsPharmacyGuidanceEditorContext: BmsPharmacyGuidanceEditorContext!
 
   """
   Pharmacist-approved guidance for clinical customer questions (10.45) — pharmacy.assessment.read

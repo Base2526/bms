@@ -7,6 +7,7 @@ import {
   PHARMACY_GUIDANCE_CODES,
   PHARMACY_GUIDANCE_DEFAULT_DRAFTS,
   PHARMACY_GUIDANCE_FOOTER,
+  PHARMACY_GUIDANCE_MEDICINE_NAME_PATTERN,
   classifyPharmacyGuidanceQuestion,
   pharmacyGuidanceWarnings,
   renderPharmacyGuidance,
@@ -149,9 +150,18 @@ test("content warnings catch doses and safety claims", () => {
   assert.ok(pharmacyGuidanceWarnings("โทร {{pharmacist_mobile}}").includes("UNKNOWN_PLACEHOLDER"));
   assert.ok(pharmacyGuidanceWarnings("   ").includes("EMPTY"));
   assert.deepEqual(pharmacyGuidanceWarnings("ติดต่อเภสัชกรที่ {{shop_phone}}"), []);
+  assert.ok(pharmacyGuidanceWarnings("paracetamol").includes("MEDICINE_NAME"));
 });
 
-const DRUG_NAMES = /(?:พารา|paracetamol|acetaminophen|ibuprofen|ไอบู|aspirin|แอสไพริน|loratadine|cetirizine|amoxicillin|อะม็อก|domperidone|omeprazole|diclofenac|antacid|ยาแก้แพ้|ยาลดกรด)/i;
+test("malformed, non-ASCII and nested placeholders never leak, including from shop values", () => {
+  for (const hole of ["{{shop.phone}}", "{{shop-phone}}", "{{โทร}}", "{{}}", "{{shop_phone", "phone}}", "{{{shop_phone}}}", "{{\nshop_phone\n}}"] ) {
+    const out = renderPharmacyGuidance(`KEEP\n${hole}\nEND`, { shop_phone: "02-555-0101" }, "en");
+    assert.doesNotMatch(out, /\{\{|\}\}/, hole);
+    assert.ok(pharmacyGuidanceWarnings(hole).includes("UNKNOWN_PLACEHOLDER"), hole);
+  }
+  assert.equal(renderPharmacyGuidance("Phone {{shop_phone}}", { shop_phone: "{{untrusted}}" }, "en"), PHARMACY_GUIDANCE_FOOTER.en);
+  assert.match(renderPharmacyGuidance("Address {{shop_address}}", { shop_address: "line 1\nline 2" }, "en"), /^Address line 1 line 2\n/);
+});
 
 test("starting drafts raise no warning, name no medicine and point to 1669 where they screen", () => {
   assert.deepEqual(Object.keys(PHARMACY_GUIDANCE_DEFAULT_DRAFTS).sort(), [...PHARMACY_GUIDANCE_CODES].sort());
@@ -160,7 +170,9 @@ test("starting drafts raise no warning, name no medicine and point to 1669 where
       const body = byLocale[locale];
       assert.ok(body?.trim(), `${code}/${locale} draft is missing`);
       assert.deepEqual(pharmacyGuidanceWarnings(body), [], `${code}/${locale} draft raises a warning`);
-      assert.doesNotMatch(body, DRUG_NAMES, `${code}/${locale} draft names a medicine`);
+      assert.doesNotMatch(body, PHARMACY_GUIDANCE_MEDICINE_NAME_PATTERN, `${code}/${locale} draft names a medicine`);
+      assert.doesNotMatch(body, /กรุณาหยุด|อย่าเพิ่มยา|ใช้ตามที่แพทย์สั่ง|please stop|do not (?:take extra|start a new medicine)|use it as the doctor prescribed/i,
+        `${code}/${locale} draft must not direct medicine use, stopping or compensation`);
       if (/อาการรุนแรง|severe symptoms/i.test(body)) assert.match(body, /1669/);
     }
   }
@@ -193,9 +205,14 @@ test("10.45 stores approval as a fact about the pharmacist and never seeds appro
 
   const store = stripComments(read("apps/web/lib/bms/pharmacy/guidanceTemplateStore.ts"));
   const approve = block(store, "export async function approvePharmacyGuidance(", "export async function retirePharmacyGuidance(");
-  assert.match(approve, /bms_is_licensed_pharmacist\(\$1, \$2\)/);
+  assert.match(approve, /bms_lock_guidance_pharmacist_license\(\$1, \$2\)/);
+  assert.ok(approve.indexOf("await beginTenantTx") < approve.indexOf("bms_lock_guidance_pharmacist_license"));
+  assert.doesNotMatch(approve, /await query</, "approval must not check the licence on another connection");
   assert.match(approve, /ok !== true/);
   assert.match(approve, /status = 'DRAFT' AND version = \$4/, "approval must pin the version the pharmacist read");
+  const seed = block(store, "export async function seedPharmacyGuidanceDrafts(", "export async function approvePharmacyGuidance(");
+  assert.match(seed, /VALUES \(\$1,\$2,\$3,\$4,'DRAFT',\$5\)/);
+  assert.match(seed, /ON CONFLICT \(tenant_id, code, locale\) DO NOTHING/);
   for (const fn of ["savePharmacyGuidanceDraft", "seedPharmacyGuidanceDrafts", "approvePharmacyGuidance", "retirePharmacyGuidance"]) {
     const body = block(store, `export async function ${fn}(`, "\n}\n");
     assert.match(body, /beginTenantTx/, `${fn} must write in a tenant transaction`);
@@ -208,6 +225,7 @@ test("GraphQL gates reading on pharmacy.assessment.read and writing on pharmacy.
   for (const [name, perm] of [
     ["bmsPharmacyGuidanceTemplates", "pharmacy.assessment.read"],
     ["bmsPharmacyGuidanceDefaults", "pharmacy.assessment.read"],
+    ["bmsPharmacyGuidanceEditorContext", "pharmacy.assessment.read"],
     ["bmsSavePharmacyGuidanceDraft", "pharmacy.protocol.manage"],
     ["bmsSeedPharmacyGuidanceDrafts", "pharmacy.protocol.manage"],
     ["bmsApprovePharmacyGuidance", "pharmacy.protocol.manage"],
@@ -218,4 +236,26 @@ test("GraphQL gates reading on pharmacy.assessment.read and writing on pharmacy.
     // The built-in drafts belong to no shop; every other operation is tenant data.
     if (name !== "bmsPharmacyGuidanceDefaults") assert.match(fn, /getTenantId\(ctx\)/, `${name} must derive the tenant server-side`);
   }
+});
+
+test("10.47 pins licence evidence without granting bms_app access to edit users", () => {
+  const sql = read("db/migrations/10.47__bms_guidance_approval_license_lock.sql");
+  assert.match(sql, /SECURITY DEFINER/);
+  assert.match(sql, /SET search_path = pg_catalog, public/);
+  assert.match(sql, /current_setting\('bms.tenant_id', true\)/);
+  assert.match(sql, /IS DISTINCT FROM p_tenant_id/);
+  assert.match(sql, /u.tenant_id = p_tenant_id AND u.id = p_user_id/);
+  assert.match(sql, /FOR SHARE OF u/);
+  assert.match(sql, /locked_licensed IS TRUE AND public.bms_is_licensed_pharmacist\(p_tenant_id, p_user_id\)/);
+  assert.match(sql, /REVOKE ALL ON FUNCTION.*FROM PUBLIC/);
+  assert.doesNotMatch(sql, /GRANT (?:SELECT|UPDATE|ALL).*ON (?:public\.)?users/i);
+});
+
+test("guidance preview uses server shop facts and approval controls require the licence hint", () => {
+  const page = read("apps/web/app/(admin)/admin/pharmacy-guidance/page.tsx");
+  assert.doesNotMatch(page, /PREVIEW_VALUES|02-000-0000|09:00–21:00/);
+  assert.match(page, /bmsPharmacyGuidanceEditorContext \{ licensedPharmacist shopPhone businessHours shopAddress \}/);
+  assert.match(page, /canManage && editorContext\?\.licensedPharmacist === true/);
+  assert.match(page, /canApprove && row\?\.status === "DRAFT"/);
+  assert.match(page, /renderPharmacyGuidance\(editing.body, previewValues, editing.locale\)/);
 });

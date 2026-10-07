@@ -1700,18 +1700,30 @@ export async function runPipeline(
   let storedState: AiConversationState = {};
   let profile: AiProfileContext = DEFAULT_AI_PROFILE;
   let pharmacyTriggerDefinitions: PharmacyTriggerDefinition[] = [];
+  // Archetype is a safety boundary, not optional conversation memory. Load it independently:
+  // a failed history/identity/protocol read must not turn a pharmacy into a generic shop.
+  try {
+    profile = await getStoreProfile(tenantId);
+  } catch (err) {
+    console.error("[BMS] pipeline store profile load failed:", err);
+    await reportBmsFailure({ tenantId, code: "ai.context_load_failed", error: err,
+      surface: "customer", channel, customerRef, meta: { stage: "store_profile" } });
+    return customerSafe({ channel, incoming: message, understanding: understand(message),
+      tool: "context:unavailable", data: { status: "NOT_FOUND", query: "" },
+      reply: /[ก-๙]/.test(message)
+        ? "ขณะนี้ตรวจสอบข้อมูลร้านไม่ได้ค่ะ กรุณาติดต่อร้านโดยตรงหรือลองใหม่ภายหลัง ระบบยังไม่ได้ดำเนินการตามคำขอนี้"
+        : "I cannot verify the shop information right now. Please contact the shop directly or try again later. No action has been taken on this request." });
+  }
   try {
     convId = await resolveConversationId(tenantId, channel, customerRef);
     const loaded = await Promise.all([
       getRecentAiHistory(tenantId, convId, HISTORY_FETCH_MESSAGES),
       getAiConversationState(tenantId, convId),
-      getStoreProfile(tenantId),
       listActivePharmacyTriggerDefinitions(tenantId),
     ]);
     history = loaded[0];
     storedState = loaded[1];
-    profile = loaded[2];
-    pharmacyTriggerDefinitions = loaded[3];
+    pharmacyTriggerDefinitions = loaded[2];
   } catch (err) {
     console.error("[BMS] pipeline pre-context history load failed:", err);
     await reportBmsFailure({

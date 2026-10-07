@@ -15,7 +15,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { query } from "../apps/web/lib/db.ts";
+import { getClient, query } from "../apps/web/lib/db.ts";
+import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import {
   PharmacyGuidanceError,
   approvePharmacyGuidance,
@@ -105,6 +106,34 @@ test("a pharmacist of another shop cannot approve this shop's text", async () =>
     () => approvePharmacyGuidance(tenantId, otherPharmacistId, draft!.id, draft!.version),
     (err: unknown) => err instanceof PharmacyGuidanceError
   );
+});
+
+test("10.47 locks the licence through the transaction and refuses a mismatched tenant", async () => {
+  const locked = await getClient(), revoker = await getClient();
+  try {
+    await beginTenantTx(locked, tenantId, { editorId: pharmacistId });
+    const licence = await locked.query(`SELECT * FROM public.bms_lock_guidance_pharmacist_license($1, $2)`, [tenantId, pharmacistId]);
+    assert.equal(licence.rows[0].ok, true);
+    assert.equal(licence.rows[0].license_no, "ภ.rx-001");
+    await revoker.query("BEGIN");
+    await revoker.query("SET LOCAL lock_timeout = '100ms'");
+    await assert.rejects(revoker.query(`UPDATE users SET is_licensed_pharmacist=false WHERE tenant_id=$1 AND id=$2`, [tenantId, pharmacistId]),
+      (error: any) => error.code === "55P03", "revocation must wait until the approval transaction ends");
+    await revoker.query("ROLLBACK");
+    await assert.rejects(locked.query(`SELECT * FROM public.bms_lock_guidance_pharmacist_license($1, $2)`, [otherTenantId, otherPharmacistId]),
+      (error: any) => error.code === "42501");
+  } finally {
+    try { await locked.query("ROLLBACK"); } finally { locked.release(); }
+    try { await revoker.query("ROLLBACK"); } finally { revoker.release(); }
+  }
+  const draft = await row(tenantId, "DRUG_INTERACTION", "th");
+  try {
+    await query(`UPDATE users SET is_licensed_pharmacist=false WHERE tenant_id=$1 AND id=$2`, [tenantId, pharmacistId]);
+    await assert.rejects(approvePharmacyGuidance(tenantId, pharmacistId, draft!.id, draft!.version), PharmacyGuidanceError);
+    assert.equal((await row(tenantId, "DRUG_INTERACTION", "th"))!.status, "DRAFT");
+  } finally {
+    await query(`UPDATE users SET is_licensed_pharmacist=true WHERE tenant_id=$1 AND id=$2`, [tenantId, pharmacistId]);
+  }
 });
 
 test("approval pins the version the pharmacist read", async () => {

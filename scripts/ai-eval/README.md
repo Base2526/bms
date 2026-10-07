@@ -103,6 +103,10 @@ reruns the baseline. These are **not** live database/provider tests. Run the sep
 แต่ pure ใช้ fake DB และไม่ยืนยัน SQL/RLS/provider จริง การรัน live ต้องใช้ sandbox ที่ migrate แล้ว
 และไม่เปิด flag/protocol ทางคลินิกเพียงเพื่อให้ test ผ่าน
 
+Recheck เพิ่มคำถามสั้นเรื่องความปลอดภัย/หยุดยา/ยากับแอลกอฮอล์ และข้อความถามเคสปนคลินิก
+รวมถึงรายงานกินยาผิด/หายใจลำบาก; runtime test จำลอง profile/conversation/history/state/protocol
+อ่านล้มเหลวแยกกัน เพื่อยืนยันว่าประเภทร้านยาไม่หายและไม่เรียก provider เมื่อไม่มีข้อมูลร้าน
+
 **ชุดนี้อยู่ใน `npm run test:pure` แล้ว** (และจึงอยู่ใน CI) — `scripts/run-contract-tests.mjs`
 เดินเข้ามาในโฟลเดอร์นี้ด้วย ไม่ต้องไล่รันทีละไฟล์เหมือนเดิม:
 
