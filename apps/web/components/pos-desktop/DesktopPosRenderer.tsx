@@ -1331,7 +1331,9 @@ function DesktopPosContent() {
     setPayments((current) => syncSingleCheckoutPayment(
       current, total, saleSubmittingRef.current || Boolean(saleAttemptRef.current),
     ));
-  }, [paymentCount, total]);
+    // A preview may change while settlement is locked. Reconcile on unlock too;
+    // an unknown result remains protected by saleAttemptRef until resolved.
+  }, [paymentCount, total, busy]);
 
   const validation = useMemo(() => validatePayments(total, payments), [payments, total]);
   const zeroDueBoardGameBill = Boolean(boardGameCheckout && total === 0);

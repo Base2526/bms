@@ -307,7 +307,7 @@ test("desktop checkout does not repeat the payment selector for a single tender"
   );
   assert.match(
     desktopRenderer,
-    /const paymentCount = payments\.length;[\s\S]*?\}, \[paymentCount, total\]\);/,
+    /const paymentCount = payments\.length;[\s\S]*?\}, \[paymentCount, total, busy\]\);/,
     "returning from split to one tender must restore the authoritative total",
   );
 });

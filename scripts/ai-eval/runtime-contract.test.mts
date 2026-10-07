@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { customerStoreFacts, customerStoreMessages, CUSTOMER_STORE_CONTEXT_POLICY } from "../../apps/web/lib/bms/customerStoreContext.ts";
 
 import { understand } from "../../apps/web/lib/bms/nlu.ts";
 import { estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
@@ -185,6 +186,36 @@ test("plain provider response is returned and usage is finalized", async () => {
   assert.equal(usage.length, 1);
   assert.equal(usage[0].payload.status, "completed");
   assert.equal(usage[0].payload.inputTokens, 3);
+});
+
+test("prefetched shop context reaches the first provider request after stale history with one usage event", async () => {
+  const usage: Array<{ id: string; payload: any }> = [];
+  const facts = customerStoreFacts({ ok: true, data: { storeName: "FAKE Cafe", website: "https://example.test" } });
+  let calls = 0;
+  const options = baseOptions([makeTool({ name: "get_store_info" })]);
+  const result = await __toolLoopTest.run({
+    ...options,
+    system: CUSTOMER_STORE_CONTEXT_POLICY,
+    messages: [
+      { role: "user", content: "ร้านอะไรครับ" },
+      { role: "assistant", content: "ไม่มีข้อมูลร้านค่ะ" },
+      { role: "user", content: "มีเว็บให้เข้าไปดูไหม" },
+      ...customerStoreMessages(facts),
+    ],
+  }, depsFor(async (_creds, system, messages) => {
+    calls++;
+    assert.match(JSON.stringify(system), /Current tool facts override earlier assistant/);
+    assert.doesNotMatch(JSON.stringify(system), /https:\/\/example.test/);
+    const last = messages.at(-1);
+    assert.equal(last.role, "user");
+    assert.equal(last.content[0].type, "tool_result");
+    assert.equal(JSON.parse(last.content[0].content).fields.website, "https://example.test");
+    return textResponse("เว็บไซต์ https://example.test ค่ะ");
+  }, { usage }));
+  assert.match(result.reply, /https:\/\/example.test/);
+  assert.equal(calls, 1);
+  assert.equal(usage.length, 1);
+  assert.equal(result.trace.length, 0, "prefetch is not a model-selected tool or write");
 });
 
 test("bounded usage diagnostics are attached when credentials are reserved", async () => {

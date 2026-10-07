@@ -26,6 +26,14 @@ import { createOrder, type CreateOrderResult } from "./orders";
 import { generateResponse } from "./ai";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
+import { boardGameCustomerGuard, BOARD_GAME_CUSTOMER_GUARD_POLICY } from "./boardGameCustomerGuard";
+import {
+  answersWithStoreFacts,
+  customerStoreFacts,
+  customerStoreMessages,
+  replyWithoutQuotedStoreFacts,
+  CUSTOMER_STORE_CONTEXT_POLICY,
+} from "./customerStoreContext";
 import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
 import {
   getRecentAiHistory,
@@ -61,6 +69,8 @@ import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
   isAlternativeCatalogRequest,
+  hasUnsupportedBoardGameActionClaim,
+  storeInfoReply,
   suppressUnconfiguredPaymentAdvice,
 } from "./customerReplyPolicy";
 import { ensureCustomerForIdentity, findCustomerIdByIdentity, getCustomerCheckoutStatus } from "./customers";
@@ -94,6 +104,8 @@ import { routePharmacyConversationMessage } from "./pharmacy/conversationRouter"
 import {
   couponCodeFromMessage,
   isEnglishCustomerReply,
+  isStoreInfoQuestion,
+  isBoardGameVisitQuestion,
   shippingProvinceFromMessage,
 } from "./customerMessageRouting";
 import {
@@ -123,6 +135,8 @@ function safeEvalRef(customerRef?: string | null): string | null {
 const PRICE_PATTERN = /(\d{1,3}(,\d{3})*|\d+)\s*(บาท|฿|baht)/i;
 const STOCK_PATTERN = /(มี|เหลือ)\s*(\d+)\s*(ชิ้น|ตัว|อัน|คู่|ชุด)/i;
 const PRICE_FACT_TOOLS = new Set([
+  "get_board_game_rates",
+  "get_board_game_availability",
   "search_products",
   "browse_catalog",
   "list_new_arrivals",
@@ -140,6 +154,7 @@ const PRICE_FACT_TOOLS = new Set([
   "reorder",
 ]);
 const STOCK_FACT_TOOLS = new Set([
+  "search_board_game_library",
   "search_products",
   "browse_catalog",
   "list_new_arrivals",
@@ -314,8 +329,8 @@ function buildBusinessArchetypeExamples(businessArchetype: string | null | undef
       ];
     case "board_game_cafe":
       return [
-        'ตัวอย่างร้านบอร์ดเกม — ลูกค้า: "ค่าเล่นนักเรียนเท่าไหร่" → ตอบจาก rate/ข้อมูลร้านที่เผยแพร่เท่านั้น ถ้ายังไม่ตั้งค่าให้บอกว่าต้องให้ร้านยืนยัน ห้ามคำนวณหรือเดาราคาเอง',
-        'ตัวอย่างร้านบอร์ดเกม — ลูกค้า: "มี Catan ไหม แล้วโต๊ะว่างไหม" → ค้นจาก catalog/ข้อมูล public ที่ร้านเผยแพร่ แยกเกมไว้ให้เล่นออกจากสินค้าที่ขาย และตอบสถานะที่นั่งแบบคร่าว ๆ เท่านั้น',
+        'ตัวอย่างร้านบอร์ดเกม — ลูกค้า: "ค่าเล่นนักเรียนเท่าไหร่" → get_board_game_rates อ่านเรตตามประเภทผู้เล่น ห้ามเดาโปรหรือราคาสุทธิ',
+        'ตัวอย่างร้านบอร์ดเกม — ลูกค้า: "มี Catan ไหม แล้วโต๊ะว่างไหม" → search_board_game_library และ get_board_game_availability ใน turn เดียว แยกเกมให้เล่นออกจากสินค้าขาย',
       ];
     case "pharmacy":
       return [
@@ -371,7 +386,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
         ? "รูปแบบร้านคือ simple catalog: อย่าถามตัวเลือกที่ลูกค้าไม่จำเป็นต้องรู้; resolve size ภายในได้เฉพาะเมื่อผลทูลมี variant เดียว"
         : "รูปแบบร้านคือ catalog variant: ต้องยืนยันไซซ์/ตัวเลือกที่ลูกค้าต้องการก่อนสร้างออร์เดอร์";
   const lines = [
-    "คุณเป็นแอดมินร้านค้าออนไลน์ ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม ห้ามใช้ ผม/ครับ และห้ามเติมเรื่องนอกบริบทการซื้อขาย",
+    "คุณเป็นผู้ช่วยของร้าน ตอบเรื่องข้อมูลร้าน บริการ และการซื้อขายตามข้อมูลจริง ใช้สรรพนามว่า 'ทางร้าน' หรือไม่ใช้สรรพนาม ห้ามใช้ ผม/ครับ",
     languageInstruction,
     orderingInstruction,
     `Archetype commerce policy: salesMotion=${commercePolicy.salesMotion}.`,
@@ -379,7 +394,19 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     `Basket policy: ${commercePolicy.basket}`,
     `Repeat-purchase policy: ${commercePolicy.repeatPurchase}`,
     `Fulfillment policy: ${commercePolicy.fulfillment}`,
-    "เป้าหมายหลักคือช่วยลูกค้าหาสินค้าที่ซื้อได้และพาไปสู่ขั้นตอนเลือกสินค้า/ไซซ์/จำนวนอย่างสุภาพ ไม่สนทนายืดยาวนอกเส้นทางการขาย",
+    "ตอบความต้องการปัจจุบันของลูกค้าก่อน คำถามข้อมูลร้านหรือบริการให้ตอบตรงเรื่อง ไม่ต้องปิดท้ายชวนซื้อสินค้าทุกครั้ง เมื่อลูกค้าต้องการซื้อจึงช่วยเลือกสินค้า/ตัวเลือก/จำนวน",
+    CUSTOMER_STORE_CONTEXT_POLICY,
+    ...(profile.businessArchetype === "board_game_cafe" ? [
+      BOARD_GAME_CUSTOMER_GUARD_POLICY,
+      "บริการเล่นบอร์ดเกมเป็นคนละเรื่องกับสินค้าขาย: ค่าเล่นใช้ get_board_game_rates เกมให้เล่น/แนะนำเกมตามจำนวนคนใช้ search_board_game_library โต๊ะว่าง/การมาเล่น/การจอง/ข้อมูลสาขาใช้ get_board_game_availability; ใช้ catalog เฉพาะสินค้า เครื่องดื่ม ขนม หรือเกมที่ลูกค้าต้องการซื้อ",
+      "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
+      "คำถามที่จอดรถ: ถ้า about ไม่ระบุ ให้เรียก get_board_game_availability เพื่อตรวจ summary ของสาขาที่เผยแพร่ก่อน ตอบได้เฉพาะที่ระบุไว้จริง ถ้าทั้งสองแหล่งไม่ระบุให้บอกว่าข้อมูลที่จอดรถยังไม่ระบุ ไม่ใช่อ้างว่าร้านไม่มีข้อมูลทุกอย่าง",
+      "ทั้งสามทูลเป็นการอ่านเท่านั้น: การจองโต๊ะให้บอกว่าต้องติดต่อพนักงานเพื่อส่งคำขอ ยังไม่ได้จองหรือแจ้งพนักงานผ่านแชทนี้ ห้ามยืนยันการจอง คืนเงิน ต่ออายุแพ็ก หรือแก้ข้อมูลเอง เรื่องบัตรประชาชน/ของหาย/ความเสียหายให้ติดต่อพนักงานและไม่เปิดเผยข้อมูลส่วนบุคคล",
+      "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
+      "คำถามสั้น มี Catan ไหม หรือ มีเกมอื่นไหม ในร้านบอร์ดเกมหมายถึงเกมให้เล่นก่อน เว้นแต่ลูกค้าระบุซื้อ/ขาย/กลับบ้าน เมื่อถาม 8–10 คนให้ค้น players=8, playersTo=10; เกมง่ายหรือมือใหม่ใช้ difficulty=LIGHT ส่วนมีคนสอนหรือไม่ต้องดูนโยบายร้าน ห้ามสัญญาว่ามีพนักงานสอนจากความยากของเกม",
+      "อาหาร/เครื่องดื่มที่ขายอ่าน catalog แต่นำขนมมาเอง ยอดสั่งขั้นต่ำ จัดงาน เหมาร้าน แยกบิล การทิ้งบัตรหรือมัดจำยืมเกม เป็นนโยบายร้าน: ตรวจ about และ summary สาขา ถ้าไม่ระบุให้บอกเฉพาะเรื่องนั้นว่าต้องติดต่อพนักงาน อย่าใช้ค่ามัดจำจองโต๊ะตอบแทนมัดจำเกมหรือบัตรประชาชน",
+      "ค้นเกมตามชื่อ/แนวแล้วไม่พบ ให้ลองรายการคลังเกมที่ไม่กรอง keyword ก่อนสรุป หากแท็กภาษาไม่ตรงกันให้เลือกจาก metadata ที่คืนมาจริงเท่านั้น ห้ามแนะนำชื่อเกมจากความจำ",
+    ] : []),
     "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริง (สินค้า/สต็อก/ราคา/สถานะออร์เดอร์) เท่านั้น",
     "ห้ามเดาหรือแต่งตัวเลขสต็อก ราคา หรือเลขออร์เดอร์เอง — ทุกตัวเลขต้องมาจากผลของทูล",
     "เมื่อลูกค้าถามเกี่ยวกับสินค้า ไม่ว่าจะระบุชื่อชัดหรือถามกว้าง ต้องค้น catalog ของร้านก่อนตอบเสมอ ห้ามตอบจากความจำหรือถามกลับก่อนค้นถ้ามีข้อมูลพอให้ค้นได้",
@@ -503,7 +530,13 @@ function stockRecoveryReply(result: StockResult, businessArchetype?: string | nu
 function isCatalogDiscoveryMessage(message: string): boolean {
   return /(?:มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(
     message
-  ) || isAlternativeCatalogRequest(message);
+  ) ||
+    /(?:มี|ขาย)\s*(?:บอร์ดเกม|เกม|board\s*games?)\s*(?:ไหม|มั้ย|บ้าง|\?|ค่ะ|คะ|ครับ)?$/i.test(message.trim()) ||
+    isAlternativeCatalogRequest(message);
+}
+
+function isNewArrivalsQuestion(message: string): boolean {
+  return /(?:ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(message);
 }
 
 type CustomerIntent =
@@ -516,13 +549,14 @@ type CustomerIntent =
   | "complaint"
   | "greeting";
 
-function classifyCustomerIntent(message: string, understanding: Understanding): CustomerIntent {
-  if (/^(?:สวัสดี|หวัดดี|hello|hi)[\s!?.]*$/i.test(message.trim())) return "greeting";
+function classifyCustomerIntent(message: string, understanding: Understanding, businessArchetype?: string | null): CustomerIntent {
+  if (/^(?:สวัสดี|หวัดดี|hello|hi)\s*(?:ครับ|ค่ะ|คะ)?[\s!?.]*$/i.test(message.trim())) return "greeting";
   if (/(?:ไม่พอใจ|ร้องเรียน|แย่มาก|โกง|ของเสีย|ของพัง|ได้ของผิด)/i.test(message)) return "complaint";
   if (isOrderStatusQuestion(message)) return "order_status";
   if (isPaymentSubmission(message)) return "payment";
   if (isReorderRequest(message)) return "reorder";
-  if (isCouponQuestion(message)) return "coupon";
+  if (isCouponQuestion(message) &&
+    (businessArchetype !== "board_game_cafe" || /คูปอง|coupon|โค้ด/i.test(message))) return "coupon";
   if (understanding.intent === "CONFIRM_ORDER") return "ordering";
   // ตะกร้าที่พิมพ์เป็นรายการล้วน ๆ ไม่มีคำกริยาสั่งซื้อ ("พารา 5 แผง, ยาแดง 2 ขวด")
   // คนอ่านรู้ทันทีว่าเป็นออร์เดอร์ แต่ understand() ต้องเห็น ORDER_HINT ก่อนจึงจะให้
@@ -1180,6 +1214,31 @@ function alternativeCatalogReply(
       )}\nสนใจตัวไหนให้ช่วยเช็กไซซ์ต่อคะ`;
 }
 
+function catalogDiscoveryReply(
+  products: CatalogReplyProduct[],
+  english = false
+): string {
+  if (products.length === 0) {
+    return english
+      ? "There are no products ready for sale right now. Please wait for an admin to confirm what is available."
+      : "ตอนนี้ยังไม่มีสินค้าที่พร้อมขายในระบบค่ะ กรุณารอแอดมินยืนยันรายการที่มีอีกครั้งนะคะ";
+  }
+  const lines = products.slice(0, 5).map((product) => {
+    const sizes = (product.availableSizes ?? [])
+      .filter((variant) => variant.available > 0)
+      .map((variant) => variant.size)
+      .slice(0, 5);
+    return english
+      ? `• ${product.name} ${Number(product.price).toLocaleString("en-US")} THB${sizes.length > 0 ? ` (options ${sizes.join(", ")})` : ""}`
+      : `• ${product.name} ${Number(product.price).toLocaleString()} บาท${
+          sizes.length > 0 ? ` (ตัวเลือก ${sizes.join(", ")})` : ""
+        }`;
+  });
+  return english
+    ? `These are available now:\n${lines.join("\n")}\nWhich one would you like me to check?`
+    : `ตอนนี้มีรายการพร้อมขายในระบบค่ะ\n${lines.join("\n")}\nสนใจรายการไหนให้ช่วยเช็กต่อคะ`;
+}
+
 function isReorderRequest(message: string): boolean {
   return /(?:สั่งซ้ำ|ซื้อซ้ำ|เอาเหมือนเดิม|สั่งเหมือนเดิม|รายการเดิม|ออร์เดอร์เดิม|ออเดอร์เดิม|เหมือน(?:ออร์เดอร์|ออเดอร์|รายการ)ล่าสุด|สั่ง[^.!?\n]{0,30}เหมือน[^.!?\n]{0,30}ล่าสุด)/i.test(
     message
@@ -1312,60 +1371,10 @@ function isCouponWalletQuestion(message: string): boolean {
   );
 }
 
-function isStoreInfoQuestion(message: string): boolean {
-  return /(?:ร้านชื่ออะไร|ชื่อร้าน|เปิด(?:กี่โมง|ไหม|วันไหนบ้าง)|เวลาทำการ|business hours|opening hours|ติดต่อร้าน|เบอร์ร้าน|ที่อยู่ร้าน|นโยบาย(?:การส่ง|คืนสินค้า)|shipping policy|return policy)/i.test(
-    message
-  );
-}
-
 function isShippingEstimateQuestion(message: string): boolean {
   return /(?:ค่าส่ง|ส่งกี่วัน|ส่งกี่วันถึง|ใช้เวลากี่วัน|จัดส่งกี่วัน|ค่าส่งเท่าไหร่|shipping|delivery)/i.test(
     message
   );
-}
-
-function storeInfoReply(
-  info: {
-    storeName?: string | null;
-    phone?: string | null;
-    address?: string | null;
-    businessHours?: string | null;
-    shippingPolicy?: string | null;
-    returnPolicy?: string | null;
-  },
-  profile: AiProfileContext,
-  message: string
-): string {
-  const english = isEnglishCustomerReply(profile.aiLanguage, message);
-  const lines: string[] = [];
-  if (info.storeName) {
-    lines.push(english ? `Shop name: ${info.storeName}` : `ชื่อร้าน: ${info.storeName}`);
-  }
-  if (info.businessHours && /(?:เปิด|เวลา|hours?)/i.test(message)) {
-    lines.push(english ? `Opening hours: ${info.businessHours}` : `เวลาทำการ: ${info.businessHours}`);
-  }
-  if (info.phone && /(?:ติดต่อ|เบอร์|phone|contact)/i.test(message)) {
-    lines.push(english ? `Phone: ${info.phone}` : `เบอร์ติดต่อ: ${info.phone}`);
-  }
-  if (info.address && /(?:ที่อยู่|address|ร้านอยู่)/i.test(message)) {
-    lines.push(english ? `Address: ${info.address}` : `ที่อยู่ร้าน: ${info.address}`);
-  }
-  if (info.shippingPolicy && /(?:ส่ง|shipping)/i.test(message)) {
-    lines.push(english ? `Shipping policy: ${info.shippingPolicy}` : `นโยบายการจัดส่ง: ${info.shippingPolicy}`);
-  }
-  if (info.returnPolicy && /(?:คืน|เปลี่ยน|return)/i.test(message)) {
-    lines.push(english ? `Return policy: ${info.returnPolicy}` : `นโยบายคืน/เปลี่ยนสินค้า: ${info.returnPolicy}`);
-  }
-  if (lines.length === 0) {
-    if (info.storeName) lines.push(english ? `Shop name: ${info.storeName}` : `ชื่อร้าน: ${info.storeName}`);
-    if (info.businessHours) lines.push(english ? `Opening hours: ${info.businessHours}` : `เวลาทำการ: ${info.businessHours}`);
-    if (info.phone) lines.push(english ? `Phone: ${info.phone}` : `เบอร์ติดต่อ: ${info.phone}`);
-  }
-  return lines.length > 0
-    ? lines.join("\n")
-    : english
-      ? "The shop has not added those details yet. Please wait for an admin to confirm them."
-      : "ตอนนี้ร้านยังไม่ได้ระบุรายละเอียดส่วนนั้นไว้ค่ะ กรุณารอแอดมินยืนยันให้อีกครั้งนะคะ";
 }
 
 function shippingEstimateReply(
@@ -1703,10 +1712,24 @@ export async function runPipeline(
     )
   );
   const englishReply = !isPharmacyTenant && isEnglishCustomerReply(profile.aiLanguage, aiInputMessage);
+  // Inspect the actual message before checkout detail capture, tools or model execution.
+  const boardGameGuard = profile.businessArchetype === "board_game_cafe"
+    ? boardGameCustomerGuard(stripMarkdownEmphasis(message), englishReply)
+    : null;
+  if (boardGameGuard) {
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding: understand(message),
+      tool: `board_game:guard:${boardGameGuard.kind}`,
+      data: { status: "NOT_FOUND", query: "" },
+      reply: boardGameGuard.reply,
+    });
+  }
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
   const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
-  const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding);
+  const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding, profile.businessArchetype);
   let execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
   const pharmacyTrigger = detectPharmacyIntakeTrigger(
     aiInputMessage,
@@ -1964,7 +1987,9 @@ export async function runPipeline(
     }
   }
 
-  const checkoutDetails = checkoutDetailsFromReply(aiInputMessage, history);
+  const boardGameVisit = isBoardGameVisitQuestion(aiInputMessage, profile.businessArchetype);
+  const basicStoreQuestion = isStoreInfoQuestion(aiInputMessage) || boardGameVisit;
+  const checkoutDetails = basicStoreQuestion ? null : checkoutDetailsFromReply(aiInputMessage, history);
   if (checkoutDetails) {
     const executed = await executeCustomerTool(
       "save_customer_checkout_details",
@@ -2007,8 +2032,8 @@ export async function runPipeline(
       reply: profile.businessArchetype === "restaurant"
         ? (englishReply ? "Hello! Tell us the dishes, drinks or packaged products and quantities you would like. The shop will review your request." : "สวัสดีค่ะ แจ้งเมนูอาหาร ขนม เครื่องดื่ม หรือสินค้าที่ต้องการ พร้อมจำนวนได้เลยค่ะ ร้านจะรับคำขอไว้ตรวจความพร้อมนะคะ")
         : englishReply
-        ? "Hello! Which product are you interested in?"
-        : "สวัสดีค่ะ สนใจสินค้ารุ่นไหน แจ้งชื่อสินค้าได้เลยนะคะ",
+        ? "Hello! What would you like to know about the shop, its services or products?"
+        : "สวัสดีค่ะ สอบถามข้อมูลร้าน บริการ หรือสินค้าได้เลยค่ะ",
     });
   }
 
@@ -2030,7 +2055,7 @@ export async function runPipeline(
     });
   }
 
-  if (isAlternativeCatalogRequest(aiInputMessage)) {
+  if (profile.businessArchetype !== "board_game_cafe" && isAlternativeCatalogRequest(aiInputMessage)) {
     const executed = await executeCustomerTool("browse_catalog", { limit: 8 }, execCtx);
     const products =
       executed.result.ok && Array.isArray((executed.result.data as any)?.products)
@@ -2054,6 +2079,29 @@ export async function runPipeline(
       incoming: message,
       understanding,
       tool: "deterministic:browse_catalog_alternatives",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply,
+      trace: [executed.trace],
+    });
+  }
+
+  if (profile.businessArchetype !== "board_game_cafe" && !basicStoreQuestion && isCatalogDiscoveryMessage(aiInputMessage)) {
+    const toolName = isNewArrivalsQuestion(aiInputMessage) ? "list_new_arrivals" : "browse_catalog";
+    const executed = await executeCustomerTool(toolName, { limit: 5 }, execCtx);
+    const products =
+      executed.result.ok && Array.isArray((executed.result.data as any)?.products)
+        ? ((executed.result.data as any).products as CatalogReplyProduct[])
+        : [];
+    const reply = executed.result.ok
+      ? catalogDiscoveryReply(products, englishReply)
+      : englishReply
+        ? `Sorry, I could not load the catalog (${executed.result.error}). Please try again.`
+        : `ขออภัยค่ะ ดูรายการสินค้าไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
+    return customerSafe({
+      channel,
+      incoming: message,
+      understanding,
+      tool: `deterministic:${toolName}`,
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply,
       trace: [executed.trace],
@@ -2281,7 +2329,8 @@ export async function runPipeline(
     });
   }
 
-  if (isCouponQuestion(aiInputMessage)) {
+  if (isCouponQuestion(aiInputMessage) &&
+    (profile.businessArchetype !== "board_game_cafe" || /คูปอง|coupon|โค้ด/i.test(aiInputMessage))) {
     return customerSafe({
       channel,
       incoming: message,
@@ -2292,25 +2341,7 @@ export async function runPipeline(
     });
   }
 
-  if (isStoreInfoQuestion(aiInputMessage)) {
-    const executed = await executeCustomerTool("get_store_info", {}, execCtx);
-    const info = executed.result.ok ? ((executed.result.data as Record<string, unknown>) ?? {}) : {};
-    return customerSafe({
-      channel,
-      incoming: message,
-      understanding,
-      tool: "deterministic:get_store_info",
-      data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: executed.result.ok
-        ? storeInfoReply(info as any, profile, aiInputMessage)
-        : englishReply
-          ? `Sorry, I could not load the shop information (${executed.result.error}). Please try again.`
-          : `ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`,
-      trace: [executed.trace],
-    });
-  }
-
-  if (isShippingEstimateQuestion(aiInputMessage)) {
+  if (!basicStoreQuestion && isShippingEstimateQuestion(aiInputMessage)) {
     const province = shippingProvinceFromMessage(aiInputMessage);
     const executed = await executeCustomerTool(
       "get_shipping_estimate",
@@ -2933,6 +2964,8 @@ export async function runPipeline(
   }
 
   const evalRef = safeEvalRef(customerRef);
+  const storeContext = await executeCustomerTool("get_store_info", {}, execCtx);
+  const storeFacts = customerStoreFacts(storeContext.result);
   const loop = await runToolLoop({
     tenantId,
     system: buildCustomerSystem(categories.map((c) => c.name), profile),
@@ -2941,7 +2974,11 @@ export async function runPipeline(
       historySummarySystemBlock(summary),
       orderMemorySystemBlock(orderMemoryHint(orderMemory))
     ),
-    messages: [...recentTurns, { role: "user", content: aiInputMessage }],
+    messages: [
+      ...recentTurns,
+      { role: "user", content: aiInputMessage },
+      ...customerStoreMessages(storeFacts),
+    ],
     tools: customerTools(profile.businessArchetype),
     execCtx,
     usageMeta: {
@@ -2952,6 +2989,7 @@ export async function runPipeline(
       history_summary_chars: summary?.length ?? 0,
       business_archetype: profile.businessArchetype ?? "none",
       business_type: profile.businessType ?? "general",
+      store_context_available: storeFacts.status === "available",
       ...(evalRef ? { eval_ref: evalRef } : {}),
     },
   });
@@ -2993,7 +3031,11 @@ export async function runPipeline(
       reply = englishReply
         ? "Sorry — a temporary system error meant your message was not processed. Your message has been saved and our team will follow up shortly. 🙏"
         : "ขออภัยค่ะ ระบบขัดข้องชั่วคราวจึงยังไม่ได้ดำเนินการให้ ข้อความของคุณถูกบันทึกไว้แล้ว ทางร้านจะติดต่อกลับโดยเร็วที่สุดนะคะ 🙏";
-    } else if (hasUnverifiedFacts(loop.reply, loop.trace)) {
+    } else if (profile.businessArchetype === "board_game_cafe" && hasUnsupportedBoardGameActionClaim(loop.reply)) {
+      reply = englishReply
+        ? "This chat can check published information, but cannot change bookings, extend play time, refund money or notify staff. Please contact the shop staff to carry out the request. No action has been confirmed."
+        : "แชทนี้ตรวจข้อมูลที่ร้านเผยแพร่ได้ แต่ยังจองหรือเปลี่ยนการจอง ต่อเวลา คืนเงิน หรือแจ้งพนักงานให้ไม่ได้ค่ะ กรุณาติดต่อพนักงานเพื่อดำเนินการ ยังไม่มีการยืนยันรายการนะคะ";
+    } else if (hasUnverifiedFacts(replyWithoutQuotedStoreFacts(loop.reply, storeFacts), loop.trace)) {
       reply = englishReply
         ? "Sorry, I need to verify that information first. Please ask again or specify the product and size."
         : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
@@ -3042,7 +3084,7 @@ export async function runPipeline(
       try {
         const madeProgress =
           (loop.trace ?? []).some((t) => t.ok && CUSTOMER_PROGRESS_TOOLS.has(t.tool)) ||
-          isBusinessClarification(reply);
+          isBusinessClarification(reply) || answersWithStoreFacts(reply, storeFacts);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
         if (!madeProgress && failedTurns >= profile.aiHandoffAfterFailedTurns) {
           reply = englishReply ? HANDOFF_REPLY_EN : HANDOFF_REPLY;
@@ -3074,7 +3116,21 @@ export async function runPipeline(
       tool: "ai:tool-calling",
       data: { status: "NOT_FOUND", query: message },
       reply,
-      trace: loop.trace,
+      trace: [storeContext.trace, ...loop.trace],
+    });
+  }
+
+  // Without a provider, keep the known basic-question fallback grounded in the same tool read.
+  if (basicStoreQuestion) {
+    return customerSafe({
+      channel, incoming: message, understanding,
+      tool: "deterministic:get_store_info",
+      data: { status: "NOT_FOUND", query: aiInputMessage },
+      reply: storeContext.result.ok
+        ? storeInfoReply((storeContext.result.data ?? {}) as Parameters<typeof storeInfoReply>[0], aiInputMessage, englishReply, boardGameVisit)
+        : englishReply ? "Sorry, I could not load the shop information. Please try again."
+          : "ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ ลองใหม่อีกครั้งนะคะ",
+      trace: [storeContext.trace],
     });
   }
 

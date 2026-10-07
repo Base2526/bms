@@ -141,7 +141,7 @@ export type PublicBoardGameCafe = BoardGamePublicLocationProfile & {
   distanceKm: number | null;
   totalTables: number | null;
   availableTables: number | null;
-  rates: Array<{ name: string; customerType: string; pricePerHour: number }>;
+  rates: Array<{ name: string; customerType: string; pricePerHour: number; minimumMinutes: number; roundingMinutes: number; graceMinutes: number }>;
   games: Array<{ title: string; minPlayers: number | null; maxPlayers: number | null; typicalMinutes: number | null }>;
 };
 
@@ -3004,7 +3004,7 @@ export async function listPublicBoardGameCafes(input: {
   longitude?: number | null;
   radiusKm?: number | null;
   limit?: number | null;
-} = {}): Promise<PublicBoardGameCafe[]> {
+} = {}, scope?: { tenantId: string; client: QueryClient }): Promise<PublicBoardGameCafe[]> {
   const hasOrigin = input.latitude != null && input.longitude != null;
   const latitude = hasOrigin ? Number(input.latitude) : null;
   const longitude = hasOrigin ? Number(input.longitude) : null;
@@ -3018,7 +3018,8 @@ export async function listPublicBoardGameCafes(input: {
   if (!Number.isFinite(requestedLimit)) throw new Error("จำนวนผลลัพธ์ไม่ถูกต้อง");
   const radiusKm = Math.min(Math.max(requestedRadiusKm, 1), 500);
   const limit = Math.min(Math.max(Math.trunc(requestedLimit), 1), 100);
-  const result = await query(
+  const read = scope ? scope.client.query.bind(scope.client) : query;
+  const result = await read(
     `SELECT profile.location_id, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
@@ -3053,7 +3054,10 @@ export async function listPublicBoardGameCafes(input: {
               SELECT jsonb_agg(jsonb_build_object(
                 'name', rate.name,
                 'customerType', rate.customer_type,
-                'pricePerHour', rate.price_per_hour
+                'pricePerHour', rate.price_per_hour,
+                'minimumMinutes', rate.minimum_minutes,
+                'roundingMinutes', rate.rounding_minutes,
+                'graceMinutes', rate.grace_minutes
               ) ORDER BY rate.sort_order, rate.name)
                 FROM bms_board_game_time_rates rate
                WHERE rate.tenant_id = profile.tenant_id AND rate.active
@@ -3087,8 +3091,10 @@ export async function listPublicBoardGameCafes(input: {
        JOIN bms_store_profile store
          ON store.tenant_id = profile.tenant_id AND store.business_archetype = 'board_game_cafe'
       WHERE profile.public_visible AND location.active
+        AND ($1::uuid IS NULL OR profile.tenant_id = $1::uuid)
       ORDER BY profile.updated_at DESC
-      LIMIT 200`
+      LIMIT 200`,
+    [scope?.tenantId ?? null]
   );
   const cafes = result.rows.map((row: any): PublicBoardGameCafe => {
     const profile = mapPublicLocationProfile(row);
@@ -3107,6 +3113,9 @@ export async function listPublicBoardGameCafes(input: {
         name: String(rate.name),
         customerType: String(rate.customerType),
         pricePerHour: Number(rate.pricePerHour),
+        minimumMinutes: Number(rate.minimumMinutes),
+        roundingMinutes: Number(rate.roundingMinutes),
+        graceMinutes: Number(rate.graceMinutes),
       })),
       games: (row.games ?? []).map((game: any) => ({
         title: String(game.title),

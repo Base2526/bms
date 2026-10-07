@@ -2,9 +2,20 @@ import {
   calculateCashChange,
   quickCashAmounts,
   validateMockPayments,
+  editCheckoutPayment,
+  syncSingleCheckoutPayment,
 } from '../src/lib/paymentMath';
 
 describe('paymentMath', () => {
+  it('เงินสดอัตโนมัติตามยอดใหม่ แต่ไม่ทับเงินรับจริง และรับพอดีกลับเป็นอัตโนมัติ', () => {
+    const automatic = { id: 'cash', method: 'cash' as const, amount: 11017, tendered: 11017 };
+    expect(syncSingleCheckoutPayment([automatic], 9559, false)[0].tendered).toBe(9559);
+    const manual = editCheckoutPayment(automatic, { tendered: 12354 });
+    expect(syncSingleCheckoutPayment([manual], 9559, false)[0].tendered).toBe(12354);
+    const exact = editCheckoutPayment(manual, { tendered: 9559 }, true);
+    expect(syncSingleCheckoutPayment([exact], 9000, false)[0].tendered).toBe(9000);
+  });
+
   it('ยอดรวมทุกช่องทางต้องเท่ายอดสุทธิเป๊ะจึงยืนยันได้', () => {
     const exact = validateMockPayments(250, [
       { id: 'p1', method: 'cash', amount: 250, tendered: 300 },

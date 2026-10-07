@@ -1,5 +1,48 @@
 import type { PaymentAccount } from "./storeProfile";
 import { customerPaymentAccountLines } from "./paymentConfiguration";
+import { isStoreHoursQuestion } from "./customerMessageRouting";
+
+export function hasUnsupportedBoardGameActionClaim(reply: string): boolean {
+  const claims = /(?:จอง(?:โต๊ะ)?|ยืนยันการจอง|เลื่อน(?:การจอง|วันจอง)|ยกเลิกการจอง|ต่อเวลา|คืน(?:เงิน|มัดจำ)|แจ้ง(?:พนักงาน|แอดมิน)|ส่ง(?:เรื่อง|คำขอ)(?:ให้|ถึง)?(?:พนักงาน|แอดมิน)?)(?:ให้)?(?:เรียบร้อย(?:แล้ว)?|สำเร็จ(?:แล้ว)?|แล้ว)|(?:booking|reservation|refund|extension)\s+(?:is\s+|has been\s+)?(?:confirmed|completed|cancelled)|(?:staff|admin)\s+(?:has been\s+|have been\s+)?notified/gi;
+  for (const match of reply.matchAll(claims)) {
+    const prefix = reply.slice(Math.max(0, match.index! - 24), match.index);
+    if (!/(?:ยังไม่ได้|ไม่ได้|ยังไม่|ไม่สามารถ|ยังไม่สามารถ|cannot|not|is not|has not been)\s*$/i.test(prefix)) return true;
+  }
+  return false;
+}
+
+export function storeInfoReply(
+  info: {
+    storeName?: string | null;
+    about?: string | null;
+    phone?: string | null;
+    address?: string | null;
+    businessHours?: string | null;
+    shippingPolicy?: string | null;
+    returnPolicy?: string | null;
+  },
+  message: string,
+  english = false,
+  boardGameVisit = false
+): string {
+  const lines: string[] = [];
+  if (info.storeName) lines.push(english ? `Shop name: ${info.storeName}` : `ชื่อร้าน: ${info.storeName}`);
+  if (info.about && (boardGameVisit || /ร้าน(?:อะไร|ชื่ออะไร)|ชื่อร้าน/i.test(message))) lines.push(info.about);
+  if (isStoreHoursQuestion(message) || boardGameVisit) {
+    lines.push(info.businessHours?.trim()
+      ? (english ? `Opening hours: ${info.businessHours}` : `เวลาทำการ: ${info.businessHours}`)
+      : (english ? "The shop has not added its opening hours yet, so I cannot confirm them."
+        : "ร้านยังไม่ได้ระบุเวลาเปิด–ปิดไว้ค่ะ จึงยังยืนยันเวลาทำการไม่ได้ค่ะ"));
+  }
+  if (info.phone && /ติดต่อ|เบอร์|phone|contact/i.test(message)) lines.push(english ? `Phone: ${info.phone}` : `เบอร์ติดต่อ: ${info.phone}`);
+  if (info.address && (boardGameVisit || /ที่อยู่|address|ร้านอยู่/i.test(message))) lines.push(english ? `Address: ${info.address}` : `ที่อยู่ร้าน: ${info.address}`);
+  if (info.shippingPolicy && /ส่ง|shipping/i.test(message)) lines.push(english ? `Shipping policy: ${info.shippingPolicy}` : `นโยบายการจัดส่ง: ${info.shippingPolicy}`);
+  if (info.returnPolicy && /คืน|เปลี่ยน|return/i.test(message)) lines.push(english ? `Return policy: ${info.returnPolicy}` : `นโยบายคืน/เปลี่ยนสินค้า: ${info.returnPolicy}`);
+  if (boardGameVisit) lines.push(english ? "How many people would like to visit, and on which day?" : "สนใจมาเล่นวันไหน และมากี่ท่านคะ");
+  return lines.length ? lines.join("\n") : english
+    ? "The shop has not added those details yet. Please contact the shop to confirm them."
+    : "ร้านยังไม่ได้ระบุรายละเอียดส่วนนี้ไว้ค่ะ กรุณาติดต่อร้านเพื่อยืนยันข้อมูลนะคะ";
+}
 
 const ALTERNATIVE_CATALOG_PATTERN =
   /(?:ขอ)?(?:ดู|ชม|หา)?\s*(?:สินค้า|รุ่น|แบบ|ตัว|อัน|อย่าง)?\s*อื่น(?:ๆ|เพิ่ม|อีก|เพิ่มเติม)?|(?:มี|เอา|ขอ)\s*(?:สินค้า|รุ่น|แบบ|ตัว|อัน|อย่าง)?\s*อื่น/i;

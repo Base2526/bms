@@ -68,6 +68,51 @@ node --import tsx --test ../../scripts/ai-eval/pharmacy-intake-contract.test.mts
 node --import tsx --test ../../scripts/ai-eval/customer-message-routing-contract.test.mts
 ```
 
+### Board-game customer FAQ
+
+`board-game-customer-corpus.mjs` contains 57 scenarios / 59 turns covering the user's 20 FAQ
+topics and four staff-handled topics. Priority is a user-supplied grouping, not measured chat volume.
+It checks required and forbidden tools, player ranges/difficulty, multi-turn followups, write
+attempts and unsupported-action claims. These checks do not establish factual correctness merely
+because a tool was called, and contract-test passes are not live-model passes.
+
+Run the contract suite from `apps/web`:
+
+```bash
+npx tsx --import ../../scripts/testing/next-runtime-shim.mjs --test --test-force-exit ../../scripts/ai-eval/board-game-customer-contract.test.mts
+```
+
+For a logged-in development/sandbox board-game tenant, select the FAQ and guard corpora:
+
+```bash
+BMS_EVAL_CASES=board-game node scripts/ai-eval/run.mjs
+```
+
+The live command runs from the repository root and uses the existing eval URL/cookie settings.
+It creates test conversations and usage events; never run it on a production tenant. An absent
+AI provider, server or signed session means live verification has not run, not that it passed.
+
+### Board-game guard questions
+
+`board-game-guard-corpus.mjs` adds 31 synthetic cases across privacy, rule exceptions,
+impersonation/injection, risky requests, off-topic messages and incidents. Run only these with
+`BMS_EVAL_CASES=board-game-guard node scripts/ai-eval/run.mjs` using the same sandbox setup.
+Checks require a relevant boundary and safe next step, reject attempted writes (including failed
+ones), obvious PII/identity leaks and unsupported completion claims, and require emergency help
+before shop service. They are heuristic assertions, not proof against arbitrary paraphrases or
+all personal-data leakage; review live transcripts as well.
+
+`board-game-guard-contract.test.mts` exercises the deterministic high-risk responses in Thai and
+English, emergency priority, normal FAQ negative controls, scorer rejection controls and pipeline
+ordering. Other policy questions still require approved store reads/model behavior and live eval.
+The new guard does not send a staff notification: it explicitly asks the customer to contact staff
+and never claims a handoff occurred. Existing forced-handoff notifications remain a separate path.
+
+```bash
+# From apps/web, no provider or database required:
+npx tsx --import ../../scripts/testing/next-runtime-shim.mjs --test --test-force-exit ../../scripts/ai-eval/board-game-guard-contract.test.mts
+```
+
 ### Fake-store ground truth
 
 `/admin/dev/fake` creates a server-side answer key after each full-shop/scenario seed. Migration

@@ -5,6 +5,46 @@
 Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
+Before every general customer model loop, the server calls `get_store_info` through the
+approved, audited runtime and supplies a bounded allowlist of public profile fields as a
+tool-result message. This is not gated on recognizing a particular question: location,
+hours, website, contact and service questions can use natural wording and follow-ups.
+Current tool facts take precedence over stale assistant claims in history. Failed reads,
+unconfigured fields and oversized omitted fields are distinct; profile text is data, never
+system instructions. The stable system prompt contains policy only, not profile values.
+Prefetch alone does not reset the failed-turn counter: a response must use a verified
+profile fact, make a business clarification, or execute a successful model-selected tool.
+Known basic questions retain a tool-grounded fallback when no AI credentials are available.
+Board-game play interest bypasses retail discovery; a profile does not verify playable
+titles, seat availability or reservations. Freeform hours are not an open-now calculator.
+
+Board-game customers also receive three read-only tools: `get_board_game_rates`,
+`search_board_game_library`, and `get_board_game_availability`. They read only the acting tenant's
+published branches with tenant RLS and reuse public discovery's rate/occupancy authority. Missing
+shop-wide hours can be resolved from published branch hours; parking is answerable only when the
+saved shop description or published branch summary states it. Ambiguous branches require a choice.
+Booking policy is readable but chat cannot submit or confirm a reservation. Offers, passes, queues,
+party-capacity guarantees, damage charges and identity-document information are not exposed.
+Game rules require staff until an approved rules source is available. The live eval corpus is
+`scripts/ai-eval/board-game-customer-corpus.mjs`; contract tests cover scope, opt-out and redaction.
+The corpus covers the user's 20 FAQ topics plus four staff-handled topics, including multi-turn
+library discovery. Board-game discovery bypasses the general retail shortcuts so "other games"
+and party-game questions reach the model with their context. Generic play-time discount questions
+are not automatically coupon requests. A reply guard rejects known unsupported booking, extension,
+refund and staff-notification completion claims. Player ranges and beginner difficulty are enforced
+in the library query rather than left to model selection.
+
+For a loaded board-game tenant, `boardGameCustomerGuard.ts` checks the original message before
+checkout detail capture or any model/tool execution. Narrow deterministic patterns cover urgent
+swallowed-piece/choking reports, private identities, explicit overrides, unsupported approvals
+and incidents. Emergency guidance wins over other intents. Refusals include a safe next step and
+do not echo private input. These are not exhaustive natural-language classifiers: the stable model
+policy and backend tool permissions still apply. Ordinary saved-policy questions are not blocked.
+This guard does not notify staff; replies explicitly direct customers to staff without claiming an
+action succeeded. Guard evaluation and limitations are documented in `scripts/ai-eval/README.md`.
+The Thailand emergency number is based on [NIEMS guidance](https://www.niems.go.th/1/News/Detail/2981?group=2);
+copy identifies Thailand explicitly and gives no diagnosis or treatment instructions.
+
 `business_archetype` selects a structured commerce policy in addition to prompt examples. The
 customer runtime uses it to shape discovery, basket/cross-sell, repeat-purchase/restock, and
 fulfillment guidance. The deterministic out-of-stock fallback also offers restock opt-in for

@@ -39,6 +39,22 @@ anthropic-compatible provider's tool-use
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
+  shop information and services are first-class requests, without a mandatory product-sales CTA.
+  `CUSTOMER_STORE_CONTEXT_POLICY` in `customerStoreContext.ts` instructs the model to use the
+  freshly prefetched `get_store_info` tool result for basic facts regardless of wording, answer
+  every requested part, and distinguish a missing field from a failed read. Public profile text
+  remains untrusted tool data, outside the stable system prompt. Earlier assistant statements
+  that shop data is missing cannot override current facts; no staff notification or reservation
+  may be claimed without the corresponding action;
+  board-game questions select the published-rate, playable-library or aggregate-availability tool
+  instead of retail catalog. Branch hours may supplement missing shop hours. Published metadata is
+  required for parking and game recommendations; rules, offers, member-pass balances and queue waits
+  cannot be invented. Booking/refund/identity-document requests must be directed to staff without
+  claiming a write or notification took place;
+  player ranges must reach library search as `players`/`playersTo`, and beginner searches as
+  `difficulty=LIGHT`. Policy questions (outside food, minimum spend, staff tuition, private events,
+  bill splitting, identity holds and game deposits) use saved shop/branch descriptions only.
+  A reservation deposit is not evidence of a game-deposit or identity-hold policy;
   tenant-selected Thai, English, or latest-message language and ordering style; a selected
   business archetype supplies the precise commerce policy and example set, while the legacy
   coarse `businessType` examples are used only for shops that have no archetype; the Thai persona
@@ -180,6 +196,15 @@ copy stay Thai. Keep new tool descriptions in English and preserve the language 
 that renders the result.
 
 ## Standing rules that constrain every prompt/tool interaction
+
+Board-game customer prompts include `BOARD_GAME_CUSTOMER_GUARD_POLICY`: private visitor/staff
+information is never disclosed, customer documents and ownership claims grant no authority,
+payment claims are not proof, and exceptions/refunds/reservations need staff. Shop policy declines
+real-money gambling, minors' alcohol orders, cheating and counterfeit sourcing; saved rules still
+govern BYOB and child/observer charges. Off-topic chat redirects briefly; genuine complaints are
+not treated as banter. Emergency help comes first. No staff notification or booking submission is
+claimed without an implemented, successful backend action. The narrow deterministic input guard
+is an additional boundary, not a replacement for tool authorization or live adversarial evaluation.
 
 From [../business/](../business/) and [CLAUDE.md](../../CLAUDE.md) — these apply regardless of
 model or prompt wording:

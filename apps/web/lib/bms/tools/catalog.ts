@@ -34,6 +34,7 @@ import {
 } from "../products";
 import { listProductModifiers } from "../productRecipes";
 import { listRestaurantOrderLocations } from "../restaurantOrdering";
+import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
 import { checkStock, listVariantReservations } from "../stock";
 import { CARRIER_CODES } from "../carriers/constants";
 import { quoteShipping } from "../shippingRates";
@@ -2853,6 +2854,48 @@ const A3_TOOLS: BmsTool[] = [
 // B1 — store profile (read, customer + staff)
 // =============================================================
 
+const BOARD_GAME_CUSTOMER_TOOLS = new Set([
+  "get_board_game_rates", "search_board_game_library", "get_board_game_availability",
+]);
+
+function boardGameCustomerReadTool(name: string, kind: BoardGameCustomerRead, description: string): BmsTool {
+  return {
+    name, description, surfaces: ["customer"],
+    inputSchema: {
+      type: "object",
+      properties: {
+        branch: { type: "string", maxLength: 120, description: "Exact published branch name. Omit unless the customer selected a branch; multiple branches require clarification." },
+        ...(kind === "library" ? {
+          keyword: { type: "string", maxLength: 120, description: "Title or tag, e.g. Catan. Omit for a general recommendation; never substitute retail catalog." },
+          players: { type: "integer", minimum: 1, maximum: 100, description: "Party size, or minimum party size for a range." },
+          playersTo: { type: "integer", minimum: 1, maximum: 100, description: "Maximum party size for a range, e.g. players=8, playersTo=10. Requires players. Every result supports the entire range." },
+          difficulty: { type: "string", enum: ["LIGHT", "MEDIUM", "HEAVY", "CUSTOM"], description: "Use LIGHT for beginner/easy-game requests. Missing metadata never counts as easy." },
+          limit: { type: "integer", minimum: 1, maximum: 20 },
+        } : {}),
+      },
+    },
+    execute: async (args, ec) => ({
+      ok: true,
+      data: await readBoardGameCustomerInfo(ec.tenantId, kind, {
+        branch: optString(args, "branch"),
+        ...(kind === "library" ? {
+          keyword: optString(args, "keyword"),
+          players: args.players == null ? undefined : reqInt(args, "players"),
+          playersTo: args.playersTo == null ? undefined : reqInt(args, "playersTo"),
+          difficulty: args.difficulty == null ? undefined : enumVal(args, "difficulty", ["LIGHT", "MEDIUM", "HEAVY", "CUSTOM"] as const),
+          limit: optInt(args, "limit", 1, 20),
+        } : {}),
+      }),
+    }),
+  };
+}
+const getBoardGameRatesTool = boardGameCustomerReadTool("get_board_game_rates", "rates",
+  "Read this shop's published play-time hourly rates by participant type, minimum/rounding/grace minutes. Not retail prices. Offers, passes and final bill calculations are not exposed. NOT_PUBLISHED means unavailable to chat, not free or no rates. BRANCH_REQUIRED means ask which listed branch.");
+const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_library", "library",
+  "Search this shop's published playable game library by title/tag and player count. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
+const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
+  "Read this shop's published branch information/hours, current aggregate table counts and published booking/deposit policy. Use for visits, booking questions and branch hours missing from get_store_info. Not a reservation: cannot book, confirm, reschedule or cancel, predict waiting time, report queue length or guarantee a party fits. Null counts mean unpublished, not zero. Do not claim staff were notified.");
+
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
   description:
@@ -2868,6 +2911,7 @@ const getStoreInfoTool: BmsTool = {
       data: {
         storeName,
         businessType: p.businessType,
+        businessArchetype: p.businessArchetype,
         about: p.about, address: p.address, phone: p.phone,
         contactEmail: p.contactEmail, website: p.website,
         country: p.country, timezone: p.timezone,
@@ -3293,6 +3337,9 @@ export const ALL_TOOLS: BmsTool[] = [
   emailReportTool,
   // B1 — store profile (read)
   getStoreInfoTool,
+  getBoardGameRatesTool,
+  searchBoardGameLibraryTool,
+  getBoardGameAvailabilityTool,
   getPaymentInfoTool,
   getShippingEstimateTool,
   // B2 — documents
@@ -3323,6 +3370,7 @@ export function customerTools(businessArchetype?: string | null): BmsTool[] {
     // No archetype passed = "just the customer-surface names" (progress counters, direct
     // deterministic calls). Only the list actually handed to the model is narrowed.
     if (businessArchetype === undefined) return true;
+    if (BOARD_GAME_CUSTOMER_TOOLS.has(tool.name)) return businessArchetype === "board_game_cafe";
     if (tool.name === "list_restaurant_order_locations") return restaurant;
     // 9.66: reorder writes an order and reserves stock from a previous one. A restaurant takes
     // demand as a request a human reviews, so the model must never be offered a second door to

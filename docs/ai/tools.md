@@ -1156,6 +1156,26 @@ Confidence
 ## Store profile (read — customer + staff)
 
 - `get_store_info` — ชื่อร้าน/ที่อยู่/เบอร์/เวลาเปิด-ปิด/นโยบายจัดส่ง-คืน · `lib/bms/storeProfile.ts`
+  Also returns `businessArchetype`, `businessType`, `about`, public contact email/website and
+  locale fields. The customer pipeline calls this approved tool before the general model loop,
+  projecting bounded public fields into a tool-result message so basic questions do not depend
+  on keyword routing or the model remembering to request shop context. No payment accounts,
+  credentials, customer data, or private settings are included in this prefetched projection.
+- `get_board_game_rates` — customer-only for `board_game_cafe`; published hourly rates by
+  participant type plus minimum, rounding and grace minutes. Offers, pass balances and final-bill
+  quotes are not exposed. Requires a published branch with `publish_rates` enabled.
+- `search_board_game_library` — customer-only playable titles, tags, difficulty, player range and
+  aggregate copy counts. Filters public titles in the selected published, active branch; no copy,
+  borrower, table, session or customer identifiers. `players` filters a known supported count;
+  optional `playersTo` requires support for the entire requested range. `difficulty=LIGHT` selects
+  known beginner-friendly metadata, never null/unknown difficulty. These filters do not promise staff tuition.
+  `availableCopies` is null when availability is not published. Never use retail stock as library truth.
+- `get_board_game_availability` — customer-only published branch hours/contact/summary, aggregate
+  total/free table counts, and existing published booking/deposit settings. `publish_availability`
+  gates counts. Queue length, waiting time and party capacity remain unknown; no booking is written.
+  These three tools use `boardGameCustomerInfo.ts` inside tenant/RLS transactions. Branch selection
+  accepts a published name, never an operational id. Multiple/mismatched branches return
+  `BRANCH_REQUIRED`; unpublished data returns `NOT_PUBLISHED`, not zero or proof of absence.
 - `get_payment_info` — บัญชีรับเงินของร้านที่กรอกข้อมูลใช้งานได้จริง (ธนาคาร/พร้อมเพย์) พร้อม
   `configured`; แถวว่างถูกตัดออก และเมื่อ `configured=false` AI ห้ามยกตัวอย่างช่องทางเอง
 - `get_shipping_estimate` — ประเมินค่าส่ง/ระยะเวลา (flat rate + ส่งฟรีเมื่อถึงยอดขั้นต่ำ)

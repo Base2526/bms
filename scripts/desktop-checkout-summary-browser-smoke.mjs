@@ -109,6 +109,20 @@ try {
       await scan("FIRST"); await checkout();
       assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).inputValue(), "8000");
       assert.equal(await page.getByRole("button", { name: /ยืนยันรับชำระ/ }).isDisabled(), true);
+      // A method-selector default is not manually received cash. Adjusting the split
+      // allocation and then collapsing to one row must keep following the amount due.
+      await page.getByRole("button", { name: "พอดี", exact: true }).click();
+      await page.getByRole("button", { name: /จ่ายผสม/ }).click();
+      const methods = page.locator("fieldset select");
+      await methods.nth(0).selectOption("qr");
+      await methods.nth(1).selectOption("cash");
+      await page.getByLabel("ยอดช่องทางนี้", { exact: true }).nth(1).fill("4000");
+      assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).inputValue(), "4000");
+      await page.getByLabel("ยอดช่องทางนี้", { exact: true }).nth(1).fill("6000");
+      assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).inputValue(), "6000");
+      await page.locator("fieldset").getByRole("button", { name: "ลบ", exact: true }).nth(0).click();
+      await page.waitForFunction(() => Array.from(document.querySelectorAll("label"))
+        .find(label => label.textContent.startsWith("รับเงินมา"))?.querySelector("input")?.value === "9559");
       if (width === 1440) await page.getByRole("button", { name: "พอดี", exact: true }).click();
       else await page.getByLabel("รับเงินมา", { exact: true }).fill("12354");
       await page.getByRole("button", { name: /ยืนยันรับชำระ/ }).click();
@@ -123,7 +137,7 @@ try {
       await page.screenshot({ path: `${output}/${width}-receipt.png`, fullPage: true });
       assert.deepEqual(mutations, []);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: gift summary, cash repricing and saved receipt; one intercepted fixture sale, no live writes`);
+      console.log(`PASS ${width}px: gift summary, split cash repricing and saved receipt; one intercepted fixture sale, no live writes`);
     } catch (error) {
       console.error((await page.locator("body").innerText()).slice(-6500));
       await page.screenshot({ path: `${output}/${width}-failure.png`, fullPage: true });

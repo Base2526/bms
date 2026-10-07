@@ -1,5 +1,18 @@
 import { guessProvinceFromAddress, normalizeProvince } from "./shippingZones";
 
+export function isStoreHoursQuestion(message: string): boolean {
+  return /(?:เวลาทำการ|เวลา\s*(?:เปิด|ปิด)|เปิด\s*[-–/]?\s*ปิด|(?:เปิด|ปิด)\s*(?:กี่โมง|เมื่อไหร่|วันไหน|วันอะไร|ไหม|มั้ย)|วันหยุด(?:ร้าน)?|หยุดวันไหน|(?:business|opening|closing|store|shop) hours|\b(?:open|close)\b.*\b(?:when|time|today)\b|\b(?:when|time)\b.*\b(?:open|close)\b)/i.test(message);
+}
+
+export function isStoreInfoQuestion(message: string): boolean {
+  return isStoreHoursQuestion(message) || /(?:ร้าน(?:ชื่ออะไร|อะไร|อยู่(?:ตรง)?ไหน)|ชื่อร้าน|ติดต่อร้าน|เบอร์ร้าน|ที่อยู่ร้าน|นโยบาย(?:การส่ง|คืนสินค้า)|shipping policy|return policy)/i.test(message);
+}
+
+export function isBoardGameVisitQuestion(message: string, archetype: string | null): boolean {
+  if (archetype !== "board_game_cafe") return false;
+  return /^(?:(?:ผม|หนู|เรา)\s*)?(?:(?:อยาก|สนใจ|ขอ|จะ|มา|ไป|อยากมา|อยากไป)\s*เล่น\s*(?:บอร์ดเกม|เกม)|มี\s*(?:บอร์ดเกม|เกม)\s*(?:ให้เล่น)?\s*(?:ไหม|มั้ย)|(?:i (?:want|would like) to )?play (?:board )?games)[\s!?]*(?:(?:ครับ|ค่ะ|คะ|นะครับ|นะคะ)[\s!?]*)?$/i.test(message.trim());
+}
+
 export function isEnglishCustomerReply(language: string, message: string): boolean {
   if (language === "en") return true;
   if (language !== "th-en") return false;
