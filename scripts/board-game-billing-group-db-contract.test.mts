@@ -1001,6 +1001,11 @@ for (const scenario of [
       assert.ok(detail);
       assert.equal(detail.lines.filter((line: any) => line.kind === "PRODUCT").length, scenario.snacks ? 1 : 0);
       assert.ok(detail.lines.some((line: any) => line.kind === "SERVICE" && line.label && line.sku === null));
+      assert.equal(Number(detail.orderAmount), Number(order.total_amount));
+      for (const line of detail.lines.filter((line: any) => line.kind === "SERVICE")) {
+        assert.equal(line.saleQty, line.qty);
+        assert.equal(line.lineAmount, line.qty * line.unitAmount);
+      }
       if (scenario.snacks) {
         assert.ok(detail.lines.some((line: any) => line.sku === SNACK && line.qty === scenario.snacks));
       }

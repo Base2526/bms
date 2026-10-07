@@ -93,7 +93,7 @@ test("every POS client uses the shared numeric 4-8 digit PIN policy", () => {
   assert.equal(visiblePosPinSlots("123456"), 6);
 });
 
-test("catalog cards show stock for the same variant that clicking will sell", () => {
+test("catalog display price and stock describe the same variant; desktop multi-size cards require a choice", () => {
   const item42 = selectPosCatalogCardVariant({
     price: 149,
     availableTotal: 99,
@@ -120,6 +120,7 @@ test("catalog cards show stock for the same variant that clicking will sell", ()
   assert.equal(item453.variant?.size, "L");
   assert.equal(item453.available, 48);
   assert.notEqual(item42.available, 99, "the all-size total must not label the selected L variant");
+  assert.match(desktopRenderer, /addProduct\(item\.sku, item\.availableSizes\.length > 1 \? undefined : selectedVariant\?\.size\)/);
 });
 
 test("desktop POS overlaps the first catalogue read with cashier PIN entry", () => {
@@ -631,8 +632,8 @@ test("the compact screen sells bundles and recipe menus and still caps tracked s
   );
   retailHas(/incoming\.stockTracked && incoming\.available <= 0/, "only tracked stock can refuse an add");
   retailHas(
-    /delta > 0\s*&& target\.stockTracked\s*&& \(target\.qty \+ delta\) \* target\.baseQty > target\.available/,
-    "the + stepper must stop at tracked stock instead of failing at payment",
+    /delta > 0\s*&& target\.stockTracked\s*&& cartVariantBaseQty\(cart, target\) \+ delta \* target\.baseQty > target\.available/,
+    "the + stepper must cap combined base units across packs of the same variant before payment",
   );
   retailHas(/const sellable = item\.availability === "AVAILABLE";/, "the catalogue card follows the server");
   retailHas(/disabled=\{!sellable \|\| busy\}/, "a zero own-stock row must not disable a sellable card");

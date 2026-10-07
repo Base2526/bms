@@ -5,6 +5,8 @@ import path from "node:path";
 
 import {
   applyBestBoardGameOffer,
+  evaluateBoardGameOfferResult,
+  readBoardGameOfferEvaluation,
   type BoardGameOffer,
 } from "../apps/web/lib/bms/boardGameOffers.ts";
 
@@ -39,6 +41,23 @@ const context = {
   timezone: "UTC",
   productSkus: new Set<string>(),
 };
+
+test("diagnostic bounds do not truncate pricing eligibility, and malformed evidence stays unknown", () => {
+  const lines = [{ billableMinutes: 180, grossAmount: 150, hourlyRate: 50 }];
+  const rejected = Array.from({ length: 25 }, (_, index) => baseOffer({ code: `FAKE_${index}`, minPlayers: 2 }));
+  const evaluation = evaluateBoardGameOfferResult(lines, rejected, context, null, 150);
+  assert.equal(evaluation.checks.length, 20);
+  assert.equal(evaluation.omittedCount, 5);
+  assert.deepEqual(readBoardGameOfferEvaluation(evaluation), evaluation);
+  assert.equal(readBoardGameOfferEvaluation({ ...evaluation, omittedCount: -1 }), null);
+  assert.equal(readBoardGameOfferEvaluation({ ...evaluation, checks: [...evaluation.checks, evaluation.checks[0]] }), null);
+  assert.equal(readBoardGameOfferEvaluation({ ...evaluation, checks: [{ offerCode: "FAKE", offerName: "FAKE", reason: "unknown" }] }), null);
+  assert.equal(readBoardGameOfferEvaluation({ ...evaluation, evaluatedAt: "bad" }), null);
+  const withEligibleLast = [...rejected, baseOffer({ code: "LAST", percentOff: 50 })];
+  const best = applyBestBoardGameOffer(lines, withEligibleLast, context);
+  assert.equal(best?.total, 75);
+  assert.equal(evaluateBoardGameOfferResult(lines, withEligibleLast, context, best, 150).status, "APPLIED");
+});
 
 test("buy two hours get one repeats per player without turning into a flat cap", () => {
   const offer = baseOffer({ kind: "TIME_BUY_GET", percentOff: null, buyMinutes: 120, freeMinutes: 60 });

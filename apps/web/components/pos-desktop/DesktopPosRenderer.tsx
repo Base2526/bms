@@ -6,6 +6,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { InfoCircleOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import ProductDetailsModal from "./ProductDetailsModal";
+import ScannedProductPanel, { type ScannedProductResult } from "./ScannedProductPanel";
 import { editCheckoutPayment, syncSingleCheckoutPayment, type CheckoutPayment } from "./checkoutPayment";
 import { ConfigProvider, theme as antdTheme } from "antd";
 import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
@@ -225,6 +226,26 @@ function boardGameMinutes(value: number | null | undefined): string {
   return minutes % 60 ? `${hours} ชม. ${minutes % 60} นาที` : `${hours} ชม.`;
 }
 
+const BOARD_GAME_OFFER_STATUS: Record<string, string> = {
+  NO_ACTIVE_OFFERS: "ไม่มีโปรค่าเล่นที่เปิดใช้สำหรับสาขานี้ ณ ตอนปิดบิล",
+  INELIGIBLE: "บิลนี้ไม่เข้าเงื่อนไขโปรค่าเล่น ณ ตอนปิดบิล",
+  NO_SAVING: "เข้าเงื่อนไขโปร แต่ยังไม่มีส่วนลดจากเวลาที่คิดในบิลนี้",
+  PASS_BETTER: "ใช้แพ็กเกจสมาชิก เพราะยอดถูกกว่าโปรค่าเล่น",
+  NO_CHARGE: "ไม่มีค่าเวลาที่ต้องนำมาลดด้วยโปร",
+};
+const BOARD_GAME_OFFER_REASON: Record<string, string> = {
+  INACTIVE: "โปรไม่ได้เปิดใช้งาน",
+  MIN_PLAYERS: "จำนวนผู้เล่นที่คิดเงินไม่ถึงขั้นต่ำของโปร",
+  MAX_PLAYERS: "จำนวนผู้เล่นที่คิดเงินเกินจำนวนสูงสุดของโปร",
+  INVALID_TIME_RULE: "ข้อมูลโปรซื้อเวลาแถมเวลาหรือเรทเวลาไม่ครบถ้วน",
+  MINIMUM_MINUTES: "มีผู้เล่นที่เวลาคิดเงินยังไม่ถึงขั้นต่ำของโปร",
+  REQUIRED_PRODUCT: "ยังไม่มีสินค้าที่โปรกำหนดในรายการสั่งของกลุ่มบิลนี้",
+  NOT_STARTED: "โปรยังไม่เริ่ม ณ เวลาปิดบิล",
+  EXPIRED: "โปรหมดอายุ ณ เวลาปิดบิล",
+  WEEKDAY: "วันที่ปิดบิลไม่ใช่วันในสัปดาห์ที่โปรกำหนด",
+  TIME_WINDOW: "เวลาปิดบิลอยู่นอกช่วงเวลาของโปร",
+};
+
 function BoardGameBillBreakdown({
   checkout,
   receipt = false,
@@ -267,9 +288,14 @@ function BoardGameBillBreakdown({
                   </span>
                   <span>
                     {rateName} · {money(line.hourlyRate)}/ชม.
-                    {' · คิดเงิน '}{boardGameMinutes(line.billableMinutes)}
+                    {' · เวลาก่อนสิทธิ์ '}{boardGameMinutes(line.billableMinutes)}
                     {hasDifferentChargedEnd ? ` ถึง ${boardGameTime(line.chargedUntil)}` : ""}
                   </span>
+                  {line.offerPaidMinutes != null && line.offerFreeMinutes != null ? (
+                    <span>
+                      ตามโปร: จ่าย {boardGameMinutes(line.offerPaidMinutes)} · ฟรี {boardGameMinutes(line.offerFreeMinutes)}
+                    </span>
+                  ) : null}
                   {benefit > 0 ? <em>สิทธิ์ช่วยลด {money(benefit)}</em> : null}
                 </div>
                 <strong>{money(line.amount)}</strong>
@@ -277,6 +303,30 @@ function BoardGameBillBreakdown({
             );
           })}
         </div>
+        {!receipt && checkout.offerEvaluation?.status !== "APPLIED" ? (
+          <div className={styles.boardGameOfferEvaluation} role="status">
+            {checkout.offerEvaluation ? (
+              <>
+                <strong>{BOARD_GAME_OFFER_STATUS[checkout.offerEvaluation.status] || "ไม่พบคำอธิบายผลโปรค่าเล่น"}</strong>
+                {checkout.offerEvaluation.checks.length > 0 ? (
+                  <details>
+                    <summary>เหตุผลที่โปรไม่เข้า</summary>
+                    <ul>
+                      {checkout.offerEvaluation.checks.map((check) => (
+                        <li key={check.offerCode}>
+                          {check.offerName} ({check.offerCode}): {BOARD_GAME_OFFER_REASON[check.reason] || "ข้อมูลเงื่อนไขไม่ครบถ้วน"}
+                        </li>
+                      ))}
+                    </ul>
+                    {checkout.offerEvaluation.omittedCount > 0 ? <span>ยังมีอีก {checkout.offerEvaluation.omittedCount} โปรที่ไม่เข้าเงื่อนไข</span> : null}
+                  </details>
+                ) : null}
+              </>
+            ) : checkout.offerDiscountAmount <= 0 ? (
+              <span>บิลนี้ไม่ได้บันทึกเหตุผลการเลือกโปรไว้ จึงตรวจย้อนหลังจากการตั้งค่าปัจจุบันไม่ได้</span>
+            ) : null}
+          </div>
+        ) : null}
       </section>
 
       {checkout.tabItems.length > 0 ? (
@@ -346,6 +396,11 @@ function serviceCallAge(createdAt: string): string {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : "เกิดข้อผิดพลาด กรุณาลองใหม่";
+}
+
+function cartVariantBaseQty(lines: readonly CartLine[], target: Pick<CartLine, "sku" | "size">): number {
+  return lines.reduce((sum, line) => line.sku === target.sku && line.size === target.size
+    ? sum + line.qty * line.baseQty : sum, 0);
 }
 
 function resolvedCartLine(hit: PosScanHit): CartLine {
@@ -437,6 +492,12 @@ function DesktopPosContent() {
   const [scanCode, setScanCode] = useState("");
   const scanInputRef = useRef<HTMLInputElement | null>(null);
   const scanDraftRevision = useRef(0);
+  const [scannedProduct, setScannedProduct] = useState<ScannedProductResult | null>(null);
+  const scanResultVersion = useRef(0);
+  const clearScannedProduct = useCallback(() => {
+    scanResultVersion.current += 1;
+    setScannedProduct(null);
+  }, []);
   const [inspectedProduct, setInspectedProduct] = useState<{ code: string; size?: string; packCode?: string } | null>(null);
   const [cart, setCart] = useState<CartLine[]>([]);
   // A timed-play bill is a frozen billing group, not a synthetic product. Keep it outside
@@ -907,11 +968,12 @@ function DesktopPosContent() {
 
   const openModule = useCallback((module: DesktopModule) => {
     if (paymentNavigationBlocked()) return;
+    clearScannedProduct();
     if (module === "mobile_sell") sendFlow("BACK_TO_CATALOG");
     setActiveModule(module);
     setError("");
     setNotice("");
-  }, [paymentNavigationBlocked, sendFlow]);
+  }, [clearScannedProduct, paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceTab = useCallback((tab: PosTab) => {
     setActiveModule(tab);
@@ -1135,12 +1197,14 @@ function DesktopPosContent() {
     setCatalogLoading(false);
     setCatalogError("");
     setBoardGameCheckout(null);
+    clearScannedProduct();
     setServiceCalls([]);
     sendFlow("UNPAIR");
-  }, [clearOperator, clearPreparedWorkspaces, paymentNavigationBlocked, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, clearScannedProduct, paymentNavigationBlocked, sendFlow]);
 
   const followWorkspaceShift = useCallback((open: boolean) => {
     if (open) return;
+    clearScannedProduct();
     setBootstrap((current) => current ? { ...current, shift: null } : current);
     setCart([]);
     setBoardGameCheckout(null);
@@ -1150,10 +1214,11 @@ function DesktopPosContent() {
       shiftOpen: false,
       stage: current.cashierAuthenticated ? "SHIFT_REQUIRED" : "CASHIER_LOGIN",
     }));
-  }, []);
+  }, [clearScannedProduct]);
 
   const signOutCashier = useCallback(() => {
     if (paymentNavigationBlocked()) return;
+    clearScannedProduct();
     clearOperator();
     clearPreparedWorkspaces();
     setCashier(null);
@@ -1164,7 +1229,7 @@ function DesktopPosContent() {
     setBoardGameCheckout(null);
     setServiceCalls([]);
     sendFlow("SIGN_OUT");
-  }, [clearOperator, clearPreparedWorkspaces, paymentNavigationBlocked, sendFlow]);
+  }, [clearOperator, clearPreparedWorkspaces, clearScannedProduct, paymentNavigationBlocked, sendFlow]);
 
   const openBoardGameCheckout = useCallback(async (billingGroupId: string) => {
     if (!cashier || !pin || busy) return;
@@ -1222,8 +1287,12 @@ function DesktopPosContent() {
 
   const addProduct = async (code: string, size?: string | null, fromScan = false) => {
     const clean = code.trim();
-    if (!clean || busy || addProductPendingRef.current) return;
+    if (!clean || busy || addProductPendingRef.current || saleAttemptRef.current) return;
     const submittedRevision = scanDraftRevision.current;
+    const expectedSku = size && scannedProduct?.kind === "selection" && scannedProduct.selection.scanCode === clean
+      ? scannedProduct.selection.sku : null;
+    const requestVersion = ++scanResultVersion.current;
+    if (!size) setScannedProduct(null);
     addProductPendingRef.current = true;
     setAddingProductKey(`${clean}\u0000${size ?? ""}`);
     setError("");
@@ -1234,8 +1303,14 @@ function DesktopPosContent() {
         POS_SCAN_QUERY,
         { code: clean, size: size || null, packCode: null, surface: "RETAIL_POS" },
       );
+      if (requestVersion !== scanResultVersion.current || tokenRef.current !== token) return;
       const hit = data.bmsPosScan;
       if (!hit) throw new Error("ไม่พบสินค้านี้");
+      if ((size && hit.size.toLowerCase() !== size.trim().toLowerCase()) || (expectedSku && hit.sku !== expectedSku)) {
+        throw new Error("สินค้าหรือไซส์ที่ระบบตอบกลับไม่ตรงกับที่เลือก กรุณาสแกนใหม่");
+      }
+      const showResult = !fromScan || scanDraftRevision.current === submittedRevision;
+      if (showResult) setScannedProduct({ kind: "product", product: hit, added: false });
       if (hit.serialTracked || hit.scaleBarcode || hit.modifiers.length > 0) {
         setNotice(ADVANCED_ITEM_NOTICE);
         return;
@@ -1246,13 +1321,11 @@ function DesktopPosContent() {
       if (incoming.stockTracked && incoming.available <= 0) {
         throw new Error("สินค้านี้ไม่มีสต็อกพร้อมขาย");
       }
-      const existingLine = cart.find((line) => line.key === incoming.key);
       if (
-        existingLine
-        && incoming.stockTracked
-        && (existingLine.qty + 1) * existingLine.baseQty > incoming.available
+        incoming.stockTracked
+        && cartVariantBaseQty(cart, incoming) + incoming.baseQty > incoming.available
       ) {
-        throw new Error(`เพิ่มไม่ได้ สาขานี้เหลือ ${incoming.available} ${incoming.unitName}`);
+        throw new Error(`เพิ่มไม่ได้ สาขานี้เหลือ ${incoming.available} หน่วยฐาน`);
       }
       setCart((current) => {
         // ราคาส่งและโปรโมชันบางแบบนับรวมทุกไซซ์ของ SKU เดียวกัน กฎจาก scan ล่าสุด
@@ -1263,23 +1336,32 @@ function DesktopPosContent() {
                 ...line,
                 priceTiers: incoming.priceTiers,
                 promotion: incoming.promotion,
+                ...(line.size === incoming.size ? { available: incoming.available } : {}),
               }
             : line,
         );
-        const existing = synced.find((line) => line.key === incoming.key);
-        if (!existing) return [...synced, incoming];
-        if (incoming.stockTracked && (existing.qty + 1) * existing.baseQty > incoming.available) {
+        if (incoming.stockTracked && cartVariantBaseQty(synced, incoming) + incoming.baseQty > incoming.available) {
           return synced;
         }
+        const existing = synced.find((line) => line.key === incoming.key);
+        if (!existing) return [...synced, incoming];
         return synced.map((line) =>
           line.key === incoming.key
             ? { ...line, qty: line.qty + 1, available: incoming.available }
             : line,
         );
       });
+      if (showResult) setScannedProduct({ kind: "product", product: hit, added: true });
       // A delayed lookup must not erase the next code or an unrelated scan draft after a card click.
       if (fromScan && scanDraftRevision.current === submittedRevision) setScanCode("");
     } catch (cause) {
+      if (requestVersion !== scanResultVersion.current || tokenRef.current !== token) return;
+      if (cause instanceof PosGraphqlError && cause.variantSelection?.scanCode === clean
+        && (!fromScan || scanDraftRevision.current === submittedRevision)) {
+        setScannedProduct({ kind: "selection", selection: cause.variantSelection });
+        if (fromScan) setScanCode("");
+        return;
+      }
       setError(messageOf(cause));
     } finally {
       addProductPendingRef.current = false;
@@ -1288,16 +1370,16 @@ function DesktopPosContent() {
   };
 
   const changeQty = (key: string, delta: number) => {
-    if (saleAttemptRef.current) return;
+    if (saleAttemptRef.current || addProductPendingRef.current) return;
     const target = cart.find((line) => line.key === key);
     if (
       target
       && delta > 0
       && target.stockTracked
-      && (target.qty + delta) * target.baseQty > target.available
+      && cartVariantBaseQty(cart, target) + delta * target.baseQty > target.available
     ) {
       // The server would refuse this at payment with OUT_OF_STOCK; say it while the line is in hand.
-      setError(`เพิ่มไม่ได้ สาขานี้เหลือ ${target.available} ${target.unitName}`);
+      setError(`เพิ่มไม่ได้ สาขานี้เหลือ ${target.available} หน่วยฐาน`);
       return;
     }
     setCart((current) =>
@@ -1697,6 +1779,7 @@ function DesktopPosContent() {
   };
 
   const newSale = () => {
+    clearScannedProduct();
     benefits.clear();
     const completedBoardGameBill = Boolean(boardGameCheckout);
     if (!completedBoardGameBill) setCart([]);
@@ -2161,7 +2244,7 @@ function DesktopPosContent() {
                 </form>
                 <div className={styles.catalogHeader}>
                   <div><p className={styles.eyebrow}>แคตตาล็อกสินค้า</p><h1>เลือกสินค้า</h1></div>
-                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="ค้นหาชื่อหรือ SKU" />
+                  <input value={query} onChange={(event) => { clearScannedProduct(); setQuery(event.target.value); }} placeholder="ค้นหาชื่อหรือ SKU" />
                 </div>
                 {(error || notice) ? <PosDismissibleAlert key={error || notice} className={error ? styles.errorBox : styles.noticeBox} onClose={() => { setError(""); setNotice(""); }}>{error || notice}{!error && notice === ADVANCED_ITEM_NOTICE ? <button onClick={() => openModule("sell")}>เปิดหน้าขายแบบเต็ม</button> : null}</PosDismissibleAlert> : null}
                 {catalog.length && catalogError ? (
@@ -2174,7 +2257,10 @@ function DesktopPosContent() {
                     <button onClick={() => void loadCatalog(query)}>ลองใหม่</button>
                   </PosDismissibleAlert>
                 ) : null}
-                <div className={styles.productGrid} aria-busy={catalogLoading}>
+                {scannedProduct ? <ScannedProductPanel result={scannedProduct} busy={busy || Boolean(addingProductKey)}
+                  onSelect={(code, size) => { void addProduct(code, size); scanInputRef.current?.focus(); }}
+                  onClose={() => { clearScannedProduct(); setError(""); setNotice(""); scanInputRef.current?.focus(); }} /> : null}
+                <div className={styles.productGrid} aria-busy={catalogLoading} hidden={Boolean(scannedProduct)}>
                   {catalog.map((item) => {
                     const selection = selectPosCatalogCardVariant(item);
                     const selectedVariant = selection.variant;
@@ -2184,6 +2270,7 @@ function DesktopPosContent() {
                     const sellable = item.availability === "AVAILABLE";
                     const stockLabel = !sellable
                       ? item.availability === "SOLD_OUT_TODAY" ? "หมดวันนี้" : "หมด"
+                      : item.availableSizes.length > 1 ? `เลือก ${item.availableSizes.length} ไซส์`
                       : selection.available > 0
                         ? `เหลือ ${selection.available}${selectedVariant?.size ? ` · ${selectedVariant.size}` : ""}`
                         : "พร้อมขาย";
@@ -2194,12 +2281,12 @@ function DesktopPosContent() {
                       disabled={!sellable || busy}
                       aria-busy={addingProductKey === addingKey}
                       data-adding={addingProductKey === addingKey}
-                      onClick={() => void addProduct(item.sku, selectedVariant?.size)}
+                      onClick={() => void addProduct(item.sku, item.availableSizes.length > 1 ? undefined : selectedVariant?.size)}
                     >
                       <div className={styles.productImage}>{item.imageUrl ? <img src={item.imageUrl} alt="" /> : <span>{item.name.slice(0, 1)}</span>}</div>
                       <strong>{item.name}</strong><small>{item.sku}</small>
                       <div>
-                        <b>{money(selection.price)}</b>
+                        <b>{item.availableSizes.length > 1 ? "เริ่ม " : ""}{money(selection.price)}</b>
                         <span className={sellable ? styles.stockOk : styles.stockOut}>
                           {stockLabel}
                         </span>
@@ -2245,7 +2332,7 @@ function DesktopPosContent() {
                   {cart.map((line) => (
                     <article key={line.key}>
                       <div className={styles.cartName}><strong>{line.name}</strong><span>{line.sku}{line.size ? ` · ${line.size}` : ""}</span></div>
-                      <div className={styles.stepper}><button onClick={() => changeQty(line.key, -1)}>−</button><b>{line.qty}</b><button onClick={() => changeQty(line.key, 1)}>+</button></div>
+                      <div className={styles.stepper}><button disabled={Boolean(addingProductKey)} onClick={() => changeQty(line.key, -1)}>−</button><b>{line.qty}</b><button disabled={Boolean(addingProductKey)} onClick={() => changeQty(line.key, 1)}>+</button></div>
                       <strong>{money(Number(line.packBasePrice ?? line.unitPrice ?? 0) * line.qty)}</strong>
                     </article>
                   ))}
@@ -2254,7 +2341,11 @@ function DesktopPosContent() {
                 <div className={styles.cartFooter}>
                   {pricingSavings > 0 ? <div className={styles.savingsRow}><span>ส่วนลดราคาส่ง / โปรโมชัน</span><strong>−{money(pricingSavings)}</strong></div> : null}
                   <div><span>ยอดสุทธิ</span><strong>{money(total)}</strong></div>
-                  <button className={styles.payButton} disabled={!cart.length} onClick={() => { setError(""); setNotice(""); sendFlow("START_CHECKOUT"); }}>ไปชำระเงิน <span>→</span></button>
+                  <button className={styles.payButton} disabled={!cart.length || Boolean(addingProductKey) || scannedProduct?.kind === "selection"}
+                    onClick={() => {
+                      if (addProductPendingRef.current || scannedProduct?.kind === "selection") return;
+                      setError(""); setNotice(""); sendFlow("START_CHECKOUT");
+                    }}>ไปชำระเงิน <span>→</span></button>
                 </div>
               </>
             ) : (

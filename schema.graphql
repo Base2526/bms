@@ -837,9 +837,15 @@ type BmsCustomerNote360 {
 }
 
 type BmsCustomerOrderDetail {
+  discountAmount: Float!
   id: ID!
   lines: [BmsCustomerPurchaseLine!]!
+  orderAmount: Float!
   points: [BmsCustomerOrderPoints!]!
+  roundingAmount: Float!
+  shippingAmount: Float!
+  totalAmount: Float!
+  vatAmount: Float!
 }
 
 type BmsCustomerOrderItem360 {
@@ -890,9 +896,13 @@ type BmsCustomerProfile360 {
 type BmsCustomerPurchaseLine {
   kind: String!
   label: String!
+  lineAmount: Float!
   qty: Float!
+  saleQty: Float!
   size: String
   sku: String
+  unitAmount: Float!
+  unitName: String
 }
 
 type BmsCustomerRecentOrder {
@@ -2846,6 +2856,8 @@ type BmsPosBoardGameChargeLine {
   hourlyRate: Float!
   joinedAt: String
   offerDiscountAmount: Float
+  offerFreeMinutes: Int
+  offerPaidMinutes: Int
   participantId: ID!
   participantType: String!
   rateCode: String
@@ -2868,6 +2880,9 @@ type BmsPosBoardGameCheckout {
 
   """ยอดค่าเล่นที่โปรโมชันช่วยลดแล้ว · 0 = ไม่มีโปรโมชัน"""
   offerDiscountAmount: Float!
+
+  """Close-time eligibility evidence; null on older frozen bills."""
+  offerEvaluation: BmsPosBoardGameOfferEvaluation
   offerName: String
 
   """
@@ -3014,6 +3029,19 @@ input BmsPosBoardGameMergeBillingGroupsInput {
   pin: String!
   sourceBillingGroupId: ID!
   targetBillingGroupId: ID!
+}
+
+type BmsPosBoardGameOfferCheck {
+  offerCode: String!
+  offerName: String!
+  reason: String!
+}
+
+type BmsPosBoardGameOfferEvaluation {
+  checks: [BmsPosBoardGameOfferCheck!]!
+  evaluatedAt: String!
+  omittedCount: Int!
+  status: String!
 }
 
 input BmsPosBoardGameOpenInput {

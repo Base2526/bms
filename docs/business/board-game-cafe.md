@@ -476,6 +476,15 @@ still shows the frozen hourly rate, while checkout shows the winning discount an
 Offer edits never reprice groups whose time has already been closed. Both the assistant capability
 search and register guide explain this distinction; capability support is not evidence that a
 particular shop configured an eligible offer.
+Actual-time (`OPEN_ENDED` / participant `ACTUAL`) visits use the same offer evaluation as
+purchased time; no advance 120-minute purchase is required. Eligibility uses the group close
+time in the store timezone, including date, weekday, time window, player counts, minimum
+minutes and required real tab SKU. New charge snapshots preserve the evaluation once on their
+first charge line, with at most 20 failed-offer reasons (and an omitted count), plus paid/free
+minutes per participant for a winning buy/get offer. Checkout displays those frozen reasons when
+no promotion applies and the paid/free breakdown when it does. It never queries current offers
+to explain an old bill; missing historical evidence is shown as unknown, not as proof that no
+offer existed. The reason evaluator is also the pricing eligibility predicate.
 Rounding, minimum time and grace are applied before the paid/free cycles: with 30-minute
 rounding and no grace, 181 actual minutes becomes 210 billable minutes (150 paid minutes
 under 120+60), not a flat two-hour charge. The promotion is evaluated per billable participant,

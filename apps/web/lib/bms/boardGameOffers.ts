@@ -40,7 +40,35 @@ export type AppliedBoardGameOfferLine = {
   offerCode: string;
   offerName: string;
   offerDiscountAmount: number;
+  offerPaidMinutes: number | null;
+  offerFreeMinutes: number | null;
 };
+
+const OFFER_REASONS = ["INACTIVE", "MIN_PLAYERS", "MAX_PLAYERS", "INVALID_TIME_RULE", "MINIMUM_MINUTES",
+  "REQUIRED_PRODUCT", "NOT_STARTED", "EXPIRED", "WEEKDAY", "TIME_WINDOW"] as const;
+type OfferReason = typeof OFFER_REASONS[number];
+type OfferContext = { at: Date; timezone: string; productSkus: ReadonlySet<string> };
+const OFFER_STATUSES = ["APPLIED", "NO_ACTIVE_OFFERS", "INELIGIBLE", "NO_SAVING", "PASS_BETTER", "NO_CHARGE"] as const;
+export type BoardGameOfferEvaluation = {
+  status: typeof OFFER_STATUSES[number];
+  evaluatedAt: string;
+  checks: Array<{ offerCode: string; offerName: string; reason: OfferReason }>;
+  omittedCount: number;
+};
+
+/** Old frozen bills carry no evaluation; never infer their eligibility from today's settings. */
+export function readBoardGameOfferEvaluation(value: unknown): BoardGameOfferEvaluation | null {
+  const raw = value as BoardGameOfferEvaluation | null;
+  if (!raw || !OFFER_STATUSES.includes(raw.status) || typeof raw.evaluatedAt !== "string"
+    || !Number.isFinite(Date.parse(raw.evaluatedAt)) || !Array.isArray(raw.checks) || raw.checks.length > 20
+    || !Number.isInteger(raw.omittedCount) || raw.omittedCount < 0
+    || raw.checks.some((check) => !check || typeof check.offerCode !== "string"
+      || typeof check.offerName !== "string" || !OFFER_REASONS.includes(check.reason))) return null;
+  return {
+    status: raw.status, evaluatedAt: raw.evaluatedAt, omittedCount: raw.omittedCount,
+    checks: raw.checks.map(({ offerCode, offerName, reason }) => ({ offerCode, offerName, reason })),
+  };
+}
 
 type QueryClient = {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>>;
@@ -261,44 +289,26 @@ function localClock(at: Date, timezone: string): { weekday: number; time: string
 export function applyBestBoardGameOffer(
   lines: readonly BoardGameOfferChargeLine[],
   offers: readonly BoardGameOffer[],
-  context: { at: Date; timezone: string; productSkus: ReadonlySet<string> },
+  context: OfferContext,
 ): { lines: AppliedBoardGameOfferLine[]; total: number; offer: BoardGameOffer } | null {
   const grossTotal = money(lines.reduce((sum, line) => sum + line.grossAmount, 0));
   if (grossTotal <= 0 || !lines.length) return null;
-  const clock = localClock(context.at, context.timezone);
-  const eligible = offers.filter((offer) => {
-    if (!offer.active || lines.length < offer.minPlayers || (offer.maxPlayers != null && lines.length > offer.maxPlayers)) return false;
-    if (offer.kind === "TIME_BUY_GET" && (
-      !Number.isInteger(offer.buyMinutes) || Number(offer.buyMinutes) <= 0
-      || !Number.isInteger(offer.freeMinutes) || Number(offer.freeMinutes) <= 0
-      || lines.some((line) => !Number.isFinite(line.hourlyRate) || Number(line.hourlyRate) < 0
-        || !Number.isFinite(line.billableMinutes) || line.billableMinutes < 0)
-    )) return false;
-    if (offer.minimumMinutes > 0 && lines.some((line) => line.billableMinutes < offer.minimumMinutes)) return false;
-    if (offer.requiredProductSku && !context.productSkus.has(offer.requiredProductSku)) return false;
-    if (offer.validFrom && context.at < new Date(offer.validFrom)) return false;
-    if (offer.validUntil && context.at >= new Date(offer.validUntil)) return false;
-    if (!offer.weekdays.includes(clock.weekday)) return false;
-    if (offer.startsLocalTime && offer.endsLocalTime
-      && (clock.time < offer.startsLocalTime || clock.time >= offer.endsLocalTime)) return false;
-    return true;
-  });
+  const eligible = offers.filter((offer) => boardGameOfferIneligibility(lines, offer, context) === null);
 
   let best: { lines: AppliedBoardGameOfferLine[]; total: number; offer: BoardGameOffer } | null = null;
   for (const offer of eligible) {
     let amounts: number[];
+    let paidMinutes: number[] | null = null;
     if (offer.kind === "TIME_PERCENT") {
       amounts = lines.map((line) => money(line.grossAmount * (1 - Number(offer.percentOff) / 100)));
     } else if (offer.kind === "TIME_FIXED_PER_PERSON") {
       amounts = lines.map((line) => money(Math.min(line.grossAmount, Number(offer.fixedPrice))));
     } else if (offer.kind === "TIME_BUY_GET") {
       const paid = Number(offer.buyMinutes), cycle = paid + Number(offer.freeMinutes);
-      amounts = lines.map((line) => {
-        // Apply per participant to the already-rounded duration, not the group's combined time.
-        const paidMinutes = Math.floor(line.billableMinutes / cycle) * paid
-          + Math.min(line.billableMinutes % cycle, paid);
-        return money(Math.min(line.grossAmount, Number(line.hourlyRate) * paidMinutes / 60));
-      });
+      // Apply per participant to the already-rounded duration, not the group's combined time.
+      paidMinutes = lines.map((line) => Math.floor(line.billableMinutes / cycle) * paid
+        + Math.min(line.billableMinutes % cycle, paid));
+      amounts = paidMinutes.map((minutes, index) => money(Math.min(lines[index].grossAmount, Number(lines[index].hourlyRate) * minutes / 60)));
     } else {
       const targetSatang = Math.round(Math.min(grossTotal, Number(offer.fixedPrice)) * 100);
       const grossSatang = Math.round(grossTotal * 100);
@@ -325,11 +335,51 @@ export function applyBestBoardGameOffer(
         offerCode: offer.code,
         offerName: offer.name,
         offerDiscountAmount: money(line.grossAmount - amounts[index]),
+        offerPaidMinutes: paidMinutes?.[index] ?? null,
+        offerFreeMinutes: paidMinutes ? line.billableMinutes - paidMinutes[index] : null,
       })),
     };
     if (!best || total < best.total || (total === best.total && offer.sortOrder < best.offer.sortOrder)) best = applied;
   }
   return best;
+}
+
+function boardGameOfferIneligibility(
+  lines: readonly BoardGameOfferChargeLine[], offer: BoardGameOffer, context: OfferContext,
+): OfferReason | null {
+  if (!offer.active) return "INACTIVE";
+  if (lines.length < offer.minPlayers) return "MIN_PLAYERS";
+  if (offer.maxPlayers != null && lines.length > offer.maxPlayers) return "MAX_PLAYERS";
+  if (offer.kind === "TIME_BUY_GET" && (
+    !Number.isInteger(offer.buyMinutes) || Number(offer.buyMinutes) <= 0
+    || !Number.isInteger(offer.freeMinutes) || Number(offer.freeMinutes) <= 0
+    || lines.some((line) => !Number.isFinite(line.hourlyRate) || Number(line.hourlyRate) < 0
+      || !Number.isFinite(line.billableMinutes) || line.billableMinutes < 0)
+  )) return "INVALID_TIME_RULE";
+  if (offer.minimumMinutes > 0 && lines.some((line) => line.billableMinutes < offer.minimumMinutes)) return "MINIMUM_MINUTES";
+  if (offer.requiredProductSku && !context.productSkus.has(offer.requiredProductSku)) return "REQUIRED_PRODUCT";
+  if (offer.validFrom && context.at < new Date(offer.validFrom)) return "NOT_STARTED";
+  if (offer.validUntil && context.at >= new Date(offer.validUntil)) return "EXPIRED";
+  const clock = localClock(context.at, context.timezone);
+  if (!offer.weekdays.includes(clock.weekday)) return "WEEKDAY";
+  if (offer.startsLocalTime && offer.endsLocalTime
+    && (clock.time < offer.startsLocalTime || clock.time >= offer.endsLocalTime)) return "TIME_WINDOW";
+  return null;
+}
+
+export function evaluateBoardGameOfferResult(
+  lines: readonly BoardGameOfferChargeLine[], offers: readonly BoardGameOffer[], context: OfferContext,
+  best: ReturnType<typeof applyBestBoardGameOffer>, passTotal: number,
+): BoardGameOfferEvaluation {
+  const grossTotal = money(lines.reduce((sum, line) => sum + line.grossAmount, 0));
+  const status: BoardGameOfferEvaluation["status"] = grossTotal <= 0 ? "NO_CHARGE"
+    : !offers.length ? "NO_ACTIVE_OFFERS" : !best ? "INELIGIBLE"
+    : best.total > passTotal ? "PASS_BETTER" : best.total >= grossTotal ? "NO_SAVING" : "APPLIED";
+  const checks = status === "INELIGIBLE" ? offers.flatMap((offer) => {
+    const reason = boardGameOfferIneligibility(lines, offer, context);
+    return reason ? [{ offerCode: offer.code, offerName: offer.name, reason }] : [];
+  }) : [];
+  return { status, evaluatedAt: context.at.toISOString(), checks: checks.slice(0, 20), omittedCount: Math.max(0, checks.length - 20) };
 }
 
 export async function eligibleBoardGameOffersInTx(

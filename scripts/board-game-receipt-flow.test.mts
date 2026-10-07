@@ -15,9 +15,19 @@ test("receipt details retain frozen rates, rounded minutes and separate particip
   assert.match(notes, /นน = 255\.00/);
   assert.match(notes, /ทั่วไป · 50\.00 บาท\/ชม\./);
   assert.match(notes, /เด็ก · 30\.00 บาท\/ชม\./);
-  assert.match(notes, /Billed 510/);
+  assert.match(notes, /Billed before benefits 510/);
   assert.match(notes, /Actual 511/);
   assert.equal(JSON.stringify(snapshot), before);
+});
+
+test("buy/get receipt distinguishes rounded time from frozen paid/free minutes", () => {
+  const notes = boardGameReceiptNotes([{ hourlyRate: 50, billableMinutes: 180, amount: 100,
+    offerPaidMinutes: 120, offerFreeMinutes: 60, offerDiscountAmount: 50, offerName: "FAKE 2+1" }]).join("\n");
+  assert.match(notes, /Billed before benefits 180/);
+  assert.match(notes, /Paid 120/);
+  assert.match(notes, /Free 60/);
+  assert.match(notes, /Offer: FAKE 2\+1 -50\.00/);
+  assert.doesNotMatch(boardGameReceiptNotes([{ billableMinutes: 180, amount: 100 }]).join("\n"), /Time offer/);
 });
 
 test("pass and promotional benefits do not recalculate or double-count the frozen net fee", () => {

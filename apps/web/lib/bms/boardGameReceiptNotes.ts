@@ -19,9 +19,14 @@ export function boardGameReceiptNotes(snapshot: unknown): string[] {
     const actual = number(raw.actualMinutes);
     const rateDetails = [text(raw.rateName) || text(raw.rateCode)];
     if (rate !== null) rateDetails.push(`${rate.toFixed(2)} บาท/ชม. (THB/h)`);
-    if (minutes !== null) rateDetails.push(`คิดเงิน / Billed ${minutes} นาที/min`);
+    if (minutes !== null) rateDetails.push(`เวลาก่อนสิทธิ์ / Billed before benefits ${minutes} นาที/min`);
     if (rateDetails.some(Boolean)) notes.push(rateDetails.filter(Boolean).join(" · "));
     if (actual !== null) notes.push(`เล่นจริง / Actual ${actual} นาที/min`);
+    const paidMinutes = number(raw.offerPaidMinutes);
+    const freeMinutes = number(raw.offerFreeMinutes);
+    if (paidMinutes !== null && freeMinutes !== null) {
+      notes.push(`ตามโปร / Time offer: จ่าย / Paid ${paidMinutes} นาที/min · ฟรี / Free ${freeMinutes} นาที/min`);
+    }
     const covered = number(raw.coveredAmount);
     if (covered !== null && covered > 0) notes.push(`สิทธิ์แพ็กเกจ / Pass coverage ${covered.toFixed(2)}`);
     const discount = number(raw.offerDiscountAmount);

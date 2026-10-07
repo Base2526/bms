@@ -4,7 +4,7 @@ import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Alert, Typography, Divider, Empty, Popconfirm,
 } from "antd";
 import { useState, useMemo } from "react";
-import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined, FileTextOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { useVisibleQueryRefresh } from "@/lib/useVisibleQueryRefresh";
 import CustomerOrderDetail from "@/components/customers/CustomerOrderDetail";
@@ -480,8 +480,13 @@ function CustomerDetail({
       return orderId ? <Text code>{orderId.slice(0, 8)}</Text> : <Text type="secondary">—</Text>;
     } },
   ];
+  const [expandedOrders, setExpandedOrders] = useState<string[]>([]);
+  const toggleBill = (id: string) => setExpandedOrders((ids) => ids.includes(id) ? ids.filter((key) => key !== id) : [...ids, id]);
   const orderCols = [
-    { title: "Order", dataIndex: "id", key: "id", width: 100, render: (id: string) => <Text code>{id.slice(0, 8)}</Text> },
+    { title: "Order", dataIndex: "id", key: "id", width: 120, render: (id: string) => <Space direction="vertical" size={0}>
+      <Text code>{id.slice(0, 8)}</Text>
+      <Button type="link" size="small" icon={<FileTextOutlined />} aria-expanded={expandedOrders.includes(id)} onClick={() => toggleBill(id)}>{t(expandedOrders.includes(id) ? "admin_customers.detail_close" : "admin_customers.detail_open")}</Button>
+    </Space> },
     { title: "Channel", dataIndex: "channel", key: "ch", width: 90 },
     { title: "Status", dataIndex: "status", key: "st", width: 120, render: (s: string) => <Tag color={STATUS_COLOR[s] || "default"}>{s}</Tag> },
     { title: t("admin_customers.col_amount"), dataIndex: "total_amount", key: "amt", width: 110, align: "right" as const, render: (v: number) => `${Number(v).toLocaleString()} ฿` },
@@ -528,7 +533,7 @@ function CustomerDetail({
       <Divider style={{ margin: "8px 0" }} />
       <Text strong>🧾 {t("admin_customers.section_history", { count: c.orders?.length || 0 })}</Text>
       <Table style={{ marginTop: 8 }} rowKey="id" dataSource={c.orders || []} columns={orderCols}
-        expandable={{ expandedRowRender: (order: Order, _index, _indent, expanded) => expanded
+        expandable={{ expandedRowKeys: expandedOrders, onExpandedRowsChange: (keys) => setExpandedOrders(keys.map(String)), expandedRowRender: (order: Order, _index, _indent, expanded) => expanded
           ? <CustomerOrderDetail customerId={c.id} orderId={order.id} /> : null }}
         size="small" scroll={{ x: "max-content" }} pagination={{ pageSize: 5, hideOnSinglePage: true }} locale={{ emptyText: t("admin_customers.no_history") }} />
     </div>

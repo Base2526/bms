@@ -185,6 +185,18 @@ Verification for the shell is `npm run lint` and `npm test` (pairing and keystor
    confirming a non-cash refund each have independent server-side permission checks.
 3. The cashier opens a shift with the drawer float, scans a barcode/SKU or searches the live catalog,
    and can sell base units or configured packs.
+   In the compact desktop register, a product-level code with multiple variants opens one product
+   image and an explicit size selector, not an arbitrary size or a text-only error. Catalog-card
+   clicks also require a choice for multi-size products. GraphQL's correctable scan conflict carries
+   the same branch-stock/catalog choices and primary image as the full REST register; the client
+   validates this metadata and re-resolves the original scanned code with the selected size before
+   adding anything. Exact variant/pack barcodes still add directly and show that product alone.
+   Out-of-stock tracked variants stay disabled; non-stock menu variants may be chosen at zero own
+   stock. No price or promotion is taken from the selector: the resolved scan and normal settlement
+   remain authoritative, including size-specific gifts and named packs.
+   Checkout waits for an in-flight scan or unresolved size choice; quantity edits also wait for
+   the scan result. The stock hint counts base units across every pack of the same SKU/size,
+   including the first pack, while settlement still performs the authoritative stock check.
 4. If the basket contains a pharmacy-controlled SKU that requires a pharmacist check, the cashier can
    send the case straight from POS into the pharmacy queue. That creates or reuses a product-review
    assessment, links it to a parked-bill snapshot, and clears the counter so the next customer is
@@ -269,6 +281,13 @@ and on focus/reconnection. Expanding a purchase loads saved product and service 
 board-game time) and that order's EARN/REDEEM/REVERSE ledger entries, scoped to both tenant and
 customer. It does not reconstruct old points from current loyalty settings or award points while
 reading. Desktop checkout shows the server's reason when a selected member earns zero points.
+The purchase-history "View bill" action opens the same lazy, read-only detail as the row expander.
+It shows saved sale units/prices, exact product `line_amount` (including gift/promotion allocation),
+service-line amounts and stored order discount/VAT/rounding/shipping/totals. It never recomputes an
+old bill from current catalog prices, and displayed VAT is a component of the bill, not an added
+charge. Detail reads establish tenant RLS and match both the customer and order. Error states
+distinguish permission, schema-version and connection failures without exposing raw server errors;
+unknown backend errors remain failures, never an empty or zero-valued bill.
 Restaurant checkout uses the current reserved-order quote, including discounts and saved
 non-discountable service charges, for its points message. A changed member clears requested
 redemption; a stale quote cannot enable settlement. The full retail/pharmacy workspace hides

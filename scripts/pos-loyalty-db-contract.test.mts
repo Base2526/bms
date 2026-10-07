@@ -250,6 +250,11 @@ test("counter sale: tier + coupon + points on one bill, receipt agrees with the 
   assert.equal(detail.lines[0].kind, "PRODUCT");
   assert.equal(detail.lines[0].sku, SKU);
   assert.equal(detail.lines[0].qty, 10);
+  assert.equal(detail.lines[0].saleQty, 10);
+  assert.equal(detail.lines[0].lineAmount, 1000);
+  assert.equal(Number(detail.orderAmount), 830);
+  assert.equal(Number(detail.discountAmount), 170);
+  assert.equal(Number(detail.totalAmount), 830 + Number(detail.shippingAmount));
   assert.deepEqual(detail.points.map((entry: any) => [entry.kind, entry.points]).sort(), [["EARN", 830], ["REDEEM", -200]]);
 
   // ใบกำกับอย่างย่อ (ถ้าร้านจด VAT) ต้องคิดฐานจากยอดหลังส่วนลด ไม่ใช่ 1000

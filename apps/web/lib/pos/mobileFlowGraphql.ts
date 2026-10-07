@@ -102,10 +102,12 @@ export const POS_BOARD_GAME_CHECKOUT_QUERY = `
       offerCode
       offerName
       offerDiscountAmount
+      offerEvaluation { status evaluatedAt omittedCount checks { offerCode offerName reason } }
       chargeLines {
         participantId displayName participantType billingGroupNo rateCode rateName
         joinedAt actualEndedAt chargedUntil actualMinutes billableMinutes hourlyRate amount
         grossAmount coveredMinutes coveredAmount offerDiscountAmount
+        offerPaidMinutes offerFreeMinutes
       }
       tabItems { id sku productName size packCode unitName quantity unitPrice amount }
     }
@@ -214,6 +216,12 @@ export type PosBoardGameCheckout = {
   offerCode: string | null;
   offerName: string | null;
   offerDiscountAmount: number;
+  offerEvaluation?: {
+    status: string;
+    evaluatedAt: string;
+    omittedCount: number;
+    checks: Array<{ offerCode: string; offerName: string; reason: string }>;
+  } | null;
   chargeLines: Array<{
     participantId: string;
     displayName: string | null;
@@ -232,6 +240,8 @@ export type PosBoardGameCheckout = {
     coveredMinutes: number | null;
     coveredAmount: number | null;
     offerDiscountAmount: number | null;
+    offerPaidMinutes?: number | null;
+    offerFreeMinutes?: number | null;
   }>;
   tabItems: Array<{
     id: string;
@@ -246,8 +256,34 @@ export type PosBoardGameCheckout = {
   }>;
 };
 
+export type PosVariantSelection = {
+  scanCode: string;
+  sku: string;
+  productName: string;
+  imageUrl: string | null;
+  variants: Array<{ size: string; available: number; price: number; stockTracked: boolean }>;
+};
+
+function readVariantSelection(extensions: Record<string, unknown> | undefined): PosVariantSelection | null {
+  if (extensions?.code !== "CONFLICT" || extensions.reason !== "VARIANT_SELECTION_REQUIRED") return null;
+  const selection = extensions.selection as PosVariantSelection | undefined;
+  if (!selection || typeof selection.scanCode !== "string" || !selection.scanCode.trim()
+    || typeof selection.sku !== "string" || !selection.sku.trim() || typeof selection.productName !== "string"
+    || !(selection.imageUrl === null || typeof selection.imageUrl === "string")
+    || !Array.isArray(selection.variants) || !selection.variants.length
+    || selection.variants.some((variant) => !variant || typeof variant.size !== "string" || !variant.size.trim()
+      || typeof variant.available !== "number" || !Number.isFinite(variant.available) || variant.available < 0
+      || typeof variant.price !== "number" || !Number.isFinite(variant.price) || variant.price < 0
+      || typeof variant.stockTracked !== "boolean")) return null;
+  return {
+    scanCode: selection.scanCode, sku: selection.sku, productName: selection.productName, imageUrl: selection.imageUrl,
+    variants: selection.variants.map(({ size, available, price, stockTracked }) => ({ size, available, price, stockTracked })),
+  };
+}
+
 export class PosGraphqlError extends Error {
-  constructor(message: string, public readonly code: string | null, public readonly httpStatus: number | null = null) {
+  constructor(message: string, public readonly code: string | null, public readonly httpStatus: number | null = null,
+    public readonly variantSelection: PosVariantSelection | null = null) {
     super(message);
     this.name = "PosGraphqlError";
   }
@@ -273,7 +309,7 @@ export async function posGraphqlRequest<T>(
     });
     const body = (await response.json().catch(() => null)) as {
       data?: T;
-      errors?: Array<{ message?: string; extensions?: { code?: string } }>;
+      errors?: Array<{ message?: string; extensions?: Record<string, unknown> & { code?: string } }>;
     } | null;
     if (!response.ok || body?.errors?.length || !body?.data) {
       const first = body?.errors?.[0];
@@ -281,6 +317,7 @@ export async function posGraphqlRequest<T>(
         first?.message ?? `เซิร์ฟเวอร์ตอบ HTTP ${response.status}`,
         first?.extensions?.code ?? null,
         response.status,
+        readVariantSelection(first?.extensions),
       );
     }
     return body.data;

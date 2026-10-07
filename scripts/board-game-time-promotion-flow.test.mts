@@ -5,22 +5,29 @@ import test from "node:test";
 import * as offers from "../apps/web/lib/bms/boardGameOffers.ts";
 import * as coverage from "../apps/web/lib/bms/boardGamePassCoverage.ts";
 import * as idempotency from "../apps/web/lib/bms/idempotencyErrors.ts";
+import { POS_BOARD_GAME_CHECKOUT_QUERY } from "../apps/web/lib/pos/mobileFlowGraphql.ts";
 
 // Exercise the public close service, real rounding, offer row mapping and pass comparison.
 // SQL transport is a deterministic fixture; this does not claim PostgreSQL integration coverage.
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
+test("checkout query validates its frozen offer evidence against the committed schema", () => {
+  const { buildSchema, parse, validate } = require("./node_modules/graphql/index.js");
+  const schema = buildSchema(readFileSync(new URL("../schema.graphql", import.meta.url), "utf8"));
+  assert.deepEqual(validate(schema, parse(POS_BOARD_GAME_CHECKOUT_QUERY)), []);
+});
 const compiled = ts.transpileModule(readFileSync(new URL("../apps/web/lib/bms/boardGameCafe.ts", import.meta.url), "utf8"), {
   compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS },
 }).outputText;
 const tenant = "11111111-1111-4111-8111-111111111111";
 const groupId = "22222222-2222-4222-8222-222222222222";
+const branchId = "33333333-3333-4333-8333-333333333333";
 const startedAt = new Date("2026-10-06T03:00:00Z");
 
 function harness(minutes: number, options: {
   active?: boolean; unlimitedPass?: boolean; passMinutes?: number;
   players?: Array<Record<string, any>>; offer?: Record<string, any>;
-  products?: string[]; failSnapshot?: boolean;
+  products?: string[]; failSnapshot?: boolean; noOffers?: boolean;
 } = {}) {
   const endedAt = new Date(startedAt.getTime() + minutes * 60_000);
   const calls: string[] = [];
@@ -37,6 +44,17 @@ function harness(minutes: number, options: {
       if (["BEGIN", "COMMIT", "ROLLBACK"].includes(sql) || sql.includes("pg_advisory_xact_lock")) return result();
       assert.equal(params[0], tenant, "all business reads and writes are tenant scoped");
       if (sql.includes("SELECT business_archetype")) return result([{ business_archetype: "board_game_cafe" }]);
+      if (sql.includes("SELECT g.id, g.status, g.group_no, g.ended_at")) {
+        assert.match(sql, /g\.tenant_id = \$1 AND g\.location_id = \$2 AND g\.id = \$3/);
+        assert.match(sql, /g\.status = 'CLOSING'/);
+        assert.deepEqual(params, [tenant, branchId, groupId]);
+        return result([{ ...group, started_at: startedAt, billing_mode: "OPEN_ENDED", session_group_count: 1,
+          table_code: "FAKE", table_name: "FAKE Table", tab_item_count: 0,
+          pass_covered_amount: group.charge_snapshot.reduce((sum: number, line: any) => sum + (line.coveredAmount ?? 0), 0),
+          offer_discount_amount: group.charge_snapshot.reduce((sum: number, line: any) => sum + (line.offerDiscountAmount ?? 0), 0),
+          offer_code: group.charge_snapshot[0]?.offerCode, offer_name: group.charge_snapshot[0]?.offerName }]);
+      }
+      if (sql.includes("SELECT id, participant_type, rate_code_snapshot")) return result();
       if (sql.includes("SELECT session_id FROM")) return result([{ session_id: "session" }]);
       if (sql.includes("SELECT id, status, started_at")) return result([{ id: "session", status: "OPEN", started_at: startedAt }]);
       if (sql.includes("FROM bms_board_game_billing_groups") && sql.includes("FOR UPDATE") && !sql.includes("FROM bms_board_game_member_passes pass")) return result([group]);
@@ -58,7 +76,7 @@ function harness(minutes: number, options: {
       if (sql.includes("FROM bms_board_game_offers")) {
         assert.match(sql, /tenant_id = \$1 AND active AND \(location_id IS NULL OR location_id = \$2\)/);
         assert.equal(params[1], "branch");
-        return result([offerRow]);
+        return result(options.noOffers ? [] : [offerRow]);
       }
       if (sql.includes("SELECT DISTINCT product_sku")) {
         assert.match(sql, /billing_group_id = \$2 AND status = 'ACTIVE'/);
@@ -78,7 +96,7 @@ function harness(minutes: number, options: {
     },
   };
   const dependencies: Record<string, any> = {
-    crypto: require("crypto"), "@/lib/db": { getClient: async () => client },
+    crypto: require("crypto"), "@/lib/db": { getClient: async () => client, query: client.query },
     "./tenant": { beginTenantTx: async () => client.query("BEGIN") },
     "./idempotencyErrors": idempotency, "./boardGameOffers": offers,
     "./boardGamePassCoverage": coverage,
@@ -90,7 +108,10 @@ function harness(minutes: number, options: {
     assert.ok(name in dependencies, `Unexpected import: ${name}`);
     return dependencies[name];
   }, exported);
-  return { calls, offerRow, close: (override: Record<string, unknown> = {}) => exported.closeBoardGameBillingGroupForBilling(tenant, groupId, {
+  return { calls, offerRow,
+    checkout: () => exported.getBoardGameCheckoutForPos(tenant, branchId, groupId),
+    removeLegacyEvidence: () => { for (const line of group.charge_snapshot) delete line.offerEvaluation; },
+    close: (override: Record<string, unknown> = {}) => exported.closeBoardGameBillingGroupForBilling(tenant, groupId, {
     idempotencyKey: "fake-time-promotion-close", endedAt,
     ...override,
   }) };
@@ -105,6 +126,9 @@ test("closing 2, 3 and 6 hours freezes the buy/get net charge and discount", asy
     assert.equal(closed.lines[0].billableMinutes, minutes);
     assert.equal(closed.lines[0].offerCode, "FAKE_2_PLUS_1");
     assert.equal(closed.lines[0].offerDiscountAmount, discount);
+    assert.equal(closed.lines[0].offerPaidMinutes, net * 60 / 50);
+    assert.equal(closed.lines[0].offerFreeMinutes, minutes - net * 60 / 50);
+    assert.equal(closed.lines[0].offerEvaluation.status, discount > 0 ? "APPLIED" : "NO_SAVING");
     assert.equal(closed.lines[0].grossAmount - discount, net);
     assert.equal(h.calls.at(-1), "COMMIT");
     h.offerRow.free_minutes = 120;
@@ -161,6 +185,93 @@ test("eligibility uses close-time dates, shop clock, headcount, minimum and real
     min_players: 1, max_players: 1, minimum_minutes: 180, required_product_sku: "FAKE-DRINK",
   }, products: ["FAKE-DRINK"] }).close();
   assert.equal(closed.amountDue, 100);
+});
+
+test("actual-time screenshot fixture receives repeating 2+1 without a purchased boundary", async () => {
+  const closed = await harness(1457, { players: [
+    { hourly_rate_snapshot: "30", rounding_minutes: 15, grace_minutes: 5 },
+    { hourly_rate_snapshot: "50", rounding_minutes: 30 },
+    { hourly_rate_snapshot: "50", rounding_minutes: 30 },
+    { hourly_rate_snapshot: "30", rounding_minutes: 15, grace_minutes: 5 },
+  ] }).close();
+  assert.equal(closed.amountDue, 2625);
+  assert.deepEqual(closed.lines.map((line: any) => line.billableMinutes), [1455, 1470, 1470, 1455]);
+  assert.deepEqual(closed.lines.map((line: any) => line.offerPaidMinutes), [975, 990, 990, 975]);
+  assert.deepEqual(closed.lines.map((line: any) => line.offerFreeMinutes), [480, 480, 480, 480]);
+  assert.equal(closed.lines.reduce((sum: number, line: any) => sum + line.grossAmount, 0), 3905);
+  assert.equal(closed.lines.reduce((sum: number, line: any) => sum + line.offerDiscountAmount, 0), 1280);
+  assert.equal(closed.lines.filter((line: any) => line.offerEvaluation).length, 1);
+});
+
+test("actual and purchased-time boundaries use the same promotion, without extending a timer", async () => {
+  const actual = await harness(180).close();
+  const purchased = await harness(120, { players: [{ charge_end_at: new Date(startedAt.getTime() + 180 * 60_000) }] }).close();
+  for (const closed of [actual, purchased]) {
+    assert.equal(closed.amountDue, 100);
+    assert.equal(closed.lines[0].offerFreeMinutes, 60);
+    assert.equal(closed.lines[0].billableMinutes, 180);
+  }
+  assert.equal(actual.lines[0].actualMinutes, 180);
+  assert.equal(purchased.lines[0].actualMinutes, 120);
+  const only120 = await harness(120).close();
+  assert.equal(only120.lines[0].offerFreeMinutes, 0);
+  assert.equal(only120.lines[0].billableMinutes, 120);
+});
+
+test("failed eligibility explains the same predicate that excluded the offer, frozen on retry", async () => {
+  for (const [offer, reason] of [
+    [{ active: false }, "INACTIVE"], [{ min_players: 2 }, "MIN_PLAYERS"],
+    [{ max_players: 0 }, "MAX_PLAYERS"], [{ free_minutes: 0 }, "INVALID_TIME_RULE"],
+    [{ minimum_minutes: 181 }, "MINIMUM_MINUTES"], [{ required_product_sku: "FAKE-DRINK" }, "REQUIRED_PRODUCT"],
+    [{ valid_from: "2026-10-06T06:00:01Z" }, "NOT_STARTED"],
+    [{ valid_until: "2026-10-06T06:00:00Z" }, "EXPIRED"],
+    [{ weekdays: [1] }, "WEEKDAY"], [{ starts_local_time: "14:00", ends_local_time: "18:00" }, "TIME_WINDOW"],
+  ] as const) {
+    const h = harness(180, { offer });
+    const closed = await h.close();
+    assert.equal(closed.amountDue, 150);
+    const evaluation = closed.lines[0].offerEvaluation;
+    assert.equal(evaluation.status, "INELIGIBLE");
+    assert.equal(evaluation.checks[0].reason, reason);
+    assert.equal(evaluation.evaluatedAt, "2026-10-06T06:00:00.000Z");
+    h.offerRow.minimum_minutes = 0;
+    h.offerRow.active = true;
+    h.offerRow.weekdays = [0, 1, 2, 3, 4, 5, 6];
+    assert.deepEqual((await h.close()).lines, closed.lines);
+  }
+});
+
+test("no configured offer, a better pass and zero charge have distinct explanations", async () => {
+  for (const [options, expected] of [
+    [{ noOffers: true }, "NO_ACTIVE_OFFERS"], [{ passMinutes: 120 }, "PASS_BETTER"],
+    [{ players: [{ hourly_rate_snapshot: 0 }] }, "NO_CHARGE"],
+  ] as const) {
+    const closed = await harness(180, options).close();
+    assert.equal(closed.lines[0].offerEvaluation.status, expected);
+    assert.deepEqual(closed.lines[0].offerEvaluation.checks, []);
+    assert.equal(closed.lines[0].offerFreeMinutes, undefined);
+  }
+  for (const legacy of [undefined, null, {}, { status: "APPLIED" }, { status: "unknown" }]) {
+    assert.equal(offers.readBoardGameOfferEvaluation(legacy), null);
+  }
+});
+
+test("checkout reads frozen evaluation and paid/free minutes without re-reading offers", async () => {
+  const h = harness(180);
+  const closed = await h.close();
+  h.calls.length = 0;
+  h.offerRow.active = false;
+  const checkout = await h.checkout();
+  assert.equal(checkout.amountDue, 100);
+  assert.equal(checkout.chargeLines[0].offerPaidMinutes, 120);
+  assert.equal(checkout.chargeLines[0].offerFreeMinutes, 60);
+  assert.deepEqual(checkout.offerEvaluation, closed.lines[0].offerEvaluation);
+  assert.equal(h.calls.some(sql => sql.includes("FROM bms_board_game_offers")), false);
+  h.removeLegacyEvidence();
+  const legacy = await h.checkout();
+  assert.equal(legacy.offerEvaluation, null);
+  assert.equal(legacy.amountDue, 100);
+  assert.equal(h.calls.some(sql => sql.includes("UPDATE")), false);
 });
 
 test("equal-priced time offer preserves pass minutes; a better pass alone is consumed once", async () => {
