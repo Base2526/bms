@@ -1657,8 +1657,12 @@ their provider independently:
 - **Failure incidents** (`lib/bms/failureAlert.ts`, migration `7.36`, tenant-scoped) record and alert
   on failures that actually reached a customer or degraded a reply — a different dimension from the two
   health tables above, which only record _connection status_. Report through `reportBmsFailure()` only;
-  it never throws, and callers must keep it out of the transaction that produced the failure. Three
-  rules an agent must not get wrong:
+  it never throws, and callers must keep it out of the transaction that produced the failure.
+  `logConversation()` reports `inbox.message_lost` at its own persistence catch before swallowing
+  the error; a caller's `.catch()` cannot observe it. Failure after message insertion (for example,
+  assignment) must not label the saved messages lost. Meta webhook replies also check the boolean
+  from `deliverToChannel()` and report `channel.push_failed` when it is false.
+  Three rules an agent must not get wrong:
   - **Never hook alerting off a tool's audit `outcome`.** `auditAttempt()` in `tools/runtime.ts` looks
     like the perfect choke point, but its `outcome === "error"` merges a genuine thrown exception, a
     `ToolArgError` the model can retry itself, and a business-level `{ ok: false }` such as

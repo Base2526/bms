@@ -57,6 +57,8 @@ const LINE_MEDIA_DEFAULTS: Record<string, { mimeType: string; extension: string;
 };
 const LINE_INBOUND_MAX_BYTES = 10 * 1024 * 1024;
 
+type LineChannelConfig = NonNullable<Awaited<ReturnType<typeof getChannel>>>;
+
 function lineInboundBody(message: NonNullable<LineEvent["message"]>, hasAttachment: boolean): string {
   if (message.type === "location") {
     return [
@@ -146,6 +148,107 @@ async function pushLineReply(
   }
 }
 
+async function processLineEvent(
+  tenantId: string,
+  cfg: LineChannelConfig,
+  ev: LineEvent
+): Promise<{ replyToken?: string | null; handled?: boolean; duplicate?: boolean; logged?: string; reply?: string; error?: string }> {
+  if (ev.type !== "message" || !ev.message) return { replyToken: ev.replyToken, handled: false };
+  if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
+    return { replyToken: ev.replyToken, duplicate: true, handled: true };
+  }
+
+  const userId = ev.source?.userId ?? null;
+  if (ev.message.type !== "text") {
+    const attachment = await fetchLineInboundAttachment(tenantId, cfg.access_token, ev.message);
+    await logInboundMessage(tenantId, "line", userId, {
+      body: lineInboundBody(ev.message, Boolean(attachment)),
+      attachment,
+      meta: {
+        type: ev.message.type,
+        providerMessageId: ev.message.id ?? null,
+        unsupportedForAi: true,
+        raw: {
+          fileName: ev.message.fileName,
+          fileSize: ev.message.fileSize,
+          packageId: ev.message.packageId,
+          stickerId: ev.message.stickerId,
+          hasAttachment: Boolean(attachment),
+        },
+      },
+    });
+    return { replyToken: ev.replyToken, logged: ev.message.type, handled: true };
+  }
+
+  const text = ev.message.text?.trim() ?? "";
+  if (!text) return { replyToken: ev.replyToken, handled: false };
+  try {
+    const result = await runPipeline(text, "line", tenantId, userId);
+
+    // บันทึกลง inbox (เข้า+ออก) — best-effort
+    await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
+
+    // ตอบกลับด้วย token ของร้าน (ถ้ามี)
+    if (cfg.access_token && ev.replyToken) {
+      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId);
+    }
+
+    // Best-effort LINE profile cache. This is intentionally after the
+    // Inbox write/reply path: profile sync must never block the sale-critical
+    // message from appearing in Inbox.
+    if (userId && cfg.access_token) {
+      const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
+      if (profileSync.ok) {
+        for (const conversationId of profileSync.conversationIds) {
+          notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
+        }
+      } else if (!profileSync.skipped) {
+        console.warn("[BMS] LINE profile sync skipped/failed:", {
+          tenantId,
+          status: profileSync.status,
+          error: profileSync.error,
+        });
+      }
+      const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
+      if (!botInfoSync.ok && !botInfoSync.skipped) {
+        console.warn("[BMS] LINE bot info sync skipped/failed:", {
+          tenantId,
+          status: botInfoSync.status,
+          error: botInfoSync.error,
+        });
+      }
+    }
+    return { replyToken: ev.replyToken, reply: result.reply, handled: true };
+  } catch (error) {
+    const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
+    console.error("[BMS] LINE webhook event handling failed:", {
+      tenantId,
+      userId,
+      messageId: ev.message?.id ?? null,
+      error,
+    });
+    await reportBmsFailure({
+      tenantId,
+      code: "channel.reply_failed",
+      error,
+      surface: "customer",
+      channel: "line",
+      customerRef: userId,
+      meta: { messageId: ev.message?.id ?? null },
+    });
+    await logConversation(tenantId, "line", userId, text, fallbackReply);
+    if (cfg.access_token && ev.replyToken) {
+      await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
+    }
+    return {
+      replyToken: ev.replyToken,
+      reply: fallbackReply,
+      error: error instanceof Error ? error.message : "event handling failed",
+      handled: true,
+    };
+  }
+}
+
 async function handlePOST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
@@ -185,122 +288,13 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   })() as { events?: LineEvent[] };
   const events = Array.isArray(body.events) ? body.events : [];
 
+  // Until events have a durable work queue, keep processing within the request.
+  // A later message in this batch must see the preceding turn's saved history.
   const replies = [];
   for (const ev of events) {
-    if (ev.type !== "message" || !ev.message) continue;
-    if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
-      replies.push({ replyToken: ev.replyToken, duplicate: true });
-      continue;
-    }
-
-    const userId = ev.source?.userId ?? null;
-    if (ev.message.type !== "text") {
-      const attachment = await fetchLineInboundAttachment(tenantId, cfg.access_token, ev.message);
-      await logInboundMessage(tenantId, "line", userId, {
-        body: lineInboundBody(ev.message, Boolean(attachment)),
-        attachment,
-        meta: {
-          type: ev.message.type,
-          providerMessageId: ev.message.id ?? null,
-          unsupportedForAi: true,
-          raw: {
-            fileName: ev.message.fileName,
-            fileSize: ev.message.fileSize,
-            packageId: ev.message.packageId,
-            stickerId: ev.message.stickerId,
-            hasAttachment: Boolean(attachment),
-          },
-        },
-      });
-      replies.push({ replyToken: ev.replyToken, logged: ev.message.type });
-      continue;
-    }
-
-    const text = ev.message.text?.trim() ?? "";
-    if (!text) continue;
-    try {
-      const result = await runPipeline(text, "line", tenantId, userId);
-
-      // บันทึกลง inbox (เข้า+ออก) — best-effort
-      await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
-
-      // ตอบกลับด้วย token ของร้าน (ถ้ามี)
-      if (cfg.access_token && ev.replyToken) {
-        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, result.reply, userId);
-      }
-
-      // Best-effort LINE profile cache. This is intentionally after the
-      // Inbox write/reply path: profile sync must never block the sale-critical
-      // message from appearing in Inbox.
-      if (userId && cfg.access_token) {
-        const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
-        if (profileSync.ok) {
-          for (const conversationId of profileSync.conversationIds) {
-            notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
-          }
-        } else if (!profileSync.skipped) {
-          console.warn("[BMS] LINE profile sync skipped/failed:", {
-            tenantId,
-            status: profileSync.status,
-            error: profileSync.error,
-          });
-        }
-        const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
-        if (!botInfoSync.ok && !botInfoSync.skipped) {
-          console.warn("[BMS] LINE bot info sync skipped/failed:", {
-            tenantId,
-            status: botInfoSync.status,
-            error: botInfoSync.error,
-          });
-        }
-      }
-      replies.push({ replyToken: ev.replyToken, reply: result.reply });
-    } catch (error) {
-      const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
-      console.error("[BMS] LINE webhook event handling failed:", {
-        tenantId,
-        userId,
-        messageId: ev.message?.id ?? null,
-        replyToken: ev.replyToken ?? null,
-        error,
-      });
-      await reportBmsFailure({
-        tenantId,
-        code: "channel.reply_failed",
-        error,
-        surface: "customer",
-        channel: "line",
-        customerRef: userId,
-        meta: { messageId: ev.message?.id ?? null },
-      });
-      await logConversation(tenantId, "line", userId, text, fallbackReply).catch(
-        async (logError) => {
-          console.error("[BMS] LINE fallback logConversation failed:", logError);
-          // ร้ายแรงกว่า reply พัง: ลูกค้าทักเข้ามาแล้วไม่ปรากฏใน Inbox เลย
-          // ไม่มีใครเห็นว่ามีคนรออยู่ จึงต้องแจ้งแยกจาก channel.reply_failed
-          await reportBmsFailure({
-            tenantId,
-            code: "inbox.message_lost",
-            error: logError,
-            surface: "customer",
-            channel: "line",
-            customerRef: userId,
-            meta: { messageId: ev.message?.id ?? null },
-          });
-        }
-      );
-      if (cfg.access_token && ev.replyToken) {
-        await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
-      }
-      replies.push({
-        replyToken: ev.replyToken,
-        reply: fallbackReply,
-        error: error instanceof Error ? error.message : "event handling failed",
-      });
-    }
+    replies.push(await processLineEvent(tenantId, cfg, ev));
   }
-
-  if (replies.length > 0) await recordInboundEvent(tenantId, "line");
+  if (replies.some((reply) => reply.handled)) await recordInboundEvent(tenantId, "line");
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }

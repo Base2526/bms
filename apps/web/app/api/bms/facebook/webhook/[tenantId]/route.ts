@@ -16,6 +16,7 @@ import { logConversation, deliverToChannel, logInboundMessage, type Attachment }
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
+import { reportBmsFailure } from "@/lib/bms/failureAlert";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
@@ -71,7 +72,28 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
     const attachment = firstMetaAttachment(ev);
     if (ev.text) {
-      const result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
+      let result: Pick<Awaited<ReturnType<typeof runPipeline>>, "reply" | "quality">;
+      try {
+        result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
+      } catch (error) {
+        const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
+        console.error("[BMS] Facebook webhook event handling failed:", {
+          tenantId,
+          senderId: ev.senderId,
+          eventId: ev.eventId,
+          error,
+        });
+        await reportBmsFailure({
+          tenantId,
+          code: "channel.reply_failed",
+          error,
+          surface: "customer",
+          channel: CHANNEL,
+          customerRef: ev.senderId,
+          meta: { eventId: ev.eventId },
+        });
+        result = { reply: fallbackReply };
+      }
       await logConversation(
         tenantId,
         CHANNEL,
@@ -82,7 +104,19 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
         attachment,
         attachment ? { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, raw: { attachmentCount: ev.attachments.length } } : null
       );
-      await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
+      const delivered = await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
+      if (!delivered) {
+        console.error("[BMS] Facebook webhook reply delivery failed:", { tenantId, eventId: ev.eventId });
+        await reportBmsFailure({
+          tenantId,
+          code: "channel.push_failed",
+          error: "Facebook reply delivery failed",
+          surface: "customer",
+          channel: CHANNEL,
+          customerRef: ev.senderId,
+          meta: { eventId: ev.eventId },
+        });
+      }
     } else {
       await logInboundMessage(tenantId, CHANNEL, ev.senderId, {
         body: "",
