@@ -3,6 +3,43 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Recheck คำถามหลุดจากด่านร้านยา — 2026-10-07
+
+- ต่อบน `codex/emergency-facilities` / draft PR #303; ไม่เปลี่ยน flag, protocol, migration หรือ approval
+- พบเทส guidance เดิมกรองเฉพาะคำถามที่ guard จับได้ก่อน assertion จึงซ่อนช่องหลุด;
+  เปลี่ยนให้ทุกตัวอย่างคลินิกต้องผ่านด่านจริง (ชื่อสินค้าควบคุมยังยึด SKU policy ไม่เหมารวม)
+- เพิ่ม guard คำถามผลข้างเคียง/ลืมยา/ไม่ดีขึ้น/เทียบยาหมอสั่ง/สัตว์เลี้ยง และไม่ให้สถานะเคสกลบคำถามคลินิก
+- safety view รองรับอักขระแฝง/Markdown/เว้นวรรคไทย/เลขไทย และรูปประโยค overdose/swelling ภาษาอังกฤษ;
+  ไม่แก้ข้อความหลักฐานหรือ input สินค้า และไม่เปลี่ยนข้อความฉุกเฉินที่ตรวจร่างไว้เดิม
+- เทสเรียก pipeline, active intake และ Lab โดยจำลอง DB/cache/provider; คำบอกข้อมูลผู้ป่วยเฉย ๆ
+  ยังตอบ intake ได้ แต่เมื่อไม่มี intake จะส่งต่อ ไม่ให้เข้า commerce
+- `npm run gate` ผ่าน: **1,987 ผ่าน / 1,989 ข้อ / skip 2 / fail 0**, typecheck + production build ผ่าน
+  (build ยังมี ECONNREFUSED ของหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบฐานข้อมูล)
+- focused: customer assistance **84/84**, guidance **12/12**, emergency **46/46**
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และข้อความยังต้องให้เภสัชกรตรวจ; ไม่อ้างว่าครอบทุกถ้อยคำ
+
+## ต่อจาก Claude: emergency directory `10.46` — 2026-10-07
+
+branch `codex/emergency-facilities` ต่อจาก `feat/pharmacy-guidance-templates` · ไม่เปิด flag/ไม่อนุมัติข้อความทางคลินิก
+
+- เพิ่ม MEDICAL/POISONING/SELF_HARM, 1669 บรรทัดแรก, 1367/1323 ตามเหตุ และ 1155 ท้ายภาษาอังกฤษ
+- เพิ่ม directory ใน Settings ผ่าน service/GraphQL/RLS/revision/audit; ไม่เก็บตำแหน่งลูกค้า
+- ฉุกเฉินตรวจข้อความดิบก่อน context DB; directory รอรวมไม่เกิน 500 ms, SQL statement 400 ms
+- แชทไม่ทราบสาขาใช้เฉพาะรายการทุกสาขา; active + 24h ไม่เกิน 3 แห่ง; Lab ใช้ข้อความมาตรฐานไม่แนบรายชื่อ
+- fallback ตรงกับ `pharmacyEmergencyReply` รุ่นใหม่ทุกตัวอักษร ไม่ได้อ้างว่าข้อความเหมือนก่อนเพิ่มเบอร์/จัดบรรทัด
+- แก้เฟส 2 ให้ timeout ครอบ placeholder/profile และ cleanup DB test เฉพาะ UUID ของรอบนั้น
+- แก้เทส Windows 3 จุด (fileURLToPath / CRLF) ไม่แตะ runtime POS
+- `npm run gate` ผ่าน: **1,956 ผ่าน / 1,958 ข้อ / skip 2 / fail 0**, typecheck และ build ผ่าน
+  (ระหว่าง build มี ECONNREFUSED จากหน้าอื่นที่อ่าน DB; ไม่ใช่ผลทดสอบ DB)
+- mutation **5/5 killed**: เลื่อน 1669 ลง, ลบ 1367, แสดง non-24h, เอา timeout ออก, rethrow DB error;
+  คืนไฟล์ byte-exact และ baseline emergency suite **35/35 ผ่าน** หลังคืนแล้ว
+- เปิด browser `/admin/pharmacy-guidance` และ `/admin/settings` แล้ว redirect ไป login;
+  **ยังไม่ได้ตรวจฟอร์มหลังล็อกอิน/desktop-mobile CRUD** เพราะไม่มี session และฐานทดสอบ
+- DB runner ของทั้ง `pharmacy-guidance` และ `emergency-facilities` หยุดที่ env guard:
+  ไม่มี POSTGRES_HOST/POSTGRES_DB และ Docker daemon ไม่ทำงาน; **ไม่ได้รัน DB tests และไม่ได้ apply 10.45/10.46**
+- Draft PR เดิม: #301 (`10.43/10.44` -> develop), #302 (`10.45` -> branch #301)
+- ข้อความทั้งหมดที่เป็นร่างยัง **ไม่ได้ตรวจโดยเภสัชกรผู้มีใบอนุญาต**; ไม่พร้อมอ้าง production verification
+
 ## `10.45` คำแนะนำที่เภสัชกรอนุมัติ สำหรับคำถามทางคลินิกของลูกค้า — 2026-10-07
 
 branch `feat/pharmacy-guidance-templates` (ต่อจาก `feat/customer-assistance-restaurant-pharmacy`

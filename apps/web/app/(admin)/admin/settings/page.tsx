@@ -5,6 +5,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { ReloadOutlined, LinkOutlined, CopyOutlined, KeyOutlined, SaveOutlined, PoweroffOutlined, WarningOutlined, ClockCircleOutlined, PlayCircleOutlined, RobotOutlined, DeleteOutlined, ShopOutlined, MessageOutlined, FileTextOutlined } from "@ant-design/icons";
 import StoreProfileCard from "./StoreProfileCard";
+import EmergencyFacilitiesCard from "./EmergencyFacilitiesCard";
 import ReportSubscriptionCard from "./ReportSubscriptionCard";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -181,7 +182,7 @@ export default function Page() {
           {
             key: "store",
             label: <span><ShopOutlined /> {t("admin_settings.tab_store")}</span>,
-            children: <StoreProfileCard />,
+            children: <Space direction="vertical" size="large" style={{ width: "100%" }}><StoreProfileCard /><EmergencyFacilitiesCard /></Space>,
           },
           {
             key: "channels",

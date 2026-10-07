@@ -1,5 +1,13 @@
 # AI Pipeline Evaluation
 
+Emergency directory follow-up (`10.46`, 2026-10-07):
+`node scripts/run-contract-tests.mjs pure emergency-facilities` covers kind routing, 1669-first,
+1367/1323/1155, 24h-only/max-three composition, no-import composer, and real pipeline execution
+against a fake unavailable/slow pool. `node scripts/testing/emergency-facilities-mutations.mjs`
+requires committed target files, kills five safety regressions, restores original bytes, then
+reruns the baseline. These are **not** live database/provider tests. Run the separate
+`node scripts/run-contract-tests.mjs db emergency-facilities` against a disposable migrated local DB.
+
 <!-- pharmacy-question-matrix:start -->
 ## รายการร้านยา 58 ข้อ — ผล recheck 2026-10-07
 
@@ -579,6 +587,15 @@ Exit code เป็น `1` เมื่อ:
 LLM มีความแปรผัน แต่ safety failure ที่เกิดเพียงบางรอบยังถือเป็น defect ไม่ควรถูกตัดทิ้งว่าเป็น flaky
 โดยอัตโนมัติ สำหรับ functional behavior ให้เก็บ JSON report หลายรอบแล้วเปรียบเทียบ pass rate, model,
 fixture และ latency ภายใต้ state เริ่มต้นเดียวกัน
+
+## Pharmacy routing recheck (2026-10-07)
+
+เพิ่ม regression สำหรับคำถามตามอาการหลังใช้ยา ลืมกินยา อาการไม่ดีขึ้น เปรียบเทียบยาหมอสั่ง
+สัตว์เลี้ยง และข้อความที่ปนคำถามสถานะเคส รวมถึงฉุกเฉินที่มี zero-width/Markdown/เว้นวรรค/เลขไทย
+ตัวอย่างคลินิกใน guidance corpus ต้องผ่านด่านเข้าจริงทุกข้อ ไม่กรองทิ้งคำถามที่ guard จับไม่ได้ก่อนเทส
+ตรึงคำถามซื้อสินค้า เช่น เครื่องวัดความดัน ที่ตรวจครรภ์ และสินค้าสำหรับเด็กไม่ให้ถูกเหมารวมเป็นคำแนะนำยา
+ชุด pure เรียก `runPipeline`, active intake และ Lab โดยจำลอง DB/cache และห้ามเรียก provider;
+ผลนี้ไม่ใช่การถามบอทผ่านช่องทางจริง ไม่ใช่การทดสอบ PostgreSQL/RLS หรือการรับรองทางคลินิก
 
 ## Token/cost strategy
 

@@ -170,6 +170,21 @@ from an approved SKU policy, never guessed from a common medicine-group name. A 
 a selector inside the server-established identity, never authority to read another customer's case.
 Fixed emergency responses for overdose/ingestion/severe-allergy/self-harm wording do not depend on
 enabling intake or on a model; conservative wording guards are not complete clinical triage.
+Clinical/emergency wording must outrank service/case reads in mixed messages. Normalize only the
+safety matching view (invisible formatting, Thai digits/spacing), never stored evidence or product
+input. Guidance-classifier coverage alone is not routing coverage: each clinical example must also
+reach an entry guard. Bare patient disclosures may still be collected by an approved active intake.
+
+Emergency directory (`10.46`): inspect raw emergency wording **before** history/profile/identity DB
+reads for every archetype. `MEDICAL`, `POISONING`, `SELF_HARM` share a pure no-import composer;
+1669 and immediate emergency care always lead, 1367 supplements poisoning, 1323 supplements self-harm,
+1155 is last in English. The optional shop directory has a 500 ms total read budget (including pool
+acquisition) and a 400 ms SQL statement timeout; no data/error/timeout means the canonical empty-list
+copy exactly. Only active 24h entries, max 3; unknown branch means all-branch entries only. Never
+collect customer location. Existing-case emergency persistence is best-effort and must never delay
+the response. Store-profile admin access and old/new branch checks gate directory edits; audit and
+revision belong in the tenant transaction. Clinical guidance's 500 ms rendering budget must include
+shop-placeholder reads too, not only the approved-body query.
 
 ## Authentication identity and registration
 

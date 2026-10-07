@@ -4225,6 +4225,18 @@ const en = {
     refresh: "Refresh",
     col_author: "Author",
   },
+  emergency_facilities: {
+    title: "Emergency departments near the shop",
+    notice: "Keep these public contacts verified. Only active 24-hour emergency departments appear below the emergency instructions, at most 3. Chat without a verified branch uses all-branch entries only. Distances are from the shop, never the customer. Branch-restricted staff cannot edit all-branch entries. The list shows up to 100 active entries.",
+    load_error: "Could not load the directory. Check that migration 10.46 is applied. Standard emergency replies still work.",
+    add: "Add facility", refresh: "Refresh", name: "Facility name", branch: "Shop branch",
+    all_branches: "All branches", phone: "Emergency phone", emergency24: "24-hour emergency department",
+    yes: "Yes", no: "No", actions: "Actions", edit: "Edit", deactivate: "Deactivate",
+    deactivate_confirm: "Stop showing this facility to customers?", cancel: "Cancel", save: "Save",
+    saved: "Facility saved", save_error: "Could not save. Check the fields and your branch access.",
+    required: "Required", phone_hint: "Use digits, + or - only", address: "Address",
+    map: "Map link", map_hint: "Use an HTTPS link", distance: "Distance from shop (km)", sort: "Display order",
+  },
   admin_settings: {
     load_error: "Couldn't load settings",
     page_title: "Shop settings",

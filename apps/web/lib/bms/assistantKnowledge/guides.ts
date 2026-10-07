@@ -946,9 +946,9 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   {
     id: "settings.configure-shop", module: "settings", pageId: "settings", route: "/admin/settings",
     title: both("ตั้งค่าร้านและช่องทาง", "Configure the shop and channels"), summary: both("ตั้งข้อมูลร้าน การรับเงิน ช่องทาง รายงาน และ AI จากหน้า Settings", "Configure store, payments, channels, reports, and AI from Settings."),
-    aliases: aliases(["ตั้งค่าร้าน", "เชื่อมช่องทาง", "ตั้ง AI"], ["configure store", "connect channel", "configure AI"]), requiredPermissions: [],
+    aliases: aliases(["ตั้งค่าร้าน", "เชื่อมช่องทาง", "ตั้ง AI", "โรงพยาบาลฉุกเฉินใกล้ร้าน"], ["configure store", "connect channel", "configure AI", "emergency departments near the shop"]), requiredPermissions: [],
     prerequisites: lists(["มี credential ของบริการที่จะเชื่อม"], ["Have credentials for the service being connected."]), steps: lists(["เปิด Settings", "เลือกหมวด", "กรอกค่าจากผู้ให้บริการ", "บันทึกและตรวจ observed status"], ["Open Settings.", "Choose a section.", "Enter provider-issued values.", "Save and verify observed status."]),
-    warnings: lists(["ห้ามใส่ secret ใน NEXT_PUBLIC_*", "active ไม่เท่ากับเชื่อมต่อปกติ"], ["Never put secrets in NEXT_PUBLIC_*.", "active does not mean healthy."]), relatedCapabilityIds: ["settings.channels"],
+    warnings: lists(["ห้ามใส่ secret ใน NEXT_PUBLIC_*", "active ไม่เท่ากับเชื่อมต่อปกติ", "แท็บข้อมูลร้านมีรายชื่อโรงพยาบาลฉุกเฉินใกล้ร้าน: ตรวจเบอร์และลิงก์ แล้วเลือก 24 ชม. จึงแสดงให้ลูกค้า (สูงสุด 3 แห่ง) แชทไม่ทราบสาขาใช้เฉพาะรายการทุกสาขา ไม่ใช่ตำแหน่งลูกค้า ปิดใช้งานต้องยืนยัน"], ["Never put secrets in NEXT_PUBLIC_*.", "active does not mean healthy.", "The store tab maintains nearby emergency departments: verify phone/map and mark 24-hour emergency service before customer display (max 3). A chat without a verified branch uses only all-branch entries, never customer location. Deactivation requires confirmation."]), relatedCapabilityIds: ["settings.channels"],
   },
   {
     id: "billing.read-usage", module: "billing", pageId: "billing", route: "/admin/billing",
