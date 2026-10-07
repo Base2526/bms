@@ -174,6 +174,11 @@ Clinical/emergency wording must outrank service/case reads in mixed messages. No
 safety matching view (invisible formatting, Thai digits/spacing), never stored evidence or product
 input. Guidance-classifier coverage alone is not routing coverage: each clinical example must also
 reach an entry guard. Bare patient disclosures may still be collected by an approved active intake.
+Short safety/suitability and medicine-stop questions remain clinical even without a drug name.
+Load the shop profile independently of optional conversation context: a history, identity or
+protocol read failure must not replace the known pharmacy archetype with a generic-shop default.
+If profile loading fails, stop with fixed unavailable copy before model/tools; emergency routing
+still precedes that load for all shops.
 
 Emergency directory (`10.46`): inspect raw emergency wording **before** history/profile/identity DB
 reads for every archetype. `MEDICAL`, `POISONING`, `SELF_HARM` share a pure no-import composer;

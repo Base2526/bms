@@ -58,6 +58,14 @@ Restricted-product names, pregnancy tests, child products and blood-pressure dev
 themselves authorize clinical advice or bypass the existing SKU sale policy. Tests invoke the
 actual pipeline, active-intake handler and Lab with fake dependencies, not a live provider/DB.
 
+The follow-up recheck also guards short suitability/safety questions, stopping/restarting medicine,
+dose confirmations and alcohol co-use, including mixed case-status messages. Reports of taking the
+wrong medicine or struggling to breathe use the existing fixed emergency copy. These are routing
+matches, not diagnoses or a claim of complete triage. Shop profile loads independently of optional
+history/identity/protocol discovery: failure of those reads cannot erase the pharmacy archetype.
+If the profile itself cannot be read, the pipeline returns a fixed unavailable reply before any
+model/catalog/order path; the earlier emergency fast path remains independent of the profile.
+
 Recheck of the [58 customer questions](../../../../../scripts/ai-eval/README.md#รายการร้านยา-58-ข้อ--ผล-recheck-2026-10-07)
 distinguishes implemented reads from partial answers, missing data and human-only tasks. Product
 facts now expose `approvedPolicy` only for `APPROVED` rows; `approvedUsageQuotationAvailable:false`

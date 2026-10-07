@@ -3,6 +3,23 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Recheck รอบถัดมา: คำถามสั้นและ context outage — 2026-10-07
+
+- ต่อใน `codex/pharmacy-guidance-recheck` / Draft PR #304; ไม่เพิ่ม migration ไม่เปิด flag/protocol
+  และคงการอนุมัติแม่แบบแยกแต่ละร้าน
+- เพิ่ม regression 21 ประโยค: suitability/safety/หยุด-เริ่มยา/ยืนยันขนาด/แอลกอฮอล์/คำถามปนเลขเคส
+  และรายงานกินยาผิด/หายใจลำบาก; เทสแดงกับโค้ดเดิมก่อนแก้ shared guard
+- แยกโหลด profile ออกจาก optional identity/history/state/protocol context เพื่อไม่ให้ context
+  ล้มแล้วทิ้ง archetype ร้านยา; profile อ่านไม่ได้ให้ fixed unavailable ก่อน model/tools/orders
+  ด่านฉุกเฉินยังอยู่ก่อนการอ่าน profile ทุกกรณี
+- runtime จำลอง DB/cache/provider ทดสอบ context ล้ม 5 จุด, pipeline, active intake และ Lab;
+  ตรึงคำถามคูปอง/บัตรเครดิต/เจลแอลกอฮอล์/เพิ่มสินค้าให้ยังไม่ถูกเข้าใจเป็นคำถามคลินิก
+- focused customer assistance **106/106**, pharmacy ทั้งชุด **236/236** ผ่าน; `npm run gate` ผ่าน:
+  typecheck + pure **2,020 ผ่าน / 2,022 ข้อ / skip 2 / fail 0** + production build 132 pages
+  (build มี ECONNREFUSED จากหน้าที่อ่าน DB เช่นเดิม ไม่ใช่ผลทดสอบ DB)
+- ยังไม่ได้ทดสอบ DB/live provider/แชทจริง และไม่ได้ตรวจทางคลินิก; guard เป็น conservative matching
+  ไม่ใช่หลักฐานว่าครอบทุกถ้อยคำ ไม่มี deploy หรืออนุมัติข้อความ
+
 ## Recheck แม่แบบคำแนะนำและการอนุมัติ `10.47` — 2026-10-07
 
 - branch `codex/pharmacy-guidance-recheck` ต่อจาก `codex/emergency-facilities`; ผู้ใช้ยืนยันให้คง

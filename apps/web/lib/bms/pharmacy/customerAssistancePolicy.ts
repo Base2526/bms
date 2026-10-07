@@ -10,6 +10,10 @@ export function shouldPreservePharmacyCustomerMessage(message: string, isPharmac
 
 export function isPharmacyMedicationAdviceQuestion(message: string): boolean {
   message = normalizePharmacySafetyText(message);
+  // Short suitability/stop/restart questions are still clinical even without a SKU.
+  // Keep shopping uses of "ใช้" (coupon/payment) and alcohol-gel catalog reads outside this gate.
+  if (/(?:กิน|ทาน).{0,30}(?:ได้ไหม|ได้มั้ย|ได้หรือเปล่า|ได้หรือไม่)|(?:ตัวนี้|ยานี้|อันนี้)(?:ใช้)?(?:ได้ไหม|ได้มั้ย|ปลอดภัย)|(?:หยุด|เลิก|เริ่ม|เปลี่ยน)(?:กิน|ทาน|ใช้|ขนาด)?ยา|(?:กิน|ทาน|ใช้).{0,25}พร้อมกัน|(?:กิน|ทาน).{0,30}(?:ดื่ม|กิน)(?:เหล้า|เบียร์|ไวน์|แอลกอฮอล์)/i.test(message)) return true;
+  if (/\b(?:is|would|will) (?:it|this|that) (?:be )?(?:safe|okay|ok|suitable)\b|\b(?:stop|start|restart|continue|discontinue|double|halve|increase|reduce|skip)\b.{0,25}\b(?:taking|using|medicine|medication|pills?|tablets?|capsules?)\b|\b(?:drink|drinking)\b.{0,15}\b(?:alcohol|beer|wine)\b.{0,35}\b(?:tak\w*|medicine|medication|pills?)\b/i.test(message)) return true;
   // Explicit advice and adverse-effect wording, including follow-ups without a drug name.
   // Do not use the guidance classifier as this guard: it also matches ordinary catalog words.
   if (/(?:ผลข้างเคียง|อาการข้างเคียง|(?:กิน|ทาน|ใช้).{0,25}(?:แล้ว|ไป).{0,25}(?:ผื่น|คัน|เวียนหัว|มึน|คลื่นไส้|อาเจียน)|(?:อาการ|กิน|ทาน|ใช้).{0,25}(?:ไม่ดีขึ้น|ไม่ทุเลา)|ลืม(?:กิน|ทาน|ใช้|หยอด)|\bforgot.{0,20}(?:take|dose|pill)|\b(?:rash|itch\w*|dizz\w*|nause\w*|vomit\w*).{0,30}(?:after|since).{0,15}(?:taking|took|using)|\bside[- ]effects?\b|\bnot (?:getting )?better\b|\bstill (?:sick|hurts)\b)/i.test(message)) return true;
