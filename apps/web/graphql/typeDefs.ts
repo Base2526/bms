@@ -1308,6 +1308,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyGuidanceTemplates: [BmsPharmacyGuidanceTemplate!]!
     "Built-in starting drafts; never shown to a customer until a licensed pharmacist approves a copy"
     bmsPharmacyGuidanceDefaults: [BmsPharmacyGuidanceDefault!]!
+    bmsPharmacyGuidanceEditorContext: BmsPharmacyGuidanceEditorContext!
     bmsPharmacyProductPolicies(search: String, limit: Int = 20, offset: Int = 0): BmsPharmacyProductPolicyPage!
     bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
     bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
@@ -3496,6 +3497,12 @@ export const typeDefs = /* GraphQL */ `
     locale: String!
     body: String!
     warnings: [String!]!
+  }
+  type BmsPharmacyGuidanceEditorContext {
+    licensedPharmacist: Boolean!
+    shopPhone: String
+    businessHours: String
+    shopAddress: String
   }
 
   type BmsPharmacyProductPolicy {

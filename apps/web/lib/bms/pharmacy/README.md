@@ -726,15 +726,30 @@ question type and language, with a text **its own licensed pharmacist approved**
   (> 500 ms) or any read error all mean the existing handoff, byte for byte.
 - **Approval is a fact about the person**: `bms_is_licensed_pharmacist`, no Administrator
   shortcut, and it pins the version that was read. The licence number is snapshotted on the row.
+  Apply `10.47__bms_guidance_approval_license_lock.sql` before new approvals: its narrow
+  `bms_lock_guidance_pharmacist_license` helper checks the transaction tenant, locks that user's
+  licence row through commit and calls the existing licence check. The check, snapshot, template
+  update and audit now share one tenant transaction; no general user-column grants are added.
 - **Editing approved text returns it to `DRAFT`** in the service and in a DB trigger, so an
   approved text cannot change under a pharmacist's name.
 - **Rendering** fills `{{shop_phone}}`, `{{business_hours}}`, `{{shop_address}}` from the store
   profile; a line whose value is unset (or whose placeholder is unknown) is dropped; the
   "not a medication approval" footer is always appended by the server.
+  Malformed/non-ASCII/nested/multiline placeholders and placeholder syntax inside shop values
+  also omit the affected line. Multiline shop facts are flattened, not inserted as new sentences.
 - **Starting drafts live in code**, never seeded as rows. They contain only red-flag screening
   (→ 1669), what to prepare for the pharmacist, when to see a doctor, and how to reach the shop;
   no medicine names, doses or safety claims (pinned by tests). Content warnings are shown to the
   pharmacist but do not block approval: the pharmacist is the authority on the text.
+  The 2026-10-07 recheck removes medicine-use/stop/compensation instructions from the built-in
+  drafts. Existing shop drafts and approved rows are never overwritten; shops must review their
+  own copies. Medicine-name warnings use a bounded example list, not an exhaustive safety check.
+- **Approval remains per shop**, explicitly reconfirmed by the user; there is no shared approved
+  platform fallback. Pharmacist attendance/hours and a successful-case reference are not invented:
+  only recorded shop phone, business hours and address can be filled today.
+- **Preview uses actual shop facts**, via the permission-gated editor context query, not sample
+  phone/hours. A server-derived licence hint hides approval controls from unlicensed users; the
+  mutation rechecks it under lock and never trusts that hint as authority.
 - Page: `/admin/pharmacy-guidance` · read `pharmacy.assessment.read` · write
   `pharmacy.protocol.manage` (approve additionally needs the licence). No new permission.
 - Tests: `scripts/pharmacy-guidance-contract.test.mts` (pure) and

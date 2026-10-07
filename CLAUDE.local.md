@@ -3,6 +3,25 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Recheck แม่แบบคำแนะนำและการอนุมัติ `10.47` — 2026-10-07
+
+- branch `codex/pharmacy-guidance-recheck` ต่อจาก `codex/emergency-facilities`; ผู้ใช้ยืนยันให้คง
+  การอนุมัติแยกแต่ละร้าน ไม่มีแม่แบบกลางที่อนุมัติครั้งเดียวใช้ข้ามร้าน
+- ตรวจใบอนุญาตและ snapshot ใน transaction เดียวกับ approval/audit ผ่าน helper `10.47`
+  ที่ตรวจ tenant GUC และล็อก user row จน commit; ไม่มี Administrator bypass หรือ grant แก้ users เพิ่ม
+- ตัด placeholder ผิดรูปแบบ/ข้ามบรรทัด/ค่าร้านที่มี placeholder; เตือนชื่อยาจากรายการตัวอย่าง
+  (ไม่ใช่พจนานุกรมยาครบทุกตัว) และตัดคำสั่งหยุด/ใช้/ชดเชยยาออกจากร่างตั้งต้น
+- ไม่แก้แม่แบบที่ร้านบันทึกไว้ ไม่อนุมัติข้อความ ไม่เปิด flag/protocol; พรีวิวใช้ข้อมูลร้านจริง
+  ปุ่มอนุมัติแสดงเฉพาะผู้มีสิทธิ์และ license hint แต่ server ตรวจซ้ำเสมอ
+- gate ผ่านก่อนเพิ่ม editor-context test สุดท้าย: typecheck + build และ pure **1,997/1,999**, skip 2;
+  focused ล่าสุด **23/23**; ผล mutation และ full pure รอบสุดท้ายบันทึกหลังรันด้านล่าง
+- เฟส 1 mutation ทดสอบซ้ำ **5/5 killed**, คืนไฟล์ byte-exact และ baseline emergency **46/46**
+- Browser เปิด `/admin/pharmacy-guidance` แล้ว redirect ไป login; ยังไม่ได้ตรวจ authenticated
+  form/desktop-mobile CRUD; ปิด server และแท็บทดสอบชั่วคราวแล้ว
+- DB runner ทั้งสองเฟสหยุดที่ env guard (ไม่มี POSTGRES_HOST/POSTGRES_DB): **ยังไม่ได้รัน SQL/DB tests**
+  หรือ apply `10.45`/`10.46`/`10.47`; ต้อง apply `10.47` ก่อนอนุมัติแม่แบบใหม่
+- ยังไม่ได้ทดสอบกับ AI provider/แชทจริง และข้อความยังไม่ได้รับการตรวจทางคลินิกโดยเภสัชกร
+
 ## Recheck คำถามหลุดจากด่านร้านยา — 2026-10-07
 
 - ต่อบน `codex/emergency-facilities` / draft PR #303; ไม่เปลี่ยน flag, protocol, migration หรือ approval

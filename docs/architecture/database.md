@@ -25,6 +25,18 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Pharmacy guidance approval (`10.45`, hardened by `10.47`)
+
+`bms_pharmacy_guidance_templates` is tenant-only (one code/locale row); built-in defaults are
+copied as DRAFT on an explicit shop action, never seeded or approved across shops. Editing an
+approved body returns it to DRAFT. `10.47` adds the narrow SECURITY DEFINER function
+`bms_lock_guidance_pharmacist_license(tenant,user)`: transaction-tenant check, scoped user-row
+SHARE lock, existing `bms_is_licensed_pharmacist` check and licence-number snapshot. The lock
+lasts through the template/version update and audit commit; revocation must wait. PUBLIC cannot
+execute it; only `bms_app` is granted EXECUTE, with no new users-table grants.
+Apply `10.47` before new approvals; a missing helper fails closed. Existing customer reads and
+checkout do not depend on it. SQL execution/idempotency/locking/RLS have **not been DB-verified**.
+
 ### Optional emergency directory (`10.46`)
 
 `bms_emergency_facilities` stores tenant, optional shop branch, public name/phone/address/HTTPS map,

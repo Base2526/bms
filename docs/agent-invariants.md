@@ -185,6 +185,12 @@ collect customer location. Existing-case emergency persistence is best-effort an
 the response. Store-profile admin access and old/new branch checks gate directory edits; audit and
 revision belong in the tenant transaction. Clinical guidance's 500 ms rendering budget must include
 shop-placeholder reads too, not only the approved-body query.
+Guidance approval (`10.47`) must acquire the licence helper's user-row SHARE lock after
+`beginTenantTx`; licence evidence, version-checked update and audit commit together. Never reuse
+the editor's licence hint as approval authority or grant general user-update access to `bms_app`.
+Preview uses recorded shop facts; malformed placeholders omit lines, never expose template tokens.
+Built-in drafts are not instructions to start/stop/compensate medicine and never overwrite a shop's
+approved text. Approval remains per tenant, not a platform-wide publication decision.
 
 ## Authentication identity and registration
 
