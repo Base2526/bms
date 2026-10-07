@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { shouldPrintMemberPoints } from "../apps/web/lib/bms/loyaltyMath.ts";
 import { receiptPromotionNotes } from "../apps/web/lib/bms/receiptPromotionNotes.ts";
@@ -80,7 +81,7 @@ test("desktop GraphQL selects every receipt detail exposed by the shared service
   for (const field of ["extraLines", "boardGameTimeNotes", "promotionNotes", "pointsEarned", "pointsBalance", "pointsExpiring", "pointsExpireAt"]) {
     assert.ok(POS_LAST_SALE_QUERY.includes(field));
   }
-  const { buildSchema, parse, validate } = require(new URL("../apps/web/node_modules/graphql/index.js", import.meta.url).pathname);
+  const { buildSchema, parse, validate } = require(fileURLToPath(new URL("../apps/web/node_modules/graphql/index.js", import.meta.url)));
   const schema = buildSchema(readFileSync(new URL("../schema.graphql", import.meta.url), "utf8"));
   assert.deepEqual(validate(schema, parse(POS_LAST_SALE_QUERY)), []);
 });
