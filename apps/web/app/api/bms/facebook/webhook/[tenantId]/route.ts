@@ -93,7 +93,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
           customerRef: ev.senderId,
           meta: { eventId: ev.eventId },
         });
-        result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error) };
+        result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error, fallbackReply) };
       }
       await logConversation(
         tenantId,

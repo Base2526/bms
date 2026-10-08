@@ -276,3 +276,19 @@ pure suite passed 2,522 tests, failed the one unrelated alert contract above, an
 The 12 dedicated evidence contracts and the disposable PostgreSQL integration test passed.
 Browser smoke passed for both languages at both viewport widths after the final UI build.
 The temporary PostgreSQL fixture is disposable and contains synthetic records only.
+
+### Recheck hardening (2026-10-08)
+
+- Preserve the pipeline/fallback reply digest at persistence; changed text is FAILED, absent
+  digests are PARTIAL/unknown, and capture metadata uses the actual persisted status.
+- Validate the customer-IN / AI-OUT message pair, and recheck message linkage, reply digest and
+  snapshot counts on inspection. Hide mismatched timelines and expired headers immediately.
+- Projection v2 rejects free-text record-array entries and isolates prefetch/JSON parsing
+  failures from the business response. Fallbacks preserve tool counters after snapshot caps and
+  retain evidence even for primitive exceptions; customer copy warns against repeating a write.
+- Added pure regressions and disposable PostgreSQL cases for these failures. No historical
+  migration rewrite or new database migration is required.
+- Verification: 15 dedicated pure cases and the expanded disposable PostgreSQL integration
+  suite passed; typecheck and production build passed. The full pure suite passed 2,525 cases,
+  skipped two and retained the same one unrelated dismissible-alert failure documented above.
+  No UI component changed in this recheck; full-schema/live-model sandbox release gates remain.

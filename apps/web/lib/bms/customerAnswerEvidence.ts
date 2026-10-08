@@ -3,7 +3,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomUUID } from "node:crypto";
 import type { AiTurnQuality } from "./aiQuality";
 
-export const EVIDENCE_VERSION = 1;
+export const EVIDENCE_VERSION = 2;
 export const EVIDENCE_LIMITS = { input: 2048, output: 8192, turn: 65536, calls: 20 } as const;
 export type EvidenceStatus = "COMPLETE" | "PARTIAL" | "FAILED" | "NOT_CAPTURED" | "NOT_APPLICABLE" | "EXPIRED";
 export type EvidenceCall = {
@@ -15,7 +15,7 @@ export type EvidenceCall = {
 export type TurnEvidence = {
   id: string; tenantId: string; channel: string; startedAt: string; finishedAt?: string;
   origin: string; status: EvidenceStatus; reasons: string[]; calls: EvidenceCall[];
-  attemptedCalls: number; bytes: number; replyHash?: string; version: number;
+  attemptedCalls: number; successfulCalls: number; failedCalls: number; bytes: number; replyHash?: string; version: number;
 };
 const scope = new AsyncLocalStorage<TurnEvidence>();
 const evidenceByQuality = new WeakMap<object, TurnEvidence>();
@@ -83,13 +83,14 @@ const CONTAINER_KEYS = new Set(("products variants sizes branch branches locatio
   "availableSizes packs candidates foodProfile").split(/\s+/));
 const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups " +
   "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings").split(/\s+/));
+const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings".split(/\s+/));
 export function redactEvidenceText(value: string): string {
   return value.replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL]")
     .replace(/(?:\+?\d[\d ()-]{7,}\d)/g, "[NUMBER]")
     .replace(/(?:bearer\s+\S+|(?:token|secret|password|authorization)\s*[:=]\s*\S+)/gi, "[SECRET]");
 }
-function project(value: unknown, keys: Set<string>, reasons: Set<string>, stats: EvidenceCall["omissions"], depth = 0): unknown {
+function project(value: unknown, keys: Set<string>, reasons: Set<string>, stats: EvidenceCall["omissions"], depth = 0, field = ""): unknown {
   if (value == null || typeof value === "boolean") return value ?? null;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") {
@@ -102,13 +103,19 @@ function project(value: unknown, keys: Set<string>, reasons: Set<string>, stats:
   if (depth >= 8) { reasons.add("DEPTH_LIMIT"); return null; }
   if (Array.isArray(value)) {
     if (value.length > 30) { reasons.add("ARRAY_LIMIT"); stats.arrayItems += value.length - 30; }
-    return value.slice(0, 30).map(v => project(v, keys, reasons, stats, depth + 1));
+    return value.slice(0, 30).flatMap(v => {
+      // Lists of business records cannot become an unstructured free-text bypass.
+      if (Array.isArray(v) || (v !== null && typeof v !== "object" && !SCALAR_ARRAY_KEYS.has(field))) {
+        reasons.add("INVALID_ARRAY_ITEM"); stats.arrayItems++; return [];
+      }
+      return [project(v, keys, reasons, stats, depth + 1, field)];
+    });
   }
   if (typeof value !== "object") { reasons.add("UNSUPPORTED_VALUE"); return null; }
   const result: Record<string, unknown> = {};
   for (const [key, child] of Object.entries(value)) {
     if (keys.has(key) && (child == null || typeof child !== "object" ||
-      (Array.isArray(child) ? ARRAY_KEYS.has(key) : CONTAINER_KEYS.has(key)))) result[key] = project(child, keys, reasons, stats, depth + 1);
+      (Array.isArray(child) ? ARRAY_KEYS.has(key) : CONTAINER_KEYS.has(key)))) result[key] = project(child, keys, reasons, stats, depth + 1, key);
     else { reasons.add("FIELDS_OMITTED"); stats.fields++; }
   }
   return result;
@@ -137,13 +144,16 @@ export function projectToolEvidence(tool: string, input: unknown, output: unknow
 }
 export function recordCustomerToolEvidence(args: {
   tenantId: string; surface: string; tool: string; input: unknown; output: unknown;
-  outcome: string; source: string; startedAt: string;
+  outcome: string; source: string; startedAt: string; serializedOutput?: string;
 }): void {
   const turn = scope.getStore();
   if (!turn || args.surface !== "customer" || turn.tenantId !== args.tenantId || turn.finishedAt) return;
   turn.attemptedCalls++;
+  if (args.outcome === "ok") turn.successfulCalls++;
+  else turn.failedCalls++;
   try {
-    const p = projectToolEvidence(args.tool, args.input, args.output);
+    const p = projectToolEvidence(args.tool, args.input,
+      args.serializedOutput === undefined ? args.output : JSON.parse(args.serializedOutput));
     const bytes = Buffer.byteLength(JSON.stringify(p));
     if (turn.calls.length >= EVIDENCE_LIMITS.calls || turn.bytes + bytes > EVIDENCE_LIMITS.turn) {
       addReason(turn, "TURN_LIMIT"); return;
@@ -168,19 +178,24 @@ export function recordStorePrefetchProjection(facts: unknown): void {
   const turn = scope.getStore();
   const call = turn?.calls.at(-1);
   if (!turn || turn.finishedAt || call?.tool !== "get_store_info") return;
-  const projected = projectToolEvidence("get_store_info", {}, facts);
   call.source = "MODEL_CONTEXT_PREFETCH";
-  const nextBytes = Buffer.byteLength(JSON.stringify(projected));
-  if (turn.bytes - call.bytes + nextBytes > EVIDENCE_LIMITS.turn) {
-    call.output = { omitted: true }; call.reasons.push("TURN_LIMIT"); addReason(turn, "TURN_LIMIT");
-    return;
+  try {
+    const projected = projectToolEvidence("get_store_info", {}, facts);
+    const nextBytes = Buffer.byteLength(JSON.stringify(projected));
+    if (turn.bytes - call.bytes + nextBytes > EVIDENCE_LIMITS.turn) {
+      call.output = { omitted: true }; call.reasons.push("TURN_LIMIT"); addReason(turn, "TURN_LIMIT");
+      return;
+    }
+    turn.bytes += nextBytes - call.bytes;
+    call.bytes = nextBytes;
+    call.omissions = projected.omissions;
+    call.output = projected.output;
+    call.reasons = [...new Set([...call.reasons, ...projected.reasons])];
+    projected.reasons.forEach(reason => addReason(turn, reason));
+  } catch {
+    // A QA projection must never abort the customer operation or present old facts as prefetch.
+    call.output = { omitted: true }; call.reasons.push("PROJECTION_FAILED"); addReason(turn, "PROJECTION_FAILED");
   }
-  turn.bytes += nextBytes - call.bytes;
-  call.bytes = nextBytes;
-  call.omissions = projected.omissions;
-  call.output = projected.output;
-  call.reasons = [...new Set([...call.reasons, ...projected.reasons])];
-  projected.reasons.forEach(reason => addReason(turn, reason));
 }
 export function evidenceForQuality(quality: unknown): TurnEvidence | undefined {
   return quality && typeof quality === "object" ? evidenceByQuality.get(quality) : undefined;
@@ -189,16 +204,22 @@ export function recoverEvidenceQuality(error: unknown, quality: object): void {
   const turn = error && typeof error === "object" ? evidenceByError.get(error) : undefined;
   if (turn) evidenceByQuality.set(quality, turn);
 }
-export function fallbackEvidenceQuality(error: unknown): AiTurnQuality {
+export function fallbackEvidenceQuality(error: unknown, reply?: string): AiTurnQuality {
   const quality: AiTurnQuality = { outcome: "FAILURE", reasonCodes: ["PIPELINE_EXCEPTION"], successfulToolCalls: 0, failedToolCalls: 0 };
   recoverEvidenceQuality(error, quality);
+  const turn = evidenceForQuality(quality);
+  if (turn) {
+    quality.successfulToolCalls = turn.successfulCalls;
+    quality.failedToolCalls = turn.failedCalls;
+    if (reply !== undefined) turn.replyHash = replyDigest(reply);
+  }
   return quality;
 }
 export async function captureCustomerAnswer<T extends { reply: string; quality?: object; tool?: string }>(
   tenantId: string, channel: string, run: () => Promise<T>
 ): Promise<T> {
   const turn: TurnEvidence = { id: randomUUID(), tenantId, channel, startedAt: new Date().toISOString(),
-    origin: "PIPELINE", status: "COMPLETE", reasons: [], calls: [], attemptedCalls: 0, bytes: 0, version: EVIDENCE_VERSION };
+    origin: "PIPELINE", status: "COMPLETE", reasons: [], calls: [], attemptedCalls: 0, successfulCalls: 0, failedCalls: 0, bytes: 0, version: EVIDENCE_VERSION };
   return scope.run(turn, async () => {
     try {
       const result = await run();
@@ -212,8 +233,9 @@ export async function captureCustomerAnswer<T extends { reply: string; quality?:
       turn.finishedAt = new Date().toISOString();
       turn.status = "PARTIAL"; turn.origin = "CHANNEL_FALLBACK";
       turn.reasons.push("PIPELINE_EXCEPTION");
-      if (error && typeof error === "object") evidenceByError.set(error, turn);
-      throw error;
+      const failure = error && typeof error === "object" ? error : new Error("CUSTOMER_PIPELINE_FAILED");
+      evidenceByError.set(failure, turn);
+      throw failure;
     }
   });
 }

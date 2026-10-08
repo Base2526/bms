@@ -1732,8 +1732,8 @@ export async function runPipeline(
     } finally { if (alertTimer) clearTimeout(alertTimer); }
     const result = customerSafe({ channel, incoming: message, understanding: understand(message),
       tool: "pipeline:fallback", data: { status: "NOT_FOUND", query: "" },
-      reply: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ" });
-    result.quality = fallbackEvidenceQuality(error);
+      reply: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ยังยืนยันผลทั้งหมดไม่ได้ หากเป็นการสั่งซื้อ จอง หรือชำระเงิน กรุณาให้พนักงานตรวจสอบก่อนทำรายการซ้ำค่ะ" });
+    result.quality = fallbackEvidenceQuality(error, result.reply);
     return result;
   }
 }

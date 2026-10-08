@@ -24,6 +24,9 @@ ID deduplicates persistence retries under an advisory lock; it does not rerun bu
 The output metadata holds the exact input message ID even when evidence fails. Legacy rows retain
 the old approximate queue preview, while evidence inspection explicitly says no exact pair exists.
 Pipeline exceptions return one safe terminal reply with the original collector for every channel.
+Fallback counters retain completed attempts even beyond the detailed-snapshot cap; the terminal
+reply asks staff to check an order/booking/payment before repeating it, since a write may have
+completed before a later failure. Projection/JSON-decoding failures affect evidence only, not replies.
 Non-text/manual replies and intentionally non-persisted playground turns are not AI evidence turns.
 
 In `/admin/ai-quality`, open a review or search by AI message ID, including messages outside the
@@ -33,11 +36,21 @@ COMPLETE/PARTIAL/FAILED/NOT_CAPTURED/EXPIRED are not human PASS/FAIL. Coverage c
 **capture-time status of all AI OUT messages** in the selected period, not accuracy. Delivery is
 UNKNOWN because provider receipts are not yet linked to individual evidence records. Reply digests
 detect stored-text mismatch, not privileged tampering or correctness.
+The pipeline digest is preserved at persistence, not recomputed to bless a changed reply: a
+pre-save mismatch is FAILED in both the header and capture counters. Missing original digests
+are PARTIAL with `replyMatches: null`, never a successful match. Persistence validates a same-tenant,
+same-conversation customer IN / AI OUT pair. Lookup rechecks exact message links, digest and saved
+call counts; an integrity mismatch is FAILED, and a mismatched link hides the unverified timeline.
+Read-time failures do not rewrite the historical capture counters. Header expiry is enforced on
+read as well as snapshot expiry, even if the purge worker is delayed.
 
 Privacy limits: no raw prompts, generated drafts, checkout names/contacts/addresses, bank accounts,
 PromptPay identifiers, payment QR, signed URLs, clinical notes/OCR/prescription/file IDs or error
 stacks are stored in snapshots. Clinical tools retain coarse metadata only. Public free text is
 bounded and redacted; discarded fields and all status-only projections are visibly PARTIAL.
+Projection v2 rejects scalar/nested-array entries in record arrays; only explicitly declared
+scalar arrays (such as sizes/tags) accept them. This is a bounded structural allowlist and pattern
+redaction, not a guarantee of detecting every identifier embedded in public free text.
 History/state dependencies are not duplicated: their absence is explicitly marked. Current shop
 settings are never used to reconstruct old facts. Retained strings render as text, never HTML.
 

@@ -814,7 +814,7 @@ async function runToolLoopInternal(
           }
         }
         recordCustomerToolEvidence({ tenantId: opts.execCtx.tenantId, surface: opts.execCtx.surface,
-          tool: toolName, input: traceInput, output: outcome === "ok" ? JSON.parse(resultContent) : {},
+          tool: toolName, input: traceInput, output: {}, serializedOutput: outcome === "ok" ? resultContent : undefined,
           outcome: evidenceOutcome ?? outcome, source: evidenceSource, startedAt: evidenceStartedAt });
         await auditAttempt(opts.execCtx, toolName, outcome, tool);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultContent });

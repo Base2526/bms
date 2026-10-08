@@ -50,7 +50,7 @@ test("disposable DB: evidence tenancy, atomic messages, savepoint isolation, exa
       "./customerAnswerEvidence": { evidenceForQuality },
       "./answerEvidenceStore": { persistAnswerEvidence: async (...args: any[]) => {
         if (failEvidence) await args[0].query("SELECT 1/0");
-        else await store.persistAnswerEvidence(...args);
+        else return await store.persistAnswerEvidence(...args);
       } },
     });
     const turn = () => captureCustomerAnswer(a, "web", async () => {
@@ -68,6 +68,20 @@ test("disposable DB: evidence tenancy, atomic messages, savepoint isolation, exa
     assert.equal(read.question, "FAKE question"); assert.equal(read.replyMatches, true);
     assert.equal(read.calls.length, 1);
     assert.equal(read.calls[0].safe_output.tableDetails[0].seats, 6);
+    assert.equal(read.status, "COMPLETE");
+    // Read-time corruption must never be reported as complete capture.
+    await pool.query("UPDATE bms_ai_turn_evidence SET captured_calls=2,attempted_calls=2 WHERE id=$1", [header.id]);
+    const missingCall = await store.getAnswerEvidence(a, String(header.output_message_id));
+    assert.equal(missingCall.status, "FAILED"); assert.ok(missingCall.reasons.includes("CALL_SNAPSHOT_MISMATCH"));
+    await pool.query("UPDATE bms_ai_turn_evidence SET captured_calls=1,attempted_calls=1 WHERE id=$1", [header.id]);
+    await pool.query("UPDATE bms_messages SET body='FAKE modified after save' WHERE id=$1", [header.output_message_id]);
+    const altered = await store.getAnswerEvidence(a, String(header.output_message_id));
+    assert.equal(altered.status, "FAILED"); assert.equal(altered.replyMatches, false);
+    await pool.query("UPDATE bms_messages SET body=$2 WHERE id=$1", [header.output_message_id,first.reply]);
+    await pool.query("UPDATE bms_messages SET meta=jsonb_set(meta,'{aiEvidence,inputMessageId}','\"999999\"') WHERE id=$1", [header.output_message_id]);
+    const wrongLink = await store.getAnswerEvidence(a, String(header.output_message_id));
+    assert.equal(wrongLink.status, "FAILED"); assert.deepEqual(wrongLink.calls, []); assert.equal(wrongLink.question, "");
+    await pool.query("UPDATE bms_messages SET meta=jsonb_set(meta,'{aiEvidence,inputMessageId}',to_jsonb($2::text)) WHERE id=$1", [header.output_message_id,String(header.input_message_id)]);
     assert.equal(await store.getAnswerEvidence(b, String(header.output_message_id)), null);
     const client = await pool.connect();
     try {
@@ -78,7 +92,16 @@ test("disposable DB: evidence tenancy, atomic messages, savepoint isolation, exa
       assert.equal((await client.query("SELECT * FROM bms_ai_turn_evidence")).rows.length, 0, "RLS hides another tenant");
       await assert.rejects(client.query("UPDATE bms_ai_turn_evidence SET tenant_id=$1 WHERE tenant_id=$2",[b,a]).then(async () => {
         await store.persistAnswerEvidence(client, b, cb, header.input_message_id, header.output_message_id, "FAKE", { ...evidenceForQuality(first.quality), tenantId:b, id:randomUUID() });
-      }), /foreign key/);
+      }), /EVIDENCE_MESSAGE_PAIR_MISMATCH/);
+      await client.query("ROLLBACK");
+      await beginTenantTx(client,b);
+      await assert.rejects(client.query(`INSERT INTO bms_ai_turn_evidence
+        SELECT * FROM jsonb_populate_record(NULL::bms_ai_turn_evidence,$1::jsonb)`,
+        [JSON.stringify({ ...header, tenant_id:b, conversation_id:cb, id:randomUUID() })]), /foreign key/);
+      await client.query("ROLLBACK");
+      await beginTenantTx(client,a);
+      await assert.rejects(store.persistAnswerEvidence(client,a,ca,String(header.output_message_id),String(header.input_message_id),
+        first.reply, { ...evidenceForQuality(first.quality), id: randomUUID() }), /EVIDENCE_MESSAGE_PAIR_MISMATCH/);
       await client.query("ROLLBACK");
     } finally { client.release(); }
     failEvidence = true;
@@ -92,11 +115,27 @@ test("disposable DB: evidence tenancy, atomic messages, savepoint isolation, exa
     await pool.query("ALTER TABLE bms_ai_turn_evidence RENAME TO fake_missing_evidence");
     assert.equal((await store.getAnswerEvidence(a,String(header.output_message_id))).status,"FAILED");
     await pool.query("ALTER TABLE fake_missing_evidence RENAME TO bms_ai_turn_evidence");
+    await pool.query("UPDATE bms_ai_turn_evidence SET expires_at=now()-interval '1 day'");
+    const headerExpired = await store.getAnswerEvidence(a,String(header.output_message_id));
+    assert.equal(headerExpired.status,"EXPIRED"); assert.equal(headerExpired.turn,null); assert.deepEqual(headerExpired.calls,[]);
+    await pool.query("UPDATE bms_ai_turn_evidence SET expires_at=now()+interval '180 days'");
     await pool.query("UPDATE bms_ai_turn_evidence SET snapshot_expires_at=now()-interval '1 day'");
     assert.equal((await store.getAnswerEvidence(a,String(header.output_message_id))).status,"EXPIRED");
     const purged = await store.purgeAnswerEvidence(); assert.equal(purged.expired,1);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM bms_ai_tool_evidence")).rows[0].n,0);
     await pool.query("DELETE FROM bms_messages WHERE id=$1",[header.input_message_id]);
     assert.equal((await pool.query("SELECT count(*)::int AS n FROM bms_ai_turn_evidence")).rows[0].n,0,"source deletion cascades evidence");
+    failEvidence = false;
+    const changedBeforeSave = await turn();
+    await inbox.logConversation(a,"web","FAKE-A","FAKE third","FAKE changed BEFORE save",changedBeforeSave.quality);
+    const changedRow = (await pool.query("SELECT id,meta FROM bms_messages WHERE direction='OUT' ORDER BY id DESC LIMIT 1")).rows[0];
+    assert.equal(changedRow.meta.aiEvidence.status,"FAILED","capture counters must include the digest mismatch");
+    const changedRead = await store.getAnswerEvidence(a,String(changedRow.id));
+    assert.equal(changedRead.replyMatches,false); assert.ok(changedRead.reasons.includes("REPLY_DIGEST_MISMATCH"));
+    const noDigest = await turn(); delete evidenceForQuality(noDigest.quality)!.replyHash;
+    await inbox.logConversation(a,"web","FAKE-A","FAKE fourth",noDigest.reply,noDigest.quality);
+    const noDigestRow = (await pool.query("SELECT id,meta FROM bms_messages WHERE direction='OUT' ORDER BY id DESC LIMIT 1")).rows[0];
+    assert.equal(noDigestRow.meta.aiEvidence.status,"PARTIAL");
+    assert.equal((await store.getAnswerEvidence(a,String(noDigestRow.id))).replyMatches,null);
   } finally { await pool.end(); }
 });

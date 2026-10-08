@@ -5,6 +5,7 @@ import { customerTools } from "../apps/web/lib/bms/tools/catalog.ts";
 import {
   captureCustomerAnswer, evidenceForQuality, fallbackEvidenceQuality, projectToolEvidence,
   PUBLIC_EVIDENCE_TOOLS, STATUS_EVIDENCE_TOOLS, recordCustomerToolEvidence, recordStorePrefetchProjection,
+  replyDigest,
 } from "../apps/web/lib/bms/customerAnswerEvidence.ts";
 import { __toolLoopTest } from "../apps/web/lib/bms/tools/runtime.ts";
 import { runEvidenceRetention } from "../apps/web/answer-evidence-retention.mjs";
@@ -50,6 +51,33 @@ test("UTF-8 limits preserve valid JSON and mark oversized/omitted facts explicit
   assert.doesNotThrow(() => JSON.parse(JSON.stringify(p)));
 });
 
+test("record arrays reject unstructured text, while explicit scalar fact arrays remain supported", () => {
+  for (const output of [["FAKE-PRIVATE-SENTINEL"], { products: ["FAKE-PRIVATE-SENTINEL", ["FAKE-PRIVATE-SENTINEL"]] }]) {
+    const projected = projectToolEvidence("search_products", {}, output);
+    assert.doesNotMatch(JSON.stringify(projected.output), /FAKE-PRIVATE-SENTINEL/);
+    assert.ok(projected.reasons.includes("INVALID_ARRAY_ITEM"));
+  }
+  assert.deepEqual(projectToolEvidence("get_product", {}, { sizes: ["S", "L"], tags: ["FAKE"] }).output,
+    { sizes: ["S", "L"], tags: ["FAKE"] });
+});
+
+test("projection and serialized-result failures never abort the reply or reuse prefetch facts", async () => {
+  const result = await captureCustomerAnswer("FAKE-A", "web", async () => {
+    recordCustomerToolEvidence({ tenantId: "FAKE-A", surface: "customer", tool: "get_store_info", input: {},
+      output: { storeName: "FAKE stale" }, outcome: "ok", source: "SERVER_SELECTED", startedAt: new Date().toISOString() });
+    recordStorePrefetchProjection({ get storeName() { throw new Error("FAKE private"); } });
+    recordCustomerToolEvidence({ tenantId: "FAKE-A", surface: "customer", tool: "get_store_info", input: {},
+      output: {}, serializedOutput: "INVALID JSON", outcome: "ok", source: "MODEL_SELECTED", startedAt: new Date().toISOString() });
+    return { reply: "FAKE reply unaffected", quality: quality() };
+  });
+  const evidence = evidenceForQuality(result.quality)!;
+  assert.equal(evidence.status, "PARTIAL");
+  assert.equal(evidence.attemptedCalls, 2);
+  assert.deepEqual(evidence.calls[0].output, { omitted: true });
+  assert.doesNotMatch(JSON.stringify(evidence), /FAKE stale|FAKE private/);
+  assert.ok(evidence.reasons.includes("PROJECTION_FAILED"));
+});
+
 test("concurrent tenants stay isolated and evidence never serializes into customer results", async () => {
   const results = await Promise.all(["FAKE-A", "FAKE-B"].map(tenant => captureCustomerAnswer(tenant, "web", async () => {
     attempt(tenant); await Promise.resolve(); attempt("FAKE-OTHER");
@@ -82,10 +110,26 @@ test("calls remain ordered, capped and fresh; prefetch records model-visible pro
 test("a thrown pipeline keeps prior attempts for the channel fallback", async () => {
   const failure = new Error("FAKE private exception");
   await assert.rejects(captureCustomerAnswer("FAKE-A", "line", async () => { attempt(); throw failure; }));
-  const q = fallbackEvidenceQuality(failure);
+  const q = fallbackEvidenceQuality(failure, "FAKE fallback");
   const e = evidenceForQuality(q)!;
   assert.equal(e.calls.length, 1); assert.equal(e.origin, "CHANNEL_FALLBACK");
+  assert.equal(q.successfulToolCalls, 1);
+  assert.equal(e.replyHash, replyDigest("FAKE fallback"));
   assert.doesNotMatch(JSON.stringify(e), /FAKE private exception/);
+});
+
+test("primitive exceptions keep evidence and fallback counters survive the snapshot cap", async () => {
+  let failure: unknown;
+  try {
+    await captureCustomerAnswer("FAKE-A", "web", async () => {
+      for (let n = 0; n < 25; n++) attempt();
+      throw "FAKE private primitive";
+    });
+  } catch (error) { failure = error; }
+  const q = fallbackEvidenceQuality(failure, "FAKE fallback");
+  assert.equal(q.successfulToolCalls, 25);
+  assert.equal(evidenceForQuality(q)!.calls.length, 20);
+  assert.doesNotMatch(String(failure), /FAKE private primitive/);
 });
 
 test("approved runtime captures successful and denied attempts without widening staff capture", async () => {

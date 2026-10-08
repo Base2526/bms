@@ -237,7 +237,7 @@ async function processLineEvent(
       customerRef: userId,
       meta: { messageId: ev.message?.id ?? null },
     });
-    await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error));
+    await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
     if (cfg.access_token && ev.replyToken) {
       await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
     }

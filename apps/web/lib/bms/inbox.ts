@@ -207,7 +207,8 @@ export async function logConversation(
       if (evidence) {
         await client.query("SAVEPOINT answer_evidence");
         try {
-          await persistAnswerEvidence(client, tenantId, convId, String(incomingMessage.id), String(aiMessage.id), reply, evidence);
+          const persisted = await persistAnswerEvidence(client, tenantId, convId, String(incomingMessage.id), String(aiMessage.id), reply, evidence);
+          status = persisted.status; reasons = persisted.reasons;
           await client.query("RELEASE SAVEPOINT answer_evidence");
         } catch {
           await client.query("ROLLBACK TO SAVEPOINT answer_evidence");
