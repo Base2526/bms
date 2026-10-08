@@ -1,6 +1,6 @@
 # Customer answer evidence — implementation plan
 
-Status: planned; runtime, schema and customer behavior are not implemented by this document.
+Status: implemented on the feature branch; deployment and production-like/live-model release checks remain pending.
 Date: 2026-10-08. Branch: `codex/customer-ai-answer-evidence`.
 Starting point: `17dd385e` on `develop`.
 
@@ -236,7 +236,43 @@ by re-reading present-day data.
 
 - [x] Inspect current paths and create the implementation branch.
 - [x] Record design, corrections to the earlier proposal, scope and acceptance criteria.
-- [ ] Inventory and finalize evidence types/projection policies.
-- [ ] Implement storage, collector and channel persistence.
-- [ ] Implement review UI and retention/operational wiring.
+- [x] Inventory and finalize evidence types/projection policies (actual customer registry coverage test).
+- [x] Implement storage, collector and channel persistence (`10.53`, savepoint failure marker and exact pairing).
+- [x] Implement review UI and retention/operational wiring (Cloud daily and Retail Local six-hour timer).
 - [ ] Complete DB, integration, UI and sandbox verification before rollout.
+
+### Implemented contract and verification
+
+- The implementation uses `customerAnswerEvidence.ts` (pure projections/request-local collection)
+  and `answerEvidenceStore.ts` (tenant-scoped storage/lookup/retention). A WeakMap keyed by the
+  existing quality object keeps evidence out of public JSON without changing channel response shapes.
+- Origins distinguish model-with-guards, deterministic-or-guarded, and terminal fallback rather
+  than claiming a precise model-versus-guard split that the current pipeline cannot establish.
+  Historical-state provenance and private/status-only fields remain explicitly PARTIAL. Schema
+  and projection version are recorded; provider usage linkage and deployment commit linkage are
+  not added in this release. Duplicate entries are labeled suppressed, not counted as new writes.
+- Pure tests cover actual registry policies, public table/parking facts, private-field omission,
+  UTF-8 caps, concurrent tenant isolation, output serialization, prefetch projection, fallback,
+  denied/unknown/malformed/duplicate attempts, timeout and late completion, cron pagination/authority.
+- Disposable PostgreSQL tests exercise the new migration twice, actual runtime RLS and grants,
+  tenant/message FK rejection, concurrent dedup, exact pairing, batched snapshot insertion,
+  evidence savepoint rollback with messages preserved, missing schema reads, expiry and cascades.
+  This is an isolated minimal schema, not a restored production-like migration chain.
+- Browser smoke uses the actual `/admin/ai-quality` route with synthetic API fixtures, Thai and
+  English, 1440 px and 390 px widths, non-sampled lookup and capture states; no live provider or
+  business mutation is involved. Production-like full-schema and live-model sandbox verification
+  remain release gates; no real customer data, deployment, push or installer package is needed
+  for this implementation request.
+- Run `node scripts/run-contract-tests.mjs pure customer-answer-evidence`; disposable DB suite
+  requires `BMS_EVIDENCE_DISPOSABLE_DB=1` and a fresh isolated PostgreSQL at 127.0.0.1:55453 named
+  `evidence_test` (see the suite's deliberately fixed test-only credentials). Browser smoke is
+  `scripts/answer-evidence-browser-smoke.mjs` with `BMS_SMOKE_URL` and `BMS_PLAYWRIGHT_MODULE`.
+- The existing full-suite failure in `admin-navigation-contract` concerns dismiss buttons in
+  `CustomerOrderDetail.tsx:33` and `DashboardActions.tsx:111`, outside this feature's changes.
+
+Local verification on 2026-10-08: typecheck and production build passed (build-time reads of the
+unconfigured default localhost:5432 database logged the existing connection warnings); the full
+pure suite passed 2,522 tests, failed the one unrelated alert contract above, and skipped two.
+The 12 dedicated evidence contracts and the disposable PostgreSQL integration test passed.
+Browser smoke passed for both languages at both viewport widths after the final UI build.
+The temporary PostgreSQL fixture is disposable and contains synthetic records only.

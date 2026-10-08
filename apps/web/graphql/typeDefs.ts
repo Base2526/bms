@@ -1345,6 +1345,9 @@ export const typeDefs = /* GraphQL */ `
     bmsAiQualityMetrics(days: Int = 30): BmsAiQualityMetrics!
     bmsAiQualityCases(days: Int = 30, status: String, source: String, outcome: String, limit: Int = 50, offset: Int = 0): [BmsAiQualityCase!]!
     bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail
+    # Safe, versioned provenance only; COMPLETE is not a factual-accuracy verdict.
+    bmsAiAnswerEvidence(messageId: ID!): JSON
+    bmsAiAnswerEvidenceCoverage(days: Int = 30): JSON!
     bmsSqlConsoleWriteEnabled: Boolean!  # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsJsConsoleEnabled: Boolean!        # platform admin เท่านั้น — false เสมอเมื่อ NODE_ENV=production
     bmsEmergencyFacilities(locationId: ID): [BmsEmergencyFacility!]!

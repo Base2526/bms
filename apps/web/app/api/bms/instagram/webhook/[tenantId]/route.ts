@@ -14,6 +14,7 @@ import { getChannel } from "@/lib/bms/channels";
 import { verifyMetaSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, deliverToChannel, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
 import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { claimInboundEvent } from "@/lib/bms/inboundEvents";
@@ -93,7 +94,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
           customerRef: ev.senderId,
           meta: { eventId: ev.eventId },
         });
-        result = { reply: fallbackReply };
+        result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error) };
       }
       await logConversation(
         tenantId,

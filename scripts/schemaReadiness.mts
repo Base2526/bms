@@ -24,6 +24,11 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.53__bms_customer_answer_evidence.sql",
+    impact: "AI replies remain available but their tool evidence cannot be persisted or inspected",
+    needs: [{ kind: "table", name: "bms_ai_turn_evidence" }, { kind: "table", name: "bms_ai_tool_evidence" }],
+  },
+  {
     file: "10.52__bms_location_parking.sql",
     impact: "Branch management cannot save basic parking information until this column is available",
     needs: [{ kind: "column", table: "bms_locations", name: "parking_info" }],

@@ -150,7 +150,7 @@ export async function enqueueAiQualityReview(
   }
 }
 
-function redactQualityText(value: string | null | undefined, maxLength = 500): string {
+export function redactQualityText(value: string | null | undefined, maxLength = 500): string {
   const redacted = String(value || "")
     .replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, "[EMAIL]")
@@ -179,7 +179,9 @@ const QUALITY_CASE_SELECT = `
        WHERE m.tenant_id = r.tenant_id
          AND m.conversation_id = r.conversation_id
          AND m.direction = 'IN'
-         AND (m.created_at, m.id) <= (ai.created_at, ai.id)
+         AND (CASE WHEN ai.meta->'aiEvidence'->>'inputMessageId' IS NOT NULL
+           THEN m.id::text = ai.meta->'aiEvidence'->>'inputMessageId'
+           ELSE (m.created_at, m.id) <= (ai.created_at, ai.id) END)
        ORDER BY m.created_at DESC, m.id DESC
        LIMIT 1
     ) customer ON true

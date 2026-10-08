@@ -40,6 +40,12 @@ The database is the source of truth. Business decisions are enforced by backend 
    When an AI-assisted or admin-confirmed write updates a revision-enabled business record, the
    backend transaction should pass the authenticated actor into `beginTenantTx(..., { editorId })`.
 
+Customer answer evidence is a separate, versioned QA store (`10.53`), never permission to expand
+`ai.tool_call` audit metadata. Capture only allowlisted/redacted facts, exact source-message links
+and the final reply digest. Missing history/policy provenance, privacy omissions and truncation
+must remain visible as PARTIAL. COMPLETE is capture coverage, not factual correctness; a saved
+reply is not proof of delivery. See [quality.md](ai/quality.md).
+
 ## Facts and response generation
 
 - Pass the model only the minimum verified facts needed to answer the current request.

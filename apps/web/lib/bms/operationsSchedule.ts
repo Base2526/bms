@@ -40,6 +40,19 @@ type OperationDefinition = {
 
 const DEFINITIONS: OperationDefinition[] = [
   {
+    key: "ai-answer-evidence-retention",
+    name: "AI Answer Evidence Retention",
+    kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/ai/evidence/purge-expired/route.ts",
+    docsPath: "docs/ai/quality.md",
+    triggerHint: "POST /api/bms/ai/evidence/purge-expired",
+    purposeFallback: "Expire safe tool snapshots after 90 days and delete evidence headers after 180 days.",
+    whenFallback: "Cloud daily; Retail Local every six hours after startup",
+    statusFallback: "Scheduled",
+    triggerFallback: "Authenticated paginated retention worker",
+    evidenceFallback: "bms-cron.yml daily retention matrix entry; Retail Local server.mjs startup timer.",
+  },
+  {
     key: "realtime-outbox-dispatch",
     name: "Realtime Outbox Dispatch",
     kind: "Cron Endpoint",

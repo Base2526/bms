@@ -1,5 +1,11 @@
 # AI Tool Catalog
 
+Customer evidence (`10.53`): every actual `customerTools()` entry must have an explicit projection
+policy in `customerAnswerEvidence.ts`. The registry contract test checks factory-created tools
+too. This records safe result snapshots for QA, not raw args in `ai.tool_call`; no new AI tool or
+permission is introduced. Unknown/new tools fail closed to metadata-only PARTIAL capture until
+their policy is reviewed. See [quality.md](quality.md) for bounds and privacy limitations.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · AI pipeline: [workflow.md](workflow.md) · Prompts/guardrails: [prompts.md](prompts.md)
 
 The **authoritative AI registry** is the snake_case matrix below and

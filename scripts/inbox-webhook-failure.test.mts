@@ -5,19 +5,24 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 function inboxHarness(failAt: number | null = null, newlyInserted = false) {
   const incidents: any[] = [];
   let queries = 0;
-  const inbox = loadWithStubs("apps/web/lib/bms/inbox.ts", {
-    "@/lib/db": { query: async () => {
+  const databaseQuery = async (sql: string) => {
+      if (/^(BEGIN|COMMIT|ROLLBACK|SET |SELECT set_config)/.test(sql)) return { rows: [] };
+      if (/UPDATE bms_messages SET meta/.test(sql)) return { rows: [] };
       queries++;
       if (queries === failAt) throw new Error("FAKE persistence failure");
       if (queries === 1) return { rows: [{ customer_id: "FAKE-customer-id" }] };
       if (queries === 2) return { rows: [{ id: "FAKE-conversation", inserted: newlyInserted }] };
       if (queries === 3) return { rows: [{ id: "FAKE-in", direction: "IN" }, { id: "FAKE-out", direction: "OUT" }] };
       return { rows: [] };
-    } },
+  };
+  const inbox = loadWithStubs("apps/web/lib/bms/inbox.ts", {
+    "@/lib/db": { query: databaseQuery, getClient: async () => ({ query: databaseQuery, release() {} }) },
     "@/lib/pubsub": { pubsub: { publish: async () => {} } },
     "../../../../packages/graphql-core/src/bmsInboxSync": { topicBmsInboxChanged: () => "FAKE-topic" },
     "./channels": {}, "./channelHealth": {}, "@/lib/notifications/service": {},
-    "./coupons": {}, "./tenant": {}, "./aiQuality": {}, "./customers": {},
+    "./coupons": {}, "./tenant": { beginTenantTx: async () => {} }, "./aiQuality": {}, "./customers": {},
+    "./customerAnswerEvidence": { evidenceForQuality: () => undefined },
+    "./answerEvidenceStore": {},
     "./failureAlert": { reportBmsFailure: async (incident: any) => { incidents.push(incident); } },
   });
   return { incidents, log: (...args: any[]) => inbox.logConversation(...args), queryCount: () => queries };
