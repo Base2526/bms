@@ -1242,6 +1242,12 @@ Confidence
   identities; existing branches return `tableDetails: null` until opted in. `estimatedWaitMinutes` and
   `estimatedPrepMinutes` remain null because queue fit,
   station capacity and dish mix are not known; SLA is a threshold, not a pickup-time promise.
+  Both restaurant and board-game availability return at most 100 area/capacity groups. A 101st
+  group is read only to set `tableDetailsTruncated`; `true` requires a partial-list explanation and
+  referral to staff for remaining details, never a claim that the list covers the whole branch.
+  Do not sum a partial list as a branch total or infer that omitted capacities/areas are unavailable.
+  The flag is `false` for complete published lists (including empty lists), and `null` when details
+  are not published. Branch aggregate counts retain their independent publication rules.
 - `request_restaurant_reservation` / `get_restaurant_reservation_status` — submit a customer-owned
   `REQUESTED` reservation and read that customer's latest five requests. The write derives customer
   identity, name and phone server-side and refuses until a meaningful saved name and phone exist;

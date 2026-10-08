@@ -914,6 +914,9 @@ own dine-in service. Operator detail:
   occupied table may be repositioned, but cannot be moved to another area, blocked or deleted. Areas and tables are
   soft-deleted, all ids are rechecked against tenant + branch in the write transaction, and layout
   saves validate the full submitted table set before updating any coordinate.
+  Changing customer table-detail publication updates only the submitted branch's cached setting;
+  it must preserve unsaved floor positions and table edits, including when a response arrives
+  after the operator switches branches.
 - **A kitchen station is a work area, not a branch (`9.54`).** Stations live in
   `bms_kitchen_stations` with their own id, active flag, sort order and optional `location_id`;
   products point at one through `bms_product_stock_policies.kitchen_station_id`. A station never
@@ -1036,6 +1039,10 @@ seat capacity only; never expose table numbers/ids, occupants, sessions or custo
 Both readers share one SQL projection for rates, current seating counts and game highlights;
 the public reader alone retains the directory visibility and optional-tenant predicates.
 Customer tool results must continue to omit internal branch/table/copy identifiers.
+Both restaurant and board-game table detail lists are bounded to 100 groups, with a 101st group
+used to detect truncation. `tableDetailsTruncated=true` must be explained as partial coverage;
+never derive a whole-branch total or an absence claim from the partial list. Unpublished details
+and their truncation status stay `null`.
 
 `10.40` time buy/get offers repeat per participant over already-rounded billable minutes, using
 the frozen hourly rate. They compete with other offers and member passes, never stack with them,

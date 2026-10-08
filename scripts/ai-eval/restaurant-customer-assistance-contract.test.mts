@@ -92,6 +92,8 @@ test("restaurant prompt corpus pins allergen, availability and reservation behav
   assert.match(pipeline, /allergenInformationProvided=false/);
   assert.match(pipeline, /estimatedWaitMinutes\/estimatedPrepMinutes เป็น null/);
   assert.match(pipeline, /tableDetails ไม่เป็น null/);
+  assert.match(pipeline, /tableDetailsTruncated=true.*ห้ามอ้างว่าครบทั้งหมด/);
+  assert.match(source("apps/web/lib/bms/boardGameCustomerGuard.ts"), /tableDetailsTruncated=true.*not the complete branch/);
   assert.match(pipeline, /ห้ามบอกหรือเดาเลขโต๊ะ/);
   assert.match(pipeline, /ยังไม่ได้จองหรือยืนยันโต๊ะ/);
   const runner = source("scripts/ai-eval/run.mjs");
@@ -227,13 +229,38 @@ test("reservation services validate input, replay stored evidence, and preserve 
       const detailRead = calls.find((call) => call.sql.includes("FROM bms_restaurant_areas area"))!;
       assert.ok(detailRead);
       assert.match(detailRead.sql, /area\.active AND table_row\.active AND NOT table_row\.blocked/);
-      assert.match(detailRead.sql, /LIMIT 100/);
+      assert.match(detailRead.sql, /LIMIT 101/);
+      assert.equal(published.tableDetailsTruncated, false);
 
       reset();
       response = requestResponse;
       const privateResult = await getRestaurantCustomerAvailability("tenant-a", "branch-a");
       assert.equal(privateResult.tableDetails, null);
+      assert.equal(privateResult.tableDetailsTruncated, null);
       assert.ok(!calls.some((call) => call.sql.includes("FROM bms_restaurant_areas area")));
+    });
+
+    await t.test("restaurant detail completeness distinguishes empty, exactly full and truncated lists", async () => {
+      for (const count of [0, 100, 101]) {
+        reset();
+        response = (sql) => {
+          if (sql.includes("FROM bms_locations location")) return [{
+            id: "branch-a", name: "A", branch_code: "A", publish_restaurant_table_details: true,
+          }];
+          if (sql.includes("FROM bms_restaurant_areas area")) return Array.from({ length: count }, (_, i) => ({
+            area_name: `FAKE Floor ${i}`, seats: 4, total_tables: "2", available_tables: "1",
+            tableId: "PRIVATE_TABLE", guestName: "PRIVATE_GUEST",
+          }));
+          if (sql.includes("AS total_tables")) return [{ total_tables: "250", available_tables: "125", available_seats: "500" }];
+          return [];
+        };
+        const result = await getRestaurantCustomerAvailability("tenant-a", "branch-a");
+        assert.equal(result.tableDetails?.length, Math.min(count, 100));
+        assert.equal(result.tableDetailsTruncated, count > 100);
+        assert.equal(result.tables.total, 250, "branch total is independent of the partial detail list");
+        assert.doesNotMatch(JSON.stringify(result), /PRIVATE_/);
+        assert.match(result.note, /partial list/);
+      }
     });
 
     const mergeResponse = (sql: string) => sql.includes("SELECT id, name, phone, email")

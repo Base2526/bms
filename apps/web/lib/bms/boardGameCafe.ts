@@ -156,6 +156,7 @@ export type PublicBoardGameCafe = BoardGamePublicLocationProfile & {
     totalTables: number;
     availableTables: number | null;
   }> | null;
+  tableDetailsTruncated: boolean | null;
   rates: Array<{ name: string; customerType: string; pricePerHour: number; minimumMinutes: number; roundingMinutes: number; graceMinutes: number }>;
   games: Array<{ title: string; minPlayers: number | null; maxPlayers: number | null; typicalMinutes: number | null }>;
 };
@@ -3088,7 +3089,7 @@ const BOARD_GAME_CAFE_SELECT = `SELECT profile.location_id, profile.public_visib
                      AND table_row.active AND NOT table_row.blocked AND area.active
                    GROUP BY area.id, area.name, area.sort_order, table_row.seats
                    ORDER BY area.sort_order, area.name, table_row.seats
-                   LIMIT 100
+                   LIMIT 101
                 ) grouped
             ), '[]'::jsonb) ELSE NULL END AS table_details,
             CASE WHEN profile.publish_rates THEN COALESCE((
@@ -3148,6 +3149,7 @@ function mapBoardGameCafe(row: any, distanceKm: number | null = null): PublicBoa
       totalTables: Number(detail.totalTables),
       availableTables: detail.availableTables == null ? null : Number(detail.availableTables),
     })),
+    tableDetailsTruncated: row.table_details == null ? null : row.table_details.length > 100,
     rates: (row.rates ?? []).map((rate: any) => ({
       name: String(rate.name),
       customerType: String(rate.customerType),

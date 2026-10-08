@@ -128,6 +128,9 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   `get_restaurant_availability`; opt-in `tableDetails` may describe only area/floor labels and
   capacity-grouped counts, never a table number, occupant or check. Null estimates stay unknown and
   kitchen SLA is not a promise.
+  For both restaurant and board-game replies, `tableDetailsTruncated=true` means only the first
+  100 groups are shown. Explain the partial list and refer to staff for remaining details; never
+  claim completeness, sum it as a branch total or infer that omitted areas/capacities do not exist.
   `request_restaurant_reservation` creates `REQUESTED` only. The deterministic post-tool reply says
   explicitly that no table is reserved or confirmed until staff accepts it.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):

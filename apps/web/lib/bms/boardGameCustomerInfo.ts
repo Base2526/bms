@@ -69,6 +69,7 @@ export async function readBoardGameCustomerInfoInTx(
       totalTables: detail.totalTables,
       availableTables: cafe.publishAvailability ? detail.availableTables : null,
     })) : null,
+    tableDetailsTruncated: cafe.publishTableDetails ? cafe.tableDetailsTruncated : null,
     observedAt: new Date().toISOString(),
     booking: {
       requestsEnabled: cafe.bookingEnabled,
@@ -80,7 +81,7 @@ export async function readBoardGameCustomerInfoInTx(
       autoConfirm: cafe.chatAutoConfirm && cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
     },
     waitMinutes: null, waitingParties: null,
-    note: "Published customer-safe table summary only. Area is the shop-maintained public zone/floor label; seats is table capacity. Available counts are current observations, not a reservation or a guarantee of future space. Never infer or reveal table numbers, occupants, sessions or customer identities.",
+    note: "Published customer-safe table summary only. Area is the shop-maintained public zone/floor label; seats is table capacity. When tableDetailsTruncated is true, only the first 100 groups are shown: explicitly say this is a partial list, never sum it as the branch total or infer that an omitted area/capacity is unavailable; ask staff for remaining details. Available counts are current observations, not a reservation or a guarantee of future space. Never infer or reveal table numbers, occupants, sessions or customer identities.",
   };
   const result = await client.query(
     `SELECT title.title, title.min_players, title.max_players, title.typical_minutes,

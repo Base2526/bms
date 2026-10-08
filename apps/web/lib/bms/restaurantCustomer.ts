@@ -50,7 +50,7 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
             AND area.active AND table_row.active AND NOT table_row.blocked
           GROUP BY area.id, area.name, area.sort_order, table_row.seats
           ORDER BY area.sort_order, area.name, table_row.seats
-          LIMIT 100`,
+          LIMIT 101`,
         [tenantId, locationId]
       )
     : Promise.resolve({ rows: [] as Array<{
@@ -154,6 +154,7 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
           availableTables: Number(row.available_tables),
         }))
       : null,
+    tableDetailsTruncated: location.publish_restaurant_table_details ? tableDetails.rows.length > 100 : null,
     queue: {
       walkInWaitingParties: Number(q?.walk_in_parties ?? 0),
       walkInWaitingGuests: Number(q?.walk_in_guests ?? 0),
@@ -177,7 +178,7 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
       },
       estimatedPrepMinutes: null,
     },
-    note: "Live aggregate only. Published table details are grouped by area and seat capacity and never identify a table or occupant. Availability can change before staff seats or accepts a party. Walk-in queue and kitchen ticket counts do not prove a wait/preparation time because table fit, station capacity and dish mix are unknown.",
+    note: "Live aggregate only. Published table details are grouped by area and seat capacity and never identify a table or occupant. When tableDetailsTruncated is true, only the first 100 groups are shown: explicitly say this is a partial list, never sum it as the branch total or infer that an omitted area/capacity is unavailable; ask staff for remaining details. Availability can change before staff seats or accepts a party. Walk-in queue and kitchen ticket counts do not prove a wait/preparation time because table fit, station capacity and dish mix are unknown.",
   };
 }
 
