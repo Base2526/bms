@@ -1,5 +1,16 @@
 // i18n/th.ts
 const th = {
+  branch_parking: {
+    title: "ที่จอดรถ", status: "ที่จอดรถของสาขา",
+    status_UNKNOWN: "ยังไม่ระบุ", status_AVAILABLE: "มีที่จอดรถ", status_NONE: "ไม่มีที่จอดรถของร้าน",
+    help: "ข้อมูลพื้นฐานรายสาขา ใช้ร่วมกันทุกรูปแบบร้าน ไม่ใช่สถานะช่องจอดว่างขณะนี้",
+    car_spaces: "จำนวนช่องรถยนต์ (ไม่บังคับ)", motorcycle_spaces: "จำนวนช่องมอเตอร์ไซค์ (ไม่บังคับ)",
+    capacity_help: "จำนวนช่องทั้งหมด ไม่ใช่จำนวนที่ว่าง เว้นว่างหากไม่ทราบ",
+    details: "รายละเอียดที่จอดรถ", details_help: "ระบุจุดจอด ทางเข้า ค่าจอด/ประทับตรา เวลาให้บริการ และข้อจำกัด หากแนะนำลานใกล้เคียงให้ระบุว่าไม่ใช่ที่จอดของร้าน",
+    map_url: "ลิงก์แผนที่ที่จอดรถ", map_error: "ใช้ลิงก์ HTTPS ที่ไม่มีชื่อผู้ใช้หรือรหัสผ่าน",
+    publish: "เปิดเผยข้อมูลที่จอดรถให้ลูกค้า", publish_help: "เมื่อเปิด AI จะใช้ข้อมูลนี้ตอบลูกค้า ควรตรวจสอบรายละเอียดก่อนบันทึก",
+    published: "เปิดเผยให้ลูกค้า", private: "ยังไม่เปิดเผยให้ลูกค้า",
+  },
   installer_reports: {
     title: "เครื่องที่ติดตั้งและรายงานปัญหา", submit_title: "ส่งรายงานการติดตั้ง BMS", choose_file: "ไฟล์รายงาน (.zip, .tar.gz, .json, .txt)",
     installations: "ทะเบียนการติดตั้ง Retail Local", installs_note: "นับ installation instance ที่รายงานสำเร็จ ไม่ใช่ยอดดาวน์โหลดหรือ hardware fingerprint", install_total: "ติดตั้งทั้งหมด", active_installs: "สถานะ Active", seen_30d: "พบใน 30 วัน", unregistered_installs: "ยังไม่ผูก License", installed_at: "ติดตั้งเมื่อ", last_seen: "พบล่าสุด", package_type: "รูปแบบติดตั้ง", license: "License", install_id: "Installation ID", install_breakdown: "สรุปตาม OS / รูปแบบ / เวอร์ชัน", error_reports: "รายงานปัญหาการติดตั้ง",

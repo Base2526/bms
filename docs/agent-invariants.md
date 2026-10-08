@@ -1516,6 +1516,13 @@ Staff writes require `member.manage`, `loyalty.settings`, or `loyalty.adjust` as
 
 ## Branch inventory operations
 
+Basic branch parking (`10.52`) belongs to `bms_locations.parking_info`, shared by all shop types.
+Only explicit publication exposes details to `get_store_info` and its prefetched customer context.
+Unknown/unpublished is never no parking, and total capacity is never current vacancy. Branch names
+must be disambiguated; truncated lists cannot establish absence. Existing clients omitting parking
+must preserve it. The location manager uses a scoped query, and writes validate id/code identity,
+actor branch access and tenant RLS before saving.
+
 `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts`, the REST admin routes under
 `/api/bms/inventory/*`, and migration `7.98` own inter-branch transfers and shelf counts. Full state,
 audit, and rollout detail: [business/inventory.md](business/inventory.md#multiple-branches-transfers-and-counts-798).

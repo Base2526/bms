@@ -15,6 +15,8 @@
 
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
+import { normalizeLocationParking, publicLocationParking, readLocationParking, type LocationParking } from "./locationParking";
 
 export const DEFAULT_LOCATION_CODE = "MAIN";
 
@@ -31,6 +33,7 @@ export type BmsLocation = {
   pharmacistName: string | null;
   pharmacistLicenseNo: string | null;
   active: boolean;
+  parking: LocationParking;
 };
 
 function mapRow(r: any): BmsLocation {
@@ -47,6 +50,7 @@ function mapRow(r: any): BmsLocation {
     pharmacistName: r.pharmacist_name ?? null,
     pharmacistLicenseNo: r.pharmacist_license_no ?? null,
     active: r.active,
+    parking: readLocationParking(r.parking_info),
   };
 }
 
@@ -156,6 +160,7 @@ export type UpsertLocationInput = {
   address?: string | null;
   phone?: string | null;
   active?: boolean | null;
+  parking?: LocationParking | null;
 };
 
 const HEAD_OFFICE_BRANCH_CODE = "00000";
@@ -170,7 +175,7 @@ const HEAD_OFFICE_BRANCH_CODE = "00000";
  * ตรงนี้ สาขาที่สองจะกลายเป็นสำนักงานใหญ่คู่ขนานไปด้วยเงียบ ๆ — แถวสำนักงานใหญ่จริง
  * มีอยู่แล้วจาก seed ตอน 7.84 หน้านี้ไม่มีทางเปลี่ยนธงนี้ได้ (ต้องแก้ตรง DB เท่านั้น)
  */
-export async function upsertLocation(tenantId: string, input: UpsertLocationInput): Promise<BmsLocation> {
+export async function upsertLocation(tenantId: string, input: UpsertLocationInput, actorId: string): Promise<BmsLocation> {
   const code = input.code.trim();
   const name = input.name.trim();
   const branchCode = input.branchCode.trim();
@@ -181,22 +186,45 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
     throw new Error(`เลขที่สาขา ${HEAD_OFFICE_BRANCH_CODE} สงวนไว้สำหรับสำนักงานใหญ่เท่านั้น — ตั้งเลขอื่นให้สาขาใหม่`);
   }
 
+  if (!actorId) throw new Error("FORBIDDEN");
+  const parking = input.parking == null ? null : normalizeLocationParking(input.parking);
+  const client = await getClient();
   try {
-    const res = await query<any>(
-      `INSERT INTO bms_locations (id, tenant_id, code, name, branch_code, address, phone, active, is_head_office)
-       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE), FALSE)
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    const existing = await client.query(
+      `SELECT id, code FROM bms_locations WHERE tenant_id = $1 AND (id = $2::uuid OR code = $3) FOR UPDATE`,
+      [tenantId, input.id ?? null, code]
+    );
+    const current = existing.rows[0];
+    if (input.id && (!current || existing.rows.length !== 1 || current.id !== input.id || current.code !== code)) {
+      throw new Error("Location id/code mismatch or location not found");
+    }
+    const access = await client.query(
+      `SELECT EXISTS (SELECT 1 FROM bms_user_allowed_locations WHERE tenant_id = $1 AND user_id = $2) AS scoped,
+              EXISTS (SELECT 1 FROM bms_user_allowed_locations WHERE tenant_id = $1 AND user_id = $2 AND location_id = $3) AS allowed`,
+      [tenantId, actorId, current?.id ?? null]
+    );
+    if (access.rows[0]?.scoped && !access.rows[0]?.allowed) throw new Error("FORBIDDEN");
+    const res = await client.query<any>(
+      `INSERT INTO bms_locations (id, tenant_id, code, name, branch_code, address, phone, active, is_head_office, parking_info)
+       VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE), FALSE,
+               COALESCE($9::jsonb, '{"status":"UNKNOWN","published":false}'::jsonb))
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET name = EXCLUDED.name,
                      branch_code = EXCLUDED.branch_code,
                      address = EXCLUDED.address,
                      phone = EXCLUDED.phone,
                      active = EXCLUDED.active,
+                     parking_info = COALESCE($9::jsonb, bms_locations.parking_info),
                      updated_at = now()
        RETURNING *`,
-      [input.id ?? null, tenantId, code, name, branchCode, input.address ?? null, input.phone ?? null, input.active ?? null]
+      [input.id ?? null, tenantId, code, name, branchCode, input.address ?? null, input.phone ?? null, input.active ?? null,
+        parking == null ? null : JSON.stringify(parking)]
     );
+    await client.query("COMMIT");
     return mapRow(res.rows[0]);
   } catch (e: any) {
+    await client.query("ROLLBACK");
     if (e?.code === "23505") {
       if (String(e.constraint ?? "").includes("branch_code")) {
         throw new Error(`เลขที่สาขา ${branchCode} ถูกใช้ไปแล้วในร้านนี้`);
@@ -204,5 +232,26 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
       throw new Error(`รหัสสาขา "${code}" ถูกใช้ไปแล้ว`);
     }
     throw e;
+  } finally {
+    client.release();
   }
+}
+
+/** Customer-safe branch facts, independently of restaurant/board-game settings. */
+export async function getCustomerBranchParking(tenantId: string, branch?: string) {
+  if (branch != null && (typeof branch !== "string" || !branch.trim() || branch.length > 200)) {
+    throw new Error("Invalid branch name");
+  }
+  const res = await query(
+    `SELECT location.name, to_jsonb(location)->'parking_info' AS parking_info
+       FROM bms_locations location
+      WHERE location.tenant_id = $1 AND location.active
+        AND ($2::text IS NULL OR location.name = $2)
+      ORDER BY location.name, location.id LIMIT 21`,
+    [tenantId, branch?.trim() ?? null]
+  );
+  return {
+    branches: res.rows.slice(0, 20).map(row => ({ name: row.name, parking: publicLocationParking(row.parking_info) })),
+    truncated: res.rows.length > 20,
+  };
 }

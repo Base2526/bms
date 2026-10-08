@@ -1,5 +1,16 @@
 // i18n/en.ts
 const en = {
+  branch_parking: {
+    title: "Parking", status: "Branch parking",
+    status_UNKNOWN: "Not specified", status_AVAILABLE: "Parking provided", status_NONE: "No shop-provided parking",
+    help: "Basic branch information for every shop type, not current parking vacancy.",
+    car_spaces: "Car spaces (optional)", motorcycle_spaces: "Motorcycle spaces (optional)",
+    capacity_help: "Total capacity, not currently free spaces. Leave blank if unknown.",
+    details: "Parking details", details_help: "Describe the parking area, entrance, fees/validation, hours and restrictions. Identify nearby alternatives as separate from shop-provided parking.",
+    map_url: "Parking map link", map_error: "Use an HTTPS link without a username or password.",
+    publish: "Publish parking information to customers", publish_help: "When enabled, AI can use these facts to answer customers. Review the details before saving.",
+    published: "Published to customers", private: "Not published to customers",
+  },
   installer_reports: {
     title: "Installations and installer reports", submit_title: "BMS installation report", choose_file: "Report file (.zip, .tar.gz, .json, .txt)",
     installations: "Retail Local installation registry", installs_note: "Counts successfully reported installation instances, not downloads or hardware fingerprints", install_total: "Total installations", active_installs: "Active status", seen_30d: "Seen in 30 days", unregistered_installs: "Not linked to a license", installed_at: "Installed", last_seen: "Last seen", package_type: "Install type", license: "License", install_id: "Installation ID", install_breakdown: "By OS / install type / release", error_reports: "Installer error reports",

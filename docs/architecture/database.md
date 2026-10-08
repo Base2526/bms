@@ -25,6 +25,21 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Basic branch parking (`10.52`)
+
+`bms_locations.parking_info` is one shared JSONB object for every shop archetype, edited in
+`/admin/locations`. `status` is `UNKNOWN`, `AVAILABLE` or `NONE`; `published` defaults to false.
+Optional `carSpaces`/`motorcycleSpaces` are integer total capacities (0–10000), not live vacancy,
+and require `AVAILABLE`. `details` (1500 characters) carries entrance, fees, validation, hours,
+restrictions and clearly distinguished nearby alternatives. `mapUrl` (1000 characters) allows
+only HTTPS without credentials. The service rejects unknown fields and malformed values; database
+constraints enforce the object/status/publication shape and a bounded payload. No occupancy ledger
+or parking booking is created. Existing rows stay unknown and unpublished; legacy writes omitting
+parking preserve the saved object. Branch writes run under tenant RLS, validate id/code identity,
+and recheck the acting user's location scope; scoped staff cannot create an unassigned branch.
+Customer reads expose only active tenant-owned branch names and published parking facts; before
+the migration, reads return unknown/unpublished via `to_jsonb(location)` rather than breaking chat.
+
 ### Pharmacy guidance approval (`10.45`, hardened by `10.47`)
 
 `bms_pharmacy_guidance_templates` is tenant-only (one code/locale row); built-in defaults are

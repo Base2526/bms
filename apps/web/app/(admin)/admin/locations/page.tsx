@@ -8,14 +8,16 @@
 // รหัสสาขา (code) แก้ไม่ได้หลังสร้าง เหมือนกับรหัสเครื่องขายที่หน้า pos-devices
 // เพราะเป็น key ที่ระบบผูก mutation ไว้แก้แถวเดิม เปลี่ยนกลางทาง = สร้างแถวใหม่แทน
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Empty, Form, Input, Modal, Space, Switch, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tag, Typography, message } from "antd";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { useI18n } from "@/lib/i18nContext";
+import type { LocationParking } from "@/lib/bms/locationParking";
 
 const Q = gql`
   query Locations {
-    bmsLocations {
+    bmsManageableLocations {
       id
       code
       name
@@ -24,6 +26,7 @@ const Q = gql`
       address
       phone
       active
+      parking { status published carSpaces motorcycleSpaces details mapUrl }
     }
   }
 `;
@@ -42,9 +45,11 @@ type Location = {
   address: string | null;
   phone: string | null;
   active: boolean;
+  parking: LocationParking | null;
 };
 
 export default function LocationsPage() {
+  const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
   const canManage = can("location.manage");
   const { data, loading, refetch } = useQuery(Q, {
@@ -53,6 +58,8 @@ export default function LocationsPage() {
   });
 
   const [form] = Form.useForm();
+  const parkingStatus = Form.useWatch(["parking", "status"], form);
+  const emptyParking: LocationParking = { status: "UNKNOWN", published: false, carSpaces: null, motorcycleSpaces: null, details: null, mapUrl: null };
   const [editing, setEditing] = useState<Location | null>(null);
   const [open, setOpen] = useState(false);
   const [upsert, { loading: saving }] = useMutation(M_UPSERT);
@@ -61,12 +68,18 @@ export default function LocationsPage() {
     return <Alert closable type="error" showIcon message="ไม่มีสิทธิ์ดูหน้านี้ (ต้องมี location.manage)" />;
   }
 
-  const locations: Location[] = data?.bmsLocations ?? [];
+  const locations: Location[] = data?.bmsManageableLocations ?? [];
 
   async function save() {
     try {
       const values = await form.validateFields();
-      await upsert({ variables: { input: { ...values, id: editing?.id ?? null } } });
+      // Do not send Apollo's __typename or other read-only fields as mutation input.
+      const parking = values.parking ?? emptyParking;
+      await upsert({ variables: { input: { ...values, id: editing?.id ?? null, parking: {
+        status: parking.status, published: parking.published,
+        carSpaces: parking.carSpaces ?? null, motorcycleSpaces: parking.motorcycleSpaces ?? null,
+        details: parking.details ?? null, mapUrl: parking.mapUrl ?? null,
+      } } } });
       message.success("บันทึกสาขาแล้ว");
       setOpen(false);
       setEditing(null);
@@ -90,7 +103,7 @@ export default function LocationsPage() {
             onClick={() => {
               setEditing(null);
               form.resetFields();
-              form.setFieldsValue({ active: true });
+              form.setFieldsValue({ active: true, parking: emptyParking });
               setOpen(true);
             }}
           >
@@ -114,6 +127,7 @@ export default function LocationsPage() {
             rowKey="id"
             dataSource={locations}
             pagination={false}
+            scroll={{ x: 800 }}
             columns={[
               { title: "รหัส", dataIndex: "code", width: 110 },
               { title: "ชื่อสาขา", dataIndex: "name" },
@@ -133,6 +147,15 @@ export default function LocationsPage() {
                 ),
               },
               {
+                title: t("branch_parking.title"),
+                render: (_: unknown, l: Location) => (
+                  <Space direction="vertical" size={0}>
+                    <span>{t(`branch_parking.status_${l.parking?.status ?? "UNKNOWN"}`)}</span>
+                    <Typography.Text type="secondary">{t(l.parking?.published ? "branch_parking.published" : "branch_parking.private")}</Typography.Text>
+                  </Space>
+                ),
+              },
+              {
                 title: "สถานะ",
                 dataIndex: "active",
                 width: 90,
@@ -146,7 +169,8 @@ export default function LocationsPage() {
                     size="small"
                     onClick={() => {
                       setEditing(l);
-                      form.setFieldsValue(l);
+                      form.resetFields();
+                      form.setFieldsValue({ ...l, parking: l.parking ?? emptyParking });
                       setOpen(true);
                     }}
                   >
@@ -192,6 +216,38 @@ export default function LocationsPage() {
           </Form.Item>
           <Form.Item name="phone" label="เบอร์โทร">
             <Input placeholder="02-xxx-xxxx" />
+          </Form.Item>
+          <Typography.Title level={5}>{t("branch_parking.title")}</Typography.Title>
+          <Typography.Paragraph type="secondary">{t("branch_parking.help")}</Typography.Paragraph>
+          <Form.Item name={["parking", "status"]} label={t("branch_parking.status")} rules={[{ required: true }]}>
+            <Select options={[
+              { value: "UNKNOWN", label: t("branch_parking.status_UNKNOWN") },
+              { value: "AVAILABLE", label: t("branch_parking.status_AVAILABLE") },
+              { value: "NONE", label: t("branch_parking.status_NONE") },
+            ]} onChange={value => {
+              if (value !== "AVAILABLE") form.setFieldsValue({ parking: { carSpaces: null, motorcycleSpaces: null } });
+            }} />
+          </Form.Item>
+          <Form.Item name={["parking", "carSpaces"]} label={t("branch_parking.car_spaces")} extra={t("branch_parking.capacity_help")}>
+            <InputNumber min={0} max={10000} precision={0} disabled={parkingStatus !== "AVAILABLE"} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name={["parking", "motorcycleSpaces"]} label={t("branch_parking.motorcycle_spaces")}>
+            <InputNumber min={0} max={10000} precision={0} disabled={parkingStatus !== "AVAILABLE"} style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item name={["parking", "details"]} label={t("branch_parking.details")} extra={t("branch_parking.details_help")}>
+            <Input.TextArea rows={4} maxLength={1500} showCount />
+          </Form.Item>
+          <Form.Item name={["parking", "mapUrl"]} label={t("branch_parking.map_url")} rules={[{
+            validator: async (_rule, value) => {
+              if (!value?.trim()) return;
+              try { const url = new URL(value.trim()); if (url.protocol === "https:" && !url.username && !url.password) return; } catch {}
+              throw new Error(t("branch_parking.map_error"));
+            },
+          }]}>
+            <Input maxLength={1000} placeholder="https://..." />
+          </Form.Item>
+          <Form.Item name={["parking", "published"]} label={t("branch_parking.publish")} valuePropName="checked" extra={t("branch_parking.publish_help")}>
+            <Switch aria-label={t("branch_parking.publish")} />
           </Form.Item>
           <Form.Item name="active" label="เปิดใช้งาน" valuePropName="checked">
             <Switch />

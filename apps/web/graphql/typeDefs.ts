@@ -576,6 +576,23 @@ export const typeDefs = /* GraphQL */ `
 
 
   # ---- POS / สาขา / lot ----
+  enum BmsParkingStatus { UNKNOWN AVAILABLE NONE }
+  type BmsLocationParking {
+    status: BmsParkingStatus!
+    published: Boolean!
+    carSpaces: Int
+    motorcycleSpaces: Int
+    details: String
+    mapUrl: String
+  }
+  input BmsLocationParkingInput {
+    status: BmsParkingStatus!
+    published: Boolean!
+    carSpaces: Int
+    motorcycleSpaces: Int
+    details: String
+    mapUrl: String
+  }
   type BmsLocation {
     id: ID!
     code: String!
@@ -588,6 +605,7 @@ export const typeDefs = /* GraphQL */ `
     pharmacyLicenseNo: String
     pharmacistName: String
     pharmacistLicenseNo: String
+    parking: BmsLocationParking
     active: Boolean!
   }
 
@@ -648,6 +666,7 @@ export const typeDefs = /* GraphQL */ `
     address: String
     phone: String
     active: Boolean
+    parking: BmsLocationParkingInput
   }
 
   type BmsPosDevice {
@@ -1078,6 +1097,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ---- POS / สาขา / lot (7.84–7.87) ----
     bmsLocations: [BmsLocation!]!
+    bmsManageableLocations: [BmsLocation!]!
     bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
     # สาขาที่ผู้ใช้คนนี้จัดผังได้จริง (bms_user_allowed_locations, 9.37) — ไม่ใช่ bmsLocations
     bmsRestaurantFloorLocations: [BmsLocation!]!

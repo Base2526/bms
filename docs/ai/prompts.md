@@ -1,5 +1,12 @@
 # Prompts & Guardrails
 
+Parking is basic branch information for all shop types (`10.52`). `get_store_info.branchParking`
+is included in the prefetched public context; use those published structured facts rather than old
+about/summary prose. Ask which branch when ambiguous. `UNKNOWN`, hidden data and zero capacity
+are distinct. Never claim current vacancy, free parking or opening hours without explicit evidence.
+Only exact quoted published parking text is exempted from the generic unverified-price check;
+unrelated product prices still require catalog evidence.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Pipeline: [workflow.md](workflow.md) · Tools: [tools.md](tools.md)
 
 ## Pharmacy customer boundary (`10.44`)

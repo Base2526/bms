@@ -2,6 +2,7 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.52__bms_location_parking.sql', 'column', 'bms_locations', 'parking_info', 'Branch management cannot save basic parking information until this column is available'),
     ('10.44__bms_pharmacy_customer_label_facts.sql', 'column', 'bms_products', 'medicine_label', 'อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้'),
     ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_codes', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
     ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_information_provided', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),

@@ -24,6 +24,11 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.52__bms_location_parking.sql",
+    impact: "Branch management cannot save basic parking information until this column is available",
+    needs: [{ kind: "column", table: "bms_locations", name: "parking_info" }],
+  },
+  {
     file: "10.44__bms_pharmacy_customer_label_facts.sql",
     impact: "อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้",
     needs: [{ kind: "column", table: "bms_products", name: "medicine_label" }],

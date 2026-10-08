@@ -40,6 +40,16 @@ value today.
 
 ## Multi-branch visibility and policy
 
+### Basic branch parking (`10.52`)
+
+In **Locations → Add/Edit branch → Parking**, choose Not specified, Parking provided, or No
+shop-provided parking. Optionally enter total car/motorcycle spaces, entrance, fees/validation,
+hours/restrictions, nearby alternatives, and an HTTPS map link. Enable publication only after
+reviewing the details. These are basic branch facts shared by restaurant, board-game and all other
+shop types; AI reads them from `get_store_info`, never interprets capacity as free spaces right now,
+and asks which branch when ambiguous. Empty/hidden information does not mean no parking. Apply
+`10.52__bms_location_parking.sql` before saving. Editing requires `location.manage` and branch access.
+
 Branch identity is operational data, not only display text. A shop with more than one active
 location must be able to answer four separate questions without opening the database:
 

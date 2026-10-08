@@ -111,6 +111,7 @@ import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
+import { getCustomerBranchParking } from "../locations";
 import { receiveRestaurantRequest, listRestaurantRequests } from "../restaurantRequests";
 import { isRestaurantRequestRejection, restaurantRequestInputChoices } from "../restaurantRequestPolicy";
 import {
@@ -3137,10 +3138,10 @@ const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_a
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
   description:
-    "Shop information: name, description, address, phone, opening hours, and the shipping and return policies. Use for the general questions customers ask most.",
+    "Shop information: name, description, address, phone, opening hours, shipping/return policies and published branchParking for every shop type. Parking capacity is not live vacancy. Match the requested branch or ask which branch; null parking means not published, UNKNOWN means unspecified, NONE means no shop-provided parking. branch is an optional exact branch name, useful when the first 20 branches are truncated. Never infer missing details from absence or old freeform about text.",
   surfaces: ["customer", "staff"],
-  inputSchema: { type: "object", properties: {} },
-  execute: async (_args, ec): Promise<ToolResult> => {
+  inputSchema: { type: "object", properties: { branch: { type: "string", minLength: 1, maxLength: 200, description: "Exact branch name explicitly requested by the customer; omit if unknown." } }, additionalProperties: false },
+  execute: async (args, ec): Promise<ToolResult> => {
     const p = await getStoreProfile(ec.tenantId);
     // ชื่อร้าน = bms_tenants.name (ชื่อเดียวทั้งระบบ ไม่ใช้ store_name แล้ว)
     const storeName = await getTenantName(ec.tenantId);
@@ -3148,6 +3149,7 @@ const getStoreInfoTool: BmsTool = {
       ok: true,
       data: {
         storeName,
+        branchParking: await getCustomerBranchParking(ec.tenantId, args.branch),
         businessType: p.businessType,
         businessArchetype: p.businessArchetype,
         about: p.about, address: p.address, phone: p.phone,
