@@ -49,9 +49,12 @@ test("CHAT migration binds customer authority and keeps public constraints plus 
   }
 });
 
-test("CHAT write inserts only REQUESTED with no table, confirmation, payment or public authority", () => {
+test("CHAT defaults to REQUESTED; automatic confirmation requires branch opt-in and locked allocation", () => {
   assert.match(chatWrite, /'RESERVATION', 'CHAT'[\s\S]*'REQUESTED'/);
-  assert.doesNotMatch(chatWrite, /'CONFIRMED'|reserved_table_id|confirmed_at|reviewPublicBoardGameReservation|bms_payments|bms_orders|guest_email|public_manage_token/);
+  assert.doesNotMatch(chatWrite, /reviewPublicBoardGameReservation|bms_payments|bms_orders|guest_email|public_manage_token/);
+  assert.match(chatWrite, /if \(preview.autoConfirm\)/);
+  assert.match(chatWrite, /boardGameReservationTableFitsInTx/);
+  assert.match(chatWrite, /CASE WHEN \$14::uuid IS NULL THEN 'REQUESTED' ELSE 'CONFIRMED'/);
   assert.match(chatWrite, /FOR UPDATE/);
   assert.ok(chatWrite.indexOf("board_game.chat_reservation_request") < chatWrite.lastIndexOf('client.query("COMMIT")'));
 });
@@ -71,7 +74,11 @@ test("CHAT status is always customer AND tenant scoped, short and private", () =
 test("CHAT review uses the existing locks; notification jobs cannot claim email-less requests", () => {
   const review = service.split("export async function reviewPublicBoardGameReservation")[1].split("async function send")[0];
   assert.match(review, /source IN \('PUBLIC', 'CHAT'\)/);
-  assert.match(review, /pg_advisory_xact_lock/);
+  assert.match(review, /boardGameReservationTableFitsInTx/);
+  const allocation = service.split("export async function boardGameReservationTableFitsInTx")[1].split("export async function previewChat")[0];
+  assert.match(allocation, /pg_advisory_xact_lock/);
+  assert.match(allocation, /FOR UPDATE/);
+  assert.match(allocation, /'CONFIRMED','WAITING','CALLED'/);
   assert.match(review, /source === "CHAT" && policy !== "NONE"/);
   assert.match(review, /source = 'CHAT' THEN 'NONE' ELSE 'PENDING'/);
   const reminders = service.split("export async function sendDueBoardGameReservationReminders")[1].split("export async function expireOverdueBoardGameReservations")[0];

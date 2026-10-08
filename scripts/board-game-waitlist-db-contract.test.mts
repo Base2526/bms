@@ -344,7 +344,7 @@ test("CHAT transactions, rejection, retry, cap, isolation, review and notificati
     actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-review")});
   assert.equal(confirmed!.status,"CONFIRMED");
   await assert.rejects(reviewPublicBoardGameReservation({tenantId,locationId,entryId:another.requestId,
-    actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-overlap")}),/เวลาทับกัน/);
+    actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-overlap")}),/โต๊ะไม่พร้อม|เวลาทับกัน/);
   await reviewPublicBoardGameReservation({tenantId,locationId,entryId:another.requestId,
     actorUserId:staffId,decision:"REJECT",reason:"FAKE unavailable",idempotencyKey:key("chat-reject")});
   await query(`UPDATE bms_board_game_waitlist SET reminder_minutes_before=10080 WHERE tenant_id=$1 AND id=$2`,[tenantId,first.requestId]);

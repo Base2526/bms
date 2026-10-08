@@ -130,6 +130,7 @@ export type BoardGamePublicLocationProfile = {
   publishRates: boolean;
   publishAvailability: boolean;
   bookingEnabled: boolean;
+  chatAutoConfirm: boolean;
   reservationReminderMinutes: number;
   timezone: string;
   reservationMinAdvanceMinutes: number;
@@ -2786,6 +2787,7 @@ function mapPublicLocationProfile(row: any): BoardGamePublicLocationProfile {
     publishRates: row.publish_rates == null ? true : Boolean(row.publish_rates),
     publishAvailability: row.publish_availability == null ? true : Boolean(row.publish_availability),
     bookingEnabled: Boolean(row.booking_enabled),
+    chatAutoConfirm: row.chat_auto_confirm === true,
     reservationReminderMinutes: Number(row.reservation_reminder_minutes ?? 180),
     timezone: row.timezone || "Asia/Bangkok",
     reservationMinAdvanceMinutes: Number(row.reservation_min_advance_minutes ?? 120),
@@ -2813,7 +2815,7 @@ export async function getBoardGamePublicLocationProfile(
             l.phone AS location_phone, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability, profile.booking_enabled,
+            profile.publish_rates, profile.publish_availability, profile.booking_enabled, profile.chat_auto_confirm,
             profile.reservation_reminder_minutes,
             profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
             profile.reservation_deposit_policy, profile.reservation_deposit_amount,
@@ -2846,6 +2848,7 @@ export async function upsertBoardGamePublicLocationProfile(
     publishRates?: boolean | null;
     publishAvailability?: boolean | null;
     bookingEnabled?: boolean | null;
+    chatAutoConfirm?: boolean | null;
     reservationReminderMinutes?: number | string | null;
     reservationMinAdvanceMinutes?: number | string | null;
     reservationRequestTtlMinutes?: number | string | null;
@@ -2879,6 +2882,7 @@ export async function upsertBoardGamePublicLocationProfile(
   const publishRates = booleanOrDefault(input.publishRates, true, "สถานะแสดงเรทราคา");
   const publishAvailability = booleanOrDefault(input.publishAvailability, true, "สถานะแสดงโต๊ะว่าง");
   const bookingEnabled = booleanOrDefault(input.bookingEnabled, false, "สถานะรับจองออนไลน์");
+  const chatAutoConfirm = booleanOrDefault(input.chatAutoConfirm, false, "ยืนยันจองจากแชทอัตโนมัติ");
   const reservationReminderMinutes = Number(input.reservationReminderMinutes ?? 180);
   if (!Number.isInteger(reservationReminderMinutes)
     || reservationReminderMinutes < 30 || reservationReminderMinutes > 10080) {
@@ -2905,6 +2909,9 @@ export async function upsertBoardGamePublicLocationProfile(
   }
   if (!["NONE", "FIXED", "PERCENT"].includes(reservationDepositPolicy)) {
     throw new Error("นโยบายมัดจำไม่ถูกต้อง");
+  }
+  if (chatAutoConfirm && (!bookingEnabled || reservationDepositPolicy !== "NONE")) {
+    throw new Error("ยืนยันจองจากแชทอัตโนมัติต้องเปิดรับจองและไม่เรียกเก็บมัดจำ");
   }
   if (!Number.isFinite(reservationDepositAmount) || reservationDepositAmount < 0
     || reservationDepositAmount > 1_000_000) throw new Error("ยอดมัดจำคงที่ไม่ถูกต้อง");
@@ -2942,8 +2949,8 @@ export async function upsertBoardGamePublicLocationProfile(
            publish_rates, publish_availability, booking_enabled, reservation_reminder_minutes,
            reservation_min_advance_minutes, reservation_request_ttl_minutes,
            reservation_deposit_policy, reservation_deposit_amount, reservation_deposit_percent,
-           reservation_deposit_payment_window_minutes, reservation_deposit_refund_cutoff_hours)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+           reservation_deposit_payment_window_minutes, reservation_deposit_refund_cutoff_hours, chat_auto_confirm)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
        ON CONFLICT (tenant_id, location_id) DO UPDATE SET
           public_visible = EXCLUDED.public_visible,
           display_name = EXCLUDED.display_name,
@@ -2956,6 +2963,7 @@ export async function upsertBoardGamePublicLocationProfile(
           publish_rates = EXCLUDED.publish_rates,
           publish_availability = EXCLUDED.publish_availability,
           booking_enabled = EXCLUDED.booking_enabled,
+          chat_auto_confirm = EXCLUDED.chat_auto_confirm,
           reservation_reminder_minutes = EXCLUDED.reservation_reminder_minutes,
           reservation_min_advance_minutes = EXCLUDED.reservation_min_advance_minutes,
           reservation_request_ttl_minutes = EXCLUDED.reservation_request_ttl_minutes,
@@ -2971,7 +2979,7 @@ export async function upsertBoardGamePublicLocationProfile(
         bookingEnabled, reservationReminderMinutes, reservationMinAdvanceMinutes,
         reservationRequestTtlMinutes, reservationDepositPolicy, reservationDepositAmount,
         reservationDepositPercent, reservationDepositPaymentWindowMinutes,
-        reservationDepositRefundCutoffHours,
+        reservationDepositRefundCutoffHours, chatAutoConfirm,
       ]
     );
     await auditInTx(client, tenantId, actorUserId, "board_game.public_profile_upsert", locationId, {
@@ -2979,6 +2987,7 @@ export async function upsertBoardGamePublicLocationProfile(
       publishRates,
       publishAvailability,
       bookingEnabled,
+      chatAutoConfirm,
       reservationReminderMinutes,
       reservationMinAdvanceMinutes,
       reservationRequestTtlMinutes,
@@ -3011,7 +3020,7 @@ function haversineDistanceKm(lat1: number, lng1: number, lat2: number, lng2: num
 const BOARD_GAME_CAFE_SELECT = `SELECT profile.location_id, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability, profile.booking_enabled,
+            profile.publish_rates, profile.publish_availability, profile.booking_enabled, profile.chat_auto_confirm,
             profile.reservation_reminder_minutes,
             profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
             profile.reservation_deposit_policy, profile.reservation_deposit_amount,

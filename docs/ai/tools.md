@@ -1198,6 +1198,23 @@ Confidence
   These three tools use `boardGameCustomerInfo.ts` inside tenant/RLS transactions. Branch selection
   accepts a published name, never an operational id. Multiple/mismatched branches return
   `BRANCH_REQUIRED`; unpublished data returns `NOT_PUBLISHED`, not zero or proof of absence.
+- `request_board_game_reservation` — board-game customer-only, `order.create`; previews exact
+  branch-local date/time, duration and party size for fresh customer confirmation. Backend derives
+  CRM identity/contact. Default is `REQUESTED`; branch `chatAutoConfirm=true` with no deposit
+  permits `CONFIRMED` only after locked table allocation. Configuration changes invalidate consent.
+- `get_board_game_reservation_status` — `order.view`; latest five own CHAT bookings, short references
+  and verified states only, never other customers or table ids.
+- `manage_board_game_booking` — board-game customer-only, `order.create`; `action` is `CANCEL`,
+  `RESCHEDULE`, `REFUND`, `DISCOUNT`, `EXTEND_TIME` or `STAFF`. Booking changes require an exact
+  eight-character reference from the scoped status read. Reschedule additionally requires
+  `reservedLocal`, `durationMinutes`, `partySize` and a CONFIRMED no-deposit booking before check-in;
+  the same table must fit the new time/party. Other actions require a bounded non-PII `note` and
+  create an Inbox note plus durable staff mention for review, never a payment, price or clock write.
+  Every action previews first. The pipeline consumes fresh consent to the exact latest server
+  summary (15-minute expiry), then the service rechecks ownership and row version in the transaction.
+  Unknown fields, model-supplied consent/identity and ambiguous references are rejected. Writes,
+  business audit and retry result commit together. Server-owned receipts survive provider failure;
+  a staff queue receipt is not evidence of approval, a push notification or staff acknowledgement.
 - `list_restaurant_order_locations` — restaurant-only active branches and their exact ids; the id is
   authority for the next read/write tool and must not be invented or printed to the customer.
 - `get_restaurant_availability` — current aggregate free tables/seats, walk-in waiting parties/guests,

@@ -675,11 +675,11 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
     }
 
     // Both customer rows are locked, the same authority used by CHAT request creation.
-    // Do not merge identities into a state that bypasses the three-pending-request cap.
+    // Do not merge identities into a state that bypasses the three-active-chat-booking cap.
     const chatPending = await client.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist
         WHERE tenant_id = $1 AND customer_id = ANY($2::uuid[])
-          AND source = 'CHAT' AND status = 'REQUESTED'`,
+          AND source = 'CHAT' AND status IN ('REQUESTED','CONFIRMED') AND reserved_for > now()`,
       [tenantId, [keepId, mergeId]]
     );
     if (Number(chatPending.rows[0].count) > 3) {

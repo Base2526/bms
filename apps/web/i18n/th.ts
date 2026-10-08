@@ -1033,6 +1033,7 @@ const th = {
     publish_rates: "เผยแพร่ค่าเล่น",
     publish_availability: "เผยแพร่โต๊ะว่างแบบรวม",
     booking_enabled: "เปิดรับคำขอจองออนไลน์",
+    chat_auto_confirm: "ยืนยันจองจากแชทอัตโนมัติ (ไม่เก็บมัดจำ)",
     reservation_reminder_minutes: "ส่งอีเมลเตือนก่อนเวลาจอง (นาที)",
     reservation_min_advance_minutes: "ต้องจองล่วงหน้าอย่างน้อย (นาที)",
     reservation_request_ttl_minutes: "อายุคำขอที่ยังไม่พิจารณา (นาที)",

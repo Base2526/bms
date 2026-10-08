@@ -543,16 +543,16 @@ type ChatReservationInput = {
   expectedFingerprint?: string;
 };
 
-async function prepareChatReservationInTx(client: PoolClient, input: Omit<ChatReservationInput, "customerId" | "requestKey">) {
+export async function prepareChatReservationInTx(client: PoolClient, input: Omit<ChatReservationInput, "customerId" | "requestKey">) {
   const config = (await client.query<{
     timezone: string; min_advance_minutes: number; request_ttl_minutes: number;
-    branch: string; booking_enabled: boolean; deposit_policy: string;
+    branch: string; booking_enabled: boolean; deposit_policy: string; chat_auto_confirm: boolean;
   }>(
     `SELECT COALESCE(NULLIF(store.timezone, ''), 'Asia/Bangkok') AS timezone,
             profile.reservation_min_advance_minutes AS min_advance_minutes,
             profile.reservation_request_ttl_minutes AS request_ttl_minutes,
             COALESCE(profile.display_name, location.name) AS branch,
-            profile.booking_enabled, profile.reservation_deposit_policy AS deposit_policy
+            profile.booking_enabled, profile.chat_auto_confirm, profile.reservation_deposit_policy AS deposit_policy
        FROM bms_board_game_public_locations profile
        JOIN bms_locations location ON location.tenant_id = profile.tenant_id AND location.id = profile.location_id
        JOIN bms_tenants tenant ON tenant.id = profile.tenant_id AND tenant.active
@@ -578,7 +578,41 @@ async function prepareChatReservationInTx(client: PoolClient, input: Omit<ChatRe
   }
   return { locationId: input.locationId, branch: config.branch, reservedLocal: input.reservedLocal.trim(),
     reservedFor: reservedFor.toISOString(), timezone: config.timezone, ...size, note: note || undefined,
-    requestTtlMinutes: Number(config.request_ttl_minutes) };
+    autoConfirm: config.chat_auto_confirm === true, requestTtlMinutes: Number(config.request_ttl_minutes) };
+}
+
+/** Same table/window locks as staff booking; the model never chooses a table or overrides capacity. */
+export async function boardGameReservationTableFitsInTx(client: PoolClient, input: {
+  tenantId: string; locationId: string; tableId: string; reservedFor: string;
+  durationMinutes: number; partySize: number; entryId?: string;
+}) {
+  await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
+    `board-game-reservation:${input.tenantId}:${input.locationId}:${input.tableId}`,
+  ]);
+  const table = await client.query<{ seats: number }>(
+    `SELECT seats FROM bms_board_game_tables
+      WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked FOR UPDATE`,
+    [input.tenantId, input.locationId, input.tableId],
+  );
+  if (!table.rowCount || Number(table.rows[0].seats) < input.partySize) return false;
+  const conflict = await client.query(
+    `SELECT 1 FROM bms_board_game_waitlist
+      WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3
+        AND ($6::uuid IS NULL OR id <> $6) AND kind = 'RESERVATION'
+        AND status IN ('CONFIRMED','WAITING','CALLED')
+        AND reserved_for < $4::timestamptz + make_interval(mins => $5)
+        AND reserved_for + make_interval(mins => reserved_duration_minutes) > $4::timestamptz
+     UNION ALL
+     SELECT 1 FROM bms_board_game_seatings st JOIN bms_board_game_sessions s
+       ON s.tenant_id = st.tenant_id AND s.seating_id = st.id
+      WHERE st.tenant_id = $1 AND st.location_id = $2 AND st.table_id = $3
+        AND st.status = 'ACTIVE' AND s.status IN ('OPEN','CLOSING')
+        AND (s.status = 'CLOSING' OR s.expected_end_at IS NULL OR s.expected_end_at > $4::timestamptz)
+     LIMIT 1`,
+    [input.tenantId, input.locationId, input.tableId, input.reservedFor, input.durationMinutes,
+      input.entryId ?? null],
+  );
+  return !conflict.rowCount;
 }
 
 export async function previewChatBoardGameReservation(input: {
@@ -598,7 +632,7 @@ export async function previewChatBoardGameReservation(input: {
   finally { client.release(); }
 }
 
-/** CHAT creates a REQUESTED row only. Staff review remains a separate PIN-authorized entry point. */
+/** Branch opt-in may confirm a no-deposit request after customer consent and locked allocation. */
 export async function requestChatBoardGameReservation(input: ChatReservationInput) {
   if (!input.requestKey?.trim() || input.requestKey.length > 256) throw new ChatBoardGameReservationRejection("INVALID_REQUEST_KEY", "รหัสคำขอไม่ถูกต้อง");
   const requestHash = sha256(JSON.stringify([input.customerId, input.locationId, input.reservedLocal,
@@ -627,29 +661,46 @@ export async function requestChatBoardGameReservation(input: ChatReservationInpu
       throw new ChatBoardGameReservationRejection("CONFIRMATION_REQUIRED", "รายละเอียดสาขาเปลี่ยน กรุณาตรวจสรุปและยืนยันใหม่");
     }
     const pending = await client.query<{ count: number }>(
-      "SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist WHERE tenant_id = $1 AND customer_id = $2 AND source = 'CHAT' AND status = 'REQUESTED'",
+      "SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist WHERE tenant_id = $1 AND customer_id = $2 AND source = 'CHAT' AND status IN ('REQUESTED','CONFIRMED') AND reserved_for > now()",
       [input.tenantId, input.customerId]
     );
-    if (Number(pending.rows[0].count) >= 3) throw new ChatBoardGameReservationRejection("PENDING_LIMIT", "มีคำขอที่รอตรวจครบ 3 รายการแล้ว กรุณาติดต่อร้าน");
+    if (Number(pending.rows[0].count) >= 3) throw new ChatBoardGameReservationRejection("PENDING_LIMIT", "มีคำขอหรือการจองล่วงหน้าครบ 3 รายการแล้ว กรุณาติดต่อร้าน");
+    let tableId: string | null = null;
+    if (preview.autoConfirm) {
+      const tables = await client.query<{ id: string }>(
+        `SELECT id FROM bms_board_game_tables WHERE tenant_id = $1 AND location_id = $2
+          AND active AND NOT blocked AND seats >= $3 ORDER BY id`,
+        [input.tenantId, input.locationId, preview.partySize],
+      );
+      for (const table of tables.rows) {
+        if (await boardGameReservationTableFitsInTx(client, { ...input, ...preview, tableId: table.id })) {
+          tableId = table.id;
+          break;
+        }
+      }
+      if (!tableId) throw new ChatBoardGameReservationRejection("NO_TABLE_AVAILABLE", "ไม่มีโต๊ะรองรับในช่วงเวลานี้ กรุณาเลือกเวลาใหม่");
+    }
     const result = await client.query<{ id: string; status: string }>(
       `INSERT INTO bms_board_game_waitlist
         (tenant_id, location_id, kind, source, customer_id, service_date, status, party_size,
          guest_name, guest_phone, note, reserved_for, reserved_duration_minutes,
-         chat_request_key_hash, chat_request_hash, request_expires_at, created_by)
+         chat_request_key_hash, chat_request_hash, request_expires_at, created_by, reserved_table_id, confirmed_at)
        VALUES ($1, $2, 'RESERVATION', 'CHAT', $3,
-         (($4::timestamptz AT TIME ZONE $5) - INTERVAL '4 hours')::date, 'REQUESTED', $6,
+         (($4::timestamptz AT TIME ZONE $5) - INTERVAL '4 hours')::date,
+         CASE WHEN $14::uuid IS NULL THEN 'REQUESTED' ELSE 'CONFIRMED' END, $6,
          $7, $8, $9, $4, $10, $11, $12,
-         LEAST($4::timestamptz, now() + make_interval(mins => $13)), NULL)
+         LEAST($4::timestamptz, now() + make_interval(mins => $13)), NULL, $14,
+         CASE WHEN $14::uuid IS NULL THEN NULL ELSE now() END)
        RETURNING id, status`,
       [input.tenantId, input.locationId, input.customerId, preview.reservedFor, preview.timezone,
         preview.partySize, customer.name.slice(0, 120), customer.phone.slice(0, 40), preview.note ?? null,
-        preview.durationMinutes, keyHash, requestHash, preview.requestTtlMinutes]
+        preview.durationMinutes, keyHash, requestHash, preview.requestTtlMinutes, tableId]
     );
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1, 'ai:customer', 'board_game.chat_reservation_request', $2, $3::jsonb)`,
       [input.tenantId, result.rows[0].id, JSON.stringify({ locationId: input.locationId, partySize: preview.partySize,
-        reservedFor: preview.reservedFor, durationMinutes: preview.durationMinutes })]
+        reservedFor: preview.reservedFor, durationMinutes: preview.durationMinutes, autoConfirmed: tableId !== null })]
     );
     await client.query("COMMIT");
     return { requestId: result.rows[0].id, status: result.rows[0].status };
@@ -1207,42 +1258,11 @@ export async function reviewPublicBoardGameReservation(input: {
       const refundEligibleUntil = policy === "NONE" ? null : new Date(
         reservedFor.getTime() - Number(current.rows[0].refund_cutoff_hours) * 60 * 60_000,
       );
-      await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, [
-        `board-game-reservation:${input.tenantId}:${input.locationId}:${tableId}`,
-      ]);
-      const table = await client.query<{ seats: number }>(
-        `SELECT seats FROM bms_board_game_tables
-          WHERE tenant_id = $1 AND location_id = $2 AND id = $3 AND active AND NOT blocked
-          FOR UPDATE`,
-        [input.tenantId, input.locationId, tableId],
-      );
-      if (!table.rowCount) throw new Error("ไม่พบโต๊ะที่เปิดรับจองในสาขานี้");
-      if (Number(table.rows[0].seats) < Number(current.rows[0].party_size)) {
-        throw new Error("โต๊ะนี้รองรับจำนวนผู้เล่นไม่พอ");
-      }
-      const liveConflict = await client.query(
-        `SELECT 1
-           FROM bms_board_game_seatings st
-           JOIN bms_board_game_sessions s
-             ON s.tenant_id = st.tenant_id AND s.seating_id = st.id
-          WHERE st.tenant_id = $1 AND st.location_id = $2 AND st.table_id = $3
-            AND st.status = 'ACTIVE' AND s.status IN ('OPEN','CLOSING')
-            AND (s.status = 'CLOSING' OR s.expected_end_at IS NULL OR s.expected_end_at > $4::timestamptz)
-          LIMIT 1`,
-        [input.tenantId, input.locationId, tableId, reservedFor.toISOString()],
-      );
-      if (liveConflict.rowCount) throw new Error("โต๊ะนี้ยังมี session ที่ยืนยันไม่ได้ว่าจะจบก่อนเวลาจอง");
-      const conflict = await client.query(
-        `SELECT 1 FROM bms_board_game_waitlist
-          WHERE tenant_id = $1 AND location_id = $2 AND reserved_table_id = $3 AND id <> $4
-            AND kind = 'RESERVATION' AND status IN ('CONFIRMED','WAITING','CALLED')
-            AND reserved_for < $5::timestamptz + make_interval(mins => $6)
-            AND reserved_for + make_interval(mins => reserved_duration_minutes) > $5::timestamptz
-          LIMIT 1`,
-        [input.tenantId, input.locationId, tableId, input.entryId, reservedFor.toISOString(),
-          Number(current.rows[0].reserved_duration_minutes)],
-      );
-      if (conflict.rowCount) throw new Error("โต๊ะนี้มีการจองที่เวลาทับกัน");
+      if (!(await boardGameReservationTableFitsInTx(client, {
+        tenantId: input.tenantId, locationId: input.locationId, tableId: tableId!, entryId: input.entryId,
+        reservedFor: reservedFor.toISOString(), durationMinutes: Number(current.rows[0].reserved_duration_minutes),
+        partySize: Number(current.rows[0].party_size),
+      }))) throw new Error("โต๊ะไม่พร้อมหรือรองรับจำนวนคนไม่พอในช่วงเวลาจอง");
       await client.query(
         `UPDATE bms_board_game_waitlist
             SET status = 'CONFIRMED', reserved_table_id = $4, confirmed_at = now(),

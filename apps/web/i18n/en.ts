@@ -1031,6 +1031,7 @@ const en = {
     publish_rates: "Publish play rates",
     publish_availability: "Publish aggregate table availability",
     booking_enabled: "Accept online booking requests",
+    chat_auto_confirm: "Automatically confirm chat bookings (no deposit)",
     reservation_reminder_minutes: "Email reminder before booking (minutes)",
     reservation_min_advance_minutes: "Minimum advance booking time (minutes)",
     reservation_request_ttl_minutes: "Unreviewed request lifetime (minutes)",

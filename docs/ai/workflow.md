@@ -23,7 +23,13 @@ Board-game customers also receive three read-only tools: `get_board_game_rates`,
 published branches with tenant RLS and reuse public discovery's rate/occupancy authority. Missing
 shop-wide hours can be resolved from published branch hours; parking is answerable only when the
 saved shop description or published branch summary states it. Ambiguous branches require a choice.
-Booking policy is readable but chat cannot submit or confirm a reservation. Offers, passes, queues,
+Chat bookings preview before customer consent. By default they await staff review; since `10.49`,
+an opt-in no-deposit branch can confirm a table after locked availability checks. Customer-owned
+CHAT bookings can be cancelled or rescheduled through `manage_board_game_booking` with fresh
+server-summary consent. Refund, discount, extra-time and staff-help requests use the same confirmation
+flow to create a durable Inbox note and staff mention; only staff apply monetary/time changes.
+The pipeline persists one pending action, invalidates it on intervening messages, and replaces
+model prose with the verified status/receipt even after provider failure. Offers, passes, queues,
 party-capacity guarantees, damage charges and identity-document information are not exposed.
 Game rules require staff until an approved rules source is available. The live eval corpus is
 `scripts/ai-eval/board-game-customer-corpus.mjs`; contract tests cover scope, opt-out and redaction.
@@ -36,12 +42,14 @@ in the library query rather than left to model selection.
 
 For a loaded board-game tenant, `boardGameCustomerGuard.ts` checks the original message before
 checkout detail capture or any model/tool execution. Narrow deterministic patterns cover urgent
-swallowed-piece/choking reports, private identities, explicit overrides, unsupported approvals
+swallowed-piece/choking reports, private identities, explicit overrides, unsupported administrative changes
 and incidents. Emergency guidance wins over other intents. Refusals include a safe next step and
 do not echo private input. These are not exhaustive natural-language classifiers: the stable model
 policy and backend tool permissions still apply. Ordinary saved-policy questions are not blocked.
-This guard does not notify staff; replies explicitly direct customers to staff without claiming an
-action succeeded. Guard evaluation and limitations are documented in `scripts/ai-eval/README.md`.
+The guard itself does not notify staff. The pipeline enables operational requests to reach the
+approved action tool while preserving emergency/privacy boundaries. Only a committed Inbox action
+may claim that a request entered the staff queue. Guard evaluation and limitations are documented
+in `scripts/ai-eval/README.md`.
 The Thailand emergency number is based on [NIEMS guidance](https://www.niems.go.th/1/News/Detail/2981?group=2);
 copy identifies Thailand explicitly and gives no diagnosis or treatment instructions.
 

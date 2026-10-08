@@ -983,17 +983,26 @@ own dine-in service. Operator detail:
 
 ## Board game cafe
 
-**Chat booking is a customer-confirmed request (`10.48`), never a confirmed table.** The customer
+**Chat booking follows branch policy (`10.48`–`10.49`).** The customer
 tool previews server-resolved branch/time/duration/party details without writing; the pipeline saves
 the fingerprint and accepts a short affirmative only after that exact latest assistant summary.
 Consent expires after 15 minutes and any intervening message consumes it. The server rechecks all
 fields/configuration inside the write transaction, locks the CRM customer to enforce at most three
-pending CHAT requests, and inserts `REQUESTED` with no table/confirmed timestamp. Tenant and CRM
+active future CHAT bookings. The default inserts `REQUESTED` with no table/confirmed timestamp;
+an explicitly enabled `chat_auto_confirm` allocates a table under the shared reservation locks
+and inserts `CONFIRMED` atomically. No available table rolls the whole request back. The policy bit
+is part of the consent fingerprint, so a changed setting requires a fresh summary. Tenant and CRM
 identity are server-derived; contact name/phone are CRM snapshots, never tool arguments. A composite
 customer FK cascades hard erasure (normal CRM soft deletion preserves history). Only active,
 booking-enabled, no-deposit branches qualify; public-directory visibility does not apply. Staff
 review retains the existing POS PIN/table locks. Chat has no email/public token/deposit, no automatic
-decision notification, and no chat reschedule/cancel. Status reads are tenant + customer scoped.
+decision notification. `manage_board_game_booking` can cancel the customer's own no-deposit CHAT
+request/confirmed booking or reschedule a CONFIRMED booking on its existing table before check-in.
+It rechecks channel identity, ownership, row version, branch policy and locked availability in the
+write transaction. A missing/ambiguous reference or stale consent writes nothing. Refund, discount,
+extra-time and staff-help actions only create a customer-confirmed Inbox note and staff mention,
+with an idempotency result and audit in one transaction. Staff use existing permission-gated
+payment/POS operations to approve and apply any money or time change. Status reads are tenant + customer scoped.
 Every request/summary/status reply is server-composed, including after a model/provider failure.
 
 **Keep chat and public discovery readers separate.** Customer chat reads only through

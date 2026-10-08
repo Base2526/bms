@@ -655,6 +655,9 @@ not establish real database, provider, customer-chat or browser-form behavior.
 
 ### Chat reservation requests (`10.48`, 2026-10-07)
 
+This section records the original request-only release. `10.49` adds the opt-in confirmation and
+customer actions described below; its active-booking cap includes future CONFIRMED rows too.
+
 Chat reuses `bms_board_game_waitlist`, not a second reservation system. The branch must be active,
 have a saved profile, enable booking and use deposit policy `NONE`. A hidden directory branch can
 qualify. The tool resolves a branch name, converts local time using the same PostgreSQL timezone
@@ -743,17 +746,52 @@ CHECK from `10.2` and public shape/text CHECKs from `10.1`, then drop only the n
 CHECK/indexes/three columns. Never delete customer requests to make rollback pass. If CHAT rows exist,
 retain schema and preserve a staff review path until requests are resolved; do not silently strand them.
 
-Deliberately out of scope: automatic decision messages, chat deposits, chat reschedule/cancel, live
+For the original `10.48` release, out of scope: automatic decision messages, chat deposits, chat reschedule/cancel, live
 provider/channel verification and authenticated browser appearance. DB apply/tests are not established
 by pure tests or a production build; see the latest `CLAUDE.local.md` result for actual execution.
+
+### Chat actions (`10.49`)
+
+At `/admin/board-game`, branch settings now include **Automatically confirm chat bookings (no
+deposit)**. It defaults off, requires booking enabled and deposit policy NONE, and is saved through
+the existing branch-scoped `board_game.floor.manage` route. Migration
+`10.49__bms_board_game_chat_actions.sql` must precede deployment; apply it to an isolated test
+database first. Disabling this setting affects new bookings, not existing confirmed reservations.
+
+The customer still reviews the exact server summary and confirms it. When enabled, the backend
+allocates a capacity-compatible table under reservation locks and commits CONFIRMED; no table
+available means no booking is created. Only that result permits “จองสำเร็จแล้ว”.
+
+Customers can cancel their own pending/confirmed no-deposit CHAT booking before check-in. They can
+reschedule a CONFIRMED booking on the same table after specifying a new local date/time, duration
+and headcount. Conflicts leave the original booking intact. Public-token or staff-created bookings
+are not claimed merely by typing a reference in chat. Every change requires a new server summary,
+fresh customer consent, current identity/row-version validation and an idempotent transaction.
+
+Refund, discount, extra-time and staff-help requests are customer-confirmed Inbox notes with a
+durable mention to the assigned staff member (or another eligible shop staff member). Staff review
+the chat and apply an approved change through existing POS/payment screens and permissions.
+The queue receipt does not mean staff have read it or approved it; no automatic money or time
+mutation is performed. Missing staff recipients fail visibly instead of claiming a notification.
+
+Verification on 2026-10-08: TypeScript passed. A schema-only isolated local database passed the
+new chat-action DB suite (7/7) and existing waitlist/reservation DB suite (10/10); migration `10.49`
+was applied twice successfully there. Tests cover concurrent table allocation, opt-out, changed
+policy/consent, identity isolation, reschedule rollback, duplicate cancellations and durable staff
+mentions without money/time writes. Redis push and email delivery were not configured in that
+environment. Full pure suite: 2,437 passed, 6 skipped, 1 unrelated existing Admin alert-dismissal
+failure in unchanged CustomerOrderDetail/DashboardActions components. Live-model/channel and
+authenticated browser verification have not been performed. No migration was applied to the
+running shop database and no existing branch was opted in.
 
 ### Deterministic reply boundaries
 
 Customer chat can read published rates, game-library metadata and aggregate availability. It
-can submit a customer-confirmed REQUESTED reservation through the approved tool, but cannot
-confirm/change/cancel a board-game reservation, extend play time, issue a refund, grant a
-discount or notify staff. A successful slip submission is not payment confirmation. The
-board-game response guard must not exempt these claims because an unrelated tool succeeded.
+can submit or confirm bookings according to branch policy and change its own booking through the
+approved confirmed-action flow. It can queue staff requests, but cannot itself extend play time,
+issue a refund or grant a discount. A successful slip submission is not payment confirmation.
+The response guard must not exempt completion claims because an unrelated tool succeeded;
+verified action receipts are composed by the server, not the model.
 
 `boardGameUrgentGuard()` is a pure, shop-neutral emergency/safety boundary, called on the actual
 message before profile, conversation or history reads. It follows the existing pharmacy emergency
