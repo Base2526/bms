@@ -12,6 +12,7 @@ export const BOARD_GAME_CUSTOMER_CORPUS = [
   q("hourly", 1, "ชั่วโมงละเท่าไร", rates, play),
   q("day-pass", 1, "เหมาวันได้ไหม", rates, { ...play, abstain: true }),
   q("floor", 2, "ตอนนี้มีโต๊ะว่างไหมคะ", availability, play),
+  q("table-details", 2, "ขอรายละเอียดโต๊ะทั้งหมดหน่อย อยู่ชั้นไหนและนั่งได้กี่คน", availability, play),
   q("walk-in", 2, "ไปตอนนี้ได้เลยไหม", availability, play),
   q("hours", 3, "เปิดกี่โมง ปิดกี่โมง", store),
   q("monday", 3, "วันจันทร์เปิดไหม", store),

@@ -60,9 +60,15 @@ export async function readBoardGameCustomerInfoInTx(
     offersStatus: "NOT_EXPOSED", note: "Published hourly rates only. Do not infer day packages, offers, personal eligibility or a final bill.",
   };
   if (kind === "availability") return {
-    ...base, status: cafe.publishAvailability ? "OK" : "NOT_PUBLISHED",
+    ...base, status: cafe.publishAvailability || cafe.publishTableDetails ? "OK" : "NOT_PUBLISHED",
     totalTables: cafe.publishAvailability ? cafe.totalTables : null,
     availableTables: cafe.publishAvailability ? cafe.availableTables : null,
+    tableDetails: cafe.publishTableDetails ? (cafe.tableDetails ?? []).map((detail) => ({
+      area: detail.area,
+      seats: detail.seats,
+      totalTables: detail.totalTables,
+      availableTables: cafe.publishAvailability ? detail.availableTables : null,
+    })) : null,
     observedAt: new Date().toISOString(),
     booking: {
       requestsEnabled: cafe.bookingEnabled,
@@ -73,8 +79,8 @@ export async function readBoardGameCustomerInfoInTx(
       canSubmitViaChat: cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
       autoConfirm: cafe.chatAutoConfirm && cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
     },
-    waitMinutes: null, waitingParties: null, partyCapacity: null,
-    note: "Current aggregate only, not a reservation or a guarantee of space for a party. Queue, wait time and party capacity are not available through this tool.",
+    waitMinutes: null, waitingParties: null,
+    note: "Published customer-safe table summary only. Area is the shop-maintained public zone/floor label; seats is table capacity. Available counts are current observations, not a reservation or a guarantee of future space. Never infer or reveal table numbers, occupants, sessions or customer identities.",
   };
   const result = await client.query(
     `SELECT title.title, title.min_players, title.max_players, title.typical_minutes,

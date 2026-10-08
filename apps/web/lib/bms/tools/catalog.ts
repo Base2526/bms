@@ -1000,7 +1000,7 @@ const getPharmacyCaseStatusTool: BmsTool = {
 const getRestaurantAvailabilityTool: BmsTool = {
   name: "get_restaurant_availability",
   description:
-    "Read current customer-safe restaurant branch aggregates: available tables/seats, walk-in queue counts, unseated reservation-request counts, open kitchen tickets and configured kitchen SLA. Accepted reservations are not counted as a live physical queue. It never returns identities or a promised wait/preparation time. Call list_restaurant_order_locations first and pass its exact locationId.",
+    "Read current customer-safe restaurant branch aggregates: available tables/seats, walk-in queue counts, unseated reservation-request counts, open kitchen tickets and configured kitchen SLA. When the branch explicitly opts in, tableDetails contains public area/floor labels and capacity-grouped total/available counts only—never table numbers, ids, occupants or checks. Accepted reservations are not counted as a live physical queue. It never returns identities or a promised wait/preparation time. Call list_restaurant_order_locations first and pass its exact locationId.",
   surfaces: ["customer"],
   permission: "product.view",
   inputSchema: {
@@ -3132,7 +3132,7 @@ const getBoardGameRatesTool = boardGameCustomerReadTool("get_board_game_rates", 
 const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_library", "library",
   "Search this shop's publicly visible playable titles by title/tag and player count, independently of public-directory listing. A saved active branch profile is required; NOT_PUBLISHED means not enabled for chat, not no games. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
-  "Read this shop's branch information/hours, current aggregate table counts and booking/deposit policy. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null counts mean not enabled for chat, not zero.");
+  "Read this shop's branch information/hours, current aggregate table counts, opt-in customer-safe area/floor and capacity groups, and booking/deposit policy. Table details contain public area labels, seat capacity and grouped counts only—never table numbers, ids, occupants or sessions. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null fields mean not enabled for chat, not zero.");
 
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",

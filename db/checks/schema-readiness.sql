@@ -102,6 +102,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
     ('10.3__bms_board_game_offers.sql', 'table', 'bms_board_game_offers', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้ — เส้นทางปิดบิลตรวจโปรโมชันค่าเวลาทุกครั้ง'),
     ('10.49__bms_board_game_chat_actions.sql', 'column', 'bms_board_game_public_locations', 'chat_auto_confirm', 'Board-game chat booking policy requires the automatic confirmation setting'),
+    ('10.50__bms_board_game_public_table_details.sql', 'column', 'bms_board_game_public_locations', 'publish_table_details', 'Board-game customer availability reads require the opt-in table-detail publication setting'),
+    ('10.51__bms_restaurant_public_table_details.sql', 'column', 'bms_locations', 'publish_restaurant_table_details', 'Restaurant floor settings and customer availability require the opt-in table-detail publication setting'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'customer_id', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'chat_request_key_hash', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'chat_request_hash', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),

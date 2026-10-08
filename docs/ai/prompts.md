@@ -125,7 +125,9 @@ loops (both alongside the same guardrails as above — facts only from tools, no
   Restaurant food-safety answers use only the structured `foodProfile`; missing declarations are
   stated as unknown, never inferred from a dish name or description, and even reviewed declarations
   do not prove freedom from cross-contact. Table/queue/kitchen answers require an exact branch and
-  `get_restaurant_availability`; null estimates stay unknown and kitchen SLA is not a promise.
+  `get_restaurant_availability`; opt-in `tableDetails` may describe only area/floor labels and
+  capacity-grouped counts, never a table number, occupant or check. Null estimates stay unknown and
+  kitchen SLA is not a promise.
   `request_restaurant_reservation` creates `REQUESTED` only. The deterministic post-tool reply says
   explicitly that no table is reserved or confirmed until staff accepts it.
 - **Staff** — `STAFF_SYSTEM` in [`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts):

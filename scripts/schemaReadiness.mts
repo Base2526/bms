@@ -376,6 +376,16 @@ export const MIGRATIONS: Migration[] = [
     needs: [{ kind: "column", table: "bms_board_game_public_locations", name: "chat_auto_confirm" }],
   },
   {
+    file: "10.50__bms_board_game_public_table_details.sql",
+    impact: "Board-game customer availability reads require the opt-in table-detail publication setting",
+    needs: [{ kind: "column", table: "bms_board_game_public_locations", name: "publish_table_details" }],
+  },
+  {
+    file: "10.51__bms_restaurant_public_table_details.sql",
+    impact: "Restaurant floor settings and customer availability require the opt-in table-detail publication setting",
+    needs: [{ kind: "column", table: "bms_locations", name: "publish_restaurant_table_details" }],
+  },
+  {
     file: "10.48__bms_board_game_chat_reservations.sql",
     impact: "คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด",
     needs: [

@@ -169,6 +169,7 @@ test("every admin mutation rejects a role without restaurant.floor.manage", asyn
     () => bmsRestaurantFloorAdminResolvers.Mutation.bmsUpdateRestaurantTable(null, { tableId: firstTableId, patch: { name: "x" } }, ctx),
     () => bmsRestaurantFloorAdminResolvers.Mutation.bmsDeleteRestaurantTable(null, { tableId: firstTableId }, ctx),
     () => bmsRestaurantFloorAdminResolvers.Mutation.bmsSaveRestaurantFloorLayout(null, { locationId, positions: [] }, ctx),
+    () => bmsRestaurantFloorAdminResolvers.Mutation.bmsSetRestaurantCustomerTableDetails(null, { locationId, publish: true }, ctx),
   ];
   for (const call of calls) {
     await assert.rejects(call, (error: any) => error?.extensions?.code === "FORBIDDEN");

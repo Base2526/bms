@@ -603,6 +603,7 @@ the service never creates one automatically.
 | Branch `public_visible` | Required to list the branch | Not required |
 | `publish_rates` | Controls hourly rates on a listed branch | Controls hourly rates; off = `NOT_PUBLISHED`, not free |
 | `publish_availability` | Controls aggregate table counts | Controls table and available-copy counts; off = unknown/null, not zero |
+| `publish_table_details` | Controls customer-safe area/floor and capacity groups | Controls the same grouped details; off by default and never exposes table numbers, ids, occupants or sessions |
 | Title `public_visible` | Controls game highlights | Controls library search results |
 
 Lost/retired copies remain excluded. Since `10.48`, `canSubmitViaChat` is true only when
@@ -615,16 +616,21 @@ ordering and limits. Internal IDs are stripped before a customer tool returns da
 
 #### Release note — แยกข้อมูลแชทจากรายชื่อร้านใกล้คุณ
 
-ตั้งแต่เวอร์ชันนี้ แชทของร้านตอบค่าเล่น จำนวนโต๊ะว่าง และเกมที่ติ๊กแสดงได้ตาม
-สวิตช์ “เผยแพร่ค่าเล่น / เผยแพร่โต๊ะว่าง” และ “แสดงต่อสาธารณะ” ของแต่ละเกม
+ตั้งแต่เวอร์ชันนี้ แชทของร้านตอบค่าเล่น จำนวนโต๊ะว่าง รายละเอียดโซน/ชั้นและขนาดโต๊ะแบบรวม
+และเกมที่ติ๊กแสดงได้ตามสวิตช์ “เผยแพร่ค่าเล่น / เผยแพร่โต๊ะว่าง /
+เผยแพร่โซนและขนาดโต๊ะ” และ “แสดงต่อสาธารณะ” ของแต่ละเกม
 โดยไม่ต้องเปิดร้านในรายชื่อร้านใกล้คุณ ชื่อสาขา คำอธิบาย ที่อยู่ เบอร์โทร และเวลาเปิดปิด
 ในโปรไฟล์สาขาถูกใช้ตอบลูกค้าในแชทด้วย
 
 **สวิตช์เผยแพร่ค่าเล่นและโต๊ะว่างมีค่าปริยายเป็นเปิด (`TRUE` ตั้งแต่ migration `9.83`)**
 ร้านที่มีโปรไฟล์อยู่แล้วแต่ซ่อนจากรายชื่อสาธารณะจึงอาจเริ่มตอบข้อมูลนี้หลัง deploy
 หากไม่ต้องการให้แชทตอบเรื่องใด ให้ปิดสวิตช์นั้นที่ `/admin/board-game`
+สวิตช์รายละเอียดโซนและขนาดโต๊ะเพิ่มใน `10.50` และปิดเป็นค่าปริยาย เพื่อไม่ขยายข้อมูล
+ของโปรไฟล์เดิมโดยไม่ได้รับความยินยอม เมื่อเปิดแล้วจะเผยแพร่เฉพาะชื่อโซน/ชั้น จำนวนที่นั่ง
+และจำนวนโต๊ะแบบจัดกลุ่ม ไม่ส่งเลขโต๊ะ รหัสโต๊ะ session หรือข้อมูลลูกค้า
 หน้าค้นหาสาธารณะยังไม่แสดงร้านที่ปิด “แสดงในรายชื่อร้านใกล้คุณ” เหมือนเดิม
-การแยกตัวอ่านไม่มี migration หรือสวิตช์ใหม่ ส่วนคำขอจองผ่านแชทเพิ่มแยกใน `10.48` ด้านล่าง
+การแยกตัวอ่านเดิมไม่มี migration หรือสวิตช์ใหม่; `10.50` เพิ่มเฉพาะ opt-in รายละเอียดโต๊ะ
+ส่วนคำขอจองผ่านแชทเพิ่มแยกใน `10.48` ด้านล่าง
 
 Read-only impact count before deployment (distinct shops versus branch profiles; a rate-enabled
 shop may still have no active rates, so this measures eligibility, not promised answers):

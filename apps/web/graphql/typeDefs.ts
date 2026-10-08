@@ -613,6 +613,7 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsRestaurantFloorAdmin {
+    publishTableDetails: Boolean!
     areas: [BmsRestaurantArea!]!
     tables: [BmsRestaurantTableAdmin!]!
   }
@@ -4700,6 +4701,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpdateRestaurantTable(tableId: ID!, patch: BmsRestaurantTablePatchInput!): BmsRestaurantTableAdmin!
     bmsDeleteRestaurantTable(tableId: ID!): Boolean!
     bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
+    bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
     bmsIssueRestaurantTableQr(tableId: ID!, rotate: Boolean): BmsRestaurantTableQr!
 
     # ---- POS (7.87) ----

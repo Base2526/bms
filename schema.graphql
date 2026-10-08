@@ -6122,6 +6122,7 @@ type BmsRestaurantCancellationLoss {
 
 type BmsRestaurantFloorAdmin {
   areas: [BmsRestaurantArea!]!
+  publishTableDetails: Boolean!
   tables: [BmsRestaurantTableAdmin!]!
 }
 
@@ -7694,6 +7695,7 @@ type Mutation {
   bmsSetProductBundleItems(bundleSku: String!, items: [BmsBundleItemInput!]!): [BmsBundleItem!]!
   bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
   bmsSetReorderPoint(locationId: ID!, reorderPoint: Int!, size: String!, sku: String!): BmsVariant!
+  bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
   bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
   bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!

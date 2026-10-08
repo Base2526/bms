@@ -1030,7 +1030,9 @@ read only through `listPublicBoardGameCafes()`. Never swap them or add an `inclu
 escape to the public reader. Chat requires a non-optional, validated tenant and unconditional
 `profile.tenant_id = $1`, a saved branch profile, active branch/tenant and board-game archetype.
 `profile.public_visible` controls only directory discovery; `publish_rates`,
-`publish_availability`, title visibility and lost/retired-copy exclusions still govern chat.
+`publish_availability`, opt-in `publish_table_details`, title visibility and lost/retired-copy
+exclusions still govern chat. Published table details are grouped by active area/floor label and
+seat capacity only; never expose table numbers/ids, occupants, sessions or customer data.
 Both readers share one SQL projection for rates, current seating counts and game highlights;
 the public reader alone retains the directory visibility and optional-tenant predicates.
 Customer tool results must continue to omit internal branch/table/copy identifiers.
@@ -1382,9 +1384,12 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
 - **Restaurant customer assistance (`10.43`) is evidence-first and propose-only where a table is
   involved.** Product tools expose shop-maintained positive allergen declarations and dietary menu
   labels with an explicit reviewed flag; a missing/empty declaration is unknown, and a reviewed list
-  still never proves freedom from cross-contact. `get_restaurant_availability` may expose only
-  current branch aggregates (free tables/seats, waiting counts, open kitchen tickets and configured
-  SLA), never table/guest/ticket ids or a fabricated wait/preparation time. A chat booking writes a
+  still never proves freedom from cross-contact. `get_restaurant_availability` may expose current
+  branch aggregates (free tables/seats, waiting counts, open kitchen tickets and configured SLA).
+  Since `10.51`, a branch may explicitly opt in to publish area/floor labels and capacity-grouped
+  total/available table counts; the projection never returns table ids/codes/names, checks,
+  occupants, guest/ticket identities or a fabricated wait/preparation time. Existing branches stay
+  opted out. A chat booking writes a
   customer-owned `REQUESTED` waitlist row; only a PIN-authenticated `pos.sell` action may accept it
   into `WAITING`, and only seating opens the authoritative check. The customer reply must never call
   `REQUESTED`, `WAITING` or `CALLED` a confirmed/reserved table. These columns are read on the common

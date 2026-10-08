@@ -75,8 +75,9 @@ test("chat publication is independent of directory visibility against real Postg
     )).rows[0].id;
     await client.query(
       `INSERT INTO bms_board_game_public_locations
-        (tenant_id, location_id, public_visible, publish_rates, publish_availability, booking_enabled, latitude, longitude)
-       VALUES ($1, $2, FALSE, TRUE, TRUE, FALSE, 13.75, 100.5)`, [shop, branch]
+        (tenant_id, location_id, public_visible, publish_rates, publish_availability,
+         publish_table_details, booking_enabled, latitude, longitude)
+       VALUES ($1, $2, FALSE, TRUE, TRUE, TRUE, FALSE, 13.75, 100.5)`, [shop, branch]
     );
     for (let i = 0; i < 4; i++) {
       await client.query(
@@ -125,6 +126,9 @@ test("chat publication is independent of directory visibility against real Postg
     assert.equal(floor.status, "OK");
     assert.equal(floor.totalTables, 3, "blocked table is excluded");
     assert.equal(floor.availableTables, 2, "active seating occupies one table");
+    assert.deepEqual(floor.tableDetails, [{
+      area: "FAKE chat area", seats: 4, totalTables: 3, availableTables: 2,
+    }]);
     assert.equal(floor.booking.canSubmitViaChat, true);
     const library = await read("library");
     assert.equal(library.status, "OK");
@@ -158,12 +162,13 @@ test("chat publication is independent of directory visibility against real Postg
     assert.deepEqual((await listBoardGameChatBranches({ tenantId: otherShop, client })).map((c) => c.locationId), [otherBranch]);
     await client.query("SELECT set_config('bms.tenant_id', $1, true)", [shop]);
 
-    await client.query("UPDATE bms_board_game_public_locations SET publish_rates = FALSE, publish_availability = FALSE WHERE tenant_id = $1", [shop]);
+    await client.query("UPDATE bms_board_game_public_locations SET publish_rates = FALSE, publish_availability = FALSE, publish_table_details = FALSE WHERE tenant_id = $1", [shop]);
     assert.equal((await read("rates")).status, "NOT_PUBLISHED");
     const unpublished = await read("availability");
     assert.equal(unpublished.status, "NOT_PUBLISHED");
     assert.equal(unpublished.totalTables, null);
     assert.equal(unpublished.availableTables, null);
+    assert.equal(unpublished.tableDetails, null);
     assert.ok((await read("library")).games.every((game) => game.availableCopies === null));
     await client.query("UPDATE bms_locations SET active = FALSE WHERE tenant_id = $1 AND id = $2", [shop, branch]);
     assert.deepEqual(await listBoardGameChatBranches({ tenantId: shop, client }), []);
