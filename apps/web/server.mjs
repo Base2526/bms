@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import next from "next";
 
 import { configureWebHttpServer } from "./server-config.mjs";
+import { startLocalEvidenceRetention } from "./answer-evidence-retention.mjs";
 
 const hostname = "0.0.0.0";
 const port = Number(process.env.PORT || 3000);
@@ -31,6 +32,7 @@ server.on("upgrade", (request, socket, head) => {
 });
 
 server.listen(port, hostname, () => {
+  startLocalEvidenceRetention(port);
   console.log(
     `[web] listening on http://${hostname}:${port}; requestTimeout=${timeouts.requestTimeoutMs}ms`,
   );

@@ -113,8 +113,24 @@ jobs:
             path: /api/bms/ai/check-health
           - name: report-digest
             path: /api/bms/reports/send-digest
+          - name: ai-answer-evidence-retention
+            path: /api/bms/ai/evidence/purge-expired
     steps:
+      - uses: actions/checkout@v4
+        if: matrix.job.name == 'ai-answer-evidence-retention'
+      - name: Purge expired AI answer evidence
+        if: matrix.job.name == 'ai-answer-evidence-retention'
+        env:
+          BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          BMS_CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$BMS_CRON_SECRET" ]; then
+            echo "::notice::Evidence retention not configured"
+            exit 0
+          fi
+          node --input-type=module -e 'import { runEvidenceRetention } from "./apps/web/answer-evidence-retention.mjs"; await runEvidenceRetention(process.env.BASE_URL, process.env.BMS_CRON_SECRET);'
       - name: POST ${{ matrix.job.name }}
+        if: matrix.job.name != 'ai-answer-evidence-retention'
         env:
           BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}

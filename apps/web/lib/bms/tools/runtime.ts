@@ -14,6 +14,7 @@ import {
   type AiCredentials,
 } from "../ai";
 import { callAnthropicCompatibleMessages } from "../aiProvider";
+import { recordCustomerToolEvidence } from "../customerAnswerEvidence";
 import {
   estimateCachedAiCostUsd,
   finalizeAiUsageEvent,
@@ -223,6 +224,7 @@ export function hasSensitiveStaffIntent(
  * ค้างยังต้องพึ่ง statement_timeout ฝั่ง Postgres ตามปกติ
  */
 const TOOL_TIMEOUT_MS = 30_000;
+class ToolEvidenceTimeout extends Error {}
 
 async function executeToolBounded(
   tool: BmsTool,
@@ -235,7 +237,7 @@ async function executeToolBounded(
       tool.execute(input, ec),
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(
-          () => reject(new Error(`ทูล ${tool.name} ใช้เวลาเกิน ${TOOL_TIMEOUT_MS} ms`)),
+          () => reject(new ToolEvidenceTimeout(`ทูล ${tool.name} ใช้เวลาเกิน ${TOOL_TIMEOUT_MS} ms`)),
           TOOL_TIMEOUT_MS
         );
       }),
@@ -406,6 +408,8 @@ async function runApprovedToolInternal(
   const auditAttempt = deps.auditAttempt ?? auditToolCall;
   const reportFailure = deps.reportFailure ?? reportBmsFailure;
   const { tool, execCtx } = opts;
+  const evidenceStartedAt = new Date().toISOString();
+  let evidenceOutcome: string | undefined;
   let input: Record<string, unknown> = {};
   let outcome: "ok" | "error" | "denied" | "proposal" = "error";
   let result: ToolResult;
@@ -438,6 +442,7 @@ async function runApprovedToolInternal(
       trace = { tool: tool.name, input, ok: false, summary: executed.error };
     }
   } catch (err) {
+    if (err instanceof ToolEvidenceTimeout) evidenceOutcome = "timeout_effect_unknown";
     const denied = err instanceof ToolAccessError;
     outcome = denied ? "denied" : "error";
     const message =
@@ -454,6 +459,9 @@ async function runApprovedToolInternal(
   }
 
   rememberStoreRead(tool.name, result, input, execCtx);
+  recordCustomerToolEvidence({ tenantId: execCtx.tenantId, surface: execCtx.surface,
+    tool: tool.name, input, output: result.ok ? result.data : {}, outcome: evidenceOutcome ?? outcome,
+    source: "SERVER_SELECTED", startedAt: evidenceStartedAt });
   await auditAttempt(execCtx, tool.name, outcome, tool);
   return { result, trace };
 }
@@ -712,6 +720,9 @@ async function runToolLoopInternal(
 
       const toolResults: any[] = [];
       for (const tu of toolUses) {
+        const evidenceStartedAt = new Date().toISOString();
+        let evidenceSource = "MODEL_SELECTED";
+        let evidenceOutcome: string | undefined;
         const toolName = typeof tu?.name === "string" ? tu.name : "unknown";
         const tool = byName.get(toolName);
         let resultContent: string;
@@ -732,6 +743,7 @@ async function runToolLoopInternal(
             // Store publication may change within a turn; do not replay an older parking read.
             const completed = toolName === "get_store_info" ? undefined : completedCalls.get(callKey);
             if (completed) {
+              evidenceSource = "DUPLICATE_SUPPRESSED";
               outcome = completed.outcome;
               resultContent = completed.resultContent;
               if (completed.fallbackReply) latestVerifiedFallback = completed.fallbackReply;
@@ -786,6 +798,7 @@ async function runToolLoopInternal(
               }
             }
           } catch (err: any) {
+            if (err instanceof ToolEvidenceTimeout) evidenceOutcome = "timeout_effect_unknown";
             const denied = err instanceof ToolAccessError;
             outcome = denied ? "denied" : "error";
             const msg = err instanceof ToolArgError || denied ? err.message : "ดึงข้อมูลไม่สำเร็จ";
@@ -800,6 +813,9 @@ async function runToolLoopInternal(
             }
           }
         }
+        recordCustomerToolEvidence({ tenantId: opts.execCtx.tenantId, surface: opts.execCtx.surface,
+          tool: toolName, input: traceInput, output: {}, serializedOutput: outcome === "ok" ? resultContent : undefined,
+          outcome: evidenceOutcome ?? outcome, source: evidenceSource, startedAt: evidenceStartedAt });
         await auditAttempt(opts.execCtx, toolName, outcome, tool);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: resultContent });
       }

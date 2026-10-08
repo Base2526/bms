@@ -13,6 +13,7 @@ import { getChannel } from "@/lib/bms/channels";
 import { verifyLineSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { logConversation, notifyInboxConversationChanged, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
+import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
 import {
@@ -236,7 +237,7 @@ async function processLineEvent(
       customerRef: userId,
       meta: { messageId: ev.message?.id ?? null },
     });
-    await logConversation(tenantId, "line", userId, text, fallbackReply);
+    await logConversation(tenantId, "line", userId, text, fallbackReply, fallbackEvidenceQuality(error, fallbackReply));
     if (cfg.access_token && ev.replyToken) {
       await pushLineReply(tenantId, cfg.access_token, ev.replyToken, fallbackReply, userId);
     }

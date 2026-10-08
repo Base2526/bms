@@ -8086,6 +8086,8 @@ type Query {
   bmsActingTenant: BmsActingTenant
   bmsActionMetrics(days: Int = 30): BmsActionMetrics!
   bmsActions(group: String = "ALL", limit: Int = 50, offset: Int = 0): [BmsAction!]!
+  bmsAiAnswerEvidence(messageId: ID!): JSON
+  bmsAiAnswerEvidenceCoverage(days: Int = 30): JSON!
   bmsAiConfig: BmsAiConfig!
   bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
   bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!

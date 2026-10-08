@@ -52,6 +52,7 @@ export type BmsFailureCode =
   | "ai.context_load_failed"
   /** บันทึก state ของบทสนทนาไม่สำเร็จ → ความจำหาย ถามซ้ำ */
   | "ai.state_persist_failed"
+  | "ai.evidence_persist_failed"
   /**
    * ปิด usage event ไม่สำเร็จ → แถวค้างที่ status 'started' และ token เป็น NULL
    *
@@ -143,6 +144,11 @@ const FAILURE_CATALOG: Readonly<Record<BmsFailureCode, CatalogEntry>> = {
     tier: "B",
     shopTitle: "ผู้ช่วย AI บันทึกความจำบทสนทนาไม่สำเร็จ",
     shopMessage: "ระบบบันทึกสถานะบทสนทนาไม่สำเร็จ AI อาจถามข้อมูลเดิมซ้ำ",
+  },
+  "ai.evidence_persist_failed": {
+    tier: "B",
+    shopTitle: "บันทึกหลักฐานคำตอบ AI ไม่สำเร็จ",
+    shopMessage: "ข้อความยังถูกบันทึก แต่ข้อมูลสำหรับตรวจสอบคำตอบไม่ครบ กรุณาตรวจ schema และสถานะ AI Quality",
   },
   "ai.usage_finalize_failed": {
     tier: "B",

@@ -38,6 +38,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; } },
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
+    "@/lib/bms/customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE", reasonCodes: ["PIPELINE_EXCEPTION"], successfulToolCalls: 0, failedToolCalls: 0 }) },
     "@/lib/bms/inbox": {
       logConversation: async (...args: any[]) => { calls.logs.push(args); },
       logInboundMessage: noop,

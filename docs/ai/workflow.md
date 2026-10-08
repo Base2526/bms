@@ -5,6 +5,12 @@
 Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
+Customer-turn evidence (`10.53`) starts before early guards and follows both approved-tool paths.
+The final sanitized reply is linked to its exact incoming message by `logConversation`, not by
+nearest timestamp. Evidence travels server-side only; a pipeline exception produces one terminal
+fallback with the original collector, never a second business execution. Missing history/state
+provenance is PARTIAL, not reconstructed from current data. See [quality.md](quality.md).
+
 Before every general customer model loop, the server calls `get_store_info` through the
 approved, audited runtime and supplies a bounded allowlist of public profile fields as a
 tool-result message. This is not gated on recognizing a particular question: location,

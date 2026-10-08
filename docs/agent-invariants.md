@@ -94,6 +94,15 @@ arguments or prompt content. Successful A2 writes also keep their domain audit a
 A3 actions are audited by the existing mutation. Shared-key quota is consumed once before a loop,
 not once per Claude round-trip.
 
+Customer QA evidence (`10.53`) is separate from audit and never serialized into customer results.
+It links exact source messages and bounded allowlisted tool snapshots under forced tenant RLS.
+Missing/omitted provenance is PARTIAL, persistence failure is FAILED, legacy is NOT_CAPTURED;
+none is a factual verdict. Savepoint failure must preserve the message pair and must never retry
+a business action. Staff runtime remains compatible but is not captured. See [ai/quality.md](ai/quality.md).
+Preserve the final pipeline digest through persistence; never replace it with a hash of changed
+text and claim a match. Recheck source-message roles/links and retained call counts; integrity
+failures cannot be COMPLETE. Expired headers and snapshots stay hidden even before cron cleanup.
+
 The catalog also covers store profile (`lib/bms/storeProfile.ts`, migrations `6.9`/`7.17__bms_store_profile*`
 — `get_store_info`/`get_payment_info`/`get_shipping_estimate`; contact/branding/locale fields). Shop name
 is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` column is deprecated — do

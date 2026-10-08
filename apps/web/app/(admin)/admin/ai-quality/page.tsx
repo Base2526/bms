@@ -30,6 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import styles from "./page.module.css";
+import { AnswerEvidence, AnswerEvidenceSearch } from "./AnswerEvidence";
 
 const { Text, Paragraph } = Typography;
 const { CheckableTag } = Tag;
@@ -437,6 +438,7 @@ export default function AiQualityPage() {
       </div>
 
       <div className={styles.thread}>
+        <AnswerEvidence key={detail.messageId} messageId={detail.messageId} />
         {(detail.messages || []).map((item: any) => {
           const flagged = item.id === detail.messageId;
           return (
@@ -556,6 +558,7 @@ export default function AiQualityPage() {
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
       </div>
 
+      <AnswerEvidenceSearch days={days} />
       <div className={styles.rail}>
         <div className={`${styles.cell} ${styles.cellLead}`}>
           <span className={styles.cellKey}><SafetyOutlined /> {t("admin_ai_quality.pending_qa_title")}</span>

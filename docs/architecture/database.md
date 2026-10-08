@@ -25,6 +25,23 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Customer answer evidence (`10.53`)
+
+`bms_ai_turn_evidence` links a server-generated turn UUID to exact tenant/conversation/IN/OUT
+message IDs, capture status/reasons, counts, projection schema version, final-reply digest and
+expiry. Composite FKs prevent a same-UUID cross-tenant or cross-conversation link and cascade
+when either source message is deleted. `bms_ai_tool_evidence` holds bounded projected inputs,
+outputs, outcomes, source and timing, keyed by tenant/turn/sequence. Both tables FORCE RLS and
+missing `bms.tenant_id` fails closed; `bms_app` has explicit grants. This operational QA data has
+no realtime business event: reads refresh on inspection.
+
+The message transaction owns evidence via a savepoint: snapshot failure rolls back only the
+snapshot and persists `meta.aiEvidence.status=FAILED` with the exact input link. A tenant/turn
+advisory lock plus partial unique message index prevents repeated persistence of the same turn.
+Payload expiry is 90 days and header expiry 180 days; source deletion wins. The authenticated
+retention worker processes locked batches under per-tenant RLS. Old backups expire according to
+backup policy, separately from online deletion. No old message is backfilled with invented facts.
+
 ### Basic branch parking (`10.52`)
 
 `bms_locations.parking_info` is one shared JSONB object for every shop archetype, edited in

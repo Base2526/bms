@@ -15,6 +15,7 @@ import {
 import { audit } from "@/lib/bms/audit";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
+import { getAnswerEvidence, getAnswerEvidenceCoverage } from "@/lib/bms/answerEvidenceStore";
 
 const CASE_STATUSES = ["PENDING", "REVIEWED", "DISMISSED"] as const;
 const CASE_SOURCES = ["AUTO_FAILURE", "AUTO_SAMPLE", "MANUAL"] as const;
@@ -38,6 +39,14 @@ function badInput(error: unknown): never {
 
 export const bmsAiQualityResolvers = {
   Query: {
+    async bmsAiAnswerEvidence(_p: unknown, args: { messageId: string }, ctx: any) {
+      await requirePermission(ctx, "ai_quality.view");
+      return getAnswerEvidence(getTenantId(ctx), args.messageId);
+    },
+    async bmsAiAnswerEvidenceCoverage(_p: unknown, args: { days?: number }, ctx: any) {
+      await requirePermission(ctx, "ai_quality.view");
+      return getAnswerEvidenceCoverage(getTenantId(ctx), args.days);
+    },
     async bmsAiQualityMetrics(_p: unknown, args: { days?: number }, ctx: any) {
       await requirePermission(ctx, "ai_quality.view");
       return getAiQualityMetrics(getTenantId(ctx), args.days ?? 30);

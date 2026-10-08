@@ -1,5 +1,18 @@
 # API Surface
 
+## Customer answer evidence (`10.53`)
+
+- `bmsAiAnswerEvidence(messageId: ID!): JSON`: bounded versioned QA projection for one AI message,
+  including non-sampled turns. Requires `ai_quality.view`; server-derived tenant; inaccessible
+  messages return null. Exact Q/A comes from existing Inbox rows, redacted for review. Unknown
+  delivery remains UNKNOWN; no raw prompt, credentials, clinical evidence or signed URL export.
+- `bmsAiAnswerEvidenceCoverage(days: Int = 30): JSON!`: clamps 1–90 days, same permission and tenant.
+  Counts capture-time COMPLETE/PARTIAL/FAILED/NOT_CAPTURED across all AI OUT messages, not accuracy.
+- `POST /api/bms/ai/evidence/purge-expired?afterTenant=<uuid>`: cron authority only; unset secret
+  refuses access. Returns bounded batch counts and `nextTenant` until exhausted, with job history.
+  The cursor does not grant tenant authority. Cloud daily and Retail Local six-hour scheduling
+  use the same endpoint; never expose it through a tenant-authorized “run all shops” button.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
 ## Mobile GraphQL primary API

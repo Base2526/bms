@@ -9,6 +9,7 @@
 // =============================================================
 
 import { parseOrderItems, understand, type Understanding } from "./nlu";
+import { captureCustomerAnswer, fallbackEvidenceQuality, noteEvidenceDependency, recordStorePrefetchProjection } from "./customerAnswerEvidence";
 import {
   isRestaurantRequestRefusal, restaurantRequestReceipt, restaurantRequestStatusLine,
   restaurantRequestSummary,
@@ -1716,6 +1717,33 @@ export async function runPipeline(
   tenantId: string,
   customerRef?: string | null
 ): Promise<PipelineResult> {
+  try {
+    return await captureCustomerAnswer(tenantId, channel, () => runPipelineInternal(message, channel, tenantId, customerRef));
+  } catch (error) {
+    // Every channel persists the same terminal fallback without retrying any business action.
+    console.error("[BMS] customer pipeline failed", { code: "PIPELINE_EXCEPTION" });
+    let alertTimer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        reportBmsFailure({ tenantId, code: "ai.loop_failed", error: "PIPELINE_EXCEPTION", surface: "customer", channel,
+          meta: { stage: "pipeline_terminal_fallback" } }),
+        new Promise<void>(resolve => { alertTimer = setTimeout(resolve, 1500); }),
+      ]);
+    } finally { if (alertTimer) clearTimeout(alertTimer); }
+    const result = customerSafe({ channel, incoming: message, understanding: understand(message),
+      tool: "pipeline:fallback", data: { status: "NOT_FOUND", query: "" },
+      reply: "ขออภัยค่ะ ระบบขัดข้องชั่วคราว ยังยืนยันผลทั้งหมดไม่ได้ หากเป็นการสั่งซื้อ จอง หรือชำระเงิน กรุณาให้พนักงานตรวจสอบก่อนทำรายการซ้ำค่ะ" });
+    result.quality = fallbackEvidenceQuality(error, result.reply);
+    return result;
+  }
+}
+
+async function runPipelineInternal(
+  message: string,
+  channel: Channel,
+  tenantId: string,
+  customerRef?: string | null
+): Promise<PipelineResult> {
   const emergencyMessage = stripMarkdownEmphasis(message);
   if (pharmacyEmergencyKind(emergencyMessage)) {
     // Existing-case escalation is best-effort evidence, never a prerequisite for urgent copy.
@@ -1770,6 +1798,7 @@ export async function runPipeline(
     ]);
     history = loaded[0];
     storedState = loaded[1];
+    if (history.length || Object.keys(storedState).length) noteEvidenceDependency("CONVERSATION_CONTEXT_NOT_SNAPSHOTTED");
     pharmacyTriggerDefinitions = loaded[2];
   } catch (err) {
     console.error("[BMS] pipeline pre-context history load failed:", err);
@@ -3662,6 +3691,7 @@ export async function runPipeline(
   const evalRef = safeEvalRef(customerRef);
   const storeContext = await executeCustomerTool("get_store_info", {}, execCtx);
   const storeFacts = customerStoreFacts(storeContext.result);
+  recordStorePrefetchProjection(storeFacts);
   const loop = await runToolLoop({
     tenantId,
     system: buildCustomerSystem(categories.map((c) => c.name), profile),

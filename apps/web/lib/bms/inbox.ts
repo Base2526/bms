@@ -27,6 +27,8 @@ import { beginTenantTx } from "./tenant";
 import { enqueueAiQualityReview, type AiTurnQuality } from "./aiQuality";
 import { ensureCustomerForIdentity } from "./customers";
 import { reportBmsFailure } from "./failureAlert";
+import { evidenceForQuality } from "./customerAnswerEvidence";
+import { persistAnswerEvidence } from "./answerEvidenceStore";
 
 export type ConvStatus = "OPEN" | "PENDING" | "CLOSED";
 
@@ -125,6 +127,9 @@ export async function logConversation(
 ): Promise<void> {
   if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return;
   let messagesPersisted = false;
+  let client: PoolClient | null = null;
+  let evidenceFailed = false;
+  const evidence = evidenceForQuality(quality);
   try {
     // best-effort link ลูกค้า (ถ้าเคยสั่งซื้อ/มี identity แล้ว)
     const cust = await query<{ customer_id: string }>(
@@ -147,7 +152,18 @@ export async function logConversation(
     // ใช้แยกว่าควร auto-assign staff หลักไหม (ครั้งแรกที่ลูกค้าทักเท่านั้น ไม่ใช่ทุกข้อความ)
     // last_sender_type = 'ai' เสมอ เพราะ logConversation() ถูกเรียกหลัง pipeline ได้ reply
     // มาแล้ว (insert คู่ IN(customer)+OUT(ai) ด้านล่างพร้อมกัน — 'ai' คือข้อความล่าสุดจริง)
-    const conv = await query<{ id: string; inserted: boolean }>(
+    client = await getClient();
+    await beginTenantTx(client, tenantId);
+    await client.query("SET LOCAL statement_timeout = '5000ms'");
+    await client.query("SET LOCAL lock_timeout = '1500ms'");
+    if (evidence) {
+      if (evidence.tenantId !== tenantId || evidence.channel !== channel) throw new Error("EVIDENCE_SCOPE_MISMATCH");
+      await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [evidence.id]);
+      const existing = await client.query(`SELECT id FROM bms_messages WHERE tenant_id=$1
+        AND direction='OUT' AND meta->'aiEvidence'->>'turnId'=$2 LIMIT 1`, [tenantId,evidence.id]);
+      if (existing.rows.length) { await client.query("COMMIT"); return; }
+    }
+    const conv = await client.query<{ id: string; inserted: boolean }>(
       `INSERT INTO bms_conversations
          (tenant_id, channel, customer_ref, customer_id, status, unread, last_message, last_message_at, last_sender_type)
        VALUES ($1, $2, $3, $4, 'OPEN', 1, $5, now(), 'ai')
@@ -168,7 +184,7 @@ export async function logConversation(
       ...(incomingMeta ? { inbound: incomingMeta } : {}),
       ...(incomingAttachment ? { attachment: incomingAttachment } : {}),
     });
-    const messages = await query<{ id: string; direction: "IN" | "OUT" }>(
+    const messages = await client.query<{ id: string; direction: "IN" | "OUT" }>(
       `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
        VALUES
          ($1, $2, 'IN', $3, 'customer', $6::jsonb),
@@ -183,9 +199,43 @@ export async function logConversation(
         inboundMeta,
       ]
     );
-    messagesPersisted = true;
     const aiMessage = messages.rows.find((message) => message.direction === "OUT");
     const incomingMessage = messages.rows.find((message) => message.direction === "IN");
+    if (aiMessage && incomingMessage) {
+      let status = evidence?.status ?? "NOT_CAPTURED";
+      let reasons = evidence?.reasons ?? ["PIPELINE_EVIDENCE_UNAVAILABLE"];
+      if (evidence) {
+        await client.query("SAVEPOINT answer_evidence");
+        try {
+          const persisted = await persistAnswerEvidence(client, tenantId, convId, String(incomingMessage.id), String(aiMessage.id), reply, evidence);
+          status = persisted.status; reasons = persisted.reasons;
+          await client.query("RELEASE SAVEPOINT answer_evidence");
+        } catch {
+          await client.query("ROLLBACK TO SAVEPOINT answer_evidence");
+          status = "FAILED"; reasons = ["EVIDENCE_WRITE_FAILED"];
+          evidenceFailed = true;
+          console.error("[BMS] answer evidence write failed", { turnId: evidence.id });
+        }
+      }
+      await client.query(`UPDATE bms_messages SET meta = meta || jsonb_build_object('aiEvidence', $3::jsonb)
+        WHERE tenant_id=$1 AND id=$2`, [tenantId,aiMessage.id,JSON.stringify({
+          turnId: evidence?.id ?? null, inputMessageId: String(incomingMessage.id), status, reasons,
+        })]);
+    }
+    await client.query("COMMIT");
+    messagesPersisted = true;
+    client.release();
+    client = null;
+    if (evidenceFailed) {
+      let alertTimer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        await Promise.race([
+          reportBmsFailure({ tenantId, code: "ai.evidence_persist_failed", error: "EVIDENCE_WRITE_FAILED",
+            surface: "customer", channel, meta: { turnId: evidence?.id } }),
+          new Promise<void>(resolve => { alertTimer = setTimeout(resolve, 1500); }),
+        ]);
+      } finally { if (alertTimer) clearTimeout(alertTimer); }
+    }
     if (quality && aiMessage) {
       try {
         await enqueueAiQualityReview(tenantId, convId, String(aiMessage.id), quality);
@@ -200,6 +250,7 @@ export async function logConversation(
     }
     publishInboxChanged(tenantId, convId, "MESSAGES_CHANGED", "customer", incomingMessage?.id);
   } catch (e) {
+    if (client && !messagesPersisted) await client.query("ROLLBACK").catch(() => undefined);
     console.error("[BMS] logConversation failed:", e);
     // Callers cannot observe this best-effort failure. Report it before swallowing it,
     // but do not call saved messages lost when only assignment/realtime failed.
@@ -214,7 +265,7 @@ export async function logConversation(
         meta: { stage: "log_conversation" },
       });
     }
-  }
+  } finally { client?.release(); }
 }
 
 /**

@@ -76,7 +76,7 @@ test("prefetch alone does not mask stuck turns, but an actual basic answer count
 
 test("pipeline prefetch is unconditional before the model and preserves the audited tool boundary", () => {
   const pipeline = readFileSync(new URL("../../apps/web/lib/bms/pipeline.ts", import.meta.url), "utf8");
-  assert.match(pipeline, /const storeContext = await executeCustomerTool\("get_store_info", \{\}, execCtx\);\s*const storeFacts = customerStoreFacts\(storeContext.result\);\s*const loop = await runToolLoop/);
+  assert.match(pipeline, /const storeContext = await executeCustomerTool\("get_store_info", \{\}, execCtx\);\s*const storeFacts = customerStoreFacts\(storeContext.result\);\s*recordStorePrefetchProjection\(storeFacts\);\s*const loop = await runToolLoop/);
   assert.match(pipeline, /\.\.\.customerStoreMessages\(storeFacts\)/);
   assert.match(pipeline, /trace: \[storeContext.trace, \.\.\.loop.trace\]/);
   assert.match(pipeline, /return runApprovedTool\(\{ tool, input, execCtx \}\)/);
