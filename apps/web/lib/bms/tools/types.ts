@@ -66,6 +66,8 @@ export type ExecCtx = {
    */
   pendingOrderQuote?: { fingerprint: string; lines: OrderQuoteLine[]; draft?: import("../orderQuote").OrderQuoteDraft };
   customerInputChoices?: { question: string; labels: string[] };
+  /** Latest completed store read for this turn only; recorded by the runtime, never model args. */
+  customerStoreRead?: { facts: import('../customerStoreContext').CustomerStoreFacts; branch: string | null };
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
   /**

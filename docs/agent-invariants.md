@@ -1522,6 +1522,10 @@ Unknown/unpublished is never no parking, and total capacity is never current vac
 must be disambiguated; truncated lists cannot establish absence. Existing clients omitting parking
 must preserve it. The location manager uses a scoped query, and writes validate id/code identity,
 actor branch access and tenant RLS before saving.
+Customer reply guards use the latest completed store read, never stale prefetched parking after
+a failed/hidden reread. Only the customer's unambiguous branch may supply a quoted parking-price
+exemption; a model-selected filter is not customer authority. Rejected numeric parking replies
+fall back to published details with full conditions or an explicit unknown/branch question.
 
 `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts`, the REST admin routes under
 `/api/bms/inventory/*`, and migration `7.98` own inter-branch transfers and shelf counts. Full state,

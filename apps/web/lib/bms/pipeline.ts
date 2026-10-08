@@ -51,6 +51,7 @@ import {
   replyWithoutQuotedStoreFacts,
   CUSTOMER_STORE_CONTEXT_POLICY,
 } from "./customerStoreContext";
+import { answersWithParkingFacts, customerParkingFallback, isParkingQuestion, needsParkingClarification, scopeParkingFactsForReply } from "./customerParkingReply";
 import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
 import {
   getRecentAiHistory,
@@ -2610,7 +2611,7 @@ export async function runPipeline(
   }
 
   const boardGameVisit = isBoardGameVisitQuestion(aiInputMessage, profile.businessArchetype);
-  const basicStoreQuestion = isStoreInfoQuestion(aiInputMessage) || boardGameVisit;
+  const basicStoreQuestion = isStoreInfoQuestion(aiInputMessage) || boardGameVisit || isParkingQuestion(aiInputMessage);
   const checkoutDetails = basicStoreQuestion ? null : checkoutDetailsFromReply(aiInputMessage, history);
   if (checkoutDetails) {
     const executed = await executeCustomerTool(
@@ -3690,6 +3691,10 @@ export async function runPipeline(
     },
   });
 
+  const latestStoreFacts = execCtx.customerStoreRead?.facts ?? storeFacts;
+  const parkingLookupBranch = execCtx.customerStoreRead?.branch;
+  const replyStoreFacts = scopeParkingFactsForReply(latestStoreFacts, aiInputMessage, parkingLookupBranch);
+
   // These replies are server-owned even if the provider fails after the tool completes.
   if (execCtx.boardGameChatActionResult || execCtx.pendingBoardGameChatAction) {
     let reply: string;
@@ -3848,10 +3853,12 @@ export async function runPipeline(
       reply = englishReply
         ? "This chat can check published information, but cannot change bookings, extend play time, refund money or notify staff. Please contact the shop staff to carry out the request. No action has been confirmed."
         : "แชทนี้ตรวจข้อมูลที่ร้านเผยแพร่ได้ แต่ยังจองหรือเปลี่ยนการจอง ต่อเวลา คืนเงิน หรือแจ้งพนักงานให้ไม่ได้ค่ะ กรุณาติดต่อพนักงานเพื่อดำเนินการ ยังไม่มีการยืนยันรายการนะคะ";
-    } else if (hasUnverifiedFacts(replyWithoutQuotedStoreFacts(loop.reply, storeFacts), loop.trace)) {
-      reply = englishReply
+    } else if (needsParkingClarification(latestStoreFacts, aiInputMessage, parkingLookupBranch)) {
+      reply = customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch)!;
+    } else if (hasUnverifiedFacts(replyWithoutQuotedStoreFacts(loop.reply, replyStoreFacts), loop.trace)) {
+      reply = customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch) ?? (englishReply
         ? "Sorry, I need to verify that information first. Please ask again or specify the product and size."
-        : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
+        : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏");
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
       reply = englishReply
         ? "Sorry, that action was not actually saved. Please send the request again."
@@ -3908,7 +3915,8 @@ export async function runPipeline(
       try {
         const madeProgress =
           (loop.trace ?? []).some((t) => t.ok && CUSTOMER_PROGRESS_TOOLS.has(t.tool)) ||
-          isBusinessClarification(reply) || answersWithStoreFacts(reply, storeFacts);
+          isBusinessClarification(reply) || answersWithStoreFacts(reply, replyStoreFacts) ||
+          answersWithParkingFacts(reply, latestStoreFacts, aiInputMessage, parkingLookupBranch);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
         if (!madeProgress && failedTurns >= profile.aiHandoffAfterFailedTurns) {
           reply = englishReply ? HANDOFF_REPLY_EN : HANDOFF_REPLY;
@@ -3950,10 +3958,10 @@ export async function runPipeline(
       channel, incoming: message, understanding,
       tool: "deterministic:get_store_info",
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: storeContext.result.ok
+      reply: customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch) ?? (storeContext.result.ok
         ? storeInfoReply((storeContext.result.data ?? {}) as Parameters<typeof storeInfoReply>[0], aiInputMessage, englishReply, boardGameVisit)
         : englishReply ? "Sorry, I could not load the shop information. Please try again."
-          : "ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ ลองใหม่อีกครั้งนะคะ",
+          : "ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"),
       trace: [storeContext.trace],
     });
   }

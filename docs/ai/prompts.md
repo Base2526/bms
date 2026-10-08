@@ -4,8 +4,17 @@ Parking is basic branch information for all shop types (`10.52`). `get_store_inf
 is included in the prefetched public context; use those published structured facts rather than old
 about/summary prose. Ask which branch when ambiguous. `UNKNOWN`, hidden data and zero capacity
 are distinct. Never claim current vacancy, free parking or opening hours without explicit evidence.
-Only exact quoted published parking text is exempted from the generic unverified-price check;
-unrelated product prices still require catalog evidence.
+Only exact quoted published parking text for the customer's unambiguous branch is exempted from
+the generic unverified-price check; unrelated product prices still require catalog evidence.
+The final guard uses the latest completed `get_store_info` read in this turn, including failures,
+not just the prefetch. Repeated store reads are fresh (other tools retain duplicate suppression).
+A rejected numeric parking answer is repaired from the published facts, preserving the complete
+fee conditions, or asks for the branch / reports unavailable data; it never asks for a product size.
+Missing, hidden, unspecified or ambiguous parking also forces this clarification even if the model's
+answer contains no numbers (for example, an unsupported claim of free parking).
+The same parking fallback works without a provider. A grounded parking-status answer counts as
+progress, but prefetch alone does not. These are bounded guard/fallback rules, not a replacement
+for normal model responses or a guarantee that every possible hallucination is detected.
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Pipeline: [workflow.md](workflow.md) · Tools: [tools.md](tools.md)
 

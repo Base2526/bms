@@ -23,6 +23,7 @@ import {
 import { audit } from "../audit";
 import { reportBmsFailure, type BmsFailureCode } from "../failureAlert";
 import { requirePermission } from "../permissions";
+import { customerStoreFacts } from "../customerStoreContext";
 import {
   ToolArgError,
   type BmsTool,
@@ -38,6 +39,14 @@ export type ToolTraceEntry = {
   ok: boolean;
   summary: string;
 };
+
+function rememberStoreRead(toolName: string, result: ToolResult, input: Record<string, unknown>, ec: ExecCtx) {
+  if (toolName !== "get_store_info" || ec.surface !== "customer") return;
+  ec.customerStoreRead = {
+    facts: customerStoreFacts(result),
+    branch: typeof input.branch === "string" ? input.branch.trim() : null,
+  };
+}
 
 export type ToolLoopResult = {
   reply: string;
@@ -444,6 +453,7 @@ async function runApprovedToolInternal(
     }
   }
 
+  rememberStoreRead(tool.name, result, input, execCtx);
   await auditAttempt(execCtx, tool.name, outcome, tool);
   return { result, trace };
 }
@@ -712,12 +722,15 @@ async function runToolLoopInternal(
           resultContent = JSON.stringify({ error: `ไม่รู้จักทูล ${toolName}` });
           trace.push({ tool: toolName, input: {}, ok: false, summary: "unknown tool" });
         } else {
+          // A failed/timed-out fresh read must not leave earlier public facts authoritative.
+          rememberStoreRead(toolName, { ok: false, error: "read_pending" }, {}, opts.execCtx);
           try {
             await authorizeTool(tool, opts.execCtx);
             traceInput = inputRecord(tu.input ?? {});
             validateKnownFields(tool, traceInput);
             const callKey = `${toolName}:${stableJson(traceInput)}`;
-            const completed = completedCalls.get(callKey);
+            // Store publication may change within a turn; do not replay an older parking read.
+            const completed = toolName === "get_store_info" ? undefined : completedCalls.get(callKey);
             if (completed) {
               outcome = completed.outcome;
               resultContent = completed.resultContent;
@@ -731,6 +744,7 @@ async function runToolLoopInternal(
             } else {
               assertSingleCustomerOrderWrite(tool, opts.execCtx);
               const r = await executeToolBounded(tool, traceInput, opts.execCtx);
+              rememberStoreRead(toolName, r, traceInput, opts.execCtx);
               if (r.ok && r.proposal) {
                 if (!tool.sensitive) throw new Error("non-sensitive tool returned a proposal");
                 proposals.push(r.proposal);

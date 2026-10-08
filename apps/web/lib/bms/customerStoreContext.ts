@@ -45,7 +45,10 @@ export function customerStoreFacts(result: ToolResult): CustomerStoreFacts {
     branchParking = {
       branches: parking.branches.map(branch => ({
         name: branch.name,
-        parking: branch.parking == null ? null : publicLocationParking({ ...branch.parking, published: true }),
+        // Public projections never carry a publication flag. Do not turn an internal/private
+        // object into public facts if a caller accidentally returns the wrong shape.
+        parking: branch.parking == null || Object.hasOwn(branch.parking, "published")
+          ? null : publicLocationParking({ ...branch.parking, published: true }),
       })),
       truncated: parking.truncated,
     };
