@@ -89,6 +89,7 @@ type PublicProfile = {
   locationId: string; publicVisible: boolean; displayName: string; summary: string | null;
   publicAddress: string | null; publicPhone: string | null; openingHours: string | null;
   latitude: number | null; longitude: number | null; publishRates: boolean; publishAvailability: boolean;
+  publishTableDetails: boolean;
   bookingEnabled: boolean; chatAutoConfirm: boolean; reservationReminderMinutes: number;
   timezone: string; reservationMinAdvanceMinutes: number; reservationRequestTtlMinutes: number;
   reservationDepositPolicy: "NONE" | "FIXED" | "PERCENT";
@@ -1192,6 +1193,7 @@ export default function BoardGamePage() {
                   <Space wrap size="large">
                     <Form.Item name="publishRates" valuePropName="checked" label={t("admin_board_game.publish_rates")}><Switch /></Form.Item>
                     <Form.Item name="publishAvailability" valuePropName="checked" label={t("admin_board_game.publish_availability")}><Switch /></Form.Item>
+                    <Form.Item name="publishTableDetails" valuePropName="checked" label={t("admin_board_game.publish_table_details")}><Switch /></Form.Item>
                     <Form.Item name="bookingEnabled" valuePropName="checked" label={t("admin_board_game.booking_enabled")}><Switch /></Form.Item>
                     <Form.Item name="chatAutoConfirm" valuePropName="checked" label={t("admin_board_game.chat_auto_confirm")}><Switch /></Form.Item>
                     <Form.Item name="publicVisible" valuePropName="checked" label={t("admin_board_game.public_visible_location")}><Switch /></Form.Item>

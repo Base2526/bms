@@ -1940,6 +1940,11 @@ At the counter:
   the same list as `REQUESTED`, with canonical customer identity resolved server-side. It does not
   hold a table, receive a queue number, or become callable/seatable until a PIN-authenticated
   `pos.sell` operator presses **Accept request**, which moves it to `WAITING`.
+- Since `10.51`, a floor manager may opt in per branch to let customer chat describe the public
+  floor/area labels and table capacities. The read groups tables by area and seat count and reports
+  only total/currently available counts. It never publishes a table id, code, display name, open
+  check, occupant or guest detail, and existing branches remain opted out. A live free count is an
+  observation, not a hold or reservation guarantee.
 - Customers still cannot take a walk-in queue number themselves and there is no SMS/LINE
   notification when a party is called; both remain staff screen actions.
 

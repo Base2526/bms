@@ -1,5 +1,16 @@
 // i18n/en.ts
 const en = {
+  branch_parking: {
+    title: "Parking", status: "Branch parking",
+    status_UNKNOWN: "Not specified", status_AVAILABLE: "Parking provided", status_NONE: "No shop-provided parking",
+    help: "Basic branch information for every shop type, not current parking vacancy.",
+    car_spaces: "Car spaces (optional)", motorcycle_spaces: "Motorcycle spaces (optional)",
+    capacity_help: "Total capacity, not currently free spaces. Leave blank if unknown.",
+    details: "Parking details", details_help: "Describe the parking area, entrance, fees/validation, hours and restrictions. Identify nearby alternatives as separate from shop-provided parking.",
+    map_url: "Parking map link", map_error: "Use an HTTPS link without a username or password.",
+    publish: "Publish parking information to customers", publish_help: "When enabled, AI can use these facts to answer customers. Review the details before saving.",
+    published: "Published to customers", private: "Not published to customers",
+  },
   installer_reports: {
     title: "Installations and installer reports", submit_title: "BMS installation report", choose_file: "Report file (.zip, .tar.gz, .json, .txt)",
     installations: "Retail Local installation registry", installs_note: "Counts successfully reported installation instances, not downloads or hardware fingerprints", install_total: "Total installations", active_installs: "Active status", seen_30d: "Seen in 30 days", unregistered_installs: "Not linked to a license", installed_at: "Installed", last_seen: "Last seen", package_type: "Install type", license: "License", install_id: "Installation ID", install_breakdown: "By OS / install type / release", error_reports: "Installer error reports",
@@ -1016,7 +1027,7 @@ const en = {
     discovery_title: "Nearby board game cafe search",
     discovery_description: "The nearby-directory switch controls public search only. It does not disable replies in your shop's chat.",
     discovery_chat_data: "Chat also uses this form's branch name, description, address, phone and opening hours to answer customers.",
-    discovery_chat_controls: "Publish play rates / Publish table availability and each game's public-visibility switch also control chat answers. Rates and availability default to on. Turn off the relevant switch to withhold that information from chat.",
+    discovery_chat_controls: "Publish play rates / table availability / area and capacity summaries and each game's public-visibility switch control chat answers. Area and capacity details default to off and never expose table numbers or occupants.",
     discovery_preview: "View public page",
     discovery_name: "Public branch name",
     discovery_phone: "Public phone",
@@ -1030,6 +1041,7 @@ const en = {
     location_unavailable: "Current location is unavailable",
     publish_rates: "Publish play rates",
     publish_availability: "Publish aggregate table availability",
+    publish_table_details: "Publish aggregate area/floor and table capacity details",
     booking_enabled: "Accept online booking requests",
     chat_auto_confirm: "Automatically confirm chat bookings (no deposit)",
     reservation_reminder_minutes: "Email reminder before booking (minutes)",
@@ -1055,6 +1067,9 @@ const en = {
     restaurant_only: "This page is available only when the shop's business type is Restaurant",
     branch: "Branch",
     branch_placeholder: "Select a branch",
+    customer_table_details: "Let customer AI describe this branch's tables",
+    customer_table_details_hint: "Publishes only grouped floor/area labels, seat capacity, and total/available counts—never table numbers, occupants, or check data.",
+    customer_table_details_saved: "Customer table-detail setting saved",
     areas: "Areas",
     add_area: "Add area",
     rename_area: "Rename area",

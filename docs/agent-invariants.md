@@ -914,6 +914,9 @@ own dine-in service. Operator detail:
   occupied table may be repositioned, but cannot be moved to another area, blocked or deleted. Areas and tables are
   soft-deleted, all ids are rechecked against tenant + branch in the write transaction, and layout
   saves validate the full submitted table set before updating any coordinate.
+  Changing customer table-detail publication updates only the submitted branch's cached setting;
+  it must preserve unsaved floor positions and table edits, including when a response arrives
+  after the operator switches branches.
 - **A kitchen station is a work area, not a branch (`9.54`).** Stations live in
   `bms_kitchen_stations` with their own id, active flag, sort order and optional `location_id`;
   products point at one through `bms_product_stock_policies.kitchen_station_id`. A station never
@@ -1030,10 +1033,16 @@ read only through `listPublicBoardGameCafes()`. Never swap them or add an `inclu
 escape to the public reader. Chat requires a non-optional, validated tenant and unconditional
 `profile.tenant_id = $1`, a saved branch profile, active branch/tenant and board-game archetype.
 `profile.public_visible` controls only directory discovery; `publish_rates`,
-`publish_availability`, title visibility and lost/retired-copy exclusions still govern chat.
+`publish_availability`, opt-in `publish_table_details`, title visibility and lost/retired-copy
+exclusions still govern chat. Published table details are grouped by active area/floor label and
+seat capacity only; never expose table numbers/ids, occupants, sessions or customer data.
 Both readers share one SQL projection for rates, current seating counts and game highlights;
 the public reader alone retains the directory visibility and optional-tenant predicates.
 Customer tool results must continue to omit internal branch/table/copy identifiers.
+Both restaurant and board-game table detail lists are bounded to 100 groups, with a 101st group
+used to detect truncation. `tableDetailsTruncated=true` must be explained as partial coverage;
+never derive a whole-branch total or an absence claim from the partial list. Unpublished details
+and their truncation status stay `null`.
 
 `10.40` time buy/get offers repeat per participant over already-rounded billable minutes, using
 the frozen hourly rate. They compete with other offers and member passes, never stack with them,
@@ -1382,9 +1391,12 @@ findings from 2026-09-04 are folded in below as durable rules, not "recent bug" 
 - **Restaurant customer assistance (`10.43`) is evidence-first and propose-only where a table is
   involved.** Product tools expose shop-maintained positive allergen declarations and dietary menu
   labels with an explicit reviewed flag; a missing/empty declaration is unknown, and a reviewed list
-  still never proves freedom from cross-contact. `get_restaurant_availability` may expose only
-  current branch aggregates (free tables/seats, waiting counts, open kitchen tickets and configured
-  SLA), never table/guest/ticket ids or a fabricated wait/preparation time. A chat booking writes a
+  still never proves freedom from cross-contact. `get_restaurant_availability` may expose current
+  branch aggregates (free tables/seats, waiting counts, open kitchen tickets and configured SLA).
+  Since `10.51`, a branch may explicitly opt in to publish area/floor labels and capacity-grouped
+  total/available table counts; the projection never returns table ids/codes/names, checks,
+  occupants, guest/ticket identities or a fabricated wait/preparation time. Existing branches stay
+  opted out. A chat booking writes a
   customer-owned `REQUESTED` waitlist row; only a PIN-authenticated `pos.sell` action may accept it
   into `WAITING`, and only seating opens the authoritative check. The customer reply must never call
   `REQUESTED`, `WAITING` or `CALLED` a confirmed/reserved table. These columns are read on the common
@@ -1503,6 +1515,17 @@ Staff writes require `member.manage`, `loyalty.settings`, or `loyalty.adjust` as
   `bms_job_runs`/`/admin/operations-schedule`, not from a green workflow alone.
 
 ## Branch inventory operations
+
+Basic branch parking (`10.52`) belongs to `bms_locations.parking_info`, shared by all shop types.
+Only explicit publication exposes details to `get_store_info` and its prefetched customer context.
+Unknown/unpublished is never no parking, and total capacity is never current vacancy. Branch names
+must be disambiguated; truncated lists cannot establish absence. Existing clients omitting parking
+must preserve it. The location manager uses a scoped query, and writes validate id/code identity,
+actor branch access and tenant RLS before saving.
+Customer reply guards use the latest completed store read, never stale prefetched parking after
+a failed/hidden reread. Only the customer's unambiguous branch may supply a quoted parking-price
+exemption; a model-selected filter is not customer authority. Rejected numeric parking replies
+fall back to published details with full conditions or an explicit unknown/branch question.
 
 `lib/bms/{stockTransfers,stockCounts,dailyDocNo}.ts`, the REST admin routes under
 `/api/bms/inventory/*`, and migration `7.98` own inter-branch transfers and shelf counts. Full state,

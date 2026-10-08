@@ -129,6 +129,7 @@ export type BoardGamePublicLocationProfile = {
   longitude: number | null;
   publishRates: boolean;
   publishAvailability: boolean;
+  publishTableDetails: boolean;
   bookingEnabled: boolean;
   chatAutoConfirm: boolean;
   reservationReminderMinutes: number;
@@ -149,6 +150,13 @@ export type PublicBoardGameCafe = BoardGamePublicLocationProfile & {
   distanceKm: number | null;
   totalTables: number | null;
   availableTables: number | null;
+  tableDetails: Array<{
+    area: string;
+    seats: number;
+    totalTables: number;
+    availableTables: number | null;
+  }> | null;
+  tableDetailsTruncated: boolean | null;
   rates: Array<{ name: string; customerType: string; pricePerHour: number; minimumMinutes: number; roundingMinutes: number; graceMinutes: number }>;
   games: Array<{ title: string; minPlayers: number | null; maxPlayers: number | null; typicalMinutes: number | null }>;
 };
@@ -2786,6 +2794,7 @@ function mapPublicLocationProfile(row: any): BoardGamePublicLocationProfile {
     longitude: row.longitude == null ? null : Number(row.longitude),
     publishRates: row.publish_rates == null ? true : Boolean(row.publish_rates),
     publishAvailability: row.publish_availability == null ? true : Boolean(row.publish_availability),
+    publishTableDetails: row.publish_table_details === true,
     bookingEnabled: Boolean(row.booking_enabled),
     chatAutoConfirm: row.chat_auto_confirm === true,
     reservationReminderMinutes: Number(row.reservation_reminder_minutes ?? 180),
@@ -2815,7 +2824,8 @@ export async function getBoardGamePublicLocationProfile(
             l.phone AS location_phone, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability, profile.booking_enabled, profile.chat_auto_confirm,
+            profile.publish_rates, profile.publish_availability, profile.publish_table_details,
+            profile.booking_enabled, profile.chat_auto_confirm,
             profile.reservation_reminder_minutes,
             profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
             profile.reservation_deposit_policy, profile.reservation_deposit_amount,
@@ -2847,6 +2857,7 @@ export async function upsertBoardGamePublicLocationProfile(
     longitude?: number | string | null;
     publishRates?: boolean | null;
     publishAvailability?: boolean | null;
+    publishTableDetails?: boolean | null;
     bookingEnabled?: boolean | null;
     chatAutoConfirm?: boolean | null;
     reservationReminderMinutes?: number | string | null;
@@ -2881,6 +2892,7 @@ export async function upsertBoardGamePublicLocationProfile(
   }
   const publishRates = booleanOrDefault(input.publishRates, true, "สถานะแสดงเรทราคา");
   const publishAvailability = booleanOrDefault(input.publishAvailability, true, "สถานะแสดงโต๊ะว่าง");
+  const publishTableDetails = booleanOrDefault(input.publishTableDetails, false, "สถานะแสดงโซนและขนาดโต๊ะ");
   const bookingEnabled = booleanOrDefault(input.bookingEnabled, false, "สถานะรับจองออนไลน์");
   const chatAutoConfirm = booleanOrDefault(input.chatAutoConfirm, false, "ยืนยันจองจากแชทอัตโนมัติ");
   const reservationReminderMinutes = Number(input.reservationReminderMinutes ?? 180);
@@ -2946,11 +2958,11 @@ export async function upsertBoardGamePublicLocationProfile(
       `INSERT INTO bms_board_game_public_locations
           (tenant_id, location_id, public_visible, display_name, summary,
            public_address, public_phone, opening_hours, latitude, longitude,
-           publish_rates, publish_availability, booking_enabled, reservation_reminder_minutes,
+           publish_rates, publish_availability, publish_table_details, booking_enabled, reservation_reminder_minutes,
            reservation_min_advance_minutes, reservation_request_ttl_minutes,
            reservation_deposit_policy, reservation_deposit_amount, reservation_deposit_percent,
            reservation_deposit_payment_window_minutes, reservation_deposit_refund_cutoff_hours, chat_auto_confirm)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
        ON CONFLICT (tenant_id, location_id) DO UPDATE SET
           public_visible = EXCLUDED.public_visible,
           display_name = EXCLUDED.display_name,
@@ -2962,6 +2974,7 @@ export async function upsertBoardGamePublicLocationProfile(
           longitude = EXCLUDED.longitude,
           publish_rates = EXCLUDED.publish_rates,
           publish_availability = EXCLUDED.publish_availability,
+          publish_table_details = EXCLUDED.publish_table_details,
           booking_enabled = EXCLUDED.booking_enabled,
           chat_auto_confirm = EXCLUDED.chat_auto_confirm,
           reservation_reminder_minutes = EXCLUDED.reservation_reminder_minutes,
@@ -2976,7 +2989,7 @@ export async function upsertBoardGamePublicLocationProfile(
       [
         tenantId, locationId, publicVisible, displayName, summary, publicAddress,
         publicPhone, openingHours, latitude, longitude, publishRates, publishAvailability,
-        bookingEnabled, reservationReminderMinutes, reservationMinAdvanceMinutes,
+        publishTableDetails, bookingEnabled, reservationReminderMinutes, reservationMinAdvanceMinutes,
         reservationRequestTtlMinutes, reservationDepositPolicy, reservationDepositAmount,
         reservationDepositPercent, reservationDepositPaymentWindowMinutes,
         reservationDepositRefundCutoffHours, chatAutoConfirm,
@@ -2986,6 +2999,7 @@ export async function upsertBoardGamePublicLocationProfile(
       publicVisible,
       publishRates,
       publishAvailability,
+      publishTableDetails,
       bookingEnabled,
       chatAutoConfirm,
       reservationReminderMinutes,
@@ -3020,7 +3034,8 @@ function haversineDistanceKm(lat1: number, lng1: number, lat2: number, lng2: num
 const BOARD_GAME_CAFE_SELECT = `SELECT profile.location_id, profile.public_visible, profile.display_name,
             profile.summary, profile.public_address, profile.public_phone,
             profile.opening_hours, profile.latitude, profile.longitude,
-            profile.publish_rates, profile.publish_availability, profile.booking_enabled, profile.chat_auto_confirm,
+            profile.publish_rates, profile.publish_availability, profile.publish_table_details,
+            profile.booking_enabled, profile.chat_auto_confirm,
             profile.reservation_reminder_minutes,
             profile.reservation_min_advance_minutes, profile.reservation_request_ttl_minutes,
             profile.reservation_deposit_policy, profile.reservation_deposit_amount,
@@ -3047,6 +3062,36 @@ const BOARD_GAME_CAFE_SELECT = `SELECT profile.location_id, profile.public_visib
                       AND seating.status = 'ACTIVE'
                  )
             ) ELSE NULL END AS available_tables,
+            CASE WHEN profile.publish_table_details THEN COALESCE((
+              SELECT jsonb_agg(jsonb_build_object(
+                'area', grouped.area_name,
+                'seats', grouped.seats,
+                'totalTables', grouped.total_tables,
+                'availableTables', CASE WHEN profile.publish_availability
+                  THEN grouped.available_tables ELSE NULL END
+              ) ORDER BY grouped.area_sort_order, grouped.area_name, grouped.seats)
+                FROM (
+                  SELECT area.name AS area_name, area.sort_order AS area_sort_order,
+                         table_row.seats, COUNT(*)::int AS total_tables,
+                         COUNT(*) FILTER (WHERE NOT EXISTS (
+                           SELECT 1 FROM bms_board_game_seatings seating
+                            WHERE seating.tenant_id = table_row.tenant_id
+                              AND seating.table_id = table_row.id
+                              AND seating.status = 'ACTIVE'
+                         ))::int AS available_tables
+                    FROM bms_board_game_tables table_row
+                    JOIN bms_board_game_areas area
+                      ON area.tenant_id = table_row.tenant_id
+                     AND area.location_id = table_row.location_id
+                     AND area.id = table_row.area_id
+                   WHERE table_row.tenant_id = profile.tenant_id
+                     AND table_row.location_id = profile.location_id
+                     AND table_row.active AND NOT table_row.blocked AND area.active
+                   GROUP BY area.id, area.name, area.sort_order, table_row.seats
+                   ORDER BY area.sort_order, area.name, table_row.seats
+                   LIMIT 101
+                ) grouped
+            ), '[]'::jsonb) ELSE NULL END AS table_details,
             CASE WHEN profile.publish_rates THEN COALESCE((
               SELECT jsonb_agg(jsonb_build_object(
                 'name', rate.name,
@@ -3098,6 +3143,13 @@ function mapBoardGameCafe(row: any, distanceKm: number | null = null): PublicBoa
     distanceKm: distanceKm == null ? null : money(distanceKm),
     totalTables: row.total_tables == null ? null : Number(row.total_tables),
     availableTables: row.available_tables == null ? null : Number(row.available_tables),
+    tableDetails: row.table_details == null ? null : (row.table_details as any[]).slice(0, 100).map((detail) => ({
+      area: String(detail.area),
+      seats: Number(detail.seats),
+      totalTables: Number(detail.totalTables),
+      availableTables: detail.availableTables == null ? null : Number(detail.availableTables),
+    })),
+    tableDetailsTruncated: row.table_details == null ? null : row.table_details.length > 100,
     rates: (row.rates ?? []).map((rate: any) => ({
       name: String(rate.name),
       customerType: String(rate.customerType),

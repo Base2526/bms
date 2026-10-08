@@ -264,8 +264,9 @@ test("board-game API routes are admin guarded and scoped by board-game permissio
   }
 });
 
-test("public board-game discovery is explicit, aggregate-only and rate limited", () => {
+test("public board-game discovery is explicit, customer-safe and rate limited", () => {
   const sql = read("db/migrations/9.83__bms_board_game_public_discovery.sql");
+  const detailsSql = read("db/migrations/10.50__bms_board_game_public_table_details.sql");
   const service = read("apps/web/lib/bms/boardGameCafe.ts")
     .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const publicRoute = read("apps/web/app/api/board-game/nearby/route.ts");
@@ -273,6 +274,7 @@ test("public board-game discovery is explicit, aggregate-only and rate limited",
 
   assert.match(sql, /CREATE TABLE IF NOT EXISTS bms_board_game_public_locations/);
   assert.match(sql, /public_visible\s+BOOLEAN NOT NULL DEFAULT FALSE/);
+  assert.match(detailsSql, /publish_table_details\s+BOOLEAN NOT NULL DEFAULT FALSE/);
   assert.match(sql, /NOT public_visible OR \(latitude IS NOT NULL AND longitude IS NOT NULL\)/);
   assert.match(sql, /ENABLE ROW LEVEL SECURITY/);
   assert.match(sql, /FORCE ROW LEVEL SECURITY/);
@@ -286,6 +288,10 @@ test("public board-game discovery is explicit, aggregate-only and rate limited",
   assert.match(publicFn, /profile\.public_visible AND location\.active/);
   assert.match(projection, /store\.business_archetype = 'board_game_cafe'/);
   assert.match(projection, /title\.public_visible/);
+  assert.match(projection, /CASE WHEN profile\.publish_table_details/);
+  assert.match(projection, /'area', grouped\.area_name/);
+  assert.match(projection, /'seats', grouped\.seats/);
+  assert.doesNotMatch(projection, /'tableId'|'tableCode'|'tableName'/);
   assert.match(publicFn, /\$\{BOARD_GAME_CAFE_SELECT\}/);
   assert.match(chatFn, /\$\{BOARD_GAME_CAFE_SELECT\}/);
   // `9.91`: โต๊ะว่างตัดสินจาก "ที่นั่ง" ไม่ใช่จาก session — หลังรวมโต๊ะ session หลายก้อนนั่งที่เดียวกัน

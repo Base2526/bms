@@ -14,6 +14,7 @@ import {
   renameRestaurantArea,
   reorderRestaurantAreas,
   saveRestaurantFloorLayout,
+  setRestaurantCustomerTableDetails,
   updateRestaurantTable,
 } from "@/lib/bms/restaurantPos";
 import { getRestaurantTableQr, issueRestaurantTableQr } from "@/lib/bms/restaurantQrOrdering";
@@ -169,6 +170,21 @@ export const bmsRestaurantFloorAdminResolvers = {
       return floorMutation(
         () => saveRestaurantFloorLayout({ ...actor, locationId: args.locationId, positions: args.positions }),
         "บันทึกผังร้านไม่สำเร็จ"
+      );
+    },
+    async bmsSetRestaurantCustomerTableDetails(
+      _parent: unknown,
+      args: { locationId: string; publish: boolean },
+      ctx: any
+    ) {
+      const actor = await floorContextForLocation(ctx, args.locationId);
+      return floorMutation(
+        () => setRestaurantCustomerTableDetails({
+          ...actor,
+          locationId: args.locationId,
+          publishTableDetails: args.publish,
+        }),
+        "บันทึกการเปิดเผยรายละเอียดโต๊ะไม่สำเร็จ"
       );
     },
   },

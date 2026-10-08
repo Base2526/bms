@@ -3,8 +3,14 @@ import { beginTenantTx } from "./tenant";
 import { RestaurantRequestRejection } from "./restaurantRequestPolicy";
 
 async function restaurantLocation(tenantId: string, locationId: string) {
-  const result = await query<{ id: string; name: string; branch_code: string | null }>(
-    `SELECT location.id, location.name, location.branch_code
+  const result = await query<{
+    id: string;
+    name: string;
+    branch_code: string | null;
+    publish_restaurant_table_details: boolean;
+  }>(
+    `SELECT location.id, location.name, location.branch_code,
+            location.publish_restaurant_table_details
        FROM bms_locations location
        JOIN bms_store_profile profile ON profile.tenant_id = location.tenant_id
       WHERE location.tenant_id = $1 AND location.id = $2 AND location.active
@@ -15,11 +21,45 @@ async function restaurantLocation(tenantId: string, locationId: string) {
   return result.rows[0] ?? null;
 }
 
-/** Customer-safe aggregate only: no table ids, party details, ticket names or operational notes. */
+/** Customer-safe aggregates: optional floor/capacity groups, never table ids or party details. */
 export async function getRestaurantCustomerAvailability(tenantId: string, locationId: string) {
   const location = await restaurantLocation(tenantId, locationId);
   if (!location) throw new RestaurantRequestRejection("ไม่พบสาขาร้านอาหารนี้");
-  const [floor, queue, kitchen, sla] = await Promise.all([
+  const publishedTableDetails = location.publish_restaurant_table_details
+    ? query<{
+        area_name: string;
+        seats: number;
+        total_tables: string;
+        available_tables: string;
+      }>(
+        `SELECT area.name AS area_name, table_row.seats,
+                COUNT(*)::text AS total_tables,
+                COUNT(*) FILTER (WHERE NOT EXISTS (
+                  SELECT 1 FROM bms_restaurant_checks check_row
+                   WHERE check_row.tenant_id = table_row.tenant_id
+                     AND check_row.table_id = table_row.id
+                     AND check_row.status IN ('OPEN','CLOSING')
+                     AND check_row.service_mode = 'DINE_IN'
+                ))::text AS available_tables
+           FROM bms_restaurant_areas area
+           JOIN bms_restaurant_tables table_row
+             ON table_row.tenant_id = area.tenant_id
+            AND table_row.location_id = area.location_id
+            AND table_row.area_id = area.id
+          WHERE area.tenant_id = $1 AND area.location_id = $2
+            AND area.active AND table_row.active AND NOT table_row.blocked
+          GROUP BY area.id, area.name, area.sort_order, table_row.seats
+          ORDER BY area.sort_order, area.name, table_row.seats
+          LIMIT 101`,
+        [tenantId, locationId]
+      )
+    : Promise.resolve({ rows: [] as Array<{
+        area_name: string;
+        seats: number;
+        total_tables: string;
+        available_tables: string;
+      }> });
+  const [floor, queue, kitchen, sla, tableDetails] = await Promise.all([
     query<{ total_tables: string; available_tables: string; available_seats: string }>(
       `SELECT COUNT(*) FILTER (WHERE t.active AND NOT t.blocked)::text AS total_tables,
               COUNT(*) FILTER (
@@ -91,6 +131,7 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
           AND (station.location_id IS NULL OR station.location_id = $2)`,
       [tenantId, locationId]
     ),
+    publishedTableDetails,
   ]);
   const f = floor.rows[0];
   const q = queue.rows[0];
@@ -105,6 +146,15 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
       availableNow: Number(f?.available_tables ?? 0),
       availableSeatsNow: Number(f?.available_seats ?? 0),
     },
+    tableDetails: location.publish_restaurant_table_details
+      ? tableDetails.rows.slice(0, 100).map((row) => ({
+          area: row.area_name,
+          seats: Number(row.seats),
+          totalTables: Number(row.total_tables),
+          availableTables: Number(row.available_tables),
+        }))
+      : null,
+    tableDetailsTruncated: location.publish_restaurant_table_details ? tableDetails.rows.length > 100 : null,
     queue: {
       walkInWaitingParties: Number(q?.walk_in_parties ?? 0),
       walkInWaitingGuests: Number(q?.walk_in_guests ?? 0),
@@ -128,7 +178,7 @@ export async function getRestaurantCustomerAvailability(tenantId: string, locati
       },
       estimatedPrepMinutes: null,
     },
-    note: "Live aggregate only. Availability can change before staff seats or accepts a party. Walk-in queue and kitchen ticket counts do not prove a wait/preparation time because table fit, station capacity and dish mix are unknown.",
+    note: "Live aggregate only. Published table details are grouped by area and seat capacity and never identify a table or occupant. When tableDetailsTruncated is true, only the first 100 groups are shown: explicitly say this is a partial list, never sum it as the branch total or infer that an omitted area/capacity is unavailable; ask staff for remaining details. Availability can change before staff seats or accepts a party. Walk-in queue and kitchen ticket counts do not prove a wait/preparation time because table fit, station capacity and dish mix are unknown.",
   };
 }
 

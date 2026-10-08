@@ -120,7 +120,13 @@ const cafe = {
   locationId: "private-branch-id", displayName: "FAKE Main", publicVisible: true,
   summary: "มีที่จอดรถ 5 คัน", openingHours: "10:00-22:00", publicAddress: "FAKE address", publicPhone: null,
   timezone: "Asia/Bangkok", publishRates: true, publishAvailability: true,
+  publishTableDetails: true,
+  tableDetailsTruncated: false,
   totalTables: 8, availableTables: 2, bookingEnabled: true,
+  tableDetails: [
+    { area: "FAKE ชั้น 1", seats: 4, totalTables: 5, availableTables: 1 },
+    { area: "FAKE ชั้น 2", seats: 8, totalTables: 3, availableTables: 1 },
+  ],
   reservationDepositPolicy: "FIXED", reservationDepositAmount: 100, reservationDepositPercent: 0,
   reservationDepositRefundCutoffHours: 24,
   rates: [{ name: "ทั่วไป", customerType: "GENERAL", pricePerHour: 50, minimumMinutes: 60, roundingMinutes: 30, graceMinutes: 5 }],
@@ -164,14 +170,15 @@ test("unpublished and ambiguous branches never disclose rates, floor or private 
   }
 });
 
-test("rate and availability publication flags fail closed, preserving unknown versus zero", async () => {
-  const hidden = harness([{ ...cafe, publishRates: false, publishAvailability: false }]);
+test("rate, availability and table-detail publication flags fail closed, preserving unknown versus zero", async () => {
+  const hidden = harness([{ ...cafe, publishRates: false, publishAvailability: false, publishTableDetails: false }]);
   const rates = await hidden.read("rates");
   assert.equal(rates.status, "NOT_PUBLISHED");
   assert.deepEqual(rates.rates, []);
   const floor = await hidden.read("availability");
   assert.equal(floor.availableTables, null);
   assert.equal(floor.totalTables, null);
+  assert.equal(floor.tableDetails, null);
   assert.equal((await harness([{ ...cafe, availableTables: 0 }]).read("availability")).availableTables, 0);
 });
 
@@ -191,8 +198,23 @@ test("availability includes published branch hours and booking policy but never 
   assert.equal(result.booking.canSubmitViaChat, false);
   assert.equal(result.waitMinutes, null);
   assert.equal(result.waitingParties, null);
-  assert.equal(result.partyCapacity, null);
+  assert.deepEqual(result.tableDetails, cafe.tableDetails);
   assert.doesNotMatch(JSON.stringify(result), /private-branch-id|tableId|sessionId|participant|customerId/);
+});
+
+test("table details expose only opt-in area and capacity groups, independently of live availability", async () => {
+  const detailsOnly = await harness([{ ...cafe, publishAvailability: false }]).read("availability");
+  assert.equal(detailsOnly.status, "OK");
+  assert.equal(detailsOnly.totalTables, null);
+  assert.equal(detailsOnly.availableTables, null);
+  assert.ok(detailsOnly.tableDetails.every((detail: any) => detail.availableTables === null));
+  assert.deepEqual(detailsOnly.tableDetails.map((detail: any) => [detail.area, detail.seats]), [
+    ["FAKE ชั้น 1", 4], ["FAKE ชั้น 2", 8],
+  ]);
+  const aggregateOnly = await harness([{ ...cafe, publishTableDetails: false }]).read("availability");
+  assert.equal(aggregateOnly.status, "OK");
+  assert.equal(aggregateOnly.tableDetails, null);
+  assert.equal(aggregateOnly.tableDetailsTruncated, null);
 });
 
 test("library search returns aggregate copy counts and filters tenant, branch, publication and players", async () => {
@@ -314,10 +336,44 @@ const CHAT_TENANT = "11111111-1111-4111-8111-111111111111";
 const hiddenChatRow = {
   location_id: "22222222-2222-4222-8222-222222222222",
   display_name: "FAKE Hidden directory branch", public_visible: false,
-  publish_rates: true, publish_availability: true, booking_enabled: false,
+  publish_rates: true, publish_availability: true, publish_table_details: true, booking_enabled: false,
   rates: Array.from({ length: 4 }, (_, i) => ({ ...cafe.rates[0], name: `FAKE Rate ${i}` })),
   total_tables: 4, available_tables: 3, games: [], latitude: 13.75, longitude: 100.5,
+  table_details: [{ area: "FAKE Floor", seats: 4, totalTables: 4, availableTables: 3 }],
 };
+
+test("board-game public and chat projections report detail truncation without leaking the sentinel", async () => {
+  for (const count of [0, 100, 101]) {
+    const row = { ...hiddenChatRow, table_details: Array.from({ length: count }, (_, i) => ({
+      area: `FAKE Floor ${i}`, seats: 4, totalTables: 2, availableTables: 1,
+      tableId: "PRIVATE_TABLE", guestName: "PRIVATE_GUEST",
+    })) };
+    const client = { query: async (sql: string) => {
+      if (sql.includes("SELECT business_archetype")) return { rows: [{ business_archetype: "board_game_cafe" }] } as any;
+      assert.match(sql, /GROUP BY area\.id[\s\S]*?LIMIT 101/);
+      return { rows: [row] } as any;
+    } };
+    const cafes = await listPublicBoardGameCafes({}, { tenantId: CHAT_TENANT, client });
+    const chat = await readBoardGameCustomerInfoInTx(client, CHAT_TENANT, "availability");
+    for (const result of [cafes[0], chat]) {
+      assert.equal(result.tableDetails.length, Math.min(count, 100));
+      assert.equal(result.tableDetailsTruncated, count > 100);
+      assert.equal(result.totalTables, 4, "keep the separately computed branch total");
+      assert.doesNotMatch(JSON.stringify(result.tableDetails), /PRIVATE_|FAKE Floor 100/);
+    }
+    assert.match(chat.note, /partial list/);
+  }
+});
+
+test("hidden board-game details keep truncation unknown; static-only details retain truncation", async () => {
+  const client = { query: async () => ({ rows: [{ ...hiddenChatRow, publish_table_details: false, table_details: null }] } as any) };
+  const [hidden] = await listPublicBoardGameCafes({}, { tenantId: CHAT_TENANT, client });
+  assert.equal(hidden.tableDetailsTruncated, null);
+  const staticOnly = await harness([{ ...cafe, publishAvailability: false, tableDetailsTruncated: true }]).read("availability");
+  assert.equal(staticOnly.tableDetailsTruncated, true);
+  assert.equal(staticOnly.availableTables, null);
+  assert.ok(staticOnly.tableDetails.every((detail: any) => detail.availableTables === null));
+});
 
 test("hidden directory branch still answers rates through the DEFAULT chat reader", async () => {
   const client = { query: async (sql: string) => {
@@ -364,6 +420,9 @@ test("chat reader requires tenant in type and SQL without optional tenant escape
     assert.match(sql, /ORDER BY COALESCE\(profile.display_name, location.name\), profile.location_id/);
     assert.match(sql, /CASE WHEN profile.publish_rates/);
     assert.match(sql, /CASE WHEN profile.publish_availability/);
+    assert.match(sql, /CASE WHEN profile.publish_table_details/);
+    assert.match(sql, /GROUP BY area.id, area.name, area.sort_order, table_row.seats/);
+    assert.match(sql, /ORDER BY area.sort_order, area.name, table_row.seats\s+LIMIT 101/);
     assert.match(sql, /title.public_visible/);
     assert.match(sql, /copy.status NOT IN \('RETIRED', 'LOST'\)/);
     return { rows: [hiddenChatRow] } as any;
@@ -394,12 +453,12 @@ test("chat and public entry points cannot swap readers", () => {
   }
 });
 
-test("public SQL preserves the discovery query apart from the new chat policy projection", async () => {
+test("public SQL pins the shared discovery projection including opt-in table details", async () => {
   const client = { query: async (sql: string, values: any[]) => {
     assert.deepEqual(values, [CHAT_TENANT]);
-    // Captured from the original query before the shared projection extraction.
+    // Pins the shared projection, including the 101st group used only as a truncation sentinel.
     assert.equal(createHash("sha256").update(sql.replace(", profile.chat_auto_confirm", "").replace(/\s+/g, " ").trim()).digest("hex"),
-      "adf1572c06fe9081f3e7ff2cc30a553e7ff02ec55d62690f549bda8eeeb9217a");
+      "529023a91dfd2ba758b6c1bcce950da311d493167a59adbcc8e5ca4cf40dd816");
     return { rows: [] } as any;
   } };
   for (const input of [{}, { latitude: 13.75, longitude: 100.5 }]) {
@@ -413,10 +472,11 @@ test("hidden directory profile obeys the separate chat publication flags", async
   assert.equal(result.status, "OK");
   assert.equal(result.rates.length, 4);
   assert.equal((await harness([{ ...hidden, publishRates: false }]).read("rates")).status, "NOT_PUBLISHED");
-  const floor = await harness([{ ...hidden, publishAvailability: false }]).read("availability");
+  const floor = await harness([{ ...hidden, publishAvailability: false, publishTableDetails: false }]).read("availability");
   assert.equal(floor.status, "NOT_PUBLISHED");
   assert.equal(floor.totalTables, null);
   assert.equal(floor.availableTables, null);
+  assert.equal(floor.tableDetails, null);
 });
 
 test("chat booking submission depends on booking opt-in AND no deposit", async () => {
@@ -447,6 +507,7 @@ test("public result mapping, distance, sorting and limit preserve the existing d
   assert.equal(near[0].publicVisible, true);
   assert.equal(near[0].totalTables, 4);
   assert.equal(near[0].availableTables, 3);
+  assert.deepEqual(near[0].tableDetails, [{ area: "FAKE Floor", seats: 4, totalTables: 4, availableTables: 3 }]);
   assert.equal(near[0].tenantSlug, "fake-public");
   assert.equal(near[0].shopName, "FAKE public shop");
   assert.equal(near[0].logoUrl, null);

@@ -143,7 +143,7 @@ async function requireRestaurantTenant(tenantId: string) {
 
 export async function listRestaurantFloor(tenantId: string, locationId: string) {
   await requireRestaurantTenant(tenantId);
-  const [areas, tables, takeawayChecks] = await Promise.all([
+  const [areas, tables, takeawayChecks, customerSettings] = await Promise.all([
     query<any>(
       `SELECT a.id, a.name, a.sort_order,
               COUNT(t.id) FILTER (WHERE t.active)::integer AS table_count
@@ -206,8 +206,15 @@ export async function listRestaurantFloor(tenantId: string, locationId: string) 
         LIMIT 50`,
       [tenantId, locationId, [...OPEN_CHECK_STATUSES]]
     ),
+    query<{ publish_restaurant_table_details: boolean }>(
+      `SELECT publish_restaurant_table_details
+         FROM bms_locations
+        WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, locationId]
+    ),
   ]);
   return {
+    publishTableDetails: Boolean(customerSettings.rows[0]?.publish_restaurant_table_details),
     areas: areas.rows.map((row) => ({
       id: row.id,
       name: row.name,
@@ -364,6 +371,30 @@ async function withFloorWrite<T>(
   } finally {
     client.release();
   }
+}
+
+export async function setRestaurantCustomerTableDetails(input: RestaurantFloorActor & {
+  locationId: string;
+  publishTableDetails: boolean;
+}) {
+  return withFloorWrite(input, async (client) => {
+    await lockFloorConfigInTx(client, input.tenantId, input.locationId);
+    const updated = await client.query(
+      `UPDATE bms_locations
+          SET publish_restaurant_table_details = $3, updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND active`,
+      [input.tenantId, input.locationId, Boolean(input.publishTableDetails)]
+    );
+    if (!updated.rowCount) throw new RestaurantCheckError("ไม่พบสาขานี้");
+    await auditFloorInTx(
+      client,
+      input,
+      "restaurant.customer_table_details.update",
+      input.locationId,
+      { publishTableDetails: Boolean(input.publishTableDetails) }
+    );
+    return Boolean(input.publishTableDetails);
+  });
 }
 
 export async function createRestaurantArea(input: RestaurantFloorActor & {

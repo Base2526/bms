@@ -8,7 +8,7 @@ import { requireAuth } from "@/lib/auth";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
-import { listLocations, upsertLocation } from "@/lib/bms/locations";
+import { listLocations, listLocationsForUser, upsertLocation } from "@/lib/bms/locations";
 import {
   clearCashierPin,
   closePosShift,
@@ -51,6 +51,11 @@ type ID_ = string;
 
 export const bmsPosResolvers = {
   Query: {
+    async bmsManageableLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "location.manage");
+      const auth = requireAuth(ctx);
+      return listLocationsForUser(getTenantId(ctx), String(auth.author_id));
+    },
     async bmsLocations(_p: unknown, _a: unknown, ctx: any) {
       await requirePermission(ctx, "product.view");
       return listLocations(getTenantId(ctx));
@@ -182,12 +187,13 @@ export const bmsPosResolvers = {
     async bmsUpsertLocation(_p: unknown, args: { input: any }, ctx: any) {
       await requirePermission(ctx, "location.manage");
       try {
-        const location = await upsertLocation(getTenantId(ctx), args.input);
+        const auth = requireAuth(ctx);
+        const location = await upsertLocation(getTenantId(ctx), args.input, String(auth.author_id));
         await audit(ctx, "location.upsert", location.id, { code: location.code, branchCode: location.branchCode });
         return location;
       } catch (e: any) {
         throw new GraphQLError(e?.message || "บันทึกสาขาไม่สำเร็จ", {
-          extensions: { code: "BAD_USER_INPUT" },
+          extensions: { code: e?.message === "FORBIDDEN" ? "FORBIDDEN" : "BAD_USER_INPUT" },
         });
       }
     },

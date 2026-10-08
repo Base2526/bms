@@ -24,6 +24,11 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.52__bms_location_parking.sql",
+    impact: "Branch management cannot save basic parking information until this column is available",
+    needs: [{ kind: "column", table: "bms_locations", name: "parking_info" }],
+  },
+  {
     file: "10.44__bms_pharmacy_customer_label_facts.sql",
     impact: "อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้",
     needs: [{ kind: "column", table: "bms_products", name: "medicine_label" }],
@@ -374,6 +379,16 @@ export const MIGRATIONS: Migration[] = [
     file: "10.49__bms_board_game_chat_actions.sql",
     impact: "Board-game chat booking policy requires the automatic confirmation setting",
     needs: [{ kind: "column", table: "bms_board_game_public_locations", name: "chat_auto_confirm" }],
+  },
+  {
+    file: "10.50__bms_board_game_public_table_details.sql",
+    impact: "Board-game customer availability reads require the opt-in table-detail publication setting",
+    needs: [{ kind: "column", table: "bms_board_game_public_locations", name: "publish_table_details" }],
+  },
+  {
+    file: "10.51__bms_restaurant_public_table_details.sql",
+    impact: "Restaurant floor settings and customer availability require the opt-in table-detail publication setting",
+    needs: [{ kind: "column", table: "bms_locations", name: "publish_restaurant_table_details" }],
   },
   {
     file: "10.48__bms_board_game_chat_reservations.sql",

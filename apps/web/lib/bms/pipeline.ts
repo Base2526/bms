@@ -51,6 +51,7 @@ import {
   replyWithoutQuotedStoreFacts,
   CUSTOMER_STORE_CONTEXT_POLICY,
 } from "./customerStoreContext";
+import { answersWithParkingFacts, customerParkingFallback, isParkingQuestion, needsParkingClarification, scopeParkingFactsForReply } from "./customerParkingReply";
 import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
 import {
   getRecentAiHistory,
@@ -361,6 +362,7 @@ function buildBusinessArchetypeExamples(businessArchetype: string | null | undef
         'ตัวอย่างร้านอาหาร — ลูกค้า: "กี่โมงได้" → เรียก get_restaurant_availability แล้วรายงานจำนวนงาน/SLA ที่มีจริง แต่ห้ามแปลงเป็นเวลารับรองเมื่อทูลคืน estimatedPrepMinutes=null',
         'ตัวอย่างร้านอาหาร — ลูกค้า: "แพ้กุ้ง กินเมนูนี้ได้ไหม" → อ่าน foodProfile ของสินค้าจริง ถ้า allergenInformationProvided=false ต้องบอกว่าไม่มีข้อมูลและให้ร้านตรวจ ห้ามสรุปว่าปลอดภัยจาก description',
         'ตัวอย่างร้านอาหาร — ลูกค้า: "มีโต๊ะว่างไหม คิวกี่โต๊ะ" → เลือกสาขาด้วย list_restaurant_order_locations แล้วใช้ get_restaurant_availability ตอบเฉพาะยอดรวมล่าสุด ไม่รับรองว่าโต๊ะจะยังว่างเมื่อมาถึง',
+        'ตัวอย่างร้านอาหาร — ลูกค้า: "มีโต๊ะชั้นไหนบ้าง โต๊ะละกี่คน" → ใช้ tableDetails จาก get_restaurant_availability ได้เมื่อร้านเปิดเผยไว้ ตอบเป็นชื่อชั้น/โซนและกลุ่มจำนวนที่นั่ง ห้ามบอกเลขโต๊ะ ผู้ที่นั่ง หรือข้อมูลบิล',
         'ตัวอย่างร้านอาหาร — ลูกค้า: "จองโต๊ะ 4 คน วันนี้ทุ่มนึง" → เก็บสาขา วันเวลา และจำนวนให้ครบ แล้วเรียก request_restaurant_reservation; แจ้งว่าเป็นคำขอรอพนักงานรับ ไม่ใช่การยืนยันโต๊ะ',
       ];
     case "board_game_cafe":
@@ -437,7 +439,6 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       BOARD_GAME_CUSTOMER_GUARD_POLICY,
       "บริการเล่นบอร์ดเกมเป็นคนละเรื่องกับสินค้าขาย: ค่าเล่นใช้ get_board_game_rates เกมให้เล่น/แนะนำเกมตามจำนวนคนใช้ search_board_game_library โต๊ะว่าง/การมาเล่น/การจอง/ข้อมูลสาขาใช้ get_board_game_availability; ใช้ catalog เฉพาะสินค้า เครื่องดื่ม ขนม หรือเกมที่ลูกค้าต้องการซื้อ",
       "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
-      "คำถามที่จอดรถ: ถ้า about ไม่ระบุ ให้เรียก get_board_game_availability เพื่อตรวจ summary ของสาขาที่เผยแพร่ก่อน ตอบได้เฉพาะที่ระบุไว้จริง ถ้าทั้งสองแหล่งไม่ระบุให้บอกว่าข้อมูลที่จอดรถยังไม่ระบุ ไม่ใช่อ้างว่าร้านไม่มีข้อมูลทุกอย่าง",
       "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง ถ้า autoConfirm=true ระบบตรวจและจองโต๊ะจริงได้เมื่อผลเป็น CONFIRMED; REQUESTED ยังรอร้านตรวจ โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน ติดตามด้วย get_board_game_reservation_status",
       "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status และใช้ reference ที่ระบบผูกกับตัวเลือกของลูกค้า ห้ามให้ลูกค้าพิมพ์รหัสซ้ำหรือเดา reference แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE; เวลาใหม่ต้องมาจากลูกค้า แต่ถ้าลูกค้าไม่ได้เปลี่ยนระยะเวลาหรือจำนวนคนให้ละ field นั้นเพื่อคงค่าปัจจุบัน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
       "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
@@ -522,8 +523,9 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       "ตัวเลือกต่างกันในแต่ละกล่อง/แก้วต้องแยกบรรทัด แม้ SKU เดียวกัน หากข้อกำชับไม่มีใน modifier ให้เก็บคำของลูกค้าใน requestNote พร้อมชื่อรายการและจำนวน ให้ร้านตรวจ ห้ามรับรองว่าทำได้หรือรับรองเรื่องแพ้อาหาร",
       "promisedAt ในคำขอคือเวลาที่ลูกค้าต้องการ ไม่ใช่เวลาที่ร้านรับรอง ต้องไม่เดาเวลาครัวหรือไรเดอร์ หลังรับคำขอให้เก็บเบอร์ติดต่อผ่าน save_customer_checkout_details เฉพาะเมื่อยังไม่มี และไม่แนะนำชำระเงินจนมีบิลที่ร้านยืนยันจริง",
       "คำถามสารก่อภูมิแพ้/เจ/ฮาลาล/มังสวิรัติ: ต้องอ่าน foodProfile จาก search_products/get_product เท่านั้น ถ้า allergenInformationProvided=false ให้ตอบว่าไม่มีข้อมูลที่ร้านตรวจไว้ ห้ามอนุมานจากชื่อหรือ description; ถ้า allergen ไม่อยู่ในรายการก็ห้ามพูดว่าปลอดภัย ให้พูดเพียงว่าไม่พบในรายการที่ร้านระบุและยังไม่ทราบเรื่องการปนเปื้อนข้าม",
-      "คำถามโต๊ะว่าง/คิว/ภาระครัว: เรียก list_restaurant_order_locations ก่อน แล้วใช้ locationId จริงกับ get_restaurant_availability รายงาน observedAt และตัวเลขรวมตามชื่อ field เท่านั้น; walkInWaitingParties คือคิว walk-in ส่วน acceptedUnseated คือการจองที่รับแล้วแต่ยังไม่นั่ง ไม่ใช่หลักฐานว่ากำลังยืนรอ ห้ามรวมสองตัวนี้ ห้ามสร้างเวลารอหรือเวลาเตรียมเมื่อ estimatedWaitMinutes/estimatedPrepMinutes เป็น null; SLA เป็นเกณฑ์ร้าน ไม่ใช่คำสัญญา",
+      "คำถามโต๊ะว่าง/คิว/ภาระครัว: เรียก list_restaurant_order_locations ก่อน แล้วใช้ locationId จริงกับ get_restaurant_availability รายงาน observedAt และตัวเลขรวมตามชื่อ field; ถ้า tableDetails ไม่เป็น null จึงบอกชื่อชั้น/โซน จำนวนที่นั่ง และจำนวนโต๊ะรวม/ว่างตามกลุ่มที่ทูลคืนได้ ห้ามบอกหรือเดาเลขโต๊ะ รหัสโต๊ะ ผู้ที่นั่ง หรือข้อมูลบิล และถ้า tableDetails เป็น null ให้บอกว่าร้านยังไม่ได้เปิดเผยรายละเอียดนี้; walkInWaitingParties คือคิว walk-in ส่วน acceptedUnseated คือการจองที่รับแล้วแต่ยังไม่นั่ง ไม่ใช่หลักฐานว่ากำลังยืนรอ ห้ามรวมสองตัวนี้ ห้ามสร้างเวลารอหรือเวลาเตรียมเมื่อ estimatedWaitMinutes/estimatedPrepMinutes เป็น null; SLA เป็นเกณฑ์ร้าน ไม่ใช่คำสัญญา",
       "การจองโต๊ะจากแชท: เก็บสาขา จำนวนคน วันเวลาพร้อม timezone และชื่อ+เบอร์ติดต่อให้ครบ ใช้ get_customer_checkout อ่านเฉพาะความครบ ถ้าขาดให้ถามทีละ field และบันทึกด้วย save_customer_checkout_details เฉพาะค่าที่ลูกค้าบอก แล้วจึงเรียก request_restaurant_reservation โดยห้ามใส่ PII ใน args ของทูลจอง ผล REQUESTED คือคำขอรอพนักงานรับ ไม่ใช่โต๊ะที่ยืนยันแล้ว; ใช้ get_restaurant_reservation_status เมื่อลูกค้าถามติดตามคำขอ",
+      "เมื่อ tableDetailsTruncated=true ให้แจ้งว่ารายละเอียดโต๊ะเป็นเพียงบางส่วน (100 กลุ่มแรก) ห้ามอ้างว่าครบทั้งหมด ห้ามรวมรายการนี้เป็นยอดทั้งสาขา หรือสรุปว่าไม่มีโซน/ขนาดที่ไม่ปรากฏ ให้แนะนำสอบถามพนักงานสำหรับรายละเอียดที่เหลือ",
     );
   }
   // One source of behavioral examples per shop. A selected archetype is more precise than the
@@ -2609,7 +2611,7 @@ export async function runPipeline(
   }
 
   const boardGameVisit = isBoardGameVisitQuestion(aiInputMessage, profile.businessArchetype);
-  const basicStoreQuestion = isStoreInfoQuestion(aiInputMessage) || boardGameVisit;
+  const basicStoreQuestion = isStoreInfoQuestion(aiInputMessage) || boardGameVisit || isParkingQuestion(aiInputMessage);
   const checkoutDetails = basicStoreQuestion ? null : checkoutDetailsFromReply(aiInputMessage, history);
   if (checkoutDetails) {
     const executed = await executeCustomerTool(
@@ -3689,6 +3691,10 @@ export async function runPipeline(
     },
   });
 
+  const latestStoreFacts = execCtx.customerStoreRead?.facts ?? storeFacts;
+  const parkingLookupBranch = execCtx.customerStoreRead?.branch;
+  const replyStoreFacts = scopeParkingFactsForReply(latestStoreFacts, aiInputMessage, parkingLookupBranch);
+
   // These replies are server-owned even if the provider fails after the tool completes.
   if (execCtx.boardGameChatActionResult || execCtx.pendingBoardGameChatAction) {
     let reply: string;
@@ -3847,10 +3853,12 @@ export async function runPipeline(
       reply = englishReply
         ? "This chat can check published information, but cannot change bookings, extend play time, refund money or notify staff. Please contact the shop staff to carry out the request. No action has been confirmed."
         : "แชทนี้ตรวจข้อมูลที่ร้านเผยแพร่ได้ แต่ยังจองหรือเปลี่ยนการจอง ต่อเวลา คืนเงิน หรือแจ้งพนักงานให้ไม่ได้ค่ะ กรุณาติดต่อพนักงานเพื่อดำเนินการ ยังไม่มีการยืนยันรายการนะคะ";
-    } else if (hasUnverifiedFacts(replyWithoutQuotedStoreFacts(loop.reply, storeFacts), loop.trace)) {
-      reply = englishReply
+    } else if (needsParkingClarification(latestStoreFacts, aiInputMessage, parkingLookupBranch)) {
+      reply = customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch)!;
+    } else if (hasUnverifiedFacts(replyWithoutQuotedStoreFacts(loop.reply, replyStoreFacts), loop.trace)) {
+      reply = customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch) ?? (englishReply
         ? "Sorry, I need to verify that information first. Please ask again or specify the product and size."
-        : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏";
+        : "ขอโทษนะคะ ขอเช็คข้อมูลให้แน่ใจอีกครั้งก่อนนะคะ ช่วยถามอีกครั้ง หรือระบุชื่อสินค้า/ไซซ์ให้ชัดเจนได้ไหมคะ 🙏");
     } else if (hasUnverifiedActionClaim(loop.reply, loop.trace)) {
       reply = englishReply
         ? "Sorry, that action was not actually saved. Please send the request again."
@@ -3907,7 +3915,8 @@ export async function runPipeline(
       try {
         const madeProgress =
           (loop.trace ?? []).some((t) => t.ok && CUSTOMER_PROGRESS_TOOLS.has(t.tool)) ||
-          isBusinessClarification(reply) || answersWithStoreFacts(reply, storeFacts);
+          isBusinessClarification(reply) || answersWithStoreFacts(reply, replyStoreFacts) ||
+          answersWithParkingFacts(reply, latestStoreFacts, aiInputMessage, parkingLookupBranch);
         const failedTurns = await bumpAiTurnCounter(tenantId, convId, madeProgress);
         if (!madeProgress && failedTurns >= profile.aiHandoffAfterFailedTurns) {
           reply = englishReply ? HANDOFF_REPLY_EN : HANDOFF_REPLY;
@@ -3949,10 +3958,10 @@ export async function runPipeline(
       channel, incoming: message, understanding,
       tool: "deterministic:get_store_info",
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: storeContext.result.ok
+      reply: customerParkingFallback(latestStoreFacts, aiInputMessage, englishReply, parkingLookupBranch) ?? (storeContext.result.ok
         ? storeInfoReply((storeContext.result.data ?? {}) as Parameters<typeof storeInfoReply>[0], aiInputMessage, englishReply, boardGameVisit)
         : englishReply ? "Sorry, I could not load the shop information. Please try again."
-          : "ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ ลองใหม่อีกครั้งนะคะ",
+          : "ขออภัยค่ะ ตรวจข้อมูลร้านไม่สำเร็จ ลองใหม่อีกครั้งนะคะ"),
       trace: [storeContext.trace],
     });
   }

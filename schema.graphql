@@ -1638,6 +1638,7 @@ type BmsLocation {
   id: ID!
   isHeadOffice: Boolean!
   name: String!
+  parking: BmsLocationParking
   pharmacistLicenseNo: String
   pharmacistName: String
   pharmacyLicenseNo: String
@@ -1652,7 +1653,26 @@ input BmsLocationInput {
   code: String!
   id: ID
   name: String!
+  parking: BmsLocationParkingInput
   phone: String
+}
+
+type BmsLocationParking {
+  carSpaces: Int
+  details: String
+  mapUrl: String
+  motorcycleSpaces: Int
+  published: Boolean!
+  status: BmsParkingStatus!
+}
+
+input BmsLocationParkingInput {
+  carSpaces: Int
+  details: String
+  mapUrl: String
+  motorcycleSpaces: Int
+  published: Boolean!
+  status: BmsParkingStatus!
 }
 
 type BmsLotMismatch {
@@ -2264,6 +2284,12 @@ type BmsPackAudit {
   sizes: Int!
   sizesWithoutBarcode: [String!]!
   sku: String!
+}
+
+enum BmsParkingStatus {
+  AVAILABLE
+  NONE
+  UNKNOWN
 }
 
 type BmsPayment {
@@ -6122,6 +6148,7 @@ type BmsRestaurantCancellationLoss {
 
 type BmsRestaurantFloorAdmin {
   areas: [BmsRestaurantArea!]!
+  publishTableDetails: Boolean!
   tables: [BmsRestaurantTableAdmin!]!
 }
 
@@ -7694,6 +7721,7 @@ type Mutation {
   bmsSetProductBundleItems(bundleSku: String!, items: [BmsBundleItemInput!]!): [BmsBundleItem!]!
   bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
   bmsSetReorderPoint(locationId: ID!, reorderPoint: Int!, size: String!, sku: String!): BmsVariant!
+  bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
   bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
   bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!
@@ -8140,6 +8168,7 @@ type Query {
   bmsMailLog(category: String, page: Int, pageSize: Int, provider: String, q: String, status: String, tenantId: ID): BmsMailLogPage!
   bmsMailLogEntry(id: ID!): BmsMailLogEntry
   bmsMailLogStats: BmsMailLogStats!
+  bmsManageableLocations: [BmsLocation!]!
   bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
   bmsMe: BmsMe!
   bmsMember(customerId: ID!): BmsMember

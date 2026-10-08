@@ -111,6 +111,7 @@ import { getDashboard } from "../dashboard";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
+import { getCustomerBranchParking } from "../locations";
 import { receiveRestaurantRequest, listRestaurantRequests } from "../restaurantRequests";
 import { isRestaurantRequestRejection, restaurantRequestInputChoices } from "../restaurantRequestPolicy";
 import {
@@ -1000,7 +1001,7 @@ const getPharmacyCaseStatusTool: BmsTool = {
 const getRestaurantAvailabilityTool: BmsTool = {
   name: "get_restaurant_availability",
   description:
-    "Read current customer-safe restaurant branch aggregates: available tables/seats, walk-in queue counts, unseated reservation-request counts, open kitchen tickets and configured kitchen SLA. Accepted reservations are not counted as a live physical queue. It never returns identities or a promised wait/preparation time. Call list_restaurant_order_locations first and pass its exact locationId.",
+    "Read current customer-safe restaurant branch aggregates: available tables/seats, walk-in queue counts, unseated reservation-request counts, open kitchen tickets and configured kitchen SLA. When the branch explicitly opts in, tableDetails contains public area/floor labels and capacity-grouped total/available counts only—never table numbers, ids, occupants or checks. Accepted reservations are not counted as a live physical queue. It never returns identities or a promised wait/preparation time. Call list_restaurant_order_locations first and pass its exact locationId.",
   surfaces: ["customer"],
   permission: "product.view",
   inputSchema: {
@@ -3132,15 +3133,15 @@ const getBoardGameRatesTool = boardGameCustomerReadTool("get_board_game_rates", 
 const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_library", "library",
   "Search this shop's publicly visible playable titles by title/tag and player count, independently of public-directory listing. A saved active branch profile is required; NOT_PUBLISHED means not enabled for chat, not no games. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
-  "Read this shop's branch information/hours, current aggregate table counts and booking/deposit policy. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null counts mean not enabled for chat, not zero.");
+  "Read this shop's branch information/hours, current aggregate table counts, opt-in customer-safe area/floor and capacity groups, and booking/deposit policy. Table details contain public area labels, seat capacity and grouped counts only—never table numbers, ids, occupants or sessions. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null fields mean not enabled for chat, not zero.");
 
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
   description:
-    "Shop information: name, description, address, phone, opening hours, and the shipping and return policies. Use for the general questions customers ask most.",
+    "Shop information: name, description, address, phone, opening hours, shipping/return policies and published branchParking for every shop type. Parking capacity is not live vacancy. Match the requested branch or ask which branch; null parking means not published, UNKNOWN means unspecified, NONE means no shop-provided parking. branch is an optional exact branch name, useful when the first 20 branches are truncated. Never infer missing details from absence or old freeform about text.",
   surfaces: ["customer", "staff"],
-  inputSchema: { type: "object", properties: {} },
-  execute: async (_args, ec): Promise<ToolResult> => {
+  inputSchema: { type: "object", properties: { branch: { type: "string", minLength: 1, maxLength: 200, description: "Exact branch name explicitly requested by the customer; omit if unknown." } }, additionalProperties: false },
+  execute: async (args, ec): Promise<ToolResult> => {
     const p = await getStoreProfile(ec.tenantId);
     // ชื่อร้าน = bms_tenants.name (ชื่อเดียวทั้งระบบ ไม่ใช้ store_name แล้ว)
     const storeName = await getTenantName(ec.tenantId);
@@ -3148,6 +3149,7 @@ const getStoreInfoTool: BmsTool = {
       ok: true,
       data: {
         storeName,
+        branchParking: await getCustomerBranchParking(ec.tenantId, args.branch),
         businessType: p.businessType,
         businessArchetype: p.businessArchetype,
         about: p.about, address: p.address, phone: p.phone,

@@ -2,6 +2,7 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.52__bms_location_parking.sql', 'column', 'bms_locations', 'parking_info', 'Branch management cannot save basic parking information until this column is available'),
     ('10.44__bms_pharmacy_customer_label_facts.sql', 'column', 'bms_products', 'medicine_label', 'อ่านหรือบันทึกข้อมูลฉลากยาในหน้าสินค้าไม่ได้'),
     ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_codes', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
     ('10.43__bms_restaurant_customer_assistance.sql', 'column', 'bms_products', 'allergen_information_provided', 'ตอบคำถามอาหารจากข้อมูลโครงสร้างไม่ได้ และรับ/ตรวจคำขอจองโต๊ะจากแชทไม่ได้'),
@@ -102,6 +103,8 @@ WITH required(migration, kind, tbl, col, impact) AS (VALUES
     ('10.2__bms_board_game_reservation_completion.sql', 'table', 'bms_board_game_reservation_deposit_applications', NULL, 'รับมัดจำ/หมดอายุคำขอ/แจ้งผลจองและคิดเงิน Board Game POS ใช้ไม่ได้'),
     ('10.3__bms_board_game_offers.sql', 'table', 'bms_board_game_offers', NULL, 'ร้านบอร์ดเกมปิดบิลไม่ได้ — เส้นทางปิดบิลตรวจโปรโมชันค่าเวลาทุกครั้ง'),
     ('10.49__bms_board_game_chat_actions.sql', 'column', 'bms_board_game_public_locations', 'chat_auto_confirm', 'Board-game chat booking policy requires the automatic confirmation setting'),
+    ('10.50__bms_board_game_public_table_details.sql', 'column', 'bms_board_game_public_locations', 'publish_table_details', 'Board-game customer availability reads require the opt-in table-detail publication setting'),
+    ('10.51__bms_restaurant_public_table_details.sql', 'column', 'bms_locations', 'publish_restaurant_table_details', 'Restaurant floor settings and customer availability require the opt-in table-detail publication setting'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'customer_id', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'chat_request_key_hash', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),
     ('10.48__bms_board_game_chat_reservations.sql', 'column', 'bms_board_game_waitlist', 'chat_request_hash', 'คำขอจองจากแชทต้องมี customer scope และ idempotency ก่อนเปิดใช้โค้ด'),

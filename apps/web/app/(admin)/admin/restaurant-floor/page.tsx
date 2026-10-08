@@ -30,6 +30,7 @@ const Q_BOOTSTRAP = gql`
 const Q_FLOOR = gql`
   query RestaurantFloorAdmin($locationId: ID!) {
     bmsRestaurantFloorAdmin(locationId: $locationId) {
+      publishTableDetails
       areas { id name sortOrder tableCount }
       tables { id areaId code name seats shape positionX positionY blocked active status }
     }
@@ -70,6 +71,11 @@ const M_DELETE_TABLE = gql`
 const M_SAVE_LAYOUT = gql`
   mutation SaveRestaurantFloorLayout($locationId: ID!, $positions: [BmsRestaurantTablePositionInput!]!) {
     bmsSaveRestaurantFloorLayout(locationId: $locationId, positions: $positions)
+  }
+`;
+const M_SET_CUSTOMER_TABLE_DETAILS = gql`
+  mutation SetRestaurantCustomerTableDetails($locationId: ID!, $publish: Boolean!) {
+    bmsSetRestaurantCustomerTableDetails(locationId: $locationId, publish: $publish)
   }
 `;
 const M_ISSUE_TABLE_QR = gql`
@@ -115,7 +121,11 @@ export default function RestaurantFloorPage() {
     fetchPolicy: "cache-and-network",
   });
   const areas: Area[] = floor.data?.bmsRestaurantFloorAdmin?.areas ?? [];
-  const tables: DiningTable[] = floor.data?.bmsRestaurantFloorAdmin?.tables ?? [];
+  // Apollo can recreate the table array after a scalar-only floor update. Keep the
+  // table snapshot stable so publishing details does not reset layout/form drafts.
+  const tablesSnapshot = JSON.stringify(floor.data?.bmsRestaurantFloorAdmin?.tables ?? []);
+  const tables: DiningTable[] = useMemo(() => JSON.parse(tablesSnapshot), [tablesSnapshot]);
+  const publishTableDetails = Boolean(floor.data?.bmsRestaurantFloorAdmin?.publishTableDetails);
   const [areaId, setAreaId] = useState<string | null>(null);
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [positions, setPositions] = useState<Record<string, Position>>({});
@@ -140,6 +150,19 @@ export default function RestaurantFloorPage() {
   const [updateTable, updateTableState] = useMutation(M_UPDATE_TABLE);
   const [deleteTable] = useMutation(M_DELETE_TABLE);
   const [saveLayout, saveLayoutState] = useMutation(M_SAVE_LAYOUT);
+  const [setCustomerTableDetails, customerTableDetailsState] = useMutation(M_SET_CUSTOMER_TABLE_DETAILS, {
+    update(cache, { data }, { variables }) {
+      const publish = data?.bmsSetRestaurantCustomerTableDetails;
+      if (!variables?.locationId || typeof publish !== "boolean") return;
+      // Update the branch that was submitted, even if the operator has since switched branches.
+      cache.updateQuery({ query: Q_FLOOR, variables: { locationId: variables.locationId } }, (current) => (
+        current ? {
+          ...current,
+          bmsRestaurantFloorAdmin: { ...current.bmsRestaurantFloorAdmin, publishTableDetails: publish },
+        } : current
+      ));
+    },
+  });
   const [issueTableQr, issueTableQrState] = useMutation(M_ISSUE_TABLE_QR);
 
   useEffect(() => {
@@ -158,7 +181,7 @@ export default function RestaurantFloorPage() {
     for (const table of tables) next[table.id] = { x: table.positionX, y: table.positionY };
     setPositions(next);
     setDirtyIds(new Set());
-  }, [floor.data]);
+  }, [tables, locationId]);
 
   const selectedTable = useMemo(
     () => tables.find((table) => table.id === selectedTableId) ?? null,
@@ -181,6 +204,16 @@ export default function RestaurantFloorPage() {
 
   async function refreshFloor() {
     await floor.refetch();
+  }
+
+  async function changeCustomerTableDetails(publish: boolean) {
+    if (!locationId) return;
+    try {
+      await setCustomerTableDetails({ variables: { locationId, publish } });
+      message.success(t("admin_restaurant_floor.customer_table_details_saved"));
+    } catch (error) {
+      message.error(errorMessage(error, t("admin_restaurant_floor.action_failed")));
+    }
   }
 
   async function submitArea() {
@@ -406,6 +439,18 @@ export default function RestaurantFloorPage() {
             </label>
           )}
           <Space wrap>
+            <Space>
+              <Switch
+                checked={publishTableDetails}
+                loading={customerTableDetailsState.loading}
+                disabled={!locationId || floor.loading || !floor.data?.bmsRestaurantFloorAdmin}
+                aria-label={t("admin_restaurant_floor.customer_table_details")}
+                onChange={(checked) => void changeCustomerTableDetails(checked)}
+              />
+              <Tooltip title={t("admin_restaurant_floor.customer_table_details_hint")}>
+                <Typography.Text>{t("admin_restaurant_floor.customer_table_details")}</Typography.Text>
+              </Tooltip>
+            </Space>
             <Typography.Text type={dirtyIds.size ? "warning" : "secondary"}>
               {dirtyIds.size ? t("admin_restaurant_floor.layout_dirty") : t("admin_restaurant_floor.drag_table_hint")}
             </Typography.Text>
