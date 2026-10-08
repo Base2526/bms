@@ -43,6 +43,8 @@ import {
 } from "../restaurantCustomer";
 import { readBoardGameCustomerInfo, type BoardGameCustomerRead } from "../boardGameCustomerInfo";
 import { executeBoardGameReservationRequest } from "../boardGameReservationPolicy";
+import { BOARD_GAME_CHAT_ACTIONS, executeBoardGameChatAction } from "../boardGameChatActionPolicy";
+import { previewBoardGameChatAction, commitBoardGameChatAction, validateBoardGameChatAction } from "../boardGameChatActions";
 import { previewChatBoardGameReservation, requestChatBoardGameReservation, listChatBoardGameReservationsForCustomer, ChatBoardGameReservationRejection } from "../boardGameWaitlist";
 import { isIdempotencyConflictError } from "../idempotencyErrors";
 import { checkStock, listVariantReservations } from "../stock";
@@ -3005,6 +3007,7 @@ const A3_TOOLS: BmsTool[] = [
 // =============================================================
 
 const BOARD_GAME_CUSTOMER_TOOLS = new Set([
+  "manage_board_game_booking",
   "request_board_game_reservation", "get_board_game_reservation_status",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability",
 ]);
@@ -3012,7 +3015,7 @@ const BOARD_GAME_CUSTOMER_TOOLS = new Set([
 
 const requestBoardGameReservationTool: BmsTool = {
   name: "request_board_game_reservation", surfaces: ["customer"], permission: "order.create",
-  description: "Prepare a board-game table REQUEST for staff review, never a confirmed booking. First call returns a server summary for customer confirmation and writes nothing. Requires saved name/phone (get_customer_checkout and save_customer_checkout_details). Use only the exact branch name and date/time/duration/party size stated by the customer. Deposits require staff. No PII in note.",
+  description: "Prepare a board-game booking. First call returns a server summary and writes nothing. After customer confirmation, branches with autoConfirm enabled allocate an available table and return CONFIRMED; others return REQUESTED for staff review. Only report success from the returned status. Requires saved name/phone (get_customer_checkout and save_customer_checkout_details). Use only the exact branch/date/time/duration/party size stated by the customer. Deposits require staff. No PII in note.",
   inputSchema: { type: "object", properties: {
     branch: { type: "string", maxLength: 120 },
     reservedLocal: { type: "string", description: "YYYY-MM-DDTHH:mm in the branch timezone; never infer a missing date or time." },
@@ -3041,7 +3044,7 @@ const requestBoardGameReservationTool: BmsTool = {
 };
 const getBoardGameReservationStatusTool: BmsTool = {
   name: "get_board_game_reservation_status", surfaces: ["customer"], permission: "order.view",
-  description: "Read this customer's latest five chat table requests only. REQUESTED awaits staff review; CONFIRMED means staff confirmed the time, never expose a table number. Rejected/expired/cancelled requests are not bookings. No automatic decision messages, rescheduling or cancellation through chat.",
+  description: "Read this customer's latest five chat bookings only. REQUESTED awaits staff review; CONFIRMED means the table/time was confirmed. Never expose a table number. Use the returned reference with manage_board_game_booking for cancellation or rescheduling. Rejected/expired/cancelled requests are not active bookings.",
   inputSchema: { type: "object", properties: {} },
   execute: async (_args, ec) => {
     if (!ec.channel || !ec.customerRef) return { ok: false, error: "CUSTOMER_IDENTITY_REQUIRED" };
@@ -3049,6 +3052,42 @@ const getBoardGameReservationStatusTool: BmsTool = {
     const requests = customerId ? await listChatBoardGameReservationsForCustomer({ tenantId: ec.tenantId, customerId }) : [];
     ec.boardGameReservationStatuses = requests;
     return { ok: true, data: { requests } };
+  },
+};
+
+const manageBoardGameBookingTool: BmsTool = {
+  name: "manage_board_game_booking", surfaces: ["customer"], permission: "order.create",
+  description: "Preview a customer-owned chat booking cancellation (CANCEL) or reschedule (RESCHEDULE), or a staff Inbox request (REFUND, EXTEND_TIME, DISCOUNT, STAFF). First call writes nothing and asks for customer confirmation. CANCEL/RESCHEDULE execute only after server-verified consent. RESCHEDULE requires a confirmed no-deposit booking and exact customer-stated new local date/time, duration and party size. Read get_board_game_reservation_status to select a reference; never guess it. Other actions send a request to staff, never refund money or grant discounts/free time. Include a short non-PII note describing the requested help, amount or extra minutes; staff verify it. Do not claim staff have acted or read the request.",
+  inputSchema: { type: "object", additionalProperties: false, properties: {
+    action: { type: "string", enum: [...BOARD_GAME_CHAT_ACTIONS] },
+    reference: { type: "string", pattern: "^[a-fA-F0-9]{8}$" },
+    reservedLocal: { type: "string", description: "RESCHEDULE only: YYYY-MM-DDTHH:mm in branch timezone" },
+    durationMinutes: { type: "integer", minimum: 30, maximum: 720 },
+    partySize: { type: "integer", minimum: 1, maximum: 500 },
+    note: { type: "string", maxLength: 300 },
+  }, required: ["action"] },
+  execute: async (args, ec) => {
+    try {
+      const allowed = new Set(["action", "reference", "reservedLocal", "durationMinutes", "partySize", "note"]);
+      if (Object.keys(args).some(key => !allowed.has(key))) throw new ToolArgError("Unknown action argument");
+      const draft = {
+        action: enumVal(args, "action", BOARD_GAME_CHAT_ACTIONS)!, reference: optString(args, "reference"),
+        reservedLocal: optString(args, "reservedLocal"),
+        durationMinutes: args.durationMinutes == null ? undefined : reqInt(args, "durationMinutes", 30),
+        partySize: args.partySize == null ? undefined : reqInt(args, "partySize", 1), note: optString(args, "note"),
+      };
+      validateBoardGameChatAction(draft);
+      const authority = (customerId: string) => ({ tenantId: ec.tenantId, customerId, channel: ec.channel!, customerRef: ec.customerRef! });
+      return await executeBoardGameChatAction(draft, ec, {
+        resolveCustomer: () => findCustomerIdByIdentity(ec.tenantId, ec.channel!, ec.customerRef!),
+        preview: (customerId, input) => previewBoardGameChatAction(authority(customerId), input),
+        commit: (customerId, quote) => commitBoardGameChatAction(authority(customerId), quote),
+      });
+    } catch (error) {
+      if (error instanceof ChatBoardGameReservationRejection) return { ok: false, error: `${error.code}: ${error.message}` };
+      if (isIdempotencyConflictError(error)) return { ok: false, error: "REQUEST_CONFLICT: Check the current booking status" };
+      throw error;
+    }
   },
 };
 
@@ -3088,7 +3127,7 @@ const getBoardGameRatesTool = boardGameCustomerReadTool("get_board_game_rates", 
 const searchBoardGameLibraryTool = boardGameCustomerReadTool("search_board_game_library", "library",
   "Search this shop's publicly visible playable titles by title/tag and player count, independently of public-directory listing. A saved active branch profile is required; NOT_PUBLISHED means not enabled for chat, not no games. Returns metadata and aggregate copy counts only, never borrowers or tables. Use for games to PLAY and recommendations; retail search is for games to BUY. Recommend only matching real titles. Null difficulty/player ranges are unknown, not beginner-friendly. No game rules provided.");
 const getBoardGameAvailabilityTool = boardGameCustomerReadTool("get_board_game_availability", "availability",
-  "Read this shop's branch information/hours, current aggregate table counts and booking/deposit policy, independently of public-directory listing. When booking.canSubmitViaChat is true, collect branch-local date/time, duration and party size, then use request_board_game_reservation to preview a request for customer confirmation. This read never submits or confirms a booking. Cannot reschedule, cancel, predict waiting time or guarantee future availability. NOT_PUBLISHED or null counts mean not enabled for chat, not zero. Do not claim staff were notified.");
+  "Read this shop's branch information/hours, current aggregate table counts and booking/deposit policy. When booking.canSubmitViaChat is true, use request_board_game_reservation for a customer-confirmed booking; booking.autoConfirm determines automatic confirmation versus staff review. This read never submits or confirms a booking. Use manage_board_game_booking for changes or staff requests. Cannot predict waiting time or guarantee future availability. NOT_PUBLISHED or null counts mean not enabled for chat, not zero.");
 
 const getStoreInfoTool: BmsTool = {
   name: "get_store_info",
@@ -3538,6 +3577,7 @@ export const ALL_TOOLS: BmsTool[] = [
   // B1 — store profile (read)
   getStoreInfoTool,
   getBoardGameRatesTool,
+  manageBoardGameBookingTool,
   requestBoardGameReservationTool,
   getBoardGameReservationStatusTool,
   searchBoardGameLibraryTool,

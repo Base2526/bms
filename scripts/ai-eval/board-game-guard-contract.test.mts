@@ -189,6 +189,43 @@ test("pipeline urgent path and five context outage seams never reach a provider,
       assert.ok(!calls.some(sql => sql.includes("INSERT INTO bms_board_game_waitlist")), "missing CRM contact fails closed");
       assert.equal(network.mock.callCount(), 0);
     });
+    await t.test("action confirmation uses the saved summary and returns a server receipt without a provider", async () => {
+      calls.length = 0;
+      const { boardGameChatActionSummary } = await import("../../apps/web/lib/bms/boardGameChatActionPolicy.ts");
+      const { ALL_TOOLS } = await import("../../apps/web/lib/bms/tools/catalog.ts");
+      const quote = { draft: { action: "STAFF" as const, note: "FAKE game help" }, preview: {
+        action: "STAFF" as const, reference: null, branch: null, reservedFor: null, timezone: "Asia/Bangkok",
+        durationMinutes: null, partySize: null, note: "FAKE game help", version: "staff-request",
+      }, fingerprint: "FAKE", expiresAt: Date.now()+60000, requestKey: "FAKE-request-key" };
+      const contextRespond = respond;
+      respond = sql => {
+        if (sql.includes("SELECT ai_state")) return [{ ai_state: { pendingBoardGameChatAction: quote } }];
+        if (sql.includes("FROM bms_messages")) return [{ direction: "OUT", body: boardGameChatActionSummary(quote, false) }];
+        return contextRespond(sql);
+      };
+      const tool = ALL_TOOLS.find(t => t.name === "manage_board_game_booking")!;
+      const original = tool.execute;
+      let writes = 0;
+      tool.execute = async (args, ec) => {
+        assert.deepEqual(args, quote.draft);
+        assert.equal(ec.confirmedBoardGameChatAction?.requestKey, quote.requestKey);
+        writes++;
+        ec.boardGameChatActionResult = { action: "STAFF", reference: "1", status: "STAFF_REVIEW" };
+        return { ok: true, data: ec.boardGameChatActionResult };
+      };
+      try {
+        const result = await runPipeline("ตกลงค่ะ", "web", "FAKE-action", "FAKE-customer");
+        assert.equal(result.tool, "deterministic:board_game_action_confirm");
+        assert.match(result.reply, /Inbox/);
+        assert.equal(writes, 1);
+        assert.equal(network.mock.callCount(), 0);
+        calls.length = 0;
+        const privacy = await runPipeline("แฟนผมนั่งโต๊ะไหน มากับใคร", "web", "FAKE-action", "FAKE-customer");
+        assert.equal(privacy.tool, "board_game:guard:privacy");
+        assert.equal(writes, 1);
+        assert.ok(calls.some(sql => sql.includes("UPDATE bms_conversations")));
+      } finally { tool.execute = original; respond = contextRespond; }
+    });
     await t.test("failed consent persistence cannot authorize a booking write", async () => {
       calls.length = 0;
       const contextRespond = respond;

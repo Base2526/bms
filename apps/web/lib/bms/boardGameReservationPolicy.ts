@@ -1,14 +1,14 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { ExecCtx, ToolResult } from "./tools/types";
 
 export type BoardGameReservationDraft = {
   branch: string; reservedLocal: string; durationMinutes: number; partySize: number; note?: string;
 };
 export type BoardGameReservationPreview = BoardGameReservationDraft & {
-  locationId: string; reservedFor: string; timezone: string;
+  locationId: string; reservedFor: string; timezone: string; autoConfirm?: boolean;
 };
 export type BoardGameReservationQuote = {
-  draft: BoardGameReservationDraft; preview: BoardGameReservationPreview; fingerprint: string; expiresAt: number;
+  draft: BoardGameReservationDraft; preview: BoardGameReservationPreview; fingerprint: string; expiresAt: number; requestKey?: string;
 };
 export function isBoardGameReservationConfirmation(message: string) {
   return /^(?:ตกลง|ยืนยัน|เอาตามนี้|yes(?: please)?|confirm)(?:\s*(?:ค่ะ|คะ|ครับ|นะ|เลย))*[.!🙏]*$/i.test(message.trim());
@@ -16,12 +16,15 @@ export function isBoardGameReservationConfirmation(message: string) {
 export function boardGameReservationFingerprint(preview: BoardGameReservationPreview, customerId: string) {
   return createHash("sha256").update(JSON.stringify([
     customerId, preview.locationId, preview.branch, preview.reservedLocal, preview.reservedFor,
-    preview.timezone, preview.durationMinutes, preview.partySize, preview.note ?? "",
+    preview.timezone, preview.durationMinutes, preview.partySize, preview.note ?? "", preview.autoConfirm === true,
   ])).digest("hex");
 }
 export function boardGameReservationSummary(quote: BoardGameReservationQuote, english: boolean) {
   const p = quote.preview;
   const when = new Date(p.reservedFor).toLocaleString(english ? "en-GB" : "th-TH", { timeZone: p.timezone });
+  if (p.autoConfirm) return english
+    ? `Please confirm this booking: ${p.branch}, ${when} (${p.timezone}), ${p.durationMinutes} minutes, ${p.partySize} people.${p.note ? ` Note: ${p.note}.` : ""} The shop allows automatic confirmation subject to a fresh table availability check. No deposit. Reply yes to book.`
+    : `กรุณาตรวจการจอง: ${p.branch} วันที่ ${when} (${p.timezone}) ระยะเวลา ${p.durationMinutes} นาที จำนวน ${p.partySize} คน${p.note ? ` หมายเหตุ: ${p.note}` : ""} ร้านเปิดยืนยันอัตโนมัติโดยตรวจโต๊ะว่างอีกครั้ง ไม่มีมัดจำ ตอบตกลงเพื่อจองค่ะ`;
   return english
     ? `Please confirm this table request: ${p.branch}, ${when} (${p.timezone}), ${p.durationMinutes} minutes, ${p.partySize} people.${p.note ? ` Note: ${p.note}.` : ""} This is a request for staff review, not a confirmed table. Reply yes to submit.`
     : `กรุณาตรวจคำขอจองโต๊ะ: ${p.branch} วันที่ ${when} (${p.timezone}) ระยะเวลา ${p.durationMinutes} นาที จำนวน ${p.partySize} คน${p.note ? ` หมายเหตุ: ${p.note}` : ""} นี่เป็นคำขอ ร้านต้องยืนยันก่อน ยังไม่ได้ยืนยันโต๊ะ ตอบตกลงเพื่อส่งคำขอค่ะ`;
@@ -30,7 +33,13 @@ export function boardGameReservationSummary(quote: BoardGameReservationQuote, en
 export function isLatestBoardGameReservationSummary(quote: BoardGameReservationQuote, lastAssistant: string) {
   return [false, true].some(english => boardGameReservationSummary(quote, english).trim() === lastAssistant.trim());
 }
-export function boardGameReservationReceipt(id: string, english: boolean) {
+export function boardGameReservationReceipt(id: string, english: boolean, status = "REQUESTED") {
+  if (status === "CONFIRMED") return english
+    ? `Booking #${id.slice(0, 8)} is confirmed. A table has been reserved for the confirmed time and party size.`
+    : `จองสำเร็จแล้วค่ะ #${id.slice(0, 8)} ระบบยืนยันโต๊ะตามวันเวลาและจำนวนคนที่คุณยืนยันแล้วค่ะ`;
+  if (status !== "REQUESTED") return english
+    ? `Booking #${id.slice(0, 8)} has changed. Please check its current status in this chat.`
+    : `การจอง #${id.slice(0, 8)} เปลี่ยนสถานะแล้ว กรุณาตรวจสถานะล่าสุดในแชทค่ะ`;
   return english
     ? `Booking request #${id.slice(0, 8)} was sent for staff review. No table is confirmed yet. Please wait for the shop to contact you or ask for its status in this chat.`
     : `ส่งคำขอจองโต๊ะ #${id.slice(0, 8)} ให้ร้านตรวจแล้วค่ะ ตอนนี้ยังไม่ได้ยืนยันโต๊ะ กรุณารอร้านติดต่อกลับหรือสอบถามสถานะในแชทนี้ได้ค่ะ`;
@@ -73,16 +82,19 @@ export async function executeBoardGameReservationRequest(
   const fingerprint = boardGameReservationFingerprint(preview, customerId);
   const confirmed = ec.confirmedBoardGameReservation;
   if (!confirmed || confirmed.fingerprint !== fingerprint || confirmed.expiresAt <= Date.now()) {
-    const quote = { draft: { ...draft, branch: preview.branch }, preview, fingerprint, expiresAt: Date.now() + 15 * 60_000 };
+    const quote = { draft: { ...draft, branch: preview.branch }, preview, fingerprint, expiresAt: Date.now() + 15 * 60_000, requestKey: randomUUID() };
     ec.pendingBoardGameReservation = quote;
     return { ok: true, data: { status: "CONFIRMATION_REQUIRED",
       branch: preview.branch, reservedLocal: preview.reservedLocal, timezone: preview.timezone,
       durationMinutes: preview.durationMinutes, partySize: preview.partySize, note: preview.note ?? null,
-      notice: "Request only; staff must confirm. No table is confirmed." } };
+      notice: preview.autoConfirm
+        ? "After customer confirmation the backend will allocate a table if available. No booking has been made yet."
+        : "Request only; staff must confirm. No table is confirmed." } };
   }
   const created = await deps.create({ ...preview, customerId,
-    requestKey: `${ec.conversationId ?? `${ec.channel}:${customerId}`}:${fingerprint}`, expectedFingerprint: fingerprint });
+    requestKey: confirmed.requestKey ?? `${ec.conversationId ?? `${ec.channel}:${customerId}`}:${fingerprint}`, expectedFingerprint: fingerprint });
   ec.boardGameReservationRequestId = created.requestId;
+  ec.boardGameReservationResultStatus = created.status;
   ec.pendingBoardGameReservation = undefined;
   return { ok: true, data: { requestReference: created.requestId.slice(0, 8), status: created.status } };
 }

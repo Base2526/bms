@@ -733,6 +733,7 @@ export type AiConversationState = {
   /** Server-resolved restaurant request; confirmation revalidates the catalog, never infers lost notes. */
   pendingRestaurantRequest?: import('./restaurantRequestPolicy').RestaurantRequestDraft | null;
   pendingBoardGameReservation?: import('./boardGameReservationPolicy').BoardGameReservationQuote | null;
+  pendingBoardGameChatAction?: import('./boardGameChatActionPolicy').BoardGameChatActionQuote | null;
   updatedAt?: string;
 };
 

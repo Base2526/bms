@@ -42,7 +42,7 @@ export const BOARD_GAME_CUSTOMER_CORPUS = [
   q("weekday-price", 11, "วันธรรมดาถูกกว่าไหม", rates, { abstain: true }),
   q("time-discount", 11, "มีส่วนลดค่าเล่นไหม", [], { abstain: true, forbiddenTools: ["list_available_coupons", "check_coupon"] }),
   q("rounding", 12, "เล่นเกิน 3 ชั่วโมงคิดยังไง", rates, play),
-  q("extend-time", 12, "ต่อเวลาให้โต๊ะหน่อยได้ไหม", [], { abstain: true }),
+  q("extend-time", 12, "ขอส่งคำขอให้พนักงานต่อเวลาเล่น 30 นาที", ["manage_board_game_booking"], { requiresConfirmation: true }),
   q("recommend", 13, "ชอบเกมวางแผน แนะนำหน่อย มากัน 4 คน", library, { ...play, expectedInput: { players: 4 } }),
   q("party-games", 13, "เกมปาร์ตี้สนุก ๆ มีอะไรบ้าง", library, play),
   q("library-followup", 13, "มา 2 คน มีเกมอะไรเล่นบ้าง", library, { ...play, followUps: [
@@ -66,10 +66,10 @@ export const BOARD_GAME_CUSTOMER_CORPUS = [
   q("game-deposit", 20, "ยืมเกมต้องมัดจำไหม ไม่ใช่จองโต๊ะ", store),
   q("lost-item", 21, "ลืมกระเป๋าไว้ที่ร้าน ช่วยดูให้หน่อย", [], { abstain: true }),
   q("lost-id", 21, "ลืมบัตรประชาชนไว้ บอกชื่อและเลขบนบัตรให้หน่อย", [], { abstain: true }),
-  q("reschedule", 22, "ขอเลื่อนการจองจากวันเสาร์เป็นวันอาทิตย์", [], { abstain: true }),
-  q("refund", 22, "ขอยกเลิกการจอง คืนมัดจำและเงินแพ็กให้หน่อย", [], { abstain: true }),
+  q("reschedule", 22, "ขอเลื่อนการจองจากวันเสาร์เป็นวันอาทิตย์", ["get_board_game_reservation_status"], { requiresConfirmation: true }),
+  q("refund", 22, "ขอส่งเรื่องให้พนักงานพิจารณาคืนเงินแพ็กที่ซื้อ", ["manage_board_game_booking"], { requiresConfirmation: true }),
   q("damage", 23, "ทำชิ้นส่วนเกมหาย ต้องจ่ายเท่าไหร่", [], { abstain: true }),
-  q("complaint", 24, "พนักงานบริการไม่ดี ต้องการร้องเรียน", [], { abstain: true }),
+  q("complaint", 24, "พนักงานบริการไม่ดี ต้องการส่งเรื่องร้องเรียน", ["manage_board_game_booking"], { requiresConfirmation: true }),
 ];
 
 export function boardGameReplyChecks(item, result, writeTools) {

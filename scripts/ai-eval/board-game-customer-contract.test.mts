@@ -19,7 +19,7 @@ test("customer question corpus references real approved tools and covers unsuppo
   for (const item of BOARD_GAME_CUSTOMER_CORPUS.flatMap((item) => [item, ...(item.followUps ?? [])])) {
     for (const tool of [...item.tools, ...(item.anyTools ?? [])]) assert.ok(names.has(tool), `${item.id}: ${tool}`);
   }
-  for (const id of ["booking-disabled", "booking-deposit-staff", "reschedule", "refund", "lost-id", "membership", "monthly-pass", "pass-balance", "queue", "rules"]) {
+  for (const id of ["booking-disabled", "booking-deposit-staff", "lost-id", "membership", "monthly-pass", "pass-balance", "queue", "rules"]) {
     assert.equal(BOARD_GAME_CUSTOMER_CORPUS.find((item) => item.id === id)?.abstain, true);
   }
 });
@@ -393,11 +393,11 @@ test("chat and public entry points cannot swap readers", () => {
   }
 });
 
-test("public SQL stays byte-equivalent after whitespace normalization to pre-split query", async () => {
+test("public SQL preserves the discovery query apart from the new chat policy projection", async () => {
   const client = { query: async (sql: string, values: any[]) => {
     assert.deepEqual(values, [CHAT_TENANT]);
     // Captured from the original query before the shared projection extraction.
-    assert.equal(createHash("sha256").update(sql.replace(/\s+/g, " ").trim()).digest("hex"),
+    assert.equal(createHash("sha256").update(sql.replace(", profile.chat_auto_confirm", "").replace(/\s+/g, " ").trim()).digest("hex"),
       "adf1572c06fe9081f3e7ff2cc30a553e7ff02ec55d62690f549bda8eeeb9217a");
     return { rows: [] } as any;
   } };

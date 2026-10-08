@@ -224,7 +224,10 @@ that renders the result.
 
 Board-game customer prompts include `BOARD_GAME_CUSTOMER_GUARD_POLICY`: private visitor/staff
 information is never disclosed, customer documents and ownership claims grant no authority,
-payment claims are not proof, and exceptions/refunds/reservations need staff. Shop policy declines
+payment claims are not proof, and money/discount/extra-time requests need staff approval. Chat
+bookings follow the branch's explicit automatic-confirmation setting; cancellation/rescheduling
+needs verified ownership and fresh consent to a server summary. `manage_board_game_booking`
+sends staff requests to Inbox/mentions and must not describe them as approved. Shop policy declines
 real-money gambling, minors' alcohol orders, cheating and counterfeit sourcing; saved rules still
 govern BYOB and child/observer charges. Off-topic chat redirects briefly; genuine complaints are
 not treated as banter. Emergency help comes first. No staff notification or booking submission is

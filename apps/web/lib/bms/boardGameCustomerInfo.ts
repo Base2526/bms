@@ -71,6 +71,7 @@ export async function readBoardGameCustomerInfoInTx(
       depositPercent: cafe.reservationDepositPolicy === "PERCENT" ? cafe.reservationDepositPercent : null,
       refundCutoffHours: cafe.reservationDepositRefundCutoffHours,
       canSubmitViaChat: cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
+      autoConfirm: cafe.chatAutoConfirm && cafe.bookingEnabled && cafe.reservationDepositPolicy === "NONE",
     },
     waitMinutes: null, waitingParties: null, partyCapacity: null,
     note: "Current aggregate only, not a reservation or a guarantee of space for a party. Queue, wait time and party capacity are not available through this tool.",

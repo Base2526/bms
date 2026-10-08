@@ -28,6 +28,7 @@ import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runti
 import { customerTools } from "./tools/catalog";
 import { boardGameCustomerGuard, boardGameUrgentGuard, BOARD_GAME_CUSTOMER_GUARD_POLICY } from "./boardGameCustomerGuard";
 import { boardGameReservationSummary, boardGameReservationReceipt, boardGameReservationStatusReply, isBoardGameReservationConfirmation, isLatestBoardGameReservationSummary } from "./boardGameReservationPolicy";
+import { boardGameChatActionSummary, boardGameChatActionReceipt, boardGameChatActionFailure, isLatestBoardGameChatActionSummary } from "./boardGameChatActionPolicy";
 import {
   answersWithStoreFacts,
   customerStoreFacts,
@@ -416,7 +417,8 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       "บริการเล่นบอร์ดเกมเป็นคนละเรื่องกับสินค้าขาย: ค่าเล่นใช้ get_board_game_rates เกมให้เล่น/แนะนำเกมตามจำนวนคนใช้ search_board_game_library โต๊ะว่าง/การมาเล่น/การจอง/ข้อมูลสาขาใช้ get_board_game_availability; ใช้ catalog เฉพาะสินค้า เครื่องดื่ม ขนม หรือเกมที่ลูกค้าต้องการซื้อ",
       "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
       "คำถามที่จอดรถ: ถ้า about ไม่ระบุ ให้เรียก get_board_game_availability เพื่อตรวจ summary ของสาขาที่เผยแพร่ก่อน ตอบได้เฉพาะที่ระบุไว้จริง ถ้าทั้งสองแหล่งไม่ระบุให้บอกว่าข้อมูลที่จอดรถยังไม่ระบุ ไม่ใช่อ้างว่าร้านไม่มีข้อมูลทุกอย่าง",
-      "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง เป็นคำขอรอพนักงานเท่านั้น ห้ามยืนยันโต๊ะหรืออ้างว่าแจ้งพนักงานแล้ว โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง; ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน; ติดตามด้วย get_board_game_reservation_status ห้ามคืนเงิน ต่ออายุแพ็ก เลื่อนหรือยกเลิกการจองเอง",
+      "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง ถ้า autoConfirm=true ระบบตรวจและจองโต๊ะจริงได้เมื่อผลเป็น CONFIRMED; REQUESTED ยังรอร้านตรวจ โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน ติดตามด้วย get_board_game_reservation_status",
+      "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status ให้เลือก reference ของตัวเอง แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE โดยระบุเวลาใหม่ ระยะเวลา จำนวนคนจากลูกค้าครบก่อน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
       "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
       "คำถามสั้น มี Catan ไหม หรือ มีเกมอื่นไหม ในร้านบอร์ดเกมหมายถึงเกมให้เล่นก่อน เว้นแต่ลูกค้าระบุซื้อ/ขาย/กลับบ้าน เมื่อถาม 8–10 คนให้ค้น players=8, playersTo=10; เกมง่ายหรือมือใหม่ใช้ difficulty=LIGHT ส่วนมีคนสอนหรือไม่ต้องดูนโยบายร้าน ห้ามสัญญาว่ามีพนักงานสอนจากความยากของเกม",
       "อาหาร/เครื่องดื่มที่ขายอ่าน catalog แต่นำขนมมาเอง ยอดสั่งขั้นต่ำ จัดงาน เหมาร้าน แยกบิล การทิ้งบัตรหรือมัดจำยืมเกม เป็นนโยบายร้าน: ตรวจ about และ summary สาขา ถ้าไม่ระบุให้บอกเฉพาะเรื่องนั้นว่าต้องติดต่อพนักงาน อย่าใช้ค่ามัดจำจองโต๊ะตอบแทนมัดจำเกมหรือบัตรประชาชน",
@@ -1784,6 +1786,36 @@ export async function runPipeline(
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding, profile.businessArchetype);
   let execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
 
+  if (profile.businessArchetype === "board_game_cafe" && storedState.pendingBoardGameChatAction) {
+    const quote = storedState.pendingBoardGameChatAction;
+    storedState.pendingBoardGameChatAction = null;
+    try {
+      if (!convId) throw new Error("Missing conversation");
+      await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameChatAction: null });
+    } catch (error) {
+      await reportStateFailure(error, "board_game_action_confirmation_consume");
+      return customerSafe({ channel, incoming: message, understanding, tool: "board_game:confirmation_unavailable",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "I could not verify your confirmation. Please try again."
+          : "ยังตรวจสอบคำยืนยันไม่ได้ กรุณาลองใหม่ค่ะ" });
+    }
+    if (isBoardGameReservationConfirmation(rawSafetyMessage)) {
+      const lastAssistant = [...history].reverse().find(turn => turn.role === "assistant")?.content ?? "";
+      if (isLatestBoardGameChatActionSummary(quote, lastAssistant)) execCtx.confirmedBoardGameChatAction = quote;
+      const received = await executeCustomerTool("manage_board_game_booking", quote.draft, execCtx);
+      let reply = boardGameChatActionFailure(received.result.ok ? undefined : received.result.error, englishReply);
+      if (execCtx.boardGameChatActionResult) reply = boardGameChatActionReceipt(execCtx.boardGameChatActionResult, englishReply);
+      else if (execCtx.pendingBoardGameChatAction) {
+        try {
+          await setAiConversationState(tenantId, convId!, { ...storedState, pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction });
+          reply = boardGameChatActionSummary(execCtx.pendingBoardGameChatAction, englishReply);
+        } catch (error) { await reportStateFailure(error, "board_game_action_reconfirmation_save"); }
+      }
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:board_game_action_confirm",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
+    }
+  }
+
   if (profile.businessArchetype === "board_game_cafe" && storedState.pendingBoardGameReservation) {
     const quote = storedState.pendingBoardGameReservation;
     // Consume before execution, even on an unrelated message. Failed persistence never authorizes a write.
@@ -1801,7 +1833,7 @@ export async function runPipeline(
     if (isBoardGameReservationConfirmation(rawSafetyMessage)) {
       const lastAssistant = [...history].reverse().find(turn => turn.role === "assistant")?.content ?? "";
       if (isLatestBoardGameReservationSummary(quote, lastAssistant)) {
-        execCtx.confirmedBoardGameReservation = { fingerprint: quote.fingerprint, expiresAt: quote.expiresAt };
+        execCtx.confirmedBoardGameReservation = { fingerprint: quote.fingerprint, expiresAt: quote.expiresAt, requestKey: quote.requestKey };
       }
       const received = await executeCustomerTool("request_board_game_reservation", quote.draft, execCtx);
       if (execCtx.pendingBoardGameReservation) {
@@ -1814,16 +1846,15 @@ export async function runPipeline(
       }
       return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:board_game_reservation_confirm",
         data: { status: "NOT_FOUND", query: "" }, trace: [received.trace],
-        reply: execCtx.boardGameReservationRequestId ? boardGameReservationReceipt(execCtx.boardGameReservationRequestId, englishReply)
+        reply: execCtx.boardGameReservationRequestId ? boardGameReservationReceipt(execCtx.boardGameReservationRequestId, englishReply, execCtx.boardGameReservationResultStatus)
           : execCtx.pendingBoardGameReservation ? boardGameReservationSummary(execCtx.pendingBoardGameReservation, englishReply)
-          : englishReply ? "The request could not be submitted. No table is confirmed. Please contact the shop or check your requests."
-          : "ยังส่งคำขอไม่สำเร็จและยังไม่ได้ยืนยันโต๊ะ กรุณาติดต่อร้านหรือสอบถามสถานะคำขอค่ะ" });
+          : boardGameChatActionFailure(received.result.ok ? undefined : received.result.error, englishReply) });
     }
   }
 
   // Consume stale consent even when this guard returns before any model/tool execution.
   const boardGameGuard = profile.businessArchetype === "board_game_cafe"
-    ? boardGameCustomerGuard(rawSafetyMessage, englishReply) : null;
+    ? boardGameCustomerGuard(rawSafetyMessage, englishReply, true) : null;
   if (boardGameGuard) {
     return customerSafe({ channel, incoming: message, understanding,
       tool: `board_game:guard:${boardGameGuard.kind}`,
@@ -3139,15 +3170,34 @@ export async function runPipeline(
   });
 
   // These replies are server-owned even if the provider fails after the tool completes.
+  if (execCtx.boardGameChatActionResult || execCtx.pendingBoardGameChatAction) {
+    let reply: string;
+    if (execCtx.boardGameChatActionResult) reply = boardGameChatActionReceipt(execCtx.boardGameChatActionResult, englishReply);
+    else {
+      try {
+        convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+        if (!convId) throw new Error("Missing conversation");
+        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameReservation: null,
+          pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction });
+        reply = boardGameChatActionSummary(execCtx.pendingBoardGameChatAction!, englishReply);
+      } catch (error) {
+        await reportStateFailure(error, "board_game_action_quote_store");
+        reply = englishReply ? "I could not save the summary. No action was submitted. Please try again."
+          : "บันทึกสรุปไม่ได้ ยังไม่ได้ส่งรายการ กรุณาลองใหม่ค่ะ";
+      }
+    }
+    return customerSafe({ channel, incoming: message, understanding, tool: "board_game:action",
+      data: { status: "NOT_FOUND", query: "" }, trace: loop.trace, reply });
+  }
   if (execCtx.boardGameReservationRequestId || execCtx.pendingBoardGameReservation || execCtx.boardGameReservationStatuses) {
     let reply: string;
     if (execCtx.boardGameReservationRequestId) {
-      reply = boardGameReservationReceipt(execCtx.boardGameReservationRequestId, englishReply);
+      reply = boardGameReservationReceipt(execCtx.boardGameReservationRequestId, englishReply, execCtx.boardGameReservationResultStatus);
     } else if (execCtx.pendingBoardGameReservation) {
       try {
         convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
         if (!convId) throw new Error("Missing conversation");
-        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameReservation: execCtx.pendingBoardGameReservation });
+        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameChatAction: null, pendingBoardGameReservation: execCtx.pendingBoardGameReservation });
         reply = boardGameReservationSummary(execCtx.pendingBoardGameReservation, englishReply);
       } catch (error) {
         await reportStateFailure(error, "board_game_quote_store");
