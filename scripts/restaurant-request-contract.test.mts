@@ -103,7 +103,7 @@ test('customer routes use server identity, admin permission and POS device/PIN; 
   assert.match(catalog,/ec.surface === "customer" && \(await getStoreProfile\(ec.tenantId\)\).businessArchetype === "restaurant"/);
   assert.doesNotMatch(catalog,/reviewRestaurantRequest/);
   const pipeline=read('apps/web/lib/bms/pipeline.ts');
-  assert.match(pipeline,/storedState.pendingRestaurantRequest && storedState.pendingQuoteFingerprint && isConfirmationOnly/);
+  assert.match(pipeline,/storedState.pendingRestaurantRequest && storedState.pendingQuoteFingerprint && pendingChoicePromptCurrent &&/);
   assert.match(pipeline,/executeCustomerTool\('create_order', storedState.pendingRestaurantRequest, execCtx\)/);
 });
 
@@ -290,8 +290,10 @@ test('the shop being closed is a status the customer can act on, not a generic f
   const replies=pipeline.slice(pipeline.indexOf('function orderReply('),pipeline.indexOf('function couponQuoteReply(')>0
     ? pipeline.indexOf('function couponQuoteReply(') : pipeline.length);
   for (const status of RESTAURANT_REQUEST_REFUSAL_STATUSES) assert.ok(replies.includes(`case "${status}"`),status);
-  const confirm=pipeline.slice(pipeline.indexOf("tool: 'deterministic:restaurant_request_confirm'")-1200,
-    pipeline.indexOf("tool: 'deterministic:restaurant_request_confirm'")+900);
+  const confirmMarker=pipeline.indexOf("tool: 'deterministic:restaurant_request_confirm'");
+  const refusalStart=pipeline.lastIndexOf('const refusal = received.result.ok',confirmMarker);
+  assert.ok(refusalStart>=0 && confirmMarker>refusalStart);
+  const confirm=pipeline.slice(refusalStart,confirmMarker+900);
   assert.match(confirm,/isRestaurantRequestRefusal\(received\.result\.data\)/);
   assert.match(confirm,/orderReply\(\{\}, received\.result\.data as CreateOrderResult, englishReply\)/);
 });

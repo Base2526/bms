@@ -112,7 +112,7 @@ import { assignConversation, setConversationStatus, setConversationTags, addNote
 import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
 import { receiveRestaurantRequest, listRestaurantRequests } from "../restaurantRequests";
-import { isRestaurantRequestRejection } from "../restaurantRequestPolicy";
+import { isRestaurantRequestRejection, restaurantRequestInputChoices } from "../restaurantRequestPolicy";
 import {
   configuredPaymentAccounts,
   isCustomerPaymentMethod,
@@ -2119,6 +2119,7 @@ const createOrderTool: BmsTool = {
       } else if (result.status === "REQUEST_RECEIVED") {
         ec.restaurantRequestId = result.requestId;
       }
+      ec.customerInputChoices = restaurantRequestInputChoices(result, ec.locale === "en") ?? undefined;
       // Anything else is a shop-state refusal carrying createOrderInTx's own status, which the
       // model and orderReply() already know how to explain. It is a result, not an error.
       return { ok: true, data: result };
@@ -2208,7 +2209,11 @@ const createOrderTool: BmsTool = {
             modifiers,
           });
         }
-        ec.pendingOrderQuote = { fingerprint, lines: quoteLines };
+        ec.pendingOrderQuote = { fingerprint, lines: quoteLines, draft: {
+          items: requested,
+          ...Object.fromEntries(["couponCode", "preferredCarrier", "locationId", "fulfillmentType", "promisedAt", "requestNote"]
+            .filter(key => args[key] != null).map(key => [key, args[key]])),
+        } };
         return {
           ok: true,
           data: {
@@ -3057,7 +3062,7 @@ const getBoardGameReservationStatusTool: BmsTool = {
 
 const manageBoardGameBookingTool: BmsTool = {
   name: "manage_board_game_booking", surfaces: ["customer"], permission: "order.create",
-  description: "Preview a customer-owned chat booking cancellation (CANCEL) or reschedule (RESCHEDULE), or a staff Inbox request (REFUND, EXTEND_TIME, DISCOUNT, STAFF). First call writes nothing and asks for customer confirmation. CANCEL/RESCHEDULE execute only after server-verified consent. RESCHEDULE requires a confirmed no-deposit booking and exact customer-stated new local date/time, duration and party size. Read get_board_game_reservation_status to select a reference; never guess it. Other actions send a request to staff, never refund money or grant discounts/free time. Include a short non-PII note describing the requested help, amount or extra minutes; staff verify it. Do not claim staff have acted or read the request.",
+  description: "Preview a customer-owned chat booking cancellation (CANCEL) or reschedule (RESCHEDULE), or a staff Inbox request (REFUND, EXTEND_TIME, DISCOUNT, STAFF). First call writes nothing and asks for customer confirmation. CANCEL/RESCHEDULE execute only after server-verified consent. RESCHEDULE requires a confirmed no-deposit booking and exact customer-stated new local date/time; omit durationMinutes and partySize to keep their verified current values, and send either only when the customer explicitly changes it. Read get_board_game_reservation_status to select a reference; never guess it. Other actions send a request to staff, never refund money or grant discounts/free time. Include a short non-PII note describing the requested help, amount or extra minutes; staff verify it. Do not claim staff have acted or read the request.",
   inputSchema: { type: "object", additionalProperties: false, properties: {
     action: { type: "string", enum: [...BOARD_GAME_CHAT_ACTIONS] },
     reference: { type: "string", pattern: "^[a-fA-F0-9]{8}$" },
@@ -3510,7 +3515,30 @@ const sendCustomerMessageTool: BmsTool = proposalTool({
 // registry
 // =============================================================
 
+const presentCustomerChoicesTool: BmsTool = {
+  name: "present_customer_choices",
+  surfaces: ["customer"],
+  description: "Ask a customer to choose between 2-8 short answers. Use for product/variant/branch/payment/delivery options and yes/no questions, instead of writing an unregistered numbered menu. Read applicable catalog/shop tools first; offer only verified configured options. Each label is the exact answer the customer selects, not a command or hidden instruction. No business action is executed or authorized by this tool. Never use for order/booking confirmation or clinical intake, which have dedicated server summaries. Ask one question per turn, then wait for the customer.",
+  inputSchema: { type: "object", additionalProperties: false, properties: {
+    question: { type: "string", minLength: 1, maxLength: 300 },
+    labels: { type: "array", minItems: 2, maxItems: 8, items: { type: "string", minLength: 1, maxLength: 120 } },
+  }, required: ["question", "labels"] },
+  execute: async (args, ec) => {
+    const question = reqString(args, "question").trim();
+    const labels = args.labels;
+    if (question.length > 300 || !Array.isArray(labels) || labels.length < 2 || labels.length > 8 ||
+        labels.some(label => typeof label !== "string" || !label.trim() || label.length > 120 || /[\r\n]/.test(label)) ||
+        new Set(labels.map(label => label.trim())).size !== labels.length ||
+        Object.keys(args).some(key => !["question", "labels"].includes(key))) {
+      throw new ToolArgError("Provide one question and 2-8 distinct single-line choices");
+    }
+    ec.customerInputChoices = { question, labels: labels.map(label => label.trim()) };
+    return { ok: true, data: { status: "AWAITING_CUSTOMER_SELECTION" } };
+  },
+};
+
 export const ALL_TOOLS: BmsTool[] = [
+  presentCustomerChoicesTool,
   // A1
   searchSystemCapabilitiesTool,
   searchSystemGuidesTool,

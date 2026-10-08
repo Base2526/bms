@@ -189,6 +189,31 @@ test("pipeline urgent path and five context outage seams never reach a provider,
       assert.ok(!calls.some(sql => sql.includes("INSERT INTO bms_board_game_waitlist")), "missing CRM contact fails closed");
       assert.equal(network.mock.callCount(), 0);
     });
+    await t.test("numbered confirmation is bound to the exact latest board-game menu", async () => {
+      calls.length = 0;
+      const { boardGameReservationSummary } = await import("../../apps/web/lib/bms/boardGameReservationPolicy.ts");
+      const { confirmationChoiceOptions, createPendingConversationChoice } = await import("../../apps/web/lib/bms/conversationChoices.ts");
+      const draft = { branch: "FAKE", reservedLocal: "2027-01-10T18:00", durationMinutes: 120, partySize: 4 };
+      const quote = { draft, preview: { ...draft, locationId: "FAKE", reservedFor: "2027-01-10T11:00:00Z", timezone: "Asia/Bangkok" }, fingerprint: "FAKE", expiresAt: Date.now()+60000 };
+      const summary = boardGameReservationSummary(quote, false);
+      const pendingConversationChoice = createPendingConversationChoice({
+        kind: "BOARD_GAME_RESERVATION_CONFIRMATION", prompt: summary,
+        options: confirmationChoiceOptions(false),
+      });
+      const contextRespond = respond;
+      respond = sql => {
+        if (sql.includes("SELECT ai_state")) return [{ ai_state: { pendingBoardGameReservation: quote, pendingConversationChoice } }];
+        if (sql.includes("'{pendingConversationChoice,consumed}'")) return [{ id: "FAKE-conversation" }];
+        if (sql.includes("FROM bms_messages")) return [{ direction: "OUT", body: summary }];
+        if (/FROM bms_customer_identities|INSERT INTO bms_audit_log/.test(sql)) return [];
+        return contextRespond(sql);
+      };
+      const result = await runPipeline("1", "web", "FAKE-numbered-confirm", "FAKE-customer");
+      assert.equal(result.tool, "deterministic:board_game_reservation_confirm");
+      assert.equal(result.trace?.[0]?.tool, "request_board_game_reservation");
+      assert.equal(network.mock.callCount(), 0);
+      respond = contextRespond;
+    });
     await t.test("action confirmation uses the saved summary and returns a server receipt without a provider", async () => {
       calls.length = 0;
       const { boardGameChatActionSummary } = await import("../../apps/web/lib/bms/boardGameChatActionPolicy.ts");

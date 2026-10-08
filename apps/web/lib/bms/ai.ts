@@ -67,13 +67,15 @@ function template(res: StockResult, language: string, message: string): string {
           ? `Sorry, ${res.name} size ${res.size} is out of stock right now. Similar available options are ${alternatives}. Would you like me to check one of those next?`
           : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ รุ่นที่พร้อมขายใกล้เคียงมี ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
         : english
-          ? `Sorry, ${res.name} size ${res.size} is out of stock right now. Would you like the shop admin to help find a similar option?`
-          : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ 🙏 ต้องการให้แอดมินช่วยหาแบบใกล้เคียงไหมคะ?`;
+          ? `Sorry, ${res.name} size ${res.size} is out of stock right now. Please provide another product to check.`
+          : `ขออภัยค่ะ ${res.name} ไซซ์ ${res.size} ตอนนี้ของหมดค่ะ กรุณาระบุสินค้าอื่นที่ต้องการตรวจสอบ`;
     case "SIZE_UNKNOWN": {
       const avail = res.sizes
         .filter((s) => s.available > 0)
         .map((s) => `${s.size} (${s.available})`)
         .join(", ");
+      if (!avail) return english ? `${res.name} is out of stock in every size. Please provide another product to check.`
+        : `${res.name} หมดทุกไซซ์ค่ะ กรุณาระบุสินค้าอื่นที่ต้องการตรวจสอบ`;
       return english
         ? `${res.name} is currently available in these sizes: ${avail || "out of stock in every size"}. Which size would you like?`
         : `${res.name} ตอนนี้มีไซซ์: ${avail || "หมดทุกไซซ์ค่ะ"} รับไซซ์ไหนดีคะ?`;

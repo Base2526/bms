@@ -153,9 +153,9 @@ will not use them. See § "AI tool-calling — example usage" in
 It enforces unique snake_case names, valid surfaces, staff-only sensitive tools, and declared required
 schema fields. Registry-only metadata (`whenToUse`/`whenNotToUse`/`commonMistakes`/`example`) stays out
 of provider payloads and should be added only for a real observed ambiguity, not mechanically to every
-tool. The current snapshot is 86 tools total / 33 unfiltered customer tools / 23 ordinary /
-26 pharmacy-customer tools / 26 restaurant-customer tools (re-counted from the registry on
-2026-10-07); verify the source rather than trusting this count after any catalog change.
+tool. Derive tool counts from the current registry and its archetype filters rather than a
+documentation snapshot. `present_customer_choices` adds a customer-only presentation tool;
+it does not expand business mutation permissions.
 
 Pharmacy customer assistance (`10.44`) stays non-clinical even with intake disabled. Medication
 advice gets a deterministic pharmacist handoff; emergencies have priority. Shop-transcribed label
@@ -1004,6 +1004,25 @@ extra-time and staff-help actions only create a customer-confirmed Inbox note an
 with an idempotency result and audit in one transaction. Staff use existing permission-gated
 payment/POS operations to approve and apply any money or time change. Status reads are tenant + customer scoped.
 Every request/summary/status reply is server-composed, including after a model/provider failure.
+Numbered chat choices are server-owned conversation state, not model interpretation: a code resolves
+only against the exact latest prompt hash and expiry. Selecting cancel opens the existing fresh
+confirmation summary; it never cancels immediately. A selected reschedule carries the verified
+reference/current duration/current party size so the customer supplies only the new date/time unless
+they explicitly change another field. A stale/expired menu cannot fall through to quantity parsing;
+the customer gets a fixed retry reply. With no pending menu, numeric fields keep their usual meaning.
+This contract also covers order/restaurant confirmation, ordinary selections registered through
+`present_customer_choices`, and pharmacy intake/approved checkout. Ordinary input choices cannot
+grant business confirmation. Pharmacy intake additionally rechecks case/stage/question context.
+Typed confirmation has the same menu-freshness requirement. The backend claims the exact pending
+menu snapshot before dispatch; a consumed or changed snapshot is refused, without replacing the
+domain's own transactional idempotency. Order confirmation retains the quoted item draft, including
+pack/modifier codes and allowed fulfillment arguments, rather than reconstructing it from history.
+Multi-line product choices keep `A1`/`B2` internally but show one numbered menu per ambiguous line,
+retaining the entire basket until every selection and the final confirmation are complete.
+Stock recovery menus carry exact server-owned SKU/variant actions, not prose interpreted as an
+order. A quantity reply binds to the latest exact variant question and expires; a revised basket
+must be summarized and confirmed anew. Base-unit stock is never converted into a pack count by
+the menu layer. Failed state persistence must not expose an unanswerable next menu.
 
 **Keep chat and public discovery readers separate.** Customer chat reads only through
 `listBoardGameChatBranches({ tenantId, client })`; `/board-game` and `/api/board-game/nearby`

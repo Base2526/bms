@@ -18,6 +18,7 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import { inputChoiceOptions, renderConversationChoices, type ConversationChoiceOption, type PendingConversationChoice } from "../conversationChoices";
 import { isPharmacyMedicationAdviceQuestion } from "./customerAssistancePolicy";
 import { pharmacyClinicalGuidanceReply } from "./guidanceTemplateStore";
 import { emergencyCustomerReply } from "../emergencyFacilities";
@@ -419,8 +420,6 @@ function renderCustomerConfirmationPrompt(summary: CustomerConfirmationSummary):
     `- อาการหลัก: ${summary.symptomGroup}`,
     bullets,
     "",
-    "ถ้าข้อมูลถูกต้อง ตอบ “ข้อมูลถูกต้อง” หรือ “ยืนยัน” ได้เลยค่ะ",
-    "ถ้าต้องการแก้ไข ตอบ “ขอแก้ไข” หรือพิมพ์ข้อมูลที่ถูกต้องกลับมาได้เลยค่ะ",
   ]
     .filter(Boolean)
     .join("\n");
@@ -466,10 +465,27 @@ const EXPIRED_TEXT = "ขออภัยค่ะ เคสก่อนหน้
 const AI_UNAVAILABLE_TEXT =
   "ขออภัยค่ะ ระบบผู้ช่วยไม่พร้อมใช้งานชั่วคราว ทางร้านได้บันทึกอาการที่แจ้งไว้แล้ว เภสัชกรจะติดต่อกลับโดยตรงค่ะ";
 
-export type PharmacyIntakeTurnResult = { reply: string; caseId: string | null };
+export type PharmacyIntakeTurnResult = { reply: string; caseId: string | null;
+  choice?: { options: ConversationChoiceOption[]; context: NonNullable<PendingConversationChoice["context"]> } };
 
 async function reply(_tenantId: string, _convId: string, caseId: string | null, text: string): Promise<PharmacyIntakeTurnResult> {
   return { reply: text, caseId };
+}
+
+function pharmacyChoiceReply(caseId: string, text: string, stage: string, labels: string[], questionKey?: string): PharmacyIntakeTurnResult {
+  const options = inputChoiceOptions(labels);
+  return { reply: renderConversationChoices(text, options), caseId,
+    choice: { options, context: { caseId, stage, questionKey } } };
+}
+
+function pharmacyQuestionReply(caseId: string, text: string, question: NextQuestionResult, protocol: ProtocolDefinition): PharmacyIntakeTurnResult {
+  const field = listAllQuestionFields(protocol).find(field => field.questionKey === question.questionKey);
+  const labels = field?.key === "patient_relationship" ? ["ตัวเอง", "ลูก", "พ่อแม่", "บุคคลอื่น"]
+    : field?.key === "biological_sex" ? ["หญิง", "ชาย", "ไม่แน่ใจ"]
+    : field?.key === "pregnancy_status" ? ["ตั้งครรภ์", "ไม่ได้ตั้งครรภ์", "ไม่แน่ใจ"]
+    : field?.key === "breastfeeding_status" ? ["ให้นมบุตร", "ไม่ได้ให้นมบุตร", "ไม่แน่ใจ"]
+    : field?.type === "yes_no" ? ["มี", "ไม่มี", "ไม่แน่ใจ"] : null;
+  return labels ? pharmacyChoiceReply(caseId, text, "ASKING", labels, question.questionKey) : { reply: text, caseId };
 }
 
 async function clinicalResumePrompt(
@@ -525,7 +541,8 @@ export async function runPharmacyIntakeTurn(
   _customerRef: string | null | undefined,
   convId: string,
   message: string,
-  state: PharmacyIntakeConvState
+  state: PharmacyIntakeConvState,
+  selectionContext?: PendingConversationChoice["context"]
 ): Promise<PharmacyIntakeTurnResult> {
   if (state.stage === "NONE") return { reply: "", caseId: null };
 
@@ -541,11 +558,43 @@ export async function runPharmacyIntakeTurn(
     return { reply: guidance.reply, caseId: state.caseId };
   }
 
+  if (selectionContext) {
+    const assessment = await getAssessment(tenantId, state.caseId);
+    if (selectionContext.caseId !== state.caseId || selectionContext.stage !== state.stage ||
+        !assessment || resolvePharmacyConversationStage(assessment.status, assessment.consentStatus) !== state.stage ||
+        (selectionContext.questionKey && selectionContext.questionKey !== assessment.currentQuestionKey)) {
+      return reply(tenantId, convId, state.caseId, "ขั้นตอนนี้เปลี่ยนแล้วค่ะ กรุณาขอคำถามหรือสรุปล่าสุดอีกครั้ง ยังไม่ได้บันทึกคำตอบนี้");
+    }
+  }
+
   // Mid-conversation expiry remains independent of the batch cron sweep.
   const expired = await closeAssessmentIfExpired(tenantId, state.caseId);
   if (expired) {
     await clearConversationLink(tenantId, convId);
     return reply(tenantId, convId, null, EXPIRED_TEXT);
+  }
+
+  if (/ขอ(?:ดู)?(?:คำถาม|สรุป|ตัวเลือก)|(?:show|repeat).*(?:question|summary|options)/i.test(message)) {
+    if (state.stage === "AWAITING_CONSENT") {
+      return pharmacyChoiceReply(state.caseId, `${DISCLAIMER_TEXT}\n\n${CONSENT_PROMPT_TEXT}`, "AWAITING_CONSENT", ["ยินยอม", "ไม่ยินยอม"]);
+    }
+    const assessment = await getAssessment(tenantId, state.caseId);
+    if (state.stage === "PENDING_CONFIRMATION" && assessment?.customerConfirmationSummary) {
+      return pharmacyChoiceReply(state.caseId, renderCustomerConfirmationPrompt(assessment.customerConfirmationSummary),
+        "PENDING_CONFIRMATION", ["ข้อมูลถูกต้อง", "ขอแก้ไข", "ยกเลิก"]);
+    }
+    if (state.stage === "ASKING" && assessment?.protocolId) {
+      const protocol = await getPharmacyProtocol(tenantId, assessment.protocolId);
+      if (protocol) {
+        const definition = toProtocolDefinition(protocol);
+        const field = listAllQuestionFields(definition).find(field => field.questionKey === assessment.currentQuestionKey);
+        if (field) {
+          const question = { questionKey: field.questionKey, questionText: `รบกวนแจ้ง${field.label}ด้วยค่ะ`, inputHint: field.type };
+          return pharmacyQuestionReply(state.caseId, question.questionText, question, definition);
+        }
+      }
+    }
+    return reply(tenantId, convId, state.caseId, state.stage === "WAITING" ? WAITING_TEXT : AI_UNAVAILABLE_TEXT);
   }
 
   if (conversationRoute.intent === "CANCEL_OR_RESTART" || RESTART_PATTERN.test(message)) {
@@ -618,7 +667,7 @@ async function handleConsent(tenantId: string, convId: string, caseId: string, m
     return reply(tenantId, convId, null, CONSENT_REVOKED_TEXT);
   }
   if (!isYes) {
-    return reply(tenantId, convId, caseId, `${DISCLAIMER_TEXT}\n\n${CONSENT_UNCLEAR_TEXT}`);
+    return pharmacyChoiceReply(caseId, `${DISCLAIMER_TEXT}\n\n${CONSENT_UNCLEAR_TEXT}`, "AWAITING_CONSENT", ["ยินยอม", "ไม่ยินยอม"]);
   }
 
   await recordConsent(tenantId, caseId, "GRANTED", CONSENT_VERSION);
@@ -664,7 +713,7 @@ async function handleConsent(tenantId: string, convId: string, caseId: string, m
     anomalies: [],
     completenessStatus: resolveCompletenessStatus(protocolDef, rememberedKnownFields),
   });
-  return reply(tenantId, convId, caseId, withPatientMemoryNotice(question.questionText, rememberedKeys));
+  return pharmacyQuestionReply(caseId, withPatientMemoryNotice(question.questionText, rememberedKeys), question, protocolDef);
 }
 
 async function handlePendingConfirmation(
@@ -695,7 +744,7 @@ async function handlePendingConfirmation(
     return handleAsking(tenantId, convId, caseId, text);
   }
   await appendRawMessage(tenantId, caseId, { role: "customer", text });
-  return reply(tenantId, convId, caseId, CONFIRMATION_REPROMPT_TEXT);
+  return pharmacyChoiceReply(caseId, CONFIRMATION_REPROMPT_TEXT, "PENDING_CONFIRMATION", ["ข้อมูลถูกต้อง", "ขอแก้ไข", "ยกเลิก"]);
 }
 
 async function handleAsking(tenantId: string, convId: string, caseId: string, message: string): Promise<PharmacyIntakeTurnResult> {
@@ -855,7 +904,7 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
     });
     const question = await askNextQuestion(tenantId, caseId, protocol, protocolDef, knownFields, decision.missingFieldKeys);
     await updateAnswers(tenantId, caseId, { currentQuestionKey: question.questionKey });
-    return reply(tenantId, convId, caseId, withPatientMemoryNotice(question.questionText, rememberedKeys));
+    return pharmacyQuestionReply(caseId, withPatientMemoryNotice(question.questionText, rememberedKeys), question, protocolDef);
   }
 
   if (decision.decision === "CONFLICT") {
@@ -915,12 +964,9 @@ async function handleAsking(tenantId: string, convId: string, caseId: string, me
   }
   const confirmationSummary = buildCustomerConfirmationSummary(protocol, protocolDef, knownFields);
   await markPendingCustomerConfirmation(tenantId, caseId, confirmationSummary);
-  return reply(
-    tenantId,
-    convId,
-    caseId,
-    withPatientMemoryNotice(renderCustomerConfirmationPrompt(confirmationSummary), rememberedKeys)
-  );
+  return pharmacyChoiceReply(caseId,
+    withPatientMemoryNotice(renderCustomerConfirmationPrompt(confirmationSummary), rememberedKeys),
+    "PENDING_CONFIRMATION", ["ข้อมูลถูกต้อง", "ขอแก้ไข", "ยกเลิก"]);
 }
 
 // ---------------------------------------------------------------
@@ -940,7 +986,7 @@ export async function startPharmacyIntake(
   }
   const created = await createAssessmentOnce({ tenantId, customerId, channelId: channel, conversationId: convId, protocolId: protocol.id });
   const caseId = created.status === "CREATED" ? created.assessmentId : created.assessmentId;
-  return reply(tenantId, convId, caseId, `${DISCLAIMER_TEXT}\n\n${CONSENT_PROMPT_TEXT}`);
+  return pharmacyChoiceReply(caseId, `${DISCLAIMER_TEXT}\n\n${CONSENT_PROMPT_TEXT}`, "AWAITING_CONSENT", ["ยินยอม", "ไม่ยินยอม"]);
 }
 
 // ---------------------------------------------------------------

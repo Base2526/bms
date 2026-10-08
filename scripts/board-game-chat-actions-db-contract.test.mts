@@ -85,7 +85,15 @@ test("customer cancellation and reschedule enforce ownership and rollback on tab
   await assert.rejects(commitBoardGameChatAction(authority(), bad), /unavailable/);
   const original = (await query(`SELECT reserved_for FROM bms_board_game_waitlist WHERE tenant_id=$1 AND id=$2`, [tenantId,bookingId])).rows[0].reserved_for;
   assert.notEqual(new Date(original).toISOString(), unavailable.reservedFor);
-  const next = await booking(130);
+  const retained = await booking(130);
+  const retainedChange = await quote({ action: "RESCHEDULE", reference, reservedLocal: retained.reservedLocal });
+  const retainedResult = await commitBoardGameChatAction(authority(), retainedChange);
+  assert.equal(retainedResult.status, "CONFIRMED");
+  const retainedRow = (await query(`SELECT reserved_for, party_size, reserved_duration_minutes FROM bms_board_game_waitlist WHERE tenant_id=$1 AND id=$2`, [tenantId,bookingId])).rows[0];
+  assert.equal(new Date(retainedRow.reserved_for).toISOString(), retained.reservedFor);
+  assert.equal(Number(retainedRow.party_size), 2);
+  assert.equal(Number(retainedRow.reserved_duration_minutes), 60);
+  const next = await booking(140);
   const change = await quote({ action: "RESCHEDULE", reference, reservedLocal: next.reservedLocal, durationMinutes: 90, partySize: 3 });
   const result = await commitBoardGameChatAction(authority(), change);
   assert.equal(result.status, "CONFIRMED");

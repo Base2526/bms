@@ -604,7 +604,7 @@ export async function listMessages(tenantId: string, conversationId: string, lim
   return res.rows;
 }
 
-export type AiHistoryTurn = { role: "user" | "assistant"; content: string };
+export type AiHistoryTurn = { role: "user" | "assistant"; content: string; latestContent?: string };
 
 function isPersistedPharmacyLabConversation(channel: string, customerRef: string | null | undefined) {
   return channel === "test" && Boolean(customerRef?.startsWith("pharmacy-lab:"));
@@ -691,8 +691,9 @@ export async function getRecentAiHistory(
     // (เช่น staff ตอบเองหลายข้อความติดกัน) กัน error strict alternation
     if (last && last.role === role) {
       last.content += `\n${text}`;
+      last.latestContent = text;
     } else {
-      turns.push({ role, content: text });
+      turns.push({ role, content: text, latestContent: text });
     }
   }
   return turns;
@@ -730,10 +731,17 @@ export type AiConversationState = {
    * เดียวคือผูกคำว่า "ยืนยัน" ไว้กับตะกร้าชุดที่ลูกค้าเห็นจริง · JSONB ไม่ต้อง migration
    */
   pendingQuoteFingerprint?: string | null;
+  pendingOrderDraft?: import('./orderQuote').OrderQuoteDraft | null;
   /** Server-resolved restaurant request; confirmation revalidates the catalog, never infers lost notes. */
   pendingRestaurantRequest?: import('./restaurantRequestPolicy').RestaurantRequestDraft | null;
   pendingBoardGameReservation?: import('./boardGameReservationPolicy').BoardGameReservationQuote | null;
   pendingBoardGameChatAction?: import('./boardGameChatActionPolicy').BoardGameChatActionQuote | null;
+  /** Latest server-rendered numbered menu. Codes have meaning only while its exact prompt is latest. */
+  pendingConversationChoice?: import('./conversationChoices').PendingConversationChoice | null;
+  /** Free quantity input after an exact variant read, never a numbered menu. */
+  pendingStockQuantity?: { sku: string; size: string; prompt: string; expiresAt: number } | null;
+  /** Verified booking selected for rescheduling while the customer supplies the new date/time. */
+  pendingBoardGameReschedule?: (import('./conversationChoices').ConversationChoiceBooking & { expiresAt: number }) | null;
   updatedAt?: string;
 };
 
@@ -765,6 +773,33 @@ export async function setAiConversationState(
       [tenantId, convId, JSON.stringify({ ...state, updatedAt: new Date().toISOString() })]
     );
     await client.query("COMMIT");
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Claim the exact menu snapshot before interpreting a choice as an action. */
+export async function consumeAiConversationChoice(
+  tenantId: string,
+  convId: string,
+  pending: NonNullable<AiConversationState["pendingConversationChoice"]>
+): Promise<boolean> {
+  if (pending.consumed || pending.expiresAt <= Date.now()) return false;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const result = await client.query(
+      `UPDATE bms_conversations
+          SET ai_state = jsonb_set(ai_state, '{pendingConversationChoice,consumed}', 'true'::jsonb), updated_at = now()
+        WHERE tenant_id = $1 AND id = $2 AND ai_state->'pendingConversationChoice' = $3::jsonb
+        RETURNING id`,
+      [tenantId, convId, JSON.stringify(pending)]
+    );
+    await client.query("COMMIT");
+    return result.rowCount === 1;
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;

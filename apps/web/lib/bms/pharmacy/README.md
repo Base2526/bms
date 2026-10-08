@@ -223,12 +223,22 @@ includes `status` in a `SET` clause.
    `bms_product_packs` again inside the order transaction; tablet/capsule counts used as strength or
    package descriptors are not assumed to be the requested quantity.
    If one named line matches several live catalog SKUs, production chat persists server-owned,
-   line-scoped choice codes (`A1/B2`, not repeated bare `1/2/3/4`) and requires exactly one choice
-   for every ambiguous line. The selected SKU, size, stock, and configured selling unit are checked
+   line-scoped choice codes internally, while displaying one ambiguous line at a time with numbered
+   options. A customer replies `1/2/3/4` to the latest menu; all remaining lines/quantities are kept.
+   Legacy explicit `A1 B2` answers remain supported. The selected SKU, size, stock, and configured selling unit are checked
    again before the backend composes a fresh whole-basket confirmation. A word such as `ยืนยัน`
    attached to the choice reply confirms only the selection step; it cannot skip the subsequent
    itemised basket confirmation or create a partial order.
 2. Disclaimer ("AI ≠ pharmacist") + consent prompt, both fixed backend copy.
+   Consent, final summary, supported fixed-answer questions and approved-checkout replies have
+   contextual numbered menus. Menu state stores a prompt hash, expiry and non-clinical option
+   labels; intake selections also bind to the assessment/stage/question key. The backend checks
+   that context again before accepting the answer. An expired menu cannot consent, submit a
+   summary or purchase. Numeric age/severity/duration fields retain their ordinary meaning.
+   Typed checkout confirmation must also match the current approved-case menu; a negative phrase
+   containing the word "confirm" is not consent. The Lab binds menus to its session stage/question,
+   pages long variant lists, and preserves the requested quantity across product/size selection.
+   Lab menus remain presentation only, never clinical or purchase authorization.
 3. Consent granted → AI (or a deterministic fallback if AI is off) asks one question at a
    time, chosen from the protocol's own field list — it can never invent a new question.
    For the same canonical customer and `SELF` relationship only, the intake can reuse the newest

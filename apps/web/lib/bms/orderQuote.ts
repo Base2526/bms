@@ -40,6 +40,16 @@ export type OrderQuoteFingerprintLine = {
   modifierCodes?: string[] | null;
 };
 
+export type OrderQuoteDraft = {
+  items: OrderQuoteFingerprintLine[];
+  couponCode?: string;
+  preferredCarrier?: string;
+  locationId?: string;
+  fulfillmentType?: "DELIVERY" | "PICKUP";
+  promisedAt?: string;
+  requestNote?: string;
+};
+
 /**
  * ลายนิ้วมือของ "ตะกร้าชุดนี้เป๊ะ ๆ"
  *
@@ -129,8 +139,8 @@ export function composeOrderQuoteSummary(
 
   parts.push(
     english
-      ? 'Reply "confirm" and I will place this order for you.'
-      : 'ถ้าถูกต้องแล้วพิมพ์ "ยืนยัน" เพื่อสั่งเลยนะคะ'
+      ? "Reply with a number:\n1. Confirm order\n2. Edit order"
+      : "ตอบเป็นตัวเลขได้เลยค่ะ\n1. ยืนยันสั่งซื้อ\n2. แก้ไขรายการ"
   );
   return parts.join("\n");
 }
