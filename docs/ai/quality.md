@@ -5,6 +5,10 @@
 The admin route `/admin/ai-quality` turns production AI responses into measurable, reviewable
 signals without creating a second copy of customer conversations.
 
+Planned extension (not yet implemented): [customer answer evidence](customer-answer-evidence-plan.md)
+defines per-turn safe tool snapshots, exact message pairing, capture status, retention and review UI.
+The sections below describe the currently implemented quality signals.
+
 ## Unit of measurement
 
 Metrics count an **AI turn** (one persisted outbound message with `sender='ai'`), not a conversation.
