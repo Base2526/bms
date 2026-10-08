@@ -765,7 +765,7 @@ EOF
 }
 
 launch_pos_desktop() {
-  [[ $(package_type) == server-pos ]] || return
+  [[ $(package_type) == server-pos ]] || return 0
   local pos_app="/Applications/BMS POS.app"
   [[ -d $pos_app ]] || die "Failed to install POS Desktop from the signed release"
   if [[ -n $PROVISION_DEVICE_TOKEN ]]; then
@@ -783,8 +783,8 @@ launch_pos_desktop() {
 }
 
 install_pos_desktop() {
-  [[ $INSTALL_MODE == online ]] || return
-  [[ $(package_type) == server-pos ]] || return
+  [[ $INSTALL_MODE == online ]] || return 0
+  [[ $(package_type) == server-pos ]] || return 0
   local archive temporary app entry
   archive=$(artifact_path desktop)
   temporary="$STATE_ROOT/desktop-install.partial"

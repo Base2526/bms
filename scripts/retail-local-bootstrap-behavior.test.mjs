@@ -652,6 +652,73 @@ echo 'must-not-reprovision'
   assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), receipt);
 });
 
+for (const existingReceipt of [false, true]) {
+test(`macOS server-only setup completes with real POS skip helpers (receipt=${existingReceipt})`, {
+  skip: process.platform === 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local');
+  const functions = ['setup_runtime', 'install_pos_desktop', 'launch_pos_desktop'].map(name => {
+    const fn = source.match(new RegExp(`${name}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
+    assert.ok(fn, name);
+    return fn;
+  }).join('\n');
+  if (existingReceipt) writeFileSync(join(root, 'installation.json'), '{}');
+  const result = run('/bin/bash', ['-c', `set -euo pipefail
+STATE_ROOT=$1; RECEIPT="$1/installation.json"; BOOTSTRAP_ROOT=$1
+INSTALL_MODE=online; AGENT=true; LIMACTL=true; INSTANCE=fixture; WEB_PORT=3100
+BMS_RETAIL_LOCAL_TEST_MODE=0
+package_type() { echo server; }
+for name in require_bootstrap require_matching_mac_architecture activate_license \\
+  stage_signed_release extract_runtime require_installed_payload render_lima_config \\
+  start_setup_vm install_release provision_shop wait_for_http record_license_evidence \\
+  ensure_runtime install_license_ui_agent; do
+  eval "$name() { :; }"
+done
+artifact_path() { echo unexpected-desktop-artifact >&2; exit 91; }
+open() { echo unexpected-desktop-launch >&2; exit 92; }
+die() { echo "$*" >&2; exit 93; }
+guest() { echo "guest:$*"; }
+wait_for_guest_doctor() { echo checked-health; }
+write_receipt() { printf '{}' >"$RECEIPT"; echo wrote-receipt; }
+install_launch_agent() { echo installed-launch-agent; }
+step() { echo "step:$1"; }
+note() { echo "$*"; }
+${functions}
+setup_runtime
+echo setup-returned-success
+`, 'test', root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /checked-health[\s\S]*setup-returned-success/);
+  assert.doesNotMatch(result.stdout + result.stderr, /unexpected-desktop/);
+  assert.equal(readFileSync(join(root, 'installation.json'), 'utf8'), '{}');
+  if (existingReceipt) {
+    assert.match(result.stdout, /Installed and ready/);
+    assert.doesNotMatch(result.stdout, /wrote-receipt/);
+  } else {
+    assert.match(result.stdout, /checked-health[\s\S]*wrote-receipt[\s\S]*installed-launch-agent[\s\S]*step:7/);
+  }
+});
+}
+
+test('macOS offline setup skips online POS installation successfully', {
+  skip: process.platform === 'win32',
+}, () => {
+  const fn = read('deploy/retail-local/managed-runtime/macos/bms-retail-local')
+    .match(/install_pos_desktop\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(fn);
+  const result = run('/bin/bash', ['-c', `set -euo pipefail
+INSTALL_MODE=offline
+package_type() { echo server-pos; }
+artifact_path() { echo unexpected-desktop-artifact >&2; exit 91; }
+${fn}
+install_pos_desktop
+echo offline-setup-continues
+`]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.equal(result.stdout.trim(), 'offline-setup-continues');
+});
+
 test('macOS resumes the final launch step after a receipt has already been written', {
   skip: process.platform === 'win32',
 }, t => {
