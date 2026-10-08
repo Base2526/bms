@@ -23,12 +23,27 @@ import {
 } from "./requestedItems";
 import { checkStock, resolveProduct, type StockResult } from "./stock";
 import { createOrder, type CreateOrderResult } from "./orders";
+import { catalogStockMenu, stockResultMenu, insufficientStockMenu, type CustomerStockMenu } from "./customerStockChoices";
 import { generateResponse } from "./ai";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
 import { boardGameCustomerGuard, boardGameUrgentGuard, BOARD_GAME_CUSTOMER_GUARD_POLICY } from "./boardGameCustomerGuard";
-import { boardGameReservationSummary, boardGameReservationReceipt, boardGameReservationStatusReply, isBoardGameReservationConfirmation, isLatestBoardGameReservationSummary } from "./boardGameReservationPolicy";
+import { boardGameReservationSummary, boardGameReservationReceipt, boardGameReservationStatusMenu,
+  boardGameBookingActionMenu, isBoardGameReservationConfirmation,
+  isLatestBoardGameReservationSummary } from "./boardGameReservationPolicy";
 import { boardGameChatActionSummary, boardGameChatActionReceipt, boardGameChatActionFailure, isLatestBoardGameChatActionSummary } from "./boardGameChatActionPolicy";
+import {
+  CONVERSATION_CHOICE_TTL_MS,
+  confirmationChoiceOptions,
+  createPendingConversationChoice,
+  isConversationChoicePromptCurrent,
+  resolveConversationChoice,
+  inputChoiceOptions,
+  renderConversationChoices,
+  type ConversationChoiceKind,
+  type ConversationChoiceOption,
+  type PendingConversationChoice,
+} from "./conversationChoices";
 import {
   answersWithStoreFacts,
   customerStoreFacts,
@@ -45,6 +60,7 @@ import {
   getConversation,
   getAiConversationState,
   setAiConversationState,
+  consumeAiConversationChoice,
   ensureConversationForPipeline,
   listLicensedPharmacistIds,
   type AiConversationState,
@@ -70,6 +86,7 @@ import { isPharmacistReviewableBasket } from "./pharmacy/productPolicyDecision";
 import {
   checkoutDetailsFromReply,
   checkoutNextStepReply,
+  bookingContactNextStepReply,
   isAlternativeCatalogRequest,
   hasUnsupportedBoardGameActionClaim,
   boardGameCheckoutFallback,
@@ -95,6 +112,7 @@ import {
   runPharmacyIntakeTurn,
   persistPharmacyEmergency,
   startPharmacyIntake,
+  type PharmacyIntakeTurnResult,
 } from "./pharmacy/intake";
 import { listActivePharmacyTriggerDefinitions, type PharmacyTriggerDefinition } from "./pharmacy/protocols";
 import {
@@ -123,6 +141,8 @@ import {
 } from "./customerMessageRouting";
 import {
   catalogLineCode,
+  catalogSelectionMenu,
+  advanceCatalogSelection,
   composeCatalogChoiceReply,
   normalizeCatalogRequestedLine,
   parseCatalogChoiceSelection,
@@ -130,7 +150,7 @@ import {
 } from "./catalogChoices";
 
 const PHARMACY_CHECKOUT_CONFIRM_PATTERN =
-  /(ยืนยันสั่งซื้อ|ยืนยันซื้อ|สั่งซื้อเลย|เอาตามนี้|ตกลงเอาตามนี้|โอเคเอาตามนี้|confirm order)/i;
+  /^(?:ยืนยันสั่งซื้อ|ยืนยันซื้อ|สั่งซื้อเลย|เอาตามนี้|ตกลงเอาตามนี้|โอเคเอาตามนี้|confirm order)(?:\s*(?:ค่ะ|คะ|ครับ|นะ|เลย))*[.!🙏]*$/i;
 
 // P0: จำนวนข้อความบทสนทนาล่าสุด (ไม่รวมข้อความปัจจุบัน) ที่ป้อนกลับเข้า AI tool loop
 // โหลดมากกว่าที่ส่งเข้าโมเดลเพื่อบีบอัดส่วนเก่า ก่อนเก็บ recent messages แบบเต็ม
@@ -411,6 +431,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
     `Repeat-purchase policy: ${commercePolicy.repeatPurchase}`,
     `Fulfillment policy: ${commercePolicy.fulfillment}`,
     "ตอบความต้องการปัจจุบันของลูกค้าก่อน คำถามข้อมูลร้านหรือบริการให้ตอบตรงเรื่อง ไม่ต้องปิดท้ายชวนซื้อสินค้าทุกครั้ง เมื่อลูกค้าต้องการซื้อจึงช่วยเลือกสินค้า/ตัวเลือก/จำนวน",
+    "ทุกครั้งที่ให้ลูกค้าเลือกคำตอบจากชุดตัวเลือก เช่น สินค้า ไซซ์ สาขา รับเอง/จัดส่ง ช่องทางชำระ หรือใช่/ไม่ใช่ ใช้ present_customer_choices หลังตรวจข้อมูลจากทูลแล้ว ห้ามเขียนเมนูตัวเลขเอง ถามทีละเรื่อง ลูกค้าตอบเป็นเลขหรือข้อความได้ จำนวนคน จำนวนสินค้า วันที่และเวลาให้ถามค่าจริง ไม่แปลงเป็นเมนูโดยไม่มีความจำเป็น การยืนยันออร์เดอร์/จอง/ยกเลิกใช้สรุปของทูลเฉพาะเท่านั้น",
     CUSTOMER_STORE_CONTEXT_POLICY,
     ...(profile.businessArchetype === "board_game_cafe" ? [
       BOARD_GAME_CUSTOMER_GUARD_POLICY,
@@ -418,7 +439,7 @@ function buildCustomerSystem(categories: string[], profile: AiProfileContext): s
       "เมื่อ businessHours ของข้อมูลร้านว่าง ให้ตรวจ openingHours ของสาขาผ่าน get_board_game_availability ก่อนบอกว่าไม่มีเวลาทำการ ถ้ามีหลายสาขาให้ลูกค้าเลือกชื่อสาขาจากผลทูล ห้ามเลือกแทน",
       "คำถามที่จอดรถ: ถ้า about ไม่ระบุ ให้เรียก get_board_game_availability เพื่อตรวจ summary ของสาขาที่เผยแพร่ก่อน ตอบได้เฉพาะที่ระบุไว้จริง ถ้าทั้งสองแหล่งไม่ระบุให้บอกว่าข้อมูลที่จอดรถยังไม่ระบุ ไม่ใช่อ้างว่าร้านไม่มีข้อมูลทุกอย่าง",
       "การจอง: อ่าน get_board_game_availability ก่อน เมื่อ canSubmitViaChat=true เก็บสาขา วัน เวลา ระยะเวลา จำนวนคนทีละข้อ ห้ามเดาวัน/เวลาหรือเวลาเปิดปิด ใช้ get_customer_checkout และ save_customer_checkout_details เก็บเฉพาะชื่อ/เบอร์ที่ขาด แล้วเรียก request_board_game_reservation ให้ server แสดงสรุปก่อนลูกค้าตกลง ถ้า autoConfirm=true ระบบตรวจและจองโต๊ะจริงได้เมื่อผลเป็น CONFIRMED; REQUESTED ยังรอร้านตรวจ โต๊ะว่างตอนนี้ไม่ใช่ของวันที่จอง ถ้าปิดรับหรือเก็บมัดจำให้ติดต่อร้าน ติดตามด้วย get_board_game_reservation_status",
-      "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status ให้เลือก reference ของตัวเอง แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE โดยระบุเวลาใหม่ ระยะเวลา จำนวนคนจากลูกค้าครบก่อน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
+      "ยกเลิก/เลื่อนจอง: อ่าน get_board_game_reservation_status และใช้ reference ที่ระบบผูกกับตัวเลือกของลูกค้า ห้ามให้ลูกค้าพิมพ์รหัสซ้ำหรือเดา reference แล้วใช้ manage_board_game_booking action CANCEL หรือ RESCHEDULE; เวลาใหม่ต้องมาจากลูกค้า แต่ถ้าลูกค้าไม่ได้เปลี่ยนระยะเวลาหรือจำนวนคนให้ละ field นั้นเพื่อคงค่าปัจจุบัน ระบบแสดงสรุปและรอลูกค้ายืนยัน คืนเงิน/ลดราคา/ต่อเวลา/ร้องเรียน/เรียกพนักงาน ใช้ action REFUND/DISCOUNT/EXTEND_TIME/STAFF พร้อม note ตามที่ลูกค้าขอ เป็นคำขอให้พนักงานอนุมัติ ไม่มีการเปลี่ยนเงิน ราคา หรือเวลาเล่นทันที ห้ามอ้างว่าพนักงานรับงานหรือทำเสร็จแล้วจากการส่งคำขอ",
       "โปรโมชัน รายละเอียดแพ็ก และยอดคงเหลือแพ็กยังไม่มีทูลฝั่งลูกค้า ห้ามแปลว่าไม่มีโปรหรือไม่มีแพ็ก กติกาเกมให้พนักงานช่วยอธิบายจนกว่าจะมีแหล่งกติกาที่อนุมัติ ห้ามอธิบายจากความจำของโมเดล",
       "คำถามสั้น มี Catan ไหม หรือ มีเกมอื่นไหม ในร้านบอร์ดเกมหมายถึงเกมให้เล่นก่อน เว้นแต่ลูกค้าระบุซื้อ/ขาย/กลับบ้าน เมื่อถาม 8–10 คนให้ค้น players=8, playersTo=10; เกมง่ายหรือมือใหม่ใช้ difficulty=LIGHT ส่วนมีคนสอนหรือไม่ต้องดูนโยบายร้าน ห้ามสัญญาว่ามีพนักงานสอนจากความยากของเกม",
       "อาหาร/เครื่องดื่มที่ขายอ่าน catalog แต่นำขนมมาเอง ยอดสั่งขั้นต่ำ จัดงาน เหมาร้าน แยกบิล การทิ้งบัตรหรือมัดจำยืมเกม เป็นนโยบายร้าน: ตรวจ about และ summary สาขา ถ้าไม่ระบุให้บอกเฉพาะเรื่องนั้นว่าต้องติดต่อพนักงาน อย่าใช้ค่ามัดจำจองโต๊ะตอบแทนมัดจำเกมหรือบัตรประชาชน",
@@ -524,36 +545,6 @@ function salesAlternativeText(items: Array<{ name: string; price: number }>, eng
     .join(", ");
 }
 
-function stockRecoveryReply(result: StockResult, businessArchetype?: string | null, english = false): string | null {
-  if (result.status === "OUT_OF_STOCK") {
-    const otherSizes = (result.availableSizes ?? []).map((item) => item.size).join(", ");
-    if (otherSizes) {
-      return english
-        ? `Sorry, ${result.name} size ${result.size} is out of stock, but sizes ${otherSizes} are available. Which size should I check?`
-        : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด แต่ยังมีไซซ์ ${otherSizes} สนใจให้เช็กไซซ์ไหนต่อไหมคะ?`;
-    }
-    const alternatives = salesAlternativeText(result.alternatives ?? [], english);
-    return alternatives
-      ? english
-        ? `Sorry, ${result.name} size ${result.size} is out of stock. Similar products available now include ${alternatives}. Which one should I check?`
-        : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ตอนนี้มีตัวเลือกพร้อมขายใกล้เคียง เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
-      : archetypeNeedsRestockEmphasis(businessArchetype)
-        ? english
-          ? `Sorry, ${result.name} size ${result.size} is out of stock. Would you like the shop to notify you when it is restocked?`
-          : `ขออภัยค่ะ ${result.name} ไซซ์ ${result.size} หมด ต้องการให้ทางร้านแจ้งเมื่อของเข้าไหมคะ?`
-        : null;
-  }
-  if (result.status === "NOT_FOUND") {
-    const alternatives = salesAlternativeText(result.alternatives ?? [], english);
-    return alternatives
-      ? english
-        ? `Sorry, that product was not found. Available products include ${alternatives}. Which one should I check?`
-        : `ขออภัยค่ะ ยังไม่พบสินค้าที่ระบุ ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กต่อไหมคะ?`
-      : null;
-  }
-  return null;
-}
-
 function isCatalogDiscoveryMessage(message: string): boolean {
   return /(?:มีสินค้าอะไร|มีอะไร(?:บ้าง|ขาย)|แนะนำสินค้า|สินค้าแนะนำ|ของเข้าใหม่|สินค้าใหม่|มาใหม่|new arrivals?)/i.test(
     message
@@ -584,7 +575,7 @@ function classifyCustomerIntent(message: string, understanding: Understanding, b
   if (isReorderRequest(message)) return "reorder";
   if (isCouponQuestion(message) &&
     (businessArchetype !== "board_game_cafe" || /คูปอง|coupon|โค้ด/i.test(message))) return "coupon";
-  if (understanding.intent === "CONFIRM_ORDER") return "ordering";
+  if (understanding.intent === "CONFIRM_ORDER" || isConfirmationOnly(message)) return "ordering";
   // ตะกร้าที่พิมพ์เป็นรายการล้วน ๆ ไม่มีคำกริยาสั่งซื้อ ("พารา 5 แผง, ยาแดง 2 ขวด")
   // คนอ่านรู้ทันทีว่าเป็นออร์เดอร์ แต่ understand() ต้องเห็น ORDER_HINT ก่อนจึงจะให้
   // CONFIRM_ORDER — ข้อความแบบนี้จึงเคยตกเป็น "inquiry" ทั้งที่ร้านเราสอนลูกค้าพิมพ์แบบนี้เอง
@@ -633,6 +624,47 @@ function historySummarySystemBlock(summary: string | null): string | null {
 function buildVolatileSystem(...blocks: Array<string | null | undefined>): string | null {
   const parts = blocks.map((part) => String(part || "").trim()).filter(Boolean);
   return parts.length > 0 ? parts.join("\n\n") : null;
+}
+
+function confirmationChoiceState(
+  kind: Extract<ConversationChoiceKind,
+    "ORDER_CONFIRMATION" | "RESTAURANT_REQUEST_CONFIRMATION" |
+    "BOARD_GAME_RESERVATION_CONFIRMATION" | "BOARD_GAME_ACTION_CONFIRMATION">,
+  prompt: string,
+  english: boolean
+): PendingConversationChoice {
+  return conversationChoiceState(kind, prompt, confirmationChoiceOptions(english));
+}
+
+function orderDraftState(draft: import("./orderQuote").OrderQuoteDraft | undefined): Partial<AiConversationState> {
+  if (!draft) return { pendingOrderDraft: null };
+  return { pendingOrderDraft: draft,
+    product: draft.items[0]?.sku ?? null, size: draft.items[0]?.size ?? null, qty: draft.items[0]?.qty ?? null,
+    items: draft.items.map(item => ({ product: item.sku, size: item.size, qty: item.qty, unit: null, packCode: item.packCode ?? null })) };
+}
+
+function conversationChoiceState(
+  kind: ConversationChoiceKind,
+  prompt: string,
+  options: ConversationChoiceOption[]
+): PendingConversationChoice {
+  return createPendingConversationChoice({ kind, prompt: sanitizeCustomerReply(prompt), options });
+}
+
+function boardGameRescheduleSystemBlock(state: AiConversationState["pendingBoardGameReschedule"]): string | null {
+  if (!state || state.expiresAt <= Date.now()) return null;
+  return [
+    "Verified server-owned board-game reschedule context:",
+    JSON.stringify({
+      reference: state.reference,
+      branch: state.branch,
+      currentReservedFor: state.reservedFor,
+      timezone: state.timezone,
+      currentDurationMinutes: state.durationMinutes,
+      currentPartySize: state.partySize,
+    }),
+    "The customer already selected this booking from a numbered menu. Ask only for an exact new local date/time if it is still missing. Call manage_board_game_booking with action RESCHEDULE and this exact reference. Omit durationMinutes and partySize unless the customer explicitly changes them. Never ask for the reference again.",
+  ].join("\n");
 }
 
 const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
@@ -905,6 +937,7 @@ function truncateTurn(text: string, max = 120): string {
 function compressConversationHistory(
   history: Awaited<ReturnType<typeof getRecentAiHistory>>
 ): { recentTurns: Awaited<ReturnType<typeof getRecentAiHistory>>; summary: string | null } {
+  history = history.map(({ role, content }) => ({ role, content }));
   if (history.length <= HISTORY_COMPRESS_THRESHOLD) {
     return { recentTurns: history, summary: null };
   }
@@ -1123,7 +1156,7 @@ function mergeStoredOrderMemory(state: AiConversationState, derived: OrderMemory
 }
 
 function isConfirmationOnly(text: string): boolean {
-  return /^(?:ยืนยัน(?:สั่ง|สั่งซื้อ|ซื้อ)?|สั่งเลย|เอาตามนี้|ตกลง(?:เอาตามนี้)?|confirm(?: order)?)(?:\s*(?:ค่ะ|คะ|ครับ|นะ|เลย))*[.!🙏]*$/i.test(
+  return /^(?:ยืนยัน(?:สั่ง|สั่งซื้อ|ซื้อ)?|สั่งเลย|เอาเลย|ได้เลย|โอเค|เอาตามนี้|ตกลง(?:เอาตามนี้)?|confirm(?: order)?|ok(?:ay)?|yes)(?:\s*(?:ค่ะ|คะ|ครับ|นะ|เลย))*[.!🙏]*$/i.test(
     text.trim()
   );
 }
@@ -1765,33 +1798,218 @@ export async function runPipeline(
     });
 
   const isPharmacyTenant = profile.businessArchetype === "pharmacy";
+  const persistPharmacyReply = async (result: PharmacyIntakeTurnResult): Promise<string> => {
+    if (!convId) return result.reply;
+    try {
+      const pendingConversationChoice = result.choice ? createPendingConversationChoice({
+        kind: "PHARMACY_INPUT", prompt: sanitizeCustomerReply(result.reply),
+        options: result.choice.options, context: result.choice.context,
+      }) : null;
+      await setAiConversationState(tenantId, convId, { ...storedState, pendingConversationChoice });
+      return result.reply;
+    } catch (error) {
+      await reportStateFailure(error, "pharmacy_choice_save");
+      return result.choice ? "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาขอคำถามหรือสรุปอีกครั้ง" : result.reply;
+    }
+  };
+  const pharmacyClarificationMenu = async (protocolKey: string): Promise<string> => {
+    const question = pharmacyAmbiguousClarificationReply(protocolKey, pharmacyTriggerDefinitions);
+    const options = inputChoiceOptions(["ซื้อสินค้าที่มีชื่อหรือยี่ห้ออยู่แล้ว", "ให้เภสัชกรช่วยประเมินอาการ"])
+      .map(option => ({ ...option, replyText: normalizePharmacyClarificationReply(option.label,
+        [{ role: "assistant", content: question }], pharmacyTriggerDefinitions) ?? option.label }));
+    const reply = renderConversationChoices(question, options);
+    try {
+      convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+      if (!convId) throw new Error("Missing conversation");
+      const current = await getAiConversationState(tenantId, convId);
+      await setAiConversationState(tenantId, convId, { ...current,
+        pendingConversationChoice: conversationChoiceState("INPUT_SELECTION", reply, options) });
+      return reply;
+    } catch (error) {
+      await reportStateFailure(error, "pharmacy_clarification_menu");
+      return question;
+    }
+  };
   const triggerDefinitions = isPharmacyTenant ? pharmacyTriggerDefinitions : undefined;
   // ตัด markdown ออกก่อนตีความทุกอย่าง — `message` ดิบยังถูกใช้ตอน log/customerSafe เพื่อ
   // ให้หลักฐานตรงกับที่ลูกค้าพิมพ์จริง แต่ทุกตัวที่ "อ่านความหมาย" (understand, classify,
   // pharmacy trigger, orderMemory และตัวโมเดล) ต้องได้ข้อความที่ไม่มี `**` ติดมา
   // ไม่งั้น "**พาราเซตามอล …" กลายเป็น keyword ของ search_products ที่ไม่ match อะไรเลย
   const rawSafetyMessage = stripMarkdownEmphasis(message);
+  const lastAssistantTurn = [...history].reverse().find(turn => turn.role === "assistant");
+  const lastAssistantMessage = lastAssistantTurn?.latestContent ?? lastAssistantTurn?.content ?? "";
+  const choiceResolution = resolveConversationChoice(
+    storedState.pendingConversationChoice,
+    rawSafetyMessage,
+    lastAssistantMessage
+  );
+  const pendingChoicePromptCurrent = isConversationChoicePromptCurrent(
+    storedState.pendingConversationChoice,
+    lastAssistantMessage
+  );
+  const confirmationChoice = choiceResolution.kind === "matched" &&
+    choiceResolution.pending.kind.endsWith("_CONFIRMATION")
+      ? choiceResolution.option.value
+      : null;
+  const interpretedMessage = confirmationChoice === "CONFIRM"
+    ? (profile.aiLanguage === "en" ? "confirm" : "ยืนยัน")
+    : choiceResolution.kind === "matched" && choiceResolution.option.value === "INPUT"
+      ? choiceResolution.option.replyText ?? rawSafetyMessage
+      : rawSafetyMessage;
   const aiInputMessage = shouldPreservePharmacyCustomerMessage(rawSafetyMessage, isPharmacyTenant)
-    ? rawSafetyMessage : stripMarkdownEmphasis(
-    normalizePharmacyClarificationReply(message, history, triggerDefinitions) ?? (
+    ? rawSafetyMessage : choiceResolution.kind === "matched" || isConfirmationOnly(interpretedMessage)
+      ? interpretedMessage : stripMarkdownEmphasis(
+    normalizePharmacyClarificationReply(interpretedMessage, history, triggerDefinitions) ?? (
       profile.aiInterpretShortReplies
-        ? normalizeShortReplyMessage(message, history)
-        : message
+        ? normalizeShortReplyMessage(interpretedMessage, history)
+        : interpretedMessage
     )
   );
-  const englishReply = !isPharmacyTenant && isEnglishCustomerReply(profile.aiLanguage, aiInputMessage);
+  const languageProbe = choiceResolution.kind === "matched" || choiceResolution.kind === "invalid"
+    ? lastAssistantMessage
+    : aiInputMessage;
+  const englishReply = !isPharmacyTenant && isEnglishCustomerReply(profile.aiLanguage, languageProbe);
+  const saveChoiceReply = async (nextState: AiConversationState, reply: string, stage: string): Promise<string> => {
+    try {
+      if (!convId) throw new Error("Missing conversation");
+      await setAiConversationState(tenantId, convId, nextState);
+      return reply;
+    } catch (error) {
+      await reportStateFailure(error, stage);
+      return englishReply ? "Your selection could not be saved. No action was taken. Please ask for the options again."
+        : "ยังบันทึกตัวเลือกไม่ได้ค่ะ ยังไม่ได้ดำเนินการ กรุณาขอตัวเลือกใหม่อีกครั้ง";
+    }
+  };
+  const saveStockMenu = async (menu: CustomerStockMenu): Promise<string> => {
+    try {
+      convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+      if (!convId) throw new Error("Missing conversation");
+      const current = await getAiConversationState(tenantId, convId);
+      await setAiConversationState(tenantId, convId, { ...current, confirmed: false,
+        pendingQuoteFingerprint: null, pendingStockQuantity: null,
+        pendingConversationChoice: conversationChoiceState("STOCK_SELECTION", menu.reply, menu.options) });
+      return menu.reply;
+    } catch (error) {
+      await reportStateFailure(error, "stock_choice_save");
+      return englishReply ? "The options could not be saved. Please ask for them again."
+        : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาขอตัวเลือกใหม่อีกครั้ง";
+    }
+  };
   // 2-3) Detect intent + extract entities (rule-based — ใช้ทั้ง trace และ fallback)
   const understanding = understand(aiInputMessage);
   const { intent, entities } = understanding;
   const classifiedIntent = classifyCustomerIntent(aiInputMessage, understanding, profile.businessArchetype);
   let execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+  execCtx.locale = englishReply ? "en" : "th";
+  if (storedState.pendingStockQuantity && (choiceResolution.kind !== "none" ||
+      !/^\d{1,6}\s*(?:ชิ้น|หน่วย|units?)?\s*(?:ค่ะ|คะ|ครับ)?$/i.test(rawSafetyMessage.trim()))) {
+    storedState.pendingStockQuantity = null;
+    try {
+      if (convId) await setAiConversationState(tenantId, convId, storedState);
+    } catch (error) {
+      await reportStateFailure(error, "stock_quantity_clear");
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:choice_unavailable",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "The previous question could not be cleared. Please try again." : "ยังปิดคำถามก่อนหน้าไม่ได้ค่ะ กรุณาลองใหม่" });
+    }
+  }
+  const pharmacySelection = choiceResolution.kind === "matched" && choiceResolution.pending.kind === "PHARMACY_INPUT"
+    ? choiceResolution.pending.context : undefined;
+  if (pharmacySelection && (!isPharmacyTenant || !isPharmacyIntakeEnabled())) {
+    return customerSafe({ channel, incoming: message, understanding,
+      tool: "deterministic:pharmacy_choice_unavailable", data: { status: "NOT_FOUND", query: "" },
+      reply: "ขั้นตอนนี้ไม่ได้ใช้งานแล้วค่ะ กรุณาติดต่อเภสัชกรของร้าน" });
+  }
+
+  if (choiceResolution.kind === "invalid") {
+    return customerSafe({ channel, incoming: message, understanding,
+      tool: "deterministic:choice_invalid", data: { status: "NOT_FOUND", query: "" },
+      reply: lastAssistantMessage });
+  }
+  const typedConfirmation = (isConfirmationOnly(aiInputMessage) || isBoardGameReservationConfirmation(aiInputMessage) ||
+    PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage)) &&
+    (storedState.pendingConversationChoice?.kind.endsWith("_CONFIRMATION") || storedState.pendingConversationChoice?.kind === "PHARMACY_CHECKOUT");
+  if (choiceResolution.kind === "stale" || choiceResolution.kind === "expired" || (typedConfirmation && !pendingChoicePromptCurrent)) {
+    const nextState = { ...storedState, confirmed: false, pendingConversationChoice: null, pendingCatalogChoices: null,
+      pendingQuoteFingerprint: null, pendingRestaurantRequest: null, pendingBoardGameReservation: null,
+      pendingBoardGameChatAction: null, pendingBoardGameReschedule: null, pendingStockQuantity: null };
+    if (convId) await setAiConversationState(tenantId, convId, nextState)
+      .catch(error => reportStateFailure(error, "choice_expired"));
+    return customerSafe({ channel, incoming: message, understanding,
+      tool: "deterministic:choice_expired", data: { status: "NOT_FOUND", query: "" },
+      reply: /[ก-๙]/.test(lastAssistantMessage) || profile.aiLanguage !== "en"
+        ? "เมนูก่อนหน้าไม่ได้ใช้งานแล้วค่ะ ยังไม่ได้ดำเนินการ กรุณาขอสรุปหรือตัวเลือกใหม่สำหรับเรื่องที่ต้องการค่ะ"
+        : "That menu is no longer active. No action was taken. Please ask for a fresh summary or options." });
+  }
+  if ((choiceResolution.kind === "matched" || typedConfirmation) && storedState.pendingConversationChoice) {
+    try {
+      if (!convId || !await consumeAiConversationChoice(tenantId, convId, storedState.pendingConversationChoice)) {
+        throw new Error("Conversation choice was already consumed or changed");
+      }
+      storedState.pendingConversationChoice.consumed = true;
+    } catch (error) {
+      await reportStateFailure(error, "choice_consume");
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:choice_unavailable",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "This selection could not be accepted. No action was taken. Please ask for the latest options."
+          : "ยังรับตัวเลือกนี้ไม่ได้ค่ะ ยังไม่ได้ดำเนินการ กรุณาขอตัวเลือกล่าสุด" });
+    }
+  }
+  if (choiceResolution.kind === "matched" && choiceResolution.option.value === "INPUT") {
+    storedState.pendingConversationChoice = null;
+    storedState.confirmed = false;
+    try {
+      if (!convId) throw new Error("Missing conversation");
+      await setAiConversationState(tenantId, convId, storedState);
+    } catch (error) {
+      await reportStateFailure(error, "input_choice_consume");
+      return customerSafe({ channel, incoming: message, understanding,
+        tool: "deterministic:choice_unavailable", data: { status: "NOT_FOUND", query: "" },
+        reply: englishReply ? "Your selection could not be saved. Please try again."
+          : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาลองใหม่" });
+    }
+  }
+  if (choiceResolution.kind === "matched" && choiceResolution.pending.kind === "STOCK_SELECTION" && choiceResolution.option.value === "KEEP") {
+    if (convId) await setAiConversationState(tenantId, convId, { ...storedState, confirmed: false,
+      pendingConversationChoice: null, pendingQuoteFingerprint: null })
+      .catch(error => reportStateFailure(error, "stock_choice_keep"));
+    return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:stock_choice_keep",
+      data: { status: "NOT_FOUND", query: "" }, reply: englishReply ? "No order or request was submitted." : "ยังไม่ได้ส่งออร์เดอร์หรือคำขอค่ะ" });
+  }
+
+  if (choiceResolution.kind === "matched" && choiceResolution.pending.kind === "CATALOG_SELECTION") {
+    const pending = storedState.pendingCatalogChoices &&
+      advanceCatalogSelection(storedState.pendingCatalogChoices, interpretedMessage);
+    if (!pending) return customerSafe({ channel, incoming: message, understanding,
+      tool: "deterministic:catalog_choice_changed", data: { status: "NOT_FOUND", query: "" },
+      reply: englishReply ? "The product choices changed. Please send your items again."
+        : "ตัวเลือกสินค้าเปลี่ยนแล้วค่ะ กรุณาส่งรายการที่ต้องการอีกครั้ง" });
+    storedState.pendingCatalogChoices = pending;
+    const next = catalogSelectionMenu(pending, englishReply);
+    if (next) {
+      try {
+        await setAiConversationState(tenantId, convId!, { ...storedState,
+          pendingConversationChoice: conversationChoiceState("CATALOG_SELECTION", next.reply, next.options) });
+      } catch (error) {
+        await reportStateFailure(error, "catalog_choice_next");
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:choice_unavailable", data: { status: "NOT_FOUND", query: "" },
+          reply: englishReply ? "Your selection could not be saved. Please send your items again."
+            : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาส่งรายการใหม่อีกครั้ง" });
+      }
+      return customerSafe({ channel, incoming: message, understanding,
+        tool: "deterministic:catalog_choice_next", data: { status: "NOT_FOUND", query: "" }, reply: next.reply });
+    }
+  }
 
   if (profile.businessArchetype === "board_game_cafe" && storedState.pendingBoardGameChatAction) {
     const quote = storedState.pendingBoardGameChatAction;
     storedState.pendingBoardGameChatAction = null;
+    storedState.pendingConversationChoice = null;
     try {
       if (!convId) throw new Error("Missing conversation");
-      await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameChatAction: null });
+      await setAiConversationState(tenantId, convId, { ...storedState,
+        pendingBoardGameChatAction: null, pendingConversationChoice: null });
     } catch (error) {
       await reportStateFailure(error, "board_game_action_confirmation_consume");
       return customerSafe({ channel, incoming: message, understanding, tool: "board_game:confirmation_unavailable",
@@ -1799,17 +2017,30 @@ export async function runPipeline(
           ? "I could not verify your confirmation. Please try again."
           : "ยังตรวจสอบคำยืนยันไม่ได้ กรุณาลองใหม่ค่ะ" });
     }
-    if (isBoardGameReservationConfirmation(rawSafetyMessage)) {
-      const lastAssistant = [...history].reverse().find(turn => turn.role === "assistant")?.content ?? "";
-      if (isLatestBoardGameChatActionSummary(quote, lastAssistant)) execCtx.confirmedBoardGameChatAction = quote;
+    if (confirmationChoice === "EDIT") {
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:board_game_action_edit",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "No action was taken. Send the detail you want to change, or ask to see your bookings again."
+          : "ยังไม่ได้ดำเนินการค่ะ ส่งรายละเอียดที่ต้องการแก้ไข หรือขอดูรายการจองอีกครั้งได้เลยค่ะ" });
+    }
+    if (isBoardGameReservationConfirmation(interpretedMessage)) {
+      if (confirmationChoice === "CONFIRM" || isLatestBoardGameChatActionSummary(quote, lastAssistantMessage)) {
+        execCtx.confirmedBoardGameChatAction = quote;
+      }
       const received = await executeCustomerTool("manage_board_game_booking", quote.draft, execCtx);
       let reply = boardGameChatActionFailure(received.result.ok ? undefined : received.result.error, englishReply);
       if (execCtx.boardGameChatActionResult) reply = boardGameChatActionReceipt(execCtx.boardGameChatActionResult, englishReply);
       else if (execCtx.pendingBoardGameChatAction) {
         try {
-          await setAiConversationState(tenantId, convId!, { ...storedState, pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction });
           reply = boardGameChatActionSummary(execCtx.pendingBoardGameChatAction, englishReply);
-        } catch (error) { await reportStateFailure(error, "board_game_action_reconfirmation_save"); }
+          await setAiConversationState(tenantId, convId!, { ...storedState,
+            pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction,
+            pendingConversationChoice: confirmationChoiceState("BOARD_GAME_ACTION_CONFIRMATION", reply, englishReply) });
+        } catch (error) {
+          await reportStateFailure(error, "board_game_action_reconfirmation_save");
+          reply = englishReply ? "The summary could not be saved. No action was taken. Please ask again."
+            : "ยังบันทึกสรุปไม่ได้ค่ะ ยังไม่ได้ดำเนินการ กรุณาขอสรุปอีกครั้ง";
+        }
       }
       return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:board_game_action_confirm",
         data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
@@ -1820,9 +2051,11 @@ export async function runPipeline(
     const quote = storedState.pendingBoardGameReservation;
     // Consume before execution, even on an unrelated message. Failed persistence never authorizes a write.
     storedState.pendingBoardGameReservation = null;
+    storedState.pendingConversationChoice = null;
     try {
       if (!convId) throw new Error("Missing conversation");
-      await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameReservation: null });
+      await setAiConversationState(tenantId, convId, { ...storedState,
+        pendingBoardGameReservation: null, pendingConversationChoice: null });
     } catch (error) {
       await reportStateFailure(error, "board_game_confirmation_consume");
       return customerSafe({ channel, incoming: message, understanding, tool: "board_game:confirmation_unavailable",
@@ -1830,15 +2063,23 @@ export async function runPipeline(
           ? "I could not verify the confirmation. No request was submitted. Please try again."
           : "ยังตรวจสอบคำยืนยันไม่ได้ ยังไม่ได้ส่งคำขอ กรุณาลองใหม่ค่ะ" });
     }
-    if (isBoardGameReservationConfirmation(rawSafetyMessage)) {
-      const lastAssistant = [...history].reverse().find(turn => turn.role === "assistant")?.content ?? "";
-      if (isLatestBoardGameReservationSummary(quote, lastAssistant)) {
+    if (confirmationChoice === "EDIT") {
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:board_game_reservation_edit",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "No booking request was submitted. Send the date, time, duration, or party size you want to change."
+          : "ยังไม่ได้ส่งคำขอจองค่ะ แจ้งวัน เวลา ระยะเวลา หรือจำนวนคนที่ต้องการแก้ไขได้เลยค่ะ" });
+    }
+    if (isBoardGameReservationConfirmation(interpretedMessage)) {
+      if (confirmationChoice === "CONFIRM" || isLatestBoardGameReservationSummary(quote, lastAssistantMessage)) {
         execCtx.confirmedBoardGameReservation = { fingerprint: quote.fingerprint, expiresAt: quote.expiresAt, requestKey: quote.requestKey };
       }
       const received = await executeCustomerTool("request_board_game_reservation", quote.draft, execCtx);
       if (execCtx.pendingBoardGameReservation) {
         try {
-          await setAiConversationState(tenantId, convId!, { ...storedState, pendingBoardGameReservation: execCtx.pendingBoardGameReservation });
+          const reply = boardGameReservationSummary(execCtx.pendingBoardGameReservation, englishReply);
+          await setAiConversationState(tenantId, convId!, { ...storedState,
+            pendingBoardGameReservation: execCtx.pendingBoardGameReservation,
+            pendingConversationChoice: confirmationChoiceState("BOARD_GAME_RESERVATION_CONFIRMATION", reply, englishReply) });
         } catch (error) {
           await reportStateFailure(error, "board_game_reconfirmation_save");
           execCtx.pendingBoardGameReservation = undefined;
@@ -1852,6 +2093,72 @@ export async function runPipeline(
     }
   }
 
+  if (profile.businessArchetype === "board_game_cafe" && storedState.pendingConversationChoice &&
+      ["BOARD_GAME_BOOKING_SELECTION", "BOARD_GAME_BOOKING_ACTION"].includes(storedState.pendingConversationChoice.kind)) {
+    if (choiceResolution.kind === "matched") {
+      const selected = choiceResolution.option;
+      const cleared = { ...storedState, pendingConversationChoice: null };
+      if (selected.value === "KEEP") {
+        if (convId) await setAiConversationState(tenantId, convId, cleared)
+          .catch(error => reportStateFailure(error, "board_game_menu_keep"));
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:board_game_menu_keep", data: { status: "NOT_FOUND", query: "" },
+          reply: englishReply ? "No booking was changed." : "คงการจองเดิมไว้ค่ะ ยังไม่มีรายการใดถูกเปลี่ยนแปลง" });
+      }
+      if (!selected.booking) {
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:board_game_menu_invalid_context", data: { status: "NOT_FOUND", query: "" },
+          reply: englishReply ? "I could not verify that booking choice. Please view your bookings again."
+            : "ตรวจสอบตัวเลือกการจองนี้ไม่ได้ค่ะ กรุณาขอดูรายการจองอีกครั้ง" });
+      }
+      if (selected.value === "SELECT_BOOKING") {
+        const menu = boardGameBookingActionMenu(selected.booking, englishReply);
+        const pendingConversationChoice = conversationChoiceState(menu.kind!, menu.reply, menu.options);
+        const reply = await saveChoiceReply({
+          ...cleared, pendingConversationChoice,
+        }, menu.reply, "board_game_action_menu");
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:board_game_booking_select", data: { status: "NOT_FOUND", query: "" },
+          reply });
+      }
+      if (selected.value === "RESCHEDULE_BOOKING") {
+        const pendingBoardGameReschedule = {
+          ...selected.booking,
+          expiresAt: Date.now() + CONVERSATION_CHOICE_TTL_MS,
+        };
+        const reply = await saveChoiceReply({
+          ...cleared, pendingBoardGameReschedule,
+        }, englishReply
+          ? `What new date and time would you like for booking #${selected.booking.reference}? The party size and duration will stay the same unless you say otherwise.`
+          : `ต้องการเลื่อนการจอง #${selected.booking.reference} ไปวันและเวลาใดคะ จำนวนคนและระยะเวลาจะคงเดิม เว้นแต่แจ้งเปลี่ยนค่ะ`, "board_game_reschedule_select");
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:board_game_reschedule_select", data: { status: "NOT_FOUND", query: "" },
+          reply });
+      }
+      if (selected.value === "CANCEL_BOOKING") {
+        const received = await executeCustomerTool("manage_board_game_booking", {
+          action: "CANCEL", reference: selected.booking.reference,
+        }, execCtx);
+        if (!execCtx.pendingBoardGameChatAction) {
+          if (convId) await setAiConversationState(tenantId, convId, cleared)
+            .catch(error => reportStateFailure(error, "board_game_cancel_preview_failure"));
+          return customerSafe({ channel, incoming: message, understanding,
+            tool: "deterministic:board_game_cancel_select", data: { status: "NOT_FOUND", query: "" },
+            trace: [received.trace], reply: boardGameChatActionFailure(received.result.ok ? undefined : received.result.error, englishReply) });
+        }
+        const summary = boardGameChatActionSummary(execCtx.pendingBoardGameChatAction, englishReply);
+        const reply = await saveChoiceReply({
+          ...cleared, pendingBoardGameReschedule: null,
+          pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction,
+          pendingConversationChoice: confirmationChoiceState("BOARD_GAME_ACTION_CONFIRMATION", summary, englishReply),
+        }, summary, "board_game_cancel_preview");
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:board_game_cancel_select", data: { status: "NOT_FOUND", query: "" },
+          trace: [received.trace], reply });
+      }
+    }
+  }
+
   // Consume stale consent even when this guard returns before any model/tool execution.
   const boardGameGuard = profile.businessArchetype === "board_game_cafe"
     ? boardGameCustomerGuard(rawSafetyMessage, englishReply, true) : null;
@@ -1859,6 +2166,26 @@ export async function runPipeline(
     return customerSafe({ channel, incoming: message, understanding,
       tool: `board_game:guard:${boardGameGuard.kind}`,
       data: { status: "NOT_FOUND", query: "" }, reply: boardGameGuard.reply });
+  }
+
+  if (storedState.pendingQuoteFingerprint && storedState.pendingConversationChoice &&
+      ["ORDER_CONFIRMATION", "RESTAURANT_REQUEST_CONFIRMATION"].includes(storedState.pendingConversationChoice.kind)) {
+    if (confirmationChoice === "EDIT") {
+      const nextState: AiConversationState = {
+        ...storedState,
+        confirmed: false,
+        pendingQuoteFingerprint: null,
+        pendingRestaurantRequest: null,
+        pendingConversationChoice: null,
+      };
+      if (convId) await setAiConversationState(tenantId, convId, nextState)
+        .catch(error => reportStateFailure(error, "order_confirmation_edit"));
+      return customerSafe({ channel, incoming: message, understanding,
+        tool: "deterministic:order_confirmation_edit", data: { status: "NOT_FOUND", query: "" },
+        reply: englishReply
+          ? "No order was submitted. Send the item, option, or quantity you want to change."
+          : "ยังไม่ได้ส่งออร์เดอร์ค่ะ แจ้งสินค้า ตัวเลือก หรือจำนวนที่ต้องการแก้ไขได้เลยค่ะ" });
+    }
   }
 
   const pharmacyTrigger = detectPharmacyIntakeTrigger(
@@ -1966,16 +2293,22 @@ export async function runPipeline(
     if (pharmacyConvId) {
       convId = pharmacyConvId;
       execCtx = customerExecCtx(tenantId, channel, customerRef, convId);
+      execCtx.locale = englishReply ? "en" : "th";
       const pharmacyState = await getPharmacyIntakeState(tenantId, pharmacyConvId).catch(() => ({ stage: "NONE" as const }));
+      if (pharmacySelection && pharmacyState.stage === "NONE") {
+        return customerSafe({ channel, incoming: message, understanding,
+          tool: "deterministic:pharmacy_choice_expired", data: { status: "NOT_FOUND", query: "" },
+          reply: "ไม่พบขั้นตอนที่รอคำตอบนี้แล้วค่ะ กรุณาติดต่อเภสัชกรหรือเริ่มเรื่องใหม่" });
+      }
       if (pharmacyState.stage !== "NONE") {
-        const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, pharmacyConvId, aiInputMessage, pharmacyState);
+        const result = await runPharmacyIntakeTurn(tenantId, channel, customerRef, pharmacyConvId, aiInputMessage, pharmacyState, pharmacySelection);
         return customerSafe({
           channel,
           incoming: message,
           understanding,
           tool: `pharmacy:${pharmacyState.stage.toLowerCase()}`,
           data: { status: "NOT_FOUND", query: aiInputMessage },
-          reply: result.reply,
+          reply: await persistPharmacyReply(result),
         });
       }
       if (isPharmacyEmergency) {
@@ -2013,7 +2346,7 @@ export async function runPipeline(
           understanding,
           tool: `pharmacy:clarify:${pharmacyTrigger.protocolKey}`,
           data: { status: "NOT_FOUND", query: aiInputMessage },
-          reply: pharmacyAmbiguousClarificationReply(pharmacyTrigger.protocolKey, pharmacyTriggerDefinitions),
+          reply: await pharmacyClarificationMenu(pharmacyTrigger.protocolKey),
         });
       }
       const trigger = isExplicitPharmacyProduct ? null : pharmacyTrigger;
@@ -2027,7 +2360,7 @@ export async function runPipeline(
             understanding,
             tool: `pharmacy:start:${trigger.protocolKey}`,
             data: { status: "NOT_FOUND", query: aiInputMessage },
-            reply: started.reply,
+            reply: await persistPharmacyReply(started),
           });
         }
         // No live protocol: the deterministic clinical fallback below handles symptoms.
@@ -2096,15 +2429,43 @@ export async function runPipeline(
       understanding,
       tool: `pharmacy:clarify:${pharmacyTrigger.protocolKey}`,
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: pharmacyAmbiguousClarificationReply(pharmacyTrigger.protocolKey, pharmacyTriggerDefinitions),
+      reply: await pharmacyClarificationMenu(pharmacyTrigger.protocolKey),
     });
   }
 
   if (convId) {
+    if (storedState.pendingConversationChoice?.kind === "PHARMACY_CHECKOUT" &&
+        /^(?:ยังไม่(?:ยืนยัน)?สั่งซื้อ|ไม่ยืนยันสั่งซื้อ)(?:\s*(?:ค่ะ|คะ|ครับ|นะ))*[.!]*$/.test(interpretedMessage.trim())) {
+      const reply = await saveChoiceReply({ ...storedState, confirmed: false, pendingConversationChoice: null,
+        pendingQuoteFingerprint: null }, "ยังไม่ได้สร้างออร์เดอร์ค่ะ", "pharmacy_checkout_declined");
+      return customerSafe({ channel, incoming: message, understanding, tool: "pharmacy:checkout_declined",
+        data: { status: "NOT_FOUND", query: "" }, reply });
+    }
     const approvedCheckoutDraft = await getApprovedAssessmentCheckoutDraftByConversation(tenantId, convId).catch(() => null);
+    const pharmacyCheckoutChoice = choiceResolution.kind === "matched" && choiceResolution.pending.kind === "PHARMACY_CHECKOUT"
+      ? choiceResolution.pending : typedConfirmation && storedState.pendingConversationChoice?.kind === "PHARMACY_CHECKOUT"
+        ? storedState.pendingConversationChoice : null;
+    if (pharmacyCheckoutChoice && pharmacyCheckoutChoice.context?.caseId !== approvedCheckoutDraft?.assessmentId) {
+      return customerSafe({ channel, incoming: message, understanding,
+        tool: "pharmacy:checkout_choice_changed", data: { status: "NOT_FOUND", query: "" },
+        reply: "รายการที่เภสัชกรอนุมัติเปลี่ยนแล้วค่ะ กรุณาติดต่อเภสัชกรเพื่อรับสรุปล่าสุด" });
+    }
+    if (pharmacyCheckoutChoice && interpretedMessage === "ยังไม่สั่งซื้อ") {
+      return customerSafe({ channel, incoming: message, understanding,
+        tool: "pharmacy:checkout_declined", data: { status: "NOT_FOUND", query: "" },
+        reply: "ยังไม่ได้สร้างออร์เดอร์ค่ะ" });
+    }
+    const confirmsPharmacyCheckout = PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage) &&
+      Boolean(pharmacyCheckoutChoice) && pendingChoicePromptCurrent;
+    if (PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage) && approvedCheckoutDraft?.draft && !confirmsPharmacyCheckout &&
+        (!storedState.pendingConversationChoice || storedState.pendingConversationChoice.kind === "PHARMACY_CHECKOUT")) {
+      return customerSafe({ channel, incoming: message, understanding, tool: "pharmacy:checkout_confirmation_required",
+        data: { status: "NOT_FOUND", query: "" },
+        reply: "กรุณาขอสรุปรายการล่าสุดจากเภสัชกรก่อนยืนยันค่ะ ยังไม่ได้สร้างออร์เดอร์" });
+    }
     if (approvedCheckoutDraft?.draft) {
       if (approvedCheckoutDraft.draft.createdOrderId) {
-        if (PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage)) {
+        if (confirmsPharmacyCheckout) {
           return customerSafe({
             channel,
             incoming: message,
@@ -2120,7 +2481,7 @@ export async function runPipeline(
         }
       } else if (
         approvedCheckoutDraft.draft.status === "AWAITING_CUSTOMER_CONFIRMATION" &&
-        PHARMACY_CHECKOUT_CONFIRM_PATTERN.test(aiInputMessage)
+        confirmsPharmacyCheckout
       ) {
         const order = await createOrder({
           tenantId,
@@ -2156,9 +2517,94 @@ export async function runPipeline(
           tool: "pharmacy:approved_checkout_create_order",
           data: { status: "NOT_FOUND", query: aiInputMessage },
           order,
-          reply: orderReply({}, order),
+          reply: insufficientStockMenu(order, [])
+            ? await saveStockMenu(insufficientStockMenu(order, [])!) : orderReply({}, order),
         });
       }
+    }
+  }
+
+  const stockAction = choiceResolution.kind === "matched" && choiceResolution.pending.kind === "STOCK_SELECTION"
+    ? choiceResolution.option.stockAction : undefined;
+  const quantityCode = choiceResolution.kind === "none" && storedState.pendingStockQuantity
+    ? rawSafetyMessage.trim().match(/^(\d{1,6})\s*(?:ชิ้น|หน่วย|units?)?\s*(?:ค่ะ|คะ|ครับ)?$/i)?.[1] : undefined;
+  const quantityContext = storedState.pendingStockQuantity;
+  if (stockAction || quantityCode) {
+    if (quantityCode && (!quantityContext || quantityContext.expiresAt <= Date.now() ||
+        quantityContext.prompt !== lastAssistantMessage || Number(quantityCode) < 1 || Number(quantityCode) > 100000)) {
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:stock_quantity_invalid",
+        data: { status: "NOT_FOUND", query: "" }, reply: englishReply
+          ? "Please check the product again and enter a quantity from 1 to 100000. No order was placed."
+          : "กรุณาตรวจสินค้าอีกครั้งและระบุจำนวน 1 ถึง 100000 ค่ะ ยังไม่ได้สร้างออร์เดอร์" });
+    }
+    const draft = stockAction?.action === "REVISE" ? stockAction.items
+      : quantityCode && quantityContext ? [{ sku: quantityContext.sku, size: quantityContext.size, qty: Number(quantityCode) }] : null;
+    if (draft) {
+      const received = await executeCustomerTool("create_order", { items: draft }, execCtx);
+      let reply: string;
+      if (execCtx.pendingOrderQuote || execCtx.restaurantRequestQuote) {
+        const restaurant = execCtx.restaurantRequestQuote;
+        const quote = execCtx.pendingOrderQuote;
+        reply = restaurant ? restaurantRequestSummary(restaurant, englishReply) : composeOrderQuoteSummary(quote!.lines, englishReply ? "en" : "th");
+        try {
+          if (!convId) throw new Error("Missing conversation");
+          await setAiConversationState(tenantId, convId, { ...storedState, confirmed: false, pendingStockQuantity: null,
+            product: draft[0].sku, size: draft[0].size, qty: draft[0].qty,
+            items: draft.map(item => ({ product: item.sku, size: item.size, qty: item.qty, unit: null, packCode: item.packCode ?? null })),
+            ...orderDraftState(quote?.draft),
+            pendingQuoteFingerprint: restaurant?.fingerprint ?? quote!.fingerprint,
+            pendingRestaurantRequest: restaurant?.draft ?? null,
+            pendingConversationChoice: confirmationChoiceState(restaurant ? "RESTAURANT_REQUEST_CONFIRMATION" : "ORDER_CONFIRMATION", reply, englishReply) });
+        } catch (error) {
+          await reportStateFailure(error, "stock_revised_quote");
+          reply = englishReply ? "The summary could not be saved. Please ask again." : "ยังบันทึกสรุปไม่ได้ค่ะ กรุณาขอสรุปอีกครั้ง";
+        }
+      } else {
+        const recovery = received.result.ok ? insufficientStockMenu(received.result.data as CreateOrderResult, draft, englishReply) : null;
+        reply = recovery ? await saveStockMenu(recovery) : execCtx.customerInputChoices
+          ? await saveStockMenu({ reply: renderConversationChoices(execCtx.customerInputChoices.question, inputChoiceOptions(execCtx.customerInputChoices.labels)), options: inputChoiceOptions(execCtx.customerInputChoices.labels) })
+          : received.result.ok ? orderReply({}, received.result.data as CreateOrderResult, englishReply)
+          : englishReply ? "The basket could not be checked. Please try again." : "ตรวจตะกร้าไม่ได้ค่ะ กรุณาลองใหม่";
+      }
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:stock_order_preview",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
+    }
+    if (stockAction && stockAction.action !== "REVISE") {
+      const received = await executeCustomerTool(stockAction.action === "RESTOCK" ? "subscribe_restock_notification" : "check_stock",
+        stockAction.action === "RESTOCK" ? { sku: stockAction.sku, size: stockAction.size }
+          : { product: stockAction.sku, ...(stockAction.size ? { size: stockAction.size } : {}) }, execCtx);
+      let reply = englishReply ? "The request could not be verified. Please try again." : "ตรวจสอบคำขอไม่ได้ค่ะ กรุณาลองใหม่";
+      if (received.result.ok && stockAction.action === "RESTOCK") {
+        const result = received.result.data as { status?: string };
+        reply = result.status === "SUBSCRIBED"
+          ? englishReply ? "Your restock request was saved for staff review. No order was placed." : "บันทึกคำขอแจ้งเมื่อของเข้าให้พนักงานตรวจแล้วค่ะ ยังไม่ได้สร้างออร์เดอร์"
+          : result.status === "IN_STOCK"
+            ? englishReply ? "The item is already in stock. Please check it again before ordering." : "ตอนนี้สินค้ามีแล้วค่ะ กรุณาตรวจสินค้าอีกครั้งก่อนสั่งซื้อ"
+            : englishReply ? "The restock request could not be saved for this item or channel." : "ยังบันทึกคำขอแจ้งของเข้าสำหรับสินค้าหรือช่องทางนี้ไม่ได้ค่ะ";
+      } else if (received.result.ok) {
+        const stock = received.result.data as StockResult;
+        const menu = stockResultMenu(stock, englishReply, archetypeNeedsRestockEmphasis(profile.businessArchetype), stockAction.offset, false);
+        if (menu) reply = await saveStockMenu(menu);
+        else if (stock.status === "IN_STOCK" || stock.status === "AVAILABLE_TO_ORDER") {
+          reply = englishReply
+            ? `${stock.name}, ${stock.size}: ${stock.price.toLocaleString("en-US")} THB${stock.status === "IN_STOCK" ? `, ${stock.available} base units available` : ""}.`
+            : `${stock.name} ไซซ์ ${stock.size} ราคา ${stock.price.toLocaleString()} บาท${stock.status === "IN_STOCK" ? ` มี ${stock.available} หน่วยฐาน` : ""}ค่ะ`;
+          if ((storedState.items?.length ?? 0) <= 1) {
+            reply += englishReply ? "\nHow many base units would you like?" : "\nต้องการจำนวนกี่หน่วยฐานคะ";
+            try {
+              if (!convId) throw new Error("Missing conversation");
+              await setAiConversationState(tenantId, convId, { ...storedState, confirmed: false,
+                pendingQuoteFingerprint: null, pendingConversationChoice: null,
+                pendingStockQuantity: { sku: stock.sku, size: stock.size, prompt: sanitizeCustomerReply(reply), expiresAt: Date.now() + CONVERSATION_CHOICE_TTL_MS } });
+            } catch (error) {
+              await reportStateFailure(error, "stock_quantity_save");
+              reply = englishReply ? "The product selection could not be saved. Please try again." : "ยังบันทึกสินค้าที่เลือกไม่ได้ค่ะ กรุณาลองใหม่";
+            }
+          }
+        } else reply = englishReply ? "That option is not available. Please provide another product or option." : "ตัวเลือกนี้ไม่พร้อมขายค่ะ กรุณาระบุสินค้าหรือตัวเลือกอื่น";
+      }
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:stock_selection",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
     }
   }
 
@@ -2183,7 +2629,9 @@ export async function runPipeline(
       data: { status: "NOT_FOUND", query: aiInputMessage },
       reply:
         checkout
-          ? profile.businessArchetype === 'restaurant'
+          ? profile.businessArchetype === 'board_game_cafe'
+            ? bookingContactNextStepReply(checkout, englishReply)
+            : profile.businessArchetype === 'restaurant'
             ? englishReply ? 'Contact details saved. The shop can use them when reviewing your request. Payment is only due after the shop confirms an order.'
               : 'บันทึกข้อมูลติดต่อแล้วค่ะ ร้านใช้ติดต่อเพื่อตรวจคำขอได้ ยังไม่ต้องชำระเงินจนกว่าร้านยืนยันบิลค่ะ'
             : englishReply
@@ -2238,7 +2686,7 @@ export async function runPipeline(
         : [];
     const lastAssistant =
       [...history].reverse().find((turn) => turn.role === "assistant")?.content ?? "";
-    const reply = executed.result.ok
+    let reply = executed.result.ok
       ? alternativeCatalogReply(products, lastAssistant, englishReply)
       : englishReply
         ? `Sorry, I could not load other products (${executed.result.error}). Please try again.`
@@ -2249,6 +2697,10 @@ export async function runPipeline(
         await reportStateFailure(err, "alternative_catalog_clear");
       });
     }
+    const unseen = products.filter(product => !lastAssistant.toLowerCase().includes(product.sku.toLowerCase()) &&
+      !lastAssistant.toLowerCase().includes(product.name.toLowerCase()));
+    const menu = catalogStockMenu(unseen.length ? unseen : products, englishReply);
+    if (executed.result.ok && menu) reply = await saveStockMenu(menu);
     return customerSafe({
       channel,
       incoming: message,
@@ -2267,8 +2719,9 @@ export async function runPipeline(
       executed.result.ok && Array.isArray((executed.result.data as any)?.products)
         ? ((executed.result.data as any).products as CatalogReplyProduct[])
         : [];
+    const menu = catalogStockMenu(products, englishReply);
     const reply = executed.result.ok
-      ? catalogDiscoveryReply(products, englishReply)
+      ? menu ? await saveStockMenu(menu) : catalogDiscoveryReply(products, englishReply)
       : englishReply
         ? `Sorry, I could not load the catalog (${executed.result.error}). Please try again.`
         : `ขออภัยค่ะ ดูรายการสินค้าไม่สำเร็จ (${executed.result.error}) ลองใหม่อีกครั้งนะคะ`;
@@ -2449,6 +2902,8 @@ export async function runPipeline(
           profile.paymentAccounts,
           englishReply
         );
+        const menu = insufficientStockMenu(order, [], englishReply);
+        if (menu) reply = await saveStockMenu(menu);
       }
     }
     return customerSafe({
@@ -2579,18 +3034,17 @@ export async function runPipeline(
   // a confirmation-only turn must use the stored resolved lines (including packCode), not regress
   // to the old names and lose the verified selling units.
   if (
-    orderMemory &&
+    (orderMemory || storedState.pendingOrderDraft) &&
     storedState.pendingQuoteFingerprint &&
-    storedState.items &&
-    storedState.items.length > 1 &&
-    isConfirmationOnly(aiInputMessage)
+    (confirmationChoice === "CONFIRM" || isConfirmationOnly(aiInputMessage))
   ) {
+    const exact = storedState.pendingOrderDraft ? { ...storedState, ...orderDraftState(storedState.pendingOrderDraft) } : storedState;
     orderMemory = {
-      product: storedState.product ?? storedState.items[0]?.product ?? null,
-      size: storedState.size ?? storedState.items[0]?.size ?? null,
-      qty: storedState.qty ?? storedState.items[0]?.qty ?? null,
+      product: exact.product ?? exact.items?.[0]?.product ?? null,
+      size: exact.size ?? exact.items?.[0]?.size ?? null,
+      qty: exact.qty ?? exact.items?.[0]?.qty ?? null,
       confirmed: true,
-      items: storedState.items,
+      items: exact.items,
     };
   }
   if (convId && draftOrderCancelled) {
@@ -2607,8 +3061,11 @@ export async function runPipeline(
       // ต้องยกมาด้วย ไม่งั้นตะกร้าที่รอลูกค้ายืนยันจะถูกลืมในเทิร์นถัดไป
       // แล้วลูกค้าตอบ "ยืนยัน" ไปก็ถูกถามใหม่วนไม่จบ
       pendingQuoteFingerprint: storedState.pendingQuoteFingerprint ?? null,
+      pendingOrderDraft: storedState.pendingOrderDraft ?? null,
       pendingRestaurantRequest: storedState.pendingRestaurantRequest ?? null,
       pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
+      pendingConversationChoice: storedState.pendingConversationChoice ?? null,
+      pendingBoardGameReschedule: storedState.pendingBoardGameReschedule ?? null,
     }).catch(async (err) => {
       console.error("[BMS] pipeline AI state update failed:", err);
       await reportStateFailure(err, "state_update");
@@ -2620,11 +3077,15 @@ export async function runPipeline(
   // ธงนี้เป็น server-only เสมอ: มาจาก "ข้อความของลูกค้าเอง" (orderMemory.confirmed ซึ่ง
   // อ่านคำว่า ยืนยัน/สั่งเลย/ตกลง) คู่กับลายนิ้วมือที่ระบบเก็บไว้ตอนสรุป — โมเดลส่งค่านี้เองไม่ได้
   // ถ้าโมเดลเปลี่ยนจำนวนหรือแอบเพิ่มรายการหลังลูกค้ายืนยัน ลายนิ้วมือจะไม่ตรงและวนกลับไปถามใหม่
-  if (storedState.pendingQuoteFingerprint && orderMemory?.confirmed) {
+  const confirmsOrder = confirmationChoice === "CONFIRM" ||
+    (choiceResolution.kind !== "matched" && isConfirmationOnly(aiInputMessage));
+  if (storedState.pendingQuoteFingerprint && orderMemory?.confirmed && pendingChoicePromptCurrent && confirmsOrder &&
+      ["ORDER_CONFIRMATION", "RESTAURANT_REQUEST_CONFIRMATION"].includes(storedState.pendingConversationChoice?.kind ?? "")) {
     execCtx.customerConfirmedQuote = { fingerprint: storedState.pendingQuoteFingerprint };
   }
   if (profile.businessArchetype === 'restaurant' && !draftOrderCancelled &&
-      storedState.pendingRestaurantRequest && storedState.pendingQuoteFingerprint && isConfirmationOnly(aiInputMessage)) {
+      storedState.pendingRestaurantRequest && storedState.pendingQuoteFingerprint && pendingChoicePromptCurrent &&
+      confirmsOrder && storedState.pendingConversationChoice?.kind === "RESTAURANT_REQUEST_CONFIRMATION") {
     execCtx.customerConfirmedQuote = { fingerprint: storedState.pendingQuoteFingerprint };
     const received = await executeCustomerTool('create_order', storedState.pendingRestaurantRequest, execCtx);
     if (execCtx.restaurantRequestId && convId) {
@@ -2633,6 +3094,21 @@ export async function runPipeline(
         await reportStateFailure(err, 'restaurant_request_clear');
       });
     }
+    if (execCtx.restaurantRequestQuote && convId) {
+      const quote = execCtx.restaurantRequestQuote;
+      let reply = restaurantRequestSummary(quote, englishReply);
+      try {
+        await setAiConversationState(tenantId, convId, { ...storedState, confirmed: false,
+          pendingQuoteFingerprint: quote.fingerprint, pendingRestaurantRequest: quote.draft,
+          pendingConversationChoice: confirmationChoiceState("RESTAURANT_REQUEST_CONFIRMATION", reply, englishReply) });
+      } catch (error) {
+        await reportStateFailure(error, "restaurant_reconfirmation");
+        reply = englishReply ? "The updated summary could not be saved. Please ask for it again."
+          : "ยังบันทึกสรุปใหม่ไม่ได้ค่ะ กรุณาขอสรุปอีกครั้ง";
+      }
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:restaurant_request_requote",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
+    }
     // The basket was already resolved in the turn that produced the summary, so what usually
     // fails here is the shop's own state changing in between — it paused ordering, or its hours
     // ended. receiveRestaurantRequest answers those with createOrderInTx's statuses, so the
@@ -2640,6 +3116,24 @@ export async function runPipeline(
     const refusal = received.result.ok && isRestaurantRequestRefusal(received.result.data)
       ? orderReply({}, received.result.data as CreateOrderResult, englishReply)
       : null;
+    const shortageMenu = received.result.ok ? insufficientStockMenu(received.result.data as CreateOrderResult, [], englishReply) : null;
+    if (shortageMenu) {
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:restaurant_stock_choice",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply: await saveStockMenu(shortageMenu) });
+    }
+    if (execCtx.customerInputChoices && convId) {
+      const options = inputChoiceOptions(execCtx.customerInputChoices.labels);
+      let reply = renderConversationChoices(execCtx.customerInputChoices.question, options);
+      try {
+        await setAiConversationState(tenantId, convId, { ...storedState, confirmed: false, pendingQuoteFingerprint: null,
+          pendingConversationChoice: conversationChoiceState("INPUT_SELECTION", reply, options) });
+      } catch (error) {
+        await reportStateFailure(error, "restaurant_input_choice");
+        reply = englishReply ? "Your options could not be saved. Please try again." : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาลองใหม่";
+      }
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:restaurant_input_choice",
+        data: { status: "NOT_FOUND", query: "" }, trace: [received.trace], reply });
+    }
     return customerSafe({ channel, incoming: message, understanding, tool: 'deterministic:restaurant_request_confirm',
       data: { status: 'NOT_FOUND', query: aiInputMessage }, trace: [received.trace],
       reply: execCtx.restaurantRequestId ? restaurantRequestReceipt(execCtx.restaurantRequestId, englishReply)
@@ -2696,17 +3190,25 @@ export async function runPipeline(
       aiInputMessage
     );
     if (parsedChoice.kind === "invalid") {
+      const menu = catalogSelectionMenu(storedState.pendingCatalogChoices, englishReply);
+      let reply = menu?.reply ?? composeCatalogChoiceReply(storedState.pendingCatalogChoices, englishReply ? "en" : "th", true);
+      if (menu) {
+        try {
+          await setAiConversationState(tenantId, convId, { ...storedState,
+            pendingConversationChoice: conversationChoiceState("CATALOG_SELECTION", reply, menu.options) });
+        } catch (error) {
+          await reportStateFailure(error, "catalog_choice_retry");
+          reply = englishReply ? "The product menu could not be saved. Please send your items again."
+            : "ยังบันทึกตัวเลือกสินค้าไม่ได้ค่ะ กรุณาส่งรายการใหม่";
+        }
+      }
       return customerSafe({
         channel,
         incoming: message,
         understanding,
         tool: "deterministic:catalog_choice_invalid",
         data: { status: "NOT_FOUND", query: aiInputMessage },
-        reply: composeCatalogChoiceReply(
-          storedState.pendingCatalogChoices,
-          englishReply ? "en" : "th",
-          true
-        ),
+        reply,
       });
     }
     if (parsedChoice.kind === "complete") {
@@ -2729,6 +3231,7 @@ export async function runPipeline(
           confirmed: false,
           pendingCatalogChoices: null,
           pendingQuoteFingerprint: null,
+          pendingConversationChoice: null,
           lastIntent: classifiedIntent,
         });
       } catch (err) {
@@ -2819,6 +3322,7 @@ export async function runPipeline(
       });
     }
     if (pending.lines.some((line) => line.candidates.length > 1)) {
+      const menu = catalogSelectionMenu(pending, englishReply)!;
       let choiceStatePersisted = true;
       try {
         await setAiConversationState(tenantId, convId, {
@@ -2826,6 +3330,7 @@ export async function runPipeline(
           confirmed: false,
           pendingQuoteFingerprint: null,
           pendingCatalogChoices: pending,
+          pendingConversationChoice: conversationChoiceState("CATALOG_SELECTION", menu.reply, menu.options),
           lastIntent: classifiedIntent,
         });
       } catch (err) {
@@ -2850,7 +3355,7 @@ export async function runPipeline(
         understanding,
         tool: "deterministic:catalog_choice",
         data: { status: "NOT_FOUND", query: aiInputMessage },
-        reply: composeCatalogChoiceReply(pending, englishReply ? "en" : "th"),
+        reply: menu.reply,
         trace: routeTrace,
       });
     }
@@ -2877,6 +3382,7 @@ export async function runPipeline(
         confirmed: false,
         pendingCatalogChoices: null,
         pendingQuoteFingerprint: null,
+        pendingConversationChoice: null,
       }).catch(() => {});
       return customerSafe({
         channel,
@@ -2914,6 +3420,10 @@ export async function runPipeline(
         trace: routeTrace,
       });
     }
+    const quoteReply = composeOrderQuoteSummary(
+      execCtx.pendingOrderQuote.lines,
+      englishReply ? "en" : "th"
+    );
     let quoteStatePersisted = true;
     try {
       await setAiConversationState(tenantId, convId, {
@@ -2930,6 +3440,8 @@ export async function runPipeline(
         confirmed: false,
         pendingCatalogChoices: null,
         pendingQuoteFingerprint: execCtx.pendingOrderQuote.fingerprint,
+        ...orderDraftState(execCtx.pendingOrderQuote.draft),
+        pendingConversationChoice: confirmationChoiceState("ORDER_CONFIRMATION", quoteReply, englishReply),
         lastIntent: classifiedIntent,
       });
     } catch (err) {
@@ -2954,10 +3466,7 @@ export async function runPipeline(
       understanding,
       tool: "deterministic:catalog_choice_quote",
       data: { status: "NOT_FOUND", query: aiInputMessage },
-      reply: composeOrderQuoteSummary(
-        execCtx.pendingOrderQuote.lines,
-        englishReply ? "en" : "th"
-      ),
+      reply: quoteReply,
       trace: routeTrace,
     });
   }
@@ -2975,7 +3484,7 @@ export async function runPipeline(
     packCode: string | null;
   }> | null = (() => {
     if (!orderMemory?.confirmed) return null;
-    if (orderMemory.items && orderMemory.items.length > 1) {
+    if (orderMemory.items && orderMemory.items.length > 0) {
       const complete = orderMemory.items.filter((item) => item.product && item.size && item.qty);
       if (complete.length !== orderMemory.items.length) return null;
       return complete.map((item) => ({
@@ -3049,7 +3558,7 @@ export async function runPipeline(
     if (!unresolved && resolved.length === memoryLines.length) {
       const created = await executeCustomerTool(
         "create_order",
-        {
+        execCtx.customerConfirmedQuote && storedState.pendingOrderDraft ? storedState.pendingOrderDraft : {
           items: resolved.map((line) => ({
             sku: line.sku,
             size: line.size,
@@ -3063,23 +3572,29 @@ export async function runPipeline(
       // ตะกร้าชุดนี้ยังไม่ถูกลูกค้ายืนยัน → ทูลไม่ได้เขียนอะไร คืนสรุปรายการมาให้ถามยืนยัน
       // ต้องดักก่อนโค้ดข้างล่าง เพราะ data ที่ได้ไม่ใช่ CreateOrderResult
       if (execCtx.pendingOrderQuote) {
-        const quoteReply = composeOrderQuoteSummary(
+        let quoteReply = composeOrderQuoteSummary(
           execCtx.pendingOrderQuote.lines,
           englishReply ? "en" : "th"
         );
-        if (convId) {
+        try {
+          convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+          if (!convId) throw new Error("Missing conversation");
           await setAiConversationState(tenantId, convId, {
             ...(orderMemory ?? storedState),
+            ...orderDraftState(execCtx.pendingOrderQuote.draft),
             lastIntent: classifiedIntent,
             // ล้างคำยืนยันเดิมทิ้ง: ลูกค้าต้องยืนยัน "ชุดที่เพิ่งเห็น" ไม่ใช่คำยืนยันเก่า
             // ที่พูดไว้ก่อนจะมีรายการให้ดู
             confirmed: false,
             pendingQuoteFingerprint: execCtx.pendingOrderQuote.fingerprint,
             pendingCatalogChoices: null,
-          }).catch(async (err) => {
-            console.error("[BMS] pipeline pending-quote state persist failed:", err);
-            await reportStateFailure(err, "state_persist");
+            pendingConversationChoice: confirmationChoiceState("ORDER_CONFIRMATION", quoteReply, englishReply),
           });
+        } catch (err) {
+          console.error("[BMS] pipeline pending-quote state persist failed:", err);
+          await reportStateFailure(err, "state_persist");
+          quoteReply = englishReply ? "The summary could not be saved. Please ask for it again."
+            : "ยังบันทึกสรุปไม่ได้ค่ะ กรุณาขอสรุปใหม่อีกครั้ง";
         }
         return customerSafe({
           channel,
@@ -3108,9 +3623,12 @@ export async function runPipeline(
           profile.paymentAccounts,
           englishReply
         );
+        const recoveryMenu = insufficientStockMenu(order, resolved.map(line => ({ sku: line.sku, size: line.size, qty: line.qty,
+          ...(line.packCode ? { packCode: line.packCode } : {}) })), englishReply);
+        if (recoveryMenu) reply = await saveStockMenu(recoveryMenu);
         // ข้อความกู้สถานการณ์เรื่องสต็อกอ้างสินค้าตัวเดียวได้ จึงใช้เฉพาะบิลรายการเดียว
         // บิลหลายรายการปล่อยให้ข้อความจาก createOrder อธิบายเอง (ไม่ทับด้วยตัวใดตัวหนึ่ง)
-        if (order.status !== "CREATED" && resolved.length === 1) {
+        if (order.status !== "CREATED" && !recoveryMenu && resolved.length === 1) {
           const checked = await executeCustomerTool(
             "check_stock",
             { product: resolved[0].sku, size: resolved[0].size },
@@ -3118,7 +3636,8 @@ export async function runPipeline(
           );
           routeTrace.push(checked.trace);
           if (checked.result.ok) {
-            reply = stockRecoveryReply(checked.result.data as StockResult, profile.businessArchetype, englishReply) ?? reply;
+            const menu = stockResultMenu(checked.result.data as StockResult, englishReply, archetypeNeedsRestockEmphasis(profile.businessArchetype));
+            if (menu) reply = await saveStockMenu(menu);
           }
         }
         if (convId && order.status === "CREATED") {
@@ -3147,7 +3666,8 @@ export async function runPipeline(
     volatileSystem: buildVolatileSystem(
       intentSystemBlock(classifiedIntent),
       historySummarySystemBlock(summary),
-      orderMemorySystemBlock(orderMemoryHint(orderMemory))
+      orderMemorySystemBlock(orderMemoryHint(orderMemory)),
+      boardGameRescheduleSystemBlock(storedState.pendingBoardGameReschedule)
     ),
     messages: [
       ...recentTurns,
@@ -3172,14 +3692,22 @@ export async function runPipeline(
   // These replies are server-owned even if the provider fails after the tool completes.
   if (execCtx.boardGameChatActionResult || execCtx.pendingBoardGameChatAction) {
     let reply: string;
-    if (execCtx.boardGameChatActionResult) reply = boardGameChatActionReceipt(execCtx.boardGameChatActionResult, englishReply);
+    if (execCtx.boardGameChatActionResult) {
+      reply = boardGameChatActionReceipt(execCtx.boardGameChatActionResult, englishReply);
+      if (convId) await setAiConversationState(tenantId, convId, {
+        ...storedState, pendingBoardGameChatAction: null, pendingBoardGameReschedule: null,
+        pendingConversationChoice: null,
+      }).catch(error => reportStateFailure(error, "board_game_action_result_clear"));
+    }
     else {
       try {
         convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
         if (!convId) throw new Error("Missing conversation");
-        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameReservation: null,
-          pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction });
         reply = boardGameChatActionSummary(execCtx.pendingBoardGameChatAction!, englishReply);
+        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameReservation: null,
+          pendingBoardGameReschedule: null,
+          pendingBoardGameChatAction: execCtx.pendingBoardGameChatAction,
+          pendingConversationChoice: confirmationChoiceState("BOARD_GAME_ACTION_CONFIRMATION", reply, englishReply) });
       } catch (error) {
         await reportStateFailure(error, "board_game_action_quote_store");
         reply = englishReply ? "I could not save the summary. No action was submitted. Please try again."
@@ -3193,22 +3721,76 @@ export async function runPipeline(
     let reply: string;
     if (execCtx.boardGameReservationRequestId) {
       reply = boardGameReservationReceipt(execCtx.boardGameReservationRequestId, englishReply, execCtx.boardGameReservationResultStatus);
+      if (convId) await setAiConversationState(tenantId, convId, {
+        ...storedState, pendingBoardGameReservation: null, pendingConversationChoice: null,
+      }).catch(error => reportStateFailure(error, "board_game_reservation_result_clear"));
     } else if (execCtx.pendingBoardGameReservation) {
       try {
         convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
         if (!convId) throw new Error("Missing conversation");
-        await setAiConversationState(tenantId, convId, { ...storedState, pendingBoardGameChatAction: null, pendingBoardGameReservation: execCtx.pendingBoardGameReservation });
         reply = boardGameReservationSummary(execCtx.pendingBoardGameReservation, englishReply);
+        await setAiConversationState(tenantId, convId, { ...storedState,
+          pendingBoardGameChatAction: null, pendingBoardGameReschedule: null,
+          pendingBoardGameReservation: execCtx.pendingBoardGameReservation,
+          pendingConversationChoice: confirmationChoiceState("BOARD_GAME_RESERVATION_CONFIRMATION", reply, englishReply) });
       } catch (error) {
         await reportStateFailure(error, "board_game_quote_store");
         reply = englishReply ? "I could not save the request summary. No request was submitted. Please try again."
           : "ยังบันทึกสรุปคำขอไม่ได้ ยังไม่ได้ส่งคำขอ กรุณาลองใหม่ค่ะ";
       }
     } else {
-      reply = boardGameReservationStatusReply(execCtx.boardGameReservationStatuses!, englishReply);
+      const menu = boardGameReservationStatusMenu(execCtx.boardGameReservationStatuses!, englishReply);
+      reply = menu.reply;
+      if (menu.kind && menu.options.length) {
+        try {
+          convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+          if (!convId) throw new Error("Missing conversation");
+          await setAiConversationState(tenantId, convId, {
+            ...storedState,
+            pendingBoardGameReschedule: null,
+            pendingConversationChoice: conversationChoiceState(menu.kind, menu.reply, menu.options),
+          });
+        } catch (error) {
+          await reportStateFailure(error, "board_game_status_menu_store");
+          reply = englishReply ? "I could not save the booking menu. Please ask for your booking status again."
+            : "บันทึกเมนูการจองไม่ได้ค่ะ กรุณาขอสถานะการจองอีกครั้ง";
+        }
+      } else if (convId) {
+        await setAiConversationState(tenantId, convId, {
+          ...storedState, pendingConversationChoice: null,
+        }).catch(error => reportStateFailure(error, "board_game_status_menu_clear"));
+      }
     }
     return customerSafe({ channel, incoming: message, understanding, tool: "board_game:reservation",
       data: { status: "NOT_FOUND", query: "" }, trace: loop.trace, reply });
+  }
+
+  if ((execCtx.pendingOrderQuote || execCtx.restaurantRequestQuote) && !convId) {
+    try {
+      convId = await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+      if (!convId) throw new Error("Missing conversation");
+    } catch (error) {
+      await reportStateFailure(error, "order_quote_conversation");
+      return customerSafe({ channel, incoming: message, understanding, tool: "deterministic:quote_unavailable",
+        data: { status: "NOT_FOUND", query: "" }, trace: loop.trace, reply: englishReply
+          ? "The order summary could not be saved. No order was placed. Please try again."
+          : "ยังบันทึกสรุปไม่ได้ค่ะ ยังไม่ได้สร้างออร์เดอร์ กรุณาลองใหม่" });
+    }
+  }
+  const inputOptions = execCtx.customerInputChoices ? inputChoiceOptions(execCtx.customerInputChoices.labels) : null;
+  let inputChoiceReply = inputOptions
+    ? renderConversationChoices(execCtx.customerInputChoices!.question, inputOptions) : null;
+  if (inputChoiceReply) {
+    try {
+      convId = convId ?? await ensureConversationForPipeline(tenantId, channel, customerRef, message);
+      if (!convId) throw new Error("Missing conversation");
+      loop.reply = inputChoiceReply;
+    } catch (error) {
+      await reportStateFailure(error, "input_choice_conversation");
+      inputChoiceReply = null;
+      loop.reply = englishReply ? "The options could not be saved. Please try again."
+        : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาลองใหม่";
+    }
   }
 
   if (loop.usedAi) {
@@ -3283,13 +3865,19 @@ export async function runPipeline(
     }
 
     if (convId) {
-      const completedOrder = !execCtx.pendingOrderQuote && (Boolean(execCtx.restaurantRequestId) || (loop.trace ?? []).some(
-        (entry) => entry.ok && ["create_order", "reorder"].includes(entry.tool)
-      ));
+      const nextPendingConversationChoice = execCtx.restaurantRequestQuote
+        ? confirmationChoiceState("RESTAURANT_REQUEST_CONFIRMATION", reply, englishReply)
+        : execCtx.pendingOrderQuote
+          ? confirmationChoiceState("ORDER_CONFIRMATION", reply, englishReply)
+          : inputOptions && reply === inputChoiceReply
+            ? conversationChoiceState("INPUT_SELECTION", reply, inputOptions)
+            : null;
+      const completedOrder = Boolean(execCtx.restaurantRequestId || execCtx.createdOrderId);
       const nextState: AiConversationState = completedOrder || draftOrderCancelled
         ? {}
         : {
             ...(orderMemory ?? storedState),
+            ...orderDraftState(execCtx.pendingOrderQuote?.draft),
             lastIntent: classifiedIntent,
             lastAskedField: askedFieldFromReply(reply),
             // จำตะกร้าที่เพิ่งสรุปให้ลูกค้าดู เพื่อให้คำว่า "ยืนยัน" ในเทิร์นถัดไปผูกกับชุดนี้
@@ -3300,10 +3888,15 @@ export async function runPipeline(
               null,
             pendingCatalogChoices: storedState.pendingCatalogChoices ?? null,
             pendingRestaurantRequest: execCtx.restaurantRequestQuote?.draft ?? storedState.pendingRestaurantRequest ?? null,
+            pendingConversationChoice: nextPendingConversationChoice,
+            pendingBoardGameReschedule: storedState.pendingBoardGameReschedule ?? null,
           };
       await setAiConversationState(tenantId, convId, nextState).catch(async (err) => {
         console.error("[BMS] pipeline AI state persist failed:", err);
         await reportStateFailure(err, "state_persist");
+        if (nextPendingConversationChoice) reply = englishReply
+          ? "The options could not be saved. Please ask for the summary again."
+          : "ยังบันทึกตัวเลือกไม่ได้ค่ะ กรุณาขอสรุปใหม่อีกครั้ง";
       });
     }
 
@@ -3403,7 +3996,8 @@ export async function runPipeline(
           limit: 3,
         });
         const alternatives = salesAlternativeText(items, englishReply);
-        reply = alternatives
+        const menu = catalogStockMenu(items, englishReply);
+        reply = menu ? await saveStockMenu(menu) : alternatives
           ? englishReply
             ? `Sorry, "${it.productText}" was not found. Available products include ${alternatives}. Which one should I check?`
             : `ขออภัยค่ะ ไม่พบสินค้า "${it.productText}" ตอนนี้มีสินค้าพร้อมขาย เช่น ${alternatives} สนใจตัวไหนให้เช็กไซซ์ต่อไหมคะ?`
@@ -3414,7 +4008,9 @@ export async function runPipeline(
       }
       names[product.sku] = product.name;
       if (!it.size) {
-        reply = englishReply
+        const checked = await executeCustomerTool("check_stock", { product: product.sku }, execCtx);
+        const menu = checked.result.ok ? stockResultMenu(checked.result.data as StockResult, englishReply, archetypeNeedsRestockEmphasis(profile.businessArchetype)) : null;
+        reply = menu ? await saveStockMenu(menu) : englishReply
           ? `Which size of ${product.name} would you like? Please provide the size and quantity, for example "order XL, quantity 2".`
           : `รับ ${product.name} ไซซ์ไหนดีคะ? แจ้งไซซ์ + จำนวน เช่น "สั่ง XL 2 ชิ้น" ค่ะ`;
         break;
@@ -3461,9 +4057,12 @@ export async function runPipeline(
           console.error("[BMS] deterministic pharmacy product review request failed:", error);
         }
       }
-      if (order.status !== "CREATED" && orderItems.length === 1) {
+      const recoveryMenu = insufficientStockMenu(order, orderItems, englishReply);
+      if (recoveryMenu) reply = await saveStockMenu(recoveryMenu);
+      if (order.status !== "CREATED" && !recoveryMenu && orderItems.length === 1) {
         const stock = await checkStock(tenantId, orderItems[0].sku, orderItems[0].size);
-        reply = stockRecoveryReply(stock, profile.businessArchetype, englishReply) ?? reply;
+        const menu = stockResultMenu(stock, englishReply, archetypeNeedsRestockEmphasis(profile.businessArchetype));
+        if (menu) reply = await saveStockMenu(menu);
       }
     }
 
@@ -3504,7 +4103,8 @@ export async function runPipeline(
       ? "Hello! Which product are you interested in? Please provide the product name and size."
       : "สวัสดีค่ะ 😊 สนใจสินค้ารุ่นไหน แจ้งชื่อรุ่น + ไซซ์ได้เลยนะคะ";
   } else {
-    reply = await generateResponse(tenantId, message, data, profile.aiLanguage);
+    const menu = stockResultMenu(data, englishReply, archetypeNeedsRestockEmphasis(profile.businessArchetype));
+    reply = menu ? await saveStockMenu(menu) : await generateResponse(tenantId, message, data, profile.aiLanguage);
   }
 
   return customerSafe({ channel, incoming: message, understanding, tool, data, reply });

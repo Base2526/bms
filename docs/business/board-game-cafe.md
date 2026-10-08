@@ -716,8 +716,8 @@ They exercise the real request policy and server formatters, not a live AI provi
 | Stage | Thai | English |
 | --- | --- | --- |
 | Request details supplied | จอง FAKE Main วันที่ 10 ม.ค. 2027 เวลา 18:00 น. 2 ชั่วโมง 4 คน | Request FAKE Main on 10 Jan 2027 at 18:00 for 120 minutes, 4 people |
-| Server summary, zero writes | กรุณาตรวจคำขอจองโต๊ะ … นี่เป็นคำขอ ร้านต้องยืนยันก่อน ยังไม่ได้ยืนยันโต๊ะ ตอบตกลงเพื่อส่งคำขอค่ะ | Please confirm this table request … This is a request for staff review, not a confirmed table. Reply yes to submit. |
-| Customer affirmation | ตกลงค่ะ | yes please |
+| Server summary, zero writes | กรุณาตรวจคำขอจองโต๊ะ … ยังไม่ได้ยืนยันโต๊ะ<br>1. ยืนยันส่งคำขอ<br>2. แก้ไขคำขอ | Please confirm this table request … no table is confirmed.<br>1. Submit request<br>2. Edit request |
+| Customer affirmation | 1 (หรือ “ตกลงค่ะ”) | 1 (or “yes please”) |
 | Server receipt, exactly one injected write | ส่งคำขอจองโต๊ะ #12345678 ให้ร้านตรวจแล้วค่ะ ตอนนี้ยังไม่ได้ยืนยันโต๊ะ … | Booking request #12345678 was sent for staff review. No table is confirmed yet. … |
 | Own status | #12345678 … รอร้านตรวจ ยังไม่ได้ยืนยันโต๊ะ | #12345678 … Awaiting staff review; no table is confirmed |
 
@@ -763,8 +763,11 @@ allocates a capacity-compatible table under reservation locks and commits CONFIR
 available means no booking is created. Only that result permits “จองสำเร็จแล้ว”.
 
 Customers can cancel their own pending/confirmed no-deposit CHAT booking before check-in. They can
-reschedule a CONFIRMED booking on the same table after specifying a new local date/time, duration
-and headcount. Conflicts leave the original booking intact. Public-token or staff-created bookings
+reschedule a CONFIRMED booking on the same table after specifying a new local date/time. The current
+duration and headcount are retained unless the customer explicitly changes them. Status replies
+offer server-bound numbered booking/action choices, so the customer does not retype a reference.
+Selecting cancellation still opens a separate exact confirmation summary; it does not cancel
+immediately. Conflicts leave the original booking intact. Public-token or staff-created bookings
 are not claimed merely by typing a reference in chat. Every change requires a new server summary,
 fresh customer consent, current identity/row-version validation and an idempotent transaction.
 

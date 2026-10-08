@@ -40,6 +40,71 @@ are not automatically coupon requests. A reply guard rejects known unsupported b
 refund and staff-notification completion claims. Player ranges and beginner difficulty are enforced
 in the library query rather than left to model selection.
 
+Deterministic customer confirmations use contextual numbered choices across order quotes,
+restaurant requests and board-game booking/action summaries. The server stores the exact rendered
+prompt hash, bounded options and expiry in conversation state. A bare `1` or `2` is interpreted only
+when that exact menu is still the latest actual outgoing message (not the merged provider history).
+A number against a stale/expired menu returns a fixed retry reply and clears the pending consent;
+out-of-range numbers repeat the current menu. Numbered choice happens before generic short-quantity
+normalization. The menu is navigation only: order, booking and cancellation writes still require
+their existing fingerprint, ownership, permission and transaction checks. A matched confirmation
+bypasses short-reply rewriting and preserves the exact basket in both Thai and English.
+Typed confirmations use the same freshness check as numeric replies. Thai digits, optional
+number punctuation and polite suffixes are accepted; an invalid multi-digit code repeats the menu
+rather than becoming a quantity. Before dispatch, the backend conditionally claims the exact saved
+menu snapshot and marks it consumed; a failed or already-used claim cannot execute an action.
+This is not a replacement for business-transaction idempotency or channel delivery deduplication.
+Order summaries retain the validated item draft (including packs and modifiers) and the allowed
+fulfillment/coupon arguments, so confirmation does not reconstruct them from chat history.
+`present_customer_choices` registers ordinary product/variant/branch/fulfillment/payment/yes-no
+questions. Its options are answers only, never a grant of order, booking or clinical authority;
+the model must read the relevant catalog/configuration first. Free numeric fields such as quantities,
+age, dates and times remain free input. No native channel Quick Reply buttons are added.
+
+Pharmacy consent, final summary, supported fixed-answer questions and approved checkout use the
+same bounded menu contract. Intake choices are additionally bound to the current assessment,
+stage and question key, checked again before accepting an answer. Pharmacist approval and
+single-use dispensing checks remain in the existing services. The Intake Lab carries its display
+menu in its existing JSON session and does not grant clinical approval. Lab menus also bind the
+stage/question, page long variant lists, preserve requested quantity, and resolve numeric size
+names as exact values. Expired/malformed menus cannot fall back to legacy numeric product selection.
+An approved checkout accepts an exact affirmative only against its current assessment menu;
+negative text such as `ยังไม่ยืนยันสั่งซื้อ` is not purchase consent.
+
+Coverage and boundaries:
+
+| Flow | Numbered answer behavior | Remaining authority |
+| --- | --- | --- |
+| Retail/order quote | Confirm/edit in Thai and English, including when short-reply interpretation is disabled | Exact basket fingerprint and fresh product/stock checks |
+| Restaurant request | Confirm/edit; branch and fulfillment prompts can register ordinary answer menus | Existing request service and staff acceptance |
+| Board-game booking | Select booking, cancel/reschedule/keep, then a separate final confirmation | Ownership, availability and original transaction checks |
+| Refund/discount/extra time | Confirm submission of a staff request | Staff still approve and execute |
+| General AI questions | `present_customer_choices` registers bounded product/variant/branch/payment/yes-no answers | Relevant read tools first; selected text cannot approve an order |
+| Ambiguous product basket | One numbered product selection per line, followed by one complete basket summary | Recheck all selected SKUs/packs; never a partial basket |
+| Catalog/stock recovery | Product and variant menus, paged variants, restock opt-in and insufficient-stock decisions | Exact server-owned SKU/size; approved tools re-read availability; restock requests await staff |
+| Pharmacy | Consent/summary/fixed answers and approved checkout; Lab uses its existing JSON session | Case/stage/question matching and licensed pharmacist approval |
+
+Regression tests in `contextual-conversation-pipeline-contract.test.mts` execute the actual pipeline
+with fake storage/tool dependencies and no provider/network. They cover both languages and short-reply
+settings, stale/expired/invalid menus (including typed confirmation), consecutive staff messages,
+persistence failure, one-use snapshot claims, exact quoted drafts, quantity-question interruption,
+pharmacy checkout refusal and Lab context/pagination. These tests use fake storage: they do not
+certify PostgreSQL concurrency, live-model tool choice or channel delivery; those need DB tests
+and the existing live eval in a disposable sandbox. Numeric replies are text input, not native
+LINE/Facebook Quick Reply buttons.
+
+Stock recovery now uses `customerStockChoices.ts` rather than parsing prose. Catalog choices
+carry exact SKUs, variant menus carry exact sizes (including numeric names), and long variant
+lists page within nine reply codes. Selecting an available variant may ask for a free numeric
+quantity, bound to that exact latest question and the same 15-minute expiry; changing topic or
+answering another menu clears the pending quantity. This is not a menu
+code and produces a new order summary, never purchase consent. An insufficient-stock choice
+may revise one base-unit line while retaining every other basket line. Pack quantities are never
+derived from base-unit availability. Pharmacy-approved checkout shortages allow catalog reads,
+not automatic modification of the pharmacist's approved draft. Stock and booking menus are
+withheld when their state cannot be saved. Free-form product searches, quantities, dates,
+contact details and clinical narratives intentionally remain free input.
+
 For a loaded board-game tenant, `boardGameCustomerGuard.ts` checks the original message before
 checkout detail capture or any model/tool execution. Narrow deterministic patterns cover urgent
 swallowed-piece/choking reports, private identities, explicit overrides, unsupported administrative changes
@@ -163,12 +228,15 @@ single-field clarification resets the turn budget, so legitimate browsing/slot f
 mistaken for a stalled conversation.
 
 For pharmacy baskets with several catalog matches, the deterministic route stores a bounded mapping
-of line-scoped codes (`A1`, `A2`, `B1`, …) to verified SKUs in conversation state. Bare repeated
-numbers such as `1 2 3 4` are rejected because they cannot identify one candidate per basket line.
-After valid codes are supplied, every selected SKU/size and configured selling unit is rechecked,
+of line-scoped codes (`A1`, `A2`, `B1`, …) to verified SKUs in conversation state. The customer sees
+one ambiguous basket line at a time and replies `1` or `2`; each reply resolves to that line's
+internal code and retains every other line and quantity. Legacy explicit `A1 B2` replies still work.
+Unbound sequences such as `1 2 3 4` remain ambiguous and are rejected.
+After all lines are selected, every selected SKU/size and configured selling unit is rechecked,
 then `create_order` runs only its read-only quote phase. A confirmation word attached to the choice
 turn does not create an order: the customer must first see and affirm the newly composed whole-basket
-summary, whose fingerprint includes the server-resolved `packCode`.
+summary, whose fingerprint includes the server-resolved `packCode`. That final summary accepts
+`1. Confirm` or `2. Edit` through the same contextual-choice contract used by non-pharmacy orders.
 
 Every customer reply — AI, deterministic-route, or rule-based fallback — leaves the pipeline through
 one sanitizer (`customerSafe()`): full UUIDs are shortened to their first eight characters, and the

@@ -64,7 +64,8 @@ export type ExecCtx = {
    * than finished prose so the pipeline — which is the only layer that knows the
    * conversation language — composes the wording.
    */
-  pendingOrderQuote?: { fingerprint: string; lines: OrderQuoteLine[] };
+  pendingOrderQuote?: { fingerprint: string; lines: OrderQuoteLine[]; draft?: import("../orderQuote").OrderQuoteDraft };
+  customerInputChoices?: { question: string; labels: string[] };
   /** staff surface: GraphQL ctx จริง (สำหรับ requirePermission/audit) */
   ctx?: any;
   /**

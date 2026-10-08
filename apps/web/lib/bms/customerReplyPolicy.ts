@@ -109,6 +109,18 @@ export type CheckoutReplyStatus = {
   missingFields: Array<"recipientName" | "phone" | "shippingAddress">;
 };
 
+export function bookingContactNextStepReply(status: CheckoutReplyStatus, english = false): string {
+  if (!status.hasRecipientName) {
+    return english ? "Please provide the booking contact name." : "รบกวนแจ้งชื่อผู้จองค่ะ";
+  }
+  if (!status.hasPhone) {
+    return english ? "Please provide a contact phone number for the booking." : "รบกวนแจ้งเบอร์โทรสำหรับติดต่อเรื่องการจองค่ะ";
+  }
+  return english
+    ? "Contact details are complete. You can continue with the booking; no delivery address is needed."
+    : "ข้อมูลติดต่อครบแล้วค่ะ ดำเนินการจองต่อได้เลย โดยไม่ต้องแจ้งที่อยู่จัดส่งค่ะ";
+}
+
 /**
  * Deterministic post-order guidance. Missing payment configuration intentionally produces no
  * payment paragraph, while existing delivery data is reused without asking the customer to type it.

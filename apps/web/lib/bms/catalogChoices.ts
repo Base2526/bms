@@ -1,3 +1,5 @@
+import { inputChoiceOptions, renderConversationChoices } from "./conversationChoices";
+
 export type CatalogChoiceCandidate = {
   choiceCode: string;
   sku: string;
@@ -17,6 +19,25 @@ export type PendingCatalogChoices = {
   version: 1;
   lines: PendingCatalogChoiceLine[];
 };
+
+/** Resolve one ambiguous line at a time while retaining the complete requested basket. */
+export function catalogSelectionMenu(pending: PendingCatalogChoices, english = false) {
+  const line = pending.lines.find(line => line.candidates.length > 1);
+  if (!line) return null;
+  const options = inputChoiceOptions(line.candidates.map(candidate => `${candidate.name} (${candidate.sku})`))
+    .map((option, index) => ({ ...option, replyText: line.candidates[index].choiceCode }));
+  const question = english
+    ? `Choose ${line.product}, size ${line.size}, quantity ${line.qty}${line.unit ? ` ${line.unit}` : ""}:`
+    : `เลือก ${line.product} ไซซ์ ${line.size} จำนวน ${line.qty}${line.unit ? ` ${line.unit}` : ""} ค่ะ`;
+  return { reply: renderConversationChoices(question, options), options };
+}
+
+export function advanceCatalogSelection(pending: PendingCatalogChoices, code: string): PendingCatalogChoices | null {
+  const current = pending.lines.findIndex(line => line.candidates.length > 1);
+  const selected = pending.lines[current]?.candidates.find(candidate => candidate.choiceCode === code);
+  if (!selected) return null;
+  return { ...pending, lines: pending.lines.map((line, index) => index === current ? { ...line, candidates: [selected] } : line) };
+}
 
 export function normalizeCatalogRequestedLine(
   productText: string,

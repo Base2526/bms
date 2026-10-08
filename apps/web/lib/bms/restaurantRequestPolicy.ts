@@ -47,6 +47,19 @@ export function isRestaurantRequestRefusal(data: unknown): data is { status: str
     && (RESTAURANT_REQUEST_REFUSAL_STATUSES as readonly string[]).includes(status);
 }
 
+export function restaurantRequestInputChoices(data: unknown, english = false): { question: string; labels: string[] } | null {
+  const result = data as { status?: string; locations?: Array<{ name: string }> } | null;
+  if (result?.status === "FULFILLMENT_REQUIRED") return {
+    question: english ? "How would you like to receive this order?" : "ต้องการรับออร์เดอร์แบบไหนคะ?",
+    labels: english ? ["Delivery", "Pickup at the shop"] : ["จัดส่ง", "รับที่ร้าน"],
+  };
+  if (result?.status === "LOCATION_REQUIRED" && result.locations?.length && result.locations.length <= 8) return {
+    question: english ? "Which branch would you like?" : "ต้องการสาขาไหนคะ?",
+    labels: result.locations.map(location => `${english ? "Branch" : "สาขา"} ${location.name}`),
+  };
+  return null;
+}
+
 export type RestaurantRequestItem = {
   sku: string; size: string; qty: number; packCode?: string | null; modifierCodes?: string[];
 };
@@ -124,7 +137,7 @@ export function restaurantRequestSummary(quote: {
     `${english ? 'Branch' : 'สาขา'}: ${quote.locationName} · ${quote.fulfillmentType === 'PICKUP' ? (english ? 'Pickup' : 'รับเอง') : (english ? 'Delivery' : 'จัดส่ง')}`,
     ...(quote.requestedAt ? [`${english ? 'Requested time (not yet promised)' : 'เวลาที่ต้องการ (ร้านยังไม่ยืนยัน)'}: ${quote.requestedAt}`] : []),
     ...(quote.note ? [`${english ? 'Instructions for shop review' : 'ข้อกำชับให้ร้านตรวจ'}: ${quote.note}`] : []),
-    english ? 'Reply "confirm" to submit these quantities. The shop will call if changes are needed. No payment is requested yet.'
-      : 'พิมพ์ "ยืนยัน" เพื่อส่งคำขอตามจำนวนนี้ ร้านจะโทรหากต้องปรับรายการ ยังไม่ต้องชำระเงินค่ะ',
+    english ? 'The shop will call if changes are needed. No payment is requested yet.\n1. Confirm request\n2. Edit request'
+      : 'ร้านจะโทรหากต้องปรับรายการ ยังไม่ต้องชำระเงินค่ะ\n1. ยืนยันส่งคำขอ\n2. แก้ไขรายการ',
   ].join('\n');
 }

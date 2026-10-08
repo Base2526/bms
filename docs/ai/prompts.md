@@ -234,6 +234,15 @@ not treated as banter. Emergency help comes first. No staff notification or book
 claimed without an implemented, successful backend action. The narrow deterministic input guard
 is an additional boundary, not a replacement for tool authorization or live adversarial evaluation.
 
+Server-rendered numbered menus are not model instructions or authorization. Use
+`present_customer_choices` for ordinary bounded selections and dedicated summaries for business
+confirmations. Never write a numbered choice menu in free-form model prose. Read verified product,
+branch or payment facts first; ask one choice question at a time. Quantities and dates stay free
+input. Selecting a general label cannot confirm a pending order or approved pharmacy checkout.
+The pipeline resolves their codes from the exact latest stored prompt before model inference. The model must not invent a
+meaning for a bare number, ask a customer to repeat a booking reference already selected by the
+server, or treat selecting "cancel" as the final cancellation confirmation.
+
 From [../business/](../business/) and [CLAUDE.md](../../CLAUDE.md) — these apply regardless of
 model or prompt wording:
 

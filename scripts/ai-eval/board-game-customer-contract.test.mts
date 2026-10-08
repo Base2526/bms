@@ -100,7 +100,8 @@ for (const english of [false, true]) test(`booking verified flow ${english ? "EN
   assert.equal(hasUnsupportedBoardGameActionClaim(receipt), false, receipt);
   assert.match(receipt, /ยังไม่ได้ยืนยันโต๊ะ|No table is confirmed/);
   const status = boardGameReservationStatusReply([{ reference: "12345678", branch: h.draft.branch, status: "REQUESTED",
-    reservedFor: quote.preview.reservedFor, timezone: quote.preview.timezone, partySize: 4, rejectionReason: null }], english);
+    reservedFor: quote.preview.reservedFor, timezone: quote.preview.timezone, durationMinutes: 120,
+    partySize: 4, rejectionReason: null }], english);
   assert.match(status, /รอร้านตรวจ|Awaiting staff review/);
   assert.equal(hasUnsupportedBoardGameActionClaim(status), false);
   assert.equal(h.writes.length, 1);
@@ -109,10 +110,10 @@ for (const english of [false, true]) test(`booking verified flow ${english ? "EN
 test("pipeline consumes consent before early guards and replaces all model reservation responses", () => {
   const pipeline = sourceWithoutComments("../../apps/web/lib/bms/pipeline.ts").split("export async function runPipeline")[1];
   assert.ok(pipeline.indexOf("board_game_confirmation_consume") < pipeline.indexOf("boardGameCustomerGuard(rawSafetyMessage"));
-  assert.match(pipeline, /isLatestBoardGameReservationSummary\(quote, lastAssistant\)/);
+  assert.match(pipeline, /isLatestBoardGameReservationSummary\(quote, lastAssistantMessage\)/);
   assert.ok(pipeline.indexOf("execCtx.boardGameReservationRequestId || execCtx.pendingBoardGameReservation") < pipeline.indexOf("if (loop.usedAi)"));
   assert.match(pipeline, /boardGameReservationReceipt\(execCtx.boardGameReservationRequestId/);
-  assert.match(pipeline, /boardGameReservationStatusReply\(execCtx.boardGameReservationStatuses/);
+  assert.match(pipeline, /boardGameReservationStatusMenu\(execCtx.boardGameReservationStatuses/);
 });
 
 const cafe = {

@@ -1,4 +1,5 @@
 import { getActivePharmacyProtocolByKey, listActivePharmacyTriggerDefinitions } from "./protocols";
+import { conversationReplyCode, createPendingConversationChoice, inputChoiceOptions, renderConversationChoices, resolveConversationChoice, type PendingConversationChoice } from "../conversationChoices";
 import { isPharmacyMedicationAdviceQuestion, pharmacyClinicalHandoffReply } from "./customerAssistancePolicy";
 import { computeMissingFields, evaluateAnswer, type KnownFields, type ProtocolDefinition } from "./ruleEngine";
 import {
@@ -41,6 +42,7 @@ export type PharmacyTestSession = {
 export type PharmacyTestResult = {
   reply: string;
   session: PharmacyTestSession;
+  choices?: { question: string; entries: Array<{ label: string; replyText: string }> };
 };
 
 const PRODUCT_SESSION_KEYS = {
@@ -181,6 +183,7 @@ function resolveProductSizeOption(
   const options = parseProductSizeOptions(answers);
   if (options.length === 0) return null;
   const normalized = text.trim().toLowerCase();
+  if (normalized.startsWith("ขนาด ")) return options.find(item => item.size.toLowerCase() === normalized.slice(5).trim()) ?? null;
   const numericChoice = Number(toArabicDigits(normalized));
   if (Number.isInteger(numericChoice) && numericChoice >= 1 && numericChoice <= options.length) {
     return options[numericChoice - 1];
@@ -849,16 +852,19 @@ async function handleProductPurchase(
     const options = items.map((item) => ({ sku: item.sku, name: item.name }));
     return {
       reply: `พบหลายรายการค่ะ เลือกหมายเลขที่ต้องการได้เลย\n${items.map((item, index) => `${index + 1}. ${item.name} (${item.sku})`).join("\n")}\n\nพิมพ์แค่เลข เช่น 1 หรือ 2 ได้เลยค่ะ`,
+      choices: { question: "เลือกสินค้าที่ต้องการค่ะ", entries: items.map(item => ({ label: `${item.name} (${item.sku})`, replyText: item.sku })) },
       session: {
         ...productSession,
-        answers: saveProductSelectionOptions(existingAnswers, options),
+        answers: saveProductSelectionOptions({ ...existingAnswers, [PRODUCT_SESSION_KEYS.qty]: requestedProductQuantity(text) }, options),
       },
     };
   }
   const product = exact[0] ?? items[0];
   const policies = await listPharmacyProductPolicies(tenantId);
   const policy = policies.find((item) => item.productSku === product.sku);
-  const requestedQty = requestedProductQuantity(text);
+  const rememberedQty = Number(existingAnswers[PRODUCT_SESSION_KEYS.qty]);
+  const requestedQty = (selectedOption || selectedSize) && Number.isInteger(rememberedQty) && rememberedQty > 0
+    ? rememberedQty : requestedProductQuantity(text);
   const availableSizeOptions = (product.availableSizes ?? []).filter((item) => Number(item.available) > 0);
   const policyText = !policy || policy.status !== "APPROVED"
     ? "ยังเพิ่มสินค้านี้เข้าตะกร้าไม่ได้\nเพราะร้านยังไม่ได้อนุมัติการขายสินค้านี้ในระบบ\nกรุณาเลือกสินค้าอื่น หรือให้แอดมิน/เภสัชกรตั้งค่าสินค้านี้ก่อนค่ะ"
@@ -885,6 +891,7 @@ async function handleProductPurchase(
   if (canAddToCart && availableSizeOptions.length > 1 && !selectedSize) {
     return {
       reply: `สินค้านี้มีหลายขนาดในสต็อกค่ะ เลือกหมายเลขขนาดที่ต้องการได้เลย\n${availableSizeOptions.map((item, index) => `${index + 1}. ${item.size} (${item.available} ชิ้น)`).join("\n")}\n\nพิมพ์แค่เลข เช่น 1 หรือ 2 ได้เลยค่ะ`,
+      choices: { question: "เลือกขนาดที่ต้องการค่ะ", entries: availableSizeOptions.map(item => ({ label: `${item.size} (${item.available} ชิ้น)`, replyText: `ขนาด ${item.size}` })) },
       session: {
         ...productSession,
         answers: saveProductSizeOptions(saveProductSelectionOptions({
@@ -936,7 +943,77 @@ async function handleProductPurchase(
   };
 }
 
+function labChoiceContext(session: PharmacyTestSession): NonNullable<PendingConversationChoice["context"]> {
+  return { caseId: session.protocolId ?? session.protocolKey ?? "lab", stage: session.phase ?? "NONE",
+    questionKey: session.currentQuestionKey ?? session.currentFieldKey ?? null };
+}
+
+function renderLabChoices(result: PharmacyTestResult, choices: NonNullable<PharmacyTestResult["choices"]>, offset = 0): PharmacyTestResult {
+  if (!choices.entries.length || choices.entries.length > 100) return {
+    reply: "กรุณาระบุชื่อสินค้า SKU หรือขนาดให้เจาะจงขึ้นค่ะ", session: result.session,
+  };
+  const start = offset >= 0 && offset < choices.entries.length ? offset : 0;
+  const entries = choices.entries.slice(start, start + 8);
+  const options = inputChoiceOptions(entries.map(entry => entry.label)).map((option, index) => ({ ...option, replyText: entries[index].replyText }));
+  if (choices.entries.length > 8) options.push({ code: "9", value: "INPUT", label: "ตัวเลือกเพิ่มเติม", replyText: `__choices_next:${start + 8 < choices.entries.length ? start + 8 : 0}` });
+  const reply = renderConversationChoices(choices.question, options);
+  return { reply, session: { ...result.session, answers: { ...result.session.answers,
+    __conversation_prompt: reply, __conversation_entries: JSON.stringify(choices),
+    __conversation_choice: JSON.stringify(createPendingConversationChoice({ kind: "INPUT_SELECTION", prompt: reply, options, context: labChoiceContext(result.session) })) } } };
+}
+
 export async function runPharmacyTestHarness(
+  tenantId: string,
+  message: string,
+  sessionInput: PharmacyTestSession | null | undefined
+): Promise<PharmacyTestResult> {
+  const { __conversation_choice: serializedChoice, __conversation_prompt: serializedPrompt, __conversation_entries: serializedEntries, ...answers } = sessionInput?.answers ?? {};
+  const choicePrompt = typeof serializedPrompt === "string" ? serializedPrompt : "";
+  let pendingChoice: PendingConversationChoice | null = null;
+  try {
+    const parsed = typeof serializedChoice === "string" ? JSON.parse(serializedChoice) : null;
+    if (parsed?.version === 1 && Array.isArray(parsed.options) && parsed.options.length <= 9 &&
+        parsed.options.every((option: any) => option && typeof option.code === "string" && typeof option.replyText === "string")) pendingChoice = parsed;
+  } catch { /* A malformed Lab session cannot select an answer. */ }
+  const selected = resolveConversationChoice(pendingChoice, message, choicePrompt);
+  if (selected.kind === "none" && conversationReplyCode(message) &&
+      (serializedChoice != null || parseProductSelectionOptions(answers).length || parseProductSizeOptions(answers).length)) {
+    return { reply: "ไม่มีเมนูที่ใช้งานอยู่ค่ะ กรุณาระบุชื่อสินค้า SKU หรือขนาดเต็ม", session: { ...sessionInput, answers } };
+  }
+  if ((selected.kind === "matched" || selected.kind === "invalid") && pendingChoice?.context &&
+      JSON.stringify(pendingChoice.context) !== JSON.stringify(labChoiceContext(sessionInput ?? {}))) {
+    return { reply: "ขั้นตอนเปลี่ยนแล้วค่ะ กรุณาขอคำถามล่าสุดหรือเริ่มใหม่", session: { ...sessionInput, answers } };
+  }
+  if (selected.kind === "invalid") return { reply: choicePrompt, session: sessionInput! };
+  if (selected.kind === "stale" || selected.kind === "expired") return {
+    reply: "เมนูนี้ไม่ได้ใช้งานแล้วค่ะ กรุณาเริ่มใหม่หรือพิมพ์คำตอบเต็ม",
+    session: { ...sessionInput, answers },
+  };
+  const text = selected.kind === "matched" ? selected.option.replyText ?? message : message;
+  if (selected.kind === "matched" && /^__choices_next:\d+$/.test(text)) {
+    try {
+      const choices = JSON.parse(String(serializedEntries));
+      if (typeof choices.question === "string" && Array.isArray(choices.entries) && choices.entries.length <= 100 &&
+          choices.entries.every((entry: any) => typeof entry.label === "string" && typeof entry.replyText === "string")) {
+        return renderLabChoices({ reply: "", session: { ...sessionInput, answers } }, choices, Number(text.split(":")[1]));
+      }
+    } catch { /* Invalid presentation data cannot select a product. */ }
+    return { reply: "อ่านตัวเลือกไม่ได้ค่ะ กรุณาระบุสินค้าใหม่", session: { ...sessionInput, answers } };
+  }
+  const result = await runPharmacyTestHarnessInternal(tenantId, text, sessionInput ? { ...sessionInput, answers } : null);
+  if (routePharmacyConversationMessage(message).intent === "EMERGENCY" || isPharmacyMedicationAdviceQuestion(message)) return result;
+  if (result.choices) return renderLabChoices(result, result.choices);
+  const labels = result.session.phase === "AWAITING_CONSENT" ? ["ยินยอม", "ไม่ยินยอม"]
+    : result.session.phase === "PENDING_CONFIRMATION" ? ["ข้อมูลถูกต้อง", "ขอแก้ไข", "ยกเลิก"]
+    : result.session.phase === "ASKING" && result.session.currentFieldKey === "patient_relationship" ? ["ตัวเอง", "ลูก", "พ่อแม่", "บุคคลอื่น"]
+    : result.session.phase === "ASKING" && result.session.currentFieldKey === "biological_sex" ? ["หญิง", "ชาย", "ไม่แน่ใจ"]
+    : result.session.phase === "ASKING" && FIELD_META[result.session.currentFieldKey ?? ""]?.type === "yes_no" ? ["มี", "ไม่มี", "ไม่แน่ใจ"]
+    : result.session.phase === "PRODUCT_PURCHASE" && result.reply.includes("ยืนยันตะกร้า") && result.reply.includes("เพิ่มสินค้า") ? ["เพิ่มสินค้า", "ยืนยันตะกร้า"] : null;
+  if (!labels) return result;
+  return renderLabChoices(result, { question: result.reply, entries: labels.map(label => ({ label, replyText: label })) });
+}
+
+async function runPharmacyTestHarnessInternal(
   tenantId: string,
   message: string,
   sessionInput: PharmacyTestSession | null | undefined
@@ -1129,7 +1206,7 @@ export async function runPharmacyTestHarness(
         session: { ...session, phase: "ASKING", currentFieldKey: null, currentQuestionKey: null },
       };
     }
-    return runPharmacyTestHarness(tenantId, text, {
+    return runPharmacyTestHarnessInternal(tenantId, text, {
       ...session,
       phase: "ASKING",
       currentFieldKey: null,

@@ -20,9 +20,9 @@ export function validateBoardGameChatAction(draft: BoardGameChatActionDraft) {
     || /[\w.+-]+@[\w.-]+\.[a-z]{2,}|(?:\+?\d[\s().-]*){8,}/i.test(draft.note))) reject("INVALID_NOTE", "Do not include personal contact or payment details");
   if (draft.action === "RESCHEDULE") {
     if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(draft.reservedLocal ?? "")
-      || !Number.isInteger(draft.durationMinutes) || draft.durationMinutes! < 30 || draft.durationMinutes! > 720
-      || !Number.isInteger(draft.partySize) || draft.partySize! < 1 || draft.partySize! > 500) {
-      reject("RESCHEDULE_DETAILS_REQUIRED", "Specify branch-local date/time, duration and party size");
+      || (draft.durationMinutes !== undefined && (!Number.isInteger(draft.durationMinutes) || draft.durationMinutes < 30 || draft.durationMinutes > 720))
+      || (draft.partySize !== undefined && (!Number.isInteger(draft.partySize) || draft.partySize < 1 || draft.partySize > 500))) {
+      reject("RESCHEDULE_DETAILS_REQUIRED", "Specify branch-local date/time; duration and party size may be omitted to keep their current values");
     }
   } else if (draft.reservedLocal !== undefined || draft.durationMinutes !== undefined || draft.partySize !== undefined) {
     reject("INVALID_ARGUMENTS", "Booking time fields are only valid for RESCHEDULE");
@@ -68,7 +68,8 @@ async function prepareInTx(client: PoolClient, auth: Authority, draft: BoardGame
   if (draft.action === "RESCHEDULE" && row.status !== "CONFIRMED") reject("BOOKING_STATE_CHANGED", "Only confirmed bookings can be rescheduled; cancel a pending request and submit a new one");
   const next = draft.action === "RESCHEDULE" ? await prepareChatReservationInTx(client, {
     tenantId: auth.tenantId, locationId: row.location_id, reservedLocal: draft.reservedLocal!,
-    durationMinutes: draft.durationMinutes!, partySize: draft.partySize!,
+    durationMinutes: draft.durationMinutes ?? Number(row.reserved_duration_minutes),
+    partySize: draft.partySize ?? Number(row.party_size),
   }) : null;
   const preview: BoardGameChatActionPreview = {
     action: draft.action, reference: row ? row.id.slice(0, 8) : null, branch: row?.branch ?? null,

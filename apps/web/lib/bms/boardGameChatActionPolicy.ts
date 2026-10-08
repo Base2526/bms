@@ -33,8 +33,8 @@ export function boardGameChatActionSummary(quote: BoardGameChatActionQuote, engl
     p.partySize && `${p.partySize} ${english ? "people" : "คน"}`, p.note].filter(Boolean).join(" · ");
   const review = !["CANCEL", "RESCHEDULE"].includes(p.action);
   return english
-    ? `Please confirm: ${details}. ${review ? "This sends a request to staff; money, prices and play time change only after staff approval. " : "No money will be refunded by this action. "}Reply yes to submit.`
-    : `กรุณาตรวจรายการ: ${details} ${review ? "ส่งคำขอให้พนักงานพิจารณา เงิน ราคา และเวลาเล่นจะเปลี่ยนเมื่อพนักงานอนุมัติเท่านั้น" : "รายการนี้ไม่มีการคืนเงิน"} ตอบตกลงเพื่อดำเนินการค่ะ`;
+    ? `Please confirm: ${details}. ${review ? "This sends a request to staff; money, prices and play time change only after staff approval." : "No money will be refunded by this action."}\n1. Confirm\n2. Edit / go back`
+    : `กรุณาตรวจรายการ: ${details} ${review ? "ส่งคำขอให้พนักงานพิจารณา เงิน ราคา และเวลาเล่นจะเปลี่ยนเมื่อพนักงานอนุมัติเท่านั้น" : "รายการนี้ไม่มีการคืนเงิน"}\n1. ยืนยัน\n2. แก้ไข / กลับ`;
 }
 export function isLatestBoardGameChatActionSummary(quote: BoardGameChatActionQuote, lastAssistant: string) {
   return [false, true].some(english => boardGameChatActionSummary(quote, english).trim() === lastAssistant.trim());

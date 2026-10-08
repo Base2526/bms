@@ -27,7 +27,8 @@ import type { PharmacySaleChannel } from "./productPolicyDecision";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "../tenant";
 import { getVariantBasePriceInTx } from "../productPacks";
-import { sendStaffMessage } from "../inbox";
+import { sendStaffMessage, getAiConversationState, setAiConversationState } from "../inbox";
+import { createPendingConversationChoice, inputChoiceOptions, renderConversationChoices } from "../conversationChoices";
 import { getConversation, listMessages } from "../inbox";
 import { recordPharmacyEvent } from "./events";
 import {
@@ -64,7 +65,9 @@ async function notifyCustomerOfDecision(
   assessmentId: string,
   text: string,
   via: "approved" | "rejected" | "referred_to_doctor" | "emergency_referral",
-  staffActor: string | null = null
+  staffActor: string | null = null,
+  checkoutDraft?: PharmacyCheckoutOrderDraft | null,
+  fallbackText?: string
 ): Promise<void> {
   try {
     const row = await query<{ conversation_id: string | null }>(
@@ -73,6 +76,18 @@ async function notifyCustomerOfDecision(
     );
     const conversationId = row.rows[0]?.conversation_id;
     if (!conversationId) return; // no chat conversation to deliver into (e.g. a staff-created case)
+    if (via === "approved" && checkoutDraft?.items.length) {
+      try {
+        const state = await getAiConversationState(tenantId, conversationId);
+        await setAiConversationState(tenantId, conversationId, { ...state,
+          pendingConversationChoice: createPendingConversationChoice({ kind: "PHARMACY_CHECKOUT", prompt: text,
+            options: inputChoiceOptions(["ยืนยันสั่งซื้อ", "ยังไม่สั่งซื้อ"]),
+            context: { caseId: assessmentId, stage: "APPROVED" } }) });
+      } catch (error) {
+        console.error("[BMS] pharmacy checkout menu persistence failed:", (error as { code?: string })?.code ?? "UNKNOWN");
+        text = fallbackText ?? text;
+      }
+    }
     await sendStaffMessage(tenantId, conversationId, text, staffActor);
     await recordPharmacyEvent({
       tenantId,
@@ -232,11 +247,12 @@ function normalizeCheckoutOrderDraft(value: any): PharmacyCheckoutOrderDraft | n
 function buildApprovedCustomerMessage(baseResponse: string, orderDraft: PharmacyCheckoutOrderDraft | null): string {
   const trimmed = baseResponse.trim();
   if (!orderDraft || orderDraft.items.length === 0) return trimmed;
-  return [
+  return renderConversationChoices([
     trimmed,
     "",
-    'หากต้องการสั่งซื้อตามรายการยานี้ ตอบว่า "ยืนยันสั่งซื้อ" ได้เลยค่ะ ระบบจะส่งลิงก์ checkout กลับให้อัตโนมัติ',
-  ].join("\n");
+    ...orderDraft.items.map(item => `${item.sku} / ${item.size} × ${item.qty}`),
+    'หากต้องการสั่งซื้อตามรายการนี้ เลือกยืนยันสั่งซื้อเพื่อรับลิงก์ checkout ค่ะ',
+  ].join("\n"), inputChoiceOptions(["ยืนยันสั่งซื้อ", "ยังไม่สั่งซื้อ"]));
 }
 
 function mapRow(r: any): PharmacyAssessmentRow {
@@ -1962,7 +1978,9 @@ export async function approveAssessment(
       assessmentId,
       buildApprovedCustomerMessage(trimmedResponse, normalizedOrderDraft),
       "approved",
-      staffActor
+      staffActor,
+      normalizedOrderDraft,
+      trimmedResponse
     );
     return { status: "OK" };
   } catch (err) {

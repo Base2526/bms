@@ -9,6 +9,15 @@ the authoritative registry. AI MUST call only registered tools.
 
 ## Wiring status (2026-07 — AI tool-calling)
 
+### Contextual customer choices
+
+`present_customer_choices` is a customer-only, non-mutating presentation tool. It takes one
+question (up to 300 characters) and 2-8 distinct short labels (up to 120 characters each).
+Use after verified reads for product, variant, branch, fulfillment, configured payment or yes/no
+choices. The pipeline renders and persists the menu; a selected label is a customer answer, never
+permission to execute a sensitive mutation. Order/booking confirmations and pharmacy intake use
+their dedicated server summaries. Staff confirmation continues through the existing permission-gated UI.
+
 ### Board-game chat requests (`10.48`)
 
 | Tool | Customer permission | Authority and result |
@@ -20,9 +29,10 @@ the authoritative registry. AI MUST call only registered tools.
 Contact completeness uses `get_customer_checkout`; missing name/phone use the existing
 `save_customer_checkout_details`. Neither customer/tenant IDs nor a confirmation flag are model
 arguments. Booking-disabled/deposit branches return typed business rejections rather than incidents.
-No chat table confirmation, deposit payment, reschedule, cancellation or automatic staff/customer
-notification is exposed. Staff must review at POS with the existing PIN and call the customer.
-Migration `10.48` must be applied before deploying these tools.
+The original `10.48` release required staff review at POS with the existing PIN. The current
+`10.49` flow adds opt-in table confirmation, customer-owned cancellation/rescheduling and
+staff-reviewed operational requests, as detailed in the registry below. Deposit payment is still
+not exposed through these chat tools. Apply the matching migrations before deploying them.
 
 These tools are now actually reachable by Claude via a tool-use runtime, not just documented.
 Registry + surface/RBAC filtering: [`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/tools/catalog.ts)
@@ -100,6 +110,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | --- | --- | --- | --- | --- |
 | `search_system_capabilities`, `search_system_guides` | A1/knowledge | no | — | deterministic read of the verified bilingual catalog; `search_system_guides` also returns the verified FAQ answers owned by each guide plus, for its two best-ranked guides, the limits/traps that constrain them — quote these rather than paraphrasing; reports missing actor permissions but never grants access |
 | `get_my_access` | A1/access | no | — | server-derived current actor role and effective permission codes; display name and POS-only scope are read from `users` because they are not session claims |
+| `present_customer_choices` | A1/presentation | yes | — | bounded question/options, no business mutation or confirmation authority |
 | `search_staff_users`, `get_staff_user_access` | A1/access | no | `user.view` | bounded current-tenant staff lookup / effective access; excludes platform identities and sensitive account fields |
 | `get_loyalty_program_status` | A1/config | no | `member.view` | tenant loyalty enablement and verified earning/redemption settings, including the before/after-discount earning base; not a customer balance |
 | `search_products`, `browse_catalog`, `list_new_arrivals`, `find_alternatives`, `get_product`, `check_stock`, `list_menu_modifiers`, `recommend_products` | A1 | yes | `product.view` | read |
@@ -1203,12 +1214,14 @@ Confidence
   CRM identity/contact. Default is `REQUESTED`; branch `chatAutoConfirm=true` with no deposit
   permits `CONFIRMED` only after locked table allocation. Configuration changes invalidate consent.
 - `get_board_game_reservation_status` — `order.view`; latest five own CHAT bookings, short references
-  and verified states only, never other customers or table ids.
+  and verified states only, never other customers or table ids. The pipeline binds numbered
+  booking/action choices to this scoped result; the model never reconstructs a reference from prose.
 - `manage_board_game_booking` — board-game customer-only, `order.create`; `action` is `CANCEL`,
   `RESCHEDULE`, `REFUND`, `DISCOUNT`, `EXTEND_TIME` or `STAFF`. Booking changes require an exact
-  eight-character reference from the scoped status read. Reschedule additionally requires
-  `reservedLocal`, `durationMinutes`, `partySize` and a CONFIRMED no-deposit booking before check-in;
-  the same table must fit the new time/party. Other actions require a bounded non-PII `note` and
+  eight-character reference from the scoped status read. Reschedule requires `reservedLocal` and a
+  CONFIRMED no-deposit booking before check-in; omitted `durationMinutes`/`partySize` retain the
+  locked current values, while explicitly changed values are revalidated. The same table must fit
+  the new time/party. Other actions require a bounded non-PII `note` and
   create an Inbox note plus durable staff mention for review, never a payment, price or clock write.
   Every action previews first. The pipeline consumes fresh consent to the exact latest server
   summary (15-minute expiry), then the service rechecks ownership and row version in the transaction.

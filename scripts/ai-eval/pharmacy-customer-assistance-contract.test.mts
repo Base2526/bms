@@ -67,7 +67,7 @@ test("short-reply clarification cannot erase a crisis, medication question or ex
   assert.equal(shouldPreservePharmacyCustomerMessage("ข้อแรก กินยาเกินขนาด", false), true);
   assert.equal(shouldPreservePharmacyCustomerMessage("ข้อแรก", true), false);
   const pipeline = source("apps/web/lib/bms/pipeline.ts");
-  assert.match(pipeline, /shouldPreservePharmacyCustomerMessage\(rawSafetyMessage, isPharmacyTenant\)\s*\? rawSafetyMessage : stripMarkdownEmphasis\(\s*normalizePharmacyClarificationReply/);
+  assert.match(pipeline, /shouldPreservePharmacyCustomerMessage\(rawSafetyMessage, isPharmacyTenant\)\s*\? rawSafetyMessage : choiceResolution.kind === "matched"/);
 });
 for (const row of PHARMACY_CUSTOMER_CORPUS) {
   test(`customer pharmacy corpus: ${row.id}`, () => {

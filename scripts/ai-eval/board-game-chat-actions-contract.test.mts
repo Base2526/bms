@@ -101,11 +101,14 @@ test("tool exposure and validation do not accept arbitrary tenant, customer, tab
     { action: "STAFF" }, { action: "STAFF", note: "call 0800000000" },
     { action: "DISCOUNT", note: "please", durationMinutes: 60 },
   ]) assert.throws(() => validateBoardGameChatAction(draft as any));
+  assert.doesNotThrow(() => validateBoardGameChatAction({
+    action: "RESCHEDULE", reference: "12345678", reservedLocal: "2027-01-11T18:00",
+  }));
 });
 
 test("pipeline consumes and persists action consent before guards, and server receipts precede model prose", () => {
   const source = readFileSync(new URL("../../apps/web/lib/bms/pipeline.ts", import.meta.url), "utf8");
   assert.ok(source.indexOf("storedState.pendingBoardGameChatAction = null") < source.indexOf("const boardGameGuard"));
-  assert.match(source, /isLatestBoardGameChatActionSummary\(quote, lastAssistant\)/);
+  assert.match(source, /isLatestBoardGameChatActionSummary\(quote, lastAssistantMessage\)/);
   assert.ok(source.indexOf("if (execCtx.boardGameChatActionResult ||") < source.indexOf("if (loop.usedAi)"));
 });
