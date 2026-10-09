@@ -44,7 +44,7 @@ done
 [[ $key_id =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || usage
 [[ -d $desktop_app && -f $private_key ]] || usage
 [[ $base_url =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $base_url != *'@'* ]] || {
-  echo "base URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2;
+  echo "base URL must use HTTPS and contain no credentials" >&2; exit 2;
 }
 base_url=${base_url%/}
 
@@ -52,11 +52,11 @@ repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 managed_root="$repo_root/deploy/retail-local/managed-runtime"
 macos_root="$managed_root/macos"
 [[ -z $(git -C "$repo_root" status --porcelain --untracked-files=normal) ]] || {
-  echo "working tree ต้องสะอาดก่อนสร้าง signed release" >&2
+  echo "The working tree must be clean before creating a signed release" >&2
   exit 1
 }
 commit=$(git -C "$repo_root" rev-parse HEAD)
-[[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "อ่าน source commit ไม่สำเร็จ" >&2; exit 1; }
+[[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "Failed to read the source commit" >&2; exit 1; }
 output_dir=${output_dir:-"$repo_root/artifacts/retail-local/managed-runtime/releases/$version/macos-15-$architecture"}
 mkdir -p "$output_dir" "$cache_dir"
 output_dir=$(cd "$output_dir" && pwd)
@@ -75,25 +75,25 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 for command in curl ditto docker file gzip node shasum tar; do
-  command -v "$command" >/dev/null || { echo "ไม่พบ $command" >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo "Command was not found: $command" >&2; exit 1; }
 done
-[[ $(uname -s) == Darwin ]] || { echo "macOS release ต้องเตรียมบน macOS" >&2; exit 1; }
-docker info >/dev/null 2>&1 || { echo "Docker build engine ไม่พร้อม" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "macOS release must be prepared on macOS" >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo "Docker build engine is not ready" >&2; exit 1; }
 desktop_executable="$desktop_app/Contents/MacOS/BMS POS"
 [[ -x $desktop_executable && -f $desktop_app/Contents/Info.plist ]] || {
-  echo "desktop app ไม่ใช่ BMS POS.app ที่สมบูรณ์: $desktop_app" >&2; exit 1;
+  echo "Desktop app is not a complete BMS POS.app: $desktop_app" >&2; exit 1;
 }
 desktop_file=$(file "$desktop_executable")
 if [[ $architecture == arm64 ]]; then
-  [[ $desktop_file == *arm64* ]] || { echo "BMS POS.app ไม่ใช่ Apple Silicon build" >&2; exit 1; }
+  [[ $desktop_file == *arm64* ]] || { echo "BMS POS.app is not an Apple Silicon build" >&2; exit 1; }
 else
-  [[ $desktop_file == *x86_64* ]] || { echo "BMS POS.app ไม่ใช่ Intel build" >&2; exit 1; }
+  [[ $desktop_file == *x86_64* ]] || { echo "BMS POS.app is not an Intel build" >&2; exit 1; }
 fi
 for name in web ws postgres redis runtime compose desktop shop-archetypes; do
-  [[ ! -e $output_dir/$name.artifact ]] || { echo "artifact มีอยู่แล้ว: $output_dir/$name.artifact" >&2; exit 1; }
+  [[ ! -e $output_dir/$name.artifact ]] || { echo "Artifact already exists: $output_dir/$name.artifact" >&2; exit 1; }
 done
 [[ ! -e $output_dir/release-descriptor.json && ! -e $output_dir/release.jws.json ]] || {
-  echo "release metadata มีอยู่แล้วใน $output_dir" >&2; exit 1;
+  echo "Release metadata already exists in $output_dir" >&2; exit 1;
 }
 cleanup_outputs=true
 
@@ -127,7 +127,7 @@ fetch() {
     mv "$destination.part" "$destination"
   fi
   actual=$(shasum -a 256 "$destination" | awk '{print $1}')
-  [[ $actual == "$expected" ]] || { echo "checksum ไม่ตรง: $destination" >&2; exit 1; }
+  [[ $actual == "$expected" ]] || { echo "Checksum mismatch: $destination" >&2; exit 1; }
 }
 
 lima_archive="$cache_dir/lima-$LIMA_VERSION-Darwin-$lima_host_arch.tar.gz"
@@ -147,7 +147,7 @@ postgres_ref="bms/retail-local-postgres:16-alpine-$version-$architecture"
 redis_ref="bms/retail-local-redis:7-alpine-$version-$architecture"
 if [[ $reuse_images == true ]]; then
   for image_ref in "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"; do
-    docker image inspect "$image_ref" >/dev/null 2>&1 || { echo "ไม่พบ image: $image_ref" >&2; exit 1; }
+    docker image inspect "$image_ref" >/dev/null 2>&1 || { echo "Image was not found: $image_ref" >&2; exit 1; }
   done
 else
   docker buildx build --platform "$linux_platform" --provenance=false --load \
@@ -171,8 +171,8 @@ fi
 for image_ref in "$web_ref" "$ws_ref"; do
   image_commit=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_ref")
   [[ $image_commit == "$commit" ]] || {
-    echo "ปฏิเสธ image ที่ไม่ตรง source commit: $image_ref (image=$image_commit source=$commit)" >&2
-    echo "build release ใหม่โดยไม่ใช้ --reuse-images" >&2
+    echo "Refusing an image that does not match the source commit: $image_ref (image=$image_commit source=$commit)" >&2
+    echo "Rebuild the release without --reuse-images" >&2
     exit 1
   }
 done
@@ -242,4 +242,4 @@ BMS_ALLOW_LOCAL_RELEASE_SIGNING=1 node "$managed_root/sign-release.mjs" \
   "$output_dir/release-descriptor.json" "$private_key" "$output_dir/release.jws.json"
 shasum -a 256 "$output_dir"/*.artifact "$output_dir/release.jws.json" >"$output_dir/SHA256SUMS"
 release_complete=true
-printf 'macOS signed release พร้อม: %s\n' "$output_dir"
+printf 'macOS signed release ready: %s\n' "$output_dir"

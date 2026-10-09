@@ -82,7 +82,7 @@ test("macOS full installer uses its private VZ runtime instead of Docker Desktop
   assert.match(packageBuilder, /pkgutil --expand "\$package_path"/);
   assert.match(packageBuilder, /gzip compressed data/);
   assert.match(packageBuilder, /"sourceCommit":"\$source_commit"/);
-  assert.match(packageSmokeTest, /component Payload ต้องเป็น archive ไม่ใช่ directory/);
+  assert.match(packageSmokeTest, /component Payload must be an archive, not a directory/);
   assert.match(packageSmokeTest, /macos-15-x64/);
   assert.match(packageSmokeTest, /<relocate>/);
   assert.match(packagePostinstall, /missing \/Applications\/BMS POS\.app/);
@@ -112,13 +112,13 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(bootstrapBuilder, /manifest-url/);
   assert.match(bootstrapBuilder, /25 \* 1024 \* 1024/);
   assert.match(bootstrapBuilder, /firstInstallInternetRequired/);
-  assert.match(bootstrapBuilder, /--test-ca[\s\S]*test_build == true[\s\S]*ห้ามใส่ private key ใน bootstrap/);
+  assert.match(bootstrapBuilder, /--test-ca[\s\S]*test_build == true[\s\S]*Do not include private keys in the bootstrap/);
   assert.match(bootstrapBuilder, /chmod 0644 "\$bootstrap_root\/trusted-release-keys\.json"[\s\S]*test-release-ca\.pem/);
   assert.doesNotMatch(bootstrapBuilder, /ubuntu-24\.04-server-cloudimg\.img|docker image save|BMS POS\.app/);
-  assert.match(bootstrapSmoke, /online bootstrap ฝัง payload ขนาดใหญ่/);
+  assert.match(bootstrapSmoke, /Online bootstrap embeds a large payload/);
   assert.match(bootstrapSmoke, /Applications\/BMS POS\.app/);
   assert.match(bootstrapSmoke, /package_type == server \|\| \$package_type == server-pos/);
-  assert.match(bootstrapSmoke, /stat -f %Lp[\s\S]*== 644[\s\S]*test release CA permission/);
+  assert.match(bootstrapSmoke, /stat -f %Lp[\s\S]*== 644[\s\S]*Test release CA permissions/);
   assert.match(postinstall, /Internet is required for the first setup/);
   assert.match(postinstall, /chmod 0644 "\$root\/bootstrap\/trusted-release-keys\.json"[\s\S]*PACKAGE_TYPE[\s\S]*test-release-ca\.pem/);
 
@@ -137,7 +137,7 @@ test("macOS normal distribution is a small signed-release bootstrap for Apple Si
   assert.match(posBootstrapSetup, /retryAfterSeconds[\s\S]*heartbeat/);
   assert.doesNotMatch(posBootstrapSetup, /curl_tls\[@\]/);
   assert.match(posBootstrapSetup, /curl_args=\(--fail[\s\S]*curl "\$\{curl_args\[@\]\}"/);
-  assert.match(posBootstrapSmoke, /POS bootstrap ฝัง Electron/);
+  assert.match(posBootstrapSmoke, /POS bootstrap embeds the Electron/);
   assert.match(posBootstrapSmoke, /LSMinimumSystemVersion[\s\S]*minimum_os == 12\.0/);
   assert.match(posBootstrapSmoke, /25 \* 1024 \* 1024/);
 
@@ -238,7 +238,7 @@ test("reference release verifier accepts authentic bytes and refuses tampering",
 
   const tampered = JSON.parse(envelope.toString("utf8"));
   tampered.payload = Buffer.from(JSON.stringify({ ...payload, releaseVersion: "9.9.9" })).toString("base64url");
-  assert.throws(() => verifyReleaseEnvelope(Buffer.from(JSON.stringify(tampered)), publicKeyPem), /signature ไม่ถูกต้อง/);
+  assert.throws(() => verifyReleaseEnvelope(Buffer.from(JSON.stringify(tampered)), publicKeyPem), /signature is invalid/);
 });
 
 test("platform preflights are read-only and preserve the Windows 10 support boundary", () => {
@@ -546,8 +546,8 @@ test("repository release build defaults to online x64 bootstraps and keeps offli
   assert.match(releaseBuilder, /build-online-pos-bootstrap\.ps1/);
   assert.match(releaseBuilder, /WindowsX86ManifestUri/);
   assert.match(releaseBuilder, /\$Distribution -eq "Online"[\s\S]*exit 0/);
-  assert.match(onlineBuilder, /public keyring ต้องไม่มี private key/);
-  assert.match(onlineBuilder, /build รองรับเฉพาะ x64/);
+  assert.match(onlineBuilder, /public keyring must not contain private keys/);
+  assert.match(onlineBuilder, /builds support only x64/);
   assert.match(onlineBuilder, /ValidateSet\("server", "server-pos", "all"\)/);
   assert.match(onlineBuilder, /BMS-Retail-Local-\$label-\$Version-windows-x64/);
   assert.match(onlineBuilder, /DPackageType=\$\(\$spec\.PackageType\)/);
@@ -629,7 +629,7 @@ test("Windows local release test uses production-format signing without serving 
   assert.match(server, /listen\(port, "127\.0\.0\.1"/);
   assert.doesNotMatch(server, /private|secrets/i);
   assert.match(stop, /FindByThumbprint/);
-  assert.match(stop, /ไม่ใช่ local test release server/);
+  assert.match(stop, /is not the recorded local test release server/);
 });
 
 test("Linux release preparation builds all signed payload components before signing", () => {
@@ -701,8 +701,8 @@ test("activation and replacement recovery preserve business continuity without c
 
   assert.doesNotMatch(linuxInstaller, /read[^\n]*Activation Code|activation_result=\$\(curl/);
   assert.doesNotMatch(windowsInstaller, /Read-Host[^\n]*Activation Code|Invoke-RestMethod -Uri \$ActivationUri/);
-  assert.match(linuxActivation, /แลก Activation Code ไม่สำเร็จ; ร้านยังใช้งานได้/);
-  assert.match(windowsActivation, /ร้านยังใช้งานได้/);
+  assert.match(linuxActivation, /Failed to redeem the Activation Code; the shop can continue operating/);
+  assert.match(windowsActivation, /the shop can continue operating/);
   assert.match(macosInstaller, /Activation did not complete[\s\S]*Installation and shop operations can continue/);
   assert.match(linuxActivation, /--transfer[\s\S]*TRANSFER_REQUESTED/);
   assert.match(windowsActivation, /\[switch\]\$Transfer[\s\S]*TRANSFER_REQUESTED/);
@@ -744,7 +744,7 @@ test("stable promotion requires current external evidence for every GA gate", ()
     new Date("2026-09-26T00:00:00Z")), /production-release-key/);
   assert.throws(() => verifyPromotionEvidence(evidence, { ...descriptor, sourceCommit: "b".repeat(40) },
     new Date("2026-09-26T00:00:00Z")), /sourceCommit/);
-  assert.throws(() => verifyPromotionEvidence(evidence, descriptor, new Date("2027-02-01T00:00:00Z")), /หมดอายุ/);
+  assert.throws(() => verifyPromotionEvidence(evidence, descriptor, new Date("2027-02-01T00:00:00Z")), /has expired/);
   assert.throws(() => verifyPromotionEvidence(
     { ...evidence, platformTarget: "ubuntu-99.99-lts-x64" },
     { ...descriptor, platformTarget: "ubuntu-99.99-lts-x64" },
@@ -841,7 +841,7 @@ test("installed-shop updates are signed, newer-only, backup-first, and recoverab
   assert.match(linuxUpdater, /run_agent_json_progress[\s\S]*stage-release[\s\S]*-progress/);
   assert.match(agentMain, /"channel":\s+verified\.Payload\.Channel/);
   assert.match(linuxUpdateCommand, /--check[\s\S]*--yes[\s\S]*update-managed-runtime\.sh/);
-  assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*พิมพ์ UPDATE[\s\S]*stage-release/);
+  assert.match(linuxUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*mode == check[\s\S]*Type UPDATE[\s\S]*stage-release/);
   assert.match(windowsUpdater, /preflight[\s\S]*check-update[\s\S]*updateAvailable[\s\S]*\$CheckOnly[\s\S]*Read-Host[\s\S]*stage-release/);
   assert.match(windowsInstaller, /Check for Updates[\s\S]*-CheckOnly[\s\S]*BMS Retail Local Update/);
   assert.ok(linuxUpdater.indexOf("mode == check") < linuxUpdater.indexOf("install -m 0755 -o root -g root \"$localctl_source\""));

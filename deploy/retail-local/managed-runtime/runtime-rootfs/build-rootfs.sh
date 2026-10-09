@@ -7,7 +7,7 @@ output=${2:-}
   echo "usage: build-rootfs.sh ubuntu@sha256:<digest> OUTPUT.tar" >&2
   exit 2
 }
-[[ -n $output && ! -e $output ]] || { echo "OUTPUT ต้องเป็นไฟล์ใหม่" >&2; exit 2; }
+[[ -n $output && ! -e $output ]] || { echo "OUTPUT must be a new file" >&2; exit 2; }
 context=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 tag="bms-retail-local-rootfs-build:$$"
 container=

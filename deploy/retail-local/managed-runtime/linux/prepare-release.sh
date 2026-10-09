@@ -34,27 +34,27 @@ done
 [[ $key_id =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || usage
 [[ -f $desktop_deb && -f $private_key ]] || usage
 [[ $base_url =~ ^https://[^/@:]+([/:?#]|$) && $base_url != *'@'* ]] || {
-  echo "base URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2;
+  echo "base URL must use HTTPS and contain no credentials" >&2; exit 2;
 }
 base_url=${base_url%/}
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 managed_root="$repo_root/deploy/retail-local/managed-runtime"
 [[ -z $(git -C "$repo_root" status --porcelain --untracked-files=normal) ]] || {
-  echo "working tree ต้องสะอาดก่อนสร้าง signed release" >&2
+  echo "The working tree must be clean before creating a signed release" >&2
   exit 1
 }
 output_dir=${output_dir:-"$repo_root/artifacts/retail-local/managed-runtime/releases/$version/ubuntu-24.04-lts-x64"}
 mkdir -p "$output_dir"
 output_dir=$(cd "$output_dir" && pwd)
 
-command -v docker >/dev/null || { echo "ไม่พบ Docker build engine" >&2; exit 1; }
-docker info >/dev/null 2>&1 || { echo "Docker build engine ไม่พร้อม" >&2; exit 1; }
+command -v docker >/dev/null || { echo "Docker build engine was not found" >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo "Docker build engine is not ready" >&2; exit 1; }
 for name in web ws postgres redis runtime compose desktop; do
-  [[ ! -e $output_dir/$name.artifact ]] || { echo "artifact มีอยู่แล้ว: $output_dir/$name.artifact" >&2; exit 1; }
+  [[ ! -e $output_dir/$name.artifact ]] || { echo "Artifact already exists: $output_dir/$name.artifact" >&2; exit 1; }
 done
 [[ ! -e $output_dir/release-descriptor.json && ! -e $output_dir/release.jws.json ]] || {
-  echo "release metadata มีอยู่แล้วใน $output_dir" >&2; exit 1
+  echo "Release metadata already exists in $output_dir" >&2; exit 1
 }
 
 web_ref="bms/retail-local-web:$version"
@@ -62,7 +62,7 @@ ws_ref="bms/retail-local-ws:$version"
 postgres_ref="bms/retail-local-postgres:16-alpine-$version"
 redis_ref="bms/retail-local-redis:7-alpine-$version"
 commit=$(git -C "$repo_root" rev-parse HEAD)
-[[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "อ่าน source commit ไม่สำเร็จ" >&2; exit 1; }
+[[ $commit =~ ^[a-f0-9]{40}$ ]] || { echo "Failed to read the source commit" >&2; exit 1; }
 
 docker buildx build --platform linux/amd64 --provenance=false --load \
   --build-arg BMS_SOURCE_COMMIT="$commit" \
@@ -84,7 +84,7 @@ printf 'FROM redis:7-alpine\n' | docker buildx build --platform linux/amd64 \
 for image_ref in "$web_ref" "$ws_ref"; do
   image_commit=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$image_ref")
   [[ $image_commit == "$commit" ]] || {
-    echo "image $image_ref ไม่ตรงกับ source commit $commit (พบ ${image_commit:-ไม่มี label})" >&2
+    echo "Image $image_ref does not match source commit $commit (found ${image_commit:-no label})" >&2
     exit 1
   }
 done
@@ -92,7 +92,7 @@ docker run --rm --entrypoint sh "$web_ref" -lc '
   test -f scripts/retail-local-provision.mts
   test -f scripts/retail-local-sample-data.mts
   node --conditions=react-server --input-type=module -e "await import(\"server-only\")"
-' || { echo "Web image ไม่พร้อมรัน Retail Local provision/sample-data" >&2; exit 1; }
+' || { echo "Web image is not ready to run Retail Local provisioning/sample data" >&2; exit 1; }
 
 docker image save --output "$output_dir/web.artifact" "$web_ref"
 docker image save --output "$output_dir/ws.artifact" "$ws_ref"
@@ -149,4 +149,4 @@ EOF
 BMS_ALLOW_LOCAL_RELEASE_SIGNING=1 node "$managed_root/sign-release.mjs" \
   "$output_dir/release-descriptor.json" "$private_key" "$output_dir/release.jws.json"
 shasum -a 256 "$output_dir"/*.artifact "$output_dir/release.jws.json" >"$output_dir/SHA256SUMS"
-printf 'Release พร้อม: %s\n' "$output_dir"
+printf 'Release ready: %s\n' "$output_dir"

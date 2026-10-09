@@ -257,7 +257,7 @@ test("Linux offline pilot produces four x64 installers with verified pinned imag
   const setup = read("deploy/retail-local/linux-offline/bms-retail-local-setup");
   const backup = read("deploy/retail-local/linux-offline/bms-retail-local-backup");
   const readme = read("deploy/retail-local/linux-offline/README.template.md");
-  assert.ok(builder.indexOf("Server ZIP checksum ไม่ตรง") < builder.indexOf("docker run --rm"));
+  assert.match(builder, /Server ZIP checksum mismatch[\s\S]*docker run --rm/);
   assert.match(builder, /imageSha256/);
   assert.match(builder, /Replace\("`r`n", "`n"\)\.Replace\("`r", "`n"\)/);
   assert.match(builder, /linuxPackageSourceMount/);
@@ -295,13 +295,13 @@ test("one release command builds every host-supported installer from a clean ver
   assert.match(builder, /npm run pack:mac/);
   assert.match(builder, /foreach \(\$architecture in @\("arm64", "x64"\)\)/);
   assert.match(builder, /BMS-Retail-Local-Server-POS-\$Version-x64\.pkg/);
-  assert.match(builder, /Target MacOS ต้อง build บน macOS/);
+  assert.match(builder, /Target MacOS must be built on macOS/);
   assert.ok(
     builder.indexOf("Build Windows installers") < builder.indexOf("Build Linux installers"),
     "large Windows and Linux packagers must run sequentially"
   );
   assert.match(builder, /release\.sourceCommit -ne \$head/);
-  assert.match(builder, /SHA-256 ไม่ตรง/);
+  assert.match(builder, /SHA-256 mismatch/);
   assert.match(guide, /-UpdateVersion/);
   assert.match(guide, /git commit -m/);
   assert.match(guide, /-Version 0\.2\.13/);

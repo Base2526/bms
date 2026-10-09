@@ -11,13 +11,13 @@ $agent = Join-Path $InstallRoot "bootstrap\bms-runtime-agent.exe"
 $receipt = Join-Path $InstallRoot "installation.json"
 if (-not (Test-Path -LiteralPath $agent -PathType Leaf) -or
     -not (Test-Path -LiteralPath $receipt -PathType Leaf)) {
-  throw "ยังไม่ได้ติดตั้ง BMS Retail Local Managed Runtime"
+  throw "BMS Retail Local Managed Runtime is not installed"
 }
-if ([string]::IsNullOrWhiteSpace($ActivationUri)) { throw "bootstrap ไม่มี Activation URL" }
+if ([string]::IsNullOrWhiteSpace($ActivationUri)) { throw "The bootstrap has no Activation URL" }
 $parsed = $null
 if (-not [Uri]::TryCreate($ActivationUri, [UriKind]::Absolute, [ref]$parsed) -or
     $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-  throw "Activation URL ต้องเป็น HTTPS ที่ไม่มี credential"
+  throw "Activation URL must use HTTPS and contain no credentials"
 }
 
 # Read and validate the authoritative restored receipt before consuming the one-use activation code.
@@ -26,7 +26,7 @@ Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
 try {
   & $agent runtime-read -engine windows-wsl -distro "BMSRuntime" `
     -source "/var/lib/bms-retail-local/installation.json" -destination $runtimeReceipt *> $null
-  if ($LASTEXITCODE -ne 0) { throw "อ่าน installation receipt จาก private runtime ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to read the installation receipt from the private runtime" }
   $installed = Get-Content -LiteralPath $runtimeReceipt -Raw | ConvertFrom-Json
 } finally {
   Remove-Item -LiteralPath $runtimeReceipt -Force -ErrorAction SilentlyContinue
@@ -42,7 +42,7 @@ $event = if ($Transfer -or $hasStoredLicense) {
 
 $secureCode = Read-Host "Activation Code" -AsSecureString
 $activationCode = [Net.NetworkCredential]::new("", $secureCode).Password
-if ([string]::IsNullOrWhiteSpace($activationCode)) { throw "Activation Code ว่าง" }
+if ([string]::IsNullOrWhiteSpace($activationCode)) { throw "Activation Code is empty" }
 try {
   $body = @{ activationCode = $activationCode } | ConvertTo-Json -Compress
   $activation = Invoke-RestMethod -Uri $ActivationUri -Method Post -ContentType "application/json" `
@@ -62,7 +62,7 @@ $oldToken = [Environment]::GetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", 
 try {
   [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", [string]$activation.ingestionToken, "Process")
   & $agent @arguments *> $null
-  if ($LASTEXITCODE -ne 0) { throw "แลก Code สำเร็จแต่ตั้งค่าหลักฐานในเครื่องไม่สำเร็จ; ร้านยังใช้งานได้ กรุณาติดต่อ Support" }
+  if ($LASTEXITCODE -ne 0) { throw "Code redeemed, but local evidence configuration failed; the shop can continue operating. Please contact Support" }
 } finally {
   [Environment]::SetEnvironmentVariable("BMS_LICENSE_EVIDENCE_TOKEN", $oldToken, "Process")
 }
@@ -76,7 +76,7 @@ $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [IO.File]::WriteAllText($receipt, ($installed | ConvertTo-Json), $utf8NoBom)
 & $agent runtime-write -engine windows-wsl -distro "BMSRuntime" -source $receipt `
   -destination "/var/lib/bms-retail-local/installation.json" -mode "0600" *> $null
-if ($LASTEXITCODE -ne 0) { Write-Warning "Activation สำเร็จแต่ sync installation receipt ไม่สำเร็จ; กรุณาติดต่อ Support" }
+if ($LASTEXITCODE -ne 0) { Write-Warning "Activation succeeded, but installation receipt synchronization failed; please contact Support" }
 
 try {
   $licenseAction = New-ScheduledTaskAction -Execute $agent `
@@ -87,6 +87,6 @@ try {
   Register-ScheduledTask -TaskName "BMS Retail Local License Evidence" -Action $licenseAction `
     -Trigger $licenseTrigger -Principal $licensePrincipal -Settings $licenseSettings -Force | Out-Null
 } catch {
-  Write-Warning "Activation สำเร็จแต่ตั้งเวลา Licensing evidence ไม่สำเร็จ; ร้านยังใช้งานได้: $($_.Exception.Message)"
+  Write-Warning "Activation succeeded, but scheduling licensing evidence failed; the shop can continue operating: $($_.Exception.Message)"
 }
-Write-Host "Activation สำเร็จ; ร้านและข้อมูลเดิมไม่เปลี่ยนแปลง" -ForegroundColor Green
+Write-Host "Activation completed; the existing shop and data are unchanged" -ForegroundColor Green

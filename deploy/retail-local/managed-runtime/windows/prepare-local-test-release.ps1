@@ -11,15 +11,15 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
-if ($PSVersionTable.PSVersion.Major -lt 7) { throw "ต้องรันด้วย PowerShell 7: pwsh" }
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version ต้องเป็น Semantic Version" }
-if ($SourceImageVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "SourceImageVersion ต้องเป็น Semantic Version" }
-if ($Port -lt 1 -or $Port -gt 65535) { throw "Port ไม่ถูกต้อง" }
+if ($PSVersionTable.PSVersion.Major -lt 7) { throw "Run this script with PowerShell 7: pwsh" }
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version must be a semantic version" }
+if ($SourceImageVersion -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "SourceImageVersion must be a semantic version" }
+if ($Port -lt 1 -or $Port -gt 65535) { throw "Port is invalid" }
 
 function Invoke-Checked([string]$Title, [scriptblock]$Action) {
   Write-Host "`n==> $Title" -ForegroundColor Cyan
   & $Action
-  if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
+  if ($LASTEXITCODE -ne 0) { throw "$Title failed (exit $LASTEXITCODE)" }
 }
 
 function Write-Utf8NoBom([string]$Path, [string]$Contents) {
@@ -31,7 +31,7 @@ function Add-LocalMachineRootCertificate([string]$CertificatePath) {
   $process = Start-Process -FilePath (Join-Path $env:SystemRoot "System32\certutil.exe") `
     -ArgumentList $arguments -Verb RunAs -Wait -PassThru
   if ($process.ExitCode -ne 0) {
-    throw "เพิ่ม local test TLS certificate ใน LocalMachine Root ไม่สำเร็จ (exit $($process.ExitCode))"
+    throw "Failed to add the local test TLS certificate to LocalMachine Root (exit $($process.ExitCode))"
   }
 }
 
@@ -40,7 +40,7 @@ function Remove-LocalMachineRootCertificate([string]$Thumbprint) {
   $process = Start-Process -FilePath (Join-Path $env:SystemRoot "System32\certutil.exe") `
     -ArgumentList "-delstore Root $Thumbprint" -Verb RunAs -Wait -PassThru
   if ($process.ExitCode -ne 0) {
-    Write-Warning "ถอด local test TLS certificate จาก LocalMachine Root ไม่สำเร็จ (exit $($process.ExitCode))"
+    Write-Warning "Failed to remove the local test TLS certificate from LocalMachine Root (exit $($process.ExitCode))"
   }
 }
 
@@ -144,7 +144,7 @@ function Start-LocalReleaseServer(
     [void]$startInfo.ArgumentList.Add($argument)
   }
   $process = [Diagnostics.Process]::Start($startInfo)
-  if (-not $process) { throw "เริ่ม local HTTPS release server ไม่สำเร็จ" }
+  if (-not $process) { throw "Failed to start the local HTTPS release server" }
   return $process
 }
 
@@ -152,9 +152,9 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $managedRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot ".."))
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $managedRoot "..\..\.."))
 $dirty = @(& git -C $repoRoot status --porcelain --untracked-files=normal)
-if ($LASTEXITCODE -ne 0) { throw "อ่านสถานะ Git ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to read Git status" }
 if ($dirty.Count -gt 0) {
-  throw "working tree ต้องสะอาดก่อนสร้าง signed test release`n$($dirty -join "`n")"
+  throw "The working tree must be clean before building a signed test release`n$($dirty -join "`n")"
 }
 $outputRoot = if ($OutputDirectory) {
   [IO.Path]::GetFullPath($OutputDirectory)
@@ -162,7 +162,7 @@ $outputRoot = if ($OutputDirectory) {
   Join-Path $repoRoot "artifacts\retail-local\local-test-release\$Version"
 }
 if (Test-Path -LiteralPath $outputRoot) {
-  throw "มี output directory อยู่แล้ว ใช้ Version หรือ OutputDirectory ใหม่เพื่อไม่เขียนทับ key/release เดิม: $outputRoot"
+  throw "Output directory already exists. Use a new Version or OutputDirectory to avoid overwriting existing keys or releases: $outputRoot"
 }
 
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
@@ -172,12 +172,12 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
   }
 }
 foreach ($command in @("docker", "git", "node", "go", "curl.exe")) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Command was not found: $command" }
 }
-Invoke-Checked "ตรวจ Docker engine" { docker info *> $null }
+Invoke-Checked "Check Docker engine" { docker info *> $null }
 
 $listener = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-if ($listener) { throw "Port $Port ถูกใช้งานอยู่" }
+if ($listener) { throw "Port $Port is already in use" }
 
 $publicRoot = Join-Path $outputRoot "public"
 $secretRoot = Join-Path $outputRoot "secrets"
@@ -189,10 +189,10 @@ $posPath = if ($PosInstaller) {
 } else {
   Join-Path $repoRoot "artifacts\retail-local\BMS-Retail-Local-POS-$SourceImageVersion-windows-x64.exe"
 }
-if (-not (Test-Path -LiteralPath $posPath -PathType Leaf)) { throw "ไม่พบ Windows x64 POS installer: $posPath" }
+if (-not (Test-Path -LiteralPath $posPath -PathType Leaf)) { throw "Windows x64 POS installer was not found: $posPath" }
 
 $sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "อ่าน source commit ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "Failed to read the source commit" }
 
 $imageRefs = [ordered]@{
   web = "bms-retail-local-web:$SourceImageVersion"
@@ -202,7 +202,7 @@ $imageRefs = [ordered]@{
 }
 $nextBuildCpus = if ([string]::IsNullOrWhiteSpace($env:NEXT_BUILD_CPUS)) { "2" } else { $env:NEXT_BUILD_CPUS }
 $nodeBuildHeap = if ([string]::IsNullOrWhiteSpace($env:NODE_BUILD_MAX_OLD_SPACE_SIZE)) { "4096" } else { $env:NODE_BUILD_MAX_OLD_SPACE_SIZE }
-Invoke-Checked "สร้าง Web image จาก source commit $sourceCommit" {
+Invoke-Checked "Build Web image from source commit $sourceCommit" {
   docker buildx build --platform linux/amd64 --provenance=false --load `
     --build-arg "BMS_SOURCE_COMMIT=$sourceCommit" `
     --build-arg "NEXT_BUILD_CPUS=$nextBuildCpus" `
@@ -213,25 +213,25 @@ Invoke-Checked "สร้าง Web image จาก source commit $sourceCommit"
     --build-arg "COOKIE_SECURE=0" --build-arg "WEB_NAME=BMS Retail Local" `
     -f (Join-Path $repoRoot "apps\web\Dockerfile") -t $imageRefs.web $repoRoot
 }
-Invoke-Checked "สร้าง WS image จาก source commit $sourceCommit" {
+Invoke-Checked "Build WS image from source commit $sourceCommit" {
   docker buildx build --platform linux/amd64 --provenance=false --load `
     --build-arg "BMS_SOURCE_COMMIT=$sourceCommit" `
     -f (Join-Path $repoRoot "apps\ws\Dockerfile") -t $imageRefs.ws $repoRoot
 }
 foreach ($entry in $imageRefs.GetEnumerator()) {
-  Invoke-Checked "ตรวจ image $($entry.Key)" { docker image inspect $entry.Value *> $null }
+  Invoke-Checked "Check image $($entry.Key)" { docker image inspect $entry.Value *> $null }
   $platform = (& docker image inspect --format '{{.Os}}/{{.Architecture}}' $entry.Value).Trim()
   if ($LASTEXITCODE -ne 0 -or $platform -ne "linux/amd64") {
-    throw "image $($entry.Value) ต้องเป็น linux/amd64 (พบ $platform)"
+    throw "Image $($entry.Value) must be linux/amd64 (found $platform)"
   }
 }
 foreach ($name in @("web", "ws")) {
   $revision = (& docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' $imageRefs[$name]).Trim()
   if ($LASTEXITCODE -ne 0 -or $revision -ne $sourceCommit) {
-    throw "image $($imageRefs[$name]) ไม่ตรงกับ source commit $sourceCommit (พบ $revision)"
+    throw "Image $($imageRefs[$name]) does not match source commit $sourceCommit (found $revision)"
   }
 }
-Invoke-Checked "ตรวจ runtime สำหรับ provision และ sample data" {
+Invoke-Checked "Check the runtime for provisioning and sample data" {
   docker run --rm --entrypoint sh $imageRefs.web -lc `
     'test -f scripts/retail-local-provision.mts && test -f scripts/retail-local-sample-data.mts && node --conditions=react-server --input-type=module -e "await import(''server-only'')"'
 }
@@ -242,7 +242,7 @@ $privateSigningKey = Join-Path $secretRoot "release-signing-private.pem"
 $publicSigningKey = Join-Path $metadataRoot "release-signing-public.pem"
 $keyringPath = Join-Path $metadataRoot "trusted-release-keys.json"
 
-Invoke-Checked "สร้าง Ed25519 local test keyring" {
+Invoke-Checked "Create an Ed25519 local test keyring" {
   node (Join-Path $managedRoot "create-local-test-signing-key.mjs") `
     $keyId $privateSigningKey $publicSigningKey $keyringPath
 }
@@ -251,21 +251,21 @@ $runtimeTag = "bms-retail-local-runtime-rootfs-localtest:$($Version.ToLowerInvar
 $runtimeContainer = "bms-runtime-rootfs-export-$([Guid]::NewGuid().ToString('N'))"
 try {
   foreach ($entry in $imageRefs.GetEnumerator()) {
-    Invoke-Checked "บันทึก $($entry.Key) OCI artifact" {
+    Invoke-Checked "Save the $($entry.Key) OCI artifact" {
       docker image save --output (Join-Path $publicRoot "$($entry.Key).artifact") $entry.Value
     }
   }
 
-  Invoke-Checked "ดึงฐาน Ubuntu 24.04 สำหรับ private WSL runtime" { docker pull ubuntu:24.04 }
+  Invoke-Checked "Pull the Ubuntu 24.04 base for the private WSL runtime" { docker pull ubuntu:24.04 }
   $ubuntuDigest = (& docker image inspect --format '{{index .RepoDigests 0}}' ubuntu:24.04).Trim()
   if ($LASTEXITCODE -ne 0 -or $ubuntuDigest -notmatch '^ubuntu@sha256:[a-f0-9]{64}$') {
-    throw "หา immutable Ubuntu digest ไม่สำเร็จ: $ubuntuDigest"
+    throw "Failed to resolve the immutable Ubuntu digest: $ubuntuDigest"
   }
-  Invoke-Checked "สร้าง private WSL runtime rootfs" {
+  Invoke-Checked "Create the private WSL runtime rootfs" {
     docker build --pull --build-arg "UBUNTU_IMAGE=$ubuntuDigest" -t $runtimeTag `
       -f (Join-Path $managedRoot "runtime-rootfs\Dockerfile") (Join-Path $managedRoot "runtime-rootfs")
   }
-  Invoke-Checked "ส่งออก private WSL runtime rootfs" {
+  Invoke-Checked "Export the private WSL runtime rootfs" {
     docker create --name $runtimeContainer $runtimeTag *> $null
     docker export --output (Join-Path $publicRoot "runtime.artifact") $runtimeContainer
   }
@@ -282,7 +282,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "packages\retail-local-contract\shop
 $digests = @{}
 foreach ($entry in $imageRefs.GetEnumerator()) {
   $digest = (& docker image inspect --format '{{.Id}}' $entry.Value).Trim()
-  if ($LASTEXITCODE -ne 0 -or $digest -notmatch '^sha256:[a-f0-9]{64}$') { throw "อ่าน digest ของ $($entry.Key) ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0 -or $digest -notmatch '^sha256:[a-f0-9]{64}$') { throw "Failed to read the digest of $($entry.Key)" }
   $digests[$entry.Key] = $digest
 }
 
@@ -324,14 +324,14 @@ Write-Utf8NoBom $descriptorPath (($descriptor | ConvertTo-Json -Depth 8) + "`n")
 $previousSigningFlag = $env:BMS_ALLOW_LOCAL_RELEASE_SIGNING
 try {
   $env:BMS_ALLOW_LOCAL_RELEASE_SIGNING = "1"
-  Invoke-Checked "ลงลายเซ็น release manifest" {
+  Invoke-Checked "Sign the release manifest" {
     node (Join-Path $managedRoot "sign-release.mjs") $descriptorPath $privateSigningKey `
       (Join-Path $publicRoot "release.jws.json")
   }
 } finally {
   $env:BMS_ALLOW_LOCAL_RELEASE_SIGNING = $previousSigningFlag
 }
-Invoke-Checked "ตรวจลายเซ็น Ed25519 และ release target" {
+Invoke-Checked "Verify the Ed25519 signature and release target" {
   node (Join-Path $managedRoot "verify-release.mjs") --manifest (Join-Path $publicRoot "release.jws.json") `
     --public-key $publicSigningKey --key-id $keyId --target "windows-11-x64"
 }
@@ -341,7 +341,7 @@ $tlsPrivateKey = Join-Path $secretRoot "localhost-private-key.pem"
 $certificateThumbprint = ""
 $serverProcess = $null
 try {
-  Write-Host "`n==> สร้างและ trust ใบรับรอง HTTPS สำหรับ localhost (CurrentUser + LocalMachine)" -ForegroundColor Cyan
+  Write-Host "`n==> Create and trust an HTTPS certificate for localhost (CurrentUser + LocalMachine)" -ForegroundColor Cyan
   $certificateThumbprint = New-LocalhostCertificate $tlsCertificate $tlsPrivateKey
 
   $serverScript = Join-Path $managedRoot "serve-local-test-release.mjs"
@@ -366,18 +366,18 @@ try {
   $ready = $false
   Start-Sleep -Seconds 1
   for ($attempt = 0; $attempt -lt 20; $attempt++) {
-    if ($serverProcess.HasExited) { throw "local HTTPS release server หยุดทำงานก่อนพร้อม อ่าน log: $serverLog" }
+    if ($serverProcess.HasExited) { throw "The local HTTPS release server stopped before it was ready. Check the log: $serverLog" }
     & curl.exe --fail --silent --show-error --head --max-time 5 --output NUL $manifestUrl
     if ($LASTEXITCODE -eq 0) { $ready = $true; break }
     Start-Sleep -Milliseconds 500
   }
-  if (-not $ready) { throw "local HTTPS release server ไม่พร้อม: $manifestUrl" }
+  if (-not $ready) { throw "The local HTTPS release server is not ready: $manifestUrl" }
   $rangeProbe = Join-Path $metadataRoot "range-probe.bin"
   try {
     $rangeStatus = & curl.exe --fail --silent --show-error --max-time 5 --range 0-31 `
       --output $rangeProbe --write-out '%{http_code}' "https://localhost:$Port/compose.artifact"
     if ($LASTEXITCODE -ne 0 -or $rangeStatus -ne "206" -or (Get-Item -LiteralPath $rangeProbe).Length -ne 32) {
-      throw "local release server ไม่รองรับ resumable range download ตามสัญญา"
+      throw "The local release server does not support the required resumable range downloads"
     }
   } finally {
     if (Test-Path -LiteralPath $rangeProbe) { Remove-Item -LiteralPath $rangeProbe -Force }
@@ -388,20 +388,20 @@ try {
     -Keyring $keyringPath -WindowsManifestUri $manifestUrl -LinuxManifestUri $manifestUrl `
     -Target Windows -PackageType server-pos -Architecture x64 -OutputDirectory $bootstrapOutput -InnoCompiler $InnoCompiler `
     -AllowTestEndpoints -SkipTests
-  if ($LASTEXITCODE -ne 0) { throw "build Windows x64 local-test bootstrap ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the Windows x64 local-test bootstrap" }
 
   $installer = Get-ChildItem -LiteralPath $bootstrapOutput -Filter '*.exe' -File | Select-Object -First 1
-  if (-not $installer) { throw "ไม่พบ Windows local-test bootstrap ที่ build แล้ว" }
+  if (-not $installer) { throw "The built Windows local-test bootstrap was not found" }
   $state["installerPath"] = $installer.FullName
   $state["installerSha256"] = (Get-FileHash -LiteralPath $installer.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
   Write-Utf8NoBom (Join-Path $outputRoot "local-test-state.json") (($state | ConvertTo-Json -Depth 4) + "`n")
 
-  Write-Host "`nLocal test release พร้อมใช้งาน" -ForegroundColor Green
+  Write-Host "`nLocal test release is ready" -ForegroundColor Green
   Write-Host "Manifest URL : $manifestUrl"
   Write-Host "Public keyring: $keyringPath"
   Write-Host "Installer     : $($installer.FullName)"
   Write-Host "Server PID    : $($serverProcess.Id)"
-  Write-Host "หยุด server/ถอน cert: pwsh -File `"$(Join-Path $scriptRoot 'stop-local-test-release.ps1')`" -ReleaseDirectory `"$outputRoot`""
+  Write-Host "Stop the server and remove the certificate: pwsh -File `"$(Join-Path $scriptRoot 'stop-local-test-release.ps1')`" -ReleaseDirectory `"$outputRoot`""
 } catch {
   if ($serverProcess -and -not $serverProcess.HasExited) { Stop-Process -Id $serverProcess.Id -Force -ErrorAction SilentlyContinue }
   if ($certificateThumbprint) {

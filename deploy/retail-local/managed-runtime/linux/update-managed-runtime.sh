@@ -33,7 +33,7 @@ run_agent_json_progress() {
             [[ $phase == retry || $phase == verify || $phase == staged ]]; then
           printf '  [%3d%%] %s %s - %d/%d MiB%s - %s\n' \
             "$percent" "$phase" "$component" "$((completed / 1048576))" "$((total / 1048576))" \
-            "$([[ $heartbeat == true ]] && printf ' - ยังทำงานอยู่ รอข้อมูลจากเครือข่าย')" \
+            "$([[ $heartbeat == true ]] && printf ' - still running, waiting for network data')" \
             "$(date '+%H:%M:%S')" >&2
           last_percent=$percent
           last_print=$now_epoch
@@ -54,30 +54,30 @@ run_agent_json_progress() {
   rm -f -- "$output_file"
 }
 
-[[ ${EUID} -eq 0 ]] || die "กรุณารันด้วย sudo"
+[[ ${EUID} -eq 0 ]] || die "Run this command with sudo"
 manifest_uri=${1:-}
 bundle_root=${2:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)}
 mode=${3:-apply}
-is_https_url "$manifest_uri" || die "ต้องระบุ HTTPS release-manifest URL ที่ไม่มี credential"
-[[ $mode == apply || $mode == check || $mode == yes ]] || die "update mode ไม่ถูกต้อง"
-[[ -f $RUNTIME_ROOT/installation.json ]] || die "ยังไม่ได้ติดตั้ง BMS Retail Local"
+is_https_url "$manifest_uri" || die "Specify an HTTPS release-manifest URL without credentials"
+[[ $mode == apply || $mode == check || $mode == yes ]] || die "Update mode is invalid"
+[[ -f $RUNTIME_ROOT/installation.json ]] || die "BMS Retail Local is not installed"
 
 agent_source="$bundle_root/bms-runtime-agent"
 keyring_source="$bundle_root/trusted-release-keys.json"
 localctl_source="$bundle_root/bms-localctl"
 transaction_source="$bundle_root/bms-update-transaction"
 [[ -x $agent_source && -f $keyring_source && -f $localctl_source && -f $transaction_source ]] || \
-  die "bootstrap package ไม่มี updater controls ครบ"
+  die "Bootstrap package is missing updater controls"
 agent="$agent_source"
 "$agent" preflight >/dev/null
 
 current_version=$(jq -er '.version' "$RUNTIME_ROOT/installation.json")
 target=$(jq -er '.platformTarget' "$RUNTIME_ROOT/installation.json")
 package_type=$(jq -r '.packageType // "server-pos"' "$RUNTIME_ROOT/installation.json")
-[[ $package_type == server-pos || $package_type == server ]] || die "installation package type ไม่ถูกต้อง"
+[[ $package_type == server-pos || $package_type == server ]] || die "Installation package type is invalid"
 if [[ $package_type == server-pos ]]; then
   old_desktop="$RUNTIME_ROOT/releases/$current_version/desktop.artifact"
-  [[ -f $old_desktop ]] || die "ไม่พบ Desktop artifact เวอร์ชันเดิมสำหรับ rollback"
+  [[ -f $old_desktop ]] || die "Previous Desktop artifact was not found for rollback"
 fi
 manifest_path="$RUNTIME_ROOT/release/update-release.jws.json"
 curl --fail --location --proto '=https' --tlsv1.2 --max-redirs 5 \
@@ -91,7 +91,7 @@ verify_command=verify-update
 release_json=$($agent "$verify_command" -manifest "$manifest_path" \
   -keyring "$keyring_source" -target "$target" -current-version "$current_version")
 if [[ $mode == check && $(jq -r '.updateAvailable' <<<"$release_json") != true ]]; then
-  printf 'BMS Retail Local เป็นเวอร์ชันล่าสุดแล้ว: %s\n' "$current_version"
+  printf 'BMS Retail Local is up to date: %s\n' "$current_version"
   exit 0
 fi
 version=$(jq -er '.releaseVersion' <<<"$release_json")
@@ -104,7 +104,7 @@ else
   total_bytes=$(jq -er '[.components[] | select(.name != "desktop") | .sizeBytes] | add' <<<"$release_json")
 fi
 rollback_mode=$(jq -r 'if .rollbackSafe then "image-only" else "full database/files/secrets restore" end' <<<"$release_json")
-printf 'พบ BMS Retail Local update ที่ตรวจลายเซ็นแล้ว\n'
+printf 'A signature-verified BMS Retail Local update is available\n'
 printf '  version: %s -> %s\n' "$current_version" "$version"
 printf '  channel: %s\n' "$channel"
 printf '  schema: %s\n' "$schema_version"
@@ -112,13 +112,13 @@ printf '  download: %s bytes\n' "$total_bytes"
 printf '  rollback: %s\n' "$rollback_mode"
 printf '  published: %s\n' "$created_at"
 if [[ $mode == check ]]; then
-  printf 'ยังไม่ได้ดาวน์โหลด component หรือติดตั้ง update\n'
+  printf 'No components have been downloaded and no update has been installed\n'
   exit 0
 fi
 if [[ $mode != yes ]]; then
-  [[ -t 0 ]] || die "ต้องยืนยันแบบ interactive หรือเรียกด้วย --yes หลังแสดงรายละเอียดให้ operator แล้ว"
-  read -r -p 'พิมพ์ UPDATE เพื่อสร้าง backup และเริ่มติดตั้ง: ' confirmation
-  [[ $confirmation == UPDATE ]] || die "ยกเลิก update"
+  [[ -t 0 ]] || die "Confirm interactively or use --yes after showing the details to the operator"
+  read -r -p 'Type UPDATE to create a backup and start installation: ' confirmation
+  [[ $confirmation == UPDATE ]] || die "Update cancelled"
 fi
 install -d -m 0700 -o root -g root "$BOOTSTRAP_ROOT"
 install -m 0755 -o root -g root "$agent_source" "$BOOTSTRAP_ROOT/bms-runtime-agent"
@@ -132,7 +132,7 @@ stage_command=stage-release
 stage_json=$(run_agent_json_progress "$agent" "$stage_command" -manifest "$manifest_path" \
   -keyring "$BOOTSTRAP_ROOT/trusted-release-keys.json" -target "$target" -root "$RUNTIME_ROOT" -progress)
 release_directory=$(jq -er '.releaseDirectory' <<<"$stage_json")
-[[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "release directory อยู่นอก runtime root"
+[[ $release_directory == "$RUNTIME_ROOT"/releases/* ]] || die "Release directory is outside the runtime root"
 
 while IFS=$'\t' read -r name image_ref digest; do
   "$agent" engine-load -engine linux-native -artifact "$(artifact_path "$name")" \
@@ -149,7 +149,7 @@ rollback_safe=$(jq -r 'if .rollbackSafe then "1" else "0" end' <<<"$release_json
 
 if ! /usr/local/sbin/bms-update-transaction begin "$version" "$rollback_safe" \
   "${ref[web]}" "${ref[ws]}" "${ref[postgres]}" "${ref[redis]}"; then
-  die "runtime update ไม่สำเร็จ; ระบบ rollback แล้วหรือเก็บ transaction ไว้ให้ recover"
+  die "Runtime update failed; the system was rolled back or the transaction was retained for recovery"
 fi
 
 # begin serializes the snapshot with registration; update-active now keeps the
@@ -167,7 +167,7 @@ if [[ $package_type == server-pos ]]; then
     if ! apt-get install -f -y || ! dpkg -i "$desktop_artifact"; then
       /usr/local/sbin/bms-update-transaction rollback "$version" || true
       dpkg -i "$old_desktop" >/dev/null 2>&1 || true
-      die "Desktop update ไม่สำเร็จ; runtime ถูก rollback"
+      die "Desktop update failed; the runtime was rolled back"
     fi
   fi
 fi
@@ -184,4 +184,4 @@ if [[ -f $profile ]]; then
   BMS_LICENSE_EVIDENCE_TOKEN="$evidence_token" "$agent" "${license_args[@]}" >/dev/null 2>&1 || true
 fi
 
-printf 'BMS Retail Local update สำเร็จ: %s -> %s\n' "$current_version" "$version"
+printf 'BMS Retail Local update completed: %s -> %s\n' "$current_version" "$version"

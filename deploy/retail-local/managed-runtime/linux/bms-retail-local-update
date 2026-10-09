@@ -17,7 +17,7 @@ if [[ -z $manifest_uri && -f $release_url_file ]]; then
   manifest_uri=$(tr -d '\r\n' <"$release_url_file")
 fi
 if [[ -z $manifest_uri ]]; then
-  echo "ยังไม่ได้กำหนด release channel URL" >&2
+  echo "Release channel URL is not configured" >&2
   echo "usage: sudo bms-retail-local-update [--check|--yes] https://release.example/release.jws.json" >&2
   exit 2
 fi

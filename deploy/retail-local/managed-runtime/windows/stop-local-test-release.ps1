@@ -9,7 +9,7 @@ Set-StrictMode -Version Latest
 $releaseRoot = [IO.Path]::GetFullPath($ReleaseDirectory)
 $statePath = Join-Path $releaseRoot "local-test-state.json"
 if (-not (Test-Path -LiteralPath $statePath -PathType Leaf)) {
-  throw "ไม่พบ local-test-state.json: $statePath"
+  throw "local-test-state.json was not found: $statePath"
 }
 $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
 
@@ -20,10 +20,10 @@ if ($pidValue -gt 0) {
     $expectedScript = [IO.Path]::GetFullPath([string]$state.serverScript)
     if ([string]$process.Name -notmatch '^node(?:\.exe)?$' -or
         [string]$process.CommandLine -notlike "*$expectedScript*") {
-      throw "PID $pidValue ไม่ใช่ local test release server ที่บันทึกไว้ จึงไม่หยุด process นี้"
+      throw "PID $pidValue is not the recorded local test release server; refusing to stop this process"
     }
     Stop-Process -Id $pidValue -Force
-    Write-Host "หยุด local HTTPS release server แล้ว (PID $pidValue)" -ForegroundColor Green
+    Write-Host "Stopped the local HTTPS release server (PID $pidValue)" -ForegroundColor Green
   }
 }
 
@@ -45,17 +45,17 @@ if ($thumbprint -match '^[A-F0-9]{40,128}$') {
     $store.Close()
   }
   if ($matches.Count -gt 0) {
-    Write-Host "ถอด local test TLS certificate ออกจาก CurrentUser Root แล้ว" -ForegroundColor Green
+    Write-Host "Removed the local test TLS certificate from CurrentUser Root" -ForegroundColor Green
   }
 
   $certutil = Join-Path $env:SystemRoot "System32\certutil.exe"
   $process = Start-Process -FilePath $certutil -ArgumentList "-delstore Root $thumbprint" `
     -Verb RunAs -Wait -PassThru
   if ($process.ExitCode -eq 0) {
-    Write-Host "ถอด local test TLS certificate ออกจาก LocalMachine Root แล้ว" -ForegroundColor Green
+    Write-Host "Removed the local test TLS certificate from LocalMachine Root" -ForegroundColor Green
   } else {
-    Write-Warning "ถอด local test TLS certificate จาก LocalMachine Root ไม่สำเร็จ (exit $($process.ExitCode))"
+    Write-Warning "Failed to remove the local test TLS certificate from LocalMachine Root (exit $($process.ExitCode))"
   }
 }
 
-Write-Host "เก็บ release files ไว้ที่ $releaseRoot (ไม่มีการลบ artifact หรือ private key)"
+Write-Host "Release files retained at $releaseRoot (artifacts and private keys have not been deleted)"

@@ -2,11 +2,11 @@ $ErrorActionPreference = "Stop"
 $localRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $localRoot "runtime.ps1")
 $ctx = Get-RetailLocalContext -ScriptRoot $localRoot
-if (-not (Test-Path -LiteralPath $ctx.EnvFile)) { throw "ยังไม่ได้ติดตั้ง กรุณารัน install.ps1 ก่อน" }
+if (-not (Test-Path -LiteralPath $ctx.EnvFile)) { throw "Installation has not been completed. Run install.ps1 first" }
 Assert-RetailLocalDocker
 
 & (Join-Path $localRoot "backup.ps1")
-if ($LASTEXITCODE -ne 0) { throw "ยกเลิก update เพราะ backup ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Update cancelled because backup failed" }
 
 $release = Get-RetailLocalRelease -ReleaseFile $ctx.ReleaseFile
 $composeArgs = Get-RetailLocalComposeArgs -Context $ctx
@@ -16,13 +16,13 @@ if ($release) {
   Protect-RetailLocalSecretFile -Path $ctx.EnvFile
 } else {
   & docker @composeArgs build migrate ws
-  if ($LASTEXITCODE -ne 0) { throw "Build เวอร์ชันใหม่ไม่สำเร็จ ระบบเดิมยังไม่ถูกแทนที่" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the new version. The existing system has not been replaced" }
 }
 
 & docker @composeArgs run --rm migrate
-if ($LASTEXITCODE -ne 0) { throw "Migration ไม่สำเร็จ ระบบเดิมจะไม่ถูก restart" }
+if ($LASTEXITCODE -ne 0) { throw "Migration failed. The existing system will not be restarted" }
 & docker @composeArgs up -d --force-recreate web ws
-if ($LASTEXITCODE -ne 0) { throw "Restart หลัง update ไม่สำเร็จ ใช้ backup ล่าสุดเพื่อกู้คืน" }
+if ($LASTEXITCODE -ne 0) { throw "Restart after update failed. Use the latest backup to recover" }
 Wait-RetailLocalHealthy -ComposeArgs $composeArgs
 $webPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WEB_PORT")
 $wsPort = [int](Get-RetailLocalEnvValue -EnvFile $ctx.EnvFile -Name "BMS_LOCAL_WS_PORT")
@@ -35,4 +35,4 @@ if ($release -and (Test-Path -LiteralPath $installationFile -PathType Leaf)) {
   $receipt | Add-Member -NotePropertyName updatedAt -NotePropertyValue ([DateTimeOffset]::Now.ToString("o")) -Force
   Set-Content -LiteralPath $installationFile -Value ($receipt | ConvertTo-Json) -Encoding utf8NoBOM
 }
-Write-Host "Update สำเร็จ" -ForegroundColor Green
+Write-Host "Update completed" -ForegroundColor Green

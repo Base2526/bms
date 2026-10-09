@@ -23,7 +23,7 @@ function Assert-HttpsUri([string]$Name, [string]$Value) {
   $parsed = $null
   if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-    throw "$Name ต้องเป็น HTTPS URL ที่ไม่มี credential"
+    throw "$Name must be an HTTPS URL without credentials"
   }
 }
 
@@ -38,18 +38,18 @@ function Test-PlaceholderUri([string]$Value) {
 function Invoke-Checked([string]$Title, [scriptblock]$Action) {
   Write-Host "`n==> $Title" -ForegroundColor Cyan
   & $Action
-  if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
+  if ($LASTEXITCODE -ne 0) { throw "$Title failed (exit $LASTEXITCODE)" }
 }
 
 function ConvertTo-WslPath([string]$WindowsPath) {
   $converted = & wsl.exe -d $WslDistribution -- wslpath -a -u $WindowsPath.Replace('\', '/') 2>&1
-  if ($LASTEXITCODE -ne 0 -or -not $converted) { throw "แปลง WSL path ไม่สำเร็จ: $WindowsPath" }
+  if ($LASTEXITCODE -ne 0 -or -not $converted) { throw "Failed to convert the WSL path: $WindowsPath" }
   return ([string]$converted).Trim()
 }
 
 function Write-Metadata([string]$Path, [string]$Platform, [string]$ManifestUri, [string]$SourceCommit) {
   $item = Get-Item -LiteralPath $Path
-  if ($item.Length -gt 25MB) { throw "POS online bootstrap ใหญ่เกิน 25 MiB: $Path" }
+  if ($item.Length -gt 25MB) { throw "POS online bootstrap exceeds 25 MiB: $Path" }
   $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
   [IO.File]::WriteAllText("$Path.sha256", "$hash  $($item.Name)`n", [Text.UTF8Encoding]::new($false))
   $architecture = if ($Platform -eq "windows-x86-legacy") { "x86" } else { "x64" }
@@ -71,8 +71,8 @@ function Write-Metadata([string]$Path, [string]$Platform, [string]$ManifestUri, 
   [pscustomobject]@{ File = $item.Name; SizeMiB = [math]::Round($item.Length / 1MB, 2); SHA256 = $hash }
 }
 
-if ($PSVersionTable.PSVersion.Major -lt 7) { throw "ต้องรันด้วย PowerShell 7: pwsh" }
-if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version ต้องเป็น Semantic Version" }
+if ($PSVersionTable.PSVersion.Major -lt 7) { throw "Run this script with PowerShell 7: pwsh" }
+if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') { throw "Version must be a semantic version" }
 . (Join-Path $PSScriptRoot "release-urls.ps1")
 $releaseUrls = Get-RetailLocalReleaseUrls -Version $Version -BaseUri $ReleaseBaseUri
 if ([string]::IsNullOrWhiteSpace($WindowsManifestUri)) { $WindowsManifestUri = $releaseUrls.WindowsManifestUri }
@@ -88,7 +88,7 @@ if ($controlUriConfigured) { Assert-HttpsUri "ControlUri" $ControlUri }
 $testBuild = (Test-PlaceholderUri $WindowsManifestUri) -or
   (Test-PlaceholderUri $WindowsX86ManifestUri) -or (Test-PlaceholderUri $LinuxManifestUri) -or
   ($controlUriConfigured -and (Test-PlaceholderUri $ControlUri))
-if ($testBuild -and -not $AllowTestEndpoints) { throw "production POS bootstrap ต้องใช้ release URL จริง" }
+if ($testBuild -and -not $AllowTestEndpoints) { throw "Production POS bootstrap requires a real release URL" }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\.."))
@@ -96,14 +96,14 @@ $agentRoot = Join-Path $repoRoot "apps\retail-local-agent"
 $sourceRoot = Join-Path $scriptRoot "pos-online"
 $outputRoot = if ($OutputDirectory) { [IO.Path]::GetFullPath($OutputDirectory) } else { Join-Path $repoRoot "artifacts\retail-local" }
 $keyringPath = [IO.Path]::GetFullPath($Keyring)
-if (-not (Test-Path -LiteralPath $keyringPath -PathType Leaf)) { throw "ไม่พบ public keyring: $keyringPath" }
+if (-not (Test-Path -LiteralPath $keyringPath -PathType Leaf)) { throw "Public keyring was not found: $keyringPath" }
 $keyringText = Get-Content -LiteralPath $keyringPath -Raw
-if ($keyringText -match 'PRIVATE KEY' -or $keyringText -notmatch 'BEGIN PUBLIC KEY') { throw "keyring ต้องมี public key เท่านั้น" }
+if ($keyringText -match 'PRIVATE KEY' -or $keyringText -notmatch 'BEGIN PUBLIC KEY') { throw "The keyring must contain only public keys" }
 foreach ($command in @("git", "go")) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Command was not found: $command" }
 }
 if ($Target -in @("All", "Linux") -and -not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-  throw "การ build Linux POS bootstrap บน Windows ต้องมี WSL2"
+  throw "Building the Linux POS bootstrap on Windows requires WSL2"
 }
 if ($Target -in @("All", "Windows")) {
   if (-not $InnoCompiler) {
@@ -113,7 +113,7 @@ if ($Target -in @("All", "Windows")) {
       (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
     ) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
   }
-  if (-not $InnoCompiler) { throw "ไม่พบ Inno Setup 6 compiler" }
+  if (-not $InnoCompiler) { throw "Inno Setup 6 compiler was not found" }
 }
 
 $qualifier = if ($testBuild) { "-SMOKE-ONLY" } else { "" }
@@ -128,7 +128,7 @@ if ($Target -in @("All", "Linux")) { $targetOutputs += $outputs.linuxX64 }
 foreach ($path in $targetOutputs) {
   $existing = @(@($path, "$path.sha256", "$path.json") |
     Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
-  if ($existing.Count -gt 0 -and -not $Force) { throw "artifact มีอยู่แล้ว ใช้ -Force: $path" }
+  if ($existing.Count -gt 0 -and -not $Force) { throw "Artifact already exists. Use -Force to overwrite it: $path" }
 }
 
 $workRoot = Join-Path ([IO.Path]::GetTempPath()) "bms-pos-online-$([Guid]::NewGuid().ToString('N'))"
@@ -142,7 +142,7 @@ try {
     try { Invoke-Checked "Test POS download agent" { go test ./... } } finally { Pop-Location }
   }
   $sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
-  if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "อ่าน source commit ไม่สำเร็จ" }
+  if ($sourceCommit -notmatch '^[a-f0-9]{40}$') { throw "Failed to read the source commit" }
   $env:CGO_ENABLED = "0"
   $results = @()
 
@@ -199,7 +199,7 @@ try {
     $results += Write-Metadata $outputs.linuxX64 "ubuntu-x64" $LinuxManifestUri $sourceCommit
   }
 
-  Write-Host "`nBuild POS online bootstrap สำเร็จ" -ForegroundColor Green
+  Write-Host "`nPOS online bootstrap build completed" -ForegroundColor Green
   $results | Format-Table -AutoSize
 } finally {
   $env:GOOS = $previousGoos

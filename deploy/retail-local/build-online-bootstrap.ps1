@@ -21,10 +21,10 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-  throw "ต้องรันด้วย PowerShell 7: pwsh"
+  throw "Run this script with PowerShell 7: pwsh"
 }
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-  throw "Version ต้องเป็น Semantic Version เช่น 0.2.13 หรือ 0.2.13-rc.1"
+  throw "Version must be a semantic version, such as 0.2.13 or 0.2.13-rc.1"
 }
 
 function Assert-HttpsUri([string]$Name, [string]$Value, [bool]$AllowEmpty = $false) {
@@ -32,7 +32,7 @@ function Assert-HttpsUri([string]$Name, [string]$Value, [bool]$AllowEmpty = $fal
   $parsed = $null
   if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-    throw "$Name ต้องเป็น HTTPS URL ที่ไม่มี credential"
+    throw "$Name must be an HTTPS URL without credentials"
   }
 }
 
@@ -51,14 +51,14 @@ function Test-PlaceholderUri([string]$Value) {
 function Invoke-Checked([string]$Title, [scriptblock]$Action) {
   Write-Host "`n==> $Title" -ForegroundColor Cyan
   & $Action
-  if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
+  if ($LASTEXITCODE -ne 0) { throw "$Title failed (exit $LASTEXITCODE)" }
 }
 
 function ConvertTo-WslPath([string]$WindowsPath) {
   $portablePath = $WindowsPath.Replace('\', '/')
   $converted = & wsl.exe -d $WslDistribution -- wslpath -a -u $portablePath 2>&1
   if ($LASTEXITCODE -ne 0 -or -not $converted) {
-    throw "แปลง path สำหรับ WSL ไม่สำเร็จ: $WindowsPath ($converted)"
+    throw "Failed to convert the path for WSL: $WindowsPath ($converted)"
   }
   return ([string]$converted).Trim()
 }
@@ -72,7 +72,7 @@ function Write-ChecksumAndMetadata(
 ) {
   $item = Get-Item -LiteralPath $Path
   if ($item.Length -gt 25MB) {
-    throw "online bootstrap ใหญ่เกิน 25 MiB: $($item.FullName) ($([math]::Round($item.Length / 1MB, 2)) MiB)"
+    throw "Online bootstrap exceeds 25 MiB: $($item.FullName) ($([math]::Round($item.Length / 1MB, 2)) MiB)"
   }
   $sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
   [IO.File]::WriteAllText(
@@ -114,7 +114,7 @@ $testBuild = (Test-PlaceholderUri $WindowsManifestUri) -or
   (Test-PlaceholderUri $LinuxManifestUri) -or
   (Test-PlaceholderUri $ActivationUri)
 if ($testBuild -and -not $AllowTestEndpoints) {
-  throw "ปฏิเสธ example/invalid endpoint: production installer ต้องใช้ release channel จริง; ใช้ -AllowTestEndpoints ได้เฉพาะ smoke test"
+  throw "Refusing example/invalid endpoints: production installers require a real release channel; use -AllowTestEndpoints only for smoke tests"
 }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -130,34 +130,34 @@ New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 
 $keyringPath = [IO.Path]::GetFullPath($Keyring)
 if (-not (Test-Path -LiteralPath $keyringPath -PathType Leaf)) {
-  throw "ไม่พบ public keyring: $keyringPath"
+  throw "Public keyring was not found: $keyringPath"
 }
 $keyringText = Get-Content -LiteralPath $keyringPath -Raw
 if ($keyringText -match 'PRIVATE KEY') {
-  throw "public keyring ต้องไม่มี private key"
+  throw "The public keyring must not contain private keys"
 }
 $keyringJson = $keyringText | ConvertFrom-Json -AsHashtable
 if ([int]$keyringJson.formatVersion -ne 1 -or
     -not $keyringJson.ContainsKey("keys") -or
     $keyringJson.keys.Count -lt 1) {
-  throw "public keyring ต้องเป็น formatVersion 1 และมี trusted public key อย่างน้อยหนึ่ง key"
+  throw "The public keyring must use formatVersion 1 and contain at least one trusted public key"
 }
 foreach ($entry in $keyringJson.keys.GetEnumerator()) {
   if ([string]$entry.Value -notmatch 'BEGIN PUBLIC KEY') {
-    throw "keyring entry '$($entry.Key)' ไม่ใช่ PEM public key"
+    throw "Keyring entry '$($entry.Key)' is not a PEM public key"
   }
 }
 
 $normalizedArchitecture = $Architecture.Trim().ToLowerInvariant()
 if ($normalizedArchitecture -ne "x64") {
-  throw "Retail Local Server build รองรับเฉพาะ x64 (ได้รับ $Architecture)"
+  throw "Retail Local Server builds support only x64 (received $Architecture)"
 }
 
 foreach ($command in @("git", "go")) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Command was not found: $command" }
 }
 if ($Target -in @("All", "Linux") -and -not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) {
-  throw "การ build Linux bootstrap บน Windows ต้องมี WSL2"
+  throw "Building the Linux bootstrap on Windows requires WSL2"
 }
 
 $artifactQualifier = if ($testBuild) { "-SMOKE-ONLY" } else { "" }
@@ -177,7 +177,7 @@ foreach ($path in $artifacts) {
   $existing = @(@($path, "$path.sha256", "$path.json") |
     Where-Object { Test-Path -LiteralPath $_ -PathType Leaf })
   if ($existing.Count -gt 0 -and -not $Force) {
-    throw "มี artifact อยู่แล้ว ใช้ -Force เมื่อตั้งใจ build ทับ: $path"
+    throw "Artifact already exists. Use -Force to rebuild and overwrite it intentionally: $path"
   }
 }
 
@@ -193,7 +193,7 @@ if ($Target -in @("All", "Windows")) {
     $InnoCompiler = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
   }
   if (-not $InnoCompiler -or -not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) {
-    throw "ไม่พบ Inno Setup 6 compiler (ISCC.exe)"
+    throw "Inno Setup 6 compiler (ISCC.exe) was not found"
   }
 }
 
@@ -210,7 +210,7 @@ try {
 
   $sourceCommit = (& git -C $repoRoot rev-parse HEAD).Trim()
   if ($LASTEXITCODE -ne 0 -or $sourceCommit -notmatch '^[a-f0-9]{40}$') {
-    throw "อ่าน source commit ไม่สำเร็จ"
+    throw "Failed to read the source commit"
   }
 
   $env:CGO_ENABLED = "0"
@@ -247,7 +247,7 @@ try {
       }
       $builtWindows = Join-Path $windowsOutput "$artifactBase.exe"
       if (-not (Test-Path -LiteralPath $builtWindows -PathType Leaf)) {
-        throw "Inno Setup สำเร็จแต่ไม่พบ artifact: $builtWindows"
+        throw "Inno Setup succeeded, but the artifact was not found: $builtWindows"
       }
       Copy-Item -LiteralPath $builtWindows -Destination $spec.WindowsArtifact -Force
       $results += Write-ChecksumAndMetadata $spec.WindowsArtifact "windows-x64" $spec.PackageType `
@@ -284,7 +284,7 @@ try {
     $agentWsl = ConvertTo-WslPath $linuxAgent
     $outputWsl = ConvertTo-WslPath $linuxStage
     foreach ($mapped in @($builderWsl, $keyringWsl, $agentWsl, $outputWsl)) {
-      if ([string]::IsNullOrWhiteSpace($mapped)) { throw "แปลง path สำหรับ WSL ไม่สำเร็จ" }
+      if ([string]::IsNullOrWhiteSpace($mapped)) { throw "Failed to convert the path for WSL" }
     }
     foreach ($spec in $packageSpecs) {
       Invoke-Checked "Build Ubuntu x64 $($spec.PackageType) online bootstrap" {
@@ -300,7 +300,7 @@ try {
       }
       $builtLinux = Join-Path $linuxStage "${packageSlug}_${Version}_amd64.deb"
       if (-not (Test-Path -LiteralPath $builtLinux -PathType Leaf)) {
-        throw "Linux builder สำเร็จแต่ไม่พบ artifact: $builtLinux"
+        throw "Linux builder succeeded, but the artifact was not found: $builtLinux"
       }
       Copy-Item -LiteralPath $builtLinux -Destination $spec.LinuxArtifact -Force
       $results += Write-ChecksumAndMetadata $spec.LinuxArtifact "ubuntu-x64" $spec.PackageType `
@@ -308,7 +308,7 @@ try {
     }
   }
 
-  Write-Host "`nBuild online bootstrap สำเร็จ" -ForegroundColor Green
+  Write-Host "`nOnline bootstrap build completed" -ForegroundColor Green
   $results | Format-Table -AutoSize
   Write-Host "Output: $outputRoot"
 } finally {

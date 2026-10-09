@@ -46,7 +46,7 @@ done
 [[ -f $keyring ]] || usage
 [[ $manifest_url =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $manifest_url != *'@'* ]] || usage
 [[ $activation_url =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $activation_url != *'@'* ]] || {
-  echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
+  echo "activation URL must use HTTPS and contain no credentials" >&2; exit 2
 }
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
@@ -64,9 +64,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 for command in hdiutil pkgutil shasum; do
-  command -v "$command" >/dev/null || { echo "ไม่พบ $command" >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo "Command was not found: $command" >&2; exit 1; }
 done
-[[ $(uname -s) == Darwin ]] || { echo "macOS bootstrap DMG ต้อง build บน macOS" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "macOS bootstrap DMG must be built on macOS" >&2; exit 1; }
 
 pkg_args=(
   --version "$version"
@@ -82,7 +82,7 @@ pkg_args=(
 "$macos_root/build-bootstrap-pkg.sh" "${pkg_args[@]}"
 
 package_path=$(find "$work/pkg" -maxdepth 1 -type f -name '*.pkg' -print -quit)
-[[ -n $package_path ]] || { echo "สร้าง bootstrap PKG ไม่สำเร็จ" >&2; exit 1; }
+[[ -n $package_path ]] || { echo "Failed to create the bootstrap PKG" >&2; exit 1; }
 pkgutil --check-signature "$package_path" >/dev/null 2>&1 || true
 
 test_build=$(node --input-type=module -e \
@@ -93,7 +93,7 @@ qualifier=
 dmg_name="BMS-Retail-Local-Server-POS-$version-macos-$architecture$qualifier.dmg"
 dmg_path="$output_dir/$dmg_name"
 for candidate in "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; do
-  [[ ! -e $candidate || $force == true ]] || { echo "artifact มีอยู่แล้ว: $candidate" >&2; exit 1; }
+  [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
 done
 if [[ $force == true ]]; then rm -f -- "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; fi
 cleanup_outputs=true
@@ -123,14 +123,14 @@ mkdir -p "$mount"
 hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$dmg_path" -quiet
 [[ -f $mount/Install\ BMS\ Retail\ Local.pkg && -f $mount/README.txt ]] || {
   hdiutil detach "$mount" -quiet || true
-  echo "DMG ไม่มี installer หรือ README" >&2
+  echo "DMG is missing the installer or README" >&2
   exit 1
 }
 pkgutil --expand "$mount/Install BMS Retail Local.pkg" "$work/expanded" >/dev/null
 hdiutil detach "$mount" -quiet
 
 size=$(stat -f %z "$dmg_path")
-((size <= 30 * 1024 * 1024)) || { echo "online bootstrap DMG ใหญ่เกิน 30 MiB: $size bytes" >&2; exit 1; }
+((size <= 30 * 1024 * 1024)) || { echo "Online bootstrap DMG exceeds 30 MiB: $size bytes" >&2; exit 1; }
 sha256=$(shasum -a 256 "$dmg_path" | awk '{print $1}')
 printf '%s  %s\n' "$sha256" "$dmg_name" >"$dmg_path.sha256"
 source_commit=$(git -C "$repo_root" rev-parse HEAD)
@@ -141,4 +141,4 @@ cat >"$dmg_path.json" <<EOF
 EOF
 
 build_complete=true
-printf 'macOS Server + POS online bootstrap DMG พร้อม: %s (%s bytes)\n' "$dmg_path" "$size"
+printf 'macOS Server + POS online bootstrap DMG ready: %s (%s bytes)\n' "$dmg_path" "$size"

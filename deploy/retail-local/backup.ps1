@@ -7,9 +7,9 @@ $localRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ctx = Get-RetailLocalContext -ScriptRoot $localRoot
 $envFile = $ctx.EnvFile
 $composeFile = $ctx.ComposeFile
-if (-not (Test-Path -LiteralPath $envFile)) { throw "ยังไม่ได้ติดตั้ง กรุณารัน install.ps1 ก่อน" }
+if (-not (Test-Path -LiteralPath $envFile)) { throw "Installation has not been completed. Run install.ps1 first" }
 $databaseName = Get-RetailLocalEnvValue -EnvFile $envFile -Name "POSTGRES_DB"
-if ($databaseName -notmatch '^[A-Za-z0-9_-]+$') { throw "POSTGRES_DB ใน .env.local ไม่ถูกต้อง" }
+if ($databaseName -notmatch '^[A-Za-z0-9_-]+$') { throw "POSTGRES_DB in .env.local is invalid" }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 if (-not $Destination) { $Destination = Join-Path $localRoot "backups\$stamp" }
@@ -17,13 +17,13 @@ $destinationPath = [IO.Path]::GetFullPath($Destination)
 New-Item -ItemType Directory -Force -Path $destinationPath | Out-Null
 
 $containerId = (& docker compose --env-file $envFile -f $composeFile ps -q postgres).Trim()
-if (-not $containerId) { throw "PostgreSQL ยังไม่ทำงาน กรุณารัน start.ps1 ก่อน" }
+if (-not $containerId) { throw "PostgreSQL is not running. Run start.ps1 first" }
 $insideDump = "/tmp/bms-retail-local-$stamp.dump"
 & docker exec $containerId pg_dump -U app -d $databaseName -Fc -f $insideDump
-if ($LASTEXITCODE -ne 0) { throw "สำรองฐานข้อมูลไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to back up the database" }
 try {
   & docker cp "${containerId}:${insideDump}" (Join-Path $destinationPath "database.dump")
-  if ($LASTEXITCODE -ne 0) { throw "คัดลอกไฟล์สำรองฐานข้อมูลไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to copy the database backup file" }
 } finally {
   & docker exec $containerId rm -f $insideDump *> $null
 }
@@ -55,6 +55,6 @@ $checksumLines = Get-ChildItem -LiteralPath $destinationPath -File |
   Sort-Object Name |
   ForEach-Object { "$(($_ | Get-FileHash -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)" }
 Set-Content -LiteralPath (Join-Path $destinationPath "SHA256SUMS.txt") -Value $checksumLines -Encoding ascii
-Write-Host "Backup สำเร็จ: $destinationPath" -ForegroundColor Green
-Write-Host "โฟลเดอร์นี้มี secrets ของร้าน ต้องเก็บในสื่อที่เข้ารหัส" -ForegroundColor Yellow
+Write-Host "Backup completed: $destinationPath" -ForegroundColor Green
+Write-Host "This folder contains shop secrets and must be stored on encrypted media" -ForegroundColor Yellow
 

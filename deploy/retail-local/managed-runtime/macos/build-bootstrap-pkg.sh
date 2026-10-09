@@ -54,29 +54,29 @@ is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-
 is_placeholder_url() {
   [[ ${1:-} =~ ^https://(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.example\.(com|invalid)|example\.(com|invalid)|[^/]*\.invalid)([/:?#]|$) ]]
 }
-is_https_url "$manifest_url" || { echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
-is_https_url "$activation_url" || { echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
+is_https_url "$manifest_url" || { echo "manifest URL must use HTTPS and contain no credentials" >&2; exit 2; }
+is_https_url "$activation_url" || { echo "activation URL must use HTTPS and contain no credentials" >&2; exit 2; }
 test_build=false
 if is_placeholder_url "$manifest_url" || { [[ -n $activation_url ]] && is_placeholder_url "$activation_url"; }; then
   test_build=true
   [[ $allow_test_endpoints == true ]] || {
-    echo "ปฏิเสธ example/invalid endpoint; ใช้ --allow-test-endpoints ได้เฉพาะ smoke test" >&2; exit 2;
+    echo "Refusing example/invalid endpoints; use --allow-test-endpoints only for smoke tests" >&2; exit 2;
   }
 fi
 if [[ -n $test_ca ]]; then
   [[ $test_build == true && $allow_test_endpoints == true && -f $test_ca ]] || {
-    echo "--test-ca ใช้ได้เฉพาะ smoke build ที่เป็น localhost/example endpoint" >&2; exit 2;
+    echo "--test-ca is allowed only for smoke builds using localhost/example endpoints" >&2; exit 2;
   }
-  grep -q 'BEGIN CERTIFICATE' "$test_ca" || { echo "test CA ไม่ใช่ PEM certificate" >&2; exit 2; }
-  ! grep -q 'PRIVATE KEY' "$test_ca" || { echo "ห้ามใส่ private key ใน bootstrap" >&2; exit 2; }
+  grep -q 'BEGIN CERTIFICATE' "$test_ca" || { echo "Test CA is not a PEM certificate" >&2; exit 2; }
+  ! grep -q 'PRIVATE KEY' "$test_ca" || { echo "Do not include private keys in the bootstrap" >&2; exit 2; }
 fi
-grep -q 'BEGIN PUBLIC KEY' "$keyring" || { echo "keyring ไม่มี public key" >&2; exit 2; }
-! grep -q 'PRIVATE KEY' "$keyring" || { echo "ห้ามใส่ private key ใน bootstrap" >&2; exit 2; }
+grep -q 'BEGIN PUBLIC KEY' "$keyring" || { echo "Keyring has no public key" >&2; exit 2; }
+! grep -q 'PRIVATE KEY' "$keyring" || { echo "Do not include private keys in the bootstrap" >&2; exit 2; }
 [[ $(/usr/bin/plutil -extract formatVersion raw -o - "$keyring" 2>/dev/null || true) == 1 ]] || {
-  echo "keyring ต้องเป็น JSON formatVersion 1" >&2; exit 2;
+  echo "Keyring must use JSON formatVersion 1" >&2; exit 2;
 }
 [[ -n $(/usr/bin/plutil -extract keys raw -o - "$keyring" 2>/dev/null || true) ]] || {
-  echo "keyring ต้องมี trusted public key อย่างน้อยหนึ่ง key" >&2; exit 2;
+  echo "Keyring must contain at least one trusted public key" >&2; exit 2;
 }
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
@@ -95,9 +95,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 for command in file go pkgbuild pkgutil plutil productbuild shasum; do
-  command -v "$command" >/dev/null || { echo "ไม่พบ $command" >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo "Command was not found: $command" >&2; exit 1; }
 done
-[[ $(uname -s) == Darwin ]] || { echo "macOS bootstrap ต้อง build บน macOS" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "macOS bootstrap must be built on macOS" >&2; exit 1; }
 
 case "$architecture" in
   arm64) go_arch=arm64; installer_host_arch=arm64 ;;
@@ -112,7 +112,7 @@ esac
 package_name="BMS-Retail-Local-$package_label-$version-$architecture$qualifier.pkg"
 package_path="$output_dir/$package_name"
 for candidate in "$package_path" "$package_path.sha256" "$package_path.json"; do
-  [[ ! -e $candidate || $force == true ]] || { echo "artifact มีอยู่แล้ว: $candidate" >&2; exit 1; }
+  [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
 done
 if [[ $force == true ]]; then
   rm -f -- "$package_path" "$package_path.sha256" "$package_path.json"
@@ -209,7 +209,7 @@ while component_path=$(plutil -extract "$component_index.RootRelativeBundlePath"
   fi
   component_index=$((component_index + 1))
 done
-[[ $found_app == true ]] || { echo "component policy ไม่พบ application bundle" >&2; exit 1; }
+[[ $found_app == true ]] || { echo "Component policy does not include the application bundle" >&2; exit 1; }
 pkgbuild --root "$package_root" --scripts "$scripts" --component-plist "$component_plist" \
   --identifier com.base2526.bms.retail-local --version "$pkg_version" --install-location / \
   "$component_pkg" >/dev/null
@@ -237,7 +237,7 @@ productbuild --distribution "$work/distribution.xml" --resources "$work" \
 "$macos_root/smoke-test-bootstrap-pkg.sh" "$package_path"
 
 size=$(stat -f %z "$package_path")
-((size <= 25 * 1024 * 1024)) || { echo "online bootstrap ใหญ่เกิน 25 MiB: $size bytes" >&2; exit 1; }
+((size <= 25 * 1024 * 1024)) || { echo "Online bootstrap exceeds 25 MiB: $size bytes" >&2; exit 1; }
 sha256=$(shasum -a 256 "$package_path" | awk '{print $1}')
 embedded_test_ca=false
 [[ -z $test_ca ]] || embedded_test_ca=true
@@ -248,4 +248,4 @@ cat >"$package_path.json" <<EOF
 EOF
 
 build_complete=true
-printf 'macOS online bootstrap พร้อม: %s (%s bytes)\n' "$package_path" "$size"
+printf 'macOS online bootstrap ready: %s (%s bytes)\n' "$package_path" "$size"

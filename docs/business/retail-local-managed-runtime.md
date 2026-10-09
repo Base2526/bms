@@ -96,6 +96,12 @@ Docker Desktop, WSL, Compose, ports, environment files, or a raw device token.
 
 Windows, Linux, and macOS Setup use English prompts, progress, preflight results, error messages,
 and completion instructions, including Server, Server + POS, POS-only, and existing offline setup paths.
+Retail Local lifecycle and build scripts on Windows, Linux, and macOS also use English messages,
+including uninstall, activation, backup/restore, off-host backup, diagnostics, local test release
+preparation/cleanup, and the shared release signing and verification tools.
+Typed confirmations such as `ERASE-BMS-RETAIL-LOCAL` and `REPLACE-LOCAL-DATA` remain unchanged.
+The Windows installer still recognizes localized WSL output when checking upgrade status, using
+Unicode regex escapes to keep the PowerShell source independent of the Windows code page.
 This keeps setup readable in consoles without Thai fonts. Shop-type choices use the release catalog's
 English labels (or the stable ID when absent). Shop names and other entered data still support Unicode;
 OS tools and backend services may return messages in their own language. This applies to newly built

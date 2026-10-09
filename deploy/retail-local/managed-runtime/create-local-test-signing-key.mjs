@@ -19,7 +19,7 @@ async function main() {
   if (!keyId || !privateKeyPath || !publicKeyPath || !keyringPath) {
     fail("usage: node create-local-test-signing-key.mjs KEY_ID PRIVATE_KEY PUBLIC_KEY KEYRING");
   }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(keyId)) fail("key id ไม่ถูกต้อง");
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(keyId)) fail("key id is invalid");
 
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
   const privatePem = privateKey.export({ type: "pkcs8", format: "pem" });

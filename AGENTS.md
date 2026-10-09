@@ -448,6 +448,13 @@ wrong, and update the doc in the same change.
 
 ## i18n
 
+Operational scripts on Windows, Linux, and macOS use English for prompts, progress, warnings,
+errors, and completion messages, including PowerShell, shell entrypoints, and shared release tools.
+Keep authored console text ASCII where practical so it remains readable across code pages and fonts.
+Preserve Unicode user data and localized OS-output matching; use Unicode escapes for non-ASCII regex
+literals where practical. Keep existing UTF-8 BOMs for Windows PowerShell 5.1 and LF line endings for
+Unix scripts. Smoke tests must follow the current English prompts and confirmation steps.
+
 Four mechanisms; the first three are real, the fourth is dead:
 
 1. `apps/web/i18n/` + `useI18n()` — the shared dictionary (**84 namespaces / 5,662 leaf keys per language,
