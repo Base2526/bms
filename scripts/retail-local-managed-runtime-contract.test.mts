@@ -410,6 +410,7 @@ test("managed compose and installers keep private services off host ports", () =
   const agentEngine = read("apps/retail-local-agent/engine.go");
   const windows = read("deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1");
   const linux = read("deploy/retail-local/managed-runtime/linux/install-managed-runtime.sh");
+  const webService = compose.slice(compose.indexOf("  web:"), compose.indexOf("\nvolumes:"));
   assert.doesNotMatch(compose, /5432:5432|6379:6379/);
   assert.doesNotMatch(daemon, /"hosts"/);
   assert.match(runtimeDockerfile, /apt-get install[\s\S]*wget/);
@@ -417,6 +418,9 @@ test("managed compose and installers keep private services off host ports", () =
   assert.match(agentEngine, /bytes\.ReplaceAll\(contents, \[\]byte\("\\r\\n"\), \[\]byte\("\\n"\)\)/);
   assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WEB_PORT/);
   assert.match(compose, /127\.0\.0\.1:\$\{BMS_LOCAL_WS_PORT/);
+  assert.match(webService, /BMS_LOCAL_LICENSE_UI_DIR: \/run\/bms-license-ui/);
+  assert.match(webService, /\.\/license-ui\/status:\/run\/bms-license-ui\/status:ro/);
+  assert.match(webService, /\.\/license-ui\/requests:\/run\/bms-license-ui\/requests\s*$/m);
   assert.equal((compose.match(/--conditions=react-server/g) ?? []).length, 2);
   assert.match(windows, /Invoke-AgentProgress[\s\S]*"engine-load"[\s\S]*"windows-wsl"/);
   assert.match(windows, /pairing-handoff\.json/);

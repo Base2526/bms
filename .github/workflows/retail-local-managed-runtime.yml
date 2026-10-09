@@ -9,10 +9,16 @@ on:
       - "apps/web/app/api/admin/retail-local/**"
       - "apps/web/app/api/bms/retail-local/**"
       - "apps/web/lib/bms/retailLocalLicensing.ts"
+      - "apps/web/lib/bms/localLicense*.ts"
+      - "apps/web/components/retail-local/**"
+      - "apps/web/app/(admin)/admin/retail-local-license/**"
       - "apps/web/Dockerfile"
       - "db/migrations/10.16__bms_retail_local_license_control_plane.sql"
       - "db/migrations/10.17__bms_retail_local_trial_lifecycle.sql"
       - "db/migrations/10.18__bms_retail_local_activation_and_followup.sql"
+      - "db/migrations/10.28__bms_retail_local_license_owner_reference.sql"
+      - "db/migrations/10.35__bms_retail_local_activation_retry.sql"
+      - "deploy/retail-local/compose.yml"
       - "deploy/retail-local/managed-runtime/**"
       - "deploy/retail-local/pos-online/**"
       - "deploy/retail-local/build-online-bootstrap.ps1"
@@ -28,6 +34,7 @@ on:
       - "scripts/retail-local-uninstall-container.test.sh"
       - ".gitattributes"
       - "scripts/retail-local-license-*.test.mts"
+      - "scripts/retail-local-license-container.test.mjs"
       - ".github/workflows/retail-local-managed-runtime.yml"
 
 permissions:
@@ -70,8 +77,12 @@ jobs:
       - name: Install Web contract-test dependencies
         working-directory: apps/web
         run: npm ci --ignore-scripts
-      - name: Test licensing control plane contract
-        run: node scripts/run-contract-tests.mjs pure retail-local-license-control-plane
+      - name: Test licensing control plane, mailbox and UI contracts
+        run: node scripts/run-contract-tests.mjs pure retail-local-license-
+      - name: Test licensing mailbox across real container mounts
+        run: |
+          docker pull node:22-bookworm-slim
+          node --test scripts/retail-local-license-container.test.mjs
       - name: Test licensing migration and database contract
         env:
           PGPASSWORD: testpass
@@ -90,6 +101,8 @@ jobs:
           psql -v ON_ERROR_STOP=1 < db/migrations/10.16__bms_retail_local_license_control_plane.sql
           psql -v ON_ERROR_STOP=1 < db/migrations/10.17__bms_retail_local_trial_lifecycle.sql
           psql -v ON_ERROR_STOP=1 < db/migrations/10.18__bms_retail_local_activation_and_followup.sql
+          psql -v ON_ERROR_STOP=1 < db/migrations/10.28__bms_retail_local_license_owner_reference.sql
+          psql -v ON_ERROR_STOP=1 < db/migrations/10.35__bms_retail_local_activation_retry.sql
           node scripts/run-contract-tests.mjs db retail-local-license-db-contract
       - name: Validate shell and release contracts
         run: |
@@ -300,6 +313,7 @@ jobs:
             deploy/retail-local/managed-runtime/macos/build-bootstrap-pkg.sh \
               --version 0.2.0-ci.1 --architecture "$architecture" \
               --manifest-url "$manifest" --keyring "$RUNNER_TEMP/bms-signing/keyring.json" \
+              --activation-url https://control.example.invalid/api/bms/retail-local/activate \
               --output-dir "$RUNNER_TEMP/bms-macos-package" --allow-test-endpoints
             deploy/retail-local/managed-runtime/macos/build-pos-bootstrap-dmg.sh \
               --version 0.2.0-ci.1 --architecture "$architecture" \

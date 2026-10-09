@@ -68,6 +68,64 @@ func TestLicenseUIAtomicWriteIgnoresPredictableTemporary(t *testing.T) {
 	}
 }
 
+func TestLicenseUILinuxFilesystemMailbox(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("requires the native Linux mailbox implementation")
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "license-ui", "requests"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "installation.json"), []byte(`{"tenantId":"tenant-test","posDeviceId":"pos-test","version":"1.2.3","platformTarget":"ubuntu-24.04-lts-x64","packageType":"server"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/activate" {
+			calls++
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer server.Close()
+	bridge := newLicenseUIBridge(root, "linux-native", "", server.URL+"/activate")
+	bridge.client = server.Client()
+	readView := func() licenseUISnapshot {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join(root, "license-ui", "status", "view.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var view licenseUISnapshot
+		if err := json.Unmarshal(data, &view); err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	if err := bridge.poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	view := readView()
+	if !view.Available || view.Registered || view.TenantID != "tenant-test" || time.Since(view.Heartbeat) > time.Minute {
+		t.Fatal("unregistered Linux host did not publish a usable heartbeat")
+	}
+	request := licenseUIRequest{RequestID: "01234567-1234-4234-8234-123456789abc", TenantID: "tenant-test", ActivationCode: "bmsla_" + strings.Repeat("x", 43), CreatedAt: time.Now()}
+	requestPath := filepath.Join(root, "license-ui", "requests", "activation.json")
+	if err := writeLicenseUIJSON(requestPath, request); err != nil {
+		t.Fatal(err)
+	}
+	if err := bridge.poll(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	view = readView()
+	if calls != 1 || !view.Available || view.RequestID != request.RequestID || view.RequestStatus != "FAILED" || view.ErrorCode != "CODE_REJECTED" {
+		t.Fatal("native mailbox did not return the activation result")
+	}
+	data, err := os.ReadFile(requestPath)
+	if err != nil || strings.Contains(string(data), request.ActivationCode) {
+		t.Fatal("activation code was not cleared from the shared mailbox")
+	}
+}
+
 func TestLicenseUIRecoveryAndPrivacy(t *testing.T) {
 	for _, scenario := range []string{"success", "lost-response", "receipt-failure", "invalid-tenant", "rejected", "expired-request", "restored-shop", "license-mismatch", "old-server-mismatch"} {
 		t.Run(scenario, func(t *testing.T) {
