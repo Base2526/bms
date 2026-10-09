@@ -9,6 +9,9 @@ platform target และ SHA-256 ก่อนย้ายเฉพาะไฟ�
 
 ```text
 /mnt/volume_sgp1_01/releases/retail-local/<version>
+
+Example 
+sudo bash ./publish-retail-local-staged-release.sh 0.2.14-pilot.3 --dry-run
 ```
 
 ## 1. Upload release
@@ -30,14 +33,14 @@ platform target และ SHA-256 ก่อนย้ายเฉพาะไฟ�
 ```text
 0.2.14-pilot.3/
   trusted-release-keys.json
-  installers/
   ubuntu-24.04-lts-x64/
   windows-11-x64/
   windows-10-x86/
 ```
 
-ไฟล์ installer ต้องอยู่ใน `installers/` จำนวน 7 package พร้อมไฟล์ `.json` และ `.sha256`
-ของแต่ละ package รวมเป็น 21 ไฟล์ สคริปต์จะไม่เผยแพร่ `release-descriptor.json`
+ไม่ต้องอัปโหลดโฟลเดอร์ `installers/` มาที่ staging นี้ ไฟล์ installer ให้อัปโหลดผ่านหน้า BMS
+ตามกระบวนการเดิม สคริปต์นี้เผยแพร่เฉพาะ Runtime payload และจะไม่เผยแพร่
+`release-descriptor.json`
 
 ## 2. Validate without publishing
 
@@ -52,7 +55,6 @@ sudo bash releases/retail-local/publish-retail-local-staged-release.sh 0.2.14-pi
 - `ubuntu-24.04-lts-x64`
 - `windows-11-x64`
 - `windows-10-x86` ซึ่ง signed target ต้องเป็น `windows-10-x86-pos`
-- 7 online installers และ 14 sidecar files
 
 โหมด `--dry-run` จะไม่ย้ายและไม่ลบไฟล์
 
@@ -69,9 +71,9 @@ sudo bash releases/retail-local/publish-retail-local-staged-release.sh 0.2.14-pi
 - ใช้ publish lock ป้องกันการรันพร้อมกัน
 - ตรวจ Ed25519 signature จาก public keyring
 - ตรวจ release version, platform target และ SHA-256
-- ปฏิเสธการเขียนทับ runtime target หรือ installer ที่มีอยู่แล้ว
+- ปฏิเสธการเขียนทับ runtime target ที่มีอยู่แล้ว
 - เก็บโฟลเดอร์ macOS ที่อยู่ใน release รุ่นเดียวกันไว้
-- เผยแพร่เฉพาะ `*.artifact`, `release.jws.json`, `SHA256SUMS` และ installer files
+- เผยแพร่เฉพาะ `*.artifact`, `release.jws.json` และ `SHA256SUMS`
 - ลบ staging folder `releases/retail-local/<version>` เมื่อทุกขั้นตอนสำเร็จเท่านั้น
 
 ถ้าสคริปต์ล้มเหลวก่อนสำเร็จ staging folder จะยังอยู่ ห้ามลบ target ที่มีข้อมูลอยู่แล้วเพื่อฝืนรันซ้ำ
