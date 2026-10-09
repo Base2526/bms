@@ -1,4 +1,39 @@
 services:
+  # Explicit opt-in: --profile scheduler. Calls Web APIs; never connects to Postgres.
+  scheduler:
+    profiles: ["scheduler"]
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile
+      target: scheduler
+    image: bms-scheduler:latest
+    init: true
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 20s
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      BMS_SCHEDULER_BASE_URL: ${BMS_SCHEDULER_BASE_URL:-http://web:3000}
+      BMS_CRON_SECRET: ${BMS_CRON_SECRET:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+    depends_on:
+      - web
+      - redis
+    healthcheck:
+      test: ["CMD", "node", "scheduler.mjs", "--healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -94,6 +129,11 @@ services:
       - redis
 
   web:
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "5"
     image: node:20-alpine
     working_dir: /app/apps/web
     environment:

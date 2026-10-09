@@ -125,7 +125,7 @@ Operational modules per this spec are **fully built** — order lifecycle closes
 | Support Tickets | ✅ | `support_tickets` / `support_ticket_comments` · `/support` · `/admin/support-tickets` |
 | Support Diagnostics | ✅ | `lib/bms/supportDiagnostics.ts` · `POST /api/pos/diagnostics/events` (device token, no cashier PIN, rate-limited per device) · `bmsPosDeviceDiagnostics` on `/admin/pos-devices` gated by `support.logs.view` — append-only, tenant-scoped, context allowlisted; a tenant is never read from the body |
 | Batch & Cron Ops View | ✅ | `lib/bms/operationsSchedule.ts` · `/admin/operations-schedule` |
-| Cron/Batch Run History | ✅ | `lib/bms/jobRuns.ts` · `7.55__bms_job_runs.sql` · every cron endpoint records status/duration/output; `POST /api/bms/jobs/report-run` lets the GitHub Action report back |
+| Cron/Batch Run History | ✅ | `lib/bms/jobRuns.ts` · `7.55__bms_job_runs.sql` · cron endpoints record status/duration/output; `POST /api/bms/jobs/report-run` lets external jobs report back. Opt-in Docker scheduler dispatches the 17 existing scheduled APIs; choose Docker or GitHub as owner. See [scheduler.md](scheduler.md). |
 | System Health (`/admin/system-health`) | ✅ | `lib/bms/systemHealth.ts` · no migration, no new permission — reuses AI Provider Health/job-run/operations-schedule services, adds Postgres/Redis vitals, cross-tenant Channel Health, and a `bms_failure_incidents` list; GraphQL latency/error-rate via `lib/bms/requestMetrics.ts` (Redis histograms, `graphql/metricsPlugin.ts`) — not yet verified against a live browser/DB |
 | Staff Management by Shop Owner (Manager) | ✅ | `lib/bms/{userAdmin,staffRoles}.ts` · `7.78__bms_user_management_perms.sql` · `/admin/users` — `user.view`/`user.manage` opens the module, a code-level role rank decides which rows may be touched; see [api.md](./api.md) § RBAC |
 | Per-user Language & Theme Preference | ✅ | `users.language` / `users.theme_preference` · `7.50` / `7.56` / `7.81` (new accounts default to Thai) · `/admin/profile` + public `/settings` |
@@ -207,12 +207,12 @@ own permission, not the general file store). Regulatory scope (OIC/คปภ. ru
 licensed-agent sign-off, e-policy documents) needs legal review before the AI-assisted quote flow
 goes live — this is not a code gap the checklist above resolves ·
 a password/TLS for Redis before a real production deploy ·
-the two GitHub secrets that make the cron schedule real. `.github/workflows/bms-cron.yml` now points
-at all seven endpoints (`orders/release-expired`, `channels/check-health`, `ai/check-health`,
-`reports/send-digest`, `followups/run`, `shipping/sync-carriers`, `loyalty/maintenance`), but
-without `BMS_APP_BASE_URL` and `BMS_CRON_SECRET` set in the repository every job skips itself
-**silently** — the workflow stays green while nothing runs, points never expire, and tiers are never
-re-evaluated. Confirm at `/admin/operations-schedule`, which reads `bms_job_runs`.
+one configured scheduler owner. The opt-in Docker `scheduler` service and
+`.github/workflows/bms-cron.yml` cover the same 17 existing APIs. Docker uses the Web cron secret
+and Redis slot claims; automatic GitHub runs require repository variable `BMS_CRON_RUNNER=github`
+plus `BMS_APP_BASE_URL` and `BMS_CRON_SECRET` secrets. Enabled GitHub jobs now fail visibly when
+these secrets are missing. See [scheduler setup and ownership](scheduler.md), and confirm real
+execution at `/admin/operations-schedule`, which reads `bms_job_runs`.
 
 **Migrations not yet applied to production (2026-08-13):** `7.33`, `7.52`, `7.54`, `7.55`, `7.56`,
 `7.78`, `7.81`, `7.82`. This list predates the POS/tax/membership/branch-inventory set

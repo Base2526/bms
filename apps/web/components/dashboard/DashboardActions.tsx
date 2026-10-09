@@ -108,7 +108,7 @@ export default function DashboardActions({ enabled, canManage }: { enabled: bool
     </article>)}
   </div>;
   const retryRead = (read: () => Promise<unknown>) => { void read().catch(() => undefined); };
-  const failure = (retry: () => void) => <Alert type="error" showIcon message={label("action_load_failed")}
+  const failure = (retry: () => void) => <Alert type="error" showIcon closable message={label("action_load_failed")}
     action={<Button size="small" onClick={retry}>{label("action_retry")}</Button>} />;
   const data = metrics.data?.bmsActionMetrics;
 

@@ -29,6 +29,7 @@ import { authorizeAdminRoute } from "@/lib/bms/adminRouteAuth";
 import { writeLogServer } from "./writeLog.server";
 import { ERROR_WINDOW_MS, shouldLog } from "./logThrottle";
 import { isRestaurantCheckError } from "@/lib/bms/restaurantPosErrors";
+import { withScheduledJobTrace } from "@/lib/bms/scheduledJobTrace";
 
 type RouteHandler<Args extends any[]> = (...args: Args) => Promise<Response> | Response;
 
@@ -67,7 +68,7 @@ export function withRouteErrorLog<Args extends any[]>(
   routeName: string,
   handler: RouteHandler<Args>
 ): (...args: Args) => Promise<Response> {
-  return async (...args: Args): Promise<Response> => {
+  return (...args: Args): Promise<Response> => withScheduledJobTrace(args[0], async () => {
     try {
       return await handler(...args);
     } catch (error: any) {
@@ -120,7 +121,7 @@ export function withRouteErrorLog<Args extends any[]>(
 
       return errorResponse(detail.message);
     }
-  };
+  });
 }
 
 function errorResponse(message: string | null) {

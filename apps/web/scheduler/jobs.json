@@ -1,0 +1,19 @@
+[
+  { "name": "release-expired", "group": "frequent", "path": "/api/bms/orders/release-expired?minutes=30" },
+  { "name": "followups-run", "group": "frequent", "path": "/api/bms/followups/run" },
+  { "name": "carrier-tracking-sync", "group": "frequent", "path": "/api/bms/shipping/sync-carriers" },
+  { "name": "menu-availability-reset", "group": "frequent", "path": "/api/bms/menu-availability/reset" },
+  { "name": "delivery-events-process", "group": "frequent", "path": "/api/bms/delivery/events/process" },
+  { "name": "delivery-commands-process", "group": "frequent", "path": "/api/bms/delivery/commands/process" },
+  { "name": "delivery-intake-auto-resume", "group": "frequent", "path": "/api/bms/delivery/intake/auto-resume" },
+  { "name": "delivery-scheduled-preparation", "group": "frequent", "path": "/api/bms/delivery/scheduled-preparation" },
+  { "name": "delivery-acceptance-timeout", "group": "frequent", "path": "/api/bms/delivery/acceptance-timeout" },
+  { "name": "board-game-reservation-expiry", "group": "frequent", "path": "/api/bms/board-game/reservations/expire" },
+  { "name": "board-game-reservation-reminders", "group": "frequent", "path": "/api/bms/board-game/reservations/remind" },
+  { "name": "board-game-pass-renewals", "group": "frequent", "path": "/api/bms/board-game/pass-renewals/run" },
+  { "name": "loyalty-maintenance", "group": "daily", "path": "/api/bms/loyalty/maintenance" },
+  { "name": "channel-health", "group": "daily", "path": "/api/bms/channels/check-health" },
+  { "name": "ai-health", "group": "daily", "path": "/api/bms/ai/check-health" },
+  { "name": "report-digest", "group": "daily", "path": "/api/bms/reports/send-digest" },
+  { "name": "ai-answer-evidence-retention", "group": "daily", "path": "/api/bms/ai/evidence/purge-expired", "paginated": true }
+]
