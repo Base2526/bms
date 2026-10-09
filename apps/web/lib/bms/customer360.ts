@@ -1,3 +1,4 @@
+import { AiMeteredOutputError, meteredUsage } from "./aiMetering";
 // =============================================================
 // BMS Customer 360 — โปรไฟล์ลูกค้าแบบรวม (Inbox right panel)
 // -------------------------------------------------------------
@@ -478,7 +479,7 @@ function templateSummary(facts: CustomerFacts): string {
   return lines.join("\n");
 }
 
-type SummarizeResult = { text: string; inputTokens: number | null; outputTokens: number | null };
+type SummarizeResult = { text: string } & ReturnType<typeof meteredUsage>;
 
 // รับ credentials มาจาก resolveAiCredentials() เท่านั้น — ห้ามอ่าน process.env.ANTHROPIC_API_KEY
 // ตรงนี้เอง ไม่งั้นร้านที่ตั้ง BYOK จะไม่ได้ใช้ key ตัวเอง และ usage จะไม่ถูกนับใน quota/รายงาน
@@ -507,11 +508,10 @@ async function claudeSummarize(
     usage?: { input_tokens?: number; output_tokens?: number };
   };
   const text = json.content?.[0]?.text?.trim();
-  if (!text) throw new Error(`${creds.provider} empty reply`);
+  if (!text) throw new AiMeteredOutputError(`${creds.provider} empty reply`, meteredUsage(json.usage));
   return {
     text,
-    inputTokens: json.usage?.input_tokens ?? null,
-    outputTokens: json.usage?.output_tokens ?? null,
+    ...meteredUsage(json.usage),
   };
 }
 
@@ -569,14 +569,15 @@ export async function getCustomerInsights(tenantId: string, customerId: string) 
   let summaryText: string;
   if (creds) {
     try {
-      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
+      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId, { provider: creds.provider, model: creds.model, maxOutputTokens: 300 });
       const result = await claudeSummarize(facts, creds);
       summaryText = result.text;
       if (creds.usageEventId) {
         await finalizeAiUsageEvent(creds.usageEventId, {
           status: "completed",
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
+          inputTokens: result.inputTokens, outputTokens: result.outputTokens,
+          cacheReadInputTokens: result.cacheReadInputTokens,
+          cacheCreationInputTokens: result.cacheCreationInputTokens,
         });
       }
     } catch (err) {
@@ -585,6 +586,7 @@ export async function getCustomerInsights(tenantId: string, customerId: string) 
       if (creds.usageEventId) {
         await finalizeAiUsageEvent(creds.usageEventId, {
           status: "failed",
+          ...(err instanceof AiMeteredOutputError ? err.usage : {}),
           errorMessage: err instanceof Error ? err.message : "customer insight failed",
         });
       }

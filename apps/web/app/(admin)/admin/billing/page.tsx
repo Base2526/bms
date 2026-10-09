@@ -4,6 +4,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Row, Col, Button, Tag, Progress, message, Alert, Typography, Space, Divider, List, Input, InputNumber } from "antd";
 import { CheckOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined, KeyOutlined, BarChartOutlined, WarningOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import { aiCreditCapacity } from "@/lib/aiUsageClient";
 
 const { Text, Paragraph } = Typography;
 
@@ -19,6 +20,7 @@ const Q = gql`
       requestCount sharedRequests byokRequests blockedRequests
       grantedCredits bonusCredits adjustedCredits billableCredits providerCalls actualCostUsd unpricedProviderCalls
       inputTokens outputTokens
+      sharedBudgetLimitUsd sharedBudgetSpentUsd sharedBudgetReservedUsd sharedBudgetRemainingUsd sharedBudgetUnaccountedCalls sharedBudgetBlocked
     }
     bmsAiConfig { has_key model }
     bmsAiCreditLedger(limit: 12) {
@@ -37,32 +39,16 @@ type TFn = (key: string, vars?: Record<string, string | number>) => string;
 const lim = (v: number, t: TFn) => (v < 0 ? t("admin_billing.unlimited") : v);
 const pct = (used: number, max: number) => (max < 0 ? 0 : Math.min(100, Math.round((used / Math.max(max, 1)) * 100)));
 
-const AI_PLAN_PRESETS: Record<string, { credits: number; label: string; noteKey: string }> = {
-  free: { credits: 1000, label: "Free", noteKey: "plan_note_free" },
-  pro: { credits: 10000, label: "Pro", noteKey: "plan_note_pro" },
-  business: { credits: 50000, label: "Business", noteKey: "plan_note_business" },
-};
-
 function formatNumber(n: number) {
   return n.toLocaleString("en-US");
 }
 
-function estimateAiCredits(limit: number, planCode?: string | null) {
-  if (limit < 0) return -1;
-  const preset = planCode ? AI_PLAN_PRESETS[planCode]?.credits : undefined;
-  if (preset != null) return preset;
-  return Math.max(limit, 0);
-}
-
-function planAiCredits(plan: any) {
-  if (!plan) return 0;
-  if (typeof plan.ai_credits_monthly === "number") return plan.ai_credits_monthly;
-  return estimateAiCredits(plan.max_ai_messages_month ?? 0, plan.code);
-}
-
 function aiQuotaStatus(aiUsage: any) {
-  if (!aiUsage || aiUsage.unlimited || aiUsage.limit < 0) return "normal";
-  const usedPct = pct(aiUsage.count, aiUsage.limit);
+  if (!aiUsage) return "normal";
+  if (aiUsage.sharedBudgetBlocked) return "exhausted";
+  if (aiUsage.unlimited || aiUsage.limit < 0) return "normal";
+  if (aiUsage.remaining === 0) return "exhausted";
+  const usedPct = pct(aiUsage.count, aiCreditCapacity(aiUsage));
   if (usedPct >= 100) return "exhausted";
   if (usedPct >= 80) return "warning";
   return "normal";
@@ -173,10 +159,8 @@ export default function Page() {
   const hasByok = !!aiConfig?.has_key;
   const aiCreditsTotal = aiUsage?.unlimited
     ? -1
-    : Number(aiUsage?.grantedCredits ?? 0) +
-      Number(aiUsage?.bonusCredits ?? 0) +
-      Number(aiUsage?.adjustedCredits ?? 0);
-  const aiCreditsUsed = Number(aiUsage?.billableCredits ?? aiUsage?.count ?? 0);
+    : aiCreditCapacity(aiUsage);
+  const aiCreditsUsed = Number(aiUsage?.count ?? 0);
   const aiCreditsRemaining = Number(aiUsage?.remaining ?? 0);
   // โทเคนไม่เข้าสูตรโควตาและไม่เข้า usagePercent โดยตั้งใจ — เป็นคนละหน่วยกับ `limit`
   const aiTokensTotal = Number(aiUsage?.inputTokens ?? 0) + Number(aiUsage?.outputTokens ?? 0);
@@ -252,7 +236,7 @@ export default function Page() {
               >
                 <Text type="secondary">{t("admin_billing.ai_policy_today")}</Text>
                 <div style={{ fontSize: 16, fontWeight: 700, marginTop: 6 }}>
-                  {hasByok ? t("admin_billing.policy_byok") : aiStatus === "exhausted" ? t("admin_billing.policy_exhausted") : aiStatus === "warning" ? t("admin_billing.policy_warning") : t("admin_billing.policy_normal")}
+                  {aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_paused") : hasByok ? t("admin_billing.policy_byok") : aiStatus === "exhausted" ? t("admin_billing.policy_exhausted") : aiStatus === "warning" ? t("admin_billing.policy_warning") : t("admin_billing.policy_normal")}
                 </div>
                 <Text type="secondary">{t("admin_billing.policy_source_note")}</Text>
               </Card>
@@ -306,9 +290,22 @@ export default function Page() {
           />
         </Card>
 
+        {aiUsage && <Alert closable showIcon type={aiUsage.sharedBudgetBlocked ? "warning" : "info"}
+          style={{ marginBottom: 16 }}
+          message={t("admin_billing.budget_title", { limit: aiUsage.sharedBudgetLimitUsd })}
+          description={<>
+            {t("admin_billing.budget_details", {
+              spent: Number(aiUsage?.sharedBudgetSpentUsd ?? 0).toFixed(4),
+              reserved: Number(aiUsage?.sharedBudgetReservedUsd ?? 0).toFixed(4),
+              remaining: Number(aiUsage?.sharedBudgetRemainingUsd ?? 0).toFixed(4),
+            })}
+            <br />{t("admin_billing.budget_policy")}
+            {aiUsage?.sharedBudgetUnaccountedCalls > 0 && <><br />{t("admin_billing.budget_unaccounted", { count: aiUsage.sharedBudgetUnaccountedCalls })}</>}
+          </>}
+        />}
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
           <Col xs={24} md={12} lg={6}>
-            <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? "Unlimited" : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: formatNumber(aiCreditsTotal) })} accent={tone.accent} />
+            <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? t("admin_billing.unlimited") : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: aiCreditsTotal < 0 ? t("admin_billing.unlimited") : formatNumber(aiCreditsTotal) })} accent={tone.accent} />
           </Col>
           <Col xs={24} md={12} lg={6}>
             <AiMetricCard title={t("admin_billing.card_used_this_month")} value={formatNumber(aiCreditsUsed)} subtitle={t("admin_billing.requests_total_month", { count: formatNumber(aiUsage?.requestCount ?? aiUsage?.count ?? 0), calls: formatNumber(aiUsage?.providerCalls ?? 0) })} accent="#13c2c2" />
@@ -331,16 +328,16 @@ export default function Page() {
                   <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 12 }} wrap>
                     <div>
                       <div style={{ fontSize: 14, color: "#8c8c8c" }}>{t("admin_billing.used_this_month")}</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: tone.accent }}>{usagePercent}%</div>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: tone.accent }}>{aiUsage?.unlimited ? t("admin_billing.unlimited") : `${usagePercent}%`}</div>
                     </div>
                     <Tag color={aiStatus === "warning" ? "gold" : aiStatus === "exhausted" ? "red" : "blue"} style={{ borderRadius: 999, paddingInline: 10, fontSize: 13 }}>
-                      {aiStatus === "warning" ? t("admin_billing.status_warning") : aiStatus === "exhausted" ? t("admin_billing.status_exhausted") : t("admin_billing.status_normal")}
+                      {aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_paused") : aiStatus === "warning" ? t("admin_billing.status_warning") : aiStatus === "exhausted" ? t("admin_billing.status_exhausted") : t("admin_billing.status_normal")}
                     </Tag>
                   </Space>
                   <Progress
                     percent={usagePercent}
                     status={aiStatus === "exhausted" ? "exception" : aiStatus === "warning" ? "active" : "normal"}
-                    format={() => `${formatNumber(aiCreditsUsed)} / ${formatNumber(aiCreditsTotal)}`}
+                    format={() => aiCreditsTotal < 0 ? t("admin_billing.unlimited") : `${formatNumber(aiCreditsUsed)} / ${formatNumber(aiCreditsTotal)}`}
                     strokeColor={tone.accent}
                   />
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginTop: 12 }}>
@@ -354,7 +351,7 @@ export default function Page() {
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
                       <Text type="secondary">{t("admin_billing.when_exhausted")}</Text>
-                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>Fallback / Upgrade</div>
+                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{aiUsage?.unlimited || aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_handoff") : 'Fallback / Upgrade'}</div>
                     </Card>
                   </div>
                 </>
@@ -399,9 +396,9 @@ export default function Page() {
             <Card size="small" title={<Space><ThunderboltOutlined /> AI Credit plans</Space>} style={{ borderRadius: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 12 }}>
                 {[
-                  { code: "free", name: "Free", credits: "1,000 AI Credits", note: t("admin_billing.tier_free_note"), cta: t("admin_billing.tier_free_cta") },
-                  { code: "pro", name: "Pro", credits: "10,000 AI Credits", note: t("admin_billing.tier_pro_note"), cta: t("admin_billing.tier_pro_cta") },
-                  { code: "enterprise", name: "Enterprise", credits: "Custom", note: t("admin_billing.tier_ent_note"), cta: "SLA / analytics / support" },
+                  ...plans.map((plan: any) => ({ code: plan.code, name: plan.name,
+                    credits: plan.ai_credits_monthly < 0 ? t("admin_billing.unlimited") : `${formatNumber(plan.ai_credits_monthly)} AI Credits`,
+                    note: aiUsage ? t("admin_billing.budget_title", { limit: aiUsage.sharedBudgetLimitUsd }) : '', cta: '' })),
                   { code: "byok", name: "BYOK", credits: "Use your own key", note: t("admin_billing.tier_byok_note"), cta: t("admin_billing.tier_byok_cta") },
                 ].map((item) => (
                   <Card
@@ -421,9 +418,7 @@ export default function Page() {
                         {(item.code === cur?.code || (item.code === "byok" && hasByok)) && <Tag color="blue">{t("admin_billing.tag_in_use")}</Tag>}
                       </Space>
                       <div style={{ fontSize: 24, fontWeight: 700 }}>
-                        {item.code === "free" || item.code === "pro" || item.code === "business"
-                          ? `${formatNumber(planAiCredits(plans.find((p: any) => p.code === item.code) ?? cur))} AI Credits`
-                          : item.credits}
+                        {item.credits}
                       </div>
                       <Text type="secondary">{item.note}</Text>
                       <Paragraph style={{ marginBottom: 0 }}>{item.cta}</Paragraph>

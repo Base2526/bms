@@ -94,7 +94,7 @@ response budget. Migration idempotency and real RLS/CRUD remain unverified until
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43` |
-| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split) |
+| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger`, `bms_ai_limit_notices` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split), `10.54` (shared cost reservations), `10.55` (owner notices and refusal status) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
@@ -652,6 +652,24 @@ Migration `7.78` seeds `user.view`/`user.manage` here for `Manager` in every ten
 lets a shop owner manage their own staff; *which* users they may touch is a separate code-level role
 rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC section of
 [api.md](api.md) before changing either half.
+
+**Shared AI budget (`10.54__bms_ai_cost_budget.sql`)** — adds nonnegative
+`budget_reserved_usd NUMERIC(16,8) NOT NULL DEFAULT 0` to `bms_ai_usage_events` and a partial
+`(tenant_id, year_month)` index for `source='shared'`. Existing RLS/grants continue to apply.
+All plans, including Business, share the service-enforced $2,000 per-tenant UTC-month cap.
+Admission locks monthly row before event, reserves the actual model ceiling before network I/O,
+and finalization replaces only known exposure with attributed cost. Unknown holds survive stale
+cleanup; legacy unknown attempts without holds block admission. No speculative backfill. Apply
+the migration before new code and drain old workers during rollout. See
+[audit, pricing sources and reconciliation limitations](../ai/usage-cost-audit.md).
+
+**AI limit notices (`10.55__bms_ai_limit_notices.sql`)** — monthly accounting also retains
+`budget_denied_required_usd` and the refused unpriced model/provider, so a refusal remains visible
+when dollars remain but cannot fit its reservation. `bms_ai_limit_notices` is tenant-RLS protected,
+unique by tenant/month/dimension/level. The existing `notifications` table holds personal recipient
+copies; AI notification reads/acknowledgements join the notice by tenant and require the recipient
+from the admin session. Levels are 80%, 90%, pause and recovery, once each per month and dimension.
+Notification failure rolls back its savepoint only and retries on later usage operations/reads.
 
 **AI usage accounting (`7.82__bms_ai_usage_accounting.sql`)** — splits what used to be one
 `credits_used`/`estimated_cost` pair on `bms_ai_usage_events` into three independent dimensions:

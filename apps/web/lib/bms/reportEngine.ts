@@ -1,3 +1,4 @@
+import { meteredUsage } from "./aiMetering";
 // =============================================================
 // BMS AI Report & Document Generation — MVP core
 // -------------------------------------------------------------
@@ -193,7 +194,7 @@ async function draftSummary(tenantId: string, doc: ReportDoc): Promise<string | 
   const creds = await resolveAiCredentials(tenantId, { surface: "system", feature: "report_summary" });
   if (!creds) return null;
   try {
-    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId, { provider: creds.provider, model: creds.model, maxOutputTokens: 180 });
     const factsText = [doc.title, doc.subtitle, ...doc.meta.map((m) => `${m.label}: ${m.value}`)].join("\n");
     const resp = await callAnthropicCompatibleMessages(creds, {
       model: creds.model,
@@ -209,8 +210,7 @@ async function draftSummary(tenantId: string, doc: ReportDoc): Promise<string | 
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {
         status: text ? "completed" : "failed",
-        inputTokens: json.usage?.input_tokens ?? null,
-        outputTokens: json.usage?.output_tokens ?? null,
+        ...meteredUsage(json.usage),
       });
     }
     return text;

@@ -134,23 +134,23 @@ export function createQwenSlipReader(
         throw new SlipReaderError("MALFORMED_OUTPUT", "Qwen slip OCR returned invalid JSON");
       }
 
-      const text = payload.choices?.[0]?.message?.content?.trim();
-      if (!text) {
-        throw new SlipReaderError("MALFORMED_OUTPUT", "Qwen slip OCR returned no text");
-      }
-
-      const inputTokens = tokenCount(payload.usage?.prompt_tokens);
-      const outputTokens = tokenCount(payload.usage?.completion_tokens);
-
-      return {
-        provider: "qwen",
-        model: request.credentials.model,
-        extracted: parseSlipExtract(text),
-        usage: {
-          inputTokens: inputTokens === null || outputTokens === null ? null : inputTokens,
-          outputTokens: inputTokens === null || outputTokens === null ? null : outputTokens,
-        },
+      const usage = {
+        inputTokens: tokenCount(payload.usage?.prompt_tokens),
+        outputTokens: tokenCount(payload.usage?.completion_tokens),
       };
+      const text = payload.choices?.[0]?.message?.content?.trim();
+      try {
+        if (!text) throw new SlipReaderError("MALFORMED_OUTPUT", "qwen slip OCR returned no text");
+        return {
+          provider: "qwen", model: request.credentials.model,
+          extracted: parseSlipExtract(text), usage,
+        };
+      } catch (error) {
+        // Output validation cannot erase already-billed provider work. Keep only
+        // numeric usage, never the slip text, on the safe error envelope.
+        if (error instanceof SlipReaderError) throw new SlipReaderError(error.code, error.message, usage);
+        throw error;
+      }
     },
   };
 }

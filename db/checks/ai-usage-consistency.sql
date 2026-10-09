@@ -82,3 +82,19 @@ SELECT year_month,
    AND year_month >= to_char(now() - interval '3 months', 'YYYY-MM')
  GROUP BY 1
  ORDER BY 1 DESC;
+
+\echo '=== 5) shared cost exposure per shop this UTC month (requires migration 10.54) ==='
+-- Read-only. Unknown cost is not zero; unaccounted calls block new shared admission.
+SELECT tenant_id, year_month,
+       sum(actual_cost_usd) AS known_shared_cost_usd,
+       sum(budget_reserved_usd) AS reserved_usd,
+       greatest(2000 - coalesce(sum(actual_cost_usd), 0) - sum(budget_reserved_usd), 0) AS remaining_usd,
+       coalesce(sum(greatest(provider_calls, 1)) FILTER (
+         WHERE budget_reserved_usd = 0 AND
+           ((provider_calls > 0 AND (actual_cost_usd IS NULL OR unpriced_provider_calls > 0))
+            OR error_message = 'provider_attempt_unrecorded')
+       ), 0) AS unaccounted_calls
+  FROM bms_ai_usage_events
+ WHERE source = 'shared' AND year_month = to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM')
+ GROUP BY tenant_id, year_month
+ ORDER BY coalesce(sum(actual_cost_usd), 0) + sum(budget_reserved_usd) DESC;

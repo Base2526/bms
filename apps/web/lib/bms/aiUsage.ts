@@ -10,8 +10,11 @@
 import crypto from "crypto";
 import type { PoolClient, QueryResultRow } from "pg";
 import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
 import { reportBmsFailure } from "./failureAlert";
 import { getTenantPlan, type Plan } from "./plans";
+import { aiPeriodResetsAt, budgetLimitStatus, creditLimitStatus, type AiLimitStatus } from "./aiLimitStatus";
+import { recordAiLimitNoticesInTx } from "./aiLimitNotices";
 import {
   recordProviderError,
   recordProviderSuccess,
@@ -38,6 +41,12 @@ export function currentYearMonth(): string {
 }
 
 export type AiUsage = {
+  tenantId: string;
+  yearMonth: string;
+  resetsAt: string;
+  creditStatus: AiLimitStatus;
+  sharedBudgetStatus: AiLimitStatus;
+  sharedBudgetRequiredUsd: number;
   count: number;
   limit: number;
   remaining: number;
@@ -64,6 +73,12 @@ export type AiUsage = {
    */
   inputTokens: number;
   outputTokens: number;
+  sharedBudgetLimitUsd: number;
+  sharedBudgetSpentUsd: number;
+  sharedBudgetReservedUsd: number;
+  sharedBudgetRemainingUsd: number;
+  sharedBudgetUnaccountedCalls: number;
+  sharedBudgetBlocked: boolean;
 };
 
 export type AiUsageContext = {
@@ -158,16 +173,11 @@ export type TenantAiUsageEvent = Omit<
   sensitive: boolean;
 };
 
-const DEFAULT_ANTHROPIC_RATE = {
-  inputPerMillionUsd: 3,
-  outputPerMillionUsd: 15,
-  cacheCreationMultiplier: 1.25,
-  cacheReadMultiplier: 0.1,
-};
-
 const DEFAULT_DEEPSEEK_RATE = {
-  inputPerMillionUsd: 0.14,
-  outputPerMillionUsd: 0.28,
+  // Conservative peak list rates, verified 2026-10-09. Off-peak discounts are
+  // not assumed; attribution is a configured rate card, never an invoice.
+  inputPerMillionUsd: 0.3,
+  outputPerMillionUsd: 1.2,
   cacheCreationMultiplier: 1,
   cacheReadMultiplier: 0.02,
 };
@@ -182,11 +192,12 @@ const DEFAULT_QWEN_OCR_RATE = {
 };
 
 function positiveEnvRate(name: string, fallback: number): number {
-  const value = Number(process.env[name]);
-  return Number.isFinite(value) && value >= 0 ? value : fallback;
+  const raw = process.env[name]?.trim();
+  const value = raw ? Number(raw) : NaN;
+  return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-type AiTokenRate = typeof DEFAULT_ANTHROPIC_RATE;
+type AiTokenRate = { inputPerMillionUsd: number; outputPerMillionUsd: number; cacheCreationMultiplier: number; cacheReadMultiplier: number };
 
 function priceForModel(
   model?: string | null,
@@ -195,53 +206,103 @@ function priceForModel(
   const p = String(provider || "anthropic").toLowerCase();
   const m = String(model || "").toLowerCase();
   if (p === "deepseek") {
-    if (m.includes("pro")) {
+    if (m === "deepseek-v4-pro") {
       return {
-        inputPerMillionUsd: 0.435,
-        outputPerMillionUsd: 0.87,
+        inputPerMillionUsd: 1.32,
+        outputPerMillionUsd: 3.96,
         cacheCreationMultiplier: 1,
-        cacheReadMultiplier: Number((0.003625 / 0.435).toFixed(6)),
+        cacheReadMultiplier: 0.044 / 1.32,
       };
     }
-    return m.includes("v4-flash") ? DEFAULT_DEEPSEEK_RATE : null;
+    return ["deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"].includes(m)
+      ? DEFAULT_DEEPSEEK_RATE : null;
   }
   if (p === "qwen") {
-    if (!m.includes("qwen-vl-ocr")) return null;
+    if (!["qwen-vl-ocr", "qwen-vl-ocr-latest", "qwen-vl-ocr-2025-11-20"].includes(m)) return null;
+    const international = (process.env.QWEN_OCR_BASE_URL ?? "").includes("dashscope-intl.aliyuncs.com");
     return {
       ...DEFAULT_QWEN_OCR_RATE,
       inputPerMillionUsd: positiveEnvRate(
         "QWEN_OCR_INPUT_USD_PER_MILLION",
-        DEFAULT_QWEN_OCR_RATE.inputPerMillionUsd
+        international ? 0.07 : DEFAULT_QWEN_OCR_RATE.inputPerMillionUsd
       ),
       outputPerMillionUsd: positiveEnvRate(
         "QWEN_OCR_OUTPUT_USD_PER_MILLION",
-        DEFAULT_QWEN_OCR_RATE.outputPerMillionUsd
+        international ? 0.16 : DEFAULT_QWEN_OCR_RATE.outputPerMillionUsd
       ),
     };
   }
-  if (m.includes("haiku") && /4[-_.]?5/.test(m)) {
-    return { inputPerMillionUsd: 1, outputPerMillionUsd: 5, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
-  }
-  if (m.includes("haiku") && /3[-_.]?5/.test(m)) {
-    return { inputPerMillionUsd: 0.8, outputPerMillionUsd: 4, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
-  }
-  if (m.includes("claude-3-haiku") || m.includes("haiku-3")) {
-    return { inputPerMillionUsd: 0.25, outputPerMillionUsd: 1.25, cacheCreationMultiplier: 1.2, cacheReadMultiplier: 0.12 };
-  }
-  if (/sonnet[-_.]?5(?:[-_.]|$)/.test(m)) {
-    const promotionalRateEndsAt = Date.UTC(2026, 8, 1);
-    return Date.now() < promotionalRateEndsAt
-      ? { inputPerMillionUsd: 2, outputPerMillionUsd: 10, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 }
-      : DEFAULT_ANTHROPIC_RATE;
-  }
-  if (m.includes("sonnet")) return DEFAULT_ANTHROPIC_RATE;
-  if (m.includes("opus") && /4[-_.]?(?:5|6|7|8)/.test(m)) {
-    return { inputPerMillionUsd: 5, outputPerMillionUsd: 25, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
-  }
-  if (m.includes("opus") && /(?:claude-)?(?:opus[-_.]?)?4(?:[-_.]?1)?(?:[-_.]|$)/.test(m)) {
-    return { inputPerMillionUsd: 15, outputPerMillionUsd: 75, cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
-  }
+  // Exact version families only. A future model must not inherit an older
+  // model's cheaper price just because its name contains "sonnet" or "pro".
+  const family = m.replace(/[_.]/g, "-").replace(/-(?:[0-9]{8}|latest|fake)$/, "");
+  const rates: Record<string, [number, number]> = {
+    "claude-haiku-4-5": [1, 5], "claude-3-5-haiku": [0.8, 4],
+    "claude-3-haiku": [0.25, 1.25],
+    "claude-sonnet-5": [2, 10],
+    "claude-sonnet-4-6": [3, 15], "claude-sonnet-4-5": [3, 15], "claude-sonnet-4": [3, 15],
+    "claude-3-7-sonnet": [3, 15], "claude-3-5-sonnet": [3, 15], "claude-3-sonnet": [3, 15],
+    "claude-opus-4-8": [5, 25], "claude-opus-4-7": [5, 25], "claude-opus-4-6": [5, 25], "claude-opus-4-5": [5, 25],
+    "claude-opus-4-1": [15, 75], "claude-opus-4": [15, 75], "claude-3-opus": [15, 75],
+  };
+  const rate = rates[family];
+  if (rate) return { inputPerMillionUsd: rate[0], outputPerMillionUsd: rate[1], cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
   return null;
+}
+
+/** Platform-funded AI only. Applies to every plan, including unlimited credits. */
+export const SHARED_AI_MONTHLY_BUDGET_USD = 2000;
+
+export class AiUsageAdmissionError extends Error {
+  constructor(readonly code: "AI_BUDGET_EXHAUSTED" | "AI_BUDGET_UNPRICED" | "AI_USAGE_UNAVAILABLE") {
+    super(code);
+    this.name = "AiUsageAdmissionError";
+  }
+}
+
+/**
+ * Reserve the provider's full supported input envelope, not a guessed tokenizer
+ * count. This intentionally refuses near the ceiling when the worst-case call
+ * cannot fit. Current allowed models fit within 1M input and 1M output tokens.
+ * Cache creation may be more expensive than ordinary input. No model/rate = no
+ * platform-funded network call. A new model needs a reviewed envelope and rate.
+ */
+export function aiAttemptReservationUsd(model: string | null, provider: string | null, maxOutputTokens = 1_000_000): number | null {
+  const rate = priceForModel(model, provider);
+  if (!rate || !Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0 || maxOutputTokens > 1_000_000) return null;
+  const cost = rate.inputPerMillionUsd * Math.max(1, rate.cacheCreationMultiplier, rate.cacheReadMultiplier)
+    + maxOutputTokens / 1_000_000 * rate.outputPerMillionUsd;
+  return Math.ceil(cost * 1e8) / 1e8;
+}
+
+async function lockUsageMonth(client: PoolClient, tenantId: string, yearMonth: string) {
+  await client.query(
+    `SELECT tenant_id FROM bms_ai_usage_monthly WHERE tenant_id = $1 AND year_month = $2 FOR UPDATE`,
+    [tenantId, yearMonth]
+  );
+}
+
+async function readSharedBudget(client: PoolClient, tenantId: string, yearMonth: string) {
+  const result = await client.query<{ spent: string; reserved: string; unaccounted: number }>(
+    `SELECT COALESCE(SUM(actual_cost_usd), 0)::numeric AS spent,
+            COALESCE(SUM(budget_reserved_usd), 0)::numeric AS reserved,
+            COALESCE(SUM(GREATEST(provider_calls, 1)) FILTER (
+              WHERE budget_reserved_usd = 0 AND
+                ((provider_calls > 0 AND (actual_cost_usd IS NULL OR unpriced_provider_calls > 0))
+                 OR error_message = 'provider_attempt_unrecorded')
+            ), 0)::int AS unaccounted
+       FROM bms_ai_usage_events
+      WHERE tenant_id = $1 AND year_month = $2 AND source = 'shared'`,
+    [tenantId, yearMonth]
+  );
+  const denial = (await client.query(
+    `SELECT budget_denied_required_usd,budget_denied_model,budget_denied_provider
+     FROM bms_ai_usage_monthly WHERE tenant_id=$1 AND year_month=$2`, [tenantId, yearMonth])).rows[0];
+  return {
+    spent: Number(result.rows[0].spent), reserved: Number(result.rows[0].reserved), unaccounted: Number(result.rows[0].unaccounted),
+    required: Number(denial?.budget_denied_required_usd ?? 0),
+    unpricedModel: Boolean(denial?.budget_denied_model),
+    limit: SHARED_AI_MONTHLY_BUDGET_USD,
+  };
 }
 
 /** True only when token usage for this provider/model can be attributed to a configured rate. */
@@ -461,11 +522,36 @@ async function insertUsageEvent(
   return id;
 }
 
-async function transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+async function transaction<T>(tenantId: string, work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
     const result = await work(client);
+    // Notification trouble must never undo an already reserved/provider-spent
+    // dollar. A savepoint permits a later request/poll to retry the notice.
+    await client.query('SAVEPOINT ai_notices');
+    try {
+      const timeout = (await client.query('SHOW statement_timeout')).rows[0].statement_timeout;
+      await client.query("SET LOCAL statement_timeout = '2000ms'");
+      const month = currentYearMonth();
+      const monthly = (await client.query<MonthlyUsageRow>(
+        `SELECT * FROM bms_ai_usage_monthly WHERE tenant_id=$1 AND year_month=$2 FOR UPDATE`, [tenantId, month])).rows[0];
+      if (monthly) {
+        const plan = await getTenantPlan(tenantId, client);
+        const budget = await readSharedBudget(client, tenantId, month);
+        await recordAiLimitNoticesInTx(client, tenantId, month, {
+          CREDITS: creditLimitStatus(planCreditLimit(plan) < 0,
+            monthly.credits_granted + monthly.credits_bonus + monthly.credits_adjusted, monthly.credits_consumed),
+          BUDGET: budgetLimitStatus(budget),
+        });
+      }
+      await client.query("SELECT set_config('statement_timeout',$1,true)", [timeout]);
+      await client.query('RELEASE SAVEPOINT ai_notices');
+    } catch (error) {
+      await client.query('ROLLBACK TO SAVEPOINT ai_notices');
+      await client.query('RELEASE SAVEPOINT ai_notices');
+      console.error('[BMS] AI limit notice deferred', error instanceof Error ? error.message : 'unknown');
+    }
     await client.query("COMMIT");
     return result;
   } catch (err) {
@@ -487,7 +573,9 @@ async function reconcileStaleAiReservations(
   tenantId: string,
   yearMonth: string
 ): Promise<void> {
-  await transaction(async (client) => {
+  await transaction(tenantId, async (client) => {
+    // Every usage writer locks month -> event, including admission and finalize.
+    await lockUsageMonth(client, tenantId, yearMonth);
     const stale = await client.query<{
       id: string;
       billable_credits: number;
@@ -601,7 +689,7 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
 
   await reconcileStaleAiReservations(tenantId, yearMonth);
 
-  const { row, accounting } = await transaction(async (client) => {
+  const { row, accounting, budget } = await transaction(tenantId, async (client) => {
     const row = await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     const accounting = await client.query<{
       requests: number;
@@ -626,11 +714,17 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
           AND year_month = $2`,
       [tenantId, yearMonth]
     );
-    return { row, accounting: accounting.rows[0] };
+    const budget = await readSharedBudget(client, tenantId, yearMonth);
+    return { row, accounting: accounting.rows[0], budget };
   });
 
   const remaining = limit < 0 ? -1 : balanceFromRow(row);
+  const budgetStatus = budgetLimitStatus(budget);
   return {
+    tenantId, yearMonth, resetsAt: aiPeriodResetsAt(yearMonth),
+    creditStatus: creditLimitStatus(limit < 0, row.credits_granted + row.credits_bonus + row.credits_adjusted, row.credits_consumed),
+    sharedBudgetStatus: budgetStatus,
+    sharedBudgetRequiredUsd: budget.required,
     count: row.credits_consumed ?? row.count ?? 0,
     limit,
     remaining,
@@ -651,13 +745,19 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
     estimatedCost: Number(row.estimated_cost ?? 0),
     inputTokens: Number(accounting?.input_tokens ?? 0),
     outputTokens: Number(accounting?.output_tokens ?? 0),
+    sharedBudgetLimitUsd: SHARED_AI_MONTHLY_BUDGET_USD,
+    sharedBudgetSpentUsd: budget.spent,
+    sharedBudgetReservedUsd: budget.reserved,
+    sharedBudgetRemainingUsd: Math.max(0, SHARED_AI_MONTHLY_BUDGET_USD - budget.spent - budget.reserved),
+    sharedBudgetUnaccountedCalls: budget.unaccounted,
+    sharedBudgetBlocked: budgetStatus.startsWith('PAUSED_'),
   };
 }
 
 export async function recordByokAiUsage(tenantId: string, ctx?: AiUsageContext): Promise<string> {
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
-  return transaction(async (client) => {
+  return transaction(tenantId, async (client) => {
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     await client.query(
       `UPDATE bms_ai_usage_monthly
@@ -678,7 +778,7 @@ export async function recordSharedAiRetryUsage(
 ): Promise<string> {
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
-  return transaction(async (client) => {
+  return transaction(tenantId, async (client) => {
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     return insertUsageEvent(client, tenantId, yearMonth, "shared", "started", 0, ctx);
   });
@@ -687,7 +787,7 @@ export async function recordSharedAiRetryUsage(
 export async function recordAiFallback(tenantId: string, reason: "quota_exhausted" | "no_credentials", ctx?: AiUsageContext): Promise<string> {
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
-  return transaction(async (client) => {
+  return transaction(tenantId, async (client) => {
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     await client.query(
       `UPDATE bms_ai_usage_monthly
@@ -715,7 +815,7 @@ export async function tryConsumeAiQuota(
 
   await reconcileStaleAiReservations(tenantId, yearMonth);
 
-  return transaction(async (client) => {
+  return transaction(tenantId, async (client) => {
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
 
     if (!unlimited) {
@@ -825,10 +925,6 @@ export async function finalizeAiUsageEvent(
   const cacheCreationInputTokens = tokenCount(result.cacheCreationInputTokens);
   // เขียน meta เฉพาะตอน caller รู้ค่าจริง (path ที่ไม่ได้ตั้ง cache_control จะไม่มี key เหล่านี้เลย
   // ซึ่งต่างจากการมี key แล้วเป็น 0 — 0 หมายถึง "ตั้ง cache_control แล้วแต่ไม่ hit")
-  const rawProviderCalls = Number(result.providerCalls ?? 1);
-  const providerCalls = Number.isFinite(rawProviderCalls)
-    ? Math.min(2_147_483_647, Math.max(0, Math.floor(rawProviderCalls)))
-    : 0;
   const explicitEstimatedCost = Number(result.estimatedCost);
   const hasValidExplicitCost =
     result.estimatedCost != null &&
@@ -842,16 +938,6 @@ export async function finalizeAiUsageEvent(
   const hasCompleteUsage =
     hasValidExplicitCost ||
     (inputTokens !== null && outputTokens !== null);
-  const rawUnpricedProviderCalls = Number(
-    result.unpricedProviderCalls ??
-      (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
-  );
-  const reportedUnpricedProviderCalls = Number.isFinite(rawUnpricedProviderCalls)
-    ? Math.min(
-        providerCalls,
-        Math.max(0, Math.floor(rawUnpricedProviderCalls))
-      )
-    : providerCalls;
   const cacheUsageMeta =
     cacheReadInputTokens === null && cacheCreationInputTokens === null
       ? {}
@@ -872,19 +958,27 @@ export async function finalizeAiUsageEvent(
     provider: string | null;
     source: string | null;
     feature: string | null;
+    provider_calls: number;
   };
   // Finalization is intentionally one-shot. Callers can encounter overlapping
   // success/error cleanup paths, but an event must contribute to the monthly
   // cost or refund a provider-free reservation only once.
   let current: FinalizedEvent | null;
   try {
-    current = await transaction<FinalizedEvent | null>(async (client) => {
+    const owner = await query<FinalizedEvent>(
+      `SELECT tenant_id, year_month FROM bms_ai_usage_events WHERE id = $1`, [eventId]
+    );
+    if (!owner.rows[0]) return;
+    current = await transaction<FinalizedEvent | null>(owner.rows[0].tenant_id, async (client) => {
+    await lockUsageMonth(client, owner.rows[0].tenant_id, owner.rows[0].year_month);
     const event = await client.query<FinalizedEvent & {
       billable_credits: number;
       completed_at: Date | string | null;
+      provider_calls: number;
+      budget_reserved_usd: string;
     }>(
       `SELECT tenant_id, year_month, model, provider, source, feature,
-              billable_credits, completed_at
+              billable_credits, completed_at, provider_calls, budget_reserved_usd
          FROM bms_ai_usage_events
         WHERE id = $1
         FOR UPDATE`,
@@ -893,15 +987,31 @@ export async function finalizeAiUsageEvent(
     const row = event.rows[0];
     if (!row || row.completed_at) return null;
 
+    // Admission persists every attempt before I/O. A failed admission made no
+    // provider call; late/incorrect cleanup must never erase a persisted attempt.
+    const providerCalls = Math.max(Number(row.provider_calls), result.providerCalls == null
+      ? Number(row.provider_calls)
+      : Number.isFinite(result.providerCalls) ? Math.min(2_147_483_647, Math.max(0, Math.floor(result.providerCalls))) : Number(row.provider_calls));
+    const rawUnpricedProviderCalls = Number(result.unpricedProviderCalls ??
+      (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls));
+    const reportedUnpricedProviderCalls = Number.isFinite(rawUnpricedProviderCalls)
+      ? Math.min(providerCalls, Math.max(0, Math.floor(rawUnpricedProviderCalls)))
+      : providerCalls;
+
     const rateKnown =
       providerCalls === 0 ||
       (result.costRateKnown ?? priceForModel(row.model, row.provider) !== null);
-    const unpricedProviderCalls = rateKnown
-      ? reportedUnpricedProviderCalls
+    const unpricedProviderCalls = rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0)
+      ? Math.min(providerCalls, Math.max(rateKnown ? 0 : 1, result.unpricedProviderCalls == null
+          ? (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
+          : reportedUnpricedProviderCalls))
       : providerCalls;
     const rawEstimatedCost = Number(
       (hasValidExplicitCost ? explicitEstimatedCost : null) ??
-        estimateAiCostUsd(inputTokens, outputTokens, row.model, row.provider)
+        estimateCachedAiCostUsd({
+          inputTokens: Math.max(0, (inputTokens ?? 0) - (cacheReadInputTokens ?? 0) - (cacheCreationInputTokens ?? 0)),
+          cacheReadInputTokens, cacheCreationInputTokens, outputTokens,
+        }, row.model, row.provider)
     );
     const estimatedCost =
       Number.isFinite(rawEstimatedCost) && rawEstimatedCost >= 0
@@ -912,7 +1022,7 @@ export async function finalizeAiUsageEvent(
     const actualCostUsd =
       providerCalls === 0
         ? 0
-        : rateKnown && hasAnyMeteredUsage
+        : hasAnyMeteredUsage && (rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0))
           ? estimatedCost
           : null;
     const refundCredits = providerCalls === 0 ? Number(row.billable_credits ?? 0) : 0;
@@ -920,6 +1030,9 @@ export async function finalizeAiUsageEvent(
       provider_calls: providerCalls,
       credit_policy: "logical_request",
       cost_basis: "provider_usage_rate_card",
+      rate_card_version: "2026-10-09",
+      ...(row.provider === "deepseek" || result.providerOutcomes?.some(o => o.provider === "deepseek")
+        ? { deepseek_pricing: "conservative_peak_list_rate" } : {}),
       cost_status:
         unpricedProviderCalls === 0 ? "measured" : "partial_or_unavailable",
       rate_status: rateKnown ? "known" : "unknown_model",
@@ -938,6 +1051,8 @@ export async function finalizeAiUsageEvent(
               provider_calls = $8,
               unpriced_provider_calls = $10,
               actual_cost_usd = $9,
+              budget_reserved_usd = CASE WHEN $8 = 0 OR $10 = 0 THEN 0
+                ELSE GREATEST(budget_reserved_usd - COALESCE($9::numeric, 0), 0) END,
               billable_credits = GREATEST(billable_credits - $11, 0),
               credits_used = GREATEST(credits_used - $11, 0),
               error_message = COALESCE($6, error_message),
@@ -995,7 +1110,7 @@ export async function finalizeAiUsageEvent(
         ]
       );
     }
-      return row;
+      return { ...row, provider_calls: providerCalls };
     });
   } catch (err) {
     // Accounting is observability after the provider call. Keep the provisional
@@ -1021,7 +1136,7 @@ export async function finalizeAiUsageEvent(
           code: "ai.usage_finalize_failed",
           error: err,
           surface: "system",
-          meta: { eventId, status: result.status, providerCalls },
+          meta: { eventId, status: result.status, providerCalls: result.providerCalls ?? null },
         });
       }
     } catch (reportErr) {
@@ -1036,7 +1151,7 @@ export async function finalizeAiUsageEvent(
   // Runtime ที่ข้าม provider ส่งผลต่อ attempt มาแยกกัน เพื่อไม่ให้ Anthropic ที่กู้ request สำเร็จ
   // กลบ DeepSeek timeout เป็น success ผิดตัว ส่วน caller เก่าที่ยังไม่ส่ง outcomes จะใช้สถานะรวม
   // completed/failed เหมือนเดิม และข้าม fallback เชิงธุรกิจที่ไม่ใช่สัญญาณว่า provider ล่ม
-  if (providerCalls > 0 && current.source === "shared") {
+  if (current.provider_calls > 0 && current.source === "shared") {
     const purpose = aiProviderPurposeFromFeature(current.feature);
     const outcomes = result.providerOutcomes?.length
       ? result.providerOutcomes
@@ -1064,52 +1179,67 @@ export async function finalizeAiUsageEvent(
  * fact that a provider request was started. Finalization replaces these
  * provisional counters with the exact totals and pricing result.
  */
-export async function recordAiProviderAttempt(eventId: string): Promise<void> {
+export async function recordAiProviderAttempt(
+  eventId: string,
+  attempt?: { provider: string; model: string; maxOutputTokens: number }
+): Promise<void> {
   try {
-    const res = await query(
-      `UPDATE bms_ai_usage_events
-          SET provider_calls = provider_calls + 1,
-              unpriced_provider_calls = unpriced_provider_calls + 1
-        WHERE id = $1
-          AND completed_at IS NULL`,
-      [eventId]
+    const owner = await query<{ tenant_id: string; year_month: string }>(
+      `SELECT tenant_id, year_month FROM bms_ai_usage_events WHERE id = $1`, [eventId]
     );
-    if ((res.rowCount ?? 0) > 0) return;
-    // 0 แถว = ไม่ใช่ race ที่ไม่มีพิษภัย: attempt ถูกบันทึก *ก่อน* network I/O เสมอ และ finalize
-    // รันหลังลูปจบ แถวจึงต้องยังเปิดอยู่ตอนนี้ · ที่เหลือคือ id ผิด หรือแถวถูกปิดไปโดยตัวกวาด
-    // ระหว่างที่ request นี้ยังทำงาน — ทั้งสองกรณีจบลงที่ `provider_calls = 0` ซึ่งจะถูกคืน credit
-    await reportUnrecordedProviderAttempt(
-      eventId,
-      new Error("AI usage event row was not open for a provider attempt")
-    );
-  } catch (err) {
-    console.error("[BMS] failed to persist AI provider attempt:", err);
-    await reportUnrecordedProviderAttempt(eventId, err);
-  }
-}
-
-/**
- * ห้าม throw และห้ามทำให้คำตอบของลูกค้าล้ม — เหตุผลเดียวกับ catch ของ finalize
- * แต่ก็ห้ามเงียบ: การไม่มี attempt ทำให้ตัวกวาด **คืนโควตาให้ request ที่เสียเงินไปแล้ว**
- * ถ้าไม่มีแถว incident ผูกกับ eventId ไว้ จะไม่มีทางแยกจากการ abort ที่คืนถูกต้องได้เลย
- */
-async function reportUnrecordedProviderAttempt(eventId: string, err: unknown): Promise<void> {
-  try {
-    const owner = await query<{ tenant_id: string }>(
-      `SELECT tenant_id FROM bms_ai_usage_events WHERE id = $1`,
-      [eventId]
-    );
-    const tenantId = owner.rows[0]?.tenant_id;
-    if (!tenantId) return;
-    await reportBmsFailure({
-      tenantId,
-      code: "ai.provider_attempt_unrecorded",
-      error: err,
-      surface: "system",
-      meta: { eventId },
+    if (!owner.rows[0]) throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
+    const { tenant_id: tenantId, year_month: yearMonth } = owner.rows[0];
+    const denied = await transaction(tenantId, async (client) => {
+      await lockUsageMonth(client, tenantId, yearMonth);
+      const event = await client.query<{
+        source: string; provider: string; model: string; completed_at: Date | null;
+      }>(`SELECT source, provider, model, completed_at FROM bms_ai_usage_events WHERE id = $1 FOR UPDATE`, [eventId]);
+      const row = event.rows[0];
+      if (!row || row.completed_at || yearMonth !== currentYearMonth()) {
+        throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
+      }
+      let reserve = 0;
+      if (row.source === "shared") {
+        const ceiling = aiAttemptReservationUsd(attempt?.model ?? row.model, attempt?.provider ?? row.provider, attempt?.maxOutputTokens);
+        const budget = await readSharedBudget(client, tenantId, yearMonth);
+        // Legacy unknown spending is not $0. Require evidence/reconciliation
+        // rather than granting another $2,000 on top of an unknown bill.
+        const code = ceiling == null || budget.unaccounted > 0 ? 'AI_BUDGET_UNPRICED'
+          : Math.round(budget.spent * 1e8) + Math.round(budget.reserved * 1e8) + Math.round(ceiling * 1e8)
+            > SHARED_AI_MONTHLY_BUDGET_USD * 1e8 ? 'AI_BUDGET_EXHAUSTED' : null;
+        if (code) {
+          await client.query(
+            `UPDATE bms_ai_usage_monthly SET
+               budget_denied_required_usd=GREATEST(budget_denied_required_usd,$3),
+               budget_denied_model=$4,budget_denied_provider=$5
+             WHERE tenant_id=$1 AND year_month=$2`,
+            [tenantId, yearMonth, ceiling ?? 0, ceiling == null ? (attempt?.model ?? row.model) || 'unknown-model' : null, attempt?.provider ?? row.provider]);
+          return code;
+        }
+        reserve = ceiling!;
+        await client.query(
+          `UPDATE bms_ai_usage_monthly SET budget_denied_model=NULL,budget_denied_provider=NULL
+           WHERE tenant_id=$1 AND year_month=$2`, [tenantId, yearMonth]);
+      }
+      await client.query(
+        `UPDATE bms_ai_usage_events
+            SET provider_calls = provider_calls + 1,
+                unpriced_provider_calls = unpriced_provider_calls + 1,
+                budget_reserved_usd = budget_reserved_usd + $2,
+                meta = meta || $3::jsonb
+          WHERE id = $1`,
+        [eventId, reserve, JSON.stringify({ budget_policy: "shared_usd_2000_v1", budget_last_provider: attempt?.provider ?? row.provider })]
+      );
+      return null;
     });
-  } catch (reportErr) {
-    console.error("[BMS] failed to report unrecorded AI provider attempt:", reportErr);
+    // Throw only after committing the refusal evidence and owner notification.
+    if (denied) throw new AiUsageAdmissionError(denied);
+  } catch (err) {
+    // Pre-I/O admission must fail closed. Post-I/O finalization still preserves
+    // a valid answer on DB failure and leaves its durable cost reservation held.
+    if (err instanceof AiUsageAdmissionError) throw err;
+    console.error("[BMS] AI provider admission failed:", err);
+    throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
   }
 }
 
@@ -1121,10 +1251,10 @@ export async function adjustAiCredits(
   if (!Number.isInteger(amount) || amount === 0) throw new Error("จำนวนเครดิตต้องเป็นจำนวนเต็มและต้องไม่เป็น 0");
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
-  return transaction(async (client) => {
+  return transaction(tenantId, async (client) => {
     const row = await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     const nextAdjusted = (row.credits_adjusted ?? 0) + amount;
-    const nextBalance = Math.max(balanceFromRow(row) + amount, 0);
+    const nextBalance = balanceFromRow({ ...row, credits_adjusted: nextAdjusted });
     await client.query(
       `UPDATE bms_ai_usage_monthly
           SET credits_adjusted = credits_adjusted + $3,

@@ -20,12 +20,14 @@ import { listAiProviderHealth, countUnhealthyAiProviders } from "@/lib/bms/aiPro
 import { audit } from "@/lib/bms/audit";
 import { requirePlatformAdmin } from "@/lib/bms/platform";
 import { requirePermission } from "@/lib/bms/permissions";
+import { listAiLimitNotifications, readAiLimitNotification } from "@/lib/bms/aiLimitNotices";
 
 function requireTenantAdmin(ctx: any) {
   const auth = requireAuth(ctx);
   if (auth.scope !== "admin") {
     throw new GraphQLError("Admin only", { extensions: { code: "FORBIDDEN", http: { status: 403 } } });
   }
+  return auth;
 }
 
 const EVAL_REF_PATTERN = /^EVAL-[A-Za-z0-9._:-]{1,180}$/;
@@ -33,6 +35,10 @@ const AI_FEATURE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
 
 export const bmsAiConfigResolvers = {
   Query: {
+    async bmsAiLimitNotifications(_p: unknown, _a: unknown, ctx: any) {
+      const auth = requireTenantAdmin(ctx);
+      return listAiLimitNotifications(getTenantId(ctx), String(auth.author_id));
+    },
     async bmsAiConfig(_p: unknown, _a: unknown, ctx: any) {
       requireTenantAdmin(ctx);
       return getTenantAiConfigMasked(getTenantId(ctx));
@@ -85,6 +91,10 @@ export const bmsAiConfigResolvers = {
     },
   },
   Mutation: {
+    async bmsReadAiLimitNotification(_p: unknown, args: { id: string }, ctx: any) {
+      const auth = requireTenantAdmin(ctx);
+      return readAiLimitNotification(getTenantId(ctx), String(auth.author_id), args.id);
+    },
     async bmsSetAiKey(
       _p: unknown,
       args: { apiKey?: string; model?: string; provider?: string },

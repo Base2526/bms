@@ -108,6 +108,29 @@ type BmsAiFailureSummary {
   totalToolCalls: Int!
 }
 
+type BmsAiLimitInbox {
+  items: [BmsAiLimitNotification!]!
+  unreadCount: Int!
+}
+
+type BmsAiLimitNotification {
+  createdAt: String!
+  dimension: String!
+  id: ID!
+  isRead: Boolean!
+  level: String!
+  yearMonth: String!
+}
+
+enum BmsAiLimitStatus {
+  NORMAL
+  PAUSED_BUDGET
+  PAUSED_CREDITS
+  PAUSED_UNPRICED
+  WARNING_80
+  WARNING_90
+}
+
 type BmsAiProviderHealth {
   last_checked_at: String
   last_error_at: String
@@ -220,6 +243,7 @@ type BmsAiUsage {
   bonusCredits: Int!
   byokRequests: Int!
   count: Int!
+  creditStatus: BmsAiLimitStatus!
   estimatedCost: Float!
   grantedCredits: Int!
   inputTokens: Float!
@@ -230,9 +254,20 @@ type BmsAiUsage {
   providerCalls: Int!
   remaining: Int!
   requestCount: Int!
+  resetsAt: String!
+  sharedBudgetBlocked: Boolean!
+  sharedBudgetLimitUsd: Float!
+  sharedBudgetRemainingUsd: Float!
+  sharedBudgetRequiredUsd: Float!
+  sharedBudgetReservedUsd: Float!
+  sharedBudgetSpentUsd: Float!
+  sharedBudgetStatus: BmsAiLimitStatus!
+  sharedBudgetUnaccountedCalls: Int!
   sharedRequests: Int!
+  tenantId: ID!
   unlimited: Boolean!
   unpricedProviderCalls: Int!
+  yearMonth: String!
 }
 
 type BmsAiUsageBreakdown {
@@ -7648,6 +7683,7 @@ type Mutation {
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
+  bmsReadAiLimitNotification(id: ID!): Boolean!
   bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
   bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
 
@@ -8091,6 +8127,7 @@ type Query {
   bmsAiConfig: BmsAiConfig!
   bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
   bmsAiFailureSummary(days: Int = 7): BmsAiFailureSummary!
+  bmsAiLimitNotifications: BmsAiLimitInbox!
   bmsAiProviderHealth: [BmsAiProviderHealth!]!
   bmsAiProviderHealthCount: Int!
   bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail

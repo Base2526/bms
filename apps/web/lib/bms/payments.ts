@@ -959,6 +959,10 @@ export async function verifyPaymentSlip(tenantId: string, paymentId: string): Pr
           : `ยอดในสลิป (${extracted.amount ?? "อ่านไม่ได้"}) ไม่ตรงกับยอด ${expectedAmount} — ตรวจสอบก่อนยืนยัน`,
         checkedAt,
       };
+    } else if (attempt.reason === "usage_blocked") {
+      fallbackReason = attempt.errorMessage === 'AI_BUDGET_EXHAUSTED'
+        ? 'พักการอ่านสลิปด้วย AI เพราะวงเงิน AI ส่วนกลางไม่พอสำหรับคำขอนี้ — ดูสถานะที่ Billing และตรวจสอบสลิปด้วยตนเอง'
+        : 'พักการอ่านสลิปด้วย AI เพราะยังตรวจสอบต้นทุนหรือระบบบัญชีการใช้งานไม่ได้ — ติดต่อผู้ดูแลและตรวจสอบสลิปด้วยตนเอง';
     } else if (attempt.reason === "image_unavailable") {
       fallbackReason = "ไม่สามารถโหลดรูปสลิปได้ — ตรวจสอบด้วยตนเอง";
     } else if (attempt.attemptedProviders.length >= 2) {

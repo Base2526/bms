@@ -1,3 +1,4 @@
+import { meteredUsage } from "./aiMetering";
 // =============================================================
 // BMS Follow-up Automation — MVP core
 // -------------------------------------------------------------
@@ -266,7 +267,7 @@ export async function classifyConversationIntent(
   if (creds) {
     let usage: { input_tokens?: number; output_tokens?: number } | undefined;
     try {
-      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
+      if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId, { provider: creds.provider, model: creds.model, maxOutputTokens: 100 });
       const resp = await callAnthropicCompatibleMessages(creds as AiCredentials, {
         model: creds.model,
         max_tokens: 100,
@@ -295,14 +296,14 @@ export async function classifyConversationIntent(
       if (creds.usageEventId) {
         await finalizeAiUsageEvent(creds.usageEventId, {
           status: result ? "completed" : "failed",
-          inputTokens: usage?.input_tokens ?? null,
-          outputTokens: usage?.output_tokens ?? null,
+          ...meteredUsage(usage),
         });
       }
     } catch (err) {
       if (creds.usageEventId) {
         await finalizeAiUsageEvent(creds.usageEventId, {
           status: "failed",
+          ...meteredUsage(usage),
           errorMessage: err instanceof Error ? err.message : "followup intent classification failed",
         });
       }
@@ -445,7 +446,7 @@ async function generateFollowupMessage(
       priorFollowups ? `Previous follow-up messages already sent (never repeat these):\n${priorFollowups}` : "No previous follow-ups sent yet.",
     ];
 
-    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId, { provider: creds.provider, model: creds.model, maxOutputTokens: 220 });
     const resp = await callAnthropicCompatibleMessages(creds, {
       model: creds.model,
       max_tokens: 220,
@@ -464,8 +465,7 @@ async function generateFollowupMessage(
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {
         status: "completed",
-        inputTokens: json.usage?.input_tokens ?? null,
-        outputTokens: json.usage?.output_tokens ?? null,
+        ...meteredUsage(json.usage),
       });
     }
     return text;

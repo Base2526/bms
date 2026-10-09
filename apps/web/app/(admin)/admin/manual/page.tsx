@@ -646,6 +646,10 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ดูแพ็กเกจ, เครดิต AI, usage breakdown, ledger และสิ่งที่ใช้โควตาไปในเดือนนี้",
     bullets: [
       "ดูเครดิตคงเหลือ, ใช้ไปแล้ว, request count, provider calls, และ estimated cost แยกกัน",
+      "เครดิตคิดหนึ่งครั้งต่อคำขอ แม้ AI จะเรียกหลายรอบหรือเปลี่ยน provider; token เป็นอีกหน่วยหนึ่ง ยอดมุมซ้ายล่างจะอ่านใหม่หลังใช้งาน และตรวจงานเบื้องหลังทุก 30 วินาที",
+      "ทุกแพ็กเกจรวม Business มีเพดาน shared AI $2,000 ต่อร้านต่อเดือน UTC ดูต้นทุนที่ทราบ วงเงินที่กันไว้ และวงเงินคงเหลือใน Billing; BYOK จ่ายกับ provider ของร้านแยกต่างหาก",
+      "ระบบพัก shared AI ถ้าวงเงินไม่พอสำหรับคำขอถัดไป หรือมีต้นทุนเก่าที่ตรวจสอบไม่ได้ ให้ทีมตอบด้วยมือและให้ผู้ดูแลตรวจหลักฐานการใช้ก่อน ไม่ควรเติมเครดิตเพื่อข้ามเพดานต้นทุน",
+      "แถบเตือนทุกหน้าหลังบ้านแยกเครดิตกับวงเงิน AI ที่ 80%, 90% และเมื่อคำขอถูกพัก กระดิ่งแจ้งเตือน AI เก็บประวัติให้ Administrator/Manager โดยไม่แจ้งซ้ำระดับเดิมในรอบเดือน ดูสถานะปัจจุบันและวันเริ่มรอบใหม่จากแถบเตือนหรือ Billing; เวลาเริ่มรอบคือวันที่ 1 เวลา 07:00 ไทย",
       "ถ้าใช้ shared key ระบบจะแจ้งใกล้หมด / หมด quota เพื่อให้ทีมเตรียมรับงานด้วยมือ",
       "เปิดดู ledger เพื่อไล่ว่า AI ถูกใช้กับงานใดของร้านบ้างในรอบบิล",
       "ถ้าใช้ BYOK รายละเอียด quota จะต่างจาก shared key และยังควรกลับไปดู Settings เพื่อเช็ก provider/model",
@@ -1879,6 +1883,10 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Review the current plan, AI credits, usage breakdown, and the ledger of what consumed quota this month",
     bullets: [
       "Track remaining credits, used credits, request count, provider calls, and estimated cost separately",
+      "One logical request costs one credit even across tool rounds or provider fallback; tokens are separate. The sidebar refreshes after use and checks background usage every 30 seconds.",
+      "Every plan, including Business, has a $2,000 shared AI budget per shop per UTC month. Billing separates known cost, reserved funds and remaining budget; BYOK is paid directly to the shop's provider.",
+      "All admin pages show separate credit and cost warnings at 80%, 90% and request pause. The AI notification bell retains history for Administrator/Manager, once per level per month. Read current status and the next period in the banner or Billing; a new period starts on the 1st at 07:00 Bangkok time. Adding credits does not increase the cost cap.",
+      "Shared AI pauses if the next call cannot fit or historical costs cannot be accounted for. Continue manually and ask the administrator to reconcile provider evidence; credit top-ups do not bypass the cost cap.",
       "When the shop relies on the shared key, Billing is where near-limit and exhausted usage becomes visible to staff",
       "Use the ledger to trace what AI usage the tenant actually spent credits on in the current cycle",
       "When BYOK is enabled, compare Billing with Settings so the team knows which provider and model are active",

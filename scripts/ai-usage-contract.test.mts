@@ -83,12 +83,13 @@ test('the stale sweep decides refunds from the computed id set, not from provide
   assert.match(sweep, /ai\.provider_attempt_unrecorded/, 'ตัวกวาดต้องอ่าน incident เพื่อแยกสองกรณี');
 });
 
-test('both AI accounting failures are reported, and their codes exist in the catalog', () => {
+test('post-provider accounting failures are reported and admission fails closed', () => {
   // `reportBmsFailure` เริ่มด้วย `if (!entry) return;` — code ที่ไม่มีใน FAILURE_CATALOG
   // จะถูกทิ้งเงียบ ๆ ซึ่งเท่ากับกลับไปเป็น console.error เหมือนเดิม
   const usage = read(path.join(WEB, 'lib/bms/aiUsage.ts'));
+  assert.match(usage, /throw new AiUsageAdmissionError/);
   const catalog = read(path.join(WEB, 'lib/bms/failureAlert.ts'));
-  for (const code of ['ai.usage_finalize_failed', 'ai.provider_attempt_unrecorded']) {
+  for (const code of ['ai.usage_finalize_failed']) {
     assert.ok(usage.includes(`"${code}"`), `aiUsage ต้องรายงาน ${code}`);
     assert.ok(catalog.includes(`"${code}":`), `${code} ต้องมี entry ใน FAILURE_CATALOG`);
   }

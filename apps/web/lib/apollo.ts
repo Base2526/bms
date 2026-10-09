@@ -16,6 +16,7 @@ import { createUploadLink } from 'apollo-upload-client';
 
 import { addLog } from './log/log';
 import { readPosDeviceToken } from "./pos/deviceTokenClient";
+import { aiUsageRefreshLink, refreshAiUsage } from "./aiUsageClient";
 
 function backendLogout(reason?: string) {
   const time = new Date().toISOString();
@@ -291,7 +292,7 @@ const link = split(
     return def.kind === "OperationDefinition" && def.operation === "subscription";
   },
   lazyWsLink,
-  from([errorLink, authLink, httpLink]) // ⬅️ ใส่ errorLink หน้า auth/http
+  from([aiUsageRefreshLink(() => { void refreshAiUsage(client); }), errorLink, authLink, httpLink])
 );
 
 // ----------------------------

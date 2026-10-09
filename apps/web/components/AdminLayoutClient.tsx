@@ -9,6 +9,7 @@ import WorkAssistantDrawer from "@/components/work-assistant/WorkAssistantDrawer
 import { useRealtimeStatus } from "@/components/realtime/RealtimeProvider";
 import { useSessionCtx } from "@/lib/session-context";
 import { LocalLicenseBadge } from "@/components/retail-local/LocalLicense";
+import AiLimitStatus from "@/components/AiLimitStatus";
 
 const { Content } = Layout;
 
@@ -82,6 +83,7 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
         <Content style={{ padding: "clamp(12px, 4vw, 24px)", minWidth: 0, overflowX: "auto" }}>
           <ImpersonationBanner />
           <RealtimeStatusBanner />
+          <AiLimitStatus />
           {retailLocal && <LocalLicenseBadge />}
           {children}
         </Content>

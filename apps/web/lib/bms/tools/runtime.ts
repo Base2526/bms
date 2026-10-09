@@ -18,6 +18,7 @@ import { recordCustomerToolEvidence } from "../customerAnswerEvidence";
 import {
   estimateCachedAiCostUsd,
   finalizeAiUsageEvent,
+  AiUsageAdmissionError,
   hasAiCostRate,
   recordAiProviderAttempt,
 } from "../aiUsage";
@@ -594,9 +595,12 @@ async function runToolLoopInternal(
     for (let round = 0; round < MAX_ROUNDS; round++) {
       let resp: any;
       while (true) {
+        if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId, {
+          provider: activeCreds.provider, model: activeCreds.model,
+          maxOutputTokens: maxTokensForSurface(opts.execCtx.surface),
+        });
         providerCalls += 1;
         attemptedProviders.push(activeCreds.provider);
-        if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
         try {
           resp = await callProvider(
             activeCreds,
@@ -632,7 +636,8 @@ async function runToolLoopInternal(
       }
       if (
         Number.isFinite(resp?.usage?.input_tokens) &&
-        Number.isFinite(resp?.usage?.output_tokens)
+        Number.isFinite(resp?.usage?.output_tokens) &&
+        hasAiCostRate(activeCreds.model, activeCreds.provider)
       ) {
         pricedProviderCalls += 1;
       }
@@ -850,6 +855,16 @@ async function runToolLoopInternal(
         ...usagePayload(),
         errorMessage: err instanceof Error ? err.message : "tool-loop error",
       });
+    }
+    if (err instanceof AiUsageAdmissionError) {
+      return {
+        reply: latestVerifiedFallback ?? (opts.execCtx.surface === "customer"
+          ? "ขออภัยค่ะ ผู้ช่วยอัตโนมัติไม่พร้อมใช้งานในขณะนี้ กรุณาติดต่อเจ้าหน้าที่ร้านเพื่อช่วยตรวจสอบค่ะ"
+          : opts.execCtx.locale === "en"
+          ? "Platform AI spending is paused because its budget or usage records cannot safely cover another call. Please check AI usage in Billing or contact an administrator."
+          : "พักการใช้ AI ส่วนกลาง เนื่องจากงบหรือข้อมูลต้นทุนยังไม่รองรับการเรียกเพิ่มอย่างปลอดภัย กรุณาตรวจการใช้ AI ในหน้าการเรียกเก็บเงินหรือติดต่อผู้ดูแล"),
+        proposals, trace, usedAi: true,
+      };
     }
     // provider call ล้มเหลว (network/timeout/!=2xx) — คืน usedAi:true กันการ retry แบบ rule-based
     // (ถ้ามีทูล write ทำงานไปแล้วในรอบก่อน จะไม่ถูกทำซ้ำ)

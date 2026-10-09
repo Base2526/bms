@@ -39,6 +39,7 @@ import {
 import {
   estimateCachedAiCostUsd,
   finalizeAiUsageEvent,
+  AiUsageAdmissionError,
   recordAiFallback,
   recordAiProviderAttempt,
   tryConsumeAiQuota,
@@ -447,8 +448,11 @@ async function callWithValidation<T>(
 
   for (let attempt = 0; attempt <= MAX_AI_VALIDATION_RETRIES; attempt++) {
     try {
+      if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId, {
+        provider: creds.provider, model: creds.model,
+        maxOutputTokens: step === "suggest_medications" ? 1400 : 512,
+      });
       providerCalls += 1;
-      if (creds.usageEventId) await persistProviderAttempt(creds.usageEventId);
       const resp = await callProvider(creds, {
         model: creds.model,
         // Medication drafts contain several dosage/warning fields and were
@@ -499,6 +503,7 @@ async function callWithValidation<T>(
       break;
     } catch (err) {
       lastErr = err;
+      if (err instanceof AiUsageAdmissionError) break;
       continue;
     }
   }

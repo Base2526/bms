@@ -11,6 +11,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { query } from '../apps/web/lib/db';
 import {
+  AiUsageAdmissionError,
+  recordByokAiUsage,
   currentYearMonth,
   finalizeAiUsageEvent,
   getAiUsage,
@@ -163,7 +165,7 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
 
   await t.test('an unknown rate card keeps the tokens and reports unpriced calls instead of a fake $0', async () => {
     const before = await monthly();
-    const id = await reserve('fake_unpriced', UNPRICED_MODEL);
+    const id = await recordByokAiUsage(tenantId, { provider: PROVIDER, model: UNPRICED_MODEL, feature: 'fake_unpriced' });
     await recordAiProviderAttempt(id);
     await recordAiProviderAttempt(id);
     await finalizeAiUsageEvent(id, { status: 'completed', inputTokens: 4_000, outputTokens: 200, providerCalls: 2 });
@@ -195,6 +197,8 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
       `UPDATE bms_ai_usage_events SET created_at = now() - interval '30 minutes' WHERE id = ANY($1::uuid[])`,
       [[aborted, unrecorded, finalizeFailed]]
     );
+    // Historical unrecorded attempt is held conservatively; no cost is invented.
+    await query('UPDATE bms_ai_usage_events SET budget_reserved_usd=1 WHERE id=$1', [unrecorded]);
     const before = await monthly();
 
     await getAiUsage(tenantId); // ตัวกวาดถูกเรียกจากที่นี่ (ยังไม่ได้ย้ายไป cron)
@@ -221,23 +225,16 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     );
   });
 
-  await t.test('a provider attempt that cannot be recorded never throws and leaves a trace', async () => {
-    // ⚠️ subtest นี้ใช้เวลา ~5 วินาทีบนเครื่องที่ Redis เข้าไม่ถึง (docker ไม่ได้ publish 6379)
-    // เพราะ reportBmsFailure แจ้ง platform admin จริงแล้วชน NOTIFY_TIMEOUT_MS — **ไม่ใช่การค้าง
-    // และห้าม "แก้" ด้วยการถอด assert ทิ้ง**: การที่ทั้งเส้นยังจบได้ทั้งที่ช่องทางแจ้งเตือนพัง
-    // คือการันตีที่ subtest นี้มีไว้ตรึง (accounting ล้มต้องไม่ทำให้คำตอบลูกค้าล้ม)
-    // id ที่ไม่มีในตาราง: หา tenant ไม่ได้ จึงไม่มี incident ให้เขียน — ต้องไม่ throw เท่านั้น
-    await recordAiProviderAttempt(crypto.randomUUID());
+  await t.test('a provider attempt that cannot be recorded is rejected before network I/O', async () => {
+    // Invalid/closed events must stop admission before spending, without inventing
+    // an incident claiming that a provider was called. Post-I/O failures differ.
+    await assert.rejects(recordAiProviderAttempt(crypto.randomUUID()), AiUsageAdmissionError);
 
     // แถวที่ปิดไปแล้ว: UPDATE ได้ 0 แถวแบบไม่มี error ซึ่งคือรูปของการล้มเงียบ ๆ ที่ต้องมีร่องรอย
     const id = await reserve('fake_closed_row', PRICED_MODEL);
     await recordAiProviderAttempt(id);
     await finalizeAiUsageEvent(id, { status: 'completed', inputTokens: 10, outputTokens: 10, providerCalls: 1 });
-    await recordAiProviderAttempt(id);
-    assert.deepEqual(
-      (await incidents('ai.provider_attempt_unrecorded')).map(r => r.event_id).filter(e => e === id),
-      [id]
-    );
+    await assert.rejects(recordAiProviderAttempt(id), AiUsageAdmissionError);
     assert.equal(Number((await event(id)).provider_calls), 1, 'a closed row must not gain another attempt');
   });
   await t.test('the monthly credit counter equals the sum the events actually hold', async () => {

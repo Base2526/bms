@@ -152,6 +152,17 @@ template.
   a tenant's totals.
 - A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
   estimates, sample ledgers, or hardcoded per-credit prices.
+- Shared inference has a $2,000 per-tenant UTC-month budget for every plan, including Business.
+  Admission reserves the actual provider/model's conservative cost ceiling before network I/O,
+  serialized on the monthly row. A failed admission makes no provider call. Every retry needs its
+  own cost reservation while sharing the logical request's credit. Finalization retains unknown
+  exposure (including crashes); legacy unknown spending with no hold blocks new shared calls.
+  BYOK and platform health probes are outside this tenant-funded budget. See
+  [the cost audit and rollout notes](ai/usage-cost-audit.md).
+- A budget refusal is not a provider outage. Persist its required headroom before returning the
+  admission error, expose the current server status, and hand OCR to manual review without marking
+  the slip verified. Durable owner notices (`10.55`) are transactionally deduplicated by shop,
+  UTC month, dimension and level; notification failure must not undo accounting or provider holds.
 
 ### Operational log triage
 
