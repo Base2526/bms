@@ -1703,6 +1703,24 @@ their provider independently:
     serialized on the monthly row.
   - **A real inference call is an event even when it is free.** Tenant BYOK key tests are recorded as
     zero-credit `ai_key_test` events rather than being skipped.
+  - **Unlimited credits do not mean unlimited platform cost (`10.54`).** Every tenant, including
+    Business, has a $100 shared-inference cap per UTC month. Before each network call,
+    `recordAiProviderAttempt()` locks monthly row then event, prices the actual provider/model and
+    output limit, and durably reserves a conservative full-context ceiling. All AI writers use
+    `beginTenantTx()`. A failed admission throws before I/O; no caller may swallow it and call the
+    provider anyway. Finalization can fail open only after I/O, keeping the hold. A timeout/stale
+    sweep cannot release unknown cost; historical unknown attempts without a hold block admission.
+    Known portions of partial responses remain attributed, unknown portions remain reserved. No
+    caller can refund a persisted attempt by reporting zero calls. BYOK is metered separately.
+    Details, rate sources and rollout caveats: [AI cost audit](ai/usage-cost-audit.md).
+  - **A refused request must be visible (`10.55`).** Positive remaining dollars may still be too
+    little for the next call's full reservation. Commit that requirement before throwing admission
+    denial; the server reports a pause until enough funds become available. Cheaper eligible calls
+    remain independently checked. Shared credit and cost warnings are distinct. Administrator and
+    Manager receive durable, deduplicated in-app notices at 80%, 90%, pause and recovery. The personal
+    read/ack service checks recipient and tenant through the RLS notice table; the global admin
+    banner uses current server status, never notification history as authorization. Notice inserts
+    run in a savepoint with bounded statements so delivery errors cannot roll back cost accounting.
 - **AI Provider Health** (`lib/bms/aiProviderHealth.ts`, migration `7.34`, platform-wide — no
   `tenant_id`, not RLS-scoped, and deliberately does not track tenant BYOK failures) tracks each
   `(provider, purpose)` combo's real connectivity. It is written through exactly one choke point,

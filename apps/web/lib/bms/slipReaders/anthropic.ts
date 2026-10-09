@@ -120,25 +120,25 @@ export function createAnthropicSlipReader(
         throw new SlipReaderError("MALFORMED_OUTPUT", "Anthropic slip OCR returned invalid JSON");
       }
 
+      const usage = {
+        inputTokens: tokenCount(payload.usage?.input_tokens),
+        outputTokens: tokenCount(payload.usage?.output_tokens),
+      };
       const text = Array.isArray(payload.content)
         ? payload.content.find((block) => block?.type === "text" && typeof block.text === "string")?.text
         : undefined;
-      if (!text) {
-        throw new SlipReaderError("MALFORMED_OUTPUT", "Anthropic slip OCR returned no text");
+      try {
+        if (!text) throw new SlipReaderError("MALFORMED_OUTPUT", "anthropic slip OCR returned no text");
+        return {
+          provider: "anthropic", model: request.credentials.model,
+          extracted: parseSlipExtract(text), usage,
+        };
+      } catch (error) {
+        // Output validation cannot erase already-billed provider work. Keep only
+        // numeric usage, never the slip text, on the safe error envelope.
+        if (error instanceof SlipReaderError) throw new SlipReaderError(error.code, error.message, usage);
+        throw error;
       }
-
-      const inputTokens = tokenCount(payload.usage?.input_tokens);
-      const outputTokens = tokenCount(payload.usage?.output_tokens);
-
-      return {
-        provider: "anthropic",
-        model: request.credentials.model,
-        extracted: parseSlipExtract(text),
-        usage: {
-          inputTokens: inputTokens === null || outputTokens === null ? null : inputTokens,
-          outputTokens: inputTokens === null || outputTokens === null ? null : outputTokens,
-        },
-      };
     },
   };
 }

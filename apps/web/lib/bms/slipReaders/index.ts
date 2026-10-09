@@ -1,5 +1,6 @@
 import { DEFAULT_AI_MODEL, getTenantAiConfig } from "../aiConfig";
-import { recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, recordSharedAiRetryUsage, tryConsumeAiQuota, type AiUsageContext } from "../aiUsage";
+import { AiUsageAdmissionError, recordAiFallback, recordAiProviderAttempt, recordByokAiUsage, recordSharedAiRetryUsage, tryConsumeAiQuota, type AiUsageContext } from "../aiUsage";
+import { SlipReaderError } from "../slipReader";
 import { resolveSharedAiProvider, resolveTenantByokProvider } from "../aiProvider";
 import type {
   SlipReadRequest,
@@ -43,7 +44,7 @@ export type SlipReaderAttemptOutcome =
     }
   | {
       ok: false;
-      reason: "no_session" | "image_unavailable" | "providers_failed";
+      reason: "no_session" | "image_unavailable" | "providers_failed" | "usage_blocked";
       attemptedProviders: string[];
       errorMessage: string | null;
     };
@@ -251,7 +252,14 @@ export async function runSlipReaderFallback(input: {
     const provider = session.provider as "anthropic" | "qwen";
     if (session.source === "shared") sharedCreditReserved = true;
     attemptedProviders.push(provider);
-    const image = await input.loadImage(session.reader);
+    let image: { base64: string; mediaType: string } | null;
+    try {
+      image = await input.loadImage(session.reader);
+    } catch {
+      // Image preparation precedes admission and cannot incur provider cost.
+      // Refund now instead of leaving a credit reserved until the stale sweep.
+      image = null;
+    }
     if (!image) {
       if (session.usageEventId) {
         await input.finalize(session.usageEventId, {
@@ -269,7 +277,9 @@ export async function runSlipReaderFallback(input: {
     }
     try {
       if (session.usageEventId) {
-        await (input.recordProviderAttempt ?? recordAiProviderAttempt)(session.usageEventId);
+        await (input.recordProviderAttempt ?? recordAiProviderAttempt)(session.usageEventId, {
+          provider: session.provider, model: session.credentials.model, maxOutputTokens: 8192,
+        });
       }
       const result = await session.reader.read({
         ...image,
@@ -289,10 +299,12 @@ export async function runSlipReaderFallback(input: {
       if (session.usageEventId) {
         await input.finalize(session.usageEventId, {
           status: "failed",
-          providerCalls: 1,
+          providerCalls: error instanceof AiUsageAdmissionError ? 0 : 1,
+          ...(error instanceof SlipReaderError ? error.usage : {}),
           errorMessage: lastError,
         });
       }
+      if (error instanceof AiUsageAdmissionError) return { ok: false, reason: "usage_blocked", attemptedProviders, errorMessage: lastError };
       fallbackFrom = provider;
     }
   }

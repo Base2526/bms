@@ -1335,6 +1335,7 @@ export const typeDefs = /* GraphQL */ `
     bmsPharmacyLicenseCandidates: [BmsPharmacyLicenseUser!]!
     bmsAiConfig: BmsAiConfig!     # BYOK key ของร้าน (mask แล้ว)
     bmsAiUsage: BmsAiUsage!       # การใช้งาน AI ผ่าน shared key เดือนนี้ + quota
+    bmsAiLimitNotifications: BmsAiLimitInbox!
     bmsAiCreditLedger(limit: Int): [BmsAiCreditLedgerEntry!]!
     bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
     bmsAiUsageEvents(limit: Int = 20, evalRef: String, feature: String): [BmsAiUsageEvent!]!
@@ -3656,6 +3657,12 @@ export const typeDefs = /* GraphQL */ `
     provider: String!
   }
   type BmsAiUsage {
+    tenantId: ID!
+    yearMonth: String!
+    resetsAt: String!
+    creditStatus: BmsAiLimitStatus!
+    sharedBudgetStatus: BmsAiLimitStatus!
+    sharedBudgetRequiredUsd: Float!
     count: Int!  limit: Int!  remaining: Int!  unlimited: Boolean!
     planCode: String!  planName: String!
     requestCount: Int!
@@ -3673,6 +3680,22 @@ export const typeDefs = /* GraphQL */ `
     # โทเคนรวมของเดือนนี้ — ไม่ใช่หน่วยของ limit (โควตานับเป็นจำนวนครั้ง 1 credit ต่อ 1 request)
     inputTokens: Float!
     outputTokens: Float!
+    sharedBudgetLimitUsd: Float!
+    sharedBudgetSpentUsd: Float!
+    sharedBudgetReservedUsd: Float!
+    sharedBudgetRemainingUsd: Float!
+    sharedBudgetUnaccountedCalls: Int!
+    sharedBudgetBlocked: Boolean!
+  }
+  enum BmsAiLimitStatus { NORMAL WARNING_80 WARNING_90 PAUSED_CREDITS PAUSED_BUDGET PAUSED_UNPRICED }
+  type BmsAiLimitInbox { unreadCount: Int! items: [BmsAiLimitNotification!]! }
+  type BmsAiLimitNotification {
+    id: ID!
+    dimension: String!
+    level: String!
+    yearMonth: String!
+    isRead: Boolean!
+    createdAt: String!
   }
   type BmsAiCreditLedgerEntry {
     id: ID!
@@ -5052,6 +5075,7 @@ export const typeDefs = /* GraphQL */ `
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!
     bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
+    bmsReadAiLimitNotification(id: ID!): Boolean!
     bmsTestPlatformAiKey(provider: String): BmsTestAiKeyResult!
     # ยิงทดสอบ anthropic/deepseek/qwen พร้อมกันแล้วคืนสถานะล่าสุดทั้งหมด — ใช้กับปุ่ม
     # "ตรวจสอบทั้งหมดตอนนี้" ในหน้า /admin/env (ไม่ต้องรอ cron ที่ยังไม่ได้ตั้ง schedule)

@@ -1,5 +1,6 @@
 'use client';
 import Link from 'next/link';
+import { aiCreditCapacity } from '@/lib/aiUsageClient';
 import { Layout, Menu, Avatar, Button, Dropdown, message, Tooltip, Drawer, Badge, Skeleton, Segmented } from 'antd';
 import type { MenuProps } from 'antd';
 import {
@@ -120,7 +121,7 @@ const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
     bmsAiConfig { has_key }
-    bmsAiUsage { count limit remaining unlimited }
+    bmsAiUsage { count limit remaining unlimited grantedCredits bonusCredits adjustedCredits sharedBudgetBlocked sharedBudgetRemainingUsd sharedBudgetLimitUsd }
   }
 `;
 const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
@@ -400,32 +401,40 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
   });
   const aiProviderHealthCount: number = aiProviderHealthData?.bmsAiProviderHealthCount ?? 0;
 
-  // โควตา AI (shared key ฟรี) — poll ห่างกว่า inbox/channel เพราะเปลี่ยนไม่บ่อย (นับเป็นเดือน ไม่ใช่วินาที)
-  const { data: aiData } = useQuery(Q_AI_USAGE, {
-    fetchPolicy: 'cache-first', pollInterval: 300000,
+  // Local mutations refresh immediately via Apollo; polling covers webhook/worker use.
+  const { data: aiData, refetch: refetchAiUsage } = useQuery(Q_AI_USAGE, {
+    fetchPolicy: 'cache-and-network', pollInterval: 30000,
   });
-  const aiHasKey: boolean = aiData?.bmsAiConfig?.has_key ?? false;
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') void refetchAiUsage().catch(() => undefined); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
+  }, [refetchAiUsage]);
   const aiUsage = aiData?.bmsAiUsage;
-  const aiOverLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.remaining === 0;
-  const aiNearLimit = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiUsage.limit * 0.2;
-  const aiShouldShow = !aiHasKey && aiUsage && !aiUsage.unlimited && aiUsage.limit > 0;
+  const aiCapacity = aiCreditCapacity(aiUsage);
+  const aiOverLimit = aiUsage && (aiUsage.sharedBudgetBlocked || (!aiUsage.unlimited && aiUsage.remaining === 0));
+  const aiNearLimit = aiUsage && !aiUsage.unlimited && aiCapacity > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiCapacity * 0.2;
+  const aiShouldShow = aiUsage && !aiUsage.unlimited && aiCapacity > 0;
   const aiNeedsManualAttention = aiOverLimit && inboxUnread > 0;
   const aiTone = aiOverLimit ? '#e5484d' : aiNearLimit ? '#d48806' : '#1677ff';
   const aiBg = aiOverLimit ? 'rgba(229,72,77,0.1)' : aiNearLimit ? 'rgba(212,136,6,0.1)' : 'rgba(22,119,255,0.1)';
-  const aiTooltip = aiOverLimit
+  const aiTooltip = aiUsage?.sharedBudgetBlocked ? t('admin.ai_budget_paused') : aiOverLimit
     ? aiNeedsManualAttention
       ? t('admin.ai_tooltip_exhausted_pending', { n: inboxUnread })
       : t('admin.ai_tooltip_exhausted')
     : aiNearLimit
-      ? t('admin.ai_tooltip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiUsage?.limit ?? 0 })
-      : t('admin.ai_tooltip_normal', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 });
-  const aiStripText = aiOverLimit
+      ? t('admin.ai_tooltip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiCapacity })
+      : aiUsage?.unlimited
+        ? t('admin.ai_budget_remaining', { amount: Number(aiUsage.sharedBudgetRemainingUsd).toFixed(2) })
+        : t('admin.ai_tooltip_normal', { count: aiUsage?.count ?? 0, limit: aiCapacity });
+  const aiStripText = aiUsage?.sharedBudgetBlocked ? t('admin.ai_budget_paused') : aiOverLimit
     ? aiNeedsManualAttention
       ? t('admin.ai_strip_exhausted_pending', { n: inboxUnread })
       : t('admin.ai_strip_exhausted')
     : aiNearLimit
-      ? t('admin.ai_strip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiUsage?.limit ?? 0 })
-      : t('admin.ai_strip_normal', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 });
+      ? t('admin.ai_strip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiCapacity })
+      : t('admin.ai_strip_normal', { count: aiUsage?.count ?? 0, limit: aiCapacity });
 
   // จำสถานะ ย่อ/ขยาย ข้ามหน้า (localStorage) — ผสมกับจอแคบ (breakpoint="lg" ของ Sider ด้านล่าง)
   // ต้องคำนวณทั้งสองเงื่อนไขในเอฟเฟกต์เดียวกัน ไม่งั้นเอฟเฟกต์ breakpoint ของ Sider (child)
@@ -586,8 +595,8 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
   // สัดส่วนโควตาที่ใช้ไป — วาดเป็นวงแหวนรอบไอคอนบนแถวผู้ช่วย (RING_CIRCUMFERENCE) แทนตัวเลขที่
   // ต้องอ่านแล้วคำนวณเอง หรือ tooltip ที่ hover ไม่ได้บนจอสัมผัส (เจอจากภาพหน้าจอจริง) ·
   // `quotaMeter` (แถบเต็มความกว้าง) เหลือไว้แค่กรณีเดียว: รางย่อตอนไม่มีแถว/ไอคอนให้วงล้อม
-  const aiQuotaPct = aiShouldShow && aiUsage?.limit
-    ? Math.min(100, Math.max(0, ((aiUsage.count ?? 0) / aiUsage.limit) * 100))
+  const aiQuotaPct = aiShouldShow && aiCapacity
+    ? Math.min(100, Math.max(0, ((aiUsage.count ?? 0) / aiCapacity) * 100))
     : 0;
   // r = 15.9155 ทำให้เส้นรอบวง ≈ 100 พอดี — dasharray รับเปอร์เซ็นต์ตรง ๆ ได้โดยไม่ต้องคูณ 2πr เอง
   const RING_R = 15.9155;
@@ -760,10 +769,11 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
             จึงยอมให้ดังและกินที่เพิ่มเฉพาะตอนนั้น */}
         {(!mini || aiOverLimit) && (
           <div style={{ padding: mini ? '10px 10px 0' : '8px 10px 0' }}>
-            <Tooltip title={aiShouldShow ? aiTooltip : mini ? t('admin_nav.assistant') : ''} placement="right">
+            <Tooltip title={aiUsage ? aiTooltip : mini ? t('admin_nav.assistant') : ''} placement="right">
               <Link
                 className="bms-sider-quiet"
-                href={aiOverLimit ? '/admin/settings' : '/admin/assistant'}
+                aria-label={aiUsage ? aiTooltip : t('admin_nav.assistant')}
+                href={aiUsage?.sharedBudgetBlocked ? '/admin/billing' : aiOverLimit ? '/admin/settings' : '/admin/assistant'}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, height: 32,
                   justifyContent: mini ? 'center' : 'flex-start',
@@ -772,8 +782,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
                   color: aiOverLimit || aiNearLimit ? aiTone : 'var(--app-text)',
                 }}
               >
-                {/* วงแหวน 24px รอบไอคอน — สัดส่วนอ่านออกโดยไม่ต้องมองตัวเลข · ไม่วาดวงเลย
-                    ตอนร้านมี AI Key เอง (aiShouldShow=false) เพราะไม่มีโควตาให้บอกสัดส่วน */}
+                {/* Finite shared credits get a ring, including shops that also have BYOK. */}
                 <span style={{ position: 'relative', width: 24, height: 24, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {aiShouldShow && (
                     <svg viewBox="0 0 36 36" style={{ position: 'absolute', inset: 0, transform: 'rotate(-90deg)' }}>
@@ -801,15 +810,15 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
                     }}>
                       {aiOverLimit ? aiStripText : t('admin_nav.assistant')}
                     </span>
-                    {aiShouldShow && !aiOverLimit && (
+                    {(aiShouldShow || aiUsage?.unlimited) && !aiOverLimit && (
                       <span style={{
                         flexShrink: 0, fontSize: 11, fontVariantNumeric: 'tabular-nums',
                         color: aiNearLimit ? aiTone : 'var(--text-secondary)',
                         fontWeight: aiNearLimit ? 600 : 400,
                       }}>
-                        {aiNearLimit
+                        {aiUsage?.unlimited ? t('admin.ai_budget_remaining', { amount: Number(aiUsage.sharedBudgetRemainingUsd).toFixed(2) }) : aiNearLimit
                           ? t('admin.ai_quota_remaining', { remaining: aiUsage?.remaining ?? 0 })
-                          : t('admin.ai_quota_count', { count: aiUsage?.count ?? 0, limit: aiUsage?.limit ?? 0 })}
+                          : t('admin.ai_quota_count', { count: aiUsage?.count ?? 0, limit: aiCapacity })}
                       </span>
                     )}
                   </>

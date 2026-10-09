@@ -1,3 +1,4 @@
+import { meteredUsage } from "./aiMetering";
 // =============================================================
 // BMS AI config — ร้านตั้ง API key ของตัวเองได้ (BYOK) + ทดสอบ key
 // (เข้ารหัส api_key เหมือน channel_secret ใน lib/bms/channels.ts)
@@ -169,7 +170,6 @@ export async function testTenantAiKey(tenantId: string): Promise<TestAiKeyResult
     if (!resp.ok) {
       await finalizeAiUsageEvent(usageEventId, {
         status: "failed",
-        providerCalls: 1,
         errorMessage: `DeepSeek API ${resp.status}`,
       });
       return {
@@ -182,9 +182,7 @@ export async function testTenantAiKey(tenantId: string): Promise<TestAiKeyResult
     };
     await finalizeAiUsageEvent(usageEventId, {
       status: "completed",
-      providerCalls: 1,
-      inputTokens: payload.usage?.input_tokens ?? null,
-      outputTokens: payload.usage?.output_tokens ?? null,
+      ...meteredUsage(payload.usage),
     });
     return {
       ok: true,
@@ -193,7 +191,6 @@ export async function testTenantAiKey(tenantId: string): Promise<TestAiKeyResult
   } catch (e: any) {
     await finalizeAiUsageEvent(usageEventId, {
       status: "failed",
-      providerCalls: 1,
       errorMessage: e?.message || "DeepSeek key test failed",
     });
     return {

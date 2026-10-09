@@ -2,6 +2,11 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.55__bms_ai_limit_notices.sql', 'table', 'bms_ai_limit_notices', NULL, 'AI admission and owner limit status need the refused-call requirement and durable notices'),
+    ('10.55__bms_ai_limit_notices.sql', 'column', 'bms_ai_usage_monthly', 'budget_denied_required_usd', 'AI admission and owner limit status need the refused-call requirement and durable notices'),
+    ('10.55__bms_ai_limit_notices.sql', 'column', 'bms_ai_usage_monthly', 'budget_denied_model', 'AI admission and owner limit status need the refused-call requirement and durable notices'),
+    ('10.55__bms_ai_limit_notices.sql', 'column', 'bms_ai_usage_monthly', 'budget_denied_provider', 'AI admission and owner limit status need the refused-call requirement and durable notices'),
+    ('10.54__bms_ai_cost_budget.sql', 'column', 'bms_ai_usage_events', 'budget_reserved_usd', 'Platform-funded AI refuses to run until durable cost reservations are available'),
     ('10.53__bms_customer_answer_evidence.sql', 'table', 'bms_ai_turn_evidence', NULL, 'AI replies remain available but their tool evidence cannot be persisted or inspected'),
     ('10.53__bms_customer_answer_evidence.sql', 'table', 'bms_ai_tool_evidence', NULL, 'AI replies remain available but their tool evidence cannot be persisted or inspected'),
     ('10.52__bms_location_parking.sql', 'column', 'bms_locations', 'parking_info', 'Branch management cannot save basic parking information until this column is available'),

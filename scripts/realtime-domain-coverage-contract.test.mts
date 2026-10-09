@@ -214,8 +214,9 @@ const CONFIGURATION = [
   "bms_local_installation", "bms_retail_local_release_assets", "bms_sample_runs", "bms_sample_records",
 ];
 
-/** Operational state whose owning page performs authoritative 15-second polling plus post-write refresh. */
+/** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  "bms_ai_limit_notices", // Personal admin bell: 30-second/focus/mutation refresh; no shop-wide broadcast of recipients.
   "bms_tax_invoice_requests",
   "bms_tax_request_submissions", // Append-only evidence; request UI polls the parent aggregate.
   "bms_expense_documents",

@@ -221,7 +221,7 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     id: "customers.mentions", route: "/admin/inbox/mentions", labelKey: "admin_nav.mentions",
     section: "customers", workspace: "SHOP", visible: (ctx) => ctx.can("inbox.view"),
     // A teammate addressed this person by name. `read_at` is per user, so nobody else can clear
-    // it, and the Admin shell has no notification bell — this badge is the only in-app signal.
+    // it. The AI-limit bell does not contain mentions, so this badge remains their in-app signal.
     badge: "mentions", topLevel: "queue",
   },
   {

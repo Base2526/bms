@@ -24,6 +24,21 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.55__bms_ai_limit_notices.sql",
+    impact: "AI admission and owner limit status need the refused-call requirement and durable notices",
+    needs: [
+      { kind: "table", name: "bms_ai_limit_notices" },
+      { kind: "column", table: "bms_ai_usage_monthly", name: "budget_denied_required_usd" },
+      { kind: "column", table: "bms_ai_usage_monthly", name: "budget_denied_model" },
+      { kind: "column", table: "bms_ai_usage_monthly", name: "budget_denied_provider" },
+    ],
+  },
+  {
+    file: "10.54__bms_ai_cost_budget.sql",
+    impact: "Platform-funded AI refuses to run until durable cost reservations are available",
+    needs: [{ kind: "column", table: "bms_ai_usage_events", name: "budget_reserved_usd" }],
+  },
+  {
     file: "10.53__bms_customer_answer_evidence.sql",
     impact: "AI replies remain available but their tool evidence cannot be persisted or inspected",
     needs: [{ kind: "table", name: "bms_ai_turn_evidence" }, { kind: "table", name: "bms_ai_tool_evidence" }],

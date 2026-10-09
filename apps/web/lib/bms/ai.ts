@@ -1,3 +1,4 @@
+import { AiMeteredOutputError, meteredUsage } from "./aiMetering";
 // =============================================================
 // BMS AI — Generate Response  (AI_WORKFLOW ขั้น 7)
 // -------------------------------------------------------------
@@ -22,11 +23,7 @@ import {
   type AiProvider,
 } from "./aiProvider";
 
-type AiReply = {
-  text: string;
-  inputTokens: number | null;
-  outputTokens: number | null;
-};
+type AiReply = { text: string } & ReturnType<typeof meteredUsage>;
 
 function isEnglishReply(language: string | null | undefined, message: string): boolean {
   if (language === "en") return true;
@@ -142,11 +139,10 @@ async function generateAiReply(
   if (!resp.ok) throw new Error(`${creds.provider} API ${resp.status}`);
   const json = (await resp.json()) as { content?: Array<{ text?: string }>; usage?: { input_tokens?: number; output_tokens?: number } };
   const text = json.content?.[0]?.text?.trim();
-  if (!text) throw new Error(`${creds.provider} empty reply`);
+  if (!text) throw new AiMeteredOutputError(`${creds.provider} empty reply`, meteredUsage(json.usage));
   return {
     text,
-    inputTokens: json.usage?.input_tokens ?? null,
-    outputTokens: json.usage?.output_tokens ?? null,
+    ...meteredUsage(json.usage),
   };
 }
 
@@ -280,13 +276,14 @@ export async function generateResponse(
   if (!creds) return template(res, language, message); // ไม่มี key เลย หรือเกิน quota — deterministic template
 
   try {
-    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId);
+    if (creds.usageEventId) await recordAiProviderAttempt(creds.usageEventId, { provider: creds.provider, model: creds.model, maxOutputTokens: 256 });
     const parsed = await generateAiReply(creds, message, res);
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {
         status: "completed",
-        inputTokens: parsed.inputTokens ?? null,
-        outputTokens: parsed.outputTokens ?? null,
+        inputTokens: parsed.inputTokens, outputTokens: parsed.outputTokens,
+        cacheReadInputTokens: parsed.cacheReadInputTokens,
+        cacheCreationInputTokens: parsed.cacheCreationInputTokens,
       });
     }
     return parsed.text;
@@ -294,6 +291,7 @@ export async function generateResponse(
     if (creds.usageEventId) {
       await finalizeAiUsageEvent(creds.usageEventId, {
         status: "failed",
+        ...(err instanceof AiMeteredOutputError ? err.usage : {}),
         errorMessage: err instanceof Error ? err.message : `${creds.provider} failed`,
       });
     }

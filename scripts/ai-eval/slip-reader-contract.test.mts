@@ -13,7 +13,7 @@ import {
   getSlipReader,
   runSlipReaderFallback,
 } from "../../apps/web/lib/bms/slipReaders/index.ts";
-import { estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
+import { AiUsageAdmissionError, estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
 
 const REQUEST = {
   base64: "ZmFrZS1zbGlw",
@@ -151,6 +151,25 @@ test("OCR adapters preserve missing usage as unpriced instead of zero-cost", asy
   });
 });
 
+test("OCR format errors and partial usage retain the tokens that were already billed", async () => {
+  for (const text of ["not-json", ""]) {
+    const readers = [
+      createAnthropicSlipReader({ fetchImpl: async () => anthropicResponse(text, { input_tokens: 123, output_tokens: 17 }) }),
+      createQwenSlipReader({ fetchImpl: async () => qwenResponse(text, { prompt_tokens: 123, completion_tokens: 17 }) }),
+    ];
+    for (const reader of readers) {
+      await assert.rejects(reader.read(REQUEST), error => {
+        assert.ok(error instanceof SlipReaderError);
+        assert.deepEqual(error.usage, {inputTokens: 123, outputTokens: 17});
+        assert.ok(!error.message.includes('not-json'));
+        return true;
+      });
+    }
+  }
+  const partial = createQwenSlipReader({ fetchImpl: async () => qwenResponse('{"amount":null,"date":null,"ref":null,"bank":null}', {prompt_tokens: 321}) });
+  assert.deepEqual((await partial.read(REQUEST)).usage, {inputTokens: 321, outputTokens: null});
+});
+
 test("Anthropic adapter rejects unsupported images before contacting provider", async () => {
   let calls = 0;
   const reader = createAnthropicSlipReader({
@@ -284,6 +303,25 @@ test("runtime OCR failure retries the fallback provider lazily and finalizes bot
     { id: "usage-qwen", status: "failed" },
     { id: "usage-anthropic", status: "completed" },
   ]);
+});
+
+test("OCR budget denial does not contact either provider; image preparation failure refunds a zero-call request", async () => {
+  for (const failImage of [false, true]) {
+    let resolves = 0, calls = 0;
+    const final: any[] = [];
+    const result = await runSlipReaderFallback({
+      resolveNext: async () => { resolves++; return { provider: 'qwen', source: 'shared', usageEventId: 'FAKE', credentials: REQUEST.credentials,
+        reader: { provider: 'qwen', read: async () => { calls++; throw new Error('must not call'); } } }; },
+      loadImage: async () => { if (failImage) throw new Error('FAKE image failure'); return REQUEST; },
+      recordProviderAttempt: async () => { throw new AiUsageAdmissionError('AI_BUDGET_EXHAUSTED'); },
+      finalize: async (_id, usage) => { final.push(usage); },
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) assert.equal(result.reason, failImage ? 'image_unavailable' : 'usage_blocked');
+    assert.equal(resolves, 1);
+    assert.equal(calls, 0);
+    assert.equal(final[0].providerCalls, 0);
+  }
 });
 
 test("Qwen OCR cost uses provider-specific rates instead of Anthropic defaults", () => {

@@ -3,7 +3,7 @@ import test from "node:test";
 import { customerStoreFacts, customerStoreMessages, CUSTOMER_STORE_CONTEXT_POLICY } from "../../apps/web/lib/bms/customerStoreContext.ts";
 
 import { understand } from "../../apps/web/lib/bms/nlu.ts";
-import { estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
+import { AiUsageAdmissionError, estimateAiCostUsd } from "../../apps/web/lib/bms/aiUsage.ts";
 import { __toolLoopTest, type ToolLoopOptions, type ToolLoopTestDeps } from "../../apps/web/lib/bms/tools/runtime.ts";
 import {
   assertValidToolRegistry,
@@ -186,6 +186,36 @@ test("plain provider response is returned and usage is finalized", async () => {
   assert.equal(usage.length, 1);
   assert.equal(usage[0].payload.status, "completed");
   assert.equal(usage[0].payload.inputTokens, 3);
+});
+
+test("budget denial prevents network I/O and finalizes a zero-attempt refundable reservation", async () => {
+  let networkCalls = 0;
+  const usage: Array<{id: string; payload: any}> = [];
+  const result = await __toolLoopTest.run(baseOptions(), {
+    ...depsFor(async () => { networkCalls++; return textResponse('unexpected'); }, {usage}),
+    recordProviderAttempt: async () => { throw new AiUsageAdmissionError('AI_BUDGET_EXHAUSTED'); },
+  });
+  assert.equal(networkCalls, 0);
+  assert.equal(usage[0].payload.providerCalls, 0);
+  assert.equal(result.trace.length, 0);
+  assert.match(result.reply, /เจ้าหน้าที่/);
+  assert.doesNotMatch(result.reply, /Billing|งบ/);
+});
+
+test("budget denial after a verified write neither replays the write nor loses its result", async () => {
+  let writes = 0, calls = 0, admissions = 0;
+  const usage: Array<{id: string; payload: any}> = [];
+  const tool = makeTool({ name: 'create_order', execute: async () => { writes++; return {ok: true, data: {id: 'FAKE-order'}}; }, fallbackReply: () => 'ยืนยันบันทึกคำสั่งซื้อ FAKE-order แล้ว' });
+  const result = await __toolLoopTest.run(baseOptions([tool]), {
+    ...depsFor(async () => { calls++; return toolResponse('create_order', {}); }, {usage}),
+    recordProviderAttempt: async () => { if (++admissions > 1) throw new AiUsageAdmissionError('AI_BUDGET_EXHAUSTED'); },
+  });
+  assert.equal(writes, 1);
+  assert.equal(calls, 1);
+  assert.equal(result.usedAi, true);
+  assert.equal(result.trace.length, 1);
+  assert.match(result.reply, /FAKE-order/);
+  assert.equal(usage[0].payload.providerCalls, 1);
 });
 
 test("prefetched shop context reaches the first provider request after stale history with one usage event", async () => {

@@ -107,7 +107,7 @@ test("the quota lives on the row that spends it, and its destination follows its
   assert.match(block, /t\('admin\.ai_quota_remaining'/);
   // Out of quota is the only state whose text tells the reader to go add a key, so it is the only
   // state whose link may leave the assistant. Sending a normal click to settings would be a lie.
-  assert.match(block, /href=\{aiOverLimit \? '\/admin\/settings' : '\/admin\/assistant'\}/);
+  assert.match(block, /href=\{aiUsage\?\.sharedBudgetBlocked \? '\/admin\/billing' : aiOverLimit \? '\/admin\/settings' : '\/admin\/assistant'\}/);
 });
 
 test("the row's own icon carries the quota now, not a separate bar underneath", () => {

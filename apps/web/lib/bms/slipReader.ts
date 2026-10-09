@@ -54,7 +54,8 @@ export class SlipReaderError extends Error {
       | "PROVIDER_ERROR"
       | "PROVIDER_TIMEOUT"
       | "MALFORMED_OUTPUT",
-    message: string
+    message: string,
+    readonly usage?: SlipReadResult["usage"]
   ) {
     super(message);
     this.name = "SlipReaderError";
