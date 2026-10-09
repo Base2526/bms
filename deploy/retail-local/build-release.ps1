@@ -23,16 +23,16 @@ param(
 
 $ErrorActionPreference = "Stop"
 if ($Version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
-  throw "Version ต้องเป็น Semantic Version เช่น 0.2.13 หรือ 0.2.13-rc.1"
+  throw "Version must be a semantic version, such as 0.2.13 or 0.2.13-rc.1"
 }
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-  throw "ต้องรันด้วย PowerShell 7: pwsh"
+  throw "Run this script with PowerShell 7: pwsh"
 }
 if ($Distribution -eq "Offline" -and -not $AllowOfflineRecovery) {
-  throw "Offline recovery ถูกล็อก: build ปกติต้องใช้ Distribution Online เท่านั้น หากผู้ใช้ร้องขอ offline โดยตรง ให้ระบุทั้ง -Distribution Offline -AllowOfflineRecovery"
+  throw "Offline recovery is restricted: normal builds must use Distribution Online. Only when the user explicitly requests offline, specify both -Distribution Offline -AllowOfflineRecovery"
 }
 if ($AllowOfflineRecovery -and $Distribution -ne "Offline") {
-  throw "-AllowOfflineRecovery ใช้ได้เฉพาะเมื่อระบุ -Distribution Offline"
+  throw "-AllowOfflineRecovery requires -Distribution Offline"
 }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -58,17 +58,17 @@ if ($Target -eq "Auto") {
   } elseif ($IsMacOS) {
     $Target = "MacOS"
   } else {
-    throw "Auto build รองรับ Windows และ macOS เท่านั้น"
+    throw "Auto build supports only Windows and macOS"
   }
 }
 if ($Target -eq "WindowsLinux" -and -not $IsWindows) {
-  throw "Target WindowsLinux ต้อง build บน Windows"
+  throw "Target WindowsLinux must be built on Windows"
 }
 if ($Target -eq "MacOS") {
-  if (-not $IsMacOS) { throw "Target MacOS ต้อง build บน macOS" }
+  if (-not $IsMacOS) { throw "Target MacOS must be built on macOS" }
   $machineArchitecture = (& uname -m).Trim()
   if ($LASTEXITCODE -ne 0 -or $machineArchitecture -notin @("arm64", "x86_64")) {
-    throw "Retail Local Server สำหรับ macOS ต้อง build บน Mac arm64 หรือ x86_64"
+    throw "Retail Local Server for macOS must be built on an arm64 or x86_64 Mac"
   }
 }
 
@@ -79,7 +79,7 @@ function Invoke-Checked {
   )
   Write-Host "`n==> $Title" -ForegroundColor Cyan
   & $Action
-  if ($LASTEXITCODE -ne 0) { throw "$Title ไม่สำเร็จ (exit $LASTEXITCODE)" }
+  if ($LASTEXITCODE -ne 0) { throw "$Title failed (exit $LASTEXITCODE)" }
 }
 
 function Assert-HttpsReleaseUri {
@@ -88,7 +88,7 @@ function Assert-HttpsReleaseUri {
   $parsed = $null
   if (-not [Uri]::TryCreate($Value, [UriKind]::Absolute, [ref]$parsed) -or
       $parsed.Scheme -ne "https" -or -not [string]::IsNullOrEmpty($parsed.UserInfo)) {
-    throw "$Name ต้องเป็น HTTPS URL ที่ไม่มี credential"
+    throw "$Name must be an HTTPS URL without credentials"
   }
 }
 
@@ -122,16 +122,16 @@ cp "dist/BMS-POS-${BMS_RELEASE_VERSION}-amd64.deb" \
 }
 
 if ($UpdateVersion) {
-  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw "ไม่พบ npm" }
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) { throw "npm was not found" }
   Push-Location $desktopRoot
   try {
-    Invoke-Checked "Update BMS POS version เป็น $Version" {
+    Invoke-Checked "Update BMS POS version to $Version" {
       npm version $Version --no-git-tag-version
     }
   } finally {
     Pop-Location
   }
-  Write-Host "`nอัปเดต version แล้ว กรุณา commit ก่อน build:" -ForegroundColor Green
+  Write-Host "`nVersion updated. Please commit before building:" -ForegroundColor Green
   Write-Host "  git add apps/desktop/package.json apps/desktop/package-lock.json"
   Write-Host "  git commit -m `"build: bump Retail Local to $Version`""
   Write-Host "  pwsh .\deploy\retail-local\build-release.ps1 -Version $Version"
@@ -139,9 +139,9 @@ if ($UpdateVersion) {
 }
 
 $dirty = @(& git -C $repoRoot status --porcelain --untracked-files=normal)
-if ($LASTEXITCODE -ne 0) { throw "อ่านสถานะ Git ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to read Git status" }
 if ($dirty.Count -gt 0) {
-  throw "Working tree ต้องสะอาดก่อน build เพื่อให้ release.json อ้าง source commit ที่ตรวจสอบได้`n$($dirty -join "`n")"
+  throw "The working tree must be clean before building so release.json references a verifiable source commit`n$($dirty -join "`n")"
 }
 
 $desktopPackage = Get-Content -LiteralPath $desktopPackagePath -Raw | ConvertFrom-Json
@@ -150,11 +150,11 @@ $lockRoot = $desktopLock["packages"][""]
 if ([string]$desktopPackage.version -ne $Version -or
     [string]$desktopLock["version"] -ne $Version -or
     [string]$lockRoot["version"] -ne $Version) {
-  throw "POS version ยังไม่ใช่ $Version ให้รัน: pwsh .\deploy\retail-local\build-release.ps1 -Version $Version -UpdateVersion แล้ว commit ก่อน"
+  throw "POS version is not $Version. Run: pwsh .\deploy\retail-local\build-release.ps1 -Version $Version -UpdateVersion, then commit before building"
 }
 
 if ($Distribution -eq "Online") {
-  Write-Host "Distribution: Online bootstrap (ดาวน์โหลด signed payload ตอนติดตั้งครั้งแรก)" -ForegroundColor Cyan
+  Write-Host "Distribution: Online bootstrap (downloads the signed payload during initial installation)" -ForegroundColor Cyan
   $onlineRequired = if ($Target -eq "MacOS") {
     @(
       @{ Name = "Keyring"; Value = $Keyring },
@@ -171,7 +171,7 @@ if ($Distribution -eq "Online") {
   }
   foreach ($required in $onlineRequired) {
     if ([string]::IsNullOrWhiteSpace([string]$required.Value)) {
-      throw "Distribution Online ต้องระบุ -$($required.Name)"
+      throw "Distribution Online requires -$($required.Name)"
     }
   }
   if ($Target -eq "MacOS") {
@@ -180,14 +180,14 @@ if ($Distribution -eq "Online") {
     Assert-HttpsReleaseUri "ActivationUri" $ActivationUri -AllowEmpty
     $macKeyring = [IO.Path]::GetFullPath($Keyring)
     if (-not (Test-Path -LiteralPath $macKeyring -PathType Leaf)) {
-      throw "ไม่พบ public keyring: $macKeyring"
+      throw "Public keyring was not found: $macKeyring"
     }
     $macKeyringText = Get-Content -LiteralPath $macKeyring -Raw
     if ($macKeyringText -notmatch 'BEGIN PUBLIC KEY' -or $macKeyringText -match 'PRIVATE KEY') {
-      throw "keyring ต้องมี public key และห้ามมี private key"
+      throw "The keyring must contain public keys and must not contain private keys"
     }
     foreach ($command in @("bash", "git", "go")) {
-      if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+      if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Command was not found: $command" }
     }
     New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
     $macServerBuilder = Join-Path $scriptRoot "managed-runtime/macos/build-bootstrap-pkg.sh"
@@ -244,7 +244,7 @@ if ($Distribution -eq "Online") {
   if ($AllowTestEndpoints) { $onlineArgs.AllowTestEndpoints = $true }
   if ($SkipTests) { $onlineArgs.SkipTests = $true }
   & (Join-Path $scriptRoot "build-online-bootstrap.ps1") @onlineArgs
-  if ($LASTEXITCODE -ne 0) { throw "Build online bootstrap ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the online bootstrap" }
   $posOnlineArgs = @{
     Version = $Version
     Keyring = $Keyring
@@ -260,24 +260,24 @@ if ($Distribution -eq "Online") {
   if ($AllowTestEndpoints) { $posOnlineArgs.AllowTestEndpoints = $true }
   if ($SkipTests) { $posOnlineArgs.SkipTests = $true }
   & (Join-Path $scriptRoot "build-online-pos-bootstrap.ps1") @posOnlineArgs
-  if ($LASTEXITCODE -ne 0) { throw "Build POS online bootstrap ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the POS online bootstrap" }
   exit 0
 }
 
-Write-Warning "Distribution: OFFLINE RECOVERY ตามคำขอโดยตรง; artifact จะฝัง payload เต็มและมีขนาดใหญ่"
+Write-Warning "Distribution: OFFLINE RECOVERY as explicitly requested; artifacts will embed the full payload and will be large"
 
 $requiredCommands = @("git", "node", "npm", "docker")
 if ($Target -eq "MacOS") { $requiredCommands += @("bash", "go") }
 foreach ($command in $requiredCommands) {
-  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "ไม่พบ $command" }
+  if (-not (Get-Command $command -ErrorAction SilentlyContinue)) { throw "Command was not found: $command" }
 }
 & docker info *> $null
-if ($LASTEXITCODE -ne 0) { throw "Docker Engine ยังไม่พร้อม กรุณาเปิด Docker Desktop" }
+if ($LASTEXITCODE -ne 0) { throw "Docker Engine is not ready. Please start Docker Desktop" }
 
 $drive = [IO.DriveInfo]::new([IO.Path]::GetPathRoot($repoRoot))
 $minimumBuildSpace = if ($Target -eq "MacOS") { 40GB } else { 20GB }
 if ($drive.AvailableFreeSpace -lt $minimumBuildSpace) {
-  throw "พื้นที่ว่างไม่พอ: ต้องมีอย่างน้อย $([math]::Round($minimumBuildSpace / 1GB)) GB (ปัจจุบัน $([math]::Round($drive.AvailableFreeSpace / 1GB, 1)) GB)"
+  throw "Insufficient free space: at least $([math]::Round($minimumBuildSpace / 1GB)) GB is required (currently $([math]::Round($drive.AvailableFreeSpace / 1GB, 1)) GB)"
 }
 
 $artifactNames = if ($Target -eq "MacOS") {
@@ -304,7 +304,7 @@ $artifactNames = if ($Target -eq "MacOS") {
 }
 $existing = @($artifactNames | Where-Object { Test-Path -LiteralPath (Join-Path $outputRoot $_) })
 if ($existing.Count -gt 0 -and -not $Force) {
-  throw "มี artifact version $Version อยู่แล้ว ใช้ -Force เมื่อตั้งใจ build ทับ:`n$($existing -join "`n")"
+  throw "Artifacts for version $Version already exist. Use -Force to rebuild and overwrite them intentionally:`n$($existing -join "`n")"
 }
 if ($Target -eq "MacOS" -and $Force) {
   foreach ($name in $artifactNames) {
@@ -353,7 +353,7 @@ if ($Target -eq "MacOS") {
   foreach ($architecture in $macPosSources.Keys) {
     $source = $macPosSources[$architecture]
     if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-      throw "ไม่พบ macOS POS หลัง build: $source"
+      throw "macOS POS was not found after the build: $source"
     }
     $destination = Join-Path $outputRoot "BMS-Retail-Local-POS-$Version-macos-$architecture.dmg"
     Copy-Item -LiteralPath $source -Destination $destination -Force
@@ -368,14 +368,14 @@ if ($Target -eq "MacOS") {
   if ($Force) { $packageArgs.Force = $true }
   Write-Host "`n==> Build verified Server ZIP" -ForegroundColor Cyan
   & (Join-Path $scriptRoot "package.ps1") @packageArgs
-  if ($LASTEXITCODE -ne 0) { throw "Build Server ZIP ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build the Server ZIP" }
 
   Write-Host "`n==> Build Windows installers" -ForegroundColor Cyan
   & (Join-Path $scriptRoot "windows-offline\build-offline-exe.ps1") `
     -Version $Version `
     -PackageType all `
     -OutputDirectory $outputRoot
-  if ($LASTEXITCODE -ne 0) { throw "Build Windows installers ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build Windows installers" }
 
   $linuxPosDeb = Join-Path $desktopRoot "dist\BMS-POS-$Version-amd64.deb"
   $linuxPosAppImage = Join-Path $desktopRoot "dist\BMS-POS-$Version-x86_64.AppImage"
@@ -390,7 +390,7 @@ if ($Target -eq "MacOS") {
   & (Join-Path $scriptRoot "linux-offline\build-offline-linux.ps1") `
     -Version $Version `
     -OutputDirectory $outputRoot
-  if ($LASTEXITCODE -ne 0) { throw "Build Linux installers ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build Linux installers" }
 }
 
 $head = (& git -C $repoRoot rev-parse HEAD).Trim()
@@ -407,7 +407,7 @@ if ($Target -eq "MacOS") {
           [string]$metadata.platform -ne "macos-$architecture" -or
           [string]$metadata.packageType -ne $packageType -or
           [string]$metadata.sourceCommit -ne $head) {
-        throw "macOS $architecture $packageType metadata version/sourceCommit ไม่ตรงกับ build ปัจจุบัน"
+        throw "macOS $architecture $packageType metadata version/sourceCommit does not match the current build"
       }
     }
   }
@@ -417,14 +417,14 @@ if ($Target -eq "MacOS") {
   $archive = [IO.Compression.ZipFile]::OpenRead($zipPath)
   try {
     $releaseEntry = $archive.Entries | Where-Object { $_.FullName -like "*/release.json" } | Select-Object -First 1
-    if (-not $releaseEntry) { throw "Server ZIP ไม่มี release.json" }
+    if (-not $releaseEntry) { throw "Server ZIP does not contain release.json" }
     $reader = [IO.StreamReader]::new($releaseEntry.Open())
     try { $release = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
   } finally {
     $archive.Dispose()
   }
   if ([string]$release.version -ne $Version -or [string]$release.sourceCommit -ne $head) {
-    throw "Server ZIP version/sourceCommit ไม่ตรงกับ build ปัจจุบัน"
+    throw "Server ZIP version/sourceCommit does not match the current build"
   }
 }
 
@@ -433,11 +433,11 @@ $verified = foreach ($name in $artifactNames) {
   $sidecar = "$path.sha256"
   if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or
       -not (Test-Path -LiteralPath $sidecar -PathType Leaf)) {
-    throw "ขาด artifact หรือ checksum: $name"
+    throw "Missing artifact or checksum: $name"
   }
   $actual = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash.ToLowerInvariant()
   $expected = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
-  if ($actual -ne $expected) { throw "SHA-256 ไม่ตรง: $name" }
+  if ($actual -ne $expected) { throw "SHA-256 mismatch: $name" }
   [pscustomobject]@{
     File = $name
     SizeMiB = [math]::Round((Get-Item -LiteralPath $path).Length / 1MB, 1)
@@ -448,14 +448,14 @@ $verified = foreach ($name in $artifactNames) {
 if ($Target -eq "WindowsLinux") {
   foreach ($readmeName in @("README.md", "README-Linux.md")) {
     $readmePath = Join-Path $outputRoot $readmeName
-    if (-not (Test-Path -LiteralPath $readmePath -PathType Leaf)) { throw "ขาด $readmeName" }
+    if (-not (Test-Path -LiteralPath $readmePath -PathType Leaf)) { throw "Missing $readmeName" }
     if ((Get-Content -LiteralPath $readmePath -Raw) -match '\{\{[^}]+\}\}') {
-      throw "$readmeName ยังมี template placeholder"
+      throw "$readmeName still contains template placeholders"
     }
   }
 }
 
-Write-Host "`nBuild สำเร็จ: BMS Retail Local $Version ($Target)" -ForegroundColor Green
+Write-Host "`nBuild completed: BMS Retail Local $Version ($Target)" -ForegroundColor Green
 Write-Host "Source commit: $head"
 $verified | Format-Table -AutoSize
 Write-Host "Output: $outputRoot"

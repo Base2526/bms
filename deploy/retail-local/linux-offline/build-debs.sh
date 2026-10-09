@@ -35,7 +35,7 @@ set -e
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
 fi
-echo "ติดตั้งไฟล์สำเร็จ: รัน sudo bms-retail-local-setup เพื่อตั้งค่าร้าน"
+echo "Files installed successfully: run sudo bms-retail-local-setup to configure the shop"
 EOF
   cat >"$stage/DEBIAN/prerm" <<'EOF'
 #!/bin/sh
@@ -50,7 +50,7 @@ set -e
 if command -v systemctl >/dev/null 2>&1; then
   systemctl daemon-reload || true
 fi
-echo "ข้อมูลร้านใน /var/lib/bms-retail-local ถูกเก็บไว้และไม่ได้ถูกลบ"
+echo "Shop data in /var/lib/bms-retail-local has been retained"
 EOF
   chmod 0755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/prerm" "$stage/DEBIAN/postrm"
 }

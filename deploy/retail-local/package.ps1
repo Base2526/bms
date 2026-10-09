@@ -6,7 +6,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if ($Version -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw "Version ใช้ได้เฉพาะ A-Z, a-z, 0-9, dot, underscore และ hyphen" }
+if ($Version -notmatch '^[A-Za-z0-9._-]{1,64}$') { throw "Version may contain only A-Z, a-z, 0-9, dots, underscores, and hyphens" }
 $localRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $localRoot "..\.."))
 . (Join-Path $localRoot "runtime.ps1")
@@ -16,7 +16,7 @@ if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repoRoot "artifacts\r
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
 $zipPath = Join-Path $outputRoot "BMS-Retail-Local-$Version.zip"
-if ((Test-Path -LiteralPath $zipPath) -and -not $Force) { throw "มี package นี้แล้ว: $zipPath (ใช้ -Force เมื่อตั้งใจแทนที่)" }
+if ((Test-Path -LiteralPath $zipPath) -and -not $Force) { throw "Package already exists: $zipPath (use -Force to replace it intentionally)" }
 
 $stageBase = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
 $stage = Join-Path $stageBase "bms-retail-local-package-$([Guid]::NewGuid().ToString('N'))"
@@ -37,11 +37,11 @@ try {
 
   $composeFile = Join-Path $localRoot "compose.yml"
   & docker compose -f $composeFile build migrate ws
-  if ($LASTEXITCODE -ne 0) { throw "Build application images ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to build application images" }
   & docker pull postgres:16-alpine
-  if ($LASTEXITCODE -ne 0) { throw "Pull postgres:16-alpine ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to pull postgres:16-alpine" }
   & docker pull redis:7-alpine
-  if ($LASTEXITCODE -ne 0) { throw "Pull redis:7-alpine ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to pull redis:7-alpine" }
 
   $imageNames = @(
     "bms-retail-local-web:$Version",
@@ -51,13 +51,13 @@ try {
   )
   foreach ($imageName in $imageNames) {
     & docker image inspect $imageName *> $null
-    if ($LASTEXITCODE -ne 0) { throw "ไม่พบ image หลัง build: $imageName" }
+    if ($LASTEXITCODE -ne 0) { throw "Image was not found after the build: $imageName" }
   }
 
   $archiveName = "bms-retail-local-images-$Version.tar"
   $archivePath = Join-Path $imagesDir $archiveName
   & docker image save --output $archivePath @imageNames
-  if ($LASTEXITCODE -ne 0) { throw "สร้าง Docker image archive ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to create the Docker image archive" }
   $archiveHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
 
   $runtimeFiles = @(
@@ -68,12 +68,12 @@ try {
   )
   foreach ($name in $runtimeFiles) {
     $source = Join-Path $localRoot $name
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "ขาดไฟล์ใน package: $name" }
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing package file: $name" }
     Copy-Item -LiteralPath $source -Destination (Join-Path $bundle $name)
   }
   $archetypeManifestSource = Join-Path $repoRoot "packages\retail-local-contract\shop-archetypes.json"
   if (-not (Test-Path -LiteralPath $archetypeManifestSource -PathType Leaf)) {
-    throw "ขาด Retail Local shop-archetypes manifest"
+    throw "Missing Retail Local shop-archetypes manifest"
   }
   $archetypeManifestDestination = Join-Path $bundle "shop-archetypes.json"
   Copy-Item -LiteralPath $archetypeManifestSource -Destination $archetypeManifestDestination
@@ -105,14 +105,14 @@ try {
   Compress-Archive -LiteralPath $bundle -DestinationPath $zipPath -CompressionLevel Optimal
   $zipHash = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash.ToLowerInvariant()
   Set-Content -LiteralPath "$zipPath.sha256" -Value "$zipHash  $([IO.Path]::GetFileName($zipPath))" -Encoding ascii
-  Write-Host "Package พร้อมทดสอบ: $zipPath" -ForegroundColor Green
+  Write-Host "Package is ready for testing: $zipPath" -ForegroundColor Green
   Write-Host "SHA-256: $zipHash"
 } finally {
   if (Test-Path -LiteralPath $stage) {
     $resolvedStage = [IO.Path]::GetFullPath($stage)
     if (-not $resolvedStage.StartsWith($stageBase, [StringComparison]::OrdinalIgnoreCase) -or
         [IO.Path]::GetFileName($resolvedStage) -notlike "bms-retail-local-package-*") {
-      throw "ปฏิเสธการล้าง temporary directory ที่อยู่นอกขอบเขต"
+      throw "Refusing to clean up a temporary directory outside the allowed scope"
     }
     Remove-Item -LiteralPath $resolvedStage -Recurse -Force
   }

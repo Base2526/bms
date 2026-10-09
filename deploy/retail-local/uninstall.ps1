@@ -8,27 +8,27 @@ $ErrorActionPreference = "Stop"
 $localRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 . (Join-Path $localRoot "runtime.ps1")
 $ctx = Get-RetailLocalContext -ScriptRoot $localRoot
-if (-not (Test-Path -LiteralPath $ctx.EnvFile)) { throw "ไม่พบ .env.local — installation นี้ไม่มีข้อมูลให้ถอน" }
+if (-not (Test-Path -LiteralPath $ctx.EnvFile)) { throw "Missing .env.local - this installation has no data to uninstall" }
 Assert-RetailLocalDocker
 $composeArgs = Get-RetailLocalComposeArgs -Context $ctx
 
 if ($EraseData) {
   if ($ConfirmationText -cne "ERASE-BMS-LOCAL") {
-    throw "การลบข้อมูลถาวรต้องระบุ -ConfirmationText ERASE-BMS-LOCAL"
+    throw "Permanent data deletion requires -ConfirmationText ERASE-BMS-LOCAL"
   }
-  Write-Warning "กำลังลบ PostgreSQL/Redis volumes ของ BMS Retail Local แบบกู้จากเครื่องนี้ไม่ได้"
+  Write-Warning "Permanently deleting BMS Retail Local PostgreSQL/Redis volumes; they cannot be recovered from this computer"
   & docker @composeArgs down -v --remove-orphans
 } else {
   & docker @composeArgs down --remove-orphans
 }
-if ($LASTEXITCODE -ne 0) { throw "ถอน containers ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to remove containers" }
 
 if ($EraseData) {
   Add-Type -AssemblyName Microsoft.VisualBasic
   foreach ($directory in @((Join-Path $localRoot "data"))) {
     $resolved = [IO.Path]::GetFullPath($directory)
     if (-not $resolved.StartsWith([IO.Path]::GetFullPath($localRoot) + [IO.Path]::DirectorySeparatorChar,
-        [StringComparison]::OrdinalIgnoreCase)) { throw "ปฏิเสธ path ที่อยู่นอก installation" }
+        [StringComparison]::OrdinalIgnoreCase)) { throw "Refusing a path outside the installation" }
     if (Test-Path -LiteralPath $resolved) {
       [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($resolved, "OnlyErrorDialogs", "SendToRecycleBin")
     }
@@ -38,7 +38,7 @@ if ($EraseData) {
       [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($file, "OnlyErrorDialogs", "SendToRecycleBin")
     }
   }
-  Write-Host "ลบ database volumes แล้ว; env/storage/receipt ถูกย้ายไป Windows Recycle Bin ส่วน backups ยังอยู่" -ForegroundColor Yellow
+  Write-Host "Database volumes deleted; env/storage/receipt moved to the Windows Recycle Bin. Backups are retained" -ForegroundColor Yellow
 } else {
-  Write-Host "ถอน containers แล้ว แต่เก็บ database volumes, storage, secrets และ backups ไว้" -ForegroundColor Green
+  Write-Host "Containers removed. Database volumes, storage, secrets, and backups are retained" -ForegroundColor Green
 }

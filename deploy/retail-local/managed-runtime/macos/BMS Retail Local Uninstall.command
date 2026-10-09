@@ -4,33 +4,33 @@ set -Eeuo pipefail
 finish() {
   local status=$?
   trap - EXIT
-  printf '\nกด Enter เพื่อปิดหน้าต่างนี้...'
+  printf '\nPress Enter to close this window...'
   read -r || true
   exit "$status"
 }
 trap finish EXIT
 
 clear
-printf 'ถอนการติดตั้ง BMS Retail Local\n\n'
-printf '1) หยุดระบบและเก็บข้อมูลร้านไว้สำหรับ recovery\n'
-printf '2) ลบระบบและข้อมูลร้านออกจากเครื่องอย่างถาวร\n'
-printf '3) ยกเลิก\n\n'
-read -r -p 'เลือก 1, 2 หรือ 3: ' choice
+printf 'Uninstall BMS Retail Local\n\n'
+printf '1) Stop the system and preserve shop data for recovery\n'
+printf '2) Permanently delete the system and shop data from this computer\n'
+printf '3) Cancelled\n\n'
+read -r -p 'Select 1, 2, or 3: ' choice
 
 case "$choice" in
   1)
     /usr/local/bin/bms-retail-local uninstall
     ;;
   2)
-    printf '\nควรมี backup ที่ตรวจสอบแล้วก่อนลบถาวร\n'
-    read -r -p 'พิมพ์ BACKUP-VERIFIED เพื่อดำเนินการต่อ: ' backup_confirmation
+    printf '\nHave a verified backup before permanently deleting data\n'
+    read -r -p 'Type BACKUP-VERIFIED to continue: ' backup_confirmation
     if [[ $backup_confirmation != BACKUP-VERIFIED ]]; then
-      printf 'ยกเลิกการลบข้อมูล\n'
+      printf 'Data deletion cancelled\n'
     else
       /usr/local/bin/bms-retail-local uninstall --erase-data
     fi
     ;;
   *)
-    printf 'ยกเลิก\n'
+    printf 'Cancelled\n'
     ;;
 esac

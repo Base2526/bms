@@ -19,7 +19,7 @@ write_status() {
 }
 failure() {
   code=$?
-  write_status failed "off-host backup ไม่สำเร็จ; ตรวจ journalctl -u bms-retail-local-offhost-backup.service" || true
+  write_status failed "Off-host backup failed; check journalctl -u bms-retail-local-offhost-backup.service" || true
   [[ -z ${local_backup:-} ]] || rm -f -- "$local_backup"
   [[ -z ${destination_partial:-} ]] || rm -f -- "$destination_partial"
   [[ -z ${checksum_partial:-} ]] || rm -f -- "$checksum_partial"
@@ -27,8 +27,8 @@ failure() {
 }
 trap failure ERR
 
-[[ ${EUID} -eq 0 ]] || { echo "ต้องรันด้วย root" >&2; exit 1; }
-[[ -f $CONFIG_PATH ]] || { echo "ยังไม่ได้ configure off-host backup" >&2; exit 1; }
+[[ ${EUID} -eq 0 ]] || { echo "Run this command as root" >&2; exit 1; }
+[[ -f $CONFIG_PATH ]] || { echo "Off-host backup is not configured" >&2; exit 1; }
 recipient=$(jq -er '.recipient' "$CONFIG_PATH")
 destination=$(jq -er '.destination' "$CONFIG_PATH")
 retention_days=$(jq -er '.retentionDays' "$CONFIG_PATH")
@@ -65,6 +65,6 @@ local_backup=
 find "$destination" -maxdepth 1 -type f \
   \( -name 'bms-retail-local-*.age' -o -name 'bms-retail-local-*.age.sha256' \) \
   -mtime "+$retention_days" -delete
-write_status passed "off-host backup สำเร็จ" "$destination/$name"
+write_status passed "Off-host backup completed" "$destination/$name"
 trap - ERR
 printf '%s\n' "$destination/$name"

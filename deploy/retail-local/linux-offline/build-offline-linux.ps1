@@ -8,7 +8,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-if ($Version -notmatch '^[A-Za-z0-9._+-]{1,64}$') { throw "Version ไม่ถูกต้อง" }
+if ($Version -notmatch '^[A-Za-z0-9._+-]{1,64}$') { throw "Version is invalid" }
 
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\..\.."))
@@ -23,15 +23,15 @@ $posDebPath = [IO.Path]::GetFullPath($PosDeb)
 $posAppImagePath = [IO.Path]::GetFullPath($PosAppImage)
 
 foreach ($path in @($serverZipPath, "$serverZipPath.sha256", $posDebPath, $posAppImagePath)) {
-  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "ไม่พบไฟล์: $path" }
+  if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "File was not found: $path" }
 }
 docker info *> $null
-if ($LASTEXITCODE -ne 0) { throw "Docker Linux engine ยังไม่พร้อม" }
+if ($LASTEXITCODE -ne 0) { throw "Docker Linux engine is not ready" }
 
 $expectedZipHash = ((Get-Content -LiteralPath "$serverZipPath.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
 $actualZipHash = (Get-FileHash -LiteralPath $serverZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($expectedZipHash -notmatch '^[a-f0-9]{64}$' -or $expectedZipHash -ne $actualZipHash) {
-  throw "Server ZIP checksum ไม่ตรง"
+  throw "Server ZIP checksum mismatch"
 }
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -42,16 +42,16 @@ New-Item -ItemType Directory -Path $stage | Out-Null
 try {
   Write-Host "Extracting verified server payload..." -ForegroundColor Cyan
   & tar -xf $serverZipPath -C $stage
-  if ($LASTEXITCODE -ne 0) { throw "แตก Server ZIP ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to extract the Server ZIP" }
   $bundleCandidates = @(Get-ChildItem -LiteralPath $stage -Directory)
-  if ($bundleCandidates.Count -ne 1) { throw "Server ZIP ต้องมี root directory เดียว" }
+  if ($bundleCandidates.Count -ne 1) { throw "Server ZIP must contain exactly one root directory" }
   $bundleRoot = $bundleCandidates[0].FullName
   $release = Get-Content -LiteralPath (Join-Path $bundleRoot "release.json") -Raw | ConvertFrom-Json
-  if ([string]$release.version -ne $Version) { throw "Version ใน release.json ไม่ตรงกับ $Version" }
+  if ([string]$release.version -ne $Version) { throw "Version in release.json does not match $Version" }
   $imagePath = Join-Path (Join-Path $bundleRoot "images") ([string]$release.imageArchive)
-  if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "ไม่พบ image archive" }
+  if (-not (Test-Path -LiteralPath $imagePath -PathType Leaf)) { throw "Image archive was not found" }
   $imageHash = (Get-FileHash -LiteralPath $imagePath -Algorithm SHA256).Hash.ToLowerInvariant()
-  if ($imageHash -ne ([string]$release.imageSha256).ToLowerInvariant()) { throw "Docker image checksum ไม่ตรง" }
+  if ($imageHash -ne ([string]$release.imageSha256).ToLowerInvariant()) { throw "Docker image checksum mismatch" }
 
   # Git may materialize tracked shell files as CRLF on a Windows build host. Execute and package a
   # normalized temporary copy so the resulting DEB remains runnable on Linux regardless of the
@@ -66,7 +66,7 @@ try {
   $utf8NoBom = [Text.UTF8Encoding]::new($false)
   foreach ($name in $linuxPackageFiles) {
     $source = Join-Path $scriptRoot $name
-    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "ขาดไฟล์ Linux package: $name" }
+    if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Missing Linux package file: $name" }
     $normalizedText = [IO.File]::ReadAllText($source).Replace("`r`n", "`n").Replace("`r", "`n")
     [IO.File]::WriteAllText((Join-Path $linuxPackageSource $name), $normalizedText, $utf8NoBom)
   }
@@ -82,7 +82,7 @@ try {
     -v "${outputMount}:/out" `
     ubuntu:24.04 bash /source/deploy/retail-local/linux-offline/build-debs.sh `
       $Version /bundle /input/BMS-POS.deb /out
-  if ($LASTEXITCODE -ne 0) { throw "สร้าง Linux DEB ไม่สำเร็จ" }
+  if ($LASTEXITCODE -ne 0) { throw "Failed to create the Linux DEB" }
 
   $artifacts = @(
     "BMS-Retail-Local-Server-POS-$Version-linux-x64.deb",
@@ -116,7 +116,7 @@ try {
     $resolvedStage = [IO.Path]::GetFullPath($stage)
     if (-not $resolvedStage.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
         [IO.Path]::GetFileName($resolvedStage) -notlike "bms-retail-local-linux-*") {
-      throw "ปฏิเสธการล้าง temporary directory ที่อยู่นอกขอบเขต"
+      throw "Refusing to clean up a temporary directory outside the allowed scope"
     }
     Remove-Item -LiteralPath $resolvedStage -Recurse -Force
   }

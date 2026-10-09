@@ -11,7 +11,7 @@ function parseArguments(argv) {
   for (let index = 0; index < argv.length; index += 2) {
     const name = argv[index];
     const value = argv[index + 1];
-    if (!name?.startsWith("--") || value === undefined) throw new Error("argument ไม่ถูกต้อง");
+    if (!name?.startsWith("--") || value === undefined) throw new Error("argument is invalid");
     values.set(name, value);
   }
   return values;

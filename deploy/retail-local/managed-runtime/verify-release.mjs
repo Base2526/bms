@@ -24,19 +24,19 @@ function assert(condition, message) {
 }
 
 function object(value, name) {
-  assert(value && typeof value === "object" && !Array.isArray(value), `${name} ต้องเป็น object`);
+  assert(value && typeof value === "object" && !Array.isArray(value), `${name} must be an object`);
   return value;
 }
 
 function exactKeys(value, allowed, name) {
   const extra = Object.keys(value).filter((key) => !allowed.has(key));
-  assert(extra.length === 0, `${name} มี field ที่ไม่รองรับ: ${extra.join(", ")}`);
+  assert(extra.length === 0, `${name} has unsupported fields: ${extra.join(", ")}`);
 }
 
 function decodeBase64url(value, name) {
-  assert(typeof value === "string" && BASE64URL.test(value), `${name} ไม่ใช่ base64url แบบไม่มี padding`);
+  assert(typeof value === "string" && BASE64URL.test(value), `${name} is not unpadded base64url`);
   const decoded = Buffer.from(value, "base64url");
-  assert(decoded.toString("base64url") === value, `${name} ไม่ใช่ canonical base64url`);
+  assert(decoded.toString("base64url") === value, `${name} is not canonical base64url`);
   return decoded;
 }
 
@@ -44,31 +44,31 @@ function parseJson(bytes, name) {
   try {
     return JSON.parse(bytes.toString("utf8"));
   } catch {
-    throw new Error(`${name} ไม่ใช่ UTF-8 JSON ที่อ่านได้`);
+    throw new Error(`${name} is not readable UTF-8 JSON`);
   }
 }
 
 function validateHeader(input, expectedKeyId) {
   const header = object(input, "protected header");
   exactKeys(header, new Set(["alg", "kid", "typ"]), "protected header");
-  assert(header.alg === "EdDSA", "release ต้องใช้ alg=EdDSA");
-  assert(header.typ === "application/vnd.bms.retail-local.release+json", "release typ ไม่ถูกต้อง");
-  assert(typeof header.kid === "string" && VERSION.test(header.kid), "release key id ไม่ถูกต้อง");
-  if (expectedKeyId) assert(header.kid === expectedKeyId, `release ใช้ key id ที่ไม่คาดไว้: ${header.kid}`);
+  assert(header.alg === "EdDSA", "Release must use alg=EdDSA");
+  assert(header.typ === "application/vnd.bms.retail-local.release+json", "release typ is invalid");
+  assert(typeof header.kid === "string" && VERSION.test(header.kid), "release key id is invalid");
+  if (expectedKeyId) assert(header.kid === expectedKeyId, `Release uses an unexpected key id: ${header.kid}`);
   return header;
 }
 
 function validateComponent(input, index) {
   const component = object(input, `components[${index}]`);
   exactKeys(component, new Set(["name", "kind", "url", "sha256", "ociDigest", "imageRef", "sizeBytes"]), `components[${index}]`);
-  assert(typeof component.name === "string" && COMPONENT_NAME.test(component.name), `components[${index}].name ไม่ถูกต้อง`);
-  assert(COMPONENT_KINDS.has(component.kind), `components[${index}].kind ไม่ถูกต้อง`);
-  assert(typeof component.url === "string" && component.url.startsWith("https://"), `components[${index}].url ต้องเป็น HTTPS`);
-  assert(typeof component.sha256 === "string" && HEX_64.test(component.sha256), `components[${index}].sha256 ไม่ถูกต้อง`);
-  assert(Number.isSafeInteger(component.sizeBytes) && component.sizeBytes > 0, `components[${index}].sizeBytes ไม่ถูกต้อง`);
+  assert(typeof component.name === "string" && COMPONENT_NAME.test(component.name), `components[${index}].name is invalid`);
+  assert(COMPONENT_KINDS.has(component.kind), `components[${index}].kind is invalid`);
+  assert(typeof component.url === "string" && component.url.startsWith("https://"), `components[${index}].url must use HTTPS`);
+  assert(typeof component.sha256 === "string" && HEX_64.test(component.sha256), `components[${index}].sha256 is invalid`);
+  assert(Number.isSafeInteger(component.sizeBytes) && component.sizeBytes > 0, `components[${index}].sizeBytes is invalid`);
   if (component.kind === "oci-image") {
-    assert(typeof component.ociDigest === "string" && OCI_DIGEST.test(component.ociDigest), `components[${index}] ขาด immutable OCI digest`);
-    assert(typeof component.imageRef === "string" && /^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$/.test(component.imageRef), `components[${index}] ขาด imageRef`);
+    assert(typeof component.ociDigest === "string" && OCI_DIGEST.test(component.ociDigest), `components[${index}] is missing an immutable OCI digest`);
+    assert(typeof component.imageRef === "string" && /^[a-z0-9][a-z0-9._/-]*:[A-Za-z0-9._-]+$/.test(component.imageRef), `components[${index}] is missing imageRef`);
   }
   return component;
 }
@@ -79,50 +79,50 @@ function validatePayload(input, expectedTarget) {
     "product", "releaseVersion", "channel", "platformTarget", "minimumAgentVersion",
     "schemaVersion", "rollbackSafe", "createdAt", "sourceCommit", "components",
   ]), "release payload");
-  assert(payload.product === "BMS Retail Local", "release product ไม่ถูกต้อง");
-  assert(typeof payload.releaseVersion === "string" && SEMVER.test(payload.releaseVersion), "releaseVersion ไม่ถูกต้อง");
-  assert(payload.channel === "pilot" || payload.channel === "stable", "release channel ไม่ถูกต้อง");
-  assert(typeof payload.platformTarget === "string" && TARGET.test(payload.platformTarget), "platformTarget ไม่ถูกต้อง");
-  if (expectedTarget) assert(payload.platformTarget === expectedTarget, `release target ไม่ตรงกับเครื่อง: ${payload.platformTarget}`);
-  assert(typeof payload.minimumAgentVersion === "string" && VERSION.test(payload.minimumAgentVersion), "minimumAgentVersion ไม่ถูกต้อง");
-  assert(typeof payload.schemaVersion === "string" && payload.schemaVersion.length > 0 && payload.schemaVersion.length <= 64, "schemaVersion ไม่ถูกต้อง");
-  assert(typeof payload.rollbackSafe === "boolean", "rollbackSafe ต้องระบุชัดเจน");
-  assert(typeof payload.createdAt === "string" && Number.isFinite(Date.parse(payload.createdAt)), "createdAt ไม่ถูกต้อง");
-  assert(typeof payload.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(payload.sourceCommit), "sourceCommit ไม่ถูกต้อง");
-  assert(Array.isArray(payload.components) && payload.components.length >= 7, "release components ไม่ครบ");
+  assert(payload.product === "BMS Retail Local", "release product is invalid");
+  assert(typeof payload.releaseVersion === "string" && SEMVER.test(payload.releaseVersion), "releaseVersion is invalid");
+  assert(payload.channel === "pilot" || payload.channel === "stable", "release channel is invalid");
+  assert(typeof payload.platformTarget === "string" && TARGET.test(payload.platformTarget), "platformTarget is invalid");
+  if (expectedTarget) assert(payload.platformTarget === expectedTarget, `Release target does not match the machine: ${payload.platformTarget}`);
+  assert(typeof payload.minimumAgentVersion === "string" && VERSION.test(payload.minimumAgentVersion), "minimumAgentVersion is invalid");
+  assert(typeof payload.schemaVersion === "string" && payload.schemaVersion.length > 0 && payload.schemaVersion.length <= 64, "schemaVersion is invalid");
+  assert(typeof payload.rollbackSafe === "boolean", "rollbackSafe must be explicitly specified");
+  assert(typeof payload.createdAt === "string" && Number.isFinite(Date.parse(payload.createdAt)), "createdAt is invalid");
+  assert(typeof payload.sourceCommit === "string" && /^[a-f0-9]{40}$/.test(payload.sourceCommit), "sourceCommit is invalid");
+  assert(Array.isArray(payload.components) && payload.components.length >= 7, "Release components are incomplete");
   const components = payload.components.map(validateComponent);
   const names = new Set(components.map((component) => component.name));
-  assert(names.size === components.length, "release มี component name ซ้ำ");
+  assert(names.size === components.length, "Release contains duplicate component names");
   for (const name of REQUIRED_COMPONENTS) {
-    assert(names.has(name), `release ขาด component ${name}`);
+    assert(names.has(name), `Release is missing component ${name}`);
     assert(components.find((component) => component.name === name)?.kind === REQUIRED_KINDS.get(name),
-      `component ${name} ใช้ kind ไม่ถูกต้อง`);
+      `component ${name} has an invalid kind`);
   }
   return payload;
 }
 
 export function verifyReleaseEnvelope(envelopeBytes, publicKeyPem, options = {}) {
-  assert(Buffer.isBuffer(envelopeBytes), "release envelope ต้องเป็น Buffer");
-  assert(envelopeBytes.length > 0 && envelopeBytes.length <= MAX_ENVELOPE_BYTES, "release envelope มีขนาดไม่ถูกต้อง");
+  assert(Buffer.isBuffer(envelopeBytes), "Release envelope must be a Buffer");
+  assert(envelopeBytes.length > 0 && envelopeBytes.length <= MAX_ENVELOPE_BYTES, "Release envelope has an invalid size");
   const envelope = object(parseJson(envelopeBytes, "release envelope"), "release envelope");
   exactKeys(envelope, new Set(["formatVersion", "protected", "payload", "signature"]), "release envelope");
-  assert(envelope.formatVersion === 1, "release envelope version ไม่รองรับ");
+  assert(envelope.formatVersion === 1, "Release envelope version is unsupported");
 
   const protectedBytes = decodeBase64url(envelope.protected, "protected");
   const payloadBytes = decodeBase64url(envelope.payload, "payload");
   const signature = decodeBase64url(envelope.signature, "signature");
-  assert(signature.length === 64, "Ed25519 signature ต้องยาว 64 bytes");
+  assert(signature.length === 64, "Ed25519 signature must be 64 bytes long");
   const header = validateHeader(parseJson(protectedBytes, "protected header"), options.expectedKeyId);
 
   let key;
   try {
     key = createPublicKey(publicKeyPem);
   } catch {
-    throw new Error("release public key อ่านไม่ได้");
+    throw new Error("Release public key is unreadable");
   }
-  assert(key.asymmetricKeyType === "ed25519", "release public key ต้องเป็น Ed25519");
+  assert(key.asymmetricKeyType === "ed25519", "Release public key must be Ed25519");
   const signingInput = Buffer.from(`${envelope.protected}.${envelope.payload}`, "ascii");
-  assert(verify(null, signingInput, key, signature), "release signature ไม่ถูกต้อง");
+  assert(verify(null, signingInput, key, signature), "release signature is invalid");
 
   // Component locations are interpreted only after publisher authentication succeeds.
   const payload = validatePayload(parseJson(payloadBytes, "release payload"), options.expectedTarget);

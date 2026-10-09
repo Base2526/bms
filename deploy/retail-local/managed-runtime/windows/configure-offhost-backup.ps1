@@ -17,49 +17,49 @@ function Test-Administrator {
 
 function Assert-OffHostDestination([string]$Path) {
   if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
-    throw "ไม่พบ destination directory: $Path"
+    throw "Destination directory was not found: $Path"
   }
   if ((Get-Item -LiteralPath $Path -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-    throw "destination ห้ามเป็น symbolic link/junction"
+    throw "Destination must not be a symbolic link or junction"
   }
   if ($Path.StartsWith("\\", [StringComparison]::Ordinal)) { return }
   $root = [IO.Path]::GetPathRoot($Path)
-  if ([string]::IsNullOrWhiteSpace($root)) { throw "destination ต้องเป็น absolute path" }
+  if ([string]::IsNullOrWhiteSpace($root)) { throw "Destination must be an absolute path" }
   $driveName = $root.Substring(0, 1)
   $psDrive = Get-PSDrive -Name $driveName -PSProvider FileSystem -ErrorAction Stop
   if (-not [string]::IsNullOrWhiteSpace([string]$psDrive.DisplayRoot)) { return }
   $drive = [IO.DriveInfo]::new($root)
   if ($drive.DriveType -in @([IO.DriveType]::Network, [IO.DriveType]::Removable)) { return }
   if ($drive.DriveType -ne [IO.DriveType]::Fixed) {
-    throw "destination ต้องเป็น network/removable/separate physical drive"
+    throw "Destination must be a network drive, removable drive, or separate physical drive"
   }
   $systemLetter = ([IO.Path]::GetPathRoot($env:SystemRoot)).Substring(0, 1)
   $targetPartition = Get-Partition -DriveLetter $driveName -ErrorAction Stop
   $systemPartition = Get-Partition -DriveLetter $systemLetter -ErrorAction Stop
   if ($targetPartition.DiskNumber -eq $systemPartition.DiskNumber) {
-    throw "destination อยู่บน physical disk เดียวกับ Windows จึงไม่ใช่ off-host backup"
+    throw "Destination is on the same physical disk as Windows and cannot be used for off-host backup"
   }
 }
 
-if ($Recipient -notmatch '^age1[0-9a-z]{58}$') { throw "AGE_RECIPIENT ไม่ถูกต้อง" }
+if ($Recipient -notmatch '^age1[0-9a-z]{58}$') { throw "AGE_RECIPIENT is invalid" }
 $Destination = [IO.Path]::GetFullPath($Destination)
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot)
 if ($Destination -eq [IO.Path]::GetPathRoot($Destination)) {
-  throw "กรุณาสร้าง directory เฉพาะสำหรับ BMS backup แทนการใช้ root ของ drive"
+  throw "Create a dedicated directory for BMS backups instead of using the drive root"
 }
 if (-not (Test-Administrator)) {
   $arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Recipient `"$Recipient`" " +
     "-Destination `"$Destination`" -RetentionDays $RetentionDays -InstallRoot `"$InstallRoot`""
   $process = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" `
     -ArgumentList $arguments -Verb RunAs -Wait -PassThru
-  if ($process.ExitCode -ne 0) { throw "ตั้ง off-host backup ไม่สำเร็จ" }
+  if ($process.ExitCode -ne 0) { throw "Failed to configure off-host backup" }
   exit 0
 }
 Assert-OffHostDestination $Destination
 
 $bootstrapRoot = Join-Path $InstallRoot "bootstrap"
 $runner = Join-Path $bootstrapRoot "run-offhost-backup.ps1"
-if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw "ไม่พบ BMS off-host backup runner" }
+if (-not (Test-Path -LiteralPath $runner -PathType Leaf)) { throw "BMS off-host backup runner was not found" }
 New-Item -ItemType Directory -Force -Path $InstallRoot | Out-Null
 $configPath = Join-Path $InstallRoot "offhost-backup.json"
 $temporary = "$configPath.tmp"
@@ -72,7 +72,7 @@ $temporary = "$configPath.tmp"
 Move-Item -LiteralPath $temporary -Destination $configPath -Force
 $userId = [Security.Principal.WindowsIdentity]::GetCurrent().Name
 & icacls $configPath /inheritance:r /grant:r "Administrators:F" "SYSTEM:F" "${userId}:F" *> $null
-if ($LASTEXITCODE -ne 0) { throw "จำกัดสิทธิ์ backup configuration ไม่สำเร็จ" }
+if ($LASTEXITCODE -ne 0) { throw "Failed to restrict access to the backup configuration" }
 
 $powershell = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
 $action = New-ScheduledTaskAction -Execute $powershell `
@@ -84,4 +84,4 @@ $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit
 Register-ScheduledTask -TaskName "BMS Retail Local Off-host Backup" -Action $action -Trigger $trigger `
   -Principal $principal -Settings $settings -Force | Out-Null
 Start-ScheduledTask -TaskName "BMS Retail Local Off-host Backup"
-Write-Host "ตั้ง encrypted off-host backup สำเร็จ: $Destination (เก็บ $RetentionDays วัน)" -ForegroundColor Green
+Write-Host "Encrypted off-host backup configured: $Destination (retained for $RetentionDays days)" -ForegroundColor Green

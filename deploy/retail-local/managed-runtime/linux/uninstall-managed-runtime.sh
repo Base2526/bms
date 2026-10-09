@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-[[ ${EUID} -eq 0 ]] || { echo "กรุณารันด้วย sudo" >&2; exit 1; }
+[[ ${EUID} -eq 0 ]] || { echo "Run this command with sudo" >&2; exit 1; }
 
 progress() { printf '\n[BMS Uninstall %s/4] %s\n' "$1" "$2"; }
 stop_unit_bounded() {
@@ -9,7 +9,7 @@ stop_unit_bounded() {
   if timeout "${seconds}s" systemctl stop "$unit" >/dev/null 2>&1; then
     return 0
   fi
-  printf 'คำเตือน: %s หยุดไม่ทัน %s วินาที กำลังบังคับหยุดและทำขั้นตอนถัดไป\n' \
+  printf 'Warning: %s did not stop within %s seconds. Forcing it to stop and continuing\n' \
     "$unit" "$seconds" >&2
   timeout 3s systemctl kill --kill-who=all "$unit" >/dev/null 2>&1 || true
   systemctl reset-failed "$unit" >/dev/null 2>&1 || true
@@ -21,7 +21,7 @@ force_stop_containers() {
     -f /var/lib/bms-retail-local/compose.yml kill >/dev/null 2>&1 || true
 }
 
-progress 1 "ปิด startup, timer และงานเบื้องหลัง"
+progress 1 "Disable startup, timers, and background tasks"
 for unit in \
   bms-retail-local.service \
   bms-retail-local-license-evidence.timer \
@@ -36,7 +36,7 @@ stop_unit_bounded bms-retail-local-license-evidence.service 5 || true
 stop_unit_bounded bms-retail-local-license-ui.service 5 || true
 stop_unit_bounded bms-retail-local-offhost-backup.service 5 || true
 
-progress 2 "บันทึกการถอนการติดตั้งและหยุดบริการ"
+progress 2 "Record uninstall status and stop services"
 # Commercial evidence is best-effort and must never hold up uninstall.
 timeout 3s /opt/bms-retail-local/bms-runtime-agent license-pulse \
   -root /var/lib/bms-retail-local -event INSTALLATION_DEACTIVATED >/dev/null 2>&1 || true
@@ -54,7 +54,7 @@ if ! stop_unit_bounded bms-retail-local.service 10; then
   force_stop_containers
 fi
 
-progress 3 "นำรายการเริ่มอัตโนมัติออก"
+progress 3 "Remove automatic startup entries"
 rm -f /etc/systemd/system/bms-retail-local.service
 rm -f /etc/systemd/system/bms-retail-local-offhost-backup.service \
   /etc/systemd/system/bms-retail-local-offhost-backup.timer \
@@ -65,18 +65,18 @@ rm -f /etc/systemd/system/bms-retail-local-offhost-backup.service \
 systemctl daemon-reload
 
 if [[ ${1:-} != --erase-data ]]; then
-  progress 4 "เสร็จสิ้น โดยเก็บข้อมูลร้านไว้"
-  echo "หยุดและถอด startup แล้ว ข้อมูลร้านและ secrets ยังอยู่ใน /var/lib/bms-retail-local"
-  echo "ใช้ bms-localctl backup ก่อน และ --erase-data เฉพาะเมื่อต้องการลบถาวร"
+  progress 4 "Completed; shop data retained"
+  echo "Automatic startup stopped and disabled. Shop data and secrets remain in /var/lib/bms-retail-local"
+  echo "Run bms-localctl backup first. Use --erase-data only for permanent deletion"
   exit 0
 fi
 
-read -r -p 'การลบถาวรกู้คืนไม่ได้ พิมพ์ ERASE-BMS-RETAIL-LOCAL: ' answer
-[[ $answer == ERASE-BMS-RETAIL-LOCAL ]] || { echo "ยกเลิกการลบข้อมูล" >&2; exit 1; }
+read -r -p 'Permanent deletion cannot be undone. Type ERASE-BMS-RETAIL-LOCAL: ' answer
+[[ $answer == ERASE-BMS-RETAIL-LOCAL ]] || { echo "Data deletion cancelled" >&2; exit 1; }
 if [[ -f /var/lib/bms-retail-local/compose.yml && -f /var/lib/bms-retail-local/.env ]]; then
   timeout 45s docker compose --env-file /var/lib/bms-retail-local/.env \
     -f /var/lib/bms-retail-local/compose.yml down --timeout 5 --volumes --remove-orphans || {
-      echo "ลบ container/volume ไม่สำเร็จ จึงยังไม่ลบข้อมูลร้าน กรุณาลองใหม่หรือติดต่อ Support" >&2
+      echo "Failed to remove containers/volumes. Shop data has not been deleted. Try again or contact Support" >&2
       exit 1
     }
 fi
@@ -84,5 +84,5 @@ rm -rf -- /var/lib/bms-retail-local
 rm -rf -- /opt/bms-retail-local
 rm -f /usr/local/bin/bms-localctl /usr/local/sbin/bms-retail-local-uninstall \
   /usr/local/sbin/bms-retail-local-offhost-backup
-progress 4 "ลบระบบและข้อมูลร้านแล้ว"
-echo "ลบ BMS Retail Local และข้อมูลในเครื่องแล้ว"
+progress 4 "System and shop data deleted"
+echo "BMS Retail Local and its local data have been deleted"

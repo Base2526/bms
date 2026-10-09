@@ -3,10 +3,10 @@ set -Eeuo pipefail
 
 pkg=${1:-}
 [[ -f $pkg ]] || { echo "usage: smoke-test-pkg.sh FULL_INSTALLER.pkg" >&2; exit 2; }
-[[ $(uname -s) == Darwin ]] || { echo "smoke test ต้องรันบน macOS" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "Smoke test must run on macOS" >&2; exit 1; }
 
 work="/tmp/brl-smoke.$$"
-[[ ! -e $work ]] || { echo "smoke path มีอยู่แล้ว: $work" >&2; exit 1; }
+[[ ! -e $work ]] || { echo "Smoke path already exists: $work" >&2; exit 1; }
 mkdir -m 0700 "$work"
 expanded="$work/expanded"
 archive_expanded="$work/archive-expanded"
@@ -30,20 +30,20 @@ pkgutil --expand "$pkg" "$archive_expanded"
 payload_archive="$archive_expanded/BMSRetailLocal.component.pkg/Payload"
 package_info="$archive_expanded/BMSRetailLocal.component.pkg/PackageInfo"
 [[ -f $payload_archive ]] || {
-  echo "component Payload ต้องเป็น archive ไม่ใช่ directory" >&2; exit 1;
+  echo "component Payload must be an archive, not a directory" >&2; exit 1;
 }
-[[ -f $package_info ]] || { echo "ไม่พบ component PackageInfo" >&2; exit 1; }
+[[ -f $package_info ]] || { echo "Component PackageInfo was not found" >&2; exit 1; }
 if grep -q '<relocate>' "$package_info"; then
-  echo "application bundle ใน package ต้องห้าม relocate ออกจาก /Applications" >&2; exit 1
+  echo "Application bundles in the package must not be relocatable outside /Applications" >&2; exit 1
 fi
 file "$payload_archive" | grep -q 'gzip compressed data' || {
-  echo "component Payload ไม่ใช่ gzip archive ที่ macOS Installer รองรับ" >&2; exit 1;
+  echo "component Payload is not a gzip archive supported by macOS Installer" >&2; exit 1;
 }
 pkgutil --expand-full "$pkg" "$expanded"
 component_payload=$(find "$expanded" -type d -path '*/BMSRetailLocal.component.pkg/Payload' -print -quit)
-[[ -n $component_payload ]] || { echo "ไม่พบ component payload" >&2; exit 1; }
+[[ -n $component_payload ]] || { echo "Component payload was not found" >&2; exit 1; }
 system_root="$component_payload/Library/Application Support/BMS/RetailLocal"
-[[ -n $system_root ]] || { echo "ไม่พบ Retail Local payload" >&2; exit 1; }
+[[ -n $system_root ]] || { echo "Retail Local payload was not found" >&2; exit 1; }
 control="$system_root/control/bms-retail-local"
 [[ -s $system_root/control/setup-diagnostics.sh && -s $system_root/control/BOOTSTRAP_VERSION ]] || {
   echo "package is missing error reporting files" >&2; exit 1;
@@ -53,14 +53,14 @@ platform_target=$(cat "$system_root/payload/PLATFORM_TARGET")
 case "$platform_target" in
   macos-15-arm64) required_host_arch=arm64 ;;
   macos-15-x64) required_host_arch=x86_64 ;;
-  *) echo "platform target ใน package ไม่ถูกต้อง: $platform_target" >&2; exit 1 ;;
+  *) echo "Platform target in the package is invalid: $platform_target" >&2; exit 1 ;;
 esac
 [[ $(uname -m) == "$required_host_arch" ]] || {
-  echo "smoke test ต้องรันบน Mac $required_host_arch สำหรับ package นี้" >&2; exit 1;
+  echo "Smoke test for this package must run on a $required_host_arch Mac" >&2; exit 1;
 }
 app="$component_payload/Applications/BMS Retail Local.app"
-[[ -x $app/Contents/MacOS/BMS\ Retail\ Local ]] || { echo "ไม่พบ app launcher" >&2; exit 1; }
-[[ -f $app/Contents/Resources/BMSRetailLocal.icns ]] || { echo "ไม่พบ app icon" >&2; exit 1; }
+[[ -x $app/Contents/MacOS/BMS\ Retail\ Local ]] || { echo "App launcher was not found" >&2; exit 1; }
+[[ -f $app/Contents/Resources/BMSRetailLocal.icns ]] || { echo "App icon was not found" >&2; exit 1; }
 plutil -lint "$app/Contents/Info.plist" >/dev/null
 
 runtime_env=(
@@ -76,15 +76,23 @@ runtime_env=(
 env "${runtime_env[@]}" BMS_SMOKE_CONTROL="$control" expect <<'EOF'
 set timeout 1800
 spawn -noecho $env(BMS_SMOKE_CONTROL) setup
-expect "ชื่อร้าน: "
+expect "Shop name: "
 send -- "BMS Smoke Shop\r"
-expect "ชื่อผู้ดูแลร้าน: "
+expect "Shop administrator name: "
 send -- "Smoke Admin\r"
-expect "อีเมลผู้ดูแลร้าน: "
+expect "Shop administrator email: "
 send -- "smoke@example.invalid\r"
-expect "รหัสผ่านผู้ดูแล (อย่างน้อย 8 ตัวอักษร): "
+expect -ex "Select a shop type "
+send -- "\r"
+expect -ex {Create sample data for this shop type? [y/N]: }
+send -- "n\r"
+expect "Administrator password (at least 8 characters): "
 send -- "RetailLocalSmoke!2026\r"
-expect "PIN ขายหน้าร้าน (ตัวเลข 4-8 หลัก): "
+expect "Confirm password: "
+send -- "RetailLocalSmoke!2026\r"
+expect "POS PIN (4-8 digits): "
+send -- "2468\r"
+expect "Confirm PIN: "
 send -- "2468\r"
 expect eof
 lassign [wait] pid spawnid os_error exit_code

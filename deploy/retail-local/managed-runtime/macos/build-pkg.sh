@@ -49,17 +49,17 @@ cleanup() { rm -rf -- "$work"; }
 trap cleanup EXIT HUP INT TERM
 
 for command in curl ditto docker file go gzip pkgbuild pkgutil plutil productbuild shasum tar; do
-  command -v "$command" >/dev/null || { echo "ไม่พบ $command" >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo "Command was not found: $command" >&2; exit 1; }
 done
-[[ $(uname -s) == Darwin ]] || { echo "build-pkg.sh ต้องรันบน macOS" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "build-pkg.sh must run on macOS" >&2; exit 1; }
 if [[ $architecture == native ]]; then
   case "$(uname -m)" in
     arm64) architecture=arm64 ;;
     x86_64) architecture=x64 ;;
-    *) echo "รองรับเฉพาะ Mac arm64 หรือ x86_64" >&2; exit 1 ;;
+    *) echo "Only arm64 or x86_64 Macs are supported" >&2; exit 1 ;;
   esac
 fi
-docker info >/dev/null 2>&1 || { echo "Docker build engine ไม่พร้อม" >&2; exit 1; }
+docker info >/dev/null 2>&1 || { echo "Docker build engine is not ready" >&2; exit 1; }
 
 readonly LIMA_VERSION=2.2.0
 readonly UBUNTU_RELEASE=release-20260926
@@ -98,7 +98,7 @@ fetch() {
   fi
   actual=$(shasum -a 256 "$destination" | awk '{print $1}')
   [[ $actual == "$expected" ]] || {
-    echo "checksum ไม่ตรง: $destination (ต้องการ $expected ได้ $actual)" >&2; exit 1;
+    echo "Checksum mismatch: $destination (expected $expected, got $actual)" >&2; exit 1;
   }
 }
 
@@ -122,7 +122,7 @@ pkg_version=$(printf '%s' "$version" | awk -F '[^0-9]+' '{out=""; for(i=1;i<=NF;
 if [[ $reuse_images == true ]]; then
   for image_ref in "$web_ref" "$ws_ref" "$postgres_ref" "$redis_ref"; do
     docker image inspect "$image_ref" >/dev/null 2>&1 || {
-      echo "--reuse-images ระบุไว้แต่ไม่พบ image: $image_ref" >&2; exit 1;
+      echo "--reuse-images was specified, but the image was not found: $image_ref" >&2; exit 1;
     }
   done
   echo "Reuse verified local service images for $version"
@@ -157,13 +157,13 @@ mkdir -p "$payload/images" "$payload/bin" "$payload/runtime" \
 if [[ $package_type == server-pos ]]; then
   desktop_builder="$desktop_root/node_modules/.bin/electron-builder"
   [[ -x $desktop_builder ]] || {
-    echo "ไม่พบ electron-builder; รัน npm install ใน apps/desktop ก่อน" >&2; exit 1;
+    echo "electron-builder was not found; run npm install in apps/desktop first" >&2; exit 1;
   }
   echo "Build $architecture BMS POS app"
   (cd "$desktop_root" && CSC_IDENTITY_AUTO_DISCOVERY=false "$desktop_builder" \
     --mac "--$electron_arch" --dir --config.directories.output="$work/desktop-dist")
   desktop_app="$work/desktop-dist/$electron_dir/BMS POS.app"
-  [[ -d $desktop_app ]] || { echo "ไม่พบ BMS POS.app หลัง build" >&2; exit 1; }
+  [[ -d $desktop_app ]] || { echo "BMS POS.app was not found after the build" >&2; exit 1; }
   ditto "$desktop_app" "$package_root/Applications/BMS POS.app"
 fi
 
@@ -265,7 +265,7 @@ done
 expected_non_relocatable_apps=1
 [[ $package_type == server-pos ]] && expected_non_relocatable_apps=2
 [[ $non_relocatable_apps -eq $expected_non_relocatable_apps ]] || {
-  echo "component policy ไม่พบ application bundle ครบ" >&2; exit 1;
+  echo "Component policy does not include all application bundles" >&2; exit 1;
 }
 pkgbuild --root "$package_root" --scripts "$scripts" \
   --component-plist "$component_plist" \
@@ -297,17 +297,17 @@ cp "$macos_root/README.txt" "$work/README.txt"
 cp "$macos_root/THIRD_PARTY_NOTICES.txt" "$work/THIRD_PARTY_NOTICES.txt"
 
 package_path="$output_dir/$package_name-$version-$architecture.pkg"
-[[ ! -e $package_path ]] || { echo "ไฟล์มีอยู่แล้ว: $package_path" >&2; exit 1; }
+[[ ! -e $package_path ]] || { echo "File already exists: $package_path" >&2; exit 1; }
 productbuild --distribution "$work/distribution.xml" --package-path "$work" \
   --resources "$work" "$package_path" >/dev/null
 verify_archive="$work/verify-archive"
 pkgutil --expand "$package_path" "$verify_archive"
 payload_archive="$verify_archive/BMSRetailLocal.component.pkg/Payload"
 [[ -f $payload_archive ]] || {
-  echo "package payload ต้องเป็น archive ไม่ใช่ directory" >&2; exit 1;
+  echo "package payload must be an archive, not a directory" >&2; exit 1;
 }
 file "$payload_archive" | grep -q 'gzip compressed data' || {
-  echo "package payload ไม่ใช่ gzip archive ที่ macOS Installer รองรับ" >&2; exit 1;
+  echo "package payload is not a gzip archive supported by macOS Installer" >&2; exit 1;
 }
 sha256=$(shasum -a 256 "$package_path" | awk '{print $1}')
 size=$(stat -f %z "$package_path")

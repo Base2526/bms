@@ -11,7 +11,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 if ($Version -notmatch '^[A-Za-z0-9._-]{1,64}$') {
-  throw "Version ใช้ได้เฉพาะ A-Z, a-z, 0-9, dot, underscore และ hyphen"
+  throw "Version may contain only A-Z, a-z, 0-9, dots, underscores, and hyphens"
 }
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $scriptRoot "..\..\.."))
@@ -38,27 +38,27 @@ if (-not $InnoCompiler) {
 }
 
 if (-not $InnoCompiler -or -not (Test-Path -LiteralPath $InnoCompiler -PathType Leaf)) {
-  throw "ไม่พบ Inno Setup 6 compiler (ISCC.exe)"
+  throw "Inno Setup 6 compiler (ISCC.exe) was not found"
 }
 if (-not (Test-Path -LiteralPath $serverZipPath -PathType Leaf)) {
-  throw "ไม่พบ Server ZIP: $serverZipPath"
+  throw "Server ZIP was not found: $serverZipPath"
 }
 if (-not (Test-Path -LiteralPath "$serverZipPath.sha256" -PathType Leaf)) {
-  throw "ไม่พบ checksum sidecar: $serverZipPath.sha256"
+  throw "Checksum sidecar was not found: $serverZipPath.sha256"
 }
 if ($PackageType -ne "server" -and -not (Test-Path -LiteralPath $posInstallerPath -PathType Leaf)) {
-  throw "ไม่พบ POS x64 installer: $posInstallerPath"
+  throw "POS x64 installer was not found: $posInstallerPath"
 }
 if ($PackageType -eq "all" -and -not (Test-Path -LiteralPath $posLegacyInstallerPath -PathType Leaf)) {
-  throw "ไม่พบ POS x86 Legacy installer: $posLegacyInstallerPath"
+  throw "POS x86 Legacy installer was not found: $posLegacyInstallerPath"
 }
-if (-not (Test-Path -LiteralPath $definitionPath -PathType Leaf)) { throw "ไม่พบ $definitionPath" }
-if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw "ไม่พบ $iconPath" }
+if (-not (Test-Path -LiteralPath $definitionPath -PathType Leaf)) { throw "File was not found: $definitionPath" }
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) { throw "File was not found: $iconPath" }
 
 $expectedHash = ((Get-Content -LiteralPath "$serverZipPath.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
 $actualHash = (Get-FileHash -LiteralPath $serverZipPath -Algorithm SHA256).Hash.ToLowerInvariant()
 if ($expectedHash -notmatch '^[a-f0-9]{64}$' -or $actualHash -ne $expectedHash) {
-  throw "Server ZIP checksum ไม่ตรง ห้ามสร้าง installer จาก payload ที่อาจเสียหาย"
+  throw "Server ZIP checksum mismatch. Do not build an installer from a potentially corrupted payload"
 }
 
 New-Item -ItemType Directory -Force -Path $outputRoot | Out-Null
@@ -70,13 +70,13 @@ try {
   Write-Host "Extracting verified server payload..." -ForegroundColor Cyan
   Expand-Archive -LiteralPath $serverZipPath -DestinationPath $stage
   $bundleCandidates = @(Get-ChildItem -LiteralPath $stage -Directory)
-  if ($bundleCandidates.Count -ne 1) { throw "Server ZIP ต้องมี root directory เดียว" }
+  if ($bundleCandidates.Count -ne 1) { throw "Server ZIP must contain exactly one root directory" }
   $bundleRoot = $bundleCandidates[0].FullName
   $releasePath = Join-Path $bundleRoot "release.json"
-  if (-not (Test-Path -LiteralPath $releasePath -PathType Leaf)) { throw "Server ZIP ไม่มี release.json" }
+  if (-not (Test-Path -LiteralPath $releasePath -PathType Leaf)) { throw "Server ZIP does not contain release.json" }
   $release = Get-Content -LiteralPath $releasePath -Raw | ConvertFrom-Json
   if ([string]$release.version -ne $Version) {
-    throw "Server ZIP version '$($release.version)' ไม่ตรงกับ requested version '$Version'"
+    throw "Server ZIP version '$($release.version)' does not match requested version '$Version'"
   }
 
   $targets = if ($PackageType -eq "all") { @("server", "server-pos") } else { @($PackageType) }
@@ -99,10 +99,10 @@ try {
 
     Write-Host "Building $baseName.exe..." -ForegroundColor Cyan
     & $InnoCompiler @arguments
-    if ($LASTEXITCODE -ne 0) { throw "Inno Setup build ไม่สำเร็จสำหรับ $target" }
+    if ($LASTEXITCODE -ne 0) { throw "Inno Setup build failed for $target" }
 
     $artifact = Join-Path $outputRoot "$baseName.exe"
-    if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) { throw "ไม่พบ artifact: $artifact" }
+    if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) { throw "Artifact was not found: $artifact" }
     $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
     Set-Content -LiteralPath "$artifact.sha256" -Value "$hash  $baseName.exe" -Encoding ascii
     Write-Host "Ready: $artifact" -ForegroundColor Green
@@ -131,7 +131,7 @@ try {
 
     $readmeTemplatePath = Join-Path $scriptRoot "README.template.md"
     if (-not (Test-Path -LiteralPath $readmeTemplatePath -PathType Leaf)) {
-      throw "ไม่พบ distribution README template: $readmeTemplatePath"
+      throw "Distribution README template was not found: $readmeTemplatePath"
     }
     $serverPosArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-POS-$Version-windows-x64.exe"
     $serverArtifact = Join-Path $outputRoot "BMS-Retail-Local-Server-$Version-windows-x64.exe"
@@ -151,7 +151,7 @@ try {
     $resolvedStage = [IO.Path]::GetFullPath($stage)
     if (-not $resolvedStage.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
         [IO.Path]::GetFileName($resolvedStage) -notlike "bms-retail-local-offline-*") {
-      throw "ปฏิเสธการล้าง temporary directory ที่อยู่นอกขอบเขต"
+      throw "Refusing to clean up a temporary directory outside the allowed scope"
     }
     Remove-Item -LiteralPath $resolvedStage -Recurse -Force
   }

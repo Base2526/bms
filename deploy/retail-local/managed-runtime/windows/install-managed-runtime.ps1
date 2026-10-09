@@ -616,7 +616,8 @@ $wslVersion = $null
 for ($attempt = 1; $attempt -le 6; $attempt++) {
   $wslVersion = Invoke-WslCommand -Arguments @("--version") -Quiet
   if ($wslVersion.ExitCode -eq 0) { break }
-  if (($wslVersion.Output -join " ") -notmatch 'finishing an upgrade|กำลัง.*อัปเกรด') { break }
+  # Match English and Thai WSL output; escapes keep the source independent of the code page.
+  if (($wslVersion.Output -join " ") -notmatch 'finishing an upgrade|\u0e01\u0e33\u0e25\u0e31\u0e07.*\u0e2d\u0e31\u0e1b\u0e40\u0e01\u0e23\u0e14') { break }
   Write-Progress -Id 18 -Activity "Waiting for Windows Subsystem for Linux" `
     -Status "WSL is finishing an earlier upgrade ($attempt/6)" -PercentComplete ([int](($attempt / 6) * 100))
   Write-Host "  WSL is finishing an earlier upgrade. Checking again in 10 seconds ($attempt/6)..." -ForegroundColor Yellow

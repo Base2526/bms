@@ -46,7 +46,7 @@ done
 [[ -f $source_dmg && -f $private_key && -f $public_key && -f $keyring && -n $output_dir ]] || usage
 [[ $key_id =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]] || usage
 [[ $base_url =~ ^https://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]{1,5})?(/[^[:space:]#]*)?$ ]] || {
-  echo "local test base URL ต้องเป็น HTTPS loopback" >&2; exit 2;
+  echo "Local test base URL must use HTTPS on loopback" >&2; exit 2;
 }
 base_url=${base_url%/}
 absolute_file() {
@@ -65,9 +65,9 @@ managed_root="$repo_root/deploy/retail-local/managed-runtime"
 agent_root="$repo_root/apps/retail-local-agent"
 [[ $output_dir == /* ]] || output_dir="$repo_root/$output_dir"
 if [[ -e $output_dir ]]; then
-  [[ $force == true ]] || { echo "output มีอยู่แล้ว: $output_dir" >&2; exit 1; }
+  [[ $force == true ]] || { echo "Output already exists: $output_dir" >&2; exit 1; }
   [[ $output_dir == *'/artifacts/retail-local/test-server/'* ]] || {
-    echo "ปฏิเสธลบ output นอก test-server: $output_dir" >&2; exit 1;
+    echo "Refusing to delete output outside test-server: $output_dir" >&2; exit 1;
   }
   find "$output_dir" -depth -delete
 fi
@@ -86,13 +86,13 @@ hdiutil attach -readonly -nobrowse -mountpoint "$mount" "$source_dmg" -quiet
 mounted=true
 desktop_app=$(find "$mount" -maxdepth 2 -type d -name 'BMS POS.app' -print -quit)
 [[ -n $desktop_app && -x $desktop_app/Contents/MacOS/BMS\ POS ]] || {
-  echo "source DMG ไม่มี BMS POS.app" >&2; exit 1;
+  echo "Source DMG does not contain BMS POS.app" >&2; exit 1;
 }
 desktop_file=$(file "$desktop_app/Contents/MacOS/BMS POS")
 if [[ $architecture == arm64 ]]; then
-  [[ $desktop_file == *arm64* ]] || { echo "source app ไม่ใช่ arm64" >&2; exit 1; }
+  [[ $desktop_file == *arm64* ]] || { echo "Source app is not arm64" >&2; exit 1; }
 else
-  [[ $desktop_file == *x86_64* ]] || { echo "source app ไม่ใช่ x64" >&2; exit 1; }
+  [[ $desktop_file == *x86_64* ]] || { echo "Source app is not x64" >&2; exit 1; }
 fi
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$desktop_app" "$output_dir/desktop.artifact"
 hdiutil detach "$mount" -quiet
@@ -145,4 +145,4 @@ node "$managed_root/verify-release.mjs" --manifest "$output_dir/release.jws.json
 (cd "$agent_root" && go run . verify-release -manifest "$output_dir/release.jws.json" \
   -keyring "$keyring" -target "macos-15-$architecture" >/dev/null)
 shasum -a 256 "$output_dir"/*.artifact "$output_dir/release.jws.json" >"$output_dir/SHA256SUMS"
-printf 'POS local test release พร้อม: %s (%s)\n' "$output_dir" "macos-15-$architecture"
+printf 'POS local test release ready: %s (%s)\n' "$output_dir" "macos-15-$architecture"

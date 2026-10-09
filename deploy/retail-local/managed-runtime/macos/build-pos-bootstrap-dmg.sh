@@ -47,26 +47,26 @@ is_https_url() { [[ ${1:-} =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && ${1:-
 is_placeholder_url() {
   [[ ${1:-} =~ ^https://(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.example\.(com|invalid)|example\.(com|invalid)|[^/]*\.invalid)([/:?#]|$) ]]
 }
-is_https_url "$manifest_url" || { echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
-[[ -z $control_url ]] || is_https_url "$control_url" || { echo "control URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
+is_https_url "$manifest_url" || { echo "manifest URL must use HTTPS and contain no credentials" >&2; exit 2; }
+[[ -z $control_url ]] || is_https_url "$control_url" || { echo "control URL must use HTTPS and contain no credentials" >&2; exit 2; }
 test_build=false
 if is_placeholder_url "$manifest_url" || { [[ -n $control_url ]] && is_placeholder_url "$control_url"; }; then
   test_build=true
   [[ $allow_test_endpoints == true ]] || {
-    echo "ปฏิเสธ localhost/example endpoint; ใช้ --allow-test-endpoints ได้เฉพาะ smoke test" >&2; exit 2;
+    echo "Refusing localhost/example endpoints; use --allow-test-endpoints only for smoke tests" >&2; exit 2;
   }
 fi
 if [[ -n $test_ca ]]; then
   [[ $test_build == true && $allow_test_endpoints == true && -f $test_ca ]] || {
-    echo "--test-ca ใช้ได้เฉพาะ smoke build ที่เป็น localhost/example endpoint" >&2; exit 2;
+    echo "--test-ca is allowed only for smoke builds using localhost/example endpoints" >&2; exit 2;
   }
-  grep -q 'BEGIN CERTIFICATE' "$test_ca" || { echo "test CA ไม่ใช่ PEM certificate" >&2; exit 2; }
-  ! grep -q 'PRIVATE KEY' "$test_ca" || { echo "ห้ามใส่ private key ใน bootstrap" >&2; exit 2; }
+  grep -q 'BEGIN CERTIFICATE' "$test_ca" || { echo "Test CA is not a PEM certificate" >&2; exit 2; }
+  ! grep -q 'PRIVATE KEY' "$test_ca" || { echo "Do not include private keys in the bootstrap" >&2; exit 2; }
 fi
-grep -q 'BEGIN PUBLIC KEY' "$keyring" || { echo "keyring ไม่มี public key" >&2; exit 2; }
-! grep -q 'PRIVATE KEY' "$keyring" || { echo "ห้ามใส่ private key ใน bootstrap" >&2; exit 2; }
+grep -q 'BEGIN PUBLIC KEY' "$keyring" || { echo "Keyring has no public key" >&2; exit 2; }
+! grep -q 'PRIVATE KEY' "$keyring" || { echo "Do not include private keys in the bootstrap" >&2; exit 2; }
 [[ $(/usr/bin/plutil -extract formatVersion raw -o - "$keyring" 2>/dev/null || true) == 1 ]] || {
-  echo "keyring ต้องเป็น JSON formatVersion 1" >&2; exit 2;
+  echo "Keyring must use JSON formatVersion 1" >&2; exit 2;
 }
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
@@ -85,9 +85,9 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 for command in file go hdiutil plutil shasum; do
-  command -v "$command" >/dev/null || { echo "ไม่พบ $command" >&2; exit 1; }
+  command -v "$command" >/dev/null || { echo "Command was not found: $command" >&2; exit 1; }
 done
-[[ $(uname -s) == Darwin ]] || { echo "macOS POS bootstrap ต้อง build บน macOS" >&2; exit 1; }
+[[ $(uname -s) == Darwin ]] || { echo "macOS POS bootstrap must be built on macOS" >&2; exit 1; }
 
 case "$architecture" in
   arm64) go_arch=arm64 ;;
@@ -98,7 +98,7 @@ qualifier=
 dmg_name="BMS-Retail-Local-POS-$version-macos-$architecture$qualifier.dmg"
 dmg_path="$output_dir/$dmg_name"
 for candidate in "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; do
-  [[ ! -e $candidate || $force == true ]] || { echo "artifact มีอยู่แล้ว: $candidate" >&2; exit 1; }
+  [[ ! -e $candidate || $force == true ]] || { echo "Artifact already exists: $candidate" >&2; exit 1; }
 done
 if [[ $force == true ]]; then rm -f -- "$dmg_path" "$dmg_path.sha256" "$dmg_path.json"; fi
 cleanup_outputs=true
@@ -178,4 +178,4 @@ cat >"$dmg_path.json" <<EOF
 EOF
 
 build_complete=true
-printf 'macOS POS online bootstrap พร้อม: %s (%s bytes)\n' "$dmg_path" "$size"
+printf 'macOS POS online bootstrap ready: %s (%s bytes)\n' "$dmg_path" "$size"
