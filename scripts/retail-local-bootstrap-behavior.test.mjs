@@ -18,6 +18,121 @@ function run(command, args, options = {}) {
   return spawnSync(command, args, { encoding: 'utf8', timeout: 60000, ...options });
 }
 
+test('Windows license bridge schedules the paired WSL worker and starts it immediately', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/windows/install-managed-runtime.ps1');
+  const bridge = source.match(/function Register-LicenseUIBridge \{[\s\S]*?\r?\n\}/)?.[0];
+  assert.ok(bridge);
+  const fixture = join(root, 'license-task.ps1');
+  writeFileSync(fixture, '\ufeff' + `
+$ErrorActionPreference = 'Stop'
+$installedAgent='C:\\Program Files\\BMS\\bms-runtime-agent.exe'
+$InstallRoot='C:\\ProgramData\\BMS Retail Local'
+$ActivationUri='https://license.example.invalid/activate'
+$distroName='BMSRuntime'
+function Register-LicenseEvidenceTask { $script:evidence=$true }
+function New-ScheduledTaskAction { param($Execute,$Argument) @{Execute=$Execute;Argument=$Argument} }
+function New-ScheduledTaskTrigger { param([switch]$Once,$At,$RepetitionInterval) @{Once=[bool]$Once;Seconds=$RepetitionInterval.TotalSeconds} }
+function New-ScheduledTaskPrincipal { param($UserId,$LogonType,$RunLevel) @{UserId=$UserId;LogonType=$LogonType;RunLevel=$RunLevel} }
+function New-ScheduledTaskSettingsSet { param([switch]$StartWhenAvailable,$MultipleInstances,$ExecutionTimeLimit) @{Instances=$MultipleInstances;Seconds=$ExecutionTimeLimit.TotalSeconds} }
+function Register-ScheduledTask { param($TaskName,$Action,$Trigger,$Principal,$Settings,[switch]$Force) $script:task=@{Name=$TaskName;Action=$Action;Trigger=$Trigger;Principal=$Principal;Settings=$Settings} }
+function Start-ScheduledTask { param($TaskName) $script:started=$TaskName }
+${bridge}
+Register-LicenseUIBridge
+@{Task=$task;Started=$started;Evidence=$evidence;User=$env:USERNAME} | ConvertTo-Json -Depth 6 -Compress
+`);
+  const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', fixture]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const state = JSON.parse(result.stdout.trim());
+  assert.equal(state.Evidence, true);
+  assert.equal(state.Started, state.Task.Name);
+  assert.equal(state.Task.Name, 'BMS Retail Local License UI');
+  assert.equal(state.Task.Trigger.Seconds, 60);
+  assert.equal(state.Task.Settings.Seconds, 55);
+  assert.equal(state.Task.Settings.Instances, 'IgnoreNew');
+  assert.equal(state.Task.Principal.UserId, state.User);
+  assert.equal(state.Task.Principal.LogonType, 'S4U');
+  assert.equal(state.Task.Action.Argument, 'license-ui -root "C:\\ProgramData\\BMS Retail Local" -engine windows-wsl -distro BMSRuntime -activation-uri "https://license.example.invalid/activate"');
+});
+
+test('macOS license LaunchAgent has a runnable plist and polls only a running Lima instance', {
+  skip: process.platform !== 'darwin',
+}, t => {
+  const root = workspace(t);
+  const source = read('deploy/retail-local/managed-runtime/macos/bms-retail-local');
+  const extract = name => {
+    const fn = source.match(new RegExp(`${name}\\(\\) \\{[\\s\\S]*?\\n\\}`))?.[0];
+    assert.ok(fn);
+    return fn;
+  };
+  writeFileSync(join(root, 'activation-url'), 'https://license.example.invalid/activate\n');
+  writeFileSync(join(root, 'installation.json'), '{}');
+  const script = `set -euo pipefail
+INSTALL_MODE=online; BOOTSTRAP_ROOT=$1; CONTROL_ROOT="$1/control with spaces"
+LICENSE_UI_AGENT="$1/license.plist"; RECEIPT="$1/installation.json"; STATE_ROOT="$1/state with spaces"
+INSTANCE=bms-retail-local; AGENT=agent_probe; state=Running
+# OS registration is intercepted; plutil writes and parses a real temporary plist.
+mkdir() { :; }
+launchctl() { printf '%s\\n' "$*" >>"$BOOTSTRAP_ROOT/launch-calls"; }
+load_installed_release() { :; }
+instance_status() { printf '%s\\n' "$state"; }
+agent_probe() { printf '%s\\n' "$@" >"$BOOTSTRAP_ROOT/agent-args"; }
+${extract('install_license_ui_agent')}
+${extract('poll_license_ui')}
+install_license_ui_agent
+poll_license_ui
+mv "$BOOTSTRAP_ROOT/agent-args" "$BOOTSTRAP_ROOT/running-args"
+state=Stopped
+poll_license_ui
+test ! -e "$BOOTSTRAP_ROOT/agent-args"
+/usr/bin/plutil -convert json -o - "$LICENSE_UI_AGENT"
+`;
+  const result = run('bash', ['-c', script, 'test', root]);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const plist = JSON.parse(result.stdout);
+  assert.equal(plist.Label, 'com.bms.retail-local.license-ui');
+  assert.equal(plist.StartInterval, 30);
+  assert.equal(plist.RunAtLoad, true);
+  assert.deepEqual(plist.ProgramArguments, [join(root, 'control with spaces/bms-retail-local'), 'license-ui']);
+  assert.match(readFileSync(join(root, 'launch-calls'), 'utf8'), /bootstrap gui\//);
+  assert.deepEqual(readFileSync(join(root, 'running-args'), 'utf8').trim().split('\n'), [
+    'license-ui', '-root', join(root, 'state with spaces'), '-engine', 'macos-lima',
+    '-distro', 'bms-retail-local', '-activation-uri', 'https://license.example.invalid/activate',
+  ]);
+});
+
+test('Windows/Linux online wrapper refuses a missing activation endpoint before building', {
+  skip: process.platform !== 'win32',
+}, t => {
+  const root = workspace(t);
+  const result = run('pwsh', ['-NoProfile', '-NonInteractive', '-File',
+    join(repo, 'deploy/retail-local/build-online-bootstrap.ps1'), '-Version', '0.0.1-test',
+    '-Keyring', join(root, 'unused-keyring.json'), '-Target', 'Windows']);
+  assert.notEqual(result.status, 0);
+  assert.match(result.stdout + result.stderr, /ActivationUri/);
+});
+
+for (const builder of ['linux/build-deb.sh', 'macos/build-bootstrap-pkg.sh', 'macos/build-bootstrap-dmg.sh']) {
+  test(`${builder} refuses missing or unsafe activation endpoints before packaging`, {
+    skip: process.platform === 'win32',
+  }, t => {
+    const root = workspace(t);
+    const keyring = join(root, 'keyring.json');
+    writeFileSync(keyring, '{}');
+    for (const endpoint of ['', 'http://control.example.invalid/activate', 'https://user:secret@control.example.invalid/activate']) {
+      const result = run('bash', ['-c', read(`deploy/retail-local/managed-runtime/${builder}`).replace(/\r\n/g, '\n'), 'test',
+        '--keyring', keyring, '--version', '0.0.1-test', '--manifest-url', 'https://release.example.invalid/manifest',
+        ...(builder.startsWith('macos') ? ['--architecture', 'arm64'] : []),
+        ...(endpoint ? ['--activation-url', endpoint] : []),
+      ]);
+      assert.equal(result.status, 2, result.stdout + result.stderr);
+      assert.match(result.stderr, /activation URL/);
+    }
+  });
+}
+
 const shopTypeFixture = {
   formatVersion: 1,
   defaultArchetype: 'retail',
@@ -90,7 +205,7 @@ function Read-Utf8Text([string]$Path) { [IO.File]::ReadAllText($Path, [Text.Enco
 ${fn}
 Get-ShopArchetypeCatalog $Manifest | ConvertTo-Json -Depth 5
 `);
-    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-File', script, manifest]);
+    const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, manifest]);
     assert.equal(result.status, 0, result.stdout + result.stderr);
     const catalog = JSON.parse(result.stdout);
     assert.equal(catalog.DefaultValue, 'retail');
@@ -796,6 +911,8 @@ function New-ScheduledTaskSettingsSet { param($ExecutionTimeLimit, $RestartCount
 function Register-ScheduledTask { param($TaskName, $Action, $Trigger, $Principal, $Settings, [switch]$Force); Write-Host "registered:$TaskName" }
 function Start-ScheduledTask { param($TaskName); Write-Host "started:$TaskName" }
 function Unregister-ScheduledTask { param($TaskName, $Confirm, $ErrorAction); Write-Host "removed:$TaskName" }
+function Register-LicenseUIBridge { Write-Host 'license-bridge-registered' }
+function Show-SetupCompletion { Write-Host 'setup-complete' }
 ${startup}
 ${recovery}
 throw 'fell through to first install'
@@ -803,7 +920,7 @@ throw 'fell through to first install'
   for (const scenario of ['present', 'missing']) {
     const result = run('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', harness, root, scenario]);
     assert.equal(result.status === 0, scenario === 'present', result.stdout + result.stderr);
-    if (scenario === 'present') assert.match(result.stdout, /registered:BMS Retail Local Runtime[\s\S]*started:BMS Retail Local Runtime[\s\S]*engine-ready[\s\S]*repair-called[\s\S]*removed:BMS Retail Local Setup Resume/);
+    if (scenario === 'present') assert.match(result.stdout, /registered:BMS Retail Local Runtime[\s\S]*started:BMS Retail Local Runtime[\s\S]*engine-ready[\s\S]*repair-called[\s\S]*license-bridge-registered[\s\S]*removed:BMS Retail Local Setup Resume/);
     else assert.doesNotMatch(result.stdout, /registered:|repair-called/);
   }
 });

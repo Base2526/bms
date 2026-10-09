@@ -141,10 +141,13 @@ services:
     restart: unless-stopped
     environment:
       <<: *web-runtime
+      BMS_LOCAL_LICENSE_UI_DIR: /run/bms-license-ui
     ports:
       - "127.0.0.1:${BMS_LOCAL_WEB_PORT:-3100}:3000"
     volumes:
       - storage_data:/app/storage
+      - ./license-ui/status:/run/bms-license-ui/status:ro
+      - ./license-ui/requests:/run/bms-license-ui/requests
     depends_on:
       migrate:
         condition: service_completed_successfully

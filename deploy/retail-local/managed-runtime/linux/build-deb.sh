@@ -3,7 +3,7 @@ set -Eeuo pipefail
 
 usage() {
   cat >&2 <<'EOF'
-usage: build-deb.sh --keyring FILE [--agent FILE] [--manifest-url HTTPS_URL] [--activation-url HTTPS_URL] [--package-type server-pos|server] [--version VERSION] [--output-dir DIR]
+usage: build-deb.sh --keyring FILE --activation-url HTTPS_URL [--agent FILE] [--manifest-url HTTPS_URL] [--package-type server-pos|server] [--version VERSION] [--output-dir DIR]
 
 Builds the small Ubuntu x64 bootstrap package. The keyring must contain only trusted Ed25519 public
 keys. Private keys and application images are never copied into this package. When --agent is
@@ -41,7 +41,7 @@ done
 if [[ -n $manifest_url && ! $manifest_url =~ ^https://[^/@:]+([/:?#]|$) ]]; then
   echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
 fi
-if [[ -n $activation_url && ! $activation_url =~ ^https://[^/@:]+([/:?#]|$) ]]; then
+if [[ ! $activation_url =~ ^https://[^/@:]+([/:?#]|$) || $activation_url == *'@'* ]]; then
   echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
 fi
 

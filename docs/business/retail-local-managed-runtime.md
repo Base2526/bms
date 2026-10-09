@@ -57,6 +57,29 @@ bootstrap as well as the application payload. POS-only packages do not need this
 Older payloads keep their command-line activation path; they must not be advertised as supporting
 web registration. Do not edit an already published signed manifest in place.
 
+Registration release checks must exercise the container boundary, not only the host and Web
+unit tests. `node --test scripts/retail-local-license-container.test.mjs` resolves both Compose
+profiles and checks real container reads, read-only status protection, request writes and atomic
+host status replacement using disposable mailboxes. It needs Docker and defaults to
+`node:22-bookworm-slim`; set `BMS_LICENSE_SMOKE_IMAGE` to the built Web image and
+`BMS_LICENSE_SMOKE_COMPOSE` to the staged `compose.artifact` to check a release candidate.
+Managed Runtime CI runs this alongside the license mailbox/UI contracts and the database suite
+with migrations `10.28` (owner reference) and `10.35` (activation retry). These checks do not redeem
+a live code. Release acceptance still requires the signed payload on a clean supported machine:
+the registration field becomes enabled, a test license reaches its confirmed status, and a retry
+does not consume another activation. A fresh host-side heartbeat alone does not prove Web can read
+it. Missing `BMS_LOCAL_LICENSE_UI_DIR` or either mailbox mount requires a new signed Compose
+component and an installed-runtime update; refreshing the browser cannot repair it.
+
+Online Server and Server + POS builders require an explicit HTTPS activation endpoint
+(`-ActivationUri` on the Windows/Linux wrapper, `--activation-url` on the native Linux/macOS
+builders). This is the control-plane URL packaged by the publisher, not an Activation Code
+requested from the shop. Without it, the periodic registration worker cannot process a code.
+Windows worker configuration is exercised through intercepted Scheduled Task commands; macOS
+CI validates an actual LaunchAgent plist and intercepted `launchctl`/agent calls. Linux agent
+tests exercise the filesystem mailbox and maintenance lock natively. These tests do not replace
+clean-machine WSL/systemd/Lima install-and-register acceptance tests on all three platforms.
+
 Online bootstraps report successful POS, Server, and Server + POS installation instances to the
 platform registry. The agent creates a random UUID and private `bmsit_` credential under its local
 state root, sends only package/OS/architecture/release and timestamps, and refreshes Server records

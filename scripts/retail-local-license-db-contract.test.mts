@@ -53,7 +53,7 @@ test("license ingestion stores an accepted chain and flags a second installation
   const token = `bmslt_${crypto.randomBytes(32).toString("base64url")}`;
   const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
   await query(
-    `INSERT INTO bms_retail_local_licenses (id, license_code, max_active_installations) VALUES ($1,$2,1)`,
+    `INSERT INTO bms_retail_local_licenses (id, license_code, customer_reference, max_active_installations) VALUES ($1,$2,$2,1)`,
     [licenseId, licenseCode]
   );
   await query(
@@ -109,9 +109,9 @@ test("activation is one-use and commercial retries are idempotent", async (t) =>
   );
   await query(
     `INSERT INTO bms_retail_local_licenses
-       (id, license_code, max_active_installations, license_type, commercial_status,
+       (id, license_code, customer_reference, max_active_installations, license_type, commercial_status,
         trial_started_at, trial_expires_at)
-     VALUES ($1,$2,1,'TRIAL','TRIAL_ACTIVE',now(),now() + interval '30 days')`,
+     VALUES ($1,$2,$2,1,'TRIAL','TRIAL_ACTIVE',now(),now() + interval '30 days')`,
     [licenseId, licenseCode],
   );
   await query(

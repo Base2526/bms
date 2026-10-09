@@ -159,9 +159,11 @@ test('Linux DEBs include the diagnostics helper and bootstrap version', { skip: 
       'https://example.invalid/release', 'ubuntu-24.04-lts-x64', root],
       'bms-pos-online-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-pos-bootstrap'],
     ['server', [join(managed, 'linux/build-deb.sh'), '--version', '1.2.3-test', '--agent', agent,
+      '--activation-url', 'https://control.example.invalid/activate',
       '--keyring', keyring, '--manifest-url', 'https://example.invalid/release', '--package-type', 'server', '--output-dir', root],
       'bms-retail-local-server-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-retail-local/bootstrap'],
     ['server-pos', [join(managed, 'linux/build-deb.sh'), '--version', '1.2.3-test', '--agent', agent,
+      '--activation-url', 'https://control.example.invalid/activate',
       '--keyring', keyring, '--manifest-url', 'https://example.invalid/release', '--package-type', 'server-pos', '--output-dir', root],
       'bms-retail-local-server-pos-bootstrap_1.2.3-test_amd64.deb', 'usr/lib/bms-retail-local/bootstrap'],
   ]) {
@@ -172,6 +174,12 @@ test('Linux DEBs include the diagnostics helper and bootstrap version', { skip: 
     assert.equal(unpacked.status, 0, unpacked.stderr);
     assert.equal(readFileSync(join(extracted, prefix, 'setup-diagnostics.sh'), 'utf8'), readFileSync(helper, 'utf8'));
     assert.equal(readFileSync(join(extracted, prefix, 'BOOTSTRAP_VERSION'), 'utf8').trim(), '1.2.3-test');
+    if (name !== 'pos') {
+      assert.equal(readFileSync(join(extracted, 'etc/bms-retail-local/activation-url'), 'utf8').trim(), 'https://control.example.invalid/activate');
+      for (const unit of ['bms-retail-local-license-ui.service', 'bms-retail-local-license-ui.timer']) {
+        assert.equal(readFileSync(join(extracted, 'lib/systemd/system', unit), 'utf8'), readFileSync(join(managed, 'linux', unit), 'utf8'));
+      }
+    }
   }
 });
 

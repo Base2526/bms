@@ -109,7 +109,7 @@ if ([string]::IsNullOrWhiteSpace($WindowsManifestUri)) { $WindowsManifestUri = $
 if ([string]::IsNullOrWhiteSpace($LinuxManifestUri)) { $LinuxManifestUri = $releaseUrls.LinuxManifestUri }
 Assert-HttpsUri "WindowsManifestUri" $WindowsManifestUri
 Assert-HttpsUri "LinuxManifestUri" $LinuxManifestUri
-Assert-HttpsUri "ActivationUri" $ActivationUri $true
+Assert-HttpsUri "ActivationUri" $ActivationUri
 $testBuild = (Test-PlaceholderUri $WindowsManifestUri) -or
   (Test-PlaceholderUri $LinuxManifestUri) -or
   (Test-PlaceholderUri $ActivationUri)

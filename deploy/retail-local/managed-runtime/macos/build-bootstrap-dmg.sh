@@ -5,7 +5,7 @@ export COPYFILE_DISABLE=1
 usage() {
   cat >&2 <<'EOF'
 usage: build-bootstrap-dmg.sh --version VERSION --architecture arm64|x64 \
-  --manifest-url HTTPS_URL --keyring FILE [--activation-url HTTPS_URL] \
+  --manifest-url HTTPS_URL --keyring FILE --activation-url HTTPS_URL \
   [--output-dir DIR] [--allow-test-endpoints] [--test-ca FILE] [--force] [--skip-tests]
 
 Builds a small Server + POS macOS online-bootstrap DMG. The DMG contains the architecture-specific
@@ -45,6 +45,9 @@ done
 [[ $architecture == arm64 || $architecture == x64 ]] || usage
 [[ -f $keyring ]] || usage
 [[ $manifest_url =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $manifest_url != *'@'* ]] || usage
+[[ $activation_url =~ ^https://[^/@:]+(:[0-9]{1,5})?([/?#].*)?$ && $activation_url != *'@'* ]] || {
+  echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2
+}
 
 repo_root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../../.." && pwd)
 macos_root="$repo_root/deploy/retail-local/managed-runtime/macos"
@@ -70,9 +73,9 @@ pkg_args=(
   --architecture "$architecture"
   --manifest-url "$manifest_url"
   --keyring "$keyring"
+  --activation-url "$activation_url"
   --output-dir "$work/pkg"
 )
-[[ -z $activation_url ]] || pkg_args+=(--activation-url "$activation_url")
 [[ $allow_test_endpoints != true ]] || pkg_args+=(--allow-test-endpoints)
 [[ -z $test_ca ]] || pkg_args+=(--test-ca "$test_ca")
 [[ $skip_tests != true ]] || pkg_args+=(--skip-tests)

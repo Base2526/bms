@@ -5,7 +5,7 @@ export COPYFILE_DISABLE=1
 usage() {
   cat >&2 <<'EOF'
 usage: build-bootstrap-pkg.sh --version VERSION --architecture arm64|x64 \
-  --manifest-url HTTPS_URL --keyring FILE [--activation-url HTTPS_URL] \
+  --manifest-url HTTPS_URL --keyring FILE --activation-url HTTPS_URL \
   [--package-type server-pos|server] \
   [--output-dir DIR] [--allow-test-endpoints] [--test-ca FILE] [--force] [--skip-tests]
 
@@ -55,9 +55,7 @@ is_placeholder_url() {
   [[ ${1:-} =~ ^https://(localhost|127\.0\.0\.1|\[::1\]|[^/]*\.example\.(com|invalid)|example\.(com|invalid)|[^/]*\.invalid)([/:?#]|$) ]]
 }
 is_https_url "$manifest_url" || { echo "manifest URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
-if [[ -n $activation_url ]]; then
-  is_https_url "$activation_url" || { echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
-fi
+is_https_url "$activation_url" || { echo "activation URL ต้องเป็น HTTPS และไม่มี credential" >&2; exit 2; }
 test_build=false
 if is_placeholder_url "$manifest_url" || { [[ -n $activation_url ]] && is_placeholder_url "$activation_url"; }; then
   test_build=true
