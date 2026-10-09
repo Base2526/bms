@@ -11,9 +11,9 @@ Publishes a Windows/Linux Retail Local release uploaded by FTP to:
 The public destination is:
   /mnt/volume_sgp1_01/releases/retail-local/VERSION
 
-The script preserves existing macOS folders, refuses to overwrite existing target folders or
-installer files, publishes only public runtime files, and deletes the uploaded staging folder only
-after every validation and publish step succeeds.
+The script preserves existing macOS folders, refuses to overwrite existing runtime target folders,
+publishes only public runtime files, and deletes the uploaded staging folder only after every
+validation and publish step succeeds. Installer files are uploaded separately through BMS.
 EOF
 }
 
@@ -143,26 +143,6 @@ for folder in "${!expected_targets[@]}"; do
   printf '  OK  %s (%s)\n' "$folder" "${expected_targets[$folder]}"
 done
 
-installer_source=$stage/installers
-[[ -d $installer_source ]] || die "Missing installer folder: $installer_source"
-mapfile -d '' installer_files < <(
-  find "$installer_source" -maxdepth 1 -type f -name "BMS-Retail-Local-*-$version-*" -print0 | sort -z
-)
-(( ${#installer_files[@]} == 21 )) || {
-  die "Expected 21 installer/package metadata files, found ${#installer_files[@]}"
-}
-for package in "$installer_source"/*.exe "$installer_source"/*.deb; do
-  [[ -f $package ]] || continue
-  sidecar=$package.sha256
-  metadata=$package.json
-  [[ -f $sidecar && -f $metadata ]] || die "Missing sidecars for $(basename -- "$package")"
-  (
-    cd -- "$installer_source"
-    sha256sum --strict -c "$(basename -- "$sidecar")" >/dev/null
-  ) || die "Installer checksum failed: $(basename -- "$package")"
-done
-printf '  OK  7 online installers and 14 sidecar files\n'
-
 if $dry_run; then
   printf 'Dry run completed. No files were moved or deleted.\n'
   exit 0
@@ -174,16 +154,9 @@ flock -n 9 || die "Another Retail Local publish is running"
 mkdir -p -- "$final"
 
 # Check every collision before the first public write so an operator error cannot publish a
-# half-merged Windows/Linux release alongside the existing macOS folders.
+# half-merged Windows/Linux runtime release alongside the existing macOS folders.
 for folder in ubuntu-24.04-lts-x64 windows-11-x64 windows-10-x86; do
   [[ ! -e $final/$folder ]] || die "Destination already exists; refusing to overwrite: $final/$folder"
-done
-installer_destination=$final/installers
-for source_file in "${installer_files[@]}"; do
-  filename=$(basename -- "$source_file")
-  [[ ! -e $installer_destination/$filename ]] || {
-    die "Installer destination already exists; refusing to overwrite: $installer_destination/$filename"
-  }
 done
 if [[ -e $final/trusted-release-keys.json ]]; then
   cmp -s -- "$keyring" "$final/trusted-release-keys.json" || {
@@ -213,26 +186,6 @@ for folder in ubuntu-24.04-lts-x64 windows-11-x64 windows-10-x86; do
   cleanup_paths=("${cleanup_paths[@]/$publishing_dir}")
   printf 'Published %s\n' "$destination"
 done
-
-mkdir -p -- "$installer_destination"
-installer_temp=$release_root/.${version}-installers.publishing.$$
-mkdir -- "$installer_temp"
-cleanup_paths+=("$installer_temp")
-for source_file in "${installer_files[@]}"; do
-  filename=$(basename -- "$source_file")
-  install -m 0644 -- "$source_file" "$installer_temp/$filename"
-done
-for source_file in "$installer_temp"/*; do
-  mv -- "$source_file" "$installer_destination/$(basename -- "$source_file")"
-done
-rmdir -- "$installer_temp"
-cleanup_paths=("${cleanup_paths[@]/$installer_temp}")
-(
-  cd -- "$installer_destination"
-  find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%f\0' \
-    | sort -z \
-    | xargs -0 sha256sum >SHA256SUMS
-)
 
 if [[ -e $final/trusted-release-keys.json ]]; then
   : # Equality was checked before publishing any files.
