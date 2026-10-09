@@ -250,7 +250,7 @@ function priceForModel(
 }
 
 /** Platform-funded AI only. Applies to every plan, including unlimited credits. */
-export const SHARED_AI_MONTHLY_BUDGET_USD = 2000;
+export const SHARED_AI_MONTHLY_BUDGET_USD = 100;
 
 export class AiUsageAdmissionError extends Error {
   constructor(readonly code: "AI_BUDGET_EXHAUSTED" | "AI_BUDGET_UNPRICED" | "AI_USAGE_UNAVAILABLE") {
@@ -1203,7 +1203,7 @@ export async function recordAiProviderAttempt(
         const ceiling = aiAttemptReservationUsd(attempt?.model ?? row.model, attempt?.provider ?? row.provider, attempt?.maxOutputTokens);
         const budget = await readSharedBudget(client, tenantId, yearMonth);
         // Legacy unknown spending is not $0. Require evidence/reconciliation
-        // rather than granting another $2,000 on top of an unknown bill.
+        // rather than granting another $100 on top of an unknown bill.
         const code = ceiling == null || budget.unaccounted > 0 ? 'AI_BUDGET_UNPRICED'
           : Math.round(budget.spent * 1e8) + Math.round(budget.reserved * 1e8) + Math.round(ceiling * 1e8)
             > SHARED_AI_MONTHLY_BUDGET_USD * 1e8 ? 'AI_BUDGET_EXHAUSTED' : null;
@@ -1228,7 +1228,7 @@ export async function recordAiProviderAttempt(
                 budget_reserved_usd = budget_reserved_usd + $2,
                 meta = meta || $3::jsonb
           WHERE id = $1`,
-        [eventId, reserve, JSON.stringify({ budget_policy: "shared_usd_2000_v1", budget_last_provider: attempt?.provider ?? row.provider })]
+        [eventId, reserve, JSON.stringify({ budget_policy: "shared_usd_100_v2", budget_last_provider: attempt?.provider ?? row.provider })]
       );
       return null;
     });

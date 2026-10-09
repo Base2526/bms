@@ -656,7 +656,7 @@ rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC 
 **Shared AI budget (`10.54__bms_ai_cost_budget.sql`)** — adds nonnegative
 `budget_reserved_usd NUMERIC(16,8) NOT NULL DEFAULT 0` to `bms_ai_usage_events` and a partial
 `(tenant_id, year_month)` index for `source='shared'`. Existing RLS/grants continue to apply.
-All plans, including Business, share the service-enforced $2,000 per-tenant UTC-month cap.
+All plans, including Business, share the service-enforced $100 per-tenant UTC-month cap.
 Admission locks monthly row before event, reserves the actual model ceiling before network I/O,
 and finalization replaces only known exposure with attributed cost. Unknown holds survive stale
 cleanup; legacy unknown attempts without holds block admission. No speculative backfill. Apply

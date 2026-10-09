@@ -27,7 +27,7 @@ try {
         return route.fulfill({ json: { data: { bmsWorkAssistant: { reply: 'FAKE verified answer', proposals: [], trace: [] } } } });
       }
       if (q.includes('bmsAiUsage')) reads++;
-      const budget = { sharedBudgetLimitUsd: 2000, sharedBudgetSpentUsd: blocked ? 1999 : 12.3456, sharedBudgetReservedUsd: blocked ? 1 : 2, sharedBudgetRemainingUsd: blocked ? 0 : 1985.6544, sharedBudgetBlocked: blocked, sharedBudgetUnaccountedCalls: 0 };
+      const budget = { sharedBudgetLimitUsd: 100, sharedBudgetSpentUsd: blocked ? 99 : 12.3456, sharedBudgetReservedUsd: blocked ? 1 : 2, sharedBudgetRemainingUsd: blocked ? 0 : 85.6544, sharedBudgetBlocked: blocked, sharedBudgetUnaccountedCalls: 0 };
       const data = {
         bmsAiLimitNotifications: { unreadCount: warning || blocked ? noticeRead ? 0 : 1 : 0,
           items: warning || blocked ? [{ id: '11111111-1111-4111-8111-111111111111', dimension: 'BUDGET', level: blocked ? 'PAUSED' : `WARNING_${warning}`, yearMonth: '2026-10', isRead: noticeRead, createdAt: '2026-10-09T00:00:00Z' }] : [] },
@@ -80,19 +80,19 @@ try {
       creditBlocked = false;
       unlimited = true;
       await page.goto(`${base}/admin/billing`, { waitUntil: 'domcontentloaded' });
-      await page.getByText(/\$2000.*Business|Business.*\$2000/).first().waitFor();
-      await page.getByText(/1985.6544/).first().waitFor();
+      await page.getByText(/\$100.*Business|Business.*\$100/).first().waitFor();
+      await page.getByText(/85.6544/).first().waitFor();
       assert.doesNotMatch(await page.locator('body').innerText(), /-1 AI Credits|0 \/ -1|total -1|ทั้งหมด -1/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, 'no page overflow');
       await page.screenshot({ path: `${output}/billing-${lang}-${width}.png`, fullPage: true });
       if (width === 390) {
-        await page.getByText(/1985.6544/).first().scrollIntoViewIfNeeded();
+        await page.getByText(/85.6544/).first().scrollIntoViewIfNeeded();
         await page.screenshot({ path: `${output}/budget-mobile-${lang}.png` });
       }
       blocked = true;
       await page.getByRole('button', { name: /Refresh/, exact: false }).last().click();
       await refreshStatus();
-      await page.getByText(/1999.0000/).first().waitFor();
+      await page.getByText(/99.0000/).first().waitFor();
       if (width === 1440) await page.locator('a.bms-sider-quiet[href="/admin/billing"]').waitFor();
       await page.getByText(lang === 'th' ? 'วงเงินต้นทุน AI ส่วนกลาง: วงเงินไม่พอสำหรับคำขอที่ถูกปฏิเสธ' : 'Shared AI cost budget: Insufficient budget for the refused request', { exact: true }).waitFor();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, 'blocked state fits mobile');

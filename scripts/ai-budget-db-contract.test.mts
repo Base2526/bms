@@ -39,7 +39,7 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
   await t.test('Business credits remain unlimited but two concurrent calls cannot spend the last budget twice', async () => {
     const tenant = await shop('business');
     const ceiling = aiAttemptReservationUsd(model, provider)!;
-    await seedCost(tenant, 2000 - ceiling);
+    await seedCost(tenant, 100 - ceiling);
     const ids = await Promise.all([reserve(tenant), reserve(tenant)]);
     const attempts = await Promise.allSettled(ids.map(id => recordAiProviderAttempt(id)));
     assert.equal(attempts.filter(r => r.status === 'fulfilled').length, 1);
@@ -50,7 +50,7 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
     assert.equal(usage.count, 0);
     assert.equal(usage.sharedBudgetRemainingUsd, 0);
     assert.equal(usage.sharedBudgetBlocked, true);
-    assert.equal(usage.sharedBudgetSpentUsd + usage.sharedBudgetReservedUsd, 2000);
+    assert.equal(usage.sharedBudgetSpentUsd + usage.sharedBudgetReservedUsd, 100);
     // An unrelated shop and tenant-owned key both remain usable.
     await recordAiProviderAttempt(await reserve(await shop()));
     await recordAiProviderAttempt(await recordByokAiUsage(tenant, context));
@@ -140,7 +140,7 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
 
   await t.test('a retry/fallback has no second credit but must still reserve the fallback model expense', async () => {
     const tenant = await shop();
-    await seedCost(tenant, 1999.9);
+    await seedCost(tenant, 99.9);
     const id = await recordSharedAiRetryUsage(tenant, context);
     assert.equal(Number((await event(id)).billable_credits), 0);
     await assert.rejects(recordAiProviderAttempt(id), (e: any) => e.code === 'AI_BUDGET_EXHAUSTED');

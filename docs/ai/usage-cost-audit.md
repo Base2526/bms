@@ -3,13 +3,20 @@
 รายงานนี้ตรวจโค้ดและทดสอบกับข้อมูลจำลองในเครื่อง ไม่ได้อ่าน invoice หรือฐาน production
 จึงยืนยันช่องโหว่และพฤติกรรมของโค้ดได้ แต่ยังสรุปยอดขาดทุนจริงย้อนหลังไม่ได้
 
+เพดานปัจจุบันตามคำสั่งล่าสุดคือ **$100 ต่อร้านต่อเดือน รวม Business** เตือนที่ $80/$90
+โดยรวมยอดที่กันไว้ด้วย การปรับเพดานไม่ล้างต้นทุนหรือวงเงินสำรองของเดือนเดิม:
+ร้านที่ยอดรวมถึงหรือเกิน $100 จะถูกปฏิเสธ shared AI คำขอใหม่เมื่อใช้โค้ดนี้
+
+ตรวจรอบปรับเพดาน $100: AI pure contracts 786/786, DB contracts 28/28, TypeScript และ
+browser smoke ไทย/อังกฤษที่ 1440px/390px ผ่าน โดยใช้ฐานและ API จำลอง ไม่เรียก provider จริง
+
 ## สิ่งที่พบและแก้
 
 | จุด | ผลกระทบ | การแก้ |
 | --- | --- | --- |
 | Sidebar ใช้ cache-first และอ่านใหม่ทุก 5 นาที; การใช้ AI ไม่ refetch quota | ใช้ AI แล้วตัวเลขมุมซ้ายล่างค้าง แม้ backend หักเครดิตแล้ว | Apollo refetch active usage queries หลัง BMS mutation สำเร็จหรือ error และหลัง customer insights; poll 30 วินาทีสำหรับ worker/webhook และ refetch เมื่อกลับมาที่หน้าต่าง |
 | เครดิตถูกเรียกสับสนกับ token | หนึ่งคำขออาจใช้หลายพัน token แต่หักหนึ่งเครดิต; Business หักศูนย์ตามนโยบาย unlimited | แสดงหน่วยเครดิตชัดเจน แยก token/provider calls/cost และแสดงวงเงิน Business |
-| ไม่เคยมีเพดาน USD ต่อร้าน | unlimited หรือคำขอราคาแพงมีต้นทุนไม่สัมพันธ์กับเครดิต | ทุกแพ็กเกจรวม Business มีเพดาน shared inference $2,000 ต่อร้านต่อเดือน UTC ตามคำสั่งเจ้าของระบบ |
+| ไม่เคยมีเพดาน USD ต่อร้าน | unlimited หรือคำขอราคาแพงมีต้นทุนไม่สัมพันธ์กับเครดิต | ทุกแพ็กเกจรวม Business มีเพดาน shared inference $100 ต่อร้านต่อเดือน UTC ตามคำสั่งเจ้าของระบบ |
 | บันทึก attempt ล้มเหลวแล้วทำ network call ต่อได้ | มีต้นทุนแต่ไม่มีหลักฐาน durable รองรับ | admission ล้มเหลวต้องหยุดก่อน network; finalization ล้มเหลวหลัง network เก็บ reservation ไว้ |
 | OCR/คำตอบว่างโยน error ก่อนส่ง usage กลับ | output ผิดรูปแบบแต่ provider คิดเงินจริง ถูกแสดงเป็น unknown โดยไม่จำเป็น | ส่งเฉพาะ usage ตัวเลขผ่าน error envelope และ finalize แม้ parse ไม่ผ่าน |
 | บาง caller อ่านเฉพาะ regular input โดยไม่รวม prompt cache | tokens/cost ต่ำกว่าจริง | normalize regular/read/write แยกกัน; รวม input เพื่อรายงานและคิด rate ของ cache แยก |
@@ -31,7 +38,7 @@
   จึงเป็น conservative attempt evidence ไม่ใช่ invoice
 - **Attributed USD**: usage × rate card; ไม่รวมภาษี/ส่วนลดตามสัญญาและไม่อ้างว่าเป็น provider invoice
   ไม่มี usage = `NULL`; มีบางส่วนเก็บเฉพาะต้นทุนที่ทราบและจำนวน unpriced calls
-- **วงเงิน shared**: `known shared cost + held reservations + next attempt ceiling <= 2000`
+- **วงเงิน shared**: `known shared cost + held reservations + next attempt ceiling <= 100`
   BYOK แสดง usage แต่ไม่กินวงเงินที่แพลตฟอร์มจ่าย; platform health probes เป็น overhead แยก
   การเติมเครดิตไม่เพิ่มเพดาน USD และไม่มีตัวเลือก client ให้ bypass
 
@@ -55,7 +62,7 @@ legacy Sonnet long-context beta ไม่ถูกเปิดผ่าน heade
 
 วงเงินเป็น calendar month UTC (เริ่มเดือน 07:00 เวลาไทย) ผูกกับเดือนที่ admit attempt
 event เดือนเก่าห้ามเริ่ม provider call ใหม่ ผลล่าช้ายังลงเดือนเดิม ไม่มีการย้ายหนี้เก่าไปเดือนใหม่
-อาจหยุดก่อนยอด known cost ถึง $2,000 เพราะคำขอถัดไปต้องใส่ได้ทั้ง ceiling และ unknown holds
+อาจหยุดก่อนยอด known cost ถึง $100 เพราะคำขอถัดไปต้องใส่ได้ทั้ง ceiling และ unknown holds
 
 ## Rate card และข้อจำกัด
 
@@ -70,7 +77,7 @@ event เดือนเก่าห้ามเริ่ม provider call ใ�
 
 Rate card เปลี่ยนตาม provider ได้ ต้องตรวจเมื่อปรับ model/region/API feature
 เพดานนี้ควบคุม rate-card exposure ในแอป ไม่ใช่สัญญาว่า provider invoice รวมทุกระบบจะไม่เกิน
-$2,000: shared key อาจมีผู้เรียกนอก BMS, probe overhead, tax หรือ rate เปลี่ยนโดยไม่แจ้งแอป
+$100: shared key อาจมีผู้เรียกนอก BMS, probe overhead, tax หรือ rate เปลี่ยนโดยไม่แจ้งแอป
 ข้อมูล cost เก่าไม่ถูกคำนวณใหม่ย้อนหลังจาก rate ปัจจุบัน เพราะจะเปลี่ยนหลักฐานทางบัญชี
 
 ## Rollout และตรวจสอบย้อนหลัง
@@ -149,7 +156,7 @@ twice; it is not a full production-dump replay or proof of production provider i
 The new migration also adds `budget_denied_required_usd`, `budget_denied_model`, and
 `budget_denied_provider` to monthly accounting. Refusal evidence is month-scoped; pricing errors
 clear after a priced shared call is admitted (or on the next month). Unknown past costs still require
-evidence-based reconciliation; adding credits never releases those holds or raises the $2,000 cap.
+evidence-based reconciliation; adding credits never releases those holds or raises the $100 cap.
 
 Additional verification for `10.55`: AI pure suite 785 passed; updated status/auth tests 4 passed;
 realtime coverage 6, schema readiness 8 and i18n 4 passed. Database admission/notification tests: 28/28 passed;

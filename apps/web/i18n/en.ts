@@ -12,7 +12,7 @@ const en = {
     status_PAUSED_UNPRICED: 'Cost verification required',
     credit_help: 'New requests using shared credits are paused. Review your credits in Billing or contact the administrator. Manual shop operations remain available.',
     credit_warning_help: 'Shared AI credits are running low. Review usage and available credits in Billing before new requests are paused.',
-    budget_help: 'Every plan, including Business, has a $2,000 shared AI budget. Pending calls reserve funds. Calls that do not fit the remaining budget are paused; manual shop operations remain available. Adding credits does not increase this budget.',
+    budget_help: 'Every plan, including Business, has a $100 shared AI budget. Pending calls reserve funds. Calls that do not fit the remaining budget are paused; manual shop operations remain available. Adding credits does not increase this budget.',
     unpriced_help: 'Some shared AI requests are paused because their cost cannot be verified. Ask the administrator to check pricing or unresolved usage. Manual shop operations remain available.',
     reset: 'New monthly period: {date} (Bangkok time). Unfinished calls may release reserved funds earlier.',
   },

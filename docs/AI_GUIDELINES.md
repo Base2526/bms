@@ -152,7 +152,7 @@ template.
   a tenant's totals.
 - A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
   estimates, sample ledgers, or hardcoded per-credit prices.
-- Shared inference has a $2,000 per-tenant UTC-month budget for every plan, including Business.
+- Shared inference has a $100 per-tenant UTC-month budget for every plan, including Business.
   Admission reserves the actual provider/model's conservative cost ceiling before network I/O,
   serialized on the monthly row. A failed admission makes no provider call. Every retry needs its
   own cost reservation while sharing the logical request's credit. Finalization retains unknown

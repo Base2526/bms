@@ -88,7 +88,7 @@ SELECT year_month,
 SELECT tenant_id, year_month,
        sum(actual_cost_usd) AS known_shared_cost_usd,
        sum(budget_reserved_usd) AS reserved_usd,
-       greatest(2000 - coalesce(sum(actual_cost_usd), 0) - sum(budget_reserved_usd), 0) AS remaining_usd,
+       greatest(100 - coalesce(sum(actual_cost_usd), 0) - sum(budget_reserved_usd), 0) AS remaining_usd,
        coalesce(sum(greatest(provider_calls, 1)) FILTER (
          WHERE budget_reserved_usd = 0 AND
            ((provider_calls > 0 AND (actual_cost_usd IS NULL OR unpriced_provider_calls > 0))

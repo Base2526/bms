@@ -134,7 +134,7 @@ wrong, and update the doc in the same change.
   `actual_cost_usd` (attributed cost) separate. A retry or provider fallback shares one
   `meta.usage_group_id` and bills **one** credit. Unknown cost is `NULL`, never `0`. Cost attribution
   is not a provider invoice.
-  Shared AI also has a **$2,000 per-tenant UTC-month cost cap, including Business** (`10.54`).
+  Shared AI also has a **$100 per-tenant UTC-month cost cap, including Business** (`10.54`).
   `recordAiProviderAttempt()` must reserve the actual model's cost ceiling before network I/O;
   failure blocks the call. Unknown spending keeps its reservation, never resets to zero on timeout.
   Refusal status and owner notices (`10.55`) must distinguish credits, budget and unknown cost;

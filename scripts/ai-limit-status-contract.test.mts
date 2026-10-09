@@ -20,13 +20,13 @@ test('credit warnings use adjusted capacity, unlimited has no credit warning', (
   assert.equal(creditLimitStatus(true, 0, 100000), 'NORMAL');
 });
 test('budget distinguishes headroom, outstanding calls and unverified cost; recovery follows released reservations', () => {
-  const base = { limit: 2000, spent: 100, reserved: 0, required: 0, unaccounted: 0, unpricedModel: false };
+  const base = { limit: 100, spent: 5, reserved: 0, required: 0, unaccounted: 0, unpricedModel: false };
   assert.equal(budgetLimitStatus(base), 'NORMAL');
-  assert.equal(budgetLimitStatus({ ...base, spent: 1500, reserved: 100 }), 'WARNING_80');
-  assert.equal(budgetLimitStatus({ ...base, spent: 1800 }), 'WARNING_90');
-  assert.equal(budgetLimitStatus({ ...base, spent: 1999, required: 1.2 }), 'PAUSED_BUDGET');
-  assert.equal(budgetLimitStatus({ ...base, spent: 1990, reserved: 10 }), 'PAUSED_BUDGET');
-  assert.equal(budgetLimitStatus({ ...base, spent: 1990, required: 1.2 }), 'WARNING_90');
+  assert.equal(budgetLimitStatus({ ...base, spent: 75, reserved: 5 }), 'WARNING_80');
+  assert.equal(budgetLimitStatus({ ...base, spent: 90 }), 'WARNING_90');
+  assert.equal(budgetLimitStatus({ ...base, spent: 99, required: 1.2 }), 'PAUSED_BUDGET');
+  assert.equal(budgetLimitStatus({ ...base, spent: 90, reserved: 10 }), 'PAUSED_BUDGET');
+  assert.equal(budgetLimitStatus({ ...base, spent: 90, required: 1.2 }), 'WARNING_90');
   assert.equal(budgetLimitStatus({ ...base, unaccounted: 1 }), 'PAUSED_UNPRICED');
   assert.equal(budgetLimitStatus({ ...base, unpricedModel: true }), 'PAUSED_UNPRICED');
 });

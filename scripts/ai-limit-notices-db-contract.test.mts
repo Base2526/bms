@@ -33,13 +33,13 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
   await t.test('80/90 warnings reach both owner roles once, without requiring an open page', async () => {
     const tenant = await shop(), admin = await owner(tenant), manager = await owner(tenant, 'Manager');
     const other = await shop(), outsider = await owner(other);
-    await cost(tenant, 1600);
+    await cost(tenant, 80);
     let inbox = await listAiLimitNotifications(tenant, admin);
     assert.equal(inbox.unreadCount, 1);
     assert.equal(inbox.items[0].level, 'WARNING_80');
     assert.equal((await listAiLimitNotifications(tenant, manager)).unreadCount, 1);
     assert.equal((await listAiLimitNotifications(other, outsider)).unreadCount, 0);
-    await cost(tenant, 200);
+    await cost(tenant, 10);
     await Promise.all(Array.from({ length: 5 }, () => getAiUsage(tenant)));
     inbox = await listAiLimitNotifications(tenant, admin);
     assert.equal(inbox.unreadCount, 2);
@@ -58,7 +58,7 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
   });
   await t.test('positive remaining budget still exposes refusal; released funds produce one recovery notice', async () => {
     const tenant = await shop(), user = await owner(tenant);
-    await cost(tenant, 1993);
+    await cost(tenant, 93);
     const active = (await tryConsumeAiQuota(tenant, context)).eventId!;
     await recordAiProviderAttempt(active); // reserves 6.25, leaving 0.75
     const denied = (await tryConsumeAiQuota(tenant, context)).eventId!;
@@ -92,7 +92,7 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
     await adjustAiCredits(tenant, 20, 'FAKE top-up');
     assert.notEqual((await getAiUsage(tenant)).creditStatus, 'PAUSED_CREDITS');
     assert.equal((await listAiLimitNotifications(tenant, user)).items.filter(x => x.level === 'RESUMED').length, 1);
-    await cost(tenant, 1999);
+    await cost(tenant, 99);
     const denied = (await tryConsumeAiQuota(tenant, context)).eventId!;
     await assert.rejects(recordAiProviderAttempt(denied), (e: any) => e.code === 'AI_BUDGET_EXHAUSTED');
     await adjustAiCredits(tenant, 100, 'FAKE more credits');
@@ -100,7 +100,7 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
   });
   await t.test('notification insert failure never rolls back a provider reservation, and a later read retries', async () => {
     const tenant = await shop(), user = await owner(tenant);
-    await cost(tenant, 1595);
+    await cost(tenant, 75);
     const constraint = 'fake_ai_notice_failure';
     try {
       await query(`ALTER TABLE notifications ADD CONSTRAINT ${constraint} CHECK (user_id <> '${user}'::uuid) NOT VALID`);

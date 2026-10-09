@@ -1704,7 +1704,7 @@ their provider independently:
   - **A real inference call is an event even when it is free.** Tenant BYOK key tests are recorded as
     zero-credit `ai_key_test` events rather than being skipped.
   - **Unlimited credits do not mean unlimited platform cost (`10.54`).** Every tenant, including
-    Business, has a $2,000 shared-inference cap per UTC month. Before each network call,
+    Business, has a $100 shared-inference cap per UTC month. Before each network call,
     `recordAiProviderAttempt()` locks monthly row then event, prices the actual provider/model and
     output limit, and durably reserves a conservative full-context ceiling. All AI writers use
     `beginTenantTx()`. A failed admission throws before I/O; no caller may swallow it and call the
