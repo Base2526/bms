@@ -22,7 +22,12 @@ apps/web/Caddyfile
 !/storage/.gitkeep
 
 # Signed Retail Local release payloads are large deployment artifacts, never source files.
-/releases/
+/releases/*
+!/releases/retail-local/
+/releases/retail-local/*
+!/releases/retail-local/.gitignore
+!/releases/retail-local/README.md
+!/releases/retail-local/publish-retail-local-staged-release.sh
 
 RN/MyApp/node_modules
 
