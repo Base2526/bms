@@ -11,6 +11,9 @@
 // =============================================================
 
 import { query } from "@/lib/db";
+import { writeLogServer } from "@/lib/log/writeLog.server";
+import { scheduledJobTrace } from "./scheduledJobTrace";
+import { diagnoseError } from "../../scheduler/diagnostics.mjs";
 
 export type JobRunStatus = "running" | "success" | "error";
 
@@ -52,29 +55,68 @@ export async function recordJobRun<T>(
   triggeredBy: "cron" | "manual",
   fn: () => Promise<T>
 ): Promise<T> {
-  const { rows } = await query<{ id: number }>(
-    `INSERT INTO bms_job_runs (job_name, status, triggered_by) VALUES ($1, 'running', $2) RETURNING id`,
-    [jobName, triggeredBy]
-  );
-  const id = rows[0].id;
+  const trace = scheduledJobTrace();
+  let id: number | null = null;
+  let stage = "record-start";
   const startedAt = Date.now();
-
+  const emit = (status: string, extra: Record<string, unknown> = {}) => {
+    if (!trace) return;
+    const event = { at: new Date().toISOString(), component: "scheduled-job", job: jobName,
+      ...trace, jobRunId: id, status, stage, durationMs: Date.now() - startedAt, ...extra };
+    if (status === "error") console.error(JSON.stringify(event));
+    else console.log(JSON.stringify(event));
+  };
+  const traceOutput = (result: unknown) => trace ? { result, scheduler: { ...trace, jobRunId: id } } : result;
+  emit("started");
   try {
+    const { rows } = await query<{ id: number }>(
+      `INSERT INTO bms_job_runs (job_name, status, triggered_by, output) VALUES ($1, 'running', $2, $3) RETURNING id`,
+      [jobName, triggeredBy, trace ? JSON.stringify(traceOutput(null)) : null]
+    );
+    id = rows[0].id;
+    if (trace) trace.jobRunId = id;
+    stage = "execute";
     const result = await fn();
+    stage = "record-success";
     await query(
       `UPDATE bms_job_runs
           SET status = 'success', finished_at = now(), duration_ms = $2, output = $3
         WHERE id = $1`,
-      [id, Date.now() - startedAt, JSON.stringify(result ?? null)]
+      [id, Date.now() - startedAt, JSON.stringify(traceOutput(result ?? null))]
     );
+    emit("success");
     return result;
   } catch (err: any) {
-    await query(
-      `UPDATE bms_job_runs
-          SET status = 'error', finished_at = now(), duration_ms = $2, error = $3
+    const diagnostic = diagnoseError(err);
+    if (trace) trace.errorCode = diagnostic.code;
+    emit("error", { diagnostic });
+    if (trace) {
+      // Also reaches the existing system_logs/triage path even if the route catches
+      // the exception. Stdout above remains available when the DB itself is down.
+      void writeLogServer("error", "scheduler", `${jobName}: ${diagnostic.hint}`, {
+        action: "scheduler.job.failed", correlationId: trace.runId,
+        schedulerRequestId: trace.requestId, routeName: `POST ${trace.route}`, jobRunId: id, stage,
+        errorMessage: `${diagnostic.code}: ${diagnostic.hint}`,
+        stack: diagnostic.frames.join("\n"), diagnostic,
+      }).then((saved) => {
+        if (!saved) emit("error", { stage: "system-log-write", code: "SYSTEM_LOG_WRITE_FAILED" });
+      }).catch((logError) => {
+        emit("error", { stage: "system-log-write", code: "SYSTEM_LOG_WRITE_FAILED", diagnostic: diagnoseError(logError) });
+      });
+    }
+    try {
+      if (id !== null) await query(
+        `UPDATE bms_job_runs
+          SET status = 'error', finished_at = now(), duration_ms = $2, error = $3,
+              output = CASE WHEN $4::jsonb IS NULL THEN output ELSE $4::jsonb END
         WHERE id = $1`,
-      [id, Date.now() - startedAt, String(err?.message ?? err)]
-    );
+        [id, Date.now() - startedAt, String(err?.message ?? err),
+          trace ? JSON.stringify({ scheduler: { ...trace, jobRunId: id }, diagnostic, stage }) : null]
+      );
+    } catch (recordError) {
+      emit("error", { stage: "record-error", diagnostic: diagnoseError(recordError) });
+      // Never replace the business failure with a second failure writing its history.
+    }
     throw err;
   }
 }

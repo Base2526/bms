@@ -466,6 +466,11 @@ Caddy จะจัดการ TLS และ reverse-proxy ไปยัง **web
 
 ### 🤖 ระบบอัตโนมัติ — Daily AI Log Triage
 
+งาน cron ระบบ 17 รายการมี service `scheduler` ใน Docker Compose แล้ว เปิดด้วย profile
+`scheduler` และเลือกให้ Docker หรือ GitHub เป็นผู้รันเพียงตัวเดียว ดู
+[การตั้งค่า scheduler กลาง](docs/architecture/scheduler.md) รวมคำสั่งเปิดใช้งานและการตรวจผลจริง
+ส่วนงาน AI วิเคราะห์ log และเปิด PR ด้านล่างยังใช้ workflow แยกเดิม
+
 GitHub Actions รันทุกวัน: ดึง error จาก `system_logs` → ให้ Claude วิเคราะห์ + เสนอแพตช์
 → เปิด **draft PR** (คนรีวิว ไม่ merge เอง) → แจ้งเตือนทีมผ่าน **LINE** พร้อมลิงก์ PR
 

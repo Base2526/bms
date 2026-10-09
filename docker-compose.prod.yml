@@ -1,4 +1,10 @@
 services:
+  scheduler:
+    environment:
+      BMS_SCHEDULER_BASE_URL: ${BMS_SCHEDULER_BASE_URL:-http://web:3000}
+      BMS_CRON_SECRET: ${BMS_CRON_SECRET:-}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+
   ws:
     build:
       context: .

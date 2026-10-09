@@ -2,6 +2,7 @@ import "server-only";
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import schedulerJobs from "../../scheduler/jobs.json";
 
 export type OperationKind = "GitHub Action" | "Cron Endpoint";
 export type OperationStatus = "Scheduled" | "Ready but unscheduled";
@@ -403,17 +404,18 @@ async function buildRouteRow(def: OperationDefinition): Promise<OperationSchedul
     source.match(/POST\s+(\/api\/[^\s—]+)/)?.[1] ||
     def.sourcePath;
   const routePath = trigger.replace(/^POST\s+/, "");
-  const scheduled = Boolean(workflow?.includes(`path: ${routePath}`));
+  const localJob = schedulerJobs.find((job) => job.path.split("?")[0] === routePath.split("?")[0]);
+  const scheduled = Boolean(localJob || workflow?.includes(`path: ${routePath}`));
 
   return {
     key: def.key,
     name: def.name,
     kind: def.kind,
     status: scheduled ? "Scheduled" : "Ready but unscheduled",
-    when,
+    when: localJob ? schedulerWhen(localJob.group) : when,
     trigger,
     purpose: inferPurposeFromComments(lines, def.purposeFallback),
-    evidence: scheduled
+    evidence: localJob ? SCHEDULER_EVIDENCE : scheduled
       ? `${def.sourcePath} exposes the cron entrypoint and .github/workflows/bms-cron.yml calls it${unauthorizedGuard ? " with x-cron-secret" : ""}.`
       : `${def.sourcePath} exposes the cron entrypoint${unauthorizedGuard ? " and checks x-cron-secret" : ""}; no repo-level scheduler was found for it.`,
     sourcePath: def.sourcePath,
@@ -421,16 +423,23 @@ async function buildRouteRow(def: OperationDefinition): Promise<OperationSchedul
   };
 }
 
+const SCHEDULER_EVIDENCE = "Configured in apps/web/scheduler/jobs.json. Enable the Docker scheduler profile OR set GitHub BMS_CRON_RUNNER=github. Configuration is not proof of execution; check run history.";
+function schedulerWhen(group: string): string {
+  return group === "daily" ? "Daily at 20:00 UTC (03:00 Asia/Bangkok)" : "Every 15 minutes (UTC)";
+}
+
 function buildFallbackRow(def: OperationDefinition): OperationScheduleRow {
+  const routePath = def.triggerHint?.replace(/^POST\s+/, "").split("?")[0];
+  const localJob = schedulerJobs.find((job) => job.path.split("?")[0] === routePath);
   return {
     key: def.key,
     name: def.name,
     kind: def.kind,
-    status: def.statusFallback,
-    when: def.whenFallback,
+    status: localJob ? "Scheduled" : def.statusFallback,
+    when: localJob ? schedulerWhen(localJob.group) : def.whenFallback,
     trigger: def.triggerFallback,
     purpose: def.purposeFallback,
-    evidence: `${def.evidenceFallback} Source inspection is unavailable in this deployment; showing the verified operations registry.`,
+    evidence: localJob ? SCHEDULER_EVIDENCE : `${def.evidenceFallback} Source inspection is unavailable in this deployment; showing the verified operations registry.`,
     sourcePath: def.sourcePath,
     docsPath: def.docsPath,
     aiView: def.key === "daily-log-triage" ? buildDailyLogTriageAiFallback() : undefined,

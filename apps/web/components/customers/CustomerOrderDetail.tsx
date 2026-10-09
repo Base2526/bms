@@ -30,7 +30,7 @@ export default function CustomerOrderDetail({ customerId, orderId }: { customerI
   });
   useVisibleQueryRefresh(result);
   const detail = result.data?.bmsCustomerOrderDetail;
-  if (result.error) return <Alert type="error" showIcon message={t(customerOrderDetailErrorKey(result.error))}
+  if (result.error) return <Alert type="error" showIcon closable message={t(customerOrderDetailErrorKey(result.error))}
     action={<Button loading={result.loading} icon={<ReloadOutlined />} onClick={() => { void result.refetch().catch(() => {}); }}>{t("admin_customers.detail_retry")}</Button>} />;
   if (!detail) return result.loading ? <Spin /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t("admin_customers.detail_missing")} />;
   return <section aria-label={t("admin_customers.purchase_detail")} style={{ minWidth: 0, maxWidth: "min(720px, calc(100vw - 96px))" }}>

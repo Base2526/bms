@@ -73,6 +73,19 @@ ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
 
+# Scheduler uses this Dockerfile but does not compile Next.js or carry database code.
+# Node 22 runs the shared Redis client's erasable TypeScript directly.
+FROM node:22-bookworm-slim AS scheduler
+WORKDIR /app/apps/web
+COPY apps/web/package*.json ./
+RUN npm ci --omit=dev --ignore-scripts
+COPY apps/web/lib/cache.ts ./lib/cache.ts
+COPY apps/web/scheduler ./scheduler
+COPY apps/web/scheduler.mjs ./scheduler.mjs
+ENV NODE_ENV=production
+USER node
+CMD ["node", "scheduler.mjs"]
+
 # --- Runner stage ---
 FROM node:20-bookworm-slim AS runner
 

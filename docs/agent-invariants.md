@@ -1868,6 +1868,19 @@ hold:
 Full history/rationale of what was found and fixed: § Multi-instance readiness in
 [CLAUDE.local.md](../CLAUDE.local.md).
 
+The opt-in Cloud Docker `scheduler` dispatches the existing cron APIs using the shared Redis
+client, atomic per-job UTC-slot claims and owner-checked in-flight leases. Redis unavailability
+must stop dispatch, never fall back to a process-local lock. Unknown HTTP outcomes consume the
+slot; aborting a request is not proof that its server transaction stopped. Select Docker or
+GitHub as the deployment's scheduler owner, never both. Business idempotency stays in the backend;
+dispatch claims are not exactly-once execution. See [scheduler.md](architecture/scheduler.md).
+
+Scheduled-job trace headers are correlation only, restricted to UUIDs on registered cron paths;
+they never replace cron authentication. Request-local context binds scheduler run/request IDs to
+the existing job-run row. Diagnostic events use allowlisted error codes and bounded file/line
+frames, never raw HTTP bodies, SQL or free-form exception text. Preserve the original exception
+when recording its failure also fails; retain stdout evidence when the database is unavailable.
+
 ## Realtime invalidation architecture
 
 The 2026-09-10 audit records the original findings and rollout design; current implementation
