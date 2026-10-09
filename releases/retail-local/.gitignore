@@ -1,0 +1,4 @@
+*
+!.gitignore
+!README.md
+!publish-retail-local-staged-release.sh
