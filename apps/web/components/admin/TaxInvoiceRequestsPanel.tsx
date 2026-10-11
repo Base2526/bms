@@ -12,6 +12,7 @@ import {
   message,
 } from "antd";
 import { useI18n } from "@/lib/i18nContext";
+import { TAX_BUYER_TYPES } from "@/lib/taxRequestFields";
 export default function TaxInvoiceRequestsPanel({
   canIssue,
   onIssued,
@@ -200,12 +201,15 @@ export default function TaxInvoiceRequestsPanel({
               {selected.locationName} · {selected.branchCode}
               <br />
               {selected.buyer.name}
+              {selected.buyer.buyerType && <> · {TAX_BUYER_TYPES.find((item) => item.value === selected.buyer.buyerType)?.label}</>}
               <br />
               {selected.buyer.taxId} · {selected.buyer.branchCode}
               <br />
               {selected.buyer.address}
               <br />
               {selected.buyer.phone}
+              <br />
+              {selected.buyer.email}
             </p>
             <p>
               {t("tax_requests.order")}: {selected.receiptNo} ·{" "}

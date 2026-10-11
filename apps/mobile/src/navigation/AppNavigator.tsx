@@ -76,6 +76,11 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
                             <Stack.Screen
                               name="Receipt"
                               component={ReceiptScreen}
+                              options={{
+                                presentation: 'transparentModal',
+                                animation: 'fade',
+                                contentStyle: { backgroundColor: 'transparent' },
+                              }}
                             />
                             <Stack.Screen
                               name="SalesHistory"

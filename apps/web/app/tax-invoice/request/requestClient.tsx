@@ -3,15 +3,17 @@ import { useEffect, useState } from "react";
 import {
   Alert,
   Button,
-  Card,
   Form,
   Input,
+  Radio,
+  Select,
   Space,
   Typography,
   message,
 } from "antd";
 import TaxInvoiceCopy from "@/components/pos/TaxInvoiceCopy";
 import { useI18n } from "@/lib/i18nContext";
+import { TAX_BUYER_TYPES, THAI_PROVINCES } from "@/lib/taxRequestFields";
 
 const labels: Record<string, string> = {
   PENDING: "รอร้านตรวจสอบ",
@@ -44,6 +46,8 @@ export default function TaxInvoiceRequestClient() {
     return () => window.removeEventListener("hashchange", reopen);
   }, []);
   const [form] = Form.useForm();
+  const buyerType = Form.useWatch("buyerType", form);
+  const [choosingType, setChoosingType] = useState(true);
   const [token, setToken] = useState(""),
     [secret, setSecret] = useState(""),
     [access, setAccess] = useState("");
@@ -57,7 +61,16 @@ export default function TaxInvoiceRequestClient() {
     const r = await call({ action: "track", access: key });
     setRequest(r);
     if (fill) {
-      form.setFieldsValue(r.buyer);
+      form.setFieldsValue({
+        ...r.buyer,
+        buyerType: r.buyer.buyerType ?? "COMPANY",
+        addressLine1: r.buyer.addressLine1 ?? r.buyer.address,
+        addressLine2: r.buyer.addressLine2 ?? "",
+        province: r.buyer.province ?? undefined,
+        postcode: r.buyer.postcode ?? "",
+        email: r.buyer.email ?? "",
+      });
+      setChoosingType(false);
       setFormVersion(r.version);
     }
   }
@@ -164,7 +177,8 @@ export default function TaxInvoiceRequestClient() {
             style={{ marginTop: 12 }}
           />
         )}
-        <Card loading={loading} style={{ marginTop: 16 }}>
+        <section aria-busy={loading} style={{ marginTop: 24 }}>
+          {loading && <p role="status">กำลังโหลดข้อมูลใบเสร็จ…</p>}
           <p>{t("tax_requests.online_policy")}</p>
           {policy && (
             <>
@@ -262,45 +276,70 @@ export default function TaxInvoiceRequestClient() {
                 layout="vertical"
                 onFinish={submit}
                 initialValues={{ branchCode: "00000" }}
+                disabled={saving}
+                size="large"
               >
+                <Form.Item name="buyerType" label="ออกใบกำกับภาษีในนาม" rules={[{ required: true, message: "กรุณาเลือกประเภทผู้ขอ" }]}>
+                  <Radio.Group className="tax-buyer-types" onChange={() => setChoosingType(false)}>
+                    {TAX_BUYER_TYPES.map((item) => <Radio.Button key={item.value} value={item.value}>{item.label}</Radio.Button>)}
+                  </Radio.Group>
+                </Form.Item>
+                {!choosingType && <>
+                <Typography.Title level={4}>ข้อมูล{TAX_BUYER_TYPES.find((item) => item.value === buyerType)?.label}</Typography.Title>
+                {buyerType === "FOREIGNER" && <Alert type="info" showIcon style={{ marginBottom: 20 }} message="ช่องทางออนไลน์รองรับผู้มีเลขประจำตัวผู้เสียภาษีไทย 13 หลักและที่อยู่ในประเทศไทย หากไม่มี กรุณาติดต่อร้านเพื่อขอเอกสาร" />}
+                <Form.Item
+                  name="taxId"
+                  label={buyerType === "INDIVIDUAL" ? "เลขประจำตัวผู้เสียภาษี / เลขประจำตัวประชาชน" : "เลขประจำตัวผู้เสียภาษีไทย 13 หลัก"}
+                  rules={[{ required: true, pattern: /^\d{13}$/, message: "กรุณากรอกเลขประจำตัวผู้เสียภาษี 13 หลัก" }]}
+                >
+                  <Input inputMode="numeric" maxLength={13} />
+                </Form.Item>
                 <Form.Item
                   name="name"
-                  label="ชื่อบุคคล / ชื่อนิติบุคคล"
+                  label={buyerType === "COMPANY" ? "ชื่อบริษัท / นิติบุคคล" : "ชื่อ-นามสกุล"}
                   rules={[{ required: true, whitespace: true }]}
                 >
                   <Input maxLength={200} />
                 </Form.Item>
-                <Form.Item
-                  name="taxId"
-                  label="เลขประจำตัวผู้เสียภาษี 13 หลัก"
-                  rules={[{ required: true, pattern: /^\d{13}$/ }]}
-                >
-                  <Input inputMode="numeric" maxLength={13} />
-                </Form.Item>
+                {buyerType === "COMPANY" &&
                 <Form.Item
                   name="branchCode"
                   label="รหัสสาขา 5 หลัก (สำนักงานใหญ่ 00000)"
                   rules={[{ required: true, pattern: /^\d{5}$/ }]}
                 >
                   <Input inputMode="numeric" maxLength={5} />
-                </Form.Item>
+                </Form.Item>}
                 <Form.Item
-                  name="address"
-                  label="ที่อยู่สำหรับใบกำกับภาษี"
+                  name="addressLine1"
+                  label="ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 1)"
                   rules={[{ required: true, whitespace: true }]}
                 >
-                  <Input.TextArea maxLength={1000} rows={3} />
+                  <Input maxLength={500} autoComplete="address-line1" />
                 </Form.Item>
-                <Form.Item name="phone" label="เบอร์ติดต่อ (ไม่บังคับ)">
-                  <Input maxLength={30} />
+                <Form.Item name="addressLine2" label="ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 2)">
+                  <Input maxLength={300} autoComplete="address-line2" />
+                </Form.Item>
+                <Form.Item name="province" label="จังหวัด" rules={[{ required: true, message: "กรุณาเลือกจังหวัด" }]}>
+                  <Select showSearch optionFilterProp="label" placeholder="เลือกจังหวัด" options={THAI_PROVINCES.map((province) => ({ value: province, label: province }))} />
+                </Form.Item>
+                <Form.Item name="postcode" label="รหัสไปรษณีย์" rules={[{ pattern: /^\d{5}$/, message: "กรุณากรอกรหัสไปรษณีย์ 5 หลัก" }]}>
+                  <Input inputMode="numeric" maxLength={5} autoComplete="postal-code" />
+                </Form.Item>
+                <Form.Item name="phone" label="เบอร์โทรศัพท์">
+                  <Input type="tel" maxLength={30} autoComplete="tel" />
+                </Form.Item>
+                <Form.Item name="email" label="อีเมล (สำหรับติดต่อเรื่องการจัดส่งเอกสาร)" rules={[{ type: "email", message: "กรุณากรอกอีเมลให้ถูกต้อง" }]}>
+                  <Input type="email" maxLength={254} autoComplete="email" />
                 </Form.Item>
                 <p>
                   ข้อมูลนี้ใช้ตรวจสอบและจัดทำเอกสารภาษีของการซื้อครั้งนี้เท่านั้น
                   กรุณาตรวจสอบให้ถูกต้องก่อนส่ง
                 </p>
-                <Button type="primary" htmlType="submit" loading={saving}>
-                  ยืนยันข้อมูลและส่งคำขอ
-                </Button>
+                <Space wrap>
+                  <Button type="primary" htmlType="submit" loading={saving}>ยืนยันข้อมูลและส่งคำขอ</Button>
+                  <Button onClick={() => { form.setFieldValue("buyerType", undefined); setChoosingType(true); }}>ยกเลิก</Button>
+                </Space>
+                </>}
               </Form>
             )}
           {request?.status === "ISSUED" && (
@@ -312,10 +351,16 @@ export default function TaxInvoiceRequestClient() {
               <Button onClick={() => window.print()}>พิมพ์สำเนา</Button>
             </>
           )}
-        </Card>
+        </section>
       </div>
       {request?.invoice && <TaxInvoiceCopy invoice={request.invoice} />}
       <style jsx global>{`
+        .tax-buyer-types { display: flex; flex-wrap: wrap; gap: 8px; }
+        .tax-buyer-types .ant-radio-button-wrapper { height: auto; min-height: 40px; white-space: normal; border: 1px solid #d9d9d9; border-radius: 6px; }
+        .tax-buyer-types .ant-radio-button-wrapper::before { display: none; }
+        @media (max-width: 480px) {
+          .tax-buyer-types { flex-direction: column; width: 100%; }
+        }
         @media print {
           .tax-request-controls {
             display: none !important;

@@ -3,12 +3,12 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InfoCircleOutlined, ReloadOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ReloadOutlined, PrinterOutlined, CheckCircleOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import ProductDetailsModal from "./ProductDetailsModal";
 import ScannedProductPanel, { type ScannedProductResult } from "./ScannedProductPanel";
 import { editCheckoutPayment, syncSingleCheckoutPayment, type CheckoutPayment } from "./checkoutPayment";
-import { ConfigProvider, theme as antdTheme } from "antd";
+import { ConfigProvider, Modal, theme as antdTheme } from "antd";
 import CheckoutBenefits, { benefitsPayable, useCheckoutBenefits } from "./CheckoutBenefits";
 import {
   initialPosClientFlow,
@@ -1926,31 +1926,22 @@ function DesktopPosContent() {
     );
   }
 
-  if (flow.stage === "RECEIPT" && receipt) {
-    return (
-      <main className={`${styles.centerPage} ${styles.lightTheme}`}>
-        <section className={`${styles.receiptCard} ${boardGameCheckout ? styles.boardGameReceiptCard : ""}`.trim()}>
-          <div className={styles.successMark}>✓</div>
-          <p className={styles.eyebrow}>ชำระเงินสำเร็จ</p>
-          <h1>{money(receipt.total ?? total)}</h1>
+  const receiptDialog = flow.stage === "RECEIPT" && receipt ? (
+      <Modal open centered width={900} title="ชำระเงินสำเร็จ" footer={null}
+        maskClosable={false} keyboard={!receiptPrinting} closable={!receiptPrinting}
+        onCancel={newSale} getContainer={false}
+        className={styles.receiptDialog} rootClassName={styles.receiptDialogRoot}
+        styles={{ mask: { backgroundColor: "rgba(20, 28, 40, 0.24)" } }}>
+        <div className={styles.receiptDialogBody}>
+          <section className={styles.receiptDialogSummary}>
+          <CheckCircleOutlined className={styles.receiptSuccessIcon} />
+          <h2>{money(receipt.total ?? total)}</h2>
           {boardGameCheckout ? <BoardGameBillBreakdown checkout={boardGameCheckout} receipt /> : null}
           <dl>
             <div><dt>เลขที่ใบเสร็จ</dt><dd>{receipt.receiptNo || receipt.billNo || receipt.orderId}</dd></div>
             <div><dt>รับเงิน</dt><dd>{money(receipt.cashTendered ?? validation.paidTotal)}</dd></div>
             <div className={styles.changeRow}><dt>เงินทอน</dt><dd>{money(receipt.cashChange ?? 0)}</dd></div>
           </dl>
-          {receiptPaper ? (
-            <div className={styles.receiptPaperPreview}>
-              <ReceiptPaper payload={receiptPaper} />
-            </div>
-          ) : receiptPaperState === "failed" ? (
-            <p className={styles.receiptPaperStatus} role="alert">
-              บันทึกการขายสำเร็จแล้ว แต่ยังโหลดใบเสร็จไม่ได้
-              <button type="button" onClick={() => void loadReceiptPaper(receipt)}>ลองโหลดใบเสร็จอีกครั้ง</button>
-            </p>
-          ) : receiptPaperState === "loading" ? (
-            <p className={styles.receiptPaperStatus} role="status">กำลังโหลดใบเสร็จ…</p>
-          ) : null}
           {error ? <PosDismissibleAlert key={error} className={styles.errorBox} onClose={() => setError("")}>{error}</PosDismissibleAlert> : null}
           {hasDesktopPrinterBridge() && (
             <details style={{ textAlign: "left", marginBottom: 12 }}>
@@ -1963,17 +1954,25 @@ function DesktopPosContent() {
             <p role="status" className={styles.receiptPaperStatus}>{receiptPaper.taxRequestUnavailableReason}</p>
           ) : null}
           <div className={styles.receiptActions}>
-            <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}>{receiptPrinting ? "กำลังส่งพิมพ์…" : "พิมพ์ใบเสร็จ"}</button>
+            <button disabled={!receiptPaper || receiptPrinting || receiptPrinter.disabled} onClick={printReceiptPaper}><PrinterOutlined /> {receiptPrinting ? "กำลังส่งพิมพ์…" : "พิมพ์ใบเสร็จ"}</button>
             <button className={styles.primaryButton} disabled={receiptPrinting} onClick={newSale}>
               {boardGameCheckout ? "กลับหน้าบอร์ดเกม" : "ขายรายการใหม่"}
             </button>
           </div>
-        </section>
-      </main>
-    );
-  }
+          </section>
+          <section className={styles.receiptDialogPreview} aria-label="ตัวอย่างใบเสร็จ">
+          {receiptPaper ? <ReceiptPaper payload={receiptPaper} /> : receiptPaperState === "failed" ? (
+            <p className={styles.receiptPaperStatus} role="alert">
+              บันทึกการขายสำเร็จแล้ว แต่ยังโหลดใบเสร็จไม่ได้
+              <button type="button" onClick={() => void loadReceiptPaper(receipt)}>ลองโหลดใบเสร็จอีกครั้ง</button>
+            </p>
+          ) : <p role="status">กำลังโหลดใบเสร็จ…</p>}
+          </section>
+        </div>
+      </Modal>
+  ) : null;
 
-  const checkout = flow.stage === "CHECKOUT";
+  const checkout = flow.stage === "CHECKOUT" || flow.stage === "RECEIPT";
   const connectionMode = connection === "offline" || realtimeStatus === "offline"
     ? "offline"
     : connection === "checking"
@@ -2001,7 +2000,8 @@ function DesktopPosContent() {
 
   return (
     <main ref={desktopRootRef} className={`pos-desktop-app ${styles.shell} ${styles.lightTheme}${bootstrap.businessArchetype === "restaurant" ? ` ${styles.restaurantTheme}` : ""}`}>
-      <aside className={styles.rail}>
+      {receiptDialog}
+      <aside className={styles.rail} ref={(element) => { if (element) element.inert = Boolean(receiptDialog); }} aria-hidden={receiptDialog ? true : undefined}>
         <div className={styles.railLogo}>B</div>
         <nav>
           {navItems.map((item) => (
@@ -2028,7 +2028,7 @@ function DesktopPosContent() {
         </div>
       </aside>
 
-      <section className={styles.workspace}>
+      <section className={styles.workspace} ref={(element) => { if (element) element.inert = Boolean(receiptDialog); }} aria-hidden={receiptDialog ? true : undefined}>
         <header className={styles.topbar}>
           <div className={styles.storeIdentity}>
             <div className={styles.storeMark}>{(bootstrap.location?.name || "B").slice(0, 1)}</div>

@@ -1357,8 +1357,15 @@ invoice-claimable. Reprints use the same link; the server always rechecks eligib
 Native hardware printing remains outside the current RN integration, and physical printers still need
 per-model QR scan verification before rollout.
 
-The customer scans without signing in, enters buyer name, checksum-valid 13-digit tax ID, five-digit
-branch (`00000` for head office), address, and optional phone, then explicitly submits. Staff review
+The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
+buyer name, checksum-valid Thai 13-digit tax ID, address line 1 (required), line 2 (optional), province
+(required), and optional five-digit postcode, phone and contact email. Companies also enter a five-digit
+branch (`00000` for head office); other types use `00000`. Foreigner currently requires a Thai tax ID
+and Thai address too; the form directs other buyers to the shop rather than accepting a passport as
+a tax ID. The server validates and composes the invoice address, retaining the separate fields and
+email in the request/submission JSON snapshots for tracking, corrections and staff review. Legacy
+single-address requests remain supported. Email is contact information only, not automatic delivery.
+The customer explicitly submits. Staff review
 the queue at `/admin/tax-documents` (`tax.document.view`, scoped to their allowed branches). The review
 dialog shows the receipt/amount and exact buyer details; `tax.document.issue` plus explicit confirmation
 can issue, ask for corrected information, or reject with a reason. Polling refreshes status every 15
