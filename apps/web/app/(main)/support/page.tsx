@@ -114,6 +114,7 @@ const SUPPORT: { en: SupportContent; th: SupportContent } = {
         messageRequired: "Please describe your issue",
       },
       topics: [
+        { value: "account_privacy", label: "Account / privacy / data deletion" },
         { value: "channel_setup", label: "Channel setup / Webhook" },
         { value: "ai_inbox", label: "AI assistant / Inbox" },
         { value: "orders_inventory", label: "Orders / Inventory / Restock" },
@@ -198,6 +199,7 @@ const SUPPORT: { en: SupportContent; th: SupportContent } = {
         messageRequired: "กรุณาอธิบายปัญหาที่พบ",
       },
       topics: [
+        { value: "account_privacy", label: "บัญชี / ความเป็นส่วนตัว / การลบข้อมูล" },
         { value: "channel_setup", label: "ตั้งค่าช่องทาง / Webhook" },
         { value: "ai_inbox", label: "ผู้ช่วย AI / Inbox" },
         { value: "orders_inventory", label: "ออเดอร์ / สต๊อก / Restock" },
