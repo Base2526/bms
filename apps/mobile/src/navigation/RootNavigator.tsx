@@ -8,6 +8,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import type { LinkingOptions } from '@react-navigation/native';
 import LoginScreen from '../screens/LoginScreen';
 import DeviceSettingsScreen from '../screens/settings/DeviceSettingsScreen';
+import PrinterSettingsScreen from '../screens/settings/PrinterSettingsScreen';
 import { AppNavigator } from './AppNavigator';
 import { useTheme } from '../theme/ThemeProvider';
 import { useDevice } from '../state/DeviceContext';
@@ -61,6 +62,10 @@ export function RootNavigator() {
         <Stack.Screen name="Login" component={LoginScreen} />
         <Stack.Screen name="Main" component={AppNavigator} />
         <Stack.Screen name="Settings" component={DeviceSettingsScreen} />
+        <Stack.Screen
+          name="PrinterSettings"
+          component={PrinterSettingsScreen}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

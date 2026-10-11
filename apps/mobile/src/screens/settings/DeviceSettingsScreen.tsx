@@ -164,6 +164,12 @@ export default function DeviceSettingsScreen({ route, navigation }: Props) {
   // ---- แผงสถานะ: "ตอนนี้เครื่องนี้เป็นของใคร" -------------------------------
   const statusPanel = (
     <View style={{ gap: spacing.md }}>
+      <Button
+        label="เครื่องพิมพ์ใบเสร็จ"
+        variant="secondary"
+        fullWidth
+        onPress={() => navigation.navigate('PrinterSettings')}
+      />
       <Card>
         <View style={styles.rowBetween}>
           <Text style={[typography.captionStrong, { color: colors.textMuted }]}>

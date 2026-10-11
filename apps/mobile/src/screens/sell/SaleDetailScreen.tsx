@@ -1,8 +1,9 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  FlatList,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,11 +18,11 @@ import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
 import { Button } from '../../components/Button';
 import { QtyStepper } from '../../components/QtyStepper';
+import { ReceiptDelivery } from '../../components/ReceiptDelivery';
 import {
   MobilePosCompleteRefundDocument,
   MobilePosMembersDocument,
   MobilePosReturnDocument,
-  MobilePosSendReceiptDocument,
   MobilePosVoidDocument,
   PosBootstrapDocument,
 } from '../../graphql/generated';
@@ -86,7 +87,6 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   });
   const [voidMutation] = useMutation(MobilePosVoidDocument);
   const [completeRefund] = useMutation(MobilePosCompleteRefundDocument);
-  const [sendReceipt] = useMutation(MobilePosSendReceiptDocument);
   const [action, setAction] = useState<Action | null>(null);
   const approvers = allApprovers.filter(approver =>
     action === 'VOID'
@@ -102,11 +102,11 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   const [approverId, setApproverId] = useState('');
   const [approverPin, setApproverPin] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [deliveryTo, setDeliveryTo] = useState('');
   const [refundRefs, setRefundRefs] = useState<Record<string, string>>({});
   const [secondaryAction, setSecondaryAction] = useState('');
   const returnKey = useRef<string | null>(null);
   const voidKey = useRef<string | null>(null);
+  const deliveryScroll = useRef<React.ComponentRef<typeof ScrollView>>(null);
 
   const selectedLines = useMemo(
     () =>
@@ -408,7 +408,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
   };
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
       <ScreenHeader
         title={sale.receiptNo}
         subtitle={`${new Date(sale.createdAt).toLocaleString('th-TH')}${
@@ -420,201 +420,185 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
         }`}
         onBack={() => navigation.goBack()}
       />
-      <Card>
-        <FlatList
-          data={sale.lines}
-          keyExtractor={line => String(line.orderItemId)}
-          renderItem={({ item }) => (
-            <View style={[styles.row, { marginBottom: spacing.sm }]}>
-              <Text style={[typography.body, { color: colors.text, flex: 1 }]}>
-                {item.name} × {item.qty}
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          ref={deliveryScroll}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: spacing.lg }}
+        >
+          <Button
+            label="ดูตัวอย่างใบเสร็จ"
+            variant="secondary"
+            fullWidth
+            style={{ marginBottom: spacing.md }}
+            onPress={() =>
+              navigation.navigate('Receipt', {
+                saleId: sale.id,
+                source: sale.source,
+                mode: 'preview',
+              })
+            }
+          />
+          <Card>
+            {sale.lines.map(item => (
+              <View
+                key={item.orderItemId}
+                style={[styles.row, { marginBottom: spacing.sm }]}
+              >
+                <Text
+                  style={[typography.body, { color: colors.text, flex: 1 }]}
+                >
+                  {item.name} × {item.qty}
+                </Text>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  ฿{(item.qty * item.unitPrice).toFixed(2)}
+                </Text>
+              </View>
+            ))}
+            <View style={[styles.row, { marginTop: spacing.md }]}>
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                รวม
               </Text>
-              <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ฿{(item.qty * item.unitPrice).toFixed(2)}
+              <Text style={[typography.subtitle, { color: colors.text }]}>
+                ฿{sale.total.toFixed(2)}
               </Text>
             </View>
-          )}
-        />
-        <View style={[styles.row, { marginTop: spacing.md }]}>
-          <Text style={[typography.subtitle, { color: colors.text }]}>รวม</Text>
-          <Text style={[typography.subtitle, { color: colors.text }]}>
-            ฿{sale.total.toFixed(2)}
-          </Text>
-        </View>
-        {sale.payments.map(payment => (
-          <Text
-            key={payment.id}
-            style={[typography.caption, { color: colors.textMuted }]}
-          >
-            {paymentMethodLabel(payment.method)} ฿{payment.amount.toFixed(2)}
-          </Text>
-        ))}
-      </Card>
-      {sale.returns.map(record => (
-        <Card key={record.id} style={{ marginTop: spacing.md }}>
-          <Text style={[typography.bodyStrong, { color: colors.warning }]}>
-            {record.type} · ฿{record.total.toFixed(2)}
-          </Text>
-          <Text style={[typography.caption, { color: colors.textMuted }]}>
-            {record.reason} · {record.settlementStatus}
-          </Text>
-        </Card>
-      ))}
-      {pendingRefunds.length > 0 ? (
-        <Card style={{ marginTop: spacing.md }}>
-          <Text style={[typography.bodyStrong, { color: colors.warning }]}>
-            คืนเงินที่ยังไม่เสร็จ
-          </Text>
-          {pendingRefunds.map((allocation, index) => {
-            const allocationId = allocation.id ?? '';
-            return (
-              <View
-                key={allocationId || `${allocation.method}-${index}`}
-                style={{ gap: spacing.sm, marginTop: spacing.md }}
+            {sale.payments.map(payment => (
+              <Text
+                key={payment.id}
+                style={[typography.caption, { color: colors.textMuted }]}
               >
-                <Text style={[typography.body, { color: colors.text }]}>
-                  {paymentMethodLabel(allocation.method)} · ฿
-                  {allocation.amount.toFixed(2)}
-                </Text>
-                <TextInput
-                  value={refundRefs[allocationId] ?? ''}
-                  onChangeText={value =>
-                    setRefundRefs(previous => ({
-                      ...previous,
-                      [allocationId]: value,
-                    }))
-                  }
-                  placeholder="เลขอ้างอิงการคืนเงิน"
-                  placeholderTextColor={colors.textSoft}
-                  style={[
-                    styles.input,
-                    { borderColor: colors.border, color: colors.text },
-                  ]}
-                />
-                <Button
-                  label="ยืนยันคืนเงินสำเร็จ"
-                  disabled={!allocationId || !refundRefs[allocationId]?.trim()}
-                  loading={secondaryAction === `refund-${allocationId}`}
-                  onPress={() =>
-                    runSecondary(`refund-${allocationId}`, async () => {
-                      if (!session) return;
-                      const response = await completeRefund({
-                        variables: {
-                          input: {
-                            cashierUserId: session.credentials.cashierUserId,
-                            pin: session.credentials.pin,
-                            userId: null,
-                            allocationId,
-                            externalRef:
-                              refundRefs[allocationId]?.trim() || null,
-                          },
-                        },
-                      });
-                      const result = response.data?.bmsPosCompleteRefund;
-                      if (result?.status !== 'COMPLETED')
-                        throw new Error(
-                          result?.reason ??
-                            result?.status ??
-                            'ยืนยันคืนเงินไม่สำเร็จ',
-                        );
-                      await refresh();
-                    })
-                  }
-                />
-              </View>
-            );
-          })}
-        </Card>
-      ) : null}
-      <Card style={{ marginTop: spacing.md }}>
-        <Text style={[typography.bodyStrong, { color: colors.text }]}>
-          ส่งสำเนาใบเสร็จ
-        </Text>
-        <TextInput
-          value={deliveryTo}
-          onChangeText={setDeliveryTo}
-          placeholder="อีเมล หรือเว้นว่างเพื่อใช้ข้อมูลสมาชิก"
-          autoCapitalize="none"
-          keyboardType="email-address"
-          placeholderTextColor={colors.textSoft}
-          style={[
-            styles.input,
-            { borderColor: colors.border, color: colors.text },
-          ]}
-        />
-        <View style={styles.reasonGrid}>
-          {(['email', 'line'] as const).map(channel => (
-            <Button
-              key={channel}
-              label={channel === 'email' ? 'ส่งอีเมล' : 'ส่ง LINE'}
-              variant="secondary"
-              loading={secondaryAction === `receipt-${channel}`}
-              onPress={() =>
-                runSecondary(`receipt-${channel}`, async () => {
-                  if (!session) return;
-                  const response = await sendReceipt({
-                    variables: {
-                      input: {
-                        cashierUserId: session.credentials.cashierUserId,
-                        pin: session.credentials.pin,
-                        orderId: sale.id,
-                        channel,
-                        to: deliveryTo.trim() || null,
-                      },
-                    },
-                  });
-                  const result = response.data?.bmsPosSendReceipt;
-                  if (result?.status !== 'SENT')
-                    throw new Error(
-                      result?.reason ?? result?.status ?? 'ส่งใบเสร็จไม่สำเร็จ',
-                    );
-                  Alert.alert(
-                    'ส่งแล้ว',
-                    `ส่งใบเสร็จทาง ${
-                      channel === 'email' ? 'อีเมล' : 'LINE'
-                    } สำเร็จ`,
-                  );
-                })
-              }
-            />
+                {paymentMethodLabel(payment.method)} ฿
+                {payment.amount.toFixed(2)}
+              </Text>
+            ))}
+          </Card>
+          {sale.returns.map(record => (
+            <Card key={record.id} style={{ marginTop: spacing.md }}>
+              <Text style={[typography.bodyStrong, { color: colors.warning }]}>
+                {record.type} · ฿{record.total.toFixed(2)}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                {record.reason} · {record.settlementStatus}
+              </Text>
+            </Card>
           ))}
-        </View>
-      </Card>
-      <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
-        <Button
-          label="คืนบางรายการ"
-          fullWidth
-          disabled={!sale.returnEligible || sale.voided}
-          onPress={() => setAction('RETURN')}
-        />
-        <Button
-          label="คืนทั้งบิล"
-          variant="secondary"
-          fullWidth
-          disabled={!sale.returnEligible || sale.voided}
-          onPress={() => setAction('RETURN_FULL')}
-        />
-        <Button
-          label="เปลี่ยนสินค้า"
-          variant="secondary"
-          fullWidth
-          disabled={!sale.returnEligible || sale.voided}
-          onPress={() => setAction('EXCHANGE')}
-        />
-        <Button
-          label="Void ทั้งบิล"
-          variant="danger"
-          fullWidth
-          disabled={!sale.returnEligible || sale.voided}
-          onPress={() => setAction('VOID')}
-        />
-        {!sale.returnEligible && sale.returnBlockedReason ? (
-          <Text style={[typography.caption, { color: colors.danger }]}>
-            {sale.returnBlockedReason}
-          </Text>
-        ) : null}
-      </View>
-
+          {pendingRefunds.length > 0 ? (
+            <Card style={{ marginTop: spacing.md }}>
+              <Text style={[typography.bodyStrong, { color: colors.warning }]}>
+                คืนเงินที่ยังไม่เสร็จ
+              </Text>
+              {pendingRefunds.map((allocation, index) => {
+                const allocationId = allocation.id ?? '';
+                return (
+                  <View
+                    key={allocationId || `${allocation.method}-${index}`}
+                    style={{ gap: spacing.sm, marginTop: spacing.md }}
+                  >
+                    <Text style={[typography.body, { color: colors.text }]}>
+                      {paymentMethodLabel(allocation.method)} · ฿
+                      {allocation.amount.toFixed(2)}
+                    </Text>
+                    <TextInput
+                      value={refundRefs[allocationId] ?? ''}
+                      onChangeText={value =>
+                        setRefundRefs(previous => ({
+                          ...previous,
+                          [allocationId]: value,
+                        }))
+                      }
+                      placeholder="เลขอ้างอิงการคืนเงิน"
+                      placeholderTextColor={colors.textSoft}
+                      style={[
+                        styles.input,
+                        { borderColor: colors.border, color: colors.text },
+                      ]}
+                    />
+                    <Button
+                      label="ยืนยันคืนเงินสำเร็จ"
+                      disabled={
+                        !allocationId || !refundRefs[allocationId]?.trim()
+                      }
+                      loading={secondaryAction === `refund-${allocationId}`}
+                      onPress={() =>
+                        runSecondary(`refund-${allocationId}`, async () => {
+                          if (!session) return;
+                          const response = await completeRefund({
+                            variables: {
+                              input: {
+                                cashierUserId:
+                                  session.credentials.cashierUserId,
+                                pin: session.credentials.pin,
+                                userId: null,
+                                allocationId,
+                                externalRef:
+                                  refundRefs[allocationId]?.trim() || null,
+                              },
+                            },
+                          });
+                          const result = response.data?.bmsPosCompleteRefund;
+                          if (result?.status !== 'COMPLETED')
+                            throw new Error(
+                              result?.reason ??
+                                result?.status ??
+                                'ยืนยันคืนเงินไม่สำเร็จ',
+                            );
+                          await refresh();
+                        })
+                      }
+                    />
+                  </View>
+                );
+              })}
+            </Card>
+          ) : null}
+          <Card style={{ marginTop: spacing.md }}>
+            <ReceiptDelivery
+              key={sale.id}
+              orderId={sale.id}
+              scrollRef={deliveryScroll}
+              disabled={sale.voided || sale.returns.length > 0}
+            />
+          </Card>
+          <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
+            <Button
+              label="คืนบางรายการ"
+              fullWidth
+              disabled={!sale.returnEligible || sale.voided}
+              onPress={() => setAction('RETURN')}
+            />
+            <Button
+              label="คืนทั้งบิล"
+              variant="secondary"
+              fullWidth
+              disabled={!sale.returnEligible || sale.voided}
+              onPress={() => setAction('RETURN_FULL')}
+            />
+            <Button
+              label="เปลี่ยนสินค้า"
+              variant="secondary"
+              fullWidth
+              disabled={!sale.returnEligible || sale.voided}
+              onPress={() => setAction('EXCHANGE')}
+            />
+            <Button
+              label="Void ทั้งบิล"
+              variant="danger"
+              fullWidth
+              disabled={!sale.returnEligible || sale.voided}
+              onPress={() => setAction('VOID')}
+            />
+            {!sale.returnEligible && sale.returnBlockedReason ? (
+              <Text style={[typography.caption, { color: colors.danger }]}>
+                {sale.returnBlockedReason}
+              </Text>
+            ) : null}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
       <Modal
         transparent
         visible={action !== null}
@@ -817,6 +801,7 @@ export default function SaleDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

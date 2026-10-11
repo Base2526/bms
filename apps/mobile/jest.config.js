@@ -6,6 +6,6 @@ module.exports = {
   // React Navigation 7 และ native helpers แจกเป็น ESM ใน node_modules จึงต้องให้
   // Babel ของ React Native transform มันด้วย ไม่งั้น smoke test จะพังตั้งแต่ `export` ตัวแรก
   transformIgnorePatterns: [
-    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-keychain|react-native-data-scanner|react-native-safe-area-context|react-native-sound|react-native-screens|react-native-svg)/)',
+    'node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-navigation|react-native-keychain|react-native-data-scanner|react-native-safe-area-context|react-native-sound|react-native-screens|react-native-svg|react-native-tcp-socket|react-native-view-shot|fast-png|iobuffer)/)',
   ],
 };

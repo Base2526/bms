@@ -126,6 +126,12 @@ test("sales totals retain returned receipts before subtracting refund events", (
   assert.match(sales, /pr\.return_location_id AS location_id/);
 });
 
+test("report status array parameters are explicitly typed for postgres", () => {
+  const reports = read("apps/web/lib/bms/reports.ts");
+  assert.doesNotMatch(reports, /ANY\(\$[0-9]+\)(?!::)/);
+  assert.match(reports, /status = ANY\(\$4::text\[\]\)/);
+});
+
 test("management analytics reach GraphQL, the admin screen, and exported documents", () => {
   const reports = read("apps/web/lib/bms/reports.ts");
   const schema = read("apps/web/graphql/typeDefs.ts");

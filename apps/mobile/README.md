@@ -23,6 +23,13 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   discount preview;
 - sale/deposit, split cash/QR/card/bank/wallet/store-credit/credit payment, receipt delivery,
   sale history, partial/full return, exchange cart, refund completion, void, and parked bills;
+- full receipt preview after checkout and from sale detail on Android/iOS, with server-returned
+  line amounts, extra charges, discounts, VAT, split tender, cash change, return/void status,
+  and the eligible full-tax-invoice request QR; email/linked-member LINE delivery requires a
+  separate confirmation and keeps recipient inputs separate;
+- Wi-Fi/LAN receipt-printer configuration (private IPv4, TCP port, 58/80 mm), a test page,
+  and manual printing from the receipt preview; print stays disabled until the selected ESC/POS
+  printer answers the online/cover/paper status checks;
 - shift open/close, shift report, cash in/out, no-sale, expenses, deposits, petty cash, purchase
   receiving, AR collection, store-credit lookup, and required second-person approval;
 - pharmacy counter authorization and parked pharmacist-review handoff/resume;
@@ -171,13 +178,47 @@ Android resource names must stay lowercase `[a-z0-9_]`. Sound behavior still nee
 real iOS and Android hardware because unit tests can validate API calls but cannot prove audible
 output.
 
-## Remaining Native Integrations
+## Native Integrations
+
+### Network Receipt Printing
+
+Open **เครื่องพิมพ์ใบเสร็จ** in device settings or **เชื่อมต่อเครื่องพิมพ์** in the receipt
+preview. Enter the printer's private IPv4 address and raw TCP port (normally 9100), choose
+58 mm (384 dots) or 80 mm (576 dots), and connect. No brand/model field is required.
+The printer must support ESC/POS raster images and `DLE EOT` status 1, 2 and 4. This is not a
+universal Wi-Fi/AirPrint/IPP driver or Bluetooth/USB pairing; a printer that accepts TCP but
+does not answer these status commands remains unavailable. Network addresses are configured
+explicitly; the app does not scan the shop network.
+
+The native transport is `react-native-tcp-socket`. `react-native-view-shot` captures only the
+server-backed receipt paper in memory; `fast-png` and `@point-of-sale/receipt-printer-encoder`
+encode bounded monochrome raster bands, preserving Thai and QR pixels without a printer code
+page. No receipt files, PINs or device tokens are sent to the printer, persisted in a print
+queue, or uploaded. Only the printer preference is saved in a separate Keychain service.
+If preference storage fails, the active connection remains usable with a visible warning;
+the address must be entered again after restarting the app. Hermes compatibility shims supply
+Latin-1 `TextDecoder` and `structuredClone`; iOS captures use device-scale-adjusted dimensions
+and support 16-bit PNG, while Android captures use pixel dimensions directly.
+
+Readiness is checked on connect, every five seconds while idle, and immediately before the
+receipt bytes. Paper-out, open cover, socket close, status timeout or write failure disables
+printing. Backgrounding or changing the paired device disconnects; returning to the app never
+silently reconnects or prints. A write acknowledgement means **data sent**, not proof that paper
+came out. Unknown/partial jobs are not automatically retried; check the paper before an explicit
+reprint. Printing never settles another sale, issues a tax document, cuts paper or opens a drawer.
+Pending Emergency Offline references have no printable receipt in this flow.
+
+Both native apps must be rebuilt after installing these dependencies (`pod install` on iOS).
+iOS needs Local Network permission; denial leaves printing disabled. Validate the test page,
+Thai text, QR scan, paper width and disconnect/paper-out behavior on actual hardware before rollout.
+
+### Other Hardware
 
 These are not replaced by GraphQL and remain separate rollout work:
 
 - global Bluetooth/USB key capture outside the explicit scanner modal (camera and focused HID input
   are live; native `pressesBegan`/`UIKeyCommand` and Android key-event capture remain separate work);
-- ESC/POS printing, cash-drawer kick, and customer display hardware;
+- Bluetooth/USB printing, AirPrint/IPP, cash-drawer kick, and customer display hardware;
 - FCM/APNs push while the app is suspended or terminated;
 - persistence/sync policy for per-device alert preferences;
 - real-device iOS/Android sound, reconnect, and poor-network soak tests;

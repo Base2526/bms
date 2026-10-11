@@ -52,8 +52,8 @@ const mobileAdjustmentsCard = read(
   "../apps/mobile/src/components/CheckoutAdjustmentsCard.tsx",
 );
 const mobileSalesContext = read("../apps/mobile/src/state/SalesContext.tsx");
-const mobileReceiptScreen = read(
-  "../apps/mobile/src/screens/sell/ReceiptScreen.tsx",
+const mobileReceiptPaper = read(
+  "../apps/mobile/src/components/ReceiptPaper.tsx",
 );
 const mobileMainTabs = read("../apps/mobile/src/navigation/MainTabs.tsx");
 const mobileAppNavigator = read(
@@ -1394,8 +1394,8 @@ test("RN receipts preserve the restaurant service-mode snapshot", () => {
     /receipt\.restaurantServiceMode \? 'restaurant' : 'retail'/,
   );
   assert.match(
-    mobileReceiptScreen,
-    /sale\.restaurantServiceMode === 'TAKEAWAY'/,
+    mobileReceiptPaper,
+    /receipt\.restaurantServiceMode === 'TAKEAWAY'/,
   );
 });
 

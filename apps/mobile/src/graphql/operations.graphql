@@ -130,6 +130,7 @@ fragment MobilePosReceiptFields on BmsPosReceipt {
   orderStatus
   locationName
   branchCode
+  posLabel
   cashierName
   memberName
   memberNo
@@ -202,6 +203,14 @@ fragment MobilePosReceiptFields on BmsPosReceipt {
     label
     amount
   }
+  extraLines {
+    label
+    qty
+    unitAmount
+    amount
+  }
+  promotionNotes
+  boardGameTimeNotes
   vat {
     rate
     taxableAmount
@@ -368,6 +377,14 @@ query MobilePosSales($q: String, $limit: Int = 50) {
 query MobilePosLastSale {
   bmsPosLastSale {
     ...MobilePosReceiptFields
+  }
+}
+
+query MobilePosReceiptPreview($orderId: String!) {
+  bmsPosRecentSales(q: $orderId, limit: 50, deviceOnly: false) {
+    sales {
+      ...MobilePosReceiptFields
+    }
   }
 }
 

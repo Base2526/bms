@@ -16,6 +16,7 @@ import { OfflineSalesProvider } from '../state/OfflineSalesContext';
 import { View } from 'react-native';
 import CheckoutScreen from '../screens/sell/CheckoutScreen';
 import ReceiptScreen from '../screens/sell/ReceiptScreen';
+import PrinterSettingsScreen from '../screens/settings/PrinterSettingsScreen';
 import SaleDetailScreen from '../screens/sell/SaleDetailScreen';
 import SalesHistoryScreen from '../screens/sell/SalesHistoryScreen';
 import CheckDetailScreen from '../screens/floor/CheckDetailScreen';
@@ -64,6 +65,10 @@ export function AppNavigator({ navigation: rootNavigation }: Props) {
                             screenOptions={{ headerShown: false }}
                           >
                             <Stack.Screen name="Tabs" component={MainTabs} />
+                            <Stack.Screen
+                              name="PrinterSettings"
+                              component={PrinterSettingsScreen}
+                            />
                             <Stack.Screen
                               name="Checkout"
                               component={CheckoutScreen}
