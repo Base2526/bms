@@ -52,6 +52,7 @@ deploy/retail-local/license-ui/
 deploy/retail-local/license-ui-host/
 deploy/retail-local/doctor.json
 artifacts/retail-local/
+artifacts/bms-promo-animatic/
 /secure/
 
 # editor-local settings and generated repository snapshots
