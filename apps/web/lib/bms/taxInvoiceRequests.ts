@@ -16,10 +16,19 @@ import {
   verifyTaxRequestToken,
 } from "./taxRequestToken";
 import { taxRequestDeadline, taxRequestPolicy } from "./taxRequestPolicy";
+import { TAX_BUYER_TYPES, THAI_PROVINCES, type TaxBuyerType } from "../taxRequestFields";
 
-const sameBuyer = (a: FullInvoiceBuyer, b: FullInvoiceBuyer) =>
-  Object.entries(a).every(
-    ([key, value]) => b[key as keyof FullInvoiceBuyer] === value
+type TaxRequestBuyer = FullInvoiceBuyer & {
+  buyerType?: TaxBuyerType;
+  addressLine1?: string;
+  addressLine2?: string;
+  province?: string;
+  postcode?: string;
+  email?: string;
+};
+const sameBuyer = (a: TaxRequestBuyer, b: TaxRequestBuyer) =>
+  [...new Set([...Object.keys(a), ...Object.keys(b)])].every(
+    (key) => a[key as keyof TaxRequestBuyer] === b[key as keyof TaxRequestBuyer]
   );
 async function policyInTx(
   client: PoolClient,
@@ -93,23 +102,45 @@ const clean = (v: unknown, max: number, required = true): string => {
     throw new TaxRequestError("ข้อมูลไม่ถูกต้องหรือยาวเกินกำหนด");
   return value;
 };
-export function normalizeTaxRequestBuyer(raw: unknown): FullInvoiceBuyer {
+export function normalizeTaxRequestBuyer(raw: unknown): TaxRequestBuyer {
   if (!raw || typeof raw !== "object" || Array.isArray(raw))
     throw new TaxRequestError("กรุณากรอกข้อมูลผู้ซื้อ");
   const b = raw as Record<string, unknown>;
+  const buyerType = b.buyerType == null ? undefined : clean(b.buyerType, 20);
+  if (buyerType !== undefined && !TAX_BUYER_TYPES.some((item) => item.value === buyerType))
+    throw new TaxRequestError("ประเภทผู้ขอไม่ถูกต้อง");
   const taxId = clean(b.taxId, 13),
-    branchCode = clean(b.branchCode, 5);
+    branchCode = buyerType && buyerType !== "COMPANY" ? "00000" : clean(b.branchCode, 5);
   if (!isValidThaiTaxId(taxId) || !/^\d{5}$/.test(branchCode))
     throw new TaxRequestError(
       "เลขผู้เสียภาษีหรือรหัสสาขาไม่ถูกต้อง (สำนักงานใหญ่ 00000)"
     );
-  return {
+  const buyer: TaxRequestBuyer = {
     name: clean(b.name, 200),
     taxId,
     branchCode,
-    address: clean(b.address, 1000),
+    address: "",
     phone: clean(b.phone, 30, false) || null,
   };
+  if (buyerType) {
+    buyer.buyerType = buyerType as TaxBuyerType;
+    buyer.addressLine1 = clean(b.addressLine1, 500);
+    buyer.addressLine2 = clean(b.addressLine2, 300, false);
+    buyer.province = clean(b.province, 100);
+    buyer.postcode = clean(b.postcode, 5, false);
+    buyer.email = clean(b.email, 254, false);
+    if (!THAI_PROVINCES.some((province) => province === buyer.province))
+      throw new TaxRequestError("กรุณาเลือกจังหวัด");
+    if (buyer.postcode && !/^\d{5}$/.test(buyer.postcode))
+      throw new TaxRequestError("รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก");
+    if (buyer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email))
+      throw new TaxRequestError("อีเมลไม่ถูกต้อง");
+    buyer.address = [buyer.addressLine1, buyer.addressLine2, buyer.province, buyer.postcode].filter(Boolean).join("\n");
+  } else {
+    // Keep old request snapshots and in-flight clients readable without guessing address parts.
+    buyer.address = clean(b.address, 1000);
+  }
+  return buyer;
 }
 async function receiptOrder(
   client: PoolClient,

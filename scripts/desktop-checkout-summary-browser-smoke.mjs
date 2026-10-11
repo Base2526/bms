@@ -12,13 +12,19 @@ const hit = (sku, size, price, promo = null) => ({ sku, size, name: sku, product
 // Promotion metadata is per SKU; the rule itself restricts qualification to size S.
 const hits = { FIRST: hit("FAKE-355", "L", 1963), BUY: hit("FAKE-A", "S", 3596, promotion), GIFT: hit("FAKE-G", "S", 1458), LARGE: hit("FAKE-A", "L", 4000, promotion) };
 try {
-  for (const width of [1440, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 } });
+  // These are renderer/IPC metadata simulations on the host browser, not native OS certification.
+  for (const { platform, width, height, deviceScaleFactor } of [
+    { platform: "darwin", width: 1440, height: 900, deviceScaleFactor: 2 },
+    { platform: "win32", width: 1366, height: 768, deviceScaleFactor: 1.25 },
+    { platform: "linux", width: 1280, height: 800, deviceScaleFactor: 1 },
+    { platform: "darwin", width: 390, height: 844, deviceScaleFactor: 1 },
+  ]) {
+    const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor });
     await context.addCookies([{ name: "lang", value: "th", url: base }]);
-    await context.addInitScript(() => {
+    await context.addInitScript(({ platform }) => {
       window.bmsDesktop = { isDesktop: true, getDeviceToken: async () => "FAKE-token", getStorageNamespace: async () => "FAKE-summary",
-        getAppInfo: async () => ({ version: "0.2.14-pilot.2", platform: "darwin", arch: "arm64" }) };
-    });
+        getAppInfo: async () => ({ version: "0.2.14-pilot.3", platform, arch: platform === "darwin" ? "arm64" : "x64" }) };
+    }, { platform });
     const session = { device: { id: "FAKE-device", code: "POS-01", name: "FAKE register", scanner: { mode: "OFF" } },
       location: { id: "FAKE-location", name: "FAKE shop", branchCode: "MAIN" }, shift: { id: "FAKE-shift", status: "OPEN", openingFloat: 0, openedAt: new Date().toISOString() },
       cashiers: [cashier], approvers: [], kitchenOperators: [], store: { name: "FAKE shop", receiptLanguageMode: "th", paymentQr: null },
@@ -127,6 +133,13 @@ try {
       else await page.getByLabel("รับเงินมา", { exact: true }).fill("12354");
       await page.getByRole("button", { name: /ยืนยันรับชำระ/ }).click();
       await page.locator("#pos-receipt").waitFor();
+      const dialog = page.getByRole("dialog", { name: "ชำระเงินสำเร็จ" });
+      await dialog.waitFor();
+      await page.waitForFunction(() => document.activeElement?.closest('[role="dialog"]'));
+      assert.equal(await page.locator('section[inert]').count(), 1, "checkout remains visible but cannot accept another payment");
+      const dialogBounds = await dialog.boundingBox();
+      assert.ok(dialogBounds.x >= 0 && dialogBounds.x + dialogBounds.width <= width, "receipt dialog fits viewport");
+      assert.ok(dialogBounds.y >= 0 && dialogBounds.y + dialogBounds.height <= height, "receipt dialog fits viewport height");
       assert.equal(sales.length, 1);
       assert.equal(sales[0].payments[0].amount, 9559);
       assert.equal(sales[0].payments[0].cashTendered, savedTender);
@@ -135,9 +148,23 @@ try {
       assert.equal(paper.match(/-1,458\.00/g)?.length, 1);
       assert.match(paper, savedChange ? /12,354\.00 \/ 2,795\.00/ : /9,559\.00 \/ 0\.00/);
       await page.screenshot({ path: `${output}/${width}-receipt.png`, fullPage: true });
+      await page.evaluate(() => document.body.dataset.posPrintTarget = "receipt");
+      await page.emulateMedia({ media: "print" });
+      const printed = await page.locator("#pos-receipt").boundingBox();
+      assert.equal(printed.x, 0, "printed receipt starts at the paper's left edge");
+      assert.equal(printed.y, 0, "printed receipt starts at the paper's top edge");
+      assert.equal(await page.locator("#pos-receipt").evaluate(el => getComputedStyle(el).maxHeight), "none");
+      await page.emulateMedia({ media: "screen" });
+      await page.evaluate(() => delete document.body.dataset.posPrintTarget);
+      // Print-media emulation hides the active element; restore keyboard focus to the dialog.
+      await dialog.getByRole("button", { name: "ขายรายการใหม่", exact: true }).focus();
+      await page.keyboard.press("Escape");
+      await dialog.waitFor({ state: "hidden" });
+      await page.getByLabel("สแกนบาร์โค้ดหรือรหัสสินค้า").waitFor();
+      assert.equal(sales.length, 1, "closing a paid receipt never submits another sale");
       assert.deepEqual(mutations, []);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: gift summary, split cash repricing and saved receipt; one intercepted fixture sale, no live writes`);
+      console.log(`PASS ${platform} metadata, ${width}x${height}, scale ${deviceScaleFactor}: checkout, receipt dialog, print geometry and close; one intercepted fixture sale, no live writes`);
     } catch (error) {
       console.error((await page.locator("body").innerText()).slice(-6500));
       await page.screenshot({ path: `${output}/${width}-failure.png`, fullPage: true });

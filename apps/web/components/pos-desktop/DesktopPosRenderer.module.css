@@ -1002,6 +1002,33 @@
   margin: 16px 0 0;
   color: #6f7b8e;
 }
+.receiptDialogRoot { position: absolute; inset: 0; z-index: 1000; }
+.receiptDialog :global(.ant-modal-content) { padding: 24px; border-radius: 8px; }
+.receiptDialogBody { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; max-height: calc(100dvh - 160px); overflow-y: auto; }
+.receiptDialogSummary { min-width: 0; padding-top: 16px; }
+.receiptSuccessIcon { color: #389e0d; font-size: 32px; }
+.receiptDialogSummary h2 { margin: 8px 0 20px; font-size: 32px; color: #0958d9; }
+.receiptDialogSummary dl { margin: 0 0 24px; }
+.receiptDialogSummary dl > div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid #e5e7eb; }
+.receiptDialogSummary dd { margin: 0; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.receiptDialogSummary .changeRow { color: #237804; }
+.receiptDialogSummary .receiptActions { grid-template-columns: 1fr; }
+.receiptDialogPreview { min-width: 0; padding: 16px; background: #f5f6f8; }
+.receiptDialogPreview :global(.pos-receipt-paper) { max-width: 100%; }
+@media (max-width: 640px) {
+  .receiptDialogBody { grid-template-columns: minmax(0, 1fr); }
+  .receiptDialog :global(.ant-modal-content) { padding: 16px; }
+}
+@media print {
+  .receiptDialogRoot { position: static !important; }
+  .receiptDialogRoot :global(.ant-modal-wrap),
+  .receiptDialog,
+  .receiptDialog :global(.ant-modal-content),
+  .receiptDialogBody,
+  .receiptDialogPreview { position: static !important; display: block !important; overflow: visible !important; max-height: none !important; height: auto !important; padding: 0 !important; margin: 0 !important; transform: none !important; }
+  .receiptDialogRoot :global(.ant-modal-mask),
+  .receiptDialogSummary { display: none !important; }
+}
 .boardGameReceiptCard {
   width: min(760px, 100%);
   max-height: calc(100dvh - 40px);
