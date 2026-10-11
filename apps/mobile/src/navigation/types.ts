@@ -11,6 +11,7 @@ export type RootStackParamList = {
    * ดิบที่ยังไม่ผ่านการตรวจ — ต้องส่งเข้า `parsePairingInput()` ก่อนเชื่อเสมอ)
    */
   Settings: { t?: string; h?: string } | undefined;
+  PrinterSettings: undefined;
 };
 
 export type SellStackParamList = {
@@ -27,8 +28,10 @@ export type AppStackParamList = {
   Receipt: {
     saleId: string;
     source: 'retail' | 'restaurant' | 'board_game';
+    mode?: 'preview';
   };
   SalesHistory: undefined;
+  PrinterSettings: undefined;
   SaleDetail: { saleId: string };
   CheckDetail: {
     tableId?: string;

@@ -16,6 +16,7 @@ import { RealtimeProvider } from './src/state/RealtimeContext';
 import { ServerHealthProvider } from './src/state/ServerHealthContext';
 import { BmsGraphqlProvider } from './src/graphql/BmsGraphqlProvider';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { PrinterProvider } from './src/state/PrinterContext';
 
 function ThemedStatusBar() {
   const { scheme } = useTheme();
@@ -41,7 +42,9 @@ export default function App() {
                 <SessionProvider>
                   <RealtimeProvider>
                     <ThemedStatusBar />
-                    <RootNavigator />
+                    <PrinterProvider>
+                      <RootNavigator />
+                    </PrinterProvider>
                   </RealtimeProvider>
                 </SessionProvider>
               </StoreModeProvider>

@@ -22,12 +22,16 @@ jest.mock('react-native-data-scanner', () => ({
 }));
 
 jest.mock('@react-native-community/datetimepicker', () => 'DateTimePicker');
+jest.mock('react-native-tcp-socket', () => ({ Socket: jest.fn() }));
+jest.mock('react-native-view-shot', () => ({ captureRef: jest.fn() }));
 
 // QR rendering is an SVG detail; the smoke test only verifies provider/navigation wiring.
 jest.mock('react-native-qrcode-svg', () => 'QRCode');
 
 test('renders correctly', async () => {
+  let renderer: ReactTestRenderer.ReactTestRenderer;
   await ReactTestRenderer.act(() => {
-    ReactTestRenderer.create(<App />);
+    renderer = ReactTestRenderer.create(<App />);
   });
+  await ReactTestRenderer.act(() => renderer.unmount());
 });

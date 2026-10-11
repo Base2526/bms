@@ -82,7 +82,7 @@ export async function getSalesSummary(
       `SELECT COALESCE(SUM(total_amount), 0) AS revenue,
               COUNT(*)::int AS orders
          FROM bms_orders
-        WHERE tenant_id = $1 AND status = ANY($2)
+        WHERE tenant_id = $1 AND status = ANY($2::text[])
           AND ($5::uuid IS NULL OR location_id = $5::uuid)
           AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
@@ -131,8 +131,8 @@ export async function getSalesSummary(
     ),
     query(
       `SELECT d::date AS day,
-              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($2)), 0) AS revenue,
-              COUNT(o.id) FILTER (WHERE o.status = ANY($2))::int AS orders
+              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($2::text[])), 0) AS revenue,
+              COUNT(o.id) FILTER (WHERE o.status = ANY($2::text[]))::int AS orders
          FROM generate_series($3::date, $4::date, interval '1 day') d
          LEFT JOIN bms_orders o
            ON o.tenant_id = $1
@@ -150,13 +150,13 @@ export async function getSalesSummary(
           AND CASE
                 WHEN status='CANCELLED' THEN COALESCE(cancelled_at,updated_at,created_at)
                 WHEN status='RETURNED' THEN COALESCE(returned_at,updated_at,created_at)
-                WHEN status = ANY($4) THEN COALESCE(paid_at,created_at)
+                WHEN status = ANY($4::text[]) THEN COALESCE(paid_at,created_at)
                 ELSE created_at
               END >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND CASE
                 WHEN status='CANCELLED' THEN COALESCE(cancelled_at,updated_at,created_at)
                 WHEN status='RETURNED' THEN COALESCE(returned_at,updated_at,created_at)
-                WHEN status = ANY($4) THEN COALESCE(paid_at,created_at)
+                WHEN status = ANY($4::text[]) THEN COALESCE(paid_at,created_at)
                 ELSE created_at
               END < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
         GROUP BY status ORDER BY count DESC`,
@@ -164,10 +164,10 @@ export async function getSalesSummary(
     ),
     query(
       `SELECT channel,
-              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
-              COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
+              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2::text[])), 0) AS revenue,
+              COUNT(*) FILTER (WHERE status = ANY($2::text[]))::int AS orders
          FROM bms_orders
-        WHERE tenant_id = $1 AND status = ANY($2)
+        WHERE tenant_id = $1 AND status = ANY($2::text[])
           AND ($5::uuid IS NULL OR location_id=$5::uuid)
           AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
           AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -205,8 +205,8 @@ export async function getLifetimeSalesSummary(tenantId: string) {
     query(
       `SELECT MIN((COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date) AS first_order_date,
               MAX((COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date) AS last_order_date,
-              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
-              COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
+              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2::text[])), 0) AS revenue,
+              COUNT(*) FILTER (WHERE status = ANY($2::text[]))::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1`,
       [tenantId, PAID]
@@ -220,8 +220,8 @@ export async function getLifetimeSalesSummary(tenantId: string) {
     ),
     query(
       `SELECT channel,
-              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2)), 0) AS revenue,
-              COUNT(*) FILTER (WHERE status = ANY($2))::int AS orders
+              COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2::text[])), 0) AS revenue,
+              COUNT(*) FILTER (WHERE status = ANY($2::text[]))::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1
         GROUP BY channel ORDER BY revenue DESC`,
@@ -309,7 +309,7 @@ export async function getTopSellingProducts(
        FROM bms_order_items oi
        JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
-      WHERE oi.tenant_id = $1 AND o.status = ANY($2)
+      WHERE oi.tenant_id = $1 AND o.status = ANY($2::text[])
         AND ($6::uuid IS NULL OR o.location_id=$6::uuid)
         AND COALESCE(o.paid_at,o.created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
         AND COALESCE(o.paid_at,o.created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -331,7 +331,7 @@ export async function getLifetimeTopSellingProducts(tenantId: string, limit = 10
        FROM bms_order_items oi
        JOIN bms_orders o ON o.id = oi.order_id AND o.tenant_id = oi.tenant_id
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
-      WHERE oi.tenant_id = $1 AND o.status = ANY($2)
+      WHERE oi.tenant_id = $1 AND o.status = ANY($2::text[])
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
       LIMIT $3`,
@@ -355,7 +355,7 @@ export async function getProfitSummary(
       `WITH eligible_orders AS (
          SELECT id, total_amount
            FROM bms_orders
-          WHERE tenant_id=$1 AND status=ANY($2)
+          WHERE tenant_id=$1 AND status=ANY($2::text[])
             AND ($5::uuid IS NULL OR location_id=$5::uuid)
             AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -378,7 +378,7 @@ export async function getProfitSummary(
          SELECT id, total_amount,
                 (COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date AS day
            FROM bms_orders
-          WHERE tenant_id=$1 AND status=ANY($2)
+          WHERE tenant_id=$1 AND status=ANY($2::text[])
             AND ($5::uuid IS NULL OR location_id=$5::uuid)
             AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -1159,8 +1159,8 @@ export async function getManagementReport(
     getProfitSummary(tenantId, r.from, r.to, locationId),
     query(
       `SELECT l.id, l.code, l.name,
-              COUNT(o.id) FILTER (WHERE o.status = ANY($5))::int AS orders,
-              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($5)), 0) AS revenue
+              COUNT(o.id) FILTER (WHERE o.status = ANY($5::text[]))::int AS orders,
+              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($5::text[])), 0) AS revenue
          FROM bms_locations l
          LEFT JOIN bms_orders o
            ON o.tenant_id = l.tenant_id AND o.location_id = l.id
@@ -1180,7 +1180,7 @@ export async function getManagementReport(
                 COUNT(*) FILTER (WHERE oi.cost_amount_snapshot IS NULL)::int AS missing_cost_lines
            FROM bms_order_items oi
            JOIN bms_orders o ON o.tenant_id=oi.tenant_id AND o.id=oi.order_id
-          WHERE oi.tenant_id=$1 AND o.status = ANY($5)
+          WHERE oi.tenant_id=$1 AND o.status = ANY($5::text[])
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
             AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -1310,7 +1310,7 @@ export async function getManagementReport(
       `WITH paid AS (
          SELECT customer_id, COUNT(*)::int AS orders, SUM(total_amount) AS revenue
            FROM bms_orders
-          WHERE tenant_id=$1 AND status = ANY($5)
+          WHERE tenant_id=$1 AND status = ANY($5::text[])
             AND ($4::uuid IS NULL OR location_id=$4::uuid)
             AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -1355,7 +1355,7 @@ export async function getManagementReport(
     query(
       `SELECT
          COALESCE((SELECT SUM(o.discount_amount) FROM bms_orders o
-                    WHERE o.tenant_id=$1 AND o.status = ANY($5)
+                    WHERE o.tenant_id=$1 AND o.status = ANY($5::text[])
                       AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
                       AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
                       AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS discounts,
@@ -1412,12 +1412,12 @@ export async function getManagementReport(
       `SELECT
          COALESCE((SELECT SUM(o.total_amount + COALESCE(o.shipping_fee,0) + COALESCE(o.rounding_amount,0))
                      FROM bms_orders o
-                    WHERE o.tenant_id=$1 AND o.status=ANY($5)
+                    WHERE o.tenant_id=$1 AND o.status=ANY($5::text[])
                       AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
                       AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
                       AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS paid_order_amount,
          (SELECT COUNT(*)::int FROM bms_orders o
-           WHERE o.tenant_id=$1 AND o.status=ANY($5)
+           WHERE o.tenant_id=$1 AND o.status=ANY($5::text[])
              AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
              AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
              AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS paid_order_count,
@@ -1465,7 +1465,7 @@ export async function getManagementReport(
          SELECT COALESCE(SUM(oi.qty),0)::numeric AS qty
            FROM bms_order_items oi
            JOIN bms_orders o ON o.tenant_id=oi.tenant_id AND o.id=oi.order_id
-          WHERE oi.tenant_id=$1 AND o.status=ANY($5)
+          WHERE oi.tenant_id=$1 AND o.status=ANY($5::text[])
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
             AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -1510,7 +1510,7 @@ export async function getManagementReport(
       `WITH paid AS (
          SELECT id, total_amount, discount_amount
            FROM bms_orders
-          WHERE tenant_id=$1 AND status=ANY($5)
+          WHERE tenant_id=$1 AND status=ANY($5::text[])
             AND ($4::uuid IS NULL OR location_id=$4::uuid)
             AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
             AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
@@ -1532,7 +1532,7 @@ export async function getManagementReport(
          SELECT o.customer_id, COUNT(*)::int AS frequency, SUM(o.total_amount) AS monetary,
                 MAX(COALESCE(o.paid_at,o.created_at)) AS last_paid
            FROM bms_orders o
-          WHERE o.tenant_id=$1 AND o.customer_id IS NOT NULL AND o.status=ANY($2)
+          WHERE o.tenant_id=$1 AND o.customer_id IS NOT NULL AND o.status=ANY($2::text[])
             AND ($3::uuid IS NULL OR o.location_id=$3::uuid)
           GROUP BY o.customer_id
        ), segmented AS (
