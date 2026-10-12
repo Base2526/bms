@@ -304,6 +304,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'platform.mail-log': <MailOutlined />,
   'platform.operations-schedule': <ControlOutlined />,
   'platform.auth-settings': <KeyOutlined />,
+  'platform.app-downloads': <DownloadOutlined />,
   'platform.system-health': <HeartOutlined />,
   'platform.env': <EnvironmentOutlined />,
   'platform.sql-console': <CodeOutlined />,

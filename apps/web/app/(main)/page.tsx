@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { gql, useQuery } from "@apollo/client";
 import { Alert, Button, Card, Col, Row, Skeleton, Space, Tag, Typography } from "antd";
 import Link from "next/link";
 import {
+  AndroidFilled,
+  AppleFilled,
   ApiOutlined,
   AuditOutlined,
   CheckCircleFilled,
@@ -125,6 +127,15 @@ function PlanCard({
 export default function HomePage() {
   const { admin, loading: sessionLoading } = useSessionCtx();
   const { t } = useI18n();
+  const [appDownloads, setAppDownloads] = useState({ androidUrl: "", iosUrl: "" });
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/public/app-downloads", { signal: controller.signal, cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((settings) => { if (settings) setAppDownloads(settings); })
+      .catch(() => { /* Keep unconfigured buttons on this page if settings cannot load. */ });
+    return () => controller.abort();
+  }, []);
   const { data, loading, error } = useQuery(Q_PLANS, { fetchPolicy: "cache-and-network" });
   const plans: any[] = data?.bmsPublicPlans || [];
   const safetyPoints = useMemo(() => buildSafetyPoints(t), [t]);
@@ -209,6 +220,26 @@ export default function HomePage() {
               <small>{t("landing.factsDescription")}</small>
             </span>
           </div>
+        </div>
+      </section>
+
+      <section className={styles.appDownloads} aria-labelledby="app-downloads-title">
+        <div className={styles.appDownloadCopy}>
+          <h2 id="app-downloads-title">{t("landing.appDownloadsTitle")}</h2>
+          <p>{t("landing.appDownloadsDescription")}</p>
+        </div>
+        <div className={styles.appDownloadActions}>
+          {[
+            { name: "Android", url: appDownloads.androidUrl, icon: <AndroidFilled aria-hidden="true" />, label: t("landing.downloadAndroid") },
+            { name: "App Store", url: appDownloads.iosUrl, icon: <AppleFilled aria-hidden="true" />, label: t("landing.downloadIos") },
+          ].map((app) => {
+            const content = <>{app.icon}<span><small>{t("landing.downloadApp")}</small><strong>{app.name}</strong></span></>;
+            return app.url ? (
+              <a key={app.name} className={styles.appDownloadBadge} href={app.url} aria-label={app.label}>{content}</a>
+            ) : (
+              <button key={app.name} type="button" className={styles.appDownloadBadge} aria-label={app.label}>{content}</button>
+            );
+          })}
         </div>
       </section>
 
