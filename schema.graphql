@@ -81,6 +81,12 @@ enum BmsActionStatus {
   NEW
 }
 
+enum BmsAiBillingMode {
+  LOCAL_OWN_KEY
+  LOCAL_UNCONFIGURED
+  PLAN_POINTS
+}
+
 type BmsAiConfig {
   api_key_masked: String
   has_key: Boolean!
@@ -239,9 +245,12 @@ type BmsAiUsage {
   actualCostUsd: Float!
   adjustedCredits: Int!
   billableCredits: Int!
+  billingMode: BmsAiBillingMode!
   blockedRequests: Int!
   bonusCredits: Int!
   byokRequests: Int!
+  connectionModel: String
+  connectionProvider: String
   count: Int!
   creditStatus: BmsAiLimitStatus!
   estimatedCost: Float!

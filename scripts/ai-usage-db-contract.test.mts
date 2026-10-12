@@ -269,7 +269,7 @@ test('AI usage accounting: fractional cost, one-shot finalize, refunds and quota
     assert.equal(usage.outputTokens, Number(expected.output));
     // โทเคนต้องไม่ไปโผล่ในหน่วยของโควตา — `count` คือเครดิต ไม่ใช่โทเคน
     assert.equal(usage.count, Number((await monthly()).credits_consumed));
-    assert.equal(usage.limit, 1000, 'free plan quota is 1000 requests, not 1000 tokens');
+    assert.equal(usage.limit, 100, 'free plan quota is 100 points, not tokens');
 
     // ยอดรวมตอบว่าใช้ไปเท่าไร แต่ "ฟีเจอร์ไหนกิน" คือคำถามถัดไปเสมอ
     const breakdown = await listAiUsageBreakdown(tenantId);

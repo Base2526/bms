@@ -152,7 +152,8 @@ export const bmsSaasResolvers = {
       return verifyPendingShopSignup(args.token);
     },
     async bmsChangePlan(_p: unknown, args: { planCode: string }, ctx: any) {
-      requireTenantAdmin(ctx);
+      // Plan grants spend platform money; shop access is not payment evidence.
+      await requirePlatformAdmin(ctx);
       try {
         const ok = await changePlan(getTenantId(ctx), args.planCode);
         if (ok) await audit(ctx, "plan.change", args.planCode);

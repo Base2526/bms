@@ -955,7 +955,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   },
   {
     id: "billing.read-usage", module: "billing", pageId: "billing", route: "/admin/billing",
-    title: both("อ่านโควตาและค่าใช้ AI", "Read AI quota and usage"), summary: both("แยกเครดิตที่คิด ผู้ให้บริการที่เรียก และต้นทุน USD", "Separate billed credits, provider attempts, and attributed USD cost."),
+    title: both("อ่านโควตาและค่าใช้ AI", "Read AI quota and usage"), summary: both("แยก point ที่คิด ผู้ให้บริการที่เรียก และต้นทุน USD", "Separate billed points, provider attempts, and attributed USD cost."),
     aliases: aliases(["AI เหลือกี่เครดิต", "ค่า AI", "provider calls"], ["AI credits left", "AI cost", "provider calls"]), requiredPermissions: [],
     prerequisites: lists([], []), steps: lists(["เปิด Billing", "ตรวจ plan และ remaining", "ดู provider calls", "อ่าน unknown/unpriced cost แยกจากศูนย์"], ["Open Billing.", "Review plan and remaining quota.", "Review provider calls.", "Distinguish unknown/unpriced cost from zero."]),
     warnings: lists(["ต้นทุน attributed ไม่ใช่ invoice ผู้ให้บริการ"], ["Attributed cost is not a provider invoice."]), relatedCapabilityIds: ["billing.plan"],

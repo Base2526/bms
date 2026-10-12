@@ -11,8 +11,8 @@ test('numeric metering includes cached input and keeps a missing counter unknown
   assert.equal(meteredUsage({ input_tokens: NaN }).inputTokens, null);
 });
 
-test('shared AI budget is 100 USD and reservations cover the full configured model envelope', () => {
-  assert.equal(SHARED_AI_MONTHLY_BUDGET_USD, 100);
+test('shared AI is uncapped; legacy reservation estimates retain their original meaning', () => {
+  assert.equal(SHARED_AI_MONTHLY_BUDGET_USD, -1);
   assert.equal(aiAttemptReservationUsd('claude-haiku-4-5', 'anthropic', 1024), 1.25512);
   assert.equal(aiAttemptReservationUsd('deepseek-v4-pro', 'deepseek', 1024), 1.32405504);
   assert.equal(aiAttemptReservationUsd('future-sonnet-99', 'anthropic'), null);

@@ -103,11 +103,12 @@ test("the quota lives on the row that spends it, and its destination follows its
   const block = footer();
   // Two blocks pointing at two pages answered one question before this. The number rides the
   // assistant row now, so "how much is left" sits on the thing that consumes it.
-  assert.match(block, /t\('admin\.ai_quota_count'/);
+  assert.match(block, /t\('admin\.ai_unlimited'/);
   assert.match(block, /t\('admin\.ai_quota_remaining'/);
   // Out of quota is the only state whose text tells the reader to go add a key, so it is the only
   // state whose link may leave the assistant. Sending a normal click to settings would be a lie.
-  assert.match(block, /href=\{aiUsage\?\.sharedBudgetBlocked \? '\/admin\/billing' : aiOverLimit \? '\/admin\/settings' : '\/admin\/assistant'\}/);
+  assert.match(block, /href=\{localAiUnconfigured \? '\/admin\/settings\?focus=ai' : aiOverLimit \? '\/admin\/settings' : '\/admin\/assistant'\}/);
+  assert.doesNotMatch(block, /sharedBudget|ai_budget_/);
 });
 
 test("the row's own icon carries the quota now, not a separate bar underneath", () => {

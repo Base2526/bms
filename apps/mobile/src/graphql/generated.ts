@@ -104,6 +104,11 @@ export type SchemaBmsActionStatus =
   | 'EXPIRED'
   | 'NEW';
 
+export type SchemaBmsAiBillingMode =
+  | 'LOCAL_OWN_KEY'
+  | 'LOCAL_UNCONFIGURED'
+  | 'PLAN_POINTS';
+
 export type SchemaBmsAiConfig = {
   __typename?: 'BmsAiConfig';
   api_key_masked: Maybe<Scalars['String']['output']>;
@@ -275,9 +280,12 @@ export type SchemaBmsAiUsage = {
   actualCostUsd: Scalars['Float']['output'];
   adjustedCredits: Scalars['Int']['output'];
   billableCredits: Scalars['Int']['output'];
+  billingMode: SchemaBmsAiBillingMode;
   blockedRequests: Scalars['Int']['output'];
   bonusCredits: Scalars['Int']['output'];
   byokRequests: Scalars['Int']['output'];
+  connectionModel: Maybe<Scalars['String']['output']>;
+  connectionProvider: Maybe<Scalars['String']['output']>;
   count: Scalars['Int']['output'];
   creditStatus: SchemaBmsAiLimitStatus;
   estimatedCost: Scalars['Float']['output'];

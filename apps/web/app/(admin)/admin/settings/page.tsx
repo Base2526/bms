@@ -20,7 +20,7 @@ const Q = gql`
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
     }
     bmsAiConfig { has_key api_key_masked model provider }
-    bmsAiUsage { count limit remaining unlimited planCode planName }
+    bmsAiUsage { billingMode count limit remaining unlimited planCode planName }
   }
 `;
 const M = gql`
@@ -132,7 +132,8 @@ export default function Page() {
   const [activeTab, setActiveTab] = useState("channels");
   useEffect(() => {
     if (highlightedChannel) setActiveTab("channels");
-  }, [highlightedChannel]);
+    else if (focus === "ai") setActiveTab("ai");
+  }, [highlightedChannel, focus]);
 
   // แถวช่องทางเป็น Collapse ทีละแถว (เดิมเป็นการ์ดใหญ่ 7 ใบเปิดพร้อมกันหมด) — เปิดเฉพาะช่องทางที่
   // มาจาก deep-link (?focus=channel) เป็น default, ผู้ใช้กางเพิ่ม/ยุบเองได้อิสระทีละแถว
@@ -459,6 +460,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
 
   const hasKey = !!aiConfig?.has_key;
   const usage = aiUsage;
+  const localAi = usage?.billingMode?.startsWith("LOCAL_");
   const nearLimit = !hasKey && usage && !usage.unlimited && usage.limit > 0 && usage.remaining <= usage.limit * 0.2;
   const overLimit = !hasKey && usage && !usage.unlimited && usage.remaining === 0;
 
@@ -467,7 +469,7 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
       title={
         <Space wrap>
           <Tag color="cyan"><RobotOutlined /> {t("admin_settings.ai_byok")}</Tag>
-          {hasKey ? <Tag color="green">{t("admin_settings.ai_using_own_key")}</Tag> : <Tag color="default">{t("admin_settings.ai_using_shared_key")}</Tag>}
+          {localAi ? <Tag color="default">{t(usage.billingMode === "LOCAL_OWN_KEY" ? "retail_local_ai.own_key" : "retail_local_ai.unconfigured")}</Tag> : hasKey ? <Tag color="green">{t("admin_settings.ai_using_own_key")}</Tag> : <Tag color="default">{t("admin_settings.ai_using_shared_key")}</Tag>}
         </Space>
       }
       extra={hasKey && (
@@ -478,10 +480,10 @@ function AiCard({ aiConfig, aiUsage, onSaved }: any) {
       )}
     >
       <Paragraph type="secondary" style={{ marginTop: -4 }}>
-        {t("admin_settings.ai_card_desc")}
+        {t(localAi ? "retail_local_ai.settings_help" : "admin_settings.ai_card_desc")}
       </Paragraph>
 
-      {!hasKey && usage && (
+      {!localAi && !hasKey && usage && (
         <Alert closable
           type={overLimit ? "error" : nearLimit ? "warning" : "info"}
           showIcon

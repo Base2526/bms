@@ -10,14 +10,19 @@ try {
   for (const lang of ['th', 'en']) for (const width of [1440, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 } });
     await context.addCookies([{ name: 'ADMIN_COOKIE', value: 'FAKE-browser-fixture', url: base }, { name: 'lang', value: lang, url: base }]);
-    let count = 10, reads = 0, unlimited = false, blocked = false, warning = 0, creditBlocked = false, noticeRead = false;
+    let count = 10, reads = 0, unlimited = false, warning = 0, creditBlocked = false, noticeRead = false;
+    let platformAdmin = false, grantMutations = 0;
     const errors = [];
-    const plan = { code: 'free', name: 'FAKE Free', price_monthly: 0, max_products: 100, max_channels: 2, max_orders_month: 100, max_users: 3, ai_credits_monthly: 1000 };
+    const plan = { code: 'free', name: 'FAKE Free', price_monthly: 0, max_products: 100, max_channels: 2, max_orders_month: 100, max_users: 3, ai_credits_monthly: 100 };
     await context.route(/\/(?:api\/|graphql)/, async route => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { isAuthenticated: true, admin: { id: 1, role: 'Administrator', email: 'fake@example.test', name: 'FAKE admin', language: lang } } });
       if (!['/api/graphql', '/graphql'].includes(path)) return route.fulfill({ json: {} });
       const { query: q } = route.request().postDataJSON();
+      if (q.includes('mutation') && /bmsChangePlan\(|bmsAdjustAiCredits\(/.test(q)) {
+        grantMutations++;
+        return route.fulfill({ json: { data: { bmsChangePlan: true, bmsAdjustAiCredits: true } } });
+      }
       if (q.includes('bmsReadAiLimitNotification(')) {
         noticeRead = true;
         return route.fulfill({ json: { data: { bmsReadAiLimitNotification: true } } });
@@ -27,24 +32,25 @@ try {
         return route.fulfill({ json: { data: { bmsWorkAssistant: { reply: 'FAKE verified answer', proposals: [], trace: [] } } } });
       }
       if (q.includes('bmsAiUsage')) reads++;
-      const budget = { sharedBudgetLimitUsd: 100, sharedBudgetSpentUsd: blocked ? 99 : 12.3456, sharedBudgetReservedUsd: blocked ? 1 : 2, sharedBudgetRemainingUsd: blocked ? 0 : 85.6544, sharedBudgetBlocked: blocked, sharedBudgetUnaccountedCalls: 0 };
+      const budget = { sharedBudgetLimitUsd: -1, sharedBudgetSpentUsd: 150.1234, sharedBudgetReservedUsd: 0, sharedBudgetRemainingUsd: -1, sharedBudgetBlocked: false, sharedBudgetUnaccountedCalls: 1 };
       const data = {
-        bmsAiLimitNotifications: { unreadCount: warning || blocked ? noticeRead ? 0 : 1 : 0,
-          items: warning || blocked ? [{ id: '11111111-1111-4111-8111-111111111111', dimension: 'BUDGET', level: blocked ? 'PAUSED' : `WARNING_${warning}`, yearMonth: '2026-10', isRead: noticeRead, createdAt: '2026-10-09T00:00:00Z' }] : [] },
-        myBmsPermissions: ['assistant.use', 'report.view', 'billing.view'], bmsIsPlatformAdmin: false,
+        bmsAiLimitNotifications: { unreadCount: warning || creditBlocked ? noticeRead ? 0 : 1 : 0,
+          items: warning || creditBlocked ? [{ id: '11111111-1111-4111-8111-111111111111', dimension: 'CREDITS', level: creditBlocked ? 'PAUSED' : `WARNING_${warning}`, yearMonth: '2026-10', isRead: noticeRead, createdAt: '2026-10-09T00:00:00Z' }] : [] },
+        myBmsPermissions: ['assistant.use', 'report.view', 'billing.view'], bmsIsPlatformAdmin: platformAdmin,
         bmsStoreProfile: { businessArchetype: 'retail' }, bmsKitchenBoardEnabled: false, bmsWastageEnabled: false, bmsPackToolsConfigured: false,
         bmsActingTenant: null, bmsChannelHealthCount: 0, bmsInboxUnreadCount: 0, bmsMyMentionsUnreadCount: 0, bmsRestockReadyCount: 0,
         bmsMe: { id: '1', email: 'fake@example.test', tenant: { id: 'FAKE', slug: 'fake' } },
         bmsAiConfig: { has_key: false, model: 'claude-haiku-4-5' },
-        bmsAiUsage: { __typename: 'BmsAiUsage', count: unlimited ? 0 : count, limit: unlimited ? -1 : 1000, remaining: unlimited ? -1 : 1000-count, unlimited,
-          tenantId: 'FAKE', yearMonth: '2026-10', resetsAt: '2026-11-01T00:00:00Z', creditStatus: creditBlocked ? 'PAUSED_CREDITS' : 'NORMAL',
-          sharedBudgetStatus: blocked ? 'PAUSED_BUDGET' : warning ? `WARNING_${warning}` : 'NORMAL', sharedBudgetRequiredUsd: blocked ? 6.25 : 0,
+        bmsAiUsage: { __typename: 'BmsAiUsage', billingMode: 'PLAN_POINTS', count: unlimited ? 0 : count, limit: unlimited ? -1 : 100, remaining: unlimited ? -1 : 100-count, unlimited,
+          tenantId: 'FAKE', yearMonth: '2026-10', resetsAt: '2026-10-31T17:00:00Z', creditStatus: creditBlocked ? 'PAUSED_CREDITS' : warning ? `WARNING_${warning}` : 'NORMAL',
+          sharedBudgetStatus: 'NORMAL', sharedBudgetRequiredUsd: 0,
           planCode: unlimited ? 'business' : 'free', planName: unlimited ? 'Business' : 'Free', requestCount: count, sharedRequests: count, byokRequests: 0,
-          blockedRequests: 0, grantedCredits: unlimited ? 0 : 1000, bonusCredits: 0, adjustedCredits: 0, billableCredits: unlimited ? 0 : count,
+          blockedRequests: 0, grantedCredits: unlimited ? 0 : 100, bonusCredits: 0, adjustedCredits: 0, billableCredits: unlimited ? 0 : count,
           providerCalls: count*2, actualCostUsd: budget.sharedBudgetSpentUsd, unpricedProviderCalls: 1, inputTokens: 12000, outputTokens: 600, ...budget },
-        bmsBilling: { plan: unlimited ? { ...plan, code: 'business', name: 'FAKE Business', ai_credits_monthly: -1 } : plan,
-          usage: { products: 1, channels: 1, orders_month: 1, users: 1 }, plans: [plan] },
+        bmsBilling: { plan: unlimited ? { ...plan, code: 'business', name: 'FAKE Business', price_monthly: 1990, ai_credits_monthly: -1 } : plan,
+          usage: { products: 1, channels: 1, orders_month: 1, users: 1 }, plans: [plan, { ...plan, code: 'pro', name: 'FAKE Pro', price_monthly: 599, ai_credits_monthly: 1000 }, { ...plan, code: 'business', name: 'FAKE Business', price_monthly: 1990, ai_credits_monthly: -1 }] },
         bmsAiCreditLedger: [], bmsAiUsageBreakdown: [],
+        bmsPublicPlans: [plan, { ...plan, code: 'pro', name: 'FAKE Pro', price_monthly: 599, ai_credits_monthly: 1000 }, { ...plan, code: 'business', name: 'FAKE Business', price_monthly: 1990, ai_credits_monthly: -1 }],
       };
       await route.fulfill({ json: { data } });
     });
@@ -53,50 +59,61 @@ try {
     page.on('pageerror', e => errors.push(e.message));
     try {
       await page.goto(`${base}/admin/assistant`, { waitUntil: 'domcontentloaded', timeout: 90000 });
-      if (width === 1440) await page.getByText('10/1000 ' + (lang === 'th' ? 'เครดิต' : 'credits'), { exact: true }).waitFor();
+      if (width === 1440) await page.getByText(lang === 'th' ? 'เหลือ 90 / 100 point' : '90 / 100 points left', { exact: true }).waitFor();
       const before = reads;
       await page.getByRole('textbox').last().fill('FAKE test usage');
       await page.getByRole('textbox').last().press('Enter');
       await page.getByText('FAKE verified answer', { exact: true }).waitFor();
-      if (width === 1440) await page.getByText('11/1000 ' + (lang === 'th' ? 'เครดิต' : 'credits'), { exact: true }).waitFor();
+      if (width === 1440) await page.getByText(lang === 'th' ? 'เหลือ 89 / 100 point' : '89 / 100 points left', { exact: true }).waitFor();
       assert.ok(reads > before, 'the real Apollo operation refreshes active quota');
       await page.screenshot({ path: `${output}/assistant-${lang}-${width}.png`, fullPage: true });
       const refreshStatus = () => page.getByRole('button', { name: lang === 'th' ? 'รีเฟรชสถานะ AI' : 'Refresh AI status', exact: true }).click();
-      warning = 80;
+      warning = 80; count = 80;
       await refreshStatus();
-      await page.getByText(lang === 'th' ? 'วงเงินต้นทุน AI ส่วนกลาง: ใช้ถึง 80%' : 'Shared AI cost budget: 80% used', { exact: true }).waitFor();
-      warning = 90;
+      await page.getByText(lang === 'th' ? 'AI point: ใช้ถึง 80%' : 'AI points: 80% used', { exact: true }).waitFor();
+      warning = 90; count = 90;
       await refreshStatus();
-      await page.getByText(lang === 'th' ? 'วงเงินต้นทุน AI ส่วนกลาง: ใช้ถึง 90%' : 'Shared AI cost budget: 90% used', { exact: true }).waitFor();
+      await page.getByText(lang === 'th' ? 'AI point: ใช้ถึง 90%' : 'AI points: 90% used', { exact: true }).waitFor();
       await page.getByRole('button', { name: lang === 'th' ? 'แจ้งเตือน AI' : 'AI notifications', exact: true }).click();
       await page.getByRole('button', { name: lang === 'th' ? 'อ่านแล้ว' : 'Mark as read', exact: true }).click();
       await page.getByRole('button', { name: lang === 'th' ? 'อ่านแล้ว' : 'Mark as read', exact: true }).waitFor({ state: 'hidden' });
       assert.equal(noticeRead, true);
       await page.screenshot({ path: `${output}/notices-${lang}-${width}.png`, fullPage: true });
       await page.getByRole('button', { name: lang === 'th' ? 'แจ้งเตือน AI' : 'AI notifications', exact: true }).click();
-      warning = 0; creditBlocked = true;
+      warning = 0; creditBlocked = true; count = 100;
       await refreshStatus();
-      await page.getByText(lang === 'th' ? 'เครดิต AI ส่วนกลาง: เครดิตหมด' : 'Shared AI credits: Credits exhausted', { exact: true }).waitFor();
+      await page.getByText(lang === 'th' ? 'AI point: point หมด' : 'AI points: Points exhausted', { exact: true }).waitFor();
       creditBlocked = false;
       unlimited = true;
       await page.goto(`${base}/admin/billing`, { waitUntil: 'domcontentloaded' });
-      await page.getByText(/\$100.*Business|Business.*\$100/).first().waitFor();
-      await page.getByText(/85.6544/).first().waitFor();
-      assert.doesNotMatch(await page.locator('body').innerText(), /-1 AI Credits|0 \/ -1|total -1|ทั้งหมด -1/);
+      if (width === 1440) await page.getByText(lang === 'th' ? 'AI ไม่จำกัด' : 'Unlimited AI', { exact: true }).waitFor();
+      await page.getByText('150.1234', { exact: false }).first().waitFor();
+      await page.getByText(lang === 'th' ? 'วันที่ 1 เวลา 00:00 น. (เวลาไทย)' : '1st of each month, 00:00 Thailand time', { exact: true }).first().waitFor();
+      await page.getByText('1,000 AI points', { exact: true }).waitFor();
+      assert.equal(await page.getByText(lang === 'th' ? 'จัดการ AI point' : 'Manage AI points', { exact: true }).count(), 0);
+      const contactButtons = page.getByRole('button', { name: lang === 'th' ? 'ติดต่อผู้ดูแลแพลตฟอร์ม' : 'Contact platform administrator', exact: true });
+      assert.equal(await contactButtons.count(), 2);
+      for (const button of await contactButtons.all()) assert.equal(await button.isDisabled(), true);
+      assert.equal(grantMutations, 0);
+      assert.doesNotMatch(await page.locator('body').innerText(), /-1 AI points|0 \/ -1|total -1|ทั้งหมด -1|\$100|Budget \$/);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, 'no page overflow');
       await page.screenshot({ path: `${output}/billing-${lang}-${width}.png`, fullPage: true });
-      if (width === 390) {
-        await page.getByText(/85.6544/).first().scrollIntoViewIfNeeded();
-        await page.screenshot({ path: `${output}/budget-mobile-${lang}.png` });
-      }
-      blocked = true;
-      await page.getByRole('button', { name: /Refresh/, exact: false }).last().click();
-      await refreshStatus();
-      await page.getByText(/99.0000/).first().waitFor();
-      if (width === 1440) await page.locator('a.bms-sider-quiet[href="/admin/billing"]').waitFor();
-      await page.getByText(lang === 'th' ? 'วงเงินต้นทุน AI ส่วนกลาง: วงเงินไม่พอสำหรับคำขอที่ถูกปฏิเสธ' : 'Shared AI cost budget: Insufficient budget for the refused request', { exact: true }).waitFor();
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, 'blocked state fits mobile');
-      await page.screenshot({ path: `${output}/blocked-${lang}-${width}.png`, fullPage: true });
+      platformAdmin = true;
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.getByText(lang === 'th' ? 'จัดการ AI point' : 'Manage AI points', { exact: true }).waitFor();
+      await page.getByRole('button', { name: lang === 'th' ? 'เลือกแพ็กเกจนี้' : 'Choose this plan', exact: true }).first().click();
+      const confirmation = page.getByRole('dialog');
+      await confirmation.waitFor();
+      assert.match(await confirmation.innerText(), /FAKE Free.*0 THB\/month.*100 point\/month/s);
+      assert.equal(grantMutations, 0, 'opening confirmation does not grant a plan');
+      await confirmation.getByRole('button', { name: /^(OK|ตกลง)$/ }).click();
+      await confirmation.waitFor({ state: 'hidden' });
+      assert.equal(grantMutations, 1);
+      await page.goto(`${base}/`, { waitUntil: 'domcontentloaded' });
+      await page.getByText(lang === 'th' ? '100 point/เดือน' : '100 points/month', { exact: true }).waitFor();
+      await page.getByText(lang === 'th' ? '1,000 point/เดือน' : '1,000 points/month', { exact: true }).waitFor();
+      await page.getByText(lang === 'th' ? 'AI ไม่จำกัด' : 'Unlimited AI', { exact: true }).waitFor();
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false);
       assert.deepEqual(errors, []);
     } catch (e) {
       await page.screenshot({ path: `${output}/failure-${lang}-${width}.png`, fullPage: true });
@@ -104,5 +121,5 @@ try {
       throw e;
     } finally { await context.close(); }
   }
-  console.log('PASS actual assistant/sidebar/Billing: th/en desktop/mobile, refresh, Business cap, 80/90 warnings, credit/budget pause, owner bell and read acknowledgement; mock API only');
+  console.log('PASS actual assistant/sidebar/Billing: th/en desktop/mobile, refresh, unlimited Business beyond $100, Bangkok reset, 80/90 point warnings, point exhaustion, owner bell and read acknowledgement; mock API only');
 } finally { await browser.close(); }

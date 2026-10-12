@@ -134,11 +134,16 @@ wrong, and update the doc in the same change.
   `actual_cost_usd` (attributed cost) separate. A retry or provider fallback shares one
   `meta.usage_group_id` and bills **one** credit. Unknown cost is `NULL`, never `0`. Cost attribution
   is not a provider invoice.
-  Shared AI also has a **$100 per-tenant UTC-month cost cap, including Business** (`10.54`).
-  `recordAiProviderAttempt()` must reserve the actual model's cost ceiling before network I/O;
-  failure blocks the call. Unknown spending keeps its reservation, never resets to zero on timeout.
-  Refusal status and owner notices (`10.55`) must distinguish credits, budget and unknown cost;
-  a notice failure must never roll back cost reservations. See the full AI accounting invariants.
+  Monthly AI points are Free **100**, Pro **1,000 at THB 599**, Business **unlimited at THB 1,990**
+  (`10.56`), resetting on the first at **00:00 Asia/Bangkok**. There is no per-tenant USD cap.
+  `recordAiProviderAttempt()` still records attempts before network I/O; failure blocks the call.
+  Unknown cost stays unknown and historical reservations remain evidence, never a usage gate.
+  Retail Local uses owner-funded keys (saved or server env), no AI plan points or SaaS purchase UI;
+  the internal business plan is shop capability metadata, not an AI subscription.
+  Only database-verified platform admins may change paid plans or adjust AI points; a shop admin
+  session is never payment evidence. Automated subscription charging is not implemented.
+  Point notices distinguish warnings, exhaustion and recovery; notification failure never rolls
+  back accounting. See the full AI accounting invariants.
 - **Shared-provider completions** flow through `finalizeAiUsageEvent()` — a parallel success/error
   path silently stops AI Provider Health from covering it.
 - **Failure alerting** — never hook it off a tool's audit `outcome` (that merges real exceptions with

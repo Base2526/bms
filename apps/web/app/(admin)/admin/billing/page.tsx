@@ -1,7 +1,8 @@
 'use client';
+import Link from "next/link";
 import { useState } from "react";
 import { gql, useQuery, useMutation } from "@apollo/client";
-import { Card, Row, Col, Button, Tag, Progress, message, Alert, Typography, Space, Divider, List, Input, InputNumber } from "antd";
+import { Card, Row, Col, Button, Tag, Progress, message, Alert, Typography, Space, Divider, List, Input, InputNumber, Modal } from "antd";
 import { CheckOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined, KeyOutlined, BarChartOutlined, WarningOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { aiCreditCapacity } from "@/lib/aiUsageClient";
@@ -10,17 +11,17 @@ const { Text, Paragraph } = Typography;
 
 const Q = gql`
   query {
+    bmsIsPlatformAdmin
     bmsBilling {
       plan { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly }
       usage { products channels orders_month users }
       plans { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly }
     }
     bmsAiUsage {
-      count limit remaining unlimited planCode planName
+      billingMode count limit remaining unlimited planCode planName
       requestCount sharedRequests byokRequests blockedRequests
       grantedCredits bonusCredits adjustedCredits billableCredits providerCalls actualCostUsd unpricedProviderCalls
       inputTokens outputTokens
-      sharedBudgetLimitUsd sharedBudgetSpentUsd sharedBudgetReservedUsd sharedBudgetRemainingUsd sharedBudgetUnaccountedCalls sharedBudgetBlocked
     }
     bmsAiConfig { has_key model }
     bmsAiCreditLedger(limit: 12) {
@@ -45,7 +46,6 @@ function formatNumber(n: number) {
 
 function aiQuotaStatus(aiUsage: any) {
   if (!aiUsage) return "normal";
-  if (aiUsage.sharedBudgetBlocked) return "exhausted";
   if (aiUsage.unlimited || aiUsage.limit < 0) return "normal";
   if (aiUsage.remaining === 0) return "exhausted";
   const usedPct = pct(aiUsage.count, aiCreditCapacity(aiUsage));
@@ -131,9 +131,72 @@ function AiMetricCard({
   );
 }
 
+const Q_BILLING_MODE = gql`query AiBillingMode {
+  bmsAiUsage { billingMode }
+}`;
+
 export default function Page() {
   const { t } = useI18n();
+  const { data, error } = useQuery(Q_BILLING_MODE, { fetchPolicy: "cache-and-network" });
+  if (error) return <Alert closable type="error" showIcon message={t("admin_billing.load_error")} />;
+  if (!data?.bmsAiUsage) return <Card loading />;
+  return data.bmsAiUsage.billingMode === "PLAN_POINTS" ? <CloudBilling /> : <LocalAiUsage />;
+}
+
+const Q_LOCAL_AI = gql`query LocalAiUsage {
+  bmsAiUsage {
+    billingMode connectionProvider connectionModel yearMonth resetsAt requestCount
+    providerCalls inputTokens outputTokens actualCostUsd unpricedProviderCalls
+  }
+  bmsAiUsageBreakdown(limit: 12) {
+    feature requests providerCalls inputTokens outputTokens actualCostUsd unpricedProviderCalls
+  }
+}`;
+
+function LocalAiUsage() {
+  const { t } = useI18n();
+  const { data, loading, error, refetch } = useQuery(Q_LOCAL_AI, { fetchPolicy: "cache-and-network", pollInterval: 30000 });
+  if (error) return <Alert closable type="error" showIcon message={t("admin_billing.load_error")} />;
+  const usage = data?.bmsAiUsage;
+  if (!usage) return <Card loading />;
+  const configured = usage.billingMode === "LOCAL_OWN_KEY";
+  return <div>
+    <Space wrap style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }}>
+      <h2>{t("retail_local_ai.title")}</h2>
+      <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void refetch()}>{t("ai_limit.refresh")}</Button>
+    </Space>
+    <Card style={{ marginBottom: 16 }} title="Retail Local">
+      <Alert closable showIcon type="info" message={t(configured ? "retail_local_ai.own_key" : "retail_local_ai.unconfigured")}
+        description={t(configured ? "retail_local_ai.own_key_help" : "retail_local_ai.setup_help")} />
+      {configured && <p>{usage.connectionProvider} · {usage.connectionModel}</p>}
+      <p><Link href="/admin/settings?focus=ai">{t("retail_local_ai.settings")}</Link></p>
+      <Text type="secondary">{t("retail_local_ai.period", { month: usage.yearMonth })}</Text>
+    </Card>
+    <Row gutter={[16, 16]}>
+      <Col xs={24} md={8}><AiMetricCard title={t("retail_local_ai.requests")} value={formatNumber(usage.requestCount)}
+        subtitle={t("retail_local_ai.attempts", { count: usage.providerCalls })} accent="#1677ff" /></Col>
+      <Col xs={24} md={8}><AiMetricCard title={t("admin_billing.card_tokens")} value={formatNumber(usage.inputTokens + usage.outputTokens)}
+        subtitle={t("retail_local_ai.tokens", { input: usage.inputTokens, output: usage.outputTokens })} accent="#13c2c2" /></Col>
+      <Col xs={24} md={8}><AiMetricCard title={t("admin_billing.card_estimated_cost")} value={`$${Number(usage.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}`}
+        subtitle={t("admin_billing.cost_subtitle")} accent="#722ed1" /></Col>
+    </Row>
+    {usage.unpricedProviderCalls > 0 && <Alert closable showIcon type="info" style={{ marginTop: 16 }}
+      message={t("admin_billing.unpriced_calls", { count: usage.unpricedProviderCalls })} />}
+    <Card title={t("retail_local_ai.breakdown")} style={{ marginTop: 16 }}>
+      <List dataSource={data?.bmsAiUsageBreakdown ?? []} locale={{ emptyText: t("admin_billing.no_usage_data") }}
+        renderItem={(row: any) => <List.Item><Space direction="vertical">
+          <Text strong>{labelForFeature(row.feature)}</Text>
+          <Text>{t("retail_local_ai.feature_usage", { requests: row.requests, tokens: row.inputTokens + row.outputTokens })}</Text>
+        </Space></List.Item>} />
+    </Card>
+  </div>;
+}
+
+function CloudBilling() {
+  const { t } = useI18n();
+  const [modal, modalContext] = Modal.useModal();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
+  const canManageEntitlements = data?.bmsIsPlatformAdmin === true;
   const [adjustAmount, setAdjustAmount] = useState<number>(1000);
   const [adjustNote, setAdjustNote] = useState<string>("");
   const [changePlan, { loading: changing }] = useMutation(M, {
@@ -172,6 +235,7 @@ export default function Page() {
 
   return (
     <div>
+      {modalContext}
       <div style={{ marginBottom: 16 }}>
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>Billing & Plan</h2>
@@ -211,7 +275,7 @@ export default function Page() {
             <Col xs={24} lg={16}>
               <Space direction="vertical" size={8} style={{ width: "100%" }}>
                 <Space wrap>
-                  <Tag color="purple" style={{ borderRadius: 999, paddingInline: 10 }}>AI Credits</Tag>
+                  <Tag color="purple" style={{ borderRadius: 999, paddingInline: 10 }}>AI points</Tag>
                   {hasByok && <Tag color="green" style={{ borderRadius: 999, paddingInline: 10 }}>BYOK</Tag>}
                   {!hasByok && <Tag color={aiStatus === "warning" ? "gold" : aiStatus === "exhausted" ? "red" : "blue"} style={{ borderRadius: 999, paddingInline: 10 }}>{aiUsage?.planName ?? "-"}</Tag>}
                 </Space>
@@ -220,7 +284,7 @@ export default function Page() {
                     <RobotOutlined style={{ fontSize: 24 }} />
                   </div>
                   <div>
-                    <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15 }}>AI Credit</div>
+                    <div style={{ fontSize: 28, fontWeight: 800, lineHeight: 1.15 }}>AI point</div>
                     <Text type="secondary" style={{ fontSize: 15 }}>
                   {hasByok ? t("admin_billing.byok_note") : t("admin_billing.credits_note")}
                     </Text>
@@ -236,7 +300,7 @@ export default function Page() {
               >
                 <Text type="secondary">{t("admin_billing.ai_policy_today")}</Text>
                 <div style={{ fontSize: 16, fontWeight: 700, marginTop: 6 }}>
-                  {aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_paused") : hasByok ? t("admin_billing.policy_byok") : aiStatus === "exhausted" ? t("admin_billing.policy_exhausted") : aiStatus === "warning" ? t("admin_billing.policy_warning") : t("admin_billing.policy_normal")}
+                  {hasByok ? t("admin_billing.policy_byok") : aiStatus === "exhausted" ? t("admin_billing.policy_exhausted") : aiStatus === "warning" ? t("admin_billing.policy_warning") : t("admin_billing.policy_normal")}
                 </div>
                 <Text type="secondary">{t("admin_billing.policy_source_note")}</Text>
               </Card>
@@ -290,19 +354,9 @@ export default function Page() {
           />
         </Card>
 
-        {aiUsage && <Alert closable showIcon type={aiUsage.sharedBudgetBlocked ? "warning" : "info"}
-          style={{ marginBottom: 16 }}
-          message={t("admin_billing.budget_title", { limit: aiUsage.sharedBudgetLimitUsd })}
-          description={<>
-            {t("admin_billing.budget_details", {
-              spent: Number(aiUsage?.sharedBudgetSpentUsd ?? 0).toFixed(4),
-              reserved: Number(aiUsage?.sharedBudgetReservedUsd ?? 0).toFixed(4),
-              remaining: Number(aiUsage?.sharedBudgetRemainingUsd ?? 0).toFixed(4),
-            })}
-            <br />{t("admin_billing.budget_policy")}
-            {aiUsage?.sharedBudgetUnaccountedCalls > 0 && <><br />{t("admin_billing.budget_unaccounted", { count: aiUsage.sharedBudgetUnaccountedCalls })}</>}
-          </>}
-        />}
+        <Alert closable showIcon type="info" style={{ marginBottom: 16 }}
+          message={t("admin_billing.points_policy")}
+          description={t("admin_billing.next_month_start")} />
         <Row gutter={[16, 16]} style={{ marginBottom: 8 }}>
           <Col xs={24} md={12} lg={6}>
             <AiMetricCard title={t("admin_billing.card_remaining")} value={aiCreditsRemaining < 0 ? t("admin_billing.unlimited") : formatNumber(aiCreditsRemaining)} subtitle={hasByok ? t("admin_billing.byok_rate_limit") : t("admin_billing.from_total", { total: aiCreditsTotal < 0 ? t("admin_billing.unlimited") : formatNumber(aiCreditsTotal) })} accent={tone.accent} />
@@ -320,7 +374,7 @@ export default function Page() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={15}>
-            <Card size="small" title="AI Credit usage" style={{ borderRadius: 16 }}>
+            <Card size="small" title="AI point usage" style={{ borderRadius: 16 }}>
               {hasByok ? (
                 <Alert closable type="success" showIcon style={{ borderRadius: 14 }} message={t("admin_billing.byok_alert_title")} description={t("admin_billing.byok_alert_desc")} />
               ) : (
@@ -331,7 +385,7 @@ export default function Page() {
                       <div style={{ fontSize: 22, fontWeight: 800, color: tone.accent }}>{aiUsage?.unlimited ? t("admin_billing.unlimited") : `${usagePercent}%`}</div>
                     </div>
                     <Tag color={aiStatus === "warning" ? "gold" : aiStatus === "exhausted" ? "red" : "blue"} style={{ borderRadius: 999, paddingInline: 10, fontSize: 13 }}>
-                      {aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_paused") : aiStatus === "warning" ? t("admin_billing.status_warning") : aiStatus === "exhausted" ? t("admin_billing.status_exhausted") : t("admin_billing.status_normal")}
+                      {aiStatus === "warning" ? t("admin_billing.status_warning") : aiStatus === "exhausted" ? t("admin_billing.status_exhausted") : t("admin_billing.status_normal")}
                     </Tag>
                   </Space>
                   <Progress
@@ -351,7 +405,7 @@ export default function Page() {
                     </Card>
                     <Card size="small" style={{ borderRadius: 14 }}>
                       <Text type="secondary">{t("admin_billing.when_exhausted")}</Text>
-                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{aiUsage?.unlimited || aiUsage?.sharedBudgetBlocked ? t("admin_billing.budget_handoff") : 'Fallback / Upgrade'}</div>
+                      <div style={{ fontWeight: 700, fontSize: 20, marginTop: 6 }}>{aiUsage?.unlimited ? t("admin_billing.unlimited") : 'Fallback / Upgrade'}</div>
                     </Card>
                   </div>
                 </>
@@ -372,7 +426,7 @@ export default function Page() {
                           <span style={{ width: 8, height: 8, borderRadius: 999, background: item.color, display: "inline-block" }} />
                           <span>{item.label}</span>
                         </Space>
-                        <Text strong>{formatNumber(item.value)} cr</Text>
+                        <Text strong>{formatNumber(item.value)} point</Text>
                       </Space>
                       <Text type="secondary" style={{ fontSize: 12 }}>
                         {formatNumber(item.requests)} requests · {formatNumber(item.providerCalls)} provider calls · {formatNumber(item.tokens)} tokens · ${Number(item.actualCostUsd).toLocaleString("en-US", { minimumFractionDigits: 4, maximumFractionDigits: 8 })}
@@ -393,12 +447,12 @@ export default function Page() {
 
         <Row gutter={[16, 16]}>
           <Col xs={24} lg={14}>
-            <Card size="small" title={<Space><ThunderboltOutlined /> AI Credit plans</Space>} style={{ borderRadius: 16 }}>
+            <Card size="small" title={<Space><ThunderboltOutlined /> AI point plans</Space>} style={{ borderRadius: 16 }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(220px, 100%), 1fr))", gap: 12 }}>
                 {[
                   ...plans.map((plan: any) => ({ code: plan.code, name: plan.name,
-                    credits: plan.ai_credits_monthly < 0 ? t("admin_billing.unlimited") : `${formatNumber(plan.ai_credits_monthly)} AI Credits`,
-                    note: aiUsage ? t("admin_billing.budget_title", { limit: aiUsage.sharedBudgetLimitUsd }) : '', cta: '' })),
+                    credits: plan.ai_credits_monthly < 0 ? t("admin_billing.unlimited") : `${formatNumber(plan.ai_credits_monthly)} AI points`,
+                    note: t("admin_billing.next_month_start"), cta: '' })),
                   { code: "byok", name: "BYOK", credits: "Use your own key", note: t("admin_billing.tier_byok_note"), cta: t("admin_billing.tier_byok_cta") },
                 ].map((item) => (
                   <Card
@@ -429,7 +483,7 @@ export default function Page() {
             </Card>
           </Col>
           <Col xs={24} lg={10}>
-            <Card size="small" title={<Space><BarChartOutlined /> Credit ledger</Space>} style={{ borderRadius: 16 }}>
+            <Card size="small" title={<Space><BarChartOutlined /> Point ledger</Space>} style={{ borderRadius: 16 }}>
               <List<BillingLedgerRow>
                 size="small"
                 dataSource={ledger}
@@ -457,7 +511,7 @@ export default function Page() {
         <Divider />
 
         <Row gutter={[16, 16]}>
-          <Col xs={24} lg={14}>
+          {canManageEntitlements && <Col xs={24} lg={14}>
             <Card size="small" title={t("admin_billing.manage_credits_title")} style={{ borderRadius: 16 }}>
               <Space direction="vertical" size={12} style={{ width: "100%" }}>
                 <Text type="secondary">{t("admin_billing.manage_credits_note")}</Text>
@@ -488,7 +542,11 @@ export default function Page() {
                     type="primary"
                     loading={adjustingCredits}
                     disabled={!adjustAmount}
-                    onClick={() => adjustCredits({ variables: { amount: adjustAmount, note: adjustNote || null } })}
+                    onClick={() => modal.confirm({
+                      title: t("admin_billing.confirm_adjust"),
+                      content: `${adjustAmount > 0 ? '+' : ''}${adjustAmount} point · ${adjustNote || '—'}`,
+                      onOk: async () => { await adjustCredits({ variables: { amount: adjustAmount, note: adjustNote || null } }); },
+                    })}
                   >
                     {t("admin_billing.btn_save_adjustment")}
                   </Button>
@@ -504,8 +562,8 @@ export default function Page() {
                 </Space>
               </Space>
             </Card>
-          </Col>
-          <Col xs={24} lg={10}>
+          </Col>}
+          <Col xs={24} lg={canManageEntitlements ? 10 : 24}>
             <Card size="small" title={t("admin_billing.credits_month_title")} style={{ borderRadius: 16 }}>
               <List
                 size="small"
@@ -567,10 +625,15 @@ export default function Page() {
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_channels")} {lim(p.max_channels, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_orders_month")} {lim(p.max_orders_month, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users, t)}</div>
+                  <div><CheckOutlined style={{ color: "#52c41a" }} /> {p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: formatNumber(p.ai_credits_monthly) })}</div>
                 </Space>
-                <Button type={isCurrent ? "default" : "primary"} block disabled={isCurrent || changing}
-                  onClick={() => changePlan({ variables: { planCode: p.code } })}>
-                  {isCurrent ? t("admin_billing.btn_current_plan") : t("admin_billing.btn_select_plan")}
+                <Button type={isCurrent ? "default" : "primary"} block disabled={!canManageEntitlements || isCurrent || changing}
+                  onClick={() => modal.confirm({
+                    title: t("admin_billing.confirm_plan"),
+                    content: `${p.name} · ${p.price_monthly} THB/month · ${p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : `${formatNumber(p.ai_credits_monthly)} point/month`}`,
+                    onOk: async () => { await changePlan({ variables: { planCode: p.code } }); },
+                  })}>
+                  {isCurrent ? t("admin_billing.btn_current_plan") : canManageEntitlements ? t("admin_billing.btn_select_plan") : t("admin_billing.contact_platform")}
                 </Button>
               </Card>
             </Col>

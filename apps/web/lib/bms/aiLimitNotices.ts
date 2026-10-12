@@ -2,10 +2,12 @@ import type { PoolClient } from 'pg';
 import { getClient } from '@/lib/db';
 import { beginTenantTx } from './tenant';
 import type { AiLimitStatus } from './aiLimitStatus';
+import { isRetailLocalDeployment } from './deploymentMode';
 
 /** Called under the monthly accounting lock; no network or email delivery. */
-export async function recordAiLimitNoticesInTx(client: PoolClient, tenantId: string, yearMonth: string, states: { CREDITS: AiLimitStatus; BUDGET: AiLimitStatus }) {
-  for (const dimension of ['CREDITS', 'BUDGET'] as const) {
+export async function recordAiLimitNoticesInTx(client: PoolClient, tenantId: string, yearMonth: string, states: { CREDITS: AiLimitStatus }) {
+  if (isRetailLocalDeployment()) return;
+  for (const dimension of ['CREDITS'] as const) {
     const status = states[dimension];
     let level: string = status.startsWith('PAUSED_') ? 'PAUSED' : status;
     const previous = await client.query<{ level: string }>(
@@ -23,8 +25,8 @@ export async function recordAiLimitNoticesInTx(client: PoolClient, tenantId: str
       `INSERT INTO bms_ai_limit_notices(tenant_id,year_month,dimension,level) VALUES($1,$2,$3,$4)
        ON CONFLICT(tenant_id,year_month,dimension,level) DO NOTHING RETURNING id`, [tenantId, yearMonth, dimension, level]);
     if (!notice.rows[0]) continue;
-    const subject = dimension === 'CREDITS' ? 'เครดิต AI' : 'วงเงิน AI ส่วนกลาง';
-    const message = level === 'PAUSED' ? `${subject} ไม่เพียงพอหรือยังยืนยันต้นทุนไม่ได้ บางคำขอ AI ถูกพัก — ดูสถานะปัจจุบันที่ Billing`
+    const subject = 'AI point';
+    const message = level === 'PAUSED' ? `${subject} เดือนนี้หมดแล้ว คำขอ AI ใหม่ถูกพัก — ดูสถานะปัจจุบันที่ Billing`
       : level === 'RESUMED' ? `${subject} ผ่านเงื่อนไขที่ทำให้พักคำขอก่อนหน้าแล้ว — ดูยอดและเงื่อนไขปัจจุบันที่ Billing`
       : `${subject} ใช้ถึง ${level === 'WARNING_90' ? '90' : '80'}% ของรอบ ${yearMonth} แล้ว — ตรวจสอบที่ Billing`;
     await client.query(
@@ -43,12 +45,13 @@ async function personalTx<T>(tenantId: string, work: (client: PoolClient) => Pro
 }
 
 export async function listAiLimitNotifications(tenantId: string, userId: string) {
+  if (isRetailLocalDeployment()) return { unreadCount: 0, items: [] };
   return personalTx(tenantId, async client => {
     const rows = await client.query(
       `SELECT n.id,n.is_read,a.dimension,a.level,a.year_month,n.created_at,
               COUNT(*) FILTER (WHERE NOT n.is_read) OVER()::int AS unread_count
        FROM notifications n JOIN bms_ai_limit_notices a ON a.id=n.entity_id
-       WHERE a.tenant_id=$1 AND n.user_id=$2 AND n.entity_type='bms_ai_limit_notice'
+       WHERE a.tenant_id=$1 AND n.user_id=$2 AND n.entity_type='bms_ai_limit_notice' AND a.dimension='CREDITS'
        ORDER BY n.is_read ASC,n.created_at DESC,n.id DESC LIMIT 30`, [tenantId, userId]);
     return { unreadCount: rows.rows[0]?.unread_count ?? 0, items: rows.rows.map(r => ({
       id: r.id, isRead: r.is_read, dimension: r.dimension, level: r.level,

@@ -343,7 +343,7 @@ test("the sidebar renders one menu definition and no placeholder badges", () => 
   // labelKey. Reading its own key gave that one menu item two names, so renaming it did nothing.
   // Both the key and the label come from the entry, so the custom renderer can never drift from
   // selectedKeys or carry a second name for the same destination.
-  assert.match(sidebar, /pharmacyQueueLink\(\s*item\.route,\s*t\(item\.labelKey\)/);
+  assert.match(sidebar, /pharmacyQueueLink\(\s*item\.route,\s*labelForNavItem\(item\)/);
   assert.doesNotMatch(sidebar, /key: '\/admin\/pharmacy-queue'/);
   assert.doesNotMatch(sidebar, /admin\.menu_pharmacy_intake_queue/);
   assert.match(sidebar, /buildAdminNavigation\(navContext, effectiveWorkspace\)/);

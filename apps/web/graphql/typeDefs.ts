@@ -3656,7 +3656,11 @@ export const typeDefs = /* GraphQL */ `
     model: String
     provider: String!
   }
+  enum BmsAiBillingMode { PLAN_POINTS LOCAL_OWN_KEY LOCAL_UNCONFIGURED }
   type BmsAiUsage {
+    billingMode: BmsAiBillingMode!
+    connectionProvider: String
+    connectionModel: String
     tenantId: ID!
     yearMonth: String!
     resetsAt: String!

@@ -12,6 +12,8 @@ export function creditLimitStatus(unlimited: boolean, capacity: number, consumed
   return warningStatus(consumed, capacity);
 }
 export function budgetLimitStatus(input: { limit: number; spent: number; reserved: number; unaccounted: number; required: number; unpricedModel: boolean }): AiLimitStatus {
+  // Negative means uncapped. Historical cost/holds are reporting, never entitlement.
+  if (input.limit < 0) return 'NORMAL';
   if (input.unaccounted > 0 || input.unpricedModel) return 'PAUSED_UNPRICED';
   const available = Math.round((input.limit - input.spent - input.reserved) * 1e8);
   if (available <= 0 || available < Math.round(input.required * 1e8)) return 'PAUSED_BUDGET';
@@ -19,5 +21,11 @@ export function budgetLimitStatus(input: { limit: number; spent: number; reserve
 }
 export function aiPeriodResetsAt(yearMonth: string): string {
   const [year, month] = yearMonth.split('-').map(Number);
-  return new Date(Date.UTC(year, month, 1)).toISOString();
+  return new Date(Date.UTC(year, month, 1, -7)).toISOString();
+}
+
+/** Bangkok has a fixed UTC+7 offset, independent of the server/browser timezone. */
+export function aiYearMonth(at = new Date()): string {
+  const local = new Date(at.getTime() + 7 * 60 * 60 * 1000);
+  return `${local.getUTCFullYear()}-${String(local.getUTCMonth() + 1).padStart(2, '0')}`;
 }

@@ -125,7 +125,7 @@ export const bmsAiConfigResolvers = {
       return result;
     },
     async bmsAdjustAiCredits(_p: unknown, args: { amount: number; note?: string | null }, ctx: any) {
-      requireTenantAdmin(ctx);
+      await requirePlatformAdmin(ctx);
       const ok = await adjustAiCredits(getTenantId(ctx), args.amount, args.note ?? null);
       await audit(ctx, "ai.adjust_credits", null, { amount: args.amount, note: args.note ?? null });
       return ok;

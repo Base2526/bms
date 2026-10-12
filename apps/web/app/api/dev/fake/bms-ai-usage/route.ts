@@ -5,14 +5,10 @@ import type { NextRequest } from "next/server";
 import { requirePlatformAdminSeeder, fakeSeedDisabled, resolveExistingTenantId } from "@/lib/dev-guards";
 import { query } from "@/lib/db";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { currentYearMonth } from "@/lib/bms/aiUsage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function currentYearMonth(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
 
 async function handlePOST(req: NextRequest) {
   if (fakeSeedDisabled()) return NextResponse.json({ error: "Disabled in production (set BMS_ALLOW_FAKE_SEED=1 to enable)" }, { status: 403 });

@@ -5,6 +5,7 @@ import { meteredUsage } from "./aiMetering";
 // =============================================================
 
 import { query } from "@/lib/db";
+import { isRetailLocalDeployment } from "./deploymentMode";
 import {
   callAnthropicCompatibleMessages,
   DEFAULT_DEEPSEEK_MODEL,
@@ -62,6 +63,26 @@ export async function getTenantAiConfigMasked(tenantId: string) {
     api_key_masked: maskSecret(cfg?.apiKey),
     model: cfg?.model ?? null,
     provider: cfg?.provider ?? "anthropic",
+  };
+}
+
+export type AiBillingMode = "PLAN_POINTS" | "LOCAL_OWN_KEY" | "LOCAL_UNCONFIGURED";
+
+/** Configuration only: never tests a key, consumes quota or returns credentials. */
+export async function getAiBillingContext(tenantId: string): Promise<{
+  billingMode: AiBillingMode; connectionProvider: string | null; connectionModel: string | null;
+}> {
+  if (!isRetailLocalDeployment()) {
+    return { billingMode: "PLAN_POINTS", connectionProvider: null, connectionModel: null };
+  }
+  const own = await getTenantAiConfig(tenantId);
+  const configured = own?.apiKey?.trim()
+    ? resolveTenantByokProvider(own.apiKey, own.model, own.provider)
+    : resolveSharedAiProvider();
+  return {
+    billingMode: configured ? "LOCAL_OWN_KEY" : "LOCAL_UNCONFIGURED",
+    connectionProvider: configured?.provider ?? null,
+    connectionModel: configured?.model ?? null,
   };
 }
 

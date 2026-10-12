@@ -1,4 +1,94 @@
-# AI usage and cost audit — 2026-10-09
+# AI points policy — 2026-10-12 (`10.56`)
+
+Current entitlement replaces the historical USD budget described below:
+
+| Plan | THB/month | AI points/month |
+| --- | ---: | ---: |
+| Free | 0 | 100 |
+| Pro | 599 | 1,000 |
+| Business | 1,990 | Unlimited |
+
+Retail Local is separate from these cloud AI plans. Server-derived `billingMode` reports a saved
+or server-environment chat key as `LOCAL_OWN_KEY`, or `LOCAL_UNCONFIGURED` if neither is configured.
+Local usage is metered without new point charges or plan-limit notices; legacy accounting stays
+intact. UI shows owned-key/setup status and requests/tokens/cost, not plan cards or balances.
+Provider/model metadata describes configuration only; checking usage makes no provider call.
+The original `business` tenant plan remains shop capability metadata, not an AI subscription.
+
+The month resets at **00:00 Asia/Bangkok on the first** (17:00 UTC on the previous day).
+One logical shared-provider request costs one point on finite plans; retries, tool rounds and
+provider fallback share the original point. BYOK and Business retain zero billable-point events.
+Unused points do not roll over. Recorded usage/cost is retained even for unlimited plans.
+
+**No per-shop USD cap remains.** Known cost, missing rates, unknown historical cost and old USD
+holds do not block requests. Attempts must still be durably recorded before I/O; database admission
+failure stops the call. Finalization stays one-shot, and unknown cost remains NULL. Old holds
+remain historical evidence and follow the existing finalization logic; new attempts create no holds.
+Legacy GraphQL budget fields remain compatible: limit/remaining -1 (uncapped), required 0,
+status NORMAL, blocked false. Real spent/reserved/unaccounted totals are preserved for reporting.
+
+Sidebar, Billing and AI alerts use points/unlimited. Owner notices cover points only (80%, 90%,
+exhaustion and recovery); historical budget notices remain stored but are excluded from the AI bell.
+All personal reads/acknowledgements retain tenant/recipient authorization.
+
+Detailed recheck (2026-10-12): the old `bmsChangePlan` and `bmsAdjustAiCredits` resolvers checked
+only an authenticated admin scope, allowing shop staff to self-issue unlimited access or points.
+Both now require database-verified platform-admin authority, as `bmsSetTenantPlan` already did.
+The Billing UI hides point adjustment from shop staff and only platform admins can confirm plan
+changes. The price catalog does not implement automatic subscription charging, renewals or paid
+expiry; those remain an explicit payment-integration gap, not a claim that THB was collected.
+Recheck also corrected stale manual/assistant wording (07:00/cost-cap/credits), added point amounts
+to public pricing and plan cards, and aligned the development fixture's month with Bangkok.
+Retail Local cost formatting now preserves eight decimal places where needed instead of rounding
+a known small cost to `$0.0000`.
+
+Recheck evidence:
+
+- Real isolated PostgreSQL accounting suites: **43 passed**, including 20 concurrent requests for
+  the last Free/Pro point (exactly one admitted), live platform-authority revocation, spoofed-context
+  denial, tenant isolation, one-shot finalization, fallback/retry accounting, unknown cost, failed
+  notification writes, exact Bangkok midnight rollover and Retail Local owner credentials.
+- Full gate: **2,570 passed, 2 skipped, 0 failed**, TypeScript and production build passed.
+- Browser with mocked API: Thai/English at 1440px/390px; public plan points; shop users cannot
+  self-adjust or change plans; platform plan changes require a visible confirmation; point refresh,
+  warnings/exhaustion, owner acknowledgement and unlimited access after attributed cost exceeds
+  $100. Retail Local saved/deleted-key updates, no catalog/point UI, and `$0.00000001` display passed.
+- No live provider calls, production database changes, subscription payments or deployment.
+  Health probes are platform operations, intentionally outside tenant usage totals; attributed
+  cost remains a rate-card estimate, not a reconciled provider invoice.
+
+Rollout: apply `10.56__bms_ai_points_packages.sql` after 10.54/10.55, then replace all web/worker
+instances together. The migration is idempotent and updates the three catalog plans plus the legacy
+quota column. Runtime reconciles current-month grants under its existing lock and writes a grant
+adjustment without clearing consumption/bonuses/adjustments. A shop already above the new limit
+has zero remaining points until reset or an authorized adjustment/upgrade. Do not reassign historical
+UTC-period events or rewrite their ledger. Periods already recorded retain their original month;
+new requests use Bangkok time. Late results finalize in their original month, and old-month events
+cannot start a new provider attempt. Deploy outside 00:00–07:00 Bangkok on the first to avoid an
+in-flight mixed-policy transition. Rollback requires a coordinated catalog and application rollback;
+old binaries reinstate the USD cap.
+
+Verification for `10.56` (2026-10-12):
+
+- Full pure suite: 2,570 passed, 2 skipped, 0 failed. TypeScript and production build passed.
+- Isolated PostgreSQL 16 fixture using the real accounting migrations: 30/30 initial DB checks;
+  expanded admission suite rerun 14/14, including an actual service call across simulated Bangkok
+  midnight, January rollover, no carryover and a single grant under concurrent reads. Migration
+  10.56 applied twice. This is not a full production dump replay.
+- Browser smoke with mocked API: Thai/English, 1440px/390px, actual Assistant/Apollo refresh,
+  remaining points, warnings, exhausted points, owner acknowledgement, unlimited Business with
+  cost above $100, Bangkok reset copy and no horizontal overflow. Screenshots inspected.
+- No real provider calls or deployment. Apply 10.56 to the target database as part of rollout;
+  this verification changes only a disposable local database.
+
+---
+
+## Historical audit — superseded policy, 2026-10-09 / 10.54–10.55
+
+The following is retained as historical evidence. Its USD cap, UTC reset and budget UI rules are
+superseded by 10.56 above; its test counts are not validation of the new policy.
+
+### AI usage and cost audit — 2026-10-09
 
 รายงานนี้ตรวจโค้ดและทดสอบกับข้อมูลจำลองในเครื่อง ไม่ได้อ่าน invoice หรือฐาน production
 จึงยืนยันช่องโหว่และพฤติกรรมของโค้ดได้ แต่ยังสรุปยอดขาดทุนจริงย้อนหลังไม่ได้
