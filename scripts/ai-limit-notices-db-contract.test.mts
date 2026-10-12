@@ -31,15 +31,18 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
     await query(`DELETE FROM bms_tenants WHERE id=ANY($1::uuid[])`, [tenants]);
   });
   await t.test('80/90 warnings reach both owner roles once, without requiring an open page', async () => {
-    const tenant = await shop(), admin = await owner(tenant), manager = await owner(tenant, 'Manager');
+    const tenant = await shop('free'), admin = await owner(tenant), manager = await owner(tenant, 'Manager');
     const other = await shop(), outsider = await owner(other);
-    await cost(tenant, 80);
+    await getAiUsage(tenant);
+    await query("UPDATE bms_ai_usage_monthly SET credits_consumed=79 WHERE tenant_id=$1", [tenant]);
+    await cost(tenant, 0.01);
     let inbox = await listAiLimitNotifications(tenant, admin);
     assert.equal(inbox.unreadCount, 1);
     assert.equal(inbox.items[0].level, 'WARNING_80');
     assert.equal((await listAiLimitNotifications(tenant, manager)).unreadCount, 1);
     assert.equal((await listAiLimitNotifications(other, outsider)).unreadCount, 0);
-    await cost(tenant, 10);
+    await query("UPDATE bms_ai_usage_monthly SET credits_consumed=89 WHERE tenant_id=$1", [tenant]);
+    await cost(tenant, 0.01);
     await Promise.all(Array.from({ length: 5 }, () => getAiUsage(tenant)));
     inbox = await listAiLimitNotifications(tenant, admin);
     assert.equal(inbox.unreadCount, 2);
@@ -56,51 +59,37 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
       assert.equal((await client.query('SELECT id FROM bms_ai_limit_notices WHERE tenant_id=$1', [tenant])).rowCount, 0);
     } finally { await client.query('ROLLBACK'); client.release(); }
   });
-  await t.test('positive remaining budget still exposes refusal; released funds produce one recovery notice', async () => {
+  await t.test('Business spending over $100 and unknown costs generate no budget warnings or pauses', async () => {
     const tenant = await shop(), user = await owner(tenant);
-    await cost(tenant, 93);
-    const active = (await tryConsumeAiQuota(tenant, context)).eventId!;
-    await recordAiProviderAttempt(active); // reserves 6.25, leaving 0.75
-    const denied = (await tryConsumeAiQuota(tenant, context)).eventId!;
-    await assert.rejects(recordAiProviderAttempt(denied), (e: any) => e.code === 'AI_BUDGET_EXHAUSTED');
-    await finalizeAiUsageEvent(denied, { status: 'failed', providerCalls: 0 });
-    const blocked = await getAiUsage(tenant);
-    assert.equal(blocked.sharedBudgetRemainingUsd, 0.75);
-    assert.equal(blocked.sharedBudgetStatus, 'PAUSED_BUDGET');
-    assert.equal(blocked.sharedBudgetBlocked, true);
-    assert.equal((await listAiLimitNotifications(tenant, user)).items.filter(x => x.level === 'PAUSED').length, 1);
-    await finalizeAiUsageEvent(active, { status: 'completed', inputTokens: 1, outputTokens: 1 });
-    assert.equal((await getAiUsage(tenant)).sharedBudgetBlocked, false);
-    await getAiUsage(tenant);
-    assert.equal((await listAiLimitNotifications(tenant, user)).items.filter(x => x.level === 'RESUMED').length, 1);
-  });
-  await t.test('unpriceable attempts have visible status and recover only after a priced admission', async () => {
-    const tenant = await shop(), user = await owner(tenant);
+    await cost(tenant, 150);
     const id = (await tryConsumeAiQuota(tenant, { ...context, model: 'unknown-model' })).eventId!;
-    await assert.rejects(recordAiProviderAttempt(id), (e: any) => e.code === 'AI_BUDGET_UNPRICED');
-    await finalizeAiUsageEvent(id, { status: 'failed', providerCalls: 0 });
-    assert.equal((await getAiUsage(tenant)).sharedBudgetStatus, 'PAUSED_UNPRICED');
-    await cost(tenant, 0.001);
-    assert.equal((await getAiUsage(tenant)).sharedBudgetStatus, 'NORMAL');
-    assert.equal((await listAiLimitNotifications(tenant, user)).items.filter(x => x.level === 'RESUMED').length, 1);
+    await recordAiProviderAttempt(id);
+    await finalizeAiUsageEvent(id, { status: 'failed' });
+    const usage = await getAiUsage(tenant);
+    assert.equal(usage.sharedBudgetStatus, 'NORMAL');
+    assert.equal(usage.sharedBudgetBlocked, false);
+    assert.equal(usage.creditStatus, 'NORMAL');
+    assert.equal((await listAiLimitNotifications(tenant, user)).items.length, 0);
   });
-  await t.test('credit top-up clears the credit pause and does not remove a budget hold', async () => {
+  await t.test('point top-up clears exhaustion with one recovery notice', async () => {
     const tenant = await shop('free'), user = await owner(tenant);
     await getAiUsage(tenant);
     await query(`UPDATE bms_ai_usage_monthly SET credits_consumed=credits_granted WHERE tenant_id=$1 AND year_month=$2`, [tenant, month]);
     assert.equal((await getAiUsage(tenant)).creditStatus, 'PAUSED_CREDITS');
     await adjustAiCredits(tenant, 20, 'FAKE top-up');
     assert.notEqual((await getAiUsage(tenant)).creditStatus, 'PAUSED_CREDITS');
-    assert.equal((await listAiLimitNotifications(tenant, user)).items.filter(x => x.level === 'RESUMED').length, 1);
-    await cost(tenant, 99);
-    const denied = (await tryConsumeAiQuota(tenant, context)).eventId!;
-    await assert.rejects(recordAiProviderAttempt(denied), (e: any) => e.code === 'AI_BUDGET_EXHAUSTED');
-    await adjustAiCredits(tenant, 100, 'FAKE more credits');
-    assert.equal((await getAiUsage(tenant)).sharedBudgetBlocked, true);
+    await getAiUsage(tenant);
+    const notices = await listAiLimitNotifications(tenant, user);
+    assert.equal(notices.items.filter(x => x.level === 'RESUMED').length, 1);
+    assert.equal(notices.items.filter(x => x.level === 'PAUSED').length, 1);
+    assert.ok(notices.items.every(x => x.dimension === 'CREDITS'));
+    await cost(tenant, 150);
+    assert.equal((await getAiUsage(tenant)).sharedBudgetBlocked, false);
   });
-  await t.test('notification insert failure never rolls back a provider reservation, and a later read retries', async () => {
-    const tenant = await shop(), user = await owner(tenant);
-    await cost(tenant, 75);
+  await t.test('notification insert failure never rolls back point/attempt accounting, and a later read retries', async () => {
+    const tenant = await shop('free'), user = await owner(tenant);
+    await getAiUsage(tenant);
+    await query("UPDATE bms_ai_usage_monthly SET credits_consumed=79 WHERE tenant_id=$1", [tenant]);
     const constraint = 'fake_ai_notice_failure';
     try {
       await query(`ALTER TABLE notifications ADD CONSTRAINT ${constraint} CHECK (user_id <> '${user}'::uuid) NOT VALID`);
@@ -108,16 +97,25 @@ test('AI owner notifications are durable, deduplicated and scoped to recipient a
       await recordAiProviderAttempt(id);
       const row = (await query(`SELECT provider_calls,budget_reserved_usd FROM bms_ai_usage_events WHERE id=$1`, [id])).rows[0];
       assert.equal(row.provider_calls, 1);
-      assert.ok(Number(row.budget_reserved_usd) > 0);
+      assert.equal(Number(row.budget_reserved_usd), 0);
       assert.equal((await listAiLimitNotifications(tenant, user)).items.length, 0);
     } finally { await query(`ALTER TABLE notifications DROP CONSTRAINT IF EXISTS ${constraint}`); }
     await getAiUsage(tenant);
     assert.equal((await listAiLimitNotifications(tenant, user)).unreadCount, 1);
   });
+  await t.test('legacy budget notices stay stored but do not appear in the AI inbox or unread count', async () => {
+    const tenant = await shop(), user = await owner(tenant);
+    const notice = (await query("INSERT INTO bms_ai_limit_notices(tenant_id,year_month,dimension,level) VALUES($1,$2,'BUDGET','PAUSED') RETURNING id", [tenant,month])).rows[0];
+    await query("INSERT INTO notifications(id,user_id,type,title,message,entity_type,entity_id,data) VALUES(gen_random_uuid(),$1,'bms_ai_limit','FAKE','FAKE','bms_ai_limit_notice',$2,'{}')", [user,notice.id]);
+    const inbox = await listAiLimitNotifications(tenant, user);
+    assert.equal(inbox.unreadCount, 0);
+    assert.equal(inbox.items.length, 0);
+    assert.equal((await query("SELECT id FROM bms_ai_limit_notices WHERE id=$1", [notice.id])).rowCount, 1);
+  });
   await t.test('old unread notices remain reachable after the newest 30 are read', async () => {
     const tenant = await shop(), user = await owner(tenant);
     await query(`INSERT INTO bms_ai_limit_notices(tenant_id,year_month,dimension,level)
-      SELECT $1,to_char(date '2020-01-01' + n * interval '1 month','YYYY-MM'),'BUDGET','WARNING_80'
+      SELECT $1,to_char(date '2020-01-01' + n * interval '1 month','YYYY-MM'),'CREDITS','WARNING_80'
       FROM generate_series(1,32) n`, [tenant]);
     await query(`INSERT INTO notifications(id,user_id,type,title,message,entity_type,entity_id,data)
       SELECT gen_random_uuid(),$2,'bms_ai_limit','FAKE','FAKE','bms_ai_limit_notice',id,'{}'::jsonb

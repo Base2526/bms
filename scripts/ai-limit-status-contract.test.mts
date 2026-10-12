@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { aiPeriodResetsAt, budgetLimitStatus, creditLimitStatus } from '../apps/web/lib/bms/aiLimitStatus';
+import { aiPeriodResetsAt, aiYearMonth, budgetLimitStatus, creditLimitStatus } from '../apps/web/lib/bms/aiLimitStatus';
 import { bmsAiConfigResolvers } from '../apps/web/graphql/bmsAiConfig';
 
 test('personal AI notice resolvers refuse missing admin sessions and authenticated public callers', async () => {
@@ -30,7 +30,25 @@ test('budget distinguishes headroom, outstanding calls and unverified cost; reco
   assert.equal(budgetLimitStatus({ ...base, unaccounted: 1 }), 'PAUSED_UNPRICED');
   assert.equal(budgetLimitStatus({ ...base, unpricedModel: true }), 'PAUSED_UNPRICED');
 });
-test('monthly reset is UTC including December rollover, not browser timezone', () => {
-  assert.equal(aiPeriodResetsAt('2026-12'), '2027-01-01T00:00:00.000Z');
-  assert.equal(aiPeriodResetsAt('2026-10'), '2026-11-01T00:00:00.000Z');
+test('monthly reset is midnight Bangkok including December rollover, not host timezone', () => {
+  assert.equal(aiPeriodResetsAt('2026-12'), '2026-12-31T17:00:00.000Z');
+  assert.equal(aiPeriodResetsAt('2026-10'), '2026-10-31T17:00:00.000Z');
+});
+
+
+test('Bangkok accounting month changes at exactly 17:00 UTC, including leap year and New Year', () => {
+  for (const [before, at, oldMonth, newMonth] of [
+    ['2026-10-31T16:59:59.999Z', '2026-10-31T17:00:00Z', '2026-10', '2026-11'],
+    ['2026-12-31T16:59:59.999Z', '2026-12-31T17:00:00Z', '2026-12', '2027-01'],
+    ['2028-02-29T16:59:59.999Z', '2028-02-29T17:00:00Z', '2028-02', '2028-03'],
+  ]) {
+    assert.equal(aiYearMonth(new Date(before)), oldMonth);
+    assert.equal(aiYearMonth(new Date(at)), newMonth);
+    assert.equal(aiPeriodResetsAt(oldMonth), new Date(at).toISOString());
+  }
+});
+
+test('uncapped USD status never pauses points, including historical unknown costs and holds', () => {
+  assert.equal(budgetLimitStatus({ limit: -1, spent: 10000, reserved: 300, required: 50,
+    unaccounted: 7, unpricedModel: true }), 'NORMAL');
 });

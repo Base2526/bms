@@ -292,10 +292,10 @@ export const SYSTEM_FAQ: readonly SystemFaq[] = [
   {
     id: "faq.ai-credit-usage",
     guideId: "billing.read-usage",
-    question: both("อยากรู้ว่าเครดิต AI หายไปกับงานไหน", "How do I see where AI credits were spent?"),
+    question: both("อยากรู้ว่า AI point หายไปกับงานไหน", "How do I see where AI points were spent?"),
     answer: both(
-      "เปิด Billing เพื่อดู usage breakdown และ ledger ของรอบบิล ระบบแยก charged credits, provider calls และ estimated cost ออกจากกัน ถ้าสงสัยว่าคำตอบ AI แปลกหรือใช้ tool ผิด ให้เปิด AI Quality ควบคู่กันเพื่อดูตัวอย่างงานและ failure cases",
-      "Open Billing to review the usage breakdown and billing ledger. The system separates charged credits, provider calls, and estimated cost. If the concern is about strange AI behavior or failed tools, open AI Quality alongside it to inspect samples and failure cases."
+      "เปิด Billing เพื่อดู usage breakdown และ ledger ของรอบบิล ระบบแยก charged points, provider calls และ estimated cost ออกจากกัน ถ้าสงสัยว่าคำตอบ AI แปลกหรือใช้ tool ผิด ให้เปิด AI Quality ควบคู่กันเพื่อดูตัวอย่างงานและ failure cases",
+      "Open Billing to review the usage breakdown and billing ledger. The system separates charged points, provider calls, and estimated cost. If the concern is about strange AI behavior or failed tools, open AI Quality alongside it to inspect samples and failure cases."
     ),
     aliases: lists(
       ["เครดิตหมด", "ค่าใช้จ่าย AI", "AI ใช้เครดิตเท่าไร", "บิลค่า AI"],

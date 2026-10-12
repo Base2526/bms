@@ -424,10 +424,10 @@ export const SYSTEM_CAPABILITIES: readonly SystemCapability[] = [
   {
     id: "billing.plan", module: "billing",
     title: both("แพ็กเกจและการใช้งาน AI", "Plan and AI usage"),
-    description: both("ดูแผน โควตาเครดิต AI provider calls และต้นทุนที่ระบุราคาได้", "View plan, AI credit quota, provider calls, and priced attributed cost."),
+    description: both("ดูแผน โควตาAI point provider calls และต้นทุนที่ระบุราคาได้", "View plan, AI point quota, provider calls, and priced attributed cost."),
     aliases: aliases(["โควตาการใช้ AI", "ใช้ AI ได้เท่าไร", "แพ็กเกจ", "โควตา AI", "เครดิต", "billing"], ["usage allowance", "plan", "AI quota", "credits", "billing"]),
     status: "AVAILABLE", route: "/admin/billing", requiredPermissions: [],
-    configurationDependencies: [], limitations: both("เครดิต provider calls และต้นทุน USD เป็นคนละมิติ", "Credits, provider calls, and attributed USD cost are separate dimensions."),
+    configurationDependencies: [], limitations: both("point, provider calls และต้นทุน USD เป็นคนละมิติ; Retail Local ใช้คีย์เจ้าของและไม่มีแพ็กเกจ AI", "Points, provider calls, and attributed USD cost are separate dimensions. Retail Local uses owner keys without AI subscriptions."),
   },
   {
     id: "reports.schedule", module: "report-schedule",

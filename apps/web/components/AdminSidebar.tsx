@@ -121,7 +121,7 @@ const Q_AI_PROVIDER_HEALTH_COUNT = gql`query { bmsAiProviderHealthCount }`;
 const Q_AI_USAGE = gql`
   query {
     bmsAiConfig { has_key }
-    bmsAiUsage { count limit remaining unlimited grantedCredits bonusCredits adjustedCredits sharedBudgetBlocked sharedBudgetRemainingUsd sharedBudgetLimitUsd }
+    bmsAiUsage { billingMode count limit remaining unlimited grantedCredits bonusCredits adjustedCredits }
   }
 `;
 const COLLAPSE_STORAGE_KEY = 'bms_admin_sidebar_collapsed';
@@ -412,23 +412,26 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
     return () => { window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh); };
   }, [refetchAiUsage]);
   const aiUsage = aiData?.bmsAiUsage;
-  const aiCapacity = aiCreditCapacity(aiUsage);
-  const aiOverLimit = aiUsage && (aiUsage.sharedBudgetBlocked || (!aiUsage.unlimited && aiUsage.remaining === 0));
-  const aiNearLimit = aiUsage && !aiUsage.unlimited && aiCapacity > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiCapacity * 0.2;
-  const aiShouldShow = aiUsage && !aiUsage.unlimited && aiCapacity > 0;
+  const localAi = retailLocal || aiUsage?.billingMode?.startsWith('LOCAL_');
+  const localAiUnconfigured = aiUsage?.billingMode === 'LOCAL_UNCONFIGURED';
+  const localAiLabel = aiUsage ? t(localAiUnconfigured ? 'retail_local_ai.unconfigured' : 'retail_local_ai.own_key') : t('retail_local_ai.title');
+  const aiCapacity = localAi ? 0 : aiCreditCapacity(aiUsage);
+  const aiOverLimit = !localAi && aiUsage && (!aiUsage.unlimited && aiUsage.remaining === 0);
+  const aiNearLimit = !localAi && aiUsage && !aiUsage.unlimited && aiCapacity > 0 && aiUsage.remaining > 0 && aiUsage.remaining <= aiCapacity * 0.2;
+  const aiShouldShow = !localAi && aiUsage && !aiUsage.unlimited && aiCapacity > 0;
   const aiNeedsManualAttention = aiOverLimit && inboxUnread > 0;
   const aiTone = aiOverLimit ? '#e5484d' : aiNearLimit ? '#d48806' : '#1677ff';
   const aiBg = aiOverLimit ? 'rgba(229,72,77,0.1)' : aiNearLimit ? 'rgba(212,136,6,0.1)' : 'rgba(22,119,255,0.1)';
-  const aiTooltip = aiUsage?.sharedBudgetBlocked ? t('admin.ai_budget_paused') : aiOverLimit
+  const aiTooltip = localAi ? localAiLabel : aiOverLimit
     ? aiNeedsManualAttention
       ? t('admin.ai_tooltip_exhausted_pending', { n: inboxUnread })
       : t('admin.ai_tooltip_exhausted')
     : aiNearLimit
       ? t('admin.ai_tooltip_near_limit', { remaining: aiUsage?.remaining ?? 0, limit: aiCapacity })
       : aiUsage?.unlimited
-        ? t('admin.ai_budget_remaining', { amount: Number(aiUsage.sharedBudgetRemainingUsd).toFixed(2) })
+        ? t('admin.ai_unlimited')
         : t('admin.ai_tooltip_normal', { count: aiUsage?.count ?? 0, limit: aiCapacity });
-  const aiStripText = aiUsage?.sharedBudgetBlocked ? t('admin.ai_budget_paused') : aiOverLimit
+  const aiStripText = aiOverLimit
     ? aiNeedsManualAttention
       ? t('admin.ai_strip_exhausted_pending', { n: inboxUnread })
       : t('admin.ai_strip_exhausted')
@@ -516,7 +519,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
   // เพราะประโยชน์หลักคือกระโดดข้ามพื้นที่ได้โดยไม่ต้องสลับสวิตช์ก่อน (ดู searchableAdminNavItems)
   const [paletteOpen, setPaletteOpen] = useState(false);
   const searchableItems = searchableAdminNavItems(navContext);
-  const labelForNavItem = (item: AdminNavItem) => t(item.labelKey);
+  const labelForNavItem = (item: AdminNavItem) => t(localAi && item.id === 'settings.billing' ? 'retail_local_ai.title' : item.labelKey);
   const sectionLabelForNavItem = (item: AdminNavItem) => t(ADMIN_NAV_SECTION_LABELS[item.section]);
   const iconForNavItem = (item: AdminNavItem) => NAV_ICONS[item.id] ?? <AppstoreOutlined />;
   useEffect(() => {
@@ -546,7 +549,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
     item.id === 'shopfloor.pharmacy-queue'
       ? pharmacyQueueLink(
           item.route,
-          t(item.labelKey),
+          labelForNavItem(item),
           effectiveCollapsed,
           pharmacyEmergencyCount,
           pharmacyPendingConfirmationCount,
@@ -555,7 +558,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
         )
       : link(
           item.route,
-          t(item.labelKey),
+          labelForNavItem(item),
           NAV_ICONS[item.id] ?? <AppstoreOutlined />,
           item.badge ? badgeCounts[item.badge] : 0,
           effectiveCollapsed,
@@ -773,7 +776,7 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
               <Link
                 className="bms-sider-quiet"
                 aria-label={aiUsage ? aiTooltip : t('admin_nav.assistant')}
-                href={aiUsage?.sharedBudgetBlocked ? '/admin/billing' : aiOverLimit ? '/admin/settings' : '/admin/assistant'}
+                href={localAiUnconfigured ? '/admin/settings?focus=ai' : aiOverLimit ? '/admin/settings' : '/admin/assistant'}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, height: 32,
                   justifyContent: mini ? 'center' : 'flex-start',
@@ -808,17 +811,16 @@ export default function AdminSidebar({ retailLocal = false }: { retailLocal?: bo
                       flex: 1, minWidth: 0, fontSize: 13, fontWeight: aiOverLimit ? 600 : 400,
                       overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                     }}>
-                      {aiOverLimit ? aiStripText : t('admin_nav.assistant')}
+                      {localAi ? localAiLabel : aiOverLimit ? aiStripText : t('admin_nav.assistant')}
                     </span>
-                    {(aiShouldShow || aiUsage?.unlimited) && !aiOverLimit && (
+                    {!localAi && (aiShouldShow || aiUsage?.unlimited) && !aiOverLimit && (
                       <span style={{
                         flexShrink: 0, fontSize: 11, fontVariantNumeric: 'tabular-nums',
                         color: aiNearLimit ? aiTone : 'var(--text-secondary)',
                         fontWeight: aiNearLimit ? 600 : 400,
                       }}>
-                        {aiUsage?.unlimited ? t('admin.ai_budget_remaining', { amount: Number(aiUsage.sharedBudgetRemainingUsd).toFixed(2) }) : aiNearLimit
-                          ? t('admin.ai_quota_remaining', { remaining: aiUsage?.remaining ?? 0 })
-                          : t('admin.ai_quota_count', { count: aiUsage?.count ?? 0, limit: aiCapacity })}
+                        {aiUsage?.unlimited ? t('admin.ai_unlimited')
+                          : t('admin.ai_quota_remaining', { remaining: aiUsage?.remaining ?? 0, limit: aiCapacity })}
                       </span>
                     )}
                   </>

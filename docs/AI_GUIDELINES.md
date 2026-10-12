@@ -152,17 +152,22 @@ template.
   a tenant's totals.
 - A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
   estimates, sample ledgers, or hardcoded per-credit prices.
-- Shared inference has a $100 per-tenant UTC-month budget for every plan, including Business.
-  Admission reserves the actual provider/model's conservative cost ceiling before network I/O,
-  serialized on the monthly row. A failed admission makes no provider call. Every retry needs its
-  own cost reservation while sharing the logical request's credit. Finalization retains unknown
-  exposure (including crashes); legacy unknown spending with no hold blocks new shared calls.
-  BYOK and platform health probes are outside this tenant-funded budget. See
-  [the cost audit and rollout notes](ai/usage-cost-audit.md).
-- A budget refusal is not a provider outage. Persist its required headroom before returning the
-  admission error, expose the current server status, and hand OCR to manual review without marking
-  the slip verified. Durable owner notices (`10.55`) are transactionally deduplicated by shop,
-  UTC month, dimension and level; notification failure must not undo accounting or provider holds.
+- Monthly AI points (`10.56`): Free 100, Pro 1,000 at THB 599, Business unlimited at THB 1,990.
+  Reset on the first at 00:00 Asia/Bangkok. One logical shared request uses one point on finite
+  plans; retries/tool rounds share that point. BYOK keeps its existing zero-point accounting.
+- Plan changes and point adjustments require a live database-verified platform admin. Tenant
+  staff cannot grant themselves paid access or points. Catalog prices do not prove payment;
+  automatic subscription collection/renewal/expiry is not implemented.
+- Retail Local is separate from AI subscriptions. Saved tenant keys and server environment keys
+  belong to the installation owner. Local requests retain usage/cost accounting with no new point
+  charges or point-limit notices, regardless of the internal shop plan or license state.
+- There is no per-tenant USD spending cap. Known/unknown costs and historical holds remain
+  accounting evidence, never an entitlement gate. Persist each attempt before network I/O;
+  an accounting admission failure still blocks I/O. Finalization stays idempotent and preserves
+  unknown cost. See [the cost audit and rollout notes](ai/usage-cost-audit.md).
+- Durable owner notices are transactionally deduplicated by shop, Bangkok month and point level
+  (80%, 90%, exhaustion, recovery). Notification failure must not undo accounting. Historical
+  budget notices remain stored but are excluded from the AI notification inbox.
 
 ### Operational log triage
 

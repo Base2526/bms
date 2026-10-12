@@ -44,6 +44,7 @@ const Q_PLANS = gql`
       max_channels
       max_orders_month
       max_users
+      ai_credits_monthly
     }
   }
 `;
@@ -56,7 +57,7 @@ const CHANNELS = [
   { label: "Website", className: styles.channelWebsite, icon: <GlobalOutlined /> },
 ];
 
-type Translate = (key: string) => string;
+type Translate = (key: string, vars?: Record<string, string | number>) => string;
 
 function buildSafetyPoints(t: Translate) {
   return [
@@ -108,6 +109,7 @@ function PlanCard({
         )}
       </div>
       <Space direction="vertical" size={9} className={styles.planFeatures}>
+        <span><CheckCircleFilled />{plan.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: Number(plan.ai_credits_monthly).toLocaleString("en-US") })}</span>
         <span><CheckCircleFilled />{t("landing.productLimit")} {lim(plan.max_products, t)}</span>
         <span><CheckCircleFilled />{t("landing.channelLimit")} {lim(plan.max_channels, t)}</span>
         <span><CheckCircleFilled />{t("landing.orderLimit")} {lim(plan.max_orders_month, t)}</span>

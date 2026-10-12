@@ -13,7 +13,9 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { reportBmsFailure } from "./failureAlert";
 import { getTenantPlan, type Plan } from "./plans";
-import { aiPeriodResetsAt, budgetLimitStatus, creditLimitStatus, type AiLimitStatus } from "./aiLimitStatus";
+import { getAiBillingContext, type AiBillingMode } from "./aiConfig";
+import { isRetailLocalDeployment } from "./deploymentMode";
+import { aiPeriodResetsAt, aiYearMonth, creditLimitStatus, type AiLimitStatus } from "./aiLimitStatus";
 import { recordAiLimitNoticesInTx } from "./aiLimitNotices";
 import {
   recordProviderError,
@@ -36,11 +38,13 @@ function run<T extends QueryResultRow = QueryResultRow>(client: PoolClient | und
 }
 
 export function currentYearMonth(): string {
-  const d = new Date();
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return aiYearMonth();
 }
 
 export type AiUsage = {
+  billingMode: AiBillingMode;
+  connectionProvider: string | null;
+  connectionModel: string | null;
   tenantId: string;
   yearMonth: string;
   resetsAt: string;
@@ -249,8 +253,8 @@ function priceForModel(
   return null;
 }
 
-/** Platform-funded AI only. Applies to every plan, including unlimited credits. */
-export const SHARED_AI_MONTHLY_BUDGET_USD = 100;
+/** Legacy API compatibility: -1 means no USD cap. Entitlement is monthly AI points. */
+export const SHARED_AI_MONTHLY_BUDGET_USD = -1;
 
 export class AiUsageAdmissionError extends Error {
   constructor(readonly code: "AI_BUDGET_EXHAUSTED" | "AI_BUDGET_UNPRICED" | "AI_USAGE_UNAVAILABLE") {
@@ -259,13 +263,7 @@ export class AiUsageAdmissionError extends Error {
   }
 }
 
-/**
- * Reserve the provider's full supported input envelope, not a guessed tokenizer
- * count. This intentionally refuses near the ceiling when the worst-case call
- * cannot fit. Current allowed models fit within 1M input and 1M output tokens.
- * Cache creation may be more expensive than ordinary input. No model/rate = no
- * platform-funded network call. A new model needs a reviewed envelope and rate.
- */
+/** Legacy USD-hold estimate retained for historical reconciliation/tests, never admission. */
 export function aiAttemptReservationUsd(model: string | null, provider: string | null, maxOutputTokens = 1_000_000): number | null {
   const rate = priceForModel(model, provider);
   if (!rate || !Number.isInteger(maxOutputTokens) || maxOutputTokens <= 0 || maxOutputTokens > 1_000_000) return null;
@@ -294,14 +292,8 @@ async function readSharedBudget(client: PoolClient, tenantId: string, yearMonth:
       WHERE tenant_id = $1 AND year_month = $2 AND source = 'shared'`,
     [tenantId, yearMonth]
   );
-  const denial = (await client.query(
-    `SELECT budget_denied_required_usd,budget_denied_model,budget_denied_provider
-     FROM bms_ai_usage_monthly WHERE tenant_id=$1 AND year_month=$2`, [tenantId, yearMonth])).rows[0];
   return {
     spent: Number(result.rows[0].spent), reserved: Number(result.rows[0].reserved), unaccounted: Number(result.rows[0].unaccounted),
-    required: Number(denial?.budget_denied_required_usd ?? 0),
-    unpricedModel: Boolean(denial?.budget_denied_model),
-    limit: SHARED_AI_MONTHLY_BUDGET_USD,
   };
 }
 
@@ -367,6 +359,8 @@ type MonthlyUsageRow = {
 };
 
 function planCreditLimit(plan: Plan): number {
+  // Local credentials belong to the installation owner, including server env keys.
+  if (isRetailLocalDeployment()) return -1;
   if (typeof plan.ai_credits_monthly === "number") return plan.ai_credits_monthly;
   return plan.max_ai_messages_month;
 }
@@ -527,8 +521,8 @@ async function transaction<T>(tenantId: string, work: (client: PoolClient) => Pr
   try {
     await beginTenantTx(client, tenantId);
     const result = await work(client);
-    // Notification trouble must never undo an already reserved/provider-spent
-    // dollar. A savepoint permits a later request/poll to retry the notice.
+    // Notification trouble must never undo point/attempt accounting.
+    // A savepoint permits a later request/poll to retry the notice.
     await client.query('SAVEPOINT ai_notices');
     try {
       const timeout = (await client.query('SHOW statement_timeout')).rows[0].statement_timeout;
@@ -536,13 +530,11 @@ async function transaction<T>(tenantId: string, work: (client: PoolClient) => Pr
       const month = currentYearMonth();
       const monthly = (await client.query<MonthlyUsageRow>(
         `SELECT * FROM bms_ai_usage_monthly WHERE tenant_id=$1 AND year_month=$2 FOR UPDATE`, [tenantId, month])).rows[0];
-      if (monthly) {
+      if (monthly && !isRetailLocalDeployment()) {
         const plan = await getTenantPlan(tenantId, client);
-        const budget = await readSharedBudget(client, tenantId, month);
         await recordAiLimitNoticesInTx(client, tenantId, month, {
           CREDITS: creditLimitStatus(planCreditLimit(plan) < 0,
             monthly.credits_granted + monthly.credits_bonus + monthly.credits_adjusted, monthly.credits_consumed),
-          BUDGET: budgetLimitStatus(budget),
         });
       }
       await client.query("SELECT set_config('statement_timeout',$1,true)", [timeout]);
@@ -682,6 +674,7 @@ async function reconcileStaleAiReservations(
 }
 
 export async function getAiUsage(tenantId: string): Promise<AiUsage> {
+  const billing = await getAiBillingContext(tenantId);
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
   const limit = planCreditLimit(plan);
@@ -719,18 +712,18 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
   });
 
   const remaining = limit < 0 ? -1 : balanceFromRow(row);
-  const budgetStatus = budgetLimitStatus(budget);
   return {
+    ...billing,
     tenantId, yearMonth, resetsAt: aiPeriodResetsAt(yearMonth),
     creditStatus: creditLimitStatus(limit < 0, row.credits_granted + row.credits_bonus + row.credits_adjusted, row.credits_consumed),
-    sharedBudgetStatus: budgetStatus,
-    sharedBudgetRequiredUsd: budget.required,
+    sharedBudgetStatus: 'NORMAL',
+    sharedBudgetRequiredUsd: 0,
     count: row.credits_consumed ?? row.count ?? 0,
     limit,
     remaining,
     unlimited: limit < 0,
-    planCode: plan.code,
-    planName: plan.name,
+    planCode: isRetailLocalDeployment() ? 'retail-local' : plan.code,
+    planName: isRetailLocalDeployment() ? 'Retail Local' : plan.name,
     requestCount: Number(accounting?.requests ?? 0),
     sharedRequests: row.shared_requests ?? 0,
     byokRequests: row.byok_requests ?? 0,
@@ -748,9 +741,9 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
     sharedBudgetLimitUsd: SHARED_AI_MONTHLY_BUDGET_USD,
     sharedBudgetSpentUsd: budget.spent,
     sharedBudgetReservedUsd: budget.reserved,
-    sharedBudgetRemainingUsd: Math.max(0, SHARED_AI_MONTHLY_BUDGET_USD - budget.spent - budget.reserved),
+    sharedBudgetRemainingUsd: -1,
     sharedBudgetUnaccountedCalls: budget.unaccounted,
-    sharedBudgetBlocked: budgetStatus.startsWith('PAUSED_'),
+    sharedBudgetBlocked: false,
   };
 }
 
@@ -1189,7 +1182,7 @@ export async function recordAiProviderAttempt(
     );
     if (!owner.rows[0]) throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
     const { tenant_id: tenantId, year_month: yearMonth } = owner.rows[0];
-    const denied = await transaction(tenantId, async (client) => {
+    await transaction(tenantId, async (client) => {
       await lockUsageMonth(client, tenantId, yearMonth);
       const event = await client.query<{
         source: string; provider: string; model: string; completed_at: Date | null;
@@ -1198,45 +1191,21 @@ export async function recordAiProviderAttempt(
       if (!row || row.completed_at || yearMonth !== currentYearMonth()) {
         throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
       }
-      let reserve = 0;
-      if (row.source === "shared") {
-        const ceiling = aiAttemptReservationUsd(attempt?.model ?? row.model, attempt?.provider ?? row.provider, attempt?.maxOutputTokens);
-        const budget = await readSharedBudget(client, tenantId, yearMonth);
-        // Legacy unknown spending is not $0. Require evidence/reconciliation
-        // rather than granting another $100 on top of an unknown bill.
-        const code = ceiling == null || budget.unaccounted > 0 ? 'AI_BUDGET_UNPRICED'
-          : Math.round(budget.spent * 1e8) + Math.round(budget.reserved * 1e8) + Math.round(ceiling * 1e8)
-            > SHARED_AI_MONTHLY_BUDGET_USD * 1e8 ? 'AI_BUDGET_EXHAUSTED' : null;
-        if (code) {
-          await client.query(
-            `UPDATE bms_ai_usage_monthly SET
-               budget_denied_required_usd=GREATEST(budget_denied_required_usd,$3),
-               budget_denied_model=$4,budget_denied_provider=$5
-             WHERE tenant_id=$1 AND year_month=$2`,
-            [tenantId, yearMonth, ceiling ?? 0, ceiling == null ? (attempt?.model ?? row.model) || 'unknown-model' : null, attempt?.provider ?? row.provider]);
-          return code;
-        }
-        reserve = ceiling!;
-        await client.query(
-          `UPDATE bms_ai_usage_monthly SET budget_denied_model=NULL,budget_denied_provider=NULL
-           WHERE tenant_id=$1 AND year_month=$2`, [tenantId, yearMonth]);
-      }
+      // Persist usage before I/O; cost and unknown cost never gate plan points.
+      // Existing reservations remain historical evidence for finalization.
       await client.query(
         `UPDATE bms_ai_usage_events
             SET provider_calls = provider_calls + 1,
                 unpriced_provider_calls = unpriced_provider_calls + 1,
-                budget_reserved_usd = budget_reserved_usd + $2,
-                meta = meta || $3::jsonb
+                meta = meta || $2::jsonb
           WHERE id = $1`,
-        [eventId, reserve, JSON.stringify({ budget_policy: "shared_usd_100_v2", budget_last_provider: attempt?.provider ?? row.provider })]
+        [eventId, JSON.stringify({ budget_policy: "points_bangkok_month_v1", budget_last_provider: attempt?.provider ?? row.provider })]
       );
       return null;
     });
-    // Throw only after committing the refusal evidence and owner notification.
-    if (denied) throw new AiUsageAdmissionError(denied);
   } catch (err) {
     // Pre-I/O admission must fail closed. Post-I/O finalization still preserves
-    // a valid answer on DB failure and leaves its durable cost reservation held.
+    // a valid answer on DB failure and preserves any historical cost hold.
     if (err instanceof AiUsageAdmissionError) throw err;
     console.error("[BMS] AI provider admission failed:", err);
     throw new AiUsageAdmissionError("AI_USAGE_UNAVAILABLE");
@@ -1248,7 +1217,8 @@ export async function adjustAiCredits(
   amount: number,
   note?: string | null
 ): Promise<boolean> {
-  if (!Number.isInteger(amount) || amount === 0) throw new Error("จำนวนเครดิตต้องเป็นจำนวนเต็มและต้องไม่เป็น 0");
+  if (isRetailLocalDeployment()) throw new Error("Retail Local does not use AI plan points");
+  if (!Number.isInteger(amount) || amount === 0) throw new Error("จำนวน point ต้องเป็นจำนวนเต็มและต้องไม่เป็น 0");
   const plan = await getTenantPlan(tenantId);
   const yearMonth = currentYearMonth();
   return transaction(tenantId, async (client) => {

@@ -656,20 +656,23 @@ rank (`lib/bms/staffRoles.ts`) and is not stored in this table — see the RBAC 
 **Shared AI budget (`10.54__bms_ai_cost_budget.sql`)** — adds nonnegative
 `budget_reserved_usd NUMERIC(16,8) NOT NULL DEFAULT 0` to `bms_ai_usage_events` and a partial
 `(tenant_id, year_month)` index for `source='shared'`. Existing RLS/grants continue to apply.
-All plans, including Business, share the service-enforced $100 per-tenant UTC-month cap.
-Admission locks monthly row before event, reserves the actual model ceiling before network I/O,
-and finalization replaces only known exposure with attributed cost. Unknown holds survive stale
-cleanup; legacy unknown attempts without holds block admission. No speculative backfill. Apply
-the migration before new code and drain old workers during rollout. See
-[audit, pricing sources and reconciliation limitations](../ai/usage-cost-audit.md).
+The USD admission cap was removed by policy `10.56`; the column/index remain as historical
+accounting evidence. New attempts record provider counters before I/O but reserve no USD.
+Unknown costs remain NULL and old reservations retain the existing finalization behavior.
+See [current policy and historical audit](../ai/usage-cost-audit.md).
 
-**AI limit notices (`10.55__bms_ai_limit_notices.sql`)** — monthly accounting also retains
-`budget_denied_required_usd` and the refused unpriced model/provider, so a refusal remains visible
-when dollars remain but cannot fit its reservation. `bms_ai_limit_notices` is tenant-RLS protected,
-unique by tenant/month/dimension/level. The existing `notifications` table holds personal recipient
-copies; AI notification reads/acknowledgements join the notice by tenant and require the recipient
-from the admin session. Levels are 80%, 90%, pause and recovery, once each per month and dimension.
-Notification failure rolls back its savepoint only and retries on later usage operations/reads.
+**AI limit notices (`10.55__bms_ai_limit_notices.sql`)** — the former budget-denial columns remain
+for compatibility. `bms_ai_limit_notices` is tenant-RLS protected and unique by tenant/month/
+dimension/level. Since `10.56`, only CREDITS (displayed as AI points) produces notices; historical
+BUDGET notices are stored but excluded from the AI inbox. Reads and acknowledgements join by
+recipient and tenant. Point thresholds are 80%, 90%, exhaustion and recovery; notification failure
+rolls back only its savepoint and retries on later accounting operations/reads.
+
+**AI point packages (`10.56__bms_ai_points_packages.sql`)** — Free 100/month, Pro 1,000/month at
+THB 599, Business unlimited at THB 1,990. Updates `price_monthly`, `ai_credits_monthly` and legacy
+`max_ai_messages_month`. Periods reset at 00:00 Asia/Bangkok on the first; previously recorded
+UTC-month events are not reassigned. Runtime grant reconciliation preserves consumption and
+adjustments. Legacy budget API limit/remaining are -1, status NORMAL, blocked false.
 
 **AI usage accounting (`7.82__bms_ai_usage_accounting.sql`)** — splits what used to be one
 `credits_used`/`estimated_cost` pair on `bms_ai_usage_events` into three independent dimensions:

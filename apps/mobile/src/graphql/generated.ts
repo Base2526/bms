@@ -104,6 +104,11 @@ export type SchemaBmsActionStatus =
   | 'EXPIRED'
   | 'NEW';
 
+export type SchemaBmsAiBillingMode =
+  | 'LOCAL_OWN_KEY'
+  | 'LOCAL_UNCONFIGURED'
+  | 'PLAN_POINTS';
+
 export type SchemaBmsAiConfig = {
   __typename?: 'BmsAiConfig';
   api_key_masked: Maybe<Scalars['String']['output']>;
@@ -133,6 +138,30 @@ export type SchemaBmsAiFailureSummary = {
   topFailingTools: Array<SchemaBmsAiToolFailureRow>;
   totalToolCalls: Scalars['Int']['output'];
 };
+
+export type SchemaBmsAiLimitInbox = {
+  __typename?: 'BmsAiLimitInbox';
+  items: Array<SchemaBmsAiLimitNotification>;
+  unreadCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsAiLimitNotification = {
+  __typename?: 'BmsAiLimitNotification';
+  createdAt: Scalars['String']['output'];
+  dimension: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  isRead: Scalars['Boolean']['output'];
+  level: Scalars['String']['output'];
+  yearMonth: Scalars['String']['output'];
+};
+
+export type SchemaBmsAiLimitStatus =
+  | 'NORMAL'
+  | 'PAUSED_BUDGET'
+  | 'PAUSED_CREDITS'
+  | 'PAUSED_UNPRICED'
+  | 'WARNING_80'
+  | 'WARNING_90';
 
 export type SchemaBmsAiProviderHealth = {
   __typename?: 'BmsAiProviderHealth';
@@ -251,10 +280,14 @@ export type SchemaBmsAiUsage = {
   actualCostUsd: Scalars['Float']['output'];
   adjustedCredits: Scalars['Int']['output'];
   billableCredits: Scalars['Int']['output'];
+  billingMode: SchemaBmsAiBillingMode;
   blockedRequests: Scalars['Int']['output'];
   bonusCredits: Scalars['Int']['output'];
   byokRequests: Scalars['Int']['output'];
+  connectionModel: Maybe<Scalars['String']['output']>;
+  connectionProvider: Maybe<Scalars['String']['output']>;
   count: Scalars['Int']['output'];
+  creditStatus: SchemaBmsAiLimitStatus;
   estimatedCost: Scalars['Float']['output'];
   grantedCredits: Scalars['Int']['output'];
   inputTokens: Scalars['Float']['output'];
@@ -265,9 +298,20 @@ export type SchemaBmsAiUsage = {
   providerCalls: Scalars['Int']['output'];
   remaining: Scalars['Int']['output'];
   requestCount: Scalars['Int']['output'];
+  resetsAt: Scalars['String']['output'];
+  sharedBudgetBlocked: Scalars['Boolean']['output'];
+  sharedBudgetLimitUsd: Scalars['Float']['output'];
+  sharedBudgetRemainingUsd: Scalars['Float']['output'];
+  sharedBudgetRequiredUsd: Scalars['Float']['output'];
+  sharedBudgetReservedUsd: Scalars['Float']['output'];
+  sharedBudgetSpentUsd: Scalars['Float']['output'];
+  sharedBudgetStatus: SchemaBmsAiLimitStatus;
+  sharedBudgetUnaccountedCalls: Scalars['Int']['output'];
   sharedRequests: Scalars['Int']['output'];
+  tenantId: Scalars['ID']['output'];
   unlimited: Scalars['Boolean']['output'];
   unpricedProviderCalls: Scalars['Int']['output'];
+  yearMonth: Scalars['String']['output'];
 };
 
 export type SchemaBmsAiUsageBreakdown = {
@@ -925,9 +969,15 @@ export type SchemaBmsCustomerNote360 = {
 
 export type SchemaBmsCustomerOrderDetail = {
   __typename?: 'BmsCustomerOrderDetail';
+  discountAmount: Scalars['Float']['output'];
   id: Scalars['ID']['output'];
   lines: Array<SchemaBmsCustomerPurchaseLine>;
+  orderAmount: Scalars['Float']['output'];
   points: Array<SchemaBmsCustomerOrderPoints>;
+  roundingAmount: Scalars['Float']['output'];
+  shippingAmount: Scalars['Float']['output'];
+  totalAmount: Scalars['Float']['output'];
+  vatAmount: Scalars['Float']['output'];
 };
 
 export type SchemaBmsCustomerOrderItem360 = {
@@ -984,9 +1034,13 @@ export type SchemaBmsCustomerPurchaseLine = {
   __typename?: 'BmsCustomerPurchaseLine';
   kind: Scalars['String']['output'];
   label: Scalars['String']['output'];
+  lineAmount: Scalars['Float']['output'];
   qty: Scalars['Float']['output'];
+  saleQty: Scalars['Float']['output'];
   size: Maybe<Scalars['String']['output']>;
   sku: Maybe<Scalars['String']['output']>;
+  unitAmount: Scalars['Float']['output'];
+  unitName: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsCustomerRecentOrder = {
@@ -1763,6 +1817,7 @@ export type SchemaBmsLocation = {
   id: Scalars['ID']['output'];
   isHeadOffice: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
+  parking: Maybe<SchemaBmsLocationParking>;
   pharmacistLicenseNo: Maybe<Scalars['String']['output']>;
   pharmacistName: Maybe<Scalars['String']['output']>;
   pharmacyLicenseNo: Maybe<Scalars['String']['output']>;
@@ -1777,7 +1832,27 @@ export type SchemaBmsLocationInput = {
   code: Scalars['String']['input'];
   id: InputMaybe<Scalars['ID']['input']>;
   name: Scalars['String']['input'];
+  parking: InputMaybe<SchemaBmsLocationParkingInput>;
   phone: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsLocationParking = {
+  __typename?: 'BmsLocationParking';
+  carSpaces: Maybe<Scalars['Int']['output']>;
+  details: Maybe<Scalars['String']['output']>;
+  mapUrl: Maybe<Scalars['String']['output']>;
+  motorcycleSpaces: Maybe<Scalars['Int']['output']>;
+  published: Scalars['Boolean']['output'];
+  status: SchemaBmsParkingStatus;
+};
+
+export type SchemaBmsLocationParkingInput = {
+  carSpaces: InputMaybe<Scalars['Int']['input']>;
+  details: InputMaybe<Scalars['String']['input']>;
+  mapUrl: InputMaybe<Scalars['String']['input']>;
+  motorcycleSpaces: InputMaybe<Scalars['Int']['input']>;
+  published: Scalars['Boolean']['input'];
+  status: SchemaBmsParkingStatus;
 };
 
 export type SchemaBmsLotMismatch = {
@@ -2445,6 +2520,11 @@ export type SchemaBmsPackAudit = {
   sku: Scalars['String']['output'];
 };
 
+export type SchemaBmsParkingStatus =
+  | 'AVAILABLE'
+  | 'NONE'
+  | 'UNKNOWN';
+
 export type SchemaBmsPayment = {
   __typename?: 'BmsPayment';
   amount: Scalars['Float']['output'];
@@ -3060,6 +3140,8 @@ export type SchemaBmsPosBoardGameChargeLine = {
   hourlyRate: Scalars['Float']['output'];
   joinedAt: Maybe<Scalars['String']['output']>;
   offerDiscountAmount: Maybe<Scalars['Float']['output']>;
+  offerFreeMinutes: Maybe<Scalars['Int']['output']>;
+  offerPaidMinutes: Maybe<Scalars['Int']['output']>;
   participantId: Scalars['ID']['output'];
   participantType: Scalars['String']['output'];
   rateCode: Maybe<Scalars['String']['output']>;
@@ -3080,6 +3162,8 @@ export type SchemaBmsPosBoardGameCheckout = {
   offerCode: Maybe<Scalars['String']['output']>;
   /** ยอดค่าเล่นที่โปรโมชันช่วยลดแล้ว · 0 = ไม่มีโปรโมชัน */
   offerDiscountAmount: Scalars['Float']['output'];
+  /** Close-time eligibility evidence; null on older frozen bills. */
+  offerEvaluation: Maybe<SchemaBmsPosBoardGameOfferEvaluation>;
   offerName: Maybe<Scalars['String']['output']>;
   /**
    * ยอดที่แพ็กเกจสมาชิกจ่ายแทนไปแล้ว (9.92) · 0 = ไม่มีแพ็กเกจช่วยจ่าย
@@ -3222,6 +3306,21 @@ export type SchemaBmsPosBoardGameMergeBillingGroupsInput = {
   pin: Scalars['String']['input'];
   sourceBillingGroupId: Scalars['ID']['input'];
   targetBillingGroupId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsPosBoardGameOfferCheck = {
+  __typename?: 'BmsPosBoardGameOfferCheck';
+  offerCode: Scalars['String']['output'];
+  offerName: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosBoardGameOfferEvaluation = {
+  __typename?: 'BmsPosBoardGameOfferEvaluation';
+  checks: Array<SchemaBmsPosBoardGameOfferCheck>;
+  evaluatedAt: Scalars['String']['output'];
+  omittedCount: Scalars['Int']['output'];
+  status: Scalars['String']['output'];
 };
 
 export type SchemaBmsPosBoardGameOpenInput = {
@@ -6441,6 +6540,7 @@ export type SchemaBmsRestaurantCancellationLoss = {
 export type SchemaBmsRestaurantFloorAdmin = {
   __typename?: 'BmsRestaurantFloorAdmin';
   areas: Array<SchemaBmsRestaurantArea>;
+  publishTableDetails: Scalars['Boolean']['output'];
   tables: Array<SchemaBmsRestaurantTableAdmin>;
 };
 
@@ -8003,6 +8103,7 @@ export type SchemaMutation = {
   bmsPosVerifyCashier: SchemaBmsPosCashier;
   bmsPosVoid: SchemaBmsPosReturnActionResult;
   bmsPublishProduct: SchemaBmsProductReadiness;
+  bmsReadAiLimitNotification: Scalars['Boolean']['output'];
   bmsReceivePurchaseOrder: SchemaBmsPurchaseResult;
   bmsReceiveStockTransfer: SchemaBmsMobileStockTransferActionResult;
   /** รับชำระที่ไม่ใช่เงินสด · เงินสดต้องทำที่เครื่องขายเพื่อให้เข้าลิ้นชักของกะ */
@@ -8067,6 +8168,7 @@ export type SchemaMutation = {
   bmsSetProductBundleItems: Array<SchemaBmsBundleItem>;
   bmsSetProductSalesSurfaces: Array<Scalars['String']['output']>;
   bmsSetReorderPoint: SchemaBmsVariant;
+  bmsSetRestaurantCustomerTableDetails: Scalars['Boolean']['output'];
   bmsSetRolePermissions: Scalars['Boolean']['output'];
   bmsSetShipmentStatus: Scalars['Boolean']['output'];
   bmsSetTenantActive: Scalars['Boolean']['output'];
@@ -9130,6 +9232,11 @@ export type SchemaMutationBmsPublishProductArgs = {
 };
 
 
+export type SchemaMutationBmsReadAiLimitNotificationArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
 export type SchemaMutationBmsReceivePurchaseOrderArgs = {
   id: Scalars['ID']['input'];
   items: Array<SchemaBmsReceiveItemInput>;
@@ -9450,6 +9557,12 @@ export type SchemaMutationBmsSetReorderPointArgs = {
   reorderPoint: Scalars['Int']['input'];
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsSetRestaurantCustomerTableDetailsArgs = {
+  locationId: Scalars['ID']['input'];
+  publish: Scalars['Boolean']['input'];
 };
 
 
@@ -10384,9 +10497,12 @@ export type SchemaQuery = {
   bmsActingTenant: Maybe<SchemaBmsActingTenant>;
   bmsActionMetrics: SchemaBmsActionMetrics;
   bmsActions: Array<SchemaBmsAction>;
+  bmsAiAnswerEvidence: Maybe<Scalars['JSON']['output']>;
+  bmsAiAnswerEvidenceCoverage: Scalars['JSON']['output'];
   bmsAiConfig: SchemaBmsAiConfig;
   bmsAiCreditLedger: Array<SchemaBmsAiCreditLedgerEntry>;
   bmsAiFailureSummary: SchemaBmsAiFailureSummary;
+  bmsAiLimitNotifications: SchemaBmsAiLimitInbox;
   bmsAiProviderHealth: Array<SchemaBmsAiProviderHealth>;
   bmsAiProviderHealthCount: Scalars['Int']['output'];
   bmsAiQualityCase: Maybe<SchemaBmsAiQualityCaseDetail>;
@@ -10463,6 +10579,7 @@ export type SchemaQuery = {
   bmsMailLog: SchemaBmsMailLogPage;
   bmsMailLogEntry: Maybe<SchemaBmsMailLogEntry>;
   bmsMailLogStats: SchemaBmsMailLogStats;
+  bmsManageableLocations: Array<SchemaBmsLocation>;
   bmsManagementReport: SchemaBmsManagementReport;
   bmsMe: SchemaBmsMe;
   bmsMember: Maybe<SchemaBmsMember>;
@@ -10678,7 +10795,19 @@ export type SchemaQueryBmsActionMetricsArgs = {
 
 
 export type SchemaQueryBmsActionsArgs = {
+  group?: InputMaybe<Scalars['String']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsAiAnswerEvidenceArgs = {
+  messageId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsAiAnswerEvidenceCoverageArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
 };
 
 

@@ -1,5 +1,24 @@
 # BMS Retail Local
 
+## AI usage and owner keys
+
+Retail Local has no BMS AI point subscription. A tenant key saved in Settings or a chat provider key
+configured in the local server environment is paid by the installation owner. The sidebar shows
+**AI ใช้คีย์ของคุณ** / **AI uses your key** when configured, or **ยังไม่ได้เชื่อมต่อ AI** /
+**AI not configured** with a link to AI Settings otherwise. This is configuration status, not a
+provider connectivity/credit check; specialized OCR/pharmacy routing keeps its own requirements.
+Deleting a saved key may leave a configured server key active.
+
+The local `/admin/billing` page is an AI usage report: requests, provider attempts, input/output
+tokens, attributed cost and unpriced-call counts, with feature breakdown. Reporting periods start
+on the first at 00:00 Asia/Bangkok. No point balance, THB 1,990 subscription, cloud plan selector or
+point-adjustment controls are shown. Runtime records zero new point charges independent of the
+internal tenant plan; old accounting evidence is preserved. Cloud-plan changes/point adjustments
+are refused by the backend in local mode. The provisioned `business` plan is retained for shop
+capabilities and is not evidence of an AI subscription or payment. License/trial state is unrelated.
+
+
+
 Commercial self-install development is tracked separately in
 [Retail Local Managed Runtime](retail-local-managed-runtime.md). It is an incubating Windows
 WSL2/Moby, Ubuntu systemd/Moby, and macOS Apple Virtualization Framework/Lima delivery layer. The

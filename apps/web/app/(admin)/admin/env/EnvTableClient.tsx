@@ -394,7 +394,7 @@ export default function EnvTableClient({
       width: 150,
       render: (_, record) => (
         <Space direction="vertical" size={0}>
-          <Text>{record.billableCredits} credit · {record.providerCalls} call</Text>
+          <Text>{record.billableCredits} point · {record.providerCalls} call</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>
             {formatTokens(record.inputTokens ?? null, record.outputTokens ?? null)}
           </Text>

@@ -693,6 +693,19 @@ deployment profile. The operator contract and remaining release gates live in
   on the shop host. Never add a local-only price, stock, payment, tax or permission implementation,
   and never put a database or money rule in Electron. The local PostgreSQL instance is the sole
   source of truth; this profile deliberately has no cloud replica or background sync queue.
+- **Retail Local AI is owner-funded.** A saved tenant key or a server environment chat key is an
+  installation-owned credential, not a BMS AI subscription. Server-derived `bmsAiUsage.billingMode`
+  distinguishes `LOCAL_OWN_KEY`, `LOCAL_UNCONFIGURED` and cloud `PLAN_POINTS`. It exposes only
+  provider/model names, never keys, and describes configuration, not a live connection test.
+  Local requests are zero-point events regardless of the internal tenant plan; legacy point/cost
+  history remains intact. Monthly reporting still uses Bangkok midnight. Sidebar, Settings and
+  Billing show owned-key/setup state; Billing shows requests/tokens/attributed cost, without point
+  balances, paid SaaS cards or point-adjustment forms. Local cloud-plan changes and point adjustments
+  are rejected server-side. The provisioned `business` value continues to govern existing shop
+  capabilities; it is not evidence of purchasing THB 1,990 AI. Licensing never gates this policy.
+  Provider routing (including sensitive/OCR/pharmacy routes) remains unchanged: a configured chat
+  key does not imply that every specialized provider is configured. Historical `source='shared'`
+  means the server credential route, not who pays; deployment/billing mode determines entitlement.
 - **One installation provisions one shop.** `bms_local_installation` is a database singleton and
   `provisionRetailLocal()` creates tenant, default role grants, store profile, `MAIN` branch,
   Administrator/PIN, `POS-01`, installation identity and audit evidence in one transaction under an
@@ -1703,24 +1716,28 @@ their provider independently:
     serialized on the monthly row.
   - **A real inference call is an event even when it is free.** Tenant BYOK key tests are recorded as
     zero-credit `ai_key_test` events rather than being skipped.
-  - **Unlimited credits do not mean unlimited platform cost (`10.54`).** Every tenant, including
-    Business, has a $100 shared-inference cap per UTC month. Before each network call,
-    `recordAiProviderAttempt()` locks monthly row then event, prices the actual provider/model and
-    output limit, and durably reserves a conservative full-context ceiling. All AI writers use
-    `beginTenantTx()`. A failed admission throws before I/O; no caller may swallow it and call the
-    provider anyway. Finalization can fail open only after I/O, keeping the hold. A timeout/stale
-    sweep cannot release unknown cost; historical unknown attempts without a hold block admission.
-    Known portions of partial responses remain attributed, unknown portions remain reserved. No
-    caller can refund a persisted attempt by reporting zero calls. BYOK is metered separately.
-    Details, rate sources and rollout caveats: [AI cost audit](ai/usage-cost-audit.md).
-  - **A refused request must be visible (`10.55`).** Positive remaining dollars may still be too
-    little for the next call's full reservation. Commit that requirement before throwing admission
-    denial; the server reports a pause until enough funds become available. Cheaper eligible calls
-    remain independently checked. Shared credit and cost warnings are distinct. Administrator and
-    Manager receive durable, deduplicated in-app notices at 80%, 90%, pause and recovery. The personal
-    read/ack service checks recipient and tenant through the RLS notice table; the global admin
-    banner uses current server status, never notification history as authorization. Notice inserts
-    run in a savepoint with bounded statements so delivery errors cannot roll back cost accounting.
+  - **Monthly AI points (`10.56`).** Free grants 100 points, Pro grants 1,000 at THB 599,
+    Business is unlimited at THB 1,990. The accounting month changes on the first at
+    00:00 Asia/Bangkok, independent of host/browser timezone. Catalog changes reconcile grants
+    under the monthly row lock without resetting consumption, bonuses or adjustments.
+    Past events retain their original month; late finalization stays in that month. An old-month
+    event cannot start another provider attempt. New months start without carrying unused points.
+    Grant-changing GraphQL mutations (`bmsChangePlan`, `bmsSetTenantPlan`, `bmsAdjustAiCredits`)
+    require live database-verified platform-admin authority. A tenant admin cannot self-grant points
+    or unlimited access. The catalog price is not evidence of subscription payment: automated
+    recurring billing is not implemented, so changes remain platform-admin operations.
+  - **Cost is reporting, not entitlement.** The former $100 cap (`10.54`) is removed for all plans.
+    `recordAiProviderAttempt()` locks month then event and persists the attempt before I/O; DB
+    failure still prevents a network call. Cost/unknown pricing never denies a valid point request.
+    Historical reservations and unknown costs are retained as evidence, not erased or set to zero.
+    Legacy GraphQL budget fields return limit/remaining `-1`, required `0`, status `NORMAL` and
+    blocked `false`; cost totals remain real. No new USD reservations or budget notices are created.
+  - **Point exhaustion must be visible.** Administrator/Manager receive durable notices at 80%,
+    90%, exhaustion and recovery, deduplicated by shop/Bangkok month/level. Unlimited plans do not
+    produce point warnings. Personal reads/acknowledgements check both tenant and recipient;
+    old budget notices are preserved but excluded from the AI inbox. The banner uses current
+    server point status. Notice writes use a bounded savepoint so failure cannot undo accounting.
+    See [AI cost audit](ai/usage-cost-audit.md) for rollout and compatibility details.
 - **AI Provider Health** (`lib/bms/aiProviderHealth.ts`, migration `7.34`, platform-wide — no
   `tenant_id`, not RLS-scoped, and deliberately does not track tenant BYOK failures) tracks each
   `(provider, purpose)` combo's real connectivity. It is written through exactly one choke point,

@@ -9,7 +9,7 @@ import { useI18n } from '@/lib/i18nContext';
 import { useSessionCtx } from '@/lib/session-context';
 
 const QUERY = gql`query AiLimitStatus {
-  bmsAiUsage { tenantId yearMonth resetsAt creditStatus sharedBudgetStatus sharedBudgetRequiredUsd sharedBudgetRemainingUsd }
+  bmsAiUsage { billingMode tenantId yearMonth resetsAt creditStatus }
   bmsAiLimitNotifications { unreadCount items { id dimension level yearMonth isRead createdAt } }
 }`;
 const READ = gql`mutation ReadAiLimitNotice($id: ID!) { bmsReadAiLimitNotification(id: $id) }`;
@@ -34,6 +34,7 @@ export default function AiLimitStatus() {
   }, [admin?.id, refetch]);
   if (!admin?.id) return null;
   const usage = data?.bmsAiUsage;
+  if (usage?.billingMode?.startsWith('LOCAL_')) return null;
   const inbox = data?.bmsAiLimitNotifications;
   const reset = usage?.resetsAt ? new Intl.DateTimeFormat(lang === 'th' ? 'th-TH' : 'en-GB', {
     dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Bangkok',
@@ -66,14 +67,14 @@ export default function AiLimitStatus() {
       </Popover>
     </div>
     {error && <Alert closable showIcon type="warning" message={t('ai_limit.unavailable')} />}
-    {!error && usage && (['CREDITS', 'BUDGET'] as const).map(dimension => {
-      const status: string = dimension === 'CREDITS' ? usage.creditStatus : usage.sharedBudgetStatus;
+    {!error && usage && (['CREDITS'] as const).map(dimension => {
+      const status: string = usage.creditStatus;
       if (!status || status === 'NORMAL') return null;
       return <Alert key={`${usage.tenantId}:${usage.yearMonth}:${pathname}:${dimension}:${status}`} closable showIcon
         style={{ marginBottom: 8 }} type={status.startsWith('PAUSED_') ? 'error' : 'warning'}
         message={<span>{t(`ai_limit.${dimension}`)}: {t(`ai_limit.status_${status}`)}</span>}
         description={<div>
-          <p>{t(dimension === 'CREDITS' ? status === 'PAUSED_CREDITS' ? 'ai_limit.credit_help' : 'ai_limit.credit_warning_help' : status === 'PAUSED_UNPRICED' ? 'ai_limit.unpriced_help' : 'ai_limit.budget_help')}</p>
+          <p>{t(status === 'PAUSED_CREDITS' ? 'ai_limit.credit_help' : 'ai_limit.credit_warning_help')}</p>
           <p>{t('ai_limit.reset', { date: reset })}</p>
           <Link href="/admin/billing">{t('ai_limit.billing')}</Link>
         </div>} />;

@@ -4,6 +4,7 @@
 
 import type { PoolClient, QueryResultRow } from "pg";
 import { query } from "@/lib/db";
+import { isRetailLocalDeployment } from "./deploymentMode";
 
 export type Plan = {
   code: string; name: string; price_monthly: number;
@@ -94,6 +95,7 @@ export async function enforceUserQuota(tenantId: string, client?: PoolClient): P
 }
 
 export async function changePlan(tenantId: string, code: string): Promise<boolean> {
+  if (isRetailLocalDeployment()) throw new Error("Retail Local is separate from cloud plans");
   const ok = await query(`SELECT 1 FROM bms_plans WHERE code = $1`, [code]);
   if (ok.rowCount === 0) throw new Error("แพ็กเกจไม่ถูกต้อง");
   const res = await query(
