@@ -315,7 +315,7 @@ export async function getTopSellingProducts(
         AND COALESCE(o.paid_at,o.created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
-      LIMIT $5`,
+      LIMIT $5::int`,
     [tenantId, PAID, r.from, r.to, lim, locationId || null]
   );
   return res.rows.map((x: any) => ({ sku: x.sku, name: x.name, qty: x.qty, revenue: Number(x.revenue) }));
@@ -334,7 +334,7 @@ export async function getLifetimeTopSellingProducts(tenantId: string, limit = 10
       WHERE oi.tenant_id = $1 AND o.status = ANY($2::text[])
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
-      LIMIT $3`,
+      LIMIT $3::int`,
     [tenantId, PAID, lim]
   );
   return res.rows.map((x: any) => ({ sku: x.sku, name: x.name, qty: x.qty, revenue: Number(x.revenue) }));
@@ -1159,8 +1159,8 @@ export async function getManagementReport(
     getProfitSummary(tenantId, r.from, r.to, locationId),
     query(
       `SELECT l.id, l.code, l.name,
-              COUNT(o.id) FILTER (WHERE o.status = ANY($5::text[]))::int AS orders,
-              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($5::text[])), 0) AS revenue
+              COUNT(o.id) FILTER (WHERE o.status = ANY($4::text[]))::int AS orders,
+              COALESCE(SUM(o.total_amount) FILTER (WHERE o.status = ANY($4::text[])), 0) AS revenue
          FROM bms_locations l
          LEFT JOIN bms_orders o
            ON o.tenant_id = l.tenant_id AND o.location_id = l.id
@@ -1169,7 +1169,7 @@ export async function getManagementReport(
         WHERE l.tenant_id = $1 AND l.active
         GROUP BY l.id, l.code, l.name
         ORDER BY revenue DESC, l.code`,
-      [...params, PAID]
+      [tenantId, r.from, r.to, PAID]
     ),
     query(
       `WITH sold AS (
@@ -1330,11 +1330,11 @@ export async function getManagementReport(
     ),
     query(
       `SELECT COUNT(*)::int AS shipment_count,
-              COUNT(*) FILTER (WHERE status='DELIVERED')::int AS delivered_count,
-              COUNT(*) FILTER (WHERE status IN ('PENDING','SHIPPED','IN_TRANSIT'))::int AS in_progress_count,
-              COUNT(*) FILTER (WHERE status IN ('RETURNED','CANCELLED'))::int AS exception_count,
-              COALESCE(AVG(EXTRACT(EPOCH FROM (updated_at-created_at))/3600)
-                FILTER (WHERE status='DELIVERED'),0) AS avg_delivery_hours
+              COUNT(*) FILTER (WHERE s.status='DELIVERED')::int AS delivered_count,
+              COUNT(*) FILTER (WHERE s.status IN ('PENDING','SHIPPED','IN_TRANSIT'))::int AS in_progress_count,
+              COUNT(*) FILTER (WHERE s.status IN ('RETURNED','CANCELLED'))::int AS exception_count,
+              COALESCE(AVG(EXTRACT(EPOCH FROM (s.updated_at-s.created_at))/3600)
+                FILTER (WHERE s.status='DELIVERED'),0) AS avg_delivery_hours
          FROM bms_shipments s
          JOIN bms_orders o ON o.tenant_id=s.tenant_id AND o.id=s.order_id
         WHERE s.tenant_id=$1 AND ($4::uuid IS NULL OR o.location_id=$4::uuid)

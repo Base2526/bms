@@ -24,6 +24,11 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
   const size = choice?.selection === selection ? choice?.size ?? "" : "";
   const selected = selection?.variants.find(variant => variant.size === size);
   const canAdd = selected && (!selected.stockTracked || selected.available > 0);
+  const choose = (variant: NonNullable<typeof selection>["variants"][number]) => {
+    if (busy || (variant.stockTracked && variant.available <= 0)) return;
+    setChoice({ selection: selection!, size: variant.size });
+    onSelect(selection!.scanCode, variant.size);
+  };
   return <section className={styles.scannedProduct} aria-label="สินค้าที่สแกน">
     <header>
       <h2>{item.productName}</h2>
@@ -40,7 +45,7 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
           const unavailable = variant.stockTracked && variant.available <= 0;
           return <label key={variant.size} data-disabled={unavailable}>
             <input type="radio" name="scanned-product-size" aria-label={`ไซส์ ${variant.size}`} checked={size === variant.size}
-              disabled={unavailable} onChange={() => setChoice({ selection, size: variant.size })} />
+              disabled={unavailable} onChange={() => choose(variant)} />
             <strong>{variant.size}</strong>
             <span>{money(variant.price)}</span>
             <small>{variant.stockTracked ? unavailable ? "หมด" : `เหลือ ${variant.available}` : "พร้อมขาย"}</small>
@@ -49,7 +54,7 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
       </fieldset>
       <button type="button" className={styles.primaryButton} disabled={busy || !canAdd}
         onClick={() => { if (canAdd) onSelect(selection.scanCode, selected.size); }}>
-        <PlusOutlined /> {busy ? "กำลังเพิ่ม…" : "เพิ่มลงบิล"}
+        <PlusOutlined /> {busy ? "กำลังเพิ่ม…" : "เพิ่มไซส์ที่เลือกลงบิล"}
       </button>
     </> : product ? <div className={styles.scannedSummary}>
       <strong>ไซส์ {product.size} · {product.unitName} · {money(product.packPrice)}</strong>

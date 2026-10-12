@@ -183,6 +183,7 @@ test("unresolved payment attempts never accept a new scan", async () => {
 
 test("a refreshed selection cannot inherit a size from the previous selection object", () => {
   let choice: any = null;
+  const calls: Array<[string, string]> = [];
   const compiled = ts.transpileModule(read("apps/web/components/pos-desktop/ScannedProductPanel.tsx"), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
   }).outputText;
@@ -197,8 +198,14 @@ test("a refreshed selection cannot inherit a size from the previous selection ob
   }, exported);
   const inputs = (node: any): any[] => !node || typeof node !== "object" ? []
     : Array.isArray(node) ? node.flatMap(inputs) : node.type === "input" ? [node] : inputs(node.props?.children);
-  const render = (value: any) => inputs(exported.default({ result: { kind: "selection", selection: value }, busy: false, onSelect() {}, onClose() {} }));
+  const render = (value: any) => inputs(exported.default({
+    result: { kind: "selection", selection: value },
+    busy: false,
+    onSelect(code: string, size: string) { calls.push([code, size]); },
+    onClose() {},
+  }));
   render(selection)[0].props.onChange();
   assert.equal(render(selection)[0].props.checked, true);
+  assert.deepEqual(calls, [[selection.scanCode, "S"]], "choosing a sellable size immediately asks the server to add it");
   assert.ok(render({ ...selection }).every(input => !input.props.checked));
 });
