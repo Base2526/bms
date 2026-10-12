@@ -94,12 +94,11 @@ try {
       await panel.getByRole("radio", { name: "ไซส์ S", exact: true }).waitFor();
       await imageCheck();
       assert.equal(await page.locator("article").count(), 0, "ambiguous code must not add a guessed size");
-      assert.equal(await panel.getByRole("button", { name: "เพิ่มลงบิล" }).isDisabled(), true);
+      assert.equal(await panel.getByRole("button", { name: "เพิ่มไซส์ที่เลือกลงบิล" }).isDisabled(), true);
       assert.equal(await panel.getByRole("radio", { name: "ไซส์ XL", exact: true }).isDisabled(), true);
       await panel.getByRole("radio", { name: "ไซส์ L", exact: true }).check();
-      await page.screenshot({ path: `${output}/${width}-choose-size.png`, fullPage: true });
-      await panel.getByRole("button", { name: "เพิ่มลงบิล" }).click();
       await panel.getByText("เพิ่มลงบิลแล้ว", { exact: true }).waitFor();
+      await page.screenshot({ path: `${output}/${width}-choose-size.png`, fullPage: true });
       assert.match(await page.locator("article").first().innerText(), /FAKE-A · L/);
       assert.equal(scans.at(-1).size, "L");
       await scan("FAKE-GIFT");
@@ -112,7 +111,6 @@ try {
       assert.equal(await page.getByRole("button", { name: /ไปชำระเงิน/ }).isDisabled(), true, "an unresolved size cannot be skipped with an existing basket");
       assert.equal(await panel.getByRole("radio", { name: "ไซส์ L", exact: true }).isChecked(), false, "a fresh scan does not reuse the previous choice");
       await panel.getByRole("radio", { name: "ไซส์ S", exact: true }).check();
-      await panel.getByRole("button", { name: "เพิ่มลงบิล" }).click();
       await panel.getByText("เพิ่มลงบิลแล้ว", { exact: true }).waitFor();
       await imageCheck();
       await page.getByRole("button", { name: /ไปชำระเงิน/ }).click();
@@ -122,7 +120,7 @@ try {
       await page.getByRole("button", { name: /FAKE Product FAKE-A/ }).click();
       await panel.getByRole("radio", { name: "ไซส์ S", exact: true }).waitFor();
       assert.equal(scans.at(-1).size, null, "catalog cards must ask instead of selecting their display price variant");
-      assert.equal(await panel.getByRole("button", { name: "เพิ่มลงบิล" }).isDisabled(), true);
+      assert.equal(await panel.getByRole("button", { name: "เพิ่มไซส์ที่เลือกลงบิล" }).isDisabled(), true);
       await panel.getByRole("button", { name: "กลับแคตตาล็อก" }).click();
       const before = await page.locator("article").count();
       await scan("EXACT-BOX");

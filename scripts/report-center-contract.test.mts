@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
+import ts from "../apps/web/node_modules/typescript/lib/typescript.js";
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), "utf8");
 
@@ -130,6 +131,46 @@ test("report status array parameters are explicitly typed for postgres", () => {
   const reports = read("apps/web/lib/bms/reports.ts");
   assert.doesNotMatch(reports, /ANY\(\$[0-9]+\)(?!::)/);
   assert.match(reports, /status = ANY\(\$4::text\[\]\)/);
+});
+
+test("report pagination parameters are explicitly typed for postgres", () => {
+  const reports = read("apps/web/lib/bms/reports.ts");
+  assert.doesNotMatch(reports, /LIMIT \$[0-9]+\b(?!::)/);
+  assert.doesNotMatch(reports, /OFFSET \$[0-9]+\b(?!::)/);
+});
+
+test("report queries never skip a postgres parameter number", () => {
+  const source = ts.createSourceFile("reports.ts", read("apps/web/lib/bms/reports.ts"), ts.ScriptTarget.Latest, true);
+  let checked = 0;
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node) && node.expression.getText(source) === "query") {
+      const sql = node.arguments[0];
+      assert.ok(ts.isNoSubstitutionTemplateLiteral(sql), "inspect dynamic report SQL before extending this check");
+      const numbers = [...new Set([...sql.text.matchAll(/\$(\d+)\b/g)].map(match => Number(match[1])))].sort((a, b) => a - b);
+      assert.deepEqual(numbers, Array.from({ length: numbers.at(-1) ?? 0 }, (_, index) => index + 1),
+        `unused parameter in ${sql.text.slice(0, 100)}`);
+      checked += 1;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.ok(checked > 0);
+});
+
+test("branch comparison binds only its date range and paid statuses", () => {
+  const reports = read("apps/web/lib/bms/reports.ts");
+  const branchQuery = reports.slice(reports.indexOf("`SELECT l.id, l.code, l.name"), reports.indexOf("`WITH sold AS"));
+  assert.match(branchQuery, /ANY\(\$4::text\[\]\)/);
+  assert.match(branchQuery, /\[tenantId, r\.from, r\.to, PAID\]/);
+});
+
+test("shipment aggregates use shipment status and timestamps after joining orders", () => {
+  const reports = read("apps/web/lib/bms/reports.ts");
+  const shipmentQuery = reports.slice(reports.indexOf("`SELECT COUNT(*)::int AS shipment_count"), reports.indexOf("`SELECT s.status AS key"));
+  assert.match(shipmentQuery, /JOIN bms_orders o/);
+  assert.match(shipmentQuery, /s\.status='DELIVERED'/);
+  assert.match(shipmentQuery, /s\.updated_at-s\.created_at/);
+  assert.doesNotMatch(shipmentQuery, /(?<![\w.])(?:status|updated_at|created_at)\b/);
 });
 
 test("management analytics reach GraphQL, the admin screen, and exported documents", () => {
