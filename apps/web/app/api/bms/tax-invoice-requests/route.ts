@@ -10,12 +10,15 @@ import {
   RetailLocalRequestBodyError,
 } from "@/lib/bms/retailLocalRequestBody";
 import { taxRequestConfiguration } from "@/lib/bms/taxRequestToken";
+import { processTaxRequestEmail, TaxRequestEmailError } from "@/lib/bms/taxRequestEmail";
+import { getTenantId } from "@/lib/bms/tenant";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 const headers = { "Cache-Control": "private, no-store" };
 function failure(error: unknown) {
   const status =
     error instanceof TaxRequestError ||
+    error instanceof TaxRequestEmailError ||
     error instanceof RetailLocalRequestBodyError
       ? error.status
       : (error as any)?.extensions?.code === "FORBIDDEN"
@@ -71,10 +74,13 @@ export async function POST(req: NextRequest) {
       { status: 403, headers }
     );
   try {
-    return NextResponse.json(
-      await reviewTaxRequest(auth.ctx, (await readRetailLocalJSON(req)) as any),
-      { headers }
-    );
+    const result = await reviewTaxRequest(auth.ctx, (await readRetailLocalJSON(req)) as any);
+    // Issuance and outbox are committed. A delivery problem must not turn this into an issuance failure.
+    if (result.emailId) {
+      try { await processTaxRequestEmail(getTenantId(auth.ctx), result.emailId); }
+      catch { /* The durable queue remains visible and the scheduler can recover it. */ }
+    }
+    return NextResponse.json(result, { headers });
   } catch (error) {
     return failure(error);
   }

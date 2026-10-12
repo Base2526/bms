@@ -1,7 +1,8 @@
 // Writes FAKE fixtures only. Use the guarded DB test runner with a disposable local schema clone.
 import assert from "node:assert/strict";
 import test from "node:test";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
+import { processTaxRequestEmail } from "../apps/web/lib/bms/taxRequestEmail.ts";
 import { query, getClient } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { upsertPosDevice } from "../apps/web/lib/bms/pos.ts";
@@ -39,6 +40,7 @@ const buyer = {
   branchCode: "00000",
   address: "FAKE address",
   phone: null,
+  email: "fake@example.test",
 };
 let tenant = "",
   other = "",
@@ -513,6 +515,134 @@ test("submission history is tenant-scoped and append-only to the application rol
   } finally {
     c.release();
   }
+});
+
+test("issue and email commit together; duplicate confirmation and concurrent workers deliver once", async () => {
+  const r = await claim();
+  const input = { id: r.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email };
+  await assert.rejects(reviewTaxRequest(ctx(), { ...input, emailRecipient: "other@example.test" }));
+  assert.equal((await trackTaxRequest(r.access)).status, "PENDING");
+  const [issued, duplicate] = await Promise.all([reviewTaxRequest(ctx(), input), reviewTaxRequest(ctx(), input)]);
+  assert.equal(issued.emailId, duplicate.emailId);
+  assert.ok(issued.emailId);
+  const queued = await query(`SELECT * FROM bms_tax_request_emails WHERE tenant_id=$1 AND request_id=$2`, [tenant, r.requestId]);
+  assert.equal(queued.rowCount, 1);
+  assert.equal(queued.rows[0].status, "PENDING");
+  assert.equal(queued.rows[0].invoice_snapshot.id, issued.documentId);
+  let sent = 0;
+  const delivery = {
+    render: async () => Buffer.from("FAKE-PDF"),
+    send: async (opts: any) => {
+      sent++;
+      assert.equal(opts.to, buyer.email);
+      assert.equal(opts.attachments[0].mimeType, "application/pdf");
+      assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [issued.emailId])).rows[0].status, "SENDING", "claim commits before provider call");
+      return { statusCode: 202, messageId: "FAKE-provider" };
+    },
+  };
+  await Promise.all([processTaxRequestEmail(tenant, issued.emailId!, delivery), processTaxRequestEmail(tenant, issued.emailId!, delivery)]);
+  assert.equal(sent, 1);
+  await processTaxRequestEmail(tenant, issued.emailId!, delivery);
+  assert.equal(sent, 1);
+  const listed = await listTaxRequests(ctx(), "ISSUED");
+  assert.equal(listed.rows.find((row: any) => row.id === r.requestId)?.email.status, "SENT");
+});
+
+test("manual email is confirmed, branch-scoped, retry-safe and never reissues the document", async () => {
+  const r = await claim();
+  const issued = await approve(r.requestId);
+  const input = { id: r.requestId, version: 2, action: "EMAIL", confirmed: true,
+    emailKey: randomUUID(), expectedEmailId: null, emailRecipient: buyer.email };
+  await assert.rejects(reviewTaxRequest(ctx(), { ...input, confirmed: false }));
+  await assert.rejects(reviewTaxRequest({ ...ctx(), __bmsPerms: new Set() }, input));
+  const [first, replay] = await Promise.all([reviewTaxRequest(ctx(), input), reviewTaxRequest(ctx(), input)]);
+  assert.equal(first.emailId, replay.emailId);
+  await assert.rejects(reviewTaxRequest(ctx(), { ...input, emailKey: randomUUID() }));
+  await processTaxRequestEmail(tenant, first.emailId!, {
+    render: async () => Buffer.from("FAKE-PDF"), send: async () => { throw new Error("FAKE timeout"); },
+  });
+  assert.equal((await trackTaxRequest(r.access)).invoice.id, issued.documentId);
+  assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [first.emailId])).rows[0].status, "UNKNOWN");
+  const resend = await reviewTaxRequest(ctx(), { ...input, emailKey: randomUUID(), expectedEmailId: first.emailId });
+  assert.notEqual(resend.emailId, first.emailId);
+  await processTaxRequestEmail(tenant, resend.emailId!, {
+    render: async () => { throw new Error("FAKE rendering failure"); }, send: async () => { throw new Error("must not send"); },
+  });
+  assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [resend.emailId])).rows[0].status, "FAILED");
+  assert.equal((await trackTaxRequest(r.access)).invoice.id, issued.documentId);
+});
+
+test("cancelled documents never send and stale sending attempts are not automatically retried", async () => {
+  const r = await claim();
+  const issued = await reviewTaxRequest(ctx(), { id: r.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email });
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, other);
+    assert.equal((await client.query(`SELECT id FROM bms_tax_request_emails WHERE id=$1`, [issued.emailId])).rowCount, 0);
+    await client.query("ROLLBACK");
+  } finally { client.release(); }
+  await query(`UPDATE bms_tax_documents SET cancelled_at=now(),cancelled_reason='FAKE cancelled' WHERE id=$1`, [issued.documentId]);
+  let sends = 0;
+  const delivery = { render: async () => Buffer.from("FAKE-PDF"), send: async () => { sends++; return { statusCode: 202, messageId: "FAKE" }; } };
+  await processTaxRequestEmail(tenant, issued.emailId!, delivery);
+  assert.equal(sends, 0);
+  assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [issued.emailId])).rows[0].status, "CANCELLED");
+  const r2 = await claim();
+  const pending = await reviewTaxRequest(ctx(), { id: r2.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email });
+  await query(`UPDATE bms_tax_request_emails SET status='SENDING',started_at=now()-interval '10 minutes' WHERE id=$1`, [pending.emailId]);
+  await processTaxRequestEmail(tenant, pending.emailId!, delivery);
+  assert.equal(sends, 0);
+  assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [pending.emailId])).rows[0].status, "UNKNOWN");
+});
+
+test("cancellation during PDF rendering prevents delivery", async () => {
+  const r = await claim();
+  const issued = await reviewTaxRequest(ctx(), { id: r.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email });
+  let sends = 0;
+  const result = await processTaxRequestEmail(tenant, issued.emailId!, {
+    render: async () => {
+      await query(`UPDATE bms_tax_documents SET cancelled_at=now(),cancelled_reason='FAKE cancelled during render' WHERE id=$1`, [issued.documentId]);
+      return Buffer.from("FAKE-PDF");
+    },
+    send: async () => { sends++; return { statusCode: 202, messageId: "FAKE" }; },
+  });
+  assert.equal(sends, 0);
+  assert.equal(result?.status, "CANCELLED");
+  assert.equal((await query(`SELECT status FROM bms_tax_request_emails WHERE id=$1`, [issued.emailId])).rows[0].status, "CANCELLED");
+});
+
+test("a worker whose claim expires while rendering cannot deliver or report a false success", async () => {
+  for (const recover of [false, true]) {
+    const r = await claim();
+    const issued = await reviewTaxRequest(ctx(), { id: r.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email });
+    let sends = 0;
+    const result = await processTaxRequestEmail(tenant, issued.emailId!, {
+      render: async () => {
+        await query(`UPDATE bms_tax_request_emails SET started_at=now()-interval '10 minutes' WHERE id=$1`, [issued.emailId]);
+        if (recover) await processTaxRequestEmail(tenant, issued.emailId!);
+        return Buffer.from("FAKE-PDF");
+      },
+      send: async () => { sends++; return { statusCode: 202, messageId: "FAKE" }; },
+    });
+    assert.equal(sends, 0);
+    assert.equal(result?.status, "UNKNOWN");
+  }
+});
+
+test("a late provider result preserves an already recovered status and its audit evidence", async () => {
+  const r = await claim();
+  const issued = await reviewTaxRequest(ctx(), { id: r.requestId, version: 1, action: "ISSUE", confirmed: true, sendEmail: true, emailRecipient: buyer.email });
+  const result = await processTaxRequestEmail(tenant, issued.emailId!, {
+    render: async () => Buffer.from("FAKE-PDF"),
+    send: async () => {
+      await query(`UPDATE bms_tax_request_emails SET started_at=now()-interval '10 minutes' WHERE id=$1`, [issued.emailId]);
+      await processTaxRequestEmail(tenant, issued.emailId!);
+      return { statusCode: 202, messageId: "FAKE" };
+    },
+  });
+  assert.equal(result?.status, "UNKNOWN");
+  const audits = await query(`SELECT meta FROM bms_audit_log WHERE tenant_id=$1 AND target=$2 AND action='tax_request.email_result'`, [tenant, r.requestId]);
+  assert.ok(audits.rows.every(row => row.meta.status !== "SENT"));
 });
 
 test.after(async () => {

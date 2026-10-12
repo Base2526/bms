@@ -328,7 +328,7 @@ export default function TaxInvoiceRequestClient() {
                 <Form.Item name="phone" label="เบอร์โทรศัพท์">
                   <Input type="tel" maxLength={30} autoComplete="tel" />
                 </Form.Item>
-                <Form.Item name="email" label="อีเมล (สำหรับติดต่อเรื่องการจัดส่งเอกสาร)" rules={[{ type: "email", message: "กรุณากรอกอีเมลให้ถูกต้อง" }]}>
+                <Form.Item name="email" label="อีเมล (สำหรับติดต่อเรื่องการจัดส่งเอกสาร)" rules={[{ required: true, whitespace: true, message: "กรุณากรอกอีเมลสำหรับติดต่อเรื่องการจัดส่งเอกสาร" }, { type: "email", message: "กรุณากรอกอีเมลให้ถูกต้อง" }]}>
                   <Input type="email" maxLength={254} autoComplete="email" />
                 </Form.Item>
                 <p>

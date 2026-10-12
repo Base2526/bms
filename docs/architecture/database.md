@@ -1309,3 +1309,16 @@ Archive parsing depends on `yauzl` (lazy ZIP reads with validated entry sizes) a
 `tar-stream` (in-memory TAR parsing after bounded gzip decompression). Unexpected names,
 links and duplicate entries are rejected; no uploaded entry is written to disk.
 Deployment and operator workflow: [Retail Local installation reports](../business/retail-local.md#installation-error-reports).
+
+## Tax Request Email Outbox (10.58)
+
+`bms_tax_request_emails` is a tenant-owned, RLS-protected delivery outbox referencing the originating
+`bms_tax_invoice_requests` and issued full tax document through composite tenant foreign keys.
+The initial job commits with issuance; manual sends require branch-scoped `tax.document.issue`,
+explicit confirmation, the reviewed recipient, a stable idempotency key and the latest job id.
+The immutable invoice-view JSON and recipient are private delivery snapshots, not a new tax ledger.
+`PENDING -> SENDING -> SENT/FAILED/UNKNOWN`; cancelled documents become `CANCELLED` before delivery.
+`SENT` means provider acceptance. A stale `SENDING` becomes `UNKNOWN`, never an automatic resend.
+Only a new explicitly confirmed action may retry a terminal attempt; prior attempts remain history.
+The worker claims one row using `FOR UPDATE SKIP LOCKED`, commits before network I/O, and stores only
+bounded error codes and job ids in audit metadata. Font assets are bundled under `public/fonts/sarabun`.

@@ -3564,7 +3564,7 @@ export default function Page() {
               <Space direction="vertical" size={16} style={{ width: "100%" }}>
                 <Alert type="info" showIcon closable
                   message={<Link href="/admin/tax-documents">{t("tax_requests.title")}</Link>}
-                  description={t("tax_requests.manual")}/>
+                  description={<>{t("tax_requests.manual")}<p>{t("tax_requests.email_manual")}</p></>}/>
                 <Alert
                   type="warning"
                   showIcon

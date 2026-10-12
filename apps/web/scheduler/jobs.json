@@ -1,4 +1,5 @@
 [
+  { "name": "tax-request-email", "group": "frequent", "path": "/api/bms/tax-invoice-requests/send-pending" },
   { "name": "release-expired", "group": "frequent", "path": "/api/bms/orders/release-expired?minutes=30" },
   { "name": "followups-run", "group": "frequent", "path": "/api/bms/followups/run" },
   { "name": "carrier-tracking-sync", "group": "frequent", "path": "/api/bms/shipping/sync-carriers" },
