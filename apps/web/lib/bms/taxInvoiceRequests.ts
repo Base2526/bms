@@ -17,6 +17,7 @@ import {
 } from "./taxRequestToken";
 import { taxRequestDeadline, taxRequestPolicy } from "./taxRequestPolicy";
 import { TAX_BUYER_TYPES, THAI_PROVINCES, type TaxBuyerType } from "../taxRequestFields";
+import { enqueueTaxRequestEmailInTx, isTaxEmailRecipient } from "./taxRequestEmail";
 
 type TaxRequestBuyer = FullInvoiceBuyer & {
   buyerType?: TaxBuyerType;
@@ -128,19 +129,27 @@ export function normalizeTaxRequestBuyer(raw: unknown): TaxRequestBuyer {
     buyer.addressLine2 = clean(b.addressLine2, 300, false);
     buyer.province = clean(b.province, 100);
     buyer.postcode = clean(b.postcode, 5, false);
-    buyer.email = clean(b.email, 254, false);
     if (!THAI_PROVINCES.some((province) => province === buyer.province))
       throw new TaxRequestError("กรุณาเลือกจังหวัด");
     if (buyer.postcode && !/^\d{5}$/.test(buyer.postcode))
       throw new TaxRequestError("รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก");
-    if (buyer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email))
-      throw new TaxRequestError("อีเมลไม่ถูกต้อง");
     buyer.address = [buyer.addressLine1, buyer.addressLine2, buyer.province, buyer.postcode].filter(Boolean).join("\n");
   } else {
     // Keep old request snapshots and in-flight clients readable without guessing address parts.
     buyer.address = clean(b.address, 1000);
   }
+  if (buyerType || b.email != null) {
+    buyer.email = clean(b.email, 254, false);
+    if (buyer.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyer.email))
+      throw new TaxRequestError("อีเมลไม่ถูกต้อง");
+  }
   return buyer;
+}
+function requireBuyerEmail(buyer: TaxRequestBuyer) {
+  if (!buyer.email)
+    throw new TaxRequestError("กรุณากรอกอีเมลสำหรับติดต่อเรื่องการจัดส่งเอกสาร");
+  if (!isTaxEmailRecipient(buyer.email))
+    throw new TaxRequestError("อีเมลไม่ถูกต้อง");
 }
 async function receiptOrder(
   client: PoolClient,
@@ -243,6 +252,8 @@ export async function submitTaxRequest(
         access: `${identity.tenantId}.${prior.rows[0].id}.${accessSecret}`,
       };
     }
+    // Apply new requirements only to new writes, preserving committed legacy retries.
+    requireBuyerEmail(buyer);
     const order = await receiptOrder(
       client,
       identity.tenantId,
@@ -371,6 +382,7 @@ export async function reviseTaxRequest(
         );
       return { ok: true };
     }
+    requireBuyerEmail(buyer);
     if (
       !["PENDING", "NEEDS_INFO"].includes(row.status) ||
       row.version !== version
@@ -417,9 +429,15 @@ export async function listTaxRequests(ctx: any, status: string, offset = 0) {
   return inTenant(tenantId, String(ctx.admin.id), async (client) => {
     const result = await client.query(
       `SELECT r.id,r.order_id AS "orderId",r.buyer,r.status,r.version,r.feedback,r.document_id AS "documentId",r.created_at AS "createdAt",l.name AS "locationName",l.branch_code AS "branchCode",
-        d.doc_no AS "receiptNo",d.grand_total AS total,r.submission_count AS "submissionCount",r.request_deadline AS "requestDeadline"
+        d.doc_no AS "receiptNo",d.grand_total AS total,r.submission_count AS "submissionCount",r.request_deadline AS "requestDeadline",
+        email.delivery AS email
       FROM bms_tax_invoice_requests r JOIN bms_locations l ON l.tenant_id=r.tenant_id AND l.id=r.location_id
       JOIN bms_tax_documents d ON d.tenant_id=r.tenant_id AND d.order_id=r.order_id AND d.doc_type='ABBREVIATED'
+      LEFT JOIN LATERAL (
+        SELECT jsonb_build_object('id',e.id,'status',e.status,'recipient',e.recipient,'createdAt',e.created_at,'finishedAt',e.finished_at) AS delivery
+        FROM bms_tax_request_emails e WHERE e.tenant_id=r.tenant_id AND e.request_id=r.id
+        ORDER BY e.created_at DESC,e.id DESC LIMIT 1
+      ) email ON true
       WHERE r.tenant_id=$1 AND r.location_id=ANY($2::uuid[]) AND r.status=$3 ORDER BY r.created_at DESC,r.id DESC LIMIT 51 OFFSET $4`,
       [tenantId, locations.map((l) => l.id), status, offset]
     );
@@ -438,6 +456,10 @@ export async function reviewTaxRequest(
     action: string;
     reason?: string;
     confirmed?: boolean;
+    sendEmail?: boolean;
+    emailRecipient?: string;
+    emailKey?: string;
+    expectedEmailId?: string | null;
   }
 ) {
   await requirePermission(ctx, "tax.document.issue");
@@ -450,9 +472,14 @@ export async function reviewTaxRequest(
     throw new TaxRequestError("ข้อมูลคำขอไม่ถูกต้อง");
   if (input.confirmed !== true)
     throw new TaxRequestError("ต้องยืนยันการดำเนินการ");
-  if (!["ISSUE", "NEEDS_INFO", "REJECT"].includes(input.action))
+  if (!["ISSUE", "NEEDS_INFO", "REJECT", "EMAIL"].includes(input.action))
     throw new TaxRequestError("คำสั่งไม่ถูกต้อง");
-  const reason = input.action === "ISSUE" ? null : clean(input.reason, 1000);
+  if (input.sendEmail !== undefined && typeof input.sendEmail !== "boolean") throw new TaxRequestError("คำสั่งส่งอีเมลไม่ถูกต้อง");
+  if (input.sendEmail && input.action !== "ISSUE") throw new TaxRequestError("ส่งอีเมลพร้อมการออกใบกำกับเท่านั้น");
+  if (input.action === "EMAIL" && (!/^[a-f0-9-]{36}$/i.test(input.emailKey ?? "")
+    || !(input.expectedEmailId === null || /^[a-f0-9-]{36}$/i.test(input.expectedEmailId ?? ""))))
+    throw new TaxRequestError("กรุณาโหลดข้อมูลอีเมลล่าสุดก่อนยืนยัน");
+  const reason = ["ISSUE", "EMAIL"].includes(input.action) ? null : clean(input.reason, 1000);
   const tenantId = getTenantId(ctx),
     actor = String(ctx.admin.id),
     locations = await listLocationsForUser(tenantId, actor);
@@ -471,8 +498,23 @@ export async function reviewTaxRequest(
       [tenantId, input.id]
     );
     const row = result.rows[0];
-    if (row.status === "ISSUED" && input.action === "ISSUE")
-      return { status: row.status, documentId: row.document_id };
+    if (row.status === "ISSUED" && input.action === "ISSUE") {
+      const email = await client.query(`SELECT id FROM bms_tax_request_emails WHERE tenant_id=$1 AND request_id=$2 AND idempotency_key='issue'`, [tenantId, row.id]);
+      return { status: row.status, documentId: row.document_id, emailId: email.rows[0]?.id ?? null };
+    }
+    if (input.sendEmail || input.action === "EMAIL") {
+      if (!isTaxEmailRecipient(row.buyer.email) || input.emailRecipient !== row.buyer.email)
+        throw new TaxRequestError("อีเมลผู้รับไม่ถูกต้องหรือเปลี่ยนแล้ว กรุณาตรวจข้อมูลใหม่");
+    }
+    if (input.action === "EMAIL") {
+      if (row.status !== "ISSUED" || row.version !== input.version)
+        throw new TaxRequestError("ต้องออกใบกำกับก่อนส่งอีเมล กรุณาโหลดข้อมูลล่าสุด", 409);
+      const emailId = await enqueueTaxRequestEmailInTx(client, {
+        tenantId, requestId: row.id, documentId: row.document_id, recipient: row.buyer.email,
+        actor, key: input.emailKey!, expectedEmailId: input.expectedEmailId,
+      });
+      return { status: row.status, documentId: row.document_id, emailId };
+    }
     if (
       !["PENDING", "NEEDS_INFO"].includes(row.status) ||
       row.version !== input.version
@@ -512,6 +554,9 @@ export async function reviewTaxRequest(
       [tenantId, row.id, status, reason, documentId, actor]
     );
     await audit(client, tenantId, actor, row.id, input.action.toLowerCase());
-    return { status, documentId };
+    const emailId = input.sendEmail && documentId ? await enqueueTaxRequestEmailInTx(client, {
+      tenantId, requestId: row.id, documentId, recipient: row.buyer.email, actor, key: "issue",
+    }) : null;
+    return { status, documentId, emailId };
   });
 }

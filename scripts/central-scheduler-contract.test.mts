@@ -42,12 +42,12 @@ test("UTC slots handle the daily boundary and recover only the latest slot after
   assert.equal(slotFor(daily, instant + 10 * 86400000), instant + 10 * 86400000);
 });
 
-test("all 17 schedules match the existing workflow and use real guarded routes", () => {
+test("all schedules match the existing workflow and use real guarded routes", () => {
   const workflow = read(".github/workflows/bms-cron.yml");
   const entries = [...workflow.matchAll(/- name: ([\w-]+)\s+path: (\/api\/\S+)/g)];
-  assert.equal(jobs.length, 17);
+  assert.equal(jobs.length, 18);
   assert.deepEqual(jobs.map((j: typeof job) => [j.name, j.path]).sort(), entries.map((m) => [m[1], m[2]]).sort());
-  assert.equal(new Set(jobs.map((j: typeof job) => j.name)).size, 17);
+  assert.equal(new Set(jobs.map((j: typeof job) => j.name)).size, jobs.length);
   const dailyStart = workflow.indexOf("  daily:");
   for (const j of jobs) {
     assert.equal(j.group, workflow.indexOf(`- name: ${j.name}\n`) > dailyStart ? "daily" : "frequent");
@@ -168,7 +168,7 @@ test("cycles bound concurrency to three and continue independent jobs after a fa
     active++; peak = Math.max(peak, active); await new Promise((resolve) => setTimeout(resolve, 1)); active--;
     return url.pathname.includes("followups") ? new Response("failed", { status: 500 }) : ok();
   } });
-  assert.equal(peak, 3); assert.equal(results.filter((r) => r.status === "success").length, 16);
+  assert.equal(peak, 3); assert.equal(results.filter((r) => r.status === "success").length, jobs.length - 1);
   assert.equal(results.filter((r) => r.status === "error").length, 1);
 });
 

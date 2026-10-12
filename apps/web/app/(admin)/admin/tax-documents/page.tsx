@@ -242,7 +242,7 @@ export default function TaxDocumentsPage() {
           </>
         )}
       </AdminPageHeader>
-      <TaxInvoiceRequestsPanel canIssue={can("tax.document.issue")} onIssued={()=>window.location.reload()}/>
+      <TaxInvoiceRequestsPanel canIssue={can("tax.document.issue")} onIssued={() => { void docs.refetch(); void summary.refetch(); }}/>
 
       <Alert
         closable

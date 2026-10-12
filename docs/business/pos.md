@@ -1359,12 +1359,14 @@ per-model QR scan verification before rollout.
 
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
 buyer name, checksum-valid Thai 13-digit tax ID, address line 1 (required), line 2 (optional), province
-(required), and optional five-digit postcode, phone and contact email. Companies also enter a five-digit
+(required), required contact email, and optional five-digit postcode and phone. Companies also enter a five-digit
 branch (`00000` for head office); other types use `00000`. Foreigner currently requires a Thai tax ID
 and Thai address too; the form directs other buyers to the shop rather than accepting a passport as
 a tax ID. The server validates and composes the invoice address, retaining the separate fields and
 email in the request/submission JSON snapshots for tracking, corrections and staff review. Legacy
-single-address requests remain supported. Email is contact information only, not automatic delivery.
+single-address requests remain supported. New submissions and corrections require a valid contact
+email on both the form and server, including single-address clients. Existing requests without email
+remain readable and committed retries remain valid. Email is contact information only, not automatic delivery.
 The customer explicitly submits. Staff review
 the queue at `/admin/tax-documents` (`tax.document.view`, scoped to their allowed branches). The review
 dialog shows the receipt/amount and exact buyer details; `tax.document.issue` plus explicit confirmation
@@ -1381,7 +1383,23 @@ existing buyer or invoice. Tracking uses a separate 256-bit secret whose hash al
 travel in fragments and POST bodies, not URL queries. The original browser tab can recover a lost
 response from session storage. Closing that tab without saving the private link requires contacting
 the shop. Treat the tracking link as confidential: anyone possessing it can read the buyer details.
-There is no email/OTP identity verification, automatic notification, public reset, or automatic issuance.
+There is no email/OTP identity verification, public reset, or automatic issuance.
+With migration `10.58`, staff can confirm an email of the issued PDF copy in the review dialog.
+The checkbox defaults on for a valid buyer email; the exact recipient is displayed and checked again
+server-side against the reviewed request. `tax.document.issue` and the request's allowed branch are
+required for both issuance and sending. An issued request also offers reviewed send/resend, with a
+stable action key and latest-email guard so duplicate clicks do not enqueue another message.
+The invoice and initial email job commit together. Delivery uses the existing mail provider only after
+commit and includes an embedded Thai font. The tenant-scoped outbox stores the issued invoice view,
+recipient and attempt status; it never sends a tracking bearer link. Provider acceptance is not proof
+of inbox delivery. A failed email does not undo issuance. Uncertain or interrupted attempts require
+explicit manual retry, with a duplicate-delivery warning. Cancellation is checked at enqueue, claim,
+and again after PDF rendering, before the provider call. An expired/recovered claim cannot start a
+send, and a late provider result never overwrites or misreports its recovered status. Cancellation
+after the provider call starts cannot recall an email already in flight.
+The normal response attempts delivery immediately; the guarded `tax-invoice-requests/send-pending`
+endpoint recovers queued jobs through the existing 15-minute scheduler (enable one scheduler only).
+The PDF is a copy, not an e-Tax submission. Apply migration `10.58` before deploying these readers.
 Staff must verify the purchase and buyer before confirming, especially for disputed/lost receipts.
 
 Self-service submission and corrections close exactly **168 hours (7 days) after the abbreviated
