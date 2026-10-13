@@ -69,6 +69,13 @@ Since 2026-07, Claude drives two separate tool-calling surfaces over the same ru
   memory is server-side only and may reuse only consented, customer-confirmed, relationship-matched
   safe fields. Current-message values win, stale age is dropped, and none of identity lookup,
   payable-order selection, or patient-memory retrieval belongs in the model tool registry.
+  Website chat establishes that key through `webChatSession.ts`: only a valid tenant-bound signed
+  session may resume its internal ref. An unsigned legacy id starts a new identity, never claims old
+  history; invalid/expired signed sessions fail with 401. Bearer tokens must not enter CRM or prompts.
+  Customer merges require `customer.edit`, a fresh actor/tenant/pair-bound server preview and explicit
+  staff verification evidence/confirmation. Customers and both assistant surfaces share the review
+  dialog; AI cannot supply proof. The merge and its `customer.merge` audit commit together, with the
+  authenticated revision actor, or roll back together. Never restore a direct unreviewed merge path.
 - **Staff** (`graphql/bmsAssistant.ts`, UI `/admin/assistant`) — `staffTools(perms)` filtered by the
   calling admin's own RBAC permissions; `runtime.ts` calls `requirePermission()` again immediately
   before execution. Read tools and non-sensitive writes execute directly; sensitive tools (refund,

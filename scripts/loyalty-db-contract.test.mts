@@ -37,6 +37,7 @@ import {
   upsertMembershipTier,
 } from "../apps/web/lib/bms/membership.ts";
 import { deleteCustomer, mergeCustomers } from "../apps/web/lib/bms/customers.ts";
+import { fakeCustomerMergeReview } from "./testing/customerMerge.mts";
 import { cancelOrder, createOrder, payOrder, returnOrder } from "../apps/web/lib/bms/orders.ts";
 import { upsertCoupon } from "../apps/web/lib/bms/coupons.ts";
 import { listOrderDiscounts } from "../apps/web/lib/bms/membership.ts";
@@ -450,7 +451,8 @@ test("merge: points follow the customer and the merged row releases its number",
   await adjustPoints({ tenantId, customerId: keep.member.customerId, points: 100, note: "keep pts" });
   await adjustPoints({ tenantId, customerId: merge.member.customerId, points: 250, note: "merge pts" });
 
-  await mergeCustomers(tenantId, keep.member.customerId, merge.member.customerId);
+  await mergeCustomers(tenantId, keep.member.customerId, merge.member.customerId,
+    await fakeCustomerMergeReview(tenantId, keep.member.customerId, merge.member.customerId));
 
   const kept = await getMember(tenantId, keep.member.customerId);
   assert.equal(kept?.pointsUsable, 350, "แต้มของทั้งสองต้องมารวมที่คนที่เก็บไว้");

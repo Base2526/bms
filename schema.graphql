@@ -872,6 +872,53 @@ type BmsCustomerInsights {
   summary: String!
 }
 
+type BmsCustomerMergePreview {
+  expiresAt: String!
+  keep: BmsCustomerMergeSummary!
+  previewToken: String!
+  source: BmsCustomerMergeSummary!
+}
+
+enum BmsCustomerMergeReason {
+  DUPLICATE_CHANNELS
+  DUPLICATE_ENTRY
+}
+
+input BmsCustomerMergeReviewInput {
+  confirmed: Boolean!
+  evidenceReference: String!
+  previewToken: String!
+  reason: BmsCustomerMergeReason!
+  verificationMethod: BmsCustomerMergeVerification!
+}
+
+type BmsCustomerMergeSummary {
+  addresses: Int!
+  channels: [String!]!
+  conversations: Int!
+  coupons: Int!
+  depositPaid: String!
+  gameRequests: Int!
+  id: ID!
+  memberNo: String
+  name: String!
+  openDeposits: Int!
+  orders: Int!
+  passes: Int!
+  pharmacyCases: Int!
+  phoneHint: String
+  points: String!
+  renewals: Int!
+  restaurantRequests: Int!
+  storeCredit: String!
+}
+
+enum BmsCustomerMergeVerification {
+  BOTH_CHANNELS
+  IN_PERSON
+  SUPPORT_CASE
+}
+
 type BmsCustomerNote360 {
   author: String
   body: String!
@@ -7590,7 +7637,7 @@ type Mutation {
   bmsMarkAllMentionsRead: Boolean!
   bmsMarkConversationRead(id: ID!): Boolean!
   bmsMarkMentionRead(id: ID!): Boolean!
-  bmsMergeCustomers(keepId: ID!, mergeId: ID!): Boolean!
+  bmsMergeCustomers(keepId: ID!, mergeId: ID!, review: BmsCustomerMergeReviewInput): Boolean!
   bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
   bmsPackOrder(id: ID!): Boolean!
   bmsPayOrder(id: ID!): Boolean!
@@ -8169,6 +8216,7 @@ type Query {
   bmsCustomer360(channel: String, conversationId: ID, customerId: ID, customerRef: String): BmsCustomer360
   bmsCustomerInsights(customerId: ID!): BmsCustomerInsights
   bmsCustomerLocations: [BmsLocation!]!
+  bmsCustomerMergePreview(keepId: ID!, mergeId: ID!): BmsCustomerMergePreview!
   bmsCustomerOrderDetail(customerId: ID!, orderId: ID!): BmsCustomerOrderDetail
   bmsCustomerTimeline(customerId: ID!): [BmsCustomerTimelineEntry!]!
   bmsCustomers(enrolledLocationId: ID, limit: Int = 50, offset: Int = 0, search: String): [BmsCustomer!]!

@@ -1,5 +1,21 @@
 // i18n/en.ts
 const en = {
+  customer_merge: {
+    title: "Review customer merge", review_button: "Review impact", confirm_button: "Confirm customer merge", cancel: "Cancel",
+    warning: "Confirm that both records belong to the same customer. There is no automatic undo.",
+    consequences: "The source's channels and history move to the kept customer; linked channels may then access combined history. Points, credit, deposits, passes and pharmacy cases follow the customer. Existing coupon conflict rules apply; duplicate renewals may be cancelled. The kept member number/tier takes priority. Clinical details are not shown here. Figures are a review snapshot; changed figures require a fresh review.",
+    refresh: "Refresh preview", impact: "Impact", keep: "Customer to keep", source: "Customer to merge in",
+    orders: "Orders", addresses: "Addresses", conversations: "Conversations", pharmacyCases: "Pharmacy cases",
+    points: "Ledger point balance (not necessarily redeemable)", coupons: "Coupon wallet entries",
+    storeCredit: "Recorded credit balance (THB; availability unchanged)", openDeposits: "Open deposits", depositPaid: "Paid on open deposits (THB)",
+    passes: "Member passes (all statuses)", renewals: "Active / paused / past-due renewals", restaurantRequests: "Restaurant requests", gameRequests: "Board-game chat requests",
+    reason: "Reason for merging", verification: "How you verified ownership", evidence: "Evidence reference",
+    evidence_hint: "Enter an internal case or verification record ID, e.g. CASE-123. Keep the actual evidence in that record. Do not enter names, phone numbers, passwords, OTPs or health information. This records your verification; it does not run an automatic identity check.",
+    evidence_invalid: "Use a 3–120 character reference: letters, digits, _ : # . / -",
+    attestation: "I have verified ownership of both records, reviewed the impacts, and confirm this merge.",
+    DUPLICATE_CHANNELS: "Same customer across channels", DUPLICATE_ENTRY: "Duplicate customer entry",
+    BOTH_CHANNELS: "Verified with the customer in both channels", IN_PERSON: "Verified with the customer in person", SUPPORT_CASE: "Verified through a documented support case",
+  },
   retail_local_ai: {
     title: "AI usage",
     own_key: "AI uses your key",

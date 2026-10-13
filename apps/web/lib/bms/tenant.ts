@@ -22,9 +22,10 @@ export function getTenantId(ctx: any): string {
 export async function beginTenantTx(
   client: PoolClient,
   tenantId: string,
-  opts: { editorId?: string | number | null; revisionId?: string | null } = {}
+  opts: { editorId?: string | number | null; revisionId?: string | null; serializable?: boolean } = {}
 ): Promise<void> {
   await client.query("BEGIN");
+  if (opts.serializable) await client.query("SET TRANSACTION ISOLATION LEVEL SERIALIZABLE");
   await client.query("SET LOCAL ROLE bms_app");
   await client.query("SELECT set_config('bms.tenant_id', $1, true)", [tenantId]);
   await client.query("SELECT set_config('app.editor_id', $1, true)", [opts.editorId != null ? String(opts.editorId) : ""]);

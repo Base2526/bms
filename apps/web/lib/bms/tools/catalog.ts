@@ -2977,7 +2977,7 @@ const A3_TOOLS: BmsTool[] = [
   proposalTool({
     name: "merge_customers",
     description:
-      "Merge duplicate customers (moves everything from mergeId onto keepId, then deletes mergeId — this cannot be undone).",
+      "Propose merging duplicate customers. Staff must review server-calculated impacts and enter their own verification method and evidence reference before confirming. Never supply or invent verification evidence. The source is soft-deleted; there is no automatic undo.",
     mutation: "bmsMergeCustomers",
     permission: "customer.edit",
     inputSchema: {

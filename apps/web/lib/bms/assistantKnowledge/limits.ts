@@ -324,14 +324,14 @@ export const SYSTEM_LIMITS: readonly SystemLimitGroup[] = [
     items: lists(
       [
         "ไม่มีการรวมลูกค้าข้ามช่องทางอัตโนมัติ — ลูกค้าคนเดียวจากสองช่องทางเห็นเป็นสองรายการ ยอดซื้อสะสมผิดจนกว่าจะผสานด้วยมือ",
-        "การผสานลูกค้าย้อนกลับไม่ได้ — รายการที่ถูกผสานถูกลบแบบซ่อนถาวร ตรวจให้แน่ใจก่อนกด",
+        "การผสานลูกค้าย้อนกลับอัตโนมัติไม่ได้ ต้องตรวจผลกระทบจากระบบ ระบุเหตุผล วิธีตรวจสอบ และรหัสหลักฐานก่อนยืนยัน ทั้งจาก Customers และผู้ช่วย พนักงานเป็นผู้ตรวจตัวตนจริง หากข้อมูลเปลี่ยนหรือหมดเวลาต้องตรวจใหม่",
         "แท็บ “ลูกค้า” ว่างเปล่าอาจแปลว่าไม่มีสิทธิ์ ไม่ใช่ลูกค้าใหม่ที่ยังไม่มีข้อมูล",
         "ข้อมูลทดสอบ (fake data) ไม่มีตัวตนช่องทางให้ผสาน",
         "ออเดอร์ Lazada/Shopee ยังไม่โผล่ใน Customer 360 — การอ่าน webhook ยังเป็นโครงร่างที่ยังไม่ได้ตรวจสอบ",
       ],
       [
         "Customers are never auto-merged across channels — the same person on two channels shows as two records, with lifetime spend wrong on both until merged by hand.",
-        "Merging customers cannot be undone — the merged-away record is soft-deleted permanently. Double-check before confirming.",
+        "Customer merging has no automatic undo. Both Customers and the assistant require a server impact preview, reason, verification method and evidence reference before confirmation. Staff verify ownership; changed or expired previews need a fresh review.",
         "An empty \\\"Customers\\\" tab can mean you lack the permission, not that there's genuinely no data yet.",
         "Fake seed data has no channel identity to merge — there's nothing for the merge tool to find.",
         "Lazada/Shopee orders don't show in Customer 360 yet — that webhook ingestion is still an unverified skeleton.",

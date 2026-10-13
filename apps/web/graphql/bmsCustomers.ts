@@ -26,6 +26,7 @@ import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
 import { listLocationsForUser } from "@/lib/bms/locations";
 import { requireAuth } from "@/lib/auth";
+import { previewCustomerMerge, type CustomerMergeReview } from "@/lib/bms/customerMergeReview";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i;
 
@@ -37,6 +38,12 @@ function toGqlError(err: any): never {
 
 export const bmsCustomersResolvers = {
   Query: {
+    async bmsCustomerMergePreview(_p: unknown, args: { keepId: string; mergeId: string }, ctx: any) {
+      await requirePermission(ctx, "customer.edit");
+      try {
+        return await previewCustomerMerge(getTenantId(ctx), args.keepId, args.mergeId, String(ctx.admin.id));
+      } catch (err) { toGqlError(err); }
+    },
     async bmsCustomers(
       _p: unknown,
       args: { search?: string; limit?: number; offset?: number; enrolledLocationId?: string | null },
@@ -128,12 +135,11 @@ export const bmsCustomersResolvers = {
       await requirePermission(ctx, "customer.edit");
       return deleteCustomer(getTenantId(ctx), args.id);
     },
-    async bmsMergeCustomers(_p: unknown, args: { keepId: string; mergeId: string }, ctx: any) {
+    async bmsMergeCustomers(_p: unknown, args: { keepId: string; mergeId: string; review?: CustomerMergeReview }, ctx: any) {
       await requirePermission(ctx, "customer.edit");
       try {
-        const ok = await mergeCustomers(getTenantId(ctx), args.keepId, args.mergeId);
-        await audit(ctx, "customer.merge", args.keepId, { mergedId: args.mergeId });
-        return ok;
+        return await mergeCustomers(getTenantId(ctx), args.keepId, args.mergeId,
+          args.review ? { actorId: String(ctx.admin.id), review: args.review } : undefined);
       } catch (err) {
         toGqlError(err);
       }
