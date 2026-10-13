@@ -45,6 +45,7 @@ type ReceiptData = {
   soldAt: string;
   total: number;
   storeName: string | null;
+  storeContactEmail: string | null;
   taxId: string | null;
   vat: { rate: number; taxable: number; exempt: number; vat: number; rounding: number } | null;
   lines: Array<{ name: string; size: string | null; qty: number; amount: number }>;
@@ -65,6 +66,7 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
                        WHERE extra.tenant_id = o.tenant_id AND extra.order_id = o.id), 0) AS extra_total,
             d.doc_no, d.vat_rate, d.taxable_amount, d.exempt_amount, d.vat_amount, d.rounding_amount,
             COALESCE(t.name, sp.store_name) AS store_name, sp.tax_id, sp.receipt_language_mode,
+            sp.contact_email AS store_contact_email,
             c.email AS customer_email, c.name AS customer_name,
             -- LINE id อยู่ที่ bms_customer_identities ไม่ใช่คอลัมน์บน bms_customers
             -- (7.74 แยก identity ต่อช่องทางออกมา — ลูกค้าคนเดียวมีได้หลายช่องทาง)
@@ -109,6 +111,7 @@ async function loadReceipt(tenantId: string, orderId: string): Promise<ReceiptDa
     soldAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at),
     total: Number(r.total_amount) + Number(r.shipping_fee ?? 0),
     storeName: r.store_name ?? null,
+    storeContactEmail: r.store_contact_email ?? null,
     taxId: r.tax_id ?? null,
     // ตัวเลขภาษีมาจากเอกสารที่ออกไปแล้วเท่านั้น — ไม่มีเอกสาร = ไม่พิมพ์บล็อก VAT
     vat: r.doc_no
@@ -239,6 +242,8 @@ export async function sendReceipt(input: {
           text: receiptText(data),
           attachments: data.taxRequestUrl ? [{ filename: "tax-invoice-request-qr.png", mimeType: "image/png",
             content: await QRCode.toBuffer(data.taxRequestUrl, { errorCorrectionLevel: "M", margin: 4, width: 400 }) }] : undefined,
+          // ลูกค้ากดตอบใบเสร็จแล้วต้องถึงร้าน ไม่ใช่ถึงอีเมลส่งของแพลตฟอร์ม
+          replyTo: data.storeContactEmail,
         },
         { tenantId: input.tenantId, category: "order" }
       );

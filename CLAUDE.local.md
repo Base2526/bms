@@ -3,6 +3,22 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## `MAIL_PROVIDER=smtp` (Resend/SES/Postmark) + reply-to ร้าน — `10.59`, 2026-10-13
+
+- branch `feat/mail-generic-smtp` จาก `develop` · ยังไม่ commit · ไม่มี permission ใหม่
+- `mailer.ts` เพิ่ม SMTP relay ทั่วไป (`SMTP_HOST/PORT/USER/PASS`, `MAIL_FROM`) · พอร์ต 465/2465 = SSL,
+  พอร์ตอื่นบังคับ STARTTLS (`requireTLS`) · SendGrid อ่าน `SENDGRID_API_KEY` ก่อนแล้ว fallback ชื่อเดิม
+  `NEXT_PUBLIC_SENDGRID_*` (production ยังไม่ต้องเปลี่ยนชื่อ)
+- `replyTo` ผ่าน `normalizeReplyTo()` (อีเมลเดี่ยวเท่านั้น ค่าผิดถูกทิ้ง ไม่ทำให้ส่งล้ม) · ต่อแล้วที่ใบเสร็จ +
+  แจ้งสถานะออร์เดอร์ (`bms_store_profile.contact_email`) · **คำขอใบกำกับ/digest ยังไม่ต่อ**
+- **`10.59` ขยาย CHECK `bms_mail_log.provider` ให้รับ `smtp`** — ไม่ apply = อีเมลส่งได้แต่ mail log
+  กลืน CHECK violation เงียบ ๆ · จงใจไม่ใส่ schemaReadiness (ไม่ทำโค้ดพัง) · **ยังไม่ได้ apply/รันกับ DB**
+  (Docker ไม่รัน, 5432 ปิด)
+- gate ผ่าน: typecheck + pure **2,606/2,608 skip 2 fail 0** + build 134/134 · `mailer-smtp-contract`
+  7 เทส · mutation **5/5 แดง** (รอบแรกตัว header-injection เขียวเพราะ regex อีเมลกันอยู่แล้ว ยกเว้น
+  `a,b@x.com` — เพิ่มเคสนั้นแล้วแดง)
+- ยังไม่ได้ทดสอบส่งจริงกับ Resend · ยังไม่มี bounce/complaint webhook
+
 ## คำขอจองโต๊ะจากแชท `10.48` — 2026-10-07
 
 - ต่อบน `codex/pharmacy-deterministic-guards`; ไม่ commit/push/deploy และไม่แก้ข้อมูลร้านจริง

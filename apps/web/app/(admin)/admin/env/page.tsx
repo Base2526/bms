@@ -117,6 +117,7 @@ function pickEnv(t: Translate, obj: NodeJS.ProcessEnv): EnvRow[] {
     "COOKIE_SECURE",
     "STORAGE_DRIVER",
     "META_GRAPH_VERSION",
+    "MAIL_PROVIDER",
   ];
 
   const out: EnvRow[] = [];

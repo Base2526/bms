@@ -3645,7 +3645,7 @@ export const typeDefs = /* GraphQL */ `
     tenantId: ID
     tenantName: String    # null = อีเมลระดับระบบ ไม่ผูกร้าน (test/auth ของ user เดิม/support ticket)
     category: String!     # digest / order / auth / support / test / other
-    provider: String!     # sendgrid / gmail
+    provider: String!     # sendgrid / gmail / smtp
     toEmail: String!
     fromEmail: String
     subject: String

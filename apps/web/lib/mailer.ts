@@ -6,7 +6,9 @@ import { recordMailLog, type MailLogCategory } from "@/lib/bms/mailLog";
 // ผู้ส่งอีเมล เลือกด้วย env MAIL_PROVIDER — ค่าเดิม (ไม่ตั้ง/ตั้งอื่น) = SendGrid เหมือนเดิมเป๊ะๆ
 // ไม่กระทบ caller เดิม (signup verify/password reset/order notify/report digest ใช้ sendEmail() ตัวเดียวกัน)
 // ตั้ง MAIL_PROVIDER=gmail + GMAIL_SMTP_USER + GMAIL_SMTP_APP_PASSWORD เพื่อส่งผ่าน Gmail SMTP แทน
-type MailProvider = "sendgrid" | "gmail";
+// ตั้ง MAIL_PROVIDER=smtp + SMTP_HOST/SMTP_PORT/SMTP_USER/SMTP_PASS/MAIL_FROM เพื่อส่งผ่าน SMTP relay
+// ทั่วไป (Resend, Amazon SES, Postmark, Brevo, Mailgun ฯลฯ) — สลับเจ้าได้ด้วย env อย่างเดียว ไม่ต้องแก้โค้ด
+type MailProvider = "sendgrid" | "gmail" | "smtp";
 
 // แนบไฟล์ — ทั้ง SendGrid (`@sendgrid/mail`) และ nodemailer (Gmail SMTP) รองรับ attachment
 // อยู่แล้วในระดับ SDK เพียงแต่ sendEmail() เดิมไม่เคย forward field นี้เข้าไปเลย (ใช้แค่ verify
@@ -18,8 +20,40 @@ export type MailAttachment = {
   mimeType: string;
 };
 
+type SendOpts = {
+  to: string;
+  subject: string;
+  html: string;
+  text?: string;
+  attachments?: MailAttachment[];
+  replyTo?: string;
+};
+
 function currentProvider(): MailProvider {
-  return process.env.MAIL_PROVIDER === "gmail" ? "gmail" : "sendgrid";
+  const raw = (process.env.MAIL_PROVIDER ?? "").trim().toLowerCase();
+  if (raw === "gmail") return "gmail";
+  if (raw === "smtp") return "smtp";
+  return "sendgrid";
+}
+
+// reply-to มาจากข้อมูลที่ร้านพิมพ์เอง (contact_email) — ค่าที่ไม่ใช่อีเมลเดี่ยว ๆ ทิ้งไปเฉย ๆ
+// แทนที่จะทำให้การส่งล้ม (ใบเสร็จที่ส่งไม่ออกเพราะร้านพิมพ์อีเมลติดต่อผิด แย่กว่าไม่มี reply-to)
+// และกันขึ้นบรรทัดใหม่ที่อาจกลายเป็น header injection
+export function normalizeReplyTo(value: string | null | undefined): string | undefined {
+  const v = (value ?? "").trim();
+  if (!v || /[\r\n,;]/.test(v)) return undefined;
+  return /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(v) ? v : undefined;
+}
+
+// SendGrid key/from เคยตั้งชื่อขึ้นต้น NEXT_PUBLIC_ ซึ่งผิดสำหรับความลับ (Next ฝังค่า NEXT_PUBLIC_*
+// ลง bundle ฝั่ง browser ทันทีที่ไฟล์ฝั่ง client อ้างถึง) — อ่านชื่อใหม่ก่อน แล้ว fallback ชื่อเดิม
+// เพื่อไม่ให้ production ที่ยังตั้งชื่อเดิมพังตอน deploy
+function sendgridApiKey(): string | undefined {
+  return process.env.SENDGRID_API_KEY || process.env.NEXT_PUBLIC_SENDGRID_API_KEY || undefined;
+}
+
+function sendgridFromEmail(): string | undefined {
+  return process.env.SENDGRID_FROM_EMAIL || process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL || undefined;
 }
 
 // ---------------- SendGrid ----------------
@@ -29,14 +63,14 @@ let sendgridInitialized = false;
 function initSendGrid() {
   if (sendgridInitialized) return;
 
-  const key = process.env.NEXT_PUBLIC_SENDGRID_API_KEY;
+  const key = sendgridApiKey();
   if (!key) {
     // log ตอน init พัง
     addLog(
       "error",
       "email",
       "SendGrid init failed: missing API key",
-      { env: "NEXT_PUBLIC_SENDGRID_API_KEY" }
+      { env: "SENDGRID_API_KEY (หรือชื่อเดิม NEXT_PUBLIC_SENDGRID_API_KEY)" }
     );
     throw new Error("Missing SENDGRID_API_KEY");
   }
@@ -47,15 +81,15 @@ function initSendGrid() {
   sendgridInitialized = true;
 }
 
-async function sendViaSendGrid(opts: { to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] }) {
-  const from = process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL;
+async function sendViaSendGrid(opts: SendOpts) {
+  const from = sendgridFromEmail();
 
   if (!from) {
     addLog(
       "error",
       "email",
       "SendGrid send failed: missing FROM email",
-      { env: "NEXT_PUBLIC_SENDGRID_FROM_EMAIL" }
+      { env: "SENDGRID_FROM_EMAIL (หรือชื่อเดิม NEXT_PUBLIC_SENDGRID_FROM_EMAIL)" }
     );
     throw new Error("Missing SENDGRID_FROM_EMAIL");
   }
@@ -66,6 +100,7 @@ async function sendViaSendGrid(opts: { to: string; subject: string; html: string
     const [res] = await sgMail.send({
       to: opts.to,
       from,
+      replyTo: opts.replyTo,
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
@@ -136,7 +171,7 @@ function getGmailTransporter(): nodemailer.Transporter {
   return gmailTransporter;
 }
 
-async function sendViaGmail(opts: { to: string; subject: string; html: string; text?: string; attachments?: MailAttachment[] }) {
+async function sendViaGmail(opts: SendOpts) {
   const user = process.env.GMAIL_SMTP_USER;
   const fromName = process.env.GMAIL_SMTP_FROM_NAME;
 
@@ -144,6 +179,7 @@ async function sendViaGmail(opts: { to: string; subject: string; html: string; t
     const transporter = getGmailTransporter();
     const info = await transporter.sendMail({
       from: fromName ? `${fromName} <${user}>` : user,
+      replyTo: opts.replyTo,
       to: opts.to,
       subject: opts.subject,
       html: opts.html,
@@ -176,11 +212,106 @@ async function sendViaGmail(opts: { to: string; subject: string; html: string; t
   }
 }
 
+// ---------------- Generic SMTP relay ----------------
+// ใช้กับผู้ให้บริการที่ให้ SMTP credential (Resend: host smtp.resend.com, user "resend", pass = API key ·
+// Amazon SES: email-smtp.<region>.amazonaws.com · Postmark/Brevo/Mailgun ก็รูปแบบเดียวกัน)
+// พอร์ต 465/2465 = SSL ตั้งแต่ต้น · พอร์ตอื่น (587/2587/25) = STARTTLS และบังคับ TLS เสมอ
+// (ห้ามยอมส่ง credential/เนื้ออีเมลแบบไม่เข้ารหัสเมื่อ server ไม่เสนอ STARTTLS)
+// MAIL_FROM ต้องเป็นอีเมลบนโดเมนที่ verify กับผู้ให้บริการแล้ว เช่น "BMS <no-reply@mail.example.com>"
+
+let smtpTransporter: nodemailer.Transporter | null = null;
+
+export function smtpTransportOptions(env: NodeJS.ProcessEnv = process.env) {
+  const host = env.SMTP_HOST?.trim();
+  const user = env.SMTP_USER?.trim();
+  const pass = env.SMTP_PASS;
+  const port = Number(env.SMTP_PORT || 587);
+  if (!host || !user || !pass) {
+    throw new Error("Missing SMTP_HOST/SMTP_USER/SMTP_PASS");
+  }
+  if (!Number.isInteger(port) || port <= 0 || port > 65535) {
+    throw new Error(`Invalid SMTP_PORT: ${env.SMTP_PORT}`);
+  }
+  const secure = port === 465 || port === 2465;
+  return {
+    host,
+    port,
+    secure,
+    requireTLS: !secure,
+    auth: { user, pass },
+    dnsTimeout: 5_000,
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
+  };
+}
+
+function getSmtpTransporter(): nodemailer.Transporter {
+  if (smtpTransporter) return smtpTransporter;
+  try {
+    smtpTransporter = nodemailer.createTransport(smtpTransportOptions());
+  } catch (err: any) {
+    addLog("error", "email", "SMTP init failed", {
+      env: "SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS",
+      error: err?.message,
+    });
+    throw err;
+  }
+  return smtpTransporter;
+}
+
+async function sendViaSmtp(opts: SendOpts) {
+  const from = process.env.MAIL_FROM?.trim();
+  if (!from) {
+    addLog("error", "email", "SMTP send failed: missing FROM", { env: "MAIL_FROM" });
+    throw new Error("Missing MAIL_FROM");
+  }
+
+  try {
+    const transporter = getSmtpTransporter();
+    const info = await transporter.sendMail({
+      from,
+      replyTo: opts.replyTo,
+      to: opts.to,
+      subject: opts.subject,
+      html: opts.html,
+      text: opts.text,
+      attachments: opts.attachments?.map((a) => ({
+        filename: a.filename,
+        content: a.content,
+        contentType: a.mimeType,
+      })),
+    });
+
+    await addLog("info", "email", "Email sent successfully (smtp)", {
+      to: opts.to,
+      subject: opts.subject,
+      host: process.env.SMTP_HOST,
+      messageId: info?.messageId,
+      response: info?.response,
+    });
+
+    return { statusCode: 250, messageId: info?.messageId };
+  } catch (err: any) {
+    await addLog("error", "email", "Email send failed (smtp)", {
+      to: opts.to,
+      subject: opts.subject,
+      host: process.env.SMTP_HOST,
+      error: err?.message || err,
+      responseCode: err?.responseCode,
+      response: err?.response,
+    });
+
+    throw err;
+  }
+}
+
 // ---------------- entrypoint ----------------
 
 function fromAddressFor(provider: MailProvider): string | null {
   if (provider === "gmail") return process.env.GMAIL_SMTP_USER ?? null;
-  return process.env.NEXT_PUBLIC_SENDGRID_FROM_EMAIL ?? null;
+  if (provider === "smtp") return process.env.MAIL_FROM?.trim() || null;
+  return sendgridFromEmail() ?? null;
 }
 
 // รูปแบบ error message ของทั้งสอง provider ซ้ำกับที่ resolver บางจุด (bmsSqlConsole.ts/
@@ -205,10 +336,13 @@ export async function sendEmail(
     text?: string;
     /** ไฟล์แนบ (เช่น รายงาน Excel ที่สร้างไว้แล้ว) — optional, caller เดิมทั้งหมดไม่ส่งค่านี้ */
     attachments?: MailAttachment[];
+    /** ให้ลูกค้ากดตอบแล้วถึงร้าน ไม่ใช่ถึงแพลตฟอร์ม — ค่าที่ไม่ใช่อีเมลเดี่ยวถูกทิ้ง (ดู normalizeReplyTo) */
+    replyTo?: string | null;
   },
   meta: { tenantId?: string | null; category?: MailLogCategory; triggeredBy?: string | null } = {}
 ) {
   const provider = currentProvider();
+  const send: SendOpts = { ...opts, replyTo: normalizeReplyTo(opts.replyTo) };
 
   // log: ก่อนส่ง (ใช้ร่วมทั้งสอง provider) — ไม่ log เนื้อไฟล์แนบ แค่ชื่อ/จำนวน กัน log บวมและกัน PII/ข้อมูลธุรกิจรั่วเข้า log
   await addLog("info", "email", "Sending email", {
@@ -231,7 +365,10 @@ export async function sendEmail(
   };
 
   try {
-    const result = provider === "gmail" ? await sendViaGmail(opts) : await sendViaSendGrid(opts);
+    const result =
+      provider === "gmail" ? await sendViaGmail(send)
+      : provider === "smtp" ? await sendViaSmtp(send)
+      : await sendViaSendGrid(send);
     await recordMailLog({
       ...logBase,
       status: "success",

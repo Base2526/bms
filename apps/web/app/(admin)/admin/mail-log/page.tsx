@@ -187,6 +187,7 @@ export default function MailLogPage() {
                 options={[
                   { value: "sendgrid", label: "SendGrid" },
                   { value: "gmail", label: "Gmail SMTP" },
+                  { value: "smtp", label: "SMTP relay" },
                 ]}
               />
               <Select
