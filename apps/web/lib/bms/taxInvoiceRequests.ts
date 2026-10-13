@@ -434,7 +434,7 @@ export async function listTaxRequests(ctx: any, status: string, offset = 0) {
       FROM bms_tax_invoice_requests r JOIN bms_locations l ON l.tenant_id=r.tenant_id AND l.id=r.location_id
       JOIN bms_tax_documents d ON d.tenant_id=r.tenant_id AND d.order_id=r.order_id AND d.doc_type='ABBREVIATED'
       LEFT JOIN LATERAL (
-        SELECT jsonb_build_object('id',e.id,'status',e.status,'recipient',e.recipient,'createdAt',e.created_at,'finishedAt',e.finished_at) AS delivery
+        SELECT jsonb_build_object('id',e.id,'status',e.status,'recipient',e.recipient,'createdAt',e.created_at,'finishedAt',e.finished_at,'errorCode',e.error_code) AS delivery
         FROM bms_tax_request_emails e WHERE e.tenant_id=r.tenant_id AND e.request_id=r.id
         ORDER BY e.created_at DESC,e.id DESC LIMIT 1
       ) email ON true

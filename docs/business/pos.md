@@ -1390,7 +1390,10 @@ server-side against the reviewed request. `tax.document.issue` and the request's
 required for both issuance and sending. An issued request also offers reviewed send/resend, with a
 stable action key and latest-email guard so duplicate clicks do not enqueue another message.
 The invoice and initial email job commit together. Delivery uses the existing mail provider only after
-commit and includes an embedded Thai font. The tenant-scoped outbox stores the issued invoice view,
+commit and includes an embedded Thai font, selected in the PDFKit constructor so bundled server code
+does not try to load a missing default Helvetica AFM file. The admin list shows a safe failure reason
+(PDF generation, pre-send verification, provider rejection, uncertain delivery or cancellation),
+never raw provider errors or credentials. The tenant-scoped outbox stores the issued invoice view,
 recipient and attempt status; it never sends a tracking bearer link. Provider acceptance is not proof
 of inbox delivery. A failed email does not undo issuance. Uncertain or interrupted attempts require
 explicit manual retry, with a duplicate-delivery warning. Cancellation is checked at enqueue, claim,

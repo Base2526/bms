@@ -33,6 +33,17 @@ export default function TaxInvoiceRequestsPanel({
     [busy, setBusy] = useState(false);
   const [sendEmail, setSendEmail] = useState(false);
   const [emailKey, setEmailKey] = useState("");
+  const emailError = (code: string | undefined) => {
+    switch (code) {
+      case "PDF_FAILED": return t("tax_requests.email_error_pdf");
+      case "PRE_SEND_CHECK_FAILED": return t("tax_requests.email_error_check");
+      case "PROVIDER_REJECTED": return t("tax_requests.email_error_provider");
+      case "PROVIDER_RESULT_UNKNOWN":
+      case "INTERRUPTED": return t("tax_requests.email_error_unknown");
+      case "DOCUMENT_CANCELLED": return t("tax_requests.email_error_cancelled");
+      default: return null;
+    }
+  };
   const validEmail = (value: unknown) => typeof value === "string" && value.length <= 254 && /^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(value);
   const openReview = (row: any, nextAction: string) => {
     setSelected(row);
@@ -158,6 +169,7 @@ export default function TaxInvoiceRequestsPanel({
                     {t(`tax_requests.email_${(r.email?.status ?? "NOT_REQUESTED").toLowerCase()}`)}
                   </Tag>
                   {r.email && <><br />{r.email.recipient}<br />{new Date(r.email.finishedAt ?? r.email.createdAt).toLocaleString()}</>}
+                  {emailError(r.email?.errorCode) && <div style={{ maxWidth: 280, whiteSpace: "normal", overflowWrap: "anywhere" }}>{emailError(r.email.errorCode)}</div>}
                 </>,
               },
               {
