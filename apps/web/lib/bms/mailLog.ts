@@ -9,7 +9,7 @@
 import { query } from "@/lib/db";
 
 export type MailLogCategory = "digest" | "order" | "auth" | "support" | "test" | "other";
-export type MailProvider = "sendgrid" | "gmail";
+export type MailProvider = "sendgrid" | "gmail" | "smtp";
 export type MailStatus = "success" | "error";
 
 export type MailLogRow = {

@@ -119,7 +119,7 @@ export async function processTaxRequestEmail(tenantId: string, emailId?: string,
     errorCode = null;
   } catch (error: any) {
     // Definite rejections are retryable failures; a connection/timeout may have delivered.
-    if (status === "UNKNOWN" && (/^Missing (SENDGRID|GMAIL)_/.test(error?.message ?? "")
+    if (status === "UNKNOWN" && (/^(Missing (SENDGRID|GMAIL|SMTP|MAIL)_|Invalid SMTP_)/.test(error?.message ?? "")
       || ["EAUTH", "EENVELOPE"].includes(error?.code)
       || (Number(error?.code) >= 400 && Number(error?.code) <= 599)
       || (Number(error?.responseCode) >= 400 && Number(error?.responseCode) <= 599))) {

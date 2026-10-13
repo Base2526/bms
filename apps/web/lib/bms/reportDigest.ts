@@ -444,11 +444,11 @@ type ChannelResult = { channel: "EMAIL" | "SLACK" | "LINE"; ok: boolean; error?:
 // (เหตุผลจริงจาก provider ไม่ใช่แค่ "Forbidden" เฉยๆ) เพื่อให้แอดมิน debug ได้จากหน้า UI ตรงๆ
 // โดยไม่ต้องเปิด /admin/logs
 
-/** แกะ error message ที่มีรายละเอียดจริงจาก mail provider (mailer.ts เลือก SendGrid/Gmail SMTP
+/** แกะ error message ที่มีรายละเอียดจริงจาก mail provider (mailer.ts เลือก SendGrid/Gmail SMTP/SMTP relay
  *  ตาม MAIL_PROVIDER แต่ error shape ของสองตัวต่างกัน):
  *  - SendGrid: e.response.body.errors = [{message, field, help}] — e.message เดี่ยวๆ สั้นเกินไป
  *    (เช่น "Forbidden") ไม่บอกสาเหตุจริง ต้องแกะ body นี้
- *  - Gmail SMTP (nodemailer): e.responseCode + e.response เป็น raw SMTP response string */
+ *  - Gmail SMTP / SMTP relay (nodemailer): e.responseCode + e.response เป็น raw SMTP response string */
 function formatProviderError(e: any): string {
   const errors = e?.response?.body?.errors;
   if (Array.isArray(errors) && errors.length) {

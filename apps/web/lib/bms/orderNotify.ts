@@ -97,7 +97,8 @@ export async function notifyOrderStatusEmail(
     const tpl = await getLatestEmailTemplate(`order.${statusKey}`, locale);
     const rendered = renderEmailTemplate(tpl, data);
     await sendEmail(
-      { to: customerEmail, subject: rendered.subject, html: rendered.html, text: rendered.text },
+      // ลูกค้ากดตอบแล้วต้องถึงร้าน ไม่ใช่ถึงอีเมลส่งของแพลตฟอร์ม
+      { to: customerEmail, subject: rendered.subject, html: rendered.html, text: rendered.text, replyTo: profile.contactEmail },
       { tenantId, category: "order", triggeredBy: `orderNotify:${statusKey}` }
     );
   } catch (error) {
