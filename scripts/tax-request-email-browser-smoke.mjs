@@ -21,7 +21,7 @@ try {
       else if (url.pathname === "/api/bms/tax-invoice-requests") {
         if (route.request().method() === "POST") {
           const body = route.request().postDataJSON(); writes.push(body);
-          row = { ...row, status: "ISSUED", version: 2, email: { id: "22222222-2222-4222-8222-222222222222", status: body.action === "EMAIL" ? "PENDING" : "FAILED", recipient: row.buyer.email, createdAt: row.createdAt, finishedAt: body.action === "EMAIL" ? null : row.createdAt } };
+          row = { ...row, status: "ISSUED", version: 2, email: { id: "22222222-2222-4222-8222-222222222222", status: body.action === "EMAIL" ? "PENDING" : "FAILED", errorCode: body.action === "EMAIL" ? null : "PDF_FAILED", recipient: row.buyer.email, createdAt: row.createdAt, finishedAt: body.action === "EMAIL" ? null : row.createdAt } };
           json = { status: "ISSUED", documentId: "FAKE-document", emailId: row.email.id };
         } else json = { enabled: true, rows: url.searchParams.get("status") === row.status ? [row] : [], hasMore: false };
       } else if (url.pathname.endsWith("/graphql")) {
@@ -70,6 +70,8 @@ try {
       assert.equal(writes[0].emailRecipient, "fake@example.test");
       const card = page.locator(".ant-card").filter({ has: page.getByText("คำขอใบกำกับภาษีออนไลน์", { exact: true }) });
       await card.getByText("ส่งไม่สำเร็จ", { exact: true }).waitFor();
+      await card.getByText("สร้างไฟล์ PDF ใบกำกับไม่สำเร็จ กรุณาติดต่อผู้ดูแลระบบก่อนส่งอีกครั้ง", { exact: true }).waitFor();
+      await card.screenshot({ path: `${output}/${width}-failure-reason.png`, animations: "disabled" });
       await card.getByRole("button", { name: "ส่งอีเมลอีกครั้ง", exact: true }).click();
       await modal.getByText(/ตรวจอีเมลผู้รับก่อนส่งอีกครั้ง/).waitFor();
       await modal.getByRole("button", { name: "ยืนยันส่งอีเมล", exact: true }).click();
@@ -79,6 +81,7 @@ try {
       // Simulate worker completion; the UI must pick it up by polling without another user action.
       row = { ...row, email: { ...row.email, status: "SENT", finishedAt: row.createdAt } };
       await card.getByText("ผู้ให้บริการรับส่งแล้ว", { exact: true }).waitFor();
+      assert.equal(await card.getByText("สร้างไฟล์ PDF ใบกำกับไม่สำเร็จ กรุณาติดต่อผู้ดูแลระบบก่อนส่งอีกครั้ง", { exact: true }).count(), 0);
       assert.equal(writes.length, 2);
       assert.equal(writes[1].action, "EMAIL");
       assert.equal(writes[1].expectedEmailId, "22222222-2222-4222-8222-222222222222");

@@ -3924,6 +3924,11 @@ const en = {
   tax_requests: {
     email_delivery: "Email delivery", email_not_requested: "Not requested", email_pending: "Queued", email_sending: "Sending",
     email_sent: "Accepted by mail provider", email_failed: "Failed", email_unknown: "Delivery outcome unknown", email_cancelled: "Cancelled",
+    email_error_pdf: "Could not create the invoice PDF. Contact the administrator before retrying.",
+    email_error_check: "Could not verify the document before sending. Reload and try again.",
+    email_error_provider: "Mail configuration is missing or the provider rejected the email. Ask the administrator to check mail settings and logs.",
+    email_error_unknown: "Delivery could not be confirmed. Check the recipient's inbox before resending to avoid duplicates.",
+    email_error_cancelled: "The invoice was cancelled. Email delivery has been stopped.",
     email_checkbox: "Email a PDF invoice copy after issuance", email_recipient: "Recipient",
     issue_and_email: "Issue and email invoice", email_confirm: "Confirm email", email_send: "Send email", email_resend: "Send email again",
     email_copy_notice: "Send a PDF copy to this address after issuance. This is not e-Tax delivery.",

@@ -4,7 +4,10 @@ import type { FullTaxInvoiceView } from "./taxDocuments";
 
 /** Render the issued snapshot; never recompute tax or fetch current product prices. */
 export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<Buffer> {
+  // Set the initial font too: bundled PDFKit cannot resolve its default Helvetica AFM file.
+  const font = path.join(process.cwd(), "public/fonts/sarabun/Sarabun-Regular.ttf");
   const doc = new PDFDocument({ size: "A4", margin: 40, bufferPages: true,
+    font,
     info: { Title: `Tax invoice copy ${invoice.docNo}`, Author: "BMS" } });
   const parts: Buffer[] = [];
   const complete = new Promise<Buffer>((resolve, reject) => {
@@ -12,7 +15,6 @@ export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<
     doc.on("end", () => resolve(Buffer.concat(parts)));
     doc.on("error", reject);
   });
-  doc.font(path.join(process.cwd(), "public/fonts/sarabun/Sarabun-Regular.ttf"));
   const width = doc.page.width - 80;
   const bottom = doc.page.height - 65;
   const money = (n: number) => n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
