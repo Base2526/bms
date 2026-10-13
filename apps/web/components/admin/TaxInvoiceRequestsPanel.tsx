@@ -271,7 +271,8 @@ export default function TaxInvoiceRequestsPanel({
             </p>}
             {(action === "EMAIL" || (action === "ISSUE" && sendEmail)) && <>
               <p>{t("tax_requests.email_recipient")}: <strong>{selected.buyer.email}</strong></p>
-              <Alert type={selected.email ? "warning" : "info"} showIcon
+              {/* A newly opened confirmation must show the notice again, even if it was dismissed. */}
+              <Alert key={emailKey} closable type={selected.email ? "warning" : "info"} showIcon
                 message={t(selected.email ? "tax_requests.email_repeat_warning" : "tax_requests.email_copy_notice")} />
             </>}
             {action === "ISSUE" && !validEmail(selected.buyer.email) && <p>{t("tax_requests.email_missing")}</p>}
