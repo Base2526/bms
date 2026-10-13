@@ -11,6 +11,18 @@ import {
 const ROOT = path.resolve(import.meta.dirname, "../..");
 const read = (relative: string) => readFileSync(path.join(ROOT, relative), "utf8");
 
+test("both assistant surfaces require the shared customer-merge review instead of executing the proposal", () => {
+  for (const file of ["apps/web/app/(admin)/admin/assistant/page.tsx",
+    "apps/web/components/work-assistant/WorkAssistantDrawer.tsx"]) {
+    const source = read(file);
+    assert.match(source, /mutation === "bmsMergeCustomers"\)\s*\{\s*setMergeReview\([\s\S]*?return;/);
+    assert.match(source, /<CustomerMergeReviewModal/);
+  }
+  const modal = read("apps/web/components/CustomerMergeReviewModal.tsx");
+  assert.match(modal, /previewToken: preview\.previewToken/);
+  assert.match(modal, /form\.validateFields\(\)/);
+});
+
 test("work assistant GraphQL surface is additive and returns structured grounding", () => {
   const schema = read("apps/web/graphql/typeDefs.ts");
   assert.match(schema, /bmsAssistant\(message: String!, history:/, "legacy mutation disappeared");

@@ -99,6 +99,56 @@ merged only after staff verifies they are the same person. It also flags identif
 customers with an active order but no phone or shipping address; checkout/shipping continue to block
 at the normal completeness boundary rather than letting AI invent the missing PII.
 
+### Reviewed staff merges and web-chat ownership (2026-10)
+
+Customers, the assistant page and the global assistant drawer share one review dialog.
+`bmsCustomerMergePreview` requires `customer.edit` and shows both customers, channel names,
+masked phones, member numbers, and server-calculated counts/balances for orders, addresses,
+conversations, pharmacy cases (no clinical text), ledger points, coupons, store credit, open
+deposits, game passes/renewals and reservation requests. Recorded balances are not promises
+of redeemable availability. Existing merge conflict/business rules remain in force.
+
+`bmsMergeCustomers` retains its name and IDs but requires a `review` at execution time:
+a ten-minute signed preview bound to tenant, actor, direction and snapshot; a reason
+(`DUPLICATE_CHANNELS` / `DUPLICATE_ENTRY`); a verification method (`BOTH_CHANNELS`, `IN_PERSON`,
+`SUPPORT_CASE`); a 3–120 character internal evidence reference; and explicit confirmation.
+Old callers without review receive an actionable refusal. This is a staff attestation,
+**not** automatic OTP verification or proof that an external case exists. Staff keep actual
+evidence in the referenced record; never enter PII, credentials or health data in the reference.
+AI only proposes IDs; staff enter evidence themselves.
+
+The service re-reads the snapshot inside a serializable tenant transaction, locks customer rows
+in ID order, checks the preview, and writes `customer.merge` before commit. Audit failure rolls
+back the merge. Audit holds IDs, method, reason, evidence reference, impact totals and snapshot
+digest, never raw contacts/clinical details or tokens. The private snapshot includes exact identity
+bindings, so replacing/adding an account on the same channel also invalidates the preview; those
+bindings never leave the service in the preview or audit. Revisions receive the authenticated editor.
+Refresh and re-confirm after expired/changed previews or serialization conflicts. No automatic unmerge.
+
+Web chat retains `{message, sessionId?, messageId?}` and `{reply, sessionId}`. The returned
+`sessionId` is now an opaque signed bearer token valid for 30 days and bound to the URL's tenant.
+Clients must store the **returned** value for subsequent requests. Only its verified internal
+`web-UUID` reaches CRM/pipeline/Inbox. Responses add `sessionReset` and `Cache-Control: no-store`.
+Message deduplication is scoped to the visitor as well as tenant/channel. Before a client has a
+signed token, a separate bootstrap claim uses the legacy id (if any) and message id strictly for
+deduplication, never identity ownership. Use a unique message id (or `Idempotency-Key`, allowed by
+CORS) for every new message and keep it on retries. Bootstrap retries return `duplicate: true`
+without the original reply/token/history; a lost initial token cannot be recovered using public ids.
+Requests without a message id have no duplicate protection, as before.
+
+Unsigned legacy IDs start a fresh visitor with `sessionReset: true`; historical CRM data is
+retained but cannot be claimed with that unsigned ID. This one-time history discontinuity is
+necessary because the old API recorded no ownership proof. Invalid/expired signed tokens return
+401 `INVALID_CHAT_SESSION` before AI or Inbox work. The client should explicitly start a new
+conversation without `sessionId`; never reattach old history by name/phone. This is anonymous
+session continuity, not authenticated membership. Tokens must not be shared, put in URLs or logged.
+There is no individual token revocation yet.
+
+Both purposes reuse existing secret precedence: `BMS_CHECKOUT_SECRET`, `NEXTAUTH_SECRET`,
+`AUTH_SECRET`, `JWT_SECRET`; production without a secret fails closed. Purposes are signed to
+prevent token substitution. Rotation invalidates existing chat/review tokens. No database
+migration or new required configuration is introduced.
+
 ## Omnichannel Inbox
 
 Every conversation belongs to exactly one customer and is **never deleted**. Internal notes are

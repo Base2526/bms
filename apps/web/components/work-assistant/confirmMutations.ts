@@ -35,8 +35,9 @@ export const WORK_ASSISTANT_CONFIRM_MUTATIONS: Record<
     }),
   },
   bmsMergeCustomers: {
-    doc: gql`mutation($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`,
-    vars: (args) => ({ keepId: args.keepId, mergeId: args.mergeId }),
+    doc: gql`mutation($keepId: ID!, $mergeId: ID!, $review: BmsCustomerMergeReviewInput!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId, review: $review) }`,
+    // Both assistant surfaces route this proposal through CustomerMergeReviewModal.
+    vars: (args) => ({ keepId: args.keepId, mergeId: args.mergeId, review: args.review }),
   },
   bmsCancelPurchaseOrder: {
     doc: gql`mutation($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`,

@@ -139,6 +139,7 @@ test("reservation services validate input, replay stored evidence, and preserve 
     const { requestRestaurantReservation, getRestaurantCustomerAvailability,
       listCustomerRestaurantReservations } = await import("../../apps/web/lib/bms/restaurantCustomer.ts");
     const { mergeCustomers } = await import("../../apps/web/lib/bms/customers.ts");
+    const { fakeCustomerMergeReview } = await import("../testing/customerMerge.mts");
     const desiredAt = new Date(Date.now() + 86_400_000).toISOString();
     const input = { tenantId: "tenant-a", locationId: "branch-a", customerId: "customer-a",
       partySize: 4, desiredAt, note: "window if available" };
@@ -263,12 +264,13 @@ test("reservation services validate input, replay stored evidence, and preserve 
       }
     });
 
-    const mergeResponse = (sql: string) => sql.includes("SELECT id, name, phone, email")
+    const mergeResponse = (sql: string) => (sql.includes("SELECT id, name, phone, email") || sql.includes("SELECT c.id, c.name"))
       ? ["keep", "merge"].map((id) => ({ id, tags: [], followup_opt_out: false }))
       : sql.includes("SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist") ? [{ count: 0 }] : [];
     await t.test("CRM merge moves all reservation history to the surviving customer", async () => {
       reset(); response = mergeResponse;
-      assert.equal(await mergeCustomers("tenant-a", "keep", "merge"), true);
+      assert.equal(await mergeCustomers("tenant-a", "keep", "merge",
+        await fakeCustomerMergeReview("tenant-a", "keep", "merge")), true);
       const move = calls.find((call) => call.sql.includes("UPDATE bms_restaurant_waitlist SET customer_id"));
       assert.ok(move);
       assert.deepEqual(move.params, ["tenant-a", "merge", "keep"]);
@@ -276,14 +278,16 @@ test("reservation services validate input, replay stored evidence, and preserve 
     });
     await t.test("CRM merge refuses duplicate active appointments before moving identities", async () => {
       reset(); response = (sql) => sql.includes("FROM bms_restaurant_waitlist source") ? [{ id: "conflict" }] : mergeResponse(sql);
-      await assert.rejects(mergeCustomers("tenant-a", "keep", "merge"), /คำขอจองร้านอาหารซ้ำ/);
+      await assert.rejects(mergeCustomers("tenant-a", "keep", "merge",
+        await fakeCustomerMergeReview("tenant-a", "keep", "merge")), /คำขอจองร้านอาหารซ้ำ/);
       assert.ok(!calls.some((call) => call.sql.includes("UPDATE bms_customer_identities")));
       assert.equal(calls.at(-1)?.sql, "ROLLBACK");
     });
     await t.test("shared CRM merge refuses more than three pending CHAT requests without moving identities", async () => {
       reset(); response = sql => sql.includes("SELECT COUNT(*)::int AS count FROM bms_board_game_waitlist")
         ? [{ count: 4 }] : mergeResponse(sql);
-      await assert.rejects(mergeCustomers("tenant-a", "keep", "merge"), /ไม่เกิน 3/);
+      await assert.rejects(mergeCustomers("tenant-a", "keep", "merge",
+        await fakeCustomerMergeReview("tenant-a", "keep", "merge")), /ไม่เกิน 3/);
       assert.ok(!calls.some(call => call.sql.includes("UPDATE bms_customer_identities")));
       assert.equal(calls.at(-1)?.sql, "ROLLBACK");
     });

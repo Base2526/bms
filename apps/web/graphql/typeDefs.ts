@@ -1281,6 +1281,7 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS CRM (admin) =====
     bmsCustomers(search: String, limit: Int = 50, offset: Int = 0, enrolledLocationId: ID): [BmsCustomer!]!
+    bmsCustomerMergePreview(keepId: ID!, mergeId: ID!): BmsCustomerMergePreview!
     bmsCustomerLocations: [BmsLocation!]!
     bmsCustomer(id: ID!): BmsCustomer
     bmsCustomerOrderDetail(customerId: ID!, orderId: ID!): BmsCustomerOrderDetail
@@ -2287,6 +2288,41 @@ export const typeDefs = /* GraphQL */ `
   }
 
   # ===== BMS CRM =====
+  enum BmsCustomerMergeReason { DUPLICATE_CHANNELS DUPLICATE_ENTRY }
+  enum BmsCustomerMergeVerification { BOTH_CHANNELS IN_PERSON SUPPORT_CASE }
+  input BmsCustomerMergeReviewInput {
+    previewToken: String!
+    reason: BmsCustomerMergeReason!
+    verificationMethod: BmsCustomerMergeVerification!
+    evidenceReference: String!
+    confirmed: Boolean!
+  }
+  type BmsCustomerMergeSummary {
+    id: ID!
+    name: String!
+    phoneHint: String
+    memberNo: String
+    channels: [String!]!
+    orders: Int!
+    addresses: Int!
+    conversations: Int!
+    pharmacyCases: Int!
+    points: String!
+    coupons: Int!
+    storeCredit: String!
+    openDeposits: Int!
+    depositPaid: String!
+    passes: Int!
+    renewals: Int!
+    restaurantRequests: Int!
+    gameRequests: Int!
+  }
+  type BmsCustomerMergePreview {
+    keep: BmsCustomerMergeSummary!
+    source: BmsCustomerMergeSummary!
+    previewToken: String!
+    expiresAt: String!
+  }
   type BmsCustomerAddress {
     id: ID!
     label: String
@@ -4981,7 +5017,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
     bmsDeleteCustomerAddress(addressId: ID!): Boolean!
     bmsDeleteCustomer(id: ID!): Boolean!
-    bmsMergeCustomers(keepId: ID!, mergeId: ID!): Boolean!
+    bmsMergeCustomers(keepId: ID!, mergeId: ID!, review: BmsCustomerMergeReviewInput): Boolean!
 
     # ===== BMS AI Assistant (staff) — ตอบด้วย tool-calling; A3 คืน proposal ให้กดยืนยันเอง =====
     bmsAssistant(message: String!, history: [BmsAssistantTurn!]): BmsAssistantResult!

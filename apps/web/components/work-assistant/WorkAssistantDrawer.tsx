@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "./confirmMutations";
+import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
 
 const WORK_ASSISTANT = gql`
   mutation BmsWorkAssistant($input: BmsWorkAssistantInput!) {
@@ -88,6 +89,7 @@ export default function WorkAssistantDrawer() {
   const [emailEdits, setEmailEdits] = useState<Record<string, string>>({});
   const [loadedKey, setLoadedKey] = useState<string | null>(null);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [mergeReview, setMergeReview] = useState<{ keepId: string; mergeId: string; messageIndex: number; proposalIndex: number } | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
   const pageId = pageIdFromPath(pathname);
   const storageKey = useMemo(() => {
@@ -171,6 +173,10 @@ export default function WorkAssistantDrawer() {
     proposalIndex: number,
     argsOverride?: Record<string, unknown>
   ) => {
+    if (proposal.mutation === "bmsMergeCustomers") {
+      setMergeReview({ keepId: proposal.args.keepId, mergeId: proposal.args.mergeId, messageIndex, proposalIndex });
+      return;
+    }
     const config = WORK_ASSISTANT_CONFIRM_MUTATIONS[proposal.mutation];
     if (!config) {
       toast.error(en ? "This confirmation is not supported here." : "ยังไม่รองรับการยืนยันรายการนี้ใน Drawer");
@@ -257,6 +263,11 @@ export default function WorkAssistantDrawer() {
 
   return (
     <>
+      {mergeReview && <CustomerMergeReviewModal key={`${mergeReview.keepId}:${mergeReview.mergeId}`} {...mergeReview}
+        onCancel={() => setMergeReview(null)} onMerged={() => {
+          setProposalState(mergeReview.messageIndex, mergeReview.proposalIndex, "done"); setMergeReview(null);
+          toast.success(en ? "Confirmed" : "ยืนยันแล้ว");
+        }} />}
       <Button
         type="primary"
         shape="circle"

@@ -84,7 +84,7 @@ One route per channel, all shaped `POST /api/bms/{channel}/webhook/[tenantId]`:
 | TikTok | `tiktok/webhook/[tenantId]` | inline HMAC-SHA256 hex header |
 | Facebook | `facebook/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge |
 | Instagram | `instagram/webhook/[tenantId]` | `X-Hub-Signature-256` (`verifyMetaSignature`) + `GET` challenge |
-| Web | `web/webhook/[tenantId]` | none (public widget) — rate-limit + CORS only |
+| Web | `web/webhook/[tenantId]` | public bootstrap; signed tenant-bound `sessionId` for continuity, rate-limit + CORS; unsigned legacy IDs start fresh, invalid signed tokens return 401 |
 | Shopee 🧪 | `shopee/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
 | Lazada 🧪 | `lazada/webhook/[tenantId]` | placeholder HMAC — **not verified against real API docs** |
 

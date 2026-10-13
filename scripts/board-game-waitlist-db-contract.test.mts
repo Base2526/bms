@@ -14,6 +14,7 @@ import test from "node:test";
 import { query } from "../apps/web/lib/db.ts";
 import { isIdempotencyConflictError } from "../apps/web/lib/bms/idempotencyErrors.ts";
 import { mergeCustomers } from "../apps/web/lib/bms/customers.ts";
+import { fakeCustomerMergeReview } from "./testing/customerMerge.mts";
 import {
   addBoardGameReservation,
   addBoardGameWaitlistEntry,
@@ -339,7 +340,8 @@ test("CHAT transactions, rejection, retry, cap, isolation, review and notificati
   assert.deepEqual(await listChatBoardGameReservationsForCustomer({tenantId,customerId:otherCustomerId}),[]);
   assert.deepEqual(await listChatBoardGameReservationsForCustomer({tenantId:"00000000-0000-4000-8000-000000000000",customerId:chatCustomerId}),[]);
   const another = await requestChatBoardGameReservation({...input,customerId:otherCustomerId,requestKey:key("chat-other")});
-  await assert.rejects(mergeCustomers(tenantId,chatCustomerId,otherCustomerId),/ไม่เกิน 3/);
+  await assert.rejects(mergeCustomers(tenantId,chatCustomerId,otherCustomerId,
+    await fakeCustomerMergeReview(tenantId,chatCustomerId,otherCustomerId,staffId)),/ไม่เกิน 3/);
   const confirmed = await reviewPublicBoardGameReservation({tenantId,locationId,entryId:first.requestId,
     actorUserId:staffId,decision:"CONFIRM",tableId:smallTableId,idempotencyKey:key("chat-review")});
   assert.equal(confirmed!.status,"CONFIRMED");
@@ -355,7 +357,8 @@ test("CHAT transactions, rejection, retry, cap, isolation, review and notificati
   await query(`UPDATE bms_board_game_waitlist SET request_expires_at='2000-01-01' WHERE tenant_id=$1 AND source='CHAT' AND status='REQUESTED'`,[tenantId]);
   await expireOverdueBoardGameReservations(new Date("2000-01-02T00:00:00Z"));
   assert.equal(Number((await query(`SELECT count(*)::int AS n FROM bms_board_game_waitlist WHERE tenant_id=$1 AND source='CHAT' AND status='EXPIRED'`,[tenantId])).rows[0].n),2);
-  await mergeCustomers(tenantId,chatCustomerId,otherCustomerId);
+  await mergeCustomers(tenantId,chatCustomerId,otherCustomerId,
+    await fakeCustomerMergeReview(tenantId,chatCustomerId,otherCustomerId,staffId));
   const mergedRequests = await listChatBoardGameReservationsForCustomer({tenantId,customerId:chatCustomerId});
   assert.ok(mergedRequests.some(r => r.reference === another.requestId.slice(0,8) && r.status === "REJECTED"));
   await query(`DELETE FROM bms_customers WHERE tenant_id=$1 AND id=ANY($2::uuid[])`,[tenantId,[chatCustomerId,otherCustomerId]]);

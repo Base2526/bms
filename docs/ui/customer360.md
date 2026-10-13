@@ -219,7 +219,7 @@ shows up as two separate records with two separate (incomplete) purchase histori
 
 ## Merging duplicate customers
 
-`mergeCustomers(tenantId, keepId, mergeId)` — [`lib/bms/customers.ts`](../../apps/web/lib/bms/customers.ts)
+`mergeCustomers(tenantId, keepId, mergeId, confirmation)` — [`lib/bms/customers.ts`](../../apps/web/lib/bms/customers.ts)
 — consolidates a duplicate record into the one being kept:
 
 - Moves `bms_customer_identities`, `bms_orders`, `bms_customer_addresses`, and `bms_conversations`
@@ -229,9 +229,13 @@ shows up as two separate records with two separate (incomplete) purchase histori
 - Soft-deletes `mergeId` (`deleted_at`) — **not reversible**.
 - All in a single transaction (`beginTenantTx`).
 
-UI: `/admin/customers` → **"ผสาน"** button per row → search for the duplicate → confirm.
-GraphQL: `bmsMergeCustomers(keepId, mergeId)`, permission `customer.edit`, audited as
-`customer.merge`.
+UI: `/admin/customers` → **"ผสาน"** → select duplicate → review server-calculated impacts →
+enter reason, verification method and internal evidence reference → attest and confirm.
+Both assistant surfaces open this same review dialog. GraphQL preview `bmsCustomerMergePreview`
+issues a ten-minute actor/tenant/pair/snapshot-bound token; `bmsMergeCustomers(keepId, mergeId, review)`
+refuses missing/stale review. Permission remains `customer.edit`; `customer.merge` evidence is
+written in the merge transaction. Actual ownership verification is the staff member's responsibility;
+the reference does not automatically verify a case. See [CRM](../business/crm.md#reviewed-staff-merges-and-web-chat-ownership-2026-10).
 
 ## Reorder ("ซื้อซ้ำ")
 

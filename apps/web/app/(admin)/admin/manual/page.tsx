@@ -508,7 +508,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     title: "Customers & สมาชิก",
     desc: "ดูข้อมูล CRM, ที่อยู่, ประวัติซื้อ, คูปองของลูกค้า และโปรแกรมสมาชิก/แต้ม",
     bullets: [
-      "Customers ใช้ค้นหาชื่อ/เบอร์/ลูกค้าเดิม และ merge duplicate ตามสิทธิ์",
+      "Customers ใช้ค้นหาลูกค้าและผสานรายการซ้ำตามสิทธิ์ ก่อนรวมต้องตรวจผลกระทบสองฝั่ง ระบุเหตุผล วิธีตรวจสอบ และรหัสหลักฐาน แล้วกดยืนยัน หากข้อมูลเปลี่ยนหรือหมดเวลาให้โหลดผลกระทบใหม่",
       "สมาชิกที่สมัครจาก POS จะแสดงสาขา เครื่อง กะ และพนักงานต้นทางใน Customers พร้อมกรองตามสาขาที่สมัครได้; สมาชิกเก่าแสดงว่าไม่ทราบสาขาแทนการเดาจากบิลแรก",
       "หนึ่งลูกค้ามีหลายที่อยู่ได้ และที่อยู่จัดส่งต้องพร้อมก่อนใช้ Shipping กับช่องทางแชททั่วไป",
       "Loyalty ใช้ตั้งคะแนน, tier, ledger แต้ม, และปรับแต้มด้วยมือเมื่อมีสิทธิ์",
@@ -1751,7 +1751,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     title: "Customers & Members",
     desc: "Keep CRM data clean, manage addresses, see purchase history, and run the membership/points program",
     bullets: [
-      "Customers is the main CRM page for searching existing customers and merging duplicates when allowed",
+      "Customers lets authorized staff find and merge duplicates. Review both records and their impacts, enter a reason, verification method and evidence reference, then confirm. Refresh the preview if data changes or the review expires.",
       "POS-enrolled members show their enrollment branch, register, shift, and employee in Customers and can be filtered by enrollment branch; legacy members show unknown instead of guessing from their first bill",
       "One customer can hold multiple addresses, and shipping addresses must be complete before using Shipping for chat channels",
       "Loyalty manages member numbers, tiers, point settings, ledgers, and manual point adjustments",

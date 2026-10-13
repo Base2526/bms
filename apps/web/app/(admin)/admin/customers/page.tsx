@@ -4,6 +4,7 @@ import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, message, Alert, Typography, Divider, Empty, Popconfirm,
 } from "antd";
 import { useState, useMemo } from "react";
+import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
 import { PlusOutlined, EditOutlined, ReloadOutlined, EnvironmentOutlined, DeleteOutlined, MergeCellsOutlined, TagOutlined, FileTextOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { useVisibleQueryRefresh } from "@/lib/useVisibleQueryRefresh";
@@ -84,7 +85,6 @@ const M_UPDATE_ADDR = gql`
 const M_SET_DEFAULT_ADDR = gql`mutation ($addressId: ID!) { bmsSetDefaultCustomerAddress(addressId: $addressId) { id } }`;
 const M_DELETE_ADDR = gql`mutation ($addressId: ID!) { bmsDeleteCustomerAddress(addressId: $addressId) }`;
 const M_DELETE = gql`mutation ($id: ID!) { bmsDeleteCustomer(id: $id) }`;
-const M_MERGE = gql`mutation ($keepId: ID!, $mergeId: ID!) { bmsMergeCustomers(keepId: $keepId, mergeId: $mergeId) }`;
 const M_REORDER = gql`mutation ($id: ID!) { bmsReorderFromOrder(id: $id) { status orderId total message } }`;
 
 // ⚠️ คีย์ของ TAG_COLOR และค่าใน TAG_OPTIONS เป็น "ค่าที่เก็บใน DB" (customers.tags) ไม่ใช่ UI copy
@@ -148,6 +148,7 @@ function CustomersManagement() {
   const [editingAddr, setEditingAddr] = useState<Address | null>(null); // มีค่า = โหมดแก้ไขที่อยู่เดิม (ไม่ใช่เพิ่มใหม่)
   const [mergeFor, setMergeFor] = useState<Customer | null>(null);
   const [mergeTargetId, setMergeTargetId] = useState<string | null>(null);
+  const [reviewMerge, setReviewMerge] = useState(false);
 
   const customersQuery = useQuery(Q_CUSTOMERS, {
     variables: { search: search || null, enrolledLocationId },
@@ -159,10 +160,6 @@ function CustomersManagement() {
   const onErr = (e: any) => message.error(e?.message || t("admin_customers.action_failed"));
 
   const [searchDupes, { data: dupeData, loading: dupeLoading }] = useLazyQuery(Q_CUSTOMERS, { fetchPolicy: "network-only" });
-  const [merge, { loading: merging }] = useMutation(M_MERGE, {
-    onCompleted: () => { message.success(t("admin_customers.merged")); closeMergeModal(); refetch(); },
-    onError: onErr,
-  });
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [reorder] = useMutation(M_REORDER, {
     onCompleted: (d: any) => {
@@ -219,10 +216,10 @@ function CustomersManagement() {
   };
   const closeAddrModal = () => { setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); };
   const openMerge = (c: Customer) => { setMergeFor(c); setMergeTargetId(null); searchDupes({ variables: { search: c.phone || c.name } }); };
-  const closeMergeModal = () => { setMergeFor(null); setMergeTargetId(null); };
+  const closeMergeModal = () => { setMergeFor(null); setMergeTargetId(null); setReviewMerge(false); };
   const submitMerge = () => {
     if (!mergeFor || !mergeTargetId) return;
-    merge({ variables: { keepId: mergeFor.id, mergeId: mergeTargetId } });
+    setReviewMerge(true);
   };
   const submitAddr = async () => {
     const v = await addrForm.validateFields();
@@ -410,11 +407,10 @@ function CustomersManagement() {
       {/* modal ผสานลูกค้าซ้ำ */}
       <Modal
         title={t("admin_customers.merge_modal_title", { name: mergeFor?.name || "" })}
-        open={!!mergeFor}
+        open={!!mergeFor && !reviewMerge}
         onCancel={closeMergeModal}
         onOk={submitMerge}
-        confirmLoading={merging}
-        okText={t("admin_customers.btn_merge_ok")} okButtonProps={{ disabled: !mergeTargetId }}
+        okText={t("customer_merge.review_button")} okButtonProps={{ disabled: !mergeTargetId }}
         width={520}
       >
         <Alert closable
@@ -438,6 +434,11 @@ function CustomersManagement() {
             }))}
         />
       </Modal>
+      {reviewMerge && mergeFor && mergeTargetId && <CustomerMergeReviewModal
+        key={`${mergeFor.id}:${mergeTargetId}`} keepId={mergeFor.id} mergeId={mergeTargetId}
+        onCancel={() => setReviewMerge(false)} onMerged={() => {
+          message.success(t("admin_customers.merged")); closeMergeModal(); refetch();
+        }} />}
     </div>
   );
 }

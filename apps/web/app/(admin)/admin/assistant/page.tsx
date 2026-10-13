@@ -12,6 +12,7 @@ import {
 import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import { useI18n } from "@/lib/i18nContext";
 import { WORK_ASSISTANT_CONFIRM_MUTATIONS } from "@/components/work-assistant/confirmMutations";
+import CustomerMergeReviewModal from "@/components/CustomerMergeReviewModal";
 
 const { Text, Paragraph } = Typography;
 
@@ -223,6 +224,7 @@ export default function Page() {
   const [chat, setChat] = useState<Bubble[]>([]);
   const [chatLoaded, setChatLoaded] = useState(false);
   const [examplesOpen, setExamplesOpen] = useState(false);
+  const [mergeReview, setMergeReview] = useState<{ keepId: string; mergeId: string; bubbleIdx: number; propIdx: number } | null>(null);
   const [showScrollLatest, setShowScrollLatest] = useState(false);
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
   const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
@@ -403,6 +405,10 @@ export default function Page() {
   };
 
   const confirmProposal = async (bubbleIdx: number, propIdx: number, p: Proposal, argsOverride?: Record<string, unknown>) => {
+    if (p.mutation === "bmsMergeCustomers") {
+      setMergeReview({ keepId: p.args.keepId, mergeId: p.args.mergeId, bubbleIdx, propIdx });
+      return;
+    }
     const entry = CONFIRM_MUTATIONS[p.mutation];
     if (!entry) {
       message.error(t("admin_assistant.confirm_unsupported", { mutation: p.mutation }));
@@ -1012,6 +1018,13 @@ export default function Page() {
           {exampleGroupsContent}
         </Drawer>
       )}
+      {mergeReview && <CustomerMergeReviewModal key={`${mergeReview.keepId}:${mergeReview.mergeId}`} {...mergeReview}
+        onCancel={() => setMergeReview(null)} onMerged={() => {
+          setChat(c => c.map((b, i) => i === mergeReview.bubbleIdx
+            ? { ...b, proposalStates: { ...b.proposalStates, [mergeReview.propIdx]: "done" } } : b));
+          setMergeReview(null);
+          message.success(t("admin_customers.merged"));
+        }} />}
     </div>
   );
 }

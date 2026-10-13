@@ -7,6 +7,8 @@ import { query, getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { normalizeProvince } from "./shippingZones";
 import { normalizeCustomerIdentity } from "./customerIdentity";
+import { validateCustomerMergeReview, readCustomerMergeSnapshot, assertCustomerMergePreview,
+  customerMergeAuditMeta, type CustomerMergeActor } from "./customerMergeReview";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const MARKETPLACE_CHECKOUT_CHANNELS = new Set([
@@ -643,12 +645,13 @@ export async function customerIdentities(tenantId: string, customerId: string) {
  * ย้าย identities/orders/addresses/conversations จาก mergeId ไป keepId แล้ว soft-delete mergeId
  * ปลอดภัยเพราะ (tenant_id, channel, external_ref) เป็น UNIQUE — identity หนึ่งอยู่กับลูกค้าได้ทีละคนเท่านั้น จึงไม่มีชนกันตอนย้าย
  */
-export async function mergeCustomers(tenantId: string, keepId: string, mergeId: string) {
+export async function mergeCustomers(tenantId: string, keepId: string, mergeId: string, confirmation?: CustomerMergeActor) {
+  const verified = validateCustomerMergeReview(confirmation);
   if (keepId === mergeId) throw new Error("เลือกลูกค้าที่จะผสานให้ต่างจากลูกค้าหลัก");
 
   const client = await getClient();
   try {
-    await beginTenantTx(client, tenantId);
+    await beginTenantTx(client, tenantId, { editorId: verified.actorId, serializable: true });
 
     const rows = await client.query<{
       id: string;
@@ -664,7 +667,7 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       `SELECT id, name, phone, email, note, tags, preferred_language, timezone, followup_opt_out
          FROM bms_customers
         WHERE tenant_id = $1 AND id = ANY($2) AND deleted_at IS NULL
-        FOR UPDATE`,
+        ORDER BY id FOR UPDATE`,
       [tenantId, [keepId, mergeId]]
     );
     const keep = rows.rows.find((r) => r.id === keepId);
@@ -673,6 +676,9 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       await client.query("ROLLBACK");
       throw new Error("ไม่พบลูกค้าที่จะผสาน");
     }
+
+    const snapshot = await readCustomerMergeSnapshot(client, tenantId, keepId, mergeId);
+    assertCustomerMergePreview(tenantId, keepId, mergeId, verified, snapshot);
 
     // Both customer rows are locked, the same authority used by CHAT request creation.
     // Do not merge identities into a state that bypasses the three-active-chat-booking cap.
@@ -1009,10 +1015,18 @@ export async function mergeCustomers(tenantId: string, keepId: string, mergeId: 
       [tenantId, mergeId]
     );
 
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'customer.merge', $3, $4::jsonb)`,
+      [tenantId, verified.actorId, keepId, JSON.stringify(customerMergeAuditMeta(mergeId, verified, snapshot))]
+    );
     await client.query("COMMIT");
     return true;
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
+    if ((err as { code?: string })?.code === "40001" || (err as { code?: string })?.code === "40P01") {
+      throw new Error("ข้อมูลเปลี่ยนระหว่างรวม กรุณาโหลดผลกระทบใหม่และยืนยันอีกครั้ง / Refresh the merge preview and confirm again");
+    }
     throw err;
   } finally {
     client.release();

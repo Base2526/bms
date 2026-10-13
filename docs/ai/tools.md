@@ -157,7 +157,7 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `cancel_order` | A3 | no | `order.cancel` | proposal only |
 | `return_order` | A3 | no | `order.return` | proposal only |
 | `adjust_stock` | A3 | no | `stock.adjust` | proposal only; requires a verified `locationId` and must never guess a branch |
-| `merge_customers` | A3 | no | `customer.edit` | proposal only |
+| `merge_customers` | A3 | no | `customer.edit` | proposal only; shared review dialog requires server preview, staff verification method and evidence reference |
 | `cancel_purchase_order` | A3 | no | `purchase.cancel` | proposal only |
 | `cancel_shipment` | A3 | no | `shipping.update` | proposal only |
 | `send_customer_message` | A3 | no | `inbox.reply` | proposal only |
@@ -975,7 +975,7 @@ Permission: customer.view (ถ้าไม่มีสิทธิ์ → โช
 
 ลูกค้าคนเดียวกันทักมาคนละช่องทาง (เช่น LINE แล้วก็ FB) จะถูก `resolveOrCreateCustomer`
 สร้างเป็นคนละ `bms_customers` record เพราะจับคู่ตาม `(tenant_id, channel, external_ref)` เท่านั้น —
-`mergeCustomers(tenantId, keepId, mergeId)` ใช้ยุบ record ซ้ำเข้าด้วยกันด้วยมือ:
+`mergeCustomers(tenantId, keepId, mergeId, confirmation)` ใช้ยุบ record ซ้ำเข้าด้วยกันด้วยมือ:
 
 - ย้าย `bms_customer_identities` / `bms_orders` / `bms_customer_addresses` / `bms_conversations` /
   `bms_pharmacy_assessments` / `bms_restock_subscriptions` / coupon wallet ทั้งหมดจาก `mergeId`
@@ -989,16 +989,22 @@ Permission: customer.view (ถ้าไม่มีสิทธิ์ → โช
 - soft-delete `mergeId` (`deleted_at`) — **ทำแล้วย้อนกลับเองไม่ได้**
 - ทั้งหมดอยู่ในทรานแซกชันเดียว (`beginTenantTx`)
 
-UI: `/admin/customers` → ปุ่ม **"ผสาน"** ต่อแถว → ค้นหา record ซ้ำ → เลือก → ยืนยัน
+UI: `/admin/customers` → ปุ่ม **"ผสาน"** ต่อแถว → ค้นหา record ซ้ำ → ตรวจผลกระทบจากเซิร์ฟเวอร์
+→ ระบุเหตุผล วิธีตรวจสอบเจ้าของข้อมูล และรหัสหลักฐาน → ยืนยัน
+หน้า Assistant และ Drawer ใช้หน้าตรวจสอบเดียวกัน โมเดลเสนอได้เฉพาะคู่ลูกค้า ห้ามสร้างหลักฐานเอง
 
 Input
 
 {
     keepId,   # ลูกค้าหลักที่จะเก็บไว้
-    mergeId   # ลูกค้าซ้ำที่จะยุบเข้ามาแล้วลบ
+    mergeId,  # ลูกค้าซ้ำที่จะยุบเข้ามาแล้ว soft-delete
+    review    # previewToken, reason, verificationMethod, evidenceReference, confirmed
 }
 
-Permission: customer.edit · บันทึก audit action `customer.merge`
+Permission: customer.edit · `review` จำเป็นตอน execute แม้ SDL คง optional เพื่อ compatibility
+· เซิร์ฟเวอร์กำหนด actor จาก session และตรวจ preview อายุไม่เกิน 10 นาที ผูก tenant/actor/คู่และทิศทาง
+· บันทึก audit action `customer.merge` พร้อมการรวมใน transaction เดียวกัน
+· รายละเอียดและข้อจำกัด: [CRM](../business/crm.md#reviewed-staff-merges-and-web-chat-ownership-2026-10)
 
 ---
 
