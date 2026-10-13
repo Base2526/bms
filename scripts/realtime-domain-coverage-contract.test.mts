@@ -220,6 +220,7 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_ai_limit_notices", // Personal admin bell: 30-second/focus/mutation refresh; no shop-wide broadcast of recipients.
   "bms_tax_invoice_requests",
   "bms_tax_request_submissions", // Append-only evidence; request UI polls the parent aggregate.
+  "bms_tax_request_emails", // Request list includes latest delivery status: 15-second polling and post-action refresh.
   "bms_expense_documents",
   "bms_board_game_copies", "bms_board_game_sessions",
   "bms_board_game_session_games", "bms_board_game_session_participants",
@@ -307,6 +308,18 @@ test("message delivery metadata keeps its explicit conversation invalidation", (
     INBOX,
     /UPDATE bms_messages SET meta[\s\S]{0,500}publishInboxChanged\(tenantId, row\.conversation_id, "CONVERSATION_CHANGED"\)/,
   );
+});
+
+test("tax request email coverage is backed by authoritative polling and post-action refresh", () => {
+  assert.ok(POLLED_OPERATIONAL_SURFACE.includes("bms_tax_request_emails"));
+  const panel = read("apps/web/components/admin/TaxInvoiceRequestsPanel.tsx");
+  const service = read("apps/web/lib/bms/taxInvoiceRequests.ts");
+  assert.match(panel, /setInterval\(\(\) => void load\(\), 15000\)/);
+  assert.match(panel, /clearInterval\(timer\)/);
+  assert.match(panel, /cache: "no-store"/);
+  assert.match(panel, /message\.success\([\s\S]*?await load\(\)/);
+  assert.match(service, /FROM bms_tax_request_emails e WHERE e\.tenant_id=r\.tenant_id AND e\.request_id=r\.id/);
+  assert.match(service, /ORDER BY e\.created_at DESC,e\.id DESC LIMIT 1/);
 });
 
 test("a table that gained a trigger is removed from the exclusion lists", () => {

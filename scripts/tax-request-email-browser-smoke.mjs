@@ -14,17 +14,17 @@ try {
       submissionCount: 1, requestDeadline: "2026-10-19T10:00:00Z", email: null,
       buyer: { name: "FAKE ผู้ซื้อทดสอบ", taxId: "0105555555554", branchCode: "00000", address: "FAKE กรุงเทพมหานคร 10140", email: "fake@example.test" } };
     const writes = [], errors = [];
-    await context.route("**/api/**", async route => {
+    await context.route(/\/api\/|\/graphql(?:\?|$)/, async route => {
       const url = new URL(route.request().url());
       let json = {};
       if (url.pathname === "/api/auth/me") json = { isAuthenticated: true, admin: { id: "FAKE", role: "Administrator", name: "FAKE admin", language: "th" } };
       else if (url.pathname === "/api/bms/tax-invoice-requests") {
         if (route.request().method() === "POST") {
           const body = route.request().postDataJSON(); writes.push(body);
-          row = { ...row, status: "ISSUED", version: 2, email: { id: "22222222-2222-4222-8222-222222222222", status: body.action === "EMAIL" ? "SENT" : "FAILED", recipient: row.buyer.email, createdAt: row.createdAt, finishedAt: row.createdAt } };
+          row = { ...row, status: "ISSUED", version: 2, email: { id: "22222222-2222-4222-8222-222222222222", status: body.action === "EMAIL" ? "PENDING" : "FAILED", recipient: row.buyer.email, createdAt: row.createdAt, finishedAt: body.action === "EMAIL" ? null : row.createdAt } };
           json = { status: "ISSUED", documentId: "FAKE-document", emailId: row.email.id };
         } else json = { enabled: true, rows: url.searchParams.get("status") === row.status ? [row] : [], hasMore: false };
-      } else if (url.pathname === "/api/graphql") {
+      } else if (url.pathname.endsWith("/graphql")) {
         const q = route.request().postDataJSON()?.query || "";
         const data = q.includes("MyBmsPermissions") ? { myBmsPermissions: ["tax.document.view", "tax.document.issue"] }
           : q.includes("SalesTaxSummary") ? { bmsSalesTaxReport: { vatRegistered: true, sellerTaxId: "0105555555554", from: "2026-10-01", to: "2026-10-31", cancelledCount: 0,
@@ -48,6 +48,18 @@ try {
       await modal.getByRole("button", { name: "ยืนยันดำเนินการ", exact: true }).waitFor();
       await checkbox.check();
       await modal.getByText("fake@example.test", { exact: true }).last().waitFor();
+      const emailNotice = modal.locator(".ant-alert").filter({ hasText: "ส่งสำเนา PDF ไปยังอีเมลนี้หลังออกเอกสาร ไม่ใช่การส่ง e-Tax" });
+      await emailNotice.locator(".ant-alert-close-icon").click();
+      await emailNotice.waitFor({ state: "hidden" });
+      assert.equal(writes.length, 0, "dismissing the notice must not send an email");
+      assert.equal(await checkbox.isChecked(), true, "dismissing the notice must not change the email choice");
+      await modal.getByRole("button", { name: "ยกเลิก", exact: true }).click();
+      await modal.waitFor({ state: "hidden" });
+      await page.getByRole("button", { name: "ตรวจคำขอ", exact: true }).click();
+      await emailNotice.waitFor({ state: "visible" });
+      assert.equal(writes.length, 0, "reopening confirmation must not send an email");
+      await emailNotice.locator(".ant-alert-close-icon").click();
+      await emailNotice.waitFor({ state: "hidden" });
       await page.screenshot({ path: `${output}/${width}-confirm.png`, fullPage: true, animations: "disabled" });
       const bounds = await modal.boundingBox();
       assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= width);
@@ -62,13 +74,17 @@ try {
       await modal.getByText(/ตรวจอีเมลผู้รับก่อนส่งอีกครั้ง/).waitFor();
       await modal.getByRole("button", { name: "ยืนยันส่งอีเมล", exact: true }).click();
       await modal.waitFor({ state: "hidden" });
+      await card.getByText("รอส่ง", { exact: true }).waitFor();
+      assert.equal(await card.getByRole("button", { name: "ส่งอีเมลอีกครั้ง", exact: true }).isDisabled(), true);
+      // Simulate worker completion; the UI must pick it up by polling without another user action.
+      row = { ...row, email: { ...row.email, status: "SENT", finishedAt: row.createdAt } };
       await card.getByText("ผู้ให้บริการรับส่งแล้ว", { exact: true }).waitFor();
       assert.equal(writes.length, 2);
       assert.equal(writes[1].action, "EMAIL");
       assert.equal(writes[1].expectedEmailId, "22222222-2222-4222-8222-222222222222");
       assert.ok(writes[1].emailKey);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: default checkbox, opt-out, issue + email and reviewed resend; mocked API only`);
+      console.log(`PASS ${width}px: notice dismissal, opt-out, issue + email, reviewed resend and polled completion; mocked API only`);
     } catch (error) {
       await page.screenshot({ path: `${output}/${width}-failure.png`, fullPage: true });
       console.error((await page.locator("body").innerText()).slice(-2000));

@@ -1322,3 +1322,7 @@ The immutable invoice-view JSON and recipient are private delivery snapshots, no
 Only a new explicitly confirmed action may retry a terminal attempt; prior attempts remain history.
 The worker claims one row using `FOR UPDATE SKIP LOCKED`, commits before network I/O, and stores only
 bounded error codes and job ids in audit metadata. Font assets are bundled under `public/fonts/sarabun`.
+The staff request list reads the latest email attempt with a tenant/request-scoped join. Its UI polls
+every 15 seconds and refreshes after confirmed actions (plus manual refresh); this outbox is classified
+as a polled operational surface, not an unimplemented realtime subscription. Recipient and invoice
+snapshots are never broadcast in realtime events.
