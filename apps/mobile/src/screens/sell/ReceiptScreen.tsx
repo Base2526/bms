@@ -151,7 +151,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             เลขที่ใบเสร็จ
           </Text>
-          <Text style={[typography.bodyStrong, { color: colors.text }]}>
+          <Text
+            style={[
+              typography.bodyStrong,
+              styles.summaryValue,
+              { color: colors.text },
+            ]}
+          >
             {receipt.receiptNo ?? receipt.billNo ?? receipt.orderId}
           </Text>
         </View>
@@ -159,7 +165,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           <Text style={[typography.caption, { color: colors.textMuted }]}>
             รับเงิน
           </Text>
-          <Text style={[typography.bodyStrong, { color: colors.text }]}>
+          <Text
+            style={[
+              typography.bodyStrong,
+              styles.summaryValue,
+              { color: colors.text },
+            ]}
+          >
             ฿{(receipt.cashTendered ?? receipt.total).toFixed(2)}
           </Text>
         </View>
@@ -173,7 +185,13 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           <Text style={[typography.bodyStrong, { color: colors.textMuted }]}>
             เงินทอน
           </Text>
-          <Text style={[typography.title, { color: colors.success }]}>
+          <Text
+            style={[
+              typography.title,
+              styles.summaryValue,
+              { color: colors.success },
+            ]}
+          >
             ฿{(receipt.cashChange ?? 0).toFixed(2)}
           </Text>
         </View>
@@ -307,9 +325,11 @@ export default function ReceiptScreen({ route, navigation }: Props) {
           </View>
 
           <View style={[styles.dialogBody, { gap: spacing.lg }]}>
-            {paidSummary}
             {isTablet ? (
-              <View style={[styles.panes, { gap: spacing.lg }]}>
+              <View
+                testID="receipt-panes"
+                style={[styles.panes, { gap: spacing.lg }]}
+              >
                 <ScrollView
                   style={styles.flex}
                   contentContainerStyle={styles.previewScroll}
@@ -317,23 +337,28 @@ export default function ReceiptScreen({ route, navigation }: Props) {
                   {paper}
                 </ScrollView>
                 <ScrollView
+                  testID="receipt-sidebar"
                   style={styles.sidebar}
                   ref={deliveryScroll}
                   keyboardShouldPersistTaps="handled"
                   contentContainerStyle={styles.scroll}
                 >
+                  {paidSummary}
                   {actions}
                 </ScrollView>
               </View>
             ) : (
-              <ScrollView
-                ref={deliveryScroll}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={styles.scroll}
-              >
-                {paper}
-                {actions}
-              </ScrollView>
+              <>
+                {paidSummary}
+                <ScrollView
+                  ref={deliveryScroll}
+                  keyboardShouldPersistTaps="handled"
+                  contentContainerStyle={styles.scroll}
+                >
+                  {paper}
+                  {actions}
+                </ScrollView>
+              </>
             )}
           </View>
         </View>
@@ -418,12 +443,19 @@ const styles = StyleSheet.create({
     gap: 16,
     paddingVertical: 6,
   },
+  // เลขที่ใบเสร็จตกไปใช้ orderId (UUID 36 ตัว) เมื่อไม่มีเลขบิล — ไม่ให้หดได้มันจะเลยขอบการ์ด ~89px
+  // ทั้งบนมือถือและในคอลัมน์ขวา 300px ของแท็บเล็ต (วัดด้วย Yoga) จึงต้องหดแล้วตัดบรรทัดแทน
+  summaryValue: { flexShrink: 1, textAlign: 'right' },
   summaryDivider: {
     borderTopWidth: StyleSheet.hairlineWidth,
     marginTop: 4,
     paddingTop: 10,
   },
-  panes: { flex: 1, flexDirection: 'row' },
+  // ⚠️ ห้ามกลับไปใช้ `flex: 1` — กล่องใบเสร็จมีแค่ `maxHeight` (สูงตามเนื้อหา) ไม่มีความสูงแน่นอน
+  // `flex: 1` ทำให้ flexBasis = 0 แล้ว Yoga ให้แผงนี้สูง 0 ทั้งแผง: บนแท็บเล็ตทั้งใบเสร็จและปุ่มพิมพ์
+  // หายไป เหลือแต่หัวกล่อง (ยืนยันด้วย yoga-layout ทั้ง errata All และ None, 2026-10-14)
+  // ใช้ basis อัตโนมัติ (สูงตามเนื้อหาที่สูงที่สุด) แล้วหดลงเมื่อเกิน maxHeight ให้ ScrollView เลื่อนแทน
+  panes: { flexDirection: 'row', flexShrink: 1 },
   sidebar: { width: 300, flexGrow: 0, flexShrink: 0 },
   scroll: { gap: 24, paddingBottom: 12 },
   previewScroll: {
