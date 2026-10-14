@@ -1,9 +1,17 @@
 # Global Work Assistant — full-system V1 coverage
 
-Status: implemented and contract-checked. The deterministic catalog currently contains 51 verified
-capabilities, 119 bilingual guides, 20 verified FAQ answers, and 24 groups of limits and traps
-(139 rules per language; 229 corpus entries, 99 of them real questions — counted 2026-10-02) — counts drift as features ship; re-count from `lib/bms/assistantKnowledge/*` before
-quoting them elsewhere. Every Admin Sidebar
+Status: implemented and contract-checked. The deterministic catalog currently contains 52 verified
+capabilities (23 `AVAILABLE` · 25 `CONDITIONAL` · 3 `BETA` · 1 `MOCK`), 125 bilingual guides (29 of them
+register guides with `pageId === "pos"`), 21 verified FAQ answers, and 24 groups of limits and traps
+(139 rules per language). The pinned question corpus holds 246 entries: 103 real questions
+(`CORPUS_REAL_QUESTIONS`), 141 coverage questions and 2 no-match guards — counted 2026-10-13 by
+importing `SYSTEM_CAPABILITIES`/`SYSTEM_GUIDES`/`SYSTEM_FAQ`/`SYSTEM_LIMITS` and
+`scripts/ai-eval/work-assistant-question-corpus.mts`, not by grepping. Counts drift as features ship;
+re-count from `lib/bms/assistantKnowledge/*` before quoting them elsewhere. Compared with the
+catalog at commit `c81b5478` (the 2026-10-02 count), it gained one capability (`board-game.time-promotions`), six guides
+(`board-game.time-offer-limits`, `pos.board-game-time-promotion`, `products.cross-sku-gift`,
+`pharmacy.manage-guidance`, `platform.app-downloads`, `platform.retail-local-runtime-releases`) and one
+FAQ (`faq.board-game-single-checkin-split-payment`); no limit group was added. Every Admin Sidebar
 destination — read from `ADMIN_NAV_ITEMS`/`ADMIN_NAV_FOOTER_ROUTES` in `lib/bms/adminNavigation.ts`,
 not scraped from the component, so the coverage set cannot silently empty out when the menu moves —
 and every routable Admin page except `/admin` (redirect) and `/admin/login` has a
@@ -52,6 +60,35 @@ A status describes one capability, not a whole module: shipment creation and tra
 `AVAILABLE` while `shipping.carrier-integrations` stays `MOCK`, because a single entry cannot
 honestly say both.
 
+## Recent features: in the catalog or not (checked 2026-10-13)
+
+Checked by searching the four catalog modules (`capabilities.ts`, `guides.ts`, `faq.ts`, `limits.ts`)
+for each feature's route, ids and Thai/English wording. "Not in the catalog" means the assistant has
+no verified entry for it and must not describe it from guesswork; it does not mean the feature is
+missing from the product.
+
+| Feature (migration) | Catalog state |
+| --- | --- |
+| Board-game time offers incl. buy/get time (`10.3`, `10.40`) | In: capability `board-game.time-promotions`, guides `board-game.time-offer-limits` and `pos.board-game-time-promotion`, FAQ `faq.board-game-single-checkin-split-payment` |
+| Board-game member passes (`9.92`) | In: aliases and steps of `board-game.run-cafe` |
+| Board-game automatic pass renewal (`10.4`) | **Not in the catalog** — no guide/capability mentions renewal |
+| Board-game walk-in queue and advance/public reservations (`9.99`–`10.2`) | **Not in the catalog** as their own entries; `restaurant.waitlist` / `pos.restaurant-waitlist` describe the restaurant queue only |
+| Board-game chat booking requests (`10.48`) | In: aliases and a warning in `board-game.run-cafe` (shared request queue, POS PIN review, no automatic decision message, booking-enabled no-deposit branches) |
+| Board-game chat actions / opt-in auto-confirm, customer cancel/reschedule (`10.49`) | **Not in the catalog** — the `board-game.run-cafe` text still describes the request-only release |
+| Board-game library images (`10.42`) and opt-in table details (`10.50`, `10.51`) | **Not in the catalog** |
+| Cross-SKU gifts (`10.41`) | In: guide `products.cross-sku-gift` |
+| Supplier credit/debit notes (`10.37`) | **Not in the catalog** — `expense.record-document` does not mention them |
+| Cloud receipt-QR tax invoice requests (`10.38`–`10.39`) and PDF email (`10.58`) | **Not in the catalog** — no entry mentions the request queue, its limits or the email copy |
+| Pharmacist-approved guidance (`10.45`, `10.47`) | In: guide `pharmacy.manage-guidance` |
+| Emergency facility directory (`10.46`) | Partial: only an alias on the settings guide ("โรงพยาบาลฉุกเฉินใกล้ร้าน") and a warning line; no dedicated entry |
+| Branch parking (`10.52`) | **Not in the catalog** |
+| Customer answer evidence (`10.53`) | **Not in the catalog** — `ai-quality.review` still describes verdict review only |
+| Monthly AI points (`10.56`) | In: billing capability ("AI point quota") and `faq.ai-credit-usage` |
+| Homepage app download links (`10.57`) | In: `platform.app-downloads` |
+| Central Docker scheduler (no migration) | Partial: `platform.operations` covers the run-history page; the scheduler service itself is not described |
+| `MAIL_PROVIDER=smtp` (`10.59`) | **Not in the catalog** (the mail-log guide exists but does not mention SMTP) |
+| Reviewed customer merges (no migration) | In: rule in the customer-data limit group (impact preview, reason, verification method, evidence reference) |
+
 ## Module coverage summary
 
 | Area | Verified coverage | Important boundary |
@@ -95,7 +132,7 @@ no page it reaches the honest empty answer.
 
 ## Verified limits and traps
 
-`lib/bms/assistantKnowledge/limits.ts` holds the 19 groups (97 rules) that used to exist only in
+`lib/bms/assistantKnowledge/limits.ts` began with the 19 groups (97 rules) that used to exist only in
 `/admin/manual`: the stock invariant and its movement types, barcode rules, which numbers are
 estimates, cancel vs return vs refund, coupon ordering, FEFO lots and snapshot counts, what is not
 supported yet, permissions by module, and the rest. A guide says what to do; these say what will
@@ -104,7 +141,8 @@ distinguishing authoritative sale-time cost snapshots from reconstructed legacy 
 
 Each group names the guides it constrains, the Manual renders the same array, and
 `search_system_guides` returns the groups belonging to its two best-ranked guides — only two,
-because 97 rules would crowd out the answer they exist to protect. Rules are payload and are never
+because the full set (now 24 groups, 139 rules per language) would crowd out the answer it exists to
+protect. Rules are payload and are never
 scored; group titles and staff phrasings are the retrieval keys, the same contract as the FAQ.
 
 ## Required ambiguity behavior
@@ -155,8 +193,9 @@ All three suites run in `npm run test:pure` (and therefore in CI), not by hand:
 - An unmatched question at the register says so instead of showing the first page guide.
 - A proposal in the Drawer shows its mutation and server-composed arguments before Confirm, and an
   emailed report requires a reviewed, valid recipient with an unknown-recipient warning.
-- Every question the product asks — the 59 chips and hand-verified questions, plus one coverage
-  question for every remaining catalog entry, plus 2 guards that must stay unanswerable (133 in
+- Every question the product asks — the chips and hand-verified questions (103 on 2026-10-13), plus
+  coverage questions for the remaining catalog entries (141), plus 2 guards that must stay
+  unanswerable (246 in
   `work-assistant-question-corpus.mts`) — is *led* by the entry that answers it. Presence anywhere
   in the result list is not a pass: a guide that slips to rank 6 behind unrelated entries fails,
   which is the regression the earlier `.some(...)` assertions could not see.

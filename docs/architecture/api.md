@@ -1,5 +1,7 @@
 # API Surface
 
+> Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
+
 ## Customer answer evidence (`10.53`)
 
 - `bmsAiAnswerEvidence(messageId: ID!): JSON`: bounded versioned QA projection for one AI message,
@@ -13,8 +15,6 @@
   The cursor does not grant tenant authority. Cloud daily and Retail Local six-hour scheduling
   use the same endpoint; never expose it through a tenant-authorized “run all shops” button.
 
-> Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
-
 ## Mobile GraphQL primary API
 
 ### Pharmacy guidance editor
@@ -25,6 +25,14 @@ plus a display-only `licensedPharmacist` hint. The preview renders these facts w
 renderer used for customers. Unknown/malformed placeholders omit lines. The existing approval
 mutation still requires `pharmacy.protocol.manage`, version matching and the transaction-locked
 licence check from `10.47`; the UI hint never authorizes approval. No new AI tool or permission.
+
+The template lifecycle (`10.45`, module `graphql/bmsPharmacy.ts`, page `/admin/pharmacy-guidance`):
+`bmsPharmacyGuidanceTemplates` and `bmsPharmacyGuidanceDefaults` read with
+`pharmacy.assessment.read`; `bmsSavePharmacyGuidanceDraft`, `bmsSeedPharmacyGuidanceDrafts`
+(copies the built-in defaults in as this shop's own DRAFT rows), `bmsApprovePharmacyGuidance(id,
+version)` and `bmsRetirePharmacyGuidance(id)` require `pharmacy.protocol.manage`. Approval
+additionally requires the actor to be a licensed pharmacist, re-checked in the service with no
+Administrator shortcut. Customers only ever receive an `APPROVED` row of their own shop.
 
 ### Emergency directory (`10.46`)
 
@@ -97,9 +105,20 @@ Details per channel: [../integrations/](../integrations/).
 ## REST — cron endpoints
 
 Routes using `authorizeCronRequest()` require header `x-cron-secret` matching
-`BMS_CRON_SECRET`; an unset secret fails closed with 503 and a wrong header returns 401. The
-repository GitHub Action schedules its frequent/daily matrices only when repository secrets are
-configured. Other routes remain visible as ready-but-unscheduled on `/admin/operations-schedule`.
+`BMS_CRON_SECRET`; an unset secret fails closed with 503 and a wrong header returns 401. Exactly
+one scheduler owner should call them: the opt-in Docker `scheduler` service (registry
+`apps/web/scheduler/jobs.json`, 18 jobs: 13 every 15 minutes, 5 daily) or the GitHub Action
+`.github/workflows/bms-cron.yml` with repository variable `BMS_CRON_RUNNER=github` — see
+[scheduler.md](scheduler.md). Other routes remain visible as ready-but-unscheduled on
+`/admin/operations-schedule`.
+
+- `POST /api/bms/tax-invoice-requests/send-pending` (`10.58`) — drains the tax-invoice email outbox
+  (`runTaxRequestEmailQueue()`, `lib/bms/taxRequestEmail.ts`) inside `recordJobRun("tax-request-email")`.
+  It is the recovery path for an issuance whose immediate send did not complete; a stale `SENDING`
+  row becomes `UNKNOWN`, never an automatic resend. Scheduled every 15 minutes.
+- `POST /api/bms/menu-availability/reset` (`9.55`) — clears "sold out today" rows whose own
+  `resets_at` has passed, recorded as `menu-availability-reset`. Scheduled every 15 minutes so each
+  shop's own reset time and timezone are honoured.
 
 - `POST /api/bms/realtime/dispatch` — recovery/manual trigger for the same dispatcher used by the
   continuous web-process pump. It claims committed rows with `FOR UPDATE SKIP LOCKED`, publishes to
@@ -159,6 +178,32 @@ customer. Responses use `no-store`, the page uses `no-referrer`/`noindex`, and L
 are rejected because Seller Center remains authoritative. Runtime signing uses
 `BMS_CHECKOUT_SECRET` (all compose files inject it, defaulting to the deployment's `JWT_SECRET`);
 production refuses to create or verify links when no secret is configured.
+
+## REST — tax reports and receipt-QR tax-invoice requests (`10.37`–`10.39`, `10.58`)
+
+| Route | Guard | Purpose |
+| --- | --- | --- |
+| `GET /api/bms/reports/tax-print?reportType=&from=&to=[&locationId=]` | `authorizeAdminRoute("report.view")`, then `tax.document.view` (`VAT_SALES`) or `expense.view` (`VAT_PURCHASE`) and the actor's branch scope | Printable HTML of the statutory VAT sales/purchase report (supplier credit/debit notes from `10.37` included in the purchase side); `private, no-store`, nonce CSP, `frame-ancestors 'none'` |
+| `POST /api/bms/tax-invoice-request` | **public by design**; `rateLimit()` 60/min per IP and 20/min per hashed credential, 8 KiB body | Customer side of the printed receipt QR: `inspect`, `submit` and `recover` take the signed receipt token; `track` and `revise` take the private tracking secret. Never a session; tenant/order come from the signed token. Errors never log tokens or buyer identity |
+| `GET /api/bms/tax-invoice-requests?status=&offset=` | `authorizeAdminRoute("tax.document.view")`; rows filtered to the actor's allowed branches | Staff review queue, including the latest email attempt |
+| `POST /api/bms/tax-invoice-requests` | `authorizeAdminRoute("tax.document.issue")` + same-origin check; branch-scoped lookup | `ISSUE`, `NEEDS_INFO`, `REJECT` or `EMAIL`, each with `confirmed: true` and the expected `version`. `ISSUE` issues the full tax invoice in the same transaction and may enqueue the email (`sendEmail`); `EMAIL` needs the reviewed recipient, a stable `emailKey` and the latest email id. Delivery is attempted after commit and never turns a committed issuance into a failure |
+| `POST /api/bms/tax-invoice-requests/send-pending` | `authorizeCronRequest()` | Outbox recovery cron (see § cron endpoints) |
+
+The public QR service is off unless `BMS_TAX_REQUESTS_ENABLED=true`, an HTTPS public origin
+(`BMS_PUBLIC_ORIGIN` or `NEXT_PUBLIC_BASE_URL`) and a signing secret are configured, and it is never
+enabled in a Retail Local deployment; the customer page is `/tax-invoice/request`. A request is
+unique per order, limited to three customer submissions inside a 168-hour window from the
+abbreviated receipt, and each submission is an immutable buyer snapshot. Business rules:
+[../business/pos.md](../business/pos.md).
+
+## REST — platform homepage settings (`10.57`)
+
+- `GET|PUT /api/admin/app-downloads` — `authorizePlatformAdminRoute()`; the write service checks
+  the authority again, validates both URLs (explicit `https://`, no credentials, ≤ 2,048 characters)
+  before writing either, and audits. Shop Administrators cannot change these links.
+- `GET /api/public/app-downloads` — public, `rateLimit()` 120/min per IP, `no-store`; returns only
+  the two URLs, never the actor or update metadata. See
+  [../business/app-downloads.md](../business/app-downloads.md).
 
 ## REST — POS device surface
 
@@ -233,6 +278,11 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   locked tenant-wide and bound to a normalized request hash; exact retries replay, while reusing the
   key with a different payload returns `409 IDEMPOTENCY_CONFLICT`.
 - `GET /api/pos/scan|search|recent-sales|last-sale|session` — device-scoped operational reads.
+  A barcode shared by several variants of one product makes `scan` answer `409` with
+  `reason: "VARIANT_SELECTION_REQUIRED"` and a `selection` (product name, image, branch variant
+  choices) instead of guessing a size; the native register gets the same as a GraphQL `CONFLICT`.
+  Sale receipts carry `taxRequestUrl` / `taxRequestUnavailableReason` for the cloud receipt QR
+  (`10.38`); an ineligible receipt or an unready service yields a reason, never an unusable link.
 - `GET|POST /api/pos/restaurant/floor` (`9.44`, `9.45`) — dining areas and tables of the device's
   branch. `POST` seeds a default floor and needs PIN + `restaurant.floor.manage`; the branch is never
   read from the body.
@@ -267,7 +317,8 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   store-wide ladder, which would reach branches they do not run. The write replaces one whole
   ladder for one (product, branch) because a branch ladder replaces rather than merges.
 - `GET|POST /api/pos/restaurant/waitlist` (`9.64`) — the branch's walk-in queue and table
-  reservations. `add`, `call`, `cancel`, `no_show`, `seat`; all on PIN + `pos.sell`, the same gate as
+  reservations. `add`, `call`, `accept_request` (`10.43`: the only transition of a customer-chat `REQUESTED`
+  row into the operational `WAITING` queue), `cancel`, `no_show`, `seat`; all on PIN + `pos.sell`, the same gate as
   opening a table, because nothing here moves money or stock and the one action that does — `seat`,
   which opens a dine-in check — goes through the same `openRestaurantCheckInTx()` the floor screen
   uses, inside the transaction that closes the queue entry. Queue numbers and the service day are
@@ -298,6 +349,16 @@ Mutating routes verify both layers — `/api/pos/park` is the single deliberate 
   `board_game.offer.manage` and re-checks branch access against **both** the offer's current branch
   and the branch being assigned, so an edit cannot move another branch's offer to itself. Nothing
   here applies a discount: the server picks the winning offer when a billing group is closed.
+  `10.40` adds the `TIME_BUY_GET` kind (per-player paid/free minute cycles applied after
+  billing-time rounding) to the same route and permissions.
+- `POST|DELETE /api/bms/board-game/library/image?titleId=` (`10.42`) — upload or remove a title's
+  public artwork. `authorizeAdminRoute("board_game.library.manage")`; PNG/JPEG/WebP only, 5 MB
+  streamed limit (`413` beyond it); the server re-encodes the image as a public file owned by the
+  title's tenant, shared by every physical copy.
+- `GET|POST /api/bms/board-game/discovery` — branch public profile; `board_game.floor.manage` plus
+  branch access. Besides the `9.83` publish flags it now saves `publishTableDetails` (`10.50`,
+  area labels and capacity-grouped counts only) and `chatAutoConfirm` (`10.49`, refused unless
+  booking is enabled and the deposit policy is `NONE`). Both default off.
 - `GET|POST /api/bms/board-game/pass-renewals` (`10.4`) — automatic member-pass renewal agreements.
   `GET` lists them for accessible branches on `board_game.session.manage`; `POST` carries `create`,
   `pause`, `resume`, `cancel` or `retry` and needs `board_game.pass.manage` — every one changes what
@@ -552,30 +613,34 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 
 | File | Covers |
 | --- | --- |
-| `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments, bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
+| `bmsProducts.ts` | products (`bmsProducts` list plus lazy `bmsProductBySku` configuration detail), categories, stock adjustments, bulk CSV/XLSX product/menu import (`bmsImportProducts`), catalog variants and sales surfaces, publish readiness (`bmsPublishProduct`), draft configuration cloning (`bmsDuplicateProduct`), shop-maintained customer facts on `BmsProduct` (`allergenCodes`, `allergenInformationProvided`, `dietaryTags`, `foodSafetyNote` from `10.43`; `medicineLabel` from `10.44`; written through the normal `product.edit` upsert, and an empty unreviewed declaration means unknown), and reservation drill-down (`bmsVariantReservations`, gated on `order.view` because the answer carries bill ids and customer contact) |
 | `bmsOrders.ts` | order lifecycle transitions, staff create/reorder, invoice projection, shipping-address eligibility |
-| `bmsCustomers.ts` | CRM: profile, addresses, tags, merge |
+| `bmsCustomers.ts` | CRM: profile, addresses, tags, merge. `bmsCustomerOrderDetail(customerId, orderId)` (`customer.view`) returns one purchase's exact sale lines, totals and points. A merge is reviewed: `bmsCustomerMergePreview` (`customer.edit`) returns a ten-minute signed preview with server-counted impact, and `bmsMergeCustomers` requires its `review` input (preview token, reason, verification method, evidence reference, `confirmed`) — old callers without a review are refused. See [../business/crm.md](../business/crm.md) |
 | `bmsInbox.ts` | conversations, messages, notes, timeline, diagnostic Inbox message creation (`bmsCreateInboxDiagnosticMessage`) |
 | `bmsChannels.ts` | per-tenant channel credentials (settings page) + Channel Health status/test (`bmsChannelHealth`, `bmsChannelHealthCount`, `bmsTestChannel`) + realtime signal probe (`bmsEmitInboxDiagnosticEvent`) |
 | `bmsPurchase.ts` | supplier purchase orders |
 | `bmsPayments.ts` | payment submission/confirmation/refund |
 | `bmsShipping.ts` | shipments, tracking, carrier sync (`bmsSyncShipmentLive`), labels |
 | `bmsCoupons.ts` | discount code CRUD + usage history (`bmsCoupons`, `bmsCouponRedemptions`) |
-| `bmsProductPromotions.ts` | buy-X-get-Y / N-for-a-price offers, store-wide or per branch (`bmsProductPromotions`, `bmsPromotionLocations`, `bmsUpsertProductPromotion`, `bmsDeactivateProductPromotion`) — reads `product.view`, writes `product.edit`; branch-restricted staff (`bms_user_allowed_locations`) may only set offers for their own branches and never a store-wide one |
-| `bmsRestaurantFloorAdmin.ts` | restaurant areas, tables, drag-and-drop floor layout and the printable table QR (`9.59`, `9.60`): `bmsRestaurantFloorAdmin`, `bmsRestaurantFloorLocations`, `bmsRestaurantTableQr`, `bmsIssueRestaurantTableQr`, plus area/table create-rename-reorder-delete and `bmsSaveRestaurantFloorLayout`. All of it uses one permission, `restaurant.floor.manage`, and every operation additionally resolves the owning branch (from the locationId, or from the area/table row when that is all the argument list carries) and rejects a branch outside the caller's `bms_user_allowed_locations` scope — rotating a QR invalidates the sticker physically on another branch's table and cuts the guests seated at it |
+| `bmsProductPromotions.ts` | buy-X-get-Y / N-for-a-price offers and, since `10.41`, cross-SKU `BUY_A_GET_B` (`buySize`, `giftSku`, `giftSize`; direct-stock retail variants only), store-wide or per branch (`bmsProductPromotions`, `bmsPromotionLocations`, `bmsUpsertProductPromotion`, `bmsDeactivateProductPromotion`) — reads `product.view`, writes `product.edit`; branch-restricted staff (`bms_user_allowed_locations`) may only set offers for their own branches and never a store-wide one |
+| `bmsRestaurantFloorAdmin.ts` | restaurant areas, tables, drag-and-drop floor layout and the printable table QR (`9.59`, `9.60`): `bmsRestaurantFloorAdmin`, `bmsRestaurantFloorLocations`, `bmsRestaurantTableQr`, `bmsIssueRestaurantTableQr`, plus area/table create-rename-reorder-delete, `bmsSaveRestaurantFloorLayout` and `bmsSetRestaurantCustomerTableDetails(locationId, publish)` (`10.51`, opt-in publication of area labels and capacity-grouped table counts to customer chat). All of it uses one permission, `restaurant.floor.manage`, and every operation additionally resolves the owning branch (from the locationId, or from the area/table row when that is all the argument list carries) and rejects a branch outside the caller's `bms_user_allowed_locations` scope — rotating a QR invalidates the sticker physically on another branch's table and cuts the guests seated at it |
 | `bmsAr.ts` | credit accounts, invoice aging, receivable ledger, non-cash collection and write-off (`9.30`). Selling on credit and collecting **cash** are absent by design — those live on `/api/pos/*`, because cash has to reach the drawer of the shift that is actually open |
 | `bmsRevisions.ts` | revision history list/detail/compare for products, orders, payments, shipments, and purchase orders (header + line items) |
-| `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
+| `bmsReports.ts` / `bmsDashboard.ts` | analytics plus Phase 1 daily actions and advisory inventory intelligence (`bmsActions(limit, group, offset)` — `group` is `ALL`/`NEW`/`ACCEPTED`/`HISTORY`, `bmsActionMetrics`, `bmsInventoryActionCenter`) |
+| `bmsPharmacy.ts` | pharmacy intake/queue/protocols/policies, plus the `10.45` guidance-template lifecycle (see § Pharmacy guidance editor) |
+| `bmsStoreProfile.ts` | store profile and the `10.46` emergency directory (see § Emergency directory) |
+| `bmsAiQuality.ts` | AI quality review plus the `10.53` answer-evidence reads (see § Customer answer evidence) |
+| `bmsMailLog.ts` | read-only platform mail log (`bmsMailLog`, `bmsMailLogEntry`, `bmsMailLogStats`) — platform admin only; `provider` is `sendgrid`, `gmail` or `smtp` (`10.59`) |
 | `bmsFollowups.ts` | follow-up automation plus the separately permissioned Phase 2 retention queue/analytics (`bmsRetentionCases`, `bmsRetentionAnalytics`) and explicit refresh/transition mutations |
 | `bmsReportEngine.ts` | generated report export history + on-demand XLSX/CSV/PDF generation (`bmsGeneratedReports`, `bmsGenerateReport`); tax/stock-ledger exports persist their location scope and re-check it on history, download and email, while `VAT_SALES` additionally requires `tax.document.view` and `VAT_PURCHASE` requires `expense.view` at every one of those boundaries |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
-| `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/credit reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`, `bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
-| `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down |
+| `bmsAiConfig.ts` | tenant BYOK key config + key tests (`bmsAiConfig`, `bmsSetAiKey`, `bmsRemoveAiKey`, `bmsTestAiKey`), AI usage/points reporting (`bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiUsageEvents`, `bmsAiCreditLedger`), the per-recipient AI limit inbox (`bmsAiLimitNotifications`, `bmsReadAiLimitNotification`, `10.55`), platform-only point adjustment (`bmsAdjustAiCredits`), and platform-only provider health (`bmsAiProviderHealth`, `bmsAiProviderHealthCount`, `bmsCheckAllAiProviderHealth`, `bmsTestPlatformAiKey`) |
+| `bmsSaas.ts` | platform admin: tenants, plans, signup, drill-down. `bmsChangePlan` and `bmsSetTenantPlan` both require database-verified platform admin — shop access is not payment evidence |
 | `bmsAssistant.ts` | staff AI assistant (`bmsAssistant` + additive `bmsWorkAssistant`) — shared tool-calling runtime filtered by caller RBAC; the work surface adds bounded page context, citations and links; sensitive tools return proposals instead of executing |
-| `bmsPos.ts` | POS back-office: locations, devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
+| `bmsPos.ts` | POS back-office: locations (`bmsUpsertLocation` re-checks the actor's branch scope, carries the `10.52` `parking` object; `bmsManageableLocations` lists the branches a `location.manage` holder may edit), devices/pairing tokens, cashier PIN/account-mode management, shift open/close, lot listing/reconciliation, VAT settings, tax document issuance, e-Tax queue status, product pack/barcode setup. Counter selling is **not** here — the browser register uses `/api/pos/*` and the native register uses `bmsPosDevice.ts` |
 | `bmsTaxReports.ts` | Branch-scoped tax-document list and sales-tax summary (`tax.document.view`), including buyer tax identity and reconciliation exceptions; every read intersects `bms_user_allowed_locations` |
-| `bmsExpenseDocuments.ts` | Tenant-scoped expense evidence, input-VAT/withholding summaries, idempotent creation and reason-required voiding (`expense.view` / `expense.manage`) |
+| `bmsExpenseDocuments.ts` | Tenant-scoped expense evidence, input-VAT/withholding summaries, idempotent creation and reason-required voiding (`expense.view` / `expense.manage`). Since `10.37` the same mutation records `SUPPLIER_CREDIT_NOTE` / `SUPPLIER_DEBIT_NOTE` with `receivedDate`, `referenceDocumentNo` and `adjustmentReason`; the VAT claim month is the month received |
 | `bmsPosDevice.ts` | Device-scoped surface for the native register (`apps/mobile`), authenticated by a device Bearer token plus a cashier PIN re-checked on every mutation — not by an admin session. Covers selling, returns/void, shift and drawer, restaurant checks/kitchen, branch stock transfers and counts, and board-game sessions/library. Tenant, branch, device and shift are derived from the authenticated device and are never accepted as input; money/stock/document mutations require `idempotencyKey`, and a key already spent on a different request body is refused as `CONFLICT` (`reason: IDEMPOTENCY_CONFLICT`), never a 500. Every operation calls the same `lib/bms/*` service the REST route calls — one adapter never calls the other |
 | `bmsMobileOperations.ts` | The remaining mobile back-office gaps that are not device-scoped. Ordinary `getTenantId(ctx)` + `requirePermission()` resolvers over the same services as their REST compatibility routes |
 | `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`, `9.51`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and grouped modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), readiness (`bmsProductReadiness`), the kitchen station master (`bmsKitchenStations`, `bmsUnmappedKitchenStationNames`, `bmsCreateKitchenStation`, `bmsUpdateKitchenStation`, `bmsArchiveKitchenStation` — `9.54`, read `product.view` / manage `product.edit`), kitchen tickets and wastage. Reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `restaurant.kitchen.update`, and write-off uses `stock.adjust`. Modifier surcharge and group constraints are server-owned and re-resolved during order creation. |
@@ -783,8 +848,21 @@ show `unpricedProviderCalls`, otherwise partially-known cost reads as a complete
 `bmsAiCreditLedger` is the append-only credit trail (grant / usage / refund / adjustment) and is where
 an automatic refund appears when a reservation ends without a provider call, including the 15-minute
 stale-reservation sweep. `bmsAdjustAiCredits` is the manual adjustment path; the monthly row is locked
-so two adjustments cannot be computed from the same balance. Tenant reads are gated by
-`ai_quality.view`; the platform-wide provider-health operations require platform admin.
+so two adjustments cannot be computed from the same balance. Since the `10.56` recheck it requires
+database-verified platform admin (as do `bmsChangePlan` and `bmsSetTenantPlan`), because a shop could
+otherwise self-issue points or an unlimited plan.
+
+Gates as implemented: `bmsAiConfig`, `bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiCreditLedger` and the
+key mutations need an authenticated `admin`-scope session of the tenant; `bmsAiUsageEvents` needs
+`ai_quality.view`; provider health needs platform admin. Credits are presented as **AI points**
+(`10.56`: Free 100/month, Pro 1,000, Business unlimited; the month resets at 00:00 Asia/Bangkok on
+the first). There is **no per-shop USD cap**: the `10.54` shared-budget fields on `BmsAiUsage` are
+kept for compatibility and report limit/remaining `-1`, status `NORMAL`, `blocked: false`, while real
+spent/reserved totals stay available. `billingMode` is `PLAN_POINTS`, or `LOCAL_OWN_KEY` /
+`LOCAL_UNCONFIGURED` on Retail Local, where usage is metered without point charges.
+`bmsAiLimitNotifications` / `bmsReadAiLimitNotification` (`10.55`) are the caller's own points
+notices (80%, 90%, exhausted, recovered), read and acknowledged per recipient and tenant. Policy:
+[../ai/usage-cost-audit.md](../ai/usage-cost-audit.md).
 
 ### Support tickets
 
@@ -974,8 +1052,11 @@ when the dataset is larger than the currently loaded page.
   The signup page stops waiting after 45 seconds, aborts its HTTP request, and keeps a visible
   error with inbox/spam guidance. A timeout means the outcome is unknown: it does not undo the
   pending request or a delivered email, and no retry is automatic. The shared mailer uses native
-  provider timeouts (SendGrid: 20 seconds; Gmail: DNS 5 seconds, connect/greeting 10 seconds each,
-  socket inactivity 20 seconds) so a stalled provider does not retain a request for minutes.
+  provider timeouts (SendGrid: 20 seconds; Gmail and the generic `MAIL_PROVIDER=smtp` relay: DNS 5
+  seconds, connect/greeting 10 seconds each, socket inactivity 20 seconds) so a stalled provider does
+  not retain a request for minutes. The SMTP relay (`SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`,
+  `MAIL_FROM`) uses implicit TLS on ports 465/2465 and requires STARTTLS on every other port; logging
+  it needs migration `10.59`.
 - `/shop-signup` also accepts an **optional** `businessArchetype` field and persists it on the
   pending signup row until verification. The verified flow initializes the tenant's first
   store-profile archetype/business-type defaults in the same transaction. This is for onboarding,
