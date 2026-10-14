@@ -180,6 +180,8 @@ export const BMS_PERMISSIONS = [
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",
+  "tax.document.adjust",
+  "tax.period.close",
   "tax.setting.manage",
   // e-Tax นำส่งกรมสรรพากร — seed ที่ 7.94
   "etax.view",

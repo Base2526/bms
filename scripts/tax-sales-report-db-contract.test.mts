@@ -29,7 +29,6 @@ import {
 } from "../apps/web/lib/bms/taxDocuments.ts";
 import { getSalesTaxReport, listTaxDocuments } from "../apps/web/lib/bms/taxReports.ts";
 import { cancelOrder } from "../apps/web/lib/bms/orders.ts";
-import { assertNoActiveSalesTaxDocumentInTx } from "../apps/web/lib/bms/taxDocumentGuards.ts";
 import { buildSalesTaxReportDoc, buildXlsx } from "../apps/web/lib/bms/documentGenerator.ts";
 import { formatTaxDate } from "../apps/web/lib/bms/taxReportMath.ts";
 import { taxClockOf } from "../apps/web/lib/bms/taxDocumentNumber.ts";
@@ -397,56 +396,19 @@ test("a credit note prints its returned lines, the original invoice and value ne
   assert.ok((await getCreditNoteView(tenantId, notes[0]))?.cancelledAt);
 });
 
-test("a partially returned bill can get a full invoice; its credit notes are re-issued against it", async () => {
+test("a partially returned bill stays non-invoiceable even with a credit note", async () => {
   const { orderId } = await abbreviated(branchId, devC);
   const ret = await posReturn(orderId, 53.5, "pre-full");
-  const before = await issueCreditNote({
-    tenantId, orderId, amount: 53.5, reason: "รับคืนสินค้าบางรายการ", returnRef: ret,
-  });
+  const before = await issueCreditNote({ tenantId, orderId, amount: 53.5, reason: "FAKE return", returnRef: ret });
   assert.equal(before.status, "ISSUED");
-  if (before.status !== "ISSUED") return;
-  // ร้านที่เปิด e-Tax: ใบลดหนี้เดิมที่ยังไม่ได้ส่งต้องถูกถอนออกจากคิว
-  await query(
-    `INSERT INTO bms_etax_submissions (tenant_id, document_id, status) VALUES ($1,$2,'PENDING')
-     ON CONFLICT (document_id) DO NOTHING`,
-    [tenantId, before.document.id]
-  );
   const reportBefore = await getSalesTaxReport(tenantId, period);
-
-  const full = await issueFullTaxInvoice({
-    tenantId, orderId, issuedBy: userId,
-    buyer: { name: "FAKE Co., Ltd.", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" },
-  });
-  assert.equal(full.status, "ISSUED", JSON.stringify(full));
-  if (full.status !== "ISSUED") return;
-  const queued = await query<{ status: string }>(
-    `SELECT status FROM bms_etax_submissions WHERE tenant_id = $1 AND document_id = $2`,
-    [tenantId, before.document.id]
-  );
-  assert.equal(queued.rows[0]?.status, "CANCELLED");
-  assert.equal(full.document.grandTotal, 107, "the full invoice states the original sale");
-  assert.equal(full.reissuedCreditNotes.length, 1);
-  const note = full.reissuedCreditNotes[0];
-  assert.equal(note.grandTotal, 53.5);
-  assert.equal(note.buyerTaxId, "0105555555554", "the new credit note names the buyer of the full invoice");
-  const old = (await query<{ cancelled_at: Date | null }>(
-    `SELECT cancelled_at FROM bms_tax_documents WHERE tenant_id = $1 AND id = $2`, [tenantId, before.document.id]
-  )).rows[0];
-  assert.ok(old.cancelled_at, "the credit note against the abbreviated invoice is cancelled");
-
-  const view = await getCreditNoteView(tenantId, note.id);
-  assert.equal(view?.original.docNo, full.document.docNo);
-  assert.equal(view?.replacesDocNo, before.document.docNo);
-  assert.equal(view?.correctValue, 53.5);
-
-  // งวดภาษีเดิมไม่ขยับ: ใบลดหนี้เดิมคงยอด ใบใหม่และใบเต็มเป็นแถวอ้างอิงยอดศูนย์
-  const reportAfter = await getSalesTaxReport(tenantId, period);
-  assert.deepEqual(
-    { vat: reportAfter.grandTotal.vat, total: reportAfter.grandTotal.total },
-    { vat: reportBefore.grandTotal.vat, total: reportBefore.grandTotal.total }
-  );
-  // การคืนเดิมยังมีใบลดหนี้ที่มีผล — ไม่ขึ้นเป็น "คืนของไม่มีใบลดหนี้"
-  assert.ok(!reportAfter.exceptions.some((e) => e.kind === "RETURN_WITHOUT_CREDIT_NOTE" && e.reference === ret));
+  const result = await issueFullTaxInvoice({ tenantId, orderId, issuedBy: userId,
+    buyer: { name: "FAKE Buyer", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" } });
+  assert.equal(result.status, "ORDER_NOT_INVOICEABLE");
+  assert.equal((await query(
+    "SELECT 1 FROM bms_tax_documents WHERE tenant_id=$1 AND order_id=$2 AND (doc_type='FULL' OR cancelled_at IS NOT NULL)",
+    [tenantId, orderId])).rowCount, 0);
+  assert.deepEqual((await getSalesTaxReport(tenantId, period)).grandTotal, reportBefore.grandTotal);
 });
 
 test("a return without a credit note still blocks the full invoice", async () => {
@@ -479,46 +441,21 @@ test("an individual buyer needs no tax ID and gets no branch; a company does", a
   assert.equal(view?.calendarEra, "BE");
 });
 
-test("a paid online order gets a full invoice, and cancelling it issues a full credit note", async () => {
-  const orderId = await newOrder(hqId, "PAID");
-  // ของถูกจองไว้ตอนชำระ — การยกเลิกปล่อยคืน
-  await query(
-    `UPDATE bms_inventory SET reserved_stock = reserved_stock + 1
-      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
-    [tenantId, hqId, SKU, SIZE]
-  );
-  const full = await issueFullTaxInvoice({
-    tenantId, orderId, issuedBy: userId,
-    buyer: { name: "FAKE Co., Ltd.", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" },
-  });
-  assert.equal(full.status, "ISSUED", JSON.stringify(full));
-  if (full.status !== "ISSUED") return;
-  // ขอบเขตสาขา: คนที่ดูได้แค่สาขาย่อยออกใบให้บิลของสำนักงานใหญ่ไม่ได้
-  const scoped = await issueFullTaxInvoice({
-    tenantId, orderId: await newOrder(hqId, "PAID"), issuedBy: userId, allowedLocationIds: [branchId],
-    buyer: { name: "FAKE Co., Ltd.", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" },
-  });
-  assert.equal(scoped.status, "ORDER_NOT_FOUND");
+test("paid, packing and shipped orders cannot issue a full invoice", async () => {
+  for (const status of ["PAID", "PACKING", "SHIPPED"]) {
+    const orderId = await newOrder(hqId, status);
+    const result = await issueFullTaxInvoice({ tenantId, orderId, issuedBy: userId,
+      buyer: { name: "FAKE Buyer", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" } });
+    assert.equal(result.status, "ORDER_NOT_INVOICEABLE", status);
+    assert.equal((await query("SELECT 1 FROM bms_tax_documents WHERE tenant_id=$1 AND order_id=$2", [tenantId, orderId])).rowCount, 0);
+  }
+});
 
-  assert.equal(await cancelOrder(tenantId, orderId), true);
-  const notes = (await query<{ grand_total: string; vat_amount: string; references_document_id: string }>(
-    `SELECT grand_total, vat_amount, references_document_id FROM bms_tax_documents
-      WHERE tenant_id = $1 AND order_id = $2 AND doc_type = 'CREDIT_NOTE' AND cancelled_at IS NULL`,
-    [tenantId, orderId]
-  )).rows;
-  assert.equal(notes.length, 1);
-  assert.equal(Number(notes[0].grand_total), 107);
-  assert.equal(Number(notes[0].vat_amount), 7);
-  assert.equal(notes[0].references_document_id, full.document.id);
-  // ใบเต็มที่ลดหนี้ครบแล้วไม่ขวางการคืนเงิน และไม่ขึ้นเป็นสิ่งที่ต้องตรวจสอบ
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-    await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
-    await client.query("ROLLBACK");
-  } finally { client.release(); }
-  const report = await getSalesTaxReport(tenantId, period);
-  assert.ok(!report.exceptions.some((e) => e.orderId === orderId));
+test("full invoice issuance hides orders outside the issuer's branch", async () => {
+  const result = await issueFullTaxInvoice({ tenantId, orderId: await newOrder(hqId), issuedBy: userId,
+    allowedLocationIds: [branchId],
+    buyer: { name: "FAKE Buyer", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" } });
+  assert.equal(result.status, "ORDER_NOT_FOUND");
 });
 
 test("a back-office cancel still refuses a counter bill with an abbreviated invoice", async () => {

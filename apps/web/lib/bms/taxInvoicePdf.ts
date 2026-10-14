@@ -27,7 +27,7 @@ export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<
   text("สำเนาใบกำกับภาษีเต็มรูป", 18);
   text("สำเนาสำหรับตรวจสอบ - ไม่ใช่ e-Tax Invoice - ติดต่อร้านเพื่อรับต้นฉบับ", 10);
   text(`เลขที่ ${invoice.docNo}   วันที่ ${formatTaxDate(invoice.issueDate, invoice.calendarEra)}`);
-  if (invoice.replacesDocNo) text(`ออกแทนใบอย่างย่อ ${invoice.replacesDocNo}`, 10);
+  if (invoice.replacesDocNo) text(`ยกเลิกและออกใหม่แทนเอกสาร ${invoice.replacesDocNo}`, 10);
   for (const [label, party] of [["ผู้ขาย", invoice.seller], ["ผู้ซื้อ", invoice.buyer]] as const) {
     const identity = taxIdentityLine(party.taxId, party.branchCode);
     text(`${label}: ${party.name}\n${party.address}${identity ? `\n${identity}` : ""}${party.phone ? `\nโทร ${party.phone}` : ""}`);

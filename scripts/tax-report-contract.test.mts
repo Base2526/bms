@@ -74,7 +74,7 @@ test("full tax invoices share the same Thai tax-ID checksum guard as input VAT",
   assert.equal(isValidThaiTaxId("0105555555554"), true);
   assert.equal(isValidThaiTaxId("0105555555555"), false);
   const service = read("apps/web/lib/bms/taxDocuments.ts");
-  assert.match(service, /isValidThaiTaxId\(buyerTaxId\)/);
+  assert.match(read("apps/web/lib/bms/taxBuyer.ts"), /isValidThaiTaxId\(taxId\)/);
   assert.match(service, /buyer\.address\?\.trim\(\)/);
 });
 
@@ -278,7 +278,7 @@ test("full tax invoice issuance is reachable from the tax document page and vali
   assert.match(page, /can\("tax\.document\.issue"\)/);
   assert.match(page, /row\.docType === "ABBREVIATED" && !row\.cancelledAt/);
   assert.match(service, /isValidThaiTaxId/);
-  assert.match(service, /\^\\d\{5\}\$/);
+  assert.match(read("apps/web/lib/bms/taxBuyer.ts"), /\^\\d\{5\}\$/);
   assert.match(page, /bmsFullTaxInvoiceView/);
   assert.match(page, /data-print-root/);
   assert.match(page, /@media print/);
@@ -392,57 +392,20 @@ test("printed tax documents carry the original/copy label, era dates and the sha
   assert.equal((page.match(/destroyOnClose/g) ?? []).length >= 3, true);
 });
 
-test("buyer tax ID is required only for businesses, and non-business buyers get no branch", () => {
+test("buyer VAT registration is separate from legal personality in the service, schema and UI", () => {
   const service = read("apps/web/lib/bms/taxDocuments.ts");
   const page = read("apps/web/app/(admin)/admin/tax-documents/page.tsx");
   const gql = read("apps/web/graphql/typeDefs.ts");
-  assert.match(service, /const businessBuyer = buyerType === null \|\| buyerType === "COMPANY";/);
-  assert.match(service, /if \(businessBuyer && !buyerTaxId\)/);
-  assert.match(service, /const buyerBranchCode = businessBuyer \? buyer\.branchCode\?\.trim\(\) \|\| "00000" : null;/);
-  assert.match(gql, /input BmsTaxInvoiceBuyerInput \{[\s\S]*?taxId: String\r?\n[\s\S]*?buyerType: String/);
-  assert.match(page, /required: buyerType === "COMPANY"/);
-  assert.match(page, /branchCode: values\.buyerType === "COMPANY" \? values\.branchCode : null/);
-  const xml = read("apps/web/lib/bms/etax/xml.ts");
-  assert.match(xml, /if \(doc\.buyer\.branchCode && !doc\.buyer\.taxId\?\.trim\(\)\)/);
+  assert.match(service, /normalizeTaxBuyer\(buyer/);
+  assert.match(gql, /vatRegistered: Boolean/);
+  assert.match(page, /required: buyerVat/);
+  assert.match(page, /values.vatRegistered/);
 });
 
-test("a full invoice after a partial return re-issues the credit notes against it", () => {
-  const service = read("apps/web/lib/bms/taxDocuments.ts");
-  const section = service.slice(
-    service.indexOf("export async function issueFullTaxInvoiceInTx"),
-    service.indexOf("export async function creditOutstandingSalesDocumentInTx")
-  );
-  assert.ok(section.length > 0);
-  // ใบลดหนี้ที่อ้างใบย่อที่เพิ่งถูกยกเลิก ถูกยกเลิกแล้วออกใหม่อ้างใบเต็ม ยอด/เหตุผลเดิม
-  assert.match(section, /references_document_id = \$3[\s\S]*?\[tenantId, orderId, cancelled\.id\]/);
-  // ต้องเป็นคำสั่งที่รันจริง ไม่ใช่ชื่อที่อยู่ในกิ่งที่ตายแล้ว
-  assert.match(section, /\r?\n\s*await cancelQueuedTaxDocumentInTx\(\s*client, tenantId, row\.id/);
-  assert.match(section, /full\.id, row\.id, row\.credit_reason, full\.grandTotal/);
-  assert.match(section, /row\.taxable_amount, row\.exempt_amount, row\.vat_amount, row\.rounding_amount, row\.grand_total/);
-  // รายงาน: ใบเดิมคงยอดในงวดเดิม ใบใหม่เป็นแถวอ้างอิงยอดศูนย์
+test("legacy re-issued credit notes remain readable without moving tax periods", () => {
   const report = read("apps/web/lib/bms/taxReports.ts");
   assert.match(report, /full_doc\.doc_type = CASE WHEN d\.doc_type = 'CREDIT_NOTE' THEN 'CREDIT_NOTE' ELSE 'FULL' END/);
-  assert.match(report, /if \(r\.cancelled_at && !\(r\.doc_type === "CREDIT_NOTE" && r\.active_replacement_doc_no\)\) continue;/);
   assert.match(report, /const replacesAbbreviated = Boolean\(r\.replaces_document_id\);/);
-});
-
-test("cancelling or returning a paid order with a full invoice issues a credit note in the same transaction", () => {
-  const orders = read("apps/web/lib/bms/orders.ts");
-  for (const fn of ["export async function cancelOrderInTx", "export async function returnOrder"]) {
-    const start = orders.indexOf(fn);
-    const body = orders.slice(start, start + orders.slice(start).search(/\r?\n\}\r?\n/));
-    assert.ok(body.length > 50, fn);
-    const update = body.search(/UPDATE bms_orders SET status = '(CANCELLED|RETURNED)'/);
-    const credit = body.indexOf("await creditOutstandingSalesDocumentInTx(");
-    // ออกใบลดหนี้หลังเปลี่ยนสถานะสำเร็จเท่านั้น — ไม่งั้นบิลที่ยกเลิกไม่ได้กลับได้ใบลดหนี้ไป
-    assert.ok(update >= 0 && credit > update, fn);
-  }
-  const service = read("apps/web/lib/bms/taxDocuments.ts");
-  const fn = service.slice(service.indexOf("export async function creditOutstandingSalesDocumentInTx"));
-  assert.match(fn, /if \(row\.doc_type !== "FULL"\) throw new Error\(ACTIVE_TAX_DOCUMENT_BLOCK_MESSAGE\)/);
-  // ยอดคงเหลือหักทีละช่อง ไม่เฉลี่ยใหม่
-  assert.match(fn, /Number\(row\.vat_amount\) - Number\(row\.credited_vat\)/);
-  assert.match(fn, /FOR UPDATE/);
 });
 
 test("full invoice issuance honours the issuer's branch scope", () => {
@@ -451,7 +414,7 @@ test("full invoice issuance honours the issuer's branch scope", () => {
   assert.match(gql, /async bmsIssueFullTaxInvoice[\s\S]*?listLocationsForUser[\s\S]*?allowedLocationIds: locations\.map/);
   assert.match(service, /args\.allowedLocationIds && !args\.allowedLocationIds\.includes\(ord\.rows\[0\]\.location_id\)/);
   const page = read("apps/web/app/(admin)/admin/tax-documents/page.tsx");
-  // บิลที่ชำระแล้วแต่ไม่มีเอกสาร (ออนไลน์) ออกใบเต็มได้จากส่วน "ต้องตรวจสอบ"
+  // The exception action is an entry point only; the service enforces COMPLETED.
   assert.match(page, /row\.kind === "PAID_WITHOUT_TAX_DOCUMENT"[\s\S]{0,120}setFullInvoiceSource\(\{ orderId: row\.orderId, docNo: null \}\)/);
 });
 

@@ -27,7 +27,7 @@ export default function TaxInvoiceCopy({
       </p>
       <p>
         เลขที่ {i.docNo} · วันที่ {formatTaxDate(i.issueDate, i.calendarEra)}
-        {i.replacesDocNo && ` · ออกแทนใบอย่างย่อ ${i.replacesDocNo}`}
+        {i.replacesDocNo && ` · ยกเลิกและออกใหม่แทนเอกสาร ${i.replacesDocNo}`}
       </p>
       <p>
         <b>ผู้ขาย: {i.seller.name}</b>

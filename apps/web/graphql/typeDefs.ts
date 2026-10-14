@@ -918,6 +918,7 @@ export const typeDefs = /* GraphQL */ `
     branchCode: String
     "INDIVIDUAL | COMPANY | FOREIGNER — ไม่ระบุ = COMPANY (พฤติกรรมเดิม)"
     buyerType: String
+    vatRegistered: Boolean
     address: String
     phone: String
   }

@@ -396,10 +396,23 @@ When a full invoice replaces an abbreviated invoice, the abbreviated invoice rem
 daily sales-tax total. The full invoice is an additional zero-value reference row naming the replaced
 number; moving the value to the full invoice or warning merely because the two issue dates cross a
 month would double-count or move the original sale. Issued documents snapshot seller identity as well
-as buyer and amounts. Full invoices require checksum-valid seller and buyer tax IDs plus both
-addresses, and their preview/print reads only the server-side document/order snapshot. Superseding or
+as buyer and amounts. Full invoices require a checksum-valid seller tax ID and both addresses.
+Buyer VAT registration is independent of legal personality (`10.60`). Registered buyers require a
+checksum-valid tax ID and branch; explicit non-registered buyers may omit the ID and have no branch.
+Missing registration flags preserve COMPANY/legacy behaviour. Preview/print reads the server-side document/order snapshot and excludes
+cancelled full invoices. Superseding or
 voiding an unsent document marks its e-Tax queue row `CANCELLED` in the same transaction; already-sent
 rows remain intact because an external recipient may already hold them.
+
+Paper tax controls (`10.60`) require a server-reviewed confirmation, tenant/branch scope, exact
+idempotency and same-transaction audit. Corrections preserve original amounts/date and record the
+actual processing date; originals are retained. Debit/price-credit notes change no cash/stock/AR and
+cannot over-credit any tax bucket. POS returns on price-adjusted bills require accounting review.
+Paper controls never bypass provider submission/correction requirements. New document print views
+are frozen snapshots; existing documents are not reconstructed from today's identity. Period archives
+are immutable versions of sales/input VAT reports, readable only with both source permissions and
+branch access; current-source drift does not rewrite a saved version. The tax-point decision remains
+pending in [tax-accounting-review.md](business/tax-accounting-review.md).
 
 `lib/bms/pos.ts` (migrations `7.84`–`7.93`, plus `7.97` for parked bills, drawer cash, void and the
 shift report, `9.5` for retry-safe drawer movements, `9.7` for petty-cash expenses, `9.8` for

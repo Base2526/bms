@@ -1321,27 +1321,24 @@ This does not enable the existing server-generated tax PDF option, which remains
 
 An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
 buyer identity and issue a full invoice with `tax.document.issue`. The service still owns the
-decision: it accepts a non-void order from `PAID` onward (the VAT point is payment — `PAID`,
-`PACKING`, `SHIPPED`, `COMPLETED`), cancels the abbreviated invoice (if any) and creates the full
-invoice atomically, requires a checksum-valid seller tax ID and both addresses, and never rewrites
-an issued document. The buyer's tax ID and branch are required only for a company/VAT-registered
-buyer (`buyerType` `COMPANY` or unset, DG notification 199); an individual or foreigner may omit the
-tax ID, and no branch (no "head office") is stored or printed for them. The issuer's branch scope is
-enforced. Paid bills without a tax document (typically online orders) get an issue action in the
-"items to check" list.
+decision: it accepts only a non-void COMPLETED order with no non-void POS return,
+including a zero-value return or a return already backed by a credit note. It cancels the abbreviated
+invoice (if any) and issues the full invoice atomically. The seller needs a checksum-valid tax ID
+and address; the buyer needs a name and address, and a checksum-valid tax ID and branch for
+VAT-registered buyers, independently of legal personality. An explicit `vatRegistered=false`
+permits an optional tax ID and omits the branch. Unspecified registration preserves COMPANY/legacy
+behaviour; an individual registered for VAT must supply the tax ID and branch. Issuance enforces the staff member's branch scope.
 
-A partially returned bill can get a full invoice of the original sale, provided every non-void return
-already has an active credit note. Those credit notes (which referenced the abbreviated invoice) are
-cancelled and re-issued, same amounts and reason, against the full invoice and its buyer; the old
-note's unsent e-Tax job is withdrawn. In the sales-tax report the old note keeps its value in its
-original period and the re-issued note is a zero-value reference row — the same rule as a full
-invoice replacing an abbreviated one.
+An active abbreviated or full invoice blocks back-office cancellation, return and payment refund,
+even when credit notes cover its whole value. Use the POS return flow for its cashier, approval,
+stock, refund and credit-note controls. No automatic back-office credit-note path is provided.
+The guard locks the order before reading documents, serializing with concurrent full issuance.
+Paid orders that are not yet completed cannot issue a full invoice. The issue action in the
+exceptions list still calls the same eligibility-checked service.
 
-Cancelling (`PENDING/PAID/PACKING`) or fully returning (`SHIPPED/COMPLETED`) a bill from the back office
-after a full invoice issues a credit note for the outstanding amount (field by field, not
-re-prorated) in the same transaction, after the status change succeeds. A counter bill with an
-active abbreviated invoice is still refused and must be returned through the register. The refund
-guard and the "returned/cancelled with an active document" exception ignore fully credited invoices.
+Existing re-issued credit notes remain readable in reports without double-counting or moving
+periods, but new partial-return-to-full conversions are refused. Cancelled full invoices cannot
+be retrieved as printable originals or customer copies.
 
 Printing: full invoices and credit notes (section 86/10: original invoice number/date, original
 value, previously credited, correct value, difference, VAT of the difference, reason, returned lines
@@ -2496,3 +2493,46 @@ lifecycle. COD is not part of this rollout. For an in-house rider, select carrie
 the rider name in tracking; live parcel-carrier adapters are not inferred. Sample restaurant data
 offers a quick menu with no ingredient recipes by default and an opt-in recipe set for operators who
 want ingredient-level depletion.
+
+
+## Paper document controls and period archives (10.60)
+
+On **Sales tax**, the document-controls card operates on the current server-backed document list.
+Use the existing month/search/page controls to locate older sources. Staff first reviews a server
+preview, then explicitly confirms; changed data requires a fresh review. Retries keep the same key.
+
+- **Substitute**: `tax.document.issue`, active FULL/CREDIT_NOTE/DEBIT_NOTE, customer request/evidence
+  and reason. Records consecutive substitute number, processing date, issuing staff and snapshot;
+  print includes a signature line. The operator signs and retains the evidence and annotates the
+  retained copy. Sales reports receive a zero-value note in the processing month. This does not issue
+  a new invoice or move money.
+- **Buyer correction**: `tax.document.adjust`, completed/non-void/non-returned bill without earlier
+  adjustment notes, recovered/cancelled original confirmation and evidence. Issues a new FULL number
+  with original document date, seller and monetary values, links and cancels the original in one
+  transaction. The action retains the original view and the corrected view. Report value stays on
+  the original document; the replacement is zero-value and the processing month gets an annotation.
+  This date rule is only for correction, not a changed first-invoice tax point.
+- **Price debit/credit note**: `tax.document.adjust`, intact completed FULL source, stated affected
+  goods/services, evidence and event date. Enter positive taxable base/exempt differences; server
+  derives VAT at the original rate and checks cumulative credit limits per tax bucket. Event must be
+  current month, or previous month with a necessary-delay reason. These are **tax-document-only**
+  records, not refunds, inventory receipts or AR entries. Accounting must reconcile corresponding
+  cash/receivable actions separately. POS refuses subsequent automatic returns on price-adjusted
+  bills to prevent refunding the unadjusted basket; such cases require accounting reconciliation.
+- **Electronic documents**: paper substitutes/adjustments/corrections refuse e-Tax-enabled shops or outstanding/
+  sent provider submissions. They do not pretend to send provider corrections. These paper records
+  are excluded from electronic enqueue/backfill. Existing PDF email remains a copy, not e-Tax.
+- **Period archive**: `tax.period.close` plus `expense.view`; select one establishment and a completed
+  past month. Resolve sales-report exceptions, review both VAT reports, then save an immutable version.
+  The archive has print and JSON download. Viewing detects drift from current source data; a new
+  reviewed version with reason preserves all previous versions. This does not submit PP.30, lock
+  every operational ledger, or claim a filing has been accepted. Archive reads need both source
+  permissions and current branch access. Lists show at most 200 entries for a selected month.
+
+New full/credit/debit documents preserve print snapshots so changing store identity, catalog labels
+or calendar era does not rewrite them. Historical documents without this snapshot retain the prior
+fallback behaviour; the system cannot reconstruct facts that were never recorded.
+
+Tax-point changes remain pending in [tax-accounting-review.md](tax-accounting-review.md). In this
+round the user requested no database use: migration 10.60 has not been applied and transactional SQL,
+RLS, grants and concurrent calls have not been proven against PostgreSQL.

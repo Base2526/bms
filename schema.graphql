@@ -7143,6 +7143,7 @@ input BmsTaxInvoiceBuyerInput {
   บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการจด VAT (buyerType COMPANY หรือไม่ระบุ)
   """
   taxId: String
+  vatRegistered: Boolean
 }
 
 """

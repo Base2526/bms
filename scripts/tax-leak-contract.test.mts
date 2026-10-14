@@ -28,17 +28,14 @@ test("promotion-exact line_amount is the tax/refund/commission authority", () =>
   assert.doesNotMatch(tax, /COALESCE\(pack_unit_price \* pack_qty, unit_price \* qty\) AS amount/);
 });
 
-test("full invoices lock and reject unpaid, voided and credit-note-less returned orders", () => {
+test("full invoices lock and reject unfinished, voided and partially returned orders", () => {
   const src = read("apps/web/lib/bms/taxDocuments.ts");
   const section = src.slice(src.indexOf("export async function issueFullTaxInvoice"));
   assert.match(section, /status, voided_at[\s\S]*FOR UPDATE/);
-  // ออกได้ตั้งแต่รับชำระ (จุดความรับผิด VAT) — ไม่ใช่ PENDING/CANCELLED/RETURNED
-  assert.match(src, /FULL_INVOICE_ORDER_STATUSES = \["PAID", "PACKING", "SHIPPED", "COMPLETED"\] as const/);
-  assert.match(section, /FULL_INVOICE_ORDER_STATUSES as readonly string\[\]\)\.includes\(ord\.rows\[0\]\.status\)/);
+  assert.match(section, /status !== "COMPLETED"/);
   assert.match(section, /voided_at != null/);
-  // คืนบางส่วนได้ ต่อเมื่อทุกการคืนมีใบลดหนี้ที่มีผล — ไม่งั้นใบเต็มสูงกว่ายอดขายจริง
-  assert.match(section, /FROM bms_pos_returns r[\s\S]*?NOT EXISTS[\s\S]*?cn\.credit_reason LIKE '%\[' \|\| r\.id::text \|\| '\]%'/);
-  assert.match(section, /if \(unbackedReturn\.rowCount\)/);
+  assert.match(section, /FROM bms_pos_returns/);
+  assert.match(section, /if \(returned\.rowCount\)/);
   assert.match(section, /ORDER_NOT_INVOICEABLE/);
   assert.match(section, /INSERT INTO bms_audit_log[\s\S]*tax\.document\.issue_full/);
   assert.doesNotMatch(read("apps/web/graphql/bmsPos.ts"), /audit\(ctx, "tax\.document\.issue_full"/);
@@ -51,11 +48,7 @@ test("back-office money paths refuse an active sales tax document", () => {
   assert.match(guard, /doc_type IN \('ABBREVIATED','FULL'\)/);
   assert.match(guard, /cancelled_at IS NULL/);
   assert.match(guard, /คืนผ่านหน้า POS เพื่อออกใบลดหนี้/);
-  // ใบที่ลดหนี้ครบแล้วไม่นับว่ายังใช้งาน — ไม่งั้นยกเลิกออร์เดอร์ที่ออกใบเต็มแล้วคืนเงินไม่ได้
-  assert.match(guard, /d\.grand_total - COALESCE\(\([\s\S]*?cn\.references_document_id = d\.id[\s\S]*?> 0\.005/);
-  // ยกเลิก/คืนทั้งบิลจากหลังบ้าน: ใบย่อยังปฏิเสธ ใบเต็มได้ใบลดหนี้ในทรานแซกชันเดียวกัน
-  assert.ok((orders.match(/await creditOutstandingSalesDocumentInTx\(/g) ?? []).length >= 2);
-  assert.doesNotMatch(orders, /assertNoActiveSalesTaxDocumentInTx/);
+  assert.ok((orders.match(/assertNoActiveSalesTaxDocumentInTx\(/g) ?? []).length >= 2);
   assert.match(payments, /to === "REFUNDED"[\s\S]*assertNoActiveSalesTaxDocumentInTx/);
 });
 

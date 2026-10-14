@@ -203,6 +203,13 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 
 ## Notable schema details
 
+**Tax-document eligibility (2026-10-14 review)** — no schema change. Full issuance requires a
+non-void `COMPLETED` order with no non-void POS return, even when existing credit notes cover the
+return. Active `ABBREVIATED`/`FULL` documents block back-office cancellation, return and refund
+regardless of credited balance. Existing `replaces_document_id` credit-note chains remain readable
+for historical reporting; new partial-return conversions do not create such chains. Cancelled full
+documents are excluded from printable/copy readers. See [POS tax behavior](../business/pos.md).
+
 **`bms_inventory.reserved_stock` has no ownership ledger** — the table is keyed by
 `(tenant_id, location_id, product_sku, size)` and `reserved_stock` is a running total that
 `createOrder()` increments and `SHIP`/cancel decrement. No column or table says which bill owns which
@@ -1412,3 +1419,34 @@ The staff request list reads the latest email attempt with a tenant/request-scop
 every 15 seconds and refreshes after confirmed actions (plus manual refresh); this outbox is classified
 as a polled operational surface, not an unimplemented realtime subscription. Recipient and invoice
 snapshots are never broadcast in realtime events.
+
+
+## Tax document controls (10.60)
+
+`bms_tax_documents` and `bms_document_counters` additionally accept `DEBIT_NOTE`.
+`buyer_vat_registered` snapshots VAT registration independently of buyer personality; NULL retains
+legacy semantics. `print_snapshot` freezes full-invoice / credit / debit print data, including lines,
+seller/buyer identity, amounts and calendar era for newly issued documents. Existing documents are
+not backfilled with today's identity. `adjustment_kind` distinguishes paper `PRICE` notes and
+`CORRECTION` invoices; provider enqueue/backfill excludes these unsupported electronic workflows.
+
+`bms_tax_document_actions` stores SUBSTITUTE/CORRECT/CREDIT/DEBIT actions, source/result documents,
+request hash and idempotency key, evidence reference, reason, actor/name, processing date, substitute
+number and the immutable print snapshot. `bms_tax_period_snapshots` stores per-establishment/month
+versions of sales and input VAT reports with report/request hashes, reason and actor. Both tables use
+strict tenant-GUC RLS, FORCE RLS, composite tenant/location/document FKs, and SELECT/INSERT-only
+`bms_app` grants. They are append-only; no pruning job is added. A database operator's backup/retention
+policy is still required. Seller/order documents must not be deleted around these evidence FKs.
+
+Dependencies: existing tax documents/counters and credit-note columns, 10.24 seller snapshots,
+10.25 e-Tax cancellation, 10.37 supplier adjustments, 10.38 tenant document index. Migration 10.60
+seeds Manager permissions `tax.document.adjust` and `tax.period.close`; substitute issuance retains
+`tax.document.issue`. Archived sales/purchase views require `tax.document.view` plus `expense.view`.
+All new writes use `beginTenantTx`, same-transaction audit, explicit reviewed confirmation and
+idempotency. Order-first locking is shared with full issuance and POS returns. Period versions are
+serialized by tenant/branch/month; current/future months and reports with unresolved exceptions
+cannot close. A close freezes a report version, not every operational transaction: later changes
+produce a drift warning when viewing the archive, and a new reviewed version preserves the old one.
+
+Migration and real DB behaviour were not exercised in this round, at the user's request. See
+[business/tax-accounting-review.md](../business/tax-accounting-review.md).

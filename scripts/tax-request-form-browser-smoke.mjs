@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 const { chromium } = await import(process.env.BMS_PLAYWRIGHT_MODULE || "playwright");
 const base = process.env.BMS_SMOKE_URL || "http://localhost:3003";
+assert.ok(["localhost", "127.0.0.1"].includes(new URL(base).hostname), "Local fixture server only");
 const output = ".test-output/tax-request-form";
 await mkdir(output, { recursive: true });
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -13,8 +14,11 @@ try {
     let version = 1;
     const submissions = [], errors = [];
     const policy = { canSubmit: true, expiresAt: "2026-10-18T14:00:00Z", submissions: 0, maxSubmissions: 3, remaining: 3 };
-    await context.route("**/api/**", async (route) => {
-      const path = new URL(route.request().url()).pathname;
+    await context.route("**/*", async (route) => {
+      const url = new URL(route.request().url());
+      if (url.origin !== new URL(base).origin) return route.abort();
+      const path = url.pathname;
+      if (!path.startsWith("/api/")) return route.continue();
       let json = {};
       if (path === "/api/bms/tax-invoice-request") {
         const body = route.request().postDataJSON();
@@ -34,7 +38,8 @@ try {
     try {
       await page.goto(`${base}/tax-invoice/request#FAKE-receipt-token`, { waitUntil: "domcontentloaded", timeout: 120000 });
       await page.getByText("บุคคลธรรมดา", { exact: true }).click();
-      await page.getByLabel("เลขประจำตัวผู้เสียภาษี / เลขประจำตัวประชาชน", { exact: true }).fill("0105555555554");
+      const individualTaxId = page.getByLabel("เลขประจำตัวผู้เสียภาษี / เลขประจำตัวประชาชน (ไม่บังคับ)", { exact: true });
+      assert.notEqual(await individualTaxId.getAttribute("aria-required"), "true");
       await page.getByLabel("ชื่อ-นามสกุล", { exact: true }).fill("FAKE Buyer");
       await page.getByLabel("ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 1)", { exact: true }).fill("FAKE address 1");
       await page.getByLabel("ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 2)", { exact: true }).fill("FAKE address 2");
@@ -67,6 +72,7 @@ try {
       await page.reload({ waitUntil: "domcontentloaded" });
       assert.equal(await page.getByLabel("อีเมล (สำหรับติดต่อเรื่องการจัดส่งเอกสาร)", { exact: true }).inputValue(), "fake@example.test");
       await page.getByText("นิติบุคคล", { exact: true }).click();
+      await page.getByLabel("เลขประจำตัวผู้เสียภาษีไทย 13 หลัก", { exact: true }).fill("0105555555554");
       await page.getByLabel("รหัสสาขา 5 หลัก (สำนักงานใหญ่ 00000)", { exact: true }).fill("00001");
       await email.fill("");
       await submit.click();
@@ -79,7 +85,7 @@ try {
       assert.equal(saved.buyerType, "COMPANY");
       assert.equal(saved.branchCode, "00001");
       await page.getByText("Foreigner (ชาวต่างชาติ)", { exact: true }).click();
-      await page.getByText(/ช่องทางออนไลน์รองรับผู้มีเลขประจำตัวผู้เสียภาษีไทย/).waitFor();
+      await page.getByText(/ไม่มีเลขประจำตัวผู้เสียภาษีไทยก็ขอได้/).waitFor();
       await page.getByRole("button", { name: "ยกเลิก", exact: true }).click();
       assert.equal(await page.getByRole("button", { name: "ยืนยันข้อมูลและส่งคำขอ" }).count(), 0);
       assert.equal(submissions.length, 2, "cancel does not send a request");
