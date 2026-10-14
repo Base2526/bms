@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import path from "node:path";
 import type { FullTaxInvoiceView } from "./taxDocuments";
+import { formatTaxDate, taxIdentityLine } from "./taxDocumentText";
 
 /** Render the issued snapshot; never recompute tax or fetch current product prices. */
 export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<Buffer> {
@@ -25,10 +26,11 @@ export async function renderTaxInvoicePdf(invoice: FullTaxInvoiceView): Promise<
   };
   text("สำเนาใบกำกับภาษีเต็มรูป", 18);
   text("สำเนาสำหรับตรวจสอบ - ไม่ใช่ e-Tax Invoice - ติดต่อร้านเพื่อรับต้นฉบับ", 10);
-  text(`เลขที่ ${invoice.docNo}   วันที่ ${invoice.issueDate}`);
+  text(`เลขที่ ${invoice.docNo}   วันที่ ${formatTaxDate(invoice.issueDate, invoice.calendarEra)}`);
   if (invoice.replacesDocNo) text(`ออกแทนใบอย่างย่อ ${invoice.replacesDocNo}`, 10);
   for (const [label, party] of [["ผู้ขาย", invoice.seller], ["ผู้ซื้อ", invoice.buyer]] as const) {
-    text(`${label}: ${party.name}\n${party.address}\nเลขผู้เสียภาษี ${party.taxId}   ${party.branchCode === "00000" ? "สำนักงานใหญ่" : `สาขา ${party.branchCode}`}${party.phone ? `\nโทร ${party.phone}` : ""}`);
+    const identity = taxIdentityLine(party.taxId, party.branchCode);
+    text(`${label}: ${party.name}\n${party.address}${identity ? `\n${identity}` : ""}${party.phone ? `\nโทร ${party.phone}` : ""}`);
   }
   const columns = [40, 295, 342, 388, 471];
   const widths = [247, 39, 38, 75, width - 431];

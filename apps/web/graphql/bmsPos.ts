@@ -284,11 +284,15 @@ export const bmsPosResolvers = {
       ctx: any
     ) {
       await requirePermission(ctx, "tax.document.issue");
+      const tenantId = getTenantId(ctx);
+      // ผู้ที่ถูกจำกัดสาขาออกใบเต็มให้บิลของสาขาอื่นไม่ได้ (เหมือนการอ่านรายงานภาษี)
+      const locations = await listLocationsForUser(tenantId, String(ctx.admin.id));
       const result = await issueFullTaxInvoice({
-        tenantId: getTenantId(ctx),
+        tenantId,
         orderId: args.orderId,
         buyer: args.buyer,
         issuedBy: String(requireAuth(ctx).author_id),
+        allowedLocationIds: locations.map((location) => location.id),
       });
       return result;
     },

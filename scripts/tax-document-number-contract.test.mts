@@ -91,11 +91,13 @@ test("taxDocuments.ts no longer reads the host clock for dates or numbers", () =
   const src = withoutComments(read("apps/web/lib/bms/taxDocuments.ts"));
   assert.ok(!/new Date\(\)/.test(src), "tax documents must take their date from the transaction clock");
   assert.ok(!/periodKey:\s*String\(now\./.test(src), "period keys must come from the Thai tax clock");
-  assert.equal((src.match(/periodKey:\s*String\(clock\.year\)/g) ?? []).length, 3);
+  // ใบย่อ · ใบเต็ม · ใบลดหนี้ · ใบลดหนี้ที่ออกใหม่อ้างใบเต็ม · ใบลดหนี้ตอนยกเลิกออร์เดอร์
+  assert.equal((src.match(/periodKey:\s*String\(clock\.year\)/g) ?? []).length, 5);
   assert.ok(!/toISOString\(\)\.slice\(0,\s*10\)/.test(src), "DATE columns must not be read with toISOString()");
-  // ทั้งสามเส้นทางต้องเขียน issue_date เอง ไม่พึ่ง DEFAULT
+  // ทุกเส้นทางต้องเขียน issue_date เอง ไม่พึ่ง DEFAULT
   const inserts = src.match(/INSERT INTO bms_tax_documents[\s\S]*?RETURNING \*/g) ?? [];
-  assert.equal(inserts.length, 3, "expected three tax-document INSERTs (abbreviated, full, credit note)");
+  assert.equal(inserts.length, 5,
+    "expected five tax-document INSERTs (abbreviated, full, credit note, re-issued credit note, cancellation credit note)");
   for (const sql of inserts) {
     assert.ok(/[(,]\s*issue_date\s*,/.test(sql), `INSERT must list issue_date as a column:\n${sql}`);
     assert.ok(/\$\d+::date/.test(sql), `INSERT must bind issue_date from the tax clock:\n${sql}`);

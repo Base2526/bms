@@ -76,6 +76,15 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     locationName: String
   }
 
+  "ผู้ซื้อบนใบกำกับ — taxId/branchCode เป็น null เมื่อผู้ซื้อไม่ได้เป็นผู้ประกอบการจด VAT"
+  type BmsFullTaxInvoiceBuyer {
+    name: String!
+    taxId: String
+    branchCode: String
+    address: String!
+    phone: String
+  }
+
   type BmsFullTaxInvoiceLine {
     sku: String!
     name: String!
@@ -92,8 +101,10 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     docNo: String!
     issueDate: String!
     seller: BmsFullTaxInvoiceParty!
-    buyer: BmsFullTaxInvoiceParty!
+    buyer: BmsFullTaxInvoiceBuyer!
     replacesDocNo: String
+    "BE | CE — ปีบนเอกสารตามที่ร้านตั้ง"
+    calendarEra: String!
     lines: [BmsFullTaxInvoiceLine!]!
     subtotal: Float!
     discount: Float!
@@ -143,8 +154,12 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     seller: BmsFullTaxInvoiceParty!
     buyer: BmsCreditNoteBuyer
     original: BmsCreditNoteOriginal!
+    replacesDocNo: String
+    calendarEra: String!
     reason: String!
     lines: [BmsCreditNoteLine!]!
+    "ยอดคืนลบผลรวมรายการ (ราคาส่ง/โปรของที่เหลือถูกประเมินใหม่) — 0 เมื่อไม่มีรายการ"
+    lineAdjustment: Float!
     originalValue: Float!
     previouslyCredited: Float!
     correctValue: Float!

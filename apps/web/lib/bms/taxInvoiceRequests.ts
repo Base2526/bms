@@ -110,15 +110,18 @@ export function normalizeTaxRequestBuyer(raw: unknown): TaxRequestBuyer {
   const buyerType = b.buyerType == null ? undefined : clean(b.buyerType, 20);
   if (buyerType !== undefined && !TAX_BUYER_TYPES.some((item) => item.value === buyerType))
     throw new TaxRequestError("ประเภทผู้ขอไม่ถูกต้อง");
-  const taxId = clean(b.taxId, 13),
-    branchCode = buyerType && buyerType !== "COMPANY" ? "00000" : clean(b.branchCode, 5);
-  if (!isValidThaiTaxId(taxId) || !/^\d{5}$/.test(branchCode))
+  // เลขผู้เสียภาษีและสาขาบังคับเฉพาะนิติบุคคล (และคำขอรุ่นเก่าที่ไม่มีประเภท)
+  // บุคคลธรรมดา/ชาวต่างชาติที่ไม่ได้จด VAT ไม่ต้องมี (ประกาศอธิบดีฯ ฉบับที่ 199)
+  const company = !buyerType || buyerType === "COMPANY";
+  const taxId = clean(b.taxId, 13, company),
+    branchCode = company ? clean(b.branchCode, 5) : null;
+  if ((taxId && !isValidThaiTaxId(taxId)) || (branchCode !== null && !/^\d{5}$/.test(branchCode)))
     throw new TaxRequestError(
       "เลขผู้เสียภาษีหรือรหัสสาขาไม่ถูกต้อง (สำนักงานใหญ่ 00000)"
     );
   const buyer: TaxRequestBuyer = {
     name: clean(b.name, 200),
-    taxId,
+    taxId: taxId || null,
     branchCode,
     address: "",
     phone: clean(b.phone, 30, false) || null,

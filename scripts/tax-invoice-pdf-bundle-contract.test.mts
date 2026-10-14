@@ -14,9 +14,15 @@ test("bundled invoice renderer uses the embedded Thai font without PDFKit's unbu
   try {
     const ts = require("typescript");
     const source = await readFile(path.join(web, "lib/bms/taxInvoicePdf.ts"), "utf8");
-    await writeFile(path.join(directory, "entry.cjs"), ts.transpileModule(source, {
+    const transpile = (code: string) => ts.transpileModule(code, {
       compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
-    }).outputText);
+    }).outputText;
+    await writeFile(path.join(directory, "entry.cjs"), transpile(source));
+    // ข้อความบนเอกสาร (สาขา/วันที่) ต้องเป็นโมดูลเดียวกับหน้าพิมพ์และสำเนาลูกค้า
+    for (const helper of ["taxDocumentText", "taxReportMath"]) {
+      await writeFile(path.join(directory, `${helper}.js`),
+        transpile(await readFile(path.join(web, `lib/bms/${helper}.ts`), "utf8")));
+    }
     const webpack = require("next/dist/compiled/webpack/webpack");
     webpack.init();
     const compiler = webpack.webpack({
@@ -35,8 +41,10 @@ test("bundled invoice renderer uses the embedded Thai font without PDFKit's unbu
     } finally { await new Promise<void>((resolve, reject) => compiler.close((error: Error) => error ? reject(error) : resolve())); }
     const { renderTaxInvoicePdf } = require(path.join(directory, "bundle.cjs"));
     const party = { name: "FAKE ผู้ซื้อทดสอบ", taxId: "0105555555554", branchCode: "00000", address: "FAKE กรุงเทพมหานคร", phone: null, locationName: "FAKE" };
+    // ผู้ซื้อบุคคลธรรมดาที่ไม่ได้จด VAT: ไม่มีเลขและไม่มีสาขา
+    const individual = { name: "FAKE บุคคลธรรมดา", taxId: null, branchCode: null, address: "FAKE เชียงใหม่", phone: null };
     const pdf = await renderTaxInvoicePdf({ id: "FAKE", orderId: "FAKE", docNo: "FAKE-001", issueDate: "2026-10-13",
-      seller: party, buyer: party, replacesDocNo: "FAKE-ABB-001",
+      seller: party, buyer: individual, replacesDocNo: "FAKE-ABB-001", calendarEra: "BE",
       lines: [{ name: "FAKE สินค้า", sku: "FAKE", size: "XL", qty: 1, unit: "ชิ้น", unitPrice: 107, amount: 107 }],
       subtotal: 107, discount: 0, shipping: 0, netBeforeVat: 100, exemptAmount: 0, vatAmount: 7,
       vatRate: 7, roundingAmount: 0, grandTotal: 107, amountText: "หนึ่งร้อยเจ็ดบาทถ้วน",

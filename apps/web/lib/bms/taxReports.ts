@@ -21,6 +21,7 @@
 
 import { query } from "@/lib/db";
 import { getVatSettings } from "./taxDocuments";
+import { OUTSTANDING_SALES_DOCUMENT_SQL } from "./taxDocumentGuards";
 import {
   assertTaxPeriod,
   sumTaxAmounts,
@@ -317,11 +318,13 @@ export async function getSalesTaxReport(
                 ON ref.tenant_id = d.tenant_id
                AND ref.id = COALESCE(d.references_document_id, d.replaces_document_id)
          LEFT JOIN LATERAL (
+           -- ใบย่อถูกแทนด้วยใบเต็ม · ใบลดหนี้ถูกแทนด้วยใบลดหนี้ใหม่ที่อ้างใบเต็ม
            SELECT full_doc.doc_no
              FROM bms_tax_documents full_doc
             WHERE full_doc.tenant_id = d.tenant_id
               AND full_doc.replaces_document_id = d.id
-              AND full_doc.doc_type = 'FULL' AND full_doc.cancelled_at IS NULL
+              AND full_doc.doc_type = CASE WHEN d.doc_type = 'CREDIT_NOTE' THEN 'CREDIT_NOTE' ELSE 'FULL' END
+              AND full_doc.cancelled_at IS NULL
             ORDER BY full_doc.issued_at, full_doc.id
             LIMIT 1
          ) replacement ON TRUE
@@ -403,8 +406,10 @@ export async function getSalesTaxReport(
       continue;
     }
 
-    if (r.cancelled_at) continue;
-    const replacesAbbreviated = r.doc_type === "FULL" && Boolean(r.replaces_document_id);
+    // ใบลดหนี้ที่ถูกออกใหม่ให้อ้างใบเต็มยังเป็นยอดของงวดเดิม (เหมือนใบย่อที่ถูกแทน)
+    // ใบที่ออกใหม่จึงเป็นแถวอ้างอิงยอดศูนย์ — ยอดไม่ย้ายงวดและไม่ลดซ้ำ
+    if (r.cancelled_at && !(r.doc_type === "CREDIT_NOTE" && r.active_replacement_doc_no)) continue;
+    const replacesAbbreviated = Boolean(r.replaces_document_id);
     rows.push({
       kind: r.doc_type === "FULL" ? "FULL" : "CREDIT_NOTE",
       issueDate: r.issue_date,
@@ -496,7 +501,7 @@ export async function getSalesTaxReport(
               AND EXISTS (
                 SELECT 1 FROM bms_tax_documents d
                  WHERE d.tenant_id = o.tenant_id AND d.order_id = o.id
-                   AND d.doc_type IN ('ABBREVIATED','FULL') AND d.cancelled_at IS NULL
+                   AND ${OUTSTANDING_SALES_DOCUMENT_SQL}
               )
               AND NOT EXISTS (
                 SELECT 1 FROM bms_pos_returns r

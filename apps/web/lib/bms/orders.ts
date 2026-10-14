@@ -75,7 +75,7 @@ import {
 import { validateOrderItems } from "./orderValidation";
 import { restaurantOrderingStateInTx } from "./restaurantOrdering";
 import { RestaurantCheckError } from "./restaurantPosErrors";
-import { assertNoActiveSalesTaxDocumentInTx } from "./taxDocumentGuards";
+import { creditOutstandingSalesDocumentInTx } from "./taxDocuments";
 import {
   resolveStockConsumptionInTx,
   snapshotOrderItemConsumptionInTx,
@@ -1961,8 +1961,6 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
   try {
     await beginTenantTx(client, tenantId);
 
-    await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
-
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'RETURNED', returned_at = COALESCE(returned_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('SHIPPED','COMPLETED')
@@ -1976,6 +1974,8 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
       await client.query("ROLLBACK");
       return false;
     }
+    // ใบย่อ (บิลหน้าร้าน) → ปฏิเสธให้คืนผ่าน POS · ใบเต็ม → ออกใบลดหนี้ยอดที่เหลือในทรานแซกชันนี้
+    await creditOutstandingSalesDocumentInTx(client, tenantId, orderId, { reason: "รับคืนสินค้าทั้งบิล" });
 
     await client.query(
       `UPDATE bms_inventory inv
@@ -2026,13 +2026,15 @@ export async function cancelOrderInTx(
   tenantId: string,
   orderId: string
 ): Promise<boolean> {
-    await assertNoActiveSalesTaxDocumentInTx(client, tenantId, orderId);
     const ord = await client.query(
       `UPDATE bms_orders SET status = 'CANCELLED', cancelled_at = COALESCE(cancelled_at, now()), updated_at = now()
         WHERE tenant_id = $2 AND id = $1 AND status IN ('PENDING','PAID','PACKING')`,
       [orderId, tenantId]
     );
     if (ord.rowCount === 0) return false;
+    // ออกใบเต็มได้ตั้งแต่ชำระเงิน — ยกเลิกก่อนส่งของจึงต้องออกใบลดหนี้ยอดเต็ม ไม่ใช่ทางตัน
+    // (ใบย่อของบิลหน้าร้านยังปฏิเสธเหมือนเดิม) · throw = rollback ทั้งการยกเลิก
+    await creditOutstandingSalesDocumentInTx(client, tenantId, orderId, { reason: "ยกเลิกออร์เดอร์" });
 
     // คืน reserved ตามรายการใน order
     await client.query(

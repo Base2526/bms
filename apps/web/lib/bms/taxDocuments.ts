@@ -36,6 +36,7 @@ import {
 } from "./taxDocumentNumber";
 import { isValidThaiTaxId } from "./thaiTaxId";
 import { creditNoteFigures, parseCreditReason } from "./creditNoteMath";
+import { ACTIVE_TAX_DOCUMENT_BLOCK_MESSAGE } from "./taxDocumentGuards";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -498,16 +499,35 @@ export async function issueAbbreviatedInvoiceInTx(
 // ลูกค้าขอใบเต็ม → ยกเลิกใบย่อ + ออกใบเต็มแทน
 // ---------------------------------------------------------------
 
+/**
+ * ประเภทผู้ซื้อ — เลขผู้เสียภาษีและสาขาบังคับเฉพาะผู้ซื้อที่เป็นผู้ประกอบการจด VAT
+ * (ประกาศอธิบดีฯ ภาษีมูลค่าเพิ่ม ฉบับที่ 199) บุคคลธรรมดา/ชาวต่างชาติใส่แค่ชื่อและที่อยู่ได้
+ */
+export const TAX_BUYER_KINDS = ["INDIVIDUAL", "COMPANY", "FOREIGNER"] as const;
+export type TaxBuyerKind = typeof TAX_BUYER_KINDS[number];
+
+/** สถานะบิลที่ออกใบกำกับเต็มรูปได้ — จุดความรับผิด VAT เกิดเมื่อรับชำระแล้ว */
+export const FULL_INVOICE_ORDER_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"] as const;
+
 export type FullInvoiceBuyer = {
   name: string;
-  taxId: string;
+  /** บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการ (buyerType COMPANY หรือไม่ระบุ) */
+  taxId?: string | null;
   branchCode?: string | null;
+  /** ไม่ระบุ = ผู้ประกอบการ (พฤติกรรมเดิม: ต้องมีเลขผู้เสียภาษีและสาขา) */
+  buyerType?: TaxBuyerKind | null;
   address?: string | null;
   phone?: string | null;
 };
 
 export type IssueFullResult =
-  | { status: "ISSUED"; document: TaxDocument; cancelledAbbreviated: TaxDocument | null }
+  | {
+      status: "ISSUED";
+      document: TaxDocument;
+      cancelledAbbreviated: TaxDocument | null;
+      /** ใบลดหนี้ที่ออกใหม่ให้อ้างใบเต็ม (บิลที่คืนของบางส่วนไปแล้ว) */
+      reissuedCreditNotes: TaxDocument[];
+    }
   | { status: "ALREADY_ISSUED"; document: TaxDocument }
   | { status: "NOT_VAT_REGISTERED" }
   | { status: "VAT_CATEGORY_MISSING"; skus: string[] }
@@ -525,6 +545,8 @@ export type IssueFullInvoiceArgs = {
   orderId: string;
   buyer: FullInvoiceBuyer;
   issuedBy?: string | null;
+  /** ขอบเขตสาขาของผู้ออก — null = ทุกสาขา (เส้นทางภายใน) */
+  allowedLocationIds?: string[] | null;
 };
 
 export async function issueFullTaxInvoice(args: IssueFullInvoiceArgs): Promise<IssueFullResult> {
@@ -544,12 +566,21 @@ export async function issueFullTaxInvoice(args: IssueFullInvoiceArgs): Promise<I
 export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFullInvoiceArgs): Promise<IssueFullResult> {
   const { tenantId, orderId, buyer } = args;
   if (!buyer?.name?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุชื่อผู้ซื้อ" };
-  if (!buyer?.taxId?.trim()) return { status: "BUYER_INCOMPLETE", reason: "ต้องระบุเลขประจำตัวผู้เสียภาษี" };
-  if (!isValidThaiTaxId(buyer.taxId.trim())) {
+  const buyerType = buyer.buyerType ?? null;
+  if (buyerType !== null && !(TAX_BUYER_KINDS as readonly string[]).includes(buyerType)) {
+    return { status: "BUYER_INCOMPLETE", reason: "ประเภทผู้ซื้อไม่ถูกต้อง" };
+  }
+  const businessBuyer = buyerType === null || buyerType === "COMPANY";
+  const buyerTaxId = buyer.taxId?.trim() || null;
+  if (businessBuyer && !buyerTaxId) {
+    return { status: "BUYER_INCOMPLETE", reason: "ผู้ซื้อที่เป็นนิติบุคคลหรือผู้ประกอบการจด VAT ต้องระบุเลขประจำตัวผู้เสียภาษี" };
+  }
+  if (buyerTaxId && !isValidThaiTaxId(buyerTaxId)) {
     return { status: "BUYER_INCOMPLETE", reason: "เลขประจำตัวผู้เสียภาษีผู้ซื้อต้องมี 13 หลักและ checksum ถูกต้อง" };
   }
-  const buyerBranchCode = buyer.branchCode?.trim() || "00000";
-  if (!/^\d{5}$/.test(buyerBranchCode)) {
+  // สาขาเป็นของผู้ประกอบการเท่านั้น — บุคคลธรรมดาไม่มี "สำนักงานใหญ่"
+  const buyerBranchCode = businessBuyer ? buyer.branchCode?.trim() || "00000" : null;
+  if (buyerBranchCode !== null && !/^\d{5}$/.test(buyerBranchCode)) {
     return { status: "BUYER_INCOMPLETE", reason: "รหัสสาขาผู้ซื้อต้องมี 5 หลัก (สำนักงานใหญ่ใช้ 00000)" };
   }
   if (!buyer.address?.trim()) {
@@ -568,25 +599,38 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
     if (!ord.rowCount) {
       return { status: "ORDER_NOT_FOUND" };
     }
-    if (ord.rows[0].status !== "COMPLETED" || ord.rows[0].voided_at != null) {
+    // ผู้ออกที่ถูกจำกัดสาขาต้องไม่เห็นว่าบิลของสาขาอื่นมีอยู่ — ตอบเหมือนไม่พบ
+    if (args.allowedLocationIds && !args.allowedLocationIds.includes(ord.rows[0].location_id)) {
+      return { status: "ORDER_NOT_FOUND" };
+    }
+    if (ord.rows[0].voided_at != null) {
+      return { status: "ORDER_NOT_INVOICEABLE", reason: "บิลถูก void แล้ว จึงออกใบกำกับภาษีเต็มรูปไม่ได้" };
+    }
+    if (!(FULL_INVOICE_ORDER_STATUSES as readonly string[]).includes(ord.rows[0].status)) {
       return {
         status: "ORDER_NOT_INVOICEABLE",
-        reason: ord.rows[0].voided_at != null
-          ? "บิลถูก void แล้ว จึงออกใบกำกับภาษีเต็มรูปไม่ได้"
-          : `บิลสถานะ ${ord.rows[0].status} ยังไม่ใช่การขายที่เสร็จสมบูรณ์`,
+        reason: `บิลสถานะ ${ord.rows[0].status} ออกใบกำกับภาษีเต็มรูปไม่ได้ (ต้องรับชำระแล้ว และยังไม่ถูกยกเลิกหรือคืนทั้งบิล)`,
       };
     }
-    // A partially returned sale needs credit-note accounting first. Rebuilding a
-    // full invoice from the original basket would overstate the remaining sale.
-    const returned = await client.query(
-      `SELECT 1 FROM bms_pos_returns
-        WHERE tenant_id = $1 AND order_id = $2 AND is_void = FALSE LIMIT 1`,
+    // คืนของบางส่วนแล้วยังออกใบเต็มได้: ใบเต็มเป็นยอดขายเดิม และใบลดหนี้ที่ออกไปแล้ว
+    // ถูกออกใหม่ให้อ้างใบเต็มข้างล่าง · แต่การคืนที่ไม่มีใบลดหนี้เลยทำให้ใบเต็มสูงกว่า
+    // ยอดขายจริงโดยไม่มีเอกสารลดยอด จึงต้องให้คนจัดการก่อน
+    const unbackedReturn = await client.query(
+      `SELECT 1 FROM bms_pos_returns r
+        WHERE r.tenant_id = $1 AND r.order_id = $2 AND r.is_void = FALSE AND r.refund_amount > 0
+          AND NOT EXISTS (
+            SELECT 1 FROM bms_tax_documents cn
+             WHERE cn.tenant_id = r.tenant_id AND cn.order_id = r.order_id
+               AND cn.doc_type = 'CREDIT_NOTE' AND cn.cancelled_at IS NULL
+               AND cn.credit_reason LIKE '%[' || r.id::text || ']%'
+          )
+        LIMIT 1`,
       [tenantId, orderId]
     );
-    if (returned.rowCount) {
+    if (unbackedReturn.rowCount) {
       return {
         status: "ORDER_NOT_INVOICEABLE",
-        reason: "บิลนี้มีการคืนสินค้าบางส่วนแล้ว กรุณาใช้เอกสารเดิมและใบลดหนี้",
+        reason: "บิลนี้มีการคืนสินค้าที่ยังไม่มีใบลดหนี้ กรุณาตรวจรายการในส่วน \"ต้องตรวจสอบ\" ก่อนออกใบเต็ม",
       };
     }
     const locationId = ord.rows[0].location_id;
@@ -659,7 +703,7 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [tenantId, locationId, orderId, docNo, cancelled?.id ?? null,
-        buyer.name.trim(), buyer.taxId.trim(), buyerBranchCode,
+        buyer.name.trim(), buyerTaxId, buyerBranchCode,
         buyer.address?.trim() || null, buyer.phone?.trim() || null,
         sellerIdentity.name, sellerIdentity.taxId, sellerIdentity.branchCode,
         sellerIdentity.address, sellerIdentity.phone,
@@ -670,6 +714,59 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
 
     const full = mapDoc(res.rows[0]);
     await enqueueTaxDocument(tenantId, full.id, client);
+
+    // ใบลดหนี้ที่ออกไปแล้วอ้างใบย่อที่เพิ่งถูกยกเลิก ถ้าปล่อยไว้ ผู้ซื้อถือใบเต็มยอดเต็ม
+    // ที่ไม่มีใบลดหนี้ลดยอด แล้วขอคืนภาษีซื้อเกินจริง จึงออกใบลดหนี้ใหม่อ้างใบเต็ม
+    // ยอดเท่าเดิม และยกเลิกใบเดิม — แบบเดียวกับใบเต็มที่แทนใบย่อ: รายงานภาษีขายคง
+    // ยอดของใบเดิมไว้ในงวดเดิม ใบใหม่เป็นแถวอ้างอิงยอดศูนย์ (ดู taxReports.ts)
+    const reissued: TaxDocument[] = [];
+    if (cancelled) {
+      const notes = await client.query<any>(
+        `SELECT * FROM bms_tax_documents
+          WHERE tenant_id = $1 AND order_id = $2 AND doc_type = 'CREDIT_NOTE'
+            AND cancelled_at IS NULL AND references_document_id = $3
+          ORDER BY issued_at, id
+          FOR UPDATE`,
+        [tenantId, orderId, cancelled.id]
+      );
+      for (const row of notes.rows) {
+        await client.query(
+          `UPDATE bms_tax_documents SET cancelled_at = now(), cancelled_reason = $3
+            WHERE tenant_id = $1 AND id = $2`,
+          [tenantId, row.id, `ออกใบลดหนี้ใหม่อ้างอิงใบกำกับภาษีเต็มรูปเลขที่ ${full.docNo}`]
+        );
+        await cancelQueuedTaxDocumentInTx(
+          client, tenantId, row.id, "ยกเลิกก่อนนำส่ง: ออกใบลดหนี้ใหม่อ้างอิงใบกำกับภาษีเต็มรูป"
+        );
+        const cnSeq = await nextSequenceInTx(client, {
+          tenantId, locationId, deviceId: null, docType: "CREDIT_NOTE",
+          periodKey: String(clock.year),
+        });
+        const cnNo = buildTaxDocNo(creditNotePrefix(location), clock, cnSeq, settings.calendarEra);
+        const inserted = await client.query(
+          `INSERT INTO bms_tax_documents
+             (tenant_id, location_id, order_id, doc_type, doc_no, issue_date,
+              references_document_id, replaces_document_id, credit_reason, original_total,
+              buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+              seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
+              taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
+           VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $5::date, $6, $7, $8, $9,
+                   $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                   $20, $21, $22, $23, $24, $25, $26)
+           RETURNING *`,
+          [tenantId, locationId, orderId, cnNo, clock.isoDate,
+            full.id, row.id, row.credit_reason, full.grandTotal,
+            full.buyerName, full.buyerTaxId, full.buyerBranchCode, full.buyerAddress, full.buyerPhone,
+            full.sellerName, full.sellerTaxId, full.sellerBranchCode, full.sellerAddress, full.sellerPhone,
+            row.taxable_amount, row.exempt_amount, row.vat_amount, row.rounding_amount, row.grand_total,
+            row.vat_rate, args.issuedBy ?? null]
+        );
+        const note = mapDoc(inserted.rows[0]);
+        await enqueueTaxDocument(tenantId, note.id, client);
+        reissued.push(note);
+      }
+    }
+
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'tax.document.issue_full',$3,$4::jsonb)`,
@@ -677,9 +774,113 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
         orderId,
         docNo: full.docNo,
         replaces: cancelled?.docNo ?? null,
+        reissuedCreditNotes: reissued.map((note) => note.docNo),
       })]
     );
-    return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled };
+    return { status: "ISSUED", document: full, cancelledAbbreviated: cancelled, reissuedCreditNotes: reissued };
+}
+
+// ---------------------------------------------------------------
+// ยกเลิก/คืนทั้งบิลจากหลังบ้าน หลังออกใบกำกับเต็มรูปไปแล้ว
+// ---------------------------------------------------------------
+
+/**
+ * เรียกในทรานแซกชันเดียวกับการยกเลิก/คืนทั้งบิล หลังเปลี่ยนสถานะสำเร็จแล้ว
+ *
+ * - ใบย่อที่ยังมียอดคงเหลือ → ปฏิเสธ: บิลหน้าร้านต้องคืนผ่าน POS ซึ่งออกใบลดหนี้ตามรายการจริง
+ * - ใบเต็มที่ยังมียอดคงเหลือ → ออกใบลดหนี้ยอดที่เหลือทั้งหมดอ้างใบเต็ม
+ *   (ออร์เดอร์ออนไลน์ที่ออกใบเต็มตั้งแต่ชำระเงินแล้วยกเลิกได้ ไม่ใช่ทางตัน)
+ *
+ * ยอดคงเหลือคิดแยกทีละช่องจากใบลดหนี้ที่มีผลอยู่ — ไม่เฉลี่ยตามสัดส่วนใหม่
+ * ไม่งั้นการปัดเศษสะสมทำให้ VAT ที่ลดรวมกันไม่เท่า VAT ของใบเต็ม
+ */
+export async function creditOutstandingSalesDocumentInTx(
+  client: PoolClient,
+  tenantId: string,
+  orderId: string,
+  opts: { reason: string; issuedBy?: string | null }
+): Promise<TaxDocument | null> {
+  // ล็อกเอกสารก่อน แล้วค่อยรวมยอดใบลดหนี้ — FOR UPDATE ใช้คู่กับ aggregate ในคำสั่งเดียวไม่ได้
+  await client.query(
+    `SELECT id FROM bms_tax_documents
+      WHERE tenant_id = $1 AND order_id = $2
+        AND doc_type IN ('ABBREVIATED', 'FULL') AND cancelled_at IS NULL
+      ORDER BY id
+      FOR UPDATE`,
+    [tenantId, orderId]
+  );
+  const docs = await client.query<any>(
+    `SELECT d.*,
+            COALESCE(cn.taxable, 0) AS credited_taxable,
+            COALESCE(cn.exempt, 0)  AS credited_exempt,
+            COALESCE(cn.vat, 0)     AS credited_vat,
+            COALESCE(cn.rounding, 0) AS credited_rounding,
+            COALESCE(cn.total, 0)   AS credited_total
+       FROM bms_tax_documents d
+       LEFT JOIN LATERAL (
+         SELECT SUM(c.taxable_amount) AS taxable, SUM(c.exempt_amount) AS exempt,
+                SUM(c.vat_amount) AS vat, SUM(c.rounding_amount) AS rounding,
+                SUM(c.grand_total) AS total
+           FROM bms_tax_documents c
+          WHERE c.tenant_id = d.tenant_id AND c.references_document_id = d.id
+            AND c.doc_type = 'CREDIT_NOTE' AND c.cancelled_at IS NULL
+       ) cn ON TRUE
+      WHERE d.tenant_id = $1 AND d.order_id = $2
+        AND d.doc_type IN ('ABBREVIATED', 'FULL') AND d.cancelled_at IS NULL
+      ORDER BY (d.doc_type = 'FULL') DESC`,
+    [tenantId, orderId]
+  );
+  let issued: TaxDocument | null = null;
+  for (const row of docs.rows) {
+    const remaining = Math.round((Number(row.grand_total) - Number(row.credited_total)) * 100) / 100;
+    if (remaining <= 0) continue;
+    if (row.doc_type !== "FULL") throw new Error(ACTIVE_TAX_DOCUMENT_BLOCK_MESSAGE);
+
+    const original = mapDoc(row);
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    const taxable = r2(Number(row.taxable_amount) - Number(row.credited_taxable));
+    const exempt = r2(Number(row.exempt_amount) - Number(row.credited_exempt));
+    const vat = r2(Number(row.vat_amount) - Number(row.credited_vat));
+    const rounding = r2(remaining - taxable - exempt);
+
+    const settings = await getVatSettings(tenantId, client);
+    const clock = await taxClockInTx(client);
+    const seq = await nextSequenceInTx(client, {
+      tenantId, locationId: original.locationId, deviceId: null, docType: "CREDIT_NOTE",
+      periodKey: String(clock.year),
+    });
+    const location = await taxDocLocationInTx(client, tenantId, original.locationId);
+    const docNo = buildTaxDocNo(creditNotePrefix(location), clock, seq, settings.calendarEra);
+    const res = await client.query(
+      `INSERT INTO bms_tax_documents
+         (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, references_document_id,
+          credit_reason, original_total,
+          buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+          seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
+          taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
+       VALUES ($1, $2, $3, 'CREDIT_NOTE', $4, $5::date, $6, $7, $8,
+               $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+               $19, $20, $21, $22, $23, $24, $25)
+       RETURNING *`,
+      [tenantId, original.locationId, orderId, docNo, clock.isoDate, original.id,
+        opts.reason, original.grandTotal,
+        original.buyerName, original.buyerTaxId, original.buyerBranchCode,
+        original.buyerAddress, original.buyerPhone,
+        original.sellerName, original.sellerTaxId, original.sellerBranchCode,
+        original.sellerAddress, original.sellerPhone,
+        taxable, exempt, vat, rounding, remaining, original.vatRate, opts.issuedBy ?? null]
+    );
+    issued = mapDoc(res.rows[0]);
+    await enqueueTaxDocument(tenantId, issued.id, client);
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'tax.document.credit_note_on_cancel',$3,$4::jsonb)`,
+      [tenantId, opts.issuedBy ?? "system", issued.id, JSON.stringify({
+        orderId, docNo: issued.docNo, references: original.docNo, amount: remaining,
+      })]
+    );
+  }
+  return issued;
 }
 
 // ---------------------------------------------------------------
@@ -869,8 +1070,11 @@ export type FullTaxInvoiceView = {
   docNo: string;
   issueDate: string;
   seller: { name: string; taxId: string; branchCode: string; address: string; phone: string | null; locationName: string };
-  buyer: { name: string; taxId: string; branchCode: string; address: string; phone: string | null };
+  /** taxId/branchCode เป็น null ได้เมื่อผู้ซื้อไม่ได้เป็นผู้ประกอบการจด VAT */
+  buyer: { name: string; taxId: string | null; branchCode: string | null; address: string; phone: string | null };
   replacesDocNo: string | null;
+  /** ปีบนเอกสารต้องตามที่ร้านตั้ง (พ.ศ./ค.ศ.) เหมือนเลขเอกสาร */
+  calendarEra: "BE" | "CE";
   lines: Array<{ sku: string; name: string; size: string; qty: number; unit: string; unitPrice: number; amount: number }>;
   subtotal: number;
   discount: number;
@@ -897,7 +1101,7 @@ export async function getFullTaxInvoiceView(
             COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
             COALESCE(d.seller_address, NULLIF(btrim(l.address), ''), NULLIF(btrim(s.address), '')) AS seller_address,
             COALESCE(d.seller_phone, NULLIF(btrim(l.phone), ''), NULLIF(btrim(s.phone), '')) AS seller_phone,
-            l.name AS location_name, l.branch_code,
+            l.name AS location_name, l.branch_code, s.calendar_era,
             o.discount_amount, o.shipping_fee
        FROM bms_tax_documents d
        JOIN bms_tenants t ON t.id = d.tenant_id
@@ -961,12 +1165,13 @@ export async function getFullTaxInvoiceView(
     },
     buyer: {
       name: d.buyer_name ?? "",
-      taxId: d.buyer_tax_id ?? "",
-      branchCode: d.buyer_branch_code ?? "00000",
+      taxId: d.buyer_tax_id || null,
+      branchCode: d.buyer_branch_code || null,
       address: d.buyer_address ?? "",
       phone: d.buyer_phone ?? null,
     },
     replacesDocNo: d.replaces_doc_no ?? null,
+    calendarEra: d.calendar_era === "CE" ? "CE" : "BE",
     lines,
     subtotal,
     discount: Number(d.discount_amount ?? 0),
@@ -996,9 +1201,17 @@ export type CreditNoteView = {
   /** null = ใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ */
   buyer: { name: string; taxId: string | null; branchCode: string | null; address: string | null; phone: string | null } | null;
   original: { docNo: string; docType: TaxDocType; issueDate: string };
+  /** ใบลดหนี้ที่ออกใหม่แทนใบเดิม (ตอนออกใบเต็มแทนใบย่อ) */
+  replacesDocNo: string | null;
+  calendarEra: "BE" | "CE";
   reason: string;
   /** รายการที่คืนจริง — ว่างได้เมื่อหาการคืนต้นทางไม่เจอ (เอกสารยุคก่อน/ลดหนี้ด้วยวิธีอื่น) */
   lines: Array<{ name: string; size: string; qty: number; unit: string; amount: number }>;
+  /**
+   * ผลต่างจากผลรวมรายการ — ยอดคืนอาจไม่เท่าราคารายการที่คืน เมื่อของที่เหลือเสียสิทธิ์
+   * ราคาส่ง/โปรโมชัน (9.23) · แสดงเป็นบรรทัดแยกให้เอกสารบวกลงตัว ไม่ซ่อนส่วนต่าง
+   */
+  lineAdjustment: number;
   originalValue: number;
   previouslyCredited: number;
   correctValue: number;
@@ -1025,17 +1238,24 @@ export async function getCreditNoteView(
             COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
             COALESCE(d.seller_address, NULLIF(btrim(l.address), ''), NULLIF(btrim(s.address), '')) AS seller_address,
             COALESCE(d.seller_phone, NULLIF(btrim(l.phone), ''), NULLIF(btrim(s.phone), '')) AS seller_phone,
-            l.name AS location_name, l.branch_code,
+            l.name AS location_name, l.branch_code, s.calendar_era,
+            dprev.doc_no AS replaces_doc_no,
+            -- ใบลดหนี้ที่ออกใหม่ทั้งชุดในทรานแซกชันเดียวมีเวลาออกเท่ากัน จึงเรียงตามเวลาของใบเดิม
             (SELECT COALESCE(SUM(p.grand_total), 0)
                FROM bms_tax_documents p
+               LEFT JOIN bms_tax_documents pprev
+                      ON pprev.tenant_id = p.tenant_id AND pprev.id = p.replaces_document_id
               WHERE p.tenant_id = d.tenant_id
                 AND p.doc_type = 'CREDIT_NOTE'
                 AND p.references_document_id = d.references_document_id
                 AND p.cancelled_at IS NULL
                 AND p.id <> d.id
-                AND (p.issued_at, p.id) < (d.issued_at, d.id)) AS previously_credited
+                AND (COALESCE(pprev.issued_at, p.issued_at), COALESCE(pprev.id, p.id))
+                  < (COALESCE(dprev.issued_at, d.issued_at), COALESCE(dprev.id, d.id))) AS previously_credited
        FROM bms_tax_documents d
        JOIN bms_tenants t ON t.id = d.tenant_id
+       LEFT JOIN bms_tax_documents dprev
+              ON dprev.tenant_id = d.tenant_id AND dprev.id = d.replaces_document_id
        JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
        JOIN bms_tax_documents orig
          ON orig.tenant_id = d.tenant_id AND orig.id = d.references_document_id
@@ -1107,8 +1327,13 @@ export async function getCreditNoteView(
       docType: d.original_doc_type,
       issueDate: toDate(d.original_issue_date),
     },
+    replacesDocNo: d.replaces_doc_no ?? null,
+    calendarEra: d.calendar_era === "CE" ? "CE" : "BE",
     reason,
     lines,
+    lineAdjustment: lines.length
+      ? Math.round((figures.difference - lines.reduce((sum, line) => sum + line.amount, 0)) * 100) / 100
+      : 0,
     ...figures,
     exemptAmount: Number(d.exempt_amount),
     vatAmount: figures.differenceVat,

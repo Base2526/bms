@@ -14,6 +14,7 @@ import {
   message,
 } from "antd";
 import { useI18n } from "@/lib/i18nContext";
+import { taxIdentityLine } from "@/lib/bms/taxDocumentText";
 import { TAX_BUYER_TYPES } from "@/lib/taxRequestFields";
 export default function TaxInvoiceRequestsPanel({
   canIssue,
@@ -156,8 +157,7 @@ export default function TaxInvoiceRequestsPanel({
                 render: (_: unknown, r: any) => (
                   <>
                     {r.buyer.name}
-                    <br />
-                    {r.buyer.taxId}
+                    {r.buyer.taxId && <><br />{r.buyer.taxId}</>}
                   </>
                 ),
               },
@@ -244,7 +244,7 @@ export default function TaxInvoiceRequestsPanel({
               {selected.buyer.name}
               {selected.buyer.buyerType && <> · {TAX_BUYER_TYPES.find((item) => item.value === selected.buyer.buyerType)?.label}</>}
               <br />
-              {selected.buyer.taxId} · {selected.buyer.branchCode}
+              {taxIdentityLine(selected.buyer.taxId, selected.buyer.branchCode) ?? "ไม่มีเลขประจำตัวผู้เสียภาษี (ผู้ซื้อไม่ได้จด VAT)"}
               <br />
               {selected.buyer.address}
               <br />

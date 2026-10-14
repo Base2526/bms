@@ -16,10 +16,23 @@ test("legacy requests retain exactly their original shape", () => {
 test("structured request retains contact fields and composes invoice address on the server", () => {
   const buyer = normalizeTaxRequestBuyer({ ...structured, address: "UNTRUSTED combined address", branchCode: "12345" });
   assert.equal(buyer.address, "FAKE line 1\nFAKE line 2\nกรุงเทพมหานคร\n10140");
-  assert.equal(buyer.branchCode, "00000");
+  // บุคคลธรรมดาไม่มีสาขา — ค่าที่ผู้เรียกส่งมาถูกทิ้ง ไม่พิมพ์ "สำนักงานใหญ่" ให้คนธรรมดา
+  assert.equal(buyer.branchCode, null);
   assert.equal(buyer.email, "fake@example.test");
   assert.equal(buyer.buyerType, "INDIVIDUAL");
   assert.deepEqual(normalizeTaxRequestBuyer(buyer), buyer, "tracking/correction round trip is stable");
+});
+test("a buyer who is not VAT-registered may omit the tax ID; a company may not", () => {
+  for (const buyerType of ["INDIVIDUAL", "FOREIGNER"]) {
+    const buyer = normalizeTaxRequestBuyer({ ...structured, buyerType, taxId: "" });
+    assert.equal(buyer.taxId, null, buyerType);
+    assert.equal(buyer.branchCode, null, buyerType);
+  }
+  // ใส่มาก็ต้องเป็นเลขที่ถูก checksum
+  assert.throws(() => normalizeTaxRequestBuyer({ ...structured, taxId: "1234567890123" }), /เลขผู้เสียภาษี/);
+  assert.throws(() => normalizeTaxRequestBuyer({ ...structured, buyerType: "COMPANY", taxId: "" }));
+  // คำขอรุ่นเก่าที่ไม่มีประเภทยังถือเป็นผู้ประกอบการ
+  assert.throws(() => normalizeTaxRequestBuyer({ ...legacy, taxId: "" }));
 });
 test("old company snapshots without contact fields remain readable", () => {
   const buyer = normalizeTaxRequestBuyer({ ...structured, buyerType: "COMPANY", branchCode: "00001", addressLine2: undefined, postcode: undefined, email: undefined });
