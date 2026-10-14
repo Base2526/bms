@@ -404,6 +404,13 @@ test("a partially returned bill can get a full invoice; its credit notes are re-
     tenantId, orderId, amount: 53.5, reason: "รับคืนสินค้าบางรายการ", returnRef: ret,
   });
   assert.equal(before.status, "ISSUED");
+  if (before.status !== "ISSUED") return;
+  // ร้านที่เปิด e-Tax: ใบลดหนี้เดิมที่ยังไม่ได้ส่งต้องถูกถอนออกจากคิว
+  await query(
+    `INSERT INTO bms_etax_submissions (tenant_id, document_id, status) VALUES ($1,$2,'PENDING')
+     ON CONFLICT (document_id) DO NOTHING`,
+    [tenantId, before.document.id]
+  );
   const reportBefore = await getSalesTaxReport(tenantId, period);
 
   const full = await issueFullTaxInvoice({
@@ -411,7 +418,12 @@ test("a partially returned bill can get a full invoice; its credit notes are re-
     buyer: { name: "FAKE Co., Ltd.", taxId: "0105555555554", branchCode: "00000", address: "FAKE address" },
   });
   assert.equal(full.status, "ISSUED", JSON.stringify(full));
-  if (full.status !== "ISSUED" || before.status !== "ISSUED") return;
+  if (full.status !== "ISSUED") return;
+  const queued = await query<{ status: string }>(
+    `SELECT status FROM bms_etax_submissions WHERE tenant_id = $1 AND document_id = $2`,
+    [tenantId, before.document.id]
+  );
+  assert.equal(queued.rows[0]?.status, "CANCELLED");
   assert.equal(full.document.grandTotal, 107, "the full invoice states the original sale");
   assert.equal(full.reissuedCreditNotes.length, 1);
   const note = full.reissuedCreditNotes[0];

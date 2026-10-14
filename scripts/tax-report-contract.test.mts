@@ -415,7 +415,8 @@ test("a full invoice after a partial return re-issues the credit notes against i
   assert.ok(section.length > 0);
   // ใบลดหนี้ที่อ้างใบย่อที่เพิ่งถูกยกเลิก ถูกยกเลิกแล้วออกใหม่อ้างใบเต็ม ยอด/เหตุผลเดิม
   assert.match(section, /references_document_id = \$3[\s\S]*?\[tenantId, orderId, cancelled\.id\]/);
-  assert.match(section, /cancelQueuedTaxDocumentInTx\(\s*client, tenantId, row\.id/);
+  // ต้องเป็นคำสั่งที่รันจริง ไม่ใช่ชื่อที่อยู่ในกิ่งที่ตายแล้ว
+  assert.match(section, /\r?\n\s*await cancelQueuedTaxDocumentInTx\(\s*client, tenantId, row\.id/);
   assert.match(section, /full\.id, row\.id, row\.credit_reason, full\.grandTotal/);
   assert.match(section, /row\.taxable_amount, row\.exempt_amount, row\.vat_amount, row\.rounding_amount, row\.grand_total/);
   // รายงาน: ใบเดิมคงยอดในงวดเดิม ใบใหม่เป็นแถวอ้างอิงยอดศูนย์
