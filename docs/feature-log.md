@@ -10,6 +10,140 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
 
 ---
 
+## Reviewed customer merges and signed web-chat sessions (no migration, 2026-10-13)
+
+- Customers, the assistant page and the global Drawer share one review dialog.
+  `bmsMergeCustomers` now requires a ten-minute signed preview bound to tenant, actor, direction and
+  snapshot, a reason, a verification method, a short internal evidence reference and explicit
+  confirmation. It is a staff attestation, not OTP verification. The merge re-reads the snapshot in a
+  serializable transaction and writes `customer.merge` before commit; there is no automatic unmerge.
+- The public web-chat `sessionId` is now an opaque signed bearer token (30 days, bound to the URL's
+  tenant). Unsigned legacy ids start a fresh visitor with `sessionReset: true`; history is retained
+  but cannot be claimed with an unsigned id.
+
+## SMTP relay mail provider (`10.59`, 2026-10-13)
+
+- `lib/mailer.ts` gains `MAIL_PROVIDER=smtp`, a generic SMTP relay (Resend, Amazon SES, Postmark,
+  Brevo, Mailgun) configured by `SMTP_HOST/PORT/USER/PASS` and `MAIL_FROM`. Ports 465/2465 use SSL;
+  every other port requires STARTTLS. SendGrid reads `SENDGRID_API_KEY` first and falls back to the
+  old `NEXT_PUBLIC_SENDGRID_*` names, so production does not have to rename anything yet.
+- A shop reply-to address (`bms_store_profile.contact_email`) passes through `normalizeReplyTo()`
+  (one address only; an invalid value is dropped rather than failing the send) and is wired into
+  receipts and order-status mail. Tax-request and digest mail are not wired yet.
+- `10.59` widens the `bms_mail_log.provider` CHECK to accept `smtp`. Without it mail still sends but
+  `recordMailLog()` swallows the CHECK violation, so `/admin/mail-log` silently shows no SMTP mail.
+  It is deliberately absent from schema readiness because missing it does not break code paths.
+- Not yet verified: the migration has not been applied or run against any database, no real send
+  through Resend has been made, and there is no bounce/complaint webhook.
+
+## Tax invoice PDF email outbox (`10.58`, 2026-10-12 – 2026-10-13)
+
+- Cloud tax-invoice requests now require a buyer contact email. When staff issue the full invoice
+  from a request they can confirm sending a PDF copy; the invoice and the first
+  `bms_tax_request_emails` row commit in one transaction, and delivery runs after commit through the
+  existing mail provider. Issued requests also offer a reviewed resend guarded by a stable action key
+  and the latest-email id, so duplicate clicks do not enqueue another message.
+- The guarded `tax-invoice-requests/send-pending` cron recovers queued jobs; cancellation is
+  checked at enqueue, claim and again after rendering. A failed email never undoes issuance, and
+  uncertain or interrupted attempts need an explicit manual retry with a duplicate warning.
+- Follow-up fix (2026-10-13): the bundled server renderer looked for PDFKit's default Helvetica AFM
+  file, which the bundle does not contain, so every send failed as `PDF_FAILED`. The embedded Sarabun
+  font is now passed to the PDFKit constructor, and `tax-invoice-pdf-bundle-contract` bundles the
+  renderer with Next's webpack and asserts the Thai font is embedded. The admin list shows a safe,
+  localized failure reason instead of raw provider errors.
+- The PDF is a copy, not an e-Tax submission; provider acceptance is not proof of inbox delivery.
+  Verified with contracts and a mocked-API browser smoke (`tax-request-email-browser-smoke.mjs`);
+  no send through a real mail provider is recorded.
+
+## Homepage app download links (`10.57`, 2026-10-12)
+
+- A platform-owned singleton (`bms_app_download_settings`) holds Android and App Store URLs shown on
+  the public homepage. Only platform administrators edit them at `/admin/app-downloads`; the write
+  service rechecks that authority, validates both URLs before writing either (explicit `https://`, no
+  credentials/control characters/backslashes, ≤ 2,048 characters) and records an audit action.
+- An empty link keeps visitors on the homepage; the public read is rate-limited to 120/min/IP and
+  returns only the two URLs. No APK build, store publication or mobile app change is included.
+
+## Monthly AI points (`10.54`–`10.56`, 2026-10-09 – 2026-10-12)
+
+- `10.54`/`10.55` first introduced a shared monthly USD budget (lowered from $2,000 to $100 the same
+  day) with reserved-cost holds and owner limit notices. `10.56` replaced that entitlement with
+  monthly AI points: Free 100, Pro 1,000 (THB 599), Business unlimited (THB 1,990), resetting at
+  00:00 Asia/Bangkok on the first with no rollover. One logical request costs one point; retries,
+  tool rounds and provider fallback share it. Known cost is reporting only — no per-shop USD cap
+  remains — and unknown cost stays NULL.
+- Owner notices cover points at 80%, 90%, exhaustion and recovery. A recheck found that
+  `bmsChangePlan` and `bmsAdjustAiCredits` only checked an admin scope, letting shop staff grant
+  themselves points or plans; both now require database-verified platform-admin authority.
+- Retail Local is separate: a saved or environment key reports `LOCAL_OWN_KEY`, usage is metered
+  without point charges or plan notices.
+- Verified on isolated PostgreSQL (43 accounting tests, including concurrent last-point admission and
+  Bangkok-midnight rollover) and a mocked-API browser smoke. No real provider calls, subscription
+  charging or deployment; the plan catalogue does not collect THB automatically.
+
+## Central Docker scheduler (no migration, 2026-10-09)
+
+- An opt-in `scheduler` Compose service dispatches the existing authenticated cron APIs listed in
+  `apps/web/scheduler/jobs.json`. It owns timing only — no database, AI or GitHub credentials, no host
+  ports — and uses a Redis claim so replicas and restarts do not double-fire.
+- `.github/workflows/bms-cron.yml` now runs on schedule only when the repository variable
+  `BMS_CRON_RUNNER=github`; `docker` also blocks manual dispatch, and enabled jobs fail instead of
+  skipping silently when credentials are missing. Choose one runner. Verified by pure contracts and a
+  local container smoke (`scripts/testing/scheduler-smoke.mjs`); a configured schedule is not proof a
+  job ran — check `/admin/operations-schedule`.
+
+## Customer AI answer evidence (`10.53`, 2026-10-08)
+
+- `bms_ai_turn_evidence` / tool evidence link the exact customer input message and AI reply with
+  bounded, allowlisted tool-result snapshots under forced tenant RLS. It is QA provenance, separate
+  from the security audit and from human verdicts: `PARTIAL`, `FAILED` and `NOT_CAPTURED` describe
+  capture, never factual correctness.
+- A savepoint keeps the message pair when evidence persistence fails and never retries a business
+  action. Snapshots expire after 90 days, headers after 180; retention runs from the scheduler.
+  `/admin/ai-quality` shows the timeline.
+- Verified with pure contracts, a disposable minimal-schema PostgreSQL run and a mocked-API browser
+  smoke. Production-like full-schema and live-model sandbox verification are still open rollout gates.
+
+## Branch parking and customer-safe table details (`10.50`–`10.52`, 2026-10-08)
+
+- `10.52` adds `bms_locations.parking_info`, shared by every shop type: provided / none / not
+  specified, optional capacity, entrance, fees, hours, alternatives and an HTTPS map link. Only an
+  explicitly published entry reaches `get_store_info`; unknown is never "no parking" and capacity is
+  never current vacancy. Reply guards use the latest store read, not stale prefetched parking.
+- `10.50` (board-game) and `10.51` (restaurant) let a branch opt in to publishing area/floor labels
+  and capacity-grouped table counts to customer chat. Both default off and never expose table
+  numbers, ids, open checks, sessions or occupants; a live free count is not a hold.
+
+## Board-game chat bookings (`10.48`–`10.49`, 2026-10-07 – 2026-10-08)
+
+- `10.48` lets customer chat submit a booking into the existing `bms_board_game_waitlist` as
+  `REQUESTED` with no table, only for active, booking-enabled, no-deposit branches. The server
+  previews the details, and only a short affirmative to that exact latest summary (15-minute consent,
+  consumed by any intervening message) writes the request. A CRM row lock caps three pending
+  requests per customer; staff still confirm at POS with their PIN and no decision message is sent.
+- `10.49` adds opt-in `chat_auto_confirm` (default off): with it, the server allocates a compatible
+  table under the reservation locks and commits `CONFIRMED`, or creates nothing. Customers can cancel
+  or reschedule their own no-deposit chat booking through a fresh server summary and consent.
+  Refund/discount/extra-time requests become Inbox notes mentioning staff — no automatic money or
+  time change.
+- `10.49` was verified on a schema-only isolated database (chat-action 7/7, waitlist 10/10, migration
+  applied twice). Live channel/model and authenticated browser verification have not been done.
+
+## Pharmacist-approved guidance and emergency directory (`10.45`–`10.47`, 2026-10-07)
+
+- `10.45`: clinical customer questions are classified deterministically into 11 types; a shop's own
+  licensed pharmacist can approve per-type, per-locale text that replaces the fixed handoff. Only
+  `APPROVED` rows reach a customer; editing approved text returns it to `DRAFT` in the service and a
+  DB trigger; reads are bounded to 500 ms and fail safe to the existing handoff byte for byte.
+  Starting drafts live in code, are never seeded, and contain no medicine names or doses.
+- `10.47` adds a narrow helper that checks the transaction tenant and locks the pharmacist's licence
+  row until approval and audit commit; no Administrator shortcut and no new user-column grants.
+- `10.46`: every shop type checks raw emergency wording before context reads. 1669 is always the
+  first line, with 1367 (poisoning), 1323 (self-harm) and 1155 (English) added by case. A shop can
+  list nearby 24-hour emergency departments (near the shop, not the customer; at most three shown).
+- The DB suites for `10.45` and `10.46` have not been run, and none of the wording has been
+  clinically reviewed. No flag, protocol or approval was enabled.
+
 ## Pharmacy customer assistance (`10.44`, 2026-10-07)
 
 - Second recheck maps all 58 customer questions to a single counted capability status in
@@ -58,6 +192,49 @@ lists, and "not yet applied" notes are snapshots — verify against the code bef
   can clear the ownership FK without violating the historical-row constraint.
   Expected reservation refusals retain actionable messages through the AI tool boundary instead of
   becoming generic tool-failure incidents.
+
+## Board-game library images (`10.42`, 2026-10-06)
+
+- Board-game titles gain an optional catalogue image shared by every playable copy. Library managers
+  upload PNG/JPEG/WebP up to 5 MB; the server decodes, strips metadata and resizes to at most 1200 px.
+  Ownership comes from the authenticated tenant and no client file id is accepted. Older databases
+  still list titles without images; image writes require the migration.
+
+## Cross-SKU gift promotions (`10.41`, 2026-10-05)
+
+- `BUY_A_GET_B` gives a different SKU/variant per qualifying set. The gift must be a real basket line
+  (the counter offers an explicit add-gift action), excess gifts are charged at shelf price, and gift
+  stock moves through the normal sale/FEFO/tax transaction. Scope is `RETAIL_POS` direct-stock goods;
+  pharmacy-policy, bundle, recipe, serial and weighted products are excluded.
+- Both variants freeze the rule and awarded quantity in `pricing_snapshot.crossSkuGifts`, so returns
+  use sale-time evidence: returning the purchase requires returning a gift that loses eligibility
+  (`GIFT_RETURN_REQUIRED`). Overlapping promotions involving either SKU are rejected.
+
+## Board-game buy/get time offers (`10.40`, 2026-10-04)
+
+- `TIME_BUY_GET` runs each player's already-rounded billable minutes through repeating paid/free
+  cycles (default 120 paid + 60 free). It is compared with other eligible offers and passes, and the
+  winner is frozen without stacking. It discounts billable minutes at close; it does not extend the
+  timer, and closed bills are never repriced.
+
+## Cloud receipt-QR tax invoice requests (`10.38`–`10.39`, 2026-10-04)
+
+- Cloud-only and opt-in through server environment variables (`BMS_TAX_REQUESTS_ENABLED`, a public
+  HTTPS origin and a signing secret); Retail Local always disables it. Eligible completed POS sales
+  with an abbreviated invoice carry a signed QR/link; the customer submits buyer details without
+  signing in and staff with `tax.document.issue` review and issue the full invoice in the same
+  transaction that completes the request.
+- `10.39` freezes a 168-hour submission deadline from the abbreviated receipt's issue and allows three
+  successful submissions (initial + two corrections); accepted buyer snapshots are append-only. The
+  private tracking link has its own 180-day expiry. These are technical access windows, not legal
+  limits, and the feature is not an e-Tax delivery.
+
+## Supplier credit and debit notes (`10.37`, 2026-10-03)
+
+- `/admin/expenses` records received supplier credit/debit notes as positive difference amounts with
+  the original invoice reference, reason and received date. Credit notes subtract base/VAT and debit
+  notes add them, in the month received. They are evidence only: no stock, cash, payment or WHT
+  change. Active note identity is unique per supplier tax id/branch, kind and normalized number.
 
 ---
 

@@ -9,18 +9,33 @@
 | `check-*.mts`, `rotate-*.mts` | เครื่องมือตรวจ/ซ่อมของจริง (อ่านอย่างเดียว ยกเว้น rotate) | แล้วแต่ตัว |
 | `preflight-deploy.mts`, `export-graphql-schema.mts` | เครื่องมือก่อน deploy · เรนเดอร์ SDL artifact | preflight ต้องมี · export ไม่ต้อง |
 | `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — **ตัวรันกลางไม่หยิบ** (หยิบเฉพาะ `*.test.mts`) ดู § 9 | ไม่ต้อง |
+| `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs`, `infra/*.test.mts` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — **ตัวรันกลางไม่หยิบ** ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
 
-ตอนนี้: **214 ไฟล์เทส** = pure 158 ไฟล์ (141 ใน `scripts/` + 17 ใน `scripts/ai-eval/` ·
-**1,613 เทส — รันบน `develop` 2026-10-02 ได้ 1,612 ผ่าน / 1 แดง**: `realtime-domain-coverage-contract`
-เจอ `DELETE FROM bms_restaurant_checks` ใน `lib/bms/platform.ts` (การลบร้าน) ที่ยังไม่มี trigger
-หรือเหตุผลประกาศไว้ — เป็นของโค้ด ไม่ใช่ของเทส) + DB 56 ไฟล์ (จำนวนเทสยังไม่ได้นับใหม่ —
-เครื่องที่นับไม่มี Postgres ให้รัน) — นับไฟล์ใหม่ 2026-10-02
-ด้วยตัวรันเอง (`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง)
-`scripts/run-contract-tests.mjs` เดินหาไฟล์เอง ไม่ต้องต่อชื่อไฟล์ด้วยมือ
+ตอนนี้ (นับ 2026-10-13 ที่ `676a38a7`): **287 ไฟล์เทส** = pure **220 ไฟล์** (194 ใน `scripts/` +
+26 ใน `scripts/ai-eval/`) + DB **67 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
-> **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้างด้วย `ls scripts/*.test.mts | wc -l`,
-> `ls scripts/*-db-contract.test.mts | wc -l`, `ls scripts/ai-eval/*.test.mts | wc -l`
-> และอ่านจำนวนเทสจากบรรทัด `# tests` ท้าย `.test-output/pure.tap`
+ผลรัน `npm run test:pure` วันเดียวกัน: **2,609 เทส — 2,602 ผ่าน · 1 แดง · 6 ข้าม (skip)** ใช้เวลา ~51 วินาที
+· ตัวที่แดงคือ `ai-eval/restaurant-customer-assistance-contract` → *restaurant availability exposes only
+opt-in capacity groups, never table or guest identities* (บรรทัด 79): regex
+`/tableCode|tableName|checkId|occupant/` ไปเจอคำว่า `occupant` ใน **ข้อความ note ที่บอกโมเดลว่า "never
+identify a table or occupant"** ของ `return {...}` ใน service — ยังไม่ได้ตัดสินว่าแก้ที่เทสหรือที่ข้อความ
+**ห้ามอ่านว่าชุด pure เขียว** · จำนวนเทสของชุด DB ยังไม่ได้นับใหม่ (เครื่องที่นับไม่มี Postgres ให้รัน)
+
+ตัวรัน `scripts/run-contract-tests.mjs` เดินหาไฟล์เอง: ชั้นบนสุดของ `scripts/` + โฟลเดอร์ย่อย `ai-eval/`
+**โฟลเดอร์เดียว** (`scripts/infra/`, `scripts/testing/` ไม่ถูกเดิน) · ชื่อมี `-db-contract` = โหมด db
+ที่เหลือ = โหมด pure · ตัวรันพิมพ์จำนวนไฟล์ของโหมดเป็นบรรทัดแรก (`[gate] โหมด pure — 220 ไฟล์`) และ
+`run-contract-tests.mjs <mode> zzz-nope` บอกจำนวนไฟล์ของโหมดนั้นตอนกรองไม่ตรง
+
+> **ตัวเลขนี้เก่าได้เร็ว** — นับใหม่ก่อนอ้าง (ตรงกับวิธีที่ตัวรันแยกโหมด):
+>
+> ```bash
+> ls scripts/*.test.mts | grep -vc -- -db-contract      # pure ชั้นบนสุด
+> ls scripts/ai-eval/*.test.mts | grep -vc -- -db-contract  # pure ใน ai-eval
+> ls scripts/*-db-contract.test.mts | wc -l              # db
+> ```
+>
+> แล้วอ่านจำนวนเทสจากบรรทัด `# tests` / `# pass` / `# fail` / `# skipped` ท้าย `.test-output/pure.tap`
+> (หรือบรรทัด `tests=… pass=… fail=…` ใน `.test-output/pure.failures.txt`)
 
 > ทำไมต้องมีตัวรันกลาง: ก่อนหน้านี้ชุดเทสถูกรันด้วยคำสั่งยาว ๆ ที่จดไว้ใน `CLAUDE.local.md`
 > แล้วต้องก็อปมาต่อชื่อไฟล์เอง ผลคือเทส DB หลายชุดไม่เคยถูกรันจริงในรอบที่แก้โค้ด —
@@ -50,6 +65,9 @@ cd apps/web && npm run test:pure
 
 ### ผ่าน (สิ่งที่จะได้เห็นบนจอ)
 
+ตัวอย่างนี้มาจากรอบ 2026-09-07 ตอนชุดยังมี 80 ไฟล์ — **รูปแบบยังเหมือนเดิม แต่ตัวเลขปัจจุบันดูหัวไฟล์นี้**
+(รอบปัจจุบันใช้ราว 50 วินาที):
+
 ```
 [gate] โหมด pure — 80 ไฟล์
 ...
@@ -63,7 +81,8 @@ cd apps/web && npm run test:pure
 ```
 
 **อ่านสามบรรทัดนี้พอ**: `ℹ tests` (จำนวนที่รัน) · `ℹ pass` · `ℹ fail` — ผ่านคือ `ℹ fail 0`
-คู่กับ exit code `0` · ใช้เวลาราว 30 วินาที
+คู่กับ exit code `0` · มีบรรทัด `ℹ skipped` ด้วย (6 ตัวในรอบ 2026-10-13 — เทสที่ต้องมี Windows/
+PostgreSQL/เบราว์เซอร์จริงจึงข้ามตัวเองบนเครื่องที่ไม่มี) · `tests = pass + fail + skipped`
 
 > **บรรทัดที่ดูเหมือน error ไม่ใช่ความล้มเหลว** — ชุด `ai-eval` จงใจป้อน JSON เสียให้โมเดลปลอม
 > เพื่อทดสอบเส้นทางล้มเหลว stderr ของมันจึงโผล่มาทั้งบนจอและเป็น comment ในไฟล์ TAP:
@@ -242,7 +261,7 @@ host ที่ถือว่าท้องถิ่น: `localhost` · `127.0.
 
 ```
 [gate] เทส DB จะรันกับ localhost/bms
-[gate] โหมด db — 36 ไฟล์
+[gate] โหมด db — 67 ไฟล์
 ```
 
 **อ่านบรรทัดนี้ก่อนปล่อยให้รันต่อทุกครั้ง**
@@ -260,7 +279,7 @@ not ok 1 - restaurant intake -> callback -> atomic order; original demand, retri
 **แยกให้ออก**: exit `2` = ด่านปฏิเสธ ยังไม่ได้แตะฐาน · exit `1` = รันแล้วมีอะไรแดง
 (รวมกรณีต่อฐานไม่ได้) — อย่างหลังไม่ได้แปลว่าโค้ดผิด ให้ดูว่า Postgres ขึ้นอยู่หรือยัง
 
-### `npm run test:all` = pure + db (214 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
+### `npm run test:all` = pure + db (287 ไฟล์) ใช้ด่านและ env ชุดเดียวกับ `test:db`
 
 ---
 
@@ -276,7 +295,7 @@ node scripts/run-contract-tests.mjs db   restaurant-request
 บอกด้วยว่ากรองเหลือกี่ไฟล์ จึงเห็นทันทีถ้าพิมพ์ชื่อผิดแล้วรันไม่ตรงไฟล์:
 
 ```
-[gate] โหมด pure — 1 ไฟล์ (กรองด้วย "restaurant-request" จาก 80)
+[gate] โหมด pure — 1 ไฟล์ (กรองด้วย "restaurant-request" จาก 220)
 # tests 30
 # pass 30
 # fail 0
@@ -286,13 +305,15 @@ node scripts/run-contract-tests.mjs db   restaurant-request
 `contract-runner-contract` ตรึงข้อนี้ไว้ด้วยการรันตัวรันจริง):
 
 ```
-ตัวกรอง "nope-nothing" ไม่ตรงไฟล์ไหนในโหมด pure (80 ไฟล์)
+ตัวกรอง "nope-nothing" ไม่ตรงไฟล์ไหนในโหมด pure (220 ไฟล์)
 ตัวอย่างชื่อที่มี: admin-navigation-contract, ai-eval/archetype-policy-contract, ...
 ```
 
 > **ทำไมต้องใช้ทางนี้กับชุด DB**: `npx tsx --test <ไฟล์>` ตรง ๆ **ข้ามด่านตรวจ host ทั้งหมด**
-> และ **34 จาก 36 ไฟล์ของชุด DB ไม่มีด่านของตัวเอง** (มีแค่ `restaurant-request-db-contract`
-> ที่ assert `local test DB required`) — ชุดนี้เขียนจริงลงฐาน · ผ่านตัวรันกลางแล้วได้ทั้ง
+> และตอนนับเมื่อ 2026-09-07 **34 จาก 36 ไฟล์ของชุด DB ไม่มีด่านของตัวเอง** (มีแค่
+> `restaurant-request-db-contract` ที่ assert `local test DB required`) — ตอนนี้ชุด DB มี 67 ไฟล์ และ
+> **ยังไม่ได้นับใหม่ว่าตัวไหนมีด่านของตัวเอง** (บางตัวที่เพิ่มทีหลัง เช่น `customer-answer-evidence-db-contract`
+> ต้องการ `BMS_EVIDENCE_DISPOSABLE_DB=1` + ฐานแยกของตัวเอง) — ชุดนี้เขียนจริงลงฐาน · ผ่านตัวรันกลางแล้วได้ทั้ง
 > ด่าน host และ shim ครบ:
 >
 > ```
@@ -519,6 +540,7 @@ seed permission ใหม่ครบทุกร้าน) **จงใจเป
 | `retail-local-unix-diagnostics.test.mjs` | workflow เดียวกัน (Ubuntu · macOS) |
 | `retail-local-update-transaction.test.sh` | workflow เดียวกัน (Ubuntu) |
 | `retail-local-uninstall-container.test.sh` | workflow เดียวกัน — ใน container `ubuntu:24.04` |
+| `retail-local-license-container.test.mjs` | workflow เดียวกัน (job ของ licensing) — `node --test` · **ต้องมี Docker** (probe mailbox ใน container แยก ไม่แตะ stack ของร้าน) |
 | `retail-local-setup-diagnostics.test.ps1` · `retail-local-migration-checksum.test.mjs` · `installer-reports-browser-smoke.mjs` | **รันมือเท่านั้น** — ไม่มี workflow ไหนเรียก |
 
 workflow เดียวกันรัน `go test` ของ `apps/retail-local-agent` และสร้างตัวติดตั้งแบบ unsigned เพื่อตรวจ
@@ -528,6 +550,56 @@ workflow เดียวกันรัน `go test` ของ `apps/retail-loca
 ส่วนชุด `*.test.mts` ของ Retail Local (`retail-local-contract`, `-managed-runtime-contract`,
 `-release-{download,upload}-contract`, `-license-*`, `-optional-activation`, `-activation-retry`,
 `-installation-registry`, `-request-body`, `-sample-data-*`, `installer-reports-*`) อยู่ในตัวรันกลางตามปกติ
+
+---
+
+## 10. สโมคและตัวขับ mutation ที่อยู่นอกตัวรันกลาง
+
+ไฟล์กลุ่มนี้ **ไม่อยู่ใน `npm run gate`/CI** ต้องรันมือ · ผล "ผ่าน" ของมันจึงเป็นหลักฐานเฉพาะรอบที่มีคนรัน
+และ **ไม่ใช่หลักฐานกับฐานข้อมูลจริง/ผู้ให้บริการจริง** (เกือบทุกตัว mock API)
+
+### สโมคเบราว์เซอร์ (`scripts/*-browser-smoke.mjs`)
+
+ทุกตัวใช้ Playwright (`BMS_PLAYWRIGHT_MODULE` ชี้โมดูลได้ · ค่าปริยาย `playwright`) เปิด Chrome headless
+กับ dev server ท้องถิ่น (`BMS_SMOKE_URL` · ค่าปริยายแตกต่างกันต่อไฟล์ เช่น `http://localhost:3003`)
+**ดัก `/api/*` และ `/graphql` ด้วย fixture `FAKE-*`** (เขียนอะไรลงฐานไม่ได้) แล้วเก็บภาพหน้าจอไว้ใต้
+`.test-output/<ชื่อ>/` (สองตัวของเดสก์ท็อปเก็บใต้ `apps/desktop/dist-smoke/`) · หลายตัวไล่ทั้ง th/en และ
+ความกว้าง 1440/1280 กับ 390 px
+
+| ไฟล์ | หน้าที่ตรวจ |
+| --- | --- |
+| `tax-request-email-browser-smoke.mjs` | `/admin/tax-documents` — กล่องตรวจคำขอใบกำกับ: ติ๊กส่งอีเมลเป็นค่าเริ่มต้น · ปิด notice แล้วไม่ส่ง · ออกใบกำกับ+ส่งอีเมล · เหตุผลที่ส่งไม่สำเร็จแบบปลอดภัย · ส่งซ้ำที่ต้องยืนยัน (มี `expectedEmailId` + `emailKey`) · poll จนเห็นสถานะส่งแล้วโดยไม่ต้องกดอะไร (1280/390 px) |
+| `tax-request-form-browser-smoke.mjs` | ฟอร์มขอใบกำกับฝั่งลูกค้าที่ `/tax-invoice/request` (ไม่มีคุกกี้แอดมิน) |
+| `ai-usage-browser-smoke.mjs` · `retail-local-ai-browser-smoke.mjs` | แต้ม/การใช้ AI ที่หน้าแรก `/admin/assistant` `/admin/billing` (Cloud) · หน้า `/admin/billing` ของ Retail Local — สองตัวนี้ assert ว่า host ต้องเป็น localhost |
+| `answer-evidence-browser-smoke.mjs` | ไทม์ไลน์หลักฐานคำตอบ AI ที่ `/admin/ai-quality` (`10.53`) |
+| `customer-merge-browser-smoke.mjs` | กล่องตรวจก่อนรวมลูกค้า ที่ `/admin/customers` และ `/admin/assistant` |
+| `customer-purchase-browser-smoke.mjs` · `dashboard-actions-browser-smoke.mjs` | รายละเอียดการซื้อในหน้า `/admin/customers` · ปุ่ม Action Center บนแดชบอร์ด (รวมกรณีไม่มีสิทธิ์จัดการ) |
+| `cross-sku-promotion-browser-smoke.mjs` | โปรซื้อ A แถม B ข้าม SKU (`10.41`) |
+| `board-game-library-browser-smoke.mjs` · `board-game-offer-checkout-browser-smoke.mjs` | คลังเกมที่ `/admin/board-game` · โปรค่าเวลาตอนเก็บเงิน (กรณีได้โปร/ไม่เข้าเงื่อนไข/บิลเก่า) |
+| `desktop-*-browser-smoke.mjs` (6 ไฟล์) | หน้าขายของเดสก์ท็อป: สรุปตะกร้า · ธีม · สถานะรีเฟรช · เลือกตัวเลือกจากการสแกน · สมาชิก/แต้ม · การอัปเดต — รันบนเบราว์เซอร์ของเครื่องที่ทดสอบ ไม่ใช่แอป Electron จริง (`desktop-checkout-summary` เขียนไว้ตรง ๆ ว่าเป็นการจำลอง renderer/IPC **ไม่ใช่การรับรองบน OS จริง**) |
+| `installer-reports-browser-smoke.mjs` | ดู § 9 — ใช้กับ dev server แยกของ installer reports เท่านั้น |
+
+### อื่น ๆ
+
+- **`tax-invoice-pdf-smoke.mts`** — เรียก `renderTaxInvoicePdf()` ด้วยใบกำกับ `FAKE` 60 บรรทัดข้อความไทย
+  แล้ว assert ว่าได้ **4 หน้า** (ไม่มีหน้าเปล่าที่มีแต่ท้ายกระดาษ) และเขียน
+  `.test-output/tax-invoice-pdf/sample.pdf` ไว้ให้เปิดดูด้วยตา · ไม่ต้องมีฐาน
+  · ส่วน **`tax-invoice-pdf-bundle-contract.test.mts`** อยู่ในชุด pure ตามปกติ: transpile ตัว renderer
+  แล้ว bundle ด้วย webpack ของ Next จริง จากนั้น render PDF และ assert ว่าฟอนต์ไทยถูกฝัง (`/FontFile2`)
+  — มีไว้กันกรณีที่โค้ดรันได้ตอน dev แต่ bundle ฝั่ง server ไปหาไฟล์ AFM ของ Helvetica ที่ไม่มี (`PDF_FAILED`)
+- **`testing/scheduler-smoke.mjs`** — สโมคคอนเทนเนอร์ของ central scheduler: ต้อง
+  `docker build --target scheduler -t bms-scheduler:review -f apps/web/Dockerfile .` ก่อน แล้วรันจากราก repo ·
+  สร้าง network/fake Web/Redis ทิ้งเองทั้งหมด ไม่ใช้ env ของ deployment · รายละเอียดที่
+  [docs/architecture/scheduler.md](../docs/architecture/scheduler.md) § Verification ·
+  ส่วน `central-scheduler-contract` และ `scheduler-diagnostics-contract` อยู่ในชุด pure
+- **`testing/*-mutations.mjs`** (`board-game-chat-booking` · `board-game-chat-readers` · `board-game-guards` ·
+  `emergency-facilities` · `pharmacy-guards` · `pharmacy-guidance`) — ตัวขับ mutation test แบบกลไก: แก้ซอร์ส
+  ชั่วคราวแล้วดูว่าเทสที่ควรแดงแดงจริง จากนั้นคืนไบต์เดิม · **รันหลัง gate หยุดแล้วเท่านั้น** · บางตัวบังคับ
+  ให้ส่ง SHA ของ backup stash ที่มีงานปัจจุบันครบเป็นอาร์กิวเมนต์ บางตัวปฏิเสธไฟล์เป้าหมายที่ยังไม่ commit ·
+  ห้ามใช้ `git checkout`/`reset` คืนไฟล์ (อ่านหัวไฟล์ก่อนรันทุกครั้ง)
+- **`infra/multi-instance-contract.test.mts`** — ชื่อเป็น `.test.mts` แต่อยู่ใน `scripts/infra/` ซึ่งตัวรันกลาง
+  **ไม่เดิน** จึงไม่อยู่ในชุด pure · ต้องมี Redis + MinIO จริง ดู
+  [docs/architecture/multi-instance-readiness.md](../docs/architecture/multi-instance-readiness.md)
 
 ## ตารางสรุป exit code
 

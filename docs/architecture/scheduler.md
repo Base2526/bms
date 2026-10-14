@@ -1,6 +1,6 @@
 # Central Docker scheduler
 
-The opt-in `scheduler` Compose service runs the 17 existing authenticated BMS cron APIs.
+The opt-in `scheduler` Compose service runs the 18 existing authenticated BMS cron APIs.
 It owns timing and dispatch only: all SQL, tenant selection, permissions, business rules,
 idempotency and `recordJobRun()` remain in the Web services. It receives no database,
 AI-provider or GitHub credentials and has no host ports or Docker socket.
@@ -46,12 +46,12 @@ name/path/group parity with the existing GitHub workflow.
 
 | Group | UTC schedule | Bangkok time | Jobs |
 | --- | --- | --- | --- |
-| frequent | Every 15 minutes | Every 15 minutes | 12 existing order, follow-up, shipping, menu, delivery and board-game jobs |
+| frequent | Every 15 minutes | Every 15 minutes | 13 existing order, follow-up, shipping, menu, delivery, board-game and tax-request email jobs |
 | daily | 20:00 | 03:00 next day | Loyalty maintenance, channel health, AI health, report digest, answer-evidence retention |
 
 Polling is every 10 seconds with at most three concurrent requests. Startup/recovery catches up
 only the latest quarter-hour and daily period, including the previous UTC day's daily slot before
-20:00. It never replays a historical backlog. A first deployment can therefore run all 17 jobs
+20:00. It never replays a historical backlog. A first deployment can therefore run all 18 jobs
 soon after startup rather than waiting for the next daily boundary.
 
 Before any POST, one Redis Lua command claims both the job's UTC slot and an in-flight lease.
@@ -90,7 +90,7 @@ even with HTTP 200. The final `warnings` count distinguishes this from a clean r
 success and container health do not assert that every domain item/provider succeeded.
 
 Every dispatch has a `runId`, and every page a separate `requestId`. Web accepts only valid UUIDs
-on the 17 registered cron paths for correlation. These headers grant no authority; the existing
+on the 18 registered cron paths for correlation. These headers grant no authority; the existing
 cron-secret guard still decides whether the handler may execute. AsyncLocalStorage isolates
 simultaneous requests. When `recordJobRun()` inserts history, Web returns `x-bms-job-run-id`;
 on a recognized error it also returns a safe machine code such as SQLSTATE `42703`.

@@ -25,6 +25,28 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Mail log provider (`7.40`, `10.59`)
+
+`bms_mail_log` (`7.40`) is the platform mail log written best-effort by `sendEmail()` in
+`lib/mailer.ts`; `tenant_id` is nullable (`ON DELETE SET NULL`) and `bms_app` holds only
+SELECT/INSERT. Reads go through the platform-admin-only `bmsMailLog*` resolvers. `10.59` widens the
+single-column `provider` CHECK from `('sendgrid','gmail')` to add `'smtp'` for `MAIL_PROVIDER=smtp`
+(generic SMTP relay). It finds the old CHECK by shape (single column `provider`, definition
+mentioning `sendgrid`) rather than by a generated name. Without it, SMTP mail still sends but the
+log INSERT violates the CHECK and is swallowed, so `/admin/mail-log` shows none of it — apply
+before setting `MAIL_PROVIDER=smtp`. Rollback is only possible while no `provider='smtp'` row
+exists. Not in schema readiness because a missing row does not break a code path.
+
+### Homepage app download settings (`10.57`)
+
+`bms_app_download_settings` is a platform-global singleton (`singleton BOOLEAN PRIMARY KEY` with
+`CHECK (singleton = TRUE)`), not tenant-owned and without RLS. `android_url`/`ios_url` default to
+`''` (an empty value keeps the homepage badge inert) and are each capped at 2,048 characters;
+`updated_by` references `users(id)` `ON DELETE SET NULL`. The migration inserts the one row with
+`ON CONFLICT DO NOTHING`, revokes PUBLIC and grants `bms_app` SELECT/INSERT/UPDATE. Writes require a
+platform administrator (route + service), and URL validation (HTTPS only, no credentials) lives in
+the service, not the database — see [../business/app-downloads.md](../business/app-downloads.md).
+
 ### Customer answer evidence (`10.53`)
 
 `bms_ai_turn_evidence` links a server-generated turn UUID to exact tenant/conversation/IN/OUT
@@ -57,6 +79,40 @@ and recheck the acting user's location scope; scoped staff cannot create an unas
 Customer reads expose only active tenant-owned branch names and published parking facts; before
 the migration, reads return unknown/unpublished via `to_jsonb(location)` rather than breaking chat.
 
+### Opt-in public table details (`10.50`, `10.51`)
+
+Two independent opt-in booleans, both `NOT NULL DEFAULT FALSE`, so no existing branch publishes
+anything new until a manager enables it. `10.50` adds
+`bms_board_game_public_locations.publish_table_details` (saved through the existing
+`board_game.floor.manage` discovery route); `10.51` adds
+`bms_locations.publish_restaurant_table_details` (restaurant-only, written by
+`bmsSetRestaurantCustomerTableDetails` under `restaurant.floor.manage` and branch scope). When on,
+customer reads may expose active area labels and capacity-grouped table counts only — never table
+ids, codes, sessions/checks, occupants or customer data. Both files are declared in
+`scripts/schemaReadiness.mts`.
+
+### Board-game chat reservations and actions (`10.48`, `10.49`)
+
+`10.48` lets customer chat create a reservation **request** on the existing
+`bms_board_game_waitlist` aggregate rather than a second table. It adds `customer_id`
+(composite FK `(tenant_id, customer_id)` → `bms_customers` `ON DELETE CASCADE`, because `SET NULL`
+would violate the chat shape), `chat_request_key_hash` and `chat_request_hash` (64-char hashes;
+partial unique `(tenant_id, chat_request_key_hash) WHERE source = 'CHAT'`), and a customer
+index. `source` now accepts `CHAT`; the rebuilt `kind_shape`, `public_shape` and new `chat_shape`
+CHECKs require a `CHAT` row to be a `RESERVATION` with a customer, no staff creator, no guest
+email/public token, deposit policy `NONE`/`NOT_REQUIRED`/0, and no reminder or decision
+notification. A chat request starts `REQUESTED` with no table; a staff confirmation (or, after
+`10.49`, the opted-in automatic path) is the only way to `CONFIRMED`. Rollback is allowed only when
+no `source = 'CHAT'` rows exist.
+
+`10.49` adds `bms_board_game_public_locations.chat_auto_confirm BOOLEAN NOT NULL DEFAULT FALSE`.
+The service accepts it only when booking is enabled and the deposit policy is `NONE`; when on, a
+customer-confirmed chat booking allocates a capacity-compatible table under the reservation locks
+and commits `CONFIRMED`, or creates nothing. Chat cancel/reschedule of the customer's own no-deposit
+`CHAT` booking reuse the same row and idempotency path; refund/discount/extra-time/staff-help
+requests are Inbox notes, not money or time writes. See
+[../business/board-game-cafe.md](../business/board-game-cafe.md).
+
 ### Pharmacy guidance approval (`10.45`, hardened by `10.47`)
 
 `bms_pharmacy_guidance_templates` is tenant-only (one code/locale row); built-in defaults are
@@ -79,22 +135,52 @@ No customer coordinates or store-profile columns are added. This optional table 
 absent from schema readiness: missing/slow DB reads return standard emergency copy within a 500 ms
 response budget. Migration idempotency and real RLS/CRUD remain unverified until the DB suite runs.
 
+### Board-game time buy/get offers (`10.40`)
+
+`bms_board_game_offers` gains `buy_minutes` and `free_minutes` (each 1–1440) and the kind
+`TIME_BUY_GET`. The rebuilt `value_shape` CHECK makes the three value families mutually exclusive:
+`TIME_PERCENT` needs only `percent_off`, `TIME_FIXED_PER_PERSON`/`GROUP_FIXED` need only
+`fixed_price`, and `TIME_BUY_GET` needs only the two minute columns. The minutes are per player and
+apply after normal billing-time rounding, as repeating paid/free cycles; the winning offer is
+chosen server-side at group close and frozen into the charge snapshot, so already-frozen bills are
+never repriced. Declared in schema readiness.
+
+### Supplier VAT adjustment notes (`10.37`)
+
+`bms_expense_documents` gains `received_date`, `reference_document_no` and `adjustment_reason`,
+and `document_kind` adds `SUPPLIER_CREDIT_NOTE` / `SUPPLIER_DEBIT_NOTE`. These notes may carry VAT
+(alongside `TAX_INVOICE`) and need a document number plus payee tax id. The `adjustment_shape`
+CHECK requires, for a note: a `received_date` on/after `document_date`, a 1–500 character
+reference document number, a 1–2000 character reason, a payee branch code, positive VAT, a
+`vat_claim_month` equal to the month received, and no withholding; every other kind must leave the
+three new columns NULL. A separate partial unique index normalises the note number per
+tenant/kind/payee tax id/branch for `ACTIVE` notes, leaving the existing invoice key unchanged.
+Notes are evidence only: no stock, cash or payment row moves. A credit note reduces input VAT and a
+debit note increases it (`lib/bms/expenseAdjustments.ts`).
+
 | Module | Tables | Key migration |
 | --- | --- | --- |
-| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55` |
+| Products & Inventory | `bms_products`, `bms_product_images`, `bms_inventory`, `bms_stock_movements`, `bms_product_categories`, `bms_product_bundle_items`, `bms_product_stock_policies`, `bms_product_recipes`, `bms_product_recipe_items`, `bms_product_modifiers`, `bms_product_modifier_items`, `bms_product_menu_unavailability`, `bms_order_item_stock_consumption`, `bms_inventory_wastage` (+ `bms_order_stock_lines` view) | `3.2`, `5.9`, `6.0`, `6.5`, `7.33` (AI discovery indexes), `8.8` (`9.3` repair), `9.40`–`9.41`, `9.55`, `10.43` (allergen/dietary declarations), `10.44` (`medicine_label`) |
 | Orders | `bms_orders`, `bms_order_items` | `3.3`, `3.5`, `7.21` (discount columns), `7.86` (pack snapshot), `9.21` (pack-aware line uniqueness), `9.22` (receipt price snapshot), `9.23` (pricing-rule snapshot), `9.24` (snapshot provenance), `10.13` (exact sale-line amount) |
 | Coupons | `bms_coupons`, `bms_customer_coupon_wallet` | `7.21`, `7.25` |
 | CRM | `bms_customers`, `bms_customer_identities`, `bms_customer_addresses` | `3.6` |
 | Purchase | `bms_suppliers`, `bms_supplier_products`, `bms_purchase_orders`, `bms_purchase_order_items` | `5.2`, `9.18` |
 | Payment | `bms_payments` | `5.3` |
-| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions` (+ `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns) | `7.84`–`10.11` (`9.4` repair) |
+| POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions`, `bms_tax_invoice_requests`, `bms_tax_request_submissions`, `bms_tax_request_emails` (+ supplier credit/debit-note columns on expense documents; `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns) | `7.84`–`10.11` (`9.4` repair), `10.37` (supplier VAT notes), `10.38`–`10.39` (receipt-QR tax-invoice requests), `10.58` (tax-request email outbox) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
 | Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
 | Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43` |
-| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger`, `bms_ai_limit_notices` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split), `10.54` (shared cost reservations), `10.55` (owner notices and refusal status) |
+| Branch customer facts | `bms_locations.parking_info`, `bms_locations.publish_restaurant_table_details` | `10.51`, `10.52` |
+| Customer AI answer evidence | `bms_ai_turn_evidence`, `bms_ai_tool_evidence` | `10.53` |
+| Pharmacy guidance & emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`) | `10.45`–`10.47` |
+| Product promotions | `bms_product_promotions` (per-branch scope; `BUY_A_GET_B` gift columns) | `8.7`, `9.61`, `10.41` |
+| Board game cafe | `bms_board_game_*` (floor, sessions, billing groups, library, passes, offers, waitlist/reservations, public locations) | `9.79`–`9.83`, `9.89`–`9.94`, `9.96`, `9.98`–`10.7`; `10.40` (time buy/get), `10.42` (title images), `10.48`–`10.49` (chat reservations/actions), `10.50` (public table details) |
+| Mail log | `bms_mail_log` (platform-wide, nullable `tenant_id`) | `7.40`, `10.59` (`smtp` provider) |
+| Homepage app downloads | `bms_app_download_settings` (platform-global singleton, no `tenant_id`) | `10.57` |
+| AI usage / credits | `bms_tenant_ai_config`, `bms_ai_usage_monthly`, `bms_ai_usage_events`, `bms_ai_credit_ledger`, `bms_ai_limit_notices` | `6.8`, `7.27`, `7.35`, `7.82` (billing/provider/cost split), `10.54` (shared cost reservations, historical since `10.56`), `10.55` (owner notices and refusal status), `10.56` (monthly AI point packages on `bms_plans`; no USD cap) |
 | AI context safety / learning | `bms_inbound_events`, `bms_ai_synonym_candidates`; `bms_conversations.ai_state` | `7.30` |
 | AI quality review | `bms_messages.meta.aiQuality`, `bms_ai_quality_reviews` | `7.31`, `7.32` |
 | AI Provider Health | `bms_ai_provider_health`, `bms_ai_provider_health_log` (platform-wide, no `tenant_id`) | `7.34` |
