@@ -901,8 +901,8 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
       "Pick the month and establishment, clear the items to check, then export XLSX for the accountant."
     ),
     aliases: aliases(
-      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา"],
-      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax"]
+      ["รายงานภาษีขายอยู่ไหน", "ดูภาษีขายรายเดือน", "ส่งออกรายงานภาษี", "ใบกำกับที่ออกเดือนนี้", "หาใบกำกับภาษี", "ค้นเลขใบกำกับ", "ภ.พ.30", "รายงานสินค้าและวัตถุดิบ", "รายงานสินค้าคงเหลือรายสาขา", "พิมพ์ใบลดหนี้", "ใบลดหนี้เต็มรูป", "ออกใบกำกับภาษีเต็มรูป", "ใบกำกับเต็มรูปบุคคลธรรมดา", "ไม่มีเลขผู้เสียภาษีขอใบกำกับ", "ต้นฉบับสำเนาใบกำกับ"],
+      ["where is the sales tax report", "monthly output VAT", "export tax report", "tax invoices this month", "find a tax invoice", "search invoice number", "PP30", "goods and materials report", "stock report per branch for tax", "print credit note", "full credit note", "issue full tax invoice", "full tax invoice for an individual", "tax invoice without buyer tax id", "original and copy tax invoice"]
     ),
     requiredPermissions: ["tax.document.view"],
     prerequisites: lists(
@@ -918,7 +918,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
         "แบ่งงวดตามวันที่ออกเอกสารเวลาไทย บิลหลังเที่ยงคืนอยู่ในวันใหม่",
         "ใบกำกับอย่างย่อสรุปรายวันต่อเครื่องเป็นช่วงเลข ใบลดหนี้เป็นยอดลบ",
         "ใบเต็มที่ออกแทนใบย่อเป็นแถวอ้างอิงยอดศูนย์ ยอดขายยังอยู่ในยอดรวมใบย่อของวันที่เดิม",
-        "บิลที่ชำระแล้วแต่ไม่มีใบกำกับ (เช่นออร์เดอร์ออนไลน์) ไม่ถูกนับในยอด — ดูที่รายการที่ต้องตรวจสอบ",
+        "บิลที่ชำระแล้วแต่ไม่มีใบกำกับ (เช่นออร์เดอร์ออนไลน์) ไม่ถูกนับในยอด — กดออกใบเต็มได้จากรายการที่ต้องตรวจสอบ ออกได้ตั้งแต่ชำระเงิน",
+        "เลขผู้เสียภาษีและสาขาผู้ซื้อบังคับเฉพาะนิติบุคคล/ผู้ประกอบการจด VAT · บุคคลธรรมดาและชาวต่างชาติใส่แค่ชื่อกับที่อยู่ได้ และไม่พิมพ์คำว่าสำนักงานใหญ่",
+        "ยกเลิกหรือคืนทั้งบิลจากหลังบ้านหลังออกใบเต็มแล้ว ระบบออกใบลดหนี้ยอดที่เหลือให้อัตโนมัติ · บิลหน้าร้านที่มีใบย่อยังต้องคืนผ่านเครื่องขาย",
+        "บิลที่คืนของบางส่วนแล้วออกใบเต็มได้ ใบเต็มเป็นยอดขายเดิมและใบลดหนี้ถูกออกใหม่ให้อ้างใบเต็ม · การคืนที่ยังไม่มีใบลดหนี้ต้องจัดการก่อน",
+        "ใบเต็มและใบลดหนี้พิมพ์ได้ที่ปุ่มดูเอกสาร เลือกป้ายต้นฉบับหรือสำเนาก่อนพิมพ์ ระบบไม่นับจำนวนครั้งที่พิมพ์",
         "รายงานนี้ไม่ใช่การยื่น ภ.พ.30 · ภาษีซื้อบันทึก ตรวจ และส่งออก XLSX แยกที่หน้า รายจ่ายและภาษีซื้อ โดยใช้งวดตามเดือนที่เลือกใช้สิทธิ์",
         "ส่งออกได้เฉพาะ XLSX/CSV เพราะ PDF ยังแสดงภาษาไทยไม่ได้",
         "รายงานสินค้าและวัตถุดิบแสดงชื่อผู้ประกอบการและเลขผู้เสียภาษี นับเป็นหน่วยฐาน และมูลค่าคิดจากต้นทุนปัจจุบัน ไม่ใช่ FIFO/ถัวเฉลี่ย · ยอดยกมาที่ไม่มีหลักฐานการเคลื่อนไหวแสดงแยกเสมอ",
@@ -927,7 +931,11 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
         "Periods follow the Thai-time issue date; a bill after midnight belongs to the new day.",
         "Abbreviated invoices are summarised per day per register as a number range; credit notes are negative.",
         "A full invoice replacing an abbreviated one is a zero-value reference row; the sale stays in the abbreviated invoice's original daily total.",
-        "Paid bills without a tax invoice (such as online orders) are not in the totals — see the items to check.",
+        "Paid bills without a tax invoice (such as online orders) are not in the totals — issue a full invoice from the items to check; it can be issued once the order is paid.",
+        "The buyer's tax ID and branch are required only for companies/VAT-registered businesses; individuals and foreigners can give just name and address, and no head-office branch is printed.",
+        "Cancelling or fully returning a bill from the back office after a full invoice issues a credit note for the remainder automatically; counter bills with an abbreviated invoice still return through the register.",
+        "A partially returned bill can get a full invoice of the original sale; its credit notes are re-issued against the full invoice. A return without a credit note must be resolved first.",
+        "Print full invoices and credit notes from the view buttons; choose the original or copy label before printing. Print counts are not tracked.",
         "This report does not file PP.30; record, review and export input VAT separately on Expenses & input VAT, using the selected claim month.",
         "Only XLSX/CSV can be exported because PDF cannot render Thai yet.",
         "The goods and materials report includes the operator name and tax ID, counts base units, and values stock at current cost rather than FIFO/average; opening stock without movement evidence is always shown separately.",

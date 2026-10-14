@@ -1321,9 +1321,33 @@ This does not enable the existing server-generated tax PDF option, which remains
 
 An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
 buyer identity and issue a full invoice with `tax.document.issue`. The service still owns the
-decision: it accepts only an intact non-void completed sale, cancels the abbreviated invoice and
-creates the full invoice atomically, requires checksum-valid seller/buyer tax IDs and both addresses,
-and never rewrites an issued document. Seller identity is snapshotted on issue so a later profile edit
+decision: it accepts a non-void order from `PAID` onward (the VAT point is payment — `PAID`,
+`PACKING`, `SHIPPED`, `COMPLETED`), cancels the abbreviated invoice (if any) and creates the full
+invoice atomically, requires a checksum-valid seller tax ID and both addresses, and never rewrites
+an issued document. The buyer's tax ID and branch are required only for a company/VAT-registered
+buyer (`buyerType` `COMPANY` or unset, DG notification 199); an individual or foreigner may omit the
+tax ID, and no branch (no "head office") is stored or printed for them. The issuer's branch scope is
+enforced. Paid bills without a tax document (typically online orders) get an issue action in the
+"items to check" list.
+
+A partially returned bill can get a full invoice of the original sale, provided every non-void return
+already has an active credit note. Those credit notes (which referenced the abbreviated invoice) are
+cancelled and re-issued, same amounts and reason, against the full invoice and its buyer; the old
+note's unsent e-Tax job is withdrawn. In the sales-tax report the old note keeps its value in its
+original period and the re-issued note is a zero-value reference row — the same rule as a full
+invoice replacing an abbreviated one.
+
+Cancelling (`PENDING/PAID/PACKING`) or fully returning (`SHIPPED/COMPLETED`) a bill from the back office
+after a full invoice issues a credit note for the outstanding amount (field by field, not
+re-prorated) in the same transaction, after the status change succeeds. A counter bill with an
+active abbreviated invoice is still refused and must be returned through the register. The refund
+guard and the "returned/cancelled with an active document" exception ignore fully credited invoices.
+
+Printing: full invoices and credit notes (section 86/10: original invoice number/date, original
+value, previously credited, correct value, difference, VAT of the difference, reason, returned lines
+plus an adjustment line when the refund was re-priced) print from `/admin/tax-documents` with an
+original/copy label chosen at print time (print counts are not tracked) and dates in the shop's
+calendar era. The customer copy and the emailed PDF use the same identity and date rules. Seller identity is snapshotted on issue so a later profile edit
 cannot rewrite history. In the sales-tax report the original abbreviated value stays in its daily
 total and the replacing full invoice is a zero-value reference row. An unsent e-Tax queue row for a
 superseded or voided document is marked `CANCELLED` inside the same transaction.
@@ -1358,11 +1382,11 @@ Native hardware printing remains outside the current RN integration, and physica
 per-model QR scan verification before rollout.
 
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
-buyer name, checksum-valid Thai 13-digit tax ID, address line 1 (required), line 2 (optional), province
-(required), required contact email, and optional five-digit postcode and phone. Companies also enter a five-digit
-branch (`00000` for head office); other types use `00000`. Foreigner currently requires a Thai tax ID
-and Thai address too; the form directs other buyers to the shop rather than accepting a passport as
-a tax ID. The server validates and composes the invoice address, retaining the separate fields and
+buyer name, a checksum-valid Thai 13-digit tax ID (required for Company, optional for Individual and
+Foreigner), address line 1 (required), line 2 (optional), province (required), required contact email,
+and optional five-digit postcode and phone. Companies also enter a five-digit branch (`00000` for head
+office); other types have no branch. Foreigners still need a Thai address online; the form directs
+buyers with a foreign address to the shop. A passport number is never accepted as a tax ID. The server validates and composes the invoice address, retaining the separate fields and
 email in the request/submission JSON snapshots for tracking, corrections and staff review. Legacy
 single-address requests remain supported. New submissions and corrections require a valid contact
 email on both the form and server, including single-address clients. Existing requests without email
