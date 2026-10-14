@@ -13,6 +13,7 @@ import {
 } from "antd";
 import TaxInvoiceCopy from "@/components/pos/TaxInvoiceCopy";
 import { useI18n } from "@/lib/i18nContext";
+import { taxIdentityLine } from "@/lib/bms/taxDocumentText";
 import { TAX_BUYER_TYPES, THAI_PROVINCES } from "@/lib/taxRequestFields";
 
 const labels: Record<string, string> = {
@@ -47,6 +48,7 @@ export default function TaxInvoiceRequestClient() {
   }, []);
   const [form] = Form.useForm();
   const buyerType = Form.useWatch("buyerType", form);
+  const buyerVat = Form.useWatch("vatRegistered", form) ?? (buyerType === "COMPANY");
   const [choosingType, setChoosingType] = useState(true);
   const [token, setToken] = useState(""),
     [secret, setSecret] = useState(""),
@@ -263,8 +265,7 @@ export default function TaxInvoiceRequestClient() {
               <p>
                 {request.buyer.name}
                 <br />
-                {request.buyer.taxId} · {request.buyer.branchCode}
-                <br />
+                {request.buyer.taxId && <>{taxIdentityLine(request.buyer.taxId, request.buyer.branchCode)}<br /></>}
                 {request.buyer.address}
               </p>
             )}
@@ -285,12 +286,18 @@ export default function TaxInvoiceRequestClient() {
                   </Radio.Group>
                 </Form.Item>
                 {!choosingType && <>
+                <Form.Item name="vatRegistered" label="จดทะเบียนภาษีมูลค่าเพิ่ม (VAT)"><Radio.Group options={[{label:"จด VAT",value:true},{label:"ไม่ได้จด VAT",value:false}]} /></Form.Item>
                 <Typography.Title level={4}>ข้อมูล{TAX_BUYER_TYPES.find((item) => item.value === buyerType)?.label}</Typography.Title>
-                {buyerType === "FOREIGNER" && <Alert type="info" showIcon style={{ marginBottom: 20 }} message="ช่องทางออนไลน์รองรับผู้มีเลขประจำตัวผู้เสียภาษีไทย 13 หลักและที่อยู่ในประเทศไทย หากไม่มี กรุณาติดต่อร้านเพื่อขอเอกสาร" />}
+                {buyerType === "FOREIGNER" && <Alert type="info" showIcon style={{ marginBottom: 20 }} message="ไม่มีเลขประจำตัวผู้เสียภาษีไทยก็ขอได้ ช่องทางออนไลน์ยังรับเฉพาะที่อยู่ในประเทศไทย หากใช้ที่อยู่ต่างประเทศ กรุณาติดต่อร้าน" />}
                 <Form.Item
                   name="taxId"
-                  label={buyerType === "INDIVIDUAL" ? "เลขประจำตัวผู้เสียภาษี / เลขประจำตัวประชาชน" : "เลขประจำตัวผู้เสียภาษีไทย 13 หลัก"}
-                  rules={[{ required: true, pattern: /^\d{13}$/, message: "กรุณากรอกเลขประจำตัวผู้เสียภาษี 13 หลัก" }]}
+                  label={buyerVat
+                    ? "เลขประจำตัวผู้เสียภาษีไทย 13 หลัก"
+                    : buyerType === "INDIVIDUAL"
+                    ? "เลขประจำตัวผู้เสียภาษี / เลขประจำตัวประชาชน (ไม่บังคับ)"
+                    : "เลขประจำตัวผู้เสียภาษีไทย 13 หลัก (ไม่บังคับ)"}
+                  extra={buyerVat ? undefined : "ใส่เฉพาะเมื่อจดทะเบียนภาษีมูลค่าเพิ่ม หรือต้องการให้ปรากฏบนใบกำกับ"}
+                  rules={[{ required: buyerVat, pattern: /^\d{13}$/, message: "กรุณากรอกเลขประจำตัวผู้เสียภาษี 13 หลัก" }]}
                 >
                   <Input inputMode="numeric" maxLength={13} />
                 </Form.Item>
@@ -301,7 +308,7 @@ export default function TaxInvoiceRequestClient() {
                 >
                   <Input maxLength={200} />
                 </Form.Item>
-                {buyerType === "COMPANY" &&
+                {buyerVat &&
                 <Form.Item
                   name="branchCode"
                   label="รหัสสาขา 5 หลัก (สำนักงานใหญ่ 00000)"

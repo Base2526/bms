@@ -11,6 +11,17 @@
 | `retail-local-*.test.{mjs,sh,ps1}`, `installer-reports-browser-smoke.mjs` | เทสของตัวติดตั้ง Retail Local — **ตัวรันกลางไม่หยิบ** (หยิบเฉพาะ `*.test.mts`) ดู § 9 | ไม่ต้อง |
 | `*-browser-smoke.mjs`, `tax-invoice-pdf-smoke.mts`, `testing/*-mutations.mjs`, `testing/scheduler-smoke.mjs`, `infra/*.test.mts` | สโมคเบราว์เซอร์/คอนเทนเนอร์และตัวขับ mutation — **ตัวรันกลางไม่หยิบ** ดู § 10 | ไม่ต้อง (บางตัวต้องมี dev server/Docker) |
 
+Tax review checks (2026-10-14): `node scripts/run-contract-tests.mjs pure tax` includes
+`tax-invoice-eligibility-contract` (executes service guards with a fake query client, no database).
+`tax-document-preview-browser-smoke.mjs` opens the real tax and manual routes at 1280/390px using
+mocked API responses, checks copy/date/branch rendering and cancelled-document print denial, and
+saves screenshots and print PDFs under `.test-output/tax-document-preview`. Run against a local
+server using `BMS_SMOKE_URL`; set `BMS_PLAYWRIGHT_MODULE` if Playwright is outside normal resolution.
+The public `tax-request-form-browser-smoke.mjs` additionally needs the local server's tax-request
+feature enabled with a test-only secret and HTTPS public origin. Both smokes block external requests.
+These checks do not prove SQL execution: run `db tax-sales-report` and `db tax-backoffice-guards`
+against a restored disposable local database before deploying.
+
 ตอนนี้ (นับ 2026-10-13 ที่ `676a38a7`): **287 ไฟล์เทส** = pure **220 ไฟล์** (194 ใน `scripts/` +
 26 ใน `scripts/ai-eval/`) + DB **67 ไฟล์** (ทั้งหมดอยู่ชั้นบนสุดของ `scripts/`)
 
@@ -634,3 +645,20 @@ workflow เดียวกันรัน `go test` ของ `apps/retail-loca
   ซึ่งต้องมี migration `9.70`–`9.74` (ต้องใช้ **คนละ instance** สำหรับ production-like rollout
   เพราะ role ของ dispatcher เป็นระดับ cluster และต้อง restore จาก dump เพราะสร้างฐานเปล่าจาก
   `db/migrations` ไม่ได้) · **จดจำนวนที่ผ่าน/แดงก่อน apply ไว้เป็น baseline เสมอ**
+
+
+### Tax document controls (10.60)
+
+`node scripts/run-contract-tests.mjs pure tax-controls` exercises the actual control service against
+simulated query results: preview/confirmation, stale reads, RBAC/branch refusal, bucket credit limits,
+retries, rollback on audit failure, substitutes, buyer correction and versioned sales/purchase archives.
+It also executes the real sales-report builder with replacement chains, debit/credit signs and
+zero-value document-event annotations. These tests do not execute PostgreSQL or prove RLS/concurrency.
+The implementation round explicitly excludes database use at the user's request.
+
+`node scripts/tax-controls-browser-smoke.mjs` opens the real tax route at 1280/390px and
+intercepts every API with fixtures. It covers all five preview/confirmation flows, individual VAT
+registration, mobile overflow and excluding unconfirmed previews from print. Screenshots and PDFs
+are saved in `.test-output/tax-controls-browser`. Use a local dev server on port 3107 (or
+`BMS_SMOKE_URL`) and an installed Playwright module (or its file URL in `BMS_PLAYWRIGHT_MODULE`).
+This is UI verification only; it does not verify database transactions or production authentication.

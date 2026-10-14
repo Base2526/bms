@@ -233,8 +233,12 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_delivery_adjustments", "bms_delivery_disputes",
 ];
 
+// Immutable financial evidence has no live POS audience. The tax page refreshes on open,
+// explicit reload and after a confirmed write; stale confirmations are rejected by the service.
+const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period_snapshots"];
 const CLASSIFIED = new Map<string, string>();
 for (const [reason, tables] of [
+  ["immutable financial archive; explicit read and post-write refresh", ARCHIVED_FINANCIAL_EVIDENCE],
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
   ["ops/telemetry, not a mobile-visible business state", OPS_TELEMETRY],
   ["configuration read on demand, not a live surface", CONFIGURATION],

@@ -9,6 +9,13 @@ export async function assertNoActiveSalesTaxDocumentInTx(
   tenantId: string,
   orderId: string
 ): Promise<void> {
+  // Serialize the check with full issuance, which locks this same order first.
+  // Checking documents before acquiring the order lock permits a concurrent
+  // issuer to commit between the check and the cancellation/return update.
+  await client.query(
+    `SELECT id FROM bms_orders WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+    [tenantId, orderId]
+  );
   const active = await client.query(
     `SELECT 1 FROM bms_tax_documents
       WHERE tenant_id = $1 AND order_id = $2

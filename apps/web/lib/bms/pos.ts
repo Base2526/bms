@@ -5359,6 +5359,7 @@ export type PosReturnResult =
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "TAX_ADJUSTMENT_REVIEW_REQUIRED"; reason: string }
   | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "WOULD_OVERDRAW"; available: number | null }
@@ -5414,6 +5415,7 @@ export type PosPartialReturnResult =
   | { status: "EMPTY" }
   | { status: "ITEM_NOT_FOUND"; orderItemId: number }
   | { status: "RETURN_QTY_EXCEEDED"; orderItemId: number; remaining: number; requested: number }
+  | { status: "TAX_ADJUSTMENT_REVIEW_REQUIRED"; reason: string }
   | { status: "REPRICE_PAYMENT_REQUIRED"; additionalAmount: number; remainingAmount: number }
   | { status: "SHIFT_NOT_OPEN" }
   | { status: "WOULD_OVERDRAW"; available: number | null }
@@ -5806,6 +5808,16 @@ export async function processPosReturn(input: {
     if (onlineCancellation ? !["PAID", "PACKING"].includes(order.status) : order.status !== "COMPLETED") {
       await client.query("ROLLBACK");
       return { status: "INVALID_ORDER_STATUS", current: order.status };
+    }
+
+    // Price-only tax notes do not alter the paid basket. Refunding its old price would
+    // overpay/over-credit; a staff accountant must reconcile this case explicitly.
+    const taxAdjustments = await client.query(`SELECT 1 FROM bms_tax_documents
+      WHERE tenant_id=$1 AND order_id=$2 AND adjustment_kind='PRICE' AND cancelled_at IS NULL LIMIT 1`,
+      [input.tenantId, input.orderId]);
+    if (taxAdjustments.rowCount) {
+      await client.query("ROLLBACK");
+      return { status: "TAX_ADJUSTMENT_REVIEW_REQUIRED", reason: "บิลมีใบลด/เพิ่มหนี้ปรับราคา กรุณาให้บัญชีกระทบยอดก่อนคืนสินค้า" };
     }
 
     const saleLocationId = order.location_id;

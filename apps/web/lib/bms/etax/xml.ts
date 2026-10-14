@@ -171,7 +171,10 @@ export function validateEtaxDocument(doc: EtaxDocumentData): string[] {
   // ใบกำกับเต็มรูปต้องมีผู้ซื้อ — ใบย่อไม่ต้อง
   if (doc.docType === "FULL") {
     if (!doc.buyer.name?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีชื่อผู้ซื้อ");
-    if (!doc.buyer.taxId?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีเลขประจำตัวผู้เสียภาษีผู้ซื้อ");
+    // เลขผู้ซื้อบังคับเฉพาะผู้ประกอบการ (มีรหัสสาขา) — บุคคลธรรมดาที่ไม่ได้จด VAT ไม่ต้องมี
+    if (doc.buyer.branchCode && !doc.buyer.taxId?.trim()) {
+      errors.push("ใบกำกับเต็มรูปของผู้ซื้อที่เป็นผู้ประกอบการต้องมีเลขประจำตัวผู้เสียภาษีผู้ซื้อ");
+    }
     if (!doc.buyer.address?.trim()) errors.push("ใบกำกับเต็มรูปต้องมีที่อยู่ผู้ซื้อ");
   }
   const sum = Math.round((doc.taxableAmount + doc.exemptAmount + doc.roundingAmount) * 100) / 100;

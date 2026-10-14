@@ -502,6 +502,13 @@ const MENU_CARDS_TH: MenuCard[] = [
       "Shipping ใช้สร้าง shipment, ใส่ tracking, sync carrier และปิดงานเมื่อ DELIVERED",
       "ทุกหน้ามี search เพื่อหา order id, payment id, shipment id, tracking หรือข้อมูลลูกค้าที่เกี่ยวข้อง",
       "ยอดบน Orders แสดง subtotal, ส่วนลดคูปอง, และยอดสุทธิให้เห็นชัดก่อนตามงานต่อ",
+      "ใบกำกับเต็มรูปออกได้เฉพาะ COMPLETED ที่ไม่ถูก void และไม่เคยคืนสินค้า เมื่อมีใบย่อหรือใบเต็มที่ยังไม่ยกเลิก ต้องคืนผ่าน POS ไม่ใช่ยกเลิก/คืน/คืนเงินจากหลังบ้าน",
+      "หน้า ภาษีขาย มีปุ่มดูใบเต็มและดูใบลดหนี้ เลือกต้นฉบับหรือสำเนาก่อนพิมพ์ วันที่ใช้ พ.ศ./ค.ศ. ตามค่าร้าน และเอกสารที่ยกเลิกพิมพ์เป็นใบใช้งานไม่ได้",
+      "การแก้เอกสารและปิดงวด: ตรวจตัวอย่างจากเซิร์ฟเวอร์ก่อนยืนยัน ออกใบแทนพร้อมเลขครั้งที่/วันที่/เหตุผล/ช่องลงนาม หรือแก้ข้อมูลผู้ซื้อโดยรับคืนต้นฉบับและออกเลขใหม่อ้างเดิม ต้องมีสิทธิ์ตามรายการ",
+      "ใบลด/เพิ่มหนี้ปรับราคาเป็นเอกสารภาษีเท่านั้น ไม่คืนเงิน ไม่รับสต็อก ไม่ปรับลูกหนี้ บิลที่ปรับราคาต้องให้บัญชีกระทบยอดก่อนคืนผ่าน POS ส่วนร้านที่ใช้ e-Tax ต้องดำเนินการแก้ผ่านผู้ให้บริการ",
+      "ปิดงวด: เลือกสาขาและเดือนที่สิ้นสุดแล้ว แก้รายการผิดปกติ ตรวจรายงานภาษีขายและซื้อ แล้วเก็บฉบับปิดงวด หากข้อมูลภายหลังเปลี่ยนระบบเตือนเมื่อเปิดดู และเก็บฉบับใหม่ได้โดยไม่ทับฉบับเดิม ไม่ใช่การยื่นภาษี",
+      "สถานะจด VAT ของผู้ซื้อแยกจากบริษัท/บุคคลธรรมดา ผู้ซื้อบุคคลธรรมดาที่จด VAT ต้องมีเลขภาษีและสาขา ส่วนวันที่เกิดภาษีออนไลน์/เงินล่วงหน้ายังรอบัญชียืนยัน",
+
     ],
   },
   {
@@ -1745,6 +1752,13 @@ const MENU_CARDS_EN: MenuCard[] = [
       "Shipping creates shipments, records tracking numbers, syncs carriers, and closes work at DELIVERED",
       "Every page has search so staff can find an order id, payment id, shipment id, tracking number, or related customer fast",
       "Orders keeps subtotal, coupon discount, and net total visible before the next team picks up the work",
+      "Full invoices require COMPLETED with no void or prior return. An uncancelled abbreviated or full invoice requires POS returns, not back-office cancellation, return or refund.",
+      "Document controls require a server preview and explicit confirmation. Substitutes record number, date, reason and signature; buyer corrections require the recovered original and issue a linked new number with unchanged money.",
+      "Price credit/debit notes change tax documents only, not cash, stock or receivables. Adjusted bills require accounting reconciliation before POS returns. Electronic corrections must use the e-Tax provider workflow.",
+      "Close a completed past month per establishment after resolving exceptions and reviewing sales/input VAT. Archived versions never change; viewing warns about source drift. Save a new version with a reason when necessary. This does not file tax returns.",
+      "Buyer VAT registration is independent of company/individual status. VAT-registered individuals need tax ID and branch. Online/advance-payment tax-point changes await accounting confirmation.",
+
+      "Sales tax has full-invoice and credit-note previews. Select original or copy before printing; dates follow the shop's BE/CE setting. Cancelled documents cannot be printed as active documents.",
     ],
   },
   {

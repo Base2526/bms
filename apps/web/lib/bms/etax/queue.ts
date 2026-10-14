@@ -81,7 +81,7 @@ export async function enqueueTaxDocument(
 ): Promise<void> {
   if (!(await etaxEnabledForTenant(tenantId))) return;
   const sql = `INSERT INTO bms_etax_submissions (tenant_id, document_id, status)
-               VALUES ($1, $2, 'PENDING')
+               SELECT tenant_id,id,'PENDING' FROM bms_tax_documents WHERE tenant_id=$1 AND id=$2 AND cancelled_at IS NULL AND adjustment_kind IS NULL AND doc_type <> 'DEBIT_NOTE'
                ON CONFLICT (document_id) DO NOTHING`;
   // ต้องเข้าคิวใน "ทรานแซกชันเดียวกับที่สร้างเอกสาร" เมื่อผู้เรียกอยู่ในทรานแซกชัน
   // ไม่งั้น FK ชี้ไปหาแถวที่ยังไม่ commit → ล้มทุกครั้งอย่างเงียบ ๆ
@@ -131,7 +131,7 @@ async function loadDocumentData(tenantId: string, documentId: string): Promise<E
        JOIN bms_tenants t ON t.id = d.tenant_id
        LEFT JOIN bms_store_profile s ON s.tenant_id = d.tenant_id
        LEFT JOIN bms_tax_documents prev ON prev.id = d.replaces_document_id
-      WHERE d.tenant_id = $1 AND d.id = $2`,
+      WHERE d.tenant_id = $1 AND d.id = $2 AND d.adjustment_kind IS NULL AND d.doc_type <> 'DEBIT_NOTE'`,
     [tenantId, documentId]
   );
   const d = res.rows[0];
@@ -364,7 +364,7 @@ export async function getEtaxSummary(tenantId: string): Promise<EtaxSummary> {
        count(*) FILTER (WHERE s.status = 'REJECTED') AS rejected,
        count(*) FILTER (WHERE s.status = 'FAILED')   AS failed,
        (SELECT count(*) FROM bms_tax_documents d
-         WHERE d.tenant_id = $1 AND d.cancelled_at IS NULL
+         WHERE d.tenant_id = $1 AND d.cancelled_at IS NULL AND d.adjustment_kind IS NULL AND d.doc_type <> 'DEBIT_NOTE'
            AND NOT EXISTS (SELECT 1 FROM bms_etax_submissions x WHERE x.document_id = d.id)
        ) AS not_queued
      FROM bms_etax_submissions s WHERE s.tenant_id = $1`,
@@ -389,7 +389,7 @@ export async function backfillEtaxQueue(tenantId: string, limit = 500): Promise<
     `INSERT INTO bms_etax_submissions (tenant_id, document_id, status)
      SELECT d.tenant_id, d.id, 'PENDING'
        FROM bms_tax_documents d
-      WHERE d.tenant_id = $1 AND d.cancelled_at IS NULL
+      WHERE d.tenant_id = $1 AND d.cancelled_at IS NULL AND d.adjustment_kind IS NULL AND d.doc_type <> 'DEBIT_NOTE'
         AND NOT EXISTS (SELECT 1 FROM bms_etax_submissions x WHERE x.document_id = d.id)
       ORDER BY d.issued_at
       LIMIT $2

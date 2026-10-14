@@ -1321,9 +1321,30 @@ This does not enable the existing server-generated tax PDF option, which remains
 
 An authorised user can select an active abbreviated invoice on `/admin/tax-documents`, enter the
 buyer identity and issue a full invoice with `tax.document.issue`. The service still owns the
-decision: it accepts only an intact non-void completed sale, cancels the abbreviated invoice and
-creates the full invoice atomically, requires checksum-valid seller/buyer tax IDs and both addresses,
-and never rewrites an issued document. Seller identity is snapshotted on issue so a later profile edit
+decision: it accepts only a non-void COMPLETED order with no non-void POS return,
+including a zero-value return or a return already backed by a credit note. It cancels the abbreviated
+invoice (if any) and issues the full invoice atomically. The seller needs a checksum-valid tax ID
+and address; the buyer needs a name and address, and a checksum-valid tax ID and branch for
+VAT-registered buyers, independently of legal personality. An explicit `vatRegistered=false`
+permits an optional tax ID and omits the branch. Unspecified registration preserves COMPANY/legacy
+behaviour; an individual registered for VAT must supply the tax ID and branch. Issuance enforces the staff member's branch scope.
+
+An active abbreviated or full invoice blocks back-office cancellation, return and payment refund,
+even when credit notes cover its whole value. Use the POS return flow for its cashier, approval,
+stock, refund and credit-note controls. No automatic back-office credit-note path is provided.
+The guard locks the order before reading documents, serializing with concurrent full issuance.
+Paid orders that are not yet completed cannot issue a full invoice. The issue action in the
+exceptions list still calls the same eligibility-checked service.
+
+Existing re-issued credit notes remain readable in reports without double-counting or moving
+periods, but new partial-return-to-full conversions are refused. Cancelled full invoices cannot
+be retrieved as printable originals or customer copies.
+
+Printing: full invoices and credit notes (section 86/10: original invoice number/date, original
+value, previously credited, correct value, difference, VAT of the difference, reason, returned lines
+plus an adjustment line when the refund was re-priced) print from `/admin/tax-documents` with an
+original/copy label chosen at print time (print counts are not tracked) and dates in the shop's
+calendar era. The customer copy and the emailed PDF use the same identity and date rules. Seller identity is snapshotted on issue so a later profile edit
 cannot rewrite history. In the sales-tax report the original abbreviated value stays in its daily
 total and the replacing full invoice is a zero-value reference row. An unsent e-Tax queue row for a
 superseded or voided document is marked `CANCELLED` inside the same transaction.
@@ -1358,11 +1379,11 @@ Native hardware printing remains outside the current RN integration, and physica
 per-model QR scan verification before rollout.
 
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
-buyer name, checksum-valid Thai 13-digit tax ID, address line 1 (required), line 2 (optional), province
-(required), required contact email, and optional five-digit postcode and phone. Companies also enter a five-digit
-branch (`00000` for head office); other types use `00000`. Foreigner currently requires a Thai tax ID
-and Thai address too; the form directs other buyers to the shop rather than accepting a passport as
-a tax ID. The server validates and composes the invoice address, retaining the separate fields and
+buyer name, a checksum-valid Thai 13-digit tax ID (required for Company, optional for Individual and
+Foreigner), address line 1 (required), line 2 (optional), province (required), required contact email,
+and optional five-digit postcode and phone. Companies also enter a five-digit branch (`00000` for head
+office); other types have no branch. Foreigners still need a Thai address online; the form directs
+buyers with a foreign address to the shop. A passport number is never accepted as a tax ID. The server validates and composes the invoice address, retaining the separate fields and
 email in the request/submission JSON snapshots for tracking, corrections and staff review. Legacy
 single-address requests remain supported. New submissions and corrections require a valid contact
 email on both the form and server, including single-address clients. Existing requests without email
@@ -2472,3 +2493,46 @@ lifecycle. COD is not part of this rollout. For an in-house rider, select carrie
 the rider name in tracking; live parcel-carrier adapters are not inferred. Sample restaurant data
 offers a quick menu with no ingredient recipes by default and an opt-in recipe set for operators who
 want ingredient-level depletion.
+
+
+## Paper document controls and period archives (10.60)
+
+On **Sales tax**, the document-controls card operates on the current server-backed document list.
+Use the existing month/search/page controls to locate older sources. Staff first reviews a server
+preview, then explicitly confirms; changed data requires a fresh review. Retries keep the same key.
+
+- **Substitute**: `tax.document.issue`, active FULL/CREDIT_NOTE/DEBIT_NOTE, customer request/evidence
+  and reason. Records consecutive substitute number, processing date, issuing staff and snapshot;
+  print includes a signature line. The operator signs and retains the evidence and annotates the
+  retained copy. Sales reports receive a zero-value note in the processing month. This does not issue
+  a new invoice or move money.
+- **Buyer correction**: `tax.document.adjust`, completed/non-void/non-returned bill without earlier
+  adjustment notes, recovered/cancelled original confirmation and evidence. Issues a new FULL number
+  with original document date, seller and monetary values, links and cancels the original in one
+  transaction. The action retains the original view and the corrected view. Report value stays on
+  the original document; the replacement is zero-value and the processing month gets an annotation.
+  This date rule is only for correction, not a changed first-invoice tax point.
+- **Price debit/credit note**: `tax.document.adjust`, intact completed FULL source, stated affected
+  goods/services, evidence and event date. Enter positive taxable base/exempt differences; server
+  derives VAT at the original rate and checks cumulative credit limits per tax bucket. Event must be
+  current month, or previous month with a necessary-delay reason. These are **tax-document-only**
+  records, not refunds, inventory receipts or AR entries. Accounting must reconcile corresponding
+  cash/receivable actions separately. POS refuses subsequent automatic returns on price-adjusted
+  bills to prevent refunding the unadjusted basket; such cases require accounting reconciliation.
+- **Electronic documents**: paper substitutes/adjustments/corrections refuse e-Tax-enabled shops or outstanding/
+  sent provider submissions. They do not pretend to send provider corrections. These paper records
+  are excluded from electronic enqueue/backfill. Existing PDF email remains a copy, not e-Tax.
+- **Period archive**: `tax.period.close` plus `expense.view`; select one establishment and a completed
+  past month. Resolve sales-report exceptions, review both VAT reports, then save an immutable version.
+  The archive has print and JSON download. Viewing detects drift from current source data; a new
+  reviewed version with reason preserves all previous versions. This does not submit PP.30, lock
+  every operational ledger, or claim a filing has been accepted. Archive reads need both source
+  permissions and current branch access. Lists show at most 200 entries for a selected month.
+
+New full/credit/debit documents preserve print snapshots so changing store identity, catalog labels
+or calendar era does not rewrite them. Historical documents without this snapshot retain the prior
+fallback behaviour; the system cannot reconstruct facts that were never recorded.
+
+Tax-point changes remain pending in [tax-accounting-review.md](tax-accounting-review.md). In this
+round the user requested no database use: migration 10.60 has not been applied and transactional SQL,
+RLS, grants and concurrent calls have not been proven against PostgreSQL.

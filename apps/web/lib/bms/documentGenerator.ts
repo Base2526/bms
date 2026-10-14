@@ -554,6 +554,8 @@ const SALES_TAX_KIND_LABEL: Record<string, string> = {
   FULL: "ใบกำกับภาษีเต็มรูป",
   ABBREVIATED_DAY: "ใบกำกับภาษีอย่างย่อ (รวมรายวัน)",
   CREDIT_NOTE: "ใบลดหนี้",
+  DEBIT_NOTE: "ใบเพิ่มหนี้",
+  DOCUMENT_EVENT: "หมายเหตุเอกสาร",
 };
 
 const SALES_TAX_EXCEPTION_LABEL: Record<string, string> = {
@@ -579,6 +581,8 @@ function taxPeriodLabel(period: { from: string }, calendarEra: "BE" | "CE"): str
 }
 
 function salesTaxNote(row: import("./taxReports").SalesTaxRow): string {
+  if (row.note) return row.note;
+  if (row.kind === "DEBIT_NOTE") return `ใบเพิ่มหนี้ อ้างอิง ${row.referenceDocNo ?? ""}`;
   if (row.kind === "ABBREVIATED_DAY") {
     return ["ใบกำกับภาษีอย่างย่อรวมรายวัน", row.deviceCode ? `เครื่อง ${row.deviceCode}` : ""]
       .filter(Boolean).join(" · ");

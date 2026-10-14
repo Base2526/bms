@@ -27,15 +27,15 @@ async function newOrder(status: "PENDING" | "COMPLETED"): Promise<string> {
   )).rows[0].id;
 }
 
-async function addActiveTaxDocument(orderId: string): Promise<void> {
+async function addActiveTaxDocument(orderId: string, docType = "ABBREVIATED"): Promise<void> {
   sequence += 1;
   await query(
     `INSERT INTO bms_tax_documents
        (tenant_id, location_id, order_id, doc_type, doc_no, issue_date,
         taxable_amount, vat_amount, grand_total, vat_rate)
-     VALUES ($1,$2,$3,'ABBREVIATED',$4,
+     VALUES ($1,$2,$3,$5,$4,
              (now() AT TIME ZONE 'Asia/Bangkok')::date,107,7,107,7)`,
-    [tenantId, locationId, orderId, `FAKE-GUARD-${process.pid}-${sequence}`]
+    [tenantId, locationId, orderId, `FAKE-GUARD-${process.pid}-${sequence}`, docType]
   );
 }
 
@@ -127,6 +127,29 @@ test("refundPayment rejects an active tax document and still permits a document-
   assert.equal((await query<{ status: string }>(
     `SELECT status FROM bms_payments WHERE tenant_id=$1 AND id=$2`, [tenantId, plainPayment]
   )).rows[0].status, "REFUNDED");
+});
+
+test("full invoices also block cancellation, return and refund, even after full credit", async () => {
+  const pending = await newOrder("PENDING");
+  await addActiveTaxDocument(pending, "FULL");
+  await assert.rejects(cancelInTenantTx(pending), /คืนผ่านหน้า POS/);
+  const completed = await newOrder("COMPLETED");
+  await addActiveTaxDocument(completed, "FULL");
+  await query(
+    `INSERT INTO bms_tax_documents
+      (tenant_id, location_id, order_id, doc_type, doc_no, issue_date,
+       references_document_id, taxable_amount, vat_amount, grand_total, vat_rate)
+     SELECT tenant_id, location_id, order_id, 'CREDIT_NOTE', doc_no || '-CN', issue_date,
+       id, taxable_amount, vat_amount, grand_total, vat_rate
+       FROM bms_tax_documents WHERE tenant_id=$1 AND order_id=$2 AND doc_type='FULL'`,
+    [tenantId, completed]
+  );
+  await assert.rejects(returnOrder(tenantId, completed), /คืนผ่านหน้า POS/);
+  const payment = await addConfirmedPayment(completed);
+  await assert.rejects(refundPayment(tenantId, payment, "fake-actor"), /คืนผ่านหน้า POS/);
+  assert.equal((await query<{ status: string }>(
+    `SELECT status FROM bms_orders WHERE tenant_id=$1 AND id=$2`, [tenantId, completed]
+  )).rows[0].status, "COMPLETED");
 });
 
 test("teardown", async () => {

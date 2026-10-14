@@ -14,7 +14,7 @@
 // ใบลดหนี้เก็บยอดเป็นบวก (ประเภทเอกสารบอกเองว่าเป็นการลด) → รายงานต้องกลับเครื่องหมาย
 // =============================================================
 
-export type TaxDocKind = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
+export type TaxDocKind = "ABBREVIATED" | "FULL" | "CREDIT_NOTE" | "DEBIT_NOTE";
 
 export type TaxAmounts = {
   /** มูลค่าสินค้า/บริการที่ต้องเสียภาษี ก่อน VAT */

@@ -19,7 +19,8 @@
 // ใบลดหนี้) — ห้ามซ่อนหรือปัดทิ้ง
 // =============================================================
 
-import { query } from "@/lib/db";
+import { query, getClient } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
 import { getVatSettings } from "./taxDocuments";
 import {
   assertTaxPeriod,
@@ -89,7 +90,7 @@ export async function listTaxDocuments(
   const limit = Math.min(Math.max(Math.trunc(filter.limit ?? 50), 1), 200);
   const offset = Math.max(Math.trunc(filter.offset ?? 0), 0);
   const docType = filter.docType ?? null;
-  if (docType && !["ABBREVIATED", "FULL", "CREDIT_NOTE"].includes(docType)) {
+  if (docType && !["ABBREVIATED", "FULL", "CREDIT_NOTE", "DEBIT_NOTE"].includes(docType)) {
     throw new Error("ประเภทเอกสารไม่ถูกต้อง");
   }
   const search = filter.search?.trim() ? `%${escapeLike(filter.search.trim())}%` : null;
@@ -178,7 +179,8 @@ export type SalesTaxEstablishment = {
 };
 
 export type SalesTaxRow = TaxAmounts & {
-  kind: "FULL" | "ABBREVIATED_DAY" | "CREDIT_NOTE";
+  kind: "FULL" | "ABBREVIATED_DAY" | "CREDIT_NOTE" | "DEBIT_NOTE" | "DOCUMENT_EVENT";
+  note?: string;
   issueDate: string;
   locationId: string;
   branchCode: string;
@@ -275,8 +277,18 @@ function amountsOfRow(r: DocRow): TaxAmounts {
 
 export async function getSalesTaxReport(
   tenantId: string,
-  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
+  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null },
+  reader?: { query: typeof query }
 ): Promise<SalesTaxReport> {
+  if (!reader) {
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, tenantId);
+      const report = await getSalesTaxReport(tenantId, input, client);
+      await client.query("COMMIT");
+      return report;
+    } finally { await client.query("ROLLBACK").catch(() => {}); client.release(); }
+  }
   const requested = assertTaxPeriod(input.from, input.to);
   if (requested.from.slice(0, 7) !== requested.to.slice(0, 7)) {
     throw new Error("รายงานภาษีขายต้องออกครั้งละหนึ่งเดือนภาษี");
@@ -289,14 +301,14 @@ export async function getSalesTaxReport(
   const allowedLocationIds = input.allowedLocationIds ?? null;
 
   const [settings, sellerRes, locRes, docRes] = await Promise.all([
-    getVatSettings(tenantId),
-    query<{ name: string; tax_id: string | null }>(
+    getVatSettings(tenantId, reader),
+    reader.query<{ name: string; tax_id: string | null }>(
       `SELECT t.name, s.tax_id FROM bms_tenants t
          LEFT JOIN bms_store_profile s ON s.tenant_id = t.id
         WHERE t.id = $1`,
       [tenantId]
     ),
-    query<any>(
+    reader.query<any>(
       `SELECT id, code, name, branch_code, is_head_office, address
          FROM bms_locations
         WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
@@ -304,7 +316,7 @@ export async function getSalesTaxReport(
         ORDER BY is_head_office DESC, branch_code, code`,
       [tenantId, locationId, allowedLocationIds]
     ),
-    query<DocRow>(
+    reader.query<DocRow>(
       `SELECT d.doc_type, d.location_id, l.branch_code, d.device_id, dev.code AS device_code,
               d.doc_no, d.issue_date::text AS issue_date, d.issued_at, d.cancelled_at, d.cancelled_reason,
               d.buyer_name, d.buyer_tax_id, d.buyer_branch_code, d.replaces_document_id,
@@ -317,11 +329,13 @@ export async function getSalesTaxReport(
                 ON ref.tenant_id = d.tenant_id
                AND ref.id = COALESCE(d.references_document_id, d.replaces_document_id)
          LEFT JOIN LATERAL (
+           -- ใบย่อถูกแทนด้วยใบเต็ม · ใบลดหนี้ถูกแทนด้วยใบลดหนี้ใหม่ที่อ้างใบเต็ม
            SELECT full_doc.doc_no
              FROM bms_tax_documents full_doc
             WHERE full_doc.tenant_id = d.tenant_id
               AND full_doc.replaces_document_id = d.id
-              AND full_doc.doc_type = 'FULL' AND full_doc.cancelled_at IS NULL
+              AND full_doc.doc_type = CASE WHEN d.doc_type = 'CREDIT_NOTE' THEN 'CREDIT_NOTE' ELSE 'FULL' END
+              -- Replacement chains retain the original monetary event even after buyer corrections.
             ORDER BY full_doc.issued_at, full_doc.id
             LIMIT 1
          ) replacement ON TRUE
@@ -403,10 +417,12 @@ export async function getSalesTaxReport(
       continue;
     }
 
-    if (r.cancelled_at) continue;
-    const replacesAbbreviated = r.doc_type === "FULL" && Boolean(r.replaces_document_id);
+    // ใบลดหนี้ที่ถูกออกใหม่ให้อ้างใบเต็มยังเป็นยอดของงวดเดิม (เหมือนใบย่อที่ถูกแทน)
+    // ใบที่ออกใหม่จึงเป็นแถวอ้างอิงยอดศูนย์ — ยอดไม่ย้ายงวดและไม่ลดซ้ำ
+    if (r.cancelled_at && !r.active_replacement_doc_no) continue;
+    const replacesAbbreviated = Boolean(r.replaces_document_id);
     rows.push({
-      kind: r.doc_type === "FULL" ? "FULL" : "CREDIT_NOTE",
+      kind: r.doc_type === "FULL" ? "FULL" : r.doc_type === "DEBIT_NOTE" ? "DEBIT_NOTE" : "CREDIT_NOTE",
       issueDate: r.issue_date,
       locationId: r.location_id,
       branchCode: r.branch_code,
@@ -426,6 +442,26 @@ export async function getSalesTaxReport(
   }
   for (const g of abbrGroups.values()) Object.assign(g.row, sumTaxAmounts(g.amounts));
   // วันที่ละวันไม่มีใบย่อที่นับได้เลย (ถูกยกเลิกทั้งหมด) ยังคงแถวไว้ — ช่วงเลขต้องต่อเนื่อง
+
+  // Administrative document events are zero-value notes in their actual processing month.
+  const events = await reader.query<any>(`SELECT a.action,a.copy_number,a.reason,a.issue_date::text,a.actor_name,
+      a.location_id,l.branch_code,d.doc_no,d.buyer_name,d.buyer_tax_id,d.buyer_branch_code,
+      replacement.doc_no AS replacement_doc_no
+    FROM bms_tax_document_actions a JOIN bms_tax_documents d ON d.tenant_id=a.tenant_id AND d.id=a.document_id
+    JOIN bms_locations l ON l.tenant_id=a.tenant_id AND l.id=a.location_id
+    LEFT JOIN bms_tax_documents replacement ON replacement.tenant_id=a.tenant_id AND replacement.id=a.result_document_id
+    WHERE a.tenant_id=$1 AND a.issue_date BETWEEN $2::date AND $3::date
+      AND ($4::uuid IS NULL OR a.location_id=$4) AND ($5::uuid[] IS NULL OR a.location_id=ANY($5::uuid[]))
+      AND a.action IN ('SUBSTITUTE','CORRECT') ORDER BY a.issued_at,a.id`, [tenantId,from,to,locationId,allowedLocationIds]);
+  for (const e of events.rows) rows.push({
+    kind: "DOCUMENT_EVENT", issueDate: e.issue_date, locationId: e.location_id, branchCode: e.branch_code,
+    deviceCode: null, docNoFrom: e.doc_no, docNoTo: e.doc_no, docCount: 0, cancelledCount: 0,
+    buyerName: e.buyer_name, buyerTaxId: e.buyer_tax_id, buyerBranchCode: e.buyer_branch_code,
+    referenceDocNo: e.replacement_doc_no ?? e.doc_no,
+    note: e.action === "SUBSTITUTE" ? `ใบแทนครั้งที่ ${e.copy_number} · ${e.reason} · ${e.actor_name}` : `ยกเลิกและออกใหม่แทน ${e.replacement_doc_no} · ${e.reason}`,
+    base: 0, exempt: 0, vat: 0, total: 0, rounding: 0,
+  });
+  rows.sort((a,b) => a.issueDate.localeCompare(b.issueDate));
 
   // ---- ยอดรวมต่อสถานประกอบการ ----
   const totals: SalesTaxEstablishmentTotal[] = establishments.map((e) => {
@@ -452,7 +488,7 @@ export async function getSalesTaxReport(
 
   if (settings.vatRegistered) {
     const [paid, returns] = await Promise.all([
-      query<any>(
+      reader.query<any>(
         `SELECT o.id, o.location_id, o.channel, o.status, o.total_amount,
                 COALESCE(o.paid_at, o.created_at) AS at, count(*) OVER () AS total_count
            FROM bms_orders o
@@ -474,7 +510,7 @@ export async function getSalesTaxReport(
       ),
       // คืนของที่บิลต้นทางมีใบกำกับ แต่ไม่มีใบลดหนี้ของการคืนครั้งนั้น
       // (ensurePosReturnCreditNote ใส่ [posReturnId] ท้าย credit_reason ทุกครั้ง)
-      query<any>(
+      reader.query<any>(
         `WITH inconsistent AS (
            SELECT r.id::text AS ref, r.order_id, o.location_id, r.refund_amount AS amount,
                   r.created_at AS at

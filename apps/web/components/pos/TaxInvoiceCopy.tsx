@@ -1,5 +1,6 @@
 "use client";
 import type { FullTaxInvoiceView } from "@/lib/bms/taxDocuments";
+import { formatTaxDate, taxIdentityLine } from "@/lib/bms/taxDocumentText";
 export default function TaxInvoiceCopy({
   invoice: i,
 }: {
@@ -10,7 +11,6 @@ export default function TaxInvoiceCopy({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
-  const branch = (s: string) => (s === "00000" ? "สำนักงานใหญ่" : `สาขา ${s}`);
   return (
     <article data-print-root="tax-invoice-copy"
       style={{
@@ -26,22 +26,21 @@ export default function TaxInvoiceCopy({
         สำเนาสำหรับตรวจสอบ — ไม่ใช่ e-Tax Invoice · ติดต่อร้านเพื่อรับต้นฉบับ
       </p>
       <p>
-        เลขที่ {i.docNo} · วันที่ {i.issueDate}
-        {i.replacesDocNo && ` · ออกแทนใบอย่างย่อ ${i.replacesDocNo}`}
+        เลขที่ {i.docNo} · วันที่ {formatTaxDate(i.issueDate, i.calendarEra)}
+        {i.replacesDocNo && ` · ยกเลิกและออกใหม่แทนเอกสาร ${i.replacesDocNo}`}
       </p>
       <p>
         <b>ผู้ขาย: {i.seller.name}</b>
         <br />
         {i.seller.address}
         <br />
-        เลขผู้เสียภาษี {i.seller.taxId} · {branch(i.seller.branchCode)}
+        {taxIdentityLine(i.seller.taxId, i.seller.branchCode)}
       </p>
       <p>
         <b>ผู้ซื้อ: {i.buyer.name}</b>
         <br />
         {i.buyer.address}
-        <br />
-        เลขผู้เสียภาษี {i.buyer.taxId} · {branch(i.buyer.branchCode)}
+        {taxIdentityLine(i.buyer.taxId, i.buyer.branchCode) && <><br />{taxIdentityLine(i.buyer.taxId, i.buyer.branchCode)}</>}
       </p>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>

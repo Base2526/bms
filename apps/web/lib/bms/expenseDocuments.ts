@@ -331,7 +331,8 @@ export type InputVatReport = {
  */
 export async function getInputVatReport(
   tenantId: string,
-  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null }
+  input: { from: string; to: string; locationId?: string | null; allowedLocationIds?: string[] | null },
+  reader: { query: typeof query } = { query }
 ): Promise<InputVatReport> {
   const requested = assertTaxPeriod(input.from, input.to);
   if (requested.from.slice(0, 7) !== requested.to.slice(0, 7)) {
@@ -344,20 +345,20 @@ export async function getInputVatReport(
   const locationId = input.locationId ?? null;
   const allowedLocationIds = input.allowedLocationIds ?? null;
   const [buyerRes, locRes, rowRes] = await Promise.all([
-    query<{ name: string; tax_id: string | null }>(
+    reader.query<{ name: string; tax_id: string | null }>(
       `SELECT t.name, s.tax_id FROM bms_tenants t
          LEFT JOIN bms_store_profile s ON s.tenant_id = t.id
         WHERE t.id = $1`,
       [tenantId]
     ),
-    query<any>(
+    reader.query<any>(
       `SELECT id, code, name, branch_code, is_head_office, address FROM bms_locations
         WHERE tenant_id = $1 AND ($2::uuid IS NULL OR id = $2::uuid)
           AND ($3::uuid[] IS NULL OR id = ANY($3::uuid[]))
         ORDER BY is_head_office DESC, branch_code, code`,
       [tenantId, locationId, allowedLocationIds]
     ),
-    query<any>(
+    reader.query<any>(
       `SELECT d.location_id, l.branch_code, d.document_date::text AS document_date,
               d.document_no, d.payee_name, d.payee_tax_id,
               COALESCE(NULLIF(btrim(d.payee_branch_code), ''), '00000') AS payee_branch_code,

@@ -913,8 +913,12 @@ export const typeDefs = /* GraphQL */ `
 
   input BmsTaxInvoiceBuyerInput {
     name: String!
-    taxId: String!
+    "บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการจด VAT (buyerType COMPANY หรือไม่ระบุ)"
+    taxId: String
     branchCode: String
+    "INDIVIDUAL | COMPANY | FOREIGNER — ไม่ระบุ = COMPANY (พฤติกรรมเดิม)"
+    buyerType: String
+    vatRegistered: Boolean
     address: String
     phone: String
   }
@@ -1040,6 +1044,8 @@ export const typeDefs = /* GraphQL */ `
     status: String!
     document: BmsTaxDocument
     cancelledAbbreviated: BmsTaxDocument
+    "ใบลดหนี้ที่ออกใหม่ให้อ้างใบเต็ม เมื่อบิลมีการคืนสินค้าบางส่วนไปแล้ว"
+    reissuedCreditNotes: [BmsTaxDocument!]
     reason: String
     skus: [String!]
   }

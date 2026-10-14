@@ -1,5 +1,13 @@
 import React from 'react';
-import { Alert, Keyboard, ScrollView, Text, TextInput } from 'react-native';
+import {
+  Alert,
+  Dimensions,
+  Keyboard,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+} from 'react-native';
 import ReactTestRenderer, { act } from 'react-test-renderer';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useQuery } from '@apollo/client';
@@ -318,6 +326,74 @@ describe('Receipt navigation and recovery', () => {
       />,
     );
   }
+
+  // The test renderer never runs Yoga, so these pin the layout rule instead of pixels. RN's default
+  // jest window (750x1334) already counts as a tablet, which is why every other test here passed
+  // while Android 7"/10" tablets drew a dialog with a 0-height receipt pane.
+  function withWindow(width: number, height: number) {
+    return jest
+      .spyOn(Dimensions, 'get')
+      .mockReturnValue({ width, height, scale: 2, fontScale: 1 });
+  }
+  function byTestId(testID: string) {
+    return renderer.root.findAll(node => node.props.testID === testID)[0];
+  }
+  function textIn(node: ReactTestRenderer.ReactTestInstance) {
+    return node
+      .findAllByType(Text)
+      .map(child => child.props.children)
+      .flat(Infinity)
+      .join(' ');
+  }
+
+  test.each([
+    ['7-inch tablet landscape', 1024, 600],
+    ['10-inch tablet landscape', 1280, 800],
+    ['10-inch tablet portrait', 800, 1280],
+  ])(
+    'keeps the receipt pane content-sized on a %s',
+    async (_label, width, height) => {
+      const dims = withWindow(width, height);
+      try {
+        await screen();
+        const panes = byTestId('receipt-panes');
+        expect(panes).toBeDefined();
+        const style = StyleSheet.flatten(panes.props.style);
+        // flex:1 means flexBasis 0, which collapses to 0px inside the maxHeight-only dialog.
+        expect(style.flex).toBeUndefined();
+        expect(style.flexBasis).toBeUndefined();
+        expect(style.flexGrow ?? 0).toBe(0);
+        expect(style.flexShrink).toBe(1);
+        expect(panes.findAllByType(ReceiptPaper)).toHaveLength(1);
+        const sidebar = byTestId('receipt-sidebar');
+        expect(textIn(sidebar)).toContain('เลขที่ใบเสร็จ');
+        // The 300px column cannot fit a UUID fallback unless the value may shrink and wrap.
+        const receiptNo = sidebar
+          .findAllByType(Text)
+          .find(node => node.props.children === receipt.receiptNo)!;
+        expect(StyleSheet.flatten(receiptNo.props.style).flexShrink).toBe(1);
+        expect(
+          sidebar
+            .findAllByType(Button)
+            .some(node => node.props.label === 'พิมพ์ใบเสร็จ'),
+        ).toBe(true);
+      } finally {
+        dims.mockRestore();
+      }
+    },
+  );
+
+  test('keeps the phone receipt as one scroll under the paid summary', async () => {
+    const dims = withWindow(390, 844);
+    try {
+      await screen();
+      expect(byTestId('receipt-panes')).toBeUndefined();
+      expect(renderer.root.findAllByType(ReceiptPaper)).toHaveLength(1);
+      expect(text()).toContain('เลขที่ใบเสร็จ');
+    } finally {
+      dims.mockRestore();
+    }
+  });
 
   test('keeps the confirmed paper and delivery form mounted during background refresh', async () => {
     jest.mocked(useQuery).mockReturnValue({

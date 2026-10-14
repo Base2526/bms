@@ -758,6 +758,62 @@ input BmsCreateStockTransferInput {
   toLocationId: ID!
 }
 
+type BmsCreditNoteBuyer {
+  address: String
+  branchCode: String
+  name: String!
+  phone: String
+  taxId: String
+}
+
+type BmsCreditNoteLine {
+  amount: Float!
+  name: String!
+  qty: Float!
+  size: String!
+  unit: String!
+}
+
+type BmsCreditNoteOriginal {
+  docNo: String!
+  docType: String!
+  issueDate: String!
+}
+
+"""
+ใบลดหนี้เต็มรูป (มาตรา 86/10) — ยอดทั้งหมดมาจาก snapshot ของเอกสารที่ออกไปแล้ว
+buyer เป็น null เมื่อใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ
+"""
+type BmsCreditNoteView {
+  amountText: String!
+  buyer: BmsCreditNoteBuyer
+  calendarEra: String!
+  cancelledAt: String
+  cancelledReason: String
+  correctValue: Float!
+  difference: Float!
+  differenceBeforeVat: Float!
+  docNo: String!
+  exemptAmount: Float!
+  id: ID!
+  issueDate: String!
+
+  """
+  ยอดคืนลบผลรวมรายการ (ราคาส่ง/โปรของที่เหลือถูกประเมินใหม่) — 0 เมื่อไม่มีรายการ
+  """
+  lineAdjustment: Float!
+  lines: [BmsCreditNoteLine!]!
+  orderId: ID!
+  original: BmsCreditNoteOriginal!
+  originalValue: Float!
+  previouslyCredited: Float!
+  reason: String!
+  replacesDocNo: String
+  seller: BmsFullTaxInvoiceParty!
+  vatAmount: Float!
+  vatRate: Float!
+}
+
 type BmsCustomer {
   addresses: [BmsCustomerAddress!]!
   coupons: [BmsCustomerCoupon360!]!
@@ -1365,6 +1421,17 @@ type BmsFulfillmentReport {
   shipmentCount: Int!
 }
 
+"""
+ผู้ซื้อบนใบกำกับ — taxId/branchCode เป็น null เมื่อผู้ซื้อไม่ได้เป็นผู้ประกอบการจด VAT
+"""
+type BmsFullTaxInvoiceBuyer {
+  address: String!
+  branchCode: String
+  name: String!
+  phone: String
+  taxId: String
+}
+
 type BmsFullTaxInvoiceLine {
   amount: Float!
   name: String!
@@ -1386,7 +1453,10 @@ type BmsFullTaxInvoiceParty {
 
 type BmsFullTaxInvoiceView {
   amountText: String!
-  buyer: BmsFullTaxInvoiceParty!
+  buyer: BmsFullTaxInvoiceBuyer!
+
+  """BE | CE — ปีบนเอกสารตามที่ร้านตั้ง"""
+  calendarEra: String!
   discount: Float!
   docNo: String!
   exemptAmount: Float!
@@ -1595,6 +1665,9 @@ type BmsIssueFullTaxInvoiceResult {
   cancelledAbbreviated: BmsTaxDocument
   document: BmsTaxDocument
   reason: String
+
+  """ใบลดหนี้ที่ออกใหม่ให้อ้างใบเต็ม เมื่อบิลมีการคืนสินค้าบางส่วนไปแล้ว"""
+  reissuedCreditNotes: [BmsTaxDocument!]
   skus: [String!]
   status: String!
 }
@@ -7060,9 +7133,17 @@ type BmsTaxEstablishment {
 input BmsTaxInvoiceBuyerInput {
   address: String
   branchCode: String
+
+  """INDIVIDUAL | COMPANY | FOREIGNER — ไม่ระบุ = COMPANY (พฤติกรรมเดิม)"""
+  buyerType: String
   name: String!
   phone: String
-  taxId: String!
+
+  """
+  บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการจด VAT (buyerType COMPANY หรือไม่ระบุ)
+  """
+  taxId: String
+  vatRegistered: Boolean
 }
 
 """
@@ -8212,6 +8293,7 @@ type Query {
   bmsCouponLocations: [BmsLocation!]!
   bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!
   bmsCoupons: [BmsCoupon!]!
+  bmsCreditNoteView(documentId: ID!): BmsCreditNoteView
   bmsCustomer(id: ID!): BmsCustomer
   bmsCustomer360(channel: String, conversationId: ID, customerId: ID, customerRef: String): BmsCustomer360
   bmsCustomerInsights(customerId: ID!): BmsCustomerInsights

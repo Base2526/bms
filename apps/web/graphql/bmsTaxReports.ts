@@ -14,7 +14,7 @@ import {
   listTaxDocuments,
   type TaxDocumentListFilter,
 } from "@/lib/bms/taxReports";
-import { getFullTaxInvoiceView } from "@/lib/bms/taxDocuments";
+import { getCreditNoteView, getFullTaxInvoiceView } from "@/lib/bms/taxDocuments";
 
 function badInput(err: unknown, fallback: string): never {
   throw new GraphQLError(err instanceof Error && err.message ? err.message : fallback, {
@@ -76,6 +76,15 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     locationName: String
   }
 
+  "ผู้ซื้อบนใบกำกับ — taxId/branchCode เป็น null เมื่อผู้ซื้อไม่ได้เป็นผู้ประกอบการจด VAT"
+  type BmsFullTaxInvoiceBuyer {
+    name: String!
+    taxId: String
+    branchCode: String
+    address: String!
+    phone: String
+  }
+
   type BmsFullTaxInvoiceLine {
     sku: String!
     name: String!
@@ -92,8 +101,10 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     docNo: String!
     issueDate: String!
     seller: BmsFullTaxInvoiceParty!
-    buyer: BmsFullTaxInvoiceParty!
+    buyer: BmsFullTaxInvoiceBuyer!
     replacesDocNo: String
+    "BE | CE — ปีบนเอกสารตามที่ร้านตั้ง"
+    calendarEra: String!
     lines: [BmsFullTaxInvoiceLine!]!
     subtotal: Float!
     discount: Float!
@@ -104,6 +115,59 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     vatRate: Float!
     roundingAmount: Float!
     grandTotal: Float!
+    amountText: String!
+  }
+
+  type BmsCreditNoteBuyer {
+    name: String!
+    taxId: String
+    branchCode: String
+    address: String
+    phone: String
+  }
+
+  type BmsCreditNoteOriginal {
+    docNo: String!
+    docType: String!
+    issueDate: String!
+  }
+
+  type BmsCreditNoteLine {
+    name: String!
+    size: String!
+    qty: Float!
+    unit: String!
+    amount: Float!
+  }
+
+  """
+  ใบลดหนี้เต็มรูป (มาตรา 86/10) — ยอดทั้งหมดมาจาก snapshot ของเอกสารที่ออกไปแล้ว
+  buyer เป็น null เมื่อใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ
+  """
+  type BmsCreditNoteView {
+    id: ID!
+    orderId: ID!
+    docNo: String!
+    issueDate: String!
+    cancelledAt: String
+    cancelledReason: String
+    seller: BmsFullTaxInvoiceParty!
+    buyer: BmsCreditNoteBuyer
+    original: BmsCreditNoteOriginal!
+    replacesDocNo: String
+    calendarEra: String!
+    reason: String!
+    lines: [BmsCreditNoteLine!]!
+    "ยอดคืนลบผลรวมรายการ (ราคาส่ง/โปรของที่เหลือถูกประเมินใหม่) — 0 เมื่อไม่มีรายการ"
+    lineAdjustment: Float!
+    originalValue: Float!
+    previouslyCredited: Float!
+    correctValue: Float!
+    difference: Float!
+    differenceBeforeVat: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    vatRate: Float!
     amountText: String!
   }
 
@@ -174,6 +238,7 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     bmsTaxEstablishments: [BmsTaxEstablishment!]!
     bmsTaxDocumentList(input: BmsTaxDocumentListInput!): BmsTaxDocumentList!
     bmsFullTaxInvoiceView(documentId: ID!): BmsFullTaxInvoiceView
+    bmsCreditNoteView(documentId: ID!): BmsCreditNoteView
     bmsSalesTaxReport(input: BmsSalesTaxReportInput!): BmsSalesTaxReportSummary!
   }
 `;
@@ -210,6 +275,15 @@ export const bmsTaxReportsResolvers = {
       await requirePermission(ctx, "tax.document.view");
       const locations = await taxLocationScope(ctx);
       return getFullTaxInvoiceView(
+        getTenantId(ctx),
+        args.documentId,
+        locations.map((location) => location.id)
+      );
+    },
+    async bmsCreditNoteView(_p: unknown, args: { documentId: string }, ctx: any) {
+      await requirePermission(ctx, "tax.document.view");
+      const locations = await taxLocationScope(ctx);
+      return getCreditNoteView(
         getTenantId(ctx),
         args.documentId,
         locations.map((location) => location.id)
