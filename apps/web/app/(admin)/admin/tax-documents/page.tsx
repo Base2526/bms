@@ -78,6 +78,20 @@ const Q_FULL_INVOICE = gql`
   }
 `;
 
+const Q_CREDIT_NOTE = gql`
+  query CreditNoteView($documentId: ID!) {
+    bmsCreditNoteView(documentId: $documentId) {
+      id orderId docNo issueDate cancelledAt cancelledReason reason amountText
+      seller { name taxId branchCode address phone locationName }
+      buyer { name taxId branchCode address phone }
+      original { docNo docType issueDate }
+      lines { name size qty unit amount }
+      originalValue previouslyCredited correctValue difference differenceBeforeVat
+      exemptAmount vatAmount vatRate
+    }
+  }
+`;
+
 type Establishment = { locationId: string; code: string; name: string; branchCode: string; isHeadOffice: boolean };
 
 const baht = (n: number) =>
@@ -99,6 +113,7 @@ export default function TaxDocumentsPage() {
   const [page, setPage] = useState(1);
   const [fullInvoiceSource, setFullInvoiceSource] = useState<{ orderId: string; docNo: string } | null>(null);
   const [invoicePreviewOpen, setInvoicePreviewOpen] = useState(false);
+  const [creditPreviewOpen, setCreditPreviewOpen] = useState(false);
   const [fullInvoiceForm] = Form.useForm();
 
   const from = month.startOf("month").format("YYYY-MM-DD");
@@ -124,6 +139,7 @@ export default function TaxDocumentsPage() {
   const [generate, { loading: generating }] = useMutation(M_GENERATE);
   const [issueFull, { loading: issuingFull }] = useMutation(M_ISSUE_FULL);
   const [loadFullInvoice, fullInvoice] = useLazyQuery(Q_FULL_INVOICE, { fetchPolicy: "network-only" });
+  const [loadCreditNote, creditNote] = useLazyQuery(Q_CREDIT_NOTE, { fetchPolicy: "network-only" });
 
   const establishments: Establishment[] = est.data?.bmsTaxEstablishments ?? [];
   const placeLabel = useMemo(() => {
@@ -403,6 +419,10 @@ export default function TaxDocumentsPage() {
                   setInvoicePreviewOpen(true);
                   void loadFullInvoice({ variables: { documentId: row.id } });
                 }}>{t("admin_tax_documents.view_full")}</Button>}
+                {row.docType === "CREDIT_NOTE" && <Button size="small" icon={<EyeOutlined />} onClick={() => {
+                  setCreditPreviewOpen(true);
+                  void loadCreditNote({ variables: { documentId: row.id } });
+                }}>{t("admin_tax_documents.view_credit_note")}</Button>}
                 {can("tax.document.issue") && row.docType === "ABBREVIATED" && !row.cancelledAt
                   ? <Button size="small" onClick={() => {
                     setFullInvoiceSource({ orderId: row.orderId, docNo: row.docNo });
@@ -521,6 +541,86 @@ export default function TaxDocumentsPage() {
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, borderTop: "1px solid #111", paddingTop: 8 }}><span>{t("admin_tax_documents.grand_total")}</span><span>{baht(invoice.grandTotal)}</span></div>
             </div>
             <div style={{ marginTop: 16, textAlign: "center" }}>({invoice.amountText})</div>
+          </div>;
+        })()}
+      </Modal>
+      <Modal
+        open={creditPreviewOpen}
+        width={900}
+        title={t("admin_tax_documents.credit_preview_title")}
+        onCancel={() => setCreditPreviewOpen(false)}
+        destroyOnClose
+        footer={[
+          <Button key="close" onClick={() => setCreditPreviewOpen(false)}>{t("admin_tax_documents.issue_full_cancel")}</Button>,
+          <Button key="print" type="primary" icon={<PrinterOutlined />}
+            disabled={!creditNote.data?.bmsCreditNoteView || Boolean(creditNote.data?.bmsCreditNoteView?.cancelledAt)}
+            onClick={() => window.print()}>{t("admin_tax_documents.print_credit")}</Button>,
+        ]}
+      >
+        {creditNote.loading ? <Typography.Text>{t("admin_tax_documents.loading_credit")}</Typography.Text> : (() => {
+          const note = creditNote.data?.bmsCreditNoteView;
+          if (!note) return <Empty description={t("admin_tax_documents.credit_not_found")} />;
+          // ใบที่ถูกยกเลิกไม่มีผลทางภาษี — ไม่เรนเดอร์เป็นเอกสารที่พิมพ์ได้
+          if (note.cancelledAt) {
+            return <Alert closable type="error" showIcon message={t("admin_tax_documents.credit_cancelled")} description={note.cancelledReason ?? undefined} />;
+          }
+          const branch = (code: string) => code === "00000" ? t("admin_tax_documents.full_head_office") : `${t("admin_tax_documents.branch")} ${code}`;
+          const total = (label: string, value: string, strong = false) => (
+            <div style={{ display: "flex", justifyContent: "space-between", fontWeight: strong ? 700 : undefined }}>
+              <span>{label}</span><span>{value}</span>
+            </div>
+          );
+          return <div data-print-root style={{ color: "#111", background: "#fff", padding: 24 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 24, marginBottom: 20 }}>
+              <div>
+                <Typography.Title level={3} style={{ margin: 0 }}>{t("admin_tax_documents.credit_document_title")}</Typography.Title>
+                <div>{note.seller.name}</div><div>{note.seller.address}</div>
+                <div>{t("admin_tax_documents.tax_id_short")} {note.seller.taxId} · {branch(note.seller.branchCode)}</div>
+                {note.seller.phone && <div>{t("admin_tax_documents.buyer_phone")}: {note.seller.phone}</div>}
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div><b>{t("admin_tax_documents.document_no")}</b> {note.docNo}</div>
+                <div><b>{t("admin_tax_documents.col_date")}</b> {dayjs(note.issueDate).format("DD/MM/YYYY")}</div>
+                <div>
+                  {t("admin_tax_documents.credit_original_doc")} {note.original.docNo}
+                  {note.original.docType === "ABBREVIATED" ? ` ${t("admin_tax_documents.credit_original_abbreviated")}` : ""}
+                </div>
+                <div>{t("admin_tax_documents.credit_original_date")} {dayjs(note.original.issueDate).format("DD/MM/YYYY")}</div>
+              </div>
+            </div>
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <b>{t("admin_tax_documents.buyer_section")}</b>
+              {note.buyer ? <>
+                <div>{note.buyer.name}</div>
+                {note.buyer.address && <div>{note.buyer.address}</div>}
+                {note.buyer.taxId && <div>{t("admin_tax_documents.tax_id_short")} {note.buyer.taxId} · {branch(note.buyer.branchCode ?? "00000")}</div>}
+                {note.buyer.phone && <div>{t("admin_tax_documents.buyer_phone")}: {note.buyer.phone}</div>}
+              </> : <div>{t("admin_tax_documents.credit_buyer_unknown")}</div>}
+            </Card>
+            <div style={{ marginBottom: 12 }}><b>{t("admin_tax_documents.credit_reason")}:</b> {note.reason}</div>
+            {note.lines.length > 0 ? (
+              <Table size="small" rowKey={(_: any, index?: number) => String(index)} pagination={false} dataSource={note.lines}
+                title={() => <b>{t("admin_tax_documents.credit_lines")}</b>}
+                columns={[
+                  { title: t("admin_tax_documents.line_no"), render: (_: unknown, __: unknown, index: number) => index + 1, width: 60 },
+                  { title: t("admin_tax_documents.line_item"), render: (_: unknown, line: any) => `${line.name}${line.size && line.size !== "-" ? ` (${line.size})` : ""}` },
+                  { title: t("admin_tax_documents.line_qty"), dataIndex: "qty", align: "right" as const },
+                  { title: t("admin_tax_documents.line_unit"), dataIndex: "unit" },
+                  { title: t("admin_tax_documents.col_amount"), dataIndex: "amount", align: "right" as const, render: baht },
+                ]} />
+            ) : <Typography.Text type="secondary">{t("admin_tax_documents.credit_lines_unavailable")}</Typography.Text>}
+            <div style={{ marginLeft: "auto", width: 420, maxWidth: "100%", marginTop: 16 }}>
+              {total(t("admin_tax_documents.credit_original_value"), baht(note.originalValue))}
+              {note.previouslyCredited > 0 && total(t("admin_tax_documents.credit_previously"), `-${baht(note.previouslyCredited)}`)}
+              {total(t("admin_tax_documents.credit_correct_value"), baht(note.correctValue))}
+              {total(t("admin_tax_documents.credit_difference_before_vat"), baht(note.differenceBeforeVat))}
+              {note.exemptAmount > 0 && total(t("admin_tax_documents.credit_exempt"), baht(note.exemptAmount))}
+              {total(`${t("admin_tax_documents.credit_vat")} ${note.vatRate}%`, baht(note.vatAmount))}
+              <div style={{ borderTop: "1px solid #111", paddingTop: 8 }}>
+                {total(t("admin_tax_documents.credit_difference"), baht(note.difference), true)}
+              </div>
+            </div>
+            <div style={{ marginTop: 16, textAlign: "center" }}>({note.amountText})</div>
           </div>;
         })()}
       </Modal>

@@ -35,6 +35,7 @@ import {
   type TaxDocLocation,
 } from "./taxDocumentNumber";
 import { isValidThaiTaxId } from "./thaiTaxId";
+import { creditNoteFigures, parseCreditReason } from "./creditNoteMath";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE";
 
@@ -977,5 +978,141 @@ export async function getFullTaxInvoiceView(
     roundingAmount: Number(d.rounding_amount),
     grandTotal,
     amountText: bahtText(grandTotal),
+  };
+}
+
+// ---------------------------------------------------------------
+// ใบลดหนี้เต็มรูป — ข้อมูลสำหรับ preview/print (มาตรา 86/10)
+// ---------------------------------------------------------------
+
+export type CreditNoteView = {
+  id: string;
+  orderId: string;
+  docNo: string;
+  issueDate: string;
+  cancelledAt: string | null;
+  cancelledReason: string | null;
+  seller: { name: string; taxId: string; branchCode: string; address: string; phone: string | null; locationName: string };
+  /** null = ใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ */
+  buyer: { name: string; taxId: string | null; branchCode: string | null; address: string | null; phone: string | null } | null;
+  original: { docNo: string; docType: TaxDocType; issueDate: string };
+  reason: string;
+  /** รายการที่คืนจริง — ว่างได้เมื่อหาการคืนต้นทางไม่เจอ (เอกสารยุคก่อน/ลดหนี้ด้วยวิธีอื่น) */
+  lines: Array<{ name: string; size: string; qty: number; unit: string; amount: number }>;
+  originalValue: number;
+  previouslyCredited: number;
+  correctValue: number;
+  difference: number;
+  differenceBeforeVat: number;
+  exemptAmount: number;
+  vatAmount: number;
+  vatRate: number;
+  amountText: string;
+};
+
+/** อ่านจาก snapshot ของเอกสารฝั่ง server เท่านั้น — ไม่คำนวณยอดภาษีใหม่ */
+export async function getCreditNoteView(
+  tenantId: string,
+  documentId: string,
+  allowedLocationIds?: string[] | null,
+  reader: { query: typeof query } = { query }
+): Promise<CreditNoteView | null> {
+  const res = await reader.query<any>(
+    `SELECT d.*,
+            orig.doc_no AS original_doc_no, orig.doc_type AS original_doc_type,
+            orig.issue_date AS original_issue_date, orig.grand_total AS original_grand_total,
+            COALESCE(d.seller_name, t.name) AS seller_name,
+            COALESCE(d.seller_tax_id, s.tax_id) AS seller_tax_id,
+            COALESCE(d.seller_address, NULLIF(btrim(l.address), ''), NULLIF(btrim(s.address), '')) AS seller_address,
+            COALESCE(d.seller_phone, NULLIF(btrim(l.phone), ''), NULLIF(btrim(s.phone), '')) AS seller_phone,
+            l.name AS location_name, l.branch_code,
+            (SELECT COALESCE(SUM(p.grand_total), 0)
+               FROM bms_tax_documents p
+              WHERE p.tenant_id = d.tenant_id
+                AND p.doc_type = 'CREDIT_NOTE'
+                AND p.references_document_id = d.references_document_id
+                AND p.cancelled_at IS NULL
+                AND p.id <> d.id
+                AND (p.issued_at, p.id) < (d.issued_at, d.id)) AS previously_credited
+       FROM bms_tax_documents d
+       JOIN bms_tenants t ON t.id = d.tenant_id
+       JOIN bms_locations l ON l.tenant_id = d.tenant_id AND l.id = d.location_id
+       JOIN bms_tax_documents orig
+         ON orig.tenant_id = d.tenant_id AND orig.id = d.references_document_id
+       LEFT JOIN bms_store_profile s ON s.tenant_id = d.tenant_id
+      WHERE d.tenant_id = $1 AND d.id = $2 AND d.doc_type = 'CREDIT_NOTE'
+        AND ($3::uuid[] IS NULL OR d.location_id = ANY($3::uuid[]))`,
+    [tenantId, documentId, allowedLocationIds ?? null]
+  );
+  const d = res.rows[0];
+  if (!d) return null;
+
+  const { reason, returnRef } = parseCreditReason(d.credit_reason);
+  // ผูกการคืนกับบิลของใบลดหนี้ด้วย — รหัสในเหตุผลเป็นข้อความ ไม่ใช่ FK
+  const items = returnRef
+    ? await reader.query<any>(
+        `SELECT ri.qty, ri.pack_qty, ri.refund_amount, oi.size, oi.pack_unit_name,
+                COALESCE(NULLIF(oi.product_name, ''), oi.product_sku) AS item_name
+           FROM bms_pos_return_items ri
+           JOIN bms_pos_returns pr ON pr.tenant_id = ri.tenant_id AND pr.id = ri.pos_return_id
+           JOIN bms_order_items oi ON oi.tenant_id = ri.tenant_id AND oi.id = ri.order_item_id
+          WHERE ri.tenant_id = $1 AND ri.pos_return_id = $2 AND pr.order_id = $3
+          ORDER BY ri.id`,
+        [tenantId, returnRef, d.order_id]
+      )
+    : { rows: [] as any[] };
+  const lines = items.rows.map((row: any) => ({
+    name: row.item_name,
+    size: row.size ?? "",
+    qty: Number(row.pack_qty ?? row.qty),
+    unit: row.pack_unit_name ?? "หน่วย",
+    amount: Number(row.refund_amount),
+  }));
+
+  const figures = creditNoteFigures({
+    originalTotal: Number(d.original_total ?? d.original_grand_total),
+    previouslyCredited: Number(d.previously_credited),
+    amount: Number(d.grand_total),
+    taxableAmount: Number(d.taxable_amount),
+    exemptAmount: Number(d.exempt_amount),
+    vatAmount: Number(d.vat_amount),
+  });
+
+  return {
+    id: d.id,
+    orderId: d.order_id,
+    docNo: d.doc_no,
+    issueDate: toDate(d.issue_date),
+    cancelledAt: d.cancelled_at ? toISO(d.cancelled_at) : null,
+    cancelledReason: d.cancelled_reason ?? null,
+    seller: {
+      name: d.seller_name ?? "",
+      taxId: d.seller_tax_id ?? "",
+      branchCode: d.seller_branch_code ?? d.branch_code ?? "00000",
+      address: d.seller_address ?? "",
+      phone: d.seller_phone ?? null,
+      locationName: d.location_name ?? "",
+    },
+    buyer: d.buyer_name
+      ? {
+          name: d.buyer_name,
+          taxId: d.buyer_tax_id ?? null,
+          branchCode: d.buyer_branch_code ?? null,
+          address: d.buyer_address ?? null,
+          phone: d.buyer_phone ?? null,
+        }
+      : null,
+    original: {
+      docNo: d.original_doc_no,
+      docType: d.original_doc_type,
+      issueDate: toDate(d.original_issue_date),
+    },
+    reason,
+    lines,
+    ...figures,
+    exemptAmount: Number(d.exempt_amount),
+    vatAmount: figures.differenceVat,
+    vatRate: Number(d.vat_rate),
+    amountText: bahtText(figures.difference),
   };
 }

@@ -14,7 +14,7 @@ import {
   listTaxDocuments,
   type TaxDocumentListFilter,
 } from "@/lib/bms/taxReports";
-import { getFullTaxInvoiceView } from "@/lib/bms/taxDocuments";
+import { getCreditNoteView, getFullTaxInvoiceView } from "@/lib/bms/taxDocuments";
 
 function badInput(err: unknown, fallback: string): never {
   throw new GraphQLError(err instanceof Error && err.message ? err.message : fallback, {
@@ -107,6 +107,55 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     amountText: String!
   }
 
+  type BmsCreditNoteBuyer {
+    name: String!
+    taxId: String
+    branchCode: String
+    address: String
+    phone: String
+  }
+
+  type BmsCreditNoteOriginal {
+    docNo: String!
+    docType: String!
+    issueDate: String!
+  }
+
+  type BmsCreditNoteLine {
+    name: String!
+    size: String!
+    qty: Float!
+    unit: String!
+    amount: Float!
+  }
+
+  """
+  ใบลดหนี้เต็มรูป (มาตรา 86/10) — ยอดทั้งหมดมาจาก snapshot ของเอกสารที่ออกไปแล้ว
+  buyer เป็น null เมื่อใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ
+  """
+  type BmsCreditNoteView {
+    id: ID!
+    orderId: ID!
+    docNo: String!
+    issueDate: String!
+    cancelledAt: String
+    cancelledReason: String
+    seller: BmsFullTaxInvoiceParty!
+    buyer: BmsCreditNoteBuyer
+    original: BmsCreditNoteOriginal!
+    reason: String!
+    lines: [BmsCreditNoteLine!]!
+    originalValue: Float!
+    previouslyCredited: Float!
+    correctValue: Float!
+    difference: Float!
+    differenceBeforeVat: Float!
+    exemptAmount: Float!
+    vatAmount: Float!
+    vatRate: Float!
+    amountText: String!
+  }
+
   input BmsSalesTaxReportInput {
     from: String!
     to: String!
@@ -174,6 +223,7 @@ export const bmsTaxReportsTypeDefs = /* GraphQL */ `
     bmsTaxEstablishments: [BmsTaxEstablishment!]!
     bmsTaxDocumentList(input: BmsTaxDocumentListInput!): BmsTaxDocumentList!
     bmsFullTaxInvoiceView(documentId: ID!): BmsFullTaxInvoiceView
+    bmsCreditNoteView(documentId: ID!): BmsCreditNoteView
     bmsSalesTaxReport(input: BmsSalesTaxReportInput!): BmsSalesTaxReportSummary!
   }
 `;
@@ -210,6 +260,15 @@ export const bmsTaxReportsResolvers = {
       await requirePermission(ctx, "tax.document.view");
       const locations = await taxLocationScope(ctx);
       return getFullTaxInvoiceView(
+        getTenantId(ctx),
+        args.documentId,
+        locations.map((location) => location.id)
+      );
+    },
+    async bmsCreditNoteView(_p: unknown, args: { documentId: string }, ctx: any) {
+      await requirePermission(ctx, "tax.document.view");
+      const locations = await taxLocationScope(ctx);
+      return getCreditNoteView(
         getTenantId(ctx),
         args.documentId,
         locations.map((location) => location.id)

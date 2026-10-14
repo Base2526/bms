@@ -20,6 +20,7 @@ import {
 import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
 import { buildCsv, buildInputVatReportDoc, buildSalesTaxReportDoc, buildXlsx } from "../apps/web/lib/bms/documentGenerator.ts";
 import { isValidThaiTaxId } from "../apps/web/lib/bms/thaiTaxId.ts";
+import { creditNoteFigures, parseCreditReason } from "../apps/web/lib/bms/creditNoteMath.ts";
 
 const root = new URL("../", import.meta.url);
 const read = (p: string) => readFileSync(new URL(p, root), "utf8");
@@ -235,7 +236,7 @@ test("tax periods are cut by the Thai issue_date, never by the UTC issued_at", (
 
 test("the tax document page is behind tax.document.view", () => {
   const gql = read("apps/web/graphql/bmsTaxReports.ts");
-  assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 4);
+  assert.equal((gql.match(/requirePermission\(ctx, "tax\.document\.view"\)/g) ?? []).length, 5);
 });
 
 test("tax reads, exports and generated files honour the actor's branch scope", () => {
@@ -293,6 +294,68 @@ test("full tax invoice issuance is reachable from the tax document page and vali
   assert.match(queue, /status = 'CANCELLED'/);
   const pos = read("apps/web/lib/bms/pos.ts");
   assert.match(pos, /cancelledTaxDocuments[\s\S]*cancelQueuedTaxDocumentInTx/);
+});
+
+test("a credit note states original, correct value and difference — net of earlier credit notes", () => {
+  // บิล 107 คืน 53.50 สองครั้ง: ใบที่สองต้องบอกว่ามูลค่าที่ถูกต้องเหลือ 0 ไม่ใช่ 53.50
+  const first = creditNoteFigures({
+    originalTotal: 107, previouslyCredited: 0, amount: 53.5, taxableAmount: 53.5, exemptAmount: 0, vatAmount: 3.5,
+  });
+  assert.deepEqual(first, {
+    originalValue: 107, previouslyCredited: 0, correctValue: 53.5,
+    difference: 53.5, differenceBeforeVat: 50, differenceVat: 3.5,
+  });
+  const second = creditNoteFigures({
+    originalTotal: 107, previouslyCredited: 53.5, amount: 53.5, taxableAmount: 53.5, exemptAmount: 0, vatAmount: 3.5,
+  });
+  assert.equal(second.correctValue, 0);
+  // ส่วนยกเว้น VAT อยู่ในผลต่างก่อน VAT แต่ไม่มี VAT
+  const mixed = creditNoteFigures({
+    originalTotal: 200, previouslyCredited: 0, amount: 60, taxableAmount: 21.4, exemptAmount: 38.6, vatAmount: 1.4,
+  });
+  assert.equal(mixed.differenceBeforeVat, 58.6);
+  assert.equal(mixed.differenceBeforeVat + mixed.differenceVat, mixed.difference);
+  // 0.1 + 0.2 ต้องไม่หลุดเป็น 0.30000000000000004 บนเอกสาร
+  assert.equal(creditNoteFigures({
+    originalTotal: 0.3, previouslyCredited: 0.1, amount: 0.2, taxableAmount: 0.2, exemptAmount: 0, vatAmount: 0,
+  }).correctValue, 0);
+});
+
+test("the internal return reference never reaches the printed credit-note reason", () => {
+  const ref = "3f2b8c1e-9a4d-4e7b-8c2a-1d2e3f4a5b6c";
+  assert.deepEqual(parseCreditReason(`รับคืนสินค้าบางรายการ [${ref}]`), { reason: "รับคืนสินค้าบางรายการ", returnRef: ref });
+  assert.deepEqual(parseCreditReason("ลดราคาเพราะสินค้าชำรุด"), { reason: "ลดราคาเพราะสินค้าชำรุด", returnRef: null });
+  // วงเล็บที่ไม่ใช่ uuid เป็นส่วนหนึ่งของเหตุผลที่คนเขียน ต้องไม่ถูกตัด
+  assert.deepEqual(parseCreditReason("คืนของ [ล็อต A]"), { reason: "คืนของ [ล็อต A]", returnRef: null });
+  assert.deepEqual(parseCreditReason(null), { reason: "", returnRef: null });
+});
+
+test("a full-format credit note is printable from the tax document page, branch-scoped and read-only", () => {
+  const page = read("apps/web/app/(admin)/admin/tax-documents/page.tsx");
+  const service = read("apps/web/lib/bms/taxDocuments.ts");
+  const gql = read("apps/web/graphql/bmsTaxReports.ts");
+  assert.match(page, /row\.docType === "CREDIT_NOTE" && <Button/);
+  assert.match(page, /bmsCreditNoteView/);
+  assert.match(gql, /async bmsCreditNoteView[\s\S]*?tax\.document\.view[\s\S]*?taxLocationScope/);
+  const view = service.slice(service.indexOf("export async function getCreditNoteView"));
+  assert.ok(view.length > 0);
+  // ขอบเขตสาขาต้องอยู่ใน SQL ไม่ใช่กรองทีหลัง
+  assert.match(view, /\$3::uuid\[\] IS NULL OR d\.location_id = ANY\(\$3::uuid\[\]\)/);
+  assert.match(view, /d\.doc_type = 'CREDIT_NOTE'/);
+  // ใบลดหนี้ก่อนหน้าที่นับต้องเป็นของใบกำกับเดิมใบเดียวกัน และไม่นับใบที่ยกเลิก
+  assert.match(view, /p\.references_document_id = d\.references_document_id/);
+  assert.match(view, /p\.cancelled_at IS NULL/);
+  // การคืนต้องเป็นของบิลเดียวกับใบลดหนี้ — รหัสในเหตุผลเป็นข้อความ ไม่ใช่ FK
+  assert.match(view, /pr\.order_id = \$3/);
+  // อ่านอย่างเดียว
+  assert.doesNotMatch(view, /\b(INSERT|UPDATE|DELETE)\b/);
+  // ใบที่ยกเลิกต้องพิมพ์ไม่ได้
+  assert.match(page, /Boolean\(creditNote\.data\?\.bmsCreditNoteView\?\.cancelledAt\)/);
+  // มาตรา 86/10: อ้างใบกำกับเดิม มูลค่าเดิม มูลค่าที่ถูกต้อง ผลต่าง VAT ของผลต่าง และเหตุผล
+  for (const key of ["credit_original_doc", "credit_original_value", "credit_correct_value",
+    "credit_difference", "credit_vat", "credit_reason"]) {
+    assert.match(page, new RegExp(`admin_tax_documents\\.${key}"`), key);
+  }
 });
 
 test("tax document pagination keeps the real total when an offset returns no rows", () => {

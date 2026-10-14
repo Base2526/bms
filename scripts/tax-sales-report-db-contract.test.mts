@@ -20,6 +20,7 @@ import { getClient, query } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
 import { upsertPosDevice } from "../apps/web/lib/bms/pos.ts";
 import {
+  getCreditNoteView,
   getVatSettings,
   issueAbbreviatedInvoiceInTx,
   issueCreditNote,
@@ -336,6 +337,61 @@ test("the XLSX export has every sheet and Thai-dated rows", async () => {
   assert.equal(total[5], "รวมทั้งสิ้น");
   assert.equal(total[6], 300);
   assert.equal(total[7], 21);
+});
+
+test("a credit note prints its returned lines, the original invoice and value net of earlier notes", async () => {
+  const { orderId, docNo } = await abbreviated(branchId, devC);
+  const item = (await query<{ id: string }>(
+    `SELECT id FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`, [tenantId, orderId]
+  )).rows[0].id;
+  const notes: string[] = [];
+  for (const key of ["cn-1", "cn-2"]) {
+    const ret = await posReturn(orderId, 53.5, key);
+    await query(
+      `INSERT INTO bms_pos_return_items (tenant_id, pos_return_id, order_item_id, qty, refund_amount)
+       VALUES ($1,$2,$3,1,53.5)`, [tenantId, ret, item]
+    );
+    const note = await issueCreditNote({
+      tenantId, orderId, amount: 53.5, reason: "รับคืนสินค้าบางรายการ", returnRef: ret,
+    });
+    assert.equal(note.status, "ISSUED", JSON.stringify(note));
+    if (note.status === "ISSUED") notes.push(note.document.id);
+  }
+
+  const first = await getCreditNoteView(tenantId, notes[0]);
+  assert.ok(first);
+  assert.equal(first.original.docNo, docNo);
+  assert.equal(first.original.docType, "ABBREVIATED");
+  assert.equal(first.buyer, null, "an abbreviated original has no buyer to print");
+  assert.equal(first.reason, "รับคืนสินค้าบางรายการ", "the return uuid stays off the document");
+  assert.equal(first.lines.length, 1);
+  assert.equal(first.lines[0].amount, 53.5);
+  assert.equal(first.originalValue, 107);
+  assert.equal(first.previouslyCredited, 0);
+  assert.equal(first.correctValue, 53.5);
+  assert.equal(first.differenceBeforeVat, 50);
+  assert.equal(first.vatAmount, 3.5);
+
+  const second = await getCreditNoteView(tenantId, notes[1]);
+  assert.equal(second?.previouslyCredited, 53.5);
+  assert.equal(second?.correctValue, 0);
+
+  // ขอบเขตสาขา: คนที่ดูได้แค่สำนักงานใหญ่ต้องไม่เห็นใบลดหนี้ของสาขา
+  assert.equal(await getCreditNoteView(tenantId, notes[0], [hqId]), null);
+  // ใบกำกับไม่ใช่ใบลดหนี้
+  const invoice = (await query<{ id: string }>(
+    `SELECT id FROM bms_tax_documents WHERE tenant_id = $1 AND order_id = $2 AND doc_type = 'ABBREVIATED'`,
+    [tenantId, orderId]
+  )).rows[0].id;
+  assert.equal(await getCreditNoteView(tenantId, invoice), null);
+
+  // ใบที่ถูกยกเลิกไม่นับเป็นยอดที่ลดไปแล้ว และตัวมันเองบอกว่ายกเลิก
+  await query(
+    `UPDATE bms_tax_documents SET cancelled_at = now(), cancelled_reason = 'FAKE test'
+      WHERE tenant_id = $1 AND id = $2`, [tenantId, notes[0]]
+  );
+  assert.equal((await getCreditNoteView(tenantId, notes[1]))?.previouslyCredited, 0);
+  assert.ok((await getCreditNoteView(tenantId, notes[0]))?.cancelledAt);
 });
 
 test("teardown", async () => {
