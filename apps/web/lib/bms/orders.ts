@@ -21,6 +21,7 @@ import { listShipments, MARKETPLACE_CHANNELS } from "./shipping";
 import { isCarrier, type Carrier } from "./carriers/constants";
 import { quoteShipping, type ShippingFeeSource } from "./shippingRates";
 import type { PoolClient } from "pg";
+import { restaurantOrderItemsInTx, readRestaurantItemSnapshot, type RestaurantItemSnapshot } from "./restaurantItemSnapshots";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { notifyOrderActionCommitted } from "./orderActionNotify";
 import { applyCouponInTx, releaseCouponForOrdersInTx, redeemCustomerCouponForOrderInTx, releaseCustomerCouponReservationsInTx, reserveCustomerCouponInTx } from "./coupons";
@@ -100,6 +101,9 @@ export type OrderItemInput = {
   packUnitPrice?: number | null;
   /** Server-validated menu modifier codes. They affect stock, never price authority. */
   modifierCodes?: string[] | null;
+  /** Internal only: discarded by mergeItems; populated from locked check rows, never adapters. */
+  restaurantCheckItemId?: string;
+  restaurantStockSnapshot?: RestaurantItemSnapshot;
 };
 
 export type CreateOrderInput = {
@@ -158,6 +162,8 @@ export type CreateOrderInput = {
   posSalesSurface?: "RETAIL_POS" | "RESTAURANT_POS" | null;
   /** Server-validated restaurant check settled by this order. */
   restaurantCheckId?: string | null;
+  /** Server workflow only: persist NEW line stock/cost evidence on successful kitchen send. */
+  freezeRestaurantItems?: boolean;
   /**
    * Server-validated board-game billing group settled by this POS order (`9.89`).
    * The session it belongs to is derived here, never supplied by the caller: one
@@ -227,7 +233,7 @@ export type CreatedLine = {
   vatCategory?: string | null;
   /** ต้นทุนรวมของบรรทัด ณ ตอนขาย; null = มีส่วนประกอบอย่างน้อยหนึ่งตัวไม่มีต้นทุน */
   costAmountSnapshot: number | null;
-  costSnapshotSource: "CATALOG_AT_SALE" | "MISSING";
+  costSnapshotSource: "CATALOG_AT_SALE" | "LEGACY_CURRENT" | "MISSING";
 };
 
 export type CreateOrderResult =
@@ -762,6 +768,11 @@ export async function createOrderInTx(
     // Pack metadata may change after catalog lookup. Re-read it inside the
     // order transaction so active/baseQty/unit/price snapshots never come from
     // stale tool or POS payload data.
+    if (input.restaurantCheckId) {
+      if (input.channel !== "pos") return { status: "INVALID_ITEM", index: 0, reason: "Restaurant check requires POS" };
+      items = await restaurantOrderItemsInTx(client, tenantId, input.restaurantCheckId, locationId);
+      if (!items.length) return { status: "EMPTY" };
+    }
     const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items, salesSurface);
     if (!canonicalPacks.ok) {
       return {
@@ -770,6 +781,11 @@ export async function createOrderInTx(
         size: canonicalPacks.size,
         packCode: canonicalPacks.packCode,
       };
+    }
+    for (const [index, item] of canonicalPacks.items.entries()) {
+      if (item.restaurantCheckItemId && item.qty !== items[index].qty) {
+        return { status: "INVALID_ITEM", index, reason: "RESTAURANT_PACK_CHANGED: หน่วยขายเปลี่ยน กรุณาตรวจสอบรายการอาหารก่อนส่งครัว" };
+      }
     }
     items = canonicalPacks.items;
 
@@ -860,6 +876,11 @@ export async function createOrderInTx(
     const resolvedConsumption: ResolvedStockConsumption[] = [];
     for (const item of items) {
       try {
+        if (item.restaurantStockSnapshot) {
+          const snapshot = readRestaurantItemSnapshot(item.restaurantStockSnapshot, item.sku, item.size, item.qty);
+          resolvedConsumption.push(snapshot.consumption);
+          continue;
+        }
         resolvedConsumption.push(await resolveStockConsumptionInTx(client, tenantId, {
           sku: item.sku,
           size: item.size,
@@ -1044,8 +1065,12 @@ export async function createOrderInTx(
         promo
       ).amount * 100);
       let allocatedCents = 0;
+      let cumulativeQty = 0;
       indexes.forEach((index, position) => {
-        const cents = position === indexes.length - 1
+        cumulativeQty += items[index].qty;
+        const cents = input.restaurantCheckId
+          ? Math.round(promotedCents * cumulativeQty / qty) - allocatedCents
+          : position === indexes.length - 1
           ? promotedCents - allocatedCents
           : Math.round(promotedCents * (items[index].qty / qty));
         allocatedCents += cents;
@@ -1179,7 +1204,7 @@ export async function createOrderInTx(
         ? consumption.lines.map((line) => ({ qty: line.qty, cost: componentCostBySku.get(line.sku) ?? null }))
         : [{ qty: it.qty, cost: prod.rows[0].cost_price == null ? null : Number(prod.rows[0].cost_price) }];
       const hasCompleteCost = costParts.every((part) => part.cost != null);
-      const costAmountSnapshot = hasCompleteCost
+      const costAmountSnapshot = it.restaurantStockSnapshot ? it.restaurantStockSnapshot.costAmount : hasCompleteCost
         ? Math.round(costParts.reduce((sum, part) => sum + part.qty * Number(part.cost), 0) * 100) / 100
         : null;
       // line_amount is the exact monetary authority. unit_price remains a rounded
@@ -1227,7 +1252,7 @@ export async function createOrderInTx(
         modifierCodes: it.modifierCodes ?? [],
         vatCategory: prod.rows[0].vat_category ?? "UNKNOWN",
         costAmountSnapshot,
-        costSnapshotSource: costAmountSnapshot == null ? "MISSING" : "CATALOG_AT_SALE",
+        costSnapshotSource: it.restaurantStockSnapshot?.costSource ?? (costAmountSnapshot == null ? "MISSING" : "CATALOG_AT_SALE"),
       });
     }
 
@@ -1537,13 +1562,14 @@ export async function createOrderInTx(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price, line_amount,
                                       receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price,
                                       vat_category, stock_modifier_codes, stock_consumption_version,
-                                      cost_amount_snapshot, cost_snapshot_source)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $19, $14, $15, $9, $10, $11, $12, $13, $16, 1, $17, $18)
+                                      cost_amount_snapshot, cost_snapshot_source, restaurant_check_item_id)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $19, $14, $15, $9, $10, $11, $12, $13, $16, $21, $17, $18, $20)
          RETURNING id`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
           ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot),
-          ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource, ln.lineAmount]
+          ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource, ln.lineAmount,
+          items[lineIndex]?.restaurantCheckItemId ?? null, input.restaurantCheckId ? 2 : 1]
       );
       await snapshotOrderItemConsumptionInTx(
         client,
@@ -1551,6 +1577,17 @@ export async function createOrderInTx(
         insertedItem.rows[0].id,
         resolvedConsumption[lineIndex]
       );
+      if (input.restaurantCheckId && input.freezeRestaurantItems && items[lineIndex]?.restaurantCheckItemId) {
+        const snapshot: RestaurantItemSnapshot = {
+          version: 1, provenance: "FIRST_SEND", sourceOrderId: orderId,
+          sourceOrderItemId: String(insertedItem.rows[0].id), qty: ln.qty,
+          consumption: resolvedConsumption[lineIndex], costAmount: ln.costAmountSnapshot, costSource: ln.costSnapshotSource,
+        };
+        readRestaurantItemSnapshot(snapshot, ln.sku, ln.size, ln.qty);
+        await client.query(`UPDATE bms_restaurant_check_items SET stock_snapshot=$4::jsonb
+          WHERE tenant_id=$1 AND check_id=$2 AND id=$3 AND status='NEW' AND stock_snapshot IS NULL`,
+          [tenantId, input.restaurantCheckId, items[lineIndex].restaurantCheckItemId, JSON.stringify(snapshot)]);
+      }
     }
 
     // ledger: RESERVE ทุกรายการ

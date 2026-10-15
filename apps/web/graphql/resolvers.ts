@@ -63,6 +63,12 @@ import { bmsPaymentsResolvers } from "@/graphql/bmsPayments";
 import { bmsShippingResolvers } from "@/graphql/bmsShipping";
 import { bmsInboxResolvers } from "@/graphql/bmsInbox";
 import { bmsReportsResolvers } from "@/graphql/bmsReports";
+import { bmsSalesEvidenceResolvers } from "@/graphql/bmsSalesEvidence";
+import { bmsOperatingCostResolvers } from "@/graphql/bmsOperatingCosts";
+import { bmsCostAllocationResolvers } from "@/graphql/bmsCostAllocations";
+import { bmsNetProfitResolvers } from "@/graphql/bmsNetProfit";
+import { bmsRestaurantPricePlanResolvers } from "@/graphql/bmsRestaurantPricePlans";
+import { bmsRestaurantMenuPlanResolvers } from "@/graphql/bmsRestaurantMenuPlans";
 import { bmsReportEngineResolvers } from "@/graphql/bmsReportEngine";
 import { bmsCustomer360Resolvers } from "@/graphql/bmsCustomer360";
 import { bmsAssistantResolvers } from "@/graphql/bmsAssistant";
@@ -2884,12 +2890,20 @@ const rawResolvers = {
     ...bmsShippingResolvers.Query,
     ...bmsInboxResolvers.Query,
     ...bmsReportsResolvers.Query,
+    ...bmsSalesEvidenceResolvers.Query,
+    ...bmsOperatingCostResolvers.Query,
+    ...bmsCostAllocationResolvers.Query,
+    ...bmsNetProfitResolvers.Query,
+    ...bmsRestaurantPricePlanResolvers.Query,
+    ...bmsRestaurantMenuPlanResolvers.Query,
     ...bmsReportEngineResolvers.Query,
     ...bmsCustomer360Resolvers.Query,
     ...bmsRestockSubscriptionsResolvers.Query,
   },
   Mutation: {
     ...bmsExpenseDocumentsResolvers.Mutation,
+    ...bmsOperatingCostResolvers.Mutation,
+    ...bmsCostAllocationResolvers.Mutation,
     login: async (_: any, { input }: { input: { email?: string; username?: string; password: string } }, ctx: any) => {
       
       console.log("[login]");

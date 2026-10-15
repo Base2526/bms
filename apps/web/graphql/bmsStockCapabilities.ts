@@ -43,6 +43,7 @@ import {
 import { dropKitchenCancelledLineInTx } from "@/lib/bms/restaurantPos";
 import { listInventoryWastage, recordInventoryWastage } from "@/lib/bms/wastage";
 import { getProductReadiness } from "@/lib/bms/productConfiguration";
+import { getRecipeCostEstimate } from "@/lib/bms/recipeCostEstimates";
 
 function tenantAdminId(ctx: any): string {
   const auth = requireAuth(ctx);
@@ -128,6 +129,13 @@ export const bmsStockCapabilityResolvers = {
     async bmsProductRecipes(_p: unknown, args: { productSku: string; size?: string | null }, ctx: any) {
       await requirePermission(ctx, "product.view");
       return listProductRecipes(getTenantId(ctx), args.productSku, args.size);
+    },
+    async bmsRecipeCostEstimate(_p: unknown, args: { recipeId: string }, ctx: any) {
+      await requirePermission(ctx, "product.view");
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(args.recipeId)) {
+        badInput(new Error("Invalid recipe id"), "Invalid recipe id");
+      }
+      return getRecipeCostEstimate(getTenantId(ctx), args.recipeId);
     },
     async bmsProductModifiers(_p: unknown, args: { productSku: string; size?: string | null }, ctx: any) {
       await requirePermission(ctx, "product.view");
@@ -218,9 +226,7 @@ export const bmsStockCapabilityResolvers = {
         const result = await upsertProductRecipe(
           getTenantId(ctx), args.input, String(requireAuth(ctx).author_id)
         );
-        await audit(ctx, "product.recipe_upsert", result.id, {
-          sku: result.productSku, size: result.size, version: result.version,
-        });
+        // The recipe service commits its audit with the new version/activation, never afterwards.
         return result;
       } catch (error) {
         badInput(error, "บันทึกสูตรไม่สำเร็จ");

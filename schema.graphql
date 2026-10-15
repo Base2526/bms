@@ -668,6 +668,117 @@ type BmsConversationNote {
   mentionedUserIds: [ID!]!
 }
 
+type BmsCostAllocationGroup {
+  amount: String!
+  channel: String
+  locationId: ID!
+}
+
+type BmsCostAllocationLocation {
+  id: ID!
+  name: String!
+}
+
+type BmsCostAllocationPart {
+  amount: String!
+  basisWeight: String!
+  channel: String
+  locationId: ID!
+}
+
+type BmsCostAllocationPreview {
+  errorCode: String
+  expectedVersion: Int
+  snapshot: BmsCostAllocationSnapshot
+  status: String!
+}
+
+input BmsCostAllocationPreviewInput {
+  month: String!
+  rule: BmsCostAllocationRuleInput!
+  sourceKey: String!
+}
+
+type BmsCostAllocationReport {
+  allocatedTotal: String
+  complete: Boolean
+  currency: String
+  errorCode: String
+  groups: [BmsCostAllocationGroup!]
+  knownAllocated: String
+  locations: [BmsCostAllocationLocation!]
+  month: String
+  reviewedTotal: String
+  rows: [BmsCostAllocationRow!]
+  salesBasis: String
+  status: String!
+  truncated: Boolean
+  unresolvedCount: Int
+}
+
+type BmsCostAllocationRow {
+  amount: String
+  classification: String!
+  issue: String
+  reference: String!
+  snapshot: BmsCostAllocationSnapshot
+  sourceKey: String!
+  state: String!
+  version: Int!
+}
+
+type BmsCostAllocationRule {
+  method: String!
+  reason: String!
+  targets: [BmsCostAllocationTarget!]!
+}
+
+input BmsCostAllocationRuleInput {
+  method: String!
+  reason: String!
+  targets: [BmsCostAllocationTargetInput!]!
+}
+
+input BmsCostAllocationSaveInput {
+  confirmed: Boolean!
+  expectedVersion: Int!
+  month: String!
+  previewFingerprint: String!
+  rule: BmsCostAllocationRuleInput!
+  sourceKey: String!
+}
+
+type BmsCostAllocationSaveResult {
+  errorCode: String
+  replayed: Boolean
+  status: String!
+  version: Int
+}
+
+type BmsCostAllocationSnapshot {
+  allocations: [BmsCostAllocationPart!]!
+  amount: String!
+  currency: String!
+  fingerprint: String!
+  month: String!
+  rule: BmsCostAllocationRule!
+  salesBasis: String!
+  sourceKey: String!
+  version: Int!
+}
+
+type BmsCostAllocationTarget {
+  channel: String
+  locationId: ID!
+  weight: String
+}
+
+input BmsCostAllocationTargetInput {
+  channel: String
+  locationId: ID!
+  weight: String
+}
+
 type BmsCoupon {
   active: Boolean!
   code: String!
@@ -2324,6 +2435,85 @@ input BmsModifierComponentInput {
   sku: String!
 }
 
+type BmsNetProfitAmounts {
+  complete: Boolean!
+  costComplete: Boolean!
+  creditReductionCompleted: String!
+  expenseTotal: String
+  expensesComplete: Boolean!
+  grossProfit: String
+  knownDepreciationExpense: String!
+  knownExpenseTotal: String!
+  knownGpExpense: String!
+  knownOperatingExpense: String!
+  knownReturnRevenue: String!
+  knownSalesCost: String!
+  knownSalesRevenue: String!
+  netCost: String
+  netProfit: String
+  netRevenue: String
+  refundCompleted: String!
+  returnQuantityCostBasis: String!
+  revenueComplete: Boolean!
+}
+
+type BmsNetProfitGroup {
+  bucketOnly: Boolean!
+  channel: String
+  complete: Boolean!
+  costComplete: Boolean!
+  creditReductionCompleted: String!
+  expenseTotal: String
+  expensesComplete: Boolean!
+  grossProfit: String
+  knownDepreciationExpense: String!
+  knownExpenseTotal: String!
+  knownGpExpense: String!
+  knownOperatingExpense: String!
+  knownReturnRevenue: String!
+  knownSalesCost: String!
+  knownSalesRevenue: String!
+  locationId: ID
+  locationName: String
+  netCost: String
+  netProfit: String
+  netRevenue: String
+  refundCompleted: String!
+  returnQuantityCostBasis: String!
+  revenueComplete: Boolean!
+  sharedBranchCost: Boolean!
+}
+
+type BmsNetProfitIssue {
+  code: String!
+  count: Int!
+}
+
+type BmsNetProfitReport {
+  basis: String
+  branches: [BmsNetProfitGroup!]
+  channels: [BmsNetProfitGroup!]
+  complete: Boolean
+  costBasis: String
+  currency: String
+  errorCode: String
+  eventCount: Int
+  expenseBasis: String
+  issues: [BmsNetProfitIssue!]
+  month: String
+  observedAt: String
+  returnBasis: String
+  samples: [BmsNetProfitSample!]
+  status: String!
+  totals: BmsNetProfitAmounts
+  truncated: Boolean
+}
+
+type BmsNetProfitSample {
+  code: String!
+  key: String!
+}
+
 type BmsOnboardingProgress {
   completed: [String!]!
   dismissedAt: String
@@ -2335,6 +2525,66 @@ type BmsOpenShiftResult {
   reason: String
   shift: BmsPosShift
   status: String!
+}
+
+type BmsOperatingCostReport {
+  complete: Boolean!
+  currency: String!
+  depreciationAmount: Float!
+  duplicateCount: Int!
+  gpAmount: Float!
+  knownTotal: Float!
+  month: String!
+  operatingAmount: Float!
+  reviewedTotal: Float
+  rows: [BmsOperatingCostSource!]!
+  scope: String!
+  truncated: Boolean!
+  unresolvedCount: Int!
+}
+
+type BmsOperatingCostReview {
+  disposition: String!
+  duplicateKey: String
+  lifeMonths: Int
+  reason: String!
+  residual: Float
+  sourceFingerprint: String!
+  startMonth: String
+  version: Int!
+}
+
+input BmsOperatingCostReviewInput {
+  confirmed: Boolean!
+  disposition: String!
+  duplicateKey: String
+  expectedVersion: Int!
+  lifeMonths: Int
+  reason: String!
+  residual: Float
+  sourceFingerprint: String!
+  sourceKey: String!
+  startMonth: String
+}
+
+type BmsOperatingCostReviewResult {
+  version: Int!
+}
+
+type BmsOperatingCostSource {
+  amount: String
+  category: String!
+  currency: String!
+  eligible: Boolean!
+  fingerprint: String!
+  id: ID!
+  key: String!
+  kind: String!
+  month: String!
+  recognizedAmount: Float
+  reference: String!
+  review: BmsOperatingCostReview
+  state: String!
 }
 
 type BmsOperationalAlerts {
@@ -5973,21 +6223,29 @@ type BmsProductReadinessIssue {
 
 type BmsProductRecipe {
   active: Boolean!
+  costAssumptions: BmsRecipeCostAssumptions!
+  directItems: [BmsRecipeComponent!]!
   id: ID!
   items: [BmsRecipeComponent!]!
   outputQty: Int!
   productSku: String!
   size: String!
+  sopSteps: [String!]!
+  subrecipes: [BmsRecipeReference!]!
   version: Int!
 }
 
 input BmsProductRecipeInput {
   active: Boolean
+  costAssumptions: BmsRecipeCostAssumptionsInput
+  directItems: [BmsRecipeComponentInput!]
   id: ID
-  items: [BmsRecipeComponentInput!]!
+  items: [BmsRecipeComponentInput!]
   outputQty: Int
   productSku: String!
   size: String!
+  sopSteps: [String!]
+  subrecipes: [BmsRecipeReferenceInput!]
 }
 
 type BmsProductStockPolicy {
@@ -6160,6 +6418,78 @@ input BmsRecipeComponentInput {
   sku: String!
 }
 
+type BmsRecipeCostAssumptions {
+  electricity: BmsRecipeCostRate
+  gas: BmsRecipeCostRate
+  labor: BmsRecipeCostRate
+}
+
+input BmsRecipeCostAssumptionsInput {
+  electricity: BmsRecipeCostRateInput
+  gas: BmsRecipeCostRateInput
+  labor: BmsRecipeCostRateInput
+}
+
+type BmsRecipeCostEstimate {
+  calculatedAt: String!
+  currency: String!
+  ingredientBatchCost: Float
+  ingredients: [BmsRecipeIngredientCost!]!
+  knownBatchCost: Float!
+  missingIngredientCount: Int!
+  outputQty: Int!
+  overhead: [BmsRecipeOverheadCost!]!
+  recipeId: ID!
+  recipeVersion: Int!
+  scope: String!
+  status: String!
+  totalBatchCost: Float
+  totalUnitCost: Float
+}
+
+type BmsRecipeCostRate {
+  quantity: Float!
+  rate: Float!
+  source: String!
+}
+
+input BmsRecipeCostRateInput {
+  quantity: Float!
+  rate: Float!
+  source: String!
+}
+
+type BmsRecipeIngredientCost {
+  batchCost: Float
+  qty: Int!
+  size: String!
+  sku: String!
+  source: String!
+  unitCost: Float
+}
+
+type BmsRecipeOverheadCost {
+  batchCost: Float
+  category: String!
+  quantity: Float
+  rate: Float
+  source: String
+}
+
+type BmsRecipeReference {
+  outputQty: Int!
+  productSku: String!
+  qty: Int!
+  recipeId: ID!
+  size: String!
+  version: Int!
+}
+
+input BmsRecipeReferenceInput {
+  qty: Int!
+  recipeId: ID!
+}
+
 type BmsReconciliationReport {
   cashDifference: Float!
   completedRefundAmount: Float!
@@ -6303,6 +6633,25 @@ type BmsRestaurantArea {
   tableCount: Int!
 }
 
+type BmsRestaurantBundleAnalysis {
+  baselineContribution: Float
+  baselineCustomerTotal: Float!
+  contributionDelta: Float
+  customerSavings: Float!
+  price: BmsRestaurantPriceScenario!
+  recipeCost: Float
+}
+
+input BmsRestaurantBundlePartInput {
+  qty: Int!
+  recipeId: ID!
+}
+
+input BmsRestaurantBundlePlanInput {
+  parts: [BmsRestaurantBundlePartInput!]!
+  scenario: BmsRestaurantPriceScenarioInput!
+}
+
 type BmsRestaurantCancellationLoss {
   absorbedAmount: Float!
   name: String!
@@ -6314,6 +6663,46 @@ type BmsRestaurantFloorAdmin {
   areas: [BmsRestaurantArea!]!
   publishTableDetails: Boolean!
   tables: [BmsRestaurantTableAdmin!]!
+}
+
+type BmsRestaurantMenuAnalysis {
+  bundle: BmsRestaurantBundleAnalysis
+  contributionThreshold: Float
+  popularityThresholdPercent: Float!
+  projectedProfit: Float
+  rows: [BmsRestaurantMenuAnalysisRow!]!
+  status: String!
+  totalContribution: Float
+  totalUnits: Int
+}
+
+type BmsRestaurantMenuAnalysisRow {
+  classification: String!
+  label: String!
+  popularityPercent: Float
+  price: BmsRestaurantPriceScenario!
+  recipeId: ID!
+  units: Int
+}
+
+input BmsRestaurantMenuItemInput {
+  recipeId: ID!
+  scenario: BmsRestaurantPriceScenarioInput!
+}
+
+type BmsRestaurantMenuPlan {
+  analysis: BmsRestaurantMenuAnalysis
+  errorCode: String
+  estimates: [BmsRecipeCostEstimate!]!
+  status: String!
+}
+
+input BmsRestaurantMenuPlanInput {
+  assumptionSource: String!
+  bundle: BmsRestaurantBundlePlanInput
+  dailyFixedCost: Float
+  dailyTargetProfit: Float!
+  items: [BmsRestaurantMenuItemInput!]!
 }
 
 type BmsRestaurantOperationsReport {
@@ -6329,6 +6718,51 @@ type BmsRestaurantOperationsReport {
   qrRejectedCount: Int!
   qrSubmissionCount: Int!
   servedTicketCount: Int!
+}
+
+type BmsRestaurantPricePlan {
+  errorCode: String
+  estimate: BmsRecipeCostEstimate
+  scenarios: [BmsRestaurantPriceScenario!]!
+  status: String!
+}
+
+input BmsRestaurantPricePlanInput {
+  assumptionSource: String!
+  dailyFixedCost: Float
+  dailyTargetProfit: Float!
+  recipeId: ID!
+  scenarios: [BmsRestaurantPriceScenarioInput!]!
+}
+
+type BmsRestaurantPriceScenario {
+  breakEvenCustomerSales: Float
+  breakEvenUnits: Float
+  contribution: Float
+  contributionMarginPercent: Float
+  customerTotal: Float!
+  gpAmount: Float!
+  label: String!
+  netRevenue: Float!
+  outputVat: Float!
+  projectedDailyProfit: Float
+  status: String!
+  targetDailyUnits: Float
+  targetPrice: Float
+  targetPriceStatus: String!
+  variableUnitCost: Float
+}
+
+input BmsRestaurantPriceScenarioInput {
+  expectedDailyUnits: Int
+  extraUnitCost: Float!
+  gpBasis: String!
+  gpPercent: Float!
+  label: String!
+  price: Float!
+  targetMarginPercent: Float
+  vatMode: String!
+  vatPercent: Float!
 }
 
 type BmsRestaurantTableAdmin {
@@ -6562,6 +6996,86 @@ type BmsSalesByTierRow {
   revenue: Float!
   tierCode: String!
   tierName: String!
+}
+
+type BmsSalesEvidence {
+  allocationBasis: String
+  basis: String
+  channel: String
+  costBasis: String
+  currency: String
+  currencyBasis: String
+  diagnosticSampleLimit: Int
+  errorCode: String
+  eventCount: Int
+  from: String
+  groups: [BmsSalesEvidenceGroup!]!
+  issues: [BmsSalesEvidenceIssue!]!
+  legacyCostLines: Int
+  locationId: ID
+  missingCostLines: Int
+  netCost: String
+  netProfit: String
+  netRevenue: String
+  observedAt: String
+  refundBasis: String
+  returnVatBasis: String
+  samples: [BmsSalesEvidenceSample!]!
+  status: String!
+  to: String
+  totals: BmsSalesEvidenceAmounts
+  truncated: Boolean
+}
+
+type BmsSalesEvidenceAmounts {
+  backofficeReturnValue: String!
+  creditReductionCompleted: String!
+  extras: String!
+  orderDiscount: String!
+  paymentRefundUnallocated: String!
+  refundCompleted: String!
+  returnAllocatedExVat: String!
+  returnAllocatedVat: String!
+  returnClaim: String!
+  returnKnownCostBasis: String!
+  returnKnownExtrasGross: String!
+  returnKnownMerchandiseGross: String!
+  returnKnownRounding: String!
+  returnKnownShippingGross: String!
+  rounding: String!
+  saleGross: String!
+  saleKnownCost: String!
+  saleKnownExVat: String!
+  saleKnownVat: String!
+  saleNet: String!
+  shipping: String!
+  taxAdjustmentGross: String!
+}
+
+type BmsSalesEvidenceGroup {
+  channel: String!
+  day: String!
+  eventCount: Int!
+  locationId: ID
+  totals: BmsSalesEvidenceAmounts!
+}
+
+input BmsSalesEvidenceInput {
+  channel: String
+  from: String!
+  locationId: ID
+  to: String!
+}
+
+type BmsSalesEvidenceIssue {
+  code: String!
+  count: Int!
+}
+
+type BmsSalesEvidenceSample {
+  codes: [String!]!
+  eventKey: String!
+  orderId: ID!
 }
 
 type BmsSalesSummary {
@@ -7853,6 +8367,7 @@ type Mutation {
   bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
   bmsReviewAiSynonymCandidate(decision: String!, id: ID!, productSku: String): BmsAiSynonymCandidate!
   bmsReviewMemberTier(customerId: ID): BmsTierReviewResult!
+  bmsReviewOperatingCost(input: BmsOperatingCostReviewInput!): BmsOperatingCostReviewResult!
   bmsReviewPharmacyProductPolicy(decision: String!, productSku: String!): BmsPharmacyProductPolicy!
   bmsReviewPharmacyProtocol(decision: String!, id: ID!): BmsPharmacyProtocol!
   bmsReviewRestaurantRequest(input: BmsReviewRestaurantRequestInput!): BmsMobileRestaurantRequestActionResult!
@@ -7861,6 +8376,7 @@ type Mutation {
   bmsRunReadOnlySql(sql: String!): BmsSqlResult!
   bmsRunSandboxedJs(code: String!): BmsJsConsoleResult!
   bmsRunSql(sql: String!): BmsSqlResult!
+  bmsSaveCostAllocation(input: BmsCostAllocationSaveInput!): BmsCostAllocationSaveResult!
   bmsSavePharmacyGuidanceDraft(body: String!, code: String!, locale: String!): BmsPharmacyGuidanceTemplate!
   bmsSaveRestaurantFloorLayout(locationId: ID!, positions: [BmsRestaurantTablePositionInput!]!): Boolean!
   bmsSeedPharmacyGuidanceDrafts: Int!
@@ -8290,6 +8806,7 @@ type Query {
   bmsConversation(id: ID!): BmsConversation
   bmsConversationTimeline(id: ID!, limit: Int): [BmsTimelineEntry!]!
   bmsConversations(assignedTo: ID, limit: Int = 50, offset: Int = 0, search: String, status: BmsConvStatus, tag: String): [BmsConversation!]!
+  bmsCostAllocations(month: String!): BmsCostAllocationReport!
   bmsCouponLocations: [BmsLocation!]!
   bmsCouponRedemptions(couponId: ID!): [BmsCouponRedemption!]!
   bmsCoupons: [BmsCoupon!]!
@@ -8358,7 +8875,9 @@ type Query {
   bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
   bmsMyMentionsUnreadCount: Int!
   bmsMyTenant: BmsTenantInfo!
+  bmsNetProfit(month: String!): BmsNetProfitReport!
   bmsOnboardingProgress: BmsOnboardingProgress!
+  bmsOperatingCosts(month: String!): BmsOperatingCostReport!
   bmsOperationalAlerts: BmsOperationalAlerts!
   bmsOrder(id: ID!): BmsOrder
   bmsOrderJourney(orderId: ID!): BmsOrderJourney
@@ -8437,6 +8956,7 @@ type Query {
   bmsPosStockCounts(credentials: BmsPosCredentialsInput!): BmsPosStockCountsResult!
   bmsPosStockTransfers(credentials: BmsPosCredentialsInput!): BmsPosStockTransfersResult!
   bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): BmsPosStoreCreditResult!
+  bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!
   bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
   bmsProductBySku(sku: String!): BmsProduct
   bmsProductCategories: [BmsProductCategory!]!
@@ -8454,6 +8974,7 @@ type Query {
   bmsPublicPlans: [BmsPlan!]!
   bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
   bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
+  bmsRecipeCostEstimate(recipeId: ID!): BmsRecipeCostEstimate
   bmsReportDeliveries(limit: Int): [BmsReportDelivery!]!
   bmsReportDeliveriesForTenant(limit: Int, tenantId: ID!): [BmsReportDelivery!]!
   bmsReportSubscription: BmsReportSubscription!
@@ -8461,6 +8982,8 @@ type Query {
   bmsRestaurantCancellationLossReport: [BmsRestaurantCancellationLoss!]!
   bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
   bmsRestaurantFloorLocations: [BmsLocation!]!
+  bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!): BmsRestaurantMenuPlan!
+  bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!): BmsRestaurantPricePlan!
   bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr
   bmsRestockDeliveries(subscriptionId: ID!): [BmsRestockDelivery!]!
   bmsRestockMetrics(search: String): BmsRestockMetrics!
@@ -8474,6 +8997,7 @@ type Query {
   bmsRevisionHistory(entityId: ID!, kind: BmsRevisionKind!, limit: Int = 50): [BmsRevisionEntry!]!
   bmsRolePermissions: [BmsRolePermissions!]!
   bmsSalesByTier: [BmsSalesByTierRow!]!
+  bmsSalesEvidence(input: BmsSalesEvidenceInput!): BmsSalesEvidence!
   bmsSalesSummary(from: String, locationId: ID, to: String): BmsSalesSummary!
   bmsSalesTaxReport(input: BmsSalesTaxReportInput!): BmsSalesTaxReportSummary!
   bmsShipment(id: ID!): BmsShipment

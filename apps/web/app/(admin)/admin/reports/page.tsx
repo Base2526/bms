@@ -10,6 +10,9 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import { localizedShopArchetypeLabel } from "@/lib/bms/shopArchetypes";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
+import OperatingCostReport from "./OperatingCostReport";
+import CostAllocationReport from "./CostAllocationReport";
+import NetProfitReport from "./NetProfitReport";
 
 const { RangePicker } = DatePicker;
 
@@ -585,6 +588,10 @@ export default function Page() {
           />
         )}
       </Card>
+
+      <OperatingCostReport />
+      <CostAllocationReport />
+      <NetProfitReport />
 
       <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
         <Col xs={24} lg={12}>

@@ -383,11 +383,11 @@ test("teardown: ไม่เหลือข้อมูลทดสอบใน�
   );
   for (const table of [
     "bms_restaurant_kitchen_tickets",
-    "bms_restaurant_check_items",
     "bms_kitchen_station_slas",
     "bms_kitchen_tickets",
     "bms_payments",
     "bms_order_items",
+    "bms_restaurant_check_items", // 10.61 order lines reference check-item identity
     "bms_order_discounts",
     "bms_tax_documents",
     "bms_pos_cash_movements",

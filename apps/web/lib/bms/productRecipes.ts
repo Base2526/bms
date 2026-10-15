@@ -1,8 +1,13 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
+import { positiveBaseQuantity, sameRecipeDefinition, type RecipeComponentInput } from "./recipeDefinition";
+import { normalizeRecipeCostAssumptions, type RecipeCostAssumptions } from "./recipeCosting";
+import { flattenRecipeComposition, loadPinnedRecipeCompositionInTx, normalizeDirectRecipeItems,
+  normalizeRecipeReferences, normalizeRecipeSteps, sameRecipeReferences,
+  type RecipeReference, type RecipeReferenceInput } from "./recipeComposition";
 
-export type RecipeComponentInput = { sku: string; size: string; qty: number };
+export type { RecipeComponentInput } from "./recipeDefinition";
 export type ProductRecipe = {
   id: string;
   productSku: string;
@@ -11,26 +16,30 @@ export type ProductRecipe = {
   outputQty: number;
   active: boolean;
   items: RecipeComponentInput[];
+  directItems: RecipeComponentInput[];
+  subrecipes: RecipeReference[];
+  sopSteps: string[];
+  costAssumptions: RecipeCostAssumptions;
 };
 
-function normalizeComponents(items: RecipeComponentInput[]): RecipeComponentInput[] {
-  const normalized = items.map((item) => ({
-    sku: String(item.sku ?? "").trim(),
-    size: String(item.size ?? "").trim(),
-    qty: Math.trunc(Number(item.qty)),
-  }));
-  if (normalized.length === 0) throw new Error("สูตรต้องมีวัตถุดิบอย่างน้อย 1 รายการ");
-  const keys = new Set<string>();
-  for (const item of normalized) {
-    if (!item.sku || !item.size || !Number.isSafeInteger(item.qty) || item.qty <= 0) {
-      throw new Error("วัตถุดิบและจำนวนหน่วยฐานไม่ถูกต้อง");
-    }
-    const key = `${item.sku}\u0000${item.size}`;
-    if (keys.has(key)) throw new Error(`วัตถุดิบซ้ำในสูตร: ${item.sku} (${item.size})`);
-    keys.add(key);
-  }
-  return normalized;
-}
+type RecipeHeaderRow = {
+  product_sku: string;
+  size: string;
+  output_qty: number;
+  active: boolean;
+  version: number;
+  direct_items?: RecipeComponentInput[] | null;
+  sop_steps?: string[];
+  cost_assumptions?: RecipeCostAssumptions | null;
+  subrecipes?: RecipeReference[];
+};
+
+const recipeReferencesSql = `COALESCE((SELECT jsonb_agg(jsonb_build_object(
+  'recipeId', s.child_recipe_id, 'qty', s.qty, 'productSku', child.product_sku,
+  'size', child.size, 'version', child.version, 'outputQty', child.output_qty) ORDER BY s.child_recipe_id)
+  FROM bms_product_recipe_subrecipes s JOIN bms_product_recipes child
+    ON child.tenant_id=s.tenant_id AND child.id=s.child_recipe_id
+  WHERE s.tenant_id=r.tenant_id AND s.recipe_id=r.id), '[]'::jsonb)`;
 
 export async function listProductRecipes(
   tenantId: string,
@@ -38,7 +47,8 @@ export async function listProductRecipes(
   size?: string | null
 ): Promise<ProductRecipe[]> {
   const result = await query<any>(
-    `SELECT r.id, r.product_sku, r.size, r.version, r.output_qty, r.active,
+    `SELECT r.id, r.product_sku, r.size, r.version, r.output_qty, r.active, r.direct_items, r.sop_steps, r.cost_assumptions,
+            ${recipeReferencesSql} AS subrecipes,
             COALESCE(jsonb_agg(jsonb_build_object(
               'sku', ri.component_sku, 'size', ri.component_size, 'qty', ri.qty
             ) ORDER BY ri.component_sku, ri.component_size)
@@ -60,6 +70,10 @@ export async function listProductRecipes(
     outputQty: Number(row.output_qty),
     active: Boolean(row.active),
     items: Array.isArray(row.items) ? row.items : [],
+    directItems: normalizeDirectRecipeItems(row.direct_items ?? row.items ?? []),
+    subrecipes: row.subrecipes ?? [],
+    sopSteps: normalizeRecipeSteps(row.sop_steps ?? []),
+    costAssumptions: normalizeRecipeCostAssumptions(row.cost_assumptions),
   }));
 }
 
@@ -71,17 +85,27 @@ export async function upsertProductRecipe(
     size: string;
     outputQty?: number | null;
     active?: boolean | null;
-    items: RecipeComponentInput[];
+    /** Legacy flat editor input. Composed recipes must use directItems when changing ingredients. */
+    items?: RecipeComponentInput[];
+    directItems?: RecipeComponentInput[];
+    subrecipes?: RecipeReferenceInput[];
+    sopSteps?: string[];
+    costAssumptions?: RecipeCostAssumptions | null;
   },
   editorId?: string | null
 ): Promise<ProductRecipe> {
   const productSku = String(input.productSku ?? "").trim();
   const size = String(input.size ?? "").trim();
-  const outputQty = Math.trunc(Number(input.outputQty ?? 1));
-  const items = normalizeComponents(input.items ?? []);
+  if (input.items !== undefined && input.directItems !== undefined) throw new Error("ส่ง items หรือ directItems ได้เพียงแบบเดียว");
+  const suppliedItems = input.directItems !== undefined ? normalizeDirectRecipeItems(input.directItems)
+    : input.items !== undefined ? normalizeDirectRecipeItems(input.items) : undefined;
+  const suppliedReferences = input.subrecipes === undefined ? undefined : normalizeRecipeReferences(input.subrecipes);
+  const suppliedSteps = input.sopSteps === undefined ? undefined : normalizeRecipeSteps(input.sopSteps);
+  const suppliedCosts = input.costAssumptions === undefined ? undefined : normalizeRecipeCostAssumptions(input.costAssumptions);
+  if (input.outputQty != null && !positiveBaseQuantity(input.outputQty)) throw new Error("จำนวนผลผลิตต้องเป็นจำนวนเต็มบวกของหน่วยฐาน");
   if (!productSku || !size) throw new Error("ต้องระบุสินค้าและตัวเลือกของเมนู");
-  if (!Number.isSafeInteger(outputQty) || outputQty <= 0) throw new Error("จำนวนผลผลิตต้องมากกว่า 0");
-  if (items.some((item) => item.sku === productSku)) throw new Error("เมนูเป็นวัตถุดิบของตัวเองไม่ได้");
+  if (input.active != null && typeof input.active !== "boolean") throw new Error("สถานะสูตรไม่ถูกต้อง");
+  if (suppliedItems?.some((item) => item.sku === productSku)) throw new Error("เมนูเป็นวัตถุดิบของตัวเองไม่ได้");
 
   const client = await getClient();
   let recipeId = input.id ?? null;
@@ -92,19 +116,60 @@ export async function upsertProductRecipe(
       [tenantId, productSku]
     );
     if (!owned.rowCount) throw new Error("ไม่พบเมนูนี้ในร้าน");
+    let existing: RecipeHeaderRow | null = null;
+    let contentChanged = false;
+    let oldItems: RecipeComponentInput[] = [];
     if (recipeId) {
-      const existing = await client.query<{ product_sku: string; size: string }>(
-        `SELECT product_sku, size FROM bms_product_recipes
-          WHERE tenant_id = $1 AND id = $2 FOR UPDATE`,
+      const locked = await client.query<RecipeHeaderRow>(
+        `SELECT r.product_sku, r.size, r.output_qty, r.active, r.version, r.direct_items, r.sop_steps, r.cost_assumptions,
+                ${recipeReferencesSql} AS subrecipes FROM bms_product_recipes r
+          WHERE r.tenant_id = $1 AND r.id = $2 FOR NO KEY UPDATE OF r`,
         [tenantId, recipeId]
       );
-      if (!existing.rowCount) throw new Error("ไม่พบสูตรนี้ในร้าน");
-      if (existing.rows[0].product_sku !== productSku || existing.rows[0].size !== size) {
+      existing = locked.rows[0] ?? null;
+      if (!existing) throw new Error("ไม่พบสูตรนี้ในร้าน");
+      if (existing.product_sku !== productSku || existing.size !== size) {
         throw new Error("ย้ายสูตรไปสินค้า/ตัวเลือกอื่นไม่ได้ ให้สร้าง version ใหม่");
       }
+      const components = await client.query<{ component_sku: string; component_size: string; qty: number }>(
+        `SELECT component_sku, component_size, qty FROM bms_product_recipe_items
+          WHERE tenant_id = $1 AND recipe_id = $2 ORDER BY component_sku, component_size`,
+        [tenantId, recipeId]
+      );
+      oldItems = components.rows.map(row => ({ sku: row.component_sku, size: row.component_size, qty: Number(row.qty) }));
     }
 
-    if (input.active) {
+    const oldReferences = existing?.subrecipes ?? [];
+    const oldDirect = normalizeDirectRecipeItems(existing?.direct_items ?? oldItems);
+    let directItems = suppliedItems ?? oldDirect;
+    if (input.items !== undefined && oldReferences.length) {
+      // Old clients read the flattened BOM. Never add pinned children to it a second time or
+      // silently erase their provenance when a legacy editor saves/activates a composed recipe.
+      if (!sameRecipeDefinition({ outputQty: 1, items: suppliedItems! }, { outputQty: 1, items: oldItems })) {
+        throw new Error("สูตรนี้มีสูตรย่อย กรุณาใช้ตัวแก้ไข directItems และ subrecipes");
+      }
+      directItems = oldDirect;
+    }
+    const references = suppliedReferences ?? normalizeRecipeReferences(oldReferences);
+    const sopSteps = suppliedSteps ?? normalizeRecipeSteps(existing?.sop_steps ?? []);
+    const oldCosts = normalizeRecipeCostAssumptions(existing?.cost_assumptions);
+    const costAssumptions = suppliedCosts ?? oldCosts;
+    const outputQty = input.outputQty ?? Number(existing?.output_qty ?? 1);
+    const children = await loadPinnedRecipeCompositionInTx(client, tenantId, productSku, references);
+    const items = flattenRecipeComposition(productSku, directItems, children);
+    const subrecipes = children.map(({ items: _items, ...ref }) => ref);
+    if (existing) contentChanged = !sameRecipeDefinition({ outputQty, items: directItems }, {
+      outputQty: Number(existing.output_qty), items: oldDirect,
+    }) || !sameRecipeReferences(references, oldReferences)
+      || JSON.stringify(sopSteps) !== JSON.stringify(existing.sop_steps ?? [])
+      || JSON.stringify(costAssumptions) !== JSON.stringify(oldCosts);
+
+    // Recipe content is append-only through this service, even when the old version is inactive.
+    // Keep the old API shape: an id is the source version, and the returned id is authoritative.
+    const sourceRecipeId = contentChanged ? recipeId : null;
+    if (contentChanged) recipeId = null;
+    const active = input.active ?? existing?.active ?? false;
+    if (active) {
       await client.query(
         `UPDATE bms_product_recipes SET active = FALSE, updated_at = now()
           WHERE tenant_id = $1 AND product_sku = $2 AND size = $3
@@ -112,32 +177,37 @@ export async function upsertProductRecipe(
         [tenantId, productSku, size, recipeId]
       );
     }
-    const recipe = await client.query<{ id: string }>(
-      `INSERT INTO bms_product_recipes
-         (id, tenant_id, product_sku, size, version, output_qty, active)
-       VALUES (
-         COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4,
-         COALESCE((SELECT max(version) + 1 FROM bms_product_recipes
-                    WHERE tenant_id = $2 AND product_sku = $3 AND size = $4), 1),
-         $5, COALESCE($6, FALSE)
-       )
-       ON CONFLICT (id) DO UPDATE SET
-         output_qty = EXCLUDED.output_qty,
-         active = COALESCE($6, bms_product_recipes.active), updated_at = now()
-       RETURNING id`,
-      [recipeId, tenantId, productSku, size, outputQty, input.active ?? null]
-    );
-    recipeId = recipe.rows[0].id;
-    await client.query(
-      `DELETE FROM bms_product_recipe_items WHERE tenant_id = $1 AND recipe_id = $2`,
-      [tenantId, recipeId]
-    );
-    for (const item of items) {
+    let version = Number(existing?.version ?? 0);
+    if (!recipeId) {
+      // The product row above serializes version allocation and activation for this SKU.
+      const recipe = await client.query<{ id: string; version: number }>(
+        `INSERT INTO bms_product_recipes
+           (tenant_id, product_sku, size, version, output_qty, active, direct_items, sop_steps, cost_assumptions)
+         VALUES ($1, $2, $3,
+           COALESCE((SELECT max(version) + 1 FROM bms_product_recipes
+                      WHERE tenant_id = $1 AND product_sku = $2 AND size = $3), 1), $4, $5, $6::jsonb, $7::jsonb, $8::jsonb)
+         RETURNING id, version`,
+        [tenantId, productSku, size, outputQty, active, JSON.stringify(directItems), JSON.stringify(sopSteps), JSON.stringify(costAssumptions)]
+      );
+      recipeId = recipe.rows[0].id;
+      version = Number(recipe.rows[0].version);
+      for (const item of items) {
+        await client.query(
+          `INSERT INTO bms_product_recipe_items
+             (tenant_id, recipe_id, component_sku, component_size, qty)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [tenantId, recipeId, item.sku, item.size, item.qty]
+        );
+      }
+      for (const ref of references) {
+        await client.query(`INSERT INTO bms_product_recipe_subrecipes (tenant_id, recipe_id, child_recipe_id, qty)
+          VALUES ($1,$2,$3,$4)`, [tenantId, recipeId, ref.recipeId, ref.qty]);
+      }
+    } else if (active !== existing?.active) {
       await client.query(
-        `INSERT INTO bms_product_recipe_items
-           (tenant_id, recipe_id, component_sku, component_size, qty)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [tenantId, recipeId, item.sku, item.size, item.qty]
+        `UPDATE bms_product_recipes SET active = $3, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2`,
+        [tenantId, recipeId, active]
       );
     }
     await client.query(
@@ -151,17 +221,22 @@ export async function upsertProductRecipe(
       const readiness = await getProductReadinessInTx(client, tenantId, productSku);
       assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1,$2,'product.recipe_upsert',$3,$4)`,
+      [tenantId, editorId ?? null, recipeId, JSON.stringify({ sku: productSku, size, version, active, sourceRecipeId,
+        subrecipeCount: references.length, sopStepCount: sopSteps.length,
+        costAssumptionCount: Object.values(costAssumptions).filter(Boolean).length })]
+    );
+    const saved: ProductRecipe = { id: recipeId, productSku, size, version, outputQty, active, items, directItems, subrecipes, sopSteps, costAssumptions };
     await client.query("COMMIT");
+    return saved;
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch {}
     throw error;
   } finally {
     client.release();
   }
-  const saved = (await listProductRecipes(tenantId, productSku, size))
-    .find((recipe) => recipe.id === recipeId);
-  if (!saved) throw new Error("ไม่พบสูตรหลังบันทึก");
-  return saved;
 }
 
 export type ProductModifier = {

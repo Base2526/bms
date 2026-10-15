@@ -1,5 +1,195 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+Restaurant handoff/backlog (2026-10-15): see
+[phase 1–9 completion and remaining-work log](../docs/business/inventory.md#restaurant-phases-1–9-completion-and-remaining-work-log-2026-10-15).
+It separates implemented scope, unfinished business-evidence/features, and deferred DB verification.
+The user requested commit/push after the verification records below; statements that no commit/push
+was performed describe those earlier test runs, not the later Git handoff. No DB work is authorized.
+
+Phase-9 recorded net profit: `node scripts/run-contract-tests.mjs pure net-profit` covers exact
+pre-income-tax arithmetic, discounts/extras/shipping/VAT/signed rounding, historical vs legacy costs,
+cross-month/branch returns, refund/CREDIT non-double-counting, negative expenses, unknown review or
+disappeared sources, branch-wide vs channel buckets, unvalued inventory/blind-return gaps and scan
+caps. It executes the real math/service/resolver with strict dependency/SQL doubles and GraphQL SDL;
+it does not prove SQL, RLS/grants, isolation, query plans or stock-cost reversals on a real DB.
+`node scripts/net-profit-browser-smoke.mjs` runs TH/EN at 1280/390px against a local production server
+with mocked HTTP and idle WS (no gateway). It checks late success/rejection after month changes,
+loading/error stale-total hiding, unknown results, read-only access, source-permission denial,
+manual content, viewport containment and unbroken money strings. Existing allocation/cost browser
+smokes are regressions. DB tests remain deferred; do not provision a DB. Phase 9 adds no migration;
+existing sources through 10.66 are prerequisites. Return cost reversal, purchase-lot valuation and
+unreconciled adjustments remain business-evidence limitations, distinct from DB-test deferral.
+Verified 2026-10-15: final `npm run gate` passed typecheck, 235 DB-free files (2,848 passed /
+2 skipped / 0 failed; 2,850 total, including 26 phase-9 cases) and production build. New profit plus
+existing allocation and operating-cost browser smokes passed all 12 TH/EN 1280/390px cases on the
+final production build. Screenshots were visually checked; money is nowrap and the long worksheet
+scrolls inside the viewport. Schema export, browser-script syntax and git diff --check passed.
+Logs: `.test-output/restaurant-phase9/`; screenshots: `.test-output/net-profit-browser/`.
+The final browser-server log is clean. Build still emits the existing unavailable-DB prerender
+sentinel (127.0.0.1:1 in operations-schedule) and exits 0; this is not a DB test. No DB test,
+migration execution, commit or push was performed. Local fixture server was stopped after checks.
+
+Phase-8 expense allocation: `node scripts/run-contract-tests.mjs pure cost-allocation` covers signed
+cent conservation, direct/equal/weighted/sales bases, overlap/zero/unknown/cap rejection, gross product
+denominators (not net sales), source reuse in one transaction, stale previews, JSONB order stability,
+append-only versions, exact retry, audit rollback, source retirement, tenant/RBAC and typed GraphQL.
+`node scripts/cost-allocation-browser-smoke.mjs` uses local mocked APIs at TH/EN 1280/390px, holds a
+preview response across close/reopen, checks disabled inputs, confirmation, stale rejection/retry,
+read-only/denied/error states, manual content and viewport layout. It does not connect to a DB.
+Apply/reapply 10.66, RLS/grants, concurrency and real rollback/query plans are DB-deferred by request.
+Verified 2026-10-15: 18 focused allocation tests passed. `npm run gate` passed typecheck,
+234 DB-free files (2,822 passed / 2 skipped / 0 failed; 2,824 total) and production build.
+Both allocation and existing operating-cost browser smokes passed all four TH/EN desktop/mobile
+cases (1280/390px) against the production build with mocked HTTP and idle WebSocket transport;
+no gateway connection or realtime behavior is tested. Allocation screenshots were
+visually inspected. The allocation smoke matches the preview action independently of Ant's exiting
+loading-icon animation. Schema export, readiness generation, script syntax and git diff --check passed.
+An initial fixture run let WS upgrades reach the standalone Next server (unconfigured gateway URL),
+which logged a Next response-header error. Both browser fixtures now intercept WS as well as HTTP;
+the final server log is clean. No application realtime code was changed.
+Logs: `.test-output/restaurant-phase8/`; screenshots: `.test-output/cost-allocation-browser/`.
+Build emitted the existing unavailable-DB sentinel during operations-schedule prerender
+(127.0.0.1:1) but finished successfully. This does not certify live SQL, RLS/grants, transaction
+isolation, concurrency or query performance. Apply migration 10.66 before enabling the new feature;
+no migration/DB test, commit or push was performed. Allocation remains separate from actual net profit.
+
+Sales evidence foundation (phase 7): `node scripts/run-contract-tests.mjs pure sales-evidence`
+executes exact satang allocation, historical vs missing/legacy costs, tax-bucket reconciliation,
+extras/shipping/rounding separation, independent return/payment dates, CREDIT debt reductions,
+cross-branch groups, cumulative partial-return cost basis, bounded diagnostics and scan-cap handling.
+The service/resolver run against a fake client with permission denial, tenant/branch scope, invalid
+inputs, all-page aggregation, currency refusal, rollback/release and typed error cases. This does NOT
+execute SQL or certify RLS, indexes, isolation or performance. The new API leaves existing reports
+unchanged; the return-snapshot completion below adds capture, not refund/stock/tax repricing. No new UI. Source gaps are explicit and net-profit
+fields remain null. DB checks remain deferred by the user; do not provision a DB for this work.
+Verified 2026-10-15: 27 focused cases passed, including executable GraphQL SDL and source-stream
+consumer failure handling. Final `npm run gate` passed typecheck, 232 DB-free files (2,775 passed /
+2 skipped / 0 failed; 2,777 total) and production build. Schema export and git diff --check passed.
+Logs: `.test-output/restaurant-phase7/`. Build emitted the existing unavailable-DB sentinel during
+operations-schedule prerender (127.0.0.1:1); exit status was 0, not a live-DB certification. No UI
+changed, so no browser smoke was added/run in this phase. No DB test, migration execution, commit
+or push. SQL/source permissions, transaction isolation and query plans remain unverified on DB.
+
+Phase-7 return-snapshot completion: `node scripts/run-contract-tests.mjs pure return-financial-snapshot`.
+29 focused cases cover exact vs legacy policies, partial-to-full returns, mixed VAT, positive/negative
+rounding, prior unknowns, changed/malformed evidence, caps, gift zero weights, report identity checks,
+and migration/readiness source contracts. The real processPosReturn function body runs with strict
+SQL/dependency doubles for snapshot insert + audit, replay/conflict, rollback at snapshot/item/audit,
+no payments/insufficient cash, cash/CREDIT completion, cross-branch approval, void and restaurant
+reservation release. These prove orchestration and rollback requests, NOT live SQL/RLS/locking.
+Migration `10.65` must precede deployment. DB tests (apply/reapply, immutable guard, inherited RLS/
+grants, concurrent return/replay, settlement/realtime triggers and actual financial reconciliation)
+are explicitly deferred; do not provision a DB. No operator route/layout/CSS changed, so no new
+browser smoke is required. Earlier phase-7 verification counts above describe the read-only baseline.
+Verified 2026-10-15 completion: all 29 focused snapshot cases passed; final `npm run gate` passed
+typecheck, 233 DB-free files (2,804 passed / 2 skipped / 0 failed; 2,806 total) and production build.
+Schema export, generated readiness parity and git diff --check passed. Logs are under
+`.test-output/restaurant-phase7-return-snapshot/`. The build's unavailable-DB sentinel remains a
+known prerender warning, not a DB test. No DB test/migration execution, commit or push was performed.
+
+Restaurant menu/promotion planning (phase 6): `node scripts/run-contract-tests.mjs pure restaurant-menu-plan`
+includes the request-order regression suite executing the real component with controlled Form/hooks
+and deferred Apollo responses: old success/error, out-of-order completion, programmatic changes,
+unmount, and latest-request loading ownership. The browser smoke holds actual mocked HTTP responses
+until assertions finish (no timing sleeps), checks every recipe selector is disabled, and verifies
+v7-to-v8 recalculation after release in TH/EN at 1280/390px.
+The suites also cover four relative engineering quadrants, exact weighted thresholds/ties, zero/unknown/negative
+evidence, bundle gifts/quantities/extras, VAT/GP bases, alternative-only demand, bounds, server-derived
+cost/tenant and permission denial. `node scripts/restaurant-menu-plan-browser-smoke.mjs` uses local
+mocked APIs in TH/EN at desktop/mobile widths. Demand is supplied planning input, not historical sales.
+No new migration or real selling-rule write. Real recipe SQL/RLS remains deferred; mocks cannot prove it.
+Verified 2026-10-15: 15 focused contracts passed; full gate passed typecheck, 230 pure-test files
+(2,740 passed / 2 skipped / 0 failed) and production build. Schema export passed. Menu-planning,
+price-planning and recipe-versioning browser smokes each passed TH/EN at 1280/390px (12 cases),
+including permission/error states and manual rendering, with no page errors. Desktop/mobile menu
+screenshots were visually checked under `.test-output/restaurant-menu-plan-browser/`.
+Build still logs the intentional unavailable-DB sentinel from existing operations-schedule prerender;
+the local Next server also still logs the pre-existing background `undefined.bind` error. Target
+routes returned 200 and browser assertions passed; this is not a clean-runtime or live-DB certification.
+No migration, DB test, commit or push was performed in phase 6. Automatic historical-sales menu
+engineering and real promotion activation are not implemented by this planning worksheet.
+
+Phase-6 P2 stale-response fix, verified 2026-10-15: the new held-response browser assertion failed
+against the pre-fix production build (recipe picker incorrectly remained enabled), then passed all
+four TH/EN desktop/mobile cases on the fixed build. Eight new request-order contracts passed (23
+menu-plan contracts total). Full gate: typecheck, 231 pure-test files, 2,748 passed / 2 skipped /
+0 failed, and production build passed. Price-plan and recipe-versioning browser regressions also
+passed all four cases each (12 browser cases total); no page errors, with desktop/mobile screenshots
+visually checked. Logs: `.test-output/restaurant-phase6-p2-final/`. Scope is UI request ownership and
+shared recipe-picker disabled inheritance only; no arithmetic, API, schema/migration, tenant/RBAC,
+stock, money or sale snapshot changes. DB/RLS tests remain deferred. Existing unavailable-DB build
+logs and Next background `undefined.bind` logs remain; these passing checks do not certify live DB
+or general runtime health. No commit or push.
+
+Restaurant price planning (phase 5): `node scripts/run-contract-tests.mjs pure restaurant-price-plan`
+covers exact VAT/GP bases, contribution and upward-rounded targets, missing/zero/negative evidence,
+target-margin prices, input bounds, service/GraphQL permissions and tenant isolation, and read-only
+separation from real prices/ledgers. `node scripts/restaurant-price-plan-browser-smoke.mjs` exercises
+TH/EN at 1280/390px against mocked local APIs. No new migration; existing recipe reads still need
+real DB verification later. No database is provisioned or live provider/tax setting inferred.
+Verified 2026-10-15: 13 focused contracts passed, full pure suite 2,725 passed / 2 skipped;
+typecheck, schema export, i18n parity and production build passed. Price-plan browser smoke and
+existing recipe-versioning browser smoke each passed TH/EN at 1280/390px (8 cases total), including
+the manual; final runs had no page errors. Images are under `.test-output/restaurant-price-plan-browser/`.
+The build still logs the unavailable DB sentinel during the existing operations-schedule prerender;
+local Next background `undefined.bind` errors remain an environment/runtime limitation, not proof of
+a healthy DB-backed deployment. No new phase-5 migration, commit or push was performed.
+
+Operating costs (`10.64`, phase 4): `node scripts/run-contract-tests.mjs pure operating-cost` covers
+fixed-point depreciation, signed notes, canonical/cross-month dedup, missing/stale/currency/truncation,
+fake-client service retry/conflict/rollback, all-branch scope and executable API permission boundaries.
+`node scripts/operating-cost-browser-smoke.mjs` uses mocked APIs on a local production server only,
+in TH/EN at 1280/390px. No database is provisioned. Migration reapplication, actual source SQL,
+RLS/grants and concurrent transactions remain deferred deployment checks; these tests do not prove them.
+Verification on 2026-10-15: 16 phase-4 contracts passed; full pure suite 2,712 passed / 2 skipped;
+typecheck and production build passed; final browser smoke passed all four language/viewport cases,
+including Reports and Manual. The manual's positional card/metadata mismatch found by browser QA was
+fixed and now has a contract guard. Build logs still show the expected unavailable DB sentinel during
+operations-schedule prerender. The local Next server also emits the previously observed background
+`undefined.bind` errors; target routes returned 200 and the final browser run had no page errors.
+These checks are not evidence that the whole DB-backed runtime is healthy.
+
+Recipe costing (`10.63`, phase 3): `node scripts/run-contract-tests.mjs pure recipe-costing` covers
+fixed-point batch/yield math, missing/zero/invalid evidence, input bounds, tenant-scoped consistent
+reads, GraphQL permission/denial/bad-id boundaries, and no linkage to stock/payment/profit paths.
+`pure recipe-versioning` also verifies assumptions/source-only versioning, omission preservation,
+explicit clearing and rollback. The browser smoke below covers cost editing/reopen, read-only viewing,
+complete/incomplete/error states in TH/EN at 1280/390px with mocked APIs only. No DB is provisioned or
+used by these checks. Applying `10.63` twice and verifying real RLS/grants/transactions on a restored
+disposable DB remain deployment checks; this machine's user explicitly deferred DB testing.
+
+Recipe composition/SOP (`10.62`, phase 2): `node scripts/run-contract-tests.mjs pure recipe-composition`
+executes exact leaf-BOM expansion, invalid input, quantity/graph limits, tenant-scoped pinned loading,
+cycles, and GraphQL permission/tenant/error boundaries. `pure recipe-versioning` also executes
+SOP-only version changes, pinned inactive children, explicit upgrades, legacy-client preservation,
+and transactional rollback requests with a fake client. These do not execute PostgreSQL or prove
+locks/RLS/FKs. Apply `10.62` before recipe APIs; DB execution remains deferred by the user.
+The recipe browser smoke also selects an inactive pinned child, saves SOP, reopens the new version,
+and verifies read-only SOP access in Thai/English at desktop/mobile widths using mocked APIs.
+
+Restaurant item snapshots (`10.61`): `node scripts/run-contract-tests.mjs pure restaurant-item-snapshot`
+executes JSON validation, integer/cents legacy allocation, fake-client evidence adoption, and grouped
+restaurant return promotions. `node scripts/run-contract-tests.mjs db restaurant-pos` includes actual
+multi-version kitchen rounds, split/merge, cancellation, settlement, and failed-send rollback;
+`db kitchen-station` covers the related kitchen path. Apply `10.61` twice on a restored disposable
+database and verify RLS/grants/indexes/empty-v2 view behavior before rollout. These PostgreSQL checks
+have NOT run in this change's environment (no restored BMS test database available); explicitly
+deferred by the user on 2026-10-15, not required to finish this machine's DB-free work.
+`node scripts/run-contract-tests.mjs pure restaurant-kitchen-snapshot` executes the real send-round
+orchestrator and snapshot loader against transactional fakes: retry/no duplicate tickets, rejection,
+audit/link failure rollback requests, missing legacy evidence, branch/device denial, and kitchen-off.
+It also exercises tenant-purge link detachment ordering, target scope and failure rollback requests.
+The order engine is stubbed in that suite; it does not prove SQL atomicity, locks, or actual stock.
+
+Recipe version preservation (2026-10-15): `node scripts/run-contract-tests.mjs pure recipe-versioning`
+executes validation and the real service against a transactional fake (including rollback and audit).
+`node scripts/run-contract-tests.mjs db recipe-versioning` covers append-only content, activation,
+component-FK rollback, tenant isolation and concurrent version allocation on the restored disposable
+database. The DB suite is not replaced by the fake. `recipe-versioning-browser-smoke.mjs` opens Stock
+Models and Manual in Thai/English at 1280/390px with mocked APIs, checks the version warning and a
+save/refetch returning a new id, and stores screenshots under `.test-output/recipe-versioning-browser`.
+Use `BMS_SMOKE_URL` for a local server and `BMS_PLAYWRIGHT_MODULE` for an external Playwright install.
+
 ไฟล์ในนี้มีสองพวก และ **ชื่อไฟล์คือสัญญา**:
 
 | รูปชื่อไฟล์ | คืออะไร | ต้องมี Postgres |

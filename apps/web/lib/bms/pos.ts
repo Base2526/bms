@@ -22,6 +22,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { buildReturnFinancialSnapshot } from "./returnFinancialSnapshot";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
 import { createOrder, createOrderInTx, cancelOrder, type OrderItemInput } from "./orders";
@@ -5765,16 +5766,26 @@ export async function processPosReturn(input: {
       coupon_id: string | null;
       fulfillment_type: "DELIVERY" | "PICKUP" | null;
       extra_total: string;
+      extra_taxable: string;
+      taxable_amount: string;
+      exempt_amount: string;
+      vat_amount: string;
     }>(
       `SELECT id, status, channel, pos_device_id, location_id, total_amount, shipping_fee,
               rounding_amount,
-              discount_amount, coupon_id, fulfillment_type,
+              discount_amount, coupon_id, fulfillment_type, taxable_amount, exempt_amount, vat_amount,
               COALESCE((
                 SELECT SUM(extra.qty * extra.unit_amount)
                   FROM bms_order_extra_lines extra
                  WHERE extra.tenant_id = bms_orders.tenant_id
                    AND extra.order_id = bms_orders.id
-              ), 0) AS extra_total
+              ), 0) AS extra_total,
+              COALESCE((
+                SELECT SUM(extra.qty * extra.unit_amount)
+                  FROM bms_order_extra_lines extra
+                 WHERE extra.tenant_id = bms_orders.tenant_id AND extra.order_id = bms_orders.id
+                   AND extra.vat_category <> 'N'
+              ), 0) AS extra_taxable
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -5858,7 +5869,10 @@ export async function processPosReturn(input: {
       receipt_unit_price: string;
       pricing_snapshot: unknown;
       returned_pack_qty: string | null;
+      stock_consumption_version: number;
+      restaurant_check_item_id: string | null;
       returned_refund_amount: string | null;
+      vat_category: string;
     }>(
       `SELECT oi.id,
               oi.order_id,
@@ -5873,6 +5887,9 @@ export async function processPosReturn(input: {
               oi.line_amount,
               oi.receipt_unit_price,
               oi.pricing_snapshot,
+              oi.vat_category,
+              oi.stock_consumption_version,
+              oi.restaurant_check_item_id,
               COALESCE((
                 SELECT SUM(pri.pack_qty)
                   FROM bms_pos_return_items pri
@@ -6004,6 +6021,7 @@ export async function processPosReturn(input: {
         receiptUnitPrice: Number(item.receipt_unit_price),
         packUnitPrice: item.pack_unit_price == null ? null : Number(item.pack_unit_price),
         pricingSnapshot: item.pricing_snapshot,
+        promotionGroup: item.restaurant_check_item_id ? JSON.stringify([item.product_sku, item.size]) : undefined,
       }));
     const remainingPricing = priceRemainingLines(returnPricingLines, requestedMap);
     const giftOriginal = orderItems.map((l) => ({ sku: l.product_sku, size: l.size, qty: Number(l.qty),
@@ -6205,20 +6223,37 @@ export async function processPosReturn(input: {
       if (!approvedBy && actorCanApprove) approvedBy = input.actorUserId;
     }
 
+    // The order row is locked above: prior evidence and this new return share one serialised
+    // transaction. Replay exits before here; never reconstruct a legacy/retried snapshot.
+    const financialHistory = await client.query<{ amount: string; snapshot: unknown }>(
+      `SELECT refund_amount::text AS amount, financial_snapshot AS snapshot
+         FROM bms_pos_returns WHERE tenant_id=$1 AND order_id=$2 ORDER BY created_at, id LIMIT 1001`,
+      [input.tenantId, input.orderId]
+    );
+    const financialSnapshot = buildReturnFinancialSnapshot({
+      amount: roundedRefundAmount.toFixed(2), previousRefund: previousRefundAmount.toFixed(2),
+      exactPricing: hasExactSaleTimeRules, allReturned,
+      source: { payable: orderAmount.toFixed(2), shipping: order.shipping_fee ?? "0.00",
+        rounding: order.rounding_amount ?? "0.00", extras: order.extra_total,
+        extraTaxable: order.extra_taxable, taxable: order.taxable_amount, exempt: order.exempt_amount, vat: order.vat_amount },
+      lines: calculated.map(line => ({ orderItemId: String(line.item.id), amount: line.refundAmount.toFixed(2),
+        vatCategory: line.item.vat_category ?? "UNKNOWN" })),
+      previous: financialHistory.rows,
+    });
     const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, shift_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void, merchant_absorbed_amount,
           pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method,
-          source_channel, sale_location_id, return_location_id, cross_branch)
+          source_channel, sale_location_id, return_location_id, cross_branch, financial_snapshot)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14, $15,
-               $16, $17, $18, $19)
+               $16, $17, $18, $19, $20::jsonb)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
         input.isVoid === true, merchantAbsorbedAmount, pricingAdjustmentAmount, remainingAmount,
         input.preferredRefundMethod ?? null, order.channel, saleLocationId, returnLocationId,
-        crossBranch]
+        crossBranch, JSON.stringify(financialSnapshot)]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -6252,7 +6287,9 @@ export async function processPosReturn(input: {
           ORDER BY product_sku, size`,
         [input.tenantId, input.orderId, item.id]
       );
-      if (!stockLines.rowCount && !onlineCancellation) throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+      if (!stockLines.rowCount && !onlineCancellation && Number(item.stock_consumption_version) !== 2) {
+        throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+      }
 
       if (onlineCancellation) {
         for (const stockLine of stockLines.rows) {
@@ -6619,6 +6656,9 @@ export async function processPosReturn(input: {
         pricingAdjustmentAmount,
         remainingAmount,
         merchantAbsorbedAmount,
+        financialSnapshotVersion: financialSnapshot.version,
+        financialSnapshotPolicy: financialSnapshot.policy,
+        financialSnapshotIssues: financialSnapshot.issues,
         cancellationCauses: [...cancellationCauses.entries()],
         pointsReversed: loyaltyReversal.earnedReversed,
         pointsReturned: loyaltyReversal.redeemedReturned,

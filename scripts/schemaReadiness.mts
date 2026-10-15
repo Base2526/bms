@@ -24,6 +24,43 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.66__bms_cost_allocations.sql",
+    impact: "Monthly expense allocation requires versioned allocation evidence; selling and refund paths are unchanged",
+    needs: [{ kind: "table", name: "bms_cost_allocations" }],
+  },
+  {
+    file: "10.65__bms_pos_return_financial_snapshots.sql",
+    impact: "Returns, voids, restaurant line cancellation and sales evidence require the immutable return financial snapshot column",
+    needs: [{ kind: "column", table: "bms_pos_returns", name: "financial_snapshot" }],
+  },
+  {
+    file: "10.64__bms_operating_cost_reviews.sql",
+    impact: "Monthly operating-cost reconciliation needs reviewed classifications; original sales, cash and tax reports are unchanged",
+    needs: [{ kind: "table", name: "bms_operating_cost_reviews" }],
+  },
+  {
+    file: "10.63__bms_recipe_cost_assumptions.sql",
+    impact: "Recipe configuration and planning estimates require versioned whole-batch cost assumptions; sales and profit snapshots are unchanged",
+    needs: [{ kind: "column", table: "bms_product_recipes", name: "cost_assumptions" }],
+  },
+  {
+    file: "10.62__bms_recipe_composition_sop.sql",
+    impact: "Recipe configuration requires pinned subrecipe references and versioned SOP; stock readers keep the compiled leaf BOM",
+    needs: [
+      { kind: "column", table: "bms_product_recipes", name: "direct_items" },
+      { kind: "column", table: "bms_product_recipes", name: "sop_steps" },
+      { kind: "table", name: "bms_product_recipe_subrecipes" },
+    ],
+  },
+  {
+    file: "10.61__bms_restaurant_item_snapshots.sql",
+    impact: "Order writes and restaurant checks require per-item stock/cost snapshots and line identity",
+    needs: [
+      { kind: "column", table: "bms_restaurant_check_items", name: "stock_snapshot" },
+      { kind: "column", table: "bms_order_items", name: "restaurant_check_item_id" },
+    ],
+  },
+  {
     file: "10.55__bms_ai_limit_notices.sql",
     impact: "AI admission and owner limit status need the refused-call requirement and durable notices",
     needs: [
