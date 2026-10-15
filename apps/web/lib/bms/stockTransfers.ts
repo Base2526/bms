@@ -377,11 +377,12 @@ export async function sendStockTransfer(input: {
     }
 
     const items = await client.query<{
+      id: string;
       product_sku: string;
       size: string;
       qty: number;
     }>(
-      `SELECT product_sku, size, qty FROM bms_stock_transfer_items
+      `SELECT id, product_sku, size, qty FROM bms_stock_transfer_items
         WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
       [input.tenantId, input.transferId],
     );
@@ -425,6 +426,7 @@ export async function sendStockTransfer(input: {
         sku: item.product_sku,
         size: item.size,
         type: "TRANSFER_OUT",
+        transferItemId: item.id,
         qty: item.qty,
         note: `โอนออก ${t.transfer_no}`,
         actor: input.actorUserId,
@@ -625,6 +627,7 @@ export async function receiveStockTransfer(input: {
           sku: item.product_sku,
           size: item.size,
           type: "TRANSFER_IN",
+          transferItemId: item.id,
           qty: receivedQty,
           note: `รับโอน ${t.transfer_no}`,
           actor: input.actorUserId,
@@ -637,6 +640,7 @@ export async function receiveStockTransfer(input: {
           sku: item.product_sku,
           size: item.size,
           type: "QUARANTINE_IN",
+          transferItemId: item.id,
           qty: damagedQty,
           note: `ของเสียหายจากใบโอน ${t.transfer_no}: ${note}`,
           actor: input.actorUserId,
@@ -651,6 +655,7 @@ export async function receiveStockTransfer(input: {
           sku: item.product_sku,
           size: item.size,
           type: "TRANSFER_LOST",
+          transferItemId: item.id,
           qty: missing,
           note: `ของขาดระหว่างโอน ${t.transfer_no} (ส่ง ${item.qty} รับดี ${receivedQty} เสียหาย ${damagedQty} ไม่พบ ${missing}; ${reason}: ${note})`,
           actor: input.actorUserId,

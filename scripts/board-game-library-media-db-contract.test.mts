@@ -2,12 +2,25 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { query } from "../apps/web/lib/db.ts";
-import { createBoardGameTitle, createBoardGameCopy, listBoardGameLibrary } from "../apps/web/lib/bms/boardGameCafe.ts";
-import { setBoardGameTitleImage } from "../apps/web/lib/bms/boardGameLibraryMedia.ts";
-import { deleteStoredFile } from "../apps/web/lib/storage.ts";
 
-test("title images are tenant-owned, audited and independent from playable copies", async () => {
+test("title images are tenant-owned, audited and independent from playable copies", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "bms-library-test-"));
+  const previous = { dir: process.env.STORAGE_DIR, driver: process.env.STORAGE_DRIVER };
+  process.env.STORAGE_DIR = directory;
+  process.env.STORAGE_DRIVER = "local";
+  t.after(async () => {
+    if (previous.dir === undefined) delete process.env.STORAGE_DIR; else process.env.STORAGE_DIR = previous.dir;
+    if (previous.driver === undefined) delete process.env.STORAGE_DRIVER; else process.env.STORAGE_DRIVER = previous.driver;
+    await rm(directory, { recursive: true, force: true });
+  });
+  // Storage resolves its local root on import, so configure before loading business services.
+  const { createBoardGameTitle, createBoardGameCopy, listBoardGameLibrary } = await import("../apps/web/lib/bms/boardGameCafe.ts");
+  const { setBoardGameTitleImage } = await import("../apps/web/lib/bms/boardGameLibraryMedia.ts");
+  const { deleteStoredFile } = await import("../apps/web/lib/storage.ts");
   const ids: string[] = [];
   try {
     const migration = readFileSync(new URL("../db/migrations/10.42__bms_board_game_library_images.sql", import.meta.url), "utf8");

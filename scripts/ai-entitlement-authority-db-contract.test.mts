@@ -23,7 +23,7 @@ test('AI entitlements cannot be self-issued and finite balances serialize concur
     tenants.push(id); return id as string;
   }
   const tenant = await shop(), other = await shop();
-  const user = (await query("INSERT INTO users(tenant_id,role_id,name,email,is_platform_admin) SELECT $1,id,'FAKE owner',$2,false FROM roles WHERE name='Administrator' RETURNING id", [tenant,`fake-${crypto.randomUUID()}@example.test`])).rows[0].id;
+  const user = (await query("INSERT INTO users(tenant_id,role_id,name,email,is_platform_admin,password_hash,fake_test) SELECT $1,id,'FAKE owner',$2,false,'x',true FROM roles WHERE name='Administrator' RETURNING id", [tenant,`fake-${crypto.randomUUID()}@example.test`])).rows[0].id;
   users.push(user);
   const ctx = { scope: 'admin', admin: { id: user, tenant_id: tenant, role: 'Administrator', is_platform_admin: true }, isPlatformAdmin: true };
   const change = () => bmsSaasResolvers.Mutation.bmsChangePlan(null, { planCode: 'business' }, ctx);

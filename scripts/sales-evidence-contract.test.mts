@@ -188,6 +188,7 @@ function harness(options: any = {}) {
     if (name === "@/lib/db") return { getClient: async () => client };
     if (name === "./tenant") return { beginTenantTx: async (c: any, tenant: string, opts: any) => { calls.push({ beginTenant: tenant, opts }); await c.query("BEGIN"); } };
     if (name === "./salesEvidenceMath") return math;
+    if (name === "./actualSalesCosts") return { attachActualSalesCosts: async () => { throw new Error("Actual valuation was not requested"); } };
     throw new Error(name);
   }, options.clock);
   return { service, calls, released: () => released };

@@ -8,7 +8,7 @@ export function promotionFromRow(row: Record<string, any>): Promotion | null {
     buyQty: Number(row.buy_qty), giftSku: row.gift_sku, giftSize: row.gift_size, getQty: Number(row.get_qty),
   });
   if (row.kind === "BUY_X_GET_Y") return { kind: row.kind, buyQty: Number(row.buy_qty), getQty: Number(row.get_qty) };
-  if (row.kind === "N_FOR_PRICE") return { kind: row.kind, buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price) };
+  if (row.kind === "N_FOR_PRICE") return { kind: row.kind, buyQty: Number(row.buy_qty), bundlePrice: Number(row.bundle_price), ...(row.buy_size ? {buySize:String(row.buy_size)} : {}) };
   return null;
 }
 

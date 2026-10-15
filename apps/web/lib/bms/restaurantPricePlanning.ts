@@ -2,7 +2,7 @@
 export type PriceScenario = { label: string; price: number; vatMode: "NONE" | "INCLUSIVE" | "EXCLUSIVE";
   vatPercent: number; gpPercent: number; gpBasis: "CUSTOMER_TOTAL" | "NET_REVENUE"; extraUnitCost: number;
   expectedDailyUnits: number | null; targetMarginPercent: number | null };
-export type PricePlanInput = { recipeId: string; assumptionSource: string; dailyFixedCost: number | null;
+export type PricePlanInput = { costBasis?: "CATALOG" | "WEIGHTED_AVERAGE"; locationId?: string | null; recipeId: string; assumptionSource: string; dailyFixedCost: number | null;
   dailyTargetProfit: number; scenarios: PriceScenario[] };
 const invalid = (): never => { throw new Error("PRICE_PLAN_INVALID_INPUT"); };
 function hundredths(value: unknown, max = 1_000_000_000): bigint {
@@ -29,7 +29,9 @@ export function normalizePricePlan(input: any): PricePlanInput {
       gpPercent: row.gpPercent, gpBasis: row.gpBasis, extraUnitCost: row.extraUnitCost,
       expectedDailyUnits: row.expectedDailyUnits ?? null, targetMarginPercent: row.targetMarginPercent ?? null };
   });
-  return { recipeId: input.recipeId, assumptionSource: input.assumptionSource.trim(), dailyFixedCost: input.dailyFixedCost ?? null,
+  if (input.costBasis != null && !["CATALOG","WEIGHTED_AVERAGE"].includes(input.costBasis)) return invalid();
+  if (input.costBasis === "WEIGHTED_AVERAGE" && (typeof input.locationId!=="string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(input.locationId))) return invalid();
+  return { ...(input.costBasis ? {costBasis:input.costBasis,locationId:input.costBasis==="CATALOG"?null:input.locationId} : {}), recipeId: input.recipeId, assumptionSource: input.assumptionSource.trim(), dailyFixedCost: input.dailyFixedCost ?? null,
     dailyTargetProfit: input.dailyTargetProfit, scenarios };
 }
 type Fraction = { n: bigint; d: bigint };

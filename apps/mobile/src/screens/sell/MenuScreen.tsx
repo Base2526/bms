@@ -14,6 +14,8 @@ import Svg, { Circle, Line, Path } from 'react-native-svg';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { Button } from '../../components/Button';
+import { CartLineAmount } from '../../components/CartLineAmount';
+import { cartProductPricing } from '../../lib/cartPricing';
 import { MenuGrid } from '../../components/MenuGrid';
 import { QtyStepper } from '../../components/QtyStepper';
 import { BarcodeScannerModal } from '../../components/BarcodeScannerModal';
@@ -157,6 +159,7 @@ export default function MenuScreen({ navigation }: Props) {
     resumeParkedBill,
     deleteParkedBill,
   } = useCart();
+  const linePricing = useMemo(() => cartProductPricing(lines).lines, [lines]);
   const { isOpen: isShiftOpen, loading: shiftLoading } = useShift();
   const { mode } = useStoreMode();
   const {
@@ -356,7 +359,7 @@ export default function MenuScreen({ navigation }: Props) {
             </Text>
           </View>
         }
-        renderItem={({ item }) => (
+        renderItem={({ item, index }) => (
           <View style={{ gap: spacing.sm }}>
             <View
               style={{
@@ -382,9 +385,7 @@ export default function MenuScreen({ navigation }: Props) {
                   </Text>
                 ) : null}
               </View>
-              <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ฿{(item.qty * item.unitPrice).toFixed(2)}
-              </Text>
+              <CartLineAmount {...linePricing[index]} />
             </View>
             <View
               style={{

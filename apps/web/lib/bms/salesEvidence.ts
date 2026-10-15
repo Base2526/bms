@@ -1,3 +1,4 @@
+import { attachActualSalesCosts } from "./actualSalesCosts";
 import { getClient } from "@/lib/db";
 import type { PoolClient } from "pg";
 import { beginTenantTx } from "./tenant";
@@ -72,14 +73,14 @@ SELECT e.key, e.kind, e.order_id AS "orderId", e.location_id AS "locationId", e.
     'rounding',o.rounding_amount::text,'taxable',o.taxable_amount::text,'exempt',o.exempt_amount::text,'vat',o.vat_amount::text,
     'extras',(SELECT COALESCE(SUM(x.qty*x.unit_amount),0)::text FROM bms_order_extra_lines x WHERE x.tenant_id=o.tenant_id AND x.order_id=o.id),
     'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',i.id::text,'sku',i.product_sku,'size',i.size,
-      'qty',i.qty::text,'amount',i.line_amount::text,'cost',i.cost_amount_snapshot::text,'costSource',i.cost_snapshot_source) ORDER BY i.id),'[]'::jsonb)
+      'vatCategory',i.vat_category,'qty',i.qty::text,'amount',i.line_amount::text,'cost',i.cost_amount_snapshot::text,'costSource',i.cost_snapshot_source) ORDER BY i.id),'[]'::jsonb)
       FROM (SELECT * FROM bms_order_items WHERE tenant_id=$1 AND order_id=e.order_id ORDER BY id LIMIT 1001) i))
     FROM bms_orders o WHERE o.tenant_id=$1 AND o.id=e.order_id)
   WHEN 'RETURN' THEN (SELECT jsonb_build_object('amount',r.refund_amount::text,
     'financialSnapshot',CASE WHEN jsonb_typeof(r.financial_snapshot->'lines')='array'
       THEN CASE WHEN jsonb_array_length(r.financial_snapshot->'lines')<=1000 THEN r.financial_snapshot END END,
     'lines',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',ri.id::text,'qty',ri.qty::text,'amount',ri.refund_amount::text,
-      'orderItemId',ri.order_item_id::text,
+      'orderItemId',ri.order_item_id::text,'sku',i.product_sku,'size',i.size,'vatCategory',i.vat_category,
       'soldQty',i.qty::text,'cost',i.cost_amount_snapshot::text,'costSource',i.cost_snapshot_source,
       'cancellationCause',ri.cancellation_cause,
       'priorQty',(SELECT COALESCE(SUM(prev.qty),0)::text FROM bms_pos_return_items prev
@@ -90,7 +91,7 @@ SELECT e.key, e.kind, e.order_id AS "orderId", e.location_id AS "locationId", e.
   WHEN 'REFUND' THEN (SELECT jsonb_build_object('amount',a.amount::text,'method',a.method) FROM bms_pos_refund_allocations a WHERE a.tenant_id=$1 AND a.id=e.source_id::uuid)
   WHEN 'PAYMENT_REFUND' THEN (SELECT jsonb_build_object('amount',p.amount::text,'legacyDate',e.legacy_date) FROM bms_payments p WHERE p.tenant_id=$1 AND p.id=e.source_id::uuid)
   WHEN 'BACKOFFICE_RETURN' THEN (SELECT jsonb_build_object('amount',o.total_amount::text,'legacyDate',e.legacy_date) FROM bms_orders o WHERE o.tenant_id=$1 AND o.id=e.order_id)
-  WHEN 'TAX_ADJUSTMENT' THEN (SELECT jsonb_build_object('amount',d.grand_total::text,'docType',d.doc_type) FROM bms_tax_documents d WHERE d.tenant_id=$1 AND d.id=e.source_id::uuid)
+  WHEN 'TAX_ADJUSTMENT' THEN (SELECT jsonb_build_object('amount',d.grand_total::text,'docType',d.doc_type,'creditReason',d.credit_reason,'vat',d.vat_amount::text) FROM bms_tax_documents d WHERE d.tenant_id=$1 AND d.id=e.source_id::uuid)
   END AS payload
 FROM page e ORDER BY e.key COLLATE "C"`;
 
@@ -114,7 +115,7 @@ export async function scanSalesEvidence(tenantId: string, actorId: string, input
 
 /** Internal composition only: caller owns a serializable tenant transaction and source permissions. */
 export async function scanSalesEvidenceInTx(client: PoolClient, tenantId: string, actorId: string, input: unknown,
-  consume: (event: SalesEvidenceEvent) => unknown) {
+  consume: (event: SalesEvidenceEvent) => unknown, actualCosts = false) {
     const filter = normalizeSalesEvidenceFilter(input);
     if (!tenantId || !actorId) throw new Error("SALES_EVIDENCE_FORBIDDEN");
     await client.query("SET LOCAL statement_timeout = '30s'");
@@ -137,6 +138,7 @@ export async function scanSalesEvidenceInTx(client: PoolClient, tenantId: string
       const limit = Math.min(SALES_EVIDENCE_PAGE_SIZE, remaining + 1);
       const rows = (await client.query<SalesEvidenceEvent>(EVENTS_SQL,
         [tenantId, filter.from, filter.to, locations, filter.channel, cursor, limit])).rows;
+      if (actualCosts) await attachActualSalesCosts(client,tenantId,rows);
       if (rows.length > limit) throw new Error("SALES_EVIDENCE_INVALID_PAGE");
       for (const event of rows) {
         if (event.key <= cursor) throw new Error("SALES_EVIDENCE_INVALID_CURSOR");

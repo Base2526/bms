@@ -66,3 +66,24 @@ describe('ProductOptionsModal', () => {
     });
   });
 });
+
+
+test.each([false, true])('zero-stock size follows scan stockTracked=%s', async stockTracked => {
+  const resolvedItem: PosMenuItem = {
+    ...catalogItem, stockTracked, basePrice: 50, packBasePrice: 50,
+    priceTiers: [], promotion: null, modifiers: [], packs: [],
+    availableSizes: [{ size: 'M', available: 0 }, { size: 'L', available: 0 }],
+  };
+  const resolveVariant = jest.fn().mockResolvedValue({ ...resolvedItem, size: 'L' });
+  let tree!: ReactTestRenderer.ReactTestRenderer;
+  await ReactTestRenderer.act(async () => { tree = ReactTestRenderer.create(
+    <ThemeProvider><ProductOptionsModal item={resolvedItem} resolveVariant={resolveVariant} onClose={jest.fn()} onConfirm={jest.fn()} /></ThemeProvider>,
+  ); });
+  const large = tree.root.findAllByType(Button).find(b => b.props.label === 'L')!;
+  expect(large.props.disabled).toBe(stockTracked);
+  if (!stockTracked) {
+    await ReactTestRenderer.act(async () => large.props.onPress());
+    expect(resolveVariant).toHaveBeenCalledWith('TEA-001', 'L', null);
+  }
+  await ReactTestRenderer.act(async () => tree.unmount());
+});

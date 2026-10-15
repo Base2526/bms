@@ -12,7 +12,7 @@ try {
   for (const lang of ["th", "en"]) for (const width of [1280, 390]) {
     const context = await browser.newContext({ viewport: { width, height: 1000 }, serviceWorkers: "block" });
     await context.addCookies([{ name: "ADMIN_COOKIE", value: "FAKE-fixture", url: base }, { name: "lang", value: lang, url: base }]);
-    let permissions = ["product.view", "report.view"], reads = 0, savedInput;
+    let permissions = ["product.view", "report.view", "product.edit"], reads = 0, savedInput;
     const mutations = [];
     await context.route("**/*", async route => {
       const url = new URL(route.request().url());
@@ -25,6 +25,12 @@ try {
         if (/^\s*mutation/.test(q)) mutations.push(q);
         let data = {};
         if (q.includes("MyBmsPermissions")) data = { myBmsPermissions: permissions };
+        else if (q.includes("query PreviewPricePublication")) data={bmsPreviewPricePublication:{status:"READY",errorCode:null,fingerprint:"a".repeat(64),snapshot:{sku:"FAKE-MENU",size:"PLATE",price:107,quantity:1,mode:"BASE",packs:[],tiers:[],promotions:[]}}};
+        else if (q.includes("mutation PublishPricePlan")) {
+          assert.equal(variables.review.confirmed,true);assert.equal(variables.review.fingerprint,"a".repeat(64));
+          assert.equal(variables.input.plan.recipeId,recipeId);assert.equal(variables.input.quantity,1);
+          assert.equal(variables.input.tenantId,undefined);data={bmsPublishPricePlan:{status:"PUBLISHED",errorCode:null}};
+        }
         else if (q.includes("query RestaurantPricePlan")) {
           reads++; savedInput = variables.input;
           if (reads === 3) return route.fulfill({ json: { errors: [{ message: "FAKE unavailable", extensions: { code: "INTERNAL_SERVER_ERROR" } }] } });
@@ -84,6 +90,16 @@ try {
       await result.scrollIntoViewIfNeeded();
       await page.screenshot({ path: `${output}/${lang}-${width}-result.png`, animations: "disabled" });
       assert.ok(await result.evaluate(el => el.scrollWidth <= el.clientWidth + 1), "results fit viewport");
+      assert.deepEqual(mutations,[]);
+      await result.getByRole('button',{name:lang==='th'?'นำราคาไปใช้ขาย':'Publish selling price',exact:true}).first().click();
+      const publication=page.getByRole('dialog').last();
+      await publication.getByRole('button',{name:lang==='th'?'ตรวจสอบก่อนยืนยัน':'Review before confirmation',exact:true}).click();
+      await publication.getByText(/฿107/).waitFor();assert.deepEqual(mutations,[]);
+      await publication.screenshot({path:`${output}/${lang}-${width}-publication.png`,animations:'disabled'});
+      await publication.getByRole('button',{name:lang==='th'?'ยืนยันเปิดใช้ราคาขายนี้':'Confirm and publish this price',exact:true}).click();
+      await publication.getByText(lang==='th'?'เปิดใช้ราคาแล้ว':'Price published',{exact:true}).waitFor();
+      assert.equal(mutations.length,1);mutations.length=0;
+      await publication.getByRole('button',{name:'Close',exact:true}).click();
       await dialog.locator('#scenarios_0_price').fill("108"); assert.equal(await result.count(), 0, "changed inputs invalidate output");
       await dialog.getByRole('button', { name: new RegExp(calculate) }).click();
       await result.getByText(lang === "th" ? "ต้นทุนสูตรไม่ครบ — ยังไม่ทราบกำไรและเป้าขาย" : "Recipe estimate incomplete — profit and targets unknown", { exact: true }).first().waitFor();

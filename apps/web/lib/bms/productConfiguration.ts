@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import type { QueryResult, QueryResultRow } from "pg";
 import { beginTenantTx } from "./tenant";
@@ -504,11 +505,12 @@ export async function getProductReadiness(tenantId: string, productSku: string):
 export async function publishProduct(
   tenantId: string,
   productSku: string,
-  editorId?: string | null
+  editorId?: string | null,
+  transaction?: PoolClient
 ): Promise<ProductReadiness> {
-  const client = await getClient();
+  const client = transaction ?? await getClient();
   try {
-    await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
+    if (!transaction) await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     const locked = await client.query(
       `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
       [tenantId, productSku]
@@ -523,13 +525,13 @@ export async function publishProduct(
         WHERE tenant_id = $1 AND sku = $2`,
       [tenantId, productSku]
     );
-    await client.query("COMMIT");
+    if (!transaction) await client.query("COMMIT");
     return readiness;
   } catch (error) {
-    try { await client.query("ROLLBACK"); } catch {}
+    try { if (!transaction) await client.query("ROLLBACK"); } catch {}
     throw error;
   } finally {
-    client.release();
+    if (!transaction) client.release();
   }
 }
 

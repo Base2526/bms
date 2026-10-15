@@ -1,3 +1,5 @@
+import { branchPrice } from "./branchPrices";
+import { promotionForVariant } from "./pricing";
 // =============================================================
 // BMS Orders — สร้าง order + reserve สต็อกแบบ atomic
 // -------------------------------------------------------------
@@ -325,7 +327,8 @@ async function revalidateOrderPacksInTx(
   client: PoolClient,
   tenantId: string,
   items: OrderItemInput[],
-  salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER"
+  salesSurface: "RETAIL_POS" | "RESTAURANT_POS" | "ONLINE_ORDER",
+  locationId: string
 ): Promise<{ ok: true; items: OrderItemInput[] } | { ok: false; sku: string; size: string; packCode: string }> {
   const canonical: OrderItemInput[] = [];
   for (const item of items) {
@@ -374,9 +377,9 @@ async function revalidateOrderPacksInTx(
       packCode: pack.pack_code,
       packUnitName: pack.unit_name,
       packQty: Number(packQty),
-      packUnitPrice: pack.price == null
-        ? (await getVariantBasePriceInTx(client, tenantId, item.sku, item.size) ?? Number(pack.base_price)) * baseQty
-        : Number(pack.price),
+      packUnitPrice: (await branchPrice(client,tenantId,locationId,item.sku,item.size,pack.pack_code)) ?? (pack.price == null
+        ? (await getVariantBasePriceInTx(client, tenantId, item.sku, item.size, locationId) ?? Number(pack.base_price)) * baseQty
+        : Number(pack.price)),
       modifierCodes: item.modifierCodes ?? [],
     });
   }
@@ -773,7 +776,7 @@ export async function createOrderInTx(
       items = await restaurantOrderItemsInTx(client, tenantId, input.restaurantCheckId, locationId);
       if (!items.length) return { status: "EMPTY" };
     }
-    const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items, salesSurface);
+    const canonicalPacks = await revalidateOrderPacksInTx(client, tenantId, items, salesSurface, locationId);
     if (!canonicalPacks.ok) {
       return {
         status: "PACK_NOT_FOUND",
@@ -1028,6 +1031,7 @@ export async function createOrderInTx(
     );
     const scopedPromosBySku = new Map<string, ScopedPromotion[]>();
     for (const row of promoRows.rows) {
+      if (row.sales_surface && row.sales_surface!==salesSurface) continue;
       const promotion = promotionFromRow(row);
       if (!promotion || (promotion.kind === "BUY_A_GET_B" && salesSurface !== "RETAIL_POS")) continue;
       const scoped = scopedPromosBySku.get(row.product_sku) ?? [];
@@ -1056,11 +1060,11 @@ export async function createOrderInTx(
     });
     for (const [key, indexes] of looseIndexesByVariant) {
       const first = items[indexes[0]];
-      const promo = promoBySku.get(first.sku) ?? null;
+      const promo = promotionForVariant(promoBySku.get(first.sku) ?? null, first.size);
       if (!promo || promo.kind === "BUY_A_GET_B") continue;
       const qty = promoQtyByVariant.get(key) ?? 0;
       const promotedCents = Math.round(applyPromotion(
-        await getVariantBasePriceInTx(client, tenantId, first.sku, first.size) ?? 0,
+        await getVariantBasePriceInTx(client, tenantId, first.sku, first.size, locationId) ?? 0,
         qty,
         promo
       ).amount * 100);
@@ -1172,7 +1176,7 @@ export async function createOrderInTx(
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
 
-      const listPrice = await getVariantBasePriceInTx(client, tenantId, it.sku, it.size);
+      const listPrice = await getVariantBasePriceInTx(client, tenantId, it.sku, it.size, locationId);
       if (listPrice == null) {
         return { status: "NOT_FOUND", sku: it.sku, size: it.size };
       }
@@ -1224,7 +1228,7 @@ export async function createOrderInTx(
 
       // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
-      const promo = packUnitPrice != null ? null : promoBySku.get(it.sku) ?? null;
+      const promo = packUnitPrice != null ? null : promotionForVariant(promoBySku.get(it.sku) ?? null,it.size);
       total += lineAmount;
       lines.push({
         sku: it.sku,

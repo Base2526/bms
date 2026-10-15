@@ -139,6 +139,9 @@ test("a walk-in POS cart creates its own order and first deposit idempotently", 
   const first = await recordPosSale(input);
   assert.equal(first.status, "DEPOSIT_TAKEN", JSON.stringify(first));
   if (first.status !== "DEPOSIT_TAKEN") return;
+  assert.ok(typeof first.orderId === "string");
+  assert.ok(first.deposit && typeof first.deposit === "object"
+    && "depositPaid" in first.deposit && "balanceDue" in first.deposit);
   orders.push(first.orderId);
   assert.equal(first.total, 2000);
   assert.equal(first.deposit.depositPaid, 500);
@@ -148,6 +151,7 @@ test("a walk-in POS cart creates its own order and first deposit idempotently", 
   const replay = await recordPosSale(input);
   assert.equal(replay.status, "DEPOSIT_TAKEN", JSON.stringify(replay));
   if (replay.status === "DEPOSIT_TAKEN") {
+    assert.ok(replay.deposit && typeof replay.deposit === "object" && "depositPaid" in replay.deposit);
     assert.equal(replay.orderId, first.orderId);
     assert.equal(replay.deposit.depositPaid, 500, "retry must not collect the first deposit twice");
     assert.equal(replay.replayed, true);
@@ -280,6 +284,18 @@ test("collecting the balance completes the sale through the ordinary path", asyn
   const closed = await getDepositByOrder(tenantId, dep!.orderId);
   assert.equal(closed!.status, "COMPLETED");
   assert.equal(closed!.balanceDue, 0);
+  const paid = async () => (await query(
+    "SELECT amount::float AS amount FROM bms_payments WHERE tenant_id=$1 AND order_id=$2 AND status='CONFIRMED' ORDER BY amount",
+    [tenantId, dep.orderId],
+  )).rows.map((r) => r.amount);
+  assert.deepEqual(await paid(), [1000, 1500, 2500], "collect only the balance after both instalments");
+  const replay = await settleDepositSale({
+    tenantId, deviceId, shiftId, cashierUserId: cashierId, orderId: dep.orderId,
+    payments: [{ method: "CASH", amount: 2500, cashTendered: 2500 }],
+  });
+  assert.equal(replay.status, "DEPOSIT_NOT_FOUND");
+  assert.deepEqual(await paid(), [1000, 1500, 2500]);
+  assert.deepEqual(await stock(), after, "settlement retry cannot collect or deduct twice");
 });
 
 test("paying the wrong balance is refused rather than accepted quietly", async () => {

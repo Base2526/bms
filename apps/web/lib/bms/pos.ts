@@ -1,3 +1,4 @@
+import { readBranchPrice, branchPrice } from "./branchPrices";
 // =============================================================
 // BMS POS — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
@@ -60,6 +61,7 @@ import { isPharmacistReviewableBlock } from "./pharmacy/productPolicyDecision";
 import { createProductReviewAssessmentOnce } from "./pharmacy/assessments";
 import {
   cashRoundingDelta,
+  applyOrderVatInTx,
   getVatSettings,
   issueAbbreviatedInvoiceInTx,
   issueCreditNote,
@@ -613,12 +615,12 @@ export async function listPosVariantChoices(
       ORDER BY choices.sort_order, choices.size`,
     [tenantId, productSku, locationId],
   );
-  return result.rows.map((row) => ({
+  return Promise.all(result.rows.map(async (row) => ({
     size: row.size,
     available: Math.max(0, Number(row.available) || 0),
-    price: Number(row.price),
+    price: await readBranchPrice(tenantId,locationId,productSku,row.size) ?? Number(row.price),
     stockTracked: row.stock_tracked,
-  }));
+  })));
 }
 
 /**
@@ -850,6 +852,7 @@ export async function resolvePosScan(
   );
   const promotion: Promotion | null = pickPromotionForLocation(
     promoRes.rows.flatMap((promoRow: any) => {
+      if (promoRow.sales_surface && promoRow.sales_surface!==salesSurface) return [];
       const promotion = promotionFromRow(promoRow);
       return !promotion || (promotion.kind === "BUY_A_GET_B" && salesSurface !== "RETAIL_POS") ? [] : [{
       locationId: promoRow.location_id ?? null,
@@ -908,7 +911,7 @@ export async function resolvePosScan(
         default_selected: boolean;
       }> };
 
-  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
+  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size, opts.locationId);
   if (basePrice == null) return null;
   const packOptions = await query<{
     pack_code: string;
@@ -926,11 +929,16 @@ export async function resolvePosScan(
   const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
+  const branchPackPrice = await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,resolvedPackCode);
+  for (const pack of packOptions.rows) {
+    const override=await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,pack.pack_code);
+    if(override!=null) pack.price=String(override);
+  }
   const packPrice = scaleBarcode
     ? basePrice * baseQty
     : resolvedPackCode === "BASE"
     ? basePrice
-    : row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty;
+    : branchPackPrice ?? (row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty);
 
   return {
     sku: row.sku,
@@ -2867,8 +2875,8 @@ async function canonicalizePosSaleLines(
       return { ok: false, sku, packCode };
     }
     const baseQty = row.base_qty ?? 1;
-    const basePrice = Number(row.base_price);
-    const packPrice = row.pack_price == null ? basePrice * baseQty : Number(row.pack_price);
+    const basePrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size) ?? Number(row.base_price);
+    const packPrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size,packCode) ?? (row.pack_price == null ? basePrice * baseQty : Number(row.pack_price));
     items.push({
       sku,
       // ใช้ไซซ์ตามที่เก็บใน bms_inventory ไม่ใช่ที่ client ส่งมา —
@@ -3576,6 +3584,9 @@ async function fulfilPosOrderInTx(
   }
   // ร้านที่ยังไม่จด VAT ขายได้ตามปกติ แค่ไม่มีใบกำกับ — ไม่ใช่ error
   if (issued.status === "NOT_VAT_REGISTERED") {
+    // Freeze the exempt revenue bucket even without a tax document; later registration changes
+    // must not make historical non-VAT sales indistinguishable from missing legacy snapshots.
+    await applyOrderVatInTx(client, tenantId, orderId, taxArgs.settings);
     return { docNo: null, vat: null, vatIssue: null, kitchenTickets };
   }
   // ร้านจด VAT แล้วแต่สินค้ายังไม่ระบุประเภทภาษี = ออกใบไม่ได้ ต้องหยุดทั้งบิล
@@ -4386,8 +4397,9 @@ async function finalizePosSale(args: {
       }
 
       const externalTotal = Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
-      if (Math.abs(externalTotal + reservationDepositApplied - amountDue) > 0.01) {
-        throw new Error(`ยอดชำระไม่ตรง (ต้องเก็บ ${amountDue - reservationDepositApplied})`);
+      // The locked payments include earlier deposit instalments. Collect only the balance.
+      if (Math.abs(foundPaid + externalTotal + reservationDepositApplied - amountDue) > 0.01) {
+        throw new Error(`ยอดชำระไม่ตรง (ต้องเก็บ ${Math.round((amountDue - foundPaid - reservationDepositApplied) * 100) / 100})`);
       }
 
       for (const payment of payments) {
@@ -6421,6 +6433,8 @@ export async function processPosReturn(input: {
           qty: exactQty,
           refOrderId: input.orderId,
           note: `POS return ${posReturnId}${crossBranch ? ` from ${saleLocationId}` : ""}`,
+          orderItemId: item.id,
+          returnId: posReturnId,
           actor: input.actorUserId,
         });
       }
@@ -8441,7 +8455,7 @@ export async function blindReturnPosSale(input: {
           WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
         [input.tenantId, locationId, line.sku, line.size]
       );
-      const maxUnitRefund = await getVariantBasePriceInTx(client, input.tenantId, line.sku, line.size);
+      const maxUnitRefund = await getVariantBasePriceInTx(client, input.tenantId, line.sku, line.size, locationId);
       if (!variant.rowCount || maxUnitRefund == null) {
         await client.query("ROLLBACK");
         return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ขนาด ${line.size} ที่เปิดขายอยู่ในสาขานี้` };

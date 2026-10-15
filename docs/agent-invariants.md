@@ -2450,3 +2450,34 @@ falls into before copying one pattern verbatim.
 - The Docker development stack owns its own `apps/web/.next` and `apps/web/node_modules` volumes.
   Do not remove those volume mounts or share the same Next.js output directory between host and
   container dev servers; mixed manifests cause App Router `clientModules` failures across routes.
+
+
+### Restaurant costing extension (10.67–10.69)
+
+The what-if price/menu calculators remain read-only. A separate explicit preview/confirm publication
+workflow reuses shared pack/promotion writers and records append-only history and audit in one tenant
+transaction. Require product.edit + report.view, access to the affected branch (unrestricted for global prices), VAT agreement and a current
+fingerprint. Mixed-menu publication requires its own preview/confirmation and product activation permission; it creates a pinned recipe SKU through shared catalog/recipe services.
+
+Moving weighted-average valuation is per SKU/variant/branch, never current-catalog historical backfill.
+Physical movements and their cost evidence commit atomically. Original-consumption return and transfer
+cost allocation must conserve the final micro-baht; report partial-return allocation conserves satang.
+Opening values require inventory.count.apply + report.view, evidence and quantity/version confirmation.
+Unknown financial/valuation evidence remains unknown. Reconcile POS credit notes only through a unique,
+validated tenant/order return with matching monetary/VAT snapshot; payment refunds never reduce sales twice.
+
+10.70: valuation browsing must be server-paged/searchable. Planners explicitly select catalog or an
+authorized branch weighted average, never fallback when stock value is unknown. Unsold active recipes
+are NO_SALES, not an invalidation of sold menus. Promotion scope (variant/branch/surface/time) must be
+preserved from publication through POS previews, settlement and immutable return snapshots.
+
+10.71–10.72: base/pack branch overrides are authoritative in catalog, scan and settlement, and returns
+use frozen sale prices. A branch override changes price only, never pack quantity. Scheduled offers
+use half-open non-overlapping windows per SKU/branch; publication preserves the current offer until
+the boundary, then the next rule applies without a scheduler. No time-window overlap or implicit
+stacking. Menu net profit allocates reviewed actual expenses and stock adjustments only after a
+human confirms a method/reason, preserves cents, and reconciles through an explicit non-menu revenue
+bucket. It is not complete if actual costs are unknown. Changed evidence invalidates the confirmation.
+All sources are read in one tenant transaction. Bundle publication composes shared product, recipe
+and readiness services in one transaction, requires product.edit + product.delete + report.view,
+and never creates opening valuation or modifies existing SKUs.

@@ -88,13 +88,14 @@ test("estimate service scopes one consistent read and labels current catalog obs
   const calls: any[] = []; let rows: any[] = [{ id: recipeId, version: 4, output_qty: 2, cost_assumptions: assumptions, ingredients, calculated_at: new Date("2026-10-15T00:00:00Z") }];
   const service = load("apps/web/lib/bms/recipeCostEstimates.ts", name => {
     if (name === "./recipeCosting") return costing;
+    if (["./tenant","./inventoryValuation"].includes(name)) return {};
     if (name === "@/lib/db") return { query: async (sql: string, params: any[]) => { calls.push({ sql, params }); return { rows }; } };
     throw new Error(name);
   });
   const result = await service.getRecipeCostEstimate("tenant-a", recipeId);
   assert.equal(result.recipeVersion, 4); assert.equal(result.calculatedAt, "2026-10-15T00:00:00.000Z");
   assert.equal(result.totalBatchCost, 78.25); assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].params, ["tenant-a", recipeId]);
+  assert.deepEqual(calls[0].params, ["tenant-a", recipeId,null,"CATALOG"]);
   for (const predicate of [/r.tenant_id=\$1 AND r.id=\$2/, /p.tenant_id=i.tenant_id/, /i.tenant_id=r.tenant_id/, /statement_timestamp\(\)/]) assert.match(calls[0].sql, predicate);
   rows = [{ ...rows[0], ingredients: [{ ...ingredients[0], unitCost: "0.40" }, ingredients[1]] }];
   assert.equal((await service.getRecipeCostEstimate("tenant-a", recipeId)).totalBatchCost, 98.25);
@@ -107,15 +108,17 @@ test("cost GraphQL query enforces product.view, server tenant and bad ids before
   let allowed = false; const calls: any[] = [];
   class InputError extends Error { extensions: any; constructor(message: string, options: any) { super(message); this.extensions = options.extensions; } }
   const adapter = load("apps/web/graphql/bmsStockCapabilities.ts", name => {
+    if (name === "@/lib/auth") return {requireAuth:()=>({author_id:"server-actor"})};
     if (name === "graphql/error") return { GraphQLError: InputError };
-    if (name === "@/lib/bms/permissions") return { requirePermission: async (_: any, permission: string) => { assert.equal(permission, "product.view"); if (!allowed) throw new Error("FORBIDDEN"); } };
+    if (name === "@/lib/bms/permissions") return { requirePermission: async (_: any, permission: string) => { assert.ok(["product.view","report.view"].includes(permission)); if (permission==="report.view") throw new Error("FORBIDDEN"); if (!allowed) throw new Error("FORBIDDEN"); } };
     if (name === "@/lib/bms/tenant") return { getTenantId: () => "server-tenant" };
     if (name === "@/lib/bms/recipeCostEstimates") return { getRecipeCostEstimate: async (...args: any[]) => { calls.push(args); return null; } };
     return {};
   }).bmsStockCapabilityResolvers.Query;
   const run = (id = recipeId) => adapter.bmsRecipeCostEstimate(null, { recipeId: id, tenantId: "forged" }, {});
   await assert.rejects(run(), /FORBIDDEN/); assert.equal(calls.length, 0);
-  allowed = true; assert.equal(await run(), null); assert.deepEqual(calls, [["server-tenant", recipeId]]);
+  allowed = true; assert.equal(await run(), null); assert.deepEqual(calls, [["server-tenant", recipeId,undefined,{recipeId,tenantId:"forged"},"server-actor"]]);
+  await assert.rejects(adapter.bmsRecipeCostEstimate(null,{recipeId,costBasis:"WEIGHTED_AVERAGE",locationId:recipeId},{}),/FORBIDDEN/);assert.equal(calls.length,1);
   await assert.rejects(run("bad"), (error: any) => error.extensions.code === "BAD_USER_INPUT"); assert.equal(calls.length, 1);
 });
 
@@ -130,5 +133,5 @@ test("costing migration is additive; estimates cannot become bill/stock/report a
   const service = read("apps/web/lib/bms/recipeCostEstimates.ts");
   assert.doesNotMatch(service, /INSERT INTO|UPDATE bms_|DELETE FROM/);
   const schema = read("apps/web/graphql/typeDefs.ts");
-  assert.match(schema, /bmsRecipeCostEstimate\(recipeId: ID!\): BmsRecipeCostEstimate/);
+  assert.match(schema, /bmsRecipeCostEstimate\(recipeId: ID!, costBasis: String, locationId: ID\): BmsRecipeCostEstimate/);
 });

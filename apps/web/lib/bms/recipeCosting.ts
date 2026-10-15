@@ -52,6 +52,7 @@ function money(numerator: bigint, outputQty = 1): number {
 
 export function calculateRecipeCostEstimate(input: {
   outputQty: number;
+  costSource?: string;
   assumptions: unknown;
   ingredients: Array<{ sku: string; size: string; qty: number; unitCost: unknown }>;
 }) {
@@ -68,7 +69,7 @@ export function calculateRecipeCostEstimate(input: {
     return { sku: item.sku, size: item.size, qty: item.qty,
       unitCost: cost == null ? null : Number(cost) / Number(SCALE),
       batchCost: amount == null ? null : money(amount),
-      source: cost != null ? "CATALOG_CURRENT" : item.unitCost == null ? "MISSING" : "INVALID_CATALOG" };
+      source: cost != null ? input.costSource ?? "CATALOG_CURRENT" : item.unitCost == null ? "MISSING" : "INVALID_CATALOG" };
   });
   const overhead = CATEGORIES.map(category => {
     const assumption = assumptions[category];

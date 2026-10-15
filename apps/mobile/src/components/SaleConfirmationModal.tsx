@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from './Button';
+import { CartLineAmount } from './CartLineAmount';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
 import {
@@ -28,6 +29,8 @@ interface Props {
     variantLabel?: string;
     qty: number;
     unitPrice: number;
+    listAmount?: number;
+    amount?: number;
   }>;
   payments: MockPaymentInput[];
   memberName?: string;
@@ -196,11 +199,10 @@ export function SaleConfirmationModal({
                         )} × ฿${item.unitPrice.toFixed(2)}`}
                       </Text>
                     </View>
-                    <Text
-                      style={[typography.bodyStrong, { color: colors.text }]}
-                    >
-                      ฿{(item.qty * item.unitPrice).toFixed(2)}
-                    </Text>
+                    <CartLineAmount
+                      listAmount={item.listAmount ?? item.qty * item.unitPrice}
+                      amount={item.amount ?? item.qty * item.unitPrice}
+                    />
                   </View>
                 </React.Fragment>
               ))}

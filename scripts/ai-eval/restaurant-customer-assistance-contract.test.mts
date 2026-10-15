@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import ts from "../../apps/web/node_modules/typescript/lib/typescript.js";
 
 import {
   customerFoodProfile,
@@ -74,9 +75,17 @@ test("restaurant availability exposes only opt-in capacity groups, never table o
   assert.match(customer, /seats:\s*Number\(row\.seats\)/);
   assert.match(customer, /totalTables:\s*Number\(row\.total_tables\)/);
   assert.match(customer, /availableTables:\s*Number\(row\.available_tables\)/);
+  // Inspect identifiers/property names, not explanatory text saying identities are excluded.
   const returnedBlock = customer.slice(customer.indexOf("return {\n    status: \"OK\""), customer.indexOf("export async function requestRestaurantReservation"));
-  assert.doesNotMatch(returnedBlock, /tableId|guestName|guestPhone|ticketId/);
-  assert.doesNotMatch(returnedBlock, /tableCode|tableName|checkId|occupant/);
+  const ast = ts.createSourceFile("returned.ts", returnedBlock, ts.ScriptTarget.Latest, true);
+  const identifiers: string[] = [];
+  const walk = (node: ts.Node) => {
+    if (ts.isIdentifier(node)) identifiers.push(node.text);
+    if (ts.isPropertyAssignment(node) && ts.isStringLiteral(node.name)) identifiers.push(node.name.text);
+    ts.forEachChild(node, walk);
+  };
+  walk(ast);
+  assert.doesNotMatch(identifiers.join(" "), /tableId|guestName|guestPhone|ticketId|tableCode|tableName|checkId|occupant/);
   const adminPage = source("apps/web/app/(admin)/admin/restaurant-floor/page.tsx");
   assert.match(adminPage, /bmsSetRestaurantCustomerTableDetails/);
   assert.match(adminPage, /customer_table_details/);

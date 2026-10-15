@@ -14,7 +14,10 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
+import { createRequire } from "node:module";
+
+const XLSX: typeof import("../apps/web/node_modules/xlsx") =
+  createRequire(new URL("../apps/web/package.json", import.meta.url))("xlsx");
 
 import { getClient, query } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
@@ -387,12 +390,12 @@ test("a credit note prints its returned lines, the original invoice and value ne
   )).rows[0].id;
   assert.equal(await getCreditNoteView(tenantId, invoice), null);
 
-  // ใบที่ถูกยกเลิกไม่นับเป็นยอดที่ลดไปแล้ว และตัวมันเองบอกว่ายกเลิก
+  // Issued print snapshots remain frozen even when an earlier note is later cancelled (10.60).
   await query(
     `UPDATE bms_tax_documents SET cancelled_at = now(), cancelled_reason = 'FAKE test'
       WHERE tenant_id = $1 AND id = $2`, [tenantId, notes[0]]
   );
-  assert.equal((await getCreditNoteView(tenantId, notes[1]))?.previouslyCredited, 0);
+  assert.equal((await getCreditNoteView(tenantId, notes[1]))?.previouslyCredited, 53.5);
   assert.ok((await getCreditNoteView(tenantId, notes[0]))?.cancelledAt);
 });
 

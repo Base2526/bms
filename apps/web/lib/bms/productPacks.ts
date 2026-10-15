@@ -1,3 +1,4 @@
+import { branchPrice } from "./branchPrices";
 // =============================================================
 // BMS Product Packs — หน่วยขาย (7.86 + 7.93)
 // -------------------------------------------------------------
@@ -9,8 +10,9 @@
 // ขายเป็นกล่อง = ตัดสต็อก base_qty หน่วย ไม่ใช่แยกกองสต็อก
 // =============================================================
 
-import { query } from "@/lib/db";
-import type { QueryResult, QueryResultRow } from "pg";
+import { beginTenantTx } from "./tenant";
+import { getClient, query } from "@/lib/db";
+import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 
 type VariantPriceClient = {
   query<T extends QueryResultRow = QueryResultRow>(text: string, params?: any[]): Promise<QueryResult<T>>;
@@ -50,8 +52,11 @@ export async function getVariantBasePriceInTx(
   client: VariantPriceClient,
   tenantId: string,
   productSku: string,
-  size: string
+  size: string,
+  locationId?: string | null
 ): Promise<number | null> {
+  const override = await branchPrice(client, tenantId, locationId, productSku, size);
+  if (override != null) return override;
   const res = await client.query<{ price: string }>(
     `SELECT COALESCE(sized.price, shared.price, p.price)::text AS price
        FROM bms_products p
@@ -75,9 +80,10 @@ export async function getVariantBasePriceInTx(
 export async function getVariantBasePrice(
   tenantId: string,
   productSku: string,
-  size: string
+  size: string,
+  locationId?: string | null
 ): Promise<number | null> {
-  return getVariantBasePriceInTx({ query }, tenantId, productSku, size);
+  return getVariantBasePriceInTx({ query }, tenantId, productSku, size, locationId);
 }
 
 export async function listProductPacks(tenantId: string, productSku: string): Promise<ProductPack[]> {
@@ -131,7 +137,8 @@ export async function resolveSellablePack(
 export async function listSellablePacksForSize(
   tenantId: string,
   productSku: string,
-  size: string | null
+  size: string | null,
+  locationId?: string | null
 ): Promise<ProductPack[]> {
   const res = await query(
     `SELECT * FROM bms_product_packs
@@ -143,7 +150,9 @@ export async function listSellablePacksForSize(
       ORDER BY base_qty, pack_code`,
     [tenantId, productSku, size]
   );
-  return res.rows.map(mapPack);
+  const packs=res.rows.map(mapPack);
+  if(locationId&&size) for(const pack of packs) pack.price=await branchPrice({query},tenantId,locationId,productSku,size,pack.packCode)??pack.price;
+  return packs;
 }
 
 /** ไซซ์ที่มีแถวสต็อกจริง — หน่วยขายควรผูกกับไซซ์ที่ขายได้เท่านั้น */
@@ -177,6 +186,15 @@ export type UpsertPackInput = {
 };
 
 export async function upsertProductPack(tenantId: string, input: UpsertPackInput): Promise<ProductPack> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client,tenantId);
+    const result = await upsertProductPackInTx(client,tenantId,input);
+    await client.query("COMMIT"); return result;
+  } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
+export async function upsertProductPackInTx(client: PoolClient, tenantId: string, input: UpsertPackInput): Promise<ProductPack> {
   const packCode = String(input.packCode ?? "").trim().toUpperCase();
   const requestedUnitName = String(input.unitName ?? "").trim();
   const baseQty = Math.floor(Number(input.baseQty));
@@ -188,7 +206,11 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
   if (input.isBase && baseQty !== 1) throw new Error("หน่วยฐานต้องมีจำนวนต่อหน่วย = 1");
   if (input.price != null && Number(input.price) < 0) throw new Error("ราคาติดลบไม่ได้");
 
-  const prod = await query(
+  if (input.id) {
+    const owned = await client.query("SELECT 1 FROM bms_product_packs WHERE tenant_id=$1 AND id=$2 AND product_sku=$3 FOR UPDATE",[tenantId,input.id,input.productSku]);
+    if (!owned.rowCount) throw new Error("PACK_NOT_FOUND");
+  }
+  const prod = await client.query(
     `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
     [tenantId, input.productSku]
   );
@@ -198,7 +220,7 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
   // (display_unit ของ stock policy — ร้านอาหารตั้งเป็น "จาน"/"แก้ว") → "ชิ้น"
   let unitName = requestedUnitName;
   if (!unitName) {
-    const fallback = await query<{ unit_name: string | null; display_unit: string | null }>(
+    const fallback = await client.query<{ unit_name: string | null; display_unit: string | null }>(
       `SELECT pack.unit_name, policy.display_unit
          FROM bms_products p
          LEFT JOIN bms_product_packs pack
@@ -220,7 +242,7 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
   // บาร์โค้ดซ้ำในร้าน = ยิงแล้วไม่รู้ว่าหมายถึงอันไหน — กันไว้ก่อนถึง DB
   // เพื่อให้ข้อความอ่านรู้เรื่องกว่า unique violation
   if (barcode) {
-    const dup = await query<{ product_sku: string; size: string | null }>(
+    const dup = await client.query<{ product_sku: string; size: string | null }>(
       `SELECT product_sku, size FROM bms_product_packs
         WHERE tenant_id = $1 AND barcode = $2 AND ($3::uuid IS NULL OR id <> $3)`,
       [tenantId, barcode, input.id ?? null]
@@ -233,7 +255,7 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
 
   // หน่วยฐานมีได้ตัวเดียวต่อไซซ์ — ปิดตัวเดิมก่อน ไม่งั้นชน unique index
   if (input.isBase) {
-    await query(
+    await client.query(
       `UPDATE bms_product_packs SET is_base = FALSE, updated_at = now()
         WHERE tenant_id = $1 AND product_sku = $2 AND is_base
           AND size IS NOT DISTINCT FROM $3::text
@@ -242,7 +264,7 @@ export async function upsertProductPack(tenantId: string, input: UpsertPackInput
     );
   }
 
-  const res = await query(
+  const res = await client.query(
     `INSERT INTO bms_product_packs
        (id, tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
      VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, FALSE), COALESCE($11, TRUE))

@@ -1369,10 +1369,16 @@ export const typeDefs = /* GraphQL */ `
     bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
     bmsProductReadiness(productSku: String!): BmsProductReadiness!
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
-    bmsRecipeCostEstimate(recipeId: ID!): BmsRecipeCostEstimate
+    bmsRecipeCostEstimate(recipeId: ID!, costBasis: String, locationId: ID): BmsRecipeCostEstimate
     bmsOperatingCosts(month: String!): BmsOperatingCostReport!
     bmsCostAllocations(month: String!): BmsCostAllocationReport!
     bmsNetProfit(month: String!): BmsNetProfitReport!
+    bmsInventoryValuation(locationId: ID!, search: String, offset: Int, limit: Int): BmsInventoryValuationReport!
+    bmsRestaurantMenuActual(input: BmsMenuActualInput!): BmsMenuActualReport!
+    bmsMenuNetProfit(month: String!, locationId: ID): BmsPricePublicationResult!
+    bmsPreviewMenuNetProfit(input: BmsMenuProfitInput!): BmsPricePublicationResult!
+    bmsPreviewMenuBundle(input: BmsMenuBundlePublicationInput!): BmsPricePublicationResult!
+    bmsPreviewPricePublication(input: BmsPublishPriceInput!): BmsPricePublicationResult!
     bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!
     bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!): BmsRestaurantPricePlan!
     bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!): BmsRestaurantMenuPlan!
@@ -4327,6 +4333,23 @@ export const typeDefs = /* GraphQL */ `
   }
   type BmsOperatingCostReviewResult { version: Int! }
   input BmsCostAllocationTargetInput { locationId: ID!, channel: String, weight: String }
+  type BmsCostingActionResult { status: String!, errorCode: String }
+  type BmsInventoryValue { sku: String!, size: String!, qty: String!, value: String, unitCost: String, version: String! }
+  type BmsInventoryValuationReport { status: String!, errorCode: String, rows: [BmsInventoryValue!], truncated: Boolean, total: Int, offset: Int, limit: Int }
+  input BmsInventoryOpeningInput {
+    locationId: ID!, sku: String!, size: String!, qty: String!, value: String!, version: String!, evidence: String!, requestId: ID!, confirmed: Boolean!
+  }
+  type BmsMenuActualRow { sku: String!, size: String!, units: String!, revenue: String, cost: String, contribution: String, classification: String!, popularityPercent: Float }
+  type BmsMenuActualReport {
+    status: String!, errorCode: String, complete: Boolean, truncated: Boolean, observedAt: String,
+    totalUnits: String, totalContribution: String, rows: [BmsMenuActualRow!], issues: [String!], basis: String, costBasis: String
+  }
+  input BmsMenuProfitWeight {sku: String!, size: String!, weight: Int!}
+  input BmsMenuProfitInput {month: String!, locationId: ID, method: String!, reason: String!, weights: [BmsMenuProfitWeight!]}
+  input BmsMenuBundlePublicationInput {plan: BmsRestaurantMenuPlanInput!, sku: String!, name: String!, vatCategory: String!, surfaces: [String!]!, kitchenStation: String}
+  input BmsPublishPriceInput { plan: BmsRestaurantPricePlanInput!, scenarioIndex: Int!, mode: String!, quantity: Int!, packCode: String, locationId: ID, salesSurface: String, startsAt: String, endsAt: String }
+  input BmsPricePublicationReview { fingerprint: String!, requestId: ID!, confirmed: Boolean! }
+  type BmsPricePublicationResult { status: String!, errorCode: String, fingerprint: String, snapshot: JSON }
   type BmsNetProfitAmounts {
     complete: Boolean!, revenueComplete: Boolean!, costComplete: Boolean!, expensesComplete: Boolean!
     knownSalesRevenue: String!, knownReturnRevenue: String!, knownSalesCost: String!, returnQuantityCostBasis: String!
@@ -4386,6 +4409,7 @@ export const typeDefs = /* GraphQL */ `
   input BmsRestaurantMenuItemInput { recipeId: ID!, scenario: BmsRestaurantPriceScenarioInput! }
   input BmsRestaurantBundlePartInput { recipeId: ID!, qty: Int! }
   input BmsRestaurantBundlePlanInput { scenario: BmsRestaurantPriceScenarioInput!, parts: [BmsRestaurantBundlePartInput!]! }
+  input BmsMenuActualInput { from: String!, to: String!, locationId: ID, channel: String, menuSkus: [String!] }
   input BmsSalesEvidenceInput {
     from: String!
     to: String!
@@ -4454,6 +4478,7 @@ export const typeDefs = /* GraphQL */ `
     netProfit: String
   }
   input BmsRestaurantMenuPlanInput {
+    costBasis: String, locationId: ID
     assumptionSource: String!, dailyFixedCost: Float, dailyTargetProfit: Float!
     items: [BmsRestaurantMenuItemInput!]!, bundle: BmsRestaurantBundlePlanInput
   }
@@ -4472,6 +4497,7 @@ export const typeDefs = /* GraphQL */ `
     customerSavings: Float!, contributionDelta: Float
   }
   input BmsRestaurantPricePlanInput {
+    costBasis: String, locationId: ID
     recipeId: ID!, assumptionSource: String!, dailyFixedCost: Float, dailyTargetProfit: Float!
     scenarios: [BmsRestaurantPriceScenarioInput!]!
   }
@@ -4491,6 +4517,7 @@ export const typeDefs = /* GraphQL */ `
   type BmsRecipeIngredientCost { sku: String!, size: String!, qty: Int!, unitCost: Float, batchCost: Float, source: String! }
   type BmsRecipeOverheadCost { category: String!, quantity: Float, rate: Float, source: String, batchCost: Float }
   type BmsRecipeCostEstimate {
+    costBasis: String, locationId: ID
     recipeId: ID!
     recipeVersion: Int!
     calculatedAt: String!
@@ -4914,6 +4941,7 @@ export const typeDefs = /* GraphQL */ `
     locationId: ID
     locationName: String
     kind: String!          # BUY_X_GET_Y | N_FOR_PRICE | BUY_A_GET_B
+    salesSurface: String
     buySize: String
     giftSku: String
     giftSize: String
@@ -4933,6 +4961,7 @@ export const typeDefs = /* GraphQL */ `
     buyQty: Int!
     getQty: Int
     bundlePrice: Float
+    salesSurface: String
     buySize: String
     giftSku: String
     giftSize: String
@@ -5023,6 +5052,10 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+    bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
+    bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
+    bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
+    bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
 
     bmsRefreshActions: Int!
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!

@@ -9,7 +9,7 @@ export const bmsNetProfitResolvers = { Query: {
     for (const permission of ["report.view", "expense.view", "delivery.settlement.view", "tax.document.view"] as const)
       await requirePermission(ctx, permission);
     const actor = String(requireAuth(ctx).author_id), tenant = getTenantId(ctx);
-    try { return await getNetProfitReport(tenant, actor, args.month); }
+    try { return await getNetProfitReport(tenant, actor, args.month, true); }
     catch (error) {
       const code = error instanceof Error ? error.message : "";
       if (code.endsWith("FORBIDDEN") || code.endsWith("ALL_BRANCH_ACCESS_REQUIRED"))

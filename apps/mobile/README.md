@@ -56,6 +56,12 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   recovers a committed result before retrying, normalizes interrupted writes after process restart,
   keeps rejected sales visible in the on-device Sync Center, and blocks shift close while unresolved.
 
+Recipe and published menu-set cards use the server's availability status. Their own inventory
+may correctly be zero because settlement consumes ingredients. Size selection follows the scan's
+`stockTracked` flag; direct-stock variants with zero available quantity remain disabled. Before
+payment or resuming a parked bill, a changed SKU/variant/pack conversion is rejected for review:
+remove and re-add that line rather than silently changing the physical quantity in the saved cart.
+
 All tenant, location, device, and shift scope is server-derived. Money and stock operations retain
 their idempotency key across an unknown network result. Cash out, void, and manual discount filter the
 server-provided approver list by the required permission and still receive server-side PIN/RBAC

@@ -344,7 +344,7 @@ test("an expired promotion stops applying by itself", async () => {
   assert.equal((await sell([{ size: SIZE_S, qty: 4 }])).subtotal, 160);
 });
 
-test("a deactivated promotion does not apply, and only one can be active per product", async () => {
+test("a deactivated promotion does not apply, and only one can be effective per product at a time", async () => {
   await setPromo(
     `INSERT INTO bms_product_promotions (tenant_id, product_sku, kind, buy_qty, get_qty, active)
      VALUES ($1,$2,'BUY_X_GET_Y',3,1,FALSE)`,
@@ -364,7 +364,7 @@ test("a deactivated promotion does not apply, and only one can be active per pro
        VALUES ($1,$2,'N_FOR_PRICE',3,100,TRUE)`,
       [tenantId, SKU]
     ),
-    /duplicate key|uq_bms_promotions_active_sku/i
+    /duplicate key|uq_bms_promotions_active_sku|bms_promotion_windows_exclusive/i
   );
 });
 
@@ -440,7 +440,7 @@ test("a branch deal never leaks into another branch", async () => {
   assert.equal(noBranch?.promotion?.kind, "N_FOR_PRICE");
 });
 
-test("one active deal per scope — but store-wide and branch may coexist", async () => {
+test("one effective deal per time/scope — store-wide and branch may coexist", async () => {
   // นี่คือทั้งหมดของ 9.61: สองแถวนี้อยู่ด้วยกันได้ ต่างจากดัชนีเดิมของ 8.7
   const scoped = await listProductPromotions(tenantId, { productSku: SKU });
   assert.equal(scoped.length, 2, "ต้องมีโปรทั้งร้าน 1 + โปรของสาขา 1 อยู่พร้อมกัน");
@@ -451,7 +451,7 @@ test("one active deal per scope — but store-wide and branch may coexist", asyn
        VALUES ($1,$2,$3,'N_FOR_PRICE',3,100,TRUE)`,
       [tenantId, SKU, branchId]
     ),
-    /duplicate key|uq_bms_promotions_active_sku_branch/i,
+    /duplicate key|uq_bms_promotions_active_sku_branch|bms_promotion_windows_exclusive/i,
     "สาขาเดียวกันมีโปร active สองแบบไม่ได้"
   );
   await assert.rejects(
@@ -460,7 +460,7 @@ test("one active deal per scope — but store-wide and branch may coexist", asyn
        VALUES ($1,$2,'BUY_X_GET_Y',2,1,TRUE)`,
       [tenantId, SKU]
     ),
-    /duplicate key|uq_bms_promotions_active_sku_store/i,
+    /duplicate key|uq_bms_promotions_active_sku_store|bms_promotion_windows_exclusive/i,
     "โปรทั้งร้าน active สองแบบก็ยังไม่ได้เหมือนเดิม"
   );
 });

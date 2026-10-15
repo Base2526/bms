@@ -33,6 +33,8 @@ function mount() {
     if (name === "@apollo/client") return { gql: () => "QUERY", useApolloClient: () => ({ query: (request: any) =>
       new Promise((resolve, reject) => pending.push({ request, resolve: (data: any) => resolve({ data: { bmsRestaurantMenuPlan: data } }), reject })) }) };
     if (name === "@/lib/i18nContext") return { useI18n: () => ({ t: (key: string) => key }) };
+    if (name === "./MenuBundlePublish") return {default:()=>null};
+    if (name === "./RecipeCostBasis") return {default:()=>null,costSelection:()=>({costBasis:"CATALOG",locationId:null})};
     if (name === "antd") return { Form, Input: { TextArea: "TextArea" }, Typography: { Paragraph: "Paragraph", Title: "Title", Text: "Text" },
       ...Object.fromEntries(["Alert", "Button", "Card", "Checkbox", "InputNumber", "Select", "Space"].map(key => [key, key])) };
     throw new Error(name);

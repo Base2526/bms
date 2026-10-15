@@ -295,19 +295,20 @@ export async function checkStock(
           ORDER BY variant.sort_order, variant.code`,
         [tenantId, product.sku],
       );
+      const sizes = await Promise.all(variants.rows.map(async row => ({
+        size: row.size,
+        price: (await getVariantBasePrice(tenantId, product.sku, row.size, locationId)) ?? Number(row.price),
+      })));
       return {
         status: "MENU_SIZE_REQUIRED",
         sku: product.sku,
         name: product.name,
-        price: Number(product.price),
-        sizes: variants.rows.map((row) => ({
-          size: row.size,
-          price: Number(row.price),
-        })),
+        price: sizes.length ? Math.min(...sizes.map(row => row.price)) : Number(product.price),
+        sizes,
       };
     }
     const price =
-      (await getVariantBasePrice(tenantId, product.sku, size)) ??
+      (await getVariantBasePrice(tenantId, product.sku, size, locationId)) ??
       Number(product.price);
     return {
       status: "AVAILABLE_TO_ORDER",
@@ -335,22 +336,23 @@ export async function checkStock(
         ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size)`,
       [product.sku, tenantId, locationId],
     );
-    const prices = res.rows.map((row) => Number(row.price));
+    const sizes = await Promise.all(res.rows.map(async row => ({
+      size: row.size,
+      available: Number(row.available),
+      price: (await getVariantBasePrice(tenantId, product.sku, row.size, locationId)) ?? Number(row.price),
+    })));
+    const prices = sizes.map(row => row.price);
     return {
       status: "SIZE_UNKNOWN",
       sku: product.sku,
       name: product.name,
       price: prices.length ? Math.min(...prices) : Number(product.price),
-      sizes: res.rows.map((r) => ({
-        size: r.size,
-        available: Number(r.available),
-        price: Number(r.price),
-      })),
+      sizes,
     };
   }
 
   const price =
-    (await getVariantBasePrice(tenantId, product.sku, size)) ??
+    (await getVariantBasePrice(tenantId, product.sku, size, locationId)) ??
     Number(product.price);
 
   const res = await query<{ available: number }>(
@@ -394,7 +396,7 @@ export async function checkStock(
 
   // หน่วยขายอื่นนอกจากหน่วยฐาน — ถ้าไม่บอกตรงนี้ โมเดลไม่มีทางรู้รหัสหน่วยขายเลย
   // แล้ว packCode ของ create_order จะใช้ไม่ได้ (schema สั่งห้ามเดารหัสเอง)
-  const packs = await listSellablePacksForSize(tenantId, product.sku, size);
+  const packs = await listSellablePacksForSize(tenantId, product.sku, size, locationId);
   return {
     status: "IN_STOCK",
     sku: product.sku,

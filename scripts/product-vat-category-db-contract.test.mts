@@ -75,6 +75,19 @@ test("the form can set it, which was impossible before", async () => {
   assert.equal(await catOf(SKU_A), "N", "เปลี่ยนไปมาได้");
 });
 
+test("food metadata arrays round-trip, survive omitted fields, and clear only explicitly", async () => {
+  const food = async () => (await query(
+    "SELECT allergen_codes, dietary_tags FROM bms_products WHERE tenant_id=$1 AND sku=$2",
+    [tenantId, SKU_A],
+  )).rows[0];
+  await upsertProduct(tenantId, { ...base(SKU_A), allergen_codes: ["MILK"], dietary_tags: ["VEGETARIAN"] });
+  assert.deepEqual(await food(), { allergen_codes: ["MILK"], dietary_tags: ["VEGETARIAN"] });
+  await upsertProduct(tenantId, base(SKU_A));
+  assert.deepEqual(await food(), { allergen_codes: ["MILK"], dietary_tags: ["VEGETARIAN"] });
+  await upsertProduct(tenantId, { ...base(SKU_A), allergen_codes: [], dietary_tags: [] });
+  assert.deepEqual(await food(), { allergen_codes: [], dietary_tags: [] });
+});
+
 test("omitting the field keeps the stored value — the regression that would wipe every shop", async () => {
   await upsertProduct(tenantId, { ...base(SKU_A), vat_category: "V" });
   // บันทึกจากฟอร์ม/ตัวนำเข้าที่ไม่รู้จักคอลัมน์นี้

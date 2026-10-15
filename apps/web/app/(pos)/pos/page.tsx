@@ -34,6 +34,7 @@ import {
   isFixedPricePack,
   priceLinesByQty,
   syncSkuPricingSnapshot,
+  promotionForVariant,
 } from "@/lib/bms/pricing";
 import { isCameraScanSupported, needsDecoderDownload, startCameraScan } from "@/lib/pos/cameraScan";
 import { cashRoundingForPayments, type CashRounding } from "@/lib/pos/cashRounding";
@@ -2331,7 +2332,7 @@ export default function PosPage() {
     const promoOf = new Map<string, NonNullable<CartLine["promotion"]>>();
     const priceOf = new Map<string, number>();
     for (const line of cart) {
-      if (isFixedPricePack(line.packCode) || !line.promotion || line.promotion.kind === "BUY_A_GET_B") continue;
+      if (isFixedPricePack(line.packCode) || !line.promotion || line.promotion.kind === "BUY_A_GET_B" || !promotionForVariant(line.promotion,line.size)) continue;
       const key = variantPricingKey(line.sku, line.size);
       const baseQuantity = line.packQty * line.baseQty;
       qtyByVariant.set(key, (qtyByVariant.get(key) ?? 0) + baseQuantity);

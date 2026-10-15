@@ -779,6 +779,11 @@ input BmsCostAllocationTargetInput {
   weight: String
 }
 
+type BmsCostingActionResult {
+  errorCode: String
+  status: String!
+}
+
 type BmsCoupon {
   active: Boolean!
   code: String!
@@ -1723,6 +1728,18 @@ type BmsInventoryLot {
   unitCost: Float
 }
 
+input BmsInventoryOpeningInput {
+  confirmed: Boolean!
+  evidence: String!
+  locationId: ID!
+  qty: String!
+  requestId: ID!
+  size: String!
+  sku: String!
+  value: String!
+  version: String!
+}
+
 input BmsInventoryPolicyInput {
   leadTimeDays: Int!
   safetyStockDays: Int!
@@ -1743,6 +1760,25 @@ type BmsInventorySummary {
   stockValue: Float!
   totalUnits: Int!
   variantCount: Int!
+}
+
+type BmsInventoryValuationReport {
+  errorCode: String
+  limit: Int
+  offset: Int
+  rows: [BmsInventoryValue!]
+  status: String!
+  total: Int
+  truncated: Boolean
+}
+
+type BmsInventoryValue {
+  qty: String!
+  size: String!
+  sku: String!
+  unitCost: String
+  value: String
+  version: String!
 }
 
 type BmsInventoryWastage {
@@ -2197,6 +2233,62 @@ type BmsMention {
   customerName: String
   id: ID!
   readAt: String
+}
+
+input BmsMenuActualInput {
+  channel: String
+  from: String!
+  locationId: ID
+  menuSkus: [String!]
+  to: String!
+}
+
+type BmsMenuActualReport {
+  basis: String
+  complete: Boolean
+  costBasis: String
+  errorCode: String
+  issues: [String!]
+  observedAt: String
+  rows: [BmsMenuActualRow!]
+  status: String!
+  totalContribution: String
+  totalUnits: String
+  truncated: Boolean
+}
+
+type BmsMenuActualRow {
+  classification: String!
+  contribution: String
+  cost: String
+  popularityPercent: Float
+  revenue: String
+  size: String!
+  sku: String!
+  units: String!
+}
+
+input BmsMenuBundlePublicationInput {
+  kitchenStation: String
+  name: String!
+  plan: BmsRestaurantMenuPlanInput!
+  sku: String!
+  surfaces: [String!]!
+  vatCategory: String!
+}
+
+input BmsMenuProfitInput {
+  locationId: ID
+  method: String!
+  month: String!
+  reason: String!
+  weights: [BmsMenuProfitWeight!]
+}
+
+input BmsMenuProfitWeight {
+  size: String!
+  sku: String!
+  weight: Int!
 }
 
 type BmsMessage {
@@ -5927,6 +6019,19 @@ input BmsPosVoidInput {
   reason: String!
 }
 
+type BmsPricePublicationResult {
+  errorCode: String
+  fingerprint: String
+  snapshot: JSON
+  status: String!
+}
+
+input BmsPricePublicationReview {
+  confirmed: Boolean!
+  fingerprint: String!
+  requestId: ID!
+}
+
 type BmsPriceTier {
   discountPct: Float
   minQty: Int!
@@ -6186,6 +6291,7 @@ type BmsProductPromotion {
   note: String
   productName: String
   productSku: String!
+  salesSurface: String
   startsAt: String
   updatedAt: String!
 }
@@ -6202,6 +6308,7 @@ input BmsProductPromotionInput {
   locationId: ID
   note: String
   productSku: String!
+  salesSurface: String
   startsAt: String
 }
 
@@ -6319,6 +6426,18 @@ type BmsProfitSummary {
   to: String!
 }
 
+input BmsPublishPriceInput {
+  endsAt: String
+  locationId: ID
+  mode: String!
+  packCode: String
+  plan: BmsRestaurantPricePlanInput!
+  quantity: Int!
+  salesSurface: String
+  scenarioIndex: Int!
+  startsAt: String
+}
+
 type BmsPurchaseItem {
   qtyOrdered: Int!
   qtyReceived: Int!
@@ -6432,10 +6551,12 @@ input BmsRecipeCostAssumptionsInput {
 
 type BmsRecipeCostEstimate {
   calculatedAt: String!
+  costBasis: String
   currency: String!
   ingredientBatchCost: Float
   ingredients: [BmsRecipeIngredientCost!]!
   knownBatchCost: Float!
+  locationId: ID
   missingIngredientCount: Int!
   outputQty: Int!
   overhead: [BmsRecipeOverheadCost!]!
@@ -6700,9 +6821,11 @@ type BmsRestaurantMenuPlan {
 input BmsRestaurantMenuPlanInput {
   assumptionSource: String!
   bundle: BmsRestaurantBundlePlanInput
+  costBasis: String
   dailyFixedCost: Float
   dailyTargetProfit: Float!
   items: [BmsRestaurantMenuItemInput!]!
+  locationId: ID
 }
 
 type BmsRestaurantOperationsReport {
@@ -6729,8 +6852,10 @@ type BmsRestaurantPricePlan {
 
 input BmsRestaurantPricePlanInput {
   assumptionSource: String!
+  costBasis: String
   dailyFixedCost: Float
   dailyTargetProfit: Float!
+  locationId: ID
   recipeId: ID!
   scenarios: [BmsRestaurantPriceScenarioInput!]!
 }
@@ -8184,6 +8309,8 @@ type Mutation {
   bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
   bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
   bmsCompleteOrder(id: ID!): Boolean!
+  bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
+  bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsConfirmPayment(id: ID!): BmsPaymentResult!
   bmsCreateExpenseDocument(input: BmsCreateExpenseDocumentInput!): BmsExpenseDocument!
   bmsCreateInboxDiagnosticMessage(body: String, channel: String!): BmsInboxDiagnosticMessageResult!
@@ -8333,6 +8460,8 @@ type Mutation {
   bmsPosUpdateBoardGameReservation(input: BmsPosBoardGameReservationUpdateInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
+  bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
+  bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
   bmsReadAiLimitNotification(id: ID!): Boolean!
   bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
@@ -8841,6 +8970,7 @@ type Query {
   bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, windowDays: Int = 30): BmsInventoryActionCenter!
   bmsInventoryLots(locationId: ID, productSku: String, size: String): [BmsInventoryLot!]!
   bmsInventorySummary(locationId: ID): BmsInventorySummary!
+  bmsInventoryValuation(limit: Int, locationId: ID!, offset: Int, search: String): BmsInventoryValuationReport!
   bmsInventoryWastage(limit: Int = 100): [BmsInventoryWastage!]!
   bmsIsPlatformAdmin: Boolean!
   bmsJsConsoleEnabled: Boolean!
@@ -8871,6 +9001,7 @@ type Query {
   bmsMembers(limit: Int, offset: Int, search: String): BmsMemberPage!
   bmsMembersExpiringPoints(days: Int, limit: Int): [BmsExpiringPointsRow!]!
   bmsMembershipTiers(activeOnly: Boolean): [BmsMembershipTier!]!
+  bmsMenuNetProfit(locationId: ID, month: String!): BmsPricePublicationResult!
   bmsMobileRestaurantRequests: BmsMobileRestaurantRequestsResult!
   bmsMyMentions(limit: Int, unreadOnly: Boolean): [BmsMention!]!
   bmsMyMentionsUnreadCount: Int!
@@ -8957,6 +9088,9 @@ type Query {
   bmsPosStockTransfers(credentials: BmsPosCredentialsInput!): BmsPosStockTransfersResult!
   bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): BmsPosStoreCreditResult!
   bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!
+  bmsPreviewMenuBundle(input: BmsMenuBundlePublicationInput!): BmsPricePublicationResult!
+  bmsPreviewMenuNetProfit(input: BmsMenuProfitInput!): BmsPricePublicationResult!
+  bmsPreviewPricePublication(input: BmsPublishPriceInput!): BmsPricePublicationResult!
   bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
   bmsProductBySku(sku: String!): BmsProduct
   bmsProductCategories: [BmsProductCategory!]!
@@ -8974,7 +9108,7 @@ type Query {
   bmsPublicPlans: [BmsPlan!]!
   bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
   bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
-  bmsRecipeCostEstimate(recipeId: ID!): BmsRecipeCostEstimate
+  bmsRecipeCostEstimate(costBasis: String, locationId: ID, recipeId: ID!): BmsRecipeCostEstimate
   bmsReportDeliveries(limit: Int): [BmsReportDelivery!]!
   bmsReportDeliveriesForTenant(limit: Int, tenantId: ID!): [BmsReportDelivery!]!
   bmsReportSubscription: BmsReportSubscription!
@@ -8982,6 +9116,7 @@ type Query {
   bmsRestaurantCancellationLossReport: [BmsRestaurantCancellationLoss!]!
   bmsRestaurantFloorAdmin(locationId: ID!): BmsRestaurantFloorAdmin!
   bmsRestaurantFloorLocations: [BmsLocation!]!
+  bmsRestaurantMenuActual(input: BmsMenuActualInput!): BmsMenuActualReport!
   bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!): BmsRestaurantMenuPlan!
   bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!): BmsRestaurantPricePlan!
   bmsRestaurantTableQr(tableId: ID!): BmsRestaurantTableQr

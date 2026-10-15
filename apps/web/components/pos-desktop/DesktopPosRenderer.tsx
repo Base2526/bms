@@ -1347,7 +1347,7 @@ function DesktopPosContent() {
         if (!existing) return [...synced, incoming];
         return synced.map((line) =>
           line.key === incoming.key
-            ? { ...line, qty: line.qty + 1, available: incoming.available }
+            ? { ...line, ...incoming, qty: line.qty + 1, serials: line.serials }
             : line,
         );
       });
@@ -1587,14 +1587,13 @@ function DesktopPosContent() {
       );
       if (!data.bmsPosScan) throw new Error(`ไม่พบ ${line.name} ในแคตตาล็อกล่าสุด`);
       const next = { ...resolvedCartLine(data.bmsPosScan), qty: line.qty };
-      if (cartLinePricingSignature(next) !== cartLinePricingSignature(line)) {
-        setCart((current) => current.map((item) => (item.key === line.key ? next : item)));
-        setNotice("ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนแล้ว กรุณาตรวจยอดและรับเงินใหม่");
-        return false;
-      }
       refreshed.push(next);
     }
     setCart(refreshed);
+    if (refreshed.some((line, index) => cartLinePricingSignature(line) !== cartLinePricingSignature(cart[index]))) {
+      setNotice("ราคา ขั้นราคาส่ง หรือโปรโมชันเปลี่ยนแล้ว กรุณาตรวจยอดและรับเงินใหม่");
+      return false;
+    }
     return true;
   };
 

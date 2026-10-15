@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
-import { query } from "../apps/web/lib/db.ts";
+import { getClient, query } from "../apps/web/lib/db.ts";
 import { listProductRecipes, upsertProductRecipe } from "../apps/web/lib/bms/productRecipes.ts";
 
 // Run ONLY through run-contract-tests.mjs db recipe-versioning, against the restored disposable DB.
@@ -20,7 +20,21 @@ async function fixture(work: (tenant: string, save: (patch?: any) => ReturnType<
     });
     await work(tenant, save);
   } finally {
-    await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenant]);
+    // Products deliberately do not cascade from a tenant. Remove recipe references before
+    // ingredients, and clean only this fixture's UUID (never a name/prefix or a real shop).
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      for (const table of ["bms_product_recipe_subrecipes", "bms_product_recipes", "bms_products", "bms_audit_log"]) {
+        await client.query(`DELETE FROM ${table} WHERE tenant_id=$1`, [tenant]);
+      }
+      await client.query(`DELETE FROM bms_tenants WHERE id=$1`, [tenant]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+    assert.equal((await query(`SELECT id FROM bms_tenants WHERE id=$1`, [tenant])).rowCount, 0);
   }
 }
 

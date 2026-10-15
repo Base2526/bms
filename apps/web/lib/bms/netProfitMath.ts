@@ -15,7 +15,7 @@ export type ProfitGap = { key: string; code: string };
 const costIssues = new Set(["MISSING_COST", "INVALID_COST_SOURCE", "LEGACY_RECONSTRUCTED_COST"]);
 const keyOf = (locationId: string | null, channel: string | null) => JSON.stringify([locationId, channel]);
 
-export function createNetProfitAccumulator() {
+export function createNetProfitAccumulator(actualCosts = false) {
   const total = empty(), branches = new Map<string, Bucket>(), channels = new Map<string, Bucket>();
   const issues = new Map<string, number>(), samples: { key: string; code: string }[] = [], seen = new Set<string>();
   let eventCount = 0, finished = false;
@@ -31,6 +31,7 @@ export function createNetProfitAccumulator() {
       if (finished) throw new Error("NET_PROFIT_ACCUMULATOR_CLOSED");
       if (seen.has(event.key)) throw new Error("NET_PROFIT_DUPLICATE_EVENT");
       seen.add(event.key); eventCount++;
+      if (actualCosts && event.kind === "TAX_ADJUSTMENT" && event.payload.reconciledReturn===true) return;
       const b = empty(), result = inspectSalesEvidence(event), a = result.amounts;
       const codes = new Set(result.issues);
       if (event.kind === "SALE") {
@@ -55,6 +56,18 @@ export function createNetProfitAccumulator() {
         b.revenueComplete = false;
         if (event.kind === "BACKOFFICE_RETURN") b.costComplete = false;
       }
+      if (actualCosts && (event.kind === "SALE" || event.kind === "RETURN")) {
+        const lines = event.payload.lines;
+        b.cost = 0n;
+        b.costComplete = event.payload.actualCostBasis === "MOVING_WEIGHTED_AVERAGE"
+          && Array.isArray(lines) && lines.length > 0 && lines.length <= 1000 && lines.every((l: {actualCost?:string|null})=>l.actualCost!=null);
+        if (Array.isArray(lines) && lines.length <= 1000)
+          for (const line of lines) if (line.actualCost!=null) b.cost += cents(line.actualCost) * (event.kind==='RETURN' ? -1n : 1n);
+        if (b.costComplete) {
+          for (const code of costIssues) codes.delete(code);
+          codes.delete("RETURN_COST_REVERSAL_UNVERIFIED");
+        } else codes.add("ACTUAL_INVENTORY_COST_UNKNOWN");
+      }
       for (const code of codes) issue(code, event.key);
       if (typeof event.locationId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(event.locationId)
           || typeof event.channel !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(event.channel)) {
@@ -65,6 +78,12 @@ export function createNetProfitAccumulator() {
         for (const k of ["sales", "returns", "cost", "returnCostBasis", "refunds", "creditReductions"] as const) target[k] += b[k];
         target.revenueComplete &&= b.revenueComplete; target.costComplete &&= b.costComplete;
       }
+    },
+    addLoss(locationId: string, amount: string) {
+      if (finished) throw new Error("NET_PROFIT_ACCUMULATOR_CLOSED");
+      const value = cents(amount);
+      total.cost += value; get(branches,keyOf(locationId,null)).cost += value;
+      get(channels,keyOf(locationId,null)).cost += value;
     },
     finish(allocation: AllocationReport, scan: { truncated: boolean; limitCode: string }, gaps: ProfitGap[] = [], gapsTruncated = false) {
       if (finished) throw new Error("NET_PROFIT_ACCUMULATOR_CLOSED");
@@ -128,8 +147,8 @@ export function createNetProfitAccumulator() {
       return { status: "OK", complete: totals.complete, eventCount, truncated: scan.truncated || allocation.truncated || gapsTruncated,
         totals, branches: groups(branches, false), channels: groups(channels, true),
         issues: [...issues].sort(([a], [b]) => a < b ? -1 : 1).map(([code, count]) => ({ code, count })), samples,
-        basis: "RECORDED_MONTHLY_PRE_INCOME_TAX_V1", costBasis: "CATALOG_AT_SALE_NOT_PURCHASE_LOT",
-        returnBasis: "SALE_VAT_ALLOCATION_COST_REVERSAL_UNKNOWN", expenseBasis: "REVIEWED_SOURCE_MONTH_NOT_CASH_DATE" };
+        basis: "RECORDED_MONTHLY_PRE_INCOME_TAX_V1", costBasis: actualCosts ? "MOVING_WEIGHTED_AVERAGE_WITH_STOCK_ADJUSTMENTS" : "CATALOG_AT_SALE_NOT_PURCHASE_LOT",
+        returnBasis: actualCosts ? "SALE_VAT_ALLOCATION_ORIGINAL_CONSUMPTION_COST" : "SALE_VAT_ALLOCATION_COST_REVERSAL_UNKNOWN", expenseBasis: "REVIEWED_SOURCE_MONTH_NOT_CASH_DATE" };
     },
   };
 }

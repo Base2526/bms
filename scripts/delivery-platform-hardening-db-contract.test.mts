@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { query } from "../apps/web/lib/db.ts";
+import { getClient, query } from "../apps/web/lib/db.ts";
 import { encryptSecret } from "../apps/web/lib/bms/crypto.ts";
 import { processClaimedDeliveryEvent } from "../apps/web/lib/bms/deliveryPlatforms/eventWorker.ts";
 import { intakeDeliveryWebhook } from "../apps/web/lib/bms/deliveryPlatforms/webhooks.ts";
@@ -25,8 +25,20 @@ test("delivery currency, latest-state history, kill switch and webhook conflict 
     [tag, `${tag.toLowerCase()}-${randomUUID()}`],
   )).rows[0].id;
   t.after(async () => {
-    await query(`DELETE FROM bms_audit_log WHERE tenant_id=$1`, [tenantId]).catch(() => {});
-    await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
+    const client = await getClient();
+    try {
+      await client.query("BEGIN");
+      for (const table of [
+        "bms_delivery_commands", "bms_delivery_orders",
+        "bms_kitchen_tickets", "bms_order_items", "bms_order_discounts", "bms_payments",
+        "bms_orders", "bms_stock_movements", "bms_inventory", "bms_delivery_integrations",
+        "bms_products", "bms_customers", "bms_locations", "bms_store_profile", "bms_audit_log",
+      ]) await client.query(`DELETE FROM ${table} WHERE tenant_id=$1`, [tenantId]);
+      await client.query("DELETE FROM bms_tenants WHERE id=$1", [tenantId]);
+      await client.query("COMMIT");
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+    assert.equal((await query("SELECT id FROM bms_tenants WHERE id=$1", [tenantId])).rowCount, 0);
   });
 
   await query(

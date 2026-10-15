@@ -21,6 +21,7 @@ type PromotionInput = {
   buyQty: number;
   getQty?: number | null;
   bundlePrice?: number | null;
+  salesSurface?: string | null;
   buySize?: string | null;
   giftSku?: string | null;
   giftSize?: string | null;
@@ -92,6 +93,7 @@ export const bmsProductPromotionsResolvers = {
           buyQty: args.input.buyQty,
           getQty: args.input.getQty ?? null,
           bundlePrice: args.input.bundlePrice ?? null,
+          salesSurface: args.input.salesSurface ?? null,
           buySize: args.input.buySize ?? null,
           giftSku: args.input.giftSku ?? null,
           giftSize: args.input.giftSize ?? null,

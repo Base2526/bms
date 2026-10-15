@@ -13,7 +13,10 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
+import { createRequire } from "node:module";
+
+const XLSX: typeof import("../apps/web/node_modules/xlsx") =
+  createRequire(new URL("../apps/web/package.json", import.meta.url))("xlsx");
 
 import { getClient, query } from "../apps/web/lib/db.ts";
 import { beginTenantTx } from "../apps/web/lib/bms/tenant.ts";
@@ -192,9 +195,9 @@ test("the XLSX export is numeric and Thai-labelled", async () => {
   const r = await getStockLedger(tenantId, { from: daysAgo(10), to: today });
   const wb = XLSX.read(buildXlsx(buildStockLedgerReportDoc(r, (d) => d)), { type: "buffer" });
   assert.deepEqual(wb.SheetNames, ["Summary", "บัญชีเคลื่อนไหว", "สรุปยอดสินค้า"]);
-  const summary = XLSX.utils.sheet_to_json<any>(wb.Sheets.Summary);
-  assert.ok(summary.some((row) => row.Field === "ชื่อผู้ประกอบการ" && row.Value === `FAKE ${TAG}`));
-  assert.ok(summary.some((row) => row.Field === "เลขประจำตัวผู้เสียภาษี"));
+  const summary = XLSX.utils.sheet_to_json<any[]>(wb.Sheets.Summary, { header: 1 });
+  assert.ok(summary.some((row) => row[0] === "ชื่อผู้ประกอบการ" && row[1] === `FAKE ${TAG}`));
+  assert.ok(summary.some((row) => row[0] === "เลขประจำตัวผู้เสียภาษี"));
   const ledger = XLSX.utils.sheet_to_json<any>(wb.Sheets["บัญชีเคลื่อนไหว"]);
   assert.ok(ledger.some((x) => x["เลขที่ใบสำคัญ"] === "PO:new00000" && x["รับ"] === 20));
   const rows = XLSX.utils.sheet_to_json<any>(wb.Sheets["สรุปยอดสินค้า"]);

@@ -132,7 +132,7 @@ function harness() {
           : { status: "CREATED", orderId: "order-new", amountDue: 120 };
       },
     };
-    if (["./products", "./menuAvailability", "./pos"].includes(name)) return new Proxy({}, {
+    if (["./products", "./menuAvailability", "./pos", "./productPacks"].includes(name)) return new Proxy({}, {
       get: (_target, key) => { throw new Error(`Unexpected dependency use: ${name}.${String(key)}`); },
     });
     throw new Error(`Unexpected dependency: ${name}`);

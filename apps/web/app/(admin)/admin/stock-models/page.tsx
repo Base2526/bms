@@ -60,8 +60,8 @@ const Q_RECIPE_VERSIONS = gql`
   }
 `;
 const Q_RECIPE_COST = gql`
-  query StockRecipeCost($recipeId: ID!) {
-    bmsRecipeCostEstimate(recipeId: $recipeId) {
+  query StockRecipeCost($recipeId: ID!,$costBasis:String,$locationId:ID) {
+    bmsRecipeCostEstimate(recipeId: $recipeId,costBasis:$costBasis,locationId:$locationId) {
       recipeId recipeVersion calculatedAt status currency scope outputQty missingIngredientCount
       ingredientBatchCost knownBatchCost totalBatchCost totalUnitCost
       ingredients { sku size qty unitCost batchCost source }
@@ -166,9 +166,12 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+import {RecipeCostBasisSelect,costSelection} from "./RecipeCostBasis";
+
 function RecipeCostDetails({ recipeId }: { recipeId: string }) {
   const { t } = useI18n();
-  const result = useQuery(Q_RECIPE_COST, { variables: { recipeId }, fetchPolicy: "network-only" });
+  const [basis,setBasis]=useState("CATALOG");
+  const result = useQuery(Q_RECIPE_COST, { variables: { recipeId,...costSelection(basis) }, fetchPolicy: "network-only" });
   const estimate = result.data?.bmsRecipeCostEstimate;
   const amount = (value: number | null | undefined) => value == null ? t("admin_stock.cost_unknown") : `฿${value.toFixed(2)}`;
   const rateAmount = (value: number | null) => value == null ? t("admin_stock.cost_unknown") : `฿${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
@@ -176,6 +179,7 @@ function RecipeCostDetails({ recipeId }: { recipeId: string }) {
   return <Card size="small" style={{ marginTop: 16 }}
     extra={<Button size="small" loading={result.loading} onClick={() => void result.refetch().catch(() => undefined)}>{t("admin_stock.refresh")}</Button>}>
     <Alert closable type="info" showIcon message={t("admin_stock.cost_scope")} />
+    <RecipeCostBasisSelect value={basis} onChange={setBasis}/>
     {result.loading ? <Spin /> : result.error ? <Alert closable type="error" message={t("admin_stock.action_failed")} /> : !estimate
       ? <Typography.Paragraph>{t("admin_stock.cost_unavailable")}</Typography.Paragraph> : <>
         <Typography.Paragraph style={{ marginTop: 12 }}>
@@ -188,7 +192,7 @@ function RecipeCostDetails({ recipeId }: { recipeId: string }) {
           { title: t("admin_stock.cost_quantity"), dataIndex: "qty" },
           { title: t("admin_stock.cost_unit_price"), dataIndex: "unitCost", render: amount },
           { title: t("admin_stock.cost_batch"), dataIndex: "batchCost", render: amount },
-          { title: t("admin_stock.cost_source"), dataIndex: "source", render: (source: string) => source === "CATALOG_CURRENT" ? t("admin_stock.cost_catalog") : source === "MISSING" ? t("admin_stock.cost_unknown") : t("admin_stock.cost_invalid") },
+          { title: t("admin_stock.cost_source"), dataIndex: "source", render: (source: string) => source === "MOVING_WEIGHTED_AVERAGE" ? t("restaurant_actual.weighted_basis") : source === "CATALOG_CURRENT" ? t("admin_stock.cost_catalog") : source === "MISSING" ? t("admin_stock.cost_unknown") : t("admin_stock.cost_invalid") },
         ]} />
         {estimate.overhead.map((line: any) => <Typography.Paragraph key={line.category} style={{ marginTop: 12, overflowWrap: "anywhere" }}>
           <strong>{labels[line.category]}</strong>: {amount(line.batchCost)} · {t("admin_stock.cost_quantity")}: {line.quantity ?? t("admin_stock.cost_unknown")} · {t("admin_stock.cost_rate")}: {rateAmount(line.rate)}

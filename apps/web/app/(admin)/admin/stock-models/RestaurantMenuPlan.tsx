@@ -2,6 +2,8 @@
 import { gql, useApolloClient } from "@apollo/client";
 import { Alert, Button, Card, Checkbox, Form, Input, InputNumber, Select, Space, Typography } from "antd";
 import { useEffect, useRef, useState, type ReactElement } from "react";
+import MenuBundlePublish from "./MenuBundlePublish";
+import RecipeCostBasis, {costSelection} from "./RecipeCostBasis";
 import { useI18n } from "@/lib/i18nContext";
 const QUERY = gql`query RestaurantMenuPlan($input: BmsRestaurantMenuPlanInput!) {
   bmsRestaurantMenuPlan(input: $input) { status errorCode
@@ -68,15 +70,16 @@ export default function RestaurantMenuPlan({ recipeSelect }: { recipeSelect: () 
       gpPercent: s.gpPercent, gpBasis: s.gpBasis, extraUnitCost: s.extraUnitCost,
       expectedDailyUnits: s.expectedDailyUnits ?? null, targetMarginPercent: s.targetMarginPercent ?? null });
     try {
-      const response = await client.query({ query: QUERY, fetchPolicy: "no-cache", variables: { input: {
-        assumptionSource: values.assumptionSource, dailyFixedCost: values.dailyFixedCost ?? null, dailyTargetProfit: values.dailyTargetProfit,
+      const input = {
+        ...costSelection(values.costSelection), assumptionSource: values.assumptionSource, dailyFixedCost: values.dailyFixedCost ?? null, dailyTargetProfit: values.dailyTargetProfit,
         items: values.items.map((r: any) => ({ recipeId: r.recipeId, scenario: scenario(r.scenario) })),
         bundle: values.bundleEnabled ? { scenario: scenario(values.bundleScenario),
           parts: values.items.filter((r: any) => r.bundleQty > 0).map((r: any) => ({ recipeId: r.recipeId, qty: r.bundleQty })) } : null,
-      } } });
+      };
+      const response = await client.query({query:QUERY,fetchPolicy:"no-cache",variables:{input}});
       if (!isCurrent()) return;
       const data = response.data.bmsRestaurantMenuPlan;
-      if (data.status !== "OK") setError(data.errorCode ?? data.status); else setResult(data);
+      if (data.status !== "OK") setError(data.errorCode ?? data.status); else setResult({...data,publicationInput:input});
     } catch (e) { if (isCurrent()) setError(e instanceof Error ? e.message : "ERROR"); }
     finally { if (revision === requestRevision.current) setLoading(false); }
   }
@@ -89,6 +92,7 @@ export default function RestaurantMenuPlan({ recipeSelect }: { recipeSelect: () 
     <Form form={form} layout="vertical" disabled={loading} initialValues={{ dailyTargetProfit: 0, bundleEnabled: false,
       items: [{ scenario: blank(), bundleQty: 0 }, { scenario: blank(), bundleQty: 0 }], bundleScenario: blank() }}
       onFinish={values => void calculate(values)} onValuesChange={invalidateResult}>
+      <RecipeCostBasis/>
       <Form.Item name="assumptionSource" label={t("restaurant_menu_plan.source")} rules={[{ required: true, whitespace: true, max: 500 }]}><Input.TextArea rows={2} maxLength={500} /></Form.Item>
       <Space wrap align="start">
         <Form.Item name="dailyFixedCost" label={t("restaurant_price_plan.fixed")}><InputNumber min={0} max={1_000_000_000} precision={2} /></Form.Item>
@@ -145,6 +149,7 @@ export default function RestaurantMenuPlan({ recipeSelect }: { recipeSelect: () 
           [t("restaurant_price_plan.projected"), result.analysis.bundle.price.projectedDailyProfit],
           [t("restaurant_price_plan.target_price"), result.analysis.bundle.price.targetPrice]])}
         <Typography.Paragraph>{state[result.analysis.bundle.price.targetPriceStatus]}</Typography.Paragraph>
+        <MenuBundlePublish plan={result.publicationInput}/>
       </Card>}
     </section>}
   </>;

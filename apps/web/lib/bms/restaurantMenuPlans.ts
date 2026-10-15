@@ -1,7 +1,7 @@
 import { getRecipeCostEstimate } from "./recipeCostEstimates";
 import { calculateMenuPlan, normalizeMenuPlan } from "./restaurantMenuPlanning";
 
-export async function previewRestaurantMenuPlan(tenantId: string, input: unknown) {
+export async function previewRestaurantMenuPlan(tenantId: string, input: unknown, actor?:string) {
   const rejected = (status: string, errorCode: string) => ({ status, errorCode, analysis: null, estimates: [] });
   let plan;
   try { plan = normalizeMenuPlan(input); }
@@ -9,7 +9,7 @@ export async function previewRestaurantMenuPlan(tenantId: string, input: unknown
   // Bounded sequential observations, not one atomic multi-recipe snapshot. Return each timestamp.
   const estimates = [];
   for (const item of plan.items) {
-    const estimate = await getRecipeCostEstimate(tenantId, item.recipeId);
+    const estimate = await getRecipeCostEstimate(tenantId, item.recipeId,undefined,plan,actor);
     if (!estimate) return rejected("NOT_FOUND", "RECIPE_NOT_FOUND");
     estimates.push(estimate);
   }

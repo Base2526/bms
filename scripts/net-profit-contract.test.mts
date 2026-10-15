@@ -225,7 +225,7 @@ test("API enforces every source permission and server identities; expected rejec
   }).bmsNetProfitResolvers.Query.bmsNetProfit;
   for (const p of ["report.view", "expense.view", "delivery.settlement.view", "tax.document.view"]) { denied = p; await assert.rejects(api(null, { month: "2026-10" }, {}), /DENIED/); }
   assert.equal(calls.length, 0); denied = ""; await api(null, { month: "2026-10", tenantId: "forged" }, {});
-  assert.deepEqual(calls[0], ["server-tenant", "server-actor", "2026-10"]);
+  assert.deepEqual(calls[0], ["server-tenant", "server-actor", "2026-10", true]);
   failure = "NET_PROFIT_ALL_BRANCH_ACCESS_REQUIRED"; await assert.rejects(api(null, {}, {}), (e: any) => e.extensions.code === "FORBIDDEN");
   failure = "NET_PROFIT_CURRENCY_REVIEW_REQUIRED"; assert.deepEqual(await api(null, {}, {}), { status: "REJECTED", errorCode: failure });
   failure = "DB unavailable"; await assert.rejects(api(null, {}, {}), /DB unavailable/);

@@ -1,3 +1,4 @@
+import { getVariantBasePrice } from "./productPacks";
 import { randomUUID } from "node:crypto";
 import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
 // คีย์ล็อกบิลมีสูตรเดียวทั้งระบบ (kitchen.ts ก็ขอล็อกตัวเดียวกันนี้ก่อนแตะแถวตั๋ว)
@@ -775,7 +776,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
   );
   const skus = res.rows.map((row) => row.sku);
   const images = await listPrimaryProductImages(tenantId, skus);
-  return res.rows.map((row) => {
+  return Promise.all(res.rows.map(async (row) => {
     const sizes = row.sizes ?? [];
     const sellability = isMenuSellable({
       stockPolicy: row.stock_policy,
@@ -785,7 +786,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     return {
       sku: row.sku,
       name: row.name,
-      price: Number(row.price),
+      price: Math.min(...await Promise.all((row.sizes?.length?row.sizes:[{size:"STD"}]).map(async v=>await getVariantBasePrice(tenantId,row.sku,v.size,locationId)??Number(row.price)))),
       kitchenStation: row.kitchen_station,
       kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
       hasModifiers: row.has_modifiers,
@@ -799,7 +800,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
       unavailableReason: row.unavailable_reason,
       imageUrl: images.get(row.sku) ?? null,
     };
-  });
+  }));
 }
 
 export async function createDefaultRestaurantFloor(input: {

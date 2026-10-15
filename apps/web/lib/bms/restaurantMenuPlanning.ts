@@ -1,7 +1,7 @@
 import { calculatePricePlan, normalizePricePlan, type PriceScenario } from "./restaurantPricePlanning";
 
 // Planning only: supplied demand is NOT a sales query; never use these results in settlement.
-export type MenuPlan = { assumptionSource: string; dailyFixedCost: number | null; dailyTargetProfit: number;
+export type MenuPlan = { costBasis?: "CATALOG" | "WEIGHTED_AVERAGE"; locationId?: string | null; assumptionSource: string; dailyFixedCost: number | null; dailyTargetProfit: number;
   items: { recipeId: string; scenario: PriceScenario }[];
   bundle: { scenario: PriceScenario; parts: { recipeId: string; qty: number }[] } | null };
 const invalid = (): never => { throw new Error("MENU_PLAN_INVALID_INPUT"); };
@@ -9,7 +9,7 @@ export function normalizeMenuPlan(input: any): MenuPlan {
   if (!input || !Array.isArray(input.items) || input.items.length < 2 || input.items.length > 12) return invalid();
   const ids = new Set<string>(), labels = new Set<string>();
   const normalize = (recipeId: unknown, scenario: unknown) => normalizePricePlan({ recipeId,
-    assumptionSource: input.assumptionSource, dailyFixedCost: input.dailyFixedCost,
+    costBasis:input.costBasis,locationId:input.locationId,assumptionSource: input.assumptionSource, dailyFixedCost: input.dailyFixedCost,
     dailyTargetProfit: input.dailyTargetProfit, scenarios: [scenario] });
   const items = input.items.map((item: any) => {
     const p = normalize(item?.recipeId, item?.scenario), recipeId = p.recipeId.toLowerCase(), scenario = p.scenarios[0];
@@ -30,7 +30,7 @@ export function normalizeMenuPlan(input: any): MenuPlan {
     bundle = { parts, scenario: normalize(items[0].recipeId, b.scenario).scenarios[0] };
   }
   const p = normalize(items[0].recipeId, items[0].scenario);
-  return { items, bundle, assumptionSource: p.assumptionSource, dailyFixedCost: p.dailyFixedCost, dailyTargetProfit: p.dailyTargetProfit };
+  return { costBasis:p.costBasis,locationId:p.locationId,items, bundle, assumptionSource: p.assumptionSource, dailyFixedCost: p.dailyFixedCost, dailyTargetProfit: p.dailyTargetProfit };
 }
 function cents(value: number): bigint {
   if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER / 100) throw new Error("MENU_PLAN_RANGE_EXCEEDED");

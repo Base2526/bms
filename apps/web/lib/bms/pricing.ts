@@ -91,7 +91,7 @@ export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
       : promo?.kind === "N_FOR_PRICE"
         && Number.isInteger(Number(promo.buyQty)) && Number(promo.buyQty) >= 1
         && Number.isFinite(Number(promo.bundlePrice)) && Number(promo.bundlePrice) >= 0
-          ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice) }
+          ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice), ...(promo.buySize ? {buySize:String(promo.buySize)} : {}) }
           : null;
   const rawModifierUnitPrice = Number(record.modifierUnitPrice ?? 0);
   const modifierUnitPrice = Number.isFinite(rawModifierUnitPrice) && rawModifierUnitPrice >= 0
@@ -345,7 +345,11 @@ export function priceLinesByQty<T extends { sku: string; size?: string; qty: num
 export type Promotion =
   | CrossSkuPromotion
   | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
-  | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number };
+  | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number; buySize?: string | null };
+
+export function promotionForVariant(promo: Promotion | null, size:string): Promotion | null {
+  return promo?.kind === "N_FOR_PRICE" && promo.buySize && promo.buySize !== size ? null : promo;
+}
 
 export type SkuPricingSnapshot = {
   sku: string;

@@ -123,17 +123,18 @@ test("GraphQL requires both permissions before service, server tenant, and query
   const calls: any[] = []; let deny = "product.view";
   const api = load("apps/web/graphql/bmsRestaurantMenuPlans.ts", name => {
     if (name === "@/lib/bms/permissions") return { requirePermission: async (_: any, p: string) => { if (p === deny) throw new Error("FORBIDDEN"); } };
+    if (name === "@/lib/auth") return {requireAuth:()=>({author_id:"server-actor"})};
     if (name === "@/lib/bms/tenant") return { getTenantId: () => "tenant-server" };
     if (name === "@/lib/bms/restaurantMenuPlans") return { previewRestaurantMenuPlan: async (...args: any[]) => { calls.push(args); return { status: "OK" }; } };
     throw new Error(name);
   }).bmsRestaurantMenuPlanResolvers;
   const run = () => api.Query.bmsRestaurantMenuPlan(null, { input: plan(), tenantId: "forged" }, {});
   for (deny of ["product.view", "report.view"]) { await assert.rejects(run(), /FORBIDDEN/); assert.equal(calls.length, 0); }
-  deny = ""; assert.equal((await run()).status, "OK"); assert.deepEqual(calls[0], ["tenant-server", plan()]); assert.equal(api.Mutation, undefined);
+  deny = ""; assert.equal((await run()).status, "OK"); assert.deepEqual(calls[0], ["tenant-server", plan(),"server-actor"]); assert.equal(api.Mutation, undefined);
   const sdl = read("schema.graphql"); assert.match(sdl, /bmsRestaurantMenuPlan\(input: BmsRestaurantMenuPlanInput!\): BmsRestaurantMenuPlan!/);
 });
 test("no actual sales, price, stock, expense, AI or promotion mutation is wired", () => {
   for (const file of ["restaurantMenuPlans", "restaurantMenuPlanning"]) assert.doesNotMatch(read(`apps/web/lib/bms/${file}.ts`), /INSERT INTO|UPDATE bms_|DELETE FROM|from ["'].*(?:reports|operatingCosts|pricing|pos|orders|tax)["']/);
   const ui = read("apps/web/app/(admin)/admin/stock-models/RestaurantMenuPlan.tsx");
-  assert.match(ui, /fetchPolicy: "no-cache"/); assert.match(ui, /onValuesChange/); assert.doesNotMatch(ui, /useMutation|localStorage/);
+  assert.match(ui, /fetchPolicy:\s*"no-cache"/); assert.match(ui, /onValuesChange/); assert.doesNotMatch(ui, /useMutation|localStorage/);
 });

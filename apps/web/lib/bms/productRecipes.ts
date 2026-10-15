@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { assertReadinessAllowsSaveOfActiveProduct, getProductReadinessInTx } from "./productConfiguration";
@@ -92,7 +93,8 @@ export async function upsertProductRecipe(
     sopSteps?: string[];
     costAssumptions?: RecipeCostAssumptions | null;
   },
-  editorId?: string | null
+  editorId?: string | null,
+  transaction?: PoolClient
 ): Promise<ProductRecipe> {
   const productSku = String(input.productSku ?? "").trim();
   const size = String(input.size ?? "").trim();
@@ -107,10 +109,10 @@ export async function upsertProductRecipe(
   if (input.active != null && typeof input.active !== "boolean") throw new Error("สถานะสูตรไม่ถูกต้อง");
   if (suppliedItems?.some((item) => item.sku === productSku)) throw new Error("เมนูเป็นวัตถุดิบของตัวเองไม่ได้");
 
-  const client = await getClient();
+  const client = transaction ?? await getClient();
   let recipeId = input.id ?? null;
   try {
-    await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
+    if (!transaction) await beginTenantTx(client, tenantId, editorId ? { editorId } : undefined);
     const owned = await client.query<{ active: boolean }>(
       `SELECT active FROM bms_products WHERE tenant_id = $1 AND sku = $2 FOR UPDATE`,
       [tenantId, productSku]
@@ -229,13 +231,13 @@ export async function upsertProductRecipe(
         costAssumptionCount: Object.values(costAssumptions).filter(Boolean).length })]
     );
     const saved: ProductRecipe = { id: recipeId, productSku, size, version, outputQty, active, items, directItems, subrecipes, sopSteps, costAssumptions };
-    await client.query("COMMIT");
+    if (!transaction) await client.query("COMMIT");
     return saved;
   } catch (error) {
-    try { await client.query("ROLLBACK"); } catch {}
+    try { if (!transaction) await client.query("ROLLBACK"); } catch {}
     throw error;
   } finally {
-    client.release();
+    if (!transaction) client.release();
   }
 }
 

@@ -1,7 +1,10 @@
 "use client";
 import { gql, useApolloClient } from "@apollo/client";
 import { Alert, Button, Card, Form, Input, InputNumber, Select, Space, Typography } from "antd";
-import { useState } from "react";
+import RestaurantPricePublish from "./RestaurantPricePublish";
+import type { PricePlanInput } from "@/lib/bms/restaurantPricePlanning";
+import { useState, useRef, useEffect } from "react";
+import RecipeCostBasis, {costSelection} from "./RecipeCostBasis";
 import { useI18n } from "@/lib/i18nContext";
 const QUERY = gql`query RestaurantPricePlan($input: BmsRestaurantPricePlanInput!) {
   bmsRestaurantPricePlan(input: $input) { status errorCode
@@ -13,7 +16,10 @@ const QUERY = gql`query RestaurantPricePlan($input: BmsRestaurantPricePlanInput!
 export default function RestaurantPricePlan({ recipeId }: { recipeId: string }) {
   const { t } = useI18n();
   const client = useApolloClient();
+  const revision=useRef(0);
+  useEffect(()=>()=>{revision.current++;},[]);
   const [result, setResult] = useState<any>(null), [error, setError] = useState<string | null>(null), [loading, setLoading] = useState(false);
+  const [plan,setPlan] = useState<PricePlanInput|null>(null);
   const blank = () => ({ vatMode: "NONE", vatPercent: 0, gpPercent: 0, gpBasis: "NET_REVENUE", extraUnitCost: 0 });
   const states: Record<string, string> = { COMPLETE: t("restaurant_price_plan.complete"), INCOMPLETE_COST: t("restaurant_price_plan.missing_cost"),
     INCOMPLETE_FIXED_COST: t("restaurant_price_plan.missing_fixed"), NON_POSITIVE_CONTRIBUTION: t("restaurant_price_plan.non_positive"),
@@ -28,23 +34,26 @@ export default function RestaurantPricePlan({ recipeId }: { recipeId: string }) 
     { name: "targetMarginPercent", label: t("restaurant_price_plan.target_margin"), max: 99.99, required: false },
   ];
   async function calculate(values: any) {
-    setResult(null); setError(null); setLoading(true);
+    const request=++revision.current;
+    setResult(null); setPlan(null); setError(null); setLoading(true);
     try {
       const response = await client.query({ query: QUERY, fetchPolicy: "no-cache", variables: { input: {
-        recipeId, assumptionSource: values.assumptionSource, dailyFixedCost: values.dailyFixedCost ?? null, dailyTargetProfit: values.dailyTargetProfit,
+        recipeId, ...costSelection(values.costSelection), assumptionSource: values.assumptionSource, dailyFixedCost: values.dailyFixedCost ?? null, dailyTargetProfit: values.dailyTargetProfit,
         scenarios: values.scenarios.map((s: any) => ({ label: s.label, price: s.price, vatMode: s.vatMode, vatPercent: s.vatPercent,
           gpPercent: s.gpPercent, gpBasis: s.gpBasis, extraUnitCost: s.extraUnitCost,
           expectedDailyUnits: s.expectedDailyUnits ?? null, targetMarginPercent: s.targetMarginPercent ?? null })),
       } } });
+      if (request!==revision.current) return;
       const data = response.data.bmsRestaurantPricePlan;
-      if (data.status !== "OK") setError(data.errorCode ?? data.status); else setResult(data);
-    } catch (e) { setError(e instanceof Error ? e.message : "ERROR"); }
-    finally { setLoading(false); }
+      if (data.status !== "OK") setError(data.errorCode ?? data.status); else { setResult(data); setPlan({ recipeId,...costSelection(values.costSelection),assumptionSource:values.assumptionSource,scenarios:values.scenarios,dailyTargetProfit:values.dailyTargetProfit, dailyFixedCost:values.dailyFixedCost??null }); }
+    } catch (e) { if(request===revision.current) setError(e instanceof Error ? e.message : "ERROR"); }
+    finally { if(request===revision.current) setLoading(false); }
   }
   return <>
     <Alert closable showIcon type="info" message={t("restaurant_price_plan.scope")} description={t("restaurant_price_plan.basis")} style={{ marginBottom: 16 }} />
     <Form layout="vertical" disabled={loading} initialValues={{ dailyTargetProfit: 0, scenarios: [blank()] }}
-      onFinish={values => void calculate(values)} onValuesChange={() => { setResult(null); setError(null); }}>
+      onFinish={values => void calculate(values)} onValuesChange={() => { revision.current++;setLoading(false);setResult(null); setPlan(null); setError(null); }}>
+      <RecipeCostBasis/>
       <Form.Item name="assumptionSource" label={t("restaurant_price_plan.source")} rules={[{ required: true, whitespace: true, max: 500 }]}><Input.TextArea rows={2} maxLength={500} /></Form.Item>
       <Space wrap align="start">
         <Form.Item name="dailyFixedCost" label={t("restaurant_price_plan.fixed")}><InputNumber min={0} max={1_000_000_000} precision={2} /></Form.Item>
@@ -75,7 +84,7 @@ export default function RestaurantPricePlan({ recipeId }: { recipeId: string }) 
       <Typography.Paragraph type="secondary">{t("restaurant_price_plan.rounding")}</Typography.Paragraph>
       <Typography.Paragraph>{t("restaurant_price_plan.observation")}: v{result.estimate.recipeVersion} · {result.estimate.calculatedAt}<br />
         {t("restaurant_price_plan.cost")}: {show(result.estimate.totalUnitCost, " THB")}</Typography.Paragraph>
-      {result.scenarios.map((row: any) => <Card key={row.label} title={row.label} style={{ marginBottom: 12 }}>
+      {result.scenarios.map((row: any, scenarioIndex: number) => <Card key={row.label} title={row.label} style={{ marginBottom: 12 }}>
         <Alert closable type={row.status === "COMPLETE" ? "info" : "warning"} message={states[row.status] ?? row.status} />
         <dl style={{ overflowWrap: "anywhere" }}>{[
           [t("restaurant_price_plan.gross"), show(row.customerTotal, " THB")], [t("restaurant_price_plan.net"), show(row.netRevenue, " THB")],
@@ -86,6 +95,7 @@ export default function RestaurantPricePlan({ recipeId }: { recipeId: string }) 
           [t("restaurant_price_plan.projected"), show(row.projectedDailyProfit, " THB")],
           [t("restaurant_price_plan.target_price"), `${show(row.targetPrice, " THB")} · ${states[row.targetPriceStatus] ?? row.targetPriceStatus}`],
         ].map(([label, value]) => <div key={label} style={{ marginBlock: 8 }}><dt>{label}</dt><dd style={{ marginInlineStart: 0, fontWeight: 600 }}>{value}</dd></div>)}</dl>
+        {plan && <RestaurantPricePublish plan={plan} scenarioIndex={scenarioIndex}/> }
       </Card>)}
     </section>}
   </>;

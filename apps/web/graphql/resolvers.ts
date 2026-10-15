@@ -66,6 +66,7 @@ import { bmsReportsResolvers } from "@/graphql/bmsReports";
 import { bmsSalesEvidenceResolvers } from "@/graphql/bmsSalesEvidence";
 import { bmsOperatingCostResolvers } from "@/graphql/bmsOperatingCosts";
 import { bmsCostAllocationResolvers } from "@/graphql/bmsCostAllocations";
+import { bmsRestaurantCostingResolvers } from "@/graphql/bmsRestaurantCosting";
 import { bmsNetProfitResolvers } from "@/graphql/bmsNetProfit";
 import { bmsRestaurantPricePlanResolvers } from "@/graphql/bmsRestaurantPricePlans";
 import { bmsRestaurantMenuPlanResolvers } from "@/graphql/bmsRestaurantMenuPlans";
@@ -2894,6 +2895,7 @@ const rawResolvers = {
     ...bmsOperatingCostResolvers.Query,
     ...bmsCostAllocationResolvers.Query,
     ...bmsNetProfitResolvers.Query,
+    ...bmsRestaurantCostingResolvers.Query,
     ...bmsRestaurantPricePlanResolvers.Query,
     ...bmsRestaurantMenuPlanResolvers.Query,
     ...bmsReportEngineResolvers.Query,
@@ -2901,6 +2903,7 @@ const rawResolvers = {
     ...bmsRestockSubscriptionsResolvers.Query,
   },
   Mutation: {
+    ...bmsRestaurantCostingResolvers.Mutation,
     ...bmsExpenseDocumentsResolvers.Mutation,
     ...bmsOperatingCostResolvers.Mutation,
     ...bmsCostAllocationResolvers.Mutation,

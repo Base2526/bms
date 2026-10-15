@@ -121,4 +121,22 @@ describe('CatalogProvider offline snapshots', () => {
 
     await act(async () => tree!.unmount());
   });
+  test.each([
+    ['AVAILABLE', true],
+    ['OUT_OF_STOCK', false],
+    ['SOLD_OUT_TODAY', false],
+  ])('zero own stock respects server availability %s', async (availability, sellable) => {
+    (useQuery as jest.Mock).mockReturnValue({ data: { bmsPosRestaurantMenu: { items: [] }, bmsPosCatalogSearch: { items: [{
+      sku: 'RECIPE', name: 'Recipe set', price: 150, availableTotal: 0,
+      availability, availableSizes: [{ size: 'STD', available: 0, price: 150 }], imageUrl: null,
+    }] } }, loading: false, refetch: jest.fn() });
+    (useLazyQuery as jest.Mock).mockReturnValue([jest.fn()]);
+    let catalog: ReturnType<typeof useCatalog> | undefined;
+    function Probe() { catalog = useCatalog(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<CatalogProvider><Probe /></CatalogProvider>); });
+    expect(catalog!.catalog.items[0].sellable).toBe(sellable);
+    await act(async () => tree.unmount());
+  });
+
 });

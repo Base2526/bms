@@ -81,7 +81,7 @@ test("service validates before I/O, reads server tenant/cost, returns business s
   const run = (input: any = plan()) => service.previewRestaurantPricePlan("tenant-server", input);
   assert.equal((await run({})).status, "INVALID_INPUT"); assert.equal(calls.length, 0);
   assert.equal((await run({ ...plan(), unitCost: 0, tenantId: "forged" })).scenarios[0].contribution, 60);
-  assert.deepEqual(calls[0], ["tenant-server", id]);
+  assert.deepEqual(calls[0], ["tenant-server", id,undefined,normalizePricePlan(plan()),undefined]);
   estimate = { status: "INCOMPLETE", totalUnitCost: 0 }; assert.equal((await run()).scenarios[0].contribution, null);
   estimate = { status: "COMPLETE", totalUnitCost: 90_000_000_000_000 };
   assert.equal((await run(plan({ expectedDailyUnits: 1_000_000 }))).errorCode, "PRICE_PLAN_RANGE_EXCEEDED");
@@ -92,13 +92,14 @@ test("GraphQL enforces both permissions before service and derives tenant; no mu
   let deny = "product.view"; const calls: any[] = [];
   const api = load("apps/web/graphql/bmsRestaurantPricePlans.ts", name => {
     if (name === "@/lib/bms/permissions") return { requirePermission: async (_: any, p: string) => { if (p === deny) throw new Error("FORBIDDEN"); } };
+    if (name === "@/lib/auth") return {requireAuth:()=>({author_id:"server-actor"})};
     if (name === "@/lib/bms/tenant") return { getTenantId: () => "tenant-server" };
     if (name === "@/lib/bms/restaurantPricePlans") return { previewRestaurantPricePlan: async (...args: any[]) => { calls.push(args); return {}; } };
     throw new Error(name);
   }).bmsRestaurantPricePlanResolvers;
   const run = () => api.Query.bmsRestaurantPricePlan(null, { input: plan(), tenantId: "forged" }, {});
   for (deny of ["product.view", "report.view"]) { await assert.rejects(run(), /FORBIDDEN/); assert.equal(calls.length, 0); }
-  deny = ""; await run(); assert.deepEqual(calls[0], ["tenant-server", plan()]); assert.equal(api.Mutation, undefined);
+  deny = ""; await run(); assert.deepEqual(calls[0], ["tenant-server", plan(),"server-actor"]); assert.equal(api.Mutation, undefined);
 });
 test("preview is isolated from persistence, actual pricing, monthly expenses and financial ledgers", () => {
   for (const file of ["restaurantPricePlans", "restaurantPricePlanning"]) assert.doesNotMatch(read(`apps/web/lib/bms/${file}.ts`), /INSERT INTO|UPDATE bms_|DELETE FROM|from ["'].*(?:operatingCosts|pricing|pos|orders|tax)["']/);

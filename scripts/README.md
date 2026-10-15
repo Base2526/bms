@@ -4,7 +4,123 @@ Restaurant handoff/backlog (2026-10-15): see
 [phase 1–9 completion and remaining-work log](../docs/business/inventory.md#restaurant-phases-1–9-completion-and-remaining-work-log-2026-10-15).
 It separates implemented scope, unfinished business-evidence/features, and deferred DB verification.
 The user requested commit/push after the verification records below; statements that no commit/push
-was performed describe those earlier test runs, not the later Git handoff. No DB work is authorized.
+was performed describe those earlier test runs, not the later Git handoff. The user subsequently
+authorized local Docker DB testing on 2026-10-15; the DB deferrals below describe the earlier rounds.
+
+## Restaurant phases 1–9: real DB follow-up (2026-10-15)
+
+Use the [restored disposable instance](../docs/architecture/realtime-test-database.md), never the
+dev database. The new suites additionally require loopback host, port **5433** and database
+**bms_realtime_test**. A separate test Redis can be started with
+`docker run --name bms-costing-test-redis -p 127.0.0.1:6381:6379 -d redis:7-alpine`;
+set `REDIS_URL=redis://127.0.0.1:6381` for the test runner. No source-database password, dump,
+customer data or test logs belong in Git. Remove the test Redis and disposable DB after testing.
+
+| Phase | Real DB coverage |
+| --- | --- |
+| 1 | `db recipe-versioning`, `db restaurant-pos`, `db kitchen-station`: append-only recipes, concurrency/rollback, first-send cost/stock evidence across rounds, split/merge, kitchen cancellation and settlement |
+| 2 | `db restaurant-costing`: pinned inactive child versions, SOP edits, integral BOM expansion, cycle/foreign-reference rejection, concurrent saves |
+| 3 | Same suite: current catalog estimates, whole-batch overhead, immutable assumption versions and unknown inputs |
+| 4 | Same suite: expense documents, settled POS expenses and LIVE GP sources; review/replay/conflict, canonical dedup, credits, depreciation, stale/retired sources and audit rollback |
+| 5–6 | Same suite: actual recipe reads for VAT/GP/break-even, demand/menu/bundle planning, unknown cost and absence of price/order writes |
+| 7 | Same suite: actual POS partial/full returns, concurrent retry, void, audit rollback, immutable snapshots, mixed VAT/extras, signed rounding, branch/month event clocks and 101-sale keyset paging |
+| 8 | Same suite: exact-cent allocations, versions/replay, concurrent conflict, stale previews, gross-sales drivers, tenant/branch isolation, confirmation and audit rollback |
+| 9 | Same suite: real monthly sales/expenses/allocations, frozen vs current cost, unknown cost/loss/return/tax evidence, serializable source snapshots and a 1,001-expense read cap |
+| Schema/API | `db restaurant-costing` also runs the migration suite: first application plus reapplication of 10.61–10.66, grants/RLS, foreign keys, immutable trigger, unauthenticated/denied/success resolver paths and real per-tenant permissions |
+
+`restaurant-costing-migrations-db-contract.test.mts` reconstructs the pre-feature schema inside
+one **rollback-only** transaction on the restored test instance. It transactionally truncates the
+affected copied tables, removes the feature objects, runs the migration files twice (only stripping
+their outer BEGIN/COMMIT), checks structure/grants, then rolls everything back. It does not build
+an empty database from the repository migration history or alter the original dev database.
+
+`recipe-versioning-db-contract.test.mts` now removes child recipe references, recipes and products
+before deleting its exact fixture tenant UUID, in one cleanup transaction. The new fixture helper
+also preserves both assertion and cleanup errors, and verifies that its tenant was removed.
+Audit-failure tests install a uniquely named, tenant-specific trigger only on the disposable DB
+and remove it in `finally`; no production service is stubbed or weakened to make a test pass.
+
+These tests validate the implemented scope. They do not implement purchase-lot valuation, return
+cost recovery, historical-sales Menu Engineering or price/promotion activation. A real POS return
+also produces a credit note: known return VAT/components remain visible, while phase-9 net revenue
+and profit stay unknown when those tax adjustments have not been reconciled. Production-scale query
+plans, the 20,000-event cap and a live HTTP/browser/Redis→gateway→client flow remain separate checks.
+
+Run through `node scripts/run-contract-tests.mjs db <filter>` with the isolated connection env from
+the runbook. Result logs for this follow-up are under ignored `.test-output/restaurant-phases-db/`.
+
+Verified 2026-10-15: focused DB runs **99/99 passed, no skips**: recipe-versioning 5,
+restaurant-costing (service + migration suites) 26, restaurant-pos 51, kitchen-station 17.
+The initial complete DB run on a newly restored copy covered **70 files / 711 tests: 676 passed,
+21 failed, 14 skipped**. Every final failing test name was also present in the earlier 68-file
+baseline (648 passed / 23 failed / 14 skipped); two baseline failures did not recur and are not
+claimed as fixes. Existing failures include fixture/NOT NULL cleanup, catalog `allergen_codes`
+SQL typing, deposit and tax-report expectations. That initial repository-wide DB gate was **not green**;
+the follow-up below resolves those failures.
+See `final-all/db.failures.txt` and the four `focused/*/db.tap` logs under that output directory.
+The tests plus their imported services passed a separate strict TypeScript check (including .mts,
+which the ordinary web tsconfig does not include). Schema readiness passed; no costing/recipe
+fixture tenants or fault-injection functions remained. `git diff --check` passed. No browser/build
+or full pure-suite rerun is claimed for this test/documentation change.
+
+### All-DB failure fixes and rerun (2026-10-15)
+
+All 21 initial failures are resolved. Two production fixes were needed: explicitly type the
+`allergen_codes` / `dietary_tags` INSERT parameters as `text[]`, and include locked earlier deposit
+instalments in the final POS payment-total check. Regression assertions cover nonempty/omitted/empty
+food arrays and a 5,000 deposit sale with 1,000 + 1,500 already paid, 2,500 collected, and no duplicate
+payment/stock deduction on retry. The expected-paid guard, tenant locks and transaction remain intact.
+
+Fixture repairs supply the required fake password hash, cast UUID/text parameters, use a temporary
+local media directory, and delete delivery children before parents in one exact-tenant transaction.
+Assertions now follow the existing contracts: chat booking requires `booking_enabled` independently
+of directory publication, XLSX Summary uses positional metadata rows, and issued credit-note print
+snapshots retain earlier-credit amounts after a later cancellation.
+
+| Verification target | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| All 70 DB files, freshly restored `bms_realtime_test` | 710 | 0 | 14 |
+| Cross-SKU gifts, restored `bms_gift_test_current` | 11 | 0 | 1 legacy-only |
+| Cross-SKU gifts, `bms_gift_test_legacy` without 10.41 columns | 2 | 0 | 10 current-only |
+| Customer answer evidence, fresh dedicated `evidence_test` instance | 1 | 0 | 0 |
+| Installer reports, empty dedicated `bms_installer_reports_test` | 1 | 0 | 0 |
+
+The main run has **724 tests** (previously blocked nested tests now execute, plus one new array
+regression). Every one of its **14 skipped test names** passed on the dedicated targets; the gift
+setup runs twice, so do not sum executions as unique cases. No skip guard was relaxed. The legacy
+gift target is a disposable clone with the three 10.41 columns removed and the 8.7 kind/shape checks
+restored; no migration file or source database was altered. Evidence uses port 55453 and
+`BMS_EVIDENCE_DISPOSABLE_DB=1`; the gift legacy target uses `BMS_GIFT_LEGACY_SCHEMA=1`.
+
+Logs are in ignored `.test-output/db-green/{full,gift-current,gift-legacy,evidence,installer}/`;
+`verification.json` reconciles the skipped names with successful dedicated runs. The web
+`npm run typecheck` and affected pure suites (`pos`: 233; `product`: 52) passed. There are no
+standalone pure filters named `price-tiers` or `deposits`; those checks are in DB mode.
+The additional strict compilation probe initially reported union-narrowing and XLSX declaration
+issues in four older suites outside the web tsconfig. These are resolved in the follow-up below.
+No full pure gate or production build rerun is claimed. All test DB containers/volumes and test Redis
+are removed after verification; the dev stack is retained.
+
+### Strict DB verification scripts (2026-10-15)
+
+Run `cd apps/web && npm run typecheck:db-verification` for the complete scope of that strict probe:
+**12 DB suites plus `testing/restaurantCostingFixture.mts`**, along with their imported dependencies.
+The committed `scripts/tsconfig.db-verification.json` preserves all 13 original script entries,
+inherits the web compiler settings and explicitly enables `strict`, `noEmit` and TypeScript-extension
+imports. This selected verification scope is separate from the 70-file DB execution runner; it does
+not claim to typecheck every test script in the repository.
+
+Board-game tests now assert the expected result shape before reading union-specific fields,
+including replay payloads. Deposit tests check the returned order ID and deposit object before
+reading their fields. The two workbook suites resolve the installed `xlsx` package from the web
+workspace using its published declarations instead of an untyped direct `.mjs` import. No error
+suppression, new `any` cast or relaxed compiler setting was introduced.
+
+Verification: `typecheck:db-verification` and the ordinary web `typecheck` both exit 0. The four
+changed DB suites pass **52/52, no skips** on a freshly restored disposable Docker database:
+board-game-seating 13, deposits 12, stock-ledger 8, tax-sales-report 19. Logs are in ignored
+`.test-output/strict-db-scripts/`. The earlier full DB run remains recorded above; this follow-up
+reruns the affected suites only. The disposable DB/Redis are removed afterward; dev data is unchanged.
 
 Phase-9 recorded net profit: `node scripts/run-contract-tests.mjs pure net-profit` covers exact
 pre-income-tax arithmetic, discounts/extras/shipping/VAT/signed rounding, historical vs legacy costs,
@@ -16,7 +132,7 @@ it does not prove SQL, RLS/grants, isolation, query plans or stock-cost reversal
 with mocked HTTP and idle WS (no gateway). It checks late success/rejection after month changes,
 loading/error stale-total hiding, unknown results, read-only access, source-permission denial,
 manual content, viewport containment and unbroken money strings. Existing allocation/cost browser
-smokes are regressions. DB tests remain deferred; do not provision a DB. Phase 9 adds no migration;
+smokes are regressions. DB tests were deferred in that original round; see the real-DB follow-up above. Phase 9 adds no migration;
 existing sources through 10.66 are prerequisites. Return cost reversal, purchase-lot valuation and
 unreconciled adjustments remain business-evidence limitations, distinct from DB-test deferral.
 Verified 2026-10-15: final `npm run gate` passed typecheck, 235 DB-free files (2,848 passed /
@@ -852,3 +968,147 @@ registration, mobile overflow and excluding unconfirmed previews from print. Scr
 are saved in `.test-output/tax-controls-browser`. Use a local dev server on port 3107 (or
 `BMS_SMOKE_URL`) and an installed Playwright module (or its file URL in `BMS_PLAYWRIGHT_MODULE`).
 This is UI verification only; it does not verify database transactions or production authentication.
+
+## Restaurant feature completion and weighted-average valuation (2026-10-15)
+
+The reference image's costing/recipe/SOP/BOM/price/VAT/GP/break-even/menu workflows now include
+moving weighted-average material cost by SKU/variant/branch, reviewed opening stock values,
+original-cost returns/transfers, valued losses/count adjustments, actual-sales menu engineering,
+and a separate preview/confirmation workflow for real unit/pack/N-for-price prices.
+
+New migrations: **10.67–10.69**. Apply these before starting the new application code. Initial
+verification applied and re-applied them on the restored local throwaway database. The subsequent
+explicitly authorized local-main rollout is recorded below.
+10.69 prevents an inventory deletion/recreated SKU from inheriting an obsolete valuation balance;
+append-only cost evidence is retained. Repeated inventory-multilocation runs pass with this FK.
+
+| Verification on final implementation | Result |
+| --- | --- |
+| Full DB runner, 71 files / 740 cases | **726 pass, 0 fail, 14 target-specific skips** |
+| Dedicated gift-current schema | 11 pass, 0 fail; legacy-only case runs below |
+| Dedicated gift-legacy schema | 2 pass, 0 fail; includes shared setup |
+| Dedicated answer-evidence database | 1 pass, 0 fail |
+| Dedicated installer database | 1 pass, 0 fail |
+| All 14 main-run skipped case names matched to successful dedicated runs | **14/14 covered** |
+| New actual-cost/publication DB suite (part of full runner) | **16/16 pass** |
+| Strict web typecheck and original 13 verification scripts plus new suite | **pass** |
+| Full `npm run gate`: typecheck, 235 pure suites, production build | **pass; 2,814 pure cases passed, 6 skipped, 0 failed** |
+| Actual cost/opening and price publication browser smokes | **8/8 pass: TH/EN, 1280px/390px; mocked APIs** |
+| Generated GraphQL SDL and `git diff --check` | **pass** |
+
+Commands remain `npm --prefix apps/web run typecheck:db-verification`, `npm --prefix apps/web run gate`
+and `node scripts/run-contract-tests.mjs db` with the disposable local PostgreSQL/Redis environment.
+The new strict scope is the original 13 files plus `restaurant-actual-costs-db-contract.test.mts`.
+New browser script: `restaurant-actual-costs-browser-smoke.mjs`; the existing
+`restaurant-price-plan-browser-smoke.mjs` additionally verifies publication preview/confirmation.
+
+Evidence is in ignored `.test-output/costing-completed/` (`verification.json`, DB TAP, strict/gate
+and browser logs), `.test-output/costing-special/`, and the two restaurant browser screenshot folders.
+The new DB suite covers concurrent receipts, exact partial-return rounding, recipe consumption,
+VAT/exempt/non-registered sales, stale/denied confirmation, audit rollback, shared pricing and
+migration reapplication/RLS/grants. The public POS result shape is unchanged; new non-VAT sales
+now freeze exempt revenue evidence without issuing a tax document.
+
+Boundaries: historical unvalued sales stay unknown; opening reviews are prospective. Unlinked tax
+adjustments, blind returns and legacy back-office financial returns still require reconciliation.
+Actual menu contribution excludes labour/GP/shared overhead, which remain in reviewed branch P&L.
+Mixed-menu bundles use the existing bundle-product workflow. Price publication is immediate/global;
+registered checkout must use inclusive prices (exclusive planning prices convert before review).
+The legacy exclusive-checkout configuration is refused. Browser mocks verify UI, not live auth or
+payment integration; real SQL/business transitions are covered by the DB suites above. No deployment,
+commit or push was performed by this completion task.
+
+### Local Docker main database and real browser verification (2026-10-15)
+
+At the user's explicit request, re-applied **10.67, 10.68 and 10.69**, in order, to local
+`bms-postgres-1` / database `bms`, with `ON_ERROR_STOP`. All three committed successfully.
+The tables and lifecycle FK already existed and the four new tables were empty before this run;
+10.69 removed zero orphan balances. Verified forced RLS, grants, append-only history permissions,
+indexes and the inventory composite FK. A new custom-format backup was taken first and its TOC
+validated, stored with mode 0600 in ignored `.test-output/local-main-costing/`.
+
+`restaurant-costing-live-browser-smoke.mjs` uses real password login, GraphQL and database writes;
+it does not mock application APIs. Chrome pins the configured local HTTPS hostname to loopback,
+checks the response's server address, and goes through the existing Docker Caddy/web stack.
+It requires `BMS_LIVE_COSTING_FIXTURE` pointing to an independently provisioned, disposable
+`live-costing-<uuid>@example.invalid` account fixture (`email`, `password`, `recipes` IDs), plus
+`BMS_PLAYWRIGHT_MODULE` when Playwright is outside the normal module path. Never supply a real
+shop account. Provision and remove fixtures separately; the browser runner never clears a DB.
+
+The real-browser matrix passed **TH/EN × 1280px/390px**: actual menu sales/costs, branch isolation,
+opening evidence preview/invalidation/confirmation, recipe BOM/SOP and cost estimate, VAT/GP and
+daily break-even planning, unit/pack/N-for-price publication, recorded net profit, operating-cost
+and allocation worksheets. Exact fixture SQL checks confirmed four publication histories and
+four matching audits, all four UI opening values, unit price 107, pack/promotion price 214.
+A subsequent sale through the real POS service used the published recipe price and froze 40 THB
+ingredient cost. This last checkout assertion is service-level, not a POS browser/payment test.
+
+Additional real-browser checks passed for explicit rent/depreciation review and direct branch
+allocation: recorded net profit was **300 = 400 revenue − 80 material cost − 20 expenses**.
+Live API checks rejected missing confirmation, stale publication fingerprints and an inaccessible
+branch without invalidating login. The live in-app manual also rendered at desktop/mobile widths.
+The test tenant and its business data were removed by exact UUID after verification; no original
+shop rows were selected for cleanup. A scan of tenant-owned tables found only diagnostic
+`system_logs`, retained for normal log retention. Session/fixture credential files were removed.
+
+Evidence: `.test-output/local-main-costing/browser-summary.json`, `persistence-verification.json`,
+`schema-verification.txt`, migration logs and TH/EN desktop/mobile screenshots. Strict typechecking
+of the original 13 scripts plus the actual-cost suite passed again. The full DB suite above was
+not rerun against the main database: fault-injection suites remain restricted to throwaway DBs.
+
+10.70 costing completion extends the actual-cost DB suite with >1,000-row paging/search, unsold
+menu population, explicit branch weighted recipe costs, stale receipt/publication checks, and actual
+multi-variant POS settlement under branch/surface/time-scoped rules. It also exercises the shared
+native cart calculator. Restore the disposable database baseline and apply 10.70 before DB mode.
+Never fill opening valuations for real shops as test setup; live smokes use a disposable tenant.
+
+`restaurant-costing-gaps-live-browser-smoke.mjs` verifies real local APIs/UI at desktop/mobile widths:
+page 21 and literal search over 1,007 synthetic stock rows, menu population selection, weighted recipe,
+price and two-menu plans, unknown branch cost, scoped/scheduled publication and promotion management.
+Like the original live smoke it requires a provisioned disposable tenant fixture and pins HTTPS DNS to
+loopback; it never mocks GraphQL or assigns opening costs to existing shops.
+
+### Restaurant operating completion — 10.71–10.72 (2026-10-16)
+
+This supersedes the earlier immediate/global-price, single-active-row and manual mixed-bundle
+limitations above. `restaurant-completion-db-contract.test.mts` exercises branch BASE/PACK prices
+(including custom base-unit names and recipe variants without inventory), real settlement/returns,
+non-overlapping future promotion windows, atomic pinned-BOM publication, reviewed menu net-profit
+allocation/reconciliation, stale confirmations, RBAC, unknown costs and audit rollback.
+`restaurant-costing-migrations-db-contract.test.mts` also proves fresh/repeated 10.71–10.72,
+forced RLS, schedule exclusion and append-only allocation grants. The strict verification config
+includes the new suite alongside the existing agreed scripts.
+
+Run the full DB runner on the restored disposable Docker database, not the shop database. The main
+run has **753 cases: 739 passed, 14 environment-gated skips, zero failures**. All 14 skipped case
+names are covered on dedicated gift-current/gift-legacy, empty answer-evidence and empty installer
+schemas. Their guards intentionally remain enabled; incompatible schema cases cannot share one DB.
+Full pure contracts and strict typechecking are also rerun. Detailed evidence and timestamps are in
+ignored `.test-output/costing-completion/verification.json` and the accompanying TAP/log files.
+
+The real local browser scripts use a disposable tenant with sufficient product quota, real login,
+GraphQL and SQL, loopback-pinned HTTPS and no application API mocks:
+
+- `restaurant-costing-live-browser-smoke.mjs`: existing cost/SOP/price flows, Thai/English desktop/mobile.
+- `restaurant-costing-gaps-live-browser-smoke.mjs`: 1,007-row pagination/search, weighted costs,
+  unknown branch evidence, future scoped promotion and management screens, desktop/mobile.
+- `restaurant-completion-live-browser-smoke.mjs`: reviewed menu net profit, invalidated previews,
+  branch base prices and mixed-menu publication, desktop/mobile. `BMS_SMOKE_RUN_SUFFIX` allows a
+  second run in the same fixture while retaining the append-only publication records.
+
+Migrations 10.71–10.72 are applied to local Docker main after a verified custom-format backup.
+Only synthetic fixture costs/openings are written. Real opening stock is never inferred; historical
+unknown cost remains unknown. Net menu profit is monthly management profit before income tax and
+requires reviewed source expenses plus a confirmed allocation rule. Named-pack quantities remain
+shared; branch prices override those units. Checkout still requires the established inclusive VAT
+configuration, and the preview converts exclusive scenario input before publication.
+
+
+Client impact checks for restaurant pricing: `desktop-costing-prices-browser-smoke.mjs` opens the
+local `/pos/app` renderer with simulated GraphQL/IPC responses. It verifies repeated-scan branch
+prices, an offer restricted to one size, whole-cart repricing before payment, offer expiry, and
+wide/narrow layouts. `darwin`/`win32`/`linux` are simulated platform metadata, not OS certification.
+Run with `BMS_SMOKE_URL=http://127.0.0.1:3000` and optional `BMS_PLAYWRIGHT_MODULE`.
+Native Jest includes `CartContext`, `CartLineAmount`, and scoped promotion tests. The completion DB
+suite compares the shared native/Desktop calculator with real branch-priced POS settlement on the
+isolated port-5433 database; it must not run against the primary development database.
