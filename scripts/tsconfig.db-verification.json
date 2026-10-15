@@ -1,0 +1,28 @@
+{
+  "extends": "../apps/web/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "incremental": false,
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "restaurant-actual-costs-db-contract.test.mts",
+    "restaurant-completion-db-contract.test.mts",
+    "ai-entitlement-authority-db-contract.test.mts",
+    "board-game-library-media-db-contract.test.mts",
+    "board-game-seating-db-contract.test.mts",
+    "delivery-platform-hardening-db-contract.test.mts",
+    "deposits-db-contract.test.mts",
+    "emergency-facilities-db-contract.test.mts",
+    "product-vat-category-db-contract.test.mts",
+    "recipe-versioning-db-contract.test.mts",
+    "stock-ledger-db-contract.test.mts",
+    "tax-sales-report-db-contract.test.mts",
+    "restaurant-costing-db-contract.test.mts",
+    "restaurant-costing-migrations-db-contract.test.mts",
+    "testing/restaurantCostingFixture.mts",
+    "../apps/web/types/**/*.d.ts",
+    "../apps/web/next-env.d.ts"
+  ]
+}

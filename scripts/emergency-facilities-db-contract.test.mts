@@ -13,9 +13,9 @@ test("emergency facility CRUD, RLS, branch scope, rollback and unavailable-table
   const input = { locationId: null, name: "FAKE emergency department", emergencyPhone: "02-555-0101", address: null,
     mapUrl: "https://example.invalid/map", has24hEmergency: true, distanceKm: 1.25, sortOrder: 0 };
   try {
-    await query("INSERT INTO bms_tenants(id,name,slug) VALUES ($1,'FAKE emergency test',$1),($2,'FAKE other emergency test',$2)", [tenantId, other]);
+    await query("INSERT INTO bms_tenants(id,name,slug) VALUES ($1::uuid,'FAKE emergency test',$1::text),($2::uuid,'FAKE other emergency test',$2::text)", [tenantId, other]);
     await query(`INSERT INTO users(id,tenant_id,name,username,email,role,role_id,password_hash,fake_test)
-      SELECT $1,$2,'FAKE emergency admin',$1,$1 || '@example.invalid','Administrator',id,'x',true FROM roles WHERE name='Administrator' LIMIT 1`, [userId, tenantId]);
+      SELECT $1::uuid,$2,'FAKE emergency admin',$1::text,$1::text || '@example.invalid','Administrator',id,'x',true FROM roles WHERE name='Administrator' LIMIT 1`, [userId, tenantId]);
     await query("INSERT INTO bms_locations(id,tenant_id,code,name) VALUES ($1,$2,'MAIN','FAKE main'),($3,$4,'MAIN','FAKE foreign')", [location, tenantId, foreignLocation, other]);
     await t.test("create/update/list records revision and audit in the same service transaction", async () => {
       const row = await upsertEmergencyFacility(tenantId, userId, input); ids.push(row.id);

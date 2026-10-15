@@ -168,6 +168,14 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   // RESTRICT FKs on purpose (they are the evidence of what was asked for), so they must go
   // before all three or the whole purge fails on this one table.
   await client.query(`DELETE FROM bms_restaurant_order_requests WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // 10.61 links historical order lines to check items. Only a full, already-authorized tenant
+  // purge may release this evidence link; ordinary check deletion must remain FK-protected.
+  // Keep it in the purge transaction so any later failure restores the references too.
+  await client.query(
+    `UPDATE bms_order_items SET restaurant_check_item_id = NULL
+      WHERE tenant_id = ANY($1::uuid[]) AND restaurant_check_item_id IS NOT NULL`,
+    [tenantIds]
+  );
   // Delete the restaurant floor while its tenant still exists. Letting the tenant cascade it is
   // too late for the floor DELETE trigger: that trigger emits a realtime outbox event whose
   // tenant FK has already disappeared, rolling back the entire purge. Checks must go first because

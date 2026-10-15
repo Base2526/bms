@@ -195,3 +195,15 @@ describe('การอ่านค่าจากเซิร์ฟเวอร�
     expect(isFixedPricePack('BOX')).toBe(true);
   });
 });
+
+describe('published restaurant prices on native and desktop', () => {
+  it('preserves promotion size and never discounts a different variant or named pack', () => {
+    const promotion = normalizePromotion({ kind: 'N_FOR_PRICE', buyQty: 2, bundlePrice: 150, buySize: 'S' });
+    expect(promotion).toMatchObject({ buySize: 'S' });
+    expect(cartProductSubtotal([
+      line({ qty: 2, promotion }),
+      line({ qty: 2, size: 'L', basePrice: 130, packBasePrice: 130, promotion }),
+      line({ qty: 1, packCode: 'BOX', baseQty: 6, packBasePrice: 450, promotion }),
+    ])).toBe(860);
+  });
+});

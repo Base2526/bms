@@ -209,3 +209,12 @@ test("a refreshed selection cannot inherit a size from the previous selection ob
   assert.deepEqual(calls, [[selection.scanCode, "S"]], "choosing a sellable size immediately asks the server to add it");
   assert.ok(render({ ...selection }).every(input => !input.props.checked));
 });
+
+test("rescanning a cart line adopts its latest branch price immediately", async () => {
+  const existing = { ...hit, key: `${hit.sku}:${hit.size}:${hit.packCode}`, qty: 1, serials: [], packPrice: 100 };
+  const h = harness({ ...hit, packPrice: 130, available: 10 }, { cart: [existing] });
+  await h.add(selection.scanCode);
+  assert.equal(h.state.cart.length, 1);
+  assert.equal(h.state.cart[0].qty, 2);
+  assert.equal(h.state.cart[0].packPrice, 130);
+});

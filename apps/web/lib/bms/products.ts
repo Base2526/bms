@@ -1,3 +1,4 @@
+import type { PoolClient } from "pg";
 // =============================================================
 // BMS Products & Inventory — admin management service (tenant-scoped)
 // =============================================================
@@ -359,8 +360,8 @@ export async function listSellableProducts(
   params.push(limit);
   const limitParam = params.length;
   const variantPriceRangeSql = `
-    SELECT MIN(COALESCE(sized.price, shared.price, p.price)) AS min_price,
-           MAX(COALESCE(sized.price, shared.price, p.price)) AS max_price
+    SELECT MIN(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS min_price,
+           MAX(COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=variants.size AND bp.pack_code='BASE' AND bp.location_id=$${locationParam}),sized.price, shared.price, p.price)) AS max_price
       FROM (
         SELECT DISTINCT price_i.size
           FROM bms_inventory price_i
@@ -368,6 +369,12 @@ export async function listSellableProducts(
            AND price_i.product_sku = p.sku
            AND ($${locationParam}::uuid IS NULL OR price_i.location_id = $${locationParam})
            AND ($${sizeParam}::text IS NULL OR price_i.size = $${sizeParam})
+        UNION
+        SELECT v.code FROM bms_product_variants v
+         JOIN bms_product_stock_policies policy ON policy.tenant_id=v.tenant_id AND policy.product_sku=v.product_sku
+        WHERE v.tenant_id=p.tenant_id AND v.product_sku=p.sku AND v.active
+          AND policy.stock_policy IN ('RECIPE','NON_STOCK')
+          AND ($${sizeParam}::text IS NULL OR v.code=$${sizeParam})
       ) variants
       LEFT JOIN bms_product_packs sized
         ON sized.tenant_id = p.tenant_id AND sized.product_sku = p.sku
@@ -511,8 +518,14 @@ export async function listSellableProducts(
     ? { rows: [] as Array<{ product_sku: string; size: string; price: string }> }
     : await query<{ product_sku: string; size: string; price: string }>(
         `SELECT i.product_sku, i.size,
-                COALESCE(sized.price, shared.price, p.price)::text AS price
-           FROM bms_inventory i
+                COALESCE((SELECT bp.price FROM bms_branch_prices bp WHERE bp.tenant_id=p.tenant_id AND bp.product_sku=p.sku AND bp.size=i.size AND bp.pack_code='BASE' AND bp.location_id=$3),sized.price, shared.price, p.price)::text AS price
+           FROM (
+             SELECT tenant_id,product_sku,size FROM bms_inventory WHERE tenant_id=$1 AND product_sku=ANY($2::text[])
+             UNION
+             SELECT v.tenant_id,v.product_sku,v.code FROM bms_product_variants v
+             JOIN bms_product_stock_policies policy ON policy.tenant_id=v.tenant_id AND policy.product_sku=v.product_sku
+             WHERE v.tenant_id=$1 AND v.product_sku=ANY($2::text[]) AND v.active AND policy.stock_policy IN ('RECIPE','NON_STOCK')
+           ) i
            JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
            LEFT JOIN bms_product_packs sized
              ON sized.tenant_id = i.tenant_id AND sized.product_sku = i.product_sku
@@ -521,7 +534,7 @@ export async function listSellableProducts(
              ON shared.tenant_id = i.tenant_id AND shared.product_sku = i.product_sku
             AND shared.size IS NULL AND shared.is_base AND shared.active
           WHERE i.tenant_id = $1 AND i.product_sku = ANY($2::text[])`,
-        [tenantId, res.rows.map((row) => row.sku)]
+        [tenantId, res.rows.map((row) => row.sku),effectiveLocationId]
       );
   const pricesByVariant = new Map(
     variantPriceRes.rows.map((row) => [`${row.product_sku}\u0000${row.size}`, Number(row.price)])
@@ -532,6 +545,12 @@ export async function listSellableProducts(
       typeof row.available_sizes === "string"
         ? (JSON.parse(row.available_sizes) as Array<{ size: string; available: number }>)
         : (row.available_sizes ?? []);
+    // Recipe serving variants exist in the catalog even when only ingredients own stock.
+    if (row.stock_policy === 'RECIPE' || row.stock_policy === 'NON_STOCK') {
+      for (const variant of variantPriceRes.rows.filter(v => v.product_sku === row.sku)) {
+        if (!parsedSizes.some(v => v.size === variant.size)) parsedSizes.push({size:variant.size,available:0});
+      }
+    }
     const availableSizes = parsedSizes.map((variant) => ({
       size: String(variant.size),
       available: Math.max(0, Number(variant.available) || 0),
@@ -1488,7 +1507,8 @@ export async function upsertProduct(
   tenantId: string,
   input: UpsertProductInput,
   editorId?: string | number | null,
-  revisionId?: string | null
+  revisionId?: string | null,
+  transaction?: PoolClient
 ): Promise<ProductRowFull> {
   const {
     sku, name, price, keywords, barcode, description, category, brand, costPrice, weightGrams,
@@ -1502,9 +1522,9 @@ export async function upsertProduct(
   const { templateDefaults, requestedSurfaces, requestedVariants, requestedPolicy, requestedBaseUnit } =
     validateProductConfigurationFields(input);
 
-  const client = await getClient();
+  const client = transaction ?? await getClient();
   try {
-    await beginTenantTx(client, tenantId, { editorId, revisionId });
+    if (!transaction) await beginTenantTx(client, tenantId, { editorId, revisionId });
 
     // ล็อกแถว tenant ก่อนเช็ค quota กันสอง request สร้างสินค้าใหม่พร้อมกันแล้วเกินแพ็กเกจ
     // (เดิมเช็ค quota แยก connection นอก transaction — race ได้ถ้าสร้างพร้อมกันตอนใกล้เต็มโควตา)
@@ -1542,8 +1562,8 @@ export async function upsertProduct(
           category, brand, weight_grams, vat_category, allergen_codes,
           allergen_information_provided, dietary_tags, food_safety_note, medicine_label)
        VALUES ($1, $2, $3, $4, $5, COALESCE($6,FALSE), $7, $8, $9, $10, $11, $12, $13,
-               COALESCE($14, 'UNKNOWN'), COALESCE($15, '{}'), COALESCE($16, FALSE),
-               COALESCE($17, '{}'), NULLIF($18, ''), COALESCE($19::jsonb, '{}'::jsonb))
+               COALESCE($14, 'UNKNOWN'), COALESCE($15::text[], '{}'), COALESCE($16, FALSE),
+               COALESCE($17::text[], '{}'), NULLIF($18, ''), COALESCE($19::jsonb, '{}'::jsonb))
        ON CONFLICT (tenant_id, sku) DO UPDATE
          SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
              active = COALESCE($6, bms_products.active), barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
@@ -1722,15 +1742,15 @@ export async function upsertProduct(
       assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
 
-    await client.query("COMMIT");
+    if (!transaction) await client.query("COMMIT");
     return res.rows[0];
   } catch (error) {
     try {
-      await client.query("ROLLBACK");
+      if (!transaction) await client.query("ROLLBACK");
     } catch {}
     throw error;
   } finally {
-    client.release();
+    if (!transaction) client.release();
   }
 }
 

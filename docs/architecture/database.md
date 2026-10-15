@@ -858,6 +858,185 @@ that snapshot and preserves direct/bundle fallback only for historical rows. `bm
 and `bms_inventory_wastage` are tenant-scoped operational ledgers. Every new table has forced RLS,
 `bms_app` grants, and composite tenant foreign keys.
 
+Recipe content preservation (service change, no migration): `upsertProductRecipe()` appends a new
+`bms_product_recipes` row and component rows when the definition changes, instead of replacing
+components under an existing id. Only `active`/`updated_at` may change on an existing recipe via
+this service. The product row lock serializes version allocation; the existing unique version and
+one-active-version indexes remain authoritative. The same transaction records
+`product.recipe_upsert` with the source recipe id. Old overwritten definitions cannot be recovered;
+direct SQL is not prevented by a new trigger. No new recipe lifecycle columns are introduced.
+
+**Restaurant item snapshots (`10.61`)** add nullable `bms_restaurant_check_items.stock_snapshot`
+(JSONB object, version 1) and `bms_order_items.restaurant_check_item_id` (UUID composite tenant FK).
+No new table, permission or trigger is introduced; existing tenant RLS and table grants remain.
+The JSON records provenance (`FIRST_SEND` or `LEGACY_RESERVATION`), source order/item ids, base quantity,
+resolved stock lines with recipe/modifier references, and cost amount/source. FIRST_SEND is written
+only for NEW rows in the successful kitchen-send transaction, with `WHERE stock_snapshot IS NULL`.
+SENT evidence is reused and moves with the check-item row; it is never sent through public APIs.
+The FK intentionally prevents deleting a referenced check item: cleanup deletes order items first.
+The authorized full-tenant purge is the exception: `deleteTenantRows()` nulls only the selected
+tenants' order-item links before deleting checks, inside the existing purge transaction. A failed
+purge restores these links; ordinary check operations cannot detach historical evidence.
+
+The old SKU/size/pack unique index now applies only to non-restaurant lines. Restaurant orders use
+unique `(order_id, restaurant_check_item_id)`, allowing different round snapshots for the same menu.
+New restaurant order items use `stock_consumption_version=2`: the stock view must not apply either
+legacy direct or bundle expansion when that explicit snapshot is empty. Return processing likewise
+accepts an empty v2 snapshot as no stock to restore. Ordinary orders retain version 1 behavior.
+Legacy adoption reads the current reservation's persisted consumption/cost only; source totals must
+match exactly and per-item stock allocation must be integral. Unknown cost is retained, known cost
+cents are allocated cumulatively. Insufficient evidence aborts the caller transaction.
+
+Apply `10.61` before deploying: common order inserts/return reads reference the new column, so an
+unmigrated database breaks more than the restaurant screen. Both columns are in schema readiness.
+Re-running is guarded; rollout still requires the restored disposable-DB migration/RLS/transaction
+checks. Rollback must retain snapshots, the split unique indexes and v2 stock-view semantics while
+multi-line orders exist; do not restore the old unique index or discard evidence.
+
+**Pinned subrecipes and SOP (`10.62`, restaurant costing phase 2).** Recipe headers add nullable
+`direct_items` JSONB (NULL = legacy flat definition) and `sop_steps` JSONB (ordered strings, default
+empty). `bms_product_recipe_subrecipes` stores `(tenant_id, recipe_id, child_recipe_id, qty)` with a
+composite primary key, tenant foreign keys to both recipe versions, positive integer output quantity,
+no direct self-reference, forced tenant RLS and `bms_app` grants. Parent deletion cascades its links;
+deleting a referenced child is refused. Full-tenant purge deletes the product/recipe graph together;
+partial cleanup must delete parent references/recipes first. No new realtime or revision trigger.
+Like recipe headers, composition is configuration read on open and refreshed after save, explicitly
+classified in the realtime coverage contract; it has no new websocket event or kitchen work event.
+
+The save service expands child **output base units** into a compiled `bms_product_recipe_items` leaf
+BOM using exact integer arithmetic. No batch production or prepared-product inventory is created.
+All existing stock, availability and catalog-cost readers continue reading that BOM unchanged.
+References keep explicit ids/versions even after deactivation. Parent recipes never auto-upgrade.
+Definitions/SOP remain copy-on-write at service level, not protected against arbitrary SQL edits.
+Changing SOP alone appends a version. Unchanged saves/status changes keep the id; omitted SOP/pins
+preserve existing content. Legacy `items` remains the flat read shape; new `directItems` is the
+authoring input. A legacy client may resave an unchanged flat BOM but cannot edit away composed
+provenance. New editors submit `directItems`, `subrecipes`, `sopSteps` and never both ingredient inputs.
+
+Bounds: 200 direct/compiled ingredients, 20 immediate child references, 64 distinct reachable versions,
+8 child levels, 256 traversal visits, 50 SOP steps of 2,000 characters. Reject fractions/overflow,
+missing or foreign children, repeated product ancestry, and malformed JSON; never truncate or guess.
+The product lock serializes version allocation. Source headers use `FOR NO KEY UPDATE`, compatible
+with pinned-child `FOR KEY SHARE`, to avoid opposite-reference edits taking incompatible key locks.
+The recipe content/compiled BOM/references/activation/audit commit together.
+
+Apply `10.62` before recipe editor/read APIs deploy (also apply `10.61` for phase 1). There is no
+backfill and no update to historical order/check snapshots. Rollback retains definition evidence and
+compiled BOM; do not use old editors to overwrite composed definitions. DB-free tests cover compiler,
+service orchestration and API boundaries only. SQL execution, RLS/grants, FK cascade and concurrency
+are unverified here: the user explicitly deferred DB tests on this machine.
+
+**Recipe cost assumptions (`10.63`, restaurant costing phase 3).** Add nullable `cost_assumptions`
+JSONB to the existing tenant-owned `bms_product_recipes`; SQL NULL means no assumptions. The guarded
+constraint accepts only SQL NULL or an object. Existing recipe RLS and table-level `bms_app` grants
+apply; no new table, trigger, ledger, sequence or historical backfill. The service validates the full
+JSON shape: optional `labor`, `electricity`, `gas`, each null or `{quantity,rate,source}`. It stores a
+canonical three-key object and appends a recipe version when assumptions/source change. Null category
+means unknown, not zero. Labor is person-minutes and THB/person-hour; electricity kWh and THB/kWh;
+gas kg and THB/kg. These describe the whole output batch INCLUDING subrecipe preparation, not an
+extra recursively inherited surcharge. Omitted mutation field preserves old data; explicit null
+clears all; provided object replaces all categories. Product lock, readiness and audit stay atomic.
+
+`recipeCostEstimates.ts` reads the saved version and its flattened ingredient costs in one tenant-scoped
+statement. `statement_timestamp()` is catalog observation time, NOT the assumption's effective date or
+an immutable cost snapshot. `recipeCosting.ts` uses fixed-point arithmetic, bounds and unknown-aware
+totals. Current catalog changes update only these on-demand estimates; no bill/order/expense or report
+rows are written. Apply `10.63` after `10.62` before deploying the recipe API. Rollback retains the
+column/evidence; older clients must not overwrite it. DB migration idempotency, grants, RLS and real
+transactions were originally deferred. The 2026-10-15 Docker DB follow-up now covers real estimates,
+version writes, tenant isolation, migration application/reapplication and rollback; see the
+[coverage matrix](../../scripts/README.md#restaurant-phases-1–9-real-db-follow-up-2026-10-15).
+
+**Monthly cost allocations (`10.66`, phase 8).** Adds `bms_cost_allocations` keyed by
+`(tenant_id,month,source_key,version)`, with request_hash, snapshot JSONB, created_by and created_at.
+Source identity is polymorphic DOCUMENT/POS_EXPENSE/STATEMENT and validated against phase-4 reviewed
+evidence by the service; targets are validated against tenant locations. FORCE RLS uses a strict
+tenant GUC in USING/WITH CHECK. bms_app gets SELECT/INSERT only; UPDATE/DELETE are explicitly revoked.
+Deleting a user nulls the creator FK without deleting the evidence; the audit retains actor identity.
+There is no sequence, trigger or historical backfill. Every correction appends a new version, leaving
+the prior snapshot intact; current reports derive whether that version is still applicable.
+
+Source month, recognized amount, classification/review/fingerprint, normalized target rule, full sales
+driver fingerprint (when applicable), exact allocated decimal amounts and calculation-basis version
+are frozen. Canonical key ordering prevents JSONB property order from invalidating fingerprints.
+The service reuses getOperatingCostsInTx/scanSalesEvidenceInTx under one serializable beginTenantTx,
+rechecks all-branch access/currency, and serializes writes with a tenant/month advisory lock. New
+version plus audit commit atomically; exact latest-request replay creates neither. Serialization and
+the version PK collision are reported as conflicts; other DB errors propagate. The read is bounded
+by existing 1,000 cost rows / 20,000 sales events plus probes, 1,000 latest allocations/locations,
+100 targets per rule and SQL timeout. It never alters source expense, inventory, cash or tax rows.
+Readiness includes 10.66. Rollback retains all allocation versions/audits. The Docker DB follow-up
+tests apply/reapply, RLS/grants, concurrent conflicts, source consistency and audit rollback.
+Production-scale query plans and latency remain separate deployment checks.
+
+**Recorded net-profit read (phase 9).** No new schema/migration or write. `netProfit.ts` composes the
+shared sales scan and `getCostAllocationReportInTx` on one serializable tenant client, passing the
+same monthly sales driver into allocation validation (no second scan/snapshot). Supplemental reads
+of `bms_pos_blind_returns` and `bms_stock_movements` detect unvalued/unreconciled gaps, bounded at
+1,000 + probe; they never infer valuation from current products or mutation notes. Existing source
+grants/RLS and migrations through 10.66 remain prerequisites. Report source failures roll back and
+propagate, never become zero profit. Real SQL and serializable source consistency are covered by
+the Docker DB follow-up; production-scale query plans remain unverified. Business limits
+(catalog rather than purchase-lot costs, unknown return reversals,
+unvalued losses, tax-note reconciliation) are separate from DB verification; see inventory.md phase 9.
+
+**Sales evidence foundation (phase 7).** The read adapter itself makes no business writes. Reads
+`bms_orders`, `bms_order_items`, `bms_order_extra_lines`, `bms_pos_returns`, `bms_pos_return_items`,
+`bms_pos_refund_allocations`, `bms_payments`, `bms_tax_documents`, `bms_locations`,
+`bms_user_allowed_locations` and `bms_store_profile` in one serializable beginTenantTx snapshot.
+Prerequisites are the existing source migrations, including order extras (8.6), cost snapshots
+(9.97), exact line amounts (10.13), return branch/cancellation metadata and tax adjustments (10.60).
+Keyset paging orders source-kind/id identities with C collation. Date/branch/channel filtering
+precedes bounded line expansion. Branch permissions are read in the same transaction. No current
+catalog/BOM reads, source updates, snapshot rewrites or financial backfill in this reader.
+See inventory.md phase 7 for event-date semantics and explicit unresolved allocations. Real SQL,
+RLS/grants, index/query-plan performance and snapshot consistency still require the deferred restored
+DB checks; fake-client tests do not certify them. Existing reports and common sale inserts do not
+depend on this optional read path.
+
+**Return financial snapshots (`10.65`, phase-7 completion).** Adds nullable JSONB
+`bms_pos_returns.financial_snapshot`; existing tenant RLS and table-level bms_app grants apply.
+No new table or permission. A guarded CHECK requires a v1 object with the expected keys; the service
+validates decimal strings, line identity, totals and VAT invariants. The table-specific caller-rights
+`bms_pos_return_snapshot_immutable` trigger rejects all changes to the column (including legacy NULL
+backfill); it reads no other table, references only this table's columns, and emits no events.
+It does not fire on normal settlement_status/updated_at updates. The writer supplies the snapshot
+at INSERT, under the existing order row lock, same beginTenantTx and decision audit as the return.
+Previous return reads are tenant/order scoped, capped at 1,001 to detect overflow; gaps stay explicit.
+Snapshot components separate merchandise/extra/shipping gross and signed non-VAT rounding. Tax
+fields are sale-bucket cumulative ALLOCATION evidence, not issued tax-document amounts. Source
+amounts, returned line ids/classifications and policy version are frozen alongside result/reasons.
+Replay never writes, settlement never refreshes, and post-commit credit-note issuance is unchanged.
+Apply after existing return/tax/extra-line migrations and BEFORE deploying this writer/reader.
+Readiness is updated; rollback retains evidence and rolls the app back first. The Docker DB follow-up
+tests first application/reapplication, grants/RLS, immutable guards, partial/full/void returns,
+concurrent retries, mixed VAT/extras/signed rounding and real audit rollback on a restored instance
+with realtime triggers. Production-scale query plans and wider legacy evidence remain rollout checks.
+
+**Restaurant menu/promotion planning (phase 6).** No new migration/table/column or stored scenarios.
+Reuse the 10.63 tenant-scoped recipe estimator for at most 12 distinct versions; each result carries
+its own observation timestamp. This is not a transaction-wide snapshot. No sales/refund/branch-ledger
+query, stock change, actual promotion rule or financial write. Demand/price inputs are planning
+assumptions, never imported history. Actual recipe reads/RLS still need the deferred DB check.
+
+**Restaurant price planning (phase 5).** No new migration/table/column: ephemeral read-only scenarios
+reuse the tenant-scoped recipe estimate introduced in 10.63. Scenario inputs/results are not stored
+in product prices, recipe definitions, expense reviews, bills or ledgers. Existing recipe cost source
+reads are the only DB dependency; no additional branch financial data is loaded. SQL/RLS source reads
+remain deferred for this machine; fake-service and browser tests do not prove live DB behavior.
+
+**Operating-cost reviews (`10.64`, phase 4).** New `bms_operating_cost_reviews` stores current human
+decisions under `(tenant_id, source_key)`: version, source_fingerprint, decision JSONB, request_hash,
+reviewed_by and reviewed_at. DOCUMENT/POS_EXPENSE/STATEMENT UUID keys are polymorphic; source existence
+and tenant ownership are checked by the service, not an FK. Force RLS uses the tenant GUC for both
+USING/WITH CHECK, with bms_app table grants. Reads and writes use beginTenantTx. Existing expense
+document, POS expense and delivery settlement source migrations are prerequisites.
+Tenant advisory locks serialize review graphs; source rows are shared-locked, fingerprints/versions
+checked, and before/after audit committed atomically. Exact retries do not audit twice. There are no
+new triggers, financial mutations or historical backfills. Classification is on-demand configuration,
+without realtime events; rollback retains evidence. SQL execution/reapplication, RLS/grants and real
+locking remain unverified because DB testing was explicitly deferred; fake/source tests do not prove them.
+
 **Kitchen station master (`9.54`)** — a station used to exist only as free text on
 `bms_product_stock_policies.kitchen_station`, so everything that referred to one referred to it by an
 exactly-matching name: SLA thresholds (`9.53`) are keyed by name, tickets stored a name, and the
@@ -1450,3 +1629,65 @@ produce a drift warning when viewing the archive, and a new reviewed version pre
 
 Migration and real DB behaviour were not exercised in this round, at the user's request. See
 [business/tax-accounting-review.md](../business/tax-accounting-review.md).
+
+
+### 10.67–10.69 — weighted inventory valuation and confirmed price publication
+
+`bms_inventory_values` holds the current moving weighted average per `(tenant_id, location_id,
+product_sku, size)`: integer base quantity, nullable NUMERIC(26,6) total THB value and version.
+NULL means unverified opening/receipt; a zero balance resets to known zero. No historical backfill.
+`bms_inventory_value_entries` stores immutable movement amounts and structured purchase item,
+order item, return and transfer item references in the stock transaction. Reservations/releases
+are excluded; transfers carry original value, quarantine remains an asset, transit loss is expensed.
+`bms_inventory_value_openings` stores explicit evidence-backed confirmations, stale quantity/version
+checks and request hash/idempotency. Known values cannot be overwritten by the opening workflow.
+
+`bms_price_plan_publications` stores the exact confirmed plan/observed cost and pricing snapshot,
+request identity, actor and timestamp. It does not replace the pricing engine: shared pack and
+promotion writers execute in the publication transaction. VAT mismatch, stale observations,
+branch-restricted actors and missing confirmation are rejected. Global packs and same-SKU promotions
+apply across channels; a multi-variant SKU cannot publish a single-recipe N-for-price promotion.
+
+All four tables enforce strict tenant GUC RLS and bms_app grants. Only the current valuation balance
+is updateable; history is SELECT/INSERT only. Migrations are re-runnable and contain rollback notes.
+Actual reporting is opt-in at the internal scanner; the existing sales-evidence catalog diagnostics
+stay unchanged. The operator net-profit GraphQL resolver selects actual valuation. Missing historical
+cost remains unknown. A credit note linked uniquely to a matching tenant/order return and validated
+financial/VAT snapshot is a duplicate representation of that return, not another revenue reduction.
+Unlinked adjustments, back-office financial returns and blind returns still require reconciliation.
+
+10.69 ties the mutable valuation balance to the exact inventory row with a composite cascading FK,
+so deleting/recreating a SKU cannot inherit an obsolete balance. Only orphaned derived balances are
+removed; opening and movement evidence remain append-only. A tenant/period index bounds report scans.
+
+### 10.70 — variant and surface price promotions
+
+`bms_product_promotions.buy_size` now also scopes N_FOR_PRICE. NULL preserves legacy all-variant
+behavior. The guarded gift-shape constraint still requires gift fields to be NULL for N_FOR_PRICE.
+New nullable `sales_surface` accepts RETAIL_POS, RESTAURANT_POS or ONLINE_ORDER; NULL means all surfaces.
+Existing tenant RLS/grants, one-active-rule-per-SKU/branch indexes, and starts_at/ends_at remain in force.
+POS scan and order settlement filter surface, then branch; variant eligibility is applied by the web
+and native cart calculators and settlement before money is committed. Historical sale snapshots retain
+buySize; old snapshots retain their original all-variant behavior. Migration is idempotent; rollback
+requires reviewing/deactivating scoped rules before reinstating the old shape.
+
+### 10.71–10.72: branch prices, scheduled promotions and confirmed menu profit
+
+`bms_branch_prices` keys `(tenant_id,location_id,product_sku,size,pack_code)` and stores an explicit
+nonnegative price; absence inherits the shared catalog. It changes no physical stock or pack size.
+Tenant RLS is fail-closed, with bms_app read/write grants. Writes go through confirmed publication
+with branch authorization and atomic publication/audit history.
+
+Promotion active-SKU partial indexes are replaced by `bms_promotion_windows_exclusive`, a GiST
+exclusion on tenant/SKU/coalesced branch and `[starts_at,ends_at)` for active rows. Requires btree_gist.
+This permits multiple future windows while forbidding ambiguity at checkout. Old/current rule start
+and sale snapshots stay intact; new scheduling can shorten a predecessor at the future boundary.
+No cron or trigger is required. Reapplication preserves data; rollback must retain schedules and
+resolve them before restoring old unique indexes.
+
+`bms_menu_profit_allocations` is append-only per tenant/month/scope/version, with tenant/request UUID
+idempotency and snapshot/fingerprint/rationale/actor. RLS is fail-closed; bms_app can SELECT/INSERT,
+not UPDATE/DELETE. Read states are UNREVIEWED, CURRENT or STALE; stale figures are withheld.
+Confirmed snapshots reconcile menu totals to existing net-profit evidence including a separate
+non-menu revenue bucket. Bundle publication reuses `bms_price_plan_publications` with mode MENU_BUNDLE
+and existing product/recipe tables, all in one tenant transaction. No guessed opening stock values.

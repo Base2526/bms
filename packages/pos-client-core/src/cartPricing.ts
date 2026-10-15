@@ -30,7 +30,7 @@ import { crossSkuGiftPricing, normalizeCrossSkuPromotion, type CrossSkuPromotion
 export type Promotion =
   | CrossSkuPromotion
   | { kind: 'BUY_X_GET_Y'; buyQty: number; getQty: number }
-  | { kind: 'N_FOR_PRICE'; buyQty: number; bundlePrice: number };
+  | { kind: 'N_FOR_PRICE'; buyQty: number; bundlePrice: number; buySize?: string | null };
 
 export type CashRounding = 'NONE' | '0.25' | '0.50' | '1.00';
 
@@ -101,7 +101,7 @@ export function normalizePromotion(raw: unknown): Promotion | null {
   if (promo.kind === 'N_FOR_PRICE') {
     const bundlePrice = Number(promo.bundlePrice);
     if (!Number.isFinite(bundlePrice) || bundlePrice < 0) return null;
-    return { kind: 'N_FOR_PRICE', buyQty, bundlePrice };
+    return { kind: 'N_FOR_PRICE', buyQty, bundlePrice, ...(promo.buySize ? {buySize:String(promo.buySize)} : {}) };
   }
   return null;
 }
@@ -334,7 +334,8 @@ export function cartProductPricing(lines: readonly PricedCartLine[]): {
           qtyBySku.get(line.sku) ?? line.baseUnits,
           line.size,
         );
-    const promo = line.fixedPack ? null : promoBySku.get(line.sku) ?? null;
+    const candidate = line.fixedPack ? null : promoBySku.get(line.sku) ?? null;
+    const promo = candidate?.kind === 'N_FOR_PRICE' && candidate.buySize && candidate.buySize !== line.size ? null : candidate;
     if (promo && !promoCharged.has(line.key)) {
       promoCharged.add(line.key);
       const promoted = applyPromotion(

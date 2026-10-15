@@ -1,3 +1,4 @@
+import { preparePromotionWindow } from "./promotionSchedule";
 // =============================================================
 // BMS — โปรโมชันต่อสินค้า: อ่าน/เขียน (8.7 · ขอบเขตสาขา 9.61)
 // -------------------------------------------------------------
@@ -13,6 +14,7 @@
 // ผู้เรียกต้องตรวจสิทธิ์ + ขอบเขตสาขาของผู้ใช้ (bms_user_allowed_locations) มาก่อน
 // =============================================================
 
+import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { validateCrossSkuProducts } from "./crossSkuPromotions";
@@ -29,6 +31,7 @@ export type ProductPromotionRow = {
   buyQty: number;
   getQty: number | null;
   bundlePrice: number | null;
+  salesSurface: string | null;
   buySize: string | null;
   giftSku: string | null;
   giftSize: string | null;
@@ -53,6 +56,7 @@ function mapRow(row: any): ProductPromotionRow {
     buyQty: Number(row.buy_qty),
     getQty: row.get_qty == null ? null : Number(row.get_qty),
     bundlePrice: row.bundle_price == null ? null : Number(row.bundle_price),
+    salesSurface: row.sales_surface ?? null,
     buySize: row.buy_size ?? null,
     giftSku: row.gift_sku ?? null,
     giftSize: row.gift_size ?? null,
@@ -109,6 +113,7 @@ export type UpsertProductPromotionInput = {
   buyQty: number;
   getQty?: number | null;
   bundlePrice?: number | null;
+  salesSurface?: string | null;
   buySize?: string | null;
   giftSku?: string | null;
   giftSize?: string | null;
@@ -150,7 +155,10 @@ function normalizeInput(input: UpsertProductPromotionInput) {
     throw new Error("วันสิ้นสุดโปรต้องอยู่หลังวันเริ่ม");
   }
 
-  const buySize = input.kind === "BUY_A_GET_B" ? input.buySize?.trim() || null : null;
+  const salesSurface=input.salesSurface??null;
+  if (salesSurface!=null && !["RETAIL_POS","RESTAURANT_POS","ONLINE_ORDER"].includes(salesSurface)) throw new Error("PRICE_PUBLISH_INVALID_SURFACE");
+  if (input.kind === "BUY_A_GET_B" && salesSurface && salesSurface!=="RETAIL_POS") throw new Error("PRICE_PUBLISH_INVALID_SURFACE");
+  const buySize = input.kind !== "BUY_X_GET_Y" ? input.buySize?.trim() || null : null;
   const giftSku = input.kind === "BUY_A_GET_B" ? input.giftSku?.trim() || null : null;
   const giftSize = input.kind === "BUY_A_GET_B" ? input.giftSize?.trim() || null : null;
   if (input.kind === "BUY_A_GET_B" && (!buySize || !giftSku || !giftSize || giftSku === productSku)) {
@@ -163,7 +171,7 @@ function normalizeInput(input: UpsertProductPromotionInput) {
     buyQty,
     getQty,
     bundlePrice,
-    buySize, giftSku, giftSize,
+    salesSurface, buySize, giftSku, giftSize,
     startsAt,
     endsAt,
     note: input.note?.trim() || null,
@@ -175,13 +183,19 @@ function normalizeInput(input: UpsertProductPromotionInput) {
  * จึงเป็นการ "แก้โปรเดิมของขอบเขตนั้น" ไม่ใช่การเพิ่มโปรตัวที่สอง (ตรงกับดัชนี
  * uq_bms_promotions_active_sku_store / _branch ของ 9.61)
  */
-export async function upsertProductPromotion(
-  input: UpsertProductPromotionInput
-): Promise<ProductPromotionRow> {
-  const data = normalizeInput(input);
+export async function upsertProductPromotion(input: UpsertProductPromotionInput): Promise<ProductPromotionRow> {
   const client = await getClient();
   try {
-    await beginTenantTx(client, input.tenantId, { editorId: input.actorUserId });
+    await beginTenantTx(client,input.tenantId,{editorId:input.actorUserId});
+    const result = await upsertProductPromotionInTx(client,input);
+    await client.query("COMMIT"); return result;
+  } catch(error) { await client.query("ROLLBACK"); throw error; } finally { client.release(); }
+}
+
+export async function upsertProductPromotionInTx(
+  client: PoolClient, input: UpsertProductPromotionInput
+): Promise<ProductPromotionRow> {
+  const data = normalizeInput(input);
     // Serialize all promotion edits, including a legacy promo racing with a gift promo.
     await client.query(`SELECT pg_advisory_xact_lock(hashtextextended($1, 1041))`, [input.tenantId]);
     // Keep legacy promotions writable during a staged rollout before migration 10.41.
@@ -189,20 +203,25 @@ export async function upsertProductPromotion(
       FROM pg_attribute WHERE attrelid = 'bms_product_promotions'::regclass
         AND attname IN ('buy_size','gift_sku','gift_size') AND NOT attisdropped`);
     const giftSchemaReady = schema.rows[0].ready;
-    if (data.kind === "BUY_A_GET_B" && !giftSchemaReady) {
+    if (data.buySize && !giftSchemaReady) {
       throw new Error("ต้องอัปเดตฐานข้อมูล 10.41 ก่อนตั้งโปรซื้อ A แถม B");
     }
     if (data.kind === "BUY_A_GET_B") await validateCrossSkuProducts(client, input.tenantId, {
       buySku: data.productSku, buySize: data.buySize!, giftSku: data.giftSku!, giftSize: data.giftSize!,
     });
+    if (data.kind === "N_FOR_PRICE" && data.buySize) {
+      const variant=await client.query(`SELECT 1 FROM bms_product_variants WHERE tenant_id=$1 AND product_sku=$2 AND code=$3 AND active`,[input.tenantId,data.productSku,data.buySize]);
+      if (!variant.rowCount) throw new Error("PRICE_PUBLISH_INVALID_VARIANT");
+    }
     const conflict = await client.query(
       `SELECT id FROM bms_product_promotions promo
        WHERE tenant_id=$1 AND active
          AND (location_id IS NULL OR $3::uuid IS NULL OR location_id=$3)
          AND NOT (product_sku=$2 AND location_id IS NOT DISTINCT FROM $3::uuid)
          AND (kind='BUY_A_GET_B' OR $5='BUY_A_GET_B')
+         AND tstzrange(starts_at,ends_at,'[)') && tstzrange($6::timestamptz,$7::timestamptz,'[)')
          AND (product_sku=ANY($4::text[]) OR to_jsonb(promo)->>'gift_sku'=ANY($4::text[])) LIMIT 1`,
-      [input.tenantId, data.productSku, data.locationId, [data.productSku, data.giftSku].filter(Boolean), data.kind],
+      [input.tenantId, data.productSku, data.locationId, [data.productSku, data.giftSku].filter(Boolean), data.kind,data.startsAt,data.endsAt],
     );
     if (conflict.rowCount) throw new Error("สินค้านี้อยู่ในโปรที่ทับซ้อนกับโปรแถมข้ามสินค้า กรุณาหยุดโปรเดิมก่อน");
 
@@ -220,20 +239,22 @@ export async function upsertProductPromotion(
       if (!location.rowCount) throw new Error("ไม่พบสาขานี้ในร้านนี้");
     }
 
+    const window = await preparePromotionWindow(client,input.tenantId,data.productSku,data.locationId,data.startsAt,data.endsAt);
     const params = [
       input.tenantId, data.productSku, data.locationId, data.kind, data.buyQty,
-      data.getQty, data.bundlePrice, data.startsAt, data.endsAt, data.note,
+      data.getQty, data.bundlePrice, window.start, window.end, data.note,
       ...(giftSchemaReady ? [data.buySize, data.giftSku, data.giftSize] : []),
     ];
-    const updated = await client.query(
+    const updated = window.enabled && !window.id ? {rowCount:0,rows:[]} : await client.query(
       `UPDATE bms_product_promotions
           SET kind = $4, buy_qty = $5, get_qty = $6, bundle_price = $7,
               starts_at = $8::timestamptz, ends_at = $9::timestamptz,
               note = $10, ${giftSchemaReady ? "buy_size=$11, gift_sku=$12, gift_size=$13," : ""} updated_at = now()
         WHERE tenant_id = $1 AND product_sku = $2 AND active
           AND location_id IS NOT DISTINCT FROM $3::uuid
+          ${window.enabled ? `AND id=$${params.length+1}` : ""}
         RETURNING id`,
-      params
+      window.enabled ? [...params,window.id] : params
     );
     const id = updated.rowCount
       ? updated.rows[0].id
@@ -246,6 +267,13 @@ export async function upsertProductPromotion(
           params
         )).rows[0].id;
 
+    if (data.salesSurface != null) {
+      await client.query('UPDATE bms_product_promotions SET sales_surface=$3 WHERE tenant_id=$1 AND id=$2',[input.tenantId,id,data.salesSurface]);
+    } else {
+      // Older databases may not yet have the optional surface column.
+      const ready=(await client.query("SELECT 1 FROM pg_attribute WHERE attrelid='bms_product_promotions'::regclass AND attname='sales_surface' AND NOT attisdropped")).rowCount;
+      if (ready) await client.query('UPDATE bms_product_promotions SET sales_surface=NULL WHERE tenant_id=$1 AND id=$2',[input.tenantId,id]);
+    }
     await client.query(
       `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
        VALUES ($1,$2,'product.promotion_saved',$3,$4::jsonb)`,
@@ -253,7 +281,7 @@ export async function upsertProductPromotion(
         JSON.stringify({
           sku: data.productSku, locationId: data.locationId, kind: data.kind,
           buyQty: data.buyQty, getQty: data.getQty, bundlePrice: data.bundlePrice,
-          buySize: data.buySize, giftSku: data.giftSku, giftSize: data.giftSize,
+          salesSurface: data.salesSurface, buySize: data.buySize, giftSku: data.giftSku, giftSize: data.giftSize,
           created: !updated.rowCount,
         })]
     );
@@ -268,14 +296,7 @@ export async function upsertProductPromotion(
         WHERE promo.tenant_id = $1 AND promo.id = $2`,
       [input.tenantId, id]
     );
-    await client.query("COMMIT");
     return mapRow(saved.rows[0]);
-  } catch (error) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw error;
-  } finally {
-    client.release();
-  }
 }
 
 /**

@@ -15,6 +15,7 @@ import Svg, { Path } from 'react-native-svg';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
 import { Card } from '../../components/Card';
+import { CartLineAmount } from '../../components/CartLineAmount';
 import { Button } from '../../components/Button';
 import { QtyStepper } from '../../components/QtyStepper';
 import { MoneyField } from '../../components/MoneyField';
@@ -41,6 +42,7 @@ import {
 } from '../../graphql/generated';
 import { cartLineVariantLabel } from '../../lib/cartLine';
 import {
+  cartProductPricing,
   cashRoundingForPayments,
   isCashRounding,
   payableWithRounding,
@@ -282,6 +284,15 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         ...productLines,
       ]
     : productLines;
+  const pricingByKey = useMemo(() => {
+    const pricing = cartProductPricing(cart.lines).lines;
+    return new Map(cart.lines.map((line, index) => [line.key, pricing[index]]));
+  }, [cart.lines]);
+  const displayPricing = (item: (typeof lines)[number]) =>
+    (source !== 'restaurant' && pricingByKey.get(item.key)) || {
+      listAmount: item.qty * item.unitPrice,
+      amount: item.qty * item.unitPrice,
+    };
   const confirmationItems = [
     ...lines.map(item => ({
       key: item.key,
@@ -292,6 +303,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           : cartLineVariantLabel(item) || undefined,
       qty: item.qty,
       unitPrice: item.unitPrice,
+      ...displayPricing(item),
     })),
     ...(source === 'retail'
       ? cart.extraLines.map(line => ({
@@ -1139,9 +1151,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                   </Text>
                 ) : null}
               </View>
-              <Text style={[typography.bodyStrong, { color: colors.text }]}>
-                ฿{(item.qty * item.unitPrice).toFixed(2)}
-              </Text>
+              <CartLineAmount {...displayPricing(item)} />
             </View>
             {source !== 'restaurant' && item.sku !== '__BOARD_GAME_TIME__' ? (
               <>

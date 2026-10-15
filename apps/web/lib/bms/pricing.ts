@@ -91,7 +91,7 @@ export function normalizePricingSnapshot(raw: unknown): PricingSnapshot {
       : promo?.kind === "N_FOR_PRICE"
         && Number.isInteger(Number(promo.buyQty)) && Number(promo.buyQty) >= 1
         && Number.isFinite(Number(promo.bundlePrice)) && Number(promo.bundlePrice) >= 0
-          ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice) }
+          ? { kind: "N_FOR_PRICE", buyQty: Number(promo.buyQty), bundlePrice: Number(promo.bundlePrice), ...(promo.buySize ? {buySize:String(promo.buySize)} : {}) }
           : null;
   const rawModifierUnitPrice = Number(record.modifierUnitPrice ?? 0);
   const modifierUnitPrice = Number.isFinite(rawModifierUnitPrice) && rawModifierUnitPrice >= 0
@@ -117,6 +117,8 @@ export type RemainingPricingLine = {
   receiptUnitPrice: number;
   packUnitPrice: number | null;
   pricingSnapshot: unknown;
+  /** Server-owned restaurant line group; ordinary retail return behavior is unchanged. */
+  promotionGroup?: string;
 };
 
 /**
@@ -152,6 +154,29 @@ export function priceRemainingLines(
     qtyBySku.set(line.sku, (qtyBySku.get(line.sku) ?? 0) + line.remainingBaseQty);
   }
 
+  const promotionAmounts = new Map<number, number>();
+  const promotionGroups = new Map<string, typeof remaining>();
+  for (const line of remaining) {
+    const snapshot = normalizePricingSnapshot(line.pricingSnapshot);
+    if (!line.promotionGroup || line.packUnitPrice != null || !snapshot.promotion || !line.remainingBaseQty) continue;
+    const key = JSON.stringify([line.promotionGroup, line.sku, line.size,
+      Math.max(0, line.receiptUnitPrice - snapshot.modifierUnitPrice), snapshot.promotion]);
+    promotionGroups.set(key, [...(promotionGroups.get(key) ?? []), line]);
+  }
+  for (const group of promotionGroups.values()) {
+    const first = group[0];
+    const snapshot = normalizePricingSnapshot(first.pricingSnapshot);
+    const qty = group.reduce((sum, line) => sum + line.remainingBaseQty, 0);
+    const cents = Math.round(applyPromotion(Math.max(0, first.receiptUnitPrice - snapshot.modifierUnitPrice), qty, snapshot.promotion!).amount * 100);
+    let cumulativeQty = 0;
+    let allocated = 0;
+    for (const line of group) {
+      cumulativeQty += line.remainingBaseQty;
+      const cumulativeCents = Math.round(cents * cumulativeQty / qty);
+      promotionAmounts.set(line.id, (cumulativeCents - allocated) / 100);
+      allocated = cumulativeCents;
+    }
+  }
   const priced = remaining.map((line) => {
     const shelfAmount = round2(line.receiptUnitPrice * line.remainingPackQty);
     if (line.packUnitPrice != null) {
@@ -165,7 +190,7 @@ export function priceRemainingLines(
     const snapshot = normalizePricingSnapshot(line.pricingSnapshot);
     const baseReceiptUnitPrice = Math.max(0, line.receiptUnitPrice - snapshot.modifierUnitPrice);
     const promo = snapshot.promotion;
-    const baseAmount = promo
+    const baseAmount = promotionAmounts.get(line.id) ?? (promo
       ? applyPromotion(baseReceiptUnitPrice, line.remainingBaseQty, promo).amount
       : round2(unitPriceForQty(
           baseReceiptUnitPrice,
@@ -173,7 +198,7 @@ export function priceRemainingLines(
           qtyByVariant.get(variantKey(line.sku, line.size)) ?? line.remainingBaseQty,
           qtyBySku.get(line.sku) ?? line.remainingBaseQty,
           line.size
-        ) * line.remainingBaseQty);
+        ) * line.remainingBaseQty));
     const amount = round2(baseAmount + snapshot.modifierUnitPrice * line.remainingPackQty);
     return { id: line.id, remainingPackQty: line.remainingPackQty, amount, shelfAmount };
   });
@@ -320,7 +345,11 @@ export function priceLinesByQty<T extends { sku: string; size?: string; qty: num
 export type Promotion =
   | CrossSkuPromotion
   | { kind: "BUY_X_GET_Y"; buyQty: number; getQty: number }
-  | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number };
+  | { kind: "N_FOR_PRICE"; buyQty: number; bundlePrice: number; buySize?: string | null };
+
+export function promotionForVariant(promo: Promotion | null, size:string): Promotion | null {
+  return promo?.kind === "N_FOR_PRICE" && promo.buySize && promo.buySize !== size ? null : promo;
+}
 
 export type SkuPricingSnapshot = {
   sku: string;

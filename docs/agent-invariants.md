@@ -1313,6 +1313,109 @@ playable game library. The operating brief is
 `9.40`–`9.43`, `9.51`, `9.52` own what a product _is_ (its serving options, which channels may sell
 it, how its stock is consumed) independently of how many units are on a shelf.
 
+- **Recipe definition changes append a version.** `upsertProductRecipe()` never replaces components
+  or yield under an existing id; unchanged definitions and status-only edits retain their id.
+  Keep allocation/activation/readiness and `product.recipe_upsert` audit in one tenant transaction
+  under the product row lock. Reject fractional base quantities instead of truncating them.
+- **Restaurant stock/cost evidence belongs to the check item (`10.61`).** First successful kitchen
+  send freezes resolved ingredient/modifier quantities, recipe references and catalog cost (including
+  unknown cost) on the item. Whole-order rebuilds, split/merge and kitchen cancellation reuse that
+  evidence; NEW lines in provisional reservations are not frozen. Each order line links to its check
+  item, so two rounds of the same menu may consume different recipes. Explicit v2 empty consumption
+  never falls back to today's policy. Legacy SENT lines require exact persisted reservation evidence,
+  labelled `LEGACY_RESERVATION`; missing/ambiguous/non-integral evidence fails closed, not reconstructed
+  from current recipes or costs. This is stock/cost pinning, not price/modifier-availability pinning:
+  existing catalog validation and pricing rules still apply on a rebuild. Restaurant return promotions
+  group loose lines across rounds; named packs and ordinary retail behavior stay separate.
+
+- **Subrecipes pin versions, not active pointers (`10.62`).** Recipe saves compile selected child
+  versions into the existing integer leaf BOM; stock/availability/cost readers must not recursively
+  expand current recipes at sale. `direct_items`, subrecipe references and ordered `sop_steps` are
+  definition content: editing any of them appends a version in the same tenant transaction/audit.
+  Child quantity means output base units, not batches; reject non-integral expansion, overflow,
+  cycles, excessive depth/size and foreign references. Inactive pinned versions remain valid.
+  Product row locking serializes saves; source recipe uses NO KEY UPDATE, compatible with child
+  KEY SHARE/FK locks. Do not strengthen that source lock to FOR UPDATE without concurrency proof.
+  Legacy flat inputs cannot edit away a composed definition. SOP is staff-written reference text,
+  not AI guidance, a production ledger, or proof of completed kitchen work.
+
+- **Recipe cost estimates are planning, not ledger authority (`10.63`).** `cost_assumptions` is
+  copy-on-write recipe content. Omission preserves it; explicit null clears it. Labor/energy inputs
+  describe the entire output batch INCLUDING child preparation; never add child overhead again.
+  Read compiled leaf ingredients against current catalog costs, labelled with version/observation
+  time. Missing/invalid cost or unprovided overhead is unknown, never zero; expose known subtotal
+  separately and null full totals. Staff source notes are assumptions, not verified expenses. Never
+  import this estimator into sales, stock, sent-item snapshots or profit reports. No actual COGS claim.
+
+- **Price/break-even preview (phase 5) is read-only planning.** Require product.view + report.view,
+  derive tenant, reuse the current complete recipe estimate, and never accept a client unit cost as
+  authority. Separate VAT/GP bases explicitly. Missing costs are unknown, not zero; non-positive
+  contribution has no finite positive-volume target. Ceil whole-unit targets from unrounded math.
+  Scenario alternatives are not a menu sales mix. Never add labor/energy or monthly expenses twice,
+  persist a preview as a real price, infer tax/provider settings, or import this calculator into POS.
+
+- **Menu/promotion planning (phase 6) is not a historical sales report or selling rule.** Require
+  product.view + report.view; server-derived tenant/cost only. Bounded 2–12 distinct recipes, per-read
+  observation times, staff-supplied daily demand and source/population note. Any unknown cost/demand
+  disables the common engineering benchmark; zero total demand has no groups. Weighted contribution
+  uses cent-rounded unit figures and exact fraction comparisons; equality is high. Negative margins
+  stay negative even for a relative STAR. Bundle includes gift quantities and its own extras once;
+  compare the same quantities individually, never add bundle demand/profit to the menu-mix totals.
+  No price/promotion persistence, POS import, automatic tax settings or fabricated sales evidence.
+  Recipe selectors must inherit the disabled Form context during calculation. Invalidate pending
+  responses on edits/unmount; success, error and loading cleanup must respect the latest request.
+  Compare current form values as well, since programmatic updates can skip onValuesChange.
+
+- **Sales evidence (phase 7) is not a net-profit report.** `bmsSalesEvidence` requires report.view +
+  tax.document.view; service reads branch scope in the same serializable tenant snapshot. Keep sale,
+  return acceptance, completed payment refund and CREDIT debt reduction on their distinct event
+  dates/branches. Never multiply them by joining headers to multiple payment allocations or subtract
+  refunds twice. Use line_amount and saved cost, not current catalog/recipe estimates. Derived
+  proportional discount attribution is not posted history; return quantity cost basis is not proof
+  of restocking. Unallocated return VAT/shipping/rounding, tax notes and missing/legacy evidence stay
+  explicit. Decimal strings/BigInt conserve satang; read caps mean INCOMPLETE, SQL failures never zero.
+  Net revenue/cost/profit remain null until the later evidence reconciliation is implemented. No
+  silent migration of the old profit report or reconstruction of missing historical snapshots.
+  New return evidence (`10.65`) is captured at INSERT by processPosReturn under its existing tenant
+  transaction/order lock, with the return audit. Snapshot updates/backfills are forbidden; replay
+  and settlement cannot refresh it. Exact-pricing returns retain shipping/extras/signed rounding
+  until full return; legacy proportional policy is explicitly versioned. VAT is a cumulative
+  allocation of saved SALE buckets, not an issued credit note or today's VAT configuration. Unknown
+  prior snapshots/buckets stay unknown. Keep post-commit credit-note issuance separate and never
+  change the financial refund/stock calculation to make reporting evidence look complete.
+
+- **Operating-cost review (`10.64`) is not a ledger.** Require report.view + expense.view +
+  delivery.settlement.view and unrestricted all-branch access; writes also require expense.manage,
+  human confirmation and reason. Source-derived amounts, fingerprints, optimistic versions, exact
+  retries and transactional before/after audit are mandatory. Dedup uses reviewed canonical keys,
+  never equal amounts or chains. Never double-count inventory purchases, statement lines or drawer
+  movements. Non-cash depreciation is whole-month planning, not a tax schedule. Missing/stale/non-THB
+  or truncated evidence means unknown; reviewed records do not imply complete bookkeeping.
+
+- **Expense allocation (`10.66`, phase 8) does not post another expense.** Reuse reviewed monthly
+  source amounts (including negative credits and monthly depreciation), never ingredient purchases
+  or recipe overhead estimates. Require all phase-4 source permissions plus tax.document.view and
+  all-branch scope; save adds expense.manage, explicit preview confirmation, matching fingerprint
+  and expected version. Source/driver reads share the allocation's serializable tenant transaction.
+  Append a version and audit together, never update history; exact replay is audit-free. Signed
+  BigInt allocations conserve cents. Overlapping targets, zero nonzero-expense denominator and
+  truncated/unknown evidence reject; no guessed equal shares. Sales drivers are gross recorded
+  product activity BEFORE returns/voids, not net revenue. Stale saved allocations remain visible
+  but excluded from current totals. Excluded/duplicate sources deactivate allocations without
+  deleting evidence. Keep this out of existing money, stock, tax and legacy profit engines.
+
+- **Recorded net profit (phase 9) is read-only, before income tax.** Compose the shared monthly
+  sale stream, reviewed expenses and current allocations on the same serializable tenant snapshot,
+  requiring all source permissions and all-branch scope. Deduct accepted returns once, never again
+  at refund/CREDIT reduction. Saved SALE VAT allocation is not an issued credit note. Only historical
+  CATALOG_AT_SALE cost qualifies; return quantity basis is not proof of cost reversal, so net COGS/
+  profit stays unknown for returns. Detect blind returns and unvalued stock loss/adjustment evidence.
+  Missing/legacy/unreconciled/truncated sources yield null full totals, not zero. Whole-tenant cost
+  uses recognized source amounts once; grouped profit requires current allocations, and branch-wide
+  buckets never become guessed channel costs/subtotals. COMPLETE describes loaded evidence only,
+  not complete bookkeeping, purchase-lot valuation or statutory profit. Never overwrite old reports,
+  backfill historical snapshots, use current recipe estimates or create accounting postings here.
+
 - **A store capability is a real switch only if something calls `isCapabilityEnabledInTx()` for
   it.** `business_archetype` selects a preset of capability flags at signup
   (`shopArchetypes.ts`), but most of that preset is descriptive, not enforced — `PACK`,
@@ -2347,3 +2450,34 @@ falls into before copying one pattern verbatim.
 - The Docker development stack owns its own `apps/web/.next` and `apps/web/node_modules` volumes.
   Do not remove those volume mounts or share the same Next.js output directory between host and
   container dev servers; mixed manifests cause App Router `clientModules` failures across routes.
+
+
+### Restaurant costing extension (10.67–10.69)
+
+The what-if price/menu calculators remain read-only. A separate explicit preview/confirm publication
+workflow reuses shared pack/promotion writers and records append-only history and audit in one tenant
+transaction. Require product.edit + report.view, access to the affected branch (unrestricted for global prices), VAT agreement and a current
+fingerprint. Mixed-menu publication requires its own preview/confirmation and product activation permission; it creates a pinned recipe SKU through shared catalog/recipe services.
+
+Moving weighted-average valuation is per SKU/variant/branch, never current-catalog historical backfill.
+Physical movements and their cost evidence commit atomically. Original-consumption return and transfer
+cost allocation must conserve the final micro-baht; report partial-return allocation conserves satang.
+Opening values require inventory.count.apply + report.view, evidence and quantity/version confirmation.
+Unknown financial/valuation evidence remains unknown. Reconcile POS credit notes only through a unique,
+validated tenant/order return with matching monetary/VAT snapshot; payment refunds never reduce sales twice.
+
+10.70: valuation browsing must be server-paged/searchable. Planners explicitly select catalog or an
+authorized branch weighted average, never fallback when stock value is unknown. Unsold active recipes
+are NO_SALES, not an invalidation of sold menus. Promotion scope (variant/branch/surface/time) must be
+preserved from publication through POS previews, settlement and immutable return snapshots.
+
+10.71–10.72: base/pack branch overrides are authoritative in catalog, scan and settlement, and returns
+use frozen sale prices. A branch override changes price only, never pack quantity. Scheduled offers
+use half-open non-overlapping windows per SKU/branch; publication preserves the current offer until
+the boundary, then the next rule applies without a scheduler. No time-window overlap or implicit
+stacking. Menu net profit allocates reviewed actual expenses and stock adjustments only after a
+human confirms a method/reason, preserves cents, and reconciles through an explicit non-menu revenue
+bucket. It is not complete if actual costs are unknown. Changed evidence invalidates the confirmation.
+All sources are read in one tenant transaction. Bundle publication composes shared product, recipe
+and readiness services in one transaction, requires product.edit + product.delete + report.view,
+and never creates opening valuation or modifies existing SKUs.

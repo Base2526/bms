@@ -700,6 +700,510 @@ may still have packs configured. `scripts/store-capability-gates-contract.test.m
 switch list equal to the set of capabilities the source actually gates on, in both directions.
 
 Restaurant recipes are versioned in `bms_product_recipes`; one active version exists per SKU/size.
+Recipe saves are copy-on-write: changing ingredients, their quantities, or `output_qty` creates a
+new id/version, including edits to an inactive recipe. An unchanged definition (ignoring component
+order) keeps its id; activation/deactivation alone changes only `active`. Saving changed content
+with `active=false` leaves the currently active recipe available. With `active` omitted, an edit
+inherits the source's current active state; a new recipe defaults inactive. Callers must use the
+returned id. The product row lock serializes version allocation/activation, readiness is rechecked,
+and `product.recipe_upsert` is audited in the same tenant transaction, with `sourceRecipeId` when
+content is copied. Quantities/yield must be positive PostgreSQL INTEGER base units; fractional
+values are rejected, not truncated. No migration or reconstruction of overwritten history occurs.
+
+This is service-level content preservation, not database-enforced immutability or the planned
+DRAFT/PUBLISHED/RETIRED lifecycle. Migration `10.61` adds per-check-item stock/cost snapshots. A first
+successful kitchen send freezes the resolved recipe/modifier consumption and catalog cost. Later
+rounds, split/merge and kitchen cancellation reuse each SENT item's own evidence; NEW lines remain
+unfrozen even if a split temporarily reserves them. Missing cost remains unknown. A menu ordered in
+two rounds can therefore use two versions without rewriting the first round. No new payment or
+stock ledger is introduced. Explicit empty consumption remains empty after a policy change.
+
+Existing open checks are adopted only from persisted reservation rows, marked `LEGACY_RESERVATION`
+(not proof of the original kitchen round). Missing/ambiguous evidence, legacy empty consumption or
+fractional stock allocation require operator review; the whole operation rolls back. No backfill
+uses today's catalog. Finish legacy NON_STOCK checks before rollout where possible. Ordinary full
+check cancellation remains available through its existing approval flow.
+
+Scope: selling-price/promotional/catalog-availability checks still run under the existing rules on
+rebuild. Disabling a menu/modifier can block a rebuild; changing a pack's base quantity is rejected
+instead of silently resizing historical stock. Receipt gross display remains separate from exact
+`line_amount`. Return promotion eligibility groups the new restaurant lines by menu/variant, while
+named packs and retail stay separate. Deletion tooling must delete order items before check items.
+The existing authorized full-tenant purge detaches these links before deleting the restaurant floor,
+within its original transaction and selected-tenant scope; its authorization rules are unchanged.
+
+Restaurant costing rollout (2026-10-15): recipe content preservation and per-item pinning are now
+implemented, with executable DB-free tests and DB scenarios. PostgreSQL migration/locking/RLS and
+end-to-end settlement verification remain a deployment gate on a restored disposable database.
+The user explicitly deferred DB execution on 2026-10-15 because this machine has no test database;
+local completion covers code, documentation, DB-free contracts and mocked browser checks only.
+Phase 2 adds pinned subrecipes and recipe SOP (`10.62`). At Stock models > Recipes, choose a child
+product and exact version (inactive versions are allowed), then enter the child output base units
+needed for the parent's yield, not a batch count. For example, a 100 g sauce recipe using 60 g sugar,
+referenced for 20 g output, contributes 12 g sugar. Fractional base ingredients are refused: use
+smaller base units or adjust the yield instead of rounding. Duplicate leaf ingredients are combined.
+This is virtual ingredient expansion, not stocked-preparation production or a second stock ledger.
+
+The parent stores its chosen version until explicitly changed; child recipe/SOP edits never rewrite
+parents, historical BOMs or sent-check snapshots. Edit ingredients, output, child pins or SOP to
+create a new version; status-only/no-op saves retain the version. Missing SOP is explicitly absent.
+Expand a saved recipe row to read its ordered staff-written SOP. These are reference instructions,
+not a kitchen checklist or completion evidence. No AI tools/customer response behavior is added.
+Saving rejects self/ancestor cycles, missing/foreign refs, overflow, more than 200 leaf ingredients,
+20 immediate children, 8 nested levels or 64 versions (also bounded to 256 traversal visits).
+SOP accepts up to 50 nonblank steps, 2,000 characters each. Existing legacy flat editors cannot
+silently discard a composed recipe's references or SOP. Referenced recipe/product deletion can now
+be refused by FK; retire/deactivate versions instead. The save uses the original product.edit
+permission and transactional audit. DB-free coverage does not prove the new FK/RLS/concurrency SQL.
+
+Phase 3 adds recipe planning estimates (`10.63`). Expand a saved recipe row and click Recipe cost estimate
+to open the responsive detail dialog and read its server-calculated
+ingredient breakdown from the compiled leaf BOM and current `bms_products.cost_price` per base unit.
+The read is one tenant-scoped SQL statement, labelled with recipe version and catalog observation time;
+refreshing can change the estimate when catalog prices change, without changing recipe or bill history.
+The existing readiness estimate remains ingredient-only and keeps its original behavior.
+
+The recipe editor accepts three optional whole-batch assumptions: labor person-minutes × THB/person-hour
+÷ 60, electricity kWh × THB/kWh, and gas kg × THB/kg. Each needs a staff-written source/date/basis
+(1–500 characters); quantity/rate are nonnegative, at most 1,000,000 with up to six decimals. These are
+staff assumptions, not independently verified tariffs or expense documents. All three cover the full
+recipe output, INCLUDING child preparation. Child overhead is deliberately not added again; review
+these assumptions after changing yield/composition. No automatic allocation from payroll/bills exists.
+Unchecked categories and missing/invalid ingredient costs are unknown. Explicit zero usage requires
+quantity/rate/source. Known subtotal stays visible, but full batch and per-output-unit totals are null
+until all categories and ingredients are known. Exact fixed-point math aggregates before two-decimal
+rounding and yield division; displayed rounded rows may differ from totals. Unsafe money ranges fail.
+
+Assumptions are copy-on-write definition content: edits (including source-only edits or clearing)
+append a version, no-op/status-only saves retain it, omitted API input preserves it. Explicit null
+clears all categories; a provided object replaces the entire three-category set (omitted categories
+become unknown). Old clients continue to preserve assumptions. The same product.edit permission,
+product lock and transactional audit apply; product.view reads estimates, including inactive versions.
+No new AI tool, POS/mobile flow, stock movement, payment, expense, report or realtime event is added.
+Modifiers, rent, depreciation, VAT/GP and purchase-lot actual COGS are excluded. This estimate is never
+copied into `cost_amount_snapshot` or sent-check snapshots. Migration must precede recipe API deployment.
+DB-free contracts and mocked browser checks do not prove PostgreSQL constraints/RLS/locking; DB testing
+remains explicitly deferred on this machine.
+
+Phase 4 adds monthly cost reconciliation (`10.64`) in Reports, separate from gross profit, net profit,
+tax and cash-flow statements. Reads require report.view + expense.view + delivery.settlement.view
+and unrestricted all-branch access: statement fees have no reliable branch allocation. Reviews also
+require expense.manage, confirmation and a reason. No client amount or tenant is authoritative.
+
+Sources: expense documents use pre-input-VAT base (credit notes negative, supplier notes in received
+month); settled POS expenses use actual gross amount in Bangkok settlement month; LIVE delivery
+statement headers use fee + commission in Bangkok period-end month, eligible only MATCHED/CLOSED.
+Never add statement lines, payouts, refunds, drawer/wallet movements or recipe estimates again.
+Classify as OPERATING, GP, DEPRECIATION, DUPLICATE, EXCLUDED or UNREVIEWED. Inventory/ingredient
+purchases cannot become another cost on top of COGS. Duplicate decisions require a reviewed canonical
+typed source key, including across months; no chains or automatic equal-amount matching.
+
+Depreciation allocates basis minus residual over 1–600 whole months from a chosen start month, with
+integer-cent cumulative rounding conserving the total. It is non-cash planning, not a tax schedule.
+Source fingerprints invalidate stale evidence; versions reject stale edits; identical retries do not
+duplicate audits. Review and before/after audit commit together. Source documents, stock, money and
+tax ledgers stay unchanged. Previously reviewed LIVE statements remain visible if environment changes.
+
+Unknown/stale/non-THB evidence leaves reviewedTotal null, with known subtotals separate; no FX guessing.
+The 1,000-row limit includes historical depreciation schedules (1,001 loaded to detect truncation),
+and truncation also means unknown. Fully reviewed only describes loaded records, not completeness of
+bookkeeping. Migration must precede deployment; real SQL/RLS/locking tests are deferred here. No AI,
+realtime, external provider or mobile POS changes. Promotion/menu planning is described in phase 6 below.
+
+**Phase 8: monthly operating-expense allocation (`10.66`).** Reports > Open expense allocation uses
+its own month, independent of the parent report filters. First review/classify sources in phase 4;
+only current OPERATING, GP and monthly DEPRECIATION recognized amounts may be allocated. Inventory/
+ingredient purchases, duplicate sources, exclusions and recipe labor/energy estimates are not added
+again. Supplier credits retain their negative sign. This is management attribution, not a new expense,
+cash/stock/tax posting, statutory depreciation schedule or the phase-9 net-profit report.
+
+Each month/source has one latest allocation version and retains all older versions. Choose one or
+more branch/channel targets (at most 100) and a reason: DIRECT requires one target; EQUAL divides
+equally; WEIGHTED uses nonnegative integer weights (70/30 can represent percentages); SALES_GROSS or
+SALES_UNITS derives weights from the shared phase-7 source stream. Blank channel means all channels
+of that branch. Duplicate/overlapping targets are rejected, not silently counted twice. Only declared
+targets share that source's cost; manual weights are staff decisions, not measured usage. There is
+no implicit carry-forward into another month and no automatic menu/SKU allocation in this phase.
+In result groups, null channel is a branch-wide cost bucket, not a subtotal of the channel-specific
+buckets belonging to other expenses. Sum each bucket once; do not add a derived subtotal again.
+
+Sales drivers are paid product activity **after order discounts, including VAT, before return/void
+reversals**, not net revenue/units; free gifts count as units. Extras, shipping and rounding are
+excluded from the product sales denominator. This explicitly reuses gross recorded activity while
+phase-7 tax/return reconciliation remains unresolved. No top-N query or client-provided sales figure
+is accepted. Missing cost or VAT does not invalidate a gross-sales weight, but mismatched product
+totals, unknown sale dates, missing branch/channel, scan truncation and malformed evidence do.
+Zero denominator with a nonzero expense requires a different reviewed basis; never fall back to equal
+shares. True zero expense stays zero. BigInt cumulative rounding conserves every cent, also for credits.
+
+Reads and writes require report.view, expense.view, delivery.settlement.view, tax.document.view and
+unrestricted branch access; saving also requires expense.manage and explicit human confirmation.
+Tenant/actor derive from auth, and branch/currency checks repeat inside the serializable tenant
+transaction. Source reviews and the complete bounded sales stream are composed on the same client
+and snapshot. The writer re-reads the preview evidence, compares fingerprints and expected version,
+then inserts the new immutable version and decision audit atomically. Exact retries do not duplicate
+versions/audits. No money amount, tenant, denominator or result is accepted from the client.
+
+The worksheet shows the server preview before enabling confirmation. Edits/month changes/closing
+invalidate pending previews; old success/error responses cannot replace current evidence. A rejected
+save clears confirmation and needs a new preview. Source, review, target or sales-population changes
+make saved results STALE: the frozen result remains inspectable but is excluded from current totals.
+Reviewed exclusion/duplicate/void eligibility makes the old allocation INACTIVE without deleting it.
+Missing sources remain unresolved. Full allocatedTotal is null until all loaded reviewed costs are
+current and allocated; known subtotals remain separate. Complete is not proof all expenses were entered.
+
+Apply `10.66` before deploying the worksheet/API. DB work is deferred: migration apply/reapply, inherited
+source grants, new table RLS and append-only grants, cross-tenant isolation, concurrent version/review/
+sales changes, serializable retries, audit rollback and real query plans. DB-free fakes and mocked
+browser smokes verify orchestration/UI only. Existing profit reports, POS, returns, stock, tax documents,
+AI, mobile and realtime contracts are unchanged. Phase 9 below consumes current allocations in a
+separate read-only profit worksheet; it does not replace the legacy profit engine.
+
+### Restaurant phases 1–9: completion and remaining-work log (2026-10-15)
+
+**สถานะส่งมอบเดิม:** มี implementation ระยะ 1–9 ตามขอบเขตด้านล่าง แต่ **ยังไม่รองรับทุก feature
+ในภาพแบบครบวงจร** รอบส่งมอบเดิมผู้ใช้ให้ข้าม DB ไปก่อน ต่อมาผู้ใช้อนุญาตทดสอบ local Docker DB
+และมีการเพิ่ม/รัน integration tests แล้ว ดูผลและข้อจำกัดในหัวข้อ D ด้านล่าง การ commit/push
+เป็นการเก็บและส่งงานบน feature branch ไม่ใช่การอนุมัติ deploy หรือยืนยัน production readiness.
+รายการนี้เป็น backlog ณ วันที่บันทึก ไม่ใช่ข้อความว่าแก้ข้อจำกัดเหล่านี้แล้ว
+
+| ระยะ | สิ่งที่มีแล้ว | ขอบเขตที่ต้องไม่ตีความเกินจริง |
+| --- | --- | --- |
+| 1 | Version สูตรและ snapshot วัตถุดิบ/ต้นทุนข้ามรอบครัว แยก/รวมบิล | ไม่ได้ freeze ราคา ความพร้อมขาย หรือ modifier ทั้ง catalog; legacy ที่ไม่มีหลักฐานยังไม่ทราบต้นทุน |
+| 2 | สูตรย่อยแบบอ้าง version, compiled BOM และ SOP | SOP เป็นข้อมูลอ้างอิง ไม่ใช่ checklist ปฏิบัติงานหรือ ledger ผลิตสินค้าสำเร็จรูป |
+| 3 | ประมาณต้นทุนสูตร รวมสมมติฐานแรงงาน/พลังงาน/แก๊ส | เป็นต้นทุนเพื่อวางแผน ไม่ใช่ต้นทุนจริงตามล็อตซื้อ; ไม่หักซ้ำกับค่าใช้จ่ายจริง |
+| 4 | ทบทวนค่าใช้จ่ายรายเดือน, GP และค่าเสื่อมเชิงบริหาร | ไม่รับรองว่าลงบัญชีครบทั้งหมด; ค่าเสื่อมไม่ใช่ระบบภาษี/บัญชีสินทรัพย์เต็มรูปแบบ |
+| 5 | จำลองราคาปลีก/ยกชุด/ช่องทาง, VAT/GP และจุดคุ้มทุน | เป็น scenario ไม่เปลี่ยนราคาขายจริง และไม่ใช่พยากรณ์ยอดขายตาม sales mix จริง |
+| 6 | Menu Engineering จาก demand ที่กรอก และจำลองชุดโปรโมชั่น | ยังไม่ได้ใช้ยอดขายจริง และยังไม่ publish กฎโปรโมชั่นไปขาย |
+| 7 | Sales evidence และ snapshot คืนสินค้าแยก VAT/ค่าส่ง/เงินปัดเศษ | VAT คืนเป็นการปันจาก SALE ไม่ใช่ใบลดหนี้ภาษี; หลักฐานเก่าที่หายไม่เดาเติม |
+| 8 | ปันส่วนค่าใช้จ่ายตามสาขา/ช่องทาง แบบ direct/equal/weighted/sales พร้อม version/audit | ยังไม่ปันรายเมนู/SKU; sales driver เป็นยอดสินค้ารวม VAT ก่อนคืน ไม่ใช่ยอดสุทธิหลังคืน |
+| 9 | รายงานกำไรสุทธิจากหลักฐานที่บันทึก ก่อนภาษีเงินได้ | ไม่ใช่กำไรจริงครบทุกกรณี: ใช้ CATALOG_AT_SALE ไม่ใช่ล็อตซื้อ; มี RETURN จะยังไม่สรุป net COGS/profit |
+
+#### A. Backlog เดิมก่อนส่วนขยาย 10.67–10.69
+
+สถานะปัจจุบัน: COST-ACTUAL, COST-RETURN, LOSS-VALUE และ MENU-ACTUAL มี service/UI/tests
+ตามหัวข้อ Completed restaurant costing workflow ด้านล่างแล้ว PRICE-PUBLISH รองรับเปิดใช้ทันที
+สำหรับราคาต่อหน่วย/ชุดเมนูเดียวกัน/โปร N-for-price พร้อม confirmation/history; scheduling และ
+mixed-menu activation อัตโนมัติยังไม่ใช่ขอบเขตนี้ MONEY-RECONCILE ปิดการหักซ้ำของ POS return/
+refund/ใบลดหนี้ที่จับคู่ได้แล้ว แต่รายการเก่าหรือนอก flow ที่ไม่มีหลักฐานยังต้องทบทวน
+รายการ 1–6 ต่อไปนี้เก็บไว้เป็นเกณฑ์และประวัติของ backlog เดิม ไม่ใช่สถานะล่าสุดของทุกข้อ.
+
+1. **COST-RETURN — ต้นทุนที่กลับคืนจริง:** เพิ่มหลักฐาน cost reversal/stock recovery ที่มี
+   authority สำหรับคืน/void รวมอาหารปรุงแล้ว การปล่อย reservation คืนบางส่วนสะสม ข้ามเดือน
+   และข้ามสาขา ต้องแยกเงินคืนออกจากมูลค่าสต็อกที่รับกลับ ปัจจุบันทุก RETURN ทำให้กำไรเต็มเป็น
+   unknown แม้ snapshot VAT/ค่าส่ง/ปัดเศษครบแล้ว เกณฑ์จบ: ย้อนกลับต้นทุนตามหลักฐานเดิมเพียงครั้งเดียว
+   และกรณีไม่มีหลักฐานยังแสดง unknown ไม่ใช้ quantity cost basis แทนมูลค่ารับคืน
+2. **COST-ACTUAL — ต้นทุนจริงย้อนหลัง:** กำหนดและ implement นโยบาย valuation/COGS ที่สอดคล้อง
+   กับหลักฐานซื้อ/ล็อตและการใช้วัตถุดิบ รวมต้นทุนเมื่อรับคืน ไม่อ้างว่าราคา catalog ณ วันขายเท่ากับ
+   ต้นทุนซื้อจริง เกณฑ์จบ: trace ที่มาต้นทุนได้ และข้อมูลเก่าที่ไม่มีหลักฐานไม่ถูกเติมด้วยราคาปัจจุบัน
+3. **LOSS-VALUE — มูลค่าสูญเสียและปรับสต็อก:** ประเมินมูลค่า wastage, transfer loss,
+   count adjustment และ manual stock-out พร้อม linkage/dedup เพื่อไม่หักซ้ำกับ COGS/expense
+   ปัจจุบันพบรายการเหล่านี้ที่ยังไม่มีมูลค่าจะไม่สรุปกำไรเต็ม
+4. **MONEY-RECONCILE — กระทบยอดรายการนอก flow:** เชื่อม blind return, payment refund ที่ยัง
+   ไม่จัดสรร, back-office return และใบเพิ่มหนี้/ลดหนี้กับยอดขาย/คืน/VAT ให้ครบ ต้องไม่หัก refund,
+   CREDIT และ credit note ซ้ำกัน และไม่ใช้ management VAT allocation แทนเอกสารภาษีจริง
+5. **MENU-ACTUAL — Menu Engineering จากยอดขายจริง:** ใช้ sales evidence ของช่วงเวลา/สาขา/
+   ช่องทางที่เลือก รวมส่วนลด คืน ของแถม และ coverage ต้นทุน สร้างเกณฑ์ popularity/contribution
+   จากประชากรยอดขายจริง แสดง unknown/truncated ชัดเจน ไม่แทนข้อมูลขาดด้วยศูนย์ ระยะ 6 ปัจจุบัน
+   ยังเป็นแผนจาก demand ที่กรอก ต้องคงหน้าวางแผนเดิมไว้แยกจากผลจริง
+6. **PRICE-PUBLISH — นำแผนราคา/โปรโมชั่นไปขาย:** เพิ่ม flow preview → human confirmation →
+   version/effective window/scope → activate ผ่าน selling service กลาง พร้อม RBAC, audit,
+   idempotency, conflict/applicability checks และ snapshot กฎที่ใช้จริงบนบิล รวมของแถมและกฎคืน
+   ต้องทดสอบ POS/ออนไลน์ที่อยู่ใน scope และราคา/โปรโมชั่นเดิม ไม่ให้การกดคำนวณแผนเปลี่ยนราคาทันที
+
+ลำดับที่แนะนำ: ตกลงนโยบาย COST-ACTUAL/COST-RETURN ร่วมกัน → ทำหลักฐานต้นทุนและ LOSS-VALUE/
+MONEY-RECONCILE → MENU-ACTUAL → PRICE-PUBLISH โดย recheck service/API/UI/migration และเพิ่ม
+regression ทุกช่วง รหัสข้างต้นเป็น backlog IDs ไม่ใช่การกำหนดเลขระยะใหม่แทนแผนที่ผู้ใช้ตกลงไว้
+
+ขอบเขตเพิ่มเติมที่ **ยังไม่มี** และต้องตกลงก่อนขยาย: ปันส่วนรายเมนู/SKU, sales driver แบบสุทธิ
+หลังคืน, carry-forward การปันส่วนข้ามเดือน, ภาษีเงินได้/บัญชีแยกประเภทเต็มระบบ, export/mobile/
+realtime สำหรับ worksheet กำไรใหม่ รายงานและ export เดิมยังไม่ถูกแทนที่ ส่วน `COMPLETE` หมายถึง
+หลักฐานที่โหลดมากระทบยอดได้ ไม่ได้ยืนยันว่าบันทึกรายรับ/ค่าใช้จ่ายครบทุกแหล่งแล้ว
+
+#### B. รายการตรวจ DB ที่ค้าง ณ รอบส่งมอบเดิม (ผลติดตามอยู่ในหัวข้อ D)
+
+- **DB-SCHEMA:** apply/reapply migration `10.61`–`10.66` ตามลำดับบน throwaway DB ที่ restore
+  baseline ได้รับอนุญาตแล้ว ตรวจ readiness, FK/constraints, grants/RLS และ cross-tenant isolation
+  ห้ามถือว่า migration ชุดนี้สร้าง DB ว่างได้ และห้ามนำขึ้น production จากผล pure tests อย่างเดียว
+- **DB-RESTAURANT:** SQL จริงของ snapshot ข้ามรอบครัว/แยก-รวมบิล/ยกเลิก/settlement, legacy
+  checks, transaction rollback, idempotency และสูตร/version/subrecipe เมื่อแก้ไขพร้อมกัน
+- **DB-RETURN:** immutable snapshot guard, partial-to-full mixed VAT/rounding, refund/CREDIT/
+  void replay และ concurrency รวม stock/tax/realtime triggers ในธุรกรรมจริง
+- **DB-COST:** operating-cost review/dedup/source retirement, allocation version locks,
+  exact replay, stale preview, audit rollback และ SERIALIZABLE snapshot/retry เมื่อยอดขายหรือ
+  source/review เปลี่ยนพร้อมกัน ต้องทดสอบ grants ของ source tables ด้วย
+- **DB-REPORT:** SQL และ query plans ของ phase 7–9, paging/caps/timeouts, เดือนปัจจุบันที่มี
+  sale/return ใหม่, หลายสาขา, permission denial และ snapshot consistency ทั้ง sales/expenses
+  ใน query เดียว ตรวจจำนวนข้อมูลระดับใช้งานจริง ไม่ใช้ fake SQL เป็นหลักฐาน performance
+- **DB-COVERAGE/ROLLOUT:** รัน DB suites ที่เพิ่ม/แก้ และเติม DB integration coverage ของ allocation/
+  net profit ที่ยังมีเพียง doubles ตรวจ active legacy checks ก่อน rollout และลง prerequisite
+  migrations ก่อน API/UI ไม่มี DB suite หรือ migration ใดถูกรันในงานรอบนี้
+
+การผ่าน B ไม่ทำให้ A เสร็จโดยอัตโนมัติ และการปิด A ด้วย pure tests ไม่ทดแทน B
+
+#### C. Verification evidence และการส่งมอบ
+
+- ผลล่าสุดก่อนเพิ่ม log นี้ (2026-10-15): `npm run gate` ผ่าน typecheck, 235 DB-free test files
+  (2,848 passed / 2 skipped / 0 failed; รวม 2,850 cases) และ production build
+- Browser smoke บน final build แบบ mocked API/idle WS ผ่าน 12 cases: net profit, allocation,
+  operating cost แต่ละชุด TH/EN ที่ desktop 1280px และ mobile 390px พร้อมตรวจภาพ
+- Schema export, browser-script syntax และ `git diff --check` ผ่าน ผลและข้อจำกัดแต่ละระยะอยู่ใน
+  [scripts/README.md](../../scripts/README.md) ไม่มีหลักฐาน live DB หรือ live gateway จาก mock เหล่านี้
+- Local logs/screenshots อยู่ใน ignored `.test-output/`; ไม่รวม credentials, environment files,
+  database dumps หรือผลทดสอบชั่วคราวใน commit การเพิ่ม log รอบนี้เป็น documentation-only
+- รอบส่งมอบรันซ้ำเฉพาะ `node scripts/run-contract-tests.mjs pure net-profit`: ผ่าน 26/26,
+  staged diff whitespace check ผ่าน และไม่พบ excluded paths/secret patterns ที่ตรวจ
+  ไม่ได้รัน full gate/browser smoke ซ้ำหลังเพิ่ม log; ผล full gate ด้านบนเป็นของ final code เดิม
+- ผู้ใช้ขอ commit/push งานค้างทั้งหมดบน `codex/restaurant-costing-foundation`; ตรวจผล Git
+  หลังดำเนินการแยกต่างหาก ข้อความนี้ไม่ใช่หลักฐานว่า push สำเร็จหรือ deploy แล้ว
+
+#### D. Local Docker DB follow-up (2026-10-15)
+
+ผู้ใช้อนุญาตให้แก้ test cleanup และทดสอบระยะ 1–9 กับ DB จริงแล้ว ใช้สำเนาจาก local Docker
+บน PostgreSQL แยกที่ `127.0.0.1:5433/bms_realtime_test` พร้อม Redis ทดสอบแยก ข้อมูลฐานต้นฉบับ
+ไม่ถูกแก้ไข รายละเอียดคำสั่งและ coverage matrix อยู่ใน
+[scripts/README.md — Restaurant phases 1–9](../../scripts/README.md#restaurant-phases-1–9-real-db-follow-up-2026-10-15).
+
+- แก้ cleanup สูตรให้ลบความสัมพันธ์สูตรย่อย/สูตร/สินค้าก่อนลบร้าน โดยจำกัดด้วย UUID fixture
+- เพิ่ม `restaurant-costing-db-contract.test.mts` สำหรับ SQL จริงของระยะ 2–9 รวมสิทธิ์/tenant/
+  สาขา, concurrent writes, retry, stale evidence, audit rollback และ serializable source reads
+- เพิ่ม migration contract ตรวจติดตั้ง 10.61–10.66 ครั้งแรกและรันซ้ำภายใน transaction ที่ rollback
+  บนฐานสำเนา ตรวจ RLS/grants/FK/trigger ร่วมกับ service tests; ไม่แก้ migration ที่ใช้ไปแล้ว
+- ระยะ 1 ใช้ DB suites เดิมของ recipe versioning, restaurant POS และ kitchen station ร่วมกัน
+- ผลคืนจริงยืนยันว่ามีทั้ง frozen return VAT และใบลดหนี้ กำไร/รายรับสุทธิยังต้องเป็น unknown
+  เมื่อมี tax adjustments ที่ยังไม่กระทบยอด ไม่ทำให้ backlog MONEY-RECONCILE หรือ COST-RETURN ปิดลง
+
+ผลรอบนี้: ชุดหลัก **99/99 ผ่าน ไม่มี skip** (recipe-versioning 5, restaurant-costing รวม migration
+26, restaurant-pos 51, kitchen-station 17) และ strict TypeScript ของชุดเทสต์ใหม่ผ่าน
+รอบแรก DB ทั้ง repository บนสำเนาที่ restore ใหม่ได้ **676 ผ่าน / 21 ไม่ผ่าน / 14 skipped**
+จาก 70 ไฟล์ รวม 711 tests โดยเก็บ baseline ไว้ใน `.test-output/restaurant-phases-db/final-all/`
+ต่อมาแก้ทั้ง 21 failures แล้วรันใหม่ได้ **710 ผ่าน / 0 ไม่ผ่าน / 14 skipped** จาก 70 ไฟล์ รวม
+724 tests (nested tests ที่เคยถูกบล็อกได้รัน และเพิ่ม array regression หนึ่งเคส) ทั้ง 14 เคสที่ข้าม
+ได้รันผ่านบนฐานเฉพาะครบแล้ว รวม gift schema ปัจจุบัน/ก่อน migration, answer evidence และ installer
+ผลล่าสุดอยู่ใน `.test-output/db-green/` พร้อม `verification.json` ตรวจชื่อเคสที่ครอบคลุม
+รายละเอียดการแก้และผลตรวจอื่นอยู่ใน [scripts README](../../scripts/README.md#all-db-failure-fixes-and-rerun-2026-10-15)
+ตรวจ schema readiness ในรอบก่อนหน้าผ่าน และ cleanup ไม่เหลือร้าน costing/recipe fixture หรือ audit-failure functions
+
+ยังไม่ถือว่าผ่าน production rollout: ต้องประเมิน query plans/latency ด้วยปริมาณข้อมูลเป้าหมาย,
+20,000-event cap, historical/legacy coverage ที่เกิน fixture และ live browser/gateway แยกต่างหาก
+ผล DB tests ไม่ได้ทำให้ feature backlog ในหัวข้อ A เสร็จอัตโนมัติ
+
+**Phase 9: recorded monthly net profit (before income tax).** Reports > Open recorded net profit
+combines phase-7 events and phase-4 reviewed expenses with phase-8 current allocations, on one
+serializable tenant snapshot. One full monthly sales scan supplies both profit and allocation drivers.
+Requires report.view + expense.view + delivery.settlement.view + tax.document.view and unrestricted
+branch access. Only month (20xx YYYY-MM) is accepted; tenant/actor derive from auth. No mutation,
+new table, migration, export, AI tool, mobile or realtime event is added.
+
+Revenue is saved sale net + shipping - saved VAT + signed rounding, less accepted returns' frozen
+ex-VAT amount + signed rounding. Extras are already inside sale net; order discounts are already
+applied. Return VAT is management allocation from SALE buckets, not an issued credit note or VAT
+filing. Sale/return events use their own Bangkok dates; returns follow the receiving branch, including
+cross-month/cross-branch returns. Completed cash/noncash refunds and CREDIT reductions are shown as
+separate diagnostics and are never subtracted again. Unallocated payment refunds, back-office returns
+and tax adjustments block full revenue instead of guessing a linkage or double-counting a credit note.
+
+Cost uses only CATALOG_AT_SALE snapshots. Legacy reconstructed/current/missing cost is unknown, not
+zero. This is **not actual purchase-lot valuation**. Return quantity cost basis remains diagnostic:
+without authoritative cost-reversal evidence, any return leaves net COGS/profit unknown. Do not assume
+a refund restocks cooked food or treat reservation release as valued stock recovery. Supplemental
+reads detect blind returns and unvalued WASTAGE/TRANSFER_LOST/COUNT_ADJUST/manual STOCK_OUT events;
+these block full profit rather than treating loss as zero or guessing current catalog values.
+
+Net profit = net revenue - historical net COGS - reviewed OPERATING - GP - monthly management
+DEPRECIATION. Signed credits preserve cents. No inventory purchases, drawer movement duplicates,
+recipe labor/energy estimates or allocation copy is deducted twice. Whole-tenant expenses use
+recognized source totals once, even before allocation; branch/channel results require complete,
+current allocations. Branch-wide cost buckets count once in the branch total and are not channel
+subtotals: nonzero unallocated shared cost blocks channel profit, never implicitly spreads it.
+Expense-only branches/channels are retained. Unknown evidence yields null full totals and labelled
+known subtotals; samples cap at 100, supplemental gaps at 1,000 + probe. Truncation never means zero.
+
+COMPLETE means **loaded evidence reconciles**, not proof all bookkeeping is entered or an audited
+statutory profit. Income tax is not calculated; management depreciation and current THB-profile
+checks retain their existing limitations. Returns with unverified cost reversal, unvalued inventory
+adjustments, unlinked tax notes and legacy evidence remain data-model reconciliation gaps even after
+DB testing; they are not falsely presented as merely waiting for a DB test. The old phase-7 nullable
+net fields, gross-profit dashboard and exports retain their original behavior.
+
+The worksheet has an independent month and read-only refresh. Changing month unmounts the old query,
+late responses cannot replace the new month, and loading/error hides stale totals. No browser-side
+authoritative arithmetic. DB work remains deferred: existing source migrations through 10.66,
+source grants/RLS, snapshot isolation, concurrent source/review changes and bounded-query plans.
+
+Phase 7 adds the **sales evidence read foundation**, not the phase-9 net-profit report or a new
+operator screen. `salesEvidence.ts` / `salesEvidenceMath.ts` and `bmsSalesEvidence` read existing
+order/item snapshots, extras, POS returns, completed refund allocations, standalone refunded
+payments, back-office returns and tax notes. The original profit/dashboard/export implementations
+stay unchanged. The phase-7 completion adds return evidence capture described below; refund pricing,
+stock and tax-document behavior are unchanged. No current recipe or product cost enters this read.
+Future P&L/menu readers can reuse `scanSalesEvidence` with a synchronous, side-effect-free server
+consumer; the summary uses this same stream. Consumers and cursors are never API inputs, and a
+failed consumer aborts the read transaction rather than returning a partial successful report.
+
+The query requires report.view + tax.document.view; tenant/actor come from the authenticated server
+context. Branch permissions are resolved inside the same serializable tenant transaction. An omitted
+branch filter means the actor's allowed branches, not all branches; explicit inaccessible/nonexistent
+branches are denied. Sales belong to the sale branch; POS return/refund evidence belongs to the
+receiving branch. Channel means the order's original channel, not payment method or fulfilment mode.
+There is no implicit restaurant-only filter: the foundation covers all order channels for reuse.
+
+Dates are inclusive Bangkok calendar dates (up to 366 days). Sales use paid_at, with a flagged
+created_at fallback; returns use acceptance created_at, completed allocations use completed_at,
+standalone refunds use refunded_at with a flagged fallback, and tax notes use issued_at (NOT the
+statutory tax-report issue_date basis). Paid sales remain visible even after cancellation/void,
+paired with their separately visible return/refund facts. Cancelled paid orders without a POS return
+are explicitly reconciliation-required. This deliberately differs from a netted shift
+report. No refund completion is subtracted a second time from a return claim. CREDIT allocations
+are receivable reductions, separately totalled from completed cash/provider refunds. Pending refunds
+are not completed money. Unallocated standalone refunds/back-office returns and tax notes are
+explicit unresolved evidence, not inferred menu-level revenue adjustments.
+
+Money is returned as exact decimal strings after BigInt satang arithmetic. saleNet is the recorded
+order total excluding shipping/rounding; saleGross is that header total plus order discount (already
+after product promotions). Product lines use line_amount, never unit_price multiplied by quantity.
+The internal proportional order-discount attribution conserves cents, excludes extras, and is
+labelled DERIVED_PROPORTIONAL_NOT_POSTED; it is not an immutable historical per-line allocation.
+Pre-promotion discounts, individual VAT allocations and missing historical snapshots are not
+reconstructed. VAT/ex-VAT known subtotals accept only order tax buckets that reconcile to the order
+total plus shipping; default-zero unmatched buckets are unknown. Explicit zero cost, missing cost,
+CATALOG_AT_SALE and LEGACY_CURRENT remain distinct. Catalog snapshots are not purchase-lot COGS.
+The current store currency must explicitly be THB; absent/non-THB settings require review. This
+guard does not certify historical currency, which orders do not snapshot; the API labels that basis.
+
+Return cost is a separately labelled quantity-proportional basis, cumulatively rounded using all
+prior return quantities (including outside the selected period). It is NOT proof of ingredient
+restocking or an authoritative COGS reversal; online reservation releases are called out separately.
+New POS returns carry the immutable financial snapshot below; older return claims can still include
+unallocated shipping/rounding and must remain explicitly unknown.
+Consequently netRevenue/netCost/netProfit are null by design, including on otherwise complete reads.
+COMPLETE only describes the selected evidence read, never complete bookkeeping or net profit.
+The later profit/menu integrations must resolve these explicit source gaps, not turn known subtotals
+into full totals. Historical gaps are never backfilled from current settings.
+
+**Phase-7 completion (`10.65`): return financial snapshots.** `processPosReturn()` inserts a v1
+`bms_pos_returns.financial_snapshot` in the same tenant transaction as the return, items, stock,
+refund allocations and audit, after the existing order lock and approval checks. It covers partial,
+full, cross-branch, void and restaurant online line cancellation through the shared engine. This is
+automatic evidence capture, not a new operator workflow or a change to refund entitlement. Snapshot
+failure rolls back with the return. Idempotent retries reuse history without writing/recomputing it.
+Settlement completion never changes the snapshot; a DB trigger rejects snapshot updates, including
+NULL-to-value backfills. Legacy NULL means unknown.
+
+The snapshot stores exact decimal amounts, source order tax buckets/auxiliaries, the returned line
+ids/amounts/VAT classifications, a versioned allocation policy, components and explicit gap reasons.
+For exact sale-time pricing, shipping, extras and signed cash rounding remain until the final return,
+matching the existing remaining-basket calculation. For legacy proportional pricing they follow a
+cumulative refund proportion, conserving every source cent across successive returns. Merchandise
+gross is the residual. Identity: claim = merchandiseGross + extrasGross + shippingGross + rounding.
+Rounding may be negative and is outside the VAT base; it is not a discount or shipping charge.
+
+VAT is explicitly `SALE_BUCKET_CUMULATIVE_ALLOCATION_V1`, **not the issued credit-note VAT**. Partial
+mixed-VAT attribution uses frozen returned-line classifications and separates auxiliaries; the final
+return consumes remaining sale tax buckets. VAT is cumulatively rounded against the original saved
+VAT/taxable amounts, preserving the sale's final VAT cents rather than applying today's VAT settings.
+Identity: claim - rounding = taxableGross + exemptGross = exVat + vat. VAT is embedded in merchandise/
+extras/shipping gross and must NOT be added to them again. Missing/unreconciled sale buckets, mixed
+bucket overflow, unknown VAT classification, source/policy changes, legacy prior returns, mismatched
+history or the 1,000-prior-return cap remain unknown with reasons, not zero. Components can be known
+while VAT is unknown. Allocation is not a statutory calculation or a claim that a credit note exists.
+Credit notes still issue after commit and may fail independently; void still cancels tax documents.
+The report marks allocated VAT as reconciliation-required and leaves tax notes separately visible.
+
+The evidence API exposes known component subtotals and separately named allocated VAT/ex-VAT totals.
+It validates the stored JSON, amount and exact return-line identities before counting them; malformed
+snapshots remain diagnostic gaps. No claim or payment is subtracted twice, and no net-profit formula
+is activated. Back-office/non-POS returns, blind returns without an original sale, generic payment
+refunds and provider-managed returns do not acquire invented line snapshots through this change.
+
+Identity-paged reads aggregate on the server in one transaction, never reuse a truncated top-sellers
+list. Pages are 100 events; 20,000 events plus one probe, 1,000 lines per header plus one probe, and a
+30-second scan budget bound work. A cap yields INCOMPLETE with a limit reason and partial known totals;
+a SQL timeout/failure is an error, never a zero report. Diagnostic samples are capped at 100, while
+issue counts and grouped totals include all loaded events. Source ids in diagnostics have no PII.
+The original round deferred DB verification; the local Docker follow-up in section D now exercises
+real source SQL, RLS/grants, serializable reads, first/repeated migration application, immutable
+snapshots, concurrent retries, audit rollback and mixed VAT/extras/rounding with real POS credit notes.
+There is no new AI tool, realtime event or client workflow. Apply `10.65` before deploying the return
+writer and reader; schema readiness includes the mandatory column. Production-scale query plans,
+the 20,000-event cap and wider legacy evidence still need separate rollout verification.
+
+Phase 6 adds read-only promotion/menu planning from the Recipes card in Stock models. Permissions
+remain product.view + report.view. Select 2–12 unique recipe UUIDs and unique labels; current cost
+comes only from the tenant-scoped estimator. Reads are bounded and sequential, with an observation
+timestamp per recipe, not an atomic multi-recipe snapshot. Missing/foreign ids reject the whole preview.
+No new table, migration, AI tool, provider, financial query, POS/mobile flow or promotion mutation.
+
+This is an explicit planning worksheet, **not automatic historical-sales Menu Engineering**. Staff
+must supply comparable daily quantities (including explicit zero-demand menus), realized prices,
+VAT/GP assumptions and a dated branch/channel/population/source note. Blank quantity is unknown.
+No existing top-seller query is reused as a complete population: those queries truncate and do not
+provide the line/refund allocation needed for a historical menu-margin report. That integration,
+actual promotion activation, modifiers, capacity and cannibalization analysis remain outside this increment.
+
+Popularity threshold = 70% / number of selected menus. Contribution threshold = sum(unit contribution
+in cents × assumed units) / total units. Equality counts as high; classify STAR (high/high), PLOWHORSE
+(high/low), PUZZLE (low/high), DOG (low/low). All groups are UNCLASSIFIED if any recipe cost or demand
+is unknown, or total demand is zero. Negative contributions remain negative; a relative STAR is not
+proof of positive profit. Zero-demand menus still count in the population. Classifications use the
+exact weighted fraction; threshold display truncates to satang. Menu-mix totals multiply displayed
+unit contributions (satang), then deduct shared daily fixed cost once. Unknown fixed cost leaves
+projected profit null but does not prevent classification. Totals include only individual menus.
+
+An optional bundle selects 1–12 distinct members of that menu population, each 1–1,000 integer output
+base units (including gifts), with its own final price/VAT/GP/extras/demand/target-margin assumptions.
+Recipe cost is summed from server unit costs × quantities. Individual-menu extras stay in the
+individual-sale baseline; bundle extras must be entered once for the entire bundle. Compare the same
+quantities' tax-inclusive individual payment and contribution with bundle payment/contribution.
+Negative savings means a more expensive bundle. Missing member costs leave bundle contribution and
+targets unknown, but known payment comparisons remain visible. A known subset can still be simulated
+when other menu costs are unknown. Bundle demand/profit is an independent alternative, never added
+to menu-mix totals. Reuse phase-5 exact rational targets, including null targets for non-positive
+contribution. No assumed sales volume is presented as evidence of demand or achievable capacity.
+
+Forms are ephemeral, no-cache, disabled during calculation and clear results on edits. Recipe-version
+selectors inherit the parent Form disabled context (never override it with an explicit false after
+selecting a product). Request revisions and a captured form-value fingerprint reject stale successes
+and errors after edits or newer calculations; an old request cannot unlock a newer pending request.
+Closing the modal invalidates callbacks. Programmatic form changes are checked even when they bypass
+onValuesChange. Existing
+recipe source SQL/RLS and migration prerequisites still require DB verification later; pure contracts
+and mocked browser tests cannot certify them. Phase-6 calculations never rewrite prior sale snapshots.
+
+Phase 5 adds read-only price/break-even previews from expanded recipe rows in Stock models, with
+product.view + report.view. Reuse one tenant-scoped current complete recipe estimate per request
+(inactive versions supported). Up to 12 named scenarios are alternatives assuming only this recipe
+output base unit is sold, not a weighted menu mix or shop-wide forecast. No persistence, migration,
+AI/provider calls or changes to actual pricing, bill snapshots, stock, financial reports or ledgers.
+
+Inputs: final realized price after discounts, VAT NONE/INCLUSIVE/EXCLUSIVE and explicit rate, GP rate
+and NET_REVENUE/CUSTOMER_TOTAL base, extra variable cost, optional expected daily units and target
+contribution margin. Common daily fixed cost may be unknown (blank); zero is explicit. Daily target
+profit and a source/date/allocation note are required. These are staff assumptions, not verified
+tax/provider settings. Include unrecoverable fee tax/packaging in extra cost. No modifier, pack,
+promotion, refund, tax-recovery, income-tax, minimum/tier fee or capacity model is implied.
+
+Contribution = revenue before output VAT − GP − complete recipe unit cost − extra variable cost.
+Recipe cost already includes labor/energy and is rounded to cents; do not add these again to fixed
+cost. Phase-4 monthly totals are deliberately not imported/divided automatically. Positive contribution
+yields ceil(fixed/contribution) break-even units and ceil((fixed + target profit)/contribution) target
+units. Daily profit = expected units × contribution − fixed. GP/VAT use exact rational arithmetic
+until display; targets use unrounded contribution, including tiny positives displayed as 0.00.
+Minimum price for target contribution margin uses the same VAT/GP factors and rounds UP to cents,
+at least 0.01 because margin is undefined at zero revenue. Impossible combinations yield UNREACHABLE.
+
+Missing recipe cost gives unknown contribution/targets; missing fixed cost gives unknown daily
+targets/profit. Non-positive contribution suppresses sales targets, including the degenerate zero
+fixed-cost/zero-contribution case (not a claim that its arithmetic balance is impossible).
+Rounded display rows may not sum. Money inputs max 1 billion THB with two decimals;
+rates 0–100%, target margin 0–99.99%, expected daily units integer 0–1 million; labels unique, at most
+60 characters; source note 1–500. NONE with nonzero VAT is rejected. No tax rate is auto-selected.
+Inputs are ephemeral; editing hides old results and failed previews never show stale results.
+Existing 10.63 recipe evidence is required; real source reads are now covered by the section-D Docker DB follow-up.
+Stocked-preparation production is separate. Catalog estimates, order-creation cost snapshots and
+period expenses must remain distinct; missing evidence is unknown, not zero. Nothing here changes
+the existing profit report or claims purchase-lot actual COGS, and no historical costs are backfilled.
+
 Modifiers apply integer positive or negative component deltas, but the resolved total for any
 component may never be negative. Completed POS recipe lines create idempotent kitchen tickets **when
 the shop has `KITCHEN_WORKFLOW` on** — a shop that uses recipes only to deduct ingredients would
@@ -783,3 +1287,101 @@ the product's base unit to be grams, and a price-embedded sale means the counter
 which the server would have to re-derive from the barcode at commit, or the register would be deciding
 prices. That contradicts the invariant the whole POS is built on, so the parser and its tests ship now
 and the sale path stays untouched until the re-derivation is built.
+
+
+### Completed restaurant costing workflow — 10.67–10.69
+
+The 15 items in the reference checklist now have operator workflows: ingredient and supplier records;
+central catalog cost updates; Single/Batch recipes, pinned subrecipes/BOM and SOP; labour/gas/electric
+assumptions; reviewed rent/depreciation; price/VAT/GP scenarios, retail/pack prices, promotion comparisons
+and daily break-even targets; and menu engineering. Actual-cost and publishing additions are below.
+
+- **Actual valuation:** moving weighted average per SKU/variant/branch, using authoritative PO item
+  cost on receipt. Review unknown opening inventory at Reports > Actual costs and menu engineering,
+  with evidence, current quantity/version and explicit confirmation. It never rewrites old sales.
+- **Sales/returns/transfers:** cost is frozen with the physical movement in the business transaction.
+  Returns carry original consumed value and cumulative partial-return allocation conserves cents.
+  Transfers carry value to the destination; quarantine is separate, losses/wastage and reviewed count
+  differences affect management cost. Unknown receipt/opening value remains unknown, not catalog cost.
+- **Actual menu engineering:** posted sale/return units, merchandise revenue net of allocated VAT and
+  actual material cost; no demand assumptions. A missing valuation or unresolved financial event blocks
+  classification. STAR/PLOWHORSE/PUZZLE/DOG use 70% of equal share and weighted unit contribution.
+  This is material contribution, not per-menu net profit after shared operating costs.
+- **Publish:** calculate a recipe price scenario, choose unit price, same-menu pack or N-for-price,
+  preview, then confirm. Requires product.edit + report.view and access to the affected branch (all-branch access for global prices); VAT must match the
+  store. Shared pack/promotion writers, immutable publication record and audit commit together.
+  Retries reuse the request id; stale recipe/cost/price/promotion observations are rejected. Base/pack changes can target a branch (10.71); without a branch they affect all branches/channels immediately. N-for-price rules can select a branch, sales surface and start/end time; existing quantity tiers/promotions can still alter final checkout pricing.
+  Mixed-menu comparisons have a separate reviewed publication workflow (10.72) that creates a sellable pinned recipe and ingredient BOM.
+
+**Evidence boundary:** existing unvalued sales are not retroactively assigned current prices.
+Unknown opening stock needs an authorized evidence-backed review. Cash refunds and uniquely linked,
+validated POS credit notes are not deducted twice. Unlinked tax adjustments, blind returns and legacy
+back-office returns remain explicit reconciliation gaps. No statutory P&L/tax certification is claimed.
+
+Verification: `restaurant-actual-costs-db-contract.test.mts` covers opening audit rollback, tenant
+isolation, concurrent purchases, frozen sale cost, partial-return rounding/replay, transfer loss,
+wastage, menu results, publication/VAT/stale confirmation, shared pricing, and migration reapplication.
+
+Price publication requires VAT-inclusive checkout for registered stores (non-registered/exempt
+prices remain untaxed). Exclusive what-if prices convert to inclusive selling prices before human
+confirmation. A legacy VAT-exclusive checkout configuration is rejected instead of publishing a
+price that its current settlement engine would collect incorrectly. The what-if calculator still
+supports both VAT price modes.
+
+### Costing completeness follow-up — 10.70
+
+- Opening valuation uses server-side literal SKU/variant search and offset/limit pagination (50 rows in
+  the UI, up to 1,000 per API page); there is no 1,000-row reachability limit. Read/review stays branch
+  authorized. A page is an observation; quantity/version are checked again when confirming a value.
+- Recipe, price and menu planners expose an explicit catalog or branch moving-average basis. The
+  latter requires an authorized branch, positive valued stock and a valuation quantity matching the
+  physical balance. Unknown opening stock never falls back to catalog cost. Labour/utilities remain
+  declared assumptions. Publication recomputes the selected basis and rejects stale costs.
+- Actual Menu Engineering includes active recipes with zero sales plus recorded sold items, including
+  discontinued items. An optional SKU population filters the comparison. Zero-unit rows show NO_SALES
+  without poisoning sold-menu classification; net negative quantities show NET_RETURNS. Material
+  contribution is not full per-menu net profit. Unknown cost or unreconciled financial evidence still
+  blocks a complete comparison. The scan cap of 20,000 events/population rows is explicit.
+- N_FOR_PRICE can target a variant, branch, RETAIL_POS / RESTAURANT_POS / ONLINE_ORDER surface and time
+  window. One-unit rules support scoped unit-price offers; 10.71 also adds branch base/pack overrides. The shared web,
+  native and settlement pricing paths filter variant eligibility before applying quantity tiers.
+  A promotion never raises the normal price. 10.71 allows successive non-overlapping windows per SKU/branch: future publication retains the
+  current rule until activation. Preview includes existing rules and the selected scope. A rule is not an additional independently stacked discount.
+- VAT-exclusive scenario input is converted to the VAT-inclusive customer price before confirmation;
+  a legacy store configured for VAT-exclusive checkout must be reviewed in Tax settings first. No
+  store tax flag or existing price is silently rewritten. Mixed-menu bundle comparisons require a separate explicit preview/confirm to publish a sellable recipe SKU (10.72).
+
+### Operating completion — 10.71–10.72
+
+- At price publication, choose all branches or one authorized branch for BASE/PACK. Branch overrides
+  use the catalog variant and existing named-pack definition; quantity and barcode stay shared. A base
+  override also works before a BASE pack row exists. Recipe menu prices and filters use serving variants
+  even when only ingredients own stock. Both higher and lower
+  branch prices are supported. Scan, available pack choices, catalog filtering and settlement resolve
+  the same override; sale snapshots preserve returns after later price edits. Tiers/promotions still
+  apply through existing pricing rules.
+- Future promotions are separate rows. Their intervals are `[start,end)`, with database exclusion
+  enforcing no overlap for one SKU/branch. A new window closes its predecessor at the activation
+  boundary, not at save time, and inherits the next start as its end when omitted. An explicit end
+  crossing the next window is rejected. Current edits retain future windows. Cancellation disables
+  the selected row; it does not silently extend a prior offer. Legacy pre-10.41 schema behavior is
+  retained for the dedicated migration compatibility test.
+- Reports > Actual costs > Net profit by menu uses the full monthly menu population for the selected
+  scope. Preview an explicit positive-net-revenue, positive-net-unit or equal allocation, with a
+  rationale, then confirm. Revenue, actual material costs, operating expense, GP, depreciation and
+  stock adjustments are displayed separately. Each allocation conserves cents. Non-menu revenue
+  (including shipping/rounding) is shown as its own reconciliation bucket: menu profit plus that bucket
+  equals the existing recorded net-profit report. Unknown opening costs/financial sources remain
+  unknown. Changed source evidence hides stale confirmed totals until reconfirmed. This is monthly
+  management profit before income tax, not a statutory statement. Read permissions mirror net profit;
+  confirmation additionally requires expense.manage. All-branch authority is required to read the
+  complete source ledger even when displaying a branch.
+- From a calculated multi-menu bundle, choose Publish menu bundle; enter a new SKU/name, reviewed
+  bundle tax category, sales surfaces and kitchen station. Review price and the flattened ingredient
+  BOM and confirm. The shared catalog, pinned-recipe and readiness services create and activate a
+  RECIPE product atomically, without stock fabrication. Ingredient consumption uses normal recipe
+  sale/return handling. Child assumptions are combined by output quantity with weighted rates;
+  historical actual costs still come exclusively from inventory evidence. Tax category is explicitly
+  reviewed for the sold bundle rather than inferred from component taxes. Conflicts, missing costs,
+  fractional base-unit BOMs, stale review or failed audit publish nothing. Replays create no duplicates.
+  Requires product.edit + product.delete (activation permission) + report.view and all-branch access.

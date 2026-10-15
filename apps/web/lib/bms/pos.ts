@@ -1,3 +1,4 @@
+import { readBranchPrice, branchPrice } from "./branchPrices";
 // =============================================================
 // BMS POS — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
@@ -22,6 +23,7 @@ import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { buildReturnFinancialSnapshot } from "./returnFinancialSnapshot";
 import { resetMenuAvailabilityForLocationInTx } from "./menuAvailability";
 import { refreshSessionFromGroupsInTx } from "./boardGameSessionStatus";
 import { createOrder, createOrderInTx, cancelOrder, type OrderItemInput } from "./orders";
@@ -59,6 +61,7 @@ import { isPharmacistReviewableBlock } from "./pharmacy/productPolicyDecision";
 import { createProductReviewAssessmentOnce } from "./pharmacy/assessments";
 import {
   cashRoundingDelta,
+  applyOrderVatInTx,
   getVatSettings,
   issueAbbreviatedInvoiceInTx,
   issueCreditNote,
@@ -612,12 +615,12 @@ export async function listPosVariantChoices(
       ORDER BY choices.sort_order, choices.size`,
     [tenantId, productSku, locationId],
   );
-  return result.rows.map((row) => ({
+  return Promise.all(result.rows.map(async (row) => ({
     size: row.size,
     available: Math.max(0, Number(row.available) || 0),
-    price: Number(row.price),
+    price: await readBranchPrice(tenantId,locationId,productSku,row.size) ?? Number(row.price),
     stockTracked: row.stock_tracked,
-  }));
+  })));
 }
 
 /**
@@ -849,6 +852,7 @@ export async function resolvePosScan(
   );
   const promotion: Promotion | null = pickPromotionForLocation(
     promoRes.rows.flatMap((promoRow: any) => {
+      if (promoRow.sales_surface && promoRow.sales_surface!==salesSurface) return [];
       const promotion = promotionFromRow(promoRow);
       return !promotion || (promotion.kind === "BUY_A_GET_B" && salesSurface !== "RETAIL_POS") ? [] : [{
       locationId: promoRow.location_id ?? null,
@@ -907,7 +911,7 @@ export async function resolvePosScan(
         default_selected: boolean;
       }> };
 
-  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size);
+  const basePrice = await getVariantBasePrice(tenantId, row.sku, row.size, opts.locationId);
   if (basePrice == null) return null;
   const packOptions = await query<{
     pack_code: string;
@@ -925,11 +929,16 @@ export async function resolvePosScan(
   const baseQty = embeddedBaseQty ?? row.base_qty ?? 1;
   // pack ไม่ตั้งราคาไว้ → ราคาต่อ pack = ราคาต่อหน่วยฐาน × base_qty (ไม่มีส่วนลดยกกล่อง)
   const resolvedPackCode = row.pack_code ?? "BASE";
+  const branchPackPrice = await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,resolvedPackCode);
+  for (const pack of packOptions.rows) {
+    const override=await readBranchPrice(tenantId,opts.locationId,row.sku,row.size,pack.pack_code);
+    if(override!=null) pack.price=String(override);
+  }
   const packPrice = scaleBarcode
     ? basePrice * baseQty
     : resolvedPackCode === "BASE"
     ? basePrice
-    : row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty;
+    : branchPackPrice ?? (row.pack_price != null ? Number(row.pack_price) : basePrice * baseQty);
 
   return {
     sku: row.sku,
@@ -2866,8 +2875,8 @@ async function canonicalizePosSaleLines(
       return { ok: false, sku, packCode };
     }
     const baseQty = row.base_qty ?? 1;
-    const basePrice = Number(row.base_price);
-    const packPrice = row.pack_price == null ? basePrice * baseQty : Number(row.pack_price);
+    const basePrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size) ?? Number(row.base_price);
+    const packPrice = await readBranchPrice(tenantId,locationId,sku,row.stored_size ?? size,packCode) ?? (row.pack_price == null ? basePrice * baseQty : Number(row.pack_price));
     items.push({
       sku,
       // ใช้ไซซ์ตามที่เก็บใน bms_inventory ไม่ใช่ที่ client ส่งมา —
@@ -3575,6 +3584,9 @@ async function fulfilPosOrderInTx(
   }
   // ร้านที่ยังไม่จด VAT ขายได้ตามปกติ แค่ไม่มีใบกำกับ — ไม่ใช่ error
   if (issued.status === "NOT_VAT_REGISTERED") {
+    // Freeze the exempt revenue bucket even without a tax document; later registration changes
+    // must not make historical non-VAT sales indistinguishable from missing legacy snapshots.
+    await applyOrderVatInTx(client, tenantId, orderId, taxArgs.settings);
     return { docNo: null, vat: null, vatIssue: null, kitchenTickets };
   }
   // ร้านจด VAT แล้วแต่สินค้ายังไม่ระบุประเภทภาษี = ออกใบไม่ได้ ต้องหยุดทั้งบิล
@@ -4385,8 +4397,9 @@ async function finalizePosSale(args: {
       }
 
       const externalTotal = Math.round(payments.reduce((sum, payment) => sum + payment.amount, 0) * 100) / 100;
-      if (Math.abs(externalTotal + reservationDepositApplied - amountDue) > 0.01) {
-        throw new Error(`ยอดชำระไม่ตรง (ต้องเก็บ ${amountDue - reservationDepositApplied})`);
+      // The locked payments include earlier deposit instalments. Collect only the balance.
+      if (Math.abs(foundPaid + externalTotal + reservationDepositApplied - amountDue) > 0.01) {
+        throw new Error(`ยอดชำระไม่ตรง (ต้องเก็บ ${Math.round((amountDue - foundPaid - reservationDepositApplied) * 100) / 100})`);
       }
 
       for (const payment of payments) {
@@ -5765,16 +5778,26 @@ export async function processPosReturn(input: {
       coupon_id: string | null;
       fulfillment_type: "DELIVERY" | "PICKUP" | null;
       extra_total: string;
+      extra_taxable: string;
+      taxable_amount: string;
+      exempt_amount: string;
+      vat_amount: string;
     }>(
       `SELECT id, status, channel, pos_device_id, location_id, total_amount, shipping_fee,
               rounding_amount,
-              discount_amount, coupon_id, fulfillment_type,
+              discount_amount, coupon_id, fulfillment_type, taxable_amount, exempt_amount, vat_amount,
               COALESCE((
                 SELECT SUM(extra.qty * extra.unit_amount)
                   FROM bms_order_extra_lines extra
                  WHERE extra.tenant_id = bms_orders.tenant_id
                    AND extra.order_id = bms_orders.id
-              ), 0) AS extra_total
+              ), 0) AS extra_total,
+              COALESCE((
+                SELECT SUM(extra.qty * extra.unit_amount)
+                  FROM bms_order_extra_lines extra
+                 WHERE extra.tenant_id = bms_orders.tenant_id AND extra.order_id = bms_orders.id
+                   AND extra.vat_category <> 'N'
+              ), 0) AS extra_taxable
          FROM bms_orders
         WHERE tenant_id = $1 AND id = $2
         FOR UPDATE`,
@@ -5858,7 +5881,10 @@ export async function processPosReturn(input: {
       receipt_unit_price: string;
       pricing_snapshot: unknown;
       returned_pack_qty: string | null;
+      stock_consumption_version: number;
+      restaurant_check_item_id: string | null;
       returned_refund_amount: string | null;
+      vat_category: string;
     }>(
       `SELECT oi.id,
               oi.order_id,
@@ -5873,6 +5899,9 @@ export async function processPosReturn(input: {
               oi.line_amount,
               oi.receipt_unit_price,
               oi.pricing_snapshot,
+              oi.vat_category,
+              oi.stock_consumption_version,
+              oi.restaurant_check_item_id,
               COALESCE((
                 SELECT SUM(pri.pack_qty)
                   FROM bms_pos_return_items pri
@@ -6004,6 +6033,7 @@ export async function processPosReturn(input: {
         receiptUnitPrice: Number(item.receipt_unit_price),
         packUnitPrice: item.pack_unit_price == null ? null : Number(item.pack_unit_price),
         pricingSnapshot: item.pricing_snapshot,
+        promotionGroup: item.restaurant_check_item_id ? JSON.stringify([item.product_sku, item.size]) : undefined,
       }));
     const remainingPricing = priceRemainingLines(returnPricingLines, requestedMap);
     const giftOriginal = orderItems.map((l) => ({ sku: l.product_sku, size: l.size, qty: Number(l.qty),
@@ -6205,20 +6235,37 @@ export async function processPosReturn(input: {
       if (!approvedBy && actorCanApprove) approvedBy = input.actorUserId;
     }
 
+    // The order row is locked above: prior evidence and this new return share one serialised
+    // transaction. Replay exits before here; never reconstruct a legacy/retried snapshot.
+    const financialHistory = await client.query<{ amount: string; snapshot: unknown }>(
+      `SELECT refund_amount::text AS amount, financial_snapshot AS snapshot
+         FROM bms_pos_returns WHERE tenant_id=$1 AND order_id=$2 ORDER BY created_at, id LIMIT 1001`,
+      [input.tenantId, input.orderId]
+    );
+    const financialSnapshot = buildReturnFinancialSnapshot({
+      amount: roundedRefundAmount.toFixed(2), previousRefund: previousRefundAmount.toFixed(2),
+      exactPricing: hasExactSaleTimeRules, allReturned,
+      source: { payable: orderAmount.toFixed(2), shipping: order.shipping_fee ?? "0.00",
+        rounding: order.rounding_amount ?? "0.00", extras: order.extra_total,
+        extraTaxable: order.extra_taxable, taxable: order.taxable_amount, exempt: order.exempt_amount, vat: order.vat_amount },
+      lines: calculated.map(line => ({ orderItemId: String(line.item.id), amount: line.refundAmount.toFixed(2),
+        vatCategory: line.item.vat_category ?? "UNKNOWN" })),
+      previous: financialHistory.rows,
+    });
     const ret = await client.query<{ id: string; created_at: unknown }>(
       `INSERT INTO bms_pos_returns
          (tenant_id, order_id, pos_device_id, shift_id, returned_by, approved_by, return_mode,
           refund_amount, settlement_status, idempotency_key, note, is_void, merchant_absorbed_amount,
           pricing_adjustment_amount, remaining_amount_after_return, preferred_refund_method,
-          source_channel, sale_location_id, return_location_id, cross_branch)
+          source_channel, sale_location_id, return_location_id, cross_branch, financial_snapshot)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'PENDING', $9, $10, $11, $12, $13, $14, $15,
-               $16, $17, $18, $19)
+               $16, $17, $18, $19, $20::jsonb)
        RETURNING id, created_at`,
       [input.tenantId, input.orderId, input.deviceId, input.shiftId, input.actorUserId, approvedBy,
         input.mode, roundedRefundAmount, input.idempotencyKey, input.note ?? null,
         input.isVoid === true, merchantAbsorbedAmount, pricingAdjustmentAmount, remainingAmount,
         input.preferredRefundMethod ?? null, order.channel, saleLocationId, returnLocationId,
-        crossBranch]
+        crossBranch, JSON.stringify(financialSnapshot)]
     );
     const posReturnId = ret.rows[0].id;
 
@@ -6252,7 +6299,9 @@ export async function processPosReturn(input: {
           ORDER BY product_sku, size`,
         [input.tenantId, input.orderId, item.id]
       );
-      if (!stockLines.rowCount && !onlineCancellation) throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+      if (!stockLines.rowCount && !onlineCancellation && Number(item.stock_consumption_version) !== 2) {
+        throw new Error(`ไม่พบบรรทัด stock ของรายการ ${item.id}`);
+      }
 
       if (onlineCancellation) {
         for (const stockLine of stockLines.rows) {
@@ -6384,6 +6433,8 @@ export async function processPosReturn(input: {
           qty: exactQty,
           refOrderId: input.orderId,
           note: `POS return ${posReturnId}${crossBranch ? ` from ${saleLocationId}` : ""}`,
+          orderItemId: item.id,
+          returnId: posReturnId,
           actor: input.actorUserId,
         });
       }
@@ -6619,6 +6670,9 @@ export async function processPosReturn(input: {
         pricingAdjustmentAmount,
         remainingAmount,
         merchantAbsorbedAmount,
+        financialSnapshotVersion: financialSnapshot.version,
+        financialSnapshotPolicy: financialSnapshot.policy,
+        financialSnapshotIssues: financialSnapshot.issues,
         cancellationCauses: [...cancellationCauses.entries()],
         pointsReversed: loyaltyReversal.earnedReversed,
         pointsReturned: loyaltyReversal.redeemedReturned,
@@ -8401,7 +8455,7 @@ export async function blindReturnPosSale(input: {
           WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
         [input.tenantId, locationId, line.sku, line.size]
       );
-      const maxUnitRefund = await getVariantBasePriceInTx(client, input.tenantId, line.sku, line.size);
+      const maxUnitRefund = await getVariantBasePriceInTx(client, input.tenantId, line.sku, line.size, locationId);
       if (!variant.rowCount || maxUnitRefund == null) {
         await client.query("ROLLBACK");
         return { status: "INVALID", reason: `ไม่พบสินค้า ${line.sku} ขนาด ${line.size} ที่เปิดขายอยู่ในสาขานี้` };

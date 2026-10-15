@@ -643,7 +643,50 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsExpenseDocuments.ts` | Tenant-scoped expense evidence, input-VAT/withholding summaries, idempotent creation and reason-required voiding (`expense.view` / `expense.manage`). Since `10.37` the same mutation records `SUPPLIER_CREDIT_NOTE` / `SUPPLIER_DEBIT_NOTE` with `receivedDate`, `referenceDocumentNo` and `adjustmentReason`; the VAT claim month is the month received |
 | `bmsPosDevice.ts` | Device-scoped surface for the native register (`apps/mobile`), authenticated by a device Bearer token plus a cashier PIN re-checked on every mutation — not by an admin session. Covers selling, returns/void, shift and drawer, restaurant checks/kitchen, branch stock transfers and counts, and board-game sessions/library. Tenant, branch, device and shift are derived from the authenticated device and are never accepted as input; money/stock/document mutations require `idempotencyKey`, and a key already spent on a different request body is refused as `CONFLICT` (`reason: IDEMPOTENCY_CONFLICT`), never a 500. Every operation calls the same `lib/bms/*` service the REST route calls — one adapter never calls the other |
 | `bmsMobileOperations.ts` | The remaining mobile back-office gaps that are not device-scoped. Ordinary `getTenantId(ctx)` + `requirePermission()` resolvers over the same services as their REST compatibility routes |
-| `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`, `9.51`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and grouped modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), readiness (`bmsProductReadiness`), the kitchen station master (`bmsKitchenStations`, `bmsUnmappedKitchenStationNames`, `bmsCreateKitchenStation`, `bmsUpdateKitchenStation`, `bmsArchiveKitchenStation` — `9.54`, read `product.view` / manage `product.edit`), kitchen tickets and wastage. Reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `restaurant.kitchen.update`, and write-off uses `stock.adjust`. Modifier surcharge and group constraints are server-owned and re-resolved during order creation. |
+| `bmsStockCapabilities.ts` | Multi-store stock model (`9.40`–`9.41`, `9.51`): tenant capability overrides (`bmsStoreCapabilities`, `bmsUpsertStoreCapability`, `bmsResetStoreCapability`), per-product stock policies (`bmsProductStockPolicy`, `bmsUpsertProductStockPolicy`), versioned recipes and grouped modifiers (`bmsProductRecipes`, `bmsProductModifiers`, `bmsUpsertProductRecipe`, `bmsUpsertProductModifier`), readiness (`bmsProductReadiness`), the kitchen station master (`bmsKitchenStations`, `bmsUnmappedKitchenStationNames`, `bmsCreateKitchenStation`, `bmsUpdateKitchenStation`, `bmsArchiveKitchenStation` — `9.54`, read `product.view` / manage `product.edit`), kitchen tickets and wastage. Reads use `product.view` / `order.view`, model edits use `product.edit`, ticket moves use `restaurant.kitchen.update`, and write-off uses `stock.adjust`. Modifier surcharge and group constraints are server-owned and re-resolved during order creation. Recipe composition/SOP (`10.62`) adds `directItems`, pinned `subrecipes { recipeId qty }`, and ordered `sopSteps` to the existing recipe mutation/read. Legacy `items` remains the compiled BOM on reads; writers must choose either `items` or `directItems`, and may not flatten away existing pins. Omitted pins/SOP preserve existing content; changed content returns a new id/version. Tenant and actor remain server-derived. |
+
+Restaurant menu planning (phase 6): query `bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!)`
+requires product.view + report.view before deriving tenant and calling the service. Input has a source
+note, nullable daily fixed cost, target profit, 2–12 distinct recipe/scenario items and optional bundle
+parts/scenario. All assumptions are validated before I/O; no tenant, cost, sales authority or mutation.
+Result status OK/INVALID_INPUT/NOT_FOUND with errorCode, per-recipe estimates and nullable analysis.
+Missing and foreign recipes share NOT_FOUND without partial results. Infrastructure errors propagate.
+Analysis states COMPLETE/INCOMPLETE_COST/INCOMPLETE_DEMAND/NO_DEMAND; groups STAR/PLOWHORSE/PUZZLE/DOG/
+UNCLASSIFIED. Bundle uses existing price-plan status/target contracts. See inventory phase-6 formulas,
+limits and explicit manually supplied demand basis; this endpoint never queries historical sales.
+
+Restaurant price planning (phase 5): query `bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!)`
+requires product.view + report.view and derives tenant on the server. No mutation. Validates assumptions
+before reading the existing recipe estimator. Returns typed status OK/INVALID_INPUT/NOT_FOUND,
+errorCode, estimate (recipe version, observation time, full cost evidence) and scenario results.
+Missing and foreign recipe ids share NOT_FOUND. Infrastructure/auth failures remain errors.
+Per-scenario states: COMPLETE/INCOMPLETE_COST/INCOMPLETE_FIXED_COST/NON_POSITIVE_CONTRIBUTION;
+target-price states COMPLETE/NOT_REQUESTED/INCOMPLETE_COST/UNREACHABLE. Nullable outputs preserve
+unknown evidence; zero revenue has no contribution-margin percentage. See inventory phase-5 formulas
+and limits. No tenant, authoritative unit cost, branch financial data or actual selling-price write
+is accepted from the caller. Full schema is generated in the same change.
+
+Operating-cost reconciliation (`10.64`): `bmsOperatingCosts(month: String!)` requires report.view +
+expense.view + delivery.settlement.view and unrestricted all-branch access. YYYY-MM input; output
+ALL_BRANCHES/THB rows with source fingerprints/review versions, separate operating/GP/depreciation
+and known totals, nullable reviewedTotal, complete/truncated/unresolvedCount. No caller scope.
+`bmsReviewOperatingCost(input)` additionally requires expense.manage. Inputs: sourceKey,
+sourceFingerprint, expectedVersion, disposition, reason, confirmed=true; duplicateKey only for
+DUPLICATE; startMonth/lifeMonths/residual only for DEPRECIATION. Source eligibility/amounts are
+server-derived. Exact retry returns saved version. Stale source/version: CONFLICT; scope: FORBIDDEN;
+invalid business input: BAD_USER_INPUT. Infrastructure errors are not recast as validation.
+No new REST/AI/native adapter or financial ledger write. See inventory phase-4 semantics.
+
+Recipe planning (`10.63`): `bmsRecipeCostEstimate(recipeId: ID!)` requires `product.view` and derives
+tenant from context. Missing/foreign ids return null; malformed UUIDs are `BAD_USER_INPUT`. Output
+includes version, current-catalog observation time, leaf cost provenance, known subtotal, missing
+ingredient count and nullable complete batch/unit totals. It never writes or supplies bill costs.
+`bmsUpsertProductRecipe` adds optional `costAssumptions { labor electricity gas }`, each null or
+`{quantity rate source}`. Omission preserves existing assumptions; explicit null clears all; a provided
+object replaces all three categories. These are whole-batch values INCLUDING child preparation;
+labor uses person-minutes/THB per hour, electricity kWh/THB per kWh, gas kg/THB per kg. Every supplied
+category needs a source even when quantity is zero. Editing amounts/source creates a recipe version
+under existing `product.edit` and transactional audit; no new permission or AI tool is introduced.
 
 Most resolvers follow the same shape: `requirePermission(ctx, "<resource>.<action>")` →
 `getTenantId(ctx)` → call the matching `lib/bms/*.ts` function → optionally `audit(ctx, ...)`.
@@ -1074,6 +1117,76 @@ when the dataset is larger than the currently loaded page.
   `FAKE-`/`SAMPLE-` prefix never is. DELETE requires the body confirmation `DELETE SAMPLE`. Unlike
   `/api/dev/fake/*`, it does not use the development fake-seed feature flag.
 - `bmsMe`, `updateMe`, and `uploadAvatar` power `/admin/profile` and other self-profile surfaces.
+
+## Recorded monthly net profit (phase 9)
+
+Phase 9 adds the separate read-only `bmsNetProfit(month: String!): BmsNetProfitReport!` query.
+Month is 20xx YYYY-MM; caller cannot supply tenant, actor, amounts, location/channel scope or a basis.
+Requires report.view + expense.view + delivery.settlement.view + tax.document.view and all-branch
+access, with tenant/currency/scope repeated in the serializable service transaction. Expected evidence
+rejections return status REJECTED/errorCode; auth/scope remains FORBIDDEN, SQL failures propagate.
+OK responses include month/observedAt, coverage flags, exact nullable money strings, known subtotals,
+branch/channel groups, bounded diagnostic codes/counts/samples and explicit calculation bases.
+Only the dedicated P&L query calculates net fields; `bmsSalesEvidence` remains an evidence adapter
+with null net fields. No mutation/new REST endpoint/export replaces existing report behavior.
+See inventory.md phase 9 for before-income-tax, catalog-cost, return-reversal and source-gap limits.
+
+## Monthly cost allocation (phase 8)
+
+`bmsCostAllocations(month)` returns typed current/unknown totals, branch/channel groups, source review
+state and the latest frozen allocation version. `bmsPreviewCostAllocation(input)` accepts month,
+sourceKey and rule `{method,reason,targets:[{locationId,channel?,weight?}]}`; it returns server-derived
+amount/allocations, fingerprint and expectedVersion. Methods: DIRECT, EQUAL, WEIGHTED, SALES_GROSS,
+SALES_UNITS. Weight is an integer string only for WEIGHTED. Blank/null channel means all channels
+within the target branch; overlapping targets reject. Month is 20xx YYYY-MM, at most 100 targets.
+
+`bmsSaveCostAllocation(input)` repeats the preview input plus expectedVersion, previewFingerprint and
+confirmed:true. It recomputes against current evidence in its tenant transaction before appending a
+version. Caller tenant/actor/amount/result/denominator are not inputs. All operations require report,
+expense, delivery-settlement and tax-document read permissions plus unrestricted branch access;
+save adds expense.manage. Business rejections stay in data as status REJECTED/errorCode. Permission
+failures remain FORBIDDEN; DB failures are not empty successful reports. Exact latest-request retries
+return SAVED/replayed:true without another audit. No new REST route or AI tool.
+
+Money is decimal strings. SALES_* means recorded paid product activity after bill discounts, VAT
+inclusive, excluding extras/shipping/rounding and BEFORE return/void reversals. It is not net revenue.
+STALE allocations are visible but excluded from current groups/totals; INACTIVE source allocations
+are retained without being charged again. allocatedTotal=null when evidence/review/allocation is
+incomplete; knownAllocated is only the current known subset. Existing profit/POS APIs are unchanged.
+
+## Sales evidence foundation (phase 7)
+
+`bmsSalesEvidence(input: {from, to, locationId?, channel?})` requires `report.view` AND
+`tax.document.view`. Tenant and actor are server-derived. The service repeats branch authorization
+inside its tenant transaction, including omitted filters. Dates must be valid 20xx ISO calendar
+dates, inclusive Bangkok, with at most 366 days. There is no caller tenant, actor, cost or amount.
+
+Returns typed decimal-string totals and day/branch/original-channel groups, source quality counts,
+up to 100 diagnostic source-id samples, observation time and explicit calculation bases. Sale,
+return claim, returned quantity cost basis, completed refund and completed credit reduction are
+separate metrics; tax notes/standalone refunds/back-office returns stay unallocated. `netRevenue`,
+`netCost` and `netProfit` are deliberately null: this is phase-7 evidence, not the later P&L API.
+`COMPLETE` means no detected gap in the selected read, not complete bookkeeping. `INCOMPLETE` also
+covers scan/line caps and legacy/missing evidence; known subtotals are not full financial totals.
+The store currency must explicitly be THB; it is labelled current configuration, not sale-time
+currency proof. Missing/non-THB configuration returns a review-required rejection.
+
+Phase-7 return completion adds decimal-string `returnKnownMerchandiseGross`, `returnKnownExtrasGross`,
+`returnKnownShippingGross`, `returnKnownRounding`, `returnAllocatedVat` and `returnAllocatedExVat` to
+totals and group totals. Known component totals come only from validated `10.65` snapshots whose
+amount and item identities match the return. These are known subsets, not full totals when gaps exist.
+`returnVatBasis = SALE_BUCKET_CUMULATIVE_ALLOCATION_NOT_CREDIT_NOTE`; allocated VAT is embedded in
+gross, excludes rounding, and is never added again or substituted for issued credit-note evidence.
+`RETURN_VAT_IS_SALE_ALLOCATION` intentionally keeps reconciliation visible; legacy/invalid snapshots
+remain `RETURN_COMPONENTS_UNALLOCATED`/`RETURN_SNAPSHOT_INVALID`, and missing VAT remains explicit.
+The existing POS REST/GraphQL return inputs/responses, authentication, cashier approvals and money
+semantics do not change; clients cannot supply or rewrite financial snapshots. No new mutation.
+
+Validation/evidence rejections return `status: REJECTED` plus `errorCode`, with null totals and empty
+groups/issues/samples. Permission failures remain GraphQL FORBIDDEN, never logout. Infrastructure
+errors are not transformed into empty successful reports. No mutation, AI exposure, price publication,
+new REST route, UI change or replacement of existing report queries. Regenerate schema.graphql with
+schema:export. Real SQL/RLS/consistency/performance tests remain deferred; DB-free tests use fakes.
 
 ## Fake-store ground truth
 

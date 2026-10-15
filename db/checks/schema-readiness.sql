@@ -2,6 +2,15 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.66__bms_cost_allocations.sql', 'table', 'bms_cost_allocations', NULL, 'Monthly expense allocation requires versioned allocation evidence; selling and refund paths are unchanged'),
+    ('10.65__bms_pos_return_financial_snapshots.sql', 'column', 'bms_pos_returns', 'financial_snapshot', 'Returns, voids, restaurant line cancellation and sales evidence require the immutable return financial snapshot column'),
+    ('10.64__bms_operating_cost_reviews.sql', 'table', 'bms_operating_cost_reviews', NULL, 'Monthly operating-cost reconciliation needs reviewed classifications; original sales, cash and tax reports are unchanged'),
+    ('10.63__bms_recipe_cost_assumptions.sql', 'column', 'bms_product_recipes', 'cost_assumptions', 'Recipe configuration and planning estimates require versioned whole-batch cost assumptions; sales and profit snapshots are unchanged'),
+    ('10.62__bms_recipe_composition_sop.sql', 'column', 'bms_product_recipes', 'direct_items', 'Recipe configuration requires pinned subrecipe references and versioned SOP; stock readers keep the compiled leaf BOM'),
+    ('10.62__bms_recipe_composition_sop.sql', 'column', 'bms_product_recipes', 'sop_steps', 'Recipe configuration requires pinned subrecipe references and versioned SOP; stock readers keep the compiled leaf BOM'),
+    ('10.62__bms_recipe_composition_sop.sql', 'table', 'bms_product_recipe_subrecipes', NULL, 'Recipe configuration requires pinned subrecipe references and versioned SOP; stock readers keep the compiled leaf BOM'),
+    ('10.61__bms_restaurant_item_snapshots.sql', 'column', 'bms_restaurant_check_items', 'stock_snapshot', 'Order writes and restaurant checks require per-item stock/cost snapshots and line identity'),
+    ('10.61__bms_restaurant_item_snapshots.sql', 'column', 'bms_order_items', 'restaurant_check_item_id', 'Order writes and restaurant checks require per-item stock/cost snapshots and line identity'),
     ('10.55__bms_ai_limit_notices.sql', 'table', 'bms_ai_limit_notices', NULL, 'AI admission and owner limit status need the refused-call requirement and durable notices'),
     ('10.55__bms_ai_limit_notices.sql', 'column', 'bms_ai_usage_monthly', 'budget_denied_required_usd', 'AI admission and owner limit status need the refused-call requirement and durable notices'),
     ('10.55__bms_ai_limit_notices.sql', 'column', 'bms_ai_usage_monthly', 'budget_denied_model', 'AI admission and owner limit status need the refused-call requirement and durable notices'),

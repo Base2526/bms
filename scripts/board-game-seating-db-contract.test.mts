@@ -121,17 +121,25 @@ test("chat publication is independent of directory visibility against real Postg
       readBoardGameCustomerInfoInTx(client, shop, kind, { limit: 20 });
     const rates = await read("rates");
     assert.equal(rates.status, "OK");
+    assert.ok("rates" in rates);
     assert.equal(rates.rates.length, 4);
     const floor = await read("availability");
     assert.equal(floor.status, "OK");
+    assert.ok("booking" in floor);
     assert.equal(floor.totalTables, 3, "blocked table is excluded");
     assert.equal(floor.availableTables, 2, "active seating occupies one table");
     assert.deepEqual(floor.tableDetails, [{
       area: "FAKE chat area", seats: 4, totalTables: 3, availableTables: 2,
     }]);
-    assert.equal(floor.booking.canSubmitViaChat, true);
+    assert.equal(floor.booking.canSubmitViaChat, false, "published availability does not enable booking");
+    await client.query("UPDATE bms_board_game_public_locations SET booking_enabled = TRUE WHERE tenant_id = $1", [shop]);
+    const bookable = await read("availability");
+    assert.ok("booking" in bookable);
+    assert.equal(bookable.booking.canSubmitViaChat, true,
+      "a booking-enabled branch accepts chat requests independently of directory visibility");
     const library = await read("library");
     assert.equal(library.status, "OK");
+    assert.ok("games" in library);
     assert.equal(library.games.length, 6);
     assert.ok(library.games.every((game) => game.totalCopies === 1 && game.availableCopies === 1));
     assert.ok(!library.games.some((game) => game.title === "FAKE chat title 6"));
@@ -166,10 +174,13 @@ test("chat publication is independent of directory visibility against real Postg
     assert.equal((await read("rates")).status, "NOT_PUBLISHED");
     const unpublished = await read("availability");
     assert.equal(unpublished.status, "NOT_PUBLISHED");
+    assert.ok("tableDetails" in unpublished);
     assert.equal(unpublished.totalTables, null);
     assert.equal(unpublished.availableTables, null);
     assert.equal(unpublished.tableDetails, null);
-    assert.ok((await read("library")).games.every((game) => game.availableCopies === null));
+    const unpublishedLibrary = await read("library");
+    assert.ok("games" in unpublishedLibrary);
+    assert.ok(unpublishedLibrary.games.every((game) => game.availableCopies === null));
     await client.query("UPDATE bms_locations SET active = FALSE WHERE tenant_id = $1 AND id = $2", [shop, branch]);
     assert.deepEqual(await listBoardGameChatBranches({ tenantId: shop, client }), []);
     assert.equal((await read("rates")).status, "NOT_PUBLISHED");
@@ -403,6 +414,7 @@ test("opening a table claims a seating, and the vacated table is reopenable righ
   const moved = await moveBoardGameSeating(
     tenantId, session.id, tables.T2, { idempotencyKey: key("move") }, staffId
   );
+  assert.ok("action" in moved);
   assert.equal(moved.action, "move");
   assert.equal(moved.fromTableId, tables.T1);
   assert.equal(moved.toTableId, tables.T2);
@@ -509,6 +521,7 @@ test("merging two occupied tables keeps two separate bills, and one payment does
   const merged = await mergeBoardGameSeating(
     tenantId, guest.id, tables.T1, { idempotencyKey: key("merge") }, staffId
   );
+  assert.ok("action" in merged);
   assert.equal(merged.action, "merge");
   assert.equal(merged.seatingId, hostSeating.id);
   assert.equal(merged.sourceSeatingId, guestSeating.id);
@@ -567,6 +580,7 @@ test("adding a player after a seating merge counts every party sharing the table
     },
     staffId,
   );
+  assert.ok("displayName" in added);
   assert.equal(added.displayName, "FAKE seventh player");
 
   await settleWholeTable(host.id);
@@ -587,6 +601,8 @@ test("moving two parties together keeps both game loans on their original sessio
     staffId,
   );
 
+  assert.ok("id" in firstLoan);
+  assert.ok("id" in secondLoan);
   // จำลองหน้าร้าน: ย้ายชุดแรกไปโต๊ะว่าง แล้วรวมชุดที่สองเข้าที่โต๊ะปลายทาง
   await moveBoardGameSeating(
     tenantId, first.id, tables.T3, { idempotencyKey: key("move-first") }, staffId
@@ -651,6 +667,7 @@ test("a merged table is not a one-way door: moving one party out detaches only t
   const split = await moveBoardGameSeating(
     tenantId, guest.id, tables.T3, { idempotencyKey: key("split") }, staffId
   );
+  assert.ok("sessionIds" in split);
   assert.deepEqual(split.sessionIds, [guest.id], "ต้องย้ายเฉพาะชุดที่เลือก ไม่ลากอีกชุดไปด้วย");
   assert.notEqual(split.seatingId, hostSeating.id, "ชุดที่แยกออกไปต้องได้ที่นั่งของตัวเอง");
 
@@ -698,6 +715,8 @@ test("replaying a relocate returns the stored result, and the same key with anot
     tenantId, session.id, tables.T2, { idempotencyKey: moveKey }, staffId
   );
   assert.equal(replay.replayed, true);
+  assert.ok("seatingId" in first);
+  assert.ok("seatingId" in replay);
   assert.equal(replay.seatingId, first.seatingId);
   assert.equal(replay.toTableId, tables.T2);
   assert.equal((await seatingOf(session.id)).table_id, tables.T2, "ยิงซ้ำต้องไม่ย้ายอีกรอบ");

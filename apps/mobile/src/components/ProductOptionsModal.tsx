@@ -167,7 +167,7 @@ export function ProductOptionsModal({
                       key={option.size}
                       label={`${option.size}${option.price != null ? ` · ฿${option.price.toFixed(2)}` : ''}`}
                       variant={resolved?.size === option.size ? 'primary' : 'secondary'}
-                      disabled={loading || option.available <= 0}
+                      disabled={loading || (option.available <= 0 && resolved?.stockTracked !== false)}
                       onPress={() => chooseVariant(option.size, null)}
                     />
                   ))}

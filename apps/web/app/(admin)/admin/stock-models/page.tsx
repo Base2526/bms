@@ -1,4 +1,6 @@
 "use client";
+import RestaurantPricePlan from "./RestaurantPricePlan";
+import RestaurantMenuPlan from "./RestaurantMenuPlan";
 
 import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
 import {
@@ -13,6 +15,7 @@ import { useI18n } from "@/lib/i18nContext";
 import { shopExperienceForArchetype, type StockExperienceSection } from "@/lib/bms/shopExperience";
 import { POLICY_REQUIRED_CAPABILITY, PRODUCT_STOCK_POLICIES } from "@/lib/bms/productStockPolicyOptions";
 import styles from "./page.module.css";
+import type { RecipeCostAssumptions } from "@/lib/bms/recipeCosting";
 
 const Q_CAPABILITIES = gql`
   query StockModelCapabilities {
@@ -35,6 +38,8 @@ const Q_MODEL = gql`
     }
     bmsProductRecipes(productSku: $sku) {
       id productSku size version outputQty active items { sku size qty }
+      directItems { sku size qty } subrecipes { recipeId qty productSku size version outputQty } sopSteps
+      costAssumptions { labor { quantity rate source } electricity { quantity rate source } gas { quantity rate source } }
     }
     bmsProductBundleItems(bundleSku: $sku) {
       componentSku componentName componentSize qty
@@ -48,6 +53,21 @@ const Q_MODEL = gql`
 `;
 const Q_STATION_SLAS = gql`
   query KitchenStationSlas { bmsKitchenStationSlas { station stationId warnMinutes lateMinutes configured } }
+`;
+const Q_RECIPE_VERSIONS = gql`
+  query StockRecipeVersions($sku: String!) {
+    bmsProductRecipes(productSku: $sku) { id productSku size version outputQty active }
+  }
+`;
+const Q_RECIPE_COST = gql`
+  query StockRecipeCost($recipeId: ID!,$costBasis:String,$locationId:ID) {
+    bmsRecipeCostEstimate(recipeId: $recipeId,costBasis:$costBasis,locationId:$locationId) {
+      recipeId recipeVersion calculatedAt status currency scope outputQty missingIngredientCount
+      ingredientBatchCost knownBatchCost totalBatchCost totalUnitCost
+      ingredients { sku size qty unitCost batchCost source }
+      overhead { category quantity rate source batchCost }
+    }
+  }
 `;
 // ทะเบียนสถานีครัว (9.54) — includeInactive เพราะหน้าตั้งค่าต้องเห็นสถานีที่ปิดไปแล้วเพื่อ
 // เปิดกลับได้ (ปิดสถานีไม่ใช่การลบ ตั๋วเก่ายังอ้างถึงมันอยู่)
@@ -128,7 +148,10 @@ const M_QUICK_INGREDIENT = gql`
 
 type Capability = { capability: string; enabled: boolean; configured: boolean; status: string; source: string; gating: boolean };
 type Product = { sku: string; name: string; active: boolean; variants: Array<{ size: string }> };
-type Recipe = { id: string; productSku: string; size: string; version: number; outputQty: number; active: boolean; items: Array<{ sku: string; size: string; qty: number }> };
+type RecipeReference = { recipeId: string; qty: number; productSku: string; size: string; version: number; outputQty: number };
+type Recipe = { id: string; productSku: string; size: string; version: number; outputQty: number; active: boolean;
+  items: Array<{ sku: string; size: string; qty: number }>; directItems: Array<{ sku: string; size: string; qty: number }>;
+  subrecipes: RecipeReference[]; sopSteps: string[]; costAssumptions: RecipeCostAssumptions };
 type BundleItem = { componentSku: string; componentName: string; componentSize: string; qty: number };
 type Modifier = {
   id: string; productSku: string; size: string; code: string; name: string; priceDelta: number; active: boolean;
@@ -143,6 +166,74 @@ function errorText(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
 }
 
+import {RecipeCostBasisSelect,costSelection} from "./RecipeCostBasis";
+
+function RecipeCostDetails({ recipeId }: { recipeId: string }) {
+  const { t } = useI18n();
+  const [basis,setBasis]=useState("CATALOG");
+  const result = useQuery(Q_RECIPE_COST, { variables: { recipeId,...costSelection(basis) }, fetchPolicy: "network-only" });
+  const estimate = result.data?.bmsRecipeCostEstimate;
+  const amount = (value: number | null | undefined) => value == null ? t("admin_stock.cost_unknown") : `฿${value.toFixed(2)}`;
+  const rateAmount = (value: number | null) => value == null ? t("admin_stock.cost_unknown") : `฿${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+  const labels: Record<string, string> = { labor: t("admin_stock.cost_labor"), electricity: t("admin_stock.cost_electricity"), gas: t("admin_stock.cost_gas") };
+  return <Card size="small" style={{ marginTop: 16 }}
+    extra={<Button size="small" loading={result.loading} onClick={() => void result.refetch().catch(() => undefined)}>{t("admin_stock.refresh")}</Button>}>
+    <Alert closable type="info" showIcon message={t("admin_stock.cost_scope")} />
+    <RecipeCostBasisSelect value={basis} onChange={setBasis}/>
+    {result.loading ? <Spin /> : result.error ? <Alert closable type="error" message={t("admin_stock.action_failed")} /> : !estimate
+      ? <Typography.Paragraph>{t("admin_stock.cost_unavailable")}</Typography.Paragraph> : <>
+        <Typography.Paragraph style={{ marginTop: 12 }}>
+          {t("admin_stock.version")} {estimate.recipeVersion} · {t("admin_stock.output_qty")} {estimate.outputQty} · {t("admin_stock.cost_as_of")} {estimate.calculatedAt}
+        </Typography.Paragraph>
+        <Tag color={estimate.status === "COMPLETE" ? "green" : "orange"}>{estimate.status === "COMPLETE" ? t("admin_stock.cost_complete") : t("admin_stock.cost_incomplete")}</Tag>
+        <Typography.Paragraph>{t("admin_stock.cost_ingredients")}: {amount(estimate.ingredientBatchCost)} · {t("admin_stock.cost_missing")}: {estimate.missingIngredientCount}</Typography.Paragraph>
+        <Table size="small" rowKey={(row: any) => JSON.stringify([row.sku, row.size])} pagination={false} scroll={{ x: 580 }} dataSource={estimate.ingredients} columns={[
+          { title: t("admin_stock.components"), render: (_: unknown, row: any) => `${row.sku}/${row.size}` },
+          { title: t("admin_stock.cost_quantity"), dataIndex: "qty" },
+          { title: t("admin_stock.cost_unit_price"), dataIndex: "unitCost", render: amount },
+          { title: t("admin_stock.cost_batch"), dataIndex: "batchCost", render: amount },
+          { title: t("admin_stock.cost_source"), dataIndex: "source", render: (source: string) => source === "MOVING_WEIGHTED_AVERAGE" ? t("restaurant_actual.weighted_basis") : source === "CATALOG_CURRENT" ? t("admin_stock.cost_catalog") : source === "MISSING" ? t("admin_stock.cost_unknown") : t("admin_stock.cost_invalid") },
+        ]} />
+        {estimate.overhead.map((line: any) => <Typography.Paragraph key={line.category} style={{ marginTop: 12, overflowWrap: "anywhere" }}>
+          <strong>{labels[line.category]}</strong>: {amount(line.batchCost)} · {t("admin_stock.cost_quantity")}: {line.quantity ?? t("admin_stock.cost_unknown")} · {t("admin_stock.cost_rate")}: {rateAmount(line.rate)}
+          <br />{t("admin_stock.cost_source")}: {line.source ?? t("admin_stock.cost_unknown")}
+        </Typography.Paragraph>)}
+        <Typography.Paragraph>{t("admin_stock.cost_known")}: {amount(estimate.knownBatchCost)}<br />
+          <strong>{t("admin_stock.cost_total")}: {amount(estimate.totalBatchCost)} · {t("admin_stock.cost_per_output")}: {amount(estimate.totalUnitCost)}</strong>
+        </Typography.Paragraph>
+        <Typography.Text type="secondary">{t("admin_stock.cost_rounding")}</Typography.Text>
+      </>}
+  </Card>;
+}
+
+function RecipeVersionSelect({ value, onChange, parentSku, saved, planning = false }: {
+  value?: string; onChange?: (value: string | undefined) => void; parentSku: string; saved: RecipeReference[]; planning?: boolean;
+}) {
+  const { t } = useI18n();
+  const [sku, setSku] = useState<string | null>(saved.find(r => r.recipeId === value)?.productSku ?? null);
+  const [searchProducts, products] = useLazyQuery(Q_PRODUCTS, { fetchPolicy: "network-only" });
+  const versions = useQuery(Q_RECIPE_VERSIONS, { variables: { sku: sku ?? "" }, skip: !sku, fetchPolicy: "network-only" });
+  const stored = saved.find(r => r.recipeId === value);
+  const candidates: Product[] = products.data?.bmsProducts?.items ?? [];
+  const productOptions = candidates.filter(p => p.sku !== parentSku).map(p => ({ value: p.sku, label: `${p.sku} · ${p.name}` }));
+  if (sku && !productOptions.some(p => p.value === sku)) productOptions.unshift({ value: sku, label: sku });
+  const choices: Recipe[] = versions.data?.bmsProductRecipes ?? [];
+  const options = choices.filter(r => r.productSku === sku).map(r => ({ value: r.id,
+    label: `${r.productSku}/${r.size} · v${r.version} · ${t("admin_stock.output_qty")} ${r.outputQty}${r.active ? "" : ` (${t("admin_stock.inactive")})`}` }));
+  if (stored && !options.some(o => o.value === stored.recipeId)) options.unshift({ value: stored.recipeId,
+    label: `${stored.productSku}/${stored.size} · v${stored.version} · ${t("admin_stock.output_qty")} ${stored.outputQty}` });
+  return <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
+    <Select showSearch filterOption={false} value={sku} placeholder={planning ? t("restaurant_menu_plan.product") : t("admin_stock.subrecipe_product")}
+      aria-label={planning ? t("restaurant_menu_plan.product") : t("admin_stock.subrecipe_product")} loading={products.loading} options={productOptions}
+      onFocus={() => void searchProducts({ variables: { search: "" } })}
+      onSearch={search => void searchProducts({ variables: { search } })}
+      onChange={next => { setSku(next); onChange?.(undefined); }} />
+    <Select value={value} onChange={onChange} disabled={!sku ? true : undefined} loading={versions.loading} options={options}
+      aria-label={planning ? t("restaurant_menu_plan.recipe") : t("admin_stock.subrecipe_version")} placeholder={planning ? t("restaurant_menu_plan.recipe") : t("admin_stock.subrecipe_version")} />
+    {(products.error || versions.error) && <Typography.Text type="danger">{t("admin_stock.action_failed")}</Typography.Text>}
+  </div>;
+}
+
 export default function StockModelsPage() {
   const { t } = useI18n();
   const { can, loading: permsLoading } = useBmsPermissions();
@@ -152,6 +243,9 @@ export default function StockModelsPage() {
   const [selectedSku, setSelectedSku] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [recipeOpen, setRecipeOpen] = useState(false);
+  const [costRecipeId, setCostRecipeId] = useState<string | null>(null);
+  const [priceRecipeId, setPriceRecipeId] = useState<string | null>(null);
+  const [menuPlanOpen, setMenuPlanOpen] = useState(false);
   const [modifierOpen, setModifierOpen] = useState(false);
   const [ingredientOpen, setIngredientOpen] = useState(false);
   const [showAdditionalCapabilities, setShowAdditionalCapabilities] = useState(false);
@@ -374,6 +468,11 @@ export default function StockModelsPage() {
   function openRecipe(recipe?: Recipe) {
     const next = recipe ?? null;
     setEditingRecipe(next);
+    recipeForm.resetFields();
+    const costs = Object.fromEntries((["labor", "electricity", "gas"] as const).map(key => {
+      const line = next?.costAssumptions?.[key];
+      return [key, line ? { enabled: true, quantity: line.quantity, rate: line.rate, source: line.source } : { enabled: false }];
+    }));
     // Apollo แปะ __typename ลงทุก object ที่มาจาก query รวมถึงแต่ละแถวใน items —
     // ถ้าเซ็ตฟอร์มด้วย object ของ query ตรง ๆ ค่านั้นจะติดไปกับ mutation input ตอน submit
     // แล้วโดน GraphQL ปฏิเสธ ("Field \"__typename\" is not defined by type ...Input")
@@ -382,9 +481,12 @@ export default function StockModelsPage() {
       next
         ? {
             size: next.size, outputQty: next.outputQty, active: next.active,
-            items: next.items.map((item) => ({ sku: item.sku, size: item.size, qty: item.qty })),
+            items: (next.directItems ?? next.items).map((item) => ({ sku: item.sku, size: item.size, qty: item.qty })),
+            subrecipes: (next.subrecipes ?? []).map(ref => ({ recipeId: ref.recipeId, qty: ref.qty })),
+            sopSteps: [...(next.sopSteps ?? [])],
+            costs,
           }
-        : { size: sizes[0], outputQty: 1, active: true, items: [{ sku: "", size: "", qty: 1 }] }
+        : { size: sizes[0], outputQty: 1, active: true, items: [{ sku: "", size: "", qty: 1 }], subrecipes: [], sopSteps: [], costs }
     );
     setRecipeOpen(true);
   }
@@ -394,7 +496,16 @@ export default function StockModelsPage() {
     const values = await recipeForm.validateFields().catch(() => null);
     if (!values) return;
     try {
-      await saveRecipe({ variables: { input: { id: editingRecipe?.id, productSku: selectedSku, ...values } } });
+      await saveRecipe({ variables: { input: { id: editingRecipe?.id, productSku: selectedSku,
+        size: values.size, outputQty: values.outputQty, active: values.active,
+        directItems: (values.items ?? []).map((item: any) => ({ sku: item.sku, size: item.size, qty: item.qty })),
+        subrecipes: (values.subrecipes ?? []).map((ref: any) => ({ recipeId: ref.recipeId, qty: ref.qty })),
+        sopSteps: values.sopSteps ?? [],
+        costAssumptions: Object.fromEntries(["labor", "electricity", "gas"].map(key => {
+          const line = values.costs?.[key];
+          return [key, line?.enabled ? { quantity: line.quantity, rate: line.rate, source: line.source } : null];
+        })),
+      } } });
       setRecipeOpen(false);
       await model.refetch();
       message.success(t("admin_stock.recipe_saved"));
@@ -793,7 +904,17 @@ export default function StockModelsPage() {
       </Card>}
 
       {stockSectionVisible("RECIPES") && <Card title={t("admin_stock.recipes")} extra={canEdit && <Button icon={<PlusOutlined />} onClick={() => openRecipe()}>{t("admin_stock.new_recipe")}</Button>}>
-        <Table rowKey="id" pagination={false} dataSource={recipes} locale={{ emptyText: <Empty description={t("admin_stock.no_recipes")} /> }} columns={[
+        {can("report.view") && <Button style={{ marginBottom: 12, maxWidth: "100%", height: "auto", whiteSpace: "normal" }} onClick={() => setMenuPlanOpen(true)}>{t("restaurant_menu_plan.title")}</Button>}
+        <Table rowKey="id" pagination={false} dataSource={recipes} scroll={{ x: 650 }}
+          expandable={{ expandedRowRender: (row: Recipe) => <div>
+            <Typography.Text strong>{t("admin_stock.subrecipes")}</Typography.Text>
+            <ul>{(row.subrecipes ?? []).map(ref => <li key={ref.recipeId}>{ref.productSku}/{ref.size} · v{ref.version} × {ref.qty}</li>)}</ul>
+            <Typography.Text strong>{t("admin_stock.recipe_sop")}</Typography.Text>
+            {(row.sopSteps ?? []).length ? <ol>{row.sopSteps.map((step, i) => <li key={i} style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere" }}>{step}</li>)}</ol>
+              : <p>{t("admin_stock.recipe_sop_empty")}</p>}
+            <Button onClick={() => setCostRecipeId(row.id)}>{t("admin_stock.cost_title")}</Button>
+            {can("report.view") && <Button style={{ marginInlineStart: 8 }} onClick={() => setPriceRecipeId(row.id)}>{t("restaurant_price_plan.title")}</Button>}
+          </div> }} locale={{ emptyText: <Empty description={t("admin_stock.no_recipes")} /> }} columns={[
           { title: t("admin_stock.size"), dataIndex: "size" },
           { title: t("admin_stock.version"), dataIndex: "version", width: 90 },
           { title: t("admin_stock.output_qty"), dataIndex: "outputQty", width: 110 },
@@ -817,7 +938,20 @@ export default function StockModelsPage() {
       </Card>}
     </Spin>}
 
-    <Modal open={recipeOpen} title={editingRecipe ? t("admin_stock.edit_recipe") : t("admin_stock.new_recipe")} onCancel={() => setRecipeOpen(false)} onOk={() => void submitRecipe()} confirmLoading={recipeMutation.loading} width={760}>
+    <Modal destroyOnClose open={menuPlanOpen} title={t("restaurant_menu_plan.title")} footer={null} width={900} onCancel={() => setMenuPlanOpen(false)}>
+      {menuPlanOpen && <RestaurantMenuPlan recipeSelect={() => <RecipeVersionSelect parentSku="" saved={[]} planning />} />}
+    </Modal>
+    <Modal destroyOnClose open={priceRecipeId != null} title={t("restaurant_price_plan.title")} footer={null} width={900}
+      onCancel={() => setPriceRecipeId(null)}>
+      {priceRecipeId && <RestaurantPricePlan recipeId={priceRecipeId} />}
+    </Modal>
+    <Modal destroyOnClose open={costRecipeId != null} title={t("admin_stock.cost_title")} footer={null}
+      onCancel={() => setCostRecipeId(null)} width={760}>
+      {costRecipeId && <RecipeCostDetails recipeId={costRecipeId} />}
+    </Modal>
+
+    <Modal destroyOnClose open={recipeOpen} title={editingRecipe ? t("admin_stock.edit_recipe") : t("admin_stock.new_recipe")} onCancel={() => setRecipeOpen(false)} onOk={() => void submitRecipe()} confirmLoading={recipeMutation.loading} width={760}>
+      <Alert closable type="info" showIcon message={t("admin_stock.recipe_version_hint")} style={{ marginBottom: 16 }} />
       <Form form={recipeForm} layout="vertical">
         <Space wrap align="start">
           <Form.Item name="size" label={t("admin_stock.size")} rules={[{ required: true }]}><Select disabled={Boolean(editingRecipe)} style={{ width: 180 }} options={sizes.map((s) => ({ value: s, label: s }))} /></Form.Item>
@@ -825,6 +959,58 @@ export default function StockModelsPage() {
           <Form.Item name="active" label={t("admin_stock.active")} valuePropName="checked"><Switch /></Form.Item>
         </Space>
         {componentFields("recipe")}
+        <Typography.Title level={5}>{t("admin_stock.cost_title")}</Typography.Title>
+        <Alert closable type="info" showIcon message={t("admin_stock.cost_scope")} style={{ marginBottom: 12 }} />
+        <Typography.Paragraph type="secondary">{t("admin_stock.cost_input_hint")}</Typography.Paragraph>
+        {[
+          { key: "labor", title: t("admin_stock.cost_labor"), qty: t("admin_stock.cost_labor_qty"), rate: t("admin_stock.cost_labor_rate") },
+          { key: "electricity", title: t("admin_stock.cost_electricity"), qty: t("admin_stock.cost_electricity_qty"), rate: t("admin_stock.cost_electricity_rate") },
+          { key: "gas", title: t("admin_stock.cost_gas"), qty: t("admin_stock.cost_gas_qty"), rate: t("admin_stock.cost_gas_rate") },
+        ].map(({ key, title, qty, rate }) => <Card key={key} size="small" style={{ marginBottom: 12 }}>
+          <Form.Item name={["costs", key, "enabled"]} valuePropName="checked"><Checkbox>{title}</Checkbox></Form.Item>
+          <Form.Item noStyle shouldUpdate={(before, after) => before.costs?.[key]?.enabled !== after.costs?.[key]?.enabled}>
+            {({ getFieldValue }) => getFieldValue(["costs", key, "enabled"]) && <>
+              <Space wrap align="start">
+                <Form.Item name={["costs", key, "quantity"]} label={qty} rules={[{ required: true }]}><InputNumber min={0} max={1000000} /></Form.Item>
+                <Form.Item name={["costs", key, "rate"]} label={rate} rules={[{ required: true }]}><InputNumber min={0} max={1000000} /></Form.Item>
+              </Space>
+              <Form.Item name={["costs", key, "source"]} label={t("admin_stock.cost_source")} rules={[{ required: true, whitespace: true, max: 500 }]}>
+                <Input.TextArea maxLength={500} autoSize={{ minRows: 2, maxRows: 4 }} />
+              </Form.Item>
+            </>}
+          </Form.Item>
+        </Card>)}
+        <Typography.Title level={5}>{t("admin_stock.subrecipes")}</Typography.Title>
+        <Typography.Paragraph type="secondary">{t("admin_stock.subrecipe_hint")}</Typography.Paragraph>
+        <Form.List name="subrecipes">
+          {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
+            {fields.map(({ key, name, ...rest }) => <Card size="small" key={key}>
+              <Form.Item {...rest} name={[name, "recipeId"]} rules={[{ required: true }]}>
+                <RecipeVersionSelect parentSku={selectedSku ?? ""} saved={editingRecipe?.subrecipes ?? []} />
+              </Form.Item>
+              <Space wrap align="start">
+                <Form.Item {...rest} name={[name, "qty"]} label={t("admin_stock.subrecipe_qty")} rules={[{ required: true }]}>
+                  <InputNumber min={1} max={2147483647} precision={0} />
+                </Form.Item>
+                <Button danger icon={<DeleteOutlined />} aria-label={t("admin_stock.remove_subrecipe")} onClick={() => remove(name)} />
+              </Space>
+            </Card>)}
+            <Button type="dashed" icon={<PlusOutlined />} disabled={fields.length >= 20} onClick={() => add({ qty: 1 })}>{t("admin_stock.add_subrecipe")}</Button>
+          </Space>}
+        </Form.List>
+        <Typography.Title level={5}>{t("admin_stock.recipe_sop")}</Typography.Title>
+        <Typography.Paragraph type="secondary">{t("admin_stock.recipe_sop_hint")}</Typography.Paragraph>
+        <Form.List name="sopSteps">
+          {(fields, { add, remove }) => <Space direction="vertical" style={{ width: "100%" }}>
+            {fields.map(({ key, name, ...rest }) => <div key={key} style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) 36px", gap: 8 }}>
+              <Form.Item {...rest} name={name} label={`${t("admin_stock.recipe_step")} ${name + 1}`} rules={[{ required: true, whitespace: true, max: 2000 }]}>
+                <Input.TextArea autoSize={{ minRows: 2, maxRows: 6 }} maxLength={2000} />
+              </Form.Item>
+              <Button danger type="text" icon={<DeleteOutlined />} aria-label={t("admin_stock.remove_step")} onClick={() => remove(name)} />
+            </div>)}
+            <Button type="dashed" icon={<PlusOutlined />} disabled={fields.length >= 50} onClick={() => add("")}>{t("admin_stock.add_step")}</Button>
+          </Space>}
+        </Form.List>
       </Form>
     </Modal>
 

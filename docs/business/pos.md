@@ -484,7 +484,10 @@ that already has payment rows — a sensible defence against collecting twice �
 them by design. It now takes an expected already-paid amount, turning "there must be none" into "there
 must be exactly this much", which still catches an unplanned payment. And it compares the bill total
 against the amount being settled, so settlement passes the **full** total (the deposit is already a
-payment row) rather than the balance.
+payment row) rather than the balance. The final payment-total guard includes the locked earlier
+instalments plus the new balance payment (and any applicable reservation credit); it must not compare
+the new payment alone with the full bill. The DB contract checks a 5,000 bill with 1,000 + 1,500 already
+paid and a final 2,500 collection, including a retry that adds no payment or stock deduction.
 
 **Closing a deposit does not move money by itself.** Whether an unclaimed deposit is refunded or
 forfeited is an agreement between shop and customer — some forfeit after a deadline, some refund in
@@ -2536,3 +2539,31 @@ fallback behaviour; the system cannot reconstruct facts that were never recorded
 Tax-point changes remain pending in [tax-accounting-review.md](tax-accounting-review.md). In this
 round the user requested no database use: migration 10.60 has not been applied and transactional SQL,
 RLS, grants and concurrent calls have not been proven against PostgreSQL.
+
+
+10.67 actual costing adds append-only valuation evidence to the existing stock movement transaction.
+It does not change authoritative line_amount, payment totals, reservation semantics or refund timing.
+A receipt uses PO unit cost; shipment uses branch moving weighted average; a physical POS return
+restores original consumed value. Cost recovery needs structured order-item/return references and
+never uses today's catalog cost. Net-profit reporting deduplicates only a uniquely matched credit
+note whose amount/VAT agrees with the saved return snapshot. Unverified legacy evidence remains a gap.
+
+New non-VAT POS settlements also freeze an exempt revenue bucket with the shared VAT calculator,
+without issuing a tax document. Later store registration changes do not rewrite this evidence.
+
+10.70 extends N-for-price to an optional variant and sales surface. Scope is enforced by scan,
+order settlement and shared web/native cart pricing. Other variants retain normal tier pricing;
+publication can select branch and schedule, and preserves exact tax-inclusive customer amounts.
+With 10.71, active schedules for a SKU/branch may be adjacent but cannot overlap. A future
+publication ends its predecessor at the new start time; expired/future rules do not apply now. Catalog checkout remains VAT-inclusive; exclusive planning input is converted before review.
+
+
+Mobile/Desktop pricing verification (10.71–10.72): both clients use branch-resolved scan prices
+and the shared variant-scoped promotion calculator. Rescanning an existing cart line replaces its
+price snapshot; Desktop rechecks every line before requesting review of a changed cart. Native cart,
+checkout and confirmation show product-level discounts explicitly, including free lines; member,
+coupon and points discounts remain at bill level. The server still revalidates at settlement.
+Administrative cost opening, Menu Engineering and menu-profit review remain admin-web workflows,
+not new native POS screens. A disconnected client cannot know a newly published price or schedule;
+its existing emergency cash queue/review rules still apply. These changes do not supply missing
+opening valuation evidence or certify Windows/Linux hardware, native mobile devices, or printers.

@@ -1,3 +1,4 @@
+import { getVariantBasePrice } from "./productPacks";
 import { randomUUID } from "node:crypto";
 import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
 // คีย์ล็อกบิลมีสูตรเดียวทั้งระบบ (kitchen.ts ก็ขอล็อกตัวเดียวกันนี้ก่อนแตะแถวตั๋ว)
@@ -9,6 +10,7 @@ import { isCapabilityEnabledInTx } from "./storeCapabilities";
 import { listPrimaryProductImages } from "./products";
 import { kitchenStationColumnsSql } from "./kitchenStations";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
+import { ensureRestaurantItemSnapshotsInTx } from "./restaurantItemSnapshots";
 import {
   afterOrderCancellationCommitted,
   cancelOrderInTx,
@@ -774,7 +776,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
   );
   const skus = res.rows.map((row) => row.sku);
   const images = await listPrimaryProductImages(tenantId, skus);
-  return res.rows.map((row) => {
+  return Promise.all(res.rows.map(async (row) => {
     const sizes = row.sizes ?? [];
     const sellability = isMenuSellable({
       stockPolicy: row.stock_policy,
@@ -784,7 +786,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
     return {
       sku: row.sku,
       name: row.name,
-      price: Number(row.price),
+      price: Math.min(...await Promise.all((row.sizes?.length?row.sizes:[{size:"STD"}]).map(async v=>await getVariantBasePrice(tenantId,row.sku,v.size,locationId)??Number(row.price)))),
       kitchenStation: row.kitchen_station,
       kitchenStationId: row.kitchen_station_id ? String(row.kitchen_station_id) : null,
       hasModifiers: row.has_modifiers,
@@ -798,7 +800,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
       unavailableReason: row.unavailable_reason,
       imageUrl: images.get(row.sku) ?? null,
     };
-  });
+  }));
 }
 
 export async function createDefaultRestaurantFloor(input: {
@@ -946,9 +948,8 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
             kt.status AS kitchen_status,
             order_line.line_amount
        FROM bms_restaurant_check_items ci
-       -- createOrderInTx รวมรายการ SKU/size/pack/modifier เดียวกันเป็น order line เดียว แม้
-       -- ร้านอาหารจะกดสั่งซ้ำคนละรอบ จึงห้ามจับคู่ตามลำดับบรรทัด ใช้ key เดียวกับการรวมและ
-       -- กระจาย immutable receipt unit price กลับตามจำนวนของ check line นี้แทน
+       -- New orders match check-item identity; legacy orders still use the old grouped key.
+       -- Receipt display is gross before the separate tier/promotion discount lines.
        LEFT JOIN LATERAL (
          SELECT round(oi.receipt_unit_price * ci.pack_qty, 2) AS line_amount
            FROM bms_restaurant_checks current_check
@@ -956,6 +957,7 @@ export async function getRestaurantCheck(tenantId: string, checkId: string, loca
              ON oi.tenant_id = current_check.tenant_id AND oi.order_id = current_check.current_order_id
           WHERE current_check.tenant_id = ci.tenant_id AND current_check.id = ci.check_id
             AND ci.status = 'SENT'
+            AND (oi.restaurant_check_item_id = ci.id OR oi.restaurant_check_item_id IS NULL)
             AND oi.product_sku = ci.product_sku
             AND oi.size = ci.size
             AND COALESCE(oi.pack_code, 'BASE') = COALESCE(ci.pack_code, 'BASE')
@@ -1383,6 +1385,7 @@ export async function dropKitchenCancelledLineInTx(
   if (!checkResult.rowCount) return { dropped: false, amountDue: null };
   const check = checkResult.rows[0];
 
+  await ensureRestaurantItemSnapshotsInTx(client, input.tenantId, input.checkId);
   const cancelled = await client.query(
     `UPDATE bms_restaurant_check_items
         SET status = 'CANCELLED', updated_at = now()
@@ -1508,6 +1511,7 @@ async function sendRestaurantKitchenRoundInTx(
     return { status: "SENT", kitchenTickets: 0 };
   }
 
+  await ensureRestaurantItemSnapshotsInTx(client, input.tenantId, input.checkId);
   if (check.current_order_id
       && await releaseCheckReservationInTx(client, input.tenantId, check.current_order_id) === "BLOCKED") {
     throw new RestaurantCheckError(
@@ -1526,6 +1530,7 @@ async function sendRestaurantKitchenRoundInTx(
     editorId: input.actorUserId,
     idempotencyKey: `restaurant:${input.checkId}:v${check.version}`,
     restaurantCheckId: input.checkId,
+    freezeRestaurantItems: true,
     restaurantServiceMode: normalizeRestaurantServiceMode(check.service_mode),
   });
   if (created.status !== "CREATED") return created;
@@ -1946,6 +1951,10 @@ async function moveCheckItemsInTx(
   client: PoolClient,
   input: { tenantId: string; fromCheckId: string; toCheckId: string; itemIds: string[] | null }
 ): Promise<number> {
+  // Capture legacy evidence while each row still belongs to its original order/check.
+  for (const checkId of [input.fromCheckId, input.toCheckId].sort()) {
+    await ensureRestaurantItemSnapshotsInTx(client, input.tenantId, checkId);
+  }
   const base = await client.query<{ base: number }>(
     `SELECT COALESCE(MAX(round_no), 0) AS base
        FROM bms_restaurant_check_items

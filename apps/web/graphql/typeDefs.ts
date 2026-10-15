@@ -1369,6 +1369,20 @@ export const typeDefs = /* GraphQL */ `
     bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
     bmsProductReadiness(productSku: String!): BmsProductReadiness!
     bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
+    bmsRecipeCostEstimate(recipeId: ID!, costBasis: String, locationId: ID): BmsRecipeCostEstimate
+    bmsOperatingCosts(month: String!): BmsOperatingCostReport!
+    bmsCostAllocations(month: String!): BmsCostAllocationReport!
+    bmsNetProfit(month: String!): BmsNetProfitReport!
+    bmsInventoryValuation(locationId: ID!, search: String, offset: Int, limit: Int): BmsInventoryValuationReport!
+    bmsRestaurantMenuActual(input: BmsMenuActualInput!): BmsMenuActualReport!
+    bmsMenuNetProfit(month: String!, locationId: ID): BmsPricePublicationResult!
+    bmsPreviewMenuNetProfit(input: BmsMenuProfitInput!): BmsPricePublicationResult!
+    bmsPreviewMenuBundle(input: BmsMenuBundlePublicationInput!): BmsPricePublicationResult!
+    bmsPreviewPricePublication(input: BmsPublishPriceInput!): BmsPricePublicationResult!
+    bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!
+    bmsRestaurantPricePlan(input: BmsRestaurantPricePlanInput!): BmsRestaurantPricePlan!
+    bmsRestaurantMenuPlan(input: BmsRestaurantMenuPlanInput!): BmsRestaurantMenuPlan!
+    bmsSalesEvidence(input: BmsSalesEvidenceInput!): BmsSalesEvidence!
     bmsProductModifiers(productSku: String!, size: String): [BmsProductModifier!]!
     bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
     bmsKitchenTickets(status: String, limit: Int = 100): [BmsKitchenTicket!]!
@@ -4265,7 +4279,260 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsRecipeComponent { sku: String!, size: String!, qty: Int! }
+  type BmsOperatingCostReview {
+    version: Int!
+    sourceFingerprint: String!
+    disposition: String!
+    reason: String!
+    duplicateKey: String
+    startMonth: String
+    lifeMonths: Int
+    residual: Float
+  }
+  type BmsOperatingCostSource {
+    key: String!
+    kind: String!
+    id: ID!
+    month: String!
+    amount: String
+    currency: String!
+    category: String!
+    reference: String!
+    eligible: Boolean!
+    fingerprint: String!
+    review: BmsOperatingCostReview
+    state: String!
+    recognizedAmount: Float
+  }
+  type BmsOperatingCostReport {
+    month: String!
+    currency: String!
+    scope: String!
+    complete: Boolean!
+    truncated: Boolean!
+    unresolvedCount: Int!
+    duplicateCount: Int!
+    operatingAmount: Float!
+    gpAmount: Float!
+    depreciationAmount: Float!
+    knownTotal: Float!
+    reviewedTotal: Float
+    rows: [BmsOperatingCostSource!]!
+  }
+  input BmsOperatingCostReviewInput {
+    sourceKey: String!
+    sourceFingerprint: String!
+    expectedVersion: Int!
+    disposition: String!
+    reason: String!
+    duplicateKey: String
+    startMonth: String
+    lifeMonths: Int
+    residual: Float
+    confirmed: Boolean!
+  }
+  type BmsOperatingCostReviewResult { version: Int! }
+  input BmsCostAllocationTargetInput { locationId: ID!, channel: String, weight: String }
+  type BmsCostingActionResult { status: String!, errorCode: String }
+  type BmsInventoryValue { sku: String!, size: String!, qty: String!, value: String, unitCost: String, version: String! }
+  type BmsInventoryValuationReport { status: String!, errorCode: String, rows: [BmsInventoryValue!], truncated: Boolean, total: Int, offset: Int, limit: Int }
+  input BmsInventoryOpeningInput {
+    locationId: ID!, sku: String!, size: String!, qty: String!, value: String!, version: String!, evidence: String!, requestId: ID!, confirmed: Boolean!
+  }
+  type BmsMenuActualRow { sku: String!, size: String!, units: String!, revenue: String, cost: String, contribution: String, classification: String!, popularityPercent: Float }
+  type BmsMenuActualReport {
+    status: String!, errorCode: String, complete: Boolean, truncated: Boolean, observedAt: String,
+    totalUnits: String, totalContribution: String, rows: [BmsMenuActualRow!], issues: [String!], basis: String, costBasis: String
+  }
+  input BmsMenuProfitWeight {sku: String!, size: String!, weight: Int!}
+  input BmsMenuProfitInput {month: String!, locationId: ID, method: String!, reason: String!, weights: [BmsMenuProfitWeight!]}
+  input BmsMenuBundlePublicationInput {plan: BmsRestaurantMenuPlanInput!, sku: String!, name: String!, vatCategory: String!, surfaces: [String!]!, kitchenStation: String}
+  input BmsPublishPriceInput { plan: BmsRestaurantPricePlanInput!, scenarioIndex: Int!, mode: String!, quantity: Int!, packCode: String, locationId: ID, salesSurface: String, startsAt: String, endsAt: String }
+  input BmsPricePublicationReview { fingerprint: String!, requestId: ID!, confirmed: Boolean! }
+  type BmsPricePublicationResult { status: String!, errorCode: String, fingerprint: String, snapshot: JSON }
+  type BmsNetProfitAmounts {
+    complete: Boolean!, revenueComplete: Boolean!, costComplete: Boolean!, expensesComplete: Boolean!
+    knownSalesRevenue: String!, knownReturnRevenue: String!, knownSalesCost: String!, returnQuantityCostBasis: String!
+    refundCompleted: String!, creditReductionCompleted: String!, netRevenue: String, netCost: String, grossProfit: String
+    knownOperatingExpense: String!, knownGpExpense: String!, knownDepreciationExpense: String!, knownExpenseTotal: String!
+    expenseTotal: String, netProfit: String
+  }
+  type BmsNetProfitGroup {
+    locationId: ID, locationName: String, channel: String, bucketOnly: Boolean!, sharedBranchCost: Boolean!
+    complete: Boolean!, revenueComplete: Boolean!, costComplete: Boolean!, expensesComplete: Boolean!
+    knownSalesRevenue: String!, knownReturnRevenue: String!, knownSalesCost: String!, returnQuantityCostBasis: String!
+    refundCompleted: String!, creditReductionCompleted: String!, netRevenue: String, netCost: String, grossProfit: String
+    knownOperatingExpense: String!, knownGpExpense: String!, knownDepreciationExpense: String!, knownExpenseTotal: String!
+    expenseTotal: String, netProfit: String
+  }
+  type BmsNetProfitIssue { code: String!, count: Int! }
+  type BmsNetProfitSample { key: String!, code: String! }
+  type BmsNetProfitReport {
+    status: String!, errorCode: String, month: String, currency: String, observedAt: String
+    complete: Boolean, truncated: Boolean, eventCount: Int, totals: BmsNetProfitAmounts
+    branches: [BmsNetProfitGroup!], channels: [BmsNetProfitGroup!], issues: [BmsNetProfitIssue!], samples: [BmsNetProfitSample!]
+    basis: String, costBasis: String, returnBasis: String, expenseBasis: String
+  }
+  input BmsCostAllocationRuleInput { method: String!, reason: String!, targets: [BmsCostAllocationTargetInput!]! }
+  input BmsCostAllocationPreviewInput { month: String!, sourceKey: String!, rule: BmsCostAllocationRuleInput! }
+  input BmsCostAllocationSaveInput {
+    month: String!, sourceKey: String!, rule: BmsCostAllocationRuleInput!
+    expectedVersion: Int!, previewFingerprint: String!, confirmed: Boolean!
+  }
+  type BmsCostAllocationTarget { locationId: ID!, channel: String, weight: String }
+  type BmsCostAllocationRule { method: String!, reason: String!, targets: [BmsCostAllocationTarget!]! }
+  type BmsCostAllocationPart { locationId: ID!, channel: String, basisWeight: String!, amount: String! }
+  type BmsCostAllocationSnapshot {
+    version: Int!, month: String!, sourceKey: String!, amount: String!, fingerprint: String!
+    rule: BmsCostAllocationRule!, allocations: [BmsCostAllocationPart!]!, salesBasis: String!, currency: String!
+  }
+  type BmsCostAllocationRow {
+    sourceKey: String!, reference: String!, classification: String!, amount: String
+    state: String!, issue: String, version: Int!, snapshot: BmsCostAllocationSnapshot
+  }
+  type BmsCostAllocationLocation { id: ID!, name: String! }
+  type BmsCostAllocationGroup { locationId: ID!, channel: String, amount: String! }
+  type BmsCostAllocationReport {
+    status: String!, errorCode: String, month: String, currency: String, complete: Boolean, truncated: Boolean
+    unresolvedCount: Int, knownAllocated: String, allocatedTotal: String, reviewedTotal: String, salesBasis: String
+    locations: [BmsCostAllocationLocation!], rows: [BmsCostAllocationRow!], groups: [BmsCostAllocationGroup!]
+  }
+  type BmsCostAllocationPreview { status: String!, errorCode: String, expectedVersion: Int, snapshot: BmsCostAllocationSnapshot }
+  type BmsCostAllocationSaveResult { status: String!, errorCode: String, version: Int, replayed: Boolean }
   input BmsRecipeComponentInput { sku: String!, size: String!, qty: Int! }
+  type BmsRecipeReference { recipeId: ID!, qty: Int!, productSku: String!, size: String!, version: Int!, outputQty: Int! }
+  input BmsRecipeReferenceInput { recipeId: ID!, qty: Int! }
+  input BmsRestaurantPriceScenarioInput {
+    label: String!, price: Float!, vatMode: String!, vatPercent: Float!, gpPercent: Float!, gpBasis: String!
+    extraUnitCost: Float!, expectedDailyUnits: Int, targetMarginPercent: Float
+  }
+  input BmsRestaurantMenuItemInput { recipeId: ID!, scenario: BmsRestaurantPriceScenarioInput! }
+  input BmsRestaurantBundlePartInput { recipeId: ID!, qty: Int! }
+  input BmsRestaurantBundlePlanInput { scenario: BmsRestaurantPriceScenarioInput!, parts: [BmsRestaurantBundlePartInput!]! }
+  input BmsMenuActualInput { from: String!, to: String!, locationId: ID, channel: String, menuSkus: [String!] }
+  input BmsSalesEvidenceInput {
+    from: String!
+    to: String!
+    locationId: ID
+    channel: String
+  }
+  type BmsSalesEvidenceAmounts {
+    saleGross: String!
+    orderDiscount: String!
+    saleNet: String!
+    extras: String!
+    shipping: String!
+    rounding: String!
+    saleKnownVat: String!
+    saleKnownExVat: String!
+    saleKnownCost: String!
+    returnClaim: String!
+    returnKnownCostBasis: String!
+    returnKnownMerchandiseGross: String!
+    returnKnownExtrasGross: String!
+    returnKnownShippingGross: String!
+    returnKnownRounding: String!
+    returnAllocatedVat: String!
+    returnAllocatedExVat: String!
+    refundCompleted: String!
+    creditReductionCompleted: String!
+    paymentRefundUnallocated: String!
+    backofficeReturnValue: String!
+    taxAdjustmentGross: String!
+  }
+  type BmsSalesEvidenceGroup {
+    day: String!
+    locationId: ID
+    channel: String!
+    eventCount: Int!
+    totals: BmsSalesEvidenceAmounts!
+  }
+  type BmsSalesEvidenceIssue { code: String!, count: Int! }
+  type BmsSalesEvidenceSample { eventKey: String!, orderId: ID!, codes: [String!]! }
+  type BmsSalesEvidence {
+    status: String!
+    errorCode: String
+    from: String
+    to: String
+    locationId: ID
+    channel: String
+    observedAt: String
+    basis: String
+    costBasis: String
+    allocationBasis: String
+    refundBasis: String
+    returnVatBasis: String
+    currency: String
+    currencyBasis: String
+    eventCount: Int
+    truncated: Boolean
+    missingCostLines: Int
+    legacyCostLines: Int
+    diagnosticSampleLimit: Int
+    totals: BmsSalesEvidenceAmounts
+    groups: [BmsSalesEvidenceGroup!]!
+    issues: [BmsSalesEvidenceIssue!]!
+    samples: [BmsSalesEvidenceSample!]!
+    netRevenue: String
+    netCost: String
+    netProfit: String
+  }
+  input BmsRestaurantMenuPlanInput {
+    costBasis: String, locationId: ID
+    assumptionSource: String!, dailyFixedCost: Float, dailyTargetProfit: Float!
+    items: [BmsRestaurantMenuItemInput!]!, bundle: BmsRestaurantBundlePlanInput
+  }
+  type BmsRestaurantMenuPlan {
+    status: String!, errorCode: String, estimates: [BmsRecipeCostEstimate!]!, analysis: BmsRestaurantMenuAnalysis
+  }
+  type BmsRestaurantMenuAnalysis {
+    status: String!, rows: [BmsRestaurantMenuAnalysisRow!]!, totalUnits: Int, popularityThresholdPercent: Float!
+    contributionThreshold: Float, totalContribution: Float, projectedProfit: Float, bundle: BmsRestaurantBundleAnalysis
+  }
+  type BmsRestaurantMenuAnalysisRow {
+    recipeId: ID!, label: String!, units: Int, price: BmsRestaurantPriceScenario!, classification: String!, popularityPercent: Float
+  }
+  type BmsRestaurantBundleAnalysis {
+    price: BmsRestaurantPriceScenario!, recipeCost: Float, baselineCustomerTotal: Float!, baselineContribution: Float
+    customerSavings: Float!, contributionDelta: Float
+  }
+  input BmsRestaurantPricePlanInput {
+    costBasis: String, locationId: ID
+    recipeId: ID!, assumptionSource: String!, dailyFixedCost: Float, dailyTargetProfit: Float!
+    scenarios: [BmsRestaurantPriceScenarioInput!]!
+  }
+  type BmsRestaurantPriceScenario {
+    label: String!, status: String!, customerTotal: Float!, netRevenue: Float!, outputVat: Float!, gpAmount: Float!
+    variableUnitCost: Float, contribution: Float, contributionMarginPercent: Float, breakEvenUnits: Float
+    breakEvenCustomerSales: Float, targetDailyUnits: Float, projectedDailyProfit: Float
+    targetPrice: Float, targetPriceStatus: String!
+  }
+  type BmsRestaurantPricePlan {
+    status: String!, errorCode: String, estimate: BmsRecipeCostEstimate, scenarios: [BmsRestaurantPriceScenario!]!
+  }
+  type BmsRecipeCostRate { quantity: Float!, rate: Float!, source: String! }
+  input BmsRecipeCostRateInput { quantity: Float!, rate: Float!, source: String! }
+  type BmsRecipeCostAssumptions { labor: BmsRecipeCostRate, electricity: BmsRecipeCostRate, gas: BmsRecipeCostRate }
+  input BmsRecipeCostAssumptionsInput { labor: BmsRecipeCostRateInput, electricity: BmsRecipeCostRateInput, gas: BmsRecipeCostRateInput }
+  type BmsRecipeIngredientCost { sku: String!, size: String!, qty: Int!, unitCost: Float, batchCost: Float, source: String! }
+  type BmsRecipeOverheadCost { category: String!, quantity: Float, rate: Float, source: String, batchCost: Float }
+  type BmsRecipeCostEstimate {
+    costBasis: String, locationId: ID
+    recipeId: ID!
+    recipeVersion: Int!
+    calculatedAt: String!
+    status: String!
+    currency: String!
+    scope: String!
+    outputQty: Int!
+    missingIngredientCount: Int!
+    ingredients: [BmsRecipeIngredientCost!]!
+    overhead: [BmsRecipeOverheadCost!]!
+    ingredientBatchCost: Float
+    knownBatchCost: Float!
+    totalBatchCost: Float
+    totalUnitCost: Float
+  }
   type BmsProductRecipe {
     id: ID!
     productSku: String!
@@ -4274,6 +4541,10 @@ export const typeDefs = /* GraphQL */ `
     outputQty: Int!
     active: Boolean!
     items: [BmsRecipeComponent!]!
+    directItems: [BmsRecipeComponent!]!
+    subrecipes: [BmsRecipeReference!]!
+    sopSteps: [String!]!
+    costAssumptions: BmsRecipeCostAssumptions!
   }
   input BmsProductRecipeInput {
     id: ID
@@ -4281,7 +4552,11 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     outputQty: Int
     active: Boolean
-    items: [BmsRecipeComponentInput!]!
+    items: [BmsRecipeComponentInput!]
+    directItems: [BmsRecipeComponentInput!]
+    subrecipes: [BmsRecipeReferenceInput!]
+    sopSteps: [String!]
+    costAssumptions: BmsRecipeCostAssumptionsInput
   }
   type BmsModifierComponent { sku: String!, size: String!, qtyDelta: Int! }
   input BmsModifierComponentInput { sku: String!, size: String!, qtyDelta: Int! }
@@ -4666,6 +4941,7 @@ export const typeDefs = /* GraphQL */ `
     locationId: ID
     locationName: String
     kind: String!          # BUY_X_GET_Y | N_FOR_PRICE | BUY_A_GET_B
+    salesSurface: String
     buySize: String
     giftSku: String
     giftSize: String
@@ -4685,6 +4961,7 @@ export const typeDefs = /* GraphQL */ `
     buyQty: Int!
     getQty: Int
     bundlePrice: Float
+    salesSurface: String
     buySize: String
     giftSku: String
     giftSize: String
@@ -4775,6 +5052,10 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type Mutation {
+    bmsConfirmInventoryValue(input: BmsInventoryOpeningInput!): BmsCostingActionResult!
+    bmsConfirmMenuNetProfit(input: BmsMenuProfitInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
+    bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
+    bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
 
     bmsRefreshActions: Int!
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!
@@ -5039,6 +5320,8 @@ export const typeDefs = /* GraphQL */ `
     bmsResetStoreCapability(capability: String!): BmsStoreCapability!
     bmsUpsertProductStockPolicy(input: BmsProductStockPolicyInput!): BmsProductStockPolicy!
     bmsUpsertProductRecipe(input: BmsProductRecipeInput!): BmsProductRecipe!
+    bmsReviewOperatingCost(input: BmsOperatingCostReviewInput!): BmsOperatingCostReviewResult!
+    bmsSaveCostAllocation(input: BmsCostAllocationSaveInput!): BmsCostAllocationSaveResult!
     bmsUpsertProductModifier(input: BmsProductModifierInput!): BmsProductModifier!
     # ส่งรายการว่าง = เลิกเป็นสินค้าชุด (is_bundle ถูก derive จากรายการนี้เสมอ)
     bmsSetProductBundleItems(bundleSku: String!, items: [BmsBundleItemInput!]!): [BmsBundleItem!]!

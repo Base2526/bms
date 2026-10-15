@@ -13,7 +13,7 @@ const Q_PROMOTIONS = gql`
     bmsPromotionLocations { id code name branchCode active }
     bmsProductPromotions(locationId: $locationId, includeInactive: $includeInactive) {
       id productSku productName locationId locationName
-      kind buyQty getQty bundlePrice buySize giftSku giftSize active startsAt endsAt note updatedAt
+      kind buyQty getQty bundlePrice salesSurface buySize giftSku giftSize active startsAt endsAt note updatedAt
     }
   }
 `;
@@ -53,7 +53,7 @@ type PromotionRow = {
   id: string; productSku: string; productName: string | null;
   locationId: string | null; locationName: string | null;
   kind: "BUY_X_GET_Y" | "N_FOR_PRICE" | "BUY_A_GET_B";
-  buySize: string | null; giftSku: string | null; giftSize: string | null;
+  salesSurface: string | null; buySize: string | null; giftSku: string | null; giftSize: string | null;
   buyQty: number; getQty: number | null; bundlePrice: number | null;
   active: boolean; startsAt: string | null; endsAt: string | null; note: string | null; updatedAt: string;
 };
@@ -125,7 +125,8 @@ export default function PromotionsPage() {
             buyQty: values.buyQty,
             getQty: values.kind !== "N_FOR_PRICE" ? values.getQty : null,
             bundlePrice: values.kind === "N_FOR_PRICE" ? values.bundlePrice : null,
-            buySize: values.kind === "BUY_A_GET_B" ? values.buySize : null,
+            salesSurface: values.salesSurface ?? null,
+            buySize: values.kind !== "BUY_X_GET_Y" ? values.buySize ?? null : null,
             giftSku: values.kind === "BUY_A_GET_B" ? values.giftSku : null,
             giftSize: values.kind === "BUY_A_GET_B" ? values.giftSize : null,
             startsAt: values.startsAt ? values.startsAt.toISOString() : null,
@@ -134,7 +135,7 @@ export default function PromotionsPage() {
           },
         },
       });
-      form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note", "buySize", "giftSku", "giftSize"]);
+      form.resetFields(["buyQty", "getQty", "bundlePrice", "startsAt", "endsAt", "note", "salesSurface", "buySize", "giftSku", "giftSize"]);
       await list.refetch();
       message.success(t("admin_promotions.saved"));
     } catch (error) {
@@ -231,6 +232,8 @@ export default function PromotionsPage() {
               { value: "BUY_A_GET_B", label: t("admin_promotions.kind_cross_sku") },
             ]} />
           </Form.Item>
+          <Form.Item name="salesSurface" label={t('restaurant_actual.surface')}><Select allowClear placeholder={t('restaurant_actual.all_surfaces')} options={['RETAIL_POS','RESTAURANT_POS','ONLINE_ORDER'].map(value=>({value,label:value}))}/></Form.Item>
+          {kind === "N_FOR_PRICE" && <Form.Item name="buySize" label={t('admin_promotions.buy_size')}><Select allowClear options={sizeOptions(productRows.find(p=>p.sku===selectedSku))}/></Form.Item>}
           {kind === "BUY_A_GET_B" && <>
             <Form.Item name="buySize" label={t("admin_promotions.buy_size")} rules={[{ required: true }]}>
               <Select options={sizeOptions(productRows.find((p) => p.sku === selectedSku))} />
@@ -352,7 +355,7 @@ export default function PromotionsPage() {
               ? <Tag color="purple">{row.locationName ?? row.locationId}</Tag>
               : <Tag>{t("admin_promotions.scope_all")}</Tag>,
           },
-          { title: t("admin_promotions.deal"), render: (_: unknown, row: PromotionRow) => <span className={styles.saving}>{describe(row)}</span> },
+          { title: t("admin_promotions.deal"), render: (_: unknown, row: PromotionRow) => <span className={styles.saving}>{describe(row)}{row.buySize&&row.kind==='N_FOR_PRICE'?` · ${row.buySize}`:''}{row.salesSurface?` · ${row.salesSurface}`:''}</span> },
           {
             title: t("admin_promotions.window"),
             render: (_: unknown, row: PromotionRow) => {

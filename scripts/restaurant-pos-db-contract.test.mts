@@ -23,6 +23,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { query } from "../apps/web/lib/db.ts";
+import { upsertProductRecipe } from "../apps/web/lib/bms/productRecipes.ts";
 import {
   KITCHEN_BULK_LIMIT,
   listKitchenTickets,
@@ -398,6 +399,12 @@ test("a failed later round keeps the reservation for food already sent to the ki
     tenantId, locationId, deviceId, shiftId: shiftA, checkId: paidCheckId, actorUserId: waiterId,
   });
   assert.equal(failed.status, "INSUFFICIENT");
+  const snapshotState = await query<{ status: string; stock_snapshot: unknown }>(
+    `SELECT status, stock_snapshot FROM bms_restaurant_check_items WHERE tenant_id=$1 AND check_id=$2`,
+    [tenantId, paidCheckId]);
+  assert.ok(snapshotState.rows.filter(r => r.status === "SENT").every(r => r.stock_snapshot != null));
+  assert.ok(snapshotState.rows.filter(r => r.status === "NEW").every(r => r.stock_snapshot == null),
+    "failed send must not freeze unsent lines");
   assert.equal(Number((await stock(FOOD)).reserved_stock), 2,
     "อาหารรอบเดิมอยู่ในครัวแล้วจึงต้องยังถูกจอง");
   assert.equal(Number((await stock(DRINK)).reserved_stock), 1,
@@ -2196,6 +2203,75 @@ test("คิวของสาขาอื่นไม่โผล่บนก�
   assert.equal(board.waitingCount, 0);
 });
 
+test("recipe/cost snapshots survive rounds, split, merge, kitchen cancellation and settlement", async () => {
+  const menu = `FAKE-${TAG}-SNAPSHOT-MENU`;
+  const a = `FAKE-${TAG}-SNAPSHOT-A`;
+  const b = `FAKE-${TAG}-SNAPSHOT-B`;
+  for (const sku of [menu, a, b]) {
+    await query(`INSERT INTO bms_products(tenant_id,sku,name,price,active,vat_category) VALUES($1,$2,$2,60,true,'V')`, [tenantId, sku]);
+    await query(`INSERT INTO bms_inventory(tenant_id,location_id,product_sku,size,current_stock,reserved_stock)
+      VALUES($1,$2,$3,$4,100,0)`, [tenantId, locationId, sku, SIZE]);
+    await declareSalesSurfaces(sku, ALL_SURFACES);
+  }
+  await query(`UPDATE bms_products SET cost_price=CASE WHEN sku=$2 THEN 0.50 ELSE 0.80 END
+    WHERE tenant_id=$1 AND sku=ANY($3::text[])`, [tenantId, a, [a, b]]);
+  await query(`INSERT INTO bms_product_stock_policies(tenant_id,product_sku,stock_policy) VALUES($1,$2,'RECIPE')
+    ON CONFLICT(tenant_id,product_sku) DO UPDATE SET stock_policy='RECIPE'`, [tenantId, menu]);
+  await query(`INSERT INTO bms_store_capabilities(tenant_id,capability,enabled) VALUES($1,'RECIPE',true)
+    ON CONFLICT(tenant_id,capability) DO UPDATE SET enabled=true`, [tenantId]);
+  const saveRecipe = async (ingredient: string, qty: number, id?: string) => {
+    await query(`UPDATE bms_products SET active=false WHERE tenant_id=$1 AND sku=$2`, [tenantId, menu]);
+    const recipe = await upsertProductRecipe(tenantId, { id, productSku: menu, size: SIZE,
+      outputQty: 1, active: true, items: [{ sku: ingredient, size: SIZE, qty }] });
+    await query(`UPDATE bms_products SET active=true WHERE tenant_id=$1 AND sku=$2`, [tenantId, menu]);
+    return recipe;
+  };
+  const v1 = await saveRecipe(a, 2);
+  const table = await makeSplitTable(`T-SNAPSHOT-${Date.now()}`);
+  const check = await openRestaurantCheck({ tenantId, locationId, deviceId, shiftId: shiftB,
+    tableId: table.id, guestCount: 2, actorUserId: cashierId });
+  assert.ok(check);
+  const input = { tenantId, locationId, deviceId, shiftId: shiftB, checkId: check.id, actorUserId: cashierId };
+  const add = () => addRestaurantCheckItem({ ...input, sku: menu, size: SIZE, packQty: 1 });
+  const evidence = async (checkId: string) => (await query(`SELECT ci.id, ci.stock_snapshot, oi.id AS order_item_id,
+      oi.cost_amount_snapshot, oi.stock_consumption_version, ci.status
+    FROM bms_restaurant_check_items ci JOIN bms_restaurant_checks c ON c.tenant_id=ci.tenant_id AND c.id=ci.check_id
+    LEFT JOIN bms_order_items oi ON oi.tenant_id=c.tenant_id AND oi.order_id=c.current_order_id AND oi.restaurant_check_item_id=ci.id
+    WHERE ci.tenant_id=$1 AND ci.check_id=$2 AND ci.status <> 'CANCELLED' ORDER BY ci.created_at, ci.id`, [tenantId, checkId])).rows;
+  await add(); assert.equal((await sendRestaurantKitchenRound(input)).status, "SENT");
+  const first = (await evidence(check.id))[0];
+  assert.equal(first.stock_snapshot.consumption.lines[0].sourceRef, v1.id);
+  assert.equal(first.stock_snapshot.costAmount, 1);
+  const v2 = await saveRecipe(b, 3, v1.id);
+  await query(`UPDATE bms_products SET cost_price=99 WHERE tenant_id=$1 AND sku=$2`, [tenantId, a]);
+  await add(); assert.equal((await sendRestaurantKitchenRound(input)).status, "SENT");
+  const rounds = await evidence(check.id);
+  assert.equal(rounds.length, 2);
+  assert.notEqual(rounds[0].order_item_id, rounds[1].order_item_id);
+  assert.deepEqual(rounds[0].stock_snapshot, first.stock_snapshot);
+  assert.equal(rounds[1].stock_snapshot.consumption.lines[0].sourceRef, v2.id);
+  assert.equal(rounds[1].stock_snapshot.costAmount, 2.4);
+  assert.equal(Number((await stock(a)).reserved_stock), 2);
+  assert.equal(Number((await stock(b)).reserved_stock), 3);
+  const split = await splitRestaurantCheck({ ...input, itemIds: [first.id] });
+  assert.ok(split.target);
+  assert.deepEqual((await evidence(split.target.id))[0].stock_snapshot, first.stock_snapshot);
+  await mergeRestaurantChecks({ ...input, sourceCheckId: split.target.id, targetCheckId: check.id });
+  assert.deepEqual((await evidence(check.id)).map(r => r.stock_snapshot), rounds.map(r => r.stock_snapshot));
+  assert.equal(Number((await stock(a)).reserved_stock), 2);
+  assert.equal(Number((await stock(b)).reserved_stock), 3);
+  const tickets = await query<{ id: string }>(`SELECT id FROM bms_restaurant_kitchen_tickets WHERE tenant_id=$1 AND check_item_id=$2`, [tenantId, rounds[1].id]);
+  await updateKitchenTicketStatus({ tenantId, ticketId: tickets.rows[0].id,
+    status: "CANCELLED", actorUserId: cashierId, onRestaurantCheckLineCancelled: dropKitchenCancelledLineInTx });
+  assert.equal(Number((await stock(b)).reserved_stock), 0);
+  assert.deepEqual((await evidence(check.id))[0].stock_snapshot, first.stock_snapshot);
+  const paid = await settleRestaurantCheck({ ...input, payments: [{ method: "CASH", amount: 60 }] });
+  assert.equal(paid.status, "SOLD");
+  assert.equal(Number((await stock(a)).current_stock), 98);
+  assert.equal(Number((await stock(a)).reserved_stock), 0);
+  assert.equal(Number((await evidence(check.id))[0].cost_amount_snapshot), 1);
+});
+
 test("teardown: drop the throwaway tenant and everything under it", async () => {
   const stale = await query<{ id: string }>(
     `SELECT id FROM bms_tenants WHERE slug LIKE $1`, [`fake-${TAG}-%`]
@@ -2219,12 +2295,12 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     // คิวอ้างทั้งโต๊ะและบิล (SET NULL) แต่ลบก่อนเสมอเพื่อไม่ต้องพึ่งลำดับของ FK
     "bms_restaurant_waitlist",
     "bms_restaurant_kitchen_tickets",
-    "bms_restaurant_check_items",
     // checks ต้องไปหลัง orders เพราะ bms_orders.restaurant_check_id เป็น FK ปกติ (NO ACTION)
     "bms_kitchen_station_slas", "bms_kitchen_tickets",
     "bms_payments",
     "bms_loyalty_ledger",
     "bms_order_items",
+    "bms_restaurant_check_items", // 10.61 order lines reference check-item identity
     "bms_order_discounts",
     "bms_tax_documents",
     "bms_pos_cash_movements",
@@ -2236,6 +2312,7 @@ test("teardown: drop the throwaway tenant and everything under it", async () => 
     "bms_pos_devices",
     "bms_stock_movements",
     "bms_inventory",
+    "bms_product_recipes", // recipe components must go before their ingredient products
     "bms_product_modifiers",
     "bms_product_modifier_groups",
     "bms_products",

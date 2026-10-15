@@ -196,7 +196,10 @@ const CONFIGURATION = [
   "bms_membership_tiers", "bms_pending_shop_signups", "bms_pharmacy_product_policies",
   "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",
   "bms_product_modifier_groups", "bms_product_modifiers", "bms_product_packs",
+  "bms_branch_prices", // Shared catalog price configuration, resolved on scan and revalidated at settlement.
   "bms_product_price_tiers", "bms_product_promotions", "bms_product_recipes",
+  "bms_product_recipe_subrecipes", // Immutable recipe definition; Stock Models reads on open and refetches after save.
+  "bms_operating_cost_reviews", // Human report classification; monthly view reads on open and refetches after each decision, no live money mutation.
   "bms_product_sales_surfaces", "bms_product_stock_policies", "bms_product_variants",
   "bms_report_subscriptions", "bms_restock_subscriptions", "bms_role_permissions",
   "bms_store_capabilities", "bms_store_profile", "bms_supplier_products", "bms_suppliers",
@@ -235,7 +238,14 @@ const POLLED_OPERATIONAL_SURFACE = [
 
 // Immutable financial evidence has no live POS audience. The tax page refreshes on open,
 // explicit reload and after a confirmed write; stale confirmations are rejected by the service.
-const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period_snapshots"];
+const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period_snapshots",
+  "bms_inventory_values", // Correlated stock writes already emit inventory events; opening worksheet explicitly refetches after confirmation.
+  "bms_inventory_value_entries", // Append-only valuation evidence, queried on report open; never a cashier command.
+  "bms_inventory_value_openings", // Append-only reviewed opening history; explicit worksheet refresh.
+  "bms_price_plan_publications", // Confirmation evidence only; shared pack/promotion writers retain existing realtime events.
+  "bms_menu_profit_allocations", // Confirmed report evidence; explicit refresh and stale fingerprint checks.
+  "bms_cost_allocations", // Append-only management allocation; explicit report refresh, stale preview/version checks, no live money change.
+];
 const CLASSIFIED = new Map<string, string>();
 for (const [reason, tables] of [
   ["immutable financial archive; explicit read and post-write refresh", ARCHIVED_FINANCIAL_EVIDENCE],

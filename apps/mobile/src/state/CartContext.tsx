@@ -183,7 +183,15 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       const existing = synced.find(line => line.key === key);
       if (existing) {
         return synced.map(line =>
-          line.key === key ? { ...line, qty: line.qty + 1 } : line,
+          line.key === key ? {
+            ...line,
+            qty: line.qty + 1,
+            unitPrice: item.price,
+            basePrice: item.basePrice,
+            packBasePrice: item.packBasePrice ?? item.price,
+            modifierUnitPrice: item.modifierUnitPrice ?? 0,
+            unitName: item.unitName,
+          } : line,
         );
       }
       return [
@@ -483,6 +491,18 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
           line.size,
           line.packCode || null,
         );
+        // A saved cart describes physical units. Do not silently reinterpret its quantity
+        // when a pack has changed, even if the new pack happens to have the same price.
+        if (
+          latest.sku !== line.sku || latest.size !== line.size ||
+          (latest.packCode || 'BASE') !== (line.packCode || 'BASE') ||
+          latest.baseQty !== line.baseQty
+        ) {
+          return {
+            line,
+            error: `หน่วยขายหรือรุ่นของ ${line.name} เปลี่ยนแล้ว กรุณาลบรายการและเพิ่มใหม่`,
+          };
+        }
         const allowed = new Set((latest.modifiers ?? []).map(m => m.code));
         const closed = line.modifierCodes.find(code => !allowed.has(code));
         if (closed) {

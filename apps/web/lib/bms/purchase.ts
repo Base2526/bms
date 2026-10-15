@@ -525,6 +525,7 @@ export async function receivePurchaseOrder(
         type: "STOCK_IN",
         qty: ln.qty,
         note: `PO:${poId.slice(0, 8)}`,
+        purchaseItemId: itemId,
         actor: actor ?? "admin",
       });
     }

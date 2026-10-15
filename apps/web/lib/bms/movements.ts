@@ -4,6 +4,7 @@
 
 import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
+import { valueMovementInTx } from "./inventoryValuation";
 import { resolveDefaultLocationIdInTx } from "./locations";
 
 export type MovementType =
@@ -61,6 +62,11 @@ export async function recordMovement(
     actor?: string | null;
     /** บังคับสำหรับ COUNT_ADJUST ห้ามใส่กับชนิดอื่น */
     direction?: MovementDirection | null;
+    orderItemId?: string | number | null;
+    returnId?: string | null;
+    transferItemId?: string | number | null;
+    purchaseItemId?: string | number | null;
+    initialQty?: string;
   }
 ): Promise<void> {
   if (m.type === "COUNT_ADJUST" && !m.direction) {
@@ -73,21 +79,23 @@ export async function recordMovement(
   // เขียนคอลัมน์ direction เฉพาะแถวที่มีค่า — การขาย/รับของ/โอนเรียกฟังก์ชันนี้ทุกบิล
   // ฐานที่ยังไม่ apply 10.10 ต้องไม่ทำให้การขายทั้งระบบล้ม
   if (m.direction) {
-    await client.query(
+    const inserted = await client.query<{id:string}>(
       `INSERT INTO bms_stock_movements
          (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, note, actor, direction)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id::text`,
       [m.tenantId, locationId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null,
         m.direction]
     );
+    await valueMovementInTx(client, inserted.rows[0].id, { ...m, locationId });
     return;
   }
-  await client.query(
+  const inserted = await client.query<{id:string}>(
     `INSERT INTO bms_stock_movements
        (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, note, actor)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id::text`,
     [m.tenantId, locationId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
   );
+  await valueMovementInTx(client, inserted.rows[0].id, { ...m, locationId });
 }
 
 /**
@@ -101,16 +109,17 @@ export async function recordOrderMovements(
   actor: string | null
 ): Promise<void> {
   if (orderIds.length === 0) return;
-  await client.query(
-    // อ่านจาก view (8.8) — ledger ต้องบันทึกของที่ขยับจริง ถ้าบันทึกชื่อเซ็ตแต่
-    // สต็อกขยับที่ส่วนประกอบ ledger จะขัดกับ bms_inventory และกระทบยอดไม่ได้
-    `INSERT INTO bms_stock_movements
-       (tenant_id, location_id, product_sku, size, type, qty, ref_order_id, actor)
-     SELECT tenant_id, location_id, product_sku, size, $2, qty, order_id, $3
-       FROM bms_order_stock_lines
-      WHERE order_id = ANY($1::uuid[])`,
-    [orderIds, type, actor]
-  );
+  const lines = (await client.query<{
+    tenant_id:string;location_id:string;product_sku:string;size:string;qty:number;order_id:string;order_item_id:string;initial_qty:string;
+  }>(`SELECT l.*, (i.current_stock + CASE WHEN $2='SHIP' THEN 1 ELSE -1 END *
+       SUM(l.qty) OVER(PARTITION BY l.tenant_id,l.location_id,l.product_sku,l.size))::text AS initial_qty
+     FROM bms_order_stock_lines l JOIN bms_inventory i USING(tenant_id,location_id,product_sku,size)
+     WHERE l.order_id=ANY($1::uuid[]) ORDER BY l.tenant_id,l.location_id,l.product_sku,l.size,l.order_item_id`,[orderIds,type])).rows;
+  for (const line of lines) await recordMovement(client, {
+    tenantId:line.tenant_id,locationId:line.location_id,sku:line.product_sku,size:line.size,
+    type,qty:Number(line.qty),refOrderId:line.order_id,orderItemId:line.order_item_id,actor,
+    initialQty:line.initial_qty,
+  });
 }
 
 /** อ่านประวัติ (ล่าสุดก่อน) ต่อสินค้าในร้าน */

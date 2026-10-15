@@ -124,8 +124,8 @@ export function CatalogProvider({ children }: { children: React.ReactNode }) {
             price: item.availableSizes[0]?.price ?? item.price,
             category: 'สินค้า',
             station: 'สินค้า',
-            sellable:
-              item.availability === 'AVAILABLE' && item.availableTotal > 0,
+            // Recipe menus own no stock; the server evaluates their selling policy.
+            sellable: item.availability === 'AVAILABLE',
             imageUrl: serverAssetUrl(target?.serverUrl, item.imageUrl),
             unavailableNote:
               item.availability === 'AVAILABLE' ? null : item.availability,
