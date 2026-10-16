@@ -1705,6 +1705,26 @@ produce a drift warning when viewing the archive, and a new reviewed version pre
 Migration and real DB behaviour were not exercised in this round, at the user's request. See
 [business/tax-accounting-review.md](../business/tax-accounting-review.md).
 
+## Platform master data foundation (`10.76`)
+
+`bms_master_banks`, `bms_master_units`, `bms_master_th_provinces`,
+`bms_master_th_districts` and `bms_master_th_subdistricts` are platform-global reference tables.
+They deliberately have no `tenant_id` and no RLS. `bms_app` has `SELECT` only; platform-admin
+writes use the guarded master-data service and commit the revision plus `bms_audit_log` row in the
+same transaction. Rows are retired with `active=false`, not deleted, and external provenance is
+stored as `source` plus `source_version`.
+
+The migration seeds a bounded Thai bank/unit starter set. The full Thai address hierarchy is not
+embedded in SQL: `scripts/import-th-address.mts` requires a recorded source, version and licence,
+runs as a rollback-only dry run by default, and needs `--apply` to commit. It upserts stable codes so
+running the same version twice does not grow the row count.
+
+Tenant data keeps snapshots: payment-account JSON stores both `bankCode` and `bankName`, product
+packs store nullable `unit_code`, and new order items freeze it as `pack_unit_code` for e-Tax.
+Customer address codes are nullable; legacy `address`, `province` and `postcode` text remains valid.
+Apply `10.76` before deploying the readers/writers; schema readiness checks the master bank/unit
+tables and the order-item snapshot column.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

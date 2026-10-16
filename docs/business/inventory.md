@@ -1385,3 +1385,10 @@ supports both VAT price modes.
   reviewed for the sold bundle rather than inferred from component taxes. Conflicts, missing costs,
   fractional base-unit BOMs, stale review or failed audit publish nothing. Replays create no duplicates.
   Requires product.edit + product.delete (activation permission) + report.view and all-branch access.
+
+## Platform unit mapping (`10.76`)
+
+Each product pack may optionally reference a UN/ECE Recommendation 20 `unit_code` from
+`bms_master_units`. `unit_name` remains the tenant-owned receipt/display snapshot. New sales freeze
+the selected code on the order item for e-Tax; changing or retiring a master unit never rewrites an
+old bill. Missing mappings are warnings on POS readiness, not sale blockers.

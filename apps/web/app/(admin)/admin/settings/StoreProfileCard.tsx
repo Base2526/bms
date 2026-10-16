@@ -18,7 +18,7 @@ const Q = gql`
       receiptLanguageMode
       about address phone contactEmail website logoUrl taxId timezone country currency
       businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
-      paymentAccounts { type bankName accountName accountNo promptpayId qrPayload note }
+      paymentAccounts { type bankCode bankName accountName accountNo promptpayId qrPayload note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
       enabledCarriers
       shippingMode shippingOriginProvince shippingOriginPostcode
@@ -26,6 +26,7 @@ const Q = gql`
       shippingWeightTiers { maxGrams surcharge }
       emailThemeColor emailFooterText
     }
+    bmsMasterBanks(includeInactive: true) { code nameTh nameEn active }
   }
 `;
 
@@ -80,6 +81,7 @@ export default function StoreProfileCard() {
 
   const [form] = Form.useForm();
   const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
+  const masterBanks: Array<{ code: string; nameTh: string; nameEn: string; active: boolean }> = data?.bmsMasterBanks ?? [];
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const [uploadingLogo, setUploadingLogo] = useState(false);
@@ -160,7 +162,7 @@ export default function StoreProfileCard() {
         ? archetypeToBusinessType(v.businessArchetype)
         : (v.businessType ?? null);
       input.paymentAccounts = (v.paymentAccounts || []).map((a: any) => ({
-        type: a.type || "BANK", bankName: a.bankName ?? null, accountName: a.accountName ?? null,
+        type: a.type || "BANK", bankCode: a.bankCode ?? null, bankName: a.bankName ?? null, accountName: a.accountName ?? null,
         accountNo: a.accountNo ?? null, promptpayId: a.promptpayId ?? null,
         qrPayload: a.qrPayload ?? null, note: a.note ?? null,
       }));
@@ -715,7 +717,26 @@ export default function StoreProfileCard() {
                                 ]} />
                               </Form.Item>
                             </Col>
-                            <Col xs={12} sm={4}><Form.Item name={[field.name, "bankName"]} noStyle><Input placeholder={t("admin_store_profile.bank_name_placeholder")} /></Form.Item></Col>
+                            <Col xs={12} sm={4}>
+                              <Form.Item name={[field.name, "bankCode"]} noStyle>
+                                <Select
+                                  allowClear
+                                  showSearch
+                                  optionFilterProp="label"
+                                  placeholder={form.getFieldValue(["paymentAccounts", field.name, "bankName"]) || t("admin_store_profile.bank_name_placeholder")}
+                                  options={masterBanks.map((bank) => ({
+                                    value: bank.code,
+                                    label: `${bank.nameTh} / ${bank.nameEn}${bank.active ? "" : " (inactive)"}`,
+                                    disabled: !bank.active,
+                                  }))}
+                                  onChange={(value) => {
+                                    const bank = masterBanks.find((item) => item.code === value);
+                                    if (bank) form.setFieldValue(["paymentAccounts", field.name, "bankName"], bank.nameTh);
+                                  }}
+                                />
+                              </Form.Item>
+                              <Form.Item name={[field.name, "bankName"]} hidden><Input /></Form.Item>
+                            </Col>
                             <Col xs={12} sm={5}><Form.Item name={[field.name, "accountName"]} noStyle><Input placeholder={t("admin_store_profile.account_name_placeholder")} /></Form.Item></Col>
                             <Col xs={12} sm={5}><Form.Item name={[field.name, "accountNo"]} noStyle><Input placeholder={t("admin_store_profile.account_no_placeholder")} /></Form.Item></Col>
                             <Col xs={10} sm={4}><Form.Item name={[field.name, "promptpayId"]} noStyle><Input placeholder={t("admin_store_profile.promptpay_placeholder")} /></Form.Item></Col>

@@ -27,8 +27,9 @@ const Q_PACKS = gql`
   query ProductPacks($productSku: String!) {
     bmsProductPacks(productSku: $productSku) {
       sizes
-      packs { id productSku size packCode unitName baseQty barcode price isBase active }
+      packs { id productSku size packCode unitName unitCode baseQty barcode price isBase active }
     }
+    bmsMasterUnits { code nameTh nameEn kind active }
   }
 `;
 const M_UPSERT = gql`
@@ -40,7 +41,7 @@ const M_DELETE = gql`
 
 type Pack = {
   id: string; productSku: string; size: string | null; packCode: string;
-  unitName: string; baseQty: number; barcode: string | null;
+  unitName: string; unitCode: string | null; baseQty: number; barcode: string | null;
   price: number | null; isBase: boolean; active: boolean;
 };
 
@@ -65,6 +66,7 @@ export default function ProductPacksPage() {
 
   const packs: Pack[] = packsQuery.data?.bmsProductPacks?.packs ?? [];
   const sizes: string[] = packsQuery.data?.bmsProductPacks?.sizes ?? [];
+  const masterUnits: Array<{ code: string; nameTh: string; nameEn: string; kind: string; active: boolean }> = packsQuery.data?.bmsMasterUnits ?? [];
   const auditRows = audit.data?.bmsProductsNeedingBarcodes ?? [];
   const loadedSku = packsQuery.variables?.productSku as string | undefined;
 
@@ -76,6 +78,7 @@ export default function ProductPacksPage() {
         size: sizeValue,
         packCode: "BASE",
         unitName: "ชิ้น",
+        unitCode: null,
         baseQty: 1,
         barcode: "",
         price: null,
@@ -178,6 +181,7 @@ export default function ProductPacksPage() {
                             <Space>
                               <b>{p.unitName}</b>
                               <Tag>{p.packCode}</Tag>
+                              {p.unitCode ? <Tag color="green">UN/ECE {p.unitCode}</Tag> : <Tag color="orange">ยังไม่ map หน่วย e-Tax</Tag>}
                               {p.isBase && <Tag color="blue">หน่วยฐาน</Tag>}
                               {!p.active && <Tag>ปิด</Tag>}
                             </Space>
@@ -296,6 +300,21 @@ export default function ProductPacksPage() {
           </Form.Item>
           <Form.Item name="unitName" label="ชื่อหน่วยที่พิมพ์บนใบเสร็จ" rules={[{ required: true, message: "ต้องระบุชื่อหน่วย" }]}>
             <Input placeholder="กล่อง" />
+          </Form.Item>
+          <Form.Item
+            name="unitCode"
+            label="รหัสหน่วยมาตรฐาน UN/ECE"
+            extra="ใช้ใน XML e-Tax · เว้นว่างได้ ระบบจะ fallback เป็นชื่อหน่วยเดิม"
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={masterUnits.filter((unit) => unit.active || unit.code === editing?.unitCode).map((unit) => ({
+                value: unit.code,
+                label: `${unit.code} · ${unit.nameTh} / ${unit.nameEn}`,
+              }))}
+            />
           </Form.Item>
           <Form.Item
             name="baseQty"

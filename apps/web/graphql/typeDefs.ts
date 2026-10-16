@@ -742,6 +742,7 @@ export const typeDefs = /* GraphQL */ `
     size: String
     packCode: String!
     unitName: String!
+    unitCode: String
     baseQty: Int!
     barcode: String
     " null = คิดจากราคาสินค้า × baseQty "
@@ -763,6 +764,7 @@ export const typeDefs = /* GraphQL */ `
     packCode: String!
     # ไม่ส่งมา = คงชื่อหน่วยเดิมของแพ็กนั้น (แพ็กใหม่จะใช้หน่วยแสดงผลของสินค้า)
     unitName: String
+    unitCode: String
     baseQty: Int!
     barcode: String
     price: Float
@@ -776,6 +778,87 @@ export const typeDefs = /* GraphQL */ `
     sizes: Int!
     packs: Int!
     sizesWithoutBarcode: [String!]!
+  }
+
+  type BmsMasterBank {
+    id: ID!
+    code: String!
+    countryCode: String!
+    nameTh: String!
+    nameEn: String!
+    swift: String
+    active: Boolean!
+    sortOrder: Int!
+    source: String!
+    sourceVersion: String!
+    updatedAt: String!
+  }
+  input BmsMasterBankInput {
+    id: ID
+    code: String!
+    countryCode: String
+    nameTh: String!
+    nameEn: String!
+    swift: String
+    active: Boolean
+    sortOrder: Int
+    source: String
+    sourceVersion: String
+  }
+  type BmsMasterUnit {
+    id: ID!
+    code: String!
+    countryCode: String!
+    nameTh: String!
+    nameEn: String!
+    aliases: [String!]!
+    kind: String!
+    baseFactor: Float!
+    active: Boolean!
+    source: String!
+    sourceVersion: String!
+    updatedAt: String!
+  }
+  input BmsMasterUnitInput {
+    id: ID
+    code: String!
+    countryCode: String
+    nameTh: String!
+    nameEn: String!
+    aliases: [String!]
+    kind: String!
+    baseFactor: Float
+    active: Boolean
+    source: String
+    sourceVersion: String
+  }
+  type BmsMasterThaiAddress {
+    level: String!
+    id: ID!
+    code: String!
+    countryCode: String!
+    provinceCode: String
+    districtCode: String
+    nameTh: String!
+    nameEn: String!
+    postcode: String
+    active: Boolean!
+    source: String!
+    sourceVersion: String!
+    updatedAt: String!
+  }
+  input BmsMasterThaiAddressInput {
+    level: String!
+    id: ID
+    code: String!
+    provinceCode: String
+    districtCode: String
+    nameTh: String!
+    nameEn: String!
+    postcode: String
+    active: Boolean
+    source: String
+    sourceVersion: String
   }
 
   type BmsEtaxSummary {
@@ -1118,6 +1201,9 @@ export const typeDefs = /* GraphQL */ `
     bmsArOutstanding: BmsArOutstanding!
 
     bmsProductPacks(productSku: String!): BmsProductPackList!
+    bmsMasterBanks(search: String, includeInactive: Boolean): [BmsMasterBank!]!
+    bmsMasterUnits(search: String, includeInactive: Boolean): [BmsMasterUnit!]!
+    bmsMasterThaiAddresses(search: String, level: String, provinceCode: String, districtCode: String, includeInactive: Boolean, limit: Int): [BmsMasterThaiAddress!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
     bmsEtaxSubmissions(status: String, limit: Int = 100): [BmsEtaxSubmission!]!
@@ -2351,6 +2437,11 @@ export const typeDefs = /* GraphQL */ `
     label: String
     address: String!
     is_default: Boolean!
+    province: String
+    postcode: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
   }
 
   type BmsCustomerIdentity {
@@ -4155,6 +4246,7 @@ export const typeDefs = /* GraphQL */ `
   # ===== BMS store profile (ข้อมูลร้าน + ค่าส่ง) =====
   type BmsPaymentAccount {
     type: String!
+    bankCode: String
     bankName: String
     accountName: String
     accountNo: String
@@ -4164,6 +4256,7 @@ export const typeDefs = /* GraphQL */ `
   }
   input BmsPaymentAccountInput {
     type: String!
+    bankCode: String
     bankName: String
     accountName: String
     accountNo: String
@@ -5127,6 +5220,9 @@ export const typeDefs = /* GraphQL */ `
     bmsGenerateInStoreBarcode: String!
     "pin ว่าง/null = ล้าง PIN ทำให้ขายหน้าร้านไม่ได้"
     bmsUpsertProductPack(input: BmsProductPackInput!): BmsProductPack!
+    bmsUpsertMasterBank(input: BmsMasterBankInput!): BmsMasterBank!
+    bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
+    bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
     bmsDeleteProductPack(id: ID!): Boolean!
     bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
     bmsBackfillEtaxQueue(limit: Int = 500): Int!
@@ -5317,8 +5413,8 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS CRM (admin) =====
     bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
     bmsSetCustomerTags(id: ID!, tags: [String!]!): Boolean!
-    bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean): BmsCustomerAddress!
-    bmsUpdateCustomerAddress(addressId: ID!, label: String, address: String!): BmsCustomerAddress!
+    bmsAddCustomerAddress(id: ID!, label: String, address: String!, isDefault: Boolean, provinceCode: String, districtCode: String, subdistrictCode: String, postcode: String): BmsCustomerAddress!
+    bmsUpdateCustomerAddress(addressId: ID!, label: String, address: String!, provinceCode: String, districtCode: String, subdistrictCode: String, postcode: String): BmsCustomerAddress!
     bmsSetDefaultCustomerAddress(addressId: ID!): BmsCustomerAddress!
     bmsDeleteCustomerAddress(addressId: ID!): Boolean!
     bmsDeleteCustomer(id: ID!): Boolean!

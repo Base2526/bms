@@ -382,6 +382,14 @@ const en = {
     saved: "Download links saved",
     save: "Save",
   },
+  admin_master_data: {
+    title: "Platform master data", warning_title: "Changes affect every store", warning_description: "Edit reference data only from verified sources. Existing payment and document snapshots keep their original text.",
+    banks: "Banks", units: "Units", addresses: "Thai addresses", search: "Search code or name", reload: "Reload", save: "Save", cancel: "Cancel", saved: "Master data saved", save_error: "Unable to save master data",
+    add_bank: "Add bank", add_unit: "Add unit", add_address: "Add address row", bank_form: "Bank reference", unit_form: "Standard unit", address_form: "Thai address reference",
+    code: "Code", country: "Country", name_th: "Thai name", name_en: "English name", sort_order: "Sort order", status: "Status", active: "Active", inactive: "Inactive", edit: "Edit",
+    source: "Source", source_version: "Source version", kind: "Kind", aliases: "Aliases", aliases_help: "Comma-separated retail terms", base_factor: "Base factor within the same kind",
+    level: "Level", province: "Province", district: "District", subdistrict: "Subdistrict", postcode: "Postcode", address_import_title: "Bulk address data belongs in the importer", address_import_description: "Use scripts/import-th-address.mts. It is dry-run by default and refuses datasets without recorded source, version, and licence.",
+  },
   footer: {
     support: "Support",
     as_is: "AS IS / No Warranty",
@@ -735,6 +743,7 @@ const en = {
     restaurant_floor: "Floor Plan",
     delivery_platforms: "Delivery Platforms",
     delivery_provider_settings: "Delivery Partner APIs",
+    master_data: "Platform master data",
     auth_settings: "Social Login",
     local_license: "This installation’s license",
     retail_local_licenses: "Retail Local licenses",

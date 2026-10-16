@@ -243,6 +243,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'sales.restaurant-floor': <ShopOutlined />,
   'sales.delivery-platforms': <CloudOutlined />,
   'platform.delivery-provider-settings': <ApiOutlined />,
+  'platform.master-data': <DatabaseOutlined />,
   'sales.board-game': <AppstoreOutlined />,
   'sales.pos-manual': <ReadOutlined />,
   'inventory.products': <ShoppingCartOutlined />,

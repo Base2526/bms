@@ -34,6 +34,7 @@ export async function invalidateStoreProfileCache(tenantId: string): Promise<voi
 
 export type PaymentAccount = {
   type: string; // BANK / PROMPTPAY / อื่นๆ
+  bankCode?: string | null;
   bankName?: string | null;
   accountName?: string | null;
   accountNo?: string | null;
@@ -327,6 +328,7 @@ export async function upsertStoreProfile(
     // still small enough to render reliably on the customer display.
     merged.paymentAccounts = (merged.paymentAccounts ?? []).slice(0, 20).map((account) => ({
       type: String(account?.type ?? "BANK").trim().toUpperCase().slice(0, 40) || "BANK",
+      bankCode: String(account?.bankCode ?? "").trim().toUpperCase().slice(0, 12) || null,
       bankName: String(account?.bankName ?? "").trim().slice(0, 120) || null,
       accountName: String(account?.accountName ?? "").trim().slice(0, 160) || null,
       accountNo: String(account?.accountNo ?? "").trim().slice(0, 80) || null,
@@ -334,6 +336,18 @@ export async function upsertStoreProfile(
       qrPayload: String(account?.qrPayload ?? "").trim().slice(0, 2048) || null,
       note: String(account?.note ?? "").trim().slice(0, 300) || null,
     }));
+    // bankName is a display snapshot. Never trust a client-supplied name when a
+    // master code is present; resolving here also lets an already configured,
+    // inactive bank keep its historical account readable.
+    for (const account of merged.paymentAccounts) {
+      if (!account.bankCode) continue;
+      const bank = await client.query<{ name_th: string }>(
+        `SELECT name_th FROM bms_master_banks WHERE country_code='TH' AND code=$1`,
+        [account.bankCode]
+      );
+      if (!bank.rowCount) throw new Error(`ไม่พบรหัสธนาคาร ${account.bankCode} ในข้อมูลกลาง`);
+      account.bankName = bank.rows[0].name_th;
+    }
 
     await client.query(
       `INSERT INTO bms_store_profile (

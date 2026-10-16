@@ -24,6 +24,15 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.76__bms_master_data_foundation.sql",
+    impact: "New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables",
+    needs: [
+      { kind: "table", name: "bms_master_units" },
+      { kind: "table", name: "bms_master_banks" },
+      { kind: "column", table: "bms_order_items", name: "pack_unit_code" },
+    ],
+  },
+  {
     file: "10.66__bms_cost_allocations.sql",
     impact: "Monthly expense allocation requires versioned allocation evidence; selling and refund paths are unchanged",
     needs: [{ kind: "table", name: "bms_cost_allocations" }],

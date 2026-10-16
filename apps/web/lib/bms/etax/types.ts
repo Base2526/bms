@@ -40,6 +40,7 @@ export type EtaxDocumentData = {
     name: string;
     qty: number;
     unitName: string | null;
+    unitCode: string | null;
     unitPrice: number;
     amount: number;
     vatCategory: "V" | "N" | "UNKNOWN";

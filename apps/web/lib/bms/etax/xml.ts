@@ -61,7 +61,7 @@ export function buildEtaxXml(doc: EtaxDocumentData): string {
           </NetPriceProductTradePrice>
         </SpecifiedLineTradeAgreement>
         <SpecifiedLineTradeDelivery>
-          <BilledQuantity unitCode="${esc(l.unitName ?? "EA")}">${esc(l.qty)}</BilledQuantity>
+          <BilledQuantity unitCode="${esc(l.unitCode ?? l.unitName ?? "EA")}">${esc(l.qty)}</BilledQuantity>
         </SpecifiedLineTradeDelivery>
         <SpecifiedLineTradeSettlement>
           <ApplicableTradeTax>

@@ -24,6 +24,7 @@ export type ProductPack = {
   size: string | null;
   packCode: string;
   unitName: string;
+  unitCode: string | null;
   baseQty: number;
   barcode: string | null;
   /** null = คิดจากราคาสินค้า × baseQty (ไม่มีส่วนลดยกกล่อง) */
@@ -39,6 +40,7 @@ function mapPack(r: any): ProductPack {
     size: r.size ?? null,
     packCode: r.pack_code,
     unitName: r.unit_name,
+    unitCode: r.unit_code ?? null,
     baseQty: Number(r.base_qty),
     barcode: r.barcode ?? null,
     price: r.price == null ? null : Number(r.price),
@@ -178,6 +180,8 @@ export type UpsertPackInput = {
    * "ข้าวกะเพรา 1 ชิ้น" และของชั่งกิโลกลายเป็น "ชิ้น" หลังแก้ราคาครั้งแรก)
    */
   unitName?: string | null;
+  /** Optional UN/ECE Recommendation 20 code used by e-Tax; display name remains a snapshot. */
+  unitCode?: string | null;
   baseQty: number;
   barcode?: string | null;
   price?: number | null;
@@ -200,11 +204,13 @@ export async function upsertProductPackInTx(client: PoolClient, tenantId: string
   const baseQty = Math.floor(Number(input.baseQty));
   const size = input.size?.trim() || null;
   const barcode = input.barcode?.trim() || null;
+  const unitCode = input.unitCode?.trim().toUpperCase() || null;
 
   if (!packCode) throw new Error("ต้องระบุรหัสหน่วยขาย (เช่น BASE, BOX)");
   if (!Number.isInteger(baseQty) || baseQty < 1) throw new Error("จำนวนต่อหน่วยต้องเป็นจำนวนเต็มตั้งแต่ 1");
   if (input.isBase && baseQty !== 1) throw new Error("หน่วยฐานต้องมีจำนวนต่อหน่วย = 1");
   if (input.price != null && Number(input.price) < 0) throw new Error("ราคาติดลบไม่ได้");
+  if (unitCode && !/^[A-Z0-9]{1,3}$/.test(unitCode)) throw new Error("รหัสหน่วยมาตรฐานไม่ถูกต้อง");
 
   if (input.id) {
     const owned = await client.query("SELECT 1 FROM bms_product_packs WHERE tenant_id=$1 AND id=$2 AND product_sku=$3 FOR UPDATE",[tenantId,input.id,input.productSku]);
@@ -266,14 +272,15 @@ export async function upsertProductPackInTx(client: PoolClient, tenantId: string
 
   const res = await client.query(
     `INSERT INTO bms_product_packs
-       (id, tenant_id, product_sku, size, pack_code, unit_name, base_qty, barcode, price, is_base, active)
-     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, FALSE), COALESCE($11, TRUE))
+       (id, tenant_id, product_sku, size, pack_code, unit_name, unit_code, base_qty, barcode, price, is_base, active)
+     VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, $8, $9, $10, COALESCE($11, FALSE), COALESCE($12, TRUE))
      ON CONFLICT (id) DO UPDATE
        SET size = EXCLUDED.size, pack_code = EXCLUDED.pack_code, unit_name = EXCLUDED.unit_name,
+           unit_code = EXCLUDED.unit_code,
            base_qty = EXCLUDED.base_qty, barcode = EXCLUDED.barcode, price = EXCLUDED.price,
            is_base = EXCLUDED.is_base, active = EXCLUDED.active, updated_at = now()
      RETURNING *`,
-    [input.id ?? null, tenantId, input.productSku, size, packCode, unitName, baseQty,
+    [input.id ?? null, tenantId, input.productSku, size, packCode, unitName, unitCode, baseQty,
       barcode, input.price ?? null, input.isBase ?? null, input.active ?? null]
   );
   return mapPack(res.rows[0]);
