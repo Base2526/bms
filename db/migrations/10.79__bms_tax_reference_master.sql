@@ -103,6 +103,10 @@ CREATE TABLE IF NOT EXISTS bms_master_tax_document_types (
   UNIQUE (bms_document_type, effective_from)
 );
 
+-- This must precede the seed. A database that attempted the original 10.79
+-- may already have the tenant-only trigger attached to this global table.
+SELECT public.create_global_revision_trigger('bms_master_tax_document_types');
+
 INSERT INTO bms_master_tax_document_types
   (code,name_th,name_en,bms_document_type,effective_from,source,source_version)
 VALUES
@@ -134,6 +138,11 @@ CREATE TABLE IF NOT EXISTS bms_master_vat_rates (
   UNIQUE (country_code,effective_from)
 );
 
+-- Install the global trigger before ON CONFLICT DO UPDATE below; otherwise a
+-- retry against the original table fires trg_generic_revision(), which reads
+-- the nonexistent OLD.tenant_id and aborts the whole transaction.
+SELECT public.create_global_revision_trigger('bms_master_vat_rates');
+
 INSERT INTO bms_master_vat_rates
   (country_code,rate,effective_from,effective_to,source,source_version)
 VALUES
@@ -160,6 +169,8 @@ CREATE TABLE IF NOT EXISTS bms_master_tax_buyer_types (
   UNIQUE (code,effective_from)
 );
 
+SELECT public.create_global_revision_trigger('bms_master_tax_buyer_types');
+
 INSERT INTO bms_master_tax_buyer_types
   (code,name_th,name_en,tax_id_policy,branch_policy,effective_from,source,source_version)
 VALUES
@@ -178,9 +189,6 @@ SELECT public.create_global_revision_trigger('bms_master_th_districts');
 SELECT public.create_global_revision_trigger('bms_master_th_subdistricts');
 SELECT public.create_global_revision_trigger('bms_master_carriers');
 SELECT public.create_global_revision_trigger('bms_master_th_shipping_zones');
-SELECT public.create_global_revision_trigger('bms_master_tax_document_types');
-SELECT public.create_global_revision_trigger('bms_master_vat_rates');
-SELECT public.create_global_revision_trigger('bms_master_tax_buyer_types');
 
 DO $$
 DECLARE tbl TEXT;

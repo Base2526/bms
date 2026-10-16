@@ -47,6 +47,7 @@ test("tax reference tables are versioned global read-only masters",()=>{
   assert.match(migration,/create_global_revision_trigger\('bms_master_tax_document_types'\)/);
   assert.doesNotMatch(migration,/create_revision_trigger\('bms_master_tax_/);
   assert.match(migration,/ALTER COLUMN tenant_id DROP NOT NULL/);
+  assert.ok(migration.indexOf("create_global_revision_trigger('bms_master_vat_rates')")<migration.indexOf("INSERT INTO bms_master_vat_rates"));
 });
 
 test("VAT reference mismatch is advisory and the sale calculation stays untouched",()=>{
