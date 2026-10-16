@@ -126,8 +126,10 @@ branch that `lib/bms/ai.ts`'s `resolveAiCredentials()` tries first for every oth
 This is a deliberate deviation, decided with the user: platform ops controls model/prompt
 quality for this feature end-to-end, not each shop's own key. It still consumes the
 tenant's monthly AI quota like any other shared-key call.
-Shared AI uses monthly plan points (`10.56`), resetting at 00:00 Asia/Bangkok on the first:
-Free 100, Pro 1,000, Business unlimited. There is no per-shop USD cap. Each retry still records
+Shared AI uses monthly plan points (`10.56`, `10.73`), resetting at 00:00 Asia/Bangkok on the first:
+Free 100, Pro 1,000, Business 5,000 after the scheduled transition. Business retains its old
+allowance until the first Bangkok month boundary after `10.73`; the shared plan service resolves
+that date for accounting. There is no per-shop USD cap. Each retry still records
 its attempt before I/O without charging a second point; accounting failure uses the existing
 pharmacist handoff. This never relaxes clinical validation or grants a sale approval.
 

@@ -1392,7 +1392,9 @@ Permission: admin ที่ล็อกอิน
 
 ## Quota staff ต่อแพ็กเกจ (`enforceUserQuota()`)
 เช็คก่อนสร้าง user ใหม่ (`upsertUser` ตอน INSERT) — เกิน `bms_plans.max_users` ของร้านนั้น → throw พร้อมข้อความแนะนำอัปเกรด
-free=3 · pro=10 · business=ไม่จำกัด (`-1`). **platform admin ไม่ถูกจำกัด**. ดู `lib/bms/plans.ts` (`enforceProductQuota` ทำงานแบบเดียวกันฝั่งสินค้า)
+หลัง `10.73`: free=2 · pro=5 · business=20 รวมเจ้าของร้าน นับบัญชีเดิมทุกบัญชีและไม่ปิดผู้ใช้ที่เกินเพดาน
+Retail Local ไม่ใช้เพดานผู้ใช้ Cloud นี้ บัญชี platform ที่ไม่สังกัด tenant ไม่อยู่ในโควตาร้าน
+ดู `lib/bms/plans.ts` (`enforceProductQuota` ทำงานแบบเดียวกันฝั่งสินค้า)
 
 ## Loyalty points (`get_loyalty_points`, migration 7.96)
 

@@ -1,6 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { createHash } from "crypto";
+import { requirePackageFeature } from "./featureAccess";
 
 const PAID = ["PAID","PACKING","SHIPPED","COMPLETED"];
 const ATTRIBUTION_DAYS = 30;
@@ -15,8 +16,13 @@ function shape(r:any) {
     contactedAt:r.contacted_at?.toISOString?.()??r.contacted_at??null,convertedAt:r.converted_at?.toISOString?.()??r.converted_at??null,convertedRevenue:r.converted_revenue==null?null:Number(r.converted_revenue) };
 }
 
-export async function refreshRetentionCases(tenantId:string) {
-  const stats=await query<any>(`WITH paid AS (
+export async function refreshRetentionCases(tenantId:string, existingOnly = false, actorId?:string) {
+  const client=await getClient();
+  try {
+    await beginTenantTx(client,tenantId,actorId ? {editorId:actorId} : undefined);
+    if (!existingOnly) await requirePackageFeature(tenantId, "RETENTION_ENGINE", client);
+  // Downgraded shops can reconcile old cases, but cannot generate new recommendations.
+  const stats=existingOnly ? {rows:[],rowCount:0} : await client.query<any>(`WITH paid AS (
     SELECT o.id,o.customer_id,o.channel,o.total_amount,o.created_at FROM bms_orders o
     WHERE o.tenant_id=$1 AND o.customer_id IS NOT NULL AND o.status=ANY($2)
   ), agg AS (
@@ -36,9 +42,6 @@ export async function refreshRetentionCases(tenantId:string) {
     GROUP BY peer.product_sku ORDER BY score DESC,peer.product_sku LIMIT 1
   ) next ON true`,[tenantId,PAID]);
   const periodKey=new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit"}).format(new Date());
-  const client=await getClient();
-  try {
-    await beginTenantTx(client,tenantId);
     for(const r of stats.rows){
       const recency=Math.max(0,Math.floor((Date.now()-new Date(r.last_order).getTime())/86400000));
       const gap=Math.max(14,Math.min(365,Number(r.avg_gap)||60));
@@ -65,6 +68,8 @@ export async function refreshRetentionCases(tenantId:string) {
       SET status='EXPIRED',updated_at=now()
       WHERE tenant_id=$1 AND status IN ('NEW','ACCEPTED','CONTACTED')
         AND COALESCE(contacted_at,created_at) < now() - ($2::int * interval '1 day')`,[tenantId,ATTRIBUTION_DAYS]);
+    await client.query(`INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta) VALUES($1,$2,$3,NULL,$4)`,
+      [tenantId,actorId??"system",existingOnly ? "retention.reconcile" : "retention.refresh",JSON.stringify({customers:stats.rowCount})]);
     await client.query("COMMIT"); return stats.rowCount;
   }catch(e){await client.query("ROLLBACK").catch(()=>undefined);throw e;}finally{client.release();}
 }

@@ -374,6 +374,13 @@ function balanceFromRow(row: MonthlyUsageRow): number {
   return Math.max((row.credits_granted ?? 0) + (row.credits_bonus ?? 0) + (row.credits_adjusted ?? 0) - (row.credits_consumed ?? 0), 0);
 }
 
+/** Lock tenant -> month -> event. Never reconcile a grant from a pre-transaction plan. */
+async function getAccountingPlan(client: PoolClient, tenantId: string, at: Date): Promise<Plan> {
+  const tenant = await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR SHARE`, [tenantId]);
+  if (!tenant.rowCount) throw new Error("Tenant not found");
+  return getTenantPlan(tenantId, client, at.getTime());
+}
+
 async function ensureMonthlySummary(
   client: PoolClient,
   tenantId: string,
@@ -527,11 +534,12 @@ async function transaction<T>(tenantId: string, work: (client: PoolClient) => Pr
     try {
       const timeout = (await client.query('SHOW statement_timeout')).rows[0].statement_timeout;
       await client.query("SET LOCAL statement_timeout = '2000ms'");
-      const month = currentYearMonth();
+      const at = new Date();
+      const month = aiYearMonth(at);
       const monthly = (await client.query<MonthlyUsageRow>(
         `SELECT * FROM bms_ai_usage_monthly WHERE tenant_id=$1 AND year_month=$2 FOR UPDATE`, [tenantId, month])).rows[0];
       if (monthly && !isRetailLocalDeployment()) {
-        const plan = await getTenantPlan(tenantId, client);
+        const plan = await getTenantPlan(tenantId, client, at.getTime());
         await recordAiLimitNoticesInTx(client, tenantId, month, {
           CREDITS: creditLimitStatus(planCreditLimit(plan) < 0,
             monthly.credits_granted + monthly.credits_bonus + monthly.credits_adjusted, monthly.credits_consumed),
@@ -675,14 +683,13 @@ async function reconcileStaleAiReservations(
 
 export async function getAiUsage(tenantId: string): Promise<AiUsage> {
   const billing = await getAiBillingContext(tenantId);
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
-  const limit = planCreditLimit(plan);
-  const grant = creditGrantForPlan(plan);
-
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   await reconcileStaleAiReservations(tenantId, yearMonth);
 
-  const { row, accounting, budget } = await transaction(tenantId, async (client) => {
+  const { row, accounting, budget, plan } = await transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
     const row = await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     const accounting = await client.query<{
       requests: number;
@@ -708,9 +715,11 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
       [tenantId, yearMonth]
     );
     const budget = await readSharedBudget(client, tenantId, yearMonth);
-    return { row, accounting: accounting.rows[0], budget };
+    return { row, accounting: accounting.rows[0], budget, plan };
   });
 
+  const limit = planCreditLimit(plan);
+  const grant = creditGrantForPlan(plan);
   const remaining = limit < 0 ? -1 : balanceFromRow(row);
   return {
     ...billing,
@@ -748,9 +757,11 @@ export async function getAiUsage(tenantId: string): Promise<AiUsage> {
 }
 
 export async function recordByokAiUsage(tenantId: string, ctx?: AiUsageContext): Promise<string> {
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   return transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     await client.query(
       `UPDATE bms_ai_usage_monthly
@@ -769,18 +780,22 @@ export async function recordSharedAiRetryUsage(
   tenantId: string,
   ctx?: AiUsageContext
 ): Promise<string> {
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   return transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     return insertUsageEvent(client, tenantId, yearMonth, "shared", "started", 0, ctx);
   });
 }
 
 export async function recordAiFallback(tenantId: string, reason: "quota_exhausted" | "no_credentials", ctx?: AiUsageContext): Promise<string> {
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   return transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     await client.query(
       `UPDATE bms_ai_usage_monthly
@@ -802,13 +817,14 @@ export async function tryConsumeAiQuota(
   tenantId: string,
   ctx?: AiUsageContext
 ): Promise<{ ok: boolean; eventId?: string }> {
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
-  const unlimited = planCreditLimit(plan) < 0;
-
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   await reconcileStaleAiReservations(tenantId, yearMonth);
 
   return transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
+    const unlimited = planCreditLimit(plan) < 0;
     await ensureMonthlySummary(client, tenantId, yearMonth, plan);
 
     if (!unlimited) {
@@ -1219,9 +1235,11 @@ export async function adjustAiCredits(
 ): Promise<boolean> {
   if (isRetailLocalDeployment()) throw new Error("Retail Local does not use AI plan points");
   if (!Number.isInteger(amount) || amount === 0) throw new Error("จำนวน point ต้องเป็นจำนวนเต็มและต้องไม่เป็น 0");
-  const plan = await getTenantPlan(tenantId);
-  const yearMonth = currentYearMonth();
+  // One instant owns both entitlement and ledger month, even across a slow DB read.
+  const at = new Date();
+  const yearMonth = aiYearMonth(at);
   return transaction(tenantId, async (client) => {
+    const plan = await getAccountingPlan(client, tenantId, at);
     const row = await ensureMonthlySummary(client, tenantId, yearMonth, plan);
     const nextAdjusted = (row.credits_adjusted ?? 0) + amount;
     const nextBalance = balanceFromRow({ ...row, credits_adjusted: nextAdjusted });

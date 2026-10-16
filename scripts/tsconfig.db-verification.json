@@ -10,6 +10,7 @@
     "restaurant-actual-costs-db-contract.test.mts",
     "restaurant-completion-db-contract.test.mts",
     "ai-entitlement-authority-db-contract.test.mts",
+    "freemium-restored-db-contract.test.mts",
     "board-game-library-media-db-contract.test.mts",
     "board-game-seating-db-contract.test.mts",
     "delivery-platform-hardening-db-contract.test.mts",

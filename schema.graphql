@@ -535,6 +535,14 @@ type BmsBusinessDoc {
   type: String!
 }
 
+type BmsCapacity {
+  canAdd: Boolean!
+  limit: Int!
+  resource: String!
+  source: String!
+  used: Int!
+}
+
 enum BmsCarrier {
   AUSPOST
   DHL
@@ -1290,6 +1298,12 @@ type BmsEnrollMemberResult {
   status: String!
 }
 
+type BmsEntitlements {
+  capacities: [BmsCapacity!]!
+  features: [BmsFeatureAccess!]!
+  plan: BmsPlan!
+}
+
 type BmsEtaxRunResult {
   accepted: Int!
   failed: Int!
@@ -1413,6 +1427,13 @@ type BmsExpiringPointsRow {
   memberNo: String
   name: String!
   phone: String
+}
+
+type BmsFeatureAccess {
+  allowed: Boolean!
+  feature: String!
+  minimumPlan: String!
+  source: String!
 }
 
 type BmsFollowupAnalytics {
@@ -2792,6 +2813,30 @@ type BmsPackAudit {
   sku: String!
 }
 
+type BmsPackageCohort {
+  conversionRate: Float
+  converted: Int!
+  kind: String!
+  shops: Int!
+}
+
+type BmsPackageCost {
+  knownCostUsd: Float
+  providerCalls: Int!
+  source: String!
+  tenantId: ID!
+  unpricedProviderCalls: Int!
+}
+
+type BmsPackageMetrics {
+  available: Boolean!
+  cohorts: [BmsPackageCohort!]!
+  costs: [BmsPackageCost!]!
+  from: String!
+  to: String!
+  untrackedTenants: Int
+}
+
 enum BmsParkingStatus {
   AVAILABLE
   NONE
@@ -3210,10 +3255,15 @@ input BmsPharmacyProtocolInput {
 }
 
 type BmsPlan {
+  ai_credits_change_at: String
   ai_credits_monthly: Int!
+  ai_credits_next_monthly: Int
   code: String!
+  feature_keys: [String!]!
   max_ai_messages_month: Int!
+  max_branches: Int!
   max_channels: Int!
+  max_devices: Int!
   max_orders_month: Int!
   max_products: Int!
   max_users: Int!
@@ -8477,7 +8527,7 @@ type Mutation {
   bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): BmsMobileStockCountActionResult!
   bmsReferAssessmentToDoctor(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
   bmsRefreshActions: Int!
-  bmsRefreshRetention: Int!
+  bmsRefreshRetention(existingOnly: Boolean = false): Int!
   bmsRefundPayment(id: ID!): Boolean!
   bmsRejectAssessment(assessmentId: ID!, expectedVersion: Int!, reason: String!): BmsPharmacyAssessment!
   bmsRejectPayment(id: ID!, note: String): Boolean!
@@ -8951,6 +9001,7 @@ type Query {
   bmsDashboard: BmsDashboard!
   bmsEmergencyFacilities(locationId: ID): [BmsEmergencyFacility!]!
   bmsEmergencyFacilityLocations: [BmsLocation!]!
+  bmsEntitlements: BmsEntitlements!
   bmsEtaxSubmissions(limit: Int = 100, status: String): [BmsEtaxSubmission!]!
   bmsEtaxSummary: BmsEtaxSummary!
   bmsExpenseDocuments(input: BmsExpenseDocumentListInput!): BmsExpenseDocumentList!
@@ -8958,6 +9009,7 @@ type Query {
   bmsExpenseSuppliers: [BmsSupplier!]!
   bmsExpenseTaxSummary(from: String!, locationId: ID, to: String!): BmsExpenseTaxSummary!
   bmsExpiringLots(withinDays: Int = 90): [BmsInventoryLot!]!
+  bmsFeatureAccess: [BmsFeatureAccess!]!
   bmsFollowupAnalytics(windowDays: Int): BmsFollowupAnalytics!
   bmsFollowupHistory(conversationId: ID, limit: Int): [BmsFollowupHistoryEntry!]!
   bmsFollowupQueue(limit: Int): [BmsFollowupJob!]!
@@ -9015,6 +9067,7 @@ type Query {
   bmsOrderLocations: [BmsLocation!]!
   bmsOrders(limit: Int = 50, locationId: ID, offset: Int = 0, search: String, status: BmsOrderStatus): [BmsOrder!]!
   bmsPackToolsConfigured: Boolean!
+  bmsPackageMetrics(from: String!, to: String!): BmsPackageMetrics!
   bmsPayment(id: ID!): BmsPayment
   bmsPayments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsPaymentStatus): [BmsPayment!]!
   bmsPermissionCatalog: [String!]!

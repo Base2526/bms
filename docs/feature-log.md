@@ -1,5 +1,149 @@
 # BMS feature log
 
+## Freemium handoff: paused before live E2E / pilot (2026-10-16)
+
+- User is switching to other features. Implementation and local restored-dump rehearsal are done
+  within the verified scope below; this is **not** a completed pilot or production release.
+- Seven-step status: 1 Free/order-limit changes, 2 finite Business AI, 3 central entitlements,
+  and 4 capacity limits are implemented. Step 5 pilot has not started. Step 6 conversion/AI-cost
+  instrumentation is implemented but real pilot evidence has not been collected. Step 7 recurring
+  billing remains intentionally deferred until after pilot evaluation.
+- Remaining: live browser/device E2E against the isolated backend; sandbox integration checks for
+  the pilot's enabled channels/providers; pilot cohort, success/stop criteria and rollback plan;
+  then explicitly authorized pilot execution and measurement. No production action is authorized.
+- Resume from [Freemium remaining work and resume checkpoint](architecture/freemium-rehearsal.md#remaining-work-and-resume-checkpoint).
+  Start with environment/code-drift checks and isolated live E2E, not a blind migration replay.
+  Existing rehearsal containers are stopped; original dump and local test volumes are retained.
+- This entry records status only: no application, database, container or deployment was changed.
+
+## Freemium restored-dump rehearsal (2026-10-16)
+
+- Restored the user-provided PostgreSQL 16.11 archive into a new local isolated instance, keeping
+  ownership/ACLs and the original dump immutable. Role membership's original `GRANTED BY app`
+  failed; the local bootstrap admin restored the same effective membership/options. This changes
+  only the test-cluster grantor, not application permissions. Both tested PG patch versions showed
+  the same restore issue. See [evidence and limitations](architecture/freemium-rehearsal.md).
+- Before/after/rerun comparison: all 348 checked existing public-table fingerprints match; all
+  29 existing shops retain legacy feature and capacity access. Only intended package metadata and
+  baseline evidence were added. Existing schema ownership, RLS/grants, functions and triggers are
+  unchanged. Business's effective transition is 2026-11-01 00:00 Bangkok; reruns keep that deadline.
+- Original-data comparisons stay on the pristine restored DB; write tests use separate restored
+  copies and fake shops. Workflow tests: 7 passed / 2 intentionally skipped before 10.75; 9 passed
+  after. AI platform authority/concurrency tests: 5 passed before and 5 after. A further migration
+  rerun with newer version-2 fixture shops preserves their policy versions.
+- Added an opt-in restored-schema suite and expanded the read-only fingerprint script from selected
+  core tables to all public tables except plans/events. Fixed a fixture to supply the branch required
+  by the real order schema. No application or migration SQL fix was necessary for these checks.
+- Web typecheck, DB-verification typecheck and full pure suite passed (2,873 passed / 2 skipped).
+  No production access/deployment, real-shop pilot, outbound customer delivery or AI inference.
+  These targeted service tests do not replace live browser/device and external-integration smokes.
+
+## Freemium offline hardening (2026-10-16)
+
+- Zero-provider-call events no longer turn unknown AI cost into a misleading zero; groups with no
+  attempts still report zero. Added a DB-free regression and extended the future PostgreSQL fixture.
+- Best-effort package telemetry bounds statement/lock waits (1 s / 250 ms, preserving stricter
+  caller settings); restores settings on success or savepoint rollback. Plan audit remains atomic.
+- Added the [restored-dump rehearsal runbook](architecture/freemium-rehearsal.md) and read-only
+  fingerprint/ACL/trigger snapshot script. The script refuses other database names and restricted
+  snapshot roles; repeatable read covers every tenant consistently. No existing migration rewritten.
+- Offline verification: `npm run gate` passed: Web typecheck, 2,873 pure tests (2 skipped), and
+  production build. Build still prints unavailable localhost:5432 warnings while collecting the
+  operations-schedule page, then exits 0. The SQL-source guard test does not execute PostgreSQL.
+  No DB test, migration, browser smoke, real-shop pilot or production
+  deployment was run in this follow-up; restored-dump verification remains a deployment prerequisite.
+
+## Central entitlements, capacity and package pilot metrics (`10.75`, 2026-10-16)
+
+- `entitlements.ts` now owns the package catalogue/effective AI allowance, product/staff admission,
+  feature access and branch/POS-device/channel registration limits. Existing plans/featureAccess
+  imports remain compatible re-exports; RBAC and AI usage accounting remain independent.
+- New-shop matrix: Free 1/1/1, Pro 1/3/3, Business 5/10/unlimited. Count registered rows, including
+  disabled ones. Admission uses the tenant lock and the same resource transaction; simultaneous
+  requests cannot overrun capacity. Editing/re-enabling existing identities and normal operations
+  remain available after downgrade. Existing shops and Retail Local retain unlimited capacity in
+  these three categories, independently of 10.74's feature grandfathering. Reruns preserve cutoffs.
+- Channel credential saves now use tenant transactions and atomic audit. No quota gate is added to
+  sales, pairing, credential refresh, webhooks, cron deliveries or existing Retention work.
+- Append-only `bms_package_events` captures rollout baselines, verified signup cohorts and plan
+  transitions. Telemetry failures preserve business outcomes; authoritative plan audits retain
+  from/to evidence for conversion fallback. Repeated upgrades count a shop once. Missing signup
+  cohorts are exposed as untracked. No historic payments or conversions are invented.
+- Billing/public plans show capacities. Platform Tenants shows 30-day cohort conversion and nullable
+  AI attribution by shop/shared/BYOK, with unpriced calls explicit; never payment revenue, total
+  operating cost or a falsely precise provider split across multi-provider attempts.
+- Verified: 2,866 pure tests passed (2 skipped), 28 dedicated PostgreSQL tests, Web and Mobile
+  typechecks, production build, and both
+  mocked-API browser scripts in Thai/English at 1440px/390px (Billing, public plans, manual, Tenants,
+  report access and Retention continuity). Screenshots inspected. Build emits existing unavailable
+  default-DB warnings while collecting operations-schedule data, but completes successfully.
+- No production, real-shop pilot, provider calls or recurring billing. DB suites use isolated
+  synthetic schemas: a restored-dump rehearsal is still required before production deployment.
+
+## Freemium phase 1–2 review hardening (2026-10-16)
+
+- AI grant reads now occur under a tenant lock inside the accounting transaction, preventing a
+  concurrent downgrade from being overwritten by stale allowances in all six grant-writing paths.
+- Starter Catalog can no longer add editable products beyond the Cloud quota; reject the complete
+  batch before creating rows. Preserve existing products/runs and update-only imports. Retail Local
+  product admission and import previews explicitly bypass Cloud caps, like staff admission.
+- Plan changes and their actor audit now commit/roll back together through `beginTenantTx`.
+  Platform-admin authority, legacy feature version and existing-work policy remain unchanged.
+- Digest reads now require report.view; changing schedules/recipients and test sends require
+  report.email, matching the existing report-export policy. Grandfathered feature access does not
+  override staff permissions. Administrator and previously granted Manager permissions stay intact;
+  custom roles without report.email are read-only. Existing cron deliveries continue unchanged.
+- No additional migration, provider call or deployment introduced.
+- Verified on final code: 2,864 pure tests passed (2 skipped), 20 dedicated PostgreSQL freemium
+  tests passed, Web typecheck and production build passed, and both mocked-API browser smokes
+  passed in Thai/English at 1440px/390px, including digest read-only/no-permission states.
+  Screenshots inspected. Build still reports unavailable default-DB page-data warnings; no full
+  restored-schema accounting suite, real channel delivery or production rollout is claimed.
+
+## Cloud freemium phase two (`10.74`, 2026-10-16)
+
+- New shops need Pro+ for scheduled reports and Business for new Retention analyses. Core POS,
+  CRM, stock, payment, tax, ordinary reports and export remain unchanged. Existing RBAC still applies.
+- Existing shops permanently retain both features using tenant `feature_policy_version=1`;
+  migration atomically changes the insertion default to 2 and is safe to rerun without granting
+  new shops legacy access. No usage-history inference and no expiry. Future features are not
+  implicitly included. This does not waive phase-one capacity/AI quotas; Retail Local is separate.
+- Service-side checks serialize admission with plan changes. Even disabled schedule creation
+  needs entitlement. Existing schedules can still be edited, enabled, tested and delivered after
+  downgrade; existing Retention cases remain readable/actionable. An explicit existing-only
+  refresh reconciles conversions/expiry without new recommendations or case generation.
+- Settings, Retention, Billing, public packages and the manual explain rights in Thai/English.
+  Public package features and private effective access are separate GraphQL fields; the latter
+  takes no caller tenant or plan. Configuration/generation audit writes now share tenant transactions.
+- Deploy all compatible app instances before migration; before migration access remains legacy.
+  Do not drop/recreate the version column on rollback. No production migration/deployment,
+  provider delivery or full restored-database replay has been performed.
+- Verified: production build (page-data collection warns about the unavailable default local DB),
+  Web/Mobile TypeScript, full pure suite 2,860 passed / 2 skipped / 0 failed, and 11 isolated
+  PostgreSQL checks across phases 1–2. Mocked-API browser smokes pass in Thai/English at
+  1440px/390px for Settings/Retention (locked, legacy, existing-work, paid), Billing, Landing,
+  Manual and Assistant. Screenshots inspected; no real delivery or subscription payment tested.
+
+## Cloud freemium phase one (`10.73`, 2026-10-16)
+
+- Free/Pro/Business: 100/unlimited/unlimited SKUs, 2/5/20 users including owner,
+  unlimited orders, unchanged THB 0/599/1,990 prices. Existing over-limit rows remain usable.
+- Business moves to 5,000 AI points at the first Bangkok month boundary after migration;
+  schedule-aware plan reads keep the old allowance until then and expose the pending change.
+  Rerunning the migration does not postpone the effective date or reset usage.
+- Landing/Billing show the scheduled date in Thai/English. Unsupported channel quota claims are
+  removed; channel usage remains visible. Retail Local bypasses the new cloud user cap.
+- No new branch/device/channel gates, paid modules, report limits, trial or subscription checkout.
+  Deploy the schedule-aware application before migration. Application rollback needs the raw
+  Business AI columns restored first; see migration notes.
+- Accounting resolves the allowance and Bangkok ledger month at the same captured instant,
+  including a plan query that crosses the month boundary.
+- Verified: Web/Mobile TypeScript, production build, 2,853 pure tests (2 skipped, 0 failed),
+  4 temporary-table PostgreSQL migration/service checks, and mocked-API browser smoke in
+  Thai/English at 1440px/390px (Landing, Billing, Manual and Assistant).
+  Build completed with missing-default-DB warnings during page-data collection; no live provider,
+  payment, full accounting DB suite or production deployment is claimed for this change.
+
 Detailed implementation notes for features already built, moved out of `CLAUDE.md` so that file
 stays small enough to load into every session. Nothing here is a rule — for rules see
 [../AGENTS.md](../AGENTS.md); for the current build status see

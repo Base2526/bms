@@ -5,11 +5,14 @@ import { MailOutlined, SaveOutlined, SendOutlined, FileSearchOutlined, CopyOutli
 import { useEffect, useState } from "react";
 import { parseRecipientList, invalidEmails, invalidSlackWebhookUrls, invalidLineUserIds } from "@/lib/bms/reportRecipients";
 import { useI18n } from "@/lib/i18nContext";
+import FeatureAccessNotice from "@/components/billing/FeatureAccessNotice";
+import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 
 const { Text } = Typography;
 
 const Q = gql`
   query {
+    bmsFeatureAccess { feature minimumPlan allowed source }
     bmsReportSubscription {
       frequency sendHour sendWeekday sendDayOfMonth
       emailEnabled recipientEmail
@@ -76,6 +79,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 
 export default function ReportSubscriptionCard() {
   const { t } = useI18n();
+  const { can, loading: permissionsLoading } = useBmsPermissions();
   const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({ value: h, label: t("admin_report_subscription.hour_suffix", { h: String(h).padStart(2, "0") }) }));
   const WEEKDAY_OPTIONS = [
     { value: 1, label: t("admin_report_subscription.weekday_mon") }, { value: 2, label: t("admin_report_subscription.weekday_tue") },
@@ -90,7 +94,7 @@ export default function ReportSubscriptionCard() {
   };
 
   const [form] = Form.useForm();
-  const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
+  const { data, loading, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network", skip: !can("report.view") });
   const [save, { loading: saving }] = useMutation(M_SAVE, {
     onCompleted: () => { message.success(t("admin_report_subscription.save_success")); refetch(); },
     onError: (e) => message.error(e.message || t("admin_report_subscription.save_failed")),
@@ -114,6 +118,7 @@ export default function ReportSubscriptionCard() {
   const [lineEnabled, setLineEnabled] = useState(false);
 
   const sub = data?.bmsReportSubscription;
+  const featureAccess = data?.bmsFeatureAccess?.find((f: any) => f.feature === "REPORT_SCHEDULE");
   const deliveries = data?.bmsReportDeliveries || [];
 
   useEffect(() => {
@@ -133,6 +138,7 @@ export default function ReportSubscriptionCard() {
   }, [sub, form]);
 
   const onFinish = (values: any) => {
+    if (!featureAccess?.allowed || !can("report.email")) return;
     save({
       variables: {
         input: {
@@ -152,6 +158,10 @@ export default function ReportSubscriptionCard() {
     });
   };
 
+  if (!can("report.view")) return <Card loading={permissionsLoading}>
+    <Alert closable type="warning" showIcon message={t("admin_report_subscription.permission_read")} />
+  </Card>;
+
   return (
     <Card title={<Space><MailOutlined /> {t("admin_report_subscription.card_title")}</Space>} loading={loading} style={{ marginTop: 16 }}>
       <Alert closable
@@ -159,7 +169,9 @@ export default function ReportSubscriptionCard() {
         message={t("admin_report_subscription.intro_alert")}
         description={t("admin_report_subscription.intro_alert_desc")}
       />
-      <Form form={form} layout="vertical" onFinish={onFinish}>
+      <FeatureAccessNotice access={featureAccess} />
+      {!can("report.email") && <Alert closable type="info" showIcon message={t("admin_report_subscription.permission_send")} />}
+      <Form form={form} layout="vertical" onFinish={onFinish} disabled={!featureAccess?.allowed || !can("report.email")}>
         <SectionTitle>{t("admin_report_subscription.section_frequency")}</SectionTitle>
         <Space wrap align="start">
           <Form.Item name="frequency" label={t("admin_report_subscription.frequency_label")} style={{ marginBottom: 8 }}>
@@ -270,7 +282,7 @@ export default function ReportSubscriptionCard() {
         <Divider />
         <Space>
           <Button type="primary" htmlType="submit" icon={<SaveOutlined />} loading={saving}>{t("admin_report_subscription.save_btn")}</Button>
-          <Button icon={<SendOutlined />} loading={testing} onClick={() => sendTest()}>{t("admin_report_subscription.send_test_btn")}</Button>
+          <Button icon={<SendOutlined />} loading={testing} disabled={!featureAccess?.allowed || !can("report.email")} onClick={() => sendTest()}>{t("admin_report_subscription.send_test_btn")}</Button>
         </Space>
       </Form>
 

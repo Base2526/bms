@@ -2,6 +2,19 @@
 
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
+## Package capacity and pilot metrics (`10.75`)
+
+Package capacity / pilot evidence (`10.75`): `bmsEntitlements` is admin-authenticated, accepts no
+tenant/plan/version argument, and returns effective capacities with used/limit/source/canAdd plus
+feature access. `bmsPublicPlans` adds max_branches/max_devices (max_channels already exists).
+These fields are display information, not client authority. Resource upserts call the same central
+admission service in their tenant transaction; existing adapters keep their RBAC/error contracts.
+`bmsPackageMetrics(from: String!, to: String!)` requires DB-verified platform-admin authority,
+validates a half-open interval up to 366 days, and returns separate Free SIGNUP/BASELINE cohorts,
+distinct plan conversions, untracked cohort count and nullable AI attribution by tenant/shared/BYOK.
+It never claims payment conversion, revenue or total operating cost. A missing 10.75 migration
+returns available=false. The Tenants card refreshes a rolling 30-day window on demand.
+
 ## Customer answer evidence (`10.53`)
 
 - `bmsAiAnswerEvidence(messageId: ID!): JSON`: bounded versioned QA projection for one AI message,
@@ -54,6 +67,15 @@ pharmacy evidence, shift-report export, and support diagnostics remain REST. The
 classification, authentication model, operation list, and rollout state are in
 [mobile-graphql-ws-realtime.md](mobile-graphql-ws-realtime.md); native client wiring is in
 [react-native-graphql-client.md](react-native-graphql-client.md).
+
+## Cloud feature access
+
+Cloud package feature reads (`10.74`): `bmsFeatureAccess` is admin-authenticated and resolves the
+tenant from context, taking no tenant/plan arguments. Each entry returns `feature`, `minimumPlan`,
+`allowed`, and `source` (`PLAN`, `LEGACY`, `EXISTING_WORK`, `RETAIL_LOCAL`, `LOCKED`). This is
+entitlement only, never an RBAC grant. Public `BmsPlan.feature_keys` describes the package, not
+the shop's grandfathered rights. Schedule creation and new Retention generation check entitlement
+in the shared service; denials return GraphQL `FEATURE_NOT_INCLUDED`, not logout/401.
 
 ## Realtime subscriptions
 
@@ -631,7 +653,7 @@ inside the same transaction as the stock movement, with `actor` stored as a raw 
 | `bmsStoreProfile.ts` | store profile and the `10.46` emergency directory (see § Emergency directory) |
 | `bmsAiQuality.ts` | AI quality review plus the `10.53` answer-evidence reads (see § Customer answer evidence) |
 | `bmsMailLog.ts` | read-only platform mail log (`bmsMailLog`, `bmsMailLogEntry`, `bmsMailLogStats`) — platform admin only; `provider` is `sendgrid`, `gmail` or `smtp` (`10.59`) |
-| `bmsFollowups.ts` | follow-up automation plus the separately permissioned Phase 2 retention queue/analytics (`bmsRetentionCases`, `bmsRetentionAnalytics`) and explicit refresh/transition mutations |
+| `bmsFollowups.ts` | follow-up automation plus separately permissioned retention queue/analytics; `bmsRefreshRetention(existingOnly: Boolean = false)` requires Business/legacy/Local for generation; existing-only conversion/expiry and old-case transitions survive downgrade |
 | `bmsReportEngine.ts` | generated report export history + on-demand XLSX/CSV/PDF generation (`bmsGeneratedReports`, `bmsGenerateReport`); tax/stock-ledger exports persist their location scope and re-check it on history, download and email, while `VAT_SALES` additionally requires `tax.document.view` and `VAT_PURCHASE` requires `expense.view` at every one of those boundaries |
 | `bmsReportSchedule.ts` | sales digest subscription config + delivery history (own tenant: `bmsReportSubscription`/`bmsReportDeliveries`/`bmsUpsertReportSubscription`/`bmsSendTestReportNow`; platform-wide: `bmsReportSubscriptions`/`bmsReportDeliveriesForTenant`) |
 | `graphql/resolvers.ts` (`createSupportTicket`, `bmsSupportTickets`, `bmsUpdateSupportTicket`) | public support intake + platform ticket review/status/comments |
@@ -844,11 +866,11 @@ follow this same shape rather than inventing a separate preview-only query/REST 
 `bmsReportSchedule.ts` splits into a tenant-facing half and a platform-admin half, both backed by
 `lib/bms/reportDigest.ts`:
 
-- `bmsReportSubscription` / `bmsUpsertReportSubscription` / `bmsSendTestReportNow` /
-  `bmsReportDeliveries` gate with the module's own `requireTenantAdmin(ctx)` (checks
-  `auth.scope === "admin"` only) — the same config-domain pattern as `bmsChannels`/`bmsStoreProfile`/
-  `bmsAiConfig`, deliberately with no new `BMS_PERMISSIONS` entry, since this is shop configuration
-  rather than an operational action.
+- `bmsReportSubscription` / `bmsReportDeliveries` require an admin session and `report.view`.
+  `bmsUpsertReportSubscription` / `bmsSendTestReportNow` require an admin session and `report.email`,
+  matching permission to send business reports outside the system. This also applies to legacy
+  tenants; package eligibility does not grant staff permissions. The existing permission catalog is
+  reused without changing role grants. Upserts additionally enforce package/new-work admission.
 - `bmsReportSubscriptions` / `bmsReportDeliveriesForTenant` gate with `requirePlatformAdmin(ctx)`
   (cross-tenant, like `bmsTenants` in `bmsSaas.ts`) and back the platform-only `/admin/report-schedule`
   audit page.
@@ -898,8 +920,11 @@ otherwise self-issue points or an unlimited plan.
 Gates as implemented: `bmsAiConfig`, `bmsAiUsage`, `bmsAiUsageBreakdown`, `bmsAiCreditLedger` and the
 key mutations need an authenticated `admin`-scope session of the tenant; `bmsAiUsageEvents` needs
 `ai_quality.view`; provider health needs platform admin. Credits are presented as **AI points**
-(`10.56`: Free 100/month, Pro 1,000, Business unlimited; the month resets at 00:00 Asia/Bangkok on
-the first). There is **no per-shop USD cap**: the `10.54` shared-budget fields on `BmsAiUsage` are
+(`10.73`: Free 100/month, Pro 1,000, Business 5,000 after rollout-month grace; the month resets
+at 00:00 Asia/Bangkok on the first). `BmsPlan.ai_credits_monthly` and `max_ai_messages_month`
+remain the effective allowance. Nullable `ai_credits_next_monthly` and `ai_credits_change_at`
+announce the pending change and ISO timestamp, then become null when it takes effect. Old clients
+can keep selecting existing fields. There is **no per-shop USD cap**: the `10.54` shared-budget fields on `BmsAiUsage` are
 kept for compatibility and report limit/remaining `-1`, status `NORMAL`, `blocked: false`, while real
 spent/reserved totals stay available. `billingMode` is `PLAN_POINTS`, or `LOCAL_OWN_KEY` /
 `LOCAL_UNCONFIGURED` on Retail Local, where usage is metered without point charges.

@@ -64,7 +64,9 @@ test("branch parking executes the real scoped read/write service against a fake 
   let response: (sql: string, params: any[]) => any[] = () => [];
   let releases = 0;
   const query = async (sql: string, params: any[] = []) => {
-    calls.push({ sql, params }); const rows = response(sql, params); return { rows, rowCount: rows.length };
+    calls.push({ sql, params });
+    const rows = sql.includes('capacity_policy_version') ? [{ version: 1 }] : response(sql, params);
+    return { rows, rowCount: rows.length };
   };
   globals.__bmsPostgresPool = { query, connect: async () => ({ query, release: () => { releases++; } }) };
   try {

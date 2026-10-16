@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { query } from '../apps/web/lib/db';
+import { getTenantPlan } from '../apps/web/lib/bms/plans';
 import { bmsSaasResolvers } from '../apps/web/graphql/bmsSaas';
 import { bmsAiConfigResolvers } from '../apps/web/graphql/bmsAiConfig';
 import { getAiUsage, tryConsumeAiQuota, recordAiProviderAttempt, finalizeAiUsageEvent } from '../apps/web/lib/bms/aiUsage';
@@ -41,7 +42,10 @@ test('AI entitlements cannot be self-issued and finite balances serialize concur
     assert.equal(await adjust(), true);
     assert.equal((await getAiUsage(tenant)).remaining, 1100);
     assert.equal(await change(), true);
-    assert.equal((await getAiUsage(tenant)).unlimited, true);
+    const businessUsage = await getAiUsage(tenant);
+    const businessLimit = (await getTenantPlan(tenant)).ai_credits_monthly;
+    assert.equal(businessUsage.unlimited, businessLimit < 0);
+    assert.equal(businessUsage.remaining, businessLimit < 0 ? -1 : businessLimit + 1000);
     assert.equal((await getAiUsage(other)).remaining, 100);
     assert.equal((await getAiUsage(other)).planCode, 'free');
     assert.equal((await query('SELECT COUNT(*)::int AS n FROM bms_audit_log WHERE tenant_id=$1', [tenant])).rows[0].n, 2);
