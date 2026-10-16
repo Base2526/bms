@@ -3,6 +3,22 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Platform master data phase 1 — 2026-10-16
+
+- branch `feat/master-data-phase-1` จาก `develop` · ไม่ commit/push/deploy
+- migration `10.76__bms_master_data_foundation.sql` ต้อง apply ก่อน deploy; สร้างตาราง global
+  ธนาคาร/หน่วย/จังหวัด/อำเภอ/ตำบล, revision, SELECT-only grant และคอลัมน์ snapshot nullable
+- pure เฉพาะเฟส 6/6 ผ่าน · schema-readiness 5/5 · Work Assistant knowledge 18/18 · corpus
+  11/11 · i18n 2/2 · typecheck ผ่าน · schema export แล้ว · mutation 6/6 แดงตามคาดและคืนไฟล์ครบ
+- final Web gate ผ่าน: pure 2,879/2,879 (skip 2) และ production build ผ่าน; build พบ Postgres
+  `ECONNREFUSED` ระหว่าง static generation ตาม environment ที่ไม่มี local DB แต่สร้าง 135 pages สำเร็จ
+- DB contract ยังไม่ได้รัน: runner ปฏิเสธเพราะไม่มี `POSTGRES_HOST` + `POSTGRES_DB`
+- เปิด `/admin/master-data` ใน browser จริงแล้ว แต่ middleware ส่งไป `/admin/login` เพราะไม่มี
+  authenticated platform-admin session; จึงยังไม่ได้ตรวจเนื้อหาหน้าใหม่หรือ desktop/mobile layout
+- ก่อน production: backup ตาราง store profile/product packs/customer addresses/order items,
+  apply ด้วย `psql -1`, import ชุดที่อยู่ที่ตรวจ licence แล้วแบบ dry-run ก่อน `--apply`, จากนั้นตรวจ
+  grants/RLS, จำนวน hierarchy, orphan codes และ `pack_unit_code` ของบิลใหม่
+
 ## ใบกำกับเต็มรูป/ใบลดหนี้ ปิดช่องที่เหลือ — 2026-10-14
 
 - branch `feat/full-credit-note-print` จาก `develop` · commit แล้ว ยังไม่ push · **ไม่มี migration · ไม่มี permission ใหม่**

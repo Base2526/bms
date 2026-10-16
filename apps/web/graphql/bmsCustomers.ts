@@ -97,24 +97,24 @@ export const bmsCustomersResolvers = {
     },
     async bmsAddCustomerAddress(
       _p: unknown,
-      args: { id: string; label?: string; address: string; isDefault?: boolean },
+      args: { id: string; label?: string; address: string; isDefault?: boolean; provinceCode?: string; districtCode?: string; subdistrictCode?: string; postcode?: string },
       ctx: any
     ) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await addCustomerAddress(getTenantId(ctx), args.id, args.label ?? null, args.address, !!args.isDefault);
+        return await addCustomerAddress(getTenantId(ctx), args.id, args.label ?? null, args.address, !!args.isDefault, args);
       } catch (err) {
         toGqlError(err);
       }
     },
     async bmsUpdateCustomerAddress(
       _p: unknown,
-      args: { addressId: string; label?: string; address: string },
+      args: { addressId: string; label?: string; address: string; provinceCode?: string; districtCode?: string; subdistrictCode?: string; postcode?: string },
       ctx: any
     ) {
       await requirePermission(ctx, "customer.edit");
       try {
-        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address);
+        return await updateCustomerAddress(getTenantId(ctx), args.addressId, args.label ?? null, args.address, args);
       } catch (err) {
         toGqlError(err);
       }
@@ -158,5 +158,10 @@ export const bmsCustomersResolvers = {
     // อีกหน้า (/admin/loyalty) เพื่อรู้ว่าลูกค้าคนนี้เป็นสมาชิกและมีแต้มเท่าไร
     membership: (p: any) => getMember(p.tenant_id, p.id),
     loyaltyLedger: (p: any) => listLoyaltyLedger(p.tenant_id, p.id, 50),
+  },
+  BmsCustomerAddress: {
+    provinceCode: (p: any) => p.province_code ?? null,
+    districtCode: (p: any) => p.district_code ?? null,
+    subdistrictCode: (p: any) => p.subdistrict_code ?? null,
   },
 };

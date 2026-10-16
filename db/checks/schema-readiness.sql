@@ -2,6 +2,9 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.76__bms_master_data_foundation.sql', 'table', 'bms_master_units', NULL, 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),
+    ('10.76__bms_master_data_foundation.sql', 'table', 'bms_master_banks', NULL, 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),
+    ('10.76__bms_master_data_foundation.sql', 'column', 'bms_order_items', 'pack_unit_code', 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),
     ('10.66__bms_cost_allocations.sql', 'table', 'bms_cost_allocations', NULL, 'Monthly expense allocation requires versioned allocation evidence; selling and refund paths are unchanged'),
     ('10.65__bms_pos_return_financial_snapshots.sql', 'column', 'bms_pos_returns', 'financial_snapshot', 'Returns, voids, restaurant line cancellation and sales evidence require the immutable return financial snapshot column'),
     ('10.64__bms_operating_cost_reviews.sql', 'table', 'bms_operating_cost_reviews', NULL, 'Monthly operating-cost reconciliation needs reviewed classifications; original sales, cash and tax reports are unchanged'),

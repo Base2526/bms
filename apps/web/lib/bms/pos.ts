@@ -259,7 +259,9 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
                 WHERE d.tenant_id = i.tenant_id AND d.location_id = i.location_id AND d.active
              )) AS stocked_variants,
          (SELECT COUNT(*) FROM bms_products
-           WHERE tenant_id = $1 AND active AND vat_category = 'UNKNOWN') AS unknown_vat_products`
+           WHERE tenant_id = $1 AND active AND vat_category = 'UNKNOWN') AS unknown_vat_products,
+         (SELECT COUNT(*) FROM bms_product_packs pack
+           WHERE pack.tenant_id = $1 AND pack.active AND pack.unit_code IS NULL) AS unmapped_unit_packs`
       , [tenantId]
     ),
     query<any>(
@@ -326,6 +328,10 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
   if (result.openShifts > 0) result.warnings.push(`มีกะเปิดค้างอยู่ ${result.openShifts} กะ`);
   if (vat.vatRegistered && !vat.abbreviatedApproved) {
     result.warnings.push("ร้านจด VAT แต่ยังไม่ได้บันทึกการอนุมัติใช้ใบกำกับภาษีอย่างย่อ");
+  }
+  const unmappedUnitPacks = Number(productRow.unmapped_unit_packs ?? 0);
+  if (unmappedUnitPacks > 0) {
+    result.warnings.push(`หน่วยขายที่ยังไม่ map รหัส UN/ECE สำหรับ e-Tax ${unmappedUnitPacks} รายการ (ไม่บล็อกการขาย)`);
   }
   result.ready = result.blockers.length === 0;
   return result;

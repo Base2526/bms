@@ -450,6 +450,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },
   {
+    id: "platform.master-data", route: "/admin/master-data", labelKey: "admin_nav.master_data",
+    section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
+  },
+  {
     id: "platform.auth-settings", route: "/admin/auth-settings", labelKey: "admin_nav.auth_settings",
     section: "platform_ops", workspace: "PLATFORM", visible: (ctx) => ctx.isPlatformAdmin,
   },

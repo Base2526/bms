@@ -382,6 +382,14 @@ const th = {
     saved: "บันทึกลิงก์ดาวน์โหลดแล้ว",
     save: "บันทึก",
   },
+  admin_master_data: {
+    title: "ข้อมูลกลางแพลตฟอร์ม", warning_title: "การแก้ไขมีผลกับทุกร้าน", warning_description: "แก้ข้อมูลอ้างอิงจากแหล่งที่ตรวจสอบแล้วเท่านั้น ชื่อธนาคารและข้อความบนเอกสารที่ snapshot ไว้จะไม่เปลี่ยนตามข้อมูลกลาง",
+    banks: "ธนาคาร", units: "หน่วยมาตรฐาน", addresses: "ที่อยู่ไทย", search: "ค้นหารหัสหรือชื่อ", reload: "โหลดใหม่", save: "บันทึก", cancel: "ยกเลิก", saved: "บันทึกข้อมูลกลางแล้ว", save_error: "บันทึกข้อมูลกลางไม่สำเร็จ",
+    add_bank: "เพิ่มธนาคาร", add_unit: "เพิ่มหน่วย", add_address: "เพิ่มข้อมูลที่อยู่", bank_form: "ข้อมูลอ้างอิงธนาคาร", unit_form: "หน่วยมาตรฐาน", address_form: "ข้อมูลอ้างอิงที่อยู่ไทย",
+    code: "รหัส", country: "ประเทศ", name_th: "ชื่อไทย", name_en: "ชื่ออังกฤษ", sort_order: "ลำดับ", status: "สถานะ", active: "เปิดใช้", inactive: "ปิดใช้", edit: "แก้ไข",
+    source: "แหล่งข้อมูล", source_version: "เวอร์ชันแหล่งข้อมูล", kind: "ชนิด", aliases: "ชื่อเรียกอื่น", aliases_help: "คั่นชื่อเรียกที่ร้านใช้ด้วยจุลภาค", base_factor: "ตัวคูณเทียบหน่วยฐานในชนิดเดียวกัน",
+    level: "ระดับ", province: "จังหวัด", district: "อำเภอ/เขต", subdistrict: "ตำบล/แขวง", postcode: "รหัสไปรษณีย์", address_import_title: "ข้อมูลที่อยู่จำนวนมากต้องใช้ importer", address_import_description: "ใช้ scripts/import-th-address.mts ซึ่งเป็น dry-run โดยปริยาย และจะปฏิเสธชุดข้อมูลที่ไม่มี source, version และ licence",
+  },
   footer: {
     support: "ติดต่อฝ่ายสนับสนุน",
     as_is: "AS IS / No Warranty",
@@ -737,6 +745,7 @@ const th = {
     restaurant_floor: "จัดผังร้าน",
     delivery_platforms: "แพลตฟอร์มเดลิเวอรี",
     delivery_provider_settings: "Partner API เดลิเวอรี",
+    master_data: "ข้อมูลกลางแพลตฟอร์ม",
     auth_settings: "Social Login",
     local_license: "License ของเครื่องนี้",
     retail_local_licenses: "License Retail Local",

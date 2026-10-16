@@ -969,9 +969,14 @@ type BmsCustomer360 {
 
 type BmsCustomerAddress {
   address: String!
+  districtCode: String
   id: ID!
   is_default: Boolean!
   label: String
+  postcode: String
+  province: String
+  provinceCode: String
+  subdistrictCode: String
 }
 
 type BmsCustomerAddress360 {
@@ -2155,6 +2160,92 @@ type BmsManagementReport {
   to: String!
 }
 
+type BmsMasterBank {
+  active: Boolean!
+  code: String!
+  countryCode: String!
+  id: ID!
+  nameEn: String!
+  nameTh: String!
+  sortOrder: Int!
+  source: String!
+  sourceVersion: String!
+  swift: String
+  updatedAt: String!
+}
+
+input BmsMasterBankInput {
+  active: Boolean
+  code: String!
+  countryCode: String
+  id: ID
+  nameEn: String!
+  nameTh: String!
+  sortOrder: Int
+  source: String
+  sourceVersion: String
+  swift: String
+}
+
+type BmsMasterThaiAddress {
+  active: Boolean!
+  code: String!
+  countryCode: String!
+  districtCode: String
+  id: ID!
+  level: String!
+  nameEn: String!
+  nameTh: String!
+  postcode: String
+  provinceCode: String
+  source: String!
+  sourceVersion: String!
+  updatedAt: String!
+}
+
+input BmsMasterThaiAddressInput {
+  active: Boolean
+  code: String!
+  districtCode: String
+  id: ID
+  level: String!
+  nameEn: String!
+  nameTh: String!
+  postcode: String
+  provinceCode: String
+  source: String
+  sourceVersion: String
+}
+
+type BmsMasterUnit {
+  active: Boolean!
+  aliases: [String!]!
+  baseFactor: Float!
+  code: String!
+  countryCode: String!
+  id: ID!
+  kind: String!
+  nameEn: String!
+  nameTh: String!
+  source: String!
+  sourceVersion: String!
+  updatedAt: String!
+}
+
+input BmsMasterUnitInput {
+  active: Boolean
+  aliases: [String!]
+  baseFactor: Float
+  code: String!
+  countryCode: String
+  id: ID
+  kind: String!
+  nameEn: String!
+  nameTh: String!
+  source: String
+  sourceVersion: String
+}
+
 type BmsMe {
   avatar: String
   created_at: String
@@ -2872,6 +2963,7 @@ type BmsPayment {
 type BmsPaymentAccount {
   accountName: String
   accountNo: String
+  bankCode: String
   bankName: String
   note: String
   promptpayId: String
@@ -2882,6 +2974,7 @@ type BmsPaymentAccount {
 input BmsPaymentAccountInput {
   accountName: String
   accountNo: String
+  bankCode: String
   bankName: String
   note: String
   promptpayId: String
@@ -6284,6 +6377,7 @@ type BmsProductPack {
   price: Float
   productSku: String!
   size: String
+  unitCode: String
   unitName: String!
 }
 
@@ -6297,6 +6391,7 @@ input BmsProductPackInput {
   price: Float
   productSku: String!
   size: String
+  unitCode: String
   unitName: String
 }
 
@@ -8327,7 +8422,7 @@ type Mutation {
   blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
   bmsAddConversationHelper(id: ID!, userId: ID!): Boolean!
   bmsAddConversationNote(body: String!, id: ID!, mentionedUserIds: [ID!]): BmsConversationNote
-  bmsAddCustomerAddress(address: String!, id: ID!, isDefault: Boolean, label: String): BmsCustomerAddress!
+  bmsAddCustomerAddress(address: String!, districtCode: String, id: ID!, isDefault: Boolean, label: String, postcode: String, provinceCode: String, subdistrictCode: String): BmsCustomerAddress!
   bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
   bmsAdjustLoyaltyPoints(customerId: ID!, note: String!, points: Int!): BmsLoyaltyBalance!
   bmsAdjustStock(delta: Int!, locationId: ID!, note: String, size: String!, sku: String!): BmsVariant!
@@ -8611,7 +8706,7 @@ type Mutation {
   bmsTestPlatformAiKey(provider: String): BmsTestAiKeyResult!
   bmsTransitionAction(id: ID!, measuredOutcome: JSON, ownerId: ID, reason: String, status: BmsActionStatus!): BmsAction!
   bmsTransitionRetentionCase(id: ID!, reason: String, status: BmsRetentionStatus!): BmsRetentionCase!
-  bmsUpdateCustomerAddress(address: String!, addressId: ID!, label: String): BmsCustomerAddress!
+  bmsUpdateCustomerAddress(address: String!, addressId: ID!, districtCode: String, label: String, postcode: String, provinceCode: String, subdistrictCode: String): BmsCustomerAddress!
   bmsUpdateKitchenStation(id: ID!, input: BmsKitchenStationInput!): BmsKitchenStation!
   bmsUpdateKitchenTicketStatus(id: ID!, status: String!): BmsKitchenTicket!
   bmsUpdateKitchenTicketsStatus(ids: [ID!]!, status: String!): [BmsKitchenTicket!]!
@@ -8632,6 +8727,9 @@ type Mutation {
   bmsUpsertInventoryPolicy(input: BmsInventoryPolicyInput!): Boolean!
   bmsUpsertKitchenStationSla(lateMinutes: Int!, station: String!, warnMinutes: Int!): BmsKitchenStationSla!
   bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
+  bmsUpsertMasterBank(input: BmsMasterBankInput!): BmsMasterBank!
+  bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
+  bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
   bmsUpsertMembershipTier(input: BmsMembershipTierInput!): BmsMembershipTier!
   bmsUpsertPharmacyProductPolicy(input: BmsPharmacyProductPolicyInput!): BmsPharmacyProductPolicy!
   bmsUpsertPharmacyProtocol(input: BmsPharmacyProtocolInput!): BmsPharmacyProtocol!
@@ -9047,6 +9145,9 @@ type Query {
   bmsMailLogStats: BmsMailLogStats!
   bmsManageableLocations: [BmsLocation!]!
   bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
+  bmsMasterBanks(includeInactive: Boolean, search: String): [BmsMasterBank!]!
+  bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!
+  bmsMasterUnits(includeInactive: Boolean, search: String): [BmsMasterUnit!]!
   bmsMe: BmsMe!
   bmsMember(customerId: ID!): BmsMember
   bmsMemberDiscountPreview(couponDiscount: Float, customerId: ID, pointsToRedeem: Int, subtotal: Float!): BmsMemberDiscountPreview!

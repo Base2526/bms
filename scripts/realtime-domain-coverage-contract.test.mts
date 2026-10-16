@@ -190,6 +190,8 @@ const OPS_TELEMETRY = [
 
 /** ค่าตั้งค่า/แคตตาล็อกที่หน้าจออ่านตอนเปิด ไม่ได้เฝ้าเป็น live surface */
 const CONFIGURATION = [
+  "bms_master_banks", "bms_master_units", "bms_master_th_provinces",
+  "bms_master_th_districts", "bms_master_th_subdistricts", // Platform-global reference data; editor refetches after writes.
   "bms_emergency_facilities",
   "bms_commission_rules", "bms_coupon_locations", "bms_document_counters",
   "bms_followup_rules", "bms_inventory_policies", "bms_kitchen_stations",

@@ -93,6 +93,7 @@ import { bmsFollowupsResolvers } from "@/graphql/bmsFollowups";
 import { bmsPharmacyResolvers } from "@/graphql/bmsPharmacy";
 import { bmsMailLogResolvers } from "@/graphql/bmsMailLog";
 import { bmsRestockSubscriptionsResolvers } from "@/graphql/bmsRestockSubscriptions";
+import { bmsMasterDataResolvers } from "@/graphql/bmsMasterData";
 import { getTenantId } from "@/lib/bms/tenant";
 import { isPlatformAdmin } from "@/lib/bms/platform";
 import { enforceUserQuota } from "@/lib/bms/plans";
@@ -2901,6 +2902,7 @@ const rawResolvers = {
     ...bmsReportEngineResolvers.Query,
     ...bmsCustomer360Resolvers.Query,
     ...bmsRestockSubscriptionsResolvers.Query,
+    ...bmsMasterDataResolvers.Query,
   },
   Mutation: {
     ...bmsRestaurantCostingResolvers.Mutation,
@@ -7582,12 +7584,14 @@ const rawResolvers = {
     ...bmsFollowupsResolvers.Mutation,
     ...bmsPharmacyResolvers.Mutation,
     ...bmsRestockSubscriptionsResolvers.Mutation,
+    ...bmsMasterDataResolvers.Mutation,
   },
   BmsOrder: bmsOrdersResolvers.BmsOrder,
   BmsOrderItem: bmsOrdersResolvers.BmsOrderItem,
   BmsProduct: bmsProductsResolvers.BmsProduct,
   BmsProductReadinessIssue: bmsProductsResolvers.BmsProductReadinessIssue,
   BmsCustomer: bmsCustomersResolvers.BmsCustomer,
+  BmsCustomerAddress: bmsCustomersResolvers.BmsCustomerAddress,
   BmsPurchaseOrder: bmsPurchaseResolvers.BmsPurchaseOrder,
   BmsPayment: bmsPaymentsResolvers.BmsPayment,
   BmsShipment: bmsShippingResolvers.BmsShipment,

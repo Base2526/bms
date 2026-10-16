@@ -115,6 +115,7 @@ const ROUTES = {
   restaurantFloor: "/admin/restaurant-floor",
   deliveryPlatforms: "/admin/delivery-platforms",
   deliveryProviderSettings: "/admin/delivery-provider-settings",
+  masterData: "/admin/master-data",
   authSettings: "/admin/auth-settings",
   appDownloads: "/admin/app-downloads",
   boardGame: "/admin/board-game",
@@ -856,6 +857,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
     title: "พื้นที่แพลตฟอร์ม (platform admin เท่านั้น)",
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "ดูและจัดการร้านทั้งหมดในมุม platform admin" },
+      { label: "Master Data", href: ROUTES.masterData, note: "จัดการธนาคาร หน่วยมาตรฐาน และโครงสร้างที่อยู่ไทยส่วนกลาง พร้อมแหล่งที่มาและประวัติการแก้ไข" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "ออก Trial 30 วัน ต่ออายุ แปลงเป็น Paid และดูหลักฐานการใช้งาน โดยไม่ปิดกั้นร้าน" },
       { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "อัปโหลด ตรวจ checksum และเผยแพร่ installer แยก OS/แพ็กเกจ; Server และ Server + POS ติดตั้งได้โดยไม่ถาม Activation Code ลงทะเบียนภายหลังได้; Windows Server only เปิด Admin จากหน้า Finish หรือ shortcut BMS Retail Local Admin" },
       { label: "Managed Runtime Releases", href: ROUTES.retailLocalRuntimeReleases, note: "เผยแพร่ signed manifest และ component ทั้งชุด ระบบตรวจ public-key signature, target, URL, ขนาด และ SHA-256 ก่อน publish แบบแก้ทับไม่ได้" },
@@ -2121,6 +2123,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
     title: "Platform workspace (platform admin only)",
     items: [
       { label: "Tenants", href: ROUTES.tenants, note: "Review or manage shops across the platform fleet" },
+      { label: "Master Data", href: ROUTES.masterData, note: "Manage shared banks, standard units, and Thai address hierarchy with provenance and revision history" },
       { label: "Retail Local Licenses", href: ROUTES.retailLocalLicenses, note: "Issue 30-day trials, extend or convert them to paid, and review evidence without blocking a store" },
       { label: "Retail Local Downloads", href: ROUTES.retailLocalReleases, note: "Upload, checksum, and publish installers by OS/package. Server and Server + POS setup need no Activation Code; register afterwards. Windows Server-only users can open Admin from Finish or the BMS Retail Local Admin shortcut" },
       { label: "Managed Runtime Releases", href: ROUTES.retailLocalRuntimeReleases, note: "Publish a complete pre-signed manifest/component set; the server verifies the public-key signature, target, URLs, sizes and SHA-256 before an immutable publish" },

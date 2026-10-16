@@ -259,3 +259,10 @@ treatment and holdout conversion rates; `treatment rate - holdout rate` is repor
 lift. Conversion attribution is bounded to 30 days from contact for treatment and case creation for
 holdout; open cases older than that window expire so later organic orders are not misattributed.
 This is an experiment estimate, not proof of causality when cohorts are small.
+
+## Structured Thai address references (`10.76`)
+
+Customer addresses may store nullable province, district and subdistrict codes plus the existing
+postcode and free-text address. New back-office selections are validated against the platform
+master hierarchy and save the Thai province/postcode snapshot. Existing text-only addresses remain
+readable and editable and do not block orders or tax documents.

@@ -12,7 +12,7 @@ import CustomerOrderDetail from "@/components/customers/CustomerOrderDetail";
 
 const { Text } = Typography;
 
-type Address = { id: string; label: string | null; address: string; is_default: boolean };
+type Address = { id: string; label: string | null; address: string; is_default: boolean; province: string | null; postcode: string | null; provinceCode: string | null; districtCode: string | null; subdistrictCode: string | null };
 type Identity = { channel: string; external_ref: string };
 type Order = { id: string; channel: string; status: string; total_amount: number; created_at: string };
 type CustomerCoupon = {
@@ -52,7 +52,7 @@ const Q_CUSTOMERS = gql`
     bmsCustomers(search: $search, enrolledLocationId: $enrolledLocationId, limit: 100) {
       id name phone note tags total_spent order_count created_at
       identities { channel external_ref }
-      addresses { id label address is_default }
+      addresses { id label address is_default province postcode provinceCode districtCode subdistrictCode }
       orders { id channel status total_amount created_at }
       coupons {
         id walletId code type value minOrderAmount expiresAt available reason
@@ -71,15 +71,22 @@ const Q_CUSTOMERS = gql`
 const Q_CUSTOMER_LOCATIONS = gql`
   query { bmsCustomerLocations { id name branchCode active } }
 `;
+const Q_ADDRESS_OPTIONS = gql`
+  query CustomerAddressOptions($provinceCode:String,$districtCode:String){
+    provinces:bmsMasterThaiAddresses(level:"PROVINCE",limit:100){code nameTh nameEn}
+    districts:bmsMasterThaiAddresses(level:"DISTRICT",provinceCode:$provinceCode,limit:500){code provinceCode nameTh nameEn}
+    subdistricts:bmsMasterThaiAddresses(level:"SUBDISTRICT",districtCode:$districtCode,limit:500){code districtCode nameTh nameEn postcode}
+  }
+`;
 const M_UPSERT = gql`mutation ($input: BmsCustomerInput!) { bmsUpsertCustomer(input: $input) { id } }`;
 const M_ADDR = gql`
-  mutation ($id: ID!, $label: String, $address: String!, $isDefault: Boolean) {
-    bmsAddCustomerAddress(id: $id, label: $label, address: $address, isDefault: $isDefault) { id }
+  mutation ($id: ID!, $label: String, $address: String!, $isDefault: Boolean, $provinceCode:String, $districtCode:String, $subdistrictCode:String, $postcode:String) {
+    bmsAddCustomerAddress(id: $id, label: $label, address: $address, isDefault: $isDefault, provinceCode:$provinceCode, districtCode:$districtCode, subdistrictCode:$subdistrictCode, postcode:$postcode) { id }
   }
 `;
 const M_UPDATE_ADDR = gql`
-  mutation ($addressId: ID!, $label: String, $address: String!) {
-    bmsUpdateCustomerAddress(addressId: $addressId, label: $label, address: $address) { id }
+  mutation ($addressId: ID!, $label: String, $address: String!, $provinceCode:String, $districtCode:String, $subdistrictCode:String, $postcode:String) {
+    bmsUpdateCustomerAddress(addressId: $addressId, label: $label, address: $address, provinceCode:$provinceCode, districtCode:$districtCode, subdistrictCode:$subdistrictCode, postcode:$postcode) { id }
   }
 `;
 const M_SET_DEFAULT_ADDR = gql`mutation ($addressId: ID!) { bmsSetDefaultCustomerAddress(addressId: $addressId) { id } }`;
@@ -140,6 +147,8 @@ function CustomersManagement() {
   const { t } = useI18n();
   const [form] = Form.useForm();
   const [addrForm] = Form.useForm();
+  const selectedProvinceCode = Form.useWatch("provinceCode", addrForm);
+  const selectedDistrictCode = Form.useWatch("districtCode", addrForm);
   const [search, setSearch] = useState("");
   const [enrolledLocationId, setEnrolledLocationId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
@@ -157,6 +166,7 @@ function CustomersManagement() {
   useVisibleQueryRefresh(customersQuery);
   const { data, loading, error, refetch } = customersQuery;
   const { data: locationData } = useQuery(Q_CUSTOMER_LOCATIONS, { fetchPolicy: "cache-and-network" });
+  const { data: addressOptions } = useQuery(Q_ADDRESS_OPTIONS, { variables: { provinceCode: selectedProvinceCode || null, districtCode: selectedDistrictCode || null }, fetchPolicy: "cache-and-network" });
   const onErr = (e: any) => message.error(e?.message || t("admin_customers.action_failed"));
 
   const [searchDupes, { data: dupeData, loading: dupeLoading }] = useLazyQuery(Q_CUSTOMERS, { fetchPolicy: "network-only" });
@@ -212,7 +222,7 @@ function CustomersManagement() {
   const openEditAddress = (c: Customer, a: Address) => {
     setAddrFor(c);
     setEditingAddr(a);
-    addrForm.setFieldsValue({ label: a.label || "", address: a.address });
+    addrForm.setFieldsValue({ label: a.label || "", address: a.address, provinceCode:a.provinceCode, districtCode:a.districtCode, subdistrictCode:a.subdistrictCode, postcode:a.postcode });
   };
   const closeAddrModal = () => { setAddrFor(null); setEditingAddr(null); addrForm.resetFields(); };
   const openMerge = (c: Customer) => { setMergeFor(c); setMergeTargetId(null); searchDupes({ variables: { search: c.phone || c.name } }); };
@@ -223,10 +233,11 @@ function CustomersManagement() {
   };
   const submitAddr = async () => {
     const v = await addrForm.validateFields();
+    const structured = { provinceCode:v.provinceCode||null,districtCode:v.districtCode||null,subdistrictCode:v.subdistrictCode||null,postcode:v.postcode||null };
     if (editingAddr) {
-      await updateAddr({ variables: { addressId: editingAddr.id, label: v.label?.trim() || null, address: v.address.trim() } });
+      await updateAddr({ variables: { addressId: editingAddr.id, label: v.label?.trim() || null, address: v.address.trim(), ...structured } });
     } else {
-      await addAddr({ variables: { id: addrFor!.id, label: v.label?.trim() || null, address: v.address.trim(), isDefault: !!v.isDefault } });
+      await addAddr({ variables: { id: addrFor!.id, label: v.label?.trim() || null, address: v.address.trim(), isDefault: !!v.isDefault, ...structured } });
     }
   };
 
@@ -396,6 +407,14 @@ function CustomersManagement() {
           <Form.Item label={t("admin_customers.form_address")} name="address" rules={[{ required: true, message: t("admin_customers.form_address_required") }]}>
             <Input.TextArea rows={3} />
           </Form.Item>
+          <Space align="start" wrap>
+            <Form.Item label={t("admin_master_data.province")} name="provinceCode"><Select allowClear showSearch optionFilterProp="label" style={{width:180}} options={(addressOptions?.provinces??[]).map((r:any)=>({value:r.code,label:r.nameTh}))} onChange={()=>addrForm.setFieldsValue({districtCode:null,subdistrictCode:null,postcode:null})}/></Form.Item>
+            <Form.Item label={t("admin_master_data.district")} name="districtCode"><Select allowClear showSearch optionFilterProp="label" style={{width:180}} disabled={!selectedProvinceCode} options={(addressOptions?.districts??[]).map((r:any)=>({value:r.code,label:r.nameTh}))} onChange={()=>addrForm.setFieldsValue({subdistrictCode:null,postcode:null})}/></Form.Item>
+          </Space>
+          <Space align="start" wrap>
+            <Form.Item label={t("admin_master_data.subdistrict")} name="subdistrictCode"><Select allowClear showSearch optionFilterProp="label" style={{width:180}} disabled={!selectedDistrictCode} options={(addressOptions?.subdistricts??[]).map((r:any)=>({value:r.code,label:r.nameTh}))} onChange={(value)=>{const row=(addressOptions?.subdistricts??[]).find((r:any)=>r.code===value);addrForm.setFieldValue("postcode",row?.postcode??null);}}/></Form.Item>
+            <Form.Item label={t("admin_master_data.postcode")} name="postcode"><Input readOnly style={{width:140}}/></Form.Item>
+          </Space>
           {!editingAddr && (
             <Form.Item name="isDefault" valuePropName="checked" label={t("admin_customers.form_is_default")}>
               <Select options={[{ value: false, label: t("admin_customers.opt_no") }, { value: true, label: t("admin_customers.opt_yes") }]} defaultValue={false} />

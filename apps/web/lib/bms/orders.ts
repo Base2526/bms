@@ -99,6 +99,7 @@ export type OrderItemInput = {
   qty: number;
   packCode?: string | null;
   packUnitName?: string | null;
+  packUnitCode?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
   /** Server-validated menu modifier codes. They affect stock, never price authority. */
@@ -228,6 +229,7 @@ export type CreatedLine = {
   availableAfter: number | null;
   packCode?: string | null;
   packUnitName?: string | null;
+  packUnitCode?: string | null;
   packQty?: number | null;
   packUnitPrice?: number | null;
   modifierCodes?: string[] | null;
@@ -1225,6 +1227,15 @@ export async function createOrderInTx(
       const packUnitPrice = basePackUnitPrice == null
         ? null
         : basePackUnitPrice + modifierUnitPrice;
+      const unitCodeRow = await client.query<{ unit_code: string | null }>(
+        `SELECT unit_code FROM bms_product_packs
+          WHERE tenant_id=$1 AND product_sku=$2
+            AND upper(pack_code)=upper(COALESCE($3,'BASE'))
+            AND (size IS NULL OR size=$4)
+          ORDER BY size NULLS LAST LIMIT 1`,
+        [tenantId,it.sku,it.packCode ?? null,it.size]
+      );
+      const packUnitCode = unitCodeRow.rows[0]?.unit_code ?? null;
 
       // โปรคิดครั้งเดียวต่อ SKU+ไซซ์ เพื่อไม่ให้ราคา/จำนวนของคนละไซซ์ปนกัน
       // บรรทัดที่ขายเป็น pack ไม่เข้าโปร ด้วยเหตุผลเดียวกับขั้นราคาส่ง
@@ -1251,6 +1262,7 @@ export async function createOrderInTx(
           : availableAfterByStockKey.get(`${it.sku}\u0000${it.size}`) ?? 0,
         packCode: it.packCode ?? null,
         packUnitName: it.packUnitName ?? null,
+        packUnitCode,
         packQty,
         packUnitPrice,
         modifierCodes: it.modifierCodes ?? [],
@@ -1564,16 +1576,17 @@ export async function createOrderInTx(
     for (const [lineIndex, ln] of lines.entries()) {
       const insertedItem = await client.query<{ id: string }>(
         `INSERT INTO bms_order_items (tenant_id, location_id, order_id, product_sku, product_name, size, qty, unit_price, line_amount,
-                                      receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_qty, pack_unit_price,
+                                      receipt_unit_price, pricing_snapshot, pack_code, pack_unit_name, pack_unit_code, pack_qty, pack_unit_price,
                                       vat_category, stock_modifier_codes, stock_consumption_version,
                                       cost_amount_snapshot, cost_snapshot_source, restaurant_check_item_id)
-         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $19, $14, $15, $9, $10, $11, $12, $13, $16, $21, $17, $18, $20)
+         VALUES ($1, $8, $2, $3, $4, $5, $6, $7, $19, $14, $15, $9, $10, $22, $11, $12, $13, $16, $21, $17, $18, $20)
          RETURNING id`,
         [tenantId, orderId, ln.sku, ln.name, ln.size, ln.qty, ln.unitPrice,
           locationId, ln.packCode ?? null, ln.packUnitName ?? null, ln.packQty ?? null, ln.packUnitPrice ?? null,
           ln.vatCategory ?? "UNKNOWN", ln.receiptUnitPrice, JSON.stringify(ln.pricingSnapshot),
           ln.modifierCodes ?? [], ln.costAmountSnapshot, ln.costSnapshotSource, ln.lineAmount,
-          items[lineIndex]?.restaurantCheckItemId ?? null, input.restaurantCheckId ? 2 : 1]
+          items[lineIndex]?.restaurantCheckItemId ?? null, input.restaurantCheckId ? 2 : 1,
+          ln.packUnitCode ?? null]
       );
       await snapshotOrderItemConsumptionInTx(
         client,
