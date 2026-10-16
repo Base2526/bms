@@ -57,6 +57,14 @@ DECLARE
   rev_table text := p_table || '_revisions';
   trg_name text := p_table || '_rev_trg';
 BEGIN
+  -- Repairs for master tables introduced by earlier phases are best-effort:
+  -- some long-lived environments have not applied every optional phase yet.
+  -- Phase 4 tables call this helper only after their own CREATE TABLE, so they
+  -- remain mandatory while missing earlier-phase tables are safely skipped.
+  IF to_regclass(format('%I.%I', 'public', p_table)) IS NULL THEN
+    RETURN;
+  END IF;
+
   EXECUTE format(
     'CREATE TABLE IF NOT EXISTS %I (' ||
     'id uuid PRIMARY KEY DEFAULT gen_random_uuid(), ' ||
