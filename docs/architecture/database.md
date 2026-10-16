@@ -1739,6 +1739,23 @@ it never joins mutable master data.
 `EXACT`, `AMBIGUOUS`, or `NONE`; `--apply` requires an actor UUID and writes only unique exact
 matches with revision and audit evidence. Apply `10.76` before `10.77`.
 
+## Shipping master data (`10.78`)
+
+`bms_master_carriers` is the platform-global carrier directory and preserves the six legacy carrier
+codes. `bms_app` can read but not write it. `integration_status` is `LIVE`, `MOCK`, or `NONE`; only
+`LIVE` represents a verified production connection. Optional tracking templates must be HTTPS and
+contain `{trackingNo}`. Tracking patterns are bounded and advisory.
+
+`bms_master_th_shipping_zones` maps imported Thai province codes to the existing three shipping
+zones. The address importer upserts missing defaults, while `bms_shipping_zone_overrides` stores a
+tenant-scoped override under forced RLS. Override mutations use `beginTenantTx()` and commit their
+audit row with the change. Shipping quotes resolve override → platform default by province code,
+falling back to the legacy name aliases only for old or unknown structured data.
+
+`bms_shipments.carrier_name`, `tracking_url`, and `tracking_no_warning` are issue-time snapshots.
+Historical shipments remain readable after a carrier is renamed or deactivated, and a format
+mismatch remains a warning rather than a fulfillment rejection.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

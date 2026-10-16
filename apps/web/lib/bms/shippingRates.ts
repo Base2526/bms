@@ -21,11 +21,11 @@ import { getStoreProfile, type StoreProfile } from "./storeProfile";
 import { getCarrierClient } from "./carriers";
 import { runCarrierCall } from "./carriers/safeCall";
 import { isCarrier, type Carrier } from "./carriers/constants";
+import { resolveShippingZone } from "./shippingMaster";
 import {
   guessProvinceFromAddress,
   parseWeightTiers,
   parseZoneRates,
-  zoneForProvince,
   type ShippingZone,
   type WeightTier,
 } from "./shippingZones";
@@ -65,6 +65,8 @@ export type ShippingQuoteInput = {
   subtotal?: number | null;
   /** Explicit destination province (preferred). */
   province?: string | null;
+  /** Structured province code. When present, master data + shop override is authoritative. */
+  provinceCode?: string | null;
   /** Free-text address used only to guess the province when none was given. */
   addressText?: string | null;
   /** Total parcel weight if already known; otherwise pass items to have it summed. */
@@ -142,7 +144,11 @@ export async function quoteShipping(input: ShippingQuoteInput): Promise<Shipping
       warnings.push(`เดาจังหวัดจากที่อยู่ว่า "${guessed}" (ไม่ได้กรอกจังหวัดแยก) — ควรยืนยันก่อนเก็บเงิน`);
     }
   }
-  const zone = zoneForProvince(province);
+  const zone = await resolveShippingZone({
+    tenantId: input.tenantId,
+    provinceCode: input.provinceCode,
+    province,
+  });
 
   // ---- น้ำหนัก ----
   let totalGrams = num(input.totalGrams);

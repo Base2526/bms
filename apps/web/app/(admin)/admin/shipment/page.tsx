@@ -20,7 +20,8 @@ import { useI18n } from "@/lib/i18nContext";
 type ShipStatus = "PENDING" | "SHIPPED" | "IN_TRANSIT" | "DELIVERED" | "RETURNED" | "CANCELLED";
 type Carrier = CarrierCode;
 type Shipment = {
-  id: string; orderId: string; carrier: Carrier; trackingNo: string | null;
+  id: string; orderId: string; carrier: Carrier; carrierName: string; trackingNo: string | null;
+  trackingUrl: string | null; trackingNoWarning: string | null;
   externalShipmentId: string | null; carrierLastSyncedAt: string | null;
   carrierTrackingSource: "manual" | "live" | "mock" | null;
   carrierBookingStatus: string; carrierBookingError: string | null;
@@ -33,7 +34,7 @@ type Shipment = {
 const Q_SHIPMENTS = gql`
   query BmsShipments($search: String, $status: BmsShipmentStatus, $limit: Int) {
     bmsShipments(search: $search, status: $status, limit: $limit) {
-      id orderId carrier trackingNo externalShipmentId carrierLastSyncedAt carrierTrackingSource
+      id orderId carrier carrierName trackingNo trackingUrl trackingNoWarning externalShipmentId carrierLastSyncedAt carrierTrackingSource
       carrierBookingStatus carrierBookingError carrierBookingAttemptedAt
       marketplaceManaged
       status note createdAt updatedAt
@@ -43,10 +44,11 @@ const Q_SHIPMENTS = gql`
 const Q_PACKING_ORDERS = gql`
   query { bmsOrders(status: PACKING, limit: 200) { id customer_ref total_amount shipping_fee amount_due preferred_carrier } }
 `;
+const Q_CARRIERS = gql`query { bmsMasterCarriers { code nameTh nameEn integrationStatus active } }`;
 const Q_LABEL = gql`
   query ($id: ID!) {
     bmsShipmentLabel(id: $id) {
-      shipmentId orderId carrier trackingNo labelUrl createdAt
+      shipmentId orderId carrier carrierName trackingNo trackingUrl trackingNoWarning labelUrl createdAt
       shipTo { name phone address }
       items { sku size qty }
     }
@@ -83,6 +85,8 @@ const M_BOOK_LIVE = gql`
     }
   }
 `;
+const Q_ZONES = gql`query { bmsShippingZones { provinceCode nameTh nameEn defaultZone overrideZone effectiveZone } }`;
+const M_ZONE = gql`mutation ($provinceCode:String!,$zone:String){bmsSetShippingZoneOverride(provinceCode:$provinceCode,zone:$zone)}`;
 
 const STATUS_COLOR: Record<ShipStatus, string> = {
   PENDING: "orange", SHIPPED: "geekblue", IN_TRANSIT: "cyan", DELIVERED: "green", RETURNED: "red", CANCELLED: "default",
@@ -111,6 +115,7 @@ function ShipmentManagement() {
   const [createOpen, setCreateOpen] = useState(false);
   const [editShip, setEditShip] = useState<Shipment | null>(null);
   const [labelId, setLabelId] = useState<string | null>(null);
+  const [zonesOpen, setZonesOpen] = useState(false);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
 
@@ -122,6 +127,11 @@ function ShipmentManagement() {
   const { data, loading, error, refetch } = useQuery(Q_SHIPMENTS, {
     variables: { search: search || null, status: filter === "ALL" ? null : filter, limit: 200 },
     fetchPolicy: "cache-and-network",
+  });
+  const zonesQuery = useQuery(Q_ZONES, { skip: !zonesOpen, fetchPolicy: "network-only" });
+  const [saveZone, zoneState] = useMutation(M_ZONE, {
+    onCompleted: (d:any) => d?.bmsSetShippingZoneOverride ? (message.success(t("admin_shipment.zone_saved")), zonesQuery.refetch()) : message.error(t("admin_shipment.action_failed")),
+    onError: (e:any) => onErr(e),
   });
 
   const onErr = (e: any) => message.error(e?.message || t("admin_shipment.action_failed"));
@@ -251,9 +261,9 @@ function ShipmentManagement() {
       { title: "Order", dataIndex: "orderId", key: "orderId", width: 100,
         render: (id: string) => <Typography.Text code>{id.slice(0, 8)}</Typography.Text> },
       { title: t("admin_shipment.col_carrier"), dataIndex: "carrier", key: "carrier", width: 130,
-        render: (c: Carrier) => CARRIER_LABEL[c] || c },
+        render: (_c: Carrier, r: Shipment) => r.carrierName || CARRIER_LABEL[r.carrier] || r.carrier },
       { title: t("admin_shipment.col_tracking"), dataIndex: "trackingNo", key: "trackingNo",
-        render: (t: string | null) => t ? <Typography.Text copyable>{t}</Typography.Text> : <span style={{ color: "#999" }}>—</span> },
+        render: (value: string | null, r: Shipment) => value ? <Space direction="vertical" size={0}><Typography.Text copyable>{value}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space> : <span style={{ color: "#999" }}>—</span> },
       { title: t("admin_shipment.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: ShipStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {statusLabel(s, t)}</Tag> },
       { title: "Carrier sync", key: "carrierSync", width: 170,
@@ -299,6 +309,7 @@ function ShipmentManagement() {
         {can("shipping.create") && (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_shipment.btn_create")}</Button>
         )}
+        {can("shipping.update") && <Button onClick={()=>setZonesOpen(true)}>{t("admin_shipment.zone_overrides")}</Button>}
         <Button icon={<ReloadOutlined />} onClick={() => refetch()} loading={loading}>Refresh</Button>
       </AdminPageHeader>
 
@@ -321,7 +332,7 @@ function ShipmentManagement() {
                 <Space size={6} wrap>
                   <Typography.Text code>{r.id.slice(0, 8)}</Typography.Text>
                   <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                    {CARRIER_LABEL[r.carrier] || r.carrier}
+                    {r.carrierName || CARRIER_LABEL[r.carrier] || r.carrier}
                   </Typography.Text>
                 </Space>
               }
@@ -331,7 +342,7 @@ function ShipmentManagement() {
                 {
                   label: t("admin_shipment.col_tracking"),
                   value: r.trackingNo
-                    ? <Typography.Text copyable>{r.trackingNo}</Typography.Text>
+                    ? <Space direction="vertical" size={0}><Typography.Text copyable>{r.trackingNo}</Typography.Text>{r.trackingUrl&&<Typography.Link href={r.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{r.trackingNoWarning&&<Typography.Text type="warning">{r.trackingNoWarning}</Typography.Text>}</Space>
                     : <span style={{ color: "#999" }}>—</span>,
                 },
                 {
@@ -356,6 +367,14 @@ function ShipmentManagement() {
       <CreateShipmentModal open={createOpen} onClose={() => setCreateOpen(false)} onDone={() => { setCreateOpen(false); refetch(); }} />
       <EditTrackingModal shipment={editShip} onClose={() => setEditShip(null)} onDone={() => { setEditShip(null); refetch(); }} />
       <LabelModal shipmentId={labelId} onClose={() => setLabelId(null)} />
+      <Modal title={t("admin_shipment.zone_overrides")} open={zonesOpen} onCancel={()=>setZonesOpen(false)} footer={null} width={panelWidth(isMobile, 760)} destroyOnClose>
+        <Alert closable showIcon type="info" style={{marginBottom:12}} message={t("admin_shipment.zone_help")}/>
+        <Table rowKey="provinceCode" size="small" loading={zonesQuery.loading||zoneState.loading} dataSource={zonesQuery.data?.bmsShippingZones??[]} pagination={{pageSize:15}} scroll={{x:620}} columns={[
+          {title:t("admin_master_data.province"),render:(_:any,r:any)=>`${r.nameTh} · ${r.nameEn}`},
+          {title:t("admin_shipment.zone_default"),dataIndex:"defaultZone",width:130},
+          {title:t("admin_shipment.zone_override"),width:190,render:(_:any,r:any)=><Select allowClear placeholder={t("admin_shipment.zone_use_default")} value={r.overrideZone??undefined} style={{width:"100%"}} options={["BANGKOK","PERIMETER","UPCOUNTRY"].map(value=>({value}))} onChange={(zone)=>saveZone({variables:{provinceCode:r.provinceCode,zone:zone??null}})}/>},
+        ]}/>
+      </Modal>
     </div>
   );
 }
@@ -366,6 +385,8 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
   const { data } = useQuery(Q_PACKING_ORDERS, { fetchPolicy: "cache-and-network", skip: !open });
+  const { data: carrierData } = useQuery(Q_CARRIERS, { fetchPolicy: "cache-and-network", skip: !open });
+  const carrierOptions = (carrierData?.bmsMasterCarriers ?? []).map((c:any)=>({value:c.code,label:`${c.nameTh} · ${c.integrationStatus}`}));
   const orders: { id: string; customer_ref: string | null; total_amount: number; shipping_fee: number; amount_due: number; preferred_carrier: Carrier | null }[] =
     data?.bmsOrders || [];
 
@@ -430,7 +451,7 @@ function CreateShipmentModal({ open, onClose, onDone }: { open: boolean; onClose
               : undefined
           }
         >
-          <Select options={CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))} />
+          <Select options={carrierOptions.length?carrierOptions:CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))} />
         </Form.Item>
         <Form.Item name="trackingNo" label={t("admin_shipment.form_tracking_optional")}>
           <Input placeholder={t("admin_shipment.form_tracking_placeholder")} />
@@ -448,6 +469,8 @@ function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment |
   const { t } = useI18n();
   const isMobile = useIsMobile();
   const [form] = Form.useForm();
+  const { data: carrierData } = useQuery(Q_CARRIERS, { fetchPolicy: "cache-and-network", skip: !shipment });
+  const carrierOptions = (carrierData?.bmsMasterCarriers ?? []).map((c:any)=>({value:c.code,label:`${c.nameTh} · ${c.integrationStatus}`}));
   useEffect(() => {
     if (shipment) form.setFieldsValue({ trackingNo: shipment.trackingNo, carrier: shipment.carrier });
   }, [shipment, form]);
@@ -469,7 +492,7 @@ function EditTrackingModal({ shipment, onClose, onDone }: { shipment: Shipment |
       confirmLoading={loading} okText={t("admin_shipment.btn_save")} cancelText={t("admin_shipment.btn_close")} destroyOnClose>
       <Form form={form} layout="vertical">
         <Form.Item name="carrier" label={t("admin_shipment.form_carrier")}>
-          <Select options={CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))} />
+          <Select options={carrierOptions.length?carrierOptions:CARRIERS.map((c) => ({ value: c, label: CARRIER_LABEL[c] }))} />
         </Form.Item>
         <Form.Item name="trackingNo" label={t("admin_shipment.form_tracking")}>
           <Input placeholder={t("admin_shipment.form_tracking_placeholder")} />
@@ -501,8 +524,8 @@ function LabelModal({ shipmentId, onClose }: { shipmentId: string | null; onClos
           )}
           {/* มือถือใช้ layout แนวตั้งเพื่อให้ที่อยู่ยังอ่านได้ */}
           <Descriptions bordered column={1} size="small" layout={isMobile ? "vertical" : "horizontal"}>
-            <Descriptions.Item label={t("admin_shipment.col_carrier")}>{CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
-            <Descriptions.Item label={t("admin_shipment.col_tracking")}>{label.trackingNo || "—"}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_shipment.col_carrier")}>{label.carrierName || CARRIER_LABEL[label.carrier as Carrier] || label.carrier}</Descriptions.Item>
+            <Descriptions.Item label={t("admin_shipment.col_tracking")}><Space direction="vertical" size={0}><span>{label.trackingNo || "—"}</span>{label.trackingUrl&&<Typography.Link href={label.trackingUrl} target="_blank" rel="noreferrer">Tracking</Typography.Link>}{label.trackingNoWarning&&<Typography.Text type="warning">{label.trackingNoWarning}</Typography.Text>}</Space></Descriptions.Item>
             <Descriptions.Item label="Order">{label.orderId.slice(0, 8)}</Descriptions.Item>
             <Descriptions.Item label={t("admin_shipment.label_recipient")}>{label.shipTo?.name || "—"}</Descriptions.Item>
             <Descriptions.Item label={t("admin_shipment.label_phone")}>{label.shipTo?.phone || "—"}</Descriptions.Item>

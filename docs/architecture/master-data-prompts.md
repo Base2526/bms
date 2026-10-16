@@ -177,6 +177,11 @@ E. carriers/constants.ts เหลือเป็นชนิด TypeScript ข�
 - ปิดขนส่งแล้วพัสดุเก่ายังแสดงชื่อ/ลิงก์ติดตามจาก snapshot
 ```
 
+สถานะ: implemented บน branch `feat/master-data-phase-3` ด้วย migration `10.78`, code-first zone
+resolution + tenant override, shipment carrier snapshots, platform/tenant admin UI และ pure/DB
+contract tests. Tracking URL/pattern ของ seed เดิมคงเป็น `NULL` จนมีเอกสาร carrier ที่ตรวจสอบแล้ว;
+ระบบรองรับ template โดยไม่เดา endpoint.
+
 ---
 
 ## เฟส 4 — ภาษีและ e-Tax reference

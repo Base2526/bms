@@ -26,6 +26,8 @@ import {
 import { requirePermission } from "@/lib/bms/permissions";
 import { getTenantId } from "@/lib/bms/tenant";
 import { audit } from "@/lib/bms/audit";
+import { listShippingZoneOverrides, setShippingZoneOverride } from "@/lib/bms/shippingMaster";
+import type { ShippingZone } from "@/lib/bms/shippingZones";
 
 const toISO = (d: any) => (d instanceof Date ? d.toISOString() : d == null ? null : String(d));
 const actorOf = (ctx: any) => ctx?.admin?.email || ctx?.admin?.id || "admin";
@@ -60,6 +62,10 @@ export const bmsShippingResolvers = {
     async bmsShipmentTrackingEvents(_p: unknown, args: { shipmentId: string; limit?: number }, ctx: any) {
       await requirePermission(ctx, "shipping.view");
       return listShipmentTrackingEvents(getTenantId(ctx), args.shipmentId, args.limit ?? 100);
+    },
+    async bmsShippingZones(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "shipping.view");
+      return listShippingZoneOverrides(getTenantId(ctx));
     },
   },
 
@@ -120,8 +126,21 @@ export const bmsShippingResolvers = {
         { trackingNo: args.trackingNo ?? null, carrier: args.carrier ?? null },
         actorOf(ctx)
       );
-      if (ok) await audit(ctx, "shipping.update_tracking", args.id, { trackingNo: args.trackingNo, carrier: args.carrier });
       return ok;
+    },
+    async bmsSetShippingZoneOverride(
+      _p: unknown,
+      args: { provinceCode: string; zone?: ShippingZone | null },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "shipping.update");
+      return setShippingZoneOverride({
+        tenantId: getTenantId(ctx),
+        provinceCode: args.provinceCode,
+        zone: args.zone ?? null,
+        actorId: String(ctx?.admin?.id || ""),
+        actor: actorOf(ctx),
+      });
     },
 
     async bmsSetShipmentStatus(_p: unknown, args: { id: string; status: ShipmentStatus }, ctx: any) {
@@ -166,6 +185,9 @@ export const bmsShippingResolvers = {
   BmsShipment: {
     orderId: (p: any) => p.order_id,
     trackingNo: (p: any) => p.tracking_no ?? null,
+    carrierName: (p: any) => p.carrier_name || p.carrier,
+    trackingUrl: (p: any) => normalizeCarrierLabelUrl(p.tracking_url),
+    trackingNoWarning: (p: any) => p.tracking_no_warning ?? null,
     labelUrl: (p: any) => normalizeCarrierLabelUrl(p.label_url),
     externalShipmentId: (p: any) => p.external_shipment_id ?? null,
     carrierLastSyncedAt: (p: any) => toISO(p.carrier_last_synced_at),

@@ -17,7 +17,7 @@ async function handlePOST(req: NextRequest, { params }: { params: { id: string }
   const ok = await updateTracking(auth.tenantId, id, {
     trackingNo: typeof body.trackingNo === "string" ? body.trackingNo : null,
     carrier: typeof body.carrier === "string" ? (body.carrier as Carrier) : null,
-  });
+  }, String(auth.admin.email || auth.adminId));
   if (!ok) return NextResponse.json({ status: "INVALID", id }, { status: 409 });
   return NextResponse.json({ ok: true, id });
 }
