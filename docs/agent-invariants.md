@@ -1750,6 +1750,9 @@ The rules that follow from it:
 - `onboarding/sample-data` now uses `authorizeAdminRoute("product.edit")` (it previously gated on
   the role read from the database). What it may delete is decided by the `10.26` run ledger
   (`bms_sample_runs`/`bms_sample_records`), never by a `FAKE-`/`SAMPLE-` name prefix.
+  New Starter Catalog batches share the Cloud product quota, checked under the tenant lock
+  before any sample insert (tenant -> profile lock order). An existing ACTIVE run is still readable
+  when over quota. Retail Local bypasses Cloud product/staff caps, including import previews.
 
 `scripts/inventory-tenant-scope-contract.test.mts` walks every `route.ts` under `app/api/bms` and
 fails when one carries no guard from an explicit allowlist, and requires a `rateLimit()` call on the
@@ -1840,9 +1843,15 @@ their provider independently:
   - **A real inference call is an event even when it is free.** Tenant BYOK key tests are recorded as
     zero-credit `ai_key_test` events rather than being skipped.
   - **Monthly AI points (`10.56`).** Free grants 100 points, Pro grants 1,000 at THB 599,
-    Business is unlimited at THB 1,990. The accounting month changes on the first at
+    Business is 5,000 at THB 1,990 after `10.73`'s scheduled transition. That migration preserves
+    the previous Business allowance through its rollout month; `planPolicy.ts` resolves both the
+    current and pending allowance for the service/API. Never use the raw catalogue target to
+    admit AI work before its effective date. The accounting month changes on the first at
     00:00 Asia/Bangkok, independent of host/browser timezone. Catalog changes reconcile grants
     under the monthly row lock without resetting consumption, bonuses or adjustments.
+    Grant writers first lock the tenant FOR SHARE and read the plan in the same transaction
+    (tenant -> month -> event); never reconcile a pre-transaction plan after a concurrent downgrade.
+    Plan changes and their audit row commit or roll back together in a tenant transaction.
     Past events retain their original month; late finalization stays in that month. An old-month
     event cannot start another provider attempt. New months start without carrying unused points.
     Grant-changing GraphQL mutations (`bmsChangePlan`, `bmsSetTenantPlan`, `bmsAdjustAiCredits`)
@@ -1903,6 +1912,23 @@ their provider independently:
   silently read as `undefined` at runtime with no error.
 
 ## Follow-up automation scheduler
+
+`entitlements.ts` is the central package authority; `plans.ts` and `featureAccess.ts` are facades.
+Capacity (`10.75`) counts registered branches/devices/channels, including inactive rows. Only new
+registrations are gated under the tenant lock: Free 1/1/1, Pro 1/3/3, Business 5/10/unlimited.
+Existing identities remain editable/reactivatable after downgrade; capacity version 1 and Retail
+Local retain unlimited capacity in those three categories. Never move gates into sales, pairing,
+webhooks or existing job execution. Cohort events are telemetry, never payment evidence; unknown
+AI attribution remains NULL and costs never grant/deny entitlements.
+
+Cloud feature packaging (`10.74`) gates **new Retention generation only**, not follow-up automation
+or existing-case reads/transitions/conversion/expiry. Scheduled report creation requires Pro+;
+existing subscriptions continue after downgrade. `featureAccess.ts` owns both server checks;
+digest reads require `report.view`; schedule/recipient changes and test sends require `report.email`,
+including legacy tenants (platform overview retains its platform-admin guard).
+Legacy tenant version 1 permanently retains these two features, never
+future features automatically; new tenants default to 2. Never re-grandfather on migration reruns,
+rewrite the version on plan changes, or gate core sales/data access/Retail Local by this policy.
 
 `lib/bms/followups.ts` (migration `7.52`) decides whether to re-engage a customer whose conversation
 went idle, via a configurable Rule Engine + Scheduler rather than a fixed timer. This is an **MVP

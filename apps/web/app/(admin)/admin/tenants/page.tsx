@@ -3,6 +3,7 @@ import { gql, useQuery, useMutation } from "@apollo/client";
 import { Table, Tag, Switch, Select, Button, Space, Alert, message, Statistic, Row, Col, Card, Popconfirm } from "antd";
 import { ReloadOutlined, ShopOutlined, LoginOutlined, DeleteOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import PackageMetricsCard from "@/components/billing/PackageMetricsCard";
 
 const Q = gql`
   query {
@@ -138,6 +139,7 @@ export default function Page() {
       <Alert type="info" showIcon closable style={{ marginBottom: 16 }}
         message={t("admin_tenants.platform_notice")} />
 
+      {data?.bmsIsPlatformAdmin === true && <PackageMetricsCard />}
       <Table
         rowKey="id" size="middle" loading={loading}
         dataSource={rows} columns={columns}

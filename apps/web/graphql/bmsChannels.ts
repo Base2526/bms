@@ -79,11 +79,10 @@ export const bmsChannelsResolvers = {
           accessToken: args.accessToken,
           channelSecret: args.channelSecret,
           active: args.active,
-        });
+        }, String(requireAuth(ctx).author_id));
       } catch (err: any) {
         throw new GraphQLError(err?.message || "บันทึกไม่สำเร็จ", { extensions: { code: "BAD_USER_INPUT" } });
       }
-      await audit(ctx, "channel.upsert", args.channel, { active: args.active });
       return ok;
     },
     async bmsTestChannel(_p: unknown, args: { channel: string }, ctx: any) {

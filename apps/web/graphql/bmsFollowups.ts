@@ -16,6 +16,7 @@ import {
 import { query } from "@/lib/db";
 import { requireAuth } from "@/lib/auth";
 import { getRetentionAnalytics, listRetentionCases, refreshRetentionCases, transitionRetentionCase } from "@/lib/bms/retention";
+import { FeatureAccessError } from "@/lib/bms/featurePolicy";
 
 export const bmsFollowupsResolvers = {
   Query: {
@@ -57,7 +58,11 @@ export const bmsFollowupsResolvers = {
     },
   },
   Mutation: {
-    async bmsRefreshRetention(_p:unknown,_a:unknown,ctx:any){await requirePermission(ctx,"retention.manage");return refreshRetentionCases(getTenantId(ctx));},
+    async bmsRefreshRetention(_p:unknown,args:{existingOnly?:boolean},ctx:any){
+      await requirePermission(ctx,"retention.manage");
+      try { return await refreshRetentionCases(getTenantId(ctx),args.existingOnly??false,String(requireAuth(ctx).author_id)); }
+      catch(e:any){throw new GraphQLError(e?.message||"failed",{extensions:{code:e instanceof FeatureAccessError?e.code:"BAD_USER_INPUT"}});}
+    },
     async bmsTransitionRetentionCase(_p:unknown,args:any,ctx:any){await requirePermission(ctx,"retention.manage");try{return await transitionRetentionCase(getTenantId(ctx),args.id,String(requireAuth(ctx).author_id),args.status,args.reason);}catch(e:any){throw new GraphQLError(e?.message||"failed",{extensions:{code:"BAD_USER_INPUT"}});}},
     async bmsUpsertFollowupRule(_p: unknown, args: { input: FollowupRuleInput }, ctx: any) {
       await requirePermission(ctx, "followup.manage");

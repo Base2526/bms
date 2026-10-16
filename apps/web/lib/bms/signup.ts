@@ -15,6 +15,7 @@ import { verifySocialIdentity } from "@/lib/auth/social";
 import { archetypeToBusinessType, isValidShopArchetype, normalizeShopArchetype } from "./shopArchetypes";
 import { isRetailLocalDeployment } from "./deploymentMode";
 import { assertSocialAuthAvailable } from "./socialAuthSettings";
+import { recordPackageSignup } from "./packageMetrics";
 
 function slugify(name: string): string {
   const base = name.trim().toLowerCase()
@@ -240,6 +241,7 @@ export async function signupShopWithSocial(input: {
     });
 
     await client.query("COMMIT");
+    await recordPackageSignup(created.tenantId, client);
     return { status: "VERIFIED", ...created };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}
@@ -305,6 +307,7 @@ export async function verifyPendingShopSignup(rawToken: string): Promise<VerifyS
       [pending.email, pending.id]
     );
     await client.query("COMMIT");
+    await recordPackageSignup(created.tenantId, client);
     return { status: "VERIFIED", tenantId: created.tenantId, slug: created.slug };
   } catch (err) {
     try { await client.query("ROLLBACK"); } catch {}

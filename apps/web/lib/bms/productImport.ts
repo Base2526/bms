@@ -9,6 +9,7 @@
 import { randomUUID } from "crypto";
 import { query } from "@/lib/db";
 import { getTenantPlan } from "./plans";
+import { isRetailLocalDeployment } from "./deploymentMode";
 import {
   upsertProduct,
   validateProductConfigurationFields,
@@ -91,7 +92,7 @@ export async function runImport(
   // 3) จำลองโควตาแบบ all-or-nothing — เกิน = บล็อกทั้ง batch ไม่ใช่เอาแค่ N แถวแรก
   let quotaExceeded = false;
   let quotaMessage: string | null = null;
-  if (newSkuCount > 0) {
+  if (newSkuCount > 0 && !isRetailLocalDeployment()) {
     const plan = await getTenantPlan(tenantId);
     if (plan.max_products >= 0) {
       const countRes = await query<{ c: number }>(

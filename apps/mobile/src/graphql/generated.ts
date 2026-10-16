@@ -586,6 +586,15 @@ export type SchemaBmsBusinessDoc = {
   type: Scalars['String']['output'];
 };
 
+export type SchemaBmsCapacity = {
+  __typename?: 'BmsCapacity';
+  canAdd: Scalars['Boolean']['output'];
+  limit: Scalars['Int']['output'];
+  resource: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  used: Scalars['Int']['output'];
+};
+
 export type SchemaBmsCarrier =
   | 'AUSPOST'
   | 'DHL'
@@ -741,6 +750,133 @@ export type SchemaBmsConversationNote = {
   mentionedUserIds: Array<Scalars['ID']['output']>;
 };
 
+export type SchemaBmsCostAllocationGroup = {
+  __typename?: 'BmsCostAllocationGroup';
+  amount: Scalars['String']['output'];
+  channel: Maybe<Scalars['String']['output']>;
+  locationId: Scalars['ID']['output'];
+};
+
+export type SchemaBmsCostAllocationLocation = {
+  __typename?: 'BmsCostAllocationLocation';
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+};
+
+export type SchemaBmsCostAllocationPart = {
+  __typename?: 'BmsCostAllocationPart';
+  amount: Scalars['String']['output'];
+  basisWeight: Scalars['String']['output'];
+  channel: Maybe<Scalars['String']['output']>;
+  locationId: Scalars['ID']['output'];
+};
+
+export type SchemaBmsCostAllocationPreview = {
+  __typename?: 'BmsCostAllocationPreview';
+  errorCode: Maybe<Scalars['String']['output']>;
+  expectedVersion: Maybe<Scalars['Int']['output']>;
+  snapshot: Maybe<SchemaBmsCostAllocationSnapshot>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsCostAllocationPreviewInput = {
+  month: Scalars['String']['input'];
+  rule: SchemaBmsCostAllocationRuleInput;
+  sourceKey: Scalars['String']['input'];
+};
+
+export type SchemaBmsCostAllocationReport = {
+  __typename?: 'BmsCostAllocationReport';
+  allocatedTotal: Maybe<Scalars['String']['output']>;
+  complete: Maybe<Scalars['Boolean']['output']>;
+  currency: Maybe<Scalars['String']['output']>;
+  errorCode: Maybe<Scalars['String']['output']>;
+  groups: Maybe<Array<SchemaBmsCostAllocationGroup>>;
+  knownAllocated: Maybe<Scalars['String']['output']>;
+  locations: Maybe<Array<SchemaBmsCostAllocationLocation>>;
+  month: Maybe<Scalars['String']['output']>;
+  reviewedTotal: Maybe<Scalars['String']['output']>;
+  rows: Maybe<Array<SchemaBmsCostAllocationRow>>;
+  salesBasis: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+  truncated: Maybe<Scalars['Boolean']['output']>;
+  unresolvedCount: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsCostAllocationRow = {
+  __typename?: 'BmsCostAllocationRow';
+  amount: Maybe<Scalars['String']['output']>;
+  classification: Scalars['String']['output'];
+  issue: Maybe<Scalars['String']['output']>;
+  reference: Scalars['String']['output'];
+  snapshot: Maybe<SchemaBmsCostAllocationSnapshot>;
+  sourceKey: Scalars['String']['output'];
+  state: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsCostAllocationRule = {
+  __typename?: 'BmsCostAllocationRule';
+  method: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+  targets: Array<SchemaBmsCostAllocationTarget>;
+};
+
+export type SchemaBmsCostAllocationRuleInput = {
+  method: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  targets: Array<SchemaBmsCostAllocationTargetInput>;
+};
+
+export type SchemaBmsCostAllocationSaveInput = {
+  confirmed: Scalars['Boolean']['input'];
+  expectedVersion: Scalars['Int']['input'];
+  month: Scalars['String']['input'];
+  previewFingerprint: Scalars['String']['input'];
+  rule: SchemaBmsCostAllocationRuleInput;
+  sourceKey: Scalars['String']['input'];
+};
+
+export type SchemaBmsCostAllocationSaveResult = {
+  __typename?: 'BmsCostAllocationSaveResult';
+  errorCode: Maybe<Scalars['String']['output']>;
+  replayed: Maybe<Scalars['Boolean']['output']>;
+  status: Scalars['String']['output'];
+  version: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsCostAllocationSnapshot = {
+  __typename?: 'BmsCostAllocationSnapshot';
+  allocations: Array<SchemaBmsCostAllocationPart>;
+  amount: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+  fingerprint: Scalars['String']['output'];
+  month: Scalars['String']['output'];
+  rule: SchemaBmsCostAllocationRule;
+  salesBasis: Scalars['String']['output'];
+  sourceKey: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsCostAllocationTarget = {
+  __typename?: 'BmsCostAllocationTarget';
+  channel: Maybe<Scalars['String']['output']>;
+  locationId: Scalars['ID']['output'];
+  weight: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsCostAllocationTargetInput = {
+  channel: InputMaybe<Scalars['String']['input']>;
+  locationId: Scalars['ID']['input'];
+  weight: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsCostingActionResult = {
+  __typename?: 'BmsCostingActionResult';
+  errorCode: Maybe<Scalars['String']['output']>;
+  status: Scalars['String']['output'];
+};
+
 export type SchemaBmsCoupon = {
   __typename?: 'BmsCoupon';
   active: Scalars['Boolean']['output'];
@@ -832,6 +968,63 @@ export type SchemaBmsCreateStockTransferInput = {
   items: Array<SchemaBmsStockTransferLineInput>;
   note: InputMaybe<Scalars['String']['input']>;
   toLocationId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsCreditNoteBuyer = {
+  __typename?: 'BmsCreditNoteBuyer';
+  address: Maybe<Scalars['String']['output']>;
+  branchCode: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  phone: Maybe<Scalars['String']['output']>;
+  taxId: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsCreditNoteLine = {
+  __typename?: 'BmsCreditNoteLine';
+  amount: Scalars['Float']['output'];
+  name: Scalars['String']['output'];
+  qty: Scalars['Float']['output'];
+  size: Scalars['String']['output'];
+  unit: Scalars['String']['output'];
+};
+
+export type SchemaBmsCreditNoteOriginal = {
+  __typename?: 'BmsCreditNoteOriginal';
+  docNo: Scalars['String']['output'];
+  docType: Scalars['String']['output'];
+  issueDate: Scalars['String']['output'];
+};
+
+/**
+ * ใบลดหนี้เต็มรูป (มาตรา 86/10) — ยอดทั้งหมดมาจาก snapshot ของเอกสารที่ออกไปแล้ว
+ * buyer เป็น null เมื่อใบกำกับเดิมเป็นใบอย่างย่อที่ไม่มีข้อมูลผู้ซื้อ
+ */
+export type SchemaBmsCreditNoteView = {
+  __typename?: 'BmsCreditNoteView';
+  amountText: Scalars['String']['output'];
+  buyer: Maybe<SchemaBmsCreditNoteBuyer>;
+  calendarEra: Scalars['String']['output'];
+  cancelledAt: Maybe<Scalars['String']['output']>;
+  cancelledReason: Maybe<Scalars['String']['output']>;
+  correctValue: Scalars['Float']['output'];
+  difference: Scalars['Float']['output'];
+  differenceBeforeVat: Scalars['Float']['output'];
+  docNo: Scalars['String']['output'];
+  exemptAmount: Scalars['Float']['output'];
+  id: Scalars['ID']['output'];
+  issueDate: Scalars['String']['output'];
+  /** ยอดคืนลบผลรวมรายการ (ราคาส่ง/โปรของที่เหลือถูกประเมินใหม่) — 0 เมื่อไม่มีรายการ */
+  lineAdjustment: Scalars['Float']['output'];
+  lines: Array<SchemaBmsCreditNoteLine>;
+  orderId: Scalars['ID']['output'];
+  original: SchemaBmsCreditNoteOriginal;
+  originalValue: Scalars['Float']['output'];
+  previouslyCredited: Scalars['Float']['output'];
+  reason: Scalars['String']['output'];
+  replacesDocNo: Maybe<Scalars['String']['output']>;
+  seller: SchemaBmsFullTaxInvoiceParty;
+  vatAmount: Scalars['Float']['output'];
+  vatRate: Scalars['Float']['output'];
 };
 
 export type SchemaBmsCustomer = {
@@ -957,6 +1150,53 @@ export type SchemaBmsCustomerInsights = {
   generatedAt: Maybe<Scalars['String']['output']>;
   summary: Scalars['String']['output'];
 };
+
+export type SchemaBmsCustomerMergePreview = {
+  __typename?: 'BmsCustomerMergePreview';
+  expiresAt: Scalars['String']['output'];
+  keep: SchemaBmsCustomerMergeSummary;
+  previewToken: Scalars['String']['output'];
+  source: SchemaBmsCustomerMergeSummary;
+};
+
+export type SchemaBmsCustomerMergeReason =
+  | 'DUPLICATE_CHANNELS'
+  | 'DUPLICATE_ENTRY';
+
+export type SchemaBmsCustomerMergeReviewInput = {
+  confirmed: Scalars['Boolean']['input'];
+  evidenceReference: Scalars['String']['input'];
+  previewToken: Scalars['String']['input'];
+  reason: SchemaBmsCustomerMergeReason;
+  verificationMethod: SchemaBmsCustomerMergeVerification;
+};
+
+export type SchemaBmsCustomerMergeSummary = {
+  __typename?: 'BmsCustomerMergeSummary';
+  addresses: Scalars['Int']['output'];
+  channels: Array<Scalars['String']['output']>;
+  conversations: Scalars['Int']['output'];
+  coupons: Scalars['Int']['output'];
+  depositPaid: Scalars['String']['output'];
+  gameRequests: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  memberNo: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  openDeposits: Scalars['Int']['output'];
+  orders: Scalars['Int']['output'];
+  passes: Scalars['Int']['output'];
+  pharmacyCases: Scalars['Int']['output'];
+  phoneHint: Maybe<Scalars['String']['output']>;
+  points: Scalars['String']['output'];
+  renewals: Scalars['Int']['output'];
+  restaurantRequests: Scalars['Int']['output'];
+  storeCredit: Scalars['String']['output'];
+};
+
+export type SchemaBmsCustomerMergeVerification =
+  | 'BOTH_CHANNELS'
+  | 'IN_PERSON'
+  | 'SUPPORT_CASE';
 
 export type SchemaBmsCustomerNote360 = {
   __typename?: 'BmsCustomerNote360';
@@ -1176,6 +1416,13 @@ export type SchemaBmsEnrollMemberResult = {
   status: Scalars['String']['output'];
 };
 
+export type SchemaBmsEntitlements = {
+  __typename?: 'BmsEntitlements';
+  capacities: Array<SchemaBmsCapacity>;
+  features: Array<SchemaBmsFeatureAccess>;
+  plan: SchemaBmsPlan;
+};
+
 export type SchemaBmsEtaxRunResult = {
   __typename?: 'BmsEtaxRunResult';
   accepted: Scalars['Int']['output'];
@@ -1310,6 +1557,14 @@ export type SchemaBmsExpiringPointsRow = {
   phone: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsFeatureAccess = {
+  __typename?: 'BmsFeatureAccess';
+  allowed: Scalars['Boolean']['output'];
+  feature: Scalars['String']['output'];
+  minimumPlan: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+};
+
 export type SchemaBmsFollowupAnalytics = {
   __typename?: 'BmsFollowupAnalytics';
   activeJobs: Scalars['Int']['output'];
@@ -1440,6 +1695,16 @@ export type SchemaBmsFulfillmentReport = {
   shipmentCount: Scalars['Int']['output'];
 };
 
+/** ผู้ซื้อบนใบกำกับ — taxId/branchCode เป็น null เมื่อผู้ซื้อไม่ได้เป็นผู้ประกอบการจด VAT */
+export type SchemaBmsFullTaxInvoiceBuyer = {
+  __typename?: 'BmsFullTaxInvoiceBuyer';
+  address: Scalars['String']['output'];
+  branchCode: Maybe<Scalars['String']['output']>;
+  name: Scalars['String']['output'];
+  phone: Maybe<Scalars['String']['output']>;
+  taxId: Maybe<Scalars['String']['output']>;
+};
+
 export type SchemaBmsFullTaxInvoiceLine = {
   __typename?: 'BmsFullTaxInvoiceLine';
   amount: Scalars['Float']['output'];
@@ -1464,7 +1729,9 @@ export type SchemaBmsFullTaxInvoiceParty = {
 export type SchemaBmsFullTaxInvoiceView = {
   __typename?: 'BmsFullTaxInvoiceView';
   amountText: Scalars['String']['output'];
-  buyer: SchemaBmsFullTaxInvoiceParty;
+  buyer: SchemaBmsFullTaxInvoiceBuyer;
+  /** BE | CE — ปีบนเอกสารตามที่ร้านตั้ง */
+  calendarEra: Scalars['String']['output'];
   discount: Scalars['Float']['output'];
   docNo: Scalars['String']['output'];
   exemptAmount: Scalars['Float']['output'];
@@ -1630,6 +1897,18 @@ export type SchemaBmsInventoryLot = {
   unitCost: Maybe<Scalars['Float']['output']>;
 };
 
+export type SchemaBmsInventoryOpeningInput = {
+  confirmed: Scalars['Boolean']['input'];
+  evidence: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+  qty: Scalars['String']['input'];
+  requestId: Scalars['ID']['input'];
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+  value: Scalars['String']['input'];
+  version: Scalars['String']['input'];
+};
+
 export type SchemaBmsInventoryPolicyInput = {
   leadTimeDays: Scalars['Int']['input'];
   safetyStockDays: Scalars['Int']['input'];
@@ -1651,6 +1930,27 @@ export type SchemaBmsInventorySummary = {
   stockValue: Scalars['Float']['output'];
   totalUnits: Scalars['Int']['output'];
   variantCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsInventoryValuationReport = {
+  __typename?: 'BmsInventoryValuationReport';
+  errorCode: Maybe<Scalars['String']['output']>;
+  limit: Maybe<Scalars['Int']['output']>;
+  offset: Maybe<Scalars['Int']['output']>;
+  rows: Maybe<Array<SchemaBmsInventoryValue>>;
+  status: Scalars['String']['output'];
+  total: Maybe<Scalars['Int']['output']>;
+  truncated: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type SchemaBmsInventoryValue = {
+  __typename?: 'BmsInventoryValue';
+  qty: Scalars['String']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  unitCost: Maybe<Scalars['String']['output']>;
+  value: Maybe<Scalars['String']['output']>;
+  version: Scalars['String']['output'];
 };
 
 export type SchemaBmsInventoryWastage = {
@@ -1687,6 +1987,8 @@ export type SchemaBmsIssueFullTaxInvoiceResult = {
   cancelledAbbreviated: Maybe<SchemaBmsTaxDocument>;
   document: Maybe<SchemaBmsTaxDocument>;
   reason: Maybe<Scalars['String']['output']>;
+  /** ใบลดหนี้ที่ออกใหม่ให้อ้างใบเต็ม เมื่อบิลมีการคืนสินค้าบางส่วนไปแล้ว */
+  reissuedCreditNotes: Maybe<Array<SchemaBmsTaxDocument>>;
   skus: Maybe<Array<Scalars['String']['output']>>;
   status: Scalars['String']['output'];
 };
@@ -2124,6 +2426,64 @@ export type SchemaBmsMention = {
   readAt: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsMenuActualInput = {
+  channel: InputMaybe<Scalars['String']['input']>;
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  menuSkus: InputMaybe<Array<Scalars['String']['input']>>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsMenuActualReport = {
+  __typename?: 'BmsMenuActualReport';
+  basis: Maybe<Scalars['String']['output']>;
+  complete: Maybe<Scalars['Boolean']['output']>;
+  costBasis: Maybe<Scalars['String']['output']>;
+  errorCode: Maybe<Scalars['String']['output']>;
+  issues: Maybe<Array<Scalars['String']['output']>>;
+  observedAt: Maybe<Scalars['String']['output']>;
+  rows: Maybe<Array<SchemaBmsMenuActualRow>>;
+  status: Scalars['String']['output'];
+  totalContribution: Maybe<Scalars['String']['output']>;
+  totalUnits: Maybe<Scalars['String']['output']>;
+  truncated: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type SchemaBmsMenuActualRow = {
+  __typename?: 'BmsMenuActualRow';
+  classification: Scalars['String']['output'];
+  contribution: Maybe<Scalars['String']['output']>;
+  cost: Maybe<Scalars['String']['output']>;
+  popularityPercent: Maybe<Scalars['Float']['output']>;
+  revenue: Maybe<Scalars['String']['output']>;
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  units: Scalars['String']['output'];
+};
+
+export type SchemaBmsMenuBundlePublicationInput = {
+  kitchenStation: InputMaybe<Scalars['String']['input']>;
+  name: Scalars['String']['input'];
+  plan: SchemaBmsRestaurantMenuPlanInput;
+  sku: Scalars['String']['input'];
+  surfaces: Array<Scalars['String']['input']>;
+  vatCategory: Scalars['String']['input'];
+};
+
+export type SchemaBmsMenuProfitInput = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  method: Scalars['String']['input'];
+  month: Scalars['String']['input'];
+  reason: Scalars['String']['input'];
+  weights: InputMaybe<Array<SchemaBmsMenuProfitWeight>>;
+};
+
+export type SchemaBmsMenuProfitWeight = {
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+  weight: Scalars['Int']['input'];
+};
+
 export type SchemaBmsMessage = {
   __typename?: 'BmsMessage';
   attachment: Maybe<SchemaBmsMessageAttachment>;
@@ -2385,6 +2745,90 @@ export type SchemaBmsModifierComponentInput = {
   sku: Scalars['String']['input'];
 };
 
+export type SchemaBmsNetProfitAmounts = {
+  __typename?: 'BmsNetProfitAmounts';
+  complete: Scalars['Boolean']['output'];
+  costComplete: Scalars['Boolean']['output'];
+  creditReductionCompleted: Scalars['String']['output'];
+  expenseTotal: Maybe<Scalars['String']['output']>;
+  expensesComplete: Scalars['Boolean']['output'];
+  grossProfit: Maybe<Scalars['String']['output']>;
+  knownDepreciationExpense: Scalars['String']['output'];
+  knownExpenseTotal: Scalars['String']['output'];
+  knownGpExpense: Scalars['String']['output'];
+  knownOperatingExpense: Scalars['String']['output'];
+  knownReturnRevenue: Scalars['String']['output'];
+  knownSalesCost: Scalars['String']['output'];
+  knownSalesRevenue: Scalars['String']['output'];
+  netCost: Maybe<Scalars['String']['output']>;
+  netProfit: Maybe<Scalars['String']['output']>;
+  netRevenue: Maybe<Scalars['String']['output']>;
+  refundCompleted: Scalars['String']['output'];
+  returnQuantityCostBasis: Scalars['String']['output'];
+  revenueComplete: Scalars['Boolean']['output'];
+};
+
+export type SchemaBmsNetProfitGroup = {
+  __typename?: 'BmsNetProfitGroup';
+  bucketOnly: Scalars['Boolean']['output'];
+  channel: Maybe<Scalars['String']['output']>;
+  complete: Scalars['Boolean']['output'];
+  costComplete: Scalars['Boolean']['output'];
+  creditReductionCompleted: Scalars['String']['output'];
+  expenseTotal: Maybe<Scalars['String']['output']>;
+  expensesComplete: Scalars['Boolean']['output'];
+  grossProfit: Maybe<Scalars['String']['output']>;
+  knownDepreciationExpense: Scalars['String']['output'];
+  knownExpenseTotal: Scalars['String']['output'];
+  knownGpExpense: Scalars['String']['output'];
+  knownOperatingExpense: Scalars['String']['output'];
+  knownReturnRevenue: Scalars['String']['output'];
+  knownSalesCost: Scalars['String']['output'];
+  knownSalesRevenue: Scalars['String']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  locationName: Maybe<Scalars['String']['output']>;
+  netCost: Maybe<Scalars['String']['output']>;
+  netProfit: Maybe<Scalars['String']['output']>;
+  netRevenue: Maybe<Scalars['String']['output']>;
+  refundCompleted: Scalars['String']['output'];
+  returnQuantityCostBasis: Scalars['String']['output'];
+  revenueComplete: Scalars['Boolean']['output'];
+  sharedBranchCost: Scalars['Boolean']['output'];
+};
+
+export type SchemaBmsNetProfitIssue = {
+  __typename?: 'BmsNetProfitIssue';
+  code: Scalars['String']['output'];
+  count: Scalars['Int']['output'];
+};
+
+export type SchemaBmsNetProfitReport = {
+  __typename?: 'BmsNetProfitReport';
+  basis: Maybe<Scalars['String']['output']>;
+  branches: Maybe<Array<SchemaBmsNetProfitGroup>>;
+  channels: Maybe<Array<SchemaBmsNetProfitGroup>>;
+  complete: Maybe<Scalars['Boolean']['output']>;
+  costBasis: Maybe<Scalars['String']['output']>;
+  currency: Maybe<Scalars['String']['output']>;
+  errorCode: Maybe<Scalars['String']['output']>;
+  eventCount: Maybe<Scalars['Int']['output']>;
+  expenseBasis: Maybe<Scalars['String']['output']>;
+  issues: Maybe<Array<SchemaBmsNetProfitIssue>>;
+  month: Maybe<Scalars['String']['output']>;
+  observedAt: Maybe<Scalars['String']['output']>;
+  returnBasis: Maybe<Scalars['String']['output']>;
+  samples: Maybe<Array<SchemaBmsNetProfitSample>>;
+  status: Scalars['String']['output'];
+  totals: Maybe<SchemaBmsNetProfitAmounts>;
+  truncated: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type SchemaBmsNetProfitSample = {
+  __typename?: 'BmsNetProfitSample';
+  code: Scalars['String']['output'];
+  key: Scalars['String']['output'];
+};
+
 export type SchemaBmsOnboardingProgress = {
   __typename?: 'BmsOnboardingProgress';
   completed: Array<Scalars['String']['output']>;
@@ -2398,6 +2842,70 @@ export type SchemaBmsOpenShiftResult = {
   reason: Maybe<Scalars['String']['output']>;
   shift: Maybe<SchemaBmsPosShift>;
   status: Scalars['String']['output'];
+};
+
+export type SchemaBmsOperatingCostReport = {
+  __typename?: 'BmsOperatingCostReport';
+  complete: Scalars['Boolean']['output'];
+  currency: Scalars['String']['output'];
+  depreciationAmount: Scalars['Float']['output'];
+  duplicateCount: Scalars['Int']['output'];
+  gpAmount: Scalars['Float']['output'];
+  knownTotal: Scalars['Float']['output'];
+  month: Scalars['String']['output'];
+  operatingAmount: Scalars['Float']['output'];
+  reviewedTotal: Maybe<Scalars['Float']['output']>;
+  rows: Array<SchemaBmsOperatingCostSource>;
+  scope: Scalars['String']['output'];
+  truncated: Scalars['Boolean']['output'];
+  unresolvedCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsOperatingCostReview = {
+  __typename?: 'BmsOperatingCostReview';
+  disposition: Scalars['String']['output'];
+  duplicateKey: Maybe<Scalars['String']['output']>;
+  lifeMonths: Maybe<Scalars['Int']['output']>;
+  reason: Scalars['String']['output'];
+  residual: Maybe<Scalars['Float']['output']>;
+  sourceFingerprint: Scalars['String']['output'];
+  startMonth: Maybe<Scalars['String']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsOperatingCostReviewInput = {
+  confirmed: Scalars['Boolean']['input'];
+  disposition: Scalars['String']['input'];
+  duplicateKey: InputMaybe<Scalars['String']['input']>;
+  expectedVersion: Scalars['Int']['input'];
+  lifeMonths: InputMaybe<Scalars['Int']['input']>;
+  reason: Scalars['String']['input'];
+  residual: InputMaybe<Scalars['Float']['input']>;
+  sourceFingerprint: Scalars['String']['input'];
+  sourceKey: Scalars['String']['input'];
+  startMonth: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsOperatingCostReviewResult = {
+  __typename?: 'BmsOperatingCostReviewResult';
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsOperatingCostSource = {
+  __typename?: 'BmsOperatingCostSource';
+  amount: Maybe<Scalars['String']['output']>;
+  category: Scalars['String']['output'];
+  currency: Scalars['String']['output'];
+  eligible: Scalars['Boolean']['output'];
+  fingerprint: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  key: Scalars['String']['output'];
+  kind: Scalars['String']['output'];
+  month: Scalars['String']['output'];
+  recognizedAmount: Maybe<Scalars['Float']['output']>;
+  reference: Scalars['String']['output'];
+  review: Maybe<SchemaBmsOperatingCostReview>;
+  state: Scalars['String']['output'];
 };
 
 export type SchemaBmsOperationalAlerts = {
@@ -2518,6 +3026,33 @@ export type SchemaBmsPackAudit = {
   sizes: Scalars['Int']['output'];
   sizesWithoutBarcode: Array<Scalars['String']['output']>;
   sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsPackageCohort = {
+  __typename?: 'BmsPackageCohort';
+  conversionRate: Maybe<Scalars['Float']['output']>;
+  converted: Scalars['Int']['output'];
+  kind: Scalars['String']['output'];
+  shops: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPackageCost = {
+  __typename?: 'BmsPackageCost';
+  knownCostUsd: Maybe<Scalars['Float']['output']>;
+  providerCalls: Scalars['Int']['output'];
+  source: Scalars['String']['output'];
+  tenantId: Scalars['ID']['output'];
+  unpricedProviderCalls: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPackageMetrics = {
+  __typename?: 'BmsPackageMetrics';
+  available: Scalars['Boolean']['output'];
+  cohorts: Array<SchemaBmsPackageCohort>;
+  costs: Array<SchemaBmsPackageCost>;
+  from: Scalars['String']['output'];
+  to: Scalars['String']['output'];
+  untrackedTenants: Maybe<Scalars['Int']['output']>;
 };
 
 export type SchemaBmsParkingStatus =
@@ -2953,10 +3488,15 @@ export type SchemaBmsPharmacyProtocolInput = {
 
 export type SchemaBmsPlan = {
   __typename?: 'BmsPlan';
+  ai_credits_change_at: Maybe<Scalars['String']['output']>;
   ai_credits_monthly: Scalars['Int']['output'];
+  ai_credits_next_monthly: Maybe<Scalars['Int']['output']>;
   code: Scalars['String']['output'];
+  feature_keys: Array<Scalars['String']['output']>;
   max_ai_messages_month: Scalars['Int']['output'];
+  max_branches: Scalars['Int']['output'];
   max_channels: Scalars['Int']['output'];
+  max_devices: Scalars['Int']['output'];
   max_orders_month: Scalars['Int']['output'];
   max_products: Scalars['Int']['output'];
   max_users: Scalars['Int']['output'];
@@ -5884,6 +6424,20 @@ export type SchemaBmsPosVoidInput = {
   reason: Scalars['String']['input'];
 };
 
+export type SchemaBmsPricePublicationResult = {
+  __typename?: 'BmsPricePublicationResult';
+  errorCode: Maybe<Scalars['String']['output']>;
+  fingerprint: Maybe<Scalars['String']['output']>;
+  snapshot: Maybe<Scalars['JSON']['output']>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsPricePublicationReview = {
+  confirmed: Scalars['Boolean']['input'];
+  fingerprint: Scalars['String']['input'];
+  requestId: Scalars['ID']['input'];
+};
+
 export type SchemaBmsPriceTier = {
   __typename?: 'BmsPriceTier';
   discountPct: Maybe<Scalars['Float']['output']>;
@@ -6148,6 +6702,7 @@ export type SchemaBmsProductPromotion = {
   note: Maybe<Scalars['String']['output']>;
   productName: Maybe<Scalars['String']['output']>;
   productSku: Scalars['String']['output'];
+  salesSurface: Maybe<Scalars['String']['output']>;
   startsAt: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['String']['output'];
 };
@@ -6164,6 +6719,7 @@ export type SchemaBmsProductPromotionInput = {
   locationId: InputMaybe<Scalars['ID']['input']>;
   note: InputMaybe<Scalars['String']['input']>;
   productSku: Scalars['String']['input'];
+  salesSurface: InputMaybe<Scalars['String']['input']>;
   startsAt: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -6188,21 +6744,29 @@ export type SchemaBmsProductReadinessIssue = {
 export type SchemaBmsProductRecipe = {
   __typename?: 'BmsProductRecipe';
   active: Scalars['Boolean']['output'];
+  costAssumptions: SchemaBmsRecipeCostAssumptions;
+  directItems: Array<SchemaBmsRecipeComponent>;
   id: Scalars['ID']['output'];
   items: Array<SchemaBmsRecipeComponent>;
   outputQty: Scalars['Int']['output'];
   productSku: Scalars['String']['output'];
   size: Scalars['String']['output'];
+  sopSteps: Array<Scalars['String']['output']>;
+  subrecipes: Array<SchemaBmsRecipeReference>;
   version: Scalars['Int']['output'];
 };
 
 export type SchemaBmsProductRecipeInput = {
   active: InputMaybe<Scalars['Boolean']['input']>;
+  costAssumptions: InputMaybe<SchemaBmsRecipeCostAssumptionsInput>;
+  directItems: InputMaybe<Array<SchemaBmsRecipeComponentInput>>;
   id: InputMaybe<Scalars['ID']['input']>;
-  items: Array<SchemaBmsRecipeComponentInput>;
+  items: InputMaybe<Array<SchemaBmsRecipeComponentInput>>;
   outputQty: InputMaybe<Scalars['Int']['input']>;
   productSku: Scalars['String']['input'];
   size: Scalars['String']['input'];
+  sopSteps: InputMaybe<Array<Scalars['String']['input']>>;
+  subrecipes: InputMaybe<Array<SchemaBmsRecipeReferenceInput>>;
 };
 
 export type SchemaBmsProductStockPolicy = {
@@ -6268,6 +6832,18 @@ export type SchemaBmsProfitSummary = {
   profit: Maybe<Scalars['Float']['output']>;
   revenue: Scalars['Float']['output'];
   to: Scalars['String']['output'];
+};
+
+export type SchemaBmsPublishPriceInput = {
+  endsAt: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  mode: Scalars['String']['input'];
+  packCode: InputMaybe<Scalars['String']['input']>;
+  plan: SchemaBmsRestaurantPricePlanInput;
+  quantity: Scalars['Int']['input'];
+  salesSurface: InputMaybe<Scalars['String']['input']>;
+  scenarioIndex: Scalars['Int']['input'];
+  startsAt: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SchemaBmsPurchaseItem = {
@@ -6372,6 +6948,86 @@ export type SchemaBmsRecipeComponentInput = {
   qty: Scalars['Int']['input'];
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
+};
+
+export type SchemaBmsRecipeCostAssumptions = {
+  __typename?: 'BmsRecipeCostAssumptions';
+  electricity: Maybe<SchemaBmsRecipeCostRate>;
+  gas: Maybe<SchemaBmsRecipeCostRate>;
+  labor: Maybe<SchemaBmsRecipeCostRate>;
+};
+
+export type SchemaBmsRecipeCostAssumptionsInput = {
+  electricity: InputMaybe<SchemaBmsRecipeCostRateInput>;
+  gas: InputMaybe<SchemaBmsRecipeCostRateInput>;
+  labor: InputMaybe<SchemaBmsRecipeCostRateInput>;
+};
+
+export type SchemaBmsRecipeCostEstimate = {
+  __typename?: 'BmsRecipeCostEstimate';
+  calculatedAt: Scalars['String']['output'];
+  costBasis: Maybe<Scalars['String']['output']>;
+  currency: Scalars['String']['output'];
+  ingredientBatchCost: Maybe<Scalars['Float']['output']>;
+  ingredients: Array<SchemaBmsRecipeIngredientCost>;
+  knownBatchCost: Scalars['Float']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  missingIngredientCount: Scalars['Int']['output'];
+  outputQty: Scalars['Int']['output'];
+  overhead: Array<SchemaBmsRecipeOverheadCost>;
+  recipeId: Scalars['ID']['output'];
+  recipeVersion: Scalars['Int']['output'];
+  scope: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  totalBatchCost: Maybe<Scalars['Float']['output']>;
+  totalUnitCost: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsRecipeCostRate = {
+  __typename?: 'BmsRecipeCostRate';
+  quantity: Scalars['Float']['output'];
+  rate: Scalars['Float']['output'];
+  source: Scalars['String']['output'];
+};
+
+export type SchemaBmsRecipeCostRateInput = {
+  quantity: Scalars['Float']['input'];
+  rate: Scalars['Float']['input'];
+  source: Scalars['String']['input'];
+};
+
+export type SchemaBmsRecipeIngredientCost = {
+  __typename?: 'BmsRecipeIngredientCost';
+  batchCost: Maybe<Scalars['Float']['output']>;
+  qty: Scalars['Int']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  unitCost: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsRecipeOverheadCost = {
+  __typename?: 'BmsRecipeOverheadCost';
+  batchCost: Maybe<Scalars['Float']['output']>;
+  category: Scalars['String']['output'];
+  quantity: Maybe<Scalars['Float']['output']>;
+  rate: Maybe<Scalars['Float']['output']>;
+  source: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsRecipeReference = {
+  __typename?: 'BmsRecipeReference';
+  outputQty: Scalars['Int']['output'];
+  productSku: Scalars['String']['output'];
+  qty: Scalars['Int']['output'];
+  recipeId: Scalars['ID']['output'];
+  size: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRecipeReferenceInput = {
+  qty: Scalars['Int']['input'];
+  recipeId: Scalars['ID']['input'];
 };
 
 export type SchemaBmsReconciliationReport = {
@@ -6529,6 +7185,26 @@ export type SchemaBmsRestaurantArea = {
   tableCount: Scalars['Int']['output'];
 };
 
+export type SchemaBmsRestaurantBundleAnalysis = {
+  __typename?: 'BmsRestaurantBundleAnalysis';
+  baselineContribution: Maybe<Scalars['Float']['output']>;
+  baselineCustomerTotal: Scalars['Float']['output'];
+  contributionDelta: Maybe<Scalars['Float']['output']>;
+  customerSavings: Scalars['Float']['output'];
+  price: SchemaBmsRestaurantPriceScenario;
+  recipeCost: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsRestaurantBundlePartInput = {
+  qty: Scalars['Int']['input'];
+  recipeId: Scalars['ID']['input'];
+};
+
+export type SchemaBmsRestaurantBundlePlanInput = {
+  parts: Array<SchemaBmsRestaurantBundlePartInput>;
+  scenario: SchemaBmsRestaurantPriceScenarioInput;
+};
+
 export type SchemaBmsRestaurantCancellationLoss = {
   __typename?: 'BmsRestaurantCancellationLoss';
   absorbedAmount: Scalars['Float']['output'];
@@ -6542,6 +7218,51 @@ export type SchemaBmsRestaurantFloorAdmin = {
   areas: Array<SchemaBmsRestaurantArea>;
   publishTableDetails: Scalars['Boolean']['output'];
   tables: Array<SchemaBmsRestaurantTableAdmin>;
+};
+
+export type SchemaBmsRestaurantMenuAnalysis = {
+  __typename?: 'BmsRestaurantMenuAnalysis';
+  bundle: Maybe<SchemaBmsRestaurantBundleAnalysis>;
+  contributionThreshold: Maybe<Scalars['Float']['output']>;
+  popularityThresholdPercent: Scalars['Float']['output'];
+  projectedProfit: Maybe<Scalars['Float']['output']>;
+  rows: Array<SchemaBmsRestaurantMenuAnalysisRow>;
+  status: Scalars['String']['output'];
+  totalContribution: Maybe<Scalars['Float']['output']>;
+  totalUnits: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsRestaurantMenuAnalysisRow = {
+  __typename?: 'BmsRestaurantMenuAnalysisRow';
+  classification: Scalars['String']['output'];
+  label: Scalars['String']['output'];
+  popularityPercent: Maybe<Scalars['Float']['output']>;
+  price: SchemaBmsRestaurantPriceScenario;
+  recipeId: Scalars['ID']['output'];
+  units: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsRestaurantMenuItemInput = {
+  recipeId: Scalars['ID']['input'];
+  scenario: SchemaBmsRestaurantPriceScenarioInput;
+};
+
+export type SchemaBmsRestaurantMenuPlan = {
+  __typename?: 'BmsRestaurantMenuPlan';
+  analysis: Maybe<SchemaBmsRestaurantMenuAnalysis>;
+  errorCode: Maybe<Scalars['String']['output']>;
+  estimates: Array<SchemaBmsRecipeCostEstimate>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsRestaurantMenuPlanInput = {
+  assumptionSource: Scalars['String']['input'];
+  bundle: InputMaybe<SchemaBmsRestaurantBundlePlanInput>;
+  costBasis: InputMaybe<Scalars['String']['input']>;
+  dailyFixedCost: InputMaybe<Scalars['Float']['input']>;
+  dailyTargetProfit: Scalars['Float']['input'];
+  items: Array<SchemaBmsRestaurantMenuItemInput>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
 };
 
 export type SchemaBmsRestaurantOperationsReport = {
@@ -6558,6 +7279,55 @@ export type SchemaBmsRestaurantOperationsReport = {
   qrRejectedCount: Scalars['Int']['output'];
   qrSubmissionCount: Scalars['Int']['output'];
   servedTicketCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRestaurantPricePlan = {
+  __typename?: 'BmsRestaurantPricePlan';
+  errorCode: Maybe<Scalars['String']['output']>;
+  estimate: Maybe<SchemaBmsRecipeCostEstimate>;
+  scenarios: Array<SchemaBmsRestaurantPriceScenario>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsRestaurantPricePlanInput = {
+  assumptionSource: Scalars['String']['input'];
+  costBasis: InputMaybe<Scalars['String']['input']>;
+  dailyFixedCost: InputMaybe<Scalars['Float']['input']>;
+  dailyTargetProfit: Scalars['Float']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  recipeId: Scalars['ID']['input'];
+  scenarios: Array<SchemaBmsRestaurantPriceScenarioInput>;
+};
+
+export type SchemaBmsRestaurantPriceScenario = {
+  __typename?: 'BmsRestaurantPriceScenario';
+  breakEvenCustomerSales: Maybe<Scalars['Float']['output']>;
+  breakEvenUnits: Maybe<Scalars['Float']['output']>;
+  contribution: Maybe<Scalars['Float']['output']>;
+  contributionMarginPercent: Maybe<Scalars['Float']['output']>;
+  customerTotal: Scalars['Float']['output'];
+  gpAmount: Scalars['Float']['output'];
+  label: Scalars['String']['output'];
+  netRevenue: Scalars['Float']['output'];
+  outputVat: Scalars['Float']['output'];
+  projectedDailyProfit: Maybe<Scalars['Float']['output']>;
+  status: Scalars['String']['output'];
+  targetDailyUnits: Maybe<Scalars['Float']['output']>;
+  targetPrice: Maybe<Scalars['Float']['output']>;
+  targetPriceStatus: Scalars['String']['output'];
+  variableUnitCost: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsRestaurantPriceScenarioInput = {
+  expectedDailyUnits: InputMaybe<Scalars['Int']['input']>;
+  extraUnitCost: Scalars['Float']['input'];
+  gpBasis: Scalars['String']['input'];
+  gpPercent: Scalars['Float']['input'];
+  label: Scalars['String']['input'];
+  price: Scalars['Float']['input'];
+  targetMarginPercent: InputMaybe<Scalars['Float']['input']>;
+  vatMode: Scalars['String']['input'];
+  vatPercent: Scalars['Float']['input'];
 };
 
 export type SchemaBmsRestaurantTableAdmin = {
@@ -6805,6 +7575,91 @@ export type SchemaBmsSalesByTierRow = {
   revenue: Scalars['Float']['output'];
   tierCode: Scalars['String']['output'];
   tierName: Scalars['String']['output'];
+};
+
+export type SchemaBmsSalesEvidence = {
+  __typename?: 'BmsSalesEvidence';
+  allocationBasis: Maybe<Scalars['String']['output']>;
+  basis: Maybe<Scalars['String']['output']>;
+  channel: Maybe<Scalars['String']['output']>;
+  costBasis: Maybe<Scalars['String']['output']>;
+  currency: Maybe<Scalars['String']['output']>;
+  currencyBasis: Maybe<Scalars['String']['output']>;
+  diagnosticSampleLimit: Maybe<Scalars['Int']['output']>;
+  errorCode: Maybe<Scalars['String']['output']>;
+  eventCount: Maybe<Scalars['Int']['output']>;
+  from: Maybe<Scalars['String']['output']>;
+  groups: Array<SchemaBmsSalesEvidenceGroup>;
+  issues: Array<SchemaBmsSalesEvidenceIssue>;
+  legacyCostLines: Maybe<Scalars['Int']['output']>;
+  locationId: Maybe<Scalars['ID']['output']>;
+  missingCostLines: Maybe<Scalars['Int']['output']>;
+  netCost: Maybe<Scalars['String']['output']>;
+  netProfit: Maybe<Scalars['String']['output']>;
+  netRevenue: Maybe<Scalars['String']['output']>;
+  observedAt: Maybe<Scalars['String']['output']>;
+  refundBasis: Maybe<Scalars['String']['output']>;
+  returnVatBasis: Maybe<Scalars['String']['output']>;
+  samples: Array<SchemaBmsSalesEvidenceSample>;
+  status: Scalars['String']['output'];
+  to: Maybe<Scalars['String']['output']>;
+  totals: Maybe<SchemaBmsSalesEvidenceAmounts>;
+  truncated: Maybe<Scalars['Boolean']['output']>;
+};
+
+export type SchemaBmsSalesEvidenceAmounts = {
+  __typename?: 'BmsSalesEvidenceAmounts';
+  backofficeReturnValue: Scalars['String']['output'];
+  creditReductionCompleted: Scalars['String']['output'];
+  extras: Scalars['String']['output'];
+  orderDiscount: Scalars['String']['output'];
+  paymentRefundUnallocated: Scalars['String']['output'];
+  refundCompleted: Scalars['String']['output'];
+  returnAllocatedExVat: Scalars['String']['output'];
+  returnAllocatedVat: Scalars['String']['output'];
+  returnClaim: Scalars['String']['output'];
+  returnKnownCostBasis: Scalars['String']['output'];
+  returnKnownExtrasGross: Scalars['String']['output'];
+  returnKnownMerchandiseGross: Scalars['String']['output'];
+  returnKnownRounding: Scalars['String']['output'];
+  returnKnownShippingGross: Scalars['String']['output'];
+  rounding: Scalars['String']['output'];
+  saleGross: Scalars['String']['output'];
+  saleKnownCost: Scalars['String']['output'];
+  saleKnownExVat: Scalars['String']['output'];
+  saleKnownVat: Scalars['String']['output'];
+  saleNet: Scalars['String']['output'];
+  shipping: Scalars['String']['output'];
+  taxAdjustmentGross: Scalars['String']['output'];
+};
+
+export type SchemaBmsSalesEvidenceGroup = {
+  __typename?: 'BmsSalesEvidenceGroup';
+  channel: Scalars['String']['output'];
+  day: Scalars['String']['output'];
+  eventCount: Scalars['Int']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  totals: SchemaBmsSalesEvidenceAmounts;
+};
+
+export type SchemaBmsSalesEvidenceInput = {
+  channel: InputMaybe<Scalars['String']['input']>;
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsSalesEvidenceIssue = {
+  __typename?: 'BmsSalesEvidenceIssue';
+  code: Scalars['String']['output'];
+  count: Scalars['Int']['output'];
+};
+
+export type SchemaBmsSalesEvidenceSample = {
+  __typename?: 'BmsSalesEvidenceSample';
+  codes: Array<Scalars['String']['output']>;
+  eventKey: Scalars['String']['output'];
+  orderId: Scalars['ID']['output'];
 };
 
 export type SchemaBmsSalesSummary = {
@@ -7414,9 +8269,13 @@ export type SchemaBmsTaxEstablishment = {
 export type SchemaBmsTaxInvoiceBuyerInput = {
   address: InputMaybe<Scalars['String']['input']>;
   branchCode: InputMaybe<Scalars['String']['input']>;
+  /** INDIVIDUAL | COMPANY | FOREIGNER — ไม่ระบุ = COMPANY (พฤติกรรมเดิม) */
+  buyerType: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
   phone: InputMaybe<Scalars['String']['input']>;
-  taxId: Scalars['String']['input'];
+  /** บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการจด VAT (buyerType COMPANY หรือไม่ระบุ) */
+  taxId: InputMaybe<Scalars['String']['input']>;
+  vatRegistered: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 /** ค่าตั้งภาษีของร้าน — มีผลกับบิลใหม่เท่านั้น เอกสารเก่าเก็บอัตราของตัวเองไว้แล้ว */
@@ -7951,6 +8810,8 @@ export type SchemaMutation = {
   bmsClosePosShift: SchemaBmsCloseShiftResult;
   bmsCommissionRule: SchemaBmsMobileCommissionRuleActionResult;
   bmsCompleteOrder: Scalars['Boolean']['output'];
+  bmsConfirmInventoryValue: SchemaBmsCostingActionResult;
+  bmsConfirmMenuNetProfit: SchemaBmsCostingActionResult;
   bmsConfirmPayment: SchemaBmsPaymentResult;
   bmsCreateExpenseDocument: SchemaBmsExpenseDocument;
   bmsCreateInboxDiagnosticMessage: SchemaBmsInboxDiagnosticMessageResult;
@@ -8102,6 +8963,8 @@ export type SchemaMutation = {
   bmsPosUpdateBoardGameReservation: SchemaBmsPosBoardGameWaitlistEntry;
   bmsPosVerifyCashier: SchemaBmsPosCashier;
   bmsPosVoid: SchemaBmsPosReturnActionResult;
+  bmsPublishMenuBundle: SchemaBmsPricePublicationResult;
+  bmsPublishPricePlan: SchemaBmsCostingActionResult;
   bmsPublishProduct: SchemaBmsProductReadiness;
   bmsReadAiLimitNotification: Scalars['Boolean']['output'];
   bmsReceivePurchaseOrder: SchemaBmsPurchaseResult;
@@ -8133,6 +8996,7 @@ export type SchemaMutation = {
   bmsReviewAiQualityCase: SchemaBmsAiQualityCaseDetail;
   bmsReviewAiSynonymCandidate: SchemaBmsAiSynonymCandidate;
   bmsReviewMemberTier: SchemaBmsTierReviewResult;
+  bmsReviewOperatingCost: SchemaBmsOperatingCostReviewResult;
   bmsReviewPharmacyProductPolicy: SchemaBmsPharmacyProductPolicy;
   bmsReviewPharmacyProtocol: SchemaBmsPharmacyProtocol;
   bmsReviewRestaurantRequest: SchemaBmsMobileRestaurantRequestActionResult;
@@ -8141,6 +9005,7 @@ export type SchemaMutation = {
   bmsRunReadOnlySql: SchemaBmsSqlResult;
   bmsRunSandboxedJs: SchemaBmsJsConsoleResult;
   bmsRunSql: SchemaBmsSqlResult;
+  bmsSaveCostAllocation: SchemaBmsCostAllocationSaveResult;
   bmsSavePharmacyGuidanceDraft: SchemaBmsPharmacyGuidanceTemplate;
   bmsSaveRestaurantFloorLayout: Scalars['Boolean']['output'];
   bmsSeedPharmacyGuidanceDrafts: Scalars['Int']['output'];
@@ -8483,6 +9348,17 @@ export type SchemaMutationBmsCompleteOrderArgs = {
 };
 
 
+export type SchemaMutationBmsConfirmInventoryValueArgs = {
+  input: SchemaBmsInventoryOpeningInput;
+};
+
+
+export type SchemaMutationBmsConfirmMenuNetProfitArgs = {
+  input: SchemaBmsMenuProfitInput;
+  review: SchemaBmsPricePublicationReview;
+};
+
+
 export type SchemaMutationBmsConfirmPaymentArgs = {
   id: Scalars['ID']['input'];
 };
@@ -8738,6 +9614,7 @@ export type SchemaMutationBmsMarkMentionReadArgs = {
 export type SchemaMutationBmsMergeCustomersArgs = {
   keepId: Scalars['ID']['input'];
   mergeId: Scalars['ID']['input'];
+  review: InputMaybe<SchemaBmsCustomerMergeReviewInput>;
 };
 
 
@@ -9227,6 +10104,18 @@ export type SchemaMutationBmsPosVoidArgs = {
 };
 
 
+export type SchemaMutationBmsPublishMenuBundleArgs = {
+  input: SchemaBmsMenuBundlePublicationInput;
+  review: SchemaBmsPricePublicationReview;
+};
+
+
+export type SchemaMutationBmsPublishPricePlanArgs = {
+  input: SchemaBmsPublishPriceInput;
+  review: SchemaBmsPricePublicationReview;
+};
+
+
 export type SchemaMutationBmsPublishProductArgs = {
   sku: Scalars['String']['input'];
 };
@@ -9284,6 +10173,11 @@ export type SchemaMutationBmsReferAssessmentToDoctorArgs = {
   assessmentId: Scalars['ID']['input'];
   expectedVersion: Scalars['Int']['input'];
   reason: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsRefreshRetentionArgs = {
+  existingOnly?: InputMaybe<Scalars['Boolean']['input']>;
 };
 
 
@@ -9387,6 +10281,11 @@ export type SchemaMutationBmsReviewMemberTierArgs = {
 };
 
 
+export type SchemaMutationBmsReviewOperatingCostArgs = {
+  input: SchemaBmsOperatingCostReviewInput;
+};
+
+
 export type SchemaMutationBmsReviewPharmacyProductPolicyArgs = {
   decision: Scalars['String']['input'];
   productSku: Scalars['String']['input'];
@@ -9421,6 +10320,11 @@ export type SchemaMutationBmsRunSandboxedJsArgs = {
 
 export type SchemaMutationBmsRunSqlArgs = {
   sql: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsSaveCostAllocationArgs = {
+  input: SchemaBmsCostAllocationSaveInput;
 };
 
 
@@ -10528,19 +11432,23 @@ export type SchemaQuery = {
   bmsConversation: Maybe<SchemaBmsConversation>;
   bmsConversationTimeline: Array<SchemaBmsTimelineEntry>;
   bmsConversations: Array<SchemaBmsConversation>;
+  bmsCostAllocations: SchemaBmsCostAllocationReport;
   bmsCouponLocations: Array<SchemaBmsLocation>;
   bmsCouponRedemptions: Array<SchemaBmsCouponRedemption>;
   bmsCoupons: Array<SchemaBmsCoupon>;
+  bmsCreditNoteView: Maybe<SchemaBmsCreditNoteView>;
   bmsCustomer: Maybe<SchemaBmsCustomer>;
   bmsCustomer360: Maybe<SchemaBmsCustomer360>;
   bmsCustomerInsights: Maybe<SchemaBmsCustomerInsights>;
   bmsCustomerLocations: Array<SchemaBmsLocation>;
+  bmsCustomerMergePreview: SchemaBmsCustomerMergePreview;
   bmsCustomerOrderDetail: Maybe<SchemaBmsCustomerOrderDetail>;
   bmsCustomerTimeline: Array<SchemaBmsCustomerTimelineEntry>;
   bmsCustomers: Array<SchemaBmsCustomer>;
   bmsDashboard: SchemaBmsDashboard;
   bmsEmergencyFacilities: Array<SchemaBmsEmergencyFacility>;
   bmsEmergencyFacilityLocations: Array<SchemaBmsLocation>;
+  bmsEntitlements: SchemaBmsEntitlements;
   bmsEtaxSubmissions: Array<SchemaBmsEtaxSubmission>;
   bmsEtaxSummary: SchemaBmsEtaxSummary;
   bmsExpenseDocuments: SchemaBmsExpenseDocumentList;
@@ -10548,6 +11456,7 @@ export type SchemaQuery = {
   bmsExpenseSuppliers: Array<SchemaBmsSupplier>;
   bmsExpenseTaxSummary: SchemaBmsExpenseTaxSummary;
   bmsExpiringLots: Array<SchemaBmsInventoryLot>;
+  bmsFeatureAccess: Array<SchemaBmsFeatureAccess>;
   bmsFollowupAnalytics: SchemaBmsFollowupAnalytics;
   bmsFollowupHistory: Array<SchemaBmsFollowupHistoryEntry>;
   bmsFollowupQueue: Array<SchemaBmsFollowupJob>;
@@ -10560,6 +11469,7 @@ export type SchemaQuery = {
   bmsInventoryActionCenter: SchemaBmsInventoryActionCenter;
   bmsInventoryLots: Array<SchemaBmsInventoryLot>;
   bmsInventorySummary: SchemaBmsInventorySummary;
+  bmsInventoryValuation: SchemaBmsInventoryValuationReport;
   bmsInventoryWastage: Array<SchemaBmsInventoryWastage>;
   bmsIsPlatformAdmin: Scalars['Boolean']['output'];
   bmsJsConsoleEnabled: Scalars['Boolean']['output'];
@@ -10587,17 +11497,21 @@ export type SchemaQuery = {
   bmsMembers: SchemaBmsMemberPage;
   bmsMembersExpiringPoints: Array<SchemaBmsExpiringPointsRow>;
   bmsMembershipTiers: Array<SchemaBmsMembershipTier>;
+  bmsMenuNetProfit: SchemaBmsPricePublicationResult;
   bmsMobileRestaurantRequests: SchemaBmsMobileRestaurantRequestsResult;
   bmsMyMentions: Array<SchemaBmsMention>;
   bmsMyMentionsUnreadCount: Scalars['Int']['output'];
   bmsMyTenant: SchemaBmsTenantInfo;
+  bmsNetProfit: SchemaBmsNetProfitReport;
   bmsOnboardingProgress: SchemaBmsOnboardingProgress;
+  bmsOperatingCosts: SchemaBmsOperatingCostReport;
   bmsOperationalAlerts: SchemaBmsOperationalAlerts;
   bmsOrder: Maybe<SchemaBmsOrder>;
   bmsOrderJourney: Maybe<SchemaBmsOrderJourney>;
   bmsOrderLocations: Array<SchemaBmsLocation>;
   bmsOrders: Array<SchemaBmsOrder>;
   bmsPackToolsConfigured: Scalars['Boolean']['output'];
+  bmsPackageMetrics: SchemaBmsPackageMetrics;
   bmsPayment: Maybe<SchemaBmsPayment>;
   bmsPayments: Array<SchemaBmsPayment>;
   bmsPermissionCatalog: Array<Scalars['String']['output']>;
@@ -10661,6 +11575,10 @@ export type SchemaQuery = {
   bmsPosStockCounts: SchemaBmsPosStockCountsResult;
   bmsPosStockTransfers: SchemaBmsPosStockTransfersResult;
   bmsPosStoreCredit: SchemaBmsPosStoreCreditResult;
+  bmsPreviewCostAllocation: SchemaBmsCostAllocationPreview;
+  bmsPreviewMenuBundle: SchemaBmsPricePublicationResult;
+  bmsPreviewMenuNetProfit: SchemaBmsPricePublicationResult;
+  bmsPreviewPricePublication: SchemaBmsPricePublicationResult;
   bmsProductBundleItems: Array<SchemaBmsBundleItem>;
   bmsProductBySku: Maybe<SchemaBmsProduct>;
   bmsProductCategories: Array<SchemaBmsProductCategory>;
@@ -10678,6 +11596,7 @@ export type SchemaQuery = {
   bmsPublicPlans: Array<SchemaBmsPlan>;
   bmsPurchaseOrder: Maybe<SchemaBmsPurchaseOrder>;
   bmsPurchaseOrders: Array<SchemaBmsPurchaseOrder>;
+  bmsRecipeCostEstimate: Maybe<SchemaBmsRecipeCostEstimate>;
   bmsReportDeliveries: Array<SchemaBmsReportDelivery>;
   bmsReportDeliveriesForTenant: Array<SchemaBmsReportDelivery>;
   bmsReportSubscription: SchemaBmsReportSubscription;
@@ -10685,6 +11604,9 @@ export type SchemaQuery = {
   bmsRestaurantCancellationLossReport: Array<SchemaBmsRestaurantCancellationLoss>;
   bmsRestaurantFloorAdmin: SchemaBmsRestaurantFloorAdmin;
   bmsRestaurantFloorLocations: Array<SchemaBmsLocation>;
+  bmsRestaurantMenuActual: SchemaBmsMenuActualReport;
+  bmsRestaurantMenuPlan: SchemaBmsRestaurantMenuPlan;
+  bmsRestaurantPricePlan: SchemaBmsRestaurantPricePlan;
   bmsRestaurantTableQr: Maybe<SchemaBmsRestaurantTableQr>;
   bmsRestockDeliveries: Array<SchemaBmsRestockDelivery>;
   bmsRestockMetrics: SchemaBmsRestockMetrics;
@@ -10698,6 +11620,7 @@ export type SchemaQuery = {
   bmsRevisionHistory: Array<SchemaBmsRevisionEntry>;
   bmsRolePermissions: Array<SchemaBmsRolePermissions>;
   bmsSalesByTier: Array<SchemaBmsSalesByTierRow>;
+  bmsSalesEvidence: SchemaBmsSalesEvidence;
   bmsSalesSummary: SchemaBmsSalesSummary;
   bmsSalesTaxReport: SchemaBmsSalesTaxReportSummary;
   bmsShipment: Maybe<SchemaBmsShipment>;
@@ -10920,8 +11843,18 @@ export type SchemaQueryBmsConversationsArgs = {
 };
 
 
+export type SchemaQueryBmsCostAllocationsArgs = {
+  month: Scalars['String']['input'];
+};
+
+
 export type SchemaQueryBmsCouponRedemptionsArgs = {
   couponId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsCreditNoteViewArgs = {
+  documentId: Scalars['ID']['input'];
 };
 
 
@@ -10940,6 +11873,12 @@ export type SchemaQueryBmsCustomer360Args = {
 
 export type SchemaQueryBmsCustomerInsightsArgs = {
   customerId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsCustomerMergePreviewArgs = {
+  keepId: Scalars['ID']['input'];
+  mergeId: Scalars['ID']['input'];
 };
 
 
@@ -11040,6 +11979,14 @@ export type SchemaQueryBmsInventorySummaryArgs = {
 };
 
 
+export type SchemaQueryBmsInventoryValuationArgs = {
+  limit: InputMaybe<Scalars['Int']['input']>;
+  locationId: Scalars['ID']['input'];
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type SchemaQueryBmsInventoryWastageArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
 };
@@ -11127,9 +12074,25 @@ export type SchemaQueryBmsMembershipTiersArgs = {
 };
 
 
+export type SchemaQueryBmsMenuNetProfitArgs = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  month: Scalars['String']['input'];
+};
+
+
 export type SchemaQueryBmsMyMentionsArgs = {
   limit: InputMaybe<Scalars['Int']['input']>;
   unreadOnly: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type SchemaQueryBmsNetProfitArgs = {
+  month: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsOperatingCostsArgs = {
+  month: Scalars['String']['input'];
 };
 
 
@@ -11149,6 +12112,12 @@ export type SchemaQueryBmsOrdersArgs = {
   offset?: InputMaybe<Scalars['Int']['input']>;
   search: InputMaybe<Scalars['String']['input']>;
   status: InputMaybe<SchemaBmsOrderStatus>;
+};
+
+
+export type SchemaQueryBmsPackageMetricsArgs = {
+  from: Scalars['String']['input'];
+  to: Scalars['String']['input'];
 };
 
 
@@ -11378,6 +12347,26 @@ export type SchemaQueryBmsPosStoreCreditArgs = {
 };
 
 
+export type SchemaQueryBmsPreviewCostAllocationArgs = {
+  input: SchemaBmsCostAllocationPreviewInput;
+};
+
+
+export type SchemaQueryBmsPreviewMenuBundleArgs = {
+  input: SchemaBmsMenuBundlePublicationInput;
+};
+
+
+export type SchemaQueryBmsPreviewMenuNetProfitArgs = {
+  input: SchemaBmsMenuProfitInput;
+};
+
+
+export type SchemaQueryBmsPreviewPricePublicationArgs = {
+  input: SchemaBmsPublishPriceInput;
+};
+
+
 export type SchemaQueryBmsProductBundleItemsArgs = {
   bundleSku: Scalars['String']['input'];
 };
@@ -11459,6 +12448,13 @@ export type SchemaQueryBmsPurchaseOrdersArgs = {
 };
 
 
+export type SchemaQueryBmsRecipeCostEstimateArgs = {
+  costBasis: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  recipeId: Scalars['ID']['input'];
+};
+
+
 export type SchemaQueryBmsReportDeliveriesArgs = {
   limit: InputMaybe<Scalars['Int']['input']>;
 };
@@ -11472,6 +12468,21 @@ export type SchemaQueryBmsReportDeliveriesForTenantArgs = {
 
 export type SchemaQueryBmsRestaurantFloorAdminArgs = {
   locationId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsRestaurantMenuActualArgs = {
+  input: SchemaBmsMenuActualInput;
+};
+
+
+export type SchemaQueryBmsRestaurantMenuPlanArgs = {
+  input: SchemaBmsRestaurantMenuPlanInput;
+};
+
+
+export type SchemaQueryBmsRestaurantPricePlanArgs = {
+  input: SchemaBmsRestaurantPricePlanInput;
 };
 
 
@@ -11525,6 +12536,11 @@ export type SchemaQueryBmsRevisionHistoryArgs = {
   entityId: Scalars['ID']['input'];
   kind: SchemaBmsRevisionKind;
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsSalesEvidenceArgs = {
+  input: SchemaBmsSalesEvidenceInput;
 };
 
 

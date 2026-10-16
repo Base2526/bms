@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { query } from '../apps/web/lib/db';
+import { getTenantPlan } from '../apps/web/lib/bms/plans';
 import {
   AiUsageAdmissionError, currentYearMonth, finalizeAiUsageEvent,
   getAiUsage, recordAiProviderAttempt, recordByokAiUsage, recordSharedAiRetryUsage,
@@ -42,9 +43,10 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
     const ids = await Promise.all([reserve(tenant), reserve(tenant)]);
     await Promise.all(ids.map(id => recordAiProviderAttempt(id)));
     const usage = await getAiUsage(tenant);
-    assert.equal(usage.unlimited, true);
-    assert.equal(usage.count, 0);
-    assert.equal(usage.remaining, -1);
+    const limit = (await getTenantPlan(tenant)).ai_credits_monthly;
+    assert.equal(usage.unlimited, limit < 0);
+    assert.equal(usage.count, limit < 0 ? 0 : 3);
+    assert.equal(usage.remaining, limit < 0 ? -1 : limit - 3);
     assert.equal(usage.sharedBudgetLimitUsd, -1);
     assert.equal(usage.sharedBudgetRemainingUsd, -1);
     assert.equal(usage.sharedBudgetBlocked, false);
@@ -216,7 +218,7 @@ test('platform AI cost admission is durable, tenant scoped and serialized', asyn
   await t.test('catalog matches all three packages and a reduced grant preserves recorded consumption', async () => {
     const plans = (await query("SELECT code,price_monthly,ai_credits_monthly,max_ai_messages_month FROM bms_plans ORDER BY code")).rows;
     assert.deepEqual(plans.map(p => [p.code, Number(p.price_monthly),p.ai_credits_monthly,p.max_ai_messages_month]),
-      [['business',1990,-1,-1],['free',0,100,100],['pro',599,1000,1000]]);
+      [['business',1990,5000,5000],['free',0,100,100],['pro',599,1000,1000]]);
     const tenant = await shop();
     await getAiUsage(tenant);
     await query("UPDATE bms_ai_usage_monthly SET credits_granted=1000,credits_consumed=130,credits_bonus=5,credits_adjusted=2 WHERE tenant_id=$1", [tenant]);

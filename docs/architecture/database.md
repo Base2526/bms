@@ -767,6 +767,81 @@ THB 599, Business unlimited at THB 1,990. Updates `price_monthly`, `ai_credits_m
 UTC-month events are not reassigned. Runtime grant reconciliation preserves consumption and
 adjustments. Legacy budget API limit/remaining are -1, status NORMAL, blocked false.
 
+**Cloud freemium phase one (`10.73__bms_freemium_phase_one.sql`)** — updates the existing global
+`bms_plans` catalogue: Free/Pro/Business have 100/unlimited/unlimited products, 2/5/20 users
+(including owner), and unlimited orders. Prices stay 0/599/1,990 THB. No tenant resources are
+deleted or disabled; quota checks continue to reject additions only. Product counts include all
+SKUs, not only active ones. Channel limits remain legacy metadata and are no longer advertised.
+Two nullable columns, `ai_credits_previous_monthly` and `ai_credits_effective_at`, preserve the
+old Business AI allowance until the first Bangkok midnight of the month after migration.
+The raw target is 5,000 in both AI columns; plan reads resolve the schedule before accounting or
+display. Accounting captures one instant for both the resolved allowance and Bangkok ledger month,
+so a slow query across midnight cannot apply an old allowance to the new month.
+Grant-writing services read the live plan under a tenant FOR SHARE lock in the same transaction
+as the monthly grant (tenant -> month -> event lock order). Plan mutation and its audit are atomic;
+an audit failure rolls back entitlement changes. Starter Catalog checks the complete batch against
+the shared product quota under the tenant lock before inserting any sample rows; old rows remain
+untouched. Retail Local bypasses Cloud product/staff caps in manual, sample and import paths.
+Reruns retain the original deadline and old allowance. No new tenant table/RLS/grant is
+needed. Deploy schedule-aware code first; restore raw AI values before an application rollback.
+This is not recurring billing, trial expiry, paid feature gating, or a branch/device/channel cap.
+
+**Feature access (`10.74__bms_feature_access.sql`)** — additive non-null SMALLINT
+`bms_tenants.feature_policy_version`, CHECK 1/2. One atomic migration adds the column with
+default 1 for existing shops then changes the insertion default to 2. Reruns never backfill or
+reclassify shops. Version 1 permanently retains only `REPORT_SCHEDULE` and `RETENTION_ENGINE`;
+version 2 uses the live plan (Pro+ / Business respectively). No expiry, tenant-facing setter,
+new table or RLS/grant is introduced. `featureAccess.ts` selects by server-derived tenant and
+locks the tenant in admission transactions to serialize against plan updates. An absent column
+before migration means legacy, but missing tenants and DB failures never grant access.
+Existing subscription rows retain operational access after downgrades. Existing Retention cases
+remain readable/actionable, with an explicit existing-only reconciliation that creates no cases
+or recommendations. Both write entry points now audit in their tenant transaction. Core services,
+cron delivery, point quotas and Retail Local remain unchanged. Deploy all instances before the
+migration; rollback application gates without dropping/recreating the version column.
+
+**Capacity and package evidence (`10.75`)** — `bms_plans.max_branches/max_devices` plus
+`max_channels`: Free 1/1/1, Pro 1/3/3, Business 5/10/-1. New
+`bms_tenants.capacity_policy_version` uses the same atomic existing=1/new=2 rollout,
+independently of `feature_policy_version`; it is never rewritten on plan changes or reruns.
+`entitlements.ts` owns plan lookup, product/staff limits, feature admission and registered
+capacity. `plans.ts`/`featureAccess.ts` are compatibility re-exports. Tenant FOR UPDATE serializes
+branch/device/channel admission with concurrent registrations and plan changes. Channels here means
+configured LINE/TikTok/Facebook/Instagram/web/Shopee/Lazada rows in `bms_tenant_channels`, not POS
+sales or the separate contract-gated delivery adapters. Count ALL rows, including disabled
+registrations. Existing identities always remain editable/reactivatable;
+legacy and Retail Local have unlimited capacity in these three categories only. No gate on
+checkout, device pairing/token refresh, webhooks, existing jobs or AI provider calls is added.
+
+`bms_package_events`: UUID key, tenant FK (cascade only on tenant deletion), kind
+BASELINE/SIGNUP/PLAN_CHANGE, nullable from_plan, required to_plan, actor and occurred_at.
+One BASELINE or SIGNUP per tenant via partial unique index; changes require distinct from/to.
+Tenant RLS with SELECT/INSERT grants only; no app UPDATE/DELETE. Time and tenant indexes support
+cohort reads. Baseline snapshots legacy shops at rollout, never invents their historical signup
+or conversion. Verified signup captures SIGNUP after commit using a fresh tenant transaction;
+plan changes capture transitions under the tenant lock, alongside the authoritative audit.
+Telemetry savepoints preserve business outcomes on telemetry failure; telemetry statements are
+bounded to 1 second and lock waits to 250 ms (or stricter caller limits). Caller settings are
+restored on success or savepoint rollback. Logs report gaps and the
+platform report counts untracked cohorts. The authoritative plan audit also stores fromPlan/planCode;
+conversion reads use that evidence if telemetry failed, without counting a shop twice. SIGNUP time
+uses the verified tenant's creation timestamp, not the later telemetry write. Unobserved history
+before rollout is never invented. No business-table trigger or provider I/O is installed.
+
+Platform-only `bmsPackageMetrics(from,to)` uses a half-open window (max 366 days), distinct shops
+per Free cohort, and excludes test-* tenants. New SIGNUP and legacy BASELINE conversions remain
+separate; repeated upgrades count once. This is plan conversion, not payment/revenue. Cost reads
+reuse `bms_ai_usage_events` by tenant/shared-vs-BYOK; SUM(NULL) stays NULL, with explicit
+unpriced call counts. Zero-call events cannot mask unknown cost on real provider attempts; a group
+with no attempts has zero cost. Cross-provider attempts in one event cannot be attributed entirely to its
+original provider label. These are attributed AI costs only, not total operating costs or invoices.
+
+Restored-schema rollout evidence must follow [the freemium rehearsal runbook](freemium-rehearsal.md).
+Its read-only snapshots compare counts/fingerprints and trigger metadata; offline source checks
+do not certify the migration against existing shop data.
+Roll out compatible code on every instance before 10.75. Rollback application gates, not policy
+columns/history. Rehearse on a restored throwaway DB before any production rollout.
+
 **AI usage accounting (`7.82__bms_ai_usage_accounting.sql`)** — splits what used to be one
 `credits_used`/`estimated_cost` pair on `bms_ai_usage_events` into three independent dimensions:
 `billable_credits` (what the tenant was charged — one credit per *logical* request on a finite plan,

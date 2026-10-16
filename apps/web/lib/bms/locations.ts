@@ -14,6 +14,7 @@
 // =============================================================
 
 import type { PoolClient } from "pg";
+import { requireCapacityForUpsert } from "./entitlements";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { normalizeLocationParking, publicLocationParking, readLocationParking, type LocationParking } from "./locationParking";
@@ -191,6 +192,7 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorId });
+    await requireCapacityForUpsert(tenantId, "branches", code, client);
     const existing = await client.query(
       `SELECT id, code FROM bms_locations WHERE tenant_id = $1 AND (id = $2::uuid OR code = $3) FOR UPDATE`,
       [tenantId, input.id ?? null, code]

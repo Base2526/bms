@@ -1,4 +1,4 @@
-# AI points policy — 2026-10-12 (`10.56`)
+# AI points policy — 2026-10-16 (`10.56`, `10.73`)
 
 Current entitlement replaces the historical USD budget described below:
 
@@ -6,7 +6,20 @@ Current entitlement replaces the historical USD budget described below:
 | --- | ---: | ---: |
 | Free | 0 | 100 |
 | Pro | 599 | 1,000 |
-| Business | 1,990 | Unlimited |
+| Business | 1,990 | 5,000 after scheduled transition |
+
+`10.73` records the old Business allowance and the first instant of the next Bangkok month.
+All Business shops, including newly assigned ones, keep that old allowance until the recorded
+instant. Rerunning the migration does not move the deadline. `getTenantPlan()` and `listPlans()`
+return today's effective allowance and nullable `ai_credits_next_monthly`/`ai_credits_change_at`
+for advance notice. Deploy this schedule-aware application before the migration; rolling back
+the application requires restoring both raw AI allowance columns first. Existing monthly events,
+consumption and adjustments are untouched. See [phase-one packaging](../business/product-overview-th.md#แพ็กเกจ-cloud--freemium-ระยะที่-1-1073).
+
+Grant writers lock the tenant before reading the plan, then lock the monthly accounting row.
+This includes usage reads, BYOK, retry, fallback and manual adjustments: none may restore an old
+grant after a concurrent downgrade. Existing consumption/bonuses/adjustments remain intact.
+Plan changes and the actor's audit row share one tenant transaction.
 
 Retail Local is separate from these cloud AI plans. Server-derived `billingMode` reports a saved
 or server-environment chat key as `LOCAL_OWN_KEY`, or `LOCAL_UNCONFIGURED` if neither is configured.
@@ -17,7 +30,8 @@ The original `business` tenant plan remains shop capability metadata, not an AI 
 
 The month resets at **00:00 Asia/Bangkok on the first** (17:00 UTC on the previous day).
 One logical shared-provider request costs one point on finite plans; retries, tool rounds and
-provider fallback share the original point. BYOK and Business retain zero billable-point events.
+provider fallback share the original point. BYOK and plans currently resolved as unlimited retain
+zero billable-point events; Business consumes points once the new finite allowance takes effect.
 Unused points do not roll over. Recorded usage/cost is retained even for unlimited plans.
 
 **No per-shop USD cap remains.** Known cost, missing rates, unknown historical cost and old USD

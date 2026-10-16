@@ -5,6 +5,9 @@ import { query } from "@/lib/db";
 import { getTenantId } from "@/lib/bms/tenant";
 import { myPermissions } from "@/lib/bms/permissions";
 import { listPlans, getTenantPlan, getUsage, changePlan } from "@/lib/bms/plans";
+import { getTenantFeatureAccess } from "@/lib/bms/featureAccess";
+import { getTenantEntitlements } from "@/lib/bms/entitlements";
+import { getPackageMetrics } from "@/lib/bms/packageMetrics";
 import { signupShop, signupShopWithSocial, verifyPendingShopSignup } from "@/lib/bms/signup";
 import { audit } from "@/lib/bms/audit";
 import { isPlatformAdmin, requirePlatformAdmin, listTenants, setTenantActive, deleteTenant } from "@/lib/bms/platform";
@@ -27,6 +30,22 @@ function requireTenantAdmin(ctx: any) {
 
 export const bmsSaasResolvers = {
   Query: {
+    async bmsEntitlements(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return getTenantEntitlements(getTenantId(ctx));
+    },
+    async bmsPackageMetrics(_p: unknown, args: { from: string; to: string }, ctx: any) {
+      await requirePlatformAdmin(ctx);
+      try { return await getPackageMetrics(args.from, args.to); }
+      catch (error) {
+        if (error instanceof RangeError) throw new GraphQLError(error.message, { extensions: { code: "BAD_USER_INPUT" } });
+        throw error;
+      }
+    },
+    async bmsFeatureAccess(_p: unknown, _a: unknown, ctx: any) {
+      requireTenantAdmin(ctx);
+      return getTenantFeatureAccess(getTenantId(ctx));
+    },
     // public — ไม่ต้อง auth (โชว์ราคาแพ็กเกจที่หน้าแรก/landing page)
     async bmsPublicPlans() {
       return listPlans();
@@ -155,9 +174,7 @@ export const bmsSaasResolvers = {
       // Plan grants spend platform money; shop access is not payment evidence.
       await requirePlatformAdmin(ctx);
       try {
-        const ok = await changePlan(getTenantId(ctx), args.planCode);
-        if (ok) await audit(ctx, "plan.change", args.planCode);
-        return ok;
+        return await changePlan(getTenantId(ctx), args.planCode, String(requireAuth(ctx).author_id));
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }
@@ -173,9 +190,7 @@ export const bmsSaasResolvers = {
     async bmsSetTenantPlan(_p: unknown, args: { tenantId: string; planCode: string }, ctx: any) {
       await requirePlatformAdmin(ctx);
       try {
-        const ok = await changePlan(args.tenantId, args.planCode);
-        if (ok) await audit(ctx, "tenant.plan.change", args.tenantId, { planCode: args.planCode });
-        return ok;
+        return await changePlan(args.tenantId, args.planCode, String(requireAuth(ctx).author_id), "tenant.plan.change");
       } catch (err: any) {
         throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } });
       }

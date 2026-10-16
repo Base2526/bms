@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { enforceProductQuota } from "./plans";
 import { starterSampleImageUrl } from "./sampleCatalogImages";
 import { normalizeShopArchetype, shopArchetypeHasStarterCatalog, type ShopArchetype } from "./shopArchetypes";
 
@@ -115,7 +116,7 @@ const STARTER_CATALOGS: Record<ShopArchetype, StarterProduct[]> = {
 };
 
 export class SampleDataError extends Error {
-  constructor(message: string, readonly code: "INVALID_ARCHETYPE" | "ACTIVE_RUN" | "SKU_CONFLICT" | "NOT_FOUND" | "BLOCKED") {
+  constructor(message: string, readonly code: "INVALID_ARCHETYPE" | "ACTIVE_RUN" | "SKU_CONFLICT" | "NOT_FOUND" | "BLOCKED" | "QUOTA_EXCEEDED") {
     super(message);
   }
 }
@@ -395,6 +396,8 @@ export async function createStarterCatalog(
       throw new SampleDataError("ร้านนี้มีงานข้อมูลตัวอย่างที่ยังไม่เสร็จ", "ACTIVE_RUN");
     }
 
+    // Same lock order as store profile updates: tenant before profile.
+    await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
     const profile = await client.query<{ business_archetype: string | null }>(
       `SELECT business_archetype FROM bms_store_profile WHERE tenant_id = $1 FOR SHARE`,
       [tenantId]
@@ -402,6 +405,16 @@ export async function createStarterCatalog(
     const archetype = normalizeShopArchetype(profile.rows[0]?.business_archetype);
     if (!archetype || !shopArchetypeHasStarterCatalog(archetype)) {
       throw new SampleDataError("ประเภทร้านนี้ไม่มี Starter Catalog ใน release ปัจจุบัน", "INVALID_ARCHETYPE");
+    }
+    // Samples become editable real SKUs; they must share normal catalog admission.
+    // Lock before counting and before any insert, so a denied batch leaves no run/rows.
+    try {
+      await enforceProductQuota(tenantId, client, STARTER_CATALOGS[archetype].length);
+    } catch (error) {
+      if (error instanceof Error && error.message.startsWith("เกินโควตา")) {
+        throw new SampleDataError(error.message, "QUOTA_EXCEEDED");
+      }
+      throw error;
     }
     const location = await client.query<{ id: string }>(
       `SELECT id FROM bms_locations

@@ -1,5 +1,41 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Freemium phases 1–2 (`10.73` / `10.74`)
+
+- Restored-dump validation is separate from synthetic contracts: follow
+  [the rehearsal runbook](../docs/architecture/freemium-rehearsal.md) and its read-only
+  `db/checks/freemium-rehearsal-snapshot.sql` before/after/rerun comparisons on the isolated restore.
+  `freemium-metrics-contract` runs without DB: telemetry timeout/rollback boundaries and unknown
+  cost handling. Its SQL-source guard check is not evidence of a successful restored rehearsal.
+  `freemium-restored-db-contract` is opt-in (`BMS_RESTORED_REHEARSAL=1`) and requires the dedicated
+  marked workflow copies/loopback port documented in that runbook. It tests real services against
+  the restored schema, retains synthetic fixture shops only in those copies, and blocks external
+  network calls. Do not run the synthetic `freemium-*` suites against the restored snapshot DB.
+
+- `freemium-capacity-*` additionally covers 10.75: registration limits, concurrent admissions,
+  legacy/migration rerun continuity, downgrade editing, tenant/RLS isolation, audit rollback,
+  distinct cohort conversion and nullable shared/BYOK cost. The DB fixture is synthetic, not a dump.
+  `ai-usage-browser-smoke.mjs` also covers Billing capacity and Tenants pilot metrics in both languages
+  at desktop/mobile widths; all API replies are mock fixtures, never real shop mutations.
+
+- Review regression suites (`freemium-review-*`): concurrent downgrade vs all six AI grant writers,
+  atomic plan/audit rollback, Starter Catalog batch quota and unchanged old rows. The DB suite uses
+  its own random schema in `bms_freemium_test`, synthetic data and real migrations/services only;
+  it does not call providers or deliver messages. Not a restored production-schema rehearsal.
+
+- `node scripts/run-contract-tests.mjs pure freemium`: package/time policy, server feature denial,
+  auth/RBAC/tenant binding, transactional audit and existing-work continuity (no network/DB).
+- `node scripts/run-contract-tests.mjs db freemium`: loopback PostgreSQL only; phase two additionally
+  requires the dedicated database name `bms_freemium_test`. Configure `POSTGRES_HOST`, `POSTGRES_PORT`,
+  `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` for a disposable superuser test instance.
+  Phase one uses temporary tables; phase two creates/drops a uniquely named synthetic schema and
+  creates `bms_app` if absent. Covers migration reruns, role/RLS, plan locks, audit rollback, legacy
+  grants, downgrade continuity and real Retention conversion. Not a restored production replay.
+- `scripts/ai-usage-browser-smoke.mjs` and `scripts/freemium-feature-browser-smoke.mjs`: local
+  production server (`BMS_SMOKE_URL`, default localhost:3007), mocked APIs, Chrome via Playwright
+  (`BMS_PLAYWRIGHT_MODULE` optionally selects its module). Thai/English at 1440px/390px; screenshots
+  go into `.test-output/`. No live customer messages, payments or provider calls.
+
 Restaurant handoff/backlog (2026-10-15): see
 [phase 1–9 completion and remaining-work log](../docs/business/inventory.md#restaurant-phases-1–9-completion-and-remaining-work-log-2026-10-15).
 It separates implemented scope, unfinished business-evidence/features, and deferred DB verification.

@@ -218,6 +218,12 @@ Known output limitation:
 
 ## Sales digest subscriptions (email/Slack/LINE)
 
+Cloud feature policy (`10.74`): new shops require Pro/Business to create a subscription, even a
+disabled one. Legacy shops retain permanent access; existing subscriptions remain editable and
+deliverable after downgrades. Reads/history/export and the cron sender are not paywalled.
+`upsertReportSubscription()` checks the server-derived entitlement and writes/audits in one
+tenant transaction. Settings/Billing show the server-provided access reason, not a client plan test.
+
 A shop can subscribe to have the same numbers pushed to them automatically instead of only viewing
 the dashboard on demand. Implemented in [`lib/bms/reportDigest.ts`](../../apps/web/lib/bms/reportDigest.ts),
 GraphQL `graphql/bmsReportSchedule.ts`, migration `7.37__bms_report_subscriptions.sql`, admin UI
@@ -249,10 +255,11 @@ at `/admin/report-schedule`.
 - **Delivery history**: every send attempt — one row per channel, success or failure with the
   error message — is logged to append-only `bms_report_deliveries`, visible per-tenant on the
   settings card and cross-tenant (with a per-tenant drawer) on `/admin/report-schedule`.
-- **Access**: the shop-facing config (`bmsReportSubscription`/`bmsUpsertReportSubscription`) uses
-  the same `requireTenantAdmin()` config-domain gate as `bmsChannels`/`bmsStoreProfile` — no new
-  `report.view`/`report.manage` permission was added. The cross-tenant view gates with
-  `requirePlatformAdmin()`.
+- **Access**: the shop-facing endpoints require an admin session plus existing `report.view` for
+  subscription/history reads, or `report.email` for configuration changes and test delivery. This
+  prevents staff without export permission from redirecting business reports. Legacy package access
+  never bypasses RBAC; read-only staff see a disabled form. No new permission or permission backfill
+  is introduced. Existing cron delivery is unchanged; cross-tenant views use `requirePlatformAdmin()`.
 - **Not yet done**: the cron endpoint is not on an actual schedule (same state as
   `channels/check-health` and `ai/check-health` — see [../architecture/api.md](../architecture/api.md)).
 

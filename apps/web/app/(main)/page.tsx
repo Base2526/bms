@@ -32,6 +32,8 @@ import {
 import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import BmsFlowDiagram from "@/components/marketing/flow/BmsFlowDiagram";
+import PlanAiChangeNotice from "@/components/billing/PlanAiChangeNotice";
+import { PlanFeatureList } from "@/components/billing/FeatureAccessNotice";
 import styles from "./page.module.css";
 
 const { Title, Paragraph, Text } = Typography;
@@ -44,9 +46,14 @@ const Q_PLANS = gql`
       price_monthly
       max_products
       max_channels
+      max_branches
+      max_devices
       max_orders_month
       max_users
       ai_credits_monthly
+      ai_credits_next_monthly
+      ai_credits_change_at
+      feature_keys
     }
   }
 `;
@@ -113,9 +120,13 @@ function PlanCard({
       <Space direction="vertical" size={9} className={styles.planFeatures}>
         <span><CheckCircleFilled />{plan.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: Number(plan.ai_credits_monthly).toLocaleString("en-US") })}</span>
         <span><CheckCircleFilled />{t("landing.productLimit")} {lim(plan.max_products, t)}</span>
-        <span><CheckCircleFilled />{t("landing.channelLimit")} {lim(plan.max_channels, t)}</span>
         <span><CheckCircleFilled />{t("landing.orderLimit")} {lim(plan.max_orders_month, t)}</span>
         <span><CheckCircleFilled />{t("landing.teamLimit")} {lim(plan.max_users, t)} {t("landing.people")}</span>
+        <span><CheckCircleFilled />{t("package_metrics.branches")}: {lim(plan.max_branches, t)}</span>
+        <span><CheckCircleFilled />{t("package_metrics.devices")}: {lim(plan.max_devices, t)}</span>
+        <span><CheckCircleFilled />{t("package_metrics.channels")}: {lim(plan.max_channels, t)}</span>
+        <PlanAiChangeNotice plan={plan} />
+        <PlanFeatureList features={plan.feature_keys} />
       </Space>
       <Link href={ctaHref}>
         <Button type={highlight ? "primary" : "default"} block size="large">{ctaLabel}</Button>

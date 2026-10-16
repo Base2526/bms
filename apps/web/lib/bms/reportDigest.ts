@@ -10,7 +10,9 @@
 // เป็นหลัก ไม่มี dependency ใหม่)
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
+import { requirePackageFeature } from "./featureAccess";
 import { encryptSecret, decryptSecret } from "./crypto";
 import { sendEmail } from "@/lib/mailer";
 import { getChannel } from "./channels";
@@ -352,8 +354,13 @@ export type UpsertReportSubscriptionInput = {
   enabled?: boolean;
 };
 
-export async function upsertReportSubscription(tenantId: string, input: UpsertReportSubscriptionInput): Promise<ReportSubscription> {
-  const cur = await query<any>(`SELECT * FROM bms_report_subscriptions WHERE tenant_id = $1`, [tenantId]);
+export async function upsertReportSubscription(tenantId: string, input: UpsertReportSubscriptionInput, actorId?: string): Promise<ReportSubscription> {
+  const client = await getClient();
+  try {
+  await beginTenantTx(client, tenantId, actorId ? { editorId: actorId } : undefined);
+  // Existing schedules retain their entitlement even when the shop later downgrades.
+  await requirePackageFeature(tenantId, "REPORT_SCHEDULE", client);
+  const cur = await client.query<any>(`SELECT * FROM bms_report_subscriptions WHERE tenant_id = $1 FOR UPDATE`, [tenantId]);
   const prev = cur.rows[0];
 
   const frequency = (input.frequency ?? prev?.frequency ?? "DAILY") as Frequency;
@@ -409,7 +416,7 @@ export async function upsertReportSubscription(tenantId: string, input: UpsertRe
     throw new Error("ต้องเปิดอย่างน้อย 1 ช่องทาง (อีเมล/Slack/LINE) ก่อนเปิดใช้งานระบบส่งรายงาน");
   }
 
-  await query(
+  const saved = await client.query(
     `INSERT INTO bms_report_subscriptions
        (tenant_id, frequency, send_hour, send_weekday, send_day_of_month,
         email_enabled, recipient_email, slack_enabled, slack_webhook_url,
@@ -427,11 +434,19 @@ export async function upsertReportSubscription(tenantId: string, input: UpsertRe
        line_enabled = EXCLUDED.line_enabled,
        line_user_id = EXCLUDED.line_user_id,
        enabled = EXCLUDED.enabled,
-       updated_at = now()`,
+       updated_at = now() RETURNING *`,
     [tenantId, frequency, sendHour, sendWeekday, sendDayOfMonth, emailEnabled, recipientEmail, slackEnabled, slackWebhookUrl, lineEnabled, lineUserId, enabled]
   );
 
-  return getReportSubscription(tenantId);
+  await client.query(`INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+    VALUES($1,$2,'report.subscription.upsert',NULL,$3)`,
+    [tenantId, actorId ?? "system", JSON.stringify({ frequency, enabled, emailEnabled, slackEnabled, lineEnabled })]);
+  await client.query("COMMIT");
+  return mapRow(saved.rows[0]);
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
 
 // ---------------- sending ----------------

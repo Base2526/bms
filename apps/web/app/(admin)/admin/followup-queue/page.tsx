@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import FeatureAccessNotice from "@/components/billing/FeatureAccessNotice";
 
 const { Text } = Typography;
 
@@ -32,7 +33,8 @@ const Q = gql`
 `;
 const Q_RETENTION=gql`query { bmsRetentionCases(limit:100){id customerId customerName cohort status rfmSegment recencyDays frequency monetary expectedReturnAt riskScore recommendedChannel recommendedMessageTh recommendedMessageEn recommendedOffer recommendedProductSku reasonTh reasonEn convertedRevenue} bmsRetentionAnalytics{treatmentTotal holdoutTotal treatmentConverted holdoutConverted treatmentRate holdoutRate incrementalLift retentionRevenue} }`;
 const M_RUN_NOW = gql`mutation { bmsRunFollowupsNow { scanned sent skipped failed } }`;
-const M_REFRESH_RETENTION = gql`mutation { bmsRefreshRetention }`;
+const Q_FEATURES = gql`query { bmsFeatureAccess { feature minimumPlan allowed source } }`;
+const M_REFRESH_RETENTION = gql`mutation($existingOnly:Boolean!){ bmsRefreshRetention(existingOnly:$existingOnly) }`;
 const M_RETENTION_STATUS = gql`mutation($id:ID!,$status:BmsRetentionStatus!,$reason:String){bmsTransitionRetentionCase(id:$id,status:$status,reason:$reason){id status}}`;
 
 const JOB_STATUS_COLOR: Record<string, string> = {
@@ -47,6 +49,8 @@ export default function FollowupQueuePage() {
   const { can, loading: permsLoading } = useBmsPermissions();
   const canManage = can("followup.manage");
   const canViewRetention=can("retention.view");
+  const { data: featureData } = useQuery(Q_FEATURES, { skip: permsLoading || !canViewRetention, fetchPolicy: "network-only" });
+  const retentionAccess = featureData?.bmsFeatureAccess?.find((f:any) => f.feature === "RETENTION_ENGINE");
   const { data, loading, error, refetch } = useQuery(Q, {
     skip: permsLoading || !can("followup.view"),
     fetchPolicy: "cache-and-network",
@@ -248,7 +252,7 @@ export default function FollowupQueuePage() {
       )}
       <Tabs
         items={[
-          ...(canViewRetention?[{key:"retention",label:t("admin_followup_queue.tab_retention",{count:retention.length}),children:<Space direction="vertical" size={12} style={{width:"100%"}}><Space><Button type="primary" loading={refreshingRetention} disabled={!can("retention.manage")} onClick={()=>refreshRetention()}>{t("admin_followup_queue.retention_refresh")}</Button></Space>{retentionAnalytics&&<Row gutter={[12,12]}><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_treatment_rate")} value={retentionAnalytics.treatmentRate*100} suffix="%" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_holdout_rate")} value={retentionAnalytics.holdoutRate*100} suffix="%" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_lift")} value={retentionAnalytics.incrementalLift*100} suffix=" pp" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_revenue")} value={retentionAnalytics.retentionRevenue} suffix="฿" precision={0}/></Card></Col></Row>}<Table rowKey="id" loading={retentionLoading} dataSource={retention} columns={retentionColumns} pagination={{pageSize:20}} scroll={{x:"max-content"}}/></Space>}] : []),
+          ...(canViewRetention?[{key:"retention",label:t("admin_followup_queue.tab_retention",{count:retention.length}),children:<Space direction="vertical" size={12} style={{width:"100%"}}><FeatureAccessNotice access={retentionAccess}/><Space><Button type="primary" loading={refreshingRetention} disabled={!can("retention.manage")||!retentionAccess} onClick={()=>refreshRetention({variables:{existingOnly:!retentionAccess?.allowed}})}>{retentionAccess?.allowed?t("admin_followup_queue.retention_refresh"):t("admin_billing.feature_maintain")}</Button></Space>{retentionAnalytics&&<Row gutter={[12,12]}><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_treatment_rate")} value={retentionAnalytics.treatmentRate*100} suffix="%" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_holdout_rate")} value={retentionAnalytics.holdoutRate*100} suffix="%" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_lift")} value={retentionAnalytics.incrementalLift*100} suffix=" pp" precision={1}/></Card></Col><Col xs={12} lg={6}><Card><Statistic title={t("admin_followup_queue.retention_revenue")} value={retentionAnalytics.retentionRevenue} suffix="฿" precision={0}/></Card></Col></Row>}<Table rowKey="id" loading={retentionLoading} dataSource={retention} columns={retentionColumns} pagination={{pageSize:20}} scroll={{x:"max-content"}}/></Space>}] : []),
           ...(canViewFollowups ? [{
             key: "queue",
             label: t("admin_followup_queue.tab_queue", { count: jobs.length }),

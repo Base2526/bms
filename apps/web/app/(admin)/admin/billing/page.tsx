@@ -6,16 +6,20 @@ import { Card, Row, Col, Button, Tag, Progress, message, Alert, Typography, Spac
 import { CheckOutlined, ReloadOutlined, RobotOutlined, ThunderboltOutlined, KeyOutlined, BarChartOutlined, WarningOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { aiCreditCapacity } from "@/lib/aiUsageClient";
+import PlanAiChangeNotice from "@/components/billing/PlanAiChangeNotice";
+import CapacityNotice from "@/components/billing/CapacityNotice";
+import FeatureAccessNotice, { PlanFeatureList } from "@/components/billing/FeatureAccessNotice";
 
 const { Text, Paragraph } = Typography;
 
 const Q = gql`
   query {
     bmsIsPlatformAdmin
+    bmsFeatureAccess { feature minimumPlan allowed source }
     bmsBilling {
-      plan { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly }
+      plan { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at }
       usage { products channels orders_month users }
-      plans { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly }
+      plans { code name price_monthly max_products max_channels max_branches max_devices max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at feature_keys }
     }
     bmsAiUsage {
       billingMode count limit remaining unlimited planCode planName
@@ -252,7 +256,7 @@ function CloudBilling() {
             </Col>
             <Col xs={24} md={6}>
               <Text type="secondary">{t("admin_billing.label_channels")}</Text>
-              <Progress percent={pct(usage.channels, cur.max_channels)} format={() => `${usage.channels}/${lim(cur.max_channels, t)}`} />
+              <div>{usage.channels}</div>
             </Col>
             <Col xs={24} md={6}>
               <Text type="secondary">{t("admin_billing.label_orders_month")}</Text>
@@ -263,6 +267,11 @@ function CloudBilling() {
               <Progress percent={pct(usage.users, cur.max_users)} format={() => `${usage.users}/${lim(cur.max_users, t)}`} status={cur.max_users>=0 && usage.users>=cur.max_users ? "exception":"active"} />
             </Col>
           </Row>
+          <PlanAiChangeNotice plan={cur} />
+          {(data?.bmsFeatureAccess ?? []).map((access:any) => <FeatureAccessNotice key={access.feature} access={access} />)}
+          <CapacityNotice />
+          <Paragraph type="secondary">{t("admin_billing.feature_policy")}</Paragraph>
+          <Paragraph type="secondary" style={{ marginTop: 12, marginBottom: 0 }}>{t("admin_billing.capacity_policy")}</Paragraph>
         </Card>
       )}
 
@@ -622,15 +631,17 @@ function CloudBilling() {
                 </div>
                 <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_products")} {lim(p.max_products, t)}</div>
-                  <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_channels")} {lim(p.max_channels, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_orders_month")} {lim(p.max_orders_month, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> Staff {lim(p.max_users, t)}</div>
+                  <div>{t("package_metrics.branches")}: {lim(p.max_branches, t)} · {t("package_metrics.devices")}: {lim(p.max_devices, t)} · {t("package_metrics.channels")}: {lim(p.max_channels, t)}</div>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: formatNumber(p.ai_credits_monthly) })}</div>
+                  <PlanAiChangeNotice plan={p} />
+                  <PlanFeatureList features={p.feature_keys} />
                 </Space>
                 <Button type={isCurrent ? "default" : "primary"} block disabled={!canManageEntitlements || isCurrent || changing}
                   onClick={() => modal.confirm({
                     title: t("admin_billing.confirm_plan"),
-                    content: `${p.name} · ${p.price_monthly} THB/month · ${p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : `${formatNumber(p.ai_credits_monthly)} point/month`}`,
+                    content: <>{`${p.name} · ${p.price_monthly} THB/month · ${p.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : `${formatNumber(p.ai_credits_monthly)} point/month`}`}<PlanAiChangeNotice plan={p} /></>,
                     onOk: async () => { await changePlan({ variables: { planCode: p.code } }); },
                   })}>
                   {isCurrent ? t("admin_billing.btn_current_plan") : canManageEntitlements ? t("admin_billing.btn_select_plan") : t("admin_billing.contact_platform")}

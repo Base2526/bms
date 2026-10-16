@@ -82,7 +82,8 @@ before changing that domain.
   `/api/bms/pharmacy/evidence/[id]/file` with `pharmacy.evidence.read` (Pharmacist only).
 - AI accounting: keep `billable_credits`, `provider_calls`, `actual_cost_usd` separate; retries
   share one `usage_group_id`; unknown cost is `NULL`. Monthly points (`10.56`): Free 100 / Pro 1,000 /
-  Business unlimited, reset 00:00 Asia/Bangkok; no USD cap; attempts recorded before I/O; only
+  Business 5,000 after the scheduled `10.73` transition (old allowance through rollout month),
+  reset 00:00 Asia/Bangkok; no USD cap; attempts recorded before I/O; only
   DB-verified platform admins change plans/points. Shared-provider completions go through
   `finalizeAiUsageEvent()`. Never hook failure alerts off a tool's audit outcome.
 - Customer merges need `customer.edit` + a ten-minute signed preview + reason/method/evidence/
@@ -267,6 +268,9 @@ before changing that domain.
 - `401` for missing/invalid auth, `403` for authenticated-without-permission. A permission failure is
   never a logout.
 - Hiding a menu item is not authorization. Enforce on the server.
+- Cloud feature gates (`10.74`): Pro+ scheduled reports, Business new Retention analyses. Legacy
+  tenant version 1 permanently keeps both; new tenants default to 2. Never revoke existing work,
+  gate core data/POS or Retail Local, reset legacy status on rerun, or bypass existing RBAC.
 - A REST route mirrors the permission of the GraphQL resolver doing the same job (`order.pay`,
   `purchase.receive`, `report.view`, `inbox.reply`, …) — do not invent a second, looser rule for the
   same action. "Logged in" is not a permission: an upload endpoint gates on the permission the step

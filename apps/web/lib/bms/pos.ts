@@ -18,6 +18,7 @@ import { readBranchPrice, branchPrice } from "./branchPrices";
 // =============================================================
 
 import crypto from "crypto";
+import { requireCapacityForUpsert } from "./entitlements";
 import bcrypt from "bcryptjs";
 import type { PoolClient, QueryResult, QueryResultRow } from "pg";
 import { isPosPinValid } from "@pos-core/posPin";
@@ -379,6 +380,7 @@ export async function upsertPosDevice(
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: writeContext?.editorId });
+    await requireCapacityForUpsert(tenantId, "devices", input.code.trim(), client);
     // prefix คือส่วนเดียวของเลขใบกำกับอย่างย่อที่บอกว่ามาจากเครื่องไหน — สองเครื่องใช้
     // prefix เดียวกัน เลขจะชนกันได้ (taxDocumentNumber.ts ต่อรหัสเครื่องให้เองเพื่อไม่ให้
     // การขายล้ม แต่รูปแบบเลขจะเปลี่ยน) · ตรวจเฉพาะตอน "เปลี่ยน" prefix เท่านั้น

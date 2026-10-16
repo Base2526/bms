@@ -152,7 +152,10 @@ template.
   a tenant's totals.
 - A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
   estimates, sample ledgers, or hardcoded per-credit prices.
-- Monthly AI points (`10.56`): Free 100, Pro 1,000 at THB 599, Business unlimited at THB 1,990.
+- Monthly AI points (`10.56`, `10.73`): Free 100, Pro 1,000 at THB 599, Business 5,000 at THB 1,990.
+  `10.73` preserves the previous Business allowance through the rollout month, then switches at
+  the next Bangkok month boundary. Resolve the effective plan through `getTenantPlan()`/`listPlans()`;
+  raw catalogue AI columns contain the target, not necessarily the allowance effective today.
   Reset on the first at 00:00 Asia/Bangkok. One logical shared request uses one point on finite
   plans; retries/tool rounds share that point. BYOK keeps its existing zero-point accounting.
 - Plan changes and point adjustments require a live database-verified platform admin. Tenant

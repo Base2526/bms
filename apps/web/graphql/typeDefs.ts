@@ -1416,6 +1416,9 @@ export const typeDefs = /* GraphQL */ `
 
     # ===== BMS billing (admin) =====
     bmsBilling: BmsBilling!
+    bmsFeatureAccess: [BmsFeatureAccess!]!
+    bmsEntitlements: BmsEntitlements!
+    bmsPackageMetrics(from: String!, to: String!): BmsPackageMetrics!
 
     # ===== BMS public plans (หน้าแรก/landing — ไม่ต้อง auth) =====
     bmsPublicPlans: [BmsPlan!]!
@@ -3163,17 +3166,32 @@ export const typeDefs = /* GraphQL */ `
 
   # ===== BMS SaaS: plans / billing / signup =====
   type BmsPlan {
+    feature_keys: [String!]!
     code: String!  name: String!  price_monthly: Float!
     max_products: Int!  max_channels: Int!  max_orders_month: Int!  max_users: Int!
+    max_branches: Int! max_devices: Int!
     max_ai_messages_month: Int!
     ai_credits_monthly: Int!
+    ai_credits_next_monthly: Int
+    ai_credits_change_at: String
   }
   type BmsUsage { products: Int!  channels: Int!  orders_month: Int!  users: Int! }
+  type BmsFeatureAccess {
+    feature: String!
+    minimumPlan: String!
+    allowed: Boolean!
+    source: String!
+  }
   type BmsBilling {
     plan: BmsPlan!
     usage: BmsUsage!
     plans: [BmsPlan!]!
   }
+  type BmsCapacity { resource: String! used: Int! limit: Int! source: String! canAdd: Boolean! }
+  type BmsEntitlements { plan: BmsPlan! capacities: [BmsCapacity!]! features: [BmsFeatureAccess!]! }
+  type BmsPackageCohort { kind: String! shops: Int! converted: Int! conversionRate: Float }
+  type BmsPackageCost { tenantId: ID! source: String! providerCalls: Int! unpricedProviderCalls: Int! knownCostUsd: Float }
+  type BmsPackageMetrics { available: Boolean! from: String! to: String! untrackedTenants: Int cohorts: [BmsPackageCohort!]! costs: [BmsPackageCost!]! }
   type BmsSignupResult { status: String!  tenantId: ID  slug: String  token: String  user: User }
   type BmsVerifyShopSignupResult { status: String!  tenantId: ID  slug: String }
 
@@ -5061,7 +5079,7 @@ export const typeDefs = /* GraphQL */ `
     bmsTransitionAction(id: ID!, status: BmsActionStatus!, reason: String, ownerId: ID, measuredOutcome: JSON): BmsAction!
     bmsRecordInventoryDemand(input: BmsInventoryDemandInput!): ID!
     bmsUpsertInventoryPolicy(input: BmsInventoryPolicyInput!): Boolean!
-    bmsRefreshRetention: Int!
+    bmsRefreshRetention(existingOnly: Boolean = false): Int!
     bmsTransitionRetentionCase(id: ID!, status: BmsRetentionStatus!, reason: String): BmsRetentionCase!
 
     # ---- สาขา (9.1) ----

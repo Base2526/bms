@@ -3,7 +3,9 @@
 // (token/secret เข้ารหัสก่อนเก็บ)
 // =============================================================
 
-import { query } from "@/lib/db";
+import { getClient, query } from "@/lib/db";
+import { beginTenantTx } from "./tenant";
+import { requireCapacityForUpsert } from "./entitlements";
 import { encryptSecret, decryptSecret, maskSecret } from "./crypto";
 
 export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada";
@@ -55,47 +57,59 @@ export async function listChannelsMasked(tenantId: string) {
 export async function upsertChannel(
   tenantId: string,
   channel: string,
-  input: { accessToken?: string | null; channelSecret?: string | null; active?: boolean; extra?: any }
+  input: { accessToken?: string | null; channelSecret?: string | null; active?: boolean; extra?: any },
+  actorId?: string,
 ) {
-  // ดึงของเดิม (ถ้ามี) — ค่า token/secret ที่ไม่ได้กรอกใหม่ให้คงเดิม
-  const cur = await query<any>(
-    `SELECT access_token, channel_secret, active, extra FROM bms_tenant_channels
-      WHERE tenant_id = $1 AND channel = $2`,
-    [tenantId, channel]
-  );
-  const prev = cur.rows[0];
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId: actorId });
+    await requireCapacityForUpsert(tenantId, "channels", channel, client);
+    // ดึงของเดิม (ถ้ามี) — ค่า token/secret ที่ไม่ได้กรอกใหม่ให้คงเดิม
+    const cur = await client.query<any>(
+      `SELECT access_token, channel_secret, active, extra FROM bms_tenant_channels
+        WHERE tenant_id = $1 AND channel = $2`,
+      [tenantId, channel]
+    );
+    const prev = cur.rows[0];
 
-  // Credentials are commonly pasted from provider consoles. Strip only surrounding
-  // whitespace so an invisible newline is not persisted as part of the Bearer token
-  // or webhook secret.
-  const normalizedAccessToken = typeof input.accessToken === "string" ? input.accessToken.trim() : "";
-  const normalizedChannelSecret = typeof input.channelSecret === "string" ? input.channelSecret.trim() : "";
-  const accessToken = normalizedAccessToken
-    ? encryptSecret(normalizedAccessToken)
-    : prev?.access_token ?? null;
-  const channelSecret = normalizedChannelSecret
-    ? encryptSecret(normalizedChannelSecret)
-    : prev?.channel_secret ?? null;
-  const active = input.active ?? prev?.active ?? true;
-  const extra = input.extra ?? prev?.extra ?? {};
+    // Credentials are commonly pasted from provider consoles. Strip only surrounding
+    // whitespace so an invisible newline is not persisted as part of the Bearer token
+    // or webhook secret.
+    const normalizedAccessToken = typeof input.accessToken === "string" ? input.accessToken.trim() : "";
+    const normalizedChannelSecret = typeof input.channelSecret === "string" ? input.channelSecret.trim() : "";
+    const accessToken = normalizedAccessToken
+      ? encryptSecret(normalizedAccessToken)
+      : prev?.access_token ?? null;
+    const channelSecret = normalizedChannelSecret
+      ? encryptSecret(normalizedChannelSecret)
+      : prev?.channel_secret ?? null;
+    const active = input.active ?? prev?.active ?? true;
+    const extra = input.extra ?? prev?.extra ?? {};
 
-  // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
-  // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ
-  // โดน 401 เงียบ ๆ ทุก request จนกว่าจะมีคนสังเกตเห็นใน Channel Health
-  if (channel !== "web" && active && !channelSecret) {
-    throw new Error("ต้องกรอก channel secret ก่อนเปิดใช้งานช่องทางนี้ (ป้องกันการปลอม webhook)");
-  }
+    // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
+    // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ
+    // โดน 401 เงียบ ๆ ทุก request จนกว่าจะมีคนสังเกตเห็นใน Channel Health
+    if (channel !== "web" && active && !channelSecret) {
+      throw new Error("ต้องกรอก channel secret ก่อนเปิดใช้งานช่องทางนี้ (ป้องกันการปลอม webhook)");
+    }
 
-  await query(
-    `INSERT INTO bms_tenant_channels (tenant_id, channel, access_token, channel_secret, active, extra)
-     VALUES ($1, $2, $3, $4, $5, $6)
-     ON CONFLICT (tenant_id, channel) DO UPDATE SET
-       access_token   = EXCLUDED.access_token,
-       channel_secret = EXCLUDED.channel_secret,
-       active         = EXCLUDED.active,
-       extra          = EXCLUDED.extra,
-       updated_at     = now()`,
-    [tenantId, channel, accessToken, channelSecret, active, extra]
-  );
-  return true;
+    await client.query(
+      `INSERT INTO bms_tenant_channels (tenant_id, channel, access_token, channel_secret, active, extra)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (tenant_id, channel) DO UPDATE SET
+         access_token   = EXCLUDED.access_token,
+         channel_secret = EXCLUDED.channel_secret,
+         active         = EXCLUDED.active,
+         extra          = EXCLUDED.extra,
+         updated_at     = now()`,
+      [tenantId, channel, accessToken, channelSecret, active, extra]
+    );
+    await client.query(`INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+      VALUES($1,$2,'channel.upsert',$3,$4)`, [tenantId, actorId ?? "system", channel, JSON.stringify({ active })]);
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
