@@ -1,10 +1,21 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   canPrintDesktopReceipt, getPrinterSnapshot, printDesktopReceipt,
   refreshPrinterState, subscribePrinter, testDesktopPrinter, confirmDesktopPrinterTest,
   canTestDesktopPrinter,
 } from "../apps/web/lib/pos/desktopPrinterClient.ts";
+
+test("printer status cannot consume the vertical POS workspace", () => {
+  const source = readFileSync(
+    new URL("../apps/web/components/pos-desktop/ReceiptPrinterStatus.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /flex:\s*["']1 0 100%["']/);
+  assert.match(source, /minWidth:\s*["']100%["']/);
+  assert.match(source, /flex:\s*["']0 0 auto["']/);
+});
 
 test("cashier print guard covers failures, unknown status, testing and duplicate clicks", async () => {
   let state = { deviceName: "FAKE", paperWidth: 80, available: true, canPrint: false,
@@ -70,4 +81,14 @@ test("cashier print guard covers failures, unknown status, testing and duplicate
     if (previous) Object.defineProperty(globalThis, "window", previous);
     else Reflect.deleteProperty(globalThis, "window");
   }
+});
+
+test("a malformed desktop-update reply cannot crash the POS screen", () => {
+  const source = readFileSync(
+    new URL("../apps/web/components/pos-desktop/DesktopUpdateMenu.tsx", import.meta.url),
+    "utf8",
+  );
+  const guard = source.indexOf("Array.isArray(next.releases)");
+  assert.ok(guard > 0, "update reply must be validated before releases are read");
+  assert.ok(guard < source.indexOf("next.releases.some"), "validation must run before .some()");
 });

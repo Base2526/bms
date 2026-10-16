@@ -3,6 +3,17 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Desktop POS แท็บ คืน/รับของ/มัดจำ/กะ/ตั้งค่า — 2026-10-16
+
+- branch `codex/fix-pos-return-empty-state` (push แล้ว ยังไม่เปิด PR) · ไม่มี migration · ไม่มี permission ใหม่
+- ต้นเหตุหน้าคืนว่าง (Codex): `ReceiptPrinterStatus` ใช้ `flex: 1 0 100%` แล้วถูกวางตรงใต้ `.pos-body` (flex column)
+  → กินความสูงทั้งแผง ดันเนื้อหาแท็บไปใต้ overflow · วัดจริง: แบบเดิม grid สูง 0px แบบใหม่ 564px ที่ 1280x800
+- recheck เพิ่ม: กล่อง (i) "วันรับของ" แท็บมัดจำถูกตัดขอบขวาที่จอ 1024px → `PosHelp` วัดแล้วสลับฝั่งเอง ·
+  คำตอบ desktop-update ที่ไม่มี `releases` เคยทำให้ทั้งจอ POS ล้ม (error boundary) → ตรวจก่อนอ่าน
+- เปิดดูจริงด้วย dev 3100 + iframe harness ที่ mock fetch/`window.bmsDesktop` (ไม่แตะ DB) ทั้ง 5 แท็บที่ 1280x800 และ 1024x600
+- gate ผ่าน: pure 2,912/2,914 (skip 2) + build · mutation 4/4 แดงถูกตัว
+- ยังไม่ได้ verify: Electron จริงกับเครื่องพิมพ์จริง · แบนเนอร์ซ้อนหลายอันที่ 1024x600 เหลือพื้นที่แท็บ 148px (ปิดได้ทุกอัน ยังไม่แก้)
+
 ## Platform master data phase 1 — 2026-10-16
 
 - branch `feat/master-data-phase-1` จาก `develop` · ไม่ commit/push/deploy

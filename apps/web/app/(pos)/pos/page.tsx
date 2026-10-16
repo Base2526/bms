@@ -9,7 +9,7 @@
 //
 // idempotencyKey สร้างที่เครื่อง {device}-{shift}-{seq} — ยิงซ้ำเพราะ response
 // หายกลางทางต้องได้บิลเดิม จำเป็นแม้จะไม่ทำโหมดออฟไลน์
-import { Fragment, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, forwardRef, memo, useCallback, useContext, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { InfoCircleOutlined } from "@ant-design/icons";
 import { crossSkuGiftPricing } from "@pos-core/crossSkuPromotion";
 import RestaurantRequestQueue from '@/components/RestaurantRequestQueue';
@@ -250,6 +250,17 @@ function PaymentMethodIcon({ method }: { method: (typeof METHODS)[number]["key"]
   );
 }
 
+/** ขอบซ้าย/ขวาที่กล่องลอยถูกตัดจริง = กล่องบรรพบุรุษตัวแรกที่ overflow-x ไม่ visible หรือหน้าจอ */
+function clippingBoundsOf(element: HTMLElement): { left: number; right: number } {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (getComputedStyle(node).overflowX !== "visible") {
+      const rect = node.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    }
+  }
+  return { left: 0, right: window.innerWidth };
+}
+
 /**
  * คำอธิบายเฉพาะจุดสำหรับกฎที่มีผลต่อเงิน สต็อก หรือสถานะบิล
  *
@@ -263,6 +274,28 @@ function PosHelp({ title, children, align = "left" }: {
 }) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const [open, setOpen] = useState(false);
+  // ด้านที่กล่องคำอธิบายกางออก · `align` เป็นแค่ค่าตั้งต้น — ปุ่ม (i) ที่อยู่ชิดขอบขวาของ
+  // แผงงานจะกางกล่องกว้าง 310px ออกไปพ้นขอบแล้วถูก overflow ของแผงตัดทิ้ง (เจอที่ช่อง
+  // "วันรับของ" ในแท็บมัดจำบนจอ 1024px) จึงวัดตอนเปิดแล้วสลับไปอีกฝั่งเมื่อฝั่งนั้นพอดีกว่า
+  const [placement, setPlacement] = useState(align);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlacement(align);
+      return;
+    }
+    const details = detailsRef.current;
+    const popover = details?.querySelector<HTMLElement>(".pos-help-popover");
+    if (!details || !popover) return;
+    const bounds = clippingBoundsOf(details);
+    const summary = details.getBoundingClientRect();
+    const width = popover.getBoundingClientRect().width;
+    const fitsLeft = summary.left + width <= bounds.right;
+    const fitsRight = summary.right - width >= bounds.left;
+    if (align === "left" && !fitsLeft && fitsRight) setPlacement("right");
+    else if (align === "right" && !fitsRight && fitsLeft) setPlacement("left");
+    else setPlacement(align);
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
@@ -293,7 +326,7 @@ function PosHelp({ title, children, align = "left" }: {
   return (
     <details
       ref={detailsRef}
-      className={`pos-help pos-help--${align}`}
+      className={`pos-help pos-help--${placement}`}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary aria-label={`ดูคำอธิบาย: ${title}`} title={title}>

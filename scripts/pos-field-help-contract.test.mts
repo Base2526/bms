@@ -50,3 +50,14 @@ test("ambiguous POS fields and deposit commands say exactly what they do", () =>
   assert.match(source, /placeholder="รายละเอียดเหตุผล \(บังคับและแสดงในประวัติ\)"/);
   assert.match(source, /placeholder="ข้อความนี้จะแสดงในประวัติออเดอร์"/);
 });
+
+test("POS help flips side instead of being clipped by the work panel edge", () => {
+  // The (i) next to "วันรับของ" sits at the right edge of the deposit tab on a 1024px
+  // screen; a left-anchored 310px popover was cut by the panel's overflow.
+  const help = source.slice(source.indexOf("function PosHelp("), source.indexOf("const LAST_RECEIPT_KEY"));
+  assert.ok(help.length > 0, "PosHelp body not found");
+  assert.ok(/className=\{`pos-help pos-help--\$\{placement\}`\}/.test(help), "class must follow the measured placement, not the static align");
+  assert.ok(/clippingBoundsOf\(details\)/.test(help), "placement must be measured against the clipping ancestor");
+  assert.ok(/!fitsLeft && fitsRight\) setPlacement\("right"\)/.test(help), "left-anchored help must flip when it would overflow");
+  assert.ok(/overflowX !== "visible"/.test(source), "clipping ancestor is the first non-visible overflow-x box");
+});

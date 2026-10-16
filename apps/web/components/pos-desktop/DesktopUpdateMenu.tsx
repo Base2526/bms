@@ -87,7 +87,11 @@ export default function DesktopUpdateMenu({ className = "" }: { className?: stri
         signal: controller.signal, cache: "no-store",
       });
       if (!response.ok) throw new Error("Update check failed");
-      const next: DesktopUpdateResult = await response.json();
+      const next = await response.json() as DesktopUpdateResult;
+      // คำตอบที่ไม่มี `releases` (proxy/captive portal หรือเซิร์ฟเวอร์รุ่นเก่า) เคยทำให้
+      // `.some` ล้มกลาง setState แล้ว error boundary ปิดหน้าขายทั้งจอ — เมนูอัปเดตเป็นของเสริม
+      // ห้ามพาเครื่องขายล้มตาม ให้ถือว่าเช็กไม่สำเร็จแทน
+      if (!next || !Array.isArray(next.releases)) throw new Error("Malformed update response");
       if (request.current !== controller) return;
       if (controller.signal.aborted) throw new Error("Update check timed out");
       setResult(next);
