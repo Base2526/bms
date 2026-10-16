@@ -105,6 +105,7 @@ import { receiptPromotionNotes } from "./receiptPromotionNotes";
 import { promotionFromRow } from "./crossSkuPromotions";
 import { missingGiftReturns } from "@pos-core/crossSkuPromotion";
 import { normalizePricingSnapshot } from "./pricing";
+import { getEffectiveVatReference } from "./taxMaster";
 
 export const POS_CHANNEL = "pos" as const;
 const COUNTER_RETURN_UNSUPPORTED_CHANNELS = new Set([
@@ -238,7 +239,7 @@ export type PosOperationalReadiness = {
 
 /** ข้อเท็จจริงที่ตรวจจากฐานข้อมูลได้ก่อนเปิดเคาน์เตอร์ — ไม่แทน rehearsal/hardware checklist */
 export async function getPosOperationalReadiness(tenantId: string): Promise<PosOperationalReadiness> {
-  const [core, products, cashiers, refunds, vat] = await Promise.all([
+  const [core, products, cashiers, refunds, vat, vatReference] = await Promise.all([
     query<any>(
       `SELECT
          (SELECT COUNT(*) FROM bms_locations WHERE tenant_id = $1 AND active) AS active_locations,
@@ -286,6 +287,7 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
       [tenantId]
     ),
     getVatSettings(tenantId),
+    getEffectiveVatReference("TH"),
   ]);
   const row = core.rows[0] ?? {};
   const productRow = products.rows[0] ?? {};
@@ -328,6 +330,9 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
   if (result.openShifts > 0) result.warnings.push(`มีกะเปิดค้างอยู่ ${result.openShifts} กะ`);
   if (vat.vatRegistered && !vat.abbreviatedApproved) {
     result.warnings.push("ร้านจด VAT แต่ยังไม่ได้บันทึกการอนุมัติใช้ใบกำกับภาษีอย่างย่อ");
+  }
+  if (vat.vatRegistered && vatReference && Math.abs(vat.vatRate - vatReference.rate) > 0.0001) {
+    result.warnings.push(`อัตรา VAT ของร้าน ${vat.vatRate}% ไม่ตรงกับอัตราอ้างอิงที่มีผล ${vatReference.rate}% — ตรวจสอบการตั้งค่า (ไม่บล็อกการขาย)`);
   }
   const unmappedUnitPacks = Number(productRow.unmapped_unit_packs ?? 0);
   if (unmappedUnitPacks > 0) {

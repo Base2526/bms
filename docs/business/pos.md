@@ -1494,6 +1494,13 @@ goods for tax is not the same decision as editing a product's name or price.
 
 ## e-Tax submission queue
 
+Migration `10.79` moves document-code, VAT-rate, and buyer-type references into effective-dated
+global master tables. Queue XML resolves its compatibility code using the document's `issue_date`,
+never the worker's current date. This preserves historical output when a future code version is
+added. The VAT row is a readiness advisory only and never feeds `vat.ts` or changes bill amounts.
+The initial XML mapping intentionally preserves the existing BETA byte contract; it is not proof of
+XSD conformance or readiness for real submission.
+
 Issuing a tax document at the counter never talks to the Revenue Department by itself — it only
 writes the local document row described above. Submitting that document as e-Tax XML is a separate
 background queue (`bms_etax_submissions`, migration `7.94`), gated off by default via

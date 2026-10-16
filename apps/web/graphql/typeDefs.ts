@@ -885,6 +885,10 @@ export const typeDefs = /* GraphQL */ `
     sourceVersion: String!
     updatedAt: String!
   }
+  type BmsMasterTaxDocumentType { id: ID!, code: String!, nameTh: String!, nameEn: String!, bmsDocumentType: String, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
+  type BmsMasterVatRate { id: ID!, countryCode: String!, rate: Float!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
+  type BmsMasterTaxBuyerType { id: ID!, code: String!, nameTh: String!, nameEn: String!, taxIdPolicy: String!, branchPolicy: String!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
+  type BmsMasterTaxReferences { documentTypes: [BmsMasterTaxDocumentType!]!, vatRates: [BmsMasterVatRate!]!, buyerTypes: [BmsMasterTaxBuyerType!]! }
   input BmsMasterCarrierInput {
     id: ID
     code: BmsCarrier!
@@ -1247,6 +1251,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMasterUnits(search: String, includeInactive: Boolean): [BmsMasterUnit!]!
     bmsMasterThaiAddresses(search: String, level: String, provinceCode: String, districtCode: String, includeInactive: Boolean, limit: Int): [BmsMasterThaiAddress!]!
     bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
+    bmsMasterTaxReferences: BmsMasterTaxReferences!
     bmsShippingZones: [BmsShippingZone!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!

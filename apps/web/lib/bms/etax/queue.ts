@@ -19,6 +19,7 @@ import { beginTenantTx } from "../tenant";
 import { etaxEnabledGlobally, resolveProvider, resolveSigner } from "./providers";
 import type { EtaxDocumentData } from "./types";
 import { buildEtaxXml, validateEtaxDocument } from "./xml";
+import { resolveEtaxDocumentCodes } from "../taxMaster";
 
 const MAX_ATTEMPTS = 6;
 
@@ -270,7 +271,9 @@ export async function processEtaxQueue(tenantId: string, limit = 20): Promise<Pr
         continue;
       }
 
-      const xml = buildEtaxXml(doc);
+      // Resolve by the immutable document issue date, never by today's code list.
+      const documentCodes = await resolveEtaxDocumentCodes(doc.issueDate);
+      const xml = buildEtaxXml(doc, documentCodes);
       await query(
         `UPDATE bms_etax_submissions SET xml = $2, status = 'BUILT', built_at = now(), updated_at = now() WHERE id = $1`,
         [claimedId, xml]

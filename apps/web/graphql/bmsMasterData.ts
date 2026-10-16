@@ -6,6 +6,7 @@ import {
   type MasterAddressInput, type MasterBankInput, type MasterCarrierInput, type MasterUnitInput,
 } from "@/lib/bms/masterData";
 import { listMasterCarriers } from "@/lib/bms/shippingMaster";
+import { listTaxMasterData } from "@/lib/bms/taxMaster";
 
 function requireLoggedIn(ctx: any) {
   const auth = requireAuth(ctx, { optionalAdmin: true });
@@ -41,6 +42,10 @@ export const bmsMasterDataResolvers = {
     async bmsMasterCarriers(_p: unknown, args: { includeInactive?: boolean }, ctx: any) {
       requireLoggedIn(ctx);
       return listMasterCarriers(Boolean(args.includeInactive));
+    },
+    async bmsMasterTaxReferences(_p: unknown, _args: unknown, ctx: any) {
+      requireLoggedIn(ctx);
+      return listTaxMasterData();
     },
   },
   Mutation: {

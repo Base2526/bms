@@ -16,6 +16,7 @@
 // =============================================================
 
 import type { EtaxDocumentData } from "./types";
+import type { EtaxDocumentCodeMap } from "../taxMaster";
 
 /** & < > " ' ต้อง escape ทั้งหมด — ชื่อร้าน/สินค้าไทยมี & ได้จริง */
 export function esc(v: string | number | null | undefined): string {
@@ -33,7 +34,7 @@ function num(n: number): string {
 }
 
 /** รหัสประเภทเอกสารตาม ขมธ.๑๔ — ต้องยืนยันกับเอกสาร RD ก่อนใช้จริง */
-const DOC_TYPE_CODE: Record<EtaxDocumentData["docType"], string> = {
+export const LEGACY_ETAX_DOCUMENT_CODES: EtaxDocumentCodeMap = {
   ABBREVIATED: "T02", // ใบกำกับภาษีอย่างย่อ
   FULL: "T03", // ใบกำกับภาษี
   CREDIT_NOTE: "T04", // ใบลดหนี้
@@ -44,7 +45,7 @@ function taxTypeCode(cat: "V" | "N" | "UNKNOWN"): string {
   return cat === "N" ? "FRE" : "VAT";
 }
 
-export function buildEtaxXml(doc: EtaxDocumentData): string {
+export function buildEtaxXml(doc: EtaxDocumentData, documentCodes: EtaxDocumentCodeMap = LEGACY_ETAX_DOCUMENT_CODES): string {
   const lines = doc.lines
     .map(
       (l) => `      <IncludedSupplyChainTradeLineItem>
@@ -102,7 +103,7 @@ export function buildEtaxXml(doc: EtaxDocumentData): string {
   const replaces = doc.replacesDocNo
     ? `    <ReferencedDocument>
       <IssuerAssignedID>${esc(doc.replacesDocNo)}</IssuerAssignedID>
-      <TypeCode>${DOC_TYPE_CODE.ABBREVIATED}</TypeCode>
+      <TypeCode>${documentCodes.ABBREVIATED}</TypeCode>
     </ReferencedDocument>`
     : "";
 
@@ -110,7 +111,7 @@ export function buildEtaxXml(doc: EtaxDocumentData): string {
 <CrossIndustryInvoice>
   <ExchangedDocument>
     <ID>${esc(doc.docNo)}</ID>
-    <TypeCode>${DOC_TYPE_CODE[doc.docType]}</TypeCode>
+    <TypeCode>${documentCodes[doc.docType]}</TypeCode>
     <IssueDateTime>${esc(doc.issueDate)}</IssueDateTime>
 ${doc.operatorId ? `    <OperatorID>${esc(doc.operatorId)}</OperatorID>\n` : ""}${replaces}
   </ExchangedDocument>
