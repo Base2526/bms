@@ -11,6 +11,7 @@ import {
   listMasterBarcodes, reviewMasterBarcode, type MasterBarcodeInput,
 } from "@/lib/bms/barcodeMaster";
 import { requirePlatformAdmin } from "@/lib/bms/platform";
+import { listMasterDrugs, upsertMasterDrug, type MasterDrugInput } from "@/lib/bms/masterDrugs";
 
 function requireLoggedIn(ctx: any) {
   const auth = requireAuth(ctx, { optionalAdmin: true });
@@ -55,6 +56,10 @@ export const bmsMasterDataResolvers = {
       await requirePlatformAdmin(ctx);
       return listMasterBarcodes(args);
     },
+    async bmsMasterDrugs(_p: unknown, args: any, ctx: any) {
+      requireLoggedIn(ctx);
+      return listMasterDrugs(args);
+    },
   },
   Mutation: {
     async bmsUpsertMasterBank(_p: unknown, args: { input: MasterBankInput }, ctx: any) {
@@ -71,6 +76,9 @@ export const bmsMasterDataResolvers = {
     },
     async bmsReviewMasterBarcode(_p: unknown, args: { input: MasterBarcodeInput }, ctx: any) {
       return mutation(() => reviewMasterBarcode(ctx, args.input));
+    },
+    async bmsUpsertMasterDrug(_p: unknown, args: { input: MasterDrugInput }, ctx: any) {
+      return mutation(() => upsertMasterDrug(ctx, args.input));
     },
   },
 };

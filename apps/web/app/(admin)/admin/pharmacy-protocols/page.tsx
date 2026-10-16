@@ -34,10 +34,14 @@ const Q_PRODUCT_POLICIES = gql`
       items {
         id productSku productName productType regulatoryFramework regulatoryClass
         regulatoryEvidenceSource regulatoryEvidenceRef salePolicy registrationNo maxQuantity
-        status reviewedBy reviewedAt updatedAt
+        status reviewedBy reviewedAt updatedAt masterDrugId masterDrugCode masterDrugVersion masterDrugSuggestionAppliedAt
+        suggestedMasterDrug { code genericName dosageForm strength regulatoryClass suggestedSalePolicy suggestedQuantityLimit reviewedByPharmacist reviewedByPharmacistName reviewedAt version }
       }
     }
   }
+`;
+const Q_MASTER_DRUGS = gql`
+  query PharmacyMasterDrugs { bmsMasterDrugs(limit: 500) { code genericName dosageForm strength regulatoryClass suggestedSalePolicy suggestedQuantityLimit reviewedByPharmacist reviewedByPharmacistName reviewedAt version active } }
 `;
 const M_SET_ENABLED = gql`
   mutation($id: ID!, $enabled: Boolean!) { bmsSetPharmacyProtocolEnabled(id: $id, enabled: $enabled) { id enabled } }
@@ -64,6 +68,11 @@ const M_SUBMIT_PRODUCT_POLICY = gql`
 const M_REVIEW_PRODUCT_POLICY = gql`
   mutation($productSku: String!, $decision: String!) {
     bmsReviewPharmacyProductPolicy(productSku: $productSku, decision: $decision) { id productSku status }
+  }
+`;
+const M_APPLY_MASTER_DRUG = gql`
+  mutation($productSku: String!, $masterDrugCode: String!) {
+    bmsApplyMasterDrugSuggestion(productSku: $productSku, masterDrugCode: $masterDrugCode) { id productSku status masterDrugCode }
   }
 `;
 
@@ -133,7 +142,10 @@ export default function PharmacyProtocolsPage() {
   const [policySearch, setPolicySearch] = useState("");
   const [policyPage, setPolicyPage] = useState(1);
   const [policyPageSize, setPolicyPageSize] = useState(20);
+  const [suggestionTarget, setSuggestionTarget] = useState<any | null>(null);
+  const [selectedMasterDrugCode, setSelectedMasterDrugCode] = useState<string | null>(null);
   const canManage = can("pharmacy.protocol.manage");
+  const canApplySuggestion = can("pharmacy.policy.review");
   const selectedProductType = Form.useWatch("productType", policyForm) || "UNKNOWN";
   const selectedRegulatoryFramework = Form.useWatch("regulatoryFramework", policyForm) || "UNKNOWN";
   const selectedEvidenceSource = Form.useWatch("regulatoryEvidenceSource", policyForm) || "UNKNOWN";
@@ -160,6 +172,7 @@ export default function PharmacyProtocolsPage() {
       offset: (policyPage - 1) * policyPageSize,
     },
   });
+  const masterDrugQuery = useQuery(Q_MASTER_DRUGS, queryOptions);
   const [setEnabled] = useMutation(M_SET_ENABLED, {
     onCompleted: () => { message.success(t("admin_pharmacy_protocols.saved")); refetchProtocols(); },
     onError: (e) => message.error(e?.message || t("admin_pharmacy_protocols.save_failed")),
@@ -171,6 +184,24 @@ export default function PharmacyProtocolsPage() {
   const [upsertProductPolicy, { loading: savingPolicy }] = useMutation(M_UPSERT_PRODUCT_POLICY);
   const [submitProductPolicy] = useMutation(M_SUBMIT_PRODUCT_POLICY);
   const [reviewProductPolicy] = useMutation(M_REVIEW_PRODUCT_POLICY);
+  const [applyMasterDrug, { loading: applyingMasterDrug }] = useMutation(M_APPLY_MASTER_DRUG);
+
+  const openSuggestion = (row: any) => {
+    setSuggestionTarget(row);
+    setSelectedMasterDrugCode(row?.suggestedMasterDrug?.code || row?.masterDrugCode || null);
+  };
+
+  const applySuggestion = async () => {
+    if (!suggestionTarget || !selectedMasterDrugCode) return;
+    try {
+      await applyMasterDrug({ variables: { productSku: suggestionTarget.productSku, masterDrugCode: selectedMasterDrugCode } });
+      message.success(t("admin_pharmacy_protocols.master_suggestion_applied"));
+      setSuggestionTarget(null);
+      await refetchProductPolicies();
+    } catch (error: any) {
+      message.error(error?.message || t("admin_pharmacy_protocols.master_suggestion_failed"));
+    }
+  };
 
   const openPolicyEditor = (row?: any) => {
     setPolicyEditing(row || null);
@@ -180,8 +211,8 @@ export default function PharmacyProtocolsPage() {
       productType: row?.productType || "UNKNOWN",
       regulatoryFramework: row?.regulatoryFramework || "UNKNOWN",
       regulatoryClass: row?.regulatoryClass || "UNKNOWN",
-      regulatoryEvidenceSource: row?.regulatoryEvidenceSource || "UNKNOWN",
-      regulatoryEvidenceRef: row?.regulatoryEvidenceRef || "",
+      regulatoryEvidenceSource: row?.regulatoryEvidenceSource === "MASTER_DRUG_REFERENCE" ? "UNKNOWN" : row?.regulatoryEvidenceSource || "UNKNOWN",
+      regulatoryEvidenceRef: row?.regulatoryEvidenceSource === "MASTER_DRUG_REFERENCE" ? "" : row?.regulatoryEvidenceRef || "",
       salePolicy: row?.salePolicy || "PHARMACIST_APPROVAL",
       registrationNo: row?.registrationNo || "",
       maxQuantity: row?.maxQuantity ?? null,
@@ -335,6 +366,8 @@ export default function PharmacyProtocolsPage() {
   ];
   const policyRows = productPolicyData?.bmsPharmacyProductPolicies?.items || [];
   const policyTotal = productPolicyData?.bmsPharmacyProductPolicies?.total || 0;
+  const masterDrugRows = masterDrugQuery.data?.bmsMasterDrugs || [];
+  const selectedMasterDrug = masterDrugRows.find((row: any) => row.code === selectedMasterDrugCode) || null;
   const unconfiguredProductOptions = policyRows
     .filter((row: any) => row.status === "MISSING")
     .map((row: any) => ({
@@ -360,6 +393,7 @@ export default function PharmacyProtocolsPage() {
     { title: "SKU", dataIndex: "productSku", key: "productSku" },
     { title: t("admin_pharmacy_protocols.col_type"), dataIndex: "productType", key: "productType" },
     { title: t("admin_pharmacy_protocols.col_framework"), dataIndex: "regulatoryFramework", key: "regulatoryFramework" },
+    { title: t("admin_pharmacy_protocols.col_master_suggestion"), key: "masterSuggestion", width: 260, render: (_: unknown, row: any) => row.suggestedMasterDrug ? <Space direction="vertical" size={2}><span>{row.suggestedMasterDrug.genericName} · {row.suggestedMasterDrug.strength}</span><Tag color={row.suggestedMasterDrug.reviewedByPharmacist ? "green" : "orange"}>{row.suggestedMasterDrug.reviewedByPharmacist ? t("admin_pharmacy_protocols.master_reviewed") : t("admin_pharmacy_protocols.master_not_reviewed")}</Tag></Space> : <Typography.Text type="secondary">{t("admin_pharmacy_protocols.no_master_suggestion")}</Typography.Text> },
     { title: "Regulatory class", dataIndex: "regulatoryClass", key: "regulatoryClass" },
     { title: "Sale policy", dataIndex: "salePolicy", key: "salePolicy", render: (value: string) => <Tag color={value === "DIRECT_SALE" ? "green" : value === "ONLINE_SALE_PROHIBITED" ? "red" : "orange"}>{value}</Tag> },
     { title: t("admin_pharmacy_protocols.col_max_qty"), dataIndex: "maxQuantity", key: "maxQuantity", render: (value: number | null) => value ?? "—" },
@@ -369,6 +403,7 @@ export default function PharmacyProtocolsPage() {
       key: "actions",
       render: (_: unknown, row: any) => (
         <Space wrap>
+          <Button size="small" disabled={!canApplySuggestion || masterDrugRows.length === 0 || row.status === "PENDING_REVIEW"} onClick={() => openSuggestion(row)}>{t("admin_pharmacy_protocols.use_master_suggestion")}</Button>
           {row.status !== "PENDING_REVIEW" && <Button size="small" disabled={!canManage} onClick={() => openPolicyEditor(row)}>{row.status === "MISSING" ? t("admin_pharmacy_protocols.btn_configure") : t("admin_pharmacy_protocols.btn_edit")}</Button>}
           {row.status === "DRAFT" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_send_policy_review")} onConfirm={() => transitionProductPolicy(row)}><Button size="small" disabled={!canManage}>ส่งตรวจ</Button></Popconfirm>}
           {row.status === "PENDING_REVIEW" && <Popconfirm title={t("admin_pharmacy_protocols.confirm_policy_reviewed")} onConfirm={() => transitionProductPolicy(row, "APPROVE")}><Button size="small" type="primary" disabled={!canManage}>เภสัชกรอนุมัติ</Button></Popconfirm>}
@@ -476,6 +511,33 @@ export default function PharmacyProtocolsPage() {
           },
         }}
       />
+      <Modal
+        open={Boolean(suggestionTarget)}
+        title={t("admin_pharmacy_protocols.master_suggestion_modal")}
+        onCancel={() => setSuggestionTarget(null)}
+        onOk={() => void applySuggestion()}
+        okButtonProps={{ disabled: !selectedMasterDrugCode }}
+        confirmLoading={applyingMasterDrug}
+        okText={t("admin_pharmacy_protocols.use_as_draft")}
+        cancelText={t("admin_pharmacy_protocols.cancel")}
+      >
+        <Alert closable type="info" showIcon style={{ marginBottom: 12 }} message={t("admin_pharmacy_protocols.master_suggestion_draft_only")} />
+        <Select
+          showSearch
+          optionFilterProp="label"
+          style={{ width: "100%", marginBottom: 12 }}
+          value={selectedMasterDrugCode}
+          onChange={setSelectedMasterDrugCode}
+          placeholder={t("admin_pharmacy_protocols.select_master_drug")}
+          options={masterDrugRows.map((row: any) => ({ value: row.code, label: `${row.genericName} · ${row.strength} (${row.code})` }))}
+        />
+        {selectedMasterDrug && <Space direction="vertical" size={4}>
+          <Typography.Text>{selectedMasterDrug.dosageForm} · {selectedMasterDrug.regulatoryClass}</Typography.Text>
+          <Typography.Text>{selectedMasterDrug.suggestedSalePolicy}{selectedMasterDrug.suggestedQuantityLimit ? ` · max ${selectedMasterDrug.suggestedQuantityLimit}` : ""}</Typography.Text>
+          <Tag color={selectedMasterDrug.reviewedByPharmacist ? "green" : "orange"}>{selectedMasterDrug.reviewedByPharmacist ? t("admin_pharmacy_protocols.master_reviewed") : t("admin_pharmacy_protocols.master_not_reviewed")}</Tag>
+          {selectedMasterDrug.reviewedByPharmacistName && <Typography.Text type="secondary">{selectedMasterDrug.reviewedByPharmacistName}</Typography.Text>}
+        </Space>}
+      </Modal>
       <Modal title={editing ? t("admin_pharmacy_protocols.modal_edit_protocol") : t("admin_pharmacy_protocols.modal_create_protocol")} open={editorOpen} onCancel={() => setEditorOpen(false)} onOk={saveProtocol} confirmLoading={saving} width={920}>
         <Alert closable
           type="info"

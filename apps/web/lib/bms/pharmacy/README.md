@@ -162,6 +162,9 @@ pharmacist handoff. This never relaxes clinical validation or grants a sale appr
 - `7.83__bms_pharmacy_seed_protocol_safety_fields.sql` — repairs untouched MVP Drafts by declaring
   every safety/red-flag question referenced by their rules. This lets stores converted to the
   Pharmacy archetype submit the samples for review without weakening field-reference validation.
+- `10.82__bms_master_drugs.sql` — optional global drug-policy suggestions plus tenant snapshots.
+  The only seed is an inactive shape example; no real drug content ships without a named licensed
+  pharmacist owning and reviewing the dataset.
 
 ## Permissions
 
@@ -519,6 +522,24 @@ Three further boundaries of the same approval, all found in a later recheck of t
   counter case into an "online" one and make its items unapprovable). Judged as "online", an
   `ONLINE_SALE_PROHIBITED` product raised from a register was unapprovable: the pharmacist standing
   next to the customer still could not say yes.
+
+## Global drug-policy suggestions (`10.82`)
+
+`bms_master_drugs` reduces repeated data entry; it does not create a shared clinical decision.
+Platform admins maintain effective-dated versions of generic name/form/strength, regulatory class and suggested sale
+conditions with source provenance. A row that has not been reviewed by a named pharmacist is visibly
+labelled **ยังไม่ได้ตรวจโดยเภสัชกร**. The repository deliberately seeds no real drug: the one
+`SAMPLE-DO-NOT-USE` row is inactive and exists only to document the shape.
+The runtime role keeps SELECT-only table access; platform-admin mutations and reviewed barcode linking
+go through narrow security-definer functions after server-side RBAC and remain in the caller's audited transaction.
+
+The Product Policy page can find a suggestion through an `APPROVED` Phase 6 product/pack barcode or
+let authorized staff choose one manually. **ใช้ค่าแนะนำ** requires `pharmacy.policy.review` and
+copies a version/source/reviewer snapshot into that shop's policy as `DRAFT`; it clears any previous
+shop approval and records the audit row in the same tenant transaction. A later master edit cannot
+change the copied regulatory class, sale policy or quantity limit. The shop still submits the Draft
+and its own licensed pharmacist still approves it through the existing workflow. Neither
+`evaluatePharmacySale()` nor any customer-facing clinical reply reads `bms_master_drugs`.
 
 ## Prescription items
 

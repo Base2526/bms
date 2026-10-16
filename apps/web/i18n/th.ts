@@ -384,7 +384,7 @@ const th = {
   },
   admin_master_data: {
     title: "ข้อมูลกลางแพลตฟอร์ม", warning_title: "การแก้ไขมีผลกับทุกร้าน", warning_description: "แก้ข้อมูลอ้างอิงจากแหล่งที่ตรวจสอบแล้วเท่านั้น ชื่อธนาคารและข้อความบนเอกสารที่ snapshot ไว้จะไม่เปลี่ยนตามข้อมูลกลาง",
-    banks: "ธนาคาร", units: "หน่วยมาตรฐาน", addresses: "ที่อยู่ไทย", carriers: "บริษัทขนส่ง", barcodes: "บาร์โค้ด", tax: "ข้อมูลอ้างอิงภาษี", search: "ค้นหารหัสหรือชื่อ", reload: "โหลดใหม่", save: "บันทึก", cancel: "ยกเลิก", saved: "บันทึกข้อมูลกลางแล้ว", save_error: "บันทึกข้อมูลกลางไม่สำเร็จ",
+    banks: "ธนาคาร", units: "หน่วยมาตรฐาน", addresses: "ที่อยู่ไทย", carriers: "บริษัทขนส่ง", barcodes: "บาร์โค้ด", drugs: "ข้อมูลยากลาง", tax: "ข้อมูลอ้างอิงภาษี", search: "ค้นหารหัสหรือชื่อ", reload: "โหลดใหม่", save: "บันทึก", cancel: "ยกเลิก", saved: "บันทึกข้อมูลกลางแล้ว", save_error: "บันทึกข้อมูลกลางไม่สำเร็จ",
     add_bank: "เพิ่มธนาคาร", add_unit: "เพิ่มหน่วย", add_address: "เพิ่มข้อมูลที่อยู่", bank_form: "ข้อมูลอ้างอิงธนาคาร", unit_form: "หน่วยมาตรฐาน", address_form: "ข้อมูลอ้างอิงที่อยู่ไทย",
     code: "รหัส", country: "ประเทศ", name_th: "ชื่อไทย", name_en: "ชื่ออังกฤษ", sort_order: "ลำดับ", status: "สถานะ", active: "เปิดใช้", inactive: "ปิดใช้", edit: "แก้ไข",
     source: "แหล่งข้อมูล", source_version: "เวอร์ชันแหล่งข้อมูล", kind: "ชนิด", aliases: "ชื่อเรียกอื่น", aliases_help: "คั่นชื่อเรียกที่ร้านใช้ด้วยจุลภาค", base_factor: "ตัวคูณเทียบหน่วยฐานในชนิดเดียวกัน",
@@ -392,6 +392,7 @@ const th = {
     carrier_form: "ข้อมูลอ้างอิงบริษัทขนส่ง", integration_status: "สถานะการเชื่อมต่อ", tracking_url_template: "แม่แบบลิงก์ติดตาม", tracking_url_help: "ลิงก์ HTTPS ที่ตรวจสอบแล้วและมี {trackingNo} (ไม่บังคับ)", tracking_pattern: "รูปแบบเลขพัสดุ", carrier_status_title: "LIVE หมายถึงเชื่อมระบบจริงที่ตรวจสอบแล้ว", carrier_status_description: "MOCK และ NONE จะไม่แสดงว่าเชื่อมต่อแล้ว เพิ่มลิงก์หรือรูปแบบเลขพัสดุจากเอกสารขนส่งที่ตรวจสอบแล้วเท่านั้น",
     tax_beta_title: "e-Tax ยังเป็น BETA", tax_beta_description: "ข้อมูลอ้างอิงแบบมีเวอร์ชันใช้ตรวจสอบและรักษาความเข้ากันได้ของ XML แต่ไม่ได้รับรองว่า XML พร้อมยื่นจริง และอัตรา VAT อ้างอิงจะไม่เปลี่ยนตัวเลขของบิล", tax_document_types: "รหัสประเภทเอกสาร", vat_references: "อัตรา VAT อ้างอิง", tax_buyer_types: "กติกาประเภทผู้ซื้อ", effective_period: "ช่วงเวลาที่มีผล", tax_id_policy: "กฎเลขผู้เสียภาษี", branch_policy: "กฎรหัสสาขา",
     barcode_review_title: "ตรวจข้อมูลบาร์โค้ดที่ร้านยืนยัน", barcode_review_description: "อนุมัติ แก้ไข หรือปฏิเสธก่อนให้ร้านอื่นใช้เติมฟอร์ม ข้อมูลจาก provider ไม่ถูกเก็บใน master โดยตรง", barcode: "บาร์โค้ด", name: "ชื่อสินค้า", brand: "ยี่ห้อ", size: "ขนาด", confirmations: "ร้านยืนยัน", review: "ตรวจ", unit_code: "รหัสหน่วย", category_hint: "หมวดหมู่แนะนำ",
+    drug_safety_title: "ข้อมูลยากลางเป็นเพียงคำแนะนำ ไม่ใช่การอนุมัติข้ามร้าน", drug_safety_description: "ห้ามเพิ่มข้อมูลยาจริงจนกว่าจะมีเภสัชกรที่มีใบอนุญาตระบุชื่อเป็นเจ้าของและตรวจชุดข้อมูล แถว SAMPLE ที่ปิดใช้อยู่เป็นตัวอย่างโครงสร้างเท่านั้นและนำไปใช้ไม่ได้", add_drug: "เพิ่มข้อมูลยา", drug_form: "ข้อมูลยากลาง", generic_name: "ชื่อสามัญ", dosage_form: "รูปแบบยา", strength: "ความแรง", regulatory_class: "ประเภทตามกฎหมายยา", suggested_policy: "นโยบายขายที่แนะนำ", suggested_limit: "จำนวนสูงสุดที่แนะนำ", drug_barcodes: "บาร์โค้ดที่เสนอให้เชื่อม", drug_barcodes_help: "คั่น GTIN ด้วยจุลภาค การจับคู่อัตโนมัติจะทำงานเมื่อแถวบาร์โค้ดจาก Phase 6 มีสถานะ APPROVED เท่านั้น", pharmacist_review: "การตรวจโดยเภสัชกร", reviewed_by_pharmacist: "ตรวจโดยเภสัชกรแล้ว", not_reviewed_by_pharmacist: "ยังไม่ได้ตรวจโดยเภสัชกร", reviewer_name: "ชื่อเภสัชกรผู้รับผิดชอบ", reviewer_license: "เลขใบอนุญาตเภสัชกร", version: "เวอร์ชัน",
   },
   footer: {
     support: "ติดต่อฝ่ายสนับสนุน",
@@ -3049,6 +3050,7 @@ const th = {
     ev_fda_ann: "ประกาศหรือหลักเกณฑ์ของ อย.",
     ev_supplier: "เอกสารจากผู้ผลิต/ผู้จำหน่าย",
     ev_pharmacist: "บันทึกการตรวจโดยเภสัชกร",
+    ev_master_drug: "snapshot คำแนะนำจากข้อมูลยากลาง",
     saved: "บันทึกแล้ว",
     save_failed: "บันทึกไม่สำเร็จ",
     policy_draft_saved: "บันทึก Product Policy เป็น Draft แล้ว",
@@ -3126,6 +3128,7 @@ const th = {
     pick_from_catalog2: "เลือกสินค้าจาก Catalog แล้วกำหนดเงื่อนไขการขาย การบันทึกครั้งแรกจะเป็น Draft เสมอ",
     compound_redflag_hint: "Compound red flag ใช้ condition เช่น {\"allOf\":[{\"field\":\"patient_age_years\",\"lessThan\":0.25},{\"field\":\"fever_temp\",\"greaterThanOrEqual\":38}]} และ escalationRules.bySeverity แยก EMERGENCY/HIGH/MODERATE/LOW",
     form_max_qty: "จำนวนสูงสุดต่อออร์เดอร์",
+    col_master_suggestion: "คำแนะนำจากข้อมูลกลาง", master_reviewed: "ตรวจโดยเภสัชกรแล้ว", master_not_reviewed: "ยังไม่ได้ตรวจโดยเภสัชกร", no_master_suggestion: "ไม่พบบาร์โค้ดที่จับคู่", use_master_suggestion: "ใช้ค่าแนะนำ", master_suggestion_modal: "ใช้คำแนะนำจากข้อมูลยากลาง", master_suggestion_draft_only: "ระบบจะคัดลอก snapshot แบบมีเวอร์ชันลง Draft เท่านั้น ไม่อนุมัติ Product Policy ของร้าน เภสัชกรที่มีใบอนุญาตยังต้องตรวจและอนุมัติอีกครั้ง", select_master_drug: "เลือกข้อมูลยากลาง", use_as_draft: "คัดลอกลง Draft", cancel: "ยกเลิก", master_suggestion_applied: "คัดลอกค่าแนะนำลง Product Policy Draft แล้ว", master_suggestion_failed: "ใช้คำแนะนำข้อมูลยากลางไม่สำเร็จ",
   },
   admin_pharmacy_review_mockup: {
     approved_toast: "Mockup: เภสัช approve และส่งคำแนะนำกลับลูกค้าแล้ว",

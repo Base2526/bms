@@ -53,6 +53,7 @@ import { listSellableProducts } from "@/lib/bms/products";
 import {
   listPharmacyProductPolicies,
   listPharmacyProductPoliciesPage,
+  applyMasterDrugSuggestionToPolicy,
   reviewPharmacyProductPolicy,
   submitPharmacyProductPolicyForReview,
   upsertPharmacyProductPolicyDraft,
@@ -459,6 +460,26 @@ export const bmsPharmacyResolvers = {
         return policy;
       } catch (error: any) {
         throw new GraphQLError(error?.message || "ตรวจ Product Policy ไม่สำเร็จ", {
+          extensions: { code: "BAD_USER_INPUT" },
+        });
+      }
+    },
+    async bmsApplyMasterDrugSuggestion(
+      _p: unknown,
+      args: { productSku: string; masterDrugCode: string },
+      ctx: any
+    ) {
+      await requirePermission(ctx, "pharmacy.policy.review");
+      try {
+        return await applyMasterDrugSuggestionToPolicy({
+          tenantId: getTenantId(ctx),
+          productSku: args.productSku,
+          masterDrugCode: args.masterDrugCode,
+          actorId: actorId(ctx),
+          actorLabel: String(ctx?.admin?.email || ctx?.admin?.id || "admin"),
+        });
+      } catch (error: any) {
+        throw new GraphQLError(error?.message || "ใช้ค่าแนะนำข้อมูลยากลางไม่สำเร็จ", {
           extensions: { code: "BAD_USER_INPUT" },
         });
       }

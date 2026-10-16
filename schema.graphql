@@ -2254,6 +2254,50 @@ input BmsMasterCarrierInput {
   trackingUrlTemplate: String
 }
 
+type BmsMasterDrug {
+  active: Boolean!
+  barcodes: [String!]!
+  code: String!
+  countryCode: String!
+  dosageForm: String!
+  effectiveFrom: String!
+  effectiveTo: String
+  genericName: String!
+  id: ID!
+  regulatoryClass: String!
+  reviewedAt: String
+  reviewedByPharmacist: Boolean!
+  reviewedByPharmacistLicenseNo: String
+  reviewedByPharmacistName: String
+  source: String!
+  sourceVersion: String!
+  strength: String!
+  suggestedQuantityLimit: Int
+  suggestedSalePolicy: String!
+  updatedAt: String!
+  version: Int!
+}
+
+input BmsMasterDrugInput {
+  active: Boolean
+  barcodes: [String!]
+  code: String!
+  countryCode: String
+  dosageForm: String!
+  genericName: String!
+  id: ID
+  regulatoryClass: String!
+  reviewedByPharmacist: Boolean
+  reviewedByPharmacistLicenseNo: String
+  reviewedByPharmacistName: String
+  source: String!
+  sourceVersion: String!
+  strength: String!
+  suggestedQuantityLimit: Int
+  suggestedSalePolicy: String!
+  version: Int
+}
+
 type BmsMasterTaxBuyerType {
   active: Boolean!
   branchPolicy: String!
@@ -3353,6 +3397,20 @@ type BmsPharmacyLicenseUser {
   pharmacistLicenseNo: String
 }
 
+type BmsPharmacyMasterDrugSuggestion {
+  code: String!
+  dosageForm: String!
+  genericName: String!
+  regulatoryClass: String!
+  reviewedAt: String
+  reviewedByPharmacist: Boolean!
+  reviewedByPharmacistName: String
+  strength: String!
+  suggestedQuantityLimit: Int
+  suggestedSalePolicy: String!
+  version: Int!
+}
+
 type BmsPharmacyOperationsReport {
   approvedPolicyCount: Int!
   draftPolicyCount: Int!
@@ -3381,6 +3439,12 @@ type BmsPharmacyPolicyReadiness {
 type BmsPharmacyProductPolicy {
   createdAt: String!
   id: ID!
+  masterDrugCode: String
+  masterDrugId: ID
+  masterDrugSuggestionAppliedAt: String
+  masterDrugSuggestionAppliedBy: ID
+  masterDrugSuggestionSnapshot: JSON
+  masterDrugVersion: Int
   maxQuantity: Int
   productName: String!
   productSku: String!
@@ -3395,6 +3459,7 @@ type BmsPharmacyProductPolicy {
   safetyRuleKey: String
   salePolicy: String!
   status: String!
+  suggestedMasterDrug: BmsPharmacyMasterDrugSuggestion
   tenantId: ID!
   updatedAt: String!
 }
@@ -8577,6 +8642,7 @@ type Mutation {
   bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
   bmsAdjustLoyaltyPoints(customerId: ID!, note: String!, points: Int!): BmsLoyaltyBalance!
   bmsAdjustStock(delta: Int!, locationId: ID!, note: String, size: String!, sku: String!): BmsVariant!
+  bmsApplyMasterDrugSuggestion(masterDrugCode: String!, productSku: String!): BmsPharmacyProductPolicy!
   bmsApplyStarterCategories: BmsStarterCategoryApplyResult!
   bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
   bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, orderDraft: JSON, pharmacistResponse: String!): BmsPharmacyAssessment!
@@ -8883,6 +8949,7 @@ type Mutation {
   bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
   bmsUpsertMasterBank(input: BmsMasterBankInput!): BmsMasterBank!
   bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
+  bmsUpsertMasterDrug(input: BmsMasterDrugInput!): BmsMasterDrug!
   bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
   bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
   bmsUpsertMembershipTier(input: BmsMembershipTierInput!): BmsMembershipTier!
@@ -9303,6 +9370,7 @@ type Query {
   bmsMasterBanks(includeInactive: Boolean, search: String): [BmsMasterBank!]!
   bmsMasterBarcodes(limit: Int, search: String, status: String): [BmsMasterBarcode!]!
   bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
+  bmsMasterDrugs(includeInactive: Boolean, limit: Int, search: String): [BmsMasterDrug!]!
   bmsMasterTaxReferences: BmsMasterTaxReferences!
   bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!
   bmsMasterUnits(includeInactive: Boolean, search: String): [BmsMasterUnit!]!

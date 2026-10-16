@@ -912,6 +912,48 @@ export const typeDefs = /* GraphQL */ `
     categoryHint: String
     status: String!
   }
+  type BmsMasterDrug {
+    id: ID!
+    code: String!
+    countryCode: String!
+    genericName: String!
+    dosageForm: String!
+    strength: String!
+    regulatoryClass: String!
+    suggestedSalePolicy: String!
+    suggestedQuantityLimit: Int
+    barcodes: [String!]!
+    source: String!
+    sourceVersion: String!
+    reviewedByPharmacist: Boolean!
+    reviewedByPharmacistName: String
+    reviewedByPharmacistLicenseNo: String
+    reviewedAt: String
+    version: Int!
+    effectiveFrom: String!
+    effectiveTo: String
+    active: Boolean!
+    updatedAt: String!
+  }
+  input BmsMasterDrugInput {
+    id: ID
+    code: String!
+    countryCode: String
+    genericName: String!
+    dosageForm: String!
+    strength: String!
+    regulatoryClass: String!
+    suggestedSalePolicy: String!
+    suggestedQuantityLimit: Int
+    barcodes: [String!]
+    source: String!
+    sourceVersion: String!
+    reviewedByPharmacist: Boolean
+    reviewedByPharmacistName: String
+    reviewedByPharmacistLicenseNo: String
+    version: Int
+    active: Boolean
+  }
   input BmsMasterCarrierInput {
     id: ID
     code: BmsCarrier!
@@ -1276,6 +1318,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
     bmsMasterTaxReferences: BmsMasterTaxReferences!
     bmsMasterBarcodes(search: String, status: String, limit: Int): [BmsMasterBarcode!]!
+    bmsMasterDrugs(search: String, includeInactive: Boolean, limit: Int): [BmsMasterDrug!]!
     bmsShippingZones: [BmsShippingZone!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
@@ -3822,6 +3865,27 @@ export const typeDefs = /* GraphQL */ `
     reviewedAt: String
     createdAt: String!
     updatedAt: String!
+    masterDrugCode: String
+    masterDrugId: ID
+    masterDrugVersion: Int
+    masterDrugSuggestionSnapshot: JSON
+    masterDrugSuggestionAppliedAt: String
+    masterDrugSuggestionAppliedBy: ID
+    suggestedMasterDrug: BmsPharmacyMasterDrugSuggestion
+  }
+
+  type BmsPharmacyMasterDrugSuggestion {
+    code: String!
+    genericName: String!
+    dosageForm: String!
+    strength: String!
+    regulatoryClass: String!
+    suggestedSalePolicy: String!
+    suggestedQuantityLimit: Int
+    reviewedByPharmacist: Boolean!
+    reviewedByPharmacistName: String
+    reviewedAt: String
+    version: Int!
   }
 
   type BmsPharmacyProductPolicyPage {
@@ -5336,6 +5400,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
     bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
     bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
+    bmsUpsertMasterDrug(input: BmsMasterDrugInput!): BmsMasterDrug!
     bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
     bmsDeleteProductPack(id: ID!): Boolean!
     bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
@@ -5629,6 +5694,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertPharmacyProductPolicy(input: BmsPharmacyProductPolicyInput!): BmsPharmacyProductPolicy!
     bmsSubmitPharmacyProductPolicyForReview(productSku: String!): BmsPharmacyProductPolicy!
     bmsReviewPharmacyProductPolicy(productSku: String!, decision: String!): BmsPharmacyProductPolicy!
+    bmsApplyMasterDrugSuggestion(productSku: String!, masterDrugCode: String!): BmsPharmacyProductPolicy!
     bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!
     bmsRemoveAiKey: Boolean!
     bmsTestAiKey: BmsTestAiKeyResult!

@@ -109,13 +109,7 @@ export async function reviewMasterBarcode(ctx: MasterContext, input: MasterBarco
   }
   return (await runInTransaction(actorId, async (client) => {
     const saved = await client.query<any>(
-      `UPDATE bms_master_barcodes SET
-         name=$2,brand=NULLIF($3,''),size_text=NULLIF($4,''),unit_code=NULLIF($5,''),
-         category_hint=NULLIF($6,''),status=$7,
-         source=CASE WHEN source='MERCHANT_CONFIRMED' THEN source ELSE 'PLATFORM_CURATED' END,
-         updated_at=now()
-       WHERE id=$1
-       RETURNING *`,
+      `SELECT * FROM public.review_master_barcode($1,$2,$3,$4,$5,$6,$7)`,
       [input.id, name, text(input.brand, 120), text(input.sizeText, 80),
         text(input.unitCode, 3).toUpperCase(), text(input.categoryHint, 120), status],
     );
