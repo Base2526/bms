@@ -22,6 +22,7 @@ import {
 import { runImport } from "@/lib/bms/productImport";
 import { PRODUCT_IMPORT_MAX_ROWS } from "@/lib/bms/productImport.constants";
 import { listCategories, createCategory, renameCategory, deleteCategory } from "@/lib/bms/productCategories";
+import { applyStarterCategories } from "@/lib/bms/starterMasterData";
 import { listMovements } from "@/lib/bms/movements";
 import { listVariantReservations } from "@/lib/bms/stock";
 import { requirePermission } from "@/lib/bms/permissions";
@@ -343,6 +344,15 @@ export const bmsProductsResolvers = {
         const c = await createCategory(getTenantId(ctx), args.name);
         await audit(ctx, "product.category.create", c.id, { name: c.name });
         return c;
+      } catch (err) {
+        toGqlError(err);
+      }
+    },
+    async bmsApplyStarterCategories(_p: unknown, _args: unknown, ctx: any) {
+      await requirePermission(ctx, "product.edit");
+      const auth = requireAuth(ctx);
+      try {
+        return await applyStarterCategories(getTenantId(ctx), String(auth.author_id));
       } catch (err) {
         toGqlError(err);
       }

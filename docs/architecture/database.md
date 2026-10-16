@@ -1770,6 +1770,25 @@ mismatch adds a POS-readiness warning without blocking sales or changing issued 
 rows version the tax-ID and branch-code policy while the Thai 13-digit checksum remains application
 code. Issued buyer, seller, VAT, and document snapshots remain immutable.
 
+## Starter and emergency reference data (`10.80`)
+
+`bms_master_category_templates` and `bms_master_archetype_units` are global suggestions keyed by
+shop archetype. A tenant must explicitly click **Use starter categories** (or explicitly create a
+Starter Catalog) before anything is copied. `bms_category_template_applications` is tenant-scoped,
+forced-RLS history: it prevents a second click from recreating a template after the shop renamed or
+deleted its local category. Local categories remain fully editable and no existing tenant is seeded.
+
+`bms_master_holidays` stores provenance-bearing `PUBLIC` and `BANK` display references.
+`scripts/import-th-holidays.mts` validates a single annual JSON file and rolls back by default;
+`--apply`, an actor UUID, and an audit tenant UUID are required to commit. Holiday rows do not alter
+AR due dates, order acceptance, or cron scheduling in this phase.
+
+`bms_master_emergency_numbers` stores the Thai 1669, 1367, 1323, and 1155 directory. The emergency
+guard still evaluates the raw message before context reads. Its optional lookup is bounded and the
+pure composer retains code constants, so missing tables, pool saturation, timeout, or a database
+outage produce the same byte-exact customer copy. All four global tables give `bms_app` SELECT only
+and use global revision history; the tenant application ledger receives tenant RLS and normal grants.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

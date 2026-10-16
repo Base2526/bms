@@ -94,8 +94,10 @@ separates MEDICAL / POISONING / SELF_HARM and composes static Thai/English copy 
 1367; self-harm retains supportive language and 1323; English adds Tourist Police 1155 last.
 Official contact sources were checked on 2026-10-07:
 [Ramathibodi](https://www.rama.mahidol.ac.th/poisoncenter/sites/default/files/public/pdf/books/Antidote_book4.pdf)
-and [Tourist Police](https://www.touristpolice.go.th/contact-us). These are fixed constants, never a
-runtime web request. Wording is still **not clinically reviewed**, and matching is not complete triage.
+and [Tourist Police](https://www.touristpolice.go.th/contact-us). Since `10.80`, the reply can read
+the four values from `bms_master_emergency_numbers`; the same values remain fixed in dependency-free
+`emergency.ts` as the mandatory database-failure fallback. This is never a runtime web request.
+Wording is still **not clinically reviewed**, and matching is not complete triage.
 
 Settings → store tab maintains public emergency departments near the **shop**, not the customer.
 Only active 24h entries supplement the reply (max 3, sort order then distance). An unknown chat

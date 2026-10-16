@@ -221,6 +221,7 @@ const CONFIGURATION = [
   "bms_delivery_provider_settings", "bms_social_auth_settings",
   "bms_app_download_settings", // Public homepage reads on load; admin form uses the saved response.
   "bms_local_installation", "bms_retail_local_release_assets", "bms_sample_runs", "bms_sample_records",
+  "bms_category_template_applications", // Opt-in configuration ledger; Getting Started refreshes after the mutation.
 ];
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */

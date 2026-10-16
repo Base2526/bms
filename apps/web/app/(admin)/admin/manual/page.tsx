@@ -713,6 +713,7 @@ const ONBOARDING_CARDS_TH: OnboardingCard[] = [
     desc: "เหมาะกับเจ้าของร้านหรือแอดมินที่กำลังเปิดร้านใหม่และอยากให้ทีมเริ่มใช้งานได้เร็วที่สุด",
     steps: [
       "เปิด Getting Started เพื่อไล่ checklist พื้นฐานก่อนว่าร้านยังขาดอะไรบ้าง",
+      "กด ใช้หมวดหมู่ตั้งต้น เพื่อคัดลอกหมวดหมู่ตามประเภทร้าน ร้านแก้ต่อได้ และกดซ้ำจะไม่เพิ่มหรือทับรายการเดิม",
       "เข้า Settings เพื่อกรอกชื่อร้าน, เวลาเปิด, บัญชีรับเงิน, ค่าส่ง, webhook/token และ AI provider",
       "เข้า Products เพื่อเพิ่มสินค้าหลักอย่างน้อยชุดแรก พร้อมราคาและ stock",
       "ถ้าจะขายหน้าร้าน ให้เข้า POS Devices และ POS Readiness ก่อนเปิดขายจริง",
@@ -1979,6 +1980,7 @@ const ONBOARDING_CARDS_EN: OnboardingCard[] = [
     desc: "For an owner or admin setting up a shop for the first time and trying to get the team usable quickly",
     steps: [
       "Open Getting Started and clear the basic setup checklist first",
+      "Use starter categories to copy editable suggestions for the selected shop type; applying again does not duplicate or overwrite them",
       "Go to Settings to fill in the shop name, hours, payment accounts, shipping fees, webhook/token setup, and AI provider",
       "Go to Products and create the first sellable product set with prices and stock",
       "If the shop will sell at the counter, open POS Devices and POS Readiness before the first live sale",

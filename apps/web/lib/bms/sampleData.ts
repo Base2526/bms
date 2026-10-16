@@ -5,6 +5,7 @@ import { beginTenantTx } from "./tenant";
 import { enforceProductQuota } from "./plans";
 import { starterSampleImageUrl } from "./sampleCatalogImages";
 import { normalizeShopArchetype, shopArchetypeHasStarterCatalog, type ShopArchetype } from "./shopArchetypes";
+import { applyStarterCategoriesInTx, defaultStarterUnitInTx } from "./starterMasterData";
 
 export type SampleDataMode = "STARTER_CATALOG" | "FULL_DEMO";
 export type SampleRunStatus = "RUNNING" | "ACTIVE" | "FAILED" | "DELETING" | "DELETED";
@@ -416,6 +417,9 @@ export async function createStarterCatalog(
       }
       throw error;
     }
+    // Only an admitted sample run may apply its opt-in supporting defaults.
+    await applyStarterCategoriesInTx(client, tenantId, requestedBy ? String(requestedBy) : null);
+    const archetypeUnit = await defaultStarterUnitInTx(client, archetype);
     const location = await client.query<{ id: string }>(
       `SELECT id FROM bms_locations
         WHERE tenant_id = $1 AND active
@@ -476,11 +480,20 @@ export async function createStarterCatalog(
              VALUES ($1,$2,$3,$4,0,0,0)`,
             [tenantId, location.rows[0].id, sku, variant]
           );
+          const requestedUnitCode: Record<string, string> = {
+            PIECE: "H87", GRAM: "GRM", BOX: "BX", BAG: "BG", BOTTLE: "BO",
+          };
+          const explicitCode = item.baseUnit ? requestedUnitCode[item.baseUnit] : undefined;
+          const packUnit = explicitCode
+            ? (await client.query<{ code: string; name: string }>(
+                `SELECT code,name_th AS name FROM bms_master_units WHERE code=$1 AND active`, [explicitCode],
+              )).rows[0] ?? archetypeUnit
+            : archetypeUnit;
           await client.query(
             `INSERT INTO bms_product_packs
-               (tenant_id, product_sku, size, pack_code, unit_name, base_qty, price, is_base, active)
-             VALUES ($1,$2,$3,'BASE',$4,1,NULL,TRUE,TRUE)`,
-            [tenantId, sku, variant, item.baseUnit ?? "ชิ้น"]
+               (tenant_id, product_sku, size, pack_code, unit_name, unit_code, base_qty, price, is_base, active)
+             VALUES ($1,$2,$3,'BASE',$4,$5,1,NULL,TRUE,TRUE)`,
+            [tenantId, sku, variant, packUnit?.name ?? item.baseUnit ?? "ชิ้น", packUnit?.code ?? null]
           );
         }
       }

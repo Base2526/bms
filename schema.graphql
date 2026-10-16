@@ -7675,6 +7675,13 @@ type BmsStaffRef {
   role: String
 }
 
+type BmsStarterCategoryApplyResult {
+  appliedCount: Int!
+  archetype: String!
+  categories: [BmsProductCategory!]!
+  createdCount: Int!
+}
+
 type BmsStatusCount {
   count: Int!
   status: String!
@@ -8542,6 +8549,7 @@ type Mutation {
   bmsAdjustAiCredits(amount: Int!, note: String): Boolean!
   bmsAdjustLoyaltyPoints(customerId: ID!, note: String!, points: Int!): BmsLoyaltyBalance!
   bmsAdjustStock(delta: Int!, locationId: ID!, note: String, size: String!, sku: String!): BmsVariant!
+  bmsApplyStarterCategories: BmsStarterCategoryApplyResult!
   bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
   bmsApproveAssessment(assessmentId: ID!, expectedVersion: Int!, orderDraft: JSON, pharmacistResponse: String!): BmsPharmacyAssessment!
 
