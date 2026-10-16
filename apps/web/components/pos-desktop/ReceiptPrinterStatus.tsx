@@ -22,7 +22,12 @@ export default function ReceiptPrinterStatus({ compactReady = false }: { compact
     <Button type="text" icon={<PrinterOutlined />} title="พิมพ์ทดสอบ" aria-label="พิมพ์ทดสอบ" style={{ minWidth: 44, minHeight: 44 }}
       disabled={!canTestDesktopPrinter(printer)} onClick={() => void run(testDesktopPrinter)} />
   </div>;
-  return <div style={{ margin: "12px 0", textAlign: "left", width: "100%", flex: "1 0 100%", order: -1 }}>
+  // This component is used both inside wrapping action rows and as a direct child of
+  // the POS's vertical workspace. A 100% flex-basis means width in the former but
+  // height in the latter, where it used to consume the whole screen and push the
+  // active tab below an overflow:hidden boundary. minWidth keeps a full row without
+  // changing its vertical flex basis.
+  return <div style={{ margin: "12px 0", textAlign: "left", width: "100%", minWidth: "100%", flex: "0 0 auto", order: -1 }}>
     <Alert closable key={[error, printer.error, printer.checking, printer.busy, unavailable, printer.state?.message].join("|")}
       showIcon type={error || printer.error ? "error" : printer.disabled ? "warning" : "success"}
       message={error || printer.error || (printer.busy ? "กำลังส่งงานไปเครื่องพิมพ์" : printer.checking ? "กำลังตรวจสอบเครื่องพิมพ์"
