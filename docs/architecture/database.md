@@ -1789,6 +1789,23 @@ pure composer retains code constants, so missing tables, pool saturation, timeou
 outage produce the same byte-exact customer copy. All four global tables give `bms_app` SELECT only
 and use global revision history; the tenant application ledger receives tenant RLS and normal grants.
 
+## Barcode master cache (`10.81`)
+
+`bms_master_barcodes` is a global reviewed suggestion table with barcode, descriptive catalog
+fields, provenance, confirmation count and `CANDIDATE`/`APPROVED`/`REJECTED` status. It deliberately
+has no `tenant_id`, shop name, price, cost, stock, or provider image URL. Codes in the restricted
+20–29 range, including 21/22 scale labels and zero-padded equivalents, are rejected. Only
+`APPROVED` rows are used for autofill, before the external provider, and never write a product.
+
+`bms_store_profile.barcode_master_contribution_enabled` is false by default. An enabled shop must
+still explicitly confirm each product save. `bms_barcode_master_contributions` is a forced-RLS,
+tenant-owned deduplication ledger so one shop contributes at most once per barcode; tenant identity
+never enters the global row or its revision history. A narrowly granted `SECURITY DEFINER` function
+rechecks tenant context, opt-in, GTIN checksum and restricted prefixes, records the audit row, and
+updates the candidate count in the product transaction. Platform review is separately gated and
+audited. Provider responses remain uncached because Barcode Lookup's limited, non-sublicensable
+subscription and termination deletion clause do not establish a durable redistribution right.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

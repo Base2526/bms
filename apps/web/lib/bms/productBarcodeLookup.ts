@@ -2,6 +2,7 @@ import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { rateLimit } from "./rateLimit";
 import { fetchBarcodeProduct } from "./productBarcodeProvider";
+import { findApprovedMasterBarcode } from "./barcodeMaster";
 import {
   parseProductBarcode, productBarcodeAliases,
   type BarcodeLookupResult, type BarcodeProductMatch,
@@ -35,6 +36,8 @@ export async function lookupProductBarcode(tenantId: string, raw: string): Promi
   } finally { client.release(); }
   if (matches.length) return { code, status: "LOCAL", matches };
   if (!parsed.external) return { code, status: "UNSUPPORTED", matches: [] };
+  const masterSuggestion = await findApprovedMasterBarcode(code);
+  if (masterSuggestion) return { code, status: "MASTER", matches: [], suggestion: masterSuggestion };
   const apiKey = process.env.BMS_BARCODE_LOOKUP_API_KEY?.trim();
   if (!apiKey) return { code, status: "NOT_CONFIGURED", matches: [] };
   // Global ceiling as the API key is shared across shops; per-user limits live at the route.

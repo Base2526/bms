@@ -889,6 +889,29 @@ export const typeDefs = /* GraphQL */ `
   type BmsMasterVatRate { id: ID!, countryCode: String!, rate: Float!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
   type BmsMasterTaxBuyerType { id: ID!, code: String!, nameTh: String!, nameEn: String!, taxIdPolicy: String!, branchPolicy: String!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
   type BmsMasterTaxReferences { documentTypes: [BmsMasterTaxDocumentType!]!, vatRates: [BmsMasterVatRate!]!, buyerTypes: [BmsMasterTaxBuyerType!]! }
+  type BmsMasterBarcode {
+    id: ID!
+    barcode: String!
+    name: String!
+    brand: String
+    sizeText: String
+    unitCode: String
+    categoryHint: String
+    imageFileId: ID
+    source: String!
+    confirmations: Int!
+    status: String!
+    updatedAt: String!
+  }
+  input BmsMasterBarcodeReviewInput {
+    id: ID!
+    name: String!
+    brand: String
+    sizeText: String
+    unitCode: String
+    categoryHint: String
+    status: String!
+  }
   input BmsMasterCarrierInput {
     id: ID
     code: BmsCarrier!
@@ -1252,6 +1275,7 @@ export const typeDefs = /* GraphQL */ `
     bmsMasterThaiAddresses(search: String, level: String, provinceCode: String, districtCode: String, includeInactive: Boolean, limit: Int): [BmsMasterThaiAddress!]!
     bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
     bmsMasterTaxReferences: BmsMasterTaxReferences!
+    bmsMasterBarcodes(search: String, status: String, limit: Int): [BmsMasterBarcode!]!
     bmsShippingZones: [BmsShippingZone!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
@@ -2347,6 +2371,7 @@ export const typeDefs = /* GraphQL */ `
     kitchen_station: String
     """9.54 — id ของสถานีจาก bmsKitchenStations · ชนะ kitchen_station เมื่อส่งมาทั้งคู่"""
     kitchen_station_id: ID
+    confirm_barcode_master: Boolean
   }
 
   input BmsProductCatalogVariantInput {
@@ -4407,6 +4432,7 @@ export const typeDefs = /* GraphQL */ `
     shippingWeightTiers: [BmsShippingWeightTier!]!
     emailThemeColor: String   # #RRGGBB — สีแบรนด์ในอีเมลแจ้งสถานะออร์เดอร์ (7.20)
     emailFooterText: String   # ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (ไม่บังคับ)
+    barcodeMasterContributionEnabled: Boolean!
   }
   type BmsOnboardingProgress {
     completed: [String!]!
@@ -4913,6 +4939,7 @@ export const typeDefs = /* GraphQL */ `
     shippingWeightTiers: [BmsShippingWeightTierInput!]
     emailThemeColor: String
     emailFooterText: String
+    barcodeMasterContributionEnabled: Boolean
   }
 
   # ค่าส่งตามโซนปลายทาง / ขั้นน้ำหนัก (7.47)
@@ -5308,6 +5335,7 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
     bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
     bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
+    bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
     bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
     bmsDeleteProductPack(id: ID!): Boolean!
     bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!

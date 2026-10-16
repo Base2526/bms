@@ -7,6 +7,10 @@ import {
 } from "@/lib/bms/masterData";
 import { listMasterCarriers } from "@/lib/bms/shippingMaster";
 import { listTaxMasterData } from "@/lib/bms/taxMaster";
+import {
+  listMasterBarcodes, reviewMasterBarcode, type MasterBarcodeInput,
+} from "@/lib/bms/barcodeMaster";
+import { requirePlatformAdmin } from "@/lib/bms/platform";
 
 function requireLoggedIn(ctx: any) {
   const auth = requireAuth(ctx, { optionalAdmin: true });
@@ -47,6 +51,10 @@ export const bmsMasterDataResolvers = {
       requireLoggedIn(ctx);
       return listTaxMasterData();
     },
+    async bmsMasterBarcodes(_p: unknown, args: any, ctx: any) {
+      await requirePlatformAdmin(ctx);
+      return listMasterBarcodes(args);
+    },
   },
   Mutation: {
     async bmsUpsertMasterBank(_p: unknown, args: { input: MasterBankInput }, ctx: any) {
@@ -60,6 +68,9 @@ export const bmsMasterDataResolvers = {
     },
     async bmsUpsertMasterCarrier(_p: unknown, args: { input: MasterCarrierInput }, ctx: any) {
       return mutation(() => upsertMasterCarrier(ctx, args.input));
+    },
+    async bmsReviewMasterBarcode(_p: unknown, args: { input: MasterBarcodeInput }, ctx: any) {
+      return mutation(() => reviewMasterBarcode(ctx, args.input));
     },
   },
 };

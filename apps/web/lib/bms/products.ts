@@ -16,6 +16,7 @@ import { buildFileUrlById } from "@/lib/storage";
 import type { VatCategory } from "./vat";
 import { IN_STORE_PREFIX, inStoreBarcode, isInStoreBarcode } from "./barcode";
 import { productBarcodeAliases } from "./productBarcodeLookupContract";
+import { submitMasterBarcodeCandidateInTx } from "./barcodeMaster";
 import type { PriceTier } from "./pricing";
 import { normalizeMedicineLabel, type MedicineLabel } from "./productMedicineLabel";
 import {
@@ -870,6 +871,8 @@ export type UpsertProductInput = {
    * ส่งมาคู่กับ `kitchen_station` ได้ แต่ **id ชนะเสมอ** (ชื่อคือสำเนา ไม่ใช่ความจริง)
    */
   kitchen_station_id?: string | null;
+  /** Explicit per-save confirmation; the shop-level opt-in is checked again in PostgreSQL. */
+  confirm_barcode_master?: boolean | null;
 };
 
 function normalizePriceTiers(input: PriceTier[]): PriceTier[] {
@@ -1741,6 +1744,20 @@ export async function upsertProduct(
       const readiness = await getProductReadinessInTx(client, tenantId, sku);
       assertReadinessAllowsSaveOfActiveProduct(readiness);
     }
+
+    await submitMasterBarcodeCandidateInTx(client, {
+      actorId: editorId,
+      barcode,
+      name,
+      brand,
+      sizeText: requestedVariants?.length === 1 && requestedVariants[0] !== "STD"
+        ? requestedVariants[0]
+        : null,
+      unitCode: requestedBaseUnit,
+      categoryHint: category,
+      productSku: sku,
+      confirmed: input.confirm_barcode_master === true,
+    });
 
     if (!transaction) await client.query("COMMIT");
     return res.rows[0];

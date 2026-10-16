@@ -98,6 +98,7 @@ export default function BarcodeLookupField(props: Props) {
 
   const statusText = result ? {
     LOCAL: t("admin_products.lookup_local"),
+    MASTER: t("admin_products.lookup_master"),
     EXTERNAL: t("admin_products.lookup_external"),
     NOT_FOUND: t("admin_products.lookup_not_found"),
     NOT_CONFIGURED: t("admin_products.lookup_not_configured"),
@@ -158,7 +159,9 @@ export default function BarcodeLookupField(props: Props) {
               {suggestion.imageUrl && <Image src={suggestion.imageUrl} alt={suggestion.name} width={72} height={72} style={{ objectFit: "contain" }} />}
               <div className={styles.details}><strong>{suggestion.name}</strong>
                 <div>{[suggestion.brand, suggestion.size].filter(Boolean).join(" · ")}</div>
-                <a href={suggestion.sourceUrl} target="_blank" rel="noopener noreferrer">{suggestion.source}</a>
+                {suggestion.sourceUrl
+                  ? <a href={suggestion.sourceUrl} target="_blank" rel="noopener noreferrer">{suggestion.source}</a>
+                  : <Typography.Text type="secondary">{suggestion.source}</Typography.Text>}
               </div>
             </div>
             <Space wrap>
