@@ -24,3 +24,17 @@ test("a future document-code version cannot change today's resolution",async()=>
     assert.equal(today.rows[0].code,'T03');assert.equal(future.rows[0].code,'T05');
   } finally { await pool.query("ROLLBACK"); }
 });
+
+test("global tax master updates append a revision without requiring tenant_id",async()=>{
+  await pool.query("BEGIN");
+  try{
+    const row=await pool.query(`SELECT id,name_en FROM bms_master_tax_buyer_types WHERE code='INDIVIDUAL' ORDER BY effective_from LIMIT 1`);
+    assert.equal(row.rowCount,1);
+    await pool.query(`UPDATE bms_master_tax_buyer_types SET name_en=name_en || ' test' WHERE id=$1`,[row.rows[0].id]);
+    const revision=await pool.query(`SELECT snapshot FROM bms_master_tax_buyer_types_revisions WHERE snapshot->>'id'=$1 ORDER BY created_at DESC LIMIT 1`,[row.rows[0].id]);
+    assert.equal(revision.rowCount,1);
+    assert.equal(revision.rows[0].snapshot.name_en,row.rows[0].name_en);
+    const tenantColumn=await pool.query(`SELECT is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='bms_master_tax_buyer_types_revisions' AND column_name='tenant_id'`);
+    assert.ok(tenantColumn.rowCount===0||tenantColumn.rows[0].is_nullable==='YES');
+  } finally { await pool.query("ROLLBACK"); }
+});

@@ -4,7 +4,84 @@ BEGIN;
 -- validate configuration; bms_store_profile.vat_rate remains the sale-time
 -- authority and issued bms_tax_documents remain immutable snapshots.
 -- ROLLBACK: return XML to the compatibility constants in etax/xml.ts, then
--- drop these three global reference tables and their revision tables.
+-- drop these three global reference tables and their revision tables. The
+-- global revision helper is shared by the master-data tables from 10.76 and
+-- 10.78, so keep it while either of those migrations remains installed.
+
+-- create_revision_trigger() is intentionally tenant-only: its trigger reads
+-- OLD.tenant_id and its history table requires tenant_id. Platform master data
+-- has no tenant_id, so give global reference tables their own append-only
+-- history helper. The ALTER path repairs the unusable tenant revision tables
+-- created for the 10.76/10.78 global masters without rewriting those applied
+-- migrations.
+CREATE OR REPLACE FUNCTION public.trg_global_revision() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_editor uuid;
+  v_revision uuid;
+  v_rev_table text := TG_TABLE_NAME || '_revisions';
+BEGIN
+  BEGIN
+    v_editor := NULLIF(current_setting('app.editor_id', true), '')::uuid;
+  EXCEPTION WHEN others THEN
+    v_editor := NULL;
+  END;
+
+  BEGIN
+    v_revision := NULLIF(current_setting('app.revision_id', true), '')::uuid;
+  EXCEPTION WHEN others THEN
+    v_revision := NULL;
+  END;
+
+  IF TG_OP = 'UPDATE' THEN
+    EXECUTE format(
+      'INSERT INTO %I (id, editor_id, revision_id, snapshot, created_at) VALUES (gen_random_uuid(), $1, $2, $3, now())',
+      v_rev_table
+    ) USING v_editor, v_revision, to_jsonb(OLD);
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.create_global_revision_trigger(p_table text) RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  rev_table text := p_table || '_revisions';
+  trg_name text := p_table || '_rev_trg';
+BEGIN
+  EXECUTE format(
+    'CREATE TABLE IF NOT EXISTS %I (' ||
+    'id uuid PRIMARY KEY DEFAULT gen_random_uuid(), ' ||
+    'editor_id uuid, ' ||
+    'revision_id uuid, ' ||
+    'snapshot jsonb NOT NULL, ' ||
+    'created_at timestamptz NOT NULL DEFAULT now())',
+    rev_table
+  );
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = rev_table AND column_name = 'tenant_id'
+  ) THEN
+    EXECUTE format('ALTER TABLE %I ALTER COLUMN tenant_id DROP NOT NULL', rev_table);
+  END IF;
+
+  EXECUTE format('ALTER TABLE %I DISABLE ROW LEVEL SECURITY', rev_table);
+  EXECUTE format('DROP POLICY IF EXISTS %I ON %I', rev_table || '_tenant_isolation', rev_table);
+  EXECUTE format('REVOKE ALL ON TABLE %I FROM PUBLIC', rev_table);
+  EXECUTE format('REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER ON TABLE %I FROM bms_app', rev_table);
+  EXECUTE format('GRANT SELECT ON TABLE %I TO bms_app', rev_table);
+  EXECUTE format('DROP TRIGGER IF EXISTS %I ON %I', trg_name, p_table);
+  EXECUTE format(
+    'CREATE TRIGGER %I BEFORE UPDATE ON %I FOR EACH ROW EXECUTE FUNCTION public.trg_global_revision()',
+    trg_name,
+    p_table
+  );
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS bms_master_tax_document_types (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -91,9 +168,19 @@ VALUES
   ('FOREIGNER','ชาวต่างชาติ','Foreigner','THAI_13_OPTIONAL','FORBIDDEN','1900-01-01','BMS tax buyer contract','10.60')
 ON CONFLICT (code,effective_from) DO NOTHING;
 
-SELECT public.create_revision_trigger('bms_master_tax_document_types');
-SELECT public.create_revision_trigger('bms_master_vat_rates');
-SELECT public.create_revision_trigger('bms_master_tax_buyer_types');
+-- Repair the global master triggers introduced by 10.76 and 10.78, then use
+-- the same helper for this phase. Tenant-owned shipping overrides deliberately
+-- keep the original tenant revision helper.
+SELECT public.create_global_revision_trigger('bms_master_banks');
+SELECT public.create_global_revision_trigger('bms_master_units');
+SELECT public.create_global_revision_trigger('bms_master_th_provinces');
+SELECT public.create_global_revision_trigger('bms_master_th_districts');
+SELECT public.create_global_revision_trigger('bms_master_th_subdistricts');
+SELECT public.create_global_revision_trigger('bms_master_carriers');
+SELECT public.create_global_revision_trigger('bms_master_th_shipping_zones');
+SELECT public.create_global_revision_trigger('bms_master_tax_document_types');
+SELECT public.create_global_revision_trigger('bms_master_vat_rates');
+SELECT public.create_global_revision_trigger('bms_master_tax_buyer_types');
 
 DO $$
 DECLARE tbl TEXT;

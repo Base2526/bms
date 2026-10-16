@@ -43,6 +43,10 @@ test("tax reference tables are versioned global read-only masters",()=>{
   assert.match(migration,/GRANT SELECT ON TABLE %I TO bms_app/);
   assert.doesNotMatch(migration,/ALTER TABLE bms_master_(?:tax_document_types|vat_rates|tax_buyer_types).*ROW LEVEL SECURITY/s);
   assert.match(migration,/Royal Decree 807 B\.E\. 2569/);
+  assert.match(migration,/CREATE OR REPLACE FUNCTION public\.trg_global_revision\(\)/);
+  assert.match(migration,/create_global_revision_trigger\('bms_master_tax_document_types'\)/);
+  assert.doesNotMatch(migration,/create_revision_trigger\('bms_master_tax_/);
+  assert.match(migration,/ALTER COLUMN tenant_id DROP NOT NULL/);
 });
 
 test("VAT reference mismatch is advisory and the sale calculation stays untouched",()=>{
