@@ -1725,6 +1725,20 @@ Customer address codes are nullable; legacy `address`, `province` and `postcode`
 Apply `10.76` before deploying the readers/writers; schema readiness checks the master bank/unit
 tables and the order-item snapshot column.
 
+## Structured Thai address snapshots (`10.77`)
+
+Phase 2 adds nullable master codes plus Thai display snapshots to `bms_store_profile` and
+`bms_locations`, district/subdistrict snapshots to `bms_customer_addresses`, and immutable buyer
+code/text snapshots to `bms_tax_documents`. Legacy free-text columns remain valid and no existing
+row is backfilled automatically. New structured writes validate the complete
+province → district → subdistrict hierarchy against active master rows and copy the Thai names and
+postcode into the tenant/document row. Printing reads `buyer_address` and the saved snapshot only;
+it never joins mutable master data.
+
+`scripts/match-th-addresses.mts` is tenant-scoped and rollback-only by default. It proposes
+`EXACT`, `AMBIGUOUS`, or `NONE`; `--apply` requires an actor UUID and writes only unique exact
+matches with revision and audit evidence. Apply `10.76` before `10.77`.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

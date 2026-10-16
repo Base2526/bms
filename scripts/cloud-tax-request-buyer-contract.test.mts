@@ -80,6 +80,7 @@ function serviceWithReplay(replay: unknown = null) {
       taxRequestAccessHash: () => "hash",
     };
     if (id === "./taxRequestEmail") return { isTaxEmailRecipient };
+    if (id === "./thaiAddress") return { resolveThaiAddressCodesInTx: async () => null, structuredAddressSnapshot: (line: string) => line };
     if (["./permissions", "./locations", "./taxDocuments", "./taxRequestPolicy"].includes(id)) return {};
     throw new Error(`Unexpected import ${id}`);
   }, exports);

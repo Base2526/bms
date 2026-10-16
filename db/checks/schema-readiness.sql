@@ -2,6 +2,10 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_store_profile', 'province_code', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
+    ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_locations', 'subdistrict_code', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
+    ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_customer_addresses', 'district', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
+    ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_tax_documents', 'buyer_province_code', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
     ('10.76__bms_master_data_foundation.sql', 'table', 'bms_master_units', NULL, 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),
     ('10.76__bms_master_data_foundation.sql', 'table', 'bms_master_banks', NULL, 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),
     ('10.76__bms_master_data_foundation.sql', 'column', 'bms_order_items', 'pack_unit_code', 'New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables'),

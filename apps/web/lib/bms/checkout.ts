@@ -77,12 +77,14 @@ export type CheckoutView = {
       label: string | null;
       address: string;
       isDefault: boolean;
+      provinceCode:string|null;districtCode:string|null;subdistrictCode:string|null;postcode:string|null;
     } | null;
     addresses: Array<{
       id: string;
       label: string | null;
       address: string;
       isDefault: boolean;
+      provinceCode:string|null;districtCode:string|null;subdistrictCode:string|null;postcode:string|null;
     }>;
     missingFields: CustomerCheckoutMissingField[];
     complete: boolean;
@@ -209,8 +211,9 @@ export async function getCheckoutByToken(
           label: string | null;
           address: string;
           is_default: boolean;
+          province_code:string|null;district_code:string|null;subdistrict_code:string|null;postcode:string|null;
         }>(
-          `SELECT id::text, label, address, is_default
+          `SELECT id::text, label, address, is_default,province_code,district_code,subdistrict_code,postcode
              FROM bms_customer_addresses
             WHERE tenant_id = $1
               AND customer_id = $2
@@ -224,6 +227,7 @@ export async function getCheckoutByToken(
             label: string | null;
             address: string;
             is_default: boolean;
+            province_code:string|null;district_code:string|null;subdistrict_code:string|null;postcode:string|null;
           }>;
         }),
     query<{
@@ -271,6 +275,8 @@ export async function getCheckoutByToken(
     label: clean(address.label),
     address: address.address,
     isDefault: address.is_default,
+    provinceCode:address.province_code??null,districtCode:address.district_code??null,
+    subdistrictCode:address.subdistrict_code??null,postcode:address.postcode??null,
   }));
   const selectedAddress = addresses[0] ?? null;
   const accounts = publicPaymentAccounts(profile.paymentAccounts);

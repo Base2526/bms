@@ -18,6 +18,7 @@ import { useIsMobile } from "@/app/hooks/useMediaQuery";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import { isValidThaiTaxId } from "@/lib/bms/thaiTaxId";
+import ThaiAddressFields from "@/components/ThaiAddressFields";
 import { formatTaxDate, taxIdentityLine, taxPrintCopyLabel, type TaxPrintCopy } from "@/lib/bms/taxDocumentText";
 import TaxDocumentControlsPanel from "@/components/admin/TaxDocumentControlsPanel";
 import TaxInvoiceRequestsPanel from "@/components/admin/TaxInvoiceRequestsPanel";
@@ -543,6 +544,7 @@ export default function TaxDocumentsPage() {
           <Form.Item name="address" label={t("admin_tax_documents.buyer_address")} rules={[{ required: true }]}>
             <Input.TextArea rows={3} maxLength={500} />
           </Form.Item>
+          <ThaiAddressFields form={fullInvoiceForm} />
           <Form.Item name="phone" label={t("admin_tax_documents.buyer_phone")}>
             <Input maxLength={30} />
           </Form.Item>

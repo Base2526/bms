@@ -16,6 +16,7 @@ import { isCarrier, type Carrier } from "./carriers/constants";
 import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZones";
 import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { normalizeRestaurantOrderHours, type RestaurantOrderInterval } from "./restaurantOrdering";
+import { resolveThaiAddressCodesInTx } from "./thaiAddress";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -59,6 +60,8 @@ export type StoreProfile = {
   receiptLanguageMode: ReceiptLanguageMode;
   about: string | null;
   address: string | null;
+  provinceCode: string | null; districtCode: string | null; subdistrictCode: string | null;
+  province: string | null; district: string | null; subdistrict: string | null; postcode: string | null;
   phone: string | null;
   contactEmail: string | null;
   website: string | null;
@@ -106,7 +109,8 @@ const EMPTY: StoreProfile = {
   aiInterpretShortReplies: true,
   aiHandoffAfterFailedTurns: 3,
   receiptLanguageMode: "th",
-  about: null, address: null, phone: null, contactEmail: null, website: null,
+  about: null, address: null, provinceCode:null,districtCode:null,subdistrictCode:null,
+  province:null,district:null,subdistrict:null,postcode:null, phone: null, contactEmail: null, website: null,
   logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
   restaurantOrderHours: [], restaurantOrdersPaused: false, restaurantMerchantAbsorbLimit: 2000,
@@ -145,7 +149,8 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
             shipping_est_days_min, shipping_est_days_max, enabled_carriers,
             shipping_mode, shipping_origin_province, shipping_origin_postcode,
             shipping_zone_rates, shipping_weight_tiers,
-            email_theme_color, email_footer_text
+            email_theme_color, email_footer_text,
+            province_code,district_code,subdistrict_code,province,district,subdistrict,postcode
        FROM bms_store_profile WHERE tenant_id = $1`;
   const res = client ? await client.query<any>(sql, [tenantId]) : await query<any>(sql, [tenantId]);
   const r = res.rows[0];
@@ -161,6 +166,8 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     receiptLanguageMode: isReceiptLanguageMode(r.receipt_language_mode) ? r.receipt_language_mode : "th",
     about: r.about ?? null,
     address: r.address ?? null,
+    provinceCode:r.province_code??null,districtCode:r.district_code??null,subdistrictCode:r.subdistrict_code??null,
+    province:r.province??null,district:r.district??null,subdistrict:r.subdistrict??null,postcode:r.postcode??null,
     phone: r.phone ?? null,
     contactEmail: r.contact_email ?? null,
     website: r.website ?? null,
@@ -348,6 +355,8 @@ export async function upsertStoreProfile(
       if (!bank.rowCount) throw new Error(`ไม่พบรหัสธนาคาร ${account.bankCode} ในข้อมูลกลาง`);
       account.bankName = bank.rows[0].name_th;
     }
+    const structuredAddress = await resolveThaiAddressCodesInTx(client, merged);
+    if (structuredAddress) Object.assign(merged, structuredAddress);
 
     await client.query(
       `INSERT INTO bms_store_profile (
@@ -358,9 +367,10 @@ export async function upsertStoreProfile(
         payment_accounts, shipping_flat_rate, shipping_free_threshold, shipping_est_days_min, shipping_est_days_max,
         enabled_carriers, email_theme_color, email_footer_text,
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
-        shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused, restaurant_merchant_absorb_limit
+        shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused, restaurant_merchant_absorb_limit,
+        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38)
+               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -389,6 +399,9 @@ export async function upsertStoreProfile(
         restaurant_order_hours = EXCLUDED.restaurant_order_hours,
         restaurant_orders_paused = EXCLUDED.restaurant_orders_paused,
         restaurant_merchant_absorb_limit = EXCLUDED.restaurant_merchant_absorb_limit,
+        province_code=EXCLUDED.province_code,district_code=EXCLUDED.district_code,
+        subdistrict_code=EXCLUDED.subdistrict_code,province=EXCLUDED.province,
+        district=EXCLUDED.district,subdistrict=EXCLUDED.subdistrict,postcode=EXCLUDED.postcode,
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
       [
@@ -403,6 +416,7 @@ export async function upsertStoreProfile(
         merged.shippingMode, merged.shippingOriginProvince, merged.shippingOriginPostcode,
         JSON.stringify(merged.shippingZoneRates ?? []), JSON.stringify(merged.shippingWeightTiers ?? []),
         JSON.stringify(merged.restaurantOrderHours ?? []), merged.restaurantOrdersPaused, merged.restaurantMerchantAbsorbLimit,
+        merged.provinceCode,merged.districtCode,merged.subdistrictCode,merged.province,merged.district,merged.subdistrict,merged.postcode,
       ]
     );
     await client.query("COMMIT");

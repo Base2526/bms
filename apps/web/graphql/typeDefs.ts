@@ -601,6 +601,13 @@ export const typeDefs = /* GraphQL */ `
     isHeadOffice: Boolean!
     vatCode: String
     address: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
+    province: String
+    district: String
+    subdistrict: String
+    postcode: String
     phone: String
     pharmacyLicenseNo: String
     pharmacistName: String
@@ -664,6 +671,10 @@ export const typeDefs = /* GraphQL */ `
     name: String!
     branchCode: String!
     address: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
+    postcode: String
     phone: String
     active: Boolean
     parking: BmsLocationParkingInput
@@ -1003,6 +1014,10 @@ export const typeDefs = /* GraphQL */ `
     buyerType: String
     vatRegistered: Boolean
     address: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
+    postcode: String
     phone: String
   }
 
@@ -2438,6 +2453,8 @@ export const typeDefs = /* GraphQL */ `
     address: String!
     is_default: Boolean!
     province: String
+    district: String
+    subdistrict: String
     postcode: String
     provinceCode: String
     districtCode: String
@@ -4300,6 +4317,13 @@ export const typeDefs = /* GraphQL */ `
     receiptLanguageMode: String!
     about: String
     address: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
+    province: String
+    district: String
+    subdistrict: String
+    postcode: String
     phone: String
     contactEmail: String
     website: String
@@ -4802,6 +4826,10 @@ export const typeDefs = /* GraphQL */ `
     receiptLanguageMode: String
     about: String
     address: String
+    provinceCode: String
+    districtCode: String
+    subdistrictCode: String
+    postcode: String
     phone: String
     contactEmail: String
     website: String

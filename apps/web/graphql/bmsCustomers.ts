@@ -163,5 +163,7 @@ export const bmsCustomersResolvers = {
     provinceCode: (p: any) => p.province_code ?? null,
     districtCode: (p: any) => p.district_code ?? null,
     subdistrictCode: (p: any) => p.subdistrict_code ?? null,
+    district: (p: any) => p.district ?? null,
+    subdistrict: (p: any) => p.subdistrict ?? null,
   },
 };

@@ -388,7 +388,7 @@ const th = {
     add_bank: "เพิ่มธนาคาร", add_unit: "เพิ่มหน่วย", add_address: "เพิ่มข้อมูลที่อยู่", bank_form: "ข้อมูลอ้างอิงธนาคาร", unit_form: "หน่วยมาตรฐาน", address_form: "ข้อมูลอ้างอิงที่อยู่ไทย",
     code: "รหัส", country: "ประเทศ", name_th: "ชื่อไทย", name_en: "ชื่ออังกฤษ", sort_order: "ลำดับ", status: "สถานะ", active: "เปิดใช้", inactive: "ปิดใช้", edit: "แก้ไข",
     source: "แหล่งข้อมูล", source_version: "เวอร์ชันแหล่งข้อมูล", kind: "ชนิด", aliases: "ชื่อเรียกอื่น", aliases_help: "คั่นชื่อเรียกที่ร้านใช้ด้วยจุลภาค", base_factor: "ตัวคูณเทียบหน่วยฐานในชนิดเดียวกัน",
-    level: "ระดับ", province: "จังหวัด", district: "อำเภอ/เขต", subdistrict: "ตำบล/แขวง", postcode: "รหัสไปรษณีย์", address_import_title: "ข้อมูลที่อยู่จำนวนมากต้องใช้ importer", address_import_description: "ใช้ scripts/import-th-address.mts ซึ่งเป็น dry-run โดยปริยาย และจะปฏิเสธชุดข้อมูลที่ไม่มี source, version และ licence",
+    level: "ระดับ", province: "จังหวัด", district: "อำเภอ/เขต", subdistrict: "ตำบล/แขวง", postcode: "รหัสไปรษณีย์", select_province: "เลือกจังหวัด", select_district: "เลือกอำเภอ/เขต", select_subdistrict: "เลือกตำบล/แขวง", address_required: "กรุณาเลือกข้อมูลที่อยู่", address_import_title: "ข้อมูลที่อยู่จำนวนมากต้องใช้ importer", address_import_description: "ใช้ scripts/import-th-address.mts ซึ่งเป็น dry-run โดยปริยาย และจะปฏิเสธชุดข้อมูลที่ไม่มี source, version และ licence",
   },
   footer: {
     support: "ติดต่อฝ่ายสนับสนุน",

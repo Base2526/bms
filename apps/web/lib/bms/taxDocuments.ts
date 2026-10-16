@@ -25,6 +25,7 @@ import { bahtText, computeVat, unresolvedVatSkus, type VatCategory, type VatRoun
 import { cashRoundingDelta, isCashRounding, type CashRounding } from "@/lib/pos/cashRounding";
 import { invalidateStoreProfileCache } from "./storeProfile";
 import { cancelQueuedTaxDocumentInTx, enqueueTaxDocument } from "./etax/queue";
+import { resolveThaiAddressCodesInTx, structuredAddressSnapshot } from "./thaiAddress";
 import {
   abbreviatedInvoicePrefix,
   buildTaxDocNo,
@@ -516,6 +517,15 @@ export type FullInvoiceBuyer = {
   vatRegistered?: boolean | null;
   address?: string | null;
   phone?: string | null;
+  provinceCode?: string | null;
+  districtCode?: string | null;
+  subdistrictCode?: string | null;
+  postcode?: string | null;
+  province?: string | null;
+  district?: string | null;
+  subdistrict?: string | null;
+  /** Internal only: tax-request JSON was already resolved and must remain an immutable snapshot. */
+  preserveAddressSnapshot?: boolean;
 };
 
 export type IssueFullResult =
@@ -568,6 +578,18 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
   catch (error) { return { status: "BUYER_INCOMPLETE", reason: (error as Error).message }; }
   const buyerTaxId = normalizedBuyer.taxId;
   const buyerBranchCode = normalizedBuyer.branchCode;
+  let structuredBuyerAddress: Awaited<ReturnType<typeof resolveThaiAddressCodesInTx>> = null;
+  try {
+    structuredBuyerAddress = buyer.preserveAddressSnapshot && buyer.provinceCode && buyer.districtCode && buyer.subdistrictCode
+      && buyer.province && buyer.district && buyer.subdistrict && buyer.postcode
+      ? { provinceCode:buyer.provinceCode,districtCode:buyer.districtCode,subdistrictCode:buyer.subdistrictCode,
+          province:buyer.province,district:buyer.district,subdistrict:buyer.subdistrict,postcode:buyer.postcode }
+      : await resolveThaiAddressCodesInTx(client, buyer);
+  }
+  catch (error) { return { status: "BUYER_INCOMPLETE", reason: (error as Error).message }; }
+  const buyerAddress = structuredBuyerAddress
+    ? structuredAddressSnapshot(buyer.address?.trim() || "", structuredBuyerAddress)
+    : buyer.address?.trim() || null;
 
   const settings = await getVatSettings(tenantId, client);
   if (!settings.vatRegistered) return { status: "NOT_VAT_REGISTERED" };
@@ -670,19 +692,26 @@ export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFul
       `INSERT INTO bms_tax_documents
          (tenant_id, location_id, order_id, doc_type, doc_no, issue_date, replaces_document_id,
           buyer_name, buyer_tax_id, buyer_branch_code, buyer_address, buyer_phone,
+          buyer_province_code,buyer_district_code,buyer_subdistrict_code,
+          buyer_province,buyer_district,buyer_subdistrict,buyer_postcode,
           seller_name, seller_tax_id, seller_branch_code, seller_address, seller_phone,
           taxable_amount, exempt_amount, vat_amount, rounding_amount, grand_total, vat_rate, issued_by)
        VALUES ($1, $2, $3, 'FULL', $4, $23::date, $5, $6, $7, $8, $9, $10,
+               $24,$25,$26,$27,$28,$29,$30,
                $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
        RETURNING *`,
       [tenantId, locationId, orderId, docNo, cancelled?.id ?? null,
         buyer.name.trim(), buyerTaxId, buyerBranchCode,
-        buyer.address?.trim() || null, buyer.phone?.trim() || null,
+        buyerAddress, buyer.phone?.trim() || null,
         sellerIdentity.name, sellerIdentity.taxId, sellerIdentity.branchCode,
         sellerIdentity.address, sellerIdentity.phone,
         breakdown.taxableAmount, breakdown.exemptAmount, breakdown.vatAmount,
         breakdown.roundingAmount, breakdown.grandTotal, breakdown.vatRate,
-        args.issuedBy ?? null, clock.isoDate]
+        args.issuedBy ?? null, clock.isoDate,
+        structuredBuyerAddress?.provinceCode ?? null, structuredBuyerAddress?.districtCode ?? null,
+        structuredBuyerAddress?.subdistrictCode ?? null, structuredBuyerAddress?.province ?? null,
+        structuredBuyerAddress?.district ?? null, structuredBuyerAddress?.subdistrict ?? null,
+        structuredBuyerAddress?.postcode ?? (buyer.postcode?.trim() || null)]
     );
 
     const full = mapDoc(res.rows[0]);
