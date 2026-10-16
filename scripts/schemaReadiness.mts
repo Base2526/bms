@@ -24,6 +24,16 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.77__bms_structured_thai_addresses.sql",
+    impact: "Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns",
+    needs: [
+      { kind: "column", table: "bms_store_profile", name: "province_code" },
+      { kind: "column", table: "bms_locations", name: "subdistrict_code" },
+      { kind: "column", table: "bms_customer_addresses", name: "district" },
+      { kind: "column", table: "bms_tax_documents", name: "buyer_province_code" },
+    ],
+  },
+  {
     file: "10.76__bms_master_data_foundation.sql",
     impact: "New orders snapshot standard unit codes for e-Tax and master-data readers require the platform reference tables",
     needs: [

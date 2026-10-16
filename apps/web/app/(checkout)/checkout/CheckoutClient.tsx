@@ -6,6 +6,7 @@ import type {
   CheckoutView,
 } from "@/lib/bms/checkout";
 import { useI18n } from "@/lib/i18nContext";
+import PublicThaiAddressSelects from "@/components/PublicThaiAddressSelects";
 import type { Lang } from "@/i18n";
 import styles from "./checkout.module.css";
 
@@ -170,6 +171,10 @@ export default function CheckoutClient({
       "phone",
       "shippingAddress",
       "addressLabel",
+      "provinceCode",
+      "districtCode",
+      "subdistrictCode",
+      "postcode",
     ]) {
       const value = String(form.get(key) || "").trim();
       if (value) payload[key] = value;
@@ -185,6 +190,8 @@ export default function CheckoutClient({
     await updateDelivery({
       shippingAddress: address.address,
       addressLabel: address.label || "",
+      provinceCode:address.provinceCode||"",districtCode:address.districtCode||"",
+      subdistrictCode:address.subdistrictCode||"",postcode:address.postcode||"",
     });
   }
 
@@ -431,6 +438,7 @@ export default function CheckoutClient({
                           placeholder={t("checkout.shipping_address_placeholder")}
                         />
                       </label>
+                      <PublicThaiAddressSelects />
                     </>
                   )}
                   <div className={styles.formActions}>

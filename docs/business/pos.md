@@ -1384,7 +1384,11 @@ per-model QR scan verification before rollout.
 The customer scans without signing in and selects Individual, Company or Foreigner. The form collects
 buyer name, a checksum-valid Thai 13-digit tax ID (required for Company, optional for Individual and
 Foreigner), address line 1 (required), line 2 (optional), province (required), required contact email,
-and optional five-digit postcode and phone. Companies also enter a five-digit branch (`00000` for head
+and optional five-digit postcode and phone. Since `10.77`, a customer may also select the platform
+province/district/subdistrict hierarchy; the server validates the hierarchy and freezes its Thai names
+and postcode into the request and issued invoice. The legacy province field remains accepted during
+rollout, and printing reads only the frozen buyer-address snapshot, never the current master rows.
+Companies also enter a five-digit branch (`00000` for head
 office); other types have no branch. Foreigners still need a Thai address online; the form directs
 buyers with a foreign address to the shop. A passport number is never accepted as a tax ID. The server validates and composes the invoice address, retaining the separate fields and
 email in the request/submission JSON snapshots for tracking, corrections and staff review. Legacy

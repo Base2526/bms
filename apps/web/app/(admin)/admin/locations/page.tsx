@@ -14,6 +14,7 @@ import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import { useI18n } from "@/lib/i18nContext";
 import type { LocationParking } from "@/lib/bms/locationParking";
+import ThaiAddressFields from "@/components/ThaiAddressFields";
 
 const Q = gql`
   query Locations {
@@ -24,6 +25,7 @@ const Q = gql`
       branchCode
       isHeadOffice
       address
+      provinceCode districtCode subdistrictCode province district subdistrict postcode
       phone
       active
       parking { status published carSpaces motorcycleSpaces details mapUrl }
@@ -43,6 +45,7 @@ type Location = {
   branchCode: string;
   isHeadOffice: boolean;
   address: string | null;
+  provinceCode:string|null;districtCode:string|null;subdistrictCode:string|null;postcode:string|null;
   phone: string | null;
   active: boolean;
   parking: LocationParking | null;
@@ -214,6 +217,7 @@ export default function LocationsPage() {
           <Form.Item name="address" label="ที่อยู่">
             <Input.TextArea rows={2} />
           </Form.Item>
+          <ThaiAddressFields form={form} />
           <Form.Item name="phone" label="เบอร์โทร">
             <Input placeholder="02-xxx-xxxx" />
           </Form.Item>

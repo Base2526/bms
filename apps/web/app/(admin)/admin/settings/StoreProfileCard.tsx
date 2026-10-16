@@ -7,6 +7,7 @@ import { localizedShopArchetypeLabel, localizedShopArchetypeOptions, onboardingC
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
+import ThaiAddressFields from "@/components/ThaiAddressFields";
 
 const { Text } = Typography;
 
@@ -16,7 +17,7 @@ const Q = gql`
     bmsStoreProfile {
       businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
-      about address phone contactEmail website logoUrl taxId timezone country currency
+      about address provinceCode districtCode subdistrictCode province district subdistrict postcode phone contactEmail website logoUrl taxId timezone country currency
       businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
       paymentAccounts { type bankCode bankName accountName accountNo promptpayId qrPayload note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
@@ -46,6 +47,7 @@ const PROFILE_KEYS = [
   "receiptLanguageMode",
   "businessArchetype",
   "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
+  "provinceCode", "districtCode", "subdistrictCode", "postcode",
   "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
   "enabledCarriers",
@@ -121,7 +123,8 @@ export default function StoreProfileCard() {
         aiInterpretShortReplies: p?.aiInterpretShortReplies !== false,
         aiHandoffAfterFailedTurns: p?.aiHandoffAfterFailedTurns || 3,
         receiptLanguageMode: p?.receiptLanguageMode || "th",
-        about: p?.about, address: p?.address, phone: p?.phone,
+        about: p?.about, address: p?.address, provinceCode:p?.provinceCode,districtCode:p?.districtCode,
+        subdistrictCode:p?.subdistrictCode,postcode:p?.postcode, phone: p?.phone,
         contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl, taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
         businessHours: p?.businessHours,
@@ -504,6 +507,7 @@ export default function StoreProfileCard() {
                       <Col xs={24} md={12}><Form.Item name="about" label={t("admin_store_profile.about_label")} style={{ marginBottom: 12 }}><Input.TextArea rows={3} /></Form.Item></Col>
                       <Col xs={24} md={12}><Form.Item name="address" label={t("admin_store_profile.address_label")} style={{ marginBottom: 12 }}><Input.TextArea rows={3} /></Form.Item></Col>
                     </Row>
+                    <ThaiAddressFields form={form} />
                   </>
                 ),
               },

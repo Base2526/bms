@@ -7639,3 +7639,22 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
   migration หรือยืนยัน DB behavior
 - production rollout ยังปิด: GrabFood/LINE MAN contract-blocked และ Foodpanda production ยังต้องผ่าน partner
   webhook/onboarding, sandbox + shadow, tax approval และ settlement cycle จริง
+
+### Master data — Phase 2 (`10.77`, 2026-10-16)
+
+- branch `feat/master-data-phase-2`; เพิ่ม structured Thai address hierarchy + frozen Thai display
+  snapshots ให้ customer delivery, signed checkout/AI chat, tax requests/full invoices, store profile
+  และ branch locations โดย legacy free-text rows และ saved legacy checkout addresses ยังใช้ต่อได้
+- full tax invoice พิมพ์จาก snapshot ที่บันทึกตอนออกเอกสารเท่านั้น; ไม่มีการ join master data ตอนพิมพ์
+  และคำขอใบกำกับเก่ายังใช้จังหวัดแบบเดิมได้ ระหว่างรอการตัดสินใจว่าจะบังคับ code สำหรับ COMPANY ใหม่หรือไม่
+- เพิ่ม `scripts/match-th-addresses.mts` ซึ่ง dry-run/rollback เป็นค่าเริ่มต้น; apply ต้องมี tenant UUID,
+  actor UUID, revision context และ audit และเขียนเฉพาะแถวที่จับคู่ได้หนึ่งคำตอบเท่านั้น
+- verify: focused Phase 2 **7/7**, tax-request buyer **8/8**, customer policy **87/87**,
+  schema artifact/readiness, i18n และ typecheck ผ่าน; mutation test แดงครบ **6/6** แล้ว restore;
+  full gate ผ่าน pure **2,886/2,888** (skip 2, fail 0) และ production build **135/135** pages
+- DB contract ยังไม่รัน: runner ปฏิเสธเพราะไม่มี `POSTGRES_HOST`/`POSTGRES_DB`; browser smoke เปิด
+  `/admin/locations` ที่ 1440x900 และ 390x844 ได้แต่ redirect ไป login ตาม guard จึงยังไม่เห็นฟอร์มหลัง auth;
+  public address endpoint compile ได้แต่ตอบ 500 เพราะ local PostgreSQL/Redis ไม่พร้อม
+- rollout: backup `bms_customer_addresses`, `bms_store_profile`, `bms_locations`, `bms_tax_documents`;
+  apply `10.76` ก่อน `10.77` ด้วย transaction, ตรวจ nullable columns/FKs แล้วรัน matcher แบบ dry-run
+  แยก tenant ก่อน apply; rollback app ก่อนและเก็บ snapshot columns ไว้จน export/review เสร็จ

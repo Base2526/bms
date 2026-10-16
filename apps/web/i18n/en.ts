@@ -388,7 +388,7 @@ const en = {
     add_bank: "Add bank", add_unit: "Add unit", add_address: "Add address row", bank_form: "Bank reference", unit_form: "Standard unit", address_form: "Thai address reference",
     code: "Code", country: "Country", name_th: "Thai name", name_en: "English name", sort_order: "Sort order", status: "Status", active: "Active", inactive: "Inactive", edit: "Edit",
     source: "Source", source_version: "Source version", kind: "Kind", aliases: "Aliases", aliases_help: "Comma-separated retail terms", base_factor: "Base factor within the same kind",
-    level: "Level", province: "Province", district: "District", subdistrict: "Subdistrict", postcode: "Postcode", address_import_title: "Bulk address data belongs in the importer", address_import_description: "Use scripts/import-th-address.mts. It is dry-run by default and refuses datasets without recorded source, version, and licence.",
+    level: "Level", province: "Province", district: "District", subdistrict: "Subdistrict", postcode: "Postcode", select_province: "Select province", select_district: "Select district", select_subdistrict: "Select subdistrict", address_required: "Select the structured address", address_import_title: "Bulk address data belongs in the importer", address_import_description: "Use scripts/import-th-address.mts. It is dry-run by default and refuses datasets without recorded source, version, and licence.",
   },
   footer: {
     support: "Support",

@@ -15,6 +15,7 @@ import TaxInvoiceCopy from "@/components/pos/TaxInvoiceCopy";
 import { useI18n } from "@/lib/i18nContext";
 import { taxIdentityLine } from "@/lib/bms/taxDocumentText";
 import { TAX_BUYER_TYPES, THAI_PROVINCES } from "@/lib/taxRequestFields";
+import ThaiAddressFields from "@/components/ThaiAddressFields";
 
 const labels: Record<string, string> = {
   PENDING: "รอร้านตรวจสอบ",
@@ -68,7 +69,9 @@ export default function TaxInvoiceRequestClient() {
         buyerType: r.buyer.buyerType ?? "COMPANY",
         addressLine1: r.buyer.addressLine1 ?? r.buyer.address,
         addressLine2: r.buyer.addressLine2 ?? "",
-        province: r.buyer.province ?? undefined,
+        provinceCode: r.buyer.provinceCode ?? undefined,
+        districtCode: r.buyer.districtCode ?? undefined,
+        subdistrictCode: r.buyer.subdistrictCode ?? undefined,
         postcode: r.buyer.postcode ?? "",
         email: r.buyer.email ?? "",
       });
@@ -326,12 +329,12 @@ export default function TaxInvoiceRequestClient() {
                 <Form.Item name="addressLine2" label="ที่อยู่ในการออกใบกำกับภาษี (บรรทัดที่ 2)">
                   <Input maxLength={300} autoComplete="address-line2" />
                 </Form.Item>
-                <Form.Item name="province" label="จังหวัด" rules={[{ required: true, message: "กรุณาเลือกจังหวัด" }]}>
-                  <Select showSearch optionFilterProp="label" placeholder="เลือกจังหวัด" options={THAI_PROVINCES.map((province) => ({ value: province, label: province }))} />
+                <Form.Item name="province" label="จังหวัด" rules={[{ required: true, message: "กรุณาเลือกจังหวัด" }]}
+                  extra="ข้อมูลจังหวัดเดิมยังใช้ได้; เลือกชุดจังหวัด/อำเภอ/ตำบลด้านล่างเพื่อบันทึกรหัสมาตรฐานเพิ่มเติม">
+                  <Select showSearch optionFilterProp="label"
+                    options={THAI_PROVINCES.map(value => ({ value, label: value }))} />
                 </Form.Item>
-                <Form.Item name="postcode" label="รหัสไปรษณีย์" rules={[{ pattern: /^\d{5}$/, message: "กรุณากรอกรหัสไปรษณีย์ 5 หลัก" }]}>
-                  <Input inputMode="numeric" maxLength={5} autoComplete="postal-code" />
-                </Form.Item>
+                <ThaiAddressFields form={form} />
                 <Form.Item name="phone" label="เบอร์โทรศัพท์">
                   <Input type="tel" maxLength={30} autoComplete="tel" />
                 </Form.Item>

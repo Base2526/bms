@@ -18,6 +18,7 @@ import { requireCapacityForUpsert } from "./entitlements";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { normalizeLocationParking, publicLocationParking, readLocationParking, type LocationParking } from "./locationParking";
+import { resolveThaiAddressCodesInTx, type ThaiAddressCodes } from "./thaiAddress";
 
 export const DEFAULT_LOCATION_CODE = "MAIN";
 
@@ -29,6 +30,8 @@ export type BmsLocation = {
   isHeadOffice: boolean;
   vatCode: string | null;
   address: string | null;
+  provinceCode: string | null; districtCode: string | null; subdistrictCode: string | null;
+  province: string | null; district: string | null; subdistrict: string | null; postcode: string | null;
   phone: string | null;
   pharmacyLicenseNo: string | null;
   pharmacistName: string | null;
@@ -46,6 +49,8 @@ function mapRow(r: any): BmsLocation {
     isHeadOffice: r.is_head_office,
     vatCode: r.vat_code ?? null,
     address: r.address ?? null,
+    provinceCode:r.province_code??null,districtCode:r.district_code??null,subdistrictCode:r.subdistrict_code??null,
+    province:r.province??null,district:r.district??null,subdistrict:r.subdistrict??null,postcode:r.postcode??null,
     phone: r.phone ?? null,
     pharmacyLicenseNo: r.pharmacy_license_no ?? null,
     pharmacistName: r.pharmacist_name ?? null,
@@ -153,7 +158,7 @@ export async function countActiveLocations(tenantId: string): Promise<number> {
   return Number(res.rows[0]?.n ?? 0);
 }
 
-export type UpsertLocationInput = {
+export type UpsertLocationInput = ThaiAddressCodes & {
   id?: string | null;
   code: string;
   name: string;
@@ -207,10 +212,12 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
       [tenantId, actorId, current?.id ?? null]
     );
     if (access.rows[0]?.scoped && !access.rows[0]?.allowed) throw new Error("FORBIDDEN");
+    const structuredAddress = await resolveThaiAddressCodesInTx(client, input);
     const res = await client.query<any>(
-      `INSERT INTO bms_locations (id, tenant_id, code, name, branch_code, address, phone, active, is_head_office, parking_info)
+      `INSERT INTO bms_locations (id, tenant_id, code, name, branch_code, address, phone, active, is_head_office, parking_info,
+        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode)
        VALUES (COALESCE($1::uuid, gen_random_uuid()), $2, $3, $4, $5, $6, $7, COALESCE($8, TRUE), FALSE,
-               COALESCE($9::jsonb, '{"status":"UNKNOWN","published":false}'::jsonb))
+               COALESCE($9::jsonb, '{"status":"UNKNOWN","published":false}'::jsonb),$10,$11,$12,$13,$14,$15,$16)
        ON CONFLICT (tenant_id, code)
        DO UPDATE SET name = EXCLUDED.name,
                      branch_code = EXCLUDED.branch_code,
@@ -218,10 +225,16 @@ export async function upsertLocation(tenantId: string, input: UpsertLocationInpu
                      phone = EXCLUDED.phone,
                      active = EXCLUDED.active,
                      parking_info = COALESCE($9::jsonb, bms_locations.parking_info),
+                     province_code=EXCLUDED.province_code,district_code=EXCLUDED.district_code,
+                     subdistrict_code=EXCLUDED.subdistrict_code,province=EXCLUDED.province,
+                     district=EXCLUDED.district,subdistrict=EXCLUDED.subdistrict,postcode=EXCLUDED.postcode,
                      updated_at = now()
        RETURNING *`,
       [input.id ?? null, tenantId, code, name, branchCode, input.address ?? null, input.phone ?? null, input.active ?? null,
-        parking == null ? null : JSON.stringify(parking)]
+        parking == null ? null : JSON.stringify(parking),structuredAddress?.provinceCode??null,
+        structuredAddress?.districtCode??null,structuredAddress?.subdistrictCode??null,
+        structuredAddress?.province??null,structuredAddress?.district??null,structuredAddress?.subdistrict??null,
+        structuredAddress?.postcode??input.postcode??null]
     );
     await client.query("COMMIT");
     return mapRow(res.rows[0]);

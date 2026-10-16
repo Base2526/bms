@@ -18,13 +18,19 @@ import {
 import { taxRequestDeadline, taxRequestPolicy } from "./taxRequestPolicy";
 import { TAX_BUYER_TYPES, THAI_PROVINCES, type TaxBuyerType } from "../taxRequestFields";
 import { enqueueTaxRequestEmailInTx, isTaxEmailRecipient } from "./taxRequestEmail";
+import { resolveThaiAddressCodesInTx, structuredAddressSnapshot } from "./thaiAddress";
 
 type TaxRequestBuyer = FullInvoiceBuyer & {
   buyerType?: TaxBuyerType;
   addressLine1?: string;
   addressLine2?: string;
   province?: string;
+  district?: string;
+  subdistrict?: string;
   postcode?: string;
+  provinceCode?: string;
+  districtCode?: string;
+  subdistrictCode?: string;
   email?: string;
 };
 const sameBuyer = (a: TaxRequestBuyer, b: TaxRequestBuyer) =>
@@ -133,9 +139,14 @@ export function normalizeTaxRequestBuyer(raw: unknown): TaxRequestBuyer {
     buyer.buyerType = buyerType as TaxBuyerType;
     buyer.addressLine1 = clean(b.addressLine1, 500);
     buyer.addressLine2 = clean(b.addressLine2, 300, false);
-    buyer.province = clean(b.province, 100);
+    buyer.provinceCode = clean(b.provinceCode, 20, false) || undefined;
+    buyer.districtCode = clean(b.districtCode, 20, false) || undefined;
+    buyer.subdistrictCode = clean(b.subdistrictCode, 20, false) || undefined;
+    buyer.province = clean(b.province, 100, !buyer.provinceCode) || undefined;
+    buyer.district = clean(b.district, 100, false) || undefined;
+    buyer.subdistrict = clean(b.subdistrict, 100, false) || undefined;
     buyer.postcode = clean(b.postcode, 5, false);
-    if (!THAI_PROVINCES.some((province) => province === buyer.province))
+    if (!buyer.provinceCode && !THAI_PROVINCES.some((province) => province === buyer.province))
       throw new TaxRequestError("กรุณาเลือกจังหวัด");
     if (buyer.postcode && !/^\d{5}$/.test(buyer.postcode))
       throw new TaxRequestError("รหัสไปรษณีย์ต้องเป็นตัวเลข 5 หลัก");
@@ -150,6 +161,18 @@ export function normalizeTaxRequestBuyer(raw: unknown): TaxRequestBuyer {
       throw new TaxRequestError("อีเมลไม่ถูกต้อง");
   }
   return buyer;
+}
+async function resolveTaxRequestBuyerInTx(client: PoolClient, buyer: TaxRequestBuyer) {
+  if (!buyer.buyerType || !buyer.provinceCode) return buyer;
+  const resolved = await resolveThaiAddressCodesInTx(client, buyer);
+  if (!resolved) throw new TaxRequestError("กรุณาเลือกข้อมูลที่อยู่ให้ครบ");
+  return {
+    ...buyer,
+    provinceCode: resolved.provinceCode, districtCode: resolved.districtCode,
+    subdistrictCode: resolved.subdistrictCode, province: resolved.province,
+    district: resolved.district, subdistrict: resolved.subdistrict, postcode: resolved.postcode,
+    address: structuredAddressSnapshot([buyer.addressLine1, buyer.addressLine2].filter(Boolean).join("\n"), resolved),
+  };
 }
 function requireBuyerEmail(buyer: TaxRequestBuyer) {
   if (!buyer.email)
@@ -230,9 +253,11 @@ export async function submitTaxRequest(
   const identity = verifyTaxRequestToken(token);
   if (!identity)
     throw new TaxRequestError("ลิงก์ไม่ถูกต้องหรือบริการไม่พร้อมใช้งาน", 404);
-  const buyer = normalizeTaxRequestBuyer(rawBuyer),
+  let buyer = normalizeTaxRequestBuyer(rawBuyer);
+  const
     accessHash = taxRequestAccessHash(accessSecret);
   return inTenant(identity.tenantId, null, async (client) => {
+    buyer = await resolveTaxRequestBuyerInTx(client, buyer);
     // Lock before looking for a replay; a network retry cannot create a second request.
     await client.query(
       `SELECT id FROM bms_orders WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
@@ -362,11 +387,12 @@ export async function reviseTaxRequest(
   version: number,
   rawBuyer: unknown
 ) {
-  const identity = parseTaxRequestAccess(access),
-    buyer = normalizeTaxRequestBuyer(rawBuyer);
+  const identity = parseTaxRequestAccess(access);
+  let buyer = normalizeTaxRequestBuyer(rawBuyer);
   if (!Number.isSafeInteger(version) || version < 1)
     throw new TaxRequestError("เวอร์ชันคำขอไม่ถูกต้อง");
   return inTenant(identity.tenantId, null, async (client) => {
+    buyer = await resolveTaxRequestBuyerInTx(client, buyer);
     // Locate without locking, then order -> request, matching staff approval.
     const found = await accessRow(client, identity);
     await client.query(
@@ -537,7 +563,7 @@ export async function reviewTaxRequest(
       const issued = await issueFullTaxInvoiceInTx(client, {
         tenantId,
         orderId: row.order_id,
-        buyer: row.buyer,
+        buyer: { ...row.buyer, preserveAddressSnapshot: true },
         issuedBy: actor,
       });
       if (issued.status !== "ISSUED")

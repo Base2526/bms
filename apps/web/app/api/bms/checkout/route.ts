@@ -38,6 +38,10 @@ async function handlePATCH(req: NextRequest) {
         typeof body.shippingAddress === "string" ? body.shippingAddress : null,
       addressLabel:
         typeof body.addressLabel === "string" ? body.addressLabel : null,
+      provinceCode: typeof body.provinceCode === "string" ? body.provinceCode : null,
+      districtCode: typeof body.districtCode === "string" ? body.districtCode : null,
+      subdistrictCode: typeof body.subdistrictCode === "string" ? body.subdistrictCode : null,
+      postcode: typeof body.postcode === "string" ? body.postcode : null,
     });
     if (!result.ok) return response({ error: result.reason }, 400);
 

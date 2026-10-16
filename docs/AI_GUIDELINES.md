@@ -57,6 +57,9 @@ reply is not proof of delivery. See [quality.md](ai/quality.md).
 - If a tool fails, say that the information could not be verified and provide a safe next step.
 - If required order details are incomplete, ask for the missing information. Do not create a
   partial order unless the product specification explicitly supports drafts.
+- Customer-supplied Thai shipping addresses are resolved by the approved checkout tool against
+  platform master data. A duplicated subdistrict name without enough province/postcode evidence
+  must produce one clarification question; the model must never select a location or code itself.
 - Customer replies should be polite, concise, and appropriate to the channel and tenant language.
   Style must never weaken accuracy or safety.
 - Marketing/demo/infographic copy shown on public pages or internal manuals must describe only

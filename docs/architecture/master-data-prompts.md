@@ -332,7 +332,7 @@ F. archetype/capability presets ย้ายเข้า DB **เฉพาะเ
 | เฟส | branch | migration | สถานะ | ยังไม่ได้ verify |
 | --- | --- | --- | --- | --- |
 | 1 | `feat/master-data-phase-1` | `10.76` | ทำโค้ดครบ: master tables/service/GraphQL/UI, bank+unit integration, customer autocomplete, importer, audit+revision, tests | DB contract และ browser desktop/mobile ยังไม่ได้ verify |
-| 2 | — | — | ยังไม่เริ่ม | — |
+| 2 | `feat/master-data-phase-2` | `10.77` | ทำโค้ดครบ: structured address resolver/snapshots, customer checkout+AI, tax request/full invoice, store/branch forms, legacy matcher; focused+full gate ผ่าน และ browser guard responsive smoke ผ่าน | DB contract และฟอร์ม browser หลัง login ยังไม่ได้ verify; รอคำตอบเรื่องบังคับ code สำหรับ COMPANY ใหม่ |
 | 3 | — | — | ยังไม่เริ่ม | — |
 | 4 | — | — | ยังไม่เริ่ม | — |
 | 5 | — | — | ยังไม่เริ่ม | — |

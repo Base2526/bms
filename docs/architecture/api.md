@@ -193,6 +193,9 @@ silently has no run history on the ops page.
   CRM fields.
 - `POST /api/bms/checkout/payment` validates the signed token, configured receiving method, order
   state, and slip image before recording a `PENDING` payment.
+- `GET /api/public/thai-addresses?level=&provinceCode=&districtCode=` is a read-only, rate-limited
+  public hierarchy lookup used by signed checkout and tax-request forms. It returns bounded active
+  master codes/names/postcodes only; it accepts no tenant or customer identity.
 
 These routes are intentionally public bearer-link endpoints, not admin APIs. The HMAC token binds
 `tenantId`, `orderId`, and expiry; the browser cannot select a tenant, order total, or another

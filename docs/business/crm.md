@@ -54,6 +54,12 @@ Complete saved details are reused automatically. Incomplete details are collecte
 time and saved by `saveCustomerCheckoutDetails()` only when the customer explicitly supplied them.
 An identical shipping address is selected as default rather than inserted again.
 
+Since `10.77`, new non-marketplace delivery addresses resolve through the platform Thai-address
+hierarchy and save both stable codes and Thai display snapshots. Checkout forms use cascading
+province/district/subdistrict selection. The customer AI tool resolves customer-typed address text
+against the same master rows; a subdistrict name matching more than one province is a clarification,
+never a guess. Legacy address rows without codes remain valid for ordering, shipping and display.
+
 Customer-safe own-order status, payment submission, and reorder resolve the channel identity to its
 canonical `customer_id` first. After staff merges duplicate LINE/Facebook/etc. records, those reads
 therefore see the combined cross-channel order history. Legacy orders with no `customer_id` remain

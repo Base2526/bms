@@ -9,6 +9,7 @@ import { normalizeProvince } from "./shippingZones";
 import { normalizeCustomerIdentity } from "./customerIdentity";
 import { validateCustomerMergeReview, readCustomerMergeSnapshot, assertCustomerMergePreview,
   customerMergeAuditMeta, type CustomerMergeActor } from "./customerMergeReview";
+import { resolveThaiAddressCodesInTx, resolveThaiAddressTextInTx, type ThaiAddressCodes } from "./thaiAddress";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const MARKETPLACE_CHECKOUT_CHANNELS = new Set([
@@ -49,6 +50,9 @@ export type SaveCustomerCheckoutDetailsInput = {
   /** จังหวัด/รหัสไปรษณีย์ปลายทาง (7.47) — ใช้คิดค่าส่งตามโซน ไม่บังคับกรอก */
   province?: string | null;
   postcode?: string | null;
+  provinceCode?: string | null;
+  districtCode?: string | null;
+  subdistrictCode?: string | null;
 };
 
 function cleanOptional(value: string | null | undefined): string | null {
@@ -214,6 +218,17 @@ export async function saveCustomerCheckoutDetails(
           LIMIT 1`,
         [tenantId, customerId, shippingAddress]
       );
+      const hasStructuredInput = Boolean(
+        input.provinceCode || input.districtCode || input.subdistrictCode
+      );
+      // Re-selecting an existing legacy address must remain valid. Resolve master data only when
+      // the caller supplied codes, or when this is a genuinely new free-text address from chat.
+      const structured = hasStructuredInput
+        ? await resolveThaiAddressCodesInTx(client, input)
+        : existing.rows[0]
+          ? null
+          : await resolveThaiAddressTextInTx(client, shippingAddress, { province, postcode });
+      if (!existing.rows[0] && !structured) throw new Error("กรุณาเลือกจังหวัด อำเภอ และตำบล");
 
       await client.query(
         `UPDATE bms_customer_addresses
@@ -225,21 +240,35 @@ export async function saveCustomerCheckoutDetails(
       );
 
       if (existing.rows[0]) {
-        await client.query(
-          `UPDATE bms_customer_addresses
-              SET label = COALESCE($3, label),
-                  province = COALESCE($4, province),
-                  postcode = COALESCE($5, postcode),
-                  is_default = true
-            WHERE tenant_id = $1 AND id = $2`,
-          [tenantId, existing.rows[0].id, addressLabel, province, postcode]
-        );
+        if (structured) {
+          await client.query(
+            `UPDATE bms_customer_addresses
+                SET label = COALESCE($3, label),
+                    province=$4,district=$5,subdistrict=$6,postcode=$7,
+                    province_code=$8,district_code=$9,subdistrict_code=$10,
+                    is_default = true
+              WHERE tenant_id = $1 AND id = $2`,
+            [tenantId, existing.rows[0].id, addressLabel, structured.province, structured.district,
+              structured.subdistrict, structured.postcode, structured.provinceCode,
+              structured.districtCode, structured.subdistrictCode]
+          );
+        } else {
+          await client.query(
+            `UPDATE bms_customer_addresses
+                SET label = COALESCE($3, label), is_default = true
+              WHERE tenant_id = $1 AND id = $2`,
+            [tenantId, existing.rows[0].id, addressLabel]
+          );
+        }
       } else {
+        if (!structured) throw new Error("กรุณาเลือกจังหวัด อำเภอ และตำบล");
         await client.query(
           `INSERT INTO bms_customer_addresses
-             (tenant_id, customer_id, label, address, is_default, address_type, province, postcode)
-           VALUES ($1, $2, $3, $4, true, 'shipping', $5, $6)`,
-          [tenantId, customerId, addressLabel, shippingAddress, province, postcode]
+             (tenant_id,customer_id,label,address,is_default,address_type,province,district,subdistrict,postcode,province_code,district_code,subdistrict_code)
+           VALUES ($1,$2,$3,$4,true,'shipping',$5,$6,$7,$8,$9,$10,$11)`,
+          [tenantId, customerId, addressLabel, shippingAddress, structured.province,
+            structured.district, structured.subdistrict, structured.postcode,
+            structured.provinceCode, structured.districtCode, structured.subdistrictCode]
         );
       }
     } else if (province || postcode) {
@@ -624,7 +653,7 @@ export async function customerOrderHistory(
 
 export async function customerAddresses(tenantId: string, customerId: string) {
   const res = await query(
-    `SELECT id, label, address, is_default, province, postcode,
+    `SELECT id, label, address, is_default, province,district,subdistrict,postcode,
             province_code, district_code, subdistrict_code
        FROM bms_customer_addresses
       WHERE tenant_id = $1 AND customer_id = $2 ORDER BY is_default DESC, id`,
@@ -1079,23 +1108,10 @@ export async function setCustomerTags(tenantId: string, id: string, tags: string
   return (res.rowCount ?? 0) > 0;
 }
 
-type CustomerAddressCodes = { provinceCode?: string | null; districtCode?: string | null; subdistrictCode?: string | null; postcode?: string | null };
+type CustomerAddressCodes = ThaiAddressCodes;
 
 async function validateAddressCodes(client: PoolClient, codes: CustomerAddressCodes) {
-  const provinceCode = codes.provinceCode?.trim() || null;
-  const districtCode = codes.districtCode?.trim() || null;
-  const subdistrictCode = codes.subdistrictCode?.trim() || null;
-  const postcode = codes.postcode?.trim() || null;
-  if (postcode && !/^\d{5}$/.test(postcode)) throw new Error("รหัสไปรษณีย์ต้องมี 5 หลัก");
-  if (!provinceCode && !districtCode && !subdistrictCode) return { provinceCode, districtCode, subdistrictCode, postcode };
-  if (!provinceCode || !districtCode || !subdistrictCode) throw new Error("กรุณาเลือกจังหวัด อำเภอ และตำบลให้ครบ หรือเว้นว่างทั้งหมด");
-  const found = await client.query<{ postcode: string }>(
-    `SELECT s.postcode FROM bms_master_th_subdistricts s
-      JOIN bms_master_th_districts d ON d.code=s.district_code AND d.province_code=s.province_code
-     WHERE s.code=$1 AND s.district_code=$2 AND s.province_code=$3 AND s.active AND d.active`,
-    [subdistrictCode,districtCode,provinceCode]);
-  if (!found.rowCount) throw new Error("ลำดับจังหวัด อำเภอ ตำบลไม่ตรงกับข้อมูลกลาง");
-  return { provinceCode, districtCode, subdistrictCode, postcode: postcode || found.rows[0].postcode };
+  return resolveThaiAddressCodesInTx(client, codes);
 }
 
 export async function addCustomerAddress(
@@ -1108,10 +1124,12 @@ export async function addCustomerAddress(
   try { await beginTenantTx(client,tenantId); const normalized=await validateAddressCodes(client,codes);
     if(isDefault) await client.query(`UPDATE bms_customer_addresses SET is_default=false WHERE tenant_id=$1 AND customer_id=$2`,[tenantId,customerId]);
     const res=await client.query(`INSERT INTO bms_customer_addresses
-      (tenant_id,customer_id,label,address,is_default,province,postcode,province_code,district_code,subdistrict_code)
-      VALUES($1,$2,$3,$4,$5,(SELECT name_th FROM bms_master_th_provinces WHERE code=$6),$7,$6,$8,$9)
-      RETURNING id,label,address,is_default,province,postcode,province_code,district_code,subdistrict_code`,
-      [tenantId,customerId,label?.trim()||null,addr,isDefault,normalized.provinceCode,normalized.postcode,normalized.districtCode,normalized.subdistrictCode]);
+      (tenant_id,customer_id,label,address,is_default,province,district,subdistrict,postcode,province_code,district_code,subdistrict_code)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+      RETURNING id,label,address,is_default,province,district,subdistrict,postcode,province_code,district_code,subdistrict_code`,
+      [tenantId,customerId,label?.trim()||null,addr,isDefault,normalized?.province??null,normalized?.district??null,
+        normalized?.subdistrict??null,normalized?.postcode??codes.postcode??null,normalized?.provinceCode??null,
+        normalized?.districtCode??null,normalized?.subdistrictCode??null]);
     await client.query("COMMIT");return res.rows[0];
   } catch(error){await client.query("ROLLBACK");throw error;} finally{client.release();}
 }
@@ -1125,11 +1143,13 @@ export async function updateCustomerAddress(
   const client=await getClient();
   try { await beginTenantTx(client,tenantId); const normalized=await validateAddressCodes(client,codes);
     const res=await client.query(`UPDATE bms_customer_addresses SET label=$3,address=$4,
-      province=COALESCE((SELECT name_th FROM bms_master_th_provinces WHERE code=$5),province),
-      postcode=COALESCE($6,postcode),province_code=COALESCE($5,province_code),
-      district_code=COALESCE($7,district_code),subdistrict_code=COALESCE($8,subdistrict_code)
+      province=COALESCE($5,province),district=COALESCE($6,district),subdistrict=COALESCE($7,subdistrict),
+      postcode=COALESCE($8,postcode),province_code=COALESCE($9,province_code),
+      district_code=COALESCE($10,district_code),subdistrict_code=COALESCE($11,subdistrict_code)
       WHERE tenant_id=$1 AND id=$2 RETURNING id,label,address,is_default,province,postcode,province_code,district_code,subdistrict_code`,
-      [tenantId,addressId,label?.trim()||null,addr,normalized.provinceCode,normalized.postcode,normalized.districtCode,normalized.subdistrictCode]);
+      [tenantId,addressId,label?.trim()||null,addr,normalized?.province??null,normalized?.district??null,
+        normalized?.subdistrict??null,normalized?.postcode??codes.postcode??null,normalized?.provinceCode??null,
+        normalized?.districtCode??null,normalized?.subdistrictCode??null]);
     if(!res.rowCount)throw new Error("ไม่พบที่อยู่");await client.query("COMMIT");return res.rows[0];
   }catch(error){await client.query("ROLLBACK");throw error;}finally{client.release();}
 }
