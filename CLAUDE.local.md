@@ -7669,3 +7669,25 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - rollout: backup `bms_customer_addresses`, `bms_store_profile`, `bms_locations`, `bms_tax_documents`;
   apply `10.76` ก่อน `10.77` ด้วย transaction, ตรวจ nullable columns/FKs แล้วรัน matcher แบบ dry-run
   แยก tenant ก่อน apply; rollback app ก่อนและเก็บ snapshot columns ไว้จน export/review เสร็จ
+
+### Master data — Phase 7 (`10.82`, 2026-10-17)
+
+- branch `feat/master-data-phase-7`; เพิ่ม global `bms_master_drugs` แบบ effective-dated พร้อม source/version,
+  pharmacist-review provenance, Phase 6 approved-barcode link และ revision history; ไม่มี tenant/RLS และ
+  `bms_app` ได้ table `SELECT` เท่านั้น การเขียนผ่าน narrow `SECURITY DEFINER` functions หลัง application RBAC
+- ร้านเห็นคำแนะนำอัตโนมัติจาก product/pack barcode หรือเลือก master เอง; ปุ่มใช้คำแนะนำต้องมี
+  `pharmacy.policy.review`, คัดลอก snapshot ลง Product Policy เป็น `DRAFT`, ล้าง approval เดิม และ audit
+  ใน tenant transaction เดียวกัน; sale decision เดิมไม่อ่าน master data
+- ไม่มี seed ยาจริงเพราะยังไม่มีชื่อเภสัชกรผู้รับผิดชอบชุดข้อมูล มีเพียง `SAMPLE-DO-NOT-USE` ที่ inactive
+  และติดป้ายว่าไม่ผ่าน clinical review
+- verify: focused Phase 7 **9/9**, pharmacy-policy-decision **38/38**, Phase 6 **5/5**,
+  assistant corpus **11/11**, realtime coverage **7/7**, schema artifact/readiness, i18n และ typecheck ผ่าน;
+  deliberate mutation scenarios 6 ชุดเดิม + security-definer boundary แดงตามคาดและ restore แล้ว
+- full gate รอบสุดท้ายผ่าน: pure **2,914/2,920** (skip 6, fail 0) และ production build สำเร็จ;
+  browser guard smoke เปิด `/admin/master-data` ที่ 1440x900 และ 390x844 ได้ แต่ redirect ไป login
+  ตาม guard จึงยังไม่ได้ตรวจ master-drug form หลัง authenticated session
+- DB contract ยังไม่รัน: runner exit 2 เพราะไม่มี `POSTGRES_HOST`/`POSTGRES_DB`; ห้ามอ้างว่า migration/function
+  ผ่าน PostgreSQL จริงจนกว่าจะรัน `node scripts/run-contract-tests.mjs db master-data-phase7` บน local throwaway DB
+- rollout: backup `bms_master_barcodes` และ `bms_pharmacy_product_policies`; apply `10.81` ก่อน `10.82`,
+  ตรวจ direct table write ของ `bms_app` ถูกปฏิเสธแต่สอง function execute ได้, sample ยัง inactive และไม่มี active
+  real-drug rows; rollback app ก่อนและเก็บ policy snapshot columns จน export/review เสร็จ เพราะการ drop จะทำลาย provenance

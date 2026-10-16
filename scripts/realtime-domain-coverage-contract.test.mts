@@ -194,7 +194,7 @@ const CONFIGURATION = [
   "bms_master_th_districts", "bms_master_th_subdistricts", "bms_master_carriers",
   "bms_master_th_shipping_zones", "bms_shipping_zone_overrides",
   "bms_master_tax_document_types", "bms_master_vat_rates", "bms_master_tax_buyer_types", // Reference/configuration data; editors refetch after writes.
-  "bms_master_barcodes", "bms_barcode_master_contributions", // Reviewed barcode suggestions and opt-in dedupe ledger; forms refetch after save/review.
+  "bms_master_barcodes", "bms_barcode_master_contributions", "bms_master_drugs", // Reviewed global references; forms refetch after save/review.
   "bms_emergency_facilities",
   "bms_commission_rules", "bms_coupon_locations", "bms_document_counters",
   "bms_followup_rules", "bms_inventory_policies", "bms_kitchen_stations",

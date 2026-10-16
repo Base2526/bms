@@ -1,5 +1,6 @@
 import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
+import { applyMasterDrugSuggestionToPolicy as applyMasterDrugSuggestionInTx } from "../masterDrugs";
 import {
   PHARMACY_PRODUCT_TYPES,
   PHARMACY_SALE_POLICIES,
@@ -41,6 +42,25 @@ export type PharmacyProductPolicy = {
   reviewedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  masterDrugCode: string | null;
+  masterDrugId: string | null;
+  masterDrugVersion: number | null;
+  masterDrugSuggestionSnapshot: Record<string, unknown> | null;
+  masterDrugSuggestionAppliedAt: string | null;
+  masterDrugSuggestionAppliedBy: string | null;
+  suggestedMasterDrug: {
+    code: string;
+    genericName: string;
+    dosageForm: string;
+    strength: string;
+    regulatoryClass: string;
+    suggestedSalePolicy: PharmacySalePolicy;
+    suggestedQuantityLimit: number | null;
+    reviewedByPharmacist: boolean;
+    reviewedByPharmacistName: string | null;
+    reviewedAt: string | null;
+    version: number;
+  } | null;
 };
 
 export type ListPharmacyProductPoliciesPageOptions = {
@@ -60,7 +80,7 @@ export const PHARMACY_REGULATORY_FRAMEWORKS = ["UNKNOWN", "NOT_REGULATED", "DRUG
 export type PharmacyRegulatoryFramework = (typeof PHARMACY_REGULATORY_FRAMEWORKS)[number];
 export const PHARMACY_REGULATORY_EVIDENCE_SOURCES = [
   "UNKNOWN", "PRODUCT_LABEL", "FDA_REGISTRATION", "FDA_ANNOUNCEMENT",
-  "SUPPLIER_DOCUMENT", "PHARMACIST_REVIEW",
+  "SUPPLIER_DOCUMENT", "PHARMACIST_REVIEW", "MASTER_DRUG_REFERENCE",
 ] as const;
 export type PharmacyRegulatoryEvidenceSource = (typeof PHARMACY_REGULATORY_EVIDENCE_SOURCES)[number];
 
@@ -118,6 +138,19 @@ function iso(value: Date | string | null): string | null {
 }
 
 function mapRow(row: any): PharmacyProductPolicy {
+  const suggestedMasterDrug = row.suggested_master_drug_code ? {
+    code: row.suggested_master_drug_code,
+    genericName: row.suggested_generic_name,
+    dosageForm: row.suggested_dosage_form,
+    strength: row.suggested_strength,
+    regulatoryClass: row.suggested_regulatory_class,
+    suggestedSalePolicy: row.suggested_sale_policy,
+    suggestedQuantityLimit: row.suggested_quantity_limit == null ? null : Number(row.suggested_quantity_limit),
+    reviewedByPharmacist: row.suggested_reviewed_by_pharmacist === true,
+    reviewedByPharmacistName: row.suggested_reviewed_by_pharmacist_name ?? null,
+    reviewedAt: iso(row.suggested_reviewed_at),
+    version: Number(row.suggested_version),
+  } : null;
   return {
     id: row.id,
     tenantId: row.tenant_id,
@@ -137,8 +170,31 @@ function mapRow(row: any): PharmacyProductPolicy {
     reviewedAt: iso(row.reviewed_at),
     createdAt: iso(row.created_at)!,
     updatedAt: iso(row.updated_at)!,
+    masterDrugCode: row.master_drug_code ?? null,
+    masterDrugId: row.master_drug_id ?? null,
+    masterDrugVersion: row.master_drug_version == null ? null : Number(row.master_drug_version),
+    masterDrugSuggestionSnapshot: row.master_drug_suggestion_snapshot ?? null,
+    masterDrugSuggestionAppliedAt: iso(row.master_drug_suggestion_applied_at),
+    masterDrugSuggestionAppliedBy: row.master_drug_suggestion_applied_by ?? null,
+    suggestedMasterDrug,
   };
 }
+
+const MASTER_DRUG_SELECT = `
+  policy.master_drug_id, policy.master_drug_code, policy.master_drug_version,
+  policy.master_drug_suggestion_snapshot,
+  policy.master_drug_suggestion_applied_at, policy.master_drug_suggestion_applied_by,
+  master_drug.code AS suggested_master_drug_code,
+  master_drug.generic_name AS suggested_generic_name,
+  master_drug.dosage_form AS suggested_dosage_form,
+  master_drug.strength AS suggested_strength,
+  master_drug.regulatory_class AS suggested_regulatory_class,
+  master_drug.suggested_sale_policy,
+  master_drug.suggested_quantity_limit,
+  master_drug.reviewed_by_pharmacist AS suggested_reviewed_by_pharmacist,
+  master_drug.reviewed_by_pharmacist_name AS suggested_reviewed_by_pharmacist_name,
+  master_drug.reviewed_at AS suggested_reviewed_at,
+  master_drug.version AS suggested_version`;
 
 export async function listPharmacyProductPolicies(tenantId: string): Promise<PharmacyProductPolicy[]> {
   const res = await query(
@@ -155,11 +211,29 @@ export async function listPharmacyProductPolicies(tenantId: string): Promise<Pha
             policy.registration_no, policy.max_quantity, policy.safety_rule_key,
             COALESCE(policy.status, 'MISSING') AS status,
             policy.reviewed_by, policy.reviewed_at,
+            ${MASTER_DRUG_SELECT},
             COALESCE(policy.created_at, product.created_at) AS created_at,
             COALESCE(policy.updated_at, product.updated_at) AS updated_at
        FROM bms_products product
        LEFT JOIN bms_pharmacy_product_policies policy
          ON policy.tenant_id = product.tenant_id AND policy.product_sku = product.sku
+       LEFT JOIN LATERAL (
+         SELECT barcode_ref.master_drug_id
+           FROM bms_master_barcodes barcode_ref
+          WHERE barcode_ref.status = 'APPROVED'
+            AND barcode_ref.master_drug_id IS NOT NULL
+            AND (
+              barcode_ref.barcode = product.barcode OR EXISTS (
+                SELECT 1 FROM bms_product_packs pack
+                 WHERE pack.tenant_id=product.tenant_id AND pack.product_sku=product.sku
+                   AND pack.active AND pack.barcode=barcode_ref.barcode
+              )
+            )
+          ORDER BY barcode_ref.barcode
+          LIMIT 1
+       ) master_barcode ON TRUE
+       LEFT JOIN bms_master_drugs master_drug
+         ON master_drug.id = COALESCE(policy.master_drug_id, master_barcode.master_drug_id)
       WHERE product.tenant_id = $1
       ORDER BY product.name, product.sku`,
     [tenantId]
@@ -192,12 +266,30 @@ export async function listPharmacyProductPoliciesPage(
                 policy.registration_no, policy.max_quantity, policy.safety_rule_key,
                 COALESCE(policy.status, 'MISSING') AS status,
                 policy.reviewed_by, policy.reviewed_at,
+                ${MASTER_DRUG_SELECT},
                 COALESCE(policy.created_at, product.created_at) AS created_at,
                 COALESCE(policy.updated_at, product.updated_at) AS updated_at,
                 COUNT(*) OVER()::int AS total_count
            FROM bms_products product
            LEFT JOIN bms_pharmacy_product_policies policy
              ON policy.tenant_id = product.tenant_id AND policy.product_sku = product.sku
+           LEFT JOIN LATERAL (
+             SELECT barcode_ref.master_drug_id
+               FROM bms_master_barcodes barcode_ref
+              WHERE barcode_ref.status = 'APPROVED'
+                AND barcode_ref.master_drug_id IS NOT NULL
+                AND (
+                  barcode_ref.barcode = product.barcode OR EXISTS (
+                    SELECT 1 FROM bms_product_packs pack
+                     WHERE pack.tenant_id=product.tenant_id AND pack.product_sku=product.sku
+                       AND pack.active AND pack.barcode=barcode_ref.barcode
+                  )
+                )
+              ORDER BY barcode_ref.barcode
+              LIMIT 1
+           ) master_barcode ON TRUE
+           LEFT JOIN bms_master_drugs master_drug
+             ON master_drug.id = COALESCE(policy.master_drug_id, master_barcode.master_drug_id)
           WHERE product.tenant_id = $1
             AND (
               $2::boolean = false
@@ -215,6 +307,17 @@ export async function listPharmacyProductPoliciesPage(
     limit,
     offset,
   };
+}
+
+export async function applyMasterDrugSuggestionToPolicy(input: {
+  tenantId: string;
+  productSku: string;
+  masterDrugCode: string;
+  actorId: string;
+  actorLabel: string;
+}): Promise<PharmacyProductPolicy> {
+  const row = await applyMasterDrugSuggestionInTx(input);
+  return mapRow(row);
 }
 
 export type UpsertPharmacyProductPolicyInput = {
@@ -242,6 +345,9 @@ export function validatePharmacyProductPolicyInput(input: UpsertPharmacyProductP
   }
   if (!PHARMACY_REGULATORY_EVIDENCE_SOURCES.includes(input.regulatoryEvidenceSource)) {
     throw new Error("regulatoryEvidenceSource ไม่ถูกต้อง");
+  }
+  if (input.regulatoryEvidenceSource === "MASTER_DRUG_REFERENCE") {
+    throw new Error("MASTER_DRUG_REFERENCE ใช้ได้เฉพาะปุ่มใช้ค่าแนะนำที่บันทึก snapshot เท่านั้น");
   }
   if (input.productType === "DRUG" && input.regulatoryFramework !== "DRUG") {
     throw new Error("สินค้าประเภท DRUG ต้องใช้ regulatoryFramework = DRUG");

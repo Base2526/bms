@@ -307,6 +307,12 @@ C. ผูกยาของร้านกับ master ผ่านบาร์
 - ด่านขายยาเดิม (evaluatePharmacySale) ผลเท่าเดิมทุกเคสใน pharmacy-policy-decision-contract
 ```
 
+สถานะ: implemented บน branch `feat/master-data-phase-7` ด้วย migration `10.82`: master drug
+แบบ effective-dated, การเชื่อมผ่านบาร์โค้ดที่ Phase 6 อนุมัติหรือเลือกเอง, snapshot ลง Product Policy
+Draft และ audit ใน tenant transaction; runtime role เขียน global tables ได้เฉพาะ narrow security-definer
+functions หลังผ่าน application RBAC. ยังไม่มี seed ยาจริง; มีเฉพาะแถวตัวอย่าง inactive ที่ระบุชัดว่า
+ห้ามใช้ เพราะยังไม่มีชื่อเภสัชกรผู้รับผิดชอบชุดข้อมูล.
+
 ---
 
 ## เฟส 8 — ย้ายค่าตั้งค่าแพลตฟอร์มเข้า DB + หลายประเทศ
@@ -350,6 +356,6 @@ F. archetype/capability presets ย้ายเข้า DB **เฉพาะเ
 | 3 | `feat/master-data-phase-3` | `10.78` | ทำโค้ดครบ: carrier/shipping-zone master, tenant override, snapshots, importer integration และ UI | ดูผล verify ในประวัติ branch |
 | 4 | `feat/master-data-phase-4` | `10.79` | ทำโค้ดครบ: tax document/VAT/buyer reference, effective-date resolution, readiness และ UI | ดูผล verify ในประวัติ branch |
 | 5 | `feat/master-data-phase-5` | `10.80` | ทำโค้ดครบ: starter categories/units, holiday importer, emergency master+fallback, onboarding integration | browser หลัง login และ production dataset วันหยุดต้อง verify แยก |
-| 6 | — | — | ยังไม่เริ่ม | — |
-| 7 | — | — | ยังไม่เริ่ม | — |
+| 6 | `feat/master-data-phase-6` | `10.81` | merge แล้ว: barcode master cache, opt-in merchant candidate, platform review และ autofill ก่อน provider | ดูผล verify ในประวัติ branch; provider payload ยังไม่ cache ตามข้อสัญญา |
+| 7 | `feat/master-data-phase-7` | `10.82` | ทำโค้ดครบ: effective-dated drug suggestions, Phase 6 barcode/manual link, tenant Draft snapshot, permission+same-tx audit, UI/GraphQL/docs/tests | DB contract และ browser หลัง login ยังไม่ได้ verify; ยังไม่มีเภสัชกรผู้รับผิดชอบจึงไม่มี seed ยาจริง |
 | 8 | — | — | ยังไม่เริ่ม | — |

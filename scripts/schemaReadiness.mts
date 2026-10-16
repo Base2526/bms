@@ -24,6 +24,15 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.82__bms_master_drugs.sql",
+    impact: "Pharmacy Product Policy reads and optional master-drug Draft snapshots require the Phase 7 reference table and links",
+    needs: [
+      { kind: "table", name: "bms_master_drugs" },
+      { kind: "column", table: "bms_master_barcodes", name: "master_drug_id" },
+      { kind: "column", table: "bms_pharmacy_product_policies", name: "master_drug_suggestion_snapshot" },
+    ],
+  },
+  {
     file: "10.77__bms_structured_thai_addresses.sql",
     impact: "Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns",
     needs: [

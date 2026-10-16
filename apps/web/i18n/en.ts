@@ -384,7 +384,7 @@ const en = {
   },
   admin_master_data: {
     title: "Platform master data", warning_title: "Changes affect every store", warning_description: "Edit reference data only from verified sources. Existing payment and document snapshots keep their original text.",
-    banks: "Banks", units: "Units", addresses: "Thai addresses", carriers: "Carriers", barcodes: "Barcodes", tax: "Tax references", search: "Search code or name", reload: "Reload", save: "Save", cancel: "Cancel", saved: "Master data saved", save_error: "Unable to save master data",
+    banks: "Banks", units: "Units", addresses: "Thai addresses", carriers: "Carriers", barcodes: "Barcodes", drugs: "Drug references", tax: "Tax references", search: "Search code or name", reload: "Reload", save: "Save", cancel: "Cancel", saved: "Master data saved", save_error: "Unable to save master data",
     add_bank: "Add bank", add_unit: "Add unit", add_address: "Add address row", bank_form: "Bank reference", unit_form: "Standard unit", address_form: "Thai address reference",
     code: "Code", country: "Country", name_th: "Thai name", name_en: "English name", sort_order: "Sort order", status: "Status", active: "Active", inactive: "Inactive", edit: "Edit",
     source: "Source", source_version: "Source version", kind: "Kind", aliases: "Aliases", aliases_help: "Comma-separated retail terms", base_factor: "Base factor within the same kind",
@@ -392,6 +392,7 @@ const en = {
     carrier_form: "Carrier reference", integration_status: "Integration status", tracking_url_template: "Tracking URL template", tracking_url_help: "Optional verified HTTPS URL containing {trackingNo}", tracking_pattern: "Tracking number pattern", carrier_status_title: "LIVE means a verified production connection", carrier_status_description: "MOCK and NONE are never shown as connected. Add tracking URLs or patterns only from verified carrier documentation.",
     tax_beta_title: "e-Tax remains beta", tax_beta_description: "These versioned references support validation and XML compatibility. They do not certify the generated XML for real submission, and the VAT reference never changes a bill amount.", tax_document_types: "Document codes", vat_references: "VAT advisory rates", tax_buyer_types: "Buyer rules", effective_period: "Effective period", tax_id_policy: "Tax ID policy", branch_policy: "Branch policy",
     barcode_review_title: "Review merchant-confirmed barcodes", barcode_review_description: "Approve, edit, or reject a candidate before other shops can use it to fill a form. Provider payloads never enter the master directly.", barcode: "Barcode", name: "Product name", brand: "Brand", size: "Size", confirmations: "Confirmations", review: "Review", unit_code: "Unit code", category_hint: "Category hint",
+    drug_safety_title: "Drug references are suggestions, never tenant approvals", drug_safety_description: "Do not add real drug content until a named licensed pharmacist owns and reviews the dataset. The inactive SAMPLE row documents the shape only and cannot be applied.", add_drug: "Add drug reference", drug_form: "Drug reference", generic_name: "Generic name", dosage_form: "Dosage form", strength: "Strength", regulatory_class: "Regulatory class", suggested_policy: "Suggested sale policy", suggested_limit: "Suggested quantity limit", drug_barcodes: "Approved barcode candidates", drug_barcodes_help: "Comma-separated GTINs. Automatic matching activates only when the Phase 6 barcode row is APPROVED.", pharmacist_review: "Pharmacist review", reviewed_by_pharmacist: "Reviewed by pharmacist", not_reviewed_by_pharmacist: "Not reviewed by pharmacist", reviewer_name: "Responsible pharmacist name", reviewer_license: "Pharmacist licence number", version: "Version",
   },
   footer: {
     support: "Support",
@@ -3047,6 +3048,7 @@ const en = {
     ev_fda_ann: "Thai FDA announcement or criteria",
     ev_supplier: "Manufacturer / supplier document",
     ev_pharmacist: "Pharmacist review record",
+    ev_master_drug: "Snapshotted master drug recommendation",
     saved: "Saved",
     save_failed: "Save failed",
     policy_draft_saved: "Product Policy saved as Draft",
@@ -3124,6 +3126,7 @@ const en = {
     pick_from_catalog2: "Pick a product from the catalog and set its sale conditions — the first save is always a Draft",
     compound_redflag_hint: "A compound red flag uses a condition such as {\"allOf\":[{\"field\":\"patient_age_years\",\"lessThan\":0.25},{\"field\":\"fever_temp\",\"greaterThanOrEqual\":38}]}, and escalationRules.bySeverity splits EMERGENCY/HIGH/MODERATE/LOW",
     form_max_qty: "Max quantity per order",
+    col_master_suggestion: "Master recommendation", master_reviewed: "Reviewed by pharmacist", master_not_reviewed: "Not reviewed by pharmacist", no_master_suggestion: "No barcode match", use_master_suggestion: "Use recommendation", master_suggestion_modal: "Use a master drug recommendation", master_suggestion_draft_only: "This copies a versioned snapshot into a Draft only. It never approves the shop policy; a licensed pharmacist must still review it.", select_master_drug: "Select a drug reference", use_as_draft: "Copy to Draft", cancel: "Cancel", master_suggestion_applied: "Copied the recommendation into a Product Policy Draft", master_suggestion_failed: "Couldn't apply the master drug recommendation",
   },
   admin_pharmacy_review_mockup: {
     approved_toast: "Mockup: the pharmacist approved and sent the advice back to the customer",

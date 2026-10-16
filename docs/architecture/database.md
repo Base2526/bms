@@ -1806,6 +1806,26 @@ updates the candidate count in the product transaction. Platform review is separ
 audited. Provider responses remain uncached because Barcode Lookup's limited, non-sublicensable
 subscription and termination deletion clause do not establish a durable redistribution right.
 
+## Drug master suggestions (`10.82`)
+
+`bms_master_drugs` is a platform-global, provenance-bearing catalogue of optional Product Policy
+starting values. It has no `tenant_id` and no RLS; `bms_app` receives `SELECT` only on the table.
+Platform-admin writes and Phase 6 barcode review use narrowly scoped `SECURITY DEFINER` functions
+after application RBAC, so the shared runtime role never receives a general global-table write grant. A row records
+the generic name, form, strength, Thai regulatory class, suggested sale policy/quantity limit,
+source version, effective period, dataset version and the named pharmacist review evidence when one exists. Edits
+close the current effective period and insert a new `(code, version)` row instead of overwriting history. The only
+seed is inactive `SAMPLE-DO-NOT-USE`; no real drug dataset is shipped until a named licensed
+pharmacist owns and reviews it.
+
+Automatic matching goes through an `APPROVED` Phase 6 barcode row and can use a product or active
+pack barcode. A shop may also select a drug reference manually. Either route merely copies values
+into a tenant Product Policy in `DRAFT`: `master_drug_suggestion_snapshot` freezes the exact version,
+source and reviewer metadata that was used. Editing the global row later never changes the tenant
+policy, and no global review counts as approval for another shop. Applying requires
+`pharmacy.policy.review` and writes `pharmacy.product_policy.master_suggestion_applied` in the same
+tenant transaction as the Draft. Sale decisions continue to read only the tenant policy fields.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 

@@ -353,6 +353,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "เคสร้านขายยาเดินยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.case-flow", origin: "coverage" },
   { q: "ทำงานจากคิวเภสัชกรยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.process-queue", origin: "coverage" },
   { q: "แก้คำถามคัดกรองของร้านยายังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-protocols", origin: "coverage" },
+  { q: "จะใช้คำแนะนำข้อมูลยากลางตั้ง Product Policy ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-protocols", origin: "phase7" },
   { q: "บันทึกใบอนุญาตเภสัชกรยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-licenses", origin: "coverage" },
   { q: "อนุมัติข้อความที่ AI ตอบเรื่องยาตีกันยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-guidance", origin: "coverage" },
   { q: "how do I approve pharmacist guidance for AI replies", locale: "en", context: GUIDES, expect: "answer", expectTop: "pharmacy.manage-guidance", origin: "coverage" },

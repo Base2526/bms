@@ -1058,10 +1058,10 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   }),
   menuGuide({
     id: "pharmacy.manage-protocols", module: "pharmacy", route: "/admin/pharmacy-protocols",
-    title: ["จัดการ Pharmacy Protocols", "Manage pharmacy protocols"], summary: ["ดูแลคำถาม กฎ และเวอร์ชัน protocol ที่ workflow ร้านยาใช้", "Maintain the questions, rules, and versions used by the pharmacy workflow."],
-    aliases: [["แก้คำถามคัดกรอง", "โปรโตคอลร้านยา", "กฎคัดกรองยา"], ["pharmacy protocols", "screening questions"]],
-    requiredPermissions: ["pharmacy.protocol.manage"], steps: [["เปิด Protocols", "เลือก protocol และแก้ข้อมูล", "ทบทวนผลกระทบ", "เผยแพร่ตาม workflow ของหน้า"], ["Open Protocols.", "Select and edit a protocol.", "Review the impact.", "Publish through the page workflow."]],
-    warnings: [["ห้ามให้โมเดลสร้าง clinical decision แทน protocol และเภสัชกร"], ["Never let the model replace protocols or pharmacist decisions."]], relatedCapabilityIds: ["pharmacy.workflow"],
+    title: ["จัดการ Pharmacy Protocols", "Manage pharmacy protocols"], summary: ["ดูแลคำถาม กฎ เวอร์ชัน protocol และ Product Policy; คำแนะนำข้อมูลยากลางคัดลอกเป็น Draft เท่านั้น", "Maintain protocol questions, rules, versions and Product Policies; master drug recommendations copy into Drafts only."],
+    aliases: [["แก้คำถามคัดกรอง", "โปรโตคอลร้านยา", "กฎคัดกรองยา", "ใช้คำแนะนำข้อมูลยากลาง", "ตั้ง product policy ยา"], ["pharmacy protocols", "screening questions", "master drug recommendation", "drug product policy"]],
+    anyOfPermissions: ["pharmacy.protocol.manage", "pharmacy.policy.review"], steps: [["เปิด Protocols", "เลือก protocol หรือ Product Policy", "ถ้าใช้ข้อมูลยากลาง ให้ตรวจป้ายเภสัชกรและคัดลอกเป็น Draft", "ให้เภสัชกรร้านตรวจและอนุมัติตาม workflow"], ["Open Protocols.", "Select a protocol or Product Policy.", "If using master data, review the pharmacist label and copy it to Draft.", "Have the shop pharmacist review and approve it through the normal workflow."]],
+    warnings: [["คำแนะนำข้อมูลกลางไม่ใช่การอนุมัติข้ามร้าน", "ห้ามให้โมเดลสร้าง clinical decision แทน protocol และเภสัชกร"], ["A master recommendation is not cross-shop approval.", "Never let the model replace protocols or pharmacist decisions."]], relatedCapabilityIds: ["pharmacy.workflow"],
   }),
   menuGuide({
     id: "pharmacy.manage-guidance", module: "pharmacy", route: "/admin/pharmacy-guidance",

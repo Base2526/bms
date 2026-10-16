@@ -2,6 +2,9 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact) AS (VALUES
+    ('10.82__bms_master_drugs.sql', 'table', 'bms_master_drugs', NULL, 'Pharmacy Product Policy reads and optional master-drug Draft snapshots require the Phase 7 reference table and links'),
+    ('10.82__bms_master_drugs.sql', 'column', 'bms_master_barcodes', 'master_drug_id', 'Pharmacy Product Policy reads and optional master-drug Draft snapshots require the Phase 7 reference table and links'),
+    ('10.82__bms_master_drugs.sql', 'column', 'bms_pharmacy_product_policies', 'master_drug_suggestion_snapshot', 'Pharmacy Product Policy reads and optional master-drug Draft snapshots require the Phase 7 reference table and links'),
     ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_store_profile', 'province_code', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
     ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_locations', 'subdistrict_code', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
     ('10.77__bms_structured_thai_addresses.sql', 'column', 'bms_customer_addresses', 'district', 'Structured checkout, branch/store saves and full tax invoice snapshots require Thai address code columns'),
