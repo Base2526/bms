@@ -384,12 +384,13 @@ const th = {
   },
   admin_master_data: {
     title: "ข้อมูลกลางแพลตฟอร์ม", warning_title: "การแก้ไขมีผลกับทุกร้าน", warning_description: "แก้ข้อมูลอ้างอิงจากแหล่งที่ตรวจสอบแล้วเท่านั้น ชื่อธนาคารและข้อความบนเอกสารที่ snapshot ไว้จะไม่เปลี่ยนตามข้อมูลกลาง",
-    banks: "ธนาคาร", units: "หน่วยมาตรฐาน", addresses: "ที่อยู่ไทย", carriers: "บริษัทขนส่ง", search: "ค้นหารหัสหรือชื่อ", reload: "โหลดใหม่", save: "บันทึก", cancel: "ยกเลิก", saved: "บันทึกข้อมูลกลางแล้ว", save_error: "บันทึกข้อมูลกลางไม่สำเร็จ",
+    banks: "ธนาคาร", units: "หน่วยมาตรฐาน", addresses: "ที่อยู่ไทย", carriers: "บริษัทขนส่ง", tax: "ข้อมูลอ้างอิงภาษี", search: "ค้นหารหัสหรือชื่อ", reload: "โหลดใหม่", save: "บันทึก", cancel: "ยกเลิก", saved: "บันทึกข้อมูลกลางแล้ว", save_error: "บันทึกข้อมูลกลางไม่สำเร็จ",
     add_bank: "เพิ่มธนาคาร", add_unit: "เพิ่มหน่วย", add_address: "เพิ่มข้อมูลที่อยู่", bank_form: "ข้อมูลอ้างอิงธนาคาร", unit_form: "หน่วยมาตรฐาน", address_form: "ข้อมูลอ้างอิงที่อยู่ไทย",
     code: "รหัส", country: "ประเทศ", name_th: "ชื่อไทย", name_en: "ชื่ออังกฤษ", sort_order: "ลำดับ", status: "สถานะ", active: "เปิดใช้", inactive: "ปิดใช้", edit: "แก้ไข",
     source: "แหล่งข้อมูล", source_version: "เวอร์ชันแหล่งข้อมูล", kind: "ชนิด", aliases: "ชื่อเรียกอื่น", aliases_help: "คั่นชื่อเรียกที่ร้านใช้ด้วยจุลภาค", base_factor: "ตัวคูณเทียบหน่วยฐานในชนิดเดียวกัน",
     level: "ระดับ", province: "จังหวัด", district: "อำเภอ/เขต", subdistrict: "ตำบล/แขวง", postcode: "รหัสไปรษณีย์", select_province: "เลือกจังหวัด", select_district: "เลือกอำเภอ/เขต", select_subdistrict: "เลือกตำบล/แขวง", address_required: "กรุณาเลือกข้อมูลที่อยู่", address_import_title: "ข้อมูลที่อยู่จำนวนมากต้องใช้ importer", address_import_description: "ใช้ scripts/import-th-address.mts ซึ่งเป็น dry-run โดยปริยาย และจะปฏิเสธชุดข้อมูลที่ไม่มี source, version และ licence",
     carrier_form: "ข้อมูลอ้างอิงบริษัทขนส่ง", integration_status: "สถานะการเชื่อมต่อ", tracking_url_template: "แม่แบบลิงก์ติดตาม", tracking_url_help: "ลิงก์ HTTPS ที่ตรวจสอบแล้วและมี {trackingNo} (ไม่บังคับ)", tracking_pattern: "รูปแบบเลขพัสดุ", carrier_status_title: "LIVE หมายถึงเชื่อมระบบจริงที่ตรวจสอบแล้ว", carrier_status_description: "MOCK และ NONE จะไม่แสดงว่าเชื่อมต่อแล้ว เพิ่มลิงก์หรือรูปแบบเลขพัสดุจากเอกสารขนส่งที่ตรวจสอบแล้วเท่านั้น",
+    tax_beta_title: "e-Tax ยังเป็น BETA", tax_beta_description: "ข้อมูลอ้างอิงแบบมีเวอร์ชันใช้ตรวจสอบและรักษาความเข้ากันได้ของ XML แต่ไม่ได้รับรองว่า XML พร้อมยื่นจริง และอัตรา VAT อ้างอิงจะไม่เปลี่ยนตัวเลขของบิล", tax_document_types: "รหัสประเภทเอกสาร", vat_references: "อัตรา VAT อ้างอิง", tax_buyer_types: "กติกาประเภทผู้ซื้อ", effective_period: "ช่วงเวลาที่มีผล", tax_id_policy: "กฎเลขผู้เสียภาษี", branch_policy: "กฎรหัสสาขา",
   },
   footer: {
     support: "ติดต่อฝ่ายสนับสนุน",

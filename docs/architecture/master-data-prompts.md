@@ -211,6 +211,10 @@ E. หน้า /admin/master-data แท็บ ภาษี
 - readiness เตือนเมื่อ vat_rate ร้านไม่ตรง แต่ไม่บล็อกการขาย
 ```
 
+สถานะ: implemented บน branch `feat/master-data-phase-4` ด้วย migration `10.79`, effective-dated
+document/VAT/buyer references, issue-date XML resolution, advisory VAT readiness และแท็บภาษีใน
+Master Data. Mapping XML เริ่มต้นรักษา byte contract เดิมและยังระบุชัดว่า e-Tax เป็น BETA.
+
 ---
 
 ## เฟส 5 — ค่าตั้งต้นของร้านใหม่

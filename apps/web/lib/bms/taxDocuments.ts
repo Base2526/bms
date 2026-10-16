@@ -37,6 +37,8 @@ import {
 } from "./taxDocumentNumber";
 import { isValidThaiTaxId } from "./thaiTaxId";
 import { normalizeTaxBuyer } from "./taxBuyer";
+import { getTaxBuyerRule } from "./taxMaster";
+import type { TaxBuyerType } from "./taxBuyer";
 import { creditNoteFigures, parseCreditReason } from "./creditNoteMath";
 
 export type TaxDocType = "ABBREVIATED" | "FULL" | "CREDIT_NOTE" | "DEBIT_NOTE";
@@ -574,7 +576,13 @@ export async function issueFullTaxInvoice(args: IssueFullInvoiceArgs): Promise<I
 export async function issueFullTaxInvoiceInTx(client: PoolClient, args: IssueFullInvoiceArgs): Promise<IssueFullResult> {
   const { tenantId, orderId, buyer } = args;
   let normalizedBuyer: ReturnType<typeof normalizeTaxBuyer>;
-  try { normalizedBuyer = normalizeTaxBuyer(buyer ?? {}); }
+  try {
+    const kind = ["COMPANY","INDIVIDUAL","FOREIGNER"].includes(String(buyer?.buyerType))
+      ? String(buyer.buyerType) as TaxBuyerType : null;
+    const rule = kind ? await getTaxBuyerRule(kind, undefined, client) : null;
+    if (kind && !rule) throw new Error("ไม่พบกติกาประเภทผู้ซื้อที่มีผล / Buyer reference is not configured");
+    normalizedBuyer = normalizeTaxBuyer(buyer ?? {}, rule);
+  }
   catch (error) { return { status: "BUYER_INCOMPLETE", reason: (error as Error).message }; }
   const buyerTaxId = normalizedBuyer.taxId;
   const buyerBranchCode = normalizedBuyer.branchCode;

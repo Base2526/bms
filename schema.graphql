@@ -2229,6 +2229,39 @@ input BmsMasterCarrierInput {
   trackingUrlTemplate: String
 }
 
+type BmsMasterTaxBuyerType {
+  active: Boolean!
+  branchPolicy: String!
+  code: String!
+  effectiveFrom: String!
+  effectiveTo: String
+  id: ID!
+  nameEn: String!
+  nameTh: String!
+  source: String!
+  sourceVersion: String!
+  taxIdPolicy: String!
+}
+
+type BmsMasterTaxDocumentType {
+  active: Boolean!
+  bmsDocumentType: String
+  code: String!
+  effectiveFrom: String!
+  effectiveTo: String
+  id: ID!
+  nameEn: String!
+  nameTh: String!
+  source: String!
+  sourceVersion: String!
+}
+
+type BmsMasterTaxReferences {
+  buyerTypes: [BmsMasterTaxBuyerType!]!
+  documentTypes: [BmsMasterTaxDocumentType!]!
+  vatRates: [BmsMasterVatRate!]!
+}
+
 type BmsMasterThaiAddress {
   active: Boolean!
   code: String!
@@ -2286,6 +2319,17 @@ input BmsMasterUnitInput {
   nameTh: String!
   source: String
   sourceVersion: String
+}
+
+type BmsMasterVatRate {
+  active: Boolean!
+  countryCode: String!
+  effectiveFrom: String!
+  effectiveTo: String
+  id: ID!
+  rate: Float!
+  source: String!
+  sourceVersion: String!
 }
 
 type BmsMe {
@@ -9221,6 +9265,7 @@ type Query {
   bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
   bmsMasterBanks(includeInactive: Boolean, search: String): [BmsMasterBank!]!
   bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
+  bmsMasterTaxReferences: BmsMasterTaxReferences!
   bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!
   bmsMasterUnits(includeInactive: Boolean, search: String): [BmsMasterUnit!]!
   bmsMe: BmsMe!

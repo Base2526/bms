@@ -7,3 +7,11 @@ export function isValidThaiTaxId(value: string): boolean {
   }
   return (11 - (sum % 11)) % 10 === Number(value[12]);
 }
+
+export type TaxIdPolicy = "THAI_13_REQUIRED" | "THAI_13_OPTIONAL" | "OPTIONAL";
+
+/** Master data decides the policy; the checksum algorithm deliberately stays in code. */
+export function isValidTaxIdForPolicy(value: string | null, policy: TaxIdPolicy): boolean {
+  if (!value) return policy !== "THAI_13_REQUIRED";
+  return policy === "OPTIONAL" || isValidThaiTaxId(value);
+}

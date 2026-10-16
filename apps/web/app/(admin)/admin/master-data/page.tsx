@@ -11,6 +11,7 @@ const Q_BANKS = gql`query MasterBanks($search:String,$includeInactive:Boolean){b
 const Q_UNITS = gql`query MasterUnits($search:String,$includeInactive:Boolean){bmsMasterUnits(search:$search,includeInactive:$includeInactive){id code countryCode nameTh nameEn aliases kind baseFactor active source sourceVersion updatedAt}}`;
 const Q_ADDRESSES = gql`query MasterAddresses($search:String,$includeInactive:Boolean){bmsMasterThaiAddresses(search:$search,includeInactive:$includeInactive,limit:500){level id code countryCode provinceCode districtCode nameTh nameEn postcode active source sourceVersion updatedAt}}`;
 const Q_CARRIERS = gql`query MasterCarriers($includeInactive:Boolean){bmsMasterCarriers(includeInactive:$includeInactive){id code countryCode nameTh nameEn trackingUrlTemplate trackingNoPattern integrationStatus active source sourceVersion updatedAt}}`;
+const Q_TAX = gql`query MasterTaxReferences{bmsMasterTaxReferences{documentTypes{id code nameTh nameEn bmsDocumentType effectiveFrom effectiveTo active source sourceVersion}vatRates{id countryCode rate effectiveFrom effectiveTo active source sourceVersion}buyerTypes{id code nameTh nameEn taxIdPolicy branchPolicy effectiveFrom effectiveTo active source sourceVersion}}}`;
 const M_BANK = gql`mutation SaveBank($input:BmsMasterBankInput!){bmsUpsertMasterBank(input:$input){id}}`;
 const M_UNIT = gql`mutation SaveUnit($input:BmsMasterUnitInput!){bmsUpsertMasterUnit(input:$input){id}}`;
 const M_ADDRESS = gql`mutation SaveAddress($input:BmsMasterThaiAddressInput!){bmsUpsertMasterThaiAddress(input:$input){id}}`;
@@ -109,4 +110,22 @@ function CarriersTab(){
     </Modal></Card>;
 }
 
-export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>},{key:"carriers",label:t("admin_master_data.carriers"),children:<CarriersTab/>}]}/></Space>}
+function TaxReferencesTab(){
+  const {t}=useI18n();const query=useQuery(Q_TAX,{fetchPolicy:"cache-and-network"});const data=query.data?.bmsMasterTaxReferences;
+  const period=(row:any)=>`${row.effectiveFrom}${row.effectiveTo?` – ${row.effectiveTo}`:" – ∞"}`;
+  return <Space direction="vertical" size="middle" style={{width:"100%"}}>
+    <Alert closable showIcon type="warning" message={t("admin_master_data.tax_beta_title")} description={t("admin_master_data.tax_beta_description")}/>
+    <Button icon={<ReloadOutlined/>} onClick={()=>void query.refetch()}>{t("admin_master_data.reload")}</Button>
+    <Card title={t("admin_master_data.tax_document_types")}><Table rowKey="id" size="small" loading={query.loading} dataSource={data?.documentTypes??[]} pagination={{pageSize:10}} scroll={{x:850}} columns={[
+      {title:t("admin_master_data.code"),dataIndex:"code",width:90},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:"BMS",dataIndex:"bmsDocumentType",width:140,render:(v)=>v?<Tag color="orange">{v}</Tag>:"—"},{title:t("admin_master_data.effective_period"),width:220,render:(_,r)=>period(r)},{title:t("admin_master_data.source"),dataIndex:"source",width:220}
+    ]}/></Card>
+    <Card title={t("admin_master_data.vat_references")}><Table rowKey="id" size="small" loading={query.loading} dataSource={data?.vatRates??[]} pagination={false} scroll={{x:650}} columns={[
+      {title:t("admin_master_data.country"),dataIndex:"countryCode",width:100},{title:"VAT %",dataIndex:"rate",width:100},{title:t("admin_master_data.effective_period"),width:220,render:(_,r)=>period(r)},{title:t("admin_master_data.source"),dataIndex:"source"}
+    ]}/></Card>
+    <Card title={t("admin_master_data.tax_buyer_types")}><Table rowKey="id" size="small" loading={query.loading} dataSource={data?.buyerTypes??[]} pagination={false} scroll={{x:800}} columns={[
+      {title:t("admin_master_data.code"),dataIndex:"code",width:120},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:t("admin_master_data.tax_id_policy"),dataIndex:"taxIdPolicy",width:180},{title:t("admin_master_data.branch_policy"),dataIndex:"branchPolicy",width:220},{title:t("admin_master_data.effective_period"),width:220,render:(_,r)=>period(r)}
+    ]}/></Card>
+  </Space>;
+}
+
+export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>},{key:"carriers",label:t("admin_master_data.carriers"),children:<CarriersTab/>},{key:"tax",label:t("admin_master_data.tax"),children:<TaxReferencesTab/>}]}/></Space>}

@@ -1756,6 +1756,20 @@ falling back to the legacy name aliases only for old or unknown structured data.
 Historical shipments remain readable after a carrier is renamed or deactivated, and a format
 mismatch remains a warning rather than a fulfillment rejection.
 
+## Tax reference master data (`10.79`)
+
+`bms_master_tax_document_types`, `bms_master_vat_rates`, and
+`bms_master_tax_buyer_types` are platform-global, provenance-bearing, effective-dated reference
+tables. `bms_app` receives `SELECT` only. Document-code resolution uses the immutable tax-document
+issue date. The initial BMS mappings preserve the pre-10.79 beta XML bytes and are explicitly not
+evidence that the XML has passed the Revenue Department XSD or provider acceptance tests.
+
+The Thai VAT reference is advisory only. It reflects the 7% rate through 30 September 2027 under
+Royal Decree 807 B.E. 2569; `bms_store_profile.vat_rate` remains the sale-time authority, and a
+mismatch adds a POS-readiness warning without blocking sales or changing issued amounts. Buyer-type
+rows version the tax-ID and branch-code policy while the Thai 13-digit checksum remains application
+code. Issued buyer, seller, VAT, and document snapshots remain immutable.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 
