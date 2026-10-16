@@ -1,3 +1,8 @@
+-- Recovery-safe entry point for SQL clients such as HeidiSQL. A previous
+-- attempt may have left this connection inside an aborted transaction; no SQL
+-- except ROLLBACK can run in that state. This also harmlessly emits a warning
+-- when the connection is already idle. Run this file as one complete batch.
+ROLLBACK;
 BEGIN;
 
 -- Phase 4: versioned tax/e-Tax reference data. These tables advise and

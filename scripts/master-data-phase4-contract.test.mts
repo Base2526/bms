@@ -35,6 +35,7 @@ test("XML production path resolves document codes by immutable issue date",()=>{
 });
 
 test("tax reference tables are versioned global read-only masters",()=>{
+  assert.match(migration,/^-- Recovery-safe entry point[\s\S]*ROLLBACK;\s*BEGIN;/);
   for(const table of ["tax_document_types","vat_rates","tax_buyer_types"]){
     assert.match(migration,new RegExp(`CREATE TABLE IF NOT EXISTS bms_master_${table}`));
   }
