@@ -871,6 +871,33 @@ export const typeDefs = /* GraphQL */ `
     source: String
     sourceVersion: String
   }
+  type BmsMasterCarrier {
+    id: ID!
+    code: BmsCarrier!
+    countryCode: String!
+    nameTh: String!
+    nameEn: String!
+    trackingUrlTemplate: String
+    trackingNoPattern: String
+    integrationStatus: String!
+    active: Boolean!
+    source: String!
+    sourceVersion: String!
+    updatedAt: String!
+  }
+  input BmsMasterCarrierInput {
+    id: ID
+    code: BmsCarrier!
+    countryCode: String!
+    nameTh: String!
+    nameEn: String!
+    trackingUrlTemplate: String
+    trackingNoPattern: String
+    integrationStatus: String!
+    active: Boolean
+    source: String
+    sourceVersion: String
+  }
 
   type BmsEtaxSummary {
     enabled: Boolean!
@@ -1219,6 +1246,8 @@ export const typeDefs = /* GraphQL */ `
     bmsMasterBanks(search: String, includeInactive: Boolean): [BmsMasterBank!]!
     bmsMasterUnits(search: String, includeInactive: Boolean): [BmsMasterUnit!]!
     bmsMasterThaiAddresses(search: String, level: String, provinceCode: String, districtCode: String, includeInactive: Boolean, limit: Int): [BmsMasterThaiAddress!]!
+    bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
+    bmsShippingZones: [BmsShippingZone!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
     bmsEtaxSubmissions(status: String, limit: Int = 100): [BmsEtaxSubmission!]!
@@ -1872,7 +1901,10 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     orderId: ID!
     carrier: BmsCarrier!
+    carrierName: String!
     trackingNo: String
+    trackingUrl: String
+    trackingNoWarning: String
     status: BmsShipmentStatus!
     labelUrl: String
     externalShipmentId: String
@@ -1893,11 +1925,23 @@ export const typeDefs = /* GraphQL */ `
     shipmentId: ID!
     orderId: ID!
     carrier: String!
+    carrierName: String!
     trackingNo: String
+    trackingUrl: String
+    trackingNoWarning: String
     labelUrl: String
     shipTo: BmsLabelShipTo!
     items: [BmsLabelItem!]!
     createdAt: String!
+  }
+
+  type BmsShippingZone {
+    provinceCode: String!
+    nameTh: String!
+    nameEn: String!
+    defaultZone: String!
+    overrideZone: String
+    effectiveZone: String!
   }
 
   type BmsShipmentTrackingEvent {
@@ -5251,6 +5295,8 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertMasterBank(input: BmsMasterBankInput!): BmsMasterBank!
     bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
     bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
+    bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
+    bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
     bmsDeleteProductPack(id: ID!): Boolean!
     bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!
     bmsBackfillEtaxQueue(limit: Int = 500): Int!

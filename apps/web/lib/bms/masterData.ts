@@ -3,6 +3,9 @@ import type { PoolClient } from "pg";
 import { query, runInTransaction } from "@/lib/db";
 import { requirePlatformAdmin } from "./platform";
 import { getTenantId } from "./tenant";
+import { isSafeTrackingPattern } from "./shippingMaster";
+import { isCarrier } from "./carriers/constants";
+import { defaultShippingZoneForProvince } from "./shippingZones";
 
 type MasterContext = { admin?: { id?: string; email?: string; tenant_id?: string } };
 
@@ -20,6 +23,11 @@ export type MasterAddressInput = {
   level: string; id?: string | null; code: string; provinceCode?: string | null;
   districtCode?: string | null; nameTh: string; nameEn: string; postcode?: string | null;
   active?: boolean | null; source?: string | null; sourceVersion?: string | null;
+};
+export type MasterCarrierInput = {
+  id?: string | null; code: string; countryCode: string; nameTh: string; nameEn: string;
+  trackingUrlTemplate?: string | null; trackingNoPattern?: string | null;
+  integrationStatus: string; active?: boolean | null; source?: string | null; sourceVersion?: string | null;
 };
 
 const clean = (value: unknown, max = 200) => String(value ?? "").trim().slice(0, max);
@@ -189,6 +197,12 @@ export async function upsertMasterThaiAddress(ctx: MasterContext, input: MasterA
         ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,
           active=EXCLUDED.active,source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now()
         RETURNING 'PROVINCE'::text level,*`, [normalized.id, normalized.code, normalized.nameTh, normalized.nameEn, normalized.active, normalized.source, normalized.sourceVersion]);
+      await client.query(
+        `INSERT INTO bms_master_th_shipping_zones (province_code,zone,source,source_version)
+         VALUES($1,$2,'BMS legacy shipping-zone parity','pre-10.78')
+         ON CONFLICT(province_code) DO NOTHING`,
+        [normalized.code, defaultShippingZoneForProvince(normalized.nameTh)]
+      );
     } else if (level === 'DISTRICT') {
       saved = await client.query(`INSERT INTO bms_master_th_districts
         (id,code,province_code,name_th,name_en,active,source,source_version)
@@ -209,5 +223,63 @@ export async function upsertMasterThaiAddress(ctx: MasterContext, input: MasterA
     }
     await writeAudit(client, ctx, `platform.master_data.${level.toLowerCase()}_upsert`, saved.rows[0].id, { code: normalized.code, active: normalized.active });
     return mapAddress(saved.rows[0]);
+  });
+}
+
+export async function upsertMasterCarrier(ctx: MasterContext, input: MasterCarrierInput) {
+  const normalized = {
+    id: input.id || null,
+    code: code(input.code, 24),
+    countryCode: country(input.countryCode),
+    nameTh: clean(input.nameTh),
+    nameEn: clean(input.nameEn),
+    trackingUrlTemplate: clean(input.trackingUrlTemplate, 2048) || null,
+    trackingNoPattern: clean(input.trackingNoPattern, 200) || null,
+    integrationStatus: code(input.integrationStatus, 10),
+    active: input.active !== false,
+    source: source(input.source),
+    sourceVersion: sourceVersion(input.sourceVersion),
+  };
+  if (!isCarrier(normalized.code) || !normalized.nameTh || !normalized.nameEn) throw new Error("CARRIER_FIELDS_INVALID");
+  if (!/^[A-Z]{2}$/.test(normalized.countryCode)) throw new Error("COUNTRY_CODE_INVALID");
+  if (!['LIVE','MOCK','NONE'].includes(normalized.integrationStatus)) throw new Error("INTEGRATION_STATUS_INVALID");
+  if (normalized.trackingUrlTemplate) {
+    let url: URL;
+    try { url = new URL(normalized.trackingUrlTemplate.replaceAll("{trackingNo}", "TEST")); }
+    catch { throw new Error("TRACKING_URL_TEMPLATE_INVALID"); }
+    if (url.protocol !== "https:" || !normalized.trackingUrlTemplate.includes("{trackingNo}")) {
+      throw new Error("TRACKING_URL_TEMPLATE_INVALID");
+    }
+  }
+  if (!isSafeTrackingPattern(normalized.trackingNoPattern)) throw new Error("TRACKING_PATTERN_UNSAFE");
+  return platformWrite(ctx, async (client) => {
+    const saved = await client.query(
+      `INSERT INTO bms_master_carriers
+        (id,code,country_code,name_th,name_en,tracking_url_template,tracking_no_pattern,
+         integration_status,active,source,source_version)
+       VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,country_code=EXCLUDED.country_code,
+         name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,
+         tracking_url_template=EXCLUDED.tracking_url_template,
+         tracking_no_pattern=EXCLUDED.tracking_no_pattern,
+         integration_status=EXCLUDED.integration_status,active=EXCLUDED.active,
+         source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now()
+       RETURNING *`,
+      [normalized.id,normalized.code,normalized.countryCode,normalized.nameTh,normalized.nameEn,
+       normalized.trackingUrlTemplate,normalized.trackingNoPattern,normalized.integrationStatus,
+       normalized.active,normalized.source,normalized.sourceVersion]
+    );
+    await writeAudit(client, ctx, "platform.master_data.carrier_upsert", saved.rows[0].id, {
+      code: normalized.code, active: normalized.active, integrationStatus: normalized.integrationStatus,
+    });
+    return {
+      id: saved.rows[0].id, code: saved.rows[0].code, countryCode: saved.rows[0].country_code,
+      nameTh: saved.rows[0].name_th, nameEn: saved.rows[0].name_en,
+      trackingUrlTemplate: saved.rows[0].tracking_url_template,
+      trackingNoPattern: saved.rows[0].tracking_no_pattern,
+      integrationStatus: saved.rows[0].integration_status, active: saved.rows[0].active,
+      source: saved.rows[0].source, sourceVersion: saved.rows[0].source_version,
+      updatedAt: saved.rows[0].updated_at,
+    };
   });
 }

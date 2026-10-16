@@ -88,6 +88,11 @@ export function zoneForProvince(province?: string | null): ShippingZone | null {
   return "UPCOUNTRY";
 }
 
+/** Default used when importing a structured Thai province master row. */
+export function defaultShippingZoneForProvince(provinceNameTh: string): ShippingZone {
+  return zoneForProvince(provinceNameTh) ?? "UPCOUNTRY";
+}
+
 /**
  * Best-effort province detection from a single free-text address line, for the
  * addresses saved before 7.47 added a province column. Only matches the names we

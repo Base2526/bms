@@ -10,9 +10,11 @@ import { useI18n } from "@/lib/i18nContext";
 const Q_BANKS = gql`query MasterBanks($search:String,$includeInactive:Boolean){bmsMasterBanks(search:$search,includeInactive:$includeInactive){id code countryCode nameTh nameEn swift active sortOrder source sourceVersion updatedAt}}`;
 const Q_UNITS = gql`query MasterUnits($search:String,$includeInactive:Boolean){bmsMasterUnits(search:$search,includeInactive:$includeInactive){id code countryCode nameTh nameEn aliases kind baseFactor active source sourceVersion updatedAt}}`;
 const Q_ADDRESSES = gql`query MasterAddresses($search:String,$includeInactive:Boolean){bmsMasterThaiAddresses(search:$search,includeInactive:$includeInactive,limit:500){level id code countryCode provinceCode districtCode nameTh nameEn postcode active source sourceVersion updatedAt}}`;
+const Q_CARRIERS = gql`query MasterCarriers($includeInactive:Boolean){bmsMasterCarriers(includeInactive:$includeInactive){id code countryCode nameTh nameEn trackingUrlTemplate trackingNoPattern integrationStatus active source sourceVersion updatedAt}}`;
 const M_BANK = gql`mutation SaveBank($input:BmsMasterBankInput!){bmsUpsertMasterBank(input:$input){id}}`;
 const M_UNIT = gql`mutation SaveUnit($input:BmsMasterUnitInput!){bmsUpsertMasterUnit(input:$input){id}}`;
 const M_ADDRESS = gql`mutation SaveAddress($input:BmsMasterThaiAddressInput!){bmsUpsertMasterThaiAddress(input:$input){id}}`;
+const M_CARRIER = gql`mutation SaveCarrier($input:BmsMasterCarrierInput!){bmsUpsertMasterCarrier(input:$input){id}}`;
 
 function SearchBar({ value, onChange, reload }: { value: string; onChange: (value: string) => void; reload: () => void }) {
   const { t } = useI18n();
@@ -86,4 +88,25 @@ function AddressesTab(){
     </Modal></Card>;
 }
 
-export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>}]}/></Space>}
+function CarriersTab(){
+  const {t}=useI18n();const[open,setOpen]=useState(false);const[form]=Form.useForm();
+  const query=useQuery(Q_CARRIERS,{variables:{includeInactive:true},fetchPolicy:"cache-and-network"});const[save,state]=useMutation(M_CARRIER);
+  const edit=(row:any)=>{form.resetFields();form.setFieldsValue(row);setOpen(true);};
+  const submit=async()=>{try{await save({variables:{input:await form.validateFields()}});message.success(t("admin_master_data.saved"));setOpen(false);await query.refetch();}catch(e:any){if(!e?.errorFields)message.error(e?.message??t("admin_master_data.save_error"));}};
+  return <Card><Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_master_data.carrier_status_title")} description={t("admin_master_data.carrier_status_description")}/>
+    <Button icon={<ReloadOutlined/>} onClick={()=>void query.refetch()} style={{marginBottom:12}}>{t("admin_master_data.reload")}</Button>
+    <Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsMasterCarriers??[]} pagination={false} scroll={{x:720}} columns={[
+      {title:t("admin_master_data.code"),dataIndex:"code",width:100},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},
+      {title:t("admin_master_data.integration_status"),dataIndex:"integrationStatus",width:130,render:(v:string)=><Tag color={v==="LIVE"?"green":v==="MOCK"?"orange":"default"}>{v}</Tag>},
+      {title:t("admin_master_data.status"),dataIndex:"active",width:100,render:(v)=><Tag color={v?"green":"default"}>{v?t("admin_master_data.active"):t("admin_master_data.inactive")}</Tag>},
+      {title:"",width:90,render:(_,row)=><Button size="small" onClick={()=>edit(row)}>{t("admin_master_data.edit")}</Button>},
+    ]}/>
+    <Modal open={open} title={t("admin_master_data.carrier_form")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={state.loading} okText={t("admin_master_data.save")} cancelText={t("admin_master_data.cancel")}>
+      <Form form={form} layout="vertical"><Form.Item name="id" hidden><Input/></Form.Item><Space align="start" wrap><Form.Item name="code" label={t("admin_master_data.code")} rules={[{required:true}]}><Input disabled/></Form.Item><Form.Item name="countryCode" label={t("admin_master_data.country")} rules={[{required:true}]}><Input maxLength={2}/></Form.Item><Form.Item name="integrationStatus" label={t("admin_master_data.integration_status")} rules={[{required:true}]}><Select options={["LIVE","MOCK","NONE"].map(value=>({value}))}/></Form.Item></Space>
+      <Form.Item name="nameTh" label={t("admin_master_data.name_th")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="nameEn" label={t("admin_master_data.name_en")} rules={[{required:true}]}><Input/></Form.Item>
+      <Form.Item name="trackingUrlTemplate" label={t("admin_master_data.tracking_url_template")} extra={t("admin_master_data.tracking_url_help")}><Input placeholder="https://…/{trackingNo}"/></Form.Item><Form.Item name="trackingNoPattern" label={t("admin_master_data.tracking_pattern")}><Input/></Form.Item>
+      <Form.Item name="source" label={t("admin_master_data.source")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="sourceVersion" label={t("admin_master_data.source_version")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="active" label={t("admin_master_data.active")} valuePropName="checked"><Switch/></Form.Item></Form>
+    </Modal></Card>;
+}
+
+export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>},{key:"carriers",label:t("admin_master_data.carriers"),children:<CarriersTab/>}]}/></Space>}

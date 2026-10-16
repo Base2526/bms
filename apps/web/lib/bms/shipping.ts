@@ -17,6 +17,7 @@ import { beginTenantTx } from "./tenant";
 import { notifyOrderStatusEmail } from "./orderNotify";
 import { getCarrierClient } from "./carriers";
 import { runCarrierCall } from "./carriers/safeCall";
+import { buildTrackingSnapshot, getMasterCarrier } from "./shippingMaster";
 import type {
   CarrierClientStatus,
   CarrierCreateShipmentRequest,
@@ -376,6 +377,8 @@ export async function bookShipmentLive(tenantId: string, shipmentId: string): Pr
   }
   const trackingNo = cleanCarrierValue(result.trackingNo);
   const labelUrl = normalizeCarrierLabelUrl(result.labelUrl);
+  const carrierMaster = await getMasterCarrier(carrier, true);
+  const trackingSnapshot = buildTrackingSnapshot(carrierMaster, carrier, trackingNo);
 
   try {
     const persisted = await query(
@@ -387,13 +390,17 @@ export async function bookShipmentLive(tenantId: string, shipmentId: string): Pr
               carrier_tracking_source = $7,
               carrier_booking_status = 'booked',
               carrier_booking_error = NULL,
+              carrier_name = $8,
+              tracking_url = $9,
+              tracking_no_warning = $10,
               updated_at = now()
         WHERE tenant_id = $1 AND id = $2 AND carrier = $3
           AND external_shipment_id IS NULL
           AND tracking_no IS NULL
           AND status NOT IN ('DELIVERED', 'RETURNED', 'CANCELLED')
           AND carrier_booking_status = 'booking'`,
-      [tenantId, shipmentId, carrier, externalShipmentId, trackingNo, labelUrl, result.source]
+      [tenantId, shipmentId, carrier, externalShipmentId, trackingNo, labelUrl, result.source,
+       trackingSnapshot.carrierName, trackingSnapshot.trackingUrl, trackingSnapshot.trackingNoWarning]
     );
     if ((persisted.rowCount ?? 0) === 0) {
       return { status: "STALE_SHIPMENT", detail: "Shipment changed while the carrier request was in progress" };
@@ -412,6 +419,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
   const { tenantId } = input;
   if (!isCarrier(input.carrier)) return { status: "BAD_CARRIER" };
   const manualTrackingNo = cleanCarrierValue(input.trackingNo);
+  const carrierMaster = await getMasterCarrier(input.carrier);
+  if (!carrierMaster) return { status: "BAD_CARRIER" };
+  const carrierSnapshot = buildTrackingSnapshot(carrierMaster, input.carrier, manualTrackingNo);
 
   const client = await getClient();
   let shipmentId: string;
@@ -490,8 +500,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
     const ins = await client.query<{ id: string }>(
       `INSERT INTO bms_shipments
          (tenant_id, order_id, carrier, tracking_no, status, note,
-          carrier_tracking_source, carrier_booking_status)
-       VALUES ($1, $2, $3, $4, 'SHIPPED', $5, 'manual', $6)
+          carrier_tracking_source, carrier_booking_status, carrier_name,
+          tracking_url, tracking_no_warning)
+       VALUES ($1, $2, $3, $4, 'SHIPPED', $5, 'manual', $6, $7, $8, $9)
        RETURNING id`,
       [
         tenantId,
@@ -500,6 +511,9 @@ export async function createShipment(input: CreateShipmentInput): Promise<Create
         manualTrackingNo,
         input.note ?? null,
         canBookWithCarrier ? "ready" : "manual",
+        carrierSnapshot.carrierName,
+        carrierSnapshot.trackingUrl,
+        carrierSnapshot.trackingNoWarning,
       ]
     );
     shipmentId = ins.rows[0].id;
@@ -566,11 +580,38 @@ export async function updateTracking(
   actor?: string | null
 ): Promise<boolean> {
   if (patch.carrier != null && !isCarrier(patch.carrier)) return false;
-  const res = await query(
-    `UPDATE bms_shipments
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const current = await client.query<{ carrier: Carrier; tracking_no: string | null }>(
+      `SELECT carrier,tracking_no FROM bms_shipments
+        WHERE tenant_id=$1 AND id=$2 FOR UPDATE`,
+      [tenantId, shipmentId]
+    );
+    if (current.rowCount === 0) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const nextCarrier = patch.carrier ?? current.rows[0].carrier;
+    const nextTrackingNo = patch.trackingNo ?? current.rows[0].tracking_no;
+    const carrierMaster = await client.query(
+      `SELECT name_th,tracking_url_template,tracking_no_pattern,active
+         FROM bms_master_carriers WHERE code=$1`,
+      [nextCarrier]
+    );
+    if (patch.carrier != null && (carrierMaster.rowCount === 0 || !carrierMaster.rows[0].active)) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    const snapshot = buildTrackingSnapshot(carrierMaster.rows[0] ?? null, nextCarrier, nextTrackingNo);
+    const res = await client.query(
+      `UPDATE bms_shipments
         SET tracking_no = COALESCE($3, tracking_no),
             carrier     = COALESCE($4, carrier),
             note        = COALESCE($5, note),
+            carrier_name = $6,
+            tracking_url = $7,
+            tracking_no_warning = $8,
             external_shipment_id = CASE
               WHEN ($3 IS NOT NULL AND tracking_no IS DISTINCT FROM $3)
                 OR ($4 IS NOT NULL AND carrier IS DISTINCT FROM $4) THEN NULL
@@ -599,9 +640,25 @@ export async function updateTracking(
       WHERE tenant_id = $1 AND id = $2
         AND status NOT IN ('CANCELLED','RETURNED')
         AND carrier_booking_status <> 'booking'`,
-    [tenantId, shipmentId, patch.trackingNo ?? null, patch.carrier ?? null, actor ? `updated by ${actor}` : null]
-  );
-  return (res.rowCount ?? 0) > 0;
+      [tenantId, shipmentId, patch.trackingNo ?? null, patch.carrier ?? null,
+       actor ? `updated by ${actor}` : null, snapshot.carrierName,
+       snapshot.trackingUrl, snapshot.trackingNoWarning]
+    );
+    if ((res.rowCount ?? 0) > 0) {
+      await client.query(
+        `INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta)
+         VALUES ($1,$2,'shipping.update_tracking',$3,$4::jsonb)`,
+        [tenantId, actor || "system", shipmentId, JSON.stringify({ carrier: patch.carrier ?? null, trackingNoChanged: patch.trackingNo != null })]
+      );
+    }
+    await client.query("COMMIT");
+    return (res.rowCount ?? 0) > 0;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 // ---- set status (DELIVERED → order COMPLETED) ----------------
@@ -665,7 +722,8 @@ export function cancelShipment(tenantId: string, shipmentId: string) {
 // ---- read ----------------------------------------------------
 export async function getShipment(tenantId: string, id: string) {
   const res = await query(
-    `SELECT id, order_id, carrier, tracking_no, status, label_url, note, external_shipment_id,
+    `SELECT id, order_id, carrier, carrier_name, tracking_no, tracking_url, tracking_no_warning,
+            status, label_url, note, external_shipment_id,
             carrier_last_synced_at, carrier_tracking_source, carrier_booking_status,
             carrier_booking_error, carrier_booking_attempted_at, created_at, updated_at,
             EXISTS (SELECT 1 FROM bms_orders o
@@ -685,7 +743,8 @@ export async function listShipments(
   const offset = Math.max(Number(opts.offset ?? 0), 0);
   const search = opts.search?.trim() || null;
   const res = await query(
-    `SELECT id, order_id, carrier, tracking_no, status, label_url, note, created_at, updated_at
+    `SELECT id, order_id, carrier, carrier_name, tracking_no, tracking_url, tracking_no_warning,
+            status, label_url, note, created_at, updated_at
             , external_shipment_id, carrier_last_synced_at, carrier_tracking_source
             , carrier_booking_status, carrier_booking_error, carrier_booking_attempted_at
             , EXISTS (SELECT 1 FROM bms_orders o
@@ -919,7 +978,10 @@ export type ShipmentLabel = {
   shipmentId: string;
   orderId: string;
   carrier: string;
+  carrierName: string;
   trackingNo: string | null;
+  trackingUrl: string | null;
+  trackingNoWarning: string | null;
   labelUrl: string | null;
   shipTo: { name: string | null; phone: string | null; address: string | null };
   items: { sku: string; size: string; qty: number }[];
@@ -928,10 +990,13 @@ export type ShipmentLabel = {
 
 export async function getShipmentLabel(tenantId: string, shipmentId: string): Promise<ShipmentLabel | null> {
   const head = await query<{
-    id: string; order_id: string; carrier: string; tracking_no: string | null; label_url: string | null; created_at: any;
+    id: string; order_id: string; carrier: string; carrier_name: string | null;
+    tracking_no: string | null; tracking_url: string | null; tracking_no_warning: string | null;
+    label_url: string | null; created_at: any;
     name: string | null; phone: string | null; address: string | null;
   }>(
-    `SELECT s.id, s.order_id, s.carrier, s.tracking_no, s.label_url, s.created_at,
+    `SELECT s.id, s.order_id, s.carrier, s.carrier_name, s.tracking_no,
+            s.tracking_url, s.tracking_no_warning, s.label_url, s.created_at,
             c.name, c.phone,
             (SELECT a.address FROM bms_customer_addresses a
               WHERE a.tenant_id = s.tenant_id AND a.customer_id = o.customer_id
@@ -956,7 +1021,10 @@ export async function getShipmentLabel(tenantId: string, shipmentId: string): Pr
     shipmentId: h.id,
     orderId: h.order_id,
     carrier: h.carrier,
+    carrierName: h.carrier_name || h.carrier,
     trackingNo: h.tracking_no,
+    trackingUrl: normalizeCarrierLabelUrl(h.tracking_url),
+    trackingNoWarning: h.tracking_no_warning,
     labelUrl: normalizeCarrierLabelUrl(h.label_url),
     shipTo: { name: h.name, phone: h.phone, address: h.address },
     items: items.rows.map((r) => ({ sku: r.product_sku, size: r.size, qty: r.qty })),

@@ -405,10 +405,11 @@ async function computeOrderShippingFeeInTx(
 ): Promise<{ fee: number; source: ShippingFeeSource }> {
   try {
     let province: string | null = null;
+    let provinceCode: string | null = null;
     let addressText: string | null = null;
     if (args.customerId) {
-      const addr = await client.query<{ province: string | null; address: string }>(
-        `SELECT province, address
+      const addr = await client.query<{ province: string | null; province_code: string | null; address: string }>(
+        `SELECT province, province_code, address
            FROM bms_customer_addresses
           WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
           ORDER BY is_default DESC, id
@@ -416,6 +417,7 @@ async function computeOrderShippingFeeInTx(
         [args.tenantId, args.customerId]
       );
       province = addr.rows[0]?.province ?? null;
+      provinceCode = addr.rows[0]?.province_code ?? null;
       addressText = addr.rows[0]?.address ?? null;
     }
 
@@ -423,6 +425,7 @@ async function computeOrderShippingFeeInTx(
       tenantId: args.tenantId,
       subtotal: args.subtotal,
       province,
+      provinceCode,
       addressText,
       items: args.items.map((it) => ({ sku: it.sku, qty: it.qty })),
       carrier: args.carrier,
@@ -462,8 +465,8 @@ export async function recalculateOrderShipping(
       `SELECT product_sku, qty FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
       [tenantId, row.id]
     );
-    const addr = await query<{ province: string | null; address: string }>(
-      `SELECT province, address FROM bms_customer_addresses
+    const addr = await query<{ province: string | null; province_code: string | null; address: string }>(
+      `SELECT province, province_code, address FROM bms_customer_addresses
         WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
         ORDER BY is_default DESC, id LIMIT 1`,
       [tenantId, customerId]
@@ -473,6 +476,7 @@ export async function recalculateOrderShipping(
       tenantId,
       subtotal: Number(row.total_amount),
       province: addr.rows[0]?.province ?? null,
+      provinceCode: addr.rows[0]?.province_code ?? null,
       addressText: addr.rows[0]?.address ?? null,
       items: itemsRes.rows.map((r) => ({ sku: r.product_sku, qty: Number(r.qty) })),
       carrier: row.preferred_carrier,

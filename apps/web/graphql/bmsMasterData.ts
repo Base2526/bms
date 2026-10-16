@@ -2,9 +2,10 @@ import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import {
   listMasterBanks, listMasterThaiAddresses, listMasterUnits,
-  upsertMasterBank, upsertMasterThaiAddress, upsertMasterUnit,
-  type MasterAddressInput, type MasterBankInput, type MasterUnitInput,
+  upsertMasterBank, upsertMasterCarrier, upsertMasterThaiAddress, upsertMasterUnit,
+  type MasterAddressInput, type MasterBankInput, type MasterCarrierInput, type MasterUnitInput,
 } from "@/lib/bms/masterData";
+import { listMasterCarriers } from "@/lib/bms/shippingMaster";
 
 function requireLoggedIn(ctx: any) {
   const auth = requireAuth(ctx, { optionalAdmin: true });
@@ -37,6 +38,10 @@ export const bmsMasterDataResolvers = {
       requireLoggedIn(ctx);
       return listMasterThaiAddresses(args);
     },
+    async bmsMasterCarriers(_p: unknown, args: { includeInactive?: boolean }, ctx: any) {
+      requireLoggedIn(ctx);
+      return listMasterCarriers(Boolean(args.includeInactive));
+    },
   },
   Mutation: {
     async bmsUpsertMasterBank(_p: unknown, args: { input: MasterBankInput }, ctx: any) {
@@ -47,6 +52,9 @@ export const bmsMasterDataResolvers = {
     },
     async bmsUpsertMasterThaiAddress(_p: unknown, args: { input: MasterAddressInput }, ctx: any) {
       return mutation(() => upsertMasterThaiAddress(ctx, args.input));
+    },
+    async bmsUpsertMasterCarrier(_p: unknown, args: { input: MasterCarrierInput }, ctx: any) {
+      return mutation(() => upsertMasterCarrier(ctx, args.input));
     },
   },
 };

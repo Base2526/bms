@@ -2200,6 +2200,35 @@ input BmsMasterBankInput {
   swift: String
 }
 
+type BmsMasterCarrier {
+  active: Boolean!
+  code: BmsCarrier!
+  countryCode: String!
+  id: ID!
+  integrationStatus: String!
+  nameEn: String!
+  nameTh: String!
+  source: String!
+  sourceVersion: String!
+  trackingNoPattern: String
+  trackingUrlTemplate: String
+  updatedAt: String!
+}
+
+input BmsMasterCarrierInput {
+  active: Boolean
+  code: BmsCarrier!
+  countryCode: String!
+  id: ID
+  integrationStatus: String!
+  nameEn: String!
+  nameTh: String!
+  source: String
+  sourceVersion: String
+  trackingNoPattern: String
+  trackingUrlTemplate: String
+}
+
 type BmsMasterThaiAddress {
   active: Boolean!
   code: String!
@@ -7451,6 +7480,7 @@ type BmsShipment {
   carrierBookingError: String
   carrierBookingStatus: String!
   carrierLastSyncedAt: String
+  carrierName: String!
   carrierTrackingSource: String
   createdAt: String!
   externalShipmentId: String
@@ -7461,11 +7491,14 @@ type BmsShipment {
   orderId: ID!
   status: BmsShipmentStatus!
   trackingNo: String
+  trackingNoWarning: String
+  trackingUrl: String
   updatedAt: String!
 }
 
 type BmsShipmentLabel {
   carrier: String!
+  carrierName: String!
   createdAt: String!
   items: [BmsLabelItem!]!
   labelUrl: String
@@ -7473,6 +7506,8 @@ type BmsShipmentLabel {
   shipTo: BmsLabelShipTo!
   shipmentId: ID!
   trackingNo: String
+  trackingNoWarning: String
+  trackingUrl: String
 }
 
 type BmsShipmentResult {
@@ -7508,6 +7543,15 @@ type BmsShippingWeightTier {
 input BmsShippingWeightTierInput {
   maxGrams: Int!
   surcharge: Float!
+}
+
+type BmsShippingZone {
+  defaultZone: String!
+  effectiveZone: String!
+  nameEn: String!
+  nameTh: String!
+  overrideZone: String
+  provinceCode: String!
 }
 
 type BmsShippingZoneRate {
@@ -8715,6 +8759,7 @@ type Mutation {
   bmsSetRestaurantCustomerTableDetails(locationId: ID!, publish: Boolean!): Boolean!
   bmsSetRolePermissions(permissions: [String!]!, roleId: ID!): Boolean!
   bmsSetShipmentStatus(id: ID!, status: BmsShipmentStatus!): Boolean!
+  bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
   bmsSetTenantActive(active: Boolean!, tenantId: ID!): Boolean!
   bmsSetTenantPlan(planCode: String!, tenantId: ID!): Boolean!
   bmsSetVatCategoryForUnknown(activeOnly: Boolean, vatCategory: String!): Int!
@@ -8756,6 +8801,7 @@ type Mutation {
   bmsUpsertKitchenStationSla(lateMinutes: Int!, station: String!, warnMinutes: Int!): BmsKitchenStationSla!
   bmsUpsertLocation(input: BmsLocationInput!): BmsLocation!
   bmsUpsertMasterBank(input: BmsMasterBankInput!): BmsMasterBank!
+  bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
   bmsUpsertMasterThaiAddress(input: BmsMasterThaiAddressInput!): BmsMasterThaiAddress!
   bmsUpsertMasterUnit(input: BmsMasterUnitInput!): BmsMasterUnit!
   bmsUpsertMembershipTier(input: BmsMembershipTierInput!): BmsMembershipTier!
@@ -9174,6 +9220,7 @@ type Query {
   bmsManageableLocations: [BmsLocation!]!
   bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
   bmsMasterBanks(includeInactive: Boolean, search: String): [BmsMasterBank!]!
+  bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
   bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!
   bmsMasterUnits(includeInactive: Boolean, search: String): [BmsMasterUnit!]!
   bmsMe: BmsMe!
@@ -9321,6 +9368,7 @@ type Query {
   bmsShipmentLabel(id: ID!): BmsShipmentLabel
   bmsShipmentTrackingEvents(limit: Int = 100, shipmentId: ID!): [BmsShipmentTrackingEvent!]!
   bmsShipments(limit: Int = 50, offset: Int = 0, orderId: ID, search: String, status: BmsShipmentStatus): [BmsShipment!]!
+  bmsShippingZones: [BmsShippingZone!]!
   bmsSocialAuthSettings: [BmsSocialAuthSetting!]!
   bmsSqlConsoleWriteEnabled: Boolean!
   bmsStockCounts(status: String): BmsMobileStockCountsResult!

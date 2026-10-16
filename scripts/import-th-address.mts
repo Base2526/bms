@@ -3,6 +3,7 @@ import path from "node:path";
 import process from "node:process";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
+import { defaultShippingZoneForProvince } from "../apps/web/lib/bms/shippingZones.ts";
 
 type Province = { code: string; nameTh: string; nameEn: string };
 type District = Province & { provinceCode: string };
@@ -101,6 +102,11 @@ try {
      VALUES($1,$2,$3,$4,$5) ON CONFLICT(code) DO UPDATE SET name_th=EXCLUDED.name_th,
        name_en=EXCLUDED.name_en,source=EXCLUDED.source,source_version=EXCLUDED.source_version,
        active=TRUE,updated_at=now()`, [row.code,row.nameTh,row.nameEn,provenance.source,provenance.sourceVersion]);
+  for (const row of raw.provinces) await client.query(
+    `INSERT INTO bms_master_th_shipping_zones (province_code,zone,source,source_version)
+     VALUES($1,$2,'BMS legacy shipping-zone parity','pre-10.78')
+     ON CONFLICT(province_code) DO NOTHING`,
+    [row.code, defaultShippingZoneForProvince(row.nameTh)]);
   for (const row of raw.districts) await client.query(
     `INSERT INTO bms_master_th_districts (code,province_code,name_th,name_en,source,source_version)
      VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(code) DO UPDATE SET province_code=EXCLUDED.province_code,

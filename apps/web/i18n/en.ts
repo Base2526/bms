@@ -384,11 +384,12 @@ const en = {
   },
   admin_master_data: {
     title: "Platform master data", warning_title: "Changes affect every store", warning_description: "Edit reference data only from verified sources. Existing payment and document snapshots keep their original text.",
-    banks: "Banks", units: "Units", addresses: "Thai addresses", search: "Search code or name", reload: "Reload", save: "Save", cancel: "Cancel", saved: "Master data saved", save_error: "Unable to save master data",
+    banks: "Banks", units: "Units", addresses: "Thai addresses", carriers: "Carriers", search: "Search code or name", reload: "Reload", save: "Save", cancel: "Cancel", saved: "Master data saved", save_error: "Unable to save master data",
     add_bank: "Add bank", add_unit: "Add unit", add_address: "Add address row", bank_form: "Bank reference", unit_form: "Standard unit", address_form: "Thai address reference",
     code: "Code", country: "Country", name_th: "Thai name", name_en: "English name", sort_order: "Sort order", status: "Status", active: "Active", inactive: "Inactive", edit: "Edit",
     source: "Source", source_version: "Source version", kind: "Kind", aliases: "Aliases", aliases_help: "Comma-separated retail terms", base_factor: "Base factor within the same kind",
     level: "Level", province: "Province", district: "District", subdistrict: "Subdistrict", postcode: "Postcode", select_province: "Select province", select_district: "Select district", select_subdistrict: "Select subdistrict", address_required: "Select the structured address", address_import_title: "Bulk address data belongs in the importer", address_import_description: "Use scripts/import-th-address.mts. It is dry-run by default and refuses datasets without recorded source, version, and licence.",
+    carrier_form: "Carrier reference", integration_status: "Integration status", tracking_url_template: "Tracking URL template", tracking_url_help: "Optional verified HTTPS URL containing {trackingNo}", tracking_pattern: "Tracking number pattern", carrier_status_title: "LIVE means a verified production connection", carrier_status_description: "MOCK and NONE are never shown as connected. Add tracking URLs or patterns only from verified carrier documentation.",
   },
   footer: {
     support: "Support",
@@ -1970,6 +1971,12 @@ const en = {
     col_latest: "Latest",
   },
   admin_shipment: {
+    zone_overrides: "Shipping zone overrides",
+    zone_help: "A shop override wins over the platform default for structured province codes. Clear it to use the default again.",
+    zone_default: "Platform default",
+    zone_override: "Shop override",
+    zone_use_default: "Use default",
+    zone_saved: "Shipping zone saved",
     status_pending: "Awaiting shipment",
     status_shipped: "Shipped",
     status_in_transit: "In transit",

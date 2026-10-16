@@ -1,7 +1,7 @@
 # Carrier integrations (Flash / Kerry)
 
 > Code: `apps/web/lib/bms/carriers/` and `apps/web/lib/bms/shipping.ts` · Data:
-> migrations `7.76` and `7.77` · Admin UI: `/admin/shipment`
+> migrations `7.76`, `7.77` and `10.78` · Admin UI: `/admin/shipment` and `/admin/master-data`
 
 ## Current status
 
@@ -31,6 +31,20 @@ References:
   production. Lazada/Shopee remain marketplace-managed and never invoke these booking adapters.
 - `POST /api/bms/shipping/sync-carriers` polls stale active shipments and records job-run history;
   it skips unconfigured and `not_implemented` adapters.
+- `bms_master_carriers.integration_status` is the presentation contract: only `LIVE` may be called
+  connected. Flash/Kerry are seeded as `MOCK`; the remaining built-in codes are `NONE`.
+- New shipments freeze `carrier_name`, the rendered HTTPS `tracking_url`, and any advisory tracking
+  format warning. Deactivating or renaming a carrier therefore does not rewrite historical labels.
+- Tracking URL templates and number patterns are optional. A platform administrator may add them
+  only from verified carrier material; a number mismatch warns staff and never blocks fulfillment.
+
+## Shipping zones
+
+`bms_master_th_shipping_zones` maps structured Thai `province_code` values to `BANGKOK`,
+`PERIMETER`, or `UPCOUNTRY`. The Thai address importer adds a default zone for every imported
+province. A shop can override one province in `bms_shipping_zone_overrides`; tenant RLS and a
+same-transaction audit protect that write. Quotes prefer code + shop override, then retain the old
+name/alias classifier only for legacy addresses without a usable code.
 
 ## Before enabling a live adapter
 
