@@ -26,6 +26,7 @@ const Q = gql`
       shippingZoneRates { zone fee }
       shippingWeightTiers { maxGrams surcharge }
       emailThemeColor emailFooterText
+      barcodeMasterContributionEnabled
     }
     bmsMasterBanks(includeInactive: true) { code nameTh nameEn active }
   }
@@ -53,6 +54,7 @@ const PROFILE_KEYS = [
   "enabledCarriers",
   "shippingMode", "shippingOriginProvince", "shippingOriginPostcode",
   "emailThemeColor", "emailFooterText",
+  "barcodeMasterContributionEnabled",
 ] as const;
 
 const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
@@ -142,6 +144,7 @@ export default function StoreProfileCard() {
         shippingZoneRates: (p?.shippingZoneRates || []).map((r: any) => ({ zone: r.zone, fee: r.fee })),
         shippingWeightTiers: (p?.shippingWeightTiers || []).map((wt: any) => ({ maxGrams: wt.maxGrams, surcharge: wt.surcharge })),
         emailThemeColor: p?.emailThemeColor || DEFAULT_EMAIL_THEME_COLOR, emailFooterText: p?.emailFooterText,
+        barcodeMasterContributionEnabled: p?.barcodeMasterContributionEnabled === true,
       });
     }
   }, [data, form]);
@@ -410,6 +413,14 @@ export default function StoreProfileCard() {
                       </Col>
                       <Col xs={12} md={6}>
                         <Form.Item name="aiInterpretShortReplies" label={t("admin_store_profile.interpret_short_replies_label")} valuePropName="checked">
+                          <Switch checkedChildren={t("admin_store_profile.switch_on")} unCheckedChildren={t("admin_store_profile.switch_off")} />
+                        </Form.Item>
+                        <Form.Item
+                          name="barcodeMasterContributionEnabled"
+                          label={t("admin_store_profile.barcode_master_opt_in_label")}
+                          extra={t("admin_store_profile.barcode_master_opt_in_extra")}
+                          valuePropName="checked"
+                        >
                           <Switch checkedChildren={t("admin_store_profile.switch_on")} unCheckedChildren={t("admin_store_profile.switch_off")} />
                         </Form.Item>
                       </Col>

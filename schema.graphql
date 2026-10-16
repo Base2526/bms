@@ -2200,6 +2200,31 @@ input BmsMasterBankInput {
   swift: String
 }
 
+type BmsMasterBarcode {
+  barcode: String!
+  brand: String
+  categoryHint: String
+  confirmations: Int!
+  id: ID!
+  imageFileId: ID
+  name: String!
+  sizeText: String
+  source: String!
+  status: String!
+  unitCode: String
+  updatedAt: String!
+}
+
+input BmsMasterBarcodeReviewInput {
+  brand: String
+  categoryHint: String
+  id: ID!
+  name: String!
+  sizeText: String
+  status: String!
+  unitCode: String
+}
+
 type BmsMasterCarrier {
   active: Boolean!
   code: BmsCarrier!
@@ -6387,6 +6412,7 @@ input BmsProductInput {
   base_unit: String
   brand: String
   category: String
+  confirm_barcode_master: Boolean
   cost_price: Float
   creation_template: String
   description: String
@@ -7765,6 +7791,7 @@ type BmsStoreProfile {
   aiLanguage: String!
   aiOrderingStyle: String!
   aiRequiredFields: [String!]!
+  barcodeMasterContributionEnabled: Boolean!
   businessArchetype: String
   businessArchetypeLocked: Boolean!
   businessHours: String
@@ -7814,6 +7841,7 @@ input BmsStoreProfileInput {
   aiLanguage: String
   aiOrderingStyle: String
   aiRequiredFields: [String!]
+  barcodeMasterContributionEnabled: Boolean
   businessArchetype: String
   businessHours: String
   businessType: String
@@ -8764,6 +8792,7 @@ type Mutation {
   bmsReturnOrder(id: ID!): Boolean!
   bmsReviewAiQualityCase(category: String!, id: ID!, note: String, verdict: String!): BmsAiQualityCaseDetail!
   bmsReviewAiSynonymCandidate(decision: String!, id: ID!, productSku: String): BmsAiSynonymCandidate!
+  bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
   bmsReviewMemberTier(customerId: ID): BmsTierReviewResult!
   bmsReviewOperatingCost(input: BmsOperatingCostReviewInput!): BmsOperatingCostReviewResult!
   bmsReviewPharmacyProductPolicy(decision: String!, productSku: String!): BmsPharmacyProductPolicy!
@@ -9272,6 +9301,7 @@ type Query {
   bmsManageableLocations: [BmsLocation!]!
   bmsManagementReport(from: String, locationId: ID, to: String): BmsManagementReport!
   bmsMasterBanks(includeInactive: Boolean, search: String): [BmsMasterBank!]!
+  bmsMasterBarcodes(limit: Int, search: String, status: String): [BmsMasterBarcode!]!
   bmsMasterCarriers(includeInactive: Boolean): [BmsMasterCarrier!]!
   bmsMasterTaxReferences: BmsMasterTaxReferences!
   bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!

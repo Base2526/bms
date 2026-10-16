@@ -12,12 +12,12 @@ export type BarcodeSuggestion = {
   size: string | null;
   description: string | null;
   imageUrl: string | null;
-  source: "Barcode Lookup";
-  sourceUrl: string;
+  source: "Barcode Lookup" | "BMS verified barcode";
+  sourceUrl: string | null;
 };
 export type BarcodeLookupResult = {
   code: string;
-  status: "LOCAL" | "EXTERNAL" | "NOT_FOUND" | "NOT_CONFIGURED" | "UNSUPPORTED" | "UNAVAILABLE";
+  status: "LOCAL" | "MASTER" | "EXTERNAL" | "NOT_FOUND" | "NOT_CONFIGURED" | "UNSUPPORTED" | "UNAVAILABLE";
   matches: BarcodeProductMatch[];
   suggestion?: BarcodeSuggestion;
 };

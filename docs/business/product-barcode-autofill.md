@@ -17,7 +17,19 @@ product asks before discarding the current draft. Product saves also check other
 barcodes under the existing tenant lock. This is not a replacement for barcode constraints or
 a change to POS pack resolution.
 
-## External Lookup
+## Shared Master and External Lookup
+
+After the shop catalog, lookup checks an `APPROVED` row in `bms_master_barcodes`; only then does it
+call the external provider. A master hit is still a form suggestion, never an automatic product
+write. The master contains no tenant/shop identity, price, cost, stock, or provider image URL.
+
+Contribution is double opt-in: an Administrator first enables it in Store settings (off by
+default), then a user explicitly checks **Confirm these details** on an individual product save.
+The save contributes the merchant-confirmed name, brand, size, unit, and category only. Restricted
+20–29 codes (including 21/22 scale labels), non-GTIN codes, failed saves, disabled shops, and
+unchecked saves never contribute. A tenant-scoped ledger prevents one shop counting the same
+barcode more than once; platform administrators approve, edit, or reject candidates before another
+shop can use them.
 
 The adapter implements [Barcode Lookup API v3](https://www.barcodelookup.com/api-documentation).
 Set the **server-only** `BMS_BARCODE_LOOKUP_API_KEY` in the deployment secret configuration and
@@ -41,7 +53,12 @@ The API endpoint is fixed, redirects are refused, responses are limited to 256 K
 time out after five seconds. Provider errors/URLs are not exposed or logged because the provider
 uses a query-string API key. Lookups are limited per acting shop/admin, with a separate global
 provider ceiling (30/minute each). No provider payload is cached or written to the database by
-lookup. Only an exact, unambiguous returned GTIN is accepted; related products are not guesses.
+lookup. [Barcode Lookup's current terms](https://www.barcodelookup.com/terms-and-conditions) grant a
+limited, non-sublicensable subscription, retain rights in Product Data, and require cached/backed-up
+Product Data to be deleted when the subscription ends. Therefore BMS never promotes a provider
+response into the shared master; only a merchant's explicit confirmation or platform-curated data
+can enter it. Only an exact, unambiguous returned
+GTIN is accepted; related products are not guesses.
 Only HTTPS images hosted on `images.barcodelookup.com` are offered.
 
 ## Applying Suggestions
@@ -60,5 +77,5 @@ When the barcode changes, unchanged fields/pictures supplied by the previous loo
 Delayed code-generation and product-open responses cannot overwrite a newer/closed draft.
 The in-store code generator checks both product and pack barcodes, including padded codes.
 
-No migration or desktop-shell rebuild is required; deploy the updated web service. Automated
-provider tests use fixtures, not billed live calls.
+Apply migration `10.81` before deploying the updated web service. No desktop-shell rebuild is
+required. Automated provider tests use fixtures, not billed live calls.

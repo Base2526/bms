@@ -93,6 +93,7 @@ export type StoreProfile = {
   shippingWeightTiers: unknown;
   emailThemeColor: string | null;  // #RRGGBB — validated at the resolver before it reaches here
   emailFooterText: string | null;  // ข้อความท้ายอีเมลแจ้งสถานะออร์เดอร์ (7.19/7.20)
+  barcodeMasterContributionEnabled: boolean;
 };
 
 export type BusinessArchetypeLockState = {
@@ -122,6 +123,7 @@ const EMPTY: StoreProfile = {
   shippingOriginProvince: null, shippingOriginPostcode: null,
   shippingZoneRates: [], shippingWeightTiers: [],
   emailThemeColor: null, emailFooterText: null,
+  barcodeMasterContributionEnabled: false,
 };
 
 export const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
@@ -149,7 +151,7 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
             shipping_est_days_min, shipping_est_days_max, enabled_carriers,
             shipping_mode, shipping_origin_province, shipping_origin_postcode,
             shipping_zone_rates, shipping_weight_tiers,
-            email_theme_color, email_footer_text,
+            email_theme_color, email_footer_text, barcode_master_contribution_enabled,
             province_code,district_code,subdistrict_code,province,district,subdistrict,postcode
        FROM bms_store_profile WHERE tenant_id = $1`;
   const res = client ? await client.query<any>(sql, [tenantId]) : await query<any>(sql, [tenantId]);
@@ -195,6 +197,7 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     shippingWeightTiers: Array.isArray(r.shipping_weight_tiers) ? r.shipping_weight_tiers : [],
     emailThemeColor: r.email_theme_color ?? null,
     emailFooterText: r.email_footer_text ?? null,
+    barcodeMasterContributionEnabled: r.barcode_master_contribution_enabled === true,
   };
 }
 
@@ -205,6 +208,7 @@ const NON_NULL_PROFILE_KEYS = [
   "aiHandoffAfterFailedTurns", "receiptLanguageMode", "restaurantOrderHours",
   "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "paymentAccounts",
   "enabledCarriers", "shippingMode", "shippingZoneRates", "shippingWeightTiers",
+  "barcodeMasterContributionEnabled",
 ] as const satisfies ReadonlyArray<keyof StoreProfile>;
 
 /** GraphQL nullable fields may arrive as null, but these domain values map to NOT NULL columns. */
@@ -368,9 +372,10 @@ export async function upsertStoreProfile(
         enabled_carriers, email_theme_color, email_footer_text,
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
         shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused, restaurant_merchant_absorb_limit,
-        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode
+        province_code,district_code,subdistrict_code,province,district,subdistrict,postcode,
+        barcode_master_contribution_enabled
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45)
+               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -403,7 +408,9 @@ export async function upsertStoreProfile(
         subdistrict_code=EXCLUDED.subdistrict_code,province=EXCLUDED.province,
         district=EXCLUDED.district,subdistrict=EXCLUDED.subdistrict,postcode=EXCLUDED.postcode,
         email_theme_color = EXCLUDED.email_theme_color,
-        email_footer_text = EXCLUDED.email_footer_text, updated_at = now()`,
+        email_footer_text = EXCLUDED.email_footer_text,
+        barcode_master_contribution_enabled = EXCLUDED.barcode_master_contribution_enabled,
+        updated_at = now()`,
       [
         tenantId, merged.businessArchetype, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
         merged.aiInterpretShortReplies, merged.aiHandoffAfterFailedTurns, merged.receiptLanguageMode,
@@ -417,6 +424,7 @@ export async function upsertStoreProfile(
         JSON.stringify(merged.shippingZoneRates ?? []), JSON.stringify(merged.shippingWeightTiers ?? []),
         JSON.stringify(merged.restaurantOrderHours ?? []), merged.restaurantOrdersPaused, merged.restaurantMerchantAbsorbLimit,
         merged.provinceCode,merged.districtCode,merged.subdistrictCode,merged.province,merged.district,merged.subdistrict,merged.postcode,
+        merged.barcodeMasterContributionEnabled,
       ]
     );
     await client.query("COMMIT");

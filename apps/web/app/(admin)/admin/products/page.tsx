@@ -147,7 +147,7 @@ type Movement = {
 // ---- GraphQL ------------------------------------------------
 const Q_PRODUCTS = gql`
   query BmsProducts($search: String, $category: String, $limit: Int, $offset: Int) {
-    bmsStoreProfile { businessArchetype vatRegistered }
+    bmsStoreProfile { businessArchetype vatRegistered barcodeMasterContributionEnabled }
     bmsLocations { id code name branchCode active }
     bmsProducts(search: $search, category: $category, limit: $limit, offset: $offset) {
       total
@@ -663,6 +663,7 @@ function ProductsManagement() {
       dietaryTags: [],
       foodSafetyNote: "",
       medicineIngredients: [], medicineStrength: "", medicineForm: "",
+      confirmBarcodeMaster: false,
     });
     // setFieldsValue marks defaults as touched; the initial STD is still an unedited suggestion.
     form.setFields([{ name: "variantCodes", touched: false }]);
@@ -724,6 +725,7 @@ function ProductsManagement() {
       variantCodes: configuredProduct.catalogVariants.filter((variant) => variant.active).map((variant) => variant.code),
       salesSurfaces: configuredProduct.salesSurfaces,
       kitchenStation: configuredProduct.stockPolicy?.kitchenStation || "",
+      confirmBarcodeMaster: false,
     });
     setBarcodeDraft(configuredProduct.barcode || "");
     setPriceTiers((configuredProduct.priceTiers ?? []).map((t) => ({
@@ -816,6 +818,7 @@ function ProductsManagement() {
             ...(showKitchenStationField ? { kitchen_station: v.kitchenStation?.trim() || "" } : {}),
             // ร้านที่ไม่จด VAT ไม่มีช่องนี้บนจอ — ไม่ส่ง = คงค่าเดิม ไม่ใช่ล้างเป็น UNKNOWN
             ...(vatRegistered ? { vat_category: v.vatCategory || null } : {}),
+            confirm_barcode_master: v.confirmBarcodeMaster === true,
           },
         },
       });
@@ -1301,6 +1304,16 @@ function ProductsManagement() {
               onOk: () => openEdit({ sku }),
             })}
           />}
+
+          {modalOpen && productFieldVisibility.barcode && data?.bmsStoreProfile?.barcodeMasterContributionEnabled && (
+            <Form.Item
+              name="confirmBarcodeMaster"
+              valuePropName="checked"
+              extra={t("admin_products.barcode_master_confirm_extra")}
+            >
+              <Switch checkedChildren={t("admin_products.barcode_master_confirm_on")} unCheckedChildren={t("admin_products.barcode_master_confirm_off")} />
+            </Form.Item>
+          )}
 
           <Form.Item label={t("admin_products.label_images")} extra={t("admin_products.images_extra")}>
             <Space align="start" wrap>
