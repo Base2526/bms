@@ -243,6 +243,11 @@ E. onboarding checklist / ปุ่มข้อมูลตัวอย่าง
 - คัดลอกหมวดหมู่สองครั้งไม่งอกซ้ำ · ร้านแก้แล้วคัดลอกใหม่ไม่ทับของร้าน
 ```
 
+สถานะ: implemented บน branch `feat/master-data-phase-5` ด้วย migration `10.80`, opt-in category
+templates + durable application ledger, archetype unit defaults, display-only holiday references และ
+annual dry-run importer, emergency-number master พร้อม bounded code fallback และการเชื่อมกับ Getting
+Started/Starter Catalog. ไม่มีการคัดลอกข้อมูลเข้าร้านเดิมอัตโนมัติ และ holiday ยังไม่เปลี่ยนการคำนวณใด ๆ.
+
 ---
 
 ## เฟส 6 — แคชบาร์โค้ดกลาง
@@ -342,9 +347,9 @@ F. archetype/capability presets ย้ายเข้า DB **เฉพาะเ
 | --- | --- | --- | --- | --- |
 | 1 | `feat/master-data-phase-1` | `10.76` | ทำโค้ดครบ: master tables/service/GraphQL/UI, bank+unit integration, customer autocomplete, importer, audit+revision, tests | DB contract และ browser desktop/mobile ยังไม่ได้ verify |
 | 2 | `feat/master-data-phase-2` | `10.77` | ทำโค้ดครบ: structured address resolver/snapshots, customer checkout+AI, tax request/full invoice, store/branch forms, legacy matcher; focused+full gate ผ่าน และ browser guard responsive smoke ผ่าน | DB contract และฟอร์ม browser หลัง login ยังไม่ได้ verify; รอคำตอบเรื่องบังคับ code สำหรับ COMPANY ใหม่ |
-| 3 | — | — | ยังไม่เริ่ม | — |
-| 4 | — | — | ยังไม่เริ่ม | — |
-| 5 | — | — | ยังไม่เริ่ม | — |
+| 3 | `feat/master-data-phase-3` | `10.78` | ทำโค้ดครบ: carrier/shipping-zone master, tenant override, snapshots, importer integration และ UI | ดูผล verify ในประวัติ branch |
+| 4 | `feat/master-data-phase-4` | `10.79` | ทำโค้ดครบ: tax document/VAT/buyer reference, effective-date resolution, readiness และ UI | ดูผล verify ในประวัติ branch |
+| 5 | `feat/master-data-phase-5` | `10.80` | ทำโค้ดครบ: starter categories/units, holiday importer, emergency master+fallback, onboarding integration | browser หลัง login และ production dataset วันหยุดต้อง verify แยก |
 | 6 | — | — | ยังไม่เริ่ม | — |
 | 7 | — | — | ยังไม่เริ่ม | — |
 | 8 | — | — | ยังไม่เริ่ม | — |

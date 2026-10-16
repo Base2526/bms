@@ -63,6 +63,7 @@ export function pharmacyEmergencyKind(message: string): EmergencyKind | null {
 // 1367: https://www.rama.mahidol.ac.th/poisoncenter/sites/default/files/public/pdf/books/Antidote_book4.pdf
 // 1155: https://www.touristpolice.go.th/contact-us
 export const EMERGENCY_CONTACTS = { medical: "1669", poisoning: "1367", mentalHealth: "1323", touristPolice: "1155" } as const;
+export type EmergencyContacts = { medical: string; poisoning: string; mentalHealth: string; touristPolice: string };
 
 export type EmergencyReplyFacility = {
   name: string; emergencyPhone: string; mapUrl?: string | null;
@@ -70,20 +71,21 @@ export type EmergencyReplyFacility = {
 };
 
 /** Pure fixed copy. No imports, model, network, geolocation, or queue promises. */
-export function composeEmergencyReply({ kind, english, facilities }: {
-  kind: EmergencyKind; english: boolean; facilities: readonly EmergencyReplyFacility[];
+export function composeEmergencyReply({ kind, english, facilities, contacts = EMERGENCY_CONTACTS }: {
+  kind: EmergencyKind; english: boolean; facilities: readonly EmergencyReplyFacility[]; contacts?: EmergencyContacts;
 }): string {
+  const contact = contacts;
   const lines = [english
-    ? "In Thailand, call 1669 or go to the nearest emergency department immediately. Do not wait for a pharmacist or this chat."
-    : "หากอยู่ประเทศไทย กรุณาโทร 1669 หรือไปห้องฉุกเฉินของโรงพยาบาลใกล้ที่สุดทันที ไม่ต้องรอเภสัชกรหรือคำตอบในแชทค่ะ"];
+    ? `In Thailand, call ${contact.medical} or go to the nearest emergency department immediately. Do not wait for a pharmacist or this chat.`
+    : `หากอยู่ประเทศไทย กรุณาโทร ${contact.medical} หรือไปห้องฉุกเฉินของโรงพยาบาลใกล้ที่สุดทันที ไม่ต้องรอเภสัชกรหรือคำตอบในแชทค่ะ`];
   if (kind === "SELF_HARM") {
     lines.push(english
-      ? "I'm sorry you are going through this. You do not have to face it alone. If you have harmed yourself, taken an overdose, or cannot stay safe, seek emergency help now. Ask someone you trust to stay with you. Thailand's mental health helpline 1323 is available 24 hours a day; it does not replace emergency care."
-      : "เสียใจที่คุณกำลังเจอเรื่องหนักนะคะ คุณไม่ต้องรับมือคนเดียว หากทำร้ายตัวเอง กินยาเกินขนาด หรือไม่มั่นใจว่าจะปลอดภัย ให้ขอความช่วยเหลือฉุกเฉินทันที ขอให้คนที่ไว้ใจมาอยู่ด้วย และโทรสายด่วนสุขภาพจิต 1323 ได้ตลอด 24 ชั่วโมง ซึ่งไม่ใช้แทนบริการฉุกเฉินค่ะ");
+      ? `I'm sorry you are going through this. You do not have to face it alone. If you have harmed yourself, taken an overdose, or cannot stay safe, seek emergency help now. Ask someone you trust to stay with you. Thailand's mental health helpline ${contact.mentalHealth} is available 24 hours a day; it does not replace emergency care.`
+      : `เสียใจที่คุณกำลังเจอเรื่องหนักนะคะ คุณไม่ต้องรับมือคนเดียว หากทำร้ายตัวเอง กินยาเกินขนาด หรือไม่มั่นใจว่าจะปลอดภัย ให้ขอความช่วยเหลือฉุกเฉินทันที ขอให้คนที่ไว้ใจมาอยู่ด้วย และโทรสายด่วนสุขภาพจิต ${contact.mentalHealth} ได้ตลอด 24 ชั่วโมง ซึ่งไม่ใช้แทนบริการฉุกเฉินค่ะ`);
   } else if (kind === "POISONING") {
     lines.push(english
-      ? "For poisoning or overdose, also call Ramathibodi Poison Center 1367 (24 hours). Take the packaging or container and note the approximate time and amount. Do not induce vomiting unless instructed by medical staff or the poison center."
-      : "กรณีได้รับสารพิษหรือยาเกินขนาด โทรศูนย์พิษวิทยารามาธิบดี 1367 ได้ตลอด 24 ชั่วโมง นำบรรจุภัณฑ์หรือภาชนะไปด้วย และจดเวลาและปริมาณโดยประมาณ ห้ามทำให้อาเจียนเอง เว้นแต่บุคลากรทางการแพทย์หรือศูนย์พิษวิทยาสั่งค่ะ");
+      ? `For poisoning or overdose, also call Ramathibodi Poison Center ${contact.poisoning} (24 hours). Take the packaging or container and note the approximate time and amount. Do not induce vomiting unless instructed by medical staff or the poison center.`
+      : `กรณีได้รับสารพิษหรือยาเกินขนาด โทรศูนย์พิษวิทยารามาธิบดี ${contact.poisoning} ได้ตลอด 24 ชั่วโมง นำบรรจุภัณฑ์หรือภาชนะไปด้วย และจดเวลาและปริมาณโดยประมาณ ห้ามทำให้อาเจียนเอง เว้นแต่บุคลากรทางการแพทย์หรือศูนย์พิษวิทยาสั่งค่ะ`);
   } else {
     lines.push(english ? "Do not drive yourself. Ask someone to stay with you."
       : "อย่าขับรถไปเอง ขอให้มีคนอยู่ด้วยระหว่างรอความช่วยเหลือค่ะ");
@@ -101,7 +103,7 @@ export function composeEmergencyReply({ kind, english, facilities }: {
   }
   lines.push(english ? "Outside Thailand, call your local emergency or crisis service."
     : "หากอยู่นอกประเทศไทยให้ติดต่อหมายเลขฉุกเฉินหรือสายด่วนในพื้นที่ค่ะ");
-  if (english) lines.push("For tourist assistance in Thailand, Tourist Police: 1155 (supplemental support, not a replacement for 1669).");
+  if (english) lines.push(`For tourist assistance in Thailand, Tourist Police: ${contact.touristPolice} (supplemental support, not a replacement for ${contact.medical}).`);
   return lines.join("\n");
 }
 

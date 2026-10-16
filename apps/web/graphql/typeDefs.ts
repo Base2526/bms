@@ -2396,6 +2396,13 @@ export const typeDefs = /* GraphQL */ `
     name: String!
   }
 
+  type BmsStarterCategoryApplyResult {
+    archetype: String!
+    appliedCount: Int!
+    createdCount: Int!
+    categories: [BmsProductCategory!]!
+  }
+
   type BmsLowStockItem {
     sku: String!
     name: String!
@@ -5443,6 +5450,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetProductSalesSurfaces(productSku: String!, surfaces: [String!]!): [String!]!
     bmsDuplicateProduct(sourceSku: String!, targetSku: String!, targetName: String!): BmsProductDuplicateResult!
     bmsCreateProductCategory(name: String!): BmsProductCategory!
+    bmsApplyStarterCategories: BmsStarterCategoryApplyResult!
     bmsRenameProductCategory(id: ID!, name: String!): BmsProductCategory!
     bmsDeleteProductCategory(id: ID!): Boolean!
     bmsAdjustStock(sku: String!, size: String!, locationId: ID!, delta: Int!, note: String): BmsVariant!

@@ -53,6 +53,11 @@ const M_PROGRESS = gql`
     }
   }
 `;
+const M_APPLY_STARTER_CATEGORIES = gql`
+  mutation ApplyStarterCategories {
+    bmsApplyStarterCategories { appliedCount createdCount }
+  }
+`;
 
 type StepItem = {
   key: string;
@@ -79,6 +84,7 @@ export default function Page() {
   const { t } = useI18n();
   const { data, loading, error, refetch } = useQuery(Q, { fetchPolicy: "cache-and-network" });
   const [saveProgress] = useMutation(M_PROGRESS);
+  const [applyStarterCategories, { loading: applyingCategories }] = useMutation(M_APPLY_STARTER_CATEGORIES);
   const [creatingSample, setCreatingSample] = useState(false);
   const [deletingSample, setDeletingSample] = useState(false);
   const [sampleStatus, setSampleStatus] = useState<SampleStatus | null>(null);
@@ -320,6 +326,28 @@ export default function Page() {
           </div>
         }
       />
+
+      {archetype && (
+        <Card style={{ marginBottom: 16 }}>
+          <Space direction="vertical" size={8} style={{ width: "100%" }}>
+            <Title level={4} style={{ margin: 0 }}>{t("admin_getting_started.category_templates_title")}</Title>
+            <Paragraph style={{ marginBottom: 0 }}>{t("admin_getting_started.category_templates_desc")}</Paragraph>
+            <Button loading={applyingCategories} onClick={async () => {
+              try {
+                const result = await applyStarterCategories();
+                const count = Number(result.data?.bmsApplyStarterCategories?.createdCount ?? 0);
+                message.success(count > 0
+                  ? `${t("admin_getting_started.category_templates_success")} ${count}`
+                  : t("admin_getting_started.category_templates_unchanged"));
+              } catch (e: any) {
+                message.error(e?.message || t("admin_getting_started.category_templates_failed"));
+              }
+            }}>
+              {t("admin_getting_started.btn_apply_categories")}
+            </Button>
+          </Space>
+        </Card>
+      )}
 
       {canOfferSampleData && (
         <Card style={{ marginBottom: 16 }}>

@@ -1,7 +1,7 @@
 import type { PoolClient } from "pg";
 import { getClient } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { composeEmergencyReply, pharmacyEmergencyKind } from "./pharmacy/emergency";
+import { composeEmergencyReply, EMERGENCY_CONTACTS, pharmacyEmergencyKind, type EmergencyContacts } from "./pharmacy/emergency";
 
 export type EmergencyFacility = {
   id: string; locationId: string | null; name: string; emergencyPhone: string;
@@ -90,9 +90,52 @@ export async function listEmergencyFacilitiesForReply(tenantId: string, location
   } finally { if (timer) clearTimeout(timer); }
 }
 
+async function readEmergencyContacts(): Promise<EmergencyContacts> {
+  const client = await getClient();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL statement_timeout = '400ms'");
+    const result = await client.query<{ kind: string; number: string }>(
+      `SELECT kind,number FROM bms_master_emergency_numbers
+        WHERE country_code='TH' AND active
+          AND kind IN ('MEDICAL','POISONING','SELF_HARM','TOURIST_ASSISTANCE')
+        ORDER BY priority`,
+    );
+    await client.query("COMMIT");
+    const byKind = new Map<string, string>();
+    for (const row of result.rows) if (!byKind.has(row.kind)) byKind.set(row.kind, row.number);
+    if (!byKind.get("MEDICAL") || !byKind.get("POISONING") || !byKind.get("SELF_HARM") || !byKind.get("TOURIST_ASSISTANCE")) {
+      return EMERGENCY_CONTACTS;
+    }
+    return {
+      medical: byKind.get("MEDICAL")!, poisoning: byKind.get("POISONING")!,
+      mentalHealth: byKind.get("SELF_HARM")!, touristPolice: byKind.get("TOURIST_ASSISTANCE")!,
+    };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
+}
+
+export async function emergencyContactsForReply(): Promise<EmergencyContacts> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const safeRead = readEmergencyContacts().catch((error: unknown) => {
+      console.error("[BMS] emergency contacts unavailable", (error as { code?: string })?.code ?? "UNKNOWN");
+      return EMERGENCY_CONTACTS;
+    });
+    return await Promise.race([safeRead, new Promise<EmergencyContacts>((resolve) => {
+      timer = setTimeout(() => resolve(EMERGENCY_CONTACTS), 500);
+    })]);
+  } finally { if (timer) clearTimeout(timer); }
+}
+
 export async function emergencyCustomerReply(tenantId: string, message: string): Promise<string> {
+  const [facilities, contacts] = await Promise.all([
+    listEmergencyFacilitiesForReply(tenantId), emergencyContactsForReply(),
+  ]);
   return composeEmergencyReply({ kind: pharmacyEmergencyKind(message) ?? "MEDICAL",
-    english: Boolean(message) && !/[ก-๙]/.test(message), facilities: await listEmergencyFacilitiesForReply(tenantId) });
+    english: Boolean(message) && !/[ก-๙]/.test(message), facilities, contacts });
 }
 
 export async function upsertEmergencyFacility(tenantId: string, actorId: string, input: EmergencyFacilityInput): Promise<EmergencyFacility> {
