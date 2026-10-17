@@ -1725,6 +1725,17 @@ Customer address codes are nullable; legacy `address`, `province` and `postcode`
 Apply `10.76` before deploying the readers/writers; schema readiness checks the master bank/unit
 tables and the order-item snapshot column.
 
+Corrective migration `10.86` adds seven narrow `SECURITY DEFINER` entry points for bank, unit,
+Thai-address and carrier upserts plus insert-only province-zone initialization. The editor service
+checks platform authorization, enters `bms_app` with the audit tenant GUC, and calls these functions
+instead of direct table writes. Each function rechecks the revision editor's platform-admin flag;
+table grants remain SELECT-only. Audit failure rolls back the edit and its revision together.
+Apply `10.86` after `10.85` before deploying this editor service. It changes functions/grants only,
+without rewriting data or taking a master-table DDL lock. Back up the function definitions/grants
+before rollout; rollback the application first, then revoke the new EXECUTE grants if required.
+Retain master rows, tenant snapshots and revision history. Verify an editor save plus its audit,
+direct `bms_app` UPDATE denial, and ordinary-admin denial after rollout.
+
 ## Structured Thai address snapshots (`10.77`)
 
 Phase 2 adds nullable master codes plus Thai display snapshots to `bms_store_profile` and
@@ -1825,6 +1836,46 @@ source and reviewer metadata that was used. Editing the global row later never c
 policy, and no global review counts as approval for another shop. Applying requires
 `pharmacy.policy.review` and writes `pharmacy.product_policy.master_suggestion_applied` in the same
 tenant transaction as the Draft. Sale decisions continue to read only the tenant policy fields.
+
+## Platform reference settings and multi-country foundation (`10.83`–`10.85`)
+
+`bms_master_countries`, `bms_master_currencies`, and `bms_master_timezones` are global, read-only-to-
+`bms_app` catalogues. `bms_store_profile.country_code`, `currency_code`, and `timezone_code` are
+validated foreign keys while the old text columns remain compatibility snapshots during rollout.
+The migration backfills only explicit recognised values. It records every non-empty unknown value
+in the tenant-RLS `bms_master_reference_backfill_issues` ledger instead of guessing. `10.85` keeps
+that ledger current after rollout: a newly observed unknown value is opened, and fixing the profile
+marks its issue resolved without deleting history.
+Partial locale edits validate only the submitted fields, so repairing a currency does not require
+replacing an unknown legacy country or timezone in the same request.
+
+Country authority uses ISO alpha-2 `TH`, `AU`, and `GB`. Corrective migration `10.84` moves any
+temporary `UK` profile reference created by `10.83` to `GB`, leaves `UK` inactive for compatibility,
+and updates the legacy-text synchronization trigger. AU state/suburb/postcode and UK postcode
+tables are intentionally empty. Their non-null source,
+licence, and residency evidence columns are structural gates, and the country catalogue remains
+`REVIEW_REQUIRED`; schema presence is not permission to import a dataset.
+
+`bms_master_ai_rates` is an effective-dated accounting rate card. Finalization selects the row in
+effect at the AI event's immutable `created_at`, records its source/version in event metadata, and
+never revisits a completed event. Environment overrides keep precedence for the existing Qwen OCR
+deployment settings. `10.84` serializes each provider/model timeline and closes adjacent periods so
+future rates cannot overlap even when admins add them out of chronological order. Unknown model cost
+remains `NULL`; this table never grants AI entitlement.
+
+Operational reports, scheduled digests, restaurant ordering hours, menu reset boundaries, waitlist
+service dates, customer reservations, and pharmacy lot dates prefer the validated `timezone_code`.
+They retain the legacy `timezone` field and `Asia/Bangkok` as rolling-deploy/outage fallbacks, with
+the Thai date-boundary contract unchanged. SQL date paths validate the selected zone against
+`pg_timezone_names` before `AT TIME ZONE`, so an unmapped invalid legacy value also takes the fallback
+instead of raising a PostgreSQL error.
+
+`bms_plans.feature_keys`, `version`, and `updated_at` make the cloud catalogue editable through a
+platform-admin-only preview/confirm flow. Preview counts all shops on the plan and separately counts
+feature-policy-v2 shops that gain or lose new feature access. Save rechecks the version and preview
+fingerprint, writes through a narrow `SECURITY DEFINER` function, and appends an audit row in the same
+transaction. Legacy/existing-work feature rules and Retail Local fail-open licensing remain
+independent, and no plan catalogue edit disables POS or sales.
 
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication

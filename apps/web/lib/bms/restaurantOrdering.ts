@@ -72,7 +72,10 @@ export async function restaurantOrderingStateInTx(
   // 9.56 columns must never be named until the shop is known to be a restaurant — otherwise a
   // database that has not applied 9.56 yet stops selling for every tenant, not just restaurants.
   const archetype = await client.query<{ business_archetype: string | null; timezone: string | null }>(
-    `SELECT business_archetype, timezone FROM bms_store_profile WHERE tenant_id = $1`,
+    `SELECT business_archetype,
+            COALESCE((SELECT tz.name FROM pg_timezone_names tz WHERE tz.name =
+              COALESCE(NULLIF(btrim(to_jsonb(profile)->>'timezone_code'), ''), NULLIF(btrim(profile.timezone), ''))), 'Asia/Bangkok') AS timezone
+       FROM bms_store_profile profile WHERE tenant_id = $1`,
     [tenantId]
   );
   const profile = archetype.rows[0];

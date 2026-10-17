@@ -17,17 +17,21 @@ export type Plan = {
   max_ai_messages_month: number; ai_credits_monthly: number; sort: number;
   ai_credits_next_monthly?: number | null; ai_credits_change_at?: string | null;
   feature_keys: PackageFeature[];
+  version: number;
 };
 
 /** Missing rollout column means legacy; missing tenants/database errors never grant access. */
 export async function getTenantFeatureAccess(tenantId: string, client?: PoolClient) {
   const sql = `SELECT t.plan, COALESCE((to_jsonb(t)->>'feature_policy_version')::int, 1) AS version,
+    (SELECT CASE WHEN to_jsonb(p) ? 'feature_keys'
+      THEN ARRAY(SELECT jsonb_array_elements_text(to_jsonb(p)->'feature_keys')) ELSE NULL END
+      FROM bms_plans p WHERE p.code=t.plan) AS feature_keys,
     EXISTS(SELECT 1 FROM bms_report_subscriptions s WHERE s.tenant_id=t.id) AS has_report_schedule
     FROM bms_tenants t WHERE t.id=$1 ${client ? "FOR SHARE OF t" : ""}`;
   const result = await run(client, sql, [tenantId]);
   const row = result.rows[0];
   if (!row) throw new Error("Tenant not found");
-  return resolveFeatureAccess(row.plan, row.version, isRetailLocalDeployment(), row.has_report_schedule);
+  return resolveFeatureAccess(row.plan, row.version, isRetailLocalDeployment(), row.has_report_schedule, row.feature_keys);
 }
 
 export async function requirePackageFeature(tenantId: string, feature: PackageFeature, client: PoolClient) {
@@ -113,7 +117,10 @@ function shapePlan(r: any, at: number): Plan {
     max_branches: r.max_branches ?? -1, max_devices: r.max_devices ?? -1,
     max_orders_month: r.max_orders_month, max_users: r.max_users,
     ...resolvePlanAiAllowance(r, at),
-    feature_keys: planFeatureKeys(r.code),
+    feature_keys: Array.isArray(r.feature_keys)
+      ? r.feature_keys.filter((feature: string): feature is PackageFeature => feature in { REPORT_SCHEDULE: true, RETENTION_ENGINE: true })
+      : planFeatureKeys(r.code),
+    version: Number(r.version ?? 1),
     sort: r.sort,
   };
 }

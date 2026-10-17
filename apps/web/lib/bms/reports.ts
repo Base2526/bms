@@ -16,21 +16,17 @@ import { loyaltyOutstandingReport } from "./membership";
 import { getStoreCreditOutstanding } from "./storeCredit";
 import { getLocation } from "./locations";
 import { normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import { DEFAULT_STORE_TIMEZONE, resolveStoreTimezone } from "./storeLocale";
 
 const PAID = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 // A RETURNED order was still a paid receipt. Keep the receipt and its later
 // refund as separate financial events.
 const FINANCIAL_ORDER_STATUSES = [...PAID, "RETURNED"];
 const RETURN_REASON_PREFIX_RE = /^\[([A-Z_]+)\]\s*/;
-const BANGKOK_DATE_FORMATTER = new Intl.DateTimeFormat("en-CA", {
-  timeZone: "Asia/Bangkok",
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-});
-
-function bangkokDateKey(value: Date): string {
-  const parts = BANGKOK_DATE_FORMATTER.formatToParts(value);
+function storeDateKey(value: Date, timeZone = DEFAULT_STORE_TIMEZONE): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(value);
   const get = (type: "year" | "month" | "day") => parts.find((part) => part.type === type)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
@@ -59,9 +55,9 @@ function parseReturnReason(note: string | null | undefined) {
   };
 }
 
-/** normalize ช่วงวันที่ธุรกิจ Asia/Bangkok: default = 30 วันล่าสุด (YYYY-MM-DD) */
-function range(from?: string | null, to?: string | null): { from: string; to: string } {
-  const toD = assertDateKey(from && to ? to : to || bangkokDateKey(new Date()), "to");
+/** Normalize a store-local business-date range; Thai legacy behavior is the fallback. */
+function range(from?: string | null, to?: string | null, timeZone = DEFAULT_STORE_TIMEZONE): { from: string; to: string } {
+  const toD = assertDateKey(from && to ? to : to || storeDateKey(new Date(), timeZone), "to");
   const fromD = assertDateKey(from || addDateKeyDays(toD, -29), "from");
   if (fromD > toD) throw new Error("from ต้องไม่อยู่หลัง to");
   const spanDays = Math.round((Date.parse(`${toD}T00:00:00Z`) - Date.parse(`${fromD}T00:00:00Z`)) / 86_400_000);
@@ -75,7 +71,8 @@ export async function getSalesSummary(
   to?: string | null,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
 
   const [totals, refunds, byDay, byStatus, byChannel] = await Promise.all([
     query(
@@ -84,9 +81,9 @@ export async function getSalesSummary(
          FROM bms_orders
         WHERE tenant_id = $1 AND status = ANY($2::text[])
           AND ($5::uuid IS NULL OR location_id = $5::uuid)
-          AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
-      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
+          AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE $6)
+          AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE $6)`,
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null, timeZone]
     ),
     query(
       `WITH raw_refund_events AS (
@@ -125,9 +122,9 @@ export async function getSalesSummary(
        SELECT COALESCE(SUM(amount),0) AS refund_total
          FROM refund_events
         WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
-          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
-      [tenantId, r.from, r.to, locationId || null]
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE $5)
+          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE $5)`,
+      [tenantId, r.from, r.to, locationId || null, timeZone]
     ),
     query(
       `SELECT d::date AS day,
@@ -137,10 +134,10 @@ export async function getSalesSummary(
          LEFT JOIN bms_orders o
            ON o.tenant_id = $1
           AND ($5::uuid IS NULL OR o.location_id=$5::uuid)
-          AND COALESCE(o.paid_at, o.created_at) >= (d::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND COALESCE(o.paid_at, o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND COALESCE(o.paid_at, o.created_at) >= (d::timestamp AT TIME ZONE $6)
+          AND COALESCE(o.paid_at, o.created_at) < ((d + interval '1 day')::timestamp AT TIME ZONE $6)
         GROUP BY day ORDER BY day`,
-      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null, timeZone]
     ),
     query(
       `SELECT status, COUNT(*)::int AS count
@@ -152,15 +149,15 @@ export async function getSalesSummary(
                 WHEN status='RETURNED' THEN COALESCE(returned_at,updated_at,created_at)
                 WHEN status = ANY($4::text[]) THEN COALESCE(paid_at,created_at)
                 ELSE created_at
-              END >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
+              END >= ($2::date::timestamp AT TIME ZONE $6)
           AND CASE
                 WHEN status='CANCELLED' THEN COALESCE(cancelled_at,updated_at,created_at)
                 WHEN status='RETURNED' THEN COALESCE(returned_at,updated_at,created_at)
                 WHEN status = ANY($4::text[]) THEN COALESCE(paid_at,created_at)
                 ELSE created_at
-              END < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+              END < (($3::date + 1)::timestamp AT TIME ZONE $6)
         GROUP BY status ORDER BY count DESC`,
-      [tenantId, r.from, r.to, PAID, locationId || null]
+      [tenantId, r.from, r.to, PAID, locationId || null, timeZone]
     ),
     query(
       `SELECT channel,
@@ -169,10 +166,10 @@ export async function getSalesSummary(
          FROM bms_orders
         WHERE tenant_id = $1 AND status = ANY($2::text[])
           AND ($5::uuid IS NULL OR location_id=$5::uuid)
-          AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND COALESCE(paid_at, created_at) >= ($3::date::timestamp AT TIME ZONE $6)
+          AND COALESCE(paid_at, created_at) < (($4::date + 1)::timestamp AT TIME ZONE $6)
         GROUP BY channel ORDER BY revenue DESC`,
-      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null]
+      [tenantId, FINANCIAL_ORDER_STATUSES, r.from, r.to, locationId || null, timeZone]
     ),
   ]);
 
@@ -201,15 +198,16 @@ export async function getSalesSummary(
  * make an all-time tool response unnecessarily large.
  */
 export async function getLifetimeSalesSummary(tenantId: string) {
+  const timeZone = await resolveStoreTimezone(tenantId);
   const [totals, byStatus, byChannel] = await Promise.all([
     query(
-      `SELECT MIN((COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date) AS first_order_date,
-              MAX((COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date) AS last_order_date,
+      `SELECT MIN((COALESCE(paid_at,created_at) AT TIME ZONE $3)::date) AS first_order_date,
+              MAX((COALESCE(paid_at,created_at) AT TIME ZONE $3)::date) AS last_order_date,
               COALESCE(SUM(total_amount) FILTER (WHERE status = ANY($2::text[])), 0) AS revenue,
               COUNT(*) FILTER (WHERE status = ANY($2::text[]))::int AS orders
          FROM bms_orders
         WHERE tenant_id = $1`,
-      [tenantId, PAID]
+      [tenantId, PAID, timeZone]
     ),
     query(
       `SELECT status, COUNT(*)::int AS count
@@ -300,7 +298,8 @@ export async function getTopSellingProducts(
   limit = 10,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
   const lim = Math.min(Math.max(limit, 1), 100);
   const res = await query(
     `SELECT oi.product_sku AS sku, p.name,
@@ -311,8 +310,8 @@ export async function getTopSellingProducts(
        JOIN bms_products p ON p.tenant_id = oi.tenant_id AND p.sku = oi.product_sku
       WHERE oi.tenant_id = $1 AND o.status = ANY($2::text[])
         AND ($6::uuid IS NULL OR o.location_id=$6::uuid)
-        AND COALESCE(o.paid_at,o.created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-        AND COALESCE(o.paid_at,o.created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+        AND COALESCE(o.paid_at,o.created_at) >= ($3::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+        AND COALESCE(o.paid_at,o.created_at) < (($4::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
       GROUP BY oi.product_sku, p.name
       ORDER BY qty DESC
       LIMIT $5::int`,
@@ -349,7 +348,8 @@ export async function getProfitSummary(
   to?: string | null,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
   const [totals, salesByDay, refundsByDay, returnedCostsByDay] = await Promise.all([
     query(
       `WITH eligible_orders AS (
@@ -357,8 +357,8 @@ export async function getProfitSummary(
            FROM bms_orders
           WHERE tenant_id=$1 AND status=ANY($2::text[])
             AND ($5::uuid IS NULL OR location_id=$5::uuid)
-            AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
        )
        SELECT COALESCE((SELECT SUM(total_amount) FROM eligible_orders), 0) AS revenue,
               COALESCE(SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL), 0) AS known_cost,
@@ -376,12 +376,12 @@ export async function getProfitSummary(
     query(
       `WITH eligible_orders AS (
          SELECT id, total_amount,
-                (COALESCE(paid_at,created_at) AT TIME ZONE 'Asia/Bangkok')::date AS day
+                (COALESCE(paid_at,created_at) AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))::date AS day
            FROM bms_orders
           WHERE tenant_id=$1 AND status=ANY($2::text[])
             AND ($5::uuid IS NULL OR location_id=$5::uuid)
-            AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(paid_at,created_at) >= ($3::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(paid_at,created_at) < (($4::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
        ), order_cost AS (
          SELECT o.id, o.day, o.total_amount,
                 COALESCE(SUM(oi.cost_amount_snapshot) FILTER (WHERE oi.cost_amount_snapshot IS NOT NULL),0) AS known_cost,
@@ -424,12 +424,12 @@ export async function getProfitSummary(
                 location_id, occurred_at
            FROM raw_refund_events
        )
-       SELECT (occurred_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+       SELECT (occurred_at AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))::date AS day,
               COALESCE(SUM(amount),0) AS refund_total
          FROM refund_events
         WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
-          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY day ORDER BY day`,
       [tenantId, r.from, r.to, locationId || null]
     ),
@@ -471,7 +471,7 @@ export async function getProfitSummary(
                WHERE pr.tenant_id=o.tenant_id AND pr.order_id=o.id
             )
        )
-       SELECT (occurred_at AT TIME ZONE 'Asia/Bangkok')::date AS day,
+       SELECT (occurred_at AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))::date AS day,
               COALESCE(SUM(returned_cost) FILTER (WHERE cost_amount_snapshot IS NOT NULL),0) AS returned_known_cost,
               COUNT(*) FILTER (WHERE cost_amount_snapshot IS NULL)::int AS missing_cost_line_count,
               COUNT(DISTINCT product_sku) FILTER (WHERE cost_amount_snapshot IS NULL)::int AS missing_cost_sku_count,
@@ -479,8 +479,8 @@ export async function getProfitSummary(
               COALESCE(SUM(missing_cost_revenue) FILTER (WHERE cost_amount_snapshot IS NULL),0) AS missing_cost_revenue
          FROM returned_lines
         WHERE ($4::uuid IS NULL OR location_id=$4::uuid)
-          AND occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND occurred_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY day ORDER BY day`,
       [tenantId, r.from, r.to, locationId || null]
     ),
@@ -591,7 +591,8 @@ export async function getPosReturnSummary(
   to?: string | null,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
   const [totals, reasons, recent] = await Promise.all([
     query(
       `WITH selected_returns AS (
@@ -601,8 +602,8 @@ export async function getPosReturnSummary(
           WHERE pr.tenant_id = $1
             AND pr.is_void = FALSE
             AND ($4::uuid IS NULL OR COALESCE(pr.return_location_id,o.location_id)=$4::uuid)
-            AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND pr.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
        )
        SELECT COUNT(*)::int AS return_count,
               COALESCE(SUM(refund_amount), 0) AS refund_total,
@@ -633,8 +634,8 @@ export async function getPosReturnSummary(
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
           AND ($4::uuid IS NULL OR COALESCE(pr.return_location_id,o.location_id)=$4::uuid)
-          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY 1
         ORDER BY count DESC, note
         LIMIT 5`,
@@ -672,8 +673,8 @@ export async function getPosReturnSummary(
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
           AND ($4::uuid IS NULL OR COALESCE(pr.return_location_id,source_order.location_id)=$4::uuid)
-          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         ORDER BY pr.created_at DESC
         LIMIT 10`,
       [tenantId, r.from, r.to, locationId || null]
@@ -722,7 +723,8 @@ export async function getPosReturnAuditSummary(
   to?: string | null,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
   const [byCashier, approvals, blind] = await Promise.all([
     query(
       `SELECT COALESCE(u.name, u.email, pr.returned_by::text, 'unknown') AS cashier,
@@ -734,8 +736,8 @@ export async function getPosReturnAuditSummary(
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
           AND ($4::uuid IS NULL OR COALESCE(pr.return_location_id,o.location_id)=$4::uuid)
-          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY 1
         ORDER BY refund_total DESC, return_count DESC
         LIMIT 10`,
@@ -752,8 +754,8 @@ export async function getPosReturnAuditSummary(
         WHERE pr.tenant_id = $1
           AND pr.is_void = FALSE
           AND ($4::uuid IS NULL OR COALESCE(pr.return_location_id,o.location_id)=$4::uuid)
-          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+          AND pr.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND pr.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
       [tenantId, r.from, r.to, locationId || null]
     ),
     // คืนโดยไม่มีใบเสร็จ (8.2) — นับแยกจากการคืนปกติเสมอ
@@ -766,8 +768,8 @@ export async function getPosReturnAuditSummary(
         FROM bms_pos_blind_returns
         WHERE tenant_id = $1
           AND ($4::uuid IS NULL OR location_id=$4::uuid)
-          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+          AND created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
       [tenantId, r.from, r.to, locationId || null]
     ),
   ]);
@@ -961,8 +963,8 @@ async function getArchetypeReport(
                   FILTER (WHERE status='PAID'),0) AS avg_table_minutes
            FROM bms_restaurant_checks
           WHERE tenant_id=$1 AND ($4::uuid IS NULL OR location_id=$4::uuid)
-            AND opened_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND opened_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+            AND opened_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND opened_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
         params
       ),
       query(
@@ -974,8 +976,8 @@ async function getArchetypeReport(
            FROM bms_restaurant_kitchen_tickets k
            JOIN bms_restaurant_checks c ON c.tenant_id=k.tenant_id AND c.id=k.check_id
           WHERE k.tenant_id=$1 AND ($4::uuid IS NULL OR c.location_id=$4::uuid)
-            AND k.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND k.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+            AND k.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND k.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
         params
       ),
       query(
@@ -984,8 +986,8 @@ async function getArchetypeReport(
                 COUNT(*) FILTER (WHERE status='REJECTED')::int AS rejected
            FROM bms_restaurant_qr_submissions
           WHERE tenant_id=$1 AND ($4::uuid IS NULL OR location_id=$4::uuid)
-            AND submitted_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND submitted_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+            AND submitted_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND submitted_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
         params
       ),
     ]);
@@ -1037,8 +1039,8 @@ async function getArchetypeReport(
                   FILTER (WHERE status='PAID'),0) AS avg_play_minutes
            FROM bms_board_game_sessions
           WHERE tenant_id=$1 AND ($4::uuid IS NULL OR location_id=$4::uuid)
-            AND started_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND started_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+            AND started_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND started_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
         params
       ),
       query(
@@ -1049,8 +1051,8 @@ async function getArchetypeReport(
           WHERE tenant_id=$1 AND ($4::uuid IS NULL OR location_id=$4::uuid)
             AND (
               (status='PAID'
-                AND ended_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                AND ended_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok'))
+                AND ended_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                AND ended_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok')))
               OR status IN ('OPEN','CLOSING')
             )`,
         params
@@ -1121,7 +1123,8 @@ export async function getManagementReport(
   to?: string | null,
   locationId?: string | null
 ) {
-  const r = range(from, to);
+  const timeZone = await resolveStoreTimezone(tenantId);
+  const r = range(from, to, timeZone);
   if (locationId && !(await getLocation(tenantId, locationId))) {
     throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
   }
@@ -1164,8 +1167,8 @@ export async function getManagementReport(
          FROM bms_locations l
          LEFT JOIN bms_orders o
            ON o.tenant_id = l.tenant_id AND o.location_id = l.id
-          AND COALESCE(o.paid_at, o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND COALESCE(o.paid_at, o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND COALESCE(o.paid_at, o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND COALESCE(o.paid_at, o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         WHERE l.tenant_id = $1 AND l.active
         GROUP BY l.id, l.code, l.name
         ORDER BY revenue DESC, l.code`,
@@ -1182,8 +1185,8 @@ export async function getManagementReport(
            JOIN bms_orders o ON o.tenant_id=oi.tenant_id AND o.id=oi.order_id
           WHERE oi.tenant_id=$1 AND o.status = ANY($5::text[])
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-            AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
           GROUP BY oi.product_sku
        )
        SELECT p.sku, p.name, p.category,
@@ -1227,11 +1230,11 @@ export async function getManagementReport(
                    WHERE p.tenant_id=$1 AND p.status IN ('CONFIRMED','REFUNDED')
                      AND p.source_payment_id IS NULL
                      AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
-                     AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS received,
+                     AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS received,
          COALESCE((SELECT SUM(amount) FROM refund_events
-                   WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS refunded,
+                   WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS refunded,
          COALESCE((SELECT SUM(p.amount) FROM bms_payments p
                     LEFT JOIN bms_orders o ON o.tenant_id=p.tenant_id AND o.id=p.order_id
                     LEFT JOIN bms_board_game_waitlist w
@@ -1257,8 +1260,8 @@ export async function getManagementReport(
         WHERE p.tenant_id=$1 AND p.status IN ('CONFIRMED','REFUNDED')
           AND p.source_payment_id IS NULL
           AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
-          AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND COALESCE(p.confirmed_at,p.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND COALESCE(p.confirmed_at,p.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY p.method ORDER BY amount DESC`,
       params
     ),
@@ -1270,8 +1273,8 @@ export async function getManagementReport(
            ON w.tenant_id=p.tenant_id AND w.id=p.board_game_reservation_id
         WHERE p.tenant_id=$1 AND p.source_payment_id IS NULL
           AND ($4::uuid IS NULL OR COALESCE(o.location_id,w.location_id)=$4::uuid)
-          AND p.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND p.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND p.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND p.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY p.status ORDER BY count DESC`,
       params
     ),
@@ -1282,16 +1285,16 @@ export async function getManagementReport(
               COUNT(*) FILTER (WHERE status IN ('OPEN','PARTIAL'))::int AS open_count
          FROM bms_purchase_orders
         WHERE tenant_id=$1
-          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+          AND created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
       params.slice(0, 3)
     ),
     query(
       `SELECT status AS key, COUNT(*)::int AS count, COALESCE(SUM(total_amount),0) AS amount
          FROM bms_purchase_orders
         WHERE tenant_id=$1
-          AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY status ORDER BY amount DESC`,
       params.slice(0, 3)
     ),
@@ -1301,8 +1304,8 @@ export async function getManagementReport(
          FROM bms_purchase_orders po
          LEFT JOIN bms_suppliers s ON s.tenant_id=po.tenant_id AND s.id=po.supplier_id
         WHERE po.tenant_id=$1
-          AND po.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND po.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND po.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND po.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY COALESCE(s.name,'(no supplier)') ORDER BY amount DESC LIMIT 20`,
       params.slice(0, 3)
     ),
@@ -1312,15 +1315,15 @@ export async function getManagementReport(
            FROM bms_orders
           WHERE tenant_id=$1 AND status = ANY($5::text[])
             AND ($4::uuid IS NULL OR location_id=$4::uuid)
-            AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
           GROUP BY customer_id
        )
        SELECT
          (SELECT COUNT(*)::int FROM bms_customers WHERE tenant_id=$1 AND deleted_at IS NULL) AS total_customers,
          (SELECT COUNT(*)::int FROM bms_customers WHERE tenant_id=$1 AND deleted_at IS NULL
-            AND created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS new_customers,
+            AND created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS new_customers,
          COUNT(*) FILTER (WHERE customer_id IS NOT NULL)::int AS purchasing_customers,
          COUNT(*) FILTER (WHERE customer_id IS NOT NULL AND orders > 1)::int AS repeat_customers,
          COALESCE(SUM(orders) FILTER (WHERE customer_id IS NULL),0)::int AS anonymous_orders,
@@ -1338,8 +1341,8 @@ export async function getManagementReport(
          FROM bms_shipments s
          JOIN bms_orders o ON o.tenant_id=s.tenant_id AND o.id=s.order_id
         WHERE s.tenant_id=$1 AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-          AND s.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND s.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')`,
+          AND s.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND s.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))`,
       params
     ),
     query(
@@ -1347,8 +1350,8 @@ export async function getManagementReport(
          FROM bms_shipments s
          JOIN bms_orders o ON o.tenant_id=s.tenant_id AND o.id=s.order_id
         WHERE s.tenant_id=$1 AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-          AND s.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND s.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND s.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND s.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY s.status ORDER BY count DESC`,
       params
     ),
@@ -1357,50 +1360,50 @@ export async function getManagementReport(
          COALESCE((SELECT SUM(o.discount_amount) FROM bms_orders o
                     WHERE o.tenant_id=$1 AND o.status = ANY($5::text[])
                       AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-                      AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                      AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS discounts,
+                      AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                      AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS discounts,
          (SELECT COUNT(*)::int FROM bms_orders o WHERE o.tenant_id=$1
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-            AND o.voided_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND o.voided_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS void_count,
+            AND o.voided_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND o.voided_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS void_count,
          COALESCE((SELECT SUM(o.total_amount) FROM bms_orders o WHERE o.tenant_id=$1
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-            AND o.voided_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND o.voided_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS void_amount,
+            AND o.voided_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND o.voided_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS void_amount,
          (SELECT COUNT(*)::int FROM bms_pos_no_sales n JOIN bms_pos_shifts ps ON ps.id=n.shift_id AND ps.tenant_id=n.tenant_id
             WHERE n.tenant_id=$1 AND ($4::uuid IS NULL OR ps.location_id=$4::uuid)
-              AND n.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-              AND n.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS no_sale_count,
+              AND n.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+              AND n.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS no_sale_count,
          COALESCE((SELECT SUM(CASE WHEN m.direction='IN' THEN m.amount ELSE 0 END) FROM bms_pos_cash_movements m
                     JOIN bms_pos_shifts ps ON ps.id=m.shift_id AND ps.tenant_id=m.tenant_id
                    WHERE m.tenant_id=$1 AND ($4::uuid IS NULL OR ps.location_id=$4::uuid)
-                     AND m.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS cash_in,
+                     AND m.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS cash_in,
          COALESCE((SELECT SUM(CASE WHEN m.direction='OUT' THEN m.amount ELSE 0 END) FROM bms_pos_cash_movements m
                     JOIN bms_pos_shifts ps ON ps.id=m.shift_id AND ps.tenant_id=m.tenant_id
                    WHERE m.tenant_id=$1 AND ($4::uuid IS NULL OR ps.location_id=$4::uuid)
-                     AND m.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS cash_out,
+                     AND m.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS cash_out,
          COALESCE((SELECT SUM(ABS(ps.cash_variance)) FROM bms_pos_shifts ps WHERE ps.tenant_id=$1
                     AND ps.status='CLOSED' AND ($4::uuid IS NULL OR ps.location_id=$4::uuid)
-                    AND ps.closed_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                    AND ps.closed_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS absolute_cash_variance,
+                    AND ps.closed_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                    AND ps.closed_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS absolute_cash_variance,
          (SELECT COUNT(*)::int FROM bms_pos_shifts ps WHERE ps.tenant_id=$1
            AND ps.status='CLOSED' AND ($4::uuid IS NULL OR ps.location_id=$4::uuid)
-           AND ps.closed_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-           AND ps.closed_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS closed_shift_count,
+           AND ps.closed_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+           AND ps.closed_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS closed_shift_count,
          COALESCE((SELECT SUM(w.qty) FROM bms_inventory_wastage w WHERE w.tenant_id=$1
                     AND ($4::uuid IS NULL OR w.location_id=$4::uuid)
-                    AND w.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                    AND w.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0)::int AS wastage_qty`,
+                    AND w.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                    AND w.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0)::int AS wastage_qty`,
       [...params, PAID]
     ),
     query(
       `SELECT m.type AS key, COALESCE(SUM(m.qty),0)::int AS count, 0::numeric AS amount
          FROM bms_stock_movements m
         WHERE m.tenant_id=$1 AND ($4::uuid IS NULL OR m.location_id=$4::uuid)
-          AND m.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND m.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND m.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY m.type ORDER BY count DESC`,
       params
     ),
@@ -1414,49 +1417,49 @@ export async function getManagementReport(
                      FROM bms_orders o
                     WHERE o.tenant_id=$1 AND o.status=ANY($5::text[])
                       AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-                      AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                      AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS paid_order_amount,
+                      AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                      AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS paid_order_amount,
          (SELECT COUNT(*)::int FROM bms_orders o
            WHERE o.tenant_id=$1 AND o.status=ANY($5::text[])
              AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-             AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-             AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS paid_order_count,
+             AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+             AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS paid_order_count,
          -- ใบลดหนี้ลดยอดที่ออกใบกำกับไป ต้องเป็นยอดลบ · เดิมบวกเข้าไป ร้านที่รับคืน
          -- ของเยอะจะเห็นยอดใบกำกับสูงกว่ายอดรับเงินจริง แล้วช่องกระทบยอดไม่มีวันตรง
          COALESCE((SELECT SUM(CASE WHEN d.doc_type = 'CREDIT_NOTE' THEN -d.grand_total ELSE d.grand_total END)
                      FROM bms_tax_documents d
                    WHERE d.tenant_id=$1 AND d.cancelled_at IS NULL
                      AND ($4::uuid IS NULL OR d.location_id=$4::uuid)
-                     AND d.issued_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS tax_document_amount,
+                     AND d.issued_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS tax_document_amount,
          -- นับเฉพาะใบกำกับ (ใบย่อ/ใบเต็ม) ให้เทียบกับจำนวนบิลที่ชำระแล้วได้ตรง ๆ
          (SELECT COUNT(*)::int FROM bms_tax_documents d
            WHERE d.tenant_id=$1 AND d.cancelled_at IS NULL AND d.doc_type <> 'CREDIT_NOTE' AND d.doc_type <> 'DEBIT_NOTE'
              AND ($4::uuid IS NULL OR d.location_id=$4::uuid)
-             AND d.issued_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-             AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS tax_document_count,
+             AND d.issued_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+             AND d.issued_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS tax_document_count,
          COALESCE((SELECT SUM(s.expected_cash) FROM bms_pos_shifts s
                    WHERE s.tenant_id=$1 AND s.status='CLOSED'
                      AND ($4::uuid IS NULL OR s.location_id=$4::uuid)
-                     AND s.closed_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS expected_cash,
+                     AND s.closed_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS expected_cash,
          COALESCE((SELECT SUM(s.counted_cash) FROM bms_pos_shifts s
                    WHERE s.tenant_id=$1 AND s.status='CLOSED'
                      AND ($4::uuid IS NULL OR s.location_id=$4::uuid)
-                     AND s.closed_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-                     AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')),0) AS counted_cash,
+                     AND s.closed_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+                     AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))),0) AS counted_cash,
          (SELECT COUNT(*)::int FROM bms_pos_shifts s
          WHERE s.tenant_id=$1 AND s.status='CLOSED' AND ABS(COALESCE(s.cash_variance,0)) > 0.009
              AND ($4::uuid IS NULL OR s.location_id=$4::uuid)
-             AND s.closed_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-             AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')) AS variance_shift_count`,
+             AND s.closed_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+             AND s.closed_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))) AS variance_shift_count`,
       [...params, FINANCIAL_ORDER_STATUSES]
     ),
     query(
       `WITH stock AS (
          SELECT i.product_sku, i.size, i.current_stock, i.reserved_stock, i.updated_at,
                 p.cost_price,
-                GREATEST(0, (now() AT TIME ZONE 'Asia/Bangkok')::date - (i.updated_at AT TIME ZONE 'Asia/Bangkok')::date)::int AS age_days
+                GREATEST(0, (now() AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))::date - (i.updated_at AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))::date)::int AS age_days
            FROM bms_inventory i
            JOIN bms_products p ON p.tenant_id=i.tenant_id AND p.sku=i.product_sku
           WHERE i.tenant_id=$1 AND i.current_stock > 0
@@ -1467,8 +1470,8 @@ export async function getManagementReport(
            JOIN bms_orders o ON o.tenant_id=oi.tenant_id AND o.id=oi.order_id
           WHERE oi.tenant_id=$1 AND o.status=ANY($5::text[])
             AND ($4::uuid IS NULL OR o.location_id=$4::uuid)
-            AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(o.paid_at,o.created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(o.paid_at,o.created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
        )
        SELECT COUNT(*)::int AS stocked_variants,
               COUNT(*) FILTER (WHERE cost_price IS NULL)::int AS missing_cost_variants,
@@ -1500,8 +1503,8 @@ export async function getManagementReport(
          LEFT JOIN bms_suppliers s ON s.tenant_id=po.tenant_id AND s.id=po.supplier_id
          LEFT JOIN bms_purchase_order_items item ON item.tenant_id=po.tenant_id AND item.po_id=po.id
         WHERE po.tenant_id=$1
-          AND po.created_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-          AND po.created_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+          AND po.created_at >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+          AND po.created_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
         GROUP BY COALESCE(s.name,'(no supplier)')
         ORDER BY ordered_amount DESC LIMIT 20`,
       params.slice(0, 3)
@@ -1512,8 +1515,8 @@ export async function getManagementReport(
            FROM bms_orders
           WHERE tenant_id=$1 AND status=ANY($5::text[])
             AND ($4::uuid IS NULL OR location_id=$4::uuid)
-            AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-            AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+            AND COALESCE(paid_at,created_at) >= ($2::date::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
+            AND COALESCE(paid_at,created_at) < (($3::date + 1)::timestamp AT TIME ZONE COALESCE((SELECT tz.name FROM bms_store_profile store_profile JOIN pg_timezone_names tz ON tz.name = COALESCE(NULLIF(btrim(to_jsonb(store_profile)->>'timezone_code'), ''), NULLIF(btrim(store_profile.timezone), '')) WHERE store_profile.tenant_id = $1), 'Asia/Bangkok'))
        )
        SELECT COALESCE(SUM(total_amount),0) AS net_revenue,
               COALESCE(SUM(total_amount + discount_amount),0) AS before_discount_revenue,

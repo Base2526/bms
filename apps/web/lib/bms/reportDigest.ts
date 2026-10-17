@@ -5,9 +5,9 @@
 // (bms_report_deliveries) ให้ platform admin เห็นประวัติจริงว่าร้านไหนส่งไปเมื่อไหร่
 // สำเร็จ/ล้มเหลว — คู่กับ § Channel Health/AI Provider Health pattern เดิม
 //
-// เวลา/period ทั้งหมดยึด Asia/Bangkok (UTC+7 คงที่ ไม่มี DST) — คำนวณด้วยเลขคณิต
-// offset ตรงๆ แทน timezone library (ตาม convention เดิมของโปรเจกต์ที่ใช้ Intl.DateTimeFormat
-// เป็นหลัก ไม่มี dependency ใหม่)
+// เวลา/period ยึด timezone ของร้านและคำนวณผ่าน Intl.DateTimeFormat เพื่อรองรับ DST
+// โดยไม่เพิ่ม dependency; ข้อมูลเก่าหรือการอ่าน profile ที่ล้มเหลวจะ fallback เป็น Asia/Bangkok
+// เพื่อรักษาพฤติกรรมเดิมระหว่าง rollout
 // =============================================================
 
 import { getClient, query } from "@/lib/db";
@@ -19,16 +19,17 @@ import { getChannel } from "./channels";
 import { getTenantName } from "./platform";
 import { getStoreProfile, DEFAULT_EMAIL_THEME_COLOR } from "./storeProfile";
 import { parseRecipientList, invalidEmails, invalidSlackWebhookUrls, invalidLineUserIds } from "./reportRecipients";
+import { DEFAULT_STORE_TIMEZONE, isValidTimeZone, resolveStoreTimezone } from "./storeLocale";
 
 export type Frequency = "DAILY" | "WEEKLY" | "MONTHLY";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 
-// ---------------- Asia/Bangkok time helpers (UTC+7 คงที่) ----------------
+// ---------------- store-local time helpers ----------------
 
-function bkkNow(now: Date = new Date()) {
+export function storeLocalNow(timeZone = DEFAULT_STORE_TIMEZONE, now: Date = new Date()) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Bangkok",
+    timeZone,
     year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", hour12: false, weekday: "short",
   }).formatToParts(now);
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
@@ -42,8 +43,16 @@ function bkkNow(now: Date = new Date()) {
   return { year, month, day, hour, weekday };
 }
 
-function bkkMidnightUtc(year: number, month: number, day: number): Date {
-  return new Date(Date.UTC(year, month - 1, day, 0, 0, 0) - 7 * 3600 * 1000);
+function zonedMidnightUtc(year: number, month: number, day: number, timeZone: string): Date {
+  const desiredWall = Date.UTC(year,month-1,day,0,0,0);
+  let candidate = desiredWall;
+  for (let attempt=0; attempt<2; attempt += 1) {
+    const parts = new Intl.DateTimeFormat("en-US",{timeZone,year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(new Date(candidate));
+    const get=(type:string)=>Number(parts.find(part=>part.type===type)?.value??0);
+    const representedWall=Date.UTC(get("year"),get("month")-1,get("day"),get("hour"),get("minute"),get("second"));
+    candidate = desiredWall - (representedWall-candidate);
+  }
+  return new Date(candidate);
 }
 
 function addDaysToYmd(year: number, month: number, day: number, delta: number) {
@@ -55,15 +64,15 @@ function addDaysToYmd(year: number, month: number, day: number, delta: number) {
 const ymd = (p: { year: number; month: number; day: number }) =>
   `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(2, "0")}`;
 
-export function computePeriod(frequency: Frequency, now = bkkNow()) {
-  const todayMidnight = bkkMidnightUtc(now.year, now.month, now.day);
+export function computePeriod(frequency: Frequency, now = storeLocalNow(), timeZone = DEFAULT_STORE_TIMEZONE) {
+  const todayMidnight = zonedMidnightUtc(now.year, now.month, now.day, timeZone);
   if (frequency === "DAILY") {
     const start = addDaysToYmd(now.year, now.month, now.day, -1);
-    return { periodStart: bkkMidnightUtc(start.year, start.month, start.day), periodEnd: todayMidnight, periodKey: `DAILY:${ymd(start)}` };
+    return { periodStart: zonedMidnightUtc(start.year, start.month, start.day,timeZone), periodEnd: todayMidnight, periodKey: `DAILY:${ymd(start)}` };
   }
   if (frequency === "WEEKLY") {
     const start = addDaysToYmd(now.year, now.month, now.day, -7);
-    return { periodStart: bkkMidnightUtc(start.year, start.month, start.day), periodEnd: todayMidnight, periodKey: `WEEKLY:${ymd(start)}` };
+    return { periodStart: zonedMidnightUtc(start.year, start.month, start.day,timeZone), periodEnd: todayMidnight, periodKey: `WEEKLY:${ymd(start)}` };
   }
   // MONTHLY — เดือนปฏิทินก่อนหน้าเต็มเดือน
   const prevMonth = new Date(Date.UTC(now.year, now.month - 1, 1));
@@ -71,16 +80,16 @@ export function computePeriod(frequency: Frequency, now = bkkNow()) {
   const py = prevMonth.getUTCFullYear();
   const pm = prevMonth.getUTCMonth() + 1;
   return {
-    periodStart: bkkMidnightUtc(py, pm, 1),
-    periodEnd: bkkMidnightUtc(now.year, now.month, 1),
+    periodStart: zonedMidnightUtc(py, pm, 1,timeZone),
+    periodEnd: zonedMidnightUtc(now.year, now.month, 1,timeZone),
     periodKey: `MONTHLY:${py}-${String(pm).padStart(2, "0")}`,
   };
 }
 
-function periodLabel(frequency: Frequency, periodStart: Date, periodEnd: Date): string {
-  const fmt = (d: Date) => new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", day: "numeric", month: "short", year: "numeric" }).format(d);
+function periodLabel(frequency: Frequency, periodStart: Date, periodEnd: Date, timeZone=DEFAULT_STORE_TIMEZONE): string {
+  const fmt = (d: Date) => new Intl.DateTimeFormat("th-TH", { timeZone, day: "numeric", month: "short", year: "numeric" }).format(d);
   if (frequency === "MONTHLY") {
-    return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }).format(periodStart);
+    return new Intl.DateTimeFormat("th-TH", { timeZone, month: "long", year: "numeric" }).format(periodStart);
   }
   const inclusiveEnd = new Date(periodEnd.getTime() - 1000);
   return `${fmt(periodStart)} – ${fmt(inclusiveEnd)}`;
@@ -92,7 +101,7 @@ const FREQ_LABEL_TH: Record<Frequency, string> = { DAILY: "รายวัน", 
  *  (เช็คจาก last_period_key แยกต่างหากใน runScheduledDigests เพื่อกันส่งซ้ำถ้า cron ยิงถี่กว่า 1 ชม.) */
 export function shouldSendNow(
   sub: { frequency: Frequency; sendHour: number; sendWeekday: number | null; sendDayOfMonth: number | null },
-  now = bkkNow()
+  now = storeLocalNow()
 ): boolean {
   if (now.hour !== sub.sendHour) return false;
   if (sub.frequency === "WEEKLY") return sub.sendWeekday == null || now.weekday === sub.sendWeekday;
@@ -563,14 +572,19 @@ export async function sendDigestForTenant(
   const sub = rawSub.rows[0];
   if (!sub) throw new Error("ร้านนี้ยังไม่ได้ตั้งค่าระบบส่งรายงาน");
 
-  const [tenantName, profile, summary] = await Promise.all([
+  const [tenantName, profile, summary, resolvedTimeZone] = await Promise.all([
     getTenantName(tenantId),
     getStoreProfile(tenantId),
     computeSalesSummary(tenantId, periodStart, periodEnd),
+    resolveStoreTimezone(tenantId),
   ]);
   const name = tenantName || "ร้านค้า";
   const themeColor = profile.emailThemeColor || DEFAULT_EMAIL_THEME_COLOR;
-  const periodLbl = periodLabel(frequency, periodStart, periodEnd);
+  const profileTimeZone = profile.timezone?.trim();
+  const timeZone = profileTimeZone && isValidTimeZone(profileTimeZone)
+    ? profileTimeZone
+    : resolvedTimeZone;
+  const periodLbl = periodLabel(frequency, periodStart, periodEnd, timeZone);
   const suffix = opts.isTest ? " (ทดสอบ)" : "";
 
   const results: ChannelResult[] = [];
@@ -627,16 +641,18 @@ export async function sendTestDigest(tenantId: string): Promise<{ results: Chann
 /** cron entrypoint — สแกนทุกร้านที่เปิดใช้งาน ส่งเฉพาะร้านที่ตรงตารางเวลาและยังไม่เคยส่งรอบนี้
  *  ออกแบบให้เรียกถี่แค่ไหนก็ได้ (เช่นทุกชั่วโมง) โดย idempotency มาจาก last_period_key ไม่ใช่ความถี่ cron */
 export async function runScheduledDigests(): Promise<{ processed: number; sent: number; results: any[] }> {
-  const now = bkkNow();
+  const instant = new Date();
   const { rows: subs } = await query<any>(
     `SELECT tenant_id, frequency, send_hour, send_weekday, send_day_of_month, last_period_key
        FROM bms_report_subscriptions WHERE enabled = true`
   );
   const out: any[] = [];
   for (const s of subs) {
+    const timeZone = await resolveStoreTimezone(s.tenant_id);
+    const now = storeLocalNow(timeZone,instant);
     const cfg = { frequency: s.frequency as Frequency, sendHour: s.send_hour, sendWeekday: s.send_weekday, sendDayOfMonth: s.send_day_of_month };
     if (!shouldSendNow(cfg, now)) continue;
-    const { periodStart, periodEnd, periodKey } = computePeriod(cfg.frequency, now);
+    const { periodStart, periodEnd, periodKey } = computePeriod(cfg.frequency, now,timeZone);
     if (s.last_period_key === periodKey) continue; // ส่งไปแล้วรอบนี้ (เช็คแบบถูกที่สุดจากค่าที่เพิ่งอ่าน)
 
     // จองรอบนี้แบบ compare-and-set ก่อนส่งจริง — เช็คจากค่าที่อ่านมาข้างบนอย่างเดียวไม่พอเมื่อมี

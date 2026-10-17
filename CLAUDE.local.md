@@ -7691,3 +7691,60 @@ pending non-cash, second approver, serial, cross-branch และ immutable hist
 - rollout: backup `bms_master_barcodes` และ `bms_pharmacy_product_policies`; apply `10.81` ก่อน `10.82`,
   ตรวจ direct table write ของ `bms_app` ถูกปฏิเสธแต่สอง function execute ได้, sample ยัง inactive และไม่มี active
   real-drug rows; rollback app ก่อนและเก็บ policy snapshot columns จน export/review เสร็จ เพราะการ drop จะทำลาย provenance
+
+### Master data — Phase 1–8 audit and Phase 8 corrections (`10.84`–`10.85`, 2026-10-17)
+
+- audit prompt/migrations/services/GraphQL/UI/contracts ของ Phase 1–8 พบและแก้ 3 production gaps:
+  country authority ใช้ `UK` แทน ISO `GB`, report centre/service-day บางเส้นทางยังล็อก Bangkok/อ่าน legacy
+  timezone ก่อน code, และ future AI rates อาจมีช่วง effective ซ้อนถ้าเพิ่มไม่เรียงเวลา
+- เพิ่ม corrective migrations `10.84`–`10.85`: ย้าย profile `UK` ไป `GB` โดยเก็บ `UK` inactive, เปลี่ยน
+  sync trigger, รักษา unknown-reference ledger หลัง backfill, normalize ช่วง rate เดิมโดยไม่แตะ finalized
+  usage event และ serialize provider/model timeline ก่อนเพิ่ม rate ใหม่
+- report centre ทั้งโมดูลและ restaurant ordering/menu reset/waitlist/customer reservation/pharmacy lot date
+  อ่าน validated `timezone_code` ก่อน โดย fallback legacy timezone แล้วจึง `Asia/Bangkok`; Thai golden ไม่เปลี่ยน
+- เพิ่ม Phase 8 DB contract และแก้ DB test harness Phase 1–4 ให้ resolve `pg` จาก workspace จริง รวมถึง teardown
+  Phase 6–7 ให้ลบ product fixtures ก่อน tenant; ล้าง FAKE rows จากรอบแดงแล้วและตรวจเหลือ 0 tenant
+- verify: `10.84`–`10.85` apply และ rerun ผ่านบน local dev; focused pure Phase 8 **7/7**, DB Phase 1–8 **25/25**,
+  full gate ผ่าน (pure **2,924/2,930**, skip 6, fail 0 + production build) และ `git diff --check` ผ่าน;
+  browser authenticated desktop/mobile ยังไม่ได้ตรวจเพราะ active Comet session
+  ถูกผู้ใช้สลับระหว่างรอบตรวจ
+- rollout: backup `bms_master_countries`, `bms_store_profile`, `bms_master_ai_rates`, `bms_plans`; apply ตามลำดับ
+  `10.76` → … → `10.83` → `10.84` → `10.85`; หลัง apply ตรวจ active country เป็น `TH/AU/GB`, `UK` inactive,
+  ไม่มี profile อ้าง `UK`, AI rate แต่ละ provider/model ไม่มีช่วงซ้อน และห้าม import AU/UK locality จนผ่าน
+  residency/licence review. Rollback app ก่อนเสมอ; อย่าลบ `GB`, profile codes, rate history หรือ finalized AI cost.
+
+### Master data — repeat audit Phase 1–8 (`10.86`, 2026-10-17)
+
+- แก้ Phase 1/3 writer ที่ใช้ direct INSERT บน global master: เปลี่ยน service ให้ลดสิทธิ์เป็น `bms_app`,
+  ตั้ง audit tenant GUC และเรียก narrow functions ใน `10.86`; function ตรวจ platform-admin จาก editor ID อีกชั้น
+  โดยคง SELECT-only grants บนตารางและ revision. ทดสอบ service จริงทั้ง insert/update/audit และ ordinary-admin denial;
+  audit ล้มเหลวแล้วทั้ง master update และ revision rollback จริง
+- แก้ SQL timezone ใน reports/menu/order/waitlist/customer/pharmacy lot paths: ตรวจชื่อกับ `pg_timezone_names`
+  และ trim ก่อนใช้ จึง fallback ได้เมื่อค่า legacy ไม่ถูกต้อง; ไม่แก้เวลาที่เก็บไว้หรือ snapshot เก่า
+- แก้ store-profile partial locale update ให้ตรวจเฉพาะ field ที่ส่งมา การแก้ currency ไม่บังคับให้แก้ unknown
+  country/timezone พร้อมกัน และ unresolved ledger ยังเก็บข้อที่เหลือ
+- DB master-data **29/29** ผ่าน local; เพิ่ม 6 SQL-writer mutation checks (เปลี่ยนเป็น SECURITY INVOKER ภายใน
+  savepoint แล้วต้องโดน 42501) และคืน function/role ทุกครั้ง; narrow pure master-data **52/52** ผ่าน
+- full gate รอบสุดท้ายผ่าน: typecheck, pure **2,924/2,930** (skip 6, fail 0), production build;
+  `git diff --check` ผ่าน; ยืนยัน function ทั้ง 7 กลับเป็น SECURITY DEFINER และ fixture tenant/user เหลือ 0
+- `10.86` apply + rerun บน local dev สำเร็จ ไม่มี data rewrite; deploy ต้อง apply หลัง `10.85` ก่อน web code
+  backup function definitions/grants; rollback app ก่อนแล้ว revoke new EXECUTE grants หากต้องถอน เก็บ data/history ไว้
+- browser เปิด `/admin/master-data` ผ่านแท็บ IAB แยกแล้ว redirect ไป `/admin/login` ตาม guard; ยังไม่ได้ยืนยัน
+  ฟอร์มหลัง authenticated session หรือ layout desktop/mobile. ไม่ commit/push/deploy หรือ apply production
+
+### Master data — authenticated UI follow-up (2026-10-17)
+
+- ใช้ temporary platform admin + tenant บน host dev port 3002/Redis แยก เพราะ Docker UI port 3001
+  มี GraphQL public URL ข้าม origin; ไม่แก้ local env หรือ Docker config ที่ผู้ใช้ใช้อยู่
+- เปิด Master Data ครบ 10 แท็บ; save inactive test bank สำเร็จผ่าน UI และพบ audit row 1 แถว;
+  package impact preview แสดง confirm gate แล้ว cancel โดยไม่เปลี่ยนแผน/rates; drug SAMPLE ยัง inactive
+- ตรวจ desktop 1440×1000 และ mobile 390×844: แก้ table overflow, search width และ form wrapping;
+  mobile document width เท่ากับ viewport 390px. แสดงสถานะ UK inactive และแปล plan name/limit labels th↔en
+- เพิ่ม pure regression guard สำหรับ table scroll/form wrapping/country status. Focused Phase 8 ผ่าน 8/8
+  ก่อนแก้ label; full gate หลังแก้ทั้งหมดบันทึกในผลตรวจท้ายรายการนี้
+- ล้าง fixture bank/user/tenant แล้วตรวจเหลือ 0 ทั้งสามชนิด; หยุด isolated dev server และ temporary Redis
+  (ข้อมูลทดสอบไม่มี backup และไม่ได้แตะข้อมูลร้านจริง). รูปหลักฐานอยู่ใน task visualization directory
+- ขอบเขต browser คือ Master Data เท่านั้น; consumer forms/tenant drug draft apply ไม่ได้ browser smoke ครบ
+  และไม่แทนที่ dataset licence/residency/pharmacist ownership review. ไม่ commit/push/deploy
+- gate หลัง UI corrections ผ่านครบ: typecheck + pure **2,917/2,923** (skip 6, fail 0, 248 files)
+  + production build; `git diff --check` ผ่าน. จำนวน test ใช้ผลรันรอบนี้ ไม่อ้างยอดจากรอบก่อน

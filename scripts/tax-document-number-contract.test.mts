@@ -122,7 +122,10 @@ test("the e-Tax loader reads issue_date as text and names the seller from bms_te
 test("management report treats credit notes as negative", () => {
   const src = read("apps/web/lib/bms/reports.ts");
   assert.ok(/CASE WHEN d\.doc_type = 'CREDIT_NOTE' THEN -d\.grand_total ELSE d\.grand_total END/.test(src));
-  assert.ok(/AND d\.doc_type <> 'CREDIT_NOTE'[\s\S]{0,400}AS tax_document_count/.test(src));
+  const countQuery = src.match(/\(SELECT COUNT\(\*\)::int FROM bms_tax_documents d[\s\S]*? AS tax_document_count/)?.[0];
+  assert.ok(countQuery, "tax document count query must exist");
+  assert.ok(/AND d\.doc_type <> 'CREDIT_NOTE'/.test(countQuery));
+  assert.ok(/AND d\.doc_type <> 'DEBIT_NOTE'/.test(countQuery));
 });
 
 test("a failed credit note opens an incident instead of only logging", () => {

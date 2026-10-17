@@ -843,6 +843,16 @@ export const typeDefs = /* GraphQL */ `
     source: String
     sourceVersion: String
   }
+  type BmsPlatformCountry { code: String!, nameTh: String!, nameEn: String!, defaultCurrencyCode: String!, defaultTimezoneCode: String!, addressDatasetStatus: String!, active: Boolean! }
+  type BmsPlatformCurrency { code: String!, nameTh: String!, nameEn: String!, symbol: String!, minorUnits: Int!, active: Boolean! }
+  type BmsPlatformTimezone { code: String!, nameTh: String!, nameEn: String!, active: Boolean! }
+  type BmsPlatformReferenceIssue { field: String!, rawValue: String!, shops: Int! }
+  type BmsPlatformReferences { source: String!, countries: [BmsPlatformCountry!]!, currencies: [BmsPlatformCurrency!]!, timezones: [BmsPlatformTimezone!]!, unresolved: [BmsPlatformReferenceIssue!]! }
+  type BmsPlanCatalog { code: String!, name: String!, priceMonthly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]!, version: Int!, updatedAt: String }
+  input BmsPlanCatalogInput { code: String!, expectedVersion: Int!, name: String!, priceMonthly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]! }
+  type BmsPlanCatalogPreview { code: String!, version: Int!, affectedTenants: Int!, featureGrantedTenants: Int!, featureRevokedTenants: Int!, grantedFeatures: [String!]!, revokedFeatures: [String!]!, previewToken: String! }
+  type BmsAiRateCard { id: ID!, provider: String!, model: String!, inputUsdPerMillion: Float!, outputUsdPerMillion: Float!, cacheCreationMultiplier: Float!, cacheReadMultiplier: Float!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
+  input BmsAiRateCardInput { provider: String!, model: String!, inputUsdPerMillion: Float!, outputUsdPerMillion: Float!, cacheCreationMultiplier: Float, cacheReadMultiplier: Float, effectiveFrom: String!, source: String!, sourceVersion: String! }
   type BmsMasterThaiAddress {
     level: String!
     id: ID!
@@ -1319,6 +1329,10 @@ export const typeDefs = /* GraphQL */ `
     bmsMasterTaxReferences: BmsMasterTaxReferences!
     bmsMasterBarcodes(search: String, status: String, limit: Int): [BmsMasterBarcode!]!
     bmsMasterDrugs(search: String, includeInactive: Boolean, limit: Int): [BmsMasterDrug!]!
+    bmsPlatformReferences: BmsPlatformReferences!
+    bmsPlanCatalog: [BmsPlanCatalog!]!
+    bmsAiRateCards: [BmsAiRateCard!]!
+    bmsPreviewPlanCatalogChange(input: BmsPlanCatalogInput!): BmsPlanCatalogPreview!
     bmsShippingZones: [BmsShippingZone!]!
     bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
     bmsEtaxSummary: BmsEtaxSummary!
@@ -5401,6 +5415,8 @@ export const typeDefs = /* GraphQL */ `
     bmsUpsertMasterCarrier(input: BmsMasterCarrierInput!): BmsMasterCarrier!
     bmsReviewMasterBarcode(input: BmsMasterBarcodeReviewInput!): BmsMasterBarcode!
     bmsUpsertMasterDrug(input: BmsMasterDrugInput!): BmsMasterDrug!
+    bmsUpdatePlanCatalog(input: BmsPlanCatalogInput!, previewToken: String!, confirmed: Boolean!): BmsPlanCatalog!
+    bmsAddAiRateCard(input: BmsAiRateCardInput!): BmsAiRateCard!
     bmsSetShippingZoneOverride(provinceCode: String!, zone: String): Boolean!
     bmsDeleteProductPack(id: ID!): Boolean!
     bmsRunEtaxQueue(limit: Int = 20): BmsEtaxRunResult!

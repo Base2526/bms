@@ -40,7 +40,8 @@ export async function getPharmacyProductFacts(tenantId: string, sku: string, loc
          JOIN bms_store_profile profile ON profile.tenant_id = lot.tenant_id
         WHERE lot.tenant_id = $1 AND lot.product_sku = $2 AND lot.location_id = $3 AND lot.size = $4
           AND lot.qty > 0 AND (lot.expiry_date IS NULL OR lot.expiry_date >=
-            (now() AT TIME ZONE COALESCE(NULLIF(profile.timezone, ''), 'Asia/Bangkok'))::date)`,
+            (now() AT TIME ZONE COALESCE((SELECT tz.name FROM pg_timezone_names tz WHERE tz.name =
+              COALESCE(NULLIF(btrim(to_jsonb(profile)->>'timezone_code'), ''), NULLIF(btrim(profile.timezone), ''))), 'Asia/Bangkok'))::date)`,
       [tenantId, sku, locationId, size]
     );
     const summary = lots.rows[0];

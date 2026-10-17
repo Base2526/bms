@@ -3,7 +3,7 @@
 ข้อมูลกลางของแพลตฟอร์ม (ไม่ใช่ของร้านใดร้านหนึ่ง) แบ่งเป็น 8 เฟส · ทำทีละเฟสตามลำดับ
 เพราะเฟสหลังพึ่งตารางของเฟสก่อน · **แต่ละเฟสใช้ได้โดยแปะ "ส่วนกลาง" + "เฟสนั้น" ต่อกัน**
 
-สถานะ ณ 2026-10-16 (ตรวจจากรีโป ไม่ใช่จากฐาน production):
+สถานะตั้งต้นก่อนเริ่มโครงการ (ผลหลังทำแต่ละเฟสอยู่ในตารางท้ายไฟล์ ไม่ใช่สถานะฐาน production):
 
 | สิ่งที่มี | เก็บที่ไหน |
 | --- | --- |
@@ -351,11 +351,25 @@ F. archetype/capability presets ย้ายเข้า DB **เฉพาะเ
 
 | เฟส | branch | migration | สถานะ | ยังไม่ได้ verify |
 | --- | --- | --- | --- | --- |
-| 1 | `feat/master-data-phase-1` | `10.76` | ทำโค้ดครบ: master tables/service/GraphQL/UI, bank+unit integration, customer autocomplete, importer, audit+revision, tests | DB contract และ browser desktop/mobile ยังไม่ได้ verify |
-| 2 | `feat/master-data-phase-2` | `10.77` | ทำโค้ดครบ: structured address resolver/snapshots, customer checkout+AI, tax request/full invoice, store/branch forms, legacy matcher; focused+full gate ผ่าน และ browser guard responsive smoke ผ่าน | DB contract และฟอร์ม browser หลัง login ยังไม่ได้ verify; รอคำตอบเรื่องบังคับ code สำหรับ COMPANY ใหม่ |
-| 3 | `feat/master-data-phase-3` | `10.78` | ทำโค้ดครบ: carrier/shipping-zone master, tenant override, snapshots, importer integration และ UI | ดูผล verify ในประวัติ branch |
+| 1 | `feat/master-data-phase-1` | `10.76` + corrective `10.86` | ทำโค้ดครบ: master tables/service/GraphQL/UI, bank+unit integration, customer autocomplete, importer, audit+revision; editor ลดสิทธิ์เป็น bms_app และเขียนผ่าน narrow functions; DB ทดสอบ service จริง + rollback/audit; browser master bank save+audit และ desktop/mobile ผ่าน | consumer forms นอกหน้า Master Data ยังไม่ได้ browser smoke ครบ |
+| 2 | `feat/master-data-phase-2` | `10.77` | ทำโค้ดครบ: structured address resolver/snapshots, customer checkout+AI, tax request/full invoice, store/branch forms, legacy matcher; focused/full gate และ DB contract ผ่าน | ฟอร์ม browser หลัง login ยังไม่ได้ verify; รอคำตอบเรื่องบังคับ code สำหรับ COMPANY ใหม่ |
+| 3 | `feat/master-data-phase-3` | `10.78` + corrective `10.86` | ทำโค้ดครบ: carrier/shipping-zone master, tenant override, snapshots, importer integration และ UI; carrier/zone writes ผ่าน narrow functions และ DB contract ผ่าน; browser carrier tab แสดง MOCK/NONE ตามข้อมูลจริง | shipping consumer forms ยังไม่ได้ browser smoke ครบ |
 | 4 | `feat/master-data-phase-4` | `10.79` | ทำโค้ดครบ: tax document/VAT/buyer reference, effective-date resolution, readiness และ UI | ดูผล verify ในประวัติ branch |
 | 5 | `feat/master-data-phase-5` | `10.80` | ทำโค้ดครบ: starter categories/units, holiday importer, emergency master+fallback, onboarding integration | browser หลัง login และ production dataset วันหยุดต้อง verify แยก |
 | 6 | `feat/master-data-phase-6` | `10.81` | merge แล้ว: barcode master cache, opt-in merchant candidate, platform review และ autofill ก่อน provider | ดูผล verify ในประวัติ branch; provider payload ยังไม่ cache ตามข้อสัญญา |
-| 7 | `feat/master-data-phase-7` | `10.82` | ทำโค้ดครบ: effective-dated drug suggestions, Phase 6 barcode/manual link, tenant Draft snapshot, permission+same-tx audit, UI/GraphQL/docs/tests | DB contract และ browser หลัง login ยังไม่ได้ verify; ยังไม่มีเภสัชกรผู้รับผิดชอบจึงไม่มี seed ยาจริง |
-| 8 | — | — | ยังไม่เริ่ม | — |
+| 7 | `feat/master-data-phase-7` | `10.82` | ทำโค้ดครบ: effective-dated drug suggestions, Phase 6 barcode/manual link, tenant Draft snapshot, permission+same-tx audit, UI/GraphQL/docs/tests; DB contract ผ่านใน audit 2026-10-17; browser master tab ยืนยัน SAMPLE ปิดใช้และคำเตือน | tenant draft/apply flow ยังไม่ได้ browser smoke; ยังไม่มีเภสัชกรผู้รับผิดชอบจึงไม่มี seed ยาจริง |
+| 8 | `feat/master-data-phase-8` | `10.83` + corrective `10.84`–`10.85` | ทำโค้ดครบ: country/currency/timezone FK+live unknown ledger, ISO `GB` correction, store-timezone report/digest/service-day rollout, non-overlapping effective AI rates, plan preview/version/audit UI, AU/UK schema-only; audit ซ้ำเพิ่ม invalid-timezone fallback และ partial locale repair; DB master-data ผ่าน 29/29 บน local; authenticated browser desktop/mobile, plan preview/cancel, rate cards และ inactive UK status ผ่าน | ไม่เปลี่ยนแพ็กเกจหรือ rate จริงผ่าน browser; AU/UK ยังห้าม import จนผ่าน residency/licence review; archetype preset คง release contract เพื่อไม่ให้ Retail Local ต่างจาก cloud |
+
+### Browser follow-up (2026-10-17)
+
+- ตรวจ `/admin/master-data` ครบ 10 แท็บด้วย temporary platform admin บน isolated local dev server;
+  desktop 1440×1000 และ mobile 390×844. บันทึกธนาคารทดสอบแบบ inactive ผ่าน UI แล้วตรวจ audit ใน DB;
+  หน้าแพ็กเกจ preview แสดง confirm gate และยกเลิกโดยไม่เปลี่ยนแพ็กเกจ
+- แก้ table overflow ให้ scroll ภายในตาราง, search/form fields ให้พอดีมือถือ, แสดง active/inactive country
+  (UK legacy ปิดใช้), และแปลชื่อแพ็กเกจ/limit labels th↔en. เพิ่ม pure regression contract ครอบคลุม layout guards
+- fixture user/tenant/bank ถูกล้างและตรวจเหลือ 0; temporary dev server/Redis หยุดแล้ว.
+  ไม่แตะ production, ไม่ส่ง provider request และไม่เปลี่ยน clinical guidance
+- browser smoke นี้ไม่ใช่ end-to-end ของทุก consumer form ใน Phase 1–8;
+  ตารางด้านบนระบุจุดที่ยังไม่ได้ browser verify แยกจาก DB/pure contracts
+- gate หลัง UI corrections ผ่าน typecheck + pure 2,917/2,923 (skip 6, fail 0) + production build;
+  DB contracts จาก repeat audit ผ่าน 29/29 และ `git diff --check` ผ่าน

@@ -869,6 +869,10 @@ follow this same shape rather than inventing a separate preview-only query/REST 
 `bmsReportSchedule.ts` splits into a tenant-facing half and a platform-admin half, both backed by
 `lib/bms/reportDigest.ts`:
 
+- Schedule matching, report boundaries, and labels use each store's validated IANA timezone from
+  `bms_store_profile.timezone_code`. `Asia/Bangkok` remains the code fallback during rollout or a
+  reference-data outage; DST boundaries come from `Intl`, not a fixed UTC offset.
+
 - `bmsReportSubscription` / `bmsReportDeliveries` require an admin session and `report.view`.
   `bmsUpsertReportSubscription` / `bmsSendTestReportNow` require an admin session and `report.email`,
   matching permission to send business reports outside the system. This also applies to legacy

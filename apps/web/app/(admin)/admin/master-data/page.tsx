@@ -1,7 +1,7 @@
 "use client";
 
-import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, message } from "antd";
+import { gql, useLazyQuery, useMutation, useQuery } from "@apollo/client";
+import { Alert, Button, Card, DatePicker, Form, Input, InputNumber, Modal, Select, Space, Switch, Table, Tabs, Tag, message } from "antd";
 import { PlusOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useState } from "react";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
@@ -20,13 +20,62 @@ const M_ADDRESS = gql`mutation SaveAddress($input:BmsMasterThaiAddressInput!){bm
 const M_CARRIER = gql`mutation SaveCarrier($input:BmsMasterCarrierInput!){bmsUpsertMasterCarrier(input:$input){id}}`;
 const M_BARCODE = gql`mutation ReviewBarcode($input:BmsMasterBarcodeReviewInput!){bmsReviewMasterBarcode(input:$input){id status}}`;
 const M_DRUG = gql`mutation SaveMasterDrug($input:BmsMasterDrugInput!){bmsUpsertMasterDrug(input:$input){id code active reviewedByPharmacist}}`;
+const Q_PLATFORM_REFS = gql`query PlatformReferences{bmsPlatformReferences{source countries{code nameTh nameEn defaultCurrencyCode defaultTimezoneCode addressDatasetStatus active}currencies{code nameTh nameEn symbol minorUnits active}timezones{code nameTh nameEn active}unresolved{field rawValue shops}}}`;
+const Q_PLAN_CATALOG = gql`query PlanCatalog{bmsPlanCatalog{code name priceMonthly maxProducts maxChannels maxOrdersMonth maxUsers maxBranches maxDevices maxAiMessagesMonth aiCreditsMonthly featureKeys version updatedAt}}`;
+const Q_PLAN_PREVIEW = gql`query PlanPreview($input:BmsPlanCatalogInput!){bmsPreviewPlanCatalogChange(input:$input){code version affectedTenants featureGrantedTenants featureRevokedTenants grantedFeatures revokedFeatures previewToken}}`;
+const M_PLAN_CATALOG = gql`mutation UpdatePlanCatalog($input:BmsPlanCatalogInput!,$previewToken:String!,$confirmed:Boolean!){bmsUpdatePlanCatalog(input:$input,previewToken:$previewToken,confirmed:$confirmed){code version}}`;
+const Q_AI_RATES = gql`query AiRates{bmsAiRateCards{id provider model inputUsdPerMillion outputUsdPerMillion cacheCreationMultiplier cacheReadMultiplier effectiveFrom effectiveTo active source sourceVersion}}`;
+const M_AI_RATE = gql`mutation AddAiRate($input:BmsAiRateCardInput!){bmsAddAiRateCard(input:$input){id}}`;
 
 function SearchBar({ value, onChange, reload }: { value: string; onChange: (value: string) => void; reload: () => void }) {
   const { t } = useI18n();
   return <Space style={{ marginBottom: 16 }} wrap>
-    <Input.Search allowClear value={value} onChange={(e) => onChange(e.target.value)} onSearch={reload} placeholder={t("admin_master_data.search")} style={{ width: 320 }} />
+    <Input.Search allowClear value={value} onChange={(e) => onChange(e.target.value)} onSearch={reload} placeholder={t("admin_master_data.search")} style={{ width: "min(320px, calc(100vw - 80px))" }} />
     <Button icon={<ReloadOutlined />} onClick={reload}>{t("admin_master_data.reload")}</Button>
   </Space>;
+}
+
+function PlatformReferencesTab(){
+  const{t}=useI18n();const query=useQuery(Q_PLATFORM_REFS,{fetchPolicy:"cache-and-network"});const data=query.data?.bmsPlatformReferences;
+  return <Space direction="vertical" size="middle" style={{width:"100%"}}>
+    {data?.source==="CODE_FALLBACK"&&<Alert closable showIcon type="warning" message={t("admin_master_data.reference_fallback")}/>}
+    <Alert closable showIcon type="info" message={t("admin_master_data.multi_country_title")} description={t("admin_master_data.multi_country_description")}/>
+    <Button icon={<ReloadOutlined/>} onClick={()=>void query.refetch()}>{t("admin_master_data.reload")}</Button>
+    <Card title={t("admin_master_data.countries")}><Table rowKey="code" loading={query.loading} dataSource={data?.countries??[]} pagination={false} scroll={{x:860}} columns={[
+      {title:t("admin_master_data.status"),dataIndex:"active",width:100,render:(v:boolean)=><Tag color={v?"green":"default"}>{v?t("admin_master_data.active"):t("admin_master_data.inactive")}</Tag>},
+      {title:t("admin_master_data.code"),dataIndex:"code",width:80},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:t("admin_master_data.currency"),dataIndex:"defaultCurrencyCode",width:110},{title:t("admin_master_data.timezone"),dataIndex:"defaultTimezoneCode",width:180},{title:t("admin_master_data.dataset_status"),dataIndex:"addressDatasetStatus",width:160,render:(v:string)=><Tag color={v==="READY"?"green":"orange"}>{v}</Tag>}
+    ]}/></Card>
+    <Card title={t("admin_master_data.currencies_timezones")}><Table rowKey="code" size="small" dataSource={[...(data?.currencies??[]).map((r:any)=>({...r,kind:"CURRENCY",detail:`${r.symbol} · ${r.minorUnits}`})),...(data?.timezones??[]).map((r:any)=>({...r,kind:"TIMEZONE",detail:r.code}))]} pagination={false} scroll={{x:760}} columns={[
+      {title:t("admin_master_data.kind"),dataIndex:"kind",width:120},{title:t("admin_master_data.code"),dataIndex:"code",width:190},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:t("admin_master_data.detail"),dataIndex:"detail"}
+    ]}/></Card>
+    <Card title={t("admin_master_data.unresolved_backfill")}><Table rowKey={(r:any)=>`${r.field}:${r.rawValue}`} size="small" dataSource={data?.unresolved??[]} pagination={false} scroll={{x:500}} columns={[
+      {title:t("admin_master_data.field"),dataIndex:"field"},{title:t("admin_master_data.raw_value"),dataIndex:"rawValue"},{title:t("admin_master_data.affected_shops"),dataIndex:"shops"}
+    ]}/></Card>
+  </Space>;
+}
+
+function PlanCatalogTab(){
+  const{t}=useI18n();const[open,setOpen]=useState(false);const[form]=Form.useForm();
+  const query=useQuery(Q_PLAN_CATALOG,{fetchPolicy:"cache-and-network"});const[preview,{loading:previewing}]=useLazyQuery(Q_PLAN_PREVIEW,{fetchPolicy:"no-cache"});const[save,{loading:saving}]=useMutation(M_PLAN_CATALOG);
+  const edit=(row:any)=>{form.setFieldsValue({...row,expectedVersion:row.version});setOpen(true);};
+  const submit=async()=>{try{const input=await form.validateFields();const result=await preview({variables:{input}});const p=result.data?.bmsPreviewPlanCatalogChange;if(!p)return;Modal.confirm({title:t("admin_master_data.plan_confirm_title"),content:<Space direction="vertical"><span>{t("admin_master_data.affected_shops")}: {p.affectedTenants}</span><span>{t("admin_master_data.feature_granted_shops")}: {p.featureGrantedTenants}</span><span>{t("admin_master_data.feature_revoked_shops")}: {p.featureRevokedTenants}</span></Space>,okText:t("admin_master_data.confirm_save"),okButtonProps:{danger:p.featureRevokedTenants>0},onOk:async()=>{await save({variables:{input,previewToken:p.previewToken,confirmed:true}});message.success(t("admin_master_data.saved"));setOpen(false);await query.refetch();}});}catch(e:any){if(!e?.errorFields)message.error(e?.message??t("admin_master_data.save_error"));}};
+  const limits=[
+    {key:"maxProducts",label:t("admin_master_data.limit_products")},{key:"maxChannels",label:t("admin_master_data.limit_channels")},
+    {key:"maxOrdersMonth",label:t("admin_master_data.limit_orders")},{key:"maxUsers",label:t("admin_master_data.limit_users")},
+    {key:"maxBranches",label:t("admin_master_data.limit_branches")},{key:"maxDevices",label:t("admin_master_data.limit_devices")},
+    {key:"maxAiMessagesMonth",label:t("admin_master_data.limit_ai_messages")},{key:"aiCreditsMonthly",label:t("admin_master_data.limit_ai_credits")}
+  ];
+  return <Card><Alert closable showIcon type="warning" style={{marginBottom:16}} message={t("admin_master_data.plan_warning")} description={t("admin_master_data.plan_warning_description")}/><Table rowKey="code" loading={query.loading} dataSource={query.data?.bmsPlanCatalog??[]} pagination={false} scroll={{x:1100}} columns={[
+    {title:t("admin_master_data.code"),dataIndex:"code",width:110},{title:t("admin_master_data.plan_name"),dataIndex:"name"},{title:t("admin_master_data.price"),dataIndex:"priceMonthly",width:110},{title:t("admin_master_data.features"),dataIndex:"featureKeys",render:(v:string[])=><Space wrap>{v.map(x=><Tag key={x}>{x}</Tag>)}</Space>},{title:t("admin_master_data.version"),dataIndex:"version",width:100,render:(v:number)=>`v${v}`},{title:"",width:90,render:(_:unknown,row:any)=><Button size="small" onClick={()=>edit(row)}>{t("admin_master_data.edit")}</Button>}
+  ]}/><Modal open={open} width={820} title={t("admin_master_data.plan_form")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={previewing||saving} okText={t("admin_master_data.preview")} cancelText={t("admin_master_data.cancel")}><Form form={form} layout="vertical"><Form.Item name="code" label={t("admin_master_data.code")}><Input disabled/></Form.Item><Form.Item name="expectedVersion" hidden><InputNumber/></Form.Item><Space align="start" wrap><Form.Item name="name" label={t("admin_master_data.plan_name")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="priceMonthly" label={t("admin_master_data.price")} rules={[{required:true}]}><InputNumber min={0}/></Form.Item></Space><Space align="start" wrap>{limits.map(({key,label})=><Form.Item key={key} name={key} label={label} rules={[{required:true}]}><InputNumber min={-1}/></Form.Item>)}</Space><Form.Item name="featureKeys" label={t("admin_master_data.features")}><Select mode="multiple" options={["REPORT_SCHEDULE","RETENTION_ENGINE"].map(value=>({value}))}/></Form.Item></Form></Modal></Card>;
+}
+
+function AiRatesTab(){
+  const{t}=useI18n();const[open,setOpen]=useState(false);const[form]=Form.useForm();const query=useQuery(Q_AI_RATES,{fetchPolicy:"cache-and-network"});const[save,state]=useMutation(M_AI_RATE);
+  const submit=async()=>{try{const values=await form.validateFields();await save({variables:{input:{...values,effectiveFrom:values.effectiveFrom.toISOString()}}});message.success(t("admin_master_data.saved"));setOpen(false);form.resetFields();await query.refetch();}catch(e:any){if(!e?.errorFields)message.error(e?.message??t("admin_master_data.save_error"));}};
+  return <Card><Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_master_data.ai_rate_title")} description={t("admin_master_data.ai_rate_description")}/><Button type="primary" icon={<PlusOutlined/>} onClick={()=>setOpen(true)} style={{marginBottom:12}}>{t("admin_master_data.add_ai_rate")}</Button><Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsAiRateCards??[]} pagination={{pageSize:30}} scroll={{x:1050}} columns={[
+    {title:"Provider",dataIndex:"provider",width:120},{title:"Model",dataIndex:"model",width:240},{title:"Input USD/M",dataIndex:"inputUsdPerMillion",width:130},{title:"Output USD/M",dataIndex:"outputUsdPerMillion",width:130},{title:t("admin_master_data.effective_period"),width:260,render:(_:unknown,r:any)=>`${r.effectiveFrom}${r.effectiveTo?` – ${r.effectiveTo}`:" – ∞"}`},{title:t("admin_master_data.source"),dataIndex:"source"},{title:t("admin_master_data.source_version"),dataIndex:"sourceVersion",width:130}
+  ]}/><Modal open={open} title={t("admin_master_data.add_ai_rate")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={state.loading} okText={t("admin_master_data.save")} cancelText={t("admin_master_data.cancel")}><Form form={form} layout="vertical" initialValues={{cacheCreationMultiplier:1,cacheReadMultiplier:1}}><Space align="start" wrap><Form.Item name="provider" label="Provider" rules={[{required:true}]}><Input/></Form.Item><Form.Item name="model" label="Model" rules={[{required:true}]}><Input/></Form.Item></Space><Space align="start" wrap><Form.Item name="inputUsdPerMillion" label="Input USD / 1M" rules={[{required:true}]}><InputNumber min={0}/></Form.Item><Form.Item name="outputUsdPerMillion" label="Output USD / 1M" rules={[{required:true}]}><InputNumber min={0}/></Form.Item><Form.Item name="cacheCreationMultiplier" label="Cache create ×" rules={[{required:true}]}><InputNumber min={0}/></Form.Item><Form.Item name="cacheReadMultiplier" label="Cache read ×" rules={[{required:true}]}><InputNumber min={0}/></Form.Item></Space><Form.Item name="effectiveFrom" label={t("admin_master_data.effective_from")} rules={[{required:true}]}><DatePicker showTime/></Form.Item><Form.Item name="source" label={t("admin_master_data.source")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="sourceVersion" label={t("admin_master_data.source_version")} rules={[{required:true}]}><Input/></Form.Item></Form></Modal></Card>;
 }
 
 function BanksTab() {
@@ -38,13 +87,13 @@ function BanksTab() {
   const submit = async () => { try { await save({variables:{input:await form.validateFields()}}); message.success(t("admin_master_data.saved")); setOpen(false); await query.refetch(); } catch(e:any) { if(!e?.errorFields) message.error(e?.message ?? t("admin_master_data.save_error")); } };
   return <Card><SearchBar value={search} onChange={setSearch} reload={() => void query.refetch()} />
     <Button type="primary" icon={<PlusOutlined />} onClick={() => edit()} style={{ marginBottom: 12 }}>{t("admin_master_data.add_bank")}</Button>
-    <Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsMasterBanks ?? []} pagination={{pageSize:20}} columns={[
+    <Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsMasterBanks ?? []} pagination={{pageSize:20}} scroll={{x:850}} columns={[
       {title:t("admin_master_data.code"),dataIndex:"code",width:90},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},
       {title:"SWIFT/BIC",dataIndex:"swift",width:130},{title:t("admin_master_data.status"),dataIndex:"active",width:100,render:(v)=><Tag color={v?"green":"default"}>{v?t("admin_master_data.active"):t("admin_master_data.inactive")}</Tag>},
       {title:"",width:90,render:(_,row)=><Button size="small" onClick={()=>edit(row)}>{t("admin_master_data.edit")}</Button>},
     ]}/>
     <Modal open={open} title={t("admin_master_data.bank_form")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={state.loading} okText={t("admin_master_data.save")} cancelText={t("admin_master_data.cancel")}>
-      <Form form={form} layout="vertical"><Form.Item name="id" hidden><Input/></Form.Item><Space align="start">
+      <Form form={form} layout="vertical"><Form.Item name="id" hidden><Input/></Form.Item><Space align="start" wrap>
         <Form.Item name="countryCode" label={t("admin_master_data.country")} rules={[{required:true}]}><Input maxLength={2}/></Form.Item>
         <Form.Item name="code" label={t("admin_master_data.code")} rules={[{required:true}]}><Input maxLength={12}/></Form.Item>
         <Form.Item name="sortOrder" label={t("admin_master_data.sort_order")}><InputNumber precision={0}/></Form.Item>
@@ -62,12 +111,12 @@ function UnitsTab() {
   const edit=(row?:any)=>{form.resetFields();form.setFieldsValue(row?{...row,aliases:(row.aliases??[]).join(", ")}:{countryCode:"TH",kind:"COUNT",baseFactor:1,active:true,source:"UNECE Recommendation 20",sourceVersion:"revision 14 (2020)"});setOpen(true);};
   const submit=async()=>{try{const values=await form.validateFields();await save({variables:{input:{...values,aliases:String(values.aliases??"").split(",").map((v)=>v.trim()).filter(Boolean)}}});message.success(t("admin_master_data.saved"));setOpen(false);await query.refetch();}catch(e:any){if(!e?.errorFields)message.error(e?.message??t("admin_master_data.save_error"));}};
   return <Card><SearchBar value={search} onChange={setSearch} reload={()=>void query.refetch()}/><Button type="primary" icon={<PlusOutlined/>} onClick={()=>edit()} style={{marginBottom:12}}>{t("admin_master_data.add_unit")}</Button>
-    <Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsMasterUnits??[]} pagination={{pageSize:20}} columns={[
+    <Table rowKey="id" loading={query.loading} dataSource={query.data?.bmsMasterUnits??[]} pagination={{pageSize:20}} scroll={{x:850}} columns={[
       {title:t("admin_master_data.code"),dataIndex:"code",width:90},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:t("admin_master_data.kind"),dataIndex:"kind",width:110},
       {title:t("admin_master_data.aliases"),dataIndex:"aliases",render:(v:string[])=>(v??[]).join(", ")},{title:t("admin_master_data.status"),dataIndex:"active",width:100,render:(v)=><Tag color={v?"green":"default"}>{v?t("admin_master_data.active"):t("admin_master_data.inactive")}</Tag>},{title:"",width:90,render:(_,row)=><Button size="small" onClick={()=>edit(row)}>{t("admin_master_data.edit")}</Button>},
     ]}/>
     <Modal open={open} title={t("admin_master_data.unit_form")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={state.loading} okText={t("admin_master_data.save")} cancelText={t("admin_master_data.cancel")}>
-      <Form form={form} layout="vertical"><Form.Item name="id" hidden><Input/></Form.Item><Space align="start"><Form.Item name="countryCode" label={t("admin_master_data.country")} rules={[{required:true}]}><Input maxLength={2}/></Form.Item><Form.Item name="code" label={t("admin_master_data.code")} rules={[{required:true}]}><Input maxLength={3}/></Form.Item><Form.Item name="kind" label={t("admin_master_data.kind")} rules={[{required:true}]}><Select options={["COUNT","WEIGHT","VOLUME","LENGTH"].map(value=>({value}))}/></Form.Item></Space>
+      <Form form={form} layout="vertical"><Form.Item name="id" hidden><Input/></Form.Item><Space align="start" wrap><Form.Item name="countryCode" label={t("admin_master_data.country")} rules={[{required:true}]}><Input maxLength={2}/></Form.Item><Form.Item name="code" label={t("admin_master_data.code")} rules={[{required:true}]}><Input maxLength={3}/></Form.Item><Form.Item name="kind" label={t("admin_master_data.kind")} rules={[{required:true}]}><Select options={["COUNT","WEIGHT","VOLUME","LENGTH"].map(value=>({value}))}/></Form.Item></Space>
       <Form.Item name="nameTh" label={t("admin_master_data.name_th")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="nameEn" label={t("admin_master_data.name_en")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="aliases" label={t("admin_master_data.aliases")} extra={t("admin_master_data.aliases_help")}><Input/></Form.Item><Form.Item name="baseFactor" label={t("admin_master_data.base_factor")} rules={[{required:true}]}><InputNumber min={0.000000001} style={{width:"100%"}}/></Form.Item>
       <Form.Item name="source" label={t("admin_master_data.source")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="sourceVersion" label={t("admin_master_data.source_version")} rules={[{required:true}]}><Input/></Form.Item><Form.Item name="active" label={t("admin_master_data.active")} valuePropName="checked"><Switch/></Form.Item></Form>
     </Modal></Card>;
@@ -81,7 +130,7 @@ function AddressesTab(){
   const submit=async()=>{try{await save({variables:{input:await form.validateFields()}});message.success(t("admin_master_data.saved"));setOpen(false);await query.refetch();}catch(e:any){if(!e?.errorFields)message.error(e?.message??t("admin_master_data.save_error"));}};
   const level=Form.useWatch("level",form);
   return <Card><Alert closable showIcon type="info" style={{marginBottom:16}} message={t("admin_master_data.address_import_title")} description={t("admin_master_data.address_import_description")}/><SearchBar value={search} onChange={setSearch} reload={()=>void query.refetch()}/><Button type="primary" icon={<PlusOutlined/>} onClick={()=>edit()} style={{marginBottom:12}}>{t("admin_master_data.add_address")}</Button>
-    <Table rowKey="id" loading={query.loading} dataSource={rows} pagination={{pageSize:30}} columns={[
+    <Table rowKey="id" loading={query.loading} dataSource={rows} pagination={{pageSize:30}} scroll={{x:850}} columns={[
       {title:t("admin_master_data.level"),dataIndex:"level",width:120},{title:t("admin_master_data.code"),dataIndex:"code",width:100},{title:t("admin_master_data.name_th"),dataIndex:"nameTh"},{title:t("admin_master_data.name_en"),dataIndex:"nameEn"},{title:t("admin_master_data.postcode"),dataIndex:"postcode",width:100},{title:t("admin_master_data.status"),dataIndex:"active",width:100,render:(v)=><Tag color={v?"green":"default"}>{v?t("admin_master_data.active"):t("admin_master_data.inactive")}</Tag>},{title:"",width:90,render:(_,row)=><Button size="small" onClick={()=>edit(row)}>{t("admin_master_data.edit")}</Button>},
     ]}/>
     <Modal open={open} title={t("admin_master_data.address_form")} onCancel={()=>setOpen(false)} onOk={()=>void submit()} confirmLoading={state.loading} okText={t("admin_master_data.save")} cancelText={t("admin_master_data.cancel")}>
@@ -160,4 +209,4 @@ function DrugsTab(){
   </Card>;
 }
 
-export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>},{key:"carriers",label:t("admin_master_data.carriers"),children:<CarriersTab/>},{key:"barcodes",label:t("admin_master_data.barcodes"),children:<BarcodesTab/>},{key:"drugs",label:t("admin_master_data.drugs"),children:<DrugsTab/>},{key:"tax",label:t("admin_master_data.tax"),children:<TaxReferencesTab/>}]}/></Space>}
+export default function MasterDataPage(){const{t}=useI18n();return <Space direction="vertical" size="large" style={{width:"100%"}}><AdminPageHeader title={t("admin_master_data.title")}/><Alert closable showIcon type="warning" message={t("admin_master_data.warning_title")} description={t("admin_master_data.warning_description")}/><Tabs items={[{key:"platform",label:t("admin_master_data.platform_settings"),children:<PlatformReferencesTab/>},{key:"plans",label:t("admin_master_data.plans"),children:<PlanCatalogTab/>},{key:"ai-rates",label:t("admin_master_data.ai_rates"),children:<AiRatesTab/>},{key:"banks",label:t("admin_master_data.banks"),children:<BanksTab/>},{key:"units",label:t("admin_master_data.units"),children:<UnitsTab/>},{key:"addresses",label:t("admin_master_data.addresses"),children:<AddressesTab/>},{key:"carriers",label:t("admin_master_data.carriers"),children:<CarriersTab/>},{key:"barcodes",label:t("admin_master_data.barcodes"),children:<BarcodesTab/>},{key:"drugs",label:t("admin_master_data.drugs"),children:<DrugsTab/>},{key:"tax",label:t("admin_master_data.tax"),children:<TaxReferencesTab/>}]}/></Space>}

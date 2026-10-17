@@ -224,6 +224,33 @@ type BmsAiQualityMetrics {
   unresolvedRate: Float!
 }
 
+type BmsAiRateCard {
+  active: Boolean!
+  cacheCreationMultiplier: Float!
+  cacheReadMultiplier: Float!
+  effectiveFrom: String!
+  effectiveTo: String
+  id: ID!
+  inputUsdPerMillion: Float!
+  model: String!
+  outputUsdPerMillion: Float!
+  provider: String!
+  source: String!
+  sourceVersion: String!
+}
+
+input BmsAiRateCardInput {
+  cacheCreationMultiplier: Float
+  cacheReadMultiplier: Float
+  effectiveFrom: String!
+  inputUsdPerMillion: Float!
+  model: String!
+  outputUsdPerMillion: Float!
+  provider: String!
+  source: String!
+  sourceVersion: String!
+}
+
 type BmsAiSynonymCandidate {
   firstSeenAt: String!
   id: ID!
@@ -3538,6 +3565,90 @@ type BmsPlan {
   max_users: Int!
   name: String!
   price_monthly: Float!
+}
+
+type BmsPlanCatalog {
+  aiCreditsMonthly: Int!
+  code: String!
+  featureKeys: [String!]!
+  maxAiMessagesMonth: Int!
+  maxBranches: Int!
+  maxChannels: Int!
+  maxDevices: Int!
+  maxOrdersMonth: Int!
+  maxProducts: Int!
+  maxUsers: Int!
+  name: String!
+  priceMonthly: Float!
+  updatedAt: String
+  version: Int!
+}
+
+input BmsPlanCatalogInput {
+  aiCreditsMonthly: Int!
+  code: String!
+  expectedVersion: Int!
+  featureKeys: [String!]!
+  maxAiMessagesMonth: Int!
+  maxBranches: Int!
+  maxChannels: Int!
+  maxDevices: Int!
+  maxOrdersMonth: Int!
+  maxProducts: Int!
+  maxUsers: Int!
+  name: String!
+  priceMonthly: Float!
+}
+
+type BmsPlanCatalogPreview {
+  affectedTenants: Int!
+  code: String!
+  featureGrantedTenants: Int!
+  featureRevokedTenants: Int!
+  grantedFeatures: [String!]!
+  previewToken: String!
+  revokedFeatures: [String!]!
+  version: Int!
+}
+
+type BmsPlatformCountry {
+  active: Boolean!
+  addressDatasetStatus: String!
+  code: String!
+  defaultCurrencyCode: String!
+  defaultTimezoneCode: String!
+  nameEn: String!
+  nameTh: String!
+}
+
+type BmsPlatformCurrency {
+  active: Boolean!
+  code: String!
+  minorUnits: Int!
+  nameEn: String!
+  nameTh: String!
+  symbol: String!
+}
+
+type BmsPlatformReferenceIssue {
+  field: String!
+  rawValue: String!
+  shops: Int!
+}
+
+type BmsPlatformReferences {
+  countries: [BmsPlatformCountry!]!
+  currencies: [BmsPlatformCurrency!]!
+  source: String!
+  timezones: [BmsPlatformTimezone!]!
+  unresolved: [BmsPlatformReferenceIssue!]!
+}
+
+type BmsPlatformTimezone {
+  active: Boolean!
+  code: String!
+  nameEn: String!
+  nameTh: String!
 }
 
 type BmsPosApprover {
@@ -8636,6 +8747,7 @@ type Mutation {
   addMember(chat_id: ID!, user_id: ID!): Boolean!
   blockNumber(phoneNumber: String!): PhoneCenterActionPayload!
   blockPhone(input: BlockPhoneInput!): BlockPhonePayload!
+  bmsAddAiRateCard(input: BmsAiRateCardInput!): BmsAiRateCard!
   bmsAddConversationHelper(id: ID!, userId: ID!): Boolean!
   bmsAddConversationNote(body: String!, id: ID!, mentionedUserIds: [ID!]): BmsConversationNote
   bmsAddCustomerAddress(address: String!, districtCode: String, id: ID!, isDefault: Boolean, label: String, postcode: String, provinceCode: String, subdistrictCode: String): BmsCustomerAddress!
@@ -8933,6 +9045,7 @@ type Mutation {
   bmsUpdateLoyaltySettings(input: BmsLoyaltySettingsInput!): BmsLoyaltySettings!
   bmsUpdateMyTenant(name: String, slug: String): BmsTenantInfo!
   bmsUpdateOnboardingProgress(completed: [String!], dismissed: Boolean, skipped: [String!]): BmsOnboardingProgress!
+  bmsUpdatePlanCatalog(confirmed: Boolean!, input: BmsPlanCatalogInput!, previewToken: String!): BmsPlanCatalog!
   bmsUpdateRestaurantTable(patch: BmsRestaurantTablePatchInput!, tableId: ID!): BmsRestaurantTableAdmin!
   bmsUpdateSocialAuthSetting(confirm: Boolean!, input: BmsSocialAuthSettingInput!): BmsSocialAuthSetting!
   bmsUpdateSupportTicket(input: BmsUpdateSupportTicketInput!): BmsSupportTicket!
@@ -9285,6 +9398,7 @@ type Query {
   bmsAiQualityCase(id: ID!): BmsAiQualityCaseDetail
   bmsAiQualityCases(days: Int = 30, limit: Int = 50, offset: Int = 0, outcome: String, source: String, status: String): [BmsAiQualityCase!]!
   bmsAiQualityMetrics(days: Int = 30): BmsAiQualityMetrics!
+  bmsAiRateCards: [BmsAiRateCard!]!
   bmsAiSynonymCandidates(limit: Int = 50, status: String = "PENDING"): [BmsAiSynonymCandidate!]!
   bmsAiUsage: BmsAiUsage!
   bmsAiUsageBreakdown(limit: Int): [BmsAiUsageBreakdown!]!
@@ -9425,6 +9539,8 @@ type Query {
   bmsPharmacyProductPolicies(limit: Int = 20, offset: Int = 0, search: String): BmsPharmacyProductPolicyPage!
   bmsPharmacyProtocol(id: ID!): BmsPharmacyProtocol
   bmsPharmacyProtocols: [BmsPharmacyProtocol!]!
+  bmsPlanCatalog: [BmsPlanCatalog!]!
+  bmsPlatformReferences: BmsPlatformReferences!
   bmsPosArAccount(credentials: BmsPosCredentialsInput!, customerId: ID!): BmsPosArAccountResult!
   bmsPosBoardGameCheckout(credentials: BmsPosCredentialsInput!, id: ID!): BmsPosBoardGameCheckout
   bmsPosBoardGameServiceCalls(credentials: BmsPosCredentialsInput!): BmsPosBoardGameServiceCallsResult!
@@ -9470,6 +9586,7 @@ type Query {
   bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!
   bmsPreviewMenuBundle(input: BmsMenuBundlePublicationInput!): BmsPricePublicationResult!
   bmsPreviewMenuNetProfit(input: BmsMenuProfitInput!): BmsPricePublicationResult!
+  bmsPreviewPlanCatalogChange(input: BmsPlanCatalogInput!): BmsPlanCatalogPreview!
   bmsPreviewPricePublication(input: BmsPublishPriceInput!): BmsPricePublicationResult!
   bmsProductBundleItems(bundleSku: String!): [BmsBundleItem!]!
   bmsProductBySku(sku: String!): BmsProduct
