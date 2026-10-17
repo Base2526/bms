@@ -240,7 +240,8 @@ export async function requestRestaurantReservation(input: {
       party_size: number; reserved_for: Date | string; created_at: Date | string;
     }>(
       `WITH service AS (
-         SELECT ((($5::timestamptz AT TIME ZONE COALESCE(NULLIF(profile.timezone, ''), 'Asia/Bangkok'))
+         SELECT ((($5::timestamptz AT TIME ZONE COALESCE((SELECT tz.name FROM pg_timezone_names tz WHERE tz.name =
+                   COALESCE(NULLIF(btrim(to_jsonb(profile)->>'timezone_code'), ''), NULLIF(btrim(profile.timezone), ''))), 'Asia/Bangkok'))
                    - COALESCE(profile.menu_availability_reset_time, TIME '04:00'))::date) AS service_date
            FROM bms_store_profile profile WHERE profile.tenant_id = $1
        )

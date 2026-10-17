@@ -26,7 +26,8 @@ export type WaitlistCloseStatus = "CANCELLED" | "NO_SHOW";
  * ตี 2 จึงได้เลขคิวเดินต่อจนถึงรอบปิดร้าน ไม่ใช่กลับไปเป็นคิว 1 ตอนเที่ยงคืนต่อหน้าคนที่รออยู่
  */
 const SERVICE_DATE_SQL = `(
-  (now() AT TIME ZONE COALESCE(NULLIF(profile.timezone, ''), 'Asia/Bangkok'))
+  (now() AT TIME ZONE COALESCE((SELECT tz.name FROM pg_timezone_names tz WHERE tz.name =
+              COALESCE(NULLIF(btrim(to_jsonb(profile)->>'timezone_code'), ''), NULLIF(btrim(profile.timezone), ''))), 'Asia/Bangkok'))
   - COALESCE(profile.menu_availability_reset_time, TIME '04:00')
 )::date`;
 

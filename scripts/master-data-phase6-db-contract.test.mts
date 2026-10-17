@@ -15,7 +15,12 @@ test.before(async () => {
 });
 test.after(async () => {
   await query(`DELETE FROM bms_master_barcodes WHERE barcode=$1`, [valid]);
-  if (tenantId) await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
+  if (tenantId) {
+    await query(`DELETE FROM bms_product_packs WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_product_variants WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_products WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
+  }
 });
 test("shop disabled and unchecked saves do not submit candidates", async () => {
   await upsertProduct(tenantId, { sku:`FAKE-${tag}-OFF`, name:"Off", price:1, barcode:valid, confirm_barcode_master:true });

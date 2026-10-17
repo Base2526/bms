@@ -33,7 +33,14 @@ test.before(async () => {
 });
 
 test.after(async () => {
-  if (tenantId) await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
+  if (tenantId) {
+    await query(`DELETE FROM bms_pharmacy_product_policies WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_product_packs WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_product_variants WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_products WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM users WHERE tenant_id=$1`, [tenantId]);
+    await query(`DELETE FROM bms_tenants WHERE id=$1`, [tenantId]);
+  }
   await query(`DELETE FROM bms_master_drugs WHERE code=$1`, [code]);
 });
 

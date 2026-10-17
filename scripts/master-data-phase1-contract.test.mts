@@ -28,7 +28,10 @@ test("master tables are global, provenance-aware, and read-only to bms_app", () 
 
 test("every master mutation rechecks platform admin and audits inside its transaction", () => {
   assert.match(service, /await requirePlatformAdmin\(ctx\)/);
-  assert.match(service, /runInTransaction\(actorId, work\)/);
+  assert.match(service, /runInTransaction\(actorId, async/);
+  assert.match(service, /SET LOCAL ROLE bms_app/);
+  assert.match(service, /set_config\('bms\.tenant_id'/);
+  assert.doesNotMatch(service, /INSERT INTO bms_master_/);
   assert.match(service, /INSERT INTO bms_audit_log/);
   for (const field of ["bmsUpsertMasterBank","bmsUpsertMasterUnit","bmsUpsertMasterThaiAddress"]) {
     assert.ok(schema.includes(field));

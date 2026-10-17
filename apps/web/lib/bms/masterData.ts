@@ -120,7 +120,13 @@ async function platformWrite<T>(ctx: MasterContext, work: (client: PoolClient) =
   await requirePlatformAdmin(ctx);
   const actorId = String(ctx.admin?.id || "");
   if (!actorId) throw new Error("Unauthenticated");
-  return (await runInTransaction(actorId, work)).result;
+  return (await runInTransaction(actorId, async (client) => {
+    // Global writes use the narrow definer functions; audit rows still belong
+    // to the authenticated tenant and must run with its RLS context.
+    await client.query("SET LOCAL ROLE bms_app");
+    await client.query(`SELECT set_config('bms.tenant_id',$1,true)`, [getTenantId(ctx)]);
+    return work(client);
+  })).result;
 }
 
 export async function upsertMasterBank(ctx: MasterContext, input: MasterBankInput) {
@@ -135,13 +141,7 @@ export async function upsertMasterBank(ctx: MasterContext, input: MasterBankInpu
   if (normalized.swift && !/^[A-Z0-9]{8}([A-Z0-9]{3})?$/.test(normalized.swift)) throw new Error("SWIFT_INVALID");
   return platformWrite(ctx, async (client) => {
     const saved = await client.query(
-      `INSERT INTO bms_master_banks
-        (id,code,country_code,name_th,name_en,swift,active,sort_order,source,source_version)
-       VALUES (COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       ON CONFLICT (id) DO UPDATE SET code=EXCLUDED.code,country_code=EXCLUDED.country_code,
-         name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,swift=EXCLUDED.swift,
-         active=EXCLUDED.active,sort_order=EXCLUDED.sort_order,source=EXCLUDED.source,
-         source_version=EXCLUDED.source_version,updated_at=now() RETURNING *`,
+      `SELECT * FROM public.upsert_master_bank($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [normalized.id, normalized.code, normalized.countryCode, normalized.nameTh, normalized.nameEn,
        normalized.swift, normalized.active, normalized.sortOrder, normalized.source, normalized.sourceVersion]);
     await writeAudit(client, ctx, "platform.master_data.bank_upsert", saved.rows[0].id, { code: normalized.code, active: normalized.active });
@@ -162,13 +162,7 @@ export async function upsertMasterUnit(ctx: MasterContext, input: MasterUnitInpu
   if (!Number.isFinite(normalized.baseFactor) || normalized.baseFactor <= 0) throw new Error("BASE_FACTOR_INVALID");
   return platformWrite(ctx, async (client) => {
     const saved = await client.query(
-      `INSERT INTO bms_master_units
-        (id,code,country_code,name_th,name_en,aliases,kind,base_factor,active,source,source_version)
-       VALUES (COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT (id) DO UPDATE SET code=EXCLUDED.code,country_code=EXCLUDED.country_code,
-         name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,aliases=EXCLUDED.aliases,
-         kind=EXCLUDED.kind,base_factor=EXCLUDED.base_factor,active=EXCLUDED.active,
-         source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now() RETURNING *`,
+      `SELECT * FROM public.upsert_master_unit($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [normalized.id, normalized.code, normalized.countryCode, normalized.nameTh, normalized.nameEn,
        normalized.aliases, normalized.kind, normalized.baseFactor, normalized.active, normalized.source, normalized.sourceVersion]);
     await writeAudit(client, ctx, "platform.master_data.unit_upsert", saved.rows[0].id, { code: normalized.code, active: normalized.active });
@@ -191,35 +185,15 @@ export async function upsertMasterThaiAddress(ctx: MasterContext, input: MasterA
   return platformWrite(ctx, async (client) => {
     let saved;
     if (level === 'PROVINCE') {
-      saved = await client.query(`INSERT INTO bms_master_th_provinces
-        (id,code,name_th,name_en,active,source,source_version)
-        VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7)
-        ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,
-          active=EXCLUDED.active,source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now()
-        RETURNING 'PROVINCE'::text level,*`, [normalized.id, normalized.code, normalized.nameTh, normalized.nameEn, normalized.active, normalized.source, normalized.sourceVersion]);
+      saved = await client.query(`SELECT 'PROVINCE'::text level,* FROM public.upsert_master_th_province($1,$2,$3,$4,$5,$6,$7)`, [normalized.id, normalized.code, normalized.nameTh, normalized.nameEn, normalized.active, normalized.source, normalized.sourceVersion]);
       await client.query(
-        `INSERT INTO bms_master_th_shipping_zones (province_code,zone,source,source_version)
-         VALUES($1,$2,'BMS legacy shipping-zone parity','pre-10.78')
-         ON CONFLICT(province_code) DO NOTHING`,
+        `SELECT public.ensure_master_province_shipping_zone($1,$2)`,
         [normalized.code, defaultShippingZoneForProvince(normalized.nameTh)]
       );
     } else if (level === 'DISTRICT') {
-      saved = await client.query(`INSERT INTO bms_master_th_districts
-        (id,code,province_code,name_th,name_en,active,source,source_version)
-        VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8)
-        ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,province_code=EXCLUDED.province_code,
-          name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,active=EXCLUDED.active,
-          source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now()
-        RETURNING 'DISTRICT'::text level,*`, [normalized.id, normalized.code, normalized.provinceCode, normalized.nameTh, normalized.nameEn, normalized.active, normalized.source, normalized.sourceVersion]);
+      saved = await client.query(`SELECT 'DISTRICT'::text level,* FROM public.upsert_master_th_district($1,$2,$3,$4,$5,$6,$7,$8)`, [normalized.id, normalized.code, normalized.provinceCode, normalized.nameTh, normalized.nameEn, normalized.active, normalized.source, normalized.sourceVersion]);
     } else {
-      saved = await client.query(`INSERT INTO bms_master_th_subdistricts
-        (id,code,province_code,district_code,name_th,name_en,postcode,active,source,source_version)
-        VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,province_code=EXCLUDED.province_code,
-          district_code=EXCLUDED.district_code,name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,
-          postcode=EXCLUDED.postcode,active=EXCLUDED.active,source=EXCLUDED.source,
-          source_version=EXCLUDED.source_version,updated_at=now()
-        RETURNING 'SUBDISTRICT'::text level,*`, [normalized.id, normalized.code, normalized.provinceCode, normalized.districtCode, normalized.nameTh, normalized.nameEn, normalized.postcode, normalized.active, normalized.source, normalized.sourceVersion]);
+      saved = await client.query(`SELECT 'SUBDISTRICT'::text level,* FROM public.upsert_master_th_subdistrict($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`, [normalized.id, normalized.code, normalized.provinceCode, normalized.districtCode, normalized.nameTh, normalized.nameEn, normalized.postcode, normalized.active, normalized.source, normalized.sourceVersion]);
     }
     await writeAudit(client, ctx, `platform.master_data.${level.toLowerCase()}_upsert`, saved.rows[0].id, { code: normalized.code, active: normalized.active });
     return mapAddress(saved.rows[0]);
@@ -254,17 +228,7 @@ export async function upsertMasterCarrier(ctx: MasterContext, input: MasterCarri
   if (!isSafeTrackingPattern(normalized.trackingNoPattern)) throw new Error("TRACKING_PATTERN_UNSAFE");
   return platformWrite(ctx, async (client) => {
     const saved = await client.query(
-      `INSERT INTO bms_master_carriers
-        (id,code,country_code,name_th,name_en,tracking_url_template,tracking_no_pattern,
-         integration_status,active,source,source_version)
-       VALUES(COALESCE($1::uuid,gen_random_uuid()),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-       ON CONFLICT(id) DO UPDATE SET code=EXCLUDED.code,country_code=EXCLUDED.country_code,
-         name_th=EXCLUDED.name_th,name_en=EXCLUDED.name_en,
-         tracking_url_template=EXCLUDED.tracking_url_template,
-         tracking_no_pattern=EXCLUDED.tracking_no_pattern,
-         integration_status=EXCLUDED.integration_status,active=EXCLUDED.active,
-         source=EXCLUDED.source,source_version=EXCLUDED.source_version,updated_at=now()
-       RETURNING *`,
+      `SELECT * FROM public.upsert_master_carrier($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [normalized.id,normalized.code,normalized.countryCode,normalized.nameTh,normalized.nameEn,
        normalized.trackingUrlTemplate,normalized.trackingNoPattern,normalized.integrationStatus,
        normalized.active,normalized.source,normalized.sourceVersion]

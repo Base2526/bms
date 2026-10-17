@@ -12,10 +12,18 @@ export function planFeatureKeys(plan: string): PackageFeature[] {
   return [];
 }
 
-export function resolveFeatureAccess(plan: string, version: number, local = false, hasReportSchedule = false) {
+export function resolveFeatureAccess(
+  plan: string,
+  version: number,
+  local = false,
+  hasReportSchedule = false,
+  configuredFeatures?: readonly string[] | null,
+) {
+  const features = configuredFeatures?.filter((feature): feature is PackageFeature => feature in PACKAGE_FEATURES)
+    ?? planFeatureKeys(plan);
   return (Object.keys(PACKAGE_FEATURES) as PackageFeature[]).map(feature => {
     const source = local ? "RETAIL_LOCAL" : version === 1 && LEGACY_FEATURES.includes(feature) ? "LEGACY"
-      : planFeatureKeys(plan).includes(feature) ? "PLAN"
+      : features.includes(feature) ? "PLAN"
       : feature === "REPORT_SCHEDULE" && hasReportSchedule ? "EXISTING_WORK" : "LOCKED";
     return { feature, minimumPlan: PACKAGE_FEATURES[feature], allowed: source !== "LOCKED", source };
   });

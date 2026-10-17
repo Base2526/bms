@@ -12,6 +12,7 @@ import {
 } from "@/lib/bms/barcodeMaster";
 import { requirePlatformAdmin } from "@/lib/bms/platform";
 import { listMasterDrugs, upsertMasterDrug, type MasterDrugInput } from "@/lib/bms/masterDrugs";
+import { addAiRateCard, listAiRateCards, listPlanCatalog, listPlatformReferences, previewPlanCatalogChange, updatePlanCatalog, type AiRateInput, type PlanCatalogInput } from "@/lib/bms/platformSettings";
 
 function requireLoggedIn(ctx: any) {
   const auth = requireAuth(ctx, { optionalAdmin: true });
@@ -60,6 +61,15 @@ export const bmsMasterDataResolvers = {
       requireLoggedIn(ctx);
       return listMasterDrugs(args);
     },
+    async bmsPlatformReferences(_p:unknown,_args:unknown,ctx:any) {
+      await requirePlatformAdmin(ctx);
+      return listPlatformReferences();
+    },
+    async bmsPlanCatalog(_p:unknown,_args:unknown,ctx:any) { return listPlanCatalog(ctx); },
+    async bmsAiRateCards(_p:unknown,_args:unknown,ctx:any) { return listAiRateCards(ctx); },
+    async bmsPreviewPlanCatalogChange(_p:unknown,args:{input:PlanCatalogInput},ctx:any) {
+      return previewPlanCatalogChange(ctx,args.input);
+    },
   },
   Mutation: {
     async bmsUpsertMasterBank(_p: unknown, args: { input: MasterBankInput }, ctx: any) {
@@ -80,5 +90,9 @@ export const bmsMasterDataResolvers = {
     async bmsUpsertMasterDrug(_p: unknown, args: { input: MasterDrugInput }, ctx: any) {
       return mutation(() => upsertMasterDrug(ctx, args.input));
     },
+    async bmsUpdatePlanCatalog(_p:unknown,args:{input:PlanCatalogInput;previewToken:string;confirmed:boolean},ctx:any) {
+      return mutation(()=>updatePlanCatalog(ctx,args.input,args.previewToken,args.confirmed));
+    },
+    async bmsAddAiRateCard(_p:unknown,args:{input:AiRateInput},ctx:any){return mutation(()=>addAiRateCard(ctx,args.input));},
   },
 };

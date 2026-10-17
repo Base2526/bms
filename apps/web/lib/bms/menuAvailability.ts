@@ -79,8 +79,9 @@ export function nextMenuAvailabilityReset(
 async function resetSettings(tenantId: string) {
   const res = await query<{ reset_time: string; timezone: string }>(
     `SELECT COALESCE(menu_availability_reset_time::text, '04:00:00') AS reset_time,
-            COALESCE(NULLIF(timezone, ''), 'Asia/Bangkok') AS timezone
-       FROM bms_store_profile WHERE tenant_id = $1`,
+            COALESCE((SELECT tz.name FROM pg_timezone_names tz WHERE tz.name =
+              COALESCE(NULLIF(btrim(to_jsonb(profile)->>'timezone_code'), ''), NULLIF(btrim(profile.timezone), ''))), 'Asia/Bangkok') AS timezone
+       FROM bms_store_profile profile WHERE tenant_id = $1`,
     [tenantId]
   );
   return res.rows[0] ?? { reset_time: "04:00:00", timezone: "Asia/Bangkok" };

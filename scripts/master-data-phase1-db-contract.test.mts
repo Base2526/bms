@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Pool } from "pg";
+import { Pool } from "./testing/pg.mjs";
 
 const pool = new Pool({host:process.env.POSTGRES_HOST||"localhost",port:Number(process.env.POSTGRES_PORT||5432),database:process.env.POSTGRES_DB||"appdb",user:process.env.POSTGRES_USER||"app",password:process.env.POSTGRES_PASSWORD||"app",max:1});
 

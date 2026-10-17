@@ -203,6 +203,8 @@ function positiveEnvRate(name: string, fallback: number): number {
 
 type AiTokenRate = { inputPerMillionUsd: number; outputPerMillionUsd: number; cacheCreationMultiplier: number; cacheReadMultiplier: number };
 
+type ResolvedAiTokenRate = AiTokenRate & { version: string; source: "DATABASE" | "CODE_FALLBACK" };
+
 function priceForModel(
   model?: string | null,
   provider?: string | null
@@ -251,6 +253,43 @@ function priceForModel(
   const rate = rates[family];
   if (rate) return { inputPerMillionUsd: rate[0], outputPerMillionUsd: rate[1], cacheCreationMultiplier: 1.25, cacheReadMultiplier: 0.1 };
   return null;
+}
+
+function applyRateEnvOverrides(rate: AiTokenRate, provider?: string|null): AiTokenRate {
+  if (String(provider||"").toLowerCase() !== "qwen") return rate;
+  const international = (process.env.QWEN_OCR_BASE_URL ?? "").includes("dashscope-intl.aliyuncs.com");
+  return { ...rate,
+    inputPerMillionUsd:positiveEnvRate("QWEN_OCR_INPUT_USD_PER_MILLION",international?0.07:rate.inputPerMillionUsd),
+    outputPerMillionUsd:positiveEnvRate("QWEN_OCR_OUTPUT_USD_PER_MILLION",international?0.16:rate.outputPerMillionUsd) };
+}
+
+async function resolveAiRateForEvent(model:string|null,provider:string|null,eventAt:Date|string): Promise<ResolvedAiTokenRate|null> {
+  const fallback=priceForModel(model,provider);
+  try {
+    const exists=await query<{name:string|null}>(`SELECT to_regclass('public.bms_master_ai_rates')::text AS name`);
+    if (!exists.rows[0]?.name) return fallback?{...fallback,version:"2026-10-09",source:"CODE_FALLBACK"}:null;
+    const result=await query<any>(`SELECT input_usd_per_million,output_usd_per_million,cache_creation_multiplier,
+      cache_read_multiplier,effective_from,source_version FROM bms_master_ai_rates
+      WHERE active AND lower(provider)=lower($1) AND lower(model)=lower($2) AND effective_from <= $3
+        AND (effective_to IS NULL OR effective_to > $3)
+      ORDER BY effective_from DESC LIMIT 1`,[provider||"anthropic",model||"",eventAt]);
+    const row=result.rows[0];
+    if (!row) return fallback?{...fallback,version:"2026-10-09",source:"CODE_FALLBACK"}:null;
+    const configured=applyRateEnvOverrides({inputPerMillionUsd:Number(row.input_usd_per_million),outputPerMillionUsd:Number(row.output_usd_per_million),
+      cacheCreationMultiplier:Number(row.cache_creation_multiplier),cacheReadMultiplier:Number(row.cache_read_multiplier)},provider);
+    return {...configured,version:String(row.source_version||new Date(row.effective_from).toISOString()),source:"DATABASE"};
+  } catch {
+    return fallback?{...applyRateEnvOverrides(fallback,provider),version:"2026-10-09",source:"CODE_FALLBACK"}:null;
+  }
+}
+
+function estimateCachedCostWithRate(usage:{inputTokens?:number|null;cacheCreationInputTokens?:number|null;cacheReadInputTokens?:number|null;outputTokens?:number|null},price:AiTokenRate|null) {
+  if (!price) return 0;
+  const inputTokens=Math.max(0,Number(usage.inputTokens??0));
+  const cacheCreationInputTokens=Math.max(0,Number(usage.cacheCreationInputTokens??0));
+  const cacheReadInputTokens=Math.max(0,Number(usage.cacheReadInputTokens??0));
+  const outputTokens=Math.max(0,Number(usage.outputTokens??0));
+  return Number(((((inputTokens+cacheCreationInputTokens*price.cacheCreationMultiplier+cacheReadInputTokens*price.cacheReadMultiplier)/1_000_000)*price.inputPerMillionUsd)+(outputTokens/1_000_000)*price.outputPerMillionUsd).toFixed(8));
 }
 
 /** Legacy API compatibility: -1 means no USD cap. Entitlement is monthly AI points. */
@@ -327,23 +366,8 @@ export function estimateCachedAiCostUsd(
   model?: string | null,
   provider?: string | null
 ) {
-  const inputTokens = Math.max(0, Number(usage.inputTokens ?? 0));
-  const cacheCreationInputTokens = Math.max(
-    0,
-    Number(usage.cacheCreationInputTokens ?? 0)
-  );
-  const cacheReadInputTokens = Math.max(0, Number(usage.cacheReadInputTokens ?? 0));
-  const outputTokens = Math.max(0, Number(usage.outputTokens ?? 0));
   const price = priceForModel(model, provider);
-  if (!price) return 0;
-  const inputCost =
-    ((inputTokens +
-      cacheCreationInputTokens * price.cacheCreationMultiplier +
-      cacheReadInputTokens * price.cacheReadMultiplier) /
-      1_000_000) *
-    price.inputPerMillionUsd;
-  const outputCost = (outputTokens / 1_000_000) * price.outputPerMillionUsd;
-  return Number((inputCost + outputCost).toFixed(8));
+  return estimateCachedCostWithRate(usage,price);
 }
 
 type MonthlyUsageRow = {
@@ -968,6 +992,7 @@ export async function finalizeAiUsageEvent(
     source: string | null;
     feature: string | null;
     provider_calls: number;
+    created_at: Date | string;
   };
   // Finalization is intentionally one-shot. Callers can encounter overlapping
   // success/error cleanup paths, but an event must contribute to the monthly
@@ -975,9 +1000,10 @@ export async function finalizeAiUsageEvent(
   let current: FinalizedEvent | null;
   try {
     const owner = await query<FinalizedEvent>(
-      `SELECT tenant_id, year_month FROM bms_ai_usage_events WHERE id = $1`, [eventId]
+      `SELECT tenant_id,year_month,model,provider,created_at FROM bms_ai_usage_events WHERE id = $1`, [eventId]
     );
     if (!owner.rows[0]) return;
+    const resolvedRate = await resolveAiRateForEvent(owner.rows[0].model,owner.rows[0].provider,owner.rows[0].created_at);
     current = await transaction<FinalizedEvent | null>(owner.rows[0].tenant_id, async (client) => {
     await lockUsageMonth(client, owner.rows[0].tenant_id, owner.rows[0].year_month);
     const event = await client.query<FinalizedEvent & {
@@ -986,7 +1012,7 @@ export async function finalizeAiUsageEvent(
       provider_calls: number;
       budget_reserved_usd: string;
     }>(
-      `SELECT tenant_id, year_month, model, provider, source, feature,
+      `SELECT tenant_id, year_month, model, provider, source, feature,created_at,
               billable_credits, completed_at, provider_calls, budget_reserved_usd
          FROM bms_ai_usage_events
         WHERE id = $1
@@ -1009,7 +1035,7 @@ export async function finalizeAiUsageEvent(
 
     const rateKnown =
       providerCalls === 0 ||
-      (result.costRateKnown ?? priceForModel(row.model, row.provider) !== null);
+      (result.costRateKnown ?? resolvedRate !== null);
     const unpricedProviderCalls = rateKnown || (hasValidExplicitCost && explicitEstimatedCost > 0)
       ? Math.min(providerCalls, Math.max(rateKnown ? 0 : 1, result.unpricedProviderCalls == null
           ? (providerCalls === 0 || hasCompleteUsage ? 0 : providerCalls)
@@ -1017,10 +1043,10 @@ export async function finalizeAiUsageEvent(
       : providerCalls;
     const rawEstimatedCost = Number(
       (hasValidExplicitCost ? explicitEstimatedCost : null) ??
-        estimateCachedAiCostUsd({
+        estimateCachedCostWithRate({
           inputTokens: Math.max(0, (inputTokens ?? 0) - (cacheReadInputTokens ?? 0) - (cacheCreationInputTokens ?? 0)),
           cacheReadInputTokens, cacheCreationInputTokens, outputTokens,
-        }, row.model, row.provider)
+        }, resolvedRate)
     );
     const estimatedCost =
       Number.isFinite(rawEstimatedCost) && rawEstimatedCost >= 0
@@ -1039,7 +1065,8 @@ export async function finalizeAiUsageEvent(
       provider_calls: providerCalls,
       credit_policy: "logical_request",
       cost_basis: "provider_usage_rate_card",
-      rate_card_version: "2026-10-09",
+      rate_card_version: resolvedRate?.version??null,
+      rate_card_source: resolvedRate?.source??"UNPRICED",
       ...(row.provider === "deepseek" || result.providerOutcomes?.some(o => o.provider === "deepseek")
         ? { deepseek_pricing: "conservative_peak_list_rate" } : {}),
       cost_status:

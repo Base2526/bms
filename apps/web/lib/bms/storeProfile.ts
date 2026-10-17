@@ -17,6 +17,7 @@ import { normalizeProvince, parseWeightTiers, parseZoneRates } from "./shippingZ
 import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/receiptI18n";
 import { normalizeRestaurantOrderHours, type RestaurantOrderInterval } from "./restaurantOrdering";
 import { resolveThaiAddressCodesInTx } from "./thaiAddress";
+import { FALLBACK_COUNTRIES, FALLBACK_CURRENCIES, FALLBACK_TIMEZONES } from "./platformSettings";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -68,7 +69,7 @@ export type StoreProfile = {
   logoUrl: string | null;
   taxId: string | null;
   timezone: string | null;
-  country: string | null;   // TH / AU / UK
+  country: string | null;   // TH / AU / GB (legacy text "UK" is normalized to GB)
   currency: string | null;  // THB / AUD / GBP
   businessHours: string | null;
   restaurantOrderHours: RestaurantOrderInterval[];
@@ -145,7 +146,10 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
             about, address, phone, contact_email, website, logo_url, tax_id,
-            timezone, country, currency, business_hours, restaurant_order_hours,
+            COALESCE(to_jsonb(bms_store_profile)->>'timezone_code', timezone) AS timezone,
+            COALESCE(to_jsonb(bms_store_profile)->>'country_code', country) AS country,
+            COALESCE(to_jsonb(bms_store_profile)->>'currency_code', currency) AS currency,
+            business_hours, restaurant_order_hours,
             restaurant_orders_paused, restaurant_merchant_absorb_limit, shipping_policy, return_policy,
             payment_accounts, shipping_flat_rate, shipping_free_threshold,
             shipping_est_days_min, shipping_est_days_max, enabled_carriers,
@@ -268,6 +272,43 @@ export async function upsertStoreProfile(
     // an unrelated concurrent save can write a stale archetype back over the locked value.
     const cur = await fetchStoreProfileWithClient(tenantId, client);
     const merged = mergeStoreProfileInput(cur, input);
+
+    // Validate explicit locale changes against the platform catalogue. During a
+    // rolling deploy the catalogue may not exist yet, so the code fallback is
+    // intentionally the same three values seeded by migration 10.83.
+    if (input.country !== undefined || input.currency !== undefined || input.timezone !== undefined) {
+      let countries = new Set<string>(FALLBACK_COUNTRIES.map(row => row.code));
+      let currencies = new Set<string>(FALLBACK_CURRENCIES.map(row => row.code));
+      let timezones = new Set<string>(FALLBACK_TIMEZONES.map(row => row.code));
+      const catalogueTables = await client.query<{ countries:string|null;currencies:string|null;timezones:string|null }>(
+        `SELECT to_regclass('public.bms_master_countries')::text AS countries,
+                to_regclass('public.bms_master_currencies')::text AS currencies,
+                to_regclass('public.bms_master_timezones')::text AS timezones`
+      );
+      if (catalogueTables.rows[0]?.countries && catalogueTables.rows[0]?.currencies && catalogueTables.rows[0]?.timezones) {
+        const [countryRows,currencyRows,timezoneRows] = await Promise.all([
+          client.query<{code:string}>(`SELECT code FROM bms_master_countries WHERE active`),
+          client.query<{code:string}>(`SELECT code FROM bms_master_currencies WHERE active`),
+          client.query<{code:string}>(`SELECT code FROM bms_master_timezones WHERE active`),
+        ]);
+        countries = new Set(countryRows.rows.map(row=>row.code));
+        currencies = new Set(currencyRows.rows.map(row=>row.code));
+        timezones = new Set(timezoneRows.rows.map(row=>row.code));
+      }
+      // An unmapped legacy value in another field must not block a partial repair.
+      if (input.country !== undefined) {
+        merged.country = merged.country == null ? null : String(merged.country).trim().toUpperCase() || null;
+        if (merged.country && !countries.has(merged.country)) throw new Error("รหัสประเทศไม่อยู่ในข้อมูลกลาง");
+      }
+      if (input.currency !== undefined) {
+        merged.currency = merged.currency == null ? null : String(merged.currency).trim().toUpperCase() || null;
+        if (merged.currency && !currencies.has(merged.currency)) throw new Error("รหัสสกุลเงินไม่อยู่ในข้อมูลกลาง");
+      }
+      if (input.timezone !== undefined) {
+        merged.timezone = merged.timezone == null ? null : String(merged.timezone).trim() || null;
+        if (merged.timezone && !timezones.has(merged.timezone)) throw new Error("เขตเวลาไม่อยู่ในข้อมูลกลาง");
+      }
+    }
 
     const rawBusinessArchetype = merged.businessArchetype?.trim?.() ?? merged.businessArchetype;
     const normalizedBusinessArchetype = normalizeShopArchetype(rawBusinessArchetype);
