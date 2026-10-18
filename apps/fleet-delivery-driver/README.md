@@ -37,6 +37,7 @@ npm run lint
 npm run verify:security-patch
 npm run verify:supply-chain
 npm run verify:audit-boundary
+npm run verify:device-safety
 npm run verify:licenses
 npm run verify:reproducibility
 cd android && ./gradlew assembleDebug assembleRelease
@@ -46,6 +47,12 @@ cd ../ios && bundle exec pod install
 Run Metro with `npm start`, then use `npm run android` or `npm run ios`. Debug activation requires a
 short-lived synthetic driver bearer token and explicit tenant/branch references. Do not use a real
 driver credential, customer record, or production environment.
+
+Before a physical-device exercise, run `npm run device:inventory -- --require-physical`. The command
+reports only device state/model counts and never persists a serial or UDID. Follow
+`docs/delivery/phase-4/real-device-test-runbook.md`: the current build supports the fail-closed
+baseline only. GPS, notification and device-trust feature cases remain explicitly blocked; absence
+of a permission prompt is not evidence that those features passed.
 
 ## Architecture
 

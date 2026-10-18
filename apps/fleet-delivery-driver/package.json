@@ -13,6 +13,8 @@
     "verify:security-patch": "node scripts/verify-braces-security-patch.mjs",
     "verify:supply-chain": "node scripts/verify-supply-chain.mjs",
     "verify:audit-boundary": "node scripts/verify-audit-boundary.mjs",
+    "verify:device-safety": "node scripts/verify-device-safety-boundary.mjs",
+    "device:inventory": "node scripts/device-inventory.mjs",
     "verify:licenses": "node scripts/verify-licenses.mjs",
     "verify:reproducibility": "node scripts/verify-bundle-reproducibility.mjs"
   },

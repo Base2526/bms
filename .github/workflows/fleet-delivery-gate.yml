@@ -45,6 +45,7 @@ jobs:
       - run: npm run verify:security-patch
       - run: npm run verify:supply-chain
       - run: npm run verify:audit-boundary
+      - run: npm run verify:device-safety
       - run: npm run verify:licenses
       - run: npm run verify:reproducibility
       - name: Build Android debug and unsigned release applications
@@ -71,6 +72,7 @@ jobs:
           working-directory: apps/fleet-delivery-driver
       - run: npm ci
       - run: npm run verify:security-patch
+      - run: npm run verify:device-safety
       - run: bundle exec pod install --project-directory=ios
       - name: Build unsigned iOS Debug simulator application
         run: >-

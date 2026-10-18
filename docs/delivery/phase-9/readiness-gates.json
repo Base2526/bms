@@ -60,8 +60,12 @@
       "status": "BLOCKED",
       "ownerRoles": ["Operations", "Safety", "Mobile Engineering"],
       "requiredApprovals": ["Operations", "Safety"],
-      "evidence": [],
-      "blockers": ["KYC policy, target devices, background-location behavior, permission withdrawal and real-device journeys are unverified"],
+      "evidence": [
+        "docs/delivery/phase-4/device-certification-policy.json",
+        "docs/delivery/phase-4/real-device-test-runbook.md",
+        "docs/delivery/phase-4/device-test-results-2026-10-18.json"
+      ],
+      "blockers": ["Fail-closed repository checks pass, but no physical baseline ran because no device was online; KYC policy, target-device approvals, GPS/background-location behavior, push lifecycle, device trust, permission withdrawal and real-device journeys remain unverified"],
       "approvals": []
     },
     {

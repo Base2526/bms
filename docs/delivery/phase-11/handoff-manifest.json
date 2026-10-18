@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T05:05:20.000Z",
+  "generatedAt": "2026-10-18T05:12:01.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
@@ -12,17 +12,32 @@
     },
     {
       "path": "docs/delivery/phase-4/README.md",
-      "sha256": "33f13e1b63b65252dc109a7449fb2efbcd570f4e263593c678d8df5cb94e2c4f",
+      "sha256": "eaeff169893fc2cb32173e3d2dcee1ee79506cccabe0dc8dddc9c2842fa1240e",
       "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
     },
     {
+      "path": "docs/delivery/phase-4/device-certification-policy.json",
+      "sha256": "8758d57e0b92290286cc83725df19aa96247d31bf2cc3a6016ab4be10cc873d6",
+      "purpose": "Machine-readable fail-closed mobile permission, capability and evidence policy"
+    },
+    {
+      "path": "docs/delivery/phase-4/real-device-test-runbook.md",
+      "sha256": "14348502cd4db86ce10229436452df8f87cb2b98c5fbc226deb28ba926b3cbc2",
+      "purpose": "Physical-device baseline and blocked GPS, notification and device-trust certification procedure"
+    },
+    {
+      "path": "docs/delivery/phase-4/device-test-results-2026-10-18.json",
+      "sha256": "a71ddc02378b3359503eb0aaeef2b5eeeef7cda92ffac0ff8e5b0477aa49035d",
+      "purpose": "Redacted initial device inventory and fail-closed repository-boundary result"
+    },
+    {
       "path": "apps/fleet-delivery-driver/README.md",
-      "sha256": "d719ed01ca294009586ff9151a7d042812e9c86d8b0db61ab8636e047d6a84be",
+      "sha256": "83668238df5f1bfd1d4415ce4a9a32df281829a4c9ac3813d2a48ce8a097ef6c",
       "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
     },
     {
       "path": "apps/fleet-delivery-driver/package.json",
-      "sha256": "f751984db28d9784ef21eda7b5138475a01dfe98fe9262fcde8c5195784d69b0",
+      "sha256": "59970d1ed564f06c87a6c14e0b7013fc7e50a0d5bd22d741a1ad877f5f433498",
       "purpose": "Pinned driver mobile scripts and direct dependencies"
     },
     {
@@ -39,6 +54,16 @@
       "path": "apps/fleet-delivery-driver/scripts/verify-audit-boundary.mjs",
       "sha256": "987e34bcf984f7ccd4f22844765564f3cd1bbbb19d169a9092255560b2cc5751",
       "purpose": "Driver mobile dependency-advisory drift and production-blocker monitor"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-device-safety-boundary.mjs",
+      "sha256": "698f043bb11cbd46a3d6466b68fe3dc27763d98436a252579da81222f4d9edb0",
+      "purpose": "Fail-closed Android/iOS permission, identity, secure-storage and capability verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/device-inventory.mjs",
+      "sha256": "29191e5b7550345d7f3469ca43a3567f962308d37d70781b1dac0c67bf56218c",
+      "purpose": "Read-only physical-device inventory that drops serials, UDIDs and device names"
     },
     {
       "path": "apps/fleet-delivery-driver/scripts/verify-braces-security-patch.mjs",
@@ -192,12 +217,12 @@
     },
     {
       "path": "docs/delivery/phase-9/readiness-gates.json",
-      "sha256": "fe357594e817785be277a23c193d05207cf898adbe04e0683f7e9aa077b479c4",
+      "sha256": "76a43717d81e0f5b4682be756746b8a92f5cd63e08aaee7ebbb93f11e54834e6",
       "purpose": "Machine-readable pilot readiness gates"
     },
     {
       "path": "docs/delivery/phase-9/certification-workbook.json",
-      "sha256": "7b0271ca4babcbfeb1f80b6bad920faef5d5c8ab3be0cc25ddbabe651b9512b7",
+      "sha256": "4e9fcc6cc8242cd2545346fa34c75e172067cb18d0be4e2f04da0fac071e8ab6",
       "purpose": "Machine-readable certification artifacts, exercises and acceptance criteria"
     },
     {
@@ -222,7 +247,7 @@
     },
     {
       "path": "docs/delivery/phase-9/evidence/driver-device-safety.md",
-      "sha256": "d65dcbba01e8113ea6d08c5c5252d36acaef0217482536414b44d5002005e11a",
+      "sha256": "30fc89d08647254ddba3c853153668e3ad3153d1edc7b714d4fc3c1c1b3e4a8c",
       "purpose": "Driver device and safety certification packet"
     },
     {
@@ -377,7 +402,7 @@
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "e9654dd11d87c47adc79b31b608109da5bd3926266c9c8e601f88d69dfd44d8d",
+      "sha256": "31e91ac0d6c6321824e54fc49c3f3c953aa240309c9115312c194001d308d6da",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -518,7 +543,7 @@
     "npm run reproducibility:verify",
     "npm run config:verify",
     "npm run api-contract:verify",
-    "cd apps/fleet-delivery-driver && npm run typecheck && npm run test:ci && npm run lint",
+    "cd apps/fleet-delivery-driver && npm run typecheck && npm run test:ci && npm run lint && npm run verify:device-safety",
     "cd apps/fleet-delivery-driver && npm run verify:security-patch && npm run verify:supply-chain && npm run verify:audit-boundary && npm run verify:licenses",
     "cd apps/fleet-delivery-driver && npm run verify:reproducibility",
     "cd apps/fleet-delivery-driver/android && ./gradlew assembleDebug assembleRelease",

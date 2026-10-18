@@ -86,7 +86,11 @@
         "environment": "NON_PRODUCTION",
         "acceptanceCriteria": ["Every supported-device journey completes safely or fails closed with an operator-visible recovery path"]
       }],
-      "evidenceRefs": [],
+      "evidenceRefs": [
+        "docs/delivery/phase-4/device-certification-policy.json",
+        "docs/delivery/phase-4/real-device-test-runbook.md",
+        "docs/delivery/phase-4/device-test-results-2026-10-18.json"
+      ],
       "openActions": ["Operations, Safety and Mobile Engineering must execute and approve real-device evidence"]
     },
     {

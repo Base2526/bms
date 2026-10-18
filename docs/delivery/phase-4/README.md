@@ -33,8 +33,16 @@ accepted design, nor can it supply the real Android/iOS devices required by the 
   FCM/APNs credential, notification endpoint or remote device-revocation implementation exists.
 - `VERIFIED`: no approved GPS/POD/KYC retention schedule, lawful basis, storage region or privacy
   notice exists.
-- `VERIFIED`: no real Android/iOS target device is connected to this workspace, so foreground,
-  background and terminated behavior cannot be truthfully certified.
+- `VERIFIED`: the redacted device inventory found no online physical target: no Android device and
+  one iPhone SE (3rd generation) in `unavailable` state. One simulator exists but cannot substitute
+  for physical-device certification.
+- `VERIFIED`: the automated device-safety boundary passes: Android requests only Internet and
+  disables backup; iOS declares no location/camera/background-notification permission or push
+  entitlement; restricted capabilities remain false; secure storage is device-only/while-unlocked.
+- `BLOCKED`: no physical baseline case ran. GPS, notification, remote-revocation and rooted/
+  jailbroken-device cases have no approved policy or implementation and therefore ran zero cases.
+  See [the redacted result](device-test-results-2026-10-18.json) and
+  [real-device runbook](real-device-test-runbook.md).
 
 ## 2. Blocking decisions and evidence
 
@@ -48,7 +56,7 @@ accepted design, nor can it supply the real Android/iOS devices required by the 
 | Private object storage | approved provider, region, encryption/key owner, malware scanning and credentials | fail closed |
 | Push notifications | approved FCM/APNs ownership, token lifecycle and message classification | use the implemented bounded snapshot API as the non-app polling/reconnect foundation |
 | Contact/SOS/abuse handling | Safety + Support + Legal escalation owner and runbook | no phone disclosure or contact feature |
-| Real-device gate | supported Android/iOS versions plus physical devices and signing setup | do not claim Phase 4 completion |
+| Real-device gate | supported Android/iOS versions plus online physical devices and signing setup | run only the fail-closed baseline in the current build; do not claim Phase 4 completion |
 
 ## 3. Why production implementation stops here
 
@@ -109,6 +117,9 @@ checksum rerun applied nothing. The React Native shell separately passes strict 
 a zero-vulnerability production dependency audit and two-iteration Android/iOS bundle reproducibility.
 Android Debug/unsigned Release and iOS Debug/Release simulator builds pass;
 these do not substitute for signed artifacts or physical-device certification.
+The device-safety verifier also passes its permission, identity, entitlement, privacy-manifest,
+secure-storage and disabled-capability assertions. The redacted inventory found zero online physical
+devices, so the physical baseline, GPS, notification and device-trust result counts remain zero.
 
 ## 5. Later-phase blockers
 
