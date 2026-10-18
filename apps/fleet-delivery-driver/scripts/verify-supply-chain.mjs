@@ -18,6 +18,31 @@ const direct = { ...packageJson.dependencies, ...packageJson.devDependencies };
 const rootLock = lock.packages[''];
 if (!rootLock) throw new Error('mobile lockfile root package is missing');
 
+const reviewedOverrides = new Map(policy.reviewedOverrides.map(entry => [entry.package, entry]));
+const observedOverrides = packageJson.overrides ?? {};
+if (JSON.stringify(Object.keys(observedOverrides).sort()) !== JSON.stringify([...reviewedOverrides.keys()].sort())) {
+  throw new Error('mobile dependency override set changed; review is required');
+}
+for (const [name, declaration] of Object.entries(observedOverrides)) {
+  const reviewed = reviewedOverrides.get(name);
+  if (!reviewed || reviewed.specifier !== declaration || !declaration.startsWith('$')) {
+    throw new Error(`unapproved mobile dependency override: ${name}`);
+  }
+  const directDeclaration = packageJson.dependencies?.[name];
+  if (directDeclaration !== reviewed.directDependency || !directDeclaration.startsWith('file:')) {
+    throw new Error(`mobile override lacks its reviewed direct dependency: ${name}`);
+  }
+  const target = await realpath(path.resolve(appRoot, directDeclaration.slice(5)));
+  const relative = path.relative(repoRoot, target).split(path.sep).join('/');
+  if (relative.startsWith('../') || !policy.allowedLocalPackages.includes(relative)) {
+    throw new Error(`unapproved local mobile override target: ${name} -> ${relative}`);
+  }
+  const reviewedPolicy = JSON.parse(await readFile(path.join(repoRoot, reviewed.policyPath), 'utf8'));
+  if (reviewedPolicy.productionAuthorized !== false || reviewedPolicy.vendorPath !== relative) {
+    throw new Error(`invalid fail-closed policy for mobile override: ${name}`);
+  }
+}
+
 for (const [name, declaration] of Object.entries(direct)) {
   const lockedDeclaration = rootLock.dependencies?.[name] ?? rootLock.devDependencies?.[name];
   if (lockedDeclaration !== declaration) throw new Error(`mobile lock declaration mismatch: ${name}`);
@@ -68,6 +93,7 @@ process.stdout.write(`${JSON.stringify({
   directDependencyCount: Object.keys(direct).length,
   lockedPackageCount: Object.keys(lock.packages).length - 1,
   registryArtifactCount,
+  verifiedOverrides: [...reviewedOverrides.keys()].sort(),
   verifiedInstallScripts: [...observedInstallScripts].sort(),
   verified: true,
 }, null, 2)}\n`);

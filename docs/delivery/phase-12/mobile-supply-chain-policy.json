@@ -11,7 +11,16 @@
   ],
   "allowedLocalPackages": [
     "apps/fleet-delivery-driver-core",
+    "apps/fleet-delivery-driver/vendor/braces",
     "packages/fleet-delivery-contracts"
+  ],
+  "reviewedOverrides": [
+    {
+      "package": "braces",
+      "specifier": "$braces",
+      "directDependency": "file:vendor/braces",
+      "policyPath": "docs/delivery/phase-12/mobile-braces-security-patch.json"
+    }
   ],
   "requireExactDirectVersions": true,
   "requireSha512Integrity": true,

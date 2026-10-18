@@ -1,18 +1,22 @@
 {
   "schemaVersion": 1,
   "phase": 12,
-  "mode": "MOBILE_AUDIT_BLOCKER_MONITOR",
+  "mode": "MOBILE_AUDIT_CLEAN_WITH_LOCAL_PATCH",
   "productionAuthorized": false,
   "productionPlanPath": "docs/delivery/phase-10/controlled-launch-plan.json",
+  "securityGatePath": "docs/delivery/phase-9/readiness-gates.json",
+  "securityGateId": "independent-security-review",
+  "securityPatchPolicyPath": "docs/delivery/phase-12/mobile-braces-security-patch.json",
   "expectedVulnerabilities": {
     "info": 0,
     "low": 0,
     "moderate": 0,
-    "high": 20,
+    "high": 0,
     "critical": 0,
-    "total": 20
+    "total": 0
   },
-  "knownAdvisoryUrls": [
+  "knownAdvisoryUrls": [],
+  "locallyMitigatedAdvisoryUrls": [
     "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm"
   ]
 }

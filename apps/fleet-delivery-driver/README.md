@@ -34,6 +34,7 @@ npm ci
 npm run typecheck
 npm run test:ci
 npm run lint
+npm run verify:security-patch
 npm run verify:supply-chain
 npm run verify:audit-boundary
 npm run verify:licenses
@@ -64,8 +65,9 @@ host; it does not prove deterministic native APK/IPA archives, compiler provenan
 
 This source tree is not evidence that the Phase 4 real-device gate passed. Release still requires the
 owner approvals and device exercises in `docs/delivery/phase-4/README.md` and
-`docs/delivery/phase-9/evidence/driver-device-safety.md`. As of 2026-10-18, `npm audit --omit=dev`
-reports 20 high-severity and zero critical transitive React Native/Metro/CLI advisories for which npm
-proposes incompatible downgrades; these remain a Security-owned release blocker and must not be bypassed with
-`npm audit fix --force`. Both Debug and Release compile checks are required; Release artifacts remain
-unsigned and non-activatable.
+`docs/delivery/phase-9/evidence/driver-device-safety.md`. The React Native graph uses the reviewed
+local `braces@3.0.4-bms.1` fork to reject structural nesting above 100 levels before recursive
+walkers execute. `npm audit --omit=dev` now reports zero vulnerabilities and the verifier exercises
+the malicious pattern, but the patch still requires an independent Security review before release.
+Do not replace it with `npm audit fix --force` or remove the exact-hash policy. Both Debug and Release
+compile checks are required; Release artifacts remain unsigned and non-activatable.

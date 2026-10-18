@@ -22,10 +22,43 @@ const usedExceptions = new Set();
 const counts = new Map();
 let externalPackageCount = 0;
 let workspacePackageCount = 0;
+const reviewedLocalForks = [];
+const localForkLockPaths = new Set();
+const linkedLockPlaceholders = new Set(
+  Object.values(lock.packages ?? {})
+    .filter(entry => entry.link === true && typeof entry.resolved === 'string' && entry.resolved.startsWith('node_modules/'))
+    .map(entry => entry.resolved),
+);
+
+for (const fork of policy.localForks ?? []) {
+  const forkRoot = path.resolve(repoRoot, fork.path);
+  if (!forkRoot.startsWith(`${repoRoot}${path.sep}`)) throw new Error(`invalid local fork path: ${fork.package}`);
+  const manifest = JSON.parse(await readFile(path.join(forkRoot, 'package.json'), 'utf8'));
+  if (manifest.name !== fork.package || manifest.version !== fork.version || manifest.license !== fork.license) {
+    throw new Error(`local fork metadata changed: ${fork.package}`);
+  }
+  if (!allowed.has(fork.license)) throw new Error(`local fork license is not allowlisted: ${fork.package}`);
+  const lockPath = path.relative(appRoot, forkRoot).split(path.sep).join('/');
+  const lockEntry = lock.packages?.[lockPath];
+  if (lockEntry?.version !== fork.version || lockEntry?.license !== fork.license) {
+    throw new Error(`local fork lock metadata changed: ${fork.package}`);
+  }
+  localForkLockPaths.add(lockPath);
+  const licensePath = path.resolve(repoRoot, fork.licenseFile);
+  if (!licensePath.startsWith(`${forkRoot}${path.sep}`)) throw new Error(`invalid local fork license path: ${fork.package}`);
+  const digest = createHash('sha256').update(await readFile(licensePath)).digest('hex');
+  if (digest !== fork.licenseFileSha256) throw new Error(`local fork license evidence changed: ${fork.package}`);
+  reviewedLocalForks.push(`${fork.package}@${fork.version}`);
+}
 
 for (const [packagePath, entry] of Object.entries(lock.packages ?? {})) {
   if (packagePath === '' || entry.link === true) continue;
+  if (linkedLockPlaceholders.has(packagePath)) {
+    if (Object.keys(entry).length !== 0) throw new Error(`unexpected local override placeholder metadata: ${packagePath}`);
+    continue;
+  }
   if (!packagePath.startsWith('node_modules/')) {
+    if (localForkLockPaths.has(packagePath)) continue;
     workspacePackageCount += 1;
     continue;
   }
@@ -61,6 +94,7 @@ process.stdout.write(`${JSON.stringify({
   packageLockSha256: lockDigest,
   externalPackageCount,
   workspacePackageCount,
+  reviewedLocalForks: reviewedLocalForks.sort(),
   licenseCounts: Object.fromEntries([...counts].sort(([left], [right]) => left.localeCompare(right))),
   metadataExceptions: [...usedExceptions].sort(),
   verified: true,

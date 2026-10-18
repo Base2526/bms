@@ -16,8 +16,8 @@ does not close policy, legal, privacy, safety, SRE or cross-system gates owned o
 - The runtime images remain non-root (`node`), read-only, all Linux capabilities dropped and
   `no-new-privileges` enabled. Development ports remain loopback-only.
 - CI rejects high/critical API/worker production dependency vulnerabilities before build/tests. The
-  mobile job separately binds its current advisory count/set, rejects drift or any production-enabled
-  plan while findings remain, and keeps the known high-severity findings visible as a release blocker.
+  mobile job separately verifies its exact-hash local `braces` security patch, rejects dependency
+  drift and refuses a production-enabled plan until the independent Security gate is approved.
 - The backup/restore verifier restores into an explicitly named disposable database and checks
   migration history, forced RLS, Phase 6 finance guards and Phase 7 operations indexes before cleanup.
 - Release, rollback, incident, credential-rotation and recovery steps are documented in the runbook.
@@ -33,9 +33,9 @@ does not close policy, legal, privacy, safety, SRE or cross-system gates owned o
 - container inspection confirms `user=node`, read-only root filesystem, `cap_drop=ALL` and
   `no-new-privileges=true`;
 - the API/worker production dependency audit reports zero vulnerabilities;
-- the separate React Native lockfile has deterministic provenance and license checks, while its
-  production audit reports 20 high-severity and zero critical transitive React Native/Metro/CLI
-  advisories; these remain an explicit release blocker rather than being hidden by the root audit;
+- the separate React Native lockfile has deterministic provenance and license checks; its local
+  depth-guard fork mitigates `GHSA-vfj7-8cjw-p6xm`, the malicious-pattern regression passes and the
+  mobile production dependency audit reports zero vulnerabilities;
 - Compose validation and diff whitespace checks pass.
 
 The restore exercise validates mechanics and selected controls on local synthetic data only. It does
@@ -47,8 +47,8 @@ recovery, regional failover or an operator drill.
 - `RTK.md` referenced by repository instructions is still missing.
 - Real driver identity/device/KYC, mobile privacy, exact-location retention, evidence storage and
   safety/support policy are not approved or implemented.
-- Mobile native signing, physical-device certification and resolution or Security acceptance of the
-  20 high-severity React Native toolchain advisories are absent.
+- Mobile native signing and physical-device certification are absent; the local React Native
+  toolchain patch has engineering evidence but still lacks independent Security approval.
 - BMS handoff/stock authority, customer tracking grants, provider integrations and cross-system E2E
   remain blocked.
 - COD, commission recognition, earnings, settlement, refund, payout, transfer and tax remain disabled.

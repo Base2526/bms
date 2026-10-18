@@ -36,8 +36,12 @@
       "status": "BLOCKED",
       "ownerRoles": ["Security"],
       "requiredApprovals": ["Security"],
-      "evidence": [],
-      "blockers": ["No independent security review, remediation report or accepted residual-risk record exists"],
+      "evidence": [
+        "docs/delivery/phase-9/evidence/independent-security-review.md",
+        "docs/delivery/phase-12/mobile-braces-security-patch.json",
+        "docs/delivery/phase-12/mobile-audit-boundary.json"
+      ],
+      "blockers": ["Engineering supplied a local mobile dependency remediation packet, but no independent Security review or approval exists"],
       "approvals": []
     },
     {

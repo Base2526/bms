@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T04:43:13.000Z",
+  "generatedAt": "2026-10-18T05:05:20.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
@@ -12,32 +12,42 @@
     },
     {
       "path": "docs/delivery/phase-4/README.md",
-      "sha256": "83e699627f955286692cce4f7524cd924cbefa4c297c16f940ceecd9826e90fd",
+      "sha256": "33f13e1b63b65252dc109a7449fb2efbcd570f4e263593c678d8df5cb94e2c4f",
       "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
     },
     {
       "path": "apps/fleet-delivery-driver/README.md",
-      "sha256": "4ad918f86b287ab0c79bed5c64495a89999b325e79197ed5b74a81bcb6b2fd3b",
+      "sha256": "d719ed01ca294009586ff9151a7d042812e9c86d8b0db61ab8636e047d6a84be",
       "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
     },
     {
       "path": "apps/fleet-delivery-driver/package.json",
-      "sha256": "0b0cf309476a4581b434f4db7516c9fcf0d11793ed10b6944c006a13e079eb67",
+      "sha256": "f751984db28d9784ef21eda7b5138475a01dfe98fe9262fcde8c5195784d69b0",
       "purpose": "Pinned driver mobile scripts and direct dependencies"
     },
     {
+      "path": "apps/fleet-delivery-driver/.eslintrc.js",
+      "sha256": "5223df39e48a598c681c7485199c5758b48d5156e24cd15c39c1009a88c4837a",
+      "purpose": "Driver mobile lint boundary excluding exact-hash third-party vendored source"
+    },
+    {
       "path": "apps/fleet-delivery-driver/scripts/verify-supply-chain.mjs",
-      "sha256": "1d15d61a04e2db6215567cba05066c5b7d1a7afbd508203b31338d511f6de0d9",
+      "sha256": "4ef3c683e53805253978ab7ab3abf91ab07eccea7846246d9a37d93d1226ec6e",
       "purpose": "Driver mobile dependency provenance and install-script verifier"
     },
     {
       "path": "apps/fleet-delivery-driver/scripts/verify-audit-boundary.mjs",
-      "sha256": "32caf4292cc235c70cd3c00028d9319399d456c159b53246910cf546dd46e0eb",
+      "sha256": "987e34bcf984f7ccd4f22844765564f3cd1bbbb19d169a9092255560b2cc5751",
       "purpose": "Driver mobile dependency-advisory drift and production-blocker monitor"
     },
     {
+      "path": "apps/fleet-delivery-driver/scripts/verify-braces-security-patch.mjs",
+      "sha256": "b9d800fa9a0d3b1ae677e85565634554228c55b1630b0ab447a5c228c98886a6",
+      "purpose": "Exact-source, installed-resolution and malicious-pattern verifier for the local braces fork"
+    },
+    {
       "path": "apps/fleet-delivery-driver/scripts/verify-licenses.mjs",
-      "sha256": "5728c4f0eb172a240afe62631edf21d37db08ecd0cf926e7897c8b5a2fc50239",
+      "sha256": "f5eb12056b0d05601317fcaa7ad9e66bc2c54a756641cb00edbec9d48d7be1ef",
       "purpose": "Driver mobile dependency license verifier"
     },
     {
@@ -47,8 +57,58 @@
     },
     {
       "path": "apps/fleet-delivery-driver/package-lock.json",
-      "sha256": "2c72494970850dce926c840b979e9565b03db77755b857b3f05cd32cc433043f",
+      "sha256": "3129445d50bd895e50e4227ebaf402d751fb03c1017c2eac992d2a6a18e984fa",
       "purpose": "Driver mobile npm dependency graph and integrity metadata"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/package.json",
+      "sha256": "6077c6c578e17e56959e4fb4036da31b77880afc4b75291947e4284029873a89",
+      "purpose": "Private versioned manifest for the MIT-licensed braces security fork"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/LICENSE",
+      "sha256": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+      "purpose": "Preserved upstream MIT license for the vendored braces fork"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/SECURITY_PATCH.md",
+      "sha256": "65cd52ede1b08faceeaa5abfb9b268c597004db3768e02e0557b7534e5b5cf70",
+      "purpose": "Fork scope, advisory and upstream-removal note"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/index.js",
+      "sha256": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+      "purpose": "Vendored braces public API"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/compile.js",
+      "sha256": "dc98f22eee3d511785d92a00758d5f0d48efed5f5813bdecc2de430c529b5c9f",
+      "purpose": "Vendored braces compiler"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/constants.js",
+      "sha256": "f9fb688959232eee3e6ad7906a5b0e3234815db49ee857ef86983d65b917dc7c",
+      "purpose": "Vendored braces constants including the fail-closed maximum structural depth"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/expand.js",
+      "sha256": "41ccc196ebfa7b7781a634e721eb744e4e7bcb54cba427a7e3d6806a1b9e58f7",
+      "purpose": "Vendored braces expander"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/parse.js",
+      "sha256": "558d672939c8c7e9a1268c7ebe3a1c8840f991c6e39a52feae6d04d7043c8b1c",
+      "purpose": "Patched braces parser that rejects excessive structural nesting"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/stringify.js",
+      "sha256": "96c44fbf78c21d7dac04556259c808f452ff639f8ccb093758299d2cc3334a4e",
+      "purpose": "Vendored braces stringifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/utils.js",
+      "sha256": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+      "purpose": "Vendored braces utilities"
     },
     {
       "path": "apps/fleet-delivery-driver/App.tsx",
@@ -122,7 +182,7 @@
     },
     {
       "path": "docs/delivery/phase-8/README.md",
-      "sha256": "3d2667c6b8e140d38a1357ea9d0f94e1333a6c25825a0568a903aab2c200d012",
+      "sha256": "553fede7ddde8e585fd4f35def104d3a88b12d8417f7e6aad7143db580ba6dbb",
       "purpose": "Security and release-readiness decision"
     },
     {
@@ -132,7 +192,7 @@
     },
     {
       "path": "docs/delivery/phase-9/readiness-gates.json",
-      "sha256": "dfa7a666c18a21cb02975a33088af74630400da0585d3e667c8cd7b31651b9a7",
+      "sha256": "fe357594e817785be277a23c193d05207cf898adbe04e0683f7e9aa077b479c4",
       "purpose": "Machine-readable pilot readiness gates"
     },
     {
@@ -152,7 +212,7 @@
     },
     {
       "path": "docs/delivery/phase-9/evidence/independent-security-review.md",
-      "sha256": "4ead8ca2b2a5daa7d9c80c6385cf00f9c44bc62fa4b3dfab22057d4c878c173b",
+      "sha256": "3d25af69bafa05e4bbfd5b38a653997b5f03ef0ea9605e602d975fd414a8a772",
       "purpose": "Independent security review packet"
     },
     {
@@ -287,7 +347,7 @@
     },
     {
       "path": "docs/delivery/phase-12/README.md",
-      "sha256": "f07bdea2c2cb378826dbeea084c8a0399ea20657a3e9263d6c28424763730520",
+      "sha256": "8ac2d9737c3514a00ec0cf560d1d770a6582b5c614c1de1b19ef2e1066d6724c",
       "purpose": "Supply-chain verification boundary"
     },
     {
@@ -297,13 +357,18 @@
     },
     {
       "path": "docs/delivery/phase-12/mobile-supply-chain-policy.json",
-      "sha256": "847a32202dc4d8ade0d2d71a8493dc240a7e10174cfeb8196d7bf46c1252b5ad",
+      "sha256": "49b85e304ac246cb5ec3690999bc066610741d32c0cac7527befb36f955258bc",
       "purpose": "Machine-readable driver mobile dependency provenance policy"
     },
     {
       "path": "docs/delivery/phase-12/mobile-audit-boundary.json",
-      "sha256": "84c4f1857c0bb37baf783a5d50782f4ebc1d30c98ee12fc95bb59ebc77371a26",
+      "sha256": "a42b08912c4167dae2233a21b9cd883acde7234d96c5d27d6d2ec3f56dc9d680",
       "purpose": "Fail-closed known-advisory drift and production-enable policy"
+    },
+    {
+      "path": "docs/delivery/phase-12/mobile-braces-security-patch.json",
+      "sha256": "82e0498b2c0056f6bcfdee57356125ff0f2e9fe833de23f1ef66ab137987b5b2",
+      "purpose": "Exact-source policy for the local mobile braces remediation"
     },
     {
       "path": "scripts/fleet-delivery-supply-chain.ts",
@@ -312,7 +377,7 @@
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "47971224056f40f653f3f07a1b7808dd72c6e642d7088665b975bb315209c399",
+      "sha256": "e9654dd11d87c47adc79b31b608109da5bd3926266c9c8e601f88d69dfd44d8d",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -337,7 +402,7 @@
     },
     {
       "path": "docs/delivery/phase-14/README.md",
-      "sha256": "fee38ae95d4ce9d1895a9e471ccd13de03d9492b3a04d2d301a0d7ee896e5c7a",
+      "sha256": "aaf411da335f5be60df0600d98fdc04f0681b6c0fe2f1f9b58c1debe99ce03f5",
       "purpose": "Third-party license verification boundary"
     },
     {
@@ -347,7 +412,7 @@
     },
     {
       "path": "docs/delivery/phase-14/mobile-dependency-license-policy.json",
-      "sha256": "a8cac5afa2abba8e5e92cb7561b58017a43e439c7f311098e9f3401a9db30ad7",
+      "sha256": "2c5cd1d13105212f81fbedbaf5f276698a625215f70059a90b5234290edb2249",
       "purpose": "Lock-bound driver mobile dependency license policy"
     },
     {
@@ -454,6 +519,8 @@
     "npm run config:verify",
     "npm run api-contract:verify",
     "cd apps/fleet-delivery-driver && npm run typecheck && npm run test:ci && npm run lint",
+    "cd apps/fleet-delivery-driver && npm run verify:security-patch && npm run verify:supply-chain && npm run verify:audit-boundary && npm run verify:licenses",
+    "cd apps/fleet-delivery-driver && npm run verify:reproducibility",
     "cd apps/fleet-delivery-driver/android && ./gradlew assembleDebug assembleRelease",
     "npm run gate"
   ]

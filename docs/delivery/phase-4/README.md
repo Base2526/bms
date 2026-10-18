@@ -105,8 +105,9 @@ denial, wrong-driver denial, stale-location denial, idempotent replay, append-on
 evidence, `DRIVER` actor audit, removal of the offer after acceptance and the existing 100-request
 atomic acceptance test. Migration `0001`–`0008` applied on a fresh disposable database and the
 checksum rerun applied nothing. The React Native shell separately passes strict TypeScript, ESLint,
-10 Jest tests, mobile lock provenance, dependency-license verification and two-iteration Android/iOS
-bundle reproducibility. Android Debug/unsigned Release and iOS Debug/Release simulator builds pass;
+10 Jest tests, mobile lock provenance, dependency-license verification, malicious nesting rejection,
+a zero-vulnerability production dependency audit and two-iteration Android/iOS bundle reproducibility.
+Android Debug/unsigned Release and iOS Debug/Release simulator builds pass;
 these do not substitute for signed artifacts or physical-device certification.
 
 ## 5. Later-phase blockers

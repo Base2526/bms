@@ -10,6 +10,7 @@
     "test": "jest",
     "test:ci": "jest --runInBand",
     "typecheck": "tsc --noEmit",
+    "verify:security-patch": "node scripts/verify-braces-security-patch.mjs",
     "verify:supply-chain": "node scripts/verify-supply-chain.mjs",
     "verify:audit-boundary": "node scripts/verify-audit-boundary.mjs",
     "verify:licenses": "node scripts/verify-licenses.mjs",
@@ -20,6 +21,8 @@
     "@bms/fleet-delivery-driver-core": "file:../fleet-delivery-driver-core",
     "@react-navigation/native": "7.5.1",
     "@react-navigation/native-stack": "7.21.0",
+    "braces": "file:vendor/braces",
+    "fill-range": "7.1.1",
     "react": "19.2.3",
     "react-native": "0.87.1",
     "react-native-keychain": "10.0.0",
@@ -48,6 +51,9 @@
     "prettier": "2.8.8",
     "react-test-renderer": "19.2.3",
     "typescript": "6.0.3"
+  },
+  "overrides": {
+    "braces": "$braces"
   },
   "engines": {
     "node": ">= 22.11.0"

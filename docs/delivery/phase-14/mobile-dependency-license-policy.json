@@ -4,7 +4,7 @@
   "mode": "MOBILE_DEPENDENCY_LICENSE_VERIFICATION",
   "productionAuthorized": false,
   "lockfilePath": "apps/fleet-delivery-driver/package-lock.json",
-  "packageLockSha256": "2c72494970850dce926c840b979e9565b03db77755b857b3f05cd32cc433043f",
+  "packageLockSha256": "3129445d50bd895e50e4227ebaf402d751fb03c1017c2eac992d2a6a18e984fa",
   "allowedLicenses": [
     "(MIT OR Apache-2.0)",
     "(MIT OR CC0-1.0)",
@@ -25,6 +25,16 @@
     "GPL",
     "SSPL",
     "UNLICENSED"
+  ],
+  "localForks": [
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces",
+      "package": "braces",
+      "version": "3.0.4-bms.1",
+      "license": "MIT",
+      "licenseFile": "apps/fleet-delivery-driver/vendor/braces/LICENSE",
+      "licenseFileSha256": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2"
+    }
   ],
   "metadataExceptions": [
     {
