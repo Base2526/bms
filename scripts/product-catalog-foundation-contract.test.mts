@@ -86,6 +86,24 @@ test("upsert cannot mutate lifecycle and publishing cannot bypass readiness", ()
   assert.match(resolvers, /if \(args\.active\) \{[\s\S]*publishProduct/);
 });
 
+// node-postgres serializes JS arrays as PostgreSQL array literals, but every occurrence of the
+// bind parameter still needs an explicit array type. Without these casts, saving an existing
+// restaurant product can make PostgreSQL resolve the conflict-update expression as scalar text
+// and reject it with "column allergen_codes is of type text[] but expression is of type text".
+test("food metadata bind parameters stay typed as text arrays on insert and update", () => {
+  const products = withoutComments(source("apps/web/lib/bms/products.ts"));
+  assert.match(products, /COALESCE\(\$15::text\[\], '\{\}'\)/);
+  assert.match(products, /COALESCE\(\$17::text\[\], '\{\}'\)/);
+  assert.match(
+    products,
+    /allergen_codes = COALESCE\(\$15::text\[\], bms_products\.allergen_codes\)/
+  );
+  assert.match(
+    products,
+    /dietary_tags = COALESCE\(\$17::text\[\], bms_products\.dietary_tags\)/
+  );
+});
+
 test("every selling path uses an explicit sales surface", () => {
   const products = source("apps/web/lib/bms/products.ts");
   const pos = source("apps/web/lib/bms/pos.ts");
