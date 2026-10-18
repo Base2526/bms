@@ -18,4 +18,9 @@ This is an engineering compliance control, not legal advice. It does not generat
 evaluate patents/trademarks, inspect transitive source headers or approve redistribution. A lockfile
 change requires renewed review and policy/checksum update.
 
+The separate driver-mobile verifier binds `apps/fleet-delivery-driver/package-lock.json`, evaluates
+882 external packages and two linked workspace packages, denies prohibited license-family tokens and
+hash-binds the installed MIT text for legacy `exit@0.1.2`, whose lock metadata omits a singular
+`license` field. CocoaPods/Gem distribution obligations still require Legal review before release.
+
 **NO-GO.** A passing allowlist check does not resolve Phase 9/10 gates or authorize production.

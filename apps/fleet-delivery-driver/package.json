@@ -9,7 +9,11 @@
     "start": "react-native start",
     "test": "jest",
     "test:ci": "jest --runInBand",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:supply-chain": "node scripts/verify-supply-chain.mjs",
+    "verify:audit-boundary": "node scripts/verify-audit-boundary.mjs",
+    "verify:licenses": "node scripts/verify-licenses.mjs",
+    "verify:reproducibility": "node scripts/verify-bundle-reproducibility.mjs"
   },
   "dependencies": {
     "@bms/fleet-delivery-contracts": "file:../../packages/fleet-delivery-contracts",

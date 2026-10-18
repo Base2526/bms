@@ -57,11 +57,13 @@ production driver product before these decisions would force unapproved choices 
 credentials, exact-location collection, private evidence, retention and emergency handling. Using
 mock devices or a public/local file URL would not satisfy the accepted gate.
 
-The safe synthetic boundary now includes the offer feed, platform-neutral client core and the
-pre-handoff `ASSIGNED -> EN_ROUTE_PICKUP -> AT_PICKUP` journey. Migration `0008` expands only those
-Delivery states and adds structured evidence to the append-only transition history. No mobile
-binary, external resource, real credential or customer/driver record was created. The
-following capabilities are hard-disabled in the client manifest: production authentication,
+The safe synthetic boundary now includes the offer feed, platform-neutral client core, a separate
+React Native Android/iOS source tree and the pre-handoff
+`ASSIGNED -> EN_ROUTE_PICKUP -> AT_PICKUP` journey. Migration `0008` expands only those Delivery
+states and adds structured evidence to the append-only transition history. Local unsigned native
+builds have been created for verification, but no signed or distributable production artifact,
+external resource, real credential or customer/driver record was created. The following capabilities
+are hard-disabled in the client manifest: production authentication,
 real-device location, KYC documents, POD photos, push notifications, customer contact and COD/
 earnings.
 
@@ -95,15 +97,17 @@ earnings.
 - Access-token and storage implementations remain injected; the core neither persists a token nor
   queues customer data, coordinates, photos or financial data.
 
-Verification on 2026-10-18: strict TypeScript passed; 25/25 pure tests passed; all 4 DB/API suites
-passed, including own-driver offer/assignment visibility, other-driver isolation, cross-tenant
+Verification on 2026-10-18: strict TypeScript, 43/43 DB-free tests and production bundles passed; all
+4 DB/API suites passed on the disposable test stack, including own-driver offer/assignment visibility,
+other-driver isolation, cross-tenant
 denial, coherent polling snapshots before and after assignment, restart recovery, transition-order
 denial, wrong-driver denial, stale-location denial, idempotent replay, append-only location-reference
 evidence, `DRIVER` actor audit, removal of the offer after acceptance and the existing 100-request
 atomic acceptance test. Migration `0001`–`0008` applied on a fresh disposable database and the
-checksum rerun applied nothing. The React Native shell separately passes strict TypeScript, ESLint
-and 10 Jest tests; native build verification is recorded in its app README/check history and does not
-substitute for physical-device certification.
+checksum rerun applied nothing. The React Native shell separately passes strict TypeScript, ESLint,
+10 Jest tests, mobile lock provenance, dependency-license verification and two-iteration Android/iOS
+bundle reproducibility. Android Debug/unsigned Release and iOS Debug/Release simulator builds pass;
+these do not substitute for signed artifacts or physical-device certification.
 
 ## 5. Later-phase blockers
 

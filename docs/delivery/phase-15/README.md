@@ -13,4 +13,9 @@ This check proves deterministic output on the current machine/toolchain inputs. 
 cross-platform reproducibility, hermetic networking, compiler provenance, image reproducibility,
 artifact signing or runtime equivalence. Those claims require separate evidence.
 
+The driver app additionally bundles Android and iOS JavaScript plus copied assets twice into isolated
+temporary directories and requires identical SHA-256 digests. This closes source-bundle drift but is
+not a reproducible native APK/IPA, CocoaPods compiler, signing or notarization claim; those remain part
+of the blocked mobile release gate.
+
 **NO-GO.** Reproducible bundles do not resolve Phase 9/10 approvals or authorize deployment.

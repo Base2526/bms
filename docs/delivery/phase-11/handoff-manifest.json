@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T04:18:30.000Z",
+  "generatedAt": "2026-10-18T04:43:13.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
@@ -12,18 +12,38 @@
     },
     {
       "path": "docs/delivery/phase-4/README.md",
-      "sha256": "479c4487fb9a5eb19e1606366da1c140fb3bc21d8533645020dcc77ab4776afd",
+      "sha256": "83e699627f955286692cce4f7524cd924cbefa4c297c16f940ceecd9826e90fd",
       "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
     },
     {
       "path": "apps/fleet-delivery-driver/README.md",
-      "sha256": "b8ff43ad912792265ec3a6da13719849d690d03038ec86e8be82aa616e94f42d",
+      "sha256": "4ad918f86b287ab0c79bed5c64495a89999b325e79197ed5b74a81bcb6b2fd3b",
       "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
     },
     {
       "path": "apps/fleet-delivery-driver/package.json",
-      "sha256": "37ca1dc9b1aec89ff0c46f988640d4129ab02b611d15c40f4568f958c76ab1f3",
+      "sha256": "0b0cf309476a4581b434f4db7516c9fcf0d11793ed10b6944c006a13e079eb67",
       "purpose": "Pinned driver mobile scripts and direct dependencies"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-supply-chain.mjs",
+      "sha256": "1d15d61a04e2db6215567cba05066c5b7d1a7afbd508203b31338d511f6de0d9",
+      "purpose": "Driver mobile dependency provenance and install-script verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-audit-boundary.mjs",
+      "sha256": "32caf4292cc235c70cd3c00028d9319399d456c159b53246910cf546dd46e0eb",
+      "purpose": "Driver mobile dependency-advisory drift and production-blocker monitor"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-licenses.mjs",
+      "sha256": "5728c4f0eb172a240afe62631edf21d37db08ecd0cf926e7897c8b5a2fc50239",
+      "purpose": "Driver mobile dependency license verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-bundle-reproducibility.mjs",
+      "sha256": "60594215297435bda61c9f7b21088aff861b120a4cda86bfd822fcec1cf74709",
+      "purpose": "Two-iteration Android and iOS JavaScript bundle verifier"
     },
     {
       "path": "apps/fleet-delivery-driver/package-lock.json",
@@ -102,7 +122,7 @@
     },
     {
       "path": "docs/delivery/phase-8/README.md",
-      "sha256": "d262194124479b0df982806c71b7eb9598750d29fdc256a797a772f6e95d545e",
+      "sha256": "3d2667c6b8e140d38a1357ea9d0f94e1333a6c25825a0568a903aab2c200d012",
       "purpose": "Security and release-readiness decision"
     },
     {
@@ -267,7 +287,7 @@
     },
     {
       "path": "docs/delivery/phase-12/README.md",
-      "sha256": "d27a747e8680bfb78fb224d8163280f3abd2e18438fc26ea152f942c5468401c",
+      "sha256": "f07bdea2c2cb378826dbeea084c8a0399ea20657a3e9263d6c28424763730520",
       "purpose": "Supply-chain verification boundary"
     },
     {
@@ -276,13 +296,23 @@
       "purpose": "Machine-readable dependency provenance policy"
     },
     {
+      "path": "docs/delivery/phase-12/mobile-supply-chain-policy.json",
+      "sha256": "847a32202dc4d8ade0d2d71a8493dc240a7e10174cfeb8196d7bf46c1252b5ad",
+      "purpose": "Machine-readable driver mobile dependency provenance policy"
+    },
+    {
+      "path": "docs/delivery/phase-12/mobile-audit-boundary.json",
+      "sha256": "84c4f1857c0bb37baf783a5d50782f4ebc1d30c98ee12fc95bb59ebc77371a26",
+      "purpose": "Fail-closed known-advisory drift and production-enable policy"
+    },
+    {
       "path": "scripts/fleet-delivery-supply-chain.ts",
       "sha256": "33ef81b5aac4c6077eec8428d40f81a08f1156a1193cfcd31c26691c0e37466b",
       "purpose": "Deterministic package-lock and install-script verifier"
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "bab3efd7eb7d7d30db23bd4e40462178a0b475bb4baaf03d8769dd9194e4e0ac",
+      "sha256": "47971224056f40f653f3f07a1b7808dd72c6e642d7088665b975bb315209c399",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -307,7 +337,7 @@
     },
     {
       "path": "docs/delivery/phase-14/README.md",
-      "sha256": "310377e9dfd15002263070190718d381da14d280578f63384f9881cd5387d293",
+      "sha256": "fee38ae95d4ce9d1895a9e471ccd13de03d9492b3a04d2d301a0d7ee896e5c7a",
       "purpose": "Third-party license verification boundary"
     },
     {
@@ -316,19 +346,29 @@
       "purpose": "Lock-bound dependency license policy"
     },
     {
+      "path": "docs/delivery/phase-14/mobile-dependency-license-policy.json",
+      "sha256": "a8cac5afa2abba8e5e92cb7561b58017a43e439c7f311098e9f3401a9db30ad7",
+      "purpose": "Lock-bound driver mobile dependency license policy"
+    },
+    {
       "path": "scripts/fleet-delivery-license.ts",
       "sha256": "ae4b6b2d565a9b39377da8d0d39a5ad6f0f045f5423b17da3c6aca0a423ec3c6",
       "purpose": "Dependency license allowlist verifier"
     },
     {
       "path": "docs/delivery/phase-15/README.md",
-      "sha256": "e4c31d9df1f741dcebb8ab288e970616e777cddac4241f91f611725bfe1c18f2",
+      "sha256": "1c5a1f7ac79d39085465f8caf12613b77d68da3fbcebcab460f4ab37b42c6b75",
       "purpose": "Reproducible-build verification boundary"
     },
     {
       "path": "docs/delivery/phase-15/reproducible-build-policy.json",
       "sha256": "aff0593778f2409aff7d8c97447ef47ea3c0d87a8a5d80e102bd4a85c9537094",
       "purpose": "Exact build-output reproducibility policy"
+    },
+    {
+      "path": "docs/delivery/phase-15/mobile-reproducible-build-policy.json",
+      "sha256": "ca726198acd65c02e0d3c887eed1c7eda32273a0d6a8c8af53481cb8499d2986",
+      "purpose": "Two-iteration Android and iOS JavaScript bundle reproducibility policy"
     },
     {
       "path": "scripts/fleet-delivery-reproducibility.ts",

@@ -1,0 +1,71 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(appRoot, '../..');
+const policy = JSON.parse(await readFile(
+  path.join(repoRoot, 'docs/delivery/phase-12/mobile-audit-boundary.json'),
+  'utf8',
+));
+const launchPlan = JSON.parse(await readFile(path.join(repoRoot, policy.productionPlanPath), 'utf8'));
+
+function audit() {
+  return new Promise((resolve, reject) => {
+    const child = spawn('npm', ['audit', '--omit=dev', '--json'], {
+      cwd: appRoot,
+      env: { ...process.env, NO_COLOR: '1' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', chunk => { stdout += chunk; });
+    child.stderr.on('data', chunk => { stderr += chunk; });
+    child.on('error', reject);
+    child.on('exit', code => {
+      try {
+        resolve({ code, report: JSON.parse(stdout) });
+      } catch {
+        reject(new Error(`npm audit did not return JSON: ${stderr.slice(-1000)}`));
+      }
+    });
+  });
+}
+
+const { report } = await audit();
+const counts = report.metadata?.vulnerabilities;
+if (!counts) throw new Error('npm audit report lacks vulnerability metadata');
+for (const [severity, expected] of Object.entries(policy.expectedVulnerabilities)) {
+  if (counts[severity] !== expected) {
+    throw new Error(`mobile audit drift for ${severity}: expected ${expected}, received ${counts[severity]}`);
+  }
+}
+
+const advisoryUrls = new Set();
+for (const vulnerability of Object.values(report.vulnerabilities ?? {})) {
+  for (const via of vulnerability.via ?? []) {
+    if (typeof via === 'object' && typeof via.url === 'string') advisoryUrls.add(via.url);
+  }
+}
+const expectedUrls = [...policy.knownAdvisoryUrls].sort();
+const observedUrls = [...advisoryUrls].sort();
+if (JSON.stringify(observedUrls) !== JSON.stringify(expectedUrls)) {
+  throw new Error('mobile audit advisory set changed; Security review is required');
+}
+
+const releaseBlocked = counts.total > 0;
+if (launchPlan.productionEnabled === true && releaseBlocked) {
+  throw new Error('production cannot be enabled while mobile dependency advisories remain open');
+}
+if (policy.productionAuthorized !== false) throw new Error('mobile audit policy must remain non-authorizing');
+
+process.stdout.write(`${JSON.stringify({
+  phase: policy.phase,
+  mode: policy.mode,
+  productionAuthorized: policy.productionAuthorized,
+  vulnerabilityCounts: counts,
+  knownAdvisoryUrls: observedUrls,
+  releaseBlocked,
+  verified: true,
+}, null, 2)}\n`);

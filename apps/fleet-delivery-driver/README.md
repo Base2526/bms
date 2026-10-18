@@ -20,9 +20,10 @@ Status: **internal test build only; production activation is fail-closed**.
 
 The app stops at `AT_PICKUP`. Production authentication, device registration/revocation, real GPS,
 KYC, POD, push notifications, customer contact, COD, earnings, merchant handoff, and drop-off are
-hard-disabled in `src/config/capabilities.ts`. A Release build purges any stored test session, has no
-activation form, and cannot create a session until an approved identity implementation replaces the
-debug flow. Android Release is intentionally unsigned and never falls back to the debug keystore.
+hard-disabled in `src/config/capabilities.ts`. Debug and Release use isolated application identities;
+a Release build never reads or writes the Debug keychain/keystore session, has no activation form,
+and cannot create a session until an approved identity implementation replaces the debug flow.
+Android Release is intentionally unsigned and never falls back to the debug keystore.
 
 ## Local checks
 
@@ -33,6 +34,10 @@ npm ci
 npm run typecheck
 npm run test:ci
 npm run lint
+npm run verify:supply-chain
+npm run verify:audit-boundary
+npm run verify:licenses
+npm run verify:reproducibility
 cd android && ./gradlew assembleDebug assembleRelease
 cd ../ios && bundle exec pod install
 ```
@@ -53,6 +58,9 @@ The app is intentionally a standalone npm project because React Native owns nati
 lockfile lifecycles independently from the Fleet Delivery Node workspace.
 
 ## Release blockers
+
+The reproducibility check proves deterministic Android/iOS JavaScript bundles and copied assets on one
+host; it does not prove deterministic native APK/IPA archives, compiler provenance or signing.
 
 This source tree is not evidence that the Phase 4 real-device gate passed. Release still requires the
 owner approvals and device exercises in `docs/delivery/phase-4/README.md` and

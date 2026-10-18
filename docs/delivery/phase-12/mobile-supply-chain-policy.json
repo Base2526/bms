@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "phase": 12,
+  "mode": "MOBILE_SUPPLY_CHAIN_VERIFICATION",
+  "productionAuthorized": false,
+  "packagePath": "apps/fleet-delivery-driver/package.json",
+  "lockfilePath": "apps/fleet-delivery-driver/package-lock.json",
+  "lockfileVersion": 3,
+  "allowedRegistryPrefixes": [
+    "https://registry.npmjs.org/"
+  ],
+  "allowedLocalPackages": [
+    "apps/fleet-delivery-driver-core",
+    "packages/fleet-delivery-contracts"
+  ],
+  "requireExactDirectVersions": true,
+  "requireSha512Integrity": true,
+  "allowedInstallScripts": [
+    {
+      "package": "fsevents",
+      "version": "2.3.3",
+      "reason": "Pinned optional macOS filesystem-event dependency used by the React Native toolchain"
+    }
+  ]
+}
