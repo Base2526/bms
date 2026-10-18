@@ -123,6 +123,7 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run certification:verify
+      - run: npm run approval-requests:verify
       - run: npm run launch-controls:verify
       - run: npm run config:verify
       - run: npm run api-contract:verify

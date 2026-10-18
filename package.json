@@ -17,6 +17,7 @@
     "test": "npm run test:pure",
     "migrate": "tsx apps/fleet-delivery-api/src/migrate.ts",
     "certification:verify": "tsx scripts/fleet-delivery-certification-pack.ts",
+    "approval-requests:verify": "tsx scripts/fleet-delivery-approval-requests.ts",
     "pilot:readiness": "tsx scripts/fleet-delivery-readiness.ts",
     "launch-controls:verify": "tsx scripts/fleet-delivery-launch-controls.ts",
     "launch:readiness": "tsx scripts/fleet-delivery-launch-readiness.ts",

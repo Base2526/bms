@@ -17,3 +17,8 @@ For each gate:
 5. Run `npm run certification:verify` and `npm run pilot:readiness`.
 
 `PILOT_READY` does not authorize production; Phase 10 still requires separate authorization.
+
+The files under `../approval-requests/` are outbound request drafts, not accepted evidence. Sending,
+acknowledging or discussing a packet does not add an approval. Only a real authorized owner may sign
+the reviewed evidence, after which the durable evidence reference and approval are recorded in the
+authoritative readiness manifest.

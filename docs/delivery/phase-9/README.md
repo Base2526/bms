@@ -27,6 +27,9 @@ pilot. The current manifest deliberately fixes `productionEnabled` to `false`; e
   `-- --require-pilot-ready` in an explicitly requested pilot-release workflow; it exits 2 while the
   decision is `NO_GO`. It also validates workbook alignment and all local packet references.
 - `npm run certification:verify` reports the artifact/exercise inventory without changing a gate.
+- `approval-requests.json` and `approval-requests/` contain a role-complete request bundle for all
+  blocked gates. `npm run approval-requests:verify` proves packet/gate/role coverage while fixing the
+  bundle itself to `NOT_DISPATCHED`, `productionAuthorized=false` and no granted approvals.
 
 Approval entries must identify a real authorized person and link to durable evidence. Engineering
 must not create or infer an approval from a coding instruction, test result or general permission to
@@ -42,6 +45,10 @@ remain blocked.
 The certification workbook now covers all 11 gates with 11 required artifact sets and 9 controlled
 non-production exercises. Ten packets remain open because authorized reviews, owner decisions,
 approved environments, real devices or non-production credentials have not been supplied.
+
+Six grouped approval requests are ready to send to all 14 required roles. They have not been
+dispatched because no connected Slack/email channel or named authorized recipient was supplied.
+The request bundle is preparation material only and does not unblock implementation.
 
 **NO-GO.** Keep real users, BMS mutations, provider traffic, customer tracking, physical handoff,
 private evidence and real money disabled. Phase 10 requires `PILOT_READY` plus a separate explicit

@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T05:12:01.000Z",
+  "generatedAt": "2026-10-18T05:18:19.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
@@ -212,8 +212,48 @@
     },
     {
       "path": "docs/delivery/phase-9/README.md",
-      "sha256": "45e0a1a4e35ce8e2bb0d7cc68db8f9d8a26b3bb41b0795a9e44a18a72baea795",
+      "sha256": "63b40f586077b3e41f58e972a33215b3c6787152e8a688de3adb9cc8951bc8dc",
       "purpose": "Pilot certification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests.json",
+      "sha256": "944aa70995cb1d5d0ad37b073e4a61048e68f87f337b62e7f0577c90b97db628",
+      "purpose": "Machine-readable non-authorizing approval request manifest"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/README.md",
+      "sha256": "ce66749facac203b39fb814bc83bada90c4b0c5a51c7f1e2a6e19f2089ef6a03",
+      "purpose": "Approval dispatch boundary and post-approval capability sequence"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/security.md",
+      "sha256": "3f7c0b2ab6697686f37bf915564ccf171f30b0241ce0a6a1b84330132f4f4cce",
+      "purpose": "Security production-authentication and private-evidence approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/privacy-legal.md",
+      "sha256": "6e30d941543589eae7e14d479c4483413e44cf152cfc21c0b4ba4b1c930af1aa",
+      "purpose": "DPO and Legal privacy, KYC, POD and contact approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/finance-tax.md",
+      "sha256": "51636d1ae3e1b7efe5c4740125a65991ebf423e7ea82bd0197ebd6305774351e",
+      "purpose": "Finance, Tax and Legal COD and earnings approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/operations-safety.md",
+      "sha256": "97169ce280ea205501a714676e4bf1883a79dc5d2bf25f0fcb38f90b2070fd73",
+      "purpose": "Operations and Safety driver, device and support approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/sre-product.md",
+      "sha256": "f5dd2f3deb30a273e78e7933ad0de7d7f433848f9031343cd9bca0695171fd2f",
+      "purpose": "SRE and Product scale, SLO and recovery approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/cross-system-owners.md",
+      "sha256": "24e575600097b64be6fc495221b16d75138d2aa9f053eccc9332d259d46eb096",
+      "purpose": "Repository and BMS authority owner approval request"
     },
     {
       "path": "docs/delivery/phase-9/readiness-gates.json",
@@ -227,7 +267,7 @@
     },
     {
       "path": "docs/delivery/phase-9/evidence/README.md",
-      "sha256": "d5f0911f5a8f25f341cb6b8a854eeff42c392fdb8118f9e5fb02251fa94acb9b",
+      "sha256": "e32406d2d946bde3f5a761314246b861162e6f890acb884ee97f612f4ebf2ce2",
       "purpose": "Certification evidence handling and approval boundary"
     },
     {
@@ -322,7 +362,7 @@
     },
     {
       "path": "package.json",
-      "sha256": "a7627df2d547f6f90b3ef176c0783c87ce7bd2040f157de9e22e93fb22760027",
+      "sha256": "c14792ab4a295497157ddb02159d9dbb8bc2def969afb51e6534b6fdb7f70a0d",
       "purpose": "Workspace verification command catalog"
     },
     {
@@ -349,6 +389,11 @@
       "path": "scripts/fleet-delivery-certification-pack.ts",
       "sha256": "9474296325688b51fa1b94d0c9c52132485ea799041c2cdc7966dd83504fd723",
       "purpose": "Phase 9 workbook and readiness-manifest drift verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-approval-requests.ts",
+      "sha256": "c11e6d56a70c19ffe2a548449305bc4b1275799662897efd749e9f5a8f928783",
+      "purpose": "Phase 9 approval request gate and role coverage verifier"
     },
     {
       "path": "scripts/fleet-delivery-launch-readiness.ts",
@@ -402,7 +447,7 @@
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "31e91ac0d6c6321824e54fc49c3f3c953aa240309c9115312c194001d308d6da",
+      "sha256": "6f36f94aa9577af98e6ee01b86b2f13a30c194c365313ad4eb5d6b92e3e1fad8",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -532,6 +577,7 @@
   ],
   "verificationCommands": [
     "npm run certification:verify",
+    "npm run approval-requests:verify",
     "npm run pilot:readiness",
     "npm run launch-controls:verify",
     "npm run launch:readiness",
