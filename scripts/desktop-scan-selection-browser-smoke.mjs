@@ -10,15 +10,19 @@ const barcode = "2018443771676", sku = "FAKE-A";
 const imageUrl = "/sample/restaurant/pork-garlic.jpg";
 const selection = { scanCode: barcode, sku, productName: "FAKE Product", imageUrl,
   variants: [{ size: "S", price: 100, available: 10, stockTracked: true }, { size: "L", price: 200, available: 10, stockTracked: true },
-    { size: "XL", price: 250, available: 0, stockTracked: true }] };
+    { size: "XL", price: 250, available: 0, stockTracked: true },
+    ...Array.from({ length: 12 }, (_, i) => ({ size: `EXTRA-${i + 1}`, price: 300, available: 5, stockTracked: true }))] };
 const promotion = { kind: "BUY_A_GET_B", id: "FAKE-PROMO", buySku: sku, buySize: "S", buyQty: 1, giftSku: "FAKE-GIFT", giftSize: "STD", getQty: 1 };
 const hit = (size, pack = false) => ({ sku, size, productName: selection.productName, receiptName: selection.productName,
   baseQty: pack ? 6 : 1, packCode: pack ? "BOX" : "BASE", unitName: pack ? "กล่อง" : "ชิ้น", packPrice: pack ? 900 : size === "S" ? 100 : 200,
   basePrice: size === "S" ? 100 : 200, available: 10, stockTracked: true, serialTracked: false, scaleBarcode: null,
   imageUrl, barcode: pack ? "EXACT-BOX" : barcode, priceTiers: [], promotion, modifiers: [], packs: [] });
 try {
-  for (const width of [1440, 390]) {
-    const context = await browser.newContext({ viewport: { width, height: 1000 } });
+  for (const { width, height } of [
+    { width: 1440, height: 1000 }, { width: 1366, height: 700 },
+    { width: 1024, height: 700 }, { width: 390, height: 844 },
+  ]) {
+    const context = await browser.newContext({ viewport: { width, height } });
     await context.addCookies([{ name: "lang", value: "th", url: base }]);
     await context.addInitScript(() => {
       window.bmsDesktop = { isDesktop: true, getDeviceToken: async () => "FAKE-token", getStorageNamespace: async () => "FAKE-scan",
@@ -93,6 +97,24 @@ try {
       await scan(barcode);
       await panel.getByRole("radio", { name: "ไซส์ S", exact: true }).waitFor();
       await imageCheck();
+      const layout = await panel.evaluate(element => {
+        const bounds = element.getBoundingClientRect();
+        const body = element.firstElementChild.getBoundingClientRect();
+        const action = element.querySelector(":scope > button").getBoundingClientRect();
+        return { panelBottom: bounds.bottom, bodyHeight: body.height, bodyBottom: body.bottom, actionTop: action.top, actionBottom: action.bottom };
+      });
+      assert.ok(layout.bodyHeight >= 80, `product details must retain usable space at ${width}x${height}: ${JSON.stringify(layout)}`);
+      assert.ok(layout.bodyBottom <= layout.actionTop, "scrolling details must not overlap the add action");
+      assert.ok(layout.actionBottom <= layout.panelBottom, "add action must not be clipped by its panel");
+      if (width > 980) assert.ok(layout.panelBottom <= height, "desktop panel must fit the viewport");
+      const lastSize = panel.getByRole("radio", { name: "ไซส์ EXTRA-12", exact: true });
+      await lastSize.scrollIntoViewIfNeeded();
+      assert.ok(await lastSize.evaluate(input => {
+        const rect = input.getBoundingClientRect();
+        const body = input.closest("fieldset").parentElement.getBoundingClientRect();
+        return rect.top >= body.top && rect.bottom <= body.bottom;
+      }), "last size must be reachable inside the scrolling product body");
+      await page.screenshot({ path: `${output}/${width}-selection.png`, fullPage: true });
       assert.equal(await page.locator("article").count(), 0, "ambiguous code must not add a guessed size");
       assert.equal(await panel.getByRole("button", { name: "เพิ่มไซส์ที่เลือกลงบิล" }).isDisabled(), true);
       assert.equal(await panel.getByRole("radio", { name: "ไซส์ XL", exact: true }).isDisabled(), true);
