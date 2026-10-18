@@ -1398,6 +1398,15 @@ The same migration adds positive allergen declarations, a reviewed flag, dietary
 bounded safety note to `bms_products`. Empty arrays remain unknown unless the reviewed flag is true,
 and no database value asserts freedom from kitchen cross-contact.
 
+Product upserts must type the array defaults in the `INSERT` expression, e.g.
+`COALESCE($15::text[], '{}')`. Without the cast, PostgreSQL resolves the expression as `text`
+and rejects it before either insertion or conflict-update can run. The insert casts were added
+in `5fdd2706`; explicit casts in the conflict clause are defensive and do not substitute for them.
+`scripts/product-food-array-db-contract.test.mts` executes the service SQL on a temporary table
+and reproduces error `42804` by removing each insert cast. A deployment still reporting this
+error needs its running application version checked against that change; no column migration
+is needed to repair this expression-type mismatch.
+
 `bms_restaurant_check_items` keeps menu, pack, modifier and kitchen-note snapshots by service round.
 `bms_restaurant_kitchen_tickets` drives pre-payment KDS states independently from the completed-order
 tickets introduced in `9.40`; because those tickets exist before any sale, the kitchen board's

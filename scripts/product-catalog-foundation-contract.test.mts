@@ -86,6 +86,15 @@ test("upsert cannot mutate lifecycle and publishing cannot bypass readiness", ()
   assert.match(resolvers, /if \(args\.active\) \{[\s\S]*publishProduct/);
 });
 
+// The INSERT expression COALESCE($n, '{}') resolves to text before the target array column
+// supplies a type. Cast here even for updates: PostgreSQL parses the INSERT before ON CONFLICT.
+// Once inferred here, the parameter already has the right type in the conflict clause.
+test("food metadata INSERT defaults have an explicit array type", () => {
+  const products = withoutComments(source("apps/web/lib/bms/products.ts"));
+  assert.match(products, /COALESCE\(\$15::text\[\], '\{\}'\)/);
+  assert.match(products, /COALESCE\(\$17::text\[\], '\{\}'\)/);
+});
+
 test("every selling path uses an explicit sales surface", () => {
   const products = source("apps/web/lib/bms/products.ts");
   const pos = source("apps/web/lib/bms/pos.ts");

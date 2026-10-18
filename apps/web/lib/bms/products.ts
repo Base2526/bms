@@ -1577,9 +1577,9 @@ export async function upsertProduct(
              -- INSERT ข้างบน COALESCE เป็น 'UNKNOWN' ไปแล้ว การอ้าง EXCLUDED จะทับ
              -- ค่าที่ตั้งไว้ของสินค้าเดิมทุกครั้งที่มีใครกดบันทึกจากฟอร์มที่ไม่มีช่องนี้
              vat_category = COALESCE($14, bms_products.vat_category),
-             allergen_codes = COALESCE($15, bms_products.allergen_codes),
+             allergen_codes = COALESCE($15::text[], bms_products.allergen_codes),
              allergen_information_provided = COALESCE($16, bms_products.allergen_information_provided),
-             dietary_tags = COALESCE($17, bms_products.dietary_tags),
+             dietary_tags = COALESCE($17::text[], bms_products.dietary_tags),
              food_safety_note = CASE
                WHEN $18::text IS NULL THEN bms_products.food_safety_note
                ELSE NULLIF($18, '')
