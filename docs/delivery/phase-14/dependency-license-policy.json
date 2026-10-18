@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "phase": 14,
+  "mode": "DEPENDENCY_LICENSE_VERIFICATION",
+  "productionAuthorized": false,
+  "lockfileVersion": 3,
+  "packageLockSha256": "123c81c651c72f1bebb75682a06ca718988c5d6a93a7dbd95c14e8ef70cab915",
+  "allowedLicenses": [
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT"
+  ],
+  "deniedLicenseTokens": [
+    "AGPL",
+    "BUSL",
+    "CC-BY-NC",
+    "GPL",
+    "SSPL",
+    "UNLICENSED"
+  ],
+  "workspacePathPrefixes": [
+    "apps/fleet-delivery-",
+    "packages/fleet-delivery-"
+  ],
+  "allowMissingLicenseForWorkspacePackages": true
+}

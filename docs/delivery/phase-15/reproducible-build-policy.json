@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "phase": 15,
+  "mode": "REPRODUCIBLE_BUILD_VERIFICATION",
+  "productionAuthorized": false,
+  "buildCommand": "npm run build",
+  "iterations": 2,
+  "artifacts": [
+    "dist/fleet-delivery-api/main.js",
+    "dist/fleet-delivery-api/main.js.map",
+    "dist/fleet-delivery-api/migrate.js",
+    "dist/fleet-delivery-api/migrate.js.map",
+    "dist/fleet-delivery-worker/main.js",
+    "dist/fleet-delivery-worker/main.js.map"
+  ],
+  "hashAlgorithm": "sha256"
+}

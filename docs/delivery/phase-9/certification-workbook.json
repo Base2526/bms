@@ -1,0 +1,201 @@
+{
+  "schemaVersion": 1,
+  "phase": 9,
+  "mode": "PILOT_CERTIFICATION_WORKBOOK",
+  "generatedAt": "2026-10-18T00:00:00.000Z",
+  "productionAuthorized": false,
+  "items": [
+    {
+      "gateId": "synthetic-foundation",
+      "planRef": "docs/delivery/phase-8/README.md",
+      "status": "COMPLETE",
+      "requiredArtifacts": [{
+        "id": "phase-8-release-pack",
+        "description": "Synthetic engineering release-readiness pack and runbook",
+        "acceptanceCriteria": ["Phase 8 documents the verified synthetic foundation and explicit production boundary"]
+      }],
+      "requiredExercises": [],
+      "evidenceRefs": [
+        "docs/delivery/phase-8/README.md",
+        "docs/delivery/phase-8/api-and-event-inventory.md",
+        "docs/delivery/phase-8/release-and-recovery-runbook.md"
+      ],
+      "openActions": []
+    },
+    {
+      "gateId": "repository-instructions",
+      "planRef": "docs/delivery/phase-9/evidence/repository-instructions.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "rtk-instructions",
+        "description": "Repository-owner-authored RTK.md instructions referenced by AGENTS.md",
+        "acceptanceCriteria": ["RTK.md exists, contains authoritative instructions and is approved by the Repository Owner"]
+      }],
+      "requiredExercises": [],
+      "evidenceRefs": [],
+      "openActions": ["Repository Owner must provide and approve the missing RTK.md content"]
+    },
+    {
+      "gateId": "independent-security-review",
+      "planRef": "docs/delivery/phase-9/evidence/independent-security-review.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "security-review-report",
+        "description": "Independent threat, abuse and application-security review report",
+        "acceptanceCriteria": ["No unresolved high-severity issue remains without signed residual-risk acceptance"]
+      }],
+      "requiredExercises": [{
+        "id": "authorization-abuse-exercise",
+        "description": "Exercise tenant isolation, scope denial, replay and idempotency abuse cases",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Cross-tenant, under-scoped and replay attempts are denied without unauthorized mutation"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["Security must perform an independent review and record remediation or risk acceptance"]
+    },
+    {
+      "gateId": "privacy-retention",
+      "planRef": "docs/delivery/phase-9/evidence/privacy-retention.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "privacy-retention-decision",
+        "description": "Approved PDPA purpose, data inventory, retention, deletion, legal-hold and data-subject procedure",
+        "acceptanceCriteria": ["DPO and Legal approve every collected field, purpose, retention period and deletion exception"]
+      }],
+      "requiredExercises": [{
+        "id": "deletion-export-exercise",
+        "description": "Exercise an authorized data export and deletion request against synthetic records",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["The exercise preserves required audit records while deleting or exporting all in-scope data"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["DPO and Legal must approve policy and review the synthetic deletion/export exercise"]
+    },
+    {
+      "gateId": "driver-device-safety",
+      "planRef": "docs/delivery/phase-9/evidence/driver-device-safety.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "driver-safety-policy",
+        "description": "Approved driver identity, supported-device, location-permission, safety and support policy",
+        "acceptanceCriteria": ["Operations and Safety approve identity, permission withdrawal, incident and support handling"]
+      }],
+      "requiredExercises": [{
+        "id": "real-device-journey",
+        "description": "Run pickup, location interruption, permission withdrawal, offline recovery and support journeys on target devices",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Every supported-device journey completes safely or fails closed with an operator-visible recovery path"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["Operations, Safety and Mobile Engineering must execute and approve real-device evidence"]
+    },
+    {
+      "gateId": "bms-cross-system",
+      "planRef": "docs/delivery/phase-9/evidence/bms-cross-system.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "authority-contract",
+        "description": "Approved service-principal, data-authority, stock-handoff and customer-tracking contract",
+        "acceptanceCriteria": ["BMS Architecture and domain owners approve every producer, consumer, mutation authority and permission"]
+      }],
+      "requiredExercises": [{
+        "id": "cross-system-e2e",
+        "description": "Exercise order context, handoff, duplicate delivery, missed event, replay and reconciliation paths",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["BMS remains authoritative and duplicate, delayed and replayed messages converge without double mutation"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["BMS Architecture, Commerce and Inventory owners must certify the contract and E2E results"]
+    },
+    {
+      "gateId": "finance-tax-legal",
+      "planRef": "docs/delivery/phase-9/evidence/finance-tax-legal.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "financial-operating-model",
+        "description": "Approved COD custody, fee, earnings, settlement, refund, payout, transfer and tax model",
+        "acceptanceCriteria": ["Finance, Tax and Legal approve money ownership, accounting entries, evidence and dispute handling"]
+      }],
+      "requiredExercises": [{
+        "id": "financial-reconciliation-tabletop",
+        "description": "Reconcile synthetic happy-path, cancellation, return, shortage and payout-dispute scenarios",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Every scenario balances exactly in satang with an identified source of truth and accountable owner"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["Finance, Tax and Legal must decide and approve the disabled financial capabilities"]
+    },
+    {
+      "gateId": "admin-access-model",
+      "planRef": "docs/delivery/phase-9/evidence/admin-access-model.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "access-control-matrix",
+        "description": "Approved tenant/platform access matrix including private evidence and financial separation of duties",
+        "acceptanceCriteria": ["Product and Security approve least privilege, break-glass handling and incompatible duty pairs"]
+      }],
+      "requiredExercises": [{
+        "id": "access-denial-exercise",
+        "description": "Exercise cross-tenant, missing-permission, private-evidence and conflicting-duty denial cases",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Every unauthorized case is denied and audited without leaking private evidence"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["Product, Security and BMS Architecture must approve placement, federation and duty separation"]
+    },
+    {
+      "gateId": "sre-capacity-observability",
+      "planRef": "docs/delivery/phase-9/evidence/sre-capacity-observability.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "pilot-slo-capacity-plan",
+        "description": "Approved pilot volume, topology, SLO, alert threshold, on-call and incident-command plan",
+        "acceptanceCriteria": ["SRE and Product approve measurable SLOs, paging thresholds, capacity limits and ownership"]
+      }],
+      "requiredExercises": [{
+        "id": "approved-volume-load-test",
+        "description": "Run load, saturation and degraded-dependency tests at the approved pilot volume",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["The service meets approved SLOs and emits actionable alerts before unsafe saturation"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["SRE and Product must define pilot volume/SLO and approve measured capacity evidence"]
+    },
+    {
+      "gateId": "recovery-objectives",
+      "planRef": "docs/delivery/phase-9/evidence/recovery-objectives.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "approved-recovery-objectives",
+        "description": "Approved RPO, RTO, offsite backup and recovery ownership record",
+        "acceptanceCriteria": ["SRE and Operations approve objective values, data-loss boundary and recovery authority"]
+      }],
+      "requiredExercises": [{
+        "id": "timed-operator-restore",
+        "description": "Perform a timed restore from an offsite backup using the operator runbook",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Measured recovery meets approved RPO/RTO and reconciliation proves restored consistency"]
+      }],
+      "evidenceRefs": ["docs/delivery/phase-8/release-and-recovery-runbook.md"],
+      "openActions": ["SRE and Operations must approve objectives and complete a timed offsite restore drill"]
+    },
+    {
+      "gateId": "provider-failure-certification",
+      "planRef": "docs/delivery/phase-9/evidence/provider-failure-certification.md",
+      "status": "OPEN",
+      "requiredArtifacts": [{
+        "id": "provider-boundary-record",
+        "description": "Approved provider inventory, non-production credential custody and network-boundary record",
+        "acceptanceCriteria": ["Security, SRE and the Integration Owner approve credentials, egress, rotation and outage ownership"]
+      }],
+      "requiredExercises": [{
+        "id": "provider-outage-rotation-drill",
+        "description": "Exercise timeouts, errors, duplicate callbacks, credential revocation and credential rotation",
+        "environment": "NON_PRODUCTION",
+        "acceptanceCriteria": ["Provider failures remain bounded, retries are safe and rotated credentials recover without data corruption"]
+      }],
+      "evidenceRefs": [],
+      "openActions": ["Authorized owners must supply sandbox credentials and approve outage and rotation drill results"]
+    }
+  ]
+}

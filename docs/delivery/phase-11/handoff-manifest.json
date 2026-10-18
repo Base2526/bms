@@ -1,0 +1,328 @@
+{
+  "schemaVersion": 1,
+  "phase": 11,
+  "mode": "ENGINEERING_HANDOFF",
+  "generatedAt": "2026-10-18T03:56:59.000Z",
+  "productionAuthorized": false,
+  "artifacts": [
+    {
+      "path": "docs/BMS_Delivery_Master_Prompt_v2.4.md",
+      "sha256": "89bfd1b71ffbc115c066dfced43cc7e613154bc0ddbe3e4a2e78c1a1dd70ec2f",
+      "purpose": "Authoritative Fleet Delivery implementation roadmap"
+    },
+    {
+      "path": "docs/delivery/phase-8/README.md",
+      "sha256": "d262194124479b0df982806c71b7eb9598750d29fdc256a797a772f6e95d545e",
+      "purpose": "Security and release-readiness decision"
+    },
+    {
+      "path": "docs/delivery/phase-9/README.md",
+      "sha256": "45e0a1a4e35ce8e2bb0d7cc68db8f9d8a26b3bb41b0795a9e44a18a72baea795",
+      "purpose": "Pilot certification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-9/readiness-gates.json",
+      "sha256": "dfa7a666c18a21cb02975a33088af74630400da0585d3e667c8cd7b31651b9a7",
+      "purpose": "Machine-readable pilot readiness gates"
+    },
+    {
+      "path": "docs/delivery/phase-9/certification-workbook.json",
+      "sha256": "7b0271ca4babcbfeb1f80b6bad920faef5d5c8ab3be0cc25ddbabe651b9512b7",
+      "purpose": "Machine-readable certification artifacts, exercises and acceptance criteria"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/README.md",
+      "sha256": "d5f0911f5a8f25f341cb6b8a854eeff42c392fdb8118f9e5fb02251fa94acb9b",
+      "purpose": "Certification evidence handling and approval boundary"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/repository-instructions.md",
+      "sha256": "51affcb0016a1d240efd0c676e6e2538fedf427b73b423cbd6af3fec6eaa35a1",
+      "purpose": "Repository instruction certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/independent-security-review.md",
+      "sha256": "4ead8ca2b2a5daa7d9c80c6385cf00f9c44bc62fa4b3dfab22057d4c878c173b",
+      "purpose": "Independent security review packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/privacy-retention.md",
+      "sha256": "5d1e6f62d9eec4adaff11938e1e3fcd5a342aaf277031911425f7943811f859f",
+      "purpose": "Privacy and retention certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/driver-device-safety.md",
+      "sha256": "d65dcbba01e8113ea6d08c5c5252d36acaef0217482536414b44d5002005e11a",
+      "purpose": "Driver device and safety certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/bms-cross-system.md",
+      "sha256": "e2d2e33325b774f1283c9780814739760b76f56e3d5608b6caed65a005011eda",
+      "purpose": "BMS authority and cross-system certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/finance-tax-legal.md",
+      "sha256": "4e9dfbb6cca38e9773867a32391aefee0c1eed925a506aba2458920e8ef7a62c",
+      "purpose": "Finance, tax and legal certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/admin-access-model.md",
+      "sha256": "f867fa429eb68ff087d7da46502e73a941042bb8832c49faf3085d824242e239",
+      "purpose": "Admin access and separation-of-duties packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/sre-capacity-observability.md",
+      "sha256": "5920eacbf54c9c59d7dc2158dbbd3a91004041b580973d168f3ae3128b3e3a66",
+      "purpose": "SRE capacity and observability certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/recovery-objectives.md",
+      "sha256": "6d53569a728e9eba146ddf55a5a0b952496c3710193004887e23b5924b686744",
+      "purpose": "Recovery objective and timed drill packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/provider-failure-certification.md",
+      "sha256": "9b1dc7f7c71b04011691a1677a3c2713aa93b6b1bc521427b1403ac9114bb8e1",
+      "purpose": "Provider failure and credential certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-10/README.md",
+      "sha256": "5dead3c5341f47c3f19bdf0de379b819ed61e266be3433fecc35191a06a38e17",
+      "purpose": "Controlled launch boundary"
+    },
+    {
+      "path": "docs/delivery/phase-10/controlled-launch-plan.json",
+      "sha256": "01a55ec5e6cee53268044d777bd2bbf0ea8eff41fa270c5c176f9243d5b3d976",
+      "purpose": "Machine-readable fail-closed launch plan"
+    },
+    {
+      "path": "docs/delivery/phase-10/launch-readiness-workbook.json",
+      "sha256": "d5b9fd454a3f839abadcdd3656ffc011818983456840b12abb947fcc55d7af53",
+      "purpose": "Machine-readable launch-control ownership and acceptance workbook"
+    },
+    {
+      "path": "docs/delivery/phase-10/production-authorization-template.md",
+      "sha256": "158844e5a6ea250dcde30ce1fb0ed3e708d528d1d2d7fd69cdfd398cc8d88dfb",
+      "purpose": "Non-authorizing production approval record template"
+    },
+    {
+      "path": "docs/delivery/phase-10/operator-checklist.md",
+      "sha256": "330a20df9f7d12a7cbdf228be72790b276d38cf21587c452fcec2e469aff424d",
+      "purpose": "Controlled launch operator evidence checklist"
+    },
+    {
+      "path": "docs/delivery/phase-10/stage-gates-and-rollback.md",
+      "sha256": "bd466317d3a6e4ee1157631bc165b68c2fcdd38682fde3e20e6c85af45c50e0b",
+      "purpose": "Non-executable stage gate and rollback template"
+    },
+    {
+      "path": "docs/delivery/phase-11/README.md",
+      "sha256": "a8b1fa63e2312ee39a922537a063c5aa0fc34d27c6df18fb7d2d526c34c0ba08",
+      "purpose": "Engineering handoff boundary"
+    },
+    {
+      "path": "docs/delivery/roadmap-closure/README.md",
+      "sha256": "6aa15d2a1429fe422b9c209bf69f0be6435e76660084ca725b582e00855dd30b",
+      "purpose": "Cross-phase closure checkpoint"
+    },
+    {
+      "path": "package.json",
+      "sha256": "a7627df2d547f6f90b3ef176c0783c87ce7bd2040f157de9e22e93fb22760027",
+      "purpose": "Workspace verification command catalog"
+    },
+    {
+      "path": "packages/fleet-delivery-contracts/src/index.ts",
+      "sha256": "61051edccda82ad93e4139738cec170d5e3550f0f92f394e206b5c7a13e74dca",
+      "purpose": "Versioned readiness and handoff contracts"
+    },
+    {
+      "path": "packages/fleet-delivery-contracts/src/contracts.test.ts",
+      "sha256": "7a1c30434abc7394bc4c7bcca35b04744c906e4e693967ff8a6a7977a92554e8",
+      "purpose": "Fail-closed contract regression tests"
+    },
+    {
+      "path": "scripts/fleet-delivery-evidence.ts",
+      "sha256": "b0464ccca00567249cedc74731437689e8ac6a1b291c20920ac48456955ba4e1",
+      "purpose": "Repository-local evidence validation"
+    },
+    {
+      "path": "scripts/fleet-delivery-readiness.ts",
+      "sha256": "534dd6d215cc54572dbdbcd9e6206e515e6ee8aa7b232fe090529647aad296f5",
+      "purpose": "Phase 9 readiness evaluator"
+    },
+    {
+      "path": "scripts/fleet-delivery-certification-pack.ts",
+      "sha256": "9474296325688b51fa1b94d0c9c52132485ea799041c2cdc7966dd83504fd723",
+      "purpose": "Phase 9 workbook and readiness-manifest drift verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-launch-readiness.ts",
+      "sha256": "397bfdf11d79992dd533c4cc0fcc43df7e87f5ff124fc79863ef2d46f9d63b31",
+      "purpose": "Phase 10 launch preflight"
+    },
+    {
+      "path": "scripts/fleet-delivery-launch-controls.ts",
+      "sha256": "e39db4cd71eccd213bb91c5f02d5b43f280b61c2f105af80a8257e4213501a93",
+      "purpose": "Launch blocker and workbook alignment verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-roadmap-status.ts",
+      "sha256": "b572ddd3a6670bffb6d83269d6f80c501965b2485276d45d4138bb7c4907d73b",
+      "purpose": "Aggregate roadmap status report"
+    },
+    {
+      "path": "scripts/fleet-delivery-handoff-verify.ts",
+      "sha256": "c2b69aedd9b9ba572955e9b73caa22aead520416c81c50ccdcf1d3a1b1d0afe4",
+      "purpose": "Handoff checksum verifier"
+    },
+    {
+      "path": "docs/delivery/phase-12/README.md",
+      "sha256": "d27a747e8680bfb78fb224d8163280f3abd2e18438fc26ea152f942c5468401c",
+      "purpose": "Supply-chain verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-12/supply-chain-policy.json",
+      "sha256": "d2c13b2196b26898d9e4966aaa7e1e7f3e41b30b834b0b215ae37540b028234d",
+      "purpose": "Machine-readable dependency provenance policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-supply-chain.ts",
+      "sha256": "33ef81b5aac4c6077eec8428d40f81a08f1156a1193cfcd31c26691c0e37466b",
+      "purpose": "Deterministic package-lock and install-script verifier"
+    },
+    {
+      "path": ".github/workflows/fleet-delivery-gate.yml",
+      "sha256": "81e29b44c81d38b809d9e91d5d0a9e70f8b76dd0c7ad46082e192795e4d2cfab",
+      "purpose": "Fleet Delivery continuous-integration gate"
+    },
+    {
+      "path": "docs/delivery/phase-13/README.md",
+      "sha256": "475f39aaf967ff3cf39440081b6d26228e29f5dc5eeacfa30656cab0926003f8",
+      "purpose": "Secret-hygiene verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-13/secret-scan-policy.json",
+      "sha256": "3ea82180531001f3e7252f744e0c87938265b80f44de1bd32b68489a6618eefd",
+      "purpose": "Machine-readable bounded secret-scan policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-secret-scan.ts",
+      "sha256": "9bcd76540afc3e080dc7b3f5710ad2437939b6eb7677b0415b420787486f2f6e",
+      "purpose": "Non-disclosing credential-pattern scanner"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "123c81c651c72f1bebb75682a06ca718988c5d6a93a7dbd95c14e8ef70cab915",
+      "purpose": "Pinned dependency graph and integrity metadata"
+    },
+    {
+      "path": "docs/delivery/phase-14/README.md",
+      "sha256": "310377e9dfd15002263070190718d381da14d280578f63384f9881cd5387d293",
+      "purpose": "Third-party license verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-14/dependency-license-policy.json",
+      "sha256": "099b2a87bdf18908bdb270db96f95607b72464efedda95eacae626e557ca5940",
+      "purpose": "Lock-bound dependency license policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-license.ts",
+      "sha256": "ae4b6b2d565a9b39377da8d0d39a5ad6f0f045f5423b17da3c6aca0a423ec3c6",
+      "purpose": "Dependency license allowlist verifier"
+    },
+    {
+      "path": "docs/delivery/phase-15/README.md",
+      "sha256": "e4c31d9df1f741dcebb8ab288e970616e777cddac4241f91f611725bfe1c18f2",
+      "purpose": "Reproducible-build verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-15/reproducible-build-policy.json",
+      "sha256": "aff0593778f2409aff7d8c97447ef47ea3c0d87a8a5d80e102bd4a85c9537094",
+      "purpose": "Exact build-output reproducibility policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-reproducibility.ts",
+      "sha256": "7f9fe8134dc76e82cfd657aed0493a23def06ff24ffd4c489deaa7425f3e9a91",
+      "purpose": "Two-iteration build artifact verifier"
+    },
+    {
+      "path": "tsconfig.fleet-delivery.json",
+      "sha256": "6f7f1e2af3bbc116e91663f3cb26c018b2eb6dbd8939a94f289e9818fdc40b97",
+      "purpose": "Fleet Delivery TypeScript compiler configuration"
+    },
+    {
+      "path": "tsup.fleet-delivery.config.ts",
+      "sha256": "6ab79c01b22e9e67530dc017a86cdc09497e8217d5f62daeb265192e1077c4f5",
+      "purpose": "Fleet Delivery production bundle configuration"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/.env.example",
+      "sha256": "da04bf789a4fc86ba73938936c509ab839fe8d9550ec62decf135f651e2c71c8",
+      "purpose": "Complete development configuration example"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/docker-compose.yml",
+      "sha256": "4ec2f1401e61096335c1eb0d095dc72d71a55a201e567b2fd3992a9db97e93fb",
+      "purpose": "Fleet Delivery local runtime configuration"
+    },
+    {
+      "path": "docs/delivery/phase-16/README.md",
+      "sha256": "756661195c1320c94cacda51368fb96efe1fe220c4be3d0c3baa23ece9c01b39",
+      "purpose": "Configuration-contract verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-16/configuration-contract.json",
+      "sha256": "996e27d3af5a9d415468eafd2857e168fb439e1197e46bc9dee6148649e8a7af",
+      "purpose": "Machine-readable environment variable contract"
+    },
+    {
+      "path": "scripts/fleet-delivery-config.ts",
+      "sha256": "82938a8881932734971e137ec4c18d9886337a46092f981ab5aef2580b60bbbd",
+      "purpose": "Environment and Compose drift verifier"
+    },
+    {
+      "path": "docs/delivery/phase-8/api-and-event-inventory.md",
+      "sha256": "6e3a5673aaf7bd742ab8a25540b6dfa993928dc47bc88fa6ab4b78dcbc954858",
+      "purpose": "Human-readable API and event inventory"
+    },
+    {
+      "path": "apps/fleet-delivery-api/src/server.ts",
+      "sha256": "a8f362b172bf90c2cd48406c8d62fb67d0847d1d012b735d108ede6316bad966",
+      "purpose": "Fleet Delivery HTTP router and authorization source"
+    },
+    {
+      "path": "docs/delivery/phase-17/README.md",
+      "sha256": "73798d9810abcc6dfbd390f81faf72c159526a3dbf2ced66d2507140c1243045",
+      "purpose": "API authorization contract boundary"
+    },
+    {
+      "path": "docs/delivery/phase-17/api-route-inventory.json",
+      "sha256": "a06031d7213bb02bd9d784c3cd826f70b49d78cb4c45c29134218d957713c6a0",
+      "purpose": "Machine-readable route, scope and idempotency inventory"
+    },
+    {
+      "path": "scripts/fleet-delivery-api-contract.ts",
+      "sha256": "059c6e5eda17605f6b15afc1f8a54bbdb00293562af05502dddc13486de853e5",
+      "purpose": "Router source and API documentation drift verifier"
+    }
+  ],
+  "unresolvedGateRefs": [
+    "docs/delivery/phase-9/readiness-gates.json",
+    "docs/delivery/phase-10/controlled-launch-plan.json"
+  ],
+  "verificationCommands": [
+    "npm run certification:verify",
+    "npm run pilot:readiness",
+    "npm run launch-controls:verify",
+    "npm run launch:readiness",
+    "npm run roadmap:status",
+    "npm run handoff:verify",
+    "npm run supply-chain:verify",
+    "npm run secret-scan:verify",
+    "npm run license:verify",
+    "npm run reproducibility:verify",
+    "npm run config:verify",
+    "npm run api-contract:verify",
+    "npm run gate"
+  ]
+}

@@ -2,6 +2,7 @@
 .env
 .env.*
 !deploy/retail-local/.env.example
+!infrastructure/fleet-delivery/.env.example
 .next/
 dist/
 dist-smoke/

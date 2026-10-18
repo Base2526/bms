@@ -25,6 +25,77 @@ operators must resolve those records before retrying the migration.
 
 ## Tables by module
 
+### Fleet Delivery bounded context (Phase 1–7 safe foundation)
+
+Fleet Delivery is a separate deployable/database boundary in this repository. Its migrations live in
+`packages/fleet-delivery-database/migrations/`; they do not run in the BMS application database and do
+not add Delivery states to `bms_orders`. The runtime roles are `fleet_delivery_app` and
+`fleet_delivery_worker`, the schema is `fleet_delivery`, and tenant transactions set the fail-closed
+`fleet_delivery.tenant_ref` RLS setting.
+
+Phase 1 migrations `0001`–`0003` provide service-principal mappings/revocation, durable inbox/outbox,
+idempotency and append-only audit foundations. Phase 2 migrations `0004`–`0006` add immutable-version
+merchant configuration, PostGIS service areas, pricing rules, BMS-provided order/eligibility/route
+snapshots, expiring exact-satang quotes/components, a versioned Delivery aggregate and append-only
+transitions, plus a minimum balanced shadow-ledger framework. Active configuration and current order
+context have partial unique indexes; one Delivery is allowed per tenant/branch/BMS fulfillment ref.
+
+Phase 3 migration `0007` adds tenant-owned synthetic drivers, branch memberships, approved vehicles,
+availability, append-only location evidence, immutable dispatch-policy versions, leased dispatch
+attempts, sequential offers, atomic assignments and the manual-dispatch queue. One pending offer is
+allowed per attempt, one accepted offer/assignment per Delivery and one active assignment per driver.
+The global worker claims due attempts through bounded `SKIP LOCKED` security-definer functions; the
+worker role has execute-only access and no direct table grants. Matching uses fresh accepted PostGIS
+locations and records policy/rank inputs with each offer. Driver suspension is rechecked on acceptance.
+
+Phase 4 migration `0008` extends only the synthetic pre-handoff journey with `EN_ROUTE_PICKUP` and
+`AT_PICKUP`. Named driver actions are assignment-owned, expected-version/idempotency protected and
+append transition/outbox/audit evidence in the same tenant transaction. Arrival requires the latest
+accepted synthetic location to meet the frozen dispatch freshness/accuracy policy; the transition
+stores only the location evidence reference/quality, not another coordinate copy. `AT_PICKUP` is a
+hard boundary: no merchant handoff, BMS stock/order mutation or `PICKED_UP` state exists yet.
+
+The Phase 5 safe foundation adds no migration and no BMS writer. The existing inbox now treats a
+non-contiguous `bms.order-context-changed.v1` aggregate version as `ACTION_REQUIRED` and preserves
+the last contiguous snapshot. Only an authenticated `bms.order-context-snapshot.v1` can reconcile a
+gap. A tenant/branch-mapped, read-only cursor feed exposes safe issue metadata without returning the
+stored envelope or payload; it does not provide an automatic repair mutation.
+
+Phase 6 migration `0009` is a fail-closed finance gate, not a real-money implementation. It limits
+`ledger_accounts` to the four documented Phase 2 shadow allocation codes and their exact account
+types; the existing journal constraint still permits only `DELIVERY_FEE_ALLOCATION_SHADOW`. The
+mapped read-only finance capability contract reports `SHADOW_ONLY`, every real finance capability
+disabled, unresolved policy and a separate production-authorization requirement. No COD, payable
+earning, settlement, refund, payout, transfer or tax authority is introduced.
+
+Phase 7 migration `0010` adds only query indexes for tenant/branch Delivery keyset pagination,
+state-filtered lists and the open manual-dispatch count. The mapped operations read models expose
+privacy-minimal state/version/timestamp summaries and no customer, coordinate, private evidence or
+money fields. Admin UI placement, federation, platform fleet scope and every operator mutation remain
+blocked by ADR-008 approval.
+
+Phase 8 adds no database migration. Its disposable backup/restore verifier checks that the restored
+database retains migration checksums, forced RLS, Phase 6 finance constraints and Phase 7 indexes.
+This local schema/control exercise is not evidence of production RPO/RTO, point-in-time recovery,
+encryption, offsite copies or approved retention.
+
+Every operational Phase 2–4 table carries `tenant_ref`, uses forced RLS and has explicit app-role grants.
+Quote money snapshots and bound quotes are immutable, while order/configuration versions may only be
+deactivated when superseded. Posted journal totals are checked by deferred table-specific triggers;
+posted journals/entries and append-only components/transitions reject updates or deletes. The API
+still accepts synthetic route evidence only. This phase creates no BMS mutation, COD, payout, driver
+earning, tax document or claim that an external payment occurred. See
+[../delivery/phase-2/README.md](../delivery/phase-2/README.md) and
+[../delivery/phase-3/README.md](../delivery/phase-3/README.md), with the Phase 4 boundary documented in
+[../delivery/phase-4/README.md](../delivery/phase-4/README.md) and the Phase 5 safe integration
+foundation in [../delivery/phase-5/README.md](../delivery/phase-5/README.md).
+The Phase 6 fail-closed gate is documented in
+[../delivery/phase-6/README.md](../delivery/phase-6/README.md).
+The Phase 7 read-only operations foundation is documented in
+[../delivery/phase-7/README.md](../delivery/phase-7/README.md).
+Phase 8 hardening and its explicit no-go decision are documented in
+[../delivery/phase-8/README.md](../delivery/phase-8/README.md).
+
 ### Mail log provider (`7.40`, `10.59`)
 
 `bms_mail_log` (`7.40`) is the platform mail log written best-effort by `sendEmail()` in
