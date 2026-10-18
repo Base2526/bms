@@ -46,9 +46,9 @@ The certification workbook now covers all 11 gates with 11 required artifact set
 non-production exercises. Ten packets remain open because authorized reviews, owner decisions,
 approved environments, real devices or non-production credentials have not been supplied.
 
-Six grouped approval requests are ready to send to all 14 required roles. They have not been
-dispatched because no connected Slack/email channel or named authorized recipient was supplied.
-The request bundle is preparation material only and does not unblock implementation.
+Six grouped approval requests covering all 14 required roles are saved as recipient-free Gmail
+drafts. They have not been dispatched because no named authorized recipient was supplied. The
+request bundle is preparation material only and does not unblock implementation.
 
 **NO-GO.** Keep real users, BMS mutations, provider traffic, customer tracking, physical handoff,
 private evidence and real money disabled. Phase 10 requires `PILOT_READY` plus a separate explicit

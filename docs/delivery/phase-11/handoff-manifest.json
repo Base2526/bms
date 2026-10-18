@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T05:18:19.000Z",
+  "generatedAt": "2026-10-18T05:21:43.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
@@ -212,17 +212,17 @@
     },
     {
       "path": "docs/delivery/phase-9/README.md",
-      "sha256": "63b40f586077b3e41f58e972a33215b3c6787152e8a688de3adb9cc8951bc8dc",
+      "sha256": "e92e056db88c0c25d326514b7abc3e61c2060370dfabd40764bf4cdd83d99dc2",
       "purpose": "Pilot certification boundary"
     },
     {
       "path": "docs/delivery/phase-9/approval-requests.json",
-      "sha256": "944aa70995cb1d5d0ad37b073e4a61048e68f87f337b62e7f0577c90b97db628",
+      "sha256": "ce8a920a06b1f8f000191ac415924f1c311623fa5cf19ea9c374093300db5937",
       "purpose": "Machine-readable non-authorizing approval request manifest"
     },
     {
       "path": "docs/delivery/phase-9/approval-requests/README.md",
-      "sha256": "ce66749facac203b39fb814bc83bada90c4b0c5a51c7f1e2a6e19f2089ef6a03",
+      "sha256": "ee0608afe09d8cdd50e5ea06973902beb145b68482ebc6481dfa1bea0d2756b1",
       "purpose": "Approval dispatch boundary and post-approval capability sequence"
     },
     {
@@ -392,7 +392,7 @@
     },
     {
       "path": "scripts/fleet-delivery-approval-requests.ts",
-      "sha256": "c11e6d56a70c19ffe2a548449305bc4b1275799662897efd749e9f5a8f928783",
+      "sha256": "5797ffe6ee36b8699acde28af005076fba0285c677b9bf7c4fe9ebf20381488a",
       "purpose": "Phase 9 approval request gate and role coverage verifier"
     },
     {

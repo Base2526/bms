@@ -30,6 +30,8 @@ const approvalRequestManifestSchema = z.object({
   approvalsGrantedByThisManifest: z.literal(false),
   dispatch: z.object({
     status: z.literal("NOT_DISPATCHED"),
+    channel: z.literal("GMAIL"),
+    draftCount: z.number().int().nonnegative().max(20),
     blockers: z.array(z.string().min(3).max(500)).min(1).max(10),
   }).strict(),
   requests: z.array(requestSchema).min(1).max(20),
@@ -43,6 +45,10 @@ const requestIds = new Set<string>();
 const coveredGateIds = new Set<string>();
 const coveredRolesByGate = new Map<string, Set<string>>();
 const readinessById = new Map(readiness.gates.map((gate) => [gate.id, gate]));
+
+if (manifest.dispatch.draftCount !== manifest.requests.length) {
+  problems.push("draft count must equal approval request count");
+}
 
 for (const request of manifest.requests) {
   if (requestIds.has(request.id)) problems.push(`duplicate request id: ${request.id}`);
@@ -91,6 +97,8 @@ const result = {
   mode: manifest.mode,
   generatedAt: manifest.generatedAt,
   dispatchStatus: manifest.dispatch.status,
+  dispatchChannel: manifest.dispatch.channel,
+  draftCount: manifest.dispatch.draftCount,
   productionAuthorized: manifest.productionAuthorized,
   approvalsGrantedByThisManifest: manifest.approvalsGrantedByThisManifest,
   requestCount: manifest.requests.length,

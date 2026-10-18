@@ -8,10 +8,10 @@ any other blocked capability. A coding instruction is not an owner approval.
 
 ## Dispatch state
 
-No Slack or email connection and no named authorized recipients were available when this bundle was
-prepared. `approval-requests.json` therefore records `NOT_DISPATCHED`. Once a channel is connected,
-send each packet to a real person holding the listed role and store only a durable, access-controlled
-response reference—never credentials, KYC, POD, coordinates, raw findings or customer PII here.
+Six recipient-free Gmail drafts were prepared, but no named authorized recipients were available.
+`approval-requests.json` therefore remains `NOT_DISPATCHED`. Add only a real person holding the
+listed role, then send and store a durable, access-controlled response reference—never credentials,
+KYC, POD, coordinates, raw findings or customer PII here.
 
 ## Capability sequence after approval
 

@@ -2,13 +2,14 @@
   "schemaVersion": 1,
   "phase": 9,
   "mode": "APPROVAL_REQUEST_PREPARATION",
-  "generatedAt": "2026-10-18T05:18:19.000Z",
+  "generatedAt": "2026-10-18T05:21:43.000Z",
   "productionAuthorized": false,
   "approvalsGrantedByThisManifest": false,
   "dispatch": {
     "status": "NOT_DISPATCHED",
+    "channel": "GMAIL",
+    "draftCount": 6,
     "blockers": [
-      "No Slack or email integration is connected",
       "No named authorized recipients or destination channels were supplied"
     ]
   },
