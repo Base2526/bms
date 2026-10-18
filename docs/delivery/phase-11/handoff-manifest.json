@@ -2,13 +2,103 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T03:56:59.000Z",
+  "generatedAt": "2026-10-18T04:18:30.000Z",
   "productionAuthorized": false,
   "artifacts": [
     {
       "path": "docs/BMS_Delivery_Master_Prompt_v2.4.md",
       "sha256": "89bfd1b71ffbc115c066dfced43cc7e613154bc0ddbe3e4a2e78c1a1dd70ec2f",
       "purpose": "Authoritative Fleet Delivery implementation roadmap"
+    },
+    {
+      "path": "docs/delivery/phase-4/README.md",
+      "sha256": "479c4487fb9a5eb19e1606366da1c140fb3bc21d8533645020dcc77ab4776afd",
+      "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/README.md",
+      "sha256": "b8ff43ad912792265ec3a6da13719849d690d03038ec86e8be82aa616e94f42d",
+      "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/package.json",
+      "sha256": "37ca1dc9b1aec89ff0c46f988640d4129ab02b611d15c40f4568f958c76ab1f3",
+      "purpose": "Pinned driver mobile scripts and direct dependencies"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/package-lock.json",
+      "sha256": "2c72494970850dce926c840b979e9565b03db77755b857b3f05cd32cc433043f",
+      "purpose": "Driver mobile npm dependency graph and integrity metadata"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/App.tsx",
+      "sha256": "17e9e79a70f97c6bb5ac783938fd2aef10212148598238950c810c51d1d95526",
+      "purpose": "Driver mobile provider and navigation composition root"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/babel.config.js",
+      "sha256": "4f814c3b85c1f294ae7e4d6653bf5fc1e242e0cb096ccd827202a903f64749bf",
+      "purpose": "React Native release bundle transform configuration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/config/capabilities.ts",
+      "sha256": "f7baf14575384b5191582419c32c9de1958f2eeab0c3af21d5146d51cfc7cd13",
+      "purpose": "Fail-closed driver mobile capability declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/state/DriverRuntimeContext.tsx",
+      "sha256": "bb3e4161e65a72c80352e09d484426c3bc811011c40d0c56e3c850436fbfcb8d",
+      "purpose": "Driver snapshot recovery, polling and offline command orchestration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/state/DriverSessionContext.tsx",
+      "sha256": "932fc33cb63db0dfe4345153bd837cfe53bc7fa005605f9c444dac8569759a82",
+      "purpose": "Debug-only synthetic session and fail-closed Release policy"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/components/Screen.tsx",
+      "sha256": "5f9745fcba5b2ff2d40af263e4a4ea378b5ab3a0cefae1b3819134493410e91f",
+      "purpose": "Safe-area-aware driver mobile screen shell"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/screens/ActivationScreen.tsx",
+      "sha256": "5ea037fd12fcd5001907e2ad20686b5fd12005891246df2f156eeeebf5c8221d",
+      "purpose": "Internal activation and visible production-lock boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/storage/secureStore.ts",
+      "sha256": "d6925e13398e8be04e0971db354397a15d59dc270cf1c359aefb44582abc0b9c",
+      "purpose": "OS-keystore session and bounded reference-only offline queue storage"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/android/app/build.gradle",
+      "sha256": "76446ac2eda269000386aec50a84642153ddb9a3f58dbc3689bd85910c69d746",
+      "purpose": "Android application identity, build hardening and unsigned release boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/android/app/src/main/AndroidManifest.xml",
+      "sha256": "e3517aa998a5cbe6c10b54b6a9762e2ee5b381e3a04323ad7ccefba5a476dcb8",
+      "purpose": "Minimal Android permission and application manifest"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/BmsDeliveryDriver.xcodeproj/project.pbxproj",
+      "sha256": "37c784f8b662ea200ae77566847450ada1fe8a5167221eebb3c5972ed0fc1e4a",
+      "purpose": "iOS target identity with isolated debug bundle identifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/BmsDeliveryDriver/Info.plist",
+      "sha256": "93b3ea5672fcc1c3b0e8ea58c2c05e63e013d6abc652879dafcebed7cc5d26a9",
+      "purpose": "iOS transport security and device capability declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/Podfile.lock",
+      "sha256": "5c664bc1c44c36e30677da1e325f09c7119940909bf6567ac6b92226bb06b84c",
+      "purpose": "Pinned iOS native dependency graph"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/Gemfile.lock",
+      "sha256": "b06f69d9dae85c0ec8afda049f2ed59ab80f4121f44921d0d822e8407bff1aab",
+      "purpose": "Pinned CocoaPods toolchain dependency graph"
     },
     {
       "path": "docs/delivery/phase-8/README.md",
@@ -192,7 +282,7 @@
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "81e29b44c81d38b809d9e91d5d0a9e70f8b76dd0c7ad46082e192795e4d2cfab",
+      "sha256": "bab3efd7eb7d7d30db23bd4e40462178a0b475bb4baaf03d8769dd9194e4e0ac",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -202,7 +292,7 @@
     },
     {
       "path": "docs/delivery/phase-13/secret-scan-policy.json",
-      "sha256": "3ea82180531001f3e7252f744e0c87938265b80f44de1bd32b68489a6618eefd",
+      "sha256": "bf3cf7166f6b08f7c376f86cb2dc0ad23b6a772462ecb80491df501bf937adbe",
       "purpose": "Machine-readable bounded secret-scan policy"
     },
     {
@@ -323,6 +413,8 @@
     "npm run reproducibility:verify",
     "npm run config:verify",
     "npm run api-contract:verify",
+    "cd apps/fleet-delivery-driver && npm run typecheck && npm run test:ci && npm run lint",
+    "cd apps/fleet-delivery-driver/android && ./gradlew assembleDebug assembleRelease",
     "npm run gate"
   ]
 }

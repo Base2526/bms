@@ -21,6 +21,33 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  driver-mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/fleet-delivery-driver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12"
+          cache: npm
+          cache-dependency-path: apps/fleet-delivery-driver/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:ci
+      - run: npm run lint
+      - name: Report dependency advisories without overriding the release blocker
+        run: npm audit --omit=dev --audit-level=critical
+      - name: Build Android debug and unsigned release applications
+        run: ./gradlew assembleDebug assembleRelease
+        working-directory: apps/fleet-delivery-driver/android
+
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 20

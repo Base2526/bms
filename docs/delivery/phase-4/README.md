@@ -1,7 +1,7 @@
 # Fleet Delivery Phase 4 execution gate
 
-Status: **IN PROGRESS / GATE BLOCKED — synthetic client foundation implemented; required authority
-and real-device infrastructure are absent**
+Status: **IN PROGRESS / GATE BLOCKED — internal React Native test app implemented; required authority
+and representative real-device evidence are absent**
 
 Date: 2026-10-18 (Asia/Bangkok)
 
@@ -12,9 +12,12 @@ accepted design, nor can it supply the real Android/iOS devices required by the 
 ## 1. Verified repository state
 
 - `VERIFIED`: Phase 3 exposes synthetic driver principal, availability, location and offer APIs.
-- `VERIFIED`: no separate Fleet Delivery React Native app exists.
-- `VERIFIED`: a platform-neutral synthetic driver client core now exists at
-  `apps/fleet-delivery-driver-core`; it is not a distributable Android/iOS application.
+- `VERIFIED`: a separate bare React Native test app now exists at `apps/fleet-delivery-driver`; it
+  does not share the BMS POS app identity or business rules.
+- `VERIFIED`: the app uses `apps/fleet-delivery-driver-core`, OS secure storage, strict shared
+  contracts, a bounded offline Sync Center and debug-only synthetic activation.
+- `VERIFIED`: Release builds expose no activation form and cannot create a driver session; this is
+  deliberately not a production authentication implementation.
 - `VERIFIED`: an authenticated, bounded `GET /v1/driver/offers` feed resolves the exact driver
   principal and returns no customer identity, address, contact detail or coordinates.
 - `VERIFIED`: availability and offer decisions can be queued through an injected persistence
@@ -47,13 +50,12 @@ accepted design, nor can it supply the real Android/iOS devices required by the 
 | Contact/SOS/abuse handling | Safety + Support + Legal escalation owner and runbook | no phone disclosure or contact feature |
 | Real-device gate | supported Android/iOS versions plus physical devices and signing setup | do not claim Phase 4 completion |
 
-## 3. Why implementation stops here
+## 3. Why production implementation stops here
 
-Creating a production-shaped mobile shell before these decisions would force unapproved choices into
-security credentials, exact-location collection, private evidence, retention and emergency handling.
-Using mock devices or a public/local file URL would not satisfy the accepted gate. Advancing to Phase
-5 before Phase 4 journeys pass would also violate the phase ordering and make BMS handoff depend on an
-unverified client.
+The internal shell exercises only the already-approved synthetic API boundary. Extending it into a
+production driver product before these decisions would force unapproved choices into security
+credentials, exact-location collection, private evidence, retention and emergency handling. Using
+mock devices or a public/local file URL would not satisfy the accepted gate.
 
 The safe synthetic boundary now includes the offer feed, platform-neutral client core and the
 pre-handoff `ASSIGNED -> EN_ROUTE_PICKUP -> AT_PICKUP` journey. Migration `0008` expands only those
@@ -99,7 +101,9 @@ denial, coherent polling snapshots before and after assignment, restart recovery
 denial, wrong-driver denial, stale-location denial, idempotent replay, append-only location-reference
 evidence, `DRIVER` actor audit, removal of the offer after acceptance and the existing 100-request
 atomic acceptance test. Migration `0001`–`0008` applied on a fresh disposable database and the
-checksum rerun applied nothing.
+checksum rerun applied nothing. The React Native shell separately passes strict TypeScript, ESLint
+and 10 Jest tests; native build verification is recorded in its app README/check history and does not
+substitute for physical-device certification.
 
 ## 5. Later-phase blockers
 
