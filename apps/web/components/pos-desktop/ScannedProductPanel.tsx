@@ -29,7 +29,10 @@ export default function ScannedProductPanel({ result, busy, onSelect, onClose }:
     setChoice({ selection: selection!, size: variant.size });
     onSelect(selection!.scanCode, variant.size);
   };
-  return <section className={styles.scannedProduct} aria-label="สินค้าที่สแกน">
+  return <section
+    className={`${styles.scannedProduct}${selection ? ` ${styles.scannedProductSelection}` : ""}`}
+    aria-label="สินค้าที่สแกน"
+  >
     <header>
       <h2>{item.productName}</h2>
       <button type="button" onClick={onClose} disabled={busy} title="กลับแคตตาล็อก" aria-label="กลับแคตตาล็อก"><ArrowLeftOutlined /></button>

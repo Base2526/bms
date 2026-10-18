@@ -760,7 +760,19 @@
 }
 .serviceBenefit span { font-size: 12px; }
 .boardGameBreakdown { width: 100%; text-align: left; }
-.scannedProduct { width: 100%; min-width: 0; padding: 16px 0; }
+.scannedProduct {
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 3px 16px 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.scannedProductSelection { overflow: hidden; }
 .productGrid[hidden] { display: none; }
 .scannedProduct header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .scannedProduct h2 { margin: 0; font-size: 18px; overflow-wrap: anywhere; }
@@ -769,6 +781,15 @@
 .scannedImage img { width: 100%; height: 240px; object-fit: contain; }
 .scannedSku { color: #697386; overflow-wrap: anywhere; font-size: 12px; }
 .scanVariants { border: 0; padding: 0; margin: 16px 0; min-width: 0; }
+.scannedProductSelection .scanVariants {
+  min-height: 0;
+  flex: 1;
+  padding-right: 3px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.scannedProductSelection > .primaryButton { width: 100%; flex: 0 0 auto; }
 .scanVariants legend { font-weight: 600; font-size: 14px; }
 .scanVariants label { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px 0; border-bottom: 1px solid #e5e9f0; cursor: pointer; }
 .scanVariants label strong { overflow-wrap: anywhere; }
