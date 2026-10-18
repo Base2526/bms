@@ -3,6 +3,13 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { Redis } from "ioredis";
 import type { Pool } from "pg";
 import {
+  customerDeliveryRequestV1Schema,
+  customerDeliveryResponseV1Schema,
+  customerGrantRegistrationV1Schema,
+  customerDeliveryStatusV1Schema,
+  customerQuoteRequestV1Schema,
+  customerQuoteResponseV1Schema,
+  createSyntheticDisputeV1Schema,
   createDeliveryV1Schema,
   createQuoteV1Schema,
   dispatchPolicyV1Schema,
@@ -24,6 +31,7 @@ import {
   operationsDeliveryListQueryV1Schema,
   operationsScopeQueryV1Schema,
   reconciliationIssueQueryV1Schema,
+  resolveSyntheticDisputeV1Schema,
   startDispatchV1Schema,
   syntheticDriverV1Schema,
   transitionDeliveryV1Schema,
@@ -31,7 +39,7 @@ import {
 } from "@bms/fleet-delivery-contracts";
 import {
   applyOrderContextEnvelope,
-  advanceDriverPickupJourney,
+  advanceDriverJourney,
   configureDispatchPolicy,
   configureMerchant,
   configureSyntheticDriver,
@@ -40,19 +48,26 @@ import {
   decideDispatchOffer,
   FleetDeliveryBusinessError,
   getCurrentDriverAssignment,
+  getCustomerDeliveryStatus,
   getDriverSnapshot,
   getOperationsOverview,
   principalHasMapping,
   principalHasTenantBranchMapping,
+  registerSyntheticCustomerGrant,
   recordDriverLocation,
+  resolveSyntheticCustomerGrant,
   listDriverOffers,
   listOperationsDeliveries,
   listReconciliationIssues,
+  openSyntheticDispute,
+  resolveSyntheticDispute,
   setDriverAvailability,
   startDispatch,
   storeInboxEnvelope,
   transitionDelivery,
   withTenantTransaction,
+  type CustomerGrantAction,
+  type ResolvedCustomerGrant,
 } from "@bms/fleet-delivery-database";
 import { requireIdempotencyKey } from "@bms/fleet-delivery-domain";
 import { ServiceAuthError, type VerifiedServicePrincipal } from "./serviceAuth.js";
@@ -172,6 +187,30 @@ async function requireMapping(
   }
 }
 
+async function authenticateCustomer(
+  deps: Dependencies,
+  req: IncomingMessage,
+  action: CustomerGrantAction,
+): Promise<ResolvedCustomerGrant> {
+  const token = req.headers.authorization?.match(/^Bearer\s+([^\s]+)$/i)?.[1];
+  if (!token) throw new RequestFailure(401, "CUSTOMER_AUTH_REQUIRED");
+  const grant = await resolveSyntheticCustomerGrant(deps.pool, token, action);
+  const clientAddress = req.socket.remoteAddress ?? "unknown";
+  try {
+    if (!(await rateLimit(
+      deps.redis,
+      `customer:${grant.grantId}:${clientAddress}`,
+      deps.serviceRateLimitPerMinute,
+    ))) {
+      throw new RequestFailure(429, "RATE_LIMITED", true);
+    }
+  } catch (error) {
+    if (error instanceof RequestFailure) throw error;
+    throw new RequestFailure(503, "RATE_LIMIT_UNAVAILABLE", true);
+  }
+  return grant;
+}
+
 export function createFleetDeliveryServer(deps: Dependencies) {
   const server = createServer(async (req, res) => {
     const id = requestId(req);
@@ -278,6 +317,62 @@ export function createFleetDeliveryServer(deps: Dependencies) {
         sendJson(res, response.status, response.body, id);
         return;
       }
+      if (req.method === "POST" && pathname === "/v1/customer/grants") {
+        const principal = await authenticateMutation(deps, req, "customer.grants.write");
+        requireJson(req);
+        const body = customerGrantRegistrationV1Schema.parse(await readJson(req, deps.maxBodyBytes));
+        await requireMapping(deps, principal.subject, body.tenantRef, body.branchRef);
+        const response = await registerSyntheticCustomerGrant(deps.pool, body, {
+          principal: principal.subject,
+          idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
+          requestId: id,
+        });
+        sendJson(res, response.status, response.body, id);
+        return;
+      }
+      if (req.method === "POST" && pathname === "/v1/customer/quotes") {
+        const grant = await authenticateCustomer(deps, req, "QUOTE");
+        requireJson(req);
+        const body = customerQuoteRequestV1Schema.parse(await readJson(req, deps.maxBodyBytes));
+        const response = await createQuote(deps.pool, {
+          tenantRef: grant.tenantRef,
+          branchRef: grant.branchRef,
+          bmsOrderRef: grant.bmsOrderRef,
+          expectedOrderVersion: grant.orderVersion,
+          serviceRequirement: body.serviceRequirement,
+        }, {
+          principal: grant.principal,
+          customerGrantId: grant.grantId,
+          idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
+          requestId: id,
+        });
+        sendJson(res, response.status, customerQuoteResponseV1Schema.parse(response.body), id);
+        return;
+      }
+      if (req.method === "POST" && pathname === "/v1/customer/deliveries") {
+        const grant = await authenticateCustomer(deps, req, "CREATE_DELIVERY");
+        requireJson(req);
+        const body = customerDeliveryRequestV1Schema.parse(await readJson(req, deps.maxBodyBytes));
+        const response = await createDelivery(deps.pool, {
+          tenantRef: grant.tenantRef,
+          branchRef: grant.branchRef,
+          bmsOrderRef: grant.bmsOrderRef,
+          quoteId: body.quoteId,
+        }, {
+          principal: grant.principal,
+          customerGrantId: grant.grantId,
+          idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
+          requestId: id,
+        });
+        sendJson(res, response.status, customerDeliveryResponseV1Schema.parse(response.body), id);
+        return;
+      }
+      if (req.method === "GET" && pathname === "/v1/customer/deliveries/current") {
+        const grant = await authenticateCustomer(deps, req, "TRACK");
+        const response = await getCustomerDeliveryStatus(deps.pool, grant);
+        sendJson(res, 200, customerDeliveryStatusV1Schema.parse(response), id);
+        return;
+      }
       if (req.method === "POST" && pathname === "/v1/quotes") {
         const principal = await authenticateMutation(deps, req, "quotes.create");
         requireJson(req);
@@ -379,7 +474,7 @@ export function createFleetDeliveryServer(deps: Dependencies) {
         return;
       }
       const driverJourneyMatch = pathname.match(
-        /^\/v1\/driver\/deliveries\/([0-9a-f-]{36})\/actions\/(start_pickup|arrive_pickup)$/,
+        /^\/v1\/driver\/deliveries\/([0-9a-f-]{36})\/actions\/(start_pickup|arrive_pickup|start_delivery|arrive_dropoff|deliver_with_pod|report_failure|start_return|arrive_return)$/,
       );
       if (req.method === "POST" && driverJourneyMatch) {
         const principal = await authenticateMutation(deps, req, "driver.journey.write");
@@ -387,7 +482,37 @@ export function createFleetDeliveryServer(deps: Dependencies) {
         const deliveryId = deliveryIdSchema.parse(driverJourneyMatch[1]);
         const action = driverJourneyActionSchema.parse(driverJourneyMatch[2]);
         const body = driverJourneyV1Schema.parse(await readJson(req, deps.maxBodyBytes));
-        const response = await advanceDriverPickupJourney(deps.pool, deliveryId, action, body, {
+        const response = await advanceDriverJourney(deps.pool, deliveryId, action, body, {
+          principal: principal.subject,
+          idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
+          requestId: id,
+        });
+        sendJson(res, response.status, response.body, id);
+        return;
+      }
+      const createDisputeMatch = pathname.match(/^\/v1\/deliveries\/([0-9a-f-]{36})\/disputes$/);
+      if (req.method === "POST" && createDisputeMatch) {
+        const principal = await authenticateMutation(deps, req, "disputes.manage");
+        requireJson(req);
+        const deliveryId = deliveryIdSchema.parse(createDisputeMatch[1]);
+        const body = createSyntheticDisputeV1Schema.parse(await readJson(req, deps.maxBodyBytes));
+        await requireMapping(deps, principal.subject, body.tenantRef, body.branchRef);
+        const response = await openSyntheticDispute(deps.pool, deliveryId, body, {
+          principal: principal.subject,
+          idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
+          requestId: id,
+        });
+        sendJson(res, response.status, response.body, id);
+        return;
+      }
+      const resolveDisputeMatch = pathname.match(/^\/v1\/disputes\/([0-9a-f-]{36})\/resolve$/);
+      if (req.method === "POST" && resolveDisputeMatch) {
+        const principal = await authenticateMutation(deps, req, "disputes.manage");
+        requireJson(req);
+        const disputeId = deliveryIdSchema.parse(resolveDisputeMatch[1]);
+        const body = resolveSyntheticDisputeV1Schema.parse(await readJson(req, deps.maxBodyBytes));
+        await requireMapping(deps, principal.subject, body.tenantRef, body.branchRef);
+        const response = await resolveSyntheticDispute(deps.pool, disputeId, body, {
           principal: principal.subject,
           idempotencyKey: requireIdempotencyKey(headerValue(req, "idempotency-key")),
           requestId: id,

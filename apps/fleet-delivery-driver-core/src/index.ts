@@ -1,7 +1,9 @@
 import {
   driverCurrentAssignmentV1Schema,
+  deliveryFailureDescriptorV1Schema,
   driverOfferFeedV1Schema,
   driverSnapshotV1Schema,
+  syntheticPodDescriptorV1Schema,
   type DriverCurrentAssignmentV1,
   type DriverJourneyAction,
   type DriverOfferFeedQueryV1,
@@ -48,8 +50,13 @@ const offerDecisionCommandSchema = commandBaseSchema.extend({
 const journeyCommandSchema = commandBaseSchema.extend({
   kind: z.literal("ADVANCE_PICKUP_JOURNEY"),
   deliveryId: z.uuid(),
-  action: z.enum(["start_pickup", "arrive_pickup"]),
+  action: z.enum([
+    "start_pickup", "arrive_pickup", "start_delivery", "arrive_dropoff",
+    "deliver_with_pod", "report_failure", "start_return", "arrive_return",
+  ]),
   expectedVersion: z.number().int().positive().safe(),
+  pod: syntheticPodDescriptorV1Schema.optional(),
+  failure: deliveryFailureDescriptorV1Schema.optional(),
 }).strict();
 
 export const driverOfflineCommandSchema = z.discriminatedUnion("kind", [
@@ -166,11 +173,15 @@ export class DriverOfflineQueue {
     });
   }
 
-  enqueuePickupJourneyAction(
+  enqueueJourneyAction(
     scope: DriverScope,
     deliveryId: string,
     action: DriverJourneyAction,
     expectedVersion: number,
+    evidence: {
+      pod?: z.infer<typeof syntheticPodDescriptorV1Schema>;
+      failure?: z.infer<typeof deliveryFailureDescriptorV1Schema>;
+    } = {},
   ): Promise<DriverOfflineCommand> {
     return this.exclusive(async () => {
       const command = journeyCommandSchema.parse({
@@ -179,12 +190,22 @@ export class DriverOfflineQueue {
         deliveryId,
         action,
         expectedVersion,
+        ...evidence,
       });
       const commands = await this.read();
       if (commands.length >= 100) throw new Error("DRIVER_OFFLINE_QUEUE_FULL");
       await this.store.save([...commands, command]);
       return command;
     });
+  }
+
+  enqueuePickupJourneyAction(
+    scope: DriverScope,
+    deliveryId: string,
+    action: Extract<DriverJourneyAction, "start_pickup" | "arrive_pickup">,
+    expectedVersion: number,
+  ): Promise<DriverOfflineCommand> {
+    return this.enqueueJourneyAction(scope, deliveryId, action, expectedVersion);
   }
 
   flush(): Promise<FlushResult> {
@@ -306,7 +327,12 @@ export class DriverHttpTransport implements DriverCommandSender {
       ? { ...checked.scope, state: checked.state }
       : checked.kind === "DECIDE_OFFER"
         ? { ...checked.scope, expectedOfferVersion: checked.expectedOfferVersion }
-        : { ...checked.scope, expectedVersion: checked.expectedVersion };
+        : {
+          ...checked.scope,
+          expectedVersion: checked.expectedVersion,
+          ...(checked.pod ? { pod: checked.pod } : {}),
+          ...(checked.failure ? { failure: checked.failure } : {}),
+        };
     let response: FetchResponse;
     try {
       response = await this.fetchImpl(`${this.baseUrl}${path}`, {

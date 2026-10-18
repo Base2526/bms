@@ -23,6 +23,31 @@ test("foundation migration reruns and tenant RLS/inbox identity/worker lease hol
     await runMigrations(pool, migrationsDir);
     assert.deepEqual(await runMigrations(pool, migrationsDir), []);
 
+    const deliveryGuards = await pool.query<{ name: string }>(
+      `SELECT conname AS name
+         FROM pg_constraint
+        WHERE conrelid = 'fleet_delivery.deliveries'::regclass
+          AND conname IN ('deliveries_terminal_state_check', 'deliveries_amount_balance_check')
+        ORDER BY conname`,
+    );
+    assert.deepEqual(
+      deliveryGuards.rows.map((row) => row.name),
+      ["deliveries_amount_balance_check", "deliveries_terminal_state_check"],
+    );
+    const postPickupRls = await pool.query<{ count: number }>(
+      `SELECT count(*)::int AS count
+         FROM pg_class c
+         JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'fleet_delivery'
+          AND c.relname IN (
+            'synthetic_pod_evidence', 'delivery_failures', 'delivery_returns',
+            'delivery_disputes', 'notification_intents'
+          )
+          AND c.relrowsecurity
+          AND c.relforcerowsecurity`,
+    );
+    assert.equal(postPickupRls.rows[0]?.count, 5);
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
@@ -69,8 +94,8 @@ test("foundation migration reruns and tenant RLS/inbox identity/worker lease hol
     await pool.query(
       `INSERT INTO fleet_delivery.outbox_events (
         id, tenant_ref, branch_ref, message_type, aggregate_type, aggregate_ref,
-        aggregate_version, destination, envelope
-      ) VALUES ($1,$2,'branch:main','fleet-delivery.synthetic.v1','synthetic','aggregate:1',1,'synthetic://ack','{}'::jsonb)`,
+        aggregate_version, destination, envelope, next_attempt_at
+      ) VALUES ($1,$2,'branch:main','fleet-delivery.synthetic.v1','synthetic','aggregate:1',1,'synthetic://ack','{}'::jsonb,'1970-01-01T00:00:00Z')`,
       [outboxId, tenantA],
     );
     const appClient = await pool.connect();

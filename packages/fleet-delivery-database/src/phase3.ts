@@ -100,7 +100,8 @@ export async function getCurrentDriverAssignment(
       delivery_id: string;
       offer_id: string;
       status: "ACTIVE";
-      delivery_state: "ASSIGNED" | "EN_ROUTE_PICKUP" | "AT_PICKUP";
+      delivery_state: "ASSIGNED" | "EN_ROUTE_PICKUP" | "AT_PICKUP" | "PICKED_UP" | "IN_TRANSIT"
+        | "AT_DROPOFF" | "DELIVERY_FAILED" | "RETURN_REQUESTED" | "RETURN_APPROVED" | "RETURN_IN_TRANSIT";
       delivery_version: string;
       assigned_at: Date;
     }>(
@@ -163,7 +164,8 @@ export async function getDriverSnapshot(
       delivery_id: string;
       offer_id: string;
       status: "ACTIVE";
-      delivery_state: "ASSIGNED" | "EN_ROUTE_PICKUP" | "AT_PICKUP";
+      delivery_state: "ASSIGNED" | "EN_ROUTE_PICKUP" | "AT_PICKUP" | "PICKED_UP" | "IN_TRANSIT"
+        | "AT_DROPOFF" | "DELIVERY_FAILED" | "RETURN_REQUESTED" | "RETURN_APPROVED" | "RETURN_IN_TRANSIT";
       delivery_version: string;
       assigned_at: Date;
     }>(
@@ -606,13 +608,17 @@ export async function decideDispatchOffer(
       verification_status: string; delivery_id: string; attempt_id: string; branch_ref: string;
       delivery_state: string; delivery_version: string; location_received_at: Date | null;
       location_accuracy_m: string | null; freshness_seconds: number; maximum_accuracy_m: number;
+      vehicle_type: string | null; vehicle_capacity_kg: number | null;
+      required_vehicle_type: string; required_capacity_kg: number;
     }>(
       `SELECT o.status, o.version AS offer_version, o.expires_at, drv.id AS driver_id,
               drv.status AS driver_status, drv.verification_status, o.delivery_id, o.attempt_id,
               o.branch_ref, dl.state AS delivery_state, dl.version AS delivery_version,
               loc.received_at AS location_received_at, loc.accuracy_m AS location_accuracy_m,
               p.location_freshness_seconds AS freshness_seconds,
-              p.maximum_location_accuracy_m AS maximum_accuracy_m
+              p.maximum_location_accuracy_m AS maximum_accuracy_m,
+              v.vehicle_type, v.capacity_kg AS vehicle_capacity_kg,
+              dl.required_vehicle_type, dl.required_capacity_kg
          FROM fleet_delivery.dispatch_offers o
          JOIN fleet_delivery.drivers drv ON drv.id=o.driver_id AND drv.tenant_ref=o.tenant_ref
          JOIN fleet_delivery.driver_memberships m
@@ -620,6 +626,8 @@ export async function decideDispatchOffer(
          JOIN fleet_delivery.dispatch_attempts a ON a.id=o.attempt_id
          JOIN fleet_delivery.dispatch_policy_versions p ON p.id=a.policy_id
          JOIN fleet_delivery.deliveries dl ON dl.id=o.delivery_id
+         LEFT JOIN fleet_delivery.driver_vehicles v
+           ON v.driver_id=drv.id AND v.tenant_ref=drv.tenant_ref AND v.active AND v.approved
          LEFT JOIN LATERAL (
            SELECT l.received_at, l.accuracy_m FROM fleet_delivery.driver_locations l
             WHERE l.driver_id=drv.id AND l.accepted ORDER BY l.sequence DESC LIMIT 1
@@ -701,6 +709,9 @@ export async function decideDispatchOffer(
       || !row.location_received_at || row.location_accuracy_m === null
       || now.getTime() - row.location_received_at.getTime() > row.freshness_seconds * 1_000
       || Number(row.location_accuracy_m) > row.maximum_accuracy_m
+      || row.vehicle_type !== row.required_vehicle_type
+      || row.vehicle_capacity_kg === null
+      || row.vehicle_capacity_kg < row.required_capacity_kg
       || row.delivery_state !== "OFFERED") {
       throw new FleetDeliveryBusinessError("DRIVER_NO_LONGER_ELIGIBLE", 409);
     }

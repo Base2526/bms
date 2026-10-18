@@ -248,6 +248,18 @@ export const operationsDeliveryStateSchema = z.enum([
   "ASSIGNED",
   "EN_ROUTE_PICKUP",
   "AT_PICKUP",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "AT_DROPOFF",
+  "DELIVERED",
+  "COMPLETED",
+  "DELIVERY_FAILED",
+  "RETURN_REQUESTED",
+  "RETURN_APPROVED",
+  "RETURN_IN_TRANSIT",
+  "RETURNED_TO_MERCHANT",
+  "RETURN_REVIEW",
+  "RETURN_RESOLVED",
   "MANUAL_DISPATCH_REQUIRED",
   "CANCELLED",
 ]);
@@ -295,11 +307,25 @@ export type OperationsOverviewV1 = z.infer<typeof operationsOverviewV1Schema>;
 export type OperationsDeliveryListQueryV1 = z.infer<typeof operationsDeliveryListQueryV1Schema>;
 export type OperationsDeliveryFeedV1 = z.infer<typeof operationsDeliveryFeedV1Schema>;
 
+export const deliveryServiceRequirementV1Schema = z.object({
+  serviceType: z.literal("ON_DEMAND"),
+  requiredVehicleType: z.literal("MOTORCYCLE"),
+  requiredCapacityKg: z.number().int().min(1).max(500),
+  packageWeightKg: z.number().positive().max(500).multipleOf(0.01),
+  packageSizeClass: z.literal("SMALL"),
+  specialHandling: z.array(z.never()).max(0),
+  requirementVersion: opaqueRefSchema,
+}).strict().refine(
+  (value) => value.requiredCapacityKg >= value.packageWeightKg,
+  { path: ["requiredCapacityKg"], message: "required capacity must cover package weight" },
+);
+
 export const createQuoteV1Schema = z.object({
   tenantRef: opaqueRefSchema,
   branchRef: opaqueRefSchema,
   bmsOrderRef: opaqueRefSchema,
   expectedOrderVersion: z.number().int().positive().safe(),
+  serviceRequirement: deliveryServiceRequirementV1Schema,
 }).strict();
 
 export const createDeliveryV1Schema = z.object({
@@ -316,6 +342,12 @@ export const deliveryActionSchema = z.enum([
   "merchant_accepted",
   "merchant_ready",
   "cancel_before_pickup",
+  "merchant_handoff",
+  "complete_delivery",
+  "request_return",
+  "approve_return",
+  "review_return",
+  "resolve_return",
 ]);
 
 export const transitionDeliveryV1Schema = z.object({
@@ -327,8 +359,105 @@ export const transitionDeliveryV1Schema = z.object({
 
 export type CreateQuoteV1 = z.infer<typeof createQuoteV1Schema>;
 export type CreateDeliveryV1 = z.infer<typeof createDeliveryV1Schema>;
+export type DeliveryServiceRequirementV1 = z.infer<typeof deliveryServiceRequirementV1Schema>;
 export type DeliveryAction = z.infer<typeof deliveryActionSchema>;
 export type TransitionDeliveryV1 = z.infer<typeof transitionDeliveryV1Schema>;
+
+export const customerGrantRegistrationV1Schema = z.object({
+  grantId: z.uuid(),
+  tenantRef: opaqueRefSchema,
+  branchRef: opaqueRefSchema,
+  bmsOrderRef: opaqueRefSchema,
+  tokenSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  expiresAt: z.iso.datetime({ offset: true }),
+  allowedActions: z.tuple([
+    z.literal("QUOTE"),
+    z.literal("CREATE_DELIVERY"),
+    z.literal("TRACK"),
+  ]),
+  syntheticOnly: z.literal(true),
+}).strict();
+
+export const customerQuoteRequestV1Schema = z.object({
+  serviceRequirement: deliveryServiceRequirementV1Schema,
+}).strict();
+
+export const customerDeliveryRequestV1Schema = z.object({
+  quoteId: z.uuid(),
+}).strict();
+
+export const customerQuoteResponseV1Schema = z.object({
+  quoteId: z.uuid(),
+  currency: z.literal("THB"),
+  billableDistanceMeters: z.number().int().positive().safe(),
+  startedKilometres: z.number().int().positive().safe(),
+  baseFareSatang: satangSchema,
+  distanceChargeSatang: satangSchema,
+  grossDeliveryFeeSatang: satangSchema,
+  customerContributionSatang: satangSchema,
+  merchantSubsidySatang: satangSchema,
+  explicitDiscountSatang: satangSchema,
+  eligibleCommissionFeeSatang: satangSchema,
+  commissionSatang: satangSchema,
+  commissionBps: z.number().int().min(0).max(10_000),
+  pricingRuleVersion: opaqueRefSchema,
+  eligibilityVersion: opaqueRefSchema,
+  serviceRequirement: deliveryServiceRequirementV1Schema,
+  expiresAt: z.iso.datetime({ offset: true }),
+}).strict();
+
+export const customerDeliveryResponseV1Schema = z.object({
+  deliveryId: z.uuid(),
+  state: z.literal("AWAITING_PAYMENT"),
+  version: z.literal(1),
+  quoteId: z.uuid(),
+  serviceRequirement: deliveryServiceRequirementV1Schema,
+}).strict();
+
+export const customerMatchStageV1Schema = z.enum([
+  "PAYMENT_REQUIRED",
+  "MERCHANT_PREPARING",
+  "READY_FOR_SEARCH",
+  "SEARCHING",
+  "DRIVER_OFFERED",
+  "DRIVER_ASSIGNED",
+  "PICKUP_IN_PROGRESS",
+  "IN_TRANSIT",
+  "ARRIVING",
+  "DELIVERED",
+  "COMPLETED",
+  "DELIVERY_EXCEPTION",
+  "RETURNING",
+  "RETURNED",
+  "RETURN_REVIEW",
+  "RETURN_RESOLVED",
+  "MANUAL_REVIEW",
+  "CANCELLED",
+]);
+
+export const customerDeliveryStatusV1Schema = z.object({
+  serverNow: z.iso.datetime({ offset: true }),
+  delivery: z.object({
+    deliveryId: z.uuid(),
+    quoteId: z.uuid(),
+    state: operationsDeliveryStateSchema,
+    version: z.number().int().positive().safe(),
+    matchStage: customerMatchStageV1Schema,
+    currency: z.literal("THB"),
+    grossDeliveryFeeSatang: satangSchema,
+    customerContributionSatang: satangSchema,
+    merchantSubsidySatang: satangSchema,
+    updatedAt: z.iso.datetime({ offset: true }),
+  }).strict().nullable(),
+}).strict();
+
+export type CustomerGrantRegistrationV1 = z.infer<typeof customerGrantRegistrationV1Schema>;
+export type CustomerQuoteRequestV1 = z.infer<typeof customerQuoteRequestV1Schema>;
+export type CustomerDeliveryRequestV1 = z.infer<typeof customerDeliveryRequestV1Schema>;
+export type CustomerQuoteResponseV1 = z.infer<typeof customerQuoteResponseV1Schema>;
+export type CustomerDeliveryResponseV1 = z.infer<typeof customerDeliveryResponseV1Schema>;
+export type CustomerMatchStageV1 = z.infer<typeof customerMatchStageV1Schema>;
+export type CustomerDeliveryStatusV1 = z.infer<typeof customerDeliveryStatusV1Schema>;
 
 export const dispatchPolicyV1Schema = z.object({
   tenantRef: opaqueRefSchema,
@@ -424,7 +553,10 @@ export const driverAssignmentV1Schema = z.object({
   deliveryId: z.uuid(),
   offerId: z.uuid(),
   status: z.literal("ACTIVE"),
-  deliveryState: z.enum(["ASSIGNED", "EN_ROUTE_PICKUP", "AT_PICKUP"]),
+  deliveryState: z.enum([
+    "ASSIGNED", "EN_ROUTE_PICKUP", "AT_PICKUP", "PICKED_UP", "IN_TRANSIT",
+    "AT_DROPOFF", "DELIVERY_FAILED", "RETURN_REQUESTED", "RETURN_APPROVED", "RETURN_IN_TRANSIT",
+  ]),
   deliveryVersion: z.number().int().positive().safe(),
   assignedAt: z.iso.datetime({ offset: true }),
 }).strict();
@@ -447,12 +579,60 @@ export const driverSnapshotV1Schema = z.object({
   message: "active assignment and pending offers cannot coexist in a driver snapshot",
 });
 
-export const driverJourneyActionSchema = z.enum(["start_pickup", "arrive_pickup"]);
+export const driverJourneyActionSchema = z.enum([
+  "start_pickup",
+  "arrive_pickup",
+  "start_delivery",
+  "arrive_dropoff",
+  "deliver_with_pod",
+  "report_failure",
+  "start_return",
+  "arrive_return",
+]);
+
+export const syntheticPodDescriptorV1Schema = z.object({
+  evidenceRef: z.string().min(24).max(176).regex(/^synthetic-photo:[A-Za-z0-9._:-]{8,160}$/),
+  sha256: z.string().regex(/^[a-f0-9]{64}$/),
+  contentType: z.enum(["image/jpeg", "image/png"]),
+  byteSize: z.number().int().min(1).max(10 * 1024 * 1024).safe(),
+  pixelWidth: z.number().int().min(1).max(12_000).safe(),
+  pixelHeight: z.number().int().min(1).max(12_000).safe(),
+  syntheticOnly: z.literal(true),
+}).strict();
+
+export const deliveryFailureDescriptorV1Schema = z.object({
+  reasonCode: z.enum([
+    "CUSTOMER_UNREACHABLE", "UNSAFE_DROPOFF", "ADDRESS_UNRESOLVED", "DAMAGED", "OTHER",
+  ]),
+  safetyException: z.boolean(),
+  contactAttemptCount: z.literal(0),
+  syntheticOnly: z.literal(true),
+}).strict();
 
 export const driverJourneyV1Schema = z.object({
   tenantRef: opaqueRefSchema,
   branchRef: opaqueRefSchema,
   expectedVersion: z.number().int().positive().safe(),
+  pod: syntheticPodDescriptorV1Schema.optional(),
+  failure: deliveryFailureDescriptorV1Schema.optional(),
+}).strict();
+
+export const createSyntheticDisputeV1Schema = z.object({
+  tenantRef: opaqueRefSchema,
+  branchRef: opaqueRefSchema,
+  expectedDeliveryVersion: z.number().int().positive().safe(),
+  category: z.enum([
+    "DELIVERY_NOT_RECEIVED", "DAMAGED", "RETURN_EXCEPTION", "FEE_QUESTION", "OTHER",
+  ]),
+  syntheticOnly: z.literal(true),
+}).strict();
+
+export const resolveSyntheticDisputeV1Schema = z.object({
+  tenantRef: opaqueRefSchema,
+  branchRef: opaqueRefSchema,
+  decision: z.enum(["RESOLVED", "REJECTED"]),
+  resolutionCode: z.string().min(1).max(80).regex(/^[A-Z0-9_:-]+$/),
+  syntheticOnly: z.literal(true),
 }).strict();
 
 export type DispatchPolicyV1 = z.infer<typeof dispatchPolicyV1Schema>;
@@ -471,6 +651,10 @@ export type DriverCurrentAssignmentV1 = z.infer<typeof driverCurrentAssignmentV1
 export type DriverSnapshotV1 = z.infer<typeof driverSnapshotV1Schema>;
 export type DriverJourneyAction = z.infer<typeof driverJourneyActionSchema>;
 export type DriverJourneyV1 = z.infer<typeof driverJourneyV1Schema>;
+export type SyntheticPodDescriptorV1 = z.infer<typeof syntheticPodDescriptorV1Schema>;
+export type DeliveryFailureDescriptorV1 = z.infer<typeof deliveryFailureDescriptorV1Schema>;
+export type CreateSyntheticDisputeV1 = z.infer<typeof createSyntheticDisputeV1Schema>;
+export type ResolveSyntheticDisputeV1 = z.infer<typeof resolveSyntheticDisputeV1Schema>;
 
 function isValidReleaseEvidenceRef(value: string): boolean {
   if (value.startsWith("https://")) {
@@ -1208,7 +1392,7 @@ export const apiRouteInventoryV1Schema = z.object({
     method: z.enum(["GET", "POST", "PUT", "PATCH", "DELETE"]),
     pathTemplate: z.string().startsWith("/").max(240),
     matcher: apiRouteMatcherV1Schema,
-    access: z.enum(["PUBLIC_HEALTH", "SERVICE"]),
+    access: z.enum(["PUBLIC_HEALTH", "SERVICE", "CUSTOMER_GRANT"]),
     scope: z.string().min(3).max(120).nullable(),
     idempotencyRequired: z.boolean(),
   }).strict()).min(1).max(100),
@@ -1237,6 +1421,11 @@ export const apiRouteInventoryV1Schema = z.object({
       }
     } else if (route.scope === null || !route.pathTemplate.startsWith("/v1/")) {
       context.addIssue({ code: "custom", path: ["routes", index], message: "service route requires scope and /v1 path" });
+    }
+    if (route.access === "CUSTOMER_GRANT"
+      && (!route.pathTemplate.startsWith("/v1/customer/")
+        || !["QUOTE", "CREATE_DELIVERY", "TRACK"].includes(route.scope ?? ""))) {
+      context.addIssue({ code: "custom", path: ["routes", index], message: "invalid customer-grant route" });
     }
     if (route.matcher.type === "STATIC" && route.matcher.literal !== route.pathTemplate) {
       context.addIssue({ code: "custom", path: ["routes", index, "matcher"], message: "static matcher must equal path template" });

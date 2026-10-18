@@ -55,12 +55,31 @@ The future `fleetDeliveryCommitHandoff` boundary must therefore be a narrow BMS-
   stale-event quarantine, cursor pagination, invalid-cursor denial and cross-tenant denial.
 - Migrations `0001`–`0008` apply on a fresh disposable database and rerun with no checksum drift.
 
+## Synthetic Customer App foundation (later local slice)
+
+The repository now includes a local-only Customer client core and migration `0012` for short-lived,
+purpose-bound synthetic grants. The service principal registers only a token digest for one exact
+order; Customer quote/create/status requests carry neither tenant, branch nor order authority, and
+write transactions plus the tracking snapshot recheck the live grant. `customer-search`,
+`dev:customer-flow` and `dev:customer-dispatch` exercise this boundary against the real local
+API/database. It does not add customer-authoritative payment, POD access, notifications, precise
+location or a BMS writer, and it is not evidence that the original cross-system Phase 5 gate passed.
+
+The separate Android-first React Native debug shell is in `apps/fleet-delivery-customer`. It stores
+the short-lived activation in the OS keystore, exposes only package weight and explicit quote
+confirmation, then shows the coarse status through `DRIVER_ASSIGNED`. Payment/readiness and dispatch
+remain service-owned; offer acceptance remains driver-owned. The release variant renders a locked screen,
+rejects synthetic activation, disables cleartext traffic, is unsigned, and has no location, camera,
+notification or contacts permission. Both APK variants compile and the merged-manifest boundary is
+machine-checked; no emulator or physical Android device was attached during this verification, so
+this is not device-certification evidence.
+
 ## Remaining gate
 
 Executable handoff remains blocked until Commerce/Operations approve the lifecycle and confirmation
 contract, Security/Platform approve the Delivery-to-BMS principal and scopes, and BMS owns an adapter
-that reuses its authoritative stock/order service. Customer tracking separately requires the
-purpose-bound revocable grant policy owned by Security/Product/Privacy. No Phase 5 completion or
+that reuses its authoritative stock/order service. Production customer tracking still requires the
+approved revocable-grant/location/POD policy owned by Security/Product/Privacy. No Phase 5 completion or
 cross-system E2E claim is made before those dependencies exist.
 
 **PRODUCTION BOUNDARY — Event gap detection and read-only reconciliation only.**

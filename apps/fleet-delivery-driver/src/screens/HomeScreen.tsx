@@ -72,15 +72,68 @@ export function HomeScreen({ navigation }: Props) {
             <Text style={screenStyles.body}>{assignment.deliveryState}</Text>
             {assignment.deliveryState === 'ASSIGNED' ? (
               <PrimaryButton disabled={pending} label={t('startPickup')} onPress={() =>
-                runtime.advancePickup(assignment.deliveryId, 'start_pickup', assignment.deliveryVersion)
+                runtime.advanceJourney(assignment.deliveryId, 'start_pickup', assignment.deliveryVersion)
               } />
             ) : null}
             {assignment.deliveryState === 'EN_ROUTE_PICKUP' ? (
               <PrimaryButton disabled={pending} label={t('arrivePickup')} onPress={() =>
-                runtime.advancePickup(assignment.deliveryId, 'arrive_pickup', assignment.deliveryVersion)
+                runtime.advanceJourney(assignment.deliveryId, 'arrive_pickup', assignment.deliveryVersion)
               } />
             ) : null}
-            {assignment.deliveryState === 'AT_PICKUP' ? <Text style={screenStyles.warning}>{t('atPickupBoundary')}</Text> : null}
+            {assignment.deliveryState === 'AT_PICKUP' ? <Text style={screenStyles.warning}>{t('awaitingMerchantHandoff')}</Text> : null}
+            {assignment.deliveryState === 'PICKED_UP' ? (
+              <PrimaryButton disabled={pending} label={t('startDelivery')} onPress={() =>
+                runtime.advanceJourney(assignment.deliveryId, 'start_delivery', assignment.deliveryVersion)
+              } />
+            ) : null}
+            {assignment.deliveryState === 'IN_TRANSIT' ? (
+              <View style={screenStyles.gap}>
+                <PrimaryButton disabled={pending} label={t('arriveDropoff')} onPress={() =>
+                  runtime.advanceJourney(assignment.deliveryId, 'arrive_dropoff', assignment.deliveryVersion)
+                } />
+                <PrimaryButton disabled={pending} label={t('reportFailure')} tone="secondary" onPress={() =>
+                  runtime.advanceJourney(assignment.deliveryId, 'report_failure', assignment.deliveryVersion, {
+                    failure: {
+                      reasonCode: 'OTHER', safetyException: false, contactAttemptCount: 0, syntheticOnly: true,
+                    },
+                  })
+                } />
+              </View>
+            ) : null}
+            {assignment.deliveryState === 'AT_DROPOFF' ? (
+              <View style={screenStyles.gap}>
+                <PrimaryButton disabled={pending} label={t('deliverWithPod')} onPress={() =>
+                  runtime.advanceJourney(assignment.deliveryId, 'deliver_with_pod', assignment.deliveryVersion, {
+                    pod: {
+                      evidenceRef: `synthetic-photo:${makeEvidenceRef()}`,
+                      sha256: '0'.repeat(64),
+                      contentType: 'image/jpeg', byteSize: 1, pixelWidth: 1, pixelHeight: 1,
+                      syntheticOnly: true,
+                    },
+                  })
+                } />
+                <PrimaryButton disabled={pending} label={t('reportFailure')} tone="secondary" onPress={() =>
+                  runtime.advanceJourney(assignment.deliveryId, 'report_failure', assignment.deliveryVersion, {
+                    failure: {
+                      reasonCode: 'OTHER', safetyException: false, contactAttemptCount: 0, syntheticOnly: true,
+                    },
+                  })
+                } />
+              </View>
+            ) : null}
+            {assignment.deliveryState === 'DELIVERY_FAILED' || assignment.deliveryState === 'RETURN_REQUESTED' ? (
+              <Text style={screenStyles.warning}>{t('awaitingReturnApproval')}</Text>
+            ) : null}
+            {assignment.deliveryState === 'RETURN_APPROVED' ? (
+              <PrimaryButton disabled={pending} label={t('startReturn')} onPress={() =>
+                runtime.advanceJourney(assignment.deliveryId, 'start_return', assignment.deliveryVersion)
+              } />
+            ) : null}
+            {assignment.deliveryState === 'RETURN_IN_TRANSIT' ? (
+              <PrimaryButton disabled={pending} label={t('arriveReturn')} onPress={() =>
+                runtime.advanceJourney(assignment.deliveryId, 'arrive_return', assignment.deliveryVersion)
+              } />
+            ) : null}
           </>
         )}
       </Card>
@@ -117,6 +170,10 @@ export function HomeScreen({ navigation }: Props) {
 
 function shortRef(value: string): string {
   return `${value.slice(0, 8)}…`;
+}
+
+function makeEvidenceRef(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
 const styles = StyleSheet.create({

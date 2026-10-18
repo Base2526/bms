@@ -7,6 +7,7 @@ on:
       - "packages/fleet-delivery-*/**"
       - "infrastructure/fleet-delivery/**"
       - "docs/delivery/**"
+      - "scripts/fleet-delivery-*"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.fleet-delivery.json"
@@ -21,6 +22,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  customer-mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: android
+          - os: macos-15
+            platform: ios
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: apps/fleet-delivery-customer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.12"
+          cache: npm
+          cache-dependency-path: apps/fleet-delivery-customer/package-lock.json
+      - uses: actions/setup-java@v4
+        if: matrix.platform == 'android'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: ruby/setup-ruby@v1
+        if: matrix.platform == 'ios'
+        with:
+          ruby-version: "3.3"
+          bundler-cache: true
+          working-directory: apps/fleet-delivery-driver
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test:ci
+      - run: npm run lint
+      - run: npm audit --omit=dev --audit-level=high
+      - name: Build Android debug and unsigned release applications
+        if: matrix.platform == 'android'
+        run: npm run android:assemble
+      - name: Install iOS pods using the shared mobile Ruby lock
+        if: matrix.platform == 'ios'
+        working-directory: apps/fleet-delivery-driver
+        run: bundle exec pod install --project-directory=../fleet-delivery-customer/ios
+      - name: Build locally signed iOS Debug simulator application
+        if: matrix.platform == 'ios'
+        run: npm run ios:build
+      - name: Verify the built platform boundary
+        run: npm run verify:native-boundary -- ${{ matrix.platform }}
+
   driver-mobile:
     runs-on: ubuntu-latest
     timeout-minutes: 30

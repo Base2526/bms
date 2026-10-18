@@ -46,8 +46,12 @@ branches.forEach((branch, index) => {
   const block = serverSource.slice(branch.index, branches[index + 1]?.index ?? serverSource.length);
   const scopes = [...block.matchAll(/authenticateMutation\(deps, req, "([a-z0-9.]+)"\)/g)]
     .map((match) => match[1]!);
-  if (scopes.length > 1) throw new Error(`route branch has multiple authorization scopes: ${branch.matcherValue}`);
-  branch.scope = scopes[0] ?? null;
+  const customerActions = [...block.matchAll(/authenticateCustomer\(deps, req, "(QUOTE|CREATE_DELIVERY|TRACK)"\)/g)]
+    .map((match) => match[1]!);
+  if (scopes.length + customerActions.length > 1) {
+    throw new Error(`route branch has multiple authorization scopes: ${branch.matcherValue}`);
+  }
+  branch.scope = scopes[0] ?? customerActions[0] ?? null;
   branch.idempotencyRequired = block.includes("requireIdempotencyKey(");
 });
 
@@ -73,7 +77,7 @@ for (const route of inventory.routes) {
     if (!normalizedSource.includes(expectedMatcher)) throw new Error(`dynamic route regex drift: ${route.id}`);
   }
   const scopeCell = route.scope === null ? "" : ` | \`${route.scope}\` |`;
-  if (route.access === "SERVICE"
+  if ((route.access === "SERVICE" || route.access === "CUSTOMER_GRANT")
     && !humanInventory.includes(`| \`${route.method} ${route.pathTemplate}\`${scopeCell}`)) {
     throw new Error(`human API inventory is missing route/scope: ${route.id}`);
   }
@@ -89,6 +93,7 @@ process.stdout.write(`${JSON.stringify({
   routeCount: inventory.routes.length,
   publicHealthRouteCount: inventory.routes.filter((route) => route.access === "PUBLIC_HEALTH").length,
   serviceRouteCount: inventory.routes.filter((route) => route.access === "SERVICE").length,
+  customerGrantRouteCount: inventory.routes.filter((route) => route.access === "CUSTOMER_GRANT").length,
   scopedRouteCount: inventory.routes.filter((route) => route.scope !== null).length,
   idempotentMutationCount: inventory.routes.filter((route) => route.idempotencyRequired).length,
   verified: true,

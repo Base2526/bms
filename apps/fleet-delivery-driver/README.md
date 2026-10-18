@@ -12,15 +12,18 @@ Status: **internal test build only; production activation is fail-closed**.
 - Debug-only activation against HTTPS or loopback HTTP.
 - Access token and offline command queue stored through the OS keystore/keychain.
 - Server-owned driver snapshot, availability, pending offer, and current assignment display.
-- Offer accept/reject and the bounded `ASSIGNED -> EN_ROUTE_PICKUP -> AT_PICKUP` journey.
+- Offer accept/reject plus the synthetic pickup, delivery, photo-metadata POD, failure and return
+  journeys through `DELIVERED` or `RETURNED_TO_MERCHANT`.
 - A 100-command validated offline queue with original idempotency keys, foreground recovery, polling,
   explicit Sync Center, and visible server rejection codes.
 - No customer identity, address, contact, coordinate, photo, or financial payload is persisted by the
   app.
 
-The app stops at `AT_PICKUP`. Production authentication, device registration/revocation, real GPS,
-KYC, POD, push notifications, customer contact, COD, earnings, merchant handoff, and drop-off are
-hard-disabled in `src/config/capabilities.ts`. Debug and Release use isolated application identities;
+The app can advance the isolated Delivery aggregate after `AT_PICKUP`, but it does not perform a
+physical/BMS handoff. Its POD button sends fixed synthetic photo metadata only—no camera capture,
+image bytes, signature or OTP. Production authentication, device registration/revocation, real GPS,
+KYC, real POD storage, push notifications, customer contact, SOS, COD and earnings are hard-disabled
+in `src/config/capabilities.ts`. Debug and Release use isolated application identities;
 a Release build never reads or writes the Debug keychain/keystore session, has no activation form,
 and cannot create a session until an approved identity implementation replaces the debug flow.
 Android Release is intentionally unsigned and never falls back to the debug keystore.

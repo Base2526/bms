@@ -3,20 +3,23 @@
 ## Eligibility
 
 A candidate must be active and verified, have an active membership for the Delivery tenant/branch,
-an active approved motorcycle, `ONLINE` availability, no active assignment and a latest accepted
+an active approved vehicle whose type exactly matches the frozen Delivery requirement and whose
+capacity covers `required_capacity_kg`, `ONLINE` availability, no active assignment and a latest accepted
 location within the policy freshness, accuracy and current-radius bounds. A recent offer inside the
 configured cooldown excludes the driver. Suspension or verification loss is checked again while the
-offer row and Delivery are locked for acceptance.
+offer row and Delivery are locked for acceptance; vehicle type/capacity are rechecked there too.
 
-This synthetic phase has one vehicle class and no COD, capacity-by-order, provider ETA or cross-tenant
-pool. Those missing facts never default to eligible.
+This synthetic phase enables exactly `ON_DEMAND` + `MOTORCYCLE` + `SMALL`, with no special handling,
+COD, provider ETA or cross-tenant pool. Capacity is explicit per quote and copied immutably to the
+Delivery. Unsupported vehicle/service/package options never default to eligible.
 
 ## Ranking and offer evidence
 
 `DISTANCE_THEN_LONGEST_IDLE` orders candidates by PostGIS pickup distance, then oldest
 `last_assigned_at` (`NULL` first), then driver id for deterministic ties. Batch size is exactly `1`.
 The offer stores policy version, fairness mode, pickup distance, location sequence/accuracy/receive
-time, last assignment time and active workload evidence.
+time, last assignment time, active workload, service-requirement version, required type/capacity and
+the matched vehicle type/capacity.
 
 ## Attempt loop
 

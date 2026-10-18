@@ -27,8 +27,12 @@ accepted design, nor can it supply the real Android/iOS devices required by the 
 - `VERIFIED`: a coherent polling/reconnect snapshot reads availability, the active assignment and
   pending offers from one repeatable-read database snapshot, with the invariant that an assigned
   driver receives no offers in that response.
-- `VERIFIED`: Delivery object storage is deliberately `DisabledObjectStore`; no private POD upload
-  or authorized streaming path exists.
+- `VERIFIED`: the synthetic journey continues through handoff, transit, drop-off, metadata-only
+  photo POD and completion, or failure and return/review/resolution.
+- `VERIFIED`: POD stores only SHA-256/MIME/size/dimension metadata. Object storage remains
+  `DisabledObjectStore`; no image bytes, signature, OTP, private upload or streaming path exists.
+- `VERIFIED`: tenant-scoped, idempotent dispute open/resolve APIs accept bounded category/reason
+  text and append audit/outbox evidence without contact data or financial authority.
 - `VERIFIED`: no driver login/recovery, registered-device session, refresh-token rotation, KYC,
   FCM/APNs credential, notification endpoint or remote device-revocation implementation exists.
 - `VERIFIED`: no approved GPS/POD/KYC retention schedule, lawful basis, storage region or privacy
@@ -65,14 +69,14 @@ production driver product before these decisions would force unapproved choices 
 credentials, exact-location collection, private evidence, retention and emergency handling. Using
 mock devices or a public/local file URL would not satisfy the accepted gate.
 
-The safe synthetic boundary now includes the offer feed, platform-neutral client core, a separate
-React Native Android/iOS source tree and the pre-handoff
-`ASSIGNED -> EN_ROUTE_PICKUP -> AT_PICKUP` journey. Migration `0008` expands only those Delivery
-states and adds structured evidence to the append-only transition history. Local unsigned native
+The safe synthetic boundary now includes the offer feed, platform-neutral client core, separate
+Driver and Customer React Native Android/iOS source trees, and repository-only post-pickup/return
+journeys. Migrations `0008` and `0014`–`0017` add the states, metadata-only evidence tables and named
+terminal/amount invariants. Local unsigned native
 builds have been created for verification, but no signed or distributable production artifact,
 external resource, real credential or customer/driver record was created. The following capabilities
 are hard-disabled in the client manifest: production authentication,
-real-device location, KYC documents, POD photos, push notifications, customer contact and COD/
+real-device location, KYC documents, real POD photos, push notifications, customer contact and COD/
 earnings.
 
 ## 4. Implemented synthetic slice
@@ -88,13 +92,15 @@ earnings.
   customer, route or coordinate data and never combines an active assignment with pending offers.
 - The client validates the response with a strict schema and does not infer assignment from a local
   tap or device clock.
-- `POST /v1/driver/deliveries/:id/actions/start_pickup` and `arrive_pickup` require
+- Named driver actions from `start_pickup` through `deliver_with_pod`, `report_failure`,
+  `start_return` and `arrive_return` require
   `driver.journey.write`, the exact active assignment, an active/verified driver and the expected
   Delivery version. Arrival additionally requires a fresh, accurate accepted synthetic location.
 - Transition evidence stores the location sequence/time/accuracy without duplicating coordinates;
-  outbox and `DRIVER` audit rows commit atomically. The boundary stops at `AT_PICKUP`, before any
-  merchant handoff or BMS stock/order mutation. See [state transition matrix](state-transition-matrix.md).
-- The offline queue supports availability, offer decisions and the two synthetic pickup actions. It
+  outbox and `DRIVER` audit rows commit atomically. Service handoff/completion/return actions affect
+  only the isolated Delivery aggregate and never mutate BMS stock/order state. See
+  [state transition matrix](state-transition-matrix.md).
+- The offline queue supports availability, offer decisions and all synthetic driver journey actions. It
   is capped at 100 commands,
   validates persisted values, serializes queue operations and keeps the original idempotency key.
 - Consecutive availability intent in the same tenant/branch is coalesced without crossing an offer or
@@ -105,21 +111,34 @@ earnings.
 - Access-token and storage implementations remain injected; the core neither persists a token nor
   queues customer data, coordinates, photos or financial data.
 
-Verification on 2026-10-18: strict TypeScript, 43/43 DB-free tests and production bundles passed; all
+Verification on 2026-10-18: strict TypeScript, 57/57 DB-free tests and production bundles passed; all
 4 DB/API suites passed on the disposable test stack, including own-driver offer/assignment visibility,
 other-driver isolation, cross-tenant
 denial, coherent polling snapshots before and after assignment, restart recovery, transition-order
 denial, wrong-driver denial, stale-location denial, idempotent replay, append-only location-reference
 evidence, `DRIVER` actor audit, removal of the offer after acceptance and the existing 100-request
-atomic acceptance test. Migration `0001`–`0008` applied on a fresh disposable database and the
+atomic acceptance test. Migration `0001`–`0017` applied on a fresh disposable database and the
 checksum rerun applied nothing. The React Native shell separately passes strict TypeScript, ESLint,
-10 Jest tests, mobile lock provenance, dependency-license verification, malicious nesting rejection,
+the app Jest suites, mobile lock provenance, dependency-license verification, malicious nesting rejection,
 a zero-vulnerability production dependency audit and two-iteration Android/iOS bundle reproducibility.
-Android Debug/unsigned Release and iOS Debug/Release simulator builds pass;
+Driver Android Debug/unsigned Release and iOS Debug/Release simulator builds pass. Customer Android
+Debug/unsigned Release and iOS Debug simulator builds also pass (Customer Debug simulator now uses
+Xcode's local ad-hoc signing with a simulator-only Keychain identity);
 these do not substitute for signed artifacts or physical-device certification.
 The device-safety verifier also passes its permission, identity, entitlement, privacy-manifest,
 secure-storage and disabled-capability assertions. The redacted inventory found zero online physical
 devices, so the physical baseline, GPS, notification and device-trust result counts remain zero.
+
+The follow-up recheck adds DB/API regressions for cancellation from manual dispatch and after
+assignment, the full failure/return path, idempotent return replay, inconsistent-return rollback,
+preserving OFFLINE after completion, dispute scope/duplicate denial and financial/terminal guards.
+All 17 migrations were independently applied to a newly created local database, rerun with zero
+changes, and the temporary database removed. Backup/restore passed; its cleanup now owns only a
+database created by that run and refuses a source/restore name collision.
+Customer iOS activation was visually checked on Simulator after correcting the shared scheme,
+CLI dependency, Metro origin and simulator Keychain identity. Customer CI and secret-scanning scope
+now include both mobile source trees and the scenario runner. Hosted CI and physical-device tests
+have not been run by this recheck.
 
 ## 5. Later-phase blockers
 

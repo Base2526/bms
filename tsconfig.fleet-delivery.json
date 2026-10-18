@@ -15,6 +15,7 @@
       "@bms/fleet-delivery-contracts": ["packages/fleet-delivery-contracts/src/index.ts"],
       "@bms/fleet-delivery-domain": ["packages/fleet-delivery-domain/src/index.ts"],
       "@bms/fleet-delivery-database": ["packages/fleet-delivery-database/src/index.ts"],
+      "@bms/fleet-delivery-customer-core": ["apps/fleet-delivery-customer-core/src/index.ts"],
       "@bms/fleet-delivery-driver-core": ["apps/fleet-delivery-driver-core/src/index.ts"],
       "@bms/fleet-delivery-shared": ["packages/fleet-delivery-shared/src/index.ts"]
     },
@@ -22,8 +23,11 @@
   },
   "include": [
     "apps/fleet-delivery-api/src/**/*.ts",
+    "apps/fleet-delivery-customer-core/src/**/*.ts",
     "apps/fleet-delivery-worker/src/**/*.ts",
     "packages/fleet-delivery-*/src/**/*.ts",
+    "scripts/fleet-delivery-dev.ts",
+    "scripts/fleet-delivery-dev.test.ts",
     "tsup.fleet-delivery.config.ts"
   ]
 }

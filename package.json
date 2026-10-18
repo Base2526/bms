@@ -5,6 +5,7 @@
   "type": "module",
   "workspaces": [
     "apps/fleet-delivery-api",
+    "apps/fleet-delivery-customer-core",
     "apps/fleet-delivery-driver-core",
     "apps/fleet-delivery-worker",
     "packages/fleet-delivery-*"
@@ -12,10 +13,17 @@
   "scripts": {
     "build": "tsup --config tsup.fleet-delivery.config.ts",
     "typecheck": "tsc -p tsconfig.fleet-delivery.json --noEmit",
-    "test:pure": "node --import tsx --test packages/fleet-delivery-contracts/src/contracts.test.ts packages/fleet-delivery-domain/src/*.test.ts apps/fleet-delivery-api/src/server.test.ts apps/fleet-delivery-api/src/serviceAuth.test.ts apps/fleet-delivery-driver-core/src/*.test.ts",
+    "test:pure": "node --import tsx --test packages/fleet-delivery-contracts/src/contracts.test.ts packages/fleet-delivery-domain/src/*.test.ts apps/fleet-delivery-api/src/server.test.ts apps/fleet-delivery-api/src/serviceAuth.test.ts apps/fleet-delivery-customer-core/src/*.test.ts apps/fleet-delivery-driver-core/src/*.test.ts scripts/fleet-delivery-dev.test.ts",
     "test:db": "node --import tsx --test packages/fleet-delivery-database/src/*.integration.test.ts apps/fleet-delivery-api/src/*.integration.test.ts",
     "test": "npm run test:pure",
     "migrate": "tsx apps/fleet-delivery-api/src/migrate.ts",
+    "dev:bootstrap": "tsx scripts/fleet-delivery-dev.ts bootstrap",
+    "dev:scenario": "tsx scripts/fleet-delivery-dev.ts scenario",
+    "dev:customer-flow": "tsx scripts/fleet-delivery-dev.ts customer-flow",
+    "dev:customer-dispatch": "tsx scripts/fleet-delivery-dev.ts customer-dispatch",
+    "dev:customer-complete": "tsx scripts/fleet-delivery-dev.ts customer-complete",
+    "dev:customer-return": "tsx scripts/fleet-delivery-dev.ts customer-return",
+    "dev:cleanup": "tsx scripts/fleet-delivery-dev.ts cleanup",
     "certification:verify": "tsx scripts/fleet-delivery-certification-pack.ts",
     "approval-requests:verify": "tsx scripts/fleet-delivery-approval-requests.ts",
     "pilot:readiness": "tsx scripts/fleet-delivery-readiness.ts",

@@ -14,8 +14,12 @@ Date: 2026-10-18 (Asia/Bangkok)
   geocode confidence, unpaid order version, item eligibility and 15-minute snapshot freshness.
 - `VERIFIED`: quote price/subsidy/commission inputs and results are snapshotted as exact integer
   satang with append-only components and an expiry timestamp.
+- `VERIFIED`: quote requests carry an explicit versioned service/package requirement. The current
+  synthetic contract accepts only `ON_DEMAND`, `MOTORCYCLE`, `SMALL`, no special handling, and a
+  required capacity that covers package weight; unsupported options fail validation.
 - `VERIFIED`: delivery creation binds one unexpired/current quote, is idempotent and concurrency-safe,
-  records the initial transition/audit/outbox event and posts one balanced shadow allocation journal.
+  freezes that quote's service requirement, records the initial transition/audit/outbox event and
+  posts one balanced shadow allocation journal.
 - `VERIFIED`: the Phase 2 state machine accepts named actions plus expected aggregate version; clients
   cannot submit an arbitrary target state.
 
@@ -41,6 +45,9 @@ changed body conflicts.
   validation; it intentionally does not share incompatible `NEW`/`OLD` column references.
 - `0006_protect_phase2_snapshots.sql` prevents mutation of versioned configuration/context, quote
   economics and Delivery authority/money snapshots.
+- `0011_delivery_service_requirements.sql` adds immutable service/package snapshots to quotes and
+  deliveries. Its legacy backfill is explicitly labelled `legacy-synthetic:v1`; new writes have no
+  database default and must provide the requirement.
 - Migration apply is additive, checksum-protected and rerunnable. Rollback is forward repair; accepted
   jobs, quote history, transitions, audit and posted journals are not deleted.
 

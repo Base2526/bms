@@ -17,7 +17,11 @@ Date: 2026-10-18 (Asia/Bangkok)
 - `VERIFIED`: PostgreSQL row locks plus unique constraints make acceptance atomic. Duplicate accepts
   return the authoritative assignment and cannot create another assignment.
 - `VERIFIED`: every offer freezes distance, policy version, location sequence/accuracy/time,
-  longest-idle input and fairness mode for later review.
+  longest-idle input, fairness mode, required vehicle/capacity and matched vehicle/capacity for
+  later review.
+- `VERIFIED`: dispatch candidate selection and offer acceptance both require an active approved
+  vehicle of the frozen type with capacity at least the Delivery requirement. No-capacity matches
+  exhaust the bounded search and enter the durable manual queue.
 
 ## 2. API and authorization surface
 
@@ -47,6 +51,10 @@ The worker receives execute-only access to `claim_dispatch_attempts()` and
 `advance_dispatch_attempt()`. Those security-definer functions use table-safe fields, explicit
 PostGIS schema qualification, bounded claims and leases. Offer expiry, radius expansion, state
 transition, outbox event and audit evidence commit with the dispatch transaction.
+
+Migration `0011_delivery_service_requirements.sql` replaces the worker function additively so matching
+uses the immutable Delivery requirement. It also rechecks the vehicle snapshot in the application
+transaction before accepting an offer; changing/deactivating the vehicle therefore fails closed.
 
 Detailed behavior: [dispatch policy](dispatch-policy.md), [location policy](location-policy.md), and
 [state transition matrix](state-transition-matrix.md).

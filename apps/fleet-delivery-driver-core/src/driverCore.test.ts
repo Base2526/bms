@@ -191,6 +191,56 @@ test("pickup journey action is replay-safe and carries no coordinates", async ()
   });
 });
 
+test("delivery confirmation queues only hash-bound synthetic POD metadata", async () => {
+  const store = new MemoryStore();
+  const requests: Array<{ body?: string }> = [];
+  const transport = new DriverHttpTransport("https://delivery.invalid", async () => "synthetic-token", async (_url, init) => {
+    requests.push({ ...(init.body ? { body: init.body } : {}) });
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { state: "DELIVERED", version: 13 }; },
+    };
+  });
+  const queue = new DriverOfflineQueue(
+    store,
+    transport,
+    () => "command-pod-0001",
+    () => new Date("2026-10-18T00:00:00Z"),
+  );
+  await queue.enqueueJourneyAction(
+    scope,
+    "3d2547e1-2ed8-42d4-9741-5cafeeb015cd",
+    "deliver_with_pod",
+    12,
+    {
+      pod: {
+        evidenceRef: "synthetic-photo:queue-proof-0001",
+        sha256: "b".repeat(64),
+        contentType: "image/png",
+        byteSize: 256,
+        pixelWidth: 10,
+        pixelHeight: 10,
+        syntheticOnly: true,
+      },
+    },
+  );
+  assert.equal((await queue.flush()).remaining, 0);
+  const body = JSON.parse(requests[0]!.body!) as Record<string, unknown>;
+  assert.equal("otp" in body, false);
+  assert.equal("signature" in body, false);
+  assert.equal("bytes" in body, false);
+  assert.deepEqual(body.pod, {
+    evidenceRef: "synthetic-photo:queue-proof-0001",
+    sha256: "b".repeat(64),
+    contentType: "image/png",
+    byteSize: 256,
+    pixelWidth: 10,
+    pixelHeight: 10,
+    syntheticOnly: true,
+  });
+});
+
 test("restart recovery reads the active assignment from the server", async () => {
   const transport = new DriverHttpTransport("https://delivery.invalid", async () => "synthetic-token", async (url) => {
     assert.match(url, /\/v1\/driver\/assignments\/current\?/);

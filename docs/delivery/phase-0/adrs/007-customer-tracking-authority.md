@@ -1,6 +1,6 @@
 # ADR-007: Customer tracking authority
 
-- Status: `ACCEPTED` as a future constraint on 2026-10-18; no customer tracking exists in Phase 1
+- Status: `ACCEPTED` as a future production constraint on 2026-10-18; synthetic coarse-status slice implemented
 - Decision owner: Security + Product + Privacy
 - Blocks: Phase 5 customer integration
 
@@ -18,6 +18,16 @@
   a BMS-authoritative request. Rotation/revocation invalidates earlier links.
 - `PROPOSED`: no-store/no-referrer/noindex responses, grant+IP rate limiting, token fingerprint logs,
   coarsened/stale-labelled location and no driver contact/KYC/raw audit/finance data.
+
+## Synthetic implementation evidence
+
+- `VERIFIED`: migration `0013` adds `TRACK` only to newly issued synthetic grants; existing grants
+  are not expanded. The live grant is rechecked inside the tenant read snapshot.
+- `VERIFIED`: `GET /v1/customer/deliveries/current` derives order scope from the grant and returns
+  state, version, coarse match stage, frozen amounts and timestamps only. It returns no caller scope,
+  driver identity/contact/KYC, assignment id, GPS, POD or raw evidence.
+- `VERIFIED`: the local runner reached `DRIVER_ASSIGNED` after service-owned payment/readiness and
+  dispatch plus driver-owned acceptance. This is local synthetic evidence, not production approval.
 
 ## Consequences
 

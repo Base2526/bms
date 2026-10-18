@@ -48,12 +48,47 @@ The global worker claims due attempts through bounded `SKIP LOCKED` security-def
 worker role has execute-only access and no direct table grants. Matching uses fresh accepted PostGIS
 locations and records policy/rank inputs with each offer. Driver suspension is rechecked on acceptance.
 
-Phase 4 migration `0008` extends only the synthetic pre-handoff journey with `EN_ROUTE_PICKUP` and
-`AT_PICKUP`. Named driver actions are assignment-owned, expected-version/idempotency protected and
+Migration `0011` adds the quote-owned service/package requirement and copies it immutably to the
+Delivery. New rows must explicitly provide the version, service type, required vehicle type/capacity,
+package weight/size and special-handling set. The current fail-closed constraints permit only the
+synthetic motorcycle option. Dispatch and acceptance both compare the active approved vehicle with
+the frozen type/capacity; offer evidence records both sides of that match.
+
+Migration `0012` adds synthetic-only `customer_grants` for Customer App development. A grant binds
+one exact tenant/branch/order/version, initially permits `QUOTE` and `CREATE_DELIVERY`, expires within one
+hour and stores only the SHA-256 token digest. Registering a replacement revokes the previous active
+grant for that order. The app role reaches a live grant through the narrow security-definer resolver;
+the quote and delivery transactions recheck the grant before writing. The table is tenant-owned,
+forced-RLS protected and explicitly granted to the app role. This is not the unresolved production
+customer tracking/POD authorization and cannot be used to enable production.
+
+Migration `0013` permits newly issued synthetic grants to add the read-only `TRACK` action. Existing
+grants retain their original authority; the migration does not widen them in place. The customer
+projection rechecks the live grant inside a tenant read snapshot and returns only Delivery state,
+version, coarse matching stage, frozen customer-facing amounts and timestamps. It contains no
+tenant/order reference, driver identity/KYC/contact, assignment id, coordinate or POD. Production
+tracking authority, location precision and retention remain blocked by ADR-007 approval.
+
+Migration `0014` adds the synthetic post-pickup/return state set and five tenant-owned, forced-RLS
+tables: `synthetic_pod_evidence`, `delivery_failures`, `delivery_returns`, `delivery_disputes` and
+`notification_intents`. POD stores descriptor metadata only; failure evidence fixes contact attempts
+to zero; notification intents can only be `SUPPRESSED_NO_APPROVED_PROVIDER`. No bytes, phone data,
+external message, payment, COD or earnings authority is introduced. Migrations `0015`–`0016` replace
+the old unnamed CANCELLED-only terminal constraint with the named expanded terminal invariant.
+Corrective migration `0017` restores the amount-balance invariant under the stable name
+`deliveries_amount_balance_check`; it is additive because applied migrations are never rewritten.
+
+Phase 4 migration `0008` starts the synthetic journey with `EN_ROUTE_PICKUP` and `AT_PICKUP`;
+`0014`–`0017` continue the isolated aggregate through delivery/failure/return terminal states. Named
+driver actions are assignment-owned, expected-version/idempotency protected and
 append transition/outbox/audit evidence in the same tenant transaction. Arrival requires the latest
 accepted synthetic location to meet the frozen dispatch freshness/accuracy policy; the transition
-stores only the location evidence reference/quality, not another coordinate copy. `AT_PICKUP` is a
-hard boundary: no merchant handoff, BMS stock/order mutation or `PICKED_UP` state exists yet.
+stores only the location evidence reference/quality, not another coordinate copy. The synthetic
+`merchant_handoff` transition does not mutate or claim authority over BMS stock/order state.
+Return actions additionally require one return record in the expected previous state; inconsistency
+rolls back the entire transition. Pre-pickup cancellation includes manual dispatch, resolves its
+open queue entry and closes active assignment/pending offer state atomically. Assignment completion
+or cancellation releases BUSY availability without overwriting an explicit OFFLINE choice.
 
 The Phase 5 safe foundation adds no migration and no BMS writer. The existing inbox now treats a
 non-contiguous `bms.order-context-changed.v1` aggregate version as `ACTION_REQUIRED` and preserves
@@ -75,7 +110,8 @@ money fields. Admin UI placement, federation, platform fleet scope and every ope
 blocked by ADR-008 approval.
 
 Phase 8 adds no database migration. Its disposable backup/restore verifier checks that the restored
-database retains migration checksums, forced RLS, Phase 6 finance constraints and Phase 7 indexes.
+database retains migrations through `0017`, forced RLS, Phase 6 finance constraints, Phase 7 indexes,
+synthetic customer-grant controls, the post-pickup tables and both named Delivery invariants.
 This local schema/control exercise is not evidence of production RPO/RTO, point-in-time recovery,
 encryption, offsite copies or approved retention.
 

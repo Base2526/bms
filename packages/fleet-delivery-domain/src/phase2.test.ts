@@ -59,3 +59,27 @@ test("phase 4 pickup journey is ordered and cannot skip arrival", () => {
     /INVALID_DRIVER_JOURNEY_TRANSITION/,
   );
 });
+
+test("post-pickup delivery and failure-return journeys remain ordered", () => {
+  assert.equal(nextDeliveryState("AT_PICKUP", "merchant_handoff"), "PICKED_UP");
+  assert.equal(nextDriverJourneyState("PICKED_UP", "start_delivery"), "IN_TRANSIT");
+  assert.equal(nextDriverJourneyState("IN_TRANSIT", "arrive_dropoff"), "AT_DROPOFF");
+  assert.equal(nextDriverJourneyState("AT_DROPOFF", "deliver_with_pod"), "DELIVERED");
+  assert.equal(nextDeliveryState("DELIVERED", "complete_delivery"), "COMPLETED");
+  assert.throws(
+    () => nextDriverJourneyState("IN_TRANSIT", "deliver_with_pod"),
+    /INVALID_DRIVER_JOURNEY_TRANSITION/,
+  );
+
+  assert.equal(nextDriverJourneyState("IN_TRANSIT", "report_failure"), "DELIVERY_FAILED");
+  assert.equal(nextDeliveryState("DELIVERY_FAILED", "request_return"), "RETURN_REQUESTED");
+  assert.equal(nextDeliveryState("RETURN_REQUESTED", "approve_return"), "RETURN_APPROVED");
+  assert.equal(nextDriverJourneyState("RETURN_APPROVED", "start_return"), "RETURN_IN_TRANSIT");
+  assert.equal(nextDriverJourneyState("RETURN_IN_TRANSIT", "arrive_return"), "RETURNED_TO_MERCHANT");
+  assert.equal(nextDeliveryState("RETURNED_TO_MERCHANT", "review_return"), "RETURN_REVIEW");
+  assert.equal(nextDeliveryState("RETURN_REVIEW", "resolve_return"), "RETURN_RESOLVED");
+  assert.throws(
+    () => nextDeliveryState("DELIVERY_FAILED", "complete_delivery"),
+    /INVALID_DELIVERY_TRANSITION/,
+  );
+});

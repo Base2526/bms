@@ -5,10 +5,15 @@ import {
   controlledLaunchPlanV1Schema,
   controlledLaunchWorkbookV1Schema,
   configurationContractV1Schema,
+  createQuoteV1Schema,
+  customerGrantRegistrationV1Schema,
+  customerDeliveryStatusV1Schema,
+  customerQuoteRequestV1Schema,
   apiRouteInventoryV1Schema,
   dependencyLicensePolicyV1Schema,
   dispatchPolicyV1Schema,
   driverCurrentAssignmentV1Schema,
+  driverJourneyV1Schema,
   driverOfferFeedV1Schema,
   driverSnapshotV1Schema,
   FINANCE_CAPABILITIES_V1,
@@ -33,6 +38,132 @@ import {
   supplyChainPolicyV1Schema,
   secretScanPolicyV1Schema,
 } from "./index.js";
+
+test("delivery service requirement is explicit, capacity-safe and fail-closed", () => {
+  const input = {
+    tenantRef: "tenant:synthetic",
+    branchRef: "branch:main",
+    bmsOrderRef: "order:synthetic",
+    expectedOrderVersion: 1,
+    serviceRequirement: {
+      serviceType: "ON_DEMAND",
+      requiredVehicleType: "MOTORCYCLE",
+      requiredCapacityKg: 20,
+      packageWeightKg: 12.5,
+      packageSizeClass: "SMALL",
+      specialHandling: [],
+      requirementVersion: "synthetic-motorcycle:v1",
+    },
+  } as const;
+  assert.equal(createQuoteV1Schema.parse(input).serviceRequirement.requiredCapacityKg, 20);
+  assert.throws(() => createQuoteV1Schema.parse({
+    ...input,
+    serviceRequirement: { ...input.serviceRequirement, requiredVehicleType: "CAR" },
+  }));
+  assert.throws(() => createQuoteV1Schema.parse({
+    ...input,
+    serviceRequirement: { ...input.serviceRequirement, requiredCapacityKg: 10 },
+  }));
+  assert.throws(() => createQuoteV1Schema.parse({
+    ...input,
+    serviceRequirement: { ...input.serviceRequirement, specialHandling: ["FRAGILE"] },
+  }));
+});
+
+test("synthetic customer contracts are purpose-bound and reject caller authority", () => {
+  const serviceRequirement = createQuoteV1Schema.parse({
+    tenantRef: "tenant:synthetic",
+    branchRef: "branch:main",
+    bmsOrderRef: "order:synthetic",
+    expectedOrderVersion: 1,
+    serviceRequirement: {
+      serviceType: "ON_DEMAND",
+      requiredVehicleType: "MOTORCYCLE",
+      requiredCapacityKg: 20,
+      packageWeightKg: 12.5,
+      packageSizeClass: "SMALL",
+      specialHandling: [],
+      requirementVersion: "synthetic-motorcycle:v1",
+    },
+  }).serviceRequirement;
+  assert.deepEqual(customerQuoteRequestV1Schema.parse({ serviceRequirement }), { serviceRequirement });
+  assert.throws(() => customerQuoteRequestV1Schema.parse({ serviceRequirement, tenantRef: "tenant:spoof" }));
+  const registration = {
+    grantId: "11111111-1111-4111-8111-111111111111",
+    tenantRef: "tenant:synthetic",
+    branchRef: "branch:main",
+    bmsOrderRef: "order:synthetic",
+    tokenSha256: "a".repeat(64),
+    expiresAt: "2026-10-18T08:00:00.000Z",
+    allowedActions: ["QUOTE", "CREATE_DELIVERY", "TRACK"],
+    syntheticOnly: true,
+  } as const;
+  assert.equal(customerGrantRegistrationV1Schema.parse(registration).syntheticOnly, true);
+  assert.throws(() => customerGrantRegistrationV1Schema.parse({ ...registration, syntheticOnly: false }));
+  assert.throws(() => customerGrantRegistrationV1Schema.parse({
+    ...registration, allowedActions: ["QUOTE"],
+  }));
+  assert.throws(() => customerGrantRegistrationV1Schema.parse({ ...registration, tokenSha256: "raw-token" }));
+  const status = customerDeliveryStatusV1Schema.parse({
+    serverNow: "2026-10-18T08:00:00.000Z",
+    delivery: {
+      deliveryId: "22222222-2222-4222-8222-222222222222",
+      quoteId: "33333333-3333-4333-8333-333333333333",
+      state: "SEARCHING_DRIVER",
+      version: 5,
+      matchStage: "SEARCHING",
+      currency: "THB",
+      grossDeliveryFeeSatang: 2900,
+      customerContributionSatang: 2400,
+      merchantSubsidySatang: 500,
+      updatedAt: "2026-10-18T08:00:00.000Z",
+    },
+  });
+  assert.equal(status.delivery?.matchStage, "SEARCHING");
+  assert.throws(() => customerDeliveryStatusV1Schema.parse({
+    ...status,
+    delivery: { ...status.delivery!, driverPhone: "0800000000" },
+  }));
+});
+
+test("synthetic POD accepts photo metadata only and failure evidence carries no contact PII", () => {
+  const base = {
+    tenantRef: "tenant:synthetic",
+    branchRef: "branch:main",
+    expectedVersion: 12,
+  };
+  const pod = {
+    evidenceRef: "synthetic-photo:contract-proof-0001",
+    sha256: "a".repeat(64),
+    contentType: "image/jpeg",
+    byteSize: 256,
+    pixelWidth: 10,
+    pixelHeight: 10,
+    syntheticOnly: true,
+  } as const;
+  assert.equal(driverJourneyV1Schema.parse({ ...base, pod }).pod?.contentType, "image/jpeg");
+  assert.throws(() => driverJourneyV1Schema.parse({ ...base, pod: { ...pod, otp: "123456" } }));
+  assert.throws(() => driverJourneyV1Schema.parse({ ...base, pod: { ...pod, signature: "base64" } }));
+  assert.equal(driverJourneyV1Schema.parse({
+    ...base,
+    failure: {
+      reasonCode: "CUSTOMER_UNREACHABLE",
+      safetyException: false,
+      contactAttemptCount: 0,
+      syntheticOnly: true,
+    },
+  }).failure?.contactAttemptCount, 0);
+  assert.throws(() => driverJourneyV1Schema.parse({
+    ...base,
+    failure: {
+      reasonCode: "CUSTOMER_UNREACHABLE",
+      safetyException: false,
+      contactAttemptCount: 1,
+      syntheticOnly: true,
+      phone: "+66123456789",
+    },
+  }));
+});
 
 test("release evidence references reject traversal and unverifiable schemes", () => {
   assert.equal(releaseEvidenceRefSchema.parse("docs/delivery/phase-10/README.md"),

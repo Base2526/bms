@@ -33,6 +33,28 @@ export class FleetDeliveryBusinessError extends Error {
 
 export type IdempotentResponse = { status: number; body: Record<string, unknown> };
 
+async function requireLiveCustomerGrant(
+  client: PoolClient,
+  input: {
+    grantId: string;
+    tenantRef: string;
+    branchRef: string;
+    bmsOrderRef: string;
+    action: "QUOTE" | "CREATE_DELIVERY";
+  },
+): Promise<void> {
+  const grant = await client.query(
+    `SELECT 1
+       FROM fleet_delivery.customer_grants
+      WHERE id=$1 AND tenant_ref=$2 AND branch_ref=$3 AND bms_order_ref=$4
+        AND synthetic_only=true AND revoked_at IS NULL AND expires_at > now()
+        AND $5 = ANY(allowed_actions)
+      FOR SHARE`,
+    [input.grantId, input.tenantRef, input.branchRef, input.bmsOrderRef, input.action],
+  );
+  if (grant.rowCount !== 1) throw new FleetDeliveryBusinessError("CUSTOMER_AUTH_INVALID", 401);
+}
+
 export async function beginIdempotent(
   client: PoolClient,
   input: {
@@ -430,9 +452,24 @@ export function asSafeNumber(value: string | number): number {
 export async function createQuote(
   pool: Pool,
   input: CreateQuoteV1,
-  context: { principal: string; idempotencyKey: string; requestId: string; now?: Date },
+  context: {
+    principal: string;
+    idempotencyKey: string;
+    requestId: string;
+    now?: Date;
+    customerGrantId?: string;
+  },
 ): Promise<IdempotentResponse> {
   return withTenantTransaction(pool, input.tenantRef, async (client) => {
+    if (context.customerGrantId) {
+      await requireLiveCustomerGrant(client, {
+        grantId: context.customerGrantId,
+        tenantRef: input.tenantRef,
+        branchRef: input.branchRef,
+        bmsOrderRef: input.bmsOrderRef,
+        action: "QUOTE",
+      });
+    }
     const operation = "quote.create.v1";
     const idem = await beginIdempotent(client, {
       tenantRef: input.tenantRef, principal: context.principal, operation,
@@ -490,9 +527,11 @@ export async function createQuote(
          distance_charge_satang, gross_delivery_fee_satang, customer_contribution_satang,
          merchant_subsidy_satang, explicit_discount_satang, eligible_commission_fee_satang,
          commission_bps, commission_satang, distance_rounding, commission_rounding,
+         service_type, required_vehicle_type, required_capacity_kg, package_weight_kg,
+         package_size_class, special_handling, service_requirement_version,
          created_by, created_at, expires_at
        ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'THB',$14,$15,$16,$17,$18,$19,$20,$21,$22,
-         'STARTED_KILOMETRE','HALF_UP_SATANG',$23,$24,$25)`,
+         'STARTED_KILOMETRE','HALF_UP_SATANG',$23,$24,$25,$26,$27,$28::jsonb,$29,$30,$31,$32)`,
       [quoteId, input.tenantRef, input.branchRef, input.bmsOrderRef, row.context_id,
         input.expectedOrderVersion, row.eligibility_version, asSafeNumber(row.configuration_version),
         row.rule_version, row.route_provider, row.route_reference, row.route_distance_m,
@@ -500,7 +539,10 @@ export async function createQuote(
         pricing.grossDeliveryFeeSatang, pricing.customerContributionSatang,
         pricing.merchantSubsidySatang, pricing.explicitDiscountSatang,
         pricing.eligibleCommissionFeeSatang, row.commission_bps, pricing.commissionSatang,
-        context.principal, now, expiresAt],
+        input.serviceRequirement.serviceType, input.serviceRequirement.requiredVehicleType,
+        input.serviceRequirement.requiredCapacityKg, input.serviceRequirement.packageWeightKg,
+        input.serviceRequirement.packageSizeClass, JSON.stringify(input.serviceRequirement.specialHandling),
+        input.serviceRequirement.requirementVersion, context.principal, now, expiresAt],
     );
     const components: Array<[string, number, Record<string, unknown>]> = [
       ["BASE_FARE", pricing.baseFareSatang, {}],
@@ -520,7 +562,13 @@ export async function createQuote(
       tenantRef: input.tenantRef, branchRef: input.branchRef,
       messageType: "fleet-delivery.quote-issued.v1", aggregateType: "delivery-quote",
       aggregateRef: quoteId, aggregateVersion: 1, correlationId: context.requestId,
-      payload: { quoteId, bmsOrderRef: input.bmsOrderRef, expiresAt: expiresAt.toISOString() },
+      payload: {
+        quoteId, bmsOrderRef: input.bmsOrderRef, expiresAt: expiresAt.toISOString(),
+        serviceType: input.serviceRequirement.serviceType,
+        requiredVehicleType: input.serviceRequirement.requiredVehicleType,
+        requiredCapacityKg: input.serviceRequirement.requiredCapacityKg,
+        serviceRequirementVersion: input.serviceRequirement.requirementVersion,
+      },
     });
     await writeAudit(client, {
       tenantRef: input.tenantRef, branchRef: input.branchRef, principal: context.principal,
@@ -530,6 +578,7 @@ export async function createQuote(
     const response = { status: 201, body: {
       quoteId, currency: "THB", ...pricing, commissionBps: row.commission_bps,
       pricingRuleVersion: row.rule_version, eligibilityVersion: row.eligibility_version,
+      serviceRequirement: input.serviceRequirement,
       expiresAt: expiresAt.toISOString(),
     } };
     await finishIdempotent(client, {
@@ -563,9 +612,24 @@ async function ensureAccount(
 export async function createDelivery(
   pool: Pool,
   input: CreateDeliveryV1,
-  context: { principal: string; idempotencyKey: string; requestId: string; now?: Date },
+  context: {
+    principal: string;
+    idempotencyKey: string;
+    requestId: string;
+    now?: Date;
+    customerGrantId?: string;
+  },
 ): Promise<IdempotentResponse> {
   return withTenantTransaction(pool, input.tenantRef, async (client) => {
+    if (context.customerGrantId) {
+      await requireLiveCustomerGrant(client, {
+        grantId: context.customerGrantId,
+        tenantRef: input.tenantRef,
+        branchRef: input.branchRef,
+        bmsOrderRef: input.bmsOrderRef,
+        action: "CREATE_DELIVERY",
+      });
+    }
     const operation = "delivery.create.v1";
     const idem = await beginIdempotent(client, {
       tenantRef: input.tenantRef, principal: context.principal, operation,
@@ -577,11 +641,16 @@ export async function createDelivery(
       gross_delivery_fee_satang: string; customer_contribution_satang: string;
       merchant_subsidy_satang: string; explicit_discount_satang: string;
       commission_bps: number; commission_satang: string;
+      service_type: string; required_vehicle_type: string; required_capacity_kg: number;
+      package_weight_kg: string; package_size_class: string; special_handling: unknown[];
+      service_requirement_version: string;
     }>(
       `SELECT q.status, q.expires_at, q.order_version, q.eligibility_version,
               q.gross_delivery_fee_satang, q.customer_contribution_satang,
               q.merchant_subsidy_satang, q.explicit_discount_satang,
-              q.commission_bps, q.commission_satang
+              q.commission_bps, q.commission_satang, q.service_type,
+              q.required_vehicle_type, q.required_capacity_kg, q.package_weight_kg,
+              q.package_size_class, q.special_handling, q.service_requirement_version
          FROM fleet_delivery.delivery_quotes q
          JOIN fleet_delivery.order_context_snapshots o ON o.id=q.order_context_id
         WHERE q.id=$1 AND q.tenant_ref=$2 AND q.branch_ref=$3 AND q.bms_order_ref=$4
@@ -600,12 +669,17 @@ export async function createDelivery(
       `INSERT INTO fleet_delivery.deliveries (
          id, tenant_ref, branch_ref, bms_order_ref, quote_id, state, currency,
          gross_delivery_fee_satang, customer_contribution_satang, merchant_subsidy_satang,
-         explicit_discount_satang, commission_bps, commission_satang, created_by
-       ) VALUES ($1,$2,$3,$4,$5,'AWAITING_PAYMENT','THB',$6,$7,$8,$9,$10,$11,$12)`,
+         explicit_discount_satang, commission_bps, commission_satang, service_type,
+         required_vehicle_type, required_capacity_kg, package_weight_kg, package_size_class,
+         special_handling, service_requirement_version, created_by
+       ) VALUES ($1,$2,$3,$4,$5,'AWAITING_PAYMENT','THB',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17::jsonb,$18,$19)`,
       [deliveryId, input.tenantRef, input.branchRef, input.bmsOrderRef, input.quoteId,
         quote.gross_delivery_fee_satang, quote.customer_contribution_satang,
         quote.merchant_subsidy_satang, quote.explicit_discount_satang,
-        quote.commission_bps, quote.commission_satang, context.principal],
+        quote.commission_bps, quote.commission_satang, quote.service_type,
+        quote.required_vehicle_type, quote.required_capacity_kg, quote.package_weight_kg,
+        quote.package_size_class, JSON.stringify(quote.special_handling),
+        quote.service_requirement_version, context.principal],
     );
     await client.query(
       `INSERT INTO fleet_delivery.delivery_state_transitions (
@@ -653,14 +727,30 @@ export async function createDelivery(
       tenantRef: input.tenantRef, branchRef: input.branchRef,
       messageType: "fleet-delivery.delivery-created.v1", aggregateType: "delivery",
       aggregateRef: deliveryId, aggregateVersion: 1, correlationId: context.requestId,
-      payload: { deliveryId, bmsOrderRef: input.bmsOrderRef, quoteId: input.quoteId, state: "AWAITING_PAYMENT" },
+      payload: {
+        deliveryId, bmsOrderRef: input.bmsOrderRef, quoteId: input.quoteId, state: "AWAITING_PAYMENT",
+        serviceType: quote.service_type, requiredVehicleType: quote.required_vehicle_type,
+        requiredCapacityKg: quote.required_capacity_kg,
+        serviceRequirementVersion: quote.service_requirement_version,
+      },
     });
     await writeAudit(client, {
       tenantRef: input.tenantRef, branchRef: input.branchRef, principal: context.principal,
       action: "delivery.created", targetType: "delivery", targetRef: deliveryId,
       requestId: context.requestId, metadata: { quoteId: input.quoteId, journalId },
     });
-    const response = { status: 201, body: { deliveryId, state: "AWAITING_PAYMENT", version: 1, quoteId: input.quoteId } };
+    const response = { status: 201, body: {
+      deliveryId, state: "AWAITING_PAYMENT", version: 1, quoteId: input.quoteId,
+      serviceRequirement: {
+        serviceType: quote.service_type,
+        requiredVehicleType: quote.required_vehicle_type,
+        requiredCapacityKg: quote.required_capacity_kg,
+        packageWeightKg: Number(quote.package_weight_kg),
+        packageSizeClass: quote.package_size_class,
+        specialHandling: quote.special_handling,
+        requirementVersion: quote.service_requirement_version,
+      },
+    } };
     await finishIdempotent(client, {
       tenantRef: input.tenantRef, principal: context.principal, operation, key: context.idempotencyKey,
     }, response);
@@ -705,10 +795,82 @@ export async function transitionDelivery(
           SET state=$2::text,
               version=$3::bigint,
               updated_at=$4::timestamptz,
-              terminal_at=CASE WHEN $2::text='CANCELLED' THEN $4::timestamptz ELSE NULL END
+              terminal_at=CASE
+                WHEN $2::text IN ('CANCELLED','COMPLETED','RETURN_RESOLVED') THEN $4::timestamptz
+                ELSE terminal_at
+              END
         WHERE id=$1`,
       [deliveryId, target, nextVersion, now],
     );
+    if (target === "CANCELLED") {
+      await client.query(
+        `UPDATE fleet_delivery.dispatch_manual_queue
+            SET status='RESOLVED', resolved_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='OPEN'`,
+        [deliveryId, now, input.tenantRef],
+      );
+      const activeAssignment = await client.query<{ driver_id: string }>(
+        `UPDATE fleet_delivery.driver_assignments
+            SET status='CANCELLED', ended_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='ACTIVE'
+          RETURNING driver_id`,
+        [deliveryId, now, input.tenantRef],
+      );
+      if (activeAssignment.rows[0]) {
+        await client.query(
+          `UPDATE fleet_delivery.driver_availability
+              SET state='ONLINE', version=version+1, changed_at=$2
+            WHERE driver_id=$1 AND tenant_ref=$3 AND state='BUSY'`,
+          [activeAssignment.rows[0].driver_id, now, input.tenantRef],
+        );
+      }
+      await client.query(
+        `UPDATE fleet_delivery.dispatch_offers
+            SET status='SUPERSEDED', version=version+1, decided_at=$2,
+                decision_reason='DELIVERY_CANCELLED'
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='PENDING'`,
+        [deliveryId, now, input.tenantRef],
+      );
+      await client.query(
+        `UPDATE fleet_delivery.dispatch_attempts
+            SET status='CANCELLED', lease_owner=NULL, lease_expires_at=NULL, updated_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='SEARCHING'`,
+        [deliveryId, now, input.tenantRef],
+      );
+    }
+    if (action === "request_return") {
+      await client.query(
+        `INSERT INTO fleet_delivery.delivery_returns (
+           tenant_ref, branch_ref, delivery_id, status, reason_code, synthetic_only, requested_by,
+           requested_at, updated_at
+         ) VALUES ($1,$2,$3,'REQUESTED',$4,true,$5,$6,$6)`,
+        [input.tenantRef, input.branchRef, deliveryId, input.reasonCode, context.principal, now],
+      );
+    } else if (action === "approve_return") {
+      const updated = await client.query(
+        `UPDATE fleet_delivery.delivery_returns
+            SET status='APPROVED', updated_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='REQUESTED'`,
+        [deliveryId, now, input.tenantRef],
+      );
+      if (updated.rowCount !== 1) throw new FleetDeliveryBusinessError("RETURN_STATE_CONFLICT", 409);
+    } else if (action === "review_return") {
+      const updated = await client.query(
+        `UPDATE fleet_delivery.delivery_returns
+            SET status='REVIEW', updated_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='RETURNED_TO_MERCHANT'`,
+        [deliveryId, now, input.tenantRef],
+      );
+      if (updated.rowCount !== 1) throw new FleetDeliveryBusinessError("RETURN_STATE_CONFLICT", 409);
+    } else if (action === "resolve_return") {
+      const updated = await client.query(
+        `UPDATE fleet_delivery.delivery_returns
+            SET status='RESOLVED', updated_at=$2
+          WHERE delivery_id=$1 AND tenant_ref=$3 AND status='REVIEW'`,
+        [deliveryId, now, input.tenantRef],
+      );
+      if (updated.rowCount !== 1) throw new FleetDeliveryBusinessError("RETURN_STATE_CONFLICT", 409);
+    }
     await client.query(
       `INSERT INTO fleet_delivery.delivery_state_transitions (
          tenant_ref, branch_ref, delivery_id, from_state, to_state, from_version, to_version,
@@ -729,6 +891,16 @@ export async function transitionDelivery(
       action: `delivery.${action}`, targetType: "delivery", targetRef: deliveryId,
       requestId: context.requestId, metadata: { fromState: delivery.state, toState: target, version: nextVersion },
     });
+    await client.query(
+      `INSERT INTO fleet_delivery.notification_intents (
+         tenant_ref, branch_ref, delivery_id, delivery_version, audience, template_key,
+         classification, status, deduplication_key, safe_payload
+       ) VALUES ($1,$2,$3,$4,'CUSTOMER',$5,'OPERATIONAL','SUPPRESSED_NO_APPROVED_PROVIDER',$6,$7::jsonb)
+       ON CONFLICT (tenant_ref, deduplication_key) DO NOTHING`,
+      [input.tenantRef, input.branchRef, deliveryId, nextVersion,
+        `delivery.${target.toLowerCase()}`, `customer:${deliveryId}:${nextVersion}`,
+        JSON.stringify({ deliveryId, state: target, version: nextVersion })],
+    );
     const response = { status: 200, body: { deliveryId, state: target, version: nextVersion } };
     await finishIdempotent(client, {
       tenantRef: input.tenantRef, principal: context.principal, operation, key: context.idempotencyKey,

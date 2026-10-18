@@ -3,12 +3,15 @@
 Status: **CURRENT ROUTER CONTRACT VERIFIED; PRODUCTION NO-GO**.
 
 Phase 17 binds the API router source to a strict inventory of method, path template, static/dynamic
-matcher, access class, service scope and idempotency requirement. The verifier also requires every
+matcher, access class, service scope/customer purpose and idempotency requirement. The verifier also requires every
 route/scope pair to remain present in the Phase 8 human inventory.
 
-Current boundary: two public health routes and nineteen `/v1/**` service routes. Every service route
-has an explicit scope; eleven business mutations require an idempotency key, while durable event
-ingest uses the envelope message identity instead.
+Current boundary: 27 routes — two public health, 22 service-token and three purpose-bound customer-grant
+routes. Every non-health route has an explicit scope/purpose; 16 business mutations require an
+idempotency key, while durable event ingest uses the envelope message identity instead. Customer
+routes are limited to `QUOTE`, `CREATE_DELIVERY` and the read-only `TRACK` projection. They derive
+tenant/branch/order authority from the live grant rather than request fields, and tracking returns no
+driver identity, contact details or location.
 
 Run `npm run api-contract:verify`; CI runs it before tests. A new or removed branch, changed dynamic
 regex, scope drift, idempotency drift or undocumented route fails closed.

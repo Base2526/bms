@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import test from "node:test";
 import { exportJWK, generateKeyPair, SignJWT } from "jose";
 import { operationsDeliveryFeedV1Schema, operationsOverviewV1Schema } from "@bms/fleet-delivery-contracts";
@@ -36,7 +36,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
   publicJwk.alg = "EdDSA";
   const token = await new SignJWT({ scopes: [
     "events.ingest", "merchant.settings.write", "quotes.create",
-    "deliveries.create", "deliveries.transition", "operations.read",
+    "deliveries.create", "deliveries.transition", "operations.read", "customer.grants.write",
   ] })
     .setProtectedHeader({ alg: "EdDSA", kid: publicJwk.kid })
     .setIssuer("synthetic-bms")
@@ -72,9 +72,35 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
       },
       body: JSON.stringify(body),
     });
+    const customerRequest = (
+      customerToken: string,
+      path: string,
+      body: unknown,
+      idempotencyKey: string,
+    ) => fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${customerToken}`,
+        "content-type": "application/json",
+        "idempotency-key": idempotencyKey,
+      },
+      body: JSON.stringify(body),
+    });
+    const customerStatus = (customerToken: string) => fetch(`${baseUrl}/v1/customer/deliveries/current`, {
+      headers: { authorization: `Bearer ${customerToken}` },
+    });
     const weeklyHours = Array.from({ length: 7 }, (_, dayOfWeek) => ({
       dayOfWeek, opensAt: "00:00", closesAt: "23:59",
     }));
+    const serviceRequirement = {
+      serviceType: "ON_DEMAND" as const,
+      requiredVehicleType: "MOTORCYCLE" as const,
+      requiredCapacityKg: 20,
+      packageWeightKg: 12.5,
+      packageSizeClass: "SMALL" as const,
+      specialHandling: [],
+      requirementVersion: "phase2-motorcycle:v1",
+    };
     const configurationBody = {
       tenantRef,
       branchRef,
@@ -159,7 +185,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     };
     assert.equal((await request("/v1/integration/events", "POST", ineligibleEnvelope)).status, 202);
     const ineligibleQuote = await request("/v1/quotes", "POST", {
-      tenantRef, branchRef, bmsOrderRef: ineligibleOrderRef, expectedOrderVersion: 1,
+      tenantRef, branchRef, bmsOrderRef: ineligibleOrderRef, expectedOrderVersion: 1, serviceRequirement,
     }, "quote-phase2-ineligible");
     assert.equal(ineligibleQuote.status, 422);
 
@@ -178,7 +204,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     };
     assert.equal((await request("/v1/integration/events", "POST", staleEnvelope)).status, 202);
     const staleQuote = await request("/v1/quotes", "POST", {
-      tenantRef, branchRef, bmsOrderRef: staleOrderRef, expectedOrderVersion: 1,
+      tenantRef, branchRef, bmsOrderRef: staleOrderRef, expectedOrderVersion: 1, serviceRequirement,
     }, "quote-phase2-stale");
     assert.equal(staleQuote.status, 409);
 
@@ -197,16 +223,132 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     };
     assert.equal((await request("/v1/integration/events", "POST", outsideEnvelope)).status, 202);
     const outsideQuote = await request("/v1/quotes", "POST", {
-      tenantRef, branchRef, bmsOrderRef: outsideOrderRef, expectedOrderVersion: 1,
+      tenantRef, branchRef, bmsOrderRef: outsideOrderRef, expectedOrderVersion: 1, serviceRequirement,
     }, "quote-phase2-outside");
     assert.equal(outsideQuote.status, 422);
 
-    const quoteInput = { tenantRef, branchRef, bmsOrderRef, expectedOrderVersion: 1 };
+    const customerOrderRef = `order:${randomUUID()}`;
+    assert.equal((await request("/v1/integration/events", "POST", {
+      ...envelope,
+      messageId: randomUUID(),
+      aggregateRef: customerOrderRef,
+      correlationId: randomUUID(),
+      payload: {
+        ...envelope.payload,
+        eligibility: { ...envelope.payload.eligibility, version: "eligible:customer-v1" },
+        route: { ...envelope.payload.route, reference: "route:customer-v1" },
+      },
+    })).status, 202);
+    const firstCustomerToken = randomBytes(32).toString("base64url");
+    const secondCustomerToken = randomBytes(32).toString("base64url");
+    const grantBody = {
+      grantId: randomUUID(), tenantRef, branchRef, bmsOrderRef: customerOrderRef,
+      tokenSha256: createHash("sha256").update(firstCustomerToken).digest("hex"),
+      expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+      allowedActions: ["QUOTE", "CREATE_DELIVERY", "TRACK"], syntheticOnly: true,
+    };
+    const grant = await request("/v1/customer/grants", "POST", grantBody, "customer-grant-phase2-1");
+    assert.equal(grant.status, 201);
+    const overlongGrant = await request("/v1/customer/grants", "POST", {
+      ...grantBody,
+      grantId: randomUUID(),
+      tokenSha256: createHash("sha256").update(randomBytes(32).toString("base64url")).digest("hex"),
+      expiresAt: new Date(Date.now() + 61 * 60_000).toISOString(),
+    }, "customer-grant-phase2-overlong");
+    assert.equal(overlongGrant.status, 422);
+    const rotatedGrantBody = {
+      ...grantBody,
+      grantId: randomUUID(),
+      tokenSha256: createHash("sha256").update(secondCustomerToken).digest("hex"),
+    };
+    assert.equal((await request(
+      "/v1/customer/grants", "POST", rotatedGrantBody, "customer-grant-phase2-2",
+    )).status, 201);
+    assert.equal((await customerRequest(
+      firstCustomerToken,
+      "/v1/customer/quotes",
+      { serviceRequirement },
+      "customer-quote-revoked",
+    )).status, 401);
+    assert.equal((await customerStatus(firstCustomerToken)).status, 401);
+    assert.equal((await customerRequest(
+      secondCustomerToken,
+      "/v1/customer/quotes",
+      { serviceRequirement, tenantRef },
+      "customer-quote-spoof",
+    )).status, 400);
+    assert.equal((await customerRequest(
+      randomBytes(32).toString("base64url"),
+      "/v1/customer/quotes",
+      { serviceRequirement },
+      "customer-quote-invalid-token",
+    )).status, 401);
+    const customerQuoted = await customerRequest(
+      secondCustomerToken,
+      "/v1/customer/quotes",
+      { serviceRequirement },
+      "customer-quote-phase2",
+    );
+    assert.equal(customerQuoted.status, 201);
+    const customerQuote = await customerQuoted.json() as { quoteId: string };
+    const customerCreated = await customerRequest(
+      secondCustomerToken,
+      "/v1/customer/deliveries",
+      { quoteId: customerQuote.quoteId },
+      "customer-delivery-phase2",
+    );
+    assert.equal(customerCreated.status, 201);
+    const customerDeliveryId = (await ownerPool.query<{ id: string }>(
+      "SELECT id FROM fleet_delivery.deliveries WHERE quote_id=$1",
+      [customerQuote.quoteId],
+    )).rows[0]!.id;
+    assert.deepEqual(await customerCreated.json(), {
+      deliveryId: customerDeliveryId,
+      state: "AWAITING_PAYMENT",
+      version: 1,
+      quoteId: customerQuote.quoteId,
+      serviceRequirement,
+    });
+    const customerTracked = await customerStatus(secondCustomerToken);
+    assert.equal(customerTracked.status, 200);
+    const customerTrackedBody = await customerTracked.json() as {
+      serverNow: string;
+      delivery: Record<string, unknown> | null;
+    };
+    assert.doesNotThrow(() => new Date(customerTrackedBody.serverNow).toISOString());
+    assert.doesNotThrow(() => new Date(String(customerTrackedBody.delivery?.updatedAt)).toISOString());
+    assert.deepEqual(customerTrackedBody.delivery, {
+      deliveryId: customerDeliveryId,
+      quoteId: customerQuote.quoteId,
+      state: "AWAITING_PAYMENT",
+      version: 1,
+      matchStage: "PAYMENT_REQUIRED",
+      currency: "THB",
+      grossDeliveryFeeSatang: 2_900,
+      customerContributionSatang: 2_400,
+      merchantSubsidySatang: 500,
+      updatedAt: customerTrackedBody.delivery?.updatedAt,
+    });
+    assert.equal(JSON.stringify(customerTrackedBody).includes(customerOrderRef), false);
+    assert.equal(JSON.stringify(customerTrackedBody).includes("driver"), false);
+    const storedGrant = await ownerPool.query<{ token_sha256: string; safe_metadata: unknown }>(
+      `SELECT g.token_sha256, a.safe_metadata
+         FROM fleet_delivery.customer_grants g
+         JOIN fleet_delivery.audit_logs a
+           ON a.tenant_ref=g.tenant_ref AND a.target_ref=g.id::text
+        WHERE g.id=$1 AND a.action='customer.grant.synthetic_registered'`,
+      [rotatedGrantBody.grantId],
+    );
+    assert.equal(storedGrant.rows[0]?.token_sha256, rotatedGrantBody.tokenSha256);
+    assert.equal(JSON.stringify(storedGrant.rows[0]).includes(secondCustomerToken), false);
+
+    const quoteInput = { tenantRef, branchRef, bmsOrderRef, expectedOrderVersion: 1, serviceRequirement };
     const quoted = await request("/v1/quotes", "POST", quoteInput, "quote-phase2-0001");
     assert.equal(quoted.status, 201);
     const quote = await quoted.json() as {
       quoteId: string; grossDeliveryFeeSatang: number; customerContributionSatang: number;
       merchantSubsidySatang: number; commissionSatang: number; expiresAt: string;
+      serviceRequirement: typeof serviceRequirement;
     };
     assert.deepEqual({
       gross: quote.grossDeliveryFeeSatang,
@@ -214,6 +356,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
       subsidy: quote.merchantSubsidySatang,
       commission: quote.commissionSatang,
     }, { gross: 2_900, customer: 2_400, subsidy: 500, commission: 145 });
+    assert.deepEqual(quote.serviceRequirement, serviceRequirement);
     const quoteReplay = await request("/v1/quotes", "POST", quoteInput, "quote-phase2-0001");
     assert.equal(quoteReplay.status, 201);
     assert.equal((await quoteReplay.json() as { quoteId: string }).quoteId, quote.quoteId);
@@ -250,6 +393,29 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     const replay = await request("/v1/deliveries", "POST", deliveryInput, winningKey);
     assert.equal(replay.status, 201);
     assert.equal((await replay.json() as { deliveryId: string }).deliveryId, delivery.deliveryId);
+    const frozenRequirement = await ownerPool.query<{
+      quote_capacity: number; delivery_capacity: number;
+      quote_version: string; delivery_version: string;
+    }>(
+      `SELECT q.required_capacity_kg AS quote_capacity,
+              d.required_capacity_kg AS delivery_capacity,
+              q.service_requirement_version AS quote_version,
+              d.service_requirement_version AS delivery_version
+         FROM fleet_delivery.delivery_quotes q
+         JOIN fleet_delivery.deliveries d ON d.quote_id=q.id
+        WHERE d.id=$1`,
+      [delivery.deliveryId],
+    );
+    assert.deepEqual(frozenRequirement.rows[0], {
+      quote_capacity: 20,
+      delivery_capacity: 20,
+      quote_version: "phase2-motorcycle:v1",
+      delivery_version: "phase2-motorcycle:v1",
+    });
+    await assert.rejects(() => ownerPool.query(
+      "UPDATE fleet_delivery.deliveries SET required_capacity_kg=21 WHERE id=$1",
+      [delivery.deliveryId],
+    ), /immutable/);
 
     const secondOrderRef = `order:${randomUUID()}`;
     assert.equal((await request("/v1/integration/events", "POST", {
@@ -264,7 +430,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
       },
     })).status, 202);
     const secondQuoted = await request("/v1/quotes", "POST", {
-      tenantRef, branchRef, bmsOrderRef: secondOrderRef, expectedOrderVersion: 1,
+      tenantRef, branchRef, bmsOrderRef: secondOrderRef, expectedOrderVersion: 1, serviceRequirement,
     }, "quote-phase7-pagination");
     assert.equal(secondQuoted.status, 201);
     const secondQuote = await secondQuoted.json() as { quoteId: string };
@@ -274,13 +440,13 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     assert.equal(secondCreated.status, 201);
     const secondDelivery = await secondCreated.json() as { deliveryId: string };
 
-    const operationsQuery = new URLSearchParams({ tenantRef, branchRef, limit: "1" });
+    const operationsQuery = new URLSearchParams({ tenantRef, branchRef, limit: "2" });
     const operationsPageOneResponse = await fetch(`${baseUrl}/v1/operations/deliveries?${operationsQuery}`, {
       headers: { authorization: `Bearer ${token}` },
     });
     assert.equal(operationsPageOneResponse.status, 200);
     const operationsPageOne = operationsDeliveryFeedV1Schema.parse(await operationsPageOneResponse.json());
-    assert.equal(operationsPageOne.deliveries.length, 1);
+    assert.equal(operationsPageOne.deliveries.length, 2);
     assert(operationsPageOne.nextCursor);
     operationsQuery.set("cursor", operationsPageOne.nextCursor);
     const operationsPageTwoResponse = await fetch(`${baseUrl}/v1/operations/deliveries?${operationsQuery}`, {
@@ -289,11 +455,10 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     assert.equal(operationsPageTwoResponse.status, 200);
     const operationsPageTwo = operationsDeliveryFeedV1Schema.parse(await operationsPageTwoResponse.json());
     assert.equal(operationsPageTwo.deliveries.length, 1);
-    assert.notEqual(operationsPageTwo.deliveries[0]?.deliveryId, operationsPageOne.deliveries[0]?.deliveryId);
     assert.equal(operationsPageTwo.nextCursor, null);
     assert.deepEqual(
-      new Set([operationsPageOne.deliveries[0]?.deliveryId, operationsPageTwo.deliveries[0]?.deliveryId]),
-      new Set([delivery.deliveryId, secondDelivery.deliveryId]),
+      new Set([...operationsPageOne.deliveries, ...operationsPageTwo.deliveries].map((entry) => entry.deliveryId)),
+      new Set([delivery.deliveryId, secondDelivery.deliveryId, customerDeliveryId]),
     );
 
     const operationsOverviewResponse = await fetch(
@@ -304,7 +469,7 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
     const operationsOverview = operationsOverviewV1Schema.parse(await operationsOverviewResponse.json());
     assert.equal(
       operationsOverview.deliveryCounts.find((entry) => entry.state === "AWAITING_PAYMENT")?.count,
-      2,
+      3,
     );
 
     const transitioned = await request(
@@ -428,8 +593,10 @@ test("phase 2 API quotes, creates and transitions one synthetic delivery with a 
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     const tables = [
+      "notification_intents", "delivery_disputes", "delivery_returns", "delivery_failures",
+      "synthetic_pod_evidence",
       "ledger_entries", "ledger_journals", "ledger_accounts", "delivery_state_transitions",
-      "deliveries", "quote_components", "delivery_quotes", "order_context_snapshots",
+      "deliveries", "quote_components", "delivery_quotes", "customer_grants", "order_context_snapshots",
       "pricing_rules", "service_areas", "merchant_configurations", "outbox_events",
       "idempotency_keys", "audit_logs", "inbox_events",
     ];

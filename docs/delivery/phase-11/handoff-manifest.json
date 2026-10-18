@@ -2,9 +2,29 @@
   "schemaVersion": 1,
   "phase": 11,
   "mode": "ENGINEERING_HANDOFF",
-  "generatedAt": "2026-10-18T05:21:43.000Z",
+  "generatedAt": "2026-10-18T07:43:37.760Z",
   "productionAuthorized": false,
   "artifacts": [
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/DeliverySearchScreen.test.tsx",
+      "sha256": "96456d89042f1f4d3dd6d555a5c238d5da5260aa4c66d6b220587e936783e582",
+      "purpose": "Customer recovery and duplicate-confirmation UI regressions"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer.xcodeproj/xcshareddata/xcschemes/BmsDeliveryCustomer.xcscheme",
+      "sha256": "3d193442b2942de48d929dead3fb26052b5f84e123477f0bda559219466a3f58",
+      "purpose": "Shared iOS Debug launch and build scheme"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/run-ios-simulator.mjs",
+      "sha256": "92f20f495c4b7d9529248a23c5ccb7596f951c3efc99cb569d8f3672bfe8b3c3",
+      "purpose": "Explicit simulator-only build install and Metro launch runner"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/ios-simulator.entitlements",
+      "sha256": "f382e9c39b7bbb1bc567ad9d535f3a266a291cbc6cc039c9e0969448f779bd83",
+      "purpose": "Debug simulator-only application Keychain identity"
+    },
     {
       "path": "docs/BMS_Delivery_Master_Prompt_v2.4.md",
       "sha256": "89bfd1b71ffbc115c066dfced43cc7e613154bc0ddbe3e4a2e78c1a1dd70ec2f",
@@ -12,7 +32,7 @@
     },
     {
       "path": "docs/delivery/phase-4/README.md",
-      "sha256": "eaeff169893fc2cb32173e3d2dcee1ee79506cccabe0dc8dddc9c2842fa1240e",
+      "sha256": "87d2b3b8e59a0b1ea1a60b6ba81ddf13c3487e0de926f62dedb6e7694f137e3f",
       "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
     },
     {
@@ -32,7 +52,7 @@
     },
     {
       "path": "apps/fleet-delivery-driver/README.md",
-      "sha256": "83668238df5f1bfd1d4415ce4a9a32df281829a4c9ac3813d2a48ce8a097ef6c",
+      "sha256": "3e7ed70e7a1cf1a613c5dea47c80cf1a8536595953cf5e9ad777c230385a9c58",
       "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
     },
     {
@@ -152,7 +172,7 @@
     },
     {
       "path": "apps/fleet-delivery-driver/src/state/DriverRuntimeContext.tsx",
-      "sha256": "bb3e4161e65a72c80352e09d484426c3bc811011c40d0c56e3c850436fbfcb8d",
+      "sha256": "22dda92bcce3a0fe0d0f97ec0f87b5213607c894bc716817a09841a2e0a6b121",
       "purpose": "Driver snapshot recovery, polling and offline command orchestration"
     },
     {
@@ -362,17 +382,17 @@
     },
     {
       "path": "package.json",
-      "sha256": "c14792ab4a295497157ddb02159d9dbb8bc2def969afb51e6534b6fdb7f70a0d",
+      "sha256": "ca63290207341474aa3c8b7941448a9422caa6f9a5ea9365d15a77adee5494e5",
       "purpose": "Workspace verification command catalog"
     },
     {
       "path": "packages/fleet-delivery-contracts/src/index.ts",
-      "sha256": "61051edccda82ad93e4139738cec170d5e3550f0f92f394e206b5c7a13e74dca",
+      "sha256": "2807469a19f3e4fc63f4277066fedc258612c3965a30418c0543e7976fd74392",
       "purpose": "Versioned readiness and handoff contracts"
     },
     {
       "path": "packages/fleet-delivery-contracts/src/contracts.test.ts",
-      "sha256": "7a1c30434abc7394bc4c7bcca35b04744c906e4e693967ff8a6a7977a92554e8",
+      "sha256": "ce12c08d40481892c209e84ad519cfa29f94f1720bcdbb523db8eff14b0c3315",
       "purpose": "Fail-closed contract regression tests"
     },
     {
@@ -447,7 +467,7 @@
     },
     {
       "path": ".github/workflows/fleet-delivery-gate.yml",
-      "sha256": "6f36f94aa9577af98e6ee01b86b2f13a30c194c365313ad4eb5d6b92e3e1fad8",
+      "sha256": "850e5a6d3b12ee214066a7ace595ab8177f7c3e8d89d67d44f5846ebc4a32c8c",
       "purpose": "Fleet Delivery continuous-integration gate"
     },
     {
@@ -457,7 +477,7 @@
     },
     {
       "path": "docs/delivery/phase-13/secret-scan-policy.json",
-      "sha256": "bf3cf7166f6b08f7c376f86cb2dc0ad23b6a772462ecb80491df501bf937adbe",
+      "sha256": "d0ee52561586ff0d653b4a2aed845ac4755edcfc33ee9abeb7af98ebf03db3a9",
       "purpose": "Machine-readable bounded secret-scan policy"
     },
     {
@@ -467,7 +487,7 @@
     },
     {
       "path": "package-lock.json",
-      "sha256": "123c81c651c72f1bebb75682a06ca718988c5d6a93a7dbd95c14e8ef70cab915",
+      "sha256": "4fa1059c9095587f7e01120a4ea1a0830c657083f47a029efa9b70412f49dac2",
       "purpose": "Pinned dependency graph and integrity metadata"
     },
     {
@@ -477,7 +497,7 @@
     },
     {
       "path": "docs/delivery/phase-14/dependency-license-policy.json",
-      "sha256": "099b2a87bdf18908bdb270db96f95607b72464efedda95eacae626e557ca5940",
+      "sha256": "6434934d1b7df369cd1a90e3d2c2e46dbe8829324fb7c790bbce8dc2a3b562c8",
       "purpose": "Lock-bound dependency license policy"
     },
     {
@@ -512,7 +532,7 @@
     },
     {
       "path": "tsconfig.fleet-delivery.json",
-      "sha256": "6f7f1e2af3bbc116e91663f3cb26c018b2eb6dbd8939a94f289e9818fdc40b97",
+      "sha256": "7efdbc59a01b6eb83cc956f1f8451083158f1cf111d626f67b13630052dbac5f",
       "purpose": "Fleet Delivery TypeScript compiler configuration"
     },
     {
@@ -547,28 +567,283 @@
     },
     {
       "path": "docs/delivery/phase-8/api-and-event-inventory.md",
-      "sha256": "6e3a5673aaf7bd742ab8a25540b6dfa993928dc47bc88fa6ab4b78dcbc954858",
+      "sha256": "b2b2d9beccff1fbfbd4faf426a72cd06130d2e49f847e9e09e7cfcfcc6b91384",
       "purpose": "Human-readable API and event inventory"
     },
     {
       "path": "apps/fleet-delivery-api/src/server.ts",
-      "sha256": "a8f362b172bf90c2cd48406c8d62fb67d0847d1d012b735d108ede6316bad966",
+      "sha256": "e75353a960482d48919817d60af2c5981f8d0773529640187c1a3c8d4c935429",
       "purpose": "Fleet Delivery HTTP router and authorization source"
     },
     {
+      "path": "apps/fleet-delivery-api/src/phase2.integration.test.ts",
+      "sha256": "dcbe8771435ff647388bf3f72c6572bdadf5d907e785fc06a7bf9a5dad73403b",
+      "purpose": "Customer grant, spoofing denial, rotation and quote-to-Delivery DB/API proof"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0012_synthetic_customer_grants.sql",
+      "sha256": "7152f6bc2803eee36f43570bdf31409ae1312588e1129f5fc39e427380dc1d2b",
+      "purpose": "Synthetic purpose-bound customer grant table, RLS and resolver"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0013_customer_tracking_status.sql",
+      "sha256": "601dfa1d7043e6c9bad6b093af27b830f66280661acb764b8c54badc4fccdcf7",
+      "purpose": "Additive synthetic TRACK grant constraint without expanding existing grants"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/customer.ts",
+      "sha256": "89423bb398cc98d802c2ea2357a2bb8c97313131d2efa1a01d1d346b8dc70b1a",
+      "purpose": "Hash-only grant registration, authority resolution and privacy-minimal status projection"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase2.ts",
+      "sha256": "4d9f7608dcc7a10ff913c6b7eac39ba244fffea1bab8d166da7951a0aa56ac22",
+      "purpose": "Transactional live customer-grant rechecks for quote and Delivery creation"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/package.json",
+      "sha256": "26a9af0d7a1fa284cd6bcbc58e1d3a83e2471c7f2b536c99f9077382c0e1e32a",
+      "purpose": "Platform-neutral Customer App core package boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/src/index.ts",
+      "sha256": "98c6e305ef65c62496f5319b0a5f2a9704d87fa151988a294b1a9a300a43ffa6",
+      "purpose": "Strict customer activation, quote, Delivery and status client"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/src/customerCore.test.ts",
+      "sha256": "f3317efb1ef2c1c1ef6c707ae497ec9b1ae3280398b5da904e39c5f441470780",
+      "purpose": "Customer authority minimization, tracking privacy and fail-closed client tests"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/README.md",
+      "sha256": "03e9c3232798275b126f6786936ef1cea6a45dddd3631347da2f077a8819f758",
+      "purpose": "Customer core local runbook and remaining production-app boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/README.md",
+      "sha256": "0ecc34acb104b85474ccf6eb63d151eb9c1760ab83f6413744ef2c2097ef7a9d",
+      "purpose": "Android Customer App debug-flow runbook and explicit production boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/package.json",
+      "sha256": "97b6acfa9458faa709601166e3e500fb94186242a0631b70086054fc20ace82d",
+      "purpose": "Pinned Customer App dependencies and verification commands"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/package-lock.json",
+      "sha256": "023c449b675fe17b9e6d0ae612364dc3c4163fe459e0578266355fe3ce95b94c",
+      "purpose": "Customer App npm dependency graph and integrity metadata"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/App.tsx",
+      "sha256": "b69d015708d93a618987a49c69a034eac2568ff733361ec1cc0da46559b1bc2d",
+      "purpose": "Customer session-to-search native application boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/screens/ActivationScreen.tsx",
+      "sha256": "f424fb2e9861f9bd4760973d7f7501cac7c49edf0d4c72b45eae056dc56c241f",
+      "purpose": "Debug-only activation UI and release locked-state presentation"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/screens/DeliverySearchScreen.tsx",
+      "sha256": "ece4fd309e6b169acd543db0578492f243a5dd184cb862ee5e0794de161b00b1",
+      "purpose": "Motorcycle quote, Delivery confirmation and coarse status UI"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/storage/secureStore.ts",
+      "sha256": "ce32bf349818ea6680a749a564dc65461740c65a8fab195ca6c7231bc8a6593f",
+      "purpose": "Device-only OS-keystore customer session storage"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/state/CustomerSessionContext.tsx",
+      "sha256": "4825b4fff8fed7216bf0cd9024459da6b0acd7be1cc92f197e9f98efd628bf34",
+      "purpose": "Fail-closed debug activation and release lock state"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/verify-native-boundary.mjs",
+      "sha256": "9ac95fc7305c43c86152735262b1e3576a0ff610074ac61fdebcae2a046ff0a1",
+      "purpose": "Built APK, merged permission, cleartext, signing and client-authority verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/android/app/build.gradle",
+      "sha256": "4c9a7e09614f953c5a221cd38510112259f6b22c0ea782859383862efc5bd140",
+      "purpose": "Isolated Android identities and fail-closed release network/build policy"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/android/app/src/main/AndroidManifest.xml",
+      "sha256": "fc29ecbc0c11f9977c58df660deb04c6e9d99cdadc4c90df3a63187be4a0d829",
+      "purpose": "Minimal Customer App Android permission and backup surface"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/App.test.tsx",
+      "sha256": "e7e818904a4e577de3fc17b7459535ce916c186943d1cfd6a0168298a2147d4a",
+      "purpose": "Native activation boundary render contract"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/presentation.test.ts",
+      "sha256": "cb88531fb6a3e3c04633596b71064c441be793db3ccc98b70f024634926848ce",
+      "purpose": "Customer package input and coarse match-stage presentation tests"
+    },
+    {
+      "path": "scripts/fleet-delivery-dev.ts",
+      "sha256": "63c736cc0e084a028df7697a897a1676fd4e81abc3f28176b65ab17c15b3f558",
+      "purpose": "Protected customer search, quote-to-Delivery and authority-separated dispatch runner"
+    },
+    {
+      "path": "scripts/fleet-delivery-dev.test.ts",
+      "sha256": "e5de0b01e340ba0dc7ae9198f1e0c72261b85c47ee08e8e9151f1b0185da7943",
+      "purpose": "Loopback configuration and synthetic cleanup guard tests"
+    },
+    {
+      "path": "docs/delivery/phase-5/README.md",
+      "sha256": "0a7167b00c1171aac5b8e8b070c302f1ed1d349f746f28687abd82d574f29004",
+      "purpose": "Synthetic Customer foundation, native Android shell and unresolved production boundary"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/README.md",
+      "sha256": "7a7ef8064023142efda9eabba43ee6fe009185f746a3b5e33b028fe6353985e0",
+      "purpose": "Local Customer native UI and Driver scenario runbook"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/scripts/verify-backup-restore.sh",
+      "sha256": "9a066eb6514e3cc0a9d9bec97b4ce8cd491130d460e90159b5672242c28f119f",
+      "purpose": "Migration 0013 backup/restore and customer TRACK control proof"
+    },
+    {
+      "path": "docs/architecture/database.md",
+      "sha256": "d341bb1686ad288ece010fc9651771f79cbfc917453474371bb7612fa2e6c96d",
+      "purpose": "Customer-grant database authority, RLS and production boundary"
+    },
+    {
       "path": "docs/delivery/phase-17/README.md",
-      "sha256": "73798d9810abcc6dfbd390f81faf72c159526a3dbf2ced66d2507140c1243045",
+      "sha256": "fc5ae8695f3db6f9461faced20d0a69a2db93a7ce9cee0804848bd242b148a1f",
       "purpose": "API authorization contract boundary"
     },
     {
       "path": "docs/delivery/phase-17/api-route-inventory.json",
-      "sha256": "a06031d7213bb02bd9d784c3cd826f70b49d78cb4c45c29134218d957713c6a0",
+      "sha256": "49a6c18e2e4ac9c7e51ad318c3a29ef222de6e95c580d434ef0dd47728f48bbd",
       "purpose": "Machine-readable route, scope and idempotency inventory"
     },
     {
       "path": "scripts/fleet-delivery-api-contract.ts",
-      "sha256": "059c6e5eda17605f6b15afc1f8a54bbdb00293562af05502dddc13486de853e5",
+      "sha256": "98df9ba6ca6eaeba09007f9bea61610324d7ea5fe806b09e509baf21af6666f4",
       "purpose": "Router source and API documentation drift verifier"
+    },
+    {
+      "path": "docs/delivery/phase-0/adrs/007-customer-tracking-authority.md",
+      "sha256": "dd08ceb337e1953dfb6fb8abf252796ed4e3fa1b7dcd8491310d480166f83d8e",
+      "purpose": "Production tracking authority decision and bounded synthetic implementation evidence"
+    },
+    {
+      "path": "docs/delivery/phase-4/state-transition-matrix.md",
+      "sha256": "960e431088da8fea709d4b931c2c15c45971838f2992c34681b9447a3b62a33d",
+      "purpose": "Synthetic pickup, delivery, POD metadata, failure and return transition authority matrix"
+    },
+    {
+      "path": "packages/fleet-delivery-domain/src/index.ts",
+      "sha256": "14bc1e34b99b2f4365688e14525c33d6395120cda086c60665ca09c2ff43ae1d",
+      "purpose": "Ordered post-pickup, completion, failure and return state machine"
+    },
+    {
+      "path": "packages/fleet-delivery-domain/src/phase2.test.ts",
+      "sha256": "28dd58a015c3a3086e8fb7fb4fe48e4bc6e220c06a00908d49c262d3c70b2465",
+      "purpose": "Happy-path and failure-return state ordering tests"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0014_synthetic_post_pickup_lifecycle.sql",
+      "sha256": "6571554dd4577248706413c2285c071a2c2b16bf87da84703588640711d6578c",
+      "purpose": "Tenant-scoped synthetic POD, failure, return, dispute and suppressed-notification schema"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0015_post_pickup_terminal_invariant.sql",
+      "sha256": "6d247bb432ab032a80ea6159c619604bfcf36c6138bf6095ae987f3b644871b6",
+      "purpose": "Named expanded Delivery terminal-state invariant"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0016_remove_legacy_terminal_constraint.sql",
+      "sha256": "bf14bbd1e0da0c94647acd24f61a3ce672da9549e98d26a3c09ba1a942d94500",
+      "purpose": "Forward removal of the legacy unnamed terminal-state constraint"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0017_restore_delivery_amount_balance_invariant.sql",
+      "sha256": "625baebd906affa249c9423f99816d3d083d61c2eb15ffe6547c11f8f9fa9d18",
+      "purpose": "Corrective restoration of the named Delivery amount-balance guard"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase3.ts",
+      "sha256": "4043c833a0035a4e99989e8fbc818565f283628c5c8e9da3c0f6ab117d5468b6",
+      "purpose": "Active post-pickup and return assignment projection"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase4.ts",
+      "sha256": "72ed07d0e3750cfe73548b11edc2d0a8e00b2ee259fdce4126602a82d2022b5e",
+      "purpose": "Tenant-atomic driver journey, synthetic POD/failure and dispute services"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/foundation.integration.test.ts",
+      "sha256": "5f605b52377fa9b3f7808827b70d396d780f1e108e93bfb84b886faaad1d6e15",
+      "purpose": "Migration rerun, post-pickup RLS and named invariant proof"
+    },
+    {
+      "path": "apps/fleet-delivery-api/src/phase3.integration.test.ts",
+      "sha256": "8b11076d6cfe697036afc24ec92a6d4ec83fd821421d9675009f2de516bb2ff8",
+      "purpose": "End-to-end delivery, POD, completion and dispute API integration proof"
+    },
+    {
+      "path": "apps/fleet-delivery-driver-core/src/index.ts",
+      "sha256": "d7483ad43d67cdd82de7ddd2be83d6919849f23e1dd06a424cc3b63d957d10ca",
+      "purpose": "Reference-only offline queue for complete synthetic driver journeys"
+    },
+    {
+      "path": "apps/fleet-delivery-driver-core/src/driverCore.test.ts",
+      "sha256": "156ecb3fb5157b05c8f75bdd42620fa91de0a2cb55f485ec4f38442f395fa244",
+      "purpose": "Synthetic POD metadata privacy and retry behavior test"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/screens/HomeScreen.tsx",
+      "sha256": "beb647dd5b42041750de32f43a87562beca0dc5c29029b5da62c168bef9357f2",
+      "purpose": "Driver controls for synthetic delivery, failure and return actions"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/i18n.tsx",
+      "sha256": "67de9d199e4867cd0e9eb72a75c0cda847b3269910e2112b89aca89726e80fdb",
+      "purpose": "Bilingual post-pickup driver action labels"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/.gitignore",
+      "sha256": "60854a337d2e7b320fd32c37034e005aaf2f97c7eb3c80d7c078a3d65c6ffdf4",
+      "purpose": "Customer native dependency and build-artifact exclusion boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/Podfile",
+      "sha256": "521e7e39a470aa6f67ff713bd1458bce82c55c7ef32e9fc103a6c73714840ac1",
+      "purpose": "Customer iOS React Native native-module configuration"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/Podfile.lock",
+      "sha256": "b8d08a669986de8968fe95124b0006550cf8fbdb2ed21498c9fb569f29230a5e",
+      "purpose": "Pinned Customer iOS native dependency graph"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer.xcodeproj/project.pbxproj",
+      "sha256": "4c885881fdd517864ee5f0cfcb6969c41c5cec371d4e5d2f66cf8ce8a2d13853",
+      "purpose": "Customer iOS Debug and Release target identities and build phases"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/AppDelegate.swift",
+      "sha256": "43022cf858b487d4feb1c93ee2cb8305c93ac2dd73d6ce010003ebbb8f0dd08d",
+      "purpose": "Customer React Native iOS application bootstrap"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/Info.plist",
+      "sha256": "e3bb54129f3ceb74bacd0c0b1b8fe7ce02f81acc6d01cd54aae194e176d730eb",
+      "purpose": "Fail-closed Customer iOS transport and permission declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/PrivacyInfo.xcprivacy",
+      "sha256": "590759b762398ab2ffe8e0d4dae6d61d6c202a2d6c3567eb90dcc6de9cd9c3c1",
+      "purpose": "Customer iOS no-tracking privacy manifest"
     }
   ],
   "unresolvedGateRefs": [
@@ -593,6 +868,8 @@
     "cd apps/fleet-delivery-driver && npm run verify:security-patch && npm run verify:supply-chain && npm run verify:audit-boundary && npm run verify:licenses",
     "cd apps/fleet-delivery-driver && npm run verify:reproducibility",
     "cd apps/fleet-delivery-driver/android && ./gradlew assembleDebug assembleRelease",
+    "cd apps/fleet-delivery-customer && npm run typecheck && npm run test:ci && npm run lint && npm run android:assemble && npm run verify:native-boundary -- android",
+    "cd apps/fleet-delivery-customer && npm run ios:pods && npm run ios:build && npm run verify:native-boundary -- ios && npm audit --omit=dev --audit-level=high",
     "npm run gate"
   ]
 }

@@ -19,6 +19,7 @@ async function createReadyDelivery(
   ownerPool: ReturnType<typeof createDatabasePool>,
   tenantRef: string,
   branchRef: string,
+  requiredCapacityKg = 20,
 ): Promise<{ id: string; version: number }> {
   const contextId = randomUUID();
   const quoteId = randomUUID();
@@ -44,21 +45,27 @@ async function createReadyDelivery(
        distance_charge_satang, gross_delivery_fee_satang, customer_contribution_satang,
        merchant_subsidy_satang, explicit_discount_satang, eligible_commission_fee_satang,
        commission_bps, commission_satang, distance_rounding, commission_rounding,
+       service_type, required_vehicle_type, required_capacity_kg, package_weight_kg,
+       package_size_class, special_handling, service_requirement_version,
        status, created_by, expires_at, bound_at
      ) VALUES (
        $1,$2,$3,$4,$5,1,'phase3:v1',1,'phase3:v1','synthetic',$6,1000,1000,'THB',
        1000,1000,2000,1500,500,0,2000,500,100,'STARTED_KILOMETRE','HALF_UP_SATANG',
+       'ON_DEMAND','MOTORCYCLE',$7,12.50,'SMALL','[]'::jsonb,'phase3-motorcycle:v1',
        'BOUND','phase3-fixture',now()+interval '1 hour',now()
      )`,
-    [quoteId, tenantRef, branchRef, orderRef, contextId, `route:${randomUUID()}`],
+    [quoteId, tenantRef, branchRef, orderRef, contextId, `route:${randomUUID()}`, requiredCapacityKg],
   );
   await ownerPool.query(
     `INSERT INTO fleet_delivery.deliveries (
        id, tenant_ref, branch_ref, bms_order_ref, quote_id, state, version, currency,
        gross_delivery_fee_satang, customer_contribution_satang, merchant_subsidy_satang,
-       explicit_discount_satang, commission_bps, commission_satang, created_by
-     ) VALUES ($1,$2,$3,$4,$5,'READY_FOR_DISPATCH',4,'THB',2000,1500,500,0,500,100,'phase3-fixture')`,
-    [deliveryId, tenantRef, branchRef, orderRef, quoteId],
+       explicit_discount_satang, commission_bps, commission_satang, service_type,
+       required_vehicle_type, required_capacity_kg, package_weight_kg, package_size_class,
+       special_handling, service_requirement_version, created_by
+     ) VALUES ($1,$2,$3,$4,$5,'READY_FOR_DISPATCH',4,'THB',2000,1500,500,0,500,100,
+       'ON_DEMAND','MOTORCYCLE',$6,12.50,'SMALL','[]'::jsonb,'phase3-motorcycle:v1','phase3-fixture')`,
+    [deliveryId, tenantRef, branchRef, orderRef, quoteId, requiredCapacityKg],
   );
   return { id: deliveryId, version: 4 };
 }
@@ -100,7 +107,7 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
     .setExpirationTime("10m")
     .sign(privateKey);
   const [adminToken, driverAToken, driverBToken] = await Promise.all([
-    sign(adminPrincipal, ["dispatch.manage"]),
+    sign(adminPrincipal, ["dispatch.manage", "deliveries.transition", "disputes.manage"]),
     sign(driverAPrincipal, ["driver.availability.write", "driver.location.write", "driver.offers.read", "driver.offers.decide", "driver.assignments.read", "driver.journey.write", "driver.snapshot.read"]),
     sign(driverBPrincipal, ["driver.availability.write", "driver.location.write", "driver.offers.read", "driver.offers.decide", "driver.assignments.read", "driver.journey.write", "driver.snapshot.read"]),
   ]);
@@ -203,7 +210,37 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
        WHERE tenant_ref=$1`,
       [tenantRef],
     );
+    const overCapacityDelivery = await createReadyDelivery(ownerPool, tenantRef, branchRef, 100);
+    const overCapacityStart = await request(
+      adminToken,
+      `/v1/deliveries/${overCapacityDelivery.id}/actions/start_dispatch`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: overCapacityDelivery.version },
+      "phase3-start-over-capacity",
+    );
+    assert.equal(overCapacityStart.status, 202);
+    const overCapacityAttemptId = (await overCapacityStart.json() as { attemptId: string }).attemptId;
+    await claimExpected(overCapacityAttemptId, "worker:phase3-capacity");
+    assert.equal(
+      (await advanceDispatchAttempt(workerPool, overCapacityAttemptId, "worker:phase3-capacity")).result,
+      "RADIUS_EXPANDED",
+    );
+    await claimExpected(overCapacityAttemptId, "worker:phase3-capacity");
+    assert.equal(
+      (await advanceDispatchAttempt(workerPool, overCapacityAttemptId, "worker:phase3-capacity")).result,
+      "MANUAL_ESCALATION",
+    );
+    const overCapacityManual = await ownerPool.query<{ reason: string }>(
+      "SELECT reason FROM fleet_delivery.dispatch_manual_queue WHERE delivery_id=$1",
+      [overCapacityDelivery.id],
+    );
+    assert.equal(overCapacityManual.rows[0]?.reason, "NO_ELIGIBLE_DRIVER");
+
     const firstDelivery = await createReadyDelivery(ownerPool, tenantRef, branchRef);
+    await assert.rejects(() => ownerPool.query(
+      "UPDATE fleet_delivery.deliveries SET gross_delivery_fee_satang=gross_delivery_fee_satang+1 WHERE id=$1",
+      [firstDelivery.id],
+    ), { code: "55000" }); // The immutable financial-snapshot trigger rejects updates first.
     const started = await request(adminToken, `/v1/deliveries/${firstDelivery.id}/actions/start_dispatch`, "POST", {
       tenantRef, branchRef, expectedVersion: firstDelivery.version,
     }, "phase3-start-first");
@@ -224,6 +261,11 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
     assert.equal(selected.rows[0]?.driver_ref, "driver:a");
     assert.equal(selected.rows[0]?.fairness_evidence.fairnessMode, "DISTANCE_THEN_LONGEST_IDLE");
     assert.equal(selected.rows[0]?.fairness_evidence.policyVersion, 1);
+    assert.equal(selected.rows[0]?.fairness_evidence.requiredVehicleType, "MOTORCYCLE");
+    assert.equal(selected.rows[0]?.fairness_evidence.requiredCapacityKg, 20);
+    assert.equal(selected.rows[0]?.fairness_evidence.matchedVehicleType, "MOTORCYCLE");
+    assert.equal(selected.rows[0]?.fairness_evidence.matchedVehicleCapacityKg, 50);
+    assert.equal(selected.rows[0]?.fairness_evidence.serviceRequirementVersion, "phase3-motorcycle:v1");
     const driverAFeed = await getOffers(driverAToken);
     assert.equal(driverAFeed.status, 200);
     const driverAOffers = await driverAFeed.json() as { offers: Array<{ offerId: string; version: number }> };
@@ -252,6 +294,32 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
       tenantRef, branchRef, expectedOfferVersion: 1,
     }, "phase3-wrong-driver-accept");
     assert.equal(wrongDriver.status, 404);
+    assert.equal((await request(
+      adminToken,
+      "/v1/dispatch/drivers",
+      "PUT",
+      { ...driverA, vehicle: { ...driverA.vehicle, capacityKg: 10 } },
+      "phase3-driver-a-capacity-too-low",
+    )).status, 201);
+    const capacityChangedAccept = await request(
+      driverAToken,
+      `/v1/dispatch/offers/${offered.offerId}/accept`,
+      "POST",
+      { tenantRef, branchRef, expectedOfferVersion: 1 },
+      "phase3-capacity-changed-accept",
+    );
+    assert.equal(capacityChangedAccept.status, 409);
+    assert.equal(
+      (await capacityChangedAccept.json() as { error: { code: string } }).error.code,
+      "DRIVER_NO_LONGER_ELIGIBLE",
+    );
+    assert.equal((await request(
+      adminToken,
+      "/v1/dispatch/drivers",
+      "PUT",
+      driverA,
+      "phase3-driver-a-capacity-restore",
+    )).status, 201);
 
     const accepts = await Promise.all(Array.from({ length: 100 }, (_, index) => request(
       driverAToken,
@@ -385,6 +453,141 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
     assert.equal(atPickupSnapshotBody.availability?.state, "BUSY");
     assert.equal(atPickupSnapshotBody.assignment?.deliveryState, "AT_PICKUP");
     assert.deepEqual(atPickupSnapshotBody.offers, []);
+    const handoff = await request(
+      adminToken,
+      `/v1/deliveries/${firstDelivery.id}/actions/merchant_handoff`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: arrivedPickupBody.version, reasonCode: "SYNTHETIC_HANDOFF" },
+      "phase4-merchant-handoff",
+    );
+    assert.equal(handoff.status, 200);
+    const handoffBody = await handoff.json() as { state: string; version: number };
+    assert.equal(handoffBody.state, "PICKED_UP");
+    const inTransit = await request(
+      driverAToken,
+      `/v1/driver/deliveries/${firstDelivery.id}/actions/start_delivery`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: handoffBody.version },
+      "phase4-start-delivery",
+    );
+    assert.equal(inTransit.status, 200);
+    const inTransitBody = await inTransit.json() as { state: string; version: number };
+    assert.equal(inTransitBody.state, "IN_TRANSIT");
+    assert.equal((await request(
+      driverAToken,
+      "/v1/driver/locations",
+      "POST",
+      { ...validLocation, sequence: 52, deviceObservedAt: new Date().toISOString() },
+      "phase4-dropoff-location-52",
+    )).status, 202);
+    const atDropoff = await request(
+      driverAToken,
+      `/v1/driver/deliveries/${firstDelivery.id}/actions/arrive_dropoff`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: inTransitBody.version },
+      "phase4-arrive-dropoff",
+    );
+    assert.equal(atDropoff.status, 200);
+    const atDropoffBody = await atDropoff.json() as { state: string; version: number };
+    assert.equal(atDropoffBody.state, "AT_DROPOFF");
+    const missingPod = await request(
+      driverAToken,
+      `/v1/driver/deliveries/${firstDelivery.id}/actions/deliver_with_pod`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: atDropoffBody.version },
+      "phase4-deliver-missing-pod",
+    );
+    assert.equal(missingPod.status, 422);
+    assert.equal((await missingPod.json() as { error: { code: string } }).error.code, "POD_REQUIRED");
+    const delivered = await request(
+      driverAToken,
+      `/v1/driver/deliveries/${firstDelivery.id}/actions/deliver_with_pod`,
+      "POST",
+      {
+        tenantRef,
+        branchRef,
+        expectedVersion: atDropoffBody.version,
+        pod: {
+          evidenceRef: `synthetic-photo:${randomUUID()}`,
+          sha256: "a".repeat(64),
+          contentType: "image/jpeg",
+          byteSize: 128,
+          pixelWidth: 10,
+          pixelHeight: 10,
+          syntheticOnly: true,
+        },
+      },
+      "phase4-deliver-with-pod",
+    );
+    assert.equal(delivered.status, 200);
+    const deliveredBody = await delivered.json() as { state: string; version: number };
+    assert.equal(deliveredBody.state, "DELIVERED");
+    assert.equal((await (await getCurrentAssignment(driverAToken)).json() as { assignment: unknown }).assignment, null);
+    assert.equal(
+      (await (await getSnapshot(driverAToken)).json() as { availability: { state: string } }).availability.state,
+      "ONLINE",
+    );
+    const completedDelivery = await request(
+      adminToken,
+      `/v1/deliveries/${firstDelivery.id}/actions/complete_delivery`,
+      "POST",
+      { tenantRef, branchRef, expectedVersion: deliveredBody.version, reasonCode: "SYNTHETIC_BMS_COMPLETED" },
+      "phase4-complete-delivery",
+    );
+    assert.equal(completedDelivery.status, 200);
+    const completedDeliveryBody = await completedDelivery.json() as { state: string; version: number };
+    assert.equal(completedDeliveryBody.state, "COMPLETED");
+    await assert.rejects(() => ownerPool.query(
+      "UPDATE fleet_delivery.deliveries SET terminal_at=NULL WHERE id=$1", [firstDelivery.id],
+    ), { code: "23514", constraint: "deliveries_terminal_state_check" });
+    const dispute = await request(
+      adminToken,
+      `/v1/deliveries/${firstDelivery.id}/disputes`,
+      "POST",
+      {
+        tenantRef,
+        branchRef,
+        expectedDeliveryVersion: completedDeliveryBody.version,
+        category: "DELIVERY_NOT_RECEIVED",
+        syntheticOnly: true,
+      },
+      "phase4-open-dispute",
+    );
+    assert.equal(dispute.status, 201);
+    const disputeBody = await dispute.json() as { disputeId: string; status: string };
+    assert.equal(disputeBody.status, "OPEN");
+    const disputeInput = {
+      tenantRef, branchRef, expectedDeliveryVersion: completedDeliveryBody.version,
+      category: "DELIVERY_NOT_RECEIVED", syntheticOnly: true,
+    };
+    assert.equal((await request(driverAToken, `/v1/deliveries/${firstDelivery.id}/disputes`,
+      "POST", disputeInput, "phase4-dispute-driver-denied")).status, 403);
+    assert.equal((await request(adminToken, `/v1/deliveries/${firstDelivery.id}/disputes`,
+      "POST", { ...disputeInput, tenantRef: "tenant:other" }, "phase4-dispute-tenant-denied")).status, 404);
+    assert.equal((await request(adminToken, `/v1/deliveries/${firstDelivery.id}/disputes`,
+      "POST", disputeInput, "phase4-open-dispute")).status, 201);
+    assert.equal((await request(adminToken, `/v1/deliveries/${firstDelivery.id}/disputes`,
+      "POST", disputeInput, "phase4-second-open-dispute")).status, 409);
+    const resolvedDispute = await request(
+      adminToken,
+      `/v1/disputes/${disputeBody.disputeId}/resolve`,
+      "POST",
+      {
+        tenantRef,
+        branchRef,
+        decision: "RESOLVED",
+        resolutionCode: "SYNTHETIC_EVIDENCE_REVIEWED",
+        syntheticOnly: true,
+      },
+      "phase4-resolve-dispute",
+    );
+    assert.equal(resolvedDispute.status, 200);
+    assert.equal((await resolvedDispute.json() as { status: string }).status, "RESOLVED");
+    const proofRows = await ownerPool.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM fleet_delivery.synthetic_pod_evidence WHERE delivery_id=$1",
+      [firstDelivery.id],
+    );
+    assert.equal(proofRows.rows[0]?.count, 1);
     const transitionEvidence = await ownerPool.query<{
       actor_type: string;
       evidence: { driverLocationSequence: number; syntheticOnly: boolean };
@@ -442,6 +645,12 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
     assert.equal(lateAccept.status, 409);
     assert.equal((await lateAccept.json() as { error: { code: string } }).error.code, "OFFER_ALREADY_DECIDED");
 
+    // Completing the first delivery returns driver A to ONLINE. Suspend both synthetic drivers so
+    // the manual-escalation branch below still proves the no-eligible-driver outcome deterministically.
+    assert.equal((await request(
+      adminToken, "/v1/dispatch/drivers", "PUT", { ...driverA, status: "SUSPENDED" }, "phase3-driver-a-suspend",
+    )).status, 201);
+
     const thirdDelivery = await createReadyDelivery(ownerPool, tenantRef, branchRef);
     const thirdStart = await request(adminToken, `/v1/deliveries/${thirdDelivery.id}/actions/start_dispatch`, "POST", {
       tenantRef, branchRef, expectedVersion: thirdDelivery.version,
@@ -462,6 +671,111 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
       [thirdDelivery.id],
     );
     assert.deepEqual(manual.rows[0], { state: "MANUAL_DISPATCH_REQUIRED", reason: "NO_ELIGIBLE_DRIVER" });
+
+    // Manual escalation is still pre-pickup and must be cancellable without leaving an OPEN queue.
+    const manualVersion = await ownerPool.query<{ version: string }>(
+      "SELECT version FROM fleet_delivery.deliveries WHERE id=$1", [thirdDelivery.id],
+    );
+    const cancelManualInput = {
+      tenantRef, branchRef, expectedVersion: Number(manualVersion.rows[0]!.version),
+      reasonCode: "SYNTHETIC_CANCELLED",
+    };
+    const cancelManualPath = `/v1/deliveries/${thirdDelivery.id}/actions/cancel_before_pickup`;
+    assert.equal((await request(adminToken, cancelManualPath, "POST", cancelManualInput, "cancel-manual-test")).status, 200);
+    assert.equal((await request(adminToken, cancelManualPath, "POST", cancelManualInput, "cancel-manual-test")).status, 200);
+    const closedManual = await ownerPool.query<{ status: string; resolved: boolean }>(
+      "SELECT status, resolved_at IS NOT NULL AS resolved FROM fleet_delivery.dispatch_manual_queue WHERE delivery_id=$1",
+      [thirdDelivery.id],
+    );
+    assert.deepEqual(closedManual.rows[0], { status: "RESOLVED", resolved: true });
+
+    // Exercise return/cancellation through the API with real RLS, transaction and idempotency checks.
+    assert.equal((await request(adminToken, "/v1/dispatch/drivers", "PUT", driverA, "phase4-reactivate-a")).status, 201);
+    assert.equal((await request(driverAToken, "/v1/driver/availability", "POST", availability, "phase4-return-online")).status, 200);
+    assert.equal((await request(driverAToken, "/v1/driver/locations", "POST", {
+      ...validLocation, sequence: 53, deviceObservedAt: new Date().toISOString(),
+    }, "phase4-return-location")).status, 202);
+    const assignToA = async (label: string) => {
+      const delivery = await createReadyDelivery(ownerPool, tenantRef, branchRef);
+      const start = await request(adminToken, `/v1/deliveries/${delivery.id}/actions/start_dispatch`,
+        "POST", { tenantRef, branchRef, expectedVersion: delivery.version }, `${label}-dispatch`);
+      assert.equal(start.status, 202);
+      const { attemptId } = await start.json() as { attemptId: string };
+      await claimExpected(attemptId, `worker:${label}`);
+      assert.equal((await advanceDispatchAttempt(workerPool, attemptId, `worker:${label}`)).result, "RADIUS_EXPANDED");
+      await claimExpected(attemptId, `worker:${label}`);
+      const offer = await advanceDispatchAttempt(workerPool, attemptId, `worker:${label}`);
+      assert.equal(offer.result, "OFFERED");
+      const accept = await request(driverAToken, `/v1/dispatch/offers/${offer.offerId}/accept`,
+        "POST", { tenantRef, branchRef, expectedOfferVersion: 1 }, `${label}-accept`);
+      assert.equal(accept.status, 200);
+      const snapshot = await (await getCurrentAssignment(driverAToken)).json() as {
+        assignment: { deliveryVersion: number };
+      };
+      return { id: delivery.id, version: snapshot.assignment.deliveryVersion };
+    };
+    const cancelledAssignment = await assignToA("cancel-assigned");
+    assert.equal((await request(adminToken, `/v1/deliveries/${cancelledAssignment.id}/actions/cancel_before_pickup`,
+      "POST", { tenantRef, branchRef, expectedVersion: cancelledAssignment.version, reasonCode: "SYNTHETIC_CANCELLED" },
+      "cancel-assigned-action")).status, 200);
+    assert.equal((await (await getCurrentAssignment(driverAToken)).json() as { assignment: unknown }).assignment, null);
+    assert.equal((await (await getSnapshot(driverAToken)).json() as { availability: { state: string } }).availability.state, "ONLINE");
+
+    const returning = await assignToA("return-flow");
+    let returnVersion = returning.version;
+    const returnAction = async (action: string, driver: boolean, extra = {}, key = `return-${action}`) => {
+      const path = `/v1/${driver ? "driver/" : ""}deliveries/${returning.id}/actions/${action}`;
+      const body = { tenantRef, branchRef, expectedVersion: returnVersion,
+        ...(!driver ? { reasonCode: "SYNTHETIC_RETURN" } : {}), ...extra };
+      const response = await request(driver ? driverAToken : adminToken, path, "POST", body, key);
+      const result = await response.json() as { state: string; version: number };
+      assert.equal(response.status, 200, JSON.stringify(result));
+      const replay = await request(driver ? driverAToken : adminToken, path, "POST", body, key);
+      assert.equal(replay.status, 200);
+      assert.deepEqual(await replay.json(), result);
+      returnVersion = result.version;
+      return result;
+    };
+    await returnAction("start_pickup", true);
+    await returnAction("arrive_pickup", true);
+    await returnAction("merchant_handoff", false);
+    assert.equal((await request(adminToken, `/v1/deliveries/${returning.id}/actions/cancel_before_pickup`,
+      "POST", { tenantRef, branchRef, expectedVersion: returnVersion, reasonCode: "SYNTHETIC_CANCELLED" },
+      "return-cannot-cancel-picked-up")).status, 409);
+    assert.equal((await request(driverAToken, `/v1/driver/deliveries/${returning.id}/actions/report_failure`,
+      "POST", { tenantRef, branchRef, expectedVersion: returnVersion }, "return-missing-failure")).status, 422);
+    await returnAction("report_failure", true, { failure: {
+      reasonCode: "UNSAFE_DROPOFF", safetyException: true, contactAttemptCount: 0, syntheticOnly: true,
+    } });
+    await returnAction("request_return", false);
+    await returnAction("approve_return", false);
+    // Simulate an inconsistent return record and prove the Delivery change rolls back atomically.
+    await ownerPool.query("UPDATE fleet_delivery.delivery_returns SET status='REQUESTED' WHERE delivery_id=$1", [returning.id]);
+    const conflict = await request(driverAToken, `/v1/driver/deliveries/${returning.id}/actions/start_return`,
+      "POST", { tenantRef, branchRef, expectedVersion: returnVersion }, "return-start_return");
+    assert.equal(conflict.status, 409);
+    assert.equal((await conflict.json() as { error: { code: string } }).error.code, "RETURN_STATE_CONFLICT");
+    const unchanged = await ownerPool.query<{ state: string; version: string }>(
+      "SELECT state, version FROM fleet_delivery.deliveries WHERE id=$1", [returning.id],
+    );
+    assert.deepEqual(unchanged.rows[0], { state: "RETURN_APPROVED", version: String(returnVersion) });
+    await ownerPool.query("UPDATE fleet_delivery.delivery_returns SET status='APPROVED' WHERE delivery_id=$1", [returning.id]);
+    await returnAction("start_return", true);
+    assert.equal((await request(driverAToken, "/v1/driver/availability", "POST", {
+      tenantRef, branchRef, state: "OFFLINE",
+    }, "return-driver-goes-offline")).status, 200);
+    await returnAction("arrive_return", true);
+    assert.equal((await (await getCurrentAssignment(driverAToken)).json() as { assignment: unknown }).assignment, null);
+    assert.equal((await (await getSnapshot(driverAToken)).json() as { availability: { state: string } }).availability.state, "OFFLINE");
+    await returnAction("review_return", false);
+    assert.equal((await returnAction("resolve_return", false)).state, "RETURN_RESOLVED");
+    const returnEvidence = await ownerPool.query<{ status: string; failure_count: number; intent_count: number }>(
+      `SELECT r.status,
+         (SELECT count(*)::int FROM fleet_delivery.delivery_failures WHERE delivery_id=r.delivery_id) AS failure_count,
+         (SELECT count(*)::int FROM fleet_delivery.notification_intents WHERE delivery_id=r.delivery_id) AS intent_count
+       FROM fleet_delivery.delivery_returns r WHERE r.delivery_id=$1`, [returning.id],
+    );
+    assert.deepEqual(returnEvidence.rows[0], { status: "RESOLVED", failure_count: 1, intent_count: 10 });
 
     const appClient = await appPool.connect();
     try {
@@ -484,6 +798,8 @@ test("phase 3 dispatch is tenant-safe, evidence-backed, atomic and recoverable",
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     const tables = [
+      "notification_intents", "delivery_disputes", "delivery_returns", "delivery_failures",
+      "synthetic_pod_evidence",
       "dispatch_manual_queue", "driver_assignments", "dispatch_offers", "dispatch_attempts",
       "driver_locations", "driver_availability", "driver_vehicles", "driver_memberships", "drivers",
       "dispatch_policy_versions", "delivery_state_transitions", "deliveries", "delivery_quotes",

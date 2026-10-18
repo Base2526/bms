@@ -188,4 +188,5 @@ export * from "./phase2.js";
 export * from "./phase3.js";
 export * from "./phase4.js";
 export * from "./phase7.js";
+export * from "./customer.js";
 export * from "./transaction.js";

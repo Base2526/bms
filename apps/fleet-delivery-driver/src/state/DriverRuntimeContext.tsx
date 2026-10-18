@@ -7,7 +7,13 @@ import {
   type DriverOfflineCommand,
   type FlushResult,
 } from '@bms/fleet-delivery-driver-core';
-import type { DriverSnapshotV1, OfferDecision } from '@bms/fleet-delivery-contracts';
+import type {
+  DeliveryFailureDescriptorV1,
+  DriverJourneyAction,
+  DriverSnapshotV1,
+  OfferDecision,
+  SyntheticPodDescriptorV1,
+} from '@bms/fleet-delivery-contracts';
 import { KeychainDriverCommandStore } from '../storage/secureStore';
 import { useDriverSession } from './DriverSessionContext';
 
@@ -25,7 +31,12 @@ type DriverRuntimeValue = {
   flush(): Promise<FlushResult | null>;
   setAvailability(state: 'ONLINE' | 'OFFLINE'): Promise<void>;
   decideOffer(offerId: string, decision: OfferDecision, expectedOfferVersion: number): Promise<void>;
-  advancePickup(deliveryId: string, action: 'start_pickup' | 'arrive_pickup', expectedVersion: number): Promise<void>;
+  advanceJourney(
+    deliveryId: string,
+    action: DriverJourneyAction,
+    expectedVersion: number,
+    evidence?: { pod?: SyntheticPodDescriptorV1; failure?: DeliveryFailureDescriptorV1 },
+  ): Promise<void>;
   clearQueue(): Promise<void>;
 };
 
@@ -136,14 +147,15 @@ export function DriverRuntimeProvider({ children }: { children: React.ReactNode 
     }
   }, [flush, queue, reloadQueue, scope]);
 
-  const advancePickup = useCallback(async (
+  const advanceJourney = useCallback(async (
     deliveryId: string,
-    action: 'start_pickup' | 'arrive_pickup',
+    action: DriverJourneyAction,
     expectedVersion: number,
+    evidence: { pod?: SyntheticPodDescriptorV1; failure?: DeliveryFailureDescriptorV1 } = {},
   ) => {
     if (!queue || !scope) return;
     try {
-      await queue.enqueuePickupJourneyAction(scope, deliveryId, action, expectedVersion);
+      await queue.enqueueJourneyAction(scope, deliveryId, action, expectedVersion, evidence);
       await reloadQueue();
       await flush();
     } catch (caught) {
@@ -188,11 +200,11 @@ export function DriverRuntimeProvider({ children }: { children: React.ReactNode 
     flush,
     setAvailability,
     decideOffer,
-    advancePickup,
+    advanceJourney,
     clearQueue,
   }), [
     snapshot, snapshotReceivedAt, queuedCommands, rejected, status, error, refresh, flush,
-    setAvailability, decideOffer, advancePickup, clearQueue,
+    setAvailability, decideOffer, advanceJourney, clearQueue,
   ]);
 
   return <DriverRuntimeContext.Provider value={value}>{children}</DriverRuntimeContext.Provider>;

@@ -109,6 +109,18 @@ export const DELIVERY_STATES = [
   "ASSIGNED",
   "EN_ROUTE_PICKUP",
   "AT_PICKUP",
+  "PICKED_UP",
+  "IN_TRANSIT",
+  "AT_DROPOFF",
+  "DELIVERED",
+  "COMPLETED",
+  "DELIVERY_FAILED",
+  "RETURN_REQUESTED",
+  "RETURN_APPROVED",
+  "RETURN_IN_TRANSIT",
+  "RETURNED_TO_MERCHANT",
+  "RETURN_REVIEW",
+  "RETURN_RESOLVED",
   "MANUAL_DISPATCH_REQUIRED",
   "CANCELLED",
 ] as const;
@@ -118,7 +130,13 @@ export type Phase2DeliveryAction =
   | "payment_confirmed"
   | "merchant_accepted"
   | "merchant_ready"
-  | "cancel_before_pickup";
+  | "cancel_before_pickup"
+  | "merchant_handoff"
+  | "complete_delivery"
+  | "request_return"
+  | "approve_return"
+  | "review_return"
+  | "resolve_return";
 
 const transitionTargets: Record<Phase2DeliveryAction, Partial<Record<DeliveryState, DeliveryState>>> = {
   payment_confirmed: { AWAITING_PAYMENT: "AWAITING_MERCHANT_ACCEPTANCE" },
@@ -129,7 +147,19 @@ const transitionTargets: Record<Phase2DeliveryAction, Partial<Record<DeliverySta
     AWAITING_MERCHANT_ACCEPTANCE: "CANCELLED",
     PREPARING: "CANCELLED",
     READY_FOR_DISPATCH: "CANCELLED",
+    SEARCHING_DRIVER: "CANCELLED",
+    OFFERED: "CANCELLED",
+    ASSIGNED: "CANCELLED",
+    EN_ROUTE_PICKUP: "CANCELLED",
+    AT_PICKUP: "CANCELLED",
+    MANUAL_DISPATCH_REQUIRED: "CANCELLED",
   },
+  merchant_handoff: { AT_PICKUP: "PICKED_UP" },
+  complete_delivery: { DELIVERED: "COMPLETED" },
+  request_return: { DELIVERY_FAILED: "RETURN_REQUESTED" },
+  approve_return: { RETURN_REQUESTED: "RETURN_APPROVED" },
+  review_return: { RETURNED_TO_MERCHANT: "RETURN_REVIEW" },
+  resolve_return: { RETURN_REVIEW: "RETURN_RESOLVED" },
 };
 
 export function nextDeliveryState(state: DeliveryState, action: Phase2DeliveryAction): DeliveryState {
@@ -138,11 +168,29 @@ export function nextDeliveryState(state: DeliveryState, action: Phase2DeliveryAc
   return target;
 }
 
-export type DriverJourneyAction = "start_pickup" | "arrive_pickup";
+export type DriverJourneyAction =
+  | "start_pickup"
+  | "arrive_pickup"
+  | "start_delivery"
+  | "arrive_dropoff"
+  | "deliver_with_pod"
+  | "report_failure"
+  | "start_return"
+  | "arrive_return";
 
 const driverJourneyTargets: Record<DriverJourneyAction, Partial<Record<DeliveryState, DeliveryState>>> = {
   start_pickup: { ASSIGNED: "EN_ROUTE_PICKUP" },
   arrive_pickup: { EN_ROUTE_PICKUP: "AT_PICKUP" },
+  start_delivery: { PICKED_UP: "IN_TRANSIT" },
+  arrive_dropoff: { IN_TRANSIT: "AT_DROPOFF" },
+  deliver_with_pod: { AT_DROPOFF: "DELIVERED" },
+  report_failure: {
+    PICKED_UP: "DELIVERY_FAILED",
+    IN_TRANSIT: "DELIVERY_FAILED",
+    AT_DROPOFF: "DELIVERY_FAILED",
+  },
+  start_return: { RETURN_APPROVED: "RETURN_IN_TRANSIT" },
+  arrive_return: { RETURN_IN_TRANSIT: "RETURNED_TO_MERCHANT" },
 };
 
 export function nextDriverJourneyState(
