@@ -213,6 +213,13 @@ BMS is **multi-tenant** (SaaS). Each shop (tenant) has:
    This brings up **postgres**, **redis**, **web** (Next.js), **ws** (WebSocket
    gateway), **caddy**, and **pgAdmin** (http://localhost:5050).
 
+   For the `.env.dev` workflow, run `./dev.sh` (or `./dev.sh -d` for background
+   services). The script resolves paths from the repository, checks Docker and
+   Compose, and starts Docker Desktop on macOS when the selected local daemon
+   is unavailable, waiting up to 120 seconds for readiness. On other platforms,
+   start the Docker daemon first. If Claude is installed on macOS, the script
+   also opens its existing Terminal workflow after configuration validation.
+
 3. **Or run apps locally** (against Docker Postgres/Redis):
 
    ```bash

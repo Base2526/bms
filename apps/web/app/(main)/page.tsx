@@ -33,7 +33,6 @@ import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import BmsFlowDiagram from "@/components/marketing/flow/BmsFlowDiagram";
 import PlanAiChangeNotice from "@/components/billing/PlanAiChangeNotice";
-import { PlanFeatureList } from "@/components/billing/FeatureAccessNotice";
 import styles from "./page.module.css";
 
 const { Title, Paragraph, Text } = Typography;
@@ -90,48 +89,127 @@ function buildSafetyPoints(t: Translate) {
 
 const lim = (value: number, t: Translate) => (value < 0 ? t("landing.unlimited") : value.toLocaleString());
 
-function PlanCard({
-  plan,
-  highlight,
+type PublicPlan = {
+  code: string;
+  name: string;
+  price_monthly: number;
+  max_products: number;
+  max_channels: number;
+  max_branches: number;
+  max_devices: number;
+  max_orders_month: number;
+  max_users: number;
+  ai_credits_monthly: number;
+  ai_credits_next_monthly?: number | null;
+  ai_credits_change_at?: string | null;
+  feature_keys?: string[];
+};
+
+function PlanComparison({
+  plans,
   t,
   ctaHref,
   ctaLabel,
 }: {
-  plan: any;
-  highlight?: boolean;
+  plans: PublicPlan[];
   t: Translate;
   ctaHref: string;
   ctaLabel: string;
 }) {
+  const limits: Array<{ label: string; field: keyof Pick<PublicPlan,
+    "max_products" | "max_orders_month" | "max_users" | "max_branches" | "max_devices" | "max_channels"> }> = [
+    { label: t("landing.productLimit"), field: "max_products" },
+    { label: t("landing.orderLimit"), field: "max_orders_month" },
+    { label: t("landing.teamLimit"), field: "max_users" },
+    { label: t("package_metrics.branches"), field: "max_branches" },
+    { label: t("package_metrics.devices"), field: "max_devices" },
+    { label: t("package_metrics.channels"), field: "max_channels" },
+  ];
+  const features = [
+    { label: t("admin_billing.features_core"), key: null },
+    { label: t("admin_billing.feature_report_schedule"), key: "REPORT_SCHEDULE" },
+    { label: t("admin_billing.feature_retention_engine"), key: "RETENTION_ENGINE" },
+  ];
+  const highlight = (plan: PublicPlan) => plan.code === "pro" ? styles.planRecommended : undefined;
+  const pendingChanges = plans.filter(plan => plan.ai_credits_next_monthly != null && plan.ai_credits_change_at);
   return (
-    <Card className={`${styles.planCard} ${highlight ? styles.planCardHighlight : ""}`}>
-      {highlight && <Tag color="blue" className={styles.planBadge}>{t("landing.recommended")}</Tag>}
-      <Title level={4} className={styles.planName}>{plan.name}</Title>
-      <div className={styles.planPrice}>
-        {plan.price_monthly > 0 ? (
-          <>
-            {Number(plan.price_monthly).toLocaleString()}
-            <Text type="secondary" className={styles.planUnit}>{t("landing.perMonth")}</Text>
-          </>
-        ) : (
-          t("landing.free")
-        )}
+    <>
+      <div className={styles.planTableScroll} role="region" aria-label={t("landing.planComparison")} tabIndex={0}>
+        <table className={styles.planTable} aria-label={t("landing.planComparison")}>
+          <thead>
+            <tr>
+              <th scope="col">{t("landing.monthlyPlans")}</th>
+              {plans.map(plan => (
+                <th scope="col" key={plan.code} className={highlight(plan)}>
+                  <div className={styles.planBadgeSlot}>
+                    {plan.code === "pro" && <span className={styles.planBadge}>{t("landing.recommended")}</span>}
+                  </div>
+                  <span className={styles.planName}>{plan.name}</span>
+                  <div className={styles.planPrice}>
+                    {plan.price_monthly > 0 ? Number(plan.price_monthly).toLocaleString() : t("landing.free")}
+                  </div>
+                  <span className={styles.planUnit}>{plan.price_monthly > 0 ? t("landing.perMonth") : "\u00a0"}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row">{t("landing.monthlyAi")}</th>
+              {plans.map(plan => (
+                <td key={plan.code} className={highlight(plan)}>
+                  {plan.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", {
+                    count: Number(plan.ai_credits_monthly).toLocaleString("en-US"),
+                  })}
+                </td>
+              ))}
+            </tr>
+            {limits.map(({ label, field }) => (
+              <tr key={field}>
+                <th scope="row">{label}</th>
+                {plans.map(plan => <td key={plan.code} className={highlight(plan)}>{lim(plan[field], t)}</td>)}
+              </tr>
+            ))}
+            {features.map(({ label, key }) => (
+              <tr key={key ?? "core"}>
+                <th scope="row">{label}</th>
+                {plans.map(plan => {
+                  const included = plan.feature_keys ? key === null || plan.feature_keys.includes(key) : null;
+                  return (
+                    <td key={plan.code} className={highlight(plan)}>
+                      <span className={included ? styles.planIncluded : styles.planUnavailable}
+                        aria-label={included === null ? t("landing.planUnknown") : included ? t("landing.planIncluded") : t("landing.planExcluded")}>
+                        {included === null ? "…" : included ? "✓" : "—"}
+                      </span>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              <th scope="row"><span className={styles.srOnly}>{t("landing.startUsing")}</span></th>
+              {plans.map(plan => (
+                <td key={plan.code} className={highlight(plan)}>
+                  <Link href={ctaHref} className={styles.planCta}>
+                    <Button type={plan.code === "pro" ? "primary" : "default"} block size="large">{ctaLabel}</Button>
+                  </Link>
+                </td>
+              ))}
+            </tr>
+          </tfoot>
+        </table>
       </div>
-      <Space direction="vertical" size={9} className={styles.planFeatures}>
-        <span><CheckCircleFilled />{plan.ai_credits_monthly < 0 ? t("admin.ai_unlimited") : t("admin_billing.points_per_month", { count: Number(plan.ai_credits_monthly).toLocaleString("en-US") })}</span>
-        <span><CheckCircleFilled />{t("landing.productLimit")} {lim(plan.max_products, t)}</span>
-        <span><CheckCircleFilled />{t("landing.orderLimit")} {lim(plan.max_orders_month, t)}</span>
-        <span><CheckCircleFilled />{t("landing.teamLimit")} {lim(plan.max_users, t)} {t("landing.people")}</span>
-        <span><CheckCircleFilled />{t("package_metrics.branches")}: {lim(plan.max_branches, t)}</span>
-        <span><CheckCircleFilled />{t("package_metrics.devices")}: {lim(plan.max_devices, t)}</span>
-        <span><CheckCircleFilled />{t("package_metrics.channels")}: {lim(plan.max_channels, t)}</span>
-        <PlanAiChangeNotice plan={plan} />
-        <PlanFeatureList features={plan.feature_keys} />
-      </Space>
-      <Link href={ctaHref}>
-        <Button type={highlight ? "primary" : "default"} block size="large">{ctaLabel}</Button>
-      </Link>
-    </Card>
+      <p className={styles.planScrollHint}>{t("landing.planScrollHint")}</p>
+      {pendingChanges.length > 0 && (
+        <div className={styles.planNotices}>
+          {pendingChanges.map(plan => (
+            <div key={plan.code}><strong>{plan.name}</strong><PlanAiChangeNotice plan={plan} /></div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -148,7 +226,7 @@ export default function HomePage() {
     return () => controller.abort();
   }, []);
   const { data, loading, error } = useQuery(Q_PLANS, { fetchPolicy: "cache-and-network" });
-  const plans: any[] = data?.bmsPublicPlans || [];
+  const plans: PublicPlan[] = data?.bmsPublicPlans || [];
   const safetyPoints = useMemo(() => buildSafetyPoints(t), [t]);
 
   const primaryCta = !sessionLoading && admin
@@ -312,7 +390,6 @@ export default function HomePage() {
           <Title level={2}>{t("landing.pricingTitle")}</Title>
           <Paragraph>{t("landing.pricingDescription")}</Paragraph>
           <div className={styles.productIncluded}><CheckCircleFilled /> {t("landing.hybridIncluded")}</div>
-          <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
 
         {error && <Alert closable type="error" showIcon message={t("landing.pricingLoadError")} description={error.message} />}
@@ -322,20 +399,11 @@ export default function HomePage() {
             {[1, 2, 3].map((item) => <Col xs={24} md={8} key={item}><Card><Skeleton active paragraph={{ rows: 5 }} /></Card></Col>)}
           </Row>
         ) : (
-          <Row gutter={[20, 20]}>
-            {plans.map((plan) => (
-              <Col xs={24} md={8} key={plan.code}>
-                <PlanCard
-                  plan={plan}
-                  highlight={plan.code === "pro"}
-                  t={t}
-                  ctaHref={planCta.href}
-                  ctaLabel={planCta.label}
-                />
-              </Col>
-            ))}
-          </Row>
+          plans.length > 0 && <PlanComparison plans={plans} t={t} ctaHref={planCta.href} ctaLabel={planCta.label} />
         )}
+        <div className={styles.pricingFooter}>
+          <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
+        </div>
       </section>
 
       <section className={styles.finalCta}>
