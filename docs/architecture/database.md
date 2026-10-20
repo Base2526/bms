@@ -1,5 +1,23 @@
 # Database
 
+Passenger nearby follow-up: Fleet migration `0019_passenger_nearby.sql` adds nullable latest simulator
+`location` JSONB and `location_received_at` to `ride_sandbox_accounts`, with driver/source/bounds
+constraint and partial online freshness index. Existing tenant RLS/grants apply. PostGIS matching
+uses a fixed 5 km radius, 60-second freshness, <=100 m accuracy and idle/online eligibility, rechecked
+on acceptance. Offline/logout clears the point; local cleanup/startup purges expired fixes. No GPS
+history is added. See [maps data boundary](../delivery/passenger-maps.md); real GPS remains gated.
+
+Passenger sandbox addition (2026-10-18): Fleet migration `0018_passenger_ride_sandbox.sql` adds
+`ride_sandbox_accounts`, `sessions`, `quotes`, `trips`, `commands`, and `audit` (all names prefixed
+`ride_sandbox_`) in `fleet_delivery`, not the BMS database. Account/quote/trip foreign keys include
+tenant; forced RLS uses `fleet_delivery.tenant_ref`. The application role can update accounts,
+sessions and trips only; audit/idempotency responses are append-only. Partial unique indexes
+allow one active trip per rider/driver. Trip completion requires successful simulated payment and
+a unique receipt; no caller-supplied fare is accepted. Separate ride states and pay-after-arrival
+do not change goods Delivery's states or payment rules. See the
+[passenger sandbox schema and test guide](../delivery/passenger-sandbox.md); these test credentials,
+fares and receipts are never production identity, KYC, financial records or operating approval.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
 All BMS tables are tenant-scoped (`tenant_id UUID`) and enforced by Postgres Row-Level Security

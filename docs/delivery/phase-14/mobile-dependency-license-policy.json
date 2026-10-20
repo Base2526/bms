@@ -4,7 +4,8 @@
   "mode": "MOBILE_DEPENDENCY_LICENSE_VERIFICATION",
   "productionAuthorized": false,
   "lockfilePath": "apps/fleet-delivery-driver/package-lock.json",
-  "packageLockSha256": "3129445d50bd895e50e4227ebaf402d751fb03c1017c2eac992d2a6a18e984fa",
+  "packageLockSha256": "90d60da4844106f637d621d99b227bb39ab74bb9c7c630ee9e9799903ba9a69e",
+  "reviewNote": "2026-10-18 passenger map dependency delta: installed LICENSE files and npm metadata checked for react-native-maps 1.29.11, @react-native-community/geolocation 3.4.0, @types/geojson 7946.0.16 (all MIT). No license allowlist or exception expansion. This is npm source metadata verification, not Google SDK/Places terms approval or production authorization.",
   "allowedLicenses": [
     "(MIT OR Apache-2.0)",
     "(MIT OR CC0-1.0)",
