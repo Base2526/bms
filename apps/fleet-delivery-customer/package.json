@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "react-native run-android --appId com.bms.delivery.customer.debug",
     "android:assemble": "./android/gradlew assembleDebug assembleRelease",
     "ios": "node scripts/run-ios-simulator.mjs",
     "ios:pods": "cd ios && pod install",
@@ -16,6 +16,8 @@
     "verify:native-boundary": "node scripts/verify-native-boundary.mjs"
   },
   "dependencies": {
+    "@react-native-community/geolocation": "3.4.0",
+    "react-native-maps": "1.29.11",
     "@bms/fleet-delivery-contracts": "file:../../packages/fleet-delivery-contracts",
     "@bms/fleet-delivery-customer-core": "file:../fleet-delivery-customer-core",
     "braces": "file:../fleet-delivery-driver/vendor/braces",

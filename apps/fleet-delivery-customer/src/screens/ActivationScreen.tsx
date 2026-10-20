@@ -15,7 +15,7 @@ export function ActivationScreen() {
 
   if (state.kind === 'LOADING') {
     return (
-      <Screen title="BMS Delivery" subtitle="กำลังเปิดที่เก็บข้อมูลปลอดภัย">
+      <Screen title="BMS Go" subtitle="กำลังเปิดที่เก็บข้อมูลปลอดภัย">
         <ActivityIndicator color={colors.primary} size="large" />
       </Screen>
     );
@@ -23,7 +23,7 @@ export function ActivationScreen() {
 
   if (state.kind === 'UNAVAILABLE') {
     return (
-      <Screen title="BMS Delivery" subtitle="รุ่นทดสอบภายใน">
+      <Screen title="BMS Go" subtitle="รุ่นทดสอบภายใน">
         <Card>
           <Text style={textStyles.sectionTitle}>ไม่สามารถอ่าน OS keystore</Text>
           <Text accessibilityRole="alert" style={textStyles.error}>{state.error}</Text>
@@ -35,7 +35,7 @@ export function ActivationScreen() {
 
   if (state.kind === 'LOCKED') {
     return (
-      <Screen title="BMS Delivery" subtitle="Production lock">
+      <Screen title="BMS Go" subtitle="Production lock">
         <Card>
           <Text style={textStyles.sectionTitle}>ปิดการเชื่อมต่อแบบ Synthetic</Text>
           <Text style={textStyles.warning}>
@@ -60,7 +60,7 @@ export function ActivationScreen() {
   };
 
   return (
-    <Screen title="BMS Delivery" subtitle="ค้นหารถส่งสินค้า · Synthetic Debug">
+    <Screen title="BMS Go" subtitle="ค้นหารถส่งสินค้า · Synthetic Debug">
       <Card>
         <Text style={textStyles.sectionTitle}>Production lock ทำงานอยู่</Text>
         <Text style={textStyles.warning}>

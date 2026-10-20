@@ -95,6 +95,7 @@ android {
     }
     buildTypes {
         debug {
+            manifestPlaceholders.rideGoogleMapsKey = System.getenv("BMS_GOOGLE_MAPS_ANDROID_API_KEY") ?: ""
             applicationIdSuffix ".debug"
             signingConfig signingConfigs.debug
         }
@@ -113,5 +114,23 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// Track shared passenger UI/client/contracts in addition to this app's own Metro source root.
+tasks.configureEach { task ->
+    if (task.name.startsWith("createBundle") && task.name.endsWith("JsAndAssets")) {
+        task.inputs.files(fileTree("../../../fleet-delivery-customer-core") {
+            include "src/**/*.ts", "native/**/*.tsx"
+            exclude "**/*.test.ts"
+        })
+        task.inputs.files(fileTree("../../../fleet-delivery-driver-core/src") {
+            include "**/*.ts"
+            exclude "**/*.test.ts"
+        })
+        task.inputs.files(fileTree("../../../../packages/fleet-delivery-contracts/src") {
+            include "**/*.ts"
+            exclude "**/*.test.ts"
+        })
     }
 }

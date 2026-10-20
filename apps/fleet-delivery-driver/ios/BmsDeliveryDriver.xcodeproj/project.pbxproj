@@ -259,9 +259,11 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = "../scripts/ios-simulator.entitlements";
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_BITCODE = NO;
 				INFOPLIST_FILE = BmsDeliveryDriver/Info.plist;
+				"INFOPLIST_FILE[sdk=iphonesimulator*]" = "BmsDeliveryDriver/Info-Simulator.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

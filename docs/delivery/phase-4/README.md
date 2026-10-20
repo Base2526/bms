@@ -1,5 +1,16 @@
 # Fleet Delivery Phase 4 execution gate
 
+Passenger clarification (2026-10-18): the user has now requested motorcycle passenger rides.
+The separate [passenger sandbox](../passenger-sandbox.md) adds local test signup and pay-after-arrival
+in both Debug apps. This document's production identity/KYC/GPS and physical-device blockers remain
+unchanged; the goods-delivery grant/driver flow described below is still a separate surface.
+
+Maps follow-up: [passenger maps](../passenger-maps.md) adds Google SDK/search wiring and nearby
+matching with foreground Simulator/Emulator-only OS location. Debug overlays request foreground
+permission; production capability and iOS physical-device/Release location remain disabled. Older
+permission-absence evidence below describes the earlier shell, not this new Debug overlay.
+No real-device GPS approval, owner sign-off or Google-live certification is implied.
+
 Status: **IN PROGRESS / GATE BLOCKED — internal React Native test app implemented; required authority
 and representative real-device evidence are absent**
 

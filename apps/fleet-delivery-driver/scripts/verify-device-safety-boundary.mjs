@@ -43,10 +43,18 @@ const manifestSources = await Promise.all(manifestPaths.map(async path => ({
   path: relative(appRoot, path),
   source: await readFile(path, 'utf8'),
 })));
-const androidPermissions = [...new Set(manifestSources.flatMap(({ source }) =>
+// Production/main retains the original permission policy. The separate Debug overlay is checked below.
+const androidPermissions = [...new Set(manifestSources.filter(({path}) => path.includes('/main/')).flatMap(({ source }) =>
   [...source.matchAll(/<uses-permission\b[^>]*android:name=["']([^"']+)["'][^>]*>/g)].map(match => match[1]),
 ))].sort();
 const expectedPermissions = [...policy.android.allowedPermissions].sort();
+const debugManifest = manifestSources.find(({path})=>path.includes('/debug/'))?.source ?? '';
+const releaseManifest = manifestSources.find(({path})=>path.includes('/release/'))?.source ?? '';
+const debugPermissions = [...debugManifest.matchAll(/<uses-permission\b[^>]*android:name=["']([^"']+)["'][^>]*>/g)].map(m=>m[1]).sort();
+check('passenger-debug-only-foreground-permissions',JSON.stringify(debugPermissions)===JSON.stringify(['android.permission.ACCESS_COARSE_LOCATION','android.permission.ACCESS_FINE_LOCATION']),{actual:debugPermissions});
+check('passenger-release-removes-location-permissions', ['ACCESS_FINE_LOCATION','ACCESS_COARSE_LOCATION','ACCESS_BACKGROUND_LOCATION'].every(p=>new RegExp(`android:name="android.permission.${p}" tools:node="remove"`).test(releaseManifest)),{expected:'remove all location permissions from Release'});
+const rideMap = await readFile(join(repositoryRoot,'apps/fleet-delivery-customer-core/native/RideMap.tsx'),'utf8');
+check('passenger-location-simulator-only',rideMap.includes('environment.rideSimulator !== true') && rideMap.includes('!__DEV__') && /enableBackgroundLocationUpdates:\s*false/.test(rideMap),{expected:'Debug simulator, foreground only; physical GPS remains blocked'});
 
 check(
   'android-permission-allowlist',

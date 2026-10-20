@@ -2,7 +2,7 @@ import React, { createContext, useContext, useMemo, useState } from 'react';
 
 const messages = {
   th: {
-    appName: 'BMS Delivery Driver',
+    appName: 'BMS Driver',
     internalBuild: 'รุ่นทดสอบภายใน',
     activationTitle: 'เชื่อมต่อระบบทดสอบ',
     activationBlocked: 'รุ่น Release ยังไม่เปิดรับบัญชีคนขับจนกว่าจะมีระบบยืนยันตัวตนที่อนุมัติแล้ว',
@@ -71,7 +71,7 @@ const messages = {
     disabledExplanation: 'ต้องผ่านการอนุมัติและทดสอบบนอุปกรณ์จริงก่อนเปิดใช้งาน',
   },
   en: {
-    appName: 'BMS Delivery Driver',
+    appName: 'BMS Driver',
     internalBuild: 'Internal test build',
     activationTitle: 'Connect to a test environment',
     activationBlocked: 'Release builds remain locked until an approved driver identity service exists.',
