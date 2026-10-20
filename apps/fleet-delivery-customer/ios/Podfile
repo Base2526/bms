@@ -15,7 +15,6 @@ if linkage != nil
 end
 
 target 'BmsDeliveryCustomer' do
-  pod 'react-native-maps/Google', :path => '../node_modules/react-native-maps'
   config = use_native_modules!
 
   use_react_native!(

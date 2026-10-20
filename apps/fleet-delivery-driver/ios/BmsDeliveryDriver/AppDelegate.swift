@@ -2,7 +2,6 @@ import UIKit
 import React
 import React_RCTAppDelegate
 import ReactAppDependencyProvider
-import GoogleMaps
 
 @main
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -15,14 +14,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
   ) -> Bool {
-    var mapsConfigured = false
-    var simulator = false
-#if DEBUG && targetEnvironment(simulator)
-    simulator = true
-    if let key = ProcessInfo.processInfo.environment["BMS_GOOGLE_MAPS_IOS_API_KEY"], !key.isEmpty {
-      mapsConfigured = GMSServices.provideAPIKey(key)
-    }
-#endif
     let delegate = ReactNativeDelegate()
     let factory = RCTReactNativeFactory(delegate: delegate)
     delegate.dependencyProvider = RCTAppDependencyProvider()
@@ -35,7 +26,6 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     factory.startReactNative(
       withModuleName: "BmsDeliveryDriver",
       in: window,
-      initialProperties: ["rideSimulator": simulator, "rideMapsConfigured": mapsConfigured],
       launchOptions: launchOptions
     )
 

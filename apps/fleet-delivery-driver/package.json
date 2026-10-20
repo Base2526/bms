@@ -3,9 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "android": "react-native run-android --appId com.bms.delivery.driver.debug",
-    "ios": "node ../fleet-delivery-customer/scripts/run-ios-simulator.mjs --driver",
-    "ios:build": "xcodebuild -workspace ios/BmsDeliveryDriver.xcworkspace -scheme BmsDeliveryDriver -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath ios/build/DerivedData CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES build",
+    "android": "react-native run-android",
+    "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
@@ -20,8 +19,6 @@
     "verify:reproducibility": "node scripts/verify-bundle-reproducibility.mjs"
   },
   "dependencies": {
-    "@react-native-community/geolocation": "3.4.0",
-    "react-native-maps": "1.29.11",
     "@bms/fleet-delivery-contracts": "file:../../packages/fleet-delivery-contracts",
     "@bms/fleet-delivery-driver-core": "file:../fleet-delivery-driver-core",
     "@react-navigation/native": "7.5.1",

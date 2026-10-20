@@ -27,7 +27,6 @@ android {
         debug {
             applicationIdSuffix ".debug"
             manifestPlaceholders = [usesCleartextTraffic: "true"]
-            manifestPlaceholders.rideGoogleMapsKey = System.getenv("BMS_GOOGLE_MAPS_ANDROID_API_KEY") ?: ""
         }
         release {
             minifyEnabled enableProguardInReleaseBuilds
@@ -43,19 +42,5 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
-    }
-}
-
-// Metro watchFolders are outside this app root; Gradle must invalidate bundles for them too.
-tasks.configureEach { task ->
-    if (task.name.startsWith("createBundle") && task.name.endsWith("JsAndAssets")) {
-        task.inputs.files(fileTree("../../../fleet-delivery-customer-core") {
-            include "src/**/*.ts", "native/**/*.tsx"
-            exclude "**/*.test.ts"
-        })
-        task.inputs.files(fileTree("../../../../packages/fleet-delivery-contracts/src") {
-            include "**/*.ts"
-            exclude "**/*.test.ts"
-        })
     }
 }

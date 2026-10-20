@@ -28,7 +28,6 @@
     "packages/fleet-delivery-*/src/**/*.ts",
     "scripts/fleet-delivery-dev.ts",
     "scripts/fleet-delivery-dev.test.ts",
-    "scripts/fleet-delivery-ride-sandbox.ts",
     "tsup.fleet-delivery.config.ts"
   ]
 }

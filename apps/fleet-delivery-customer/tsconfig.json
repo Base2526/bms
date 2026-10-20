@@ -2,12 +2,6 @@
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
     "paths": {
-      "react-native-maps": ["./node_modules/react-native-maps"],
-      "@react-native-community/geolocation": ["./node_modules/@react-native-community/geolocation"],
-      "react": ["./node_modules/@types/react"],
-      "react-native": ["./node_modules/react-native/types_generated/index.d.ts"],
-      "react-native-safe-area-context": ["./node_modules/react-native-safe-area-context"],
-      "react-native-keychain": ["./node_modules/react-native-keychain"],
       "@bms/fleet-delivery-customer-core": ["../fleet-delivery-customer-core/src/index.ts"],
       "@bms/fleet-delivery-contracts": ["../../packages/fleet-delivery-contracts/src/index.ts"]
     }

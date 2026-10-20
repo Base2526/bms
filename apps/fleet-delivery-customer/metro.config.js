@@ -9,12 +9,6 @@ const config = {
   watchFolders: [customerCore, contracts],
   resolver: {
     resolveRequest(context, moduleName, platform) {
-      if (moduleName === './rideSandbox.js' && context.originModulePath === path.join(contracts, 'src/index.ts')) {
-        return { type: 'sourceFile', filePath: path.join(contracts, 'src/rideSandbox.ts') };
-      }
-      if (moduleName === './routePolyline.js' && context.originModulePath === path.join(customerCore, 'src/rideSandbox.ts')) {
-        return { type: 'sourceFile', filePath: path.join(customerCore, 'src/routePolyline.ts') };
-      }
       if (moduleName === 'react-native-keychain') {
         return { type: 'sourceFile', filePath: keychainSource };
       }

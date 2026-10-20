@@ -3,20 +3,15 @@ import { access } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const args = process.argv.slice(2);
-const driver = args.includes('--driver');
-const customerRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-const root = driver ? join(customerRoot, '../fleet-delivery-driver') : customerRoot;
-const appName = driver ? 'BmsDeliveryDriver' : 'BmsDeliveryCustomer';
-const bundleId = driver ? 'com.bms.delivery.driver.debug' : 'com.bms.delivery.customer.debug';
 let udid;
-let port = driver ? 8089 : 8088;
+let port = 8088;
 let build = true;
 for (let i = 0; i < args.length; i += 1) {
   if (args[i] === '--udid') udid = args[++i];
   else if (args[i] === '--port') port = Number(args[++i]);
   else if (args[i] === '--no-build') build = false;
-  else if (args[i] === '--driver') continue;
   else
     throw new Error(
       'Usage: npm run ios -- [--udid SIMULATOR_ID] [--port 8088] [--no-build]',
@@ -26,14 +21,7 @@ if (!Number.isInteger(port) || port < 1024 || port > 65535)
   throw new Error('Invalid Metro port');
 
 function run(command, commandArgs, capture = false) {
-  const environment = {...process.env};
-  // Pass SDK key only to the simulator launch, never to xcodebuild logs or command arguments.
-  delete environment.BMS_GOOGLE_MAPS_IOS_API_KEY;
-  delete environment.SIMCTL_CHILD_BMS_GOOGLE_MAPS_IOS_API_KEY;
-  if (command === 'xcrun' && commandArgs[1] === 'launch' && process.env.BMS_GOOGLE_MAPS_IOS_API_KEY)
-    environment.SIMCTL_CHILD_BMS_GOOGLE_MAPS_IOS_API_KEY = process.env.BMS_GOOGLE_MAPS_IOS_API_KEY;
   return execFileSync(command, commandArgs, {
-    env: environment,
     cwd: root,
     encoding: 'utf8',
     stdio: capture ? 'pipe' : 'inherit',
@@ -67,13 +55,13 @@ try {
     throw new Error('Not Metro');
 } catch {
   throw new Error(
-    `Start ${appName} Metro in another terminal: npm start -- --port ${port}`,
+    `Start Customer Metro in another terminal: npm start -- --port ${port}`,
   );
 }
 if (build) run('npm', ['run', 'ios:build']);
 const app = join(
   root,
-  `ios/build/DerivedData/Build/Products/Debug-iphonesimulator/${appName}.app`,
+  'ios/build/DerivedData/Build/Products/Debug-iphonesimulator/BmsDeliveryCustomer.app',
 );
 await access(app);
 // Xcode embeds the simulator-only Keychain identity and applies the ad-hoc signature.
@@ -84,7 +72,7 @@ run('xcrun', ['simctl', 'install', device.udid, app]);
 try {
   run(
     'xcrun',
-    ['simctl', 'terminate', device.udid, bundleId],
+    ['simctl', 'terminate', device.udid, 'com.bms.delivery.customer.debug'],
     true,
   );
 } catch {
@@ -94,10 +82,10 @@ run('xcrun', [
   'simctl',
   'launch',
   device.udid,
-  bundleId,
+  'com.bms.delivery.customer.debug',
   '-RCT_jsLocation',
   `127.0.0.1:${port}`,
 ]);
 console.log(
-  `${appName} Debug app launched on iOS Simulator (ad-hoc local signature, not distribution signing).`,
+  'Customer Debug app launched on iOS Simulator (ad-hoc local signature, not distribution signing).',
 );

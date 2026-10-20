@@ -1,6 +1,5 @@
 node_modules/
 android/.gradle/
-android/.kotlin/
 android/app/build/
 android/app/.cxx/
 ios/Pods/

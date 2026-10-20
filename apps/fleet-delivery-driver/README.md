@@ -1,12 +1,4 @@
-# BMS Driver
-
-**Passenger addition (2026-10-18):** Debug now opens **BMS Driver**, with test signup, vehicle
-plate, online/offline and passenger travel through pay-after-arrival. Follow
-[the two-app guide](../../docs/delivery/passenger-sandbox.md). Real KYC/GPS/payment/auth remain off.
-Debug Simulator/Emulator foreground location and nearby matching are covered in
-[the maps guide](../../docs/delivery/passenger-maps.md); physical-device GPS remains gated.
-`npm run ios` uses the shared simulator runner with Driver Metro 8089 and Debug simulator-only
-Keychain identity. The original goods-delivery surface below remains accessible from the app.
+# BMS Fleet Delivery Driver
 
 Bare React Native app for the **internal, synthetic Phase 4 driver workflow**. It is a separate app
 from `apps/mobile`, which remains the BMS POS app. The reserved Android application ID and iOS bundle

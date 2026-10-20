@@ -1,11 +1,4 @@
-# BMS Go (Android/iOS debug shell)
-
-**Passenger addition (2026-10-18):** Debug now opens **BMS Go** for test signup → request → pickup
-→ travel → pay-after-arrival. See [the two-app guide](../../docs/delivery/passenger-sandbox.md).
-Payment is an internal simulator; Google search/map wiring and opt-in Simulator location are described
-in [the maps guide](../../docs/delivery/passenger-maps.md). Live Google verification requires configured
-keys; physical-device GPS and Release remain locked. Select
-“กลับไปโหมดส่งสินค้าเดิม” for the original goods-delivery surface described below.
+# BMS Delivery Customer (Android/iOS debug shell)
 
 This is a separate bare React Native Customer App shell for the synthetic quote-to-Delivery flow.
 It does not share driver identity or credentials. Production activation is hard-disabled; only a
