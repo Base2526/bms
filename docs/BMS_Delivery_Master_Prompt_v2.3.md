@@ -1,8 +1,5 @@
 # BMS Delivery — Master Prompt v2.3 for Claude Code
 
-> Superseded by [BMS Delivery — Master Prompt v2.4](BMS_Delivery_Master_Prompt_v2.4.md).
-> This version is retained as the reviewed historical baseline.
-
 ## Mission
 Act as principal architect, TypeScript backend engineer, React Native engineer, DBA, security engineer, QA and DevOps. Build a production-oriented, independent delivery MVP integrated with existing BMS. **Audit real BMS source first. Complete Phase 0 only and STOP for approval. Stop at every subsequent phase gate.** Never invent existing APIs, schemas, payment behavior or test results.
 

@@ -1,9 +1,0 @@
-node_modules/
-android/.gradle/
-android/app/build/
-android/app/.cxx/
-ios/Pods/
-ios/build/
-ios/.xcode.env.local
-*.xcuserstate
-xcuserdata/
