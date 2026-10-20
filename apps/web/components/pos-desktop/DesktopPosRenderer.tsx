@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { InfoCircleOutlined, ReloadOutlined, PrinterOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { InfoCircleOutlined, ReloadOutlined, PrinterOutlined, CheckCircleOutlined, ShopOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import ProductDetailsModal from "./ProductDetailsModal";
 import ScannedProductPanel, { type ScannedProductResult } from "./ScannedProductPanel";
@@ -479,6 +479,8 @@ function DesktopPosContent() {
   const tokenRef = useRef("");
   const [flow, setFlow] = useState<PosClientFlowState>(() => initialPosClientFlow(true));
   const [bootstrap, setBootstrap] = useState<PosBootstrap | null>(null);
+  const [failedStoreLogoUrl, setFailedStoreLogoUrl] = useState<string | null>(null);
+  const storeLogoUrl = bootstrap?.store.logoUrl?.trim() || null;
   const [cashier, setCashier] = useState<PosCashier | null>(null);
   const [cashierId, setCashierId] = useState("");
   const [pin, setPin] = useState("");
@@ -1054,6 +1056,7 @@ function DesktopPosContent() {
         loadCatalog(query, currentToken),
         cashier && pin ? refreshDesktopServiceCalls() : Promise.resolve(),
       ]);
+      setFailedStoreLogoUrl(null);
       // Child workspaces refresh their own authoritative source while keeping the desktop shell,
       // verified operator and current navigation context mounted.
       setContentRefreshSignal((value) => value + 1);
@@ -2030,7 +2033,19 @@ function DesktopPosContent() {
       <section className={styles.workspace} ref={(element) => { if (element) element.inert = Boolean(receiptDialog); }} aria-hidden={receiptDialog ? true : undefined}>
         <header className={styles.topbar}>
           <div className={styles.storeIdentity}>
-            <div className={styles.storeMark}>{(bootstrap.location?.name || "B").slice(0, 1)}</div>
+            <div className={styles.storeMark} aria-hidden="true">
+              {storeLogoUrl && storeLogoUrl !== failedStoreLogoUrl ? (
+                <img
+                  key={storeLogoUrl}
+                  src={storeLogoUrl}
+                  alt=""
+                  style={{ width: "100%", height: "100%", objectFit: "contain", borderRadius: "inherit", display: "block" }}
+                  onError={() => setFailedStoreLogoUrl(storeLogoUrl)}
+                />
+              ) : (
+                <ShopOutlined style={{ fontSize: 24, color: "inherit", marginTop: 0, display: "inline-flex" }} />
+              )}
+            </div>
             <div><strong>{bootstrap.location?.name ?? "สาขาหลัก"}</strong><span>{bootstrap.device.registeredPosNo ?? bootstrap.device.code} · กะเปิดอยู่</span></div>
           </div>
           <div className={styles.topMeta}>

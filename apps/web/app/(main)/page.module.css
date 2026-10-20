@@ -476,50 +476,78 @@
   padding-top: 18px;
 }
 
-.planCard {
-  border-radius: 20px !important;
-  height: 100%;
-  position: relative;
-}
-
-.planCardHighlight {
-  border: 2px solid var(--app-primary) !important;
-}
-
-.planBadge {
-  left: 20px;
-  position: absolute;
-  top: -12px;
-}
-
-.planName { margin-top: 4px !important; }
-
-.planPrice {
-  align-items: baseline;
-  display: flex;
-  font-size: 30px;
-  font-weight: 700;
-  gap: 7px;
-  margin-bottom: 18px;
-}
-
-.planUnit {
-  font-size: 13px !important;
-  font-weight: 400;
-}
-
-.planFeatures {
-  margin-bottom: 22px;
+.pricingSection { min-width: 0; }
+.planTableScroll {
   width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 20px;
+  background: var(--app-surface);
 }
-
-.planFeatures span {
-  align-items: center;
-  display: flex;
-  gap: 8px;
+.planTable {
+  width: 100%;
+  min-width: 640px;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  font-variant-numeric: tabular-nums;
 }
-
-.planFeatures :global(.anticon) { color: #22c55e; }
+.planTable th,
+.planTable td {
+  border-bottom: 1px solid var(--app-border);
+  padding: 17px 20px;
+  text-align: center;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.planTable th { font-weight: 500; }
+.planTable th:first-child {
+  width: 28%;
+  text-align: left;
+  color: var(--app-muted);
+  background: var(--app-surface);
+}
+.planTable thead th { padding-top: 20px; padding-bottom: 26px; }
+.planTable .planRecommended { background: rgba(var(--app-primary-rgb), 0.06); }
+.planBadgeSlot { min-height: 30px; margin-bottom: 6px; }
+.planBadge {
+  display: inline-block;
+  color: var(--app-primary);
+  background: rgba(var(--app-primary-rgb), 0.1);
+  border-radius: 20px;
+  padding: 3px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.planName { display: block; font-size: 22px; font-weight: 700; }
+.planPrice { font-size: 34px; font-weight: 700; margin-top: 10px; }
+.planUnit { font-size: 13px; color: var(--app-muted); }
+.planIncluded { color: var(--app-primary); font-weight: 700; font-size: 19px; }
+.planUnavailable { color: var(--app-muted); font-size: 19px; }
+.planTable tfoot th,
+.planTable tfoot td { border-bottom: 0; padding-top: 22px; padding-bottom: 22px; }
+.planCta { display: block; }
+.planNotices {
+  display: grid;
+  gap: 12px;
+  padding: 16px 20px;
+  border-radius: 12px;
+  background: rgba(var(--app-primary-rgb), 0.06);
+  color: var(--app-muted);
+}
+.planNotices strong { color: var(--app-text); }
+.pricingFooter { display: flex; justify-content: flex-end; }
+.planScrollHint { display: none; margin: 0; color: var(--app-muted); font-size: 12px; }
+.srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 767px) {
+  .planTable th,
+  .planTable td { padding: 14px 12px; }
+  .planTable th:first-child { position: sticky; left: 0; z-index: 1; }
+  .planTable .planName { font-size: 18px; }
+  .planPrice { font-size: 28px; }
+  .planScrollHint { display: block; }
+}
 
 .finalCta {
   align-items: center;
