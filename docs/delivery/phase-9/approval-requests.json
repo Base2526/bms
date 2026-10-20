@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "phase": 9,
+  "mode": "APPROVAL_REQUEST_PREPARATION",
+  "generatedAt": "2026-10-18T05:21:43.000Z",
+  "productionAuthorized": false,
+  "approvalsGrantedByThisManifest": false,
+  "dispatch": {
+    "status": "NOT_DISPATCHED",
+    "channel": "GMAIL",
+    "draftCount": 6,
+    "blockers": [
+      "No named authorized recipients or destination channels were supplied"
+    ]
+  },
+  "requests": [
+    {
+      "id": "security",
+      "status": "READY_TO_SEND",
+      "gateIds": ["independent-security-review", "admin-access-model", "provider-failure-certification"],
+      "recipientRoles": ["Security"],
+      "subject": "Approval request: Fleet Delivery security, production authentication and private evidence",
+      "packetRef": "docs/delivery/phase-9/approval-requests/security.md",
+      "requiredOutputs": [
+        "Independent security report and remediation disposition",
+        "Approved production driver identity, MFA, recovery, device binding and revocation design",
+        "Approved private KYC/POD storage, upload scanning and access model",
+        "Approved customer-contact masking, provider credential and incident model"
+      ]
+    },
+    {
+      "id": "privacy-legal",
+      "status": "READY_TO_SEND",
+      "gateIds": ["privacy-retention", "driver-device-safety", "finance-tax-legal"],
+      "recipientRoles": ["DPO", "Legal"],
+      "subject": "Approval request: Fleet Delivery KYC, POD, location, contact and retention policy",
+      "packetRef": "docs/delivery/phase-9/approval-requests/privacy-legal.md",
+      "requiredOutputs": [
+        "Approved lawful basis, notice, controller/processor allocation and data inventory",
+        "Approved field-level retention, deletion, export and legal-hold schedule",
+        "Approved KYC/POD/customer-contact access and disclosure boundaries",
+        "Approved driver contractual, insurance and incident obligations"
+      ]
+    },
+    {
+      "id": "finance-tax",
+      "status": "READY_TO_SEND",
+      "gateIds": ["finance-tax-legal"],
+      "recipientRoles": ["Finance", "Tax", "Legal"],
+      "subject": "Approval request: Fleet Delivery COD, driver earnings, settlement and tax model",
+      "packetRef": "docs/delivery/phase-9/approval-requests/finance-tax.md",
+      "requiredOutputs": [
+        "Approved COD scope, custody, limits, deposit and discrepancy treatment",
+        "Approved driver earning formula and exact satang rounding",
+        "Approved chart of accounts, journal templates and separation of duties",
+        "Approved VAT, withholding, merchant-of-record and retention treatment"
+      ]
+    },
+    {
+      "id": "operations-safety",
+      "status": "READY_TO_SEND",
+      "gateIds": ["driver-device-safety", "recovery-objectives"],
+      "recipientRoles": ["Operations", "Safety"],
+      "subject": "Approval request: Fleet Delivery driver onboarding, devices, contact and safety operations",
+      "packetRef": "docs/delivery/phase-9/approval-requests/operations-safety.md",
+      "requiredOutputs": [
+        "Approved KYC review roles, exceptions, renewal and suspension workflow",
+        "Approved target-device matrix and permission withdrawal behavior",
+        "Approved masked-contact, SOS, harassment and support escalation runbook",
+        "Approved COD custody operating controls and recovery ownership"
+      ]
+    },
+    {
+      "id": "sre-product",
+      "status": "READY_TO_SEND",
+      "gateIds": ["admin-access-model", "sre-capacity-observability", "recovery-objectives", "provider-failure-certification"],
+      "recipientRoles": ["SRE", "Product"],
+      "subject": "Approval request: Fleet Delivery pilot scale, SLO, recovery and provider operations",
+      "packetRef": "docs/delivery/phase-9/approval-requests/sre-product.md",
+      "requiredOutputs": [
+        "Approved pilot cohort, load profile, SLO and alert thresholds",
+        "Approved topology, capacity margin, on-call and incident command",
+        "Approved RPO/RTO with timed restore evidence",
+        "Approved provider failure, credential rotation and degraded-mode exercises"
+      ]
+    },
+    {
+      "id": "cross-system-owners",
+      "status": "READY_TO_SEND",
+      "gateIds": ["repository-instructions", "bms-cross-system", "provider-failure-certification"],
+      "recipientRoles": ["Repository Owner", "BMS Architecture", "Commerce Owner", "Inventory Owner", "Integration Owner"],
+      "subject": "Approval request: Fleet Delivery repository and BMS authority contracts",
+      "packetRef": "docs/delivery/phase-9/approval-requests/cross-system-owners.md",
+      "requiredOutputs": [
+        "Repository-owner-authored and approved RTK.md",
+        "Approved BMS service principal and tenant/order mapping",
+        "Approved handoff, stock, cancellation, return and reconciliation authority contract",
+        "Approved provider ownership and failure responsibility"
+      ]
+    }
+  ]
+}

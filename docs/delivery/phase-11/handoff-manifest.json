@@ -1,0 +1,875 @@
+{
+  "schemaVersion": 1,
+  "phase": 11,
+  "mode": "ENGINEERING_HANDOFF",
+  "generatedAt": "2026-10-18T07:43:37.760Z",
+  "productionAuthorized": false,
+  "artifacts": [
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/DeliverySearchScreen.test.tsx",
+      "sha256": "96456d89042f1f4d3dd6d555a5c238d5da5260aa4c66d6b220587e936783e582",
+      "purpose": "Customer recovery and duplicate-confirmation UI regressions"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer.xcodeproj/xcshareddata/xcschemes/BmsDeliveryCustomer.xcscheme",
+      "sha256": "3d193442b2942de48d929dead3fb26052b5f84e123477f0bda559219466a3f58",
+      "purpose": "Shared iOS Debug launch and build scheme"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/run-ios-simulator.mjs",
+      "sha256": "92f20f495c4b7d9529248a23c5ccb7596f951c3efc99cb569d8f3672bfe8b3c3",
+      "purpose": "Explicit simulator-only build install and Metro launch runner"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/ios-simulator.entitlements",
+      "sha256": "f382e9c39b7bbb1bc567ad9d535f3a266a291cbc6cc039c9e0969448f779bd83",
+      "purpose": "Debug simulator-only application Keychain identity"
+    },
+    {
+      "path": "docs/BMS_Delivery_Master_Prompt_v2.4.md",
+      "sha256": "89bfd1b71ffbc115c066dfced43cc7e613154bc0ddbe3e4a2e78c1a1dd70ec2f",
+      "purpose": "Authoritative Fleet Delivery implementation roadmap"
+    },
+    {
+      "path": "docs/delivery/phase-4/README.md",
+      "sha256": "87d2b3b8e59a0b1ea1a60b6ba81ddf13c3487e0de926f62dedb6e7694f137e3f",
+      "purpose": "Phase 4 mobile boundary, verified internal slice and remaining real-device blockers"
+    },
+    {
+      "path": "docs/delivery/phase-4/device-certification-policy.json",
+      "sha256": "8758d57e0b92290286cc83725df19aa96247d31bf2cc3a6016ab4be10cc873d6",
+      "purpose": "Machine-readable fail-closed mobile permission, capability and evidence policy"
+    },
+    {
+      "path": "docs/delivery/phase-4/real-device-test-runbook.md",
+      "sha256": "14348502cd4db86ce10229436452df8f87cb2b98c5fbc226deb28ba926b3cbc2",
+      "purpose": "Physical-device baseline and blocked GPS, notification and device-trust certification procedure"
+    },
+    {
+      "path": "docs/delivery/phase-4/device-test-results-2026-10-18.json",
+      "sha256": "a71ddc02378b3359503eb0aaeef2b5eeeef7cda92ffac0ff8e5b0477aa49035d",
+      "purpose": "Redacted initial device inventory and fail-closed repository-boundary result"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/README.md",
+      "sha256": "3e7ed70e7a1cf1a613c5dea47c80cf1a8536595953cf5e9ad777c230385a9c58",
+      "purpose": "Internal React Native driver app runbook and fail-closed release boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/package.json",
+      "sha256": "59970d1ed564f06c87a6c14e0b7013fc7e50a0d5bd22d741a1ad877f5f433498",
+      "purpose": "Pinned driver mobile scripts and direct dependencies"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/.eslintrc.js",
+      "sha256": "5223df39e48a598c681c7485199c5758b48d5156e24cd15c39c1009a88c4837a",
+      "purpose": "Driver mobile lint boundary excluding exact-hash third-party vendored source"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-supply-chain.mjs",
+      "sha256": "4ef3c683e53805253978ab7ab3abf91ab07eccea7846246d9a37d93d1226ec6e",
+      "purpose": "Driver mobile dependency provenance and install-script verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-audit-boundary.mjs",
+      "sha256": "987e34bcf984f7ccd4f22844765564f3cd1bbbb19d169a9092255560b2cc5751",
+      "purpose": "Driver mobile dependency-advisory drift and production-blocker monitor"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-device-safety-boundary.mjs",
+      "sha256": "698f043bb11cbd46a3d6466b68fe3dc27763d98436a252579da81222f4d9edb0",
+      "purpose": "Fail-closed Android/iOS permission, identity, secure-storage and capability verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/device-inventory.mjs",
+      "sha256": "29191e5b7550345d7f3469ca43a3567f962308d37d70781b1dac0c67bf56218c",
+      "purpose": "Read-only physical-device inventory that drops serials, UDIDs and device names"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-braces-security-patch.mjs",
+      "sha256": "b9d800fa9a0d3b1ae677e85565634554228c55b1630b0ab447a5c228c98886a6",
+      "purpose": "Exact-source, installed-resolution and malicious-pattern verifier for the local braces fork"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-licenses.mjs",
+      "sha256": "f5eb12056b0d05601317fcaa7ad9e66bc2c54a756641cb00edbec9d48d7be1ef",
+      "purpose": "Driver mobile dependency license verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/scripts/verify-bundle-reproducibility.mjs",
+      "sha256": "60594215297435bda61c9f7b21088aff861b120a4cda86bfd822fcec1cf74709",
+      "purpose": "Two-iteration Android and iOS JavaScript bundle verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/package-lock.json",
+      "sha256": "3129445d50bd895e50e4227ebaf402d751fb03c1017c2eac992d2a6a18e984fa",
+      "purpose": "Driver mobile npm dependency graph and integrity metadata"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/package.json",
+      "sha256": "6077c6c578e17e56959e4fb4036da31b77880afc4b75291947e4284029873a89",
+      "purpose": "Private versioned manifest for the MIT-licensed braces security fork"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/LICENSE",
+      "sha256": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+      "purpose": "Preserved upstream MIT license for the vendored braces fork"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/SECURITY_PATCH.md",
+      "sha256": "65cd52ede1b08faceeaa5abfb9b268c597004db3768e02e0557b7534e5b5cf70",
+      "purpose": "Fork scope, advisory and upstream-removal note"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/index.js",
+      "sha256": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+      "purpose": "Vendored braces public API"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/compile.js",
+      "sha256": "dc98f22eee3d511785d92a00758d5f0d48efed5f5813bdecc2de430c529b5c9f",
+      "purpose": "Vendored braces compiler"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/constants.js",
+      "sha256": "f9fb688959232eee3e6ad7906a5b0e3234815db49ee857ef86983d65b917dc7c",
+      "purpose": "Vendored braces constants including the fail-closed maximum structural depth"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/expand.js",
+      "sha256": "41ccc196ebfa7b7781a634e721eb744e4e7bcb54cba427a7e3d6806a1b9e58f7",
+      "purpose": "Vendored braces expander"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/parse.js",
+      "sha256": "558d672939c8c7e9a1268c7ebe3a1c8840f991c6e39a52feae6d04d7043c8b1c",
+      "purpose": "Patched braces parser that rejects excessive structural nesting"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/stringify.js",
+      "sha256": "96c44fbf78c21d7dac04556259c808f452ff639f8ccb093758299d2cc3334a4e",
+      "purpose": "Vendored braces stringifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/vendor/braces/lib/utils.js",
+      "sha256": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+      "purpose": "Vendored braces utilities"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/App.tsx",
+      "sha256": "17e9e79a70f97c6bb5ac783938fd2aef10212148598238950c810c51d1d95526",
+      "purpose": "Driver mobile provider and navigation composition root"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/babel.config.js",
+      "sha256": "4f814c3b85c1f294ae7e4d6653bf5fc1e242e0cb096ccd827202a903f64749bf",
+      "purpose": "React Native release bundle transform configuration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/config/capabilities.ts",
+      "sha256": "f7baf14575384b5191582419c32c9de1958f2eeab0c3af21d5146d51cfc7cd13",
+      "purpose": "Fail-closed driver mobile capability declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/state/DriverRuntimeContext.tsx",
+      "sha256": "22dda92bcce3a0fe0d0f97ec0f87b5213607c894bc716817a09841a2e0a6b121",
+      "purpose": "Driver snapshot recovery, polling and offline command orchestration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/state/DriverSessionContext.tsx",
+      "sha256": "932fc33cb63db0dfe4345153bd837cfe53bc7fa005605f9c444dac8569759a82",
+      "purpose": "Debug-only synthetic session and fail-closed Release policy"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/components/Screen.tsx",
+      "sha256": "5f9745fcba5b2ff2d40af263e4a4ea378b5ab3a0cefae1b3819134493410e91f",
+      "purpose": "Safe-area-aware driver mobile screen shell"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/screens/ActivationScreen.tsx",
+      "sha256": "5ea037fd12fcd5001907e2ad20686b5fd12005891246df2f156eeeebf5c8221d",
+      "purpose": "Internal activation and visible production-lock boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/storage/secureStore.ts",
+      "sha256": "d6925e13398e8be04e0971db354397a15d59dc270cf1c359aefb44582abc0b9c",
+      "purpose": "OS-keystore session and bounded reference-only offline queue storage"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/android/app/build.gradle",
+      "sha256": "76446ac2eda269000386aec50a84642153ddb9a3f58dbc3689bd85910c69d746",
+      "purpose": "Android application identity, build hardening and unsigned release boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/android/app/src/main/AndroidManifest.xml",
+      "sha256": "e3517aa998a5cbe6c10b54b6a9762e2ee5b381e3a04323ad7ccefba5a476dcb8",
+      "purpose": "Minimal Android permission and application manifest"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/BmsDeliveryDriver.xcodeproj/project.pbxproj",
+      "sha256": "37c784f8b662ea200ae77566847450ada1fe8a5167221eebb3c5972ed0fc1e4a",
+      "purpose": "iOS target identity with isolated debug bundle identifier"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/BmsDeliveryDriver/Info.plist",
+      "sha256": "93b3ea5672fcc1c3b0e8ea58c2c05e63e013d6abc652879dafcebed7cc5d26a9",
+      "purpose": "iOS transport security and device capability declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/ios/Podfile.lock",
+      "sha256": "5c664bc1c44c36e30677da1e325f09c7119940909bf6567ac6b92226bb06b84c",
+      "purpose": "Pinned iOS native dependency graph"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/Gemfile.lock",
+      "sha256": "b06f69d9dae85c0ec8afda049f2ed59ab80f4121f44921d0d822e8407bff1aab",
+      "purpose": "Pinned CocoaPods toolchain dependency graph"
+    },
+    {
+      "path": "docs/delivery/phase-8/README.md",
+      "sha256": "553fede7ddde8e585fd4f35def104d3a88b12d8417f7e6aad7143db580ba6dbb",
+      "purpose": "Security and release-readiness decision"
+    },
+    {
+      "path": "docs/delivery/phase-9/README.md",
+      "sha256": "e92e056db88c0c25d326514b7abc3e61c2060370dfabd40764bf4cdd83d99dc2",
+      "purpose": "Pilot certification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests.json",
+      "sha256": "ce8a920a06b1f8f000191ac415924f1c311623fa5cf19ea9c374093300db5937",
+      "purpose": "Machine-readable non-authorizing approval request manifest"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/README.md",
+      "sha256": "ee0608afe09d8cdd50e5ea06973902beb145b68482ebc6481dfa1bea0d2756b1",
+      "purpose": "Approval dispatch boundary and post-approval capability sequence"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/security.md",
+      "sha256": "3f7c0b2ab6697686f37bf915564ccf171f30b0241ce0a6a1b84330132f4f4cce",
+      "purpose": "Security production-authentication and private-evidence approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/privacy-legal.md",
+      "sha256": "6e30d941543589eae7e14d479c4483413e44cf152cfc21c0b4ba4b1c930af1aa",
+      "purpose": "DPO and Legal privacy, KYC, POD and contact approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/finance-tax.md",
+      "sha256": "51636d1ae3e1b7efe5c4740125a65991ebf423e7ea82bd0197ebd6305774351e",
+      "purpose": "Finance, Tax and Legal COD and earnings approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/operations-safety.md",
+      "sha256": "97169ce280ea205501a714676e4bf1883a79dc5d2bf25f0fcb38f90b2070fd73",
+      "purpose": "Operations and Safety driver, device and support approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/sre-product.md",
+      "sha256": "f5dd2f3deb30a273e78e7933ad0de7d7f433848f9031343cd9bca0695171fd2f",
+      "purpose": "SRE and Product scale, SLO and recovery approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/approval-requests/cross-system-owners.md",
+      "sha256": "24e575600097b64be6fc495221b16d75138d2aa9f053eccc9332d259d46eb096",
+      "purpose": "Repository and BMS authority owner approval request"
+    },
+    {
+      "path": "docs/delivery/phase-9/readiness-gates.json",
+      "sha256": "76a43717d81e0f5b4682be756746b8a92f5cd63e08aaee7ebbb93f11e54834e6",
+      "purpose": "Machine-readable pilot readiness gates"
+    },
+    {
+      "path": "docs/delivery/phase-9/certification-workbook.json",
+      "sha256": "4e9fcc6cc8242cd2545346fa34c75e172067cb18d0be4e2f04da0fac071e8ab6",
+      "purpose": "Machine-readable certification artifacts, exercises and acceptance criteria"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/README.md",
+      "sha256": "e32406d2d946bde3f5a761314246b861162e6f890acb884ee97f612f4ebf2ce2",
+      "purpose": "Certification evidence handling and approval boundary"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/repository-instructions.md",
+      "sha256": "51affcb0016a1d240efd0c676e6e2538fedf427b73b423cbd6af3fec6eaa35a1",
+      "purpose": "Repository instruction certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/independent-security-review.md",
+      "sha256": "3d25af69bafa05e4bbfd5b38a653997b5f03ef0ea9605e602d975fd414a8a772",
+      "purpose": "Independent security review packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/privacy-retention.md",
+      "sha256": "5d1e6f62d9eec4adaff11938e1e3fcd5a342aaf277031911425f7943811f859f",
+      "purpose": "Privacy and retention certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/driver-device-safety.md",
+      "sha256": "30fc89d08647254ddba3c853153668e3ad3153d1edc7b714d4fc3c1c1b3e4a8c",
+      "purpose": "Driver device and safety certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/bms-cross-system.md",
+      "sha256": "e2d2e33325b774f1283c9780814739760b76f56e3d5608b6caed65a005011eda",
+      "purpose": "BMS authority and cross-system certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/finance-tax-legal.md",
+      "sha256": "4e9dfbb6cca38e9773867a32391aefee0c1eed925a506aba2458920e8ef7a62c",
+      "purpose": "Finance, tax and legal certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/admin-access-model.md",
+      "sha256": "f867fa429eb68ff087d7da46502e73a941042bb8832c49faf3085d824242e239",
+      "purpose": "Admin access and separation-of-duties packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/sre-capacity-observability.md",
+      "sha256": "5920eacbf54c9c59d7dc2158dbbd3a91004041b580973d168f3ae3128b3e3a66",
+      "purpose": "SRE capacity and observability certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/recovery-objectives.md",
+      "sha256": "6d53569a728e9eba146ddf55a5a0b952496c3710193004887e23b5924b686744",
+      "purpose": "Recovery objective and timed drill packet"
+    },
+    {
+      "path": "docs/delivery/phase-9/evidence/provider-failure-certification.md",
+      "sha256": "9b1dc7f7c71b04011691a1677a3c2713aa93b6b1bc521427b1403ac9114bb8e1",
+      "purpose": "Provider failure and credential certification packet"
+    },
+    {
+      "path": "docs/delivery/phase-10/README.md",
+      "sha256": "5dead3c5341f47c3f19bdf0de379b819ed61e266be3433fecc35191a06a38e17",
+      "purpose": "Controlled launch boundary"
+    },
+    {
+      "path": "docs/delivery/phase-10/controlled-launch-plan.json",
+      "sha256": "01a55ec5e6cee53268044d777bd2bbf0ea8eff41fa270c5c176f9243d5b3d976",
+      "purpose": "Machine-readable fail-closed launch plan"
+    },
+    {
+      "path": "docs/delivery/phase-10/launch-readiness-workbook.json",
+      "sha256": "d5b9fd454a3f839abadcdd3656ffc011818983456840b12abb947fcc55d7af53",
+      "purpose": "Machine-readable launch-control ownership and acceptance workbook"
+    },
+    {
+      "path": "docs/delivery/phase-10/production-authorization-template.md",
+      "sha256": "158844e5a6ea250dcde30ce1fb0ed3e708d528d1d2d7fd69cdfd398cc8d88dfb",
+      "purpose": "Non-authorizing production approval record template"
+    },
+    {
+      "path": "docs/delivery/phase-10/operator-checklist.md",
+      "sha256": "330a20df9f7d12a7cbdf228be72790b276d38cf21587c452fcec2e469aff424d",
+      "purpose": "Controlled launch operator evidence checklist"
+    },
+    {
+      "path": "docs/delivery/phase-10/stage-gates-and-rollback.md",
+      "sha256": "bd466317d3a6e4ee1157631bc165b68c2fcdd38682fde3e20e6c85af45c50e0b",
+      "purpose": "Non-executable stage gate and rollback template"
+    },
+    {
+      "path": "docs/delivery/phase-11/README.md",
+      "sha256": "a8b1fa63e2312ee39a922537a063c5aa0fc34d27c6df18fb7d2d526c34c0ba08",
+      "purpose": "Engineering handoff boundary"
+    },
+    {
+      "path": "docs/delivery/roadmap-closure/README.md",
+      "sha256": "6aa15d2a1429fe422b9c209bf69f0be6435e76660084ca725b582e00855dd30b",
+      "purpose": "Cross-phase closure checkpoint"
+    },
+    {
+      "path": "package.json",
+      "sha256": "ca63290207341474aa3c8b7941448a9422caa6f9a5ea9365d15a77adee5494e5",
+      "purpose": "Workspace verification command catalog"
+    },
+    {
+      "path": "packages/fleet-delivery-contracts/src/index.ts",
+      "sha256": "2807469a19f3e4fc63f4277066fedc258612c3965a30418c0543e7976fd74392",
+      "purpose": "Versioned readiness and handoff contracts"
+    },
+    {
+      "path": "packages/fleet-delivery-contracts/src/contracts.test.ts",
+      "sha256": "ce12c08d40481892c209e84ad519cfa29f94f1720bcdbb523db8eff14b0c3315",
+      "purpose": "Fail-closed contract regression tests"
+    },
+    {
+      "path": "scripts/fleet-delivery-evidence.ts",
+      "sha256": "b0464ccca00567249cedc74731437689e8ac6a1b291c20920ac48456955ba4e1",
+      "purpose": "Repository-local evidence validation"
+    },
+    {
+      "path": "scripts/fleet-delivery-readiness.ts",
+      "sha256": "534dd6d215cc54572dbdbcd9e6206e515e6ee8aa7b232fe090529647aad296f5",
+      "purpose": "Phase 9 readiness evaluator"
+    },
+    {
+      "path": "scripts/fleet-delivery-certification-pack.ts",
+      "sha256": "9474296325688b51fa1b94d0c9c52132485ea799041c2cdc7966dd83504fd723",
+      "purpose": "Phase 9 workbook and readiness-manifest drift verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-approval-requests.ts",
+      "sha256": "5797ffe6ee36b8699acde28af005076fba0285c677b9bf7c4fe9ebf20381488a",
+      "purpose": "Phase 9 approval request gate and role coverage verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-launch-readiness.ts",
+      "sha256": "397bfdf11d79992dd533c4cc0fcc43df7e87f5ff124fc79863ef2d46f9d63b31",
+      "purpose": "Phase 10 launch preflight"
+    },
+    {
+      "path": "scripts/fleet-delivery-launch-controls.ts",
+      "sha256": "e39db4cd71eccd213bb91c5f02d5b43f280b61c2f105af80a8257e4213501a93",
+      "purpose": "Launch blocker and workbook alignment verifier"
+    },
+    {
+      "path": "scripts/fleet-delivery-roadmap-status.ts",
+      "sha256": "b572ddd3a6670bffb6d83269d6f80c501965b2485276d45d4138bb7c4907d73b",
+      "purpose": "Aggregate roadmap status report"
+    },
+    {
+      "path": "scripts/fleet-delivery-handoff-verify.ts",
+      "sha256": "c2b69aedd9b9ba572955e9b73caa22aead520416c81c50ccdcf1d3a1b1d0afe4",
+      "purpose": "Handoff checksum verifier"
+    },
+    {
+      "path": "docs/delivery/phase-12/README.md",
+      "sha256": "8ac2d9737c3514a00ec0cf560d1d770a6582b5c614c1de1b19ef2e1066d6724c",
+      "purpose": "Supply-chain verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-12/supply-chain-policy.json",
+      "sha256": "d2c13b2196b26898d9e4966aaa7e1e7f3e41b30b834b0b215ae37540b028234d",
+      "purpose": "Machine-readable dependency provenance policy"
+    },
+    {
+      "path": "docs/delivery/phase-12/mobile-supply-chain-policy.json",
+      "sha256": "49b85e304ac246cb5ec3690999bc066610741d32c0cac7527befb36f955258bc",
+      "purpose": "Machine-readable driver mobile dependency provenance policy"
+    },
+    {
+      "path": "docs/delivery/phase-12/mobile-audit-boundary.json",
+      "sha256": "a42b08912c4167dae2233a21b9cd883acde7234d96c5d27d6d2ec3f56dc9d680",
+      "purpose": "Fail-closed known-advisory drift and production-enable policy"
+    },
+    {
+      "path": "docs/delivery/phase-12/mobile-braces-security-patch.json",
+      "sha256": "82e0498b2c0056f6bcfdee57356125ff0f2e9fe833de23f1ef66ab137987b5b2",
+      "purpose": "Exact-source policy for the local mobile braces remediation"
+    },
+    {
+      "path": "scripts/fleet-delivery-supply-chain.ts",
+      "sha256": "33ef81b5aac4c6077eec8428d40f81a08f1156a1193cfcd31c26691c0e37466b",
+      "purpose": "Deterministic package-lock and install-script verifier"
+    },
+    {
+      "path": ".github/workflows/fleet-delivery-gate.yml",
+      "sha256": "850e5a6d3b12ee214066a7ace595ab8177f7c3e8d89d67d44f5846ebc4a32c8c",
+      "purpose": "Fleet Delivery continuous-integration gate"
+    },
+    {
+      "path": "docs/delivery/phase-13/README.md",
+      "sha256": "475f39aaf967ff3cf39440081b6d26228e29f5dc5eeacfa30656cab0926003f8",
+      "purpose": "Secret-hygiene verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-13/secret-scan-policy.json",
+      "sha256": "d0ee52561586ff0d653b4a2aed845ac4755edcfc33ee9abeb7af98ebf03db3a9",
+      "purpose": "Machine-readable bounded secret-scan policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-secret-scan.ts",
+      "sha256": "9bcd76540afc3e080dc7b3f5710ad2437939b6eb7677b0415b420787486f2f6e",
+      "purpose": "Non-disclosing credential-pattern scanner"
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "4fa1059c9095587f7e01120a4ea1a0830c657083f47a029efa9b70412f49dac2",
+      "purpose": "Pinned dependency graph and integrity metadata"
+    },
+    {
+      "path": "docs/delivery/phase-14/README.md",
+      "sha256": "aaf411da335f5be60df0600d98fdc04f0681b6c0fe2f1f9b58c1debe99ce03f5",
+      "purpose": "Third-party license verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-14/dependency-license-policy.json",
+      "sha256": "6434934d1b7df369cd1a90e3d2c2e46dbe8829324fb7c790bbce8dc2a3b562c8",
+      "purpose": "Lock-bound dependency license policy"
+    },
+    {
+      "path": "docs/delivery/phase-14/mobile-dependency-license-policy.json",
+      "sha256": "2c5cd1d13105212f81fbedbaf5f276698a625215f70059a90b5234290edb2249",
+      "purpose": "Lock-bound driver mobile dependency license policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-license.ts",
+      "sha256": "ae4b6b2d565a9b39377da8d0d39a5ad6f0f045f5423b17da3c6aca0a423ec3c6",
+      "purpose": "Dependency license allowlist verifier"
+    },
+    {
+      "path": "docs/delivery/phase-15/README.md",
+      "sha256": "1c5a1f7ac79d39085465f8caf12613b77d68da3fbcebcab460f4ab37b42c6b75",
+      "purpose": "Reproducible-build verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-15/reproducible-build-policy.json",
+      "sha256": "aff0593778f2409aff7d8c97447ef47ea3c0d87a8a5d80e102bd4a85c9537094",
+      "purpose": "Exact build-output reproducibility policy"
+    },
+    {
+      "path": "docs/delivery/phase-15/mobile-reproducible-build-policy.json",
+      "sha256": "ca726198acd65c02e0d3c887eed1c7eda32273a0d6a8c8af53481cb8499d2986",
+      "purpose": "Two-iteration Android and iOS JavaScript bundle reproducibility policy"
+    },
+    {
+      "path": "scripts/fleet-delivery-reproducibility.ts",
+      "sha256": "7f9fe8134dc76e82cfd657aed0493a23def06ff24ffd4c489deaa7425f3e9a91",
+      "purpose": "Two-iteration build artifact verifier"
+    },
+    {
+      "path": "tsconfig.fleet-delivery.json",
+      "sha256": "7efdbc59a01b6eb83cc956f1f8451083158f1cf111d626f67b13630052dbac5f",
+      "purpose": "Fleet Delivery TypeScript compiler configuration"
+    },
+    {
+      "path": "tsup.fleet-delivery.config.ts",
+      "sha256": "6ab79c01b22e9e67530dc017a86cdc09497e8217d5f62daeb265192e1077c4f5",
+      "purpose": "Fleet Delivery production bundle configuration"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/.env.example",
+      "sha256": "da04bf789a4fc86ba73938936c509ab839fe8d9550ec62decf135f651e2c71c8",
+      "purpose": "Complete development configuration example"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/docker-compose.yml",
+      "sha256": "4ec2f1401e61096335c1eb0d095dc72d71a55a201e567b2fd3992a9db97e93fb",
+      "purpose": "Fleet Delivery local runtime configuration"
+    },
+    {
+      "path": "docs/delivery/phase-16/README.md",
+      "sha256": "756661195c1320c94cacda51368fb96efe1fe220c4be3d0c3baa23ece9c01b39",
+      "purpose": "Configuration-contract verification boundary"
+    },
+    {
+      "path": "docs/delivery/phase-16/configuration-contract.json",
+      "sha256": "996e27d3af5a9d415468eafd2857e168fb439e1197e46bc9dee6148649e8a7af",
+      "purpose": "Machine-readable environment variable contract"
+    },
+    {
+      "path": "scripts/fleet-delivery-config.ts",
+      "sha256": "82938a8881932734971e137ec4c18d9886337a46092f981ab5aef2580b60bbbd",
+      "purpose": "Environment and Compose drift verifier"
+    },
+    {
+      "path": "docs/delivery/phase-8/api-and-event-inventory.md",
+      "sha256": "b2b2d9beccff1fbfbd4faf426a72cd06130d2e49f847e9e09e7cfcfcc6b91384",
+      "purpose": "Human-readable API and event inventory"
+    },
+    {
+      "path": "apps/fleet-delivery-api/src/server.ts",
+      "sha256": "e75353a960482d48919817d60af2c5981f8d0773529640187c1a3c8d4c935429",
+      "purpose": "Fleet Delivery HTTP router and authorization source"
+    },
+    {
+      "path": "apps/fleet-delivery-api/src/phase2.integration.test.ts",
+      "sha256": "dcbe8771435ff647388bf3f72c6572bdadf5d907e785fc06a7bf9a5dad73403b",
+      "purpose": "Customer grant, spoofing denial, rotation and quote-to-Delivery DB/API proof"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0012_synthetic_customer_grants.sql",
+      "sha256": "7152f6bc2803eee36f43570bdf31409ae1312588e1129f5fc39e427380dc1d2b",
+      "purpose": "Synthetic purpose-bound customer grant table, RLS and resolver"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0013_customer_tracking_status.sql",
+      "sha256": "601dfa1d7043e6c9bad6b093af27b830f66280661acb764b8c54badc4fccdcf7",
+      "purpose": "Additive synthetic TRACK grant constraint without expanding existing grants"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/customer.ts",
+      "sha256": "89423bb398cc98d802c2ea2357a2bb8c97313131d2efa1a01d1d346b8dc70b1a",
+      "purpose": "Hash-only grant registration, authority resolution and privacy-minimal status projection"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase2.ts",
+      "sha256": "4d9f7608dcc7a10ff913c6b7eac39ba244fffea1bab8d166da7951a0aa56ac22",
+      "purpose": "Transactional live customer-grant rechecks for quote and Delivery creation"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/package.json",
+      "sha256": "26a9af0d7a1fa284cd6bcbc58e1d3a83e2471c7f2b536c99f9077382c0e1e32a",
+      "purpose": "Platform-neutral Customer App core package boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/src/index.ts",
+      "sha256": "98c6e305ef65c62496f5319b0a5f2a9704d87fa151988a294b1a9a300a43ffa6",
+      "purpose": "Strict customer activation, quote, Delivery and status client"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/src/customerCore.test.ts",
+      "sha256": "f3317efb1ef2c1c1ef6c707ae497ec9b1ae3280398b5da904e39c5f441470780",
+      "purpose": "Customer authority minimization, tracking privacy and fail-closed client tests"
+    },
+    {
+      "path": "apps/fleet-delivery-customer-core/README.md",
+      "sha256": "03e9c3232798275b126f6786936ef1cea6a45dddd3631347da2f077a8819f758",
+      "purpose": "Customer core local runbook and remaining production-app boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/README.md",
+      "sha256": "0ecc34acb104b85474ccf6eb63d151eb9c1760ab83f6413744ef2c2097ef7a9d",
+      "purpose": "Android Customer App debug-flow runbook and explicit production boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/package.json",
+      "sha256": "97b6acfa9458faa709601166e3e500fb94186242a0631b70086054fc20ace82d",
+      "purpose": "Pinned Customer App dependencies and verification commands"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/package-lock.json",
+      "sha256": "023c449b675fe17b9e6d0ae612364dc3c4163fe459e0578266355fe3ce95b94c",
+      "purpose": "Customer App npm dependency graph and integrity metadata"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/App.tsx",
+      "sha256": "b69d015708d93a618987a49c69a034eac2568ff733361ec1cc0da46559b1bc2d",
+      "purpose": "Customer session-to-search native application boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/screens/ActivationScreen.tsx",
+      "sha256": "f424fb2e9861f9bd4760973d7f7501cac7c49edf0d4c72b45eae056dc56c241f",
+      "purpose": "Debug-only activation UI and release locked-state presentation"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/screens/DeliverySearchScreen.tsx",
+      "sha256": "ece4fd309e6b169acd543db0578492f243a5dd184cb862ee5e0794de161b00b1",
+      "purpose": "Motorcycle quote, Delivery confirmation and coarse status UI"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/storage/secureStore.ts",
+      "sha256": "ce32bf349818ea6680a749a564dc65461740c65a8fab195ca6c7231bc8a6593f",
+      "purpose": "Device-only OS-keystore customer session storage"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/src/state/CustomerSessionContext.tsx",
+      "sha256": "4825b4fff8fed7216bf0cd9024459da6b0acd7be1cc92f197e9f98efd628bf34",
+      "purpose": "Fail-closed debug activation and release lock state"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/scripts/verify-native-boundary.mjs",
+      "sha256": "9ac95fc7305c43c86152735262b1e3576a0ff610074ac61fdebcae2a046ff0a1",
+      "purpose": "Built APK, merged permission, cleartext, signing and client-authority verifier"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/android/app/build.gradle",
+      "sha256": "4c9a7e09614f953c5a221cd38510112259f6b22c0ea782859383862efc5bd140",
+      "purpose": "Isolated Android identities and fail-closed release network/build policy"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/android/app/src/main/AndroidManifest.xml",
+      "sha256": "fc29ecbc0c11f9977c58df660deb04c6e9d99cdadc4c90df3a63187be4a0d829",
+      "purpose": "Minimal Customer App Android permission and backup surface"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/App.test.tsx",
+      "sha256": "e7e818904a4e577de3fc17b7459535ce916c186943d1cfd6a0168298a2147d4a",
+      "purpose": "Native activation boundary render contract"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/__tests__/presentation.test.ts",
+      "sha256": "cb88531fb6a3e3c04633596b71064c441be793db3ccc98b70f024634926848ce",
+      "purpose": "Customer package input and coarse match-stage presentation tests"
+    },
+    {
+      "path": "scripts/fleet-delivery-dev.ts",
+      "sha256": "63c736cc0e084a028df7697a897a1676fd4e81abc3f28176b65ab17c15b3f558",
+      "purpose": "Protected customer search, quote-to-Delivery and authority-separated dispatch runner"
+    },
+    {
+      "path": "scripts/fleet-delivery-dev.test.ts",
+      "sha256": "e5de0b01e340ba0dc7ae9198f1e0c72261b85c47ee08e8e9151f1b0185da7943",
+      "purpose": "Loopback configuration and synthetic cleanup guard tests"
+    },
+    {
+      "path": "docs/delivery/phase-5/README.md",
+      "sha256": "0a7167b00c1171aac5b8e8b070c302f1ed1d349f746f28687abd82d574f29004",
+      "purpose": "Synthetic Customer foundation, native Android shell and unresolved production boundary"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/README.md",
+      "sha256": "7a7ef8064023142efda9eabba43ee6fe009185f746a3b5e33b028fe6353985e0",
+      "purpose": "Local Customer native UI and Driver scenario runbook"
+    },
+    {
+      "path": "infrastructure/fleet-delivery/scripts/verify-backup-restore.sh",
+      "sha256": "9a066eb6514e3cc0a9d9bec97b4ce8cd491130d460e90159b5672242c28f119f",
+      "purpose": "Migration 0013 backup/restore and customer TRACK control proof"
+    },
+    {
+      "path": "docs/architecture/database.md",
+      "sha256": "d341bb1686ad288ece010fc9651771f79cbfc917453474371bb7612fa2e6c96d",
+      "purpose": "Customer-grant database authority, RLS and production boundary"
+    },
+    {
+      "path": "docs/delivery/phase-17/README.md",
+      "sha256": "fc5ae8695f3db6f9461faced20d0a69a2db93a7ce9cee0804848bd242b148a1f",
+      "purpose": "API authorization contract boundary"
+    },
+    {
+      "path": "docs/delivery/phase-17/api-route-inventory.json",
+      "sha256": "49a6c18e2e4ac9c7e51ad318c3a29ef222de6e95c580d434ef0dd47728f48bbd",
+      "purpose": "Machine-readable route, scope and idempotency inventory"
+    },
+    {
+      "path": "scripts/fleet-delivery-api-contract.ts",
+      "sha256": "98df9ba6ca6eaeba09007f9bea61610324d7ea5fe806b09e509baf21af6666f4",
+      "purpose": "Router source and API documentation drift verifier"
+    },
+    {
+      "path": "docs/delivery/phase-0/adrs/007-customer-tracking-authority.md",
+      "sha256": "dd08ceb337e1953dfb6fb8abf252796ed4e3fa1b7dcd8491310d480166f83d8e",
+      "purpose": "Production tracking authority decision and bounded synthetic implementation evidence"
+    },
+    {
+      "path": "docs/delivery/phase-4/state-transition-matrix.md",
+      "sha256": "960e431088da8fea709d4b931c2c15c45971838f2992c34681b9447a3b62a33d",
+      "purpose": "Synthetic pickup, delivery, POD metadata, failure and return transition authority matrix"
+    },
+    {
+      "path": "packages/fleet-delivery-domain/src/index.ts",
+      "sha256": "14bc1e34b99b2f4365688e14525c33d6395120cda086c60665ca09c2ff43ae1d",
+      "purpose": "Ordered post-pickup, completion, failure and return state machine"
+    },
+    {
+      "path": "packages/fleet-delivery-domain/src/phase2.test.ts",
+      "sha256": "28dd58a015c3a3086e8fb7fb4fe48e4bc6e220c06a00908d49c262d3c70b2465",
+      "purpose": "Happy-path and failure-return state ordering tests"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0014_synthetic_post_pickup_lifecycle.sql",
+      "sha256": "6571554dd4577248706413c2285c071a2c2b16bf87da84703588640711d6578c",
+      "purpose": "Tenant-scoped synthetic POD, failure, return, dispute and suppressed-notification schema"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0015_post_pickup_terminal_invariant.sql",
+      "sha256": "6d247bb432ab032a80ea6159c619604bfcf36c6138bf6095ae987f3b644871b6",
+      "purpose": "Named expanded Delivery terminal-state invariant"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0016_remove_legacy_terminal_constraint.sql",
+      "sha256": "bf14bbd1e0da0c94647acd24f61a3ce672da9549e98d26a3c09ba1a942d94500",
+      "purpose": "Forward removal of the legacy unnamed terminal-state constraint"
+    },
+    {
+      "path": "packages/fleet-delivery-database/migrations/0017_restore_delivery_amount_balance_invariant.sql",
+      "sha256": "625baebd906affa249c9423f99816d3d083d61c2eb15ffe6547c11f8f9fa9d18",
+      "purpose": "Corrective restoration of the named Delivery amount-balance guard"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase3.ts",
+      "sha256": "4043c833a0035a4e99989e8fbc818565f283628c5c8e9da3c0f6ab117d5468b6",
+      "purpose": "Active post-pickup and return assignment projection"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/phase4.ts",
+      "sha256": "72ed07d0e3750cfe73548b11edc2d0a8e00b2ee259fdce4126602a82d2022b5e",
+      "purpose": "Tenant-atomic driver journey, synthetic POD/failure and dispute services"
+    },
+    {
+      "path": "packages/fleet-delivery-database/src/foundation.integration.test.ts",
+      "sha256": "5f605b52377fa9b3f7808827b70d396d780f1e108e93bfb84b886faaad1d6e15",
+      "purpose": "Migration rerun, post-pickup RLS and named invariant proof"
+    },
+    {
+      "path": "apps/fleet-delivery-api/src/phase3.integration.test.ts",
+      "sha256": "8b11076d6cfe697036afc24ec92a6d4ec83fd821421d9675009f2de516bb2ff8",
+      "purpose": "End-to-end delivery, POD, completion and dispute API integration proof"
+    },
+    {
+      "path": "apps/fleet-delivery-driver-core/src/index.ts",
+      "sha256": "d7483ad43d67cdd82de7ddd2be83d6919849f23e1dd06a424cc3b63d957d10ca",
+      "purpose": "Reference-only offline queue for complete synthetic driver journeys"
+    },
+    {
+      "path": "apps/fleet-delivery-driver-core/src/driverCore.test.ts",
+      "sha256": "156ecb3fb5157b05c8f75bdd42620fa91de0a2cb55f485ec4f38442f395fa244",
+      "purpose": "Synthetic POD metadata privacy and retry behavior test"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/screens/HomeScreen.tsx",
+      "sha256": "beb647dd5b42041750de32f43a87562beca0dc5c29029b5da62c168bef9357f2",
+      "purpose": "Driver controls for synthetic delivery, failure and return actions"
+    },
+    {
+      "path": "apps/fleet-delivery-driver/src/i18n.tsx",
+      "sha256": "67de9d199e4867cd0e9eb72a75c0cda847b3269910e2112b89aca89726e80fdb",
+      "purpose": "Bilingual post-pickup driver action labels"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/.gitignore",
+      "sha256": "60854a337d2e7b320fd32c37034e005aaf2f97c7eb3c80d7c078a3d65c6ffdf4",
+      "purpose": "Customer native dependency and build-artifact exclusion boundary"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/Podfile",
+      "sha256": "521e7e39a470aa6f67ff713bd1458bce82c55c7ef32e9fc103a6c73714840ac1",
+      "purpose": "Customer iOS React Native native-module configuration"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/Podfile.lock",
+      "sha256": "b8d08a669986de8968fe95124b0006550cf8fbdb2ed21498c9fb569f29230a5e",
+      "purpose": "Pinned Customer iOS native dependency graph"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer.xcodeproj/project.pbxproj",
+      "sha256": "4c885881fdd517864ee5f0cfcb6969c41c5cec371d4e5d2f66cf8ce8a2d13853",
+      "purpose": "Customer iOS Debug and Release target identities and build phases"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/AppDelegate.swift",
+      "sha256": "43022cf858b487d4feb1c93ee2cb8305c93ac2dd73d6ce010003ebbb8f0dd08d",
+      "purpose": "Customer React Native iOS application bootstrap"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/Info.plist",
+      "sha256": "e3bb54129f3ceb74bacd0c0b1b8fe7ce02f81acc6d01cd54aae194e176d730eb",
+      "purpose": "Fail-closed Customer iOS transport and permission declaration"
+    },
+    {
+      "path": "apps/fleet-delivery-customer/ios/BmsDeliveryCustomer/PrivacyInfo.xcprivacy",
+      "sha256": "590759b762398ab2ffe8e0d4dae6d61d6c202a2d6c3567eb90dcc6de9cd9c3c1",
+      "purpose": "Customer iOS no-tracking privacy manifest"
+    }
+  ],
+  "unresolvedGateRefs": [
+    "docs/delivery/phase-9/readiness-gates.json",
+    "docs/delivery/phase-10/controlled-launch-plan.json"
+  ],
+  "verificationCommands": [
+    "npm run certification:verify",
+    "npm run approval-requests:verify",
+    "npm run pilot:readiness",
+    "npm run launch-controls:verify",
+    "npm run launch:readiness",
+    "npm run roadmap:status",
+    "npm run handoff:verify",
+    "npm run supply-chain:verify",
+    "npm run secret-scan:verify",
+    "npm run license:verify",
+    "npm run reproducibility:verify",
+    "npm run config:verify",
+    "npm run api-contract:verify",
+    "cd apps/fleet-delivery-driver && npm run typecheck && npm run test:ci && npm run lint && npm run verify:device-safety",
+    "cd apps/fleet-delivery-driver && npm run verify:security-patch && npm run verify:supply-chain && npm run verify:audit-boundary && npm run verify:licenses",
+    "cd apps/fleet-delivery-driver && npm run verify:reproducibility",
+    "cd apps/fleet-delivery-driver/android && ./gradlew assembleDebug assembleRelease",
+    "cd apps/fleet-delivery-customer && npm run typecheck && npm run test:ci && npm run lint && npm run android:assemble && npm run verify:native-boundary -- android",
+    "cd apps/fleet-delivery-customer && npm run ios:pods && npm run ios:build && npm run verify:native-boundary -- ios && npm audit --omit=dev --audit-level=high",
+    "npm run gate"
+  ]
+}

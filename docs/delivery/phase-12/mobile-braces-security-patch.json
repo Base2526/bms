@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "phase": 12,
+  "mode": "MOBILE_LOCAL_SECURITY_PATCH",
+  "productionAuthorized": false,
+  "securityApprovalRequired": true,
+  "advisory": "GHSA-vfj7-8cjw-p6xm",
+  "upstreamPackage": "braces",
+  "upstreamVersion": "3.0.3",
+  "upstreamIntegrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
+  "patchedVersion": "3.0.4-bms.1",
+  "directDependency": "file:vendor/braces",
+  "override": "$braces",
+  "vendorPath": "apps/fleet-delivery-driver/vendor/braces",
+  "maximumStructuralDepth": 100,
+  "files": {
+    "LICENSE": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+    "SECURITY_PATCH.md": "65cd52ede1b08faceeaa5abfb9b268c597004db3768e02e0557b7534e5b5cf70",
+    "index.js": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+    "lib/compile.js": "dc98f22eee3d511785d92a00758d5f0d48efed5f5813bdecc2de430c529b5c9f",
+    "lib/constants.js": "f9fb688959232eee3e6ad7906a5b0e3234815db49ee857ef86983d65b917dc7c",
+    "lib/expand.js": "41ccc196ebfa7b7781a634e721eb744e4e7bcb54cba427a7e3d6806a1b9e58f7",
+    "lib/parse.js": "558d672939c8c7e9a1268c7ebe3a1c8840f991c6e39a52feae6d04d7043c8b1c",
+    "lib/stringify.js": "96c44fbf78c21d7dac04556259c808f452ff639f8ccb093758299d2cc3334a4e",
+    "lib/utils.js": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+    "package.json": "6077c6c578e17e56959e4fb4036da31b77880afc4b75291947e4284029873a89"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "schemaVersion": 1,
+  "phase": 9,
+  "mode": "PILOT_CERTIFICATION",
+  "evaluatedAt": "2026-10-18T00:00:00.000Z",
+  "productionEnabled": false,
+  "separateProductionAuthorizationRequired": true,
+  "gates": [
+    {
+      "id": "synthetic-foundation",
+      "title": "Synthetic engineering foundation",
+      "status": "PASS",
+      "ownerRoles": ["Delivery Engineering"],
+      "requiredApprovals": [],
+      "evidence": [
+        "docs/delivery/phase-8/README.md",
+        "docs/delivery/phase-8/api-and-event-inventory.md",
+        "docs/delivery/phase-8/release-and-recovery-runbook.md"
+      ],
+      "blockers": [],
+      "approvals": []
+    },
+    {
+      "id": "repository-instructions",
+      "title": "Complete repository instruction set",
+      "status": "BLOCKED",
+      "ownerRoles": ["Repository Owner"],
+      "requiredApprovals": ["Repository Owner"],
+      "evidence": [],
+      "blockers": ["RTK.md referenced by AGENTS.md is missing"],
+      "approvals": []
+    },
+    {
+      "id": "independent-security-review",
+      "title": "Independent security and abuse review",
+      "status": "BLOCKED",
+      "ownerRoles": ["Security"],
+      "requiredApprovals": ["Security"],
+      "evidence": [
+        "docs/delivery/phase-9/evidence/independent-security-review.md",
+        "docs/delivery/phase-12/mobile-braces-security-patch.json",
+        "docs/delivery/phase-12/mobile-audit-boundary.json"
+      ],
+      "blockers": ["Engineering supplied a local mobile dependency remediation packet, but no independent Security review or approval exists"],
+      "approvals": []
+    },
+    {
+      "id": "privacy-retention",
+      "title": "PDPA, exact-location and evidence retention approval",
+      "status": "BLOCKED",
+      "ownerRoles": ["DPO", "Legal"],
+      "requiredApprovals": ["DPO", "Legal"],
+      "evidence": [],
+      "blockers": ["Collection purpose, retention/deletion schedule, legal hold and data-subject process are unresolved"],
+      "approvals": []
+    },
+    {
+      "id": "driver-device-safety",
+      "title": "Driver identity, device, safety and support certification",
+      "status": "BLOCKED",
+      "ownerRoles": ["Operations", "Safety", "Mobile Engineering"],
+      "requiredApprovals": ["Operations", "Safety"],
+      "evidence": [
+        "docs/delivery/phase-4/device-certification-policy.json",
+        "docs/delivery/phase-4/real-device-test-runbook.md",
+        "docs/delivery/phase-4/device-test-results-2026-10-18.json"
+      ],
+      "blockers": ["Fail-closed repository checks pass, but no physical baseline ran because no device was online; KYC policy, target-device approvals, GPS/background-location behavior, push lifecycle, device trust, permission withdrawal and real-device journeys remain unverified"],
+      "approvals": []
+    },
+    {
+      "id": "bms-cross-system",
+      "title": "BMS authority and cross-system contract certification",
+      "status": "BLOCKED",
+      "ownerRoles": ["BMS Architecture", "Commerce Owner", "Inventory Owner"],
+      "requiredApprovals": ["BMS Architecture", "Commerce Owner", "Inventory Owner"],
+      "evidence": [],
+      "blockers": ["Service principal, handoff/stock authority, customer tracking grant, provider/consumer contracts and cross-system E2E are unresolved"],
+      "approvals": []
+    },
+    {
+      "id": "finance-tax-legal",
+      "title": "Finance, tax and legal operating model",
+      "status": "BLOCKED",
+      "ownerRoles": ["Finance", "Tax", "Legal"],
+      "requiredApprovals": ["Finance", "Tax", "Legal"],
+      "evidence": [],
+      "blockers": ["COD custody, commission, earnings, settlement, refund, payout, transfer and tax policy remain unresolved and disabled"],
+      "approvals": []
+    },
+    {
+      "id": "admin-access-model",
+      "title": "Admin placement, federation and separation of duties",
+      "status": "BLOCKED",
+      "ownerRoles": ["Product", "Security", "BMS Architecture"],
+      "requiredApprovals": ["Product", "Security"],
+      "evidence": [],
+      "blockers": ["Tenant/platform scope, private-evidence access and finance separation of duties are unresolved"],
+      "approvals": []
+    },
+    {
+      "id": "sre-capacity-observability",
+      "title": "Approved scale, SLO, observability and incident ownership",
+      "status": "BLOCKED",
+      "ownerRoles": ["SRE", "Product"],
+      "requiredApprovals": ["SRE", "Product"],
+      "evidence": [],
+      "blockers": ["Pilot volume, SLO, alert thresholds, capacity test, infrastructure topology and incident command are not approved"],
+      "approvals": []
+    },
+    {
+      "id": "recovery-objectives",
+      "title": "Recovery objectives and operator drill",
+      "status": "BLOCKED",
+      "ownerRoles": ["SRE", "Operations"],
+      "requiredApprovals": ["SRE", "Operations"],
+      "evidence": ["docs/delivery/phase-8/release-and-recovery-runbook.md"],
+      "blockers": ["Local restore mechanics passed, but approved RPO/RTO, offsite recovery and timed operator drill are absent"],
+      "approvals": []
+    },
+    {
+      "id": "provider-failure-certification",
+      "title": "External provider and credential failure certification",
+      "status": "BLOCKED",
+      "ownerRoles": ["SRE", "Security", "Integration Owner"],
+      "requiredApprovals": ["SRE", "Security", "Integration Owner"],
+      "evidence": [],
+      "blockers": ["No approved non-production credentials, network boundary test, provider outage suite or rotation drill exists"],
+      "approvals": []
+    }
+  ]
+}

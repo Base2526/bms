@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "phase": 4,
+  "mode": "FAIL_CLOSED_DEVICE_CERTIFICATION",
+  "productionAuthorized": false,
+  "dataHandling": {
+    "accounts": "SYNTHETIC_ONLY",
+    "environments": ["LOCAL", "NON_PRODUCTION"],
+    "persistDeviceIdentifiers": false,
+    "persistCoordinates": false,
+    "persistPushTokens": false
+  },
+  "applicationIdentity": {
+    "androidRelease": "com.bms.delivery.driver",
+    "androidDebugSuffix": ".debug",
+    "iosRelease": "com.bms.delivery.driver",
+    "iosDebug": "com.bms.delivery.driver.debug"
+  },
+  "android": {
+    "allowedPermissions": ["android.permission.INTERNET"],
+    "requiredApplicationAttributes": {
+      "android:allowBackup": "false"
+    }
+  },
+  "ios": {
+    "forbiddenInfoPlistKeys": [
+      "NSLocationWhenInUseUsageDescription",
+      "NSLocationAlwaysUsageDescription",
+      "NSLocationAlwaysAndWhenInUseUsageDescription",
+      "NSCameraUsageDescription",
+      "NSUserNotificationUsageDescription",
+      "UIBackgroundModes"
+    ],
+    "forbiddenEntitlementKeys": ["aps-environment"],
+    "requiresEmptyCollectedDataTypes": true,
+    "requiresTrackingDisabled": true
+  },
+  "secureStorage": {
+    "requiredAccessibility": "WHEN_UNLOCKED_THIS_DEVICE_ONLY",
+    "maximumOfflineQueueBytes": 65536,
+    "maximumOfflineCommands": 100
+  },
+  "blockedCapabilities": [
+    "productionAuthentication",
+    "realDeviceLocation",
+    "kycDocumentCapture",
+    "podPhotoCapture",
+    "pushNotifications",
+    "customerContact",
+    "codAndEarnings"
+  ],
+  "forbiddenRuntimePackages": [
+    "@notifee/react-native",
+    "@react-native-firebase/messaging",
+    "react-native-background-geolocation",
+    "react-native-geolocation-service",
+    "react-native-image-picker",
+    "react-native-permissions",
+    "react-native-push-notification"
+  ],
+  "physicalSuites": {
+    "allowedWithoutLocationOrPushApproval": [
+      "install-and-identity",
+      "permission-absence",
+      "synthetic-login-boundary",
+      "network-loss-and-recovery",
+      "app-kill-and-restart",
+      "secure-storage-sign-out",
+      "release-activation-denial"
+    ],
+    "blockedPendingApprovalAndImplementation": [
+      "foreground-gps",
+      "background-gps",
+      "location-permission-withdrawal",
+      "foreground-push",
+      "background-push",
+      "terminated-push",
+      "push-token-rotation",
+      "remote-device-revocation",
+      "root-or-jailbreak-response"
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "name": "bms-fleet-delivery-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/fleet-delivery-api",
+    "apps/fleet-delivery-customer-core",
+    "apps/fleet-delivery-driver-core",
+    "apps/fleet-delivery-worker",
+    "packages/fleet-delivery-*"
+  ],
+  "scripts": {
+    "build": "tsup --config tsup.fleet-delivery.config.ts",
+    "typecheck": "tsc -p tsconfig.fleet-delivery.json --noEmit",
+    "test:pure": "node --import tsx --test packages/fleet-delivery-contracts/src/contracts.test.ts packages/fleet-delivery-domain/src/*.test.ts apps/fleet-delivery-api/src/server.test.ts apps/fleet-delivery-api/src/serviceAuth.test.ts apps/fleet-delivery-customer-core/src/*.test.ts apps/fleet-delivery-driver-core/src/*.test.ts scripts/fleet-delivery-dev.test.ts",
+    "test:db": "node --import tsx --test packages/fleet-delivery-database/src/*.integration.test.ts apps/fleet-delivery-api/src/*.integration.test.ts",
+    "test": "npm run test:pure",
+    "migrate": "tsx apps/fleet-delivery-api/src/migrate.ts",
+    "dev:bootstrap": "tsx scripts/fleet-delivery-dev.ts bootstrap",
+    "dev:scenario": "tsx scripts/fleet-delivery-dev.ts scenario",
+    "dev:customer-flow": "tsx scripts/fleet-delivery-dev.ts customer-flow",
+    "dev:customer-dispatch": "tsx scripts/fleet-delivery-dev.ts customer-dispatch",
+    "dev:customer-complete": "tsx scripts/fleet-delivery-dev.ts customer-complete",
+    "dev:customer-return": "tsx scripts/fleet-delivery-dev.ts customer-return",
+    "dev:cleanup": "tsx scripts/fleet-delivery-dev.ts cleanup",
+    "certification:verify": "tsx scripts/fleet-delivery-certification-pack.ts",
+    "approval-requests:verify": "tsx scripts/fleet-delivery-approval-requests.ts",
+    "pilot:readiness": "tsx scripts/fleet-delivery-readiness.ts",
+    "launch-controls:verify": "tsx scripts/fleet-delivery-launch-controls.ts",
+    "launch:readiness": "tsx scripts/fleet-delivery-launch-readiness.ts",
+    "roadmap:status": "tsx scripts/fleet-delivery-roadmap-status.ts",
+    "handoff:verify": "tsx scripts/fleet-delivery-handoff-verify.ts",
+    "supply-chain:lock": "tsx scripts/fleet-delivery-supply-chain.ts",
+    "supply-chain:verify": "npm run supply-chain:lock && npm audit --omit=dev --audit-level=high",
+    "secret-scan:verify": "tsx scripts/fleet-delivery-secret-scan.ts",
+    "license:verify": "tsx scripts/fleet-delivery-license.ts",
+    "reproducibility:verify": "tsx scripts/fleet-delivery-reproducibility.ts",
+    "config:verify": "tsx scripts/fleet-delivery-config.ts",
+    "api-contract:verify": "tsx scripts/fleet-delivery-api-contract.ts",
+    "gate": "npm run typecheck && npm run test:pure && npm run build"
+  },
+  "dependencies": {
+    "ioredis": "5.8.1",
+    "jose": "6.1.0",
+    "pg": "8.16.3",
+    "zod": "4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.11",
+    "@types/pg": "8.15.5",
+    "tsup": "8.5.0",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22.11.0"
+  }
+}
