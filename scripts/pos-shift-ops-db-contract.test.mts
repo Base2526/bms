@@ -768,9 +768,25 @@ test("a pending POS sale recovers after UNKNOWN product VAT is classified", asyn
       [tenantId, SKU]
     );
 
+    const stockSnapshot = async () => (await query<{ current_stock: number; reserved_stock: number }>(
+      `SELECT current_stock, reserved_stock FROM bms_inventory
+        WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size=$4`,
+      [tenantId, locationId, SKU, SIZE]
+    )).rows[0];
+    const stockBefore = await stockSnapshot();
     const first = await recordPosSale(input);
     assert.equal(first.status, "PAYMENT_FAILED", JSON.stringify(first));
     assert.match(String((first as any).reason ?? ""), /ยังไม่ได้ระบุประเภท VAT/);
+
+    // Both clients preserve this exact key/payload while the operator corrects VAT.
+    const stockPending = await stockSnapshot();
+    assert.equal(Number(stockPending.current_stock), Number(stockBefore.current_stock));
+    assert.equal(Number(stockPending.reserved_stock), Number(stockBefore.reserved_stock) + 1);
+    for (let retry = 0; retry < 2; retry++) {
+      const refused = await recordPosSale(input);
+      assert.equal(refused.status, "PAYMENT_FAILED");
+      assert.deepEqual(await stockSnapshot(), stockPending, "repeated refusal must not reserve more stock");
+    }
 
     const pending = await query<{ id: string; status: string; vat_category: string }>(
       `SELECT o.id, o.status, oi.vat_category
@@ -780,6 +796,7 @@ test("a pending POS sale recovers after UNKNOWN product VAT is classified", asyn
       [tenantId, input.idempotencyKey]
     );
     assert.equal(pending.rows[0]?.status, "PENDING", "invoice failure must leave the reserved order retryable");
+    assert.equal(pending.rows.length, 1, "repeated VAT refusal still owns exactly one order/item");
     assert.equal(pending.rows[0]?.vat_category, "UNKNOWN", "the original order captured the unresolved VAT value");
 
     await query(
@@ -790,6 +807,20 @@ test("a pending POS sale recovers after UNKNOWN product VAT is classified", asyn
     assert.equal(retried.status, "SOLD", JSON.stringify(retried));
     assert.equal(retried.status === "SOLD" ? retried.replayed : false, true,
       "the retry must finish the original order rather than create another bill");
+    const replayed = await recordPosSale(input);
+    assert.equal(replayed.status, "SOLD");
+    if (replayed.status === "SOLD" && retried.status === "SOLD") {
+      assert.equal(replayed.orderId, pending.rows[0].id);
+      assert.equal(replayed.orderId, retried.orderId);
+    }
+    const stockSold = await stockSnapshot();
+    assert.equal(Number(stockSold.current_stock), Number(stockBefore.current_stock) - 1);
+    assert.equal(Number(stockSold.reserved_stock), Number(stockBefore.reserved_stock));
+    const paymentCount = await query<{ n: string }>(
+      `SELECT count(*)::text AS n FROM bms_payments WHERE tenant_id=$1 AND order_id=$2`,
+      [tenantId, pending.rows[0].id]
+    );
+    assert.equal(Number(paymentCount.rows[0].n), 1, "successful retries must not collect payment twice");
 
     const repaired = await query<{
       orders: string;

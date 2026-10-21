@@ -47,13 +47,14 @@ function effectsHarness(initial: CheckoutPayment[]) {
   return {
     payments: () => payments,
     replace: (next: CheckoutPayment[]) => { payments = next; },
-    render: (total: number, bill = "FAKE-group", busy = false, saleMode = "SALE") => {
+    render: (total: number, bill = "FAKE-group", busy = false, saleMode = "SALE", pending = false) => {
       submitting.current = busy;
       let cursor = 0;
       const effects: (() => void)[] = [];
       new Function("payments", "total", "source", "boardGameParams", "restaurantCheckId", "saleMode", "submitting",
-        "submittedRef", "useEffect", "useRef", "setPayments", "setSaleMode", "syncSingleCheckoutPayment", compiled)(
+        "submittedRef", "saleAttemptRef", "useEffect", "useRef", "setPayments", "setSaleMode", "syncSingleCheckoutPayment", compiled)(
         payments, total, "board_game", { boardGameBillingGroupId: bill }, null, saleMode, busy, submitting,
+        { current: pending ? { input: { idempotencyKey: "original" } } : null },
         (effect: () => void, deps: unknown[]) => {
           const before = previous[cursor];
           if (!before || deps.some((v, i) => !Object.is(v, before[i]))) effects.push(effect);
@@ -82,6 +83,15 @@ test("native total refresh preserves explicit cash and split rows; only a new bi
   h.render(100, "FAKE-new-group");
   assert.equal(h.payments().length, 1);
   assert.equal(h.payments()[0].tendered, 100);
+});
+
+test("native pending bill freezes tender after submit unlock and while live totals refresh", () => {
+  const h = effectsHarness([{ id: "cash", method: "cash", amount: 100, tendered: 120, manualTender: true }]);
+  h.render(100);
+  h.render(200, "FAKE-group", true, "SALE", true);
+  h.render(300, "FAKE-group", false, "SALE", true);
+  assert.equal(h.payments()[0].amount, 100);
+  assert.equal(h.payments()[0].tendered, 120);
 });
 
 test("native split collapse and submit unlock reconcile automatic cash; deposit is not full-bill cash", () => {

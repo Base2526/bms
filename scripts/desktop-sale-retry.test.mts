@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import test from "node:test";
+import { PosConnectionError, posErrorConnectionStatus } from "../packages/pos-client-core/src/operation.ts";
+import { PosSaleResultError } from "../packages/pos-client-core/src/saleRetry.ts";
 import { syncSingleCheckoutPayment, type CheckoutPayment } from "../apps/web/components/pos-desktop/checkoutPayment.ts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
@@ -13,7 +15,7 @@ class PosGraphqlError extends Error {
   constructor(message: string, public code: string | null, public httpStatus: number | null = null) { super(message); }
 }
 function harness(options: { scan?: () => Promise<boolean>; responses?: unknown[] } = {}) {
-  const requests: unknown[] = [], errors: string[] = [], events: string[] = [];
+  const requests: any[] = [], errors: string[] = [], events: string[] = [], connections: string[] = [];
   const attempt = { current: null as any }, submitting = { current: false };
   let sequence = 0;
   const responses = [...(options.responses ?? [{ bmsPosSale: { status: "SOLD", orderId: "FAKE-order" } }])];
@@ -29,13 +31,58 @@ function harness(options: { scan?: () => Promise<boolean>; responses?: unknown[]
       if (response instanceof Error) throw response;
       return response;
     },
-    setReceipt: () => events.push("receipt"), sendFlow: () => events.push("completed"), setConnection: () => {},
+    setReceipt: () => events.push("receipt"), sendFlow: () => events.push("completed"), setConnection: (value: string) => connections.push(value),
+    PosSaleResultError, posErrorConnectionStatus,
     loadReceiptPaper: async () => {}, PosGraphqlError, messageOf: (error: Error) => error.message,
     decidedCodes: new Set(["BAD_USER_INPUT", "FORBIDDEN"]),
   };
   const submit = new Function(...Object.keys(deps), `${compiled}; return submitSale;`)(...Object.values(deps));
-  return { submit, requests, errors, events, attempt, submitting };
+  return { submit, requests, errors, events, attempt, submitting, connections };
 }
+
+test("VAT failure, denied retry and timeout preserve the original bill and exact tender until SOLD", async () => {
+  let pricingChecks = 0;
+  const h = harness({ scan: async () => { pricingChecks++; return true; }, responses: [
+    { bmsPosSale: { status: "PAYMENT_FAILED", reason: "ยังไม่ได้ระบุประเภท VAT" } },
+    new PosGraphqlError("ไม่มีสิทธิ์", "FORBIDDEN", 403),
+    new PosConnectionError("network failed"),
+    { bmsPosSale: { status: "SOLD", orderId: "original-order" } },
+  ] });
+  await h.submit();
+  assert.ok(h.attempt.current);
+  assert.equal(h.connections.at(-1), "online");
+  assert.doesNotMatch(h.errors[0], /ยังไม่ทราบผล/);
+  const original = h.requests[0];
+  await h.submit();
+  assert.ok(h.attempt.current, "a permission change cannot abandon a previously reserved order");
+  assert.equal(h.connections.at(-1), "online");
+  await h.submit();
+  assert.equal(h.connections.at(-1), "offline");
+  await h.submit();
+  assert.equal(h.attempt.current, null);
+  assert.equal(h.connections.at(-1), "online");
+  assert.equal(pricingChecks, 1, "retry must not reprice a reserved bill or re-evaluate already-used points");
+  assert.ok(h.requests.every(payload => payload === original));
+  assert.equal(new Set(h.requests.map(payload => payload.input.idempotencyKey)).size, 1);
+  assert.deepEqual(h.events, ["receipt", "completed"]);
+});
+
+test("business rejections and malformed responses do not report a network outage", async () => {
+  for (const response of [
+    { bmsPosSale: { status: "PAYMENT_MISMATCH", reason: "ยอดไม่ตรง" } },
+    { bmsPosSale: { status: "STOCK_SHORT" } },
+    { bmsPosSale: { status: "SOLD" } },
+    new PosGraphqlError("ไม่มีสิทธิ์", "FORBIDDEN", 403),
+  ]) {
+    const h = harness({ responses: [response] });
+    await h.submit();
+    assert.equal(h.connections.at(-1), "online");
+    assert.ok(!h.connections.includes("offline"));
+  }
+  const local = harness({ scan: async () => { throw new Error("ไม่พบสินค้า"); } });
+  await local.submit();
+  assert.deepEqual(local.connections, []);
+});
 
 test("two clicks before a render await one pricing check and send one sale", async () => {
   let resolve!: (value: boolean) => void;

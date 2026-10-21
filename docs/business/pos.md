@@ -1488,6 +1488,18 @@ Three rules the write path enforces:
   settlement fills only its still-`UNKNOWN` item snapshots from the current product `V`/`N` values
   inside the payment/stock/tax transaction. Existing `V`/`N` snapshots and issued documents are
   never rewritten.
+- **Desktop and native checkout retain a pending sale's entire request.** `PAYMENT_FAILED` and
+  `SERVER_ERROR`, a missing result, or an incomplete success do not create a fresh idempotency key.
+  Retrying skips new-basket pricing/benefit previews and reuses the original products, coupon,
+  points and tender. A subsequent permission denial cannot erase an earlier pending attempt.
+  Fresh definitive rejections (for example invalid coupon or payment mismatch) still allow correction.
+  The native screen holds the operator on a read-only retry view; eligible cash recovery keeps its
+  durable staged row. Explicit business failures require manual retry rather than automatic tender.
+  Successful settlement clears the attempt even if refreshing the sales list fails afterward.
+- **Connection health and sale outcome are separate.** Business rejections and GraphQL error
+  responses show their own messages. Only transport failure, timeout or HTTP service unavailability
+  changes API health to offline; local validation/storage errors do not change it. An incomplete
+  response can leave payment uncertain while the server remains reachable.
 
 The bulk mutation requires `tax.setting.manage`, not `product.edit`: classifying the whole shop's
 goods for tax is not the same decision as editing a product's name or price.

@@ -59,7 +59,8 @@ try {
         else if (q.includes("query DesktopBenefitsPreview")) data = { bmsPosMemberPreview: preview(variables.input) };
         else if (q.includes("mutation MobilePosSale")) {
           sales.push(variables.input);
-          data = { bmsPosSale: { status: "SOLD", orderId: savedReceipt.orderId, receiptNo: savedReceipt.receiptNo,
+          data = sales.length === 1 ? { bmsPosSale: { status: "PAYMENT_FAILED", reason: "FAKE VAT category missing" } }
+            : { bmsPosSale: { status: "SOLD", orderId: savedReceipt.orderId, receiptNo: savedReceipt.receiptNo,
             total: 9559, cashTendered: savedTender, cashChange: savedChange, roundingAmount: 0 } };
         }
         else if (q.includes("query DesktopPosLastSale")) data = { bmsPosLastSale: savedReceipt };
@@ -132,6 +133,11 @@ try {
       if (width === 1440) await page.getByRole("button", { name: "พอดี", exact: true }).click();
       else await page.getByLabel("รับเงินมา", { exact: true }).fill("12354");
       await page.getByRole("button", { name: /ยืนยันรับชำระ/ }).click();
+      await page.getByRole("alert").filter({ hasText: "FAKE VAT category missing" }).waitFor();
+      assert.equal(await page.locator('[data-pos-connection="offline"]').count(), 0, "business rejection keeps connection online");
+      assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).isDisabled(), true, "pending tender is frozen");
+      await page.getByRole("button", { name: "ลองบันทึกซ้ำด้วยรหัสเดิม", exact: true }).click();
+      assert.deepEqual(sales[1], sales[0], "VAT correction retries the same key, basket and tender");
       await page.locator("#pos-receipt").waitFor();
       const dialog = page.getByRole("dialog", { name: "ชำระเงินสำเร็จ" });
       await dialog.waitFor();
@@ -140,7 +146,7 @@ try {
       const dialogBounds = await dialog.boundingBox();
       assert.ok(dialogBounds.x >= 0 && dialogBounds.x + dialogBounds.width <= width, "receipt dialog fits viewport");
       assert.ok(dialogBounds.y >= 0 && dialogBounds.y + dialogBounds.height <= height, "receipt dialog fits viewport height");
-      assert.equal(sales.length, 1);
+      assert.equal(sales.length, 2);
       assert.equal(sales[0].payments[0].amount, 9559);
       assert.equal(sales[0].payments[0].cashTendered, savedTender);
       const paper = await page.locator("#pos-receipt").innerText();
@@ -161,10 +167,10 @@ try {
       await page.keyboard.press("Escape");
       await dialog.waitFor({ state: "hidden" });
       await page.getByLabel("สแกนบาร์โค้ดหรือรหัสสินค้า").waitFor();
-      assert.equal(sales.length, 1, "closing a paid receipt never submits another sale");
+      assert.equal(sales.length, 2, "closing a paid receipt never submits another sale");
       assert.deepEqual(mutations, []);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${platform} metadata, ${width}x${height}, scale ${deviceScaleFactor}: checkout, receipt dialog, print geometry and close; one intercepted fixture sale, no live writes`);
+      console.log(`PASS ${platform} metadata, ${width}x${height}, scale ${deviceScaleFactor}: VAT retry preserves one sale key, connection, receipt, printing and close; no live writes`);
     } catch (error) {
       console.error((await page.locator("body").innerText()).slice(-6500));
       await page.screenshot({ path: `${output}/${width}-failure.png`, fullPage: true });

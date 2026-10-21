@@ -1,4 +1,4 @@
-import { runWithOperationTimeout } from "@pos-core/operation";
+import { PosConnectionError, runWithOperationTimeout } from "@pos-core/operation";
 
 export const POS_BOOTSTRAP_QUERY = `
   query PosBootstrap {
@@ -306,6 +306,8 @@ export async function posGraphqlRequest<T>(
       },
       body: JSON.stringify({ query, variables }),
       signal,
+    }).catch((error: unknown) => {
+      throw new PosConnectionError(error instanceof Error ? error.message : "ติดต่อเซิร์ฟเวอร์ไม่ได้");
     });
     const body = (await response.json().catch(() => null)) as {
       data?: T;

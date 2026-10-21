@@ -2,6 +2,32 @@ let operationSequence = 0;
 
 export const POS_OPERATION_TIMEOUT_MS = 15_000;
 
+export class PosConnectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PosConnectionError";
+  }
+}
+
+/** Reachability is independent of whether a business action was accepted. */
+export function posErrorConnectionStatus(error: unknown): "online" | "offline" | null {
+  if (error instanceof PosConnectionError) return "offline";
+  const value = error as {
+    serverResponded?: boolean; code?: unknown; httpStatus?: number | null;
+    graphQLErrors?: unknown[]; networkError?: { statusCode?: number } | null;
+  } | null;
+  if (value?.httpStatus === 408 || (value?.httpStatus != null && value.httpStatus >= 500)) return "offline";
+  if (value?.serverResponded || value?.graphQLErrors?.length) return "online";
+  if (value?.httpStatus != null) return "online";
+  if (value?.networkError) {
+    const status = value.networkError.statusCode;
+    return status != null && status < 500 && status !== 408 ? "online" : "offline";
+  }
+  if (typeof value?.code === "string" && [...DECIDED_ERROR_CODES, "INTERNAL_SERVER_ERROR"].includes(value.code)) return "online";
+  // Local validation/render/storage errors say nothing about server reachability.
+  return null;
+}
+
 /** Bound a GraphQL HTTP operation so a dropped connection cannot spin forever. */
 export async function runWithOperationTimeout<T>(
   work: (signal: AbortSignal) => Promise<T>,
@@ -14,7 +40,7 @@ export async function runWithOperationTimeout<T>(
   } catch (error) {
     if (controller.signal.aborted) {
       const seconds = Math.max(1, Math.ceil(timeoutMs / 1000));
-      throw new Error(`เซิร์ฟเวอร์ไม่ตอบภายใน ${seconds} วินาที`);
+      throw new PosConnectionError(`เซิร์ฟเวอร์ไม่ตอบภายใน ${seconds} วินาที`);
     }
     throw error;
   } finally {

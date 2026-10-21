@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { usePreventRemove } from '@react-navigation/native';
 import { useMutation, useQuery } from '@apollo/client';
 import Svg, { Path } from 'react-native-svg';
 import { ScreenContainer } from '../../components/ScreenContainer';
@@ -39,6 +40,7 @@ import {
   MobileRestaurantFloorDocument,
   MobileRestaurantSettleCheckDocument,
   PosBootstrapDocument,
+  type MobilePosSaleMutationVariables,
 } from '../../graphql/generated';
 import { cartLineVariantLabel } from '../../lib/cartLine';
 import {
@@ -50,8 +52,11 @@ import {
 import {
   createIdempotencyKey,
   isDecidedRejection,
+  posErrorConnectionStatus,
   runWithOperationTimeout,
 } from '../../lib/operation';
+import { PosSaleResultError } from '../../../../../packages/pos-client-core/src/saleRetry';
+import type { OfflineSalePayload } from '../../lib/offlineSales';
 import { describeMobileSaleFailure } from '../../lib/saleFailureMessage';
 import {
   calculateCashChange,
@@ -389,11 +394,40 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const submittedRef = useRef(false);
+  const saleAttemptRef = useRef<{
+    input: MobilePosSaleMutationVariables['input'];
+    offlinePayload: OfflineSalePayload | null;
+    total: number;
+  } | null>(null);
+  const [saleRetryMessage, setSaleRetryMessage] = useState('');
+  const [completion, setCompletion] = useState<(() => void) | null>(null);
+  usePreventRemove(submitting || Boolean(saleAttemptRef.current), () => {
+    Alert.alert(
+      'มีบิลที่ยังไม่เสร็จ',
+      'กรุณาลองบันทึกบิลเดิมให้จบก่อนออกจากหน้าชำระเงิน',
+    );
+  });
+  // Native-stack removal must wait until usePreventRemove has observed the cleared attempt.
+  useEffect(() => {
+    if (completion && !submitting && !saleAttemptRef.current) {
+      completion();
+      setCompletion(null);
+    }
+  }, [completion, submitting]);
+  const finishCheckout = (navigate: () => void) => {
+    saleAttemptRef.current = null;
+    setSaleRetryMessage('');
+    setCompletion(() => navigate);
+  };
   const paymentCount = payments.length;
   useEffect(() => {
     if (saleMode !== 'SALE') return;
     setPayments(current =>
-      syncSingleCheckoutPayment(current, total, submittedRef.current),
+      syncSingleCheckoutPayment(
+        current,
+        total,
+        submittedRef.current || Boolean(saleAttemptRef.current),
+      ),
     );
   }, [paymentCount, saleMode, total, submitting]);
   const idempotencyRef = useRef<string | null>(null);
@@ -420,6 +454,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   ]);
   const previousCheckoutBillKey = useRef(checkoutBillKey);
   useEffect(() => {
+    if (saleAttemptRef.current) return;
     // A refreshed total is not a new bill: preserve split allocations and actual cash.
     if (previousCheckoutBillKey.current === checkoutBillKey) return;
     previousCheckoutBillKey.current = checkoutBillKey;
@@ -557,12 +592,16 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   });
 
   const updatePayment = (
-    id: string, patch: Partial<MockPaymentInput>, exactCash = false,
+    id: string,
+    patch: Partial<MockPaymentInput>,
+    exactCash = false,
   ) => {
     if (submittedRef.current) return;
     setPayments(prev =>
       prev.map(payment =>
-        payment.id === id ? editCheckoutPayment(payment, patch, exactCash) : payment,
+        payment.id === id
+          ? editCheckoutPayment(payment, patch, exactCash)
+          : payment,
       ),
     );
   };
@@ -582,11 +621,13 @@ export default function CheckoutScreen({ route, navigation }: Props) {
   };
 
   const completeSale = async () => {
+    const retrying = Boolean(saleAttemptRef.current);
     if (
-      !canConfirmPayment ||
-      !restaurantPaymentsValid ||
-      !restaurantReady ||
-      !boardGameReady ||
+      (!retrying &&
+        (!canConfirmPayment ||
+          !restaurantPaymentsValid ||
+          !restaurantReady ||
+          !boardGameReady)) ||
       submittedRef.current ||
       !session
     )
@@ -594,8 +635,17 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     submittedRef.current = true;
     setSubmitting(true);
     const serverReachable =
-      serverHealth.status === 'offline' ? false : await serverHealth.checkNow();
+      !retrying && serverHealth.status === 'offline' ? false : await serverHealth.checkNow();
     if (!serverReachable) {
+      if (retrying) {
+        submittedRef.current = false;
+        setSubmitting(false);
+        setConfirmOpen(false);
+        setSaleRetryMessage(
+          'ยังติดต่อเซิร์ฟเวอร์ไม่ได้ · เก็บบิลเดิมไว้แล้ว กรุณาลองอีกครั้งเมื่อเชื่อมต่อได้',
+        );
+        return;
+      }
       if (!offlineEligible) {
         submittedRef.current = false;
         setSubmitting(false);
@@ -627,10 +677,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             -10,
           )} · ยังไม่ใช่ใบเสร็จหรือใบกำกับภาษี`,
         );
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
-        });
+        finishCheckout(() =>
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+          }),
+        );
       } catch (error) {
         if (staged) {
           // The accepted-cash row was durably staged before the state transition failed. Never
@@ -647,10 +699,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                 : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้'
             } · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`,
           );
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
-          });
+          finishCheckout(() =>
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+            }),
+          );
           return;
         }
         Alert.alert(
@@ -668,7 +722,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
     // ⚠️ ตรวจราคาซ้ำก่อนส่ง — ตะกร้าถือกติกา ณ ตอนที่สแกน ร้านที่แก้ราคา/เปิด-ปิดโปรระหว่าง
     // ที่บิลค้างบนจอ (หรือบิลพักที่เพิ่งเรียกกลับ) จะทำให้ยอดที่จอโชว์ไม่ใช่ยอดที่ server คิด
     // แล้วบิลถูกทิ้งทั้งใบ · หยุดก่อนออกคีย์กันบิลซ้ำ เพื่อไม่ให้คีย์ถูกเผาทิ้งโดยเปล่าประโยชน์
-    if (source === 'retail') {
+    if (!retrying && source === 'retail') {
       const recheck = await cart.refreshPricing();
       if (recheck.error || recheck.changed) {
         submittedRef.current = false;
@@ -683,7 +737,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         return;
       }
     }
-    if (source === 'board_game') {
+    if (!retrying && source === 'board_game') {
       try {
         const recheck = await boardGamePricing.refetch();
         const latest = recheck.data?.bmsPosMemberPreview;
@@ -772,6 +826,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       }
     }
     let stagedRecovery = false;
+    let requestSent = false;
     try {
       let orderId: string;
       if (source === 'restaurant') {
@@ -808,82 +863,92 @@ export default function CheckoutScreen({ route, navigation }: Props) {
       } else {
         const saleKey = idempotencyRef.current ?? createIdempotencyKey('sale');
         idempotencyRef.current = saleKey;
-        if (offlineEligible && source === 'retail') {
-          await offlineSales.stage({
-            payload: offlinePayload(saleKey),
+        if (!saleAttemptRef.current) {
+          const input: MobilePosSaleMutationVariables['input'] = {
+            cashierUserId: session.credentials.cashierUserId,
+            pin: session.credentials.pin,
+            idempotencyKey: saleKey,
+            offlineTenderedAt: null,
+            mode: saleMode,
+            boardGameBillingGroupId:
+              boardGameParams?.boardGameBillingGroupId ?? null,
+            lines: cart.lines.map(line => ({
+              sku: line.sku,
+              size: line.size,
+              packCode: line.packCode || null,
+              packQty: line.qty,
+              baseQty: line.baseQty,
+              packPrice: null,
+              unitName: line.unitName || null,
+              modifierCodes: line.modifierCodes,
+              scaleBarcode: line.scaleBarcode ?? null,
+              serials: line.serials,
+            })),
+            payments: paymentInput,
+            customerId: cart.member?.id ?? null,
+            couponCode: cart.coupon?.code ?? null,
+            // ⚠️ ส่งจำนวนแต้มที่ **พรีวิวบอกว่าจะหักจริง** ไม่ใช่ที่แคชเชียร์พิมพ์ —
+            // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
+            // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
+            // พรีวิวตัวเดียวกันนี้อยู่แล้ว
+            pointsToRedeem:
+              source === 'board_game'
+                ? confirmedBoardGamePreview?.pointsUsed ?? 0
+                : cart.pointsUsed,
+            manualDiscount: cart.manualDiscount?.amount ?? null,
+            discountReason: cart.manualDiscount?.reason ?? null,
+            discountApproverUserId: cart.manualDiscount?.approverUserId ?? null,
+            discountApproverPin: cart.manualDiscount?.approverPin ?? null,
+            extraLines: cart.extraLines.map(line => ({
+              label: line.label,
+              qty: line.qty,
+              unitAmount: line.unitAmount,
+            })),
+            creditApproverPin: creditApproverPin || null,
+            creditApproverUserId: creditApproverId || null,
+            depositCustomerNote:
+              saleMode === 'DEPOSIT' ? depositNote.trim() || null : null,
+            depositDueAt:
+              saleMode === 'DEPOSIT' ? depositDueAt.trim() || null : null,
+            pharmacistAuthorizationNote: pharmacistId
+              ? pharmacistNote.trim() || null
+              : null,
+            pharmacistAuthorizerPin:
+              pharmacistId && pharmacistId !== session.cashier.id
+                ? pharmacistPin || null
+                : null,
+            pharmacistAuthorizerUserId: pharmacistId || null,
+            pharmacyApprovedAssessmentId:
+              cart.pharmacyReview?.canResume === true
+                ? cart.pharmacyReview.assessmentId
+                : null,
+            pharmacyReviewAssessmentId:
+              pharmacistId && cart.pharmacyReview
+                ? cart.pharmacyReview.assessmentId
+                : null,
+          };
+          saleAttemptRef.current = {
+            input: JSON.parse(JSON.stringify(input)),
+            offlinePayload:
+              offlineEligible && source === 'retail'
+                ? JSON.parse(JSON.stringify(offlinePayload(saleKey)))
+                : null,
             total,
+          };
+        }
+        const attempt = saleAttemptRef.current;
+        if (attempt.offlinePayload) {
+          await offlineSales.stage({
+            payload: attempt.offlinePayload,
+            total: attempt.total,
           });
           stagedRecovery = true;
         }
+        requestSent = true;
         const response = await runWithOperationTimeout(signal =>
           sell({
             context: { fetchOptions: { signal } },
-            variables: {
-              input: {
-                cashierUserId: session.credentials.cashierUserId,
-                pin: session.credentials.pin,
-                idempotencyKey: saleKey,
-                offlineTenderedAt: null,
-                mode: saleMode,
-                boardGameBillingGroupId:
-                  boardGameParams?.boardGameBillingGroupId ?? null,
-                lines: cart.lines.map(line => ({
-                  sku: line.sku,
-                  size: line.size,
-                  packCode: line.packCode || null,
-                  packQty: line.qty,
-                  baseQty: line.baseQty,
-                  packPrice: null,
-                  unitName: line.unitName || null,
-                  modifierCodes: line.modifierCodes,
-                  scaleBarcode: line.scaleBarcode ?? null,
-                  serials: line.serials,
-                })),
-                payments: paymentInput,
-                customerId: cart.member?.id ?? null,
-                couponCode: cart.coupon?.code ?? null,
-                // ⚠️ ส่งจำนวนแต้มที่ **พรีวิวบอกว่าจะหักจริง** ไม่ใช่ที่แคชเชียร์พิมพ์ —
-                // createOrderInTx ปฏิเสธทั้งบิลเมื่อหักได้ไม่เท่าที่ขอ (เศษแต้มที่ไม่ครบ
-                // หน่วยแลก ต่ำกว่าขั้นต่ำ หรือชนเพดานส่วนลดของบิล) และยอดที่จอโชว์ก็มาจาก
-                // พรีวิวตัวเดียวกันนี้อยู่แล้ว
-                pointsToRedeem:
-                  source === 'board_game'
-                    ? confirmedBoardGamePreview?.pointsUsed ?? 0
-                    : cart.pointsUsed,
-                manualDiscount: cart.manualDiscount?.amount ?? null,
-                discountReason: cart.manualDiscount?.reason ?? null,
-                discountApproverUserId:
-                  cart.manualDiscount?.approverUserId ?? null,
-                discountApproverPin: cart.manualDiscount?.approverPin ?? null,
-                extraLines: cart.extraLines.map(line => ({
-                  label: line.label,
-                  qty: line.qty,
-                  unitAmount: line.unitAmount,
-                })),
-                creditApproverPin: creditApproverPin || null,
-                creditApproverUserId: creditApproverId || null,
-                depositCustomerNote:
-                  saleMode === 'DEPOSIT' ? depositNote.trim() || null : null,
-                depositDueAt:
-                  saleMode === 'DEPOSIT' ? depositDueAt.trim() || null : null,
-                pharmacistAuthorizationNote: pharmacistId
-                  ? pharmacistNote.trim() || null
-                  : null,
-                pharmacistAuthorizerPin:
-                  pharmacistId && pharmacistId !== session.cashier.id
-                    ? pharmacistPin || null
-                    : null,
-                pharmacistAuthorizerUserId: pharmacistId || null,
-                pharmacyApprovedAssessmentId:
-                  cart.pharmacyReview?.canResume === true
-                    ? cart.pharmacyReview.assessmentId
-                    : null,
-                pharmacyReviewAssessmentId:
-                  pharmacistId && cart.pharmacyReview
-                    ? cart.pharmacyReview.assessmentId
-                    : null,
-              },
-            },
+            variables: { input: attempt.input },
           }),
         );
         const result = response.data?.bmsPosSale;
@@ -891,6 +956,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           result?.status === 'PHARMACY_REVIEW_REQUIRED' ||
           result?.status === 'PHARMACY_SAFETY_CHECK_REQUIRED'
         ) {
+          saleAttemptRef.current = null;
           pharmacyReviewKeyRef.current ??=
             createIdempotencyKey('pharmacy-review');
           const review = await requestPharmacyReview({
@@ -954,27 +1020,37 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           return;
         }
         if (result?.status === 'DEPOSIT_TAKEN' && result.orderId) {
+          saleAttemptRef.current = null;
           cart.clear();
-          await refreshSales();
+          await refreshSales().catch(() => undefined);
           idempotencyRef.current = null;
           setConfirmOpen(false);
           Alert.alert(
             'รับมัดจำแล้ว',
             `รับมัดจำ ฿${paymentTarget.toFixed(2)} สำเร็จ`,
           );
-          navigation.reset({
-            index: 0,
-            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
-          });
+          finishCheckout(() =>
+            navigation.reset({
+              index: 0,
+              routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+            }),
+          );
           return;
         }
         if (result?.status !== 'SOLD' || !result.orderId) {
-          if (stagedRecovery) {
+          const failure = new PosSaleResultError(
+            describeMobileSaleFailure(result),
+            result,
+          );
+          if (!retrying && !failure.retainAttempt && stagedRecovery) {
             await offlineSales.discard(idempotencyRef.current);
             stagedRecovery = false;
           }
-          idempotencyRef.current = null;
-          throw new Error(describeMobileSaleFailure(result));
+          if (!retrying && !failure.retainAttempt) {
+            idempotencyRef.current = null;
+            saleAttemptRef.current = null;
+          }
+          throw failure;
         }
         orderId = result.orderId;
         if (stagedRecovery) {
@@ -987,12 +1063,29 @@ export default function CheckoutScreen({ route, navigation }: Props) {
         }
         cart.clear();
       }
-      await refreshSales();
+      saleAttemptRef.current = null;
+      await refreshSales().catch(() => undefined);
       idempotencyRef.current = null;
       setConfirmOpen(false);
-      navigation.replace('Receipt', { saleId: orderId, source });
+      finishCheckout(() =>
+        navigation.replace('Receipt', { saleId: orderId, source }),
+      );
     } catch (error) {
       setConfirmOpen(false);
+      if (posErrorConnectionStatus(error) === 'offline')
+        serverHealth.markOffline();
+      const knownFailure =
+        error instanceof PosSaleResultError && error.knownFailure;
+      if (saleAttemptRef.current && (knownFailure || retrying)) {
+        // Keep a staged cash row owned by this checkout; an explicit business refusal must
+        // neither enqueue automatic tender nor discard the reserved order's identity.
+        setSaleRetryMessage(
+          `${
+            error instanceof Error ? error.message : 'บันทึกบิลไม่สำเร็จ'
+          } · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง`,
+        );
+        return;
+      }
       if (
         stagedRecovery &&
         idempotencyRef.current &&
@@ -1011,7 +1104,6 @@ export default function CheckoutScreen({ route, navigation }: Props) {
               : 'อัปเดตสถานะคิวออฟไลน์ไม่ได้';
         }
         cart.clear();
-        serverHealth.markOffline();
         const reference = idempotencyRef.current.slice(-10);
         idempotencyRef.current = null;
         Alert.alert(
@@ -1022,10 +1114,12 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             ? `${queueWarning} · เลขอ้างอิง ${reference} · ห้ามขายรายการนี้ซ้ำ กรุณาให้ผู้จัดการตรวจคิว`
             : `เลขอ้างอิงชั่วคราว ${reference} · ระบบจะตรวจรายการเดิมก่อนซิงก์และจะไม่สร้างบิลซ้ำ`,
         );
-        navigation.reset({
-          index: 0,
-          routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
-        });
+        finishCheckout(() =>
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Tabs', params: { screen: 'SellTab' } }],
+          }),
+        );
         return;
       }
       if (stagedRecovery && idempotencyRef.current) {
@@ -1033,6 +1127,16 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           .discard(idempotencyRef.current)
           .catch(() => undefined);
         idempotencyRef.current = null;
+      }
+      if (!requestSent || isDecidedRejection(error)) {
+        saleAttemptRef.current = null;
+        idempotencyRef.current = null;
+      } else if (saleAttemptRef.current) {
+        setSaleRetryMessage(
+          `${
+            error instanceof Error ? error.message : 'ยังไม่ทราบผล'
+          } · กรุณาลองบันทึกบิลเดิมอีกครั้ง`,
+        );
       }
       Alert.alert(
         'ขายไม่สำเร็จ',
@@ -1522,7 +1626,11 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                           variant="secondary"
                           style={styles.quickCashButton}
                           onPress={() =>
-                            updatePayment(payment.id, { tendered: amount }, amount === payment.amount)
+                            updatePayment(
+                              payment.id,
+                              { tendered: amount },
+                              amount === payment.amount,
+                            )
                           }
                         />
                       ))}
@@ -1893,6 +2001,30 @@ export default function CheckoutScreen({ route, navigation }: Props) {
           setManualDiscount: setRestaurantManualDiscount,
         }
       : undefined;
+
+  if (saleRetryMessage && saleAttemptRef.current) {
+    return (
+      <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
+        <ScreenHeader title="บิลเดิมยังไม่เสร็จ" />
+        <Card>
+          <Text style={[typography.body, { color: colors.text }]}>
+            {saleRetryMessage}
+          </Text>
+          <AmountRow label="ยอดบิลเดิม" value={saleAttemptRef.current.total} />
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            เก็บรายการสินค้า ส่วนลด และการชำระเดิมไว้แล้ว
+            กรุณาอย่ารับเงินรายการนี้ซ้ำ
+          </Text>
+          <Button
+            label="ลองบันทึกบิลเดิมอีกครั้ง"
+            loading={submitting}
+            disabled={submitting}
+            onPress={() => void completeSale()}
+          />
+        </Card>
+      </ScreenContainer>
+    );
+  }
 
   return (
     <ScreenContainer edges={['top', 'left', 'right', 'bottom']}>
