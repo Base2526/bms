@@ -1390,6 +1390,7 @@ const TH: ManualContent = {
         "กด เปิดจอลูกค้า แล้วลากหน้าต่างไปจอที่สองของเครื่องเดียวกัน จอแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
         "ส่งสำเนาทางอีเมลได้โดยพิมพ์อีเมลเฉพาะครั้ง หรือเว้นว่างให้ใช้ข้อมูลสมาชิก; ส่ง LINE ได้เมื่อลูกค้าผูก LINE กับร้านแล้ว",
         "โหลดบิลล่าสุดจาก server ในแท็บ ตั้งค่าเมื่อต้องพิมพ์ซ้ำหลังรีเฟรช",
+        "ปุ่มรีเฟรชข้อมูลบน Desktop แสดง ‘กำลังอัปเดตข้อมูล…’ ที่แถบบนเพียงจุดเดียว โดยคงสถานะการเชื่อมต่อเดิมจนทราบผล ไม่เปลี่ยนเป็น ‘กำลังเชื่อมต่อ’ เพียงเพราะกดรีเฟรช",
       ],
     },
     {
@@ -2657,6 +2658,7 @@ const EN: ManualContent = {
         "Open Customer display and move it to a second monitor on the same computer. It is read-only and shows the latest eight lines, total, discounts, and change.",
         "Email a copy to a one-off address or leave it blank to use the member profile. LINE delivery requires the customer to have linked LINE to the shop.",
         "Use Load latest receipt from server to reprint after a page refresh.",
+        "Desktop data refresh shows one updating-data message in the header and keeps the last observed connection status until the result is known; refreshing alone does not mean reconnecting.",
       ],
     },
     {
