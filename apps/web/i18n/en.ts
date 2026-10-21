@@ -362,6 +362,7 @@ const en = {
     manageStore: "Manage store",
     finalTitle: "Turn every conversation into action",
     finalDescription: "Start free, use it right away, and no credit card is required.",
+    lineAsk: "Questions? Chat with us on LINE",
     flow: {
       message: { short: "Receive message", kicker: "STEP 1 · CHANNEL INTAKE", title: "Receive and verify the channel event", description: "A verified webhook delivers the message to the store inbox.", path1: "Webhook", path2: "Verify", path3: "Inbox", source: "Channel service", status: "Received" },
       intent: { short: "Understand intent", kicker: "STEP 2 · AI ORCHESTRATION", title: "Understand intent and select an approved tool", description: "Extract the product, size, and quantity without giving AI direct database access.", path1: "Message", path2: "Intent", path3: "Tool", source: "NLU pipeline", status: "Intent understood" },

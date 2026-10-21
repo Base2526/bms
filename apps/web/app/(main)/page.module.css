@@ -562,6 +562,16 @@
 .finalCta h3,
 .finalCta p { margin-bottom: 0 !important; }
 
+/* #06893B keeps 4.5:1 on white; LINE's own #06C755 is only ~2.3:1 as text. */
+.finalCta .lineCta,
+.finalCta .lineCta:not(:disabled):hover {
+  background: transparent;
+  border-color: #06c755;
+  color: #06893b;
+}
+.finalCta .lineCta:not(:disabled):hover { background: rgba(6, 199, 85, 0.08); }
+:global(html.dark) .finalCta .lineCta { color: #3ddc84; }
+
 @media (max-width: 1180px) {
   .hero { grid-template-columns: 1fr; }
 }

@@ -362,6 +362,7 @@ const th = {
     manageStore: "จัดการร้าน",
     finalTitle: "ให้ทุกบทสนทนา เดินงานต่อได้",
     finalDescription: "สมัครฟรี ใช้งานได้ทันที และไม่ต้องใช้บัตรเครดิต",
+    lineAsk: "มีคำถาม? ทักทีมงานทาง LINE",
     flow: {
       message: { short: "รับข้อความ", kicker: "STEP 1 · CHANNEL INTAKE", title: "รับข้อความและตรวจสอบช่องทาง", description: "รับข้อความจาก webhook ที่ตรวจสอบแล้วเข้าสู่ Inbox ของร้าน", path1: "Webhook", path2: "ตรวจสอบ", path3: "Inbox", source: "ระบบช่องทาง", status: "รับข้อมูลแล้ว" },
       intent: { short: "เข้าใจคำถาม", kicker: "STEP 2 · AI ORCHESTRATION", title: "เข้าใจเจตนาและเลือก Approved Tool", description: "แยกสินค้า ไซซ์ และจำนวน โดยไม่ให้ AI เข้าถึงฐานข้อมูลโดยตรง", path1: "ข้อความ", path2: "เจตนา", path3: "เครื่องมือ", source: "กระบวนการ NLU", status: "เข้าใจคำถาม" },
