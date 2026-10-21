@@ -16,7 +16,8 @@ import {
   type PosClientEvent,
   type PosClientFlowState,
 } from "@pos-core/flow";
-import { createIdempotencyKey } from "@pos-core/operation";
+import { createIdempotencyKey, posErrorConnectionStatus } from "@pos-core/operation";
+import { PosSaleResultError } from "@pos-core/saleRetry";
 import {
   calculateCashChange,
   paymentMethodLabel,
@@ -736,15 +737,16 @@ function DesktopPosContent() {
       }>(requestToken, POS_CATALOG_QUERY, { q: normalizedQuery })
         .then((data) => {
           if (version !== catalogRequestVersion.current) return;
+          setConnection("online");
           setCatalog(data.bmsPosCatalogSearch.items);
           if (!normalizedQuery) {
             catalogPrimedRef.current = { token: requestToken, at: Date.now() };
           }
-          setConnection("online");
         })
         .catch((cause) => {
           if (version !== catalogRequestVersion.current) return;
-          setConnection("offline");
+          const status = posErrorConnectionStatus(cause);
+          if (status) setConnection(status);
           const text = messageOf(cause);
           catalogLoadErrorRef.current = text;
           setCatalogError(text);
@@ -781,6 +783,7 @@ function DesktopPosContent() {
         nextToken,
         POS_BOOTSTRAP_QUERY,
       );
+      setConnection("online");
       setBootstrap(data.bmsPosSession);
       const first = data.bmsPosSession.cashiers.find((item) => item.hasPin);
       const remembered = rememberedOperatorRef.current;
@@ -800,7 +803,6 @@ function DesktopPosContent() {
         }
         return next;
       });
-      setConnection("online");
       if (data.bmsPosSession.businessArchetype === "restaurant") {
         // Route code can warm while the operator types, but operational data is prepared only
         // after the PIN is verified so every store follows the same visible login contract.
@@ -817,7 +819,8 @@ function DesktopPosContent() {
         void loadCatalog("", nextToken);
       }
     } catch (cause) {
-      setConnection("offline");
+      const status = posErrorConnectionStatus(cause);
+      if (status) setConnection(status);
       setError(messageOf(cause));
     }
   }, [loadCatalog, router]);
@@ -1051,6 +1054,7 @@ function DesktopPosContent() {
         currentToken,
         POS_BOOTSTRAP_QUERY,
       );
+      setConnection("online");
       setBootstrap(data.bmsPosSession);
       await Promise.all([
         loadCatalog(query, currentToken),
@@ -1060,9 +1064,9 @@ function DesktopPosContent() {
       // Child workspaces refresh their own authoritative source while keeping the desktop shell,
       // verified operator and current navigation context mounted.
       setContentRefreshSignal((value) => value + 1);
-      setConnection("online");
     } catch (cause) {
-      setConnection("offline");
+      const status = posErrorConnectionStatus(cause);
+      if (status) setConnection(status);
       setError(`รีเฟรชข้อมูลไม่สำเร็จ: ${messageOf(cause)}`);
     } finally {
       contentRefreshingRef.current = false;
@@ -1251,6 +1255,7 @@ function DesktopPosContent() {
         credentials: { cashierUserId: cashier.id, pin },
         id: billingGroupId,
       });
+      setConnection("online");
       if (!data.bmsPosBoardGameCheckout) {
         throw new Error("ไม่พบบิลกลุ่มนี้ หรือบิลถูกชำระจากเครื่องอื่นแล้ว");
       }
@@ -1277,12 +1282,12 @@ function DesktopPosContent() {
       setPayments([{ ...checkoutPayment, amount: checkoutTotal, tendered: checkoutTotal }]);
       setActiveModule("mobile_sell");
       sendFlow("START_CHECKOUT");
-      setConnection("online");
     } catch (cause) {
       setError(messageOf(cause));
       setActiveModule("mobile_sell");
       sendFlow("BACK_TO_CATALOG");
-      setConnection("offline");
+      const status = posErrorConnectionStatus(cause);
+      if (status) setConnection(status);
     } finally {
       setBusy(false);
     }
@@ -1739,6 +1744,7 @@ function DesktopPosContent() {
     setBusy(true);
     setError("");
     setNotice("");
+    const retrying = Boolean(saleAttemptRef.current);
     try {
       if (!saleAttemptRef.current) {
         const current = boardGameCheckout ? true : await recheckCartPricing();
@@ -1751,12 +1757,12 @@ function DesktopPosContent() {
         POS_SALE_MUTATION,
         saleAttemptRef.current.payload,
       );
-      if (!data.bmsPosSale?.status) throw new Error("ผลรับชำระไม่ครบถ้วน");
+      setConnection("online");
+      if (!data.bmsPosSale?.status) throw new PosSaleResultError("ผลรับชำระไม่ครบถ้วน", data.bmsPosSale);
       if (data.bmsPosSale.status !== "SOLD") {
-        saleAttemptRef.current = null;
-        throw new PosGraphqlError(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`, "BAD_USER_INPUT");
+        throw new PosSaleResultError(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`, data.bmsPosSale);
       }
-      if (!data.bmsPosSale.orderId) throw new Error("ผลรับชำระไม่ครบถ้วน");
+      if (!data.bmsPosSale.orderId) throw new PosSaleResultError("ผลรับชำระไม่ครบถ้วน", data.bmsPosSale);
       setReceipt({ ...data.bmsPosSale, completedAt: Date.now() });
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
@@ -1764,16 +1770,18 @@ function DesktopPosContent() {
       void loadReceiptPaper(data.bmsPosSale);
     } catch (cause) {
       // A proxy timeout (including HTTP 408) cannot prove the transaction rolled back.
-      const decided = saleAttemptRef.current === null || (
+      const decided = cause instanceof PosSaleResultError ? cause.knownFailure : saleAttemptRef.current === null || (
         cause instanceof PosGraphqlError && cause.code != null && decidedCodes.has(cause.code)
       );
-      if (decided) saleAttemptRef.current = null;
+      // A refusal on a retry cannot erase an order reserved by the earlier request.
+      if (!retrying && decided && !(cause instanceof PosSaleResultError && cause.retainAttempt)) saleAttemptRef.current = null;
       setError(
         decided
-          ? messageOf(cause)
+          ? `${messageOf(cause)}${saleAttemptRef.current ? " · แก้ไขสาเหตุแล้วลองบันทึกบิลเดิมอีกครั้ง" : ""}`
           : `${messageOf(cause)} · ยังไม่ทราบผล กรุณากดลองซ้ำ ระบบจะใช้รหัสรายการเดิม`,
       );
-      setConnection("offline");
+      const status = posErrorConnectionStatus(cause);
+      if (status) setConnection(status);
     } finally {
       saleSubmittingRef.current = false;
       setBusy(false);
