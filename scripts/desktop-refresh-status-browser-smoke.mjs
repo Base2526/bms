@@ -28,7 +28,7 @@ try {
         getStorageNamespace: async () => "FAKE-refresh",
         getAppInfo: async () => ({ version: "0.2.14-pilot.2", platform: "darwin", arch: "arm64" }) };
     });
-    let pending = null, hold = false, fail = false, bootstrapReads = 0;
+    let pending = null, hold = false, fail = false, networkFail = false, bootstrapReads = 0;
     const errors = [], writes = [];
     await context.route("**/api/**", async route => {
       const path = new URL(route.request().url()).pathname;
@@ -40,6 +40,10 @@ try {
         if (q.includes("query PosBootstrap")) {
           bootstrapReads++;
           if (hold) await new Promise(resolve => { pending = resolve; });
+          if (networkFail) {
+            await route.abort("failed");
+            return;
+          }
           if (fail) {
             await route.fulfill({ json: { errors: [{ message: "FAKE refresh failed", extensions: { code: "INTERNAL_SERVER_ERROR" } }] } });
             return;
@@ -66,6 +70,9 @@ try {
       const header = page.locator('header[class*="DesktopPosRenderer_topbar"]');
       const refresh = header.getByRole("button", { name: "รีเฟรชข้อมูล", exact: true });
       const status = header.getByRole("status", { name: "สถานะการอัปเดตข้อมูล" });
+      const connection = header.locator('[data-pos-connection]');
+      const originalConnection = await connection.getAttribute("data-pos-connection");
+      assert.ok(["online", "fallback"].includes(originalConnection));
       const progress = header.locator('[class*="refreshProgress"]');
       await scanner.fill("UNSUBMITTED-DRAFT");
       const initial = await scanner.boundingBox();
@@ -74,6 +81,9 @@ try {
       hold = true;
       await refresh.click();
       await status.getByText("กำลังอัปเดตข้อมูล…", { exact: true }).waitFor();
+      assert.equal(await page.getByText("กำลังอัปเดตข้อมูล…", { exact: true }).count(), 1);
+      assert.equal(await page.getByText("กำลังเชื่อมต่อ", { exact: true }).count(), 0);
+      assert.equal(await connection.getAttribute("data-pos-connection"), originalConnection);
       assert.equal(await refresh.isDisabled(), true);
       await page.waitForFunction(() => document.querySelector('[class*="refreshProgress"]'));
       assert.equal(await progress.count(), 1);
@@ -109,9 +119,28 @@ try {
       assert.equal(await status.innerText(), "");
       assert.equal(await refresh.isDisabled(), false);
       assert.equal(await scanner.inputValue(), "UNSUBMITTED-DRAFT");
+      assert.equal(await connection.getAttribute("data-pos-connection"), originalConnection);
+      fail = false;
+      networkFail = true;
+      await refresh.click();
+      await page.waitForFunction(() => document.querySelector('[data-pos-connection="offline"]'));
+      assert.equal(await status.innerText(), "");
+      networkFail = false;
+      hold = true;
+      await refresh.click();
+      await status.getByText("กำลังอัปเดตข้อมูล…", { exact: true }).waitFor();
+      assert.equal(await connection.getAttribute("data-pos-connection"), "offline", "refresh must not hide a known outage");
+      assert.equal(await page.getByText("กำลังอัปเดตข้อมูล…", { exact: true }).count(), 1);
+      assert.equal(await page.getByText("กำลังเชื่อมต่อ", { exact: true }).count(), 0);
+      for (let attempt = 0; !pending && attempt < 500; attempt++) await new Promise(resolve => setTimeout(resolve, 10));
+      assert.ok(pending);
+      hold = false; pending(); pending = null;
+      await page.waitForFunction(() => !document.querySelector('[class*="refreshProgress"]'));
+      assert.equal(await connection.getAttribute("data-pos-connection"), originalConnection);
+      assert.equal(await scanner.inputValue(), "UNSUBMITTED-DRAFT");
       assert.deepEqual(writes, []);
       assert.deepEqual(errors, []);
-      console.log(`PASS ${width}px: header-only status, stable layout, reduced motion, success/failure cleanup; no live writes`);
+      console.log(`PASS ${width}px: one refresh label, preserved connection, business/network failure and recovery, stable layout, reduced motion; no live writes`);
     } catch (error) {
       await page.screenshot({ path: `${output}/${width}-failure.png`, fullPage: true });
       throw error;

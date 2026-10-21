@@ -57,6 +57,9 @@ The status slot remains reserved when idle (a separate header row on narrow scre
 or finishing a refresh does not move the scanner or bill. Reduced-motion settings stop the progress
 animation. Refresh failures still use the existing dismissible error; cashier, shift, navigation,
 and pending-sale protections are unchanged.
+During refresh, show `กำลังอัปเดตข้อมูล…` only in that status slot. Keep the last observed
+connection state (including an existing offline warning) until a response or transport failure
+updates it; starting a refresh alone must not show `กำลังเชื่อมต่อ` or force the status online.
 
 ## Native POS client
 

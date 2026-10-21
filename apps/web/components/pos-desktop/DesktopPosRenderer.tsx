@@ -1048,7 +1048,8 @@ function DesktopPosContent() {
     }
     contentRefreshingRef.current = true;
     setContentRefreshing(true);
-    setConnection("checking");
+    // Refresh progress is not a reconnect: retain the last observed connection state until
+    // a response or transport failure provides new evidence. The header owns one progress label.
     try {
       const data = await posGraphqlRequest<{ bmsPosSession: PosBootstrap }>(
         currentToken,
