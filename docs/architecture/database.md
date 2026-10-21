@@ -628,7 +628,12 @@ unconstrained text, adding a new channel (e.g. Shopee/Lazada) needs no migration
 code needs to know the new value (see [../integrations/](../integrations/)). LINE OA bot/source
 display metadata is cached in `extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`,
 `botChatMode`, `botInfoSyncedAt`) so Inbox can show which OA/shop received a message without
-calling LINE APIs during reads.
+calling LINE APIs during reads. The server-owned `botIdentityTokenHash` binds provider-verified
+identity to the current access token for assistant routing (a digest, not a bearer credential).
+Channel settings cannot overwrite provider-owned fields; token replacement clears them. Bot-cache
+writes run in `beginTenantTx()` and compare the stored encrypted token before merging the JSONB,
+so responses from an old token cannot overwrite a replacement's identity. Existing unbound caches
+are verified once before text processing; no schema migration is needed for these JSONB fields.
 
 **Channel Health (`6.4__bms_channel_health.sql`)** — `bms_tenant_channels` also carries `status`
 (CHECK-constrained enum: `connected`/`token_expired`/`webhook_failed`/`rate_limited`/`no_events`/

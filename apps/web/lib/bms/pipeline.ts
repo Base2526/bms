@@ -28,7 +28,7 @@ import { catalogStockMenu, stockResultMenu, insufficientStockMenu, type Customer
 import { generateResponse } from "./ai";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
-import { isBmsPlanQuestion, isBmsPresalesGreeting } from "./platformPresales";
+import { answerBmsPresales } from "./platformPresalesAssistant";
 import { boardGameCustomerGuard, boardGameUrgentGuard, BOARD_GAME_CUSTOMER_GUARD_POLICY } from "./boardGameCustomerGuard";
 import { boardGameReservationSummary, boardGameReservationReceipt, boardGameReservationStatusMenu,
   boardGameBookingActionMenu, isBoardGameReservationConfirmation,
@@ -674,9 +674,6 @@ function boardGameRescheduleSystemBlock(state: AiConversationState["pendingBoard
 const CUSTOMER_TOOL_BY_NAME = new Map<string, BmsTool>(
   customerTools().map((tool) => [tool.name, tool])
 );
-const BMS_PRESALES_TOOL_BY_NAME = new Map<string, BmsTool>(
-  customerTools(undefined, "bms_presales").map((tool) => [tool.name, tool])
-);
 
 function customerExecCtx(
   tenantId: string,
@@ -701,46 +698,15 @@ async function runBmsPresalesTurn(
   tenantId: string,
   customerRef?: string | null
 ): Promise<PipelineResult> {
-  const locale = /[ก-๙]/.test(message) ? "th" : "en";
-  const planQuestion = isBmsPlanQuestion(message);
-  const toolName = planQuestion ? "list_bms_public_plans" : "search_bms_presales";
-  const tool = BMS_PRESALES_TOOL_BY_NAME.get(toolName);
-  if (!tool) throw new Error(`BMS presales tool not registered: ${toolName}`);
-
-  const execCtx: ExecCtx = {
-    tenantId,
-    surface: "customer",
-    actor: "ai:customer:presales",
-    channel,
-    customerRef,
-    customerMode: "bms_presales",
-    locale,
-  };
-  const input: Record<string, unknown> = planQuestion
-    ? { locale }
-    : {
-        query: isBmsPresalesGreeting(message)
-          ? locale === "en" ? "what is bms" : "BMS คืออะไร"
-          : message,
-        locale,
-        limit: 3,
-      };
-  const executed = await runApprovedTool({ tool, input, execCtx });
-  const reply = executed.result.ok
-    ? tool.fallbackReply?.(executed.result.data, execCtx, input) ?? null
-    : null;
-  const fallback = locale === "en"
-    ? "I could not verify that BMS information right now. Please try again later or leave your business type for the BMS team to follow up."
-    : "ขณะนี้ยังตรวจสอบข้อมูล BMS เรื่องนี้ไม่ได้ค่ะ กรุณาลองใหม่ภายหลัง หรือฝากประเภทธุรกิจไว้ให้ทีม BMS รับช่วงต่อได้ค่ะ";
-
+  const result = await answerBmsPresales(message, { tenantId, channel, customerRef });
   return customerSafe({
     channel,
     incoming: message,
     understanding: understand(message),
-    tool: `deterministic:${toolName}`,
+    tool: `${result.usedAi ? "ai" : "deterministic"}:bms-presales`,
     data: { status: "NOT_FOUND", query: message },
-    reply: reply || fallback,
-    trace: [executed.trace],
+    reply: result.reply,
+    trace: result.trace,
   });
 }
 

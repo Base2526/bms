@@ -1,4 +1,5 @@
 import { listPlans, type Plan } from "./entitlements";
+import { BMS_PRESALES_FAQ } from "./platformPresalesFaq";
 
 export type PresalesLocale = "th" | "en";
 export type PresalesAvailability =
@@ -14,6 +15,8 @@ export type PresalesKnowledgeEntry = Readonly<{
   aliases: Readonly<Record<PresalesLocale, readonly string[]>>;
   answer: Readonly<Record<PresalesLocale, string>>;
   availability: PresalesAvailability;
+  /** Requires a fresh approved plan read; never satisfy this from conversation history. */
+  requiresPlans?: boolean;
   nextQuestion?: Readonly<Record<PresalesLocale, string>>;
 }>;
 
@@ -30,7 +33,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "overview",
     title: both("BMS คืออะไร", "What is BMS?"),
     aliases: aliases(
-      ["bms คือ", "bms ทำอะไร", "ระบบ bms", "แนะนำ bms", "คืออะไร", "ทำอะไรได้บ้าง"],
+      ["bms คือ", "bms ทำอะไร", "ระบบ bms", "แนะนำ bms", "ช่วยงานธุรกิจ", "pos หรือแชท", "line oa อย่างเดียว", "เชื่อมงานขาย", "สรุป bms"],
       ["what is bms", "what does bms do", "tell me about bms", "bms system"]
     ),
     answer: both(
@@ -39,6 +42,30 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     ),
     availability: "AVAILABLE",
     nextQuestion: both("กำลังมองหาระบบสำหรับธุรกิจประเภทไหนคะ?", "What type of business are you looking to run?")
+  },
+  {
+    id: "readiness-status",
+    title: both("BMS ครบและพร้อมใช้หรือยัง", "Is BMS complete and ready to use?"),
+    aliases: aliases(
+      [
+        "ครบหรือยัง", "ครบหรือ ยัง", "ระบบครบหรือยัง", "ฟีเจอร์ครบไหม", "ทำเสร็จหรือยัง",
+        "พัฒนาเสร็จหรือยัง", "พร้อมใช้หรือยัง", "พร้อมใช้จริงไหม", "ใช้จริงได้หรือยัง",
+        "อะไรยังไม่เสร็จ", "มีอะไรยังไม่พร้อม", "สถานะระบบ", "ยังไม่พร้อม", "ฟีเจอร์ไหน", "ยังเป็น beta", "ใช้ได้จริงทั้งหมด", "ทดสอบจริงแล้ว", "พร้อมหรือยัง"
+      ],
+      [
+        "is bms complete", "is it complete", "is it ready", "production ready", "ready to use",
+        "what is not ready", "what is unfinished", "system status"
+      ]
+    ),
+    answer: both(
+      "BMS ยังไม่ควรถูกอธิบายว่าเสร็จครบ 100% ทุกส่วนค่ะ งานหลักบน Cloud เช่น CRM ออร์เดอร์ POS สต็อก การรับเงิน ภาษี และรายงานมี workflow ที่สร้างแล้ว แต่ความพร้อมจริงต้องตรวจตามประเภทร้าน การตั้งค่า ช่องทาง และอุปกรณ์ที่จะใช้ ส่วนที่ยังไม่พร้อม production ทั่วไป ได้แก่ Shopee/Lazada, การจอง Flash/Kerry, delivery platform ที่เปิด live ทุกบัญชี, e-Tax ผ่าน provider, อีเมล/SMTP ที่ยืนยันกับ provider จริง, ฮาร์ดแวร์ ESC/POS/ลิ้นชักทุกรุ่น, Desktop package สำหรับกระจายทั่วไป, AI Pharmacy Intake, Retail Local แบบ GA, การตัดค่าแพ็กเกจอัตโนมัติ และ Q4 Profit/Growth Simulation ค่ะ",
+      "BMS should not be described as 100% complete in every area. Core cloud workflows for CRM, orders, POS, inventory, payments, tax and reporting are built, but real readiness must be checked against the business type, configuration, channels and hardware in scope. Areas not yet generally production-ready include Shopee/Lazada, live Flash/Kerry booking, delivery platforms for every merchant account, provider-backed e-Tax, production-verified email/SMTP, certification for all ESC/POS and cash-drawer hardware, a generally distributed desktop package, AI Pharmacy Intake, Retail Local GA, automatic subscription billing and the Q4 Profit/Growth Simulation."
+    ),
+    availability: "LIMITED",
+    nextQuestion: both(
+      "จะใช้กับธุรกิจประเภทไหน และต้องการฟีเจอร์หรือช่องทางใดเป็นหลักคะ?",
+      "What type of business will you run, and which features or channels matter most?"
+    )
   },
   {
     id: "business-types",
@@ -58,7 +85,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "ai-inbox",
     title: both("AI Inbox และ CRM", "AI Inbox and CRM"),
     aliases: aliases(
-      ["ai ตอบลูกค้า", "ตอบแชท", "รวมแชท", "line oa", "crm", "จำลูกค้า", "รับออร์เดอร์จากแชท"],
+      ["ai ตอบลูกค้า", "ai ช่วยทำอะไร", "ตอบแชท", "รวมแชท", "line oa", "crm", "จำลูกค้า", "รับออร์เดอร์จากแชท"],
       ["ai replies", "chat inbox", "line oa", "crm", "remember customers", "orders from chat"]
     ),
     answer: both(
@@ -72,7 +99,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "retail-wholesale",
     title: both("ร้านค้าปลีกและค้าส่ง", "Retail and wholesale"),
     aliases: aliases(
-      ["ร้านค้าปลีก", "ร้านค้าส่ง", "ราคาส่ง", "บาร์โค้ด", "serial", "imei", "ขายเชื่อ", "มินิมาร์ท"],
+      ["ร้านค้าปลีก", "ร้านค้าส่ง", "ร้านขายส่ง", "ราคาส่ง", "บาร์โค้ด", "serial", "imei", "ขายเชื่อ", "มินิมาร์ท"],
       ["retail", "wholesale", "barcode", "serial", "imei", "credit sales", "mini mart"]
     ),
     answer: both(
@@ -111,7 +138,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "pharmacy",
     title: both("ร้านขายยา", "Pharmacies"),
     aliases: aliases(
-      ["ร้านขายยา", "ai แนะนำยา", "เภสัชกร", "ยา", "pharmacy intake"],
+      ["ร้านขายยา", "ร้านยา", "ai แนะนำยา", "เภสัชกร", "pharmacy intake", "ai intake"],
       ["pharmacy", "medicine advice", "pharmacist", "pharmacy intake"]
     ),
     answer: both(
@@ -150,7 +177,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "deployment",
     title: both("Cloud, Mobile Offline และ Retail Local", "Cloud, mobile offline and Retail Local"),
     aliases: aliases(
-      ["cloud", "offline", "เน็ตล่ม", "retail local", "ติดตั้งในร้าน", "ใช้โดยไม่มีอินเทอร์เน็ต"],
+      ["cloud", "offline", "ออฟไลน์", "เน็ตล่ม", "เน็ตหลุด", "retail local", "ติดตั้งในร้าน", "ใช้โดยไม่มีอินเทอร์เน็ต"],
       ["cloud", "offline", "internet outage", "retail local", "on premises"]
     ),
     answer: both(
@@ -189,7 +216,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "onboarding",
     title: both("เริ่มใช้งาน BMS", "Getting started with BMS"),
     aliases: aliases(
-      ["สมัครยังไง", "เริ่มใช้งาน", "ทดลองใช้", "ขอเดโม", "ย้ายระบบ", "นำเข้าข้อมูล", "ติดตั้ง"],
+      ["สมัครยังไง", "สมัครต้องใช้บัตร", "เริ่มใช้งาน", "ทดลองใช้", "ขอเดโม", "ย้ายระบบ", "นำเข้าข้อมูล", "ติดตั้ง"],
       ["how to sign up", "get started", "trial", "demo", "migrate data", "import data", "installation"]
     ),
     answer: both(
@@ -203,7 +230,7 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
     id: "hardware",
     title: both("อุปกรณ์ POS", "POS hardware"),
     aliases: aliases(
-      ["มือถือ", "android", "iphone", "desktop", "windows", "เครื่องพิมพ์", "ลิ้นชัก", "esc/pos", "ฮาร์ดแวร์"],
+      ["มือถือ", "android", "iphone", "desktop", "windows", "เครื่องพิมพ์", "ลิ้นชัก", "esc/pos", "ฮาร์ดแวร์", "ผ่านอุปกรณ์", "เครื่องสแกน"],
       ["mobile", "android", "iphone", "desktop", "windows", "printer", "cash drawer", "esc/pos", "hardware"]
     ),
     answer: both(
@@ -211,27 +238,29 @@ export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
       "BMS has Web POS, Mobile POS and a Desktop shell. Mobile contains server-connected workflows and Wi-Fi/LAN ESC/POS printing support, but not every printer or cash drawer is certified. Desktop requires the server and does not yet provide offline tender or generally distributed signed/auto-updating packages."
     ),
     availability: "LIMITED"
-  }
+  },
+  ...BMS_PRESALES_FAQ,
 ];
 
 function normalize(value: string): string {
-  return value.normalize("NFKC").toLocaleLowerCase().replace(/\s+/g, " ").trim();
+  return value.normalize("NFKC").toLowerCase().replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[?!？!.,:;]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
 function scoreEntry(query: string, entry: PresalesKnowledgeEntry, locale: PresalesLocale): number {
   const q = normalize(query);
   if (!q) return 0;
   const title = normalize(entry.title[locale]);
-  const entryAliases = entry.aliases[locale].map(normalize);
-  let score = title === q ? 100 : title.includes(q) || q.includes(title) ? 50 : 0;
+  // Mixed Thai/English questions are common. Language selects output, not what can be found.
+  const entryAliases = [...entry.aliases.th, ...entry.aliases.en].map(normalize);
+  let score = title === q ? 100 : q.includes(title) ? 50 : 0;
   for (const alias of entryAliases) {
     if (alias === q) score = Math.max(score, 100);
-    else if (q.includes(alias)) score = Math.max(score, 30 + Math.min(alias.length, 20));
+    else if (q.includes(alias)) score = Math.max(score, 30 + Math.min(alias.length, 40));
     else if (alias.includes(q) && q.length >= 4 && q.length * 2 >= alias.length) score = Math.max(score, 20);
   }
-  const tokens = q.split(/[\s/,]+/).filter(token => token.length >= 2);
-  const haystack = normalize(`${entry.title[locale]} ${entry.aliases[locale].join(" ")} ${entry.answer[locale]}`);
-  score += tokens.filter(token => haystack.includes(token)).length * 2;
+  // Never match merely because a filler word occurs in a long answer ("ยัง", "ได้", "the").
+  if (entry.id === "clarification" && score < 100) return 0;
   return score;
 }
 
@@ -248,7 +277,10 @@ export function searchBmsPresalesKnowledge(
 }
 
 export function isBmsPlanQuestion(message: string): boolean {
-  return /(?:ราคา|แพ็กเกจ|package|pricing|price|กี่บาท|รายเดือน|\bfree\b|ฟรี|\bpro\b|\bbusiness\s+(?:plan|package)\b|(?:\bplan|\bpackage)\s+business\b|โควตา|quota|แต้ม\s*ai|ai\s*(?:point|credit))/i.test(message);
+  if (/^(?:ราคา|price|cost|เท่าไร|เท่าไหร่)$/.test(normalize(message))) return true;
+  // Time entitlements are not subscription packages. Preserve an explicit mixed plan request.
+  if (/(?:แพ็กเกจชั่วโมง|hour pass|time pass)/i.test(message) && !/(?:\bfree\b|\bpro\b|\bbusiness\b|แพ็กเกจ\s*bms|subscription)/i.test(message)) return false;
+  return /(?:แพ็กเกจ|package|pricing|กี่บาท|รายเดือน|\bfree\b|แบบฟรี|\bpro\b|\bbusiness\s+(?:plan|package)\b|(?:\bplan|\bpackage)\s+business\b|โควตา|quota|ราคา(?:เท่าไร|เท่าไหร่)|เสียเท่าไร|ได้กี่(?:สาขา|เครื่อง|คน|รายการ|ช่องทาง)|จำนวนออร์เดอร์ต่อเดือน|แต้ม\s*ai|ai\s*(?:point|credit))/i.test(message);
 }
 
 export function isBmsPresalesGreeting(message: string): boolean {
@@ -265,7 +297,8 @@ export function composePresalesKnowledgeReply(
       ? "I do not yet have a verified answer for that question. Please share your business type and what you need help with so the BMS team can follow up."
       : "ตอนนี้ยังไม่มีคำตอบที่ตรวจสอบแล้วสำหรับเรื่องนี้ค่ะ รบกวนบอกประเภทธุรกิจและสิ่งที่ต้องการให้ช่วยเพิ่มเติม เพื่อให้ทีม BMS รับช่วงต่อได้ค่ะ";
   }
-  return [first.answer[locale], first.nextQuestion?.[locale]].filter(Boolean).join("\n\n");
+  const answers = [...new Set(matches.map(match => match.answer[locale]))];
+  return [...answers, first.nextQuestion?.[locale]].filter(Boolean).join("\n\n");
 }
 
 export type PublicPlan = Pick<Plan,
@@ -304,11 +337,11 @@ export function composeBmsPlanReply(plans: readonly PublicPlan[], locale: Presal
       : "ขณะนี้ตรวจสอบแพ็กเกจ BMS ล่าสุดไม่ได้ค่ะ กรุณาลองใหม่ภายหลังหรือสอบถามทีม BMS โดยตรง";
   }
   const blocks = plans.map(plan => locale === "en"
-    ? `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("en-US")} THB/month` : "Free"}\n  Products ${limit(plan.max_products, locale)} · users ${limit(plan.max_users, locale)} · branches ${limit(plan.max_branches, locale)} · POS devices ${limit(plan.max_devices, locale)} · channels ${limit(plan.max_channels, locale)} · AI ${limit(plan.ai_credits_monthly, locale)} points/month`
-    : `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("th-TH")} บาท/เดือน` : "ฟรี"}\n  สินค้า ${limit(plan.max_products, locale)} · ผู้ใช้ ${limit(plan.max_users, locale)} · สาขา ${limit(plan.max_branches, locale)} · เครื่อง POS ${limit(plan.max_devices, locale)} · ช่องทาง ${limit(plan.max_channels, locale)} · AI ${limit(plan.ai_credits_monthly, locale)} แต้ม/เดือน`
+    ? `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("en-US")} THB/month` : "Free"}\n  Products ${limit(plan.max_products, locale)} · users ${limit(plan.max_users, locale)} · branches ${limit(plan.max_branches, locale)} · POS devices ${limit(plan.max_devices, locale)} · channels ${limit(plan.max_channels, locale)} · orders ${limit(plan.max_orders_month, locale)}/month · AI ${limit(plan.ai_credits_monthly, locale)} points/month`
+    : `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("th-TH")} บาท/เดือน` : "ฟรี"}\n  สินค้า ${limit(plan.max_products, locale)} · ผู้ใช้ ${limit(plan.max_users, locale)} · สาขา ${limit(plan.max_branches, locale)} · เครื่อง POS ${limit(plan.max_devices, locale)} · ช่องทาง ${limit(plan.max_channels, locale)} · ออร์เดอร์ ${limit(plan.max_orders_month, locale)}/เดือน · AI ${limit(plan.ai_credits_monthly, locale)} แต้ม/เดือน`
   );
   const note = locale === "en"
-    ? "Core POS, CRM, inventory, payments, tax and data export remain available across plans. Scheduled reports start at Pro and new Retention analyses require Business for new shops. There is currently no automatic recurring subscription charge or Pro trial."
-    : "งานหลัก POS, CRM, สต็อก รับเงิน ภาษี และส่งออกข้อมูลใช้ได้ทุกแพ็กเกจค่ะ สำหรับร้านใหม่ การตั้งเวลารายงานเริ่มที่ Pro และการสร้าง Retention analysis ใหม่ต้องใช้ Business ปัจจุบันยังไม่มีการตัดค่าสมาชิกรายเดือนอัตโนมัติหรือ Pro trial";
+    ? "These are public new-signup limits, not verified entitlements for your shop; legacy shops and Retail Local have different rules. Core POS, CRM, inventory, payments, tax and data export remain available across plans. Scheduled reports start at Pro and new Retention analyses require Business for new shops. There is currently no automatic recurring subscription charge or Pro trial."
+    : "นี่คือขีดจำกัดสาธารณะสำหรับการสมัครใหม่ ไม่ใช่ผลตรวจสิทธิ์ของร้านคุณ ร้านเดิมและ Retail Local มีเงื่อนไขต่างกัน งานหลัก POS, CRM, สต็อก รับเงิน ภาษี และส่งออกข้อมูลใช้ได้ทุกแพ็กเกจค่ะ สำหรับร้านใหม่ การตั้งเวลารายงานเริ่มที่ Pro และการสร้าง Retention analysis ใหม่ต้องใช้ Business ปัจจุบันยังไม่มีการตัดค่าสมาชิกรายเดือนอัตโนมัติหรือ Pro trial";
   return [locale === "en" ? "Current BMS plans" : "แพ็กเกจ BMS ปัจจุบัน", ...blocks, note, locale === "en" ? "How many branches and POS devices do you expect to use?" : "คาดว่าจะใช้กี่สาขาและกี่เครื่อง POS คะ?"].join("\n\n");
 }

@@ -57,11 +57,28 @@ staff-maintained CRM fields. The sync is TTL-gated and short-timeout, so a LINE 
 blocked user, missing consent/friendship, or rate limit never prevents the message from appearing
 in Inbox.
 
-The same post-write path also syncs LINE OA/bot metadata via `GET /v2/bot/info` and caches it on
+The text-message path also syncs LINE OA/bot metadata via `GET /v2/bot/info` and caches it on
 `bms_tenant_channels.extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`, `botChatMode`,
-`botInfoSyncedAt`). Inbox uses this cache to show which LINE OA/shop received the message, for
+`botInfoSyncedAt`, `botIdentityTokenHash`). Inbox uses this cache to show which LINE OA/shop received the message, for
 example `ทักจาก: LINE OA “Jachoei Shoes” @jachoei`. This is also cache-backed; do not call LINE bot
 info APIs from Inbox rendering.
+
+Assistant routing requires provider-verified identity bound to the current access token. Only the
+verified BMS OA (`@168tnlzi`) gets the public presales assistant; other verified OAs keep shop commerce.
+Settings cannot supply or overwrite these provider-owned fields, even in an extra-only save. Changing
+the token invalidates the identity; re-saving the same token preserves it. Provider cache writes use
+a tenant transaction and compare the stored credential so an in-flight response cannot bind an old OA
+to a replacement token.
+
+For an already verified token, display refresh is best-effort **after** replies; bot-info or cache
+failures cannot abort that assistant turn. An unknown/unbound identity (including a legacy cache's
+first text message after rollout) needs one successful verification **before** claiming events. If it
+cannot be verified, the webhook returns 503 without invoking AI or sending a message; it never guesses
+shop mode. Enable [LINE webhook redelivery](https://developers.line.biz/en/docs/messaging-api/receiving-messages/#enable-webhook-redelivery)
+for recovery; delivery is not guaranteed by a 503 alone.
+Empty verification requests and non-text events do not require bot-info verification. Regression
+coverage: `line-bot-identity-contract`, `line-webhook-ack-contract`, and
+`ai-eval/presales-isolation-contract` use stubbed network/database boundaries, not live LINE delivery.
 
 After the inbox write succeeds, `logConversation()` publishes a tenant-scoped
 `bmsInboxChanged` event. Operators with the Inbox open refetch the changed list and, when selected,

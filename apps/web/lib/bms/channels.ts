@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { requireCapacityForUpsert } from "./entitlements";
 import { encryptSecret, decryptSecret, maskSecret } from "./crypto";
+import { lineChannelExtra } from "./lineBotIdentity";
 
 export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada";
 
@@ -85,21 +86,11 @@ export async function upsertChannel(
       : prev?.channel_secret ?? null;
     const active = input.active ?? prev?.active ?? true;
     let extra = input.extra ?? prev?.extra ?? {};
-    // LINE bot metadata is provider-owned identity. A newly supplied token may point to a
-    // different OA, so discard the cached identity and force `/v2/bot/info` to verify it again
-    // before the webhook selects any identity-specific assistant mode.
-    if (channel === "line" && normalizedAccessToken && extra && typeof extra === "object" && !Array.isArray(extra)) {
-      const {
-        botDisplayName: _botDisplayName,
-        botBasicId: _botBasicId,
-        botPictureUrl: _botPictureUrl,
-        botChatMode: _botChatMode,
-        botInfoSyncedAt: _botInfoSyncedAt,
-        botInfoErrorAt: _botInfoErrorAt,
-        botInfoError: _botInfoError,
-        ...preservedExtra
-      } = extra;
-      extra = preservedExtra;
+    if (channel === "line") {
+      // Even an extra-only save must not forge a bot identity. Preserve the provider cache
+      // for an unchanged token; a genuinely different token requires fresh verification.
+      const tokenChanged = Boolean(normalizedAccessToken && normalizedAccessToken !== decryptSecret(prev?.access_token));
+      extra = lineChannelExtra(prev?.extra, input.extra, tokenChanged);
     }
 
     // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept

@@ -138,6 +138,7 @@ import {
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
 import {
+  BMS_PRESALES_KNOWLEDGE,
   composeBmsPlanReply,
   composePresalesKnowledgeReply,
   listBmsPublicPlans,
@@ -157,24 +158,34 @@ const searchBmsPresalesTool: BmsTool = {
   inputSchema: {
     type: "object",
     properties: {
-      query: { type: "string", minLength: 1, maxLength: 240 },
+      query: { type: "string", minLength: 1, maxLength: 2000 },
+      topicIds: { type: "array", items: { type: "string", enum: BMS_PRESALES_KNOWLEDGE.map(entry => entry.id) }, minItems: 1, maxItems: 5 },
       locale: { type: "string", enum: ["th", "en"] },
       limit: { type: "integer", minimum: 1, maximum: 5 },
     },
     required: ["query"],
     additionalProperties: false,
   },
-  execute: async (args): Promise<ToolResult> => {
-    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
-    const matches = searchBmsPresalesKnowledge(
-      reqString(args, "query").slice(0, 240),
-      locale,
-      optInt(args, "limit", 1, 5) ?? 3
-    ).map(entry => ({
+  execute: async (args, ec): Promise<ToolResult> => {
+    const requestedLocale = enumVal(args, "locale", ["th", "en"] as const, false);
+    const locale = ec.locale ?? requestedLocale ?? "th";
+    const query = reqString(args, "query");
+    if (query.length > 2000) throw new ToolArgError("query is too long");
+    const limit = optInt(args, "limit", 1, 5) ?? 3;
+    const ids = args.topicIds;
+    if (ids !== undefined && (!Array.isArray(ids) || !ids.length || ids.length > 5 ||
+      ids.some(id => typeof id !== "string" || !BMS_PRESALES_KNOWLEDGE.some(entry => entry.id === id)))) {
+      throw new ToolArgError("topicIds must contain 1-5 known public BMS topics");
+    }
+    const entries = Array.isArray(ids)
+      ? [...new Set(ids)].map(id => ({ ...BMS_PRESALES_KNOWLEDGE.find(entry => entry.id === id)!, score: 100 }))
+      : searchBmsPresalesKnowledge(query, locale, limit);
+    const matches = entries.map(entry => ({
       id: entry.id,
       title: entry.title[locale],
       answer: entry.answer[locale],
       availability: entry.availability,
+      requiresPlans: Boolean(entry.requiresPlans),
       nextQuestion: entry.nextQuestion?.[locale] ?? null,
       score: entry.score,
     }));
@@ -196,7 +207,7 @@ const searchBmsPresalesTool: BmsTool = {
 const listBmsPublicPlansTool: BmsTool = {
   name: "list_bms_public_plans",
   description:
-    "Read the current public BMS plan catalog and capacity limits from the authoritative backend. Always use this tool for BMS pricing, plan, quota, branch, device, channel, user, product or AI-point questions; never quote remembered prices.",
+    "Read current public BMS subscription prices and capacity limits. Use for plan comparisons or numeric allowances, not product-price configuration, loyalty points, hardware prices or private shop entitlements. Never quote remembered subscription prices.",
   surfaces: ["customer"],
   customerMode: "bms_presales",
   inputSchema: {
