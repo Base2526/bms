@@ -33,6 +33,8 @@ import { useSessionCtx } from "@/lib/session-context";
 import { useI18n } from "@/lib/i18nContext";
 import BmsFlowDiagram from "@/components/marketing/flow/BmsFlowDiagram";
 import PlanAiChangeNotice from "@/components/billing/PlanAiChangeNotice";
+import { LineIcon } from "@/components/marketing/LineOa";
+import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
 import styles from "./page.module.css";
 
 const { Title, Paragraph, Text } = Typography;
@@ -416,6 +418,11 @@ export default function HomePage() {
           <Link href={primaryCta.href}>
             <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
           </Link>
+          {/* Outlined on purpose: signing up stays the one primary action here. */}
+          <Button size="large" className={styles.lineCta} icon={<LineIcon />}
+            href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">
+            {t("landing.lineAsk")}
+          </Button>
         </Space>
       </section>
     </div>

@@ -2,6 +2,8 @@
 
 import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { LineIcon, LineOaQr } from "@/components/marketing/LineOa";
+import { BMS_LINE_OA_ID, BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
 import {
   ApiOutlined,
   BarChartOutlined,
@@ -52,6 +54,9 @@ const COPY = {
   th: {
     description: "ระบบบริหารธุรกิจที่เปลี่ยนทุกบทสนทนาของลูกค้าให้เป็น Workflow ที่ตรวจสอบได้",
     start: "เริ่มใช้ฟรี",
+    lineAdd: "เพิ่มเพื่อน LINE",
+    lineNote: "สอบถาม/แจ้งปัญหา",
+    lineQrAria: "QR code เพิ่มเพื่อน LINE ของ BMS",
     product: "ผลิตภัณฑ์",
     workflow: "การทำงานของ BMS",
     demo: "ทดลองคุยกับ AI",
@@ -84,6 +89,9 @@ const COPY = {
   en: {
     description: "A business operating system that turns every customer conversation into an auditable workflow.",
     start: "Start free",
+    lineAdd: "Add us on LINE",
+    lineNote: "Questions and support",
+    lineQrAria: "QR code to add BMS on LINE",
     product: "Product",
     workflow: "How BMS works",
     demo: "Try the AI",
@@ -181,6 +189,15 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
               </Link>
               <p>{t.description}</p>
               <Link href="/shop-signup" className="bms-footer-cta"><RocketOutlined />{t.start}</Link>
+              <div className="bms-footer-line">
+                <span className="bms-footer-line-qr"><LineOaQr url={BMS_LINE_OA_URL} label={t.lineQrAria} /></span>
+                <span className="bms-footer-line-copy">
+                  <a href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer" className="bms-footer-line-btn">
+                    <LineIcon size={16} />{t.lineAdd}
+                  </a>
+                  <small>{BMS_LINE_OA_ID} · {t.lineNote}</small>
+                </span>
+              </div>
             </div>
 
             <div className="bms-footer-columns">
@@ -278,6 +295,24 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           font-weight: 600;
           box-shadow: 0 10px 24px rgba(var(--app-primary-rgb),.18);
         }
+
+        .bms-footer-line { display: flex; align-items: center; gap: 12px; }
+        .bms-footer-line-qr { display: inline-flex; border: 1px solid var(--app-border); border-radius: 10px; overflow: hidden; flex: none; }
+        .bms-footer-line-copy { display: grid; gap: 6px; justify-items: start; }
+        .bms-footer-line-copy small { color: var(--app-muted); }
+        /* #06893B is LINE green darkened to keep white text at 4.5:1. */
+        .bms-footer-line-btn {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          border-radius: 999px;
+          padding: 7px 14px;
+          background: #06893b;
+          color: #fff;
+          text-decoration: none;
+          font-weight: 600;
+        }
+        .bms-footer-line-btn:hover { background: #057a34; color: #fff; }
 
         .bms-footer-column { display: grid; align-content: start; gap: 11px; }
         .bms-footer-column h2 { margin: 0 0 4px; color: var(--app-text); font-size: 14px; }
@@ -381,6 +416,12 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           .bms-footer-brand-line strong { font-size: 16px; }
           .bms-footer-brand-line small { font-size: 12.5px; }
           .bms-footer-cta { width: 100%; justify-content: center; font-size: 13.5px; padding: 10px 15px; }
+          /* A phone can't scan its own screen: show only the button, which
+             opens the LINE app directly. */
+          .bms-footer-line-qr { display: none; }
+          .bms-footer-line, .bms-footer-line-copy, .bms-footer-line-btn { width: 100%; }
+          .bms-footer-line-btn { justify-content: center; padding: 10px 15px; }
+          .bms-footer-line-copy { justify-items: center; }
 
           /* Collapse the 3 link columns into a tighter 2-up grid so the footer
              doesn't run into one long stack of rows on narrow screens. */
