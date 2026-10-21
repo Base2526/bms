@@ -53,6 +53,13 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
   (`get_store_info`, `get_payment_info`, `get_shipping_estimate`, `get_customer_checkout`,
   `save_customer_checkout_details`, `detect_language`). Never any
   sensitive/A3 tool.
+  This surface has a server-selected sub-mode. Ordinary shop channels use `shop_commerce` and keep
+  the tools above. The verified BMS LINE OA (`@168tnlzi`) uses `bms_presales` and receives only
+  `search_bms_presales` plus `list_bms_public_plans`; runtime authorization rejects either mode's
+  tools when called from the other mode. Bot identity comes from LINE's verified bot-info response,
+  never from message text or webhook JSON. The presales search reads a separate public-safe catalog
+  with no admin routes or staff permissions; plan prices and limits are read live through
+  `listPlans()` rather than copied into prompts.
 - **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
   documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
   **propose-only** — the tool returns a proposal, a human clicks Confirm, and the UI fires the

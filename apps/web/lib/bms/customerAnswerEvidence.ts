@@ -29,7 +29,7 @@ export const PUBLIC_EVIDENCE_TOOLS = new Set([
   "check_stock", "list_menu_modifiers", "list_restaurant_order_locations", "get_restaurant_availability",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability", "get_store_info",
   "list_available_coupons", "list_customer_coupons", "check_coupon", "get_shipping_estimate",
-  "recommend_products",
+  "recommend_products", "search_bms_presales", "list_bms_public_plans",
 ]);
 const PUBLIC_KEYS = new Set((
   "verifiedAt status total products sku name price maxPrice category brand active availability available availableTotal " +
@@ -53,7 +53,9 @@ const PUBLIC_KEYS = new Set((
   "kitchen inProgressTickets readyAwaitingServiceTickets oldestInProgressTicketMinutes activeStations configuredSlaMinutes warnFrom lateBy estimatedPrepMinutes " +
   "pricePerHour customerType availableSizes packs packCode unitName baseQty candidates basis createdAt updatedAt " +
   "foodProfile allergenCodes allergenInformationProvided dietaryTags minSelect maxSelect " +
-  "type minOrderAmount remainingRedemptions subtotalOk discountPreview reason state warnings"
+  "type minOrderAmount remainingRedemptions subtotalOk discountPreview reason state warnings " +
+  "locale matches id answer nextQuestion score availability plans code price_monthly max_products max_channels " +
+  "max_orders_month max_users max_branches max_devices ai_credits_monthly feature_keys"
 ).split(/\s+/));
 const STATUS_KEYS = new Set((
   "status configured marketplaceManaged hasRecipientName hasPhone hasAddress missingFields " +
@@ -67,7 +69,7 @@ const STATUS_KEYS = new Set((
 const INPUT_KEYS = new Set((
   "sku size qty quantity branch locationId partySize desiredAt reservedLocal durationMinutes action " +
   "players playersTo difficulty limit offset subtotal items packCode fulfillmentType " +
-  "product keyword category brand minPrice maxPrice inStockOnly sort"
+  "product keyword category brand minPrice maxPrice inStockOnly sort query locale"
 ).split(/\s+/));
 /** Explicit inventory: adding a customer tool requires choosing a privacy policy and a test. */
 export const STATUS_EVIDENCE_TOOLS = new Set([
@@ -80,10 +82,10 @@ export const STATUS_EVIDENCE_TOOLS = new Set([
 ]);
 const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking " +
   "options modifierGroups coupons requested alternatives fields requests orders items tier tables queue reservations kitchen configuredSlaMinutes " +
-  "availableSizes packs candidates foodProfile").split(/\s+/));
+  "availableSizes packs candidates foodProfile matches plans").split(/\s+/));
 const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups " +
-  "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings").split(/\s+/));
-const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings".split(/\s+/));
+  "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings matches plans feature_keys").split(/\s+/));
+const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings feature_keys".split(/\s+/));
 export function redactEvidenceText(value: string): string {
   return value.replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL]")

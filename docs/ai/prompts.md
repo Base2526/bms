@@ -73,6 +73,13 @@ Since AI tool-calling landed, two additional constrained system prompts drive th
 anthropic-compatible provider's tool-use
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
+The customer surface also has a deterministic `bms_presales` mode for BMS's own verified LINE OA.
+It does not reuse the shop persona or commerce catalog. Greetings and capability questions call
+`search_bms_presales`; pricing/quota questions call `list_bms_public_plans`. Replies are composed
+from those bounded verified results without a provider call, so the first answer still works when
+shared AI credentials are unavailable. Unknown topics explicitly hand off to the BMS team instead
+of inventing a feature, integration status, price, timeline, or implementation promise.
+
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
   shop information and services are first-class requests, without a mandatory product-sales CTA.
   `CUSTOMER_STORE_CONTEXT_POLICY` in `customerStoreContext.ts` instructs the model to use the

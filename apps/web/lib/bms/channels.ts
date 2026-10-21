@@ -84,7 +84,23 @@ export async function upsertChannel(
       ? encryptSecret(normalizedChannelSecret)
       : prev?.channel_secret ?? null;
     const active = input.active ?? prev?.active ?? true;
-    const extra = input.extra ?? prev?.extra ?? {};
+    let extra = input.extra ?? prev?.extra ?? {};
+    // LINE bot metadata is provider-owned identity. A newly supplied token may point to a
+    // different OA, so discard the cached identity and force `/v2/bot/info` to verify it again
+    // before the webhook selects any identity-specific assistant mode.
+    if (channel === "line" && normalizedAccessToken && extra && typeof extra === "object" && !Array.isArray(extra)) {
+      const {
+        botDisplayName: _botDisplayName,
+        botBasicId: _botBasicId,
+        botPictureUrl: _botPictureUrl,
+        botChatMode: _botChatMode,
+        botInfoSyncedAt: _botInfoSyncedAt,
+        botInfoErrorAt: _botInfoErrorAt,
+        botInfoError: _botInfoError,
+        ...preservedExtra
+      } = extra;
+      extra = preservedExtra;
+    }
 
     // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
     // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ

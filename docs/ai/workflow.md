@@ -141,6 +141,10 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
   and creates a staff-reviewed queue item; it never sends proactively from the AI turn. This is a
   revenue-recovery path: out-of-stock demand becomes a queue the shop can convert later when stock
   returns. No sensitive (A3) tool is ever exposed here.
+  The same surface has a server-selected `bms_presales` mode used only by the verified BMS LINE OA.
+  It bypasses shop profile/history/catalog/order routing after the emergency guards and executes one
+  audited public BMS knowledge or live-plan read. A separate LINE OA cannot select this mode through
+  its tenant id, incoming text, or event body, and presales can never execute a commerce tool.
 - **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
   UI `/admin/assistant`). The active provider gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
@@ -164,6 +168,11 @@ Customer
     ▼
 Receive Message        ← per-tenant webhook (LINE / TikTok / Facebook / Instagram / Web / Shopee / Lazada)
     │
+    ▼
+Verified BMS LINE OA?  ← provider-synced LINE Basic ID; no message/body-controlled switch
+    │
+    ├─ yes ────────────▶ server-selected `search_bms_presales` or `list_bms_public_plans`
+    │                     → bounded verified reply + audit/evidence; no shop/order tools
     ▼
 Deterministic intent?  ← coupon wallet / own-order status / payment / reorder / confirmed order slots
     │                     Server selects an approved catalog tool, then runtime applies the same

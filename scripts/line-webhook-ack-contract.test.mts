@@ -74,3 +74,15 @@ test("LINE delivery rejection reports push failure without rerunning AI", async 
   assert.equal(h.calls.deliveries.length, 1);
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.push_failed"]);
 });
+
+test("verified BMS LINE OA selects presales mode while ordinary LINE stays in shop mode", async () => {
+  const bms = webhookHarness("line", {
+    lineBotExtra: { botBasicId: "@168tnlzi", botInfoSyncedAt: "2026-10-21T00:00:00Z" },
+  });
+  await bms.post();
+  assert.deepEqual(bms.calls.pipeline[0][4], { assistantMode: "bms_presales" });
+
+  const shop = webhookHarness("line");
+  await shop.post();
+  assert.deepEqual(shop.calls.pipeline[0][4], { assistantMode: "shop_commerce" });
+});

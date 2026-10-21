@@ -27,6 +27,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   fetch?: Function;
   signatureValid?: boolean;
   secret?: string | null;
+  lineBotExtra?: Record<string, unknown>;
 } = {}) {
   const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][],
     deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], profiles: 0 };
@@ -34,7 +35,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   const route = loadWithStubs(`apps/web/app/api/bms/${channel}/webhook/[tenantId]/route.ts`, {
     "next/server": { NextResponse: { json: (body: unknown, options?: { status: number }) => ({ body, status: options?.status ?? 200 }) } },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
-    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token" }) },
+    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", extra: options.lineBotExtra ?? {} }) },
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; } },
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
@@ -59,6 +60,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
       syncLineUserProfile: async () => { calls.profiles++; return { ok: true, conversationIds: [] }; },
       syncLineBotInfo: async () => ({ ok: true }),
     },
+    "@/lib/bms/lineOfficialAccount": { isBmsLineOfficialAccount: (extra: any) => extra?.botBasicId === "@168tnlzi" && typeof extra?.botInfoSyncedAt === "string" },
   }, async (...args: any[]) => {
     calls.deliveries.push(args);
     return options.fetch ? options.fetch(...args) : { ok: true };

@@ -259,6 +259,13 @@ async function authorizeTool(tool: BmsTool, ec: ExecCtx): Promise<void> {
   if (ec.surface === "customer" && tool.sensitive) {
     throw new ToolAccessError("ลูกค้าเรียกทูลที่ต้องยืนยันไม่ได้");
   }
+  if (ec.surface === "customer") {
+    const actualMode = ec.customerMode ?? "shop_commerce";
+    const requiredMode = tool.customerMode ?? "shop_commerce";
+    if (actualMode !== requiredMode) {
+      throw new ToolAccessError(`ทูล ${tool.name} ใช้กับ customer mode นี้ไม่ได้`);
+    }
+  }
   if (ec.surface === "staff" && tool.permission) {
     if (!ec.ctx) throw new ToolAccessError("ไม่มี staff context สำหรับตรวจสิทธิ์");
     try {
@@ -296,6 +303,7 @@ async function auditToolCall(
     permission: tool?.permission ?? null,
     sensitive: Boolean(tool?.sensitive),
     channel: ec.surface === "customer" ? ec.channel ?? null : null,
+    customerMode: ec.surface === "customer" ? ec.customerMode ?? "shop_commerce" : null,
   });
 }
 
