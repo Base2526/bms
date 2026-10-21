@@ -29,7 +29,7 @@ export const PUBLIC_EVIDENCE_TOOLS = new Set([
   "check_stock", "list_menu_modifiers", "list_restaurant_order_locations", "get_restaurant_availability",
   "get_board_game_rates", "search_board_game_library", "get_board_game_availability", "get_store_info",
   "list_available_coupons", "list_customer_coupons", "check_coupon", "get_shipping_estimate",
-  "recommend_products",
+  "recommend_products", "search_bms_presales", "list_bms_public_plans",
 ]);
 const PUBLIC_KEYS = new Set((
   "verifiedAt status total products sku name price maxPrice category brand active availability available availableTotal " +
@@ -69,6 +69,12 @@ const INPUT_KEYS = new Set((
   "players playersTo difficulty limit offset subtotal items packCode fulfillmentType " +
   "product keyword category brand minPrice maxPrice inStockOnly sort"
 ).split(/\s+/));
+// Presales fields must not widen projections for shop/clinical/customer tools. In particular,
+// generic `id` and free-form `answer` fields are not approved shop-catalog evidence.
+const PRESALES_INPUT_KEYS = new Set("query locale limit topicIds".split(" "));
+const PRESALES_KNOWLEDGE_KEYS = new Set("verifiedAt locale matches id title answer nextQuestion score availability requiresPlans".split(" "));
+const PRESALES_PLAN_KEYS = new Set(("verifiedAt locale plans code name price_monthly max_products max_channels " +
+  "max_orders_month max_users max_branches max_devices ai_credits_monthly feature_keys").split(" "));
 /** Explicit inventory: adding a customer tool requires choosing a privacy policy and a test. */
 export const STATUS_EVIDENCE_TOOLS = new Set([
   "request_restaurant_reservation", "get_restaurant_reservation_status", "subscribe_restock_notification",
@@ -80,10 +86,10 @@ export const STATUS_EVIDENCE_TOOLS = new Set([
 ]);
 const CONTAINER_KEYS = new Set(("products variants sizes branch branches locations branchParking parking tableDetails groups rates games titles booking " +
   "options modifierGroups coupons requested alternatives fields requests orders items tier tables queue reservations kitchen configuredSlaMinutes " +
-  "availableSizes packs candidates foodProfile").split(/\s+/));
+  "availableSizes packs candidates foodProfile matches plans").split(/\s+/));
 const ARRAY_KEYS = new Set(("products variants sizes branches locations tableDetails groups rates games titles tags options modifierGroups " +
-  "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings").split(/\s+/));
-const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings".split(/\s+/));
+  "coupons alternatives requests orders items enabledCarriers missingFields omittedFields availableSizes packs candidates allergenCodes dietaryTags warnings matches plans feature_keys topicIds").split(/\s+/));
+const SCALAR_ARRAY_KEYS = new Set("sizes tags enabledCarriers missingFields omittedFields availableSizes allergenCodes dietaryTags warnings feature_keys topicIds".split(/\s+/));
 export function redactEvidenceText(value: string): string {
   return value.replace(/https?:\/\/\S+/gi, "[URL]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL]")
@@ -136,8 +142,11 @@ export function projectToolEvidence(tool: string, input: unknown, output: unknow
   if (clinical) reasons.add("CLINICAL_METADATA_ONLY");
   if (!input || typeof input !== "object" || Array.isArray(input)) { input = {}; reasons.add("INVALID_INPUT_SHAPE"); }
   if (!output || typeof output !== "object") { output = {}; reasons.add("NON_OBJECT_OUTPUT"); }
-  const safeInput = bound(project(input, clinical ? new Set() : INPUT_KEYS, reasons, omissions), EVIDENCE_LIMITS.input, reasons);
-  const keys = PUBLIC_EVIDENCE_TOOLS.has(tool) ? PUBLIC_KEYS : STATUS_KEYS;
+  const presales = tool === "search_bms_presales" || tool === "list_bms_public_plans";
+  const safeInput = bound(project(input, clinical ? new Set() : presales ? PRESALES_INPUT_KEYS : INPUT_KEYS, reasons, omissions), EVIDENCE_LIMITS.input, reasons);
+  const keys = tool === "search_bms_presales" ? PRESALES_KNOWLEDGE_KEYS
+    : tool === "list_bms_public_plans" ? PRESALES_PLAN_KEYS
+    : PUBLIC_EVIDENCE_TOOLS.has(tool) ? PUBLIC_KEYS : STATUS_KEYS;
   const safeOutput = bound(project(output, clinical ? new Set(["status", "referenceAmbiguous"]) : keys, reasons, omissions), EVIDENCE_LIMITS.output, reasons);
   if (!PUBLIC_EVIDENCE_TOOLS.has(tool)) reasons.add("STATUS_ONLY");
   return { input: safeInput, output: safeOutput, reasons: [...reasons], omissions };

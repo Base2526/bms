@@ -16,7 +16,10 @@ const attempt = (tenantId = "FAKE-A", output: unknown = { status: "OK", totalTab
     outcome: "ok", source: "SERVER_SELECTED", startedAt: new Date().toISOString() });
 
 test("every actual customer tool, including factory-created tools, has an explicit evidence policy", () => {
-  const registry = customerTools().map(tool => tool.name).sort();
+  const registry = [
+    ...customerTools(),
+    ...customerTools(undefined, "bms_presales"),
+  ].map(tool => tool.name).sort();
   assert.deepEqual([...PUBLIC_EVIDENCE_TOOLS, ...STATUS_EVIDENCE_TOOLS].sort(), registry);
 });
 

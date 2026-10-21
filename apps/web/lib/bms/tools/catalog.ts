@@ -12,6 +12,7 @@ import type { Channel } from "../pipeline";
 import type { BmsPermission } from "../permissions";
 import {
   type BmsTool,
+  type CustomerAssistantMode,
   type ExecCtx,
   ToolArgError,
   type ToolResult,
@@ -136,9 +137,94 @@ import {
   groupPermissionDescriptions,
   searchAssistantKnowledge,
 } from "../assistantKnowledge";
+import {
+  BMS_PRESALES_KNOWLEDGE,
+  composeBmsPlanReply,
+  composePresalesKnowledgeReply,
+  listBmsPublicPlans,
+  searchBmsPresalesKnowledge,
+  type PresalesLocale,
+} from "../platformPresales";
 
 const CONV_STATUSES = ["OPEN", "PENDING", "CLOSED"] as const;
 const STAFF_CHANNELS = ["line", "tiktok", "facebook", "instagram", "web", "shopee", "lazada"] as const;
+
+const searchBmsPresalesTool: BmsTool = {
+  name: "search_bms_presales",
+  description:
+    "Search verified public BMS product knowledge for prospects: what BMS is, supported businesses, capabilities, channels, deployments, security, onboarding and current limitations. Use only facts returned here. Do not use the shop product catalog for questions about the BMS platform.",
+  surfaces: ["customer"],
+  customerMode: "bms_presales",
+  inputSchema: {
+    type: "object",
+    properties: {
+      query: { type: "string", minLength: 1, maxLength: 2000 },
+      topicIds: { type: "array", items: { type: "string", enum: BMS_PRESALES_KNOWLEDGE.map(entry => entry.id) }, minItems: 1, maxItems: 5 },
+      locale: { type: "string", enum: ["th", "en"] },
+      limit: { type: "integer", minimum: 1, maximum: 5 },
+    },
+    required: ["query"],
+    additionalProperties: false,
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const requestedLocale = enumVal(args, "locale", ["th", "en"] as const, false);
+    const locale = ec.locale ?? requestedLocale ?? "th";
+    const query = reqString(args, "query");
+    if (query.length > 2000) throw new ToolArgError("query is too long");
+    const limit = optInt(args, "limit", 1, 5) ?? 3;
+    const ids = args.topicIds;
+    if (ids !== undefined && (!Array.isArray(ids) || !ids.length || ids.length > 5 ||
+      ids.some(id => typeof id !== "string" || !BMS_PRESALES_KNOWLEDGE.some(entry => entry.id === id)))) {
+      throw new ToolArgError("topicIds must contain 1-5 known public BMS topics");
+    }
+    const entries = Array.isArray(ids)
+      ? [...new Set(ids)].map(id => ({ ...BMS_PRESALES_KNOWLEDGE.find(entry => entry.id === id)!, score: 100 }))
+      : searchBmsPresalesKnowledge(query, locale, limit);
+    const matches = entries.map(entry => ({
+      id: entry.id,
+      title: entry.title[locale],
+      answer: entry.answer[locale],
+      availability: entry.availability,
+      requiresPlans: Boolean(entry.requiresPlans),
+      nextQuestion: entry.nextQuestion?.[locale] ?? null,
+      score: entry.score,
+    }));
+    return { ok: true, data: { verifiedAt: new Date().toISOString(), locale, matches } };
+  },
+  fallbackReply: (data, ec) => {
+    const payload = data as { locale?: PresalesLocale; matches?: Array<{ answer?: string; nextQuestion?: string | null }> };
+    const locale = payload.locale ?? ec.locale ?? "th";
+    const matches = (payload.matches ?? []).map(match => ({
+      answer: { th: match.answer ?? "", en: match.answer ?? "" },
+      nextQuestion: match.nextQuestion
+        ? { th: match.nextQuestion, en: match.nextQuestion }
+        : undefined,
+    }));
+    return composePresalesKnowledgeReply(matches, locale);
+  },
+};
+
+const listBmsPublicPlansTool: BmsTool = {
+  name: "list_bms_public_plans",
+  description:
+    "Read current public BMS subscription prices and capacity limits. Use for plan comparisons or numeric allowances, not product-price configuration, loyalty points, hardware prices or private shop entitlements. Never quote remembered subscription prices.",
+  surfaces: ["customer"],
+  customerMode: "bms_presales",
+  inputSchema: {
+    type: "object",
+    properties: { locale: { type: "string", enum: ["th", "en"] } },
+    additionalProperties: false,
+  },
+  execute: async (args): Promise<ToolResult> => {
+    const locale = enumVal(args, "locale", ["th", "en"] as const, false) ?? "th";
+    const plans = await listBmsPublicPlans();
+    return { ok: true, data: { verifiedAt: plans[0]?.verifiedAt ?? new Date().toISOString(), locale, plans } };
+  },
+  fallbackReply: (data, ec) => {
+    const payload = data as { locale?: PresalesLocale; plans?: Awaited<ReturnType<typeof listBmsPublicPlans>> };
+    return composeBmsPlanReply(payload.plans ?? [], payload.locale ?? ec.locale ?? "th");
+  },
+};
 
 // ---- shared helpers ----
 
@@ -3540,6 +3626,8 @@ const presentCustomerChoicesTool: BmsTool = {
 };
 
 export const ALL_TOOLS: BmsTool[] = [
+  searchBmsPresalesTool,
+  listBmsPublicPlansTool,
   presentCustomerChoicesTool,
   // A1
   searchSystemCapabilitiesTool,
@@ -3635,10 +3723,14 @@ export const ALL_TOOLS: BmsTool[] = [
 assertValidToolRegistry(ALL_TOOLS);
 
 /** ทูลฝั่งลูกค้า: เฉพาะ surface=customer (ไม่มี A3/A2-staff ตั้งแต่ต้น) */
-export function customerTools(businessArchetype?: string | null): BmsTool[] {
+export function customerTools(
+  businessArchetype?: string | null,
+  customerMode: CustomerAssistantMode = "shop_commerce"
+): BmsTool[] {
   const restaurant = businessArchetype === "restaurant";
   return ALL_TOOLS.filter((tool) => {
     if (!tool.surfaces.includes("customer")) return false;
+    if ((tool.customerMode ?? "shop_commerce") !== customerMode) return false;
     // No archetype passed = "just the customer-surface names" (progress counters, direct
     // deterministic calls). Only the list actually handed to the model is narrowed.
     if (businessArchetype === undefined) return true;

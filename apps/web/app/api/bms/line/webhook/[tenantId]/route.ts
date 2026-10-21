@@ -16,6 +16,9 @@ import { logConversation, notifyInboxConversationChanged, logInboundMessage, typ
 import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
 import { persistBuffer, buildFileUrlById } from "@/lib/storage";
 import { syncLineBotInfo, syncLineUserProfile } from "@/lib/bms/lineProfile";
+import { isBmsLineOfficialAccount } from "@/lib/bms/lineOfficialAccount";
+import { hasVerifiedLineBotIdentity } from "@/lib/bms/lineBotIdentity";
+import type { CustomerAssistantMode } from "@/lib/bms/tools/types";
 import {
   recordInboundEvent,
   recordWebhookVerifyFailed,
@@ -152,7 +155,8 @@ async function pushLineReply(
 async function processLineEvent(
   tenantId: string,
   cfg: LineChannelConfig,
-  ev: LineEvent
+  ev: LineEvent,
+  assistantMode: CustomerAssistantMode
 ): Promise<{ replyToken?: string | null; handled?: boolean; duplicate?: boolean; logged?: string; reply?: string; error?: string }> {
   if (ev.type !== "message" || !ev.message) return { replyToken: ev.replyToken, handled: false };
   if (!(await claimInboundEvent(tenantId, "line", ev.message.id ?? ev.replyToken))) {
@@ -184,7 +188,7 @@ async function processLineEvent(
   const text = ev.message.text?.trim() ?? "";
   if (!text) return { replyToken: ev.replyToken, handled: false };
   try {
-    const result = await runPipeline(text, "line", tenantId, userId);
+    const result = await runPipeline(text, "line", tenantId, userId, { assistantMode });
 
     // บันทึกลง inbox (เข้า+ออก) — best-effort
     await logConversation(tenantId, "line", userId, text, result.reply, result.quality);
@@ -208,14 +212,6 @@ async function processLineEvent(
           tenantId,
           status: profileSync.status,
           error: profileSync.error,
-        });
-      }
-      const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
-      if (!botInfoSync.ok && !botInfoSync.skipped) {
-        console.warn("[BMS] LINE bot info sync skipped/failed:", {
-          tenantId,
-          status: botInfoSync.status,
-          error: botInfoSync.error,
         });
       }
     }
@@ -289,13 +285,42 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   })() as { events?: LineEvent[] };
   const events = Array.isArray(body.events) ? body.events : [];
 
+  // The BMS prospect assistant is selected only from LINE's bot identity, never from
+  // message content or a caller-provided tenant/body field. Refresh before processing so
+  // the first real message does not accidentally enter a shop's catalog/order workflow.
+  let processingCfg = cfg;
+  const needsAssistant = events.some(ev => ev.type === "message" && ev.message?.type === "text" && ev.message.text?.trim());
+  if (needsAssistant && !hasVerifiedLineBotIdentity(cfg.extra, cfg.access_token)) {
+    // Known token-bound OAs take no extra DB/network hop. An unknown identity must not
+    // fall through to commerce (it could be the BMS OA). Retry before claiming the event.
+    try {
+      const botInfoSync = await syncLineBotInfo(tenantId, cfg.access_token);
+      if (botInfoSync.ok && hasVerifiedLineBotIdentity(botInfoSync.extra, cfg.access_token)) {
+        processingCfg = { ...cfg, extra: botInfoSync.extra };
+      } else {
+        return NextResponse.json({ error: "LINE bot identity unavailable" }, { status: 503 });
+      }
+    } catch {
+      return NextResponse.json({ error: "LINE bot identity unavailable" }, { status: 503 });
+    }
+  }
+  const assistantMode: CustomerAssistantMode = isBmsLineOfficialAccount(processingCfg.extra)
+    ? "bms_presales"
+    : "shop_commerce";
+
   // Until events have a durable work queue, keep processing within the request.
   // A later message in this batch must see the preceding turn's saved history.
   const replies = [];
   for (const ev of events) {
-    replies.push(await processLineEvent(tenantId, cfg, ev));
+    replies.push(await processLineEvent(tenantId, processingCfg, ev, assistantMode));
   }
   if (replies.some((reply) => reply.handled)) await recordInboundEvent(tenantId, "line");
+
+  // Keep display metadata refresh best-effort and after replies for already verified OAs.
+  // Failure here must not turn a completed shop conversation into an identity-routing failure.
+  if (needsAssistant && processingCfg === cfg && cfg.access_token) {
+    await syncLineBotInfo(tenantId, cfg.access_token).catch(() => undefined);
+  }
 
   return NextResponse.json({ ok: true, tenantId, replies });
 }

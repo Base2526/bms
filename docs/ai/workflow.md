@@ -141,6 +141,18 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
   and creates a staff-reviewed queue item; it never sends proactively from the AI turn. This is a
   revenue-recovery path: out-of-stock demand becomes a queue the shop can convert later when stock
   returns. No sensitive (A3) tool is ever exposed here.
+  The same surface has a server-selected `bms_presales` mode used only by the verified BMS LINE OA.
+  It bypasses shop profile/catalog/order routing after the emergency guards. Bounded own-conversation
+  history (eight messages, server-resolved tenant/channel/customer) supports semantic topic selection
+  through the shared AI runtime, followed by approved public-answer composition and live-plan reads.
+  Greetings and provider-unavailable turns have an audited deterministic fallback. A separate LINE OA cannot select this mode through
+  its tenant id, incoming text, event body, or channel-settings `extra`, and presales can never
+  execute a commerce tool. Verified OA identity is bound to the current token; legacy/unbound
+  caches require one provider check before text processing. Known OAs refresh display metadata
+  after replies, best-effort. See [LINE routing/retry behavior](../integrations/line.md).
+  This is a tool/data/routing boundary, not a new billing pool: provider credentials and usage
+  resolve for the server-selected OA tenant through the existing runtime. Other tenants are not
+  charged, but staff/customer assistants in that same tenant still share its existing AI allowance.
 - **Staff surface** — `bmsAssistant` mutation ([`graphql/bmsAssistant.ts`](../../apps/web/graphql/bmsAssistant.ts),
   UI `/admin/assistant`). The active provider gets `staffTools(perms)` filtered by the admin's RBAC. Read + A2
   writes execute (with audit); **A3 sensitive tools are propose-only** — they return a proposal that
@@ -164,6 +176,12 @@ Customer
     ▼
 Receive Message        ← per-tenant webhook (LINE / TikTok / Facebook / Instagram / Web / Shopee / Lazada)
     │
+    ▼
+Verified BMS LINE OA?  ← provider-synced LINE Basic ID; no message/body-controlled switch
+    │
+    ├─ yes ────────────▶ bounded own history → public-topic AI routing (deterministic fallback)
+    │                     → `search_bms_presales` / `list_bms_public_plans`
+    │                     → approved server-composed reply + audit/evidence; no shop/order tools
     ▼
 Deterministic intent?  ← coupon wallet / own-order status / payment / reorder / confirmed order slots
     │                     Server selects an approved catalog tool, then runtime applies the same

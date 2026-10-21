@@ -28,6 +28,7 @@ import { catalogStockMenu, stockResultMenu, insufficientStockMenu, type Customer
 import { generateResponse } from "./ai";
 import { runApprovedTool, runToolLoop, type ToolTraceEntry } from "./tools/runtime";
 import { customerTools } from "./tools/catalog";
+import { answerBmsPresales } from "./platformPresalesAssistant";
 import { boardGameCustomerGuard, boardGameUrgentGuard, BOARD_GAME_CUSTOMER_GUARD_POLICY } from "./boardGameCustomerGuard";
 import { boardGameReservationSummary, boardGameReservationReceipt, boardGameReservationStatusMenu,
   boardGameBookingActionMenu, isBoardGameReservationConfirmation,
@@ -53,7 +54,7 @@ import {
   CUSTOMER_STORE_CONTEXT_POLICY,
 } from "./customerStoreContext";
 import { answersWithParkingFacts, customerParkingFallback, isParkingQuestion, needsParkingClarification, scopeParkingFactsForReply } from "./customerParkingReply";
-import type { BmsTool, ExecCtx, ToolResult } from "./tools/types";
+import type { BmsTool, CustomerAssistantMode, ExecCtx, ToolResult } from "./tools/types";
 import {
   getRecentAiHistory,
   resolveConversationId,
@@ -686,8 +687,27 @@ function customerExecCtx(
     actor: "ai:customer",
     channel,
     customerRef,
+    customerMode: "shop_commerce",
     conversationId: conversationId ?? null,
   };
+}
+
+async function runBmsPresalesTurn(
+  message: string,
+  channel: Channel,
+  tenantId: string,
+  customerRef?: string | null
+): Promise<PipelineResult> {
+  const result = await answerBmsPresales(message, { tenantId, channel, customerRef });
+  return customerSafe({
+    channel,
+    incoming: message,
+    understanding: understand(message),
+    tool: `${result.usedAi ? "ai" : "deterministic"}:bms-presales`,
+    data: { status: "NOT_FOUND", query: message },
+    reply: result.reply,
+    trace: result.trace,
+  });
 }
 
 async function executeCustomerTool(
@@ -1715,10 +1735,11 @@ export async function runPipeline(
   message: string,
   channel: Channel,
   tenantId: string,
-  customerRef?: string | null
+  customerRef?: string | null,
+  options: { assistantMode?: CustomerAssistantMode } = {}
 ): Promise<PipelineResult> {
   try {
-    return await captureCustomerAnswer(tenantId, channel, () => runPipelineInternal(message, channel, tenantId, customerRef));
+    return await captureCustomerAnswer(tenantId, channel, () => runPipelineInternal(message, channel, tenantId, customerRef, options));
   } catch (error) {
     // Every channel persists the same terminal fallback without retrying any business action.
     console.error("[BMS] customer pipeline failed", { code: "PIPELINE_EXCEPTION" });
@@ -1742,7 +1763,8 @@ async function runPipelineInternal(
   message: string,
   channel: Channel,
   tenantId: string,
-  customerRef?: string | null
+  customerRef?: string | null,
+  options: { assistantMode?: CustomerAssistantMode } = {}
 ): Promise<PipelineResult> {
   const emergencyMessage = stripMarkdownEmphasis(message);
   if (pharmacyEmergencyKind(emergencyMessage)) {
@@ -1769,6 +1791,9 @@ async function runPipelineInternal(
     return customerSafe({ channel, incoming: message, understanding: understand(emergencyMessage),
       tool: `board_game:guard:${urgentShopGuard.kind}`, data: { status: "NOT_FOUND", query: "" },
       reply: urgentShopGuard.reply });
+  }
+  if (options.assistantMode === "bms_presales") {
+    return runBmsPresalesTurn(message, channel, tenantId, customerRef);
   }
   let convId: string | null = null;
   let history: Awaited<ReturnType<typeof getRecentAiHistory>> = [];

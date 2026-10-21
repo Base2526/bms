@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { requireCapacityForUpsert } from "./entitlements";
 import { encryptSecret, decryptSecret, maskSecret } from "./crypto";
+import { lineChannelExtra } from "./lineBotIdentity";
 
 export type Channel = "line" | "tiktok" | "facebook" | "instagram" | "web" | "shopee" | "lazada";
 
@@ -84,7 +85,13 @@ export async function upsertChannel(
       ? encryptSecret(normalizedChannelSecret)
       : prev?.channel_secret ?? null;
     const active = input.active ?? prev?.active ?? true;
-    const extra = input.extra ?? prev?.extra ?? {};
+    let extra = input.extra ?? prev?.extra ?? {};
+    if (channel === "line") {
+      // Even an extra-only save must not forge a bot identity. Preserve the provider cache
+      // for an unchanged token; a genuinely different token requires fresh verification.
+      const tokenChanged = Boolean(normalizedAccessToken && normalizedAccessToken !== decryptSecret(prev?.access_token));
+      extra = lineChannelExtra(prev?.extra, input.extra, tokenChanged);
+    }
 
     // fail-closed guard เดียวกับที่ webhook route ทุกตัวบังคับ (ยกเว้น "web" ที่ไม่มี concept
     // signature เลย) — กันไม่ให้บันทึกสถานะ "active แต่ไม่มี secret" ได้ตั้งแต่ต้น ไม่งั้นช่องทางจะ

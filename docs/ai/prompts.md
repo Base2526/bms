@@ -73,6 +73,25 @@ Since AI tool-calling landed, two additional constrained system prompts drive th
 anthropic-compatible provider's tool-use
 loops (both alongside the same guardrails as above — facts only from tools, no fabrication):
 
+The customer surface also has a `bms_presales` mode for BMS's own verified LINE OA.
+`BMS_PRESALES_SYSTEM` in `platformPresalesAssistant.ts` uses the shared tool runtime to choose
+up to five public topics by meaning, including multiple asks and follow-up references. It reads
+at most eight messages from the server-resolved tenant/channel/customer conversation, redacts
+and bounds each turn, and treats history as untrusted context, never current facts or authority.
+It does not reuse the shop persona or commerce tools. `search_bms_presales` returns approved
+bilingual explanations from `platformPresales.ts` and `platformPresalesFaq.ts`;
+`list_bms_public_plans` reads current prices/limits. The server composes those approved answers,
+never the model's unverified final prose. Greetings skip the provider. Missing credentials,
+provider failure or unusable output retain deterministic audited public-read fallback.
+Unknown topics ask for clarification or say what the team must verify; no support ticket,
+staff handoff, account change or appointment is claimed as completed. Replies omit whole blocks
+and disclose omissions if the LINE text bound would be exceeded.
+
+The 250-question corpus and presales contract suites exercise deterministic retrieval, approved
+rendering, malformed tool output, multi-topic routing with a mocked provider, history isolation,
+plan-read failures and fallback. These are DB-free contracts, **not** measured live-model accuracy
+or verification of a production LINE deployment.
+
 - **Customer** — `CUSTOMER_SYSTEM` in [`lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts):
   shop information and services are first-class requests, without a mandatory product-sales CTA.
   `CUSTOMER_STORE_CONTEXT_POLICY` in `customerStoreContext.ts` instructs the model to use the

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import * as lineBotIdentity from "../../apps/web/lib/bms/lineBotIdentity.ts";
+import { isBmsLineOfficialAccount } from "../../apps/web/lib/bms/lineOfficialAccount.ts";
 
 const require = createRequire(new URL("../../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
@@ -27,21 +29,25 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   fetch?: Function;
   signatureValid?: boolean;
   secret?: string | null;
+  lineBotExtra?: Record<string, unknown>;
+  botSync?: Function;
 } = {}) {
   const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][],
-    deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], profiles: 0 };
+    deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], inbound: [] as any[][], profiles: 0, botSync: [] as any[][] };
+  const verifiedExtra = { botBasicId: "@fake-shop", botInfoSyncedAt: new Date().toISOString(),
+    botIdentityTokenHash: lineBotIdentity.lineBotTokenHash("FAKE-token") };
   const noop = async () => {};
   const route = loadWithStubs(`apps/web/app/api/bms/${channel}/webhook/[tenantId]/route.ts`, {
     "next/server": { NextResponse: { json: (body: unknown, options?: { status: number }) => ({ body, status: options?.status ?? 200 }) } },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
-    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token" }) },
+    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", extra: options.lineBotExtra ?? verifiedExtra }) },
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; } },
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "@/lib/bms/customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE", reasonCodes: ["PIPELINE_EXCEPTION"], successfulToolCalls: 0, failedToolCalls: 0 }) },
     "@/lib/bms/inbox": {
       logConversation: async (...args: any[]) => { calls.logs.push(args); },
-      logInboundMessage: noop,
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
       notifyInboxConversationChanged() {},
       deliverToChannel: async (...args: any[]) => { calls.deliveries.push(args); return options.deliver ? options.deliver(...args) : true; },
     },
@@ -57,8 +63,10 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/storage": {},
     "@/lib/bms/lineProfile": {
       syncLineUserProfile: async () => { calls.profiles++; return { ok: true, conversationIds: [] }; },
-      syncLineBotInfo: async () => ({ ok: true }),
+      syncLineBotInfo: async (...args: any[]) => { calls.botSync.push(args); return options.botSync ? options.botSync(...args) : { ok: true, extra: verifiedExtra }; },
     },
+    "@/lib/bms/lineOfficialAccount": { isBmsLineOfficialAccount },
+    "@/lib/bms/lineBotIdentity": lineBotIdentity,
   }, async (...args: any[]) => {
     calls.deliveries.push(args);
     return options.fetch ? options.fetch(...args) : { ok: true };

@@ -23,3 +23,15 @@ export function lineAddFriendUrl(lineId: string): string {
 }
 
 export const BMS_LINE_OA_URL = lineAddFriendUrl(BMS_LINE_OA_ID);
+
+/**
+ * Identify the BMS prospect channel only from LINE's verified bot identity cached by
+ * `syncLineBotInfo()`. Admin-entered labels or tenant ids must never select this mode.
+ */
+export function isBmsLineOfficialAccount(extra: unknown): boolean {
+  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return false;
+  const providerIdentity = extra as { botBasicId?: unknown; botInfoSyncedAt?: unknown };
+  return typeof providerIdentity.botInfoSyncedAt === "string" &&
+    typeof providerIdentity.botBasicId === "string" &&
+    providerIdentity.botBasicId.trim().toLowerCase() === BMS_LINE_OA_ID.toLowerCase();
+}

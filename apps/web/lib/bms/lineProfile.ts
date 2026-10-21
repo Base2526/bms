@@ -9,6 +9,8 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { decryptSecret } from "./crypto";
+import { hasVerifiedLineBotIdentity, lineBotTokenHash } from "./lineBotIdentity";
 
 export type LineProfileSyncResult = {
   ok: boolean;
@@ -204,53 +206,66 @@ export async function syncLineUserProfile(
   return { ok: true, conversationIds };
 }
 
+async function writeLineBotCache(tenantId: string, storedToken: string, patch: Record<string, unknown>) {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    const saved = await client.query<{ extra: Record<string, unknown> }>(
+      `UPDATE bms_tenant_channels
+          SET extra = COALESCE(extra, '{}'::jsonb) || $3::jsonb, updated_at = now()
+        WHERE tenant_id = $1 AND channel = $2 AND access_token = $4
+        RETURNING extra`,
+      [tenantId, "line", JSON.stringify(patch), storedToken]
+    );
+    await client.query("COMMIT");
+    return saved.rows[0]?.extra;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function syncLineBotInfo(
   tenantId: string,
   accessToken: string | null
-): Promise<{ ok: boolean; skipped?: "missing-token" | "fresh"; status?: number; error?: string }> {
+): Promise<{ ok: boolean; skipped?: "missing-token" | "fresh" | "credential-changed"; status?: number; error?: string; extra?: Record<string, unknown> }> {
   if (!accessToken) return { ok: false, skipped: "missing-token" };
 
-  const current = await query<{ extra: any }>(
-    `SELECT extra FROM bms_tenant_channels WHERE tenant_id = $1 AND channel = 'line' LIMIT 1`,
+  const current = await query<{ extra: any; access_token: string | null }>(
+    `SELECT extra, access_token FROM bms_tenant_channels WHERE tenant_id = $1 AND channel = 'line' LIMIT 1`,
     [tenantId]
   );
   const extra = current.rows[0]?.extra ?? {};
-  if (extra?.botInfoSyncedAt && shouldSkipFreshWithTtl(extra.botInfoSyncedAt, BOT_INFO_TTL_MS)) {
-    return { ok: true, skipped: "fresh" };
+  const storedToken = current.rows[0]?.access_token;
+  if (!storedToken || decryptSecret(storedToken) !== accessToken) return { ok: false, skipped: "credential-changed" };
+  if (hasVerifiedLineBotIdentity(extra, accessToken) && shouldSkipFreshWithTtl(extra.botInfoSyncedAt, BOT_INFO_TTL_MS)) {
+    return { ok: true, skipped: "fresh", extra };
   }
 
   const fetched = await fetchLineBotInfo(accessToken);
   if (!fetched.ok) {
-    await query(
-      `UPDATE bms_tenant_channels
-          SET extra = COALESCE(extra, '{}'::jsonb) || $3::jsonb,
-              updated_at = now()
-        WHERE tenant_id = $1 AND channel = $2`,
-      [tenantId, "line", JSON.stringify({
-        botInfoErrorAt: new Date().toISOString(),
-        botInfoError: fetched.detail.slice(0, 300),
-      })]
-    ).catch(() => null);
+    await writeLineBotCache(tenantId, storedToken, {
+      botInfoErrorAt: new Date().toISOString(), botInfoError: fetched.detail.slice(0, 300),
+    }).catch(() => undefined);
     return { ok: false, status: fetched.status, error: fetched.detail };
   }
-
   const info = fetched.info || {};
-  await query(
-    `UPDATE bms_tenant_channels
-        SET extra = COALESCE(extra, '{}'::jsonb) || $3::jsonb,
-            updated_at = now()
-      WHERE tenant_id = $1 AND channel = $2`,
-    [tenantId, "line", JSON.stringify({
-      botDisplayName: cleanText(info.displayName, 255),
-      botBasicId: cleanText(info.basicId, 255),
-      botPictureUrl: cleanText(info.pictureUrl, 1000),
-      botChatMode: cleanText(info.chatMode, 64),
-      botInfoSyncedAt: new Date().toISOString(),
-      botInfoErrorAt: null,
-      botInfoError: null,
-    })]
-  );
-  return { ok: true };
+  const verified = {
+    botDisplayName: cleanText(info.displayName, 255),
+    botBasicId: cleanText(info.basicId, 255),
+    botPictureUrl: cleanText(info.pictureUrl, 1000),
+    botChatMode: cleanText(info.chatMode, 64),
+    botInfoSyncedAt: new Date().toISOString(),
+    botIdentityTokenHash: lineBotTokenHash(accessToken),
+    botInfoErrorAt: null,
+    botInfoError: null,
+  };
+  if (!hasVerifiedLineBotIdentity(verified, accessToken)) return { ok: false, error: "invalid bot identity" };
+  // A token can be replaced while LINE is responding. Never attach the old bot to it.
+  const saved = await writeLineBotCache(tenantId, storedToken, verified);
+  return saved ? { ok: true, extra: saved } : { ok: false, skipped: "credential-changed" };
 }
 
 function shouldSkipFreshWithTtl(value: unknown, ttlMs: number): boolean {

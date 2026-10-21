@@ -11,6 +11,7 @@ import type { BmsPermission } from "../permissions";
 import type { Channel } from "../pipeline";
 
 export type ToolSurface = "customer" | "staff";
+export type CustomerAssistantMode = "shop_commerce" | "bms_presales";
 
 /** context ที่ runtime ส่งให้ execute() — tenant มาจาก server เสมอ (model เลือกไม่ได้) */
 export type ExecCtx = {
@@ -21,6 +22,8 @@ export type ExecCtx = {
   /** customer surface: ช่องทาง + external ref ของลูกค้า (ใช้ scope การอ่านให้เป็นของลูกค้าคนนั้น) */
   channel?: Channel;
   customerRef?: string | null;
+  /** Server-derived customer assistant role. The model and webhook payload cannot select it. */
+  customerMode?: CustomerAssistantMode;
   /**
    * แชทที่กำลังคุยอยู่ — ใช้เฉพาะการแจ้งเตือน/ไล่ปัญหา (reportBmsFailure) ให้ลิงก์
    * ไปแชทที่ได้รับผลกระทบได้ ห้ามใช้ scope การอ่านข้อมูล (ยังต้องใช้ channel +
@@ -112,6 +115,8 @@ export type BmsTool = {
   description: string;
   inputSchema: ToolInputSchema;
   surfaces: ToolSurface[];
+  /** Customer tools are withheld from the other customer mode and re-checked at execution. */
+  customerMode?: CustomerAssistantMode;
   /** staff RBAC — customer surface ไม่ใช้ (เปิดเฉพาะทูลปลอดภัยตั้งแต่ registry) */
   permission?: BmsPermission;
   /** true = propose-only (ไม่ execute จาก AI) */
@@ -163,6 +168,9 @@ export function assertValidToolRegistry(tools: readonly BmsTool[]): void {
     }
     if (tool.sensitive && (tool.surfaces.length !== 1 || tool.surfaces[0] !== "staff")) {
       throw new Error(`Sensitive AI tool must be staff-only: ${tool.name}`);
+    }
+    if (tool.customerMode && !tool.surfaces.includes("customer")) {
+      throw new Error(`Customer-mode AI tool must include the customer surface: ${tool.name}`);
     }
     if (tool.inputSchema.type !== "object" || !tool.inputSchema.properties) {
       throw new Error(`AI tool registry input schema is invalid: ${tool.name}`);
