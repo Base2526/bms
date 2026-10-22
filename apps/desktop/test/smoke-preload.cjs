@@ -1,4 +1,4 @@
-const { contextBridge } = require("electron/renderer");
+const { contextBridge, ipcRenderer } = require("electron/renderer");
 
 contextBridge.exposeInMainWorld("bmsDesktop", {
   pair: async () => ({ ok: false, error: "smoke test" }),
@@ -6,13 +6,5 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   openSetupAdmin: async () => ({ ok: true, kind: "local" }),
   retryStartup: async () => ({ ok: true }),
   changeServer: async () => ({ ok: true }),
-  getAppInfo: async () => ({
-    version: "0.2.1",
-    platform: "darwin",
-    clientLabel: "macOS Client",
-    securityNote: "token ถูกเข้ารหัสด้วย macOS Keychain ของเครื่องนี้",
-    secureStorageReady: true,
-    secureStorageError: null,
-    secureStorageBackend: null,
-  }),
+  getAppInfo: () => ipcRenderer.invoke("smoke:app-info"),
 });

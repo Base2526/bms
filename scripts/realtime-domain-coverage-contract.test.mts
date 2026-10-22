@@ -254,6 +254,9 @@ const ARCHIVED_FINANCIAL_EVIDENCE = ["bms_tax_document_actions", "bms_tax_period
   "bms_cost_allocations", // Append-only management allocation; explicit report refresh, stale preview/version checks, no live money change.
 ];
 const CLASSIFIED = new Map<string, string>();
+for (const table of ["bms_branch_requisitions", "bms_branch_requisition_items", "bms_branch_requisition_events", "bms_branch_requisition_transfers", "bms_branch_requisition_purchases"]) {
+  CLASSIFIED.set(table, "Requisition planning uses explicit/post-write refresh and optimistic versions; stock transfers retain their existing events. No realtime subscriber in this release.");
+}
 for (const [reason, tables] of [
   ["immutable financial archive; explicit read and post-write refresh", ARCHIVED_FINANCIAL_EVIDENCE],
   ["child of an aggregate that already emits", CHILD_OF_AGGREGATE],
@@ -282,6 +285,7 @@ const OPERATION_EXEMPTIONS = new Map<string, string>([
   ["bms_restaurant_checks:DELETE", "platform tenant teardown before restaurant floor cascade"],
   ["bms_stock_counts:INSERT", "draft count creation does not change inventory"],
   ["bms_stock_transfers:INSERT", "draft transfer creation does not move inventory"],
+  ["bms_stock_transfers:DELETE", "authorized whole-tenant purge; no subscriber survives tenant deletion"],
 ]);
 
 test("every business-layer write operation is classified for realtime coverage", () => {

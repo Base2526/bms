@@ -1,5 +1,28 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Branch requisitions (`10.87`–`10.88`)
+
+- `node scripts/run-contract-tests.mjs pure branch-requisitions`: allocation/progress math.
+- `node scripts/run-contract-tests.mjs db branch-requisitions`: real services, tenant RLS,
+  version/idempotency races, good/damaged/short receipts, purchase allocation limits, audit rollback,
+  permissions and authorized test-tenant purge. Requires loopback `POSTGRES_HOST` and dedicated
+  restored `POSTGRES_DB=bms_requisition_test` (local throwaway container, port 5433), with migration
+  `10.87` and `10.88` applied. Creates/removes exact random FAKE tenants; never target a real shop database.
+  Operations coverage includes date validation, scoped metrics, exact demand pagination, derived
+  transfer timeline and notification recipients/personal reads (including real tenant-role grants).
+- `node scripts/branch-requisitions-browser-smoke.mjs`: local dev web only; intercepts API/GraphQL
+  with FAKE fixtures and blocks external requests. TH/EN at 1280/390 px: list, consolidation, stock,
+  review queue/date filters, metrics, demand drilldown, transfer confirmation, PO form, draft creation,
+  exact linked PO/transfer routes and denied access. `BMS_PLAYWRIGHT_MODULE` may
+  point to an installed Playwright module. Screenshots go to ignored `.test-output/`.
+  Browser payloads are validated against the committed GraphQL schema, including Apollo metadata;
+  a lost mutation response and a failed read after known success exercise retry/read-error handling.
+  This checks the UI, not a live API/browser integration. The DB suite separately executes the
+  requisition SDL/resolvers with the real GraphQL executor, including malformed filters and denial.
+- Regression: `db inventory-multilocation`; full `cd apps/web && npm run gate` checks shared services,
+  schema artifact, navigation, translations, assistant guides and production compilation.
+
+
 ## Restaurant pickup checkout (2026-10-22)
 
 - `node scripts/run-contract-tests.mjs pure restaurant-pickup`: whole checkout service with

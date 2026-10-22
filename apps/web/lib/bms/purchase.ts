@@ -232,7 +232,28 @@ async function resolveSupplier(
 }
 
 // ---- create --------------------------------------------------
-export async function createPurchaseOrder(input: CreatePOInput): Promise<CreatePOResult> {
+export async function createPurchaseOrder(
+  input: CreatePOInput,
+): Promise<CreatePOResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId);
+    const result = await createPurchaseOrderInTx(client, input);
+    await client.query(result.status === "CREATED" ? "COMMIT" : "ROLLBACK");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Caller must commit/roll back the whole operation, including a non-CREATED result. */
+export async function createPurchaseOrderInTx(
+  client: PoolClient,
+  input: CreatePOInput,
+): Promise<CreatePOResult> {
   const tenantId = input.tenantId;
   const normalized = input.items.map((it) => ({
     ...it,
@@ -244,106 +265,127 @@ export async function createPurchaseOrder(input: CreatePOInput): Promise<CreateP
     supplierProductName: optionalText(it.supplierProductName, 500),
     supplierBarcode: optionalText(it.supplierBarcode, 200),
   }));
-  if (normalized.some((it) =>
-    !it.sku || it.sku.length > 200 || !it.size || it.size.length > 100
-    || !Number.isInteger(it.qty) || it.qty <= 0
-    || !Number.isFinite(it.unitCost) || it.unitCost < 0
-    || (it.packQty != null && (!Number.isInteger(Number(it.packQty)) || Number(it.packQty) <= 0))
-    || (it.minOrderQty != null && (!Number.isInteger(Number(it.minOrderQty)) || Number(it.minOrderQty) <= 0))
-    || (it.leadTimeDays != null && (!Number.isInteger(Number(it.leadTimeDays)) || Number(it.leadTimeDays) < 0))
-  )) return { status: "INVALID_INPUT" };
+  if (
+    normalized.some(
+      (it) =>
+        !it.sku ||
+        it.sku.length > 200 ||
+        !it.size ||
+        it.size.length > 100 ||
+        !Number.isInteger(it.qty) ||
+        it.qty <= 0 ||
+        !Number.isFinite(it.unitCost) ||
+        it.unitCost < 0 ||
+        (it.packQty != null &&
+          (!Number.isInteger(Number(it.packQty)) || Number(it.packQty) <= 0)) ||
+        (it.minOrderQty != null &&
+          (!Number.isInteger(Number(it.minOrderQty)) ||
+            Number(it.minOrderQty) <= 0)) ||
+        (it.leadTimeDays != null &&
+          (!Number.isInteger(Number(it.leadTimeDays)) ||
+            Number(it.leadTimeDays) < 0)),
+    )
+  )
+    return { status: "INVALID_INPUT" };
 
   const identity = new Map<string, string>();
   for (const item of normalized) {
     const key = `${item.sku}\u0000${item.size}`;
     const supplierSku = item.supplierSku?.toLocaleLowerCase() ?? "";
     const prior = identity.get(key);
-    if (prior != null && prior !== supplierSku) return { status: "INVALID_INPUT" };
+    if (prior != null && prior !== supplierSku)
+      return { status: "INVALID_INPUT" };
     identity.set(key, supplierSku);
   }
   const items = mergeItems(normalized);
   if (items.length === 0) return { status: "EMPTY" };
 
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId);
-
-    // สินค้าทุก sku ต้องมีในร้าน
-    for (const it of items) {
-      const prod = await client.query(
-        `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
-        [tenantId, it.sku]
-      );
-      if (prod.rowCount === 0) {
-        await client.query("ROLLBACK");
-        return { status: "NOT_FOUND", sku: it.sku };
-      }
+  // สินค้าทุก sku ต้องมีในร้าน
+  for (const it of items) {
+    const prod = await client.query(
+      `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
+      [tenantId, it.sku],
+    );
+    if (prod.rowCount === 0) {
+      return { status: "NOT_FOUND", sku: it.sku };
     }
+  }
 
-    const supplierId = await resolveSupplier(client, tenantId, input.supplierId, input.supplierName);
-    if (input.supplierId && !supplierId) {
-      await client.query("ROLLBACK");
-      return { status: "SUPPLIER_NOT_FOUND" };
-    }
-    const firstSupplierSku = items.find((item) => item.supplierSku)?.supplierSku;
-    if (firstSupplierSku && !supplierId) {
-      await client.query("ROLLBACK");
-      return { status: "SUPPLIER_REQUIRED", supplierSku: firstSupplierSku };
-    }
+  const supplierId = await resolveSupplier(
+    client,
+    tenantId,
+    input.supplierId,
+    input.supplierName,
+  );
+  if (input.supplierId && !supplierId) {
+    return { status: "SUPPLIER_NOT_FOUND" };
+  }
+  const firstSupplierSku = items.find((item) => item.supplierSku)?.supplierSku;
+  if (firstSupplierSku && !supplierId) {
+    return { status: "SUPPLIER_REQUIRED", supplierSku: firstSupplierSku };
+  }
 
-    const total = items.reduce((sum, it) => sum + it.unitCost * it.qty, 0);
+  const total = items.reduce((sum, it) => sum + it.unitCost * it.qty, 0);
 
-    const po = await client.query<{ id: string }>(
-      `INSERT INTO bms_purchase_orders (tenant_id, supplier_id, status, total_amount, note)
+  const po = await client.query<{ id: string }>(
+    `INSERT INTO bms_purchase_orders (tenant_id, supplier_id, status, total_amount, note)
        VALUES ($1, $2, 'OPEN', $3, $4)
        RETURNING id`,
-      [tenantId, supplierId, total, input.note ?? null]
-    );
-    const poId = po.rows[0].id;
+    [tenantId, supplierId, total, input.note ?? null],
+  );
+  const poId = po.rows[0].id;
 
-    const lines: PoLine[] = [];
-    for (const it of items) {
-      let mapping: SupplierMappingSnapshot = { supplierSku: null, supplierProductName: null };
-      if (supplierId) {
-        const resolved = await resolveSupplierMappingInTx(client, tenantId, supplierId, it);
-        if ("conflict" in resolved) {
-          await client.query("ROLLBACK");
-          return {
-            status: "SUPPLIER_SKU_CONFLICT",
-            supplierSku: String(it.supplierSku),
-            sku: resolved.sku,
-            size: resolved.size,
-          };
-        }
-        mapping = resolved;
+  const lines: PoLine[] = [];
+  for (const it of items) {
+    let mapping: SupplierMappingSnapshot = {
+      supplierSku: null,
+      supplierProductName: null,
+    };
+    if (supplierId) {
+      const resolved = await resolveSupplierMappingInTx(
+        client,
+        tenantId,
+        supplierId,
+        it,
+      );
+      if ("conflict" in resolved) {
+        return {
+          status: "SUPPLIER_SKU_CONFLICT",
+          supplierSku: String(it.supplierSku),
+          sku: resolved.sku,
+          size: resolved.size,
+        };
       }
-      await client.query(
-        `INSERT INTO bms_purchase_order_items
+      mapping = resolved;
+    }
+    await client.query(
+      `INSERT INTO bms_purchase_order_items
            (tenant_id, po_id, product_sku, size, supplier_sku, supplier_product_name,
             qty_ordered, unit_cost)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [tenantId, poId, it.sku, it.size, mapping.supplierSku,
-          mapping.supplierProductName, it.qty, it.unitCost]
-      );
-      lines.push({
-        sku: it.sku,
-        size: it.size,
-        supplierSku: mapping.supplierSku,
-        supplierProductName: mapping.supplierProductName,
-        qtyOrdered: it.qty,
-        qtyReceived: 0,
-        unitCost: it.unitCost,
-      });
-    }
-
-    await client.query("COMMIT");
-    return { status: "CREATED", poId, total, supplierId, items: lines };
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
+      [
+        tenantId,
+        poId,
+        it.sku,
+        it.size,
+        mapping.supplierSku,
+        mapping.supplierProductName,
+        it.qty,
+        it.unitCost,
+      ],
+    );
+    lines.push({
+      sku: it.sku,
+      size: it.size,
+      supplierSku: mapping.supplierSku,
+      supplierProductName: mapping.supplierProductName,
+      qtyOrdered: it.qty,
+      qtyReceived: 0,
+      unitCost: it.unitCost,
+    });
   }
+
+  return { status: "CREATED", poId, total, supplierId, items: lines };
 }
 
 // ---- receive (partial/full) ----------------------------------

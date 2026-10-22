@@ -200,6 +200,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("inventory.transfer"),
   },
   {
+    id: "inventory.branch-requisitions", route: "/admin/branch-requisitions", labelKey: "branch_requisitions.title",
+    section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("inventory.requisition.view"),
+  },
+  {
     id: "inventory.stock-counts", route: "/admin/stock-counts", labelKey: "admin_nav.stock_counts",
     section: "inventory", workspace: "SHOP", visible: (ctx) => ctx.can("inventory.count"),
   },

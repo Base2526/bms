@@ -7184,6 +7184,212 @@ type BmsReportSubscriptionOverview {
   tenantSlug: String!
 }
 
+type BmsRequisition {
+  createdAt: String!
+  creator: String!
+  id: ID!
+  items: [BmsRequisitionItem!]!
+  latestActor: String!
+  locationId: ID!
+  locationName: String!
+  neededOn: String
+  note: String!
+  priority: String!
+  requestNo: String!
+  status: String!
+  version: Int!
+}
+
+enum BmsRequisitionAction {
+  CANCEL
+  CLOSE
+  CREATE_PO
+  LINK_PO
+  REVIEW
+  SAVE
+  SUBMIT
+  TRANSFER
+}
+
+type BmsRequisitionAvailability {
+  available: Int!
+  id: ID!
+  name: String!
+  quarantine: Int!
+  reserved: Int!
+  stock: Int!
+}
+
+input BmsRequisitionCommandInput {
+  action: BmsRequisitionAction!
+  confirmed: Boolean
+  id: ID
+  idempotencyKey: String!
+  items: [BmsRequisitionLineInput!]
+  locationId: ID
+  neededOn: String
+  note: String
+  poId: ID
+  priority: String
+  sourceId: ID
+  supplierId: ID
+  version: Int
+}
+
+type BmsRequisitionDemand {
+  name: String!
+  remaining: Float!
+  requests: Int!
+  size: String!
+  sku: String!
+}
+
+type BmsRequisitionDemandList {
+  rows: [BmsRequisitionDemand!]!
+  total: Int!
+}
+
+type BmsRequisitionDemandRequest {
+  branch: String!
+  id: ID!
+  neededOn: String
+  priority: String!
+  remaining: Int!
+  requestNo: String!
+}
+
+type BmsRequisitionDemandRequestList {
+  rows: [BmsRequisitionDemandRequest!]!
+  total: Int!
+}
+
+type BmsRequisitionEvent {
+  action: String!
+  actor: String!
+  at: String!
+  note: String!
+}
+
+input BmsRequisitionFilter {
+  id: ID
+  limit: Int
+  locationId: ID
+  neededFrom: String
+  neededTo: String
+  offset: Int
+  priority: String
+  search: String
+  status: String
+}
+
+type BmsRequisitionItem {
+  approved: Int
+  discrepancy: Int!
+  drafts: Int!
+  id: ID!
+  name: String!
+  purchases: [BmsRequisitionPurchase!]!
+  received: Int!
+  remaining: Int!
+  requested: Int!
+  reviewNote: String!
+  size: String!
+  sku: String!
+  status: String!
+  transfers: [BmsRequisitionTransfer!]!
+  transit: Int!
+}
+
+input BmsRequisitionLineInput {
+  note: String
+  qty: Int!
+  size: String!
+  sku: String!
+  unitCost: Float
+}
+
+type BmsRequisitionList {
+  locations: [BmsRequisitionLocation!]!
+  rows: [BmsRequisition!]!
+  total: Int!
+}
+
+type BmsRequisitionLocation {
+  active: Boolean!
+  id: ID!
+  name: String!
+}
+
+type BmsRequisitionMetrics {
+  approvedRequests: Float!
+  approvedUnits: Float!
+  discrepancyUnits: Float!
+  medianFulfilmentHours: Float
+  medianReviewHours: Float
+  overdueRequests: Float!
+  partialRequests: Float!
+  pendingReview: Float!
+  receivedUnits: Float!
+  requestedUnits: Float!
+  reviewedRequests: Float!
+  submittedRequests: Float!
+  unallocatedUnits: Float!
+}
+
+type BmsRequisitionNotice {
+  at: String!
+  id: ID!
+  kind: String!
+  requestId: ID!
+  requestNo: String!
+}
+
+type BmsRequisitionProduct {
+  name: String!
+  size: String!
+  sku: String!
+}
+
+type BmsRequisitionPurchase {
+  id: ID!
+  ordered: Int!
+  qty: Int!
+  received: Int!
+  status: String!
+}
+
+type BmsRequisitionResult {
+  id: ID
+  poId: ID
+  status: BmsRequisitionResultStatus!
+  transferId: ID
+}
+
+enum BmsRequisitionResultStatus {
+  CONFIRMATION_REQUIRED
+  IDEMPOTENCY_CONFLICT
+  INSUFFICIENT_STOCK
+  INVALID_INPUT
+  INVALID_STATE
+  LINKED_WORK_OPEN
+  NOT_FOUND
+  OK
+  OVER_ALLOCATED
+  PRODUCT_NOT_FOUND
+  REASON_REQUIRED
+  STALE_VERSION
+  UNSUPPORTED_TRANSFER
+}
+
+type BmsRequisitionTransfer {
+  damaged: Int
+  id: ID!
+  number: String!
+  qty: Int!
+  received: Int
+  status: String!
+}
+
 type BmsRestaurantArea {
   id: ID!
   name: String!
@@ -8776,6 +8982,7 @@ type Mutation {
   bmsAssistant(history: [BmsAssistantTurn!], message: String!): BmsAssistantResult!
   bmsBackfillEtaxQueue(limit: Int = 500): Int!
   bmsBookShipmentLive(id: ID!): BmsCarrierBookingResult!
+  bmsBranchRequisitionCommand(input: BmsRequisitionCommandInput!): BmsRequisitionResult!
   bmsCancelOrder(id: ID!): Boolean!
   bmsCancelPurchaseOrder(id: ID!): Boolean!
   bmsCancelRestockSubscription(id: ID!): Boolean!
@@ -9415,6 +9622,14 @@ type Query {
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
   bmsBilling: BmsBilling!
+  bmsBranchRequisitionAvailability(size: String!, sku: String!): [BmsRequisitionAvailability!]!
+  bmsBranchRequisitionCatalog(search: String!): [BmsRequisitionProduct!]!
+  bmsBranchRequisitionDemand(offset: Int, search: String): BmsRequisitionDemandList!
+  bmsBranchRequisitionDemandRequests(offset: Int, size: String!, sku: String!): BmsRequisitionDemandRequestList!
+  bmsBranchRequisitionEvents(id: ID!): [BmsRequisitionEvent!]!
+  bmsBranchRequisitionMetrics: BmsRequisitionMetrics!
+  bmsBranchRequisitionNotices: [BmsRequisitionNotice!]!
+  bmsBranchRequisitions(filter: BmsRequisitionFilter): BmsRequisitionList!
   bmsChannelHealth: [BmsChannelHealth!]!
   bmsChannelHealthCount: Int!
   bmsChannels: [BmsChannelConfig!]!

@@ -15,6 +15,29 @@ logging movement.
 
 ## Movement types (`bms_stock_movements.type`)
 
+### Branch requisitions (`10.87`)
+
+`/admin/branch-requisitions` adds a planning layer before the existing transfer/purchase workflows:
+draft → submitted → approved/rejected → closed/cancelled. It never changes stock itself.
+`inventory.requisition.view/create/review` controls access; assigned branches are enforced in the
+service. Transfers additionally require `inventory.transfer`; PO work requires `purchase.view/edit`.
+Non-draft decisions require explicit confirmation, version and stable idempotency key.
+
+Approved quantities may be fulfilled by several transfers. Draft/in-transit quantities consume the
+allocation; cancelled drafts release it. Good received units fulfil demand, damaged/missing units do
+not. Linked PO quantities are procurement evidence only, never proof of delivery to the branch.
+Creating a linked transfer or PO and recording its allocation share one transaction and audit.
+Lot/serial/bundle/recipe items unsupported by the existing transfer engine are refused at this boundary.
+The operations follow-up (`10.88`) adds a review queue, server-side priority/date filters,
+paginated branch drilldown, exact linked-document navigation and derived send/receive/discrepancy
+history. The operational summary computes rates/lead times from authoritative events and receipts;
+closed shortfalls are not delivered units. Best-effort post-commit notices target current eligible
+reviewers/requesters, never all tenant users, and are listed on the request page (60-second refresh).
+Manual refresh displays current progress. Full scope, limitations and rollout:
+[Branch requisition implementation record](branch-requisitions-plan.md#implementation-record--first-usable-slice).
+
+### Stock movement ledger
+
 | Type | Meaning |
 | --- | --- |
 | `STOCK_IN` | Manual adjustment increase, or receiving a Purchase Order |

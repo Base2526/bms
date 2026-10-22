@@ -107,6 +107,12 @@ export default function StockTransfersPage() {
   const [locations, setLocations] = useState<Location[]>([]);
   const [loading, setLoading] = useState(false);
   const [filter, setFilter] = useState<Filter>("ALL");
+  const [linkedId,setLinkedId] = useState<string | null>(null);
+  const [expandedKeys,setExpandedKeys] = useState<React.Key[]>([]);
+  useEffect(()=>{
+    const id=new URLSearchParams(window.location.search).get("id");
+    if(id){setLinkedId(id);setExpandedKeys([id]);}
+  },[]);
   const [busy, setBusy] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -122,7 +128,10 @@ export default function StockTransfersPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = filter === "ALL" ? "" : `?status=${filter}`;
+      const params=new URLSearchParams();
+      if(filter!=="ALL") params.set("status",filter);
+      if(linkedId) params.set("id",linkedId);
+      const qs = params.size ? `?${params}` : "";
       const res = await fetch(`/api/bms/inventory/transfers${qs}`, { cache: "no-store" });
       if (!res.ok) {
         throw new Error(res.status === 403 ? "ไม่มีสิทธิ์ดูใบโอน (ต้องมี inventory.transfer)" : "โหลดรายการไม่สำเร็จ");
@@ -135,7 +144,7 @@ export default function StockTransfersPage() {
     } finally {
       setLoading(false);
     }
-  }, [filter]);
+  }, [filter,linkedId]);
 
   useEffect(() => {
     if (canUse) void load();
@@ -256,6 +265,7 @@ export default function StockTransfersPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      {linkedId && <Button onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>แสดงเอกสารทั้งหมด</Button>}
       <AdminPageHeader title="โอนย้ายสต็อกระหว่างสาขา">
         <ResponsiveStatusFilter<Filter>
           options={FILTERS}
@@ -305,6 +315,8 @@ export default function StockTransfersPage() {
           locale={{ emptyText: <Empty description="ยังไม่มีใบโอน" /> }}
           pagination={{ pageSize: 20, showSizeChanger: false }}
           expandable={{
+            expandedRowKeys:expandedKeys,
+            onExpandedRowsChange:(keys)=>setExpandedKeys([...keys]),
             expandedRowRender: (t) => (
               <Table<TransferItem>
                 rowKey="id"

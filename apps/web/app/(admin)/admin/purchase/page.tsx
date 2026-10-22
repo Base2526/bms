@@ -82,6 +82,15 @@ const Q_PRODUCTS = gql`
     bmsProducts(search: $search, limit: 100) { items { sku name variants { size } } }
   }
 `;
+const Q_LINKED_PO = gql`
+  query LinkedPurchaseOrder($id: ID!) {
+    bmsPurchaseOrder(id: $id) {
+      id status total note qtyOrdered qtyReceived createdAt updatedAt
+      supplier { id name }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost }
+    }
+  }
+`;
 const Q_SUPPLIERS = gql`query { bmsSuppliers { id name } }`;
 const Q_SUPPLIER_PRODUCTS = gql`
   query BmsSupplierProducts($supplierId: ID!) {
@@ -126,16 +135,26 @@ function PurchaseManagement() {
   const [receivePO, setReceivePO] = useState<PO | null>(null);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [linkedId,setLinkedId]=useState<string | null>(null);
+  const [expandedKeys,setExpandedKeys]=useState<React.Key[]>([]);
+  useEffect(()=>{
+    const id=new URLSearchParams(window.location.search).get("id");
+    if(id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {setLinkedId(id);setExpandedKeys([id]);}
+  },[]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearch(searchInput.trim()), 300);
     return () => clearTimeout(t);
   }, [searchInput]);
 
-  const { data, loading, error, refetch } = useQuery(Q_POS, {
+  const listQuery = useQuery(Q_POS, {
     variables: { search: search || null, limit: 100, offset: 0 },
     fetchPolicy: "cache-and-network",
+    skip:!!linkedId,
   });
+  const linkedQuery=useQuery(Q_LINKED_PO,{variables:{id:linkedId},skip:!linkedId,fetchPolicy:"network-only"});
+  const {loading,error,refetch}=linkedId?linkedQuery:listQuery;
+  const data=linkedId?{bmsPurchaseOrders:linkedQuery.data?.bmsPurchaseOrder?[linkedQuery.data.bmsPurchaseOrder]:[]}:listQuery.data;
   const { data: supplierData } = useQuery(Q_SUPPLIERS, { fetchPolicy: "cache-and-network" });
   const suppliers: Supplier[] = supplierData?.bmsSuppliers || [];
 
@@ -208,6 +227,7 @@ function PurchaseManagement() {
   return (
     <div>
       <div style={{ marginBottom: 16 }}>
+        {linkedId && <Button onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>{t("branch_requisitions.all_documents")}</Button>}
         <Space style={{ width: "100%", justifyContent: "space-between" }} wrap>
           <h2 style={{ margin: 0 }}>BMS Purchase (PO)</h2>
           <Space wrap>
@@ -216,7 +236,7 @@ function PurchaseManagement() {
               allowClear
               style={{ width: 260 }}
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {setLinkedId(null);setSearchInput(e.target.value);}}
             />
             {can("purchase.edit") && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t("admin_purchase.btn_create")}</Button>
@@ -235,6 +255,8 @@ function PurchaseManagement() {
         rowKey="id" loading={loading} dataSource={pos} columns={columns}
         scroll={{ x: "max-content" }}
         expandable={{
+          expandedRowKeys:expandedKeys,
+          onExpandedRowsChange:(keys)=>setExpandedKeys([...keys]),
           expandedRowRender: (r: PO) => (
             <Table rowKey={(it) => `${it.sku}-${it.size}`} dataSource={r.items} columns={itemColumns} pagination={false} size="small" scroll={{ x: "max-content" }} />
           ),

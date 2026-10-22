@@ -33,11 +33,14 @@ async function handleGET(req: NextRequest) {
 
   const raw = req.nextUrl.searchParams.get("status");
   const status = STATUSES.includes(raw as StockTransferStatus) ? (raw as StockTransferStatus) : null;
+  const id = req.nextUrl.searchParams.get("id");
+  if (id && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
+    return NextResponse.json({ error: "Invalid transfer identifier" }, { status: 400 });
 
   // สาขาเดินทางมาพร้อมใบโอน — หน้าจอต้องมีตัวเลือกสาขาเสมอ และการให้ไปดึงเอง
   // ผ่าน GraphQL bmsLocations จะบังคับสิทธิ์ product.view ซึ่งคลังสินค้าอาจไม่มี
   const [transfers, locations] = await Promise.all([
-    listStockTransfers(auth.tenantId, status),
+    listStockTransfers(auth.tenantId, status, 50, id),
     listLocations(auth.tenantId),
   ]);
   return NextResponse.json({ transfers, locations });

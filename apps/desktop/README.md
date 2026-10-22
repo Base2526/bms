@@ -277,11 +277,13 @@ What differs on macOS, and what it means for a test result:
   installer, `AppUserModelId` taskbar identity — and Linux-only behaviour — the Secret
   Service/KWallet check, AppImage/DEB packaging, desktop integration — cannot be proven on a Mac,
   and Gatekeeper, the system menu bar and the Keychain prompt cannot be proven anywhere else. A pass
-  on one host means the POS surface, pairing flow, IPC allow-list and window security are correct
-  there; it certifies no other build.
-- `npm run test:smoke` drives a stubbed preload that reports `win32`, so it asserts the Windows
-  labels on every host. It checks the setup screen renders and fits; it does not exercise the real
-  keystore of the machine it runs on.
+  on one host covers only the checks actually run there; it certifies no other build. Real pairing,
+  IPC authorization, keystore prompts, installer launch and physical printing need separate checks.
+- `npm run test:smoke` uses the host platform and package version, with the same label/security-note
+  helpers as the application. Pairing, storage readiness and setup actions remain stubbed. It checks
+  setup/startup rendering, responsive layout and error recovery; it does not exercise the real
+  keystore, pairing API, IPC authorization, installer or printer driver. A 60-second watchdog fails
+  the smoke if renderer initialization stalls.
 
 The disk images must be built **on macOS** — electron-builder cannot produce a `.app` from Windows
 or Linux:
@@ -331,6 +333,11 @@ additionally needs an Apple Developer ID and notarization — the macOS workflow
 `CSC_IDENTITY_AUTO_DISCOVERY` off so a runner holding no certificate still builds deterministically,
 which keeps every artifact internal-test only until those decisions are made.
 
-`.github/workflows/desktop-windows.yml` builds the NSIS installer on a Windows runner and uploads it
+`.github/workflows/desktop-windows.yml` runs units, lint and the Electron setup smoke before building
+the NSIS installer on a Windows runner and uploads it
 as a 14-day internal-test artifact. Windows, Linux and macOS jobs intentionally package on their own
 operating systems; one host's passing build is not evidence for another host's keystore or installer.
+All three jobs retain setup smoke screenshots for 14 days (including screenshots captured before a
+failure). A successful CI package is not installation or hardware acceptance; validate real pairing,
+locked/unavailable keystores, install/upgrade/uninstall, receipt printing and the customer display on
+each target OS before release.

@@ -13,6 +13,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { recordMovement } from "./movements";
 import { insertWithDailyDocNo } from "./dailyDocNo";
+import { notifyBranchRequisitionCommitted } from "./branchRequisitionNotify";
 import {
   inventoryIdempotency,
   replayInventoryResult,
@@ -173,7 +174,7 @@ export type CreateTransferResult =
   | { status: "CREATED"; transferId: string; transferNo: string }
   | { status: "INVALID"; reason: string };
 
-export async function createStockTransfer(input: {
+export type CreateStockTransferInput = {
   tenantId: string;
   fromLocationId: string;
   toLocationId: string;
@@ -181,7 +182,30 @@ export async function createStockTransfer(input: {
   note?: string | null;
   createdBy: string;
   idempotencyKey?: string | null;
-}): Promise<CreateTransferResult> {
+};
+
+export async function createStockTransfer(
+  input: CreateStockTransferInput,
+): Promise<CreateTransferResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, input.tenantId, { editorId: input.createdBy });
+    const result = await createStockTransferInTx(client, input);
+    await client.query(result.status === "CREATED" ? "COMMIT" : "ROLLBACK");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/** Caller owns the tenant transaction; used to commit request allocation and draft together. */
+export async function createStockTransferInTx(
+  client: PoolClient,
+  input: CreateStockTransferInput,
+): Promise<CreateTransferResult> {
   if (input.fromLocationId === input.toLocationId) {
     return { status: "INVALID", reason: "สาขาต้นทางกับปลายทางต้องต่างกัน" };
   }
@@ -205,107 +229,92 @@ export async function createStockTransfer(input: {
     },
   );
 
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, input.tenantId, { editorId: input.createdBy });
-    const replay = await replayInventoryResult<CreateTransferResult>(
-      client,
-      input.tenantId,
-      idempotency,
-    );
-    if (replay) {
-      await client.query("COMMIT");
-      return replay;
-    }
+  const replay = await replayInventoryResult<CreateTransferResult>(
+    client,
+    input.tenantId,
+    idempotency,
+  );
+  if (replay) {
+    return replay;
+  }
 
-    // สาขาทั้งสองต้องเป็นของร้านนี้ — ห้ามเชื่อ id จาก body
-    const locs = await client.query(
-      `SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND active`,
-      [input.tenantId, [input.fromLocationId, input.toLocationId]],
-    );
-    if (locs.rowCount !== 2) {
-      await client.query("ROLLBACK");
-      return {
-        status: "INVALID",
-        reason: "ไม่พบสาขาต้นทางหรือปลายทาง (หรือถูกปิดใช้งาน)",
-      };
-    }
+  // สาขาทั้งสองต้องเป็นของร้านนี้ — ห้ามเชื่อ id จาก body
+  const locs = await client.query(
+    `SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND active`,
+    [input.tenantId, [input.fromLocationId, input.toLocationId]],
+  );
+  if (locs.rowCount !== 2) {
+    return {
+      status: "INVALID",
+      reason: "ไม่พบสาขาต้นทางหรือปลายทาง (หรือถูกปิดใช้งาน)",
+    };
+  }
 
-    // SKU ต้องมีจริงก่อน — bms_stock_transfer_items มี FK ไป bms_products ถ้าปล่อยให้
-    // FK เป็นคนจับ คนกรอกจะได้ 500 เปล่า ๆ แทนที่จะได้ประโยคว่าพิมพ์ SKU ไหนผิด
-    // (ฝั่งใบนับตรวจข้อนี้อยู่แล้ว — ดู recordCountItem)
-    const skus = Array.from(new Set(items.map((i) => i.sku)));
-    const known = await client.query<{ sku: string }>(
-      `SELECT sku FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`,
-      [input.tenantId, skus],
-    );
-    if (known.rowCount !== skus.length) {
-      const found = new Set(known.rows.map((r) => r.sku));
-      const missing = skus.filter((s) => !found.has(s));
-      await client.query("ROLLBACK");
-      return {
-        status: "INVALID",
-        reason: `ไม่พบสินค้า: ${missing.join(", ")}`,
-      };
-    }
+  // SKU ต้องมีจริงก่อน — bms_stock_transfer_items มี FK ไป bms_products ถ้าปล่อยให้
+  // FK เป็นคนจับ คนกรอกจะได้ 500 เปล่า ๆ แทนที่จะได้ประโยคว่าพิมพ์ SKU ไหนผิด
+  // (ฝั่งใบนับตรวจข้อนี้อยู่แล้ว — ดู recordCountItem)
+  const skus = Array.from(new Set(items.map((i) => i.sku)));
+  const known = await client.query<{ sku: string }>(
+    `SELECT sku FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`,
+    [input.tenantId, skus],
+  );
+  if (known.rowCount !== skus.length) {
+    const found = new Set(known.rows.map((r) => r.sku));
+    const missing = skus.filter((s) => !found.has(s));
+    return {
+      status: "INVALID",
+      reason: `ไม่พบสินค้า: ${missing.join(", ")}`,
+    };
+  }
 
-    // เลขที่ใบโอน — TRF-YYMMDD-NNN ต่อร้าน ไม่ใช่ global sequence
-    const { transferId, transferNo } = await insertWithDailyDocNo(
-      client,
-      { tenantId: input.tenantId, table: "bms_stock_transfers", prefix: "TRF" },
-      async (docNo) => {
-        const ins = await client.query<{ id: string }>(
-          `INSERT INTO bms_stock_transfers (tenant_id, transfer_no, from_location, to_location, note, created_by)
+  // เลขที่ใบโอน — TRF-YYMMDD-NNN ต่อร้าน ไม่ใช่ global sequence
+  const { transferId, transferNo } = await insertWithDailyDocNo(
+    client,
+    { tenantId: input.tenantId, table: "bms_stock_transfers", prefix: "TRF" },
+    async (docNo) => {
+      const ins = await client.query<{ id: string }>(
+        `INSERT INTO bms_stock_transfers (tenant_id, transfer_no, from_location, to_location, note, created_by)
            VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-          [
-            input.tenantId,
-            docNo,
-            input.fromLocationId,
-            input.toLocationId,
-            input.note ?? null,
-            input.createdBy,
-          ],
-        );
-        return { transferId: ins.rows[0].id, transferNo: docNo };
-      },
-    );
+        [
+          input.tenantId,
+          docNo,
+          input.fromLocationId,
+          input.toLocationId,
+          input.note ?? null,
+          input.createdBy,
+        ],
+      );
+      return { transferId: ins.rows[0].id, transferNo: docNo };
+    },
+  );
 
-    for (const item of items) {
-      await client.query(
-        `INSERT INTO bms_stock_transfer_items (tenant_id, transfer_id, product_sku, size, qty)
+  for (const item of items) {
+    await client.query(
+      `INSERT INTO bms_stock_transfer_items (tenant_id, transfer_id, product_sku, size, qty)
          VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (transfer_id, product_sku, size) DO UPDATE SET qty = bms_stock_transfer_items.qty + EXCLUDED.qty`,
-        [input.tenantId, transferId, item.sku, item.size, item.qty],
-      );
-    }
-
-    await auditInTx(
-      client,
-      input.tenantId,
-      input.createdBy,
-      "inventory.transfer.create",
-      transferId,
-      {
-        transferNo,
-        fromLocationId: input.fromLocationId,
-        toLocationId: input.toLocationId,
-        lines: items.length,
-        units: items.reduce((sum, i) => sum + i.qty, 0),
-      },
+      [input.tenantId, transferId, item.sku, item.size, item.qty],
     );
-
-    const response = { status: "CREATED" as const, transferId, transferNo };
-    await storeInventoryResult(client, input.tenantId, idempotency, response);
-    await client.query("COMMIT");
-    return response;
-  } catch (err) {
-    try {
-      await client.query("ROLLBACK");
-    } catch {}
-    throw err;
-  } finally {
-    client.release();
   }
+
+  await auditInTx(
+    client,
+    input.tenantId,
+    input.createdBy,
+    "inventory.transfer.create",
+    transferId,
+    {
+      transferNo,
+      fromLocationId: input.fromLocationId,
+      toLocationId: input.toLocationId,
+      lines: items.length,
+      units: items.reduce((sum, i) => sum + i.qty, 0),
+    },
+  );
+
+  const response = { status: "CREATED" as const, transferId, transferNo };
+  await storeInventoryResult(client, input.tenantId, idempotency, response);
+  return response;
 }
 
 export type TransferActionResult =
@@ -455,6 +464,7 @@ export async function sendStockTransfer(input: {
     const response = { status: "OK" as const };
     await storeInventoryResult(client, input.tenantId, idempotency, response);
     await client.query("COMMIT");
+    void notifyBranchRequisitionCommitted({tenantId:input.tenantId,actorId:input.actorUserId,transferId:input.transferId,kind:"TRANSFER_SENT"});
     return response;
   } catch (err) {
     try {
@@ -726,6 +736,8 @@ export async function receiveStockTransfer(input: {
     const response = { status: "OK" as const };
     await storeInventoryResult(client, input.tenantId, idempotency, response);
     await client.query("COMMIT");
+    void notifyBranchRequisitionCommitted({tenantId:input.tenantId,actorId:input.actorUserId,transferId:input.transferId,
+      kind:totalReceived<totalSent?"TRANSFER_DISCREPANCY":"TRANSFER_RECEIVED"});
     return response;
   } catch (err) {
     try {

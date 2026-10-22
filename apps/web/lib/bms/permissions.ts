@@ -21,6 +21,9 @@ export const BMS_PERMISSIONS = [
   // .count = เดินนับและกรอกตัวเลข · .count.apply = ยืนยันว่าของหายจริงเท่านั้น
   // (คนละการตัดสินใจ จึงคนละสิทธิ์ — Warehouse นับได้ แต่ปิดใบนับไม่ได้)
   "inventory.transfer",
+  "inventory.requisition.view",
+  "inventory.requisition.create",
+  "inventory.requisition.review",
   "inventory.count",
   "inventory.count.apply",
   "order.view",
