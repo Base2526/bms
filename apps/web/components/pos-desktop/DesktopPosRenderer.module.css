@@ -1032,8 +1032,14 @@
 .receiptDialogSummary dd { margin: 0; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
 .receiptDialogSummary .changeRow { color: #237804; }
 .receiptDialogSummary .receiptActions { grid-template-columns: 1fr; }
-.receiptDialogPreview { min-width: 0; padding: 16px; background: #f5f6f8; }
-.receiptDialogPreview :global(.pos-receipt-paper) { max-width: 100%; }
+.receiptDialogPreview { display: flex; min-width: 0; padding: 16px; background: #f5f6f8; }
+.receiptDialogPreview :global(.pos-receipt-paper) {
+  box-sizing: border-box;
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+  max-height: none;
+}
 @media (max-width: 640px) {
   .receiptDialogBody { grid-template-columns: minmax(0, 1fr); }
   .receiptDialog :global(.ant-modal-content) { padding: 16px; }
