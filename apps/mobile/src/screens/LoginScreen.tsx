@@ -224,7 +224,7 @@ export default function LoginScreen({ navigation }: Props) {
             action: 'pos.cashier.verify',
             status: 'info',
             message: 'เริ่มตรวจ PIN พนักงาน',
-            context: { route: 'LoginScreen' },
+            context: { route: 'LoginScreen', cashierUserId: cashier.id },
           });
           const controller = new AbortController();
           let verifyTimedOut = false;
@@ -246,7 +246,7 @@ export default function LoginScreen({ navigation }: Props) {
               action: 'pos.cashier.verify',
               status: 'success',
               message: 'ยืนยัน PIN พนักงานสำเร็จ',
-              context: { route: 'LoginScreen' },
+              context: { route: 'LoginScreen', cashierUserId: cashier.id },
             });
             signIn(
               deviceId,
@@ -275,6 +275,7 @@ export default function LoginScreen({ navigation }: Props) {
               status: 'error',
               message: diagnosticMessage,
               context: {
+                cashierUserId: cashier.id,
                 route: 'LoginScreen',
                 errorName:
                   submitError instanceof Error ? submitError.name : 'Error',

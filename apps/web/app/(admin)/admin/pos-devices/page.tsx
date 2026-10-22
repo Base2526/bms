@@ -8,7 +8,7 @@
 // จึงไม่มีปุ่ม "ดูอีกครั้ง" ให้กด หายแล้วออกใหม่อย่างเดียว
 import { gql, useMutation, useQuery } from "@apollo/client";
 import {
-  Alert, Button, Card, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
+  Alert, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Table, Tag,
   Typography, message,
 } from "antd";
 import { ReadOutlined } from "@ant-design/icons";
@@ -31,7 +31,7 @@ const Q = gql`
     }
     bmsPosStaff { id name email role isPharmacist hasPin posOnly }
     bmsPosDeviceDiagnostics(deviceId: $diagnosticDeviceId, limit: 50) @include(if: $includeDiagnostics) {
-      id occurredAt receivedAt deviceId locationId actorId category action status message context
+      id occurredAt receivedAt correlationId actorKind actorLabel actorRole deviceId locationId category action status message context
     }
   }
 `;
@@ -59,9 +59,37 @@ type Device = {
 
 type DiagnosticEvent = {
   id: string; occurredAt: string; receivedAt: string; deviceId: string | null;
-  locationId: string | null; actorId: string | null; action: string;
+  correlationId: string | null; actorKind: "cashier" | "user" | "device" | "unknown";
+  actorLabel: string | null; actorRole: string | null; locationId: string | null; category: string; action: string;
   status: string | null; message: string | null; context: Record<string, unknown>;
 };
+
+const DIAGNOSTIC_CONTEXT_LABELS: Record<string, string> = {
+  route: "Route",
+  previousRoute: "หน้าก่อนหน้า",
+  errorName: "ชนิดข้อผิดพลาด",
+  errorCode: "Error code",
+  httpStatus: "HTTP status",
+  durationMs: "ระยะเวลา",
+  appVersion: "เวอร์ชันแอป",
+  platform: "แพลตฟอร์ม",
+  online: "การเชื่อมต่อ",
+  visibility: "สถานะหน้าจอ",
+  viewport: "ขนาดหน้าจอ",
+  source: "แหล่งที่มา",
+  retry: "ครั้งที่ลองใหม่",
+  sequence: "ลำดับ",
+  bundleVersion: "เวอร์ชัน diagnostics",
+  digest: "Digest",
+};
+
+function formatDiagnosticValue(key: string, value: unknown): string {
+  if (key === "durationMs" && typeof value === "number") {
+    return value >= 1_000 ? `${(value / 1_000).toFixed(2)} วินาที` : `${value} ms`;
+  }
+  if (key === "online" && typeof value === "boolean") return value ? "ออนไลน์" : "ออฟไลน์";
+  return String(value);
+}
 
 const SCANNER_PREFIX_OPTIONS = ["F9", ...Array.from({ length: 24 }, (_, index) => `F${index + 1}`)
   .filter((key) => key !== "F9")].map((value) => ({ value, label: value }));
@@ -73,6 +101,7 @@ export default function PosDevicesPage() {
   const canStaff = can("pos.staff.manage");
   const canDiagnostics = can("support.logs.view");
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
+  const [diagnosticStatus, setDiagnosticStatus] = useState("all");
   const { data, loading, refetch } = useQuery(Q, {
     fetchPolicy: "cache-and-network",
     variables: { includeDiagnostics: canDiagnostics, diagnosticDeviceId },
@@ -99,6 +128,9 @@ export default function PosDevicesPage() {
   const devices: Device[] = data?.bmsPosDevices ?? [];
   const cashiers = data?.bmsPosStaff ?? [];
   const diagnostics: DiagnosticEvent[] = data?.bmsPosDeviceDiagnostics ?? [];
+  const visibleDiagnostics = diagnosticStatus === "all"
+    ? diagnostics
+    : diagnostics.filter((event) => (event.status ?? "info") === diagnosticStatus);
   const locationName = (id: string) => locations.find((l: any) => l.id === id)?.name ?? "—";
   const deviceLabel = (id: string | null | undefined) => {
     const device = devices.find((item) => item.id === id);
@@ -286,6 +318,19 @@ export default function PosDevicesPage() {
                   label: deviceLabel(device.id),
                 }))}
               />
+              <Select
+                aria-label="กรองสถานะเหตุการณ์ POS"
+                style={{ width: 150 }}
+                value={diagnosticStatus}
+                onChange={setDiagnosticStatus}
+                options={[
+                  { value: "all", label: "ทุกสถานะ" },
+                  { value: "error", label: "Error" },
+                  { value: "warning", label: "Warning" },
+                  { value: "success", label: "Success" },
+                  { value: "info", label: "Info" },
+                ]}
+              />
               <Button onClick={() => void refetch()}>รีเฟรช</Button>
             </Space>
           }
@@ -295,14 +340,73 @@ export default function PosDevicesPage() {
             type="info"
             showIcon
             style={{ marginBottom: 12 }}
-            message="ดูได้ว่าเครื่องไหนส่งเหตุการณ์อะไรกลับมา และสาเหตุที่ server/client รายงานคืออะไร"
+            message="ดูได้ว่าเครื่องไหนส่งเหตุการณ์อะไรกลับมา และสาเหตุที่ server/client รายงานคืออะไร · กดแถวเพื่อดูรายละเอียด"
             description="รายการนี้มาจาก bms_support_events ของเครื่อง POS เท่านั้น ไม่เก็บ PIN, token, request body หรือข้อมูลบัตร"
           />
           <Table
             size="small"
             rowKey="id"
-            dataSource={diagnostics}
-            pagination={{ pageSize: 10, showSizeChanger: false }}
+            dataSource={visibleDiagnostics}
+            scroll={{ x: 900 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: false,
+              showTotal: (total) => `${total} เหตุการณ์ล่าสุด`,
+            }}
+            expandable={{
+              expandRowByClick: true,
+              expandedRowRender: (row: DiagnosticEvent) => {
+                const occurredAt = new Date(row.occurredAt).getTime();
+                const receivedAt = new Date(row.receivedAt).getTime();
+                const receiveDelay = Number.isFinite(occurredAt) && Number.isFinite(receivedAt)
+                  ? receivedAt - occurredAt
+                  : null;
+                const contextItems = Object.entries(row.context ?? {})
+                  .filter(([key, value]) => DIAGNOSTIC_CONTEXT_LABELS[key] && value != null && value !== "")
+                  .map(([key, value]) => ({
+                    key: `context-${key}`,
+                    label: DIAGNOSTIC_CONTEXT_LABELS[key],
+                    children: formatDiagnosticValue(key, value),
+                  }));
+                return (
+                  <Descriptions
+                    bordered
+                    size="small"
+                    column={{ xs: 1, sm: 2, lg: 3 }}
+                    items={[
+                      { key: "location", label: "สาขา", children: row.locationId ? locationName(row.locationId) : "—" },
+                      {
+                        key: "actor",
+                        label: row.actorKind === "cashier" ? "พนักงานที่เลือก" : "ผู้ส่ง diagnostics",
+                        children: row.actorLabel
+                          ? `${row.actorLabel}${row.actorRole ? ` · ${row.actorRole}` : ""}`
+                          : row.actorKind === "device"
+                            ? "ยังระบุพนักงานไม่ได้ (เหตุการณ์จากเครื่อง POS)"
+                            : "ไม่ทราบผู้ใช้งาน",
+                      },
+                      { key: "category", label: "หมวด", children: row.category },
+                      { key: "receivedAt", label: "Server รับเมื่อ", children: fmtDT(row.receivedAt) },
+                      {
+                        key: "receiveDelay",
+                        label: "ต่างจากเวลาเครื่อง",
+                        children: receiveDelay == null ? "—" : `${receiveDelay >= 0 ? "+" : ""}${receiveDelay} ms`,
+                      },
+                      {
+                        key: "correlationId",
+                        label: "Correlation ID",
+                        children: row.correlationId
+                          ? <Typography.Text copyable={{ text: row.correlationId }}>{row.correlationId}</Typography.Text>
+                          : "—",
+                      },
+                      ...contextItems,
+                    ]}
+                  />
+                );
+              },
+              rowExpandable: (row: DiagnosticEvent) => Boolean(
+                row.locationId || row.correlationId || row.receivedAt || Object.keys(row.context ?? {}).length
+              ),
+            }}
             columns={[
               { title: "เวลา", dataIndex: "occurredAt", width: 180, render: fmtDT },
               { title: "เครื่อง", dataIndex: "deviceId", width: 180, render: deviceLabel },

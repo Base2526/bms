@@ -138,7 +138,16 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(route, /category:\s*"pos"/);
   assert.doesNotMatch(route, /category:\s*event\?\.category/);
   assert.match(service, /WHERE tenant_id = \$1[\s\S]*category = 'pos'[\s\S]*device_id = \$2::uuid/);
+  assert.match(service, /SELECT e\.id, e\.occurred_at, e\.received_at, e\.correlation_id, e\.device_id/);
+  assert.match(service, /correlationId: row\.correlation_id \?\? null/);
+  assert.match(service, /allowedCashiers\.has\(cashierUserId\)/);
+  assert.match(service, /u\.tenant_id = e\.tenant_id/);
+  assert.match(service, /delete context\.cashierUserId/);
   assert.match(admin, /bmsPosDeviceDiagnostics\(deviceId: \$diagnosticDeviceId, limit: 50\)/);
+  assert.match(admin, /expandedRowRender/);
+  assert.match(admin, /DIAGNOSTIC_CONTEXT_LABELS/);
+  assert.match(admin, /Correlation ID/);
+  assert.match(admin, /พนักงานที่เลือก/);
   assert.doesNotMatch(mobile, /body:\s*JSON\.stringify\([^)]*(pin|token)/i);
   assert.match(mobile, /Keychain\.setGenericPassword/);
   assert.match(mobile, /MAX_QUEUE_EVENTS/);
@@ -146,6 +155,7 @@ test("native POS diagnostics are device-attributed and visible by server-side de
   assert.match(mobile, /signal:\s*controller\.signal/);
   assert.match(mobile, /clearTimeout\(timeout\)/);
   assert.match(login, /message:\s*'เริ่มตรวจ PIN พนักงาน'/);
+  assert.match(login, /cashierUserId: cashier\.id/);
   assert.match(login, /PIN_VERIFY_TIMEOUT/);
 });
 
