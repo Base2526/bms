@@ -252,6 +252,7 @@ const NAV_ICONS: Record<string, React.ReactNode> = {
   'inventory.product-labels': <PrinterOutlined />,
   'inventory.purchase': <ImportOutlined />,
   'inventory.stock-transfers': <SwapOutlined />,
+  'inventory.branch-requisitions': <SwapOutlined />,
   'inventory.stock-counts': <ContainerOutlined />,
   'inventory.wastage': <DeleteOutlined />,
   'customers.inbox': <MessageOutlined />,

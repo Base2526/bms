@@ -164,6 +164,13 @@ export async function updateTenantIdentity(
  */
 async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promise<void> {
   if (!tenantIds.length) return;
+  // Requisition evidence deliberately restricts deletion of its PO/transfer/product/user.
+  // Only this already-authorized full tenant purge removes it, inside the same transaction.
+  await client.query(`DELETE FROM bms_branch_requisition_events WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_branch_requisition_transfers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_branch_requisition_purchases WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_branch_requisition_items WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_branch_requisitions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Restaurant chat requests (9.66) reference orders, customers and the reviewing user with
   // RESTRICT FKs on purpose (they are the evidence of what was asked for), so they must go
   // before all three or the whole purge fails on this one table.
@@ -242,6 +249,8 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_pos_petty_cash_ledger WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_purchase_receipts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_stock_movements WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Transfer items and actors restrict product/user deletion; remove their parent first.
+  await client.query(`DELETE FROM bms_stock_transfers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);

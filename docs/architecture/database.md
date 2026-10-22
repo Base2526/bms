@@ -1,5 +1,44 @@
 # Database
 
+## Branch requisition planning (`10.87`)
+
+`bms_branch_requisitions` stores the destination, Bangkok-day `REQ-` number, creator, date,
+NORMAL/URGENT priority and optimistic version. States are DRAFT, SUBMITTED, APPROVED,
+REJECTED (all lines approved at zero), CLOSED and CANCELLED. `bms_branch_requisition_items`
+stores catalog SKU/variant/name snapshots and integer requested/approved quantities (approved
+between zero and requested); draft editing replaces lines before any fulfilment link exists.
+
+`bms_branch_requisition_transfers` links each transfer item to exactly one request item.
+`bms_branch_requisition_purchases` allocates quantities to PO items, bounded under a PO row lock;
+repeat allocation to the same pair increments the allocation and records the delta in history.
+`bms_branch_requisition_events` is an append-only decision/actor timeline. Each decision also
+writes `bms_audit_log` and the existing `bms_inventory_operation_idempotency` result in the same
+tenant transaction. Headers use row locks/version checks. Links have composite tenant FKs; the
+destination FK also includes tenant. All five tables have fail-closed RLS and explicit `bms_app`
+grants. Migration seeds Manager view/create/review and Warehouse view/create, preserving custom
+permissions. Existing tenant role configuration still determines transfer/purchase authority.
+Ordinary deletion of linked evidence remains restricted. The existing authorized whole-tenant
+purge removes requisition children/headers before its PO, product, branch and user dependencies;
+all removals remain in the purge transaction and scope.
+
+Progress is derived from existing transfer status/receipts, never a duplicate inventory ledger.
+Only good received units count as delivered. PO cumulative receipts lack destination/request
+evidence, so they do not count as requisition fulfilment. No realtime trigger/subscriber is added:
+the page refreshes explicitly and after decisions; stock/PO events remain owned by existing services.
+Dependencies: existing inventory/PO/transfer schema including discrepancy fields, inventory
+idempotency, branch allowlists, audit grants and daily document numbering. Apply migration before
+deploying the UI; readiness checks include all five tables. Roll back application access while
+retaining request/document/audit evidence. See [implementation scope](../business/branch-requisitions-plan.md).
+
+`10.88__bms_requisition_operations.sql` adds a branch/need-by index and a partial personal-notice
+index, plus column-only SELECT grants for `users.language/pos_only` and the required notification
+read fields. No new business state/table/trigger is introduced. Notifications reuse `notifications`
+with `entity_type=bms_requisition_action`, the request UUID and a fixed kind/href payload, with no
+free-text request notes. Recipients are re-resolved by tenant, RBAC and branch; reads join the request
+under RLS and match the current recipient. They are best-effort after commit and cannot undo the
+decision. The page reads the latest 20 notices; no new named realtime invalidation event is added.
+Summary metrics and transfer timeline are derived reads, never duplicate stock/fulfilment columns.
+
 > Entry point: [CLAUDE.md](../../CLAUDE.md) · Architecture overview: [system.md](system.md)
 
 All BMS tables are tenant-scoped (`tenant_id UUID`) and enforced by Postgres Row-Level Security

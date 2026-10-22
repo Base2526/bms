@@ -1,9 +1,10 @@
 import electronMain from "electron/main";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { platformClientLabel, platformSecurityNote } from "../src/secure-storage.mjs";
 
-const { app, BrowserWindow } = electronMain;
+const { app, BrowserWindow, ipcMain } = electronMain;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outputDir = path.join(__dirname, "../dist-smoke");
@@ -12,6 +13,17 @@ const compactScreenshotPath = path.join(outputDir, "setup-compact.png");
 const startupScreenshotPath = path.join(outputDir, "startup-error.png");
 
 async function run() {
+  const { version } = JSON.parse(await readFile(path.join(__dirname, "../package.json"), "utf8"));
+  // Use the host's labels, but keep pairing/storage stubbed: never read a real device token.
+  ipcMain.handle("smoke:app-info", () => ({
+    version,
+    platform: process.platform,
+    clientLabel: platformClientLabel(process.platform),
+    securityNote: platformSecurityNote(process.platform),
+    secureStorageReady: true,
+    secureStorageError: null,
+    secureStorageBackend: null,
+  }));
   const window = new BrowserWindow({
     width: 1100,
     height: 760,
@@ -51,8 +63,8 @@ async function run() {
       || !state.button?.includes("ตรวจสอบและเชื่อมต่อ")
       || !state.adminLink?.includes("สร้างจากระบบหลังบ้านบนเครื่องนี้")
       || state.alertCloseLabel !== "ปิดการแจ้งเตือน"
-      || state.clientLabel !== "macOS Client"
-      || !state.securityNote?.includes("macOS Keychain")
+      || state.clientLabel !== platformClientLabel(process.platform)
+      || state.securityNote !== platformSecurityNote(process.platform)
       || state.overflowX
       || state.overflowY
     ) {
@@ -173,17 +185,26 @@ async function run() {
     );
     const startupImage = await window.webContents.capturePage();
     await writeFile(startupScreenshotPath, startupImage.toPNG());
-    console.log(JSON.stringify({ ok: true, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
+    console.log(JSON.stringify({ ok: true, platform: process.platform, version, screenshotPath, compactScreenshotPath, startupScreenshotPath, state, compactState, loadingState, localRuntimeState, startupState }));
   } finally {
     window.destroy();
+    ipcMain.removeHandler("smoke:app-info");
   }
 }
 
+const watchdog = setTimeout(() => {
+  console.error("Electron setup smoke timed out after 60 seconds");
+  app.exit(1);
+}, 60_000);
 console.log("smoke: waiting for Electron");
 app.whenReady()
   .then(run)
-  .then(() => app.quit())
+  .then(() => {
+    clearTimeout(watchdog);
+    app.quit();
+  })
   .catch((error) => {
+    clearTimeout(watchdog);
     console.error(error);
     app.exit(1);
   });

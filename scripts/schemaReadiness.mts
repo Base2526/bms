@@ -24,6 +24,17 @@ export type Migration = {
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
   {
+    file: "10.87__bms_branch_requisitions.sql",
+    impact: "Branch requisition planning requires request, item, document-link and decision-history tables",
+    needs: [
+      { kind: "table", name: "bms_branch_requisitions" },
+      { kind: "table", name: "bms_branch_requisition_items" },
+      { kind: "table", name: "bms_branch_requisition_transfers" },
+      { kind: "table", name: "bms_branch_requisition_purchases" },
+      { kind: "table", name: "bms_branch_requisition_events" },
+    ],
+  },
+  {
     file: "10.82__bms_master_drugs.sql",
     impact: "Pharmacy Product Policy reads and optional master-drug Draft snapshots require the Phase 7 reference table and links",
     needs: [

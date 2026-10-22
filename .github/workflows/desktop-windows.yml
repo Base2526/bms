@@ -44,6 +44,18 @@ jobs:
       - name: Check desktop sources
         run: npm run lint
 
+      - name: Smoke-test the Electron setup screen
+        run: npm run test:smoke
+
+      - name: Upload setup smoke screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bms-pos-windows-smoke-${{ github.sha }}
+          if-no-files-found: warn
+          path: apps/desktop/dist-smoke/*.png
+          retention-days: 14
+
       - name: Build NSIS installer
         run: npm run pack:win
 

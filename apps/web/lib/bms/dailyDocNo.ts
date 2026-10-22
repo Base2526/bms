@@ -25,7 +25,7 @@ import type { PoolClient } from "pg";
  * ชื่อตารางถูกต่อเข้า SQL ตรง ๆ (parameter ใช้แทนชื่อตารางไม่ได้) การผูกชนิดไว้
  * ที่นี่คือสิ่งที่กันไม่ให้ชื่อจากที่อื่นหลุดเข้ามาได้
  */
-export type DailyDocTable = "bms_stock_transfers" | "bms_stock_counts";
+export type DailyDocTable = "bms_stock_transfers" | "bms_stock_counts" | "bms_branch_requisitions";
 
 const MAX_ATTEMPTS = 5;
 

@@ -73,3 +73,20 @@ test("the setup and startup pages use the bundled Thai font, not one the OS may 
 test("the bundled fonts are inside the packaged files glob", () => {
   assert.ok(pkg.build.files.includes("renderer/**/*"), "renderer/fonts must be packaged");
 });
+
+test("every native packaging workflow gates the build on setup smoke and retains screenshots", () => {
+  for (const [platform, runner, command] of [
+    ["windows", "windows-latest", "npm run test:smoke"],
+    ["linux", "ubuntu-latest", "xvfb-run -a npm run test:smoke"],
+    ["macos", "macos-latest", "npm run test:smoke"],
+  ]) {
+    const workflow = read(`../../.github/workflows/desktop-${platform}.yml`);
+    assert.ok(workflow.includes(`runs-on: ${runner}`), `${platform}: use the native runner`);
+    const smoke = workflow.indexOf(`run: ${command}`);
+    const build = workflow.indexOf("run: npm run pack:");
+    assert.ok(smoke > 0 && build > smoke, `${platform}: smoke must run before packaging`);
+    assert.doesNotMatch(workflow, /continue-on-error:/, `${platform}: do not ignore smoke failures`);
+    assert.match(workflow, /name: Upload setup smoke screenshots\s+if: always\(\)/);
+    assert.ok(workflow.includes("path: apps/desktop/dist-smoke/*.png"));
+  }
+});
