@@ -44,6 +44,13 @@ returns an existing `PENDING`/`CONFIRMED` payment to prevent duplicate submissio
 payment may be replaced. A successful upload creates `PENDING` only and requires the existing human
 Confirm action before the order becomes `PAID`.
 
+Public checkout API requests pass separate IP and hashed-token limits (per minute: read 120,
+delivery edit 30, slip submission 10). The IP limit precedes request-body parsing; a denied request
+returns 429 with Retry-After and no-store. Delivery JSON is bounded to 16 KiB on the actual stream
+and must be an object. A concurrent order-state rejection from `submitPaymentOnce()` remains a
+failed checkout result. These guards do not cover the server-rendered checkout page, which reads
+the service directly. See [retail readiness](retail-omnichannel-readiness.md) for verification scope.
+
 ## AI slip verification
 
 `verifyPaymentSlip()` loads and normalizes the image, obtains the active provider through

@@ -5,6 +5,8 @@ import {
 } from "@/lib/bms/checkout";
 import { audit } from "@/lib/bms/audit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { readRetailLocalJSON, RetailLocalRequestBodyError } from "@/lib/bms/retailLocalRequestBody";
+import { requireCheckoutRateLimit } from "./routeHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +19,11 @@ function response(body: unknown, status = 200) {
 }
 
 async function handleGET(req: NextRequest) {
+  const limited = await requireCheckoutRateLimit(req, "read");
+  if (limited) return limited;
   const token = new URL(req.url).searchParams.get("t") || "";
+  const tokenLimited = await requireCheckoutRateLimit(req, "read", token);
+  if (tokenLimited) return tokenLimited;
   const result = await getCheckoutByToken(token);
   return result.ok
     ? response({ checkout: result.checkout })
@@ -25,9 +31,25 @@ async function handleGET(req: NextRequest) {
 }
 
 async function handlePATCH(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const limited = await requireCheckoutRateLimit(req, "delivery");
+  if (limited) return limited;
+  let parsed: unknown;
+  try {
+    parsed = await readRetailLocalJSON(req, 16 * 1024);
+  } catch (error) {
+    if (error instanceof RetailLocalRequestBodyError) {
+      return response({ error: "ข้อมูลที่ส่งมาไม่ถูกต้องหรือมีขนาดใหญ่เกินไป" }, error.status);
+    }
+    throw error;
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return response({ error: "ข้อมูลที่ส่งมาไม่ถูกต้อง" }, 400);
+  }
+  const body = parsed as Record<string, unknown>;
   const token = typeof body.token === "string" ? body.token : "";
   if (!token) return response({ error: "ไม่พบ checkout token" }, 400);
+  const tokenLimited = await requireCheckoutRateLimit(req, "delivery", token);
+  if (tokenLimited) return tokenLimited;
 
   try {
     const result = await saveCheckoutDeliveryByToken(token, {

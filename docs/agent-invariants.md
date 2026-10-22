@@ -278,6 +278,10 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   non-reusing; the two behaviors share `submitPaymentInternal()` via overloads.
 - **Uploads stay untrusted.** Slips are limited to JPG/PNG/WEBP, 8 MB, and a pixel bound, and are
   re-validated by decoding with `sharp` — MIME type alone is not proof of an image.
+- **Public checkout APIs are bounded before work.** Keep IP limits before body parsing, then
+  hashed-token limits before service/storage calls (`checkout/routeHelpers.ts`). GET, PATCH and
+  payment POST have independent ceilings. Delivery JSON is stream-bounded to 16 KiB and must be
+  an object. Never return checkout success for `submitPaymentOnce()`'s `INVALID_ORDER_STATE`.
 - **Only configured receiving accounts are offered.** The method must be `BANK_TRANSFER`/`QR` _and_
   backed by a currently configured BANK/PromptPay account (`paymentConfiguration.ts`). This matches
   the chat-surface rule: never surface a payment channel the shop cannot actually receive money on.
@@ -287,6 +291,12 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   delivery + payment in Seller Center.
 - Delivery edits reuse `saveCustomerCheckoutDetails()`, so omitted fields are preserved rather than
   cleared, and customer actions are audited as `customer:checkout`.
+- Only the persisted order's `fulfillment_type = 'PICKUP'` waives the shipping address;
+  recipient name and phone remain required. Hide saved addresses on pickup checkout. PICKUP/POS
+  are excluded from customer-profile shipping recalculation. Other recalculations quote outside
+  the transaction, then lock the order and recheck payment/quote inputs before committing the fee
+  and `order.shipping_recalculated` audit together. Pickup handover reuses the locked stock
+  transition, without a carrier shipment; payment is never evidence that food is ready.
 
 ## Carrier booking and tracking sync
 

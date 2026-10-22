@@ -8,6 +8,7 @@ import { audit } from "@/lib/bms/audit";
 import { buildFileUrlById, persistWebFile } from "@/lib/storage";
 import sharp, { type Metadata } from "sharp";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { requireCheckoutRateLimit } from "../routeHelpers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,8 @@ function response(body: unknown, status = 200) {
 }
 
 async function handlePOST(req: NextRequest) {
+  const limited = await requireCheckoutRateLimit(req, "payment");
+  if (limited) return limited;
   const contentLength = Number(req.headers.get("content-length") || 0);
   if (contentLength > MAX_REQUEST_BYTES) {
     return response({ error: "รูปสลิปต้องมีขนาดไม่เกิน 8 MB" }, 413);
@@ -39,6 +42,8 @@ async function handlePOST(req: NextRequest) {
   const file = form.get("slip");
 
   if (!token) return response({ error: "ไม่พบ checkout token" }, 400);
+  const tokenLimited = await requireCheckoutRateLimit(req, "payment", token);
+  if (tokenLimited) return tokenLimited;
   if (
     !PAYMENT_METHODS.includes(method) ||
     !["BANK_TRANSFER", "QR"].includes(method)
@@ -61,7 +66,9 @@ async function handlePOST(req: NextRequest) {
     return response({ error: "ออร์เดอร์นี้ชำระเงินผ่าน Seller Center" }, 400);
   }
   if (!current.checkout.delivery.complete) {
-    return response({ error: "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" }, 400);
+    return response({ error: current.checkout.fulfillment.type === "PICKUP"
+      ? "กรุณากรอกชื่อและเบอร์โทรผู้รับที่ยังขาดก่อน"
+      : "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" }, 400);
   }
   if (current.checkout.order.status !== "PENDING") {
     return response({ error: "ออร์เดอร์นี้ไม่อยู่ในสถานะรอชำระเงิน" }, 400);
