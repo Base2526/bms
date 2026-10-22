@@ -672,6 +672,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "ดูแพ็กเกจ, AI point, usage breakdown, ledger และสิ่งที่ใช้โควตาไปในเดือนนี้",
     bullets: [
       "ดู point คงเหลือ, ใช้ไปแล้ว, request count, provider calls, และ estimated cost แยกกัน",
+      "ข้อมูลกลางแพลตฟอร์มกำหนดโควตา AI point รายเดือนเพียงค่าเดียว ทุกแพ็กเกจมีออเดอร์ไม่จำกัดและตั้งเพดานออเดอร์ไม่ได้ ยอดช่องทางใน Billing นับรวมรายการที่ปิดไว้ตามโควตาด้วย",
       "point คิดหนึ่งครั้งต่อคำขอ แม้ AI จะเรียกหลายรอบหรือเปลี่ยน provider; token เป็นอีกหน่วยหนึ่ง ยอดมุมซ้ายล่างจะอ่านใหม่หลังใช้งาน และตรวจงานเบื้องหลังทุก 30 วินาที",
       "Free 100 point/เดือน, Pro 599 บาท 1,000 point/เดือน, Business 1,990 บาท 5,000 point/เดือน โดยคงโควตา Business เดิมจนสิ้นเดือนที่ติดตั้งแพ็กเกจใหม่ ดูวันเริ่มใน Billing รีเซ็ตวันที่ 1 เวลา 00:00 น. ไทย ไม่มีเพดานต้นทุน USD ต่อร้าน; BYOK จ่ายกับ provider ของร้านแยกต่างหาก",
       "แพ็กเกจ Cloud: Free 100 SKU/2 ผู้ใช้, Pro สินค้าไม่จำกัด/5 ผู้ใช้, Business สินค้าไม่จำกัด/20 ผู้ใช้ ทุกแผนไม่จำกัดบิล ร้านใหม่มีโควตาสาขา/เครื่อง POS/ช่องทาง: Free 1/1/1, Pro 1/3/3, Business 5/10/ไม่จำกัด นับรายการที่ลงทะเบียนรวมที่ปิดไว้ ล็อกเฉพาะการเพิ่ม ของเดิมยังแก้และเปิดกลับได้แม้ลดแพ็กเกจ ร้านเดิมก่อน migration 10.75 และ Retail Local คงสิทธิ์ไม่จำกัดทั้งสามหมวด",
@@ -879,7 +880,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
       { label: "System Health", href: ROUTES.systemHealth, note: "หน้าสรุปสุขภาพระบบแบบ read-only สำหรับเช็กสถานะตอนนี้" },
       { label: "ENV", href: ROUTES.env, note: "ตรวจ environment/config ที่เกี่ยวกับการทำงานของระบบ" },
       { label: "Dev Console", href: ROUTES.devSqlConsole, note: "หน้าสำหรับ debug/query ภายใน ใช้โดยคนที่เข้าใจผลกระทบของข้อมูล" },
-      { label: "Fake data", href: ROUTES.fakeData, note: "เตรียมข้อมูลตัวอย่างสำหรับ demo หรือทดสอบ" },
+      { label: "Fake data", href: ROUTES.fakeData, note: "เลือกร้านใหม่ตามแพ็กเกจ ระบบปรับสินค้า/ผู้ใช้/POS ให้พอดีโควตา ร้านเดิมคงแพ็กเกจและตรวจโควตาก่อนเพิ่มข้อมูล (รวมเจ้าของร้านและวัตถุดิบสูตร)" },
     ],
   },
 ];
@@ -1942,6 +1943,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Review the current plan, AI points, usage breakdown, and the ledger of what consumed quota this month",
     bullets: [
       "Track remaining points, used points, request count, provider calls, and estimated cost separately",
+      "Platform master data uses one monthly AI point allowance. Orders remain unlimited; the catalogue cannot set an order cap. Billing counts disabled channel registrations toward capacity too.",
       "One logical request costs one point even across tool rounds or provider fallback; tokens are separate. The sidebar refreshes after use and checks background usage every 30 seconds.",
       "Free: 100 points/month; Pro: THB 599 for 1,000 points/month; Business: THB 1,990 for 5,000 points/month, retaining its old allowance through the package rollout month. See Billing for the effective date. Reset on the first at 00:00 Thailand time, with no per-shop USD cap. BYOK is paid directly to the shop's provider.",
       "Cloud packages: Free 100 SKUs/2 users, Pro unlimited products/5 users, Business unlimited products/20 users. All plans have unlimited orders. New-shop branch/POS-device/channel limits: Free 1/1/1, Pro 1/3/3, Business 5/10/unlimited. Count all registrations, including disabled rows; only additions are gated. Existing rows remain editable/reactivatable after downgrade. Shops existing before migration 10.75 and Retail Local retain unlimited capacity in these three categories.",
@@ -2149,7 +2151,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
       { label: "System Health", href: ROUTES.systemHealth, note: "Read-only operational health overview" },
       { label: "ENV", href: ROUTES.env, note: "Environment and configuration visibility for operators" },
       { label: "Dev Console", href: ROUTES.devSqlConsole, note: "Internal debug/query tooling for qualified operators" },
-      { label: "Fake data", href: ROUTES.fakeData, note: "Demo and test-data setup for safe experiments" },
+      { label: "Fake data", href: ROUTES.fakeData, note: "Choose a package for new test shops; product/user/POS counts fit its quota. Existing shops keep their package and additions are quota-checked, including owners and recipe ingredients." },
     ],
   },
 ];

@@ -141,7 +141,7 @@ export async function getUsage(tenantId: string) {
   const res = await query<any>(
     `SELECT
        (SELECT COUNT(*) FROM bms_products WHERE tenant_id = $1)::int AS products,
-       (SELECT COUNT(*) FROM bms_tenant_channels WHERE tenant_id = $1 AND active)::int AS channels,
+       (SELECT COUNT(*) FROM bms_tenant_channels WHERE tenant_id = $1)::int AS channels,
        (SELECT COUNT(*) FROM bms_orders WHERE tenant_id = $1
           AND created_at >= (date_trunc('month', now() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok'))::int AS orders_month,
        (SELECT COUNT(*) FROM users WHERE tenant_id = $1)::int AS users`,
@@ -169,7 +169,8 @@ export async function enforceProductQuota(tenantId: string, client?: PoolClient,
 }
 
 /** เช็คก่อนสร้าง/ย้าย staff เข้าร้าน — เกิน quota → throw */
-export async function enforceUserQuota(tenantId: string, client?: PoolClient): Promise<void> {
+export async function enforceUserQuota(tenantId: string, client?: PoolClient, additions = 1): Promise<void> {
+  if (!Number.isInteger(additions) || additions < 1) throw new Error("Invalid user count");
   // Cloud package reductions must not sanction an installed Retail Local shop.
   if (isRetailLocalDeployment()) return;
   // Serialize user creation per tenant. Without this lock two requests can
@@ -185,7 +186,7 @@ export async function enforceUserQuota(tenantId: string, client?: PoolClient): P
     `SELECT COUNT(*)::int AS c FROM users WHERE tenant_id = $1`,
     [tenantId]
   );
-  if ((res.rows[0]?.c ?? 0) >= plan.max_users) {
+  if ((res.rows[0]?.c ?? 0) + additions > plan.max_users) {
     throw new Error(`เกินโควตาแพ็กเกจ ${plan.name} (staff สูงสุด ${plan.max_users} คน) — อัปเกรดแพ็กเกจเพื่อเพิ่ม`);
   }
 }

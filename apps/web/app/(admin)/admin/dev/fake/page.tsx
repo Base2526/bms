@@ -5,6 +5,8 @@ import { gql, useQuery, useMutation } from '@apollo/client';
 import { localizedShopArchetypeOptions } from '@/lib/bms/shopArchetypes';
 import { DEMO_SCENARIO_SHOPS } from '@/lib/bms/demoScenarioSelection';
 import { useI18n } from '@/lib/i18nContext';
+import type { getFakeSeedPackage } from '@/lib/bms/devSeedPackage';
+import type { Plan } from '@/lib/bms/entitlements';
 
 const Q_ME = gql`
   query {
@@ -45,7 +47,7 @@ type ProvisionSummary = {
 };
 
 type ProvisionResult = {
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; plan: string };
   admin: { email: string; password: string };
   summary: ProvisionSummary;
   groundTruth?: { id: string; cases: number; generatorVersion: string };
@@ -53,7 +55,7 @@ type ProvisionResult = {
 
 type DemoProvisionResult = {
   key: string;
-  tenant: { id: string; slug: string; name: string };
+  tenant: { id: string; slug: string; name: string; plan: string };
   admin: { email: string; password: string };
   businessArchetype: string;
   summary: ProvisionSummary;
@@ -106,12 +108,11 @@ const KINDS = [
   // ต้อง seed Customers (และควร Orders) ก่อน — ปุ่มนี้ยกลูกค้าเดิมขึ้นเป็นสมาชิก
   { label: 'BMS Members + Points', value: 'bms-members' },
   { label: 'BMS Board Game Cafe', value: 'bms-board-game' },
-  { label: 'BMS AI Usage', value: 'bms-ai-usage' },
   { label: 'BMS Pharmacy Assessments', value: 'bms-pharmacy-assessments' },
   { label: 'Support Tickets', value: 'support-tickets' },
 ];
 
-type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-board-game' | 'bms-ai-usage' | 'bms-pharmacy-assessments' | 'support-tickets';
+type FakeKind = 'users' | 'bms-products' | 'bms-customers' | 'bms-orders' | 'bms-conversations' | 'bms-restock-subscriptions' | 'bms-purchase' | 'bms-coupons' | 'bms-members' | 'bms-board-game' | 'bms-pharmacy-assessments' | 'support-tickets';
 
 export default function DevFakePage() {
   const { t } = useI18n();
@@ -132,6 +133,25 @@ export default function DevFakePage() {
     label: `${row.name} /${row.slug}${row.active === false ? t('admin_dev_fake.tenant_inactive_suffix') : ''}`,
   }));
   const [selectedTenantId, setSelectedTenantId] = useState<string | undefined>(undefined);
+  const [planCode, setPlanCode] = useState('free');
+  const [packageInfo, setPackageInfo] = useState<(Awaited<ReturnType<typeof getFakeSeedPackage>> & { plans: Plan[] }) | null>(null);
+  const [packageRefresh, setPackageRefresh] = useState(0);
+  const [packageError, setPackageError] = useState('');
+  useEffect(() => {
+    if (!selectedTenantId || !isPlatformAdmin) return;
+    const controller = new AbortController();
+    setPackageInfo(null);
+    setPackageError('');
+    fetch(`/api/dev/fake/package?tenantId=${encodeURIComponent(selectedTenantId)}`, { signal: controller.signal, credentials: 'include' })
+      .then(async res => { const json = await res.json(); if (!res.ok) throw new Error(json.error || 'Failed'); return json; })
+      .then(info => { if (!controller.signal.aborted) setPackageInfo(info); })
+      .catch(error => { if (!controller.signal.aborted) setPackageError(error.message); });
+    return () => controller.abort();
+  }, [selectedTenantId, isPlatformAdmin, packageRefresh]);
+  const planOptions = packageInfo?.plans.map(plan => ({ value: plan.code, label: plan.name })) ?? [];
+  const remaining = kind === 'users' ? packageInfo?.users.remaining : kind === 'bms-products' ? packageInfo?.products.remaining : undefined;
+  const overQuota = remaining != null && remaining >= 0 && count > remaining;
+  const quotaCount = (value: number) => value < 0 ? t('admin_billing.unlimited') : String(value);
 
   const [shopName, setShopName] = useState('');
   const [shopArchetype, setShopArchetype] = useState<string | undefined>(undefined);
@@ -170,6 +190,7 @@ export default function DevFakePage() {
         body: JSON.stringify({
           name: shopName.trim() || undefined,
           businessArchetype: shopArchetype || undefined,
+          planCode,
         }),
 
         credentials: 'include',
@@ -179,9 +200,10 @@ export default function DevFakePage() {
       message.success(t('admin_dev_fake.shop_created', { name: j.tenant.name, slug: j.tenant.slug }));
       setProvisioned(j);
       setShopName('');
+      await refetchTenants();
     } catch (e: any) {
       message.error(e.message || 'Error');
-    } finally { setProvisioning(false); }
+    } finally { setProvisioning(false); setPackageRefresh(value => value + 1); }
   }
 
   async function provisionDemoShop() {
@@ -194,7 +216,7 @@ export default function DevFakePage() {
       const res = await fetch('/api/dev/fake/provision-demo-shops', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shopKey: selectedDemoKey }),
+        body: JSON.stringify({ shopKey: selectedDemoKey, planCode }),
         credentials: 'include',
       });
       const j = await res.json();
@@ -205,10 +227,12 @@ export default function DevFakePage() {
         const createdKeys = new Set(createdRows.map((row) => row.key));
         return [...createdRows, ...current.filter((row) => !createdKeys.has(row.key))];
       });
+      await refetchTenants();
     } catch (e: any) {
       message.error(e.message || 'Error');
     } finally {
       setProvisioningDemo(false);
+      setPackageRefresh(value => value + 1);
     }
   }
 
@@ -261,7 +285,7 @@ export default function DevFakePage() {
       setGroundTruth((current) => current ? { ...current, stale: true } : current);
     } catch (e: any) {
       message.error(e.message || 'Error');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setPackageRefresh(value => value + 1); }
   }
 
   async function loadGroundTruth() {
@@ -341,7 +365,7 @@ export default function DevFakePage() {
       setGroundTruth(null);
     } catch (e: any) {
       message.error(e.message || 'Error');
-    } finally { setLoading(false); }
+    } finally { setLoading(false); setPackageRefresh(value => value + 1); }
   }
 
   const cols = [
@@ -367,7 +391,9 @@ export default function DevFakePage() {
         message={t('admin_dev_fake.provision_alert')}
         description={<>{t('admin_dev_fake.provision_desc_1')} <code>/admin/tenants</code> {t('admin_dev_fake.provision_desc_2')} <code>test-</code>)</>}
       />
-      <Space>
+      <Alert closable type="info" showIcon style={{ marginBottom: 12 }} message={t('admin_dev_fake.package_help')} />
+      <Space wrap>
+        <Select aria-label={t('admin_dev_fake.package_label')} value={planCode} onChange={setPlanCode} options={planOptions} style={{ width: 160 }} />
         <Input
           placeholder={t('admin_dev_fake.shop_name_placeholder')}
           value={shopName}
@@ -394,6 +420,7 @@ export default function DevFakePage() {
         description={<>{t('admin_dev_fake.demo_desc_1')} <code>demo-fashion</code>, <code>demo-food</code>, <code>demo-beauty</code>, <code>demo-minimart</code>, <code>demo-gadget</code>, <code>demo-pharmacy</code>, <code>demo-general</code> {t('admin_dev_fake.demo_desc_2')}</>}
       />
       <Space wrap>
+        <Select aria-label={t('admin_dev_fake.package_label')} value={planCode} onChange={setPlanCode} options={planOptions} style={{ width: 160 }} />
         <Select
           showSearch
           optionFilterProp="label"
@@ -401,7 +428,7 @@ export default function DevFakePage() {
           value={selectedDemoKey}
           onChange={setSelectedDemoKey}
           options={DEMO_SHOP_OPTIONS as any}
-          style={{ width: 390, maxWidth: '100%' }}
+          style={{ width: 260, maxWidth: '100%' }}
           disabled={provisioningDemo || deletingScenarios}
         />
         <Button
@@ -433,7 +460,7 @@ export default function DevFakePage() {
               type="success"
               showIcon
               style={{ marginTop: 8 }}
-              message={`${row.tenant.name} /${row.tenant.slug}`}
+              message={`${row.tenant.name} /${row.tenant.slug} · ${row.tenant.plan}`}
               description={`archetype: ${row.businessArchetype} · staff ${row.summary.staff ?? 0} · POS devices ${row.summary.posDevices ?? 0} · products ${row.summary.products ?? 0} · orders ${row.summary.orders ?? 0} (${channelOrderSummary(row.summary)}) · inbox chats ${row.summary.conversations ?? 0} · customers ${row.summary.customers ?? 0} · ground truth ${row.groundTruth?.cases ?? 0} cases`}
             />
           ))}
@@ -458,6 +485,7 @@ export default function DevFakePage() {
           <Descriptions column={1} size="small" bordered>
             <Descriptions.Item label={t('admin_dev_fake.label_shop')}>{provisioned.tenant.name} <span style={{ opacity: 0.7 }}>/{provisioned.tenant.slug}</span></Descriptions.Item>
             <Descriptions.Item label="Archetype">{(provisioned as any).businessArchetype || '—'}</Descriptions.Item>
+            <Descriptions.Item label={t('admin_dev_fake.package_label')}>{provisioned.tenant.plan}</Descriptions.Item>
             <Descriptions.Item label="Admin email">{provisioned.admin.email}</Descriptions.Item>
             <Descriptions.Item label="Admin password">
               <Typography.Text code copyable>{provisioned.admin.password}</Typography.Text>
@@ -510,8 +538,8 @@ export default function DevFakePage() {
     <Card
       title={t('admin_dev_fake.ground_truth_title')}
       style={{ marginBottom: 16 }}
-      extra={(
-        <Space wrap>
+    >
+        <Space wrap style={{ marginBottom: 12 }}>
           <Button onClick={loadGroundTruth} loading={groundTruthLoading} disabled={!selectedTenantId}>
             {t('admin_dev_fake.ground_truth_load')}
           </Button>
@@ -522,8 +550,6 @@ export default function DevFakePage() {
             {t('admin_dev_fake.ground_truth_download')}
           </Button>
         </Space>
-      )}
-    >
       <Alert closable
         type="info"
         showIcon
@@ -572,32 +598,32 @@ export default function DevFakePage() {
 
     <Card
       title="Dev: Fake Data Generator"
-      extra={<Space wrap>
+    >
+      <Space wrap style={{ marginBottom: 12 }}>
         <Select
           showSearch
           placeholder={t('admin_dev_fake.select_shop_placeholder')}
           value={selectedTenantId}
-          onChange={(value) => { setSelectedTenantId(value); setGroundTruth(null); }}
+          onChange={(value) => { setSelectedTenantId(value); setPackageInfo(null); setGroundTruth(null); }}
           options={tenantOptions}
           optionFilterProp="label"
           loading={pageLoading || tenantsLoading}
           disabled={!isPlatformAdmin}
-          style={{ width: 320 }}
+          style={{ width: 260 }}
         />
         <Select
           value={kind}
           onChange={(v) => {
             const next = v as FakeKind;
             setKind(next);
-          if (next === 'bms-ai-usage') setCount(3);
-          else if (next === 'bms-restock-subscriptions') setCount(20);
+          if (next === 'bms-restock-subscriptions') setCount(20);
           else if (next === 'bms-pharmacy-assessments') setCount(5);
         }}
         options={KINDS}
         style={{ width: 180 }}
       />
         <InputNumber min={1} max={10000} value={count} onChange={(v) => setCount(v || 1)} />
-        <Button type="primary" onClick={doFake} loading={loading}>Create</Button>
+        <Button type="primary" onClick={doFake} loading={loading} disabled={!packageInfo || overQuota}>Create</Button>
         <Popconfirm
           title={t('admin_dev_fake.cleanup_confirm_title')}
           description={<>{t('admin_dev_fake.cleanup_confirm_desc_1')} <b>{tenantOptions.find((x: any) => x.value === selectedTenantId)?.label || '…'}</b></>}
@@ -606,8 +632,14 @@ export default function DevFakePage() {
         >
           <Button danger disabled={loading || !selectedTenantId}>Cleanup</Button>
         </Popconfirm>
-      </Space>}
-    >
+      </Space>
+      {packageError && <Alert closable type="error" showIcon message={packageError} />}
+      {packageInfo && <Alert closable data-testid="fake-package" type={overQuota ? 'warning' : 'info'} showIcon style={{ marginBottom: 12 }}
+        message={t('admin_dev_fake.package_usage', { plan: packageInfo.plan.name,
+          products: packageInfo.products.used, productLimit: quotaCount(packageInfo.products.limit),
+          users: packageInfo.users.used, userLimit: quotaCount(packageInfo.users.limit),
+          devices: packageInfo.devices.used, deviceLimit: quotaCount(packageInfo.devices.limit) })}
+        description={t('admin_dev_fake.package_seed_help')} />}
       <Alert closable
         type="info" showIcon style={{ marginBottom: 12 }}
         message={<Space wrap>{t('admin_dev_fake.target_shop_label')}
@@ -626,7 +658,7 @@ export default function DevFakePage() {
           <b>Restock Subscriptions</b>{t('admin_dev_fake.seed_desc_p6')}
           <b>Pharmacy Assessments</b>{t('admin_dev_fake.seed_desc_p7')}
           <b>Board Game Cafe</b>{t('admin_dev_fake.seed_desc_board_game')}
-          <b>AI Usage</b>{t('admin_dev_fake.seed_desc_p8')}<code>bms_ai_usage_monthly</code>{t('admin_dev_fake.seed_desc_p9')}
+          <b>AI point</b>{t('admin_dev_fake.seed_desc_p8')}<code>/admin/billing</code>{t('admin_dev_fake.seed_desc_p9')}
           <b>Cleanup</b>{t('admin_dev_fake.seed_desc_p10')}</>}
       />
       {data && isPlatformAdmin === false && (
@@ -639,7 +671,7 @@ export default function DevFakePage() {
         />
       )}
       <Divider style={{ margin: '8px 0 16px' }} />
-      <Table dataSource={created} columns={cols} rowKey={(r) => r.id || r.sku} size="small" pagination={{ pageSize: 20 }} />
+      <Table dataSource={created} columns={cols} rowKey={(r) => r.id || r.sku} size="small" scroll={{ x: 720 }} pagination={{ pageSize: 20 }} />
     </Card>
     </>
   );

@@ -34,7 +34,7 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
     if (tenantId) await deleteTenant(tenantId).catch(() => {});
   });
 
-  const shop = await provisionTestShop({ name: "lifecycle contract", businessArchetype: "board_game_cafe" });
+  const shop = await provisionTestShop({ name: "lifecycle contract", businessArchetype: "board_game_cafe", planCode: "pro" });
   tenantId = shop.tenantId;
   assert.ok(shop.slug.startsWith("test-"), "provisionTestShop ต้องการันตี slug ที่ลบได้");
 

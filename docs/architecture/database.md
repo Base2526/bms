@@ -766,8 +766,10 @@ BUDGET notices are stored but excluded from the AI inbox. Reads and acknowledgem
 recipient and tenant. Point thresholds are 80%, 90%, exhaustion and recovery; notification failure
 rolls back only its savepoint and retries on later accounting operations/reads.
 
-**AI point packages (`10.56__bms_ai_points_packages.sql`)** — Free 100/month, Pro 1,000/month at
-THB 599, Business unlimited at THB 1,990. Updates `price_monthly`, `ai_credits_monthly` and legacy
+**AI point packages (`10.56__bms_ai_points_packages.sql`)** — at this historical migration, Free was
+100/month, Pro 1,000/month at THB 599, and Business unlimited at THB 1,990; `10.73` below supersedes
+the current Business allowance with 5,000/month after its rollout-month transition. `10.56` updates
+`price_monthly`, `ai_credits_monthly` and legacy
 `max_ai_messages_month`. Periods reset at 00:00 Asia/Bangkok on the first; previously recorded
 UTC-month events are not reassigned. Runtime grant reconciliation preserves consumption and
 adjustments. Legacy budget API limit/remaining are -1, status NORMAL, blocked false.
@@ -776,7 +778,8 @@ adjustments. Legacy budget API limit/remaining are -1, status NORMAL, blocked fa
 `bms_plans` catalogue: Free/Pro/Business have 100/unlimited/unlimited products, 2/5/20 users
 (including owner), and unlimited orders. Prices stay 0/599/1,990 THB. No tenant resources are
 deleted or disabled; quota checks continue to reject additions only. Product counts include all
-SKUs, not only active ones. Channel limits remain legacy metadata and are no longer advertised.
+SKUs, not only active ones. At this phase, channel limits remained legacy metadata; `10.75` below
+later introduced and advertised branch/device/channel admission limits for new shops.
 Two nullable columns, `ai_credits_previous_monthly` and `ai_credits_effective_at`, preserve the
 old Business AI allowance until the first Bangkok midnight of the month after migration.
 The raw target is 5,000 in both AI columns; plan reads resolve the schedule before accounting or
@@ -817,6 +820,12 @@ sales or the separate contract-gated delivery adapters. Count ALL rows, includin
 registrations. Existing identities always remain editable/reactivatable;
 legacy and Retail Local have unlimited capacity in these three categories only. No gate on
 checkout, device pairing/token refresh, webhooks, existing jobs or AI provider calls is added.
+
+Dev fake seeders use the same product/user quota authority under tenant locks; recipe ingredients
+and the owner count toward their respective limits. New test-shop plan selections are validated
+against `bms_plans` and recorded as `dev.fake.shop.provision` in the same transaction. Full/scenario
+presets fit remaining capacity; reseeding never changes an existing plan. Legacy fake AI usage
+counter writes are retired (HTTP 410); point tests use the existing audited platform adjustment flow.
 
 `bms_package_events`: UUID key, tenant FK (cascade only on tenant deletion), kind
 BASELINE/SIGNUP/PLAN_CHANGE, nullable from_plan, required to_plan, actor and occurred_at.
@@ -1889,7 +1898,10 @@ platform-admin-only preview/confirm flow. Preview counts all shops on the plan a
 feature-policy-v2 shops that gain or lose new feature access. Save rechecks the version and preview
 fingerprint, writes through a narrow `SECURITY DEFINER` function, and appends an audit row in the same
 transaction. Legacy/existing-work feature rules and Retail Local fail-open licensing remain
-independent, and no plan catalogue edit disables POS or sales.
+independent, and no plan catalogue edit disables POS or sales. Application preview/save reject
+finite monthly order limits (orders are unlimited) and differing legacy AI-message/AI-point
+allowances. The editor exposes one AI allowance and submits it to both compatibility fields.
+Billing channel usage counts all registered rows, including disabled ones, matching capacity admission.
 
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication

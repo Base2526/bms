@@ -93,6 +93,12 @@ function normalizePlanInput(input: PlanCatalogInput) {
   if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code) || !name) throw new Error("PLAN_FIELDS_REQUIRED");
   const expectedVersion=intLimit(input.expectedVersion);
   if(expectedVersion<1)throw new Error("PLAN_VERSION_INVALID");
+  // Orders are intentionally unlimited in every package. Do not publish a cap
+  // that checkout/POS cannot enforce, or a second AI allowance ignored at runtime.
+  if (intLimit(input.maxOrdersMonth) !== -1) throw new Error("PLAN_ORDERS_MUST_BE_UNLIMITED");
+  if (intLimit(input.maxAiMessagesMonth) !== intLimit(input.aiCreditsMonthly)) {
+    throw new Error("PLAN_AI_ALLOWANCE_MISMATCH");
+  }
   return { code, expectedVersion, name, priceMonthly:Number(price.toFixed(2)),
     maxProducts:intLimit(input.maxProducts),maxChannels:intLimit(input.maxChannels),maxOrdersMonth:intLimit(input.maxOrdersMonth),
     maxUsers:intLimit(input.maxUsers),maxBranches:intLimit(input.maxBranches),maxDevices:intLimit(input.maxDevices),

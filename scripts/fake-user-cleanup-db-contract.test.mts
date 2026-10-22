@@ -21,7 +21,7 @@ test("fake-user cleanup keeps POS history owners and continues deleting other fi
     "local test DB required"
   );
 
-  const shop = await provisionTestShop({ name: "fake user cleanup contract" });
+  const shop = await provisionTestShop({ name: "fake user cleanup contract", planCode: "pro" });
   t.after(async () => deleteTenant(shop.tenantId).catch(() => {}));
 
   const staff = await seedFakeStaff(shop.tenantId, 2);
@@ -60,7 +60,7 @@ test("scenario staff cleanup preserves the demo Administrator account", async (t
     "local test DB required"
   );
 
-  const shop = await provisionTestShop({ name: "fake staff cleanup scope contract" });
+  const shop = await provisionTestShop({ name: "fake staff cleanup scope contract", planCode: "pro" });
   t.after(async () => deleteTenant(shop.tenantId).catch(() => {}));
   const staff = await seedFakeStaff(shop.tenantId, 2);
 
@@ -82,6 +82,7 @@ test("a new pharmacy scenario gets inert protocols and five retry-safe assessmen
 
   const shop = await provisionTestShop({
     name: "pharmacy fake scenario contract",
+    planCode: "business",
     businessArchetype: "pharmacy",
   });
   t.after(async () => deleteTenant(shop.tenantId).catch(() => {}));

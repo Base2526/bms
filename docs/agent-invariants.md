@@ -1753,6 +1753,9 @@ The rules that follow from it:
   New Starter Catalog batches share the Cloud product quota, checked under the tenant lock
   before any sample insert (tenant -> profile lock order). An existing ACTIVE run is still readable
   when over quota. Retail Local bypasses Cloud product/staff caps, including import previews.
+  Dev fake seeders also enforce entire product/staff batches under the tenant lock, including recipe
+  ingredients and the owner. New test/scenario shops use a validated, audited catalogue plan;
+  presets fit remaining quotas and existing scenario plans never change as a reseed side effect.
 
 `scripts/inventory-tenant-scope-contract.test.mts` walks every `route.ts` under `app/api/bms` and
 fails when one carries no guard from an explicit allowlist, and requires a `rateLimit()` call on the
