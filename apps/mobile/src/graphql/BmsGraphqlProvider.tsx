@@ -111,6 +111,10 @@ function makeClient(
 
   const errorLink = onError(({ graphQLErrors, networkError, operation }) => {
     const operationName = operation.operationName || 'anonymous';
+    const cashierUserId = operationName === 'VerifyPosCashier'
+      && typeof operation.variables?.input?.cashierUserId === 'string'
+      ? operation.variables.input.cashierUserId
+      : undefined;
     const unauthenticated =
       graphQLErrors?.some(
         error => error.extensions?.code === 'UNAUTHENTICATED',
@@ -130,6 +134,7 @@ function makeClient(
           status: 'error',
           message: error.message,
           context: {
+            cashierUserId,
             route: 'ApolloLink.error',
             errorCode:
               typeof error.extensions?.code === 'string'
@@ -147,6 +152,7 @@ function makeClient(
         status: 'error',
         message: networkError.message,
         context: {
+          cashierUserId,
           route: 'ApolloLink.error',
           errorName: networkError.name || 'NetworkError',
           errorCode: unauthenticated ? 'UNAUTHENTICATED' : 'NETWORK_ERROR',

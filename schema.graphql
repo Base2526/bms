@@ -4695,8 +4695,12 @@ type BmsPosDevice {
 type BmsPosDeviceDiagnosticEvent {
   action: String!
   actorId: String
+  actorKind: String!
+  actorLabel: String
+  actorRole: String
   category: String!
   context: JSON!
+  correlationId: String
   deviceId: ID
   id: ID!
   locationId: ID

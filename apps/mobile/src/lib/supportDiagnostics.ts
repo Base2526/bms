@@ -4,6 +4,7 @@ import type { PairingTarget } from './pairing';
 type DiagnosticStatus = 'success' | 'error' | 'warning' | 'info';
 
 type DiagnosticContext = {
+  cashierUserId?: string;
   route?: string;
   previousRoute?: string;
   online?: boolean;

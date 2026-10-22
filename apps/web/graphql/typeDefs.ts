@@ -700,6 +700,10 @@ export const typeDefs = /* GraphQL */ `
     id: ID!
     occurredAt: String!
     receivedAt: String!
+    correlationId: String
+    actorKind: String!
+    actorLabel: String
+    actorRole: String
     deviceId: ID
     locationId: ID
     actorId: String

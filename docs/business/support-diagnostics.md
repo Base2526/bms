@@ -31,6 +31,12 @@ receives them by default and Administrator remains a super-role. Export and send
 `support.logs_export`/`support.logs_send` audit rows. `bms_support_events` is append-only for the app
 role, while bundle metadata may be updated only for lifecycle management.
 
+POS PIN-verification diagnostics may carry the UUID of the cashier selected on the device, never the
+PIN. Ingestion accepts that UUID only when it belongs to the authenticated tenant. The admin event
+detail resolves it to the current user label and role, describes it as the selected cashier rather
+than proof of identity, and removes the raw UUID from the returned context. A device-only event says
+that no cashier was identified instead of presenting the device actor as a person.
+
 Client event `message` values are ignored server-side. Device and location ids are accepted only when
 they belong to the authenticated tenant. Nested diagnostic metadata is depth/size bounded and keys
 that may contain credentials, request bodies, payment data, contact details or free-text notes are

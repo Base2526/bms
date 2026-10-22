@@ -13,6 +13,7 @@ const MAX_EVENTS_PER_SOURCE = 20_000;
 const MAX_INGEST_BATCH = 100;
 const gzipAsync = promisify(gzip);
 const ALLOWED_CONTEXT_KEYS = new Set([
+  "cashierUserId",
   "route", "previousRoute", "online", "visibility", "digest", "errorName",
   "errorCode", "httpStatus", "durationMs", "appVersion", "platform", "viewport",
   "source", "retry", "sequence", "bundleVersion",
@@ -36,6 +37,10 @@ export type PosDeviceDiagnosticEvent = {
   id: string;
   occurredAt: string;
   receivedAt: string;
+  correlationId: string | null;
+  actorKind: "cashier" | "user" | "device" | "unknown";
+  actorLabel: string | null;
+  actorRole: string | null;
   deviceId: string | null;
   locationId: string | null;
   actorId: string | null;
@@ -108,14 +113,21 @@ export async function recordSupportEvents(input: {
     await beginTenantTx(client, input.tenantId, { editorId: input.actorId });
     const locationIds = [...new Set(events.map((event) => safeUuid(event.locationId)).filter((id): id is string => Boolean(id)))];
     const deviceIds = [...new Set(events.map((event) => safeUuid(event.deviceId)).filter((id): id is string => Boolean(id)))];
+    const cashierUserIds = [...new Set(events
+      .map((event) => safeUuid(event.context?.cashierUserId))
+      .filter((id): id is string => Boolean(id)))];
     const validLocations = locationIds.length
       ? await client.query<{ id: string }>(`SELECT id FROM bms_locations WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [input.tenantId, locationIds])
       : { rows: [] as Array<{ id: string }> };
     const validDevices = deviceIds.length
       ? await client.query<{ id: string }>(`SELECT id FROM bms_pos_devices WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [input.tenantId, deviceIds])
       : { rows: [] as Array<{ id: string }> };
+    const validCashiers = cashierUserIds.length
+      ? await client.query<{ id: string }>(`SELECT id FROM users WHERE tenant_id = $1 AND id = ANY($2::uuid[])`, [input.tenantId, cashierUserIds])
+      : { rows: [] as Array<{ id: string }> };
     const allowedLocations = new Set(validLocations.rows.map((row) => String(row.id)));
     const allowedDevices = new Set(validDevices.rows.map((row) => String(row.id)));
+    const allowedCashiers = new Set(validCashiers.rows.map((row) => String(row.id)));
     let inserted = 0;
     for (const event of events) {
       const eventId = safeUuid(event.eventId);
@@ -128,6 +140,9 @@ export async function recordSupportEvents(input: {
       const category = bounded(event.category, 60) ?? "ui";
       const action = bounded(event.action, 120);
       if (!action) continue;
+      const context = safeContext(event.context);
+      const cashierUserId = safeUuid(context.cashierUserId);
+      if (!cashierUserId || !allowedCashiers.has(cashierUserId)) delete context.cashierUserId;
       const result = await client.query(
         `INSERT INTO bms_support_events
            (tenant_id, client_event_id, occurred_at, actor_id, location_id, device_id, session_id,
@@ -137,7 +152,7 @@ export async function recordSupportEvents(input: {
         [input.tenantId, eventId, occurredAt, input.actorId,
           locationId, deviceId, bounded(event.sessionId, 120),
           bounded(event.correlationId, 120), category, action, bounded(event.status, 40),
-          bounded(event.message, 500), JSON.stringify(safeContext(event.context))]
+          bounded(event.message, 500), JSON.stringify(context)]
       );
       inserted += result.rowCount ?? 0;
     }
@@ -159,29 +174,55 @@ export async function listPosDeviceDiagnosticEvents(input: {
   const safeLimit = Math.max(1, Math.min(200, Math.trunc(input.limit ?? 50) || 50));
   const deviceId = safeUuid(input.deviceId);
   const result = await query<any>(
-    `SELECT id, occurred_at, received_at, device_id, location_id, actor_id,
-            category, action, status, message, context
-       FROM bms_support_events
-      WHERE tenant_id = $1
-        AND category = 'pos'
-        AND ($2::uuid IS NULL OR device_id = $2::uuid)
-      ORDER BY occurred_at DESC, id DESC
+    `SELECT e.id, e.occurred_at, e.received_at, e.correlation_id, e.device_id, e.location_id, e.actor_id,
+            e.category, e.action, e.status, e.message, e.context,
+            CASE
+              WHEN e.context->>'cashierUserId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN 'cashier'
+              WHEN e.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$' THEN 'user'
+              WHEN e.actor_id LIKE 'pos:%' THEN 'device'
+              ELSE 'unknown'
+            END AS actor_kind,
+            COALESCE(NULLIF(u.name, ''), NULLIF(u.email, '')) AS actor_label,
+            r.name AS actor_role
+       FROM bms_support_events e
+       LEFT JOIN users u
+         ON u.tenant_id = e.tenant_id
+        AND u.id = CASE
+          WHEN e.context->>'cashierUserId' ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            THEN (e.context->>'cashierUserId')::uuid
+          WHEN e.actor_id ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+            THEN e.actor_id::uuid
+          ELSE NULL
+        END
+       LEFT JOIN roles r ON r.id = u.role_id
+      WHERE e.tenant_id = $1
+        AND e.category = 'pos'
+        AND ($2::uuid IS NULL OR e.device_id = $2::uuid)
+      ORDER BY e.occurred_at DESC, e.id DESC
       LIMIT $3`,
     [input.tenantId, deviceId, safeLimit]
   );
-  return result.rows.map((row) => ({
-    id: String(row.id),
-    occurredAt: row.occurred_at?.toISOString?.() ?? row.occurred_at,
-    receivedAt: row.received_at?.toISOString?.() ?? row.received_at,
-    deviceId: row.device_id ?? null,
-    locationId: row.location_id ?? null,
-    actorId: row.actor_id ?? null,
-    category: row.category,
-    action: row.action,
-    status: row.status ?? null,
-    message: row.message ?? null,
-    context: safeDiagnosticValue(row.context) as Record<string, unknown>,
-  }));
+  return result.rows.map((row) => {
+    const context = safeDiagnosticValue(row.context) as Record<string, unknown>;
+    delete context.cashierUserId;
+    return {
+      id: String(row.id),
+      occurredAt: row.occurred_at?.toISOString?.() ?? row.occurred_at,
+      receivedAt: row.received_at?.toISOString?.() ?? row.received_at,
+      correlationId: row.correlation_id ?? null,
+      actorKind: row.actor_kind ?? "unknown",
+      actorLabel: row.actor_label ?? null,
+      actorRole: row.actor_role ?? null,
+      deviceId: row.device_id ?? null,
+      locationId: row.location_id ?? null,
+      actorId: row.actor_id ?? null,
+      category: row.category,
+      action: row.action,
+      status: row.status ?? null,
+      message: row.message ?? null,
+      context,
+    };
+  });
 }
 
 /**
