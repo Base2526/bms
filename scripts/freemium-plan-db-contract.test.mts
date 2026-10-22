@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { getClient } from '../apps/web/lib/db';
-import { enforceProductQuota, enforceUserQuota, getTenantPlan } from '../apps/web/lib/bms/plans';
+import { enforceProductQuota, enforceUserQuota, getTenantPlan, getUsage } from '../apps/web/lib/bms/plans';
 
 // Actual PostgreSQL migration/service checks, with temporary tables only.
 // Run via run-contract-tests.mjs db freemium-plan on a local throwaway database.
@@ -18,6 +18,8 @@ test('freemium migration is repeatable and preserves existing over-limit resourc
       CREATE TEMP TABLE bms_tenants (id uuid PRIMARY KEY, plan text);
       CREATE TEMP TABLE bms_products (tenant_id uuid, sku text);
       CREATE TEMP TABLE users (tenant_id uuid, name text);
+      CREATE TEMP TABLE bms_tenant_channels (tenant_id uuid, channel text, active boolean);
+      CREATE TEMP TABLE bms_orders (tenant_id uuid, created_at timestamptz);
       INSERT INTO bms_plans VALUES
       ('free','Free',0,5,1,100,3,100,100,1),
       ('pro','Pro',599,100,3,5000,10,1000,1000,2),
@@ -28,6 +30,18 @@ test('freemium migration is repeatable and preserves existing over-limit resourc
     const migration = await readFile(new URL('../db/migrations/10.73__bms_freemium_phase_one.sql', import.meta.url), 'utf8');
     const free = '11111111-1111-4111-8111-111111111111';
     const business = '22222222-2222-4222-8222-222222222222';
+    await t.test('Billing counts disabled channel registrations and excludes other tenants', async () => {
+      await client.query(`INSERT INTO bms_tenant_channels VALUES
+        ($1,'line',true),($1,'web',false),($2,'facebook',true)`, [free, business]);
+      // Route the service's pool read to this transaction's temporary tables only.
+      const pool = (globalThis as any).__bmsPostgresPool;
+      const originalQuery = pool.query;
+      pool.query = client.query.bind(client);
+      try {
+        assert.equal((await getUsage(free)).channels, 2);
+        assert.equal((await getUsage(business)).channels, 1);
+      } finally { pool.query = originalQuery; }
+    });
     await t.test('migration preserves the deadline and old allowance on rerun', async () => {
       await client.query(migration);
       const first = (await client.query('SELECT * FROM bms_plans ORDER BY sort')).rows;

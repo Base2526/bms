@@ -11,6 +11,19 @@
 > พฤติกรรมจริง + กติกาที่ต้องรักษา ดู § "เติมข้อมูลทดสอบเร็ว ๆ" ใน
 > [CLAUDE.local.md](../../../../../../../CLAUDE.local.md) และอ่านโค้ดใน `app/api/dev/fake/*` เป็นหลัก
 
+## Package enforcement (current)
+
+- New full/scenario shops accept a catalogue `planCode` (default Free); the platform-admin-only
+  provision action validates and audits that selection. Reseeding an existing scenario never changes its plan.
+- Full/scenario presets are reduced to remaining product/user/POS capacity. The owner occupies one
+  user slot; recipe ingredients occupy product slots. Retained rows after cleanup still count.
+- Adding products or staff to an existing shop checks the entire batch under the same tenant lock
+  used by normal operations, then commits or rolls back together. Retail Local retains its Cloud
+  exemptions; legacy capacity only exempts branches/devices/channels, not products/users.
+- The page reads the target shop's real package/usage via the platform-admin-only `GET /api/dev/fake/package`.
+  This snapshot is advisory; services recheck before inserts. No existing excess data is removed.
+- Orders tagged with eight historical channels do not create live channel registrations or consume AI points.
+
 **Fake Data** ที่ปลอดภัย (สำหรับใช้ทดสอบ) และให้โค้ดตัวอย่างทั้ง **หน้า UI (Next.js + Antd)** กับ **API routes (Next.js App Router)** ที่สร้างข้อมูลเทียม (users / posts) ให้เลย — คุณสามารถเอาไปวาง ปรับให้เข้ากับโครงโปรเจกต์ได้ทันที
 
 ผมแบ่งเป็น 3 ส่วนสั้น ๆ: แนวคิดความปลอดภัย, API (server) ตัวอย่าง, หน้า UI (client) ตัวอย่าง — ทั้งหมดเป็น TypeScript + Next.js App Router + fetch แบบ `credentials: 'include'` (ถ้าจำเป็น)
@@ -28,7 +41,7 @@
 | `bms-orders` | `POST /api/dev/fake/bms-orders` | orders (backdate 30 วัน, หลายสถานะ/ช่องทาง) + items + payment + shipment | Dashboard, Reports, CRM, Payment, Shipping | customer_ref `FAKE-` |
 | `bms-conversations` | `POST /api/dev/fake/bms-conversations` | conversations + messages (บทสนทนาสำเร็จรูป) | Inbox | customer_ref `FAKE-` + tag `fake` |
 | `bms-purchase` | `POST /api/dev/fake/bms-purchase` | suppliers + PO + items (หลายสถานะ OPEN/PARTIAL/RECEIVED/CANCELLED) | Purchase | PO note `FAKE%` + supplier `FAKE %` |
-| `bms-ai-usage` | `POST /api/dev/fake/bms-ai-usage` | เพิ่มตัวนับ AI shared-key quota ของเดือนนี้ | Settings | แก้ `bms_ai_usage_monthly` โดยตรง |
+| `bms-ai-usage` (retired) | `POST /api/dev/fake/bms-ai-usage` | HTTP 410 ไม่เขียนตัวนับเก่า — ใช้การปรับ AI point โดย platform admin ใน Billing สำหรับร้านทดสอบ | Billing | มี confirmation + audit |
 | `bms-board-game` | `POST /api/dev/fake/bms-board-game` | members + zones/tables + rates + sessions/bill groups + game library/loans/issues + private discovery draft | Board Game Tables, POS handoff, discovery settings | `FAKE` name/code/idempotency prefixes |
 | `bms-pharmacy-assessments` | `POST /api/dev/fake/bms-pharmacy-assessments` | เคส intake 5 สถานการณ์ + protocol template ที่ยังไม่อนุมัติเมื่อร้านยังไม่มี | Pharmacy Queue | `channel_id = 'FAKE-DEMO'` |
 
@@ -36,7 +49,7 @@
 (Orders/Conversations/Purchase สุ่มจาก products/customers ที่มีอยู่; Board Game Cafe ใช้ได้เฉพาะร้าน
 archetype `board_game_cafe` และจะสร้าง fake customers/members ขั้นต่ำให้เองเมื่อยังมีไม่พอ)
 
-หน้าสร้างร้านสถานการณ์บังคับเลือกจากรายการและสร้างได้ **ครั้งละ 1 ร้าน** เท่านั้น; API ต้องรับ `shopKey` เสมอและจะไม่ตีความ body ว่างเป็น “สร้างทั้งหมด” เพื่อป้องกันการสร้าง 7 ร้าน/70,000 ออเดอร์โดยไม่ตั้งใจ แต่ละร้านใช้ preset **สินค้า 1,000 รายการ + Inbox 450–700 ห้อง + ออเดอร์หลัก 10,000 บิล** โดยกระจายเท่ากัน 8 ช่องทาง (`pos`, `line`, `instagram`, `facebook`, `web`, `tiktok`, `shopee`, `lazada`) ช่องทางละ 1,250 บิล บิล POS เป็น `COMPLETED`, payment เป็น `CONFIRMED`, ไม่มี shipment และมีทั้งสมาชิกกับลูกค้าขาจร ส่วนออเดอร์ออนไลน์กระจายหลายสถานะ พร้อม payment/shipment ตามสถานะ
+หน้าสร้างร้านสถานการณ์บังคับเลือกจากรายการและสร้างได้ **ครั้งละ 1 ร้าน** เท่านั้น; API ต้องรับ `shopKey` เสมอและจะไม่ตีความ body ว่างเป็น “สร้างทั้งหมด” เพื่อป้องกันการสร้าง 7 ร้าน/70,000 ออเดอร์โดยไม่ตั้งใจ แต่ละร้านใช้ preset **สินค้าสูงสุด 1,000 รายการ (ปรับตามโควตา) + Inbox 450–700 ห้อง + ออเดอร์หลัก 10,000 บิล** โดยกระจายเท่ากัน 8 ช่องทาง (`pos`, `line`, `instagram`, `facebook`, `web`, `tiktok`, `shopee`, `lazada`) ช่องทางละ 1,250 บิล บิล POS เป็น `COMPLETED`, payment เป็น `CONFIRMED`, ไม่มี shipment และมีทั้งสมาชิกกับลูกค้าขาจร ส่วนออเดอร์ออนไลน์กระจายหลายสถานะ พร้อม payment/shipment ตามสถานะ
 
 ร้านสถานการณ์ Pharmacy จะสร้างเคส intake ทั้ง 5 สถานการณ์ให้อัตโนมัติด้วย หากเป็นร้านใหม่ระบบจะ
 คัดลอก protocol ตัวอย่างจากร้านระบบเป็น `DRAFT` ที่ยัง disabled และยังไม่ผ่านการรับรองทางคลินิก
@@ -53,7 +66,7 @@ prefix ของรหัสเครื่อง เพราะ scenario seede
 `FAKE-POS-*` ส่วนการลบร้านสถานการณ์ลบ tenant ทั้งก้อนใน transaction และตรวจว่าจำนวน tenant ที่
 ลบสำเร็จตรงกับจำนวนที่ล็อกไว้ก่อน commit
 
-ทีมงานของร้านสถานการณ์มีรวม 40–50 คนตามขนาดกิจการ (รวม Administrator) ใช้ role จริงของระบบ (`Manager`, `Sales`, `Warehouse`, `Cashier`, `Pharmacist`) ผู้ที่ขายหน้าร้านมี PIN และ Cashier เป็น `pos_only` ร้านยามีเภสัชกรหลายกะที่ตั้ง `is_licensed_pharmacist` พร้อมเลขใบอนุญาตจำลอง นอกจากนี้มีเครื่อง POS ที่จับคู่ token แล้ว 5–8 เครื่อง และ POS orders ทุกบิลผูกเครื่อง พนักงาน และกะย้อนหลัง โดยกะร้านยาผูกเภสัชกรเวรที่ผ่าน license gate จริง
+จำนวนทีมงานและเครื่อง POS ปรับตามแพ็กเกจจริงและโควตาที่เหลือ (รวม Administrator และแถวที่ cleanup ไม่ลบ) ใช้ role จริงของระบบ (`Manager`, `Sales`, `Warehouse`, `Cashier`, `Pharmacist`) ผู้ที่ขายหน้าร้านมี PIN และ Cashier เป็น `pos_only` ร้านยามีเภสัชกรที่ตั้ง `is_licensed_pharmacist` พร้อมเลขใบอนุญาตจำลอง และ POS orders ผูกเครื่อง พนักงาน และกะย้อนหลัง โดยกะร้านยาผูกเภสัชกรเวรที่ผ่าน license gate จริง
 
 เมื่อสร้าง scenario เดิมซ้ำ ระบบลบเฉพาะบัญชีทีมงานที่ลงท้าย `@staff.bms.test`; บัญชี
 Administrator ของร้าน demo ต้องคงอยู่เพื่อให้ credentials ที่หน้า generator แสดงยังล็อกอินได้

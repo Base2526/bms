@@ -19,6 +19,7 @@ import { withRouteErrorLog } from "@/lib/log/routeError";
 import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
 import { DEMO_SCENARIO_SHOPS, parseDemoScenarioKey } from "@/lib/bms/demoScenarioSelection";
 import { deleteUnreferencedFakeStaff } from "@/lib/bms/devCleanup";
+import { fitFakeSeedCounts, getFakeSeedPackage } from "@/lib/bms/devSeedPackage";
 import {
   deleteFakePharmacyAssessments,
   seedFakePharmacyAssessments,
@@ -114,20 +115,26 @@ async function handlePOST(req: NextRequest) {
           name: demo.name,
           slug: demo.slug,
           businessArchetype: demo.businessArchetype,
+          planCode: body?.planCode,
+          generatedBy: guard.actor.id,
         });
 
     await cleanupDemoBusinessData(shop.tenantId);
+    // Existing scenarios retain their current package; never upgrade them as a
+    // side effect of reseeding. Count surviving users/products after cleanup.
+    const packageBudget = await getFakeSeedPackage(shop.tenantId);
+    const counts = fitFakeSeedCounts(demo.counts, packageBudget);
     const staff = await seedFakeStaff(
       shop.tenantId,
-      demo.counts.staff,
+      counts.staff,
       guard.actor.id,
       demo.businessArchetype
     );
     const pharmacy = demo.businessArchetype === "pharmacy"
       ? await seedFakePharmacyAssessments(shop.tenantId)
       : null;
-    const deviceResult = await seedFakePosDevices(shop.tenantId, demo.counts.posDevices, guard.actor.id);
-    const products = await seedFakeProducts(shop.tenantId, demo.counts.products, demo.businessArchetype);
+    const deviceResult = await seedFakePosDevices(shop.tenantId, counts.posDevices, guard.actor.id);
+    const products = await seedFakeProducts(shop.tenantId, counts.products, demo.businessArchetype);
     const customers = await seedFakeCustomers(shop.tenantId, demo.counts.customers);
     const orderResult = await seedFakeOrders(shop.tenantId, demo.counts.orders, demo.businessArchetype, "omnichannel");
     const convResult = await seedFakeConversations(shop.tenantId, demo.counts.conversations, demo.businessArchetype);
@@ -141,7 +148,9 @@ async function handlePOST(req: NextRequest) {
 
     created.push({
       key: demo.key,
-      tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name },
+      tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name, plan: packageBudget.plan.code },
+      requestedCounts: demo.counts,
+      appliedCounts: counts,
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       reusedExistingTenant: !!existing,
       businessArchetype: demo.businessArchetype,
@@ -151,7 +160,7 @@ async function handlePOST(req: NextRequest) {
         generatorVersion: groundTruth.generatorVersion,
       },
       summary: {
-        staff: staff.length + 1,
+        staff: packageBudget.users.used + staff.length,
         products: products.length,
         customers: customers.length,
         coupons: coupons.length,

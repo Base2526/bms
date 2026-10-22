@@ -27,6 +27,7 @@ import { normalizeShopArchetype } from "@/lib/bms/shopArchetypes";
 import { normalizeRestaurantSeedSet } from "@/lib/bms/restaurantCatalogSeed";
 import { generateFakeGroundTruth } from "@/lib/bms/fakeEvaluation";
 import { withRouteErrorLog } from "@/lib/log/routeError";
+import { fitFakeSeedCounts, getFakeSeedPackage, missingFakeRecipeIngredients } from "@/lib/bms/devSeedPackage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -46,7 +47,7 @@ async function handlePOST(req: NextRequest) {
   const businessArchetype = normalizeShopArchetype(body?.businessArchetype);
   const restaurantSeedSet = normalizeRestaurantSeedSet(body?.restaurantSeedSet);
   const c = body?.counts ?? {};
-  const counts = {
+  const requestedCounts = {
     // One Administrator is provisioned separately, so 22 seeded staff = 23 total.
     staff: clamp(c.staff, 22, 0, 59),
     posDevices: clamp(c.posDevices, 3, 1, 12),
@@ -61,12 +62,16 @@ async function handlePOST(req: NextRequest) {
 
   let shop;
   try {
-    shop = await provisionTestShop({ name, businessArchetype });
+    shop = await provisionTestShop({ name, businessArchetype, planCode: body?.planCode, generatedBy: guard.actor.id });
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || "สร้างร้านไม่สำเร็จ" }, { status: 500 });
   }
 
   try {
+    const packageBudget = await getFakeSeedPackage(shop.tenantId);
+    const ingredients = businessArchetype === "restaurant" && restaurantSeedSet === "recipe"
+      ? await missingFakeRecipeIngredients(shop.tenantId) : 0;
+    const counts = fitFakeSeedCounts(requestedCounts, packageBudget, ingredients);
     const staff = await seedFakeStaff(shop.tenantId, counts.staff, guard.actor?.id, businessArchetype);
     const deviceResult = await seedFakePosDevices(shop.tenantId, counts.posDevices, guard.actor?.id);
     const products = await seedFakeProducts(shop.tenantId, counts.products, businessArchetype, restaurantSeedSet);
@@ -92,7 +97,9 @@ async function handlePOST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name },
+      tenant: { id: shop.tenantId, slug: shop.slug, name: shop.name, plan: packageBudget.plan.code },
+      requestedCounts,
+      appliedCounts: counts,
       admin: { email: shop.adminEmail, password: shop.adminPassword },
       businessArchetype,
       restaurantSeedSet,

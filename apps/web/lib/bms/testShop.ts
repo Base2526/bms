@@ -14,6 +14,7 @@ import { DEFAULT_TENANT_ID } from "./tenant";
 import { archetypeToBusinessType, normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
 import { DEFAULT_LOCATION_CODE } from "./locations";
 import { ensureFakePharmacyProtocolsInTx } from "./devPharmacySeed";
+import { enforceUserQuota, requireCapacityForUpsert } from "./entitlements";
 
 export type ProvisionTestShopResult = {
   tenantId: string;
@@ -21,6 +22,7 @@ export type ProvisionTestShopResult = {
   name: string;
   adminEmail: string;
   adminPassword: string;
+  planCode: string;
 };
 
 type ProvisionShopOpts = {
@@ -29,6 +31,8 @@ type ProvisionShopOpts = {
   slug?: string;
   adminEmail?: string;
   adminPassword?: string;
+  planCode?: string;
+  generatedBy?: string | number;
 };
 
 const safeSlugSuffix = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 8);
@@ -41,6 +45,9 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
   const businessType = archetypeToBusinessType(businessArchetype);
   const adminEmail = opts.adminEmail?.trim().toLowerCase() || `admin+${suffix}@test.bms.local`;
   const adminPassword = opts.adminPassword || nanoid(12);
+  if (opts.planCode != null && (typeof opts.planCode !== "string" || !opts.planCode.trim())) {
+    throw new Error("Unknown package");
+  }
 
   if (!/^[a-z0-9-]{3,120}$/.test(slug)) {
     throw new Error("slug ร้านไม่ถูกต้อง");
@@ -49,6 +56,9 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
   const client = await getClient();
   try {
     await client.query("BEGIN");
+    const planCode = opts.planCode ?? "free";
+    const plan = await client.query(`SELECT code FROM bms_plans WHERE code = $1 FOR SHARE`, [planCode]);
+    if (!plan.rowCount) throw new Error("Unknown package");
 
     const dupTenant = await client.query<{ id: string }>(
       `SELECT id FROM bms_tenants WHERE slug = $1 LIMIT 1`,
@@ -67,10 +77,15 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
     }
 
     const t = await client.query<{ id: string }>(
-      `INSERT INTO bms_tenants (name, slug, plan) VALUES ($1, $2, 'free') RETURNING id`,
-      [name, slug]
+      `INSERT INTO bms_tenants (name, slug, plan) VALUES ($1, $2, $3) RETURNING id`,
+      [name, slug, planCode]
     );
     const tenantId = t.rows[0].id;
+    // Provisioning needs the privileged connection for users/role copies, but
+    // tenant-owned writes and their triggers still receive a server-owned scope.
+    await client.query(`SELECT set_config('bms.tenant_id', $1, true)`, [tenantId]);
+    await requireCapacityForUpsert(tenantId, "branches", DEFAULT_LOCATION_CODE, client);
+    await enforceUserQuota(tenantId, client);
     await client.query(
       `INSERT INTO bms_store_profile (tenant_id, business_type, business_archetype)
        VALUES ($1, $2, $3)`,
@@ -104,8 +119,14 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
       await ensureFakePharmacyProtocolsInTx(client, tenantId);
     }
 
+    await client.query(
+      `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+       VALUES ($1, $2, 'dev.fake.shop.provision', $3, $4::jsonb)`,
+      [tenantId, opts.generatedBy == null ? null : String(opts.generatedBy), tenantId, JSON.stringify({ planCode, slug })]
+    );
+
     await client.query("COMMIT");
-    return { tenantId, slug, name, adminEmail, adminPassword };
+    return { tenantId, slug, name, adminEmail, adminPassword, planCode };
   } catch (err) {
     await client.query("ROLLBACK").catch(() => {});
     throw err;
@@ -114,7 +135,7 @@ async function provisionShopWithIdentity(opts: ProvisionShopOpts = {}): Promise<
   }
 }
 
-export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null } = {}): Promise<ProvisionTestShopResult> {
+export async function provisionTestShop(opts: { name?: string; businessArchetype?: ShopArchetype | null; planCode?: string; generatedBy?: string | number } = {}): Promise<ProvisionTestShopResult> {
   const suffix = safeSlugSuffix();
   return provisionShopWithIdentity({
     ...opts,
@@ -127,6 +148,8 @@ export async function provisionDemoShop(opts: {
   name: string;
   slug: string;
   businessArchetype: ShopArchetype;
+  planCode?: string;
+  generatedBy?: string | number;
 }): Promise<ProvisionTestShopResult> {
   return provisionShopWithIdentity({
     ...opts,

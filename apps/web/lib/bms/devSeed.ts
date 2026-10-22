@@ -32,6 +32,8 @@ import {
   type RestaurantSeedSet,
 } from "./restaurantCatalogSeed";
 import { allocateFakeStaffIdentities } from "./fakeStaffIdentity";
+import { enforceProductQuota, enforceUserQuota } from "./entitlements";
+import { missingFakeRecipeIngredients } from "./devSeedPackage";
 
 const R = (n: number) => Math.floor(Math.random() * n);
 const pick = <T,>(a: T[]): T => a[R(a.length)];
@@ -737,7 +739,10 @@ async function seedRestaurantCatalog(
 ) {
   const client = await getClient();
   try {
-    await client.query("BEGIN");
+    await beginTenantTx(client, tenantId);
+    await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    const ingredients = seedSet === "recipe" ? await missingFakeRecipeIngredients(tenantId, client) : 0;
+    await enforceProductQuota(tenantId, client, count + ingredients);
     const locationResult = await client.query<{ id: string }>(
       `SELECT id FROM bms_locations WHERE tenant_id = $1 AND active
         ORDER BY (code = 'MAIN') DESC, is_head_office DESC, created_at LIMIT 1`,
@@ -965,6 +970,8 @@ export async function seedFakeProducts(
   archetype?: ShopArchetype | null,
   restaurantSeedSet: RestaurantSeedSet = DEFAULT_RESTAURANT_SEED_SET
 ) {
+  if (!Number.isInteger(count) || count < 0) throw new Error("Invalid product count");
+  if (count === 0) return [];
   // ร้านอาหารมีแคตตาล็อกของตัวเอง (เมนู + วัตถุดิบ + สูตร + สถานีครัว + ตัวเลือก)
   // เพราะชุด food_beverage เป็นอาหารกล่องพร้อมขาย ซึ่งทดสอบครัวไม่ได้เลย
   if (archetype === "restaurant") return seedRestaurantCatalog(tenantId, count, restaurantSeedSet);
@@ -973,7 +980,9 @@ export async function seedFakeProducts(
   if (curated?.length) {
     const client = await getClient();
     try {
-      await client.query("BEGIN");
+      await beginTenantTx(client, tenantId);
+      await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+      await enforceProductQuota(tenantId, client, count);
       const inserted: Array<{ sku: string; name: string; price: string }> = [];
       // SKU ของเส้นทางนี้ deterministic จาก (tenant, archetype, ชื่อสินค้า, ลำดับ)
       // ถ้า index เริ่มที่ 0 ทุกครั้ง การกด seed รอบที่สองจะได้ SKU เดิมแล้วชน
@@ -1130,8 +1139,18 @@ export async function seedFakeProducts(
       RETURNING 1
     )
     SELECT sku, name, price FROM np ORDER BY sku`;
-  const { rows } = await query(sql, [tenantId, count, preset.categories, preset.brands, preset.prefix, salesSurfaces]);
-  return rows;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    await client.query(`SELECT id FROM bms_tenants WHERE id = $1 FOR UPDATE`, [tenantId]);
+    await enforceProductQuota(tenantId, client, count);
+    const { rows } = await client.query(sql, [tenantId, count, preset.categories, preset.brands, preset.prefix, salesSurfaces]);
+    await client.query("COMMIT");
+    return rows;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally { client.release(); }
 }
 
 export async function seedFakeCustomers(tenantId: string, count: number) {
@@ -2034,6 +2053,8 @@ export async function seedFakeStaff(
   generatedBy?: string | number,
   archetype?: ShopArchetype | null
 ) {
+  if (!Number.isInteger(count) || count < 0) throw new Error("Invalid user count");
+  if (count === 0) return [];
   const passwordHash = await bcrypt.hash("password123", 10);
   const roleSequence = staffRolesForArchetype(archetype);
   const client = await getClient();
@@ -2041,6 +2062,8 @@ export async function seedFakeStaff(
     // `users` is intentionally not granted to bms_app; user administration uses
     // the privileged app connection and explicit tenant predicates instead.
     await client.query("BEGIN");
+    await client.query(`SELECT set_config('bms.tenant_id', $1, true)`, [tenantId]);
+    await enforceUserQuota(tenantId, client, count);
     if (generatedBy != null) {
       await client.query(`SELECT set_config('app.editor_id', $1, true)`, [String(generatedBy)]);
     }

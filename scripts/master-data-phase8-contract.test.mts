@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { computePeriod, shouldSendNow, storeLocalNow } from "../apps/web/lib/bms/reportDigest.ts";
-import { summarizePlanImpact } from "../apps/web/lib/bms/platformSettings.ts";
+import { summarizePlanImpact, previewPlanCatalogChange, updatePlanCatalog } from "../apps/web/lib/bms/platformSettings.ts";
 
 const read=(path:string)=>readFileSync(new URL(`../${path}`,import.meta.url),"utf8");
 const migration=read("db/migrations/10.83__bms_platform_reference_settings.sql");
@@ -10,6 +10,47 @@ const corrections=read("db/migrations/10.84__bms_master_data_phase8_corrections.
 const issueSync=read("db/migrations/10.85__bms_store_reference_issue_sync.sql");
 const usage=read("apps/web/lib/bms/aiUsage.ts");
 const reports=read("apps/web/lib/bms/reports.ts");
+
+test("catalogue preview and save reject unenforced order caps and conflicting AI allowances", async () => {
+  const pool = (globalThis as any).__bmsPostgresPool;
+  const originalQuery = pool.query;
+  const originalConnect = pool.connect;
+  const calls: string[] = [];
+  const ctx = { scope: "admin", admin: { id: "fixture-admin", tenant_id: "fixture-tenant" } };
+  const input = { code: "pro", expectedVersion: 1, name: "Pro", priceMonthly: 599,
+    maxProducts: -1, maxChannels: 3, maxOrdersMonth: -1, maxUsers: 5,
+    maxBranches: 1, maxDevices: 3, maxAiMessagesMonth: 1000, aiCreditsMonthly: 1000,
+    featureKeys: ["REPORT_SCHEDULE"] };
+  pool.query = async (sql: string) => {
+    calls.push(sql);
+    if (sql.includes("SELECT is_platform_admin")) return { rows: [{ is_platform_admin: true }] };
+    return { rows: [{ code: "pro", version: 1, name: "Pro", price_monthly: 599,
+      max_products: -1, max_channels: 3, max_orders_month: -1, max_users: 5,
+      max_branches: 1, max_devices: 3, max_ai_messages_month: 1000, ai_credits_monthly: 1000,
+      feature_keys: ["REPORT_SCHEDULE"], tenant_count: 2, feature_tenant_count: 2 }] };
+  };
+  pool.connect = async () => { throw new Error("invalid catalogue input opened a write transaction"); };
+  try {
+    for (const [changes, message] of [
+      [{ maxOrdersMonth: 100 }, /PLAN_ORDERS_MUST_BE_UNLIMITED/],
+      [{ maxOrdersMonth: 0 }, /PLAN_ORDERS_MUST_BE_UNLIMITED/],
+      [{ maxAiMessagesMonth: -1 }, /PLAN_AI_ALLOWANCE_MISMATCH/],
+      [{ aiCreditsMonthly: 5000 }, /PLAN_AI_ALLOWANCE_MISMATCH/],
+    ] as const) {
+      calls.length = 0;
+      await assert.rejects(previewPlanCatalogChange(ctx, { ...input, ...changes }), message);
+      await assert.rejects(updatePlanCatalog(ctx, { ...input, ...changes }, "unused", true), message);
+      assert.ok(calls.every(sql => sql.includes("SELECT is_platform_admin")), "deny before catalogue reads/writes");
+    }
+    for (const allowance of [0, 100, 1000, 5000, -1]) {
+      const result = await previewPlanCatalogChange(ctx, {
+        ...input, maxAiMessagesMonth: allowance, aiCreditsMonthly: allowance,
+      });
+      assert.equal(result.code, "pro");
+      assert.match(result.previewToken, /^[a-f0-9]{64}$/);
+    }
+  } finally { pool.query = originalQuery; pool.connect = originalConnect; }
+});
 
 test("master-data tables contain horizontal overflow and country status is explicit",()=>{
   const page=read("apps/web/app/(admin)/admin/master-data/page.tsx");

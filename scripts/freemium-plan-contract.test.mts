@@ -1,8 +1,32 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { resolvePlanAiAllowance } from '../apps/web/lib/bms/planPolicy';
 import { enforceProductQuota, enforceUserQuota, getTenantPlan } from '../apps/web/lib/bms/plans';
 import { aiYearMonth } from '../apps/web/lib/bms/aiLimitStatus';
+
+const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('current monthly package matrix stays aligned across migrations and customer-facing copy', () => {
+  const phaseOne = read('db/migrations/10.73__bms_freemium_phase_one.sql');
+  const capacity = read('db/migrations/10.75__bms_capacity_and_package_metrics.sql');
+  const thai = read('apps/web/i18n/th.ts');
+  const english = read('apps/web/i18n/en.ts');
+  const status = read('docs/status-log.md');
+
+  assert.match(phaseOne, /WHEN 'free' THEN 0 WHEN 'pro' THEN 599 ELSE 1990/);
+  assert.match(phaseOne, /WHEN 'free' THEN 100 ELSE -1/);
+  assert.match(phaseOne, /WHEN 'free' THEN 2 WHEN 'pro' THEN 5 ELSE 20/);
+  assert.match(phaseOne, /ai_credits_monthly = 5000/);
+  assert.match(phaseOne, /max_orders_month = -1/);
+  assert.match(capacity, /max_branches = CASE code WHEN 'business' THEN 5 ELSE 1 END/);
+  assert.match(capacity, /max_devices = CASE code WHEN 'business' THEN 10 WHEN 'pro' THEN 3 ELSE 1 END/);
+  assert.match(capacity, /max_channels = CASE code WHEN 'business' THEN -1 WHEN 'pro' THEN 3 ELSE 1 END/);
+
+  assert.doesNotMatch(thai, /ยังไม่บังคับเพดานสาขา เครื่อง POS และช่องทาง/);
+  assert.doesNotMatch(english, /Branch, device and channel limits are not enforced/);
+  assert.doesNotMatch(status, /Business unlimited \(THB 1,990\)/);
+});
 
 test('plan lookup uses the accounting instant, not the time the query completes', async () => {
   const row = { code: 'business', price_monthly: 1990, ai_credits_monthly: 5000,

@@ -20,7 +20,9 @@ test('capacity and package evidence: real services in disposable PostgreSQL only
       INSERT INTO bms_plans VALUES('free','Free',0,100,2,1,-1,100,0),('pro','Pro',599,-1,5,3,-1,1000,1),('business','Business',1990,-1,20,-1,-1,5000,2);
       CREATE TABLE bms_tenants(id uuid PRIMARY KEY,plan text,slug text,feature_policy_version int DEFAULT 2,created_at timestamptz DEFAULT now());
       CREATE TABLE bms_locations(id uuid PRIMARY KEY,tenant_id uuid,code text,name text,branch_code text,address text,phone text,active boolean,
-        is_head_office boolean,parking_info jsonb,updated_at timestamptz, UNIQUE(tenant_id,code),UNIQUE(tenant_id,id));
+        is_head_office boolean,parking_info jsonb,updated_at timestamptz,
+        province_code text,district_code text,subdistrict_code text,province text,district text,subdistrict text,postcode text,
+        UNIQUE(tenant_id,code),UNIQUE(tenant_id,id));
       CREATE TABLE bms_user_allowed_locations(tenant_id uuid,user_id uuid,location_id uuid);
       CREATE TABLE bms_pos_devices(id uuid PRIMARY KEY,tenant_id uuid,location_id uuid,code text,name text,registered_pos_no text,receipt_prefix text,
         scanner_mode text,scanner_prefix_key text,scanner_suffix_key text,scanner_max_gap_ms int,active boolean,updated_at timestamptz,UNIQUE(tenant_id,code),
