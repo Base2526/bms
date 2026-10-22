@@ -755,6 +755,7 @@ const en = {
     orders: "Orders",
     shipment: "Shipping",
     pos_shifts: "POS shift overview",
+    salon: "Salon appointments",
     kitchen: "Kitchen Board",
     restaurant_floor: "Floor Plan",
     delivery_platforms: "Delivery Platforms",

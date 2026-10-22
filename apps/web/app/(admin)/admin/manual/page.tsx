@@ -106,6 +106,7 @@ const ROUTES = {
   posReadiness: "/admin/pos-readiness",
   loyalty: "/admin/loyalty",
   commission: "/admin/commission",
+  salon: "/admin/salon",
   stockTransfers: "/admin/stock-transfers",
   stockCounts: "/admin/stock-counts",
   receivables: "/admin/receivables",
@@ -827,6 +828,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
   {
     title: "งานเฉพาะร้าน (ตามประเภทร้าน)",
     items: [
+      { label: "งานร้านเสริมสวย", href: ROUTES.salon, note: "นัดหมาย ช่าง เก้าอี้/ห้อง โน้ตสูตรและการแพ้ ความยินยอม และคอร์สบริการ; ปิดงานโดยผูกบิล POS ที่ชำระแล้ว" },
       { label: "Pharmacy Intake Lab", href: ROUTES.pharmacyIntakeLab, note: "ซ้อมหรือกรอก intake เพื่อตรวจว่าต้องถามอะไรและต้องส่งต่อไหม" },
       { label: "Pharmacy Protocols", href: ROUTES.pharmacyProtocols, note: "ตั้งคำถาม กฎคัดกรอง และ protocol ของ flow ร้านยา" },
       { label: "Pharmacist Guidance", href: ROUTES.pharmacyGuidance, note: "ข้อความที่ AI ตอบลูกค้าเรื่องที่ต้องให้เภสัชกรตัดสิน ลูกค้าเห็นเฉพาะที่เภสัชกรอนุมัติแล้ว" },
@@ -2098,6 +2100,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
   {
     title: "Shop-specific work (by shop type)",
     items: [
+      { label: "Salon operations", href: ROUTES.salon, note: "Appointments, stylists, chairs/rooms, formula and allergy notes, consent, and service packages; completion links to a paid POS order" },
       { label: "Pharmacy Intake Lab", href: ROUTES.pharmacyIntakeLab, note: "Practice or enter intake cases and see what data or escalation is needed" },
       { label: "Pharmacy Protocols", href: ROUTES.pharmacyProtocols, note: "The screening rules and question sets behind the pharmacy flow" },
       { label: "Pharmacist Guidance", href: ROUTES.pharmacyGuidance, note: "What the AI tells customers about questions a pharmacist must decide; customers only see approved text" },

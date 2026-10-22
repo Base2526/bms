@@ -376,6 +376,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "ดูภาพรวมกะ POS ทุกเครื่องยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "pos.shift-overview", origin: "coverage" },
   { q: "เชื่อม foodpanda และจับคู่เมนูยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "delivery-platforms.review", origin: "coverage" },
   { q: "ดูค่าคอมพนักงานยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "commission.review", origin: "coverage" },
+  { q: "จัดคิวนัด ช่าง และคอร์สร้านเสริมสวยที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "salon.run-operations", origin: "coverage" },
   { q: "ดู audit log ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "access.review-audit", origin: "coverage" },
   { q: "เพิ่งเปิดร้านใหม่ต้องตั้งค่าอะไรก่อน", locale: "th", context: GUIDES, expect: "answer", expectTop: "onboarding.getting-started", origin: "coverage" },
   { q: "คู่มือทั้งระบบอยู่ที่ไหน", locale: "th", context: GUIDES, expect: "answer", expectTop: "manual.find-instructions", origin: "coverage" },

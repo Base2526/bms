@@ -121,6 +121,7 @@ const packToolsRelevant = (ctx: AdminNavContext) =>
     .some((capability) => capability === "PACK" || capability === "MULTI_BARCODE");
 
 const isPharmacyShop = (ctx: AdminNavContext) => ctx.archetype === "pharmacy";
+const isBeautyShop = (ctx: AdminNavContext) => ctx.archetype === "beauty_personal_care";
 
 export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
@@ -144,6 +145,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
   {
     id: "sales.pos-shifts", route: "/admin/pos-shifts", labelKey: "admin_nav.pos_shifts",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("pos.shift.report.all"),
+  },
+  {
+    id: "sales.salon", route: "/admin/salon", labelKey: "admin_nav.salon",
+    section: "sales", workspace: "SHOP", visible: (ctx) => isBeautyShop(ctx) && ctx.can("salon.view"),
   },
   {
     id: "sales.kitchen", route: "/admin/kitchen", labelKey: "admin_nav.kitchen",
@@ -525,7 +530,7 @@ const ARCHETYPE_EMPHASIS: Record<string, readonly string[]> = {
   b2b_wholesale: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
   building_materials: ["sales.orders", "inventory.product-packs", "finance.receivables", "inventory.purchase", "sales.shipment"],
   food_beverage: ["sales.pos-shifts", "inventory.products", "inventory.stock-models", "inventory.wastage"],
-  beauty_personal_care: ["sales.orders", "inventory.products", "customers.customers"],
+  beauty_personal_care: ["sales.salon", "sales.pos-shifts", "customers.customers", "inventory.products"],
   gadgets_accessories: ["sales.orders", "inventory.products", "sales.shipment"],
   home_kitchen: ["sales.orders", "inventory.products", "sales.shipment"],
   pet_supply: ["sales.pos-shifts", "inventory.products", "inventory.purchase", "inventory.stock-counts"],

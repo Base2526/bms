@@ -1117,6 +1117,15 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
     warnings: [["ผ่าน readiness ไม่ได้แทนการตรวจ PIN และ permission ตอนขาย"], ["Readiness does not replace PIN and permission checks at sale time."]], relatedCapabilityIds: ["pos.operations", "pharmacy.workflow"],
   }),
   menuGuide({
+    id: "salon.run-operations", module: "salon", route: "/admin/salon",
+    title: ["จัดการงานร้านเสริมสวย", "Run salon operations"], summary: ["จัดคิวนัด ช่าง เก้าอี้หรือห้อง บันทึกข้อมูลการดูแล และคอร์สบริการ โดยรับเงินผ่าน POS เดิม", "Manage appointments, stylists, chairs or rooms, client care records, and service packages while checkout stays in the shared POS."],
+    aliases: [["ตารางนัดร้านเสริมสวย", "คิวช่าง", "สูตรสี", "คอร์สทำผม"], ["salon calendar", "stylist schedule", "color formula", "service package"]],
+    requiredPermissions: ["salon.view"], prerequisites: [["ตั้งบริการเป็นสินค้า NON_STOCK และกำหนดระยะเวลาก่อนสร้างนัด", "การแก้ตารางต้องมี salon.manage; ข้อมูลการดูแลและคอร์สมีสิทธิ์แยก"], ["Configure each service as an active NON_STOCK product with a duration before booking.", "Schedule changes need salon.manage; client-care records and packages use separate permissions."]],
+    steps: [["เปิดงานร้านเสริมสวย", "เลือกช่วงเวลาและสาขา", "สร้างนัดโดยเลือกบริการ ช่าง และทรัพยากร", "เช็กอิน เริ่มงาน รับเงินใน POS แล้วจึงปิดงาน", "เปิดข้อมูลลูกค้าเพื่อบันทึกข้อควรระวัง สูตรสี หรือใช้สิทธิ์คอร์ส"], ["Open Salon operations.", "Choose the time range and location.", "Book services with their stylist and resource.", "Check in, start service, settle in POS, then complete the appointment.", "Open client care to record cautions or formulas and redeem a package use."]],
+    warnings: [["ระบบกันเวลาทับของช่างและทรัพยากรบนเซิร์ฟเวอร์", "สถานะเสร็จงานต้องอ้างบิล POS ที่ชำระแล้วของลูกค้าคนเดียวกัน", "คอร์สเปิดได้จากรายการขายที่ชำระแล้วและยังไม่คืนเท่านั้น"], ["The server prevents overlapping stylist and resource assignments.", "Completing an appointment requires a settled POS order for the same customer.", "A package can activate only from a paid, unreturned package-sale line."]],
+    relatedCapabilityIds: ["pos.operations", "commission.staff"],
+  }),
+  menuGuide({
     id: "commission.review", module: "commission", route: "/admin/commission",
     title: ["ตรวจคอมมิชชัน", "Review commission"], summary: ["ดู rule ตามช่วงเวลา ผลคำนวณ และ clawback จากการคืนสินค้า", "Review effective-dated rules, calculated results, and return clawbacks."],
     aliases: [["ค่าคอมพนักงาน", "ดูค่าคอม", "คอมมิชชันเดือนนี้"], ["staff commission", "commission report"]],

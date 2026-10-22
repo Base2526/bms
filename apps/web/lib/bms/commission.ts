@@ -154,14 +154,17 @@ export async function getCommissionReport(
   const res = await query<any>(
     `WITH sold AS (
        SELECT o.id                AS order_id,
-              o.cashier_user_id   AS staff_id,
+              -- Salon services belong to the assigned stylist, not automatically to the cashier.
+              -- If several stylists share the same service SKU, split that line evenly; ordinary
+              -- retail lines retain the cashier attribution.
+              COALESCE(salon.staff_user_id, o.cashier_user_id) AS staff_id,
               (COALESCE(o.paid_at,o.created_at) AT TIME ZONE 'Asia/Bangkok')::date AS sold_on,
               oi.id               AS item_id,
               oi.product_sku,
               COALESCE(oi.pack_qty, oi.qty) AS qty,
               p.category,
               -- มูลค่ารายการหลังเกลี่ยส่วนลดทั้งบิลตามสัดส่วน
-              oi.line_amount
+              oi.line_amount / GREATEST(COALESCE(salon.staff_count, 1), 1)
                 * CASE WHEN SUM(oi.line_amount) OVER (PARTITION BY o.id) > 0
                        THEN 1 - (o.discount_amount / SUM(oi.line_amount) OVER (PARTITION BY o.id))
                        ELSE 1 END                                        AS net_line,
@@ -176,6 +179,14 @@ export async function getCommissionReport(
          FROM bms_orders o
          JOIN bms_order_items oi ON oi.order_id = o.id AND oi.tenant_id = o.tenant_id
          LEFT JOIN bms_products p ON p.tenant_id = o.tenant_id AND p.sku = oi.product_sku
+         LEFT JOIN LATERAL (
+           SELECT s.staff_user_id, COUNT(*) OVER ()::numeric AS staff_count
+             FROM bms_salon_appointments a
+             JOIN bms_salon_appointment_services s
+               ON s.tenant_id = a.tenant_id AND s.appointment_id = a.id
+            WHERE a.tenant_id = o.tenant_id AND a.order_id = o.id
+              AND a.status = 'COMPLETED' AND s.product_sku = oi.product_sku
+         ) salon ON TRUE
         WHERE o.tenant_id = $1
           AND o.cashier_user_id IS NOT NULL
           AND o.voided_at IS NULL

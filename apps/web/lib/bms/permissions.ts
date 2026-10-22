@@ -177,6 +177,12 @@ export const BMS_PERMISSIONS = [
   "ar.writeoff",
   "commission.view",
   "commission.manage",
+  // Salon scheduling, private client service notes and prepaid-use liabilities (10.87).
+  // Keep client notes and package issuance narrower than ordinary calendar operations.
+  "salon.view",
+  "salon.manage",
+  "salon.client_notes.manage",
+  "salon.package.manage",
   // ใบกำกับภาษี — seed ที่ 7.88
   "tax.document.view",
   "tax.document.issue",

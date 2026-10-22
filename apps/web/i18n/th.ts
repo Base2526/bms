@@ -757,6 +757,7 @@ const th = {
     orders: "ออร์เดอร์",
     shipment: "การจัดส่ง",
     pos_shifts: "ภาพรวมกะ POS",
+    salon: "นัดหมายร้านเสริมสวย",
     kitchen: "กระดานครัว",
     restaurant_floor: "จัดผังร้าน",
     delivery_platforms: "แพลตฟอร์มเดลิเวอรี",

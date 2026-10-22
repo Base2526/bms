@@ -163,6 +163,8 @@ const CHILD_OF_AGGREGATE = [
   "bms_board_game_reservation_deposit_applications", "bms_board_game_pass_renewal_runs",
   "bms_delivery_order_lines", "bms_delivery_order_modifiers", "bms_delivery_order_events",
   "bms_delivery_handoffs", "bms_delivery_settlement_lines",
+  "bms_salon_appointment_services", // The appointment aggregate is the polled owner.
+  "bms_salon_package_ledger", // Append-only evidence; the owning customer package is refreshed.
 ];
 
 /** ร่องรอย/ตัวชี้วัดของระบบ ไม่ใช่สถานะธุรกิจที่จอไหนเฝ้าดูอยู่ */
@@ -223,6 +225,8 @@ const CONFIGURATION = [
   "bms_app_download_settings", // Public homepage reads on load; admin form uses the saved response.
   "bms_local_installation", "bms_retail_local_release_assets", "bms_sample_runs", "bms_sample_records",
   "bms_category_template_applications", // Opt-in configuration ledger; Getting Started refreshes after the mutation.
+  "bms_salon_service_settings", "bms_salon_resources", "bms_salon_client_profiles",
+  "bms_salon_package_plans", // Salon setup/private notes are read on open and refreshed after save.
 ];
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
@@ -241,6 +245,7 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_identity_holds",
   "bms_delivery_orders", "bms_delivery_intake_controls", "bms_delivery_settlements",
   "bms_delivery_adjustments", "bms_delivery_disputes",
+  "bms_salon_appointments", "bms_salon_customer_packages", // 30-second board polling plus post-write refresh.
 ];
 
 // Immutable financial evidence has no live POS audience. The tax page refreshes on open,

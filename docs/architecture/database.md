@@ -1903,6 +1903,22 @@ finite monthly order limits (orders are unlimited) and differing legacy AI-messa
 allowances. The editor exposes one AI allowance and submits it to both compatibility fields.
 Billing channel usage counts all registered rows, including disabled ones, matching capacity admission.
 
+## Salon operations (`10.87`)
+
+Salon scheduling is operational state beside the normal POS. `bms_salon_service_settings` turns an
+active `NON_STOCK` catalog SKU into a schedulable service. `bms_salon_resources` owns branch-scoped
+chairs, rooms, beds and equipment. `bms_salon_appointments` owns the customer, branch, lifecycle and
+optional completed POS order; `bms_salon_appointment_services` owns each stylist/resource time slice.
+The service serializes concurrent staff/resource bookings with transaction advisory locks and checks
+overlap while active. Terminal cancelled/no-show rows remain as history.
+
+`bms_salon_client_profiles` stores private allergy, formula and preference notes plus separate photo
+and marketing consent flags. `bms_salon_package_plans` maps a paid `NON_STOCK` sale SKU to a covered
+service SKU. `bms_salon_customer_packages` can only originate from one completed POS order item, and
+`bms_salon_package_ledger` is the append-only use ledger with at most one redemption per appointment
+service. All tables carry `tenant_id`, forced RLS, `bms_app` grants and revision tracking where rows
+are mutable. Sensitive mutations append `bms_audit_log` inside the same tenant transaction.
+
 
 ### 10.67–10.69 — weighted inventory valuation and confirmed price publication
 
