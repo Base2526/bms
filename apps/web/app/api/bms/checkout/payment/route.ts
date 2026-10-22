@@ -61,7 +61,9 @@ async function handlePOST(req: NextRequest) {
     return response({ error: "ออร์เดอร์นี้ชำระเงินผ่าน Seller Center" }, 400);
   }
   if (!current.checkout.delivery.complete) {
-    return response({ error: "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" }, 400);
+    return response({ error: current.checkout.fulfillment.type === "PICKUP"
+      ? "กรุณากรอกชื่อและเบอร์โทรผู้รับที่ยังขาดก่อน"
+      : "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" }, 400);
   }
   if (current.checkout.order.status !== "PENDING") {
     return response({ error: "ออร์เดอร์นี้ไม่อยู่ในสถานะรอชำระเงิน" }, 400);

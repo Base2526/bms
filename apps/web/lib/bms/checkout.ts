@@ -103,6 +103,8 @@ export type CheckoutView = {
     } | null;
   };
   fulfillment: {
+    type: "DELIVERY" | "PICKUP" | null;
+    locationName: string | null;
     shipmentStatus: string | null;
     carrier: string | null;
     trackingNo: string | null;
@@ -181,14 +183,19 @@ export async function getCheckoutByToken(
     created_at: Date | string;
     customer_name: string | null;
     customer_phone: string | null;
+    fulfillment_type: "DELIVERY" | "PICKUP" | null;
+    location_name: string | null;
   }>(
     `SELECT o.id, o.channel, o.customer_ref, o.customer_id, o.status, o.created_at,
-            c.name AS customer_name, c.phone AS customer_phone
+            c.name AS customer_name, c.phone AS customer_phone,
+            o.fulfillment_type, location.name AS location_name
        FROM bms_orders o
        LEFT JOIN bms_customers c
          ON c.tenant_id = o.tenant_id
         AND c.id = o.customer_id
         AND c.deleted_at IS NULL
+       LEFT JOIN bms_locations location
+         ON location.tenant_id = o.tenant_id AND location.id = o.location_id
       WHERE o.tenant_id = $1 AND o.id = $2
       LIMIT 1`,
     [payload.tenantId, payload.orderId]
@@ -205,7 +212,7 @@ export async function getCheckoutByToken(
   ] = await Promise.all([
     generateInvoice(payload.tenantId, payload.orderId),
     getStoreProfile(payload.tenantId),
-    order.customer_id
+    order.customer_id && order.fulfillment_type !== "PICKUP"
       ? query<{
           id: string;
           label: string | null;
@@ -281,6 +288,11 @@ export async function getCheckoutByToken(
   const selectedAddress = addresses[0] ?? null;
   const accounts = publicPaymentAccounts(profile.paymentAccounts);
   const latest = paymentResult.rows[0];
+  // Only the persisted fulfillment choice can waive an address, never a request field.
+  const pickup = order.fulfillment_type === "PICKUP";
+  const missingFields: CustomerCheckoutMissingField[] = marketplaceManaged ? []
+    : (checkoutStatus?.missingFields ?? ["recipientName", "phone", "shippingAddress"])
+      .filter((field): field is CustomerCheckoutMissingField => !pickup || field !== "shippingAddress");
 
   return {
     ok: true,
@@ -316,17 +328,10 @@ export async function getCheckoutByToken(
             : null,
         phone:
           checkoutStatus?.hasPhone === true ? clean(order.customer_phone) : null,
-        selectedAddress,
-        addresses,
-        missingFields: marketplaceManaged
-          ? []
-          : checkoutStatus?.missingFields ?? [
-              "recipientName",
-              "phone",
-              "shippingAddress",
-            ],
-        complete:
-          marketplaceManaged || checkoutStatus?.missingFields.length === 0,
+        selectedAddress: pickup ? null : selectedAddress,
+        addresses: pickup ? [] : addresses,
+        missingFields,
+        complete: missingFields.length === 0,
       },
       payment: {
         configured: accounts.length > 0,
@@ -344,6 +349,8 @@ export async function getCheckoutByToken(
           : null,
       },
       fulfillment: {
+        type: order.fulfillment_type ?? null,
+        locationName: clean(order.location_name),
         shipmentStatus: shipmentResult.rows[0]?.status ?? null,
         carrier: shipmentResult.rows[0]?.carrier ?? null,
         trackingNo: shipmentResult.rows[0]?.tracking_no ?? null,
@@ -419,7 +426,9 @@ export async function submitCheckoutPaymentByToken(
     };
   }
   if (!checkout.delivery.complete) {
-    return { ok: false, reason: "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" };
+    return { ok: false, reason: checkout.fulfillment.type === "PICKUP"
+      ? "กรุณากรอกชื่อและเบอร์โทรผู้รับที่ยังขาดก่อน"
+      : "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน" };
   }
   if (checkout.order.status !== "PENDING") {
     return { ok: false, reason: "ออร์เดอร์นี้ไม่อยู่ในสถานะรอชำระเงิน" };
@@ -515,7 +524,18 @@ export async function orderCheckoutChatReply(
         : "ข้อมูลผู้รับ ที่อยู่ และการชำระเงินจะใช้จาก Seller Center จึงไม่ต้องกรอกซ้ำค่ะ");
       return parts.join("\n");
     }
-    if (checkout.delivery.complete) {
+    if (checkout.fulfillment.type === "PICKUP") {
+      parts.push(english ? "Pickup at the shop; no shipping address is needed."
+        : "รับเองที่ร้าน ไม่ต้องกรอกที่อยู่จัดส่งค่ะ");
+      if (checkout.fulfillment.locationName) {
+        parts.push(english ? `Pickup branch: ${checkout.fulfillment.locationName}`
+          : `สาขาที่รับ: ${checkout.fulfillment.locationName}`);
+      }
+    }
+    if (checkout.delivery.complete && checkout.fulfillment.type === "PICKUP") {
+      parts.push(english ? "Your saved recipient name and phone number are complete."
+        : "มีชื่อและเบอร์โทรผู้รับครบแล้วค่ะ");
+    } else if (checkout.delivery.complete) {
       parts.push(english
         ? "Your existing recipient, phone number, and shipping address are complete and will be reused automatically."
         : "พบข้อมูลผู้รับ เบอร์โทร และที่อยู่จัดส่งเดิมแล้ว ระบบจะใช้ข้อมูลเดิมให้อัตโนมัติค่ะ");

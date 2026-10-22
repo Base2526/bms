@@ -200,8 +200,8 @@ function OrdersManagement() {
     const payBtn = <Button key="pay" type="link" size="small" icon={<DollarOutlined />} disabled={busy} onClick={() => pay(v)}>{t("admin_orders.btn_pay")}</Button>;
     const packBtn = <Button key="pack" type="link" size="small" icon={<InboxOutlined />} disabled={busy} onClick={() => pack(v)}>{r.fulfillmentType ? t("admin_orders.btn_accept") : t("admin_orders.btn_pack")}</Button>;
     const shipBtn = r.hasShippingAddress ? (
-      <Popconfirm key="ship" title={t("admin_orders.ship_confirm_title")} description={t("admin_orders.ship_confirm_desc")} okText={t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
-        <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>{t("admin_orders.btn_ship")}</Button>
+      <Popconfirm key="ship" title={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_title") : t("admin_orders.ship_confirm_title")} description={r.fulfillmentType === "PICKUP" ? t("admin_orders.pickup_confirm_desc") : t("admin_orders.ship_confirm_desc")} okText={r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.ship_ok_text")} cancelText={t("admin_orders.cancel_text")} disabled={busy} onConfirm={() => ship(v)}>
+        <Button type="link" size="small" icon={<CarOutlined />} disabled={busy}>{r.fulfillmentType === "PICKUP" ? t("admin_orders.btn_handover") : t("admin_orders.btn_ship")}</Button>
       </Popconfirm>
     ) : (
       <Space key="ship" size={4}>

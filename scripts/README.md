@@ -1,5 +1,18 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Restaurant pickup checkout (2026-10-22)
+
+- `node scripts/run-contract-tests.mjs pure restaurant-pickup`: whole checkout service with
+  mocked dependencies; persisted PICKUP/contact rules, payment scope, legacy delivery/marketplace
+  boundaries and deterministic Thai/English replies.
+- `node scripts/run-contract-tests.mjs db restaurant-pickup`: disposable PostgreSQL **only**.
+  Requires `POSTGRES_HOST=127.0.0.1`, `POSTGRES_PORT=5547`,
+  `POSTGRES_DB=bms_restaurant_readiness_test`, and superuser `POSTGRES_USER/POSTGRES_PASSWORD`.
+  Creates/drops a random synthetic schema and creates `bms_app` if absent. Uses real order/tenant
+  services and PostgreSQL RLS for repricing/payment races, rollback and concurrent handover.
+  Carrier and stock-movement writer are substituted; this is not a restored-schema,
+  realtime-trigger or inventory-valuation rehearsal. Never target a real shop database.
+
 ## Freemium phases 1–2 (`10.73` / `10.74`)
 
 - Restored-dump validation is separate from synthetic contracts: follow

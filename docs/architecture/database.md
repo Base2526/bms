@@ -1964,3 +1964,14 @@ not UPDATE/DELETE. Read states are UNREVIEWED, CURRENT or STALE; stale figures a
 Confirmed snapshots reconcile menu totals to existing net-profit evidence including a separate
 non-menu revenue bucket. Bundle publication reuses `bms_price_plan_publications` with mode MENU_BUNDLE
 and existing product/recipe tables, all in one tenant transaction. No guessed opening stock values.
+
+## Restaurant pickup checkout audit (2026-10-22; no schema change)
+
+Existing `bms_orders.fulfillment_type = 'PICKUP'` (9.56) waives the shipping-address
+requirement at signed checkout and stock handover. Existing PACKING/SHIPPED states remain;
+handover locks the order before consuming its reserved stock. DELIVERY/legacy rules remain.
+Customer-triggered shipping recalculation excludes PICKUP/POS and locks an eligible PENDING order,
+then rechecks payment and quote inputs before writing. The new `bms_audit_log.action`
+`order.shipping_recalculated` has actor `system:shipping-recalculation`, order id as target,
+and `{ shippingFee, source }` metadata, committed in the same tenant transaction as the fee.
+No new table, permission, migration, or external carrier command is introduced.

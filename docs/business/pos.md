@@ -2496,6 +2496,11 @@ crosses the route and will not catch it.
 
 # Restaurant chat and online orders
 
+Customer chat first creates a request for staff review (`REQUEST_RECEIVED`), without reserving
+stock or requesting payment. Staff review/contact the customer and confirm the agreed quantities
+through `restaurantRequests.ts`; only that confirmation creates the order and signed checkout.
+The paid-order acceptance below is a later step that creates kitchen work.
+
 Restaurant chat orders carry an explicit active branch, `DELIVERY`/`PICKUP`, and an optional promised
 time. Paid orders appear in the **ออร์เดอร์เข้า** tab at `/pos`; staff must accept an order before its
 kitchen tickets are created. The tab is scoped to the POS device's branch. Managers see the same
@@ -2506,6 +2511,14 @@ These branch, fulfilment, acceptance and kitchen-queue rules apply only to
 `business_archetype = 'restaurant'`. A cafe configured as `food_beverage` still supports AI chat and
 ordinary online ordering—including catalog-backed modifier codes—but keeps the retail order flow and
 does not silently inherit restaurant hours, branch selection, or kitchen acceptance.
+
+Signed checkout derives pickup eligibility from the persisted order's `fulfillment_type`.
+PICKUP requires the recipient name and phone, but neither an address nor a shipping fee;
+customer-profile shipping recalculation excludes PICKUP and POS orders. The checkout displays
+the verified branch and hides saved delivery addresses. Staff explicitly confirm **handover at
+the shop** after checking the recipient; the existing locked PACKING -> SHIPPED stock transaction
+is reused without creating a carrier shipment. Payment alone never means food is ready.
+See [restaurant/cafe readiness](restaurant-cafe-readiness.md) for the tested scope and launch limits.
 
 Staff can cancel individual incoming-order lines from the same POS tab. The server infers
 merchant-caused cancellation when that branch has marked the menu sold out, otherwise the operator

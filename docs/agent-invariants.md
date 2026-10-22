@@ -287,6 +287,12 @@ Invariants to preserve when touching `lib/bms/checkout.ts`, `lib/bms/checkoutTok
   delivery + payment in Seller Center.
 - Delivery edits reuse `saveCustomerCheckoutDetails()`, so omitted fields are preserved rather than
   cleared, and customer actions are audited as `customer:checkout`.
+- Only the persisted order's `fulfillment_type = 'PICKUP'` waives the shipping address;
+  recipient name and phone remain required. Hide saved addresses on pickup checkout. PICKUP/POS
+  are excluded from customer-profile shipping recalculation. Other recalculations quote outside
+  the transaction, then lock the order and recheck payment/quote inputs before committing the fee
+  and `order.shipping_recalculated` audit together. Pickup handover reuses the locked stock
+  transition, without a carrier shipment; payment is never evidence that food is ready.
 
 ## Carrier booking and tracking sync
 

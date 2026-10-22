@@ -89,12 +89,15 @@ export default function CheckoutClient({
   const [paymentBusy, setPaymentBusy] = useState(false);
   const [error, setError] = useState("");
   const [slipName, setSlipName] = useState("");
+  const pickup = checkout.fulfillment.type === "PICKUP";
+  const packingLabel = pickup ? t("checkout.pickup_accepted") : t("checkout.timeline_packing");
+  const shippedLabel = pickup ? t("checkout.pickup_handed_over") : t("checkout.timeline_shipped");
 
   const statusLabels: Record<string, string> = {
     PENDING: t("checkout.status_pending"),
     PAID: t("checkout.status_paid"),
-    PACKING: t("checkout.timeline_packing"),
-    SHIPPED: t("checkout.timeline_shipped"),
+    PACKING: packingLabel,
+    SHIPPED: shippedLabel,
     COMPLETED: t("checkout.timeline_completed"),
     CANCELLED: t("checkout.status_cancelled"),
     RETURNED: t("checkout.status_returned"),
@@ -309,7 +312,7 @@ export default function CheckoutClient({
           <div className={styles.sectionHeading}>
             <div>
               <span className={styles.step}>02</span>
-              <h2>{t("checkout.delivery_step_label")}</h2>
+              <h2>{pickup ? t("checkout.pickup_step_label") : t("checkout.delivery_step_label")}</h2>
             </div>
             {delivery.complete && !delivery.marketplaceManaged && (
               <span className={styles.readyText}>{t("checkout.ready_text")}</span>
@@ -323,6 +326,10 @@ export default function CheckoutClient({
             </div>
           ) : (
             <>
+              {pickup && <div className={styles.notice}>
+                <strong>{t("checkout.pickup_notice")}</strong>
+                {checkout.fulfillment.locationName && <p>{t("checkout.pickup_branch")}: {checkout.fulfillment.locationName}</p>}
+              </div>}
               {delivery.complete && !editingDelivery ? (
                 <div className={styles.savedDelivery}>
                   <div className={styles.savedBanner}>
@@ -335,16 +342,16 @@ export default function CheckoutClient({
                   <dl>
                     <div><dt>{t("checkout.recipient_name")}</dt><dd>{delivery.recipientName}</dd></div>
                     <div><dt>{t("checkout.phone_short")}</dt><dd>{delivery.phone}</dd></div>
-                    <div>
+                    {!pickup && <div>
                       <dt>{t("checkout.address")}</dt>
                       <dd>
                         {delivery.selectedAddress?.label && <b>{delivery.selectedAddress.label}</b>}
                         {delivery.selectedAddress?.address}
                       </dd>
-                    </div>
+                    </div>}
                   </dl>
 
-                  {delivery.addresses.length > 1 && (
+                  {!pickup && delivery.addresses.length > 1 && (
                     <div className={styles.addressChooser}>
                       <p>{t("checkout.change_saved_address")}</p>
                       {delivery.addresses.map((address) => (
@@ -401,7 +408,7 @@ export default function CheckoutClient({
                         required={!delivery.recipientName}
                         minLength={2}
                         maxLength={120}
-                        placeholder={t("checkout.recipient_name_placeholder")}
+                        placeholder={pickup ? t("checkout.recipient_name") : t("checkout.recipient_name_placeholder")}
                       />
                     </label>
                   )}
@@ -417,7 +424,7 @@ export default function CheckoutClient({
                       />
                     </label>
                   )}
-                  {(editingDelivery || delivery.missingFields.includes("shippingAddress")) && (
+                  {!pickup && (editingDelivery || delivery.missingFields.includes("shippingAddress")) && (
                     <>
                       <label>
                         <span>{t("checkout.address_label_field")} <small>{t("checkout.optional")}</small></span>
@@ -456,7 +463,7 @@ export default function CheckoutClient({
                       className={styles.primaryButton}
                       disabled={deliveryBusy}
                     >
-                      {deliveryBusy ? t("checkout.saving") : t("checkout.save_delivery")}
+                      {deliveryBusy ? t("checkout.saving") : pickup ? t("checkout.save_pickup") : t("checkout.save_delivery")}
                     </button>
                   </div>
                 </form>
@@ -495,7 +502,7 @@ export default function CheckoutClient({
             <div className={styles.successState}>
               <span>✓</span>
               <h3>{t("checkout.paid_title")}</h3>
-              <p>{t("checkout.paid_body")}</p>
+              <p>{pickup ? t("checkout.pickup_paid_body") : t("checkout.paid_body")}</p>
             </div>
           ) : paymentPending ? (
             <div className={styles.pendingState}>
@@ -517,8 +524,8 @@ export default function CheckoutClient({
           ) : !delivery.complete ? (
             <div className={styles.lockedPayment}>
               <span aria-hidden="true">🔒</span>
-              <h3>{t("checkout.fill_delivery_first_title")}</h3>
-              <p>{t("checkout.fill_delivery_first_body")}</p>
+              <h3>{pickup ? t("checkout.fill_pickup_first_title") : t("checkout.fill_delivery_first_title")}</h3>
+              <p>{pickup ? t("checkout.fill_pickup_first_body") : t("checkout.fill_delivery_first_body")}</p>
             </div>
           ) : (
             <form id="bms-payment-form" className={styles.paymentForm} onSubmit={submitPayment}>
@@ -585,8 +592,8 @@ export default function CheckoutClient({
             {[
               [t("checkout.timeline_created"), 0],
               [t("checkout.timeline_confirmed"), 1],
-              [t("checkout.timeline_packing"), 2],
-              [t("checkout.timeline_shipped"), 3],
+              [packingLabel, 2],
+              [shippedLabel, 3],
               [t("checkout.timeline_completed"), 4],
             ].map(([label, index]) => {
               const stepIndex = Number(index);
@@ -606,7 +613,7 @@ export default function CheckoutClient({
               );
             })}
           </ol>
-          {checkout.fulfillment.trackingNo && (
+          {!pickup && checkout.fulfillment.trackingNo && (
             <div className={styles.trackingNumber}>
               <span>{t("checkout.tracking_number")}</span>
               <strong>{checkout.fulfillment.trackingNo}</strong>

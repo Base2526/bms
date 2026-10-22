@@ -406,8 +406,8 @@ const ARCHETYPE_EXAMPLES_TH: ArchetypeExample[] = [
     customerAsk: "พิซซ่าฮาวายเอียนถาดกลางวันนี้มีไหม เพิ่มชีสได้หรือเปล่า",
     aiReply:
       "ได้ค่ะ เดี๋ยวเช็กเมนูที่เปิดขายอยู่ก่อน ถ้ามีจะสรุปรายการและยอดให้ทันที แต่คำตอบต้องอิงสินค้าที่มีจริงใน catalog และไม่ควรสัญญาความสามารถ POS เฉพาะทางที่ระบบยังไม่รองรับ",
-    backendFlow: "browse เมนูที่ active -> เช็ก stock/availability -> สร้างออเดอร์ -> รับชำระ -> ส่งหรือรับเอง",
-    whyItFits: "ใช้ demo การสั่งเร็วในแชตได้ดี แต่คู่มือต้องย้ำว่าเป็น chat-commerce ไม่ใช่ร้านอาหาร POS เต็มรูปแบบ",
+    backendFlow: "Food & Beverage ใช้ออเดอร์สินค้าปกติ; ถ้าต้องใช้โต๊ะ รอบสั่ง QR และ KDS ให้ตั้งร้านเป็น Restaurant ตั้งแต่เริ่ม",
+    whyItFits: "Restaurant รองรับ DELIVERY/PICKUP ตามสาขา: รับเองใช้ชื่อและเบอร์โทร ไม่ต้องมีที่อยู่หรือค่าส่ง ชำระแล้วต้องรอพนักงานรับออเดอร์ ก่อนส่งมอบให้ตรวจผู้รับและกดส่งมอบที่ร้าน การชำระเงินไม่แปลว่าอาหารพร้อม",
   },
   {
     label: "Gadgets & Accessories",
@@ -1663,9 +1663,9 @@ const ARCHETYPE_EXAMPLES_EN: ArchetypeExample[] = [
     customerAsk: "Do you have the medium Hawaiian pizza today? Can I add extra cheese?",
     aiReply:
       "Of course. Let me check the menu items currently on sale first. If it is available I'll summarise the order and the total right away — but every answer has to come from products that really exist in the catalog, and we should not promise specialised POS features the system does not support.",
-    backendFlow: "browse active menu items -> check stock/availability -> create order -> take payment -> deliver or pickup",
+    backendFlow: "Food & Beverage uses ordinary product orders; choose Restaurant during setup for tables, rounds, table QR and KDS.",
     whyItFits:
-      "Great for demoing fast in-chat ordering, but the manual must stress that this is chat commerce, not a full restaurant POS.",
+      "Restaurant supports branch-specific DELIVERY/PICKUP. Pickup needs a name and phone, without an address or shipping fee. Staff accept the paid order, then verify the recipient and confirm handover at the shop. Payment does not mean food is ready.",
   },
   {
     label: "Gadgets & Accessories",
