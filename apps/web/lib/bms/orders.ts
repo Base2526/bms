@@ -450,6 +450,7 @@ export async function recalculateOrderShipping(
     `SELECT o.id, o.total_amount, o.preferred_carrier
        FROM bms_orders o
       WHERE o.tenant_id = $1 AND o.customer_id = $2 AND o.status = 'PENDING'
+        AND o.fulfillment_type IS DISTINCT FROM 'PICKUP' AND o.channel <> 'pos'
         AND NOT EXISTS (
           SELECT 1 FROM bms_payments p
            WHERE p.tenant_id = o.tenant_id AND p.order_id = o.id
@@ -461,17 +462,16 @@ export async function recalculateOrderShipping(
 
   let updated = 0;
   for (const row of open.rows) {
-    const itemsRes = await query<{ product_sku: string; qty: number }>(
-      `SELECT product_sku, qty FROM bms_order_items WHERE tenant_id = $1 AND order_id = $2`,
-      [tenantId, row.id]
-    );
+    const itemSql = `SELECT product_sku, qty FROM bms_order_items
+      WHERE tenant_id = $1 AND order_id = $2 ORDER BY id`;
+    const addressSql = `SELECT province, province_code, address FROM bms_customer_addresses
+      WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
+      ORDER BY is_default DESC, id LIMIT 1`;
+    const itemsRes = await query<{ product_sku: string; qty: number }>(itemSql, [tenantId, row.id]);
     const addr = await query<{ province: string | null; province_code: string | null; address: string }>(
-      `SELECT province, province_code, address FROM bms_customer_addresses
-        WHERE tenant_id = $1 AND customer_id = $2 AND address_type = 'shipping'
-        ORDER BY is_default DESC, id LIMIT 1`,
-      [tenantId, customerId]
+      addressSql, [tenantId, customerId]
     );
-
+    // A carrier quote may do network I/O. Never hold an order lock while waiting for it.
     const quote = await quoteShipping({
       tenantId,
       subtotal: Number(row.total_amount),
@@ -481,14 +481,55 @@ export async function recalculateOrderShipping(
       items: itemsRes.rows.map((r) => ({ sku: r.product_sku, qty: Number(r.qty) })),
       carrier: row.preferred_carrier,
     });
-
-    const res = await query(
-      `UPDATE bms_orders SET shipping_fee = $3, shipping_fee_source = $4, updated_at = now()
-        WHERE tenant_id = $1 AND id = $2
-          AND (shipping_fee IS DISTINCT FROM $3::numeric OR shipping_fee_source IS DISTINCT FROM $4)`,
-      [tenantId, row.id, quote.fee ?? 0, quote.source]
-    );
-    updated += res.rowCount ?? 0;
+    const client = await getClient();
+    try {
+      await beginTenantTx(client, tenantId);
+      // Payment submission locks this same row. Recheck payment in a fresh statement AFTER
+      // acquiring it, so a slip submitted while the initial candidate list was read wins.
+      const locked = await client.query<{ total_amount: string; preferred_carrier: string | null }>(
+        `SELECT total_amount, preferred_carrier FROM bms_orders
+          WHERE tenant_id = $1 AND id = $2 AND customer_id = $3 AND status = 'PENDING'
+            AND fulfillment_type IS DISTINCT FROM 'PICKUP' AND channel <> 'pos'
+          FOR UPDATE`,
+        [tenantId, row.id, customerId]
+      );
+      if (!locked.rowCount) { await client.query("ROLLBACK"); continue; }
+      const payment = await client.query(
+        `SELECT 1 FROM bms_payments WHERE tenant_id = $1 AND order_id = $2
+          AND status IN ('PENDING','CONFIRMED') LIMIT 1`,
+        [tenantId, row.id]
+      );
+      if (payment.rowCount) { await client.query("ROLLBACK"); continue; }
+      const currentItems = await client.query(itemSql, [tenantId, row.id]);
+      const currentAddress = await client.query(addressSql, [tenantId, customerId]);
+      if (Number(locked.rows[0].total_amount) !== Number(row.total_amount)
+          || locked.rows[0].preferred_carrier !== row.preferred_carrier
+          || JSON.stringify(currentItems.rows) !== JSON.stringify(itemsRes.rows)
+          || JSON.stringify(currentAddress.rows) !== JSON.stringify(addr.rows)) {
+        await client.query("ROLLBACK");
+        continue;
+      }
+      const res = await client.query(
+        `UPDATE bms_orders SET shipping_fee = $3, shipping_fee_source = $4, updated_at = now()
+          WHERE tenant_id = $1 AND id = $2
+            AND (shipping_fee IS DISTINCT FROM $3::numeric OR shipping_fee_source IS DISTINCT FROM $4)`,
+        [tenantId, row.id, quote.fee ?? 0, quote.source]
+      );
+      if (res.rowCount) {
+        await client.query(
+          `INSERT INTO bms_audit_log (tenant_id, actor, action, target, meta)
+           VALUES ($1, 'system:shipping-recalculation', 'order.shipping_recalculated', $2, $3::jsonb)`,
+          [tenantId, row.id, JSON.stringify({ shippingFee: quote.fee ?? 0, source: quote.source })]
+        );
+      }
+      await client.query("COMMIT");
+      updated += res.rowCount ?? 0;
+    } catch (error) {
+      try { await client.query("ROLLBACK"); } catch {}
+      throw error;
+    } finally {
+      client.release();
+    }
   }
   return { updated };
 }
@@ -1944,15 +1985,17 @@ export async function shipOrderInTx(
   orderId: string,
   actor = "system",
 ): Promise<boolean> {
-  const info = await client.query<{ channel: string; customer_id: string | null }>(
-      `SELECT channel, customer_id FROM bms_orders WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING'`,
+  const info = await client.query<{ channel: string; customer_id: string | null; fulfillment_type: string | null }>(
+      `SELECT channel, customer_id, fulfillment_type FROM bms_orders
+        WHERE tenant_id = $1 AND id = $2 AND status = 'PACKING' FOR UPDATE`,
       [tenantId, orderId]
     );
   if (info.rowCount === 0) return false;
 
   // ช่องทางที่ร้านต้องเก็บที่อยู่เอง (ไม่ใช่มาร์เก็ตเพลส) ต้องมีที่อยู่จัดส่งของลูกค้าก่อนถึงจัดส่งได้จริง
-  const { channel, customer_id } = info.rows[0];
-  if (!MARKETPLACE_CHANNELS.has(channel)) {
+  const { channel, customer_id, fulfillment_type } = info.rows[0];
+  // PICKUP uses the same stock handover transaction, without a delivery address.
+  if (fulfillment_type !== "PICKUP" && !MARKETPLACE_CHANNELS.has(channel)) {
     const addr = customer_id
       ? await client.query(
           `SELECT 1 FROM bms_customer_addresses

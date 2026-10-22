@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as crypto from "node:crypto";
 import * as bodyReader from "../apps/web/lib/bms/retailLocalRequestBody.ts";
+import { checkoutFixture } from "./testing/restaurantCheckoutHarness.mts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
@@ -20,7 +21,7 @@ function load(file: string, dependencies: Record<string, unknown>) {
   return exports;
 }
 
-function harness(options: { blocked?: "ip" | "token"; invalidToken?: boolean } = {}) {
+function harness(options: { blocked?: "ip" | "token"; invalidToken?: boolean; checkout?: unknown } = {}) {
   const calls: string[] = [];
   const keys: string[] = [];
   const next = { NextResponse: { json: (body: unknown, init?: ResponseInit) => Response.json(body, init) } };
@@ -49,7 +50,7 @@ function harness(options: { blocked?: "ip" | "token"; invalidToken?: boolean } =
       getCheckoutByToken: async (token: string) => {
         calls.push(`read:${token}`);
         return options.invalidToken ? { ok: false, reason: "invalid" }
-          : { ok: true, payload: { tenantId: "server-tenant" }, checkout };
+          : { ok: true, payload: { tenantId: "server-tenant" }, checkout: options.checkout ?? checkout };
       },
       saveCheckoutDeliveryByToken: async (token: string, input: Record<string, unknown>) => {
         calls.push("save");
@@ -81,6 +82,25 @@ const url = "http://localhost/api/bms/checkout?t=signed-link";
 const request = (body: BodyInit, headers: Record<string, string> = {}) => new Request(url, {
   method: "PATCH", body, headers, duplex: "half",
 } as RequestInit);
+
+test("rate-limited payment route preserves service-derived pickup and delivery contact rules", async () => {
+  for (const [type, missing, expected] of [
+    ["PICKUP", ["shippingAddress"], "กรุณาแนบรูปสลิป"],
+    ["PICKUP", ["phone", "shippingAddress"], "กรุณากรอกชื่อและเบอร์โทรผู้รับที่ยังขาดก่อน"],
+    ["DELIVERY", ["shippingAddress"], "กรุณากรอกข้อมูลจัดส่งที่ยังขาดก่อน"],
+  ] as const) {
+    const fixture = checkoutFixture({ type, missing: [...missing] });
+    const result = await fixture.service.getCheckoutByToken("signed-link");
+    const h = harness({ checkout: result.checkout });
+    const form = new FormData();
+    form.set("token", "signed-link");
+    form.set("method", "BANK_TRANSFER");
+    const response = await h.POST(new Request(url, { method: "POST", body: form }));
+    assert.equal(response.status, 400);
+    assert.equal((await response.json()).error, expected);
+    assert.deepEqual(h.calls, ["limit:10:60000", "limit:10:60000", "read:signed-link"]);
+  }
+});
 
 test("all public checkout handlers reject over-limit sources before body parsing, DB or uploads", async () => {
   for (const method of ["GET", "PATCH", "POST"]) {

@@ -102,6 +102,8 @@ limiter กลางยังมี fallback ต่อ instance เมื่อ 
 
 ## ผลตรวจในรอบนี้
 
+ผลด้านล่างเป็นรอบค้าปลีกก่อนรวม; ดูผลล่าสุดในหัวข้อท้ายเอกสาร
+
 - ชุดใหม่ `node scripts/run-contract-tests.mjs pure checkout-public-boundary`: **ผ่าน 9/9**
 - `npm run gate`: **ผ่าน (exit 0)** — TypeScript, pure 258 ไฟล์ (3,001 ผ่าน / 2 skipped /
   0 failed; รวมชุดใหม่ 9 กรณี), production build สร้างเสร็จ
@@ -124,3 +126,19 @@ limiter กลางยังมี fallback ต่อ instance เมื่อ 
 ต่อท้ายรายละเอียดช่องทาง แพ็กเกจ และอุปกรณ์ที่ร้านตั้งค่าและทดสอบแล้ว
 ไม่อ้างยอดขายเพิ่ม/ลดต้นทุนเป็นเปอร์เซ็นต์โดยไม่มีผลวัด และไม่ใช้คำว่า
 “ทุกช่องทางอัตโนมัติ”, “รับเงินอัตโนมัติ”, “ครบทุกระบบออฟไลน์” หรือ “เว็บอีคอมเมิร์ซครบวงจร”
+
+## ผลตรวจหลังรวมงานร้านอาหาร
+
+วันที่ 22 ตุลาคม 2026 รวม `codex/restaurant-cafe-readiness` เข้ากับ
+`codex/retail-online-readiness`: checkout ใช้ rate limits และขนาด request ที่จำกัด
+ร่วมกับ flow PICKUP และยังปฏิเสธการชำระเมื่อสถานะออเดอร์เปลี่ยนระหว่างทำงาน
+
+- TypeScript และ pure suites 259 ไฟล์: **3,010 ผ่าน / 2 skipped / 0 failed**
+  รวม API regression ที่นำ checkout service จริงมาทดสอบกฎ pickup/contact ภายใต้ rate limiter
+- `npm run gate` รวม production build: **ผ่าน (exit 0)** หลังรวมทั้งสองงาน
+- PostgreSQL contract หลังรวม: **7/7 ผ่าน** บน disposable localhost:5547
+  ใช้ synthetic schema/RLS และ production order service; carrier/movement writer เป็นตัวแทนทดสอบ
+  ไม่ใช่การรับรอง migrations/realtime/valuation ทั้งระบบ และปิด container หลังทดสอบแล้ว
+- Browser evidence ใช้ผล desktop/mobile ของแต่ละงานข้างต้นและ
+  [รายงานร้านอาหาร](restaurant-cafe-readiness.md#หลักฐานการตรวจ);
+  การรวมนี้ไม่มีการเปลี่ยน layout เพิ่ม และยังไม่ได้ทำ live-provider/hardware E2E

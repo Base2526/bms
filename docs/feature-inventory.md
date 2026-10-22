@@ -2,6 +2,8 @@
 
 > ผลตรวจเฉพาะร้านค้าปลีกหน้าร้าน + ออนไลน์วันที่ 22 ต.ค. 2026:
 > [ขอบเขตจริง ช่องว่าง และหลักฐานทดสอบก่อน marketing](business/retail-omnichannel-readiness.md)
+> ผลตรวจร้านอาหาร/คาเฟ่และ flow รับเอง:
+> [ฟีเจอร์ ข้อจำกัด และการเลือกประเภทร้าน](business/restaurant-cafe-readiness.md)
 > ตัวเลขรวมด้านล่างยังเป็น snapshot ตามวันที่เดิม ไม่ใช่การนับใหม่ทั้งระบบ
 
 > ปรับปรุง **13 ต.ค. 2026** (ครอบ migration ถึง `10.59`) · สเปกรายโดเมนอยู่ใน [business/](business/) · สถาปัตยกรรม [architecture/system.md](architecture/system.md)
