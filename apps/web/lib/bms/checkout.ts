@@ -448,7 +448,8 @@ export async function submitCheckoutPaymentByToken(
   });
   if (
     result.status === "ORDER_NOT_FOUND" ||
-    result.status === "BAD_METHOD"
+    result.status === "BAD_METHOD" ||
+    result.status === "INVALID_ORDER_STATE"
   ) {
     return { ok: false, reason: "บันทึกการแจ้งชำระไม่สำเร็จ" };
   }

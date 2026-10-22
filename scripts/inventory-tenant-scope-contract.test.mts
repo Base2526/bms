@@ -141,6 +141,8 @@ const ROUTE_GUARDS = [
  * เปิดสาธารณะโดยตั้งใจ — ต้องมีเหตุผลเขียนไว้ และต้องมีเพดานการใช้
  */
 const PUBLIC_BY_DESIGN = new Map([
+  ["app/api/bms/checkout/route.ts", "Signed checkout token; IP/token rate limits before order reads or delivery edits"],
+  ["app/api/bms/checkout/payment/route.ts", "Signed checkout token; IP/token rate limits before slip processing"],
   ["app/api/bms/tax-invoice-request/route.ts", "Cloud receipt-only capability for submission; independent private tracking secret; bounded body and IP/token rate limits"],
   ["app/api/bms/web/webhook/[tenantId]/route.ts", "วิดเจ็ตแชทบนเว็บของร้าน — ฝั่ง client ไม่มีความลับให้เซ็น"],
   ["app/api/bms/demo-chat/route.ts", "เดโมหน้าขายของ — ใครก็ลองได้โดยตั้งใจ"],
@@ -169,7 +171,7 @@ test("every /api/bms route is guarded, or public by design with a rate limit", (
     const reason = PUBLIC_BY_DESIGN.get(rel);
     if (reason) {
       // เปิดสาธารณะได้ แต่ต้องมีเพดาน ไม่งั้นเป็นช่องเผาเงินค่าโมเดล
-      if (!/rateLimit\(|require(?:RestaurantQr|BoardGameGuest)RateLimit\(/.test(src)) unlimited.push(rel);
+      if (!/rateLimit\(|require(?:RestaurantQr|BoardGameGuest|Checkout)RateLimit\(/.test(src)) unlimited.push(rel);
       continue;
     }
     if (!ROUTE_GUARDS.some((guard) => src.includes(guard))) unguarded.push(rel);
