@@ -180,6 +180,86 @@ export function buildProfitReportDoc(data: {
   };
 }
 
+export function buildBoardGameAnalyticsReportDoc(
+  report: Awaited<ReturnType<typeof import("./boardGameAnalytics").getBoardGameAnalytics>>,
+): ReportDoc {
+  const totals = report.totals;
+  return {
+    title: "Board-game Profit & Table Utilization",
+    subtitle: `${report.range.from} – ${report.range.to} (${report.timezone})`,
+    meta: [
+      { label: "Complete", value: report.complete ? "Yes" : "No" },
+      { label: "Table utilization", value: totals.utilizationPct == null ? "Unavailable" : `${totals.utilizationPct.toFixed(2)}%` },
+      { label: "Revenue per available table-hour", value: totals.revPATH ?? "Unavailable" },
+      { label: "Net play revenue", value: totals.netPlay },
+      { label: "Product revenue", value: totals.tabRevenue },
+      { label: "Product gross profit", value: totals.tabGrossProfit ?? "Unavailable" },
+      { label: "Basis", value: "Current floor capacity; effective hours; open intervals stop at observation. Money allocated over full visit paths before area filtering. Queue/pass/library are branch-wide. Global passes only in all-branch reports. Not net profit." },
+      { label: "Data issues", value: report.issues.map((issue) => `${issue.code} (${issue.count})`).join(", ") || "None" },
+    ],
+    sheets: [
+      {
+        name: "Summary",
+        columns: [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }],
+        rows: [
+          ["availableTableHours", totals.availableTableHours], ["occupiedTableHours", totals.occupiedTableHours],
+          ["utilizationPct", totals.utilizationPct], ["seatUtilizationPct", totals.seatUtilizationPct],
+          ["sessions", totals.sessions], ["paidSessions", totals.paidSessions], ["cancelledSessions", totals.cancelledSessions],
+          ["guests", totals.guests], ["avgPlayMinutes", totals.avgPlayMinutes], ["turnoverPerTablePerDay", totals.turnoverPerTablePerDay],
+          ["grossPlay", totals.grossPlay], ["offerDiscount", totals.offerDiscount], ["passCoverage", totals.passCoverage],
+          ["netPlay", totals.netPlay], ["tabRevenue", totals.tabRevenue], ["tabCost", totals.tabCost],
+          ["tabRevenueExVat", totals.tabRevenueExVat],
+          ["playReturns", totals.playReturns], ["libraryPurchaseCost", report.library.purchaseCostTotal],
+          ["tabGrossProfit", totals.tabGrossProfit], ["passSalesRevenue", totals.passSalesRevenue],
+          ["passMinutesUsed", totals.passMinutesUsed], ["revPATH", totals.revPATH],
+          ["waitlistEntries", totals.waitlist.entries], ["avgWaitMinutes", totals.waitlist.avgWaitMinutes],
+          ["noShowRatePct", totals.waitlist.noShowRatePct], ["depositsForfeited", totals.depositsForfeited],
+        ].map(([metric, value]) => ({ metric, value })),
+      },
+      {
+        name: "By table",
+        columns: [
+          { key: "locationName", label: "Branch" }, { key: "areaName", label: "Area" },
+          { key: "code", label: "Table code" }, { key: "name", label: "Table" }, { key: "seats", label: "Seats" },
+          { key: "availableTableHours", label: "Available hours", numberFormat: "0.00" },
+          { key: "occupiedTableHours", label: "Occupied hours", numberFormat: "0.00" },
+          { key: "utilizationPct", label: "Utilization %", numberFormat: "0.00" },
+          { key: "revenue", label: "Revenue", numberFormat: "#,##0.00" }, { key: "revPATH", label: "RevPATH", numberFormat: "#,##0.00" },
+          { key: "netPlay", label: "Net play", numberFormat: "#,##0.00" }, { key: "tabRevenue", label: "Product revenue", numberFormat: "#,##0.00" },
+          { key: "tabCost", label: "Product cost", numberFormat: "#,##0.00" }, { key: "tabGrossProfit", label: "Product gross profit", numberFormat: "#,##0.00" },
+        ],
+        rows: report.byTable,
+      },
+      {
+        name: "By area",
+        columns: [
+          { key: "name", label: "Area" }, { key: "availableTableHours", label: "Available hours" },
+          { key: "occupiedTableHours", label: "Occupied hours" }, { key: "utilizationPct", label: "Utilization %" },
+          { key: "revenue", label: "Revenue" }, { key: "revPATH", label: "RevPATH" },
+        ], rows: report.byArea,
+      },
+      {
+        name: "Weekday-hour heatmap",
+        columns: [
+          { key: "weekday", label: "Weekday (0=Sun)" }, { key: "hour", label: "Hour" },
+          { key: "availableTableHours", label: "Available hours" }, { key: "occupiedTableHours", label: "Occupied hours" },
+          { key: "utilizationPct", label: "Utilization %" }, { key: "revenue", label: "Revenue" },
+        ], rows: report.heatmap,
+      },
+      {
+        name: "Offers",
+        columns: [{ key: "name", label: "Offer" }, { key: "uses", label: "Uses" }, { key: "discount", label: "Discount" }],
+        rows: report.topOffers,
+      },
+      {
+        name: "Games played",
+        columns: [{ key: "name", label: "Title" }, { key: "plays", label: "Plays" }, { key: "minutes", label: "Minutes" }],
+        rows: report.library.titlesPlayed,
+      },
+    ],
+  };
+}
+
 type ManagementReport = Awaited<ReturnType<typeof import("./reports").getManagementReport>>;
 
 function summarySheet(rows: Array<{ metric: string; value: string | number }>): ReportSheet {

@@ -21,6 +21,7 @@ import {
 } from "@/lib/bms/pharmacy/testHarness";
 import { createPharmacyLabOrder } from "@/lib/bms/pharmacy/labCheckout";
 import { clarifyAmbiguousStaffRequest } from "@/lib/bms/staffAssistantClarification";
+import { boardGameUnsupportedOwnerReply, BOARD_GAME_OWNER_LIMITS } from "@/lib/bms/boardGameOwnerPolicy";
 import {
   formatLoyaltyRedemptionReply,
   isLoyaltyRedemptionCalculationRequest,
@@ -38,6 +39,8 @@ import {
 import { isPlatformAdmin } from "@/lib/bms/platform";
 
 const STAFF_SYSTEM = [
+  BOARD_GAME_OWNER_LIMITS,
+  "รายงานบอร์ดเกมเพิ่มเติม: get_board_game_report view=SUMMARY สำหรับสรุปรอบ/ผู้เข้าร่วม/คิว/แพ็กเกจ, HEATMAP สำหรับการใช้โต๊ะแยกวันในสัปดาห์/ชั่วโมง ไม่ใช่จำนวนคนหรือพยากรณ์, OFFERS สำหรับยอดใช้โปร, PROFIT สำหรับกำไรขั้นต้นสินค้าเมื่อมีสิทธิ์; ข้อมูลขณะนี้ใช้ get_board_game_live_operations, สิทธิ์คงเหลือใช้ get_board_game_pass_balances, สถานะกล่อง/ไม่พบประวัติยืม/รายการยืมแบบแบ่งหน้าใช้ get_board_game_library_report ถ้าขอ Excel ให้ generate_report reportType=BOARD_GAME_ANALYTICS format=XLSX พร้อม dateFrom/dateTo/locationId/areaId ตามที่ผู้ใช้เลือก ห้ามขยายเป็นทุกสาขาเอง และห้ามใช้ยอดรวมของหน้ารายการที่ถูกตัดเป็นยอดรวมทั้งหมด",
   "คุณเป็นผู้ช่วย AI สำหรับแอดมินร้านค้า ตอบตามภาษาที่ผู้ใช้ถาม (ไทยหรืออังกฤษ) อย่างกระชับ ชัดเจน; ถ้าภาษากำกวมให้ใช้ภาษาไทย",
   "ใช้ 'ทูล' ที่ให้มาเพื่อดึงข้อมูลจริงและดำเนินการหลังบ้าน ห้ามเดา/แต่งตัวเลขเอง — อ้างอิงตัวเลขจากผลของทูลเท่านั้น",
   "งานที่กระทบเงิน/สต็อก/ลบข้อมูล (ยืนยันเงิน/ปฏิเสธ/คืนเงิน/ยกเลิกออร์เดอร์-PO-การจัดส่ง/ปรับสต็อก/ผสานลูกค้า)",
@@ -45,6 +48,7 @@ const STAFF_SYSTEM = [
   "ถ้าทูลคืน error หรือไม่พบข้อมูล ให้บอกตามจริงและเสนอขั้นตอนถัดไป",
   "ถ้าคำขอกำกวมจนขอบเขตข้อมูล ช่วงเวลา เป้าหมาย หรือการกระทำอาจเปลี่ยน ห้ามเดาหรือเลือกค่า default ให้ถามยืนยันสั้น ๆ ก่อนเรียกทูล โดยเฉพาะคำว่า 'ทั้งหมด' ต้องแยกทุกช่วงเวลาออกจากทุกรายการ และ 'รายการขาย' ต้องแยกสินค้าออกจากออร์เดอร์",
   "เมื่อผู้ใช้ยืนยันว่าต้องการยอดขายหรือสินค้าขายดีตั้งแต่เริ่มขาย/เปิดร้าน/ทุกช่วงเวลา ให้เรียกทูลด้วย scope='all_time' และไม่ส่ง from/to",
+  "เฉพาะรายงานร้านบอร์ดเกม: 'เกมไหนถูกเล่นมากสุด' ใช้ get_board_game_top_games (นับประวัติยืมเกม ไม่ใช่ get_top_products ซึ่งนับสินค้าขาย); 'ยอดขายแยกตามโต๊ะ' ใช้ get_board_game_table_revenue (ยอดปันตามประวัติใช้โต๊ะ ไม่ใช่เงินสดรับที่โต๊ะหรือกำไรสุทธิ) ใช้ list_board_game_report_branches ตรวจสาขาที่มีสิทธิ์และวันที่ปัจจุบันก่อน ห้ามเดา UUID; ถ้าขาดช่วงวันหรือสาขาให้ถามก่อน รายงานนี้จำกัด 92 วันและไม่มี all_time ต้องบอกข้อจำกัดข้อมูลและรายการที่ถูกตัดเสมอ",
   "เมื่อผู้ใช้ถามว่าระบบทำอะไรได้ ให้เรียก search_system_capabilities และแยกสถานะระบบออกจากการตั้งค่าจริงของร้านเสมอ",
   "เมื่อผู้ใช้ถามวิธีใช้หน้า เมนู หรือ workflow ให้เรียก search_system_guides และตอบเฉพาะขั้นตอนที่ทูลยืนยันได้ เป็นลำดับเลข 1, 2, 3 ที่ทำตามได้ พร้อมบอก route และสิทธิ์ที่ขาดถ้ามี",
   "เมื่อผู้ใช้ถามตรวจยอดกะ POS, เงินสดขาด/เกิน, X/Z report, กะล่าสุด, order/bill/ใบเสร็จหน้าร้านที่ทำให้ยอดต่าง ให้ใช้ analyze_pos_shift เพื่อดึงข้อมูลจริงจากระบบก่อนตอบ; ถ้าผลทูลบอกพบหลายกะ ให้แสดงตัวเลือกสั้น ๆ และถามว่าจะตรวจกะไหน",
@@ -283,6 +287,10 @@ async function executeStaffAssistant(input: WorkAssistantInput, ctx: any) {
   if (clarification) {
     return { reply: clarification, answerType: "CLARIFICATION", citations, links, proposals: [], trace: [] };
   }
+
+  const unsupportedBoardGame = boardGameUnsupportedOwnerReply(message, currentPath, locale,
+    (Array.isArray(input.history) ? input.history : []).filter(turn => turn?.role === "user" && typeof turn.text === "string").slice(-3).map(turn => String(turn.text).slice(0, 4000)));
+  if (unsupportedBoardGame) return { reply: unsupportedBoardGame, answerType: "CAPABILITY", citations: [], links: [], proposals: [], trace: [] };
 
   const history = Array.isArray(input.history) ? input.history : [];
   const priorTurns = history

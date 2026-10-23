@@ -3129,6 +3129,7 @@ export const typeDefs = /* GraphQL */ `
     dateFrom: String       # YYYY-MM-DD, ไม่ใช้กับ INVENTORY
     dateTo: String
     locationId: ID         # optional branch filter; tenant ownership is enforced server-side
+    areaId: ID             # BOARD_GAME_ANALYTICS only; validated against the selected branch
     format: String!        # XLSX / CSV / PDF
     includeSummary: Boolean
   }

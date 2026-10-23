@@ -287,14 +287,68 @@ The first operational release includes:
 17. Reservation completion: branch-local request time, bounded request expiry, immediate decision
     email, customer status polling, configurable deposits, private slip review, and deposit credit
     applied through the existing POS payment path.
+18. Profit/utilization analytics: effective-dated branch hours, historical physical-table occupancy,
+    play/tab contribution, RevPATH, queue/pass/library signals, and XLSX export.
 
 The public directory is `/board-game`. A branch stays private until a manager explicitly publishes
 it with valid coordinates. The public API exposes aggregate table availability only; it never returns
 table identifiers, active sessions, participants, or customer data.
 
-Advanced board-game profitability and utilization analytics remain a later phase. Stored-card renewal
-also remains unavailable until the platform has a verified payment-instrument provider contract;
+Stored-card renewal remains unavailable until the platform has a verified payment-instrument provider contract;
 `10.4` supports automatic renewal through customer-bound store credit only.
+
+### Profit and table utilization (`10.89`)
+
+The Analytics tab on `/admin/board-game` is a read-only management view. `report.view` opens it;
+editing effective-dated branch hours additionally requires `board_game.floor.manage`. Date inputs are
+inclusive **calendar dates in the validated store timezone**, limited to 92 days. An overnight opening
+window is split across those calendar dates. Public `opening_hours` prose remains customer-facing copy
+and is never used as a denominator.
+
+Utilization is `occupied table-minutes / available table-minutes`. Availability uses active,
+currently unblocked tables and structured hours in effect for each date. Occupancy is clipped to both
+the selected calendar range and those hours. `RevPATH` is recognized play + tab revenue divided by
+available table-hours. A configured closed day has a known zero denominator; missing structured hours
+stay unknown and add a visible issue. Seat utilization uses guest-minutes divided by available
+seat-minutes. Pass cash receipts and pass minutes consumed are shown separately: selling a pass does
+not become play revenue again when its minutes are used.
+
+Play money comes only from frozen paid billing-group snapshots. Tab revenue and returns reuse the
+shared sales-evidence scan and immutable `line_amount`; the report never reconstructs money from
+current prices. Actual product cost is shown only when the caller has the required cost/source access.
+Missing or unauthorized cost stays `null`/`—` with an issue, never zero, while the rest of the page
+continues to work. All money is accumulated as integer satang before formatting.
+`tabRevenue`/RevPATH use tax-inclusive receipts; `tabRevenueExVat` allocates VAT from frozen sale/return
+tax buckets and `tabGrossProfit` subtracts actual inventory cost from that ex-VAT amount. Missing VAT
+allocation keeps profit null even when cost is known; it never treats collected VAT as profit.
+
+Play charges are recognized by the paid group's close date; product sales/returns by their shared
+evidence event date. Returns of older visits remain included, and frozen returned merchandise and
+play extras are separated (`playReturns`), never both counted as product returns. Unallocated legacy
+returns/adjustments explicitly make the report incomplete. Table/area attribution distributes each
+amount over the full visit path before area filtering; weekday-hour revenue is this same derived
+visit-path allocation, not an hourly cashbook. Open visits and loans stop at database observation
+time; overlapping overnight opening windows are unioned per branch.
+
+Queue statistics are the cohort created in the range. Queue, pass and library observations remain
+branch-wide when an area is selected. Receipts for all-branch passes have no selling-branch evidence
+and appear only in all-branch reports, not once per branch. Library acquisition totals obey the same
+cost disclosure gate as product costs. XLSX uses the selected area as well as branch/date, and a
+changed filter hides the old results until refreshed. Fake-floor generation does not invent branch
+opening hours; configure those explicitly.
+
+`bms_board_game_table_occupancy` is written in the same tenant transaction as open, move, merge,
+detach, cancel, and final close so a later table move cannot rewrite history. Rows backfilled at
+migration time are explicitly approximate because pre-ledger moves cannot be reconstructed. Current
+`bms_board_game_session_table_occupancy` separately tracks which session used which table so merged
+sessions share physical utilization without sharing or duplicating revenue attribution. Current
+`active`/`blocked` table flags are not historical: a table now disabled or blocked is excluded from an
+older denominator. Holiday exceptions are represented by an effective-dated closed weekday row; no
+separate holiday calendar is inferred.
+
+This report intentionally excludes rent, payroll, utilities, depreciation and other fixed costs, and
+does not forecast demand or profit. Library purchase cost is an asset observation, not an expense or
+depreciation calculation. The screen refreshes on request/post-write and does not add a realtime event.
 
 ### Walk-in queue (`9.99`)
 
@@ -815,6 +869,61 @@ See [the detailed recheck](../ai/board-game-guards-recheck.md) for literal cases
 copy requiring human review and remaining booking-link decisions.
 
 ## Reuse Existing BMS
+
+Staff assistant analytics uses the same report service as the Analytics tab. With `report.view`,
+staff can ask “เกมไหนถูกเล่นมากสุด” (`get_board_game_top_games`) and “ยอดขายแยกตามโต๊ะ”
+(`get_board_game_table_revenue`). Supply dates (1–92 days) and branch; the assistant first discovers
+allowed branches/current report-local date with `list_board_game_report_branches`. Scoped staff
+cannot broaden to all branches. These read-only tools return no costs or customer identities and
+do not change POS, stock, payments, generic sales summaries or product rankings.
+
+Additional owner reads use `get_board_game_report` (SUMMARY / HEATMAP / OFFERS / PROFIT).
+They cover historical sessions/participant entries, utilization, revenue, created-in-period queue
+cohorts and no-shows, pass receipts/minutes and paged applied offers (rank by uses or discount;
+uses means discounted snapshot lines, not distinct visitors/bills). Existing UI/XLSX still shows
+the top 20 discounts. PROFIT is **product gross
+profit ex VAT**, gated by `report.view` + `product.view` + `tax.document.view`; it is not shop net
+profit. A date range is 1–92 days; missing data stays unknown and area filters do not narrow
+branch-wide queue/pass totals. Two periods can be compared descriptively, without claiming causes.
+Participant entries require actual participant/table overlap in the chosen area and stop at the
+database observation time. A player who left before a table move is not a visitor to the new area.
+Average queue wait measures walk-in creation/check-in-to-seating, using **checked_in_at** for
+reservations. Direct-seated reservations without recorded check-in have unknown wait, not zero
+or the time since booking; invalid/missing intervals are excluded and explicitly flagged.
+Heatmap money includes hours outside the configured opening schedule. Percentages without a
+capacity denominator remain null. Capacity still uses current table/seat configuration, not a
+historical table-state ledger; `CURRENT_CAPACITY_BASIS` exposes that limitation in every report.
+
+`get_board_game_live_operations` and `get_board_game_pass_balances` require the existing
+`board_game.session.manage` operational permission. They expose current floor/queue/reservations
+and pass balances/next-30-day expiry without guest identities, notes, bill amounts or writes.
+Reservations retain future dates; a request is not a confirmation and a historic average is not
+a promised wait. Shared passes repeat in branch reads: never sum them. Expiring balance is
+measured in **minutes**, separately from the paged expiring-contract list; unlimited minutes stay null.
+`expiringPassesIn30Days` counts the entire next-30-day contract cohort (including unlimited),
+independently of the current page. ACTIVE contracts may start later; this report is not a current
+redemption-eligibility decision. These are additive AI read fields; legacy pass operations are unchanged.
+
+`get_board_game_library_report` requires `board_game.library.view`: COPIES, ATTENTION, UNPLAYED
+(no recorded branch loan in retained history, not proof never physically played), and USAGE
+(paged loan rankings, including beyond 100 titles). Tables and operational/library lists support
+bounded paging; disclose partial pages and concurrent-change limitations. XLSX generation and
+email proposals accept branch/area filters; email still requires explicit confirmation.
+
+Still unsupported: net profit including overhead, individual-box ROI/payback/depreciation, causal
+promotion uplift, price elasticity, future visitors/staffing, recommended copy purchase quantities,
+session-based churn, and annual board-game reports. The assistant states these limitations rather
+than substituting generic product forecasts/profit/retention or inventing figures. Recognized
+unsupported board-game requests have a deterministic pre-model response; all other replies must
+still follow the approved-tool and evidence rules.
+The guard must not misclassify “ต้องเพิ่มเกมในคลังยังไง” (library setup) as a purchase recommendation.
+Explicit future-attendance and annual-report questions are covered, without blocking annual-package
+questions or report questions in unrelated shop contexts.
+
+“Most played” counts recorded loans overlapping the period, not distinct players or completed
+games. Table revenue is tax-inclusive attributed play/merchandise net of recorded returns, not
+cash received at that table or net profit. Opening-hour/backfill/truncation warnings remain visible;
+limited lists must not be described as exhaustive. Customer chat has no access to these reports.
 
 Reuse existing services for:
 

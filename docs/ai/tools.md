@@ -147,6 +147,10 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `get_store_info`, `get_payment_info`, `get_shipping_estimate`, `detect_language` | A1/helper | yes | — | read/deterministic |
 | `list_restaurant_order_locations`, `get_restaurant_availability`, `get_restaurant_reservation_status` | A1/restaurant | restaurant customers only | `product.view` / `order.view` | exact branch ids, current aggregate table/queue/kitchen facts, opt-in area/floor and capacity-grouped counts, and own request status; no guest/table/ticket identities and no promised wait time |
 | `list_low_stock`, `get_inventory_summary`, `get_sales_summary`, `get_top_products`, `get_dashboard`, `generate_report` | A1 | no | `report.view` | read / file export; dashboard results include the live-query fetch time, not a fabricated last-change time |
+| `list_board_game_report_branches`, `get_board_game_top_games`, `get_board_game_table_revenue` | A1 | no | `report.view` | staff-only board-game report reads; actor-scoped branches, bounded loan rankings and attributed table revenue; no costs or writes |
+| `get_board_game_report` | A1 | no | `report.view` | SUMMARY, HEATMAP, OFFERS; PROFIT additionally requires `product.view` AND `tax.document.view` and returns product gross profit, never shop net profit |
+| `get_board_game_live_operations`, `get_board_game_pass_balances` | A1 | no | `board_game.session.manage` | existing operational read permission; branch-scoped floor/queue/reservations and pass balances/expiry, no customer identity or mutations |
+| `get_board_game_library_report` | A1 | no | `board_game.library.view` | paged COPIES, ATTENTION, UNPLAYED and USAGE; no borrower, condition notes or purchase costs |
 | `analyze_pos_shift` | A1/POS | no | `pos.shift.report.all` | read-only shift/order/bill diagnostics from verified POS shift report + export ledgers; compares counted cash when supplied but never closes a shift or writes cash records |
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read; `customer_orders` returns 1–10 rows plus all-status `totalCount`, `successfulCount`, and bounded `nextOffset`/`truncated`, never an unbounded ledger; if provider prose is empty/token-truncated after this verified read, runtime shows a server-formatted page and “show next” guidance instead of `—` or a broken table |
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
@@ -1236,6 +1240,80 @@ Confidence
 - `get_board_game_rates` — customer-only for `board_game_cafe`; published hourly rates by
   participant type plus minimum, rounding and grace minutes. Offers, pass balances and final-bill
   quotes are not exposed. Requires a published branch with `publish_rates` enabled.
+- Staff analytics (not customer discovery): `list_board_game_report_branches` returns up to 100
+  branches allowed to the authenticated actor, a truncation flag, `allBranchesAllowed`, timezone
+  and backend `currentDate`. No contact data. Historical inactive branches remain selectable.
+  `get_board_game_top_games` and `get_board_game_table_revenue` require explicit `from`/`to`
+  (inclusive, 1–92 days), optionally a verified `locationId`, and integer `limit` 1–50 (defaults
+  10 titles / 50 tables). Only table revenue accepts a verified `areaId`, requiring `locationId`.
+  Missing/ambiguous dates or scope require clarification; no all-time default. Scoped staff
+  cannot read all branches, and every call rechecks `report.view` and the board-game archetype.
+  Both reuse `getBoardGameAnalytics()` with `includeCosts:false`, returning allowlisted fields
+  only. Top games means recorded loans overlapping the period, with duration clipped to the
+  period/observation time—not actual completed games, unique players, sales, or popularity forecasts.
+  Table revenue is tax-inclusive play plus merchandise net of recorded returns, attributed over
+  historical occupancy before area filtering; pass receipts and forfeited deposits are excluded.
+  Play is recognized at paid group close and merchandise/returns by evidence date. It is not a
+  table cashbook or net profit. Cost/acquisition/profit fields and customer identity are omitted.
+  `complete`/`sourceTruncated` describe source coverage, `outputTruncated` means the ranking/list
+  was shortened; never imply a shortened list is exhaustive. Loan coverage uses `LIBRARY_LIMIT`,
+  independent of missing financial/opening-hour data; table results preserve report quality warnings.
+  Normal runtime auditing/error/provider-failure handling applies; no direct model database access.
+  Generic `get_sales_summary` / `get_top_products` behavior is unchanged.
+- `get_board_game_report` — staff `report.view`; explicit dates (1–92 days), verified branch and
+  optional area. SUMMARY exposes sessions, participant entries (not unique visitors), average paid
+  visit duration, utilization, play/product revenue, pass receipts/minutes, and the queue cohort
+  **created** in the period (not only reservations). HEATMAP pages weekday/hour aggregates, not
+  future attendance. OFFERS pages all applied offers aggregated from the bounded report source,
+  ordered by `rankBy: USES` or `DISCOUNT` (default). Uses counts discounted snapshot lines, not
+  distinct customers/bills. This is not a full offer catalog or causal lift; source quality warnings
+  still apply. Existing UI/XLSX keeps its top-20 discount ranking. PROFIT rechecks both
+  `product.view` and `tax.document.view` before reading costs;
+  returns merchandise ex-VAT revenue, recorded cost and gross profit, preserving unknowns.
+  Pass/queue/library figures remain branch-wide even with an area filter. Existing table revenue
+  now supports `offset`/`nextOffset`; it retains its cost-free projection.
+  Participant counts require actual overlap with the selected area's table history before the
+  database observation time; a player who left before a move is not counted in the destination.
+  Historical wait uses walk-in creation or reservation **check-in**, not reservation creation.
+  Missing/reversed/future arrival-to-seating evidence is excluded and flagged `WAIT_TIME_INCOMPLETE`.
+  The cohort remains created-in-period; an average from known rows is not a promised future wait.
+  Heatmap includes revenue-only buckets outside configured opening hours (null utilization where
+  there is no denominator). `CURRENT_CAPACITY_BASIS` warns that capacity uses current active/unblocked
+  tables/current seat counts plus effective opening hours, not historical table-state evidence.
+- `get_board_game_live_operations` / `get_board_game_pass_balances` — staff
+  `board_game.session.manage`, matching operational REST reads. Omit branch to discover permitted
+  choices, then supply its verified UUID. Floor/queue projections omit PII, notes and bill amounts;
+  physical occupied tables are counted once despite multiple groups. Future reservations retain
+  dates; REQUESTED is not CONFIRMED. No wait/free-table-time promise. Floor, areas and queue each
+  have independent paging metadata; the composed reads are not an atomic snapshot.
+  Pass balances include shared all-branch contracts (never sum branches), unlimited minutes are
+  null, and `expiringMinutesIn30Days` is minutes, not contract count. The separate next-30-day
+  expiry list is paged, contains no identities, and balance drift sets `complete:false`.
+  `outstanding.expiringPassesIn30Days` is a separately counted whole-cohort contract total,
+  including unlimited passes, independent of page size/offset. It is distinct from expiring minutes.
+  ACTIVE unexpired contracts can start in the future; these counts do not establish redemption
+  eligibility now. A missing/malformed aggregate is a failed read, not an invented zero.
+- `get_board_game_library_report` — staff `board_game.library.view`; branch-scoped pages of up to
+  50 rows (`offset` up to 100000). COPIES and ATTENTION expose recorded statuses only. UNPLAYED
+  means titles currently held in the branch with no recorded loan there in retained history,
+  **not** proof nobody ever played. USAGE requires dates (1–92 days), clips overlapping loans to
+  report/observation bounds and pages beyond the old report's top-100 title cap. Live pages may
+  change between reads; disclose truncation and never treat one page as a whole-shop total.
+- For `BOARD_GAME_ANALYTICS` only, `generate_report` and `email_report` accept verified
+  `locationId`/`areaId`, explicit `dateFrom`/`dateTo` and XLSX. Other report types reject these new
+  assistant filters. Email remains propose-only with human confirmation; report generation reuses
+  the existing service, branch authorization and cost permissions.
+- Board-game owner boundaries: system instructions and tool descriptions forbid invented net
+  profit/overhead allocation, box ROI/payback/depreciation, causal promo/price effects, future
+  attendance/staffing, purchase quantities, session churn or an improvised annual report.
+  `boardGameOwnerPolicy.ts` also replies deterministically to recognized unsupported intents in
+  explicit board-game/page/recent-user context, before invoking the model. This is a conservative
+  intent guard, not exhaustive natural-language classification. Generic SKU forecasting, product
+  profit and customer retention are not substitutes. Compare two verified periods descriptively,
+  with identical scope and quality warnings; do not infer causation. Other shop workflows remain unchanged.
+  The guard distinguishes adding a game to the library (supported setup guidance) from deciding
+  which/how many games to buy (unsupported advice). Explicit future-attendance and annual-report
+  requests are declined without a model call; an annual package question is not an annual report.
 - `search_board_game_library` — customer-only playable titles, tags, difficulty, player range and
   aggregate copy counts. Filters public titles in the selected published, active branch; no copy,
   borrower, table, session or customer identifiers. `players` filters a known supported count;

@@ -1313,9 +1313,31 @@ playable game library. The operating brief is
   rates, sessions, games/copies, loan states, members, and an unpublished discovery draft. Cleanup
   removes orders linked to fake sessions first, then sessions/library/floor/rates, so no FK or paid
   receipt is left pointing at deleted fixture state.
-- **Not built:** stored-card renewal (store-credit renewal exists in `10.4`) and dedicated board-game
-  profitability/utilization reports. Extend CRM/reporting/payment domains for these; do not create
-  parallel customer or money ledgers.
+- **Analytics (`10.89`):** physical occupancy and per-session table membership are separate tenant
+  ledgers, written in the seating transaction. Effective branch hours are the denominator; current
+  active/blocked flags are not historical. Allocate recognized money over the full visit path before
+  filtering an area; returns use frozen component allocations and can originate in older periods.
+  Open intervals stop at transaction observation time. Missing hours/costs remain unknown. This is
+  not net profit and does not include fixed costs or depreciation.
+  `CURRENT_CAPACITY_BASIS` must disclose the current-table/seat capacity assumption; it is not
+  proof of historical active/blocked state. Revenue-only heatmap buckets cannot be dropped just
+  because opening hours are absent. Participant counts follow their actual area intervals, not
+  everyone who ever shared their session. Reservation wait starts at check-in; missing or invalid
+  arrival evidence is excluded with `WAIT_TIME_INCOMPLETE`, never replaced by reservation creation.
+  Staff AI loan rankings/table revenue reuse this report through `report.view`-gated read tools;
+  branch discovery is actor-scoped, costs are withheld, and no customer surface exposes these tools.
+  Loan counts are not product sales or distinct players; attributed table money is not cash receipts.
+  Additional SUMMARY/HEATMAP/OFFERS owner reads also withhold costs; PROFIT is merchandise-only
+  gross profit and rechecks `product.view` AND `tax.document.view`. Operational floor/pass reads
+  retain `board_game.session.manage`, library reads retain `board_game.library.view`; all are
+  staff-only, branch-authorized and PII-free. Shared pass balances must not be summed across
+  branches; expiring balance is minutes, not pass count. UNPLAYED means no retained branch loan,
+  not proof never played. Disclose pagination/quality warnings. No inferred net profit, box ROI,
+  causal uplift, future demand/staffing, purchase quantities or session churn; generic SKU tools
+  cannot substitute. Export branch/area filters apply only to BOARD_GAME_ANALYTICS; emailing
+  remains human-confirmed. See `docs/ai/tools.md` for the projections and deterministic intent guard.
+- **Not built:** stored-card renewal (store-credit renewal exists in `10.4`). Extend the existing
+  CRM/reporting/payment domains; do not create parallel customer or money ledgers.
 
 ## Product catalog: variants, sales surfaces, and stock policies
 

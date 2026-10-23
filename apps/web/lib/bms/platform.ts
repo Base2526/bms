@@ -234,6 +234,11 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
     [tenantIds]
   );
   await client.query(`DELETE FROM bms_board_game_waitlist WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Analytics evidence is tenant-owned. Occupancy also cascades with seatings, but deleting it
+  // explicitly keeps this lifecycle independent of FK ordering and branch-hours has no session parent.
+  await client.query(`DELETE FROM bms_board_game_table_occupancy WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_board_game_session_table_occupancy WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_board_game_branch_hours WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_sessions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_board_game_titles WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Member passes (`9.92`) are a contract between the shop and one member, so they hold the

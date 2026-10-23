@@ -1,4 +1,5 @@
 import type { QueryResult, QueryResultRow } from "pg";
+import { closeSessionTableOccupancyInTx, closeTableOccupancyInTx } from "./boardGameOccupancy";
 
 /**
  * สถานะของโต๊ะบอร์ดเกมเป็น "ผลรวมของกลุ่มบิล" ไม่ใช่ค่าที่ตั้งเอง (`9.89`)
@@ -8,8 +9,8 @@ import type { QueryResult, QueryResultRow } from "pg";
  *
  * อยู่ในไฟล์ของตัวเองเพราะผู้เรียกมีสองฝั่ง: โมดูลบอร์ดเกม (เปิด/ปิด/ยกเลิก) และเส้นทางรับเงิน
  * ของ POS (`pos.ts`) · วางไว้ในโมดูลใดโมดูลหนึ่งจะเกิด import วนกัน ส่วนการก็อปไปไว้สองที่
- * แปลว่าวันหนึ่งสองฝั่งจะตอบไม่ตรงกันว่าโต๊ะนี้ว่างหรือยัง — ไฟล์นี้จึงไม่ import อะไรนอกจาก
- * type ของ pg
+ * แปลว่าวันหนึ่งสองฝั่งจะตอบไม่ตรงกันว่าโต๊ะนี้ว่างหรือยัง — ไฟล์นี้จึง import เฉพาะ
+ * type ของ pg และตัวเขียน occupancy ledger ที่ใช้ transaction ของผู้เรียก
  */
 type QueryClient = {
   query<T extends QueryResultRow = QueryResultRow>(
@@ -23,7 +24,7 @@ export async function refreshSessionFromGroupsInTx(
   tenantId: string,
   sessionId: string
 ) {
-  const refreshed = await client.query<{ seating_id: string | null }>(
+  const refreshed = await client.query<{ seating_id: string | null; status: string; ended_at: Date | null }>(
     `UPDATE bms_board_game_sessions s
         SET status = agg.status,
             ended_at = CASE WHEN agg.status = 'OPEN' THEN NULL ELSE agg.ended_at END,
@@ -51,10 +52,22 @@ export async function refreshSessionFromGroupsInTx(
         WHERE g.tenant_id = $1 AND g.session_id = $2
        ) agg
       WHERE s.tenant_id = $1 AND s.id = $2
-      RETURNING s.seating_id`,
+      RETURNING s.seating_id,s.status,s.ended_at`,
     [tenantId, sessionId]
   );
-  const seatingId = refreshed.rows[0]?.seating_id;
+  const session = refreshed.rows[0];
+  // CLOSING is a recoverable payment claim, not a terminal play state. Keep the
+  // membership interval open so a rejected/unknown payment can return to OPEN.
+  if (session && (session.status === "PAID" || session.status === "CANCELLED") && session.ended_at) {
+    await closeSessionTableOccupancyInTx(
+      client,
+      tenantId,
+      sessionId,
+      new Date(session.ended_at),
+      session.status === "CANCELLED" ? "CANCELLED" : "CLOSED",
+    );
+  }
+  const seatingId = session?.seating_id;
   if (seatingId) await refreshBoardGameSeatingInTx(client, tenantId, seatingId);
 }
 
@@ -69,7 +82,7 @@ export async function refreshBoardGameSeatingInTx(
   tenantId: string,
   seatingId: string
 ) {
-  await client.query(
+  const refreshed = await client.query<{ status: string; closed_at: Date | null }>(
     `UPDATE bms_board_game_seatings st
         SET status = CASE WHEN EXISTS (
               SELECT 1 FROM bms_board_game_sessions s
@@ -83,7 +96,24 @@ export async function refreshBoardGameSeatingInTx(
             ) THEN NULL ELSE COALESCE(st.closed_at, now()) END,
             version = st.version + 1,
             updated_at = now()
-      WHERE st.tenant_id = $1 AND st.id = $2 AND st.status <> 'MERGED'`,
+      WHERE st.tenant_id = $1 AND st.id = $2 AND st.status <> 'MERGED'
+      RETURNING st.status, st.closed_at`,
     [tenantId, seatingId]
   );
+  const row = refreshed.rows[0];
+  if (row?.status === "CLOSED" && row.closed_at) {
+    const status = await client.query<{ cancelled: boolean }>(
+      `SELECT bool_and(status = 'CANCELLED') AS cancelled
+         FROM bms_board_game_sessions
+        WHERE tenant_id = $1 AND seating_id = $2`,
+      [tenantId, seatingId],
+    );
+    await closeTableOccupancyInTx(
+      client,
+      tenantId,
+      seatingId,
+      new Date(row.closed_at),
+      status.rows[0]?.cancelled ? "CANCELLED" : "CLOSED",
+    );
+  }
 }
