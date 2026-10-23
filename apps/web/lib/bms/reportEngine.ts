@@ -46,6 +46,7 @@ import {
   buildSalesTaxReportDoc,
   buildInputVatReportDoc,
   buildStockLedgerReportDoc,
+  buildBoardGameAnalyticsReportDoc,
   buildXlsx,
   buildCsv,
   buildPdf,
@@ -68,6 +69,7 @@ export const REPORT_TYPES = [
   "VAT_PURCHASE",
   // รายงานสินค้าและวัตถุดิบรายสถานประกอบการ (ดู stockLedger.ts)
   "STOCK_LEDGER",
+  "BOARD_GAME_ANALYTICS",
 ] as const;
 
 /** รายงานที่หัวคอลัมน์/ข้อมูลเป็นภาษาไทยล้วน — pdfkit แสดงไม่ได้ (ดู documentGenerator.ts) */
@@ -90,6 +92,7 @@ export type GenerateReportInput = {
   dateFrom?: string | null;
   dateTo?: string | null;
   locationId?: string | null;
+  areaId?: string | null;
   format: string;
   includeSummary?: boolean;
 };
@@ -122,7 +125,10 @@ async function collectReportDoc(
   dateFrom: string | null,
   dateTo: string | null,
   locationId: string | null,
-  allowedLocationIds: string[] | null
+  allowedLocationIds: string[] | null,
+  actorId: string | null,
+  includeCosts: boolean,
+  areaId: string | null = null,
 ): Promise<ReportDoc> {
   switch (reportType) {
     case "SALES": {
@@ -182,6 +188,13 @@ async function collectReportDoc(
       });
       return buildStockLedgerReportDoc(report, (iso) => formatTaxDate(iso, "BE"));
     }
+    case "BOARD_GAME_ANALYTICS": {
+      if (!actorId || !dateFrom || !dateTo) throw new Error("รายงานบอร์ดเกมต้องระบุผู้ใช้และช่วงวันที่");
+      const { getBoardGameAnalytics } = await import("./boardGameAnalytics");
+      return buildBoardGameAnalyticsReportDoc(await getBoardGameAnalytics(
+        tenantId, actorId, { from: dateFrom, to: dateTo, locationId, areaId, granularity: "TABLE" }, undefined, { includeCosts },
+      ));
+    }
   }
 }
 
@@ -232,7 +245,7 @@ const FORMAT_MIME: Record<ReportFormat, string> = {
   PDF: "application/pdf",
 };
 const FORMAT_EXT: Record<ReportFormat, string> = { XLSX: "xlsx", CSV: "csv", PDF: "pdf" };
-const LOCATION_SENSITIVE_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER"]);
+const LOCATION_SENSITIVE_REPORT_TYPES: ReadonlySet<string> = new Set(["VAT_SALES", "VAT_PURCHASE", "STOCK_LEDGER", "BOARD_GAME_ANALYTICS"]);
 
 function actorUserId(ctx: any): string | null {
   return ctx?.admin?.id == null ? null : String(ctx.admin.id);
@@ -262,21 +275,22 @@ export async function getTaxPrintReport(tenantId: string, ctx: any, input: {
   return buildInputVatReportDoc(await getInputVatReport(tenantId, filter), iso => formatTaxDate(iso, "BE"), { includeBuyerEstablishment: !input.locationId });
 }
 
-async function reportPermissionFlags(ctx: any): Promise<{ salesTax: boolean; purchaseTax: boolean }> {
+async function reportPermissionFlags(ctx: any): Promise<{ salesTax: boolean; purchaseTax: boolean; boardCosts: boolean }> {
   // งานระบบภายในที่ไม่มี admin context ใช้ service ได้ตามเดิม; ทุก HTTP/GraphQL/tool entry
   // point ส่ง ctx มาและต้องผ่านสิทธิ์จริง
-  if (!ctx) return { salesTax: true, purchaseTax: true };
+  if (!ctx) return { salesTax: true, purchaseTax: true, boardCosts: true };
   const permissions = await loadPermissions(ctx);
   return {
     salesTax: permissions.has("tax.document.view"),
     purchaseTax: permissions.has("expense.view"),
+    boardCosts: permissions.has("product.view") && permissions.has("tax.document.view"),
   };
 }
 
 // รายงานภาษีและสต็อกมีข้อมูลรายสาขาที่ละเอียดกว่า report เดิม จึงห้ามผู้ใช้ที่ถูกจำกัด
 // สาขาเห็นไฟล์ all-branch/สาขาอื่นจาก history หรือเดา file id แล้วดาวน์โหลดตรง
 const GENERATED_REPORT_SCOPE_SQL = `(
-  report_type NOT IN ('VAT_SALES', 'VAT_PURCHASE', 'STOCK_LEDGER')
+  report_type NOT IN ('VAT_SALES', 'VAT_PURCHASE', 'STOCK_LEDGER', 'BOARD_GAME_ANALYTICS')
   OR $3::text[] IS NULL
   OR params->>'locationId' = ANY($3::text[])
   OR (
@@ -291,6 +305,11 @@ const GENERATED_REPORT_SCOPE_SQL = `(
 const GENERATED_REPORT_PERMISSION_SQL = `(
   (report_type <> 'VAT_SALES' OR $4::boolean)
   AND (report_type <> 'VAT_PURCHASE' OR $5::boolean)
+  AND (
+    report_type <> 'BOARD_GAME_ANALYTICS'
+    OR NOT COALESCE((params->>'includeCosts')::boolean, false)
+    OR $6::boolean
+  )
 )`;
 
 export async function generateReport(
@@ -304,7 +323,12 @@ export async function generateReport(
   const dateTo = input.dateTo || null;
   const locationId = input.locationId || null;
   // สรุปด้วย AI ไม่มีประโยชน์กับรายงานภาษี และส่งตัวเลขภาษีของร้านออกไปหา provider เปล่า ๆ
-  const includeSummary = THAI_ONLY_REPORT_TYPES.has(reportType) ? false : input.includeSummary ?? true;
+  const includeSummary = reportType === "BOARD_GAME_ANALYTICS"
+    ? false
+    : THAI_ONLY_REPORT_TYPES.has(reportType) ? false : input.includeSummary ?? true;
+  if (reportType === "BOARD_GAME_ANALYTICS" && format !== "XLSX") {
+    throw new Error("รายงานกำไรและการใช้โต๊ะบอร์ดเกมออกได้เฉพาะ XLSX");
+  }
   if (format === "PDF" && THAI_ONLY_REPORT_TYPES.has(reportType)) {
     throw new Error("รายงานนี้ออกได้เฉพาะ XLSX หรือ CSV (PDF ยังแสดงภาษาไทยไม่ได้)");
   }
@@ -317,13 +341,18 @@ export async function generateReport(
   }
   const location = locationId ? await getLocation(tenantId, locationId) : null;
   if (locationId && !location) throw new Error("ไม่พบสาขานี้ หรือสาขาไม่ได้อยู่ในร้านปัจจุบัน");
+  const permissions = ctx ? await loadPermissions(ctx) : new Set<string>();
+  const includeCosts = permissions.has("product.view") && permissions.has("tax.document.view");
   const doc = await collectReportDoc(
     tenantId,
     reportType,
     dateFrom,
     dateTo,
     locationId,
-    LOCATION_SENSITIVE_REPORT_TYPES.has(reportType) ? allowedLocationIds : null
+    LOCATION_SENSITIVE_REPORT_TYPES.has(reportType) ? allowedLocationIds : null,
+    actorUserId(ctx),
+    includeCosts,
+    reportType === "BOARD_GAME_ANALYTICS" ? input.areaId ?? null : null,
   );
   doc.meta.unshift({
     label: "Branch scope",
@@ -356,6 +385,8 @@ export async function generateReport(
         dateTo,
         locationId,
         includeSummary,
+        includeCosts: reportType === "BOARD_GAME_ANALYTICS" ? includeCosts : undefined,
+        areaId: reportType === "BOARD_GAME_ANALYTICS" ? input.areaId ?? null : undefined,
         locationIds: LOCATION_SENSITIVE_REPORT_TYPES.has(reportType)
           ? locationId ? [locationId] : allowedLocationIds
           : undefined,
@@ -387,7 +418,7 @@ export async function listGeneratedReports(tenantId: string, limit = 50, ctx?: a
         AND ${GENERATED_REPORT_SCOPE_SQL}
         AND ${GENERATED_REPORT_PERMISSION_SQL}
       ORDER BY created_at DESC LIMIT $2`,
-    [tenantId, Math.min(Math.max(limit, 1), 200), allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax]
+    [tenantId, Math.min(Math.max(limit, 1), 200), allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax, permissionFlags.boardCosts]
   );
   return res.rows.map((r: any) => ({
     id: r.id,
@@ -414,7 +445,7 @@ export async function findGeneratedReportByFileId(tenantId: string, fileId: numb
         AND ${GENERATED_REPORT_SCOPE_SQL}
         AND ${GENERATED_REPORT_PERMISSION_SQL}
       LIMIT 1`,
-    [tenantId, fileId, allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax]
+    [tenantId, fileId, allowedLocationIds, permissionFlags.salesTax, permissionFlags.purchaseTax, permissionFlags.boardCosts]
   );
   return res.rows[0] ?? null;
 }

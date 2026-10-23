@@ -132,7 +132,9 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
   const left = await query<{ n: string }>(`SELECT count(*)::text AS n FROM bms_tenants WHERE id = $1`, [shop.tenantId]);
   assert.equal(left.rows[0].n, "0");
   for (const table of ["bms_orders", "bms_order_items", "bms_customers", "bms_board_game_sessions",
-    "bms_board_game_billing_groups", "bms_board_game_seatings",
+    "bms_board_game_billing_groups", "bms_board_game_seatings", "bms_board_game_table_occupancy",
+    "bms_board_game_session_table_occupancy",
+    "bms_board_game_branch_hours",
     "bms_board_game_session_participants", "bms_board_game_titles",
     "bms_board_game_member_passes", "bms_board_game_identity_holds", "users"]) {
     const rows = await query<{ n: string }>(

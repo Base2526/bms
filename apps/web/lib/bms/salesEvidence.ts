@@ -57,14 +57,14 @@ const EVENTS_SQL = `WITH events AS (
   FROM bms_tax_documents d JOIN bms_orders o ON o.tenant_id=d.tenant_id AND o.id=d.order_id
   WHERE d.tenant_id=$1 AND d.doc_type IN ('CREDIT_NOTE','DEBIT_NOTE') AND d.cancelled_at IS NULL
 ), page AS (
-  SELECT * FROM events WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE 'Asia/Bangkok')
-    AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE 'Asia/Bangkok')
+  SELECT * FROM events WHERE occurred_at >= ($2::date::timestamp AT TIME ZONE COALESCE(NULLIF($8::text,''),'Asia/Bangkok'))
+    AND occurred_at < (($3::date + 1)::timestamp AT TIME ZONE COALESCE(NULLIF($8::text,''),'Asia/Bangkok'))
     AND ($4::uuid[] IS NULL OR location_id=ANY($4::uuid[]))
     AND ($5::text IS NULL OR channel=$5) AND key COLLATE "C" > $6::text COLLATE "C"
   ORDER BY key COLLATE "C" LIMIT $7
 )
 SELECT e.key, e.kind, e.order_id AS "orderId", e.location_id AS "locationId", e.channel,
-  to_char(e.occurred_at AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') AS day,
+  to_char(e.occurred_at AT TIME ZONE COALESCE(NULLIF($8::text,''),'Asia/Bangkok'),'YYYY-MM-DD') AS day,
   CASE e.kind
   WHEN 'SALE' THEN (SELECT jsonb_build_object('legacyDate',e.legacy_date,
     'cancelledWithoutReturn',o.status='CANCELLED' AND NOT EXISTS
@@ -115,7 +115,7 @@ export async function scanSalesEvidence(tenantId: string, actorId: string, input
 
 /** Internal composition only: caller owns a serializable tenant transaction and source permissions. */
 export async function scanSalesEvidenceInTx(client: PoolClient, tenantId: string, actorId: string, input: unknown,
-  consume: (event: SalesEvidenceEvent) => unknown, actualCosts = false) {
+  consume: (event: SalesEvidenceEvent) => unknown, actualCosts = false, timezone = "Asia/Bangkok") {
     const filter = normalizeSalesEvidenceFilter(input);
     if (!tenantId || !actorId) throw new Error("SALES_EVIDENCE_FORBIDDEN");
     await client.query("SET LOCAL statement_timeout = '30s'");
@@ -137,7 +137,7 @@ export async function scanSalesEvidenceInTx(client: PoolClient, tenantId: string
       const remaining = SALES_EVIDENCE_EVENT_LIMIT - count;
       const limit = Math.min(SALES_EVIDENCE_PAGE_SIZE, remaining + 1);
       const rows = (await client.query<SalesEvidenceEvent>(EVENTS_SQL,
-        [tenantId, filter.from, filter.to, locations, filter.channel, cursor, limit])).rows;
+        [tenantId, filter.from, filter.to, locations, filter.channel, cursor, limit, timezone])).rows;
       if (actualCosts) await attachActualSalesCosts(client,tenantId,rows);
       if (rows.length > limit) throw new Error("SALES_EVIDENCE_INVALID_PAGE");
       for (const event of rows) {
@@ -154,7 +154,8 @@ export async function scanSalesEvidenceInTx(client: PoolClient, tenantId: string
       }
       if (truncated || rows.length < limit) break;
     }
-    return { ...filter, eventCount: count, truncated, limitCode, observedAt, basis: "EVENT_DATES_BANGKOK_V1",
+    return { ...filter, eventCount: count, truncated, limitCode, observedAt,
+      basis: timezone === "Asia/Bangkok" ? "EVENT_DATES_BANGKOK_V1" : "EVENT_DATES_STORE_TIMEZONE_V1",
       costBasis: "CATALOG_SNAPSHOT_NOT_PURCHASE_LOT", allocationBasis: "DERIVED_PROPORTIONAL_NOT_POSTED",
       refundBasis: "RETURNS_PAYMENTS_AND_CREDIT_REDUCTIONS_SEPARATE", diagnosticSampleLimit: 100,
       returnVatBasis: "SALE_BUCKET_CUMULATIVE_ALLOCATION_NOT_CREDIT_NOTE",

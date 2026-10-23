@@ -51,6 +51,7 @@ const REPORT_LABEL_TH: Record<ReportType, string> = {
   VAT_SALES: "รายงานภาษีขาย",
   VAT_PURCHASE: "รายงานภาษีซื้อ",
   STOCK_LEDGER: "รายงานสินค้าและวัตถุดิบ",
+  BOARD_GAME_ANALYTICS: "กำไรและการใช้โต๊ะบอร์ดเกม",
 };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

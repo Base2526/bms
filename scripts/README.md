@@ -1,5 +1,18 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Board-game owner assistant reads
+
+- `node scripts/run-contract-tests.mjs pure board-game-analytics-tools`: actual tool adapters/runtime,
+  staff-only permissions, scoped report views, safe exports/email proposals and unsupported-intent guards.
+- `node scripts/run-contract-tests.mjs pure board-game-owner-reads`: compiled service with mocked DB
+  transport; branch/archetype denial, projections/PII, pass units/drift, paged library SQL and failure paths.
+- `node scripts/run-contract-tests.mjs pure work-assistant`: bilingual guides, capability boundaries,
+  pinned owner questions and tool registration. This is deterministic retrieval, not a live-model eval.
+- `node scripts/run-contract-tests.mjs db board-game-analytics-db-contract`: local throwaway DB only;
+  occupancy/RLS and owner-read SQL smoke against a FAKE tenant. Requires a restored compatible schema
+  including `10.89`. The pure tests do not prove PostgreSQL query execution or RLS.
+- Run filtered suites serially or set distinct `BMS_TEST_OUTPUT_DIR` values to preserve each TAP log.
+
 ## Branch requisitions (`10.87`–`10.88`)
 
 - `node scripts/run-contract-tests.mjs pure branch-requisitions`: allocation/progress math.

@@ -2303,6 +2303,9 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
       row.id, tenantId, locationId, row.areaId, row.code, row.name, row.seats, index + 1, row.blocked,
     ]));
 
+    // Do not invent authoritative branch hours for a sample floor. Operators
+    // configure the real denominator; fake cleanup must not touch their schedule.
+
     const rateRows = [
       { id: uuid(), code: `FAKE_GENERAL_${token}`, name: "FAKE ทั่วไป 50 บาท/ชม.", type: "GENERAL", price: 50, minimum: 60, rounding: 30, grace: 10 },
       { id: uuid(), code: `FAKE_STUDENT_${token}`, name: "FAKE นักเรียน 40 บาท/ชม.", type: "STUDENT", price: 40, minimum: 60, rounding: 30, grace: 10 },
@@ -2376,6 +2379,12 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
         ]
       );
       await client.query(
+        `INSERT INTO bms_board_game_table_occupancy
+           (tenant_id, location_id, table_id, seating_id, started_at)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [tenantId, locationId, tableRows[index].id, seatingId, startedAt],
+      );
+      await client.query(
         `INSERT INTO bms_board_game_sessions
            (id, tenant_id, location_id, table_id, seating_id, status, billing_mode, guest_count,
             expected_duration_minutes, started_at, expected_end_at, ended_at, alert_before_minutes,
@@ -2390,6 +2399,12 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
           isClosing ? `fake-settle-${token}-${index}` : null,
           isClosing ? `fake-settle-hash-${token}-${index}` : null,
         ]
+      );
+      await client.query(
+        `INSERT INTO bms_board_game_session_table_occupancy
+           (tenant_id,location_id,session_id,table_id,started_at)
+         VALUES($1,$2,$3,$4,$5)`,
+        [tenantId, locationId, id, tableRows[index].id, startedAt],
       );
       sessions.push({ id, status: isClosing ? "CLOSING" : "OPEN", tableId: tableRows[index].id, startedAt, endedAt });
 
@@ -2474,6 +2489,12 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
       ]
     );
     await client.query(
+      `INSERT INTO bms_board_game_table_occupancy
+         (tenant_id, location_id, table_id, seating_id, started_at, ended_at, end_reason)
+       VALUES ($1,$2,$3,$4,$5,$6,'CANCELLED')`,
+      [tenantId, locationId, tableRows[0].id, cancelledSeatingId, cancelledStart, cancelledEnd],
+    );
+    await client.query(
       `INSERT INTO bms_board_game_sessions
          (id, tenant_id, location_id, table_id, seating_id, status, billing_mode, guest_count,
           started_at, ended_at, note, open_idempotency_key, open_request_hash,
@@ -2485,6 +2506,12 @@ export async function seedFakeBoardGameCafe(tenantId: string, requestedTables: n
         `FAKE cancelled session ${token}`, `fake-open-${token}-cancelled`, `fake-open-hash-${token}-cancelled`,
         `fake-cancel-${token}`, `fake-cancel-hash-${token}`,
       ]
+    );
+    await client.query(
+      `INSERT INTO bms_board_game_session_table_occupancy
+         (tenant_id,location_id,session_id,table_id,started_at,ended_at,end_reason)
+       VALUES($1,$2,$3,$4,$5,$6,'CANCELLED')`,
+      [tenantId, locationId, cancelledSessionId, tableRows[0].id, cancelledStart, cancelledEnd],
     );
     await client.query(
       `INSERT INTO bms_board_game_billing_groups

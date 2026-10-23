@@ -7,6 +7,9 @@
 // =============================================================
 
 import { audit } from "../audit";
+import { getBoardGameTopGamesTool, getBoardGameTableRevenueTool, listBoardGameReportBranchesTool,
+  getBoardGameReportTool, getBoardGameLiveOperationsTool, getBoardGamePassBalancesTool, getBoardGameLibraryReportTool,
+  boardGameReportExportArgs } from "./boardGameAnalytics";
 import { formatCustomerOrderHistoryFallback, type CustomerOrderHistoryPage } from "../customerOrderHistoryPresentation";
 import type { Channel } from "../pipeline";
 import type { BmsPermission } from "../permissions";
@@ -1476,6 +1479,8 @@ const generateReportTool: BmsTool = {
     type: "object",
     properties: {
       reportType: { type: "string", enum: [...REPORT_TYPES], description: "Which report to generate." },
+      locationId: { type: "string", description: "BOARD_GAME_ANALYTICS only: verified permitted branch UUID; omit only for requested all branches." },
+      areaId: { type: "string", description: "BOARD_GAME_ANALYTICS only: verified area UUID, requires locationId. This report supports XLSX only and explicit dates up to 92 days." },
       dateFrom: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
       dateTo: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
       format: { type: "string", enum: [...REPORT_FORMATS], description: "Output file format." },
@@ -1485,6 +1490,7 @@ const generateReportTool: BmsTool = {
   },
   execute: async (args, ec): Promise<ToolResult> => {
     const result = await generateReport(ec.tenantId, ec.ctx, {
+      ...boardGameReportExportArgs(args),
       reportType: enumVal(args, "reportType", REPORT_TYPES) as string,
       dateFrom: optString(args, "dateFrom") ?? null,
       dateTo: optString(args, "dateTo") ?? null,
@@ -1523,6 +1529,8 @@ const emailReportTool: BmsTool = {
     type: "object",
     properties: {
       reportType: { type: "string", enum: [...REPORT_TYPES], description: "Which report to generate." },
+      locationId: { type: "string", description: "BOARD_GAME_ANALYTICS only: verified permitted branch UUID." },
+      areaId: { type: "string", description: "BOARD_GAME_ANALYTICS only: verified area UUID; requires branch. XLSX and explicit 1–92 day dates required." },
       dateFrom: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
       dateTo: { type: "string", description: "YYYY-MM-DD, if the user gave a date range. Not used for INVENTORY." },
       format: { type: "string", enum: [...REPORT_FORMATS], description: "Output file format." },
@@ -1543,6 +1551,7 @@ const emailReportTool: BmsTool = {
     // generate ไฟล์จริงตอนนี้เลย (ไม่ sensitive — เหมือน generate_report เดิมทุกประการ, แค่ยังดาวน์โหลด
     // เองได้ปกติแม้จะยกเลิกคำขอส่งอีเมลทีหลัง) มีแค่ "ส่งออกไปที่ไหน" เท่านั้นที่รอการยืนยัน
     const generated = await generateReport(ec.tenantId, ec.ctx, {
+      ...boardGameReportExportArgs(args),
       reportType,
       dateFrom: optString(args, "dateFrom") ?? null,
       dateTo: optString(args, "dateTo") ?? null,
@@ -3661,6 +3670,13 @@ export const ALL_TOOLS: BmsTool[] = [
   getInventorySummaryTool,
   getSalesSummaryTool,
   getTopProductsTool,
+  listBoardGameReportBranchesTool,
+  getBoardGameTopGamesTool,
+  getBoardGameTableRevenueTool,
+  getBoardGameReportTool,
+  getBoardGameLiveOperationsTool,
+  getBoardGamePassBalancesTool,
+  getBoardGameLibraryReportTool,
   getDashboardTool,
   analyzePosShiftTool,
   getCustomerTool,

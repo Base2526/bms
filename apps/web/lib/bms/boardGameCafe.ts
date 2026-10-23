@@ -26,6 +26,14 @@ import {
 import { cancelOrderInTx, createOrderInTx } from "./orders";
 import { resolvePosScan } from "./pos";
 import { beginTenantTx } from "./tenant";
+import {
+  closeTableOccupancyInTx,
+  cloneSessionTableHistoryForDetachInTx,
+  moveTableOccupancyInTx,
+  moveSessionsTableOccupancyInTx,
+  openTableOccupancyInTx,
+  openSessionTableOccupancyInTx,
+} from "./boardGameOccupancy";
 
 export type BoardGameBillingMode = "OPEN_ENDED" | "FIXED_DURATION";
 export type BoardGameParticipantTimeMode = "ACTUAL" | "SESSION_END" | "DURATION";
@@ -1110,6 +1118,8 @@ export async function listBoardGameFloor(tenantId: string, locationId: string) {
       seats: Number(row.seats),
       sortOrder: Number(row.sort_order),
       blocked: Boolean(row.blocked),
+      // Seating owns the table even if no OPEN/CLOSING session is returned by the aggregate.
+      occupied: Boolean(row.seating_id),
       openSession: row.session_id ? {
         id: row.session_id,
         seatingId: row.seating_id,
@@ -1251,6 +1261,9 @@ export async function openBoardGameSession(
       [tenantId, locationId, tableId, startedAt]
     );
     const seatingId = seating.rows[0].id;
+    await openTableOccupancyInTx(client, tenantId, {
+      locationId, tableId, seatingId, startedAt,
+    });
     const result = await client.query(
       `INSERT INTO bms_board_game_sessions
           (tenant_id, location_id, table_id, seating_id, pos_device_id, pos_shift_id, billing_mode,
@@ -1281,6 +1294,9 @@ export async function openBoardGameSession(
     // หนึ่งกลุ่มบิลต่อหนึ่งหมายเลขกลุ่มที่พนักงานตั้งไว้ · โต๊ะปกติที่ไม่ได้แยกกลุ่มจึงได้
     // กลุ่มเดียวและออกบิลใบเดียวเหมือนก่อน `9.89` ทุกประการ
     const newSessionId = result.rows[0].id as string;
+    await openSessionTableOccupancyInTx(client, tenantId, {
+      locationId, tableId, sessionId: newSessionId, startedAt,
+    });
     await client.query(
       `UPDATE bms_board_game_seatings
           SET origin_session_id = $3, updated_at = now()
@@ -1782,16 +1798,20 @@ async function relocateBoardGameSeating(
       // ที่นั่งนี้ถูกรวมไว้หลายชุด — ย้ายเฉพาะชุดที่เลือกออกไปนั่งเอง ไม่งั้นการกดย้ายจากการ์ด
       // ของชุดหนึ่งจะลากอีกชุดไปโต๊ะใหม่ด้วยโดยไม่มีอะไรบนจอบอก · นี่คือทางกลับของการรวมโต๊ะ
       // ซึ่งถ้าไม่มี การรวมจะเป็นประตูทางเดียว
+      const movedAt = new Date();
       const detached = await client.query<{ id: string }>(
         `INSERT INTO bms_board_game_seatings
             (tenant_id, location_id, table_id, opened_at)
-         VALUES ($1,$2,$3, now())
+         VALUES ($1,$2,$3,$4)
          RETURNING id`,
         // origin_session_id ปล่อยว่างโดยตั้งใจ: session นี้เป็นต้นทางของที่นั่งเดิมไปแล้ว
         // และคอลัมน์นั้น unique ต่อร้าน · ที่นั่งปัจจุบันของทุก session อ่านจาก sessions.seating_id
-        [tenantId, locationId, targetTableId]
+        [tenantId, locationId, targetTableId, movedAt]
       );
       movedSeatingId = detached.rows[0].id;
+      await openTableOccupancyInTx(client, tenantId, {
+        locationId, tableId: targetTableId, seatingId: movedSeatingId, startedAt: movedAt,
+      });
       movedSessionIds = [sessionId];
       await client.query(
         `UPDATE bms_board_game_sessions
@@ -1799,17 +1819,28 @@ async function relocateBoardGameSeating(
           WHERE tenant_id = $1 AND id = $2`,
         [tenantId, sessionId, movedSeatingId]
       );
+      await moveSessionsTableOccupancyInTx(client, tenantId, {
+        locationId, tableId: targetTableId, sessionIds: [sessionId], movedAt, reason: "MOVED",
+      });
       // ที่นั่งเดิมยังมีชุดอื่นอยู่ จึงยัง ACTIVE — เรียกสูตรกลางแทนการเดา
       await refreshBoardGameSeatingInTx(client, tenantId, sourceSeatingId);
     } else if (action === "move") {
       movedSeatingId = sourceSeatingId;
+      const movedAt = new Date();
       await client.query(
         `UPDATE bms_board_game_seatings
             SET table_id = $3, version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
         [tenantId, sourceSeatingId, targetTableId]
       );
+      await moveTableOccupancyInTx(client, tenantId, {
+        locationId, tableId: targetTableId, seatingId: sourceSeatingId, movedAt,
+      });
+      await moveSessionsTableOccupancyInTx(client, tenantId, {
+        locationId, tableId: targetTableId, sessionIds: sourceSessionIds, movedAt, reason: "MOVED",
+      });
     } else {
+      const mergedAt = new Date();
       await client.query(
         `UPDATE bms_board_game_sessions
             SET seating_id = $3, version = version + 1, updated_at = now()
@@ -1818,11 +1849,17 @@ async function relocateBoardGameSeating(
       );
       await client.query(
         `UPDATE bms_board_game_seatings
-            SET status = 'MERGED', closed_at = now(), merged_into_seating_id = $3,
+            SET status = 'MERGED', closed_at = $4, merged_into_seating_id = $3,
                 version = version + 1, updated_at = now()
           WHERE tenant_id = $1 AND id = $2`,
-        [tenantId, sourceSeatingId, destinationSeatingId]
+        [tenantId, sourceSeatingId, destinationSeatingId, mergedAt]
       );
+      await closeTableOccupancyInTx(
+        client, tenantId, sourceSeatingId, mergedAt, "MERGED_INTO",
+      );
+      await moveSessionsTableOccupancyInTx(client, tenantId, {
+        locationId, tableId: targetTableId, sessionIds: sourceSessionIds, movedAt: mergedAt, reason: "MERGED",
+      });
       await refreshBoardGameSeatingInTx(client, tenantId, destinationSeatingId);
     }
 
@@ -1997,11 +2034,18 @@ export async function detachBoardGameBillingGroupToTable(
       (hold) => hold.loan_id && !loanIds.includes(hold.loan_id)
     );
     if (separatedHold) throw new Error("บัตรที่ผูกกับเกมต้องย้ายพร้อมเกมกล่องนั้น");
+    const detachedAt = new Date();
     const seating = await client.query<{ id: string }>(
       `INSERT INTO bms_board_game_seatings (tenant_id, location_id, table_id, opened_at)
-       VALUES ($1,$2,$3, now()) RETURNING id`,
-      [tenantId, groupRow.location_id, targetTableId]
+       VALUES ($1,$2,$3,$4) RETURNING id`,
+      [tenantId, groupRow.location_id, targetTableId, detachedAt]
     );
+    await openTableOccupancyInTx(client, tenantId, {
+      locationId: groupRow.location_id,
+      tableId: targetTableId,
+      seatingId: seating.rows[0].id,
+      startedAt: detachedAt,
+    });
     const sourceRow = source.rows[0];
     const sessionKey = createHash("sha256").update(`${key}:detached-session`).digest("hex");
     const created = await client.query<{ id: string }>(
@@ -2020,6 +2064,13 @@ export async function detachBoardGameBillingGroupToTable(
         actorUserId ?? null, sessionKey, hash]
     );
     const newSessionId = created.rows[0].id;
+    await cloneSessionTableHistoryForDetachInTx(client, tenantId, {
+      sourceSessionId: groupRow.session_id,
+      sessionId: newSessionId,
+      locationId: groupRow.location_id,
+      targetTableId,
+      detachedAt,
+    });
     await client.query(
       `UPDATE bms_board_game_billing_groups SET session_id = $3, updated_at = now()
         WHERE tenant_id = $1 AND id = $2`,

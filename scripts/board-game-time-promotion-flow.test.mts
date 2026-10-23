@@ -101,6 +101,15 @@ function harness(minutes: number, options: {
     "./idempotencyErrors": idempotency, "./boardGameOffers": offers,
     "./boardGamePassCoverage": coverage,
     "./boardGameSessionStatus": { refreshSessionFromGroupsInTx: async () => {} },
+    "./boardGameOccupancy": {
+      openTableOccupancyInTx: async () => {},
+      moveTableOccupancyInTx: async () => {},
+      closeTableOccupancyInTx: async () => {},
+      openSessionTableOccupancyInTx: async () => {},
+      moveSessionsTableOccupancyInTx: async () => {},
+      closeSessionTableOccupancyInTx: async () => {},
+      cloneSessionTableHistoryForDetachInTx: async () => {},
+    },
     "./locations": {}, "./orders": {}, "./pos": {},
   };
   const exported: any = {};

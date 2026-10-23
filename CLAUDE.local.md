@@ -3,6 +3,103 @@
 เก็บเฉพาะสิ่งที่ต้องใช้ทุกครั้งที่ลงมือทำในเครื่องนี้ · สเปก: [CLAUDE.md](CLAUDE.md) ·
 กฎ agent: [AGENTS.md](AGENTS.md) + [docs/agent-invariants.md](docs/agent-invariants.md)
 
+## Board-game analytics recheck — 2026-10-23
+
+### Second owner recheck
+
+- Red-first regression tests reproduced: a departed player counted in a destination area;
+  heatmap losing recognized revenue outside configured hours; reservation wait starting at booking
+  creation instead of check-in; and the unsupported-purchase guard blocking library setup guidance.
+- Fixed the report projections only: actual participant/area/time overlap capped at observation,
+  union capacity/revenue heatmap buckets, check-in-based reservation wait with invalid/missing
+  evidence excluded and `WAIT_TIME_INCOMPLETE`, and precise purchase/future/annual intent boundaries.
+  `CURRENT_CAPACITY_BASIS` discloses the existing current-table/seat assumption; no historical
+  availability ledger was invented. POS, payment, stock and entitlement writes are unchanged.
+- Added whole-cohort `expiringPassesIn30Days` independently of paging and minute balances; includes
+  unlimited contracts. Missing aggregates fail rather than becoming zero. ACTIVE may start later,
+  so outstanding balances do not establish current redemption eligibility.
+- Final focused analytics 50/50, owner reads 6/6 and assistant retrieval 46/46 passed. DB runner
+  still refuses without POSTGRES_HOST/POSTGRES_DB; real SQL/RLS/migrations/live-provider remain
+  unverified. No route/layout/CSS changed in this recheck; prior authenticated-browser limitation
+  still applies. No commit/push/deploy or business-data writes.
+- Final gate exit 0: typecheck, pure **3,070 passed / 3,072 total (2 skipped)** and production
+  build. Log: `.test-output/owner-recheck-final-gate.log`; TAP:
+  `.test-output/owner-recheck-final/pure.tap`. Final focused checks cover the last basis-copy and
+  capacity-warning assertions. `git diff --check` passed (existing schema line-ending warning only).
+
+### Owner-question coverage follow-up
+
+- Added four staff-only tools: historical SUMMARY/HEATMAP/OFFERS/PROFIT, current floor/queue,
+  pass balances/expiry, and paginated library COPIES/ATTENTION/UNPLAYED/USAGE. Preserve existing
+  report/session/library permissions and actor branch scope; product profit requires both product
+  and tax-document permissions. All projections omit customer identities and condition notes.
+- Table/library/offer reads support paging; OFFERS can rank uses separately from discount and
+  opts into full bounded-source aggregation. Existing UI/XLSX still uses top 20 discounts.
+  `generate_report`/`email_report` accept board-game branch/area filters only; email stays propose-only.
+- Recheck corrected expiring-pass units (minutes, not contracts), and current occupancy reads
+  now use an additive seating-backed `occupied` floor field instead of inferring vacancy from
+  missing OPEN/CLOSING sessions. No POS/payment/inventory mutation path was changed in this follow-up.
+- Added deterministic unsupported-intent responses for recognized board-game net-profit/box ROI/
+  causal lift/price effects/future attendance/staffing/purchase quantities/session churn requests.
+  General policy forbids guesses and generic SKU substitutes; this intent guard is not exhaustive
+  natural-language classification. Missing facts, source limits and partial pages must be disclosed.
+- Focused analytics/tool suites 46/46, owner-read transport suite 6/6, bilingual assistant suites
+  46/46 passed. Added DB smoke for new owner SQL; runner refused without POSTGRES_HOST/POSTGRES_DB.
+  DB SQL/RLS/migration execution and live-model end-to-end remain unverified. No production writes.
+- Final gate exit 0: typecheck, pure **3,066 passed / 3,068 total (2 skipped)**, production build.
+  Log: `.test-output/board-game-owner-final-gate.log`; isolated TAP:
+  `apps/web/.test-output/board-game-owner-final/pure.tap`. Earlier recheck failures were repaired
+  before this run (knowledge IDs/coverage and offer-basis assertion). `git diff --check` passed.
+- Production-built `/admin/manual` was opened at 1280px and 390px; both redirect to login, so
+  authenticated manual layout/content remains unverified. Browser viewport reset and tab closed.
+  Task-owned loopback test server on port 3107 was stopped after the check.
+  No commit/push/deploy; migration `10.89` from the earlier change still needs DB verification/rollout.
+
+### Staff AI follow-up (screenshot gaps)
+
+- Added staff-only `get_board_game_top_games`, `get_board_game_table_revenue`, and
+  `list_board_game_report_branches`. Reuse the analytics service with costs withheld; authenticate
+  actor, recheck `report.view`, enforce existing tenant/archetype/branch rules, and bound all lists.
+  Generic sales/top-product implementations, POS/payment/stock writes and customer toolsets unchanged.
+- Loan rankings count recorded overlapping loans, not players/completed games. Table money is
+  attributed revenue, not cash receipts or net profit. Dates/scope require clarification; no all-time
+  default. Branch discovery supplies report-local current date and only permitted branches.
+- Updated staff routing, bilingual guide/manual, corpus and tool/API/business documentation.
+- Final focused analytics 37/37 and assistant 46/46 passed. Full gate exit 0: typecheck,
+  pure 3,049 passed / 3,051 total (2 skipped), production build. Two final tool tests and a null-limit
+  validator assertion ran in the later 37/37 focused check. Production build includes that validator.
+  Full log: `.test-output/board-game-ai-tools-gate.log`; expected synthetic provider/service failures
+  in test logs are negative-path fixtures, not live failures.
+- DB runner still refused because POSTGRES_HOST/POSTGRES_DB are unset. No DB/live-provider E2E or
+  migration verification is claimed. `/admin/manual` opened at 1280px and 390px on the production
+  build and redirected to login; authenticated manual content was not exercised. Temporary browser
+  viewport reset and tab closed. No commit/push/deploy or live business data writes.
+
+### Earlier analytics verification
+
+- branch `codex/board-game-profit-utilization`; no commit/push/deploy or live data writes.
+- Migration `10.89` adds physical occupancy, per-session membership and effective branch hours.
+  Apply it before deploying code: existing board-game open/move/close transactions now need it.
+- Recheck fixed open intervals past database observation time, overlapping overnight schedules/DST,
+  area allocation over full visit paths, older-period returns, merchandise/play return separation,
+  ex-VAT product gross profit, early-paying groups' seat-minutes and terminal sessions reopening on moves.
+- Fixed required GraphQL hours `effectiveFrom`, typed validation results, HH:mm round trips,
+  all-branch selection, stale-filter exports and areaId forwarding. Library cost follows cost RBAC.
+- Analytics pure suites: 25/25 (including resolver RBAC/status); five actual compiled-service mutations rejected. SQL transport is
+  mocked in service tests; do not describe these as PostgreSQL integration tests.
+- Browser fixture uses the real React component/CSS at 390px and 1280px. Verified whole-page width,
+  all-branch selection, stale-export disable, areaId in export and HH:mm saves. No backend writes.
+  Reproduce with `node scripts/board-game-analytics-browser-preview.mjs` (loopback port 3108).
+  Production-built `/admin/board-game` was opened at both widths and redirected to login as expected;
+  authenticated content was not exercised. Both task-owned servers (3107/3108) were stopped afterwards.
+- DB suite attempted but runner refused: POSTGRES_HOST/POSTGRES_DB are unset; no local PostgreSQL
+  container. Migration/RLS/grants/rollback on a restored throwaway database and authenticated end-to-end
+  flows remain unverified. Do not apply to production as a substitute for those checks.
+- Full gate exit 0: typecheck, pure 3,037 passed / 3,039 total (2 skipped), production build.
+  Two final targeted tests were added after the full suite loaded; the final analytics 25/25 run
+  includes both. Build reports localhost:5432 ECONNREFUSED in unrelated static preloads, but completes.
+  Full log: `.test-output/board-game-recheck-gate.log`.
+
 ## Desktop POS แท็บ คืน/รับของ/มัดจำ/กะ/ตั้งค่า — 2026-10-16
 
 - branch `codex/fix-pos-return-empty-state` (push แล้ว ยังไม่เปิด PR) · ไม่มี migration · ไม่มี permission ใหม่

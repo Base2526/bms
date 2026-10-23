@@ -408,6 +408,17 @@ export const MIGRATIONS: Migration[] = [
     needs: [{ kind: "table", name: "bms_board_game_identity_holds" }],
   },
   {
+    // ตั้งแต่ 10.89 ทุกการเปิด/ย้าย/ปิด seating เขียน occupancy ledger ใน transaction เดียวกัน
+    // จึงไม่ใช่ตารางเสริมของหน้ารายงาน: ถ้าขาด migration นี้ workflow โต๊ะหลักจะ rollback
+    file: "10.89__bms_board_game_profit_utilization.sql",
+    impact: "ร้านบอร์ดเกมเปิด/ย้าย/ปิดโต๊ะไม่ได้ — occupancy ledger เป็นส่วนหนึ่งของ transaction หลัก",
+    needs: [
+      { kind: "table", name: "bms_board_game_table_occupancy" },
+      { kind: "table", name: "bms_board_game_session_table_occupancy" },
+      { kind: "table", name: "bms_board_game_branch_hours" },
+    ],
+  },
+  {
     // close-for-billing อ่าน location_id ของสิทธิ์ทุกใบเพื่อบังคับว่าใช้ได้ในสาขาของกลุ่มนั้น
     // และหน้าแพ็กเกจอ่านคอลัมน์นี้เพื่อกรองข้อมูลตามสาขาที่ผู้ใช้ดูแล
     file: "9.94__bms_board_game_branch_scope_and_identity_hardening.sql",

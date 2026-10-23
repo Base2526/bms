@@ -36,11 +36,12 @@ test("admin manual documents the complete board-game operating boundary in both 
   assert.match(manual, /เกมที่ขายขาดยังเป็นสินค้าและสต็อกปกติ/);
   assert.match(manual, /หยุดเวลาและคิดราคา/);
   assert.match(manual, /ไปเก็บเงินที่ POS/);
-  assert.match(manual, /ยังไม่มีสัญญาสมาชิกรายเดือน\/รายปีหรือที่เก็บเลขบัตรประชาชนแบบเข้ารหัส/);
+  assert.match(manual, /ที่แท็บ วิเคราะห์ เลือกช่วงไม่เกิน 92 วัน/);
+  assert.match(manual, /ข้อมูลก่อน migration 10\.89 อาจประมาณการย้ายโต๊ะ/);
   assert.match(manual, /Board-game cafe: from opening a session to POS settlement/);
   assert.match(manual, /checking one out changes asset status without reducing retail stock/);
-  assert.match(manual, /does not yet provide monthly\/yearly subscription contracts or encrypted national-ID storage/);
-  assert.match(manual, /they do not automatically issue separate receipts/);
+  assert.match(manual, /On Analytics, choose at most 92 days/);
+  assert.match(manual, /Pre-10\.89 table moves may be approximate/);
 });
 
 test("board-game tenant tables have RLS, bms_app grants, revisions and permissions", () => {

@@ -7,6 +7,7 @@ import { bmsMobileOperationsTypeDefs } from "./bmsMobileOperations";
 import { bmsTaxReportsTypeDefs } from "./bmsTaxReports";
 import { bmsExpenseDocumentsTypeDefs } from "./bmsExpenseDocuments";
 import { bmsBranchRequisitionsTypeDefs } from "./bmsBranchRequisitions";
+import { bmsBoardGameAnalyticsTypeDefs } from "./bmsBoardGameAnalytics";
 
 function mergeResolvers(base:any, extra:any){
   return {
@@ -19,5 +20,5 @@ function mergeResolvers(base:any, extra:any){
 
 // ฝั่ง Web/HTTP เอาเฉพาะ coreTypeDefs เพื่อให้สคีมาครบ
 // ส่วน Subscription/Resolvers รันที่บริการ WS แยกอยู่แล้ว
-export const mergedTypeDefs = [coreTypeDefs, typeDefs, bmsPosDeviceTypeDefs, bmsMobileOperationsTypeDefs, bmsTaxReportsTypeDefs, bmsExpenseDocumentsTypeDefs, bmsBranchRequisitionsTypeDefs];
+export const mergedTypeDefs = [coreTypeDefs, typeDefs, bmsPosDeviceTypeDefs, bmsMobileOperationsTypeDefs, bmsTaxReportsTypeDefs, bmsExpenseDocumentsTypeDefs, bmsBranchRequisitionsTypeDefs, bmsBoardGameAnalyticsTypeDefs];
 export const mergedResolvers = mergeResolvers({}, resolvers);

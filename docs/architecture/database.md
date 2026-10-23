@@ -2014,3 +2014,30 @@ then rechecks payment and quote inputs before writing. The new `bms_audit_log.ac
 `order.shipping_recalculated` has actor `system:shipping-recalculation`, order id as target,
 and `{ shippingFee, source }` metadata, committed in the same tenant transaction as the fee.
 No new table, permission, migration, or external carrier command is introduced.
+
+### 10.89 — board-game occupancy and effective branch hours
+
+`bms_board_game_table_occupancy` is the tenant/location/table/seating-scoped interval ledger used by
+the board-game utilization denominator and allocation. One open interval per physical table is
+enforced by a partial unique index, with a second unique index for one open interval per seating. Open/move/merge/detach/cancel/final-close update it inside the
+existing business transaction. Existing seatings are inserted once with `backfilled = true`; a
+closed backfill has `end_reason = BACKFILL`, while an active backfill stays open. That flag is evidence
+that table-move history before 10.89 is unrecoverable, not a reason to invent a split.
+
+`bms_board_game_session_table_occupancy` is the separate per-session membership timeline used only
+to allocate frozen group/tab money across moves, merges and detaches. Keeping it separate prevents
+two merged sessions from double-counting one physical occupied table. A detached billing group copies
+the source session's table path up to the detachment instant and then opens its own target interval.
+
+`bms_board_game_branch_hours` stores one effective-dated row per tenant/location/weekday. A row is
+either closed with null times or open with distinct start/end times; `closes_at <= opens_at` means an
+overnight interval. Analytics selects the latest row in effect for each service date and validates the
+store timezone through `pg_timezone_names`. Public profile opening-hours prose remains unchanged.
+
+All three tables have composite tenant FKs, forced RLS and explicit `bms_app` grants. Session membership
+also binds the session's location through its composite FK. Moving a seating does not reopen membership
+for an already-terminal session. Tenant deletion
+removes them before the session tree. The migration also extends the existing
+`bms_generated_reports.report_type` check with `BOARD_GAME_ANALYTICS`; no generated file is a money
+authority. The report reads current active/unblocked table configuration because table-state history
+does not yet exist, a limitation disclosed in the business documentation and UI.

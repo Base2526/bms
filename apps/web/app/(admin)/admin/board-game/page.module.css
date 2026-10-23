@@ -441,3 +441,42 @@
 .libraryItem { flex-wrap: wrap; gap: 12px; }
 .libraryItem :global(.ant-list-item-meta) { min-width: 200px; }
 .libraryItem :global(.ant-list-item-action) { margin-inline-start: 0; }
+
+.analytics { display: grid; gap: 16px; min-width: 0; }
+.analyticsFilters { display: grid; grid-template-columns: repeat(4, minmax(150px, 1fr)) auto auto; gap: 10px; align-items: end; }
+.analyticsFilters label, .effectiveDate { display: grid; gap: 6px; color: #5d6763; font-size: 12px; }
+.analyticsFilters :global(.ant-select) { width: 100%; }
+.analyticsKpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.analyticsKpis > div { min-width: 0; border: 1px solid #dfe6e2; border-radius: 10px; padding: 12px; background: var(--bms-surface, #fff); }
+.analyticsKpis span, .analyticsKpis strong { display: block; overflow-wrap: anywhere; }
+.analyticsKpis span { color: #68736e; font-size: 12px; }
+.analyticsKpis strong { margin-top: 4px; font-size: 20px; }
+.analyticsSection { min-width: 0; padding: 16px; border: 1px solid #dfe6e2; border-radius: 12px; background: var(--bms-surface, #fff); }
+.heatmapScroll, .tableScroll { max-width: 100%; overflow-x: auto; }
+.heatmap { min-width: 760px; display: grid; gap: 4px; align-items: center; }
+.heatmap > b { text-align: center; font-size: 11px; }
+.heatmapRow { display: grid; gap: 4px; align-items: center; }
+.heatCell { min-height: 42px; display: grid; place-items: center; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.waterfall { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; }
+.waterfall > div { min-width: 0; padding: 12px; border-radius: 8px; background: #f2f7f4; }
+.waterfall span, .waterfall b { display: block; overflow-wrap: anywhere; }
+.waterfall span { font-size: 11px; color: #68736e; }
+.analyticsTwoColumns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.hoursEditor { margin-top: 8px; }
+.effectiveDate { width: min(260px, 100%); margin: 14px 0; }
+.hoursGrid { display: grid; gap: 8px; margin-bottom: 14px; }
+.hoursRow { display: grid; grid-template-columns: 100px 110px minmax(100px, 1fr) auto minmax(100px, 1fr); gap: 8px; align-items: center; }
+
+@media (max-width: 900px) {
+  .analyticsFilters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analyticsKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waterfall { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 600px) {
+  .analyticsFilters, .analyticsTwoColumns { grid-template-columns: minmax(0, 1fr); }
+  .analyticsKpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .waterfall { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .hoursRow { grid-template-columns: minmax(90px, 1fr) auto; }
+  .hoursRow input { min-width: 0; }
+}

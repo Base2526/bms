@@ -17,6 +17,7 @@ import { searchGameLibrary } from "@/lib/pos/boardGameLibrarySearch";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import styles from "./page.module.css";
+import BoardGameAnalyticsPanel from "./BoardGameAnalyticsPanel";
 
 type Location = { id: string; code: string; name: string; active: boolean };
 type Reservation = { id: string; source: string; status: string; guestName: string | null;
@@ -143,6 +144,7 @@ export default function BoardGamePage() {
   const canManageRate = can("board_game.rate.manage");
   const canManagePass = can("board_game.pass.manage");
   const canManageOffer = can("board_game.offer.manage");
+  const canViewReports = can("report.view");
   const canRevealIdentity = can("board_game.identity.reveal");
   const canManageLibrary = can("board_game.library.manage");
   const canCancel = can("board_game.session.cancel");
@@ -1147,6 +1149,9 @@ export default function BoardGamePage() {
               ]} />
             </section>
           ) },
+          ...(canViewReports ? [{ key: "analytics", label: t("admin_board_game.tab_analytics"), children: (
+            <BoardGameAnalyticsPanel locations={locations} currentLocationId={locationId} areas={floor.areas} canManageFloor={canManageFloor} />
+          ) }] : []),
           { key: "settings", label: t("admin_board_game.tab_settings"), forceRender: true, children: (
             <div className={styles.settingsGrid}>
               <section className={styles.panel}>

@@ -1220,6 +1220,41 @@ errors are not transformed into empty successful reports. No mutation, AI exposu
 new REST route, UI change or replacement of existing report queries. Regenerate schema.graphql with
 schema:export. Real SQL/RLS/consistency/performance tests remain deferred; DB-free tests use fakes.
 
+## Board-game profit and utilization
+
+`bmsBoardGameAnalytics(input)` is a typed GraphQL read requiring `report.view`. Input is an inclusive
+20xx ISO calendar range of at most 92 days plus optional `locationId`, `areaId` and granularity. Tenant,
+actor, allowed branches and timezone are server-derived; a branch-scoped actor cannot omit the branch
+to widen the query. Output keeps decimal money as strings and includes totals, table/area rows,
+weekday-hour heatmap, top frozen offers, queue/pass/library observations, completeness, truncation and
+bounded issue counts. Product cost/gross profit are nullable and are omitted with `COST_HIDDEN` when
+the caller lacks both `product.view` and `tax.document.view`; other metrics remain available.
+
+`bmsBoardGameBranchHours(locationId)` requires `report.view` and repeats branch scope. The
+`bmsUpsertBoardGameBranchHours(input)` mutation requires `board_game.floor.manage`, exactly seven
+distinct weekday rows, an effective date, valid 24-hour times or an explicit closed day. It writes the
+hours and `board_game.branch_hours_upsert` audit in one tenant transaction. Neither operation accepts
+a tenant or actor from the caller.
+
+The analytics query returns `{status, code, report}`; branch-hour reads/writes return
+`{status, code, hours, locationId, effectiveFrom}`. Expected validation rejections remain in `status`,
+with no report/empty hours; authentication/permission failures remain GraphQL errors. Every returned
+hour includes its required `effectiveFrom`, including immediately after saving.
+
+The existing `bmsGenerateReport` mutation accepts `reportType: BOARD_GAME_ANALYTICS` with date range,
+optional branch and `areaId`, and `format: XLSX`; other formats are rejected and AI summary is disabled. The same
+branch and cost-disclosure rules are reused. No REST endpoint was added. Staff-only AI reads
+`get_board_game_top_games` and `get_board_game_table_revenue` reuse this service with costs
+withheld; `list_board_game_report_branches` supplies bounded, actor-scoped branch choices and
+the current date in the report timezone. All require `report.view`; none is a customer tool.
+`get_board_game_report` adds SUMMARY/HEATMAP/OFFERS and product PROFIT (the latter also rechecks
+`product.view` + `tax.document.view`). Read-only `get_board_game_live_operations` and
+`get_board_game_pass_balances` mirror the existing `board_game.session.manage` read permission;
+`get_board_game_library_report` uses `board_game.library.view`. All validate server-derived
+tenant/actor branch access, return bounded allowlisted data and omit customer identity. These add
+no endpoint or schema. `generate_report`/`email_report` now forward branch/area filters for
+BOARD_GAME_ANALYTICS only; XLSX/date constraints and confirmation semantics remain enforced.
+
 ## Fake-store ground truth
 
 `POST /api/dev/fake/provision-demo-shops` requires one recognized `shopKey` and provisions exactly

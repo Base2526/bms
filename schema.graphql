@@ -513,6 +513,144 @@ type BmsBilling {
   usage: BmsUsage!
 }
 
+type BmsBoardGameAnalytics {
+  byArea: [BmsBoardGameAreaAnalytics!]!
+  byTable: [BmsBoardGameTableAnalytics!]!
+  complete: Boolean!
+  dataQuality: BmsBoardGameAnalyticsDataQuality!
+  heatmap: [BmsBoardGameHeatmapCell!]!
+  issues: [BmsBoardGameAnalyticsIssue!]!
+  library: BmsBoardGameLibraryAnalytics!
+  locationScope: [ID!]
+  range: BmsBoardGameAnalyticsRange!
+  timezone: String!
+  topOffers: [BmsBoardGameOfferAnalytics!]!
+  totals: BmsBoardGameAnalyticsTotals!
+  truncated: Boolean!
+}
+
+type BmsBoardGameAnalyticsDataQuality {
+  backfilledBefore: String
+  hoursConfigured: Boolean!
+  tablesWithoutHours: Int!
+}
+
+enum BmsBoardGameAnalyticsGranularity {
+  AREA
+  DAY
+  TABLE
+  WEEKDAY_HOUR
+}
+
+input BmsBoardGameAnalyticsInput {
+  areaId: ID
+  from: String!
+  granularity: BmsBoardGameAnalyticsGranularity = DAY
+  locationId: ID
+  to: String!
+}
+
+type BmsBoardGameAnalyticsIssue {
+  code: String!
+  count: Int!
+  message: String!
+}
+
+type BmsBoardGameAnalyticsRange {
+  from: String!
+  granularity: BmsBoardGameAnalyticsGranularity!
+  to: String!
+}
+
+type BmsBoardGameAnalyticsResult {
+  code: String
+  report: BmsBoardGameAnalytics
+  status: String!
+}
+
+type BmsBoardGameAnalyticsTotals {
+  availableTableHours: Float!
+  avgPlayMinutes: Float
+  cancelledSessions: Int!
+  depositsForfeited: String!
+  grossPlay: String!
+  guests: Int!
+  netPlay: String!
+  occupiedTableHours: Float!
+  offerDiscount: String!
+  paidSessions: Int!
+  passCoverage: String!
+  passMinutesUsed: Int!
+  passSalesRevenue: String!
+  playReturns: String!
+  revPATH: String
+  seatUtilizationPct: Float
+  sessions: Int!
+  tabCost: String
+  tabGrossProfit: String
+  tabRevenue: String!
+  tabRevenueExVat: String
+  turnoverPerTablePerDay: Float
+  utilizationPct: Float
+  waitlist: BmsBoardGameWaitlistAnalytics!
+}
+
+type BmsBoardGameAreaAnalytics {
+  areaId: ID!
+  availableTableHours: Float!
+  locationId: ID!
+  name: String!
+  occupiedTableHours: Float!
+  revPATH: String
+  revenue: String!
+  utilizationPct: Float
+}
+
+type BmsBoardGameBranchHour {
+  closed: Boolean!
+  closesAt: String
+  effectiveFrom: String!
+  opensAt: String
+  weekday: Int!
+}
+
+input BmsBoardGameBranchHourInput {
+  closed: Boolean!
+  closesAt: String
+  opensAt: String
+  weekday: Int!
+}
+
+type BmsBoardGameBranchHoursResult {
+  code: String
+  effectiveFrom: String
+  hours: [BmsBoardGameBranchHour!]!
+  locationId: ID
+  status: String!
+}
+
+type BmsBoardGameHeatmapCell {
+  availableTableHours: Float!
+  hour: Int!
+  occupiedTableHours: Float!
+  revenue: String!
+  utilizationPct: Float
+  weekday: Int!
+}
+
+type BmsBoardGameLibraryAnalytics {
+  copiesNeedingAttention: Int!
+  purchaseCostTotal: String
+  titlesPlayed: [BmsBoardGameTitleAnalytics!]!
+}
+
+type BmsBoardGameOfferAnalytics {
+  discount: String!
+  name: String!
+  offerId: ID!
+  uses: Int!
+}
+
 type BmsBoardGameOperationsReport {
   activePassCount: Int!
   attentionCopyCount: Int!
@@ -530,6 +668,44 @@ type BmsBoardGameOperationsReport {
   sessionCount: Int!
   settledAmount: Float!
   titleCount: Int!
+}
+
+type BmsBoardGameTableAnalytics {
+  areaName: String!
+  availableTableHours: Float!
+  code: String!
+  grossPlay: String!
+  locationName: String!
+  name: String!
+  netPlay: String!
+  occupiedTableHours: Float!
+  offerDiscount: String!
+  passCoverage: String!
+  revPATH: String
+  revenue: String!
+  seats: Int!
+  tabCost: String
+  tabGrossProfit: String
+  tabRevenue: String!
+  tabRevenueExVat: String
+  tableId: ID!
+  utilizationPct: Float
+}
+
+type BmsBoardGameTitleAnalytics {
+  minutes: Int!
+  name: String!
+  plays: Int!
+  titleId: ID!
+}
+
+type BmsBoardGameWaitlistAnalytics {
+  avgWaitMinutes: Float
+  cancelled: Int!
+  entries: Int!
+  noShow: Int!
+  noShowRatePct: Float
+  seated: Int!
 }
 
 type BmsBundleItem {
@@ -1647,6 +1823,7 @@ type BmsFullTaxInvoiceView {
 }
 
 input BmsGenerateReportInput {
+  areaId: ID
   dateFrom: String
   dateTo: String
   format: String!
@@ -8587,6 +8764,12 @@ input BmsUpdateSupportTicketInput {
   status: String
 }
 
+input BmsUpsertBoardGameBranchHoursInput {
+  effectiveFrom: String!
+  hours: [BmsBoardGameBranchHourInput!]!
+  locationId: ID!
+}
+
 input BmsUpsertReportSubscriptionInput {
   emailEnabled: Boolean
   enabled: Boolean
@@ -9263,6 +9446,7 @@ type Mutation {
   bmsUpdateTaxSettings(input: BmsTaxSettingsInput!): BmsTaxSettings!
   bmsUpdateTracking(carrier: BmsCarrier, id: ID!, trackingNo: String): Boolean!
   bmsUpsertArAccount(creditLimit: Float!, customerId: ID!, note: String, status: String, termsDays: Int!): BmsArAccount!
+  bmsUpsertBoardGameBranchHours(input: BmsUpsertBoardGameBranchHoursInput!): BmsBoardGameBranchHoursResult!
   bmsUpsertChannel(accessToken: String, active: Boolean, channel: String!, channelSecret: String): Boolean!
   bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!
   bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
@@ -9622,6 +9806,8 @@ type Query {
   bmsAssignableStaff: [BmsStaffRef!]!
   bmsAuditLog(limit: Int = 100): [BmsAuditEntry!]!
   bmsBilling: BmsBilling!
+  bmsBoardGameAnalytics(input: BmsBoardGameAnalyticsInput!): BmsBoardGameAnalyticsResult!
+  bmsBoardGameBranchHours(locationId: ID!): BmsBoardGameBranchHoursResult!
   bmsBranchRequisitionAvailability(size: String!, sku: String!): [BmsRequisitionAvailability!]!
   bmsBranchRequisitionCatalog(search: String!): [BmsRequisitionProduct!]!
   bmsBranchRequisitionDemand(offset: Int, search: String): BmsRequisitionDemandList!

@@ -217,7 +217,7 @@ const CONFIGURATION = [
   "bms_restaurant_qr_sessions", "bms_restaurant_table_qr_tokens",
   "bms_board_game_areas", "bms_board_game_public_locations", "bms_board_game_tables",
   "bms_board_game_time_rates", "bms_board_game_titles", "bms_board_game_offers",
-  "bms_board_game_guest_tokens",
+  "bms_board_game_guest_tokens", "bms_board_game_branch_hours",
   "bms_delivery_integrations", "bms_delivery_location_mappings", "bms_delivery_menu_mappings",
   "bms_delivery_provider_settings", "bms_social_auth_settings",
   "bms_app_download_settings", // Public homepage reads on load; admin form uses the saved response.
@@ -235,7 +235,7 @@ const POLLED_OPERATIONAL_SURFACE = [
   "bms_board_game_copies", "bms_board_game_sessions",
   "bms_board_game_session_games", "bms_board_game_session_participants",
   "bms_board_game_billing_groups", "bms_board_game_group_items",
-  "bms_board_game_seatings",
+  "bms_board_game_seatings", "bms_board_game_table_occupancy", "bms_board_game_session_table_occupancy",
   "bms_board_game_pass_plans", "bms_board_game_member_passes", "bms_board_game_pass_ledger",
   "bms_board_game_pass_renewals",
   "bms_board_game_identity_holds",
