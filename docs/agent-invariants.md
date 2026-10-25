@@ -1502,6 +1502,88 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   the migration was written for. Always confirm the target database's applied-migration state before
   deploying code that reads a new column unconditionally.
 
+## Operations checklists and food-safety evidence (`10.90`–`10.92`)
+
+- Release H (`10.97`): holds restrict lot availability, never physical/value/quarantine balances.
+  Canonical checklist approval is not release; separate proposer/reviewer confirms exact frozen
+  lot quantity, hold version and inspection identity/version. Disposal also requires stock.adjust
+  and uses canonical wastage in the same audited transaction. New hold/held return needs a new
+  inspection. No automatic release on full disposal, no expiry override, no auto customer recall.
+  Case edits never rewrite terminal inspection evidence. Inactive variants can still be restricted/
+  disposed without enabling sales; rejection of stale proposals cannot depend on catalog eligibility.
+  Held replenishment invalidates inspection and commits internal change notices in the same tx.
+  Trace is bounded recorded evidence with explicit unknown/restricted history. Never deploy or
+  roll back to a hold-unaware stock writer while active holds exist.
+
+- Release G (`10.96`): frozen E BOM demand, one branch/<=7 Bangkok dates, integer base units;
+  deterministic once-only allocation is not a reservation. Usable stock and pending supply stay
+  separate. Unknown receipt allocation or unreconciled lots never become "ready" by guessing.
+- Inspection approval never receives stock. Separate receipt checks current versions, PO quantity,
+  lot/date/unit and atomically calls `receivePurchaseOrderInTx`, preserving valuation, movement,
+  exact provenance, audit and idempotency. This primitive never commits; caller rolls back failures.
+  Rejected quantity moves no stock. G and branch-request procurement cannot share a PO allocation.
+- Nonlot branch requests reuse approved/send/receive evidence; lot transfers remain unsupported.
+  Canonical tasks retain their lifecycle and My Work/review/escalation. Details:
+  [production/material workflow](business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving).
+
+Release F (`10.94`–`10.95`): [standards and improvement](business/operation-improvement.md). ACK is self-only;
+TRAINED and another trainer's PASS/PRACTICE assessment are distinct evidence. Immutable SOP versions pin independent ack/training
+bases; carry is explicit, never RBAC or shift gating. FAIL actions link uniquely to issues; followups
+reuse canonical runs/notices. Closure needs verified non-void sources and approved current-cycle
+rechecks. Weekly snapshots are immutable: exclude future/VOID denominator, label current evidence,
+keep recipe/unit cohorts, never guess missing waste cost or infer causal/ranking scores.
+
+Release E (`10.93`): physical production links canonical runs but never couples approval to stock.
+Pin BOM/SOP/unit evidence; separate DIRECT output from virtual recipe SKU. Lock run → batch → sorted
+catalog/stock; post input/output movements, lots, weighted value, audit and replay together. Output
+value comes only from same-transaction persisted input value entries; unknown stays unknown. Use
+existing exact-lot wastage and stock.adjust, never dispose production yield variance twice. Date-only
+expiry is explicit, not safety certification. Details: [production](business/operation-production.md).
+Disposal revalidates the frozen output unit/policy; detail reads share one serializable snapshot.
+Recipe/output selectors search independently on the server. A denied retry after a lost response
+must release the retry-only UI while keeping the original outcome explicitly unverified.
+
+- `/admin/operations` is an admin-session surface, not a POS/PIN or offline workflow. Both
+  reads and mutations require checklist permission plus server-resolved tenant/branch scope.
+- Template content and run snapshots are immutable; editing creates a new version. Publication
+  retires the previous active version and pauses its schedules. Never silently upgrade existing work.
+- Record FAIL and create/reopen its corrective action atomically. A later PASS does not clear
+  previous failure. Approval requires VERIFIED actions; separate-reviewer checks include all
+  historical result authors, not only the last edit. Approved/VOID work is immutable.
+- `beginTenantTx` contains state, result, event, audit and stable command-idempotency result.
+  Lock template family before template rows; lock parent run before corrective-action rows.
+- Images are decoded/re-encoded and private. Only the dedicated evidence route may read them,
+  after view/branch checks; generic file surfaces must not bypass that boundary.
+- Scheduled work claims `SKIP LOCKED` and has a unique schedule/instant occurrence. Keep the
+  15-minute dispatcher separate from business logic; polling is not proof a scheduled run executed.
+- Shop-configured limits are not legal/clinical safety standards. Approval is work review,
+  never automated food-safety certification. No new AI tool, stock or money side effect.
+
+- Release C personal queues derive the actor from session. Notices are a tenant/recipient-scoped,
+  transactional inbox; D exposes it through an admin operations bell, never external delivery. Deduplication is by
+  recipient/task/due occurrence; read receipt never changes business state. Revalidate recipients'
+  permission/branch before dispatch, and current viewer branch when reading old notices.
+- Escalation uses an explicitly configured eligible branch supervisor. Automatic escalation is
+  opt-in; one active escalation per run, including ACKNOWLEDGED. Acknowledge never approves or
+  resolves anything; APPROVED/VOID closes escalation atomically. Policy changes do not reroute old
+  matters; explicit manager reroute requires reason, version, confirmation and audit.
+- Reports use inclusive Bangkok due-date cohorts, max 93 days. Historical FAILs count distinct runs,
+  not revisions, and exclude voided work. On-time means approved by due time, denominator all
+  non-void cohort runs (including future-due). No certification score or fabricated empty-data rate.
+
+Full scope/limits: [operation-checklists](business/operation-checklists.md).
+
+- Team rosters are not POS shifts/payroll/verified attendance. Published content is immutable;
+  same-person overlap is checked under a tenant-wide publish lock, including other branches.
+- DUTY assignment resolves at original occurrence time and freezes evidence. Missing/ambiguous
+  eligible people remain unassigned; changing rosters must never rewrite created work.
+- Submitted handover source snapshots stay immutable. Receiving never approves/closes/transfers
+  work. Explicit transfer needs both handover and canonical management permissions, current source
+  version/owner, reason and confirmation; use canonical assignment in the same tx, preserve due_at.
+- Daily confirmation is an append-only snapshot with fingerprint/prior-version guard, never a POS
+  close or financial record. On-duty supervisor is opt-in with validated static fallback; old
+  escalations require explicit reroute. Notices remain tenant/recipient/branch scoped.
+
 ## Restaurant online ordering (chat, delivery, sold-out)
 
 `lib/bms/{menuAvailability,restaurantOrdering}.ts`, `app/api/pos/restaurant/{menu,incoming}`,

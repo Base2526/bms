@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
 import { resolveDefaultLocationId } from "./locations";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
@@ -133,6 +134,7 @@ export type VariantRow = {
   size: string;
   current_stock: number;
   reserved_stock: number;
+  usable_stock?: number;
   quarantine_stock: number;
   in_transit_qty: number;
   transfer_lost_qty: number;
@@ -350,7 +352,7 @@ export async function listSellableProducts(
           WHERE sellable_i.tenant_id = p.tenant_id
             AND sellable_i.product_sku = p.sku
             AND ($${locationParam}::uuid IS NULL OR sellable_i.location_id = $${locationParam})
-            AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
+            AND ${usableStockSql('sellable_i')} > 0
             AND ($${sizeParam}::text IS NULL OR sellable_i.size = $${sizeParam})
        ))`;
   }
@@ -487,13 +489,13 @@ export async function listSellableProducts(
                  AND unavailable.product_sku = m.sku
                  AND unavailable.resets_at > now()
             ) AS temporarily_unavailable,
-            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text
+            COALESCE(SUM(${usableStockSql('i')}), 0)::text
               AS available_total,
             COALESCE(
               jsonb_agg(
                 jsonb_build_object(
                   'size', i.size,
-                  'available', GREATEST(i.current_stock - i.reserved_stock, 0)
+                  'available', ${usableStockSql('i')}
                 )
                 ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], i.size), i.size
               ) FILTER (WHERE i.size IS NOT NULL),
@@ -752,6 +754,7 @@ export async function listVariants(tenantId: string, sku: string): Promise<Varia
         WHERE ti.tenant_id = $1 AND ti.product_sku = $2 AND tr.status = 'IN_TRANSIT'
      )
      SELECT keys.location_id, loc.name AS location_name, loc.branch_code,
+            ${usableStockSql('i')} AS usable_stock,
             keys.size, COALESCE(i.current_stock, 0)::integer AS current_stock,
             COALESCE(i.reserved_stock, 0)::integer AS reserved_stock,
             COALESCE(i.quarantine_stock, 0)::integer AS quarantine_stock,
@@ -1083,7 +1086,7 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
       images,
       variants: variants.map((variant) => ({
         size: variant.size,
-        available: Math.max(0, variant.current_stock - variant.reserved_stock),
+        available: variant.usable_stock ?? 0,
         price: Number(variant.price),
       })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
@@ -1137,7 +1140,7 @@ export async function listPublicRelatedProducts(
       available: string;
     }>(
       `SELECT p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand,
-              COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+              COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
          FROM bms_products p
          JOIN bms_tenants t ON t.id = p.tenant_id
          LEFT JOIN bms_inventory i
@@ -1145,7 +1148,7 @@ export async function listPublicRelatedProducts(
           AND i.product_sku = p.sku
         WHERE ${where}
         GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand
-        ORDER BY COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0) DESC, p.name
+        ORDER BY COALESCE(SUM(${usableStockSql('i')}), 0) DESC, p.name
         LIMIT $${limitPos}`,
       [...params, limit]
     );
@@ -1293,7 +1296,7 @@ export async function listPublicProducts(
             p.image_url,
             p.category,
             p.brand,
-            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+            COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
        FROM bms_products p
        JOIN bms_tenants t
          ON t.id = p.tenant_id
@@ -1905,6 +1908,7 @@ export async function adjustStock(
       [tenantId, sku, sizeUp, locationId]
     );
 
+    await assertNoQualityHold(client,tenantId,locationId,sku,sizeUp);
     let row: VariantRow;
     if (cur.rowCount === 0) {
       if (delta < 0) {

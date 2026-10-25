@@ -308,6 +308,8 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   // ถ้ามันไม่พาไปที่ไกด์สินค้า กฎ limits.product-catalog ก็ไม่มีใครไปถึง
   { q: "ขอเติมสินค้าระหว่างสาขาต้องทำยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.branch-requisitions", origin: "coverage" },
   { q: "how do I submit a branch requisition", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.branch-requisitions", origin: "coverage" },
+  { q: "เช็กลิสต์งานเปิดร้านและตรวจอุณหภูมิทำยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "operations.checklists", origin: "coverage" },
+  { q: "how do I use opening checklist and temperature log", locale: "en", context: GUIDES, expect: "answer", expectTop: "operations.checklists", origin: "coverage" },
   { q: "เพิ่มสินค้าแล้วขายไม่ได้", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.stock-sale-blockers", expectAlso: ["products.create"] },
   { q: "why a new product cannot be sold", locale: "en", context: GUIDES, expect: "answer", expectTop: "inventory.stock-sale-blockers", expectAlso: ["products.create"] },
   { q: "โอนของไปสาขาอื่นยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "inventory.transfer", origin: "coverage" },

@@ -49,6 +49,8 @@ jobs:
       fail-fast: false
       matrix:
         job:
+          - name: operation-checklists
+            path: /api/bms/operations/run
           - name: tax-request-email
             path: /api/bms/tax-invoice-requests/send-pending
           - name: release-expired

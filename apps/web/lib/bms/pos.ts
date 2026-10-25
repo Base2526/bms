@@ -1,4 +1,5 @@
 import { readBranchPrice, branchPrice } from "./branchPrices";
+import { usableLotSql, inheritQualityHold } from "./lotQuality";
 // =============================================================
 // BMS POS — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
@@ -3456,7 +3457,7 @@ async function checkSellableLots(
   for (const ln of lines) {
     const res = await query<{ lots: string; sellable: string }>(
       `SELECT count(*) AS lots,
-              COALESCE(SUM(qty) FILTER (WHERE expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date), 0) AS sellable
+              COALESCE(SUM(qty) FILTER (WHERE (expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date) AND ${usableLotSql('bms_inventory_lots')}), 0) AS sellable
          FROM bms_inventory_lots
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
       [tenantId, locationId, ln.sku, ln.size]
@@ -3531,6 +3532,7 @@ async function fulfilPosOrderInTx(
       `SELECT id, qty FROM bms_inventory_lots
         WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
           AND qty > 0 AND (expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)
+          AND ${usableLotSql('bms_inventory_lots')}
         ORDER BY expiry_date NULLS LAST, received_at
         FOR UPDATE`,
       [tenantId, it.location_id, it.product_sku, it.size]
@@ -6389,7 +6391,7 @@ export async function processPosReturn(input: {
               AND oil.order_item_id = $2
               AND lot.product_sku = $3
               AND lot.size = $4
-            ORDER BY oil.id`,
+            ORDER BY oil.id FOR UPDATE OF lot`,
           [input.tenantId, item.id, stockLine.product_sku, stockLine.size]
         );
         for (const lot of lotsRes.rows) {
@@ -6425,6 +6427,7 @@ export async function processPosReturn(input: {
               [input.tenantId, lot.lot_id, giveBack]
             );
           }
+          await inheritQualityHold(client,input.tenantId,lot.lot_id,restockLotId,input.actorUserId);
           await client.query(
             `INSERT INTO bms_pos_return_item_lots
                (tenant_id, pos_return_item_id, lot_id, restock_lot_id, qty)

@@ -41,6 +41,13 @@ type OperationDefinition = {
 
 const DEFINITIONS: OperationDefinition[] = [
   {
+    key: "operation-checklists", name: "Operations Checklist Scheduling", kind: "Cron Endpoint",
+    sourcePath: "apps/web/app/api/bms/operations/run/route.ts", docsPath: "docs/business/operation-checklists.md",
+    triggerHint: "POST /api/bms/operations/run", purposeFallback: "Create versioned branch checklists with bounded, duplicate-safe catch-up.",
+    whenFallback: "Every 15 minutes", statusFallback: "Scheduled", triggerFallback: "Selected Docker or GitHub scheduler",
+    evidenceFallback: "Both scheduler manifests include operation-checklists; inspect job history to verify execution.",
+  },
+  {
     key: "ai-answer-evidence-retention",
     name: "AI Answer Evidence Retention",
     kind: "Cron Endpoint",

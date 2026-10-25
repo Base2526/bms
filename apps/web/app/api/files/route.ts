@@ -25,8 +25,8 @@ async function handleGET(req: NextRequest) {
   const offset = (page - 1) * pageSize;
 
   const where = q
-    ? "WHERE deleted_at IS NULL AND (LOWER(original_name) LIKE LOWER($1) OR LOWER(filename) LIKE LOWER($1))"
-    : "WHERE deleted_at IS NULL";
+    ? "WHERE deleted_at IS NULL AND filename NOT LIKE '%operation-evidence-%' AND (LOWER(original_name) LIKE LOWER($1) OR LOWER(filename) LIKE LOWER($1))"
+    : "WHERE deleted_at IS NULL AND filename NOT LIKE '%operation-evidence-%'";
   const args: any[] = q ? [`%${q}%`, pageSize, offset] : [pageSize, offset];
 
   const { rows } = await query(
@@ -39,7 +39,7 @@ async function handleGET(req: NextRequest) {
   );
 
   const { rows: [{ count }] } = await query(
-    `SELECT COUNT(*)::int AS count FROM files ${q ? "WHERE deleted_at IS NULL AND (LOWER(original_name) LIKE LOWER($1) OR LOWER(filename) LIKE LOWER($1))" : "WHERE deleted_at IS NULL"}`,
+    `SELECT COUNT(*)::int AS count FROM files ${where}`,
     q ? [`%${q}%`] : []
   );
 

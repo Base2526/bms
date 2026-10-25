@@ -1,6 +1,12 @@
 # Central Docker scheduler
 
-The opt-in `scheduler` Compose service runs the 18 existing authenticated BMS cron APIs.
+Release G extends the existing `operation-checklists` job, not its schedule: after checklist/team/
+production follow-up, `runMaterialFollowups()` claims confirmed plans with SKIP LOCKED (100 tenants,
+100 plans each), notifies eligible canonical-task assignee/supervisor for overdue/cancelled unfilled
+supply or due plan review, and deduplicates by plan version. Failure contributes to the same job
+failure record. No supplier calls, stock receipt, external messages or new environment knobs.
+
+The opt-in `scheduler` Compose service runs 19 authenticated BMS cron APIs.
 It owns timing and dispatch only: all SQL, tenant selection, permissions, business rules,
 idempotency and `recordJobRun()` remain in the Web services. It receives no database,
 AI-provider or GitHub credentials and has no host ports or Docker socket.
@@ -46,12 +52,23 @@ name/path/group parity with the existing GitHub workflow.
 
 | Group | UTC schedule | Bangkok time | Jobs |
 | --- | --- | --- | --- |
-| frequent | Every 15 minutes | Every 15 minutes | 13 existing order, follow-up, shipping, menu, delivery, board-game and tax-request email jobs |
+| frequent | Every 15 minutes | Every 15 minutes | 14 order, follow-up, shipping, menu, delivery, board-game, tax-request email and operation-checklist jobs |
 | daily | 20:00 | 03:00 next day | Loyalty maintenance, channel health, AI health, report digest, answer-evidence retention |
 
 Polling is every 10 seconds with at most three concurrent requests. Startup/recovery catches up
 only the latest quarter-hour and daily period, including the previous UTC day's daily slot before
-20:00. It never replays a historical backlog. A first deployment can therefore run all 18 jobs
+20:00. It never replays a historical dispatcher backlog. The checklist service itself catches up
+bounded missed checklist occurrences, preserving original due times (see its business runbook).
+The same checklist route also runs Release C reminders/escalations: up to 100 tenants and 100
+open runs per tenant, oldest follow-up sweep first, `SKIP LOCKED` within tenant transactions.
+Assignment/review notices are normally committed with task changes; clock-based due/overdue
+reminders and opt-in escalation are checked by this sweep. Backlogs may take multiple invocations.
+Release D adds pending overdue handover sweeps (100 tenants × 100 submitted handovers per invocation,
+oldest sweep first, SKIP LOCKED). Recipient and configured/on-duty supervisor notices are deduplicated;
+an unchanged sweep does not resend. Failure counts cover schedules, checklist follow-up and handovers;
+a failed tenant does not undo other commits.
+There is no external notification provider or new scheduler job.
+A first deployment can therefore run all 19 jobs
 soon after startup rather than waiting for the next daily boundary.
 
 Before any POST, one Redis Lua command claims both the job's UTC slot and an in-flight lease.
@@ -90,7 +107,7 @@ even with HTTP 200. The final `warnings` count distinguishes this from a clean r
 success and container health do not assert that every domain item/provider succeeded.
 
 Every dispatch has a `runId`, and every page a separate `requestId`. Web accepts only valid UUIDs
-on the 18 registered cron paths for correlation. These headers grant no authority; the existing
+on the 19 registered cron paths for correlation. These headers grant no authority; the existing
 cron-secret guard still decides whether the handler may execute. AsyncLocalStorage isolates
 simultaneous requests. When `recordJobRun()` inserts history, Web returns `x-bms-job-run-id`;
 on a recognized error it also returns a safe machine code such as SQLSTATE `42703`.

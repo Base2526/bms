@@ -1,5 +1,116 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Materials and receiving — Release G
+
+- `node scripts/run-contract-tests.mjs pure operation-material`: integer/window/source validation
+  and deterministic stock allocation. The full `npm run gate` also checks i18n/schema/adapters/build.
+- DB filter `operation-material`: restored disposable `127.0.0.1:5433/bms_realtime_test` only;
+  requires current base schema plus operations 10.90–10.95, applies 10.96 twice. Covers frozen demand,
+  partial/final/rejected receipt, explicit separate review, movement/lot/value atomic rollback,
+  concurrent receiving/replay, stale stock/run/unit, external-receipt unknowns, PO allocation conflict,
+  branch requests, RBAC/branch/tenant/RLS, scoped cron dedupe and full test-tenant purge. Boundary
+  fixtures prove the 500th link/inspection remains readable and the 501st creates no orphan PO/task;
+  rescheduling a production run preserves historical detail while blocking new supply.
+  POS legacy receive idempotency is exercised using the same purchase wrapper. Fault injection and
+  fixtures write only disposable test data and remove it afterward; never point at production.
+- Regressions: DB `operation-production`, `operation-improvement`, `restaurant-actual-costs`,
+  `stock-ledger`, `pos-scan-manager`; A–D `operation-checklists` uses isolated `bms_operations_test`.
+  `branch-requisitions` uses isolated `bms_requisition_test` with current schema (including G and the
+  existing 10.89 purge dependencies), not a reduced empty schema.
+- `node scripts/operation-material-browser-smoke.mjs`: local production Next at :3018, real compiled
+  route/SDL with mocked auth/GraphQL. English/Thai × 1280/390, PO form, reviewed receipt confirmation,
+  lost-response retry key, historical-only warning, refresh, forbidden tab, no horizontal page overflow. Screenshots under
+  `.test-output/operation-material-browser/`. This does not claim a live-store end-to-end UAT.
+
+2026-10-24 completion/recheck: G DB 22/22, repeated under `TZ=UTC` 22/22; A–D 32/32,
+E 28/28, F 18/18, actual costs 20/20, stock ledger 8/8, branch requisitions 18/18.
+The POS scan-manager source-contract suite passed 7/7 (not an actual DB execution claim).
+Final gate: typecheck, 3,040 pure passed / 6 conditional skips / 0 failures, production build passed.
+G browser passed all four language/width combinations, including historical-only recovery and manual;
+A–F browser regressions also passed all four combinations each. Logs: `.test-output/release-g-*.log`.
+No production migration/deployment or real-store UAT was performed.
+
+
+## Operations improvement — Release F
+
+2026-10-24 follow-up recheck fixed four edge cases:
+
+- Partial SOP carry displayed learning from the reset basis: detail reads now match each kind to
+  its own basis. Tests exercise ACK-only carry and training-only carry while preserving old versions.
+- Followup selection filtered eligibility after the 50-row cap: the `FOLLOWUP` catalog kind now
+  filters ACTIVE/separate-review templates before limiting, tested with 55 retired templates.
+- Weekly readiness snapshots lacked exact evidence identities: new snapshots pin learning/basis IDs
+  and detect same-verdict reassessment, preserving the original immutable snapshot.
+- Readiness refreshed by history length, which stops changing at 100: each successful refresh now
+  remounts the readiness read. Browser regression fills the history to 100, records PRACTICE after
+  PASS and verifies the readiness warning changes without reopening the drawer.
+
+Recheck DB runs: F **18/18**, E **28/28**, A–D **32/32**, actual-cost **20/20**, ledger **8/8**
+(**106 passed**), on the same isolated databases described below. `npm run gate` passed typecheck,
+**3,072 pure tests / 6 skipped / 0 failed**, and production build. Logs are
+`.test-output/release-f-recheck-gate.log` and `release-f-recheck-<suite>.log`; the deliberately red
+pre-fix regression run is `release-f-recheck-before.log`. No new migration is required by these
+corrections; F still requires 10.94/10.95.
+F/E and A–D regression browser rechecks passed on the new production build in en/th at 1280px and 390px, including the
+100-row reassessment regression and server-side FOLLOWUP selector assertion. Browser logs use
+`release-f-recheck-<suite>-browser.log`. The schema-readiness recheck again reports only the existing
+unrelated 10.89 gap (`release-f-recheck-readiness.log`); all operations requirements pass.
+
+- Pure filter `operation-improvement`: seven-day calendar bounds and exact decimal waste totals,
+  including unknown costs and separate acknowledgement/assessment permissions.
+- DB filter `operation-improvement`: restored disposable `127.0.0.1:5433/bms_realtime_test` only;
+  A–E prerequisites first, applies 10.94/10.95. Covers immutable SOP versions, ACK/TRAINED/assessment
+  separation, carry/reset bases, self/branch/tenant isolation, concurrent publication, replay,
+  atomic audit rollback, unique FAIL linkage, canonical followup/assignment notice, assignee brief,
+  separate review, closure/reopen cycles, report cohorts, immutable/changed weekly evidence and
+  schema-readiness detection of an older training constraint. Fixture cleanup is exact tenant UUID.
+- Production DB adds an actual-value weekly-report case: draft excluded from actual yield, exact
+  waste movement/value link and historical NULL cost remaining unknown.
+- `node scripts/operation-improvement-browser-smoke.mjs`: local Next :3018, real route and SDL
+  validation with mocked GraphQL/auth, English/Thai at 1280/390px. Exercises ACK lost-response replay,
+  training/assessment, new SOP version form defaults, server source selectors, issue/followup target,
+  weekly confirmation, permission visibility, manual and overflow. Optional BMS_SMOKE_LANG/WIDTH
+  restrict a debugging run; omit both for full coverage. Screenshots under
+  `.test-output/operation-improvement-browser/`. It is not live-account end-to-end acceptance.
+- Existing A–D browser fixture now answers the optional readiness/run-brief queries; no SOP fixture
+  is explicitly unknown readiness. Existing E fixture answers a null improvement brief.
+- New constraint readiness support checks validated `pg_constraint` definitions, not table presence
+  alone. `10.95` is mandatory for TRAINED. Generated SQL and CLI use the same requirement catalog.
+
+2026-10-24 DB verification: F **15/15**, E **28/28**, A–D **32/32**, restaurant actual-cost **20/20**,
+stock-ledger **8/8** passed. F/E/cost/ledger used restored :5433; A–D used isolated :5549. A broad
+`operation-` filter initially selected A–D on :5433; its safety guard refused before writes, and A–D
+was rerun successfully on its designated database. No production database was touched.
+
+Final 2026-10-24 `npm run gate`: typecheck, **3,036 pure tests passed / 6 skipped / 0 failed**,
+and production build passed (`.test-output/release-f-gate.log`). F DB verification was repeated
+after the final permission changes: **15/15**. F and E browser fixtures passed against that
+production build in English/Thai at both 1280px and 390px, including the canonical assignee target
+brief in F. The A–D regression browser fixture also passed all four language/viewport combinations
+against the same production build. Logs: `.test-output/release-f-db-final.log`,
+`release-f-browser-final.log`, `release-e-browser-final.log` and `release-ad-browser-final.log`
+in the same directory. These browser fixtures mock transport/auth;
+they do not replace a real-account pilot.
+
+Global readiness on the restored test instance still reports **10.89 board-game occupancy tables
+missing** (pre-existing/outside F). Operations 10.90–10.95 all pass their schema checks. This is not
+a claim that the entire restored database is rollout-ready; the unrelated migration was not applied.
+No commit, push or deployment is implied by these results. Real-account role/branch/cron pilot is
+still required before production use.
+
+## Operations production — Release E
+
+- `node scripts/run-contract-tests.mjs pure operation-production`: quantities, dates and scaled BOM.
+- DB filter `operation-production`: restored disposable `127.0.0.1:5433/bms_realtime_test` only,
+  A–D and valuation prerequisites first. Covers actual production/lots/value, POS sale/return,
+  recipe consumption without double deduction, concurrent/replayed posts, rollback, RLS/grants,
+  duty resolution, notices, stock ledger and adapters. Fixtures use FAKE UUID-scoped tenants.
+- `node scripts/operation-production-browser-smoke.mjs`: local Next at :3018 by default; real
+  components/SDL, mocked auth/GraphQL. en/th × desktop/mobile, confirmation, same-key retry and
+  disposal. Set `BMS_PLAYWRIGHT_MODULE` to the installed Playwright module if not locally resolvable.
+- Regression: `restaurant-actual-costs` DB filter on :5433; `operation-checklists` on its separate
+  synthetic `bms_operations_test` DB. Never run either against an active shop database.
+
 ## Board-game owner assistant reads
 
 - `node scripts/run-contract-tests.mjs pure board-game-analytics-tools`: actual tool adapters/runtime,
@@ -1197,3 +1308,38 @@ Run with `BMS_SMOKE_URL=http://127.0.0.1:3000` and optional `BMS_PLAYWRIGHT_MODU
 Native Jest includes `CartContext`, `CartLineAmount`, and scoped promotion tests. The completion DB
 suite compares the shared native/Desktop calculator with real branch-priced POS settlement on the
 isolated port-5433 database; it must not run against the primary development database.
+
+## Operations checklist Release A + B + C + D (2026-10-24)
+
+- `node scripts/run-contract-tests.mjs pure operation-checklists`: input/threshold/state policy.
+- `node scripts/run-contract-tests.mjs pure operation-team`: duty time/key validation, canonical snapshot fingerprint and distinct permissions.
+- `node scripts/run-contract-tests.mjs db operation-checklists`: requires disposable local
+  `bms_operations_test` and explicit POSTGRES settings; applies synthetic dependencies and
+  migrations `10.90`, `10.91` and `10.92` twice. Exercises RLS, branch/RBAC, reviewer separation, immutable snapshots,
+  idempotency/concurrency, audit rollback, schedules and private decoded image evidence. Release C
+  additionally checks actor inboxes, opt-in thresholds, recipient revocation, deduplication, acknowledgment,
+  rerouting, transaction rollback on notice failure and Bangkok-date/distinct-run reporting.
+  D checks cross-branch overlap/concurrent publish, occurrence-time duty resolution, missing/ambiguous
+  assignment, acceptance, stale handover/explicit transfer, immutable manager review, unified inbox,
+  supervisor fallback, audit rollback, revoked recipients and real GraphQL adapters.
+- `node scripts/operation-checklists-browser-smoke.mjs`: local Next UI with fake auth/GraphQL,
+  real exported SDL, Thai/English at 1280/390 pixels, lost-response retry, publication confirmation,
+  denial, search and overflow checks, plus personal work/inbox, escalation/acknowledgment, supervisor
+  policy edits and reports, D roster/retry/publication, handover receipt/transfer, manager confirmation,
+  bell read/deep links and roster deep links. Set `BMS_SMOKE_URL` and `BMS_PLAYWRIGHT_MODULE` as needed.
+  Screenshots go to ignored `.test-output/operation-checklists-browser/`.
+- [Scope and rollout caveats](../docs/business/operation-checklists.md). No production DB,
+  real staff acceptance, external alerts or deployment is exercised by these fixtures.
+
+## Release H verification
+
+`operation-quality-db-contract.test.mts` uses only isolated `127.0.0.1:5433/bms_realtime_test`
+with fake tenants; reapplies 10.97, checks holds/POS/online returns, review identity, disposal,
+audit rollback, replay/RBAC/RLS, notifications and recorded trace. Do not run migration-reapplication
+suites concurrently on the same database: they acquire schema locks.
+Recheck regressions cover post-approval/active-task edits, inactive-variant disposal, catalog-drift
+rejection, disabled wastage and immediate held-return notices (including future-due cases).
+`operation-quality-browser-smoke.mjs` exercises the compiled operations/manual routes and committed
+SDL in English/Thai at 1280/390px with mocked auth/transport (no production writes). Set
+`BMS_SMOKE_URL` to the isolated built server; `BMS_PLAYWRIGHT_MODULE` may point to the local runtime.
+The browser also asserts exact due-time preservation on findings-only edits and visible return links.

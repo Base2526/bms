@@ -811,6 +811,348 @@ type BmsChannelSales {
   revenue: Float!
 }
 
+type BmsChecklistAction {
+  assignedTo: ID
+  dueAt: String!
+  id: ID!
+  instruction: String!
+  itemKey: String!
+  locationId: ID
+  name: String
+  resolution: String
+  resolvedBy: ID
+  runId: ID!
+  status: String!
+  verifiedBy: ID
+  version: Int!
+}
+
+enum BmsChecklistAssignmentMode {
+  DUTY
+  FIXED
+}
+
+type BmsChecklistBranchReport {
+  approved: Int!
+  failedRuns: Int!
+  locationId: ID!
+  name: String!
+  onTime: Int!
+  openActions: Int!
+  overdue: Int!
+  review: Int!
+  total: Int!
+  voided: Int!
+}
+
+enum BmsChecklistCommandAction {
+  ACTION_ASSIGN
+  ACTION_REOPEN
+  ACTION_RESOLVE
+  ACTION_START
+  ACTION_VERIFY
+  APPROVE
+  ASSIGN
+  CREATE_RUN
+  PAUSE_SCHEDULE
+  PUBLISH
+  RECORD
+  REJECT
+  RETIRE
+  SAVE_SCHEDULE
+  SAVE_TEMPLATE
+  START
+  SUBMIT
+  VOID
+}
+
+input BmsChecklistCommandInput {
+  action: BmsChecklistCommandAction!
+  assignedTo: ID
+  assignmentMode: BmsChecklistAssignmentMode
+  category: String
+  confirmed: Boolean
+  dueAt: String
+  dueMinutes: Int
+  dutyKey: String
+  id: ID
+  idempotencyKey: String!
+  itemKey: String
+  items: [BmsChecklistItemInput!]
+  localTime: String
+  locationId: ID
+  name: String
+  note: String
+  photoIds: [Int!]
+  separateReviewer: Boolean
+  stationId: ID
+  templateId: ID
+  timezone: String
+  value: JSON
+  version: Int
+  weekdays: [Int!]
+}
+
+type BmsChecklistCommandResult {
+  id: ID
+  status: String!
+  version: Int
+}
+
+type BmsChecklistEscalation {
+  acknowledgedAt: String
+  createdAt: String!
+  id: ID!
+  locationId: ID!
+  name: String!
+  reason: String!
+  recipient: ID!
+  runId: ID!
+  source: String!
+  status: String!
+  version: Int!
+}
+
+type BmsChecklistEvent {
+  action: String!
+  actor: String!
+  createdAt: String!
+  id: ID!
+  note: String!
+}
+
+type BmsChecklistEvidence {
+  fileId: Int!
+  itemKey: String!
+}
+
+input BmsChecklistFilter {
+  locationId: ID
+  offset: Int
+  search: String
+  status: String
+}
+
+enum BmsChecklistFollowupAction {
+  ACKNOWLEDGE
+  ESCALATE
+  READ_NOTICE
+  REROUTE
+  SAVE_POLICY
+}
+
+input BmsChecklistFollowupFilter {
+  bucket: BmsChecklistWorkBucket
+  locationId: ID
+  offset: Int
+  unreadOnly: Boolean
+}
+
+input BmsChecklistFollowupInput {
+  action: BmsChecklistFollowupAction!
+  confirmed: Boolean
+  enabled: Boolean
+  escalationMinutes: Int
+  id: ID
+  idempotencyKey: String!
+  locationId: ID
+  note: String
+  reminderMinutes: Int
+  supervisorId: ID
+  version: Int
+}
+
+type BmsChecklistInbox {
+  items: [BmsChecklistNotice!]!
+  total: Int!
+  unread: Int!
+}
+
+type BmsChecklistInspectionReport {
+  branches: [BmsChecklistBranchReport!]!
+  from: String!
+  generatedAt: String!
+  problems: [BmsChecklistRecurringProblem!]!
+  problemsTruncated: Boolean!
+  timezone: String!
+  to: String!
+}
+
+input BmsChecklistItemInput {
+  allowNa: Boolean!
+  choices: [String!]
+  instruction: String
+  key: String!
+  label: String!
+  max: Float
+  min: Float
+  photoRequired: Boolean!
+  required: Boolean!
+  type: String!
+  unit: String
+}
+
+type BmsChecklistMetrics {
+  actions: Int!
+  open: Int!
+  overdue: Int!
+  review: Int!
+}
+
+type BmsChecklistMyWork {
+  items: [BmsChecklistWorkItem!]!
+  overdue: Int!
+  total: Int!
+}
+
+type BmsChecklistNotice {
+  createdAt: String!
+  id: ID!
+  kind: String!
+  name: String!
+  readAt: String
+  runId: ID!
+  runStatus: String!
+}
+
+type BmsChecklistOption {
+  active: Boolean
+  id: ID!
+  locationId: ID
+  name: String!
+}
+
+type BmsChecklistPolicy {
+  enabled: Boolean!
+  escalationMinutes: Int!
+  locationId: ID!
+  name: String!
+  reminderMinutes: Int!
+  supervisorId: ID!
+  version: Int!
+}
+
+type BmsChecklistRecurringProblem {
+  branch: String!
+  familyId: ID!
+  itemKey: String!
+  lastDue: String!
+  locationId: ID!
+  name: String!
+  runs: Int!
+}
+
+input BmsChecklistReportFilter {
+  from: String!
+  locationId: ID
+  to: String!
+}
+
+type BmsChecklistResult {
+  id: ID!
+  itemKey: String!
+  note: String!
+  outcome: String!
+  photoIds: [Int!]!
+  recordedAt: String!
+  recordedBy: ID!
+  revision: Int!
+  value: JSON!
+}
+
+type BmsChecklistRun {
+  actions: [BmsChecklistAction!]
+  assignedTo: ID
+  assignmentEvidence: JSON!
+  createdAt: String!
+  createdBy: String!
+  dueAt: String!
+  events: [BmsChecklistEvent!]
+  evidence: [BmsChecklistEvidence!]
+  history: [BmsChecklistResult!]
+  id: ID!
+  locationId: ID!
+  results: [BmsChecklistResult!]
+  reviewedAt: String
+  reviewedBy: ID
+  snapshot: JSON!
+  startedAt: String
+  stationId: ID
+  status: String!
+  submittedAt: String
+  templateId: ID!
+  version: Int!
+}
+
+type BmsChecklistSchedule {
+  active: Boolean!
+  assignedTo: ID
+  assignmentMode: BmsChecklistAssignmentMode!
+  dueMinutes: Int!
+  dutyKey: String
+  id: ID!
+  localTime: String!
+  name: String!
+  nextAt: String!
+  templateId: ID!
+  timezone: String!
+  version: Int!
+  weekdays: [Int!]!
+}
+
+type BmsChecklistSupervision {
+  escalations: [BmsChecklistEscalation!]!
+  policies: [BmsChecklistPolicy!]!
+  supervisors: [BmsChecklistOption!]!
+  total: Int!
+}
+
+type BmsChecklistTemplate {
+  category: String!
+  createdAt: String!
+  familyId: ID!
+  id: ID!
+  items: JSON!
+  locationId: ID!
+  name: String!
+  separateReviewer: Boolean!
+  stationId: ID
+  status: String!
+  version: Int!
+}
+
+enum BmsChecklistWorkBucket {
+  MINE
+  REVIEW
+  UNASSIGNED
+}
+
+type BmsChecklistWorkItem {
+  assignedTo: ID
+  dueAt: String!
+  id: ID!
+  kind: String!
+  locationId: ID!
+  name: String!
+  overdue: Boolean!
+  runId: ID!
+  status: String!
+  version: Int!
+}
+
+type BmsChecklistWorkspace {
+  actions: [BmsChecklistAction!]!
+  actorId: ID!
+  locations: [BmsChecklistOption!]!
+  metrics: BmsChecklistMetrics!
+  runs: [BmsChecklistRun!]!
+  schedules: [BmsChecklistSchedule!]!
+  staff: [BmsChecklistOption!]!
+  stations: [BmsChecklistOption!]!
+  templates: [BmsChecklistTemplate!]!
+  total: Int!
+}
+
 type BmsCloseShiftResult {
   amount: Float
   count: Int
@@ -1852,6 +2194,60 @@ type BmsGeneratedReport {
   summary: String
 }
 
+enum BmsImprovementAction {
+  ACK_STANDARD
+  ASSESS_STANDARD
+  CLOSE_ISSUE
+  CONFIRM_WEEK
+  CREATE_FOLLOWUP
+  CREATE_ISSUE
+  LINK_FAILURE
+  PUBLISH_STANDARD
+  RECORD_TRAINING
+  REOPEN_ISSUE
+  UPDATE_ISSUE
+}
+
+input BmsImprovementFilter {
+  locationId: ID
+  offset: Int
+  search: String
+}
+
+input BmsImprovementInput {
+  action: BmsImprovementAction!
+  actionId: ID
+  assignedTo: ID
+  body: String
+  carryAcknowledgement: Boolean
+  carryTraining: Boolean
+  category: String
+  cause: String
+  confirmed: Boolean!
+  dueAt: String
+  dutyKey: String
+  familyId: ID
+  fingerprint: String
+  from: String
+  hypothesis: String
+  id: ID
+  idempotencyKey: String!
+  locationId: ID
+  note: String
+  outcome: String
+  ownerId: ID
+  severity: String
+  sourceId: ID
+  sourceType: String
+  staffId: ID
+  target: String
+  templateId: ID
+  title: String
+  trainingRequired: Boolean
+  version: Int
+  weeklyReviewId: ID
+}
+
 type BmsInboxChangedPayload {
   conversationId: ID!
   kind: String!
@@ -2603,6 +2999,72 @@ type BmsMasterVatRate {
   rate: Float!
   source: String!
   sourceVersion: String!
+}
+
+enum BmsMaterialAction {
+  CANCEL
+  CANCEL_INSPECTION
+  CLOSE
+  CONFIRM
+  CREATE
+  CREATE_PO
+  INSPECT
+  LINK_PO
+  LINK_REQUISITION
+  RECEIVE
+  REFRESH
+}
+
+input BmsMaterialFilter {
+  locationId: ID
+  offset: Int
+  search: String
+}
+
+input BmsMaterialInput {
+  acceptedQty: Int
+  action: BmsMaterialAction!
+  assignedTo: ID
+  confirmed: Boolean!
+  dueAt: String
+  expectedReceived: Int
+  expiryDate: String
+  fingerprint: String
+  from: String
+  id: ID
+  idempotencyKey: String!
+  inspectionId: ID
+  inspectionVersion: Int
+  linkId: ID
+  locationId: ID
+  lotNo: String
+  note: String
+  poItemId: ID
+  qty: Int
+  rejectedQty: Int
+  requisitionItemId: ID
+  runVersion: Int
+  size: String
+  sku: String
+  sources: [BmsMaterialSource!]
+  supplierId: ID
+  templateId: ID
+  title: String
+  to: String
+  unitCost: Float
+  version: Int
+}
+
+input BmsMaterialPreview {
+  from: String!
+  locationId: ID!
+  sources: [BmsMaterialSource!]!
+  to: String!
+}
+
+input BmsMaterialSource {
+  id: ID!
+  priority: Int!
 }
 
 type BmsMe {
@@ -7012,6 +7474,64 @@ input BmsProductStockPolicyInput {
   stockPolicy: String
 }
 
+enum BmsProductionAction {
+  CANCEL
+  CREATE
+  POST
+  READY
+  WASTE
+}
+
+input BmsProductionFilter {
+  from: String
+  locationId: ID
+  mine: Boolean
+  offset: Int
+  outputSearch: String
+  recipeSearch: String
+  search: String
+  status: String
+  to: String
+}
+
+input BmsProductionIngredient {
+  qty: Int!
+  size: String!
+  sku: String!
+}
+
+input BmsProductionInput {
+  action: BmsProductionAction!
+  actionId: ID
+  actualQty: Int
+  assignedTo: ID
+  confirmed: Boolean!
+  dueAt: String
+  dutyKey: String
+  expiryDate: String
+  id: ID
+  idempotencyKey: String!
+  ingredients: [BmsProductionIngredient!]
+  locationId: ID
+  note: String
+  outputSize: String
+  outputSku: String
+  plannedQty: Int
+  producedOn: String
+  qty: Int
+  recipeId: ID
+  templateId: ID
+  version: Int
+}
+
+input BmsProductionPreviewInput {
+  locationId: ID!
+  outputSize: String!
+  outputSku: String!
+  plannedQty: Int!
+  recipeId: ID!
+}
+
 type BmsProfitDay {
   cost: Float
   day: String!
@@ -7125,6 +7645,51 @@ type BmsPurchaseSuggestionItem {
   soldInWindow: Int!
   suggestedQty: Int!
   trendPct: Float!
+}
+
+enum BmsQualityAction {
+  APPROVE
+  ASSIGN_RUN
+  CLOSE
+  CREATE
+  HOLD
+  PROPOSE_DISPOSE
+  PROPOSE_RELEASE
+  REJECT
+  REOPEN
+  SAVE_TRACE
+  SUBMIT
+  UPDATE
+}
+
+input BmsQualityInput {
+  action: BmsQualityAction!
+  assignedTo: ID
+  category: String
+  confirmed: Boolean!
+  decisionId: ID
+  dueAt: String
+  expectedQty: Int
+  facts: String
+  fingerprint: String
+  holdId: ID
+  holdVersion: Int
+  hypothesis: String
+  id: ID
+  idempotencyKey: String!
+  locationId: ID
+  lotId: ID
+  note: String!
+  observedCause: String
+  qty: Int
+  runVersion: Int
+  severity: String
+  sourceInspectionId: ID
+  sourceProductionId: ID
+  sourceRunId: ID
+  templateId: ID
+  title: String
+  version: Int
 }
 
 input BmsReceiveItemInput {
@@ -8673,6 +9238,180 @@ input BmsTaxSettingsInput {
   vatRounding: String!
 }
 
+enum BmsTeamAction {
+  ACCEPT_DUTY
+  APPEND_NOTE
+  CANCEL_HANDOVER
+  CANCEL_ROSTER
+  CONFIRM_DAY
+  CREATE_HANDOVER
+  END_DUTY
+  PUBLISH_ROSTER
+  READ_NOTICE
+  RECEIVE_HANDOVER
+  REFRESH_HANDOVER
+  REROUTE_HANDOVER
+  SAVE_ROSTER
+  SAVE_SUPERVISOR_DUTY
+  SUBMIT_HANDOVER
+  TRANSFER_ITEM
+}
+
+input BmsTeamCommandInput {
+  action: BmsTeamAction!
+  assignedTo: ID
+  confirmed: Boolean
+  date: String
+  dueAt: String
+  dutyKey: String
+  dutyName: String
+  enabled: Boolean
+  endsAt: String
+  fingerprint: String
+  id: ID
+  idempotencyKey: String!
+  itemId: ID
+  itemKind: BmsTeamItemKind
+  itemVersion: Int
+  locationId: ID
+  note: String
+  recipient: ID
+  rosterId: ID
+  source: BmsTeamNoticeSource
+  startsAt: String
+  version: Int
+}
+
+type BmsTeamDailyReview {
+  createdAt: String!
+  fingerprint: String!
+  id: ID!
+  note: String!
+  reviewedBy: ID!
+  snapshot: JSON!
+  version: Int!
+}
+
+type BmsTeamDayCounts {
+  actions: Int!
+  approved: Int!
+  duties: Int!
+  escalations: Int!
+  handoverDraft: Int!
+  handoverReceived: Int!
+  handoverWaiting: Int!
+  overdue: Int!
+  review: Int!
+  runs: Int!
+  unaccepted: Int!
+  unassigned: Int!
+  vacancies: Int!
+}
+
+type BmsTeamEvent {
+  action: String!
+  actor: String!
+  createdAt: String!
+  details: JSON!
+  id: ID!
+  note: String!
+}
+
+input BmsTeamFilter {
+  from: String!
+  locationId: ID
+  offset: Int
+  to: String!
+}
+
+type BmsTeamHandover {
+  dueAt: String!
+  dutyName: String
+  events: [BmsTeamEvent!]
+  id: ID!
+  items: JSON!
+  liveItems: JSON
+  locationId: ID!
+  note: String!
+  receivedAt: String
+  recipient: ID
+  rosterId: ID!
+  sender: ID!
+  status: String!
+  submittedAt: String
+  version: Int!
+}
+
+type BmsTeamInbox {
+  items: [BmsTeamNotice!]!
+  total: Int!
+  unread: Int!
+}
+
+enum BmsTeamItemKind {
+  ACTION
+  RUN
+}
+
+type BmsTeamNotice {
+  createdAt: String!
+  entityId: ID!
+  entityKind: String!
+  id: ID!
+  kind: String!
+  readAt: String
+  source: BmsTeamNoticeSource!
+}
+
+enum BmsTeamNoticeSource {
+  CHECKLIST
+  TEAM
+}
+
+type BmsTeamPolicy {
+  locationId: ID!
+  supervisorDutyKey: String
+  useDutySupervisor: Boolean!
+  version: Int!
+}
+
+type BmsTeamRoster {
+  acceptedAt: String
+  assignedTo: ID
+  dutyKey: String!
+  dutyName: String!
+  endedAt: String
+  endsAt: String!
+  id: ID!
+  locationId: ID!
+  startsAt: String!
+  status: String!
+  version: Int!
+}
+
+type BmsTeamSummary {
+  asOf: String!
+  changed: Boolean!
+  counts: BmsTeamDayCounts!
+  date: String!
+  fingerprint: String!
+  locationId: ID!
+  previous: BmsTeamDailyReview
+  timezone: String!
+}
+
+type BmsTeamWorkspace {
+  actorId: ID!
+  handoverTotal: Int!
+  handovers: [BmsTeamHandover!]!
+  missing: [BmsChecklistRun!]!
+  missingTotal: Int!
+  policies: [BmsTeamPolicy!]!
+  rosterTotal: Int!
+  rosters: [BmsTeamRoster!]!
+  staff: [BmsChecklistOption!]!
+}
+
 type BmsTenantInfo {
   id: ID!
   name: String!
@@ -9174,6 +9913,8 @@ type Mutation {
   bmsCancelStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
   bmsChangePlan(planCode: String!): Boolean!
   bmsCheckAllAiProviderHealth: [BmsAiProviderHealth!]!
+  bmsChecklistCommand(input: BmsChecklistCommandInput!): BmsChecklistCommandResult!
+  bmsChecklistFollowup(input: BmsChecklistFollowupInput!): BmsChecklistCommandResult!
   bmsClearKitchenStationSla(station: String!): Boolean!
   bmsClosePosShift(countedCash: Float!, note: String, shiftId: ID!): BmsCloseShiftResult!
   bmsCommissionRule(input: BmsCommissionRuleInput!): BmsMobileCommissionRuleActionResult!
@@ -9220,6 +9961,7 @@ type Mutation {
   bmsGenerateMedicationSuggestions(assessmentId: ID!): BmsPharmacyAssessment!
   bmsGenerateReport(input: BmsGenerateReportInput!): BmsGenerateReportResult!
   bmsImportProducts(commit: Boolean = false, items: [BmsProductImportRowInput!]!): BmsProductImportResult!
+  bmsImprovementCommand(input: BmsImprovementInput!): BmsChecklistCommandResult!
   bmsIssueFullTaxInvoice(buyer: BmsTaxInvoiceBuyerInput!, orderId: ID!): BmsIssueFullTaxInvoiceResult!
   bmsIssuePosDeviceToken(deviceId: ID!): BmsPosDeviceToken!
   bmsIssueRestaurantTableQr(rotate: Boolean, tableId: ID!): BmsRestaurantTableQr!
@@ -9228,8 +9970,10 @@ type Mutation {
   bmsMarkAllMentionsRead: Boolean!
   bmsMarkConversationRead(id: ID!): Boolean!
   bmsMarkMentionRead(id: ID!): Boolean!
+  bmsMaterialCommand(input: BmsMaterialInput!): BmsChecklistCommandResult!
   bmsMergeCustomers(keepId: ID!, mergeId: ID!, review: BmsCustomerMergeReviewInput): Boolean!
   bmsOpenPosShift(deviceId: ID!, openingFloat: Float = 0, pharmacistUserId: ID): BmsOpenShiftResult!
+  bmsOperationTeamCommand(input: BmsTeamCommandInput!): BmsChecklistCommandResult!
   bmsPackOrder(id: ID!): Boolean!
   bmsPayOrder(id: ID!): Boolean!
 
@@ -9329,9 +10073,11 @@ type Mutation {
   bmsPosUpdateBoardGameReservation(input: BmsPosBoardGameReservationUpdateInput!): BmsPosBoardGameWaitlistEntry!
   bmsPosVerifyCashier(input: BmsPosCredentialsInput!): BmsPosCashier!
   bmsPosVoid(input: BmsPosVoidInput!): BmsPosReturnActionResult!
+  bmsProductionCommand(input: BmsProductionInput!): BmsChecklistCommandResult!
   bmsPublishMenuBundle(input: BmsMenuBundlePublicationInput!, review: BmsPricePublicationReview!): BmsPricePublicationResult!
   bmsPublishPricePlan(input: BmsPublishPriceInput!, review: BmsPricePublicationReview!): BmsCostingActionResult!
   bmsPublishProduct(sku: String!): BmsProductReadiness!
+  bmsQualityCommand(input: BmsQualityInput!): BmsChecklistCommandResult!
   bmsReadAiLimitNotification(id: ID!): Boolean!
   bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!
   bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
@@ -9819,6 +10565,12 @@ type Query {
   bmsChannelHealth: [BmsChannelHealth!]!
   bmsChannelHealthCount: Int!
   bmsChannels: [BmsChannelConfig!]!
+  bmsChecklistInbox(filter: BmsChecklistFollowupFilter): BmsChecklistInbox!
+  bmsChecklistInspectionReport(filter: BmsChecklistReportFilter!): BmsChecklistInspectionReport!
+  bmsChecklistMyWork(filter: BmsChecklistFollowupFilter): BmsChecklistMyWork!
+  bmsChecklistRun(id: ID!): BmsChecklistRun
+  bmsChecklistSupervision(filter: BmsChecklistFollowupFilter): BmsChecklistSupervision!
+  bmsChecklistWorkspace(filter: BmsChecklistFilter): BmsChecklistWorkspace!
   bmsCommissionReport(from: String!, to: String!): BmsMobileCommissionReportResult!
   bmsCommissionRules: BmsMobileCommissionRulesResult!
   bmsConversation(id: ID!): BmsConversation
@@ -9856,6 +10608,11 @@ type Query {
   bmsFullTaxInvoiceView(documentId: ID!): BmsFullTaxInvoiceView
   bmsGenerateInvoice(orderId: ID!): BmsBusinessDoc
   bmsGeneratedReports(limit: Int): [BmsGeneratedReport!]!
+  bmsImprovementCatalog(kind: String!, locationId: ID!, search: String): JSON!
+  bmsImprovementDetail(id: ID!, kind: String!): JSON!
+  bmsImprovementForRun(id: ID!): JSON
+  bmsImprovementSources(filter: BmsImprovementFilter): JSON!
+  bmsImprovementWorkspace(filter: BmsImprovementFilter): JSON!
   bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
   bmsInboxUnreadCount: Int!
   bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, windowDays: Int = 30): BmsInventoryActionCenter!
@@ -9893,6 +10650,11 @@ type Query {
   bmsMasterTaxReferences: BmsMasterTaxReferences!
   bmsMasterThaiAddresses(districtCode: String, includeInactive: Boolean, level: String, limit: Int, provinceCode: String, search: String): [BmsMasterThaiAddress!]!
   bmsMasterUnits(includeInactive: Boolean, search: String): [BmsMasterUnit!]!
+  bmsMaterialCatalog(kind: String!, locationId: ID!, search: String): JSON!
+  bmsMaterialDetail(id: ID!): JSON!
+  bmsMaterialForRun(id: ID!): JSON
+  bmsMaterialPreview(input: BmsMaterialPreview!): JSON!
+  bmsMaterialWorkspace(filter: BmsMaterialFilter): JSON!
   bmsMe: BmsMe!
   bmsMember(customerId: ID!): BmsMember
   bmsMemberDiscountPreview(couponDiscount: Float, customerId: ID, pointsToRedeem: Int, subtotal: Float!): BmsMemberDiscountPreview!
@@ -9907,6 +10669,13 @@ type Query {
   bmsNetProfit(month: String!): BmsNetProfitReport!
   bmsOnboardingProgress: BmsOnboardingProgress!
   bmsOperatingCosts(month: String!): BmsOperatingCostReport!
+  bmsOperationHandover(id: ID!): BmsTeamHandover
+  bmsOperationInbox(offset: Int): BmsTeamInbox!
+  bmsOperationReadiness(dutyKey: String, locationId: ID!, staffId: ID!): JSON!
+  bmsOperationRoster(id: ID!): BmsTeamRoster
+  bmsOperationSummary(date: String!, locationId: ID!): BmsTeamSummary!
+  bmsOperationTeam(filter: BmsTeamFilter!): BmsTeamWorkspace!
+  bmsOperationWeeklyReport(from: String!, locationId: ID): JSON!
   bmsOperationalAlerts: BmsOperationalAlerts!
   bmsOrder(id: ID!): BmsOrder
   bmsOrderJourney(orderId: ID!): BmsOrderJourney
@@ -10003,6 +10772,10 @@ type Query {
   bmsProductReadiness(productSku: String!): BmsProductReadiness!
   bmsProductRecipes(productSku: String!, size: String): [BmsProductRecipe!]!
   bmsProductStockPolicy(productSku: String!): BmsProductStockPolicy
+  bmsProductionDetail(id: ID!): JSON!
+  bmsProductionForRun(id: ID!): ID
+  bmsProductionPreview(input: BmsProductionPreviewInput!): JSON!
+  bmsProductionWorkspace(filter: BmsProductionFilter): JSON!
   bmsProducts(category: String, limit: Int, offset: Int, search: String): BmsProductConnection!
   bmsProductsNeedingBarcodes(limit: Int = 200): [BmsPackAudit!]!
   bmsProductsNeedingPolicyReview(limit: Int = 100, offset: Int = 0): [BmsUnreviewedProduct!]!
@@ -10010,6 +10783,11 @@ type Query {
   bmsPublicPlans: [BmsPlan!]!
   bmsPurchaseOrder(id: ID!): BmsPurchaseOrder
   bmsPurchaseOrders(limit: Int = 50, offset: Int = 0, search: String): [BmsPurchaseOrder!]!
+  bmsQualityDetail(id: ID!): JSON!
+  bmsQualityForRun(id: ID!): JSON
+  bmsQualityLots(locationId: ID!, search: String): JSON!
+  bmsQualityTrace(lotId: ID!): JSON!
+  bmsQualityWorkspace(filter: BmsMaterialFilter): JSON!
   bmsRecipeCostEstimate(costBasis: String, locationId: ID, recipeId: ID!): BmsRecipeCostEstimate
   bmsReportDeliveries(limit: Int): [BmsReportDelivery!]!
   bmsReportDeliveriesForTenant(limit: Int, tenantId: ID!): [BmsReportDelivery!]!

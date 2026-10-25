@@ -1,5 +1,136 @@
 # Database
 
+## Operations quality and lot holds (`10.97`)
+
+Four FORCE-RLS tables with strict missing-GUC denial, composite tenant FKs, bms_app SELECT/INSERT
+and narrow UPDATE grants (no DELETE): `bms_operation_quality_cases` (OPEN/INVESTIGATING/REVIEW/
+CLOSED, version, owner/due/facts/hypothesis/findings, canonical run and optional source references),
+`bms_operation_lot_holds` (ACTIVE/RELEASED, unique active tenant/lot, base unit, inherited return
+hold), `bms_operation_quality_decisions` (RELEASE/DISPOSE, PENDING/APPLIED/REJECTED, frozen hold/
+quantity/run identity+version, different proposer/reviewer, wastage movement),
+`bms_operation_quality_events` (append-only decision/snapshot evidence). Existing team notices
+accept QUALITY. Manager receives four quality permissions. Tenant purge removes H before G/E/lots.
+
+Inventory/lot locks serialize holds with consumption. Holds change no balances/value; canonical
+approved disposal changes stock/lot/movement/value/decision/audit/idempotency in one transaction.
+Held returns inherit restrictions and invalidate current inspection evidence. Online shipping
+records exact lot allocations and full returns restore them, without historical backfill.
+Apply before all new stock writers/readiness/report code. No new realtime trigger. Rollback cannot
+run a hold-unaware writer with active holds. See [H workflow](../business/operation-production.md#release-h--quality-cases-lot-holds-and-impact-evidence).
+
+## Operations materials and receipt evidence (`10.96`)
+
+Six FORCE-RLS tenant tables with strict missing-GUC denial and bms_app grants:
+`bms_operation_material_plans` (DRAFT/CONFIRMED/CLOSED/CANCELLED, version, branch, <=7 dates,
+canonical run, current snapshot/fingerprint), `bms_operation_material_sources` (frozen production
+membership/priority, unique active membership), `bms_operation_material_links` (immutable PO item OR
+approved branch-request allocation), `bms_operation_material_inspections` (canonical review run,
+frozen quantities/lot/date, PENDING/POSTED/REJECTED/CANCELLED, consumed approval evidence),
+`bms_purchase_receipt_evidence` (append-only G receipt/PO-item/branch/lot/movement identity,
+unique tenant/movement), `bms_operation_material_events` (append-only decisions and saved snapshots).
+Composite tenant FKs protect source/run/PO-item/request links; only narrow decision columns are
+updateable. App role cannot delete evidence. Authorized whole-tenant purge unwinds G then A–F;
+ordinary PO/task deletion cannot erase receiving provenance.
+
+Dependencies: 10.87/10.88, 10.90–10.95, existing purchase/lot/valuation schema. Apply before app,
+including branch PO allocation and weekly reporting. No new realtime trigger; purchase receipt
+retains existing transactional events. `receivePurchaseOrderInTx` never commits: composing callers
+must roll back non-success. Existing public wrapper retains POS idempotency and post-commit restock.
+No historical receipt backfill. Rollback disables G entry points but retains tables/evidence.
+See [workflow and limits](../business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving).
+
+
+## Operations standards and improvement (`10.94`)
+
+`10.95` additionally allows immutable TRAINED learning evidence, distinct from ACK/PASS/PRACTICE.
+Apply both before F. Rollback retains the wider constraint and all evidence.
+Schema readiness checks the validated constraint definition for TRAINED, not only table existence.
+
+Seven FORCE-RLS tenant tables: `bms_operation_standards` (immutable family/version/source, one ACTIVE,
+self-referenced ack/training bases), `bms_operation_learning` (append-only ACK/PASS/PRACTICE; unique
+ACK per staff/basis), `bms_operation_issues` (OPEN/CLOSED, versioned decision fields/open-cycle time),
+`bms_operation_issue_sources` (unique action membership), `bms_operation_improvements` (canonical
+run, immutable target/baseline, optional review), `bms_operation_weekly_reviews` (append-only
+branch/week/version), `bms_operation_improvement_events` (append-only history). Composite tenant FKs;
+missing tenant GUC denies. bms_app updates only SOP status and issue decision fields.
+
+New weekly snapshot JSON pins `ack_basis_id`, `training_basis_id`, `acknowledgement_id`,
+`training_id` and `assessment_id` for each readiness row. Learning row IDs are strings (bigserial),
+NULL means no evidence. Same-verdict reassessment changes the fingerprint; old immutable snapshots
+retain their original shape without backfilling guessed evidence. Detail learning reads match ACK
+only to its acknowledgement basis and TRAINED/PASS/PRACTICE only to their training basis.
+
+Nullable `bms_operation_production_waste.movement_id` binds new waste to its exact canonical movement
+in the same stock transaction. Historical NULL stays unknown. Depends on 10.90–10.93 and 10.67;
+no new stock action/realtime trigger. [Workflow/rollback](../business/operation-improvement.md).
+
+## Operations production (`10.93`)
+
+`bms_operation_production`: one branch, canonical run and pinned recipe/output/BOM/SOP snapshot;
+DRAFT → READY → POSTED, or CANCELLED before posting, optimistic version and dated output lot.
+`bms_operation_production_inputs`: append-only actual inputs, source lot allocations and canonical
+movement IDs. `bms_operation_production_events`: append-only actor/reason history.
+`bms_operation_production_waste`: append-only link to existing wastage, exact output lot and optional
+same-run corrective action. All four tenant tables use FORCE RLS, strict missing-GUC denial and
+bms_app grants; only batch state fields are mutable. Dependencies: 10.90–10.92, existing recipe/lot
+and 10.67 valuation tables. New movement kinds PRODUCTION_OUT/PRODUCTION_IN transfer material value
+without counting conversion as expense. No new realtime triggers; inventory's existing triggers fire.
+Read details and rollback in [production workflow](../business/operation-production.md).
+
+## Operations checklists / food-safety evidence (`10.90`–`10.92`)
+
+Nine new tenant-owned tables: `bms_operation_templates` (immutable family/version content,
+one ACTIVE version), `bms_operation_runs` (branch/station snapshot and optimistic state),
+`bms_operation_results` (append-only item revisions), `bms_operation_actions` (one corrective
+action per run/item), `bms_operation_evidence` (private file association),
+`bms_operation_events` (append-only actor history), `bms_operation_commands` (tenant/actor/key
+idempotency), `bms_operation_schedules` (pinned template/timezone/weekday), and
+`bms_operation_occurrences` (unique schedule/instant). Composite tenant FKs protect branch,
+template and run references; staff/station/file associations are validated by the service.
+
+Runs: OPEN/IN_PROGRESS/SUBMITTED/APPROVED/REJECTED/VOID. Actions:
+OPEN/IN_PROGRESS/RESOLVED/VERIFIED. Only template status is updateable by `bms_app`;
+result/event/evidence/command/occurrence grants are append-only. Run/action/schedule UPDATE
+grants are column-limited: run snapshots and template contents cannot be overwritten by `bms_app`.
+All nine tables have
+fail-closed FORCE RLS. Service decisions and audit rows share `beginTenantTx`.
+`files` receives column-limited INSERT and sequence grants for private image registration.
+Existing users/roles/branch/station/file/audit schema and read grants are prerequisites.
+No stock/money or realtime trigger is added; workspace uses bounded polling.
+See [workflow, privacy, scheduling and rollback](../business/operation-checklists.md).
+
+Release C adds `bms_operation_policies` (one versioned supervisor/reminder policy per tenant/branch),
+`bms_operation_notices` (recipient + dedup key unique; only read_at mutable), and
+`bms_operation_escalations` (OPEN → ACKNOWLEDGED → CLOSED; one non-closed row per tenant/run).
+All have forced fail-closed tenant RLS, explicit column UPDATE grants and composite tenant FKs.
+Supervisor references are text user IDs validated against current tenant, RBAC and branch at each
+delivery; changes to policy never rewrite existing escalation recipients. Explicit audited REROUTE
+changes recipient and resets acknowledgment. APPROVED/VOID closes active escalation in the same tx.
+Run `followup_at` is mutable sweep bookkeeping, indexed for oldest-first bounded claims. No trigger.
+Notices and escalation creation are in the originating business transaction, or a cron tenant tx
+holding the parent run lock. No generic `notifications` rows or external delivery are produced.
+Command idempotency reuses `bms_operation_commands`; follow-up fingerprints are namespaced.
+Report queries read historical results without new score/history tables or writes.
+
+Release D adds five FORCE-RLS tables with tenant/branch composite FKs and explicit grants:
+`bms_operation_rosters` (DRAFT/PUBLISHED/CANCELLED, person/time interval, optimistic version,
+accept/end acknowledgments), `bms_operation_handovers` (DRAFT/SUBMITTED/RECEIVED/CANCELLED,
+one non-cancelled per roster, JSON source snapshots, recipient/due/version),
+`bms_operation_team_events` (append-only), `bms_operation_team_notices` (unique recipient/dedup
+key; read_at only mutable), and `bms_operation_daily_reviews` (append-only branch/Bangkok-day/
+version, fingerprint, snapshot, note/reviewer). Team event sequence grants are explicit. Mutable
+roster/handover columns are limited; service state rules freeze published roster content and
+submitted handover snapshots. No history DELETE grant, POS/FIFO/payroll table or realtime trigger.
+Schedules gain assignment_mode FIXED (back-compatible) / DUTY and duty_key. Runs gain immutable
+assignment_evidence. Policies gain opt-in use_duty_supervisor and supervisor_duty_key; existing
+static supervisor is the fallback. Handover followup_at is sweep bookkeeping only.
+Tenant-wide publish advisory lock serializes cross-branch same-person overlap checks. Parent run
+locks precede action locks; handover receipt does not acquire or mutate task ownership. Explicit
+transfer invokes the canonical service in the handover transaction with the original due time.
+Daily confirmation uses a serializable snapshot, source fingerprint and prior version. D command
+fingerprints are namespaced in the existing actor/key ledger. Apply 10.92 before serving this app;
+no migration probe bypasses missing columns on the existing checklist path.
+
 ## Branch requisition planning (`10.87`)
 
 `bms_branch_requisitions` stores the destination, Bangkok-day `REQ-` number, creator, date,
@@ -1033,6 +1164,8 @@ classified in the realtime coverage contract; it has no new websocket event or k
 
 The save service expands child **output base units** into a compiled `bms_product_recipe_items` leaf
 BOM using exact integer arithmetic. No batch production or prepared-product inventory is created.
+Stocked preparation is a separate explicit workflow in `10.93`; see
+[Release E](../business/operation-production.md). Recipe saves alone still never move stock.
 All existing stock, availability and catalog-cost readers continue reading that BOM unchanged.
 References keep explicit ids/versions even after deactivation. Parent recipes never auto-upgrade.
 Definitions/SOP remain copy-on-write at service level, not protected against arbitrary SQL edits.

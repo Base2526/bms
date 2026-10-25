@@ -47,6 +47,7 @@ type PersonaKey = "owner" | "staff" | "ops";
 type FlowKey = "products" | "orders" | "payment" | "shipping";
 
 const ROUTES = {
+  operations: "/admin/operations",
   gettingStarted: "/admin/getting-started",
   dashboard: "/admin/dashboard",
   inbox: "/admin/inbox",
@@ -779,6 +780,7 @@ const SIDEBAR_MAP_GROUPS_TH: SidebarMapGroup[] = [
   {
     title: "การขาย",
     items: [
+      { label: "งานประจำร้านและ Food Safety", href: ROUTES.operations, note: "ต้นแบบ Checklist งานตามเวลา หลักฐานการตรวจ และงานแก้ไขแยกสาขา" },
       { label: "Orders", href: ROUTES.orders, note: "ติดตามออเดอร์ตั้งแต่ PENDING จนถึงปิดงาน" },
       { label: "Shipping", href: ROUTES.shipment, note: "สร้าง shipment, ใส่ tracking, sync carrier และปิดงาน" },
       { label: "ภาพรวมกะ POS", href: ROUTES.posShifts, note: "กะที่เปิด/ปิด ยอดขายต่อกะ เงินในลิ้นชัก และส่วนต่างตอนนับ" },
@@ -2057,6 +2059,7 @@ const SIDEBAR_MAP_GROUPS_EN: SidebarMapGroup[] = [
   {
     title: "Sales",
     items: [
+      { label: "Operations & Food Safety", href: ROUTES.operations, note: "Branch checklist templates, scheduled work, evidence and corrective actions" },
       { label: "Orders", href: ROUTES.orders, note: "Track orders from PENDING through completion" },
       { label: "Shipping", href: ROUTES.shipment, note: "Create shipments, save tracking, sync carriers, and close delivery work" },
       { label: "POS shift overview", href: ROUTES.posShifts, note: "Open and closed shifts, sales per shift, drawer cash and counting variance" },
@@ -3727,7 +3730,20 @@ export default function Page() {
                   <Link href={ROUTES.posReadiness}><Button>{c.posOpenLabels[2]}</Button></Link>
                   <Link href={ROUTES.loyalty}><Button>{c.posOpenLabels[3]}</Button></Link>
                   <Link href={ROUTES.commission}><Button>{c.posOpenLabels[4]}</Button></Link>
+                  <Link href="/admin/operations"><Button>{t("operation_checklists.title")}</Button></Link>
                 </Space>
+                <Alert closable type="info" showIcon message={t('operation_quality.tab')} description={<><p>{t('operation_quality.scope')}</p><p>{t('operation_quality.workflow')}</p><p>{t('operation_quality.edit_hint')}</p><p>{t('operation_quality.trace_limits')}</p></>}/>
+                <Alert closable type="info" showIcon message={t("operation_checklists.safety_hint")}
+                  description={lang === "en"
+                    ? "Operations: create a branch template, publish it, then create or schedule a run. Staff record each item and attach photos, then submit for review. Failed checks create corrective actions; resolve and verify them before approval. Published versions and previous results are preserved. Separate-review templates require a different person. New template versions pause previous schedules. The workspace shows overdue work and refreshes every 30 seconds."
+                    : "งานประจำร้าน: สร้างต้นแบบแยกสาขา เปิดใช้ แล้วสร้างงานหรือตั้งตารางเวลา พนักงานบันทึกแต่ละข้อและแนบรูปก่อนส่งตรวจ ข้อที่ไม่ผ่านจะสร้างงานแก้ไข ต้องแก้ไขและตรวจรับก่อนอนุมัติ checklist เก็บเวอร์ชันต้นแบบและผลเดิมไว้เสมอ ต้นแบบที่กำหนดผู้ตรวจคนละคนจะตรวจรับงานตัวเองไม่ได้ การเปิดเวอร์ชันใหม่หยุดตารางเดิม หน้างานแสดงงานเกินกำหนดและรีเฟรชทุก 30 วินาที"} />
+                <Alert closable type="info" showIcon message={t("operation_checklists.followup")}
+                  description={<><p>{t("operation_checklists.followup_hint")}</p><p>{t("operation_checklists.policy_hint")}</p><p>{t("operation_checklists.escalation_hint")}</p><p>{t("operation_checklists.report_hint")}</p></>} />
+                <Alert closable type="info" showIcon message={t("operation_team.tab")}
+                  description={<><p>{t("operation_team.hint")}</p><p>{lang==='en'?'Team shifts: create a duty code, person and start/end at a branch, review and publish. Select duty assignment when creating a checklist or schedule; the occurrence time selects exactly one eligible person, otherwise the work stays unassigned. Prepare a handover, refresh stale source items, submit, then let the recipient receive. Transferring an original task is a separate confirmed manager action and retains its due time. Select branch and Bangkok day to compare live manager counts with the last confirmed snapshot; confirm again with a note when needed.': 'กะทีมงาน: เพิ่มรหัสหน้าที่ คนและเวลาเริ่ม/จบแยกสาขา ตรวจแล้วเผยแพร่ เมื่อสร้างงานหรือตาราง Checklist เลือกมอบหมายตามหน้าที่ ระบบเลือกผู้มีสิทธิ์หนึ่งคน ณ เวลารอบงาน หากไม่พบหรือพบหลายคนจะคงงานยังไม่มอบหมาย เตรียมใบส่งมอบ ดึงรายการใหม่เมื่อข้อมูลเปลี่ยน แล้วส่งให้ผู้รับรับทราบ การโอนงานต้นฉบับเป็นคำสั่งผู้จัดการแยกและคงกำหนดส่งเดิม เลือกสาขาและวันกรุงเทพฯ เพื่อเทียบสรุปล่าสุดกับสรุปที่เคยยืนยัน และยืนยันครั้งใหม่พร้อมบันทึกเมื่อต้องการ'}</p><p>{t('operation_team.supervisor_hint')}</p><p>{t('operation_team.review_hint')}</p></>}/>
+                <Alert closable type="info" showIcon message={t('operation_material.tab')} description={<><p>{t('operation_material.planning_only')}</p><p>{t('operation_material.expiry_policy')}</p><p>{t('operation_material.review_hint')}</p><p>{t('operation_material.request_hint')}</p><p>{t('operation_material.live_hint')}</p><p>{t('operation_material.live_unavailable')}</p></>}/>
+                <Alert closable type="info" showIcon message={t('operation_production.tab')} description={<><p>{t('operation_production.output_hint')}</p><p>{t('operation_production.catalog_search_hint')}</p><p>{t('operation_production.scope')}</p><p>{t('operation_production.duty_hint')}</p><p>{t('operation_production.posting_hint')}</p><p>{t('operation_production.cost_hint')}</p><p>{t('operation_production.waste_hint')}</p><p>{t('operation_production.expiry_hint')}</p></>}/>
+                <Alert closable type="info" showIcon message={t('operation_improvement.tab')} description={<><p>{t('operation_improvement.scope_hint')}</p><p>{t('operation_improvement.carry_hint')}</p><p>{t('operation_improvement.readiness_hint')}</p><p>{t('operation_improvement.close_hint')}</p><p>{t('operation_improvement.cohort_hint')}</p><p>{t('operation_improvement.immutable_hint')}</p><p>{t('operation_improvement.review_task_hint')}</p></>}/>
               </Space>
             </Section>
 

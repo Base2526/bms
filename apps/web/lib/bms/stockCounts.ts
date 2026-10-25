@@ -15,6 +15,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { assertNoQualityHold } from "./lotQuality";
 import { recordMovement } from "./movements";
 import { insertWithDailyDocNo } from "./dailyDocNo";
 import {
@@ -438,6 +439,7 @@ export async function applyStockCount(input: {
     for (const item of items.rows) {
       const delta = item.counted_qty - item.snapshot_qty;
       if (delta === 0) continue;
+      await assertNoQualityHold(client,input.tenantId,c.location_id,item.product_sku,item.size);
 
       const inv = await client.query<{
         current_stock: number;

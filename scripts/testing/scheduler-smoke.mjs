@@ -62,7 +62,7 @@ try {
   const second = run("second", ...args);
   const counts = () => JSON.parse(docker("exec", web, "node", "-e",
     "fetch('http://localhost:3000/counts').then(r=>r.text()).then(console.log)"));
-  await until(() => Object.keys(counts()).length === 18, "17 jobs plus retention cursor page");
+  await until(() => Object.keys(counts()).length === 19, "18 jobs plus retention cursor page");
   for (const value of Object.values(counts())) assert.equal(value, 1);
   await until(() => { docker("exec", first, "node", "scheduler.mjs", "--healthcheck"); docker("exec", second, "node", "scheduler.mjs", "--healthcheck"); return true; }, "both schedulers healthy");
   console.log("PASS real Redis claims across two containers and paginated retention");

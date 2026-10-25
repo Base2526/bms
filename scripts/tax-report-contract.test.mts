@@ -469,7 +469,7 @@ test("the goods report never counts reservations, quarantine or lost transfers a
 test("only stock counts write the direction column — every sale must keep working without 10.10", () => {
   const src = read("apps/web/lib/bms/movements.ts");
   const fn = src.slice(src.indexOf("export async function recordMovement"), src.indexOf("export async function recordOrderMovements"));
-  assert.ok(/if \(m\.direction\) \{[\s\S]*?direction\)[\s\S]*?return;\s*\}/.test(fn), "direction is inserted only when set");
+  assert.ok(/if \(m\.direction\) \{[\s\S]*?direction\)[\s\S]*?return inserted\.rows\[0\]\.id;\s*\}/.test(fn), "direction is inserted only when set; movement id is returned for production provenance");
   const bulk = src.slice(src.indexOf("export async function recordOrderMovements"));
   assert.ok(!/direction/.test(bulk.slice(0, bulk.indexOf("export async function listMovements"))));
   const counts = read("apps/web/lib/bms/stockCounts.ts");

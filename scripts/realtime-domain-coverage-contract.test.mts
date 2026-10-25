@@ -227,6 +227,18 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
+  // H restrictions are checked synchronously by stock services; operations evidence refreshes on demand.
+  "bms_operation_quality_cases", "bms_operation_lot_holds", "bms_operation_quality_decisions", "bms_operation_quality_events",
+  // Release G: explicit/refetch-on-write readiness; canonical task inbox polls. Receipt stock uses purchase events.
+  "bms_operation_material_plans", "bms_operation_material_sources", "bms_operation_material_links", "bms_operation_material_inspections", "bms_operation_material_events", "bms_purchase_receipt_evidence",
+  // Operations workspace polls every 30 seconds; detail refreshes after writes and rejects stale versions.
+  "bms_operation_templates", "bms_operation_runs", "bms_operation_results", "bms_operation_actions",
+  "bms_operation_evidence", "bms_operation_events", "bms_operation_commands", "bms_operation_schedules", "bms_operation_occurrences",
+  "bms_operation_policies", "bms_operation_notices", "bms_operation_escalations",
+  "bms_operation_rosters", "bms_operation_handovers", "bms_operation_team_events", "bms_operation_team_notices", "bms_operation_daily_reviews",
+  "bms_operation_production", "bms_operation_production_inputs", "bms_operation_production_events", "bms_operation_production_waste",
+  // Release F is polled on view/refetch; actionable work reuses canonical checklist notifications.
+  "bms_operation_standards", "bms_operation_learning", "bms_operation_issues", "bms_operation_issue_sources", "bms_operation_weekly_reviews", "bms_operation_improvements", "bms_operation_improvement_events",
   "bms_ai_limit_notices", // Personal admin bell: 30-second/focus/mutation refresh; no shop-wide broadcast of recipients.
   "bms_tax_invoice_requests",
   "bms_tax_request_submissions", // Append-only evidence; request UI polls the parent aggregate.

@@ -8,6 +8,12 @@ import { bmsTaxReportsTypeDefs } from "./bmsTaxReports";
 import { bmsExpenseDocumentsTypeDefs } from "./bmsExpenseDocuments";
 import { bmsBranchRequisitionsTypeDefs } from "./bmsBranchRequisitions";
 import { bmsBoardGameAnalyticsTypeDefs } from "./bmsBoardGameAnalytics";
+import { bmsOperationChecklistsTypeDefs, bmsOperationChecklistsResolvers } from "./bmsOperationChecklists";
+import { bmsOperationTeamTypeDefs, bmsOperationTeamResolvers } from "./bmsOperationTeam";
+import { bmsOperationProductionTypeDefs, bmsOperationProductionResolvers } from "./bmsOperationProduction";
+import { bmsOperationImprovementTypeDefs, bmsOperationImprovementResolvers } from "./bmsOperationImprovement";
+import { bmsOperationMaterialsTypeDefs, bmsOperationMaterialsResolvers } from "./bmsOperationMaterials";
+import { bmsOperationQualityTypeDefs, bmsOperationQualityResolvers } from "./bmsOperationQuality";
 
 function mergeResolvers(base:any, extra:any){
   return {
@@ -21,4 +27,10 @@ function mergeResolvers(base:any, extra:any){
 // ฝั่ง Web/HTTP เอาเฉพาะ coreTypeDefs เพื่อให้สคีมาครบ
 // ส่วน Subscription/Resolvers รันที่บริการ WS แยกอยู่แล้ว
 export const mergedTypeDefs = [coreTypeDefs, typeDefs, bmsPosDeviceTypeDefs, bmsMobileOperationsTypeDefs, bmsTaxReportsTypeDefs, bmsExpenseDocumentsTypeDefs, bmsBranchRequisitionsTypeDefs, bmsBoardGameAnalyticsTypeDefs];
-export const mergedResolvers = mergeResolvers({}, resolvers);
+mergedTypeDefs.push(bmsOperationChecklistsTypeDefs);
+mergedTypeDefs.push(bmsOperationTeamTypeDefs);
+mergedTypeDefs.push(bmsOperationProductionTypeDefs);
+mergedTypeDefs.push(bmsOperationImprovementTypeDefs);
+mergedTypeDefs.push(bmsOperationMaterialsTypeDefs);
+mergedTypeDefs.push(bmsOperationQualityTypeDefs);
+export const mergedResolvers = mergeResolvers(mergeResolvers(mergeResolvers(mergeResolvers(mergeResolvers(mergeResolvers(resolvers, bmsOperationChecklistsResolvers), bmsOperationTeamResolvers), bmsOperationProductionResolvers), bmsOperationImprovementResolvers),bmsOperationMaterialsResolvers),bmsOperationQualityResolvers);

@@ -14,6 +14,7 @@
 
 import type { PoolClient } from "pg";
 import { query } from "@/lib/db";
+import { usableLotSql, inheritQualityHold } from "./lotQuality";
 
 export type InventoryLot = {
   id: string;
@@ -92,6 +93,7 @@ export async function receiveLotInTx(
       input.expiryDate ?? null, input.supplierId ?? null, input.unitCost ?? null,
       input.qty, input.note ?? null]
   );
+  await inheritQualityHold(client,input.tenantId,res.rows[0].id,res.rows[0].id,"system:lot-receipt","RECEIPT");
   return res.rows[0].id;
 }
 
@@ -110,8 +112,8 @@ export async function receiveLotInTx(
  */
 export async function consumeLotsForWastageInTx(
   client: PoolClient,
-  input: { tenantId: string; locationId: string; productSku: string; size: string; qty: number }
-): Promise<void> {
+  input: { tenantId: string; locationId: string; productSku: string; size: string; qty: number; lotId?: string; forProduction?: boolean; qualityDisposal?: boolean }
+): Promise<Array<{id:string; qty:number}>> {
   const key = [input.tenantId, input.locationId, input.productSku, input.size];
   const tracked = await client.query(
     `SELECT 1 FROM bms_inventory_lots
@@ -119,16 +121,23 @@ export async function consumeLotsForWastageInTx(
       LIMIT 1`,
     key
   );
-  if (!tracked.rowCount) return;
+  if (!tracked.rowCount) {
+    if(input.lotId) throw new Error('LOT_NOT_FOUND');
+    return [];
+  }
   const lots = await client.query<{ id: string; qty: number }>(
     `SELECT id, qty FROM bms_inventory_lots
       WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4
         AND qty > 0
-      ORDER BY expiry_date NULLS LAST, received_at
+        AND ($5::uuid IS NULL OR id=$5)
+        AND ($7::boolean OR ${usableLotSql('bms_inventory_lots')})
+        AND (NOT $6::boolean OR expiry_date IS NULL OR expiry_date >= (now() AT TIME ZONE 'Asia/Bangkok')::date)
+      ORDER BY expiry_date NULLS LAST, received_at, id
       FOR UPDATE`,
-    key
+    [...key,input.lotId??null,input.forProduction===true,input.qualityDisposal===true&&!input.forProduction]
   );
   let remaining = input.qty;
+  const allocations: Array<{id:string;qty:number}> = [];
   for (const lot of lots.rows) {
     if (remaining <= 0) break;
     const take = Math.min(remaining, Number(lot.qty));
@@ -138,12 +147,15 @@ export async function consumeLotsForWastageInTx(
       [input.tenantId, lot.id, take]
     );
     remaining -= take;
+    allocations.push({id:lot.id,qty:take});
   }
   if (remaining > 0) {
+    if (input.forProduction) throw new Error('PRODUCTION_INSUFFICIENT_USABLE_LOTS');
     throw new Error(
       `lot ของ ${input.productSku}/${input.size} มีไม่พอสำหรับตัดของเสีย (ขาด ${remaining}) — ตรวจยอดล็อตก่อน`
     );
   }
+  return allocations;
 }
 
 export async function listLots(

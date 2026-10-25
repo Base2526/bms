@@ -10,6 +10,7 @@ import { useRealtimeStatus } from "@/components/realtime/RealtimeProvider";
 import { useSessionCtx } from "@/lib/session-context";
 import { LocalLicenseBadge } from "@/components/retail-local/LocalLicense";
 import AiLimitStatus from "@/components/AiLimitStatus";
+import OperationsBell from "@/components/operations/OperationsBell";
 
 const { Content } = Layout;
 
@@ -84,6 +85,7 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
           <ImpersonationBanner />
           <RealtimeStatusBanner />
           <AiLimitStatus />
+          <OperationsBell />
           {retailLocal && <LocalLicenseBadge />}
           {children}
         </Content>
