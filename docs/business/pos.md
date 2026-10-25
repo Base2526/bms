@@ -936,6 +936,9 @@ upload or retain the source image. The operator must use a reusable amount-free 
 by the bank/provider; both provider initiation methods 11 and 12 are accepted. Settings derives and
 verifies the recipient against the PromptPay ID;
 the POS later turns that verified base into the per-bill Dynamic QR.
+While an image is being decoded, the settings form is temporarily disabled so removing or editing
+accounts cannot redirect a decode result to another row. A background refresh that replaces the row
+also discards its pending decode result.
 The checkout reference remains optional for QR sales. It is manual evidence only, not part of the
 Dynamic QR or proof that funds arrived; the cashier explicitly confirms after checking the real bank
 notification or account activity. This does not relax the external-reference requirement for card,
@@ -960,8 +963,15 @@ and a count of earlier lines. Restaurant publishing still includes only SENT ite
 before broadcasting; phone/email are not member labels. Existing server previews supply expected
 points, while earned/balance points and change come from the completed sale. The completed view
 groups the paid total, cash received, change, member status and tax-request QR into one summary band.
-When the sale has no resolved member, it identifies the buyer neutrally as a general customer and
-states that the sale did not earn points; it does not invent an enrolment link or imply missing data.
+Membership is separate from the masked display name: a member whose name is hidden still gets a
+generic member label and the server-reported points. Desktop freezes that presentation state with
+the sale attempt, including retries, so loading receipt details does not briefly label a member as a
+guest. Only an explicitly unlinked sale gets the general-customer/no-points message; a legacy
+snapshot with no membership evidence does not infer guest status. On medium-width screens the
+member/tax section moves below the payment/change row so the summary is not clipped.
+Desktop also hides the payment QR while the latest benefits preview is pending or failed, or the
+tender allocation no longer matches the displayed total. Expected points use the preview field;
+earned points appear only after settlement.
 A pending manual
 discount or a price preview that does not match the current bill hides the payable total and payment
 QR. Restaurant checkout reuses the cashier's rounded amount, not the unrounded preview. Locking the

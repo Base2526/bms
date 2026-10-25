@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { CheckOutlined, ShopOutlined, UserOutlined } from "@ant-design/icons";
 import QRCode from "qrcode";
-import { displayMemberName, displayPhase, displayUrl, type CustomerDisplayPayload } from "@/lib/pos/customerDisplay";
+import { displayMemberKind, displayMemberName, displayPhase, displayUrl, type CustomerDisplayPayload } from "@/lib/pos/customerDisplay";
 import { createDynamicPromptPayQrPayload } from "@/lib/bms/promptPayQr";
 import styles from "./CustomerDisplayView.module.css";
 
@@ -60,11 +60,13 @@ function DynamicPaymentQr({ basePayload, amount }: { basePayload: string; amount
 
 function Member({ state, showGuest = false }: { state: CustomerDisplayPayload; showGuest?: boolean }) {
   const name = displayMemberName(state.memberName);
-  if (!name) return showGuest ? <section className={`${styles.member} ${styles.guest}`} data-customer-kind="guest">
+  const kind = displayMemberKind(state);
+  if (kind === "unknown") return null;
+  if (kind === "guest") return showGuest ? <section className={`${styles.member} ${styles.guest}`} data-customer-kind="guest">
     <UserOutlined aria-hidden /><div><strong>ลูกค้าทั่วไป</strong><p>รายการนี้ไม่ได้สะสมแต้ม</p></div>
   </section> : null;
   return <section className={styles.member} data-customer-kind="member">
-    <UserOutlined aria-hidden /><div><strong>สมาชิก {name}</strong>
+    <UserOutlined aria-hidden /><div><strong>{name ? `สมาชิก ${name}` : "สมาชิก"}</strong>
       {state.pointsBalance != null && <p>แต้มคงเหลือ {state.pointsBalance.toLocaleString("th-TH")}</p>}
       {!state.finished && !state.pendingApproval && !state.pendingPricing && state.pointsWillEarn != null && <p className={styles.points}>แต้มที่คาดว่าจะได้รับ {state.pointsWillEarn}</p>}
       {state.finished && state.pointsEarned != null && <p className={styles.points}>ได้รับ {state.pointsEarned} แต้ม</p>}

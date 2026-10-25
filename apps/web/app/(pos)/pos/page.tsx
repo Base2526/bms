@@ -1646,7 +1646,7 @@ export default function PosPage() {
   // ไม่ใช้ modal เพราะต้องกดปิดทุกบิล = เพิ่ม 1 แตะต่อลูกค้า 1 คน
   const [justSold, setJustSold] = useState<
     { docNo: string | null; change: number | null; total: number; kitchenTickets: number;
-      id: string; completedAt: number; tendered: number | null; memberName: string | null;
+      id: string; completedAt: number; tendered: number | null; memberAttached: boolean; memberName: string | null;
       pointsEarned: number | null; pointsBalance: number | null; taxRequestUrl: string | null } | null
   >(null);
   // true = บิลนี้จ่ายเงินสดล้วนวิธีเดียว → ใช้ฟอร์มย่อ (ช่องเดียว + ปุ่มเงินด่วน)
@@ -4488,6 +4488,7 @@ export default function PosPage() {
       total,
       discountTotal,
       amountDue,
+      memberAttached: completed ? completed.memberAttached : Boolean(member),
       memberName: displayMemberName(completed ? completed.memberName : member?.name),
       pointsEarned: completed ? completed.pointsEarned : null,
       pointsBalance: completed ? completed.pointsBalance : member?.pointsBalance ?? null,
@@ -6011,6 +6012,7 @@ export default function PosPage() {
           id: data.orderId,
           completedAt: Date.now(),
           tendered: data.cashTendered ?? null,
+          memberAttached: Boolean(member),
           memberName: member?.name ?? null,
           pointsEarned: data.pointsEarned ?? null,
           pointsBalance: data.pointsBalance ?? null,

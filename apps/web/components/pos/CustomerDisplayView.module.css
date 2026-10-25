@@ -126,6 +126,15 @@
   .finishAside { justify-items: stretch; }
   .change .amount { font-size: 38px !important; }
 }
+@media (min-width: 701px) and (max-width: 1000px) {
+  .finished { padding-inline: 0; }
+  .finishedSummary, .finishedSummaryNoChange { grid-template-columns: minmax(0, 1.3fr) 1px minmax(0, 1fr); }
+  .finishedDivider:last-of-type { display: none; }
+  .finishedSummaryNoChange .settlement { grid-column: 1 / -1; }
+  .finishAside { grid-column: 1 / -1; display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--line); padding-top: 16px; }
+  .finishAside .member { flex: 1; min-width: 0; }
+  .tax { flex: 1; min-width: 0; max-width: 300px; }
+}
 @media (min-width: 701px) and (max-height: 700px) {
   .screen { padding: 16px 22px; gap: 16px; }
   .header { padding-bottom: 14px; }

@@ -144,6 +144,7 @@ const ADVANCED_ITEM_NOTICE =
 
 type SaleResult = {
   completedAt?: number;
+  displayMember?: { attached: boolean; name: string | null };
   status: string;
   reason: string | null;
   orderId: string | null;
@@ -566,7 +567,7 @@ function DesktopPosContent() {
   const [contentRefreshSignal, setContentRefreshSignal] = useState(0);
   const [contentRefreshing, setContentRefreshing] = useState(false);
   const contentRefreshingRef = useRef(false);
-  const saleAttemptRef = useRef<{ key: string; payload: SalePayload } | null>(null);
+  const saleAttemptRef = useRef<{ key: string; payload: SalePayload; displayMember: { attached: boolean; name: string | null } } | null>(null);
   const saleSubmittingRef = useRef(false);
   const addProductPendingRef = useRef(false);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1483,6 +1484,7 @@ function DesktopPosContent() {
       ? { ...EMPTY_CUSTOMER_DISPLAY, brand: displayBrand(bootstrap) } : {
       brand: displayBrand(bootstrap),
       checkout: flow.stage === "CHECKOUT",
+      pendingPricing: flow.stage === "CHECKOUT" && !benefits.ready,
       lines: boardGameCheckout
         ? boardGameDisplayLines
         : cart.map((line) => ({
@@ -1501,12 +1503,16 @@ function DesktopPosContent() {
         : retailListSubtotal,
       discountTotal: (boardGameCheckout ? boardGameTotalDiscountAmount : pricingSavings) + (benefits.ready ? benefits.preview?.totalDiscount ?? 0 : 0),
       amountDue: receipt?.total ?? total,
+      memberAttached: receipt
+        ? receipt.displayMember?.attached ?? (receiptPaper?.orderId === receipt.orderId ? Boolean(receiptPaper.member) : undefined)
+        : Boolean(benefits.member),
       memberName: displayMemberName(receipt
-        ? receiptPaper?.orderId === receipt.orderId ? receiptPaper?.member?.name : null
+        ? receiptPaper?.orderId === receipt.orderId ? receiptPaper?.member?.name : receipt.displayMember?.name
         : benefits.member?.name ?? null),
-      pointsEarned: receipt ? receipt.pointsEarned ?? null : benefits.ready ? benefits.preview?.pointsWillEarn ?? null : null,
+      pointsEarned: receipt ? receipt.pointsEarned ?? null : null,
+      pointsWillEarn: !receipt && benefits.ready ? benefits.preview?.pointsWillEarn ?? null : null,
       pointsBalance: receipt ? receipt.pointsBalance ?? null : benefits.member?.pointsBalance ?? null,
-      paymentQr: flow.stage === "CHECKOUT" && qrPaymentAmount > 0 && configuredQr
+      paymentQr: flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced && qrPaymentAmount > 0 && configuredQr
         ? { ...configuredQr, amount: qrPaymentAmount }
         : null,
       finished,
@@ -1533,6 +1539,7 @@ function DesktopPosContent() {
     receiptPaper,
     retailListSubtotal,
     total,
+    validation.isBalanced,
     benefits.ready, benefits.preview, benefits.member,
   ]);
 
@@ -1751,7 +1758,8 @@ function DesktopPosContent() {
         const current = boardGameCheckout ? true : await recheckCartPricing();
         if (!current) return;
         const key = createIdempotencyKey(boardGameCheckout ? "desktop-board-game-sale" : "desktop-sale");
-        saleAttemptRef.current = { key, payload: buildSalePayload(key) };
+        saleAttemptRef.current = { key, payload: buildSalePayload(key),
+          displayMember: { attached: Boolean(benefits.member), name: displayMemberName(benefits.member?.name) } };
       }
       const data = await posGraphqlRequest<{ bmsPosSale: SaleResult }>(
         token,
@@ -1764,7 +1772,7 @@ function DesktopPosContent() {
         throw new PosSaleResultError(data.bmsPosSale.reason ?? `ขายไม่สำเร็จ (${data.bmsPosSale.status})`, data.bmsPosSale);
       }
       if (!data.bmsPosSale.orderId) throw new PosSaleResultError("ผลรับชำระไม่ครบถ้วน", data.bmsPosSale);
-      setReceipt({ ...data.bmsPosSale, completedAt: Date.now() });
+      setReceipt({ ...data.bmsPosSale, completedAt: Date.now(), displayMember: saleAttemptRef.current.displayMember });
       saleAttemptRef.current = null;
       sendFlow("SALE_COMPLETED");
       setConnection("online");

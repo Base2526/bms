@@ -110,7 +110,22 @@ try {
       await receiving.click();
       await page.getByText(lang === "th" ? "บัญชีรับเงิน 1" : "Receiving account 1", { exact: true }).waitFor();
       await page.getByText(lang === "th" ? "รูป QR ฐานสำหรับ Dynamic QR (ไม่บังคับ)" : "Base image for Dynamic QR (optional)", { exact: true }).waitFor();
+      // Hold the actual decoder's image load to exercise the account-edit race deterministically.
+      let releaseDecode;
+      const decodeGate = new Promise(resolve => { releaseDecode = resolve; });
+      const decodeStarted = page.waitForRequest("**/test-qr-image");
+      await page.route("**/test-qr-image", async route => {
+        await decodeGate;
+        await route.fulfill({ body: await readFile(qrSmokeImage), contentType: "image/png" });
+      });
+      await page.evaluate(() => { URL.createObjectURL = () => `${location.origin}/test-qr-image`; });
       await page.locator('input[type="file"][accept="image/png,image/jpeg,image/webp"]').nth(2).setInputFiles(qrSmokeImage);
+      await decodeStarted;
+      try {
+        assert.equal(await page.getByRole("button", { name: lang === "th" ? /ลบบัญชีนี้/ : /Remove this account/ }).isDisabled(), true, "decoding cannot lose its account row");
+        assert.equal(await page.getByLabel(lang === "th" ? "เลขพร้อมเพย์" : "PromptPay ID").isDisabled(), true, "recipient stays stable during decoding");
+        assert.equal(await page.getByRole("button", { name: lang === "th" ? /บันทึกข้อมูลร้าน/ : /Save store profile/ }).isDisabled(), true, "save waits for decoded data");
+      } finally { releaseDecode(); }
       await page.getByText(lang === "th"
         ? "อ่านข้อมูล QR จากรูปแล้ว กรุณากดบันทึกข้อมูลร้าน"
         : "QR data read from the image. Save the store profile to apply it.", { exact: true }).waitFor();
@@ -120,6 +135,7 @@ try {
       if (!process.env.BMS_QR_SMOKE_IMAGE) {
         assert.equal(await page.getByLabel(lang === "th" ? "เลขพร้อมเพย์" : "PromptPay ID").inputValue(), "0812345678");
       }
+      assert.equal(await page.getByLabel(lang === "th" ? "เลขพร้อมเพย์" : "PromptPay ID").isDisabled(), false, "form unlocks after decoding");
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth + 2), false, "form must not overflow the viewport");
       await page.screenshot({ path: `${output}/${lang}-${width}.png`, fullPage: true });
 

@@ -62,6 +62,8 @@ export type CustomerDisplayPayload = {
   total: number;
   discountTotal: number;
   amountDue: number;
+  /** Membership is independent of whether a name is safe to show on a public screen. */
+  memberAttached?: boolean;
   memberName: string | null;
   pointsEarned: number | null;
   paymentQr: {
@@ -93,6 +95,12 @@ export function displayPhase(state: CustomerDisplayPayload) {
   return state.checkout || state.paymentQr ? "payment" : "cart";
 }
 
+export function displayMemberKind(state: CustomerDisplayPayload): "member" | "guest" | "unknown" {
+  if (state.memberAttached != null) return state.memberAttached ? "member" : "guest";
+  // Older publishers may omit the flag. Missing identity alone does not prove a guest sale.
+  return state.memberName || state.pointsBalance != null || (state.pointsEarned ?? 0) > 0 ? "member" : "unknown";
+}
+
 /** Reject control messages and malformed snapshots before they reach rendering. */
 export function isDisplayPayload(value: unknown): value is CustomerDisplayPayload {
   if (!value || typeof value !== "object") return false;
@@ -104,7 +112,7 @@ export function isDisplayPayload(value: unknown): value is CustomerDisplayPayloa
     && optionalText(l.size) && typeof l.unitName === "string" && money(l.qty) && money(l.amount))
     && [v.itemCount, v.total, v.discountTotal, v.amountDue].every(money)
     && optionalText(v.memberName) && [v.pointsEarned, v.pointsBalance, v.pointsWillEarn].every(optionalNumber)
-    && [v.checkout, v.pendingApproval, v.pendingPricing].every(b => b == null || typeof b === "boolean")
+    && [v.checkout, v.pendingApproval, v.pendingPricing, v.memberAttached].every(b => b == null || typeof b === "boolean")
     && (!v.brand || (typeof v.brand.name === "string" && [v.brand.branch, v.brand.logoUrl, v.brand.customerDisplayBackgroundUrl, v.brand.businessHours, v.brand.website].every(optionalText)))
     && (!v.paymentQr || (typeof v.paymentQr.payload === "string" && v.paymentQr.payload.length <= 2048
       && money(v.paymentQr.amount) && optionalText(v.paymentQr.accountName)))
