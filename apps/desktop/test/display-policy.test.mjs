@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  customerDisplayPreviewBounds,
   DEFAULT_CUSTOMER_DISPLAY_CONFIG,
   normalizeCustomerDisplayConfig,
   selectCustomerDisplay,
@@ -40,4 +41,13 @@ test("selected mode uses only the connected non-cashier target", () => {
   assert.equal(selectCustomerDisplay(displays, 10, { mode: "selected", targetDisplayId: "30" })?.id, 30);
   assert.equal(selectCustomerDisplay(displays, 10, { mode: "selected", targetDisplayId: "10" }), null);
   assert.equal(selectCustomerDisplay(displays, 10, { mode: "selected", targetDisplayId: "99" }), null);
+});
+
+test("one-screen preview stays windowed and inside the cashier work area", () => {
+  assert.deepEqual(customerDisplayPreviewBounds({
+    workArea: { x: 100, y: 40, width: 1440, height: 900 },
+  }), { x: 308, y: 106, width: 1024, height: 768 });
+  assert.deepEqual(customerDisplayPreviewBounds({
+    bounds: { x: 0, y: 0, width: 800, height: 600 },
+  }), { x: 40, y: 40, width: 720, height: 520 });
 });

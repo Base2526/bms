@@ -16,6 +16,8 @@ export type DesktopCustomerDisplayState = {
   targetDisplayId: string | null;
   activeDisplayId: string | null;
   open: boolean;
+  /** Temporary same-monitor window; never persisted or reopened on startup. */
+  preview?: boolean;
   cashierDisplayId: string;
   displays: DesktopDisplay[];
   targetAvailable: boolean;
@@ -65,6 +67,12 @@ declare global {
       confirmPrinterTest?(printed: boolean): Promise<{ ok: boolean; error?: string }>;
       /** Added in desktop 0.2.3; optional so a newer server remains usable from an older shell. */
       getCustomerDisplayState?(): Promise<DesktopCustomerDisplayState | null>;
+      openCustomerDisplayPreview?(): Promise<{
+        ok: boolean; error?: string; state?: DesktopCustomerDisplayState;
+      }>;
+      closeCustomerDisplayPreview?(): Promise<{
+        ok: boolean; error?: string; state?: DesktopCustomerDisplayState;
+      }>;
       setCustomerDisplayConfig?(input: {
         mode: DesktopCustomerDisplayMode;
         targetDisplayId?: string | null;

@@ -12,3 +12,16 @@ export async function prepareStoreLogo(bytes: Buffer): Promise<Buffer> {
   return image.rotate().resize({ width: 1024, height: 1024, fit: "inside", withoutEnlargement: true })
     .png().toBuffer();
 }
+
+/** Decode and bound a customer-display background before publishing it. */
+export async function prepareCustomerDisplayBackground(bytes: Buffer): Promise<Buffer> {
+  if (!bytes.length || bytes.length > 5 * 1024 * 1024) throw new Error("ไฟล์พื้นหลังไม่ถูกต้อง");
+  const image = sharp(bytes, { limitInputPixels: 20_000_000 });
+  const metadata = await image.metadata();
+  if (!metadata.format || !["png", "jpeg", "webp"].includes(metadata.format)
+    || !metadata.width || !metadata.height || (metadata.pages ?? 1) > 1) {
+    throw new Error("พื้นหลังต้องเป็นรูป PNG, JPG หรือ WebP แบบภาพนิ่ง");
+  }
+  return image.rotate().resize({ width: 2560, height: 1440, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 85 }).toBuffer();
+}

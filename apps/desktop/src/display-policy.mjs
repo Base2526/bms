@@ -37,3 +37,21 @@ export function selectCustomerDisplay(displays, cashierDisplayId, config) {
   }
   return displays.find((display) => String(display.id) !== cashierId) ?? null;
 }
+
+/**
+ * Keep the one-screen test window visibly inside the cashier work area. This is
+ * deliberately windowed: a preview must never cover the register like the real
+ * customer-display window does on a dedicated monitor.
+ */
+export function customerDisplayPreviewBounds(display) {
+  const area = display?.workArea ?? display?.bounds;
+  if (!area) throw new Error("DISPLAY_BOUNDS_MISSING");
+  const width = Math.min(area.width, Math.max(480, Math.min(1024, area.width - 80)));
+  const height = Math.min(area.height, Math.max(360, Math.min(768, area.height - 80)));
+  return {
+    x: area.x + Math.round((area.width - width) / 2),
+    y: area.y + Math.round((area.height - height) / 2),
+    width,
+    height,
+  };
+}

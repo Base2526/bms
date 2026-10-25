@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Button, Select, Switch } from "antd";
-import { DesktopOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CloseOutlined, DesktopOutlined, EyeOutlined, ReloadOutlined } from "@ant-design/icons";
 import type {
   DesktopCustomerDisplayMode,
   DesktopCustomerDisplayState,
 } from "@/lib/pos/deviceTokenClient";
 
 function statusText(state: DesktopCustomerDisplayState): string {
+  if (state.preview && state.open) return "กำลังทดสอบบนจอนี้";
   if (state.mode === "off") return "ปิดอยู่";
   if (state.open) {
     const display = state.displays.find((item) => item.id === state.activeDisplayId);
@@ -56,6 +57,26 @@ export default function CustomerDisplaySettings() {
       else await refresh();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "ตั้งค่าจอลูกค้าไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const togglePreview = async () => {
+    if (!state || busy) return;
+    const action = state.preview
+      ? window.bmsDesktop?.closeCustomerDisplayPreview
+      : window.bmsDesktop?.openCustomerDisplayPreview;
+    if (!action) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await action();
+      if (!result.ok) throw new Error(result.error ?? "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ");
+      if (result.state) setState(result.state);
+      else await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ");
     } finally {
       setBusy(false);
     }
@@ -126,6 +147,29 @@ export default function CustomerDisplaySettings() {
           ระบุหมายเลขจอ
         </Button>
       </div>
+
+      {typeof window.bmsDesktop?.openCustomerDisplayPreview === "function" && (
+        <div style={{ marginTop: 12, padding: 12, border: "1px dashed var(--posx-line, #d9e2ef)", borderRadius: 10 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>มีจอเดียวก็ทดสอบได้</div>
+          <div style={{ marginTop: 3, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
+            เปิดจอลูกค้าเป็นหน้าต่างย่อบนจอนี้เพื่อดูรายการและทดสอบ Dynamic QR การทดสอบนี้ไม่บันทึกเป็นค่าจอที่สองและไม่เปิดเองเมื่อเริ่มโปรแกรม
+          </div>
+          <Button
+            icon={state.preview ? <CloseOutlined /> : <EyeOutlined />}
+            danger={state.preview}
+            disabled={busy || (state.open && !state.preview)}
+            onClick={() => void togglePreview()}
+            style={{ marginTop: 10 }}
+          >
+            {state.preview ? "ปิดหน้าต่างทดสอบ" : "เปิดหน้าต่างทดสอบบนจอนี้"}
+          </Button>
+          {state.open && !state.preview && (
+            <span style={{ marginLeft: 10, color: "var(--posx-muted, #667085)", fontSize: 12 }}>
+              จอลูกค้าจริงกำลังเปิดอยู่แล้ว
+            </span>
+          )}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
         {state.displays.map((display, index) => (

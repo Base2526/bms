@@ -1103,6 +1103,7 @@ type Session = {
     address?: string | null;
     phone?: string | null;
     logoUrl?: string | null;
+    customerDisplayBackgroundUrl?: string | null;
     paymentQr?: { payload: string; accountName: string | null; promptpayId: string | null } | null;
   };
   surface?: "retail" | "restaurant";

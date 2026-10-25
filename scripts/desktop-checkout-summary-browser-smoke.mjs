@@ -127,6 +127,16 @@ try {
       assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).inputValue(), "4000");
       await page.getByLabel("ยอดช่องทางนี้", { exact: true }).nth(1).fill("6000");
       assert.equal(await page.getByLabel("รับเงินมา", { exact: true }).inputValue(), "6000");
+      await page.getByLabel("ยอดช่องทางนี้", { exact: true }).nth(0).fill("3559");
+      await page.getByLabel("เลขอ้างอิง (ไม่บังคับ)", { exact: true }).waitFor();
+      await page.getByText("Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน", { exact: true }).waitFor();
+      await page.waitForFunction(() => !Array.from(document.querySelectorAll("button"))
+        .find((button) => button.textContent?.includes("ยืนยันรับชำระ"))?.disabled);
+      assert.equal(await page.getByRole("button", { name: /ยืนยันรับชำระ/ }).isDisabled(), false,
+        "a balanced QR tender does not require a typed reference");
+      if (width === 1440 || width === 390) {
+        await page.screenshot({ path: `${output}/${width}-qr-optional.png`, fullPage: true });
+      }
       await page.locator("fieldset").getByRole("button", { name: "ลบ", exact: true }).nth(0).click();
       await page.waitForFunction(() => Array.from(document.querySelectorAll("label"))
         .find(label => label.textContent.startsWith("รับเงินมา"))?.querySelector("input")?.value === "9559");

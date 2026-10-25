@@ -984,7 +984,7 @@ const LINK_STEPS_TH: LinkStep[] = [
       <>
         ในการ์ด <b>ข้อมูลร้าน</b> ที่ {L.settings} แก้ <b>ชื่อร้าน</b> ได้เอง
         (Administrator · slug เป็นตัวระบุภายใน ระบบกำหนดให้ แก้ไม่ได้) และกรอก <b>ประเภทร้าน</b>,
-        เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
+        เวลาเปิด-ปิด, ที่อยู่, อีเมล/เว็บไซต์, โลโก้ และรูปพื้นหลังหน้าต้อนรับจอลูกค้า, บัญชีรับเงิน (ธนาคาร/พร้อมเพย์), ค่าส่ง
         โดยถ้ายังไม่กรอกบัญชีรับเงิน AI จะไม่แนะนำช่องทางชำระเงินให้ลูกค้า,
         ประเทศ/สกุลเงิน — AI จะใช้ตอบลูกค้า เช่น “ร้านชื่ออะไร/เปิดกี่โมง” “โอนเข้าบัญชีไหน” “ค่าส่งเท่าไหร่” และจะยกตัวอย่าง/ถามต่อให้เข้ากับประเภทร้านจากข้อมูลจริง ไม่เดา
         · หน้า <b>/shop-signup</b> มีตัวเลือก <b>archetype ร้าน</b> แบบ optional เพื่อเตรียม
@@ -1380,7 +1380,8 @@ const TH: ManualContent = {
       desc: "ยอดจากทุกแถวต้องตรงกับยอดที่ server คำนวณ",
       steps: [
         "บิลปกติเลือก เงินสด, QR, บัตร หรือ Wallet จากปุ่มใต้ยอด; เงินสดใส่ยอดที่รับหรือใช้ปุ่ม พอดี/ธนบัตร แล้วตรวจเงินทอน",
-        "QR/บัตร/Wallet ล็อกยอดเท่าบิลและใส่เลขอ้างอิงหรือ approval code ได้",
+        "เจ้าของร้านตั้ง QR ได้ที่ Settings > บัญชีรับเงิน: เพิ่มบัญชี เลือกประเภท พร้อมเพย์ ค้นหาธนาคาร แล้วกรอกชื่อบัญชีและเลขพร้อมเพย์ หรือเลือกรูป QR รับเงินแบบใช้ซ้ำและไม่มียอดจากธนาคาร/ผู้ให้บริการเพื่อให้ระบบอ่านเลขปลายทางให้อัตโนมัติ (รองรับ QR ที่ธนาคารระบุเป็นแบบ Static หรือ Dynamic หากไม่มีจำนวนเงิน) ระบบตรวจบัญชีปลายทางและเก็บเป็น QR ฐาน เมื่อ POS เลือก QR จอลูกค้าจะสร้าง Dynamic QR ใหม่ที่ฝังยอดของแถว QR ไว้แล้ว (กรณีจ่ายผสมใช้เฉพาะยอดส่วน QR)",
+        "QR ไม่บังคับกรอกเลขอ้างอิง เพราะ Dynamic QR ฝังยอดไว้แล้ว แต่พนักงานต้องตรวจชื่อผู้รับ ยอด และรายการเงินเข้าจริงก่อนกดยืนยัน; บัตร/Wallet/โอนยังต้องกรอกเลขอ้างอิงหรือ approval code",
         "กด + จ่ายผสม เพื่อเพิ่มหลายแถว กำหนดยอดแต่ละวิธี และกรอกยอดรับจริงในแถวเงินสด",
         "ปัดเศษเงินสดใช้เฉพาะบิลเงินสดล้วนตามค่าร้าน แสดงเป็นบรรทัดแยกและไม่เปลี่ยนฐาน VAT",
         "ถ้าออกใบกำกับไม่ได้เพราะสินค้ายังไม่ระบุ VAT ให้แก้สินค้าที่ระบบแจ้งเป็น V หรือ N แล้วกลับมากดชำระบิลเดิมซ้ำ ระบบใช้ order และ idempotency key เดิมโดยไม่รับเงินซ้ำ",
@@ -1396,7 +1397,7 @@ const TH: ManualContent = {
         "หลังขาย ตรวจเลขเอกสาร ยอดรับ และเงินทอน แล้วกดพิมพ์หรือดูใบเสร็จ; Enter พิมพ์และ Esc ปิดหน้าต่าง",
         "ใบเสร็จแสดงราคาป้ายตามไซซ์และแยกส่วนลดราคาส่ง/โปรโมชันออกมาให้ยอดตรวจสอบได้ พร้อมค่าบริการ ส่วนลดระดับบิล VAT/ยกเว้น VAT ปัดเศษ วิธีจ่าย แคชเชียร์ สมาชิก และบาร์โค้ดเลขบิล; การพิมพ์ซ้ำใช้ snapshot ตอนขาย ไม่อ่านราคาสินค้าปัจจุบัน",
         "ตั้งเครื่องพิมพ์ WebUSB ในแท็บ ตั้งค่า; ถ้าเบราว์เซอร์ไม่รองรับ ระบบใช้ print dialog และเปิดลิ้นชักจาก dialog ไม่ได้",
-        "กด เปิดจอลูกค้า แล้วลากหน้าต่างไปจอที่สองของเครื่องเดียวกัน จอแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
+        "Desktop ที่มีจอเดียว: ไปที่ ตั้งค่า > จอลูกค้า แล้วกด เปิดหน้าต่างทดสอบบนจอนี้ หน้าต่างย่อจะแสดงข้อมูลจริงแต่ไม่บันทึกเป็นค่าจอที่สองและไม่เปิดเองครั้งถัดไป หากมีจอจริงให้เปิดจอลูกค้าแบบ Auto/เลือกจอ แล้วใช้เดสก์ท็อปแบบขยาย จอแสดง 8 รายการล่าสุด ยอด ส่วนลด และเงินทอนแบบ read-only",
         "ส่งสำเนาทางอีเมลได้โดยพิมพ์อีเมลเฉพาะครั้ง หรือเว้นว่างให้ใช้ข้อมูลสมาชิก; ส่ง LINE ได้เมื่อลูกค้าผูก LINE กับร้านแล้ว",
         "โหลดบิลล่าสุดจาก server ในแท็บ ตั้งค่าเมื่อต้องพิมพ์ซ้ำหลังรีเฟรช",
         "ปุ่มรีเฟรชข้อมูลบน Desktop แสดง ‘กำลังอัปเดตข้อมูล…’ ที่แถบบนเพียงจุดเดียว โดยคงสถานะการเชื่อมต่อเดิมจนทราบผล ไม่เปลี่ยนเป็น ‘กำลังเชื่อมต่อ’ เพียงเพราะกดรีเฟรช",
@@ -2256,7 +2257,7 @@ const LINK_STEPS_EN: LinkStep[] = [
       <>
         In the <b>Shop information</b> card on {L.settings} you can edit the <b>shop name</b> yourself (Administrator ·
         the slug is an internal identifier assigned by the system and cannot be changed) and fill in the{" "}
-        <b>business type</b>, opening hours, address, email/website, receiving accounts (bank/PromptPay), and shipping
+        <b>business type</b>, opening hours, address, email/website, logo, customer-display welcome background, receiving accounts (bank/PromptPay), and shipping
         fees. If no receiving account is filled in, the AI will not suggest payment channels to customers. Country and
         currency matter too — the AI uses all of this to answer questions such as “what is the shop called / what are
         your hours”, “which account do I transfer to”, and “how much is shipping”, and it tailors its examples and
@@ -2656,7 +2657,8 @@ const EN: ManualContent = {
       steps: [
         "Desktop checkout shows each item's shelf amount, promotion/wholesale saving, gift quantity, and post-promotion amount. Member/coupon/points discounts and cash rounding remain separate bill-level rows. Cash tender follows the payable until you type an actual amount or select a banknote; repricing preserves that input, even when insufficient. Exact opts back into automatic cash.",
         "For a normal sale choose Cash, QR, Card, or Wallet. For cash, enter tendered money or use Exact/quick-note buttons and verify change.",
-        "QR, card, and wallet stay locked to the bill total and may carry a reference or approval code.",
+        "The owner can configure the payment QR under Settings > Receiving accounts: add an account, select PromptPay, search for the bank, then enter the account name and PromptPay ID—or choose a reusable, amount-free QR image issued by the bank/provider so BMS can read the recipient automatically. Provider initiation methods 11 and 12 are both accepted when no amount is present. BMS verifies the recipient and saves the QR as the base. When POS selects QR, the customer display creates a new Dynamic QR containing the QR tender amount (only the QR portion for split payment).",
+        "QR does not require a reference because the Dynamic QR already contains the amount, but the cashier must verify the recipient, amount, and actual incoming payment before confirming. Card, wallet, and bank transfer still require a reference or approval code.",
         "Press + Split payment to add rows, allocate each amount, and enter the actual cash tender on cash rows.",
         "Cash rounding applies only to fully-cash bills and prints as its own line without changing the VAT base.",
         "If invoice issuance reports an unclassified VAT item, classify the named product as V or N, then retry the recovered bill. It reuses the original order and idempotency key without taking payment twice.",
@@ -2672,7 +2674,7 @@ const EN: ManualContent = {
         "After payment, verify document number, tender, and change, then print or preview. Enter prints and Esc closes the dialog.",
         "The receipt shows the snapshotted size/list price and a separate wholesale/promotion adjustment so the arithmetic is auditable, together with charges, order-level discounts, VAT/exempt VAT, rounding, payments, cashier, member, and the receipt barcode. Reprints never read today's product price.",
         "Pair a WebUSB printer in Settings. Unsupported browsers fall back to the print dialog, which cannot kick the drawer.",
-        "Open Customer display and move it to a second monitor on the same computer. It is read-only and shows the latest eight lines, total, discounts, and change.",
+        "On a one-monitor Desktop, open Settings > Customer display and choose Open test window on this display. The resizable live preview is not saved as a second-display setting and will not reopen next time. With real customer hardware, enable Auto/a selected display and use an extended desktop. The read-only view shows the latest eight lines, total, discounts, and change.",
         "Email a copy to a one-off address or leave it blank to use the member profile. LINE delivery requires the customer to have linked LINE to the shop.",
         "Use Load latest receipt from server to reprint after a page refresh.",
         "Desktop data refresh shows one updating-data message in the header and keeps the last observed connection status until the result is known; refreshing alone does not mean reconnecting.",

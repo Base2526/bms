@@ -115,6 +115,7 @@ test("customer identity is masked and image/link URLs refuse script and credenti
 test("brand uses shop name separately from branch and never invents public links or hours", () => {
   assert.equal(displayBrand(null), null);
   assert.deepEqual(displayBrand({ store: { name: "FAKE shop", logoUrl: "/api/files/1" }, location: { name: "FAKE branch" } }), {
-    name: "FAKE shop", branch: "FAKE branch", logoUrl: "/api/files/1", businessHours: null, website: null,
+    name: "FAKE shop", branch: "FAKE branch", logoUrl: "/api/files/1", customerDisplayBackgroundUrl: null,
+    businessHours: null, website: null,
   });
 });

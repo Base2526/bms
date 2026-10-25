@@ -211,7 +211,7 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
-| Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43` |
+| Store profile / AI policy | `bms_store_profile`, `bms_store_capabilities` | `6.9`, `7.17`, `7.30`, `9.39` (receipt language), `9.40`, `9.43`, `10.90` (customer-display welcome background) |
 | Branch customer facts | `bms_locations.parking_info`, `bms_locations.publish_restaurant_table_details` | `10.51`, `10.52` |
 | Customer AI answer evidence | `bms_ai_turn_evidence`, `bms_ai_tool_evidence` | `10.53` |
 | Pharmacy guidance & emergency directory | `bms_pharmacy_guidance_templates`, `bms_emergency_facilities` (+ `bms_lock_guidance_pharmacist_license()`) | `10.45`–`10.47` |
@@ -935,12 +935,15 @@ Realtime diagnostics write `inbox.diagnostic_event` for `Emit` and `inbox.diagno
 rows using `customer_ref = diagnostic:{channel}:{adminId}`, `sender = diagnostic`, and
 `meta.diagnostic = true`; no separate diagnostic tables or migrations are required.
 
-**`bms_store_profile` (`6.9__bms_store_profile.sql`, `7.30__bms_ai_context_strategy.sql`)** —
+**`bms_store_profile` (`6.9__bms_store_profile.sql`, `7.30__bms_ai_context_strategy.sql`,
+`10.90__bms_customer_display_background.sql`)** —
 one row per tenant (`tenant_id` PK), holding the store facts AI may disclose to customers:
 business type, name/about/address/phone/hours, shipping and return policies, shop-owned receiving
 accounts, and flat/free-threshold delivery estimates. It has forced RLS and explicit `bms_app`
 grants; writes run through `beginTenantTx()`. Carrier quotes are not stored or implied—the current
 estimate is only the shop-configured flat-rate policy.
+The nullable `customer_display_background_url` stores the tenant-owned public file URL used only by
+the idle customer-display welcome phase; cart and payment screens do not consume it.
 
 Receipt-language extension (`9.39`) stores `receipt_language_mode` (`th`, `en`, or `bilingual`) on
 the same tenant profile. It is customer-document policy shared by the POS preview, ESC/POS output,

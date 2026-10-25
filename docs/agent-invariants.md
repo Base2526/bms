@@ -484,17 +484,27 @@ notes; `lib/bms/etax/*` (`7.94`) owns the e-Tax submission queue. Full operator/
   shown at the register includes broader and provider-specific pauses, and a branch toggle never claims
   to resume a tenant-wide pause.
   Provider/customer/order detail must never be copied into an OS lock-screen notification. The
-  payment QR on that display comes only from a bounded provider-issued `qrPayload` on a
-  configured PromptPay/QR receiving account. Customer-display snapshots contain masked member names,
+  payment QR on that display starts only from a bounded, CRC-validated provider-issued reusable,
+  amount-free
+  `qrPayload` on a configured PromptPay/QR receiving account. The display preserves the provider's
+  recipient data, changes the initiation method to dynamic, adds only the server-backed QR tender
+  amount (the QR portion for split tender), and recomputes CRC-16/CCITT-FALSE. Customer-display
+  snapshots contain masked member names,
   never phone/email, and only server-backed preview/settlement figures. Pending manual-discount
   approval or a stale pricing-preview key suppresses payable totals and QR. Restaurant display reuses
   the rounded checkout amount. Locked cashiers and non-selling workspaces publish idle state; a new
   service-only bill must not inherit a preceding receipt. The completed-sale ID and cashier-observed
   completion time anchor the ten-second privacy reset; local hello retries and reopening never renew it.
   Eight seconds without a valid cashier snapshot clears
-  monetary and customer data, not public branding. The screen itself remains API/IPC-free.
-  A visible PromptPay ID is never enough to synthesize
-  an EMV payload, and split tender displays only the amount assigned to QR. Media permission is
+  monetary and customer data, not public branding. An optional tenant-owned welcome background is
+  idle-only and stays behind a dark overlay; it never appears behind cart, amount or payment QR.
+  The screen itself remains API/IPC-free.
+  A visible PromptPay ID is never enough to synthesize a receiving payload; an uploaded base must
+  match that ID. Any malformed, amount-bearing or non-PromptPay base fails closed instead of falling
+  back to an amount-free QR. A sale-side QR reference is optional manual evidence and is not payment
+  verification; the cashier must still inspect the real incoming payment and explicitly confirm the
+  sale. Card/bank-transfer/wallet sale references and pending non-cash refund references remain
+  required. Media permission is
   granted only for video on the paired origin. **Linux fails
   closed:** `basic_text` is Electron's unencrypted fallback, so `secureStorageStatus()` treats it and
   every unrecognised backend as unavailable and blocks pairing until GNOME Keyring/Secret Service or

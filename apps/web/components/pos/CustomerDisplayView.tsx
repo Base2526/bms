@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CheckCircleOutlined, ShopOutlined, UserOutlined } from "@ant-design/icons";
+import { CheckOutlined, ShopOutlined, UserOutlined } from "@ant-design/icons";
 import QRCode from "qrcode";
 import { displayMemberName, displayPhase, displayUrl, type CustomerDisplayPayload } from "@/lib/pos/customerDisplay";
+import { createDynamicPromptPayQrPayload } from "@/lib/bms/promptPayQr";
 import styles from "./CustomerDisplayView.module.css";
 
 const baht = (n: number) => n.toLocaleString("th-TH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -15,6 +16,16 @@ function Logo({ url, large = false }: { url?: string | null; large?: boolean }) 
     {safeUrl && failed !== safeUrl
       ? <img src={safeUrl} alt="โลโก้ร้าน" onError={() => setFailed(safeUrl)} />
       : <ShopOutlined aria-hidden />}
+  </div>;
+}
+
+function WelcomeBackground({ url }: { url?: string | null }) {
+  const safeUrl = displayUrl(url);
+  const [failed, setFailed] = useState<string | null>(null);
+  if (!safeUrl || failed === safeUrl) return null;
+  return <div className={styles.welcomeBackground} data-customer-display-background aria-hidden="true">
+    <img src={safeUrl} alt="" onError={() => setFailed(safeUrl)} />
+    <span />
   </div>;
 }
 
@@ -34,10 +45,25 @@ function DisplayQr({ payload, label }: { payload: string; label: string }) {
   </div>;
 }
 
-function Member({ state }: { state: CustomerDisplayPayload }) {
+function DynamicPaymentQr({ basePayload, amount }: { basePayload: string; amount: number }) {
+  let payload: string | null = null;
+  try {
+    payload = createDynamicPromptPayQrPayload(basePayload, amount);
+  } catch {
+    // A malformed or amount-bearing base must fail closed: never fall back to a
+    // static QR that would ask the customer to key a different amount.
+  }
+  return payload
+    ? <DisplayQr payload={payload} label="Dynamic PromptPay QR พร้อมยอดชำระ" />
+    : <div className={styles.qr}><span>ไม่สามารถสร้าง QR พร้อมยอดได้ กรุณาติดต่อพนักงาน</span></div>;
+}
+
+function Member({ state, showGuest = false }: { state: CustomerDisplayPayload; showGuest?: boolean }) {
   const name = displayMemberName(state.memberName);
-  if (!name) return null;
-  return <section className={styles.member}>
+  if (!name) return showGuest ? <section className={`${styles.member} ${styles.guest}`} data-customer-kind="guest">
+    <UserOutlined aria-hidden /><div><strong>ลูกค้าทั่วไป</strong><p>รายการนี้ไม่ได้สะสมแต้ม</p></div>
+  </section> : null;
+  return <section className={styles.member} data-customer-kind="member">
     <UserOutlined aria-hidden /><div><strong>สมาชิก {name}</strong>
       {state.pointsBalance != null && <p>แต้มคงเหลือ {state.pointsBalance.toLocaleString("th-TH")}</p>}
       {!state.finished && !state.pendingApproval && !state.pendingPricing && state.pointsWillEarn != null && <p className={styles.points}>แต้มที่คาดว่าจะได้รับ {state.pointsWillEarn}</p>}
@@ -61,6 +87,7 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
   const name = brand?.name || "ยินดีต้อนรับ";
   const labels = { idle: "ยินดีต้อนรับ", cart: "รายการของคุณ", payment: "ชำระเงิน", finished: "ชำระเงินเรียบร้อย" };
   return <main className={styles.screen} data-phase={phase}>
+    {phase === "idle" && <WelcomeBackground url={brand?.customerDisplayBackgroundUrl} />}
     <header className={styles.header}>
       <div className={styles.brand}><Logo url={brand?.logoUrl} /><div><strong>{name}</strong>
         {brand?.branch && brand.branch !== name && <p>{brand.branch}</p>}</div></div>
@@ -100,24 +127,27 @@ export function CustomerDisplayView({ state, linked }: { state: CustomerDisplayP
         <Member state={state} />
       </section>
       {state.paymentQr ? <section className={styles.paymentQr}>
-        <DisplayQr payload={state.paymentQr.payload} label="QR ชำระเงิน" />
+        <DynamicPaymentQr basePayload={state.paymentQr.payload} amount={state.paymentQr.amount} />
         <div><h2>สแกนชำระเงิน</h2><strong className={styles.qrAmount}>฿{baht(state.paymentQr.amount)}</strong>
           {state.paymentQr.accountName && <p>{state.paymentQr.accountName}</p>}
-          <p>ตรวจสอบชื่อผู้รับและยอดเงินก่อนยืนยัน</p><small>กรุณารอพนักงานยืนยันการชำระเงิน</small></div>
+          <p>ยอดเงินถูกใส่ใน QR แล้ว โปรดตรวจสอบชื่อผู้รับและยอดก่อนยืนยัน</p><small>กรุณารอพนักงานยืนยันการชำระเงิน</small></div>
       </section> : <section className={styles.paymentWaiting}><h2>ชำระเงินกับพนักงาน</h2><p>กรุณาตรวจสอบยอดเงิน</p></section>}
     </div>}
     {phase === "finished" && state.finished && <div className={styles.finished}>
-      <section className={styles.thanks}><CheckCircleOutlined className={styles.check} aria-hidden />
-        <h1>ขอบคุณที่อุดหนุน</h1><p>ชำระเงินเรียบร้อย</p>
-        <div className={styles.settlement}>
-          <div className={styles.row}><span>ยอดชำระ</span><strong>฿{baht(state.finished.total)}</strong></div>
+      <section className={styles.thanks} data-finished-primary><span className={styles.checkBadge}><CheckOutlined aria-hidden /></span>
+        <div className={styles.thanksCopy}><h1>ชำระเงินเรียบร้อย</h1><p>ขอบคุณที่อุดหนุน</p></div>
+      </section>
+      <section className={`${styles.finishedSummary} ${state.finished.change == null ? styles.finishedSummaryNoChange : ""}`} data-finished-summary>
+        <div className={styles.settlement} data-finished-settlement>
+          <div className={`${styles.row} ${styles.totalRow}`}><span>ยอดชำระทั้งหมด</span><strong>฿{baht(state.finished.total)}</strong></div>
           {state.finished.tendered != null && <div className={styles.row}><span>รับเงินสด</span><strong>฿{baht(state.finished.tendered)}</strong></div>}
         </div>
-        {state.finished.change != null && <div className={styles.change}><p>เงินทอน</p><strong className={styles.amount}>฿{baht(state.finished.change)}</strong></div>}
+        {state.finished.change != null && <><span className={styles.finishedDivider} aria-hidden /><div className={styles.change}><p>เงินทอน</p><strong className={styles.amount}>฿{baht(state.finished.change)}</strong></div></>}
+        <span className={styles.finishedDivider} aria-hidden />
+        <aside className={styles.finishAside}><Member state={state} showGuest />
+          {taxUrl && <section className={styles.tax}><DisplayQr payload={taxUrl} label="QR ขอใบกำกับภาษีเต็มรูป" /><div className={styles.taxCopy}><h2>ขอใบกำกับภาษีเต็มรูป</h2><p>สแกน QR เพื่อกรอกข้อมูล</p></div></section>}
+        </aside>
       </section>
-      {(state.memberName || taxUrl) && <aside className={styles.finishAside}><Member state={state} />
-        {taxUrl && <section className={styles.tax}><DisplayQr payload={taxUrl} label="QR ขอใบกำกับภาษีเต็มรูป" /><h2>ขอใบกำกับภาษีเต็มรูป</h2></section>}
-      </aside>}
     </div>}
     <footer className={styles.footer}><span>{brand?.branch || brand?.name || ""}</span><span>ขอบคุณที่ใช้บริการ</span></footer>
   </main>;
