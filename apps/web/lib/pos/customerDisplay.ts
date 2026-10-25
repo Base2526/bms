@@ -6,12 +6,13 @@ export type CustomerDisplayBrand = {
   name: string;
   branch: string | null;
   logoUrl: string | null;
+  customerDisplayBackgroundUrl?: string | null;
   businessHours?: string | null;
   website?: string | null;
 };
 
 export function displayBrand(session: {
-  store?: { name?: string | null; logoUrl?: string | null; businessHours?: string | null; website?: string | null };
+  store?: { name?: string | null; logoUrl?: string | null; customerDisplayBackgroundUrl?: string | null; businessHours?: string | null; website?: string | null };
   location: { name: string } | null;
 } | null): CustomerDisplayBrand | null {
   if (!session) return null;
@@ -19,6 +20,7 @@ export function displayBrand(session: {
     name: session.store?.name || session.location?.name || "",
     branch: session.location?.name ?? null,
     logoUrl: displayUrl(session.store?.logoUrl),
+    customerDisplayBackgroundUrl: displayUrl(session.store?.customerDisplayBackgroundUrl),
     businessHours: session.store?.businessHours ?? null,
     website: displayUrl(session.store?.website),
   };
@@ -63,7 +65,7 @@ export type CustomerDisplayPayload = {
   memberName: string | null;
   pointsEarned: number | null;
   paymentQr: {
-    /** Exact provider-issued payload; the display only renders it as a QR. */
+    /** Validated provider-issued reusable, amount-free base; the display adds this tender's amount and CRC. */
     payload: string;
     amount: number;
     accountName: string | null;
@@ -103,7 +105,7 @@ export function isDisplayPayload(value: unknown): value is CustomerDisplayPayloa
     && [v.itemCount, v.total, v.discountTotal, v.amountDue].every(money)
     && optionalText(v.memberName) && [v.pointsEarned, v.pointsBalance, v.pointsWillEarn].every(optionalNumber)
     && [v.checkout, v.pendingApproval, v.pendingPricing].every(b => b == null || typeof b === "boolean")
-    && (!v.brand || (typeof v.brand.name === "string" && [v.brand.branch, v.brand.logoUrl, v.brand.businessHours, v.brand.website].every(optionalText)))
+    && (!v.brand || (typeof v.brand.name === "string" && [v.brand.branch, v.brand.logoUrl, v.brand.customerDisplayBackgroundUrl, v.brand.businessHours, v.brand.website].every(optionalText)))
     && (!v.paymentQr || (typeof v.paymentQr.payload === "string" && v.paymentQr.payload.length <= 2048
       && money(v.paymentQr.amount) && optionalText(v.paymentQr.accountName)))
     && (!v.finished || (money(v.finished.total) && optionalNumber(v.finished.tendered)

@@ -62,6 +62,8 @@ test("ทุกจุดที่บันทึกไฟล์ระบุ visi
     "app/api/bms/products/upload/route.ts": "public",
     // โลโก้ร้านแสดงบนใบเสร็จและหน้าร้านสาธารณะ
     "app/api/bms/store-profile/logo/upload/route.ts": "public",
+    // พื้นหลังหน้าต้อนรับแสดงบนจอลูกค้าที่จับคู่ด้วย device token
+    "app/api/bms/store-profile/customer-display-background/upload/route.ts": "public",
     // seeder สร้างโพสต์ปลอมที่แสดงบนหน้าเว็บสาธารณะ
     "app/api/dev/fake/posts/route.ts": "public",
     // สลิปมีชื่อ+เลขบัญชีผู้โอน
@@ -146,6 +148,7 @@ test("ทุกจุดที่อัปโหลดไฟล์ของร�
   const expected: Record<string, string> = {
     "app/api/bms/products/upload/route.ts": "auth.tenantId",
     "app/api/bms/store-profile/logo/upload/route.ts": "auth.tenantId",
+    "app/api/bms/store-profile/customer-display-background/upload/route.ts": "auth.tenantId",
     "app/api/bms/inbox/upload/route.ts": "auth.tenantId",
     "app/api/bms/pharmacy/evidence/upload/route.ts": "auth.tenantId",
     // POS ใช้ tenant ของเครื่องที่ authenticate แล้ว ไม่ใช่ค่าจาก client
@@ -177,4 +180,15 @@ test("อัปโหลดโลโก้ร้านต้องยืนย�
   assert.match(src, /5 \* 1024 \* 1024/, "ต้องจำกัดขนาดไฟล์ไว้ที่ 5MB");
   assert.match(src, /await prepareStoreLogo\(/, "ต้องตรวจและ decode รูปจริงก่อนบันทึก");
   assert.match(src, /persistWebFile\(normalizedLogo, undefined, "public", auth.tenantId\)/);
+});
+
+test("อัปโหลดพื้นหลังจอลูกค้าต้องยืนยัน admin ตรวจรูป และผูก tenant", () => {
+  const src = read("app/api/bms/store-profile/customer-display-background/upload/route.ts");
+  assert.match(src, /authorizeAdminRoute\(null\)/);
+  assert.match(src, /image\/jpeg/);
+  assert.match(src, /image\/png/);
+  assert.match(src, /image\/webp/);
+  assert.match(src, /5 \* 1024 \* 1024/);
+  assert.match(src, /await prepareCustomerDisplayBackground\(/);
+  assert.match(src, /persistWebFile\(normalizedBackground, undefined, "public", auth\.tenantId\)/);
 });

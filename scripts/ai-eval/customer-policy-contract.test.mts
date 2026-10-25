@@ -21,6 +21,7 @@ import {
   hasConfiguredPaymentAccounts,
   supportsCustomerPaymentMethod,
 } from "../../apps/web/lib/bms/paymentConfiguration.ts";
+import { promptPayQrCrc } from "../../apps/web/lib/bms/promptPayQr.ts";
 import {
   normalizeCustomerIdentity,
   reorderTargetIdentity,
@@ -165,21 +166,26 @@ test("customer payment methods must match a configured receiving account", () =>
 });
 
 test("POS customer display renders only a provider-issued QR payload", () => {
+  const withoutCrc = "00020101021129370016A0000006770101110213000000000000053037645802TH6304";
+  const providerPayload = `${withoutCrc}${promptPayQrCrc(withoutCrc)}`;
   assert.equal(configuredPosPaymentQr([
     { type: "PROMPTPAY", promptpayId: "0812345678" },
   ]), null);
   assert.deepEqual(configuredPosPaymentQr([
     {
       type: "PROMPTPAY",
-      promptpayId: "0812345678",
+      promptpayId: "0000000000000",
       accountName: "Example Shop",
-      qrPayload: "000201-provider-issued-payload-6304ABCD",
+      qrPayload: providerPayload,
     },
   ]), {
-    payload: "000201-provider-issued-payload-6304ABCD",
+    payload: providerPayload,
     accountName: "Example Shop",
-    promptpayId: "0812345678",
+    promptpayId: "0000000000000",
   });
+  assert.equal(configuredPosPaymentQr([{
+    type: "PROMPTPAY", promptpayId: "1111111111111", qrPayload: providerPayload,
+  }]), null, "a mismatched recipient must never reach the POS display");
 });
 
 test("unconfigured payment advice is removed without losing an order summary", () => {

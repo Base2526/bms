@@ -47,16 +47,22 @@ describe('paymentMath', () => {
     expect(result.errors.join(' ')).toMatch(/เงินสดที่รับ/);
   });
 
-  it('QR/บัตรต้องมีเลขอ้างอิง แต่เงินสดไม่ต้อง', () => {
-    const missingRef = validateMockPayments(100, [
+  it('QR ไม่บังคับเลขอ้างอิง แต่บัตรยังต้องมี', () => {
+    const qrWithoutRef = validateMockPayments(100, [
       { id: 'p1', method: 'qr', amount: 100 },
     ]);
-    expect(missingRef.canConfirm).toBe(false);
+    expect(qrWithoutRef.canConfirm).toBe(true);
 
-    const withRef = validateMockPayments(100, [
-      { id: 'p1', method: 'qr', amount: 100, reference: 'TEST-1' },
+    const cardWithoutRef = validateMockPayments(100, [
+      { id: 'p1', method: 'card', amount: 100 },
     ]);
-    expect(withRef.canConfirm).toBe(true);
+    expect(cardWithoutRef.canConfirm).toBe(false);
+    expect(cardWithoutRef.errors).toContain('บัตรเครดิต ต้องมีเลขอ้างอิงทดสอบ');
+
+    const cardWithRef = validateMockPayments(100, [
+      { id: 'p1', method: 'card', amount: 100, reference: 'TEST-1' },
+    ]);
+    expect(cardWithRef.canConfirm).toBe(true);
   });
 
   it('split payment ที่บวกกันพอดีผ่าน แม้มีสตางค์', () => {

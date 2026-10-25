@@ -36,6 +36,10 @@ export function paymentMethodLabel(method: PosPaymentMethod): string {
   return "ขายเชื่อ";
 }
 
+export function paymentReferenceRequired(method: PosPaymentMethod): boolean {
+  return method !== "cash" && method !== "qr" && method !== "credit";
+}
+
 export function validatePayments(
   totalDue: number,
   payments: PosPaymentInput[],
@@ -49,7 +53,7 @@ export function validatePayments(
     if (payment.amount <= 0) errors.push(`${paymentMethodLabel(payment.method)} ต้องมียอดมากกว่า 0`);
     if (payment.method === "cash") {
       if ((payment.tendered ?? 0) < payment.amount) errors.push("เงินสดที่รับต้องไม่น้อยกว่ายอดเงินสด");
-    } else if (payment.method !== "credit" && !payment.reference?.trim()) {
+    } else if (paymentReferenceRequired(payment.method) && !payment.reference?.trim()) {
       errors.push(`${paymentMethodLabel(payment.method)} ต้องมีเลขอ้างอิงทดสอบ`);
     }
   }

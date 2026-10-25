@@ -1,4 +1,5 @@
 import type { PaymentAccount } from "./storeProfile";
+import { promptPayRecipientId, validateReusablePromptPayQrPayload } from "./promptPayQr";
 
 export type CustomerPaymentMethod =
   | "BANK_TRANSFER"
@@ -43,15 +44,21 @@ export function configuredPaymentAccounts(accounts: PaymentAccount[]): PaymentAc
 }
 
 /**
- * Return the first provider-issued QR configured for an authenticated POS.
- * This deliberately does not generate PromptPay/EMV data from an identifier:
- * the configured payload remains the sole payment authority.
+ * Return the first provider-issued reusable, amount-free QR configured for an authenticated POS.
+ * The customer display preserves its recipient data and adds only the current
+ * QR tender amount plus a fresh CRC; it never generates authority from an ID.
  */
 export function configuredPosPaymentQr(accounts: PaymentAccount[]): PosPaymentQr | null {
   for (const account of configuredPaymentAccounts(accounts)) {
     const type = normalizedType(account);
     const payload = value(account.qrPayload);
     if ((type === "PROMPTPAY" || type === "QR") && payload) {
+      try {
+        const recipientId = promptPayRecipientId(validateReusablePromptPayQrPayload(payload));
+        if (recipientId !== value(account.promptpayId).replace(/\D/g, "")) continue;
+      } catch {
+        continue;
+      }
       return {
         payload: payload.slice(0, 2048),
         accountName: value(account.accountName).slice(0, 160) || null,

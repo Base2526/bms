@@ -214,9 +214,11 @@ Verification for the shell is `npm run lint` and `npm test` (pairing and keystor
    assessment, links it to a parked-bill snapshot, and clears the counter so the next customer is
    not blocked. The parked bill can be resumed only after the assessment becomes `APPROVED`.
 5. One bill can be split across cash, QR, card, bank transfer, or wallet. The method is picked from
-   a row of buttons under the amount; cash opens the quick-tender pad, the other methods take a
-   reference number and keep their amount locked to the bill total. "Split payment" switches to the
-   multi-row form. The payment rows must add up to the server-computed order amount; cash
+   a row of buttons under the amount; cash opens the quick-tender pad. QR may carry an optional
+   reference but does not require the cashier or customer to type one; the cashier must still verify
+   the recipient, amount and actual incoming payment before explicitly confirming the sale. Card,
+   bank transfer and wallet keep their external reference requirement. "Split payment" switches to
+   the multi-row form. The payment rows must add up to the server-computed order amount; cash
    tender/change is recorded per cash row.
 6. Successful settlement changes the order to `COMPLETED`, consumes reserved/current stock, assigns
    lots FEFO where lots are tracked, records movements, and issues an abbreviated tax document when
@@ -909,13 +911,35 @@ matters for one specific failure: if the shop's internet drops, a WebSocket-driv
 showing a stale total — the worst possible moment for the customer-facing number to be wrong. If no
 display window is open, the broadcast simply has no listener.
 
-When a QR tender is selected, the same payload can include the amount assigned to that tender and a
-shop-configured payment QR. The QR bytes must be the exact static payload issued by the bank/payment
-provider and stored on a configured PromptPay/QR receiving account. The renderer only turns those
-bytes into an image; it never derives EMV/PromptPay data from the visible PromptPay ID. That keeps a
-display field from silently becoming payment authority and also makes split tender show the QR
-portion rather than the whole bill. Because a POS tender currently chooses a method, not an account,
-the first configured PromptPay/QR account with a payload is the deterministic display account.
+The Desktop shell also offers a one-screen test preview. It opens the same `/pos/display` listener
+in a framed, resizable window centered inside the cashier display, so a developer or operator can
+exercise the full item/payment/Dynamic-QR flow without connecting another monitor. Preview state is
+process-local only: it does not change or persist the `off`/`auto`/`selected` display configuration,
+never reopens at startup, and yields to the configured non-cashier display when one becomes
+available. The real managed customer display remains restricted to a display other than the cashier.
+
+When a QR tender is selected, the customer display creates a new Dynamic PromptPay QR containing the
+amount assigned to that tender. Its receiving authority still comes only from the exact static QR
+issued by the bank/payment provider and stored on a configured PromptPay/QR account; a visible
+PromptPay ID is never enough to synthesize the recipient. The parser verifies the base's PromptPay
+merchant AID, Thai baht/country fields and CRC, requires it to be amount-free, and accepts either
+initiation method 11 or 12 because some banks issue reusable account QRs marked as 12. It also
+requires the embedded recipient to match the configured PromptPay ID. The renderer then changes
+only the initiation method, adds Tag 54 with the two-decimal tender amount and recomputes
+CRC-16/CCITT-FALSE. A failure shows no payment QR rather than falling back to a static one. Split
+tender therefore encodes only the QR portion, not the whole bill. Because a POS tender currently
+chooses a method, not an account, the first configured PromptPay/QR account with a valid base is the
+deterministic display account.
+The owner may choose a PNG, JPEG or WebP QR image in **Settings > Receiving accounts**. The browser
+decodes it locally and stores only the bounded QR payload in the existing profile field; it does not
+upload or retain the source image. The operator must use a reusable amount-free merchant QR issued
+by the bank/provider; both provider initiation methods 11 and 12 are accepted. Settings derives and
+verifies the recipient against the PromptPay ID;
+the POS later turns that verified base into the per-bill Dynamic QR.
+The checkout reference remains optional for QR sales. It is manual evidence only, not part of the
+Dynamic QR or proof that funds arrived; the cashier explicitly confirms after checking the real bank
+notification or account activity. This does not relax the external-reference requirement for card,
+bank-transfer or wallet sales, or for pending non-cash refund settlement.
 
 The display has four states: welcome, recent items, payment, and completed sale. The header uses the
 tenant name, branch and uploaded shop logo from the authenticated POS session (REST and GraphQL).
@@ -923,13 +947,22 @@ Logo uploads decode the actual PNG/JPEG/WebP bytes before publishing, reject emp
 images and inputs above 20 million pixels, and produce an orientation-correct PNG bounded to
 1024 pixels per side with transparency retained. The upload remains admin-authenticated,
 tenant-owned and public; existing URL logos are not rewritten.
+The owner may also upload an optional welcome background. The server decodes it under the same
+5 MB / 20-million-pixel bounds, rotates it, scales it within 2560×1440, and publishes a tenant-owned
+WebP. It renders with a dark readability overlay only in the idle welcome phase; cart, payment, QR
+and completion phases keep the solid background. A missing or failed image falls back to the existing
+solid welcome screen and never blocks the register or customer display.
 Welcome can show the configured business hours and website/social URL as a QR. These are shop profile
 fields, not invented branch hours, a membership enrolment link or a LINE OA integration.
 
 The latest three to eight lines are shown according to monitor height, with the newest highlighted
 and a count of earlier lines. Restaurant publishing still includes only SENT items. Names are masked
 before broadcasting; phone/email are not member labels. Existing server previews supply expected
-points, while earned/balance points and change come from the completed sale. A pending manual
+points, while earned/balance points and change come from the completed sale. The completed view
+groups the paid total, cash received, change, member status and tax-request QR into one summary band.
+When the sale has no resolved member, it identifies the buyer neutrally as a general customer and
+states that the sale did not earn points; it does not invent an enrolment link or imply missing data.
+A pending manual
 discount or a price preview that does not match the current bill hides the payable total and payment
 QR. Restaurant checkout reuses the cashier's rounded amount, not the unrounded preview. Locking the
 cashier or moving to non-selling work clears the customer view. A new service-only bill takes

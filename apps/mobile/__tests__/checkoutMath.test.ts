@@ -77,15 +77,23 @@ describe('mock split payments', () => {
     expect(short.remaining).toBe(200);
   });
 
-  test('validates cash tender and non-cash references', () => {
+  test('validates cash tender and keeps QR reference optional', () => {
     const result = validateMockPayments(100, [
       { id: 'cash', method: 'cash', amount: 60, tendered: 50 },
       { id: 'qr', method: 'qr', amount: 40, reference: '' },
     ]);
     expect(result.canConfirm).toBe(false);
     expect(result.errors).toContain('เงินสดที่รับต้องไม่น้อยกว่ายอดเงินสด');
-    expect(result.errors).toContain('QR ต้องมีเลขอ้างอิงทดสอบ');
+    expect(result.errors).not.toContain('QR ต้องมีเลขอ้างอิงทดสอบ');
     expect(calculateCashChange(60, 100)).toBe(40);
+  });
+
+  test('still requires an external reference for card payments', () => {
+    const result = validateMockPayments(100, [
+      { id: 'card', method: 'card', amount: 100, reference: '' },
+    ]);
+    expect(result.canConfirm).toBe(false);
+    expect(result.errors).toContain('บัตรเครดิต ต้องมีเลขอ้างอิงทดสอบ');
   });
 
   test('orders quick cash buttons from exact amount to rounded tenders', () => {

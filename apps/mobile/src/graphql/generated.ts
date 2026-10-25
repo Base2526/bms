@@ -256,6 +256,34 @@ export type SchemaBmsAiQualityMetrics = {
   unresolvedRate: Scalars['Float']['output'];
 };
 
+export type SchemaBmsAiRateCard = {
+  __typename?: 'BmsAiRateCard';
+  active: Scalars['Boolean']['output'];
+  cacheCreationMultiplier: Scalars['Float']['output'];
+  cacheReadMultiplier: Scalars['Float']['output'];
+  effectiveFrom: Scalars['String']['output'];
+  effectiveTo: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  inputUsdPerMillion: Scalars['Float']['output'];
+  model: Scalars['String']['output'];
+  outputUsdPerMillion: Scalars['Float']['output'];
+  provider: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+};
+
+export type SchemaBmsAiRateCardInput = {
+  cacheCreationMultiplier: InputMaybe<Scalars['Float']['input']>;
+  cacheReadMultiplier: InputMaybe<Scalars['Float']['input']>;
+  effectiveFrom: Scalars['String']['input'];
+  inputUsdPerMillion: Scalars['Float']['input'];
+  model: Scalars['String']['input'];
+  outputUsdPerMillion: Scalars['Float']['input'];
+  provider: Scalars['String']['input'];
+  source: Scalars['String']['input'];
+  sourceVersion: Scalars['String']['input'];
+};
+
 export type SchemaBmsAiSynonymCandidate = {
   __typename?: 'BmsAiSynonymCandidate';
   firstSeenAt: Scalars['String']['output'];
@@ -534,6 +562,155 @@ export type SchemaBmsBilling = {
   usage: SchemaBmsUsage;
 };
 
+export type SchemaBmsBoardGameAnalytics = {
+  __typename?: 'BmsBoardGameAnalytics';
+  byArea: Array<SchemaBmsBoardGameAreaAnalytics>;
+  byTable: Array<SchemaBmsBoardGameTableAnalytics>;
+  complete: Scalars['Boolean']['output'];
+  dataQuality: SchemaBmsBoardGameAnalyticsDataQuality;
+  heatmap: Array<SchemaBmsBoardGameHeatmapCell>;
+  issues: Array<SchemaBmsBoardGameAnalyticsIssue>;
+  library: SchemaBmsBoardGameLibraryAnalytics;
+  locationScope: Maybe<Array<Scalars['ID']['output']>>;
+  range: SchemaBmsBoardGameAnalyticsRange;
+  timezone: Scalars['String']['output'];
+  topOffers: Array<SchemaBmsBoardGameOfferAnalytics>;
+  totals: SchemaBmsBoardGameAnalyticsTotals;
+  truncated: Scalars['Boolean']['output'];
+};
+
+export type SchemaBmsBoardGameAnalyticsDataQuality = {
+  __typename?: 'BmsBoardGameAnalyticsDataQuality';
+  backfilledBefore: Maybe<Scalars['String']['output']>;
+  hoursConfigured: Scalars['Boolean']['output'];
+  tablesWithoutHours: Scalars['Int']['output'];
+};
+
+export type SchemaBmsBoardGameAnalyticsGranularity =
+  | 'AREA'
+  | 'DAY'
+  | 'TABLE'
+  | 'WEEKDAY_HOUR';
+
+export type SchemaBmsBoardGameAnalyticsInput = {
+  areaId: InputMaybe<Scalars['ID']['input']>;
+  from: Scalars['String']['input'];
+  granularity: InputMaybe<SchemaBmsBoardGameAnalyticsGranularity>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsBoardGameAnalyticsIssue = {
+  __typename?: 'BmsBoardGameAnalyticsIssue';
+  code: Scalars['String']['output'];
+  count: Scalars['Int']['output'];
+  message: Scalars['String']['output'];
+};
+
+export type SchemaBmsBoardGameAnalyticsRange = {
+  __typename?: 'BmsBoardGameAnalyticsRange';
+  from: Scalars['String']['output'];
+  granularity: SchemaBmsBoardGameAnalyticsGranularity;
+  to: Scalars['String']['output'];
+};
+
+export type SchemaBmsBoardGameAnalyticsResult = {
+  __typename?: 'BmsBoardGameAnalyticsResult';
+  code: Maybe<Scalars['String']['output']>;
+  report: Maybe<SchemaBmsBoardGameAnalytics>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsBoardGameAnalyticsTotals = {
+  __typename?: 'BmsBoardGameAnalyticsTotals';
+  availableTableHours: Scalars['Float']['output'];
+  avgPlayMinutes: Maybe<Scalars['Float']['output']>;
+  cancelledSessions: Scalars['Int']['output'];
+  depositsForfeited: Scalars['String']['output'];
+  grossPlay: Scalars['String']['output'];
+  guests: Scalars['Int']['output'];
+  netPlay: Scalars['String']['output'];
+  occupiedTableHours: Scalars['Float']['output'];
+  offerDiscount: Scalars['String']['output'];
+  paidSessions: Scalars['Int']['output'];
+  passCoverage: Scalars['String']['output'];
+  passMinutesUsed: Scalars['Int']['output'];
+  passSalesRevenue: Scalars['String']['output'];
+  playReturns: Scalars['String']['output'];
+  revPATH: Maybe<Scalars['String']['output']>;
+  seatUtilizationPct: Maybe<Scalars['Float']['output']>;
+  sessions: Scalars['Int']['output'];
+  tabCost: Maybe<Scalars['String']['output']>;
+  tabGrossProfit: Maybe<Scalars['String']['output']>;
+  tabRevenue: Scalars['String']['output'];
+  tabRevenueExVat: Maybe<Scalars['String']['output']>;
+  turnoverPerTablePerDay: Maybe<Scalars['Float']['output']>;
+  utilizationPct: Maybe<Scalars['Float']['output']>;
+  waitlist: SchemaBmsBoardGameWaitlistAnalytics;
+};
+
+export type SchemaBmsBoardGameAreaAnalytics = {
+  __typename?: 'BmsBoardGameAreaAnalytics';
+  areaId: Scalars['ID']['output'];
+  availableTableHours: Scalars['Float']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  occupiedTableHours: Scalars['Float']['output'];
+  revPATH: Maybe<Scalars['String']['output']>;
+  revenue: Scalars['String']['output'];
+  utilizationPct: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsBoardGameBranchHour = {
+  __typename?: 'BmsBoardGameBranchHour';
+  closed: Scalars['Boolean']['output'];
+  closesAt: Maybe<Scalars['String']['output']>;
+  effectiveFrom: Scalars['String']['output'];
+  opensAt: Maybe<Scalars['String']['output']>;
+  weekday: Scalars['Int']['output'];
+};
+
+export type SchemaBmsBoardGameBranchHourInput = {
+  closed: Scalars['Boolean']['input'];
+  closesAt: InputMaybe<Scalars['String']['input']>;
+  opensAt: InputMaybe<Scalars['String']['input']>;
+  weekday: Scalars['Int']['input'];
+};
+
+export type SchemaBmsBoardGameBranchHoursResult = {
+  __typename?: 'BmsBoardGameBranchHoursResult';
+  code: Maybe<Scalars['String']['output']>;
+  effectiveFrom: Maybe<Scalars['String']['output']>;
+  hours: Array<SchemaBmsBoardGameBranchHour>;
+  locationId: Maybe<Scalars['ID']['output']>;
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsBoardGameHeatmapCell = {
+  __typename?: 'BmsBoardGameHeatmapCell';
+  availableTableHours: Scalars['Float']['output'];
+  hour: Scalars['Int']['output'];
+  occupiedTableHours: Scalars['Float']['output'];
+  revenue: Scalars['String']['output'];
+  utilizationPct: Maybe<Scalars['Float']['output']>;
+  weekday: Scalars['Int']['output'];
+};
+
+export type SchemaBmsBoardGameLibraryAnalytics = {
+  __typename?: 'BmsBoardGameLibraryAnalytics';
+  copiesNeedingAttention: Scalars['Int']['output'];
+  purchaseCostTotal: Maybe<Scalars['String']['output']>;
+  titlesPlayed: Array<SchemaBmsBoardGameTitleAnalytics>;
+};
+
+export type SchemaBmsBoardGameOfferAnalytics = {
+  __typename?: 'BmsBoardGameOfferAnalytics';
+  discount: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  offerId: Scalars['ID']['output'];
+  uses: Scalars['Int']['output'];
+};
+
 export type SchemaBmsBoardGameOperationsReport = {
   __typename?: 'BmsBoardGameOperationsReport';
   activePassCount: Scalars['Int']['output'];
@@ -552,6 +729,47 @@ export type SchemaBmsBoardGameOperationsReport = {
   sessionCount: Scalars['Int']['output'];
   settledAmount: Scalars['Float']['output'];
   titleCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsBoardGameTableAnalytics = {
+  __typename?: 'BmsBoardGameTableAnalytics';
+  areaName: Scalars['String']['output'];
+  availableTableHours: Scalars['Float']['output'];
+  code: Scalars['String']['output'];
+  grossPlay: Scalars['String']['output'];
+  locationName: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  netPlay: Scalars['String']['output'];
+  occupiedTableHours: Scalars['Float']['output'];
+  offerDiscount: Scalars['String']['output'];
+  passCoverage: Scalars['String']['output'];
+  revPATH: Maybe<Scalars['String']['output']>;
+  revenue: Scalars['String']['output'];
+  seats: Scalars['Int']['output'];
+  tabCost: Maybe<Scalars['String']['output']>;
+  tabGrossProfit: Maybe<Scalars['String']['output']>;
+  tabRevenue: Scalars['String']['output'];
+  tabRevenueExVat: Maybe<Scalars['String']['output']>;
+  tableId: Scalars['ID']['output'];
+  utilizationPct: Maybe<Scalars['Float']['output']>;
+};
+
+export type SchemaBmsBoardGameTitleAnalytics = {
+  __typename?: 'BmsBoardGameTitleAnalytics';
+  minutes: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  plays: Scalars['Int']['output'];
+  titleId: Scalars['ID']['output'];
+};
+
+export type SchemaBmsBoardGameWaitlistAnalytics = {
+  __typename?: 'BmsBoardGameWaitlistAnalytics';
+  avgWaitMinutes: Maybe<Scalars['Float']['output']>;
+  cancelled: Scalars['Int']['output'];
+  entries: Scalars['Int']['output'];
+  noShow: Scalars['Int']['output'];
+  noShowRatePct: Maybe<Scalars['Float']['output']>;
+  seated: Scalars['Int']['output'];
 };
 
 export type SchemaBmsBundleItem = {
@@ -1061,9 +1279,16 @@ export type SchemaBmsCustomer360 = {
 export type SchemaBmsCustomerAddress = {
   __typename?: 'BmsCustomerAddress';
   address: Scalars['String']['output'];
+  district: Maybe<Scalars['String']['output']>;
+  districtCode: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   is_default: Scalars['Boolean']['output'];
   label: Maybe<Scalars['String']['output']>;
+  postcode: Maybe<Scalars['String']['output']>;
+  province: Maybe<Scalars['String']['output']>;
+  provinceCode: Maybe<Scalars['String']['output']>;
+  subdistrict: Maybe<Scalars['String']['output']>;
+  subdistrictCode: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsCustomerAddress360 = {
@@ -1751,6 +1976,7 @@ export type SchemaBmsFullTaxInvoiceView = {
 };
 
 export type SchemaBmsGenerateReportInput = {
+  areaId: InputMaybe<Scalars['ID']['input']>;
   dateFrom: InputMaybe<Scalars['String']['input']>;
   dateTo: InputMaybe<Scalars['String']['input']>;
   format: Scalars['String']['input'];
@@ -2116,6 +2342,8 @@ export type SchemaBmsLocation = {
   address: Maybe<Scalars['String']['output']>;
   branchCode: Scalars['String']['output'];
   code: Scalars['String']['output'];
+  district: Maybe<Scalars['String']['output']>;
+  districtCode: Maybe<Scalars['String']['output']>;
   id: Scalars['ID']['output'];
   isHeadOffice: Scalars['Boolean']['output'];
   name: Scalars['String']['output'];
@@ -2124,6 +2352,11 @@ export type SchemaBmsLocation = {
   pharmacistName: Maybe<Scalars['String']['output']>;
   pharmacyLicenseNo: Maybe<Scalars['String']['output']>;
   phone: Maybe<Scalars['String']['output']>;
+  postcode: Maybe<Scalars['String']['output']>;
+  province: Maybe<Scalars['String']['output']>;
+  provinceCode: Maybe<Scalars['String']['output']>;
+  subdistrict: Maybe<Scalars['String']['output']>;
+  subdistrictCode: Maybe<Scalars['String']['output']>;
   vatCode: Maybe<Scalars['String']['output']>;
 };
 
@@ -2132,10 +2365,14 @@ export type SchemaBmsLocationInput = {
   address: InputMaybe<Scalars['String']['input']>;
   branchCode: Scalars['String']['input'];
   code: Scalars['String']['input'];
+  districtCode: InputMaybe<Scalars['String']['input']>;
   id: InputMaybe<Scalars['ID']['input']>;
   name: Scalars['String']['input'];
   parking: InputMaybe<SchemaBmsLocationParkingInput>;
   phone: InputMaybe<Scalars['String']['input']>;
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  subdistrictCode: InputMaybe<Scalars['String']['input']>;
 };
 
 export type SchemaBmsLocationParking = {
@@ -2316,6 +2553,244 @@ export type SchemaBmsManagementReport = {
   reconciliation: SchemaBmsReconciliationReport;
   supplierPerformance: Array<SchemaBmsSupplierPerformance>;
   to: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterBank = {
+  __typename?: 'BmsMasterBank';
+  active: Scalars['Boolean']['output'];
+  code: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  sortOrder: Scalars['Int']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  swift: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterBankInput = {
+  active: InputMaybe<Scalars['Boolean']['input']>;
+  code: Scalars['String']['input'];
+  countryCode: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  nameEn: Scalars['String']['input'];
+  nameTh: Scalars['String']['input'];
+  sortOrder: InputMaybe<Scalars['Int']['input']>;
+  source: InputMaybe<Scalars['String']['input']>;
+  sourceVersion: InputMaybe<Scalars['String']['input']>;
+  swift: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMasterBarcode = {
+  __typename?: 'BmsMasterBarcode';
+  barcode: Scalars['String']['output'];
+  brand: Maybe<Scalars['String']['output']>;
+  categoryHint: Maybe<Scalars['String']['output']>;
+  confirmations: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  imageFileId: Maybe<Scalars['ID']['output']>;
+  name: Scalars['String']['output'];
+  sizeText: Maybe<Scalars['String']['output']>;
+  source: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  unitCode: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterBarcodeReviewInput = {
+  brand: InputMaybe<Scalars['String']['input']>;
+  categoryHint: InputMaybe<Scalars['String']['input']>;
+  id: Scalars['ID']['input'];
+  name: Scalars['String']['input'];
+  sizeText: InputMaybe<Scalars['String']['input']>;
+  status: Scalars['String']['input'];
+  unitCode: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMasterCarrier = {
+  __typename?: 'BmsMasterCarrier';
+  active: Scalars['Boolean']['output'];
+  code: SchemaBmsCarrier;
+  countryCode: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  integrationStatus: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  trackingNoPattern: Maybe<Scalars['String']['output']>;
+  trackingUrlTemplate: Maybe<Scalars['String']['output']>;
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterCarrierInput = {
+  active: InputMaybe<Scalars['Boolean']['input']>;
+  code: SchemaBmsCarrier;
+  countryCode: Scalars['String']['input'];
+  id: InputMaybe<Scalars['ID']['input']>;
+  integrationStatus: Scalars['String']['input'];
+  nameEn: Scalars['String']['input'];
+  nameTh: Scalars['String']['input'];
+  source: InputMaybe<Scalars['String']['input']>;
+  sourceVersion: InputMaybe<Scalars['String']['input']>;
+  trackingNoPattern: InputMaybe<Scalars['String']['input']>;
+  trackingUrlTemplate: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMasterDrug = {
+  __typename?: 'BmsMasterDrug';
+  active: Scalars['Boolean']['output'];
+  barcodes: Array<Scalars['String']['output']>;
+  code: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  dosageForm: Scalars['String']['output'];
+  effectiveFrom: Scalars['String']['output'];
+  effectiveTo: Maybe<Scalars['String']['output']>;
+  genericName: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  regulatoryClass: Scalars['String']['output'];
+  reviewedAt: Maybe<Scalars['String']['output']>;
+  reviewedByPharmacist: Scalars['Boolean']['output'];
+  reviewedByPharmacistLicenseNo: Maybe<Scalars['String']['output']>;
+  reviewedByPharmacistName: Maybe<Scalars['String']['output']>;
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  strength: Scalars['String']['output'];
+  suggestedQuantityLimit: Maybe<Scalars['Int']['output']>;
+  suggestedSalePolicy: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsMasterDrugInput = {
+  active: InputMaybe<Scalars['Boolean']['input']>;
+  barcodes: InputMaybe<Array<Scalars['String']['input']>>;
+  code: Scalars['String']['input'];
+  countryCode: InputMaybe<Scalars['String']['input']>;
+  dosageForm: Scalars['String']['input'];
+  genericName: Scalars['String']['input'];
+  id: InputMaybe<Scalars['ID']['input']>;
+  regulatoryClass: Scalars['String']['input'];
+  reviewedByPharmacist: InputMaybe<Scalars['Boolean']['input']>;
+  reviewedByPharmacistLicenseNo: InputMaybe<Scalars['String']['input']>;
+  reviewedByPharmacistName: InputMaybe<Scalars['String']['input']>;
+  source: Scalars['String']['input'];
+  sourceVersion: Scalars['String']['input'];
+  strength: Scalars['String']['input'];
+  suggestedQuantityLimit: InputMaybe<Scalars['Int']['input']>;
+  suggestedSalePolicy: Scalars['String']['input'];
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsMasterTaxBuyerType = {
+  __typename?: 'BmsMasterTaxBuyerType';
+  active: Scalars['Boolean']['output'];
+  branchPolicy: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  effectiveFrom: Scalars['String']['output'];
+  effectiveTo: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  taxIdPolicy: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterTaxDocumentType = {
+  __typename?: 'BmsMasterTaxDocumentType';
+  active: Scalars['Boolean']['output'];
+  bmsDocumentType: Maybe<Scalars['String']['output']>;
+  code: Scalars['String']['output'];
+  effectiveFrom: Scalars['String']['output'];
+  effectiveTo: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterTaxReferences = {
+  __typename?: 'BmsMasterTaxReferences';
+  buyerTypes: Array<SchemaBmsMasterTaxBuyerType>;
+  documentTypes: Array<SchemaBmsMasterTaxDocumentType>;
+  vatRates: Array<SchemaBmsMasterVatRate>;
+};
+
+export type SchemaBmsMasterThaiAddress = {
+  __typename?: 'BmsMasterThaiAddress';
+  active: Scalars['Boolean']['output'];
+  code: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  districtCode: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  level: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  postcode: Maybe<Scalars['String']['output']>;
+  provinceCode: Maybe<Scalars['String']['output']>;
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterThaiAddressInput = {
+  active: InputMaybe<Scalars['Boolean']['input']>;
+  code: Scalars['String']['input'];
+  districtCode: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  level: Scalars['String']['input'];
+  nameEn: Scalars['String']['input'];
+  nameTh: Scalars['String']['input'];
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  source: InputMaybe<Scalars['String']['input']>;
+  sourceVersion: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMasterUnit = {
+  __typename?: 'BmsMasterUnit';
+  active: Scalars['Boolean']['output'];
+  aliases: Array<Scalars['String']['output']>;
+  baseFactor: Scalars['Float']['output'];
+  code: Scalars['String']['output'];
+  countryCode: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
+  updatedAt: Scalars['String']['output'];
+};
+
+export type SchemaBmsMasterUnitInput = {
+  active: InputMaybe<Scalars['Boolean']['input']>;
+  aliases: InputMaybe<Array<Scalars['String']['input']>>;
+  baseFactor: InputMaybe<Scalars['Float']['input']>;
+  code: Scalars['String']['input'];
+  countryCode: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  kind: Scalars['String']['input'];
+  nameEn: Scalars['String']['input'];
+  nameTh: Scalars['String']['input'];
+  source: InputMaybe<Scalars['String']['input']>;
+  sourceVersion: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMasterVatRate = {
+  __typename?: 'BmsMasterVatRate';
+  active: Scalars['Boolean']['output'];
+  countryCode: Scalars['String']['output'];
+  effectiveFrom: Scalars['String']['output'];
+  effectiveTo: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  rate: Scalars['Float']['output'];
+  source: Scalars['String']['output'];
+  sourceVersion: Scalars['String']['output'];
 };
 
 export type SchemaBmsMe = {
@@ -3091,6 +3566,7 @@ export type SchemaBmsPaymentAccount = {
   __typename?: 'BmsPaymentAccount';
   accountName: Maybe<Scalars['String']['output']>;
   accountNo: Maybe<Scalars['String']['output']>;
+  bankCode: Maybe<Scalars['String']['output']>;
   bankName: Maybe<Scalars['String']['output']>;
   note: Maybe<Scalars['String']['output']>;
   promptpayId: Maybe<Scalars['String']['output']>;
@@ -3101,6 +3577,7 @@ export type SchemaBmsPaymentAccount = {
 export type SchemaBmsPaymentAccountInput = {
   accountName: InputMaybe<Scalars['String']['input']>;
   accountNo: InputMaybe<Scalars['String']['input']>;
+  bankCode: InputMaybe<Scalars['String']['input']>;
   bankName: InputMaybe<Scalars['String']['input']>;
   note: InputMaybe<Scalars['String']['input']>;
   promptpayId: InputMaybe<Scalars['String']['input']>;
@@ -3378,6 +3855,21 @@ export type SchemaBmsPharmacyLicenseUser = {
   pharmacistLicenseNo: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsPharmacyMasterDrugSuggestion = {
+  __typename?: 'BmsPharmacyMasterDrugSuggestion';
+  code: Scalars['String']['output'];
+  dosageForm: Scalars['String']['output'];
+  genericName: Scalars['String']['output'];
+  regulatoryClass: Scalars['String']['output'];
+  reviewedAt: Maybe<Scalars['String']['output']>;
+  reviewedByPharmacist: Scalars['Boolean']['output'];
+  reviewedByPharmacistName: Maybe<Scalars['String']['output']>;
+  strength: Scalars['String']['output'];
+  suggestedQuantityLimit: Maybe<Scalars['Int']['output']>;
+  suggestedSalePolicy: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
 export type SchemaBmsPharmacyOperationsReport = {
   __typename?: 'BmsPharmacyOperationsReport';
   approvedPolicyCount: Scalars['Int']['output'];
@@ -3407,6 +3899,12 @@ export type SchemaBmsPharmacyProductPolicy = {
   __typename?: 'BmsPharmacyProductPolicy';
   createdAt: Scalars['String']['output'];
   id: Scalars['ID']['output'];
+  masterDrugCode: Maybe<Scalars['String']['output']>;
+  masterDrugId: Maybe<Scalars['ID']['output']>;
+  masterDrugSuggestionAppliedAt: Maybe<Scalars['String']['output']>;
+  masterDrugSuggestionAppliedBy: Maybe<Scalars['ID']['output']>;
+  masterDrugSuggestionSnapshot: Maybe<Scalars['JSON']['output']>;
+  masterDrugVersion: Maybe<Scalars['Int']['output']>;
   maxQuantity: Maybe<Scalars['Int']['output']>;
   productName: Scalars['String']['output'];
   productSku: Scalars['String']['output'];
@@ -3421,6 +3919,7 @@ export type SchemaBmsPharmacyProductPolicy = {
   safetyRuleKey: Maybe<Scalars['String']['output']>;
   salePolicy: Scalars['String']['output'];
   status: Scalars['String']['output'];
+  suggestedMasterDrug: Maybe<SchemaBmsPharmacyMasterDrugSuggestion>;
   tenantId: Scalars['ID']['output'];
   updatedAt: Scalars['String']['output'];
 };
@@ -3502,6 +4001,97 @@ export type SchemaBmsPlan = {
   max_users: Scalars['Int']['output'];
   name: Scalars['String']['output'];
   price_monthly: Scalars['Float']['output'];
+};
+
+export type SchemaBmsPlanCatalog = {
+  __typename?: 'BmsPlanCatalog';
+  aiCreditsMonthly: Scalars['Int']['output'];
+  code: Scalars['String']['output'];
+  featureKeys: Array<Scalars['String']['output']>;
+  maxAiMessagesMonth: Scalars['Int']['output'];
+  maxBranches: Scalars['Int']['output'];
+  maxChannels: Scalars['Int']['output'];
+  maxDevices: Scalars['Int']['output'];
+  maxOrdersMonth: Scalars['Int']['output'];
+  maxProducts: Scalars['Int']['output'];
+  maxUsers: Scalars['Int']['output'];
+  name: Scalars['String']['output'];
+  priceMonthly: Scalars['Float']['output'];
+  updatedAt: Maybe<Scalars['String']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPlanCatalogInput = {
+  aiCreditsMonthly: Scalars['Int']['input'];
+  code: Scalars['String']['input'];
+  expectedVersion: Scalars['Int']['input'];
+  featureKeys: Array<Scalars['String']['input']>;
+  maxAiMessagesMonth: Scalars['Int']['input'];
+  maxBranches: Scalars['Int']['input'];
+  maxChannels: Scalars['Int']['input'];
+  maxDevices: Scalars['Int']['input'];
+  maxOrdersMonth: Scalars['Int']['input'];
+  maxProducts: Scalars['Int']['input'];
+  maxUsers: Scalars['Int']['input'];
+  name: Scalars['String']['input'];
+  priceMonthly: Scalars['Float']['input'];
+};
+
+export type SchemaBmsPlanCatalogPreview = {
+  __typename?: 'BmsPlanCatalogPreview';
+  affectedTenants: Scalars['Int']['output'];
+  code: Scalars['String']['output'];
+  featureGrantedTenants: Scalars['Int']['output'];
+  featureRevokedTenants: Scalars['Int']['output'];
+  grantedFeatures: Array<Scalars['String']['output']>;
+  previewToken: Scalars['String']['output'];
+  revokedFeatures: Array<Scalars['String']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPlatformCountry = {
+  __typename?: 'BmsPlatformCountry';
+  active: Scalars['Boolean']['output'];
+  addressDatasetStatus: Scalars['String']['output'];
+  code: Scalars['String']['output'];
+  defaultCurrencyCode: Scalars['String']['output'];
+  defaultTimezoneCode: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+};
+
+export type SchemaBmsPlatformCurrency = {
+  __typename?: 'BmsPlatformCurrency';
+  active: Scalars['Boolean']['output'];
+  code: Scalars['String']['output'];
+  minorUnits: Scalars['Int']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  symbol: Scalars['String']['output'];
+};
+
+export type SchemaBmsPlatformReferenceIssue = {
+  __typename?: 'BmsPlatformReferenceIssue';
+  field: Scalars['String']['output'];
+  rawValue: Scalars['String']['output'];
+  shops: Scalars['Int']['output'];
+};
+
+export type SchemaBmsPlatformReferences = {
+  __typename?: 'BmsPlatformReferences';
+  countries: Array<SchemaBmsPlatformCountry>;
+  currencies: Array<SchemaBmsPlatformCurrency>;
+  source: Scalars['String']['output'];
+  timezones: Array<SchemaBmsPlatformTimezone>;
+  unresolved: Array<SchemaBmsPlatformReferenceIssue>;
+};
+
+export type SchemaBmsPlatformTimezone = {
+  __typename?: 'BmsPlatformTimezone';
+  active: Scalars['Boolean']['output'];
+  code: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
 };
 
 export type SchemaBmsPosApprover = {
@@ -4562,8 +5152,12 @@ export type SchemaBmsPosDeviceDiagnosticEvent = {
   __typename?: 'BmsPosDeviceDiagnosticEvent';
   action: Scalars['String']['output'];
   actorId: Maybe<Scalars['String']['output']>;
+  actorKind: Scalars['String']['output'];
+  actorLabel: Maybe<Scalars['String']['output']>;
+  actorRole: Maybe<Scalars['String']['output']>;
   category: Scalars['String']['output'];
   context: Scalars['JSON']['output'];
+  correlationId: Maybe<Scalars['String']['output']>;
   deviceId: Maybe<Scalars['ID']['output']>;
   id: Scalars['ID']['output'];
   locationId: Maybe<Scalars['ID']['output']>;
@@ -6396,6 +6990,7 @@ export type SchemaBmsPosStoreReceiptSettings = {
   __typename?: 'BmsPosStoreReceiptSettings';
   address: Maybe<Scalars['String']['output']>;
   businessHours: Maybe<Scalars['String']['output']>;
+  customerDisplayBackgroundUrl: Maybe<Scalars['String']['output']>;
   logoUrl: Maybe<Scalars['String']['output']>;
   name: Maybe<Scalars['String']['output']>;
   paymentQr: Maybe<SchemaBmsPosPaymentQr>;
@@ -6572,6 +7167,7 @@ export type SchemaBmsProductInput = {
   base_unit: InputMaybe<Scalars['String']['input']>;
   brand: InputMaybe<Scalars['String']['input']>;
   category: InputMaybe<Scalars['String']['input']>;
+  confirm_barcode_master: InputMaybe<Scalars['Boolean']['input']>;
   cost_price: InputMaybe<Scalars['Float']['input']>;
   creation_template: InputMaybe<Scalars['String']['input']>;
   description: InputMaybe<Scalars['String']['input']>;
@@ -6646,6 +7242,7 @@ export type SchemaBmsProductPack = {
   price: Maybe<Scalars['Float']['output']>;
   productSku: Scalars['String']['output'];
   size: Maybe<Scalars['String']['output']>;
+  unitCode: Maybe<Scalars['String']['output']>;
   unitName: Scalars['String']['output'];
 };
 
@@ -6659,6 +7256,7 @@ export type SchemaBmsProductPackInput = {
   price: InputMaybe<Scalars['Float']['input']>;
   productSku: Scalars['String']['input'];
   size: InputMaybe<Scalars['String']['input']>;
+  unitCode: InputMaybe<Scalars['String']['input']>;
   unitName: InputMaybe<Scalars['String']['input']>;
 };
 
@@ -7175,6 +7773,226 @@ export type SchemaBmsReportSubscriptionOverview = {
   tenantId: Scalars['ID']['output'];
   tenantName: Scalars['String']['output'];
   tenantSlug: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisition = {
+  __typename?: 'BmsRequisition';
+  createdAt: Scalars['String']['output'];
+  creator: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  items: Array<SchemaBmsRequisitionItem>;
+  latestActor: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
+  neededOn: Maybe<Scalars['String']['output']>;
+  note: Scalars['String']['output'];
+  priority: Scalars['String']['output'];
+  requestNo: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionAction =
+  | 'CANCEL'
+  | 'CLOSE'
+  | 'CREATE_PO'
+  | 'LINK_PO'
+  | 'REVIEW'
+  | 'SAVE'
+  | 'SUBMIT'
+  | 'TRANSFER';
+
+export type SchemaBmsRequisitionAvailability = {
+  __typename?: 'BmsRequisitionAvailability';
+  available: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  quarantine: Scalars['Int']['output'];
+  reserved: Scalars['Int']['output'];
+  stock: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionCommandInput = {
+  action: SchemaBmsRequisitionAction;
+  confirmed: InputMaybe<Scalars['Boolean']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  items: InputMaybe<Array<SchemaBmsRequisitionLineInput>>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  neededOn: InputMaybe<Scalars['String']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  poId: InputMaybe<Scalars['ID']['input']>;
+  priority: InputMaybe<Scalars['String']['input']>;
+  sourceId: InputMaybe<Scalars['ID']['input']>;
+  supplierId: InputMaybe<Scalars['ID']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsRequisitionDemand = {
+  __typename?: 'BmsRequisitionDemand';
+  name: Scalars['String']['output'];
+  remaining: Scalars['Float']['output'];
+  requests: Scalars['Int']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionDemandList = {
+  __typename?: 'BmsRequisitionDemandList';
+  rows: Array<SchemaBmsRequisitionDemand>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionDemandRequest = {
+  __typename?: 'BmsRequisitionDemandRequest';
+  branch: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  neededOn: Maybe<Scalars['String']['output']>;
+  priority: Scalars['String']['output'];
+  remaining: Scalars['Int']['output'];
+  requestNo: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionDemandRequestList = {
+  __typename?: 'BmsRequisitionDemandRequestList';
+  rows: Array<SchemaBmsRequisitionDemandRequest>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionEvent = {
+  __typename?: 'BmsRequisitionEvent';
+  action: Scalars['String']['output'];
+  actor: Scalars['String']['output'];
+  at: Scalars['String']['output'];
+  note: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionFilter = {
+  id: InputMaybe<Scalars['ID']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  neededFrom: InputMaybe<Scalars['String']['input']>;
+  neededTo: InputMaybe<Scalars['String']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  priority: InputMaybe<Scalars['String']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  status: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsRequisitionItem = {
+  __typename?: 'BmsRequisitionItem';
+  approved: Maybe<Scalars['Int']['output']>;
+  discrepancy: Scalars['Int']['output'];
+  drafts: Scalars['Int']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  purchases: Array<SchemaBmsRequisitionPurchase>;
+  received: Scalars['Int']['output'];
+  remaining: Scalars['Int']['output'];
+  requested: Scalars['Int']['output'];
+  reviewNote: Scalars['String']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  transfers: Array<SchemaBmsRequisitionTransfer>;
+  transit: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionLineInput = {
+  note: InputMaybe<Scalars['String']['input']>;
+  qty: Scalars['Int']['input'];
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+  unitCost: InputMaybe<Scalars['Float']['input']>;
+};
+
+export type SchemaBmsRequisitionList = {
+  __typename?: 'BmsRequisitionList';
+  locations: Array<SchemaBmsRequisitionLocation>;
+  rows: Array<SchemaBmsRequisition>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsRequisitionLocation = {
+  __typename?: 'BmsRequisitionLocation';
+  active: Scalars['Boolean']['output'];
+  id: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionMetrics = {
+  __typename?: 'BmsRequisitionMetrics';
+  approvedRequests: Scalars['Float']['output'];
+  approvedUnits: Scalars['Float']['output'];
+  discrepancyUnits: Scalars['Float']['output'];
+  medianFulfilmentHours: Maybe<Scalars['Float']['output']>;
+  medianReviewHours: Maybe<Scalars['Float']['output']>;
+  overdueRequests: Scalars['Float']['output'];
+  partialRequests: Scalars['Float']['output'];
+  pendingReview: Scalars['Float']['output'];
+  receivedUnits: Scalars['Float']['output'];
+  requestedUnits: Scalars['Float']['output'];
+  reviewedRequests: Scalars['Float']['output'];
+  submittedRequests: Scalars['Float']['output'];
+  unallocatedUnits: Scalars['Float']['output'];
+};
+
+export type SchemaBmsRequisitionNotice = {
+  __typename?: 'BmsRequisitionNotice';
+  at: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  requestId: Scalars['ID']['output'];
+  requestNo: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionProduct = {
+  __typename?: 'BmsRequisitionProduct';
+  name: Scalars['String']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionPurchase = {
+  __typename?: 'BmsRequisitionPurchase';
+  id: Scalars['ID']['output'];
+  ordered: Scalars['Int']['output'];
+  qty: Scalars['Int']['output'];
+  received: Scalars['Int']['output'];
+  status: Scalars['String']['output'];
+};
+
+export type SchemaBmsRequisitionResult = {
+  __typename?: 'BmsRequisitionResult';
+  id: Maybe<Scalars['ID']['output']>;
+  poId: Maybe<Scalars['ID']['output']>;
+  status: SchemaBmsRequisitionResultStatus;
+  transferId: Maybe<Scalars['ID']['output']>;
+};
+
+export type SchemaBmsRequisitionResultStatus =
+  | 'CONFIRMATION_REQUIRED'
+  | 'IDEMPOTENCY_CONFLICT'
+  | 'INSUFFICIENT_STOCK'
+  | 'INVALID_INPUT'
+  | 'INVALID_STATE'
+  | 'LINKED_WORK_OPEN'
+  | 'NOT_FOUND'
+  | 'OK'
+  | 'OVER_ALLOCATED'
+  | 'PRODUCT_NOT_FOUND'
+  | 'REASON_REQUIRED'
+  | 'STALE_VERSION'
+  | 'UNSUPPORTED_TRANSFER';
+
+export type SchemaBmsRequisitionTransfer = {
+  __typename?: 'BmsRequisitionTransfer';
+  damaged: Maybe<Scalars['Int']['output']>;
+  id: Scalars['ID']['output'];
+  number: Scalars['String']['output'];
+  qty: Scalars['Int']['output'];
+  received: Maybe<Scalars['Int']['output']>;
+  status: Scalars['String']['output'];
 };
 
 export type SchemaBmsRestaurantArea = {
@@ -7762,6 +8580,7 @@ export type SchemaBmsShipment = {
   carrierBookingError: Maybe<Scalars['String']['output']>;
   carrierBookingStatus: Scalars['String']['output'];
   carrierLastSyncedAt: Maybe<Scalars['String']['output']>;
+  carrierName: Scalars['String']['output'];
   carrierTrackingSource: Maybe<Scalars['String']['output']>;
   createdAt: Scalars['String']['output'];
   externalShipmentId: Maybe<Scalars['String']['output']>;
@@ -7772,12 +8591,15 @@ export type SchemaBmsShipment = {
   orderId: Scalars['ID']['output'];
   status: SchemaBmsShipmentStatus;
   trackingNo: Maybe<Scalars['String']['output']>;
+  trackingNoWarning: Maybe<Scalars['String']['output']>;
+  trackingUrl: Maybe<Scalars['String']['output']>;
   updatedAt: Scalars['String']['output'];
 };
 
 export type SchemaBmsShipmentLabel = {
   __typename?: 'BmsShipmentLabel';
   carrier: Scalars['String']['output'];
+  carrierName: Scalars['String']['output'];
   createdAt: Scalars['String']['output'];
   items: Array<SchemaBmsLabelItem>;
   labelUrl: Maybe<Scalars['String']['output']>;
@@ -7785,6 +8607,8 @@ export type SchemaBmsShipmentLabel = {
   shipTo: SchemaBmsLabelShipTo;
   shipmentId: Scalars['ID']['output'];
   trackingNo: Maybe<Scalars['String']['output']>;
+  trackingNoWarning: Maybe<Scalars['String']['output']>;
+  trackingUrl: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsShipmentResult = {
@@ -7822,6 +8646,16 @@ export type SchemaBmsShippingWeightTier = {
 export type SchemaBmsShippingWeightTierInput = {
   maxGrams: Scalars['Int']['input'];
   surcharge: Scalars['Float']['input'];
+};
+
+export type SchemaBmsShippingZone = {
+  __typename?: 'BmsShippingZone';
+  defaultZone: Scalars['String']['output'];
+  effectiveZone: Scalars['String']['output'];
+  nameEn: Scalars['String']['output'];
+  nameTh: Scalars['String']['output'];
+  overrideZone: Maybe<Scalars['String']['output']>;
+  provinceCode: Scalars['String']['output'];
 };
 
 export type SchemaBmsShippingZoneRate = {
@@ -7906,6 +8740,14 @@ export type SchemaBmsStaffRef = {
   name: Maybe<Scalars['String']['output']>;
   openCount: Maybe<Scalars['Int']['output']>;
   role: Maybe<Scalars['String']['output']>;
+};
+
+export type SchemaBmsStarterCategoryApplyResult = {
+  __typename?: 'BmsStarterCategoryApplyResult';
+  appliedCount: Scalars['Int']['output'];
+  archetype: Scalars['String']['output'];
+  categories: Array<SchemaBmsProductCategory>;
+  createdCount: Scalars['Int']['output'];
 };
 
 export type SchemaBmsStatusCount = {
@@ -7996,6 +8838,7 @@ export type SchemaBmsStoreProfile = {
   aiLanguage: Scalars['String']['output'];
   aiOrderingStyle: Scalars['String']['output'];
   aiRequiredFields: Array<Scalars['String']['output']>;
+  barcodeMasterContributionEnabled: Scalars['Boolean']['output'];
   businessArchetype: Maybe<Scalars['String']['output']>;
   businessArchetypeLocked: Scalars['Boolean']['output'];
   businessHours: Maybe<Scalars['String']['output']>;
@@ -8003,12 +8846,18 @@ export type SchemaBmsStoreProfile = {
   contactEmail: Maybe<Scalars['String']['output']>;
   country: Maybe<Scalars['String']['output']>;
   currency: Maybe<Scalars['String']['output']>;
+  customerDisplayBackgroundUrl: Maybe<Scalars['String']['output']>;
+  district: Maybe<Scalars['String']['output']>;
+  districtCode: Maybe<Scalars['String']['output']>;
   emailFooterText: Maybe<Scalars['String']['output']>;
   emailThemeColor: Maybe<Scalars['String']['output']>;
   enabledCarriers: Array<SchemaBmsCarrier>;
   logoUrl: Maybe<Scalars['String']['output']>;
   paymentAccounts: Array<SchemaBmsPaymentAccount>;
   phone: Maybe<Scalars['String']['output']>;
+  postcode: Maybe<Scalars['String']['output']>;
+  province: Maybe<Scalars['String']['output']>;
+  provinceCode: Maybe<Scalars['String']['output']>;
   receiptLanguageMode: Scalars['String']['output'];
   restaurantMerchantAbsorbLimit: Scalars['Float']['output'];
   restaurantOrderHours: Scalars['JSON']['output'];
@@ -8024,6 +8873,8 @@ export type SchemaBmsStoreProfile = {
   shippingPolicy: Maybe<Scalars['String']['output']>;
   shippingWeightTiers: Array<SchemaBmsShippingWeightTier>;
   shippingZoneRates: Array<SchemaBmsShippingZoneRate>;
+  subdistrict: Maybe<Scalars['String']['output']>;
+  subdistrictCode: Maybe<Scalars['String']['output']>;
   taxId: Maybe<Scalars['String']['output']>;
   timezone: Maybe<Scalars['String']['output']>;
   vatRegistered: Scalars['Boolean']['output'];
@@ -8038,18 +8889,23 @@ export type SchemaBmsStoreProfileInput = {
   aiLanguage: InputMaybe<Scalars['String']['input']>;
   aiOrderingStyle: InputMaybe<Scalars['String']['input']>;
   aiRequiredFields: InputMaybe<Array<Scalars['String']['input']>>;
+  barcodeMasterContributionEnabled: InputMaybe<Scalars['Boolean']['input']>;
   businessArchetype: InputMaybe<Scalars['String']['input']>;
   businessHours: InputMaybe<Scalars['String']['input']>;
   businessType: InputMaybe<Scalars['String']['input']>;
   contactEmail: InputMaybe<Scalars['String']['input']>;
   country: InputMaybe<Scalars['String']['input']>;
   currency: InputMaybe<Scalars['String']['input']>;
+  customerDisplayBackgroundUrl: InputMaybe<Scalars['String']['input']>;
+  districtCode: InputMaybe<Scalars['String']['input']>;
   emailFooterText: InputMaybe<Scalars['String']['input']>;
   emailThemeColor: InputMaybe<Scalars['String']['input']>;
   enabledCarriers: InputMaybe<Array<SchemaBmsCarrier>>;
   logoUrl: InputMaybe<Scalars['String']['input']>;
   paymentAccounts: InputMaybe<Array<SchemaBmsPaymentAccountInput>>;
   phone: InputMaybe<Scalars['String']['input']>;
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
   receiptLanguageMode: InputMaybe<Scalars['String']['input']>;
   restaurantMerchantAbsorbLimit: InputMaybe<Scalars['Float']['input']>;
   restaurantOrderHours: InputMaybe<Scalars['JSON']['input']>;
@@ -8065,6 +8921,7 @@ export type SchemaBmsStoreProfileInput = {
   shippingPolicy: InputMaybe<Scalars['String']['input']>;
   shippingWeightTiers: InputMaybe<Array<SchemaBmsShippingWeightTierInput>>;
   shippingZoneRates: InputMaybe<Array<SchemaBmsShippingZoneRateInput>>;
+  subdistrictCode: InputMaybe<Scalars['String']['input']>;
   taxId: InputMaybe<Scalars['String']['input']>;
   timezone: InputMaybe<Scalars['String']['input']>;
   website: InputMaybe<Scalars['String']['input']>;
@@ -8271,8 +9128,12 @@ export type SchemaBmsTaxInvoiceBuyerInput = {
   branchCode: InputMaybe<Scalars['String']['input']>;
   /** INDIVIDUAL | COMPANY | FOREIGNER — ไม่ระบุ = COMPANY (พฤติกรรมเดิม) */
   buyerType: InputMaybe<Scalars['String']['input']>;
+  districtCode: InputMaybe<Scalars['String']['input']>;
   name: Scalars['String']['input'];
   phone: InputMaybe<Scalars['String']['input']>;
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  subdistrictCode: InputMaybe<Scalars['String']['input']>;
   /** บังคับเฉพาะผู้ซื้อที่เป็นนิติบุคคล/ผู้ประกอบการจด VAT (buyerType COMPANY หรือไม่ระบุ) */
   taxId: InputMaybe<Scalars['String']['input']>;
   vatRegistered: InputMaybe<Scalars['Boolean']['input']>;
@@ -8404,6 +9265,12 @@ export type SchemaBmsUpdateSupportTicketInput = {
   comment: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
   status: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsUpsertBoardGameBranchHoursInput = {
+  effectiveFrom: Scalars['String']['input'];
+  hours: Array<SchemaBmsBoardGameBranchHourInput>;
+  locationId: Scalars['ID']['input'];
 };
 
 export type SchemaBmsUpsertReportSubscriptionInput = {
@@ -8780,12 +9647,15 @@ export type SchemaMutation = {
   addMember: Scalars['Boolean']['output'];
   blockNumber: SchemaPhoneCenterActionPayload;
   blockPhone: SchemaBlockPhonePayload;
+  bmsAddAiRateCard: SchemaBmsAiRateCard;
   bmsAddConversationHelper: Scalars['Boolean']['output'];
   bmsAddConversationNote: Maybe<SchemaBmsConversationNote>;
   bmsAddCustomerAddress: SchemaBmsCustomerAddress;
   bmsAdjustAiCredits: Scalars['Boolean']['output'];
   bmsAdjustLoyaltyPoints: SchemaBmsLoyaltyBalance;
   bmsAdjustStock: SchemaBmsVariant;
+  bmsApplyMasterDrugSuggestion: SchemaBmsPharmacyProductPolicy;
+  bmsApplyStarterCategories: SchemaBmsStarterCategoryApplyResult;
   bmsApplyStockCount: SchemaBmsMobileStockCountActionResult;
   bmsApproveAssessment: SchemaBmsPharmacyAssessment;
   /** Licensed pharmacist only (users.is_licensed_pharmacist); version pins the text that was read */
@@ -8798,6 +9668,7 @@ export type SchemaMutation = {
   bmsAssistant: SchemaBmsAssistantResult;
   bmsBackfillEtaxQueue: Scalars['Int']['output'];
   bmsBookShipmentLive: SchemaBmsCarrierBookingResult;
+  bmsBranchRequisitionCommand: SchemaBmsRequisitionResult;
   bmsCancelOrder: Scalars['Boolean']['output'];
   bmsCancelPurchaseOrder: Scalars['Boolean']['output'];
   bmsCancelRestockSubscription: Scalars['Boolean']['output'];
@@ -8995,6 +9866,7 @@ export type SchemaMutation = {
   bmsReturnOrder: Scalars['Boolean']['output'];
   bmsReviewAiQualityCase: SchemaBmsAiQualityCaseDetail;
   bmsReviewAiSynonymCandidate: SchemaBmsAiSynonymCandidate;
+  bmsReviewMasterBarcode: SchemaBmsMasterBarcode;
   bmsReviewMemberTier: SchemaBmsTierReviewResult;
   bmsReviewOperatingCost: SchemaBmsOperatingCostReviewResult;
   bmsReviewPharmacyProductPolicy: SchemaBmsPharmacyProductPolicy;
@@ -9036,6 +9908,7 @@ export type SchemaMutation = {
   bmsSetRestaurantCustomerTableDetails: Scalars['Boolean']['output'];
   bmsSetRolePermissions: Scalars['Boolean']['output'];
   bmsSetShipmentStatus: Scalars['Boolean']['output'];
+  bmsSetShippingZoneOverride: Scalars['Boolean']['output'];
   bmsSetTenantActive: Scalars['Boolean']['output'];
   bmsSetTenantPlan: Scalars['Boolean']['output'];
   bmsSetVatCategoryForUnknown: Scalars['Int']['output'];
@@ -9064,12 +9937,14 @@ export type SchemaMutation = {
   bmsUpdateLoyaltySettings: SchemaBmsLoyaltySettings;
   bmsUpdateMyTenant: SchemaBmsTenantInfo;
   bmsUpdateOnboardingProgress: SchemaBmsOnboardingProgress;
+  bmsUpdatePlanCatalog: SchemaBmsPlanCatalog;
   bmsUpdateRestaurantTable: SchemaBmsRestaurantTableAdmin;
   bmsUpdateSocialAuthSetting: SchemaBmsSocialAuthSetting;
   bmsUpdateSupportTicket: SchemaBmsSupportTicket;
   bmsUpdateTaxSettings: SchemaBmsTaxSettings;
   bmsUpdateTracking: Scalars['Boolean']['output'];
   bmsUpsertArAccount: SchemaBmsArAccount;
+  bmsUpsertBoardGameBranchHours: SchemaBmsBoardGameBranchHoursResult;
   bmsUpsertChannel: Scalars['Boolean']['output'];
   bmsUpsertCoupon: SchemaBmsCoupon;
   bmsUpsertCustomer: SchemaBmsCustomer;
@@ -9078,6 +9953,11 @@ export type SchemaMutation = {
   bmsUpsertInventoryPolicy: Scalars['Boolean']['output'];
   bmsUpsertKitchenStationSla: SchemaBmsKitchenStationSla;
   bmsUpsertLocation: SchemaBmsLocation;
+  bmsUpsertMasterBank: SchemaBmsMasterBank;
+  bmsUpsertMasterCarrier: SchemaBmsMasterCarrier;
+  bmsUpsertMasterDrug: SchemaBmsMasterDrug;
+  bmsUpsertMasterThaiAddress: SchemaBmsMasterThaiAddress;
+  bmsUpsertMasterUnit: SchemaBmsMasterUnit;
   bmsUpsertMembershipTier: SchemaBmsMembershipTier;
   bmsUpsertPharmacyProductPolicy: SchemaBmsPharmacyProductPolicy;
   bmsUpsertPharmacyProtocol: SchemaBmsPharmacyProtocol;
@@ -9185,6 +10065,11 @@ export type SchemaMutationBlockPhoneArgs = {
 };
 
 
+export type SchemaMutationBmsAddAiRateCardArgs = {
+  input: SchemaBmsAiRateCardInput;
+};
+
+
 export type SchemaMutationBmsAddConversationHelperArgs = {
   id: Scalars['ID']['input'];
   userId: Scalars['ID']['input'];
@@ -9200,9 +10085,13 @@ export type SchemaMutationBmsAddConversationNoteArgs = {
 
 export type SchemaMutationBmsAddCustomerAddressArgs = {
   address: Scalars['String']['input'];
+  districtCode: InputMaybe<Scalars['String']['input']>;
   id: Scalars['ID']['input'];
   isDefault: InputMaybe<Scalars['Boolean']['input']>;
   label: InputMaybe<Scalars['String']['input']>;
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  subdistrictCode: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -9225,6 +10114,12 @@ export type SchemaMutationBmsAdjustStockArgs = {
   note: InputMaybe<Scalars['String']['input']>;
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsApplyMasterDrugSuggestionArgs = {
+  masterDrugCode: Scalars['String']['input'];
+  productSku: Scalars['String']['input'];
 };
 
 
@@ -9288,6 +10183,11 @@ export type SchemaMutationBmsBackfillEtaxQueueArgs = {
 
 export type SchemaMutationBmsBookShipmentLiveArgs = {
   id: Scalars['ID']['input'];
+};
+
+
+export type SchemaMutationBmsBranchRequisitionCommandArgs = {
+  input: SchemaBmsRequisitionCommandInput;
 };
 
 
@@ -10276,6 +11176,11 @@ export type SchemaMutationBmsReviewAiSynonymCandidateArgs = {
 };
 
 
+export type SchemaMutationBmsReviewMasterBarcodeArgs = {
+  input: SchemaBmsMasterBarcodeReviewInput;
+};
+
+
 export type SchemaMutationBmsReviewMemberTierArgs = {
   customerId: InputMaybe<Scalars['ID']['input']>;
 };
@@ -10482,6 +11387,12 @@ export type SchemaMutationBmsSetShipmentStatusArgs = {
 };
 
 
+export type SchemaMutationBmsSetShippingZoneOverrideArgs = {
+  provinceCode: Scalars['String']['input'];
+  zone: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type SchemaMutationBmsSetTenantActiveArgs = {
   active: Scalars['Boolean']['input'];
   tenantId: Scalars['ID']['input'];
@@ -10596,7 +11507,11 @@ export type SchemaMutationBmsTransitionRetentionCaseArgs = {
 export type SchemaMutationBmsUpdateCustomerAddressArgs = {
   address: Scalars['String']['input'];
   addressId: Scalars['ID']['input'];
+  districtCode: InputMaybe<Scalars['String']['input']>;
   label: InputMaybe<Scalars['String']['input']>;
+  postcode: InputMaybe<Scalars['String']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  subdistrictCode: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -10636,6 +11551,13 @@ export type SchemaMutationBmsUpdateOnboardingProgressArgs = {
 };
 
 
+export type SchemaMutationBmsUpdatePlanCatalogArgs = {
+  confirmed: Scalars['Boolean']['input'];
+  input: SchemaBmsPlanCatalogInput;
+  previewToken: Scalars['String']['input'];
+};
+
+
 export type SchemaMutationBmsUpdateRestaurantTableArgs = {
   patch: SchemaBmsRestaurantTablePatchInput;
   tableId: Scalars['ID']['input'];
@@ -10671,6 +11593,11 @@ export type SchemaMutationBmsUpsertArAccountArgs = {
   note: InputMaybe<Scalars['String']['input']>;
   status: InputMaybe<Scalars['String']['input']>;
   termsDays: Scalars['Int']['input'];
+};
+
+
+export type SchemaMutationBmsUpsertBoardGameBranchHoursArgs = {
+  input: SchemaBmsUpsertBoardGameBranchHoursInput;
 };
 
 
@@ -10716,6 +11643,31 @@ export type SchemaMutationBmsUpsertKitchenStationSlaArgs = {
 
 export type SchemaMutationBmsUpsertLocationArgs = {
   input: SchemaBmsLocationInput;
+};
+
+
+export type SchemaMutationBmsUpsertMasterBankArgs = {
+  input: SchemaBmsMasterBankInput;
+};
+
+
+export type SchemaMutationBmsUpsertMasterCarrierArgs = {
+  input: SchemaBmsMasterCarrierInput;
+};
+
+
+export type SchemaMutationBmsUpsertMasterDrugArgs = {
+  input: SchemaBmsMasterDrugInput;
+};
+
+
+export type SchemaMutationBmsUpsertMasterThaiAddressArgs = {
+  input: SchemaBmsMasterThaiAddressInput;
+};
+
+
+export type SchemaMutationBmsUpsertMasterUnitArgs = {
+  input: SchemaBmsMasterUnitInput;
 };
 
 
@@ -11412,6 +12364,7 @@ export type SchemaQuery = {
   bmsAiQualityCase: Maybe<SchemaBmsAiQualityCaseDetail>;
   bmsAiQualityCases: Array<SchemaBmsAiQualityCase>;
   bmsAiQualityMetrics: SchemaBmsAiQualityMetrics;
+  bmsAiRateCards: Array<SchemaBmsAiRateCard>;
   bmsAiSynonymCandidates: Array<SchemaBmsAiSynonymCandidate>;
   bmsAiUsage: SchemaBmsAiUsage;
   bmsAiUsageBreakdown: Array<SchemaBmsAiUsageBreakdown>;
@@ -11424,6 +12377,16 @@ export type SchemaQuery = {
   bmsAssignableStaff: Array<SchemaBmsStaffRef>;
   bmsAuditLog: Array<SchemaBmsAuditEntry>;
   bmsBilling: SchemaBmsBilling;
+  bmsBoardGameAnalytics: SchemaBmsBoardGameAnalyticsResult;
+  bmsBoardGameBranchHours: SchemaBmsBoardGameBranchHoursResult;
+  bmsBranchRequisitionAvailability: Array<SchemaBmsRequisitionAvailability>;
+  bmsBranchRequisitionCatalog: Array<SchemaBmsRequisitionProduct>;
+  bmsBranchRequisitionDemand: SchemaBmsRequisitionDemandList;
+  bmsBranchRequisitionDemandRequests: SchemaBmsRequisitionDemandRequestList;
+  bmsBranchRequisitionEvents: Array<SchemaBmsRequisitionEvent>;
+  bmsBranchRequisitionMetrics: SchemaBmsRequisitionMetrics;
+  bmsBranchRequisitionNotices: Array<SchemaBmsRequisitionNotice>;
+  bmsBranchRequisitions: SchemaBmsRequisitionList;
   bmsChannelHealth: Array<SchemaBmsChannelHealth>;
   bmsChannelHealthCount: Scalars['Int']['output'];
   bmsChannels: Array<SchemaBmsChannelConfig>;
@@ -11491,6 +12454,13 @@ export type SchemaQuery = {
   bmsMailLogStats: SchemaBmsMailLogStats;
   bmsManageableLocations: Array<SchemaBmsLocation>;
   bmsManagementReport: SchemaBmsManagementReport;
+  bmsMasterBanks: Array<SchemaBmsMasterBank>;
+  bmsMasterBarcodes: Array<SchemaBmsMasterBarcode>;
+  bmsMasterCarriers: Array<SchemaBmsMasterCarrier>;
+  bmsMasterDrugs: Array<SchemaBmsMasterDrug>;
+  bmsMasterTaxReferences: SchemaBmsMasterTaxReferences;
+  bmsMasterThaiAddresses: Array<SchemaBmsMasterThaiAddress>;
+  bmsMasterUnits: Array<SchemaBmsMasterUnit>;
   bmsMe: SchemaBmsMe;
   bmsMember: Maybe<SchemaBmsMember>;
   bmsMemberDiscountPreview: SchemaBmsMemberDiscountPreview;
@@ -11533,6 +12503,8 @@ export type SchemaQuery = {
   bmsPharmacyProductPolicies: SchemaBmsPharmacyProductPolicyPage;
   bmsPharmacyProtocol: Maybe<SchemaBmsPharmacyProtocol>;
   bmsPharmacyProtocols: Array<SchemaBmsPharmacyProtocol>;
+  bmsPlanCatalog: Array<SchemaBmsPlanCatalog>;
+  bmsPlatformReferences: SchemaBmsPlatformReferences;
   bmsPosArAccount: SchemaBmsPosArAccountResult;
   bmsPosBoardGameCheckout: Maybe<SchemaBmsPosBoardGameCheckout>;
   bmsPosBoardGameServiceCalls: SchemaBmsPosBoardGameServiceCallsResult;
@@ -11578,6 +12550,7 @@ export type SchemaQuery = {
   bmsPreviewCostAllocation: SchemaBmsCostAllocationPreview;
   bmsPreviewMenuBundle: SchemaBmsPricePublicationResult;
   bmsPreviewMenuNetProfit: SchemaBmsPricePublicationResult;
+  bmsPreviewPlanCatalogChange: SchemaBmsPlanCatalogPreview;
   bmsPreviewPricePublication: SchemaBmsPricePublicationResult;
   bmsProductBundleItems: Array<SchemaBmsBundleItem>;
   bmsProductBySku: Maybe<SchemaBmsProduct>;
@@ -11627,6 +12600,7 @@ export type SchemaQuery = {
   bmsShipmentLabel: Maybe<SchemaBmsShipmentLabel>;
   bmsShipmentTrackingEvents: Array<SchemaBmsShipmentTrackingEvent>;
   bmsShipments: Array<SchemaBmsShipment>;
+  bmsShippingZones: Array<SchemaBmsShippingZone>;
   bmsSocialAuthSettings: Array<SchemaBmsSocialAuthSetting>;
   bmsSqlConsoleWriteEnabled: Scalars['Boolean']['output'];
   bmsStockCounts: SchemaBmsMobileStockCountsResult;
@@ -11813,6 +12787,50 @@ export type SchemaQueryBmsArLedgerArgs = {
 
 export type SchemaQueryBmsAuditLogArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsBoardGameAnalyticsArgs = {
+  input: SchemaBmsBoardGameAnalyticsInput;
+};
+
+
+export type SchemaQueryBmsBoardGameBranchHoursArgs = {
+  locationId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsBranchRequisitionAvailabilityArgs = {
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsBranchRequisitionCatalogArgs = {
+  search: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsBranchRequisitionDemandArgs = {
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsBranchRequisitionDemandRequestsArgs = {
+  offset: InputMaybe<Scalars['Int']['input']>;
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsBranchRequisitionEventsArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsBranchRequisitionsArgs = {
+  filter: InputMaybe<SchemaBmsRequisitionFilter>;
 };
 
 
@@ -12040,6 +13058,47 @@ export type SchemaQueryBmsManagementReportArgs = {
   from: InputMaybe<Scalars['String']['input']>;
   locationId: InputMaybe<Scalars['ID']['input']>;
   to: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterBanksArgs = {
+  includeInactive: InputMaybe<Scalars['Boolean']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterBarcodesArgs = {
+  limit: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  status: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterCarriersArgs = {
+  includeInactive: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterDrugsArgs = {
+  includeInactive: InputMaybe<Scalars['Boolean']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterThaiAddressesArgs = {
+  districtCode: InputMaybe<Scalars['String']['input']>;
+  includeInactive: InputMaybe<Scalars['Boolean']['input']>;
+  level: InputMaybe<Scalars['String']['input']>;
+  limit: InputMaybe<Scalars['Int']['input']>;
+  provinceCode: InputMaybe<Scalars['String']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMasterUnitsArgs = {
+  includeInactive: InputMaybe<Scalars['Boolean']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
 };
 
 
@@ -12359,6 +13418,11 @@ export type SchemaQueryBmsPreviewMenuBundleArgs = {
 
 export type SchemaQueryBmsPreviewMenuNetProfitArgs = {
   input: SchemaBmsMenuProfitInput;
+};
+
+
+export type SchemaQueryBmsPreviewPlanCatalogChangeArgs = {
+  input: SchemaBmsPlanCatalogInput;
 };
 
 

@@ -6,6 +6,7 @@ import { lstat, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  customerDisplayPreviewBounds,
   DEFAULT_CUSTOMER_DISPLAY_CONFIG,
   normalizeCustomerDisplayConfig,
   selectCustomerDisplay,
@@ -52,6 +53,7 @@ let mainWindow = null;
 let activePairing = null;
 let customerDisplayWindow = null;
 let customerDisplayWindowDisplayId = null;
+let customerDisplayWindowKind = null;
 let customerDisplayConfig = { ...DEFAULT_CUSTOMER_DISPLAY_CONFIG };
 let printerConfig = { ...DEFAULT_PRINTER_CONFIG };
 let printerProblem = "";
@@ -391,6 +393,7 @@ function currentCustomerDisplayState() {
       ? customerDisplayWindowDisplayId
       : null,
     open: Boolean(customerDisplayWindow && !customerDisplayWindow.isDestroyed()),
+    preview: customerDisplayWindowKind === "preview",
     cashierDisplayId: String(cashier.id),
     displays: displays.map((display, index) => displaySummary(display, index, cashier.id)),
     targetAvailable: Boolean(target),
@@ -411,29 +414,37 @@ function closeCustomerDisplayWindow() {
   const window = customerDisplayWindow;
   customerDisplayWindow = null;
   customerDisplayWindowDisplayId = null;
+  customerDisplayWindowKind = null;
   if (window && !window.isDestroyed()) window.destroy();
 }
 
-function createCustomerDisplayWindow(targetDisplay) {
+function createCustomerDisplayWindow(targetDisplay, kind = "managed") {
   if (!activePairing) return;
   const targetId = String(targetDisplay.id);
   if (
     customerDisplayWindow
     && !customerDisplayWindow.isDestroyed()
     && customerDisplayWindowDisplayId === targetId
+    && customerDisplayWindowKind === kind
   ) {
-    try { customerDisplayWindow.setBounds(displayUsableBounds(targetDisplay)); } catch {}
+    if (kind === "managed") {
+      try { customerDisplayWindow.setBounds(displayUsableBounds(targetDisplay)); } catch {}
+    }
+    customerDisplayWindow.showInactive();
     return;
   }
   closeCustomerDisplayWindow();
+  const preview = kind === "preview";
   const window = new BrowserWindow({
-    ...displayUsableBounds(targetDisplay),
+    ...(preview ? customerDisplayPreviewBounds(targetDisplay) : displayUsableBounds(targetDisplay)),
     show: false,
     // Wayland may ignore app-directed placement. Keep a native frame there so the operator can
     // still move the window with the compositor instead of trapping a borderless window.
-    frame: isWaylandSession(),
-    skipTaskbar: !isWaylandSession(),
-    title: "BMS POS — จอลูกค้า",
+    frame: preview || isWaylandSession(),
+    skipTaskbar: preview ? false : !isWaylandSession(),
+    resizable: preview,
+    maximizable: preview,
+    title: preview ? "BMS POS — ทดสอบจอลูกค้า" : "BMS POS — จอลูกค้า",
     backgroundColor: "#0b0b0c",
     autoHideMenuBar: true,
     webPreferences: {
@@ -446,16 +457,22 @@ function createCustomerDisplayWindow(targetDisplay) {
   });
   customerDisplayWindow = window;
   customerDisplayWindowDisplayId = targetId;
+  customerDisplayWindowKind = kind;
   setupWindowSecurity(window.webContents.session);
   window.once("ready-to-show", () => {
     if (window.isDestroyed()) return;
-    try { window.setBounds(displayUsableBounds(targetDisplay)); } catch {}
+    try {
+      window.setBounds(preview
+        ? customerDisplayPreviewBounds(targetDisplay)
+        : displayUsableBounds(targetDisplay));
+    } catch {}
     window.showInactive();
   });
   window.on("closed", () => {
     if (customerDisplayWindow === window) {
       customerDisplayWindow = null;
       customerDisplayWindowDisplayId = null;
+      customerDisplayWindowKind = null;
       broadcastCustomerDisplayState();
     }
   });
@@ -472,15 +489,20 @@ function createCustomerDisplayWindow(targetDisplay) {
 
 function reconcileCustomerDisplay() {
   void offerCustomerDisplaySetup();
-  if (!activePairing || customerDisplayConfig.mode === "off") {
+  if (!activePairing) {
     closeCustomerDisplayWindow();
+    broadcastCustomerDisplayState();
+    return;
+  }
+  if (customerDisplayConfig.mode === "off") {
+    if (customerDisplayWindowKind !== "preview") closeCustomerDisplayWindow();
     broadcastCustomerDisplayState();
     return;
   }
   const displays = screen.getAllDisplays();
   const target = selectCustomerDisplay(displays, cashierDisplay().id, customerDisplayConfig);
   if (target) createCustomerDisplayWindow(target);
-  else closeCustomerDisplayWindow();
+  else if (customerDisplayWindowKind !== "preview") closeCustomerDisplayWindow();
   broadcastCustomerDisplayState();
 }
 
@@ -1053,6 +1075,7 @@ function registerIpc() {
       if (String(selected.id) === cashierId) return { ok: false, error: "จอหลักกำลังใช้เป็นจอแคชเชียร์ กรุณาเลือกจออื่น" };
     }
     try {
+      if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
       await writeCustomerDisplayConfig(next);
       customerDisplayConfig = next;
       reconcileCustomerDisplay();
@@ -1060,6 +1083,27 @@ function registerIpc() {
     } catch {
       return { ok: false, error: "บันทึกการตั้งค่าจอลูกค้าไม่สำเร็จ" };
     }
+  });
+
+  ipcMain.handle("bms-pos:open-customer-display-preview", async (event) => {
+    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์เปิดตัวอย่างจอลูกค้า" };
+    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed() && customerDisplayWindowKind !== "preview") {
+      return { ok: false, error: "จอลูกค้าจริงกำลังเปิดอยู่แล้ว กรุณาใช้จอนั้นหรือปิดการตั้งค่าจอก่อน" };
+    }
+    try {
+      createCustomerDisplayWindow(cashierDisplay(), "preview");
+      broadcastCustomerDisplayState();
+      return { ok: true, state: currentCustomerDisplayState() };
+    } catch {
+      return { ok: false, error: "เปิดหน้าต่างทดสอบจอลูกค้าไม่สำเร็จ" };
+    }
+  });
+
+  ipcMain.handle("bms-pos:close-customer-display-preview", async (event) => {
+    if (!isPairedCashierFrame(event)) return { ok: false, error: "หน้าต่างนี้ไม่มีสิทธิ์ปิดตัวอย่างจอลูกค้า" };
+    if (customerDisplayWindowKind === "preview") closeCustomerDisplayWindow();
+    broadcastCustomerDisplayState();
+    return { ok: true, state: currentCustomerDisplayState() };
   });
 
   ipcMain.handle("bms-pos:identify-displays", async (event) => {

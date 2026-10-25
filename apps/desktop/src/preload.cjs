@@ -36,6 +36,8 @@ contextBridge.exposeInMainWorld("bmsDesktop", {
   testReceiptPrinter: () => ipcRenderer.invoke("bms-pos:test-receipt-printer"),
   confirmPrinterTest: (printed) => ipcRenderer.invoke("bms-pos:confirm-printer-test", printed === true),
   getCustomerDisplayState: () => ipcRenderer.invoke("bms-pos:get-customer-display-state"),
+  openCustomerDisplayPreview: () => ipcRenderer.invoke("bms-pos:open-customer-display-preview"),
+  closeCustomerDisplayPreview: () => ipcRenderer.invoke("bms-pos:close-customer-display-preview"),
   setCustomerDisplayConfig: (input) => ipcRenderer.invoke("bms-pos:set-customer-display-config", {
     mode: typeof input?.mode === "string" ? input.mode : "",
     targetDisplayId: typeof input?.targetDisplayId === "string" ? input.targetDisplayId : null,

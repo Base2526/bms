@@ -1,5 +1,39 @@
 # BMS feature log
 
+## Customer-display branding and shop-owned payment QR (2026-10-25)
+
+- Store branding now includes an optional uploaded customer-display welcome background. The image
+  is decoded and normalized to a bounded WebP, remains tenant-owned, and is rendered with a dark
+  overlay only while the customer display is idle; all cart/payment/QR/completion states retain the
+  solid background for legibility.
+- Store Settings now lets the owner choose a PNG, JPEG or WebP image of a reusable, amount-free
+  merchant QR issued by the bank/payment provider. The browser decodes the image locally and saves
+  only the existing bounded QR payload; the source image is neither uploaded nor retained.
+- Amount-free bank QR payloads using initiation method 12 are accepted as reusable bases alongside
+  method 11. This covers bank-generated account QRs such as Krungthai while continuing to reject
+  any QR that already embeds a transaction amount.
+- PromptPay rows no longer show the unrelated bank-account-number field, label the accepted
+  PromptPay identifiers explicitly, and render the decoded QR preview before the profile is saved.
+  The raw payload is kept in a hidden form field because it embeds the receiving identifier; owners
+  instead see decoded/missing status and explicit replace/remove controls.
+- Each receiving account is now a separate labelled card with a readable delete action, responsive
+  fields, and a searchable bank picker whose menu shows the full localized bank name and code.
+  PromptPay and QR guidance is placed next to the field or action it explains.
+- The POS continues to use the configured payment payload as authority: choosing QR displays it on
+  `/pos/display` as a new Dynamic PromptPay QR with the QR tender amount embedded, including only
+  the QR portion of a split payment. BMS validates the provider base and recipient, changes only the
+  initiation method and amount, and recomputes CRC; a PromptPay ID alone is still never converted
+  into receiving authority.
+- The in-app cashier manual now documents where to configure the QR and what the second customer
+  screen shows in Thai and English.
+- Desktop POS can open the live customer display as a temporary framed window on the cashier monitor
+  for one-screen testing. It does not persist or replace the existing off/automatic/selected
+  second-monitor configuration; a real customer display still requires a non-cashier monitor.
+- QR checkout no longer requires a cashier or customer to type a transaction reference. The field
+  remains available as optional evidence and the cashier must still verify the actual incoming
+  payment before confirming. Card, bank-transfer, wallet and non-cash refund references remain
+  required.
+
 ## Freemium handoff: paused before live E2E / pilot (2026-10-16)
 
 - User is switching to other features. Implementation and local restored-dump rehearsal are done

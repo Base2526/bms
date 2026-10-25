@@ -9,7 +9,7 @@ import { refreshPrinterState } from "../../web/lib/pos/desktopPrinterClient";
 let printer = { deviceName: "thermal-test", paperWidth: 80, available: true,
   canPrint: true, canTest: true, awaitingConfirmation: false, message: "ระบบไม่พบปัญหาเครื่องพิมพ์",
   printers: [{ name: "thermal-test", displayName: "Thermal test printer", isDefault: true }] };
-let display = { mode: "auto", targetDisplayId: null, activeDisplayId: "20", open: true,
+let display = { mode: "auto", targetDisplayId: null, activeDisplayId: "20", open: true, preview: false,
   targetAvailable: true, positioningLimited: false, displays: [
     { id: "10", label: "Cashier", width: 1920, height: 1080, cashier: true },
     { id: "20", label: "Customer", width: 1280, height: 720, cashier: false },
@@ -27,7 +27,16 @@ Object.assign(window, { testPrintCount: 0, testSaveCount: 0,
   },
   getCustomerDisplayState: async () => display,
   setCustomerDisplayConfig: async (next) => {
-    display = { ...display, ...next, open: next.mode !== "off" };
+    display = { ...display, ...next, open: next.mode !== "off", preview: false,
+      activeDisplayId: next.mode === "off" ? null : "20" };
+    return { ok: true, state: display };
+  },
+  openCustomerDisplayPreview: async () => {
+    display = { ...display, open: true, preview: true, activeDisplayId: "10" };
+    return { ok: true, state: display };
+  },
+  closeCustomerDisplayPreview: async () => {
+    display = { ...display, open: false, preview: false, activeDisplayId: null };
     return { ok: true, state: display };
   },
   identifyDisplays: async () => ({ ok: true }),
