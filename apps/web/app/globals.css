@@ -462,3 +462,20 @@ html.dark .ant-drawer-mask {
     display: block !important;
   }
 }
+
+/* The public restaurant guide mounts its paginated print surface at body level.
+   Scope isolation to that surface so other print workflows keep their rules. */
+@media print {
+  html:has([data-restaurant-print]), body:has([data-restaurant-print]) {
+    margin: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+  }
+  body:has([data-restaurant-print]) > :not([data-restaurant-print]) {
+    display: none !important;
+  }
+  [data-restaurant-print], [data-restaurant-print] * {
+    visibility: visible !important;
+  }
+}

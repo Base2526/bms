@@ -1,5 +1,26 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Public restaurant guide
+
+- [Restaurant UAT data and 62 cases](../docs/testing/restaurant-uat-guide-th.md) covers the 11 public
+  flows with expected outcomes and separately recorded automated evidence.
+- `node apps/web/node_modules/tsx/dist/cli.mjs scripts/restaurant-uat-example.mts`: read-only sample
+  recipe/price/loyalty/requisition calculators and an independent cash/stock reconciliation oracle.
+  Reads `docs/testing/restaurant-uat-sample-data.json`; creates no tenant, sale, stock, or tax document.
+
+- `node scripts/run-contract-tests.mjs pure restaurant-public-guide`: validates all 11 bilingual
+  sequences, equivalent translated branches, canvas bounds, invalid notation and Thai text wrapping.
+- `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
+  3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
+  light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted
+  guest/admin fixtures, blocks external requests, and performs no business mutations.
+  `BMS_PLAYWRIGHT_MODULE` may point to an installed Playwright module. Build/start the web first;
+  screenshots are saved under ignored `.test-output/restaurant-public-browser/`.
+  Also checks native-share success/cancellation and clipboard fallback, print button, print-only
+  layout for all 11 flows, and portal cleanup after navigation. Exports TH/EN A4 landscape PDFs
+  into the same ignored directory for visual review. Pure pagination checks preserve contiguous
+  steps and refuse cuts through a label or arrow.
+
 ## Board-game owner assistant reads
 
 - `node scripts/run-contract-tests.mjs pure board-game-analytics-tools`: actual tool adapters/runtime,
