@@ -2,7 +2,7 @@
 import { gql, useQuery, useMutation } from "@apollo/client";
 import { Card, Input, InputNumber, Button, Space, Tag, message, Form, Divider, Typography, Select, Row, Col, Switch, Alert, Collapse, Upload, Image } from "antd";
 import { ShopOutlined, SaveOutlined, PlusOutlined, DeleteOutlined, UploadOutlined, PictureOutlined, LinkOutlined, CheckOutlined } from "@ant-design/icons";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { localizedShopArchetypeLabel, localizedShopArchetypeOptions, onboardingChecklistKeysForArchetype, archetypeToBusinessType, type ShopArchetype } from "@/lib/bms/shopArchetypes";
 import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
@@ -127,6 +127,7 @@ export default function StoreProfileCard() {
   const [showLogoUrlInput, setShowLogoUrlInput] = useState(false);
   const [logoUrlDraft, setLogoUrlDraft] = useState("");
   const [decodingPaymentQrKey, setDecodingPaymentQrKey] = useState<number | null>(null);
+  const decodingPaymentQrRef = useRef(false);
   const selectedArchetype = Form.useWatch("businessArchetype", form);
   const shopName = Form.useWatch("name", form) as string | undefined;
   const logoUrl = Form.useWatch("logoUrl", form) as string | null | undefined;
@@ -193,6 +194,7 @@ export default function StoreProfileCard() {
   }, [data, form]);
 
   const onFinish = async (v: any) => {
+    if (decodingPaymentQrRef.current) return;
     try {
       // 1) ชื่อร้าน → bms_tenants (slug ปิดไม่ให้แก้ ส่ง null = คงค่าเดิม)
       await saveTenant({ variables: { name: v.name?.trim() || null, slug: null } });
@@ -320,6 +322,8 @@ export default function StoreProfileCard() {
   };
 
   const readPaymentQrImage = async (file: File, fieldName: number, fieldKey: number) => {
+    // Only one decode at a time; keep Form.List indices stable until it completes.
+    if (decodingPaymentQrRef.current) return false;
     if (!ALLOWED_PAYMENT_QR_IMAGE_TYPES.has(file.type)) {
       message.error(t("admin_store_profile.qr_image_type_error"));
       return false;
@@ -329,7 +333,9 @@ export default function StoreProfileCard() {
       return false;
     }
 
+    decodingPaymentQrRef.current = true;
     setDecodingPaymentQrKey(fieldKey);
+    const targetAccount = form.getFieldValue(["paymentAccounts", fieldName]);
     const objectUrl = URL.createObjectURL(file);
     try {
       const { BrowserQRCodeReader } = await import("@zxing/browser");
@@ -339,6 +345,8 @@ export default function StoreProfileCard() {
         throw new Error(t("admin_store_profile.qr_image_payload_error"));
       }
       const recipientId = promptPayRecipientId(validateReusablePromptPayQrPayload(payload));
+      // A background profile refresh can replace rows even while controls are disabled.
+      if (form.getFieldValue(["paymentAccounts", fieldName]) !== targetAccount) return false;
       const currentId = String(form.getFieldValue(["paymentAccounts", fieldName, "promptpayId"]) ?? "")
         .replace(/\D/g, "");
       if (currentId && currentId !== recipientId) {
@@ -361,6 +369,7 @@ export default function StoreProfileCard() {
       message.error(translated);
     } finally {
       URL.revokeObjectURL(objectUrl);
+      decodingPaymentQrRef.current = false;
       setDecodingPaymentQrKey(null);
     }
     return false;
@@ -376,7 +385,7 @@ export default function StoreProfileCard() {
         <Text type="secondary" style={{ display: "block", marginBottom: 16 }}>
           {t("admin_store_profile.intro")}
         </Text>
-        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional">
+        <Form form={form} layout="vertical" onFinish={onFinish} requiredMark="optional" disabled={decodingPaymentQrKey !== null}>
           {/* แต่ละหมวดเป็น Collapse panel — เดิมทั้ง 8 หมวดเรียงต่อกันเป็นฟอร์มยาวเดียว ต้องเลื่อนผ่าน
               ทุกหมวดแม้จะมาแก้แค่จุดเดียว (เช่น มาต่ออายุบัญชีรับเงินแต่ต้องเลื่อนผ่าน AI/ค่าส่งก่อน)
               forceRender เพื่อให้ทุก Form.Item ลงทะเบียนกับ form store ตั้งแต่แรก ไม่ต้องพึ่ง lazy-mount */}
@@ -1019,6 +1028,7 @@ export default function StoreProfileCard() {
                                       <Space wrap>
                                         <Upload
                                           accept="image/png,image/jpeg,image/webp"
+                                          disabled={decodingPaymentQrKey !== null}
                                           maxCount={1}
                                           showUploadList={false}
                                           beforeUpload={(file) => readPaymentQrImage(file, field.name, field.key)}

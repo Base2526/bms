@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { createDisplayReceiver, displayBrand, displayMemberName, displayPhase, displayUrl, EMPTY_CUSTOMER_DISPLAY, isDisplayPayload } from "../apps/web/lib/pos/customerDisplay.ts";
+import { createDisplayReceiver, displayBrand, displayMemberKind, displayMemberName, displayPhase, displayUrl, EMPTY_CUSTOMER_DISPLAY, isDisplayPayload } from "../apps/web/lib/pos/customerDisplay.ts";
 
 const cart = { ...EMPTY_CUSTOMER_DISPLAY, lines: [{ name: "FAKE item", qty: 1, size: null, unitName: "piece", amount: 178 }], total: 178, amountDue: 178, itemCount: 1 };
 const finished = { ...cart, finished: { id: "FAKE-order-1", total: 178, tendered: 200, change: 22 } };
@@ -85,6 +85,24 @@ test("all publishers clear customer state when the cashier is locked or working 
   assert.match(desktop, /Boolean\(token && cashier && bootstrap\?\.shift/);
   assert.match(desktop, /flow.stage === "CATALOG" && shownModule === "mobile_sell"/);
   assert.match(desktop, /!displayActive\s*\? \{ \.\.\.EMPTY_CUSTOMER_DISPLAY/);
+  assert.match(desktop, /pendingPricing: flow.stage === "CHECKOUT" && !benefits.ready/);
+  assert.match(desktop, /paymentQr: flow.stage === "CHECKOUT" && benefits.ready && validation.isBalanced/);
+  assert.match(desktop, /displayMember: saleAttemptRef.current.displayMember/);
+  assert.match(desktop, /pointsWillEarn: !receipt && benefits.ready/);
+});
+
+test("membership survives hidden names and unavailable receipt details without inventing guest status", () => {
+  for (const name of ["0812345678", "customer@example.com", null]) {
+    const state = { ...finished, memberAttached: true, memberName: displayMemberName(name), pointsBalance: 123 };
+    assert.equal(isDisplayPayload(state), true);
+    assert.equal(state.memberName, null);
+    assert.equal(displayMemberKind(state), "member");
+  }
+  assert.equal(displayMemberKind({ ...finished, memberAttached: false }), "guest");
+  assert.equal(displayMemberKind(finished), "unknown");
+  assert.equal(displayMemberKind({ ...finished, pointsEarned: 0 }), "unknown");
+  assert.equal(displayMemberKind({ ...finished, pointsBalance: 0 }), "member");
+  assert.equal(isDisplayPayload({ ...finished, memberAttached: "true" }), false);
 });
 
 test("control and malformed messages cannot mark the display connected or replace good data", () => {

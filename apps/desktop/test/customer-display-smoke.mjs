@@ -37,7 +37,7 @@ async function run() {
   try {
     await win.loadURL(`http://127.0.0.1:${server.address().port}/`);
     await waitFor(win, "document.body.textContent.includes('FAKE Shop B')");
-    for (const [width, height] of [[1440, 900], [1024, 768], [1024, 600], [390, 844]]) {
+    for (const [width, height] of [[1440, 900], [1024, 768], [1024, 600], [800, 600], [768, 1024], [390, 844]]) {
       win.setContentSize(width, height);
       for (const phase of ["idle", "cart", "payment", "finished"]) {
         await win.webContents.executeJavaScript(`window.displayFixture(${JSON.stringify(phase)})`);
@@ -52,6 +52,11 @@ async function run() {
         const bounds = await win.webContents.executeJavaScript(`({ overflow: document.documentElement.scrollWidth > innerWidth, tall: document.documentElement.scrollHeight > innerHeight + 2, text: document.body.textContent, bridge: !!window.bmsDesktop })`);
         await writeFile(path.join(output, `${phase}-${width}-${height}.png`), (await win.webContents.capturePage()).toPNG());
         assert.equal(bounds.overflow, false, `${phase} ${width}: horizontal overflow`);
+        if (phase === "finished") assert.equal(await win.webContents.executeJavaScript(`(() => {
+          const summary = document.querySelector('[data-finished-summary]');
+          const rect = summary.getBoundingClientRect();
+          return summary.scrollWidth > summary.clientWidth + 1 || rect.left < 0 || rect.right > innerWidth;
+        })()`), false, `${phase} ${width}: summary content clipped`);
         if (width >= 1024) assert.equal(bounds.tall, false, `${phase} ${width}: vertical overflow`);
         assert.equal(bounds.bridge, false);
         assert.ok(!bounds.text.includes("PrivateSurname"));
@@ -89,6 +94,9 @@ async function run() {
     assert.equal(simpleFinished.customerKind, "guest", "non-member sale must identify a general customer");
     assert.equal(simpleFinished.overflow, false, "simple finished state must fit the customer display");
     await writeFile(path.join(output, "finished-simple-1440-900.png"), (await win.webContents.capturePage()).toPNG());
+    await win.webContents.executeJavaScript("window.displayFixture('finishedMaskedMember')");
+    await waitFor(win, "document.querySelector('[data-customer-kind=member]') && document.body.textContent.includes('123')");
+    assert.equal(await win.webContents.executeJavaScript("document.body.textContent.includes('ลูกค้าทั่วไป') || document.body.textContent.includes('ไม่ได้สะสมแต้ม')"), false, "hidden member name must not turn a member into a guest");
     await win.webContents.executeJavaScript("window.displayFixture('finished')");
     await waitFor(win, "document.querySelector('[data-phase=finished]')");
     await waitFor(win, "document.querySelector('[data-phase=idle]')");
@@ -114,7 +122,7 @@ async function run() {
       await writeFile(path.join(output, "live-next-cart.png"), (await win.webContents.capturePage()).toPNG());
     }
     assert.deepEqual(errors, []);
-    console.log(`Customer display: 4 phases x 4 viewports, logos, QR, privacy, member/guest completion, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
+    console.log(`Customer display: 4 phases x 6 viewports, logos, QR, privacy, member/guest completion, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
   } finally { win.destroy(); await new Promise(done => server.close(done)); }
 }
 

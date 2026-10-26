@@ -5,6 +5,7 @@ import test from "node:test";
 import { PosConnectionError, posErrorConnectionStatus } from "../packages/pos-client-core/src/operation.ts";
 import { PosSaleResultError } from "../packages/pos-client-core/src/saleRetry.ts";
 import { syncSingleCheckoutPayment, type CheckoutPayment } from "../apps/web/components/pos-desktop/checkoutPayment.ts";
+import { displayMemberName } from "../apps/web/lib/pos/customerDisplay.ts";
 
 const require = createRequire(new URL("../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
@@ -17,11 +18,14 @@ class PosGraphqlError extends Error {
 function harness(options: { scan?: () => Promise<boolean>; responses?: unknown[] } = {}) {
   const requests: any[] = [], errors: string[] = [], events: string[] = [], connections: string[] = [];
   const attempt = { current: null as any }, submitting = { current: false };
+  const receipts: any[] = [];
+  const benefits = { member: { name: "FAKE Member" } as { name: string } | null };
   let sequence = 0;
   const responses = [...(options.responses ?? [{ bmsPosSale: { status: "SOLD", orderId: "FAKE-order" } }])];
   const deps = {
     cashier: { id: "FAKE-cashier" }, busy: false, canConfirmPayment: true, boardGameCheckout: null,
     cart: [{}], token: "FAKE-token", POS_SALE_MUTATION: "sale", saleAttemptRef: attempt, saleSubmittingRef: submitting,
+    benefits, displayMemberName,
     setBusy: () => {}, setError: (value: string) => { if (value) errors.push(value); }, setNotice: () => {},
     recheckCartPricing: options.scan ?? (async () => true), createIdempotencyKey: () => `key-${++sequence}`,
     buildSalePayload: (key: string) => ({ input: { idempotencyKey: key, couponCode: "FAKE", pointsToRedeem: 100 } }),
@@ -31,14 +35,26 @@ function harness(options: { scan?: () => Promise<boolean>; responses?: unknown[]
       if (response instanceof Error) throw response;
       return response;
     },
-    setReceipt: () => events.push("receipt"), sendFlow: () => events.push("completed"), setConnection: (value: string) => connections.push(value),
+    setReceipt: (receipt: unknown) => { receipts.push(receipt); events.push("receipt"); }, sendFlow: () => events.push("completed"), setConnection: (value: string) => connections.push(value),
     PosSaleResultError, posErrorConnectionStatus,
     loadReceiptPaper: async () => {}, PosGraphqlError, messageOf: (error: Error) => error.message,
     decidedCodes: new Set(["BAD_USER_INPUT", "FORBIDDEN"]),
   };
   const submit = new Function(...Object.keys(deps), `${compiled}; return submitSale;`)(...Object.values(deps));
-  return { submit, requests, errors, events, attempt, submitting, connections };
+  return { submit, requests, errors, events, attempt, submitting, connections, benefits, receipts };
 }
+
+test("receipt loading and retries retain the member snapshot of the accepted sale", async () => {
+  const h = harness({ responses: [new Error("lost response"), { bmsPosSale: { status: "SOLD", orderId: "FAKE-order" } }] });
+  await h.submit();
+  h.benefits.member = null;
+  await h.submit();
+  assert.deepEqual(h.receipts[0].displayMember, { attached: true, name: "FAK***" });
+  const guest = harness();
+  guest.benefits.member = null;
+  await guest.submit();
+  assert.deepEqual(guest.receipts[0].displayMember, { attached: false, name: null });
+});
 
 test("VAT failure, denied retry and timeout preserve the original bill and exact tender until SOLD", async () => {
   let pricingChecks = 0;
