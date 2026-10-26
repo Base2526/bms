@@ -226,8 +226,8 @@ Mutation.bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean 
 - `commit: true` re-runs the identical validation, then writes only the non-error rows by looping
   the existing `upsertProduct()` (`lib/bms/products.ts`) once per row — bulk import does not
   duplicate product-write logic, it wraps the same single-item path used by the manual product form.
-- Both modes share one validator, `validateProductFields()` (extracted out of `upsertProduct` for
-  this purpose), so preview and commit can never drift apart.
+- Both modes share `validateProductFields()` and `validateProductConfigurationFields()`.
+  Preview is advisory: transactional constraints, readiness and concurrent edits are checked again at commit.
 
 **Rules enforced by `lib/bms/productImport.ts` (`runImport()`):**
 
@@ -235,9 +235,9 @@ Mutation.bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean 
   ever calling the mutation) and again in the resolver (defense in depth against a direct GraphQL
   call). A 5MB file-size gate on the client protects against parsing a huge file before the row
   count can even be checked.
-- **Images are never imported.** The template has no image column; if a hand-edited file includes
-  one anyway it is silently ignored rather than rejecting the whole file. Add images afterward from
-  the normal product edit form.
+- **Images are never imported or erased by import.** Existing cover/gallery and shipping weight
+  are preserved. Unknown headers (including image/stock columns) are rejected with a correction message,
+  not silently discarded. Add images afterward from the normal product edit form.
 - **Duplicate SKUs within the same file**: first occurrence wins; every later row with the same SKU
   is flagged as an `ERROR` row ("SKU ซ้ำกับแถวที่ N ในไฟล์นี้") rather than silently skipped or
   silently overwritten.
@@ -262,9 +262,34 @@ Mutation.bmsImportProducts(items: [BmsProductImportRowInput!]!, commit: Boolean 
 
 Template columns (Thai headers, matched by trimmed/case-insensitive text so a reordered or
 hand-edited sheet still parses): `SKU` / `บาร์โค้ด` / `ชื่อสินค้า` / `รายละเอียด` / `ราคาขาย` /
-`ต้นทุน` / `หมวดหมู่` / `ยี่ห้อ` / `คีย์เวิร์ด` (`|` or `,` separated) / `เปิดขาย` (`TRUE`/`FALSE`,
-blank defaults to `true`). `SKU`/`ชื่อสินค้า`/`ราคาขาย` are required; if any is missing from the
-header row the whole file is rejected up front with a message to re-download the template.
+`ต้นทุน` / `หมวดหมู่` / `ยี่ห้อ` / `คีย์เวิร์ด` / `รูปแบบสินค้า` / `Stock Policy` / `หน่วยฐาน` /
+`ตัวเลือก` / `ช่องทางขาย`. Lists use `|` (or `,`); variant spelling is preserved.
+`SKU`/`ชื่อสินค้า`/`ราคาขาย` are required. Missing, duplicate and unknown headers are rejected
+with the exact column names. There is no `เปิดขาย` column: new products always remain Draft.
+
+The download has three sheets: empty **Products** for real data, **Examples** with distinct examples
+for all 14 shop archetypes, and **Guide** with field rules and follow-up setup. The 21 examples cover
+all five creation presets, seven stock policies and five sales surfaces. Copy suitable example rows
+to Products and replace them with real shop data. Products is selected even when tabs are reordered;
+if it is missing from a template, Examples/Guide are never used as fallback. Legacy single-sheet
+XLSX/XLS and CSV files are still accepted.
+
+Set SKU/barcode cells to **Text before entering** codes to preserve leading zeroes and long codes.
+Formatted numeric prices use their underlying value, not the displayed rounded/currency string.
+Invalid/blank prices and invalid costs produce row errors through GraphQL (never NaN/null transport
+failures). Formulas, dates, Excel error cells and unsafe numeric identifiers are rejected with sheet/cell
+coordinates and repair instructions. Error row numbers remain the physical Excel row numbers after blanks.
+Sample barcodes use valid in-store codes and must be replaced with the shop's actual codes.
+
+On update, omitted optional columns preserve stored values; blank cells in supplied descriptive/cost/barcode
+columns clear them. Supplied sales surfaces replace the enabled set (blank disables all); variants add/reactivate
+the listed codes and do not remove existing ones. Stock Policy and base unit initialize new products only;
+a conflicting value for an existing SKU is rejected in preview and rechecked under the tenant lock at commit.
+Change an existing stock model in Stock models instead. Import does not create opening stock, packs, recipes,
+bundle components, lots, serials, or variant-specific prices; configure those through their existing workflows.
+
+Errors remain visible in the modal. Confirmation with row errors explicitly imports only valid rows;
+fix failed rows and upload them again. A quota-blocked batch is never shown as successful.
 
 ## Purchase Orders (supplier replenishment)
 

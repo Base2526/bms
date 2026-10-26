@@ -86,7 +86,7 @@ test('over-limit Cloud product imports can still update old SKUs; Local previews
   const deployment=process.env.BMS_DEPLOYMENT_MODE;
   let existing=true;
   pool.query=async(sql:string)=>{
-    assert.match(sql,/SELECT sku FROM bms_products/,'update-only/Local previews must not read Cloud quotas');
+    assert.match(sql,/SELECT p.sku, s.stock_policy, s.base_unit FROM bms_products p/,'update-only/Local previews must not read Cloud quotas');
     const rows=existing?[{sku:'FAKE-OLD'}]:[];
     return {rows,rowCount:rows.length};
   };
