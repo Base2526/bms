@@ -1422,6 +1422,7 @@ input BmsCreateStockCountInput {
 
 input BmsCreateStockTransferInput {
   fromLocationId: ID!
+  idempotencyKey: String
   items: [BmsStockTransferLineInput!]!
   note: String
   toLocationId: ID!
@@ -7700,6 +7701,7 @@ input BmsReceiveItemInput {
 }
 
 input BmsReceiveStockTransferInput {
+  idempotencyKey: String
   received: [BmsStockTransferReceiptLineInput!]
   receivingNote: String
   transferId: ID!
@@ -8870,6 +8872,7 @@ type BmsStockMovement {
 input BmsStockTransferInput {
   action: String!
   fromLocationId: ID
+  idempotencyKey: String
   items: [BmsStockTransferLineInput!]
   note: String
   received: [BmsStockTransferReceiptLineInput!]
@@ -9913,7 +9916,7 @@ type Mutation {
   bmsCancelRestockSubscription(id: ID!): Boolean!
   bmsCancelShipment(id: ID!): Boolean!
   bmsCancelStockCount(countId: ID!): BmsMobileStockCountActionResult!
-  bmsCancelStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+  bmsCancelStockTransfer(idempotencyKey: String, transferId: ID!): BmsMobileStockTransferActionResult!
   bmsChangePlan(planCode: String!): Boolean!
   bmsCheckAllAiProviderHealth: [BmsAiProviderHealth!]!
   bmsChecklistCommand(input: BmsChecklistCommandInput!): BmsChecklistCommandResult!
@@ -10132,7 +10135,7 @@ type Mutation {
   bmsSendAllReadyRestockNotifications: BmsRestockSendAllResult!
   bmsSendMessage(attachment: BmsAttachmentInput, body: String, id: ID!): BmsSendResult!
   bmsSendRestockNotification(body: String!, id: ID!): BmsRestockSendResult!
-  bmsSendStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+  bmsSendStockTransfer(idempotencyKey: String, transferId: ID!): BmsMobileStockTransferActionResult!
   bmsSendTestEmail(html: String, to: String!): BmsTestEmailResult!
   bmsSendTestReportNow: BmsSendReportResult!
   bmsSetAiKey(apiKey: String, model: String, provider: String): Boolean!

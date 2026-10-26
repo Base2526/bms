@@ -158,6 +158,18 @@ still required before production use.
   a lost mutation response and a failed read after known success exercise retry/read-error handling.
   This checks the UI, not a live API/browser integration. The DB suite separately executes the
   requisition SDL/resolvers with the real GraphQL executor, including malformed filters and denial.
+- `node scripts/run-contract-tests.mjs db staff-stock-transfer-route`: isolated `bms_requisition_test`
+  only. Executes real REST handlers with signed fixture sessions: 401/403, scoped reads, forged scope,
+  malformed body, stable-key replay, conflict, missing document and cancellation. The requisition DB
+  suite also covers staff source/destination scope, concurrent requests, revoked scope before replay,
+  actor-bound keys, exact-once stock/audit and named/compatibility GraphQL adapters.
+- `node scripts/stock-transfers-browser-smoke.mjs`: local production/dev web with intercepted FAKE
+  API responses, at 1280/390 px. Tests scoped buttons, create/send/receive retry after response loss,
+  same-tab reload recovery, malformed response, known success + failed refresh, and permission denial.
+  Also covers blocked browser storage (no POST), a stale GET during a command, and switching the
+  authenticated user/shop while preserving the original scope's recovery record. DB coverage rejects
+  overflow after merging duplicate product lines and unknown/duplicate receipt item IDs atomically.
+  Uses the same `BMS_SMOKE_URL`/`BMS_PLAYWRIGHT_MODULE` options and ignored `.test-output/` screenshots.
 - Regression: `db inventory-multilocation`; full `cd apps/web && npm run gate` checks shared services,
   schema artifact, navigation, translations, assistant guides and production compilation.
 

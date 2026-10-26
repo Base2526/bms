@@ -673,7 +673,9 @@ test("each typed top-level input field matches what its resolver reads, in both 
     const source = operation.module === "POS" ? posSchema : mobileSchema;
     const resolverBody = resolverMethod(source, operation.name);
     const delegated = boardGameDelegatedBody(resolverBody);
-    const body = delegated ? `${resolverBody}\n${delegated}` : resolverBody;
+    const staffTransfer = /commandStaffStockTransfer\(/.test(resolverBody)
+      ? readFileSync(new URL("../apps/web/lib/bms/staffStockTransfers.ts", import.meta.url), "utf8") : "";
+    const body = `${resolverBody}\n${delegated ?? ""}\n${staffTransfer}`;
     const read = new Set(
       [...body.matchAll(/\binput\.([A-Za-z_][A-Za-z0-9_]*)/g)]
         .map((match) => match[1])

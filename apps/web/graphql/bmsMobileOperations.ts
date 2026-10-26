@@ -6,7 +6,8 @@ import {
   upsertCommissionRule,
   type CommissionScope,
 } from "@/lib/bms/commission";
-import { listLocations } from "@/lib/bms/locations";
+import { listLocations, listLocationsForUser } from "@/lib/bms/locations";
+import { commandStaffStockTransfer } from "@/lib/bms/staffStockTransfers";
 import { requirePermission } from "@/lib/bms/permissions";
 import { getPosReturnAuditSummary, getPosReturnSummary } from "@/lib/bms/reports";
 import { listRestaurantRequests, reviewRestaurantRequest } from "@/lib/bms/restaurantRequests";
@@ -19,11 +20,7 @@ import {
   type StockCountStatus,
 } from "@/lib/bms/stockCounts";
 import {
-  cancelStockTransfer,
-  createStockTransfer,
   listStockTransfers,
-  receiveStockTransfer,
-  sendStockTransfer,
   type StockTransferStatus,
 } from "@/lib/bms/stockTransfers";
 import { findStoreCredit, getStoreCreditOutstanding, issueStoreCredit } from "@/lib/bms/storeCredit";
@@ -47,6 +44,7 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   }
 
   input BmsStockTransferInput {
+    idempotencyKey: String
     action: String!
     fromLocationId: ID
     toLocationId: ID
@@ -68,6 +66,7 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   }
 
   input BmsCreateStockTransferInput {
+    idempotencyKey: String
     fromLocationId: ID!
     toLocationId: ID!
     items: [BmsStockTransferLineInput!]!
@@ -75,6 +74,7 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
   }
 
   input BmsReceiveStockTransferInput {
+    idempotencyKey: String
     transferId: ID!
     received: [BmsStockTransferReceiptLineInput!]
     receivingNote: String
@@ -397,9 +397,9 @@ export const bmsMobileOperationsTypeDefs = /* GraphQL */ `
 
   extend type Mutation {
     bmsCreateStockTransfer(input: BmsCreateStockTransferInput!): BmsMobileStockTransferActionResult!
-    bmsSendStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+    bmsSendStockTransfer(transferId: ID!, idempotencyKey: String): BmsMobileStockTransferActionResult!
     bmsReceiveStockTransfer(input: BmsReceiveStockTransferInput!): BmsMobileStockTransferActionResult!
-    bmsCancelStockTransfer(transferId: ID!): BmsMobileStockTransferActionResult!
+    bmsCancelStockTransfer(transferId: ID!, idempotencyKey: String): BmsMobileStockTransferActionResult!
     bmsCreateStockCount(input: BmsCreateStockCountInput!): BmsMobileStockCountActionResult!
     bmsRecordStockCountItem(input: BmsRecordStockCountItemInput!): BmsMobileStockCountActionResult!
     bmsApplyStockCount(countId: ID!): BmsMobileStockCountActionResult!
@@ -457,8 +457,8 @@ export const bmsMobileOperationsResolvers = {
         ? args.status as StockTransferStatus
         : null;
       const [transfers, locations] = await Promise.all([
-        listStockTransfers(tenantId, status),
-        listLocations(tenantId),
+        listStockTransfers(tenantId, status, 50, null, null, actorId(ctx)),
+        listLocationsForUser(tenantId, actorId(ctx)),
       ]);
       return { transfers, locations };
     },
@@ -520,31 +520,7 @@ export const bmsMobileOperationsResolvers = {
   Mutation: {
     async bmsStockTransfer(_parent: unknown, args: { input: unknown }, ctx: any) {
       await requirePermission(ctx, "inventory.transfer");
-      const input = inputRecord(args.input);
-      const tenantId = getTenantId(ctx);
-      const actingUserId = actorId(ctx);
-      const action = String(input.action ?? "");
-      if (action === "create") {
-        return createStockTransfer({
-          tenantId,
-          fromLocationId: uuidInput(input.fromLocationId, "สาขาต้นทางไม่ถูกต้อง"),
-          toLocationId: uuidInput(input.toLocationId, "สาขาปลายทางไม่ถูกต้อง"),
-          items: Array.isArray(input.items) ? input.items as any[] : [],
-          note: typeof input.note === "string" ? input.note : null,
-          createdBy: actingUserId,
-        });
-      }
-      const transferId = uuidInput(input.transferId, "transferId ไม่ถูกต้อง");
-      if (action === "send") return sendStockTransfer({ tenantId, transferId, actorUserId: actingUserId });
-      if (action === "receive") return receiveStockTransfer({
-        tenantId,
-        transferId,
-        actorUserId: actingUserId,
-        received: Array.isArray(input.received) ? input.received as any[] : undefined,
-        receivingNote: typeof input.receivingNote === "string" ? input.receivingNote : null,
-      });
-      if (action === "cancel") return cancelStockTransfer({ tenantId, transferId, actorUserId: actingUserId });
-      throw mobileGraphqlError("action ไม่ถูกต้อง", "BAD_USER_INPUT");
+      return commandStaffStockTransfer(getTenantId(ctx), actorId(ctx), args.input);
     },
 
     async bmsStockCount(_parent: unknown, args: { input: unknown }, ctx: any) {
@@ -655,7 +631,7 @@ Object.assign(bmsMobileOperationsResolvers.Mutation, {
     },
     async bmsSendStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
       return namedMobileAction(compatibilityMutations.bmsStockTransfer, "send", parent, {
-        input: { transferId: args.transferId },
+        input: { transferId: args.transferId, idempotencyKey: args.idempotencyKey },
       }, ctx);
     },
     async bmsReceiveStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
@@ -663,7 +639,7 @@ Object.assign(bmsMobileOperationsResolvers.Mutation, {
     },
     async bmsCancelStockTransfer(parent: unknown, args: Record<string, any>, ctx: any) {
       return namedMobileAction(compatibilityMutations.bmsStockTransfer, "cancel", parent, {
-        input: { transferId: args.transferId },
+        input: { transferId: args.transferId, idempotencyKey: args.idempotencyKey },
       }, ctx);
     },
     async bmsCreateStockCount(parent: unknown, args: Record<string, any>, ctx: any) {

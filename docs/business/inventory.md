@@ -425,6 +425,12 @@ movement; missing units get their own `TRANSFER_LOST` evidence tied to the sourc
 number. The immutable receive row and audit retain the per-line reason/note rather than calling
 every difference “lost”. Cancelling is only possible before sending.
 
+Receipt overrides must name distinct item IDs from that exact transfer. Unknown or duplicate IDs
+reject the entire receipt before stock, audit or idempotency results are written; they must never be
+ignored and turned into a default full receipt. Omitted overrides retain the existing full-receipt
+default. Creation validates the total of repeated normalized SKU/size lines against the database
+integer limit before inserting, including native/internal callers.
+
 `TRANSFER_IN`/`TRANSFER_OUT` are separate movement types from `STOCK_IN`/`STOCK_OUT` because a
 transfer does not remove goods from the company, and a total-stock-value report must not treat it as
 if it did.
@@ -479,6 +485,34 @@ a separate permission and shows the first-entry snapshot, counted quantity, and 
 confirmation.
 
 ### Admin REST and mobile GraphQL
+
+Staff stock transfers enforce assigned branch scope on REST and staff GraphQL (including the
+deprecated combined command). Reads include documents touching either accessible endpoint. Create
+requires both branches; send/cancel require the source; receive requires the destination. No assigned
+branches retains the established all-branches policy. A branch-only employee can submit a
+replenishment request for a manager to create the transfer instead.
+
+Staff commands require an 8–200 character `idempotencyKey`; the optional SDL fields preserve schema
+compatibility, but missing keys return `INVALID` without writing. Create/receive inputs and
+send/cancel arguments accept the key. `commandStaffStockTransfer()` validates both transports and
+supplies the trusted staff-scope flag. Scope is checked inside the tenant transaction before replay;
+staff hashes bind the actor. Reusing a successful key with changed payload/actor returns `CONFLICT`.
+Native device/cashier guards and native request hashes are unchanged.
+
+The admin page saves the exact pending command in tab session storage scoped to tenant and user
+before sending. Double-clicks are blocked. Unknown results (network, malformed response, 5xx) block
+new commands and offer **ตรวจผลคำขอเดิม** using the original payload/key, including after reloading
+the same tab. Auth/scope rejection and key conflicts retain the pending command for investigation.
+Confirmed success clears it before refreshing, so refresh failure is not reported as mutation
+failure. Closing the tab or clearing browser storage loses the local recovery record; inspect
+existing documents before starting a replacement command in another tab/device.
+
+The page also sends the GET's `commandScope` as an optional REST precondition. The server compares
+it with the authenticated tenant/user and returns `SCOPE_CHANGED` (409) before executing a stale-tab
+command. This value grants no authority. Refreshing after a user/shop switch restores only that
+scope's pending command; the previous scope's recovery record remains intact. Older GET responses
+cannot overwrite pending mutation state, and failure to persist a command prevents sending it while
+keeping the form available for correction.
 
 The admin screens keep `/api/bms/inventory/transfers` and `/api/bms/inventory/counts` as guarded REST
 compatibility adapters. The native POS uses typed device-scoped GraphQL operations in

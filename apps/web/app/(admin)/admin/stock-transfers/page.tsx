@@ -16,7 +16,7 @@ import {
   Popconfirm, Select, Space, Table, Tag, Typography, message,
 } from "antd";
 import { DeleteOutlined, PlusOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader, { ResponsiveStatusFilter } from "@/components/admin/AdminPageHeader";
 
@@ -54,6 +54,8 @@ type Transfer = {
 };
 
 type Location = { id: string; code: string; name: string; active: boolean };
+type PendingCommand = { payload: Record<string, unknown>; idempotencyKey: string };
+const pendingStorageKey = (scope: string) => `bms:stock-transfer:pending:${scope}`;
 
 const FILTERS: readonly Filter[] = ["ALL", "DRAFT", "IN_TRANSIT", "RECEIVED", "CANCELLED"];
 
@@ -86,6 +88,10 @@ const fmtTime = (iso: string | null) =>
 /** แปลผลลัพธ์จาก API เป็นประโยคที่คนหน้างานอ่านแล้วรู้ว่าต้องทำอะไรต่อ */
 function explain(body: any): string {
   switch (body?.status) {
+    case "FORBIDDEN":
+      return "ไม่มีสิทธิ์ทำรายการที่สาขานี้";
+    case "CONFLICT":
+      return body.reason ?? "คำขอเดิมมีข้อมูลไม่ตรงกัน กรุณาตรวจสอบใบโอนล่าสุด";
     case "INVALID":
       return body.reason ?? "ข้อมูลไม่ถูกต้อง";
     case "NOT_FOUND":
@@ -114,6 +120,19 @@ export default function StockTransfersPage() {
     if(id){setLinkedId(id);setExpandedKeys([id]);}
   },[]);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const loadVersion = useRef(0);
+  const scopeRef = useRef<string | null>(null);
+  const pendingRef = useRef<PendingCommand | null>(null);
+  const [pending, setPending] = useState<PendingCommand | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (pendingRef.current) { event.preventDefault(); event.returnValue = ""; }
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, []);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [form] = Form.useForm();
@@ -126,6 +145,8 @@ export default function StockTransfersPage() {
   const [receivingNote, setReceivingNote] = useState("");
 
   const load = useCallback(async () => {
+    if (busyRef.current) return;
+    const version = ++loadVersion.current;
     setLoading(true);
     try {
       const params=new URLSearchParams();
@@ -133,42 +154,102 @@ export default function StockTransfersPage() {
       if(linkedId) params.set("id",linkedId);
       const qs = params.size ? `?${params}` : "";
       const res = await fetch(`/api/bms/inventory/transfers${qs}`, { cache: "no-store" });
+      if (version !== loadVersion.current) return;
       if (!res.ok) {
+        if (res.status === 401 || res.status === 403) setReady(false);
         throw new Error(res.status === 403 ? "ไม่มีสิทธิ์ดูใบโอน (ต้องมี inventory.transfer)" : "โหลดรายการไม่สำเร็จ");
       }
       const body = await res.json();
+      if (version !== loadVersion.current) return;
+      if (typeof body.commandScope !== "string") throw new Error("โหลดบริบทผู้ใช้ไม่สำเร็จ");
+      if (scopeRef.current !== body.commandScope) {
+        setReady(false);
+        const saved = sessionStorage.getItem(pendingStorageKey(body.commandScope));
+        const restored = saved ? JSON.parse(saved) as PendingCommand : null;
+        if (restored && (!restored.payload || typeof restored.idempotencyKey !== "string"))
+          throw new Error("ข้อมูลคำขอค้างไม่ถูกต้อง กรุณาติดต่อผู้ดูแล");
+        setCreateOpen(false); setReceiving(null); form.resetFields();
+        scopeRef.current = body.commandScope;
+        pendingRef.current = restored;
+        setPending(restored);
+      }
       setRows(body.transfers ?? []);
       setLocations(body.locations ?? []);
+      setReady(true);
     } catch (e: any) {
-      message.error(e?.message ?? "โหลดรายการไม่สำเร็จ");
+      if (version === loadVersion.current) message.error(e?.message ?? "โหลดรายการไม่สำเร็จ");
     } finally {
-      setLoading(false);
+      if (version === loadVersion.current) setLoading(false);
     }
-  }, [filter,linkedId]);
+  }, [filter,linkedId,form]);
 
   useEffect(() => {
     if (canUse) void load();
   }, [canUse, load]);
 
-  async function post(payload: Record<string, unknown>): Promise<boolean> {
+  async function post(payload: Record<string, unknown>, retry = false): Promise<boolean> {
+    if (busyRef.current || !scopeRef.current || !ready) return false;
+    if (pendingRef.current && !retry) {
+      message.warning("กรุณาตรวจผลคำขอเดิมก่อนทำรายการใหม่");
+      return false;
+    }
+    busyRef.current = true;
+    const commandScope = scopeRef.current;
+    ++loadVersion.current; // An earlier GET must not replace an in-flight command.
+    setLoading(false);
     setBusy(true);
     try {
+      const command = pendingRef.current ?? { payload, idempotencyKey: crypto.randomUUID() };
+      // Persist before I/O; retry after a reload keeps the exact same payload/key.
+      try {
+        sessionStorage.setItem(pendingStorageKey(commandScope), JSON.stringify(command));
+      } catch {
+        message.error("เบราว์เซอร์เก็บคำขอไม่ได้ จึงยังไม่ส่งรายการ กรุณาตรวจการตั้งค่าพื้นที่จัดเก็บ");
+        return false;
+      }
+      pendingRef.current = command;
+      setPending(command);
       const res = await fetch("/api/bms/inventory/transfers", {
         method: "POST",
+        signal: AbortSignal.timeout(30_000),
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...command.payload, idempotencyKey: command.idempotencyKey, commandScope }),
       });
-      const body = await res.json().catch(() => ({}));
+      const body = await res.json();
+      const success = res.ok && (body.status === "OK" || body.status === "CREATED");
+      const rejected = !res.ok && [400, 404, 409].includes(res.status) &&
+        ["INVALID", "NOT_FOUND", "WRONG_STATE", "INSUFFICIENT"].includes(body.status);
+      if (success || rejected) {
+        sessionStorage.removeItem(pendingStorageKey(commandScope));
+        pendingRef.current = null;
+        setPending(null);
+      }
+      if (!success && !rejected) {
+        if ([401, 403].includes(res.status) || body.status === "SCOPE_CHANGED") setReady(false);
+        message.warning(body.status === "SCOPE_CHANGED" ? body.reason : "ยังยืนยันผลไม่ได้ กรุณากดตรวจผลคำขอเดิม ห้ามสร้างรายการซ้ำ");
+        setCreateOpen(false); setReceiving(null);
+        return false;
+      }
       if (!res.ok) {
         message.error(explain(body));
         return false;
       }
       return true;
     } catch {
-      message.error("เชื่อมต่อไม่ได้");
+      message.error("ยังยืนยันผลไม่ได้ — ตรวจผลคำขอเดิมก่อนทำรายการใหม่");
+      setCreateOpen(false); setReceiving(null);
       return false;
     } finally {
+      busyRef.current = false;
       setBusy(false);
+    }
+  }
+
+  async function retryPending() {
+    if (pendingRef.current && await post(pendingRef.current.payload, true)) {
+      message.success("ยืนยันแล้วว่าคำขอเดิมสำเร็จ");
+      setCreateOpen(false); setReceiving(null); form.resetFields();
+      await load();
     }
   }
 
@@ -247,6 +328,8 @@ export default function StockTransfersPage() {
   }
 
   const activeLocations = locations.filter((l) => l.active);
+  const accessible = new Set(locations.map(l => l.id));
+  const blocked = busy || !!pending || !ready;
   const missingOnReceive = receiving
     ? receiving.items.reduce((sum, i) =>
         sum + Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0)), 0
@@ -265,21 +348,38 @@ export default function StockTransfersPage() {
 
   return (
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
-      {linkedId && <Button onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>แสดงเอกสารทั้งหมด</Button>}
+      {pending && <Card title="มีคำขอที่ยังต้องยืนยันผล" size="small">
+        <Space direction="vertical" style={{ width: "100%", overflowWrap: "anywhere" }}>
+          <span>{({ create: "สร้างใบโอน", send: "ส่งของ", receive: "รับของ", cancel: "ยกเลิกใบโอน" } as Record<string,string>)[String(pending.payload.action)]}
+            {pending.payload.transferId ? ` · ${rows.find(r => r.id === pending.payload.transferId)?.transferNo ?? pending.payload.transferId}` : ""}
+            {pending.payload.fromLocationId ? ` · ${locations.find(l => l.id === pending.payload.fromLocationId)?.name ?? "ต้นทาง"} → ${locations.find(l => l.id === pending.payload.toLocationId)?.name ?? "ปลายทาง"}` : ""}
+          </span>
+          {Array.isArray(pending.payload.items) && pending.payload.items.map((item: any, index: number) =>
+            <span key={index}>{item.sku} · {item.size} · {item.qty} ชิ้น</span>)}
+          {Array.isArray(pending.payload.received) && pending.payload.received.map((item: any) => {
+            const line = rows.find(r => r.id === pending.payload.transferId)?.items.find(i => i.id === item.itemId);
+            return <span key={item.itemId}>{line ? `${line.sku} · ${line.size}` : `รายการ ${item.itemId}`} · รับดี {item.qty} · เสียหาย {item.damagedQty ?? 0}{item.note ? ` · ${item.note}` : ""}</span>;
+          })}
+          {(pending.payload.note || pending.payload.receivingNote) ? <span>หมายเหตุ: {String(pending.payload.note || pending.payload.receivingNote)}</span> : null}
+          <span>ระบบเก็บข้อมูลเดิมไว้ แม้รีโหลดหน้านี้</span>
+          <span>ตรวจผลด้วยคำขอเดิมเพื่อป้องกันตัดสต็อกหรือสร้างใบโอนซ้ำ หากสิทธิ์เปลี่ยนให้ติดต่อผู้ดูแล</span>
+          <Button onClick={() => void retryPending()} loading={busy} disabled={!ready}>ตรวจผลคำขอเดิม</Button>
+        </Space></Card>}
+      {linkedId && <Button disabled={busy} onClick={()=>{setLinkedId(null);setExpandedKeys([]);}}>แสดงเอกสารทั้งหมด</Button>}
       <AdminPageHeader title="โอนย้ายสต็อกระหว่างสาขา">
         <ResponsiveStatusFilter<Filter>
           options={FILTERS}
           value={filter}
-          onChange={setFilter}
+          onChange={(value) => { if (!busyRef.current) setFilter(value); }}
           labels={{ ALL: "ทั้งหมด", ...STATUS_LABEL }}
         />
-        <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
+        <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading} disabled={busy}>
           รีเฟรช
         </Button>
         <Button
           type="primary"
           icon={<PlusOutlined />}
-          disabled={activeLocations.length < 2}
+          disabled={activeLocations.length < 2 || blocked}
           onClick={() => {
             form.resetFields();
             form.setFieldsValue({ items: [{ sku: "", size: "", qty: 1 }] });
@@ -294,8 +394,8 @@ export default function StockTransfersPage() {
         <Alert closable
           type="warning"
           showIcon
-          message="ยังมีสาขาที่เปิดใช้งานไม่ถึง 2 สาขา"
-          description="การโอนย้ายต้องมีต้นทางกับปลายทางที่ต่างกัน — เพิ่มสาขาก่อนจึงจะสร้างใบโอนได้"
+          message="คุณเข้าถึงสาขาที่เปิดใช้งานได้ไม่ถึง 2 สาขา"
+          description="สร้างใบโอนต้องมีสิทธิ์ทั้งต้นทางและปลายทาง — ให้ผู้จัดการที่มีสิทธิ์สร้างใบโอน หรือใช้คำขอเติมสินค้าจากสาขา"
         />
       )}
 
@@ -309,6 +409,7 @@ export default function StockTransfersPage() {
       <Card>
         <Table<Transfer>
           rowKey="id"
+          scroll={{ x: 1000 }}
           size="small"
           loading={loading}
           dataSource={rows}
@@ -320,6 +421,7 @@ export default function StockTransfersPage() {
             expandedRowRender: (t) => (
               <Table<TransferItem>
                 rowKey="id"
+                scroll={{ x: 1000 }}
                 size="small"
                 dataSource={t.items}
                 pagination={false}
@@ -394,7 +496,7 @@ export default function StockTransfersPage() {
               width: 190,
               render: (_: unknown, t) => (
                 <Space>
-                  {t.status === "DRAFT" && (
+                  {t.status === "DRAFT" && accessible.has(t.fromLocationId) && (
                     <Popconfirm
                       title={`ส่ง ${t.transferNo}?`}
                       description="สต็อกที่ต้นทางจะถูกตัดทันที และยกเลิกใบนี้ไม่ได้อีก"
@@ -402,21 +504,21 @@ export default function StockTransfersPage() {
                       cancelText="ยังไม่ส่ง"
                       onConfirm={() => void send(t)}
                     >
-                      <Button size="small" type="primary" loading={busy}>ส่งของ</Button>
+                      <Button size="small" type="primary" loading={busy} disabled={blocked}>ส่งของ</Button>
                     </Popconfirm>
                   )}
-                  {t.status === "DRAFT" && (
+                  {t.status === "DRAFT" && accessible.has(t.fromLocationId) && (
                     <Popconfirm
                       title={`ยกเลิก ${t.transferNo}?`}
                       okText="ยกเลิกใบโอน"
                       cancelText="ไม่"
                       onConfirm={() => void cancel(t)}
                     >
-                      <Button size="small" danger>ยกเลิก</Button>
+                      <Button size="small" danger disabled={blocked}>ยกเลิก</Button>
                     </Popconfirm>
                   )}
-                  {t.status === "IN_TRANSIT" && (
-                    <Button size="small" type="primary" onClick={() => openReceive(t)}>
+                  {t.status === "IN_TRANSIT" && accessible.has(t.toLocationId) && (
+                    <Button size="small" type="primary" disabled={blocked} onClick={() => openReceive(t)}>
                       รับของ
                     </Button>
                   )}
@@ -430,15 +532,16 @@ export default function StockTransfersPage() {
       <Modal
         open={createOpen}
         title="สร้างใบโอน"
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => { if (!busyRef.current) setCreateOpen(false); }}
         onOk={() => void create()}
         confirmLoading={busy}
+        okButtonProps={{ disabled: blocked }}
         okText="สร้าง (ยังไม่ตัดสต็อก)"
         cancelText="ยกเลิก"
         width={720}
       >
-        <Form form={form} layout="vertical">
-          <Space style={{ width: "100%" }} size="middle">
+        <Form form={form} layout="vertical" disabled={busy}>
+          <Space style={{ width: "100%" }} size="middle" wrap>
             <Form.Item
               name="fromLocationId"
               label="สาขาต้นทาง"
@@ -481,7 +584,7 @@ export default function StockTransfersPage() {
             {(fields, { add, remove }) => (
               <div style={{ marginTop: 8 }}>
                 {fields.map((field) => (
-                  <Space key={field.key} align="baseline" style={{ display: "flex", marginBottom: 4 }}>
+                  <Space key={field.key} align="baseline" wrap style={{ display: "flex", marginBottom: 4 }}>
                     <Form.Item
                       name={[field.name, "sku"]}
                       rules={[{ required: true, message: "ต้องระบุ SKU" }]}
@@ -525,10 +628,10 @@ export default function StockTransfersPage() {
       <Modal
         open={!!receiving}
         title={`รับของ · ${receiving?.transferNo ?? ""}`}
-        onCancel={() => setReceiving(null)}
+        onCancel={() => { if (!busyRef.current) setReceiving(null); }}
         onOk={() => void confirmReceive()}
         confirmLoading={busy}
-        okButtonProps={{ disabled: invalidDiscrepancy }}
+        okButtonProps={{ disabled: invalidDiscrepancy || blocked }}
         okText="ยืนยันรับของ"
         cancelText="ยังไม่รับ"
         width={720}
@@ -577,6 +680,7 @@ export default function StockTransfersPage() {
                   render: (_: unknown, i) => (
                     <InputNumber
                       min={0}
+                      disabled={busy}
                       max={Math.max(0, i.qty - (damagedQty[i.id] ?? 0))}
                       precision={0}
                       value={receivedQty[i.id] ?? i.qty}
@@ -590,6 +694,7 @@ export default function StockTransfersPage() {
                   render: (_: unknown, i) => (
                     <InputNumber
                       min={0}
+                      disabled={busy}
                       max={Math.max(0, i.qty - (receivedQty[i.id] ?? i.qty))}
                       precision={0}
                       value={damagedQty[i.id] ?? 0}
@@ -618,7 +723,7 @@ export default function StockTransfersPage() {
                       || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
                     return (
                       <Select
-                        disabled={!hasDifference}
+                        disabled={busy || !hasDifference}
                         value={discrepancyReason[i.id]}
                         placeholder="เลือกสาเหตุ"
                         style={{ width: "100%" }}
@@ -637,7 +742,7 @@ export default function StockTransfersPage() {
                       || i.qty - (receivedQty[i.id] ?? i.qty) - (damagedQty[i.id] ?? 0) > 0;
                     return (
                       <Input
-                        disabled={!hasDifference}
+                        disabled={busy || !hasDifference}
                         value={discrepancyNote[i.id] ?? ""}
                         placeholder={hasDifference ? "บังคับกรอก" : "ไม่มีส่วนต่าง"}
                         onChange={(event) => setDiscrepancyNote((prev) => ({
@@ -650,6 +755,7 @@ export default function StockTransfersPage() {
               ]}
             />
             <Input.TextArea
+              disabled={busy}
               value={receivingNote}
               onChange={(event) => setReceivingNote(event.target.value)}
               rows={2}

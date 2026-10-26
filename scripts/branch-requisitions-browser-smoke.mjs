@@ -104,6 +104,8 @@ try {
         )
           return route.abort();
         if (!/\/api\/|\/graphql$/.test(url.pathname)) return route.continue();
+        if (url.pathname === "/api/bms/realtime/ticket")
+          return route.fulfill({ json: { ticket: "FAKE-local-ui-ticket" } });
         let json = {};
         if (url.pathname === "/api/auth/me")
           json = {
@@ -120,6 +122,7 @@ try {
           if (url.searchParams.has("id"))
             assert.equal(url.searchParams.get("id"), source);
           json = {
+            commandScope: "FAKE-tenant:FAKE-user",
             locations: [],
             transfers: [
               {

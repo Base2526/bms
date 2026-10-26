@@ -57,6 +57,33 @@ export type StockTransfer = {
 const toISO = (v: unknown): string =>
   v instanceof Date ? v.toISOString() : String(v ?? "");
 
+// Staff scope is supplied by authenticated adapters only. Native POS has its
+// own device-location + cashier guards and must retain that separate policy.
+async function staffCanAccess(client: PoolClient, tenantId: string, actor: string, locations: string[]) {
+  const result = await client.query<{ allowed: boolean }>(
+    `SELECT NOT EXISTS (
+       SELECT 1 FROM unnest($3::uuid[]) AS wanted(id)
+       WHERE NOT EXISTS (SELECT 1 FROM bms_locations l WHERE l.tenant_id=$1 AND l.id=wanted.id)
+          OR (EXISTS (SELECT 1 FROM bms_user_allowed_locations WHERE tenant_id=$1 AND user_id=$2)
+              AND NOT EXISTS (SELECT 1 FROM bms_user_allowed_locations
+                              WHERE tenant_id=$1 AND user_id=$2 AND location_id=wanted.id))
+     ) AS allowed`, [tenantId, actor, locations],
+  );
+  return result.rows[0].allowed;
+}
+
+async function staffActionAccess(client: PoolClient, input: {
+  tenantId: string; actorUserId: string; transferId: string;
+}, side: "from_location" | "to_location"): Promise<TransferActionResult | null> {
+  const result = await client.query<{ from_location: string; to_location: string }>(
+    `SELECT from_location, to_location FROM bms_stock_transfers WHERE tenant_id=$1 AND id=$2`,
+    [input.tenantId, input.transferId],
+  );
+  if (!result.rowCount) return { status: "NOT_FOUND" };
+  return await staffCanAccess(client, input.tenantId, input.actorUserId, [result.rows[0][side]])
+    ? null : { status: "FORBIDDEN" };
+}
+
 /**
  * บันทึก audit ในทรานแซกชันเดียวกับของที่เพิ่งย้าย
  *
@@ -86,6 +113,7 @@ export async function listStockTransfers(
   limit = 50,
   id?: string | null,
   locationId?: string | null,
+  staffUserId?: string | null,
 ): Promise<StockTransfer[]> {
   const res = await query<any>(
     `SELECT t.*, lf.name AS from_name, lt.name AS to_name,
@@ -98,6 +126,10 @@ export async function listStockTransfers(
         AND ($2::text IS NULL OR t.status = $2)
         AND ($4::uuid IS NULL OR t.id = $4)
         AND ($5::uuid IS NULL OR t.from_location = $5 OR t.to_location = $5)
+        AND ($6::uuid IS NULL
+          OR NOT EXISTS (SELECT 1 FROM bms_user_allowed_locations WHERE tenant_id=$1 AND user_id=$6)
+          OR EXISTS (SELECT 1 FROM bms_user_allowed_locations
+                     WHERE tenant_id=$1 AND user_id=$6 AND location_id IN (t.from_location,t.to_location)))
       ORDER BY t.created_at DESC
       LIMIT $3`,
     [
@@ -106,6 +138,7 @@ export async function listStockTransfers(
       Math.min(Math.max(limit, 1), 200),
       id ?? null,
       locationId ?? null,
+      staffUserId ?? null,
     ],
   );
   if (!res.rows.length) return [];
@@ -173,6 +206,7 @@ export async function getStockTransfer(
 
 export type CreateTransferResult =
   | { status: "CREATED"; transferId: string; transferNo: string }
+  | { status: "FORBIDDEN" }
   | { status: "INVALID"; reason: string };
 
 export type CreateStockTransferInput = {
@@ -182,6 +216,7 @@ export type CreateStockTransferInput = {
   items: Array<{ sku: string; size: string; qty: number }>;
   note?: string | null;
   createdBy: string;
+  staffScope?: true;
   idempotencyKey?: string | null;
 };
 
@@ -207,6 +242,8 @@ export async function createStockTransferInTx(
   client: PoolClient,
   input: CreateStockTransferInput,
 ): Promise<CreateTransferResult> {
+  if (input.staffScope && !(await staffCanAccess(client, input.tenantId, input.createdBy,
+    [input.fromLocationId, input.toLocationId]))) return { status: "FORBIDDEN" };
   if (input.fromLocationId === input.toLocationId) {
     return { status: "INVALID", reason: "สาขาต้นทางกับปลายทางต้องต่างกัน" };
   }
@@ -219,6 +256,15 @@ export async function createStockTransferInTx(
     .filter((i) => i.sku && i.size && Number.isInteger(i.qty) && i.qty > 0);
   if (items.length === 0)
     return { status: "INVALID", reason: "ต้องมีรายการอย่างน้อย 1 รายการ" };
+  // Duplicate SKU/size rows are merged by the INSERT below. Validate that sum,
+  // not just each input row, before an INTEGER overflow can become an unknown 500.
+  const totals = new Map<string, number>();
+  for (const item of items) {
+    const key = JSON.stringify([item.sku, item.size]);
+    const total = (totals.get(key) ?? 0) + item.qty;
+    if (total > 2147483647) return { status: "INVALID", reason: "จำนวนรวมของสินค้าและไซซ์เดียวกันมากเกินไป" };
+    totals.set(key, total);
+  }
   const idempotency = inventoryIdempotency(
     "transfer.create",
     input.idempotencyKey,
@@ -227,6 +273,7 @@ export async function createStockTransferInTx(
       toLocationId: input.toLocationId,
       items,
       note: input.note?.trim() || null,
+      ...(input.staffScope ? { staffActor: input.createdBy } : {}),
     },
   );
 
@@ -321,6 +368,7 @@ export async function createStockTransferInTx(
 export type TransferActionResult =
   | QualityHoldRejection
   | { status: "OK" }
+  | { status: "FORBIDDEN" }
   | { status: "INVALID"; reason: string }
   | { status: "NOT_FOUND" }
   | { status: "WRONG_STATE"; current: StockTransferStatus }
@@ -342,6 +390,7 @@ export async function sendStockTransfer(input: {
   tenantId: string;
   transferId: string;
   actorUserId: string;
+  staffScope?: true;
   idempotencyKey?: string | null;
 }): Promise<TransferActionResult> {
   const idempotency = inventoryIdempotency(
@@ -349,6 +398,7 @@ export async function sendStockTransfer(input: {
     input.idempotencyKey,
     {
       transferId: input.transferId,
+      ...(input.staffScope ? { staffActor: input.actorUserId } : {}),
     },
   );
   const client = await getClient();
@@ -356,6 +406,10 @@ export async function sendStockTransfer(input: {
     await beginTenantTx(client, input.tenantId, {
       editorId: input.actorUserId,
     });
+    if (input.staffScope) {
+      const denied = await staffActionAccess(client, input, "from_location");
+      if (denied) { await client.query("ROLLBACK"); return denied; }
+    }
     const replay = await replayInventoryResult<TransferActionResult>(
       client,
       input.tenantId,
@@ -491,6 +545,7 @@ export async function receiveStockTransfer(input: {
   tenantId: string;
   transferId: string;
   actorUserId: string;
+  staffScope?: true;
   received?: Array<{
     itemId: number;
     qty: number;
@@ -506,6 +561,7 @@ export async function receiveStockTransfer(input: {
     input.idempotencyKey,
     {
       transferId: input.transferId,
+      ...(input.staffScope ? { staffActor: input.actorUserId } : {}),
       received: input.received ?? null,
       receivingNote: input.receivingNote?.trim() || null,
     },
@@ -515,6 +571,10 @@ export async function receiveStockTransfer(input: {
     await beginTenantTx(client, input.tenantId, {
       editorId: input.actorUserId,
     });
+    if (input.staffScope) {
+      const denied = await staffActionAccess(client, input, "to_location");
+      if (denied) { await client.query("ROLLBACK"); return denied; }
+    }
     const replay = await replayInventoryResult<TransferActionResult>(
       client,
       input.tenantId,
@@ -561,6 +621,13 @@ export async function receiveStockTransfer(input: {
         WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
       [input.tenantId, input.transferId],
     );
+
+    const itemIds = new Set(items.rows.map(item => Number(item.id)));
+    if (overrides.size !== (input.received?.length ?? 0) ||
+        [...overrides.keys()].some(id => !Number.isSafeInteger(id) || !itemIds.has(id))) {
+      await client.query("ROLLBACK");
+      return { status: "INVALID", reason: "รายการรับของซ้ำหรือไม่ได้อยู่ในใบโอนนี้" };
+    }
 
     let totalSent = 0;
     let totalReceived = 0;
@@ -760,6 +827,7 @@ export async function cancelStockTransfer(input: {
   tenantId: string;
   transferId: string;
   actorUserId: string;
+  staffScope?: true;
   idempotencyKey?: string | null;
 }): Promise<TransferActionResult> {
   const idempotency = inventoryIdempotency(
@@ -767,6 +835,7 @@ export async function cancelStockTransfer(input: {
     input.idempotencyKey,
     {
       transferId: input.transferId,
+      ...(input.staffScope ? { staffActor: input.actorUserId } : {}),
     },
   );
   const client = await getClient();
@@ -774,6 +843,10 @@ export async function cancelStockTransfer(input: {
     await beginTenantTx(client, input.tenantId, {
       editorId: input.actorUserId,
     });
+    if (input.staffScope) {
+      const denied = await staffActionAccess(client, input, "from_location");
+      if (denied) { await client.query("ROLLBACK"); return denied; }
+    }
     const replay = await replayInventoryResult<TransferActionResult>(
       client,
       input.tenantId,
