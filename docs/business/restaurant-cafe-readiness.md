@@ -102,6 +102,78 @@ D เพิ่มตารางกะ, งานตามหน้าที่,
 
 ## หลักฐานการตรวจ
 
+### คู่มือสาธารณะ `/restaurant`
+
+ข้อมูลตัวอย่าง ขั้นตอนตรวจรับครบ 11 Flow และผลที่รันจริงแยกจากผลคาดหวัง:
+[คู่มือทดสอบร้านอาหาร 62 กรณี](../testing/restaurant-uat-guide-th.md)
+
+หน้าใหม่เชื่อมจากหน้าแรกและ footer เพื่อให้ผู้สนใจสำรวจ 11 Flow ใน 4 หมวด:
+เตรียมร้านและวัตถุดิบ, ขายและบริการลูกค้า, ต้นทุนและการเงิน, สิทธิ์และความถูกต้อง
+แต่ละ Flow แสดง Sequence Diagram เต็ม รวมกรณียกเว้นและเงื่อนไข พร้อมซูม,
+เลื่อนแนวนอนบนมือถือ, ข้อความขั้นตอน และลิงก์ตรง `#flow-1` ถึง `#flow-11`.
+ส่วนหัวใช้สองคอลัมน์บนจอใหญ่ และโหมด “พอดีความกว้าง” (Fit width) ของ Diagram ขยายเต็มความกว้างกรอบ;
+มือถือคงขนาดตัวอักษรที่อ่านได้และเลื่อนแนวนอนได้ แทนการย่อทุกคอลัมน์ลงจอเล็ก.
+
+ปุ่ม **พิมพ์ / PDF Flow นี้** เปิดหน้าต่างพิมพ์ของเบราว์เซอร์ ให้เลือก Save as PDF
+หรือเครื่องพิมพ์ได้ ใช้ A4 แนวนอน แบ่งหน้าหลังขั้นตอนที่จบแล้ว แสดงหัวคอลัมน์ซ้ำ,
+เงื่อนไขที่ต่อจากหน้าก่อน เลขหน้า ขอบเขต และลิงก์ต้นทาง ไม่พิมพ์เมนูเว็บหรือขึ้นกับซูมบนจอ.
+ปุ่ม **แชร์ Flow นี้** ใช้เมนูแชร์ของเครื่องเมื่อรองรับ และใช้ clipboard เป็น fallback;
+การยกเลิกเมนูแชร์ไม่คัดลอกอะไร ปุ่มคัดลอกลิงก์ยังมีแยกต่างหาก.
+PDF ใช้ Flow/ภาษาที่เปิดอยู่ ส่วนลิงก์ระบุ Flow และผู้เปิดใช้ภาษาที่ตั้งไว้บนเว็บ
+ไม่ส่งข้อมูลร้านหรือส่งข้อความออกจากระบบอัตโนมัติ.
+
+เนื้อหาไทย/อังกฤษอยู่ใน `components/marketing/restaurant/{content,flowContent}.ts`
+และวาด SVG จากข้อมูลที่ตรวจ syntax แล้วใน `sequence.ts` โดยไม่มี CDN หรือ Mermaid runtime.
+บทบาทคนและระบบใช้สีต่างกัน และรองรับธีมของเว็บเดิม ปุ่ม LINE ใช้บัญชี BMS กลาง;
+ปุ่มตั้งร้านเปลี่ยนเป็นเข้าหลังบ้านเมื่อมี admin session.
+
+นี่คือคำอธิบายความสามารถ ไม่ใช่ข้อมูลร้านจริงหรือการรับรอง deployment.
+ขอบเขตที่ยังต้องระบุ: foodpanda sandbox/shadow, GrabFood/LINE MAN ติด contract,
+ไม่มี offline dine-in และวงจรผลิตครัวกลางครบชุด ต้องทดลองอุปกรณ์จริงก่อนเปิดใช้.
+ไม่มีการเปลี่ยน service, permission, transaction, schema หรือคู่มือปฏิบัติงานหลังบ้าน.
+ตรวจหน้าใหม่ด้วย pure suite `restaurant-public-guide` และ browser smoke
+`scripts/restaurant-public-browser-smoke.mjs` (local fixtures; ไม่ใช่ live E2E).
+
+ผลตรวจ 26 ต.ค. 2569: pure ของ Diagram 4/4 ผ่าน; `npm run gate` ผ่าน
+(typecheck, pure 3,038 ผ่าน / ข้าม 6, production build). Browser smoke ไทย/อังกฤษ
+ที่ 1440×1000 และ 390×1000 ผ่านครบ 11 Diagram รวมขอบข้อความ, deep link/history,
+ซูม, transcript, clipboard success/denied, ธีม และ guest/admin CTA.
+ไม่มีการทดสอบอุปกรณ์ POS หรือเปลี่ยน backend ในงานหน้านี้.
+
+ผลเพิ่ม print/share 27 ต.ค. 2569: `gate` ผ่าน (pure 3,049 ผ่าน / ข้าม 6),
+pure pagination 5/5 ผ่าน; browser smoke ไทย/อังกฤษ desktop/mobile ผ่านครบ 11 Flow.
+ส่งออก PDF ทดสอบ 22 ไฟล์ ตรวจจำนวนหน้า/ขนาด A4 แนวนอน/ข้อความและลิงก์ครบ,
+ตรวจภาพ PDF ตัวอย่างไทยทั้ง 3 หน้าและหน้าต่อเงื่อนไขภาษาอังกฤษแล้ว.
+การทดสอบ native share ใช้ browser fixture ไม่ได้ส่งข้อความไปหาผู้รับจริง.
+
+### ขอบเขต Desktop / Mobile ของคู่มือสาธารณะ (27 ต.ค. 2569)
+
+`/restaurant` เป็นหน้าเว็บอธิบายระบบ ไม่ใช่ route ของเครื่อง POS และไม่ได้เพิ่มหรือเปลี่ยน
+GraphQL/REST, schema, permission หรือการคำนวณเงิน/สต็อก จึงไม่ต้องอัปเดต installer/APK/IPA
+เพื่อให้การเปลี่ยน Diagram มีผล การเปิดคู่มือและพิมพ์/แชร์ใช้เบราว์เซอร์ของอุปกรณ์.
+
+| งานใน Diagram | ช่องทางที่ตรวจพบในโค้ด |
+| --- | --- |
+| สูตร ราคา ต้นทุน และรายงาน (1, 4) | เว็บหลังบ้าน; POS อ่านข้อมูลที่ตั้งแล้วและส่งรายการขาย |
+| คำขอเติมสินค้า / รวมคำขอ / สร้าง PO (2, 8) | เว็บหลังบ้าน; Mobile มีรับ PO และงานโอน/ตรวจนับสาขา |
+| โต๊ะ รอบครัว ย้าย/แยก/รวมบิล และรับเงิน (3, 6) | Web POS ที่ Desktop ใช้ และหน้าจอ Native Mobile |
+| คืนสินค้า งานออนไลน์ และสิทธิประโยชน์ (5, 7, 9) | หน้าปฏิบัติงาน POS ร่วมกับการตั้งค่า/ตรวจสอบหลังบ้าน ไม่ใช่ทุกขั้นตอนอยู่ในแอปเดียว |
+| กะและภาษี (10) | POS เปิด/ปิดกะและออกใบเสร็จ; การตรวจคำขอและออกใบกำกับเต็มรูปเป็นงานหลังบ้าน |
+| สิทธิ์สาขาและการส่งซ้ำ (11) | หลังบ้านกำหนดสิทธิ์; native ใช้ device-location + cashier, ทุกช่องทางตรวจที่ backend |
+
+หลักฐานเส้นทาง: Desktop `src/renderer-route.mjs` เลือก `/pos/app` (fallback `/pos`
+เฉพาะ 404), `DesktopPosRenderer.tsx` ส่งร้านอาหารไป `/pos/restaurant`;
+`src/main.mjs` เปิดหน้าที่ไม่ใช่ POS ใน system browser โดยไม่ให้สิทธิ์ IPC ของ POS.
+Native ใช้ `MainTabs.tsx`, `CheckDetailScreen.tsx`, `OperationsScreen.tsx`,
+`InventoryScreen.tsx` และ `graphql/operations.graphql` ไม่ได้ import public guide.
+การพิมพ์คู่มือใช้ CSS ที่มี `[data-restaurant-print]` จึงไม่เปลี่ยนใบเสร็จ POS.
+
+ตรวจผลกระทบ: Desktop lint + 68/68 tests ผ่าน; Mobile typecheck + Jest 37 suites,
+252/252 tests ผ่าน. เป็นการตรวจโค้ดและชุดทดสอบบน host macOS ไม่ใช่การเปิดแอปจริงครบ
+Windows/Linux/macOS/Android/iOS หรือการทดสอบเครื่องพิมพ์จริง และไม่ได้รับรอง parity ทุกฟีเจอร์.
+
+### หลักฐานเดิมของ pickup checkout
+
 - Pure service regression: `restaurant-pickup-checkout-contract` — 8 tests ผ่าน
   ครอบคลุม signed scope, missing contact, DELIVERY/legacy, marketplace และคำตอบไทย/อังกฤษ
 - PostgreSQL contract: `restaurant-pickup-db-contract` — 7 tests ผ่านบน container

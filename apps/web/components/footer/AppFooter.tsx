@@ -64,6 +64,7 @@ const COPY = {
     pricing: "แพ็กเกจราคา",
     dashboard: "Dashboard ร้านค้า",
     retailLocal: "Retail Local",
+    restaurant: "ร้านอาหารและคาเฟ่",
     resources: "เรียนรู้และช่วยเหลือ",
     help: "ศูนย์ช่วยเหลือ",
     roadmap: "Roadmap",
@@ -99,6 +100,7 @@ const COPY = {
     pricing: "Pricing",
     dashboard: "Store dashboard",
     retailLocal: "Retail Local",
+    restaurant: "Restaurants and cafes",
     resources: "Learn and support",
     help: "Help center",
     roadmap: "Roadmap",
@@ -159,6 +161,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
     { href: "/#pricing", label: t.pricing, icon: <ShopOutlined /> },
     { href: "/admin/dashboard", label: t.dashboard, icon: <BarChartOutlined /> },
     { href: "/retail-local", label: t.retailLocal, icon: <DesktopOutlined /> },
+    { href: "/restaurant", label: t.restaurant, icon: <ShopOutlined /> },
   ];
 
   const resourceLinks = [

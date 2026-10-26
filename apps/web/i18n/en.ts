@@ -973,6 +973,7 @@ const en = {
     hybridBoundaryTitle: "Not a local server or full offline system",
     hybridBoundaryDescription: "Desktop POS and restaurant, board-game, pharmacy, membership, approval-discount, non-cash payment, return, shift-close, and stock workflows still require the Cloud today.",
     retailLocalCta: "Explore the Retail Local pilot",
+    restaurantGuideCta: "Explore 11 restaurant and cafe workflows",
     hybridIncluded: "BMS Cloud and Emergency Offline Mode are capabilities of the same product, not separate packages.",
     workflowEyebrow: "INTERACTIVE INFOGRAPHIC",
     workflowTitle: "From the first chat to the customer's door",

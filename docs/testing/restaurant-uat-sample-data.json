@@ -1,0 +1,239 @@
+{
+  "purpose": "Synthetic restaurant UAT reference data. Not an import payload; no tenant or transaction is created by this file.",
+  "scenarioDate": "2026-10-27",
+  "timezone": "Asia/Bangkok",
+  "currency": "THB",
+  "tenant": {
+    "name": "FAKE BMS Cafe UAT",
+    "archetype": "restaurant",
+    "vatRegistered": false,
+    "serviceCharge": 0,
+    "automaticPromotions": false,
+    "loyaltyEnabledByDefault": false
+  },
+  "locations": [
+    {
+      "code": "FAKE-CENTRAL",
+      "name": "คลังกลางทดสอบ"
+    },
+    {
+      "code": "FAKE-A",
+      "name": "สาขา A ทดสอบ"
+    },
+    {
+      "code": "FAKE-B",
+      "name": "สาขา B ทดสอบ"
+    }
+  ],
+  "staff": [
+    {
+      "alias": "FAKE-owner",
+      "branches": [
+        "FAKE-CENTRAL",
+        "FAKE-A",
+        "FAKE-B"
+      ],
+      "duties": "Configure store, review reports"
+    },
+    {
+      "alias": "FAKE-manager",
+      "branches": [
+        "FAKE-CENTRAL",
+        "FAKE-A",
+        "FAKE-B"
+      ],
+      "duties": "Approve transfer, discount, void and cash-out; separate identity from cashier"
+    },
+    {
+      "alias": "FAKE-cashier-A",
+      "branches": [
+        "FAKE-A"
+      ],
+      "duties": "Open shift, take orders and settle permitted sales"
+    },
+    {
+      "alias": "FAKE-warehouse",
+      "branches": [
+        "FAKE-CENTRAL"
+      ],
+      "duties": "Dispatch source transfers only"
+    },
+    {
+      "alias": "FAKE-receiver-B",
+      "branches": [
+        "FAKE-B"
+      ],
+      "duties": "Receive destination transfers only"
+    },
+    {
+      "alias": "FAKE-kitchen-A",
+      "branches": [
+        "FAKE-A"
+      ],
+      "duties": "Process kitchen tickets"
+    },
+    {
+      "alias": "FAKE-viewer",
+      "branches": [
+        "FAKE-A"
+      ],
+      "duties": "Read only"
+    }
+  ],
+  "products": [
+    {
+      "sku": "FAKE-BEAN",
+      "unit": "GRAM",
+      "stockPolicy": "DIRECT",
+      "unitCost": 0.5
+    },
+    {
+      "sku": "FAKE-MILK",
+      "unit": "ML",
+      "stockPolicy": "DIRECT",
+      "unitCost": 0.04
+    },
+    {
+      "sku": "FAKE-CUP",
+      "unit": "PIECE",
+      "stockPolicy": "DIRECT",
+      "unitCost": 2
+    },
+    {
+      "sku": "FAKE-WATER",
+      "unit": "BOTTLE",
+      "stockPolicy": "DIRECT",
+      "unitCost": 7,
+      "salePrice": 15
+    },
+    {
+      "sku": "FAKE-LATTE",
+      "unit": "CUP",
+      "stockPolicy": "RECIPE",
+      "salePrice": 80,
+      "recipe": [
+        {
+          "sku": "FAKE-BEAN",
+          "qty": 20
+        },
+        {
+          "sku": "FAKE-MILK",
+          "qty": 150
+        },
+        {
+          "sku": "FAKE-CUP",
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "sku": "FAKE-AMERICANO",
+      "unit": "CUP",
+      "stockPolicy": "RECIPE",
+      "salePrice": 60,
+      "recipe": [
+        {
+          "sku": "FAKE-BEAN",
+          "qty": 20
+        },
+        {
+          "sku": "FAKE-CUP",
+          "qty": 1
+        }
+      ]
+    }
+  ],
+  "openingStock": {
+    "FAKE-CENTRAL": {
+      "FAKE-BEAN": 10000,
+      "FAKE-MILK": 20000,
+      "FAKE-CUP": 500,
+      "FAKE-WATER": 100
+    },
+    "FAKE-A": {
+      "FAKE-BEAN": 2000,
+      "FAKE-MILK": 5000,
+      "FAKE-CUP": 100,
+      "FAKE-WATER": 20
+    },
+    "FAKE-B": {
+      "FAKE-BEAN": 0,
+      "FAKE-MILK": 0,
+      "FAKE-CUP": 0,
+      "FAKE-WATER": 0
+    }
+  },
+  "floor": {
+    "branch": "FAKE-A",
+    "tables": [
+      "FAKE-T01",
+      "FAKE-T02"
+    ],
+    "station": "FAKE-BAR",
+    "device": "FAKE-POS-A"
+  },
+  "customer": {
+    "name": "FAKE ลูกค้าทดสอบ",
+    "email": "restaurant-uat@example.invalid",
+    "startingPoints": 200,
+    "phoneInstruction": "Use only an isolated fixture phone; block SMS and external channel delivery."
+  },
+  "planning": {
+    "outputQty": 1,
+    "dailyFixedCost": 6200,
+    "dailyTargetProfit": 3100,
+    "expectedDailyUnits": 150,
+    "overhead": {
+      "quantity": 0,
+      "rate": 0,
+      "source": "FAKE explicit zero overhead for arithmetic-only scenario"
+    }
+  },
+  "loyalty": {
+    "enabled": true,
+    "earnMode": "SPEND",
+    "earnPointsPerBaht": 0.1,
+    "visitPoints": 1,
+    "earnMinSpend": 0,
+    "earnBase": "AFTER_DISCOUNT",
+    "redeemPointsPerUnit": 100,
+    "redeemBahtPerUnit": 10,
+    "redeemMinPoints": 100,
+    "maxDiscountPct": 100,
+    "pointsExpireMonths": 24
+  },
+  "integrated": {
+    "openingCash": 500,
+    "poMilkQty": 5000,
+    "transferWaterQty": 10,
+    "sale": [
+      {
+        "sku": "FAKE-LATTE",
+        "qty": 2
+      },
+      {
+        "sku": "FAKE-AMERICANO",
+        "qty": 1
+      },
+      {
+        "sku": "FAKE-WATER",
+        "qty": 2
+      }
+    ],
+    "cashTendered": 300,
+    "returnWaterQty": 1,
+    "wasteMilkQty": 100,
+    "countedCups": 96,
+    "cashExpense": 20
+  },
+  "taxScenario": {
+    "separateFixture": true,
+    "vatRegistered": true,
+    "vatMode": "INCLUSIVE",
+    "vatPercent": 7,
+    "oneLineTotal": 107,
+    "expectedTaxBase": 100,
+    "expectedVat": 7,
+    "emailDelivery": "Local mail sink only"
+  }
+}

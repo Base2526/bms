@@ -973,6 +973,7 @@ const th = {
     hybridBoundaryTitle: "ไม่ใช่ Local Server หรือ Full Offline",
     hybridBoundaryDescription: "ปัจจุบัน Desktop POS และ workflow ร้านอาหาร บอร์ดเกม ร้านขายยา สมาชิก ส่วนลดอนุมัติ การจ่ายแบบไม่ใช่เงินสด คืนสินค้า ปิดกะ และงานสต็อกยังต้องเชื่อมต่อ Cloud",
     retailLocalCta: "ดู Retail Local pilot",
+    restaurantGuideCta: "สำรวจ 11 Flow ร้านอาหารและคาเฟ่",
     hybridIncluded: "BMS Cloud และ Emergency Offline Mode เป็นความสามารถในผลิตภัณฑ์เดียวกัน ไม่ใช่แพ็กเกจแยก",
     workflowEyebrow: "INTERACTIVE INFOGRAPHIC",
     workflowTitle: "จากแชทแรก จนของถึงมือลูกค้า",

@@ -335,6 +335,9 @@ export default function HomePage() {
       </section>
 
       <BmsFlowDiagram variant="compact" />
+      <p style={{ textAlign: "center", margin: "24px 0" }}>
+        <Link href="/restaurant"><Button size="large">{t("landing.restaurantGuideCta")}</Button></Link>
+      </p>
 
       <section className={styles.resilienceSection} id="resilience">
         <div className={styles.sectionHeadingSimple}>
