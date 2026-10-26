@@ -2,7 +2,7 @@
 
 ## Release H — quality cases, lot holds and impact evidence
 
-Entry: `/admin/operations` → Quality & lots. Apply **10.97 after 10.90–10.96 before any
+Entry: `/admin/operations` → Quality & lots. Apply **10.98 after 10.91–10.97 before any
 web/cron/POS writer using this version**. Implementation readiness is not production approval.
 
 1. Open a branch case with owner, Bangkok due time, priority, facts and separately labelled
@@ -72,7 +72,7 @@ online-order test; committed stock behavior and database notices were verified i
 
 ## Release G — materials, replenishment and inspected receiving
 
-Entry: `/admin/operations` → Materials. Apply **10.96** after 10.87/10.88 and 10.90–10.95
+Entry: `/admin/operations` → Materials. Apply **10.97** after 10.87/10.88 and 10.91–10.96
 before this app: branch PO allocation, weekly reports and tenant cleanup also read G tables.
 This is implementation/test readiness, not production rollout or food-safety certification.
 
@@ -139,12 +139,12 @@ credit notes, quarantine/recall, certification or deployment. Store UAT using ac
 policy and receiving checklists remains required.
 
 
-Release F dependency: app versions including F also require `10.94`, which links every new waste
+Release F dependency: app versions including F also require `10.95`, which links every new waste
 record to its canonical movement for weekly cost evidence. Old NULL references stay unknown;
 no historical stock or value is rewritten. See [Release F](operation-improvement.md).
 
-Entry: `/admin/operations` → Preparation & production. Migration `10.93`, after operations
-`10.90`–`10.92` and existing recipe/lot/valuation schema. Implementation is not production approval.
+Entry: `/admin/operations` → Preparation & production. Migration `10.94`, after operations
+`10.91`–`10.93` and existing recipe/lot/valuation schema. Implementation is not production approval.
 No AI tool, external messaging or new realtime trigger is added.
 
 ## Operator workflow
@@ -241,7 +241,7 @@ Verified locally on 2026-10-24 (no commit, deployment or production migration):
   Browser transport/auth are mocked; this is not a live-account end-to-end test.
 - The existing restored test database initially lacked some baseline grants/migrations.
   Existing migration grants (8.4/9.70/10.12) and missing 10.87/10.88 were restored there
-  before regression testing, followed by operations migrations 10.90–10.93. No fresh
+  before regression testing, followed by operations migrations 10.91–10.94. No fresh
   production dump was taken and no live database was changed.
 
 Apply migrations before app/cron. Pilot a small recipe set at one branch: receive, produce, sell

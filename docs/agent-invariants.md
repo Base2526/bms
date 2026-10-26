@@ -1512,9 +1512,9 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   the migration was written for. Always confirm the target database's applied-migration state before
   deploying code that reads a new column unconditionally.
 
-## Operations checklists and food-safety evidence (`10.90`–`10.92`)
+## Operations checklists and food-safety evidence (`10.91`–`10.93`)
 
-- Release H (`10.97`): holds restrict lot availability, never physical/value/quarantine balances.
+- Release H (`10.98`): holds restrict lot availability, never physical/value/quarantine balances.
   Canonical checklist approval is not release; separate proposer/reviewer confirms exact frozen
   lot quantity, hold version and inspection identity/version. Disposal also requires stock.adjust
   and uses canonical wastage in the same audited transaction. New hold/held return needs a new
@@ -1525,7 +1525,7 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   Trace is bounded recorded evidence with explicit unknown/restricted history. Never deploy or
   roll back to a hold-unaware stock writer while active holds exist.
 
-- Release G (`10.96`): frozen E BOM demand, one branch/<=7 Bangkok dates, integer base units;
+- Release G (`10.97`): frozen E BOM demand, one branch/<=7 Bangkok dates, integer base units;
   deterministic once-only allocation is not a reservation. Usable stock and pending supply stay
   separate. Unknown receipt allocation or unreconciled lots never become "ready" by guessing.
 - Inspection approval never receives stock. Separate receipt checks current versions, PO quantity,
@@ -1536,14 +1536,14 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   Canonical tasks retain their lifecycle and My Work/review/escalation. Details:
   [production/material workflow](business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving).
 
-Release F (`10.94`–`10.95`): [standards and improvement](business/operation-improvement.md). ACK is self-only;
+Release F (`10.95`–`10.96`): [standards and improvement](business/operation-improvement.md). ACK is self-only;
 TRAINED and another trainer's PASS/PRACTICE assessment are distinct evidence. Immutable SOP versions pin independent ack/training
 bases; carry is explicit, never RBAC or shift gating. FAIL actions link uniquely to issues; followups
 reuse canonical runs/notices. Closure needs verified non-void sources and approved current-cycle
 rechecks. Weekly snapshots are immutable: exclude future/VOID denominator, label current evidence,
 keep recipe/unit cohorts, never guess missing waste cost or infer causal/ranking scores.
 
-Release E (`10.93`): physical production links canonical runs but never couples approval to stock.
+Release E (`10.94`): physical production links canonical runs but never couples approval to stock.
 Pin BOM/SOP/unit evidence; separate DIRECT output from virtual recipe SKU. Lock run → batch → sorted
 catalog/stock; post input/output movements, lots, weighted value, audit and replay together. Output
 value comes only from same-transaction persisted input value entries; unknown stays unknown. Use

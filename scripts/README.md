@@ -5,7 +5,7 @@
 - `node scripts/run-contract-tests.mjs pure operation-material`: integer/window/source validation
   and deterministic stock allocation. The full `npm run gate` also checks i18n/schema/adapters/build.
 - DB filter `operation-material`: restored disposable `127.0.0.1:5433/bms_realtime_test` only;
-  requires current base schema plus operations 10.90–10.95, applies 10.96 twice. Covers frozen demand,
+  requires current base schema plus operations 10.91–10.96, applies 10.97 twice. Covers frozen demand,
   partial/final/rejected receipt, explicit separate review, movement/lot/value atomic rollback,
   concurrent receiving/replay, stale stock/run/unit, external-receipt unknowns, PO allocation conflict,
   branch requests, RBAC/branch/tenant/RLS, scoped cron dedupe and full test-tenant purge. Boundary
@@ -50,7 +50,7 @@ Recheck DB runs: F **18/18**, E **28/28**, A–D **32/32**, actual-cost **20/20*
 **3,072 pure tests / 6 skipped / 0 failed**, and production build. Logs are
 `.test-output/release-f-recheck-gate.log` and `release-f-recheck-<suite>.log`; the deliberately red
 pre-fix regression run is `release-f-recheck-before.log`. No new migration is required by these
-corrections; F still requires 10.94/10.95.
+corrections; F still requires 10.95/10.96.
 F/E and A–D regression browser rechecks passed on the new production build in en/th at 1280px and 390px, including the
 100-row reassessment regression and server-side FOLLOWUP selector assertion. Browser logs use
 `release-f-recheck-<suite>-browser.log`. The schema-readiness recheck again reports only the existing
@@ -59,7 +59,7 @@ unrelated 10.89 gap (`release-f-recheck-readiness.log`); all operations requirem
 - Pure filter `operation-improvement`: seven-day calendar bounds and exact decimal waste totals,
   including unknown costs and separate acknowledgement/assessment permissions.
 - DB filter `operation-improvement`: restored disposable `127.0.0.1:5433/bms_realtime_test` only;
-  A–E prerequisites first, applies 10.94/10.95. Covers immutable SOP versions, ACK/TRAINED/assessment
+  A–E prerequisites first, applies 10.95/10.96. Covers immutable SOP versions, ACK/TRAINED/assessment
   separation, carry/reset bases, self/branch/tenant isolation, concurrent publication, replay,
   atomic audit rollback, unique FAIL linkage, canonical followup/assignment notice, assignee brief,
   separate review, closure/reopen cycles, report cohorts, immutable/changed weekly evidence and
@@ -75,7 +75,7 @@ unrelated 10.89 gap (`release-f-recheck-readiness.log`); all operations requirem
 - Existing A–D browser fixture now answers the optional readiness/run-brief queries; no SOP fixture
   is explicitly unknown readiness. Existing E fixture answers a null improvement brief.
 - New constraint readiness support checks validated `pg_constraint` definitions, not table presence
-  alone. `10.95` is mandatory for TRAINED. Generated SQL and CLI use the same requirement catalog.
+  alone. `10.96` is mandatory for TRAINED. Generated SQL and CLI use the same requirement catalog.
 
 2026-10-24 DB verification: F **15/15**, E **28/28**, A–D **32/32**, restaurant actual-cost **20/20**,
 stock-ledger **8/8** passed. F/E/cost/ledger used restored :5433; A–D used isolated :5549. A broad
@@ -93,7 +93,7 @@ in the same directory. These browser fixtures mock transport/auth;
 they do not replace a real-account pilot.
 
 Global readiness on the restored test instance still reports **10.89 board-game occupancy tables
-missing** (pre-existing/outside F). Operations 10.90–10.95 all pass their schema checks. This is not
+missing** (pre-existing/outside F). Operations 10.91–10.96 all pass their schema checks. This is not
 a claim that the entire restored database is rollout-ready; the unrelated migration was not applied.
 No commit, push or deployment is implied by these results. Real-account role/branch/cron pilot is
 still required before production use.
@@ -1315,7 +1315,7 @@ isolated port-5433 database; it must not run against the primary development dat
 - `node scripts/run-contract-tests.mjs pure operation-team`: duty time/key validation, canonical snapshot fingerprint and distinct permissions.
 - `node scripts/run-contract-tests.mjs db operation-checklists`: requires disposable local
   `bms_operations_test` and explicit POSTGRES settings; applies synthetic dependencies and
-  migrations `10.90`, `10.91` and `10.92` twice. Exercises RLS, branch/RBAC, reviewer separation, immutable snapshots,
+  migrations `10.91`, `10.92` and `10.93` twice. Exercises RLS, branch/RBAC, reviewer separation, immutable snapshots,
   idempotency/concurrency, audit rollback, schedules and private decoded image evidence. Release C
   additionally checks actor inboxes, opt-in thresholds, recipient revocation, deduplication, acknowledgment,
   rerouting, transaction rollback on notice failure and Bangkok-date/distinct-run reporting.
@@ -1334,7 +1334,7 @@ isolated port-5433 database; it must not run against the primary development dat
 ## Release H verification
 
 `operation-quality-db-contract.test.mts` uses only isolated `127.0.0.1:5433/bms_realtime_test`
-with fake tenants; reapplies 10.97, checks holds/POS/online returns, review identity, disposal,
+with fake tenants; reapplies 10.98, checks holds/POS/online returns, review identity, disposal,
 audit rollback, replay/RBAC/RLS, notifications and recorded trace. Do not run migration-reapplication
 suites concurrently on the same database: they acquire schema locks.
 Recheck regressions cover post-approval/active-task edits, inactive-variant disposal, catalog-drift

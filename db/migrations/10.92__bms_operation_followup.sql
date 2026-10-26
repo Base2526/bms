@@ -1,4 +1,4 @@
--- Release C. Apply after 10.90; no stock, money or realtime triggers.
+-- Release C. Apply after 10.91; no stock, money or realtime triggers.
 BEGIN;
 ALTER TABLE bms_operation_runs ADD COLUMN IF NOT EXISTS followup_at timestamptz NOT NULL DEFAULT '-infinity';
 GRANT UPDATE(followup_at) ON bms_operation_runs TO bms_app;

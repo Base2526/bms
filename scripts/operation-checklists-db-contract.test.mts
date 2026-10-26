@@ -210,7 +210,7 @@ test.before(async () => {
   );
   const sql = readFileSync(
     new URL(
-      "../db/migrations/10.90__bms_operation_checklists.sql",
+      "../db/migrations/10.91__bms_operation_checklists.sql",
       import.meta.url,
     ),
     "utf8",
@@ -219,7 +219,7 @@ test.before(async () => {
   await query(sql); // Proves rerun, grants and policy recreation.
   const followupSql = readFileSync(
     new URL(
-      "../db/migrations/10.91__bms_operation_followup.sql",
+      "../db/migrations/10.92__bms_operation_followup.sql",
       import.meta.url,
     ),
     "utf8",
@@ -227,7 +227,7 @@ test.before(async () => {
   await query(followupSql);
   await query(followupSql);
   const teamSql = readFileSync(
-    new URL("../db/migrations/10.92__bms_operation_team.sql", import.meta.url),
+    new URL("../db/migrations/10.93__bms_operation_team.sql", import.meta.url),
     "utf8",
   );
   await query(teamSql);

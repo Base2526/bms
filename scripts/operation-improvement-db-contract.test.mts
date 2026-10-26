@@ -28,7 +28,7 @@ import {
 } from "./testing/restaurantCostingFixture.mts";
 const migration = readFileSync(
   new URL(
-    "../db/migrations/10.94__bms_operation_improvement.sql",
+    "../db/migrations/10.95__bms_operation_improvement.sql",
     import.meta.url,
   ),
   "utf8",
@@ -39,7 +39,7 @@ test.before(async () => {
   await query(
     readFileSync(
       new URL(
-        "../db/migrations/10.95__bms_operation_training_evidence.sql",
+        "../db/migrations/10.96__bms_operation_training_evidence.sql",
         import.meta.url,
       ),
       "utf8",
@@ -61,7 +61,7 @@ test("readiness detects an old training constraint, not just the existing learni
     assert.equal(
       (
         await c.query(
-          `SELECT ok FROM bms_schema_readiness WHERE migration='10.95__bms_operation_training_evidence.sql'`,
+          `SELECT ok FROM bms_schema_readiness WHERE migration='10.96__bms_operation_training_evidence.sql'`,
         )
       ).rows[0].ok,
       false,
@@ -77,7 +77,7 @@ test("readiness detects an old training constraint, not just the existing learni
     assert.equal(
       (
         await good.query(
-          `SELECT ok FROM bms_schema_readiness WHERE migration='10.95__bms_operation_training_evidence.sql'`,
+          `SELECT ok FROM bms_schema_readiness WHERE migration='10.96__bms_operation_training_evidence.sql'`,
         )
       ).rows[0].ok,
       true,
@@ -122,7 +122,7 @@ test("source catalog is branch scoped and training evidence cannot be self-certi
     await query(
       readFileSync(
         new URL(
-          "../db/migrations/10.95__bms_operation_training_evidence.sql",
+          "../db/migrations/10.96__bms_operation_training_evidence.sql",
           import.meta.url,
         ),
         "utf8",

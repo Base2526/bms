@@ -70,7 +70,7 @@ test("quality SQL fragments are static scoped identifiers, never caller SQL", ()
 test("quality schema preserves append-only evidence and independent restrictions", () => {
   const sql = readFileSync(
     new URL(
-      "../db/migrations/10.97__bms_operation_quality.sql",
+      "../db/migrations/10.98__bms_operation_quality.sql",
       import.meta.url,
     ),
     "utf8",

@@ -24,22 +24,22 @@ export type Migration = {
 // ครอบเฉพาะไฟล์ที่ "โค้ดปัจจุบันอ้างถึงแบบไม่มีเงื่อนไข" — ของเก่ากว่านี้ถ้าขาด ระบบจะพัง
 // ตั้งแต่หน้าแรกจนเห็นเองอยู่แล้ว
 export const MIGRATIONS: Migration[] = [
-  {file:'10.97__bms_operation_quality.sql',impact:'Quality cases and mandatory lot restrictions require H before any stock writer deploys',needs:[...['bms_operation_quality_cases','bms_operation_lot_holds','bms_operation_quality_decisions','bms_operation_quality_events'].map(name=>({kind:'table' as const,name})),{kind:'constraint',table:'bms_operation_team_notices',name:'bms_operation_team_notices_entity_kind_check',contains:'QUALITY'}]},
-  {file:'10.96__bms_operation_materials.sql',impact:'Material planning, replenishment allocation, inspected receipt evidence and weekly reports require Release G schema',needs:[...['bms_operation_material_plans','bms_operation_material_sources','bms_operation_material_links','bms_operation_material_inspections','bms_purchase_receipt_evidence','bms_operation_material_events'].map(name=>({kind:'table' as const,name}))]},
-  {file:'10.95__bms_operation_training_evidence.sql',impact:'Recording practical training fails unless the learning check constraint accepts TRAINED separately from assessment',needs:[{kind:'constraint',table:'bms_operation_learning',name:'bms_operation_learning_kind_check',contains:'TRAINED'}]},
-  {file:"10.94__bms_operation_improvement.sql",impact:"SOP learning, recurring issues, weekly snapshots and exact waste value references require Release F schema",needs:[
+  {file:'10.98__bms_operation_quality.sql',impact:'Quality cases and mandatory lot restrictions require H before any stock writer deploys',needs:[...['bms_operation_quality_cases','bms_operation_lot_holds','bms_operation_quality_decisions','bms_operation_quality_events'].map(name=>({kind:'table' as const,name})),{kind:'constraint',table:'bms_operation_team_notices',name:'bms_operation_team_notices_entity_kind_check',contains:'QUALITY'}]},
+  {file:'10.97__bms_operation_materials.sql',impact:'Material planning, replenishment allocation, inspected receipt evidence and weekly reports require Release G schema',needs:[...['bms_operation_material_plans','bms_operation_material_sources','bms_operation_material_links','bms_operation_material_inspections','bms_purchase_receipt_evidence','bms_operation_material_events'].map(name=>({kind:'table' as const,name}))]},
+  {file:'10.96__bms_operation_training_evidence.sql',impact:'Recording practical training fails unless the learning check constraint accepts TRAINED separately from assessment',needs:[{kind:'constraint',table:'bms_operation_learning',name:'bms_operation_learning_kind_check',contains:'TRAINED'}]},
+  {file:"10.95__bms_operation_improvement.sql",impact:"SOP learning, recurring issues, weekly snapshots and exact waste value references require Release F schema",needs:[
     ...["bms_operation_standards","bms_operation_learning","bms_operation_issues","bms_operation_issue_sources","bms_operation_weekly_reviews","bms_operation_improvements","bms_operation_improvement_events"].map(name=>({kind:"table" as const,name})),
     {kind:"column",table:"bms_operation_production_waste",name:"movement_id"},
   ]},
-  {file:"10.93__bms_operation_production.sql",impact:"Preparation plans, physical production, source lots and value transfer require Release E schema",needs:[
+  {file:"10.94__bms_operation_production.sql",impact:"Preparation plans, physical production, source lots and value transfer require Release E schema",needs:[
     ...["bms_operation_production","bms_operation_production_inputs","bms_operation_production_events","bms_operation_production_waste"].map(name=>({kind:"table" as const,name})),
   ]},
-  {file:"10.92__bms_operation_team.sql",impact:"Team roster, duty assignment, handovers, manager confirmation and operations bell require Release D schema",needs:[
+  {file:"10.93__bms_operation_team.sql",impact:"Team roster, duty assignment, handovers, manager confirmation and operations bell require Release D schema",needs:[
     ...["bms_operation_rosters","bms_operation_handovers","bms_operation_team_events","bms_operation_team_notices","bms_operation_daily_reviews"].map(name=>({kind:"table" as const,name})),
     {kind:"column",table:"bms_operation_schedules",name:"assignment_mode"},{kind:"column",table:"bms_operation_schedules",name:"duty_key"},{kind:"column",table:"bms_operation_runs",name:"assignment_evidence"},{kind:"column",table:"bms_operation_policies",name:"use_duty_supervisor"},{kind:"column",table:"bms_operation_policies",name:"supervisor_duty_key"}
   ]},
   {
-    file: "10.91__bms_operation_followup.sql",
+    file: "10.92__bms_operation_followup.sql",
     impact: "Checklist personal queues, notifications, escalation and inspection reports require follow-up schema",
     needs: [
       { kind: "table", name: "bms_operation_policies" },
@@ -49,7 +49,7 @@ export const MIGRATIONS: Migration[] = [
     ],
   },
   {
-    file: "10.90__bms_operation_checklists.sql",
+    file: "10.91__bms_operation_checklists.sql",
     impact: "Operations checklists, safety evidence and scheduled runs require all nine tenant-scoped tables",
     needs: [
       { kind: "table", name: "bms_operation_templates" },

@@ -281,13 +281,13 @@ test.before(async () => {
   await query(
     readFileSync(
       new URL(
-        "../db/migrations/10.93__bms_operation_production.sql",
+        "../db/migrations/10.94__bms_operation_production.sql",
         import.meta.url,
       ),
       "utf8",
     ),
   );
-  await query(readFileSync(new URL('../db/migrations/10.94__bms_operation_improvement.sql',import.meta.url),'utf8'));
+  await query(readFileSync(new URL('../db/migrations/10.95__bms_operation_improvement.sql',import.meta.url),'utf8'));
 });
 test("production ledger treats conversion as physical in/out, not unrecorded opening or expense", async () =>
   fixture(async (f) => {
@@ -537,7 +537,7 @@ test("production schema reapplication preserves RLS, grants and movement kinds",
   await assertCostingTestDatabase();
   const sql = readFileSync(
     new URL(
-      "../db/migrations/10.93__bms_operation_production.sql",
+      "../db/migrations/10.94__bms_operation_production.sql",
       import.meta.url,
     ),
     "utf8",

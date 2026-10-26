@@ -65,7 +65,7 @@ test.before(async () => {
   await assertCostingTestDatabase();
   const sql = readFileSync(
     new URL(
-      "../db/migrations/10.97__bms_operation_quality.sql",
+      "../db/migrations/10.98__bms_operation_quality.sql",
       import.meta.url,
     ),
     "utf8",

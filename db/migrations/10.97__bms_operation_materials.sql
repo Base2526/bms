@@ -73,4 +73,4 @@ INSERT INTO bms_role_permissions(tenant_id,role_id,permission)
 SELECT t.id,r.id,p.permission FROM bms_tenants t CROSS JOIN roles r CROSS JOIN (VALUES('operations.material.view'),('operations.material.manage'),('operations.material.review')) p(permission) WHERE r.name='Manager' ON CONFLICT DO NOTHING;
 COMMIT;
 -- ROLLBACK: disable material commands before app rollback; preserve plans, receipts and movements.
--- Requires 10.87/10.88 and 10.90-10.95. Historical receipts are not reconstructed.
+-- Requires 10.87/10.88 and 10.91-10.96. Historical receipts are not reconstructed.

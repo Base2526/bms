@@ -1,6 +1,6 @@
 # Database
 
-## Operations quality and lot holds (`10.97`)
+## Operations quality and lot holds (`10.98`)
 
 Four FORCE-RLS tables with strict missing-GUC denial, composite tenant FKs, bms_app SELECT/INSERT
 and narrow UPDATE grants (no DELETE): `bms_operation_quality_cases` (OPEN/INVESTIGATING/REVIEW/
@@ -18,7 +18,7 @@ records exact lot allocations and full returns restore them, without historical 
 Apply before all new stock writers/readiness/report code. No new realtime trigger. Rollback cannot
 run a hold-unaware writer with active holds. See [H workflow](../business/operation-production.md#release-h--quality-cases-lot-holds-and-impact-evidence).
 
-## Operations materials and receipt evidence (`10.96`)
+## Operations materials and receipt evidence (`10.97`)
 
 Six FORCE-RLS tenant tables with strict missing-GUC denial and bms_app grants:
 `bms_operation_material_plans` (DRAFT/CONFIRMED/CLOSED/CANCELLED, version, branch, <=7 dates,
@@ -32,7 +32,7 @@ Composite tenant FKs protect source/run/PO-item/request links; only narrow decis
 updateable. App role cannot delete evidence. Authorized whole-tenant purge unwinds G then A–F;
 ordinary PO/task deletion cannot erase receiving provenance.
 
-Dependencies: 10.87/10.88, 10.90–10.95, existing purchase/lot/valuation schema. Apply before app,
+Dependencies: 10.87/10.88, 10.91–10.96, existing purchase/lot/valuation schema. Apply before app,
 including branch PO allocation and weekly reporting. No new realtime trigger; purchase receipt
 retains existing transactional events. `receivePurchaseOrderInTx` never commits: composing callers
 must roll back non-success. Existing public wrapper retains POS idempotency and post-commit restock.
@@ -40,9 +40,9 @@ No historical receipt backfill. Rollback disables G entry points but retains tab
 See [workflow and limits](../business/operation-production.md#release-g--materials-replenishment-and-inspected-receiving).
 
 
-## Operations standards and improvement (`10.94`)
+## Operations standards and improvement (`10.95`)
 
-`10.95` additionally allows immutable TRAINED learning evidence, distinct from ACK/PASS/PRACTICE.
+`10.96` additionally allows immutable TRAINED learning evidence, distinct from ACK/PASS/PRACTICE.
 Apply both before F. Rollback retains the wider constraint and all evidence.
 Schema readiness checks the validated constraint definition for TRAINED, not only table existence.
 
@@ -61,10 +61,10 @@ retain their original shape without backfilling guessed evidence. Detail learnin
 only to its acknowledgement basis and TRAINED/PASS/PRACTICE only to their training basis.
 
 Nullable `bms_operation_production_waste.movement_id` binds new waste to its exact canonical movement
-in the same stock transaction. Historical NULL stays unknown. Depends on 10.90–10.93 and 10.67;
+in the same stock transaction. Historical NULL stays unknown. Depends on 10.91–10.94 and 10.67;
 no new stock action/realtime trigger. [Workflow/rollback](../business/operation-improvement.md).
 
-## Operations production (`10.93`)
+## Operations production (`10.94`)
 
 `bms_operation_production`: one branch, canonical run and pinned recipe/output/BOM/SOP snapshot;
 DRAFT → READY → POSTED, or CANCELLED before posting, optimistic version and dated output lot.
@@ -72,12 +72,12 @@ DRAFT → READY → POSTED, or CANCELLED before posting, optimistic version and 
 movement IDs. `bms_operation_production_events`: append-only actor/reason history.
 `bms_operation_production_waste`: append-only link to existing wastage, exact output lot and optional
 same-run corrective action. All four tenant tables use FORCE RLS, strict missing-GUC denial and
-bms_app grants; only batch state fields are mutable. Dependencies: 10.90–10.92, existing recipe/lot
+bms_app grants; only batch state fields are mutable. Dependencies: 10.91–10.93, existing recipe/lot
 and 10.67 valuation tables. New movement kinds PRODUCTION_OUT/PRODUCTION_IN transfer material value
 without counting conversion as expense. No new realtime triggers; inventory's existing triggers fire.
 Read details and rollback in [production workflow](../business/operation-production.md).
 
-## Operations checklists / food-safety evidence (`10.90`–`10.92`)
+## Operations checklists / food-safety evidence (`10.91`–`10.93`)
 
 Nine new tenant-owned tables: `bms_operation_templates` (immutable family/version content,
 one ACTIVE version), `bms_operation_runs` (branch/station snapshot and optimistic state),
@@ -128,7 +128,7 @@ Tenant-wide publish advisory lock serializes cross-branch same-person overlap ch
 locks precede action locks; handover receipt does not acquire or mutate task ownership. Explicit
 transfer invokes the canonical service in the handover transaction with the original due time.
 Daily confirmation uses a serializable snapshot, source fingerprint and prior version. D command
-fingerprints are namespaced in the existing actor/key ledger. Apply 10.92 before serving this app;
+fingerprints are namespaced in the existing actor/key ledger. Apply 10.93 before serving this app;
 no migration probe bypasses missing columns on the existing checklist path.
 
 ## Branch requisition planning (`10.87`)
@@ -1167,7 +1167,7 @@ classified in the realtime coverage contract; it has no new websocket event or k
 
 The save service expands child **output base units** into a compiled `bms_product_recipe_items` leaf
 BOM using exact integer arithmetic. No batch production or prepared-product inventory is created.
-Stocked preparation is a separate explicit workflow in `10.93`; see
+Stocked preparation is a separate explicit workflow in `10.94`; see
 [Release E](../business/operation-production.md). Recipe saves alone still never move stock.
 All existing stock, availability and catalog-cost readers continue reading that BOM unchanged.
 References keep explicit ids/versions even after deactivation. Parent recipes never auto-upgrade.

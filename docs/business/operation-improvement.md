@@ -1,9 +1,9 @@
 # Release F — SOP learning, recurring issues and weekly improvement
 
 Implementation on `codex/restaurant-operations-release-ab`; not production rollout or food-safety
-certification. `/admin/operations` → Standards & improvement. Requires A–E and **10.94** after
-10.90–10.93, then **10.95** for distinct TRAINED evidence, before the new app (E waste now writes
-an exact movement reference too). 10.95 widens the learning-kind constraint; never collapse training
+certification. `/admin/operations` → Standards & improvement. Requires A–E and **10.95** after
+10.91–10.94, then **10.96** for distinct TRAINED evidence, before the new app (E waste now writes
+an exact movement reference too). 10.96 widens the learning-kind constraint; never collapse training
 completion into a passing assessment. Readiness requires ACK + TRAINED + PASS when training is required.
 
 ## SOP and learning

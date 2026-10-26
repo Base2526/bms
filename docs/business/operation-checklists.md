@@ -4,8 +4,8 @@ Release E adds [preparation plans and physical production](operation-production.
 runs. Checklist approval/receipt never posts stock; production needs separate explicit confirmation.
 
 Implementation branch: `codex/restaurant-operations-release-ab` (24 October 2026).
-Entry point: `/admin/operations`. Requires migrations `10.90__bms_operation_checklists.sql`
-and `10.91__bms_operation_followup.sql`; Release D also requires `10.92__bms_operation_team.sql` before deploying the app.
+Entry point: `/admin/operations`. Requires migrations `10.91__bms_operation_checklists.sql`
+and `10.92__bms_operation_followup.sql`; Release D also requires `10.93__bms_operation_team.sql` before deploying the app.
 This document describes implementation scope, not evidence of production rollout.
 
 ## Release D: ตารางกะ → งานตามหน้าที่ → ส่งมอบ → ผู้จัดการ
@@ -74,7 +74,7 @@ State, event, audit and transactional notice commit together. No realtime trigge
 
 ### Release D rollout checklist
 
-1. Back up and apply 10.90 → 10.91 → 10.92 on the target environment; check schema readiness
+1. Back up and apply 10.91 → 10.92 → 10.93 on the target environment; check schema readiness
    before deploying this build. These columns are read by existing checklist flows too.
 2. Verify role/branch assignments, fallback supervisor, scheduler ownership and cron secret.
 3. Pilot one real branch: publish two adjacent duties, execute a duty-based checklist, hand over
@@ -124,7 +124,7 @@ Canonical write ใช้ parent-run lock เดียวกันและ sync
 ไม่มีการแจ้งเตือนซ้ำทุก 15 นาทีสำหรับ occurrence เดิม; acknowledged ไม่สร้างเรื่องใหม่.
 จำนวน processed ของ cron หมายถึง run ที่ตรวจ ไม่ใช่จำนวน notification ที่ส่ง.
 
-Release C ต้อง apply 10.91 หลัง 10.90 ก่อน deploy. Rollback: พัก cron และปิดการเข้าถึง
+Release C ต้อง apply 10.92 หลัง 10.91 ก่อน deploy. Rollback: พัก cron และปิดการเข้าถึง
 ก่อนคืน app; เก็บตาราง/history ไว้. ไม่ deploy/apply production อัตโนมัติจากการ implement.
 
 ## ขอบเขต A + B ที่เพิ่ม
@@ -224,7 +224,7 @@ Templates/schedules/actions จำกัด 100 รายการต่อก�
 ## Rollout / rollback
 
 1. สำรองฐานเป้าหมายและตรวจ migration/grants เดิม (users/roles/files/locations/stations/audit).
-2. Apply `10.90` แล้ว `10.91` ด้วยผู้มีสิทธิ์ schema/GRANT ก่อน deploy application.
+2. Apply `10.91` แล้ว `10.92` ด้วยผู้มีสิทธิ์ schema/GRANT ก่อน deploy application.
    ตรวจ schema readiness; test suite ใช้ฐานจำลอง ไม่ได้พิสูจน์ production migration.
 3. Deploy application + scheduler registry คู่กัน, ตรวจ storage และ cron secret,
    เปิด `/admin/operations` ด้วย Manager และผู้ทำงานจริง.
@@ -260,7 +260,7 @@ Build มี Browserslist/Node deprecation warnings; ไม่ได้อัป
 
 - `npm run gate` exit 0: typecheck, DB-free tests (3,071 ผ่าน / 6 ข้าม / 0 ล้มเหลว)
   และ Next production build ผ่าน. มี Node/Browserslist deprecation warnings เดิม.
-- Disposable PostgreSQL 16 localhost:5549: 23/23 tests ผ่าน รวม apply 10.90/10.91 ซ้ำ,
+- Disposable PostgreSQL 16 localhost:5549: 23/23 tests ผ่าน รวม apply 10.91/10.92 ซ้ำ,
   RLS ของตาราง C, actor/branch/RBAC, notices dedup/concurrent sweeps, revoked recipient,
   manual escalation/ack/reroute, rollback เมื่อ insert notice ล้มเหลว, report timezone/
   distinct-run historical FAIL และ GraphQL adapter ที่ derive tenant จาก session.
@@ -279,7 +279,7 @@ Build มี Browserslist/Node deprecation warnings; ไม่ได้อัป
   reported per run, not used as a claim of complete production acceptance. Existing Node/Browserslist
   deprecation warnings remain. `git diff --check` passed.
 - Disposable PostgreSQL 16 localhost:5549: **32/32 tests passed**, including A–C regressions and
-  idempotent application of 10.92, concurrent cross-branch overlap, duty acceptance/occurrence
+  idempotent application of 10.93, concurrent cross-branch overlap, duty acceptance/occurrence
   resolution, ambiguity/revoked permission, immutable handover/explicit transfer with original due,
   recipient reroute, notification dedup, daily confirmation/change detection, audit rollback,
   fail-closed RLS/history grants and real typed GraphQL reads/commands/denials.
