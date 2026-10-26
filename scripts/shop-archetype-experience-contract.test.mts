@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import * as XLSX from "../apps/web/node_modules/xlsx/xlsx.mjs";
 
 import { SHOP_ARCHETYPE_OPTIONS } from "../apps/web/lib/bms/shopArchetypes.ts";
 import {
@@ -20,6 +21,16 @@ import {
   shopExperienceForArchetype,
 } from "../apps/web/lib/bms/shopExperience.ts";
 import { resolveStoreCapabilityState } from "../apps/web/lib/bms/storeCapabilities.ts";
+import {
+  PRODUCT_IMPORT_TEMPLATE_COLUMNS,
+  PRODUCT_IMPORT_TEMPLATE_HEADERS,
+  parseProductImportWorksheet,
+  productImportExampleToInput,
+  selectProductImportSheetName,
+} from "../apps/web/lib/bms/productImportTemplate.ts";
+import { buildProductImportWorkbook, parseProductImportWorkbook } from "../apps/web/lib/bms/productImportWorkbook.ts";
+import { checkBarcode } from "../apps/web/lib/bms/barcode.ts";
+import { PRODUCT_STOCK_POLICIES } from "../apps/web/lib/bms/productStockPolicyOptions.ts";
 import {
   validateProductConfigurationFields,
   validateProductFields,
@@ -42,7 +53,7 @@ test("all shop archetypes have an explicit experience profile", () => {
     const profile = shopExperienceForArchetype(archetype);
     assert.equal(profile.archetype, archetype);
     assert.ok(profile.recommendedTemplates.length > 0, `${archetype} has no recommended product template`);
-    assert.equal(profile.importExample.length, 14, `${archetype} import example does not match the template columns`);
+    assert.ok(profile.importExamples.length > 0, `${archetype} has no import examples`);
     assert.ok((en as any).shop_archetypes[profile.descriptionKey.split(".").at(-1)!]);
     assert.ok((th as any).shop_archetypes[profile.descriptionKey.split(".").at(-1)!]);
 
@@ -53,35 +64,197 @@ test("all shop archetypes have an explicit experience profile", () => {
     assert.equal(new Set(profile.recommendedTemplates).size, profile.recommendedTemplates.length);
     assert.equal(new Set(profile.recommendedCapabilities).size, profile.recommendedCapabilities.length);
 
-    const importTemplate = profile.importExample[9];
-    const importPolicy = profile.importExample[10];
-    const importSurfaces = profile.importExample[13].split("|").filter(Boolean);
-    assert.ok(profile.recommendedTemplates.includes(importTemplate as any), `${archetype} import example is not recommended`);
-    assert.equal(productTemplateDefaults(importTemplate).stockPolicy, importPolicy, `${archetype} import policy drifts from its template`);
-    assert.ok(importSurfaces.every((surface) => PRODUCT_SALES_SURFACES.includes(surface as any)));
-
-    const exampleInput = {
-      sku: profile.importExample[0],
-      barcode: profile.importExample[1] || null,
-      name: profile.importExample[2],
-      description: profile.importExample[3] || null,
-      price: profile.importExample[4],
-      cost_price: profile.importExample[5] || null,
-      category: profile.importExample[6] || null,
-      brand: profile.importExample[7] || null,
-      keywords: profile.importExample[8].split("|").filter(Boolean),
-      creation_template: importTemplate,
-      stock_policy: importPolicy,
-      base_unit: profile.importExample[11],
-      variant_codes: profile.importExample[12].split("|").filter(Boolean),
-      sales_surfaces: importSurfaces,
-    };
-    assert.doesNotThrow(() => validateProductFields(exampleInput), `${archetype} import example has invalid product fields`);
-    assert.doesNotThrow(
-      () => validateProductConfigurationFields(exampleInput),
-      `${archetype} import example has invalid product configuration`
-    );
+    const exampleSkus = new Set<string>();
+    for (const example of profile.importExamples) {
+      assert.equal(example.length, PRODUCT_IMPORT_TEMPLATE_COLUMNS.length,
+        `${archetype} import example does not match the template columns`);
+      const exampleInput = productImportExampleToInput(example);
+      if (exampleInput.barcode) assert.equal(checkBarcode(exampleInput.barcode).kind, "VALID");
+      const importTemplate = exampleInput.creation_template!;
+      const importPolicy = exampleInput.stock_policy!;
+      const importSurfaces = exampleInput.sales_surfaces ?? [];
+      assert.ok(profile.recommendedTemplates.includes(importTemplate as any), `${archetype} import example is not recommended`);
+      assert.ok(PRODUCT_STOCK_POLICIES.includes(importPolicy as any), `${archetype} import policy is unknown`);
+      assert.ok(importSurfaces.every((surface) => PRODUCT_SALES_SURFACES.includes(surface as any)));
+      assert.ok(!exampleSkus.has(exampleInput.sku), `${archetype} repeats SKU ${exampleInput.sku}`);
+      exampleSkus.add(exampleInput.sku);
+      assert.doesNotThrow(() => validateProductFields(exampleInput), `${archetype} import example has invalid product fields`);
+      assert.doesNotThrow(
+        () => validateProductConfigurationFields(exampleInput),
+        `${archetype} import example has invalid product configuration`
+      );
+    }
   }
+});
+
+test("import examples model the archetype-specific product structure", () => {
+  const inputs = (archetype: string) => shopExperienceForArchetype(archetype).importExamples.map(productImportExampleToInput);
+  const input = (archetype: string) => inputs(archetype)[0]!;
+
+  assert.deepEqual(input("home_kitchen").variant_codes, ["24CM", "28CM"]);
+  assert.deepEqual(input("beauty_personal_care").variant_codes, ["15ML", "30ML"]);
+  assert.deepEqual(input("b2b_wholesale").variant_codes, ["70GSM", "80GSM"]);
+  assert.equal(input("b2b_wholesale").base_unit, "REAM");
+  assert.equal(input("gifts_seasonal").stock_policy, "BUNDLE");
+  assert.deepEqual(input("pet_supply").variant_codes, ["1KG", "3KG"]);
+  assert.equal(input("building_materials").base_unit, "BAG");
+  assert.deepEqual(input("board_game_cafe").variant_codes, ["STANDARD", "JAPANESE"]);
+
+  const restaurantRows = inputs("restaurant");
+  const restaurant = restaurantRows.find((row) => row.creation_template === "PREPARED_MENU")!;
+  assert.equal(restaurant.creation_template, "PREPARED_MENU");
+  assert.equal(restaurant.stock_policy, "RECIPE");
+  assert.deepEqual(restaurant.sales_surfaces, ["RESTAURANT_POS", "CUSTOMER_AI", "ONLINE_ORDER"]);
+  assert.deepEqual(
+    restaurantRows.map((row) => row.creation_template).sort(),
+    ["INGREDIENT", "PREPARED_MENU", "QUICK_MENU", "READY_GOOD"]
+  );
+
+  const examples = ARCHETYPES.map((archetype) => JSON.stringify(shopExperienceForArchetype(archetype).importExamples));
+  assert.equal(new Set(examples).size, ARCHETYPES.length,
+    "each shop archetype must download a distinct set of example rows");
+});
+
+test("downloaded examples cover every supported import mode and column", () => {
+  const examples = ARCHETYPES.flatMap((archetype) => shopExperienceForArchetype(archetype).importExamples);
+  const inputs = examples.map(productImportExampleToInput);
+
+  assert.deepEqual(
+    Array.from(new Set(inputs.map((input) => input.creation_template))).sort(),
+    [...PRODUCT_CREATION_TEMPLATES].sort(),
+    "the example set must cover every product creation template"
+  );
+  assert.deepEqual(
+    Array.from(new Set(inputs.map((input) => input.stock_policy))).sort(),
+    [...PRODUCT_STOCK_POLICIES].sort(),
+    "the example set must cover every stock policy"
+  );
+  assert.deepEqual(
+    Array.from(new Set(inputs.flatMap((input) => input.sales_surfaces ?? []))).sort(),
+    [...PRODUCT_SALES_SURFACES].sort(),
+    "the example set must cover every sales surface"
+  );
+  for (const [index, column] of PRODUCT_IMPORT_TEMPLATE_COLUMNS.entries()) {
+    assert.ok(examples.some((example) => String(example[index] ?? "").trim()),
+      `column ${column.header} has no populated example`);
+  }
+});
+
+test("the downloaded workbook schema has unique headers and complete required fields", () => {
+  const normalizedHeaders = PRODUCT_IMPORT_TEMPLATE_COLUMNS.map(({ header }) => header.trim().toLowerCase());
+  assert.equal(new Set(normalizedHeaders).size, normalizedHeaders.length);
+  assert.deepEqual(
+    PRODUCT_IMPORT_TEMPLATE_COLUMNS.filter(({ required }) => required).map(({ field }) => field),
+    ["sku", "name", "price"]
+  );
+});
+
+test("every archetype XLSX round-trips through the real import parser and service validators", () => {
+  for (const archetype of ARCHETYPES) {
+    const examples = shopExperienceForArchetype(archetype).importExamples;
+    const workbook = buildProductImportWorkbook(examples, archetype);
+    const bytes = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+    const reopened = XLSX.read(bytes, { type: "buffer" });
+    assert.deepEqual(reopened.SheetNames, ["Products", "Examples", "Guide"]);
+    const productsSheet = reopened.Sheets.Products;
+    const examplesSheet = reopened.Sheets.Examples;
+    assert.ok(productsSheet, `${archetype} workbook lost its Products sheet`);
+    assert.ok(examplesSheet, `${archetype} workbook lost its Examples sheet`);
+    const blankProducts = XLSX.utils.sheet_to_json<unknown[]>(productsSheet, { header: 1, raw: false, defval: "" });
+    assert.deepEqual(blankProducts, [PRODUCT_IMPORT_TEMPLATE_HEADERS],
+      `${archetype} Products sheet must not contain accidentally importable samples`);
+    assert.deepEqual(parseProductImportWorksheet(blankProducts), []);
+
+    const exampleAoa = XLSX.utils.sheet_to_json<unknown[]>(examplesSheet, { header: 1, raw: false, defval: "" });
+    XLSX.utils.sheet_add_aoa(productsSheet, exampleAoa.slice(1), { origin: "A2" });
+    const customerEditedBytes = XLSX.write(reopened, { type: "buffer", bookType: "xlsx" });
+    const customerEdited = XLSX.read(customerEditedBytes, { type: "buffer" });
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(customerEdited.Sheets.Products!, { header: 1, raw: false, defval: "" });
+    const parsedRows = parseProductImportWorkbook(customerEdited);
+    assert.equal(parsedRows.length, examples.length, `${archetype} workbook lost example rows`);
+    for (const [index, parsed] of parsedRows.entries()) {
+      assert.equal(parsed.rowNumber, index + 2);
+      assert.equal(parsed.sku, examples[index]![0], `${archetype} workbook changed its SKU`);
+      assert.doesNotThrow(() => validateProductFields(parsed), `${archetype} failed imported product validation`);
+      assert.doesNotThrow(() => validateProductConfigurationFields(parsed), `${archetype} failed imported configuration validation`);
+    }
+  }
+});
+
+test("the importer selects Products even when workbook tabs are reordered", () => {
+  assert.equal(selectProductImportSheetName(["Guide", "Examples", "Products"]), "Products");
+  assert.equal(selectProductImportSheetName(["Sheet1"]), "Sheet1", "CSV and legacy one-sheet files keep working");
+  assert.equal(selectProductImportSheetName([]), null);
+});
+
+test("every downloaded example reaches the real backend import preview without row errors", async () => {
+  const pool = (globalThis as any).__bmsPostgresPool;
+  const savedQuery = pool.query;
+  const savedDeployment = process.env.BMS_DEPLOYMENT_MODE;
+  pool.query = async (sql: string) => {
+    assert.match(sql, /SELECT p.sku, s.stock_policy, s.base_unit FROM bms_products p/);
+    return { rows: [], rowCount: 0 };
+  };
+  process.env.BMS_DEPLOYMENT_MODE = "retail-local";
+  try {
+    const { runImport } = await import("../apps/web/lib/bms/productImport.ts");
+    const rows = ARCHETYPES
+      .flatMap((archetype) => shopExperienceForArchetype(archetype).importExamples)
+      .map((example, index) => ({ rowNumber: index + 2, ...productImportExampleToInput(example) }));
+    const result = await runImport("template-contract", rows, { commit: false });
+    assert.equal(result.errorCount, 0);
+    assert.equal(result.updateCount, 0);
+    assert.equal(result.createCount, rows.length);
+    assert.equal(result.rows.length, rows.length);
+    assert.ok(result.rows.every((row) => row.action === "CREATE" && row.error === null));
+  } finally {
+    pool.query = savedQuery;
+    if (savedDeployment == null) delete process.env.BMS_DEPLOYMENT_MODE;
+    else process.env.BMS_DEPLOYMENT_MODE = savedDeployment;
+  }
+});
+
+test("import errors identify the exact headers to fix and variant spelling is preserved", () => {
+  assert.throws(
+    () => parseProductImportWorksheet([["SKU", "ราคาขาย"]]),
+    (error: unknown) => error instanceof Error
+      && (error as any).code === "MISSING_HEADERS"
+      && (error as any).headers.includes("ชื่อสินค้า")
+  );
+  assert.throws(
+    () => parseProductImportWorksheet([["SKU", "SKU", "ชื่อสินค้า", "ราคาขาย"]]),
+    (error: unknown) => error instanceof Error
+      && (error as any).code === "DUPLICATE_HEADERS"
+      && (error as any).headers.includes("sku")
+  );
+  const mixedCase = [...shopExperienceForArchetype("fashion").importExamples[0]!];
+  mixedCase[12] = "Small|Medium|XL";
+  const [parsed] = parseProductImportWorksheet([PRODUCT_IMPORT_TEMPLATE_HEADERS, mixedCase]);
+  assert.deepEqual(parsed.variant_codes, ["Small", "Medium", "XL"]);
+
+  const blankPrice = [...shopExperienceForArchetype("fashion").importExamples[0]!];
+  blankPrice[4] = "";
+  const [missingRequiredCell] = parseProductImportWorksheet([PRODUCT_IMPORT_TEMPLATE_HEADERS, blankPrice]);
+  assert.throws(
+    () => validateProductFields(missingRequiredCell!),
+    /คอลัมน์ ราคาขาย.*0 ขึ้นไป/,
+    "a blank required price cell must not silently become zero"
+  );
+});
+
+test("row validation errors name the column, rejected value class, and corrective action", () => {
+  const valid = productImportExampleToInput(shopExperienceForArchetype("fashion").importExamples[0]!);
+  assert.throws(() => validateProductFields({ ...valid, sku: "" }), /คอลัมน์ SKU.*ไม่ซ้ำ/);
+  assert.throws(() => validateProductFields({ ...valid, name: "" }), /คอลัมน์ ชื่อสินค้า.*ห้ามว่าง/);
+  assert.throws(() => validateProductFields({ ...valid, price: Number.NaN }), /คอลัมน์ ราคาขาย.*0 ขึ้นไป/);
+  assert.throws(
+    () => validateProductConfigurationFields({ ...valid, stock_policy: "WRONG" as any }),
+    /คอลัมน์ Stock Policy.*WRONG.*ชีต Guide/
+  );
+  assert.throws(
+    () => validateProductConfigurationFields({ ...valid, sales_surfaces: ["WRONG"] as any }),
+    /ช่องทางขายไม่ถูกต้อง: WRONG/
+  );
 });
 
 test("special operating modes stay explicit and restrictive", () => {

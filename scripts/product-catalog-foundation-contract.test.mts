@@ -125,12 +125,15 @@ test("P2 workflows keep copied and imported products as drafts", () => {
   const products = source("apps/web/lib/bms/products.ts");
   const importService = source("apps/web/lib/bms/productImport.ts");
   const importer = source("apps/web/app/(admin)/admin/products/ImportModal.tsx");
+  const importTemplate = source("apps/web/lib/bms/productImportTemplate.ts");
   assert.match(configuration, /targetSku[\s\S]*FALSE, price/);
   assert.match(configuration, /Inventory, reservations, serials,[\s\S]*barcodes are deliberately not copied/);
   assert.match(products, /requestedVariants \?\? \(isNew \? \["STD"\] : null\)/);
   assert.match(importService, /validateProductConfigurationFields\(row\)/);
-  assert.match(importer, /"รูปแบบสินค้า"/);
-  assert.match(importer, /"ช่องทางขาย"/);
+  assert.match(importer, /parseProductImportWorkbook/);
+  assert.match(source("apps/web/lib/bms/productImportWorkbook.ts"), /parseProductImportWorksheet\(aoa\)/);
+  assert.match(importTemplate, /"รูปแบบสินค้า"/);
+  assert.match(importTemplate, /"ช่องทางขาย"/);
 });
 
 // เก็บเงินบิลโต๊ะและบิลเคาน์เตอร์ร้านอาหารเดินผ่าน recordPosSale ตัวเดียวกับบิลค้าปลีก ถ้า
