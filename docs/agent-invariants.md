@@ -1728,6 +1728,10 @@ an operator note, and the audit preserves those per-line facts. Never add damage
   records `TRANSFER_OUT`; receiving adds the actual quantity at the destination as `TRANSFER_IN`.
   Goods in transit belong to no branch. A short receive records a separate source `STOCK_OUT` ledger
   line and exposes `unitsMissing` in the receive audit instead of hiding the loss.
+- **Staff transfer scope is checked before idempotency replay.** Reads require either endpoint;
+  create requires both, send/cancel source, receive destination. Admin REST and staff GraphQL share
+  `commandStaffStockTransfer()` and require a stable key bound to the actor. Native POS retains its
+  device-location + cashier guards. An unknown result retries the same payload/key, never a fresh key.
 - **A count applies a delta, never an absolute.** Each line keeps its first-entry snapshot; apply adds
   `counted_qty - snapshot_qty` to current stock so sales during the count survive. The whole apply is
   refused if any result would fall below reserved stock.

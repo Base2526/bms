@@ -1183,6 +1183,7 @@ export type SchemaBmsCreateStockCountInput = {
 
 export type SchemaBmsCreateStockTransferInput = {
   fromLocationId: Scalars['ID']['input'];
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   items: Array<SchemaBmsStockTransferLineInput>;
   note: InputMaybe<Scalars['String']['input']>;
   toLocationId: Scalars['ID']['input'];
@@ -7530,6 +7531,7 @@ export type SchemaBmsReceiveItemInput = {
 };
 
 export type SchemaBmsReceiveStockTransferInput = {
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   received: InputMaybe<Array<SchemaBmsStockTransferReceiptLineInput>>;
   receivingNote: InputMaybe<Scalars['String']['input']>;
   transferId: Scalars['ID']['input'];
@@ -8785,6 +8787,7 @@ export type SchemaBmsStockMovement = {
 export type SchemaBmsStockTransferInput = {
   action: Scalars['String']['input'];
   fromLocationId: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   items: InputMaybe<Array<SchemaBmsStockTransferLineInput>>;
   note: InputMaybe<Scalars['String']['input']>;
   received: InputMaybe<Array<SchemaBmsStockTransferReceiptLineInput>>;
@@ -10217,6 +10220,7 @@ export type SchemaMutationBmsCancelStockCountArgs = {
 
 
 export type SchemaMutationBmsCancelStockTransferArgs = {
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   transferId: Scalars['ID']['input'];
 };
 
@@ -11267,6 +11271,7 @@ export type SchemaMutationBmsSendRestockNotificationArgs = {
 
 
 export type SchemaMutationBmsSendStockTransferArgs = {
+  idempotencyKey: InputMaybe<Scalars['String']['input']>;
   transferId: Scalars['ID']['input'];
 };
 

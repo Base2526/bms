@@ -29,6 +29,9 @@ import {
   cancelPurchaseOrder,
 } from "../apps/web/lib/bms/purchase.ts";
 import { createStockTransfer } from "../apps/web/lib/bms/stockTransfers.ts";
+import { listStockTransfers } from "../apps/web/lib/bms/stockTransfers.ts";
+import { commandStaffStockTransfer } from "../apps/web/lib/bms/staffStockTransfers.ts";
+import { bmsMobileOperationsResolvers } from "../apps/web/graphql/bmsMobileOperations.ts";
 import { deleteTenant } from "../apps/web/lib/bms/platform.ts";
 import { requisitionNotificationRecipients } from "../apps/web/lib/bms/branchRequisitionNotify.ts";
 
@@ -1176,6 +1179,105 @@ test("authorized test-tenant purge removes only its requisition dependency graph
     0,
   );
   assert.equal((await listBranchRequisitions(scope)).total, untouched);
+});
+
+test("staff transfer scope: both ends for create, source for dispatch, destination for receipt, scope rechecked on replay", async () => {
+  const user = randomUUID(), third = randomUUID();
+  await query(`INSERT INTO users(id,tenant_id,name,email,password_hash,role,role_id)
+    SELECT $1,$2,'FAKE scoped transfer user',$3,'disabled','Warehouse',id FROM roles WHERE name='Warehouse'`,
+    [user,tenant,`${user}@example.invalid`]);
+  await query(`INSERT INTO bms_locations(id,tenant_id,code,name,branch_code) VALUES($1,$2,'TRANSFER-THIRD','FAKE third','00003')`,[third,tenant]);
+  await query(`INSERT INTO bms_user_allowed_locations(tenant_id,user_id,location_id) VALUES($1,$2,$3)`,[tenant,user,source]);
+  const create = {action:"create",fromLocationId:source,toLocationId:destination,items:[line(3)],idempotencyKey:randomUUID()};
+  const run = (input: any, who = user) => commandStaffStockTransfer(tenant,who,input);
+  assert.equal((await run(create)).status,"FORBIDDEN");
+  const [a,b] = await Promise.all([run(create,actor),run(create,actor)]);
+  assert.deepEqual(a,b);
+  assert.equal(a.status,"CREATED");
+  if(a.status!=="CREATED") throw new Error("fixture");
+  const hidden = await run({...create,fromLocationId:destination,toLocationId:third,idempotencyKey:randomUUID()},actor);
+  if(hidden.status!=="CREATED") throw new Error("fixture");
+  assert.equal((await listStockTransfers(tenant,null,200,a.transferId,null,user)).length,1);
+  assert.equal((await listStockTransfers(tenant,null,200,hidden.transferId,null,user)).length,0);
+  assert.equal((await listStockTransfers(tenant,null,200,a.transferId,null,actor)).length,1);
+  assert.equal((await run({...create,toLocationId:randomUUID()},actor)).status,"FORBIDDEN");
+  assert.equal((await commandStaffStockTransfer(randomUUID(),actor,{action:"send",transferId:a.transferId,idempotencyKey:randomUUID()})).status,"NOT_FOUND");
+  const transferId=a.transferId;
+  const send={action:"send",transferId,idempotencyKey:randomUUID()};
+  const receive={action:"receive",transferId,idempotencyKey:randomUUID()};
+  assert.equal((await run(receive)).status,"FORBIDDEN");
+  const stock = async (location: string) => Number((await query(`SELECT current_stock FROM bms_inventory WHERE tenant_id=$1 AND location_id=$2 AND product_sku=$3 AND size='BASE'`,[tenant,location,sku])).rows[0]?.current_stock ?? 0);
+  const sourceBefore=await stock(source), destBefore=await stock(destination);
+  assert.deepEqual(await Promise.all([run(send),run(send)]),[{status:"OK"},{status:"OK"}]);
+  assert.equal(await stock(source),sourceBefore-3);
+  await query(`UPDATE bms_user_allowed_locations SET location_id=$3 WHERE tenant_id=$1 AND user_id=$2`,[tenant,user,destination]);
+  assert.equal((await run(send)).status,"FORBIDDEN","revoked source cannot replay success");
+  assert.equal((await run({action:"cancel",transferId:hidden.transferId,idempotencyKey:randomUUID()})).status,"OK");
+  assert.deepEqual(await Promise.all([run(receive),run(receive)]),[{status:"OK"},{status:"OK"}]);
+  assert.equal(await stock(destination),destBefore+3);
+  const audits=await query(`SELECT action,count(*)::int n FROM bms_audit_log WHERE tenant_id=$1 AND target=$2 GROUP BY action`,[tenant,transferId]);
+  assert.equal(audits.rows.length,3);
+  assert.ok(audits.rows.every(r=>r.n===1),"create/send/receive audited once");
+  const movement=await query(`SELECT type,count(*)::int n FROM bms_stock_movements WHERE tenant_id=$1 AND note LIKE $2 GROUP BY type`,[tenant,`%${a.transferNo}%`]);
+  assert.equal(movement.rows.length,2);
+  assert.ok(movement.rows.every(r=>r.n===1));
+  await query(`INSERT INTO bms_user_allowed_locations(tenant_id,user_id,location_id) VALUES($1,$2,$3)`,[tenant,user,source]);
+  assert.equal((await run(create)).status,"CONFLICT","another actor cannot reuse successful key");
+  assert.equal((await run({...create,items:[line(4)]},actor)).status,"CONFLICT");
+  await query(`UPDATE bms_user_allowed_locations SET location_id=$3 WHERE tenant_id=$1 AND user_id=$2 AND location_id=$4`,[tenant,user,third,destination]);
+  assert.equal((await run(receive)).status,"FORBIDDEN");
+});
+
+test("staff command boundary rejects malformed input and missing retry keys without writing", async () => {
+  const count=async()=>Number((await query(`SELECT count(*) n FROM bms_stock_transfers WHERE tenant_id=$1`,[tenant])).rows[0].n);
+  const before=await count();
+  const create={action:"create",fromLocationId:source,toLocationId:destination,items:[line(1)],idempotencyKey:randomUUID()};
+  for(const input of [null,[],{}, {...create,idempotencyKey:"   "},{...create,idempotencyKey:undefined},
+    {...create,fromLocationId:"bad"},{...create,items:[null]},{...create,items:[line(1.2)]},
+    {...create,items:[{...line(1),sku:5}]}, {action:"receive",transferId:randomUUID(),received:[null],idempotencyKey:randomUUID()}]) {
+    assert.equal((await commandStaffStockTransfer(tenant,actor,input)).status,"INVALID");
+  }
+  assert.equal(await count(),before);
+});
+
+test("staff GraphQL named and compatibility adapters share scope, key replay and permission denial", async () => {
+  const ctx={scope:"admin",admin:{id:actor,tenant_id:tenant},__bmsPerms:new Set(["inventory.transfer"])};
+  const mutations=bmsMobileOperationsResolvers.Mutation as any;
+  const input={fromLocationId:source,toLocationId:destination,items:[line(1)],idempotencyKey:randomUUID()};
+  const result=await mutations.bmsCreateStockTransfer(null,{input},ctx);
+  assert.equal(result.status,"CREATED");
+  assert.deepEqual(await mutations.bmsStockTransfer(null,{input:{...input,action:"create"}},ctx),result);
+  const cancel={transferId:result.transferId,idempotencyKey:randomUUID()};
+  assert.deepEqual(await mutations.bmsCancelStockTransfer(null,cancel,ctx),{status:"OK"});
+  assert.deepEqual(await mutations.bmsCancelStockTransfer(null,cancel,ctx),{status:"OK"});
+  assert.equal((await mutations.bmsSendStockTransfer(null,{transferId:result.transferId},ctx)).status,"INVALID");
+  const scoped={...ctx,admin:{id:restricted,tenant_id:tenant}};
+  const {locations}=await bmsMobileOperationsResolvers.Query.bmsStockTransfers(null,{},scoped);
+  assert.deepEqual(locations.map(l=>l.id),[source]);
+  assert.equal((await mutations.bmsCreateStockTransfer(null,{input:{...input,idempotencyKey:randomUUID()}},scoped)).status,"FORBIDDEN");
+  const denied={...ctx,__bmsPerms:new Set()};
+  await assert.rejects(()=>mutations.bmsSendStockTransfer(null,cancel,denied),/Forbidden|permission|สิทธิ์/i);
+  await assert.rejects(()=>bmsMobileOperationsResolvers.Query.bmsStockTransfers(null,{},denied),/Forbidden|permission|สิทธิ์/i);
+});
+
+test("transfer boundary rejects overflow and invalid receipt item identities without changing stock", async () => {
+  const run=(input:any)=>commandStaffStockTransfer(tenant,actor,{idempotencyKey:randomUUID(),...input});
+  const create={action:"create",fromLocationId:source,toLocationId:destination,items:[line(2)]};
+  const before=Number((await query(`SELECT count(*) n FROM bms_stock_transfers WHERE tenant_id=$1`,[tenant])).rows[0].n);
+  assert.equal((await run({...create,items:[line(2147483647),{...line(1),size:"base"}]})).status,"INVALID");
+  assert.equal(Number((await query(`SELECT count(*) n FROM bms_stock_transfers WHERE tenant_id=$1`,[tenant])).rows[0].n),before);
+  const a=await run(create),b=await run(create);
+  if(a.status!=="CREATED" || b.status!=="CREATED") throw new Error("fixture");
+  const item=Number((await query(`SELECT id FROM bms_stock_transfer_items WHERE tenant_id=$1 AND transfer_id=$2`,[tenant,a.transferId])).rows[0].id);
+  const foreign=Number((await query(`SELECT id FROM bms_stock_transfer_items WHERE tenant_id=$1 AND transfer_id=$2`,[tenant,b.transferId])).rows[0].id);
+  assert.equal((await run({action:"send",transferId:a.transferId})).status,"OK");
+  for(const received of [[{itemId:foreign,qty:0}],[{itemId:item,qty:0},{itemId:item,qty:2}]]) {
+    assert.equal((await run({action:"receive",transferId:a.transferId,received})).status,"INVALID");
+    assert.equal((await receiveStockTransfer({tenantId:tenant,actorUserId:actor,transferId:a.transferId,received,idempotencyKey:randomUUID()})).status,"INVALID","native/internal callers share the identity guard");
+    assert.equal((await listStockTransfers(tenant,null,1,a.transferId))[0].status,"IN_TRANSIT");
+    assert.equal(Number((await query(`SELECT count(*) n FROM bms_audit_log WHERE tenant_id=$1 AND target=$2 AND action='inventory.transfer.receive'`,[tenant,a.transferId])).rows[0].n),0);
+  }
+  assert.equal((await run({action:"receive",transferId:a.transferId,received:[{itemId:item,qty:2}]})).status,"OK");
 });
 
 test.after(async () => {
