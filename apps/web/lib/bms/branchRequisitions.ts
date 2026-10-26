@@ -789,6 +789,9 @@ export async function commandBranchRequisition(
               pi.rows[0].qty_ordered - pi.rows[0].allocated < line.qty
             )
               reject("OVER_ALLOCATED");
+            // G and branch requisitions must not promise the same PO line to two workflows.
+            if ((await c.query(`SELECT 1 FROM bms_operation_material_links WHERE tenant_id=$1 AND po_item_id=$2 LIMIT 1`,
+              [scope.tenantId, pi.rows[0].id])).rowCount) reject("OVER_ALLOCATED");
             const already = await c.query(
               `SELECT COALESCE(sum(a.qty),0)::int AS qty FROM bms_branch_requisition_purchases a
               JOIN bms_purchase_order_items p ON p.tenant_id=a.tenant_id AND p.id=a.po_item_id

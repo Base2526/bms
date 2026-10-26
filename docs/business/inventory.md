@@ -10,6 +10,30 @@ Current Stock = Available Stock + Reserved Stock
 Available Stock = Current Stock − Reserved Stock
 ```
 
+For lot-tracked variants, sellable availability additionally excludes active quality holds and
+expired lots; a mismatch between lot totals and physical stock blocks new reservations until
+reconciled. `reserveStock()` preserves `NOT_FOUND` for a missing branch inventory row and
+`INSUFFICIENT` for an existing empty/unavailable row. Successful `availableAfter` reports the
+remaining usable quantity, excluding held/expired lots. Physical stock and the reservation ledger
+remain unchanged by this reporting distinction.
+
+POS scan, variant selection, direct-stock restaurant menus and the device-branch stock overview
+use the same usable quantity, including Desktop and native GraphQL callers. RECIPE/NON_STOCK
+items retain their virtual-stock behavior. Generic transfer send/receive and count apply return
+`LOT_QUALITY_HOLD` with a review reason as a normal business result (not a server/unknown-result
+error); the entire transaction rolls back, including earlier lines. Rejected actions do not consume
+the inventory idempotency key. Unexpected database errors still propagate.
+
+Creating a hold or approving its release also enqueues the existing branch-scoped
+`inventory.changed` invalidation in the same transaction: physical inventory is unchanged, so its
+ordinary triggers cannot announce this availability change. No inspection details enter the event.
+Existing realtime delivery flags, dispatcher and polling/reconciliation requirements still apply.
+
+Restock subscriptions use that same usable quantity for subscription checks, ready-to-notify
+eligibility, staff lists and the final pre-send check. Held-only, expired or unreconciled stock
+must not generate a customer "back in stock" claim. Receipt/return hooks may mark ready only
+when usable stock exists; sending rechecks current stock even if the notice was ready earlier.
+
 Every stock change **must** generate a Stock Movement record. Never update inventory without
 logging movement.
 

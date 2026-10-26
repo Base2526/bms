@@ -9,6 +9,7 @@ export type ValuationMovement = {
   orderItemId?: string | number | null; returnId?: string | null;
   transferItemId?: string | number | null; purchaseItemId?: string | number | null;
   initialQty?: string;
+  productionId?: string;
 };
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const micro = (v: string) => {
@@ -23,7 +24,7 @@ export async function valueMovementInTx(client: PoolClient, movementId: string, 
   if (["RESERVE","RELEASE"].includes(m.type)) return;
   const q = BigInt(m.qty);
   if (q <= 0n) throw new Error("VALUATION_INVALID_QUANTITY");
-  const inbound = ["STOCK_IN","RETURN","TRANSFER_IN"].includes(m.type) || (m.type === "COUNT_ADJUST" && m.direction === "IN");
+  const inbound = ["STOCK_IN","RETURN","TRANSFER_IN","PRODUCTION_IN"].includes(m.type) || (m.type === "COUNT_ADJUST" && m.direction === "IN");
   const transit = ["QUARANTINE_IN","TRANSFER_LOST"].includes(m.type);
   const scope = [m.tenantId,m.locationId,m.sku,m.size];
   let amount: bigint | null = null;
@@ -49,6 +50,18 @@ export async function valueMovementInTx(client: PoolClient, movementId: string, 
     [m.tenantId,m.purchaseItemId,m.qty,m.sku,m.size])).rows[0];
     if (!source) throw new Error("VALUATION_PURCHASE_SOURCE_MISSING");
     amount = micro(source.cost);
+  }
+  if (m.type === 'PRODUCTION_IN') {
+    // Only persisted, same-transaction physical input entries authorize output value. Never a caller amount.
+    const source = (await client.query<{amount:string|null}>(`SELECT CASE WHEN count(*)>0 AND bool_and(v.amount IS NOT NULL)
+      THEN sum(v.amount) END::text AS amount FROM bms_operation_production p
+      JOIN bms_operation_production_inputs i ON i.tenant_id=p.tenant_id AND i.production_id=p.id
+      JOIN bms_inventory_value_entries v ON v.tenant_id=i.tenant_id AND v.movement_id=i.movement_id
+      WHERE p.tenant_id=$1 AND p.id=$2 AND p.location_id=$3 AND p.output_sku=$4 AND p.output_size=$5
+        AND p.status='READY' AND v.kind='PRODUCTION_OUT'`,
+      [m.tenantId,m.productionId,m.locationId,m.sku,m.size])).rows[0];
+    if (!m.productionId) throw new Error('PRODUCTION_SOURCE_REQUIRED');
+    amount = source?.amount==null ? null : micro(source.amount);
   }
   if (!transit) {
     const inventory = (await client.query<{qty:string}>(`SELECT current_stock::text AS qty FROM bms_inventory

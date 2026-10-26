@@ -59,8 +59,9 @@ test("purchase receipt keeps location, movement, audit and retry result in one t
   assert.doesNotMatch(service, /unitCost: ln\.unitCost/);
   assert.match(service, /const auditActor = String\(options\.audit\?\.actor \?\? actor/);
   const auditAt = service.indexOf("INSERT INTO bms_audit_log");
-  const commitAt = service.indexOf('client.query("COMMIT")', auditAt);
-  assert.ok(auditAt >= 0 && commitAt > auditAt, "purchase.receive audit must be written before COMMIT");
+  assert.ok(auditAt >= 0);
+  const wrapper=service.slice(service.indexOf('export async function receivePurchaseOrder('),service.indexOf('export async function notifyPurchaseRestock'));
+  assert.match(wrapper,/await receivePurchaseOrderInTx[\s\S]*client.query\(success \? "COMMIT" : "ROLLBACK"\)/);
 });
 
 test("admin receive also opts into the in-transaction purchase audit", async () => {

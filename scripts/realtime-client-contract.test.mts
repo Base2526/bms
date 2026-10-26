@@ -77,6 +77,14 @@ test("every desktop header popup closes outside, on Escape, and when a sibling o
   );
 });
 
+test("desktop catalogue refreshes server availability without resetting the active cart", () => {
+  assert.match(desktopRenderer, /const CATALOG_REALTIME_EVENTS = \[[\s\S]*?"inventory.changed"[\s\S]*?"inventory.reservation_changed"/);
+  const callback = desktopRenderer.slice(desktopRenderer.indexOf("eventTypes: CATALOG_REALTIME_EVENTS"), desktopRenderer.indexOf("eventTypes: SERVICE_CALL_REALTIME_EVENTS"));
+  assert.match(callback, /flow.stage === "CATALOG" && shownModule === "mobile_sell"/);
+  assert.match(callback, /await loadCatalog\(query\)/);
+  assert.doesNotMatch(callback, /setCart|sendFlow|setCashier|location\.reload/);
+});
+
 test("desktop service-call bell refreshes from realtime and keeps bounded polling as fallback", () => {
   assert.match(desktopRenderer, /useRealtimeInvalidation\(\{/);
   assert.match(desktopRenderer, /restaurant\.table_call\.created/);

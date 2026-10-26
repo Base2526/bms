@@ -38,11 +38,13 @@ export type StockLedgerRow = {
   adjustedIn: number;
   returned: number;
   transferredIn: number;
+  producedIn?: number;
   countedUp: number;
   totalIn: number;
   sold: number;
   adjustedOut: number;
   transferredOut: number;
+  productionUsed?: number;
   wasted: number;
   countedDown: number;
   totalOut: number;
@@ -83,8 +85,8 @@ export type StockLedgerReport = {
   totalClosingValue: number | null;
 };
 
-const IN_TYPES_SQL = `m.type IN ('STOCK_IN','RETURN','TRANSFER_IN') OR (m.type = 'COUNT_ADJUST' AND m.direction = 'IN')`;
-const OUT_TYPES_SQL = `m.type IN ('STOCK_OUT','SHIP','TRANSFER_OUT','WASTAGE') OR (m.type = 'COUNT_ADJUST' AND m.direction = 'OUT')`;
+const IN_TYPES_SQL = `m.type IN ('STOCK_IN','RETURN','TRANSFER_IN','PRODUCTION_IN') OR (m.type = 'COUNT_ADJUST' AND m.direction = 'IN')`;
+const OUT_TYPES_SQL = `m.type IN ('STOCK_OUT','SHIP','TRANSFER_OUT','WASTAGE','PRODUCTION_OUT') OR (m.type = 'COUNT_ADJUST' AND m.direction = 'OUT')`;
 
 export async function getStockLedger(
   tenantId: string,
@@ -140,6 +142,10 @@ export async function getStockLedger(
               COALESCE(SUM(mv.qty) FILTER (WHERE mv.created_at >= b.t_from AND mv.created_at < b.t_to
                   AND mv.type = 'TRANSFER_IN'), 0)                                          AS transferred_in,
               COALESCE(SUM(mv.qty) FILTER (WHERE mv.created_at >= b.t_from AND mv.created_at < b.t_to
+                  AND mv.type = 'PRODUCTION_IN'), 0) AS produced_in,
+              COALESCE(SUM(mv.qty) FILTER (WHERE mv.created_at >= b.t_from AND mv.created_at < b.t_to
+                  AND mv.type = 'PRODUCTION_OUT'), 0) AS production_used,
+              COALESCE(SUM(mv.qty) FILTER (WHERE mv.created_at >= b.t_from AND mv.created_at < b.t_to
                   AND mv.type = 'COUNT_ADJUST' AND mv.direction = 'IN'), 0)                 AS counted_up,
               COALESCE(SUM(mv.qty) FILTER (WHERE mv.created_at >= b.t_from AND mv.created_at < b.t_to
                   AND mv.type = 'SHIP'), 0)                                                 AS sold,
@@ -178,6 +184,7 @@ export async function getStockLedger(
             COALESCE(a.after_to, 0) AS after_to,
             COALESCE(a.purchased, 0) AS purchased, COALESCE(a.adjusted_in, 0) AS adjusted_in,
             COALESCE(a.returned, 0) AS returned, COALESCE(a.transferred_in, 0) AS transferred_in,
+            COALESCE(a.produced_in,0) AS produced_in, COALESCE(a.production_used,0) AS production_used,
             COALESCE(a.counted_up, 0) AS counted_up, COALESCE(a.sold, 0) AS sold,
             COALESCE(a.adjusted_out, 0) AS adjusted_out, COALESCE(a.transferred_out, 0) AS transferred_out,
             COALESCE(a.wasted, 0) AS wasted, COALESCE(a.counted_down, 0) AS counted_down,
@@ -245,8 +252,8 @@ export async function getStockLedger(
     const unrecorded = n(r.current_stock) - n(r.all_time);
     const openingRecorded = n(r.before_from);
     const opening = openingRecorded + unrecorded;
-    const totalIn = n(r.purchased) + n(r.adjusted_in) + n(r.returned) + n(r.transferred_in) + n(r.counted_up);
-    const totalOut = n(r.sold) + n(r.adjusted_out) + n(r.transferred_out) + n(r.wasted) + n(r.counted_down);
+    const totalIn = n(r.purchased) + n(r.adjusted_in) + n(r.returned) + n(r.transferred_in) + n(r.counted_up) + n(r.produced_in);
+    const totalOut = n(r.sold) + n(r.adjusted_out) + n(r.transferred_out) + n(r.wasted) + n(r.counted_down) + n(r.production_used);
     const closing = opening + totalIn - totalOut;
     // แถวที่ไม่มีอะไรเลยในทุกช่อง (เช่นเมนูสูตรที่สต็อกตัวเองเป็น 0 ตามดีไซน์) ไม่ต้องรก
     if (opening === 0 && totalIn === 0 && totalOut === 0 && closing === 0 && n(r.unknown_count) === 0) continue;
@@ -272,6 +279,8 @@ export async function getStockLedger(
       adjustedIn: n(r.adjusted_in),
       returned: n(r.returned),
       transferredIn: n(r.transferred_in),
+      producedIn: n(r.produced_in),
+      productionUsed: n(r.production_used),
       countedUp: n(r.counted_up),
       totalIn,
       sold: n(r.sold),
@@ -316,7 +325,7 @@ export async function getStockLedger(
     for (const movement of rawMovements.get(key) ?? []) {
       const incoming = movement.type === "COUNT_ADJUST"
         ? movement.direction === "IN"
-        : ["STOCK_IN", "RETURN", "TRANSFER_IN"].includes(movement.type);
+        : ["STOCK_IN", "RETURN", "TRANSFER_IN", "PRODUCTION_IN"].includes(movement.type);
       const qty = Number(movement.qty);
       balance += incoming ? qty : -qty;
       movements.push({

@@ -172,6 +172,13 @@ const decidedCodes = new Set([
   "CONFLICT",
 ]);
 
+const CATALOG_REALTIME_EVENTS = [
+  "inventory.changed",
+  "inventory.reservation_changed",
+  "product.availability.changed",
+  "menu.availability.changed",
+] as const;
+
 const SERVICE_CALL_REALTIME_EVENTS = [
   "restaurant.table_call.created",
   "restaurant.table_call.status_changed",
@@ -1079,6 +1086,16 @@ function DesktopPosContent() {
     if (typeof window.bmsDesktop?.onRefreshRequested !== "function") return;
     return window.bmsDesktop.onRefreshRequested(() => { void refreshDesktopContent(); });
   }, [refreshDesktopContent]);
+
+  useRealtimeInvalidation({
+    eventTypes: CATALOG_REALTIME_EVENTS,
+    onInvalidate: async () => {
+      // Availability is server-owned; refresh the visible catalogue, never reset an active cart.
+      if (token && flow.stage === "CATALOG" && shownModule === "mobile_sell") {
+        await loadCatalog(query);
+      }
+    },
+  });
 
   useRealtimeInvalidation({
     eventTypes: SERVICE_CALL_REALTIME_EVENTS,

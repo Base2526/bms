@@ -21,7 +21,9 @@ export type MovementType =
   | "COUNT_ADJUST"
   | "QUARANTINE_IN"
   | "TRANSFER_LOST"
-  | "WASTAGE";
+  | "WASTAGE"
+  | "PRODUCTION_IN"
+  | "PRODUCTION_OUT";
 
 /**
  * ทิศทางของ COUNT_ADJUST (10.10) — qty เป็นบวกเสมอ ชนิดอื่นบอกทิศทางด้วยตัว type เอง
@@ -67,8 +69,9 @@ export async function recordMovement(
     transferItemId?: string | number | null;
     purchaseItemId?: string | number | null;
     initialQty?: string;
+    productionId?: string;
   }
-): Promise<void> {
+): Promise<string> {
   if (m.type === "COUNT_ADJUST" && !m.direction) {
     throw new Error("COUNT_ADJUST ต้องระบุทิศทาง (IN/OUT)");
   }
@@ -87,7 +90,7 @@ export async function recordMovement(
         m.direction]
     );
     await valueMovementInTx(client, inserted.rows[0].id, { ...m, locationId });
-    return;
+    return inserted.rows[0].id;
   }
   const inserted = await client.query<{id:string}>(
     `INSERT INTO bms_stock_movements
@@ -96,6 +99,7 @@ export async function recordMovement(
     [m.tenantId, locationId, m.sku, m.size, m.type, m.qty, m.refOrderId ?? null, m.note ?? null, m.actor ?? null]
   );
   await valueMovementInTx(client, inserted.rows[0].id, { ...m, locationId });
+  return inserted.rows[0].id;
 }
 
 /**

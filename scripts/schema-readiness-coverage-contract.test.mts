@@ -54,6 +54,9 @@ test("ของที่ลิสต์บอกให้ตรวจ ต้อ�
           new RegExp(`CREATE TABLE(?:\\s+IF NOT EXISTS)?\\s+(?:public\\.)?${need.name}\\b`, "i"),
           `${migration.file} ไม่ได้สร้างตาราง ${need.name}`
         );
+      } else if(need.kind==='constraint') {
+        const blocks=sql.match(new RegExp(`ALTER TABLE\\s+(?:public\\.)?${need.table}\\b[\\s\\S]*?;`,'gi'))??[];
+        assert.ok(blocks.some(block=>new RegExp(`ADD CONSTRAINT\\s+${need.name}\\b`,'i').test(block)&&block.includes(need.contains)),`${migration.file} must establish the required constraint definition`);
       } else {
         // ผูกคอลัมน์กับตารางของมันเสมอ — ไฟล์เดียวแก้ได้หลายตาราง ถ้าเจอคำว่า ADD COLUMN
         // ลอย ๆ ที่ไหนก็ได้ในไฟล์ ด่านนี้จะยืนยันได้แค่ "มีคำนี้อยู่" ไม่ใช่ "เพิ่มให้ตารางนี้"

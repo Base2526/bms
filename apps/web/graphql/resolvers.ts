@@ -2000,10 +2000,10 @@ const rawResolvers = {
       console.log("[Query] pending :", author_id);
 
       const params: any[] = [];
-      let where = '';
+      let where = "WHERE f.filename NOT LIKE '%operation-evidence-%'";
       if (search && search.trim()) {
         params.push(`%${search}%`);
-        where = `WHERE f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length}`;
+        where += ` AND (f.original_name ILIKE $${params.length} OR f.filename ILIKE $${params.length})`;
       }
       params.push(limit, offset);
 

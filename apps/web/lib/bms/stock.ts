@@ -12,6 +12,7 @@
 
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
+import { qualityStock, usableStockSql } from "./lotQuality";
 import {
   resolveDefaultLocationId,
   resolveDefaultLocationIdInTx,
@@ -161,10 +162,10 @@ export async function getBranchStockOverview(
     query<{ sellable_sku_count: number; low_stock_count: number }>(
       `SELECT
          COUNT(DISTINCT i.product_sku)
-           FILTER (WHERE (i.current_stock - i.reserved_stock) > 0)::int
+           FILTER (WHERE ${usableStockSql('i')} > 0)::int
            AS sellable_sku_count,
          COUNT(*)
-           FILTER (WHERE (i.current_stock - i.reserved_stock) <= i.reorder_point)::int
+           FILTER (WHERE ${usableStockSql('i')} <= i.reorder_point)::int
            AS low_stock_count
        ${inventoryCte}`,
       [tenantId, locationId],
@@ -179,11 +180,11 @@ export async function getBranchStockOverview(
       `SELECT i.product_sku AS sku,
               p.name,
               i.size,
-              (i.current_stock - i.reserved_stock)::int AS available,
+              ${usableStockSql('i')} AS available,
               i.reorder_point::int AS reorder_point
        ${inventoryCte}
-        AND (i.current_stock - i.reserved_stock) <= i.reorder_point
-      ORDER BY (i.current_stock - i.reserved_stock) ASC, p.name, i.size
+        AND ${usableStockSql('i')} <= i.reorder_point
+      ORDER BY ${usableStockSql('i')} ASC, p.name, i.size
       LIMIT $3`,
       [tenantId, locationId, boundedLimit],
     ),
@@ -322,7 +323,7 @@ export async function checkStock(
 
   if (!size) {
     const res = await query<{ size: string; available: number; price: string }>(
-      `SELECT i.size, (i.current_stock - i.reserved_stock) AS available,
+      `SELECT i.size, ${usableStockSql('i')} AS available,
               COALESCE(sized.price, shared.price, p.price)::text AS price
          FROM bms_inventory i
          JOIN bms_products p ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
@@ -356,8 +357,8 @@ export async function checkStock(
     Number(product.price);
 
   const res = await query<{ available: number }>(
-    `SELECT (current_stock - reserved_stock) AS available
-       FROM bms_inventory
+    `SELECT ${usableStockSql('i')} AS available
+       FROM bms_inventory i
       WHERE tenant_id = $3 AND location_id = $4 AND product_sku = $1 AND size = $2`,
     [product.sku, size, tenantId, locationId],
   );
@@ -365,8 +366,8 @@ export async function checkStock(
   if (available <= 0) {
     const [variants, alternativeResult] = await Promise.all([
       query<{ size: string; available: number }>(
-        `SELECT size, GREATEST(current_stock - reserved_stock, 0) AS available
-           FROM bms_inventory
+        `SELECT size, ${usableStockSql('i')} AS available
+           FROM bms_inventory i
           WHERE tenant_id = $2 AND location_id = $3 AND product_sku = $1
           ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], size), size`,
         [product.sku, tenantId, locationId],
@@ -478,6 +479,15 @@ export async function reserveStock(input: {
       input.locationId ??
       (await resolveDefaultLocationIdInTx(client, tenantId));
 
+    const quality = await qualityStock(client,tenantId,locationId,sku,size);
+    if (!quality.exists) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND", sku, size };
+    }
+    if(!quality.reconciled || quality.available<qty) {
+      await client.query('ROLLBACK');
+      return {status:'INSUFFICIENT',sku,size,available:quality.reconciled?quality.available:0,requested:qty};
+    }
     // atomic reserve: สำเร็จเฉพาะเมื่อ available ของ "สาขานั้นของร้านนั้น" ยังพอ
     const upd = await client.query<{ available_after: number }>(
       `UPDATE bms_inventory
@@ -510,7 +520,7 @@ export async function reserveStock(input: {
         sku,
         size,
         qty,
-        availableAfter: Number(upd.rows[0].available_after),
+        availableAfter: quality.available - qty,
       };
     }
 

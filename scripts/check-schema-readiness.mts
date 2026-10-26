@@ -76,6 +76,7 @@ function explainConnectionFailure(error: any): string[] {
 
 let tables: Set<string>;
 let columns: Set<string>;
+let constraints: Map<string,string>;
 try {
   tables = new Set(
     (await query<{ tablename: string }>(
@@ -90,6 +91,7 @@ try {
          FROM information_schema.columns WHERE table_schema = 'public'`
     )).rows.map((row) => row.key)
   );
+  constraints=new Map((await query<{key:string;definition:string}>(`SELECT t.relname||'.'||c.conname key,pg_get_constraintdef(c.oid) definition FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public' AND c.contype='c' AND c.convalidated`)).rows.map(row=>[row.key,row.definition]));
 } catch (error: any) {
   console.log("❌ ต่อฐานข้อมูลไม่ได้ — ยังไม่ได้ตรวจอะไรเลย");
   for (const line of explainConnectionFailure(error)) console.log(`   ${line}`);
@@ -111,7 +113,7 @@ for (const migration of MIGRATIONS) {
     need.kind === "table"
       ? !tables.has(need.name)
       // คอลัมน์ของตารางที่ยังไม่มี ไม่ต้องรายงานซ้ำ — ไฟล์ที่สร้างตารางนั้นจะถูกรายงานเอง
-      : tables.has(need.table) && !columns.has(`${need.table}.${need.name}`)
+      : tables.has(need.table) && (need.kind==='constraint'?!constraints.get(`${need.table}.${need.name}`)?.includes(need.contains):!columns.has(`${need.table}.${need.name}`))
   );
   if (!missing.length) {
     console.log(`✅ ${migration.file}`);
@@ -121,7 +123,7 @@ for (const migration of MIGRATIONS) {
   console.log(`❌ ${migration.file}`);
   console.log(`   ผลถ้าไม่รัน: ${migration.impact}`);
   for (const need of missing) {
-    console.log(need.kind === "table" ? `   - ไม่มีตาราง ${need.name}` : `   - ไม่มีคอลัมน์ ${need.table}.${need.name}`);
+    console.log(need.kind === "table" ? `   - ไม่มีตาราง ${need.name}` : need.kind==='constraint'?`   - Constraint missing or incompatible: ${need.table}.${need.name}`:`   - ไม่มีคอลัมน์ ${need.table}.${need.name}`);
   }
 }
 

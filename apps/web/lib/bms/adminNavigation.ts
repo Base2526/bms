@@ -134,6 +134,10 @@ export const ADMIN_NAV_ITEMS: readonly AdminNavItem[] = [
 
   // ---- การขาย ----
   {
+    id: "sales.operations", route: "/admin/operations", labelKey: "operation_checklists.title",
+    section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("operations.checklist.view"),
+  },
+  {
     id: "sales.orders", route: "/admin/orders", labelKey: "admin_nav.orders",
     section: "sales", workspace: "SHOP", visible: (ctx) => ctx.can("order.view"),
   },
