@@ -1659,18 +1659,34 @@ export default function CheckoutScreen({ route, navigation }: Props) {
                     ขายเชื่อจะใช้สมาชิกในบิลและตรวจวงเงินที่เซิร์ฟเวอร์
                   </Text>
                 ) : (
-                  <TextInput
-                    value={payment.reference ?? ''}
-                    onChangeText={reference =>
-                      updatePayment(payment.id, { reference })
-                    }
-                    placeholder="เลขอ้างอิง"
-                    placeholderTextColor={colors.textSoft}
-                    style={[
-                      styles.input,
-                      { borderColor: colors.border, color: colors.text },
-                    ]}
-                  />
+                  <>
+                    <TextInput
+                      value={payment.reference ?? ''}
+                      onChangeText={reference =>
+                        updatePayment(payment.id, { reference })
+                      }
+                      placeholder={
+                        payment.method === 'qr'
+                          ? 'เลขอ้างอิง (ไม่บังคับ)'
+                          : 'เลขอ้างอิง'
+                      }
+                      placeholderTextColor={colors.textSoft}
+                      style={[
+                        styles.input,
+                        { borderColor: colors.border, color: colors.text },
+                      ]}
+                    />
+                    {payment.method === 'qr' ? (
+                      <Text
+                        style={[
+                          typography.caption,
+                          { color: colors.textMuted, marginTop: spacing.xs },
+                        ]}
+                      >
+                        Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน
+                      </Text>
+                    ) : null}
+                  </>
                 )}
               </View>
             );

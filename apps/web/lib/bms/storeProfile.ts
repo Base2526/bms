@@ -18,6 +18,7 @@ import { isReceiptLanguageMode, type ReceiptLanguageMode } from "@/lib/pos/recei
 import { normalizeRestaurantOrderHours, type RestaurantOrderInterval } from "./restaurantOrdering";
 import { resolveThaiAddressCodesInTx } from "./thaiAddress";
 import { FALLBACK_COUNTRIES, FALLBACK_CURRENCIES, FALLBACK_TIMEZONES } from "./platformSettings";
+import { promptPayRecipientId, validateReusablePromptPayQrPayload } from "./promptPayQr";
 
 // Read on every AI tool call (get_store_info/get_payment_info/get_shipping_estimate),
 // every checkout page load, and the public storefront — but written only from
@@ -67,6 +68,7 @@ export type StoreProfile = {
   contactEmail: string | null;
   website: string | null;
   logoUrl: string | null;
+  customerDisplayBackgroundUrl: string | null;
   taxId: string | null;
   timezone: string | null;
   country: string | null;   // TH / AU / GB (legacy text "UK" is normalized to GB)
@@ -113,7 +115,7 @@ const EMPTY: StoreProfile = {
   receiptLanguageMode: "th",
   about: null, address: null, provinceCode:null,districtCode:null,subdistrictCode:null,
   province:null,district:null,subdistrict:null,postcode:null, phone: null, contactEmail: null, website: null,
-  logoUrl: null, taxId: null, timezone: null, country: null, currency: null,
+  logoUrl: null, customerDisplayBackgroundUrl: null, taxId: null, timezone: null, country: null, currency: null,
   businessHours: null, shippingPolicy: null, returnPolicy: null,
   restaurantOrderHours: [], restaurantOrdersPaused: false, restaurantMerchantAbsorbLimit: 2000,
   paymentAccounts: [],
@@ -145,7 +147,7 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
   const sql =
     `SELECT business_archetype, business_type, ai_language, ai_ordering_style, ai_required_fields,
             ai_interpret_short_replies, ai_handoff_after_failed_turns, receipt_language_mode,
-            about, address, phone, contact_email, website, logo_url, tax_id,
+            about, address, phone, contact_email, website, logo_url, customer_display_background_url, tax_id,
             COALESCE(to_jsonb(bms_store_profile)->>'timezone_code', timezone) AS timezone,
             COALESCE(to_jsonb(bms_store_profile)->>'country_code', country) AS country,
             COALESCE(to_jsonb(bms_store_profile)->>'currency_code', currency) AS currency,
@@ -178,6 +180,7 @@ async function fetchStoreProfileWithClient(tenantId: string, client?: PoolClient
     contactEmail: r.contact_email ?? null,
     website: r.website ?? null,
     logoUrl: r.logo_url ?? null,
+    customerDisplayBackgroundUrl: r.customer_display_background_url ?? null,
     taxId: r.tax_id ?? null,
     timezone: r.timezone ?? null,
     country: r.country ?? null,
@@ -374,20 +377,42 @@ export async function upsertStoreProfile(
     if (merged.emailFooterText != null) {
       merged.emailFooterText = merged.emailFooterText.trim().slice(0, 300) || null;
     }
+    if (merged.customerDisplayBackgroundUrl != null) {
+      merged.customerDisplayBackgroundUrl = merged.customerDisplayBackgroundUrl.trim().slice(0, 2048) || null;
+      if (merged.customerDisplayBackgroundUrl && !/^\/api\/files\/\d+$/.test(merged.customerDisplayBackgroundUrl)) {
+        throw new Error("รูปพื้นหลังจอลูกค้าต้องมาจากไฟล์ที่อัปโหลดในระบบ");
+      }
+    }
     // payment_accounts is JSONB, so bound and normalize the values here rather
     // than allowing an admin form to persist an arbitrarily large QR payload.
     // 2 KB is comfortably above normal merchant-presented EMV payloads while
     // still small enough to render reliably on the customer display.
-    merged.paymentAccounts = (merged.paymentAccounts ?? []).slice(0, 20).map((account) => ({
-      type: String(account?.type ?? "BANK").trim().toUpperCase().slice(0, 40) || "BANK",
-      bankCode: String(account?.bankCode ?? "").trim().toUpperCase().slice(0, 12) || null,
-      bankName: String(account?.bankName ?? "").trim().slice(0, 120) || null,
-      accountName: String(account?.accountName ?? "").trim().slice(0, 160) || null,
-      accountNo: String(account?.accountNo ?? "").trim().slice(0, 80) || null,
-      promptpayId: String(account?.promptpayId ?? "").trim().slice(0, 80) || null,
-      qrPayload: String(account?.qrPayload ?? "").trim().slice(0, 2048) || null,
-      note: String(account?.note ?? "").trim().slice(0, 300) || null,
-    }));
+    merged.paymentAccounts = (merged.paymentAccounts ?? []).slice(0, 20).map((account) => {
+      const type = String(account?.type ?? "BANK").trim().toUpperCase().slice(0, 40) || "BANK";
+      const promptpayId = String(account?.promptpayId ?? "").trim().slice(0, 80) || null;
+      const qrPayload = String(account?.qrPayload ?? "").trim().slice(0, 2048) || null;
+      if ((type === "PROMPTPAY" || type === "QR") && qrPayload) {
+        let qrRecipientId: string;
+        try {
+          qrRecipientId = promptPayRecipientId(validateReusablePromptPayQrPayload(qrPayload));
+        } catch {
+          throw new Error("QR พร้อมเพย์ต้องเป็น QR รับเงินแบบใช้ซ้ำที่ไม่ระบุยอดจากธนาคาร/ผู้ให้บริการ");
+        }
+        if (promptpayId?.replace(/\D/g, "") !== qrRecipientId) {
+          throw new Error("PromptPay ID ไม่ตรงกับบัญชีปลายทางใน QR");
+        }
+      }
+      return {
+        type,
+        bankCode: String(account?.bankCode ?? "").trim().toUpperCase().slice(0, 12) || null,
+        bankName: String(account?.bankName ?? "").trim().slice(0, 120) || null,
+        accountName: String(account?.accountName ?? "").trim().slice(0, 160) || null,
+        accountNo: String(account?.accountNo ?? "").trim().slice(0, 80) || null,
+        promptpayId,
+        qrPayload,
+        note: String(account?.note ?? "").trim().slice(0, 300) || null,
+      };
+    });
     // bankName is a display snapshot. Never trust a client-supplied name when a
     // master code is present; resolving here also lets an already configured,
     // inactive bank keep its historical account readable.
@@ -414,9 +439,9 @@ export async function upsertStoreProfile(
         shipping_mode, shipping_origin_province, shipping_origin_postcode,
         shipping_zone_rates, shipping_weight_tiers, restaurant_order_hours, restaurant_orders_paused, restaurant_merchant_absorb_limit,
         province_code,district_code,subdistrict_code,province,district,subdistrict,postcode,
-        barcode_master_contribution_enabled
+        barcode_master_contribution_enabled, customer_display_background_url
      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::jsonb,$24,$25,$26,$27,$28,$29,$30,
-               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46)
+               $31,$32,$33,$34::jsonb,$35::jsonb,$36::jsonb,$37,$38,$39,$40,$41,$42,$43,$44,$45,$46,$47)
      ON CONFLICT (tenant_id) DO UPDATE SET
         business_archetype = EXCLUDED.business_archetype,
         business_type = EXCLUDED.business_type,
@@ -451,6 +476,7 @@ export async function upsertStoreProfile(
         email_theme_color = EXCLUDED.email_theme_color,
         email_footer_text = EXCLUDED.email_footer_text,
         barcode_master_contribution_enabled = EXCLUDED.barcode_master_contribution_enabled,
+        customer_display_background_url = EXCLUDED.customer_display_background_url,
         updated_at = now()`,
       [
         tenantId, merged.businessArchetype, merged.businessType, merged.aiLanguage, merged.aiOrderingStyle, merged.aiRequiredFields,
@@ -465,7 +491,7 @@ export async function upsertStoreProfile(
         JSON.stringify(merged.shippingZoneRates ?? []), JSON.stringify(merged.shippingWeightTiers ?? []),
         JSON.stringify(merged.restaurantOrderHours ?? []), merged.restaurantOrdersPaused, merged.restaurantMerchantAbsorbLimit,
         merged.provinceCode,merged.districtCode,merged.subdistrictCode,merged.province,merged.district,merged.subdistrict,merged.postcode,
-        merged.barcodeMasterContributionEnabled,
+        merged.barcodeMasterContributionEnabled, merged.customerDisplayBackgroundUrl,
       ]
     );
     await client.query("COMMIT");

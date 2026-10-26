@@ -87,6 +87,7 @@ async function handleGET(req: NextRequest) {
       address: store.address,
       phone: store.phone,
       logoUrl: store.logoUrl,
+      customerDisplayBackgroundUrl: store.customerDisplayBackgroundUrl,
       paymentQr: configuredPosPaymentQr(store.paymentAccounts),
     },
     surface: store.businessArchetype === "restaurant" ? "restaurant" : "retail",

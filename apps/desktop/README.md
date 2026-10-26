@@ -135,6 +135,10 @@ customer display once after detecting a second monitor. Both acceptance and refu
 an existing explicit off setting is never overridden. Enabled displays reopen on app startup.
 "Identify displays" places a temporary number on every screen. The shell detects display
 add/remove/metric changes and restores the configured customer window when its target is available.
+For development or cashier training on a computer with only one monitor, **Open test window on this
+display** opens the same live customer view as a normal framed, resizable window. This preview is
+temporary: it is not saved as a second-display choice and never reopens with the app. Closing it has
+no effect on the cashier window or the persisted automatic/selected display setting.
 
 One register supports one cashier display plus at most one read-only customer display. Kitchen,
 queue and menu-board screens are separate devices/surfaces rather than third and fourth windows of
@@ -145,10 +149,10 @@ The web renderer capability-checks these IPC methods. Older installed shells the
 manual customer-display button instead of crashing when a newer server is deployed; automatic
 display selection appears after the desktop app itself is updated to 0.2.3 or newer.
 
-When the cashier selects QR payment, the display can show the exact provider-issued QR configured
-under **Admin → Settings → Receiving accounts**, together with the amount assigned to that QR
-tender. A PromptPay ID by itself is display text, not authority to invent an EMV payload, so no QR
-is generated until the shop supplies the real payload from its bank/payment provider.
+When the cashier selects QR payment, the display turns the verified, reusable amount-free PromptPay QR
+configured under **Admin → Settings → Receiving accounts** into a new Dynamic QR containing the
+amount assigned to that QR tender. A PromptPay ID by itself is display text, not authority to invent
+an EMV payload, so no QR is generated until the shop supplies the real base from its bank/provider.
 
 The web-owned display uses a branded welcome, recent items, payment and completed-sale layout.
 It clears completed bills after ten seconds and hides sensitive data after eight seconds without

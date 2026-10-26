@@ -1,10 +1,19 @@
 .screen {
-  --ink: #f4f5f6; --muted: #a9afb5; --line: #34383b; --green: #72dfa8;
+  --ink: #f4f5f6; --muted: #a9afb5; --line: #34383b; --green: #72dfa8; --gold: #ffd36b;
   box-sizing: border-box; min-height: 100dvh; padding: 28px 40px 18px;
   background: #16191c; color: var(--ink); font-family: inherit; font-size: 20px;
   letter-spacing: 0; display: flex; flex-direction: column; gap: 28px; line-height: 1.5;
+  position: relative; isolation: isolate; overflow: hidden;
 }
 .screen *, .screen *::before, .screen *::after { box-sizing: border-box; letter-spacing: 0; }
+.screen > :not(.welcomeBackground) { position: relative; z-index: 1; }
+.welcomeBackground { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.welcomeBackground img { width: 100%; height: 100%; display: block; object-fit: cover; }
+.welcomeBackground span { position: absolute; inset: 0; background: rgba(10, 13, 16, .64); }
+.screen[data-phase="idle"] .welcome h1,
+.screen[data-phase="idle"] .welcome p,
+.screen[data-phase="idle"] .header,
+.screen[data-phase="idle"] .footer { text-shadow: 0 2px 12px rgba(0, 0, 0, .7); }
 .screen h1, .screen h2, .screen p { margin: 0; color: inherit; }
 .screen h1 { font-size: 36px; line-height: 1.35; }
 .screen h2 { font-size: 24px; line-height: 1.4; }
@@ -18,8 +27,8 @@
 .logo img, .largeLogo img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
 .status { font-size: 17px; color: var(--muted); text-align: right; flex-shrink: 0; }
 .idle, .cart, .payment, .finished { flex: 1; display: grid; gap: 36px; min-width: 0; }
-.idle, .finished { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: center; }
-.idle:not(:has(aside)), .finished:not(:has(aside)) { grid-template-columns: 1fr; }
+.idle { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: center; }
+.idle:not(:has(aside)) { grid-template-columns: 1fr; }
 .welcome { padding: 32px 0; }
 .welcome h1 { font-size: 56px; overflow-wrap: anywhere; max-width: 22ch; }
 .welcome p { color: var(--muted); }
@@ -62,15 +71,29 @@
 .qr span { padding: 24px; font-size: 16px; }
 .paymentWaiting { border-left: 1px solid var(--line); padding: 36px; }
 .paymentWaiting p { color: var(--muted); margin-top: 12px; }
-.thanks { padding: 16px 0; }
-.check { color: var(--green); font-size: 52px; margin-bottom: 18px; }
-.thanks > p { color: var(--muted); margin-top: 8px; }
-.settlement { max-width: 520px; margin-top: 32px; }
-.change { color: var(--green); padding-top: 20px; border-top: 1px solid var(--line); }
-.finishAside { padding-left: 36px; border-left: 1px solid var(--line); }
-.tax { margin-top: 24px; }
-.tax .qr { max-width: 240px; }
-.tax h2 { margin-top: 16px; font-size: 20px; }
+.finished { grid-template-columns: 1fr; align-content: center; gap: 26px; padding-inline: clamp(0px, 3vw, 42px); }
+.thanks { min-width: 0; display: flex; align-items: center; justify-content: center; gap: 20px; }
+.thanks h1 { font-size: 40px; }
+.thanksCopy { display: grid; gap: 4px; }
+.checkBadge { width: 76px; height: 76px; display: grid; place-items: center; flex: none; border-radius: 50%; color: #102119; background: var(--green); box-shadow: 0 14px 38px rgba(114, 223, 168, .18); font-size: 38px; }
+.thanksCopy > p { color: var(--muted); }
+.finishedSummary { min-width: 0; min-height: 220px; display: grid; grid-template-columns: minmax(220px, 1.15fr) 1px minmax(160px, .72fr) 1px minmax(230px, .85fr); gap: clamp(16px, 2vw, 28px); align-items: stretch; padding: 24px 28px; border: 1px solid var(--line); border-radius: 20px; background: #1d2326; box-shadow: 0 16px 38px rgba(0, 0, 0, .16); }
+.finishedSummaryNoChange { grid-template-columns: minmax(240px, 1.15fr) 1px minmax(260px, .85fr); }
+.finishedDivider { width: 1px; align-self: stretch; background: var(--line); }
+.settlement { min-width: 0; display: grid; align-content: center; gap: 14px; }
+.settlement .row { align-items: baseline; margin: 0; }
+.totalRow { color: var(--muted); }
+.totalRow strong { color: var(--ink); font-size: 30px; line-height: 1.2; }
+.change { color: var(--gold); display: grid; place-content: center; gap: 10px; text-align: center; }
+.change p { color: #e6cc8b; font-size: 18px; }
+.change .amount { color: var(--gold); font-size: 48px !important; }
+.finishAside { min-width: 0; display: grid; align-content: center; gap: 18px; }
+.finishAside .member { padding: 0; border-bottom: 0; }
+.guest strong { color: var(--ink); }
+.tax { display: grid; grid-template-columns: minmax(80px, 96px) minmax(0, 1fr); align-items: center; gap: 14px; }
+.tax .qr { max-width: 96px; }
+.tax h2 { font-size: 17px; }
+.taxCopy p { margin-top: 5px; color: var(--muted); font-size: 14px; }
 .muted { color: var(--muted) !important; font-size: 16px; margin-top: 12px !important; }
 .footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; font-size: 15px; color: var(--muted); border-top: 1px solid var(--line); padding-top: 16px; overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
@@ -89,11 +112,19 @@
   .status { font-size: 15px; }
   .idle, .cart, .payment, .finished { grid-template-columns: 1fr; gap: 24px; }
   .welcome h1 { font-size: 36px; }
-  .summary, .info, .finishAside, .paymentWaiting { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
+  .summary, .info, .paymentWaiting { padding: 20px 0 0; border-left: 0; border-top: 1px solid var(--line); }
   .totals { padding-top: 0; }
   .totals > p { margin-top: 16px; }
   .line { font-size: 17px; gap: 8px; grid-template-columns: 34px minmax(0, 1fr) minmax(78px, auto); padding-right: 4px; }
   .amount { font-size: 44px !important; }
+  .finished { padding-inline: 0; }
+  .thanks { text-align: left; }
+  .thanks h1 { font-size: 32px; }
+  .checkBadge { width: 64px; height: 64px; font-size: 32px; }
+  .finishedSummary, .finishedSummaryNoChange { grid-template-columns: 1fr; min-height: auto; }
+  .finishedDivider { width: auto; height: 1px; }
+  .finishAside { justify-items: stretch; }
+  .change .amount { font-size: 38px !important; }
 }
 @media (min-width: 701px) and (max-height: 700px) {
   .screen { padding: 16px 22px; gap: 16px; }
@@ -101,8 +132,16 @@
   .paymentQr { grid-template-columns: minmax(140px, 1fr) minmax(0, 1fr); padding: 16px; gap: 16px; text-align: left; }
   .paymentQr .qr { max-width: 180px; }
   .member { padding: 8px 0; }
-  .tax { margin-top: 12px; }
-  .tax .qr { max-width: 160px; }
-  .thanks { padding: 0; }
-  .settlement { margin-top: 20px; }
+  .finished { gap: 16px; padding-inline: 0; }
+  .thanks h1 { font-size: 32px; }
+  .checkBadge { width: 58px; height: 58px; font-size: 28px; }
+  .finishedSummary { min-height: 180px; gap: 16px; padding: 16px 20px; }
+  .totalRow strong { font-size: 28px; }
+  .change .amount { font-size: 36px !important; }
+  .finishAside { gap: 10px; }
+  .member p { margin-top: 3px; font-size: 15px; }
+  .tax { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .tax .qr { max-width: 76px; }
+  .tax h2 { font-size: 15px; }
+  .taxCopy p { font-size: 12px; }
 }

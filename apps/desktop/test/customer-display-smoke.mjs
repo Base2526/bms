@@ -27,6 +27,7 @@ async function run() {
     "/display.js": ["text/javascript", await readFile(path.join(output, "display.js"))],
     "/display.css": ["text/css", await readFile(path.join(output, "display.css"))],
     "/logo.png": ["image/png", await readFile(path.join(web, "public/icons/playstore-512.png"))],
+    "/background.jpg": ["image/jpeg", await readFile(path.join(web, "public/sample/restaurant/kale-crispy-pork.jpg"))],
   };
   const server = createServer((req, res) => { const asset = assets[req.url]; if (!asset) { res.writeHead(404); res.end(); return; } res.setHeader("Content-Type", asset[0]); res.end(asset[1]); });
   await new Promise(done => server.listen(0, "127.0.0.1", done));
@@ -42,7 +43,12 @@ async function run() {
         await win.webContents.executeJavaScript(`window.displayFixture(${JSON.stringify(phase)})`);
         await waitFor(win, `document.querySelector('[data-phase="${phase}"]')`);
         await waitFor(win, "[...document.images].every(i => i.complete && i.naturalWidth > 0)");
-        if (["payment", "finished"].includes(phase)) await waitFor(win, "document.querySelector('img[alt^=QR]')");
+        if (["payment", "finished"].includes(phase)) await waitFor(win, "document.querySelector('img[alt*=QR]')");
+        assert.equal(
+          await win.webContents.executeJavaScript("!!document.querySelector('[data-customer-display-background]')"),
+          phase === "idle",
+          `${phase}: welcome background must be idle-only`,
+        );
         const bounds = await win.webContents.executeJavaScript(`({ overflow: document.documentElement.scrollWidth > innerWidth, tall: document.documentElement.scrollHeight > innerHeight + 2, text: document.body.textContent, bridge: !!window.bmsDesktop })`);
         await writeFile(path.join(output, `${phase}-${width}-${height}.png`), (await win.webContents.capturePage()).toPNG());
         assert.equal(bounds.overflow, false, `${phase} ${width}: horizontal overflow`);
@@ -60,12 +66,29 @@ async function run() {
     assert.equal(await win.webContents.executeJavaScript("document.documentElement.scrollHeight > innerHeight + 2"), false, "recent rows fit POS monitor");
     await win.webContents.executeJavaScript("window.displayFixture('pending')");
     await waitFor(win, "document.body.textContent.includes('กรุณารอพนักงานยืนยันยอดชำระ')");
-    assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('img[alt=\"QR ชำระเงิน\"]')"), false);
+    assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('img[alt*=\"พร้อมยอดชำระ\"]')"), false);
     await win.webContents.executeJavaScript("window.displayFixture('repricing')");
     await waitFor(win, "document.body.textContent.includes('กรุณารอพนักงานยืนยันยอดชำระ')");
-    assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('img[alt=\"QR ชำระเงิน\"]') || document.body.textContent.includes('168.00')"), false);
+    assert.equal(await win.webContents.executeJavaScript("!!document.querySelector('img[alt*=\"พร้อมยอดชำระ\"]') || document.body.textContent.includes('168.00')"), false);
     await win.webContents.executeJavaScript("window.displayFixture('cash')");
     await waitFor(win, "document.body.textContent.includes('ชำระเงินกับพนักงาน')");
+    win.setContentSize(1440, 900);
+    await win.webContents.executeJavaScript("window.displayFixture('finishedSimple')");
+    await waitFor(win, "document.querySelector('[data-phase=finished]') && document.body.textContent.includes('3,831.00') && document.body.textContent.includes('ลูกค้าทั่วไป')");
+    const simpleFinished = await win.webContents.executeJavaScript(`(() => {
+      const screen = document.querySelector('[data-phase=finished]').getBoundingClientRect();
+      const primary = document.querySelector('[data-finished-primary]').getBoundingClientRect();
+      const summary = document.querySelector('[data-finished-summary]').getBoundingClientRect();
+      return { screenCenter: screen.left + screen.width / 2, primaryCenter: primary.left + primary.width / 2,
+        summaryWidth: summary.width, screenWidth: screen.width,
+        customerKind: document.querySelector('[data-customer-kind]')?.dataset.customerKind,
+        overflow: document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight + 2 };
+    })()`);
+    assert.ok(Math.abs(simpleFinished.primaryCenter - simpleFinished.screenCenter) < simpleFinished.screenWidth * 0.1, "finished confirmation must be centered");
+    assert.ok(simpleFinished.summaryWidth > simpleFinished.screenWidth * 0.75, "finished summary band must use the available width");
+    assert.equal(simpleFinished.customerKind, "guest", "non-member sale must identify a general customer");
+    assert.equal(simpleFinished.overflow, false, "simple finished state must fit the customer display");
+    await writeFile(path.join(output, "finished-simple-1440-900.png"), (await win.webContents.capturePage()).toPNG());
     await win.webContents.executeJavaScript("window.displayFixture('finished')");
     await waitFor(win, "document.querySelector('[data-phase=finished]')");
     await waitFor(win, "document.querySelector('[data-phase=idle]')");
@@ -91,7 +114,7 @@ async function run() {
       await writeFile(path.join(output, "live-next-cart.png"), (await win.webContents.capturePage()).toPNG());
     }
     assert.deepEqual(errors, []);
-    console.log(`Customer display: 4 phases x 4 viewports, logos, QR, privacy, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
+    console.log(`Customer display: 4 phases x 4 viewports, logos, QR, privacy, member/guest completion, split tender, pricing/approval guards, expiry and reconnect passed. Screenshots: ${output}`);
   } finally { win.destroy(); await new Promise(done => server.close(done)); }
 }
 

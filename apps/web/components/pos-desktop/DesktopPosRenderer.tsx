@@ -2422,7 +2422,17 @@ function DesktopPosContent() {
                           <div className={styles.change}><span>เงินทอน</span><strong>{money(calculateCashChange(payment.amount, payment.tendered ?? 0))}</strong></div>
                         </>
                       ) : (
-                        <label className={styles.referenceInput}>เลขอ้างอิง<input value={payment.reference ?? ""} onChange={(event) => updatePayment(payment.id, { reference: event.target.value })} placeholder="เลขท้าย / Transaction ID" /></label>
+                        <>
+                          <label className={styles.referenceInput}>
+                            {payment.method === "qr" ? "เลขอ้างอิง (ไม่บังคับ)" : "เลขอ้างอิง"}
+                            <input
+                              value={payment.reference ?? ""}
+                              onChange={(event) => updatePayment(payment.id, { reference: event.target.value })}
+                              placeholder={payment.method === "qr" ? "เว้นว่างได้" : "เลขท้าย / Transaction ID"}
+                            />
+                          </label>
+                          {payment.method === "qr" ? <p className={styles.qrPaymentHint}>Dynamic QR ระบุยอดแล้ว กรุณาตรวจชื่อผู้รับ ยอด และรายการเงินเข้าก่อนกดยืนยัน</p> : null}
+                        </>
                       )}
                       {index < payments.length - 1 ? <hr /> : null}
                     </section>

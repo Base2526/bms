@@ -73,11 +73,17 @@ test("an unopened shift blocks checkout even after cashier verification", () => 
 test("shared payment validation balances split tender and computes cash change", () => {
   const result = validatePayments(250, [
     { id: "cash", method: "cash", amount: 100, tendered: 120 },
-    { id: "qr", method: "qr", amount: 150, reference: "TX-1" },
+    { id: "qr", method: "qr", amount: 150 },
   ]);
   assert.equal(result.canConfirm, true);
   assert.equal(result.paidTotal, 250);
   assert.equal(calculateCashChange(100, 120), 20);
+
+  const cardWithoutReference = validatePayments(250, [
+    { id: "card", method: "card", amount: 250 },
+  ]);
+  assert.equal(cardWithoutReference.canConfirm, false);
+  assert.ok(cardWithoutReference.errors.includes("บัตรเครดิต ต้องมีเลขอ้างอิงทดสอบ"));
 });
 
 test("every POS client uses the shared numeric 4-8 digit PIN policy", () => {

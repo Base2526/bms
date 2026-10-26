@@ -73,6 +73,14 @@ async function run() {
     await waitFor(source, "document.querySelector('[role=switch]').getAttribute('aria-checked') === 'false'");
     await source.webContents.executeJavaScript("document.querySelector('[role=switch]').click()");
     await waitFor(source, "document.querySelector('[role=switch]').getAttribute('aria-checked') === 'true'");
+    await source.webContents.executeJavaScript("document.querySelector('[role=switch]').click()");
+    await waitFor(source, "document.querySelector('[role=switch]').getAttribute('aria-checked') === 'false'");
+    await clickText(source, "เปิดหน้าต่างทดสอบบนจอนี้");
+    await waitFor(source, "document.body.textContent.includes('กำลังทดสอบบนจอนี้')");
+    await clickText(source, "ปิดหน้าต่างทดสอบ");
+    await waitFor(source, "document.body.textContent.includes('เปิดหน้าต่างทดสอบบนจอนี้')");
+    await source.webContents.executeJavaScript("document.querySelector('[role=switch]').click()");
+    await waitFor(source, "document.querySelector('[role=switch]').getAttribute('aria-checked') === 'true'");
     await waitFor(source, "!document.querySelector('.ant-message-notice')");
     for (const width of [1100, 390]) {
       source.setContentSize(width, 1400);

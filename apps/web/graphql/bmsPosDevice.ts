@@ -790,6 +790,7 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     address: String
     phone: String
     logoUrl: String
+    customerDisplayBackgroundUrl: String
     paymentQr: BmsPosPaymentQr
   }
 
@@ -3432,6 +3433,7 @@ export const bmsPosDeviceResolvers = {
           address: store.address,
           phone: store.phone,
           logoUrl: store.logoUrl,
+          customerDisplayBackgroundUrl: store.customerDisplayBackgroundUrl,
           paymentQr: configuredPosPaymentQr(store.paymentAccounts),
         },
         surface:

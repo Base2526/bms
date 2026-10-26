@@ -8,6 +8,7 @@ import { shopExperienceForArchetype } from "@/lib/bms/shopExperience";
 import { CARRIER_CODES, CARRIER_LABELS } from "@/lib/bms/carriers/constants";
 import { useI18n } from "@/lib/i18nContext";
 import ThaiAddressFields from "@/components/ThaiAddressFields";
+import { promptPayRecipientId, validateReusablePromptPayQrPayload } from "@/lib/bms/promptPayQr";
 
 const { Text } = Typography;
 
@@ -17,7 +18,7 @@ const Q = gql`
     bmsStoreProfile {
       businessArchetype businessArchetypeLocked businessType aiLanguage aiOrderingStyle aiRequiredFields aiInterpretShortReplies aiHandoffAfterFailedTurns
       receiptLanguageMode
-      about address provinceCode districtCode subdistrictCode province district subdistrict postcode phone contactEmail website logoUrl taxId timezone country currency
+      about address provinceCode districtCode subdistrictCode province district subdistrict postcode phone contactEmail website logoUrl customerDisplayBackgroundUrl taxId timezone country currency
       businessHours restaurantOrderHours restaurantOrdersPaused restaurantMerchantAbsorbLimit shippingPolicy returnPolicy
       paymentAccounts { type bankCode bankName accountName accountNo promptpayId qrPayload note }
       shippingFlatRate shippingFreeThreshold shippingEstDaysMin shippingEstDaysMax
@@ -47,7 +48,7 @@ const PROFILE_KEYS = [
   "businessType", "aiLanguage", "aiOrderingStyle", "aiRequiredFields", "aiInterpretShortReplies",
   "receiptLanguageMode",
   "businessArchetype",
-  "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "taxId",
+  "aiHandoffAfterFailedTurns", "about", "address", "phone", "contactEmail", "website", "logoUrl", "customerDisplayBackgroundUrl", "taxId",
   "provinceCode", "districtCode", "subdistrictCode", "postcode",
   "timezone", "country", "currency", "businessHours", "restaurantOrderHours", "restaurantOrdersPaused", "restaurantMerchantAbsorbLimit", "shippingPolicy", "returnPolicy",
   "shippingFlatRate", "shippingFreeThreshold", "shippingEstDaysMin", "shippingEstDaysMax",
@@ -60,6 +61,9 @@ const PROFILE_KEYS = [
 const DEFAULT_EMAIL_THEME_COLOR = "#1677ff";
 const MAX_LOGO_BYTES = 5 * 1024 * 1024;
 const ALLOWED_LOGO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_CUSTOMER_DISPLAY_BACKGROUND_BYTES = 5 * 1024 * 1024;
+const MAX_PAYMENT_QR_IMAGE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_PAYMENT_QR_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function SectionHeader({ children, note }: { children: React.ReactNode; note?: string }) {
   return (
@@ -70,8 +74,38 @@ function SectionHeader({ children, note }: { children: React.ReactNode; note?: s
   );
 }
 
+function PaymentQrPreview({ payload, label }: { payload?: string | null; label: string }) {
+  const [src, setSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const value = payload?.trim();
+    if (!value) {
+      setSrc(null);
+      return () => { active = false; };
+    }
+    void import("qrcode")
+      .then(({ default: QRCode }) => QRCode.toDataURL(value, {
+        errorCorrectionLevel: "M",
+        margin: 3,
+        width: 320,
+      }))
+      .then((dataUrl) => { if (active) setSrc(dataUrl); })
+      .catch(() => { if (active) setSrc(null); });
+    return () => { active = false; };
+  }, [payload]);
+
+  if (!src) return null;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <Text strong style={{ display: "block", marginBottom: 8 }}>{label}</Text>
+      <Image src={src} alt={label} width={160} preview={false} />
+    </div>
+  );
+}
+
 export default function StoreProfileCard() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const SHIPPING_MODE_OPTIONS = [
     { value: "flat", label: t("admin_store_profile.shipping_mode_flat") },
     { value: "zone", label: t("admin_store_profile.shipping_mode_zone") },
@@ -89,10 +123,18 @@ export default function StoreProfileCard() {
   const [saveTenant, { loading: savingT }] = useMutation(M_TENANT);
   const [saveProfile, { loading: savingP }] = useMutation(M_PROFILE);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingCustomerDisplayBackground, setUploadingCustomerDisplayBackground] = useState(false);
   const [showLogoUrlInput, setShowLogoUrlInput] = useState(false);
   const [logoUrlDraft, setLogoUrlDraft] = useState("");
+  const [decodingPaymentQrKey, setDecodingPaymentQrKey] = useState<number | null>(null);
   const selectedArchetype = Form.useWatch("businessArchetype", form);
+  const shopName = Form.useWatch("name", form) as string | undefined;
   const logoUrl = Form.useWatch("logoUrl", form) as string | null | undefined;
+  const customerDisplayBackgroundUrl = Form.useWatch("customerDisplayBackgroundUrl", form) as string | null | undefined;
+  const paymentAccounts = Form.useWatch("paymentAccounts", form) as Array<{
+    type?: string;
+    qrPayload?: string | null;
+  }> | undefined;
   const configuredArchetype = data?.bmsStoreProfile?.businessArchetype as string | null | undefined;
   const activeArchetypeOptions = localizedShopArchetypeOptions(t);
   // Keep a deprecated type legible for an existing shop while omitting it from all
@@ -127,7 +169,8 @@ export default function StoreProfileCard() {
         receiptLanguageMode: p?.receiptLanguageMode || "th",
         about: p?.about, address: p?.address, provinceCode:p?.provinceCode,districtCode:p?.districtCode,
         subdistrictCode:p?.subdistrictCode,postcode:p?.postcode, phone: p?.phone,
-        contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl, taxId: p?.taxId,
+        contactEmail: p?.contactEmail, website: p?.website, logoUrl: p?.logoUrl,
+        customerDisplayBackgroundUrl: p?.customerDisplayBackgroundUrl, taxId: p?.taxId,
         timezone: p?.timezone, country: p?.country || undefined, currency: p?.currency || undefined,
         businessHours: p?.businessHours,
         restaurantOrderHours: p?.restaurantOrderHours || [],
@@ -237,6 +280,90 @@ export default function StoreProfileCard() {
     form.setFieldsValue({ logoUrl: null });
     setLogoUrlDraft("");
     setShowLogoUrlInput(false);
+  };
+
+  const uploadCustomerDisplayBackground = async (file: File) => {
+    if (!ALLOWED_LOGO_TYPES.has(file.type)) {
+      message.error(t("admin_store_profile.customer_display_background_type_error"));
+      return false;
+    }
+    if (file.size > MAX_CUSTOMER_DISPLAY_BACKGROUND_BYTES) {
+      message.error(t("admin_store_profile.customer_display_background_size_error"));
+      return false;
+    }
+
+    setUploadingCustomerDisplayBackground(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const response = await fetch("/api/bms/store-profile/customer-display-background/upload", {
+        method: "POST",
+        body,
+        credentials: "include",
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok || !result?.url) {
+        throw new Error(result?.error || t("admin_store_profile.customer_display_background_upload_failed"));
+      }
+      form.setFieldValue("customerDisplayBackgroundUrl", result.url);
+      message.success(t("admin_store_profile.customer_display_background_upload_success"));
+    } catch (error: any) {
+      message.error(error?.message || t("admin_store_profile.customer_display_background_upload_failed"));
+    } finally {
+      setUploadingCustomerDisplayBackground(false);
+    }
+    return false;
+  };
+
+  const removeCustomerDisplayBackground = () => {
+    form.setFieldValue("customerDisplayBackgroundUrl", null);
+  };
+
+  const readPaymentQrImage = async (file: File, fieldName: number, fieldKey: number) => {
+    if (!ALLOWED_PAYMENT_QR_IMAGE_TYPES.has(file.type)) {
+      message.error(t("admin_store_profile.qr_image_type_error"));
+      return false;
+    }
+    if (file.size > MAX_PAYMENT_QR_IMAGE_BYTES) {
+      message.error(t("admin_store_profile.qr_image_size_error"));
+      return false;
+    }
+
+    setDecodingPaymentQrKey(fieldKey);
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const { BrowserQRCodeReader } = await import("@zxing/browser");
+      const result = await new BrowserQRCodeReader().decodeFromImageUrl(objectUrl);
+      const payload = result.getText().trim();
+      if (!payload || payload.length > 2048) {
+        throw new Error(t("admin_store_profile.qr_image_payload_error"));
+      }
+      const recipientId = promptPayRecipientId(validateReusablePromptPayQrPayload(payload));
+      const currentId = String(form.getFieldValue(["paymentAccounts", fieldName, "promptpayId"]) ?? "")
+        .replace(/\D/g, "");
+      if (currentId && currentId !== recipientId) {
+        throw new Error(t("admin_store_profile.qr_image_recipient_mismatch"));
+      }
+      form.setFieldValue(["paymentAccounts", fieldName, "promptpayId"], recipientId);
+      form.setFieldValue(["paymentAccounts", fieldName, "qrPayload"], payload);
+      message.success(t("admin_store_profile.qr_image_read_success"));
+    } catch (error: any) {
+      const translated = [
+        t("admin_store_profile.qr_image_payload_error"),
+        t("admin_store_profile.qr_image_recipient_mismatch"),
+      ].includes(error?.message)
+        ? error.message
+        : error?.message === "PROMPTPAY_BASE_QR_MUST_BE_AMOUNT_FREE"
+          ? t("admin_store_profile.qr_image_amount_error")
+          : typeof error?.message === "string" && /^(?:INVALID_|UNSUPPORTED_|NOT_|PROMPTPAY_)/.test(error.message)
+            ? t("admin_store_profile.qr_image_invalid_error")
+        : t("admin_store_profile.qr_image_read_failed");
+      message.error(translated);
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+      setDecodingPaymentQrKey(null);
+    }
+    return false;
   };
 
   return (
@@ -513,6 +640,64 @@ export default function StoreProfileCard() {
                         </Form.Item>
                       </Col>
                       <Col xs={24} sm={12} md={12}><Form.Item name="taxId" label={t("admin_store_profile.tax_id_label")}><Input /></Form.Item></Col>
+                      <Col span={24}>
+                        <Form.Item name="customerDisplayBackgroundUrl" hidden><Input /></Form.Item>
+                        <Form.Item
+                          label={t("admin_store_profile.customer_display_background_label")}
+                          extra={t("admin_store_profile.customer_display_background_hint")}
+                        >
+                          <Space direction="vertical" size={10} style={{ width: "100%" }}>
+                            <div
+                              style={{
+                                position: "relative",
+                                width: "min(100%, 520px)",
+                                aspectRatio: "16 / 9",
+                                overflow: "hidden",
+                                border: "1px solid var(--border-color, #d9d9d9)",
+                                borderRadius: 8,
+                                background: "#16191c",
+                              }}
+                            >
+                              {customerDisplayBackgroundUrl ? (
+                                <img
+                                  src={customerDisplayBackgroundUrl}
+                                  alt={t("admin_store_profile.customer_display_background_preview_alt")}
+                                  style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+                                />
+                              ) : (
+                                <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+                                  <PictureOutlined style={{ fontSize: 40, color: "#8c8c8c" }} />
+                                </div>
+                              )}
+                              {customerDisplayBackgroundUrl && (
+                                <div style={{ position: "absolute", inset: 0, background: "rgba(10, 13, 16, 0.62)" }} />
+                              )}
+                              <div style={{ position: "absolute", left: 20, bottom: 18, color: "#fff" }}>
+                                <Text style={{ color: "#ffc878" }}>{t("admin_store_profile.customer_display_background_welcome")}</Text>
+                                <div style={{ fontSize: 24, fontWeight: 700 }}>{shopName || t("admin_store_profile.customer_display_background_store_fallback")}</div>
+                              </div>
+                            </div>
+                            <Space wrap>
+                              <Upload
+                                accept="image/png,image/jpeg,image/webp"
+                                showUploadList={false}
+                                beforeUpload={uploadCustomerDisplayBackground}
+                              >
+                                <Button icon={<UploadOutlined />} loading={uploadingCustomerDisplayBackground}>
+                                  {customerDisplayBackgroundUrl
+                                    ? t("admin_store_profile.customer_display_background_change")
+                                    : t("admin_store_profile.customer_display_background_upload")}
+                                </Button>
+                              </Upload>
+                              {customerDisplayBackgroundUrl && (
+                                <Button danger type="text" icon={<DeleteOutlined />} onClick={removeCustomerDisplayBackground}>
+                                  {t("admin_store_profile.customer_display_background_remove")}
+                                </Button>
+                              )}
+                            </Space>
+                          </Space>
+                        </Form.Item>
+                      </Col>
                     </Row>
                     <Row gutter={16}>
                       <Col xs={24} md={12}><Form.Item name="about" label={t("admin_store_profile.about_label")} style={{ marginBottom: 12 }}><Input.TextArea rows={3} /></Form.Item></Col>
@@ -721,60 +906,155 @@ export default function StoreProfileCard() {
                   <Form.List name="paymentAccounts">
                     {(fields, { add, remove }) => (
                       <>
-                        {fields.map((field) => (
-                          <Row key={field.key} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-                            <Col xs={24} sm={5}>
-                              <Form.Item name={[field.name, "type"]} noStyle initialValue="BANK">
-                                <Select style={{ width: "100%" }} options={[
-                                  { value: "BANK", label: t("admin_store_profile.account_type_bank") },
-                                  { value: "PROMPTPAY", label: t("admin_store_profile.account_type_promptpay") },
-                                  { value: "OTHER", label: t("admin_store_profile.account_type_other") },
-                                ]} />
-                              </Form.Item>
-                            </Col>
-                            <Col xs={12} sm={4}>
-                              <Form.Item name={[field.name, "bankCode"]} noStyle>
-                                <Select
-                                  allowClear
-                                  showSearch
-                                  optionFilterProp="label"
-                                  placeholder={form.getFieldValue(["paymentAccounts", field.name, "bankName"]) || t("admin_store_profile.bank_name_placeholder")}
-                                  options={masterBanks.map((bank) => ({
-                                    value: bank.code,
-                                    label: `${bank.nameTh} / ${bank.nameEn}${bank.active ? "" : " (inactive)"}`,
-                                    disabled: !bank.active,
-                                  }))}
-                                  onChange={(value) => {
-                                    const bank = masterBanks.find((item) => item.code === value);
-                                    if (bank) form.setFieldValue(["paymentAccounts", field.name, "bankName"], bank.nameTh);
-                                  }}
-                                />
-                              </Form.Item>
-                              <Form.Item name={[field.name, "bankName"]} hidden><Input /></Form.Item>
-                            </Col>
-                            <Col xs={12} sm={5}><Form.Item name={[field.name, "accountName"]} noStyle><Input placeholder={t("admin_store_profile.account_name_placeholder")} /></Form.Item></Col>
-                            <Col xs={12} sm={5}><Form.Item name={[field.name, "accountNo"]} noStyle><Input placeholder={t("admin_store_profile.account_no_placeholder")} /></Form.Item></Col>
-                            <Col xs={10} sm={4}><Form.Item name={[field.name, "promptpayId"]} noStyle><Input placeholder={t("admin_store_profile.promptpay_placeholder")} /></Form.Item></Col>
-                            <Col xs={2} sm={1} style={{ textAlign: "center" }}>
-                              <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)} />
-                            </Col>
-                            <Col span={24}>
-                              <Form.Item
-                                name={[field.name, "qrPayload"]}
-                                label={t("admin_store_profile.qr_payload_label")}
-                                extra={t("admin_store_profile.qr_payload_extra")}
-                                style={{ margin: "8px 0 12px" }}
-                              >
-                                <Input.TextArea
-                                  rows={2}
-                                  maxLength={2048}
-                                  showCount
-                                  placeholder={t("admin_store_profile.qr_payload_placeholder")}
-                                />
-                              </Form.Item>
-                            </Col>
-                          </Row>
-                        ))}
+                        {fields.map((field, index) => {
+                          const account = paymentAccounts?.[field.name];
+                          const accountType = account?.type ?? "BANK";
+                          return (
+                            <Card
+                              key={field.key}
+                              size="small"
+                              title={t("admin_store_profile.payment_account_title", { number: index + 1 })}
+                              extra={(
+                                <Button danger type="text" icon={<DeleteOutlined />} onClick={() => remove(field.name)}>
+                                  {t("admin_store_profile.remove_account")}
+                                </Button>
+                              )}
+                              style={{ marginBottom: 12, background: "var(--bms-surface-subtle, #fafafa)" }}
+                            >
+                              <Row gutter={[16, 0]} align="top">
+                                <Col xs={24} md={6}>
+                                  <Form.Item
+                                    name={[field.name, "type"]}
+                                    label={t("admin_store_profile.account_type_label")}
+                                    initialValue="BANK"
+                                    rules={[{ required: true }]}
+                                    style={{ marginBottom: 14 }}
+                                  >
+                                    <Select style={{ width: "100%" }} options={[
+                                      { value: "BANK", label: t("admin_store_profile.account_type_bank") },
+                                      { value: "PROMPTPAY", label: t("admin_store_profile.account_type_promptpay") },
+                                      { value: "OTHER", label: t("admin_store_profile.account_type_other") },
+                                    ]} />
+                                  </Form.Item>
+                                </Col>
+                                <Col xs={24} md={9}>
+                                  <Form.Item
+                                    name={[field.name, "bankCode"]}
+                                    label={t("admin_store_profile.bank_name_label")}
+                                    style={{ marginBottom: 14 }}
+                                  >
+                                    <Select
+                                      allowClear
+                                      showSearch
+                                      optionFilterProp="label"
+                                      popupMatchSelectWidth={false}
+                                      placeholder={form.getFieldValue(["paymentAccounts", field.name, "bankName"]) || t("admin_store_profile.bank_search_placeholder")}
+                                      options={masterBanks.map((bank) => ({
+                                        value: bank.code,
+                                        label: `${lang === "th" ? bank.nameTh : bank.nameEn} (${bank.code})${bank.active ? "" : ` · ${t("admin_store_profile.bank_inactive")}`}`,
+                                        disabled: !bank.active,
+                                      }))}
+                                      onChange={(value) => {
+                                        const bank = masterBanks.find((item) => item.code === value);
+                                        form.setFieldValue(["paymentAccounts", field.name, "bankName"], bank?.nameTh ?? null);
+                                      }}
+                                    />
+                                  </Form.Item>
+                                  <Form.Item name={[field.name, "bankName"]} hidden><Input /></Form.Item>
+                                </Col>
+                                <Col xs={24} md={9}>
+                                  <Form.Item
+                                    name={[field.name, "accountName"]}
+                                    label={t("admin_store_profile.account_name_label")}
+                                    style={{ marginBottom: 14 }}
+                                  >
+                                    <Input placeholder={t("admin_store_profile.account_name_placeholder")} maxLength={160} />
+                                  </Form.Item>
+                                </Col>
+                                {accountType === "PROMPTPAY" ? (
+                                  <Col xs={24} md={12}>
+                                    <Form.Item
+                                      name={[field.name, "promptpayId"]}
+                                      label={t("admin_store_profile.promptpay_id_label")}
+                                      extra={t("admin_store_profile.promptpay_id_extra")}
+                                      style={{ marginBottom: 18 }}
+                                    >
+                                      <Input
+                                        inputMode="numeric"
+                                        autoComplete="off"
+                                        maxLength={80}
+                                        placeholder={t("admin_store_profile.promptpay_placeholder")}
+                                      />
+                                    </Form.Item>
+                                  </Col>
+                                ) : (
+                                  <Col xs={24} md={12}>
+                                    <Form.Item
+                                      name={[field.name, "accountNo"]}
+                                      label={t("admin_store_profile.account_no_label")}
+                                      style={{ marginBottom: 18 }}
+                                    >
+                                      <Input inputMode="numeric" autoComplete="off" maxLength={80} placeholder={t("admin_store_profile.account_no_placeholder")} />
+                                    </Form.Item>
+                                  </Col>
+                                )}
+                                {accountType === "PROMPTPAY" && <Col span={24}>
+                                  <Form.Item name={[field.name, "qrPayload"]} hidden><Input /></Form.Item>
+                                  <Divider style={{ margin: "0 0 16px" }} />
+                                  <Row gutter={[20, 16]} align="top">
+                                    <Col xs={24} lg={account?.qrPayload ? 16 : 24}>
+                                      <Text strong style={{ display: "block" }}>{t("admin_store_profile.qr_payload_label")}</Text>
+                                      <Text type="secondary" style={{ display: "block", margin: "4px 0 10px", lineHeight: 1.6 }}>
+                                        {t("admin_store_profile.qr_payload_extra")}
+                                      </Text>
+                                      <Alert
+                                        closable
+                                        type={account?.qrPayload ? "success" : "info"}
+                                        showIcon
+                                        message={t(account?.qrPayload
+                                          ? "admin_store_profile.qr_image_ready"
+                                          : "admin_store_profile.qr_image_missing")}
+                                        style={{ marginBottom: 12 }}
+                                      />
+                                      <Space wrap>
+                                        <Upload
+                                          accept="image/png,image/jpeg,image/webp"
+                                          maxCount={1}
+                                          showUploadList={false}
+                                          beforeUpload={(file) => readPaymentQrImage(file, field.name, field.key)}
+                                        >
+                                          <Button
+                                            type={account?.qrPayload ? "default" : "primary"}
+                                            icon={<UploadOutlined />}
+                                            loading={decodingPaymentQrKey === field.key}
+                                          >
+                                            {t(account?.qrPayload
+                                              ? "admin_store_profile.qr_image_replace"
+                                              : "admin_store_profile.qr_image_upload")}
+                                          </Button>
+                                        </Upload>
+                                        {account?.qrPayload && (
+                                          <Button
+                                            danger
+                                            onClick={() => form.setFieldValue(["paymentAccounts", field.name, "qrPayload"], null)}
+                                          >
+                                            {t("admin_store_profile.qr_image_remove")}
+                                          </Button>
+                                        )}
+                                      </Space>
+                                    </Col>
+                                    {account?.qrPayload && <Col xs={24} lg={8}>
+                                      <PaymentQrPreview
+                                        payload={account.qrPayload}
+                                        label={t("admin_store_profile.qr_preview_label")}
+                                      />
+                                    </Col>}
+                                  </Row>
+                                </Col>}
+                              </Row>
+                            </Card>
+                          );
+                        })}
                         <Button type="dashed" onClick={() => add({ type: "BANK" })} icon={<PlusOutlined />} block style={{ marginTop: 4 }}>
                           {t("admin_store_profile.add_account")}
                         </Button>

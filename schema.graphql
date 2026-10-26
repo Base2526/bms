@@ -7065,6 +7065,7 @@ type BmsPosStoreCreditSummary {
 type BmsPosStoreReceiptSettings {
   address: String
   businessHours: String
+  customerDisplayBackgroundUrl: String
   logoUrl: String
   name: String
   paymentQr: BmsPosPaymentQr
@@ -8927,6 +8928,7 @@ type BmsStoreProfile {
   contactEmail: String
   country: String
   currency: String
+  customerDisplayBackgroundUrl: String
   district: String
   districtCode: String
   emailFooterText: String
@@ -8976,6 +8978,7 @@ input BmsStoreProfileInput {
   contactEmail: String
   country: String
   currency: String
+  customerDisplayBackgroundUrl: String
   districtCode: String
   emailFooterText: String
   emailThemeColor: String

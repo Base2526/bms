@@ -4492,6 +4492,7 @@ export const typeDefs = /* GraphQL */ `
     contactEmail: String
     website: String
     logoUrl: String
+    customerDisplayBackgroundUrl: String
     taxId: String
     timezone: String
     country: String
@@ -4999,6 +5000,7 @@ export const typeDefs = /* GraphQL */ `
     contactEmail: String
     website: String
     logoUrl: String
+    customerDisplayBackgroundUrl: String
     taxId: String
     timezone: String
     country: String
