@@ -67,6 +67,13 @@ their idempotency key across an unknown network result. Cash out, void, and manu
 server-provided approver list by the required permission and still receive server-side PIN/RBAC
 validation.
 
+Operations quality holds are enforced by shared backend services: scan/variant quantities,
+direct-stock restaurant menus and branch stock summaries exclude held/expired lots. Existing
+inventory subscriptions invalidate active queries after HOLD/RELEASE. Transfers and count apply
+return `LOT_QUALITY_HOLD` with a review reason in data, not an unknown-result GraphQL error; all
+lines roll back. A cached Emergency Offline snapshot cannot know a newly placed hold: replay still
+revalidates on the server and keeps any rejected accepted-cash sale for reconciliation.
+
 Emergency Offline Mode is intentionally limited to plain retail cash sales. Restaurant, board-game,
 pharmacy, member/points/coupon, approval, serial/weighted/modifier, credit, deposit, split and
 non-cash workflows still require the server. A pending reference is not a receipt or tax document;

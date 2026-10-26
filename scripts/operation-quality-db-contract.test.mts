@@ -26,7 +26,7 @@ import {
   receiveLotInTx,
   consumeLotsForWastageInTx,
 } from "../apps/web/lib/bms/lots";
-import { recordPosSale, processPosReturn } from "../apps/web/lib/bms/pos";
+import { recordPosSale, processPosReturn, getPosVariantAvailable, listPosVariantChoices } from "../apps/web/lib/bms/pos";
 import {
   createOrder,
   shipOrder,
@@ -260,6 +260,27 @@ async function fixture(work: (f: any) => Promise<void>) {
     }
   });
 }
+test("POS availability and branch invalidation follow committed holds and release", () =>
+  fixture(async (f) => {
+    assert.equal(await getPosVariantAvailable(f.tenant, f.location, "FAKE-H", "BASE"), 1000);
+    const id = await f.create();
+    assert.equal(await getPosVariantAvailable(f.tenant, f.location, "FAKE-H", "BASE"), 400);
+    assert.equal((await listPosVariantChoices(f.tenant, "FAKE-H", f.location))[0].available, 400);
+    const notices = async () => (await query(
+      `SELECT location_id, safe_payload FROM bms_realtime_outbox
+       WHERE tenant_id=$1 AND entity_id=$2 AND event_type='inventory.changed'
+         AND safe_payload->>'source'='operations.quality' ORDER BY id`,
+      [f.tenant, f.lots[0]],
+    )).rows;
+    assert.deepEqual(await notices(), [{ location_id: f.location, safe_payload: { change: "HOLD", source: "operations.quality" } }]);
+    await f.review(id);
+    const proposal = await f.propose(id);
+    assert.equal((await f.act(id, "APPROVE", { decisionId: proposal.id }, f.reviewer)).status, "OK");
+    assert.equal(await getPosVariantAvailable(f.tenant, f.location, "FAKE-H", "BASE"), 1000);
+    assert.deepEqual((await notices()).map((row: any) => row.safe_payload.change), ["HOLD", "RELEASE"]);
+    assert.equal((await f.stock()).stock, 1000);
+  }));
+
 test("case findings and ownership remain editable without rewriting approved inspection evidence", () =>
   fixture(async (f) => {
     const id = await f.create();
@@ -778,14 +799,13 @@ test("generic adjustment, transfer and direct wastage cannot bypass an active qu
       items: [{ sku: "FAKE-H", size: "BASE", qty: 1 }],
     });
     assert.equal(transfer.status, "CREATED");
-    await assert.rejects(
-      () =>
-        sendStockTransfer({
+    assert.equal(
+      (await sendStockTransfer({
           tenantId: f.tenant,
           transferId: (transfer as any).transferId,
           actorUserId: f.actor,
-        }),
-      /LOT_QUALITY_HOLD/,
+        })).status,
+      "LOT_QUALITY_HOLD",
     );
     assert.equal((await f.stock()).stock, 1000);
     assert.equal((await f.stock()).available, 400);
@@ -805,10 +825,9 @@ test("generic adjustment, transfer and direct wastage cannot bypass an active qu
       note: "FAKE count",
       actorUserId: f.actor,
     });
-    await assert.rejects(
-      () =>
-        applyStockCount({ tenantId: f.tenant, countId, actorUserId: f.actor }),
-      /LOT_QUALITY_HOLD/,
+    assert.equal(
+      (await applyStockCount({ tenantId: f.tenant, countId, actorUserId: f.actor })).status,
+      "LOT_QUALITY_HOLD",
     );
     assert.equal((await f.stock()).stock, 1000);
   }));

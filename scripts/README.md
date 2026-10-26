@@ -1,5 +1,20 @@
 # scripts/ — ชุดเทสและเครื่องมือตรวจของ repo นี้
 
+## Operations integration regressions
+
+`node scripts/run-contract-tests.mjs pure operation-integration-regression` executes the real
+evidence, reservation, quality-stock and restock services with substituted database/storage/channel
+boundaries. Covers the production `files` role restriction, denied reads, upload rollback and lost
+commit, missing versus empty stock, held/expired lot availability and suppression of false restock
+messages. The checklist DB fixture also denies `bms_app` SELECT on `files` to match migration 9.28.
+These DB-free tests do not replace the disposable PostgreSQL suites.
+
+`node scripts/run-contract-tests.mjs pure operation-pos-integration` covers Desktop/native scan
+and variant availability, restaurant menu stock policies, branch summaries, multi-line transfer/count
+rollback with decided hold outcomes, transactional inventory invalidation, and native GraphQL
+operation compatibility. `apps/mobile` additionally exercises usable scan quantities and pack limits
+in its CatalogProvider Jest suite. These do not certify native hardware or a packaged app.
+
 ## Materials and receiving — Release G
 
 - `node scripts/run-contract-tests.mjs pure operation-material`: integer/window/source validation

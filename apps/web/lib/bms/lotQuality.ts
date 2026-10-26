@@ -46,6 +46,7 @@ export async function qualityStock(
   const stock = inv?.current_stock ?? 0,
     reserved = inv?.reserved_stock ?? 0;
   return {
+    exists: !!inv,
     stock,
     reserved,
     lots,
@@ -55,6 +56,26 @@ export async function qualityStock(
       : Math.max(0, stock - reserved),
   };
 }
+export type QualityHoldRejection = {
+  status: "LOT_QUALITY_HOLD";
+  reason: string;
+  sku: string;
+  size: string;
+};
+export class LotQualityHoldError extends Error {
+  readonly result: QualityHoldRejection;
+  constructor(sku: string, size: string) {
+    super("LOT_QUALITY_HOLD");
+    this.name = "LotQualityHoldError";
+    this.result = {
+      status: "LOT_QUALITY_HOLD",
+      reason: `${sku}/${size}: มีล็อตพักใช้ กรุณาตรวจสอบงานคุณภาพก่อนทำรายการ / Stock is on quality hold; review the quality case first.`,
+      sku,
+      size,
+    };
+  }
+}
+
 /** Generic count/adjust/transfer cannot erase or reinterpret held stock. */
 export async function assertNoQualityHold(
   c: PoolClient,
@@ -64,7 +85,7 @@ export async function assertNoQualityHold(
   size: string,
 ) {
   const x = await qualityStock(c, tenant, location, sku, size);
-  if (x.lots.some((l) => !l.usable)) throw new Error("LOT_QUALITY_HOLD");
+  if (x.lots.some((l) => !l.usable)) throw new LotQualityHoldError(sku, size);
 }
 /** Return a held lot to another branch without making it usable. Source lot is locked first. */
 export async function inheritQualityHold(

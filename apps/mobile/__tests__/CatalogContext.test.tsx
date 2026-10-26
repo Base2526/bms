@@ -76,6 +76,28 @@ describe('CatalogProvider offline snapshots', () => {
     });
   });
 
+  test.each([
+    [0, 1, true, false],
+    [3, 5, true, false],
+    [3, 1, true, true],
+    [0, 1, false, true],
+  ])('scan respects usable quantity %s and pack quantity %s (tracked %s)', async (available, baseQty, stockTracked, sellable) => {
+    const scan = jest.fn().mockResolvedValue({
+      data: { bmsPosScan: { ...scanResult, available, baseQty, stockTracked } },
+    });
+    (useLazyQuery as jest.Mock).mockReturnValue([scan]);
+    let catalog: ReturnType<typeof useCatalog> | undefined;
+    function Probe() { catalog = useCatalog(); return null; }
+    let tree!: ReactTestRenderer.ReactTestRenderer;
+    await act(async () => { tree = ReactTestRenderer.create(<CatalogProvider><Probe /></CatalogProvider>); });
+    await act(async () => {
+      const resolved = await catalog!.resolveVariant('SKU-1', 'STD', null);
+      expect(resolved.sellable).toBe(sellable);
+      expect(resolved.stockTracked).toBe(stockTracked);
+    });
+    await act(async () => tree.unmount());
+  });
+
   test('reuses a resolved price snapshot for repeated sales after connectivity drops', async () => {
     const scan = jest.fn().mockResolvedValue({
       data: { bmsPosScan: scanResult },

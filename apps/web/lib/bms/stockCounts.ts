@@ -15,7 +15,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { assertNoQualityHold } from "./lotQuality";
+import { assertNoQualityHold, LotQualityHoldError, type QualityHoldRejection } from "./lotQuality";
 import { recordMovement } from "./movements";
 import { insertWithDailyDocNo } from "./dailyDocNo";
 import {
@@ -358,6 +358,7 @@ export async function recordCountItem(input: {
 }
 
 export type ApplyCountResult =
+  | QualityHoldRejection
   | { status: "APPLIED"; adjustedItems: number; varianceUnits: number }
   | { status: "NOT_FOUND" }
   | { status: "WRONG_STATE"; current: StockCountStatus }
@@ -525,6 +526,7 @@ export async function applyStockCount(input: {
     try {
       await client.query("ROLLBACK");
     } catch {}
+    if (err instanceof LotQualityHoldError) return err.result;
     throw err;
   } finally {
     client.release();

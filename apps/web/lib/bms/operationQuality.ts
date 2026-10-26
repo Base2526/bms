@@ -21,7 +21,7 @@ import {
 import { teamBranches, teamHash } from "./operationTeamReads";
 import { teamInstant } from "./operationTeamPolicy";
 import { checklistRecipient } from "./operationChecklistDispatch";
-import { notifyQualityCase } from "./operationQualityDispatch";
+import { notifyQualityCase, notifyLotAvailabilityInTx } from "./operationQualityDispatch";
 import { qualityStock } from "./lotQuality";
 import { directProduct } from "./operationProduction";
 import { recordInventoryWastageInTx } from "./wastage";
@@ -211,6 +211,7 @@ async function execute(c: PoolClient, s: ChecklistScope, i: QualityCommand) {
       `INSERT INTO bms_operation_lot_holds(tenant_id,case_id,lot_id,base_unit,reason,created_by) VALUES($1,$2,$3,$4,$5,$6)`,
       [s.tenantId, p.id, l.id, unit, note, s.actorId],
     );
+    await notifyLotAvailabilityInTx(c, s.tenantId, s.actorId, l, "HOLD");
     evidence = { lotId: l.id, qty: l.qty, baseUnit: unit };
     if (i.action === "HOLD")
       await c.query(
@@ -390,12 +391,13 @@ async function execute(c: PoolClient, s: ChecklistScope, i: QualityCommand) {
       )
         reject("STOCK_CHANGED");
       if (l.baseUnit !== h.base_unit) reject("SOURCE_UNIT_CHANGED");
-      if (d.kind === "RELEASE")
+      if (d.kind === "RELEASE") {
         await c.query(
           `UPDATE bms_operation_lot_holds SET status='RELEASED',version=version+1,released_by=$3,released_at=now() WHERE tenant_id=$1 AND id=$2`,
           [s.tenantId, h.id, s.actorId],
         );
-      else {
+        await notifyLotAvailabilityInTx(c, s.tenantId, s.actorId, l, "RELEASE");
+      } else {
         checklistPermission(s, "stock.adjust");
         if (!(await isCapabilityEnabledInTx(c, s.tenantId, "WASTAGE")))
           reject("WASTAGE_DISABLED");

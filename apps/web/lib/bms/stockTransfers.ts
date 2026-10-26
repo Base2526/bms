@@ -11,7 +11,7 @@
 import type { PoolClient } from "pg";
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
-import { assertNoQualityHold } from "./lotQuality";
+import { assertNoQualityHold, LotQualityHoldError, type QualityHoldRejection } from "./lotQuality";
 import { recordMovement } from "./movements";
 import { insertWithDailyDocNo } from "./dailyDocNo";
 import { notifyBranchRequisitionCommitted } from "./branchRequisitionNotify";
@@ -319,6 +319,7 @@ export async function createStockTransferInTx(
 }
 
 export type TransferActionResult =
+  | QualityHoldRejection
   | { status: "OK" }
   | { status: "INVALID"; reason: string }
   | { status: "NOT_FOUND" }
@@ -472,6 +473,7 @@ export async function sendStockTransfer(input: {
     try {
       await client.query("ROLLBACK");
     } catch {}
+    if (err instanceof LotQualityHoldError) return err.result;
     throw err;
   } finally {
     client.release();
@@ -746,6 +748,7 @@ export async function receiveStockTransfer(input: {
     try {
       await client.query("ROLLBACK");
     } catch {}
+    if (err instanceof LotQualityHoldError) return err.result;
     throw err;
   } finally {
     client.release();

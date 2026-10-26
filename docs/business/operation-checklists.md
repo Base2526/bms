@@ -177,6 +177,13 @@ N/A ต้องมีเหตุผลและแม่แบบต้อง�
 decode จริง, ตัด metadata และบันทึก WebP ไม่เกิน 1600 pixels. รูปเป็น private,
 อ่านผ่าน `/api/bms/operations/evidence/[id]` ที่ตรวจ tenant + branch + view.
 generic files list/download ไม่เปิดเผยรูปหลักฐาน และ FK กันการลบไฟล์ที่อ้างอิงอยู่.
+
+File metadata uses the storage-side connection because migration 9.28 denies `bms_app`
+SELECT on `files`. Upload authorization runs before storage, then the tenant transaction
+rechecks assignment/version and commits the evidence link, event and audit together. Failed
+attachments soft-delete only proven orphan file rows and remove their bytes; a lost commit
+response must preserve an already-attached image. Downloads authorize the evidence/run/branch
+before reading same-tenant private, non-deleted file metadata outside the restricted role.
 เก็บไฟล์ใน storage driver เดิม; rollback ระหว่างลงทะเบียนพยายามล้างไฟล์ใหม่.
 process crash ระหว่างเขียน bytes และ commit อาจทิ้ง orphan bytes; ไม่อ้างว่ามี GC ใหม่.
 

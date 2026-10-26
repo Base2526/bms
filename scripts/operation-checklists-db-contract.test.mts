@@ -1814,6 +1814,11 @@ test("invalid timezone/schedule fails before creating a schedule", async () => {
     );
 });
 test("private evidence is decoded, branch-scoped, tied to the item and immutable after approval", async () => {
+  assert.equal(
+    (await query(`SELECT has_table_privilege('bms_app','files','SELECT') allowed`)).rows[0].allowed,
+    false,
+    "Evidence must work with the production 9.28 files restriction",
+  );
   const require = createRequire(
       new URL("../apps/web/package.json", import.meta.url),
     ),

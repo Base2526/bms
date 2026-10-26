@@ -1,5 +1,6 @@
 import { query } from "@/lib/db";
 import { channelSupportsPush, sendStaffMessage } from "./inbox";
+import { usableStockSql } from "./lotQuality";
 
 export const RESTOCK_STATUSES = [
   "ACTIVE",
@@ -66,7 +67,7 @@ export async function subscribeToRestock(input: {
   const requestedQty = Math.min(Math.max(input.requestedQty ?? 1, 1), 999);
 
   const product = await query<{ name: string; available: number }>(
-    `SELECT p.name, (i.current_stock - i.reserved_stock)::int AS available
+    `SELECT p.name, ${usableStockSql("i")} AS available
        FROM bms_products p
        JOIN bms_inventory i ON i.tenant_id = p.tenant_id AND i.product_sku = p.sku
       WHERE p.tenant_id = $1 AND p.sku = $2 AND i.size = $3 AND p.active
@@ -125,7 +126,7 @@ export async function markRestockSubscriptionsReady(tenantId: string, sku: strin
         AND EXISTS (
           SELECT 1 FROM bms_inventory i
            WHERE i.tenant_id = s.tenant_id AND i.product_sku = s.product_sku AND i.size = s.size
-             AND (i.current_stock - i.reserved_stock) > 0
+             AND ${usableStockSql("i")} > 0
         )`,
     [tenantId, sku, size.trim().toUpperCase()]
   );
@@ -236,7 +237,7 @@ export async function listRestockSubscriptions(
   const rows = await query(
     `SELECT s.*, p.name AS product_name,
             COALESCE(NULLIF(cu.name, s.customer_ref), ci.display_name, s.customer_ref) AS customer_name,
-            COALESCE(i.current_stock - i.reserved_stock, 0)::int AS available
+            ${usableStockSql("i")} AS available
        FROM bms_restock_subscriptions s
        JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
        LEFT JOIN bms_inventory i ON i.tenant_id = s.tenant_id AND i.product_sku = s.product_sku AND i.size = s.size
@@ -560,7 +561,7 @@ export async function sendRestockNotification(
 
   const subscription = await query<any>(
     `SELECT s.*, p.name AS product_name,
-            COALESCE(i.current_stock - i.reserved_stock, 0)::int AS available
+            ${usableStockSql("i")} AS available
        FROM bms_restock_subscriptions s
        JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
        LEFT JOIN bms_inventory i
@@ -671,7 +672,7 @@ export async function sendAllReadyRestockNotifications(
   for (const row of ready.rows) {
     const ctxRes = await query<{ product_sku: string; size: string; product_name: string; available: number }>(
       `SELECT s.product_sku, s.size, p.name AS product_name,
-              COALESCE(i.current_stock - i.reserved_stock, 0)::int AS available
+              ${usableStockSql("i")} AS available
          FROM bms_restock_subscriptions s
          JOIN bms_products p ON p.tenant_id = s.tenant_id AND p.sku = s.product_sku
          LEFT JOIN bms_inventory i ON i.tenant_id = s.tenant_id AND i.product_sku = s.product_sku AND i.size = s.size

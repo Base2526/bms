@@ -162,10 +162,10 @@ export async function getBranchStockOverview(
     query<{ sellable_sku_count: number; low_stock_count: number }>(
       `SELECT
          COUNT(DISTINCT i.product_sku)
-           FILTER (WHERE (i.current_stock - i.reserved_stock) > 0)::int
+           FILTER (WHERE ${usableStockSql('i')} > 0)::int
            AS sellable_sku_count,
          COUNT(*)
-           FILTER (WHERE (i.current_stock - i.reserved_stock) <= i.reorder_point)::int
+           FILTER (WHERE ${usableStockSql('i')} <= i.reorder_point)::int
            AS low_stock_count
        ${inventoryCte}`,
       [tenantId, locationId],
@@ -180,11 +180,11 @@ export async function getBranchStockOverview(
       `SELECT i.product_sku AS sku,
               p.name,
               i.size,
-              (i.current_stock - i.reserved_stock)::int AS available,
+              ${usableStockSql('i')} AS available,
               i.reorder_point::int AS reorder_point
        ${inventoryCte}
-        AND (i.current_stock - i.reserved_stock) <= i.reorder_point
-      ORDER BY (i.current_stock - i.reserved_stock) ASC, p.name, i.size
+        AND ${usableStockSql('i')} <= i.reorder_point
+      ORDER BY ${usableStockSql('i')} ASC, p.name, i.size
       LIMIT $3`,
       [tenantId, locationId, boundedLimit],
     ),
@@ -480,6 +480,10 @@ export async function reserveStock(input: {
       (await resolveDefaultLocationIdInTx(client, tenantId));
 
     const quality = await qualityStock(client,tenantId,locationId,sku,size);
+    if (!quality.exists) {
+      await client.query("ROLLBACK");
+      return { status: "NOT_FOUND", sku, size };
+    }
     if(!quality.reconciled || quality.available<qty) {
       await client.query('ROLLBACK');
       return {status:'INSUFFICIENT',sku,size,available:quality.reconciled?quality.available:0,requested:qty};
@@ -516,7 +520,7 @@ export async function reserveStock(input: {
         sku,
         size,
         qty,
-        availableAfter: Number(upd.rows[0].available_after),
+        availableAfter: quality.available - qty,
       };
     }
 

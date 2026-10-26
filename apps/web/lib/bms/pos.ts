@@ -1,5 +1,5 @@
 import { readBranchPrice, branchPrice } from "./branchPrices";
-import { usableLotSql, inheritQualityHold } from "./lotQuality";
+import { usableLotSql, usableStockSql, inheritQualityHold } from "./lotQuality";
 // =============================================================
 // BMS POS — ขายหน้าร้าน (channel = "pos")
 // -------------------------------------------------------------
@@ -255,7 +255,7 @@ export async function getPosOperationalReadiness(tenantId: string): Promise<PosO
          (SELECT COUNT(*)
             FROM bms_inventory i
            WHERE i.tenant_id = $1
-             AND i.current_stock - i.reserved_stock > 0
+             AND ${usableStockSql('i')} > 0
              AND EXISTS (
                SELECT 1 FROM bms_pos_devices d
                 WHERE d.tenant_id = i.tenant_id AND d.location_id = i.location_id AND d.active
@@ -604,7 +604,7 @@ export async function listPosVariantChoices(
           )
      )
      SELECT choices.size,
-            COALESCE(SUM(GREATEST(inventory.current_stock - inventory.reserved_stock, 0)), 0)::text
+            COALESCE(SUM(${usableStockSql('inventory')}), 0)::text
               AS available,
             COALESCE(sized.price, shared.price, product.price)::text AS price,
             NOT (
@@ -673,9 +673,9 @@ export async function getPosVariantAvailable(
   size: string,
 ): Promise<number> {
   const stock = await query<{ available: string }>(
-    `SELECT (current_stock - reserved_stock) AS available
-       FROM bms_inventory
-      WHERE tenant_id = $1 AND location_id = $2 AND product_sku = $3 AND size = $4`,
+    `SELECT ${usableStockSql('i')} AS available
+       FROM bms_inventory i
+      WHERE i.tenant_id = $1 AND i.location_id = $2 AND i.product_sku = $3 AND i.size = $4`,
     [tenantId, locationId, productSku, size],
   );
   return stock.rowCount ? Number(stock.rows[0].available) : 0;

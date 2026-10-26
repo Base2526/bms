@@ -1524,6 +1524,9 @@ zero"`, verbatim from the migration comment); reading `bms_inventory` to answer 
   Held replenishment invalidates inspection and commits internal change notices in the same tx.
   Trace is bounded recorded evidence with explicit unknown/restricted history. Never deploy or
   roll back to a hold-unaware stock writer while active holds exist.
+  POS scan/menu/variant/branch availability uses usable stock. Transfer/count quality rejections
+  return business data after full rollback, not an unknown-result GraphQL error. HOLD/RELEASE
+  enqueue existing branch inventory invalidations in the same transaction (no physical stock write).
 
 - Release G (`10.97`): frozen E BOM demand, one branch/<=7 Bangkok dates, integer base units;
   deterministic once-only allocation is not a reservation. Usable stock and pending supply stay
@@ -1564,6 +1567,8 @@ must release the retry-only UI while keeping the original outcome explicitly unv
   Lock template family before template rows; lock parent run before corrective-action rows.
 - Images are decoded/re-encoded and private. Only the dedicated evidence route may read them,
   after view/branch checks; generic file surfaces must not bypass that boundary.
+  `files` metadata uses the storage-side connection, never `bms_app` (9.28 revoked SELECT).
+  Recheck the run before attaching; orphan cleanup must preserve an attachment after lost COMMIT.
 - Scheduled work claims `SKIP LOCKED` and has a unique schedule/instant occurrence. Keep the
   15-minute dispatcher separate from business logic; polling is not proof a scheduled run executed.
 - Shop-configured limits are not legal/clinical safety standards. Approval is work review,

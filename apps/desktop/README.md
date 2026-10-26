@@ -74,6 +74,12 @@ recovery guarantees, and its own failure-mode evidence.
 ESC/POS USB/LAN printing, cash-drawer control, signed releases, auto-update, and extending Emergency
 Offline Mode to Desktop are separate rollout milestones.
 
+Operations quality holds share backend usable-stock checks with Mobile: scan/variant results and
+direct-stock restaurant menus exclude held/expired lots. HOLD/RELEASE enqueue the existing branch
+inventory invalidation. The compact Desktop catalogue refetches its current search on availability
+events without resetting the cashier, cart or payment flow; scan and settlement still revalidate.
+Generic transfer/count commands return a reviewable quality-hold result after full rollback.
+
 ### Operator-initiated update notification
 
 The `/pos/app`, `/pos/restaurant` and standalone `/pos` headers have a download icon in Desktop

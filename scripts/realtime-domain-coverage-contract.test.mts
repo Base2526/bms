@@ -227,7 +227,7 @@ const CONFIGURATION = [
 
 /** Operational state whose owning surface performs bounded polling plus post-write refresh. */
 const POLLED_OPERATIONAL_SURFACE = [
-  // H restrictions are checked synchronously by stock services; operations evidence refreshes on demand.
+  // H evidence refreshes on demand; HOLD/RELEASE explicitly enqueue inventory.changed in their tenant tx.
   "bms_operation_quality_cases", "bms_operation_lot_holds", "bms_operation_quality_decisions", "bms_operation_quality_events",
   // Release G: explicit/refetch-on-write readiness; canonical task inbox polls. Receipt stock uses purchase events.
   "bms_operation_material_plans", "bms_operation_material_sources", "bms_operation_material_links", "bms_operation_material_inspections", "bms_operation_material_events", "bms_purchase_receipt_evidence",

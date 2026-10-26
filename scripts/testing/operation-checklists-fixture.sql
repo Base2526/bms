@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS bms_user_allowed_locations(tenant_id uuid,user_id uui
 CREATE TABLE IF NOT EXISTS bms_role_permissions(tenant_id uuid,role_id uuid,permission text,UNIQUE(tenant_id,role_id,permission));
 CREATE TABLE IF NOT EXISTS bms_audit_log(id bigserial PRIMARY KEY,tenant_id uuid,actor text,action text,target text,meta jsonb);
 CREATE TABLE IF NOT EXISTS files(id serial PRIMARY KEY,tenant_id uuid,filename text,original_name text,mimetype text,size bigint,checksum text,relpath text,visibility text,deleted_at timestamptz,created_at timestamptz DEFAULT now(),updated_at timestamptz DEFAULT now());
-GRANT SELECT ON bms_tenants,roles,users,bms_locations,bms_kitchen_stations,bms_user_allowed_locations,bms_role_permissions,files TO bms_app;
+GRANT SELECT ON bms_tenants,roles,users,bms_locations,bms_kitchen_stations,bms_user_allowed_locations,bms_role_permissions TO bms_app;
+-- Mirror 9.28: synthetic fixtures must not hide the real files permission boundary.
+REVOKE SELECT ON files FROM bms_app;
 GRANT SELECT,INSERT ON bms_audit_log TO bms_app;
 GRANT USAGE,SELECT ON ALL SEQUENCES IN SCHEMA public TO bms_app;
