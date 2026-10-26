@@ -1,4 +1,5 @@
 import { getVariantBasePrice } from "./productPacks";
+import { usableStockSql } from "./lotQuality";
 import { randomUUID } from "node:crypto";
 import { RESERVATION_LOST, RestaurantCheckError } from "./restaurantPosErrors";
 // คีย์ล็อกบิลมีสูตรเดียวทั้งระบบ (kitchen.ts ก็ขอล็อกตัวเดียวกันนี้ก่อนแตะแถวตั๋ว)
@@ -730,7 +731,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
             unavailable.resets_at AS unavailable_resets_at,
             unavailable.reason AS unavailable_reason,
             COALESCE((
-              SELECT SUM(GREATEST(i.current_stock - i.reserved_stock, 0))
+              SELECT SUM(${usableStockSql('i')})
                 FROM bms_inventory i
                WHERE i.tenant_id = p.tenant_id AND i.product_sku = p.sku
                  AND i.location_id = $2
@@ -741,7 +742,7 @@ export async function listRestaurantMenu(tenantId: string, locationId: string) {
             ) AS has_modifiers,
             (SELECT jsonb_agg(jsonb_build_object(
                 'size', variant.code,
-                'available', COALESCE(i.current_stock - i.reserved_stock, 0)
+                'available', ${usableStockSql('i')}
               ) ORDER BY variant.sort_order, variant.code)
                FROM bms_product_variants variant
                LEFT JOIN bms_inventory i

@@ -164,6 +164,27 @@ export async function updateTenantIdentity(
  */
 async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promise<void> {
   if (!tenantIds.length) return;
+  // H records restrict lot and task deletion; only authorized whole-tenant purge removes them.
+  for (const table of ['bms_operation_quality_events','bms_operation_quality_decisions','bms_operation_lot_holds','bms_operation_quality_cases'])
+    await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Release G immutable evidence references PO, canonical runs and branch requests.
+  // Remove only inside this already-authorized whole-tenant purge, before those parents.
+  await client.query(`DELETE FROM bms_purchase_receipt_evidence WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_operation_material_events WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_operation_material_inspections WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_operation_material_links WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_operation_material_sources WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_operation_material_plans WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // G sources/tasks depend on A–F evidence. Their restrictive graph must also unwind before
+  // locations, products and canonical runs; this does not add any new purge entry point.
+  for (const table of [
+    'bms_operation_improvement_events','bms_operation_improvements','bms_operation_issue_sources',
+    'bms_operation_issues','bms_operation_weekly_reviews','bms_operation_learning','bms_operation_standards',
+    'bms_operation_production_waste','bms_operation_production_events','bms_operation_production_inputs',
+    'bms_operation_production','bms_operation_team_notices','bms_operation_team_events',
+    'bms_operation_handovers','bms_operation_rosters','bms_operation_daily_reviews',
+    'bms_operation_notices','bms_operation_escalations','bms_operation_policies',
+  ]) await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   // Requisition evidence deliberately restricts deletion of its PO/transfer/product/user.
   // Only this already-authorized full tenant purge removes it, inside the same transaction.
   await client.query(`DELETE FROM bms_branch_requisition_events WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
@@ -259,6 +280,10 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Frozen production sources are gone above; remove recipe component RESTRICT references
+  // before deleting products (subrecipe links reference both parent and child recipes).
+  await client.query(`DELETE FROM bms_product_recipe_subrecipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  await client.query(`DELETE FROM bms_product_recipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_customers WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM users WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);

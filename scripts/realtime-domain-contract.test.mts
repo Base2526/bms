@@ -180,10 +180,13 @@ test("POS device heartbeat and receipt counters do not invalidate RN GraphQL rea
 
 test("purchase receipt event is inserted with the same transaction before commit", () => {
   const enqueue = purchase.indexOf("await enqueueRealtimeEventInTx");
-  const commit = purchase.indexOf('await client.query("COMMIT")', enqueue);
-  assert.ok(enqueue >= 0 && commit > enqueue);
-  assert.match(purchase.slice(enqueue, commit), /eventType: "purchase\.received"/);
-  assert.match(purchase.slice(enqueue, commit), /locationId/);
+  const core=purchase.slice(purchase.indexOf('export async function receivePurchaseOrderInTx'),purchase.indexOf('export async function cancelPurchaseOrder'));
+  assert.ok(enqueue >= 0);
+  assert.match(core, /eventType: "purchase\.received"/);
+  assert.match(core, /locationId/);
+  assert.doesNotMatch(core, /client\.query\("(?:COMMIT|ROLLBACK)"\)/);
+  const wrapper=purchase.slice(purchase.indexOf('export async function receivePurchaseOrder('),purchase.indexOf('export async function notifyPurchaseRestock'));
+  assert.match(wrapper,/await receivePurchaseOrderInTx[\s\S]*await client.query\(success \? "COMMIT" : "ROLLBACK"\)/);
 });
 
 test("pharmacy envelopes expose only case identity and safe lifecycle state", () => {

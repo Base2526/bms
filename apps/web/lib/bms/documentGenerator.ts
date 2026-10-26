@@ -1026,6 +1026,8 @@ export function buildStockLedgerReportDoc(
     STOCK_OUT: "ปรับลด",
     TRANSFER_OUT: "โอนออก",
     WASTAGE: "ของเสีย",
+    PRODUCTION_IN: "รับผลผลิต",
+    PRODUCTION_OUT: "ใช้วัตถุดิบผลิต",
   };
   return {
     title: "รายงานสินค้าและวัตถุดิบ",
@@ -1092,11 +1094,13 @@ export function buildStockLedgerReportDoc(
           { key: "purchased", label: "รับ: ซื้อ" },
           { key: "returned", label: "รับ: ลูกค้าคืน" },
           { key: "transferredIn", label: "รับ: โอนเข้า" },
+          { key: "producedIn", label: "รับ: ผลผลิต" },
           { key: "countedUp", label: "รับ: นับเพิ่ม" },
           { key: "adjustedIn", label: "รับ: ปรับเพิ่ม" },
           { key: "totalIn", label: "รวมรับ" },
           { key: "sold", label: "จ่าย: ขาย" },
           { key: "transferredOut", label: "จ่าย: โอนออก" },
+          { key: "productionUsed", label: "จ่าย: ใช้ผลิต" },
           { key: "wasted", label: "จ่าย: ของเสีย" },
           { key: "countedDown", label: "จ่าย: นับลด" },
           { key: "adjustedOut", label: "จ่าย: ปรับลด" },

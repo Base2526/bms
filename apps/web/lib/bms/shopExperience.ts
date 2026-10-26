@@ -1,4 +1,5 @@
 import { normalizeShopArchetype, type ShopArchetype } from "./shopArchetypes";
+import { inStoreBarcode } from "./barcode";
 import {
   PRODUCT_CREATION_TEMPLATES,
   type ProductCreationTemplate,
@@ -23,7 +24,8 @@ export type ShopExperienceProfile = {
   showWastageInNavigation: boolean;
   specialMode: "NONE" | "PHARMACY" | "RESTAURANT";
   descriptionKey: string;
-  importExample: readonly string[];
+  /** Example rows written to the downloadable Products sheet for this archetype. */
+  importExamples: readonly (readonly string[])[];
 };
 
 export type ProductFormFieldVisibility = {
@@ -47,7 +49,11 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_mini_mart",
-    importExample: ["MM-WATER-600", "", "น้ำดื่ม 600 มล.", "สินค้าขายเป็นชิ้น", "10", "6", "เครื่องดื่ม", "", "น้ำดื่ม|600ml", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["MM-WATER-600", inStoreBarcode(1), "น้ำดื่ม 600 มล.", "สินค้าขายเป็นชิ้น", "10", "6", "เครื่องดื่ม", "แบรนด์ตัวอย่าง", "น้ำดื่ม|600ml", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+      ["MM-SODA-PACK", "", "โซดาแพ็ก 6 ขวด", "ต้องเพิ่มหน่วยขาย 6 ขวดในหน้าหน่วยบรรจุก่อนเปิดขาย", "72", "48", "เครื่องดื่ม", "", "โซดา|แพ็ก", "GENERAL", "PACK", "BOTTLE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|ONLINE_ORDER"],
+      ["MM-BANANA-KG", "", "กล้วยหอมชั่งกิโล", "สินค้าชั่งน้ำหนัก ต้องตั้งค่าเครื่องชั่งก่อนเปิดขาย", "65", "38", "ผักผลไม้", "", "กล้วย|ชั่งกิโล", "GENERAL", "WEIGHTED", "KG", "STD", "RETAIL_POS"],
+    ],
   },
   fashion: {
     archetype: "fashion",
@@ -59,7 +65,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_fashion",
-    importExample: ["FASHION-TEE-01", "", "เสื้อยืด Cotton Relaxed", "เสื้อยืดมีหลายไซซ์", "490", "220", "เสื้อผ้า", "", "เสื้อยืด|cotton", "GENERAL", "DIRECT", "PIECE", "S|M|L|XL", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["FASHION-TEE-01", inStoreBarcode(2), "เสื้อยืด Cotton Relaxed", "เสื้อยืดมีหลายไซซ์", "490", "220", "เสื้อผ้า", "แบรนด์ตัวอย่าง", "เสื้อยืด|cotton", "GENERAL", "DIRECT", "PIECE", "S|M|L|XL", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   home_kitchen: {
     archetype: "home_kitchen",
@@ -71,7 +79,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_home_kitchen",
-    importExample: ["HOME-PAN-24", "", "กระทะสเตนเลส 24 ซม.", "กระทะพร้อมฝาปิด", "890", "520", "เครื่องครัว", "", "กระทะ|24ซม", "GENERAL", "DIRECT", "PIECE", "24CM", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["HOME-PAN", inStoreBarcode(3), "กระทะสเตนเลส", "กระทะหลายขนาด", "890", "520", "เครื่องครัว", "แบรนด์ตัวอย่าง", "กระทะ|สเตนเลส", "GENERAL", "DIRECT", "PIECE", "24CM|28CM", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   beauty_personal_care: {
     archetype: "beauty_personal_care",
@@ -83,7 +93,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_beauty_personal_care",
-    importExample: ["BEAUTY-SERUM-30", "", "เซรั่มบำรุงผิว 30 มล.", "เซรั่มสำหรับใช้ประจำวัน", "590", "280", "สกินแคร์", "", "เซรั่ม|30ml", "GENERAL", "DIRECT", "PIECE", "30ML", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["BEAUTY-SERUM", inStoreBarcode(4), "Barrier Serum", "เซรั่มหลายขนาด ควรตั้ง lot และวันหมดอายุ", "590", "280", "เซรั่ม", "แบรนด์ตัวอย่าง", "เซรั่ม|barrier", "GENERAL", "DIRECT", "PIECE", "15ML|30ML", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   food_beverage: {
     archetype: "food_beverage",
@@ -95,7 +107,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: true,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_food_beverage",
-    importExample: ["FOOD-COOKIE-01", "", "คุกกี้ช็อกโกแลต", "ขนมพร้อมขาย", "65", "28", "เบเกอรี่", "", "คุกกี้|ช็อกโกแลต", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["FOOD-COOKIE-01", inStoreBarcode(5), "คุกกี้ช็อกโกแลต", "ขนมพร้อมขาย", "65", "28", "เบเกอรี่", "แบรนด์ตัวอย่าง", "คุกกี้|ช็อกโกแลต", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   gadgets_accessories: {
     archetype: "gadgets_accessories",
@@ -107,7 +121,10 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_gadgets_accessories",
-    importExample: ["GADGET-CASE-IP15", "", "เคสสำหรับ iPhone 15", "เคสกันกระแทก", "390", "150", "เคส", "", "เคส|iphone 15", "GENERAL", "DIRECT", "PIECE", "BLACK|CLEAR", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["GADGET-CASE-IP15", inStoreBarcode(6), "เคสสำหรับ iPhone 15", "เคสกันกระแทก", "390", "150", "เคส", "แบรนด์ตัวอย่าง", "เคส|iphone 15", "GENERAL", "DIRECT", "PIECE", "BLACK|CLEAR", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+      ["GADGET-PHONE-01", "", "โทรศัพท์ตัวอย่าง", "ติดตามหมายเลขเครื่องแยกชิ้น", "12900", "9900", "โทรศัพท์", "แบรนด์ตัวอย่าง", "โทรศัพท์|serial", "GENERAL", "SERIALIZED", "PIECE", "128GB|256GB", "RETAIL_POS|PUBLIC_STOREFRONT|ONLINE_ORDER"],
+    ],
   },
   b2b_wholesale: {
     archetype: "b2b_wholesale",
@@ -119,7 +136,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_b2b_wholesale",
-    importExample: ["B2B-PAPER-A4", "", "กระดาษ A4", "ขายเป็นรีมและลัง", "125", "92", "อุปกรณ์สำนักงาน", "", "กระดาษ|a4|รีม", "GENERAL", "DIRECT", "PIECE", "REAM", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["B2B-PAPER-A4", inStoreBarcode(7), "กระดาษ A4", "ขายเป็นรีมและลัง ต้องเพิ่มหน่วยขายลังในหน้าหน่วยบรรจุก่อนเปิดขาย", "125", "92", "อุปกรณ์สำนักงาน", "แบรนด์ตัวอย่าง", "กระดาษ|a4|รีม", "GENERAL", "PACK", "REAM", "70GSM|80GSM", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   gifts_seasonal: {
     archetype: "gifts_seasonal",
@@ -132,7 +151,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_gifts_seasonal",
-    importExample: ["GIFT-SET-01", "", "ชุดของขวัญ Everyday", "ชุดของขวัญพร้อมขาย", "790", "390", "Gift Set", "", "ของขวัญ|gift set", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["GIFT-SET-01", "", "ชุดของขวัญ Everyday", "Bundle ที่ต้องกำหนดส่วนประกอบก่อนเปิดขาย", "790", "390", "Gift Set", "แบรนด์ตัวอย่าง", "ของขวัญ|gift set", "GENERAL", "BUNDLE", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   pharmacy: {
     archetype: "pharmacy",
@@ -144,7 +165,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "PHARMACY",
     descriptionKey: "shop_archetypes.description_pharmacy",
-    importExample: ["PHARMACY-ITEM-01", "", "สินค้าสุขภาพตัวอย่าง", "ต้องตั้งนโยบายก่อนเปิดขาย", "120", "70", "สินค้าสุขภาพ", "", "สุขภาพ", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["PHARMACY-ITEM-01", inStoreBarcode(8), "สินค้าสุขภาพตัวอย่าง", "ต้องตั้งนโยบายและข้อมูลกำกับก่อนเปิดขาย", "120", "70", "สินค้าสุขภาพ", "แบรนด์ตัวอย่าง", "สุขภาพ", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   pet_supply: {
     archetype: "pet_supply",
@@ -156,7 +179,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_pet_supply",
-    importExample: ["PET-FOOD-1KG", "", "อาหารแมว 1 กก.", "อาหารสัตว์บรรจุถุง", "220", "145", "อาหารสัตว์", "", "อาหารแมว|1kg", "GENERAL", "DIRECT", "PIECE", "1KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["PET-CAT-FOOD", inStoreBarcode(9), "อาหารแมว", "อาหารสัตว์หลายขนาด ควรตั้ง lot และวันหมดอายุ", "220", "145", "อาหารสัตว์", "แบรนด์ตัวอย่าง", "อาหารแมว|cat food", "GENERAL", "DIRECT", "PIECE", "1KG|3KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   building_materials: {
     archetype: "building_materials",
@@ -168,7 +193,10 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_building_materials",
-    importExample: ["BUILD-CEMENT-50", "", "ปูนซีเมนต์ 50 กก.", "จำหน่ายเป็นถุง", "145", "118", "ปูนซีเมนต์", "", "ปูน|50kg", "GENERAL", "DIRECT", "PIECE", "50KG", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["BUILD-CEMENT-50", inStoreBarcode(10), "ปูนซีเมนต์ 50 กก.", "จำหน่ายเป็นถุง", "145", "118", "ปูนซีเมนต์", "แบรนด์ตัวอย่าง", "ปูน|50kg", "GENERAL", "DIRECT", "BAG", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+      ["BUILD-SAND-KG", "", "ทรายแบ่งชั่งกิโล", "สินค้าชั่งน้ำหนัก ต้องตั้งค่าหน่วยและเครื่องชั่งก่อนเปิดขาย", "8", "4", "วัสดุก่อสร้าง", "", "ทราย|ชั่งน้ำหนัก", "GENERAL", "WEIGHTED", "KG", "หยาบ|ละเอียด", "RETAIL_POS"],
+    ],
   },
   restaurant: {
     archetype: "restaurant",
@@ -180,7 +208,12 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: true,
     specialMode: "RESTAURANT",
     descriptionKey: "shop_archetypes.description_restaurant",
-    importExample: ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "QUICK_MENU", "NON_STOCK", "PIECE", "STD", "RESTAURANT_POS|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["MENU-NONSTOCK", "", "ค่าบริการเปิดขวด", "รายการไม่ตัดสต็อก", "50", "", "ค่าบริการ", "", "ค่าบริการ", "QUICK_MENU", "NON_STOCK", "PIECE", "STD", "RESTAURANT_POS"],
+      ["MENU-KAPRAO", "", "ข้าวกะเพรา", "เมนูปรุงสด ต้องกำหนดสูตรก่อนเปิดขาย", "79", "", "อาหารจานเดียว", "", "กะเพรา|ผัดกะเพรา", "PREPARED_MENU", "RECIPE", "PIECE", "หมู|ไก่", "RESTAURANT_POS|CUSTOMER_AI|ONLINE_ORDER"],
+      ["MENU-WATER", inStoreBarcode(11), "น้ำดื่มแช่เย็น", "สินค้าพร้อมขายและตัดสต็อกตรง", "15", "8", "เครื่องดื่ม", "แบรนด์ตัวอย่าง", "น้ำดื่ม", "READY_GOOD", "DIRECT", "BOTTLE", "STD", "RESTAURANT_POS|RETAIL_POS"],
+      ["ING-PORK", "", "หมูสับ", "วัตถุดิบภายใน ไม่แสดงในช่องทางขาย", "0", "120", "วัตถุดิบ", "", "หมูสับ|วัตถุดิบ", "INGREDIENT", "DIRECT", "KG", "STD", ""],
+    ],
   },
   board_game_cafe: {
     archetype: "board_game_cafe",
@@ -192,7 +225,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_board_game_cafe",
-    importExample: ["BGC-SLEEVE-STD", "", "ซองใส่การ์ดขนาดมาตรฐาน", "สินค้าเสริมสำหรับขายหน้าร้าน ไม่ใช่เกมที่ให้ยืมเล่น", "120", "70", "Board Game Accessories", "", "ซองการ์ด|board game|sleeve", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["BGC-SLEEVE", inStoreBarcode(12), "ซองใส่การ์ด", "สินค้าเสริมสำหรับขายหน้าร้าน ไม่ใช่เกมที่ให้ยืมเล่น", "120", "70", "Board Game Accessories", "แบรนด์ตัวอย่าง", "ซองการ์ด|board game|sleeve", "GENERAL", "DIRECT", "PIECE", "STANDARD|JAPANESE", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
   other: {
     archetype: "other",
@@ -204,7 +239,9 @@ const EXPERIENCES: Record<ShopArchetype, ShopExperienceProfile> = {
     showWastageInNavigation: false,
     specialMode: "NONE",
     descriptionKey: "shop_archetypes.description_other",
-    importExample: ["ITEM-001", "", "สินค้าตัวอย่าง", "สินค้าสต็อกทั่วไป", "100", "60", "ทั่วไป", "", "สินค้า", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    importExamples: [
+      ["ITEM-001", inStoreBarcode(13), "สินค้าตัวอย่าง", "สินค้าสต็อกทั่วไป", "100", "60", "ทั่วไป", "แบรนด์ตัวอย่าง", "สินค้า", "GENERAL", "DIRECT", "PIECE", "STD", "RETAIL_POS|PUBLIC_STOREFRONT|CUSTOMER_AI|ONLINE_ORDER"],
+    ],
   },
 };
 

@@ -44,6 +44,18 @@ function menuGuide(input: {
 /** Verified bilingual guides for every routable Admin sidebar surface plus POS workflows. */
 export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
+    id: "operations.checklists", module: "operations", route: "/admin/operations",
+    title: ["Checklist งานประจำร้านและ Food Safety", "Operations checklists and food safety records"],
+    summary: ["สร้างต้นแบบแยกสาขา บันทึกผลและรูป ส่งตรวจ และติดตามการแก้ไข", "Create branch templates, record results and photos, submit for review and track corrective actions."],
+    aliases: [["งานเปิดร้าน", "งานปิดร้าน", "ตรวจอุณหภูมิ", "ทำความสะอาด", "เช็กลิสต์"], ["opening checklist", "closing checklist", "temperature log", "cleaning", "corrective action"]],
+    requiredPermissions: ["operations.checklist.view"],
+    prerequisites: [["ใช้บัญชีหลังบ้านที่มีสิทธิ์ในสาขา; จัดการต้นแบบด้วย operations.checklist.manage"], ["Use an admin account with branch access; template management needs operations.checklist.manage."]],
+    steps: [["เปิดงานประจำร้าน เลือกสาขาและสร้างต้นแบบหรือเวอร์ชันใหม่", "เปิดใช้ต้นแบบ แล้วสร้างงานหรือตั้งวัน เวลา เขตเวลา และกำหนดเสร็จ", "ผู้มี execute บันทึกแต่ละข้อ แนบหลักฐาน และส่งตรวจ", "แก้ไขและตรวจรับ corrective action ทุกข้อ ก่อนให้ผู้มี review ตรวจรับ checklist"],
+      ["Open Operations, select a branch and create a template or new version.", "Publish the template, then create work or schedule weekdays, local time, time zone and completion window.", "Staff with execute permission record items, attach evidence and submit.", "Resolve and verify every corrective action before a reviewer approves the checklist."]],
+    warnings: [["เกณฑ์เป็นข้อมูลที่ร้านกำหนด ไม่ใช่การรับรองความปลอดภัย", "เวอร์ชันใหม่หยุดตารางเวลาเดิม; งานเก่าเก็บต้นแบบเดิม", "ผู้ช่วยอธิบายวิธีใช้ได้ ยังไม่มีเครื่องมือให้ AI แก้ผลตรวจหรืออนุมัติงาน"],
+      ["Thresholds are shop-defined evidence, not safety certification.", "A new published version pauses old schedules; existing runs retain their snapshot.", "The assistant can explain the workflow; no AI tool records measurements or approves work."]],
+  }),
+  menuGuide({
     id: "retail-local.register-installation", module: "settings", route: "/admin/retail-local-license",
     title: ["ลงทะเบียน License ของเครื่องนี้", "Register this installation's license"],
     summary: ["ดูสถานะการลงทะเบียน Trial และ Licensed ของ Retail Local และกรอก Activation Code หลังติดตั้ง", "View Retail Local registration, Trial and Licensed status, and enter an Activation Code after installation."],

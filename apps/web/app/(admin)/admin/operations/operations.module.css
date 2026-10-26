@@ -1,0 +1,48 @@
+.page {
+  min-width: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.toolbar {
+  margin: 12px 0;
+}
+.tableWrap { min-width: 0; max-width: 100%; overflow-x: auto; }
+.select {
+  min-width: 200px;
+  max-width: 100%;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+.metrics strong {
+  font-size: 28px;
+}
+.item {
+  margin: 14px 0;
+  overflow-wrap: anywhere;
+}
+.item :global(.ant-card-head-title) {
+  white-space: normal;
+}
+.item input[type="file"] {
+  max-width: 100%;
+  display: block;
+}
+.fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+@media (max-width: 600px) {
+  .page {
+    padding: 8px;
+  }
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -12,12 +12,14 @@ import { getTenantPlan } from "./plans";
 import { isRetailLocalDeployment } from "./deploymentMode";
 import {
   upsertProduct,
+  assertProductImportStockConfiguration,
   validateProductConfigurationFields,
   validateProductFields,
   type UpsertProductInput,
   type NormalizedProductFields,
 } from "./products";
 import { PRODUCT_IMPORT_MAX_ROWS } from "./productImport.constants";
+import { productBarcodeAliases } from "./productBarcodeLookupContract";
 
 export type ImportRowInput = { rowNumber: number } & UpsertProductInput;
 
@@ -48,6 +50,7 @@ export async function runImport(
 
   // 1) validate ทีละแถว (ไม่แตะ DB) + กัน SKU ซ้ำในไฟล์เดียวกัน (แถวแรกชนะ ที่เหลือ flag เป็น error)
   const seenSku = new Map<string, number>(); // sku -> แถวแรกที่เจอ
+  const seenBarcodes = new Map<string, number>();
   const results: ImportRowResult[] = [];
   const validated: Array<{ rowNumber: number; fields: NormalizedProductFields; input: UpsertProductInput }> = [];
 
@@ -65,7 +68,13 @@ export async function runImport(
         });
         continue;
       }
+      const aliases = fields.barcode ? productBarcodeAliases(fields.barcode) : [];
+      const barcodeRow = aliases.map((alias) => seenBarcodes.get(alias)).find((value) => value !== undefined);
+      if (barcodeRow !== undefined) {
+        throw new Error(`คอลัมน์ บาร์โค้ด ซ้ำกับแถวที่ ${barcodeRow} — ใช้บาร์โค้ดที่ไม่ซ้ำกัน หรือเว้นว่าง`);
+      }
       seenSku.set(fields.sku, row.rowNumber);
+      for (const alias of aliases) seenBarcodes.set(alias, row.rowNumber);
       validated.push({ rowNumber: row.rowNumber, fields, input: row });
     } catch (err: any) {
       results.push({
@@ -81,11 +90,25 @@ export async function runImport(
   let existingSkus = new Set<string>();
   if (validated.length > 0) {
     const skus = validated.map((v) => v.fields.sku);
-    const res = await query<{ sku: string }>(
-      `SELECT sku FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`,
+    const res = await query<{ sku: string; stock_policy: string | null; base_unit: string | null }>(
+      `SELECT p.sku, s.stock_policy, s.base_unit FROM bms_products p
+       LEFT JOIN bms_product_stock_policies s ON s.tenant_id = p.tenant_id AND s.product_sku = p.sku
+       WHERE p.tenant_id = $1 AND p.sku = ANY($2::text[])`,
       [tenantId, skus]
     );
     existingSkus = new Set(res.rows.map((r) => r.sku));
+    const currentBySku = new Map(res.rows.map((r) => [r.sku, r]));
+    for (let index = validated.length - 1; index >= 0; index--) {
+      const row = validated[index];
+      const current = currentBySku.get(row.fields.sku);
+      if (!current) continue;
+      try {
+        assertProductImportStockConfiguration(row.input, current);
+      } catch (error: any) {
+        results.push({ rowNumber: row.rowNumber, sku: row.fields.sku, action: "ERROR", error: error.message });
+        validated.splice(index, 1);
+      }
+    }
   }
   const newSkuCount = validated.filter((v) => !existingSkus.has(v.fields.sku)).length;
 
@@ -130,7 +153,7 @@ export async function runImport(
     const revisionId = randomUUID();
     for (const v of validated) {
       try {
-        await upsertProduct(tenantId, v.input, opts.editorId, revisionId);
+        await upsertProduct(tenantId, v.input, opts.editorId, revisionId, undefined, { importMode: true });
         results.push({
           rowNumber: v.rowNumber,
           sku: v.fields.sku,
@@ -142,7 +165,13 @@ export async function runImport(
           rowNumber: v.rowNumber,
           sku: v.fields.sku,
           action: "ERROR",
-          error: err?.message || "นำเข้าแถวนี้ไม่สำเร็จ",
+          error: err?.code === "23505"
+            ? "SKU หรือบาร์โค้ดซ้ำกับข้อมูลในร้าน — ตรวจรหัสและบาร์โค้ดสินค้า/แพ็ก แล้วอัปโหลดใหม่"
+            : err?.code === "22003"
+              ? "ราคาขายหรือต้นทุนเกินช่วงที่ระบบจัดเก็บได้ — ลดจำนวนหลักและตรวจหน่วยเงิน"
+              : err?.code === "22001"
+                ? "ข้อความยาวเกินที่ระบบรองรับ — ลดความยาวข้อมูลในแถวนี้แล้วลองใหม่"
+                : err?.message || "นำเข้าแถวนี้ไม่สำเร็จ — ตรวจข้อมูลแถวนี้แล้วลองใหม่",
         });
       }
     }

@@ -198,6 +198,11 @@ async function handleGET(
       return NextResponse.json({ error: "file path missing" }, { status: 404 });
     }
 
+    // Checklist evidence has branch/RBAC guards at its dedicated route, including for same-tenant users.
+    if (row.filename?.includes('operation-evidence-')) {
+      return NextResponse.json({ error: 'file not found' }, { status: 404 });
+    }
+
     // ---- visibility (9.26) ----
     // route นี้ไม่เคยตรวจอะไรเลย และ files.id เป็นเลข integer เรียงลำดับ ใครก็ไล่
     // นับขึ้นไปโหลดไฟล์ของคนอื่นได้ · รูปสินค้าหน้าร้านต้องเปิดได้จริงจึงคง public

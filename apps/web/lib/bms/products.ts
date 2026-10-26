@@ -7,6 +7,7 @@ import { getClient, query } from "@/lib/db";
 import { recordMovement } from "./movements";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { beginTenantTx } from "./tenant";
+import { assertNoQualityHold, usableStockSql } from "./lotQuality";
 import { resolveDefaultLocationIdInTx } from "./locations";
 import { resolveDefaultLocationId } from "./locations";
 import { isMenuSellable, type MenuStockPolicy } from "./menuAvailability";
@@ -133,6 +134,7 @@ export type VariantRow = {
   size: string;
   current_stock: number;
   reserved_stock: number;
+  usable_stock?: number;
   quarantine_stock: number;
   in_transit_qty: number;
   transfer_lost_qty: number;
@@ -350,7 +352,7 @@ export async function listSellableProducts(
           WHERE sellable_i.tenant_id = p.tenant_id
             AND sellable_i.product_sku = p.sku
             AND ($${locationParam}::uuid IS NULL OR sellable_i.location_id = $${locationParam})
-            AND (sellable_i.current_stock - sellable_i.reserved_stock) > 0
+            AND ${usableStockSql('sellable_i')} > 0
             AND ($${sizeParam}::text IS NULL OR sellable_i.size = $${sizeParam})
        ))`;
   }
@@ -487,13 +489,13 @@ export async function listSellableProducts(
                  AND unavailable.product_sku = m.sku
                  AND unavailable.resets_at > now()
             ) AS temporarily_unavailable,
-            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text
+            COALESCE(SUM(${usableStockSql('i')}), 0)::text
               AS available_total,
             COALESCE(
               jsonb_agg(
                 jsonb_build_object(
                   'size', i.size,
-                  'available', GREATEST(i.current_stock - i.reserved_stock, 0)
+                  'available', ${usableStockSql('i')}
                 )
                 ORDER BY array_position(ARRAY['S','M','L','XL','XXL'], i.size), i.size
               ) FILTER (WHERE i.size IS NOT NULL),
@@ -752,6 +754,7 @@ export async function listVariants(tenantId: string, sku: string): Promise<Varia
         WHERE ti.tenant_id = $1 AND ti.product_sku = $2 AND tr.status = 'IN_TRANSIT'
      )
      SELECT keys.location_id, loc.name AS location_name, loc.branch_code,
+            ${usableStockSql('i')} AS usable_stock,
             keys.size, COALESCE(i.current_stock, 0)::integer AS current_stock,
             COALESCE(i.reserved_stock, 0)::integer AS reserved_stock,
             COALESCE(i.quarantine_stock, 0)::integer AS quarantine_stock,
@@ -1083,7 +1086,7 @@ export async function getPublicProduct(tenantSlug: string, sku: string): Promise
       images,
       variants: variants.map((variant) => ({
         size: variant.size,
-        available: Math.max(0, variant.current_stock - variant.reserved_stock),
+        available: variant.usable_stock ?? 0,
         price: Number(variant.price),
       })),
       updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at ?? null),
@@ -1137,7 +1140,7 @@ export async function listPublicRelatedProducts(
       available: string;
     }>(
       `SELECT p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand,
-              COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+              COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
          FROM bms_products p
          JOIN bms_tenants t ON t.id = p.tenant_id
          LEFT JOIN bms_inventory i
@@ -1145,7 +1148,7 @@ export async function listPublicRelatedProducts(
           AND i.product_sku = p.sku
         WHERE ${where}
         GROUP BY p.tenant_id, p.sku, p.name, p.price, p.image_url, p.category, p.brand
-        ORDER BY COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0) DESC, p.name
+        ORDER BY COALESCE(SUM(${usableStockSql('i')}), 0) DESC, p.name
         LIMIT $${limitPos}`,
       [...params, limit]
     );
@@ -1293,7 +1296,7 @@ export async function listPublicProducts(
             p.image_url,
             p.category,
             p.brand,
-            COALESCE(SUM(GREATEST(i.current_stock - i.reserved_stock, 0)), 0)::text AS available
+            COALESCE(SUM(${usableStockSql('i')}), 0)::text AS available
        FROM bms_products p
        JOIN bms_tenants t
          ON t.id = p.tenant_id
@@ -1418,8 +1421,9 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   const sku = input.sku.trim();
   const name = input.name.trim();
   const price = Number(input.price);
-  if (!sku || !name) throw new Error("sku และ name ห้ามว่าง");
-  if (!Number.isFinite(price) || price < 0) throw new Error("ราคาไม่ถูกต้อง");
+  if (!sku) throw new Error("คอลัมน์ SKU ห้ามว่าง — กรอกรหัสสินค้าที่ไม่ซ้ำกันในไฟล์");
+  if (!name) throw new Error("คอลัมน์ ชื่อสินค้า ห้ามว่าง");
+  if (!Number.isFinite(price) || price < 0) throw new Error("คอลัมน์ ราคาขาย ต้องเป็นตัวเลข 0 ขึ้นไป และไม่ใส่สัญลักษณ์เงินตรา");
 
   const keywords = (input.keywords ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
   // Omitted active is resolved inside the upsert: new products are safe drafts,
@@ -1441,7 +1445,7 @@ export function validateProductFields(input: UpsertProductInput): NormalizedProd
   let costPrice: number | null = null;
   if (input.cost_price != null && input.cost_price !== ("" as any)) {
     costPrice = Number(input.cost_price);
-    if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("ต้นทุนไม่ถูกต้อง");
+    if (!Number.isFinite(costPrice) || costPrice < 0) throw new Error("คอลัมน์ ต้นทุน ต้องเป็นตัวเลข 0 ขึ้นไป หรือเว้นว่าง");
   }
 
   // น้ำหนัก (กรัม) — ไม่บังคับ; null = ยังไม่ได้กรอก (ต่างจาก 0) → ค่าส่งตามน้ำหนัก
@@ -1480,7 +1484,7 @@ export function validateProductConfigurationFields(
 ): NormalizedProductConfigurationFields {
   const rawTemplate = String(input.creation_template ?? "").trim().toUpperCase();
   if (rawTemplate && !["QUICK_MENU", "PREPARED_MENU", "READY_GOOD", "INGREDIENT", "GENERAL"].includes(rawTemplate)) {
-    throw new Error("รูปแบบสินค้าไม่ถูกต้อง");
+    throw new Error(`คอลัมน์ รูปแบบสินค้า ไม่รองรับค่า "${rawTemplate}" — ใช้ GENERAL, QUICK_MENU, PREPARED_MENU, READY_GOOD หรือ INGREDIENT`);
   }
   const templateDefaults = productTemplateDefaults(rawTemplate || null);
   const requestedSurfaces = Array.isArray(input.sales_surfaces)
@@ -1491,11 +1495,11 @@ export function validateProductConfigurationFields(
     : null;
   const requestedPolicy = String(input.stock_policy ?? templateDefaults.stockPolicy).trim().toUpperCase();
   if (!["DIRECT", "PACK", "BUNDLE", "WEIGHTED", "RECIPE", "SERIALIZED", "NON_STOCK"].includes(requestedPolicy)) {
-    throw new Error("นโยบาย Stock ไม่ถูกต้อง");
+    throw new Error(`คอลัมน์ Stock Policy ไม่รองรับค่า "${requestedPolicy}" — ดูค่าที่รองรับในชีต Guide`);
   }
   const requestedBaseUnit = String(input.base_unit ?? templateDefaults.baseUnit).trim().toUpperCase();
   if (!/^[A-Z][A-Z0-9_]{0,31}$/.test(requestedBaseUnit)) {
-    throw new Error("หน่วยฐานต้องเป็นรหัส A-Z, 0-9 หรือ underscore");
+    throw new Error(`คอลัมน์ หน่วยฐาน ค่า "${requestedBaseUnit}" ไม่ถูกต้อง — ใช้เฉพาะ A-Z, 0-9 หรือ underscore เช่น PIECE`);
   }
   return {
     templateDefaults,
@@ -1506,12 +1510,28 @@ export function validateProductConfigurationFields(
   };
 }
 
+/** Import cannot silently ignore a requested change to an existing stock model. */
+export function assertProductImportStockConfiguration(
+  input: UpsertProductInput,
+  current: { stock_policy: string | null; base_unit: string | null }
+): void {
+  const configuration = validateProductConfigurationFields(input);
+  if ((input.stock_policy != null || input.creation_template != null)
+    && configuration.requestedPolicy !== (current.stock_policy ?? "DIRECT")) {
+    throw new Error("คอลัมน์ Stock Policy / รูปแบบสินค้า ไม่ตรงกับ SKU เดิม — เปลี่ยนที่หน้ารูปแบบสต็อกก่อน หรือเว้นสองช่องนี้ว่างเพื่อคงค่าเดิม");
+  }
+  if (input.base_unit != null && configuration.requestedBaseUnit !== (current.base_unit ?? "PIECE")) {
+    throw new Error("คอลัมน์ หน่วยฐาน ไม่ตรงกับ SKU เดิม — เปลี่ยนที่หน้ารูปแบบสต็อกก่อน หรือเว้นช่องนี้ว่างเพื่อคงค่าเดิม");
+  }
+}
+
 export async function upsertProduct(
   tenantId: string,
   input: UpsertProductInput,
   editorId?: string | number | null,
   revisionId?: string | null,
-  transaction?: PoolClient
+  transaction?: PoolClient,
+  options: { importMode?: boolean } = {}
 ): Promise<ProductRowFull> {
   const {
     sku, name, price, keywords, barcode, description, category, brand, costPrice, weightGrams,
@@ -1522,6 +1542,9 @@ export async function upsertProduct(
     : null;
   const imageUrls = normalizeImageUrls(input);
   const imageUrl = imageUrls[0] ?? (input.image_url?.trim() || null);
+  const providedFields = Object.keys(input).filter((key) => input[key as keyof UpsertProductInput] !== undefined);
+  const imagesProvided = input.image_url !== undefined || input.image_urls !== undefined;
+  if (imagesProvided) providedFields.push("images");
   const { templateDefaults, requestedSurfaces, requestedVariants, requestedPolicy, requestedBaseUnit } =
     validateProductConfigurationFields(input);
 
@@ -1554,6 +1577,14 @@ export async function upsertProduct(
       [tenantId, sku]
     );
     const isNew = existing.rowCount === 0;
+    if (!isNew && options.importMode) {
+      // Recheck after taking the tenant lock, not just against the earlier preview.
+      const policy = await client.query<{ stock_policy: string; base_unit: string }>(
+        `SELECT stock_policy, base_unit FROM bms_product_stock_policies
+          WHERE tenant_id = $1 AND product_sku = $2 FOR SHARE`, [tenantId, sku]
+      );
+      assertProductImportStockConfiguration(input, policy.rows[0] ?? { stock_policy: null, base_unit: null });
+    }
     if (isNew) await enforceProductQuota(tenantId, client);
     // Lifecycle เปลี่ยนได้เฉพาะ permission-gated bmsSetProductActive/publishProduct เท่านั้น
     // ผู้ที่มี product.edit จึงใช้ upsert/import แอบเปิดหรือปิดสินค้าไม่ได้
@@ -1568,11 +1599,16 @@ export async function upsertProduct(
                COALESCE($14, 'UNKNOWN'), COALESCE($15::text[], '{}'), COALESCE($16, FALSE),
                COALESCE($17::text[], '{}'), NULLIF($18, ''), COALESCE($19::jsonb, '{}'::jsonb))
        ON CONFLICT (tenant_id, sku) DO UPDATE
-         SET name = EXCLUDED.name, price = EXCLUDED.price, keywords = EXCLUDED.keywords,
-             active = COALESCE($6, bms_products.active), barcode = EXCLUDED.barcode, image_url = EXCLUDED.image_url,
-             description = EXCLUDED.description, cost_price = EXCLUDED.cost_price,
-             category = EXCLUDED.category, brand = EXCLUDED.brand,
-             weight_grams = EXCLUDED.weight_grams,
+         SET name = EXCLUDED.name, price = EXCLUDED.price,
+             keywords = CASE WHEN 'keywords' = ANY($20::text[]) THEN EXCLUDED.keywords ELSE bms_products.keywords END,
+             active = COALESCE($6, bms_products.active),
+             barcode = CASE WHEN 'barcode' = ANY($20::text[]) THEN EXCLUDED.barcode ELSE bms_products.barcode END,
+             image_url = CASE WHEN 'images' = ANY($20::text[]) THEN EXCLUDED.image_url ELSE bms_products.image_url END,
+             description = CASE WHEN 'description' = ANY($20::text[]) THEN EXCLUDED.description ELSE bms_products.description END,
+             cost_price = CASE WHEN 'cost_price' = ANY($20::text[]) THEN EXCLUDED.cost_price ELSE bms_products.cost_price END,
+             category = CASE WHEN 'category' = ANY($20::text[]) THEN EXCLUDED.category ELSE bms_products.category END,
+             brand = CASE WHEN 'brand' = ANY($20::text[]) THEN EXCLUDED.brand ELSE bms_products.brand END,
+             weight_grams = CASE WHEN 'weight_grams' = ANY($20::text[]) THEN EXCLUDED.weight_grams ELSE bms_products.weight_grams END,
              -- $14 IS NULL = ผู้เรียกไม่ได้ส่งมา → คงค่าเดิม · ไม่ใช้ EXCLUDED เพราะ
              -- INSERT ข้างบน COALESCE เป็น 'UNKNOWN' ไปแล้ว การอ้าง EXCLUDED จะทับ
              -- ค่าที่ตั้งไว้ของสินค้าเดิมทุกครั้งที่มีใครกดบันทึกจากฟอร์มที่ไม่มีช่องนี้
@@ -1592,7 +1628,7 @@ export async function upsertProduct(
       [tenantId, sku, name, price, keywords, effectiveActive, barcode, imageUrl, description,
         costPrice, category, brand, weightGrams, vatCategory, allergenCodes,
         allergenInformationProvided, dietaryTags, foodSafetyNote,
-        medicineLabel === null ? null : JSON.stringify(medicineLabel)]
+        medicineLabel === null ? null : JSON.stringify(medicineLabel), providedFields]
     );
 
     if (isNew) {
@@ -1716,7 +1752,7 @@ export async function upsertProduct(
       }
     }
 
-    await client.query(
+    if (imagesProvided) await client.query(
       `DELETE FROM bms_product_images WHERE tenant_id = $1 AND product_sku = $2`,
       [tenantId, sku]
     );
@@ -1905,6 +1941,7 @@ export async function adjustStock(
       [tenantId, sku, sizeUp, locationId]
     );
 
+    await assertNoQualityHold(client,tenantId,locationId,sku,sizeUp);
     let row: VariantRow;
     if (cur.rowCount === 0) {
       if (delta < 0) {

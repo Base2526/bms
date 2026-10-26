@@ -37,6 +37,8 @@ async function run() {
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
   try {
     await source.loadFile(path.join(output, "receipt-smoke.html"));
+    // Assert final geometry, not compositor timing in a hidden Electron window.
+    await source.webContents.insertCSS(".ant-switch-handle { transition: none !important; }");
     await waitFor(source, "document.querySelector('#pos-receipt') && document.querySelector('[role=switch]')");
     await source.webContents.executeJavaScript(RECEIPT_READY_SCRIPT);
     await waitFor(source, "!document.querySelector('#receipt-action').disabled");
@@ -110,7 +112,7 @@ async function run() {
         assert.equal(geometry.thumbWidth, 18);
         assert.equal(geometry.thumbHeight, 18);
         assert.equal(geometry.centered, true);
-        assert.ok(Math.abs(geometry.sideGap - 2) < 1);
+        assert.ok(Math.abs(geometry.sideGap - 2) < 1, JSON.stringify({ width, checked, geometry }));
         await source.webContents.executeJavaScript("document.querySelector('[role=switch]').blur()");
         const bounds = await source.webContents.executeJavaScript(`(() => {
           const rect = document.querySelector('[role=switch]').closest('section').getBoundingClientRect();

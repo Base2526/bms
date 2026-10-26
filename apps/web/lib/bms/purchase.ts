@@ -101,6 +101,8 @@ export type ReceivePOResult =
   | { status: "EMPTY" };
 
 export type ReceivePurchaseOptions = {
+  /** Optional immutable receipt provenance for a composing workflow; caller owns its transaction. */
+  evidenceId?: string;
   /** POS receives into its own branch; omitted admin callers retain the default branch. */
   locationId?: string | null;
   /** Stable POS retry key. The ledger row is written in this same transaction. */
@@ -397,6 +399,36 @@ export async function receivePurchaseOrder(
   editorId?: string | number | null,
   options: ReceivePurchaseOptions = {}
 ): Promise<ReceivePOResult> {
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId, { editorId });
+    const result = await receivePurchaseOrderInTx(client, tenantId, poId, received, actor, options);
+    const success = result.status === "RECEIVED" || result.status === "PARTIAL";
+    await client.query(success ? "COMMIT" : "ROLLBACK");
+    if (success && !result.replayed) await notifyPurchaseRestock(tenantId, received);
+    return result;
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch {}
+    throw err;
+  } finally { client.release(); }
+}
+
+export async function notifyPurchaseRestock(tenantId: string, lines: ReceiveInput[]) {
+  const notified = new Set<string>();
+  for (const line of lines) {
+    const sku=String(line.sku).trim(),size=String(line.size).trim(),key=JSON.stringify([sku,size]);
+    if(notified.has(key))continue;
+    notified.add(key);
+    try { await markRestockSubscriptionsReady(tenantId, sku, size); }
+    catch (error) { console.error("[BMS] restock ready hook failed after PO receipt:", error); }
+  }
+}
+
+/** Never commits: caller MUST roll back on any non-success result, including partial loop writes. */
+export async function receivePurchaseOrderInTx(
+  client: PoolClient, tenantId: string, poId: string, received: ReceiveInput[],
+  actor: string | null = "admin", options: ReceivePurchaseOptions = {},
+): Promise<ReceivePOResult> {
   if (!Array.isArray(received) || received.length === 0) return { status: "EMPTY" };
   if (received.length > 200) return { status: "INVALID_INPUT" };
   const normalized = received.map((it) => ({
@@ -425,9 +457,6 @@ export async function receivePurchaseOrder(
   }
   const lines = mergeItems(normalized);
 
-  const client = await getClient();
-  try {
-    await beginTenantTx(client, tenantId, { editorId });
     let locationId: string;
     if (options.locationId) {
       const location = await client.query<{ id: string }>(
@@ -435,7 +464,6 @@ export async function receivePurchaseOrder(
         [tenantId, options.locationId]
       );
       if (!location.rowCount) {
-        await client.query("ROLLBACK");
         return { status: "LOCATION_NOT_FOUND" };
       }
       locationId = location.rows[0].id;
@@ -451,7 +479,6 @@ export async function receivePurchaseOrder(
       [tenantId, poId]
     );
     if (po.rowCount === 0) {
-      await client.query("ROLLBACK");
       return { status: "PO_NOT_FOUND" };
     }
 
@@ -459,7 +486,6 @@ export async function receivePurchaseOrder(
     if (options.idempotency) {
       const stableKey = options.idempotency.key.trim();
       if (!stableKey || stableKey.length > 200) {
-        await client.query("ROLLBACK");
         return { status: "IDEMPOTENCY_CONFLICT" };
       }
       const requestHash = crypto.createHash("sha256").update(JSON.stringify({
@@ -493,7 +519,6 @@ export async function receivePurchaseOrder(
             WHERE tenant_id = $1 AND device_id = $2 AND idempotency_key = $3`,
           [tenantId, options.idempotency.deviceId, stableKey]
         );
-        await client.query("ROLLBACK");
         const row = prior.rows[0];
         if (!row || row.request_hash !== requestHash || !row.result) return { status: "IDEMPOTENCY_CONFLICT" };
         if (row.result.status === "RECEIVED" || row.result.status === "PARTIAL") {
@@ -507,7 +532,6 @@ export async function receivePurchaseOrder(
     const cur = po.rows[0].status;
     const supplierId = po.rows[0].supplier_id ?? null;
     if (cur !== "OPEN" && cur !== "PARTIAL") {
-      await client.query("ROLLBACK");
       return { status: "INVALID_STATE", current: cur };
     }
 
@@ -519,13 +543,11 @@ export async function receivePurchaseOrder(
         [tenantId, poId, ln.sku, ln.size]
       );
       if (item.rowCount === 0) {
-        await client.query("ROLLBACK");
         return { status: "LINE_NOT_FOUND", sku: ln.sku, size: ln.size };
       }
       const { id: itemId, qty_ordered, qty_received, unit_cost } = item.rows[0];
       const remaining = qty_ordered - qty_received;
       if (ln.qty > remaining) {
-        await client.query("ROLLBACK");
         return { status: "OVER_RECEIVE", sku: ln.sku, size: ln.size, remaining, requested: ln.qty };
       }
 
@@ -539,8 +561,9 @@ export async function receivePurchaseOrder(
       );
 
       // lot: บันทึกในทรานแซกชันเดียวกับที่บวก current_stock — invariant ต้องไม่หลุด
+      let lotId: string | null = null;
       if (ln.lotNo) {
-        await receiveLotInTx(client, {
+        lotId = await receiveLotInTx(client, {
           tenantId,
           locationId,
           productSku: ln.sku,
@@ -555,11 +578,11 @@ export async function receivePurchaseOrder(
       }
 
       await client.query(
-        `UPDATE bms_purchase_order_items SET qty_received = qty_received + $2 WHERE id = $1`,
-        [itemId, ln.qty]
+        `UPDATE bms_purchase_order_items SET qty_received = qty_received + $2 WHERE id = $1 AND tenant_id=$3`,
+        [itemId, ln.qty, tenantId]
       );
 
-      await recordMovement(client, {
+      const movementId = await recordMovement(client, {
         tenantId,
         locationId,
         sku: ln.sku,
@@ -570,18 +593,23 @@ export async function receivePurchaseOrder(
         purchaseItemId: itemId,
         actor: actor ?? "admin",
       });
+      if (options.evidenceId) await client.query(
+        `INSERT INTO bms_purchase_receipt_evidence(tenant_id,receipt_id,po_id,po_item_id,location_id,product_sku,size,qty,lot_id,lot_no,expiry_date,movement_id,actor)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [tenantId,options.evidenceId,poId,itemId,locationId,ln.sku,ln.size,ln.qty,lotId,ln.lotNo,ln.expiryDate,movementId,actor ?? "admin"],
+      );
     }
 
     // recompute สถานะ PO: ครบทุกรายการ = RECEIVED, ไม่งั้น PARTIAL
     const pending = await client.query<{ c: string }>(
       `SELECT COUNT(*)::int AS c FROM bms_purchase_order_items
-        WHERE po_id = $1 AND qty_received < qty_ordered`,
-      [poId]
+        WHERE po_id = $1 AND tenant_id=$2 AND qty_received < qty_ordered`,
+      [poId,tenantId]
     );
     const nextStatus = Number(pending.rows[0].c) === 0 ? "RECEIVED" : "PARTIAL";
     await client.query(
-      `UPDATE bms_purchase_orders SET status = $2, updated_at = now() WHERE id = $1`,
-      [poId, nextStatus]
+      `UPDATE bms_purchase_orders SET status = $2, updated_at = now() WHERE id = $1 AND tenant_id=$3`,
+      [poId, nextStatus,tenantId]
     );
 
     // อ่านรายการล่าสุดกลับไป
@@ -642,21 +670,7 @@ export async function receivePurchaseOrder(
       payload: { status: nextStatus },
     }));
 
-    await client.query("COMMIT");
-    for (const line of lines) {
-      try {
-        await markRestockSubscriptionsReady(tenantId, line.sku, line.size);
-      } catch (error) {
-        console.error("[BMS] restock ready hook failed after PO receipt:", error);
-      }
-    }
     return result;
-  } catch (err) {
-    try { await client.query("ROLLBACK"); } catch {}
-    throw err;
-  } finally {
-    client.release();
-  }
 }
 
 // ---- cancel --------------------------------------------------

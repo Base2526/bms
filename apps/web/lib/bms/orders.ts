@@ -1,4 +1,6 @@
 import { branchPrice } from "./branchPrices";
+import { qualityStock } from "./lotQuality";
+import { consumeOrderLotsInTx, restoreOrderLotsInTx } from "./orderLots";
 import { promotionForVariant } from "./pricing";
 // =============================================================
 // BMS Orders — สร้าง order + reserve สต็อกแบบ atomic
@@ -1158,6 +1160,8 @@ export async function createOrderInTx(
       a.sku === b.sku ? a.size.localeCompare(b.size) : a.sku.localeCompare(b.sku)
     );
     for (const need of orderedStockNeeds) {
+      const quality = await qualityStock(client, tenantId, locationId, need.sku, need.size);
+      if (!quality.reconciled || quality.available < need.qty) return { status: "INSUFFICIENT", sku: need.sku, size: need.size, available: quality.reconciled ? quality.available : 0, requested: need.qty };
       const reserved = await client.query<{ available_after: number }>(
         `UPDATE bms_inventory
             SET reserved_stock = reserved_stock + $3, updated_at = now()
@@ -2032,6 +2036,7 @@ export async function shipOrderInTx(
     [orderId, tenantId]
   );
 
+  await consumeOrderLotsInTx(client, tenantId, orderId);
   await recordOrderMovements(client, [orderId], "SHIP", actor);
   return true;
 }
@@ -2095,6 +2100,7 @@ export async function returnOrder(tenantId: string, orderId: string): Promise<bo
       [orderId]
     );
 
+    await restoreOrderLotsInTx(client, tenantId, orderId);
     await recordOrderMovements(client, [orderId], "RETURN", "system");
     // คืนทั้งบิล = แต้มต้องกลับไปเป็นเหมือนก่อนบิลนี้ (7.96) — ดึงแต้มที่ได้คืน
     // และคืนแต้มที่ลูกค้าแลกไป · ไม่ทำ = ซื้อ→ได้แต้ม→คืนของ ได้แต้มฟรี และ
