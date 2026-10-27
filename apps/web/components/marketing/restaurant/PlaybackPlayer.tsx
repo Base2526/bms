@@ -13,6 +13,7 @@ const recordings: Record<string, { file: string; duration: number }> = thaiAudio
 export type PlayerCopy = {
   heading: string; description: string; condition: string; optional: string; include: string;
   play: string; pause: string; previous: string; next: string; restart: string;
+  download: string;
   sound: string; speed: string; step: string; of: string; voiceNotice: string; silentNotice: string;
   failedNotice: string; repeatOnce: string; resumeNotice: string;
   unlistedVoiceNotice: string;
@@ -20,9 +21,9 @@ export type PlayerCopy = {
   recordedNotice: string; recordedFailedNotice: string;
 };
 
-export default function PlaybackPlayer({ sequence, lang, copy, introduction, conclusion, onActive }: {
+export default function PlaybackPlayer({ sequence, lang, copy, introduction, conclusion, downloadName, onActive }: {
   sequence: Sequence; lang: Lang; copy: PlayerCopy; introduction: string; conclusion: string;
-  onActive: (index: number | undefined) => void;
+  downloadName: string; onActive: (index: number | undefined) => void;
 }) {
   const [selections, setSelections] = useState<Record<number, number>>({});
   const [step, setStep] = useState(0), [playing, setPlaying] = useState(false);
@@ -42,6 +43,7 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
     { index: -1, kind: "note" as const, label: conclusion },
   ], [plan, introduction, conclusion]);
   const cue = cues[Math.min(step, cues.length - 1)];
+  const introductionRecording = recorded ? recordings[introduction] : undefined;
   const startRecorded = useCallback((target: number) => {
     const text = narrationText(cues[target], sequence, copy.repeatOnce), track = recordings[text];
     if (!track || !audioElement.current) { setVoiceError("file"); return; }
@@ -170,6 +172,7 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
       <button type="button" className={styles.button} onClick={() => move(step - 1)} disabled={step === 0}>{copy.previous}</button>
       <button type="button" className={styles.button} onClick={() => move(step + 1)} disabled={step === cues.length - 1}>{copy.next}</button>
       <button type="button" className={styles.button} onClick={() => move(0)}>{copy.restart}</button>
+      {introductionRecording && <a className={styles.button} href={introductionRecording.file} download={downloadName} data-download-narration>{copy.download}</a>}
       <label className={styles.playerSetting}><input type="checkbox" checked={sound && speechSupported && !voiceFailed} disabled={!speechSupported} onChange={event => {
         if (event.target.checked && playing && recorded) startRecorded(step);
         setSound(event.target.checked); setVoiceError(null);

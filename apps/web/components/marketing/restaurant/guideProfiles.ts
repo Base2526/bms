@@ -35,8 +35,8 @@ export function flowFit(id: number, profile: GuideProfile): FlowFit {
 
 const restaurantCounter: Record<"th" | "en", RestaurantFlowCopy> = {
   th: {
-    title: "รับรายการหน้าเคาน์เตอร์ → เตรียม → รับเงิน",
-    description: "ตัวอย่างร้านอาหารแบบรับเอง: เปิดบิล Takeaway โดยไม่ผูกโต๊ะหรือ QR โต๊ะ",
+    title: "รับออร์เดอร์หน้าเคาน์เตอร์ ส่งครัว และรับเงิน",
+    description: "เปิดบิลซื้อกลับบ้าน รับออร์เดอร์ ส่งครัว และรับชำระ โดยไม่ต้องผูกโต๊ะหรือใช้ QR โต๊ะ",
     note: "การขายแบบ Takeaway ไม่มี table_id; งานครัวเกิดเมื่อส่งรอบที่ผ่านการตรวจและจองของแล้ว",
     source: `sequenceDiagram
 autonumber
@@ -68,8 +68,8 @@ end
 Note over POS,Money: Takeaway ไม่มีโต๊ะและไม่มี QR โต๊ะ; กดซ้ำต้องไม่ขายซ้ำ`,
   },
   en: {
-    title: "Take counter orders, prepare and pay",
-    description: "A takeaway restaurant example without a table or table QR session.",
+    title: "Take counter orders, send them to the kitchen and collect payment",
+    description: "Open a takeaway check, take the order, send it to the kitchen and collect payment without a table or table QR.",
     note: "Takeaway has no table_id; kitchen work starts after a validated, reserved round is sent.",
     source: `sequenceDiagram
 autonumber
@@ -104,8 +104,8 @@ Note over POS,Money: Takeaway has no table QR; retry must not create a second sa
 
 const cafeCounter: Record<"th" | "en", RestaurantFlowCopy> = {
   th: {
-    title: "คาเฟ่: รับรายการหน้าเคาน์เตอร์และรับเงิน",
-    description: "ตัวอย่างการขายสินค้าหรือเครื่องดื่มผ่าน POS โดยไม่สมมติว่ามีโต๊ะและงานครัวร้านอาหาร",
+    title: "คาเฟ่: รับออร์เดอร์หน้าเคาน์เตอร์และรับเงิน",
+    description: "ขายเครื่องดื่มหรือสินค้า ตรวจราคาและสต็อก แล้วรับชำระผ่าน POS โดยไม่ต้องมีโต๊ะหรืองานครัวแบบร้านอาหาร",
     note: "สูตรเครื่องดื่มและตัวเลือกใช้ได้ตามข้อมูลสินค้าและความสามารถที่ร้านเปิดใช้; คาเฟ่ไม่ถูกบังคับใช้ขั้นตอนออร์เดอร์ออนไลน์เฉพาะร้านอาหาร",
     source: `sequenceDiagram
 autonumber
@@ -135,8 +135,8 @@ end
 Note over POS,Money: การเลือกดูตัวอย่างนี้ไม่เปลี่ยนประเภทร้านหรือการตั้งค่าจริง`,
   },
   en: {
-    title: "Cafe: take counter orders and payment",
-    description: "A POS sale for drinks or goods without assuming restaurant tables or kitchen workflow.",
+    title: "Cafe: take counter orders and collect payment",
+    description: "Sell drinks or goods, check prices and stock, then collect payment in POS without restaurant tables or kitchen workflow.",
     note: "Recipes and options depend on configured products and enabled capabilities; cafes retain ordinary online-order behavior.",
     source: `sequenceDiagram
 autonumber
@@ -169,8 +169,8 @@ Note over POS,Money: Selecting this example does not change the store archetype 
 
 const boardGame: Record<"th" | "en", RestaurantFlowCopy> = {
   th: {
-    title: "บอร์ดเกมคาเฟ่: เปิดกลุ่ม เล่น และปิดบิล",
-    description: "แยกเวลาที่เล่น กลุ่มที่รับเงิน และสินค้าหรือเครื่องดื่มในบิล",
+    title: "บอร์ดเกมคาเฟ่: เปิดโต๊ะ จับเวลา และปิดบิลกลุ่ม",
+    description: "แยกเวลาเล่น กลุ่มที่ชำระเงิน และสินค้าหรือเครื่องดื่มในบิล เพื่อคิดยอดแต่ละส่วนได้ถูกต้อง",
     note: "กลุ่มคิดเงินเป็นเจ้าของยอดชำระ โต๊ะเป็นข้อมูลการนั่ง และสิทธิ์เวลา/บัตรผ่านไม่ใช่สินค้าในสต็อก",
     source: `sequenceDiagram
 autonumber
@@ -201,8 +201,8 @@ POS-->>Guest: แสดงใบเสร็จ
 Note over Session,POS: เวลาที่เล่นไม่ใช่ SKU และโต๊ะไม่ใช่เจ้าของบิล`,
   },
   en: {
-    title: "Board game cafe: seat, play and settle",
-    description: "Keep play time, the paying group and goods on its tab distinct.",
+    title: "Board game cafe: seat guests, track time and settle the group",
+    description: "Keep play time, the paying group, and food or drinks on its tab separate so each part is charged correctly.",
     note: "The billing group owns money, the session owns seating, and time or passes are not inventory SKUs.",
     source: `sequenceDiagram
 autonumber

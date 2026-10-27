@@ -15,7 +15,7 @@ export function thaiNarrationEntries() {
   ];
   for (const profile of profiles) for (const flow of restaurantFlows) {
     const detail = guideFlowCopy(flow, profile, "th"), sequence = parseSequence(detail.source);
-    texts.add(detail.description); texts.add(detail.note);
+    texts.add(`${detail.title}. ${detail.description}`); texts.add(detail.note);
     // Enumerate source events, including hidden alternatives and disabled optional branches.
     for (const event of sequence.events) {
       if (event.kind === "end") continue;

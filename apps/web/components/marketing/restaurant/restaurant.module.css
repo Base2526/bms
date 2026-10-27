@@ -69,19 +69,19 @@
 .share span:empty { display: none; }
 .diagramHeading { font-size: 15px; font-weight: 600; margin-top: 24px !important; }
 .exampleNotice { margin-top: 16px !important; padding: 11px 14px; border-left: 3px solid #d97706; background: var(--warm); font-size: 13px; }
-.player { margin-top: 14px; border: 1px solid var(--line); border-radius: 13px; padding: clamp(14px, 2vw, 20px); background: var(--soft); }
+.player { margin-top: 14px; border: 1px solid var(--line); border-radius: 13px; padding: clamp(14px, 1.6vw, 18px); background: var(--soft); }
 .playerHeading { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; }
 .playerHeading h4 { font-size: 16px; }
 .playerHeading p, .voiceNotice { font-size: 12px; color: var(--sub); }
 .stepCount { flex-shrink: 0; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--sub); }
-.playerChoices { display: flex; flex-wrap: wrap; gap: 9px; padding: 14px 0; }
-.playerChoices label { display: grid; gap: 4px; font-size: 12px; max-width: min(100%, 340px); }
+.playerChoices { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); align-items: end; gap: 9px; padding: 12px 0; }
+.playerChoices label { display: grid; gap: 4px; font-size: 12px; max-width: none; }
 .playerChoices select, .playerSetting select { min-height: 42px; max-width: 100%; border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 8px; padding: 7px 9px; }
-.playerChoices .optionalChoice { display: flex; gap: 7px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--paper); }
-.currentCue { min-height: 105px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 15px 18px; }
+.playerChoices .optionalChoice { display: flex; gap: 7px; align-items: center; min-height: 42px; border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px; background: var(--paper); }
+.currentCue { min-height: 70px; display: grid; grid-template-columns: minmax(240px, 1fr) minmax(260px, 1.4fr); align-items: center; gap: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 12px 14px; }
 .currentCue .cueKind { display: block; color: var(--accent); font-size: 12px; font-weight: 600; margin-bottom: 5px; }
-.currentCue p { font-size: 16px; line-height: 1.55; }
-.cueActors { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 8px; align-items: center; margin-bottom: 12px; color: var(--accent); font-size: 13px; }
+.currentCue p { min-width: 0; font-size: 14px; line-height: 1.55; border-left: 1px solid var(--line); padding-left: 14px; }
+.cueActors { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 8px; align-items: center; margin-bottom: 0; color: var(--accent); font-size: 13px; }
 .cueActors > span:not(.cueArrow) { border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-wrap: anywhere; text-align: center; }
 .cueArrow { font-size: 24px; text-align: center; }
 .cueActors[data-playing="true"] .cueArrow { animation: cueTravel 1.5s ease-in-out infinite; }
@@ -89,9 +89,10 @@
 .playerControls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .playerControls button { min-height: 40px; padding: 7px 12px; font-size: 12px; }
 .playerControls button:disabled { opacity: .45; cursor: default; }
+.playerControls [data-download-narration] { min-height: 40px; margin-left: auto; padding: 7px 12px; font-size: 12px; }
 .playerSetting { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; margin-left: 5px; }
 .playerSetting select { min-height: 38px; }
-.voiceNotice { margin-top: 10px !important; }
+.voiceNotice { margin-top: 8px !important; }
 .diagramTools { display: flex; align-items: center; gap: 20px; justify-content: space-between; margin: 12px 0; padding: 14px 16px; background: var(--soft); border-radius: 10px; }
 .diagramTools p { font-size: 12px; color: var(--sub); max-width: 640px; }
 .diagramTools label { display: flex; gap: 10px; align-items: center; flex-shrink: 0; font-size: 12px; }
@@ -158,7 +159,10 @@
   .playerHeading { display: block; }
   .stepCount { display: block; margin-top: 5px; }
   .playerChoices label { max-width: 100%; width: 100%; }
+  .currentCue { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .currentCue p { border-left: 0; border-top: 1px solid var(--line); padding: 10px 0 0; }
   .playerControls .primaryButton { flex: 1 1 100%; }
+  .playerControls [data-download-narration] { margin-left: 0; }
   .flowList button { flex-wrap: wrap; }
   .flowList button { flex-basis: 100%; width: 100%; }
   .detailHeading { flex-direction: column; }
