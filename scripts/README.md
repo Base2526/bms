@@ -22,7 +22,8 @@
   pause/next/rate/mute, flow-switch cleanup, HTTP failure/retry and blocked media permission.
 - `node scripts/run-contract-tests.mjs pure restaurant-recorded-narration`: all authored Thai
   cues across 11 flows and three profile variants, including hidden branches, must have a shipped
-  MP3 with the expected hash. Text edits require regeneration; the player never sends text to TTS.
+  MP3 with the expected hash. The title-and-description introduction is also the downloadable Flow
+  summary file. Text edits require regeneration; the player never sends text to TTS.
 
 Thai narration regeneration (offline build tool, not a web/Compose dependency):
 

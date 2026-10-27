@@ -36,6 +36,9 @@ try {
     const play = () => player.getByRole("button", { name: "▶ เล่น", exact: true }).click();
     const pause = () => player.getByRole("button", { name: "หยุดชั่วคราว", exact: true }).click();
     await guide.locator("#flow-1").waitFor();
+    const download = player.locator("[data-download-narration]");
+    assert.equal(await download.getAttribute("download"), "bms-restaurant-flow-01-th.mp3");
+    assert.ok((await download.getAttribute("href")).endsWith(".mp3"));
     assert.equal(await sound.isDisabled(), false);
     assert.equal(audioRequests, 0, "Do not preload all recordings before Play");
     await play();

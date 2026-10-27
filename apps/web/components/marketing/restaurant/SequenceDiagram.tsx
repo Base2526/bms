@@ -47,7 +47,8 @@ export default function SequenceDiagram({ source, title, lang, labels, zoomLabel
   const people = new Map(sequence.participants.map(p => [p.id, p.label]));
   return <div>
     <PrintSequence layout={layout} flow={printFlow} />
-    <PlaybackPlayer sequence={sequence} lang={lang} copy={playerCopy} introduction={printFlow.description} conclusion={printFlow.note} onActive={setActiveEventIndex} />
+    <PlaybackPlayer sequence={sequence} lang={lang} copy={playerCopy} introduction={`${printFlow.title}. ${printFlow.description}`} conclusion={printFlow.note}
+      downloadName={`bms-restaurant-flow-${String(printFlow.id).padStart(2, "0")}-${lang}.mp3`} onActive={setActiveEventIndex} />
     <div className={styles.diagramTools}>
       <p id={`${id}-hint`}>{hint}</p>
       <label>{zoomLabel}<select value={zoom} onChange={e => setZoom(e.target.value)} aria-label={zoomLabel}>
