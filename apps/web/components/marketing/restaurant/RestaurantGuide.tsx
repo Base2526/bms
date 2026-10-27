@@ -24,11 +24,14 @@ export default function RestaurantGuide() {
   }, [setOverride, clearOverride, homeLabel, copy.breadcrumb]);
   const [selected, setSelected] = useState(3), [shareStatus, setShareStatus] = useState<"copied" | "failed" | "shared" | null>(null);
   const [profile, setProfile] = useState<GuideProfile>({ shop: "overview", service: "dine_in", multiBranch: false });
-  const currentFlow = useRef(selected); currentFlow.current = selected;
+  const shareRequest = useRef(0);
+  useEffect(() => { shareRequest.current++; setShareStatus(null); return () => { shareRequest.current++; }; }, [lang]);
   useEffect(() => {
-    const restore = () => {
+    const restore = (event?: Event) => {
+      shareRequest.current++;
       const id = Number(window.location.hash.match(/^#flow-(\d+)$/)?.[1]);
-      setSelected(restaurantFlows.some(f => f.id === id) ? id : 3);
+      if (restaurantFlows.some(f => f.id === id)) setSelected(id);
+      else if (!event || window.location.hash !== "#restaurant-flows") setSelected(3);
       const url = new URL(window.location.href);
       const shop = url.searchParams.get("shop");
       const service = url.searchParams.get("service");
@@ -67,6 +70,7 @@ export default function RestaurantGuide() {
     return url;
   };
   const navigate = (id: number, nextProfile = profile) => {
+    shareRequest.current++;
     setSelected(id); setProfile(nextProfile); setShareStatus(null);
     window.history.pushState(null, "", address(id, nextProfile));
   };
@@ -74,26 +78,30 @@ export default function RestaurantGuide() {
     if (id !== selected) navigate(id);
   };
   const changeShop = (shop: ShopType) => {
+    if (shop === profile.shop) return;
     const nextProfile: GuideProfile = { shop, service: shop === "restaurant" ? "dine_in" : "counter", multiBranch: profile.multiBranch };
     navigate(shop === "restaurant" || shop === "food_beverage" || shop === "board_game_cafe" ? 3 : selected, nextProfile);
   };
   const changeService = (service: ServiceStyle) => {
+    if (service === profile.service) return;
     navigate(service === "online" ? 7 : 3, { ...profile, service });
   };
   const share = async (native = false) => {
+    const request = ++shareRequest.current;
     const url = address(selected, profile);
     setShareStatus(null);
     if (native && navigator.share) {
       try {
         await navigator.share({ title: `BMS · ${detail.title}`, text: detail.description, url: url.href });
-        if (currentFlow.current === selected) setShareStatus("shared");
+        if (shareRequest.current === request) setShareStatus("shared");
         return;
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") return;
       }
     }
-    try { await navigator.clipboard.writeText(url.href); if (currentFlow.current === selected) setShareStatus("copied"); }
-    catch { if (currentFlow.current === selected) { window.history.replaceState(null, "", url.href); setShareStatus("failed"); } }
+    if (shareRequest.current !== request) return;
+    try { await navigator.clipboard.writeText(url.href); if (shareRequest.current === request) setShareStatus("copied"); }
+    catch { if (shareRequest.current === request) { window.history.replaceState(null, "", url.href); setShareStatus("failed"); } }
   };
   return <article className={styles.page} data-restaurant-guide>
     <header className={styles.hero}>
@@ -149,7 +157,7 @@ export default function RestaurantGuide() {
           </div></div>
           {fit === "restaurant_example" && <p className={styles.exampleNotice}>{copy.profile.exampleNotice}</p>}
           <h4 className={styles.diagramHeading}>{copy.diagram}</h4>
-          <SequenceDiagram key={`${flow.id}-${lang}-${profile.shop}-${profile.service}`} source={detail.source} title={`${copy.diagram}: ${detail.title}`} lang={lang} labels={copy.labels} zoomLabel={copy.zoom} fitLabel={copy.fit} hint={copy.diagramHint} transcriptLabel={copy.transcript} playerCopy={copy.player}
+          <SequenceDiagram key={`${flow.id}-${lang}-${profile.shop}-${profile.service}-${profile.multiBranch}`} source={detail.source} title={`${copy.diagram}: ${detail.title}`} lang={lang} labels={copy.labels} zoomLabel={copy.zoom} fitLabel={copy.fit} hint={copy.diagramHint} transcriptLabel={copy.transcript} playerCopy={copy.player}
             printFlow={{ id: flow.id, title: detail.title, description: detail.description, note: detail.note, pageLabel: copy.page, continued: copy.continued, scope: copy.scope }} />
           <p className={styles.boundary}>{detail.note}</p>
         </section>

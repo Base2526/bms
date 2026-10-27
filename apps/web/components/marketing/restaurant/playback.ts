@@ -5,7 +5,7 @@ type Leaf = { kind: "message"; index: number; label: string; from: string; to: s
 type Group = { kind: "alt" | "opt" | "loop"; index: number; label: string; options: Array<{ label: string; index: number; children: Node[] }> };
 type Node = Leaf | Group;
 export type PlaybackChoice = { id: number; kind: "alt" | "opt"; label: string; options: string[]; selected: number };
-export type PlaybackCue = { index: number; kind: "message" | "note" | "condition"; label: string; from?: string; to?: string };
+export type PlaybackCue = { index: number; kind: "message" | "note" | "condition" | "loop"; label: string; from?: string; to?: string };
 
 /** Compile authored sequence syntax into exclusive branches before producing playback cues. */
 export function playbackTree(sequence: Sequence): Node[] {
@@ -42,11 +42,6 @@ export function playbackTree(sequence: Sequence): Node[] {
 
 export function compilePlayback(sequence: Sequence, selections: Record<number, number> = {}) {
   const cues: PlaybackCue[] = [], choices: PlaybackChoice[] = [];
-  const messageCount = (nodes: Node[]): number => nodes.reduce((count, node) => {
-    if (node.kind === "message") return count + 1;
-    if (node.kind === "note") return count;
-    return count + Math.max(...(node as Group).options.map(option => messageCount(option.children)));
-  }, 0);
   const visit = (nodes: Node[]) => {
     for (const node of nodes) {
       if (node.kind === "message") {
@@ -54,22 +49,21 @@ export function compilePlayback(sequence: Sequence, selections: Record<number, n
       } else if (node.kind === "note") {
         cues.push({ index: node.index, kind: "note", label: node.label });
       } else if (node.kind === "alt") {
-        const primary = node.options.reduce((best, option, i) =>
-          messageCount(option.children) > messageCount(node.options[best].children) ? i : best, 0);
-        const selected = Math.min(Math.max(selections[node.index] ?? primary, 0), node.options.length - 1);
+        const requested = selections[node.index];
+        const selected = Number.isInteger(requested) && requested >= 0 && requested < node.options.length ? requested : 0;
         choices.push({ id: node.index, kind: "alt", label: node.label, options: node.options.map(option => option.label), selected });
         const option = node.options[selected];
         cues.push({ index: option.index, kind: "condition", label: option.label });
         visit(option.children);
       } else if (node.kind === "opt") {
-        const selected = selections[node.index] === 0 ? 0 : 1;
+        const selected = selections[node.index] === 1 ? 1 : 0;
         choices.push({ id: node.index, kind: "opt", label: node.label, options: [], selected });
         if (selected) {
           cues.push({ index: node.index, kind: "condition", label: node.label });
           visit(node.options[0].children);
         }
       } else if ("options" in node) {
-        cues.push({ index: node.index, kind: "condition", label: node.label });
+        cues.push({ index: node.index, kind: "loop", label: node.label });
         visit(node.options[0].children);
       }
     }

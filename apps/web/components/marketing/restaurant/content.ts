@@ -63,6 +63,8 @@ export const restaurantCopy: Bilingual<Copy> = {
       condition: "กรณี", optional: "ขั้นตอนเพิ่มเติม", include: "รวมขั้นตอนนี้", play: "▶ เล่น", pause: "หยุดชั่วคราว", previous: "ก่อนหน้า", next: "ถัดไป", restart: "เริ่มใหม่",
       sound: "เปิดเสียง", speed: "ความเร็ว", step: "ขั้น", of: "/", voiceNotice: "เสียงอ่านใช้เสียงสังเคราะห์ของเบราว์เซอร์ คุณภาพและภาษาเสียงขึ้นกับอุปกรณ์; ข้อความทุกขั้นอ่านได้บนหน้าจอ",
       silentNotice: "อุปกรณ์นี้ไม่มีเสียงอ่านสำหรับภาษาที่เลือก ระบบยังเล่นภาพและแสดงข้อความทุกขั้นได้",
+      failedNotice: "เสียงอ่านไม่ทำงาน จึงเล่นต่อด้วยภาพและข้อความ กดเปิดเสียงเพื่อลองใหม่",
+      repeatOnce: "ตัวอย่างการทำงานหนึ่งรอบ", resumeNotice: "เมื่อหยุดชั่วคราวแล้วเล่นต่อ จะเริ่มอ่านขั้นปัจจุบันใหม่",
     },
   },
   en: {
@@ -105,6 +107,8 @@ export const restaurantCopy: Bilingual<Copy> = {
       condition: "Case", optional: "Optional step", include: "Include this step", play: "▶ Play", pause: "Pause", previous: "Previous", next: "Next", restart: "Restart",
       sound: "Sound on", speed: "Speed", step: "Step", of: "of", voiceNotice: "Narration uses your browser's synthetic voice; voice language and quality depend on the device. Every step also has on-screen text.",
       silentNotice: "No voice is available for the selected language on this device. The visual steps and text still play.",
+      failedNotice: "Narration failed. Visual steps and captions continue. Enable sound to retry.",
+      repeatOnce: "One example iteration", resumeNotice: "Resuming after a pause restarts the current step.",
     },
   },
 };

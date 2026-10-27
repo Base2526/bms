@@ -101,7 +101,7 @@ try {
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
       value: { writeText: async () => { throw new Error("FAKE clipboard denied"); } } }));
     await guide.locator('[data-copy-flow]').click();
-    assert.match(await guide.locator('[role="status"]').innerText(), lang === "th" ? /URL/ : /address bar/);
+    assert.match(await guide.locator('[data-copy-flow] + [role="status"]').innerText(), lang === "th" ? /URL/ : /address bar/);
     await guide.locator('[data-flow-id="1"]').click();
     await guide.locator('[data-flow-id="2"]').click();
     const svg = guide.locator('svg[role="img"]'), before = await svg.evaluate(el => el.getBoundingClientRect().width);

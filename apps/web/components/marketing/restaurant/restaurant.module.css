@@ -79,6 +79,11 @@
 .currentCue { min-height: 105px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); padding: 15px 18px; }
 .currentCue .cueKind { display: block; color: var(--accent); font-size: 12px; font-weight: 600; margin-bottom: 5px; }
 .currentCue p { font-size: 16px; line-height: 1.55; }
+.cueActors { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr); gap: 8px; align-items: center; margin-bottom: 12px; color: var(--accent); font-size: 13px; }
+.cueActors > span:not(.cueArrow) { border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-wrap: anywhere; text-align: center; }
+.cueArrow { font-size: 24px; text-align: center; }
+.cueActors[data-playing="true"] .cueArrow { animation: cueTravel 1.5s ease-in-out infinite; }
+@keyframes cueTravel { 0%, 100% { transform: translateX(-3px); opacity: .5; } 50% { transform: translateX(3px); opacity: 1; } }
 .playerControls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .playerControls button { min-height: 40px; padding: 7px 12px; font-size: 12px; }
 .playerControls button:disabled { opacity: .45; cursor: default; }
@@ -101,8 +106,7 @@
 .messageLine { fill: none; stroke: var(--accent); stroke-width: 1.4; }
 .activeRect { stroke: var(--accent); stroke-width: 2.5; fill: color-mix(in srgb, var(--accent) 12%, var(--paper)); }
 .activeText { fill: var(--accent); font-weight: 700; }
-.activeLine { stroke: #e26a00; stroke-width: 3.5; animation: activePulse 1.5s ease-in-out infinite; }
-@keyframes activePulse { 50% { opacity: .45; } }
+.activeLine { stroke: #e26a00; stroke-width: 3.5; }
 .arrowHead { fill: var(--accent); }
 .transcript { margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; padding: 12px 16px; font-size: 14px; }
 .transcript summary { cursor: pointer; min-height: 28px; }
@@ -165,5 +169,5 @@
   .cta .actions { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .activeLine { animation: none; }
+  .cueActors[data-playing="true"] .cueArrow { animation: none; }
 }
