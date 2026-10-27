@@ -5,17 +5,19 @@ import type { Lang } from "@/i18n";
 import { layoutSequence, parseSequence, type DiagramLabels, type Measure } from "./sequence";
 import SequenceSvg from "./SequenceSvg";
 import PrintSequence, { type PrintFlow } from "./PrintSequence";
+import PlaybackPlayer, { type PlayerCopy } from "./PlaybackPlayer";
 import styles from "./restaurant.module.css";
 
 const estimate: Measure = text => Array.from(text).reduce((width, c) => width + (/\s/.test(c) ? 4 : /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(c) ? 0 : 9), 0);
 
-export default function SequenceDiagram({ source, title, lang, labels, zoomLabel, fitLabel, hint, transcriptLabel, printFlow }: {
+export default function SequenceDiagram({ source, title, lang, labels, zoomLabel, fitLabel, hint, transcriptLabel, printFlow, playerCopy }: {
   source: string; title: string; lang: Lang; labels: DiagramLabels; zoomLabel: string;
-  fitLabel: string; hint: string; transcriptLabel: string; printFlow: PrintFlow;
+  fitLabel: string; hint: string; transcriptLabel: string; printFlow: PrintFlow; playerCopy: PlayerCopy;
 }) {
   const id = useId().replace(/:/g, ""), holder = useRef<HTMLDivElement>(null);
   const [measure, setMeasure] = useState<Measure>(() => estimate);
   const [zoom, setZoom] = useState("fit"), [available, setAvailable] = useState<number | null>(null);
+  const [activeEventIndex, setActiveEventIndex] = useState<number | undefined>();
   const sequence = useMemo(() => parseSequence(source), [source]);
   const layout = useMemo(() => layoutSequence(sequence, measure, lang, labels), [sequence, measure, lang, labels]);
   useEffect(() => {
@@ -45,6 +47,7 @@ export default function SequenceDiagram({ source, title, lang, labels, zoomLabel
   const people = new Map(sequence.participants.map(p => [p.id, p.label]));
   return <div>
     <PrintSequence layout={layout} flow={printFlow} />
+    <PlaybackPlayer sequence={sequence} lang={lang} copy={playerCopy} introduction={printFlow.description} conclusion={printFlow.note} onActive={setActiveEventIndex} />
     <div className={styles.diagramTools}>
       <p id={`${id}-hint`}>{hint}</p>
       <label>{zoomLabel}<select value={zoom} onChange={e => setZoom(e.target.value)} aria-label={zoomLabel}>
@@ -52,7 +55,7 @@ export default function SequenceDiagram({ source, title, lang, labels, zoomLabel
       </select></label>
     </div>
     <div ref={holder} className={styles.diagramScroll} tabIndex={0} role="region" aria-label={title} aria-describedby={`${id}-hint`}>
-      <SequenceSvg layout={layout} title={title} width={width} />
+      <SequenceSvg layout={layout} title={title} width={width} activeEventIndex={activeEventIndex} />
     </div>
     <details className={styles.transcript}><summary>{transcriptLabel}</summary>
       <ol>{sequence.events.map((e, i) => e.kind === "end" ? null : <li key={i}>

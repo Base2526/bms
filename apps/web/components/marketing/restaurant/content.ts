@@ -1,5 +1,14 @@
 import type { Bilingual } from "@/lib/static-page-i18n";
 import type { DiagramLabels } from "./sequence";
+import type { PlayerCopy } from "./PlaybackPlayer";
+
+type ProfileCopy = {
+  heading: string; description: string; shopLabel: string; serviceLabel: string; multiBranch: string;
+  shops: { overview: string };
+  services: { dine_in: string; counter: string; online: string };
+  recommended: string; related: string; restaurantExample: string; exampleNotice: string;
+  selected: string; recommendedHeading: string;
+};
 
 type Copy = {
   breadcrumb: string;
@@ -11,6 +20,7 @@ type Copy = {
   copyFailed: string; fitTitle: string; fitDescription: string; fits: string[];
   readinessTitle: string; readiness: string[]; ctaTitle: string; ctaDescription: string;
   scope: string; labels: DiagramLabels;
+  profile: ProfileCopy; player: PlayerCopy;
 };
 export const restaurantCopy: Bilingual<Copy> = {
   th: {
@@ -38,8 +48,22 @@ export const restaurantCopy: Bilingual<Copy> = {
       "ต้องทดลองอุปกรณ์ การชำระเงิน และการส่งมอบของร้านจริงก่อนเปิดใช้งาน ขึ้นกับการตั้งค่าและเวอร์ชันที่ติดตั้ง",
     ],
     ctaTitle: "ร้านของคุณเริ่มจาก Flow ไหน?", ctaDescription: "เล่ารูปแบบร้าน จำนวนสาขา และจุดที่อยากจัดการให้ดีขึ้นกับทีม BMS",
-    scope: "ภาพอธิบายความสามารถของระบบ ไม่ใช่ข้อมูลร้านจริงหรือหลักฐานว่ารายการเกิดขึ้นแล้ว · ขอบเขตเนื้อหาตรวจเมื่อ 26 ต.ค. 2569",
+    scope: "ภาพอธิบายความสามารถของระบบ ไม่ใช่ข้อมูลร้านจริงหรือหลักฐานว่ารายการเกิดขึ้นแล้ว · ขอบเขตเนื้อหาตรวจเมื่อ 27 ต.ค. 2569",
     labels: { person: "ผู้ดำเนินงาน", system: "ระบบ", alt: "กรณี", opt: "เมื่อมีเงื่อนไข", loop: "ทำซ้ำ", else: "อีกกรณี" },
+    profile: {
+      heading: "เลือกรูปแบบร้านของคุณ", description: "เลือกเพื่อดูตัวอย่างและลำดับ Flow ที่ใกล้กับงานของร้าน การเลือกนี้ไม่แก้การตั้งค่าร้านจริง",
+      shopLabel: "ประเภทร้าน", serviceLabel: "รูปแบบบริการหลัก", multiBranch: "มีหลายสาขา",
+      shops: { overview: "ดูภาพรวมทุกแบบ" },
+      services: { dine_in: "มีโต๊ะให้นั่ง", counter: "ขายหน้าเคาน์เตอร์ / รับเอง", online: "รับออร์เดอร์ออนไลน์" },
+      recommended: "แนะนำ", related: "เกี่ยวข้อง", restaurantExample: "ตัวอย่างร้านอาหาร", selected: "กำลังดู", recommendedHeading: "Flow ที่แนะนำสำหรับรูปแบบนี้",
+      exampleNotice: "Flow นี้เป็นตัวอย่างของร้านอาหาร โปรดตรวจเงื่อนไขก่อนใช้กับประเภทร้านที่เลือก",
+    },
+    player: {
+      heading: "เล่นคำอธิบายทีละขั้น", description: "เลือกกรณีที่ต้องการ แล้วกดเล่น ภาพจะเน้นขั้นตอนปัจจุบันและอ่านคำอธิบายด้วยเสียงของอุปกรณ์",
+      condition: "กรณี", optional: "ขั้นตอนเพิ่มเติม", include: "รวมขั้นตอนนี้", play: "▶ เล่น", pause: "หยุดชั่วคราว", previous: "ก่อนหน้า", next: "ถัดไป", restart: "เริ่มใหม่",
+      sound: "เปิดเสียง", speed: "ความเร็ว", step: "ขั้น", of: "/", voiceNotice: "เสียงอ่านใช้เสียงสังเคราะห์ของเบราว์เซอร์ คุณภาพและภาษาเสียงขึ้นกับอุปกรณ์; ข้อความทุกขั้นอ่านได้บนหน้าจอ",
+      silentNotice: "อุปกรณ์นี้ไม่มีเสียงอ่านสำหรับภาษาที่เลือก ระบบยังเล่นภาพและแสดงข้อความทุกขั้นได้",
+    },
   },
   en: {
     breadcrumb: "Restaurants and cafes",
@@ -66,7 +90,21 @@ export const restaurantCopy: Bilingual<Copy> = {
       "Rehearse with your actual hardware, payments and handover process before launch. Availability depends on configuration and installed version.",
     ],
     ctaTitle: "Which workflow matters to your restaurant?", ctaDescription: "Tell the BMS team about your store, branch count and the work you want to improve.",
-    scope: "These diagrams explain system capabilities. They are not live store data or proof of completed transactions. Content reviewed 26 October 2026.",
+    scope: "These diagrams explain system capabilities. They are not live store data or proof of completed transactions. Content reviewed 27 October 2026.",
     labels: { person: "Person", system: "System", alt: "Case", opt: "When applicable", loop: "Repeat", else: "Alternative" },
+    profile: {
+      heading: "Choose how your shop works", description: "Select an example and recommended flows. This does not change your store configuration.",
+      shopLabel: "Shop type", serviceLabel: "Main service style", multiBranch: "Multiple branches",
+      shops: { overview: "Show all examples" },
+      services: { dine_in: "Dine-in tables", counter: "Counter / takeaway", online: "Online orders" },
+      recommended: "Recommended", related: "Related", restaurantExample: "Restaurant example", selected: "Viewing", recommendedHeading: "Recommended flows for this setup",
+      exampleNotice: "This flow illustrates restaurant operation. Check its conditions before applying it to the selected shop type.",
+    },
+    player: {
+      heading: "Play the guided steps", description: "Choose a case and press Play. The current step is highlighted and spoken using your device voice.",
+      condition: "Case", optional: "Optional step", include: "Include this step", play: "▶ Play", pause: "Pause", previous: "Previous", next: "Next", restart: "Restart",
+      sound: "Sound on", speed: "Speed", step: "Step", of: "of", voiceNotice: "Narration uses your browser's synthetic voice; voice language and quality depend on the device. Every step also has on-screen text.",
+      silentNotice: "No voice is available for the selected language on this device. The visual steps and text still play.",
+    },
   },
 };

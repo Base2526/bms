@@ -3,6 +3,8 @@ import test from "node:test";
 import { restaurantFlows } from "../apps/web/components/marketing/restaurant/flowContent.ts";
 import { restaurantCopy } from "../apps/web/components/marketing/restaurant/content.ts";
 import { parseSequence, layoutSequence, paginateSequence, wrapSequenceText } from "../apps/web/components/marketing/restaurant/sequence.ts";
+import { compilePlayback } from "../apps/web/components/marketing/restaurant/playback.ts";
+import { flowFit, guideFlowCopy, type GuideProfile } from "../apps/web/components/marketing/restaurant/guideProfiles.ts";
 
 const measure = (text: string) => [...text].length * 9;
 
@@ -72,5 +74,40 @@ test("long identifiers wrap without losing characters or Thai combining marks", 
     assert.equal(rows.join(""), text);
     assert.ok(rows.every(row => measure(row) <= 54));
     assert.ok(rows.every(row => !/^[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(row)));
+  }
+});
+
+test("shop-specific core examples remain valid and bilingual", () => {
+  const profiles: GuideProfile[] = [
+    { shop: "restaurant", service: "counter", multiBranch: false },
+    { shop: "food_beverage", service: "counter", multiBranch: false },
+    { shop: "board_game_cafe", service: "dine_in", multiBranch: false },
+  ];
+  for (const profile of profiles) {
+    const flow = restaurantFlows[2];
+    const th = guideFlowCopy(flow, profile, "th"), en = guideFlowCopy(flow, profile, "en");
+    assert.deepEqual(topology(th.source), topology(en.source), profile.shop);
+    assert.ok(compilePlayback(parseSequence(th.source)).cues.length > 5);
+  }
+  assert.equal(flowFit(6, { shop: "restaurant", service: "counter", multiBranch: false }), "restaurant_example");
+  assert.equal(flowFit(7, { shop: "food_beverage", service: "counter", multiBranch: false }), "restaurant_example");
+  assert.equal(flowFit(3, { shop: "board_game_cafe", service: "dine_in", multiBranch: false }), "recommended");
+});
+
+test("playback chooses one exclusive branch and respects optional sections", () => {
+  const sequence = parseSequence("sequenceDiagram\nactor A as Staff\nparticipant B as BMS\nalt Approved\nA->>B: Execute\nelse Rejected\nB-->>A: Explain\nend\nopt Notify\nB-->>A: Notify\nend");
+  const first = compilePlayback(sequence);
+  const branch = first.choices.find(choice => choice.kind === "alt")!;
+  const optional = first.choices.find(choice => choice.kind === "opt")!;
+  assert.ok(first.cues.some(cue => cue.label === "Execute"));
+  assert.ok(!first.cues.some(cue => cue.label === "Explain"));
+  assert.ok(first.cues.some(cue => cue.label === "Notify"));
+  const other = compilePlayback(sequence, { [branch.id]: 1, [optional.id]: 0 });
+  assert.ok(other.cues.some(cue => cue.label === "Explain"));
+  assert.ok(!other.cues.some(cue => cue.label === "Execute" || cue.label === "Notify"));
+  for (const flow of restaurantFlows) for (const lang of ["th", "en"] as const) {
+    const parsed = parseSequence(flow[lang].source), plan = compilePlayback(parsed);
+    assert.ok(plan.cues.length > 4, `${lang} flow ${flow.id}`);
+    assert.ok(plan.cues.every(cue => cue.index >= 0 && cue.index < parsed.events.length));
   }
 });

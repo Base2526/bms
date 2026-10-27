@@ -69,11 +69,11 @@ export function wrapSequenceText(text: string, max: number, measure: Measure, la
   return rows;
 }
 
-export type Shape =
+export type Shape = (
   | { type: "rect"; x: number; y: number; width: number; height: number; tone: "person" | "system" | "frame" | "paper"; radius: number }
   | { type: "text"; x: number; y: number; rows: string[]; anchor: "start" | "middle" | "end"; small?: boolean; muted?: boolean }
   | { type: "line"; x1: number; x2: number; y1: number; y2: number; tone: "lifeline" | "divider" | "message"; reply?: boolean }
-  | { type: "self"; x: number; y: number };
+  | { type: "self"; x: number; y: number }) & { eventIndex?: number };
 export type DiagramLabels = { person: string; system: string; alt: string; opt: string; loop: string; else: string };
 
 export function layoutSequence(sequence: Sequence, measure: Measure, lang: string, labels: DiagramLabels) {
@@ -88,7 +88,8 @@ export function layoutSequence(sequence: Sequence, measure: Measure, lang: strin
   const breaks: Array<{ y: number; context: string[] }> = [];
   const context: string[] = [];
   let y = headerHeight + 45, number = 0;
-  for (const event of sequence.events) {
+  for (const [eventIndex, event] of sequence.events.entries()) {
+    const shapeStart = content.length;
     if (event.kind === "message") {
       const a = sequence.participants.findIndex(p => p.id === event.from), b = sequence.participants.findIndex(p => p.id === event.to);
       const self = a === b, left = self && xs[a] > width - 320;
@@ -123,6 +124,7 @@ export function layoutSequence(sequence: Sequence, measure: Measure, lang: strin
       content.push({ type: "rect", x: 48, y, width: width - 96, height: note.rows.length * 21 + 22, radius: 9, tone: "person" }, note);
       y += note.rows.length * 21 + 43;
     }
+    for (let i = shapeStart; i < content.length; i++) content[i].eventIndex = eventIndex;
     // Break only after a complete step, never between a condition and its first step.
     if (event.kind === "message" || event.kind === "note" || event.kind === "end")
       breaks.push({ y: y - 12, context: [...context] });
