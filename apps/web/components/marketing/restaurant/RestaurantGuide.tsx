@@ -9,7 +9,7 @@ import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
 import { useBreadcrumbsOverride } from "@/components/breadcrumbs-context";
 import { restaurantCopy } from "./content";
 import { restaurantFlows } from "./flowContent";
-import { flowFit, guideFlowCopy, type GuideProfile, type ServiceStyle, type ShopType } from "./guideProfiles";
+import { ADDITIONAL_GUIDE_SHOPS, PRIMARY_GUIDE_SHOPS, flowFit, guideFlows, guideFlowCopy, type GuideProfile, type ServiceStyle, type ShopType } from "./guideProfiles";
 import SequenceDiagram from "./SequenceDiagram";
 import styles from "./restaurant.module.css";
 
@@ -24,6 +24,7 @@ export default function RestaurantGuide() {
   }, [setOverride, clearOverride, homeLabel, copy.breadcrumb]);
   const [selected, setSelected] = useState(3), [shareStatus, setShareStatus] = useState<"copied" | "failed" | "shared" | null>(null);
   const [profile, setProfile] = useState<GuideProfile>({ shop: "overview", service: "dine_in", multiBranch: false });
+  const [includeExamples, setIncludeExamples] = useState(false);
   const shareRequest = useRef(0);
   useEffect(() => { shareRequest.current++; setShareStatus(null); return () => { shareRequest.current++; }; }, [lang]);
   useEffect(() => {
@@ -41,6 +42,7 @@ export default function RestaurantGuide() {
         multiBranch: url.searchParams.get("branches") === "multi",
       });
       setShareStatus(null);
+      setIncludeExamples(false);
     };
     restore();
     window.addEventListener("hashchange", restore);
@@ -56,6 +58,13 @@ export default function RestaurantGuide() {
     board_game_cafe: t("shop_archetypes.board_game_cafe"),
   };
   const fit = flowFit(selected, profile);
+  // Keep existing shared deep links readable, with an explicit reference warning.
+  const showingExamples = includeExamples || fit === "restaurant_example";
+  const visibleIds = guideFlows(profile, showingExamples);
+  const visibleFlows = restaurantFlows.filter(item => visibleIds.includes(item.id));
+  const hasExamples = guideFlows(profile).length < restaurantFlows.length;
+  const scopeSummary = copy.profile.scopes[profile.shop === "restaurant" ? profile.service : profile.shop];
+  const printScope = `${profile.shop === "board_game_cafe" ? copy.profile.additionalHeading : copy.profile.primaryHeading} · ${shopLabels[profile.shop]}${profile.shop === "restaurant" ? ` · ${copy.profile.services[profile.service]}` : ""}`;
   const fitLabel = (value: ReturnType<typeof flowFit>) => value === "restaurant_example" ? copy.profile.restaurantExample : copy.profile[value];
   const recommended = restaurantFlows.filter(item => flowFit(item.id, profile) === "recommended");
   const address = (id: number, nextProfile: GuideProfile) => {
@@ -79,11 +88,13 @@ export default function RestaurantGuide() {
   };
   const changeShop = (shop: ShopType) => {
     if (shop === profile.shop) return;
+    setIncludeExamples(false);
     const nextProfile: GuideProfile = { shop, service: shop === "restaurant" ? "dine_in" : "counter", multiBranch: profile.multiBranch };
     navigate(shop === "restaurant" || shop === "food_beverage" || shop === "board_game_cafe" ? 3 : selected, nextProfile);
   };
   const changeService = (service: ServiceStyle) => {
     if (service === profile.service) return;
+    setIncludeExamples(false);
     navigate(service === "online" ? 7 : 3, { ...profile, service });
   };
   const share = async (native = false) => {
@@ -125,23 +136,34 @@ export default function RestaurantGuide() {
       </div>
       <div className={styles.profilePanel}>
         <div><h3>{copy.profile.heading}</h3><p>{copy.profile.description}</p></div>
-        <fieldset className={styles.shopChoices}><legend>{copy.profile.shopLabel}</legend>
-          {(["overview", "restaurant", "food_beverage", "board_game_cafe"] as ShopType[]).map(shop => <button key={shop} type="button" aria-pressed={profile.shop === shop} onClick={() => changeShop(shop)}>{shopLabels[shop]}</button>)}
+        <fieldset className={styles.shopChoices} data-primary-shops><legend>{copy.profile.primaryHeading}</legend>
+          {PRIMARY_GUIDE_SHOPS.map(shop => <button key={shop} type="button" data-shop={shop} aria-pressed={profile.shop === shop} onClick={() => changeShop(shop)}>{shopLabels[shop]}</button>)}
         </fieldset>
+        <div className={styles.additionalShops} data-additional-shops>
+          <fieldset className={styles.shopChoices} aria-describedby="additional-shop-description"><legend>{copy.profile.additionalHeading}</legend>
+            {ADDITIONAL_GUIDE_SHOPS.map(shop => <button key={shop} type="button" data-shop={shop} aria-pressed={profile.shop === shop} onClick={() => changeShop(shop)}>{shopLabels[shop]}</button>)}
+          </fieldset>
+          <p id="additional-shop-description">{copy.profile.additionalDescription}</p>
+        </div>
         {profile.shop === "restaurant" && <fieldset className={styles.serviceChoices}><legend>{copy.profile.serviceLabel}</legend>
           {(Object.keys(copy.profile.services) as ServiceStyle[]).map(service => <button key={service} type="button" aria-pressed={profile.service === service} onClick={() => changeService(service)}>{copy.profile.services[service]}</button>)}
         </fieldset>}
         {(profile.shop === "restaurant" || profile.shop === "food_beverage") && <label className={styles.branchChoice}><input type="checkbox" checked={profile.multiBranch} onChange={event => navigate(selected, { ...profile, multiBranch: event.target.checked })} />{copy.profile.multiBranch}</label>}
+        <p className={styles.profileScope} data-profile-scope>{scopeSummary}</p>
+        {hasExamples && <label className={styles.branchChoice}><input data-show-examples type="checkbox" checked={showingExamples} onChange={event => {
+          setIncludeExamples(event.target.checked);
+          if (!event.target.checked && fit === "restaurant_example") navigate(profile.shop === "restaurant" && profile.service === "online" ? 7 : 3);
+        }} />{copy.profile.showExamples}</label>}
         {recommended.length > 0 && <div className={styles.recommendations}><strong>{copy.profile.recommendedHeading}</strong><div>
           {recommended.map(item => <button key={item.id} type="button" onClick={() => select(item.id)} aria-current={selected === item.id ? "true" : undefined}>{String(item.id).padStart(2, "0")} · {guideFlowCopy(item, profile, lang).title}</button>)}
         </div></div>}
       </div>
       <div className={styles.categories} role="group" aria-label={copy.groupLabel}>
-        {copy.groups.map((title, group) => <button key={group} type="button" aria-pressed={flow.group === group} onClick={() => select(restaurantFlows.find(f => f.group === group)!.id)}>{title}</button>)}
+        {copy.groups.map((title, group) => visibleFlows.some(item => item.group === group) && <button key={group} type="button" aria-pressed={flow.group === group} onClick={() => select(visibleFlows.find(f => f.group === group)!.id)}>{title}</button>)}
       </div>
       <div className={styles.explorer}>
         <nav className={styles.flowList} aria-label={copy.flowLabel}>
-          {restaurantFlows.filter(f => f.group === flow.group).map(f => <button key={f.id} type="button" data-flow-id={f.id} aria-pressed={selected === f.id} onClick={() => select(f.id)}>
+          {visibleFlows.filter(f => f.group === flow.group).map(f => <button key={f.id} type="button" data-flow-id={f.id} aria-pressed={selected === f.id} onClick={() => select(f.id)}>
             <span className={styles.flowNumber}>{String(f.id).padStart(2, "0")}</span><span>{guideFlowCopy(f, profile, lang).title}</span><small>{fitLabel(flowFit(f.id, profile))}</small>
           </button>)}
         </nav>
@@ -155,10 +177,10 @@ export default function RestaurantGuide() {
             <button className={styles.button} data-copy-flow onClick={() => void share()}>{copy.share}</button>
             <span role="status">{shareStatus === "copied" ? copy.copied : shareStatus === "failed" ? copy.copyFailed : shareStatus === "shared" ? copy.shared : ""}</span>
           </div></div>
-          {fit === "restaurant_example" && <p className={styles.exampleNotice}>{copy.profile.exampleNotice}</p>}
+          {fit === "restaurant_example" && <p className={styles.exampleNotice} data-flow-reference>{copy.profile.exampleNotice}</p>}
           <h4 className={styles.diagramHeading}>{copy.diagram}</h4>
           <SequenceDiagram key={`${flow.id}-${lang}-${profile.shop}-${profile.service}-${profile.multiBranch}`} source={detail.source} title={`${copy.diagram}: ${detail.title}`} lang={lang} labels={copy.labels} zoomLabel={copy.zoom} fitLabel={copy.fit} hint={copy.diagramHint} transcriptLabel={copy.transcript} playerCopy={copy.player}
-            printFlow={{ id: flow.id, title: detail.title, description: detail.description, note: detail.note, pageLabel: copy.page, continued: copy.continued, scope: copy.scope }} />
+            printFlow={{ id: flow.id, title: detail.title, description: detail.description, note: detail.note, pageLabel: copy.page, continued: copy.continued, scope: `${printScope} · ${fitLabel(fit)}. ${copy.scope}` }} />
           <p className={styles.boundary}>{detail.note}</p>
         </section>
       </div>

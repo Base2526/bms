@@ -8,6 +8,8 @@ type ProfileCopy = {
   services: { dine_in: string; counter: string; online: string };
   recommended: string; related: string; restaurantExample: string; exampleNotice: string;
   selected: string; recommendedHeading: string;
+  primaryHeading: string; additionalHeading: string; additionalDescription: string; showExamples: string;
+  scopes: { overview: string; food_beverage: string; board_game_cafe: string; dine_in: string; counter: string; online: string };
 };
 
 type Copy = {
@@ -53,10 +55,22 @@ export const restaurantCopy: Bilingual<Copy> = {
     profile: {
       heading: "เลือกรูปแบบร้านของคุณ", description: "เลือกเพื่อดูตัวอย่างและลำดับ Flow ที่ใกล้กับงานของร้าน การเลือกนี้ไม่แก้การตั้งค่าร้านจริง",
       shopLabel: "ประเภทร้าน", serviceLabel: "รูปแบบบริการหลัก", multiBranch: "มีหลายสาขา",
-      shops: { overview: "ดูภาพรวมทุกแบบ" },
+      primaryHeading: "กลุ่มหลัก · ร้านอาหารและคาเฟ่",
+      additionalHeading: "รูปแบบร้านเพิ่มเติมที่ BMS รองรับ",
+      additionalDescription: "บอร์ดเกมคาเฟ่มีขั้นตอนเฉพาะสำหรับเวลาเล่นและกลุ่มชำระเงิน เลือกเพื่อดูตัวอย่างของรูปแบบนี้",
+      showExamples: "แสดงตัวอย่างร้านอาหารหรือบริการรูปแบบอื่นเพิ่มเติม",
+      scopes: {
+        overview: "ภาพรวมกลุ่มหลัก: ร้านอาหารและคาเฟ่ เลือกรูปแบบร้านเพื่อดู Flow ที่เกี่ยวข้องและเงื่อนไขก่อนใช้งาน",
+        dine_in: "ร้านอาหารนั่งทาน: ใช้โต๊ะ บิล รอบส่งครัว และ QR ที่พนักงานตรวจรับ ตั้งค่าสาขา เมนูและสิทธิ์ก่อนใช้งาน",
+        counter: "ร้านอาหารหน้าเคาน์เตอร์: ตัวอย่างใช้บิล Takeaway และงานครัว โดยไม่มีโต๊ะหรือ QR โต๊ะ งานย้าย/แยก/รวมโต๊ะเป็นตัวอย่างบริการอีกแบบ",
+        online: "ร้านอาหารออนไลน์: เริ่มที่ Flow 7 เลือกสาขาและรับเองหรือจัดส่ง พนักงานรับออร์เดอร์เข้าครัวแยกจากการยืนยันชำระเงิน",
+        food_beverage: "คาเฟ่และเครื่องดื่ม: ใช้ตัวอย่างขายหน้าเคาน์เตอร์ สูตรและตัวเลือกขึ้นกับสินค้าที่ตั้งไว้ งานโต๊ะ/QR/ครัวและออร์เดอร์ออนไลน์เฉพาะร้านอาหารแยกเป็นตัวอย่างเพิ่มเติม",
+        board_game_cafe: "รูปแบบเพิ่มเติม: Flow 3 อธิบายเวลาเล่น กลุ่มชำระเงินและสินค้าบนบิล ส่วน Flow 8, 10, 11 เป็นงานซื้อสินค้าขาย กะเงิน/ภาษี และสิทธิ์การโอนสต็อกที่ใช้ร่วมกัน เกมให้ยืมเล่นแยกจากสินค้าขาย คู่มือนี้ยังไม่ครอบคลุมทุกงานบอร์ดเกม",
+      },
+      shops: { overview: "ภาพรวมกลุ่มหลัก" },
       services: { dine_in: "มีโต๊ะให้นั่ง", counter: "ขายหน้าเคาน์เตอร์ / รับเอง", online: "รับออร์เดอร์ออนไลน์" },
-      recommended: "แนะนำ", related: "เกี่ยวข้อง", restaurantExample: "ตัวอย่างร้านอาหาร", selected: "กำลังดู", recommendedHeading: "Flow ที่แนะนำสำหรับรูปแบบนี้",
-      exampleNotice: "Flow นี้เป็นตัวอย่างของร้านอาหาร โปรดตรวจเงื่อนไขก่อนใช้กับประเภทร้านที่เลือก",
+      recommended: "แนะนำ", related: "เกี่ยวข้อง", restaurantExample: "ตัวอย่างบริการรูปแบบอื่น", selected: "กำลังดู", recommendedHeading: "Flow ที่แนะนำสำหรับรูปแบบนี้",
+      exampleNotice: "กำลังดูตัวอย่างร้านอาหารหรือบริการอีกแบบ เพื่อศึกษาเพิ่มเติม ขั้นตอนนี้อาจไม่ตรงกับรูปแบบร้านที่เลือก และไม่ได้ยืนยันว่าร้านเปิดใช้ความสามารถนี้แล้ว",
     },
     player: {
       heading: "เล่นคำอธิบายทีละขั้น", description: "เลือกกรณีที่ต้องการ แล้วกดเล่น ภาพจะเน้นขั้นตอนปัจจุบันพร้อมเสียงบรรยายภาษาไทย",
@@ -107,10 +121,22 @@ export const restaurantCopy: Bilingual<Copy> = {
     profile: {
       heading: "Choose how your shop works", description: "Select an example and recommended flows. This does not change your store configuration.",
       shopLabel: "Shop type", serviceLabel: "Main service style", multiBranch: "Multiple branches",
-      shops: { overview: "Show all examples" },
+      primaryHeading: "Main group · Restaurants and cafes",
+      additionalHeading: "Additional shop formats supported by BMS",
+      additionalDescription: "Board game cafes have dedicated play-time and billing-group workflows. Select this format to explore its example.",
+      showExamples: "Show additional restaurant or service examples",
+      scopes: {
+        overview: "Main guide: restaurants and cafes. Select a shop format to see relevant flows and setup requirements.",
+        dine_in: "Dine-in restaurant: tables, checks, kitchen rounds and staff-reviewed QR requests. Configure branches, menus and permissions before use.",
+        counter: "Counter restaurant: the example uses takeaway checks and kitchen work without tables or table QR. Table moves, splits and merges illustrate another service style.",
+        online: "Online restaurant: start with Flow 7, choosing a branch and pickup or delivery. Staff acceptance into the kitchen is separate from payment confirmation.",
+        food_beverage: "Cafe and drinks: counter POS examples; recipes and options depend on configured products. Restaurant tables, QR, kitchen and restaurant-only online ordering are separate reference examples.",
+        board_game_cafe: "Additional format: Flow 3 covers play time, billing groups and goods on the tab. Flows 8, 10 and 11 cover shared retail purchasing, shifts/tax and stock-transfer authorization. Play-library games are separate from retail stock. This guide does not cover every board game workflow.",
+      },
+      shops: { overview: "Main group overview" },
       services: { dine_in: "Dine-in tables", counter: "Counter / takeaway", online: "Online orders" },
-      recommended: "Recommended", related: "Related", restaurantExample: "Restaurant example", selected: "Viewing", recommendedHeading: "Recommended flows for this setup",
-      exampleNotice: "This flow illustrates restaurant operation. Check its conditions before applying it to the selected shop type.",
+      recommended: "Recommended", related: "Related", restaurantExample: "Other service example", selected: "Viewing", recommendedHeading: "Recommended flows for this setup",
+      exampleNotice: "This is a restaurant or other service example for reference. Its steps may differ from the selected shop format and do not confirm that these capabilities are enabled for your store.",
     },
     player: {
       heading: "Play the guided steps", description: "Choose a case and press Play. The current step is highlighted and spoken using your device voice.",
