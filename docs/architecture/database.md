@@ -739,6 +739,9 @@ not an order-level discount. Partial returns use frozen evidence and refuse
 Refund allocation preserves paid B retained by the customer and a previously refunded paid B
 cannot stand in for a free gift on a subsequent return. No additional financial ledger is created.
 Legacy promotion reads/writes and sales also work before `10.41`; only the new kind requires it.
+The gift-product foreign key intentionally restricts ordinary product deletion. The authorized
+whole-tenant purge deletes the tenant's promotion rows before its products so that this second
+product reference cannot block deletion; the purge remains atomic and does not weaken the FK.
 
 **Input-tax identity (`10.13__bms_tax_leak_guards.sql`)** — the active tax-invoice unique index uses
 tenant, supplier tax ID, normalized supplier branch (`NULL`/blank → `00000`) and a document number
