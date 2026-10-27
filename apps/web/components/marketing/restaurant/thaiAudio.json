@@ -1,0 +1,1398 @@
+{
+  "BMS API. ตรวจตัวตนและสิทธิ์ใหม่": {
+    "file": "/audio/restaurant/th/fafd498cc424c4bd17b21e38.mp3",
+    "duration": 2.64
+  },
+  "BMS API. ตรวจผู้ใช้ ร้าน และสิทธิ์": {
+    "file": "/audio/restaurant/th/4117da1da1cc20ba5cc8935a.mp3",
+    "duration": 2.52
+  },
+  "BMS API. ส่งตัวตนที่ยืนยันแล้ว": {
+    "file": "/audio/restaurant/th/bdc16069a63a06a89c5be60a.mp3",
+    "duration": 2.736
+  },
+  "BMS API. แสดงผลสำเร็จ": {
+    "file": "/audio/restaurant/th/517311b3957bcf291fa55d95.mp3",
+    "duration": 2.304
+  },
+  "BMS POS. ตรวจความพร้อมของสินค้าและส่วนประกอบ": {
+    "file": "/audio/restaurant/th/b7eeef13422a65b9bad8b69e.mp3",
+    "duration": 3.48
+  },
+  "BMS POS. ตรวจราคาและข้อมูลสินค้าจริง": {
+    "file": "/audio/restaurant/th/0f127bb2161656045f9a1ce4.mp3",
+    "duration": 3.24
+  },
+  "BMS POS. แสดงยอดสุทธิให้ตรวจ": {
+    "file": "/audio/restaurant/th/bb76191a0556540b8287bbd0.mp3",
+    "duration": 2.736
+  },
+  "Backend ตรวจราคาและสิทธิ์ตอนบันทึกจริง": {
+    "file": "/audio/restaurant/th/4d42b441f76ce772f1250bd5.mp3",
+    "duration": 2.76
+  },
+  "SOP เป็นข้อมูลอ้างอิง ทีมร้านยังต้องฝึกและตรวจการปฏิบัติจริง": {
+    "file": "/audio/restaurant/th/e9992478b7771c9d26485e80.mp3",
+    "duration": 4.008
+  },
+  "Supplier. ส่งสินค้าและเอกสาร": {
+    "file": "/audio/restaurant/th/8a6f4bb12a0967098d4cdaf1.mp3",
+    "duration": 2.136
+  },
+  "Takeaway ไม่มีโต๊ะและไม่มี QR โต๊ะ; กดซ้ำต้องไม่ขายซ้ำ": {
+    "file": "/audio/restaurant/th/edac75037373a158c64beea6.mp3",
+    "duration": 3.528
+  },
+  "กดซ้ำต้องได้ผลเดิม ไม่ขายหรือตัดสต็อกซ้ำ": {
+    "file": "/audio/restaurant/th/be6ce7657afd317aabfce13d.mp3",
+    "duration": 2.688
+  },
+  "กลุ่มคิดเงิน. คำนวณเวลาจากอัตราที่บันทึกไว้": {
+    "file": "/audio/restaurant/th/f73eca723c3dd91bab441d37.mp3",
+    "duration": 2.76
+  },
+  "กลุ่มคิดเงิน. จองสินค้าที่นำไปใช้จริง": {
+    "file": "/audio/restaurant/th/4fd2cf45f4f39ea5e531aa4b.mp3",
+    "duration": 2.52
+  },
+  "กลุ่มคิดเงิน. ตรึงค่าเวลาและค่าสินค้าตามจริง": {
+    "file": "/audio/restaurant/th/a62de909e2aab8f61015e73a.mp3",
+    "duration": 2.952
+  },
+  "กลุ่มคิดเงิน. เลือกสิทธิ์ตามกติกาและตรึงยอด": {
+    "file": "/audio/restaurant/th/6d36f5c860798ec06c85313f.mp3",
+    "duration": 2.616
+  },
+  "กลุ่มคิดเงิน. แสดงยอดรวมของกลุ่มให้ตรวจ": {
+    "file": "/audio/restaurant/th/5a12478ccc048afb547f2081.mp3",
+    "duration": 2.568
+  },
+  "กลุ่มคิดเงินเป็นเจ้าของยอดชำระ โต๊ะเป็นข้อมูลการนั่ง และสิทธิ์เวลา/บัตรผ่านไม่ใช่สินค้าในสต็อก": {
+    "file": "/audio/restaurant/th/3b3d78eac9904430ade36ef4.mp3",
+    "duration": 5.64
+  },
+  "กะและลิ้นชัก. ข้อมูลรายงานปิดกะ": {
+    "file": "/audio/restaurant/th/9665031efd41c98e2cee2340.mp3",
+    "duration": 2.136
+  },
+  "กะและลิ้นชัก. คำนวณยอดคาดหมายและส่วนต่าง": {
+    "file": "/audio/restaurant/th/b6743771671031d4eefe302c.mp3",
+    "duration": 2.664
+  },
+  "กะและลิ้นชัก. ตรวจรายการที่ต้องสะสาง": {
+    "file": "/audio/restaurant/th/6ad243895433575bc5fda972.mp3",
+    "duration": 2.4
+  },
+  "กะและลิ้นชัก. บันทึกปิดกะ": {
+    "file": "/audio/restaurant/th/911def49fc7f7061d4a0dd7d.mp3",
+    "duration": 1.704
+  },
+  "กะและลิ้นชัก. แสดงรายการต้องดำเนินการ": {
+    "file": "/audio/restaurant/th/d3ca6f1b60e98a57defaf1f3.mp3",
+    "duration": 2.616
+  },
+  "การกดตรวจผลเดิมต้องผ่านการตรวจสิทธิ์อีกครั้ง ใช้ข้อมูลและรหัสคำขอเดิม": {
+    "file": "/audio/restaurant/th/a5e52d924fa1d8e79450abff.mp3",
+    "duration": 4.44
+  },
+  "การขายแบบ Takeaway ไม่มี table_id; งานครัวเกิดเมื่อส่งรอบที่ผ่านการตรวจและจองของแล้ว": {
+    "file": "/audio/restaurant/th/2444d9a85cea154e3f8cca69.mp3",
+    "duration": 5.448
+  },
+  "การคืนแบบไม่ใช่เงินสดต้องมีหลักฐานจริง ไม่ถือว่าสำเร็จทันทีที่ยกเลิก": {
+    "file": "/audio/restaurant/th/da7104d511ad0ae9f436b095.mp3",
+    "duration": 4.128
+  },
+  "การจำลองราคาไม่เปลี่ยนราคาขาย จนกว่าผู้มีสิทธิ์จะตรวจและยืนยัน": {
+    "file": "/audio/restaurant/th/80445b7addea7fe71f2a3af3.mp3",
+    "duration": 3.96
+  },
+  "การชำระและกะขาย. ชำระและตัดสต็อกพร้อมต้นทุนในธุรกรรมเดียวกัน": {
+    "file": "/audio/restaurant/th/3155361d994e80f596b27898.mp3",
+    "duration": 3.96
+  },
+  "การชำระและกะขาย. บิลสำเร็จและข้อมูลใบเสร็จ": {
+    "file": "/audio/restaurant/th/b39084a3f220e549080cd3e4.mp3",
+    "duration": 2.808
+  },
+  "การเลือกดูตัวอย่างนี้ไม่เปลี่ยนประเภทร้านหรือการตั้งค่าจริง": {
+    "file": "/audio/restaurant/th/797413b4fa67460dfa34ec8f.mp3",
+    "duration": 3.48
+  },
+  "ของที่ปรุงหรือเสียจริงต้องบันทึกตามข้อเท็จจริง ไม่ตัดซ้ำ": {
+    "file": "/audio/restaurant/th/b020376e7d16d6330197caa1.mp3",
+    "duration": 3.192
+  },
+  "ของพร้อมขาย": {
+    "file": "/audio/restaurant/th/b110ddf0b8b650299779a218.mp3",
+    "duration": 0.96
+  },
+  "ของส่วนกลางไม่พอ": {
+    "file": "/audio/restaurant/th/9d4436e9ca0ed44ae51092af.mp3",
+    "duration": 1.32
+  },
+  "ของไม่พอหรือขายไม่ได้": {
+    "file": "/audio/restaurant/th/519ef2f4ab33f85824d85420.mp3",
+    "duration": 1.608
+  },
+  "ขอใบกำกับภาษีเต็มรูป": {
+    "file": "/audio/restaurant/th/7c2397363e4b9cdf7c3979bc.mp3",
+    "duration": 1.824
+  },
+  "ขายได้": {
+    "file": "/audio/restaurant/th/30275e59115e43044bec63b7.mp3",
+    "duration": 0.672
+  },
+  "ข้อมูลเพียงพอ": {
+    "file": "/audio/restaurant/th/e974ba176d48f98a9615f502.mp3",
+    "duration": 1.176
+  },
+  "ข้อมูลและ Audit. Commit สำเร็จ": {
+    "file": "/audio/restaurant/th/6e43d66cf39c97384dbc97eb.mp3",
+    "duration": 2.904
+  },
+  "ข้อมูลและ Audit. คืนผลเดิม ไม่ขยับของซ้ำ": {
+    "file": "/audio/restaurant/th/a68f89f862849a5c9e7dc217.mp3",
+    "duration": 3.312
+  },
+  "ข้อมูลและ Audit. คืนผลเดิมเมื่อยังมีสิทธิ์": {
+    "file": "/audio/restaurant/th/9c7d823af8a775799e638abd.mp3",
+    "duration": 3.24
+  },
+  "ข้อมูลและ Audit. ปฏิเสธคำขอขัดแย้ง": {
+    "file": "/audio/restaurant/th/54ca5af5ccdc3eae585c4664.mp3",
+    "duration": 3.024
+  },
+  "ข้อมูลไม่ครบ": {
+    "file": "/audio/restaurant/th/e00c79dd79f96870b9d1bccb.mp3",
+    "duration": 1.008
+  },
+  "ข้อมูลไม่ครบหรือขายไม่ได้": {
+    "file": "/audio/restaurant/th/c8f43eea25c0ddc1dcef4c6f.mp3",
+    "duration": 1.896
+  },
+  "ครบแล้ว": {
+    "file": "/audio/restaurant/th/01afdc9bab62fff9c05ed394.mp3",
+    "duration": 0.696
+  },
+  "ครัว. อัปเดตอาหาร": {
+    "file": "/audio/restaurant/th/22546735cd85bc9d1e402e70.mp3",
+    "duration": 1.224
+  },
+  "คำขอจาก QR ต้องให้พนักงานตรวจรับก่อนส่งครัว": {
+    "file": "/audio/restaurant/th/07d7137923a76b4626524bb5.mp3",
+    "duration": 3.072
+  },
+  "คำขอออนไลน์. คำขอรอตรวจ": {
+    "file": "/audio/restaurant/th/16bee53c605d5090d13762ca.mp3",
+    "duration": 1.92
+  },
+  "คำขอออนไลน์. สรุปให้ยืนยัน": {
+    "file": "/audio/restaurant/th/1be33fc70ae1e69eddeeacda.mp3",
+    "duration": 2.016
+  },
+  "คำขอออนไลน์. สร้างออร์เดอร์ จองของ และลิงก์ชำระ": {
+    "file": "/audio/restaurant/th/66d26a4a7b7d4521b15d74c8.mp3",
+    "duration": 2.76
+  },
+  "คำขอเติมสินค้า. สร้าง DRAFT": {
+    "file": "/audio/restaurant/th/6a8c9fa3ac215784bef29419.mp3",
+    "duration": 2.16
+  },
+  "คำขอเติมสินค้า. แจ้งคำขอรอตรวจ": {
+    "file": "/audio/restaurant/th/349c1df58d41cbb1c5e8a174.mp3",
+    "duration": 2.448
+  },
+  "คำขอใหม่": {
+    "file": "/audio/restaurant/th/4891838026e111d19376d2c0.mp3",
+    "duration": 0.912
+  },
+  "คืนสินค้าหลังขายไม่คืนโควตาคูปองทุกกรณี ต้องอิงนโยบายของรายการ": {
+    "file": "/audio/restaurant/th/1aa35bb7d11645349a89eacc.mp3",
+    "duration": 4.488
+  },
+  "คืนหรือยกเลิกรายการหลังขาย": {
+    "file": "/audio/restaurant/th/ce07dda40f029b785335335d.mp3",
+    "duration": 1.968
+  },
+  "คืนเงิน. บันทึกเงินออกจากกะที่รับผิดชอบ": {
+    "file": "/audio/restaurant/th/9adad3f68be90ed4c36c4e14.mp3",
+    "duration": 2.568
+  },
+  "คืนเงิน. ปิดรายการคืนค้าง": {
+    "file": "/audio/restaurant/th/4f63d36458153e33e27ebb68.mp3",
+    "duration": 1.872
+  },
+  "คืนเงิน. แสดงเงินคืนค้าง": {
+    "file": "/audio/restaurant/th/5ac79f8d55fe6b358b562bb4.mp3",
+    "duration": 1.8
+  },
+  "งานครัว. แจ้งอาหารพร้อมส่งมอบ": {
+    "file": "/audio/restaurant/th/8ea0485a8b655db06cb58479.mp3",
+    "duration": 1.968
+  },
+  "จอครัว KDS. ทีมครัวรับงานและทำอาหาร": {
+    "file": "/audio/restaurant/th/d5ecc5e654a6c6c73fd06706.mp3",
+    "duration": 2.736
+  },
+  "จอครัว KDS. อัปเดตสถานะอาหาร": {
+    "file": "/audio/restaurant/th/1a49fbc3e755c5f2b2847fa9.mp3",
+    "duration": 2.376
+  },
+  "จัดซื้อส่งคำสั่งซื้อและ Supplier ส่งของ": {
+    "file": "/audio/restaurant/th/8c9244ca5dd96bc29aa0f02e.mp3",
+    "duration": 2.64
+  },
+  "จัดบิลตามที่ลูกค้าต้องการ โดยงานครัวเดิมตามรายการไป": {
+    "file": "/audio/restaurant/th/1e999beb25d446b0f15873b4.mp3",
+    "duration": 3.48
+  },
+  "จัดส่ง": {
+    "file": "/audio/restaurant/th/9fa454ac84deb9b244deed9f.mp3",
+    "duration": 0.672
+  },
+  "ชำระเงิน. บันทึกใช้และสะสมสิทธิ์": {
+    "file": "/audio/restaurant/th/940916d2e0233acf9c818ea8.mp3",
+    "duration": 2.112
+  },
+  "ชำระเงิน. บิลสำเร็จและผลสมาชิก": {
+    "file": "/audio/restaurant/th/3d09d7b307179f1e42666c30.mp3",
+    "duration": 2.208
+  },
+  "ชำระเงินแล้วไม่แปลว่าอาหารพร้อม และไม่ส่งเข้าครัวโดยอัตโนมัติ": {
+    "file": "/audio/restaurant/th/26fc59159264b94e1004f90a.mp3",
+    "duration": 3.648
+  },
+  "ตกลงไม่รับส่วนที่เหลือ": {
+    "file": "/audio/restaurant/th/49fd209d8334131a09fb950f.mp3",
+    "duration": 1.536
+  },
+  "ตรวจรายการที่เหลือและยืนยันความพร้อมอีกครั้งก่อนกลับไปส่งครัวหรือส่งมอบ": {
+    "file": "/audio/restaurant/th/6c6b3076c3b59fedfb125fec.mp3",
+    "duration": 4.2
+  },
+  "ตรวจสิทธิ์และราคาตามกติกากลาง ก่อนยืนยันยอดขาย": {
+    "file": "/audio/restaurant/th/a2be4f8d6383c1484092f99a.mp3",
+    "duration": 3.048
+  },
+  "ตัดสินใจปรับ": {
+    "file": "/audio/restaurant/th/d4d5e336b8d2bf75d2b50bfe.mp3",
+    "duration": 1.032
+  },
+  "ตัวอย่างการขายสินค้าหรือเครื่องดื่มผ่าน POS โดยไม่สมมติว่ามีโต๊ะและงานครัวร้านอาหาร": {
+    "file": "/audio/restaurant/th/116452bcca124ffe589b0120.mp3",
+    "duration": 5.496
+  },
+  "ตัวอย่างการทำงานหนึ่งรอบ. แต่ละรอบที่ส่งของ": {
+    "file": "/audio/restaurant/th/944d2869a10947de586d60af.mp3",
+    "duration": 2.736
+  },
+  "ตัวอย่างร้านอาหารแบบรับเอง: เปิดบิล Takeaway โดยไม่ผูกโต๊ะหรือ QR โต๊ะ": {
+    "file": "/audio/restaurant/th/0420c633c6bb5d0688573ae8.mp3",
+    "duration": 4.272
+  },
+  "ตัวอย่างใบโอนสต็อกที่ตรวจสาขาและตรวจผลคำขอเดิมหลังเน็ตหลุด": {
+    "file": "/audio/restaurant/th/c9f25369c93ebca7f7323c30.mp3",
+    "duration": 3.816
+  },
+  "ทำบางรายการไม่ได้": {
+    "file": "/audio/restaurant/th/df91fcda2daf80e215376e11.mp3",
+    "duration": 1.416
+  },
+  "บริการโอนสต็อก. ตรวจ รหัสคำขอ และข้อมูล": {
+    "file": "/audio/restaurant/th/2509ef0b5cb45c6ee46ed672.mp3",
+    "duration": 2.808
+  },
+  "บริการโอนสต็อก. ตรวจสถานะและทำรายการ": {
+    "file": "/audio/restaurant/th/8cf8e3937aee5d973837a464.mp3",
+    "duration": 2.76
+  },
+  "บริการโอนสต็อก. ตรวจสาขาก่อนอ่านผลเดิม": {
+    "file": "/audio/restaurant/th/9521c6d4dd01ab233c03cc26.mp3",
+    "duration": 2.736
+  },
+  "บริการโอนสต็อก. บันทึกผล Audit และ รหัสคำขอ ในธุรกรรมเดียวกัน": {
+    "file": "/audio/restaurant/th/aa12650f8efdcd2b8be442d7.mp3",
+    "duration": 4.416
+  },
+  "บริการโอนสต็อก. ปฏิเสธโดยไม่ทำรายการ": {
+    "file": "/audio/restaurant/th/3a9938c866ce62aaa824d5e3.mp3",
+    "duration": 2.64
+  },
+  "บริการโอนสต็อก. เปิดธุรกรรมและตรวจสาขา": {
+    "file": "/audio/restaurant/th/2d36eacf8a101df5be2182b1.mp3",
+    "duration": 2.736
+  },
+  "บิล BMS. คำนวณย้อนสิทธิ์จากหลักฐานเดิม": {
+    "file": "/audio/restaurant/th/906b09dc94f1636daef89636.mp3",
+    "duration": 2.76
+  },
+  "บิล BMS. คืนสิทธิ์ที่จองไว้ตามนโยบาย": {
+    "file": "/audio/restaurant/th/ddd89c4d2f0b2fe3cf7596c3.mp3",
+    "duration": 2.856
+  },
+  "บิล BMS. ตรวจราคา สาขา ช่องทาง เวลา และจำนวน": {
+    "file": "/audio/restaurant/th/447e2e5702cc1cff5b9f126b.mp3",
+    "duration": 3.48
+  },
+  "บิล BMS. ตรวจสิทธิ์คงเหลือและเงื่อนไข": {
+    "file": "/audio/restaurant/th/c052cda6afae48c964a45baf.mp3",
+    "duration": 2.64
+  },
+  "บิล BMS. แสดงยอดและสิทธิ์": {
+    "file": "/audio/restaurant/th/dd121712197be4367c7ca124.mp3",
+    "duration": 2.064
+  },
+  "บิล Takeaway. จองวัตถุดิบตามรายการและสูตร": {
+    "file": "/audio/restaurant/th/8b1b095c8567776530ac8b3f.mp3",
+    "duration": 2.808
+  },
+  "บิล Takeaway. ตรวจเมนู ตัวเลือก และราคา": {
+    "file": "/audio/restaurant/th/1785d62d37e3a02b029bdb34.mp3",
+    "duration": 2.736
+  },
+  "บิล Takeaway. สร้างงานครัวตาม Station": {
+    "file": "/audio/restaurant/th/d5f8c181e6cf38192413bc1c.mp3",
+    "duration": 2.76
+  },
+  "บิลเข้าเงื่อนไข": {
+    "file": "/audio/restaurant/th/e4715fbff52cd48788ce5ddf.mp3",
+    "duration": 1.248
+  },
+  "บิลและออร์เดอร์. คำนวณยอดและสิทธิ์จากหลักฐานเดิม": {
+    "file": "/audio/restaurant/th/df08a59f4ed113791b22b109.mp3",
+    "duration": 2.832
+  },
+  "บิลและออร์เดอร์. คืนยอดจอง": {
+    "file": "/audio/restaurant/th/ee7241afb4653dcef78ecd6b.mp3",
+    "duration": 1.752
+  },
+  "บิลและออร์เดอร์. คืนยอดจองหรือบันทึกคืนตามสถานะ": {
+    "file": "/audio/restaurant/th/55a3d37a81bb75e00c964e7a.mp3",
+    "duration": 3.096
+  },
+  "บิลและออร์เดอร์. ตรวจสิทธิ์ สาขา สถานะ และหลักฐานเดิม": {
+    "file": "/audio/restaurant/th/4d2715a3cd55f50d983b77ea.mp3",
+    "duration": 3.096
+  },
+  "บิลและออร์เดอร์. ตรวจเงื่อนไขคืนและเอกสารภาษี": {
+    "file": "/audio/restaurant/th/dfcc90ea8a97735c4aa8f613.mp3",
+    "duration": 2.976
+  },
+  "บิลและออร์เดอร์. ต้องใช้ผู้อนุมัติอีกคน": {
+    "file": "/audio/restaurant/th/3c19d031b70ddac88ce75229.mp3",
+    "duration": 2.352
+  },
+  "บิลและออร์เดอร์. บันทึกเหตุผลและผู้อนุมัติ": {
+    "file": "/audio/restaurant/th/77a634b46da0fd251c8bd946.mp3",
+    "duration": 2.4
+  },
+  "บิลและออร์เดอร์. ปฏิเสธพร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/9b06c94b6e735c63f9515f23.mp3",
+    "duration": 2.136
+  },
+  "บิลและออร์เดอร์. ปิดงานที่ตรงกับรายการยกเลิก": {
+    "file": "/audio/restaurant/th/d4a48455e29961e971d35447.mp3",
+    "duration": 2.832
+  },
+  "บิลและออร์เดอร์. ปิดบิลและบันทึกผู้ดำเนินการ": {
+    "file": "/audio/restaurant/th/5007d74d66490bfec7ef762e.mp3",
+    "duration": 2.592
+  },
+  "บิลและออร์เดอร์. หยุดงานครัวที่ยังเปิด": {
+    "file": "/audio/restaurant/th/8bd1afac10e627ae11a950f0.mp3",
+    "duration": 2.16
+  },
+  "บิลและออร์เดอร์. แยกยอดคืนตามช่องทาง": {
+    "file": "/audio/restaurant/th/e895ebc9bf6ea0283eecee7e.mp3",
+    "duration": 2.376
+  },
+  "ปิดกะไม่ยืนยันว่าเงินเข้าธนาคารครบ": {
+    "file": "/audio/restaurant/th/ad0af2b6e13c36e9ebfb30e7.mp3",
+    "duration": 2.424
+  },
+  "ปิดกะไม่ใช่การกระทบยอดธนาคารอัตโนมัติ และสำเนา PDF ไม่ใช่ e-Tax": {
+    "file": "/audio/restaurant/th/37b974f4f43e45edaa08649f.mp3",
+    "duration": 4.344
+  },
+  "ผู้จัดการ / บัญชี. ตรวจข้อมูลและยืนยัน": {
+    "file": "/audio/restaurant/th/e2bc2ba6f8a972c56ff7c89b.mp3",
+    "duration": 2.4
+  },
+  "ผู้จัดการ / บัญชี. ตรวจยอดขาย ช่องทาง เงินออก และเงินคืน": {
+    "file": "/audio/restaurant/th/392f9b72cc4c5213b5420e2b.mp3",
+    "duration": 3.288
+  },
+  "ผู้จัดการ / บัญชี. เทียบเงินฝากและหลักฐานธนาคาร": {
+    "file": "/audio/restaurant/th/1bd13426ef62f7b68f798ed6.mp3",
+    "duration": 2.88
+  },
+  "ผู้จัดการ / เจ้าของ. จำลองราคา แพ็ก หรือโปรโมชั่น": {
+    "file": "/audio/restaurant/th/3ce84972d8743a74c221c82f.mp3",
+    "duration": 3.024
+  },
+  "ผู้จัดการ / เจ้าของ. ตรวจตัวอย่างและยืนยันเผยแพร่": {
+    "file": "/audio/restaurant/th/9dc1da627c5cc8b737a44769.mp3",
+    "duration": 2.88
+  },
+  "ผู้จัดการ / เจ้าของ. ตรวจรายการค้างและบันทึกค่าใช้จ่ายพร้อมหลักฐาน": {
+    "file": "/audio/restaurant/th/2d4db936c90712f8f129674d.mp3",
+    "duration": 3.792
+  },
+  "ผู้จัดการ / เจ้าของ. ผู้มีสิทธิ์ยืนยันปรับยอด": {
+    "file": "/audio/restaurant/th/968980ef424777b944c91e6e.mp3",
+    "duration": 2.616
+  },
+  "ผู้จัดการ / เจ้าของ. เลือกช่วงเวลาและสาขา": {
+    "file": "/audio/restaurant/th/518d8eda7f308f58b0e261ec.mp3",
+    "duration": 2.568
+  },
+  "ผู้จัดการ. จัดส่งเพิ่มหรือพิจารณาปิดส่วนที่ขาด": {
+    "file": "/audio/restaurant/th/b4339566a6b543aaf39ec000.mp3",
+    "duration": 3.048
+  },
+  "ผู้จัดการ. ตรวจของในสาขาที่มีสิทธิ์": {
+    "file": "/audio/restaurant/th/f57e72afaf2f72f465bf8d38.mp3",
+    "duration": 2.304
+  },
+  "ผู้จัดการ. ตรวจรับจำนวนและต้นทุนจริง": {
+    "file": "/audio/restaurant/th/3b96363300895ff97791b7a7.mp3",
+    "duration": 2.52
+  },
+  "ผู้จัดการ. ตรวจเอกสารค้างและยืนยัน CLOSED": {
+    "file": "/audio/restaurant/th/b0f467dfc3b6d9f744a4a0a2.mp3",
+    "duration": 2.76
+  },
+  "ผู้จัดการ. ตรวจและสร้าง PO": {
+    "file": "/audio/restaurant/th/ec46ccb8a3a77fe0be413082.mp3",
+    "duration": 1.92
+  },
+  "ผู้จัดการ. ปฏิเสธพร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/db45879284d37a84b93a9d36.mp3",
+    "duration": 1.968
+  },
+  "ผู้จัดการ. ยืนยันจำนวนอนุมัติ": {
+    "file": "/audio/restaurant/th/57e68a43685af287ccdc2aac.mp3",
+    "duration": 2.016
+  },
+  "ผู้จัดการ. ยืนยันสร้างใบโอนที่ผูกคำขอ": {
+    "file": "/audio/restaurant/th/530c0fcdefb8238dcd1c3aae.mp3",
+    "duration": 2.688
+  },
+  "ผู้จัดการ. ยืนยันส่งของ": {
+    "file": "/audio/restaurant/th/50f1da3a3161c9b8bc5d6f6e.mp3",
+    "duration": 1.68
+  },
+  "ผู้จัดซื้อ. ติดตามส่วนที่ขาด": {
+    "file": "/audio/restaurant/th/24209ab4028c0ecba0d9d87a.mp3",
+    "duration": 1.896
+  },
+  "ผู้จัดซื้อ. ผู้มีสิทธิ์ยกเลิก PO ที่ยังเปิดหรือรับบางส่วน": {
+    "file": "/audio/restaurant/th/c30989033e18863a166d5d73.mp3",
+    "duration": 3.384
+  },
+  "ผู้จัดซื้อ. สร้าง PO ระบุสินค้า จำนวน และต้นทุน": {
+    "file": "/audio/restaurant/th/3b822fa8867e427e7fc460ac.mp3",
+    "duration": 3.048
+  },
+  "ผู้จัดซื้อ. ส่งคำสั่งซื้อผ่านช่องทางที่ใช้งาน": {
+    "file": "/audio/restaurant/th/aa1308862dfc4b80854e39ff.mp3",
+    "duration": 2.88
+  },
+  "ผู้ดูแลสูตร. บันทึกสูตรต่อเสิร์ฟ สูตรย่อย และ SOP": {
+    "file": "/audio/restaurant/th/91c2a4134120430fb38fbaad.mp3",
+    "duration": 3.144
+  },
+  "ผู้ตรวจรับ. ตรวจของและจำนวนที่รับได้": {
+    "file": "/audio/restaurant/th/07d23915df3bf04ed0102c36.mp3",
+    "duration": 2.328
+  },
+  "ผู้ตรวจรับ. ยืนยันเฉพาะจำนวนรับจริง": {
+    "file": "/audio/restaurant/th/df6ea044475b28ea73f1c491.mp3",
+    "duration": 2.496
+  },
+  "ผู้ส่งมอบ / ไรเดอร์. ส่งอาหาร": {
+    "file": "/audio/restaurant/th/3a39977fd51f0b3372cdc353.mp3",
+    "duration": 1.824
+  },
+  "ผู้อนุมัติ. ยืนยัน PIN และสิทธิ์": {
+    "file": "/audio/restaurant/th/104ce2aa8e568a007f4596e5.mp3",
+    "duration": 1.776
+  },
+  "ผู้ใช้งาน. กดตรวจผล แม้รีโหลดแล้ว": {
+    "file": "/audio/restaurant/th/cdccb6128f0e485617f0b8d8.mp3",
+    "duration": 2.232
+  },
+  "ผู้ใช้งาน. ตรวจและยืนยันคำสั่ง": {
+    "file": "/audio/restaurant/th/9212277447a839746bb82544.mp3",
+    "duration": 1.992
+  },
+  "ผ่านและผู้มีสิทธิ์ยืนยัน": {
+    "file": "/audio/restaurant/th/531e39fdca5e2c845725352a.mp3",
+    "duration": 1.68
+  },
+  "พนักงาน / แคชเชียร์. ตกลงเปลี่ยนรายการ": {
+    "file": "/audio/restaurant/th/9b7968fd0bfdf6e1e122bef8.mp3",
+    "duration": 2.256
+  },
+  "พนักงาน / แคชเชียร์. ตรวจรายการ ส่วนลด สมาชิก และยอดสุทธิ": {
+    "file": "/audio/restaurant/th/a37ce9967f73e7a46400a309.mp3",
+    "duration": 3.288
+  },
+  "พนักงาน / แคชเชียร์. ยืนยันพนักงาน เปิดกะ และเปิดโต๊ะ": {
+    "file": "/audio/restaurant/th/aa14264e6f3b77ec5f6627d1.mp3",
+    "duration": 2.928
+  },
+  "พนักงาน / แคชเชียร์. ยืนยันรับชำระด้วย รหัสคำขอ ของรายการ": {
+    "file": "/audio/restaurant/th/148f8b73687bee99adaecafd.mp3",
+    "duration": 3.576
+  },
+  "พนักงาน / แคชเชียร์. ยืนยันส่งรอบเข้าครัว": {
+    "file": "/audio/restaurant/th/3a92ee4977389293a2586277.mp3",
+    "duration": 2.352
+  },
+  "พนักงาน / แคชเชียร์. รับรายการเข้าบิล": {
+    "file": "/audio/restaurant/th/39c4fc04e0450ce9fd3565dc.mp3",
+    "duration": 2.16
+  },
+  "พนักงาน / แคชเชียร์. เพิ่มเมนูและตัวเลือก": {
+    "file": "/audio/restaurant/th/8ee81f5b987abe2105d85f5b.mp3",
+    "duration": 2.28
+  },
+  "พนักงาน / แคชเชียร์. เพิ่มและส่งรอบใหม่": {
+    "file": "/audio/restaurant/th/8a22abd8f3b31d231e295fda.mp3",
+    "duration": 2.256
+  },
+  "พนักงาน / แคชเชียร์. เสิร์ฟอาหาร": {
+    "file": "/audio/restaurant/th/20dc654ef1692940b24e7652.mp3",
+    "duration": 1.728
+  },
+  "พนักงาน. ขออนุมัติจากอีกคนด้วย PIN และสิทธิ์ตรงงาน": {
+    "file": "/audio/restaurant/th/06b9791ec6aab68391524733.mp3",
+    "duration": 3.048
+  },
+  "พนักงาน. ดำเนินการคืนเงินจริง": {
+    "file": "/audio/restaurant/th/7a77b92a6f82de067ce63844.mp3",
+    "duration": 2.04
+  },
+  "พนักงาน. ตกลงเปลี่ยนรายการ": {
+    "file": "/audio/restaurant/th/ff4d3f408ff0139d65f9c849.mp3",
+    "duration": 1.896
+  },
+  "พนักงาน. ตรวจรับเงินและนับเงินปิดกะ": {
+    "file": "/audio/restaurant/th/585a25029f7c683b36a83a11.mp3",
+    "duration": 2.352
+  },
+  "พนักงาน. ตรวจสิทธิ์และเปิดการนั่งโต๊ะ": {
+    "file": "/audio/restaurant/th/a4ce99a63e87cba4dda2ef5c.mp3",
+    "duration": 2.208
+  },
+  "พนักงาน. ตรวจเวลาเล่นและขอปิดกลุ่ม": {
+    "file": "/audio/restaurant/th/1f89be75bb352e56d036bc28.mp3",
+    "duration": 2.352
+  },
+  "พนักงาน. บันทึกของเสียและตรวจนับ": {
+    "file": "/audio/restaurant/th/55fdb89c1a05296e27aea05e.mp3",
+    "duration": 2.064
+  },
+  "พนักงาน. ผูกสมาชิก เลือกคูปองหรือแต้ม": {
+    "file": "/audio/restaurant/th/0d2841d8e9e9524171b877c7.mp3",
+    "duration": 2.496
+  },
+  "พนักงาน. ผู้มีสิทธิ์ยืนยันเลขอ้างอิง": {
+    "file": "/audio/restaurant/th/cc61bfaf8ce9c9c876590e6d.mp3",
+    "duration": 2.352
+  },
+  "พนักงาน. ยืนยันชำระของกลุ่มด้วยรหัสคำขอ": {
+    "file": "/audio/restaurant/th/d75fbc6b7da97a68dd8f6e07.mp3",
+    "duration": 2.952
+  },
+  "พนักงาน. ยืนยันพนักงานและกะขาย": {
+    "file": "/audio/restaurant/th/018f7d93168534b2bd6e19ac.mp3",
+    "duration": 2.208
+  },
+  "พนักงาน. ยืนยันยกเลิกบิล": {
+    "file": "/audio/restaurant/th/80f38e3c2c6568cfb9a571a3.mp3",
+    "duration": 1.848
+  },
+  "พนักงาน. ยืนยันยอดก่อนชำระ": {
+    "file": "/audio/restaurant/th/e05ab06e0ffb5bfc1a6f02e8.mp3",
+    "duration": 2.016
+  },
+  "พนักงาน. ยืนยันรับชำระ": {
+    "file": "/audio/restaurant/th/64dee8f2cfcc47c9f20dabbd.mp3",
+    "duration": 1.8
+  },
+  "พนักงาน. ยืนยันรับชำระด้วยรหัสคำขอเดิม": {
+    "file": "/audio/restaurant/th/dabf22d39360cba862839403.mp3",
+    "duration": 2.928
+  },
+  "พนักงาน. ยืนยันส่งรอบ": {
+    "file": "/audio/restaurant/th/63f453888243dabad26967b2.mp3",
+    "duration": 1.656
+  },
+  "พนักงาน. รับชำระแต่ละบิลที่ยังเปิด": {
+    "file": "/audio/restaurant/th/7061a1c705e73634b38e05f0.mp3",
+    "duration": 2.424
+  },
+  "พนักงาน. ส่งมอบอาหาร": {
+    "file": "/audio/restaurant/th/a0c488cefeba0f512ece8329.mp3",
+    "duration": 1.608
+  },
+  "พนักงาน. เปิดบิล Takeaway และเพิ่มรายการ": {
+    "file": "/audio/restaurant/th/f805d03d0691a89f81c1f107.mp3",
+    "duration": 2.76
+  },
+  "พนักงาน. เพิ่มสินค้าลงบิลของกลุ่ม": {
+    "file": "/audio/restaurant/th/4ae34d8e60adb0618d15c747.mp3",
+    "duration": 2.328
+  },
+  "พนักงาน. เลือกการดำเนินการ": {
+    "file": "/audio/restaurant/th/013ffa667b743278c2f5dea5.mp3",
+    "duration": 1.896
+  },
+  "พนักงาน. เลือกบิลต้นทางและปลายทาง": {
+    "file": "/audio/restaurant/th/4a37ed52716645908a72d580.mp3",
+    "duration": 2.376
+  },
+  "พนักงาน. เลือกบิลหรือรายการ พร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/533205e840601e71b41578d4.mp3",
+    "duration": 2.424
+  },
+  "พนักงาน. เลือกปลายทางและยืนยัน": {
+    "file": "/audio/restaurant/th/dfda614764f5896a4b7cc3d1.mp3",
+    "duration": 2.064
+  },
+  "พนักงาน. เลือกรายการไปบิลใหม่บนโต๊ะเดิม": {
+    "file": "/audio/restaurant/th/9ab7266dc015c38d4c2f977a.mp3",
+    "duration": 2.64
+  },
+  "พนักงานรับรายการ": {
+    "file": "/audio/restaurant/th/5043af75f0758b77a9eab1c6.mp3",
+    "duration": 1.464
+  },
+  "พนักงานร้าน. ตรวจผู้รับและรายการ": {
+    "file": "/audio/restaurant/th/8376361e60347c8f4d53ef00.mp3",
+    "duration": 2.256
+  },
+  "พนักงานร้าน. ตรวจสถานะและหลักฐานล่าสุด": {
+    "file": "/audio/restaurant/th/f7a45f2a5f75ac4e6a5cd596.mp3",
+    "duration": 2.64
+  },
+  "พนักงานร้าน. ตรวจและยืนยันชำระ": {
+    "file": "/audio/restaurant/th/08281f443656ae63ce99752f.mp3",
+    "duration": 2.256
+  },
+  "พนักงานร้าน. ติดต่อเพื่อตกลงแนวทาง": {
+    "file": "/audio/restaurant/th/7e9b5816f7104bdd8307b7d5.mp3",
+    "duration": 2.472
+  },
+  "พนักงานร้าน. บันทึกและยืนยันส่งตามขั้นตอน": {
+    "file": "/audio/restaurant/th/727af9cf4b90c950bed09911.mp3",
+    "duration": 2.808
+  },
+  "พนักงานร้าน. ปฏิเสธหรือสอบถามเพื่อแก้รายการ": {
+    "file": "/audio/restaurant/th/bd681533f2e73e267e4fa130.mp3",
+    "duration": 2.928
+  },
+  "พนักงานร้าน. ยกเลิกรายการพร้อมสาเหตุ": {
+    "file": "/audio/restaurant/th/f4ee901cedbf08a15db87be6.mp3",
+    "duration": 2.472
+  },
+  "พนักงานร้าน. ยืนยันรับเข้าครัว": {
+    "file": "/audio/restaurant/th/54ae5f37063e09140b48ce28.mp3",
+    "duration": 2.016
+  },
+  "พนักงานร้าน. ยืนยันรายการที่ตกลง": {
+    "file": "/audio/restaurant/th/523ea41ed43ac9d798e1a47a.mp3",
+    "duration": 2.376
+  },
+  "พนักงานร้าน. ยืนยันส่งมอบจริง": {
+    "file": "/audio/restaurant/th/f8e71ac7cd6d2e9b01da076b.mp3",
+    "duration": 2.112
+  },
+  "พนักงานร้าน. ส่งอาหารให้ผู้จัดส่ง": {
+    "file": "/audio/restaurant/th/3db3b4f5e1f1009d19884a7d.mp3",
+    "duration": 2.256
+  },
+  "พนักงานร้าน. แจ้งผลและตกลงรายการใหม่": {
+    "file": "/audio/restaurant/th/61a6925d9127dee52bc409bf.mp3",
+    "duration": 2.568
+  },
+  "พนักงานสาขา. ขอสินค้า จำนวน และวันที่ต้องการ": {
+    "file": "/audio/restaurant/th/49d1154b54ea8ba6380cb1f8.mp3",
+    "duration": 3.072
+  },
+  "พนักงานสาขา. ตรวจรับดี เสียหาย และขาด พร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/da3f0c4841c7dafa73010bc7.mp3",
+    "duration": 3.168
+  },
+  "พร้อมทำ": {
+    "file": "/audio/restaurant/th/b14202c0869e567ee2534adf.mp3",
+    "duration": 0.816
+  },
+  "พร้อมปิด": {
+    "file": "/audio/restaurant/th/71d6f3d87a35cd3d48a45ae4.mp3",
+    "duration": 0.696
+  },
+  "พร้อมส่งมอบจริง": {
+    "file": "/audio/restaurant/th/e831c0b39fd351bf835df73b.mp3",
+    "duration": 1.2
+  },
+  "มีรายการห้ามปิด เช่น เงินคืนค้างของกะ": {
+    "file": "/audio/restaurant/th/3970563afc27db6e25d6d229.mp3",
+    "duration": 2.592
+  },
+  "มีสิทธิ์": {
+    "file": "/audio/restaurant/th/ff3160d410e887a9c161b188.mp3",
+    "duration": 0.984
+  },
+  "มีสิทธิ์บัตรผ่านหรือข้อเสนอที่เข้าเงื่อนไข": {
+    "file": "/audio/restaurant/th/a39899c94b7a282e16b73a09.mp3",
+    "duration": 2.568
+  },
+  "ยกเลิก PO ไม่ย้อนสต็อกที่รับเข้าแล้ว": {
+    "file": "/audio/restaurant/th/8e2593e721537715b6c07c0c.mp3",
+    "duration": 2.448
+  },
+  "ยกเลิกก่อนขายสำเร็จ": {
+    "file": "/audio/restaurant/th/dbb1a166bebbda9947532122.mp3",
+    "duration": 1.656
+  },
+  "ยกเลิกทั้งบิลหลังส่งครัวหรือจองของ": {
+    "file": "/audio/restaurant/th/5475c8a94513567e6d26b98a.mp3",
+    "duration": 2.4
+  },
+  "ยกเลิกรายการออนไลน์หรือคืนหลังชำระ": {
+    "file": "/audio/restaurant/th/945377759c689fec9e43c0c9.mp3",
+    "duration": 2.568
+  },
+  "ยังรับไม่ครบ": {
+    "file": "/audio/restaurant/th/bda2b88cc8f697ead897c0b8.mp3",
+    "duration": 1.104
+  },
+  "ยังไม่ครบ": {
+    "file": "/audio/restaurant/th/9eb4d2a176205331e9cbad05.mp3",
+    "duration": 0.84
+  },
+  "ยังไม่จองของและยังไม่เรียกชำระ": {
+    "file": "/audio/restaurant/th/f5fe81542957c724f4f19e37.mp3",
+    "duration": 2.112
+  },
+  "ยังไม่ส่งครัวและไม่จองของ": {
+    "file": "/audio/restaurant/th/d870622394c8ff915deb674d.mp3",
+    "duration": 1.848
+  },
+  "ยืนยันขายสำเร็จ": {
+    "file": "/audio/restaurant/th/f97d827ef105390d9d2e7594.mp3",
+    "duration": 1.368
+  },
+  "ย้ายงานครัวเดิม ไม่สร้างรายการอาหารซ้ำ": {
+    "file": "/audio/restaurant/th/51e7213eb8ecd01049aba065.mp3",
+    "duration": 2.472
+  },
+  "ย้ายโต๊ะ": {
+    "file": "/audio/restaurant/th/ca807b2a16a2bdfb4515c5b1.mp3",
+    "duration": 0.744
+  },
+  "รวมบิล": {
+    "file": "/audio/restaurant/th/d21aa213d790978aed4af798.mp3",
+    "duration": 0.768
+  },
+  "รหัสคำขอ เดิมแต่ข้อมูลหรือผู้ทำเปลี่ยน": {
+    "file": "/audio/restaurant/th/a10c8bff0a24cbf5a04daf9b.mp3",
+    "duration": 2.688
+  },
+  "รับของไม่เท่ากับจ่ายเงิน Supplier": {
+    "file": "/audio/restaurant/th/1e0ab72624cfb9378bb4c962.mp3",
+    "duration": 2.208
+  },
+  "รับของไม่เท่ากับจ่ายเงิน Supplier และยกเลิก PO ไม่ย้อนของที่รับไปแล้ว": {
+    "file": "/audio/restaurant/th/2793e319d3e067931d1fce3d.mp3",
+    "duration": 4.128
+  },
+  "รับชำระ. ชำระและตัดสต็อกในธุรกรรมเดียวกัน": {
+    "file": "/audio/restaurant/th/442b5c26beeb245763880154.mp3",
+    "duration": 2.928
+  },
+  "รับชำระ. ตัดสินค้าที่ขายในธุรกรรมชำระ": {
+    "file": "/audio/restaurant/th/25aa1050fdd2882f19a11cc9.mp3",
+    "duration": 2.808
+  },
+  "รับชำระ. บันทึกการขายและตัดสต็อกในธุรกรรมเดียวกัน": {
+    "file": "/audio/restaurant/th/123640b9f77b6069d007403d.mp3",
+    "duration": 3.24
+  },
+  "รับชำระ. อัปเดตเฉพาะบิลที่สำเร็จ": {
+    "file": "/audio/restaurant/th/b96674e298d70406c44902fd.mp3",
+    "duration": 2.328
+  },
+  "รับชำระ. แสดงใบเสร็จ": {
+    "file": "/audio/restaurant/th/b4c6b9c8a129186903ec7b60.mp3",
+    "duration": 1.608
+  },
+  "รับเข้าเฉพาะของที่ตรวจรับจริง และติดตามยอดค้างใน PO": {
+    "file": "/audio/restaurant/th/ff7bedbbf163e37dd6bf73bd.mp3",
+    "duration": 3.264
+  },
+  "รับเอง": {
+    "file": "/audio/restaurant/th/ef0fc3fe47588aca7a62ca3d.mp3",
+    "duration": 0.792
+  },
+  "ราคากลาง. ยอดตามกติกาที่เข้าเงื่อนไข": {
+    "file": "/audio/restaurant/th/f753b33e1a6b3123f752f7c7.mp3",
+    "duration": 2.448
+  },
+  "ราคาและโปรโมชั่น. บันทึกผู้อนุมัติ ขอบเขต และเวลา": {
+    "file": "/audio/restaurant/th/215279dafd5f0b88a7c55c8f.mp3",
+    "duration": 3.12
+  },
+  "ราคาและโปรโมชั่น. แสดงผลกระทบที่คาดไว้": {
+    "file": "/audio/restaurant/th/32d2a1f47d8abea185c72d7e.mp3",
+    "duration": 2.736
+  },
+  "รายงานและวิเคราะห์เมนู. ยอดขาย ต้นทุน ของเสีย และวิเคราะห์เมนู": {
+    "file": "/audio/restaurant/th/4eb93dc3251e8fa70ebae73f.mp3",
+    "duration": 3.552
+  },
+  "รายงานและวิเคราะห์เมนู. อ่านต้นทุนจากการเคลื่อนไหวจริง": {
+    "file": "/audio/restaurant/th/b5e8aec113ef8da58830b6c0.mp3",
+    "duration": 3.168
+  },
+  "รายงานและวิเคราะห์เมนู. อ่านยอดขาย คืนเงิน และค่าใช้จ่าย": {
+    "file": "/audio/restaurant/th/33d0ba23ab92897a08dfdf4d.mp3",
+    "duration": 3.288
+  },
+  "รายงานและวิเคราะห์เมนู. แสดงข้อมูลที่ไม่ทราบและรายการต้องตรวจ": {
+    "file": "/audio/restaurant/th/fad9a4cc43d741c8cf44c018.mp3",
+    "duration": 3.648
+  },
+  "ร้านตรวจคำขอ ยืนยันบิล และรับเข้าครัวก่อนส่งมอบ": {
+    "file": "/audio/restaurant/th/bc44ddd6c9652e8ec92d71fd.mp3",
+    "duration": 3.048
+  },
+  "ร้านรับได้": {
+    "file": "/audio/restaurant/th/3a5c3fa9f0b4d7889d450470.mp3",
+    "duration": 0.936
+  },
+  "ร้านรับไม่ได้หรือข้อมูลไม่ครบ": {
+    "file": "/audio/restaurant/th/d551e9e69b6d8cdc4225b62a.mp3",
+    "duration": 1.968
+  },
+  "ลูกค้า. ขอชำระเงิน": {
+    "file": "/audio/restaurant/th/3fd9cdb97c71e9132209e9f4.mp3",
+    "duration": 1.56
+  },
+  "ลูกค้า. ขอเปลี่ยนโต๊ะหรือจัดบิล": {
+    "file": "/audio/restaurant/th/8b416b45f2f4113f5c3797eb.mp3",
+    "duration": 2.064
+  },
+  "ลูกค้า. ชำระตามช่องทางที่ร้านเปิดใช้": {
+    "file": "/audio/restaurant/th/e9780c2c7eaa8282e8903041.mp3",
+    "duration": 2.616
+  },
+  "ลูกค้า. มารับอาหาร": {
+    "file": "/audio/restaurant/th/3f62cbd31b202c38ba8efc71.mp3",
+    "duration": 1.464
+  },
+  "ลูกค้า. ยืนยันคำขอ": {
+    "file": "/audio/restaurant/th/2748ed608c534436191c7d59.mp3",
+    "duration": 1.56
+  },
+  "ลูกค้า. ระบุสมาชิกและสิทธิ์ที่ต้องการ": {
+    "file": "/audio/restaurant/th/59fc340ab7e31f3437985f9f.mp3",
+    "duration": 2.472
+  },
+  "ลูกค้า. สั่งอาหารและตัวเลือก": {
+    "file": "/audio/restaurant/th/b4c297e1d8b1e9af3d835e5e.mp3",
+    "duration": 1.92
+  },
+  "ลูกค้า. ส่งคำขอจาก QR ใบเสร็จ": {
+    "file": "/audio/restaurant/th/d8a6cf7f4c6dd13a8da368f1.mp3",
+    "duration": 2.184
+  },
+  "ลูกค้า. ส่งรายการที่ต้องการ": {
+    "file": "/audio/restaurant/th/22bc5df2a19d20ad4e2e4f49.mp3",
+    "duration": 1.968
+  },
+  "ลูกค้า. เพิ่มรายการ": {
+    "file": "/audio/restaurant/th/11a19cf8bbfb22e5351c3cdd.mp3",
+    "duration": 1.488
+  },
+  "ลูกค้า. เลือกสาขา เมนู และรับเองหรือจัดส่ง": {
+    "file": "/audio/restaurant/th/ff95fa61601b67a6dbc95ce7.mp3",
+    "duration": 2.88
+  },
+  "ลูกค้า. เลือกเครื่องดื่มหรือสินค้า": {
+    "file": "/audio/restaurant/th/43b0e5b2c3f5bf26b6242c30.mp3",
+    "duration": 2.16
+  },
+  "ลูกค้า. เล่นเกมและสั่งเครื่องดื่มเพิ่มเติม": {
+    "file": "/audio/restaurant/th/c326b5938a0b06180d7aa000.mp3",
+    "duration": 2.616
+  },
+  "ลูกค้า. แจ้งชำระพร้อมหลักฐาน": {
+    "file": "/audio/restaurant/th/8848bc6faceafa02ed7d7d61.mp3",
+    "duration": 2.04
+  },
+  "ลูกค้าสั่งผ่าน QR โต๊ะ": {
+    "file": "/audio/restaurant/th/490ae76ca465732acdaf0bd7.mp3",
+    "duration": 1.848
+  },
+  "ลูกค้าสั่งเพิ่ม": {
+    "file": "/audio/restaurant/th/964df94d81ac7b562c066941.mp3",
+    "duration": 1.32
+  },
+  "วิเคราะห์ต้นทุนและราคา. ต้นทุนประมาณการ ราคา และเป้าคุ้มทุน": {
+    "file": "/audio/restaurant/th/62789ec674473fcf23c835ec.mp3",
+    "duration": 3.624
+  },
+  "วิเคราะห์ต้นทุนและราคา. บันทึกราคาหรือโปรโมชั่น": {
+    "file": "/audio/restaurant/th/dcfac7adee1c7ba70c67ca29.mp3",
+    "duration": 3.048
+  },
+  "วิเคราะห์ต้นทุนและราคา. ระบุข้อมูลที่ไม่ทราบและหลักฐานที่ขาด": {
+    "file": "/audio/restaurant/th/e500aca3845e003fb0f9a614.mp3",
+    "duration": 3.624
+  },
+  "วิเคราะห์ต้นทุนและราคา. อ่านส่วนประกอบและหลักฐานต้นทุน": {
+    "file": "/audio/restaurant/th/6d8d38d4e6a661a1cae354a8.mp3",
+    "duration": 3.288
+  },
+  "วิเคราะห์ต้นทุนและราคา. แสดงสาขา ช่องทาง ช่วงเวลา และผลกระทบ": {
+    "file": "/audio/restaurant/th/1c8224a434086a9fc2d132fe.mp3",
+    "duration": 3.816
+  },
+  "สต็อก BMS. จำนวนพร้อมใช้": {
+    "file": "/audio/restaurant/th/046b4614789c69514175a474.mp3",
+    "duration": 2.088
+  },
+  "สต็อก BMS. บันทึก Movement และผู้ดำเนินการ": {
+    "file": "/audio/restaurant/th/09965aa4769ca78a608ee0a3.mp3",
+    "duration": 3.24
+  },
+  "สต็อก BMS. แสดงส่วนต่างและเหตุผล": {
+    "file": "/audio/restaurant/th/3621bb37e435ab4a7408f9aa.mp3",
+    "duration": 2.592
+  },
+  "สต็อก. จองสำเร็จ": {
+    "file": "/audio/restaurant/th/919109eadf64618f239b7faa.mp3",
+    "duration": 1.2
+  },
+  "สต็อก. ผ่านการตรวจ": {
+    "file": "/audio/restaurant/th/059d61c77f35a51d95ceef7d.mp3",
+    "duration": 1.344
+  },
+  "สต็อก. ระบุรายการที่ต้องแก้": {
+    "file": "/audio/restaurant/th/53b166f725f88bf1e1789b13.mp3",
+    "duration": 1.92
+  },
+  "สต็อก. แจ้งรายการให้แก้ก่อนส่งครัว": {
+    "file": "/audio/restaurant/th/31cdd823249a232e83ec23d5.mp3",
+    "duration": 2.256
+  },
+  "สต็อกและต้นทุน. ผลการจอง": {
+    "file": "/audio/restaurant/th/e4fc9a47ea8d4ebf040bb16a.mp3",
+    "duration": 1.824
+  },
+  "สร้างใช้ทั้งสองสาขา ส่งและยกเลิกใช้ต้นทาง รับใช้ปลายทาง": {
+    "file": "/audio/restaurant/th/b629b3e99416197fb79ed73b.mp3",
+    "duration": 3.648
+  },
+  "สำเร็จแล้วและข้อมูลตรงกัน": {
+    "file": "/audio/restaurant/th/85aedee25645fba23f5ffa8d.mp3",
+    "duration": 1.848
+  },
+  "สินค้าและราคา. คืนรายการที่ขายได้": {
+    "file": "/audio/restaurant/th/4b68bea1b44218cf06f471e4.mp3",
+    "duration": 2.424
+  },
+  "สินค้าและสต็อก. ยืนยันยอดจอง": {
+    "file": "/audio/restaurant/th/1554e54fe58259c44a1fe25e.mp3",
+    "duration": 2.064
+  },
+  "สูตรเครื่องดื่มและตัวเลือกใช้ได้ตามข้อมูลสินค้าและความสามารถที่ร้านเปิดใช้; คาเฟ่ไม่ถูกบังคับใช้ขั้นตอนออร์เดอร์ออนไลน์เฉพาะร้านอาหาร": {
+    "file": "/audio/restaurant/th/1ff3b5a3f071bf4fc7ae623b.mp3",
+    "duration": 7.608
+  },
+  "ส่งมอบไม่สำเร็จ": {
+    "file": "/audio/restaurant/th/c1b218d766bcc5971b8f2ea3.mp3",
+    "duration": 1.176
+  },
+  "ส่งรอบสำเร็จ": {
+    "file": "/audio/restaurant/th/fed5014a4fd1b4be2b46bb85.mp3",
+    "duration": 1.032
+  },
+  "ส่งอีเมลล้มเหลวไม่ย้อนเอกสาร PDF ไม่ใช่ e-Tax": {
+    "file": "/audio/restaurant/th/5c09e7ef263e4a55734be670.mp3",
+    "duration": 3.24
+  },
+  "ส่วนต่างหลังต้นทุนวัตถุดิบไม่ใช่กำไรสุทธิทั้งร้าน": {
+    "file": "/audio/restaurant/th/889444fef177999c0879179f.mp3",
+    "duration": 3.168
+  },
+  "ส่วนต่างหลังต้นทุนวัตถุดิบไม่ใช่กำไรสุทธิทั้งร้าน ข้อมูลที่ขาดแสดงว่าไม่ทราบ": {
+    "file": "/audio/restaurant/th/086b7fc4bd2c843d1358b7ff.mp3",
+    "duration": 4.608
+  },
+  "ส่วนที่ไม่ใช่เงินสด": {
+    "file": "/audio/restaurant/th/df5c781f4f91736673cd44cf.mp3",
+    "duration": 1.296
+  },
+  "ส่วนลดกำหนดเอง": {
+    "file": "/audio/restaurant/th/d65c16cc4c9e58ab0be8e1fb.mp3",
+    "duration": 1.248
+  },
+  "ส่วนเงินสด": {
+    "file": "/audio/restaurant/th/0aa7d9304949175900de0235.mp3",
+    "duration": 0.864
+  },
+  "หน้าจอใบโอน. ล้างคำขอค้างและโหลดข้อมูลล่าสุด": {
+    "file": "/audio/restaurant/th/b28a295fbf156394fb729466.mp3",
+    "duration": 3.024
+  },
+  "หน้าจอใบโอน. ส่งข้อมูลและ รหัสคำขอ เดิม": {
+    "file": "/audio/restaurant/th/f6fffc383d80dc89a3c90483.mp3",
+    "duration": 2.856
+  },
+  "หน้าจอใบโอน. ส่งคำสั่งพร้อม รหัสคำขอ ของรายการ": {
+    "file": "/audio/restaurant/th/322f046eac17645c686d9fd4.mp3",
+    "duration": 3.264
+  },
+  "หน้าจอใบโอน. เก็บข้อมูลคำขอและ รหัสคำขอ ก่อนส่ง": {
+    "file": "/audio/restaurant/th/732acab6f928afde4f34c999.mp3",
+    "duration": 3.264
+  },
+  "หน้าจอใบโอน. ให้ตรวจผลคำขอเดิม": {
+    "file": "/audio/restaurant/th/89089b7af3e9513ba9d5d4db.mp3",
+    "duration": 2.448
+  },
+  "หน้าจอได้รับคำตอบ": {
+    "file": "/audio/restaurant/th/d8d3378aa3affbf18d860250.mp3",
+    "duration": 1.536
+  },
+  "หน้าร้านกับครัวเห็นรายการเดียวกัน ตั้งแต่สั่งอาหารจนออกใบเสร็จ": {
+    "file": "/audio/restaurant/th/c74f68a843a4191f7318eacb.mp3",
+    "duration": 3.672
+  },
+  "หลักฐานครบ": {
+    "file": "/audio/restaurant/th/1e3275a3843702ed36352eee.mp3",
+    "duration": 0.96
+  },
+  "หลักฐานไม่ครบ": {
+    "file": "/audio/restaurant/th/69dbd961e5c10a97cdf54e53.mp3",
+    "duration": 1.08
+  },
+  "อนุมัติคำขอยังไม่ตัดของ และใบโอนใช้ได้เฉพาะสินค้าที่รองรับ": {
+    "file": "/audio/restaurant/th/d2ff4ac9e0872ce71f229e17.mp3",
+    "duration": 3.72
+  },
+  "อนุมัติคำขอไม่ตัดของ รับ PO ไม่ใช่หลักฐานว่าสาขาปลายทางได้รับแล้ว": {
+    "file": "/audio/restaurant/th/95789baac4e4ebab3ab582ee.mp3",
+    "duration": 4.08
+  },
+  "อนุมัติทั้งหมดหรือบางส่วน": {
+    "file": "/audio/restaurant/th/0929705a6343ede35ba3c019.mp3",
+    "duration": 1.728
+  },
+  "อย่าสร้าง รหัสคำขอ ใหม่เพื่อทดลองซ้ำเมื่อยังไม่ทราบผลเดิม": {
+    "file": "/audio/restaurant/th/08ed153f1f892bdff9c188b4.mp3",
+    "duration": 3.552
+  },
+  "ออร์เดอร์และชำระ. ตัดสต็อกและบันทึกการส่ง": {
+    "file": "/audio/restaurant/th/30a0d94ebd5c4d73b3222d7a.mp3",
+    "duration": 2.592
+  },
+  "ออร์เดอร์และชำระ. ตัดสต็อกและบันทึกส่งมอบ": {
+    "file": "/audio/restaurant/th/50af2fcd6ced768fdf31ca25.mp3",
+    "duration": 2.64
+  },
+  "ออร์เดอร์และชำระ. ยอดใหม่และเงินคืนตาม Flow 5": {
+    "file": "/audio/restaurant/th/c3f1239bbe631be17399e28d.mp3",
+    "duration": 2.88
+  },
+  "ออร์เดอร์และชำระ. สร้างงานครัว": {
+    "file": "/audio/restaurant/th/3e4caacf25ede4f992179c9b.mp3",
+    "duration": 1.944
+  },
+  "ออร์เดอร์และชำระ. ส่งสรุปและช่องทางที่ร้านตั้งค่า": {
+    "file": "/audio/restaurant/th/da77d46c00df404218bf49da.mp3",
+    "duration": 3.096
+  },
+  "เครือข่ายขาดจนไม่ทราบผล": {
+    "file": "/audio/restaurant/th/f4a21048507ae735fde21a49.mp3",
+    "duration": 1.704
+  },
+  "เงินและค่าใช้จ่าย. ยอดระบบ เงินจริง และส่วนต่าง": {
+    "file": "/audio/restaurant/th/35881c95dcb69dd50232f649.mp3",
+    "duration": 2.712
+  },
+  "เงื่อนไขไม่ผ่าน": {
+    "file": "/audio/restaurant/th/44e4b6b233582937185c9bce.mp3",
+    "duration": 1.2
+  },
+  "เจ้าของ / ผู้จัดการ. ตั้งสาขา เมนู วัตถุดิบ และหน่วยนับ": {
+    "file": "/audio/restaurant/th/fbd63b29cb7f29c92f2e690a.mp3",
+    "duration": 3.12
+  },
+  "เจ้าของ / ผู้จัดการ. ยืนยันเผยแพร่": {
+    "file": "/audio/restaurant/th/c35012a22ab62ee8788366a8.mp3",
+    "duration": 2.112
+  },
+  "เจ้าของ / ผู้จัดการ. ระบุสมมติฐานแรงงาน พลังงาน ค่าใช้จ่าย และยอดขาย": {
+    "file": "/audio/restaurant/th/5644403479ca584e7c955a6c.mp3",
+    "duration": 4.008
+  },
+  "เจ้าของ / ผู้จัดการ. เลือกราคา แพ็ก หรือโปรโมชั่นและดูตัวอย่าง": {
+    "file": "/audio/restaurant/th/1eca759b57fb8ef4d65f6d56.mp3",
+    "duration": 3.408
+  },
+  "เจ้าของ / ผู้จัดการ. เลือกสูตรและฐานต้นทุน": {
+    "file": "/audio/restaurant/th/90dcd11d4df4529199a35b6e.mp3",
+    "duration": 2.448
+  },
+  "เปลี่ยนสูตรของร้านให้เป็นข้อมูลที่ใช้คำนวณและตัดสินใจได้": {
+    "file": "/audio/restaurant/th/f3093f52ed5ea3c18b067374.mp3",
+    "duration": 3.576
+  },
+  "เมนูและสูตร BMS. เก็บเวอร์ชันสูตร": {
+    "file": "/audio/restaurant/th/be2045b36adf648d1d859868.mp3",
+    "duration": 2.64
+  },
+  "เลือกส่งอีเมล": {
+    "file": "/audio/restaurant/th/fc31f3424fc43745bc38a83f.mp3",
+    "duration": 1.2
+  },
+  "เวลาที่เล่นไม่ใช่ SKU และโต๊ะไม่ใช่เจ้าของบิล": {
+    "file": "/audio/restaurant/th/73f35cfa4cfe19db0605838c.mp3",
+    "duration": 3.168
+  },
+  "เห็นตั้งแต่สาขาขอของ จนปลายทางตรวจรับจริง": {
+    "file": "/audio/restaurant/th/4d2576894c61f0db99506562.mp3",
+    "duration": 3.024
+  },
+  "เห็นยอดระบบ เงินที่นับจริง และเอกสารที่ต้องตรวจ": {
+    "file": "/audio/restaurant/th/7828a836143eb735d1408e41.mp3",
+    "duration": 2.928
+  },
+  "เอกสารภาษี. ข้อมูลผู้ซื้อและคำขอ": {
+    "file": "/audio/restaurant/th/510f8f90c47797805572758d.mp3",
+    "duration": 2.544
+  },
+  "เอกสารภาษี. ตรวจสิทธิ์ สาขา และเงื่อนไขบิล": {
+    "file": "/audio/restaurant/th/ec6ce7c00e5f52d832cd5f8a.mp3",
+    "duration": 2.808
+  },
+  "เอกสารภาษี. ออกเอกสารตามขั้นตอน": {
+    "file": "/audio/restaurant/th/83d0b3a0dadd928526784fe9.mp3",
+    "duration": 2.448
+  },
+  "เอกสารภาษี. เข้าคิวส่ง PDF และติดตามผล": {
+    "file": "/audio/restaurant/th/63c0b5b9906204c80452c83a.mp3",
+    "duration": 2.928
+  },
+  "เอกสารภาษี. แจ้งเหตุผลที่ออกไม่ได้": {
+    "file": "/audio/restaurant/th/37114ffe0772957233b62d8b.mp3",
+    "duration": 2.448
+  },
+  "แคชเชียร์. กรอกเงินนับจริงและหมายเหตุ": {
+    "file": "/audio/restaurant/th/30fdb60c031c2a65f0e47693.mp3",
+    "duration": 2.064
+  },
+  "แคชเชียร์. ขอปิดกะของเครื่องที่รับผิดชอบ": {
+    "file": "/audio/restaurant/th/c1f9c011a600e10fdfa055dd.mp3",
+    "duration": 2.4
+  },
+  "แคชเชียร์. ตกลงรายการใหม่": {
+    "file": "/audio/restaurant/th/8fd6ee3ee786aa5dbf9692b7.mp3",
+    "duration": 1.68
+  },
+  "แคชเชียร์. ยืนยัน PIN สิทธิ์ และกะขาย": {
+    "file": "/audio/restaurant/th/4870bd6e6654eaebc4d93552.mp3",
+    "duration": 2.016
+  },
+  "แคชเชียร์. ยืนยันรับชำระด้วยรหัสคำขอ": {
+    "file": "/audio/restaurant/th/78c3c0614299c16697916ea7.mp3",
+    "duration": 2.616
+  },
+  "แคชเชียร์. ส่งให้ผู้มีสิทธิ์สะสาง": {
+    "file": "/audio/restaurant/th/4e05e7668a3e22f9ab948f70.mp3",
+    "duration": 1.92
+  },
+  "แคชเชียร์. เพิ่มสินค้า ขนาด และตัวเลือกที่รองรับ": {
+    "file": "/audio/restaurant/th/7e311dad4c32d7934cd04456.mp3",
+    "duration": 2.808
+  },
+  "แยกการยกเลิกอาหารออกจากการคืนเงินจริง พร้อมติดตามรายการค้าง": {
+    "file": "/audio/restaurant/th/5e8c294bd2aa6c20410569e5.mp3",
+    "duration": 3.936
+  },
+  "แยกบิล": {
+    "file": "/audio/restaurant/th/8c6d28acb096c86ff9f28ca2.mp3",
+    "duration": 0.864
+  },
+  "แยกหรือรวมบิลใช้กับ Dine-in และไม่สร้างงานปรุงอาหารซ้ำ": {
+    "file": "/audio/restaurant/th/ce87aa904b62ae9b38b6c7ce.mp3",
+    "duration": 3.888
+  },
+  "แยกเวลาที่เล่น กลุ่มที่รับเงิน และสินค้าหรือเครื่องดื่มในบิล": {
+    "file": "/audio/restaurant/th/2f0fa8a6ec4611ffbe8b101a.mp3",
+    "duration": 3.6
+  },
+  "โต๊ะและบิล BMS. จองสต็อกตามรายการและสูตร": {
+    "file": "/audio/restaurant/th/7d357cd579e0e8e226b38fdd.mp3",
+    "duration": 2.976
+  },
+  "โต๊ะและบิล BMS. ตรวจเมนู ตัวเลือก ราคา และโปรโมชั่น": {
+    "file": "/audio/restaurant/th/85ca174d6039fcb3d88b4758.mp3",
+    "duration": 3.48
+  },
+  "โต๊ะและบิล BMS. สร้างงานตาม Station": {
+    "file": "/audio/restaurant/th/2bda03e43661928e57372be4.mp3",
+    "duration": 2.784
+  },
+  "โต๊ะและบิล BMS. สร้างงานรอบใหม่เมื่อผ่านการตรวจ": {
+    "file": "/audio/restaurant/th/bdddbdd96f210faea7593506.mp3",
+    "duration": 3.168
+  },
+  "โต๊ะและบิล BMS. แจ้งรายการที่ต้องแก้": {
+    "file": "/audio/restaurant/th/a024a84b9f96e2a92b80aa0f.mp3",
+    "duration": 2.64
+  },
+  "โต๊ะและบิล BMS. แสดงคำขอให้ตรวจ": {
+    "file": "/audio/restaurant/th/1b7575dd8708e0870f51f2b4.mp3",
+    "duration": 2.568
+  },
+  "โต๊ะและบิล BMS. ใบเสร็จ": {
+    "file": "/audio/restaurant/th/027c3c73f800226484101818.mp3",
+    "duration": 1.776
+  },
+  "โต๊ะและบิล. คำนวณยอดใหม่ผ่านกติกากลาง": {
+    "file": "/audio/restaurant/th/3582e116303be8cb5b3bffd1.mp3",
+    "duration": 2.664
+  },
+  "โต๊ะและบิล. คืนยอดจองเดิมก่อนจองรายการรวม": {
+    "file": "/audio/restaurant/th/f4978dbe8042960c0b93d57d.mp3",
+    "duration": 2.88
+  },
+  "โต๊ะและบิล. คืนยอดจองเดิมก่อนจองแต่ละบิล": {
+    "file": "/audio/restaurant/th/807dba2419e93011142fdda2.mp3",
+    "duration": 2.736
+  },
+  "โต๊ะและบิล. ตรวจว่าบิลเดิมยังเหลือรายการ": {
+    "file": "/audio/restaurant/th/e0ae12199f2dc3dbb264109f.mp3",
+    "duration": 2.52
+  },
+  "โต๊ะและบิล. ตรวจสิทธิ์ สาขา และสถานะ Dine-in": {
+    "file": "/audio/restaurant/th/d88e94ba6706aaa496fd6d49.mp3",
+    "duration": 3.24
+  },
+  "โต๊ะและบิล. ตรวจโต๊ะและย้ายบิล": {
+    "file": "/audio/restaurant/th/2f156b034d7d85bf81404108.mp3",
+    "duration": 1.968
+  },
+  "โต๊ะและบิล. ปิดต้นทางเป็น MERGED": {
+    "file": "/audio/restaurant/th/a8b474d9235175d84be6eb04.mp3",
+    "duration": 2.256
+  },
+  "โต๊ะและบิล. ย้ายความสัมพันธ์ตามรายการ": {
+    "file": "/audio/restaurant/th/f491432f738de87002288a02.mp3",
+    "duration": 2.328
+  },
+  "โต๊ะและบิล. ย้ายงานเดิมไปปลายทาง": {
+    "file": "/audio/restaurant/th/dbb01c25c43a70dbebdbdb82.mp3",
+    "duration": 2.208
+  },
+  "โต๊ะและบิล. ย้ายทุกรายการและคำนวณใหม่": {
+    "file": "/audio/restaurant/th/0ea94b7c69bed2bd340f6f13.mp3",
+    "duration": 2.352
+  },
+  "โต๊ะและบิล. แสดงบิลรวม": {
+    "file": "/audio/restaurant/th/289554e75bf058f51b3a05ab.mp3",
+    "duration": 1.704
+  },
+  "โต๊ะและบิล. แสดงบิลเดิมและใหม่": {
+    "file": "/audio/restaurant/th/5fd3d220666d76cdd4fadb6a.mp3",
+    "duration": 2.016
+  },
+  "โต๊ะและบิล. แสดงโต๊ะปัจจุบันของบิลเดิม": {
+    "file": "/audio/restaurant/th/aa17ae5e8c5da4332801057a.mp3",
+    "duration": 2.568
+  },
+  "โต๊ะและเวลาเล่น. สร้างกลุ่มคิดเงินของผู้เล่น": {
+    "file": "/audio/restaurant/th/36ee640edb5fcb33d3bf65f4.mp3",
+    "duration": 2.568
+  },
+  "ใช้ยอดขาย ต้นทุน และของเสียที่บันทึกจริงประกอบการตัดสินใจ": {
+    "file": "/audio/restaurant/th/cf115cd8d126cb11e30a993c.mp3",
+    "duration": 3.576
+  },
+  "ใบสั่งซื้อ BMS. CANCELLED โดยคงหลักฐานที่รับแล้ว": {
+    "file": "/audio/restaurant/th/213f8241a3885d11dc98d691.mp3",
+    "duration": 3.456
+  },
+  "ใบสั่งซื้อ BMS. OPEN": {
+    "file": "/audio/restaurant/th/dde80b69c52fa54e8c2c7a12.mp3",
+    "duration": 1.992
+  },
+  "ใบสั่งซื้อ BMS. PARTIAL พร้อมยอดค้างรับ": {
+    "file": "/audio/restaurant/th/6d6df6d0605f23718ce3e33f.mp3",
+    "duration": 3.024
+  },
+  "ใบสั่งซื้อ BMS. RECEIVED": {
+    "file": "/audio/restaurant/th/6bd524cb8413cd7f3aaec418.mp3",
+    "duration": 2.208
+  },
+  "ใบสั่งซื้อ BMS. ตรวจสิทธิ์และยอดค้างรับ": {
+    "file": "/audio/restaurant/th/b8a4b2dbda7fa44fa38e12e9.mp3",
+    "duration": 2.808
+  },
+  "ใบสั่งซื้อ BMS. เพิ่มจำนวน มูลค่า และ Movement": {
+    "file": "/audio/restaurant/th/5ed64ec5513b86eb722ca85f.mp3",
+    "duration": 3.6
+  },
+  "ใบสั่งซื้อ. เพิ่มสต็อกและมูลค่ารับเข้า": {
+    "file": "/audio/restaurant/th/7482c0b98527ee14142ea6e0.mp3",
+    "duration": 2.616
+  },
+  "ใบโอน. IN_TRANSIT": {
+    "file": "/audio/restaurant/th/d98419252b86a8265b4d793c.mp3",
+    "duration": 1.656
+  },
+  "ใบโอน. ตรวจของพร้อมใช้ ตัดต้นทาง และบันทึก Movement": {
+    "file": "/audio/restaurant/th/229c0055703cd04ad484f24c.mp3",
+    "duration": 3.528
+  },
+  "ใบโอน. อัปเดตจำนวนได้รับจริง": {
+    "file": "/audio/restaurant/th/925218cfe98813417edc0183.mp3",
+    "duration": 2.064
+  },
+  "ใบโอน. เพิ่มของดี แยกกักของเสีย และบันทึกของขาด": {
+    "file": "/audio/restaurant/th/8787efa106f4aa25ffd870d8.mp3",
+    "duration": 2.976
+  },
+  "ไม่คืนโควตาคูปองทุกกรณีโดยอัตโนมัติ": {
+    "file": "/audio/restaurant/th/dd020ab0fadd1a1fd977ffb5.mp3",
+    "duration": 2.76
+  },
+  "ไม่ถือว่ารับสำเร็จหรือคืนเงินอัตโนมัติ": {
+    "file": "/audio/restaurant/th/1e0b092424c4d5ffa7390f64.mp3",
+    "duration": 2.568
+  },
+  "ไม่มีสิทธิ์": {
+    "file": "/audio/restaurant/th/484edbc1a9931106ed937e5e.mp3",
+    "duration": 1.104
+  },
+  "ไม่มีสิทธิ์เพิ่มเติม": {
+    "file": "/audio/restaurant/th/7a672c766a836d75190a16ac.mp3",
+    "duration": 1.56
+  },
+  "ไม่อนุมัติ": {
+    "file": "/audio/restaurant/th/f23d80e616d2907e5121283a.mp3",
+    "duration": 1.008
+  },
+  "ไม่เข้าเงื่อนไข": {
+    "file": "/audio/restaurant/th/ce9288826a108c398901d865.mp3",
+    "duration": 1.2
+  }
+}

@@ -14,8 +14,33 @@
 - `node scripts/restaurant-playback-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
   port 3100), desktop/mobile speech fixtures for completion, late callbacks, thrown errors, hung
   engines and retry, plus shop-switch/clipboard races, anchor navigation and reduced motion.
+  English uses the device engine; Thai now uses shipped MP3 files (suite below).
   Uses the same `BMS_PLAYWRIGHT_MODULE` override; screenshots go under ignored
   `.test-output/restaurant-playback-browser/`. Synthetic fixtures do not verify voice quality.
+- `node scripts/restaurant-recorded-audio-browser-smoke.mjs`: local port 3100 by default,
+  actual MP3 playback with Speech Synthesis removed, desktop/mobile, native audio completion,
+  pause/next/rate/mute, flow-switch cleanup, HTTP failure/retry and blocked media permission.
+- `node scripts/run-contract-tests.mjs pure restaurant-recorded-narration`: all authored Thai
+  cues across 11 flows and three profile variants, including hidden branches, must have a shipped
+  MP3 with the expected hash. Text edits require regeneration; the player never sends text to TTS.
+
+Thai narration regeneration (offline build tool, not a web/Compose dependency):
+
+1. Run `node apps/web/node_modules/tsx/dist/cli.mjs scripts/restaurant-narration-export.mts` at repo root.
+2. In an isolated Python 3.12 environment, install `onnxruntime==1.31.1 soundfile==0.14.0
+   pythainlp==5.4.0 numpy==2.5.4` and FastThaiG2P from the pinned source archive
+   `https://github.com/awslabs/FastThaiG2P/archive/4e82a291b4cf2876326744c6580121e9986ad354.zip`.
+3. Download `kokoro_thai.onnx`, `thai_som.npy`, `config.json` from the official
+   [v0.3.0 release](https://github.com/awslabs/FastThaiG2P/releases/tag/v0.3.0) into an ignored
+   `.test-output/fastthai-model/` folder. The builder checks their pinned SHA-256 values.
+4. Run `python scripts/generate-restaurant-thai-audio.py --model-dir .test-output/fastthai-model`.
+   It resumes verified clips, rejects unknown pronunciation characters, decodes generated MP3s,
+   and only writes the complete `thaiAudio.json` manifest after every cue succeeds.
+5. Review audio samples and run both suites above. Commit the manifest, MP3 files, provenance
+   and attribution in `apps/web/public/audio/restaurant/th/`. Never commit model weights or caches.
+
+The pronunciation map expands public guide abbreviations (BMS, POS, PIN, PO, etc.) and statuses;
+it does not generate or change business claims. Audio remains AI-generated and is labeled in UI.
 - `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
   3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
   light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted

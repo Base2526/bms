@@ -1,0 +1,2096 @@
+{
+  "fafd498cc424c4bd17b21e38": {
+    "file": "/audio/restaurant/th/fafd498cc424c4bd17b21e38.mp3",
+    "duration": 2.64,
+    "sha256": "fa318f9a41295cceb9efe8b8eaca8e8ecc5bcb4f31a3386da63a6f77b8dcb825",
+    "spoken": "บี เอ็ม เอส เอ พี ไอ ตรวจ ตัวตน และ สิทธิ์ ใหม่"
+  },
+  "4117da1da1cc20ba5cc8935a": {
+    "file": "/audio/restaurant/th/4117da1da1cc20ba5cc8935a.mp3",
+    "duration": 2.52,
+    "sha256": "c3ce0a68888f8a20964d72c87d00a7ccbfa6563c5e63db55d391f769bd032273",
+    "spoken": "บี เอ็ม เอส เอ พี ไอ ตรวจ ผู้ใช้ ร้าน และ สิทธิ์"
+  },
+  "bdc16069a63a06a89c5be60a": {
+    "file": "/audio/restaurant/th/bdc16069a63a06a89c5be60a.mp3",
+    "duration": 2.736,
+    "sha256": "39cf56d2cdcf724e04bc72855b2b526e93d1d9011ea40a8e549e060399cd99f0",
+    "spoken": "บี เอ็ม เอส เอ พี ไอ ส่ง ตัวตน ที่ ยืนยัน แล้ว"
+  },
+  "517311b3957bcf291fa55d95": {
+    "file": "/audio/restaurant/th/517311b3957bcf291fa55d95.mp3",
+    "duration": 2.304,
+    "sha256": "b02d689e7a1474a4cbbb1be599115205ea6c288b76bc7fdcaed24d8c79b4ffeb",
+    "spoken": "บี เอ็ม เอส เอ พี ไอ แสดง ผลสำเร็จ"
+  },
+  "b7eeef13422a65b9bad8b69e": {
+    "file": "/audio/restaurant/th/b7eeef13422a65b9bad8b69e.mp3",
+    "duration": 3.48,
+    "sha256": "156aab5b1232f8316bcbdece5207d86142d44a13aa073fbcba573881a02bb102",
+    "spoken": "บี เอ็ม เอส พี โอ เอส ตรวจ ความพร้อม ของ สินค้า และ ส่วนประกอบ"
+  },
+  "0f127bb2161656045f9a1ce4": {
+    "file": "/audio/restaurant/th/0f127bb2161656045f9a1ce4.mp3",
+    "duration": 3.24,
+    "sha256": "ed955704735f16da3f53c2150bf44fbd45df88a0c2a48112cc9c78be3c7c2def",
+    "spoken": "บี เอ็ม เอส พี โอ เอส ตรวจ ราคา และ ข้อมูล สินค้า จริง"
+  },
+  "bb76191a0556540b8287bbd0": {
+    "file": "/audio/restaurant/th/bb76191a0556540b8287bbd0.mp3",
+    "duration": 2.736,
+    "sha256": "a7f5cdf4f0122668e790589ef5c69e282df25a2e6b7edc613fa4336cc64d25bf",
+    "spoken": "บี เอ็ม เอส พี โอ เอส แสดง ยอด สุทธิ ให้ ตรวจ"
+  },
+  "4d42b441f76ce772f1250bd5": {
+    "file": "/audio/restaurant/th/4d42b441f76ce772f1250bd5.mp3",
+    "duration": 2.76,
+    "sha256": "96f6328a82ff824b025bd230c54f2b6ce692193743997a019b750fc00fac5ddb",
+    "spoken": "ระบบ หลังบ้าน ตรวจ ราคา และ สิทธิ์ ตอน บันทึก จริง"
+  },
+  "e9992478b7771c9d26485e80": {
+    "file": "/audio/restaurant/th/e9992478b7771c9d26485e80.mp3",
+    "duration": 4.008,
+    "sha256": "add00a06ee8fd0927819c04df568ac9e0b80d3a227ef1260ff093ee8e084bfb7",
+    "spoken": "เอส โอ พี เป็น ข้อมูล อ้างอิง ทีม ร้าน ยัง ต้อง ฝึก และ ตรวจ การปฏิบัติ จริง"
+  },
+  "8a6f4bb12a0967098d4cdaf1": {
+    "file": "/audio/restaurant/th/8a6f4bb12a0967098d4cdaf1.mp3",
+    "duration": 2.136,
+    "sha256": "51b11182657611fe99a0ddf829b5f558faf304c8cbb7ea6e75965c9de83f2a4b",
+    "spoken": "ซัพพลายเออร์ ส่งสินค้า และ เอกสาร"
+  },
+  "edac75037373a158c64beea6": {
+    "file": "/audio/restaurant/th/edac75037373a158c64beea6.mp3",
+    "duration": 3.528,
+    "sha256": "3ed13d488886fdebe0ac87e2ffb4139e167abab1acac536d581d61f5ed004fd4",
+    "spoken": "ซื้อ กลับบ้าน ไม่ มี โต๊ะ และ ไม่ มี คิว อาร์ โต๊ะ กด ซ้ำ ต้อง ไม่ ขาย ซ้ำ"
+  },
+  "be6ce7657afd317aabfce13d": {
+    "file": "/audio/restaurant/th/be6ce7657afd317aabfce13d.mp3",
+    "duration": 2.688,
+    "sha256": "9008ac65e95185c70af9de41792737bd4961871e3eef4ff69e533e9b469f9687",
+    "spoken": "กด ซ้ำ ต้อง ได้ผล เดิม ไม่ ขาย หรือ ตัด สต็อก ซ้ำ"
+  },
+  "f73eca723c3dd91bab441d37": {
+    "file": "/audio/restaurant/th/f73eca723c3dd91bab441d37.mp3",
+    "duration": 2.76,
+    "sha256": "74d27bce40c4a79cfdf3366132dedfedd002515cc36429421b0bc3a26ae91377",
+    "spoken": "กลุ่ม คิดเงิน คำนวณ เวลา จาก อัตรา ที่ บันทึก ไว้"
+  },
+  "4fd2cf45f4f39ea5e531aa4b": {
+    "file": "/audio/restaurant/th/4fd2cf45f4f39ea5e531aa4b.mp3",
+    "duration": 2.52,
+    "sha256": "5faf555ed969f6b83e6606c86577e1f9b2e12f8b8b3b1ddcb62b987b9a968d23",
+    "spoken": "กลุ่ม คิดเงิน จอง สินค้า ที่ นำไปใช้ จริง"
+  },
+  "a62de909e2aab8f61015e73a": {
+    "file": "/audio/restaurant/th/a62de909e2aab8f61015e73a.mp3",
+    "duration": 2.952,
+    "sha256": "f60d173904c429ecd19d670a0e94e81805ab23cef39e55940d31cca905e7c9ae",
+    "spoken": "กลุ่ม คิดเงิน ตรึง ค่า เวลา และ ค่า สินค้า ตามจริง"
+  },
+  "6d36f5c860798ec06c85313f": {
+    "file": "/audio/restaurant/th/6d36f5c860798ec06c85313f.mp3",
+    "duration": 2.616,
+    "sha256": "ca5bd7f81d8b3a8eeb1dc1ccd0e30759dc3ce6386a6b5c2168fce24ed340f038",
+    "spoken": "กลุ่ม คิดเงิน เลือก สิทธิ์ ตาม กติกา และ ตรึง ยอด"
+  },
+  "5a12478ccc048afb547f2081": {
+    "file": "/audio/restaurant/th/5a12478ccc048afb547f2081.mp3",
+    "duration": 2.568,
+    "sha256": "d066296821cc3a4ee54983f8d0f5ab8724ac2e0795bfdfa1c7cc9b75633c9ef3",
+    "spoken": "กลุ่ม คิดเงิน แสดง ยอดรวม ของ กลุ่ม ให้ ตรวจ"
+  },
+  "3b3d78eac9904430ade36ef4": {
+    "file": "/audio/restaurant/th/3b3d78eac9904430ade36ef4.mp3",
+    "duration": 5.64,
+    "sha256": "8e0b0e96abbe8a77a045f1e3223cb7e7eb286bbb7664dd7d8807eeddedbfa2dc",
+    "spoken": "กลุ่ม คิดเงิน เป็นเจ้าของ ยอด ชำระ โต๊ะ เป็น ข้อมูล การ นั่ง และ สิทธิ์ เวลา บัตร ผ่าน ไม่ ใช่ สินค้า ใน สต็อก"
+  },
+  "9665031efd41c98e2cee2340": {
+    "file": "/audio/restaurant/th/9665031efd41c98e2cee2340.mp3",
+    "duration": 2.136,
+    "sha256": "10f088c79ab2fa0889f9542ce4ea929ac22c4e370bab10c6dacc7907507205ab",
+    "spoken": "กะ และ ลิ้นชัก ข้อมูล รายงาน ปิด กะ"
+  },
+  "b6743771671031d4eefe302c": {
+    "file": "/audio/restaurant/th/b6743771671031d4eefe302c.mp3",
+    "duration": 2.664,
+    "sha256": "55a978724a678269ba819bc70dc66f3a3a3cf3e540be4129e23267ae6bb5ecb5",
+    "spoken": "กะ และ ลิ้นชัก คำนวณ ยอด คาดหมาย และ ส่วน ต่าง"
+  },
+  "6ad243895433575bc5fda972": {
+    "file": "/audio/restaurant/th/6ad243895433575bc5fda972.mp3",
+    "duration": 2.4,
+    "sha256": "d4ff65a6ab231d3dc7c2953680a54a35a32138ecc537db840e81c69a02daedeb",
+    "spoken": "กะ และ ลิ้นชัก ตรวจ รายการ ที่ ต้อง สะสาง"
+  },
+  "911def49fc7f7061d4a0dd7d": {
+    "file": "/audio/restaurant/th/911def49fc7f7061d4a0dd7d.mp3",
+    "duration": 1.704,
+    "sha256": "7c468b54e6fee2fbd52ba12a386d6c6160d8c137bd5a8c0b952cb0154868995a",
+    "spoken": "กะ และ ลิ้นชัก บันทึก ปิด กะ"
+  },
+  "d3ca6f1b60e98a57defaf1f3": {
+    "file": "/audio/restaurant/th/d3ca6f1b60e98a57defaf1f3.mp3",
+    "duration": 2.616,
+    "sha256": "271ac8f50b83c92375029bb1d25c67bffd97dbd8b0096c330fee19d79f91c676",
+    "spoken": "กะ และ ลิ้นชัก แสดง รายการ ต้อง ดำเนินการ"
+  },
+  "a5e52d924fa1d8e79450abff": {
+    "file": "/audio/restaurant/th/a5e52d924fa1d8e79450abff.mp3",
+    "duration": 4.44,
+    "sha256": "25281070897d6836cafbeff3d45035a0467496640c78f93ebaee4bc41faeb8e1",
+    "spoken": "การ กด ตรวจ ผล เดิม ต้อง ผ่าน การ ตรวจ สิทธิ์ อีกครั้ง ใช้ ข้อมูล และ รหัส คำขอ เดิม"
+  },
+  "2444d9a85cea154e3f8cca69": {
+    "file": "/audio/restaurant/th/2444d9a85cea154e3f8cca69.mp3",
+    "duration": 5.448,
+    "sha256": "659934c0fd57e5bcc1282e40a7574be8af52b4b9ecfdc98c8f55945c1ee10b43",
+    "spoken": "การ ขาย แบบ ซื้อ กลับบ้าน ไม่ มี รหัส โต๊ะ งาน ครัว เกิด เมื่อ ส่ง รอบ ที่ ผ่าน การ ตรวจ และ จอง ของ แล้ว"
+  },
+  "da7104d511ad0ae9f436b095": {
+    "file": "/audio/restaurant/th/da7104d511ad0ae9f436b095.mp3",
+    "duration": 4.128,
+    "sha256": "e7e5dcfeadaf36928ebcfd27737b72ede86d6c295c54f86596b5142c7695ab2e",
+    "spoken": "การคืน แบบ ไม่ ใช่ เงินสด ต้อง มี หลักฐาน จริง ไม่ ถือว่า สำเร็จ ทันทีที่ ยกเลิก"
+  },
+  "80445b7addea7fe71f2a3af3": {
+    "file": "/audio/restaurant/th/80445b7addea7fe71f2a3af3.mp3",
+    "duration": 3.96,
+    "sha256": "69abf258500d978f36462c8e5ed76dd9c453ba23e50414aecbc97da993bc5460",
+    "spoken": "การจำลอง ราคา ไม่ เปลี่ยน ราคาขาย จนกว่า ผู้ มีสิทธิ์ จะ ตรวจ และ ยืนยัน"
+  },
+  "3155361d994e80f596b27898": {
+    "file": "/audio/restaurant/th/3155361d994e80f596b27898.mp3",
+    "duration": 3.96,
+    "sha256": "a8a63758f6c0e169b9f56a80a319ca1f5bd09f454f894b92ef663a31d3df444c",
+    "spoken": "การ ชำระ และ กะ ขาย ชำระ และ ตัด สต็อก พร้อม ต้นทุน ใน ธุรกรรม เดียวกัน"
+  },
+  "b39084a3f220e549080cd3e4": {
+    "file": "/audio/restaurant/th/b39084a3f220e549080cd3e4.mp3",
+    "duration": 2.808,
+    "sha256": "ea271668485f2021a5226ecbdab8ce922bf128cb0c3182fd340b8f9feb14c945",
+    "spoken": "การ ชำระ และ กะ ขาย บิล สำเร็จ และ ข้อมูล ใบเสร็จ"
+  },
+  "797413b4fa67460dfa34ec8f": {
+    "file": "/audio/restaurant/th/797413b4fa67460dfa34ec8f.mp3",
+    "duration": 3.48,
+    "sha256": "142245bd91d175ca21e268ad121fdab7e094e85d287eceef190a7f56aacd055d",
+    "spoken": "การ เลือก ดูตัว อย่างนี้ ไม่ เปลี่ยน ประเภท ร้าน หรือ การ ตั้งค่า จริง"
+  },
+  "b020376e7d16d6330197caa1": {
+    "file": "/audio/restaurant/th/b020376e7d16d6330197caa1.mp3",
+    "duration": 3.192,
+    "sha256": "5967faec7ec8236662fbe91aa6f7f3f27cf0ad12c0484c16a3a80513526aec34",
+    "spoken": "ของ ที่ ปรุง หรือ เสีย จริง ต้อง บันทึก ตาม ข้อเท็จจริง ไม่ ตัด ซ้ำ"
+  },
+  "b110ddf0b8b650299779a218": {
+    "file": "/audio/restaurant/th/b110ddf0b8b650299779a218.mp3",
+    "duration": 0.96,
+    "sha256": "a26bf5c24a9040f641ee7bee11910e34118360860cc3054b7677010290e8223d",
+    "spoken": "ของ พร้อม ขาย"
+  },
+  "9d4436e9ca0ed44ae51092af": {
+    "file": "/audio/restaurant/th/9d4436e9ca0ed44ae51092af.mp3",
+    "duration": 1.32,
+    "sha256": "2e16f6f3aecbbc6f56373b5a9a85a50e871c56c1d16f8585f944b4ae85ad2049",
+    "spoken": "ของ ส่วนกลาง ไม่ พอ"
+  },
+  "519ef2f4ab33f85824d85420": {
+    "file": "/audio/restaurant/th/519ef2f4ab33f85824d85420.mp3",
+    "duration": 1.608,
+    "sha256": "2121be8cf009641f9d9cb7395f52364aa40bf19d8c0f2173127e92b62f3d4fd2",
+    "spoken": "ของ ไม่ พอ หรือ ขาย ไม่ ได้"
+  },
+  "7c2397363e4b9cdf7c3979bc": {
+    "file": "/audio/restaurant/th/7c2397363e4b9cdf7c3979bc.mp3",
+    "duration": 1.824,
+    "sha256": "82c67dd7df603ad90b7bf5d18be46d197180250debaa260236af53573b63a78e",
+    "spoken": "ขอ ใบกำกับภาษี เต็ม รูป"
+  },
+  "30275e59115e43044bec63b7": {
+    "file": "/audio/restaurant/th/30275e59115e43044bec63b7.mp3",
+    "duration": 0.672,
+    "sha256": "b7872e48ba0bbef3cd38190c46c034bb353443c85730d4277253f066085642bc",
+    "spoken": "ขาย ได้"
+  },
+  "e974ba176d48f98a9615f502": {
+    "file": "/audio/restaurant/th/e974ba176d48f98a9615f502.mp3",
+    "duration": 1.176,
+    "sha256": "75ff5e6fbf11d70f3fd3020d9c2fe91bc6fbafbe7d587245a02067a8811af585",
+    "spoken": "ข้อมูล เพียงพอ"
+  },
+  "6e43d66cf39c97384dbc97eb": {
+    "file": "/audio/restaurant/th/6e43d66cf39c97384dbc97eb.mp3",
+    "duration": 2.904,
+    "sha256": "94920b12d1c67fe22e720db3ac4e84023fe3a99651205416e0221fcf0437f2b8",
+    "spoken": "ข้อมูล และ ประวัติการ ตรวจสอบ บันทึก สำเร็จ สำเร็จ"
+  },
+  "a68f89f862849a5c9e7dc217": {
+    "file": "/audio/restaurant/th/a68f89f862849a5c9e7dc217.mp3",
+    "duration": 3.312,
+    "sha256": "0f0a4c72e542f643c7e40a0d1c2298c3373a0202d1d8ddb99c761756caac9dd2",
+    "spoken": "ข้อมูล และ ประวัติการ ตรวจสอบ คืน ผล เดิม ไม่ ขยับ ของ ซ้ำ"
+  },
+  "9c7d823af8a775799e638abd": {
+    "file": "/audio/restaurant/th/9c7d823af8a775799e638abd.mp3",
+    "duration": 3.24,
+    "sha256": "918a864bb5aa8ad6a8c81574a08637babc1e7dc49934ff2aa0c6d1755b966840",
+    "spoken": "ข้อมูล และ ประวัติการ ตรวจสอบ คืน ผล เดิม เมื่อ ยัง มีสิทธิ์"
+  },
+  "54ca5af5ccdc3eae585c4664": {
+    "file": "/audio/restaurant/th/54ca5af5ccdc3eae585c4664.mp3",
+    "duration": 3.024,
+    "sha256": "493f6921457c1f62859dde5f97254d42e53feb7891f870e592820102a0f31030",
+    "spoken": "ข้อมูล และ ประวัติการ ตรวจสอบ ปฏิเสธ คำขอ ขัดแย้ง"
+  },
+  "e00c79dd79f96870b9d1bccb": {
+    "file": "/audio/restaurant/th/e00c79dd79f96870b9d1bccb.mp3",
+    "duration": 1.008,
+    "sha256": "d865d7b77f598239e402437d8f011bc4804b6af566725beb58e200b3ca9bf7ea",
+    "spoken": "ข้อมูล ไม่ ครบ"
+  },
+  "c8f43eea25c0ddc1dcef4c6f": {
+    "file": "/audio/restaurant/th/c8f43eea25c0ddc1dcef4c6f.mp3",
+    "duration": 1.896,
+    "sha256": "12f28198c6065307ef7386764644ee77d394aed17d453afd8a63a32f7fb1f83d",
+    "spoken": "ข้อมูล ไม่ ครบ หรือ ขาย ไม่ ได้"
+  },
+  "01afdc9bab62fff9c05ed394": {
+    "file": "/audio/restaurant/th/01afdc9bab62fff9c05ed394.mp3",
+    "duration": 0.696,
+    "sha256": "46d4cf975dd7b6b96c10d11d968ecce9fce727d74ef451ac3cbd7d671915af2c",
+    "spoken": "ครบ แล้ว"
+  },
+  "22546735cd85bc9d1e402e70": {
+    "file": "/audio/restaurant/th/22546735cd85bc9d1e402e70.mp3",
+    "duration": 1.224,
+    "sha256": "0d3e2f7dddd28eb8cb686a8ac52b8bd331443df582b530bb616a99cc3b688f5a",
+    "spoken": "ครัว อัปเดต อาหาร"
+  },
+  "07d7137923a76b4626524bb5": {
+    "file": "/audio/restaurant/th/07d7137923a76b4626524bb5.mp3",
+    "duration": 3.072,
+    "sha256": "231d7d2c921fd6f5661b77cfe207a4a0bc98d9ca5059d925fca7b94167fcc782",
+    "spoken": "คำขอ จาก คิว อาร์ ต้อง ให้ พนักงาน ตรวจรับ ก่อน ส่ง ครัว"
+  },
+  "16bee53c605d5090d13762ca": {
+    "file": "/audio/restaurant/th/16bee53c605d5090d13762ca.mp3",
+    "duration": 1.92,
+    "sha256": "ecdc169b463dae3b5a8c67ab8bc0382bcfb63734bea9aa6aa5b7b64937fa81ad",
+    "spoken": "คำขอ ออนไลน์ คำขอ รอ ตรวจ"
+  },
+  "1be33fc70ae1e69eddeeacda": {
+    "file": "/audio/restaurant/th/1be33fc70ae1e69eddeeacda.mp3",
+    "duration": 2.016,
+    "sha256": "1e6919a8668c93e3e9e7a558ff1841e36b6a0f27371aec132b204e31ddff36f9",
+    "spoken": "คำขอ ออนไลน์ สรุป ให้ ยืนยัน"
+  },
+  "66d26a4a7b7d4521b15d74c8": {
+    "file": "/audio/restaurant/th/66d26a4a7b7d4521b15d74c8.mp3",
+    "duration": 2.76,
+    "sha256": "9c9c12dca35671cb9bd16e1444ceef08c9a910287bb397ffc14e3a752730a7ff",
+    "spoken": "คำขอ ออนไลน์ สร้าง ออร์เดอร์ จอง ของ และ ลิงก์ ชำระ"
+  },
+  "6a8c9fa3ac215784bef29419": {
+    "file": "/audio/restaurant/th/6a8c9fa3ac215784bef29419.mp3",
+    "duration": 2.16,
+    "sha256": "3835c77228db36656f5a03ee6578aae4a2bfce3738f89fcea022330251df6ad6",
+    "spoken": "คำขอ เติม สินค้า สร้าง ฉบับร่าง"
+  },
+  "349c1df58d41cbb1c5e8a174": {
+    "file": "/audio/restaurant/th/349c1df58d41cbb1c5e8a174.mp3",
+    "duration": 2.448,
+    "sha256": "ab71db0675466dee179bd7ab7a38c7758d0d4f4e8bb477f3f298cc499d069388",
+    "spoken": "คำขอ เติม สินค้า แจ้ง คำขอ รอ ตรวจ"
+  },
+  "4891838026e111d19376d2c0": {
+    "file": "/audio/restaurant/th/4891838026e111d19376d2c0.mp3",
+    "duration": 0.912,
+    "sha256": "49528e5d71bc593e56b8676be3c7777093109d737019cda3416cca34fc3069cd",
+    "spoken": "คำขอ ใหม่"
+  },
+  "1aa35bb7d11645349a89eacc": {
+    "file": "/audio/restaurant/th/1aa35bb7d11645349a89eacc.mp3",
+    "duration": 4.488,
+    "sha256": "e7afc74e592fd1e9204fd224fca969959fa7beadd2762a45fc0dc63ca74902f5",
+    "spoken": "คืน สินค้า หลัง ขาย ไม่ คืน โควตา คูปอง ทุก กรณี ต้อง อิง นโยบาย ของ รายการ"
+  },
+  "ce07dda40f029b785335335d": {
+    "file": "/audio/restaurant/th/ce07dda40f029b785335335d.mp3",
+    "duration": 1.968,
+    "sha256": "b8dce720063ee1080d1c998de471d0e10bfc021663c5b289e5a8bb16eb9e2be8",
+    "spoken": "คืน หรือ ยกเลิก รายการ หลัง ขาย"
+  },
+  "9adad3f68be90ed4c36c4e14": {
+    "file": "/audio/restaurant/th/9adad3f68be90ed4c36c4e14.mp3",
+    "duration": 2.568,
+    "sha256": "4484f94105985e4a69d1999454ba123483555141a834b57296aeceff40d36835",
+    "spoken": "คืนเงิน บันทึก เงิน ออกจาก กะ ที่ รับผิดชอบ"
+  },
+  "4f63d36458153e33e27ebb68": {
+    "file": "/audio/restaurant/th/4f63d36458153e33e27ebb68.mp3",
+    "duration": 1.872,
+    "sha256": "ef67646caa24c1e3b6f04bb3c80d9fd345acfd38fd9eea505764b3e491ba3377",
+    "spoken": "คืนเงิน ปิด ราย การคืน ค้าง"
+  },
+  "5ac79f8d55fe6b358b562bb4": {
+    "file": "/audio/restaurant/th/5ac79f8d55fe6b358b562bb4.mp3",
+    "duration": 1.8,
+    "sha256": "0b57bad8b00d3c8c30d4a2e0f0d0814a464e93f889a388303331af6e2fde585e",
+    "spoken": "คืนเงิน แสดง เงิน คืน ค้าง"
+  },
+  "8ea0485a8b655db06cb58479": {
+    "file": "/audio/restaurant/th/8ea0485a8b655db06cb58479.mp3",
+    "duration": 1.968,
+    "sha256": "8c6ee8a13679fe853fc5c5da51d80c945e849cc5e7e1be7f93d3b5717b963ae7",
+    "spoken": "งาน ครัว แจ้ง อาหาร พร้อม ส่งมอบ"
+  },
+  "d5ecc5e654a6c6c73fd06706": {
+    "file": "/audio/restaurant/th/d5ecc5e654a6c6c73fd06706.mp3",
+    "duration": 2.736,
+    "sha256": "32ec44ebea7ad7714f5fb61818a3c84cfe65886222a21f54ac7d0545c65a077e",
+    "spoken": "จอ ครัว เค ดี เอส ทีม ครัว รับงาน และ ทำอาหาร"
+  },
+  "1a49fbc3e755c5f2b2847fa9": {
+    "file": "/audio/restaurant/th/1a49fbc3e755c5f2b2847fa9.mp3",
+    "duration": 2.376,
+    "sha256": "f050161c697963c4aa68fba6552e5c25e114ade73789901176391aedd0fe907d",
+    "spoken": "จอ ครัว เค ดี เอส อัปเดต สถานะ อาหาร"
+  },
+  "8c9244ca5dd96bc29aa0f02e": {
+    "file": "/audio/restaurant/th/8c9244ca5dd96bc29aa0f02e.mp3",
+    "duration": 2.64,
+    "sha256": "9fea55a45b7d496f4a2e046067c5c181f6b5237901224b581304f8def3703c37",
+    "spoken": "จัดซื้อ ส่ง คำ สั่งซื้อ และ ซัพพลายเออร์ ส่ง ของ"
+  },
+  "1e999beb25d446b0f15873b4": {
+    "file": "/audio/restaurant/th/1e999beb25d446b0f15873b4.mp3",
+    "duration": 3.48,
+    "sha256": "500f1ab1298dce3c1ca0efb6d197340f97be645febf1e1836dcf01cf52ea0cb0",
+    "spoken": "จัด บิล ตามที่ ลูกค้า ต้องการ โดย งาน ครัว เดิม ตาม รายการ ไป"
+  },
+  "9fa454ac84deb9b244deed9f": {
+    "file": "/audio/restaurant/th/9fa454ac84deb9b244deed9f.mp3",
+    "duration": 0.672,
+    "sha256": "a4c86685c5877b7d87a70e7ddf2f2b1c0ded429b3cc8608e29c539cce7299be7",
+    "spoken": "จัดส่ง"
+  },
+  "940916d2e0233acf9c818ea8": {
+    "file": "/audio/restaurant/th/940916d2e0233acf9c818ea8.mp3",
+    "duration": 2.112,
+    "sha256": "e8cfb10a2baaf0ad808822acd559b5838def35ff184bcacfe2bafedeee137925",
+    "spoken": "ชำระเงิน บันทึก ใช้ และ สะสม สิทธิ์"
+  },
+  "3d09d7b307179f1e42666c30": {
+    "file": "/audio/restaurant/th/3d09d7b307179f1e42666c30.mp3",
+    "duration": 2.208,
+    "sha256": "163435b0efd4cabc067ae33486c8ae2d9ad70247290e37a13dcc7b209bd30de0",
+    "spoken": "ชำระเงิน บิล สำเร็จ และ ผล สมาชิก"
+  },
+  "26fc59159264b94e1004f90a": {
+    "file": "/audio/restaurant/th/26fc59159264b94e1004f90a.mp3",
+    "duration": 3.648,
+    "sha256": "036d506121109f605f869c30eed16edf444502f502c8bde72b5d41b548dab3d4",
+    "spoken": "ชำระเงิน แล้ว ไม่ แปล ว่า อาหาร พร้อม และ ไม่ ส่ง เข้าครัว โดยอัตโนมัติ"
+  },
+  "49fd209d8334131a09fb950f": {
+    "file": "/audio/restaurant/th/49fd209d8334131a09fb950f.mp3",
+    "duration": 1.536,
+    "sha256": "353bb7784b4798ac1b4c149120ffd81cbf58f3e12b44a08738149abaf89d1b0d",
+    "spoken": "ตกลง ไม่ รับ ส่วนที่เหลือ"
+  },
+  "6c6b3076c3b59fedfb125fec": {
+    "file": "/audio/restaurant/th/6c6b3076c3b59fedfb125fec.mp3",
+    "duration": 4.2,
+    "sha256": "439e2f525066ab053a74ec23fca0392b87255384e44793d6beb80efe9307bb22",
+    "spoken": "ตรวจ รายการ ที่ เหลือ และ ยืนยัน ความพร้อม อีก ครั้งก่อน กลับ ไป ส่ง ครัว หรือ ส่งมอบ"
+  },
+  "a2be4f8d6383c1484092f99a": {
+    "file": "/audio/restaurant/th/a2be4f8d6383c1484092f99a.mp3",
+    "duration": 3.048,
+    "sha256": "6e2b879e1929c64cd2b1658624deca3fcb48f147e12fdde6ac33d28ce509392d",
+    "spoken": "ตรวจ สิทธิ์ และ ราคา ตาม กติกา กลาง ก่อน ยืนยัน ยอดขาย"
+  },
+  "d4d5e336b8d2bf75d2b50bfe": {
+    "file": "/audio/restaurant/th/d4d5e336b8d2bf75d2b50bfe.mp3",
+    "duration": 1.032,
+    "sha256": "8e9f1c4c0c49fed51120b5e5dfbdd09f19ed2efea5a8441be44918cd5904aa1c",
+    "spoken": "ตัดสินใจ ปรับ"
+  },
+  "116452bcca124ffe589b0120": {
+    "file": "/audio/restaurant/th/116452bcca124ffe589b0120.mp3",
+    "duration": 5.496,
+    "sha256": "7341077116e5003dcbab18820302aacb548ed7bad30392a2e2e0d34211f204ec",
+    "spoken": "ตัวอย่าง การ ขาย สินค้า หรือ เครื่องดื่ม ผ่าน พี โอ เอส โดย ไม่ สมมติ ว่า มี โต๊ะ และ งาน ครัว ร้านอาหาร"
+  },
+  "944d2869a10947de586d60af": {
+    "file": "/audio/restaurant/th/944d2869a10947de586d60af.mp3",
+    "duration": 2.736,
+    "sha256": "d784fff119ce2185e56a3767094e3ee19e9a7d5c879bb11b9cde023f77ba50a6",
+    "spoken": "ตัวอย่าง การทำงาน หนึ่ง รอบ แต่ละ รอบ ที่ ส่ง ของ"
+  },
+  "0420c633c6bb5d0688573ae8": {
+    "file": "/audio/restaurant/th/0420c633c6bb5d0688573ae8.mp3",
+    "duration": 4.272,
+    "sha256": "bfae8a483c057269e32770644c81b5021e6d7ba64eb0cfaf4524a4697a4960a1",
+    "spoken": "ตัวอย่าง ร้านอาหาร แบบ รับ เอง เปิด บิล ซื้อ กลับบ้าน โดย ไม่ ผูก โต๊ะ หรือ คิว อาร์ โต๊ะ"
+  },
+  "c9f25369c93ebca7f7323c30": {
+    "file": "/audio/restaurant/th/c9f25369c93ebca7f7323c30.mp3",
+    "duration": 3.816,
+    "sha256": "10369f2bfbf6e9308abc4f796edea4d7989f831a1265ab4110ef6f87717c4b9b",
+    "spoken": "ตัวอย่าง ใบ โอน สต็อก ที่ ตรวจ สาขา และ ตรวจ ผล คำขอ เดิม หลัง เน็ต หลุด"
+  },
+  "df91fcda2daf80e215376e11": {
+    "file": "/audio/restaurant/th/df91fcda2daf80e215376e11.mp3",
+    "duration": 1.416,
+    "sha256": "26e482195fad2eca10fdcda2842b1bdd478920b9b0825ff4c6537ed9c9eadbd7",
+    "spoken": "ทำ บาง รายการ ไม่ ได้"
+  },
+  "2509ef0b5cb45c6ee46ed672": {
+    "file": "/audio/restaurant/th/2509ef0b5cb45c6ee46ed672.mp3",
+    "duration": 2.808,
+    "sha256": "e0448d58e0b44768bff946ec409040ae65f704754c1244c67ab93103a5f822f6",
+    "spoken": "บริการ โอน สต็อก ตรวจ รหัส คำขอ และ ข้อมูล"
+  },
+  "8cf8e3937aee5d973837a464": {
+    "file": "/audio/restaurant/th/8cf8e3937aee5d973837a464.mp3",
+    "duration": 2.76,
+    "sha256": "9655064be487240e2c1b80b98609c6891c1f94b8368280e1f9b4134eb4943bd7",
+    "spoken": "บริการ โอน สต็อก ตรวจ สถานะ และ ทำ รายการ"
+  },
+  "9521c6d4dd01ab233c03cc26": {
+    "file": "/audio/restaurant/th/9521c6d4dd01ab233c03cc26.mp3",
+    "duration": 2.736,
+    "sha256": "10abf83d1f89c2009f14b01739db625d1cc54716a9655cad96bf6f662f559d56",
+    "spoken": "บริการ โอน สต็อก ตรวจ สาขา ก่อน อ่าน ผล เดิม"
+  },
+  "aa12650f8efdcd2b8be442d7": {
+    "file": "/audio/restaurant/th/aa12650f8efdcd2b8be442d7.mp3",
+    "duration": 4.416,
+    "sha256": "f8858965dfe7ea72db925562362644cc4851787aeb996e2225a6bccfa24f2f8b",
+    "spoken": "บริการ โอน สต็อก บันทึก ผล ประวัติการ ตรวจสอบ และ รหัส คำขอ ใน ธุรกรรม เดียวกัน"
+  },
+  "3a9938c866ce62aaa824d5e3": {
+    "file": "/audio/restaurant/th/3a9938c866ce62aaa824d5e3.mp3",
+    "duration": 2.64,
+    "sha256": "2dcc3b654bd7c6151435a579fbb8fb35c561ca6fb4c10df50db45772ab417f85",
+    "spoken": "บริการ โอน สต็อก ปฏิเสธ โดย ไม่ ทำ รายการ"
+  },
+  "2d36eacf8a101df5be2182b1": {
+    "file": "/audio/restaurant/th/2d36eacf8a101df5be2182b1.mp3",
+    "duration": 2.736,
+    "sha256": "eea9dac7406be40379054d86694ef32fa2c655d23c03f39dd28d9a877f1ea42f",
+    "spoken": "บริการ โอน สต็อก เปิด ธุรกรรม และ ตรวจ สาขา"
+  },
+  "906b09dc94f1636daef89636": {
+    "file": "/audio/restaurant/th/906b09dc94f1636daef89636.mp3",
+    "duration": 2.76,
+    "sha256": "19876350d7402b4bb8bce4db700d3d4f15ccadd92f1d418fa68eaa26dc250d40",
+    "spoken": "บิล บี เอ็ม เอส คำนวณ ย้อน สิทธิ์ จาก หลักฐาน เดิม"
+  },
+  "ddd89c4d2f0b2fe3cf7596c3": {
+    "file": "/audio/restaurant/th/ddd89c4d2f0b2fe3cf7596c3.mp3",
+    "duration": 2.856,
+    "sha256": "9ddc74e730f6dd3acbc48870ee006f97932d7990871879104909266d1426bb8b",
+    "spoken": "บิล บี เอ็ม เอส คืน สิทธิ์ ที่ จอง ไว้ ตาม นโยบาย"
+  },
+  "447e2e5702cc1cff5b9f126b": {
+    "file": "/audio/restaurant/th/447e2e5702cc1cff5b9f126b.mp3",
+    "duration": 3.48,
+    "sha256": "88fda8cedec55ee399a30acd6b63e4820ae85a69d860be39d4ffb3a76d300da4",
+    "spoken": "บิล บี เอ็ม เอส ตรวจ ราคา สาขา ช่องทาง เวลา และ จำนวน"
+  },
+  "c052cda6afae48c964a45baf": {
+    "file": "/audio/restaurant/th/c052cda6afae48c964a45baf.mp3",
+    "duration": 2.64,
+    "sha256": "47650b3679e21860fdda5a5ffb9ea403beb2fc55080356fb24d684a8bd8b5138",
+    "spoken": "บิล บี เอ็ม เอส ตรวจ สิทธิ์ คงเหลือ และ เงื่อนไข"
+  },
+  "dd121712197be4367c7ca124": {
+    "file": "/audio/restaurant/th/dd121712197be4367c7ca124.mp3",
+    "duration": 2.064,
+    "sha256": "9a9423c02342e6f5332c6ab6538ec8f0c4556dd57e1c138e884cc59a1dc1d268",
+    "spoken": "บิล บี เอ็ม เอส แสดง ยอด และ สิทธิ์"
+  },
+  "8b1b095c8567776530ac8b3f": {
+    "file": "/audio/restaurant/th/8b1b095c8567776530ac8b3f.mp3",
+    "duration": 2.808,
+    "sha256": "516faacde76a1b7305bc73d39a2b6ed7e7d326f3f36660bf6fcdf369c59cea75",
+    "spoken": "บิล ซื้อ กลับบ้าน จอง วัตถุดิบ ตาม รายการ และ สูตร"
+  },
+  "1785d62d37e3a02b029bdb34": {
+    "file": "/audio/restaurant/th/1785d62d37e3a02b029bdb34.mp3",
+    "duration": 2.736,
+    "sha256": "cc54ddbf4e159de94130ee33fe5522e6e3345d3f880ee75087f49f3868e19706",
+    "spoken": "บิล ซื้อ กลับบ้าน ตรวจ เมนู ตัวเลือก และ ราคา"
+  },
+  "d5f8c181e6cf38192413bc1c": {
+    "file": "/audio/restaurant/th/d5f8c181e6cf38192413bc1c.mp3",
+    "duration": 2.76,
+    "sha256": "3cd979e3ce792f6601cd6c1706c59dd14d8104d9f6912f5dbe3bc21119a64ab1",
+    "spoken": "บิล ซื้อ กลับบ้าน สร้าง งาน ครัว ตาม สถานี งาน"
+  },
+  "e4715fbff52cd48788ce5ddf": {
+    "file": "/audio/restaurant/th/e4715fbff52cd48788ce5ddf.mp3",
+    "duration": 1.248,
+    "sha256": "cfcf217e4123e9e3b110c49a334139c24247ffde2a64defa48b2870f654683de",
+    "spoken": "บิล เข้า เงื่อนไข"
+  },
+  "df08a59f4ed113791b22b109": {
+    "file": "/audio/restaurant/th/df08a59f4ed113791b22b109.mp3",
+    "duration": 2.832,
+    "sha256": "fd937228f3dc0a8b88372b5f3e90774e2a403438e321ac1bac14af09fe79f47f",
+    "spoken": "บิล และ ออร์เดอร์ คำนวณ ยอด และ สิทธิ์ จาก หลักฐาน เดิม"
+  },
+  "ee7241afb4653dcef78ecd6b": {
+    "file": "/audio/restaurant/th/ee7241afb4653dcef78ecd6b.mp3",
+    "duration": 1.752,
+    "sha256": "19228b4fe1e94a0b11d07140df17e0f8e6dd829b22fbd38198f309390b949617",
+    "spoken": "บิล และ ออร์เดอร์ คืน ยอด จอง"
+  },
+  "55a3d37a81bb75e00c964e7a": {
+    "file": "/audio/restaurant/th/55a3d37a81bb75e00c964e7a.mp3",
+    "duration": 3.096,
+    "sha256": "1cbd5f5d86ec6fc2e182876d4c60b0e7eef05a61921caa66cd5e9630b64cc449",
+    "spoken": "บิล และ ออร์เดอร์ คืน ยอด จอง หรือ บันทึก คืน ตาม สถานะ"
+  },
+  "4d2715a3cd55f50d983b77ea": {
+    "file": "/audio/restaurant/th/4d2715a3cd55f50d983b77ea.mp3",
+    "duration": 3.096,
+    "sha256": "9da40f6f2950971350cc8052bc20dc0442f12c2f4073ffab85b1d7b27b66dcfd",
+    "spoken": "บิล และ ออร์เดอร์ ตรวจ สิทธิ์ สาขา สถานะ และ หลักฐาน เดิม"
+  },
+  "dfcc90ea8a97735c4aa8f613": {
+    "file": "/audio/restaurant/th/dfcc90ea8a97735c4aa8f613.mp3",
+    "duration": 2.976,
+    "sha256": "575a8453fbee8ba13d181249f351436ed58437110e80da4bce70be172dbd7047",
+    "spoken": "บิล และ ออร์เดอร์ ตรวจ เงื่อนไข คืน และ เอกสาร ภาษี"
+  },
+  "3c19d031b70ddac88ce75229": {
+    "file": "/audio/restaurant/th/3c19d031b70ddac88ce75229.mp3",
+    "duration": 2.352,
+    "sha256": "88c129de970ca330c92e8dcc887ce698faab2c6094ef8f5192ff43c6e2b9728c",
+    "spoken": "บิล และ ออร์เดอร์ ต้อง ใช้ ผู้อนุมัติ อีก คน"
+  },
+  "77a634b46da0fd251c8bd946": {
+    "file": "/audio/restaurant/th/77a634b46da0fd251c8bd946.mp3",
+    "duration": 2.4,
+    "sha256": "2ad31618c866b67b2a2e6dfccdaa2430d46b74155efa32cc00be1dc4dc086bdc",
+    "spoken": "บิล และ ออร์เดอร์ บันทึก เหตุผล และ ผู้อนุมัติ"
+  },
+  "9b06c94b6e735c63f9515f23": {
+    "file": "/audio/restaurant/th/9b06c94b6e735c63f9515f23.mp3",
+    "duration": 2.136,
+    "sha256": "9178378c703287c50d137ab90cdd7fbb8d4e4cfbccd8774dd77e82befe63d924",
+    "spoken": "บิล และ ออร์เดอร์ ปฏิเสธ พร้อม เหตุผล"
+  },
+  "d4a48455e29961e971d35447": {
+    "file": "/audio/restaurant/th/d4a48455e29961e971d35447.mp3",
+    "duration": 2.832,
+    "sha256": "86e01992b492e035c3d4f6c8284b6d1037dc6d5a30ea6f5305e373d7754edbe1",
+    "spoken": "บิล และ ออร์เดอร์ ปิดงาน ที่ ตรง กับ รายการ ยกเลิก"
+  },
+  "5007d74d66490bfec7ef762e": {
+    "file": "/audio/restaurant/th/5007d74d66490bfec7ef762e.mp3",
+    "duration": 2.592,
+    "sha256": "41e067d74b8a884921f2f5860303d3dae78a3b75f9599ab8549d1dc55bb1680c",
+    "spoken": "บิล และ ออร์เดอร์ ปิด บิล และ บันทึก ผู้ดำเนินการ"
+  },
+  "8bd1afac10e627ae11a950f0": {
+    "file": "/audio/restaurant/th/8bd1afac10e627ae11a950f0.mp3",
+    "duration": 2.16,
+    "sha256": "9e05380bc803b7e797d51cce8238c3f02492405351c9f46b3f259b1e850088b2",
+    "spoken": "บิล และ ออร์เดอร์ หยุดงาน ครัว ที่ ยัง เปิด"
+  },
+  "e895ebc9bf6ea0283eecee7e": {
+    "file": "/audio/restaurant/th/e895ebc9bf6ea0283eecee7e.mp3",
+    "duration": 2.376,
+    "sha256": "d0f90d17d5e5b4fa4d2396b3f4df70c40f11403371994c4bd903507b26ecf3cf",
+    "spoken": "บิล และ ออร์เดอร์ แยก ยอด คืน ตาม ช่องทาง"
+  },
+  "ad0af2b6e13c36e9ebfb30e7": {
+    "file": "/audio/restaurant/th/ad0af2b6e13c36e9ebfb30e7.mp3",
+    "duration": 2.424,
+    "sha256": "9f6eb35ce33d6bf71831a2779aaac0fe584cd207ecedc47c72ea4cef05de34cd",
+    "spoken": "ปิด กะ ไม่ ยืนยัน ว่า เงิน เข้า ธนาคาร ครบ"
+  },
+  "37b974f4f43e45edaa08649f": {
+    "file": "/audio/restaurant/th/37b974f4f43e45edaa08649f.mp3",
+    "duration": 4.344,
+    "sha256": "71d079257d2cb080fe1ed4ced959a52c56fe73b00283e612098cd7e853468dec",
+    "spoken": "ปิด กะ ไม่ ใช่ การ กระทบ ยอด ธนาคาร อัตโนมัติ และ สำเนา พี ดี เอฟ ไม่ ใช่ อี แท็ก ซ์"
+  },
+  "e2bc2ba6f8a972c56ff7c89b": {
+    "file": "/audio/restaurant/th/e2bc2ba6f8a972c56ff7c89b.mp3",
+    "duration": 2.4,
+    "sha256": "9a7febb6cb9657d701b191b90bf7c47645d96ac17511badc09dae58ff824ac99",
+    "spoken": "ผู้จัดการ บัญชี ตรวจ ข้อมูล และ ยืนยัน"
+  },
+  "392f9b72cc4c5213b5420e2b": {
+    "file": "/audio/restaurant/th/392f9b72cc4c5213b5420e2b.mp3",
+    "duration": 3.288,
+    "sha256": "f96f2044d062c4d31cd40c453d6ca32e2928e7acd9331d53f6d2b889ee118630",
+    "spoken": "ผู้จัดการ บัญชี ตรวจ ยอดขาย ช่องทาง เงิน ออก และ เงิน คืน"
+  },
+  "1bd13426ef62f7b68f798ed6": {
+    "file": "/audio/restaurant/th/1bd13426ef62f7b68f798ed6.mp3",
+    "duration": 2.88,
+    "sha256": "a63364da030dae0d2d9fe75a48907d1818a95a6747a057953d3437a413f413e8",
+    "spoken": "ผู้จัดการ บัญชี เทียบ เงินฝาก และ หลักฐาน ธนาคาร"
+  },
+  "3ce84972d8743a74c221c82f": {
+    "file": "/audio/restaurant/th/3ce84972d8743a74c221c82f.mp3",
+    "duration": 3.024,
+    "sha256": "10d692bec85d0153a207d259ba41ac84f8d6325fd2006717c949b9fa390672f7",
+    "spoken": "ผู้จัดการ เจ้าของ จำลอง ราคา แพ็ก หรือ โปรโมชั่น"
+  },
+  "9dc1da627c5cc8b737a44769": {
+    "file": "/audio/restaurant/th/9dc1da627c5cc8b737a44769.mp3",
+    "duration": 2.88,
+    "sha256": "b501e1c316ac714aef2be0b24f0da58923dcfd34a6381dc01ebaeda9c9b40663",
+    "spoken": "ผู้จัดการ เจ้าของ ตรวจ ตัวอย่าง และ ยืนยัน เผยแพร่"
+  },
+  "2d4db936c90712f8f129674d": {
+    "file": "/audio/restaurant/th/2d4db936c90712f8f129674d.mp3",
+    "duration": 3.792,
+    "sha256": "f884a97f5c9a68b6e5d86b7629da6c9c8682dadd307b2ec9393490f89ecd2c86",
+    "spoken": "ผู้จัดการ เจ้าของ ตรวจ รายการ ค้าง และ บันทึก ค่าใช้จ่าย พร้อม หลักฐาน"
+  },
+  "968980ef424777b944c91e6e": {
+    "file": "/audio/restaurant/th/968980ef424777b944c91e6e.mp3",
+    "duration": 2.616,
+    "sha256": "bdc400930361ea17c69c63c00d0f3429101d8ae8eb91639e5f90896236409edb",
+    "spoken": "ผู้จัดการ เจ้าของ ผู้ มีสิทธิ์ ยืนยัน ปรับ ยอด"
+  },
+  "518d8eda7f308f58b0e261ec": {
+    "file": "/audio/restaurant/th/518d8eda7f308f58b0e261ec.mp3",
+    "duration": 2.568,
+    "sha256": "a40991e23328b39922d71c6ad7a473c6d3ce9a43103ec965b8433dd9da67bebd",
+    "spoken": "ผู้จัดการ เจ้าของ เลือก ช่วงเวลา และ สาขา"
+  },
+  "b4339566a6b543aaf39ec000": {
+    "file": "/audio/restaurant/th/b4339566a6b543aaf39ec000.mp3",
+    "duration": 3.048,
+    "sha256": "5f89c2e290f985f85d759320b3317bd882ec59c5c6bd196de36f967729e80119",
+    "spoken": "ผู้จัดการ จัดส่ง เพิ่ม หรือ พิจารณา ปิด ส่วน ที่ ขาด"
+  },
+  "f57e72afaf2f72f465bf8d38": {
+    "file": "/audio/restaurant/th/f57e72afaf2f72f465bf8d38.mp3",
+    "duration": 2.304,
+    "sha256": "21add8f5c6cfde042092cd9548e1a2a9ed0f70040433a95d267e770bd2a4793f",
+    "spoken": "ผู้จัดการ ตรวจ ของ ใน สาขา ที่ มีสิทธิ์"
+  },
+  "3b96363300895ff97791b7a7": {
+    "file": "/audio/restaurant/th/3b96363300895ff97791b7a7.mp3",
+    "duration": 2.52,
+    "sha256": "603308449bd44577ef752b14ae4893b596eddc54adb6c20c1c49adeac2fcadfd",
+    "spoken": "ผู้จัดการ ตรวจรับ จำนวน และ ต้นทุน จริง"
+  },
+  "b0f467dfc3b6d9f744a4a0a2": {
+    "file": "/audio/restaurant/th/b0f467dfc3b6d9f744a4a0a2.mp3",
+    "duration": 2.76,
+    "sha256": "4c9b16b52529ebc52c19bb4f45b86bbfb91944473553765be10a26c624c25d70",
+    "spoken": "ผู้จัดการ ตรวจ เอกสาร ค้าง และ ยืนยัน ปิด แล้ว"
+  },
+  "ec46ccb8a3a77fe0be413082": {
+    "file": "/audio/restaurant/th/ec46ccb8a3a77fe0be413082.mp3",
+    "duration": 1.92,
+    "sha256": "1b8dbe4bf152fdd51fbf22cecedbacecb18c8b592945373d3d16702208c9f70b",
+    "spoken": "ผู้จัดการ ตรวจ และ สร้าง พี โอ"
+  },
+  "db45879284d37a84b93a9d36": {
+    "file": "/audio/restaurant/th/db45879284d37a84b93a9d36.mp3",
+    "duration": 1.968,
+    "sha256": "474e6da29ca9ee1ae25a64786b53cccb3438946c9b42c641472b6660f58bb373",
+    "spoken": "ผู้จัดการ ปฏิเสธ พร้อม เหตุผล"
+  },
+  "57e68a43685af287ccdc2aac": {
+    "file": "/audio/restaurant/th/57e68a43685af287ccdc2aac.mp3",
+    "duration": 2.016,
+    "sha256": "c3013d95e91a04b88c0be19a246bd63c8b42c65c2b6e662ae26b60193b58dc78",
+    "spoken": "ผู้จัดการ ยืนยัน จำนวน อนุมัติ"
+  },
+  "530c0fcdefb8238dcd1c3aae": {
+    "file": "/audio/restaurant/th/530c0fcdefb8238dcd1c3aae.mp3",
+    "duration": 2.688,
+    "sha256": "c349e74b6e195215233103cd0bc27a6a36ce15c35a87a29df8711e4e615ec402",
+    "spoken": "ผู้จัดการ ยืนยัน สร้าง ใบ โอน ที่ ผูก คำขอ"
+  },
+  "50f1da3a3161c9b8bc5d6f6e": {
+    "file": "/audio/restaurant/th/50f1da3a3161c9b8bc5d6f6e.mp3",
+    "duration": 1.68,
+    "sha256": "89891ca5f6d78292d55e886db9ee8500a2b0476de9a2bd37ef566f7ca9b2c933",
+    "spoken": "ผู้จัดการ ยืนยัน ส่ง ของ"
+  },
+  "24209ab4028c0ecba0d9d87a": {
+    "file": "/audio/restaurant/th/24209ab4028c0ecba0d9d87a.mp3",
+    "duration": 1.896,
+    "sha256": "8acd50003f017cc9d89ad4c6ef60dda080564d9682f935a3825108d019816a8f",
+    "spoken": "ผู้ จัดซื้อ ติด ตามส่วน ที่ ขาด"
+  },
+  "c30989033e18863a166d5d73": {
+    "file": "/audio/restaurant/th/c30989033e18863a166d5d73.mp3",
+    "duration": 3.384,
+    "sha256": "aece0f04e39b645000cc37ef953cf7f719b9a15ee6af91019ee52a2a71dfd063",
+    "spoken": "ผู้ จัดซื้อ ผู้ มีสิทธิ์ ยกเลิก พี โอ ที่ ยัง เปิด หรือ รับ บางส่วน"
+  },
+  "3b822fa8867e427e7fc460ac": {
+    "file": "/audio/restaurant/th/3b822fa8867e427e7fc460ac.mp3",
+    "duration": 3.048,
+    "sha256": "f63819821562279ac2547551ec77f128ac6d1a6ea535a86dcd2438c3bbbe3e58",
+    "spoken": "ผู้ จัดซื้อ สร้าง พี โอ ระบุ สินค้า จำนวน และ ต้นทุน"
+  },
+  "aa1308862dfc4b80854e39ff": {
+    "file": "/audio/restaurant/th/aa1308862dfc4b80854e39ff.mp3",
+    "duration": 2.88,
+    "sha256": "bef66ac666f10ad9e5a73e46ec2ef7968823e4c309da1cbb466b024852eb0970",
+    "spoken": "ผู้ จัดซื้อ ส่ง คำ สั่งซื้อ ผ่าน ช่องทาง ที่ ใช้งาน"
+  },
+  "91c2a4134120430fb38fbaad": {
+    "file": "/audio/restaurant/th/91c2a4134120430fb38fbaad.mp3",
+    "duration": 3.144,
+    "sha256": "74f71f103b35fe7af1717e3e0fb6162b215517a2e394a383a860366e4b5bf027",
+    "spoken": "ผู้ดูแล สูตร บันทึก สูตร ต่อ เสิร์ฟ สูตร ย่อย และ เอส โอ พี"
+  },
+  "07d23915df3bf04ed0102c36": {
+    "file": "/audio/restaurant/th/07d23915df3bf04ed0102c36.mp3",
+    "duration": 2.328,
+    "sha256": "c2c2770f309db6470ecc96d27b6b8d25b68ee6817f2662eb2f0753cb98dba851",
+    "spoken": "ผู้ ตรวจรับ ตรวจ ของ และ จำนวน ที่ รับได้"
+  },
+  "df6ea044475b28ea73f1c491": {
+    "file": "/audio/restaurant/th/df6ea044475b28ea73f1c491.mp3",
+    "duration": 2.496,
+    "sha256": "c80ecf6cfcb98871b63e57cbd3f1c2ae7fb63b4fb65f4bcaf8d23383b520b397",
+    "spoken": "ผู้ ตรวจรับ ยืนยัน เฉพาะ จำนวน รับ จริง"
+  },
+  "3a39977fd51f0b3372cdc353": {
+    "file": "/audio/restaurant/th/3a39977fd51f0b3372cdc353.mp3",
+    "duration": 1.824,
+    "sha256": "1940642258edc30fe5b8a1e20a4b87b216436cddf626fe707a751a46bd09856b",
+    "spoken": "ผู้ ส่งมอบ ไรเดอร์ ส่ง อาหาร"
+  },
+  "104ce2aa8e568a007f4596e5": {
+    "file": "/audio/restaurant/th/104ce2aa8e568a007f4596e5.mp3",
+    "duration": 1.776,
+    "sha256": "4d0cc1bfef74ed993c38ccf280d81687c0543f5b1ddd3ba490888dc6275e7733",
+    "spoken": "ผู้อนุมัติ ยืนยัน พิน และ สิทธิ์"
+  },
+  "cdccb6128f0e485617f0b8d8": {
+    "file": "/audio/restaurant/th/cdccb6128f0e485617f0b8d8.mp3",
+    "duration": 2.232,
+    "sha256": "d069191c5962e3e223bbc6b51d72b4fe6ce6e9abf829fa10faa2c68e8c4ffb3e",
+    "spoken": "ผู้ใช้งาน กด ตรวจ ผล แม้ รี โหลด แล้ว"
+  },
+  "9212277447a839746bb82544": {
+    "file": "/audio/restaurant/th/9212277447a839746bb82544.mp3",
+    "duration": 1.992,
+    "sha256": "a1eeef2b0ca0f7d1d777c8e54c6a5133cae873ce4d52403c4a756cc59d5d7f98",
+    "spoken": "ผู้ใช้งาน ตรวจ และ ยืนยัน คำสั่ง"
+  },
+  "531e39fdca5e2c845725352a": {
+    "file": "/audio/restaurant/th/531e39fdca5e2c845725352a.mp3",
+    "duration": 1.68,
+    "sha256": "52e20a84098c5c09d8ce2465fef909e721359992f506afcb6d1395b33427bfeb",
+    "spoken": "ผ่าน และ ผู้ มีสิทธิ์ ยืนยัน"
+  },
+  "9b7968fd0bfdf6e1e122bef8": {
+    "file": "/audio/restaurant/th/9b7968fd0bfdf6e1e122bef8.mp3",
+    "duration": 2.256,
+    "sha256": "e81c2e4e02d2f9b754790bdd48cf8ba5275177718e5b3df8dfea7059d2b26fcf",
+    "spoken": "พนักงาน แคชเชียร์ ตกลง เปลี่ยน รายการ"
+  },
+  "a37ce9967f73e7a46400a309": {
+    "file": "/audio/restaurant/th/a37ce9967f73e7a46400a309.mp3",
+    "duration": 3.288,
+    "sha256": "ef1497e424b134acf16f79c63d3264a7258486337af2e25bc38a087d97ac06fb",
+    "spoken": "พนักงาน แคชเชียร์ ตรวจ รายการ ส่วนลด สมาชิก และ ยอด สุทธิ"
+  },
+  "aa14264e6f3b77ec5f6627d1": {
+    "file": "/audio/restaurant/th/aa14264e6f3b77ec5f6627d1.mp3",
+    "duration": 2.928,
+    "sha256": "842998542b2f4500bfa0faa261760b608302f0ca702a9d8c441834913bf1b607",
+    "spoken": "พนักงาน แคชเชียร์ ยืนยัน พนักงาน เปิด กะ และ เปิด โต๊ะ"
+  },
+  "148f8b73687bee99adaecafd": {
+    "file": "/audio/restaurant/th/148f8b73687bee99adaecafd.mp3",
+    "duration": 3.576,
+    "sha256": "4366860f33a29a565814a9ba4db8443c0b3f1bf1809f23854578de131edf1d06",
+    "spoken": "พนักงาน แคชเชียร์ ยืนยัน รับ ชำระ ด้วย รหัส คำขอ ของ รายการ"
+  },
+  "3a92ee4977389293a2586277": {
+    "file": "/audio/restaurant/th/3a92ee4977389293a2586277.mp3",
+    "duration": 2.352,
+    "sha256": "17094813ce2cf626c5b2bed7818acbe4b2d31564f54766af766901dc2cb929b3",
+    "spoken": "พนักงาน แคชเชียร์ ยืนยัน ส่ง รอบ เข้าครัว"
+  },
+  "39c4fc04e0450ce9fd3565dc": {
+    "file": "/audio/restaurant/th/39c4fc04e0450ce9fd3565dc.mp3",
+    "duration": 2.16,
+    "sha256": "80a7327441c58b3bc8f7e464ad7cb1350d21fca96b6cc30f90fb2ce29bb7a2bc",
+    "spoken": "พนักงาน แคชเชียร์ รับ รายการ เข้า บิล"
+  },
+  "8ee81f5b987abe2105d85f5b": {
+    "file": "/audio/restaurant/th/8ee81f5b987abe2105d85f5b.mp3",
+    "duration": 2.28,
+    "sha256": "0869af18fbae1ef3daaec922383098ce458ed8eb1f1f4a7fe2379b053e6dfdcf",
+    "spoken": "พนักงาน แคชเชียร์ เพิ่ม เมนู และ ตัวเลือก"
+  },
+  "8a22abd8f3b31d231e295fda": {
+    "file": "/audio/restaurant/th/8a22abd8f3b31d231e295fda.mp3",
+    "duration": 2.256,
+    "sha256": "8b237c42c10d405501e966fea0a4302e6c34c4e41aaf5c8faab487003ae398ca",
+    "spoken": "พนักงาน แคชเชียร์ เพิ่ม และ ส่ง รอบ ใหม่"
+  },
+  "20dc654ef1692940b24e7652": {
+    "file": "/audio/restaurant/th/20dc654ef1692940b24e7652.mp3",
+    "duration": 1.728,
+    "sha256": "e8c78fd0009bafbd1e9570ebb443a21d2a163ff66dcb2bc3284f1e8b60ba2224",
+    "spoken": "พนักงาน แคชเชียร์ เสิร์ฟ อาหาร"
+  },
+  "06b9791ec6aab68391524733": {
+    "file": "/audio/restaurant/th/06b9791ec6aab68391524733.mp3",
+    "duration": 3.048,
+    "sha256": "8126078c71a8725828f8afb77563a4be599350e837328ffce4f0a48ec73c8df9",
+    "spoken": "พนักงาน ขออนุมัติ จาก อีก คน ด้วย พิน และ สิทธิ์ ตรง งาน"
+  },
+  "7a77b92a6f82de067ce63844": {
+    "file": "/audio/restaurant/th/7a77b92a6f82de067ce63844.mp3",
+    "duration": 2.04,
+    "sha256": "8471d38dc15db97d9ddc48464253f8976751c34e0fec9c8ab670bb60f2a752cc",
+    "spoken": "พนักงาน ดำเนินการ คืนเงิน จริง"
+  },
+  "ff4d3f408ff0139d65f9c849": {
+    "file": "/audio/restaurant/th/ff4d3f408ff0139d65f9c849.mp3",
+    "duration": 1.896,
+    "sha256": "301700787cee6cf515593a4d8b13ed5ec419a0fd2898123f39f7c6c071628e0b",
+    "spoken": "พนักงาน ตกลง เปลี่ยน รายการ"
+  },
+  "585a25029f7c683b36a83a11": {
+    "file": "/audio/restaurant/th/585a25029f7c683b36a83a11.mp3",
+    "duration": 2.352,
+    "sha256": "f3150f38fd56a2db35f52831e28ce50ad39196bb50ff334e9747ea9ff02423af",
+    "spoken": "พนักงาน ตรวจ รับเงิน และ นับ เงิน ปิด กะ"
+  },
+  "a4ce99a63e87cba4dda2ef5c": {
+    "file": "/audio/restaurant/th/a4ce99a63e87cba4dda2ef5c.mp3",
+    "duration": 2.208,
+    "sha256": "79682cfe2ec7900356fda2c44b8a3af222e815dff90ed2386033803c231d452c",
+    "spoken": "พนักงาน ตรวจ สิทธิ์ และ เปิด การ นั่ง โต๊ะ"
+  },
+  "1f89be75bb352e56d036bc28": {
+    "file": "/audio/restaurant/th/1f89be75bb352e56d036bc28.mp3",
+    "duration": 2.352,
+    "sha256": "a28be7ee21d15113cbb41740525d6ee52e101e4d8c6b444ad33e56c845771f6e",
+    "spoken": "พนักงาน ตรวจ เวลาเล่น และ ขอ ปิด กลุ่ม"
+  },
+  "55fdb89c1a05296e27aea05e": {
+    "file": "/audio/restaurant/th/55fdb89c1a05296e27aea05e.mp3",
+    "duration": 2.064,
+    "sha256": "ca0d9a680fc192e98f7f5c83f408261f7749674319e4a99ae9f9852fdfe88105",
+    "spoken": "พนักงาน บันทึก ของเสีย และ ตรวจ นับ"
+  },
+  "0d2841d8e9e9524171b877c7": {
+    "file": "/audio/restaurant/th/0d2841d8e9e9524171b877c7.mp3",
+    "duration": 2.496,
+    "sha256": "78aa9c862f7eabc4b3b4c2d33bdddbc7f04d90080a9d42021ba4a33072506859",
+    "spoken": "พนักงาน ผูก สมาชิก เลือก คูปอง หรือ แต้ม"
+  },
+  "cc61bfaf8ce9c9c876590e6d": {
+    "file": "/audio/restaurant/th/cc61bfaf8ce9c9c876590e6d.mp3",
+    "duration": 2.352,
+    "sha256": "df50ffe76fe4d43280736b41ccb92c8b2ea31afafe554383b02390ad7b2bfeb1",
+    "spoken": "พนักงาน ผู้ มีสิทธิ์ ยืนยัน เลข อ้างอิง"
+  },
+  "d75fbc6b7da97a68dd8f6e07": {
+    "file": "/audio/restaurant/th/d75fbc6b7da97a68dd8f6e07.mp3",
+    "duration": 2.952,
+    "sha256": "35843fae3a9f4a73c28e85d4961e05a764560c64b3ff2fefbd5bf8aa433d5d64",
+    "spoken": "พนักงาน ยืนยัน ชำระ ของ กลุ่ม ด้วย รหัส คำขอ"
+  },
+  "018f7d93168534b2bd6e19ac": {
+    "file": "/audio/restaurant/th/018f7d93168534b2bd6e19ac.mp3",
+    "duration": 2.208,
+    "sha256": "7e10632b5ff361438bb256bf3c95409f45d319ab195d1bc905aa4ef5e0f801c0",
+    "spoken": "พนักงาน ยืนยัน พนักงาน และ กะ ขาย"
+  },
+  "80f38e3c2c6568cfb9a571a3": {
+    "file": "/audio/restaurant/th/80f38e3c2c6568cfb9a571a3.mp3",
+    "duration": 1.848,
+    "sha256": "859f87daef5484db90feb4dbae51609b902a2aec8f7472da1dc6713732783588",
+    "spoken": "พนักงาน ยืนยัน ยกเลิก บิล"
+  },
+  "e05ab06e0ffb5bfc1a6f02e8": {
+    "file": "/audio/restaurant/th/e05ab06e0ffb5bfc1a6f02e8.mp3",
+    "duration": 2.016,
+    "sha256": "c0edd7fdb8eaabbbaa37e058cef5b457507cbca40a6a31052da7b0a627df51c7",
+    "spoken": "พนักงาน ยืนยัน ยอด ก่อน ชำระ"
+  },
+  "64dee8f2cfcc47c9f20dabbd": {
+    "file": "/audio/restaurant/th/64dee8f2cfcc47c9f20dabbd.mp3",
+    "duration": 1.8,
+    "sha256": "23427a81af186de7d9e06c4368b33f0da2c242a753c095f2790577d08a2d9792",
+    "spoken": "พนักงาน ยืนยัน รับ ชำระ"
+  },
+  "dabf22d39360cba862839403": {
+    "file": "/audio/restaurant/th/dabf22d39360cba862839403.mp3",
+    "duration": 2.928,
+    "sha256": "c0a4ed725182be0bdad6ce2ec021ed3acc331372806f1f1148097eb42583613e",
+    "spoken": "พนักงาน ยืนยัน รับ ชำระ ด้วย รหัส คำขอ เดิม"
+  },
+  "63f453888243dabad26967b2": {
+    "file": "/audio/restaurant/th/63f453888243dabad26967b2.mp3",
+    "duration": 1.656,
+    "sha256": "43796620f4eb93f01fc07a02ab7941afc833aebebd79bb7766607589416d8b42",
+    "spoken": "พนักงาน ยืนยัน ส่ง รอบ"
+  },
+  "7061a1c705e73634b38e05f0": {
+    "file": "/audio/restaurant/th/7061a1c705e73634b38e05f0.mp3",
+    "duration": 2.424,
+    "sha256": "9f13c9e0dd928848f9b6fe800cdf84bf23ed4941cf797c95185bf145277b7394",
+    "spoken": "พนักงาน รับ ชำระ แต่ละ บิล ที่ ยัง เปิด"
+  },
+  "a0c488cefeba0f512ece8329": {
+    "file": "/audio/restaurant/th/a0c488cefeba0f512ece8329.mp3",
+    "duration": 1.608,
+    "sha256": "08320c78a38b24becdfa4e2cd3563e39e6aeeefedee9866d28bc4c91b7b430ae",
+    "spoken": "พนักงาน ส่งมอบ อาหาร"
+  },
+  "f805d03d0691a89f81c1f107": {
+    "file": "/audio/restaurant/th/f805d03d0691a89f81c1f107.mp3",
+    "duration": 2.76,
+    "sha256": "2ee8d6018edde3de4526ccfbe464c14c019e3a5af5323bb06b0996505f58db4d",
+    "spoken": "พนักงาน เปิด บิล ซื้อ กลับบ้าน และ เพิ่ม รายการ"
+  },
+  "4ae34d8e60adb0618d15c747": {
+    "file": "/audio/restaurant/th/4ae34d8e60adb0618d15c747.mp3",
+    "duration": 2.328,
+    "sha256": "f3d3aa877c57e4746d1cff33a4b05740547068acbf48ca9eca8536cda445af27",
+    "spoken": "พนักงาน เพิ่ม สินค้า ลง บิล ของ กลุ่ม"
+  },
+  "013ffa667b743278c2f5dea5": {
+    "file": "/audio/restaurant/th/013ffa667b743278c2f5dea5.mp3",
+    "duration": 1.896,
+    "sha256": "f7079fb96dc8d0af809d0860076d679468e3c4cb7881f9b96eefe3110cf674e4",
+    "spoken": "พนักงาน เลือก การ ดำเนินการ"
+  },
+  "4a37ed52716645908a72d580": {
+    "file": "/audio/restaurant/th/4a37ed52716645908a72d580.mp3",
+    "duration": 2.376,
+    "sha256": "5370c6e90560cb314b22e6e806bfbbd8d56a49c14632bbfa0b932339906bd86b",
+    "spoken": "พนักงาน เลือก บิล ต้นทาง และ ปลายทาง"
+  },
+  "533205e840601e71b41578d4": {
+    "file": "/audio/restaurant/th/533205e840601e71b41578d4.mp3",
+    "duration": 2.424,
+    "sha256": "d256c381a742715541ad4fee4ddffd5ceae0c207bab0057977554b2d80bd185d",
+    "spoken": "พนักงาน เลือก บิล หรือ รายการ พร้อม เหตุผล"
+  },
+  "dfda614764f5896a4b7cc3d1": {
+    "file": "/audio/restaurant/th/dfda614764f5896a4b7cc3d1.mp3",
+    "duration": 2.064,
+    "sha256": "e3e144ff3a379eda1978af432e75554399630076fcf5b754db1cca04287b570a",
+    "spoken": "พนักงาน เลือก ปลายทาง และ ยืนยัน"
+  },
+  "9ab7266dc015c38d4c2f977a": {
+    "file": "/audio/restaurant/th/9ab7266dc015c38d4c2f977a.mp3",
+    "duration": 2.64,
+    "sha256": "b447fac722c248f8e9f283caa7342984ed4fce9b6e84515d192d14aa058653cb",
+    "spoken": "พนักงาน เลือก รายการ ไป บิล ใหม่ บน โต๊ะ เดิม"
+  },
+  "5043af75f0758b77a9eab1c6": {
+    "file": "/audio/restaurant/th/5043af75f0758b77a9eab1c6.mp3",
+    "duration": 1.464,
+    "sha256": "c79c1ecb5a623f6914bb2754a9b512a554e592e2df8ec6c3f2f8c9919ce084ec",
+    "spoken": "พนักงาน รับ รายการ"
+  },
+  "8376361e60347c8f4d53ef00": {
+    "file": "/audio/restaurant/th/8376361e60347c8f4d53ef00.mp3",
+    "duration": 2.256,
+    "sha256": "c4546b97a6617742b525a6925bb224e815eb1edaa48e51751eb15798420a5364",
+    "spoken": "พนักงาน ร้าน ตรวจ ผู้รับ และ รายการ"
+  },
+  "f7a45f2a5f75ac4e6a5cd596": {
+    "file": "/audio/restaurant/th/f7a45f2a5f75ac4e6a5cd596.mp3",
+    "duration": 2.64,
+    "sha256": "88c2c67a58309c9ca51fa84c52532dfd18debdf8c76db2e47dfbae8b4dc385b7",
+    "spoken": "พนักงาน ร้าน ตรวจ สถานะ และ หลักฐาน ล่าสุด"
+  },
+  "08281f443656ae63ce99752f": {
+    "file": "/audio/restaurant/th/08281f443656ae63ce99752f.mp3",
+    "duration": 2.256,
+    "sha256": "1dea08ab29b40b9341c3734983a8c245a21979dcc9a3f633e5a86a05c1bedc4b",
+    "spoken": "พนักงาน ร้าน ตรวจ และ ยืนยัน ชำระ"
+  },
+  "7e9b5816f7104bdd8307b7d5": {
+    "file": "/audio/restaurant/th/7e9b5816f7104bdd8307b7d5.mp3",
+    "duration": 2.472,
+    "sha256": "19de9a72a5ee8f08e177af2e4b1e6fddf478b8d342ed606a70de066e81dec3b4",
+    "spoken": "พนักงาน ร้าน ติดต่อ เพื่อ ตกลง แนวทาง"
+  },
+  "727af9cf4b90c950bed09911": {
+    "file": "/audio/restaurant/th/727af9cf4b90c950bed09911.mp3",
+    "duration": 2.808,
+    "sha256": "f28015eb84af5d798f303befe2c2fcf222ec30d3e49ee3b1188335f490a4789e",
+    "spoken": "พนักงาน ร้าน บันทึก และ ยืนยัน ส่ง ตาม ขั้นตอน"
+  },
+  "bd681533f2e73e267e4fa130": {
+    "file": "/audio/restaurant/th/bd681533f2e73e267e4fa130.mp3",
+    "duration": 2.928,
+    "sha256": "a6412db9a2716b503a42c2a484c1e58ee7e93cfe892f1d032310a91c942a9f91",
+    "spoken": "พนักงาน ร้าน ปฏิเสธ หรือ สอบถาม เพื่อ แก้ รายการ"
+  },
+  "f4ee901cedbf08a15db87be6": {
+    "file": "/audio/restaurant/th/f4ee901cedbf08a15db87be6.mp3",
+    "duration": 2.472,
+    "sha256": "0891fb99d84f516eae6daaf2d767527e2ff4edfe6e83916a69cef392ea586292",
+    "spoken": "พนักงาน ร้าน ยกเลิก รายการ พร้อม สาเหตุ"
+  },
+  "54ae5f37063e09140b48ce28": {
+    "file": "/audio/restaurant/th/54ae5f37063e09140b48ce28.mp3",
+    "duration": 2.016,
+    "sha256": "8ddb0e251a02ca44ddc29850d11249a916738edf4d5d6c4ab481e2aa984c193f",
+    "spoken": "พนักงาน ร้าน ยืนยัน รับ เข้าครัว"
+  },
+  "523ea41ed43ac9d798e1a47a": {
+    "file": "/audio/restaurant/th/523ea41ed43ac9d798e1a47a.mp3",
+    "duration": 2.376,
+    "sha256": "a094a87605852da4ce0b08b12256ba0d36a97f4243f19e65f52db5caa7e03ec2",
+    "spoken": "พนักงาน ร้าน ยืนยัน รายการ ที่ ตกลง"
+  },
+  "f8e71ac7cd6d2e9b01da076b": {
+    "file": "/audio/restaurant/th/f8e71ac7cd6d2e9b01da076b.mp3",
+    "duration": 2.112,
+    "sha256": "b92636dc5277a5ec4c8ded61f84e9ddb5a7c10ba1948902b860fda47127c21bf",
+    "spoken": "พนักงาน ร้าน ยืนยัน ส่งมอบ จริง"
+  },
+  "3db3b4f5e1f1009d19884a7d": {
+    "file": "/audio/restaurant/th/3db3b4f5e1f1009d19884a7d.mp3",
+    "duration": 2.256,
+    "sha256": "bee3c4a2ee931e6e8b8e8f81bccdad33e3a542f4debcc69ccddf9c5ecf076cae",
+    "spoken": "พนักงาน ร้าน ส่ง อาหาร ให้ ผู้ จัดส่ง"
+  },
+  "61a6925d9127dee52bc409bf": {
+    "file": "/audio/restaurant/th/61a6925d9127dee52bc409bf.mp3",
+    "duration": 2.568,
+    "sha256": "d90db475b6b9dbb44f6ea1310462dd3126ca728c7a4fd219b9897a21db9293f0",
+    "spoken": "พนักงาน ร้าน แจ้ง ผล และ ตก ลงรายการ ใหม่"
+  },
+  "49d1154b54ea8ba6380cb1f8": {
+    "file": "/audio/restaurant/th/49d1154b54ea8ba6380cb1f8.mp3",
+    "duration": 3.072,
+    "sha256": "27a4045ebb96ef99e2613666f79b82b07a91dbda6070a8301b73f874a16af4cd",
+    "spoken": "พนักงาน สาขา ขอ สินค้า จำนวน และ วันที่ ต้องการ"
+  },
+  "da3f0c4841c7dafa73010bc7": {
+    "file": "/audio/restaurant/th/da3f0c4841c7dafa73010bc7.mp3",
+    "duration": 3.168,
+    "sha256": "31c30a671562abc009202908c0d8d4bf5bd09d18f6975360072f1aa63d1bf702",
+    "spoken": "พนักงาน สาขา ตรวจรับ ดี เสียหาย และ ขาด พร้อม เหตุผล"
+  },
+  "b14202c0869e567ee2534adf": {
+    "file": "/audio/restaurant/th/b14202c0869e567ee2534adf.mp3",
+    "duration": 0.816,
+    "sha256": "681d0bd517916ef52d9879e6aec4ff837662f5a1177537a25922e6f7b50c78d6",
+    "spoken": "พร้อม ทำ"
+  },
+  "71d6f3d87a35cd3d48a45ae4": {
+    "file": "/audio/restaurant/th/71d6f3d87a35cd3d48a45ae4.mp3",
+    "duration": 0.696,
+    "sha256": "3d17b00285489002ada29d076933c7d2ad4aee3bbc88520e5398bb09a0d0bc8f",
+    "spoken": "พร้อม ปิด"
+  },
+  "e831c0b39fd351bf835df73b": {
+    "file": "/audio/restaurant/th/e831c0b39fd351bf835df73b.mp3",
+    "duration": 1.2,
+    "sha256": "e7065eea9923fdbc66ff484c6f17b9c4227f2d78790a5e8c90266623cc2d425f",
+    "spoken": "พร้อม ส่งมอบ จริง"
+  },
+  "3970563afc27db6e25d6d229": {
+    "file": "/audio/restaurant/th/3970563afc27db6e25d6d229.mp3",
+    "duration": 2.592,
+    "sha256": "d90dbb91498471dd1a2ee2aee25802587e3eeabeade0c13a9c142fb2509300f4",
+    "spoken": "มี รายการ ห้าม ปิด เช่น เงิน คืน ค้าง ของ กะ"
+  },
+  "ff3160d410e887a9c161b188": {
+    "file": "/audio/restaurant/th/ff3160d410e887a9c161b188.mp3",
+    "duration": 0.984,
+    "sha256": "3c7dc20af2bc9a52a4754cf26d6cccb9050df28acb70a14bc9c180dc5f6c1053",
+    "spoken": "มีสิทธิ์"
+  },
+  "a39899c94b7a282e16b73a09": {
+    "file": "/audio/restaurant/th/a39899c94b7a282e16b73a09.mp3",
+    "duration": 2.568,
+    "sha256": "b3e63b7e92daf90f0d329d6faaf8cc4d901e9d51744f401c500eba6d540b52ec",
+    "spoken": "มีสิทธิ์ บัตร ผ่าน หรือ ข้อเสนอ ที่ เข้า เงื่อนไข"
+  },
+  "8e2593e721537715b6c07c0c": {
+    "file": "/audio/restaurant/th/8e2593e721537715b6c07c0c.mp3",
+    "duration": 2.448,
+    "sha256": "7f3e9a7a5582d2186daec82101f0dff75a46be00e4d1b7bfeac9e993757713a4",
+    "spoken": "ยกเลิก พี โอ ไม่ ย้อน สต็อก ที่ รับ เข้า แล้ว"
+  },
+  "dbb1a166bebbda9947532122": {
+    "file": "/audio/restaurant/th/dbb1a166bebbda9947532122.mp3",
+    "duration": 1.656,
+    "sha256": "1f27ac5d4fff5e775013523d9f6482840fb27a8a933c83d39478b6f21c44d9e0",
+    "spoken": "ยกเลิก ก่อน ขาย สำเร็จ"
+  },
+  "5475c8a94513567e6d26b98a": {
+    "file": "/audio/restaurant/th/5475c8a94513567e6d26b98a.mp3",
+    "duration": 2.4,
+    "sha256": "c86884706e94b42af93baf40215a422cd2473502174764f0f0d304fc6c6dba69",
+    "spoken": "ยกเลิก ทั้ง บิล หลัง ส่ง ครัว หรือ จอง ของ"
+  },
+  "945377759c689fec9e43c0c9": {
+    "file": "/audio/restaurant/th/945377759c689fec9e43c0c9.mp3",
+    "duration": 2.568,
+    "sha256": "dd5be06155370cf713515e1e70399189c118e772d4d38010264f3237af2db9b3",
+    "spoken": "ยกเลิก รายการ ออนไลน์ หรือ คืนหลัง ชำระ"
+  },
+  "bda2b88cc8f697ead897c0b8": {
+    "file": "/audio/restaurant/th/bda2b88cc8f697ead897c0b8.mp3",
+    "duration": 1.104,
+    "sha256": "a5ee390006c94463b82c4ee58b4f09ea0fdc3a0711d3ac664b3db4916465dae1",
+    "spoken": "ยัง รับ ไม่ ครบ"
+  },
+  "9eb4d2a176205331e9cbad05": {
+    "file": "/audio/restaurant/th/9eb4d2a176205331e9cbad05.mp3",
+    "duration": 0.84,
+    "sha256": "f3dd33bf44ee1e20646a7e78063c6a8949572f84e6a2d916bd3070e563880c8d",
+    "spoken": "ยัง ไม่ ครบ"
+  },
+  "f5fe81542957c724f4f19e37": {
+    "file": "/audio/restaurant/th/f5fe81542957c724f4f19e37.mp3",
+    "duration": 2.112,
+    "sha256": "20af171deb578f33ad4ed704c2b18de7d00afe22b6778af54dfca601418212e1",
+    "spoken": "ยัง ไม่ จอง ของ และ ยัง ไม่ เรียก ชำระ"
+  },
+  "d870622394c8ff915deb674d": {
+    "file": "/audio/restaurant/th/d870622394c8ff915deb674d.mp3",
+    "duration": 1.848,
+    "sha256": "428347fc6e4a597f56140875aae45a29c82c9a96585ed06cfbe737c421a50933",
+    "spoken": "ยัง ไม่ ส่ง ครัว และ ไม่ จอง ของ"
+  },
+  "f97d827ef105390d9d2e7594": {
+    "file": "/audio/restaurant/th/f97d827ef105390d9d2e7594.mp3",
+    "duration": 1.368,
+    "sha256": "90bf7cdebf6898a8c305e57b14e38c7e7c75815edd61e1850aca489de7b02c80",
+    "spoken": "ยืนยัน ขาย สำเร็จ"
+  },
+  "51e7213eb8ecd01049aba065": {
+    "file": "/audio/restaurant/th/51e7213eb8ecd01049aba065.mp3",
+    "duration": 2.472,
+    "sha256": "80614c826657ca7d871ffa02d122d63c348a78bbcb51f0b85978105e63b56731",
+    "spoken": "ย้าย งาน ครัว เดิม ไม่ สร้าง รายการอาหาร ซ้ำ"
+  },
+  "ca807b2a16a2bdfb4515c5b1": {
+    "file": "/audio/restaurant/th/ca807b2a16a2bdfb4515c5b1.mp3",
+    "duration": 0.744,
+    "sha256": "ed6d785948b622fa149d46c1cf263793e9b94d893371ae1f04aea42c490ba81c",
+    "spoken": "ย้าย โต๊ะ"
+  },
+  "d21aa213d790978aed4af798": {
+    "file": "/audio/restaurant/th/d21aa213d790978aed4af798.mp3",
+    "duration": 0.768,
+    "sha256": "342f42d0b606742b39d5cb220ad0e996596ba3187ef7cd9679e0fb8ebb2d3be9",
+    "spoken": "รวม บิล"
+  },
+  "a10c8bff0a24cbf5a04daf9b": {
+    "file": "/audio/restaurant/th/a10c8bff0a24cbf5a04daf9b.mp3",
+    "duration": 2.688,
+    "sha256": "9a4d5d129af0ee6b30879e499756f31228619c329e20d45f615f05bf846bd3c2",
+    "spoken": "รหัส คำขอ เดิม แต่ ข้อมูล หรือ ผู้ทำ เปลี่ยน"
+  },
+  "1e0ab72624cfb9378bb4c962": {
+    "file": "/audio/restaurant/th/1e0ab72624cfb9378bb4c962.mp3",
+    "duration": 2.208,
+    "sha256": "e0d3643d34729aa3533e7f118d51ff6c80e940f20a1f70319af01a847bf7f269",
+    "spoken": "รับ ของ ไม่ เท่ากับ จ่าย เงิน ซัพพลายเออร์"
+  },
+  "2793e319d3e067931d1fce3d": {
+    "file": "/audio/restaurant/th/2793e319d3e067931d1fce3d.mp3",
+    "duration": 4.128,
+    "sha256": "7068e73c941f6ab13ab5b1d7a06215f092b644bac52f0bd9f0f81e0a4fd3326b",
+    "spoken": "รับ ของ ไม่ เท่ากับ จ่าย เงิน ซัพพลายเออร์ และ ยกเลิก พี โอ ไม่ ย้อน ของ ที่ รับ ไป แล้ว"
+  },
+  "442b5c26beeb245763880154": {
+    "file": "/audio/restaurant/th/442b5c26beeb245763880154.mp3",
+    "duration": 2.928,
+    "sha256": "160db17a81044bc88ecf68913943aa361a7a9fd906ec066cde87f648e16c799a",
+    "spoken": "รับ ชำระ ชำระ และ ตัด สต็อก ใน ธุรกรรม เดียวกัน"
+  },
+  "25aa1050fdd2882f19a11cc9": {
+    "file": "/audio/restaurant/th/25aa1050fdd2882f19a11cc9.mp3",
+    "duration": 2.808,
+    "sha256": "803c2068e008be34c7ec7c98eee5f60cd62bee50850c3de7e6e31661e35acb7d",
+    "spoken": "รับ ชำระ ตัด สินค้า ที่ ขาย ใน ธุรกรรม ชำระ"
+  },
+  "123640b9f77b6069d007403d": {
+    "file": "/audio/restaurant/th/123640b9f77b6069d007403d.mp3",
+    "duration": 3.24,
+    "sha256": "b393497a91b8e8564f9f0b46f464aafe165b0a2e8a86504ea5a151f105026dfc",
+    "spoken": "รับ ชำระ บันทึก การ ขาย และ ตัด สต็อก ใน ธุรกรรม เดียวกัน"
+  },
+  "b96674e298d70406c44902fd": {
+    "file": "/audio/restaurant/th/b96674e298d70406c44902fd.mp3",
+    "duration": 2.328,
+    "sha256": "8897cb6ae50e667eaffabb2f539910f48abb3f04cc6633e1e3acb73f26b3f9a4",
+    "spoken": "รับ ชำระ อัปเดต เฉพาะ บิล ที่ สำเร็จ"
+  },
+  "b4c6b9c8a129186903ec7b60": {
+    "file": "/audio/restaurant/th/b4c6b9c8a129186903ec7b60.mp3",
+    "duration": 1.608,
+    "sha256": "3f486fd1b223aedba040a1d2b2cecbfa2ee510c185ce4ccb9af456c3f0d5e63a",
+    "spoken": "รับ ชำระ แสดง ใบเสร็จ"
+  },
+  "ff7bedbbf163e37dd6bf73bd": {
+    "file": "/audio/restaurant/th/ff7bedbbf163e37dd6bf73bd.mp3",
+    "duration": 3.264,
+    "sha256": "950e21fe82fe1bdeeabdec3569e6e9ef45f2a6de6a7add3ff9d007e822d81d56",
+    "spoken": "รับ เข้า เฉพาะ ของ ที่ ตรวจรับ จริง และ ติดตาม ยอด ค้าง ใน พี โอ"
+  },
+  "ef0fc3fe47588aca7a62ca3d": {
+    "file": "/audio/restaurant/th/ef0fc3fe47588aca7a62ca3d.mp3",
+    "duration": 0.792,
+    "sha256": "0c6de3a905e5e7632caeddffa8439d375fa152aff17665e6fc3daf4076d47393",
+    "spoken": "รับ เอง"
+  },
+  "f753b33e1a6b3123f752f7c7": {
+    "file": "/audio/restaurant/th/f753b33e1a6b3123f752f7c7.mp3",
+    "duration": 2.448,
+    "sha256": "c3aeec8a9ac6e8e9878fb1ad751f5f1e0c9c333c03418b4f5a544c81ec707b74",
+    "spoken": "ราคา กลาง ยอด ตาม กติกา ที่ เข้า เงื่อนไข"
+  },
+  "215279dafd5f0b88a7c55c8f": {
+    "file": "/audio/restaurant/th/215279dafd5f0b88a7c55c8f.mp3",
+    "duration": 3.12,
+    "sha256": "d87c3408e7aa0722d87482b75c75fffe49288f3b1de9e12f8d8e3713916079a8",
+    "spoken": "ราคา และ โปรโมชั่น บันทึก ผู้อนุมัติ ขอบเขต และ เวลา"
+  },
+  "32d2a1f47d8abea185c72d7e": {
+    "file": "/audio/restaurant/th/32d2a1f47d8abea185c72d7e.mp3",
+    "duration": 2.736,
+    "sha256": "656b6fb0aec15a02d98bc557fd6df136e7b464dc164c8ad102b673d5ec0e07ed",
+    "spoken": "ราคา และ โปรโมชั่น แสดง ผลกระทบ ที่ คาด ไว้"
+  },
+  "4eb93dc3251e8fa70ebae73f": {
+    "file": "/audio/restaurant/th/4eb93dc3251e8fa70ebae73f.mp3",
+    "duration": 3.552,
+    "sha256": "e0254617a52191a378717d6d03e825a9ff2bf351d542f27d216708d664fc5531",
+    "spoken": "รายงาน และ วิเคราะห์ เมนู ยอดขาย ต้นทุน ของเสีย และ วิเคราะห์ เมนู"
+  },
+  "b5e8aec113ef8da58830b6c0": {
+    "file": "/audio/restaurant/th/b5e8aec113ef8da58830b6c0.mp3",
+    "duration": 3.168,
+    "sha256": "2305e7927bc080c6a3a5c9f8e89dcb7f8a03415095881e8003b190f39c98bebc",
+    "spoken": "รายงาน และ วิเคราะห์ เมนู อ่าน ต้นทุน จาก การเคลื่อนไหว จริง"
+  },
+  "33d0ba23ab92897a08dfdf4d": {
+    "file": "/audio/restaurant/th/33d0ba23ab92897a08dfdf4d.mp3",
+    "duration": 3.288,
+    "sha256": "a708f06e41b1a44ab4dae1bec4230ede23ad9c6dba15d91c943ad6579da1e649",
+    "spoken": "รายงาน และ วิเคราะห์ เมนู อ่าน ยอดขาย คืนเงิน และ ค่าใช้จ่าย"
+  },
+  "fad9a4cc43d741c8cf44c018": {
+    "file": "/audio/restaurant/th/fad9a4cc43d741c8cf44c018.mp3",
+    "duration": 3.648,
+    "sha256": "c64a29593339a019a1599ac84e22f54af7fd9c03481c2f30e95d4e89ae7494df",
+    "spoken": "รายงาน และ วิเคราะห์ เมนู แสดง ข้อมูล ที่ ไม่ ทราบ และ รายการ ต้อง ตรวจ"
+  },
+  "bc44ddd6c9652e8ec92d71fd": {
+    "file": "/audio/restaurant/th/bc44ddd6c9652e8ec92d71fd.mp3",
+    "duration": 3.048,
+    "sha256": "4ddcec23790fb04308e3745c1c5190a97b535101a94f58faef443eb7c3997a4b",
+    "spoken": "ร้าน ตรวจ คำขอ ยืนยัน บิล และ รับ เข้าครัว ก่อน ส่งมอบ"
+  },
+  "3a5c3fa9f0b4d7889d450470": {
+    "file": "/audio/restaurant/th/3a5c3fa9f0b4d7889d450470.mp3",
+    "duration": 0.936,
+    "sha256": "58d3c184b7fa3886c6fdf7930a5bf2ff97388f5cc060e3e8bb9f434b8c5ffb84",
+    "spoken": "ร้าน รับได้"
+  },
+  "d551e9e69b6d8cdc4225b62a": {
+    "file": "/audio/restaurant/th/d551e9e69b6d8cdc4225b62a.mp3",
+    "duration": 1.968,
+    "sha256": "fc9c209fe9fc45f84190e11a4d115c2cb4a80e46b3fdbf5aa80a5248434eb7f0",
+    "spoken": "ร้าน รับ ไม่ ได้ หรือ ข้อมูล ไม่ ครบ"
+  },
+  "3fd9cdb97c71e9132209e9f4": {
+    "file": "/audio/restaurant/th/3fd9cdb97c71e9132209e9f4.mp3",
+    "duration": 1.56,
+    "sha256": "8a03f71ddf339dd104d25581c029503e7abeae211cb094ebc3c85eceedcfcef1",
+    "spoken": "ลูกค้า ขอ ชำระเงิน"
+  },
+  "8b416b45f2f4113f5c3797eb": {
+    "file": "/audio/restaurant/th/8b416b45f2f4113f5c3797eb.mp3",
+    "duration": 2.064,
+    "sha256": "31021293e40b432af28c9383612a1f7a0f7f3bd70826536ef2122572af06cd35",
+    "spoken": "ลูกค้า ขอ เปลี่ยน โต๊ะ หรือ จัด บิล"
+  },
+  "e9780c2c7eaa8282e8903041": {
+    "file": "/audio/restaurant/th/e9780c2c7eaa8282e8903041.mp3",
+    "duration": 2.616,
+    "sha256": "7ea3b6f318ce51b0bd534c31f5090250b801c79c7d568e694e755f9c794db3eb",
+    "spoken": "ลูกค้า ชำระ ตาม ช่องทาง ที่ ร้าน เปิด ใช้"
+  },
+  "3f62cbd31b202c38ba8efc71": {
+    "file": "/audio/restaurant/th/3f62cbd31b202c38ba8efc71.mp3",
+    "duration": 1.464,
+    "sha256": "142172426e9e2b58ad8fa5fdd0ef8d316b196eefc5caa9f6f8184d4985fbed2d",
+    "spoken": "ลูกค้า มา รับ อาหาร"
+  },
+  "2748ed608c534436191c7d59": {
+    "file": "/audio/restaurant/th/2748ed608c534436191c7d59.mp3",
+    "duration": 1.56,
+    "sha256": "c0e7f50bec97827bdfaeae42c017e40bfba7f0773648f28048d91e4dd23a71ac",
+    "spoken": "ลูกค้า ยืนยัน คำขอ"
+  },
+  "59fc340ab7e31f3437985f9f": {
+    "file": "/audio/restaurant/th/59fc340ab7e31f3437985f9f.mp3",
+    "duration": 2.472,
+    "sha256": "c49141ef2fa0dc3cb17e8547703b00c929d2dfec10acd54442a6c23341986094",
+    "spoken": "ลูกค้า ระบุ สมาชิก และ สิทธิ์ ที่ ต้องการ"
+  },
+  "b4c297e1d8b1e9af3d835e5e": {
+    "file": "/audio/restaurant/th/b4c297e1d8b1e9af3d835e5e.mp3",
+    "duration": 1.92,
+    "sha256": "26f3a362c5c67cb456751a4a15aba6db8089fec506fb05134df2f1a90e674300",
+    "spoken": "ลูกค้า สั่งอาหาร และ ตัวเลือก"
+  },
+  "d8a6cf7f4c6dd13a8da368f1": {
+    "file": "/audio/restaurant/th/d8a6cf7f4c6dd13a8da368f1.mp3",
+    "duration": 2.184,
+    "sha256": "f71ba816c7abcdfe53f6924660008ba8a40710d5f7a2afa32f7d8f548c404261",
+    "spoken": "ลูกค้า ส่ง คำขอ จาก คิว อาร์ ใบเสร็จ"
+  },
+  "22bc5df2a19d20ad4e2e4f49": {
+    "file": "/audio/restaurant/th/22bc5df2a19d20ad4e2e4f49.mp3",
+    "duration": 1.968,
+    "sha256": "52056c5c81be36171cebf5ab8c9b9da4490a713b7a616238fcfaa575bbcf4d02",
+    "spoken": "ลูกค้า ส่ง รายการ ที่ ต้องการ"
+  },
+  "11a19cf8bbfb22e5351c3cdd": {
+    "file": "/audio/restaurant/th/11a19cf8bbfb22e5351c3cdd.mp3",
+    "duration": 1.488,
+    "sha256": "31254995c69215a97b730edc2ac530b63e9112a3a4405572d97d08f89e2454b4",
+    "spoken": "ลูกค้า เพิ่ม รายการ"
+  },
+  "ff95fa61601b67a6dbc95ce7": {
+    "file": "/audio/restaurant/th/ff95fa61601b67a6dbc95ce7.mp3",
+    "duration": 2.88,
+    "sha256": "0ce83a43dd5f663e4cfcd5e1fa2c1437e4f6ebcec8f53cf1b8d994bda732bce9",
+    "spoken": "ลูกค้า เลือก สาขา เมนู และ รับ เอง หรือ จัดส่ง"
+  },
+  "43b0e5b2c3f5bf26b6242c30": {
+    "file": "/audio/restaurant/th/43b0e5b2c3f5bf26b6242c30.mp3",
+    "duration": 2.16,
+    "sha256": "4cc3c47a91255796fc63426c3905ffbcd0362a213899130eb7381a4226fcb9a7",
+    "spoken": "ลูกค้า เลือก เครื่องดื่ม หรือ สินค้า"
+  },
+  "c326b5938a0b06180d7aa000": {
+    "file": "/audio/restaurant/th/c326b5938a0b06180d7aa000.mp3",
+    "duration": 2.616,
+    "sha256": "f898a6446dafa70a552d5a6c5875328b577ef940f8848f3bc14e70bb257a38dc",
+    "spoken": "ลูกค้า เล่น เกม และ สั่ง เครื่องดื่ม เพิ่มเติม"
+  },
+  "8848bc6faceafa02ed7d7d61": {
+    "file": "/audio/restaurant/th/8848bc6faceafa02ed7d7d61.mp3",
+    "duration": 2.04,
+    "sha256": "4965307a1c3db60fba81c367fa9ba0e2fbe5f95fe0beba4e402056867b7fda2c",
+    "spoken": "ลูกค้า แจ้ง ชำระ พร้อม หลักฐาน"
+  },
+  "490ae76ca465732acdaf0bd7": {
+    "file": "/audio/restaurant/th/490ae76ca465732acdaf0bd7.mp3",
+    "duration": 1.848,
+    "sha256": "6c359e2b85557acb87296bef54f020d5875fb3d63e51bd96b6257940ed1c4f3b",
+    "spoken": "ลูกค้า สั่ง ผ่าน คิว อาร์ โต๊ะ"
+  },
+  "964df94d81ac7b562c066941": {
+    "file": "/audio/restaurant/th/964df94d81ac7b562c066941.mp3",
+    "duration": 1.32,
+    "sha256": "5d04feacb4a1999570e529c7cf36ba93636aba8c959bd6359d325862e757e59a",
+    "spoken": "ลูกค้า สั่ง เพิ่ม"
+  },
+  "62789ec674473fcf23c835ec": {
+    "file": "/audio/restaurant/th/62789ec674473fcf23c835ec.mp3",
+    "duration": 3.624,
+    "sha256": "106fd7bb65a11b3406598c77ef97e84bd87de463867cf55cd592d69b97a369c5",
+    "spoken": "วิเคราะห์ ต้นทุน และ ราคา ต้นทุน ประมาณการ ราคา และ เป้า คุ้มทุน"
+  },
+  "dcfac7adee1c7ba70c67ca29": {
+    "file": "/audio/restaurant/th/dcfac7adee1c7ba70c67ca29.mp3",
+    "duration": 3.048,
+    "sha256": "0fc406ff274653c4729c4da8aa6375e83f7cd11717a126f850a2828bd42d0c25",
+    "spoken": "วิเคราะห์ ต้นทุน และ ราคา บันทึก ราคา หรือ โปรโมชั่น"
+  },
+  "e500aca3845e003fb0f9a614": {
+    "file": "/audio/restaurant/th/e500aca3845e003fb0f9a614.mp3",
+    "duration": 3.624,
+    "sha256": "c223709221c83ab04eb3d82502d0aa871d1e6b8298d687bf9e71a4b0f5cde677",
+    "spoken": "วิเคราะห์ ต้นทุน และ ราคา ระบุ ข้อมูล ที่ ไม่ ทราบ และ หลักฐาน ที่ ขาด"
+  },
+  "6d8d38d4e6a661a1cae354a8": {
+    "file": "/audio/restaurant/th/6d8d38d4e6a661a1cae354a8.mp3",
+    "duration": 3.288,
+    "sha256": "67c5d2a85868f8bea56cc17fd792bf96f9457ee723157498db8d1aca16df56ae",
+    "spoken": "วิเคราะห์ ต้นทุน และ ราคา อ่าน ส่วนประกอบ และ หลักฐาน ต้นทุน"
+  },
+  "1c8224a434086a9fc2d132fe": {
+    "file": "/audio/restaurant/th/1c8224a434086a9fc2d132fe.mp3",
+    "duration": 3.816,
+    "sha256": "7a598bd8d201e67ba288e2a2267f08f1b841ac1c18f08fa41497b84f84c03fbe",
+    "spoken": "วิเคราะห์ ต้นทุน และ ราคา แสดง สาขา ช่องทาง ช่วงเวลา และ ผลกระทบ"
+  },
+  "046b4614789c69514175a474": {
+    "file": "/audio/restaurant/th/046b4614789c69514175a474.mp3",
+    "duration": 2.088,
+    "sha256": "c1c023d8056096ef378022c34235074eb04ee9fd3ae888284f3a4e79af1aeb78",
+    "spoken": "สต็อก บี เอ็ม เอส จำนวน พร้อม ใช้"
+  },
+  "09965aa4769ca78a608ee0a3": {
+    "file": "/audio/restaurant/th/09965aa4769ca78a608ee0a3.mp3",
+    "duration": 3.24,
+    "sha256": "618c6116fb5a26d13fd0a44adadbed2bfd95619bf9954b2f7f27b8d1d80069c1",
+    "spoken": "สต็อก บี เอ็ม เอส บันทึก ราย การเคลื่อนไหว และ ผู้ดำเนินการ"
+  },
+  "3621bb37e435ab4a7408f9aa": {
+    "file": "/audio/restaurant/th/3621bb37e435ab4a7408f9aa.mp3",
+    "duration": 2.592,
+    "sha256": "d4b2ec0cb5fe4f80ce1c50c13701bf310f973e7e80bb054c0070bad938e149fd",
+    "spoken": "สต็อก บี เอ็ม เอส แสดง ส่วน ต่าง และ เหตุผล"
+  },
+  "919109eadf64618f239b7faa": {
+    "file": "/audio/restaurant/th/919109eadf64618f239b7faa.mp3",
+    "duration": 1.2,
+    "sha256": "da50ab954404d2406c30b691212021261a0a7728661e38811392b7b2247f167b",
+    "spoken": "สต็อก จอง สำเร็จ"
+  },
+  "059d61c77f35a51d95ceef7d": {
+    "file": "/audio/restaurant/th/059d61c77f35a51d95ceef7d.mp3",
+    "duration": 1.344,
+    "sha256": "0eb6e7d62c927cc5f8a0877227798ba45f63d1ccd00d08ab6ff5ebec11b5b195",
+    "spoken": "สต็อก ผ่าน การ ตรวจ"
+  },
+  "53b166f725f88bf1e1789b13": {
+    "file": "/audio/restaurant/th/53b166f725f88bf1e1789b13.mp3",
+    "duration": 1.92,
+    "sha256": "e5de9bfd07ceba5c21768d7b626c4104da4cde8d223d112027c07d490ae392b7",
+    "spoken": "สต็อก ระบุ รายการ ที่ ต้อง แก้"
+  },
+  "31cdd823249a232e83ec23d5": {
+    "file": "/audio/restaurant/th/31cdd823249a232e83ec23d5.mp3",
+    "duration": 2.256,
+    "sha256": "ef0cccea5c39bfd160dfca8ef70df7cf6a74df423892a71f30d75c74d2f97f01",
+    "spoken": "สต็อก แจ้ง รายการ ให้ แก้ ก่อน ส่ง ครัว"
+  },
+  "e4fc9a47ea8d4ebf040bb16a": {
+    "file": "/audio/restaurant/th/e4fc9a47ea8d4ebf040bb16a.mp3",
+    "duration": 1.824,
+    "sha256": "b8d550bca40cb55030b91aecd230fef5822264abdfcd8929c19a59182b3d4782",
+    "spoken": "สต็อก และ ต้นทุน ผล การ จอง"
+  },
+  "b629b3e99416197fb79ed73b": {
+    "file": "/audio/restaurant/th/b629b3e99416197fb79ed73b.mp3",
+    "duration": 3.648,
+    "sha256": "56752931076b08cc6ef0d7babbdb991330aa08fc0aa4619c8636d148b434b849",
+    "spoken": "สร้าง ใช้ ทั้งสอง สาขา ส่ง และ ยก เลิกใช้ ต้นทาง รับใช้ ปลายทาง"
+  },
+  "85aedee25645fba23f5ffa8d": {
+    "file": "/audio/restaurant/th/85aedee25645fba23f5ffa8d.mp3",
+    "duration": 1.848,
+    "sha256": "54f2f31340fc743611f8feaeb72001425adbcd624999a5e3142ef600d006183d",
+    "spoken": "สำเร็จ แล้ว และ ข้อมูล ตรงกัน"
+  },
+  "4b68bea1b44218cf06f471e4": {
+    "file": "/audio/restaurant/th/4b68bea1b44218cf06f471e4.mp3",
+    "duration": 2.424,
+    "sha256": "5ce064a90c8dfb7c016b48a4fbfe631f0938edb260b8362f4d787f3e29aa2e23",
+    "spoken": "สินค้า และ ราคา คืน รายการ ที่ ขาย ได้"
+  },
+  "1554e54fe58259c44a1fe25e": {
+    "file": "/audio/restaurant/th/1554e54fe58259c44a1fe25e.mp3",
+    "duration": 2.064,
+    "sha256": "bbd9e4a9bbab9c1e9a5ae3a381d58428114a5dcec28b45f0ea066319a28b538e",
+    "spoken": "สินค้า และ สต็อก ยืนยัน ยอด จอง"
+  },
+  "1ff3b5a3f071bf4fc7ae623b": {
+    "file": "/audio/restaurant/th/1ff3b5a3f071bf4fc7ae623b.mp3",
+    "duration": 7.608,
+    "sha256": "efdde6cd9a70a55dff02b134bb988086b9f996995e67fb76dc506c3454c980ad",
+    "spoken": "สูตร เครื่องดื่ม และ ตัวเลือก ใช้ได้ ตาม ข้อมูล สินค้า และ ความสามารถ ที่ ร้าน เปิด ใช้ คาเฟ่ ไม่ ถูก บังคับใช้ ขั้นตอน ออร์เดอร์ ออนไลน์ เฉพาะ ร้านอาหาร"
+  },
+  "c1b218d766bcc5971b8f2ea3": {
+    "file": "/audio/restaurant/th/c1b218d766bcc5971b8f2ea3.mp3",
+    "duration": 1.176,
+    "sha256": "ab47639d23150819cd76e5634872da5ab64a276c42653364ea74cef85a616839",
+    "spoken": "ส่งมอบ ไม่ สำเร็จ"
+  },
+  "fed5014a4fd1b4be2b46bb85": {
+    "file": "/audio/restaurant/th/fed5014a4fd1b4be2b46bb85.mp3",
+    "duration": 1.032,
+    "sha256": "2a35873a436084586aa097e60eecf6e7497a45e48c7148f44646f11b0a2fc05e",
+    "spoken": "ส่ง รอบ สำเร็จ"
+  },
+  "5c09e7ef263e4a55734be670": {
+    "file": "/audio/restaurant/th/5c09e7ef263e4a55734be670.mp3",
+    "duration": 3.24,
+    "sha256": "23327225adefff98ad7dc1a46841d3b25ee4e52477bef8e0fafa9475df344ff2",
+    "spoken": "ส่ง อีเมล ล้มเหลว ไม่ ย้อน เอกสาร พี ดี เอฟ ไม่ ใช่ อี แท็ก ซ์"
+  },
+  "889444fef177999c0879179f": {
+    "file": "/audio/restaurant/th/889444fef177999c0879179f.mp3",
+    "duration": 3.168,
+    "sha256": "dd3b5aa79cdcdb442938a3e385cfe90e6120a28d2066fbfbc5ca8cb360db8d93",
+    "spoken": "ส่วน ต่าง หลัง ต้นทุน วัตถุดิบ ไม่ ใช่ กำไรสุทธิ ทั้ง ร้าน"
+  },
+  "086b7fc4bd2c843d1358b7ff": {
+    "file": "/audio/restaurant/th/086b7fc4bd2c843d1358b7ff.mp3",
+    "duration": 4.608,
+    "sha256": "9814d0fb4624f407c2cc2a9d538a151172ac7318e0eab0489d281a4f0a472179",
+    "spoken": "ส่วน ต่าง หลัง ต้นทุน วัตถุดิบ ไม่ ใช่ กำไรสุทธิ ทั้ง ร้าน ข้อมูล ที่ ขาด แสดงว่า ไม่ ทราบ"
+  },
+  "df5c781f4f91736673cd44cf": {
+    "file": "/audio/restaurant/th/df5c781f4f91736673cd44cf.mp3",
+    "duration": 1.296,
+    "sha256": "6f51bc78312f7680b4c5004ccdd1be4a6e075b5075d4c924df0cd7977aebe556",
+    "spoken": "ส่วน ที่ ไม่ ใช่ เงินสด"
+  },
+  "d65c16cc4c9e58ab0be8e1fb": {
+    "file": "/audio/restaurant/th/d65c16cc4c9e58ab0be8e1fb.mp3",
+    "duration": 1.248,
+    "sha256": "71c894f488bc7932adad4c64b7850a55da91cdcf8481db9c8c7918d8edc495bf",
+    "spoken": "ส่วนลด กำหนด เอง"
+  },
+  "0aa7d9304949175900de0235": {
+    "file": "/audio/restaurant/th/0aa7d9304949175900de0235.mp3",
+    "duration": 0.864,
+    "sha256": "ebda0bee1ef82644bf75ac36f7ee48805fa7565bdf9696d6d9b2798638d3e372",
+    "spoken": "ส่วน เงินสด"
+  },
+  "b28a295fbf156394fb729466": {
+    "file": "/audio/restaurant/th/b28a295fbf156394fb729466.mp3",
+    "duration": 3.024,
+    "sha256": "b3e43fbccb10560fd095f2f7ba020dcb3a54f39c814883faa0a8d1459f802866",
+    "spoken": "หน้าจอ ใบ โอน ล้าง คำขอ ค้าง และ โหลด ข้อมูล ล่าสุด"
+  },
+  "f6fffc383d80dc89a3c90483": {
+    "file": "/audio/restaurant/th/f6fffc383d80dc89a3c90483.mp3",
+    "duration": 2.856,
+    "sha256": "302caf8a575acee0c24307c67f5eaccc82432ff21b2605669f8c3fc305fc2014",
+    "spoken": "หน้าจอ ใบ โอน ส่ง ข้อมูล และ รหัส คำขอ เดิม"
+  },
+  "322f046eac17645c686d9fd4": {
+    "file": "/audio/restaurant/th/322f046eac17645c686d9fd4.mp3",
+    "duration": 3.264,
+    "sha256": "daa862c7f4ccc79e566530b733f0631467cc47b55c8f081b769e9baab26159c4",
+    "spoken": "หน้าจอ ใบ โอน ส่ง คำสั่ง พร้อม รหัส คำขอ ของ รายการ"
+  },
+  "732acab6f928afde4f34c999": {
+    "file": "/audio/restaurant/th/732acab6f928afde4f34c999.mp3",
+    "duration": 3.264,
+    "sha256": "b6ba7fa96ce11d34f2ca3547bf690f6d55b96fa6e730f1e1956b3d05a264d6f1",
+    "spoken": "หน้าจอ ใบ โอน เก็บ ข้อมูล คำขอ และ รหัส คำขอ ก่อน ส่ง"
+  },
+  "89089b7af3e9513ba9d5d4db": {
+    "file": "/audio/restaurant/th/89089b7af3e9513ba9d5d4db.mp3",
+    "duration": 2.448,
+    "sha256": "0db9a660499e2002c20a2fc4aef3e31ec07fd7079511a260e92430f326d1f1aa",
+    "spoken": "หน้าจอ ใบ โอน ให้ ตรวจ ผล คำขอ เดิม"
+  },
+  "d8d3378aa3affbf18d860250": {
+    "file": "/audio/restaurant/th/d8d3378aa3affbf18d860250.mp3",
+    "duration": 1.536,
+    "sha256": "5b10b9befbb1798fa5832dfa07f54bf75cbda607c3ec0835cffdba87b2eaf7eb",
+    "spoken": "หน้าจอ ได้รับ คำตอบ"
+  },
+  "c74f68a843a4191f7318eacb": {
+    "file": "/audio/restaurant/th/c74f68a843a4191f7318eacb.mp3",
+    "duration": 3.672,
+    "sha256": "c73029ec227104b0d49a9af38e5efd4763181f1df985c5eb5a32328fde651834",
+    "spoken": "หน้า ร้าน กับ ครัว เห็น รายการ เดียวกัน ตั้งแต่ สั่งอาหาร จน ออก ใบเสร็จ"
+  },
+  "1e3275a3843702ed36352eee": {
+    "file": "/audio/restaurant/th/1e3275a3843702ed36352eee.mp3",
+    "duration": 0.96,
+    "sha256": "810904c6d1742d01885c9d72bc1cfa79a8acfcbf3e15bcfa60c436c88273f2b6",
+    "spoken": "หลักฐาน ครบ"
+  },
+  "69dbd961e5c10a97cdf54e53": {
+    "file": "/audio/restaurant/th/69dbd961e5c10a97cdf54e53.mp3",
+    "duration": 1.08,
+    "sha256": "ece4342e294bdd9ff015a66cae81b1f459f1894538be0c412e37a2f005c47edf",
+    "spoken": "หลักฐาน ไม่ ครบ"
+  },
+  "d2ff4ac9e0872ce71f229e17": {
+    "file": "/audio/restaurant/th/d2ff4ac9e0872ce71f229e17.mp3",
+    "duration": 3.72,
+    "sha256": "2a031f3697c39531b9e2c1256f08f842cb5ead9c294c869a7be90632a1deaa28",
+    "spoken": "อนุมัติ คำขอ ยัง ไม่ ตัด ของ และ ใบ โอน ใช้ได้ เฉพาะ สินค้า ที่ รองรับ"
+  },
+  "95789baac4e4ebab3ab582ee": {
+    "file": "/audio/restaurant/th/95789baac4e4ebab3ab582ee.mp3",
+    "duration": 4.08,
+    "sha256": "d47d24afbfb3fbb29a26aae995a0a27f43c4e7eaa2a35cfe806e1cdc1af43000",
+    "spoken": "อนุมัติ คำขอ ไม่ ตัด ของ รับ พี โอ ไม่ ใช่ หลักฐาน ว่า สาขา ปลายทาง ได้รับ แล้ว"
+  },
+  "0929705a6343ede35ba3c019": {
+    "file": "/audio/restaurant/th/0929705a6343ede35ba3c019.mp3",
+    "duration": 1.728,
+    "sha256": "ae00301eaf0e176c0fccb14acf996dfc5f30f89a53c7a99a6969cfb9d52c053c",
+    "spoken": "อนุมัติ ทั้งหมด หรือ บางส่วน"
+  },
+  "08ed153f1f892bdff9c188b4": {
+    "file": "/audio/restaurant/th/08ed153f1f892bdff9c188b4.mp3",
+    "duration": 3.552,
+    "sha256": "47f679c1c144387dcdcd53fc081d4109b9c3c550e7b03edc1fce199a9bec3fcb",
+    "spoken": "อย่า สร้าง รหัส คำขอ ใหม่ เพื่อ ทดลอง ซ้ำ เมื่อ ยัง ไม่ ทราบ ผล เดิม"
+  },
+  "30a0d94ebd5c4d73b3222d7a": {
+    "file": "/audio/restaurant/th/30a0d94ebd5c4d73b3222d7a.mp3",
+    "duration": 2.592,
+    "sha256": "d49b6c1e0c9f1100307232cde5be3dc05b911b379495c0629539875466062a61",
+    "spoken": "ออร์เดอร์ และ ชำระ ตัด สต็อก และ บันทึก การ ส่ง"
+  },
+  "50af2fcd6ced768fdf31ca25": {
+    "file": "/audio/restaurant/th/50af2fcd6ced768fdf31ca25.mp3",
+    "duration": 2.64,
+    "sha256": "ed335c275a5fb728d275add921b3c21d2f85087e10ab2c9bf6ed3f56dd74ae62",
+    "spoken": "ออร์เดอร์ และ ชำระ ตัด สต็อก และ บันทึก ส่งมอบ"
+  },
+  "c3f1239bbe631be17399e28d": {
+    "file": "/audio/restaurant/th/c3f1239bbe631be17399e28d.mp3",
+    "duration": 2.88,
+    "sha256": "5d537d1d6828c31abc39c9812fe7fd84d558d7e48a0e1c7d10c4261defeb1f3b",
+    "spoken": "ออร์เดอร์ และ ชำระ ยอด ใหม่ และ เงิน คืน ตาม โฟลว์ ห้า"
+  },
+  "3e4caacf25ede4f992179c9b": {
+    "file": "/audio/restaurant/th/3e4caacf25ede4f992179c9b.mp3",
+    "duration": 1.944,
+    "sha256": "0e5939b8ca4d34ad7cac703137bd2a2c0b6a6430db40438aa288a6107ed730d8",
+    "spoken": "ออร์เดอร์ และ ชำระ สร้าง งาน ครัว"
+  },
+  "da77d46c00df404218bf49da": {
+    "file": "/audio/restaurant/th/da77d46c00df404218bf49da.mp3",
+    "duration": 3.096,
+    "sha256": "57c183001e5316fb02d8d5b51a8e7d1cf5e6144b64c19f41d6a8ef0121b4bb10",
+    "spoken": "ออร์เดอร์ และ ชำระ ส่ง สรุป และ ช่องทาง ที่ ร้าน ตั้งค่า"
+  },
+  "f4a21048507ae735fde21a49": {
+    "file": "/audio/restaurant/th/f4a21048507ae735fde21a49.mp3",
+    "duration": 1.704,
+    "sha256": "e2f5ff82bfdb791109643a033455959ba13769b2bebc2fcfe636fe9161c421b8",
+    "spoken": "เครือข่าย ขาด จน ไม่ ทราบ ผล"
+  },
+  "35881c95dcb69dd50232f649": {
+    "file": "/audio/restaurant/th/35881c95dcb69dd50232f649.mp3",
+    "duration": 2.712,
+    "sha256": "69b375bae059fac0f294909809ba33a2e513e90198978b2be3208e41964d817b",
+    "spoken": "เงิน และ ค่าใช้จ่าย ยอด ระบบ เงิน จริง และ ส่วน ต่าง"
+  },
+  "44e4b6b233582937185c9bce": {
+    "file": "/audio/restaurant/th/44e4b6b233582937185c9bce.mp3",
+    "duration": 1.2,
+    "sha256": "aea4d4510a774671ab29e70938989591321526839550486d7e9cb2e25e637ebb",
+    "spoken": "เงื่อนไข ไม่ ผ่าน"
+  },
+  "fbd63b29cb7f29c92f2e690a": {
+    "file": "/audio/restaurant/th/fbd63b29cb7f29c92f2e690a.mp3",
+    "duration": 3.12,
+    "sha256": "d40173a4effbe51b9f5baa82d5c4969a81af6785a3bf072e8158a15b8ee4bee6",
+    "spoken": "เจ้าของ ผู้จัดการ ตั้ง สาขา เมนู วัตถุดิบ และ หน่วย นับ"
+  },
+  "c35012a22ab62ee8788366a8": {
+    "file": "/audio/restaurant/th/c35012a22ab62ee8788366a8.mp3",
+    "duration": 2.112,
+    "sha256": "b0f04f7898ad3f188067e608599a0f08bb689e0b49ac8654148357fd2b291e7e",
+    "spoken": "เจ้าของ ผู้จัดการ ยืนยัน เผยแพร่"
+  },
+  "5644403479ca584e7c955a6c": {
+    "file": "/audio/restaurant/th/5644403479ca584e7c955a6c.mp3",
+    "duration": 4.008,
+    "sha256": "ee33e5fba8fb3db52db11b8a814ac0feb2d51ec5856ad7b4c9257bcc48763eeb",
+    "spoken": "เจ้าของ ผู้จัดการ ระบุ สมมติฐาน แรงงาน พลังงาน ค่าใช้จ่าย และ ยอดขาย"
+  },
+  "1eca759b57fb8ef4d65f6d56": {
+    "file": "/audio/restaurant/th/1eca759b57fb8ef4d65f6d56.mp3",
+    "duration": 3.408,
+    "sha256": "61ad8d44f82a47365df4204c69c1894f9535e3ef155d34c6820a6393bcdb1861",
+    "spoken": "เจ้าของ ผู้จัดการ เลือก ราคา แพ็ก หรือ โปรโมชั่น และ ดู ตัวอย่าง"
+  },
+  "90dcd11d4df4529199a35b6e": {
+    "file": "/audio/restaurant/th/90dcd11d4df4529199a35b6e.mp3",
+    "duration": 2.448,
+    "sha256": "c5d1e19cd0b021ba8550c9ec7f099478c2ae8d7275437012fa39998c2077bcc6",
+    "spoken": "เจ้าของ ผู้จัดการ เลือก สูตร และ ฐาน ต้นทุน"
+  },
+  "f3093f52ed5ea3c18b067374": {
+    "file": "/audio/restaurant/th/f3093f52ed5ea3c18b067374.mp3",
+    "duration": 3.576,
+    "sha256": "6c08c4c9a4a3f00dc5748142343f0defeeac220244fa7d1bc412b72a16a8bb9d",
+    "spoken": "เปลี่ยน สูตร ของ ร้าน ให้ เป็น ข้อมูล ที่ ใช้ คำนวณ และ ตัดสินใจ ได้"
+  },
+  "be2045b36adf648d1d859868": {
+    "file": "/audio/restaurant/th/be2045b36adf648d1d859868.mp3",
+    "duration": 2.64,
+    "sha256": "890ccd70de82a7bb5ece5b2ed010cba2619e7ecb492ec97cea8ea0d654d771ba",
+    "spoken": "เมนู และ สูตร บี เอ็ม เอส เก็บ เวอร์ ชันสูตร"
+  },
+  "fc31f3424fc43745bc38a83f": {
+    "file": "/audio/restaurant/th/fc31f3424fc43745bc38a83f.mp3",
+    "duration": 1.2,
+    "sha256": "0dd61b6f9f402c56af6282c0111ed7b1cf31669a142bb2c3c3c11cd5fb39a580",
+    "spoken": "เลือก ส่ง อีเมล"
+  },
+  "73f35cfa4cfe19db0605838c": {
+    "file": "/audio/restaurant/th/73f35cfa4cfe19db0605838c.mp3",
+    "duration": 3.168,
+    "sha256": "c21a641ac05e07558db3f295b305be7864fbcfc75064efb95795228cfb677b92",
+    "spoken": "เวลา ที่ เล่น ไม่ ใช่ เอส เค ยู และ โต๊ะ ไม่ ใช่ เจ้าของ บิล"
+  },
+  "4d2576894c61f0db99506562": {
+    "file": "/audio/restaurant/th/4d2576894c61f0db99506562.mp3",
+    "duration": 3.024,
+    "sha256": "4ebf9b3b2a84392f81deb9eb09f35728dc43a2dc3b3acb661468c7f9ae6b129a",
+    "spoken": "เห็น ตั้งแต่ สาขา ขอ ของ จน ปลายทาง ตรวจรับ จริง"
+  },
+  "7828a836143eb735d1408e41": {
+    "file": "/audio/restaurant/th/7828a836143eb735d1408e41.mp3",
+    "duration": 2.928,
+    "sha256": "07418328ec26eee848ac0972523a84a8e3a469c9edf17cb706b01f0c0063938f",
+    "spoken": "เห็น ยอด ระบบ เงิน ที่ นับ จริง และ เอกสาร ที่ ต้อง ตรวจ"
+  },
+  "510f8f90c47797805572758d": {
+    "file": "/audio/restaurant/th/510f8f90c47797805572758d.mp3",
+    "duration": 2.544,
+    "sha256": "a2cbd6c52cf967f2f79f6c6cb13d2efcf2d3fba991ed18cd81794556b63a48c9",
+    "spoken": "เอกสาร ภาษี ข้อมูล ผู้ซื้อ และ คำขอ"
+  },
+  "ec6ce7c00e5f52d832cd5f8a": {
+    "file": "/audio/restaurant/th/ec6ce7c00e5f52d832cd5f8a.mp3",
+    "duration": 2.808,
+    "sha256": "ffa92a783354d720625f999394a12a17cd4e8070c0912b2ef4f00d251a453656",
+    "spoken": "เอกสาร ภาษี ตรวจ สิทธิ์ สาขา และ เงื่อนไข บิล"
+  },
+  "83d0b3a0dadd928526784fe9": {
+    "file": "/audio/restaurant/th/83d0b3a0dadd928526784fe9.mp3",
+    "duration": 2.448,
+    "sha256": "55d2775232a8a007248a40823598d3a6c92b8c5c16feeee989274d55e4a5c50e",
+    "spoken": "เอกสาร ภาษี ออก เอกสาร ตาม ขั้นตอน"
+  },
+  "63c0b5b9906204c80452c83a": {
+    "file": "/audio/restaurant/th/63c0b5b9906204c80452c83a.mp3",
+    "duration": 2.928,
+    "sha256": "0c956dda311ac3be1585c5fff1f8480b6e50cb911c6056c5a5839333bfcdf4b9",
+    "spoken": "เอกสาร ภาษี เข้าคิว ส่ง พี ดี เอฟ และ ติดตาม ผล"
+  },
+  "37114ffe0772957233b62d8b": {
+    "file": "/audio/restaurant/th/37114ffe0772957233b62d8b.mp3",
+    "duration": 2.448,
+    "sha256": "d471f7b191f96e0692ec63b5e49259c528ec097133acb91388d93a9bab0064c2",
+    "spoken": "เอกสาร ภาษี แจ้ง เหตุผล ที่ ออก ไม่ ได้"
+  },
+  "30fdb60c031c2a65f0e47693": {
+    "file": "/audio/restaurant/th/30fdb60c031c2a65f0e47693.mp3",
+    "duration": 2.064,
+    "sha256": "66efed3c4ba11b072cf89c1a7286806caddc20e4bc858521d0d3ee9d0999bb7a",
+    "spoken": "แคชเชียร์ กรอก เงิน นับ จริง และ หมายเหตุ"
+  },
+  "c1f9c011a600e10fdfa055dd": {
+    "file": "/audio/restaurant/th/c1f9c011a600e10fdfa055dd.mp3",
+    "duration": 2.4,
+    "sha256": "fed71898b3260bf8028a781e41ff9b4ba5354defac2cb146048bd512ff57e7de",
+    "spoken": "แคชเชียร์ ขอ ปิด กะ ของ เครื่อง ที่ รับผิดชอบ"
+  },
+  "8fd6ee3ee786aa5dbf9692b7": {
+    "file": "/audio/restaurant/th/8fd6ee3ee786aa5dbf9692b7.mp3",
+    "duration": 1.68,
+    "sha256": "b784bc3a4251ab969cecd9b6dc41ee4c7e96e8366a3f4f55083c17cbd6df292a",
+    "spoken": "แคชเชียร์ ตก ลงรายการ ใหม่"
+  },
+  "4870bd6e6654eaebc4d93552": {
+    "file": "/audio/restaurant/th/4870bd6e6654eaebc4d93552.mp3",
+    "duration": 2.016,
+    "sha256": "dc4d610cd4447e087fcde2decdf085d90cf6e0f1c9e0ec8b26ddc3a07d340326",
+    "spoken": "แคชเชียร์ ยืนยัน พิน สิทธิ์ และ กะ ขาย"
+  },
+  "78c3c0614299c16697916ea7": {
+    "file": "/audio/restaurant/th/78c3c0614299c16697916ea7.mp3",
+    "duration": 2.616,
+    "sha256": "dfdcd60259ad94eef2a99c527cf665ffdc664e2510d96ed7081f977c5e8d6371",
+    "spoken": "แคชเชียร์ ยืนยัน รับ ชำระ ด้วย รหัส คำขอ"
+  },
+  "4e05e7668a3e22f9ab948f70": {
+    "file": "/audio/restaurant/th/4e05e7668a3e22f9ab948f70.mp3",
+    "duration": 1.92,
+    "sha256": "d64155ed305ce1a30cbb6c93d19e53766d821aee2eae2bf2d068a0a419d65dcd",
+    "spoken": "แคชเชียร์ ส่ง ให้ ผู้ มีสิทธิ์ สะสาง"
+  },
+  "7e311dad4c32d7934cd04456": {
+    "file": "/audio/restaurant/th/7e311dad4c32d7934cd04456.mp3",
+    "duration": 2.808,
+    "sha256": "08c9fb2a322d4b4338caef61fe724db3fd5b6048a3753cdef5b3010c61ef77b0",
+    "spoken": "แคชเชียร์ เพิ่ม สินค้า ขนาด และ ตัวเลือก ที่ รองรับ"
+  },
+  "5e8c294bd2aa6c20410569e5": {
+    "file": "/audio/restaurant/th/5e8c294bd2aa6c20410569e5.mp3",
+    "duration": 3.936,
+    "sha256": "dcf15d075bbe15b1d3272840d606492e73a1e8afafa34739da885aae88b66719",
+    "spoken": "แยก การ ยกเลิก อาหาร ออกจาก การ คืนเงิน จริง พร้อม ติดตาม รายการ ค้าง"
+  },
+  "8c6d28acb096c86ff9f28ca2": {
+    "file": "/audio/restaurant/th/8c6d28acb096c86ff9f28ca2.mp3",
+    "duration": 0.864,
+    "sha256": "1f248964c17eba636abdf45a89674c6e79eed37dc0968b227927f8f88ee972e4",
+    "spoken": "แยก บิล"
+  },
+  "ce87aa904b62ae9b38b6c7ce": {
+    "file": "/audio/restaurant/th/ce87aa904b62ae9b38b6c7ce.mp3",
+    "duration": 3.888,
+    "sha256": "c411d7f3eec2f088a66f0118d2f2d55fbab1188a05fc166fd18c425701a073f6",
+    "spoken": "แยก หรือ รวม บิล ใช้กับ รับประทาน ที่ ร้าน และ ไม่ สร้าง งาน ปรุงอาหาร ซ้ำ"
+  },
+  "2f0fa8a6ec4611ffbe8b101a": {
+    "file": "/audio/restaurant/th/2f0fa8a6ec4611ffbe8b101a.mp3",
+    "duration": 3.6,
+    "sha256": "16bef86d58c287daf6044478108315fc49f8424d9d8699e5983853b186a2d0a4",
+    "spoken": "แยก เวลา ที่ เล่น กลุ่ม ที่ รับเงิน และ สินค้า หรือ เครื่องดื่ม ใน บิล"
+  },
+  "7d357cd579e0e8e226b38fdd": {
+    "file": "/audio/restaurant/th/7d357cd579e0e8e226b38fdd.mp3",
+    "duration": 2.976,
+    "sha256": "98a2fc591411de241dfb20fed82744461b904809f642eadaff3bd9ae3aa52c88",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส จอง สต็อก ตาม รายการ และ สูตร"
+  },
+  "85ca174d6039fcb3d88b4758": {
+    "file": "/audio/restaurant/th/85ca174d6039fcb3d88b4758.mp3",
+    "duration": 3.48,
+    "sha256": "e18d07ed7463c98ffc784ead8ee19987c18c1d7f4608e54ec4997f3780092521",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส ตรวจ เมนู ตัวเลือก ราคา และ โปรโมชั่น"
+  },
+  "2bda03e43661928e57372be4": {
+    "file": "/audio/restaurant/th/2bda03e43661928e57372be4.mp3",
+    "duration": 2.784,
+    "sha256": "8c34d8d7bca132254a8ea3d23570fe1990bf923b3931365ba92700e5dd643505",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส สร้าง งาน ตาม สถานี งาน"
+  },
+  "bdddbdd96f210faea7593506": {
+    "file": "/audio/restaurant/th/bdddbdd96f210faea7593506.mp3",
+    "duration": 3.168,
+    "sha256": "f04d6f485c2a2ec75cebd1adcb8d640b2fbb00c099df7cd07dd540d6ab4baf66",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส สร้าง งาน รอบ ใหม่ เมื่อ ผ่าน การ ตรวจ"
+  },
+  "a024a84b9f96e2a92b80aa0f": {
+    "file": "/audio/restaurant/th/a024a84b9f96e2a92b80aa0f.mp3",
+    "duration": 2.64,
+    "sha256": "de16e46040b458b600f3f318aae325b50d742665f37b6e65792e1320e69689a4",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส แจ้ง รายการ ที่ ต้อง แก้"
+  },
+  "1b7575dd8708e0870f51f2b4": {
+    "file": "/audio/restaurant/th/1b7575dd8708e0870f51f2b4.mp3",
+    "duration": 2.568,
+    "sha256": "548e7c33651207cb74bab3237e2db86195eee77cd573a64378eac4dc04f798d3",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส แสดง คำ ขอให้ ตรวจ"
+  },
+  "027c3c73f800226484101818": {
+    "file": "/audio/restaurant/th/027c3c73f800226484101818.mp3",
+    "duration": 1.776,
+    "sha256": "e082a62d73ffea0e8a481040d4924f341478a6bd6aba8561c28b77044afd019d",
+    "spoken": "โต๊ะ และ บิล บี เอ็ม เอส ใบเสร็จ"
+  },
+  "3582e116303be8cb5b3bffd1": {
+    "file": "/audio/restaurant/th/3582e116303be8cb5b3bffd1.mp3",
+    "duration": 2.664,
+    "sha256": "2dfc916c864d1aee3de68293bad87fa055d47787c6395bb9040a57b3b3cea019",
+    "spoken": "โต๊ะ และ บิล คำนวณ ยอด ใหม่ ผ่าน กติกา กลาง"
+  },
+  "f4978dbe8042960c0b93d57d": {
+    "file": "/audio/restaurant/th/f4978dbe8042960c0b93d57d.mp3",
+    "duration": 2.88,
+    "sha256": "08fc051581ce6ede8a7cca46bf8c7d457feef9b9d58728a3ce22d9289c563006",
+    "spoken": "โต๊ะ และ บิล คืน ยอด จอง เดิม ก่อน จอง รายการ รวม"
+  },
+  "807dba2419e93011142fdda2": {
+    "file": "/audio/restaurant/th/807dba2419e93011142fdda2.mp3",
+    "duration": 2.736,
+    "sha256": "aeef6ed78997ccbd88372556d808017bfdb81dfa08917f292dfa59ba95f4e3f6",
+    "spoken": "โต๊ะ และ บิล คืน ยอด จอง เดิม ก่อน จอง แต่ละ บิล"
+  },
+  "e0ae12199f2dc3dbb264109f": {
+    "file": "/audio/restaurant/th/e0ae12199f2dc3dbb264109f.mp3",
+    "duration": 2.52,
+    "sha256": "931e76fc3810a26d8d74cd234253c8cab7123714e4655f83570b2342fa3e57a5",
+    "spoken": "โต๊ะ และ บิล ตรวจ ว่า บิล เดิม ยัง เหลือ รายการ"
+  },
+  "d88e94ba6706aaa496fd6d49": {
+    "file": "/audio/restaurant/th/d88e94ba6706aaa496fd6d49.mp3",
+    "duration": 3.24,
+    "sha256": "e554d4d149fcb56dc43d9db66dcc94dd5b4e0e8771ecf6a4db2cc6acf640fbd4",
+    "spoken": "โต๊ะ และ บิล ตรวจ สิทธิ์ สาขา และ สถานะ รับประทาน ที่ ร้าน"
+  },
+  "2f156b034d7d85bf81404108": {
+    "file": "/audio/restaurant/th/2f156b034d7d85bf81404108.mp3",
+    "duration": 1.968,
+    "sha256": "e172c459bc2186959c9800441b941e0fec4462ecb0edc2fca0744d45756acda7",
+    "spoken": "โต๊ะ และ บิล ตรวจ โต๊ะ และ ย้าย บิล"
+  },
+  "a8b474d9235175d84be6eb04": {
+    "file": "/audio/restaurant/th/a8b474d9235175d84be6eb04.mp3",
+    "duration": 2.256,
+    "sha256": "252ddc138dad61397138bf94286b62abea21b552c41bf137cc3b61003f2c6461",
+    "spoken": "โต๊ะ และ บิล ปิด ต้นทาง เป็น รวม บิล แล้ว"
+  },
+  "f491432f738de87002288a02": {
+    "file": "/audio/restaurant/th/f491432f738de87002288a02.mp3",
+    "duration": 2.328,
+    "sha256": "feb64173fd4f946db0862944ce6b035e2225c89d61e4659172e0c9fc3d33e0df",
+    "spoken": "โต๊ะ และ บิล ย้าย ความสัมพันธ์ ตาม รายการ"
+  },
+  "dbb01c25c43a70dbebdbdb82": {
+    "file": "/audio/restaurant/th/dbb01c25c43a70dbebdbdb82.mp3",
+    "duration": 2.208,
+    "sha256": "00d9924ae402294a31a18db0720d5541e82a06ba2e9527d0dd6b5bf28f84c831",
+    "spoken": "โต๊ะ และ บิล ย้าย งาน เดิม ไป ปลายทาง"
+  },
+  "0ea94b7c69bed2bd340f6f13": {
+    "file": "/audio/restaurant/th/0ea94b7c69bed2bd340f6f13.mp3",
+    "duration": 2.352,
+    "sha256": "ba9453feef825d673031fdb5f56e46eb4ea490a5d49e2e1ad2fc61ff7d35bfa3",
+    "spoken": "โต๊ะ และ บิล ย้าย ทุก รายการ และ คำนวณ ใหม่"
+  },
+  "289554e75bf058f51b3a05ab": {
+    "file": "/audio/restaurant/th/289554e75bf058f51b3a05ab.mp3",
+    "duration": 1.704,
+    "sha256": "29b3a750c3959b4bac82e7f365ad34c9fc23e6c251838c7fb257a7c56b7abdb5",
+    "spoken": "โต๊ะ และ บิล แสดง บิล รวม"
+  },
+  "5fd3d220666d76cdd4fadb6a": {
+    "file": "/audio/restaurant/th/5fd3d220666d76cdd4fadb6a.mp3",
+    "duration": 2.016,
+    "sha256": "dd69ebb446ffa5d50c00777d0554ebf36a6b876c8918562148a6c911c84dc4d3",
+    "spoken": "โต๊ะ และ บิล แสดง บิล เดิม และ ใหม่"
+  },
+  "aa17ae5e8c5da4332801057a": {
+    "file": "/audio/restaurant/th/aa17ae5e8c5da4332801057a.mp3",
+    "duration": 2.568,
+    "sha256": "92f14f4b861689a4fa1d4dd7a6d95117fa71451197fa67331225aa7512bb1a28",
+    "spoken": "โต๊ะ และ บิล แสดง โต๊ะ ปัจจุบัน ของ บิล เดิม"
+  },
+  "36ee640edb5fcb33d3bf65f4": {
+    "file": "/audio/restaurant/th/36ee640edb5fcb33d3bf65f4.mp3",
+    "duration": 2.568,
+    "sha256": "25a3f00c9a64fb54efc126d2a2e6f060a641f79fa8fe8df7f296cbaa4eed51f2",
+    "spoken": "โต๊ะ และ เวลาเล่น สร้าง กลุ่ม คิดเงิน ของ ผู้ เล่น"
+  },
+  "cf115cd8d126cb11e30a993c": {
+    "file": "/audio/restaurant/th/cf115cd8d126cb11e30a993c.mp3",
+    "duration": 3.576,
+    "sha256": "093c816ecdd1c489cf58d1c5fea082d8c96847c4f96059251111d4d4be717d81",
+    "spoken": "ใช้ ยอดขาย ต้นทุน และ ของ เสียที่ บันทึก จริง ประกอบ การตัดสินใจ"
+  },
+  "213f8241a3885d11dc98d691": {
+    "file": "/audio/restaurant/th/213f8241a3885d11dc98d691.mp3",
+    "duration": 3.456,
+    "sha256": "48a5e455e5993317a7797345b7f42798765cb4307d783e076483e28973d4e186",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส ยกเลิก แล้ว โดย คง หลักฐาน ที่ รับ แล้ว"
+  },
+  "dde80b69c52fa54e8c2c7a12": {
+    "file": "/audio/restaurant/th/dde80b69c52fa54e8c2c7a12.mp3",
+    "duration": 1.992,
+    "sha256": "66fcd821dff992403fa381c15c44fcbcba689b16fbc6cfb6ae43a6104c963138",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส เปิด อยู่"
+  },
+  "6d6df6d0605f23718ce3e33f": {
+    "file": "/audio/restaurant/th/6d6df6d0605f23718ce3e33f.mp3",
+    "duration": 3.024,
+    "sha256": "871bbee869886301a2ad355f2edeff3272f902f6005a9d3721bc4fb89682c0bd",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส รับ บางส่วน พร้อม ยอด ค้าง รับ"
+  },
+  "6bd524cb8413cd7f3aaec418": {
+    "file": "/audio/restaurant/th/6bd524cb8413cd7f3aaec418.mp3",
+    "duration": 2.208,
+    "sha256": "e01863a0e798f2b7118d69695348eff0d8ba0fb68b1c07214a3f9399bcd1cf18",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส รับ ครบ แล้ว"
+  },
+  "b8a4b2dbda7fa44fa38e12e9": {
+    "file": "/audio/restaurant/th/b8a4b2dbda7fa44fa38e12e9.mp3",
+    "duration": 2.808,
+    "sha256": "26974d63d98760fcf2416a4b0ad78afd698b33caee87e0060c0bd3df2ab18078",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส ตรวจ สิทธิ์ และ ยอด ค้าง รับ"
+  },
+  "5ed64ec5513b86eb722ca85f": {
+    "file": "/audio/restaurant/th/5ed64ec5513b86eb722ca85f.mp3",
+    "duration": 3.6,
+    "sha256": "78efdc616b6d120f96767f9eee0ca60d03f5539611d25356c8c85bd0f63d7213",
+    "spoken": "ใบสั่งซื้อ บี เอ็ม เอส เพิ่มจำนวน มูลค่า และ ราย การเคลื่อนไหว"
+  },
+  "7482c0b98527ee14142ea6e0": {
+    "file": "/audio/restaurant/th/7482c0b98527ee14142ea6e0.mp3",
+    "duration": 2.616,
+    "sha256": "e4bb40121cc23ab0892d2d7d8ab2b878f0e2833330a0976267259a45c0835050",
+    "spoken": "ใบสั่งซื้อ เพิ่ม สต็อก และ มูลค่า รับ เข้า"
+  },
+  "d98419252b86a8265b4d793c": {
+    "file": "/audio/restaurant/th/d98419252b86a8265b4d793c.mp3",
+    "duration": 1.656,
+    "sha256": "ff72015990ee680cfcdd5290013236b8142de9fc5ca08cb364e289d2e02be84c",
+    "spoken": "ใบ โอน อยู่ ระหว่าง ขนส่ง"
+  },
+  "229c0055703cd04ad484f24c": {
+    "file": "/audio/restaurant/th/229c0055703cd04ad484f24c.mp3",
+    "duration": 3.528,
+    "sha256": "e03a4b073de3371ff0313d47641e597d2715159dcf613aedd0c6580ce8a5cb18",
+    "spoken": "ใบ โอน ตรวจ ของ พร้อม ใช้ ตัด ต้นทาง และ บันทึก ราย การเคลื่อนไหว"
+  },
+  "925218cfe98813417edc0183": {
+    "file": "/audio/restaurant/th/925218cfe98813417edc0183.mp3",
+    "duration": 2.064,
+    "sha256": "bfb8620bddd1b2d1098721474e776f83b9d50884a3ebf57001ca7ae0b0cee73d",
+    "spoken": "ใบ โอน อัปเดต จำนวน ได้รับ จริง"
+  },
+  "8787efa106f4aa25ffd870d8": {
+    "file": "/audio/restaurant/th/8787efa106f4aa25ffd870d8.mp3",
+    "duration": 2.976,
+    "sha256": "125a4e620b3723543245034b3d47144cf290be2d6d5bc81135a833fa7fb9e50f",
+    "spoken": "ใบ โอน เพิ่ม ของดี แยก กัก ของเสีย และ บันทึก ของ ขาด"
+  },
+  "dd020ab0fadd1a1fd977ffb5": {
+    "file": "/audio/restaurant/th/dd020ab0fadd1a1fd977ffb5.mp3",
+    "duration": 2.76,
+    "sha256": "957f53f62325fcaae5e2a8c13d447d67ef522b0c42ddae57fa70ae9e1b40e5b2",
+    "spoken": "ไม่ คืน โควตา คูปอง ทุก กรณี โดยอัตโนมัติ"
+  },
+  "1e0b092424c4d5ffa7390f64": {
+    "file": "/audio/restaurant/th/1e0b092424c4d5ffa7390f64.mp3",
+    "duration": 2.568,
+    "sha256": "a9ab62755ee29823d954d4c213c991381a4735e6df476c1e38ac280401fedff8",
+    "spoken": "ไม่ ถือว่า รับ สำเร็จ หรือ คืนเงิน อัตโนมัติ"
+  },
+  "484edbc1a9931106ed937e5e": {
+    "file": "/audio/restaurant/th/484edbc1a9931106ed937e5e.mp3",
+    "duration": 1.104,
+    "sha256": "0fd795a4b74af10798f69d2e4fbb6904a6e5086b4eeff25c80fc4284cd8094d4",
+    "spoken": "ไม่ มีสิทธิ์"
+  },
+  "7a672c766a836d75190a16ac": {
+    "file": "/audio/restaurant/th/7a672c766a836d75190a16ac.mp3",
+    "duration": 1.56,
+    "sha256": "57eeefaf9895645b3db4037acfe757b617a3fab2bdb473949cd1322e49511f8f",
+    "spoken": "ไม่ มีสิทธิ์ เพิ่มเติม"
+  },
+  "f23d80e616d2907e5121283a": {
+    "file": "/audio/restaurant/th/f23d80e616d2907e5121283a.mp3",
+    "duration": 1.008,
+    "sha256": "ffeb72c90bad81e402f9332cb4af25642518eef586c78bfaac249c6b32b2ab1f",
+    "spoken": "ไม่ อนุมัติ"
+  },
+  "ce9288826a108c398901d865": {
+    "file": "/audio/restaurant/th/ce9288826a108c398901d865.mp3",
+    "duration": 1.2,
+    "sha256": "8dab5b0093a78349b4f08ecf482eaec89943d479bfa574e2944241ac89bc6813",
+    "spoken": "ไม่ เข้า เงื่อนไข"
+  }
+}

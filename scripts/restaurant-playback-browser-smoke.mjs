@@ -95,11 +95,11 @@ try {
     await player.getByRole("button", { name: "Next", exact: true }).click();
     await play();
     assert.equal(await player.locator('[class*="cueArrow"]').evaluate(el => getComputedStyle(el).animationName), "none");
-    // Changing language to one with no installed voice keeps caption playback available.
-    await context.addCookies([{ name: "lang", value: "th", url: base }]);
+    // English retains device voices; only a missing API disables that fallback.
+    await context.addInitScript(() => Object.defineProperty(window, "SpeechSynthesisUtterance", { configurable: true, value: undefined }));
     await page.reload();
-    await player.getByRole("checkbox", { name: "เปิดเสียง" }).waitFor();
-    assert.equal(await player.getByRole("checkbox", { name: "เปิดเสียง" }).isDisabled(), true);
+    await player.getByRole("checkbox", { name: "Sound on" }).waitFor();
+    assert.equal(await player.getByRole("checkbox", { name: "Sound on" }).isDisabled(), true);
     assert.deepEqual(errors, []);
     console.log(`PASS playback errors, controls, profile navigation, sharing and reduced motion (${width}px)`);
     await context.close();
