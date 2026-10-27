@@ -4,9 +4,30 @@ import { restaurantFlows } from "../apps/web/components/marketing/restaurant/flo
 import { restaurantCopy } from "../apps/web/components/marketing/restaurant/content.ts";
 import { parseSequence, layoutSequence, paginateSequence, wrapSequenceText } from "../apps/web/components/marketing/restaurant/sequence.ts";
 import { compilePlayback, playbackTree } from "../apps/web/components/marketing/restaurant/playback.ts";
-import { flowFit, guideFlowCopy, type GuideProfile } from "../apps/web/components/marketing/restaurant/guideProfiles.ts";
+import { PRIMARY_GUIDE_SHOPS, ADDITIONAL_GUIDE_SHOPS, guideFlows, flowFit, guideFlowCopy, type GuideProfile } from "../apps/web/components/marketing/restaurant/guideProfiles.ts";
 
 const measure = (text: string) => [...text].length * 9;
+
+test("main formats and additional board game format have explicit, relevant flow sets", () => {
+  assert.deepEqual(PRIMARY_GUIDE_SHOPS, ["overview", "restaurant", "food_beverage"]);
+  assert.deepEqual(ADDITIONAL_GUIDE_SHOPS, ["board_game_cafe"]);
+  const cases: Array<[GuideProfile, number[]]> = [
+    [{ shop: "overview", service: "dine_in", multiBranch: false }, [1,2,3,4,5,6,7,8,9,10,11]],
+    [{ shop: "restaurant", service: "dine_in", multiBranch: false }, [1,3,4,5,6,7,8,9,10,11]],
+    [{ shop: "restaurant", service: "counter", multiBranch: false }, [1,3,4,5,7,8,9,10,11]],
+    [{ shop: "restaurant", service: "online", multiBranch: false }, [1,4,5,7,8,9,10,11]],
+    [{ shop: "food_beverage", service: "counter", multiBranch: false }, [1,3,4,8,9,10,11]],
+    [{ shop: "board_game_cafe", service: "counter", multiBranch: false }, [3,8,10,11]],
+  ];
+  for (const [profile, expected] of cases) {
+    assert.deepEqual(guideFlows(profile), expected, JSON.stringify(profile));
+    assert.equal(guideFlows(profile, true).length, 11);
+  }
+  for (const shop of ["restaurant", "food_beverage"] as const) {
+    const profile: GuideProfile = { shop, service: "counter", multiBranch: true };
+    assert.ok(guideFlows(profile).includes(2)); assert.equal(flowFit(2, profile), "recommended");
+  }
+});
 
 test("print pagination preserves every step without splitting labels or arrows", () => {
   for (const flow of restaurantFlows) for (const lang of ["th", "en"] as const) {

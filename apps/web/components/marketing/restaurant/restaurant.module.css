@@ -36,6 +36,8 @@
 .profilePanel { display: grid; gap: 16px; border: 1px solid var(--line); background: var(--soft); border-radius: 15px; padding: clamp(16px, 2vw, 24px); margin-bottom: 20px; }
 .profilePanel h3 { font-size: 19px; line-height: 1.4; }
 .profilePanel p { font-size: 13px; color: var(--sub); margin-top: 4px; }
+.additionalShops { border-top: 1px solid var(--line); padding-top: 16px; }
+.profilePanel .profileScope { border-left: 3px solid var(--accent); padding: 8px 12px; margin: 0; background: var(--paper); line-height: 1.6; }
 .shopChoices, .serviceChoices { display: flex; flex-wrap: wrap; gap: 8px; border: 0; padding: 0; margin: 0; min-width: 0; }
 .shopChoices legend, .serviceChoices legend { font-size: 13px; font-weight: 600; padding: 0 0 7px; }
 .shopChoices button, .serviceChoices button, .recommendations button { min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); color: var(--ink); padding: 8px 13px; text-align: left; }

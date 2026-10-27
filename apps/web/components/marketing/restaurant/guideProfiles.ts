@@ -1,12 +1,21 @@
-import type { RestaurantFlow, RestaurantFlowCopy } from "./flowContent";
+import { restaurantFlows, type RestaurantFlow, type RestaurantFlowCopy } from "./flowContent";
 
 export type ShopType = "overview" | "restaurant" | "food_beverage" | "board_game_cafe";
 export type ServiceStyle = "dine_in" | "counter" | "online";
 export type GuideProfile = { shop: ShopType; service: ServiceStyle; multiBranch: boolean };
 export type FlowFit = "recommended" | "related" | "restaurant_example";
+export const PRIMARY_GUIDE_SHOPS = ["overview", "restaurant", "food_beverage"] as const;
+export const ADDITIONAL_GUIDE_SHOPS = ["board_game_cafe"] as const;
+
+/** Scope of this public guide only; never an authority for actual store capabilities. */
+export function guideFlows(profile: GuideProfile, includeExamples = false) {
+  return restaurantFlows.map(flow => flow.id)
+    .filter(id => includeExamples || flowFit(id, profile) !== "restaurant_example");
+}
 
 export function flowFit(id: number, profile: GuideProfile): FlowFit {
   if (profile.shop === "overview") return "related";
+  if (id === 2 && !profile.multiBranch) return "restaurant_example";
   if (profile.shop === "restaurant") {
     if (id === 6 && profile.service !== "dine_in") return "restaurant_example";
     if (id === 3 && profile.service === "online") return "restaurant_example";

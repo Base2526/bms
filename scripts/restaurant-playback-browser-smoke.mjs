@@ -82,8 +82,7 @@ try {
     } }));
     await guide.locator("[data-copy-flow]").click();
     await page.waitForFunction(() => typeof rejectClipboard === "function");
-    const shops = guide.getByRole("group", { name: "Shop type", exact: true });
-    await shops.getByRole("button").nth(2).click();
+    await guide.locator('[data-shop="food_beverage"]').click();
     await page.evaluate(() => rejectClipboard(new Error("Test denied clipboard")));
     assert.equal(new URL(page.url()).searchParams.get("shop"), "food_beverage", "Stale sharing cannot restore an old shop");
     assert.equal(await guide.locator("[data-copy-flow] + [role=status]").textContent(), "");

@@ -47,8 +47,10 @@ it does not generate or change business claims. Audio remains AI-generated and i
   guest/admin fixtures, blocks external requests, and performs no business mutations.
   `BMS_PLAYWRIGHT_MODULE` may point to an installed Playwright module. Build/start the web first;
   screenshots are saved under ignored `.test-output/restaurant-public-browser/`.
-  Also checks native-share success/cancellation and clipboard fallback, print button, print-only
-  layout for all 11 flows, and portal cleanup after navigation. Exports TH/EN A4 landscape PDFs
+  Also checks native-share success/cancellation and clipboard fallback, print button,
+  grouping of primary restaurant/cafe vs additional board game formats, profile-specific flow lists,
+  explicit reference examples, multi-branch visibility and profile/reference scope in PDF.
+  It verifies print-only layout for all 11 flows and portal cleanup after navigation. Exports TH/EN A4 landscape PDFs
   into the same ignored directory for visual review. Pure pagination checks preserve contiguous
   steps and refuse cuts through a label or arrow.
 
