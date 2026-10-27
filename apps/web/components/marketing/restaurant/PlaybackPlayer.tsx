@@ -1,10 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Lang } from "@/i18n";
 import { compilePlayback } from "./playback";
 import type { Sequence } from "./sequence";
 import styles from "./restaurant.module.css";
+import { narrationText } from "./narration";
+import { RecordedNarration } from "./recordedNarration";
+import thaiAudio from "./thaiAudio.json";
+const recordings: Record<string, { file: string; duration: number }> = thaiAudio;
 
 export type PlayerCopy = {
   heading: string; description: string; condition: string; optional: string; include: string;
@@ -13,6 +17,7 @@ export type PlayerCopy = {
   failedNotice: string; repeatOnce: string; resumeNotice: string;
   unlistedVoiceNotice: string;
   failureHints: { voice: string; blocked: string; network: string; audio: string; timeout: string };
+  recordedNotice: string; recordedFailedNotice: string;
 };
 
 export default function PlaybackPlayer({ sequence, lang, copy, introduction, conclusion, onActive }: {
@@ -26,6 +31,9 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
   const [voiceListed, setVoiceListed] = useState(false), [voiceStarted, setVoiceStarted] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const voiceFailed = voiceError !== null;
+  const recorded = lang === "th";
+  const audioElement = useRef<HTMLAudioElement>(null);
+  const audioPlayer = useRef<RecordedNarration>();
   const plan = useMemo(() => compilePlayback(sequence, selections), [sequence, selections]);
   const people = useMemo(() => new Map(sequence.participants.map(p => [p.id, p.label])), [sequence]);
   const cues = useMemo(() => [
@@ -34,7 +42,18 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
     { index: -1, kind: "note" as const, label: conclusion },
   ], [plan, introduction, conclusion]);
   const cue = cues[Math.min(step, cues.length - 1)];
+  const startRecorded = useCallback((target: number) => {
+    const text = narrationText(cues[target], sequence, copy.repeatOnce), track = recordings[text];
+    if (!track || !audioElement.current) { setVoiceError("file"); return; }
+    audioPlayer.current ??= new RecordedNarration(audioElement.current);
+    audioPlayer.current.play(`${target}:${text}:${speed}`, track.file, speed, () => {
+      if (target >= cues.length - 1) setPlaying(false);
+      else setStep(target + 1);
+    }, setVoiceError);
+  }, [cues, sequence, copy.repeatOnce, speed]);
+  useEffect(() => () => audioPlayer.current?.stop(), []);
   useEffect(() => {
+    if (recorded) { setSpeechSupported(true); return; }
     const synth = window.speechSynthesis;
     // Voice enumeration can be empty or delayed even when the engine can speak.
     // Let the browser resolve utterance.lang; only a missing API disables the control.
@@ -46,10 +65,14 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
     refresh();
     synth?.addEventListener("voiceschanged", refresh);
     return () => synth?.removeEventListener("voiceschanged", refresh);
-  }, [lang]);
+  }, [lang, recorded]);
   useEffect(() => { onActive(cue.index >= 0 ? cue.index : undefined); }, [cue.index, onActive]);
   useEffect(() => {
     if (!playing) return;
+    if (recorded && sound && !voiceFailed) {
+      startRecorded(step);
+      return () => audioPlayer.current?.stop();
+    }
     let closed = false;
     let scheduled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -68,16 +91,14 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
       const remaining = Math.max(0, 1500 - (Date.now() - started));
       timer = setTimeout(finish, remaining);
     };
-    const spoken = cue.kind === "message"
-      ? `${people.get(cue.from ?? "") ?? ""}. ${cue.label}`
-      : cue.kind === "loop" ? `${copy.repeatOnce}. ${cue.label}` : cue.label;
+    const spoken = narrationText(cue, sequence, copy.repeatOnce);
     const wait = Math.max(1800, Math.min(9000, spoken.length * 85 / speed));
-    if (sound && speechSupported && !voiceFailed) {
+    if (!recorded && sound && speechSupported && !voiceFailed) {
       const synth = window.speechSynthesis;
       const failed = (reason = "failed") => { if (!closed && !scheduled) setVoiceError(reason); };
       try {
         const utterance = new SpeechSynthesisUtterance(spoken);
-        utterance.lang = lang === "th" ? "th-TH" : "en-US";
+        utterance.lang = "en-US";
         utterance.rate = speed;
         try {
           const voice = synth.getVoices().find(item => item.lang.toLowerCase().split(/[-_]/)[0] === lang);
@@ -101,9 +122,9 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
       closed = true;
       if (timer) clearTimeout(timer);
       clearTimeout(watchdog);
-      if (sound && speechSupported) window.speechSynthesis.cancel();
+      if (!recorded && sound && speechSupported) window.speechSynthesis.cancel();
     };
-  }, [playing, step, cues, sound, speechSupported, voiceFailed, speed, lang, people, copy.repeatOnce]);
+  }, [playing, step, cues, sound, speechSupported, voiceFailed, speed, lang, sequence, copy.repeatOnce, recorded, startRecorded]);
   useEffect(() => {
     const stop = () => { if (document.hidden) setPlaying(false); };
     document.addEventListener("visibilitychange", stop);
@@ -119,6 +140,7 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
     : voiceError === "audio-busy" || voiceError === "audio-hardware" ? copy.failureHints.audio
     : voiceError === "timeout" ? copy.failureHints.timeout : "";
   return <section className={styles.player} aria-label={copy.heading} data-restaurant-player>
+    {recorded && <audio ref={audioElement} preload="none" data-recorded-narration />}
     <div className={styles.playerHeading}><div><h4>{copy.heading}</h4><p>{copy.description}</p></div>
       <span className={styles.stepCount}>{copy.step} {step + 1} {copy.of} {cues.length}</span></div>
     {plan.choices.length > 0 && <div className={styles.playerChoices}>
@@ -139,15 +161,23 @@ export default function PlaybackPlayer({ sequence, lang, copy, introduction, con
       <p>{cue.label}</p>
     </div>
     <div className={styles.playerControls}>
-      <button type="button" className={styles.primaryButton} onClick={() => { if (!playing && step === cues.length - 1) setStep(0); setPlaying(!playing); }}>{playing ? copy.pause : copy.play}</button>
+      <button type="button" className={styles.primaryButton} onClick={() => {
+        const target = !playing && step === cues.length - 1 ? 0 : step;
+        if (!playing && recorded && sound && !voiceFailed) startRecorded(target);
+        if (target !== step) setStep(target);
+        setPlaying(!playing);
+      }}>{playing ? copy.pause : copy.play}</button>
       <button type="button" className={styles.button} onClick={() => move(step - 1)} disabled={step === 0}>{copy.previous}</button>
       <button type="button" className={styles.button} onClick={() => move(step + 1)} disabled={step === cues.length - 1}>{copy.next}</button>
       <button type="button" className={styles.button} onClick={() => move(0)}>{copy.restart}</button>
-      <label className={styles.playerSetting}><input type="checkbox" checked={sound && speechSupported && !voiceFailed} disabled={!speechSupported} onChange={event => { setSound(event.target.checked); setVoiceError(null); }} />{copy.sound}</label>
+      <label className={styles.playerSetting}><input type="checkbox" checked={sound && speechSupported && !voiceFailed} disabled={!speechSupported} onChange={event => {
+        if (event.target.checked && playing && recorded) startRecorded(step);
+        setSound(event.target.checked); setVoiceError(null);
+      }} />{copy.sound}</label>
       <label className={styles.playerSetting}>{copy.speed}<select value={speed} onChange={event => setSpeed(Number(event.target.value))}>
         <option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option>
       </select></label>
     </div>
-    <p className={styles.voiceNotice} role="status">{voiceFailed ? `${copy.failedNotice} ${failureHint}` : !speechSupported ? copy.silentNotice : voiceListed || voiceStarted ? copy.voiceNotice : copy.unlistedVoiceNotice} {copy.resumeNotice}</p>
+    <p className={styles.voiceNotice} role="status">{recorded ? voiceFailed ? `${copy.recordedFailedNotice} ${voiceError === "not-allowed" ? copy.failureHints.blocked : ""}` : copy.recordedNotice : voiceFailed ? `${copy.failedNotice} ${failureHint}` : !speechSupported ? copy.silentNotice : voiceListed || voiceStarted ? copy.voiceNotice : copy.unlistedVoiceNotice} {copy.resumeNotice}</p>
   </section>;
 }

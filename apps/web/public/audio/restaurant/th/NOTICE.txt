@@ -1,0 +1,17 @@
+BMS public restaurant guide - generated Thai narration
+
+These MP3 files are generated from the public guide's authored Thai text, using
+FastThaiG2P and the Thai Kokoro-82M model, voice thai_som. They are synthetic
+narration, not recordings of a BMS employee or an endorsement by model authors.
+
+Engine: https://github.com/awslabs/FastThaiG2P
+Source revision: 4e82a291b4cf2876326744c6580121e9986ad354
+Model release: https://github.com/awslabs/FastThaiG2P/releases/tag/v0.3.0
+Copyright 2026 Charin Polpanumas and Amazon Web Services.
+Apache License 2.0: see LICENSE-FastThaiG2P.txt.
+Base model: https://huggingface.co/hexgrad/Kokoro-82M (Apache-2.0).
+
+Only the generated MP3 files are distributed with the application. Model weights
+and inference libraries are offline build dependencies, not browser dependencies.
+provenance.json records the exact spoken text, duration and SHA-256 of each clip.
+Regeneration instructions: scripts/README.md, Public restaurant guide section.

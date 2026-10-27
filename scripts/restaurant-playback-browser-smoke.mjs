@@ -95,51 +95,11 @@ try {
     await player.getByRole("button", { name: "Next", exact: true }).click();
     await play();
     assert.equal(await player.locator('[class*="cueArrow"]').evaluate(el => getComputedStyle(el).animationName), "none");
-    // An unlisted Thai voice must not lock the sound control (the production regression).
-    await context.addCookies([{ name: "lang", value: "th", url: base }]);
-    await page.reload();
-    await player.getByRole("checkbox", { name: "เปิดเสียง" }).waitFor();
-    const thaiSound = player.getByRole("checkbox", { name: "เปิดเสียง" });
-    assert.equal(await thaiSound.isDisabled(), false);
-    await thaiSound.uncheck();
-    await thaiSound.check();
-    await player.getByRole("button", { name: "▶ เล่น", exact: true }).click();
-    await page.waitForFunction(() => testSpeech.spoken.length === 1);
-    assert.deepEqual(await page.evaluate(() => ({ lang: testSpeech.spoken[0].lang, voice: testSpeech.spoken[0].voice ?? null })), { lang: "th-TH", voice: null });
-    await page.evaluate(() => testSpeech.spoken[0].onerror({ error: "language-unavailable" }));
-    await player.getByRole("status").filter({ hasText: "ระบบเสียงแจ้งว่าไม่มีเสียงภาษานี้" }).waitFor();
-    await player.getByRole("button", { name: "หยุดชั่วคราว", exact: true }).click();
-    // Empty enumeration still tries lang-based speech; a late voice is used on the next request.
-    await page.evaluate(() => { speechSynthesis.getVoices = () => []; speechSynthesis.dispatchEvent(new Event("voiceschanged")); });
-    await thaiSound.check();
-    await player.getByRole("button", { name: "▶ เล่น", exact: true }).click();
-    await page.waitForFunction(() => testSpeech.spoken.length === 2);
-    await page.evaluate(() => { testSpeech.spoken.at(-1).onstart(); testSpeech.spoken.at(-1).onend(); });
-    await page.waitForFunction(() => document.querySelector("[data-player-step]").dataset.playerStep === "1");
-    await player.getByRole("button", { name: "หยุดชั่วคราว", exact: true }).click();
-    await page.evaluate(() => {
-      speechSynthesis.getVoices = () => [{ lang: "th_TH", name: "Late Thai voice" }];
-      speechSynthesis.dispatchEvent(new Event("voiceschanged"));
-      testSpeech.spoken = [];
-    });
-    await player.getByRole("button", { name: "▶ เล่น", exact: true }).click();
-    await page.waitForFunction(() => testSpeech.spoken.length === 1);
-    assert.equal(await page.evaluate(() => testSpeech.spoken[0].voice.name), "Late Thai voice");
-    await page.evaluate(() => testSpeech.spoken[0].onerror({ error: "not-allowed" }));
-    await player.getByRole("status").filter({ hasText: "เบราว์เซอร์ไม่อนุญาตให้เล่นเสียง" }).waitFor();
-    // Enumeration exceptions also use the browser's default language resolution.
-    await player.getByRole("button", { name: "หยุดชั่วคราว", exact: true }).click();
-    await page.evaluate(() => { speechSynthesis.getVoices = () => { throw new Error("Enumeration unavailable"); }; speechSynthesis.dispatchEvent(new Event("voiceschanged")); });
-    await thaiSound.check();
-    await player.getByRole("button", { name: "▶ เล่น", exact: true }).click();
-    await page.waitForFunction(() => testSpeech.spoken.length === 2);
-    await player.screenshot({ path: `${output}/${width}-thai-unlisted.png` });
-    // Disable only when the API itself is unavailable.
+    // English retains device voices; only a missing API disables that fallback.
     await context.addInitScript(() => Object.defineProperty(window, "SpeechSynthesisUtterance", { configurable: true, value: undefined }));
-    await page.goto(`${base}/restaurant`);
-    await thaiSound.waitFor();
-    assert.equal(await thaiSound.isDisabled(), true);
-    await player.getByRole("status").filter({ hasText: "เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน" }).waitFor();
+    await page.reload();
+    await player.getByRole("checkbox", { name: "Sound on" }).waitFor();
+    assert.equal(await player.getByRole("checkbox", { name: "Sound on" }).isDisabled(), true);
     assert.deepEqual(errors, []);
     console.log(`PASS playback errors, controls, profile navigation, sharing and reduced motion (${width}px)`);
     await context.close();

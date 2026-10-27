@@ -59,7 +59,9 @@ export const restaurantCopy: Bilingual<Copy> = {
       exampleNotice: "Flow นี้เป็นตัวอย่างของร้านอาหาร โปรดตรวจเงื่อนไขก่อนใช้กับประเภทร้านที่เลือก",
     },
     player: {
-      heading: "เล่นคำอธิบายทีละขั้น", description: "เลือกกรณีที่ต้องการ แล้วกดเล่น ภาพจะเน้นขั้นตอนปัจจุบันและอ่านคำอธิบายด้วยเสียงของอุปกรณ์",
+      heading: "เล่นคำอธิบายทีละขั้น", description: "เลือกกรณีที่ต้องการ แล้วกดเล่น ภาพจะเน้นขั้นตอนปัจจุบันพร้อมเสียงบรรยายภาษาไทย",
+      recordedNotice: "เสียงไทยสร้างด้วย AI และบันทึกเป็นไฟล์ไว้แล้ว ไม่ต้องติดตั้งเสียงในอุปกรณ์ กดเล่นเพื่อฟังพร้อมภาพ",
+      recordedFailedNotice: "เล่นไฟล์เสียงไม่ได้ ตรวจอินเทอร์เน็ตและการอนุญาตเล่นเสียง แล้วกดเปิดเสียงเพื่อลองใหม่ ระหว่างนี้ยังอ่านและเล่นภาพต่อได้",
       condition: "กรณี", optional: "ขั้นตอนเพิ่มเติม", include: "รวมขั้นตอนนี้", play: "▶ เล่น", pause: "หยุดชั่วคราว", previous: "ก่อนหน้า", next: "ถัดไป", restart: "เริ่มใหม่",
       sound: "เปิดเสียง", speed: "ความเร็ว", step: "ขั้น", of: "/", voiceNotice: "เสียงอ่านใช้เสียงสังเคราะห์ของเบราว์เซอร์ คุณภาพและภาษาเสียงขึ้นกับอุปกรณ์; ข้อความทุกขั้นอ่านได้บนหน้าจอ",
       silentNotice: "เบราว์เซอร์นี้ไม่รองรับเสียงอ่าน ลองเปิดลิงก์ใน Chrome, Edge หรือ Safari รุ่นล่าสุด ระบบยังเล่นภาพและข้อความได้",
@@ -112,6 +114,8 @@ export const restaurantCopy: Bilingual<Copy> = {
     },
     player: {
       heading: "Play the guided steps", description: "Choose a case and press Play. The current step is highlighted and spoken using your device voice.",
+      recordedNotice: "Thai narration is generated with AI and saved as audio files. No device voice installation is needed. Press Play to hear it with the visual steps.",
+      recordedFailedNotice: "The audio file could not play. Check your connection and media permission, then enable sound to retry. Visual steps and captions remain available.",
       condition: "Case", optional: "Optional step", include: "Include this step", play: "▶ Play", pause: "Pause", previous: "Previous", next: "Next", restart: "Restart",
       sound: "Sound on", speed: "Speed", step: "Step", of: "of", voiceNotice: "Narration uses your browser's synthetic voice; voice language and quality depend on the device. Every step also has on-screen text.",
       silentNotice: "This browser does not support narration. Try opening the link in a recent Chrome, Edge or Safari. Visual steps and captions remain available.",
