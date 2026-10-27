@@ -10,6 +10,12 @@
 
 - `node scripts/run-contract-tests.mjs pure restaurant-public-guide`: validates all 11 bilingual
   sequences, equivalent translated branches, canvas bounds, invalid notation and Thai text wrapping.
+  Also checks exclusive failure/success paths for stock, online handover, PO receipts and loyalty.
+- `node scripts/restaurant-playback-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
+  port 3100), desktop/mobile speech fixtures for completion, late callbacks, thrown errors, hung
+  engines and retry, plus shop-switch/clipboard races, anchor navigation and reduced motion.
+  Uses the same `BMS_PLAYWRIGHT_MODULE` override; screenshots go under ignored
+  `.test-output/restaurant-playback-browser/`. Synthetic fixtures do not verify voice quality.
 - `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
   3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
   light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted
