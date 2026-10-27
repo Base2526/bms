@@ -3,12 +3,13 @@
 // test database, never production.
 //
 // ทำไมต้องเดินของจริง: SQL ของ seeder อยู่ใน template literal ทั้งหมด เทสที่ไม่ยิงคำสั่งจริง
-// จึงยืนยันได้แค่ว่า "โค้ดคอมไพล์ผ่าน" — สองบั๊กที่ไฟล์นี้ตรึงไว้เป็นของที่ต้องรันถึงจะเห็น:
+// จึงยืนยันได้แค่ว่า "โค้ดคอมไพล์ผ่าน" — บั๊กที่ไฟล์นี้ตรึงไว้เป็นของที่ต้องรันถึงจะเห็น:
 //   1. `9.22` ทำให้ bms_order_items.receipt_unit_price เป็น NOT NULL แต่ seeder ไม่ได้ส่งค่า
 //      → ปุ่มสร้างร้านทดสอบล้ม 23502 ทุกครั้ง และปุ่ม "สร้างข้อมูลตัวอย่าง" ของร้านจริง
 //      ค้างที่ขั้น orders ตลอดไป
 //   2. หลักฐานของโมดูลบอร์ดเกม (`9.79`-`9.83`) ผูกกับ customer/order/user ด้วย FK แบบ RESTRICT
 //      และ `9.82` ทำให้ bms_orders ชี้กลับมาที่ session → ลำดับ DELETE ติดวงรอบ ลบร้านไม่ได้เลย
+//   3. `10.41` เพิ่ม gift_sku ที่อ้างสินค้าแบบไม่ cascade → ต้องลบโปรก่อนสินค้าใน full purge
 //
 //   cd apps/web && POSTGRES_HOST=localhost ... npx tsx --import ../../scripts/testing/next-runtime-shim.mjs \
 //     --test ../../scripts/test-shop-lifecycle-db-contract.test.mts
@@ -59,6 +60,32 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
   assert.equal(items.rows[0].nullish, "0");
   // แถว seed ไม่ได้เดินผ่านกฎราคาส่ง/โปร ราคาป้ายกับราคาที่คิดจริงจึงต้องเท่ากันเสมอ
   assert.equal(items.rows[0].mismatched, "0");
+
+  // `10.41` added a second product FK for BUY_A_GET_B. product_sku cascades from the bought
+  // product, but gift_sku does not cascade; whole-tenant purge removes promotion rows explicitly
+  // before products. This covers the foreign-key failure reported by the
+  // platform tenant-delete screen.
+  const promotion = await query(
+    `WITH candidates AS (
+       SELECT DISTINCT ON (product_sku) product_sku, code
+         FROM bms_product_variants
+        WHERE tenant_id = $1 AND active
+        ORDER BY product_sku, sort_order, code
+     ), variants AS (
+       SELECT product_sku, code, row_number() OVER (ORDER BY product_sku) AS n
+         FROM candidates
+     )
+     INSERT INTO bms_product_promotions
+       (tenant_id, product_sku, kind, buy_qty, get_qty, buy_size, gift_sku, gift_size)
+     SELECT $1, bought.product_sku, 'BUY_A_GET_B', 1, 1, bought.code,
+            gift.product_sku, gift.code
+       FROM variants bought
+       JOIN variants gift ON gift.n = 2
+      WHERE bought.n = 1
+     RETURNING id`,
+    [shop.tenantId]
+  );
+  assert.equal(promotion.rowCount, 1, "ไม่มีสินค้าสอง SKU ให้สร้างโปรซื้อ A แถม B");
 
   // ผูกบิลกับ session ทั้งสองทิศแบบที่ร้านจริงทำตอนปิดบิลโต๊ะบอร์ดเกม — seeder ไม่สร้างเคสนี้
   // แต่เป็นเคสที่ทำให้ RESTRICT ทั้งสองข้างชนกันจนลบร้านไม่ได้
@@ -131,12 +158,12 @@ test("ร้านทดสอบบอร์ดเกม: seed ครบแล�
   await deleteTenant(shop.tenantId);
   const left = await query<{ n: string }>(`SELECT count(*)::text AS n FROM bms_tenants WHERE id = $1`, [shop.tenantId]);
   assert.equal(left.rows[0].n, "0");
-  for (const table of ["bms_orders", "bms_order_items", "bms_customers", "bms_board_game_sessions",
+  for (const table of ["bms_products", "bms_orders", "bms_order_items", "bms_customers", "bms_board_game_sessions",
     "bms_board_game_billing_groups", "bms_board_game_seatings", "bms_board_game_table_occupancy",
     "bms_board_game_session_table_occupancy",
     "bms_board_game_branch_hours",
     "bms_board_game_session_participants", "bms_board_game_titles",
-    "bms_board_game_member_passes", "bms_board_game_identity_holds", "users"]) {
+    "bms_board_game_member_passes", "bms_board_game_identity_holds", "bms_product_promotions", "users"]) {
     const rows = await query<{ n: string }>(
       `SELECT count(*)::text AS n FROM ${table} WHERE tenant_id = $1`, [shop.tenantId]);
     assert.equal(rows.rows[0].n, "0", `${table} ยังมีแถวค้างหลังลบร้าน`);

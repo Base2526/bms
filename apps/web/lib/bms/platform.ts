@@ -280,8 +280,13 @@ async function deleteTenantRows(client: PoolClient, tenantIds: string[]): Promis
   await client.query(`DELETE FROM bms_purchase_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_orders WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_pos_shifts WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
-  // Frozen production sources are gone above; remove recipe component RESTRICT references
-  // before deleting products (subrecipe links reference both parent and child recipes).
+  // Frozen production sources are gone above; remove catalog rows with a second product FK
+  // before deleting products. Cross-SKU promotions cascade from their purchased product, but
+  // gift_sku deliberately has a non-cascading FK. Remove promotions explicitly so the purge
+  // does not depend on the order in which the two product references are processed.
+  await client.query(`DELETE FROM bms_product_promotions WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
+  // Remove recipe component RESTRICT references before deleting products (subrecipe links
+  // reference both parent and child recipes).
   await client.query(`DELETE FROM bms_product_recipe_subrecipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_product_recipes WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
   await client.query(`DELETE FROM bms_products WHERE tenant_id = ANY($1::uuid[])`, [tenantIds]);
