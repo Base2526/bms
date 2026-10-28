@@ -127,6 +127,237 @@ export type BranchStockOverview = {
   }>;
 };
 
+export type BranchStockSearchItem = {
+  sku: string;
+  name: string;
+  size: string;
+  locationId: string;
+  locationName: string;
+  currentStock: number;
+  reservedStock: number;
+  quarantineStock: number;
+  available: number;
+  incomingStock: number;
+  reorderPoint: number;
+  stockPolicy: string;
+  baseUnit: string;
+  displayUnit: string | null;
+  displayPrecision: number;
+  lotTracked: boolean;
+  expiryTracked: boolean;
+  serialTracked: boolean;
+  bundle: boolean;
+  transferSupported: boolean;
+  countSupported: boolean;
+  operationBlockReason: string | null;
+};
+
+export type BranchStockSearchResult = {
+  items: BranchStockSearchItem[];
+  nextOffset: number | null;
+};
+
+function stockOperationSupport(row: {
+  stock_policy: string;
+  lot_tracked: boolean;
+  expiry_tracked: boolean;
+  serial_tracked: boolean;
+  is_bundle: boolean;
+}): { supported: boolean; reason: string | null } {
+  if (row.serial_tracked || row.stock_policy === "SERIALIZED") {
+    return {
+      supported: false,
+      reason: "สินค้านี้ติดตาม Serial และต้องใช้ workflow เฉพาะ",
+    };
+  }
+  if (row.lot_tracked || row.expiry_tracked) {
+    return {
+      supported: false,
+      reason:
+        "สินค้านี้ติดตามล็อต/วันหมดอายุ และยังไม่รองรับการโอนหรือนับแบบยอดรวม",
+    };
+  }
+  if (row.is_bundle || row.stock_policy === "BUNDLE") {
+    return {
+      supported: false,
+      reason: "สินค้าชุดตัดสต็อกจากส่วนประกอบ ไม่ได้ถือสต็อกที่ตัวชุด",
+    };
+  }
+  if (["RECIPE", "NON_STOCK"].includes(row.stock_policy)) {
+    return { supported: false, reason: "สินค้านี้ไม่ได้ถือสต็อกโดยตรง" };
+  }
+  return { supported: true, reason: null };
+}
+
+/**
+ * Bounded, device-branch stock lookup for the native stock workspace.
+ *
+ * This is an operational inventory read, not the sales catalog: ingredients and unpublished
+ * direct-stock products may still need counting. Tenant/location authority is supplied by the
+ * authenticated POS adapter, while this service repeats both predicates on every source table.
+ */
+export async function searchBranchStock(input: {
+  tenantId: string;
+  locationId: string;
+  search?: string | null;
+  limit?: number;
+  offset?: number;
+}): Promise<BranchStockSearchResult> {
+  const rawSearch = String(input.search ?? "")
+    .trim()
+    .slice(0, 200);
+  const likeSearch = rawSearch.replace(/[\\%_]/g, (value) => `\\${value}`);
+  const limit = Math.min(
+    Math.max(Math.trunc(Number(input.limit ?? 30)), 1),
+    50,
+  );
+  const offset = Math.min(
+    Math.max(Math.trunc(Number(input.offset ?? 0)), 0),
+    100_000,
+  );
+  const result = await query<{
+    sku: string;
+    name: string;
+    size: string;
+    location_id: string;
+    location_name: string;
+    current_stock: number;
+    reserved_stock: number;
+    quarantine_stock: number;
+    available: number;
+    incoming_stock: number;
+    reorder_point: number;
+    stock_policy: string;
+    base_unit: string;
+    display_unit: string | null;
+    display_precision: number;
+    lot_tracked: boolean;
+    expiry_tracked: boolean;
+    serial_tracked: boolean;
+    is_bundle: boolean;
+  }>(
+    `SELECT i.product_sku AS sku,
+            p.name,
+            i.size,
+            i.location_id,
+            location.name AS location_name,
+            i.current_stock::int,
+            i.reserved_stock::int,
+            COALESCE(i.quarantine_stock, 0)::int AS quarantine_stock,
+            ${usableStockSql("i")} AS available,
+            COALESCE((
+              SELECT sum(item.qty)::int
+                FROM bms_stock_transfers transfer
+                JOIN bms_stock_transfer_items item
+                  ON item.tenant_id = transfer.tenant_id AND item.transfer_id = transfer.id
+               WHERE transfer.tenant_id = i.tenant_id
+                 AND transfer.to_location = i.location_id
+                 AND transfer.status = 'IN_TRANSIT'
+                 AND item.product_sku = i.product_sku
+                 AND item.size = i.size
+            ), 0)::int AS incoming_stock,
+            i.reorder_point::int,
+            COALESCE(policy.stock_policy,
+              CASE WHEN p.is_bundle THEN 'BUNDLE' ELSE 'DIRECT' END) AS stock_policy,
+            COALESCE(policy.base_unit, 'PIECE') AS base_unit,
+            policy.display_unit,
+            COALESCE(policy.display_precision, 0)::int AS display_precision,
+            COALESCE(policy.lot_tracking, false) AS lot_tracked,
+            COALESCE(policy.expiry_tracking, false) AS expiry_tracked,
+            p.serial_tracked,
+            p.is_bundle
+       FROM (
+         SELECT variant.tenant_id, variant.product_sku, variant.code AS size,
+                $2::uuid AS location_id,
+                COALESCE(balance.current_stock, 0) AS current_stock,
+                COALESCE(balance.reserved_stock, 0) AS reserved_stock,
+                COALESCE(balance.quarantine_stock, 0) AS quarantine_stock,
+                COALESCE(balance.reorder_point, 0) AS reorder_point
+           FROM bms_product_variants variant
+           LEFT JOIN bms_inventory balance
+             ON balance.tenant_id = variant.tenant_id
+            AND balance.product_sku = variant.product_sku
+            AND balance.size = variant.code AND balance.location_id = $2
+          WHERE variant.tenant_id = $1 AND variant.active
+       ) i
+       JOIN bms_products p
+         ON p.tenant_id = i.tenant_id AND p.sku = i.product_sku
+       JOIN bms_locations location
+         ON location.tenant_id = i.tenant_id AND location.id = i.location_id
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = i.tenant_id AND policy.product_sku = i.product_sku
+      WHERE i.tenant_id = $1
+        AND i.location_id = $2
+        AND p.active
+        AND (
+          $3 = ''
+          OR upper(p.sku) = upper($3)
+          OR p.barcode = $3
+          OR p.name ILIKE '%' || $4 || '%' ESCAPE '\\'
+          OR p.sku ILIKE '%' || $4 || '%' ESCAPE '\\'
+          OR EXISTS (
+            SELECT 1 FROM bms_product_packs pack
+             WHERE pack.tenant_id = p.tenant_id
+               AND pack.product_sku = p.sku
+               AND pack.active
+               AND (pack.size IS NULL OR pack.size = i.size)
+               AND (pack.barcode = $3 OR pack.pack_code ILIKE '%' || $4 || '%' ESCAPE '\\')
+          )
+        )
+      ORDER BY CASE
+                 WHEN upper(p.sku) = upper($3) OR p.barcode = $3 OR EXISTS (
+                   SELECT 1 FROM bms_product_packs exact_pack
+                    WHERE exact_pack.tenant_id = p.tenant_id
+                      AND exact_pack.product_sku = p.sku
+                      AND exact_pack.active AND exact_pack.barcode = $3
+                      AND (exact_pack.size IS NULL OR exact_pack.size = i.size)
+                 ) THEN 0 ELSE 1
+               END,
+               p.name, p.sku, i.size
+      LIMIT $5 OFFSET $6`,
+    [
+      input.tenantId,
+      input.locationId,
+      rawSearch,
+      likeSearch,
+      limit + 1,
+      offset,
+    ],
+  );
+  const hasMore = result.rows.length > limit;
+  const rows = result.rows.slice(0, limit);
+  return {
+    items: rows.map((row) => {
+      const support = stockOperationSupport(row);
+      return {
+        sku: row.sku,
+        name: row.name,
+        size: row.size,
+        locationId: row.location_id,
+        locationName: row.location_name,
+        currentStock: Number(row.current_stock),
+        reservedStock: Number(row.reserved_stock),
+        quarantineStock: Number(row.quarantine_stock),
+        available: Number(row.available),
+        incomingStock: Number(row.incoming_stock),
+        reorderPoint: Number(row.reorder_point),
+        stockPolicy: row.stock_policy,
+        baseUnit: row.base_unit,
+        displayUnit: row.display_unit,
+        displayPrecision: Number(row.display_precision),
+        lotTracked: Boolean(row.lot_tracked),
+        expiryTracked: Boolean(row.expiry_tracked),
+        serialTracked: Boolean(row.serial_tracked),
+        bundle: Boolean(row.is_bundle),
+        transferSupported: support.supported,
+        countSupported: support.supported,
+        operationBlockReason: support.reason,
+      };
+    }),
+    nextOffset: hasMore ? offset + limit : null,
+  };
+}
+
 /**
  * ภาพรวมสต็อกที่ขายได้ของสาขาเครื่อง POS เท่านั้น
  *

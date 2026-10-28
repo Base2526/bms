@@ -65,11 +65,11 @@ export async function getPackageMetrics(from: string, to: string) {
   const params = [start.toISOString(), end.toISOString()];
   const cohorts = await query(`WITH transitions AS (
       SELECT tenant_id, occurred_at FROM bms_package_events
-        WHERE kind='PLAN_CHANGE' AND from_plan='free' AND to_plan IN ('pro','business')
+        WHERE kind='PLAN_CHANGE' AND from_plan='free' AND to_plan IN ('pro','growth','business','enterprise')
       UNION ALL
       SELECT tenant_id, created_at FROM bms_audit_log
         WHERE action IN ('plan.change','tenant.plan.change')
-          AND meta->>'fromPlan'='free' AND meta->>'planCode' IN ('pro','business')
+          AND meta->>'fromPlan'='free' AND meta->>'planCode' IN ('pro','growth','business','enterprise')
     ), cohort AS (
       SELECT e.* FROM bms_package_events e JOIN bms_tenants t ON t.id=e.tenant_id
       WHERE e.kind IN ('SIGNUP','BASELINE') AND e.to_plan='free'

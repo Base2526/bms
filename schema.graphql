@@ -4265,6 +4265,7 @@ type BmsPlan {
   max_users: Int!
   name: String!
   price_monthly: Float!
+  price_yearly: Float!
 }
 
 type BmsPlanCatalog {
@@ -4280,6 +4281,7 @@ type BmsPlanCatalog {
   maxUsers: Int!
   name: String!
   priceMonthly: Float!
+  priceYearly: Float!
   updatedAt: String
   version: Int!
 }
@@ -4298,6 +4300,7 @@ input BmsPlanCatalogInput {
   maxUsers: Int!
   name: String!
   priceMonthly: Float!
+  priceYearly: Float!
 }
 
 type BmsPlanCatalogPreview {
@@ -5175,6 +5178,36 @@ type BmsPosBranchLowStockItem {
   reorderPoint: Int!
   size: String!
   sku: String!
+}
+
+type BmsPosBranchStockSearchItem {
+  available: Int!
+  baseUnit: String!
+  bundle: Boolean!
+  countSupported: Boolean!
+  currentStock: Int!
+  displayPrecision: Int!
+  displayUnit: String
+  expiryTracked: Boolean!
+  incomingStock: Int!
+  locationId: ID!
+  locationName: String!
+  lotTracked: Boolean!
+  name: String!
+  operationBlockReason: String
+  quarantineStock: Int!
+  reorderPoint: Int!
+  reservedStock: Int!
+  serialTracked: Boolean!
+  size: String!
+  sku: String!
+  stockPolicy: String!
+  transferSupported: Boolean!
+}
+
+type BmsPosBranchStockSearchResult {
+  items: [BmsPosBranchStockSearchItem!]!
+  nextOffset: Int
 }
 
 type BmsPosBranchStockSummary {
@@ -10830,6 +10863,7 @@ type Query {
   bmsPosShiftReport(credentials: BmsPosCredentialsInput!, shiftId: ID): BmsPosShiftReportResult!
   bmsPosStaff: [BmsPosCashier!]!
   bmsPosStockCounts(credentials: BmsPosCredentialsInput!): BmsPosStockCountsResult!
+  bmsPosStockSearch(credentials: BmsPosCredentialsInput!, limit: Int = 30, offset: Int = 0, q: String = ""): BmsPosBranchStockSearchResult!
   bmsPosStockTransfers(credentials: BmsPosCredentialsInput!): BmsPosStockTransfersResult!
   bmsPosStoreCredit(code: String!, credentials: BmsPosCredentialsInput!): BmsPosStoreCreditResult!
   bmsPreviewCostAllocation(input: BmsCostAllocationPreviewInput!): BmsCostAllocationPreview!

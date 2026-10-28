@@ -17,14 +17,14 @@ test("catalogue preview and save reject unenforced order caps and conflicting AI
   const originalConnect = pool.connect;
   const calls: string[] = [];
   const ctx = { scope: "admin", admin: { id: "fixture-admin", tenant_id: "fixture-tenant" } };
-  const input = { code: "pro", expectedVersion: 1, name: "Pro", priceMonthly: 599,
+  const input = { code: "pro", expectedVersion: 1, name: "Pro", priceMonthly: 599, priceYearly: 5990,
     maxProducts: -1, maxChannels: 3, maxOrdersMonth: -1, maxUsers: 5,
     maxBranches: 1, maxDevices: 3, maxAiMessagesMonth: 1000, aiCreditsMonthly: 1000,
     featureKeys: ["REPORT_SCHEDULE"] };
   pool.query = async (sql: string) => {
     calls.push(sql);
     if (sql.includes("SELECT is_platform_admin")) return { rows: [{ is_platform_admin: true }] };
-    return { rows: [{ code: "pro", version: 1, name: "Pro", price_monthly: 599,
+    return { rows: [{ code: "pro", version: 1, name: "Pro", price_monthly: 599, price_yearly: 5990,
       max_products: -1, max_channels: 3, max_orders_month: -1, max_users: 5,
       max_branches: 1, max_devices: 3, max_ai_messages_month: 1000, ai_credits_monthly: 1000,
       feature_keys: ["REPORT_SCHEDULE"], tenant_count: 2, feature_tenant_count: 2 }] };
@@ -35,6 +35,7 @@ test("catalogue preview and save reject unenforced order caps and conflicting AI
       [{ maxOrdersMonth: 100 }, /PLAN_ORDERS_MUST_BE_UNLIMITED/],
       [{ maxOrdersMonth: 0 }, /PLAN_ORDERS_MUST_BE_UNLIMITED/],
       [{ maxAiMessagesMonth: -1 }, /PLAN_AI_ALLOWANCE_MISMATCH/],
+      [{ priceYearly: 8000 }, /PLAN_ANNUAL_PRICE_INVALID/],
       [{ aiCreditsMonthly: 5000 }, /PLAN_AI_ALLOWANCE_MISMATCH/],
     ] as const) {
       calls.length = 0;

@@ -73,7 +73,7 @@ const INPUT_KEYS = new Set((
 // generic `id` and free-form `answer` fields are not approved shop-catalog evidence.
 const PRESALES_INPUT_KEYS = new Set("query locale limit topicIds".split(" "));
 const PRESALES_KNOWLEDGE_KEYS = new Set("verifiedAt locale matches id title answer nextQuestion score availability requiresPlans".split(" "));
-const PRESALES_PLAN_KEYS = new Set(("verifiedAt locale plans code name price_monthly max_products max_channels " +
+const PRESALES_PLAN_KEYS = new Set(("verifiedAt locale plans code name price_monthly price_yearly max_products max_channels " +
   "max_orders_month max_users max_branches max_devices ai_credits_monthly feature_keys").split(" "));
 /** Explicit inventory: adding a customer tool requires choosing a privacy policy and a test. */
 export const STATUS_EVIDENCE_TOOLS = new Set([

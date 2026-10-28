@@ -9,10 +9,14 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { useMutation, useQuery } from '@apollo/client';
+import { useLazyQuery, useMutation, useQuery } from '@apollo/client';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button } from '../../components/Button';
+import {
+  BarcodeScannerModal,
+  type ScannerResolvedItem,
+} from '../../components/BarcodeScannerModal';
 import { Card } from '../../components/Card';
 import { ScreenContainer } from '../../components/ScreenContainer';
 import { ScreenHeader } from '../../components/ScreenHeader';
@@ -30,8 +34,10 @@ import {
   MobilePosRecordStockCountItemDocument,
   MobilePosSendStockTransferDocument,
   MobilePosStockCountsDocument,
+  MobilePosStockSearchDocument,
   MobilePosStockTransfersDocument,
   type MobilePosStockCountsQuery,
+  type MobilePosStockSearchQuery,
   type MobilePosStockTransfersQuery,
 } from '../../graphql/generated';
 import {
@@ -45,13 +51,16 @@ import { useStoreMode } from '../../state/StoreModeContext';
 import { useTheme } from '../../theme/ThemeProvider';
 import { supportsTabletLayout } from '../../theme/useResponsive';
 
-type ViewMode = 'OVERVIEW' | 'TRANSFER' | 'COUNT';
+type ViewMode = 'LOOKUP' | 'OVERVIEW' | 'TRANSFER' | 'COUNT';
 type DraftLine = { sku: string; size: string; qty: string };
 type Transfer =
   MobilePosStockTransfersQuery['bmsPosStockTransfers']['transfers'][number];
 type TransferData = MobilePosStockTransfersQuery['bmsPosStockTransfers'];
 type CountData = MobilePosStockCountsQuery['bmsPosStockCounts'];
 type StockCount = CountData['counts'][number];
+type StockSearchItem =
+  MobilePosStockSearchQuery['bmsPosStockSearch']['items'][number];
+type StockScanResult = ScannerResolvedItem & { code: string };
 type ReceiptDraft = {
   itemId: number;
   sku: string;
@@ -508,6 +517,186 @@ function InventoryOverview({
   );
 }
 
+function StockLookup({
+  items,
+  loading,
+  failed,
+  draft,
+  offset,
+  nextOffset,
+  onDraftChange,
+  onSearch,
+  onScan,
+  onPrevious,
+  onNext,
+  onUseForTransfer,
+  onUseForCount,
+}: {
+  items: StockSearchItem[];
+  loading: boolean;
+  failed: boolean;
+  draft: string;
+  offset: number;
+  nextOffset: number | null | undefined;
+  onDraftChange: (value: string) => void;
+  onSearch: () => void;
+  onScan: () => void;
+  onPrevious: () => void;
+  onNext: () => void;
+  onUseForTransfer: (item: StockSearchItem) => void;
+  onUseForCount: (item: StockSearchItem) => void;
+}) {
+  const { colors, spacing, typography } = useTheme();
+  return (
+    <View style={{ gap: spacing.md }}>
+      <Card style={{ gap: spacing.md }}>
+        <Text style={[typography.subtitle, { color: colors.text }]}>
+          ค้นหาสต็อก
+        </Text>
+        <Text style={[typography.caption, { color: colors.textMuted }]}>
+          ค้นด้วยชื่อ SKU หรือบาร์โค้ด · แสดงยอดของสาขาเครื่องนี้จากเซิร์ฟเวอร์
+        </Text>
+        <View style={styles.row}>
+          <TextInput
+            value={draft}
+            onChangeText={onDraftChange}
+            onSubmitEditing={onSearch}
+            placeholder="ชื่อสินค้า, SKU หรือบาร์โค้ด"
+            placeholderTextColor={colors.textSoft}
+            autoCapitalize="none"
+            autoCorrect={false}
+            maxLength={200}
+            returnKeyType="search"
+            style={[
+              styles.input,
+              styles.flex,
+              {
+                borderColor: colors.border,
+                color: colors.text,
+                backgroundColor: colors.surface,
+              },
+            ]}
+          />
+          <Button label="ค้นหา" loading={loading} onPress={onSearch} />
+          <Button label="สแกน" variant="secondary" onPress={onScan} />
+        </View>
+      </Card>
+
+      {!loading && !failed && items.length === 0 ? (
+        <Card>
+          <Text style={[typography.body, { color: colors.textMuted }]}>
+            ไม่พบสินค้าที่ตรงกับคำค้นหา
+          </Text>
+        </Card>
+      ) : null}
+
+      {items.map(item => {
+        // Quantities are stored in base units; a display-unit label alone is not conversion.
+        const unit = item.baseUnit;
+        return (
+          <Card
+            key={`${item.locationId}-${item.sku}-${item.size}`}
+            style={{ gap: spacing.sm }}
+          >
+            <View style={styles.between}>
+              <View style={styles.flex}>
+                <Text style={[typography.bodyStrong, { color: colors.text }]}>
+                  {item.name}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {item.sku} · {item.size} · {item.stockPolicy}
+                </Text>
+              </View>
+              <View style={{ alignItems: 'flex-end' }}>
+                <Text
+                  style={[
+                    typography.subtitle,
+                    {
+                      color:
+                        item.available > 0 ? colors.success : colors.danger,
+                    },
+                  ]}
+                >
+                  พร้อมใช้ {item.available}
+                </Text>
+                <Text style={[typography.caption, { color: colors.textMuted }]}>
+                  {unit}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.wrap}>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                คงเหลือ {item.currentStock}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                จอง {item.reservedStock}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                กักกัน {item.quarantineStock}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                กำลังเข้า {item.incomingStock}
+              </Text>
+              <Text style={[typography.caption, { color: colors.textMuted }]}>
+                จุดสั่งซื้อ {item.reorderPoint}
+              </Text>
+            </View>
+            {item.operationBlockReason ? (
+              <View
+                style={[
+                  styles.infoStrip,
+                  { backgroundColor: colors.warningBg },
+                ]}
+              >
+                <Text
+                  style={[typography.captionStrong, { color: colors.warning }]}
+                >
+                  {item.operationBlockReason}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.wrap}>
+                <Button
+                  label="เพิ่มลงใบโอน"
+                  variant="secondary"
+                  disabled={loading || failed || !item.transferSupported}
+                  onPress={() => onUseForTransfer(item)}
+                />
+                <Button
+                  label="เพิ่มลงใบนับ"
+                  variant="secondary"
+                  disabled={loading || failed || !item.countSupported}
+                  onPress={() => onUseForCount(item)}
+                />
+              </View>
+            )}
+          </Card>
+        );
+      })}
+
+      {offset > 0 || nextOffset != null ? (
+        <View style={styles.between}>
+          <Button
+            label="ก่อนหน้า"
+            variant="secondary"
+            disabled={offset === 0 || loading}
+            onPress={onPrevious}
+          />
+          <Text style={[typography.caption, { color: colors.textMuted }]}>
+            หน้า {Math.floor(offset / 30) + 1}
+          </Text>
+          <Button
+            label="ถัดไป"
+            variant="secondary"
+            disabled={nextOffset == null || loading}
+            onPress={onNext}
+          />
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export default function InventoryScreen({ asTabRoot }: Props) {
   const navigation =
     useNavigation<NativeStackNavigationProp<AppStackParamList>>();
@@ -518,7 +707,11 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const isTablet =
     supportsTabletLayout(width, height, 760) && Boolean(asTabRoot);
   const credentials = session?.credentials;
-  const [mode, setMode] = useState<ViewMode>('OVERVIEW');
+  const [mode, setMode] = useState<ViewMode>('LOOKUP');
+  const [lookupDraft, setLookupDraft] = useState('');
+  const [lookupSearch, setLookupSearch] = useState('');
+  const [lookupOffset, setLookupOffset] = useState(0);
+  const [scannerOpen, setScannerOpen] = useState(false);
   const [working, setWorking] = useState('');
   const [destinationId, setDestinationId] = useState('');
   const [transferNote, setTransferNote] = useState('');
@@ -538,11 +731,25 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const inputCredentials = credentials ?? { cashierUserId: '', pin: '' };
   const transfers = useQuery(MobilePosStockTransfersDocument, {
     variables: { credentials: inputCredentials },
-    skip: !credentials || mode === 'COUNT',
+    skip: !credentials || mode === 'COUNT' || mode === 'LOOKUP',
   });
   const counts = useQuery(MobilePosStockCountsDocument, {
     variables: { credentials: inputCredentials },
-    skip: !credentials || mode === 'TRANSFER',
+    skip: !credentials || mode === 'TRANSFER' || mode === 'LOOKUP',
+  });
+  const stockSearch = useQuery(MobilePosStockSearchDocument, {
+    variables: {
+      credentials: inputCredentials,
+      q: lookupSearch,
+      limit: 30,
+      offset: lookupOffset,
+    },
+    skip: !credentials || mode !== 'LOOKUP',
+    fetchPolicy: 'network-only',
+    notifyOnNetworkStatusChange: true,
+  });
+  const [scanStock] = useLazyQuery(MobilePosStockSearchDocument, {
+    fetchPolicy: 'network-only',
   });
   const [createTransfer] = useMutation(MobilePosCreateStockTransferDocument);
   const [sendTransfer] = useMutation(MobilePosSendStockTransferDocument);
@@ -554,10 +761,15 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const [cancelCount] = useMutation(MobilePosCancelStockCountDocument);
   const refetchTransfers = transfers.refetch;
   const refetchCounts = counts.refetch;
+  const refetchStockSearch = stockSearch.refetch;
 
   useFocusEffect(
     useCallback(() => {
       if (!credentials) return;
+      if (mode === 'LOOKUP') {
+        refetchStockSearch().catch(() => undefined);
+        return;
+      }
       if (mode === 'OVERVIEW') {
         Promise.all([refetchTransfers(), refetchCounts()]).catch(
           () => undefined,
@@ -566,7 +778,13 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       }
       const refetch = mode === 'TRANSFER' ? refetchTransfers : refetchCounts;
       refetch().catch(() => undefined);
-    }, [credentials, mode, refetchCounts, refetchTransfers]),
+    }, [
+      credentials,
+      mode,
+      refetchCounts,
+      refetchStockSearch,
+      refetchTransfers,
+    ]),
   );
 
   const transferData = transfers.data?.bmsPosStockTransfers;
@@ -581,6 +799,32 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       ),
     [transferData?.transfers],
   );
+
+  const submitLookup = () => {
+    if (lookupOffset === 0 && lookupSearch === lookupDraft.trim()) {
+      refetchStockSearch().catch(() => undefined);
+      return;
+    }
+    setLookupOffset(0);
+    setLookupSearch(lookupDraft.trim());
+  };
+  const resolveStockCode = async (code: string): Promise<StockScanResult> => {
+    if (!credentials) throw new Error('กรุณาเลือกพนักงานและใส่ PIN');
+    const response = await scanStock({
+      variables: { credentials, q: code.trim(), limit: 30, offset: 0 },
+    });
+    const items = response.data?.bmsPosStockSearch.items ?? [];
+    if (items.length === 0) throw new Error(`ไม่พบสินค้า ${code}`);
+    const first = items[0];
+    return {
+      name:
+        items.length === 1
+          ? `${first.name} · ${first.size}`
+          : `${first.name} · ${items.length} ตัวเลือก`,
+      sellable: true,
+      code: code.trim(),
+    };
+  };
 
   const run = async (key: string, action: () => Promise<string | null>) => {
     if (!credentials || working) return false;
@@ -666,13 +910,19 @@ export default function InventoryScreen({ asTabRoot }: Props) {
 
   const branchName = session?.branch.name ?? '-';
   const activeError =
-    mode === 'OVERVIEW'
+    mode === 'LOOKUP'
+      ? stockSearch.error
+      : mode === 'OVERVIEW'
       ? transfers.error ?? counts.error
       : mode === 'TRANSFER'
       ? transfers.error
       : counts.error;
   const permissionDenied = activeError?.message.includes('ไม่มีสิทธิ์');
   const retryActiveView = () => {
+    if (mode === 'LOOKUP') {
+      refetchStockSearch().catch(() => undefined);
+      return;
+    }
     if (mode === 'OVERVIEW') {
       Promise.all([refetchTransfers(), refetchCounts()]).catch(() => undefined);
       return;
@@ -684,6 +934,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     <View style={[styles.segment, { gap: spacing.xs }]}>
       {(
         [
+          ['LOOKUP', 'ค้นหา'],
           ['OVERVIEW', 'ภาพรวม'],
           ['TRANSFER', 'โอนสินค้า'],
           ['COUNT', 'นับสต็อก'],
@@ -714,7 +965,9 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         </Text>
         <Text style={[typography.caption, { color: colors.textMuted }]}>
           {permissionDenied
-            ? 'ให้ Manager, Warehouse หรือผู้ดูแลระบบเข้าใช้งาน'
+            ? mode === 'LOOKUP'
+              ? 'ให้ผู้ดูแลกำหนดสิทธิ์ดูสินค้า (product.view) ให้บัญชีนี้'
+              : 'ให้ Manager, Warehouse หรือผู้ดูแลระบบเข้าใช้งาน'
             : 'ตรวจสอบการเชื่อมต่อแล้วลองอีกครั้ง'}
         </Text>
       </View>
@@ -727,7 +980,34 @@ export default function InventoryScreen({ asTabRoot }: Props) {
   const workContent = (
     <>
       {errorPanel}
-      {mode === 'OVERVIEW' ? (
+      {mode === 'LOOKUP' ? (
+        <StockLookup
+          items={stockSearch.data?.bmsPosStockSearch.items ?? []}
+          loading={stockSearch.loading}
+          failed={Boolean(stockSearch.error)}
+          draft={lookupDraft}
+          offset={lookupOffset}
+          nextOffset={stockSearch.data?.bmsPosStockSearch.nextOffset}
+          onDraftChange={setLookupDraft}
+          onSearch={submitLookup}
+          onScan={() => setScannerOpen(true)}
+          onPrevious={() => setLookupOffset(Math.max(0, lookupOffset - 30))}
+          onNext={() => {
+            const next = stockSearch.data?.bmsPosStockSearch.nextOffset;
+            if (next != null) setLookupOffset(next);
+          }}
+          onUseForTransfer={item => {
+            setLine({ sku: item.sku, size: item.size, qty: '1' });
+            setMode('TRANSFER');
+          }}
+          onUseForCount={item => {
+            setCountSku(item.sku);
+            setCountSize(item.size);
+            setCountedQty('');
+            setMode('COUNT');
+          }}
+        />
+      ) : mode === 'OVERVIEW' ? (
         <InventoryOverview
           isTablet={isTablet}
           transferData={transferData}
@@ -1349,6 +1629,21 @@ export default function InventoryScreen({ asTabRoot }: Props) {
       )}
     </>
   );
+  const scannerModal = (
+    <BarcodeScannerModal<StockScanResult>
+      purpose="lookup"
+      visible={scannerOpen}
+      resolveCode={resolveStockCode}
+      onCancel={() => setScannerOpen(false)}
+      onScanned={item => {
+        setLookupDraft(item.code);
+        setLookupSearch(item.code);
+        setLookupOffset(0);
+        setScannerOpen(false);
+      }}
+      completedHardwareScan={null}
+    />
+  );
 
   if (!isTablet) {
     return (
@@ -1368,6 +1663,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
         >
           {workContent}
         </ScrollView>
+        {scannerModal}
       </ScreenContainer>
     );
   }
@@ -1385,19 +1681,24 @@ export default function InventoryScreen({ asTabRoot }: Props) {
     glyph: string;
     label: string;
   }> = [
+    { key: 'LOOKUP', glyph: '⌕', label: 'ค้นหาสต็อก' },
     { key: 'OVERVIEW', glyph: '▦', label: 'ภาพรวม' },
     { key: 'TRANSFER', glyph: '⇄', label: 'โอนสินค้า' },
     { key: 'RECEIVE', glyph: '⇥', label: 'รับสินค้า' },
     { key: 'COUNT', glyph: '▣', label: 'นับสต็อก' },
   ];
   const tabletTitle =
-    mode === 'OVERVIEW'
+    mode === 'LOOKUP'
+      ? 'ค้นหาสต็อกสาขา'
+      : mode === 'OVERVIEW'
       ? 'ภาพรวมสต็อกสาขา'
       : mode === 'TRANSFER'
       ? 'โอนและรับสินค้า'
       : 'นับสต็อก';
   const tabletSubtitle =
-    mode === 'OVERVIEW'
+    mode === 'LOOKUP'
+      ? `${branchDisplayLabel(branchName)} · ค้นด้วยชื่อ SKU หรือบาร์โค้ด`
+      : mode === 'OVERVIEW'
       ? `${branchDisplayLabel(branchName)} · ข้อมูลล่าสุดจากเซิร์ฟเวอร์`
       : mode === 'TRANSFER'
       ? 'ต้นทางกำหนดจากสาขาของเครื่อง · สินค้าระหว่างทางยังไม่เป็นของสาขาใด'
@@ -1540,6 +1841,7 @@ export default function InventoryScreen({ asTabRoot }: Props) {
             {workContent}
           </ScrollView>
         </View>
+        {scannerModal}
       </View>
     </ScreenContainer>
   );

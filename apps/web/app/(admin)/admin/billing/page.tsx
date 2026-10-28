@@ -17,9 +17,9 @@ const Q = gql`
     bmsIsPlatformAdmin
     bmsFeatureAccess { feature minimumPlan allowed source }
     bmsBilling {
-      plan { code name price_monthly max_products max_channels max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at }
+      plan { code name price_monthly price_yearly max_products max_channels max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at }
       usage { products channels orders_month users }
-      plans { code name price_monthly max_products max_channels max_branches max_devices max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at feature_keys }
+      plans { code name price_monthly price_yearly max_products max_channels max_branches max_devices max_orders_month max_users ai_credits_monthly ai_credits_next_monthly ai_credits_change_at feature_keys }
     }
     bmsAiUsage {
       billingMode count limit remaining unlimited planCode planName
@@ -628,6 +628,7 @@ function CloudBilling() {
               >
                 <div style={{ fontSize: 24, fontWeight: 600, marginBottom: 12 }}>
                   {p.price_monthly > 0 ? <>{p.price_monthly.toLocaleString()} <Text type="secondary" style={{ fontSize: 14 }}>{t("admin_billing.per_month")}</Text></> : t("admin_billing.free")}
+                  {p.price_yearly > 0 && <div><Text type="secondary" style={{ fontSize: 12 }}>{t("admin_billing.annual_catalogue", { count: p.price_yearly.toLocaleString() })}</Text></div>}
                 </div>
                 <Space direction="vertical" size={4} style={{ marginBottom: 16 }}>
                   <div><CheckOutlined style={{ color: "#52c41a" }} /> {t("admin_billing.feat_products")} {lim(p.max_products, t)}</div>

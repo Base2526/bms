@@ -522,12 +522,15 @@
 }
 .planName { display: block; font-size: 22px; font-weight: 700; }
 .planPrice { font-size: 34px; font-weight: 700; margin-top: 10px; }
+.planPricePrefix { color: var(--app-muted); display: block; font-size: 12px; font-weight: 600; }
 .planUnit { font-size: 13px; color: var(--app-muted); }
+.planAnnual { color: var(--app-muted); display: block; font-size: 11px; font-weight: 500; line-height: 1.35; margin-top: 4px; }
 .planIncluded { color: var(--app-primary); font-weight: 700; font-size: 19px; }
 .planUnavailable { color: var(--app-muted); font-size: 19px; }
 .planTable tfoot th,
 .planTable tfoot td { border-bottom: 0; padding-top: 22px; padding-bottom: 22px; }
 .planCta { display: block; }
+.enterpriseTerms { color: var(--app-muted); font-size: 13px; margin: 12px 0 0; }
 .planNotices {
   display: grid;
   gap: 12px;
@@ -537,7 +540,12 @@
   color: var(--app-muted);
 }
 .planNotices strong { color: var(--app-text); }
-.pricingFooter { display: flex; justify-content: flex-end; }
+.pricingFooter { align-items: center; display: flex; gap: 12px; justify-content: space-between; }
+.packageActions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
+.packageActionStatus,
+.packageActionError { font-size: 12px; }
+.packageActionStatus { color: var(--app-muted); }
+.packageActionError { color: var(--app-danger); }
 .planScrollHint { display: none; margin: 0; color: var(--app-muted); font-size: 12px; }
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 @media (max-width: 767px) {
@@ -547,6 +555,12 @@
   .planTable .planName { font-size: 18px; }
   .planPrice { font-size: 28px; }
   .planScrollHint { display: block; }
+  .pricingFooter { align-items: stretch; flex-direction: column; }
+  .packageActions { align-items: stretch; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .packageActions > button,
+  .packageActions > a { height: auto; min-height: 32px; min-width: 0; white-space: normal; width: 100%; }
+  .packageActionStatus,
+  .packageActionError { grid-column: 1 / -1; }
 }
 
 .finalCta {

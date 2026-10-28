@@ -7,8 +7,8 @@ export type PackageFeature = keyof typeof PACKAGE_FEATURES;
 const LEGACY_FEATURES: readonly PackageFeature[] = ["REPORT_SCHEDULE", "RETENTION_ENGINE"];
 
 export function planFeatureKeys(plan: string): PackageFeature[] {
-  if (plan === "business") return ["REPORT_SCHEDULE", "RETENTION_ENGINE"];
-  if (plan === "pro") return ["REPORT_SCHEDULE"];
+  if (plan === "business" || plan === "enterprise") return ["REPORT_SCHEDULE", "RETENTION_ENGINE"];
+  if (plan === "pro" || plan === "growth") return ["REPORT_SCHEDULE"];
   return [];
 }
 

@@ -70,7 +70,7 @@ export async function addAiRateCard(ctx:PlatformContext,input:AiRateInput){
 }
 
 export type PlanCatalogInput = {
-  code: string; expectedVersion: number; name: string; priceMonthly: number;
+  code: string; expectedVersion: number; name: string; priceMonthly: number; priceYearly: number;
   maxProducts: number; maxChannels: number; maxOrdersMonth: number; maxUsers: number;
   maxBranches: number; maxDevices: number; maxAiMessagesMonth: number; aiCreditsMonthly: number;
   featureKeys: string[];
@@ -87,7 +87,13 @@ function normalizePlanInput(input: PlanCatalogInput) {
   const features = [...new Set(input.featureKeys.map(v => String(v).trim().toUpperCase()))].sort();
   if (features.some(v => !PLAN_FEATURE_SET.has(v as PackageFeature))) throw new Error("PLAN_FEATURE_INVALID");
   const price = Number(input.priceMonthly);
-  if (!Number.isFinite(price) || price < 0) throw new Error("PLAN_PRICE_INVALID");
+  const priceYearly = Number(input.priceYearly);
+  if (!Number.isFinite(price) || price < 0 || !Number.isFinite(priceYearly) || priceYearly < 0) {
+    throw new Error("PLAN_PRICE_INVALID");
+  }
+  if ((price === 0) !== (priceYearly === 0) || priceYearly > price * 12) {
+    throw new Error("PLAN_ANNUAL_PRICE_INVALID");
+  }
   const code = String(input.code).trim().toLowerCase();
   const name = String(input.name).trim().slice(0, 120);
   if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code) || !name) throw new Error("PLAN_FIELDS_REQUIRED");
@@ -99,7 +105,7 @@ function normalizePlanInput(input: PlanCatalogInput) {
   if (intLimit(input.maxAiMessagesMonth) !== intLimit(input.aiCreditsMonthly)) {
     throw new Error("PLAN_AI_ALLOWANCE_MISMATCH");
   }
-  return { code, expectedVersion, name, priceMonthly:Number(price.toFixed(2)),
+  return { code, expectedVersion, name, priceMonthly:Number(price.toFixed(2)),priceYearly:Number(priceYearly.toFixed(2)),
     maxProducts:intLimit(input.maxProducts),maxChannels:intLimit(input.maxChannels),maxOrdersMonth:intLimit(input.maxOrdersMonth),
     maxUsers:intLimit(input.maxUsers),maxBranches:intLimit(input.maxBranches),maxDevices:intLimit(input.maxDevices),
     maxAiMessagesMonth:intLimit(input.maxAiMessagesMonth),aiCreditsMonthly:intLimit(input.aiCreditsMonthly),featureKeys:features };
@@ -116,7 +122,7 @@ export function summarizePlanImpact(tenantCount:number,beforeFeatures:readonly s
 }
 
 function mapPlanRow(row: any) {
-  return { code:row.code,name:row.name,priceMonthly:Number(row.price_monthly),maxProducts:row.max_products,
+  return { code:row.code,name:row.name,priceMonthly:Number(row.price_monthly),priceYearly:Number(row.price_yearly??0),maxProducts:row.max_products,
     maxChannels:row.max_channels,maxOrdersMonth:row.max_orders_month,maxUsers:row.max_users,
     maxBranches:row.max_branches,maxDevices:row.max_devices,maxAiMessagesMonth:row.max_ai_messages_month,
     aiCreditsMonthly:row.ai_credits_monthly,featureKeys:Array.isArray(row.feature_keys)?row.feature_keys:planFeatureKeys(row.code),
@@ -134,7 +140,7 @@ async function readPlanPreview(run: QueryRunner, proposal: ReturnType<typeof nor
   const tenants = Number(current.tenant_count??0);
   const beforeFeatures: string[] = Array.isArray(current.feature_keys)?current.feature_keys:planFeatureKeys(current.code);
   const changed = JSON.stringify(mapPlanRow(current)) !== JSON.stringify({ ...mapPlanRow(current),
-    name:proposal.name,priceMonthly:proposal.priceMonthly,maxProducts:proposal.maxProducts,maxChannels:proposal.maxChannels,
+    name:proposal.name,priceMonthly:proposal.priceMonthly,priceYearly:proposal.priceYearly,maxProducts:proposal.maxProducts,maxChannels:proposal.maxChannels,
     maxOrdersMonth:proposal.maxOrdersMonth,maxUsers:proposal.maxUsers,maxBranches:proposal.maxBranches,maxDevices:proposal.maxDevices,
     maxAiMessagesMonth:proposal.maxAiMessagesMonth,aiCreditsMonthly:proposal.aiCreditsMonthly,featureKeys:proposal.featureKeys });
   return { code:proposal.code,version:proposal.expectedVersion,...summarizePlanImpact(tenants,beforeFeatures,proposal.featureKeys,changed,Number(current.feature_tenant_count??0)),
@@ -166,8 +172,8 @@ export async function updatePlanCatalog(ctx: PlatformContext, input: PlanCatalog
   return (await runInTransaction(actorId, async client => {
     const preview = await readPlanPreview((sql,params)=>client.query(sql,params), proposal);
     if (token !== preview.previewToken) throw new Error("PLAN_PREVIEW_STALE");
-    const result = await client.query<any>(`SELECT * FROM public.update_bms_plan_catalog($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::text[])`,
-      [proposal.code,proposal.expectedVersion,proposal.name,proposal.priceMonthly,proposal.maxProducts,proposal.maxChannels,
+    const result = await client.query<any>(`SELECT * FROM public.update_bms_plan_catalog($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::text[])`,
+      [proposal.code,proposal.expectedVersion,proposal.name,proposal.priceMonthly,proposal.priceYearly,proposal.maxProducts,proposal.maxChannels,
        proposal.maxOrdersMonth,proposal.maxUsers,proposal.maxBranches,proposal.maxDevices,proposal.maxAiMessagesMonth,
        proposal.aiCreditsMonthly,proposal.featureKeys]);
     if (!result.rowCount) throw new Error("PLAN_VERSION_CONFLICT");

@@ -852,8 +852,8 @@ export const typeDefs = /* GraphQL */ `
   type BmsPlatformTimezone { code: String!, nameTh: String!, nameEn: String!, active: Boolean! }
   type BmsPlatformReferenceIssue { field: String!, rawValue: String!, shops: Int! }
   type BmsPlatformReferences { source: String!, countries: [BmsPlatformCountry!]!, currencies: [BmsPlatformCurrency!]!, timezones: [BmsPlatformTimezone!]!, unresolved: [BmsPlatformReferenceIssue!]! }
-  type BmsPlanCatalog { code: String!, name: String!, priceMonthly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]!, version: Int!, updatedAt: String }
-  input BmsPlanCatalogInput { code: String!, expectedVersion: Int!, name: String!, priceMonthly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]! }
+  type BmsPlanCatalog { code: String!, name: String!, priceMonthly: Float!, priceYearly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]!, version: Int!, updatedAt: String }
+  input BmsPlanCatalogInput { code: String!, expectedVersion: Int!, name: String!, priceMonthly: Float!, priceYearly: Float!, maxProducts: Int!, maxChannels: Int!, maxOrdersMonth: Int!, maxUsers: Int!, maxBranches: Int!, maxDevices: Int!, maxAiMessagesMonth: Int!, aiCreditsMonthly: Int!, featureKeys: [String!]! }
   type BmsPlanCatalogPreview { code: String!, version: Int!, affectedTenants: Int!, featureGrantedTenants: Int!, featureRevokedTenants: Int!, grantedFeatures: [String!]!, revokedFeatures: [String!]!, previewToken: String! }
   type BmsAiRateCard { id: ID!, provider: String!, model: String!, inputUsdPerMillion: Float!, outputUsdPerMillion: Float!, cacheCreationMultiplier: Float!, cacheReadMultiplier: Float!, effectiveFrom: String!, effectiveTo: String, active: Boolean!, source: String!, sourceVersion: String! }
   input BmsAiRateCardInput { provider: String!, model: String!, inputUsdPerMillion: Float!, outputUsdPerMillion: Float!, cacheCreationMultiplier: Float, cacheReadMultiplier: Float, effectiveFrom: String!, source: String!, sourceVersion: String! }
@@ -3444,7 +3444,7 @@ export const typeDefs = /* GraphQL */ `
   # ===== BMS SaaS: plans / billing / signup =====
   type BmsPlan {
     feature_keys: [String!]!
-    code: String!  name: String!  price_monthly: Float!
+    code: String!  name: String!  price_monthly: Float! price_yearly: Float!
     max_products: Int!  max_channels: Int!  max_orders_month: Int!  max_users: Int!
     max_branches: Int! max_devices: Int!
     max_ai_messages_month: Int!

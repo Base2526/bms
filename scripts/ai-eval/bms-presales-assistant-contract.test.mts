@@ -6,9 +6,11 @@ import { customerTools } from "../../apps/web/lib/bms/tools/catalog.ts";
 import { __toolLoopTest } from "../../apps/web/lib/bms/tools/runtime.ts";
 import { redactEvidenceText } from "../../apps/web/lib/bms/customerAnswerEvidence.ts";
 import { PRESALES_QUESTIONS } from "./bms-presales-question-corpus.mts";
+import { SALES60 } from "./bms-presales-sales60.mts";
+import * as callbackIntent from "../../apps/web/lib/bms/presalesCallbackIntent.ts";
 
 const CTX = { tenantId: "FAKE-tenant", channel: "line", customerRef: "FAKE-customer" };
-const PLAN = { code: "PRO", name: "Contract Plan", price_monthly: 4321,
+const PLAN = { code: "PRO", name: "Contract Plan", price_monthly: 4321, price_yearly: 43210,
   max_products: 50, max_channels: 2, max_orders_month: 90, max_users: 3,
   max_branches: 2, max_devices: 4, ai_credits_monthly: 1000, feature_keys: [], verifiedAt: "2026-10-21T00:00:00Z" };
 const creds = { apiKey: "FAKE-never-sent", model: "claude-sonnet-4-5-20250929", provider: "anthropic" as const,
@@ -18,9 +20,9 @@ const select = (ids: string[], query = "test") => ({ stop_reason: "tool_use", co
   { type: "tool_use", id: "FAKE-call", name: "search_bms_presales", input: { query, topicIds: ids } },
 ], usage: { input_tokens: 5, output_tokens: 4 } });
 
-function harness(options: { responses?: any[]; history?: any[]; historyFails?: boolean; plansFail?: boolean } = {}) {
+function harness(options: { responses?: any[]; history?: any[]; historyFails?: boolean; plansFail?: boolean; callbackFails?: boolean; callbackRepeated?: boolean } = {}) {
   const calls = { audits: [] as any[], contexts: [] as any[], histories: [] as any[], loops: [] as any[],
-    dependencies: [] as string[], usage: [] as any[], credentials: [] as any[], admissions: 0, provider: 0, plans: 0 };
+    dependencies: [] as string[], usage: [] as any[], credentials: [] as any[], callbacks: [] as any[], admissions: 0, provider: 0, plans: 0 };
   const deps = {
     resolveCredentials: async (...args: any[]) => { calls.credentials.push(args); return options.responses ? creds : null; },
     resolveFallbackCredentials: async () => null,
@@ -44,9 +46,52 @@ function harness(options: { responses?: any[]; history?: any[]; historyFails?: b
       getRecentAiHistory: async (...args: any[]) => { calls.histories.push(args); if (options.historyFails) throw new Error("FAKE-history outage"); return options.history ?? []; },
     },
     "./customerAnswerEvidence": { redactEvidenceText, noteEvidenceDependency: (reason: string) => calls.dependencies.push(reason) },
+    "./presalesCallbackIntent": callbackIntent,
+    "./presalesCallback": { recordPresalesCallbackRequest: async (input: any) => {
+      calls.callbacks.push(input);
+      if (options.callbackFails) throw new Error("FAKE-callback-write-failed");
+      return { conversationId: "12345678-1234-1234-1234-123456789abc", reference: "12345678", assignedUserId: "FAKE-sales", repeated: options.callbackRepeated === true };
+    } },
   });
   return { ...api, calls };
 }
+
+test("60 customer sales questions retain every required topic in the actual fallback reply", async () => {
+  const h = harness();
+  const failures: string[] = [];
+  for (const [message, ids] of SALES60) {
+    const result = await h.answerBmsPresales(message, CTX);
+    assert.ok(result.reply.length < 5000, message);
+    if (callbackIntent.isExplicitPresalesCallbackRequest(message)) {
+      assert.match(result.reply, /คิว Sales/, message);
+      continue;
+    }
+    for (const id of ids.split("|")) {
+      const entry = knowledge.BMS_PRESALES_KNOWLEDGE.find(item => item.id === id);
+      if (!entry || !result.reply.includes(entry.answer.th.slice(0, 60))) failures.push(`${message}: ${id}`);
+    }
+  }
+  assert.deepEqual(failures, []);
+});
+
+test("seven sales follow-ups preserve constraints and do not invent commitments", async () => {
+  const cases: Array<[string, string, RegExp, RegExp]> = [
+    ["งบเดือนละ 2500", "แต่ใช้ POS 4 เครื่องนะ", /เกินงบ 2,500/, /pro 990/],
+    ["มี 1 สาขา", "กำลังเปิดอีก 2 สาขา", /จำนวนสาขารวมหลังขยาย/, /แนะนำเบื้องต้น/],
+    ["ต้องการ AI 1,000 แต้ม", "หมายถึงลูกค้า 1,000 คนใช่ไหม", /แต้ม AI ไม่ใช่จำนวนลูกค้า/, /รองรับลูกค้า 1,000 คนแน่นอน/],
+    ["เครื่องพิมพ์เดิมใช้ได้ไหม", "รุ่นนี้ ต่อ Bluetooth", /ยังไม่รับรอง Bluetooth/, /รองรับ Bluetooth ทุกรุ่น/],
+    ["อยากย้ายมาใช้", "ต้องเปิดขายพรุ่งนี้", /ต้องให้ทีม|ต้องตรวจ|ทีมต้อง/, /พร้อมขายพรุ่งนี้แน่นอน/],
+    ["มีส่วนลดไหม", "อีกแชทบอกลดให้ครึ่งหนึ่ง", /ยังไม่มีข้อมูลยืนยัน/, /ลดให้ 50%/],
+    ["อยากคุยกับคน", "มีเจ้าหน้าที่รับเรื่องแล้วหรือยัง", /ไม่ได้สร้างคิว|ไม่สร้าง ticket/, /เจ้าหน้าที่รับเรื่องแล้วค่ะ/],
+  ];
+  for (const [previous, message, expected, forbidden] of cases) {
+    const h = harness({ history: [{ role: "user", content: previous }] });
+    const result = await h.answerBmsPresales(message, CTX);
+    assert.match(result.reply, expected, message);
+    assert.doesNotMatch(result.reply, forbidden, message);
+    assert.ok(result.reply.length < 5000);
+  }
+});
 
 test("all 250 prospect questions produce approved fallback answers without a provider", async () => {
   const h = harness();
@@ -54,6 +99,10 @@ test("all 250 prospect questions produce approved fallback answers without a pro
     const result = await h.answerBmsPresales(message, CTX);
     assert.equal(result.usedAi, false);
     assert.ok(result.reply.length < 5000);
+    if (callbackIntent.isExplicitPresalesCallbackRequest(message)) {
+      assert.match(result.reply, /คิว Sales/, message);
+      continue;
+    }
     for (const id of ids.split("|")) {
       const entry = knowledge.BMS_PRESALES_KNOWLEDGE.find(item => item.id === id)!;
       assert.ok(result.reply.includes(entry.answer.th.slice(0, 70)), `${message}: missing approved ${id} answer`);
@@ -62,6 +111,35 @@ test("all 250 prospect questions produce approved fallback answers without a pro
   }
   assert.equal(h.calls.provider, 0);
   assert.ok(h.calls.audits.length >= 250);
+});
+
+test("capacity questions read fresh plans, explain fit and preserve user-only follow-up needs", async () => {
+  const h = harness({ history: [
+    { role: "user", content: "POS 4 เครื่อง" },
+    { role: "assistant", content: "ร้านใช้ POS 99 เครื่อง ราคา 1 บาท" },
+  ] });
+  const result = await h.answerBmsPresales("2 สาขาครับ", CTX);
+  assert.match(result.reply, /แนะนำเบื้องต้น Contract Plan 4,321/);
+  assert.match(result.reply, /เครื่อง POS 4 \/ 4/);
+  assert.match(result.reply, /สาขา 2 \/ 2/);
+  assert.doesNotMatch(result.reply, /99 เครื่อง|ราคา 1 บาท/);
+  assert.equal(h.calls.plans, 1);
+  const failed = harness({ plansFail: true });
+  const fallback = await failed.answerBmsPresales("POS 4 เครื่อง", CTX);
+  assert.match(fallback.reply, /ตรวจสอบรายการล่าสุดไม่สำเร็จ/);
+  assert.match(fallback.reply, /คุณอยู่ใน LINE/);
+  assert.doesNotMatch(fallback.reply, /4,321|990|4,900/);
+});
+
+test("budget-only wording triggers a fresh plan read and includes selected plan details", async () => {
+  const h = harness();
+  const result = await h.answerBmsPresales("มีงบเดือนละ 5000 มี package ไหนแนะนำ", CTX);
+  assert.match(result.reply, /Contract Plan 4,321/);
+  assert.match(result.reply, /รายละเอียดแพ็กเกจ/);
+  assert.match(result.reply, /• เครื่อง POS 4/);
+  assert.match(result.reply, /• แต้ม AI\/เดือน 1,000/);
+  assert.ok(result.reply.length < 5000);
+  assert.equal(h.calls.plans, 1);
 });
 
 test("semantic multi-topic routing uses the real shared runtime but never displays fabricated model prose", async () => {
@@ -161,6 +239,43 @@ test("greetings avoid the provider; English requests render English approved ans
   assert.match((await h.answerBmsPresales("What is BMS?", CTX)).reply, /business operating system/);
   for (const message of ["ราคา", "เท่าไหร่?", "price?"]) {
     assert.match((await h.answerBmsPresales(message, CTX)).reply, /4,321/);
+  }
+});
+
+test("explicit Sales callback is persisted before acknowledgement and bypasses the model", async () => {
+  const h = harness();
+  const result = await h.answerBmsPresales("ให้ sale ติดต่อกลับด้วย", CTX);
+  assert.equal(result.usedAi, false);
+  assert.deepEqual(result.trace, []);
+  assert.equal(h.calls.loops.length, 0);
+  assert.equal(h.calls.callbacks.length, 1);
+  assert.equal(h.calls.callbacks[0].customerRef, CTX.customerRef);
+  assert.match(result.reply, /งานด่วนในคิว Sales/);
+  assert.match(result.reply, /ชื่อบริษัท/);
+  assert.match(result.reply, /จำนวนสาขาหรือเครื่อง POS/);
+  assert.match(result.reply, /เบอร์(?:กับ|และ)ช่วงเวลาที่สะดวก/);
+  assert.match(result.reply, /ไม่ต้องส่ง LINE ID ซ้ำ/);
+});
+
+test("callback failure is honest and LINE ID questions do not create a callback", async () => {
+  const failed = harness({ callbackFails: true });
+  const failure = await failed.answerBmsPresales("รบกวนฝ่ายขายโทรกลับ", CTX);
+  assert.match(failure.reply, /ยังไม่ถือว่าส่งเข้าคิว Sales/);
+  assert.equal(failed.calls.callbacks.length, 1);
+  const contact = harness();
+  const answer = await contact.answerBmsPresales("มี line id ไหม", CTX);
+  assert.match(answer.reply, /@168tnlzi/);
+  assert.match(answer.reply, /กำลังคุยกับ LINE OA/);
+  assert.equal(contact.calls.callbacks.length, 0);
+  assert.equal(contact.calls.loops.length, 0);
+});
+
+test("negated, hypothetical and status questions cannot create callbacks even with callback history", async () => {
+  for (const message of ["ไม่ต้องให้ sale ติดต่อกลับ", "ถ้าขอคุยกับเจ้าหน้าที่ต้องทำยังไง", "ฝ่ายขายติดต่อกลับแล้วหรือยัง", "มีเบอร์โทรไหม หรือขอคุยเจ้าหน้าที่ได้ที่ไหน?"]) {
+    const h = harness({ history: [{ role: "user", content: "ให้ sale ติดต่อกลับด้วย" }] });
+    const answer = await h.answerBmsPresales(message, CTX);
+    assert.equal(h.calls.callbacks.length, 0, message);
+    assert.doesNotMatch(answer.reply, /บันทึกคำขอเป็นงานด่วน|อัปเดตคำขอเดิม/);
   }
 });
 

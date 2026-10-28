@@ -48,6 +48,13 @@ The in-repository RN workflows are connected to the generated GraphQL contract:
   and payment through the existing POS checkout;
 - branch stock transfer create/send/receive/cancel with explicit damaged/missing evidence, plus stock
   count create/line entry/apply/cancel using the server-owned snapshot-delta rule;
+- a `product.view`-guarded branch stock lookup by product name, SKU, legacy barcode, or active pack
+  barcode, showing usable, current, reserved, quarantined and incoming quantities separately; rows
+  that require lot/serial or derived-stock workflows remain visible with an explicit limitation and
+  fail closed if submitted to aggregate transfer/count operations;
+- stock lookup uses a lookup-labelled scanner action; sale screens retain their add-item action.
+  HID keyboard recovery guidance follows iOS/Android settings, and both modes resolve through
+  the same server-backed callback without moving stock or adding sale items during lookup;
 - kitchen ticket board, station SLA, bulk status updates, and fallback refresh;
 - named GraphQL subscriptions, bounded event deduplication, batched active-query refetch,
   foreground/reconnect recovery, and degraded polling.

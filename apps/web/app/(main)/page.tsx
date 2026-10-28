@@ -13,6 +13,7 @@ import {
   CloudServerOutlined,
   DatabaseOutlined,
   DesktopOutlined,
+  DownloadOutlined,
   FacebookFilled,
   GlobalOutlined,
   InboxOutlined,
@@ -24,6 +25,7 @@ import {
   RobotOutlined,
   RocketOutlined,
   SafetyOutlined,
+  ShareAltOutlined,
   ShopOutlined,
   ShoppingCartOutlined,
   TikTokFilled,
@@ -45,6 +47,7 @@ const Q_PLANS = gql`
       code
       name
       price_monthly
+      price_yearly
       max_products
       max_channels
       max_branches
@@ -95,6 +98,7 @@ type PublicPlan = {
   code: string;
   name: string;
   price_monthly: number;
+  price_yearly: number;
   max_products: number;
   max_channels: number;
   max_branches: number;
@@ -148,9 +152,17 @@ function PlanComparison({
                   </div>
                   <span className={styles.planName}>{plan.name}</span>
                   <div className={styles.planPrice}>
+                    {plan.code === "enterprise" && <span className={styles.planPricePrefix}>{t("landing.startingAt")}</span>}
                     {plan.price_monthly > 0 ? Number(plan.price_monthly).toLocaleString() : t("landing.free")}
                   </div>
                   <span className={styles.planUnit}>{plan.price_monthly > 0 ? t("landing.perMonth") : "\u00a0"}</span>
+                  {plan.price_yearly > 0 && (
+                    <span className={styles.planAnnual}>
+                      {plan.code === "enterprise" ? t("landing.annualFrom") : t("landing.annualPrice")}{" "}
+                      {Number(plan.price_yearly).toLocaleString()} {t("landing.perYear")}
+                      {plan.code !== "enterprise" && <> · {t("landing.annualAverage", { count: Math.round(plan.price_yearly / 12).toLocaleString() })}</>}
+                    </span>
+                  )}
                 </th>
               ))}
             </tr>
@@ -194,9 +206,15 @@ function PlanComparison({
               <th scope="row"><span className={styles.srOnly}>{t("landing.startUsing")}</span></th>
               {plans.map(plan => (
                 <td key={plan.code} className={highlight(plan)}>
-                  <Link href={ctaHref} className={styles.planCta}>
-                    <Button type={plan.code === "pro" ? "primary" : "default"} block size="large">{ctaLabel}</Button>
-                  </Link>
+                  {plan.code === "enterprise" ? (
+                    <a href={BMS_LINE_OA_URL} className={styles.planCta} target="_blank" rel="noreferrer">
+                      <Button block size="large">{t("landing.contactSales")}</Button>
+                    </a>
+                  ) : (
+                    <Link href={ctaHref} className={styles.planCta}>
+                      <Button type={plan.code === "pro" ? "primary" : "default"} block size="large">{ctaLabel}</Button>
+                    </Link>
+                  )}
                 </td>
               ))}
             </tr>
@@ -204,6 +222,7 @@ function PlanComparison({
         </table>
       </div>
       <p className={styles.planScrollHint}>{t("landing.planScrollHint")}</p>
+      {plans.some(plan => plan.code === "enterprise") && <p className={styles.enterpriseTerms}>{t("landing.enterpriseTerms")}</p>}
       {pendingChanges.length > 0 && (
         <div className={styles.planNotices}>
           {pendingChanges.map(plan => (
@@ -215,9 +234,51 @@ function PlanComparison({
   );
 }
 
+function PackageActions({ lang, t, disabled }: { lang: "th" | "en"; t: Translate; disabled: boolean }) {
+  const [shareStatus, setShareStatus] = useState<"" | "shared" | "copied" | "failed">("");
+  const shareLatest = async () => {
+    const url = `${window.location.origin}${window.location.pathname}#pricing`;
+    setShareStatus("");
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: t("landing.packageShareTitle"), text: t("landing.packageShareText"), url });
+        setShareStatus("shared");
+        return;
+      }
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(url);
+      else {
+        const input = document.createElement("textarea");
+        input.value = url;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        if (!document.execCommand("copy")) throw new Error("COPY_FAILED");
+        input.remove();
+      }
+      setShareStatus("copied");
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      setShareStatus("failed");
+    }
+  };
+  const status = shareStatus ? t(`landing.packageShareStatus.${shareStatus}`) : "";
+  return (
+    <div className={styles.packageActions}>
+      <Button href={`/api/public/packages/pdf?lang=${lang}`} disabled={disabled} icon={<DownloadOutlined />}>
+        {t("landing.downloadPackagesPdf")}
+      </Button>
+      <Button disabled={disabled} icon={<ShareAltOutlined />} onClick={() => void shareLatest()}>
+        {t("landing.sharePackages")}
+      </Button>
+      <span className={shareStatus === "failed" ? styles.packageActionError : styles.packageActionStatus} aria-live="polite">{status}</span>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const { admin, loading: sessionLoading } = useSessionCtx();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [appDownloads, setAppDownloads] = useState({ androidUrl: "", iosUrl: "" });
   useEffect(() => {
     const controller = new AbortController();
@@ -407,6 +468,7 @@ export default function HomePage() {
           plans.length > 0 && <PlanComparison plans={plans} t={t} ctaHref={planCta.href} ctaLabel={planCta.label} />
         )}
         <div className={styles.pricingFooter}>
+          <PackageActions lang={lang} t={t} disabled={!plans.length} />
           <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
       </section>

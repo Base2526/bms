@@ -166,7 +166,7 @@ import { findStoreCredit } from "@/lib/bms/storeCredit";
 import { getStoreProfile } from "@/lib/bms/storeProfile";
 import { getTenantName } from "@/lib/bms/platform";
 import { configuredPosPaymentQr } from "@/lib/bms/paymentConfiguration";
-import { getBranchStockOverview } from "@/lib/bms/stock";
+import { getBranchStockOverview, searchBranchStock } from "@/lib/bms/stock";
 import {
   applyStockCount,
   cancelStockCount,
@@ -2097,6 +2097,36 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     reorderPoint: Int!
   }
 
+  type BmsPosBranchStockSearchItem {
+    sku: String!
+    name: String!
+    size: String!
+    locationId: ID!
+    locationName: String!
+    currentStock: Int!
+    reservedStock: Int!
+    quarantineStock: Int!
+    available: Int!
+    incomingStock: Int!
+    reorderPoint: Int!
+    stockPolicy: String!
+    baseUnit: String!
+    displayUnit: String
+    displayPrecision: Int!
+    lotTracked: Boolean!
+    expiryTracked: Boolean!
+    serialTracked: Boolean!
+    bundle: Boolean!
+    transferSupported: Boolean!
+    countSupported: Boolean!
+    operationBlockReason: String
+  }
+
+  type BmsPosBranchStockSearchResult {
+    items: [BmsPosBranchStockSearchItem!]!
+    nextOffset: Int
+  }
+
   type BmsPosStockCountsResult {
     counts: [BmsMobileStockCount!]!
     deviceLocationId: ID!
@@ -2898,6 +2928,12 @@ export const bmsPosDeviceTypeDefs = /* GraphQL */ `
     bmsPosStockCounts(
       credentials: BmsPosCredentialsInput!
     ): BmsPosStockCountsResult!
+    bmsPosStockSearch(
+      credentials: BmsPosCredentialsInput!
+      q: String = ""
+      limit: Int = 30
+      offset: Int = 0
+    ): BmsPosBranchStockSearchResult!
     bmsPosBoardGameWorkspace(
       credentials: BmsPosCredentialsInput!
     ): BmsPosBoardGameWorkspace!
@@ -4099,6 +4135,34 @@ export const bmsPosDeviceResolvers = {
         ),
         deviceLocationId: device.locationId,
       };
+    },
+
+    async bmsPosStockSearch(
+      _parent: unknown,
+      args: {
+        credentials: PosCashierCredentials;
+        q?: unknown;
+        limit?: number | null;
+        offset?: number | null;
+      },
+      ctx: any,
+    ) {
+      const device = requirePosDevice(ctx);
+      await requirePosCashier(device, args.credentials, "product.view");
+      const search = typeof args.q === "string" ? args.q.trim() : "";
+      if (search.length > 200)
+        return badPosInput("คำค้นหาต้องไม่เกิน 200 ตัวอักษร");
+      const offset = Math.trunc(Number(args.offset ?? 0));
+      if (!Number.isFinite(offset) || offset < 0 || offset > 100_000) {
+        return badPosInput("offset ไม่ถูกต้อง");
+      }
+      return searchBranchStock({
+        tenantId: device.tenantId,
+        locationId: device.locationId,
+        search,
+        limit: boundedLimit(args.limit, 30, 50),
+        offset,
+      });
     },
 
     async bmsPosBoardGameWorkspace(

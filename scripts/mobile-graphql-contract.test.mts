@@ -451,11 +451,11 @@ test("all 97 mobile/POS input arguments are typed", () => {
   );
 });
 
-test("all 143 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
+test("all 144 mobile/POS outputs are recursively typed with no JSON escape hatch", () => {
   const operations = moduleOperations();
   assert.equal(
     operations.length,
-    143,
+    144,
     "the complete mobile/POS output surface must stay in the contract",
   );
   const jsonRoots = operations

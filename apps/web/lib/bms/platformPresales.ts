@@ -1,5 +1,6 @@
 import { listPlans, type Plan } from "./entitlements";
 import { BMS_PRESALES_FAQ } from "./platformPresalesFaq";
+export { extractPresalesNeeds, composePresalesRecommendation, presalesContact } from "./presalesAdvisor";
 
 export type PresalesLocale = "th" | "en";
 export type PresalesAvailability =
@@ -247,12 +248,29 @@ function normalize(value: string): string {
     .replace(/[?!？!.,:;]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
+// Short intent phrases for provider-free retrieval, never test sentences or business facts.
+const PRESALES_QUERY_HINTS: Record<string, readonly string[]> = {
+  "ai-points": ["รวม ai", "ซื้อ ai แยก", "แต้มคือ"],
+  "ai-behavior": ["ตอบลูกค้าแทน", "พนักงานรับช่วง", "กำหนดคำพูด", "ตั้งน้ำเสียง"],
+  "ai-grounding": ["สต็อกล่าสุด", "ของหมด", "ราคาล่าสุด"],
+  "chat-orders": ["หลายรายการ", "ข้อความเดียว"],
+  inventory: ["เครื่องขายพร้อมกัน", "สาขาไหนมี", "ระหว่างนับสต็อก", "สต็อกไม่ตรง"],
+  "privacy-operations": ["ดูต้นทุน", "ไม่ให้ลดราคา", "ปิดสิทธิ์"],
+  "mobile-stock": ["เช็กสต็อกด้วยมือถือ", "เช็คสต็อกด้วยมือถือ", "เห็นของเหลือ", "สแกนดูยอด"],
+  "purchasing-transfers": ["ล็อต", "serial", "รับของไม่ครบ", "สินค้าเสียหาย"],
+  onboarding: ["เดโม", "ลองก่อนจ่าย"],
+  reports: ["ให้บัญชี", "ดาวน์โหลด excel"],
+  "commercial-terms": ["ลดให้", "อีกแชท", "ส่วนลดพิเศษ"],
+  support: ["รับเรื่องแล้ว", "คุยกับคน", "เปิดขายพรุ่งนี้"],
+  "setup-migration": ["สมัครวันนี้", "เริ่มขายได้เลย", "เตรียมสินค้า", "เตรียมข้อมูล", "เปิดขายพรุ่งนี้"],
+};
+
 function scoreEntry(query: string, entry: PresalesKnowledgeEntry, locale: PresalesLocale): number {
   const q = normalize(query);
   if (!q) return 0;
   const title = normalize(entry.title[locale]);
   // Mixed Thai/English questions are common. Language selects output, not what can be found.
-  const entryAliases = [...entry.aliases.th, ...entry.aliases.en].map(normalize);
+  const entryAliases = [...entry.aliases.th, ...entry.aliases.en, ...(PRESALES_QUERY_HINTS[entry.id] ?? [])].map(normalize);
   let score = title === q ? 100 : q.includes(title) ? 50 : 0;
   for (const alias of entryAliases) {
     if (alias === q) score = Math.max(score, 100);
@@ -279,8 +297,8 @@ export function searchBmsPresalesKnowledge(
 export function isBmsPlanQuestion(message: string): boolean {
   if (/^(?:ราคา|price|cost|เท่าไร|เท่าไหร่)$/.test(normalize(message))) return true;
   // Time entitlements are not subscription packages. Preserve an explicit mixed plan request.
-  if (/(?:แพ็กเกจชั่วโมง|hour pass|time pass)/i.test(message) && !/(?:\bfree\b|\bpro\b|\bbusiness\b|แพ็กเกจ\s*bms|subscription)/i.test(message)) return false;
-  return /(?:แพ็กเกจ|package|pricing|กี่บาท|รายเดือน|\bfree\b|แบบฟรี|\bpro\b|\bbusiness\s+(?:plan|package)\b|(?:\bplan|\bpackage)\s+business\b|โควตา|quota|ราคา(?:เท่าไร|เท่าไหร่)|เสียเท่าไร|ได้กี่(?:สาขา|เครื่อง|คน|รายการ|ช่องทาง)|จำนวนออร์เดอร์ต่อเดือน|แต้ม\s*ai|ai\s*(?:point|credit))/i.test(message);
+  if (/(?:แพ็กเกจชั่วโมง|hour pass|time pass)/i.test(message) && !/(?:\bfree\b|\bpro\b|\bgrowth\b|\bbusiness\b|\benterprise\b|แพ็กเกจ\s*bms|subscription)/i.test(message)) return false;
+  return /(?:แพ็กเกจ|package|pricing|กี่บาท|รายเดือน|รายปี|\bfree\b|แบบฟรี|\bpro\b|\bgrowth\b|\bbusiness\s+(?:plan|package)\b|(?:\bplan|\bpackage)\s+business\b|\benterprise\b|โรงงานใหญ่|โควตา|quota|ราคา(?:เท่าไร|เท่าไหร่)|เสียเท่าไร|ได้กี่(?:สาขา|เครื่อง|คน|รายการ|ช่องทาง)|จำนวนออร์เดอร์ต่อเดือน|แต้ม\s*ai|ai\s*(?:point|credit))/i.test(message);
 }
 
 export function isBmsPresalesGreeting(message: string): boolean {
@@ -302,7 +320,7 @@ export function composePresalesKnowledgeReply(
 }
 
 export type PublicPlan = Pick<Plan,
-  "code" | "name" | "price_monthly" | "max_products" | "max_channels" | "max_orders_month" |
+  "code" | "name" | "price_monthly" | "price_yearly" | "max_products" | "max_channels" | "max_orders_month" |
   "max_users" | "max_branches" | "max_devices" | "ai_credits_monthly" | "feature_keys"
 > & { verifiedAt: string };
 
@@ -313,6 +331,7 @@ export async function listBmsPublicPlans(): Promise<PublicPlan[]> {
     code: plan.code,
     name: plan.name,
     price_monthly: plan.price_monthly,
+    price_yearly: plan.price_yearly,
     max_products: plan.max_products,
     max_channels: plan.max_channels,
     max_orders_month: plan.max_orders_month,
@@ -337,11 +356,11 @@ export function composeBmsPlanReply(plans: readonly PublicPlan[], locale: Presal
       : "ขณะนี้ตรวจสอบแพ็กเกจ BMS ล่าสุดไม่ได้ค่ะ กรุณาลองใหม่ภายหลังหรือสอบถามทีม BMS โดยตรง";
   }
   const blocks = plans.map(plan => locale === "en"
-    ? `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("en-US")} THB/month` : "Free"}\n  Products ${limit(plan.max_products, locale)} · users ${limit(plan.max_users, locale)} · branches ${limit(plan.max_branches, locale)} · POS devices ${limit(plan.max_devices, locale)} · channels ${limit(plan.max_channels, locale)} · orders ${limit(plan.max_orders_month, locale)}/month · AI ${limit(plan.ai_credits_monthly, locale)} points/month`
-    : `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.price_monthly.toLocaleString("th-TH")} บาท/เดือน` : "ฟรี"}\n  สินค้า ${limit(plan.max_products, locale)} · ผู้ใช้ ${limit(plan.max_users, locale)} · สาขา ${limit(plan.max_branches, locale)} · เครื่อง POS ${limit(plan.max_devices, locale)} · ช่องทาง ${limit(plan.max_channels, locale)} · ออร์เดอร์ ${limit(plan.max_orders_month, locale)}/เดือน · AI ${limit(plan.ai_credits_monthly, locale)} แต้ม/เดือน`
+    ? `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.code === "enterprise" ? "from " : ""}${plan.price_monthly.toLocaleString("en-US")} THB/month · ${plan.code === "enterprise" ? "annual contract from " : "annual "}${plan.price_yearly.toLocaleString("en-US")} THB` : "Free"}\n  Products ${limit(plan.max_products, locale)} · users ${limit(plan.max_users, locale)} · branches ${limit(plan.max_branches, locale)} · POS devices ${limit(plan.max_devices, locale)} · channels ${limit(plan.max_channels, locale)} · orders ${limit(plan.max_orders_month, locale)}/month · AI ${limit(plan.ai_credits_monthly, locale)} points/month${plan.code === "enterprise" ? " · sales assessment required" : ""}`
+    : `• ${plan.name}: ${plan.price_monthly > 0 ? `${plan.code === "enterprise" ? "เริ่ม " : ""}${plan.price_monthly.toLocaleString("th-TH")} บาท/เดือน · ${plan.code === "enterprise" ? "สัญญารายปีเริ่ม " : "รายปี "}${plan.price_yearly.toLocaleString("th-TH")} บาท` : "ฟรี"}\n  สินค้า ${limit(plan.max_products, locale)} · ผู้ใช้ ${limit(plan.max_users, locale)} · สาขา ${limit(plan.max_branches, locale)} · เครื่อง POS ${limit(plan.max_devices, locale)} · ช่องทาง ${limit(plan.max_channels, locale)} · ออร์เดอร์ ${limit(plan.max_orders_month, locale)}/เดือน · AI ${limit(plan.ai_credits_monthly, locale)} แต้ม/เดือน${plan.code === "enterprise" ? " · ต้องให้ฝ่ายขายประเมินการใช้งาน" : ""}`
   );
   const note = locale === "en"
-    ? "These are public new-signup limits, not verified entitlements for your shop; legacy shops and Retail Local have different rules. Core POS, CRM, inventory, payments, tax and data export remain available across plans. Scheduled reports start at Pro and new Retention analyses require Business for new shops. There is currently no automatic recurring subscription charge or Pro trial."
-    : "นี่คือขีดจำกัดสาธารณะสำหรับการสมัครใหม่ ไม่ใช่ผลตรวจสิทธิ์ของร้านคุณ ร้านเดิมและ Retail Local มีเงื่อนไขต่างกัน งานหลัก POS, CRM, สต็อก รับเงิน ภาษี และส่งออกข้อมูลใช้ได้ทุกแพ็กเกจค่ะ สำหรับร้านใหม่ การตั้งเวลารายงานเริ่มที่ Pro และการสร้าง Retention analysis ใหม่ต้องใช้ Business ปัจจุบันยังไม่มีการตัดค่าสมาชิกรายเดือนอัตโนมัติหรือ Pro trial";
+    ? "These are public new-signup limits, not verified entitlements for your shop; legacy shops and Retail Local have different rules. Core POS, CRM, inventory, payments, tax and data export remain available across plans. Scheduled reports start at Pro and new Retention analyses require Business or Enterprise for new shops. Enterprise is not self-serve and requires an annual contract and workload assessment. There is currently no automatic recurring subscription charge or Pro trial."
+    : "นี่คือขีดจำกัดสาธารณะสำหรับการสมัครใหม่ ไม่ใช่ผลตรวจสิทธิ์ของร้านคุณ ร้านเดิมและ Retail Local มีเงื่อนไขต่างกัน งานหลัก POS, CRM, สต็อก รับเงิน ภาษี และส่งออกข้อมูลใช้ได้ทุกแพ็กเกจค่ะ สำหรับร้านใหม่ การตั้งเวลารายงานเริ่มที่ Pro และการสร้าง Retention analysis ใหม่ต้องใช้ Business หรือ Enterprise โดย Enterprise ไม่เปิดสมัครเองและต้องประเมิน workload พร้อมทำสัญญารายปี ปัจจุบันยังไม่มีการตัดค่าสมาชิกรายเดือนอัตโนมัติหรือ Pro trial";
   return [locale === "en" ? "Current BMS plans" : "แพ็กเกจ BMS ปัจจุบัน", ...blocks, note, locale === "en" ? "How many branches and POS devices do you expect to use?" : "คาดว่าจะใช้กี่สาขาและกี่เครื่อง POS คะ?"].join("\n\n");
 }

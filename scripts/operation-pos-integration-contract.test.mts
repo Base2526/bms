@@ -98,6 +98,12 @@ for (const action of ["sendStockTransfer", "receiveStockTransfer", "applyStockCo
         if (sql.includes("FROM bms_stock_transfers")) return rows([{ status: action === "sendStockTransfer" ? "DRAFT" : "IN_TRANSIT", from_location: "source", to_location: "destination", transfer_no: "T" }]);
         if (sql.includes("FROM bms_stock_counts")) return rows([{ status: "DRAFT", location_id: "source", count_no: "C" }]);
         if (sql.includes("FROM bms_stock_transfer_items") || sql.includes("FROM bms_stock_count_items")) return rows(["healthy", "held"].map((product_sku, id) => ({ id, product_sku, size: "BASE", qty: 1, snapshot_qty: 10, counted_qty: 9 })));
+        if (sql.includes("FROM bms_products p") && sql.includes("policy.stock_policy IN")) {
+          assert.deepEqual(params, ["tenant", ["healthy", "held"]]);
+          // Both fixture products support aggregate work. The later quality check must
+          // still roll back the healthy line when the second line becomes held.
+          return rows();
+        }
         if (sql.includes("AS day")) return rows([{ day: "2026-10-26" }]);
         if (sql.includes("FROM bms_inventory_lots")) return rows([{ qty: 10, expiry_date: null, usable: params?.[2] !== "held" }]);
         if (sql.includes("FROM bms_inventory")) {

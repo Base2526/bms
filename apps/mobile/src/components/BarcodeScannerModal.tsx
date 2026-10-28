@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -16,15 +17,21 @@ import {
   saveScannerInputMode,
   type ScannerInputMode,
 } from '../lib/scannerPreference';
-import type { PosMenuItem } from '../types/pos';
 import { useTheme } from '../theme/ThemeProvider';
 import { useResponsive } from '../theme/useResponsive';
 
-interface Props {
+export type ScannerResolvedItem = {
+  name: string;
+  sellable: boolean;
+  unavailableNote?: string | null;
+};
+
+interface Props<T extends ScannerResolvedItem> {
+  purpose?: 'sale' | 'lookup';
   visible: boolean;
   onCancel: () => void;
-  resolveCode: (code: string) => Promise<PosMenuItem>;
-  onScanned: (item: PosMenuItem, inputMode: ScannerInputMode) => void;
+  resolveCode: (code: string) => Promise<T>;
+  onScanned: (item: T, inputMode: ScannerInputMode) => void;
   completedHardwareScan: { sequence: number; name: string } | null;
 }
 
@@ -61,13 +68,14 @@ function scannerFailureMessage(error: unknown): string {
   return 'เปิดกล้องสแกนไม่ได้ อุปกรณ์นี้อาจไม่รองรับกล้องสแกน หรือยังไม่ได้อนุญาตสิทธิ์กล้อง กรุณาตรวจสิทธิ์แล้วลองใหม่';
 }
 
-export function BarcodeScannerModal({
+export function BarcodeScannerModal<T extends ScannerResolvedItem>({
+  purpose = 'sale',
   visible,
   onCancel,
   resolveCode,
   onScanned,
   completedHardwareScan,
-}: Props) {
+}: Props<T>) {
   const { colors, spacing, radius, typography } = useTheme();
   const { isTablet } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -113,7 +121,9 @@ export function BarcodeScannerModal({
         setView('manual');
         setSelection({ start: 0, end: normalized.length });
         setError(
-          'รหัสมีอักษรไทย กรุณาเปลี่ยนคีย์บอร์ดฮาร์ดแวร์เป็น English (US) ที่ ตั้งค่า > ทั่วไป > คีย์บอร์ด',
+          Platform.OS === 'ios'
+            ? 'รหัสมีอักษรไทย กรุณาเปลี่ยนคีย์บอร์ดฮาร์ดแวร์เป็น English (US) ที่ ตั้งค่า > ทั่วไป > คีย์บอร์ด'
+            : 'รหัสมีอักษรไทย กรุณาเปลี่ยนภาษาคีย์บอร์ดจริงเป็น English (US) ในการตั้งค่าคีย์บอร์ดของอุปกรณ์',
         );
         requestAnimationFrame(() => manualInputRef.current?.focus());
         return;
@@ -415,7 +425,13 @@ export function BarcodeScannerModal({
               ) : null}
               <View style={{ gap: spacing.sm, marginTop: spacing.lg }}>
                 <Button
-                  label={loading ? 'กำลังตรวจสินค้า…' : 'เพิ่มสินค้าจากรหัส'}
+                  label={
+                    loading
+                      ? 'กำลังตรวจสินค้า…'
+                      : purpose === 'lookup'
+                      ? 'ค้นหาสต็อกจากรหัส'
+                      : 'เพิ่มสินค้าจากรหัส'
+                  }
                   fullWidth
                   loading={loading}
                   disabled={!code.trim() || loading}
