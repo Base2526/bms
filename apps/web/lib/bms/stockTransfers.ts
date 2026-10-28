@@ -302,8 +302,22 @@ export async function createStockTransferInTx(
   // FK เป็นคนจับ คนกรอกจะได้ 500 เปล่า ๆ แทนที่จะได้ประโยคว่าพิมพ์ SKU ไหนผิด
   // (ฝั่งใบนับตรวจข้อนี้อยู่แล้ว — ดู recordCountItem)
   const skus = Array.from(new Set(items.map((i) => i.sku)));
-  const known = await client.query<{ sku: string }>(
-    `SELECT sku FROM bms_products WHERE tenant_id = $1 AND sku = ANY($2::text[])`,
+  const known = await client.query<{
+    sku: string;
+    serial_tracked: boolean;
+    is_bundle: boolean;
+    stock_policy: string;
+    lot_tracking: boolean;
+    expiry_tracking: boolean;
+  }>(
+    `SELECT p.sku, p.serial_tracked, p.is_bundle,
+            COALESCE(policy.stock_policy, CASE WHEN p.is_bundle THEN 'BUNDLE' ELSE 'DIRECT' END) AS stock_policy,
+            COALESCE(policy.lot_tracking, false) AS lot_tracking,
+            COALESCE(policy.expiry_tracking, false) AS expiry_tracking
+       FROM bms_products p
+       LEFT JOIN bms_product_stock_policies policy
+         ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+      WHERE p.tenant_id = $1 AND p.sku = ANY($2::text[])`,
     [input.tenantId, skus],
   );
   if (known.rowCount !== skus.length) {
@@ -312,6 +326,30 @@ export async function createStockTransferInTx(
     return {
       status: "INVALID",
       reason: `ไม่พบสินค้า: ${missing.join(", ")}`,
+    };
+  }
+  const unsupported = known.rows.find(
+    (row) =>
+      row.serial_tracked ||
+      row.is_bundle ||
+      row.lot_tracking ||
+      row.expiry_tracking ||
+      ["SERIALIZED", "BUNDLE", "RECIPE", "NON_STOCK"].includes(
+        row.stock_policy,
+      ),
+  );
+  if (unsupported) {
+    const reason =
+      unsupported.serial_tracked || unsupported.stock_policy === "SERIALIZED"
+        ? "ติดตาม Serial"
+        : unsupported.lot_tracking || unsupported.expiry_tracking
+          ? "ติดตามล็อต/วันหมดอายุ"
+          : unsupported.is_bundle || unsupported.stock_policy === "BUNDLE"
+            ? "เป็นสินค้าชุดที่ตัดจากส่วนประกอบ"
+            : "ไม่ได้ถือสต็อกโดยตรง";
+    return {
+      status: "INVALID",
+      reason: `${unsupported.sku} ${reason} จึงยังไม่รองรับการโอนแบบยอดรวม`,
     };
   }
 
@@ -451,6 +489,28 @@ export async function sendStockTransfer(input: {
         WHERE tenant_id = $1 AND transfer_id = $2 ORDER BY id`,
       [input.tenantId, input.transferId],
     );
+
+    // Drafts can predate these guards, or the product policy can change after creation.
+    // Revalidate before the first stock write, not only when creating a document.
+    const unsupported = await client.query<{ sku: string }>(
+      `SELECT p.sku FROM bms_products p
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+        WHERE p.tenant_id = $1 AND p.sku = ANY($2::text[])
+          AND (p.serial_tracked OR p.is_bundle
+            OR COALESCE(policy.lot_tracking, false)
+            OR COALESCE(policy.expiry_tracking, false)
+            OR policy.stock_policy IN ('SERIALIZED', 'BUNDLE', 'RECIPE', 'NON_STOCK'))
+        LIMIT 1`,
+      [input.tenantId, items.rows.map((item) => item.product_sku)],
+    );
+    if (unsupported.rows.length) {
+      await client.query("ROLLBACK");
+      return {
+        status: "INVALID",
+        reason: `${unsupported.rows[0].sku} ต้องใช้ workflow เฉพาะ จึงยังไม่รองรับการโอนแบบยอดรวม`,
+      };
+    }
 
     for (const item of items.rows) {
       const inv = await client.query<{

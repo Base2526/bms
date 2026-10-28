@@ -277,6 +277,9 @@ still required before production use.
   production server (`BMS_SMOKE_URL`, default localhost:3007), mocked APIs, Chrome via Playwright
   (`BMS_PLAYWRIGHT_MODULE` optionally selects its module). Thai/English at 1440px/390px; screenshots
   go into `.test-output/`. No live customer messages, payments or provider calls.
+- `scripts/public-package-browser-smoke.mjs`: public homepage pricing table with mocked read-only
+  plan catalogue; verifies Free/Pro/Business/Enterprise, the Enterprise contact-sales boundary,
+  Thai/English copy and document overflow at 1440px/390px.
 
 Restaurant handoff/backlog (2026-10-15): see
 [phase 1–9 completion and remaining-work log](../docs/business/inventory.md#restaurant-phases-1–9-completion-and-remaining-work-log-2026-10-15).
@@ -1425,6 +1428,16 @@ rejection, disabled wastage and immediate held-return notices (including future-
 SDL in English/Thai at 1280/390px with mocked auth/transport (no production writes). Set
 `BMS_SMOKE_URL` to the isolated built server; `BMS_PLAYWRIGHT_MODULE` may point to the local runtime.
 The browser also asserts exact due-time preservation on findings-only edits and visible return links.
+
+## Presales callback recheck
+
+- `node scripts/run-contract-tests.mjs pure bms-presales`: intent negatives, tenant transaction,
+  stable assignment, owner mentions, repeat suppression, rollback and failed notification handling.
+- `node scripts/presales-callback-browser-smoke.mjs`: real Inbox route with synthetic auth/GraphQL
+  at 1440/390px in Thai/English. Checks active/read callback priority, closed-work exclusion and
+  horizontal overflow. Use `BMS_SMOKE_URL` (localhost only) and optionally `BMS_PLAYWRIGHT_MODULE`.
+  Screenshots are in `.test-output/presales-callback-browser/`. These fixtures do not verify
+  PostgreSQL grants/RLS or real LINE/realtime delivery.
 
 ## Inventory intelligence recheck
 

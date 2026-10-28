@@ -11,7 +11,7 @@ Deleting a saved key may leave a configured server key active.
 
 The local `/admin/billing` page is an AI usage report: requests, provider attempts, input/output
 tokens, attributed cost and unpriced-call counts, with feature breakdown. Reporting periods start
-on the first at 00:00 Asia/Bangkok. No point balance, THB 1,990 subscription, cloud plan selector or
+on the first at 00:00 Asia/Bangkok. No point balance, Cloud subscription, cloud plan selector or
 point-adjustment controls are shown. Runtime records zero new point charges independent of the
 internal tenant plan; old accounting evidence is preserved. Cloud-plan changes/point adjustments
 are refused by the backend in local mode. The provisioned `business` plan is retained for shop

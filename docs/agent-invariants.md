@@ -110,6 +110,21 @@ Preserve the final pipeline digest through persistence; never replace it with a 
 text and claim a match. Recheck source-message roles/links and retained call counts; integrity
 failures cannot be COMPLETE. Expired headers and snapshots stay hidden even before cron cleanup.
 
+BMS presales has one narrow deterministic write outside the model tool loop: an explicit request
+for Sales to contact the prospect. `presalesCallbackIntent.ts` must match a strong current-message
+request; asking for LINE ID/contact details alone remains read-only. `presalesCallback.ts` commits
+the tenant conversation, `sales-callback`/`hot-lead` tags, Sales-first assignment, internal mention,
+and `presales.callback_request` audit before the assistant acknowledges the queue. The Inbox sorts
+active callback-tagged work first. Notifications are best-effort after commit and contain no raw
+message, customer ref, phone number, or other copied PII. A write failure must never be described as
+a handoff, and no response-time promise is inferred from assignment. Repeated requests within the
+dedupe window keep priority but do not spam notes or notifications. The 15-minute window is anchored
+to the last non-repeated request, never extended by suppressed repeats. Existing eligible owners
+are preserved; a changed owner or a fresh request after completion starts a new notification cycle.
+New assignees need `inbox.view` and `inbox.reply`; tenant Administrators (up to 50, even unavailable)
+also receive durable internal mentions. Closing the conversation removes only `sales-callback`,
+retaining `hot-lead` and other tags. Negated, conditional, quoted and status questions are read-only.
+
 The catalog also covers store profile (`lib/bms/storeProfile.ts`, migrations `6.9`/`7.17__bms_store_profile*`
 — `get_store_info`/`get_payment_info`/`get_shipping_estimate`; contact/branding/locale fields). Shop name
 is a single source: `bms_tenants.name` via `getTenantName()` (the `store_name` column is deprecated — do
@@ -746,7 +761,7 @@ deployment profile. The operator contract and remaining release gates live in
   Billing show owned-key/setup state; Billing shows requests/tokens/attributed cost, without point
   balances, paid SaaS cards or point-adjustment forms. Local cloud-plan changes and point adjustments
   are rejected server-side. The provisioned `business` value continues to govern existing shop
-  capabilities; it is not evidence of purchasing THB 1,990 AI. Licensing never gates this policy.
+  capabilities; it is not evidence of purchasing a Cloud AI subscription. Licensing never gates this policy.
   Provider routing (including sensitive/OCR/pharmacy routes) remains unchanged: a configured chat
   key does not imply that every specialized provider is configured. Historical `source='shared'`
   means the server credential route, not who pays; deployment/billing mode determines entitlement.
@@ -1826,6 +1841,10 @@ an operator note, and the audit preserves those per-line facts. Never add damage
 - **A count applies a delta, never an absolute.** Each line keeps its first-entry snapshot; apply adds
   `counted_qty - snapshot_qty` to current stock so sales during the count survive. The whole apply is
   refused if any result would fall below reserved stock.
+- **Aggregate stock work must not erase identity.** The current transfer/count documents carry only
+  integer `SKU + size` quantities. Lot/expiry-tracked, serial-tracked, bundle, recipe and non-stock
+  products remain read-visible but fail closed in these mutations until a dedicated workflow carries
+  their identity/provenance through movement, audit and receipt evidence.
 - **Counting and accepting variance are separate jobs.** `inventory.count` may create/edit/cancel a
   draft; `inventory.count.apply` signs the stock change. Transfers use `inventory.transfer`. The REST
   routes derive tenant and actor from the signed admin session and drill-down cookie, never the body.
@@ -1982,8 +2001,10 @@ their provider independently:
     serialized on the monthly row.
   - **A real inference call is an event even when it is free.** Tenant BYOK key tests are recorded as
     zero-credit `ai_key_test` events rather than being skipped.
-  - **Monthly AI points (`10.56`).** Free grants 100 points, Pro grants 1,000 at THB 599,
-    Business is 5,000 at THB 1,990 after `10.73`'s scheduled transition. That migration preserves
+  - **Monthly AI points (`10.56`, `10.101`, `10.102`).** Free grants 100 points, Pro grants 1,000
+    at THB 990, Growth grants 2,500 at THB 1,990, Business grants 5,000 at THB 4,900, and
+    Enterprise Factory grants 10,000 starting at THB 29,900.
+    `10.73`'s historical transition preserves
     the previous Business allowance through its rollout month; `planPolicy.ts` resolves both the
     current and pending allowance for the service/API. Never use the raw catalogue target to
     admit AI work before its effective date. The accounting month changes on the first at

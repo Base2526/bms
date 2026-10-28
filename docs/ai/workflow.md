@@ -145,6 +145,40 @@ over a shared tool catalog ([`lib/bms/tools/catalog.ts`](../../apps/web/lib/bms/
   It bypasses shop profile/catalog/order routing after the emergency guards. Bounded own-conversation
   history (eight messages, server-resolved tenant/channel/customer) supports semantic topic selection
   through the shared AI runtime, followed by approved public-answer composition and live-plan reads.
+  Public capacity advice (`presalesAdvisor.ts`) compares explicit user-stated totals against a fresh
+  `list_bms_public_plans` result, chooses the lowest-priced qualifying plan and explains smaller-plan
+  shortfalls. Device count alone is not complete suitability: users, branches, products, monthly AI
+  points, requested paid features and budget stay separate. Thai/English numeric follow-ups reuse
+  user statements only; assistant history never supplies capacity or prices. Ranges/per-branch totals
+  need clarification, and unsupported wording remains a question rather than a guessed quantity.
+  Budget-only requests (including “งบเดือนละ 2500”) show an entry paid option within budget,
+  with a free alternative when available; they do not claim that spending the budget proves fit.
+  The reply lists all verified capacities and paid features. With explicit workload requirements,
+  capacity remains binding and an over-budget fit is disclosed rather than silently recommending
+  an insufficient cheaper plan. Prices are always from the current tool result.
+  Public answers also distinguish customers from billable AI requests, monthly shop subscription
+  from per-device add-ons, image receipt from visual product identification, and reports from
+  automatic outbound alerts. Hardware compatibility requires model/connection verification;
+  remote web reporting does not promise every report in the native app. Additional branch counts
+  require confirmed totals instead of replacing the existing branch count silently.
+  `bms-presales-sales60.mts` adds 60 customer-worded acceptance questions to the original 250-question
+  corpus. The assistant contract exercises actual fallback composition plus seven follow-up cases,
+  checking required topic content and forbidden commitments. These deterministic and stubbed-provider
+  tests do not prove live-model accuracy or delivery through a real LINE account.
+  Unknown answers, failed pricing and human-support needs include the verified BMS LINE contact.
+  A question asking for LINE ID is read-only and, inside LINE, explains that the prospect is already
+  in the BMS OA. A strong current-message request for Sales to contact the prospect bypasses the
+  model and commits an Inbox work item first: `sales-callback`/`hot-lead` tags, Sales-first assignment,
+  internal mention and an audit row. Only then does the assistant acknowledge the top-priority queue
+  and ask for company/business/topic/scale plus an optional phone and convenient time; it never asks
+  a LINE user to send their LINE ID again. Write failure says that no queue item was created. Repeat
+  requests within 15 minutes of the last non-repeated request retain their eligible assignee and
+  priority without notification spam. The assignee and tenant Administrators receive durable
+  mentions, including when Administrators are unavailable; realtime notification is best-effort.
+  Closing the conversation clears callback priority. Negated/hypothetical/quoted/status questions
+  do not create work. No response SLA, discount or
+  custom capacity is invented. Mobile stock knowledge is explicitly limited
+  to server-connected workflows and does not promise offline counting or app-store distribution.
   Greetings and provider-unavailable turns have an audited deterministic fallback. A separate LINE OA cannot select this mode through
   its tenant id, incoming text, event body, or channel-settings `extra`, and presales can never
   execute a commerce tool. Verified OA identity is bound to the current token; legacy/unbound

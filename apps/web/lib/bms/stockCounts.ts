@@ -306,13 +306,42 @@ export async function recordCountItem(input: {
       return { status: "WRONG_STATE", current: head.rows[0].status };
     }
 
-    const prod = await client.query(
-      `SELECT 1 FROM bms_products WHERE tenant_id = $1 AND sku = $2`,
+    const prod = await client.query<{
+      serial_tracked: boolean;
+      is_bundle: boolean;
+      stock_policy: string;
+      lot_tracking: boolean;
+      expiry_tracking: boolean;
+    }>(
+      `SELECT p.serial_tracked, p.is_bundle,
+              COALESCE(policy.stock_policy, CASE WHEN p.is_bundle THEN 'BUNDLE' ELSE 'DIRECT' END) AS stock_policy,
+              COALESCE(policy.lot_tracking, false) AS lot_tracking,
+              COALESCE(policy.expiry_tracking, false) AS expiry_tracking
+         FROM bms_products p
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = p.tenant_id AND policy.product_sku = p.sku
+        WHERE p.tenant_id = $1 AND p.sku = $2`,
       [input.tenantId, input.sku],
     );
     if (!prod.rowCount) {
       await client.query("ROLLBACK");
       return { status: "INVALID", reason: `ไม่พบสินค้า ${input.sku}` };
+    }
+    const product = prod.rows[0];
+    if (
+      product.serial_tracked ||
+      product.is_bundle ||
+      product.lot_tracking ||
+      product.expiry_tracking ||
+      ["SERIALIZED", "BUNDLE", "RECIPE", "NON_STOCK"].includes(
+        product.stock_policy,
+      )
+    ) {
+      await client.query("ROLLBACK");
+      return {
+        status: "INVALID",
+        reason: `${input.sku} ต้องนับด้วย workflow เฉพาะ ไม่รองรับการนับแบบยอดรวม`,
+      };
     }
 
     const inv = await client.query<{ current_stock: number }>(
@@ -361,6 +390,7 @@ export type ApplyCountResult =
   | QualityHoldRejection
   | { status: "APPLIED"; adjustedItems: number; varianceUnits: number }
   | { status: "NOT_FOUND" }
+  | { status: "INVALID"; reason: string }
   | { status: "WRONG_STATE"; current: StockCountStatus }
   | {
       status: "WOULD_BREAK_RESERVED";
@@ -428,11 +458,45 @@ export async function applyStockCount(input: {
       size: string;
       snapshot_qty: number;
       counted_qty: number;
+      serial_tracked: boolean;
+      is_bundle: boolean;
+      stock_policy: string;
+      lot_tracking: boolean;
+      expiry_tracking: boolean;
     }>(
-      `SELECT product_sku, size, snapshot_qty, counted_qty FROM bms_stock_count_items
-        WHERE tenant_id = $1 AND count_id = $2 ORDER BY id`,
+      `SELECT item.product_sku, item.size, item.snapshot_qty, item.counted_qty,
+              product.serial_tracked, product.is_bundle,
+              COALESCE(policy.stock_policy,
+                CASE WHEN product.is_bundle THEN 'BUNDLE' ELSE 'DIRECT' END) AS stock_policy,
+              COALESCE(policy.lot_tracking, false) AS lot_tracking,
+              COALESCE(policy.expiry_tracking, false) AS expiry_tracking
+         FROM bms_stock_count_items item
+         JOIN bms_products product
+           ON product.tenant_id = item.tenant_id AND product.sku = item.product_sku
+         LEFT JOIN bms_product_stock_policies policy
+           ON policy.tenant_id = product.tenant_id AND policy.product_sku = product.sku
+        WHERE item.tenant_id = $1 AND item.count_id = $2
+        ORDER BY item.id`,
       [input.tenantId, input.countId],
     );
+
+    const unsupported = items.rows.find(
+      (item) =>
+        item.serial_tracked ||
+        item.is_bundle ||
+        item.lot_tracking ||
+        item.expiry_tracking ||
+        ["SERIALIZED", "BUNDLE", "RECIPE", "NON_STOCK"].includes(
+          item.stock_policy,
+        ),
+    );
+    if (unsupported) {
+      await client.query("ROLLBACK");
+      return {
+        status: "INVALID" as const,
+        reason: `${unsupported.product_sku} ต้องนับด้วย workflow เฉพาะ ไม่รองรับการนับแบบยอดรวม`,
+      };
+    }
 
     let adjusted = 0;
     let varianceUnits = 0;

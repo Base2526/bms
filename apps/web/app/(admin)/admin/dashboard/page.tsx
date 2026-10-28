@@ -474,7 +474,7 @@ export default function Page() {
           </Text>}
         </Space>
         {inventoryEvidenceLoading || inventoryEvidenceUnavailable ? (
-          <Alert showIcon type={inventoryEvidenceLoading ? "info" : "error"}
+          <Alert showIcon closable type={inventoryEvidenceLoading ? "info" : "error"}
             message={inventoryEvidenceLoading
               ? (lang === "en" ? "Loading inventory evidence" : "กำลังอ่านข้อมูลวิเคราะห์สต็อก")
               : (lang === "en" ? "Inventory evidence could not be loaded" : "อ่านข้อมูลวิเคราะห์สต็อกไม่สำเร็จ")}

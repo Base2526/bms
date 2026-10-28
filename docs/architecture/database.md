@@ -338,7 +338,7 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | Payment | `bms_payments` | `5.3` |
 | POS & tax | `bms_locations`, `bms_inventory_lots`, `bms_product_packs`, `bms_product_price_tiers`, `bms_pos_devices`, `bms_pos_shifts`, `bms_pos_purchase_receipts`, `bms_pos_expenses`, `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger`, `bms_order_item_lots`, `bms_pos_returns`, `bms_pos_return_items`, `bms_pos_return_item_lots`, `bms_pos_refund_allocations`, `bms_store_credits`, `bms_store_credit_ledger`, `bms_pos_deposits`, `bms_ar_accounts`, `bms_ar_invoices`, `bms_ar_receipts`, `bms_ar_ledger`, `bms_tax_documents`, `bms_expense_documents`, `bms_tenant_vat_settings`, `bms_etax_submissions`, `bms_tax_invoice_requests`, `bms_tax_request_submissions`, `bms_tax_request_emails` (+ supplier credit/debit-note columns on expense documents; `users.pos_only`, per-size pack and wholesale-price columns, cross-size wholesale scope/percentage, credit-note/cash-rounding columns; scanner protocol columns on POS devices; deposit, drawer-movement, expense, and PO-receipt idempotency; `CREDIT` added to payment/refund methods; preferred split-refund method; return/refund event-shift attribution; sale/receiving branch and source/destination lot attribution for returns) | `7.84`–`10.11` (`9.4` repair), `10.37` (supplier VAT notes), `10.38`–`10.39` (receipt-QR tax-invoice requests), `10.58` (tax-request email outbox) |
 | Shipping | `bms_shipments`, `bms_shipment_tracking_events` | `5.4`, `7.76`, `7.77` |
-| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes` | `5.5`, `7.51` (read/search indexes) |
+| Omnichannel Inbox | `bms_conversations`, `bms_messages`, `bms_conversation_notes`, `bms_conversation_note_mentions` | `5.5`, `7.18`, `7.51` (read/search indexes) |
 | Restock follow-up | `bms_restock_subscriptions`, `bms_restock_deliveries` | `7.41` |
 | Multi-tenant / RBAC | `bms_tenants`, `bms_tenant_channels`, `bms_role_permissions`, `bms_plans`, `bms_audit_log` | `4.0`–`5.1`, `5.7`, `5.8`, `7.78` |
 | Channel Health | `bms_channel_health_log` (+ columns on `bms_tenant_channels`) | `6.4` |
@@ -702,6 +702,19 @@ conversation previews, customer refs, message bodies, CRM names, and cached chan
 Keep list/detail GraphQL queries bounded; do not reintroduce unbounded message/note/event reads on
 the initial inbox view.
 
+Explicit BMS presales callback requests reuse this existing work queue rather than creating a
+parallel lead table. The transaction reopens the conversation, adds `sales-callback` and `hot-lead`
+tags and ensures at least one unread marker. It preserves an eligible assignee, otherwise chooses
+the least-loaded available Sales user (then Manager/Administrator fallback) with `inbox.view` and
+`inbox.reply`. It writes PII-minimized internal mentions for the assignee and tenant Administrators
+(up to 50, including unavailable ones) and appends `presales.callback_request` to `bms_audit_log`. Active
+callback-tagged conversations sort ahead of ordinary recency. Notification delivery is best-effort
+after commit; the committed Inbox row and audit remain the source of truth. Repeats within 15 minutes
+of the last non-repeated request do not duplicate the note/notification but still append an audit
+occurrence and retain priority. Reassignment or a fresh callback after completion bypasses that
+dedupe. Closing the conversation removes `sales-callback` in the tenant transaction, so a later
+ordinary message does not inherit completed urgency. Other tags, including `hot-lead`, remain.
+
 **`bms_orders` / `bms_order_items`** — orders start directly at `PENDING` with stock already
 reserved; there is no separate `DRAFT` status in the implementation despite earlier planning docs
 mentioning one. `bms_order_items` snapshots `unit_price` at order time (not a live join to
@@ -1040,6 +1053,21 @@ Its read-only snapshots compare counts/fingerprints and trigger metadata; offlin
 do not certify the migration against existing shop data.
 Roll out compatible code on every instance before 10.75. Rollback application gates, not policy
 columns/history. Rehearse on a restored throwaway DB before any production rollout.
+
+**Sustainable package catalogue (`10.101`, `10.102`)** — the current public Cloud matrix is
+Free/Pro/Growth/Business/Enterprise Factory at THB 0/990/1,990/4,900/29,900 per month and
+THB 0/9,900/19,900/49,000/329,000 per year. Enforced product limits are
+100/5,000/15,000/50,000/200,000; total-user limits are 2/5/15/40/150;
+branch/device/channel limits are 1/1/1, 1/3/3, 3/6/5, 5/10/10 and 10/50/20; AI grants are
+100/1,000/2,500/5,000/10,000. Orders remain
+unlimited because no order-volume package admission gate exists; the catalogue must not advertise
+an unenforced transaction cap. Enterprise carries both paid feature keys but is not self-serve:
+the public UI routes it to sales and states the workload assessment and minimum annual contract.
+The migrations are idempotent, preserve tenants and resources, and bump a plan version only when
+the row actually changes. Monthly prices and `price_yearly` are catalogue evidence, not payment.
+Recurring collection and storage/API metering,
+Full-vs-Light user licensing, support hours, implementation, custom
+integrations and SLA enforcement are not implemented by this migration and must not be implied.
 
 **AI usage accounting (`7.82__bms_ai_usage_accounting.sql`)** — splits what used to be one
 `credits_used`/`estimated_cost` pair on `bms_ai_usage_events` into three independent dimensions:

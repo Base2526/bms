@@ -11,7 +11,7 @@ import { resolvePlanAiAllowance } from "./planPolicy";
 import { planFeatureKeys, FeatureAccessError, resolveFeatureAccess, type PackageFeature } from "./featurePolicy";
 
 export type Plan = {
-  code: string; name: string; price_monthly: number;
+  code: string; name: string; price_monthly: number; price_yearly: number;
   max_products: number; max_channels: number; max_orders_month: number; max_users: number;
   max_branches: number; max_devices: number;
   max_ai_messages_month: number; ai_credits_monthly: number; sort: number;
@@ -112,7 +112,7 @@ export async function listPlans(): Promise<Plan[]> {
 
 function shapePlan(r: any, at: number): Plan {
   return {
-    code: r.code, name: r.name, price_monthly: Number(r.price_monthly),
+    code: r.code, name: r.name, price_monthly: Number(r.price_monthly), price_yearly: Number(r.price_yearly ?? 0),
     max_products: r.max_products, max_channels: r.max_channels,
     max_branches: r.max_branches ?? -1, max_devices: r.max_devices ?? -1,
     max_orders_month: r.max_orders_month, max_users: r.max_users,

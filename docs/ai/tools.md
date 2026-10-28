@@ -70,6 +70,11 @@ Tool names in the catalog are `snake_case` (e.g. `search_products`, `create_orde
   projections are per-tool allowlists: generic topic `id`, `answer`, `query`, `topicIds`, and plan
   fields are **not** added to shop-catalog, customer-status, or clinical evidence policies. Staff
   tool registration and RBAC are unchanged; presales tools are customer-only.
+  Explicit capacity requests also trigger the existing live-plan tool. A pure server-side adviser
+  compares stated totals, requested paid features and monthly budget, then explains the lowest-price
+  fit with remaining questions. It has no separate database or model access, never changes a plan,
+  and never derives entitlements from a recommendation. Unknown answers include verified LINE contact
+  guidance without inventing telephone numbers or claiming a human has been dispatched.
 - **Staff surface** (`bmsAssistant` / `/admin/assistant`): all read tools (incl. reports, forecast,
   documents, `summarize_conversation`) + A2 writes (execute + audit) + A3 sensitive tools as
   **propose-only** — the tool returns a proposal, a human clicks Confirm, and the UI fires the

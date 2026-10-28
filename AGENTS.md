@@ -81,8 +81,9 @@ before changing that domain.
   defaults to `"online"` (strict). Clinical evidence streams only from
   `/api/bms/pharmacy/evidence/[id]/file` with `pharmacy.evidence.read` (Pharmacist only).
 - AI accounting: keep `billable_credits`, `provider_calls`, `actual_cost_usd` separate; retries
-  share one `usage_group_id`; unknown cost is `NULL`. Monthly points (`10.56`): Free 100 / Pro 1,000 /
-  Business 5,000 after the scheduled `10.73` transition (old allowance through rollout month),
+  share one `usage_group_id`; unknown cost is `NULL`. Monthly points (`10.56`, `10.102`): Free 100 /
+  Pro 1,000 / Growth 2,500 / Business 5,000 after the scheduled `10.73` transition
+  (old Business allowance through rollout month),
   reset 00:00 Asia/Bangkok; no USD cap; attempts recorded before I/O; only
   DB-verified platform admins change plans/points. Shared-provider completions go through
   `finalizeAiUsageEvent()`. Never hook failure alerts off a tool's audit outcome.

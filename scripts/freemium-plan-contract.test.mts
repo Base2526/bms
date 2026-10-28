@@ -10,6 +10,8 @@ const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.ur
 test('current monthly package matrix stays aligned across migrations and customer-facing copy', () => {
   const phaseOne = read('db/migrations/10.73__bms_freemium_phase_one.sql');
   const capacity = read('db/migrations/10.75__bms_capacity_and_package_metrics.sql');
+  const sustainable = read('db/migrations/10.101__bms_sustainable_package_pricing.sql');
+  const growth = read('db/migrations/10.102__bms_growth_and_annual_pricing.sql');
   const thai = read('apps/web/i18n/th.ts');
   const english = read('apps/web/i18n/en.ts');
   const status = read('docs/status-log.md');
@@ -22,6 +24,12 @@ test('current monthly package matrix stays aligned across migrations and custome
   assert.match(capacity, /max_branches = CASE code WHEN 'business' THEN 5 ELSE 1 END/);
   assert.match(capacity, /max_devices = CASE code WHEN 'business' THEN 10 WHEN 'pro' THEN 3 ELSE 1 END/);
   assert.match(capacity, /max_channels = CASE code WHEN 'business' THEN -1 WHEN 'pro' THEN 3 ELSE 1 END/);
+  assert.match(sustainable, /WHEN 'pro' THEN 990/);
+  assert.match(sustainable, /WHEN 'business' THEN 4900/);
+  assert.match(sustainable, /'enterprise', 'Enterprise Factory', 29900/);
+  assert.match(sustainable, /max_orders_month = -1/);
+  assert.match(growth, /'growth', 'Growth', 1990, 19900/);
+  assert.match(growth, /WHEN 'business' THEN 49000/);
 
   assert.doesNotMatch(thai, /ยังไม่บังคับเพดานสาขา เครื่อง POS และช่องทาง/);
   assert.doesNotMatch(english, /Branch, device and channel limits are not enforced/);

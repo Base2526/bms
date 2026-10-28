@@ -882,6 +882,365 @@ export type SchemaBmsChannelSales = {
   revenue: Scalars['Float']['output'];
 };
 
+export type SchemaBmsChecklistAction = {
+  __typename?: 'BmsChecklistAction';
+  assignedTo: Maybe<Scalars['ID']['output']>;
+  dueAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  instruction: Scalars['String']['output'];
+  itemKey: Scalars['String']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  name: Maybe<Scalars['String']['output']>;
+  resolution: Maybe<Scalars['String']['output']>;
+  resolvedBy: Maybe<Scalars['ID']['output']>;
+  runId: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  verifiedBy: Maybe<Scalars['ID']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistAssignmentMode =
+  | 'DUTY'
+  | 'FIXED';
+
+export type SchemaBmsChecklistBranchReport = {
+  __typename?: 'BmsChecklistBranchReport';
+  approved: Scalars['Int']['output'];
+  failedRuns: Scalars['Int']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  onTime: Scalars['Int']['output'];
+  openActions: Scalars['Int']['output'];
+  overdue: Scalars['Int']['output'];
+  review: Scalars['Int']['output'];
+  total: Scalars['Int']['output'];
+  voided: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistCommandAction =
+  | 'ACTION_ASSIGN'
+  | 'ACTION_REOPEN'
+  | 'ACTION_RESOLVE'
+  | 'ACTION_START'
+  | 'ACTION_VERIFY'
+  | 'APPROVE'
+  | 'ASSIGN'
+  | 'CREATE_RUN'
+  | 'PAUSE_SCHEDULE'
+  | 'PUBLISH'
+  | 'RECORD'
+  | 'REJECT'
+  | 'RETIRE'
+  | 'SAVE_SCHEDULE'
+  | 'SAVE_TEMPLATE'
+  | 'START'
+  | 'SUBMIT'
+  | 'VOID';
+
+export type SchemaBmsChecklistCommandInput = {
+  action: SchemaBmsChecklistCommandAction;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  assignmentMode: InputMaybe<SchemaBmsChecklistAssignmentMode>;
+  category: InputMaybe<Scalars['String']['input']>;
+  confirmed: InputMaybe<Scalars['Boolean']['input']>;
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  dueMinutes: InputMaybe<Scalars['Int']['input']>;
+  dutyKey: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  itemKey: InputMaybe<Scalars['String']['input']>;
+  items: InputMaybe<Array<SchemaBmsChecklistItemInput>>;
+  localTime: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  name: InputMaybe<Scalars['String']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  photoIds: InputMaybe<Array<Scalars['Int']['input']>>;
+  separateReviewer: InputMaybe<Scalars['Boolean']['input']>;
+  stationId: InputMaybe<Scalars['ID']['input']>;
+  templateId: InputMaybe<Scalars['ID']['input']>;
+  timezone: InputMaybe<Scalars['String']['input']>;
+  value: InputMaybe<Scalars['JSON']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+  weekdays: InputMaybe<Array<Scalars['Int']['input']>>;
+};
+
+export type SchemaBmsChecklistCommandResult = {
+  __typename?: 'BmsChecklistCommandResult';
+  id: Maybe<Scalars['ID']['output']>;
+  status: Scalars['String']['output'];
+  version: Maybe<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsChecklistEscalation = {
+  __typename?: 'BmsChecklistEscalation';
+  acknowledgedAt: Maybe<Scalars['String']['output']>;
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  reason: Scalars['String']['output'];
+  recipient: Scalars['ID']['output'];
+  runId: Scalars['ID']['output'];
+  source: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistEvent = {
+  __typename?: 'BmsChecklistEvent';
+  action: Scalars['String']['output'];
+  actor: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  note: Scalars['String']['output'];
+};
+
+export type SchemaBmsChecklistEvidence = {
+  __typename?: 'BmsChecklistEvidence';
+  fileId: Scalars['Int']['output'];
+  itemKey: Scalars['String']['output'];
+};
+
+export type SchemaBmsChecklistFilter = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  status: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsChecklistFollowupAction =
+  | 'ACKNOWLEDGE'
+  | 'ESCALATE'
+  | 'READ_NOTICE'
+  | 'REROUTE'
+  | 'SAVE_POLICY';
+
+export type SchemaBmsChecklistFollowupFilter = {
+  bucket: InputMaybe<SchemaBmsChecklistWorkBucket>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  unreadOnly: InputMaybe<Scalars['Boolean']['input']>;
+};
+
+export type SchemaBmsChecklistFollowupInput = {
+  action: SchemaBmsChecklistFollowupAction;
+  confirmed: InputMaybe<Scalars['Boolean']['input']>;
+  enabled: InputMaybe<Scalars['Boolean']['input']>;
+  escalationMinutes: InputMaybe<Scalars['Int']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  reminderMinutes: InputMaybe<Scalars['Int']['input']>;
+  supervisorId: InputMaybe<Scalars['ID']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsChecklistInbox = {
+  __typename?: 'BmsChecklistInbox';
+  items: Array<SchemaBmsChecklistNotice>;
+  total: Scalars['Int']['output'];
+  unread: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistInspectionReport = {
+  __typename?: 'BmsChecklistInspectionReport';
+  branches: Array<SchemaBmsChecklistBranchReport>;
+  from: Scalars['String']['output'];
+  generatedAt: Scalars['String']['output'];
+  problems: Array<SchemaBmsChecklistRecurringProblem>;
+  problemsTruncated: Scalars['Boolean']['output'];
+  timezone: Scalars['String']['output'];
+  to: Scalars['String']['output'];
+};
+
+export type SchemaBmsChecklistItemInput = {
+  allowNa: Scalars['Boolean']['input'];
+  choices: InputMaybe<Array<Scalars['String']['input']>>;
+  instruction: InputMaybe<Scalars['String']['input']>;
+  key: Scalars['String']['input'];
+  label: Scalars['String']['input'];
+  max: InputMaybe<Scalars['Float']['input']>;
+  min: InputMaybe<Scalars['Float']['input']>;
+  photoRequired: Scalars['Boolean']['input'];
+  required: Scalars['Boolean']['input'];
+  type: Scalars['String']['input'];
+  unit: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsChecklistMetrics = {
+  __typename?: 'BmsChecklistMetrics';
+  actions: Scalars['Int']['output'];
+  open: Scalars['Int']['output'];
+  overdue: Scalars['Int']['output'];
+  review: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistMyWork = {
+  __typename?: 'BmsChecklistMyWork';
+  items: Array<SchemaBmsChecklistWorkItem>;
+  overdue: Scalars['Int']['output'];
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistNotice = {
+  __typename?: 'BmsChecklistNotice';
+  createdAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  readAt: Maybe<Scalars['String']['output']>;
+  runId: Scalars['ID']['output'];
+  runStatus: Scalars['String']['output'];
+};
+
+export type SchemaBmsChecklistOption = {
+  __typename?: 'BmsChecklistOption';
+  active: Maybe<Scalars['Boolean']['output']>;
+  id: Scalars['ID']['output'];
+  locationId: Maybe<Scalars['ID']['output']>;
+  name: Scalars['String']['output'];
+};
+
+export type SchemaBmsChecklistPolicy = {
+  __typename?: 'BmsChecklistPolicy';
+  enabled: Scalars['Boolean']['output'];
+  escalationMinutes: Scalars['Int']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  reminderMinutes: Scalars['Int']['output'];
+  supervisorId: Scalars['ID']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistRecurringProblem = {
+  __typename?: 'BmsChecklistRecurringProblem';
+  branch: Scalars['String']['output'];
+  familyId: Scalars['ID']['output'];
+  itemKey: Scalars['String']['output'];
+  lastDue: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  runs: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistReportFilter = {
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsChecklistResult = {
+  __typename?: 'BmsChecklistResult';
+  id: Scalars['ID']['output'];
+  itemKey: Scalars['String']['output'];
+  note: Scalars['String']['output'];
+  outcome: Scalars['String']['output'];
+  photoIds: Array<Scalars['Int']['output']>;
+  recordedAt: Scalars['String']['output'];
+  recordedBy: Scalars['ID']['output'];
+  revision: Scalars['Int']['output'];
+  value: Scalars['JSON']['output'];
+};
+
+export type SchemaBmsChecklistRun = {
+  __typename?: 'BmsChecklistRun';
+  actions: Maybe<Array<SchemaBmsChecklistAction>>;
+  assignedTo: Maybe<Scalars['ID']['output']>;
+  assignmentEvidence: Scalars['JSON']['output'];
+  createdAt: Scalars['String']['output'];
+  createdBy: Scalars['String']['output'];
+  dueAt: Scalars['String']['output'];
+  events: Maybe<Array<SchemaBmsChecklistEvent>>;
+  evidence: Maybe<Array<SchemaBmsChecklistEvidence>>;
+  history: Maybe<Array<SchemaBmsChecklistResult>>;
+  id: Scalars['ID']['output'];
+  locationId: Scalars['ID']['output'];
+  results: Maybe<Array<SchemaBmsChecklistResult>>;
+  reviewedAt: Maybe<Scalars['String']['output']>;
+  reviewedBy: Maybe<Scalars['ID']['output']>;
+  snapshot: Scalars['JSON']['output'];
+  startedAt: Maybe<Scalars['String']['output']>;
+  stationId: Maybe<Scalars['ID']['output']>;
+  status: Scalars['String']['output'];
+  submittedAt: Maybe<Scalars['String']['output']>;
+  templateId: Scalars['ID']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistSchedule = {
+  __typename?: 'BmsChecklistSchedule';
+  active: Scalars['Boolean']['output'];
+  assignedTo: Maybe<Scalars['ID']['output']>;
+  assignmentMode: SchemaBmsChecklistAssignmentMode;
+  dueMinutes: Scalars['Int']['output'];
+  dutyKey: Maybe<Scalars['String']['output']>;
+  id: Scalars['ID']['output'];
+  localTime: Scalars['String']['output'];
+  name: Scalars['String']['output'];
+  nextAt: Scalars['String']['output'];
+  templateId: Scalars['ID']['output'];
+  timezone: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+  weekdays: Array<Scalars['Int']['output']>;
+};
+
+export type SchemaBmsChecklistSupervision = {
+  __typename?: 'BmsChecklistSupervision';
+  escalations: Array<SchemaBmsChecklistEscalation>;
+  policies: Array<SchemaBmsChecklistPolicy>;
+  supervisors: Array<SchemaBmsChecklistOption>;
+  total: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistTemplate = {
+  __typename?: 'BmsChecklistTemplate';
+  category: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  familyId: Scalars['ID']['output'];
+  id: Scalars['ID']['output'];
+  items: Scalars['JSON']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  separateReviewer: Scalars['Boolean']['output'];
+  stationId: Maybe<Scalars['ID']['output']>;
+  status: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistWorkBucket =
+  | 'MINE'
+  | 'REVIEW'
+  | 'UNASSIGNED';
+
+export type SchemaBmsChecklistWorkItem = {
+  __typename?: 'BmsChecklistWorkItem';
+  assignedTo: Maybe<Scalars['ID']['output']>;
+  dueAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  name: Scalars['String']['output'];
+  overdue: Scalars['Boolean']['output'];
+  runId: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsChecklistWorkspace = {
+  __typename?: 'BmsChecklistWorkspace';
+  actions: Array<SchemaBmsChecklistAction>;
+  actorId: Scalars['ID']['output'];
+  locations: Array<SchemaBmsChecklistOption>;
+  metrics: SchemaBmsChecklistMetrics;
+  runs: Array<SchemaBmsChecklistRun>;
+  schedules: Array<SchemaBmsChecklistSchedule>;
+  staff: Array<SchemaBmsChecklistOption>;
+  stations: Array<SchemaBmsChecklistOption>;
+  templates: Array<SchemaBmsChecklistTemplate>;
+  total: Scalars['Int']['output'];
+};
+
 export type SchemaBmsCloseShiftResult = {
   __typename?: 'BmsCloseShiftResult';
   amount: Maybe<Scalars['Float']['output']>;
@@ -1765,6 +2124,8 @@ export type SchemaBmsExpiringLotItem = {
   __typename?: 'BmsExpiringLotItem';
   daysToExpiry: Scalars['Int']['output'];
   expiryDate: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
   lotNo: Scalars['String']['output'];
   name: Scalars['String']['output'];
   qty: Scalars['Int']['output'];
@@ -2008,6 +2369,59 @@ export type SchemaBmsGeneratedReport = {
   summary: Maybe<Scalars['String']['output']>;
 };
 
+export type SchemaBmsImprovementAction =
+  | 'ACK_STANDARD'
+  | 'ASSESS_STANDARD'
+  | 'CLOSE_ISSUE'
+  | 'CONFIRM_WEEK'
+  | 'CREATE_FOLLOWUP'
+  | 'CREATE_ISSUE'
+  | 'LINK_FAILURE'
+  | 'PUBLISH_STANDARD'
+  | 'RECORD_TRAINING'
+  | 'REOPEN_ISSUE'
+  | 'UPDATE_ISSUE';
+
+export type SchemaBmsImprovementFilter = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsImprovementInput = {
+  action: SchemaBmsImprovementAction;
+  actionId: InputMaybe<Scalars['ID']['input']>;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  body: InputMaybe<Scalars['String']['input']>;
+  carryAcknowledgement: InputMaybe<Scalars['Boolean']['input']>;
+  carryTraining: InputMaybe<Scalars['Boolean']['input']>;
+  category: InputMaybe<Scalars['String']['input']>;
+  cause: InputMaybe<Scalars['String']['input']>;
+  confirmed: Scalars['Boolean']['input'];
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  dutyKey: InputMaybe<Scalars['String']['input']>;
+  familyId: InputMaybe<Scalars['ID']['input']>;
+  fingerprint: InputMaybe<Scalars['String']['input']>;
+  from: InputMaybe<Scalars['String']['input']>;
+  hypothesis: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  outcome: InputMaybe<Scalars['String']['input']>;
+  ownerId: InputMaybe<Scalars['ID']['input']>;
+  severity: InputMaybe<Scalars['String']['input']>;
+  sourceId: InputMaybe<Scalars['ID']['input']>;
+  sourceType: InputMaybe<Scalars['String']['input']>;
+  staffId: InputMaybe<Scalars['ID']['input']>;
+  target: InputMaybe<Scalars['String']['input']>;
+  templateId: InputMaybe<Scalars['ID']['input']>;
+  title: InputMaybe<Scalars['String']['input']>;
+  trainingRequired: InputMaybe<Scalars['Boolean']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+  weeklyReviewId: InputMaybe<Scalars['ID']['input']>;
+};
+
 export type SchemaBmsInboxChangedPayload = {
   __typename?: 'BmsInboxChangedPayload';
   conversationId: Scalars['ID']['output'];
@@ -2048,17 +2462,29 @@ export type SchemaBmsInboxDiagnosticMessageResult = {
 
 export type SchemaBmsInventoryActionCenter = {
   __typename?: 'BmsInventoryActionCenter';
+  dataQuality: Scalars['JSON']['output'];
   expiringLots: Array<SchemaBmsExpiringLotItem>;
+  generatedAt: Scalars['String']['output'];
   lowStock: Array<SchemaBmsInventoryActionLowStockItem>;
+  method: Scalars['String']['output'];
+  methodVersion: Scalars['String']['output'];
+  nextOffset: Maybe<Scalars['Int']['output']>;
   purchaseSuggestions: Array<SchemaBmsPurchaseSuggestionItem>;
   slowMoving: Array<SchemaBmsSlowMovingItem>;
   stockoutRisk: Array<SchemaBmsStockoutRiskItem>;
   summary: SchemaBmsInventoryActionSummary;
+  totalCount: Scalars['Int']['output'];
+  truncated: Scalars['Boolean']['output'];
+  unallocatedDemand: Array<SchemaBmsInventoryUnallocatedSignal>;
+  unallocatedIncoming: Array<SchemaBmsInventoryUnallocatedSignal>;
+  verifiedAt: Scalars['String']['output'];
 };
 
 export type SchemaBmsInventoryActionLowStockItem = {
   __typename?: 'BmsInventoryActionLowStockItem';
   available: Scalars['Int']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
   name: Scalars['String']['output'];
   reorderPoint: Scalars['Int']['output'];
   size: Scalars['String']['output'];
@@ -2078,6 +2504,8 @@ export type SchemaBmsInventoryActionSummary = {
   slowMovingCount: Scalars['Int']['output'];
   stockoutWithin7DaysCount: Scalars['Int']['output'];
   totalSuggestedQty: Scalars['Int']['output'];
+  unallocatedDemandUnits: Scalars['Int']['output'];
+  unallocatedIncomingUnits: Scalars['Int']['output'];
   windowDays: Scalars['Int']['output'];
 };
 
@@ -2097,8 +2525,34 @@ export type SchemaBmsInventoryAgingReport = {
   stockedVariantCount: Scalars['Int']['output'];
 };
 
+export type SchemaBmsInventoryAnomaly = {
+  __typename?: 'BmsInventoryAnomaly';
+  code: Scalars['String']['output'];
+  deepLink: Scalars['String']['output'];
+  detectedAt: Scalars['String']['output'];
+  evidence: Scalars['JSON']['output'];
+  expectedValue: Maybe<Scalars['Float']['output']>;
+  locationId: Maybe<Scalars['ID']['output']>;
+  locationName: Maybe<Scalars['String']['output']>;
+  observedValue: Maybe<Scalars['Float']['output']>;
+  recommendedReview: Scalars['String']['output'];
+  severity: Scalars['String']['output'];
+  size: Maybe<Scalars['String']['output']>;
+  sku: Maybe<Scalars['String']['output']>;
+  threshold: Scalars['String']['output'];
+};
+
+export type SchemaBmsInventoryAnomalyResult = {
+  __typename?: 'BmsInventoryAnomalyResult';
+  items: Array<SchemaBmsInventoryAnomaly>;
+  totalCount: Scalars['Int']['output'];
+  truncated: Scalars['Boolean']['output'];
+  verifiedAt: Scalars['String']['output'];
+};
+
 export type SchemaBmsInventoryDemandInput = {
   kind: SchemaBmsInventoryDemandKind;
+  locationId: InputMaybe<Scalars['ID']['input']>;
   note: InputMaybe<Scalars['String']['input']>;
   qty: Scalars['Int']['input'];
   size: Scalars['String']['input'];
@@ -2108,6 +2562,20 @@ export type SchemaBmsInventoryDemandInput = {
 export type SchemaBmsInventoryDemandKind =
   | 'LOST_SALE'
   | 'RESTOCK_REQUEST';
+
+export type SchemaBmsInventoryForecastAccuracy = {
+  __typename?: 'BmsInventoryForecastAccuracy';
+  bias: Scalars['Float']['output'];
+  disclaimer: Scalars['String']['output'];
+  firstGeneratedAt: Maybe<Scalars['String']['output']>;
+  lastEvaluatedAt: Maybe<Scalars['String']['output']>;
+  mae: Scalars['Float']['output'];
+  method: Scalars['String']['output'];
+  methodVersion: Scalars['String']['output'];
+  sampleCount: Scalars['Int']['output'];
+  wape: Maybe<Scalars['Float']['output']>;
+  windowDays: Scalars['Int']['output'];
+};
 
 export type SchemaBmsInventoryLot = {
   __typename?: 'BmsInventoryLot';
@@ -2138,6 +2606,7 @@ export type SchemaBmsInventoryOpeningInput = {
 
 export type SchemaBmsInventoryPolicyInput = {
   leadTimeDays: Scalars['Int']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
   safetyStockDays: Scalars['Int']['input'];
   size: Scalars['String']['input'];
   sku: Scalars['String']['input'];
@@ -2157,6 +2626,13 @@ export type SchemaBmsInventorySummary = {
   stockValue: Scalars['Float']['output'];
   totalUnits: Scalars['Int']['output'];
   variantCount: Scalars['Int']['output'];
+};
+
+export type SchemaBmsInventoryUnallocatedSignal = {
+  __typename?: 'BmsInventoryUnallocatedSignal';
+  qty: Scalars['Int']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
 };
 
 export type SchemaBmsInventoryValuationReport = {
@@ -2792,6 +3268,71 @@ export type SchemaBmsMasterVatRate = {
   rate: Scalars['Float']['output'];
   source: Scalars['String']['output'];
   sourceVersion: Scalars['String']['output'];
+};
+
+export type SchemaBmsMaterialAction =
+  | 'CANCEL'
+  | 'CANCEL_INSPECTION'
+  | 'CLOSE'
+  | 'CONFIRM'
+  | 'CREATE'
+  | 'CREATE_PO'
+  | 'INSPECT'
+  | 'LINK_PO'
+  | 'LINK_REQUISITION'
+  | 'RECEIVE'
+  | 'REFRESH';
+
+export type SchemaBmsMaterialFilter = {
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsMaterialInput = {
+  acceptedQty: InputMaybe<Scalars['Int']['input']>;
+  action: SchemaBmsMaterialAction;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  confirmed: Scalars['Boolean']['input'];
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  expectedReceived: InputMaybe<Scalars['Int']['input']>;
+  expiryDate: InputMaybe<Scalars['String']['input']>;
+  fingerprint: InputMaybe<Scalars['String']['input']>;
+  from: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  inspectionId: InputMaybe<Scalars['ID']['input']>;
+  inspectionVersion: InputMaybe<Scalars['Int']['input']>;
+  linkId: InputMaybe<Scalars['ID']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  lotNo: InputMaybe<Scalars['String']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  poItemId: InputMaybe<Scalars['ID']['input']>;
+  qty: InputMaybe<Scalars['Int']['input']>;
+  rejectedQty: InputMaybe<Scalars['Int']['input']>;
+  requisitionItemId: InputMaybe<Scalars['ID']['input']>;
+  runVersion: InputMaybe<Scalars['Int']['input']>;
+  size: InputMaybe<Scalars['String']['input']>;
+  sku: InputMaybe<Scalars['String']['input']>;
+  sources: InputMaybe<Array<SchemaBmsMaterialSource>>;
+  supplierId: InputMaybe<Scalars['ID']['input']>;
+  templateId: InputMaybe<Scalars['ID']['input']>;
+  title: InputMaybe<Scalars['String']['input']>;
+  to: InputMaybe<Scalars['String']['input']>;
+  unitCost: InputMaybe<Scalars['Float']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsMaterialPreview = {
+  from: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+  sources: Array<SchemaBmsMaterialSource>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsMaterialSource = {
+  id: Scalars['ID']['input'];
+  priority: Scalars['Int']['input'];
 };
 
 export type SchemaBmsMe = {
@@ -4002,6 +4543,7 @@ export type SchemaBmsPlan = {
   max_users: Scalars['Int']['output'];
   name: Scalars['String']['output'];
   price_monthly: Scalars['Float']['output'];
+  price_yearly: Scalars['Float']['output'];
 };
 
 export type SchemaBmsPlanCatalog = {
@@ -4018,6 +4560,7 @@ export type SchemaBmsPlanCatalog = {
   maxUsers: Scalars['Int']['output'];
   name: Scalars['String']['output'];
   priceMonthly: Scalars['Float']['output'];
+  priceYearly: Scalars['Float']['output'];
   updatedAt: Maybe<Scalars['String']['output']>;
   version: Scalars['Int']['output'];
 };
@@ -4036,6 +4579,7 @@ export type SchemaBmsPlanCatalogInput = {
   maxUsers: Scalars['Int']['input'];
   name: Scalars['String']['input'];
   priceMonthly: Scalars['Float']['input'];
+  priceYearly: Scalars['Float']['input'];
 };
 
 export type SchemaBmsPlanCatalogPreview = {
@@ -4916,6 +5460,38 @@ export type SchemaBmsPosBranchLowStockItem = {
   reorderPoint: Scalars['Int']['output'];
   size: Scalars['String']['output'];
   sku: Scalars['String']['output'];
+};
+
+export type SchemaBmsPosBranchStockSearchItem = {
+  __typename?: 'BmsPosBranchStockSearchItem';
+  available: Scalars['Int']['output'];
+  baseUnit: Scalars['String']['output'];
+  bundle: Scalars['Boolean']['output'];
+  countSupported: Scalars['Boolean']['output'];
+  currentStock: Scalars['Int']['output'];
+  displayPrecision: Scalars['Int']['output'];
+  displayUnit: Maybe<Scalars['String']['output']>;
+  expiryTracked: Scalars['Boolean']['output'];
+  incomingStock: Scalars['Int']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
+  lotTracked: Scalars['Boolean']['output'];
+  name: Scalars['String']['output'];
+  operationBlockReason: Maybe<Scalars['String']['output']>;
+  quarantineStock: Scalars['Int']['output'];
+  reorderPoint: Scalars['Int']['output'];
+  reservedStock: Scalars['Int']['output'];
+  serialTracked: Scalars['Boolean']['output'];
+  size: Scalars['String']['output'];
+  sku: Scalars['String']['output'];
+  stockPolicy: Scalars['String']['output'];
+  transferSupported: Scalars['Boolean']['output'];
+};
+
+export type SchemaBmsPosBranchStockSearchResult = {
+  __typename?: 'BmsPosBranchStockSearchResult';
+  items: Array<SchemaBmsPosBranchStockSearchItem>;
+  nextOffset: Maybe<Scalars['Int']['output']>;
 };
 
 export type SchemaBmsPosBranchStockSummary = {
@@ -7403,6 +7979,63 @@ export type SchemaBmsProductStockPolicyInput = {
   stockPolicy: InputMaybe<Scalars['String']['input']>;
 };
 
+export type SchemaBmsProductionAction =
+  | 'CANCEL'
+  | 'CREATE'
+  | 'POST'
+  | 'READY'
+  | 'WASTE';
+
+export type SchemaBmsProductionFilter = {
+  from: InputMaybe<Scalars['String']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  mine: InputMaybe<Scalars['Boolean']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  outputSearch: InputMaybe<Scalars['String']['input']>;
+  recipeSearch: InputMaybe<Scalars['String']['input']>;
+  search: InputMaybe<Scalars['String']['input']>;
+  status: InputMaybe<Scalars['String']['input']>;
+  to: InputMaybe<Scalars['String']['input']>;
+};
+
+export type SchemaBmsProductionIngredient = {
+  qty: Scalars['Int']['input'];
+  size: Scalars['String']['input'];
+  sku: Scalars['String']['input'];
+};
+
+export type SchemaBmsProductionInput = {
+  action: SchemaBmsProductionAction;
+  actionId: InputMaybe<Scalars['ID']['input']>;
+  actualQty: InputMaybe<Scalars['Int']['input']>;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  confirmed: Scalars['Boolean']['input'];
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  dutyKey: InputMaybe<Scalars['String']['input']>;
+  expiryDate: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  ingredients: InputMaybe<Array<SchemaBmsProductionIngredient>>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  outputSize: InputMaybe<Scalars['String']['input']>;
+  outputSku: InputMaybe<Scalars['String']['input']>;
+  plannedQty: InputMaybe<Scalars['Int']['input']>;
+  producedOn: InputMaybe<Scalars['String']['input']>;
+  qty: InputMaybe<Scalars['Int']['input']>;
+  recipeId: InputMaybe<Scalars['ID']['input']>;
+  templateId: InputMaybe<Scalars['ID']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsProductionPreviewInput = {
+  locationId: Scalars['ID']['input'];
+  outputSize: Scalars['String']['input'];
+  outputSku: Scalars['String']['input'];
+  plannedQty: Scalars['Int']['input'];
+  recipeId: Scalars['ID']['input'];
+};
+
 export type SchemaBmsProfitDay = {
   __typename?: 'BmsProfitDay';
   cost: Maybe<Scalars['Float']['output']>;
@@ -7514,6 +8147,8 @@ export type SchemaBmsPurchaseSuggestionItem = {
   demandFeedback: Scalars['Int']['output'];
   incomingQty: Scalars['Int']['output'];
   leadTimeDays: Scalars['Int']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
   name: Scalars['String']['output'];
   recommendedAction: Scalars['String']['output'];
   safetyStock: Scalars['Int']['output'];
@@ -7522,6 +8157,50 @@ export type SchemaBmsPurchaseSuggestionItem = {
   soldInWindow: Scalars['Int']['output'];
   suggestedQty: Scalars['Int']['output'];
   trendPct: Scalars['Float']['output'];
+};
+
+export type SchemaBmsQualityAction =
+  | 'APPROVE'
+  | 'ASSIGN_RUN'
+  | 'CLOSE'
+  | 'CREATE'
+  | 'HOLD'
+  | 'PROPOSE_DISPOSE'
+  | 'PROPOSE_RELEASE'
+  | 'REJECT'
+  | 'REOPEN'
+  | 'SAVE_TRACE'
+  | 'SUBMIT'
+  | 'UPDATE';
+
+export type SchemaBmsQualityInput = {
+  action: SchemaBmsQualityAction;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  category: InputMaybe<Scalars['String']['input']>;
+  confirmed: Scalars['Boolean']['input'];
+  decisionId: InputMaybe<Scalars['ID']['input']>;
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  expectedQty: InputMaybe<Scalars['Int']['input']>;
+  facts: InputMaybe<Scalars['String']['input']>;
+  fingerprint: InputMaybe<Scalars['String']['input']>;
+  holdId: InputMaybe<Scalars['ID']['input']>;
+  holdVersion: InputMaybe<Scalars['Int']['input']>;
+  hypothesis: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  lotId: InputMaybe<Scalars['ID']['input']>;
+  note: Scalars['String']['input'];
+  observedCause: InputMaybe<Scalars['String']['input']>;
+  qty: InputMaybe<Scalars['Int']['input']>;
+  runVersion: InputMaybe<Scalars['Int']['input']>;
+  severity: InputMaybe<Scalars['String']['input']>;
+  sourceInspectionId: InputMaybe<Scalars['ID']['input']>;
+  sourceProductionId: InputMaybe<Scalars['ID']['input']>;
+  sourceRunId: InputMaybe<Scalars['ID']['input']>;
+  templateId: InputMaybe<Scalars['ID']['input']>;
+  title: InputMaybe<Scalars['String']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
 };
 
 export type SchemaBmsReceiveItemInput = {
@@ -8695,6 +9374,8 @@ export type SchemaBmsSlowMovingItem = {
   __typename?: 'BmsSlowMovingItem';
   available: Scalars['Int']['output'];
   classification: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
   name: Scalars['String']['output'];
   recommendedAction: Scalars['String']['output'];
   size: Scalars['String']['output'];
@@ -8815,6 +9496,8 @@ export type SchemaBmsStockoutRiskItem = {
   available: Scalars['Int']['output'];
   avgPerDay: Scalars['Float']['output'];
   daysToStockout: Maybe<Scalars['Float']['output']>;
+  locationId: Scalars['ID']['output'];
+  locationName: Scalars['String']['output'];
   name: Scalars['String']['output'];
   projectedStockoutDate: Maybe<Scalars['String']['output']>;
   size: Scalars['String']['output'];
@@ -9165,6 +9848,187 @@ export type SchemaBmsTaxSettingsInput = {
   vatRate: Scalars['Float']['input'];
   vatRegistered: Scalars['Boolean']['input'];
   vatRounding: Scalars['String']['input'];
+};
+
+export type SchemaBmsTeamAction =
+  | 'ACCEPT_DUTY'
+  | 'APPEND_NOTE'
+  | 'CANCEL_HANDOVER'
+  | 'CANCEL_ROSTER'
+  | 'CONFIRM_DAY'
+  | 'CREATE_HANDOVER'
+  | 'END_DUTY'
+  | 'PUBLISH_ROSTER'
+  | 'READ_NOTICE'
+  | 'RECEIVE_HANDOVER'
+  | 'REFRESH_HANDOVER'
+  | 'REROUTE_HANDOVER'
+  | 'SAVE_ROSTER'
+  | 'SAVE_SUPERVISOR_DUTY'
+  | 'SUBMIT_HANDOVER'
+  | 'TRANSFER_ITEM';
+
+export type SchemaBmsTeamCommandInput = {
+  action: SchemaBmsTeamAction;
+  assignedTo: InputMaybe<Scalars['ID']['input']>;
+  confirmed: InputMaybe<Scalars['Boolean']['input']>;
+  date: InputMaybe<Scalars['String']['input']>;
+  dueAt: InputMaybe<Scalars['String']['input']>;
+  dutyKey: InputMaybe<Scalars['String']['input']>;
+  dutyName: InputMaybe<Scalars['String']['input']>;
+  enabled: InputMaybe<Scalars['Boolean']['input']>;
+  endsAt: InputMaybe<Scalars['String']['input']>;
+  fingerprint: InputMaybe<Scalars['String']['input']>;
+  id: InputMaybe<Scalars['ID']['input']>;
+  idempotencyKey: Scalars['String']['input'];
+  itemId: InputMaybe<Scalars['ID']['input']>;
+  itemKind: InputMaybe<SchemaBmsTeamItemKind>;
+  itemVersion: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  note: InputMaybe<Scalars['String']['input']>;
+  recipient: InputMaybe<Scalars['ID']['input']>;
+  rosterId: InputMaybe<Scalars['ID']['input']>;
+  source: InputMaybe<SchemaBmsTeamNoticeSource>;
+  startsAt: InputMaybe<Scalars['String']['input']>;
+  version: InputMaybe<Scalars['Int']['input']>;
+};
+
+export type SchemaBmsTeamDailyReview = {
+  __typename?: 'BmsTeamDailyReview';
+  createdAt: Scalars['String']['output'];
+  fingerprint: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  note: Scalars['String']['output'];
+  reviewedBy: Scalars['ID']['output'];
+  snapshot: Scalars['JSON']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamDayCounts = {
+  __typename?: 'BmsTeamDayCounts';
+  actions: Scalars['Int']['output'];
+  approved: Scalars['Int']['output'];
+  duties: Scalars['Int']['output'];
+  escalations: Scalars['Int']['output'];
+  handoverDraft: Scalars['Int']['output'];
+  handoverReceived: Scalars['Int']['output'];
+  handoverWaiting: Scalars['Int']['output'];
+  overdue: Scalars['Int']['output'];
+  review: Scalars['Int']['output'];
+  runs: Scalars['Int']['output'];
+  unaccepted: Scalars['Int']['output'];
+  unassigned: Scalars['Int']['output'];
+  vacancies: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamEvent = {
+  __typename?: 'BmsTeamEvent';
+  action: Scalars['String']['output'];
+  actor: Scalars['String']['output'];
+  createdAt: Scalars['String']['output'];
+  details: Scalars['JSON']['output'];
+  id: Scalars['ID']['output'];
+  note: Scalars['String']['output'];
+};
+
+export type SchemaBmsTeamFilter = {
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset: InputMaybe<Scalars['Int']['input']>;
+  to: Scalars['String']['input'];
+};
+
+export type SchemaBmsTeamHandover = {
+  __typename?: 'BmsTeamHandover';
+  dueAt: Scalars['String']['output'];
+  dutyName: Maybe<Scalars['String']['output']>;
+  events: Maybe<Array<SchemaBmsTeamEvent>>;
+  id: Scalars['ID']['output'];
+  items: Scalars['JSON']['output'];
+  liveItems: Maybe<Scalars['JSON']['output']>;
+  locationId: Scalars['ID']['output'];
+  note: Scalars['String']['output'];
+  receivedAt: Maybe<Scalars['String']['output']>;
+  recipient: Maybe<Scalars['ID']['output']>;
+  rosterId: Scalars['ID']['output'];
+  sender: Scalars['ID']['output'];
+  status: Scalars['String']['output'];
+  submittedAt: Maybe<Scalars['String']['output']>;
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamInbox = {
+  __typename?: 'BmsTeamInbox';
+  items: Array<SchemaBmsTeamNotice>;
+  total: Scalars['Int']['output'];
+  unread: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamItemKind =
+  | 'ACTION'
+  | 'RUN';
+
+export type SchemaBmsTeamNotice = {
+  __typename?: 'BmsTeamNotice';
+  createdAt: Scalars['String']['output'];
+  entityId: Scalars['ID']['output'];
+  entityKind: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  kind: Scalars['String']['output'];
+  readAt: Maybe<Scalars['String']['output']>;
+  source: SchemaBmsTeamNoticeSource;
+};
+
+export type SchemaBmsTeamNoticeSource =
+  | 'CHECKLIST'
+  | 'TEAM';
+
+export type SchemaBmsTeamPolicy = {
+  __typename?: 'BmsTeamPolicy';
+  locationId: Scalars['ID']['output'];
+  supervisorDutyKey: Maybe<Scalars['String']['output']>;
+  useDutySupervisor: Scalars['Boolean']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamRoster = {
+  __typename?: 'BmsTeamRoster';
+  acceptedAt: Maybe<Scalars['String']['output']>;
+  assignedTo: Maybe<Scalars['ID']['output']>;
+  dutyKey: Scalars['String']['output'];
+  dutyName: Scalars['String']['output'];
+  endedAt: Maybe<Scalars['String']['output']>;
+  endsAt: Scalars['String']['output'];
+  id: Scalars['ID']['output'];
+  locationId: Scalars['ID']['output'];
+  startsAt: Scalars['String']['output'];
+  status: Scalars['String']['output'];
+  version: Scalars['Int']['output'];
+};
+
+export type SchemaBmsTeamSummary = {
+  __typename?: 'BmsTeamSummary';
+  asOf: Scalars['String']['output'];
+  changed: Scalars['Boolean']['output'];
+  counts: SchemaBmsTeamDayCounts;
+  date: Scalars['String']['output'];
+  fingerprint: Scalars['String']['output'];
+  locationId: Scalars['ID']['output'];
+  previous: Maybe<SchemaBmsTeamDailyReview>;
+  timezone: Scalars['String']['output'];
+};
+
+export type SchemaBmsTeamWorkspace = {
+  __typename?: 'BmsTeamWorkspace';
+  actorId: Scalars['ID']['output'];
+  handoverTotal: Scalars['Int']['output'];
+  handovers: Array<SchemaBmsTeamHandover>;
+  missing: Array<SchemaBmsChecklistRun>;
+  missingTotal: Scalars['Int']['output'];
+  policies: Array<SchemaBmsTeamPolicy>;
+  rosterTotal: Scalars['Int']['output'];
+  rosters: Array<SchemaBmsTeamRoster>;
+  staff: Array<SchemaBmsChecklistOption>;
 };
 
 export type SchemaBmsTenantInfo = {
@@ -9680,6 +10544,8 @@ export type SchemaMutation = {
   bmsCancelStockTransfer: SchemaBmsMobileStockTransferActionResult;
   bmsChangePlan: Scalars['Boolean']['output'];
   bmsCheckAllAiProviderHealth: Array<SchemaBmsAiProviderHealth>;
+  bmsChecklistCommand: SchemaBmsChecklistCommandResult;
+  bmsChecklistFollowup: SchemaBmsChecklistCommandResult;
   bmsClearKitchenStationSla: Scalars['Boolean']['output'];
   bmsClosePosShift: SchemaBmsCloseShiftResult;
   bmsCommissionRule: SchemaBmsMobileCommissionRuleActionResult;
@@ -9726,6 +10592,7 @@ export type SchemaMutation = {
   bmsGenerateMedicationSuggestions: SchemaBmsPharmacyAssessment;
   bmsGenerateReport: SchemaBmsGenerateReportResult;
   bmsImportProducts: SchemaBmsProductImportResult;
+  bmsImprovementCommand: SchemaBmsChecklistCommandResult;
   bmsIssueFullTaxInvoice: SchemaBmsIssueFullTaxInvoiceResult;
   bmsIssuePosDeviceToken: SchemaBmsPosDeviceToken;
   bmsIssueRestaurantTableQr: SchemaBmsRestaurantTableQr;
@@ -9734,8 +10601,10 @@ export type SchemaMutation = {
   bmsMarkAllMentionsRead: Scalars['Boolean']['output'];
   bmsMarkConversationRead: Scalars['Boolean']['output'];
   bmsMarkMentionRead: Scalars['Boolean']['output'];
+  bmsMaterialCommand: SchemaBmsChecklistCommandResult;
   bmsMergeCustomers: Scalars['Boolean']['output'];
   bmsOpenPosShift: SchemaBmsOpenShiftResult;
+  bmsOperationTeamCommand: SchemaBmsChecklistCommandResult;
   bmsPackOrder: Scalars['Boolean']['output'];
   bmsPayOrder: Scalars['Boolean']['output'];
   /** แนบหลักฐานทางคลินิกจากหน้าคิว (เภสัชกร) — รูปอัปโหลดผ่าน REST ไม่ผ่าน GraphQL */
@@ -9837,9 +10706,11 @@ export type SchemaMutation = {
   bmsPosUpdateBoardGameReservation: SchemaBmsPosBoardGameWaitlistEntry;
   bmsPosVerifyCashier: SchemaBmsPosCashier;
   bmsPosVoid: SchemaBmsPosReturnActionResult;
+  bmsProductionCommand: SchemaBmsChecklistCommandResult;
   bmsPublishMenuBundle: SchemaBmsPricePublicationResult;
   bmsPublishPricePlan: SchemaBmsCostingActionResult;
   bmsPublishProduct: SchemaBmsProductReadiness;
+  bmsQualityCommand: SchemaBmsChecklistCommandResult;
   bmsReadAiLimitNotification: Scalars['Boolean']['output'];
   bmsReceivePurchaseOrder: SchemaBmsPurchaseResult;
   bmsReceiveStockTransfer: SchemaBmsMobileStockTransferActionResult;
@@ -10230,6 +11101,16 @@ export type SchemaMutationBmsChangePlanArgs = {
 };
 
 
+export type SchemaMutationBmsChecklistCommandArgs = {
+  input: SchemaBmsChecklistCommandInput;
+};
+
+
+export type SchemaMutationBmsChecklistFollowupArgs = {
+  input: SchemaBmsChecklistFollowupInput;
+};
+
+
 export type SchemaMutationBmsClearKitchenStationSlaArgs = {
   station: Scalars['String']['input'];
 };
@@ -10307,6 +11188,7 @@ export type SchemaMutationBmsCreateProductCategoryArgs = {
 export type SchemaMutationBmsCreatePurchaseOrderArgs = {
   items: Array<SchemaBmsPurchaseItemInput>;
   note: InputMaybe<Scalars['String']['input']>;
+  requestId: InputMaybe<Scalars['String']['input']>;
   supplierId: InputMaybe<Scalars['ID']['input']>;
   supplierName: InputMaybe<Scalars['String']['input']>;
 };
@@ -10477,6 +11359,11 @@ export type SchemaMutationBmsImportProductsArgs = {
 };
 
 
+export type SchemaMutationBmsImprovementCommandArgs = {
+  input: SchemaBmsImprovementInput;
+};
+
+
 export type SchemaMutationBmsIssueFullTaxInvoiceArgs = {
   buyer: SchemaBmsTaxInvoiceBuyerInput;
   orderId: Scalars['ID']['input'];
@@ -10515,6 +11402,11 @@ export type SchemaMutationBmsMarkMentionReadArgs = {
 };
 
 
+export type SchemaMutationBmsMaterialCommandArgs = {
+  input: SchemaBmsMaterialInput;
+};
+
+
 export type SchemaMutationBmsMergeCustomersArgs = {
   keepId: Scalars['ID']['input'];
   mergeId: Scalars['ID']['input'];
@@ -10526,6 +11418,11 @@ export type SchemaMutationBmsOpenPosShiftArgs = {
   deviceId: Scalars['ID']['input'];
   openingFloat?: InputMaybe<Scalars['Float']['input']>;
   pharmacistUserId: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type SchemaMutationBmsOperationTeamCommandArgs = {
+  input: SchemaBmsTeamCommandInput;
 };
 
 
@@ -11008,6 +11905,11 @@ export type SchemaMutationBmsPosVoidArgs = {
 };
 
 
+export type SchemaMutationBmsProductionCommandArgs = {
+  input: SchemaBmsProductionInput;
+};
+
+
 export type SchemaMutationBmsPublishMenuBundleArgs = {
   input: SchemaBmsMenuBundlePublicationInput;
   review: SchemaBmsPricePublicationReview;
@@ -11022,6 +11924,11 @@ export type SchemaMutationBmsPublishPricePlanArgs = {
 
 export type SchemaMutationBmsPublishProductArgs = {
   sku: Scalars['String']['input'];
+};
+
+
+export type SchemaMutationBmsQualityCommandArgs = {
+  input: SchemaBmsQualityInput;
 };
 
 
@@ -12395,6 +13302,12 @@ export type SchemaQuery = {
   bmsChannelHealth: Array<SchemaBmsChannelHealth>;
   bmsChannelHealthCount: Scalars['Int']['output'];
   bmsChannels: Array<SchemaBmsChannelConfig>;
+  bmsChecklistInbox: SchemaBmsChecklistInbox;
+  bmsChecklistInspectionReport: SchemaBmsChecklistInspectionReport;
+  bmsChecklistMyWork: SchemaBmsChecklistMyWork;
+  bmsChecklistRun: Maybe<SchemaBmsChecklistRun>;
+  bmsChecklistSupervision: SchemaBmsChecklistSupervision;
+  bmsChecklistWorkspace: SchemaBmsChecklistWorkspace;
   bmsCommissionReport: SchemaBmsMobileCommissionReportResult;
   bmsCommissionRules: SchemaBmsMobileCommissionRulesResult;
   bmsConversation: Maybe<SchemaBmsConversation>;
@@ -12432,9 +13345,17 @@ export type SchemaQuery = {
   bmsFullTaxInvoiceView: Maybe<SchemaBmsFullTaxInvoiceView>;
   bmsGenerateInvoice: Maybe<SchemaBmsBusinessDoc>;
   bmsGeneratedReports: Array<SchemaBmsGeneratedReport>;
+  bmsImprovementCatalog: Scalars['JSON']['output'];
+  bmsImprovementDetail: Scalars['JSON']['output'];
+  bmsImprovementForRun: Maybe<Scalars['JSON']['output']>;
+  bmsImprovementSources: Scalars['JSON']['output'];
+  bmsImprovementWorkspace: Scalars['JSON']['output'];
   bmsInboxDiagnosticLatest: Array<SchemaBmsInboxDiagnosticLatest>;
   bmsInboxUnreadCount: Scalars['Int']['output'];
   bmsInventoryActionCenter: SchemaBmsInventoryActionCenter;
+  bmsInventoryAnomalies: SchemaBmsInventoryAnomalyResult;
+  bmsInventoryForecastAccuracy: SchemaBmsInventoryForecastAccuracy;
+  bmsInventoryIntelligenceLocations: Array<SchemaBmsLocation>;
   bmsInventoryLots: Array<SchemaBmsInventoryLot>;
   bmsInventorySummary: SchemaBmsInventorySummary;
   bmsInventoryValuation: SchemaBmsInventoryValuationReport;
@@ -12466,6 +13387,11 @@ export type SchemaQuery = {
   bmsMasterTaxReferences: SchemaBmsMasterTaxReferences;
   bmsMasterThaiAddresses: Array<SchemaBmsMasterThaiAddress>;
   bmsMasterUnits: Array<SchemaBmsMasterUnit>;
+  bmsMaterialCatalog: Scalars['JSON']['output'];
+  bmsMaterialDetail: Scalars['JSON']['output'];
+  bmsMaterialForRun: Maybe<Scalars['JSON']['output']>;
+  bmsMaterialPreview: Scalars['JSON']['output'];
+  bmsMaterialWorkspace: Scalars['JSON']['output'];
   bmsMe: SchemaBmsMe;
   bmsMember: Maybe<SchemaBmsMember>;
   bmsMemberDiscountPreview: SchemaBmsMemberDiscountPreview;
@@ -12480,6 +13406,13 @@ export type SchemaQuery = {
   bmsNetProfit: SchemaBmsNetProfitReport;
   bmsOnboardingProgress: SchemaBmsOnboardingProgress;
   bmsOperatingCosts: SchemaBmsOperatingCostReport;
+  bmsOperationHandover: Maybe<SchemaBmsTeamHandover>;
+  bmsOperationInbox: SchemaBmsTeamInbox;
+  bmsOperationReadiness: Scalars['JSON']['output'];
+  bmsOperationRoster: Maybe<SchemaBmsTeamRoster>;
+  bmsOperationSummary: SchemaBmsTeamSummary;
+  bmsOperationTeam: SchemaBmsTeamWorkspace;
+  bmsOperationWeeklyReport: Scalars['JSON']['output'];
   bmsOperationalAlerts: SchemaBmsOperationalAlerts;
   bmsOrder: Maybe<SchemaBmsOrder>;
   bmsOrderJourney: Maybe<SchemaBmsOrderJourney>;
@@ -12550,6 +13483,7 @@ export type SchemaQuery = {
   bmsPosShiftReport: SchemaBmsPosShiftReportResult;
   bmsPosStaff: Array<SchemaBmsPosCashier>;
   bmsPosStockCounts: SchemaBmsPosStockCountsResult;
+  bmsPosStockSearch: SchemaBmsPosBranchStockSearchResult;
   bmsPosStockTransfers: SchemaBmsPosStockTransfersResult;
   bmsPosStoreCredit: SchemaBmsPosStoreCreditResult;
   bmsPreviewCostAllocation: SchemaBmsCostAllocationPreview;
@@ -12567,6 +13501,10 @@ export type SchemaQuery = {
   bmsProductReadiness: SchemaBmsProductReadiness;
   bmsProductRecipes: Array<SchemaBmsProductRecipe>;
   bmsProductStockPolicy: Maybe<SchemaBmsProductStockPolicy>;
+  bmsProductionDetail: Scalars['JSON']['output'];
+  bmsProductionForRun: Maybe<Scalars['ID']['output']>;
+  bmsProductionPreview: Scalars['JSON']['output'];
+  bmsProductionWorkspace: Scalars['JSON']['output'];
   bmsProducts: SchemaBmsProductConnection;
   bmsProductsNeedingBarcodes: Array<SchemaBmsPackAudit>;
   bmsProductsNeedingPolicyReview: Array<SchemaBmsUnreviewedProduct>;
@@ -12574,6 +13512,11 @@ export type SchemaQuery = {
   bmsPublicPlans: Array<SchemaBmsPlan>;
   bmsPurchaseOrder: Maybe<SchemaBmsPurchaseOrder>;
   bmsPurchaseOrders: Array<SchemaBmsPurchaseOrder>;
+  bmsQualityDetail: Scalars['JSON']['output'];
+  bmsQualityForRun: Maybe<Scalars['JSON']['output']>;
+  bmsQualityLots: Scalars['JSON']['output'];
+  bmsQualityTrace: Scalars['JSON']['output'];
+  bmsQualityWorkspace: Scalars['JSON']['output'];
   bmsRecipeCostEstimate: Maybe<SchemaBmsRecipeCostEstimate>;
   bmsReportDeliveries: Array<SchemaBmsReportDelivery>;
   bmsReportDeliveriesForTenant: Array<SchemaBmsReportDelivery>;
@@ -12839,6 +13782,36 @@ export type SchemaQueryBmsBranchRequisitionsArgs = {
 };
 
 
+export type SchemaQueryBmsChecklistInboxArgs = {
+  filter: InputMaybe<SchemaBmsChecklistFollowupFilter>;
+};
+
+
+export type SchemaQueryBmsChecklistInspectionReportArgs = {
+  filter: SchemaBmsChecklistReportFilter;
+};
+
+
+export type SchemaQueryBmsChecklistMyWorkArgs = {
+  filter: InputMaybe<SchemaBmsChecklistFollowupFilter>;
+};
+
+
+export type SchemaQueryBmsChecklistRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsChecklistSupervisionArgs = {
+  filter: InputMaybe<SchemaBmsChecklistFollowupFilter>;
+};
+
+
+export type SchemaQueryBmsChecklistWorkspaceArgs = {
+  filter: InputMaybe<SchemaBmsChecklistFilter>;
+};
+
+
 export type SchemaQueryBmsCommissionReportArgs = {
   from: Scalars['String']['input'];
   to: Scalars['String']['input'];
@@ -12983,10 +13956,54 @@ export type SchemaQueryBmsGeneratedReportsArgs = {
 };
 
 
+export type SchemaQueryBmsImprovementCatalogArgs = {
+  kind: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsImprovementDetailArgs = {
+  id: Scalars['ID']['input'];
+  kind: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsImprovementForRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsImprovementSourcesArgs = {
+  filter: InputMaybe<SchemaBmsImprovementFilter>;
+};
+
+
+export type SchemaQueryBmsImprovementWorkspaceArgs = {
+  filter: InputMaybe<SchemaBmsImprovementFilter>;
+};
+
+
 export type SchemaQueryBmsInventoryActionCenterArgs = {
   coverageDays?: InputMaybe<Scalars['Int']['input']>;
   limit?: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  size: InputMaybe<Scalars['String']['input']>;
+  sku: InputMaybe<Scalars['String']['input']>;
   windowDays?: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsInventoryAnomaliesArgs = {
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
+};
+
+
+export type SchemaQueryBmsInventoryForecastAccuracyArgs = {
+  days?: InputMaybe<Scalars['Int']['input']>;
+  locationId: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -13107,6 +14124,33 @@ export type SchemaQueryBmsMasterUnitsArgs = {
 };
 
 
+export type SchemaQueryBmsMaterialCatalogArgs = {
+  kind: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsMaterialDetailArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsMaterialForRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsMaterialPreviewArgs = {
+  input: SchemaBmsMaterialPreview;
+};
+
+
+export type SchemaQueryBmsMaterialWorkspaceArgs = {
+  filter: InputMaybe<SchemaBmsMaterialFilter>;
+};
+
+
 export type SchemaQueryBmsMemberArgs = {
   customerId: Scalars['ID']['input'];
 };
@@ -13157,6 +14201,45 @@ export type SchemaQueryBmsNetProfitArgs = {
 
 export type SchemaQueryBmsOperatingCostsArgs = {
   month: Scalars['String']['input'];
+};
+
+
+export type SchemaQueryBmsOperationHandoverArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsOperationInboxArgs = {
+  offset: InputMaybe<Scalars['Int']['input']>;
+};
+
+
+export type SchemaQueryBmsOperationReadinessArgs = {
+  dutyKey: InputMaybe<Scalars['String']['input']>;
+  locationId: Scalars['ID']['input'];
+  staffId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsOperationRosterArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsOperationSummaryArgs = {
+  date: Scalars['String']['input'];
+  locationId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsOperationTeamArgs = {
+  filter: SchemaBmsTeamFilter;
+};
+
+
+export type SchemaQueryBmsOperationWeeklyReportArgs = {
+  from: Scalars['String']['input'];
+  locationId: InputMaybe<Scalars['ID']['input']>;
 };
 
 
@@ -13400,6 +14483,14 @@ export type SchemaQueryBmsPosStockCountsArgs = {
 };
 
 
+export type SchemaQueryBmsPosStockSearchArgs = {
+  credentials: SchemaBmsPosCredentialsInput;
+  limit?: InputMaybe<Scalars['Int']['input']>;
+  offset?: InputMaybe<Scalars['Int']['input']>;
+  q?: InputMaybe<Scalars['String']['input']>;
+};
+
+
 export type SchemaQueryBmsPosStockTransfersArgs = {
   credentials: SchemaBmsPosCredentialsInput;
 };
@@ -13486,6 +14577,26 @@ export type SchemaQueryBmsProductStockPolicyArgs = {
 };
 
 
+export type SchemaQueryBmsProductionDetailArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsProductionForRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsProductionPreviewArgs = {
+  input: SchemaBmsProductionPreviewInput;
+};
+
+
+export type SchemaQueryBmsProductionWorkspaceArgs = {
+  filter: InputMaybe<SchemaBmsProductionFilter>;
+};
+
+
 export type SchemaQueryBmsProductsArgs = {
   category: InputMaybe<Scalars['String']['input']>;
   limit: InputMaybe<Scalars['Int']['input']>;
@@ -13514,6 +14625,32 @@ export type SchemaQueryBmsPurchaseOrdersArgs = {
   limit?: InputMaybe<Scalars['Int']['input']>;
   offset?: InputMaybe<Scalars['Int']['input']>;
   search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsQualityDetailArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsQualityForRunArgs = {
+  id: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsQualityLotsArgs = {
+  locationId: Scalars['ID']['input'];
+  search: InputMaybe<Scalars['String']['input']>;
+};
+
+
+export type SchemaQueryBmsQualityTraceArgs = {
+  lotId: Scalars['ID']['input'];
+};
+
+
+export type SchemaQueryBmsQualityWorkspaceArgs = {
+  filter: InputMaybe<SchemaBmsMaterialFilter>;
 };
 
 
@@ -15729,6 +16866,16 @@ export type MobilePosStockCountsQueryVariables = Exact<{
 
 export type MobilePosStockCountsQuery = { bmsPosStockCounts: { deviceLocationId: string, counts: Array<{ id: string, countNo: string, locationId: string, locationName: string | null, status: string, note: string | null, createdByName: string | null, appliedAt: string | null, createdAt: string, varianceUnits: number, items: Array<{ id: number, sku: string, productName: string | null, size: string, snapshotQty: number, countedQty: number, variance: number, note: string | null }> }> } };
 
+export type MobilePosStockSearchQueryVariables = Exact<{
+  credentials: BmsPosCredentialsInput;
+  q?: string | null | undefined;
+  limit?: number | null | undefined;
+  offset?: number | null | undefined;
+}>;
+
+
+export type MobilePosStockSearchQuery = { bmsPosStockSearch: { nextOffset: number | null, items: Array<{ sku: string, name: string, size: string, locationId: string, locationName: string, currentStock: number, reservedStock: number, quarantineStock: number, available: number, incomingStock: number, reorderPoint: number, stockPolicy: string, baseUnit: string, displayUnit: string | null, displayPrecision: number, lotTracked: boolean, expiryTracked: boolean, serialTracked: boolean, bundle: boolean, transferSupported: boolean, countSupported: boolean, operationBlockReason: string | null }> } };
+
 export type MobilePosCreateStockCountMutationVariables = Exact<{
   input: BmsPosStockCountCreateInput;
 }>;
@@ -16156,6 +17303,7 @@ export const MobilePosSendStockTransferDocument = {"kind":"Document","definition
 export const MobilePosReceiveStockTransferDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosReceiveStockTransfer"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockTransferReceiveInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosReceiveStockTransfer"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}}]}}]}}]} as unknown as DocumentNode<MobilePosReceiveStockTransferMutation, MobilePosReceiveStockTransferMutationVariables>;
 export const MobilePosCancelStockTransferDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCancelStockTransfer"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockTransferActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCancelStockTransfer"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}}]}}]}}]} as unknown as DocumentNode<MobilePosCancelStockTransferMutation, MobilePosCancelStockTransferMutationVariables>;
 export const MobilePosStockCountsDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosStockCounts"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosStockCounts"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"deviceLocationId"}},{"kind":"Field","name":{"kind":"Name","value":"counts"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"FragmentSpread","name":{"kind":"Name","value":"MobilePosStockCountFields"}}]}}]}}]}},{"kind":"FragmentDefinition","name":{"kind":"Name","value":"MobilePosStockCountFields"},"typeCondition":{"kind":"NamedType","name":{"kind":"Name","value":"BmsMobileStockCount"}},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"countNo"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"note"}},{"kind":"Field","name":{"kind":"Name","value":"createdByName"}},{"kind":"Field","name":{"kind":"Name","value":"appliedAt"}},{"kind":"Field","name":{"kind":"Name","value":"createdAt"}},{"kind":"Field","name":{"kind":"Name","value":"varianceUnits"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"id"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"productName"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"snapshotQty"}},{"kind":"Field","name":{"kind":"Name","value":"countedQty"}},{"kind":"Field","name":{"kind":"Name","value":"variance"}},{"kind":"Field","name":{"kind":"Name","value":"note"}}]}}]}}]} as unknown as DocumentNode<MobilePosStockCountsQuery, MobilePosStockCountsQueryVariables>;
+export const MobilePosStockSearchDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"query","name":{"kind":"Name","value":"MobilePosStockSearch"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosCredentialsInput"}}}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"q"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"String"}},"defaultValue":{"kind":"StringValue","value":"","block":false}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"limit"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}},"defaultValue":{"kind":"IntValue","value":"30"}},{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"offset"}},"type":{"kind":"NamedType","name":{"kind":"Name","value":"Int"}},"defaultValue":{"kind":"IntValue","value":"0"}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosStockSearch"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"credentials"},"value":{"kind":"Variable","name":{"kind":"Name","value":"credentials"}}},{"kind":"Argument","name":{"kind":"Name","value":"q"},"value":{"kind":"Variable","name":{"kind":"Name","value":"q"}}},{"kind":"Argument","name":{"kind":"Name","value":"limit"},"value":{"kind":"Variable","name":{"kind":"Name","value":"limit"}}},{"kind":"Argument","name":{"kind":"Name","value":"offset"},"value":{"kind":"Variable","name":{"kind":"Name","value":"offset"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"nextOffset"}},{"kind":"Field","name":{"kind":"Name","value":"items"},"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"name"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"locationId"}},{"kind":"Field","name":{"kind":"Name","value":"locationName"}},{"kind":"Field","name":{"kind":"Name","value":"currentStock"}},{"kind":"Field","name":{"kind":"Name","value":"reservedStock"}},{"kind":"Field","name":{"kind":"Name","value":"quarantineStock"}},{"kind":"Field","name":{"kind":"Name","value":"available"}},{"kind":"Field","name":{"kind":"Name","value":"incomingStock"}},{"kind":"Field","name":{"kind":"Name","value":"reorderPoint"}},{"kind":"Field","name":{"kind":"Name","value":"stockPolicy"}},{"kind":"Field","name":{"kind":"Name","value":"baseUnit"}},{"kind":"Field","name":{"kind":"Name","value":"displayUnit"}},{"kind":"Field","name":{"kind":"Name","value":"displayPrecision"}},{"kind":"Field","name":{"kind":"Name","value":"lotTracked"}},{"kind":"Field","name":{"kind":"Name","value":"expiryTracked"}},{"kind":"Field","name":{"kind":"Name","value":"serialTracked"}},{"kind":"Field","name":{"kind":"Name","value":"bundle"}},{"kind":"Field","name":{"kind":"Name","value":"transferSupported"}},{"kind":"Field","name":{"kind":"Name","value":"countSupported"}},{"kind":"Field","name":{"kind":"Name","value":"operationBlockReason"}}]}}]}}]}}]} as unknown as DocumentNode<MobilePosStockSearchQuery, MobilePosStockSearchQueryVariables>;
 export const MobilePosCreateStockCountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosCreateStockCount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountCreateInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosCreateStockCount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"countId"}},{"kind":"Field","name":{"kind":"Name","value":"countNo"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}}]}}]}}]} as unknown as DocumentNode<MobilePosCreateStockCountMutation, MobilePosCreateStockCountMutationVariables>;
 export const MobilePosRecordStockCountItemDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosRecordStockCountItem"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountItemInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosRecordStockCountItem"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}},{"kind":"Field","name":{"kind":"Name","value":"snapshotQty"}},{"kind":"Field","name":{"kind":"Name","value":"variance"}}]}}]}}]} as unknown as DocumentNode<MobilePosRecordStockCountItemMutation, MobilePosRecordStockCountItemMutationVariables>;
 export const MobilePosApplyStockCountDocument = {"kind":"Document","definitions":[{"kind":"OperationDefinition","operation":"mutation","name":{"kind":"Name","value":"MobilePosApplyStockCount"},"variableDefinitions":[{"kind":"VariableDefinition","variable":{"kind":"Variable","name":{"kind":"Name","value":"input"}},"type":{"kind":"NonNullType","type":{"kind":"NamedType","name":{"kind":"Name","value":"BmsPosStockCountActionInput"}}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"bmsPosApplyStockCount"},"arguments":[{"kind":"Argument","name":{"kind":"Name","value":"input"},"value":{"kind":"Variable","name":{"kind":"Name","value":"input"}}}],"selectionSet":{"kind":"SelectionSet","selections":[{"kind":"Field","name":{"kind":"Name","value":"status"}},{"kind":"Field","name":{"kind":"Name","value":"reason"}},{"kind":"Field","name":{"kind":"Name","value":"current"}},{"kind":"Field","name":{"kind":"Name","value":"adjustedItems"}},{"kind":"Field","name":{"kind":"Name","value":"varianceUnits"}},{"kind":"Field","name":{"kind":"Name","value":"sku"}},{"kind":"Field","name":{"kind":"Name","value":"size"}},{"kind":"Field","name":{"kind":"Name","value":"reserved"}},{"kind":"Field","name":{"kind":"Name","value":"wouldBe"}}]}}]}}]} as unknown as DocumentNode<MobilePosApplyStockCountMutation, MobilePosApplyStockCountMutationVariables>;

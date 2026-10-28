@@ -442,10 +442,11 @@ export async function listDiagnosticInboxLatest(tenantId: string): Promise<Diagn
 /** เลือก staff หลักให้แชทใหม่: Sales ที่ว่าง ถือแชท OPEN/PENDING น้อยสุดก่อน
  *  ไม่มี Sales ว่างเลย → ตกไป Manager → Administrator (กันไม่ให้แชทไม่มี staff)
  *  excludeUserId ใช้ตอนกำลังจะลบ/ปิดใช้งาน user คนหนึ่ง — กันเลือกกลับไปหาคนเดิม */
-async function pickAutoAssignee(
+export async function pickAutoAssignee(
   tenantId: string,
   excludeUserIds: string[] = [],
-  client?: PoolClient
+  client?: PoolClient,
+  requiredPermissions: string[] = []
 ): Promise<string | null> {
   const run = client ? client.query.bind(client) : query;
   for (const roleName of ["Sales", "Manager", "Administrator"]) {
@@ -455,9 +456,14 @@ async function pickAutoAssignee(
          JOIN roles r ON r.id = u.role_id
         WHERE u.tenant_id = $1 AND r.name = $2 AND u.is_available = true
           AND (cardinality($3::uuid[]) = 0 OR u.id <> ALL($3::uuid[]))
+          AND (r.name = 'Administrator' OR NOT EXISTS (
+            SELECT 1 FROM unnest($4::text[]) AS needed(permission)
+             WHERE NOT EXISTS (SELECT 1 FROM bms_role_permissions rp
+               WHERE rp.tenant_id = $1 AND rp.role_id = u.role_id AND rp.permission = needed.permission)
+          ))
         ORDER BY ${WORKLOAD_COUNT_SQL} ASC, u.created_at ASC
         LIMIT 1`,
-      [tenantId, roleName, excludeUserIds]
+      [tenantId, roleName, excludeUserIds, requiredPermissions]
     );
     if (res.rowCount) return res.rows[0].id;
   }
@@ -592,7 +598,8 @@ export async function listConversations(
                AND m.body ILIKE '%'||$5||'%'
           )
         )
-      ORDER BY c.last_message_at DESC NULLS LAST, c.created_at DESC
+      ORDER BY (c.status IN ('OPEN','PENDING') AND 'sales-callback' = ANY(c.tags)) DESC,
+               c.last_message_at DESC NULLS LAST, c.created_at DESC
       LIMIT $6 OFFSET $7`,
     [tenantId, opts.status ?? null, opts.assignedTo ?? null, opts.tag ?? null, search, limit, offset]
   );
@@ -1031,11 +1038,24 @@ export async function listSystemEvents(tenantId: string, conversationId: string,
 
 export async function setConversationStatus(tenantId: string, id: string, status: ConvStatus): Promise<boolean> {
   if (!["OPEN", "PENDING", "CLOSED"].includes(status)) return false;
-  const res = await query(
-    `UPDATE bms_conversations SET status = $3, updated_at = now() WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, id, status]
-  );
-  const ok = (res.rowCount ?? 0) > 0;
+  const client = await getClient();
+  let ok = false;
+  try {
+    await beginTenantTx(client, tenantId);
+    const res = await client.query(
+      `UPDATE bms_conversations SET status = $3,
+         tags = CASE WHEN $3 = 'CLOSED' THEN array_remove(tags, 'sales-callback') ELSE tags END,
+         updated_at = now() WHERE tenant_id = $1 AND id = $2`,
+      [tenantId, id, status]
+    );
+    ok = (res.rowCount ?? 0) > 0;
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
   if (ok) publishInboxChanged(tenantId, id, "CONVERSATION_CHANGED");
   return ok;
 }

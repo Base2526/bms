@@ -484,6 +484,21 @@ screen requires a controlled reason plus note for damaged or missing units. Appl
 a separate permission and shows the first-entry snapshot, counted quantity, and variance before
 confirmation.
 
+The native stock workspace also has a bounded, server-backed lookup guarded by `product.view` rather
+than borrowing `inventory.transfer`. It searches the paired device's branch by name, SKU, legacy
+product barcode, or active pack barcode and keeps current, reserved, quarantined, usable, and incoming
+quantities separate. The device location is server-derived; the query accepts no branch authority
+from the client. Transfer and count permissions remain independent, so read access never grants a
+stock mutation.
+
+The transfer/count engine records aggregate integer `SKU + size` quantities. It does not carry lot
+or serial identities and must fail closed for lot/expiry-tracked, serial-tracked, bundle, recipe, and
+non-stock products. Those rows remain visible in lookup with a limitation reason, but cannot be
+silently moved or reconciled through the aggregate workflow. PO receiving remains the supported path
+that records lot number and expiry evidence. A future lot/serial transfer must extend the service,
+movement provenance, receipt UI, audit, and DB tests together; hiding an unsupported row only in the
+client is not sufficient.
+
 ### Admin REST and mobile GraphQL
 
 Staff stock transfers enforce assigned branch scope on REST and staff GraphQL (including the
@@ -1534,6 +1549,15 @@ supports both VAT price modes.
   reviewed for the sold bundle rather than inferred from component taxes. Conflicts, missing costs,
   fractional base-unit BOMs, stale review or failed audit publish nothing. Replays create no duplicates.
   Requires product.edit + product.delete (activation permission) + report.view and all-branch access.
+
+## Native stock lookup review
+
+Stock lookup reads active catalog variants even before a branch inventory row exists (zero balance).
+Sized pack barcodes match only that variant; shared packs can match every size. Quantities are shown
+in base units, never relabelled with an unconverted display unit. Repeating a search refreshes from
+the server. Failed reads are distinct from empty results, and actions are disabled while refreshing
+or after an error. Sending a draft transfer rechecks aggregate-stock eligibility before any stock
+write, including drafts created before the eligibility guard existed.
 
 ## Platform unit mapping (`10.76`)
 

@@ -32,7 +32,7 @@ try {
     });
     await context.addCookies([{ name: 'ADMIN_COOKIE', value: adminToken, url: base }, { name: 'lang', value: lang, url: base }]);
     let previewInput, savedInput;
-    const plan = { code: 'free', name: 'Free', price_monthly: 0, max_products: 100, max_channels: 1,
+    const plan = { code: 'free', name: 'Free', price_monthly: 0, price_yearly: 0, max_products: 100, max_channels: 1,
       max_branches: 1, max_devices: 1, max_orders_month: -1, max_users: 2, ai_credits_monthly: 100,
       ai_credits_next_monthly: null, ai_credits_change_at: null, feature_keys: [] };
     let fakeProvisionInput;
@@ -43,7 +43,7 @@ try {
       if (path === '/api/auth/me') return route.fulfill({ json: { isAuthenticated: true,
         admin: { id: 1, role: 'Administrator', email: 'fake@example.test', language: lang } } });
       if (path === '/api/dev/fake/package') return route.fulfill({ json: {
-        plan, plans: [plan, { ...plan, code: 'pro', name: 'Pro' }, { ...plan, code: 'business', name: 'Business' }],
+        plan, plans: [plan, { ...plan, code: 'pro', name: 'Pro', price_monthly: 990, price_yearly: 9900 }, { ...plan, code: 'growth', name: 'Growth', price_monthly: 1990, price_yearly: 19900 }, { ...plan, code: 'business', name: 'Business', price_monthly: 4900, price_yearly: 49000 }],
         products: { used: fakeProductUsage, limit: 100, remaining: 100 - fakeProductUsage },
         users: { used: 1, limit: 2, remaining: 1 }, devices: { used: 1, limit: 1, remaining: 0 }, capacities: [],
       } });
@@ -99,7 +99,7 @@ try {
           resource, used: resource === 'channels' ? 2 : 1, limit: 1, source: 'PLAN', canAdd: false })) },
         bmsFeatureAccess: [], bmsAiCreditLedger: [], bmsAiUsageBreakdown: [],
         bmsPlatformReferences: { source: 'DATABASE', countries: [], currencies: [], timezones: [], unresolved: [] },
-        bmsPlanCatalog: [{ code: 'free', name: 'Free', priceMonthly: 0, maxProducts: 100, maxChannels: 1,
+        bmsPlanCatalog: [{ code: 'free', name: 'Free', priceMonthly: 0, priceYearly: 0, maxProducts: 100, maxChannels: 1,
           maxOrdersMonth: -1, maxUsers: 2, maxBranches: 1, maxDevices: 1, maxAiMessagesMonth: 100,
           aiCreditsMonthly: 100, featureKeys: [], version: 1, updatedAt: null }],
       } } });

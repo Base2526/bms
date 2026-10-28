@@ -120,6 +120,21 @@ The existing customer response flow in `apps/web/lib/bms/ai.ts` is the baseline:
 are injected into a constrained prompt, and provider failure falls back to a deterministic Thai
 template.
 
+For BMS presales, an explicit request such as “ให้ Sales ติดต่อกลับ” is a deterministic server
+action before model routing, not a model-selected tool. A success reply is allowed only after the
+tenant-scoped Inbox conversation, `sales-callback` priority tag, assignment/internal mention, and
+`presales.callback_request` audit have committed. A failed write must say that the request did not
+enter the Sales queue. Questions that only ask for a LINE ID or phone number are read-only and must
+not create work. Keep raw customer text, phone numbers, and LINE identities out of the audit and
+notification payload; staff read them from the authorized conversation. Do not promise a response
+time.
+
+For this callback path, negated, hypothetical, quoted and status/contact-location questions do not
+authorize a write. Preserve an eligible existing assignee; new assignments require both `inbox.view`
+and `inbox.reply`. Commit internal mentions for the assignee and tenant Administrators (up to 50),
+including unavailable Administrators, so a missed realtime notification does not erase the owner's
+work queue. Post-commit delivery failure must not be reported to the prospect as a failed save.
+
 ## Feature-specific requirements
 
 ### Customer insights and summaries
@@ -155,14 +170,16 @@ template.
   a tenant's totals.
 - A billing figure shown to a shop must come from recorded events. Do not fill gaps with client-side
   estimates, sample ledgers, or hardcoded per-credit prices.
-- Monthly AI points (`10.56`, `10.73`): Free 100, Pro 1,000 at THB 599, Business 5,000 at THB 1,990.
-  `10.73` preserves the previous Business allowance through the rollout month, then switches at
+- Monthly AI points (`10.56`, `10.73`, `10.101`, `10.102`): Free 100, Pro 1,000 at THB 990,
+  Growth 2,500 at THB 1,990, Business 5,000 at THB 4,900, and Enterprise Factory 10,000
+  starting at THB 29,900.
+  `10.73` preserves the historical Business allowance through its rollout month, then switches at
   the next Bangkok month boundary. Resolve the effective plan through `getTenantPlan()`/`listPlans()`;
   raw catalogue AI columns contain the target, not necessarily the allowance effective today.
   Reset on the first at 00:00 Asia/Bangkok. One logical shared request uses one point on finite
   plans; retries/tool rounds share that point. BYOK keeps its existing zero-point accounting.
 - Plan changes and point adjustments require a live database-verified platform admin. Tenant
-  staff cannot grant themselves paid access or points. Catalog prices do not prove payment;
+  staff cannot grant themselves paid access or points. Monthly/annual catalog prices do not prove payment;
   automatic subscription collection/renewal/expiry is not implemented.
 - Retail Local is separate from AI subscriptions. Saved tenant keys and server environment keys
   belong to the installation owner. Local requests retain usage/cost accounting with no new point

@@ -87,7 +87,8 @@ are in [agent-invariants.md](agent-invariants.md). Update this file when a rule 
   `actual_cost_usd` (attributed cost) separate. A retry or provider fallback shares one
   `meta.usage_group_id` and bills **one** credit. Unknown cost is `NULL`, never `0`. Cost attribution
   is not a provider invoice.
-  Monthly AI points are Free **100**, Pro **1,000 at THB 599**, Business **5,000 at THB 1,990**
+  Monthly AI points are Free **100**, Pro **1,000 at THB 990**, Growth **2,500 at THB 1,990**,
+  Business **5,000 at THB 4,900**, and Enterprise Factory **10,000 starting at THB 29,900**
   (`10.73` preserves Business's old allowance through rollout month), resetting on the first at
   **00:00 Asia/Bangkok**. There is no per-tenant USD cap.
   `recordAiProviderAttempt()` still records attempts before network I/O; failure blocks the call.

@@ -13,7 +13,7 @@ try {
     let count = 10, reads = 0, unlimited = false, warning = 0, creditBlocked = false, noticeRead = false;
     let platformAdmin = false, grantMutations = 0, finiteBusiness = false, legacyCapacity = true;
     const errors = [];
-    const plan = { code: 'free', name: 'FAKE Free', price_monthly: 0, max_products: 100, max_channels: 1, max_branches:1, max_devices:1, max_orders_month: -1, max_users: 2, ai_credits_monthly: 100, ai_credits_next_monthly: null, ai_credits_change_at: null, feature_keys: [] };
+    const plan = { code: 'free', name: 'FAKE Free', price_monthly: 0, price_yearly: 0, max_products: 100, max_channels: 1, max_branches:1, max_devices:1, max_orders_month: -1, max_users: 2, ai_credits_monthly: 100, ai_credits_next_monthly: null, ai_credits_change_at: null, feature_keys: [] };
     await context.route(/\/(?:api\/|graphql)/, async route => {
       const path = new URL(route.request().url()).pathname;
       if (path === '/api/auth/me') return route.fulfill({ json: { isAuthenticated: true, admin: { id: 1, role: 'Administrator', email: 'fake@example.test', name: 'FAKE admin', language: lang } } });
@@ -33,10 +33,12 @@ try {
       }
       if (q.includes('bmsAiUsage')) reads++;
       const budget = { sharedBudgetLimitUsd: -1, sharedBudgetSpentUsd: 150.1234, sharedBudgetReservedUsd: 0, sharedBudgetRemainingUsd: -1, sharedBudgetBlocked: false, sharedBudgetUnaccountedCalls: 1 };
-      const businessPlan = { ...plan, code: 'business', name: 'FAKE Business', price_monthly: 1990, max_products: -1, max_users: 20, max_branches:5,max_devices:10,max_channels:-1,feature_keys: ['REPORT_SCHEDULE','RETENTION_ENGINE'],
+      const businessPlan = { ...plan, code: 'business', name: 'FAKE Business', price_monthly: 4900, price_yearly: 49000, max_products: 50000, max_users: 40, max_branches:5,max_devices:10,max_channels:10,feature_keys: ['REPORT_SCHEDULE','RETENTION_ENGINE'],
         ai_credits_monthly: finiteBusiness ? 5000 : -1, ai_credits_next_monthly: finiteBusiness ? null : 5000,
         ai_credits_change_at: finiteBusiness ? null : '2026-10-31T17:00:00.000Z' };
-      const plans = [plan, { ...plan, code: 'pro', name: 'FAKE Pro', price_monthly: 599, max_products: -1, max_users: 5, max_devices:3,max_channels:3,ai_credits_monthly: 1000, feature_keys: ['REPORT_SCHEDULE'] }, businessPlan];
+      const plans = [plan, { ...plan, code: 'pro', name: 'FAKE Pro', price_monthly: 990, price_yearly: 9900, max_products: 5000, max_users: 5, max_devices:3,max_channels:3,ai_credits_monthly: 1000, feature_keys: ['REPORT_SCHEDULE'] },
+        { ...plan, code: 'growth', name: 'Growth', price_monthly: 1990, price_yearly: 19900, max_products:15000,max_users:15,max_branches:3,max_devices:6,max_channels:5,ai_credits_monthly:2500,feature_keys:['REPORT_SCHEDULE'] }, businessPlan,
+        { ...plan, code: 'enterprise', name: 'Enterprise Factory', price_monthly: 29900, price_yearly: 329000, max_products: 200000, max_users: 150, max_branches:10,max_devices:50,max_channels:20,ai_credits_monthly: 10000, feature_keys: ['REPORT_SCHEDULE','RETENTION_ENGINE'] }];
       const limit = finiteBusiness ? 5000 : 100;
       const data = {
         bmsEntitlements: { capacities:['branches','devices','channels'].map(resource=>({resource,used:2,limit:legacyCapacity?-1:1,source:legacyCapacity?'LEGACY':'PLAN',canAdd:legacyCapacity})) },

@@ -272,6 +272,7 @@ function sourceLabel(c: { channel?: string | null; sourceDisplayName?: string | 
 
 function convPriority(c: Conversation, t: Translate) {
   const text = `${c.lastMessage || ""} ${(c.tags || []).join(" ")}`.toLowerCase();
+  if (c.status !== "CLOSED" && (c.tags || []).includes("sales-callback")) return { label: t("admin_inbox.priority_sales_callback"), color: "magenta", icon: <FireOutlined /> };
   if (c.unread > 0) return { label: t("admin_inbox.priority_need_reply"), color: "red", icon: <FireOutlined /> };
   if (/สลิป|โอน|paid|payment|ชำระ/.test(text)) return { label: t("admin_inbox.priority_has_slip"), color: "blue", icon: <CreditCardOutlined /> };
   if (/ส่ง|พัสดุ|tracking|จัดส่ง/.test(text) || c.status === "PENDING") return { label: t("admin_inbox.priority_awaiting_shipment"), color: "purple", icon: <TruckOutlined /> };
@@ -282,7 +283,7 @@ function convPriority(c: Conversation, t: Translate) {
 function matchesQuickFilter(c: Conversation, quickFilter: QuickFilterKey | null) {
   if (!quickFilter) return true;
   const text = `${c.lastMessage || ""} ${(c.tags || []).join(" ")}`.toLowerCase();
-  if (quickFilter === "urgent") return c.unread > 0;
+  if (quickFilter === "urgent") return c.unread > 0 || (c.status !== "CLOSED" && (c.tags || []).includes("sales-callback"));
   if (quickFilter === "payment") return /สลิป|โอน|paid|payment|ชำระ/.test(text);
   return /ราคา|ไซซ์|size|มีไหม|stock|สต็อก/.test(text);
 }
