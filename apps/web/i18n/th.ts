@@ -909,6 +909,7 @@ const th = {
     shop_email_taken: "อีเมลนี้มีบัญชีอยู่แล้ว กรุณาเข้าสู่ระบบหรือขอรีเซ็ตรหัสผ่าน",
   },
   header: {
+    learningCenter: "ศูนย์เรียนรู้",
     title: "BMS",
 
     subtitle: "จัดการร้านค้าด้วย AI",

@@ -1,0 +1,742 @@
+import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
+
+export const LEARNING_REVIEWED_AT = "2026-10-28";
+export type TrackId = "board-game" | "restaurant";
+export type Role = "owner" | "manager" | "cashier";
+export type Localized = Bilingual<string>;
+export const bi = (th: string, en: string): Localized => ({ th, en });
+export const localize = (value: Localized, lang: "th" | "en") => resolveBilingual(value, lang);
+
+export type Lesson = {
+  slug: string;
+  title: Localized;
+  summary: Localized;
+  category: "setup" | "daily" | "growth" | "recovery";
+  roles: Role[];
+  tracks: TrackId[];
+  menu: Localized;
+  action: string;
+  prerequisite: Localized;
+  steps: Localized[];
+  check: Localized;
+  caution: Localized;
+};
+
+export const roleLabels = {
+  owner: bi("เจ้าของร้าน / ผู้ดูแล", "Owner / administrator"),
+  manager: bi("ผู้จัดการ", "Manager"),
+  cashier: bi("แคชเชียร์ / พนักงาน", "Cashier / staff"),
+};
+export const categoryLabels = {
+  setup: bi("ตั้งค่าก่อนเปิดร้าน", "Set up your shop"),
+  daily: bi("งานประจำวัน", "Daily operations"),
+  growth: bi("สมาชิก AI และรายงาน", "Members, AI & reports"),
+  recovery: bi("แก้ปัญหาและเปิดจริง", "Recovery & go-live"),
+};
+
+// Authored public instructions only. Never import internal tool catalogs, tenant records or secrets.
+const both: TrackId[] = ["board-game", "restaurant"];
+const all: Role[] = ["owner", "manager", "cashier"];
+const managers: Role[] = ["owner", "manager"];
+export const lessons: Lesson[] = [
+  {
+    slug: "start-here", title: bi("เริ่มต้น: เตรียมร้านและเลือกประเภทธุรกิจ", "Start here: prepare your shop"),
+    summary: bi("สิ่งที่ต้องเตรียมก่อนสมัคร เลือกประเภทร้าน และวางแผนย้ายจากระบบเดิม", "Prepare your information, select a business type and plan a migration."),
+    category: "setup", roles: all, tracks: both, menu: bi("สมัครร้าน → Settings → ข้อมูลร้าน", "Shop signup → Settings → Store profile"), action: "/admin/settings",
+    prerequisite: bi("เตรียมอีเมลเจ้าของร้าน ชื่อร้าน ที่อยู่ รายชื่อสาขา และผู้รับผิดชอบการเงิน", "Prepare the owner's email, shop name, address, branches and finance contact."),
+    steps: [
+      bi("สมัครร้านด้วยอีเมลที่เจ้าของควบคุมเอง ทำขั้นตอนยืนยันตัวตนที่หน้าจอกำหนด แล้วตรวจชื่อร้านและบัญชีผู้ดูแล", "Register with an owner-controlled email, complete the identity checks shown and verify the shop and administrator account."),
+      bi("เลือกประเภทร้านให้ตรงกับงานหลัก: ร้านบอร์ดเกมสำหรับค่าเล่นตามเวลา หรือร้านอาหารสำหรับโต๊ะและงานครัว ก่อนสร้างออร์เดอร์จริงครั้งแรก", "Choose board-game cafe for timed play or restaurant for dining and kitchen workflows before creating the first real order."),
+      bi("มอบหมายผู้ดูแลข้อมูลสินค้า คลังเกม สมาชิก เงิน และอุปกรณ์ แยกร้านทดสอบออกจากร้านจริง และใช้ข้อมูลสมมติในการฝึก", "Assign owners for products, games, customers, finance and devices. Train with fictional data in a separate test shop."),
+      bi("หากย้ายระบบ เลือกวันตัดยอด เก็บรายงานระบบเดิม และรวบรวมสต็อก สมาชิก คะแนน แพ็กเกจ เงินมัดจำ และการจองค้างเพื่อเทียบยอด", "For migration, choose a cutover date, retain old reports and reconcile stock, members, points, passes, deposits and open reservations."),
+    ],
+    check: bi("เจ้าของเข้าระบบได้ ประเภทร้านถูกต้อง และมีรายการข้อมูลตั้งต้นพร้อมผู้รับผิดชอบ", "The owner can sign in, the business type is correct and opening data has named owners."),
+    caution: bi("ประเภทร้านถูกล็อกหลังออร์เดอร์จริงแรก ตรวจแผนและโควตาปัจจุบันในหน้าราคา อย่าถือว่าฟีเจอร์ทุกอย่างอยู่ในแผนฟรี", "The business type locks after the first real order. Check current pricing and quotas; not every capability is included in the free plan."),
+  },
+  {
+    slug: "branches-hours", title: bi("สาขา เวลาเปิด–ปิด และวันให้บริการ", "Branches, hours & service days"),
+    summary: bi("ตั้งขอบเขตสาขาและตรวจการทำงานของร้านที่เปิดข้ามเที่ยงคืน", "Set up branch scope and verify operations across midnight."),
+    category: "setup", roles: managers, tracks: both, menu: bi("Locations → ตั้งค่าสาขา / ตั้งค่าร้านบอร์ดเกมหรือร้านอาหาร", "Locations → Branch / board-game or restaurant settings"), action: "/admin/locations",
+    prerequisite: bi("รายการสาขา รหัสสาขา ความจุ และตารางเปิดร้านที่ตกลงกันแล้ว", "Agreed branch codes, capacities and operating hours."),
+    steps: [
+      bi("เพิ่มสาขา กำหนดรหัสและชื่อที่พนักงานแยกได้ชัด เช่น MAIN และ BR02 ตรวจว่าเครื่องขายและคลังสินค้าผูกสาขาถูกต้อง", "Create branches with recognizable codes such as MAIN and BR02. Check register and stock-location assignments."),
+      bi("ร้านบอร์ดเกม: ตั้ง Timezone ที่ Settings → ข้อมูลร้าน แล้วเลือกสาขาในหน้าโต๊ะบอร์ดเกมเพื่อตั้งข้อความเวลาเปิดและนโยบายจอง ตารางเวลารายวันสำหรับ Analytics ตั้งแยกในแท็บวิเคราะห์ ไม่ใช่ตารางปิดรับจองอัตโนมัติ", "For board games, set the timezone in Settings → Store profile, then select the branch under Board-game tables to configure displayed hours and booking policy. The daily hours editor is in Analytics and does not automatically restrict booking hours."),
+      bi("ร้านอาหาร: ตรวจวันให้บริการในตั้งค่าร้านอาหาร เลขคิวและรายการหมดวันนี้ใช้วันให้บริการ ไม่จำเป็นต้องเปลี่ยนวันที่เที่ยงคืน", "For restaurants, review service-day settings. Queue numbers and sold-out-today entries follow the service day, not necessarily midnight."),
+      bi("คิวบอร์ดเกมตัดวันให้บริการที่ 04:00 ตาม Timezone ร้าน ตัวอย่าง 01:00 ยังอยู่วันให้บริการก่อนหน้า ทดสอบทั้งเที่ยงคืนและ 04:00; วันหยุดพิเศษต้องให้พนักงานตรวจคำขอเอง ข้อความวันหยุดหรือวันปิดใน Analytics ไม่ได้ปิดรับจองแทน", "Board-game queues use a 04:00 service-day boundary in the store timezone: 01:00 belongs to the previous service day. Test midnight and 04:00. Staff must review holiday bookings; holiday text and Analytics closed days do not block reservations."),
+    ],
+    check: bi("เครื่องขายอยู่สาขาที่ถูกต้อง เวลาที่ลูกค้าเห็นตรงกับช่วงรับจอง และทดสอบข้ามวันผ่าน", "Registers have the right branch, published and bookable hours agree, and midnight tests pass."),
+    caution: bi("Timezone วันปฏิทิน วันให้บริการ และช่วงกะมีความหมายต่างกัน ระบุช่วงวันที่ทุกครั้งที่เทียบรายงาน", "Timezone, calendar date, service day and shift period are different. Specify the reporting period when reconciling."),
+  },
+  {
+    slug: "staff-permissions", title: bi("พนักงาน PIN และผู้อนุมัติ", "Staff, PINs & approvers"),
+    summary: bi("เริ่มงานตามบทบาท ทดสอบสิทธิ์ และยกเลิกสิทธิ์เมื่อเลิกงานกับร้าน", "Onboard by role, test access and revoke access when employment ends."),
+    category: "setup", roles: managers, tracks: both, menu: bi("Users / Permissions → POS Devices", "Users / Permissions → POS Devices"), action: "/admin/pos-devices",
+    prerequisite: bi("รายชื่อเจ้าของ ผู้จัดการ แคชเชียร์ และผู้อนุมัติสำรอง", "An owner, manager, cashier and backup approver roster."),
+    steps: [
+      bi("สร้างบัญชีรายคนและกำหนดสิทธิ์ตามงาน ให้แคชเชียร์ใช้บัญชี POS-only หากไม่ต้องเข้าหลังบ้าน", "Create individual accounts with job-appropriate permissions. Use POS-only cashiers when back-office access is unnecessary."),
+      bi("ตั้ง PIN 4–8 หลักให้พนักงานแต่ละคน ทดสอบเลือกชื่อและเข้าหน้าเครื่องจริง ไม่ใช้ PIN ร่วมกัน", "Set an individual 4–8 digit PIN and test selecting the cashier on the actual register. Do not share PINs."),
+      bi("กำหนดผู้อนุมัติอีกคนสำหรับส่วนลดมือ Void และ Cash Out ตามสิทธิ์ ทดสอบทั้งกรณีอนุญาตและปฏิเสธ", "Assign a distinct authorized approver for manual discounts, voids and cash out. Test both allowed and denied actions."),
+      bi("เมื่อพนักงานออกจากงาน ปิดใช้งานบัญชี/สิทธิ์และ PIN ตามหน้าจัดการ ตรวจบัญชีและเครื่องที่เคยใช้ พร้อมเก็บประวัติการขายเดิม", "When staff leave, disable their account/access and PIN using management screens, review used devices and retain historical sales."),
+    ],
+    check: bi("แคชเชียร์ขายได้แต่ไม่ทำงานผู้จัดการ บัญชีทดสอบที่ไม่มีสิทธิ์ถูกปฏิเสธ และมีผู้อนุมัติสำรอง", "Cashiers can sell without manager powers, unauthorized actions are denied and a backup approver is available."),
+    caution: bi("PIN ผิด 5 ครั้งจะล็อก 15 นาที เครื่อง POS ที่จับคู่แล้วไม่ใช่ตัวตนของพนักงาน", "Five incorrect PIN attempts lock access for 15 minutes. A paired register is not a staff identity."),
+  },
+  {
+    slug: "products-import", title: bi("สินค้า SKU บาร์โค้ด และนำเข้า", "Products, SKUs, barcodes & imports"),
+    summary: bi("เตรียมน้ำ ขนม สินค้าขาย หรือวัตถุดิบ พร้อมราคาต้นทุนและหน่วย", "Set up drinks, snacks, merchandise or ingredients with prices, costs and units."),
+    category: "setup", roles: managers, tracks: both, menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/products",
+    prerequisite: bi("รายการ SKU หน่วย ราคาขาย ต้นทุน ประเภท VAT และยอดตั้งต้นที่ตรวจแล้ว", "A checked list of SKUs, units, sale prices, costs, VAT categories and opening quantities."),
+    steps: [
+      bi("สร้างสินค้าหนึ่งรายการก่อน กำหนด SKU ไม่ซ้ำ ชื่อ หน่วย รูปแบบสต็อก ราคาขาย ต้นทุน และประเภท VAT; ต้นทุนที่ไม่ทราบต้องไม่กรอกเป็นศูนย์แทน", "Create one item first with a unique SKU, name, unit, stock policy, price, cost and VAT category. Do not substitute zero for unknown cost."),
+      bi("ถ้ามีหลายขนาดให้สร้าง Variant หากขายเป็นแพ็กให้ตั้ง Pack และจำนวนต่อแพ็กจริง พร้อมบาร์โค้ดแต่ละหน่วย", "Use variants for sizes and packs for multi-unit sales. Set the actual pack quantity and barcode for each selling unit."),
+      bi("การนำเข้าจำนวนมาก: ใช้รูปแบบไฟล์ของหน้าสินค้า ตรวจตัวอย่างและข้อผิดพลาดก่อนยืนยัน แก้ SKU ซ้ำแล้วทดลองชุดเล็กก่อนชุดเต็ม", "For bulk import, use the product screen's file format. Preview errors, resolve duplicate SKUs and try a small batch before the full import."),
+      bi("ตรวจจำนวนรายการ ราคา VAT และสต็อกหลังนำเข้า เพิ่มรูปแยกจากไฟล์นำเข้า แล้วพิมพ์ป้ายจาก Product labels และทดสอบสแกน", "Reconcile counts, prices, VAT and stock after import. Add images separately, print product labels and test scans."),
+    ],
+    check: bi("สแกนแล้วได้สินค้าและหน่วยที่ถูกต้อง รวมถึงแพ็ก ราคาและจำนวนไม่ผิดเท่า", "Scanning selects the right product and selling unit, including correct pack quantities and prices."),
+    caution: bi("ค่าเวลาเล่น แพ็กเกจ และกล่องเกมให้ยืมไม่ใช่ SKU สินค้า นำเข้าสมาชิกหรือยอดสิทธิ์ต้องตรวจช่องทางที่รองรับก่อน ไม่ใช้ไฟล์สินค้าทดแทน", "Play time, passes and library copies are not product SKUs. Confirm supported customer/entitlement migration paths; do not use product import as a substitute."),
+  },
+  {
+    slug: "inventory", title: bi("รับเข้า โอน และตรวจนับสต็อก", "Receive, transfer & count stock"),
+    summary: bi("จัดการของที่ขายจริงแยกสาขา พร้อมตรวจส่วนต่างและของเสีย", "Manage sellable inventory by branch, including variances and wastage."),
+    category: "daily", roles: managers, tracks: both, menu: bi("Purchase / Stock Transfers / Stock Counts", "Purchase / Stock Transfers / Stock Counts"), action: "/admin/stock-transfers",
+    prerequisite: bi("สินค้า หน่วย สาขา และผู้รับผิดชอบตรวจรับพร้อมใช้งาน", "Products, units, branches and receiving staff are ready."),
+    steps: [
+      bi("รับสินค้าตามใบสั่งซื้อ เลือกสาขาที่รับ ตรวจจำนวนและต้นทุนตามของจริงก่อนยืนยันรับ", "Receive against a purchase order, select the receiving branch and check actual quantities and costs."),
+      bi("โอนสินค้าโดยสร้างใบโอน ต้นทางส่งออก แล้วปลายทางตรวจของและรับเข้า แยกการส่งกับการรับเป็นคนละขั้น", "Create a transfer, dispatch it at the source, then inspect and receive it at the destination. Dispatch and receipt are separate steps."),
+      bi("นับสต็อกด้วยใบตรวจนับ กรอกยอดจริง ตรวจส่วนต่างแล้วให้ผู้มีสิทธิ์นำไปปรับยอด; อย่าทับยอดคงเหลือด้วยไฟล์เก่าระหว่างมีการขาย", "Use a stock count, enter actual quantities and have an authorized user apply the variance. Do not overwrite live stock with an old export during sales."),
+      bi("บันทึกของเสียพร้อมเหตุผล ตรวจของใกล้หมด และวางรอบตรวจประจำสัปดาห์ เก็บเลขใบรับ/ใบโอนเมื่อผลรายการไม่ชัดเจน", "Record wastage with reasons, review low stock and schedule weekly checks. Keep receipt/transfer references if a result is uncertain."),
+    ],
+    check: bi("ของที่ส่งยังไม่รับแยกได้ ยอดคงเหลือตรงการเคลื่อนไหว และไม่มีใบโอนค้างโดยไม่ทราบเจ้าของงาน", "In-transit goods are identifiable, balances reconcile to movements and every pending transfer has an owner."),
+    caution: bi("สินค้าที่ใส่ tab ระหว่างเล่นถูกจองแล้ว การยืมกล่องเกมไม่ลดสต็อกสินค้าขาย", "Items added to a running tab are reserved. Borrowing a library copy does not reduce merchandise stock."),
+  },
+  {
+    slug: "tax-receipts", title: bi("VAT ใบเสร็จ และคำขอใบกำกับภาษี", "VAT, receipts & tax-invoice requests"),
+    summary: bi("ตั้งข้อมูลผู้ขาย ตรวจเอกสาร และเข้าใจขอบเขต e-Tax", "Configure seller details, review documents and understand e-Tax availability."),
+    category: "setup", roles: managers, tracks: both, menu: bi("Settings / POS Readiness → ภาษีขาย", "Settings / POS Readiness → Output tax"), action: "/admin/pos-readiness",
+    prerequisite: bi("ข้อมูลกิจการและรูปแบบภาษีที่ผู้รับผิดชอบบัญชีตรวจแล้ว", "Business details and tax configuration reviewed by your accounting owner."),
+    steps: [
+      bi("ตั้งชื่อ ที่อยู่ เลขผู้เสียภาษี สำนักงานใหญ่/เลขสาขา สถานะ VAT และรูปแบบราคารวม/ไม่รวม VAT ตรวจประเภทภาษีของสินค้าทุกตัว", "Set seller name, address, tax ID, establishment branch, VAT status and tax-inclusive/exclusive pricing. Classify every product."),
+      bi("ใน POS Devices ตรวจเลขเครื่องและ Prefix ใบเสร็จ ทดสอบเอกสารด้วยข้อมูลสมมติ ตรวจชื่อสาขาและยอดภาษีก่อนขายจริง", "Check register numbers and receipt prefixes in POS Devices. Use fictional test sales to verify branch identity and tax totals."),
+      bi("ลูกค้าสแกน QR ขอใบกำกับบนใบเสร็จเพื่อส่งข้อมูลผู้ซื้อ พนักงานตรวจคำขอและออกเอกสารด้วยสิทธิ์ที่เกี่ยวข้อง", "Customers scan the receipt's tax-request QR and submit buyer details. Authorized staff review the request before issuing the document."),
+      bi("พิมพ์ซ้ำจากบิลเดิม ตรวจรายงานภาษีขายตามช่วงวันที่และสาขา เก็บเอกสารที่ยกเลิกหรือแก้ไขตาม workflow ให้บัญชีตรวจ", "Reprint the original bill, review output-tax reports by date and establishment, and retain correction/void history for accounting."),
+    ],
+    check: bi("ชื่อผู้ขาย สาขา เลขเอกสาร รายการ ยอดรวม และ VAT ตรงกันบนหน้าจอและใบพิมพ์", "Seller identity, branch, document number, lines, totals and VAT match screen and print."),
+    caution: bi("ใบกำกับที่ออกแล้วแก้ทับไม่ได้ การส่ง PDF ทางอีเมลไม่ใช่ e-Tax; การนำส่ง e-Tax ยังไม่มีผู้ให้บริการที่ยืนยันพร้อมใช้งานจริง ให้ตรวจสถานะกับทีมงานก่อนใช้งาน", "Issued invoices are immutable. An emailed PDF is not e-Tax. e-Tax submission has no verified production provider; confirm availability with the team first."),
+  },
+  {
+    slug: "pos-devices", title: bi("สร้างเครื่อง POS และจับคู่", "Create & pair a POS register"),
+    summary: bi("ผูกเครื่องกับสาขา เปิดใช้งาน PIN และรับมือเครื่องสูญหาย", "Assign the register to a branch, enable PIN access and handle lost devices."),
+    category: "setup", roles: managers, tracks: both, menu: bi("POS Devices → POS Readiness", "POS Devices → POS Readiness"), action: "/admin/pos-devices",
+    prerequisite: bi("มีสาขาและพนักงานพร้อม PIN; ใช้เครื่องที่ร้านควบคุมได้", "A branch and cashier PINs exist; use a shop-controlled computer."),
+    steps: [
+      bi("เพิ่มเครื่องขาย กรอกรหัส ชื่อ สาขา เลขเครื่องที่เกี่ยวข้องและ Prefix ใบเสร็จ ตรวจสาขาก่อนบันทึก", "Add a register with its code, name, branch, applicable register number and receipt prefix. Verify the branch before saving."),
+      bi("ออกลิงก์จับคู่ เปิดบนเครื่องขายที่ต้องการและตรวจว่าหน้าจอแสดงเครื่อง/สาขาที่ตั้งไว้ ลิงก์นี้เป็นข้อมูลลับ", "Issue a pairing link, open it on the intended register and verify the displayed device and branch. Treat this link as a secret."),
+      bi("เลือกพนักงานและใส่ PIN ทดสอบว่าบัญชีที่ไม่มีสิทธิ์ขายทำรายการไม่ได้ แล้วตรวจ POS Readiness ให้ครบ", "Select a cashier and enter their PIN. Test denial for an unauthorized user and clear the POS Readiness checks."),
+      bi("เครื่องหายหรือเลิกใช้: ปิดใช้งานหรือเพิกถอนเครื่องในหลังบ้าน ตรวจบิลค้าง แล้วจับคู่เครื่องทดแทนด้วยข้อมูลใหม่", "For a lost or retired register, disable/revoke it in the back office, review pending bills and pair a replacement with new credentials."),
+    ],
+    check: bi("เครื่องแสดงสาขาถูกต้อง PIN ใช้งานได้ และไม่มี Blocker ที่ขัดขวางการเปิดขาย", "The branch and PIN are correct and no readiness blockers prevent opening."),
+    caution: bi("การออก Token ใหม่ทำให้ตัวเก่าใช้ไม่ได้ อย่าส่งลิงก์จับคู่ให้ Support หรือใส่ในภาพหน้าจอ", "Reissuing a token invalidates the old one. Never include pairing links in support messages or screenshots."),
+  },
+  {
+    slug: "desktop-hardware", title: bi("Desktop App หน้าจอ 2 และเครื่องพิมพ์", "Desktop app, second display & printers"),
+    summary: bi("ติดตั้ง POS Client ตั้งหน้าจอลูกค้า สแกนเนอร์ และซ้อมอุปกรณ์สำรอง", "Install the POS client, configure customer display and scanner, and rehearse device fallback."),
+    category: "setup", roles: managers, tracks: both, menu: bi("ดาวน์โหลด → POS Settings", "Downloads → POS Settings"), action: "/retail-local",
+    prerequisite: bi("ตรวจ OS/สถาปัตยกรรมของเครื่อง ลิงก์จากทีมงาน และลิงก์จับคู่ที่ถูกต้อง", "Verify your OS/architecture, the official release link and a valid pairing link."),
+    steps: [
+      bi("เลือกชุด POS Client ให้ตรง Windows, macOS หรือ Linux จากรายการเผยแพร่ของระบบหรือทีมงาน แยกจากชุด Server/Server + POS; ถ้าไม่มีไฟล์สำหรับเครื่องให้ติดต่อทีมงาน", "Choose a published POS Client matching Windows, macOS or Linux. Distinguish it from Server/Server + POS packages; contact the team if no matching installer is published."),
+      bi("ติดตั้ง เปิดแอป กรอก Server URL และจับคู่ ตรวจชื่อสาขา เลือกพนักงานและ PIN ก่อนใช้งาน", "Install and open the app, enter the server URL and pair it. Check the branch, then select a cashier and enter their PIN."),
+      bi("ต่อจอที่สองแบบขยายหน้าจอ เปิด Settings → Customer display เลือกอัตโนมัติหรือจอที่ต้องการ ใช้ Identify displays แล้วทดลองตะกร้า QR และผลชำระเงิน", "Connect the second monitor in extended mode. Under Settings → Customer display choose automatic or a specific display, identify screens, then test cart, QR and payment results."),
+      bi("ตั้งเครื่องพิมพ์และขนาดกระดาษในเส้นทางพิมพ์ที่อุปกรณ์รองรับ ทดสอบภาษาไทย QR บาร์โค้ด ตัดกระดาษ และลิ้นชักจริง เตรียม browser print/เครื่องสำรอง", "Configure a supported print path and paper size. Test Thai text, QR/barcodes, cutter and drawer on real hardware; prepare browser print or a backup printer."),
+      bi("เมื่อมีรุ่นใหม่ที่ตรงเครื่อง ไอคอนอัปเดตจะแสดงลิงก์ดาวน์โหลด ปิดงานค้างและให้ผู้ดูแลติดตั้งเอง แล้วตรวจจับคู่และอุปกรณ์อีกครั้ง", "When a matching newer release exists, the update icon offers a download. Finish pending work, have an administrator install it, then recheck pairing and hardware."),
+    ],
+    check: bi("ขายและพิมพ์รายการทดสอบได้ จอลูกค้าแสดงเฉพาะข้อมูลลูกค้าที่เหมาะสม และใช้เครื่องสำรองได้", "A test sale prints correctly, the customer display shows appropriate information and fallback equipment works."),
+    caution: bi("Desktop ไม่ใช่เซิร์ฟเวอร์ออฟไลน์ และไม่ติดตั้งอัปเดตเอง การพิมพ์ ESC/POS และลิ้นชักต้องพิสูจน์กับรุ่นเครื่องจริงก่อนเปิดร้าน", "Desktop is not an offline server and does not install updates automatically. Validate ESC/POS and drawer support on your exact hardware before launch."),
+  },
+  {
+    slug: "payments-qr", title: bi("ตั้ง QR รับเงินและชำระหลายช่องทาง", "Payment QR & split tender"),
+    summary: bi("ตั้งผู้รับเงิน ตรวจเงินเข้าจริง และแยก QR ทั้งสามประเภท", "Set the recipient, verify received funds and distinguish the three QR purposes."),
+    category: "setup", roles: all, tracks: both, menu: bi("Settings → บัญชีรับเงิน / POS → ชำระเงิน", "Settings → Receiving accounts / POS → Payment"), action: "/admin/settings",
+    prerequisite: bi("บัญชีรับเงินของร้านและผู้มีสิทธิ์ตั้งค่า", "A shop receiving account and an authorized administrator."),
+    steps: [
+      bi("เพิ่มบัญชีรับเงิน เลือก PromptPay ระบุชื่อบัญชีและ ID หรือใช้ภาพ QR จากธนาคาร/ผู้ให้บริการที่ใช้ซ้ำได้และไม่ระบุยอด ตรวจผู้รับก่อนบันทึก", "Add a PromptPay receiving account with name and ID, or a reusable provider/bank QR without a fixed amount. Verify the recipient before saving."),
+      bi("ที่ POS เลือก QR ระบบสร้างยอดตามส่วนที่จ่ายด้วย QR ถ้าจ่ายผสมกับเงินสดต้องตรวจทั้งสองยอดรวมกัน", "Select QR at checkout. Its amount reflects only the QR portion; for split tender verify that all portions add up."),
+      bi("ตรวจชื่อผู้รับ จำนวนเงิน และเงินเข้าจริงก่อนยืนยันรับชำระ บัตร/Wallet ให้บันทึกเลขอ้างอิงหรือรหัสอนุมัติที่หน้าจอต้องการ", "Verify recipient, amount and actual funds received before confirming. Record the requested reference or approval code for card/wallet payments."),
+      bi("QR รับเงินใช้ชำระ; QR เรียกพนักงานใช้ขอความช่วยเหลือ; QR ใบเสร็จใช้ขอใบกำกับภาษี ติดป้ายให้ต่างกันและทดสอบด้วยมือถือ", "Payment QR collects money; service QR requests assistance; receipt QR requests a tax invoice. Label them distinctly and test with a phone."),
+    ],
+    check: bi("ทดสอบเงินสด QR และจ่ายผสมได้ ยอด QR เท่ากับส่วนที่รับจริง และพนักงานรู้วิธีตรวจเงินเข้า", "Cash, QR and split tender work; QR matches its payment portion and cashiers know how to verify receipt."),
+    caution: bi("QR ที่ขึ้นบนจอหรือสลิปที่ลูกค้าส่งไม่ใช่หลักฐานว่าระบบยืนยันรับเงินแล้ว หากผลไม่ชัดเจนให้ตรวจบิลเดิมก่อนรับซ้ำ", "A displayed QR or uploaded slip does not itself confirm receipt. Check the original bill before taking payment again if the result is uncertain."),
+  },
+  {
+    slug: "members-coupons", title: bi("สมัครสมาชิก แจกคูปอง และใช้สิทธิ์", "Enroll members & redeem coupons"),
+    summary: bi("ตรวจตัวตนสมาชิกและเงื่อนไขคูปองก่อนลดราคาสินค้า", "Verify membership and coupon eligibility before discounting products."),
+    category: "growth", roles: all, tracks: both, menu: bi("Customers / Loyalty / Coupons / POS", "Customers / Loyalty / Coupons / POS"), action: "/admin/coupons",
+    prerequisite: bi("กำหนดผู้รับผิดชอบข้อมูลลูกค้าและนโยบายสมาชิก", "Assign a customer-data owner and agree on membership rules."),
+    steps: [
+      bi("ค้นลูกค้าเดิมด้วยข้อมูลที่ลูกค้ายืนยันก่อนสมัครใหม่ ใน POS เลือกสมาชิกหรือสมัครจากหน้าที่รองรับ ตรวจชื่อและเบอร์ก่อนบันทึก", "Search for an existing customer using customer-confirmed details before enrolling. Select/enroll through POS and check name and phone before saving."),
+      bi("สร้างคูปองที่ Coupons ระบุส่วนลด ยอดขั้นต่ำ วันเริ่ม/สิ้นสุด โควตารวม ต่อคน และสาขาที่ใช้ได้ ทดลองกับรายการสินค้าเล็ก ๆ", "Create a coupon with discount, minimum spend, validity, total/per-customer quota and branch scope. Test it on a small product basket."),
+      bi("หากแจกผ่าน Inbox เลือกคูปอง ตรวจข้อความแล้วส่งจริง คูปองจึงเข้ากระเป๋าลูกค้า การพิมพ์รหัสในแชตอย่างเดียวไม่ถือว่าใช้สิทธิ์", "To distribute through Inbox, select the coupon, review and send the message. This assigns it to the customer's wallet; typing a code in chat does not redeem it."),
+      bi("ที่ POS ผูกสมาชิก ใส่คูปอง และรอผลตรวจจากระบบก่อนรับเงิน ตรวจส่วนลดและคะแนนบนสรุปบิล พร้อมแจ้งเหตุผลเมื่อใช้ไม่ได้", "At POS select the member, enter the coupon and wait for validation. Review discounts and points in the checkout summary and explain any rejection."),
+    ],
+    check: bi("ทดสอบคูปองถูกสาขา หมดอายุ และไม่ถึงยอดขั้นต่ำ พร้อมตรวจคะแนนหลังขาย", "Test eligible, wrong-branch, expired and below-minimum coupons, then check post-sale points."),
+    caution: bi("คูปอง/คะแนนในบิลบอร์ดเกมใช้ฐานสินค้าที่เข้าเงื่อนไข ไม่ลดค่าเวลาเล่นแทนโปรค่าเวลา และบิลค่าเวลาอย่างเดียวใช้คูปองสินค้าไม่ได้", "Board-game coupons/points apply to eligible merchandise, not play-time charges. A time-only bill cannot consume a product coupon."),
+  },
+  {
+    slug: "balances-privacy", title: bi("คะแนน Store Credit และข้อมูลลูกค้า", "Points, store credit & customer data"),
+    summary: bi("ตรวจยอดและวันหมดอายุ แยกความยินยอม และจำกัดข้อมูลที่เข้าถึง", "Reconcile balances and expiry, handle consent and limit data access."),
+    category: "growth", roles: managers, tracks: both, menu: bi("Loyalty / Customers / Audit", "Loyalty / Customers / Audit"), action: "/admin/loyalty",
+    prerequisite: bi("ยอดตั้งต้นและหลักฐานจากระบบเดิมที่ตรวจสอบได้", "Verified opening balances and evidence from the previous system."),
+    steps: [
+      bi("ตรวจโปรแกรมคะแนนและประวัติการเคลื่อนไหวก่อนปรับยอด เก็บหลักฐานและเหตุผลให้ผู้มีสิทธิ์ดำเนินการ", "Review the points program and movement history before adjusting balances. Retain evidence and reasons for an authorized operator."),
+      bi("แยกคะแนน Store Credit เงินมัดจำ และนาทีแพ็กเกจเป็นคนละยอด ตรวจเจ้าของสิทธิ์ สาขา และวันหมดอายุของแต่ละรายการ", "Keep points, store credit, deposits and pass minutes separate. Verify the owner, branch and expiry of each entitlement."),
+      bi("การนำเข้าสมาชิกและยอดเดิม: เทียบรายคน ตรวจข้อมูลซ้ำ และให้ทีมงานยืนยันช่องทางนำเข้าที่รองรับก่อนบันทึกจริง ไม่สร้างยอดใหม่ทับประวัติเดิม", "For customer/balance migration, reconcile per person, resolve duplicates and confirm a supported import path with the team. Do not overwrite history with new balances."),
+      bi("เก็บข้อมูลเท่าที่จำเป็น แยกการสมัครสมาชิกจากความยินยอมการตลาด จำกัดสิทธิ์ผู้ดูแล และส่งคำขอแก้ไข/ลบข้อมูลให้ผู้รับผิดชอบตามนโยบายร้าน", "Collect only necessary data, separate membership from marketing consent, restrict access and route correction/deletion requests to the responsible person under shop policy."),
+    ],
+    check: bi("ยอดแต่ละประเภทมีที่มาและวันหมดอายุ ตรวจลูกค้าซ้ำแล้ว และผู้ไม่มีสิทธิ์เปิดดูข้อมูลไม่ได้", "Each balance has provenance and expiry, duplicates are reviewed and unauthorized staff cannot access customer data."),
+    caution: bi("Store Credit มีบริการและเส้นทางต่ออายุแพ็กเกจ แต่ปุ่มออก/ใช้เครดิตทั่วไปยังไม่เชื่อมใน POS ปัจจุบัน อย่าสอนว่าเป็นปุ่มชำระเงินที่ทุกเครื่องมี", "Store-credit services and pass renewal exist, but general credit issue/redeem controls are not connected to the current POS screen. Do not train them as universally available payment buttons."),
+  },
+  {
+    slug: "shifts", title: bi("เปิดกะ เงินทอน ปิดกะ และส่งมอบ", "Open, reconcile & hand over shifts"),
+    summary: bi("ตรวจเงินสดจริงและรายการค้างก่อนส่งมอบเครื่องขาย", "Count actual cash and resolve pending work before handing over a register."),
+    category: "daily", roles: all, tracks: both, menu: bi("POS → กะ / ภาพรวมกะ POS", "POS → Shift / POS shift overview"), action: "/pos",
+    prerequisite: bi("เครื่องจับคู่แล้ว PIN ใช้ได้ และมีเงินทอนเริ่มต้นที่นับจริง", "A paired register, valid PIN and counted opening float."),
+    steps: [
+      bi("เลือกชื่อพนักงาน ใส่ PIN เปิดกะและกรอกเงินทอนจริง ตรวจสาขา เครื่องพิมพ์ และรายการค้างก่อนรับลูกค้า", "Select a cashier, enter PIN, open the shift with the counted float and review branch, printer and pending work."),
+      bi("เงินเข้า/ออกนอกการขายให้บันทึก Cash In/Cash Out พร้อมเหตุผล Cash Out ใช้ผู้อนุมัติอีกคน อย่าปรับยอดขายเพื่อชดเชยเงินในลิ้นชัก", "Record non-sale drawer movements as cash in/out with reasons. Cash out requires another approver; do not alter sales to hide drawer differences."),
+      bi("ก่อนปิด ตรวจบิลที่ยังรับเงินไม่ครบและ Refund นอกเงินสดที่ค้าง นับเงินตามขั้นตอนของเครื่อง บันทึกส่วนต่างตามจริง", "Before closing, check unpaid bills and pending non-cash refunds. Follow the register's counting flow and record actual variance."),
+      bi("ส่งมอบรายชื่อโต๊ะ/บิล/เกม/บัตรค้ำที่ยังค้างและผู้รับผิดชอบให้กะถัดไป ผู้จัดการตรวจรายงานกะและเหตุผลส่วนต่าง", "Hand over open tables, bills, borrowed games and held documents with named owners. Managers review shift reports and variance reasons."),
+    ],
+    check: bi("เงินเริ่มต้น + เงินเคลื่อนไหวกระทบยอดกับเงินนับจริงได้ และงานค้างมีคนรับต่อ", "Opening cash and recorded movements reconcile to counted cash; pending work has a receiving owner."),
+    caution: bi("รายงานกะหลังบ้านเป็นหน้าดูข้อมูล ไม่แทนการนับและปิดกะที่เครื่องขาย การจบกะไม่ควรถูกตีความว่าทุกโต๊ะชำระแล้ว", "Back-office shift reports do not replace counting and closing on the register. A shift boundary is not proof that every table is paid."),
+  },
+  {
+    slug: "board-game-tables", title: bi("สร้างโซน โต๊ะ และเข้าใจกลุ่มบิล", "Set up tables & understand bill groups"),
+    summary: bi("Table, Seating, Session และ Billing Group พร้อมตัวอย่างใช้งาน", "Understand tables, seatings, sessions and billing groups with a concrete example."),
+    category: "setup", roles: all, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → ตั้งค่า", "Board-game tables → Settings"), action: "/admin/board-game",
+    prerequisite: bi("ประเภทร้านบอร์ดเกม สาขา และแผนจำนวนที่นั่งจริง", "A board-game shop, branch and physical seating plan."),
+    steps: [
+      bi("เลือกสาขา สร้างโซนก่อน เช่น ชั้น 1 แล้วเพิ่มโต๊ะด้วยรหัสไม่ซ้ำ ชื่อ และจำนวนที่นั่ง ตรวจว่าโต๊ะปรากฏในสาขาที่ถูกต้อง", "Select a branch, create an area such as Floor 1, then add tables with unique codes, names and seat capacities. Verify the correct branch."),
+      bi("Table คือโต๊ะจริง; Seating คือการครองโต๊ะปัจจุบัน; Session คือรอบการมาเล่นของกลุ่มลูกค้า; Billing Group คือกลุ่มผู้จ่ายเงินร่วมกัน ผู้ชม/ผู้ปกครองที่ไม่คิดค่าเล่นยังนับในจำนวนคนที่นั่ง", "A table is physical furniture; a seating is current occupancy; a session is one party's visit; a billing group is the people paying together. Non-billable spectators/guardians still count toward seating capacity."),
+      bi("ตัวอย่างฝึก: ลูกค้า 4 คนมาโต๊ะ T01 พร้อมกันแต่จ่ายสองบิล เปิด Session เดียวแล้วแบ่งผู้เล่นเป็นกลุ่มบิล 1 และ 2 ตามที่ตกลง", "Training example: four guests arrive together at T01 but want two bills. Open one session with participants assigned to billing groups 1 and 2."),
+      bi("ก่อนปิดซ่อมโต๊ะหรือโซน ตรวจการจองและลูกค้าที่นั่งอยู่ ย้ายหรือจัดการงานค้างก่อนเปลี่ยนสถานะใช้งาน หากไม่มีปุ่มปิดซ่อมเฉพาะให้ผู้จัดการกันโต๊ะตามขั้นตอนร้าน", "Before taking a table/area out of service, check reservations and occupants and resolve them first. If no dedicated maintenance control exists, have the manager keep the table unavailable operationally."),
+    ],
+    check: bi("เห็นโต๊ะตามโซนและสาขาถูกต้อง พนักงานอธิบายได้ว่ารวมโต๊ะไม่ได้รวมบิลอัตโนมัติ", "Tables appear in the correct area/branch and staff understand that merging tables does not merge bills."),
+    caution: bi("โต๊ะยังไม่ว่างหากยังมีผู้เล่นหรือบิลค้างอยู่ จำนวนที่นั่งไม่ใช่จำนวนโต๊ะว่าง", "A table is not free while a party or unpaid bill remains. Seat capacity is not live vacancy."),
+  },
+  {
+    slug: "board-game-rates", title: bi("ราคาเวลาเล่น แพ็กเกจ และโปรค่าเวลา", "Time rates, passes & play-time offers"),
+    summary: bi("ตั้งเรตและตัวอย่างการคิดเวลา พร้อมแยกโปรค่าเล่นจากคูปองสินค้า", "Configure rates and time examples, separating play-time offers from product coupons."),
+    category: "setup", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → ตั้งค่า / แพ็กเกจ / โปรโมชัน", "Board-game tables → Settings / Passes / Offers"), action: "/admin/board-game",
+    prerequisite: bi("นโยบายราคา ประเภทลูกค้า สาขา และตัวอย่างยอดที่ร้านยอมรับ", "Agreed prices, customer categories, branch scope and expected example totals."),
+    steps: [
+      bi("ไปตั้งค่า → เพิ่มเรต กำหนดชื่อ ประเภทลูกค้า ราคาต่อชั่วโมง นาทีขั้นต่ำ รอบปัดนาที และนาทีผ่อนผัน เรตทั่วไป/นักเรียน/สมาชิก/เด็กต้องตรงประเภทผู้เล่น; เรตสมาชิกต้องเลือกสมาชิกจริง ไม่ใช้ชื่อพิมพ์แทนตัวตน", "Under Settings → Add rate, set name, customer type, hourly price, minimum, rounding interval and grace minutes. General/student/member/child rates must match the player type; a member rate requires a real selected member, not a typed name."),
+      bi("ตัวอย่างก่อนโปรและภาษี: 60 บาท/ชั่วโมง ขั้นต่ำ 60 นาที ปัดทุก 30 นาที ผ่อนผัน 5 นาที เล่น 4 นาทีคิด 60 บาท; เล่น 65 นาทีคิด 60 บาท; เล่น 66 นาทีคิด 90 บาท ระบบหักผ่อนผัน ปัดขึ้น แล้วเทียบขั้นต่ำ ดังนั้นผ่อนผันไม่ได้แปลว่าฟรีหากตั้งขั้นต่ำไว้", "Example before benefits and tax: THB 60/hour, 60-minute minimum, 30-minute rounding and 5-minute grace. A 4-minute visit costs THB 60; 65 minutes costs THB 60; 66 minutes costs THB 90. Grace is deducted, the result rounds up, then the minimum applies. Grace does not mean free play when a minimum is set."),
+      bi("เลือกคิดเวลาจริง หรือกำหนดสิ้นสุดทั้ง Session หรือซื้อระยะเวลาเฉพาะคน ผู้มาเพิ่มภายหลังอาจมีเวลาสิ้นสุดของตนเอง", "Choose actual time, a shared session end or individual purchased duration. Late arrivals can have their own end time."),
+      bi("เวลาที่ซื้อไม่ใช่เพดานหยุดคิดเงิน: ซื้อ 120 นาทีแล้วกลับหลัง 90 นาทียังคิดถึงเวลาที่ซื้อ; เล่น 150 นาทีคิดถึง 150 นาทีแล้วใช้กติกาปัดและขั้นต่ำ แจ้งเงื่อนไขนี้ก่อนเปิดโต๊ะ", "Purchased time is not a billing cap: a 120-minute purchase still charges through its planned end if the guest leaves after 90 minutes; a 150-minute stay charges through 150 minutes before rounding/minimum rules. Explain this before opening."),
+      bi("ตั้งแผนสมาชิกแบบนาทีหรือไม่จำกัด ระบุราคา อายุ และสาขา ผูกแพ็กเกจกับสมาชิกที่ถูกต้องก่อนใช้ แล้วตรวจยอดคงเหลือ", "Create minute-based or unlimited plans with price, duration and branch scope. Assign to the correct member and verify balances."),
+      bi("ตั้งโปรค่าเวลา เช่น ซื้อ 120 ฟรี 60 นาที ระบุเงื่อนไขและช่วงใช้งาน สำหรับระยะเวลาซื้อให้ใส่ครบ 180 นาที แล้วตรวจผลตอนปิดบิล", "Configure offers such as 120 paid plus 60 free minutes, with eligibility and active windows. Enter all 180 minutes for a purchased duration, then review the close-time result."),
+      bi("หากใช้ต่ออายุอัตโนมัติ ให้บันทึกความยินยอมและ Store Credit ของลูกค้าคนนั้น ตรวจสถานะเมื่อเครดิตไม่พอ และกำหนดผู้ติดตาม", "For automatic renewal, record consent and the same customer's funding credit. Review insufficient-credit status and assign follow-up."),
+    ],
+    check: bi("ยอดทดสอบตรงกติกา แพ็กเกจใช้ได้เฉพาะสาขาที่อนุญาต และคำอธิบายโปรแสดงบนบิล", "Test charges match policy, passes respect branch scope and the receipt explains the applied benefit."),
+    caution: bi("แก้เรตไม่เปลี่ยนเรตของผู้เล่นที่เปิดไปแล้ว โปรและแพ็กเกจไม่ซ้อนกัน หากตั้งชื่อเรตภาษาไทยล้วนแล้วแจ้งว่าต้องระบุรหัส ให้ใช้ชื่อมีอักษรอังกฤษ/ตัวเลขที่ไม่ซ้ำ เช่น GENERAL ทั่วไป เพราะหน้าปัจจุบันสร้างรหัสจากชื่อ", "Rate edits do not change existing player snapshots. Offers and passes do not stack. If a Thai-only rate name fails with a required-code message, use a unique name containing Latin letters/digits, such as GENERAL ทั่วไป; the current form derives the code from the name."),
+  },
+  {
+    slug: "board-game-library", title: bi("คลังเกม กล่อง QR และบัตรค้ำ", "Library copies, QR labels & collateral"),
+    summary: bi("ลงทะเบียนเกมแต่ละกล่อง ยืม–คืน ตรวจสภาพ และคืนบัตรให้ครบ", "Register individual copies, lend and inspect returns, and release held documents."),
+    category: "setup", roles: all, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → คลังเกม / POS → เกมและบัตร", "Board-game tables → Library / POS → Games & documents"), action: "/admin/board-game",
+    prerequisite: bi("รายชื่อเกม จำนวนกล่องจริง รหัสกล่อง และผู้ตรวจชิ้นส่วน", "Game titles, physical copy counts, copy codes and an inspection owner."),
+    steps: [
+      bi("เพิ่มชื่อเกม จำนวนผู้เล่น ระยะเวลาทั่วไป ความยากและรูป จากนั้นสร้างกล่องแต่ละใบพร้อมรหัสเฉพาะ เลือกว่าเกมใดเผยแพร่ได้", "Add titles, player counts, typical duration, difficulty and artwork, then register each copy with its own code. Choose public visibility."),
+      bi("ใช้ปุ่ม QR ในคลังเกมเลือกและพิมพ์ป้ายกล่อง ทดสอบด้วยเครื่องอ่าน 2D; สแกนเพื่อเลือกกล่องแล้วกดยืนยันการยืมหรือคืน", "Use the library QR action to select and print copy labels. Test with a 2D scanner; scanning selects a copy and requires explicit checkout/return confirmation."),
+      bi("ตอนให้ยืม เลือก Session ที่ถูกต้อง ตรวจรหัสกล่อง หากร้านรับบัตรค้ำให้บันทึกการรับจริงและเก็บตามนโยบาย ไม่จำเป็นต้องกรอกเลขเอกสาร", "When lending, select the correct session and copy. If collateral is held, record the actual handover and follow shop policy; the document number is optional."),
+      bi("ตอนคืน ตรวจชิ้นส่วน บันทึกสภาพและหมายเหตุ เกมชำรุด/ชิ้นส่วนหายให้ผู้มีสิทธิ์เปลี่ยนสถานะ และคืนบัตรจริงก่อนบันทึกคืนบัตร", "At return, inspect pieces and record condition/notes. Have authorized staff mark damaged/incomplete copies. Physically return documents before recording release."),
+    ],
+    check: bi("รหัสไม่ซ้ำ กล่องที่ถูกยืมไม่พร้อมให้ยืมซ้ำ และไม่มีบัตรค้ำค้างเมื่อกลุ่มสุดท้ายออก", "Codes are unique, checked-out copies are unavailable and no held documents remain when the last group leaves."),
+    caution: bi("คืนเกมไม่เท่ากับคืนบัตร ระบบบันทึกแยกกัน เลขเอกสารเป็นข้อมูลจำกัดสิทธิ์และถูกล้างเมื่อคืนบัตร ไม่เก็บภาพบัตรเพื่อใช้เป็นตัวอย่างคู่มือ", "Returning a game does not release a document. Document numbers have restricted access and are cleared on release. Never use document photos in training examples."),
+  },
+  {
+    slug: "board-game-service", title: bi("เปิดโต๊ะ จับเวลา และบริการระหว่างเล่น", "Open a table & serve a running session"),
+    summary: bi("เปิดรอบเล่น เพิ่มผู้เล่น สั่งสินค้า ยืมเกม และรับเสียงเรียกพนักงาน", "Start a visit, add players and goods, lend games and respond to service calls."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม", "POS → Board games"), action: "/pos",
+    prerequisite: bi("เปิดกะแล้ว มีโต๊ะว่าง เรต และพนักงานที่มีสิทธิ์จัดการ Session", "An open shift, a free table, configured rates and a permitted operator."),
+    steps: [
+      bi("เลือกสาขา/โต๊ะ ใส่ผู้เล่นและเรต ผูกสมาชิกและกลุ่มบิลตามที่ตกลง ตรวจเวลาเริ่มและรูปแบบเวลาแล้วเปิดโต๊ะ", "Select the table, participants and rates. Assign members and bill groups, review the start/time mode and open the session."),
+      bi("คนมาเพิ่มให้เพิ่มผู้เล่นในกลุ่มที่ยังเปิดหรือหมายเลขกลุ่มใหม่ ตรวจเวลาเข้าของคนนั้น คนออกก่อนให้บันทึกออก แต่ยังมีค่าเล่นค้างจนปิดและชำระกลุ่ม; เวลาซื้อไว้ยังเป็นขั้นต่ำตามเวลาสิ้นสุดที่ตกลง", "Add late arrivals to an open group or a new group number and review their join time. Record early departures, but charges remain until the group closes and settles; purchased time still applies through the agreed planned end."),
+      bi("แจ้งเตือนใกล้หมด/เกินเวลาไม่ปิดบิลหรือหยุดเวลาเอง หากเปลี่ยนเวลาทั้ง Session ให้ผู้มีสิทธิ์แก้เวลาเข้าไปตรวจและบันทึก ผู้เล่นที่ซื้อระยะเวลาเฉพาะคนไม่ถูกเปลี่ยนตามเวลาทั้ง Session", "Ending-soon/overdue alerts do not close bills or stop time. Have a time-authorized operator review and save session-wide changes; individually purchased durations do not change with the session end."),
+      bi("ก่อนเพิ่มน้ำหรือขนม เลือกกลุ่มบิลที่จะจ่าย ตรวจรายการและจำนวน สินค้าใน tab ถูกจองสต็อกทันที จากนั้นยืมเกมให้ Session ที่เลือก", "Select the paying group before adding drinks/snacks. Check quantities; tab items reserve stock immediately. Lend games to the selected session."),
+      bi("แจก QR เรียกพนักงานให้ลูกค้า เมื่อมีคำขอให้รับเรื่องและทำเสร็จหลังช่วยจริง ตรวจแจ้งเตือนเวลาใกล้หมดก่อนตกลงเพิ่มเวลา", "Provide service-call QR access. Acknowledge requests and mark complete after assisting. Review ending-soon alerts before agreeing on time changes."),
+    ],
+    check: bi("รายชื่อผู้เล่น กลุ่มบิล เวลา สินค้าและเกมตรงกับโต๊ะจริง และคำขอบริการมีคนรับผิดชอบ", "Participants, groups, times, goods and loans match the actual table, and service calls have owners."),
+    caution: bi("แก้เวลาใช้สิทธิ์เฉพาะ อย่าเปลี่ยนเวลาเพื่อซ่อนส่วนลด และต้องยืนยันจำนวนคนหากเกินความจุโต๊ะ", "Time overrides require specific permission. Do not alter time to hide discounts. Over-capacity seating requires explicit confirmation."),
+  },
+  {
+    slug: "board-game-move-split", title: bi("ย้ายโต๊ะ รวมโต๊ะ แยกกลุ่ม และรวมบิล", "Move tables, detach groups & merge bills"),
+    summary: bi("เลือกคำสั่งให้ตรงกับการย้ายที่นั่งหรือเปลี่ยนผู้รับผิดชอบเงิน", "Choose the right operation for moving people versus changing who pays."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → รายละเอียดโต๊ะ → งานเพิ่มเติม", "POS → Board games → Table details → More actions"), action: "/pos",
+    prerequisite: bi("รู้ว่ากำลังดู Session และกลุ่มบิลใด รวมทั้งโต๊ะปลายทาง", "Identify the selected session, bill group and destination table."),
+    steps: [
+      bi("ย้ายโต๊ะ: เลือกกลุ่มลูกค้าที่กำลังดูและโต๊ะว่าง แล้วตรวจปลายทางก่อนยืนยัน เวลา บิล และเกมเดิมติดตามไป", "Move a party: select the displayed party and a free destination, then confirm. Existing time, bills and loans follow it."),
+      bi("รวมโต๊ะ: เลือกโต๊ะที่มีลูกค้าอยู่ การรวมพาลูกค้าทุก Session จากโต๊ะต้นทางไปนั่งร่วม แต่คงบิลของแต่ละกลุ่ม", "Merge tables: choose an occupied destination. Every session at the source moves there while retaining its own bills."),
+      bi("แยกกลุ่มบิลไปโต๊ะใหม่: เลือกกลุ่มที่ยังเปิดและโต๊ะว่าง ระบุเกม/บัตรที่ตามไป ต้องเหลือกลุ่มที่ยังใช้งานที่ต้นทาง; ถ้าเป็นกลุ่มสุดท้ายให้ใช้ย้ายโต๊ะ", "Detach a bill group: select an open group and free table, explicitly choose accompanying loans/documents and leave another live group behind. Use ordinary move for the last group."),
+      bi("รวมบิล: เลือกสองกลุ่มที่ยังเปิดใน Session เดียวกัน ตรวจผู้เล่นและ tab ก่อนยืนยัน ถ้าต้องการแยกจ่ายให้กำหนดกลุ่มตั้งแต่เปิดโต๊ะ", "Merge bills: select two open groups in the same session and review people and tab items. For separate bills, assign groups when opening the table."),
+    ],
+    check: bi("ตำแหน่งใหม่ถูกต้อง เวลาไม่เริ่มใหม่ สินค้าไม่ซ้ำ และคนเก็บเงินรู้ว่าบิลใดเป็นของใคร", "The destination is correct, timers did not restart, items are not duplicated and each bill has a clear payer."),
+    caution: bi("กลุ่มที่ปิดยอด รอจ่าย หรือจ่ายแล้วรวม/แยกใหม่ไม่ได้ รวมโต๊ะไม่อนุญาตให้รวมบิลข้าม Session โดยอัตโนมัติ", "Frozen, awaiting-payment or paid groups cannot be merged/detached. Table merging does not authorize merging bills across sessions."),
+  },
+  {
+    slug: "board-game-checkout", title: bi("ปิดบิลรายกลุ่มและรับชำระ", "Close a group & collect payment"),
+    summary: bi("ให้บางกลุ่มกลับก่อน ตรวจค่าเวลาและสินค้า แล้วปล่อยโต๊ะเมื่อจบทุกกลุ่ม", "Let a group leave early, verify charges and release the table only when all groups finish."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → ปิดบิลกลุ่ม → รับชำระ", "POS → Board games → Close group → Payment"), action: "/pos",
+    prerequisite: bi("กะเปิด สิทธิ์ขาย และตรวจกลุ่มผู้จ่ายกับลูกค้าแล้ว", "An open shift, sale permission and an agreed paying group."),
+    steps: [
+      bi("เลือกกลุ่มที่จะกลับ ตรวจผู้เล่น เวลาและ tab หากกลุ่มอื่นยังเล่นอยู่ให้ปิดเฉพาะกลุ่มนี้", "Select the departing group and review players, time and tab. Close only this group if others continue playing."),
+      bi("ถ้าเป็นกลุ่มสุดท้าย รับเกมทุกกล่องและคืนบัตรค้ำให้ครบก่อนปิดเวลา จากนั้นตรวจค่าเวลา แพ็กเกจ/โปรที่ระบบเลือก และยอดสินค้า", "For the last group, return every game and release all held documents before closing time. Review the selected offer/pass benefit and merchandise total."),
+      bi("ส่งบิลกลุ่มไป POS รับเงินตามยอดรวมเวลาและสินค้า หากยอดเป็นศูนย์จริงยังต้องยืนยันปิดรายการ ไม่สร้างเงินรับปลอม", "Send the group to POS and collect the combined time-and-goods total. A genuine zero-due bill still needs settlement confirmation; do not invent a payment."),
+      bi("ตรวจใบเสร็จและสถานะชำระแล้ว กลุ่มอื่นยังเล่นต่อได้ หากปิดทุกกลุ่มต้องชำระแต่ละบิลให้ครบก่อนถือว่าโต๊ะว่าง", "Check the receipt and paid status. Other groups can continue. Closing all groups still requires settling each bill before treating the table as free."),
+    ],
+    check: bi("บิลกลุ่มเป็นชำระแล้ว ไม่มีการรับเงินซ้ำ และโต๊ะว่างเฉพาะเมื่อทุกกลุ่มจบ", "The group is paid, no duplicate payment exists and the table is free only after every group finishes."),
+    caution: bi("หลังปิดกลุ่มยอดถูกตรึงแล้ว เพิ่มผู้เล่นไม่ได้ และมี Order ID ไม่ได้แปลว่าจ่ายแล้ว เพราะ tab อาจสร้างออร์เดอร์จองสต็อกไว้ก่อน", "Closing freezes the group and prevents new players. An order ID alone does not prove payment; a tab may already have a stock-reservation order."),
+  },
+  {
+    slug: "board-game-reservations", title: bi("คิว การจอง มัดจำ และ No-show", "Queues, bookings, deposits & no-shows"),
+    summary: bi("ดูแล Walk-in และการจองจากหลายช่องทางจนเช็กอินและเปิดโต๊ะ", "Handle walk-ins and multichannel reservations through check-in and seating."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → การจอง / POS → คิว", "Board-game tables → Reservations / POS → Queue"), action: "/admin/board-game",
+    prerequisite: bi("เปิดรับจอง ตั้งเวลา สาขา ความจุ และนโยบายมัดจำแล้ว", "Booking enabled with hours, branch capacity and deposit policy configured."),
+    steps: [
+      bi("Walk-in: เพิ่มคิว ระบุจำนวนคนและข้อมูลติดต่อเท่าที่จำเป็น เรียกเมื่อโต๊ะพร้อม ไม่เปิดเวลาเล่นตั้งแต่รับคิว", "For walk-ins, add party size and necessary contact details, then call when a suitable table is ready. Queue entry does not start play time."),
+      bi("การจอง: ตรวจวัน เวลา ระยะเวลา จำนวนคน และโต๊ะในสาขา อ่านสถานะคำขอให้ชัด คำขอรออนุมัติยังไม่ใช่ยืนยันโต๊ะ", "For bookings, check date, time, duration, party size and branch table. A requested reservation is not a confirmed table."),
+      bi("ถ้ามีมัดจำ ให้ลูกค้าทำตามช่องทางรับเงินที่ตั้งไว้ ส่งหลักฐานแล้วให้ผู้มีสิทธิ์ตรวจยืนยัน ตรวจว่ามัดจำพร้อมก่อนเช็กอิน/นั่งโต๊ะ", "When a deposit is required, use the configured payment route and have an authorized person verify the evidence. Check deposit readiness before check-in/seating."),
+      bi("ลูกค้ามาถึง: เช็กอินได้ตั้งแต่ก่อนนัด 2 ชั่วโมงถึงหลังนัด 6 ชั่วโมงเมื่อยืนยันและมัดจำพร้อมแล้ว เลือกพาไปนั่ง ระบุผู้เล่นและเรต ระบบเปิด Session ให้ในขั้นตอนนั้น ไม่กดเปิดโต๊ะซ้ำแยกต่างหาก", "Arrival check-in is allowed from two hours before to six hours after the booking once confirmed and deposit-ready. Choose Seat, enter players and rates; this creates the session in the same action. Do not separately open the table again."),
+      bi("เลื่อน/ยกเลิกต้องตรวจช่วงใหม่ก่อนยืนยัน ติดตาม No-show และมัดจำแยกกันตามนโยบาย การยกเลิกจองไม่ใช่หลักฐานว่าโอนเงินคืนแล้ว", "Recheck availability before rescheduling. Handle no-shows and deposits separately under shop policy; cancellation does not prove an external refund occurred."),
+      bi("แก้วันเวลา/โต๊ะได้เฉพาะการจอง CONFIRMED ที่ยังไม่เช็กอิน ระบบตรวจโต๊ะและช่วงเวลาซ้ำ ถ้าเป็น REQUESTED ให้ร้านพิจารณาคำขอ; คำขอหมดอายุ มัดจำเลยกำหนด และ No-show เป็นคนละสถานะ", "Time/table edits require a CONFIRMED reservation before check-in and recheck availability. REQUESTED entries need staff review. Request expiry, unpaid-deposit expiry and no-show are distinct outcomes."),
+      bi("งานตามตารางจะทำเครื่องหมาย NO_SHOW หลังเลยเวลานัด 6 ชั่วโมงสำหรับรายการที่ยัง CONFIRMED ไม่ปิดคนที่เช็กอิน WAITING/CALLED แล้วโดยอัตโนมัติ พนักงานต้องตรวจคิวเหล่านั้นเองและทีมระบบต้องเปิดงานตามตารางไว้", "The scheduled job marks still-CONFIRMED bookings NO_SHOW after six hours past the appointment. It does not automatically close checked-in WAITING/CALLED parties; staff own those queues and the scheduler must be enabled."),
+    ],
+    check: bi("คำขอที่บันทึกผ่าน BMS อยู่ในระบบเดียวกัน โต๊ะ/ช่วงเวลาไม่ชนและยอดมัดจำไม่ถูกเก็บซ้ำ การจองทางโทรศัพท์/ระบบภายนอกต้องให้พนักงานลงก่อน ไม่ได้ซิงก์เอง", "Bookings recorded through BMS share one workflow, with no conflicting table windows or duplicate deposits. Staff must enter phone/external bookings; they do not synchronize automatically."),
+    caution: bi("คิวไม่จำเป็นต้องเข้าตามลำดับเป๊ะเมื่อขนาดโต๊ะไม่พอ ให้พนักงานอธิบายเหตุผล และอย่าสัญญาเวลารอที่ไม่มีข้อมูลรองรับ", "Capacity can prevent strict FIFO seating. Explain the reason and do not promise unsupported wait times."),
+  },
+  {
+    slug: "line-ai-booking", title: bi("LINE OA และ AI รับจองโต๊ะ", "LINE OA & AI-assisted booking"),
+    summary: bi("เชื่อมแชต กำหนดข้อมูลที่เผยแพร่ และทดสอบตั้งแต่ถามจนยืนยันจอง", "Connect chat, control published facts and test inquiry-to-booking confirmation."),
+    category: "growth", roles: managers, tracks: ["board-game"], menu: bi("Settings → Channels / โต๊ะบอร์ดเกม → ตั้งค่า / Inbox", "Settings → Channels / Board-game settings / Inbox"), action: "/admin/settings",
+    prerequisite: bi("สิทธิ์ดูแล LINE OA และ BMS สาขารับจอง และผู้รับเรื่องใน Inbox", "LINE OA and BMS administration access, a bookable branch and an Inbox owner."),
+    steps: [
+      bi("ที่ Settings เลือก LINE Official Account ใส่ Access Token และ Channel Secret ของร้าน เปิดใช้งานแล้วบันทึก คัดลอก Webhook URL ที่ระบบแสดงไปตั้งใน Messaging API ของ LINE OA ร้านนั้น ไม่พิมพ์ URL ของร้านอื่นหรือส่ง Token ในแชต", "In Settings choose LINE Official Account, enter the shop's Access Token and Channel Secret, enable and save. Copy the displayed Webhook URL into that shop's LINE OA Messaging API configuration. Do not use another shop's URL or share tokens in chat."),
+      bi("ใช้ปุ่มทดสอบช่องทางเมื่อมีสิทธิ์ แล้วส่งข้อความจากบัญชีลูกค้าทดสอบ ตรวจว่ามาถึง Inbox ร้านนี้และตอบกลับได้ การบันทึกสำเร็จหรือสวิตช์เปิดยังไม่ยืนยันว่ารับส่งจริงทำงาน", "Use Test channel when permitted, then send a test-customer message. Verify it reaches this shop's Inbox and a reply can be delivered. A successful save or enabled switch alone does not prove end-to-end messaging."),
+      bi("กำหนดสาขาที่รับจองและข้อมูลที่ให้ลูกค้าเห็น: ราคา ความพร้อมโต๊ะ รายละเอียดพื้นที่/ความจุ และเกมที่เผยแพร่ ทดสอบว่าข้อมูลที่ปิดไว้ไม่ถูกตอบ", "Choose bookable branches and published rates, availability, area/capacity details and games. Verify that disabled disclosures stay hidden."),
+      bi("ให้ลูกค้าทดสอบถามวัน เวลา จำนวนคน และระยะเวลา AI ต้องสรุปข้อมูลให้ตรวจแล้วรอคำยืนยันก่อนบันทึกคำขอจอง", "Have the test customer provide date, time, party size and duration. AI summarizes the details and waits for confirmation before creating a request."),
+      bi("ตรวจคำขอในหน้า Reservations และให้พนักงานอนุมัติตามสิทธิ์ หากเปิด Auto-confirm ระบบต้องหาโต๊ะได้จริงก่อนให้สถานะยืนยัน", "Review the reservation request and approve through authorized staff. With auto-confirm enabled, a real suitable table must be allocated before confirmation."),
+      bi("สรุปที่ให้ยืนยันใช้ได้ 15 นาทีและต้องเป็นสรุปล่าสุด ถ้าลูกค้าเปลี่ยนข้อมูลให้สรุปใหม่ก่อนยืนยัน ลูกค้าหนึ่งรายมีคำขอ CHAT ที่ยังใช้งานและเป็นการจองอนาคตได้ไม่เกิน 3 รายการ", "Confirmation summaries last 15 minutes and must be the latest summary. Changed details need a fresh summary. Each customer can hold at most three active future CHAT bookings."),
+      bi("คำขอจากแชตไม่มีลิงก์จัดการแบบเว็บหรืออีเมลผลอนุมัติอัตโนมัติ ให้พนักงานตอบกลับใน Inbox หลังตรวจ หรือให้ลูกค้าถามสถานะในแชต; เลื่อนได้เฉพาะรายการยืนยันแล้วก่อนเช็กอินและยังใช้โต๊ะเดิม", "Chat requests do not get the website management link or automatic approval email. Staff should reply through Inbox after review, or customers can ask for status in chat. Rescheduling requires a confirmed booking before check-in and keeps the same table."),
+      bi("ทดสอบเลื่อน ยกเลิก ข้อความไม่ชัดเจน และกรณี AI ใช้ไม่ได้ กำหนดคนรับต่อใน Inbox และตรวจว่างานไม่ถูกทิ้งไว้", "Test rescheduling, cancellation, ambiguous messages and provider unavailability. Assign an Inbox handoff owner and verify nothing is left unattended."),
+    ],
+    check: bi("ลูกค้าเห็นสรุปก่อนยืนยัน คำขอ/ยืนยันแยกชัด และไม่มีการสร้างซ้ำจากข้อความทดสอบ", "Customers see a summary before confirming, requested/confirmed states are distinct and retries do not create duplicates."),
+    caution: bi("การจองผ่าน AI รองรับสาขาที่เปิดรับจองแบบไม่มีมัดจำเท่านั้น จำนวนที่นั่งไม่เท่ากับโต๊ะว่าง และ AI ไม่อนุมัติส่วนลด คืนเงิน หรือเพิ่มเวลาเอง", "AI chat booking supports enabled no-deposit branches only. Capacity is not vacancy; AI does not approve discounts, refunds or time extensions itself."),
+  },
+  {
+    slug: "restaurant-menu", title: bi("ร้านอาหาร: เมนู สูตร และสถานีครัว", "Restaurant: menu, recipes & stations"),
+    summary: bi("ตั้งสินค้าให้ตัดวัตถุดิบถูกต้องและส่งงานไปสถานีที่เกี่ยวข้อง", "Configure ingredient consumption and route kitchen work to the right station."),
+    category: "setup", roles: managers, tracks: ["restaurant"], menu: bi("Stock models / Products → Recipe / Modifiers", "Stock models / Products → Recipe / Modifiers"), action: "/admin/products",
+    prerequisite: bi("เลือกประเภทร้านอาหาร มีวัตถุดิบ หน่วยและต้นทุนที่ตรวจแล้ว", "Restaurant business type with verified ingredients, units and costs."),
+    steps: [
+      bi("ลงวัตถุดิบด้วยหน่วยฐานจริง เช่น กรัมหรือมิลลิลิตร เลือกรูปแบบสต็อกของเมนูให้ตรง: สูตร, ตัดสินค้าตรง หรือไม่ควบคุมสต็อก", "Create ingredients in their actual base units, such as grams/ml. Choose recipe, direct-stock or non-stock menu policies."),
+      bi("เมนูแบบสูตร: กำหนดวัตถุดิบและจำนวนต่อหนึ่งจาน ตรวจหน่วยให้ตรง ไม่ใส่กิโลกรัมในช่องที่ตั้งเป็นกรัม", "For recipes, set ingredients and quantities per serving. Match units carefully; do not enter kilograms into a gram-based field."),
+      bi("เพิ่มตัวเลือกที่รองรับและราคาจากหน้าสินค้า ตัวเลือกที่เปลี่ยนวัตถุดิบต้องผูกเมนูแบบ RECIPE ตรวจยอดและต้นทุนหลังเลือก", "Configure supported modifiers and prices on the product. Ingredient-changing modifiers require a RECIPE menu. Review price and cost after selection."),
+      bi("สร้างสถานีครัวใน Stock models กำหนดสาขาและลำดับ แล้วผูกเมนูกับสถานี ทดลองส่งเมนูหนึ่งรายการไปครัว", "Create kitchen stations under Stock models with branch scope and sort order. Assign menu items and test sending one item."),
+    ],
+    check: bi("เมนูส่งถูกสถานี ตัวเลือกคิดราคาถูก และการขายทดสอบตัดวัตถุดิบตามสูตร", "Items reach the right station, modifiers price correctly and test sales consume the expected ingredients."),
+    caution: bi("ต้นทุนที่หายไม่ใช่กำไรเต็มจำนวน และแก้สูตรภายหลังไม่ย้อนเปลี่ยนหลักฐานต้นทุนบิลเก่า เครื่องพิมพ์แยกต่อสถานียังไม่รองรับในเส้นทางนี้", "Missing costs do not mean full profit. Later recipe edits do not rewrite historical cost evidence. Per-station printer routing is not supported in this workflow."),
+  },
+  {
+    slug: "restaurant-floor", title: bi("ร้านอาหาร: ผังโต๊ะและ QR ลูกค้า", "Restaurant: floor plan & guest QR"),
+    summary: bi("จัดโซน โต๊ะ ความจุ และรับคำขอจาก QR อย่างถูกขั้นตอน", "Configure areas, tables and capacity, then review guest QR proposals."),
+    category: "setup", roles: managers, tracks: ["restaurant"], menu: bi("จัดผังร้าน → POS ร้านอาหาร", "Floor plan → Restaurant POS"), action: "/admin/restaurant-floor",
+    prerequisite: bi("สาขา เมนู และสิทธิ์จัดการผังร้านอาหาร", "A branch, menu and restaurant floor-management permission."),
+    steps: [
+      bi("สร้างโซนและโต๊ะในสาขา ตั้งรหัส จำนวนที่นั่ง และตำแหน่งบนผัง ตรวจเส้นทางเดินและชื่อที่พนักงานเรียกจริง", "Create branch areas and tables with codes, seats and floor positions. Use names staff actually recognize."),
+      bi("สร้างและพิมพ์ QR โต๊ะจากหน้าจัดผังร้าน ติดตรงโต๊ะที่ถูกต้อง แล้วสแกนตรวจด้วยโทรศัพท์", "Issue and print table QR codes from the floor editor, place them on the matching tables and test on a phone."),
+      bi("เปิดบิล DINE_IN ก่อนรับคำขอผ่าน QR ลูกค้าส่งรายการมาเป็นคำขอ พนักงานตรวจแล้วกดรับ จึงส่งครัวตาม workflow", "Open a DINE_IN check before accepting QR submissions. Guest items are proposals; staff review/accept them before the kitchen workflow."),
+      bi("ทดลองคำขอเรียกพนักงานและการปิดบิล หากเปลี่ยน QR ให้เปลี่ยนป้ายและตรวจลิงก์ใหม่พร้อมกัน", "Test service calls and check closure. When rotating a QR, replace the physical label and verify the new link."),
+    ],
+    check: bi("QR ระบุโต๊ะถูกต้อง คำขอรอพนักงานรับ และไม่มีคำขอที่ส่งเข้าครัวโดยไม่ตรวจ", "QR identifies the right table, requests wait for staff review and no unreviewed proposal reaches the kitchen."),
+    caution: bi("QR โต๊ะนี้ไม่ใช่ QR ชำระเงิน และใช้กับ DINE_IN เท่านั้น บิล TAKEAWAY ไม่ได้ผูกโต๊ะหรือ QR", "This table QR is not a payment QR and applies only to DINE_IN. TAKEAWAY has no table or table QR."),
+  },
+  {
+    slug: "restaurant-service", title: bi("ร้านอาหาร: เปิดบิล ส่งครัว และคิดเงิน", "Restaurant: open checks, kitchen & checkout"),
+    summary: bi("ทำงานเป็นรอบอาหาร ย้าย/แยก/รวมบิล และตรวจงานก่อนรับเงิน", "Manage kitchen rounds, move/split/merge checks and review before payment."),
+    category: "daily", roles: all, tracks: ["restaurant"], menu: bi("POS → Restaurant / กระดานครัว", "POS → Restaurant / Kitchen board"), action: "/pos/restaurant",
+    prerequisite: bi("เปิดกะแล้ว มีเมนู สถานีครัว และ PIN ที่มีสิทธิ์ร้านอาหาร", "An open shift, menus, kitchen stations and a PIN with restaurant permissions."),
+    steps: [
+      bi("เลือกโต๊ะและเปิดบิล DINE_IN หรือเปิด TAKEAWAY เลือกเมนู จำนวน ตัวเลือก และหมายเหตุ ตรวจรายการก่อนส่งครัว", "Open DINE_IN on a table or a TAKEAWAY check. Select dishes, quantities, modifiers and notes, then review the draft."),
+      bi("ส่งครัวเป็นรอบ ครัวรับงาน ทำอาหาร และอัปเดตจนเสิร์ฟ; ลูกค้าสั่งเพิ่มให้สร้างรอบใหม่ อย่าส่งรอบเดิมซ้ำ", "Send a kitchen round. Kitchen staff acknowledge, prepare and advance items to served. Use a new round for additions rather than resending the original."),
+      bi("ถ้าต้องย้าย/แยก/รวมบิล ให้ตรวจโต๊ะและรายการต้นทางปลายทาง แยกแล้วต้องเหลือรายการในบิลเดิม การรวมไม่ใช่ Void", "For move/split/merge, verify source/destination and lines. Splitting leaves items on the original check; merging is not a void."),
+      bi("ก่อนคิดเงินจัดการรายการร่างที่ยังไม่ส่งครัว ตรวจรายการและส่วนลด ส่งยอดไป POS รับชำระและตรวจใบเสร็จ", "Before checkout, resolve unsent draft lines, review items/discounts, settle through POS and check the receipt."),
+    ],
+    check: bi("รายการบนบิลตรงครัว สถานะบิลเป็นชำระแล้ว และสต็อกวัตถุดิบตรงยอดที่ขายจริง", "The check matches kitchen work, payment is completed and ingredient stock matches actual sales."),
+    caution: bi("การยกเลิกรายการหลังส่งครัวใช้ขั้นตอนอนุมัติ ไม่ใช่ลบประวัติ TAKEAWAY ไม่รองรับย้ายโต๊ะ แยกหรือรวมแบบ DINE_IN ในเส้นทางนี้", "Cancelling sent items uses the approval workflow and preserves history. TAKEAWAY does not support DINE_IN-style table moves, splits or merges here."),
+  },
+  {
+    slug: "restaurant-online", title: bi("ร้านอาหาร: คิวและออร์เดอร์ออนไลน์", "Restaurant: queues & online orders"),
+    summary: bi("แยกการรับคิว การชำระเงิน และการยอมรับงานเข้าครัว", "Separate waiting lists, payment and kitchen acceptance."),
+    category: "daily", roles: all, tracks: ["restaurant"], menu: bi("POS ร้านอาหาร → คิว / ออร์เดอร์เข้า / Inbox", "Restaurant POS → Queue / Incoming orders / Inbox"), action: "/pos/restaurant",
+    prerequisite: bi("ตั้งสาขา เมนูที่ขายช่องทางนั้น เวลาและรูปแบบรับสินค้า", "Configure branch, channel-visible menu, hours and fulfillment options."),
+    steps: [
+      bi("เพิ่มคิวและจำนวนคน เรียกเมื่อมีโต๊ะเหมาะสม พาไปนั่งจึงเปิดบิลจริง ตรวจ No-show ตามสถานะที่หน้าจอมี", "Add parties to the queue, call when a suitable table is available and seat them to open the actual check. Review no-shows through the supported states."),
+      bi("ออร์เดอร์แชตต้องระบุสาขาและรับเอง/ส่งถึง ตรวจรายการและตัวเลือกให้ลูกค้ายืนยันก่อนเปิดออร์เดอร์", "Chat orders need a branch and pickup/delivery choice. Have the customer confirm items and modifiers before creating the order."),
+      bi("ตรวจเงินตามเส้นทางจ่ายก่อนส่ง แล้วให้พนักงานรับออร์เดอร์เข้าครัว การจ่ายเงินไม่ได้สร้างงานครัวเอง", "Verify prepaid payment and have staff accept the order into kitchen work. Payment alone does not create kitchen work."),
+      bi("เมื่อพร้อมส่งมอบ ตรวจผู้รับและสถานะออร์เดอร์ งานไรเดอร์ที่ยังไม่มีการเชื่อมจริงให้ใช้ขั้นตอนที่ร้านจัดเองพร้อมหลักฐาน", "At handoff, verify recipient and order status. Use the shop's documented manual delivery process where live courier integration is unavailable."),
+    ],
+    check: bi("ออร์เดอร์อยู่สาขาถูกต้อง ไม่มีงานครัวซ้ำ และสถานะการชำระกับการส่งมอบตรงข้อเท็จจริง", "Orders belong to the right branch, kitchen work is not duplicated and payment/handoff statuses match reality."),
+    caution: bi("เดลิเวอรีภายนอกต้องตรวจความพร้อมรายผู้ให้บริการ ไม่ถือว่า GrabFood, LINE MAN หรือการเรียกไรเดอร์อัตโนมัติพร้อมใช้เพียงเพราะมีชื่อเมนู", "Check readiness per provider. A menu label does not prove live GrabFood, LINE MAN or automatic rider booking is available."),
+  },
+  {
+    slug: "returns-recovery", title: bi("ยกเลิก คืนสินค้า และคืนเงินค้าง", "Cancel, return & resolve pending refunds"),
+    summary: bi("เลือกบิลต้นฉบับ ตรวจผู้อนุมัติ และติดตามเงินที่คืนจริง", "Use the original bill, verify approval and track actual money returned."),
+    category: "recovery", roles: all, tracks: both, menu: bi("POS → บิล / คืนสินค้า → Payment", "POS → Bills / Returns → Payment"), action: "/pos",
+    prerequisite: bi("เลขบิลต้นฉบับ เหตุผล หลักฐานและผู้มีสิทธิ์อนุมัติ", "Original bill reference, reason, evidence and an authorized approver."),
+    steps: [
+      bi("ตรวจว่ากำลังยกเลิกงานที่ยังไม่ขาย หรือคืนรายการที่ชำระแล้ว เลือกบิลเดิมและจำนวนที่คืนจริง ไม่เปิดบิลใหม่มาหักล้าง", "Distinguish cancelling unfinished work from returning a completed sale. Select the original bill and actual returned quantities instead of offsetting with a new sale."),
+      bi("ตรวจสิทธิ์และ PIN ผู้อนุมัติเมื่อหน้าจอกำหนด หากมีใบกำกับภาษีที่ยังใช้งานให้ผู้รับผิดชอบเอกสารตรวจ workflow ก่อน", "Provide the required permission and approver PIN. If an active tax invoice exists, have the document owner review the supported process first."),
+      bi("เงินสดคืนตามยอดที่ระบบจัดสรร ส่วน QR/บัตร/Wallet ติดตามการคืนภายนอกและให้ผู้มีสิทธิ์บันทึกเลขอ้างอิง", "Refund the allocated cash portion. Track external QR/card/wallet refunds and have an authorized operator record their reference."),
+      bi("ตรวจสต็อกที่รับกลับ ยอดคืนสะสม คะแนน/คูปองตามผลของรายการ และ Refund ที่ยังค้างก่อนปิดกะ", "Check returned stock, cumulative refunded amounts, resulting points/coupon treatment and pending refunds before shift close."),
+    ],
+    check: bi("ไม่คืนเกินยอดเดิม เงินคืนทุกช่องทางมีสถานะและหลักฐาน และไม่มีรายการค้างโดยไม่ระบุคนรับผิดชอบ", "Refunds stay within original amounts, each payment leg has evidence/status and every pending item has an owner."),
+    caution: bi("ยกเลิกการจอง คืนสินค้า และโอนเงินคืนเป็นคนละเหตุการณ์ อย่าแปลว่าคืนเงินครบจากสถานะสินค้าเพียงอย่างเดียว", "Reservation cancellation, goods return and money refund are separate events. A product status alone cannot prove a full refund."),
+  },
+  {
+    slug: "reports-ai", title: bi("รายงาน Live Dashboard และผู้ช่วย AI", "Reports, live dashboard & AI assistant"),
+    summary: bi("ถามยอดขาย เกมยอดนิยม และวิธีใช้งาน พร้อมอ่านช่วงข้อมูลและข้อจำกัด", "Ask about sales, popular games and usage, while checking scope and limitations."),
+    category: "growth", roles: managers, tracks: both, menu: bi("Reports / Live Dashboard / ผู้ช่วย AI", "Reports / Live Dashboard / AI assistant"), action: "/admin/assistant",
+    prerequisite: bi("สิทธิ์รายงานและสิทธิ์ข้อมูลที่เกี่ยวข้อง พร้อมช่วงวันที่/สาขาที่ต้องการ", "Reporting and relevant data permissions, with an explicit branch/date range."),
+    steps: [
+      bi("เปิด Reports เลือกสาขาและช่วงวันที่ ตรวจว่ายอดหมายถึงยอดขาย เงินรับ หรือกำไรขั้นต้นก่อนส่งออก ไม่รวมยอดคนละความหมายเข้าด้วยกัน", "In Reports, choose branch/date range and distinguish sales, receipts and gross profit before exporting. Do not add unlike metrics together."),
+      bi("ร้านบอร์ดเกมดู Analytics สำหรับเวลาเล่น การใช้โต๊ะ คิว No-show เกมยืม และแพ็กเกจ; เกมนิยมหมายถึงจำนวนยืมที่บันทึก ไม่ใช่ความชอบของลูกค้าทุกคน", "Use board-game Analytics for visits, utilization, queue/no-shows, loans and passes. Popularity means recorded borrowing, not every customer's preference."),
+      bi("ใช้ Live Dashboard เมื่อมีสิทธิ์ดูข้อมูลจริง ตรวจป้ายข้อมูลที่ยังไม่เชื่อม หน้านี้ไม่ใช่ลิงก์เปิดเผยยอดร้านให้คนทั่วไป", "Use Live Dashboard with authorized live-data access. Read labels for unconnected data; this is not a public link exposing shop sales."),
+      bi("ถามผู้ช่วย เช่น ‘วันนี้สาขานี้อะไรขายดี’ ‘เดือนนี้เกมใดถูกยืมมากที่สุด’ หรือ ‘ทำไมปิดบิลไม่ได้’ ตรวจช่วงเวลาและแหล่งข้อมูลในคำตอบก่อนใช้ตัดสินใจ", "Ask the assistant: 'What sold best at this branch today?', 'Which games were borrowed most this month?' or 'Why can I not close this bill?' Check dates and evidence before acting."),
+      bi("ถามวิธีใช้เมนูจากผู้ช่วยในระบบได้ หากไม่มีเครื่องมืออ่านข้อมูลนั้น ให้เปิดหน้าที่ผู้ช่วยอ้างถึง การส่งอีเมลรายงานหรือการเปลี่ยนข้อมูลต้องตรวจและยืนยัน", "Use the in-app assistant for menu guidance. When no live-data tool exists, open the referenced page. Review and confirm report emails or data-changing proposals."),
+    ],
+    check: bi("ตอบได้ว่าตัวเลขมาจากสาขาและช่วงใด ข้อมูลต้นทุนที่ขาดแสดงว่าไม่ทราบ และส่งออกตรงหน้ารายงาน", "You can identify branch and period, missing costs remain unknown and exports match the report."),
+    caution: bi("AI ไม่รับประกันยอดขายในอนาคตหรือสั่งซื้อเกมแทนผู้จัดการ คู่มือสาธารณะค้นบทความได้โดยไม่เข้าถึงข้อมูลร้าน; ผู้ช่วยข้อมูลจริงต้องเข้าสู่ระบบตามสิทธิ์", "AI does not guarantee future sales or buy games for the manager. Public learning search cannot access shop data; live-data assistance requires authorized sign-in."),
+  },
+  {
+    slug: "outages-support", title: bi("เน็ตล่ม ไฟดับ รายการค้าง และ Support", "Outages, uncertain results & support"),
+    summary: bi("หยุดรายการซ้ำ เก็บหลักฐาน และกู้การทำงานตามบิลเดิม", "Avoid duplicates, retain evidence and recover using the original transaction."),
+    category: "recovery", roles: all, tracks: both, menu: bi("POS / Support / Audit", "POS / Support / Audit"), action: "/support",
+    prerequisite: bi("ผู้จัดการเวร แบบบันทึกฉุกเฉิน และช่องทางติดต่อทีมงาน", "A duty manager, contingency log and support contact."),
+    steps: [
+      bi("เมื่อหน้าจอค้างหลังรับเงิน ให้จดเวลา สาขา เครื่อง เลขบิลและผลที่เห็น ตรวจบิลเดิมและเงินเข้าก่อนทำรายการต่อ ไม่รับเงินซ้ำ", "If the screen stalls after payment, record time, branch, device, bill and observed result. Check the original bill and received funds before proceeding; do not charge again."),
+      bi("ถ้าระบบเสนอให้ลองรายการเดิม ให้ใช้ข้อมูลเดิมและรหัสคำขอเดิม ไม่เปิดบิลใหม่เพื่อหลบข้อผิดพลาด ให้ผู้จัดการตรวจกรณีผลยังไม่ชัด", "Use the original retry/recovery action with the same request identity. Do not create a new bill to bypass an error. Escalate unresolved outcomes to the manager."),
+      bi("บอร์ดเกม/ร้านอาหารไม่รองรับ Emergency Offline ให้จดเวลาที่ตรวจได้ รายการและเงินรับในแบบฉุกเฉินตามนโยบายร้าน แล้วผู้จัดการกระทบยอดหลังระบบกลับมา", "Board-game and restaurant bills are not supported by Emergency Offline. Record verified times, items and receipts in the shop contingency log; a manager reconciles after recovery."),
+      bi("ส่ง Support: เวลาเกิดเหตุ สาขา รหัสเครื่อง/บิล รุ่นแอป ขั้นตอนและข้อความผิดพลาด ปิดบังข้อมูลลูกค้า ห้ามส่ง PIN รหัสผ่าน Token หรือ QR จับคู่", "Send support the incident time, branch, device/bill reference, app version, steps and error. Redact customer data; never send PINs, passwords, tokens or pairing QR codes."),
+      bi("หลังแก้ ตรวจบิล เงิน สต็อก เกมและบัตรค้ำที่ค้าง รวมทั้ง Audit Log แล้วบันทึกเหตุและผู้ติดตามเพื่อปรับขั้นตอน", "After recovery, reconcile bills, money, stock, outstanding games/documents and audit history. Record the incident and follow-up owner."),
+    ],
+    check: bi("ไม่มีรับเงินซ้ำ รายการฉุกเฉินทุกใบเทียบกับระบบได้ และผู้จัดการยืนยันยอดก่อนปิดเหตุ", "No duplicate charges, every contingency record reconciles and a manager signs off before closing the incident."),
+    caution: bi("อย่าล้างข้อมูลเครื่อง ถอนติดตั้ง หรือเปลี่ยน Token เพื่อแก้บิลค้างโดยไม่ตรวจผลเดิมก่อน เครื่องพิมพ์เสียไม่ใช่เหตุให้ขายรายการเดิมอีกครั้ง", "Do not clear device data, reinstall or rotate tokens to fix a pending bill before checking its result. Printer failure is not a reason to sell the same transaction again."),
+  },
+  {
+    slug: "launch-checklist", title: bi("ซ้อมครบวงจรและ Checklist ก่อนเปิดจริง", "End-to-end rehearsal & launch checklist"),
+    summary: bi("ทดสอบตามบทบาท ทำ Soft Opening และตกลงแผนย้อนกลับ", "Rehearse by role, run a soft opening and agree on rollback ownership."),
+    category: "recovery", roles: managers, tracks: both, menu: bi("POS Readiness → ร้านทดสอบ → Soft Opening", "POS Readiness → Test shop → Soft opening"), action: "/admin/pos-readiness",
+    prerequisite: bi("อ่านบทตั้งค่าแล้ว มีร้านทดสอบและผู้รับผิดชอบทุกบทบาท", "Setup lessons completed, a test shop and all role owners available."),
+    steps: [
+      bi("ตรวจยอดตั้งต้นสินค้า สมาชิก สิทธิ์และมัดจำ เลือกวันตัดระบบเดิม กำหนดว่าหากไม่ผ่านจะหยุดรับรายการใหม่และให้ใครกระทบยอด ห้ามใช้สองระบบขายทับกัน", "Reconcile opening stock, members, entitlements and deposits. Choose cutover and define who stops new entries/reconciles on failure. Avoid overlapping sales in two systems."),
+      bi("ทดสอบเจ้าของ ผู้จัดการ และแคชเชียร์จริง: เปิดกะ เงินทอน เปิดโต๊ะ เพิ่มสินค้า ใช้สมาชิก/คูปอง รับเงินหลายช่องทาง และพิมพ์ซ้ำ", "Use actual owner, manager and cashier roles to test shift opening, float, table opening, goods, members/coupons, tender methods and reprints."),
+      bi("บอร์ดเกม: สองกลุ่มบิล ยืมเกม รับบัตร ย้าย/รวม/แยกโต๊ะ ปิดกลุ่มแรก อีกกลุ่มเล่นต่อ คืนเกม/บัตร แล้วชำระครบ; ร้านอาหาร: สองรอบครัว QR รอรับ แยกบิลและเสิร์ฟ", "Board games: two bill groups, loans/collateral, move/merge/detach, early-group payment, continued play, returns and final settlement. Restaurant: two kitchen rounds, QR review, split checks and service."),
+      bi("ซ้อมจองไม่ชนกันและข้ามเที่ยงคืน ทดลองสิทธิ์ที่ต้องถูกปฏิเสธ คืนสินค้า/เงินค้าง อุปกรณ์หลุดและผลรับเงินไม่ชัดเจน แล้วปิดกะเทียบรายงาน", "Test overlapping bookings, midnight boundaries, permission denial, returns/pending refunds, disconnected devices and uncertain payment results. Close the shift and reconcile reports."),
+      bi("Soft Opening เริ่มหนึ่งกะหรือพื้นที่เล็ก เก็บปัญหาจริง มอบหมายคนแก้ ตรวจทุกข้ออีกครั้งก่อนเปิดเต็ม และวางรอบตรวจสต็อก เกม สิทธิ์และยอดคงเหลือ", "Start a soft opening with one shift or small area. Record issues and owners, repeat failed checks before full launch and schedule stock, game, access and balance reviews."),
+    ],
+    check: bi("ผู้จัดการลงชื่อผ่านรายการทดสอบพร้อมหลักฐาน ไม่มียอดไม่ตรงหรือรายการสำคัญที่ยังหาคำตอบไม่ได้", "A manager signs off evidence-backed checks with no unexplained variance or unresolved critical result."),
+    caution: bi("Checklist การอ่านในศูนย์เรียนรู้ช่วยติดตามบทเรียนเท่านั้น ไม่ใช่การตรวจระบบจริงหรือใบรับรองว่าเปิดร้านได้", "Learning-center completion tracks reading only. It is not a live system check or certification of launch readiness."),
+  },
+  {
+    slug: "board-game-hours", title: bi("เวลาเปิดร้าน วันให้บริการ และการเปิดข้ามคืน", "Opening hours, service days & overnight visits"),
+    summary: bi("แยกเวลาแสดงหน้าร้าน ตาราง Analytics และการรับจองให้ถูกต้อง", "Distinguish displayed hours, Analytics schedules and reservation checks."),
+    category: "setup", roles: managers, tracks: ["board-game"], menu: bi("Settings → ข้อมูลร้าน / โต๊ะบอร์ดเกม → ตั้งค่า และ วิเคราะห์", "Settings → Store profile / Board-game tables → Settings and Analytics"), action: "/admin/board-game",
+    prerequisite: bi("ทราบ Timezone เวลาทำการจริง และวันที่เริ่มใช้นโยบายแต่ละสาขา", "Know the store timezone, actual branch hours and policy effective dates."),
+    steps: [
+      bi("ตั้ง Timezone ของร้าน เช่น Asia/Bangkok ในข้อมูลร้าน เวลาจองและรายงานอ้างอิงค่านี้ ไม่ใช่การตั้ง Timezone แยกในแบบฟอร์มสาขาบอร์ดเกม", "Set the store timezone, for example Asia/Bangkok, in Store profile. Booking/report times use store configuration; the board-game branch profile has no separate timezone field."),
+      bi("ในตั้งค่าบอร์ดเกม เลือกสาขาและกรอกข้อความเวลาเปิดที่ลูกค้าจะอ่าน เช่น 16:00–02:00 ให้ข้อความตรงกับการทำงานจริง", "In Board-game settings select the branch and enter customer-facing hours, for example 16:00–02:00, matching actual operations."),
+      bi("ในแท็บวิเคราะห์ เลือกสาขาเดียว เปิดส่วนเวลาเปิดทำการ กำหนดวันที่มีผลและครบทั้ง 7 วัน ระบุวันปิดหรือเวลาเปิด–ปิด แล้วกดบันทึก ผู้บันทึกต้องมีสิทธิ์รายงานและจัดผังร้าน", "In Analytics select one branch, expand Opening hours, choose an effective date and configure all seven days as closed or with opening/closing times. Save with report and floor-management access."),
+      bi("เวลา 16:00–02:00 หมายถึงปิดวันถัดไป ใช้วันที่มีผลเพื่อรักษาประวัติ หากปรับชั่วคราวต้องวางแผนบันทึกตารางกลับหลังสิ้นช่วง ไม่ถือว่าเป็นปฏิทินวันหยุดอัตโนมัติ", "16:00–02:00 closes the next day. Effective dates preserve schedule history. For temporary changes plan a later schedule restoring normal hours; this is not an automatic holiday calendar."),
+      bi("วันให้บริการคิวตัด 04:00: การจองวันที่ 28 เวลา 01:00 อยู่วันให้บริการวันที่ 27 ทดสอบค้นรายการข้ามวันและส่งมอบ Session เดิมให้กะถัดไป ไม่เปิด Session ใหม่เพื่อเปลี่ยนวันที่", "Queue service days roll at 04:00: a booking on the 28th at 01:00 belongs to service day 27. Test cross-day lookup and hand over the existing session; do not reopen it to change its date."),
+      bi("ตรวจคำขอนอกเวลาทำการและวันหยุดด้วยคน ตาราง Analytics ใช้หารอัตราการใช้โต๊ะ ส่วนข้อความเวลาเปิดใช้สื่อสาร ทั้งสองไม่ได้จำกัดช่วงจองโดยอัตโนมัติ ก่อนเปิดยืนยันจองจากแชตอัตโนมัติต้องยอมรับข้อจำกัดนี้", "Manually review bookings outside business hours or on holidays. Analytics hours provide utilization denominators and displayed hours inform guests; neither automatically restricts booking windows. Account for this before enabling chat auto-confirmation."),
+    ],
+    check: bi("รายงานไม่เตือนว่าขาดเวลาเปิดในช่วงที่ตั้งครบ คิวข้าม 04:00 ถูกวัน และการจองวันหยุดมีผู้รับผิดชอบตรวจ", "Configured report dates have no missing-hours warning, queue dates cross 04:00 correctly and holiday bookings have an assigned reviewer."),
+    caution: bi("การปิดกะ การเปลี่ยนวันให้บริการ และการปิด Session เป็นคนละเรื่อง ไม่เปลี่ยน Timezone เพื่อแก้บิลผิดวันโดยไม่ตรวจผลทั้งร้าน", "Shift close, service-day rollover and session close are separate. Do not change the timezone to fix a bill date without reviewing the store-wide impact."),
+  },
+  {
+    slug: "board-game-public", title: bi("เผยแพร่ร้านและเปิดรับจองผ่านเว็บไซต์", "Publish your cafe & enable website booking"),
+    summary: bi("เลือกราคา โต๊ะและเกมที่ลูกค้าเห็น พร้อมทดสอบลิงก์จัดการจอง", "Control visible rates, availability and games, then test booking management links."),
+    category: "setup", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → ตั้งค่า → ข้อมูลค้นหาร้าน / หน้าค้นหาร้านบอร์ดเกม", "Board-game tables → Settings → Discovery profile / Public cafe directory"), action: "/admin/board-game",
+    prerequisite: bi("สาขาเปิดใช้งาน ผังโต๊ะ เรตทั่วไป ข้อมูลติดต่อสาธารณะและผู้ตรวจคำขอ", "An active branch, tables, general rate, public contact details and a booking reviewer."),
+    steps: [
+      bi("เลือกสาขา กรอกชื่อที่แสดง คำอธิบาย ที่อยู่ เบอร์โทรและเวลาเปิดที่ยอมให้เผยแพร่ ระบุละติจูด/ลองจิจูดให้ครบก่อนเปิดค้นหาร้านใกล้ฉัน", "Select the branch and enter publishable name, description, address, phone and hours. Supply both latitude and longitude before enabling nearby discovery."),
+      bi("เลือกแสดงราคา ความพร้อมโต๊ะ และรายละเอียดโซน/ขนาดโต๊ะแยกกัน รายละเอียดโต๊ะเป็นข้อมูลความจุรวม ไม่เปิดหมายเลขโต๊ะ ชื่อลูกค้าหรือรายชื่อผู้เล่น", "Choose rates, live availability and area/table-size details separately. Table details expose aggregate capacity, not table numbers, customer names or participant lists."),
+      bi("ที่คลังเกม เลือกการเผยแพร่ตอนเพิ่มชื่อเกม แล้วตรวจชื่อ รูปและจำนวนกล่องที่แสดงจริง ปิดข้อมูลไม่ต้องการให้แชตตอบด้วยสวิตช์เผยแพร่ที่เกี่ยวข้อง", "Choose public visibility when adding game titles and verify their names, artwork and copy counts. Use the relevant publication switches for facts that chat should also withhold."),
+      bi("เปิดรับจอง กำหนดเวลาจองล่วงหน้าขั้นต่ำ อายุคำขอ เวลาแจ้งเตือน และนโยบายมัดจำ กดบันทึกก่อนใช้ Preview เปิดหน้าสาธารณะด้วยหน้าต่างที่ไม่ได้เข้าสู่ระบบ", "Enable booking, set minimum advance time, request expiry, reminder lead time and deposit policy. Save, then preview the public page in a signed-out window."),
+      bi("ทดสอบจองด้วยชื่อ เบอร์ อีเมลทดสอบ วันเวลาตาม Timezone ร้าน จำนวนคนและระยะเวลา เก็บลิงก์จัดการจองที่ได้ ลูกค้าใช้ดูผล ส่งสลิปมัดจำเมื่อพร้อม และยกเลิกตามสถานะที่อนุญาต", "Submit a test name, phone, email, store-local date/time, party size and duration. Retain the returned management link for status, deposit evidence when available and cancellation while allowed."),
+      bi("ให้พนักงานเปิดแท็บการจอง เลือกโต๊ะแล้วอนุมัติหรือปฏิเสธ ตรวจผลผ่านลิงก์ลูกค้าและทดสอบอีเมลจริงก่อนพึ่งการแจ้งเตือน การส่งเมลไม่สำเร็จไม่ทำให้การจองที่ยืนยันแล้วหายไป", "Have staff review the reservation, assign a table and confirm or reject it. Check the management link and test actual email delivery before relying on reminders. Failed delivery does not undo a confirmed booking."),
+    ],
+    check: bi("ลูกค้าที่ไม่ล็อกอินเห็นเฉพาะสิ่งที่เปิดเผย คำขอเริ่มเป็นรอพิจารณา และเห็นยืนยันหลังร้านจัดโต๊ะสำเร็จ", "Signed-out visitors see only published facts. Requests begin pending review and become confirmed only after staff successfully allocates a table."),
+    caution: bi("ลิงก์จัดการจองเป็นลิงก์ส่วนตัว ห้ามเผยแพร่ในคู่มือ การปิดแสดงร้านในไดเรกทอรีไม่ได้ปิดการตอบแชตของร้าน และแชตอัตโนมัติไม่ทำให้เว็บจองยืนยันเอง", "Management links are private; never publish them in examples. Hiding directory visibility does not disable store chat, and chat auto-confirmation does not auto-confirm website requests."),
+  },
+  {
+    slug: "board-game-permissions", title: bi("ตรวจสิทธิ์ทีมบอร์ดเกมก่อนเริ่มกะ", "Verify board-game staff access"),
+    summary: bi("แยกคนดูแลโต๊ะ รับเงิน แก้เวลา จัดคลัง และดูข้อมูลเจ้าของร้าน", "Separate table service, payment, time edits, library management and owner reporting."),
+    category: "setup", roles: managers, tracks: ["board-game"], menu: bi("Users / Permissions / POS Devices → ทดสอบ POS", "Users / Permissions / POS Devices → POS rehearsal"), action: "/admin/pos-devices",
+    prerequisite: bi("บัญชีรายคน PIN สาขาที่รับผิดชอบ และรายชื่อผู้อนุมัติสำรอง", "Individual accounts, PINs, assigned branches and backup approvers."),
+    steps: [
+      bi("ให้พนักงานบริการมีสิทธิ์จัดการ Session และดูคลังเกมเพื่อเปิดพื้นที่ทำงาน POS ถ้าต้องเพิ่มสินค้าและรับเงินต้องมีสิทธิ์ขายเพิ่มด้วย", "Service staff need session-management and library-view access for the POS workspace. Adding merchandise and collecting payment additionally require sale permission."),
+      bi("แยกสิทธิ์แก้เวลาและยกเลิก Session ให้ผู้รับผิดชอบ ไม่ถือว่าคนที่เปิดโต๊ะได้จะแก้เวลา ยกเลิก หรือเปิดเผยเลขเอกสารค้ำได้", "Assign time overrides and session cancellation separately. Table-opening access does not imply time-edit, cancellation or held-document reveal access."),
+      bi("ผู้ดูแลตั้งค่าต้องมีสิทธิ์ผังร้าน เรต คลัง แพ็กเกจ และโปรตามงานจริง คนดูรายงานใช้สิทธิ์รายงาน ส่วนข้อมูลต้นทุนมีสิทธิ์เพิ่ม ตรวจด้วยบัญชีจริงว่ามองเห็นเพียงสาขาที่รับผิดชอบ", "Setup owners need floor, rate, library, pass and offer permissions appropriate to their duties. Reporting uses report permission and costs require additional access. Test actual accounts against assigned branches."),
+      bi("ซ้อมปฏิเสธ: แคชเชียร์แก้เวลาไม่ได้ พนักงานสาขา A เปิดงานสาขา B ไม่ได้ ส่วนลดมือ Void และเงินสดออกต้องใช้ผู้อนุมัติอีกคนตามกติกา POS", "Rehearse denials: a cashier cannot override time, branch A staff cannot operate branch B, and manual discount, void and drawer cash-out use a different approver under POS rules."),
+      bi("ก่อนเลิกจ้างหรือย้ายบทบาท ส่งมอบโต๊ะ/เกม/บัตรและบิลค้าง ปิดสิทธิ์และ PIN ตรวจเครื่องที่เคยใช้งานและ Audit โดยเก็บประวัติผู้ทำรายการเดิม", "Before offboarding or changing roles, hand over tables, games, documents and pending bills, revoke access/PIN, and review devices and audit history while retaining original attribution."),
+    ],
+    check: bi("แต่ละบทบาททำงานของตนได้และถูกปฏิเสธในงานที่ไม่รับผิดชอบ ทดสอบหลังเข้าสู่ระบบ/PIN จริง ไม่ดูเพียงการซ่อนเมนู", "Each role can do its own tasks and is denied unrelated work. Test authenticated/PIN operations, not only hidden menu items."),
+    caution: bi("ชื่อบทบาทอย่างเดียวไม่รับประกันสิทธิ์ครบ หากเข้าไม่ได้ให้ผู้ดูแลตรวจสิทธิ์และสาขา ไม่ให้ใช้ PIN ผู้จัดการร่วมกัน", "A role name alone does not guarantee permissions. Have an administrator review permissions and branch scope instead of sharing a manager PIN."),
+  },
+  {
+    slug: "board-game-offers", title: bi("ตั้งโปรค่าเวลาและตรวจว่าทำไมโปรไม่เข้า", "Configure time offers & explain eligibility"),
+    summary: bi("เปอร์เซ็นต์ ราคาเหมาจ่าย และซื้อเวลาแถม พร้อมตัวอย่างผลเมื่อปิดกลุ่ม", "Percentage, capped-price and buy/get offers, with close-time examples."),
+    category: "setup", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → โปรโมชัน → เพิ่ม/แก้ไข", "Board-game tables → Offers → Add/edit"), action: "/admin/board-game",
+    prerequisite: bi("เรตที่ทดสอบแล้ว สิทธิ์จัดการโปร และสินค้าจริงหากโปรกำหนดให้ซื้อสินค้า", "Verified rates, offer-management access and actual products for product-conditioned offers."),
+    steps: [
+      bi("เลือกชนิดโปร: ลดเปอร์เซ็นต์ค่าเวลา ราคาเหมารายคน ราคาเหมาทั้งกลุ่ม หรือซื้อเวลาแถม ระบุชื่อ สาขาหรือทุกสาขา และเปิดใช้งาน ราคาเหมาใช้ลดเมื่อคุ้มกว่าค่าเวลาปกติ", "Choose percentage off time, fixed per-person cap, group cap or buy/get time. Set name, branch/all branches and active status. A capped price applies only when beneficial against the normal charge."),
+      bi("กำหนดจำนวนคนขั้นต่ำ/สูงสุด นาทีขั้นต่ำ วันที่เริ่ม/จบ วันในสัปดาห์ และช่วงเวลาท้องถิ่น เงื่อนไขจำนวนคนอ้างอิงผู้เล่นที่คิดค่าเวลาในกลุ่มบิล ไม่ใช่คนทั้งหมดทั้งโต๊ะ", "Set minimum/maximum people, minimum minutes, validity dates, weekdays and local time window. Headcount eligibility uses billable participants in the billing group, not everybody at the table."),
+      bi("หากกำหนด SKU ต้องมีสินค้านั้นใน tab ที่ยังไม่ถูกลบของกลุ่มจริง สินค้ายังคงมีราคาขายและตัดสต็อกตามปกติ ไม่กลายเป็นของฟรีเพราะใช้ประกอบโปร", "A required SKU must exist on an active tab line of that group. It remains a normally priced stock-managed product; being an eligibility condition does not make it free."),
+      bi("ซื้อ 120 แถม 60 นาที ที่เรต 60 บาท/ชั่วโมง เมื่อได้นาทีคิดเงิน 180 จะเหลือค่าเวลา 120 บาทต่อคน ก่อนภาษี โดยคิดซ้ำเป็นรอบตามนาทีของแต่ละคน เล่นจริงแบบไม่ซื้อเวลาก่อนก็มีสิทธิ์เข้าโปรได้", "For buy 120/get 60 at THB 60/hour, 180 billable minutes yields THB 120 per person before tax. Cycles repeat per person's billable minutes. Actual-time visits can qualify without purchasing time in advance."),
+      bi("ตรวจเงื่อนไข ณ เวลาปิดกลุ่ม: เปิดโต๊ะในช่วงโปรแต่ปิดหลังหมดช่วงอาจไม่เข้าโปร แยกกลุ่มบิลอาจทำให้จำนวนคนไม่ถึงขั้นต่ำ ระบบเทียบโปรที่คุ้มที่สุดกับแพ็กเกจทั้งกลุ่มและเลือกอย่างใดอย่างหนึ่ง ถ้าเท่ากันเลือกโปรเพื่อเก็บโควตาไว้", "Eligibility is evaluated at group close: opening during a promotion does not guarantee eligibility after its time window ends. Split groups may miss minimum headcount. The best offer competes with pass coverage for the whole group; ties use the offer to preserve pass quota."),
+      bi("หลังปิดอ่านเหตุผลในสรุป เช่น ไม่ถึงนาที/คน ไม่มีสินค้าที่กำหนด หมดช่วง หรือแพ็กเกจคุ้มกว่า ใช้หลักฐานจากบิลนั้น ไม่แก้โปรวันนี้เพื่อคาดหวังให้บิลที่ปิดแล้วเปลี่ยน", "After close, read reasons such as insufficient minutes/people, missing product, expired window or a better pass result. Use that bill's evidence; today's offer edits do not rewrite a closed bill."),
+    ],
+    check: bi("ทดสอบเข้าเงื่อนไขและไม่เข้าอย่างละบิล พร้อมกรณีมีแพ็กเกจ ผลที่อธิบายตรงสรุปบิล", "Test one eligible and one ineligible bill plus a pass comparison; explanations match the saved checkout result."),
+    caution: bi("โปรค่าเวลาไม่ใช่คูปองสินค้า บิลเก่าที่ไม่มีเหตุผลโปรต้องระบุว่าไม่มีข้อมูล หากชื่อไทยล้วนบันทึกไม่ได้เพราะรหัส ให้ใส่ตัวอักษรอังกฤษ/ตัวเลขที่ไม่ซ้ำในชื่อ เช่น PLAY180 เล่นสามชั่วโมง เพราะแบบฟอร์มสร้างรหัสจากชื่อ", "Time offers are separate from product coupons. Older bills without saved explanations have unknown evidence. If a Thai-only name fails code validation, include unique Latin letters/digits, such as PLAY180 เล่นสามชั่วโมง; the form derives its code from the name."),
+  },
+  {
+    slug: "board-game-passes", title: bi("ออกแพ็กเกจ ใช้นาที และยกเลิกสิทธิ์", "Issue passes, consume minutes & cancel entitlement"),
+    summary: bi("ทำตามหน้าขายแพ็กเกจจริง พร้อมแยกการออกสิทธิ์ออกจากการรับเงิน", "Follow the actual pass screen while distinguishing entitlement issuance from payment."),
+    category: "growth", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → แพ็กเกจ", "Board-game tables → Passes"), action: "/admin/board-game",
+    prerequisite: bi("สมาชิกที่ตรวจตัวตนแล้ว สิทธิ์จัดการแพ็กเกจ และขั้นตอนบันทึกการรับเงินที่ผู้จัดการรับรอง", "A verified member, pass-management permission and a manager-approved payment-recording process."),
+    steps: [
+      bi("เพิ่มแผน ระบุชื่อ แบบไม่จำกัดหรือโควตานาที ราคา อายุเป็นจำนวนวัน และสาขา เว้นสาขาว่างหมายถึงทุกสาขา แบบนาทีต้องใส่นาทีรวม แล้วเปิดใช้งาน", "Add a plan with name, unlimited/minute type, price, duration in days and branch. An empty branch means all branches. Minute plans require a total quota; enable the plan."),
+      bi("ในส่วนขายแพ็กเกจ ค้นสมาชิกด้วยชื่อ เบอร์หรือเลขสมาชิก ตรวจว่าถูกคน เลือกแผนและราคา กดออกเพียงครั้งเดียว แล้วตรวจรายการแพ็กเกจของสมาชิกและวันหมดอายุ", "In Sell pass, search by name, phone or member number, verify the person, select plan/price and issue once. Check the resulting member contract and expiry."),
+      bi("หน้าปัจจุบันออกสิทธิ์และบันทึกราคาแพ็กเกจ แต่ไม่มีช่องรับเงิน/ใบเสร็จ POS ในขั้นตอนนี้ อย่าถือว่ารับเงินแล้ว ให้ตรวจหลักฐานการรับเงินและวิธีลงบัญชีกับผู้จัดการก่อนขายจริง ไม่สร้าง SKU ค่าเวลาเพื่อกลบช่องว่าง", "The current screen issues entitlement and records the plan price but has no payment tender or POS receipt step. Do not treat issuance as money received. Agree payment evidence and accounting with the manager before selling; do not create a time SKU to hide this gap."),
+      bi("ตอนเพิ่มผู้เล่นเลือกสมาชิกเจ้าของแพ็กเกจ ตรวจว่าสิทธิ์ใช้งานได้และตรงสาขา แพ็กเกจต้องยังมีผลเมื่อปิดกลุ่ม การดูยอดก่อนปิดเป็นเพียงประมาณการ ยังไม่หักโควตา", "Select the pass owner as the participant and verify active eligibility and branch. The pass must still be valid when the group closes. Previewing charges does not reserve or consume quota."),
+      bi("ถ้าลูกค้าถือหลายใบ ระบบเลือกใบไม่จำกัดก่อน ตามด้วยใบมีนาทีและใกล้หมดอายุ เลือกหนึ่งใบต่อคนสำหรับการปิดกลุ่มครั้งนั้น ไม่รวมทุกใบเป็นกองนาทีเดียว หากชื่อแผนไทยล้วนบันทึกไม่ได้ ให้ใส่อักษรอังกฤษ/ตัวเลขไม่ซ้ำในชื่อ เช่น MONTH30 รายเดือน", "With multiple passes, unlimited takes priority, followed by usable minute balance and earliest expiry. One pass per customer is selected for that group close, not a pool of all contracts. If a Thai-only plan name fails validation, include unique Latin letters/digits, such as MONTH30 รายเดือน."),
+      bi("ตัวอย่างไม่มีโปรอื่น: ค่าเวลา 90 นาที เรต 60 บาท/ชั่วโมง เหลือแพ็กเกจ 60 นาที ระบบหัก 60 นาทีและเหลือค่าเวลา 30 บาทก่อนภาษี สินค้าใน tab ยังต้องจ่าย; แพ็กเกจไม่จำกัดไม่ใช่ยอดนาทีศูนย์", "Without another offer: 90 minutes at THB 60/hour and a 60-minute balance consumes 60 minutes and leaves THB 30 before tax. Tab merchandise remains payable. Unlimited is not a zero-minute balance."),
+      bi("ก่อนยกเลิก เลือกใบที่ถูกคนและระบุเหตุผล ตรวจผลสถานะและสัญญาต่ออายุที่ถูกหยุดด้วย การยกเลิกแพ็กเกจไม่โอนเงินคืนอัตโนมัติ ต้องติดตามกับผู้รับผิดชอบการเงินตามหลักฐานเดิม", "To cancel, select the correct contract and enter a reason. Check its cancelled status and stopped renewal agreement. Cancellation does not automatically refund money; finance must follow the original payment evidence."),
+      bi("ตรวจยอดนาทีค้าง จำนวนใบไม่จำกัด และนาทีที่จะหมดอายุใน 30 วัน หากจำนวนยอดไม่ตรงประวัติไม่เป็นศูนย์ ให้ผู้ดูแลตรวจสอบก่อนสรุปบัญชี ไม่ปรับยอดทับเพื่อให้รายงานดูตรง", "Review outstanding minutes, unlimited contracts and minutes expiring within 30 days. Any nonzero balance-mismatch count requires investigation before accounting sign-off; do not overwrite balances to hide it."),
+    ],
+    check: bi("ออกสิทธิ์ให้ถูกคน/สาขา หลักฐานเงินแยกตรวจได้ และนาทีลดเมื่อปิดกลุ่มจริงเพียงครั้งเดียว", "The right customer/branch receives entitlement, payment evidence is independently verifiable and actual close consumes minutes only once."),
+    caution: bi("แก้ราคา อายุ หรือสาขาของแผนไม่เปลี่ยนแพ็กเกจที่ขายไปแล้ว การยกเลิก Session ที่ยังไม่ชำระคืนโควตาที่หักตอนปิดได้ แต่ไม่ควรสรุปว่าคืนสินค้า/คืนเงินหลังขายจะคืนแพ็กเกจด้วยเสมอ", "Editing plan price, duration or branch does not alter sold contracts. Cancelling an unpaid session reverses consumed close-time quota; do not assume every post-sale return/refund also restores pass entitlement."),
+  },
+  {
+    slug: "board-game-renewals", title: bi("ต่ออายุแพ็กเกจและแก้เครดิตไม่พอ", "Renew passes & resolve insufficient credit"),
+    summary: bi("เปิด พัก กลับมาใช้ และยกเลิกการต่ออายุจาก Store Credit", "Enable, pause, resume and cancel store-credit-funded renewal."),
+    category: "growth", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → แพ็กเกจ → ต่ออายุอัตโนมัติ", "Board-game tables → Passes → Automatic renewal"), action: "/admin/board-game",
+    prerequisite: bi("แพ็กเกจยังมีผล ลูกค้ายินยอม และมี Store Credit ที่ผูกกับลูกค้าคนเดียวกัน", "An unexpired active pass, customer consent and store credit belonging to the same customer."),
+    steps: [
+      bi("อธิบายราคา รอบอายุ และแหล่งเงินให้ลูกค้ายืนยัน เก็บหลักฐานความยินยอมตามขั้นตอนร้าน ก่อนเลือกแพ็กเกจต้นทางและใส่รหัส Store Credit ในส่วนเปิดต่ออายุ", "Explain price, duration and funding, obtain customer consent and retain it under shop procedure. Then select the source pass and enter its funding store-credit code."),
+      bi("ตรวจสถานะใช้งาน วันต่ออายุครั้งถัดไปและท้ายรหัสเครดิต บันทึกไม่ได้หากเครดิตไม่ได้ผูกกับลูกค้าคนนั้น อย่าใช้เครดิตของคนอื่นทดแทน", "Verify active status, next renewal time and masked credit suffix. Funding must belong to the same customer; never substitute someone else's credit."),
+      bi("เมื่อถึงรอบ ระบบต้องทำงานตามตารางที่ทีมระบบเปิดไว้ ตรวจใบแพ็กเกจใหม่และการหักเครดิตจริง ไม่ถือว่าเปิดสวิตช์แล้วงานเบื้องหลังทำงานแน่นอน", "Due renewals require the scheduled job to be enabled. Verify the new pass and actual credit debit; enabling an agreement alone does not prove the background job ran."),
+      bi("สถานะ PAST_DUE หมายถึงรอบต่ออายุมีปัญหา อ่านเหตุผล เช่น เครดิตไม่พอหรือหมดอายุ ให้ผู้รับผิดชอบแก้แหล่งเงินผ่านช่องทางที่รองรับแล้วกดลองใหม่ ตรวจว่าได้หนึ่งใบสำหรับรอบเดิม", "PAST_DUE means the cycle failed. Read the reason, such as insufficient/expired credit, resolve funding through a supported process and retry. Verify exactly one pass for the original cycle."),
+      bi("ใช้พักเมื่อหยุดชั่วคราว กลับมาใช้เมื่อพร้อม หรือยกเลิกพร้อมเหตุผลเมื่อเลิกต่อ ตรวจว่าใบปัจจุบันกับสัญญาต่ออายุเป็นคนละรายการ การหยุดต่อไม่ได้แปลว่าคืนเงินใบปัจจุบัน", "Pause temporarily, resume when ready, or cancel with a reason to stop renewal. The current pass and renewal agreement are distinct; stopping renewal does not refund the current pass."),
+    ],
+    check: bi("รอบสำเร็จมีใบใหม่และยอดเครดิตตรงกัน รอบล้มเหลวไม่สร้างสิทธิ์ฟรี และคำขอซ้ำไม่ตัดเครดิตซ้ำ", "A successful cycle has a new pass and matching credit debit; failure creates no free entitlement and retries do not debit twice."),
+    caution: bi("เป็นการใช้ Store Credit ไม่ใช่ตัดบัตรเครดิตอัตโนมัติ ปุ่มเติม/ออกเครดิตทั่วไปยังไม่ครบใน POS จึงต้องยืนยันขั้นตอนแหล่งเงินก่อนเปิดบริการให้ลูกค้า", "This uses store credit, not automatic card charging. Generic credit-funding/issuance controls are not fully available in POS; confirm the funding workflow before offering renewal."),
+  },
+  {
+    slug: "board-game-waitlist", title: bi("รับคิว Walk-in เรียกคิว และพาไปนั่ง", "Walk-in queue, calling & seating"),
+    summary: bi("จากลูกค้ารอโต๊ะจนเริ่มจับเวลาจริง โดยไม่เปิดรอบซ้ำ", "Move a waiting party into timed play without creating duplicate visits."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → คิวรอโต๊ะ", "POS → Board games → Waiting queue"), action: "/pos",
+    prerequisite: bi("เครื่องและ PIN อยู่สาขาถูกต้อง; ต้องเปิดกะก่อนพาไปนั่ง", "The correct device/branch and PIN; seating requires an open shift."),
+    steps: [
+      bi("เพิ่มคิว ระบุชื่อเรียก จำนวนคน และช่องติดต่อที่จำเป็น ตรวจวันที่ให้บริการและเลขคิวที่ระบบให้ ไม่เปิด Session ระหว่างรอ", "Add the party's call name, size and necessary contact. Check the assigned service date/queue number. Do not open a session while they wait."),
+      bi("ดูโต๊ะว่างที่รองรับจำนวนคนและการจองรอบถัดไป เลือกเรียกคิวเมื่อพร้อม บันทึก CALLED ไม่ได้ส่งข้อความ LINE ให้ลูกค้าโดยตัวมันเอง ให้เรียกตามช่องทางของร้าน", "Review suitable free tables and upcoming reservations. Call when ready. Recording CALLED does not itself send a LINE message; use the shop's calling procedure."),
+      bi("เลือกพาไปนั่ง กำหนดโต๊ะ ผู้เล่น เรต สมาชิก และกลุ่มบิลให้ครบ ทวนจำนวนคนกับโต๊ะก่อนยืนยัน ระบบเปิด Session และเปลี่ยนคิวเป็น SEATED พร้อมกัน", "Choose Seat, complete table, participants, rates, members and bill groups, then confirm capacity. The system opens the session and marks the queue SEATED together."),
+      bi("กรณีโต๊ะมีการจองต่อ ต้องใช้ช่วงเล่นที่ไม่ทับการจอง อย่าสัญญาว่าเวลาใกล้หมดของลูกค้าเดิมคือเวลาที่โต๊ะว่างแน่นอน หากคนเกินที่นั่งต้องทบทวนและยืนยันตามคำเตือนที่หน้าจอรองรับ", "For a table with an upcoming booking, choose a visit window that does not overlap it. Ending-soon alerts are not promised vacancy. Review any excess headcount and explicitly confirm only where the screen permits it."),
+      bi("ลูกค้ากลับก่อนให้ปิดคิวตามสถานะที่มีพร้อมเหตุผล ข้ามคิวเพราะขนาดโต๊ะไม่พอให้แจ้งลูกค้าและเก็บเหตุผลตามขั้นตอนร้าน ตรวจว่าไม่เหลือคิวที่พาไปนั่งแล้วเป็น WAITING", "If a party leaves, close its queue entry with an available status and reason. Explain capacity-based skips under shop procedure and verify seated parties no longer remain WAITING."),
+    ],
+    check: bi("หนึ่งคิวเชื่อมหนึ่งรอบเล่น เวลาเริ่มเมื่อพาไปนั่งสำเร็จ และคิวที่เลิกแล้วไม่ค้างรอ", "One queue entry links to one visit, time starts on successful seating and abandoned entries no longer wait."),
+    caution: bi("คิวไม่ล็อกโต๊ะ ไม่สร้างบิล และไม่จองสินค้า; จำนวนคนในคิวไม่ใช่รายชื่อผู้เล่น ต้องตรวจรายชื่อก่อนพาไปนั่ง", "A queue entry reserves no table or stock and creates no bill. Party size is not a participant roster; review actual players before seating."),
+  },
+  {
+    slug: "board-game-deposits", title: bi("มัดจำจอง ยอดคงเหลือ และคืนมัดจำ", "Reservation deposits, balances & refunds"),
+    summary: bi("ตั้งนโยบาย ตรวจสลิป หักมัดจำในบิล และติดตามเงินคืน", "Configure deposit policy, verify evidence, apply deposits and track refunds."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → ตั้งค่า/การจอง → Payments → POS", "Board-game tables → Settings/Reservations → Payments → POS"), action: "/admin/board-game",
+    prerequisite: bi("บัญชีรับเงิน นโยบายที่แจ้งลูกค้า และผู้มีสิทธิ์ยืนยันรับเงิน/คืนเงิน", "A receiving account, disclosed customer policy and authorized payment/refund reviewers."),
+    steps: [
+      bi("ผู้ดูแลตั้งมัดจำไม่เก็บ/ยอดคงที่/เปอร์เซ็นต์ในโปรไฟล์สาขา พร้อมเวลารอชำระและเส้นตายยกเลิกที่คืนได้ เปอร์เซ็นต์ใช้ราคาเรตทั่วไปที่ระบบเลือก × นาทีหลังปัด × จำนวนคน ไม่ใช่ยอดสุทธิหลังแพ็กเกจของลูกค้า", "Configure none/fixed/percentage deposit, payment window and refundable cancellation cutoff. Percentage uses the selected general rate, rounded billable duration and party size, not the customer's final pass-discounted bill."),
+      bi("คำขอเว็บไซต์เริ่มรอร้านยืนยัน เมื่อพนักงานจัดโต๊ะและอนุมัติจึงตรึงยอดกับกำหนดมัดจำ ให้ลูกค้าเปิดลิงก์จัดการจอง ตรวจผู้รับเงินจริงก่อนโอนและส่งสลิป", "Website requests await review. Staff allocation/confirmation freezes deposit amount and deadlines. Ask the customer to use their management link, verify the real payee, transfer and submit evidence."),
+      bi("สถานะส่งสลิปแล้วไม่เท่ากับชำระแล้ว ผู้มีสิทธิ์ตรวจรายการรับเงินเดิม หลักฐาน ผู้รับและยอด ก่อนยืนยันใน Payments เช็กอิน/พาไปนั่งได้เมื่อมัดจำ PAID หรือไม่ต้องเก็บ", "Submitted evidence is not confirmed payment. An authorized reviewer checks the existing payment, evidence, payee and amount in Payments. Check-in/seating requires PAID or no deposit required."),
+      bi("ตอนรับเงิน POS อ่านมัดจำที่ผูกกับการจองเดิมและยอดต้องเก็บเพิ่ม ตัวอย่างบิลรวม 500 มัดจำใช้ได้ 200 ให้เก็บเพิ่ม 300 ไม่ใส่คูปอง 200 หรือลบรายการสินค้าแทนมัดจำ", "At POS review the linked original deposit and remaining tender. For a total of 500 and applicable deposit of 200, collect 300; do not create a 200 coupon or remove products to represent the deposit."),
+      bi("หลายกลุ่มบิลต้องตรวจยอดมัดจำคงเหลือทุกครั้ง ระบบกันการใช้ยอดเดิมซ้ำ มัดจำไม่ได้ลดยอดขาย/ภาษีของบริการ และยอดเกินที่ใช้ไม่หมดต้องติดตามการคืน ไม่สมมติว่าเป็นเงินทอนสด", "With multiple groups, check the remaining deposit each time; allocations prevent reuse. Deposits do not discount service sales/tax. Track unused remainders through refunds, not assumed cash change."),
+      bi("ยกเลิกในช่วงคืนได้ให้ตรวจ REFUND_PENDING และให้การเงินคืนพร้อมหลักฐานเดิม; ยกเลิกช้า/No-show อาจเป็น FORFEITED ตามเงื่อนไขที่ตรึงไว้ หากมีสลิปรอตรวจหรือเงินเข้าใกล้หมดเวลาต้องให้การเงินตรวจ ไม่รับมัดจำซ้ำ", "For refundable cancellation check REFUND_PENDING and have finance complete the original-payment refund. Late cancellation/no-show may forfeit the deposit under frozen terms. Pending slips or late transfers need review, not another deposit charge."),
+    ],
+    check: bi("ยอดรับมัดจำ = ยอดใช้ + ยอดคงเหลือ/คืน/ริบที่ตรวจได้ พร้อมเลขรายการเดิม และสถานะการจองแยกจากสถานะเงิน", "Received deposit reconciles to applied, remaining/refunded/forfeited amounts with original references. Booking and money statuses are independently checked."),
+    caution: bi("การรับมัดจำผ่านลิงก์นี้เป็น Flow ของคำขอเว็บ ไม่ใช่ปุ่มเก็บมัดจำสำหรับทุกช่องทาง คำขอ CHAT รองรับเฉพาะไม่มีมัดจำ ส่วนการจองที่พนักงานเพิ่มเองไม่ควรถูกสอนว่ามีลิงก์รับมัดจำเหมือนเว็บ", "This management-link deposit flow belongs to website requests, not every booking channel. CHAT supports no-deposit booking only; staff-created bookings must not be described as having the same website deposit link."),
+  },
+  {
+    slug: "board-game-tab", title: bi("เพิ่มน้ำขนมในบิลและแก้รายการสั่งผิด", "Add tab merchandise & correct item mistakes"),
+    summary: bi("เลือกกลุ่มผู้จ่าย หน่วยขาย และตรวจสต็อกก่อนลบหรือเพิ่มรายการใหม่", "Select the paying group and selling unit, then verify stock before correcting lines."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → รายละเอียดโต๊ะ → สินค้าในบิล", "POS → Board games → Session details → Tab items"), action: "/pos",
+    prerequisite: bi("กะเปิด สิทธิ์ขาย และกลุ่มบิลยัง OPEN พร้อมสินค้าที่ขายในสาขานี้", "An open shift, sale permission, an OPEN billing group and branch-saleable products."),
+    steps: [
+      bi("เมื่อรวมโต๊ะมีหลายชุดลูกค้า ให้เลือก Session และกลุ่มบิลที่จะจ่ายก่อนค้นสินค้า ตรวจชื่อสินค้า ขนาด หน่วยแพ็ก จำนวน และตัวเลือกที่หน้าจอให้เลือก", "On merged tables select the session and paying group first. Search products and check name, size, pack unit, quantity and any available modifiers."),
+      bi("เพิ่มลงบิล ตรวจว่ารายการไปอยู่กลุ่มที่เลือกและยอดสินค้าเพิ่มถูกต้อง การเพิ่ม tab จองสต็อกทันทีแม้ลูกค้ายังไม่ชำระ จึงไม่ขายของชิ้นเดียวกันให้โต๊ะอื่นซ้ำ", "Add the item and verify group placement and merchandise total. Tab entry reserves stock before payment so the same units cannot be sold to another party."),
+      bi("รายการผิดก่อนปิดกลุ่ม: ตรวจว่าของยังไม่ถูกใช้/ส่งแล้วหรือไม่ จากนั้นลบรายการผิดและเพิ่มใหม่ตามที่ตกลง ตรวจสต็อกและยอดทั้งสองกลุ่ม ถ้าของถูกกินหรือเสียแล้วให้ผู้จัดการจัดการของเสีย/ยอดเงินจริงด้วย", "Before close, verify whether goods have been delivered/consumed, then remove the wrong line and add the agreed correction. Check stock and both groups. Consumed or wasted goods also need manager-led wastage/payment handling."),
+      bi("สินค้าที่ต้องบันทึก Serial ใส่ tab ไม่ได้ ให้ขายแยกในแท็บขายที่รองรับ Serial และแจ้งลูกค้าว่าเป็นอีกบิล ไม่ใส่สินค้าอื่นแทนเพื่อให้ผ่าน", "Serial-tracked items cannot go on a tab. Sell them separately through the serial-capable sales tab and explain the separate receipt; do not substitute another SKU."),
+      bi("ตรวจรายการสุดท้ายก่อนปิดกลุ่ม เพราะหลังตรึงบิลเพิ่ม/ลบ tab ไม่ได้ รับเงินจากยอดค่าเวลาและสินค้าโดยรวม ไม่เก็บเฉพาะค่าเวลา และไม่ถือว่า tab เป็นใบส่งครัวของร้านอาหารโดยอัตโนมัติ", "Review the final tab before closing: frozen groups cannot add/remove lines. Collect the combined time-and-merchandise total, not just time. A board-game tab is not automatically a restaurant kitchen ticket."),
+    ],
+    check: bi("สินค้าอยู่ผู้จ่ายถูกกลุ่ม จำนวนหน่วยและยอดตรง ไม่มีรายการผิดเหลือก่อนปิด และบิลสินค้าแยกไม่ถูกคิดซ้ำ", "Items belong to the correct payer, units/totals match, mistakes are resolved before close and separate product sales are not charged again."),
+    caution: bi("การลบ tab ปล่อยสต็อกที่จองไว้ ไม่ใช่หลักฐานว่าของกลับเข้าตู้จริง ราคาแสดงอาจเปลี่ยนจากการจัดราคาใหม่ก่อนปิด จึงตรวจยอดล่าสุดก่อนยืนยันทุกครั้ง", "Removing a tab line releases its reservation; it does not prove the physical goods returned. Repricing before close can change displayed totals, so review the latest quote before confirming."),
+  },
+  {
+    slug: "board-game-service-qr", title: bi("QR เรียกพนักงานและส่งต่องานบริการ", "Service-call QR & staff handoff"),
+    summary: bi("ช่วยสอนเกม แจ้งกล่องมีปัญหา ขอคิดเงิน หรือขอต่อเวลาโดยไม่เปลี่ยนบิลเอง", "Handle game help, issues, checkout and extension requests without automatic bill changes."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → QR เรียกพนักงาน / รายการเรียก", "POS → Board games → Service QR / Service calls"), action: "/pos",
+    prerequisite: bi("Session ยังเปิดและผู้รับผิดชอบติดตามคำขอของสาขา", "An open session and an assigned branch service-call owner."),
+    steps: [
+      bi("เปิดรายละเอียด Session ที่ลูกค้านั่ง เลือก QR/ลิงก์เรียกพนักงานให้ลูกค้าสแกน ทดสอบชื่อโต๊ะก่อนแจก ลิงก์ผูกกับรอบเล่น ไม่ใช่ป้ายถาวรใช้ร่วมกับลูกค้าทุกรอบ", "Open the guest's session and show its service QR/link. Verify the displayed table. The link belongs to the visit; it is not a permanent QR shared across successive parties."),
+      bi("ให้ลูกค้าเลือกช่วยสอนเกม เกมมีปัญหา อาหาร/เครื่องดื่ม คิดเงิน ต่อเวลา ทำความสะอาด หรืออื่น ๆ พร้อมหมายเหตุที่จำเป็น ไม่ใส่ข้อมูลเอกสารหรือรายละเอียดการเงินลับ", "Guests select game help, game issue, food/drinks, bill, extra time, cleanup or other, with a necessary note. Avoid identity-document data or secret payment details."),
+      bi("พนักงานอ่านคำขอและรับเรื่อง จากนั้นไปช่วยจริง จบงานแล้วจึงกดเสร็จ หากมีคำขอประเภทเดิมค้างระบบอาจปฏิเสธซ้ำ ให้ตรวจคำขอเดิมก่อนส่งใหม่", "Read and acknowledge the request, assist the guest, then mark complete. An outstanding duplicate request type may be rejected; check the original before resubmitting."),
+      bi("ขอน้ำ/ขนมยังไม่สร้างสินค้าบนบิล ขอต่อเวลายังไม่เปลี่ยนเวลาซื้อ และขอคิดเงินยังไม่ปิดบิล พนักงานต้องทวนรายการและทำคำสั่งที่เกี่ยวข้องตามสิทธิ์", "A food/drink call does not add tab items, an extension call does not change purchased time, and a bill call does not close a group. Staff must confirm intent and perform the authorized operation."),
+      bi("หลังย้ายโต๊ะตรวจตำแหน่งปัจจุบันของลูกค้าและคำขอเดิม ถ้าแยกกลุ่มไป Session ใหม่ให้ออก QR จากรอบใหม่ เมื่อจบรอบลิงก์เดิมใช้ส่งคำขอไม่ได้; ส่งมอบคำขอค้างให้กะถัดไป", "After a move check the guest's current position and earlier request context. A group detached into a new session needs that session's QR. Closed sessions reject new calls; hand pending calls over to the next shift."),
+    ],
+    check: bi("คำขอทดสอบถึงพนักงานถูกสาขา มีการรับเรื่อง/เสร็จจริง และบิลไม่เปลี่ยนเพียงเพราะลูกค้ากดเรียก", "A test request reaches the right branch, is acknowledged/completed and does not change the bill merely by being submitted."),
+    caution: bi("QR นี้ไม่ใช่ QR รับเงินหรือ QR ขอใบกำกับ อย่าโพสต์ลิงก์ Session จริงในหน้าสาธารณะหรือคู่มือ", "This is neither payment QR nor tax-request QR. Never publish live session links in public pages or manuals."),
+  },
+  {
+    slug: "board-game-collateral", title: bi("รับและคืนบัตรค้ำโดยไม่ค้างข้อมูลลูกค้า", "Take and release held documents"),
+    summary: bi("ลงทะเบียนสิ่งที่ถือจริง คืนให้เจ้าของ และตรวจทางออกกลุ่มสุดท้าย", "Record physical custody, return to the owner and verify the last-party exit."),
+    category: "daily", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → เกมและบัตร / หลังบ้าน → รายละเอียด Session", "POS → Board games → Games and documents / Admin session details"), action: "/pos",
+    prerequisite: bi("ร้านมีนโยบายรับค้ำและพนักงานผู้รับผิดชอบเก็บของ; Session ยังเปิด", "A shop custody policy, responsible staff and an open session."),
+    steps: [
+      bi("รับเฉพาะเมื่อมีการส่งมอบจริง เลือก Session และชนิดเอกสาร กรอกผู้ถือและรายละเอียดเท่าที่จำเป็น เลขเอกสารเป็นตัวเลือก ไม่ต้องใส่เพื่อให้เปิดโต๊ะผ่าน", "Record only an actual handover. Choose the session/document type and enter only necessary holder details. Document number is optional, not required to open a table."),
+      bi("ตรวจรายการ HELD ตรงกับของที่เก็บจริง เก็บของในจุดควบคุมการเข้าถึง ไม่ถ่ายภาพหรือใส่เลขเต็มในโน้ต Session", "Match HELD records to physical documents and store them in controlled custody. Do not photograph documents or put full numbers in session notes."),
+      bi("หากจำเป็นต้องเปิดดูเลขที่บันทึก ให้ผู้มีสิทธิ์กดเปิดดูในหลังบ้าน การเปิดดูมีประวัติตรวจสอบและแสดงชั่วคราว POS แสดงข้อมูลจำกัด ไม่ใช้ PIN ผู้จัดการแจกให้พนักงานเพื่อข้ามข้อจำกัด", "If revealing a stored number is necessary, an authorized back-office user selects Reveal. Access is audited and displayed temporarily. POS exposes limited information; do not share a manager PIN to bypass this."),
+      bi("คืนบัตรให้เจ้าของจริงแล้วกดคืน ตรวจสถานะ RETURNED ระบบล้างชื่อและเลขที่เก็บไว้ทันที เหลือหลักฐานการคืนและผู้ทำรายการ จึงไม่ใช้รายการคืนแล้วเป็นสมุดรายชื่อลูกค้า", "Physically return the document, then release the hold. RETURNED clears stored holder name/number immediately while retaining return attribution. Returned holds are not a customer directory."),
+      bi("คืนเกมไม่ได้คืนบัตรอัตโนมัติ กลุ่มแรกจ่ายได้เมื่อกลุ่มอื่นยังเล่น แต่ก่อนปิดกลุ่มสุดท้ายหรือยกเลิก Session ต้องคืนบัตรทุกใบ หากหาไม่พบให้หยุดขั้นตอนและแจ้งผู้จัดการ ไม่กดคืนเพื่อให้ระบบผ่าน", "Game return does not release documents. An early group may settle while others play, but the last group/session cancellation requires every document returned. If one is missing, stop and escalate; do not falsely release it to pass the gate."),
+    ],
+    check: bi("จำนวนบัตรที่ถือจริงเท่ากับรายการค้าง ลูกค้าได้รับของคืน และไม่มี HELD ก่อนจบ Session", "Physical custody matches open holds, documents reach their owners and no HELD record remains at session exit."),
+    caution: bi("การรับค้ำเป็นทางเลือกตามนโยบายร้าน ไม่ใช่ข้อบังคับสมัครสมาชิก ข้อมูลเอกสารที่ล้างแล้วไม่ควรถูกคัดลอกเก็บไว้ที่อื่นเพื่อเลี่ยงการล้าง", "Document custody is a shop-policy choice, not a membership requirement. Do not retain separate copies to bypass release-time erasure."),
+  },
+  {
+    slug: "board-game-game-issues", title: bi("เกมชำรุด ชิ้นส่วนหาย และการตรวจคลัง", "Damaged games, missing pieces & library checks"),
+    summary: bi("รับคืนแบบมีปัญหา กันกล่องออกจากการยืม และติดตามการแก้ไข", "Receive problem returns, keep copies unavailable and track resolution."),
+    category: "recovery", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → เกมและบัตร / โต๊ะบอร์ดเกม → คลังเกม", "POS → Board games → Games and documents / Admin → Library"), action: "/admin/board-game",
+    prerequisite: bi("รหัสกล่องและรายการยืมเดิม พร้อมวิธีตรวจชิ้นส่วนของร้าน", "A copy code, original loan and the shop's component-check procedure."),
+    steps: [
+      bi("ก่อนส่งเกม ตรวจรหัส QR/กล่องและสภาพพร้อมเล่น ไม่ใช้รหัสสินค้าเกมที่ขายแทนรหัสกล่องให้ยืม ยืมได้เฉพาะกล่อง AVAILABLE ที่อยู่สาขานี้", "Before handover check copy QR/code and playable condition. A retail game SKU is not a library-copy code. Only AVAILABLE copies in the branch may be lent."),
+      bi("เมื่อคืน ตรวจชิ้นส่วนและจับคู่รายการยืม หากสมบูรณ์ใช้รับคืน ถ้ามีปัญหาใส่หมายเหตุแล้วเลือกคืนแบบมีปัญหา ระบบตั้งกล่องเป็น NEEDS_CHECK และไม่ให้ยืมต่อ", "On return inspect components against the correct loan. Use normal return if complete; otherwise enter a note and choose problem return. The copy becomes NEEDS_CHECK and is not available to lend."),
+      bi("เกมสูญหายหรือยังไม่ได้รับกลับต้องให้ผู้จัดการตรวจหลักฐานก่อนเลือกวิธีปิดรายการ ไม่กดคืนปกติ กล่องมีสถานะเสีย ชิ้นส่วนหาย ซ่อม เลิกใช้ และสูญหายในระบบ แต่หน้าเว็บปัจจุบันไม่มีตัวแก้สถานะหลังซ่อมครบทุกแบบ", "For a missing/unreturned copy, have a manager review evidence before choosing a resolution. Do not record a normal return. The system has damaged, missing-parts, repairing, retired and lost states, but the current web UI does not provide every post-repair state editor."),
+      bi("แยกกล่องมีปัญหาออกจากชั้นพร้อมยืม มอบหมายผู้ตรวจ/ซ่อม เก็บรหัสกล่อง หมายเหตุและผลตรวจ เมื่อต้องคืนสถานะพร้อมยืมให้ประสานผู้ดูแลผ่านช่องทางที่รองรับ ไม่สร้างรหัสกล่องใหม่เพื่อเลี่ยงประวัติ", "Physically separate problem copies, assign inspection/repair and retain copy code, notes and outcome. Use an administrator-supported path to restore availability; do not create a new copy code to bypass history."),
+      bi("ค่าชดใช้ความเสียหายไม่ถูกคิดหรือหักบัตรค้ำอัตโนมัติ ให้ผู้จัดการตกลงและใช้ขั้นตอนเงินที่ร้านรองรับ ตรวจคลังเป็นรอบด้วยจำนวนจริง เทียบกล่องพร้อมยืม กำลังใช้และรอตรวจ รวมถึงต้นทุนที่ยังไม่ทราบ", "Damage compensation is not charged or deducted from held documents automatically. A manager agrees handling through supported finance procedures. Periodically reconcile physical copies with available, in-use and attention states, including unknown costs."),
+    ],
+    check: bi("กล่องมีปัญหาไม่ปรากฏว่าพร้อมยืม มีคนรับผิดชอบแก้ และไม่มีประวัติยืม/รหัสกล่องถูกสร้างซ้ำเพื่อปิดงาน", "Problem copies are unavailable, remediation has an owner and no duplicate copy/loan is created to conceal unresolved work."),
+    caution: bi("บันทึกคืนแบบมีปัญหาปิดงานยืมได้แต่ยังเหลืองานตรวจกล่อง ไม่ได้แปลว่าเกมซ่อมเสร็จหรือได้รับเงินชดใช้", "A problem return can close the loan while inspection remains open. It proves neither successful repair nor compensation received."),
+  },
+  {
+    slug: "board-game-cancel-errors", title: bi("เปิดผิด ปิดผิด และยกเลิกรอบเล่น", "Wrong sessions, frozen bills & cancellation"),
+    summary: bi("แยกการย้าย แก้เวลา ยกเลิก และคืนเงินให้ตรงสถานะจริง", "Choose movement, time correction, cancellation or refund based on actual state."),
+    category: "recovery", roles: all, tracks: ["board-game"], menu: bi("POS → บอร์ดเกม → งานเพิ่มเติม / POS → ประวัติบิล", "POS → Board games → More actions / POS → Bill history"), action: "/pos",
+    prerequisite: bi("เลข Session/บิล เหตุผล ผู้มีสิทธิ์ และผลรับเงินจริงที่ตรวจแล้ว", "Session/bill reference, reason, an authorized operator and verified payment outcome."),
+    steps: [
+      bi("ผิดเฉพาะโต๊ะให้อ่านบทย้ายโต๊ะ ผิดสินค้าก่อนปิดให้แก้ tab ผิดเวลาที่ Session ยังเปิดให้ผู้มีสิทธิ์แก้เวลา การแก้เรตในตั้งค่าไม่เปลี่ยนเรตที่บันทึกไว้กับผู้เล่นเดิม", "For a wrong table use movement; for pre-close goods use tab correction; for an open-session timing mistake use an authorized time override. Editing configured rates does not replace existing player rate snapshots."),
+      bi("กลุ่ม CLOSING คือปิดเวลาและตรึงยอดแล้ว ไม่ใช่ชำระแล้ว และไม่มีปุ่มเปิดกลับมาแก้กลุ่มทั่วไป หากปิดผิดให้หยุดรับเงิน ตรวจผู้เล่นและกลุ่มอื่นกับผู้จัดการ ไม่สร้างบิลใหม่หักล้างเอง", "CLOSING means frozen, not paid, and there is no general reopen-group editor. For an incorrect close, stop payment and review the party and other groups with a manager; do not create an offsetting bill."),
+      bi("ยกเลิก Session ใช้เฉพาะกรณีไม่เก็บเงินรอบนั้นตามการอนุมัติ ต้องคืนเกมและบัตรทั้งหมด ระบุเหตุผลและตรวจ tab ก่อนกด หากมีแม้หนึ่งกลุ่มจ่ายแล้วจะยกเลิกทั้ง Session ทางนี้ไม่ได้", "Cancel a session only for an approved no-charge visit. Return every game/document, enter a reason and review the tab first. If even one group is already paid, this whole-session cancellation path is refused."),
+      bi("ยกเลิกก่อนชำระปล่อยสต็อกจองและคืนโควตาแพ็กเกจที่หักตอนปิด แต่ไม่ได้ทำให้ของที่กินแล้วกลับมา ต้องให้ผู้จัดการจัดการของใช้จริง/ของเสียและตรวจยอดมัดจำที่อาจค้างแยกต่างหาก", "Unpaid-session cancellation releases reservations and reverses pass quota consumed at close, but cannot restore consumed physical goods. Managers must handle actual consumption/wastage and separately review any remaining reservation deposit."),
+      bi("บิล PAID ให้ใช้ประวัติบิลและกระบวนการ Void/คืนที่รองรับ ตรวจผู้อนุมัติ เอกสารภาษี สินค้ากับค่าเวลา และยอดคืนที่หน้าจอแสดงก่อนยืนยัน อย่าสร้างสินค้าค่าเวลาติดลบหรือเปลี่ยนนาทีเพื่อใช้แทน Refund", "For PAID bills use supported history/void/return workflows. Review approver, tax documents, goods versus time and the displayed refundable amount. Do not use negative time products or altered minutes as refunds."),
+      bi("รายการค้างหลังยืนยันให้เปิดบิลเดิมตรวจและรีเฟรชก่อน ลองซ้ำด้วยรายการเดิมเมื่อระบบรองรับ หากยังไม่ทราบผล ส่ง Support พร้อมเวลา สาขา รุ่นแอป เลขอ้างอิงและข้อความผิดพลาดที่ปิดบังข้อมูลลับแล้ว", "For an uncertain confirmation, refresh and inspect the original bill before retrying its supported recovery action. Escalate unresolved outcomes with time, branch, app version, references and redacted error details."),
+    ],
+    check: bi("เหตุผลตรงการแก้จริง ยอดเงิน สต็อก สิทธิ์และมัดจำตรวจครบ ไม่มี Session ใหม่หรือเงินคืนซ้ำเพื่อกลบปัญหา", "The reason matches the correction, money/stock/entitlements/deposits reconcile and no duplicate visit or refund hides the problem."),
+    caution: bi("ผู้จัดการแก้ข้อมูลและงานตามสิทธิ์ได้; ถ้ายอดไม่ตรง รายการซ้ำ ผลชำระไม่ชัด หรือคืนสถานะผ่านหน้าจอไม่ได้ให้หยุดรายการที่เกี่ยวข้องและติดต่อ Support พร้อมหลักฐาน", "Managers resolve authorized operational mistakes. For inconsistent totals, duplicates, uncertain payment or unsupported state recovery, stop the affected operation and contact support with evidence."),
+  },
+  {
+    slug: "board-game-analytics", title: bi("อ่านรายงานโต๊ะ เกม และกำไรขั้นต้น", "Read table, game & gross-profit reports"),
+    summary: bi("แยกยอดขาย เงินรับ อัตราใช้โต๊ะ และจำนวนยืม พร้อมส่งออกให้บัญชี", "Distinguish sales, cash receipts, utilization and loan counts, then export for accounting."),
+    category: "growth", roles: managers, tracks: ["board-game"], menu: bi("โต๊ะบอร์ดเกม → วิเคราะห์ → เลือกช่วง/สาขา/โซน → โหลดรายงาน", "Board-game tables → Analytics → Date/branch/area → Load report"), action: "/admin/board-game",
+    prerequisite: bi("สิทธิ์รายงาน ขอบเขตสาขา และข้อมูลชั่วโมงเปิดกับต้นทุนที่ตรวจแล้ว", "Report permission, authorized branches and verified opening hours/cost data."),
+    steps: [
+      bi("เลือกวันที่เริ่ม–จบไม่เกิน 92 วันและสาขา ถ้าต้องการโซนให้เลือกสาขาก่อนแล้วโหลดใหม่ ตรวจช่วงข้อมูลและคำเตือนก่อนอ่านตัวเลขหรือส่งออก", "Choose an inclusive date range of at most 92 days and a branch; select a branch before filtering an area, then load. Check scope and quality warnings before reading figures or exporting."),
+      bi("ค่าเล่นก่อนลด ส่วนลดโปร สิทธิ์แพ็กเกจและค่าเล่นสุทธิเป็นคนละยอด รายได้ tab คือสินค้าขาย รายได้แพ็กเกจและมัดจำริบแสดงแยก ไม่บวกซ้ำกับเงินที่ลูกค้ายื่นวันนี้", "Gross play, offer discount, pass coverage and net play are different measures. Tab revenue is merchandise. Pass sales and forfeited deposits are separate and must not be double-counted with cash received today."),
+      bi("ยอดตามโต๊ะกระจายตามเส้นทางที่ลูกค้านั่งจริงก่อน/หลังย้าย ไม่ใช่ยอดเงินสดที่เคาน์เตอร์โต๊ะนั้น รับคืนวันนี้อาจอ้างอิงบิลเก่า จึงไม่เทียบกับจำนวนบิลขายวันนี้อย่างเดียว", "Table revenue follows the party's actual table path across moves; it is not cash collected at that table. Today's returns can refer to older sales, so today's sale count alone will not reconcile them."),
+      bi("อัตราใช้โต๊ะและ Heatmap ต้องมีตารางเปิดที่ครอบคลุมช่วงรายงาน ข้อมูลขาดแสดงไม่ทราบ ไม่ใช่ 0% ความจุใช้โต๊ะและที่นั่งปัจจุบัน จึงอ่านคำเตือนเมื่อเทียบช่วงที่ผังร้านเคยต่างกัน", "Utilization and heatmaps need complete opening schedules. Missing data is unknown, not 0%. Capacity uses current table/seat configuration; heed warnings when comparing periods with different historical layouts."),
+      bi("เกมยอดนิยมวัดจากรายการยืมที่บันทึกและทับช่วงรายงาน ไม่ใช่จำนวนผู้เล่นหรือเกมที่เล่นจบ ระยะเวลายืมไม่ใช่เวลาเล่นจริงที่ตรวจวัด เกมที่ไม่พบการยืมไม่ใช่ข้อพิสูจน์ว่าไม่เคยมีใครเล่น", "Popular games count recorded loans overlapping the period, not players or completed games. Loan duration is not measured active play. No retained loan record is not proof that nobody ever played a game."),
+      bi("กำไรที่แสดงเป็นกำไรขั้นต้นสินค้าตามต้นทุนที่มี ไม่ใช่กำไรสุทธิร้าน ไม่รวมค่าเช่า ค่าแรง หรือค่าเสื่อมกล่อง ถ้าต้นทุนไม่ครบให้ตรวจแหล่งข้อมูล ไม่กรอกศูนย์แทน", "Reported profit is merchandise gross profit based on available costs, not shop net profit; rent, wages and copy depreciation are excluded. Investigate missing costs instead of entering zero."),
+      bi("ส่งออก XLSX หลังโหลดผลล่าสุด ตรวจช่วง สาขา โซนและยอดในไฟล์กับหน้าจอ ส่งบัญชีพร้อมรายงานกะ ยอดมัดจำ/คืนค้าง และนาทีแพ็กเกจคงเหลือ เก็บคำเตือนข้อมูลไม่ครบไปด้วย", "Export XLSX after loading the latest filters. Reconcile file scope/totals with the screen and provide accounting with shift reports, pending deposits/refunds and outstanding pass minutes, including quality warnings."),
+    ],
+    check: bi("อธิบายที่มาของทุกยอดสำคัญได้ ไฟล์ตรงตัวกรอง และไม่มีการเรียกกำไรขั้นต้นว่ากำไรสุทธิ", "Key figures have an explainable basis, exports match filters and gross profit is not presented as net profit."),
+    caution: bi("ข้อมูลก่อนเริ่มเก็บประวัติหรือผลที่ถูกจำกัดจำนวนอาจไม่ครบ สรุปเฉพาะหลักฐานที่มี อย่าขยายอันดับ/เปอร์เซ็นต์ให้เป็นผลทั้งร้านหากรายงานเตือน", "Older pre-tracking data or truncated results may be incomplete. Do not present partial rankings or percentages as complete shop-wide results when warnings apply."),
+  },
+  {
+    slug: "board-game-ai-owner", title: bi("คำถามตัวอย่างสำหรับผู้ช่วย AI ของเจ้าของร้าน", "Owner AI questions & usage help"),
+    summary: bi("ถามข้อมูลจริงและวิธีใช้ระบบ พร้อมรู้ว่าคำตอบใดต้องตรวจต่อ", "Ask for verified operations and guidance, and recognize answers needing follow-up."),
+    category: "growth", roles: managers, tracks: ["board-game"], menu: bi("ผู้ช่วย AI ในหลังบ้าน / ผู้ช่วยใน POS", "Admin AI assistant / POS assistant"), action: "/admin/assistant",
+    prerequisite: bi("เข้าสู่ระบบด้วยสิทธิ์ข้อมูลนั้น และระบุสาขา/วันที่ที่ต้องการ", "Sign in with the relevant permissions and specify branch/date scope."),
+    steps: [
+      bi("เริ่มด้วยบริบท เช่น ‘วันนี้สาขาหลักโต๊ะไหนยังเปิดและใครใกล้หมดเวลา’ ขอรายงานสถานะปัจจุบัน แล้วตรวจรายการในหน้าโต๊ะก่อนให้บริการ เพราะคำตอบเป็นข้อมูล ณ ตอนอ่าน", "Start with context: 'Which tables are open at Main today and which visits are ending soon?' Ask for current operational status, then verify the floor before acting because the answer is a read-time snapshot."),
+      bi("ถาม ‘1–7 ตุลาคม สาขาหลัก เกมไหนถูกยืมมากที่สุด 10 อันดับ’ หรือ ‘โต๊ะไหนมีรายได้ตามรายงานสูงสุด’ ให้คำตอบบอกช่วง สาขา หน่วยและข้อมูลไม่ครบ รายงานย้อนหลังของผู้ช่วยรองรับช่วงไม่เกิน 92 วันต่อคำขอ", "Ask 'Top 10 borrowed games at Main for October 1–7' or 'Which tables have the highest attributed report revenue?' Require period, branch, units and caveats. Historical assistant reports accept at most 92 days per request."),
+      bi("ถาม ‘นาทีแพ็กเกจค้างอยู่เท่าไรและจะหมดใน 30 วันเท่าไร’ ‘กล่องไหนรอตรวจ’ ‘โปรไหนถูกใช้บ่อย’ หรือ ‘ช่วงวัน/ชั่วโมงไหนใช้โต๊ะมาก’ แยกยอดสิทธิ์ร่วมทุกสาขาออกจากสิทธิ์เฉพาะสาขาก่อนรวม", "Ask 'How many pass minutes remain and expire within 30 days?', 'Which copies need attention?', 'Which offers were used?' or 'Which weekdays/hours had high utilization?' Keep shared all-branch entitlements separate before adding branch balances."),
+      bi("‘น้ำหรือขนมอะไรขายดี’ เป็นรายงานสินค้า ไม่ใช่อันดับยืมเกม; ‘กำไรสินค้าใน tab เท่าไร’ ต้องมีสิทธิ์ต้นทุนเพิ่มเติม ถ้าข้อมูลขาดหรือไม่มีสิทธิ์ให้เปิดหน้าที่เกี่ยวข้องผ่านบัญชีที่รับผิดชอบ ไม่ใช้ตัวเลขคาดเดาแทน", "Best-selling drinks/snacks are product sales, not game-loan rankings. Tab merchandise gross profit requires additional cost access. Missing data or permission should lead to an authorized report review, not guessed figures."),
+      bi("ถามวิธีใช้ เช่น ‘เปิดโต๊ะสองบิลทำอย่างไร’ ‘ทำไมปิดกลุ่มสุดท้ายไม่ได้’ ‘QR เรียกพนักงานอยู่ตรงไหน’ ผู้ช่วยให้แนวทางเมนูได้ แต่ไม่จำเป็นต้องอ่านคู่มือสาธารณะทุกบทแบบคำต่อคำ ถ้าไม่มีคำตอบให้ค้นศูนย์เรียนรู้หรือส่ง Support", "Ask 'How do I open a party with two bills?', 'Why can I not close the last group?' or 'Where is service QR?' The assistant can provide menu guidance but is not guaranteed to retrieve every public lesson verbatim. Use learning-center search/support when guidance is unavailable."),
+      bi("คำถาม ‘ควรซื้อเกมเพิ่มกี่กล่อง’ ‘โปรนี้ทำให้กำไรเพิ่มแน่นอนไหม’ หรือ ‘กำไรสุทธิร้านเท่าไร’ ต้องมีข้อมูลและการตัดสินใจเพิ่มเติม ใช้ AI ช่วยอ่านหลักฐาน ไม่ให้คำแนะนำกลายเป็นการซื้อหรือเปลี่ยนราคาอัตโนมัติ", "Questions such as 'How many copies should I buy?', 'Did this offer definitely increase profit?' or 'What is shop net profit?' need additional evidence and human judgment. Reading evidence must not become an automatic purchase or price change."),
+      bi("ก่อนยืนยันคำสั่งเปลี่ยนข้อมูลหรือส่งรายงาน ให้ตรวจผู้รับ ขอบเขตและรายการที่เสนอ หากไม่มีเครื่องมือรองรับ ให้ทำที่เมนูจริงและตรวจผล ไม่ถือว่าข้อความตอบว่าได้แล้วคือหลักฐานสำเร็จ", "Before confirming a mutation or report send, inspect recipients, scope and proposed action. If no supported tool exists, use the actual screen and verify the result; conversational wording alone is not success evidence."),
+    ],
+    check: bi("คำตอบระบุช่วงและสาขา แยกไม่ทราบจากศูนย์ และตรวจย้อนกลับกับเมนูจริงได้", "Answers specify period/scope, distinguish unknown from zero and can be checked against the actual screen."),
+    caution: bi("ผู้ช่วยเจ้าของร้านใช้ข้อมูลตามสิทธิ์และแยกจาก AI ลูกค้าใน LINE ผู้เข้าศูนย์เรียนรู้สาธารณะไม่มีสิทธิ์ถามยอดร้าน และ AI ไม่เห็นเลขบัตรค้ำเพียงเพราะเป็นผู้ช่วย", "Owner assistance is permission-scoped and separate from customer LINE AI. Public learning visitors cannot query shop figures, and assistant status does not grant access to held-document numbers."),
+  },
+  {
+    slug: "board-game-rehearsal", title: bi("แบบฝึกก่อนเปิดจริงสำหรับทีมบอร์ดเกม", "Board-game launch rehearsal scenarios"),
+    summary: bi("สถานการณ์และผลที่ควรเห็นสำหรับเวลา บิล แพ็กเกจ จอง และอุปกรณ์", "Scenarios and expected outcomes for timing, bills, passes, bookings and equipment."),
+    category: "recovery", roles: managers, tracks: ["board-game"], menu: bi("ร้านทดสอบ → POS / โต๊ะบอร์ดเกม / รายงาน", "Test shop → POS / Board-game tables / Reports"), action: "/admin/pos-readiness",
+    prerequisite: bi("ข้อมูลสมมติ โต๊ะ A/B สมาชิกทดสอบ และผู้จัดการจดผลจริงแต่ละข้อ", "Fictional data, tables A/B, test members and a manager recording observed results."),
+    steps: [
+      bi("เวลา: เรต 60 บาท/ชั่วโมง ขั้นต่ำ 60 ปัด 30 ผ่อนผัน 5 ทดลอง 4/65/66 นาที ต้องได้ค่าเวลาก่อนภาษี/สิทธิ์ 60/60/90 บาท ทดลองซื้อ 120 กลับ 90 และเกินเป็น 150 นาที ตรวจเวลาที่คิดจริง", "Timing: THB 60/hour, minimum 60, rounding 30, grace 5; 4/65/66-minute tests should yield 60/60/90 before tax/benefits. Test a 120-minute purchase with 90-minute departure and 150-minute overrun, checking charged-through time."),
+      bi("บิล: เปิด 4 คนสองกลุ่ม ใส่น้ำคนละกลุ่ม ปิดและจ่ายกลุ่มแรก อีกกลุ่มยัง OPEN โต๊ะยังไม่ว่างและเพิ่มคนได้ แต่กลุ่มปิดแล้วเพิ่มไม่ได้ คืนเกม/บัตรแล้วปิดและจ่ายกลุ่มสุดท้าย", "Bills: open four people in two groups, add drinks to each, close/pay the first. The other stays OPEN and can add players; the frozen group cannot. The table stays occupied. Return games/documents and settle the last group."),
+      bi("ผัง: ย้ายไปโต๊ะว่าง รวมกับโต๊ะมีคน และแยกกลุ่มไปโต๊ะใหม่ ตรวจเวลาคงเดิม บิลไม่รวมเองและเกม/บัตรตามที่เลือก ทดลองเกินที่นั่งต้องมีการทวนและยืนยัน ไม่หลุดผ่านเงียบ ๆ", "Floor: move to a free table, merge onto an occupied one and detach a group. Verify unchanged clocks, separate bills and explicitly selected loans/holds. Over-capacity seating must require review/confirmation."),
+      bi("สิทธิ์: สมาชิกเหลือ 60 นาทีเล่น 90 ต้องเหลือค่าเวลา 30 บาทที่เรต 60; แพ็กเกจครอบหมดและไม่มีสินค้าให้ปิดยอดศูนย์โดยไม่มีเงินรับปลอม ทดสอบผิดสาขา หมดอายุ และโปรที่คุ้มกว่าโดยนาทีไม่ถูกหักซ้ำ", "Entitlements: 60 remaining minutes against 90 minutes at THB 60/hour leaves THB 30. Fully covered time with no goods settles at zero without fabricated tender. Test wrong branch, expiry and a better offer preserving quota."),
+      bi("จอง: ส่งคำขอเว็บแล้วร้านอนุมัติ ส่งสลิปแล้วต้องยังรอตรวจ ก่อนรับเงินจริงจึงยืนยันมัดจำ ทดสอบเช็กอิน พาไปนั่งและหักมัดจำอีกครั้งใน POS ตรวจช่วงจองชนกัน การหมดอายุ No-show และเงินคืนค้าง", "Bookings: submit/review a website request; slip submission must await payment verification. Test confirmation, check-in, seating and deposit application at POS, plus conflicting windows, expiry, no-show and pending refunds."),
+      bi("แชต/QR: ทดสอบยืนยันตามสรุปล่าสุด แก้ข้อมูลแล้วสรุปใหม่ สาขามีมัดจำต้องไม่รับจอง CHAT อัตโนมัติ ขอเพิ่มเวลาผ่าน QR ต้องเป็นเพียงคำขอบริการจนพนักงานเปลี่ยนจริง", "Chat/QR: confirm only the latest summary, require a new summary after edits and reject CHAT automation on deposit branches. A QR time-extension request must remain a service call until staff actually changes timing."),
+      bi("อุปกรณ์/สิทธิ์: ทดลอง PIN แต่ละบทบาท จอลูกค้า พิมพ์ภาษาไทย/QR พิมพ์ซ้ำ อุปกรณ์หลุดและผลชำระไม่ชัด ตรวจบิลเดิมก่อนลองใหม่ โดยไม่รับเงินซ้ำหรือใช้ Offline กับบอร์ดเกม", "Hardware/access: test each role's PIN, customer display, Thai/QR print, reprints, disconnection and uncertain payment. Inspect the original bill before retrying without duplicate collection or board-game offline use."),
+      bi("ข้ามวัน/ส่งมอบ: ซ้อมก่อนและหลัง 04:00 ส่ง Session ค้างให้กะถัดไป ตรวจเงินสด รายการคืนค้าง เกม/บัตร และแพ็กเกจกับรายงาน เก็บผลคาดหวัง ผลจริง เลขอ้างอิง ผู้ทดสอบและผู้แก้ข้อที่ไม่ผ่านก่อน Soft Opening", "Overnight/handoff: rehearse both sides of 04:00, hand over open visits, reconcile cash, pending refunds, games/documents and passes with reports. Record expected/actual results, references, tester and remediation owner before a soft opening."),
+    ],
+    check: bi("ทุกกรณีสำคัญมีหลักฐานผลจริง ผู้จัดการอนุมัติความพร้อม และข้อผิดพลาดมีผู้รับผิดชอบแก้ก่อนเปิดเต็ม", "Critical scenarios have observed evidence, manager readiness approval and resolved issues before full launch."),
+    caution: bi("ทำในร้านทดสอบก่อน บทนี้เป็นแผนทดสอบ ไม่ใช่การรับรองว่าเครื่องพิมพ์ เครือข่าย อีเมล LINE หรือเงินโอนของร้านผ่านแล้ว", "Rehearse in a test shop first. This is a test plan, not certification that your printers, network, email, LINE or bank transfers have been verified."),
+  },
+];
+
+export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
+  "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
+  restaurant: { title: bi("ร้านอาหาร", "Restaurant"), description: bi("ตั้งเมนู ผังโต๊ะ ครัว และบริการตั้งแต่รับออร์เดอร์จนปิดบิล", "Configure menus, tables and kitchen service through final checkout."), icon: "🍽" },
+};
+
+export const trackOrder: Record<TrackId, string[]> = {
+  "board-game": [
+    "start-here", "branches-hours", "board-game-hours", "staff-permissions", "board-game-permissions",
+    "products-import", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr",
+    "board-game-tables", "board-game-rates", "board-game-offers", "board-game-library", "board-game-public",
+    "shifts", "board-game-waitlist", "board-game-reservations", "board-game-deposits", "board-game-service",
+    "board-game-tab", "board-game-service-qr", "board-game-collateral", "board-game-move-split", "board-game-checkout", "inventory",
+    "members-coupons", "board-game-passes", "board-game-renewals", "balances-privacy", "line-ai-booking",
+    "board-game-analytics", "board-game-ai-owner", "reports-ai", "board-game-game-issues",
+    "board-game-cancel-errors", "returns-recovery", "outages-support", "board-game-rehearsal", "launch-checklist",
+  ],
+  restaurant: ["start-here", "branches-hours", "staff-permissions", "products-import", "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "restaurant-menu", "restaurant-floor", "members-coupons", "balances-privacy", "shifts", "restaurant-service", "restaurant-online", "returns-recovery", "reports-ai", "outages-support", "launch-checklist"],
+};
+
+export function getLesson(slug: string) { return lessons.find((lesson) => lesson.slug === slug); }
+export function getTrackLessons(track: TrackId) {
+  const categories = Object.keys(categoryLabels);
+  return trackOrder[track].map((slug) => getLesson(slug)!)
+    .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
+}
+export function isTrack(value: string): value is TrackId { return value === "board-game" || value === "restaurant"; }
+export function searchLessons(query: string, lang: "th" | "en", track?: TrackId, role?: Role) {
+  const words = query.normalize("NFKC").toLocaleLowerCase().trim().split(/\s+/).filter(Boolean).slice(0, 20);
+  return lessons.filter((lesson) => (!track || lesson.tracks.includes(track)) && (!role || lesson.roles.includes(role)))
+    .map((lesson) => {
+      const title = localize(lesson.title, lang).toLocaleLowerCase();
+      const body = [lesson.title, lesson.summary, lesson.menu, lesson.prerequisite, ...lesson.steps, lesson.check, lesson.caution]
+        .map((text) => `${text.th} ${text.en}`).join(" ").normalize("NFKC").toLocaleLowerCase();
+      return { lesson, score: words.reduce((score, word) => score + (title.includes(word) ? 5 : body.includes(word) ? 1 : 0), 0) };
+    }).filter(({ score }) => words.length === 0 || score > 0)
+    .sort((a, b) => b.score - a.score).map(({ lesson }) => lesson);
+}

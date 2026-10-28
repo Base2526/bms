@@ -66,6 +66,7 @@ const COPY = {
     retailLocal: "Retail Local",
     restaurant: "ร้านอาหารและคาเฟ่",
     resources: "เรียนรู้และช่วยเหลือ",
+    learn: "ศูนย์เรียนรู้และคู่มือ",
     help: "ศูนย์ช่วยเหลือ",
     roadmap: "Roadmap",
     support: "ติดต่อทีมงาน",
@@ -102,6 +103,7 @@ const COPY = {
     retailLocal: "Retail Local",
     restaurant: "Restaurants and cafes",
     resources: "Learn and support",
+    learn: "Learning center & guides",
     help: "Help center",
     roadmap: "Roadmap",
     support: "Contact support",
@@ -165,6 +167,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
   ];
 
   const resourceLinks = [
+    { href: "/learn", label: t.learn, icon: <BookOutlined /> },
     { href: "/help", label: t.help, icon: <QuestionCircleOutlined /> },
     { href: "/roadmap", label: t.roadmap, icon: <ApiOutlined /> },
     { href: "/support", label: t.support, icon: <CustomerServiceOutlined /> },

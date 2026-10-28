@@ -909,6 +909,7 @@ const en = {
     shop_email_taken: "This email already has an account. Please log in or reset your password.",
   },
   header: {
+    learningCenter: "Learning center",
     title: "BMS",
 
     subtitle: "AI-powered store management",

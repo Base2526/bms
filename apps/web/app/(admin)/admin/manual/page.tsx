@@ -1338,9 +1338,12 @@ const TH: ManualContent = {
         "ที่คลังเกม กดรูปภาพเพื่ออัปโหลดรูปเกมสาธารณะ (PNG/JPG/WebP ไม่เกิน 5MB) และกด QR เพื่อเลือกพิมพ์ป้ายรหัสกล่อง เครื่องสแกน QR ต้องเป็นแบบ 2D; ที่ POS สแกนในช่องยืมหรือคืนเพื่อเลือกกล่อง แล้วกดยืนยันอีกครั้ง รูปและป้ายไม่เปลี่ยนสต็อกหรือค่าเวลา",
         "ที่ Desktop POS กดไอคอนข้อมูลบนสินค้า หรือพิมพ์รหัสในช่องสแกนแล้วกดไอคอนข้อมูล เพื่อดูรูป บาร์โค้ด ขนาดและราคาโดยไม่เพิ่มสินค้าเข้าบิล การสแกนขายตามปกติยังเพิ่มสินค้าเหมือนเดิม",
         "แตะโต๊ะว่าง เลือกไม่กำหนดเวลา หรือกำหนดจำนวนนาที ตั้งเวลาแจ้งล่วงหน้า แล้วเพิ่มผู้ร่วมโต๊ะพร้อมเรตและหมายเลขกลุ่มบิล; เรต MEMBER ต้องเลือกสมาชิก CRM ที่มีอยู่จริง",
-        "ระหว่างเล่นดูเวลาที่ผ่านไป สถานะใกล้ครบ/เกินเวลา และ popup แจ้งเตือน เพิ่มคนที่มาทีหลังหรือกดออกเพื่อหยุดเวลาของคนนั้น แล้วบันทึกเกมที่นำไปเล่นและรับคืนทุกกล่อง",
-        "เมื่อจบให้กด หยุดเวลาและคิดราคา; server จะคำนวณจากเวลาเข้าออก ขั้นต่ำ การปัด และ grace ที่ snapshot ไว้ พร้อมรวมค่าเล่นตามกลุ่มบิลโดยไม่เชื่อราคาจากหน้าจอ",
-        "กด ไปเก็บเงินที่ POS เพื่อสร้างบิลผ่าน order/payment เดิม กลุ่มค่าเล่นจะแยกเป็นบรรทัดในบิลเดียว สามารถเพิ่มสินค้าที่ขายจริงและใช้จ่ายผสมได้ แล้วจึงพิมพ์ใบเสร็จหรือทำ return/void ตามกฎ POS",
+        "ระหว่างเล่นดูเวลาและแจ้งเตือน เพิ่มคนที่มาทีหลังหรือกดออกเพื่อบันทึกเวลาออก; ผู้ซื้อระยะเวลาล่วงหน้ายังคิดถึงเวลาที่ซื้อแม้ออกก่อน และเกินเวลาแล้วยังคิดต่อ การแจ้งเตือนไม่ปิดบิลเอง บันทึกยืม/คืนเกมให้ตรงของจริง",
+        "ก่อนกด หยุดเวลาและคิดราคา เลือกกลุ่มผู้จ่ายให้ถูก; กลุ่มสุดท้ายต้องคืนเกมและบัตรค้ำครบ ระบบหัก grace ปัดเวลาแล้วเทียบขั้นต่ำ ดังนั้น grace ไม่ทำให้ฟรีเสมอ ยอดตรึงตามกลุ่มบิล และกลุ่มอื่นที่ยัง OPEN เล่นต่อได้",
+        "กด ไปเก็บเงินที่ POS สำหรับกลุ่มที่ปิดแล้ว แต่ละกลุ่มชำระและมีใบเสร็จของตนเอง ตรวจค่าเวลา สินค้า โปร/แพ็กเกจและมัดจำก่อนรับเงิน รองรับจ่ายผสมและยอดศูนย์จริงโดยไม่สร้างเงินรับปลอม โต๊ะยังไม่ว่างจนทุกกลุ่มจบ",
+        "กำหนดกลุ่มให้ผู้เล่นตั้งแต่เพิ่มเข้ารอบ ไม่ใช่ปุ่มย้ายผู้เล่นที่มีอยู่ไปแยกบิลได้ทุกสถานะ รวมบิลได้เฉพาะกลุ่ม OPEN ใน Session เดียวกัน; แยกกลุ่มไปโต๊ะใหม่ต้องเลือกเกม/บัตรที่ตามไปและเหลือกลุ่มที่ยังใช้งานที่ต้นทาง",
+        "วันให้บริการคิวตัด 04:00 ตาม Timezone ร้านที่ Settings; ตารางเปิดใน Analytics ใช้คำนวณการใช้โต๊ะ ไม่ปิดรับจองตามเวลาโดยอัตโนมัติ คำขอเว็บต้องให้ร้านจัดโต๊ะและอนุมัติ ส่วน CHAT ยืนยันอัตโนมัติได้เฉพาะสาขาเปิดนโยบายและไม่มีมัดจำ",
+        "ขายแพ็กเกจในหลังบ้านออกสิทธิ์และบันทึกราคา แต่ยังไม่มีขั้นรับเงิน/ใบเสร็จ POS ในฟอร์มนั้น ต้องตรวจหลักฐานเงินแยก การต่ออายุอัตโนมัติใช้ Store Credit ลูกค้าคนเดียวกัน; ยกเลิกสิทธิ์ไม่โอนคืนเงินอัตโนมัติ",
         "ที่แท็บ วิเคราะห์ เลือกช่วงไม่เกิน 92 วันและสาขา ตั้งเวลาเปิดแบบมีผลตั้งแต่วันที่ก่อนออกรายงาน แล้วตรวจอัตราใช้โต๊ะ RevPATH รายได้ค่าเล่น/สินค้า คิว แพ็กเกจ และคลังเกม; ช่องต้นทุนเป็น — เมื่อหลักฐานหรือสิทธิ์ไม่ครบ และส่งออกได้เฉพาะ XLSX",
         "ผู้ช่วยพนักงานตอบเกมที่ถูกเล่นมากสุดและยอดขายแยกตามโต๊ะจากรายงานจริงได้เมื่อมี report.view: ระบุช่วงวันและสาขา เกมนับครั้งยืม ส่วนยอดโต๊ะปันตามประวัติใช้โต๊ะ ไม่ใช่เงินสดรับหรือกำไรสุทธิ และต้องอ่านคำเตือนข้อมูลไม่ครบ",
         "ถามสรุปรอบ/ผู้เข้าร่วม ช่วงใช้โต๊ะ คิว/no-show โปร และแพ็กเกจที่ขาย/ใช้ได้ไม่เกิน 92 วัน; กำไรขั้นต้นสินค้าไม่รวม VAT ต้องมี product.view และ tax.document.view เพิ่ม ไม่มีต้นทุนต้องตอบว่าไม่ทราบ ไม่ใช่ศูนย์",
@@ -2621,9 +2624,12 @@ const EN: ManualContent = {
         "In the library, use the image button for public game artwork (PNG/JPG/WebP, up to 5MB), or QR to select and print copy labels. QR needs a 2D scanner. At POS, scan in the loan or return field to select a copy, then explicitly confirm. Images and labels do not change stock or time charges.",
         "In Desktop POS, use a product's info icon or enter a code and click the scan field's info icon to inspect its image, barcode, size and price without adding it to the bill. Normal sale scans still add items directly.",
         "Tap an available table, choose open-ended or fixed duration, set the advance alert, and add participants with rates and billing-group numbers. A MEMBER rate must link to an existing CRM member.",
-        "While guests play, watch elapsed time, ending-soon/overdue state, and alert popups. Add late arrivals or mark a participant as left to stop that person's time, and check every play copy out and back in.",
-        "Press Stop time and calculate. The server prices the frozen participant snapshot from join/leave times, minimums, rounding, and grace, then totals the play charge by billing group.",
-        "Press Go to POS to create the sale through the existing order/payment engine. Billing groups become separate time-charge lines on one receipt; sellable goods can be added and split tender remains available before printing or later return/void handling.",
+        "Watch time and alerts, add late arrivals and record departures. Purchased durations still charge through their planned end even for early departure, and overruns keep accruing. Alerts do not close bills. Record actual game loans/returns.",
+        "Before Stop time and calculate, select the paying group; the last group requires all games/documents returned. The server deducts grace, rounds, then applies the minimum, so grace does not always mean free play. Charges freeze per group while other OPEN groups continue.",
+        "Press Go to POS for the closed group. Each group settles with its own receipt. Review time, merchandise, offer/pass benefit and deposits before tender. Split tender and genuine zero-due settlement are supported without invented payment. The table remains occupied until all groups finish.",
+        "Assign groups when adding participants; there is no general participant reassignment button for every bill state. Merge only OPEN groups within one session. Detaching a group to a new table requires explicit loans/documents and another live source group.",
+        "Queue service days roll at 04:00 in the store timezone configured in Settings. Analytics opening hours do not automatically restrict bookings. Website requests need staff allocation/approval; CHAT auto-confirmation requires an enabled no-deposit branch.",
+        "The back-office Sell pass form issues entitlement and records price but has no POS tender/receipt step. Verify payment evidence separately. Automatic renewal uses the same customer's store credit; cancelling entitlement does not automatically refund money.",
         "On Analytics, choose at most 92 days and a branch, configure effective-dated opening hours, then review utilization, RevPATH, play/product revenue, queue, pass, and library signals. Cost is — when evidence or access is incomplete; export is XLSX only.",
         "Staff with report.view can ask the assistant for most-played games or revenue by table with dates and branch. Games count recorded loans; table money is attributed over historical occupancy, not cash receipts or net profit. Read incomplete-data warnings.",
         "Ask for sessions/participant entries, hourly utilization, queue/no-shows, offers and pass sales/use for up to 92 days. Product ex-VAT gross profit additionally requires product.view and tax.document.view; missing cost is unknown, never zero.",
@@ -3211,6 +3217,13 @@ export default function Page() {
 
   return (
     <div className={styles.page}>
+      <Alert
+        type="info"
+        showIcon
+        closable
+        message={<Link href="/learn">{lang === "en" ? "Public learning center — board-game and restaurant setup guides" : "ศูนย์เรียนรู้สาธารณะ — คู่มือตั้งร้านบอร์ดเกมและร้านอาหาร"}</Link>}
+        description={lang === "en" ? "Step-by-step lessons, reading checklists and troubleshooting. Share with your team before their first shift." : "บทเรียนทีละขั้น Checklist การอ่าน และวิธีแก้ปัญหา แชร์ให้พนักงานเรียนรู้ก่อนเริ่มกะแรกได้"}
+      />
       <div id="hero" className={styles.heroWrap}>
         <Card className={styles.hero}>
           <Space direction="vertical" size={14} style={{ width: "100%" }}>
