@@ -1,0 +1,16 @@
+BMS inventory learning guide - generated Thai narration
+
+These MP3 files are synthetic narration of authored public guide text, generated
+with FastThaiG2P, Thai Kokoro-82M and voice thai_som, the same voice used by the
+Restaurant guide. They do not represent an endorsement by the model authors.
+
+Engine: https://github.com/awslabs/FastThaiG2P
+Source revision: 4e82a291b4cf2876326744c6580121e9986ad354
+Model release: https://github.com/awslabs/FastThaiG2P/releases/tag/v0.3.0
+Copyright 2026 Charin Polpanumas and Amazon Web Services.
+Apache License 2.0: ../../restaurant/th/LICENSE-FastThaiG2P.txt
+Base model: https://huggingface.co/hexgrad/Kokoro-82M (Apache-2.0).
+
+Model weights and inference libraries are offline build dependencies only.
+provenance.json records spoken text, duration and SHA-256 for each clip.
+Regeneration instructions: scripts/README.md.

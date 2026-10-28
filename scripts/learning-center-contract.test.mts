@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { businessTrackIds, getTrackLessons, isRestaurantFormat, isRetailFormat, isTrack, lessons, searchLessons, specialistTrackIds, trackOrder } from "../apps/web/lib/learning/catalog.ts";
+import { inventoryNarrationCues } from "../apps/web/lib/learning/inventoryNarration.ts";
+import { businessGuideFlows, businessNarrationCues, type BusinessTrackId } from "../apps/web/lib/learning/businessGuideFlow.ts";
 
 test("public learning paths resolve unique bilingual lessons and real action destinations", () => {
   assert.equal(new Set(lessons.map((lesson) => lesson.slug)).size, lessons.length);
@@ -35,7 +38,7 @@ test("inventory is a cross-business specialist guide with the complete controlle
     "inventory-overview", "products-import", "inventory-catalog-models", "inventory-branch-balances",
     "inventory", "inventory-purchase-receiving", "inventory-requisitions", "inventory-transfer-control",
     "inventory-count-control", "inventory-reservations", "inventory-lots-quality", "inventory-wastage",
-    "inventory-reports-recovery", "inventory-rehearsal",
+    "inventory-ai-assistant", "inventory-reports-recovery", "inventory-rehearsal",
   ]) assert.ok(slugs.includes(required), `Inventory guide is missing ${required}`);
   const inventoryText = path.flatMap((lesson) => [lesson.title, lesson.summary, ...lesson.steps, lesson.check, lesson.caution])
     .map((copy) => `${copy.th} ${copy.en}`).join(" ");
@@ -44,7 +47,69 @@ test("inventory is a cross-business specialist guide with the complete controlle
   assert.match(inventoryText, /reserved|ยอดจอง/);
   assert.match(inventoryText, /quarantine|กักกัน/);
   assert.match(inventoryText, /unknown|ไม่ทราบ/);
+  assert.match(inventoryText, /Excel.*CSV.*PDF|Excel, CSV or PDF/);
+  assert.match(inventoryText, /human.*confirm|คน.*ยืนยัน/);
   assert.equal(isTrack("inventory"), true);
+});
+
+test("inventory Thai narration ships one verified recording for every highlighted cue", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../apps/web/app/learn/inventoryThaiAudio.json", import.meta.url), "utf8"));
+  const provenance = JSON.parse(readFileSync(new URL("../apps/web/public/audio/inventory/th/provenance.json", import.meta.url), "utf8"));
+  const texts = inventoryNarrationCues.th.map((cue) => cue.text);
+  assert.deepEqual(Object.keys(manifest), texts);
+  assert.deepEqual(inventoryNarrationCues.th.map((cue) => cue.target), [
+    "product", "receiving", "sellable", "reservation", "handoff", "deduction",
+    "transfer", "transit", "outcome", "snapshot", "physical-count", "approve-delta", "adjust-delta",
+    "customer", "owner",
+  ]);
+  assert.match(inventoryNarrationCues.th.at(-1)?.text ?? "", /แอดมิน.*ยอดขาย.*สต็อก.*ส่งออกรายงาน.*ยืนยัน/);
+  for (const text of texts) {
+    const id = createHash("sha256").update(text).digest("hex").slice(0, 24);
+    const recording = manifest[text];
+    assert.equal(recording.file, `/audio/inventory/th/${id}.mp3`);
+    assert.ok(recording.duration > 0.2 && recording.duration < 90);
+    const file = new URL(`../apps/web/public${recording.file}`, import.meta.url);
+    assert.ok(statSync(file).size > 1000);
+    assert.equal(createHash("sha256").update(readFileSync(file)).digest("hex"), provenance[id].sha256);
+  }
+});
+
+test("all four business overviews ship bilingual flows and verified Thai narration", () => {
+  const manifest = JSON.parse(readFileSync(new URL("../apps/web/app/learn/businessThaiAudio.json", import.meta.url), "utf8"));
+  const provenance = JSON.parse(readFileSync(new URL("../apps/web/public/audio/learning-business/th/provenance.json", import.meta.url), "utf8"));
+  assert.deepEqual(Object.keys(businessGuideFlows), businessTrackIds);
+  for (const track of businessTrackIds as readonly BusinessTrackId[]) {
+    const config = businessGuideFlows[track];
+    assert.ok(config.lanes.length >= 2, `${track}: missing flow branches`);
+    const targets = config.lanes.flatMap((lane) => lane.map((node) => node.target));
+    assert.equal(new Set(targets).size, targets.length, `${track}: duplicate flow target`);
+    assert.ok(targets.includes(config.customer.focusTarget));
+    assert.ok(targets.includes(config.owner.focusTarget));
+    assert.ok(config.owner.analyses.th.length >= 4 && config.owner.analyses.en.length >= 4, `${track}: incomplete Admin analysis examples`);
+    for (const node of config.lanes.flat()) {
+      for (const lang of ["th", "en"] as const) {
+        assert.ok(node.title[lang].trim() && node.description[lang].trim() && node.narration[lang].trim());
+      }
+    }
+    for (const { text } of businessNarrationCues(track, "th")) {
+      const id = createHash("sha256").update(`${track}\0${text}`).digest("hex").slice(0, 24);
+      const recording = manifest[text];
+      assert.equal(recording.file, `/audio/learning-business/th/${id}.mp3`);
+      assert.ok(recording.duration > 0.2 && recording.duration < 90);
+      const file = new URL(`../apps/web/public${recording.file}`, import.meta.url);
+      assert.ok(statSync(file).size > 1000);
+      assert.equal(createHash("sha256").update(readFileSync(file)).digest("hex"), provenance[id].sha256);
+      assert.equal(provenance[id].track, track);
+    }
+  }
+  assert.match(businessGuideFlows.pharmacy.flowNote.th, /AI ไม่วินิจฉัย/);
+  assert.match(businessGuideFlows["board-game"].flowNote.th, /กลุ่มบิลเป็นเจ้าของเงิน/);
+  assert.match(businessGuideFlows.restaurant.flowNote.th, /การชำระเงินไม่สร้างงานครัว/);
+  assert.match(businessGuideFlows.retail.owner.limit.th, /ปรับสต็อก.*ยืนยัน/);
+  assert.match(businessNarrationCues("retail", "th").at(-1)?.text ?? "", /แอดมิน.*ยอดขาย.*โปรโมชัน.*ส่งออกรายงาน.*ยืนยัน/);
+  assert.match(businessNarrationCues("board-game", "th").at(-1)?.text ?? "", /แอดมิน.*รายได้ต่อโต๊ะ.*โนโชว์.*ส่งออกรายงาน.*ยืนยัน/);
+  assert.match(businessNarrationCues("restaurant", "th").at(-1)?.text ?? "", /แอดมิน.*ยอดเฉลี่ยต่อบิล.*ฟู้ดคอสต์.*คอขวด.*ส่งออกรายงาน.*ยืนยัน/);
+  assert.match(businessNarrationCues("pharmacy", "th").at(-1)?.text ?? "", /แอดมิน.*วันหมดอายุ.*คิวที่รอเภสัชกร.*ไม่วินิจฉัย.*เภสัชกรที่มีใบอนุญาต/);
 });
 
 test("restaurant and cafe guide filters Restaurant POS formats without treating an ordinary counter cafe as a kitchen workflow", () => {

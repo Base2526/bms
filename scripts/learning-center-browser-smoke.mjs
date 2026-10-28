@@ -35,6 +35,33 @@ try {
         if (width !== 320) await page.screenshot({ path: join(output, `${lang}-${width}-${path.replaceAll("/", "-")}.png`), fullPage: false });
       }
     }
+    // Every business flow and the specialist inventory flow share the same focused full-screen
+    // viewer. It must preserve the current cue, support zoom/navigation and restore trigger focus.
+    for (const track of ["retail", "board-game", "restaurant", "pharmacy", "inventory"]) {
+      await page.setViewportSize({ width: 1440, height: 950 });
+      await page.goto(`${baseURL}/learn/${track}`, { waitUntil: "networkidle" });
+      const fullscreenName = lang === "th" ? "ดู Flow เต็มจอ" : "View flow full screen";
+      const trigger = page.getByRole("button", { name: fullscreenName });
+      await trigger.click();
+      const dialog = page.getByRole("dialog");
+      await dialog.waitFor();
+      assert.equal(await dialog.locator("[data-flow-active=true]").count(), 1, `${track}: active full-screen cue`);
+      await dialog.getByRole("button", { name: lang === "th" ? "ซูมเข้า" : "Zoom in" }).click();
+      assert.equal(await dialog.locator("output").innerText(), "125%");
+      await dialog.getByRole("button", { name: lang === "th" ? /ถัดไป/ : /Next/ }).click();
+      assert.equal(await dialog.locator("[data-flow-active=true]").count(), 1, `${track}: next cue focus`);
+      await page.keyboard.press("Escape");
+      assert.equal(await dialog.count(), 0, `${track}: escape closes full-screen flow`);
+      assert.equal(await trigger.evaluate((element) => element === document.activeElement), true, `${track}: focus returns to trigger`);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await trigger.click();
+      const mobileDialog = page.getByRole("dialog");
+      await mobileDialog.waitFor();
+      const dimensions = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, width: innerWidth }));
+      assert.ok(dimensions.scroll <= dimensions.width + 1, `${track}: full-screen mobile overflow`);
+      await page.screenshot({ path: join(output, `${lang}-fullscreen-${track}.png`), fullPage: false });
+      await mobileDialog.getByRole("button", { name: lang === "th" ? "ออกจากโหมดเต็มจอ" : "Exit full screen" }).click();
+    }
     // Follow the actual contents page: every board-game article must render in both languages,
     // including all numbered steps, without clipping at the narrowest supported width.
     await page.goto(`${baseURL}/learn/board-game`);
