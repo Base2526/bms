@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
-import { categoryLabels, localize, tracks, type Lesson, type TrackId } from "@/lib/learning/catalog";
+import { categoryLabels, localize, tracks, type Lesson, type TrackFormat, type TrackId } from "@/lib/learning/catalog";
 import s from "./learning.module.css";
 
 export function learningLang(): "th" | "en" { return cookies().get("lang")?.value === "en" ? "en" : "th"; }
@@ -22,8 +22,8 @@ export function Sidebar({ lang, track }: { lang: "th" | "en"; track?: TrackId })
     <Link href="/learn/guides/launch-checklist">{lang === "th" ? "Checklist ก่อนเปิดจริง" : "Launch checklist"}</Link>
   </nav>;
 }
-export function LessonCard({ lesson, lang, track }: { lesson: Lesson; lang: "th" | "en"; track?: TrackId }) {
-  return <Link className={s.card} href={`/learn/guides/${lesson.slug}${track ? `?track=${track}` : ""}`}>
+export function LessonCard({ lesson, lang, track, format }: { lesson: Lesson; lang: "th" | "en"; track?: TrackId; format?: TrackFormat }) {
+  return <Link className={s.card} href={`/learn/guides/${lesson.slug}${track ? `?track=${track}${format ? `&format=${format}` : ""}` : ""}`}>
     <span className={s.tag}>{localize(categoryLabels[lesson.category], lang)}</span>
     <h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p>
     <span className={s.arrow}>{lang === "th" ? "อ่านขั้นตอน" : "Read steps"} →</span>

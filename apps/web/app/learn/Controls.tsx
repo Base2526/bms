@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "@/lib/useSession";
 import { setLangCookie } from "@/lib/lang";
-import { localize, type Lesson, type TrackId } from "@/lib/learning/catalog";
+import { localize, type Lesson, type TrackFormat, type TrackId } from "@/lib/learning/catalog";
 import s from "./learning.module.css";
 
 type Lang = "th" | "en";
@@ -93,7 +93,7 @@ export function ArticleTools({ slug, lang }: { slug: string; lang: Lang }) {
   </div>;
 }
 
-export function ReadingChecklist({ items, track, lang }: { items: Pick<Lesson, "slug" | "title">[]; track: TrackId; lang: Lang }) {
+export function ReadingChecklist({ items, track, format, lang }: { items: Pick<Lesson, "slug" | "title">[]; track: TrackId; format?: TrackFormat; lang: Lang }) {
   const [done, setDone] = useState<string[]>([]);
   const [storageError, setStorageError] = useState(false);
   useEffect(() => { setDone(readCompleted()); }, []);
@@ -109,7 +109,7 @@ export function ReadingChecklist({ items, track, lang }: { items: Pick<Lesson, "
         const next = current.includes(item.slug) ? current.filter((id) => id !== item.slug) : [...current, item.slug];
         setStorageError(!writeCompleted(next)); setDone(next);
       }} /><span>{localize(item.title, lang)}</span></label>
-      <div className={s.checklistLinks}><Link href={`/learn/guides/${item.slug}?track=${track}`}>{lang === "th" ? "อ่านบทเรียน →" : "Read lesson →"}</Link></div>
+      <div className={s.checklistLinks}><Link href={`/learn/guides/${item.slug}?track=${track}${format ? `&format=${format}` : ""}`}>{lang === "th" ? "อ่านบทเรียน →" : "Read lesson →"}</Link></div>
     </li>)}</ul>
     {storageError && <p role="status">{lang === "th" ? "เบราว์เซอร์ไม่อนุญาตให้บันทึก ความคืบหน้าจะหายเมื่อออกจากหน้านี้" : "Browser storage is unavailable; progress will be lost when you leave."}</p>}
   </section>;
