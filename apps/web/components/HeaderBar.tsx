@@ -520,6 +520,12 @@ export default function HeaderBar({
 
     items.push(
       {
+        key: "learning-center",
+        label: t("header.learningCenter"),
+        icon: <QuestionCircleOutlined />,
+        onClick: () => router.push("/learn"),
+      },
+      {
         key: "lang-th",
         disabled: currentLang === "th",
         label: (
@@ -703,6 +709,7 @@ export default function HeaderBar({
               <Link href="/demo">{t("header.demo")}</Link>
               <Link href="/#security">{t("header.security")}</Link>
               <Link href="/#pricing">{t("header.pricing")}</Link>
+              <Link href="/learn">{t("header.learningCenter")}</Link>
             </nav>
           )}
 

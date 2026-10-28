@@ -63,3 +63,8 @@ artifacts/bms-promo-animatic/
 # editor-local settings and generated repository snapshots
 .vscode/
 repomix-output.xml
+
+# Local media and generated deliverables stay on the workstation.
+/.local/
+/artifacts/
+/output/

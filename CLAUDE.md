@@ -24,6 +24,7 @@ full per-domain rules: [docs/agent-invariants.md](docs/agent-invariants.md) · p
 | [apps/mobile/README.md](apps/mobile/README.md) · [apps/desktop/README.md](apps/desktop/README.md) | Native RN POS (scanner, Wi-Fi printing) · Electron POS shell |
 | [scripts/README.md](scripts/README.md) · [scripts/ai-eval/README.md](scripts/ai-eval/README.md) | How to run every suite, exit codes, live-model evals |
 | Thai manuals: [inbox](docs/manual/inbox.md) · [restaurant POS](docs/restaurant-pos-guide.md) · [ร้านอาหาร](docs/คู่มือร้านอาหาร.md) · [ร้านยา](docs/คู่มือร้านขายยา.md) · [product examples](docs/shop-product-examples.md) | Operator guides |
+| [Public learning center](docs/ui/learning-center.md) | `/learn`: bilingual public board-game/restaurant learning paths, searchable lessons and reading checklists |
 
 ## Current status (2026-10)
 
