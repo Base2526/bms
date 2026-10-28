@@ -155,9 +155,9 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `get_customer`, `list_customers`, `customer_orders` | A1 | no | `customer.view` | read; `customer_orders` returns 1–10 rows plus all-status `totalCount`, `successfulCount`, and bounded `nextOffset`/`truncated`, never an unbounded ledger; if provider prose is empty/token-truncated after this verified read, runtime shows a server-formatted page and “show next” guidance instead of `—` or a broken table |
 | `list_shipments`, `get_shipment_label` | A1 | no | `shipping.view` | read |
 | `list_payments` | A1 | no | `payment.view` | read |
-| `list_purchase_orders`, `get_purchase_order`, `list_suppliers` | A1 | no | `purchase.view` | read |
+| `list_purchase_orders`, `get_purchase_order`, `list_suppliers`, `get_supplier_intelligence` | A1 | no | `purchase.view` | bounded evidence-backed read; supplier metrics do not invent an SLA |
 | `generate_invoice`, `generate_quotation` | A1 | no | `order.view` | ephemeral document data |
-| `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | heuristic/read |
+| `get_inventory_intelligence`, `explain_inventory_risk`, `get_inventory_anomalies`, `find_inventory_transfer_opportunities`, `get_inventory_forecast_accuracy`, `forecast_demand`, `predict_stockout`, `suggest_purchase_order` | A1 | no | `report.view` | branch-aware deterministic/heuristic reads; never move stock |
 | `summarize_conversation` | A1 | no | `inbox.view` | read |
 | `classify_intent` | helper | no | — | deterministic |
 | `create_order`, `reorder` | A2 | own identity; customer `reorder` defaults to latest own order; pharmacy SKU must pass approved backend Product Policy | `order.create` | execute + domain audit + deterministic signed checkout link |
@@ -167,8 +167,8 @@ is a local deterministic helper. “Customer” is an explicit surface allowlist
 | `submit_payment` | A2 | own order only | `payment.submit` | create PENDING + domain audit |
 | `create_shipment` | A2 | no | `shipping.create` | execute + domain audit |
 | `update_tracking`, `set_shipment_status` | A2 | no | `shipping.update` | execute + domain audit |
-| `create_purchase_order` | A2 | no | `purchase.edit` | execute + domain audit |
-| `receive_purchase_order` | A2 | no | `purchase.receive` | execute + domain audit |
+| `create_purchase_order` | A3 | no | `purchase.edit` | proposal only; stable request id makes confirmation retry-safe |
+| `propose_stock_transfer` | A3 | no | `inventory.transfer` | proposal for a draft only; send and receive remain separate human actions |
 | `upsert_customer`, `set_customer_tags` | A2 | no | `customer.edit` | execute + domain audit |
 | `assign_conversation` | A2 | no | `inbox.assign` | execute + domain audit |
 | `set_conversation_status`, `set_conversation_tags`, `add_note` | A2 | no | `inbox.manage` | execute + domain audit |
@@ -1384,16 +1384,33 @@ Confidence
 - `generate_invoice(orderId)` — ใบแจ้งหนี้จากออร์เดอร์จริง (ราคา snapshot, ผลลัพธ์ชั่วคราวไม่ persist)
 - `generate_quotation(items[])` — ใบเสนอราคา (ตีราคาปัจจุบัน + ค่าส่งประเมิน ยังไม่ผูกออร์เดอร์)
 
-## Forecast (staff, `report.view`) — `lib/bms/forecast.ts` · **heuristic เท่านั้น ต้องบอก uncertainty**
+## Inventory intelligence (staff, `report.view`) — `lib/bms/inventoryIntelligence.ts` · **heuristic เท่านั้น ต้องบอก uncertainty**
 
 - `forecast_demand(windowDays?, horizonDays?)` — คาดการณ์ยอดต่อ sku จากค่าเฉลี่ยยอดขายย้อนหลัง
 - `predict_stockout(windowDays?)` — ประเมินวันที่จะหมดสต็อกต่อไซซ์ จาก velocity
 - `suggest_purchase_order(windowDays?, coverageDays?)` — เสนอจำนวนสั่งซื้อให้พอขาย N วัน
+- `get_inventory_intelligence(...)` / `explain_inventory_risk(...)` — อ่านสูตรและหลักฐานแยกสาขา
+- `get_inventory_anomalies(...)` — สัญญาณ integrity/เหตุการณ์ผิดปกติแบบ deterministic; ไม่แก้ยอด
+- `find_inventory_transfer_opportunities(...)` — review-only; ใช้เฉพาะ surplus เหนือ safety/coverage
+- `get_inventory_forecast_accuracy(...)` — MAE/WAPE/bias จาก snapshot ที่ครบกำหนดแล้ว
+- `get_supplier_intelligence(...)` (`purchase.view`) — fill rate, อายุ PO จากวันสร้างถึงแก้ไขล่าสุดของ PO ที่รับครบ (ไม่ใช่เวลาส่งจริง) และ cost change ของ SKU เดิม
 
-Every forecast response includes `generatedAt` and `dataQuality` (paid-order count, distinct Bangkok
-sales days, and the required floor). Fewer than seven paid orders or three distinct sales days
-returns `INSUFFICIENT`, no items, and an explicit reason. The model must relay that limitation and
-must not turn absence of history into a demand prediction.
+Every forecast response includes `generatedAt` and `dataQuality` (paid-order count, Bangkok sales days,
+and the required floor). Each branch needs seven paid orders and three distinct sales days; otherwise
+its rows are `INSUFFICIENT_DATA` with no purchase recommendation, stockout date or forecast snapshot.
+Observed stock rows remain available. The summary's day count is the maximum branch count, not a
+claim that every branch has sufficient data. The model must relay row-level limitations.
+Accuracy method `2.1` compares paid stock consumption over an exact horizon; unfulfilled demand is
+excluded from that baseline and uncalibrated bounds remain unknown.
+
+All inventory rows are scoped by permitted branch. Demand and incoming PO quantities without a
+verified branch are returned separately and never duplicated into branch recommendations. The
+assistant cannot receive a PO. Creating a PO or draft transfer returns a shared confirmation proposal;
+only the existing backend mutation can perform the write after staff confirms it. A new proposal has
+a fresh key; retrying its saved confirmation retains the same key. Transfer suggestions conserve
+donor surplus across receivers and reserve safety, lead-time and coverage stock. Partial PO allocation
+is conservative when receipt attribution is unknown; residual incoming stock stays unallocated.
+Unallocated result lists expose their own truncation flags; a partial list never proves absence.
 
 ## AI-native (data providers — deterministic)
 

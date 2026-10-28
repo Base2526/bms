@@ -367,11 +367,23 @@ debit note increases it (`lib/bms/expenseAdjustments.ts`).
 | POS Scan Manager / PO receipt retry | `bms_pos_purchase_receipts` (+ `bms_pos_devices.scanner_mode/scanner_prefix_key/scanner_suffix_key/scanner_max_gap_ms`) | `9.6` |
 | POS petty-cash expenses | `bms_pos_expenses` (drawer-funded rows link atomically to `bms_pos_cash_movements`; personal-funded rows intentionally do not), `bms_pos_petty_cash_wallets`, `bms_pos_petty_cash_ledger` | `9.7`–`9.10` |
 | Stock transfers & counts | `bms_stock_transfers`, `bms_stock_transfer_items`, `bms_stock_counts`, `bms_stock_count_items`; branch quarantine + receive discrepancy evidence + transfer-loss visibility | `7.98`, `9.35`, `9.36` |
-| Phase 1 action + inventory intelligence | `bms_actions`, `bms_action_events`, `bms_inventory_policies`, `bms_inventory_demand_events` | `9.12`–`9.13` |
+| Phase 1 action + branch inventory intelligence | `bms_actions`, `bms_action_events`, `bms_inventory_policies`, `bms_inventory_demand_events` (+ nullable branch attribution), `bms_inventory_location_policies`, `bms_inventory_forecast_runs`, `bms_inventory_forecast_items`, `bms_purchase_order_idempotency` | `9.12`–`9.13`, `10.99`–`10.100` |
 | Phase 2 retention engine | `bms_retention_cases` | `9.14` |
 | Data-integrity lifecycle | event timestamps on `bms_orders` / `bms_payments`; non-negative product-cost constraint | `9.15` |
 
 ## Notable schema details
+
+**Branch inventory intelligence (`10.99`)** — tenant policy remains the fallback; a row in
+`bms_inventory_location_policies` overrides it for one `(location, SKU, size)`. A null
+`bms_inventory_demand_events.location_id` means unallocated demand and must not be multiplied across
+branches. Migration `10.100` changes the demand FK to `ON DELETE SET NULL (location_id)` so branch
+deletion cannot clear the non-null tenant. Forecast runs/items are append-only evidence until the
+run's exact `generated_at + horizon_days` timestamp, after which only
+`actual_qty` and `evaluated_at` may be filled. `bms_purchase_order_idempotency` makes an assistant
+confirmation retry replay the same PO rather than create another one. All four tables use forced RLS;
+stock remains authoritative in `bms_inventory` plus its same-transaction movement ledger. Evidence
+reads set the tenant GUC under `bms_app`. Method `2.1` accuracy excludes earlier method versions;
+uncalibrated bounds remain null and due evaluations claim rows with `FOR UPDATE SKIP LOCKED`.
 
 **Tax-document eligibility (2026-10-14 review)** — no schema change. Full issuance requires a
 non-void `COMPLETED` order with no non-void POS return, even when existing credit notes cover the

@@ -120,11 +120,13 @@ jobs:
             path: /api/bms/ai/check-health
           - name: report-digest
             path: /api/bms/reports/send-digest
+          - name: inventory-intelligence-maintenance
+            path: /api/bms/inventory-intelligence/maintain
           - name: ai-answer-evidence-retention
             path: /api/bms/ai/evidence/purge-expired
     steps:
       - uses: actions/checkout@v4
-        if: matrix.job.name == 'ai-answer-evidence-retention'
+        if: matrix.job.name == 'ai-answer-evidence-retention' || matrix.job.name == 'inventory-intelligence-maintenance'
       - name: Purge expired AI answer evidence
         if: matrix.job.name == 'ai-answer-evidence-retention'
         env:
@@ -137,7 +139,7 @@ jobs:
           fi
           node --input-type=module -e 'import { runEvidenceRetention } from "./apps/web/answer-evidence-retention.mjs"; await runEvidenceRetention(process.env.BASE_URL, process.env.BMS_CRON_SECRET);'
       - name: POST ${{ matrix.job.name }}
-        if: matrix.job.name != 'ai-answer-evidence-retention'
+        if: matrix.job.name != 'ai-answer-evidence-retention' && matrix.job.name != 'inventory-intelligence-maintenance'
         env:
           BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
           CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
@@ -150,3 +152,14 @@ jobs:
                --max-time 600 --retry 2 --retry-delay 30 \
                -X POST "$BASE_URL${{ matrix.job.path }}" \
                -H "x-cron-secret: $CRON_SECRET"
+      - name: Evaluate inventory forecasts
+        if: matrix.job.name == 'inventory-intelligence-maintenance'
+        env:
+          BASE_URL: ${{ secrets.BMS_APP_BASE_URL }}
+          BMS_CRON_SECRET: ${{ secrets.BMS_CRON_SECRET }}
+        run: |
+          if [ -z "$BASE_URL" ] || [ -z "$BMS_CRON_SECRET" ]; then
+            echo "::error::Inventory intelligence requires BMS_APP_BASE_URL / BMS_CRON_SECRET"
+            exit 1
+          fi
+          node --input-type=module -e 'let c=null; for(let p=0;p<100;p++){const u=new URL("/api/bms/inventory-intelligence/maintain",process.env.BASE_URL);if(c)u.searchParams.set("afterTenant",c);const r=await fetch(u,{method:"POST",headers:{"x-cron-secret":process.env.BMS_CRON_SECRET},signal:AbortSignal.timeout(600000)});if(!r.ok)throw new Error(`inventory maintenance HTTP ${r.status}`);const j=await r.json();c=j.nextTenant;if(!c)process.exit(0)}throw new Error("inventory maintenance exceeded bounded fleet pages")'

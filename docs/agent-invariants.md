@@ -121,7 +121,11 @@ read-only in the Settings UI and is now the stable public-shop handle used by
 Also documents (`lib/bms/documents.ts` —
 `generate_invoice`/`generate_quotation`), heuristic forecasting (`lib/bms/forecast.ts` —
 `forecast_demand`/`predict_stockout`/`suggest_purchase_order`, every result tagged with its
-`method`/`disclaimer` per the forecasting rules in AI_GUIDELINES), AI-native helpers
+`method`/`disclaimer` per the forecasting rules in AI_GUIDELINES). These compatibility tools and
+Dashboard delegate to `inventoryIntelligence.ts`: branch is part of the key, order stock lines are
+the demand source, unallocated demand/incoming stays separate, accuracy comes only from matured
+forecast snapshots, and PO/draft-transfer creation is propose-only. PO receiving is not exposed to
+AI. AI-native helpers
 (`detect_language`/`classify_intent`/`summarize_conversation`/`recommend_products`), and propose-only
 outbound (`send_customer_message` → `bmsSendMessage`, LINE/Meta only — TikTok send and email have no
 real API yet, so they are intentionally not implemented rather than stubbed).

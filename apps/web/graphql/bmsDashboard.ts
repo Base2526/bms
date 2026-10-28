@@ -2,6 +2,9 @@
 import { GraphQLError } from "graphql/error";
 import { requireAuth } from "@/lib/auth";
 import { getDashboard, getInventoryActionCenter, getOperationalAlerts } from "@/lib/bms/dashboard";
+import { getInventoryAnomalies } from "@/lib/bms/inventoryAnomalies";
+import { getInventoryForecastAccuracy } from "@/lib/bms/inventoryIntelligence";
+import { listLocationsForUser, userCanAccessLocation, userHasLocationScope } from "@/lib/bms/locations";
 import { getAiFailureSummary } from "@/lib/bms/aiUsage";
 import { getTenantId } from "@/lib/bms/tenant";
 import {
@@ -37,16 +40,42 @@ export const bmsDashboardResolvers = {
     },
     async bmsInventoryActionCenter(
       _p: unknown,
-      args: { windowDays?: number; coverageDays?: number; limit?: number },
+      args: { windowDays?: number; coverageDays?: number; limit?: number; offset?: number; locationId?: string | null; sku?: string | null; size?: string | null },
       ctx: any
     ) {
       await requirePermission(ctx, "report.view");
+      const tenantId = getTenantId(ctx);
+      const actor = String(requireAuth(ctx).author_id);
+      const locationScoped = await userHasLocationScope(tenantId, actor);
+      const allowedLocationIds = (await listLocationsForUser(tenantId, actor)).map((location) => location.id);
       return getInventoryActionCenter(
-        getTenantId(ctx),
+        tenantId,
         args.windowDays ?? 30,
         args.coverageDays ?? 30,
-        args.limit ?? 5
+        args.limit ?? 5,
+        { locationId:args.locationId,sku:args.sku,size:args.size,offset:args.offset ?? 0,allowedLocationIds,
+          includeUnallocated:!locationScoped }
       );
+    },
+    async bmsInventoryIntelligenceLocations(_p: unknown, _a: unknown, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      return listLocationsForUser(getTenantId(ctx), String(requireAuth(ctx).author_id));
+    },
+    async bmsInventoryAnomalies(_p: unknown, args: { locationId?: string | null; limit?: number }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      const tenantId = getTenantId(ctx);
+      const actor = String(requireAuth(ctx).author_id);
+      const locationScoped = await userHasLocationScope(tenantId, actor);
+      const allowedLocationIds = (await listLocationsForUser(tenantId, actor)).map((location) => location.id);
+      return getInventoryAnomalies({ tenantId, locationId:args.locationId, limit:args.limit, allowedLocationIds,
+        includeTenantWide:!locationScoped });
+    },
+    async bmsInventoryForecastAccuracy(_p: unknown, args: { locationId?: string | null; days?: number }, ctx: any) {
+      await requirePermission(ctx, "report.view");
+      const tenantId = getTenantId(ctx);
+      const actor = String(requireAuth(ctx).author_id);
+      const allowedLocationIds = (await listLocationsForUser(tenantId, actor)).map((location) => location.id);
+      return getInventoryForecastAccuracy({tenantId,locationId:args.locationId,days:args.days,allowedLocationIds});
     },
     async bmsAiFailureSummary(_p: unknown, args: { days?: number }, ctx: any) {
       await requirePermission(ctx, "report.view");
@@ -96,13 +125,21 @@ export const bmsDashboardResolvers = {
     async bmsRecordInventoryDemand(_p: unknown, args: any, ctx: any) {
       await requirePermission(ctx, "action.manage");
       const actor = String(requireAuth(ctx).author_id);
-      try { return await recordDemandEvent(getTenantId(ctx), actor, args.input); }
+      const tenantId = getTenantId(ctx);
+      if (!(await userCanAccessLocation(tenantId, actor, args.input?.locationId))) {
+        throw new GraphQLError("ไม่มีสิทธิ์สาขานี้", { extensions:{code:"FORBIDDEN"} });
+      }
+      try { return await recordDemandEvent(tenantId, actor, args.input); }
       catch (err: any) { throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } }); }
     },
     async bmsUpsertInventoryPolicy(_p: unknown, args: any, ctx: any) {
       await requirePermission(ctx, "action.manage");
       const actor = String(requireAuth(ctx).author_id);
-      try { return await upsertInventoryPolicy(getTenantId(ctx), actor, args.input); }
+      const tenantId = getTenantId(ctx);
+      if (!(await userCanAccessLocation(tenantId, actor, args.input?.locationId))) {
+        throw new GraphQLError("ไม่มีสิทธิ์สาขานี้", { extensions:{code:"FORBIDDEN"} });
+      }
+      try { return await upsertInventoryPolicy(tenantId, actor, args.input); }
       catch (err: any) { throw new GraphQLError(err?.message || "failed", { extensions: { code: "BAD_USER_INPUT" } }); }
     },
     async bmsSetRolePermissions(

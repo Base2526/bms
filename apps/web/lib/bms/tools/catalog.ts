@@ -6,6 +6,7 @@
 // ยึด docs/AI_GUIDELINES.md — tenant มาจาก server, validate args, bounded output
 // =============================================================
 
+import { randomUUID } from "node:crypto";
 import { audit } from "../audit";
 import { getBoardGameTopGamesTool, getBoardGameTableRevenueTool, listBoardGameReportBranchesTool,
   getBoardGameReportTool, getBoardGameLiveOperationsTool, getBoardGamePassBalancesTool, getBoardGameLibraryReportTool,
@@ -80,8 +81,6 @@ import {
   MARKETPLACE_CHANNELS,
 } from "../shipping";
 import {
-  createPurchaseOrder,
-  receivePurchaseOrder,
   listPurchaseOrders,
   getPurchaseOrder,
   listSuppliers,
@@ -112,10 +111,13 @@ import {
   type PosShiftOverviewRow,
 } from "../pos";
 import { getDashboard } from "../dashboard";
+import { explainInventoryRisk, findInventoryTransferOpportunities, getInventoryForecastAccuracy, getInventoryIntelligence } from "../inventoryIntelligence";
+import { getInventoryAnomalies } from "../inventoryAnomalies";
+import { getSupplierIntelligence } from "../supplierIntelligence";
+import { getCustomerBranchParking, listLocationsForUser, userHasLocationScope } from "../locations";
 import { assignConversation, setConversationStatus, setConversationTags, addNote, getConversation, listMessages } from "../inbox";
 import { subscribeToRestock } from "../restockSubscriptions";
 import { getStoreProfile } from "../storeProfile";
-import { getCustomerBranchParking } from "../locations";
 import { receiveRestaurantRequest, listRestaurantRequests } from "../restaurantRequests";
 import { isRestaurantRequestRejection, restaurantRequestInputChoices } from "../restaurantRequestPolicy";
 import {
@@ -125,7 +127,6 @@ import {
 } from "../paymentConfiguration";
 import { getTenantName, getTenantSlug } from "../platform";
 import { generateInvoice, generateQuotation } from "../documents";
-import { forecastDemand, predictStockOut, suggestPurchaseOrder } from "../forecast";
 import { understand } from "../nlu";
 import { checkCouponForCustomer, listAvailableCouponsForCustomer, listCustomerCouponWallet } from "../coupons";
 import { recordSynonymCandidate } from "../aiSynonyms";
@@ -237,6 +238,24 @@ function auditCtxOf(ec: ExecCtx): any {
 }
 async function auditWrite(ec: ExecCtx, action: string, target: string | null, meta: Record<string, unknown>) {
   await audit(auditCtxOf(ec), action, target, { ...meta, via: `ai:${ec.surface}` });
+}
+
+async function inventoryToolScope(ec: ExecCtx, locationId?: string | null) {
+  const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+  if (!actorId || ec.surface !== "staff") throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่ออ่านข้อมูลสต็อก");
+  const locationScoped = actorId ? await userHasLocationScope(ec.tenantId, actorId) : false;
+  const allowedLocationIds = actorId
+    ? (await listLocationsForUser(ec.tenantId, actorId)).map((location) => location.id)
+    : null;
+  if (locationId && allowedLocationIds && !allowedLocationIds.includes(locationId)) {
+    throw new ToolArgError("ไม่มีสิทธิ์ดูสาขานี้");
+  }
+  return {
+    allowedLocationIds,
+    locationId: locationId ?? null,
+    includeUnallocated: !locationScoped,
+    includeTenantWide: !locationScoped,
+  };
 }
 
 /** customer scope guard: order นี้เป็นของลูกค้าคนที่กำลังคุยจริงไหม (กันเดา orderId คนอื่น) */
@@ -2722,9 +2741,10 @@ const setShipmentStatusTool: BmsTool = {
 
 const createPurchaseOrderTool: BmsTool = {
   name: "create_purchase_order",
-  description: "Create a purchase order (PO) for a supplier (stock does not move until the goods are received).",
+  description: "Propose a purchase order (PO) for a supplier. Stock does not move until receiving, and a human must review the forecast/evidence and press Confirm before this PO is created.",
   surfaces: ["staff"],
   permission: "purchase.edit",
+  sensitive: true,
   inputSchema: {
     type: "object",
     properties: {
@@ -2750,7 +2770,7 @@ const createPurchaseOrderTool: BmsTool = {
     },
     required: ["items"],
   },
-  execute: async (args, ec): Promise<ToolResult> => {
+  execute: async (args): Promise<ToolResult> => {
     const items = reqItems(args).map((it, i) => ({
       ...it,
       unitCost: typeof (args.items?.[i]?.unitCost) === "number" ? args.items[i].unitCost : undefined,
@@ -2758,51 +2778,11 @@ const createPurchaseOrderTool: BmsTool = {
       supplierProductName: typeof (args.items?.[i]?.supplierProductName) === "string" ? args.items[i].supplierProductName : undefined,
       supplierBarcode: typeof (args.items?.[i]?.supplierBarcode) === "string" ? args.items[i].supplierBarcode : undefined,
     }));
-    const r = await createPurchaseOrder({
-      tenantId: ec.tenantId,
-      supplierId: optString(args, "supplierId") ?? null,
-      supplierName: optString(args, "supplierName") ?? null,
-      note: optString(args, "note") ?? null,
-      items,
-      actor: ec.actor,
-    });
-    if (r.status === "CREATED") await auditWrite(ec, "purchase.edit", r.poId, { itemCount: items.length });
-    return { ok: true, data: r };
-  },
-};
-
-const receivePurchaseOrderTool: BmsTool = {
-  name: "receive_purchase_order",
-  description: "Receive goods from a purchase order into stock, partially or in full → increases current_stock and records STOCK_IN.",
-  surfaces: ["staff"],
-  permission: "purchase.receive",
-  inputSchema: {
-    type: "object",
-    properties: {
-      poId: { type: "string" },
-      items: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: { sku: { type: "string" }, size: { type: "string" }, qty: { type: "integer" } },
-          required: ["sku", "size", "qty"],
-        },
-      },
-    },
-    required: ["poId", "items"],
-  },
-  execute: async (args, ec): Promise<ToolResult> => {
-    const poId = reqString(args, "poId");
-    const items = reqItems(args);
-    const r = await receivePurchaseOrder(
-      ec.tenantId,
-      poId,
-      items,
-      ec.actor,
-      ec.ctx?.admin?.id ?? null,
-      { audit: { actor: ec.actor, meta: { surface: `ai:${ec.surface}` } } }
-    );
-    return { ok: true, data: r };
+    const payload={supplierId:optString(args,"supplierId")??null,supplierName:optString(args,"supplierName")??null,
+      note:optString(args,"note")??null,items};
+    const requestId=`ai-po-${randomUUID()}`;
+    return {ok:true,proposal:{tool:"create_purchase_order",mutation:"bmsCreatePurchaseOrder",args:{...payload,requestId},
+      summary:`สร้าง PO ${items.length} รายการ รวม ${items.reduce((sum,item)=>sum+item.qty,0)} หน่วย`}};
   },
 };
 
@@ -3068,6 +3048,20 @@ const A3_TOOLS: BmsTool[] = [
       note: optString(a, "note") ?? null,
     }),
     summary: (a) => `ปรับสต็อก ${a.sku} ไซซ์ ${a.size} ที่สาขา ${String(a.locationId).slice(0, 8)} จำนวน ${a.delta}`,
+  }),
+  proposalTool({
+    name:"propose_stock_transfer",
+    description:"Propose a draft stock transfer between two exact verified branches. Use find_inventory_transfer_opportunities first and never guess a branch id. Creating the draft does not send goods; send and receive remain separate human-controlled steps.",
+    mutation:"bmsCreateStockTransfer",
+    permission:"inventory.transfer",
+    inputSchema:{type:"object",properties:{fromLocationId:{type:"string"},toLocationId:{type:"string"},items:{type:"array",items:{type:"object",properties:{sku:{type:"string"},size:{type:"string"},qty:{type:"integer"}},required:["sku","size","qty"]}},note:{type:"string"}},required:["fromLocationId","toLocationId","items"],additionalProperties:false},
+    buildArgs:(a)=>{
+      const items=reqItems(a);
+      const payload={fromLocationId:reqString(a,"fromLocationId"),toLocationId:reqString(a,"toLocationId"),items,note:optString(a,"note")??null};
+      const idempotencyKey=`ai-transfer-${randomUUID()}`;
+      return {input:{...payload,idempotencyKey}};
+    },
+    summary:(a)=>`สร้างใบโอนฉบับร่าง ${reqItems(a).length} รายการ จาก ${String(a.fromLocationId).slice(0,8)} ไป ${String(a.toLocationId).slice(0,8)} (ยังไม่ส่งของ)`,
   }),
   proposalTool({
     name: "merge_customers",
@@ -3391,6 +3385,95 @@ const generateQuotationTool: BmsTool = {
 // B3 — forecast (staff, report.view) · heuristic + uncertainty
 // =============================================================
 
+const getInventoryIntelligenceTool: BmsTool = {
+  name: "get_inventory_intelligence",
+  description:
+    "Read branch-aware inventory intelligence from verified stock consumption, usable lots, confirmed demand, branch policy and allocated incoming supply. " +
+    "Use it for low stock, stockout risk, reorder, slow/dead stock or expiry questions. Unallocated demand/incoming is reported separately and is never duplicated into every branch.",
+  surfaces: ["staff"],
+  permission: "report.view",
+  inputSchema: {
+    type: "object",
+    properties: {
+      view: { type: "string", enum: ["SUMMARY", "STOCKOUT", "REORDER", "SLOW", "EXPIRY"] },
+      locationId: { type: "string", description: "Exact verified branch UUID; omit to read all permitted branches." },
+      sku: { type: "string" }, size: { type: "string" },
+      windowDays: { type: "integer" }, coverageDays: { type: "integer" }, limit: { type: "integer" }, offset: { type: "integer" },
+    },
+    additionalProperties: false,
+  },
+  execute: async (args, ec): Promise<ToolResult> => {
+    const locationId = optString(args, "locationId");
+    const scope = await inventoryToolScope(ec, locationId);
+    const result = await getInventoryIntelligence({ tenantId:ec.tenantId,...scope,sku:optString(args,"sku"),size:optString(args,"size"),
+      windowDays:optInt(args,"windowDays",7,180) ?? 30,coverageDays:optInt(args,"coverageDays",1,180) ?? 30,
+      limit:optInt(args,"limit",1,50) ?? 20,offset:optInt(args,"offset",0,100000) ?? 0 });
+    const view = enumVal(args,"view",["SUMMARY","STOCKOUT","REORDER","SLOW","EXPIRY"] as const,false) ?? "SUMMARY";
+    const selected = view === "STOCKOUT" ? result.stockoutRisk : view === "REORDER" ? result.purchaseSuggestions
+      : view === "SLOW" ? result.slowMoving : view === "EXPIRY" ? result.expiringLots : result.items;
+    return { ok:true,data:{method:result.method,methodVersion:result.methodVersion,generatedAt:result.generatedAt,
+      dataQuality:result.dataQuality,disclaimer:result.disclaimer,summary:result.summary,view,items:selected,
+      unallocatedDemand:result.unallocatedDemand,unallocatedIncoming:result.unallocatedIncoming,
+      totalCount:result.totalCount,truncated:result.truncated,nextOffset:result.nextOffset} };
+  },
+};
+
+const explainInventoryRiskTool: BmsTool = {
+  name: "explain_inventory_risk",
+  description:
+    "Explain exactly why one verified SKU/size is at risk or has a reorder suggestion, separated by permitted branch. Returns the backend formula and evidence; never recompute or invent a quantity.",
+  surfaces:["staff"],permission:"report.view",
+  inputSchema:{type:"object",properties:{sku:{type:"string"},size:{type:"string"},locationId:{type:"string"},windowDays:{type:"integer"},coverageDays:{type:"integer"}},required:["sku","size"],additionalProperties:false},
+  execute:async(args,ec):Promise<ToolResult>=>{
+    const locationId=optString(args,"locationId"); const scope=await inventoryToolScope(ec,locationId);
+    return {ok:true,data:await explainInventoryRisk({tenantId:ec.tenantId,...scope,sku:reqString(args,"sku"),size:reqString(args,"size"),
+      windowDays:optInt(args,"windowDays",7,180)??30,coverageDays:optInt(args,"coverageDays",1,180)??30})};
+  },
+};
+
+const getInventoryAnomaliesTool: BmsTool = {
+  name:"get_inventory_anomalies",
+  description:"Read deterministic inventory integrity warnings for permitted branches: reservation attribution, lot reconciliation, stale transfers/POs, repeated adjustments, wastage/loss and missing branch policy. It only recommends what to inspect and never fixes stock.",
+  surfaces:["staff"],permission:"report.view",
+  inputSchema:{type:"object",properties:{locationId:{type:"string"},limit:{type:"integer"}},additionalProperties:false},
+  execute:async(args,ec):Promise<ToolResult>=>{
+    const locationId=optString(args,"locationId"); const scope=await inventoryToolScope(ec,locationId);
+    return {ok:true,data:await getInventoryAnomalies({tenantId:ec.tenantId,...scope,limit:optInt(args,"limit",1,100)??50})};
+  },
+};
+
+const findInventoryTransfersTool: BmsTool = {
+  name:"find_inventory_transfer_opportunities",
+  description:"Find review-only branch rebalancing opportunities. It uses usable surplus above the donor branch safety/coverage target and a verified shortage at the receiver. It does not create, send or receive a transfer.",
+  surfaces:["staff"],permission:"report.view",
+  inputSchema:{type:"object",properties:{sku:{type:"string"},size:{type:"string"},windowDays:{type:"integer"},coverageDays:{type:"integer"},limit:{type:"integer"}},additionalProperties:false},
+  execute:async(args,ec):Promise<ToolResult>=>{
+    const scope=await inventoryToolScope(ec,null);
+    return {ok:true,data:await findInventoryTransferOpportunities({tenantId:ec.tenantId,...scope,sku:optString(args,"sku"),size:optString(args,"size"),
+      windowDays:optInt(args,"windowDays",7,180)??30,coverageDays:optInt(args,"coverageDays",1,180)??30,limit:optInt(args,"limit",1,50)??20})};
+  },
+};
+
+const getInventoryForecastAccuracyTool: BmsTool = {
+  name:"get_inventory_forecast_accuracy",
+  description:"Read MAE, WAPE and bias from matured branch forecast snapshots. A small sample is reported as limited evidence and is never a guarantee of future demand.",
+  surfaces:["staff"],permission:"report.view",
+  inputSchema:{type:"object",properties:{locationId:{type:"string"},days:{type:"integer"}},additionalProperties:false},
+  execute:async(args,ec):Promise<ToolResult>=>{
+    const locationId=optString(args,"locationId"); const scope=await inventoryToolScope(ec,locationId);
+    return {ok:true,data:await getInventoryForecastAccuracy({tenantId:ec.tenantId,...scope,days:optInt(args,"days",7,365)??90})};
+  },
+};
+
+const getSupplierIntelligenceTool: BmsTool = {
+  name:"get_supplier_intelligence",
+  description:"Read supplier history from purchase orders: recorded fill rate, approximate age from creation to last update of received POs, comparable product cost changes and evidence count. The age is not a verified delivery duration. Missing delivery promises or quality evidence remain unknown.",
+  surfaces:["staff"],permission:"purchase.view",
+  inputSchema:{type:"object",properties:{supplierId:{type:"string"},days:{type:"integer"},limit:{type:"integer"}},additionalProperties:false},
+  execute:async(args,ec):Promise<ToolResult>=>({ok:true,data:await getSupplierIntelligence({tenantId:ec.tenantId,
+    supplierId:optString(args,"supplierId"),days:optInt(args,"days",30,730)??180,limit:optInt(args,"limit",1,100)??25})}),
+};
+
 const forecastDemandTool: BmsTool = {
   name: "forecast_demand",
   description:
@@ -3402,14 +3485,13 @@ const forecastDemandTool: BmsTool = {
     properties: {
       windowDays: { type: "integer", description: "How many days of past data to use (default 30)." },
       horizonDays: { type: "integer", description: "How many days ahead to forecast (default 30)." },
+      locationId: { type: "string", description: "Exact verified branch UUID; omit for all permitted branches." },
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await forecastDemand(
-      ec.tenantId,
-      optInt(args, "windowDays", 1, 365) ?? 30,
-      optInt(args, "horizonDays", 1, 365) ?? 30
-    );
+    const scope=await inventoryToolScope(ec,optString(args,"locationId"));
+    const data = await getInventoryIntelligence({tenantId:ec.tenantId,...scope,windowDays:optInt(args,"windowDays",7,180)??30,
+      coverageDays:optInt(args,"horizonDays",1,180)??30,limit:50});
     return { ok: true, data };
   },
 };
@@ -3420,9 +3502,10 @@ const predictStockOutTool: BmsTool = {
     "Estimate how many days until each size runs out of stock, based on recent sales velocity (heuristic — highest risk listed first).",
   surfaces: ["staff"],
   permission: "report.view",
-  inputSchema: { type: "object", properties: { windowDays: { type: "integer" } } },
+  inputSchema: { type: "object", properties: { windowDays: { type: "integer" }, locationId:{type:"string"} } },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await predictStockOut(ec.tenantId, optInt(args, "windowDays", 1, 365) ?? 30);
+    const scope=await inventoryToolScope(ec,optString(args,"locationId"));
+    const data = await getInventoryIntelligence({tenantId:ec.tenantId,...scope,windowDays:optInt(args,"windowDays",7,180)??30,limit:30});
     return { ok: true, data };
   },
 };
@@ -3438,14 +3521,13 @@ const suggestPurchaseOrderTool: BmsTool = {
     properties: {
       windowDays: { type: "integer" },
       coverageDays: { type: "integer", description: "How many days of sales the stock should cover (default 30)." },
+      locationId:{type:"string",description:"Exact verified branch UUID; omit for all permitted branches."},
     },
   },
   execute: async (args, ec): Promise<ToolResult> => {
-    const data = await suggestPurchaseOrder(
-      ec.tenantId,
-      optInt(args, "windowDays", 1, 365) ?? 30,
-      optInt(args, "coverageDays", 1, 365) ?? 30
-    );
+    const scope=await inventoryToolScope(ec,optString(args,"locationId"));
+    const data = await getInventoryIntelligence({tenantId:ec.tenantId,...scope,windowDays:optInt(args,"windowDays",7,180)??30,
+      coverageDays:optInt(args,"coverageDays",1,180)??30,limit:30});
     return { ok: true, data };
   },
 };
@@ -3698,7 +3780,6 @@ export const ALL_TOOLS: BmsTool[] = [
   updateTrackingTool,
   setShipmentStatusTool,
   createPurchaseOrderTool,
-  receivePurchaseOrderTool,
   upsertCustomerTool,
   setCustomerTagsTool,
   assignConversationTool,
@@ -3722,6 +3803,12 @@ export const ALL_TOOLS: BmsTool[] = [
   generateInvoiceTool,
   generateQuotationTool,
   // B3 — forecast
+  getInventoryIntelligenceTool,
+  explainInventoryRiskTool,
+  getInventoryAnomaliesTool,
+  findInventoryTransfersTool,
+  getInventoryForecastAccuracyTool,
+  getSupplierIntelligenceTool,
   forecastDemandTool,
   predictStockOutTool,
   suggestPurchaseOrderTool,

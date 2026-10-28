@@ -185,6 +185,8 @@ const SENSITIVE_TOOL_INTENT: Readonly<Record<string, RegExp>> = {
   refund_payment: /(คืนเงิน|refund)/i,
   cancel_order: /(ยกเลิก|cancel).*(ออเดอร์|order|คำสั่งซื้อ)/i,
   adjust_stock: /(ปรับ|แก้|เพิ่ม|ลด|adjust).*(สต็อก|stock|inventory)/i,
+  create_purchase_order: /(สร้าง|ทำ|เปิด|create).*(ใบสั่งซื้อ|purchase order|\bpo\b)/i,
+  propose_stock_transfer: /(สร้าง|ทำ|เสนอ|โอน|transfer).*(ใบโอน|สต็อก|stock|inventory|สาขา)/i,
   merge_customers: /(รวม|merge).*(ลูกค้า|customer)/i,
   cancel_purchase_order: /(ยกเลิก|cancel).*(ใบสั่งซื้อ|purchase order|\bpo\b)/i,
   cancel_shipment: /(ยกเลิก|cancel).*(จัดส่ง|ขนส่ง|shipment)/i,

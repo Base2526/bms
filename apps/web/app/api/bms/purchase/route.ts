@@ -38,6 +38,7 @@ async function handlePOST(req: NextRequest) {
     supplierId?: unknown;
     supplierName?: unknown;
     note?: unknown;
+    requestId?: unknown;
     items?: unknown;
   };
 
@@ -64,13 +65,15 @@ async function handlePOST(req: NextRequest) {
     supplierId: typeof body.supplierId === "string" ? body.supplierId : null,
     supplierName: typeof body.supplierName === "string" ? body.supplierName : null,
     note: typeof body.note === "string" ? body.note : null,
+    requestId: typeof body.requestId === "string" ? body.requestId : null,
     items,
+    audit: { actor:String(auth.admin.email ?? auth.adminId), meta:{surface:"admin_rest"} },
   });
 
   const httpStatus =
     result.status === "CREATED" ? 201
       : result.status === "NOT_FOUND" || result.status === "SUPPLIER_NOT_FOUND" ? 404
-        : result.status === "SUPPLIER_SKU_CONFLICT" ? 409
+        : result.status === "SUPPLIER_SKU_CONFLICT" || result.status === "IDEMPOTENCY_CONFLICT" ? 409
           : 400;
 
   return NextResponse.json(result, { status: httpStatus });

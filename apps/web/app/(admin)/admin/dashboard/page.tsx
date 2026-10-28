@@ -1,6 +1,7 @@
 'use client';
+import { useState } from "react";
 import { gql, useMutation, useQuery } from "@apollo/client";
-import { Alert, Button, Card, Col, Row, Space, Table, Tag, Typography } from "antd";
+import { Alert, Button, Card, Col, Row, Select, Space, Table, Tag, Typography } from "antd";
 import {
   ApiOutlined,
   CheckCircleOutlined,
@@ -61,24 +62,39 @@ const Q_ALERTS = gql`
   query { bmsOperationalAlerts { packingOverdueCount slipPendingCount reservationExpiringCount chatWaitingCount } }
 `;
 const Q_INVENTORY_ACTION = gql`
-  query {
-    bmsInventoryActionCenter {
+  query($locationId: ID) {
+    bmsInventoryActionCenter(locationId: $locationId) {
+      method methodVersion generatedAt verifiedAt dataQuality totalCount truncated nextOffset
       summary {
         lowStockCount
         outOfStockCount
         stockoutWithin7DaysCount
         purchaseSuggestionCount
         totalSuggestedQty
-        slowMovingCount deadStockCount expiringLotCount expiringUnits
+        slowMovingCount deadStockCount expiringLotCount expiringUnits unallocatedDemandUnits unallocatedIncomingUnits
         windowDays
         coverageDays
         disclaimer
       }
-      lowStock { sku name size available reorderPoint }
-      stockoutRisk { sku name size available avgPerDay daysToStockout projectedStockoutDate }
-      purchaseSuggestions { sku name size available avgPerDay suggestedQty soldInWindow demandFeedback incomingQty trendPct safetyStock leadTimeDays classification recommendedAction }
-      slowMoving { sku name size available soldInWindow trendPct classification recommendedAction }
-      expiringLots { sku name size lotNo expiryDate qty daysToExpiry recommendedAction }
+      lowStock { locationId locationName sku name size available reorderPoint }
+      stockoutRisk { locationId locationName sku name size available avgPerDay daysToStockout projectedStockoutDate }
+      purchaseSuggestions { locationId locationName sku name size available avgPerDay suggestedQty soldInWindow demandFeedback incomingQty trendPct safetyStock leadTimeDays classification recommendedAction }
+      slowMoving { locationId locationName sku name size available soldInWindow trendPct classification recommendedAction }
+      expiringLots { locationId locationName sku name size lotNo expiryDate qty daysToExpiry recommendedAction }
+      unallocatedDemand { sku size qty }
+      unallocatedIncoming { sku size qty }
+    }
+  }
+`;
+const Q_INVENTORY_LOCATIONS = gql`query { bmsInventoryIntelligenceLocations { id name active } }`;
+const Q_INVENTORY_ANOMALIES = gql`
+  query($locationId: ID) {
+    bmsInventoryAnomalies(locationId: $locationId, limit: 20) {
+      totalCount truncated verifiedAt
+      items { code severity locationId locationName sku size observedValue expectedValue threshold recommendedReview deepLink }
+    }
+    bmsInventoryForecastAccuracy(locationId: $locationId, days: 90) {
+      sampleCount mae wape bias lastEvaluatedAt disclaimer
     }
   }
 `;
@@ -201,6 +217,7 @@ export default function Page() {
   const canViewReports = can("report.view");
   const canManageActions = can("action.manage");
   const shouldSkipReportQueries = permsLoading || !canViewReports;
+  const [inventoryLocationId, setInventoryLocationId] = useState<string | null>(null);
   const { data, loading, error, refetch } = useQuery(Q_DASH, {
     fetchPolicy: "cache-first",
     skip: shouldSkipReportQueries,
@@ -227,12 +244,27 @@ export default function Page() {
     skip: shouldSkipReportQueries,
   });
   const alerts = alertsData?.bmsOperationalAlerts;
-  const { data: inventoryActionData, refetch: refetchInventoryAction } = useQuery(Q_INVENTORY_ACTION, {
+  const { data: inventoryLocationsData, error: inventoryLocationsError, loading: inventoryLocationsLoading, refetch: refetchInventoryLocations } = useQuery(Q_INVENTORY_LOCATIONS, { skip:shouldSkipReportQueries, notifyOnNetworkStatusChange:true });
+  const { data: inventoryActionData, error: inventoryActionError, loading: inventoryActionLoading, refetch: refetchInventoryAction } = useQuery(Q_INVENTORY_ACTION, {
+    variables:{locationId:inventoryLocationId},
     fetchPolicy: "cache-first",
     pollInterval: 120000,
     skip: shouldSkipReportQueries,
+    notifyOnNetworkStatusChange: true,
   });
   const inventoryAction = inventoryActionData?.bmsInventoryActionCenter;
+  const { data: inventoryAnomalyData, error: inventoryAnomalyError, loading: inventoryAnomalyLoading, refetch: refetchInventoryAnomalies } = useQuery(Q_INVENTORY_ANOMALIES, {
+    variables:{locationId:inventoryLocationId},
+    fetchPolicy:"cache-first",
+    pollInterval:120000,
+    skip:shouldSkipReportQueries,
+    notifyOnNetworkStatusChange:true,
+  });
+  const inventoryAnomalies = inventoryAnomalyData?.bmsInventoryAnomalies;
+  const inventoryForecastAccuracy = inventoryAnomalyData?.bmsInventoryForecastAccuracy;
+  const inventoryEvidenceLoading = inventoryActionLoading || inventoryAnomalyLoading || inventoryLocationsLoading;
+  const inventoryEvidenceUnavailable = inventoryActionError || inventoryAnomalyError || inventoryLocationsError
+    || !inventoryAction || !inventoryAnomalies || !inventoryForecastAccuracy || !inventoryLocationsData?.bmsInventoryIntelligenceLocations;
   const [recordDemand, { loading: recordingDemand }] = useMutation(M_RECORD_DEMAND, { onCompleted: () => refetchInventoryAction() });
   const [savePolicy, { loading: savingPolicy }] = useMutation(M_POLICY, { onCompleted: () => refetchInventoryAction() });
   const recommendationText = (code: string) => t(`admin_dashboard.recommendation_${String(code || "monitor").toLowerCase()}`);
@@ -422,8 +454,77 @@ export default function Page() {
 
       <DashboardActions enabled={!shouldSkipReportQueries} canManage={canManageActions} />
 
-      <div className={styles.inventorySection}>
+      <div className={styles.inventorySection} role="region" aria-label={lang === "en" ? "Inventory intelligence" : "วิเคราะห์สต็อก"}>
         <h2>{t("admin_dashboard.phase1_heading")}</h2>
+        <Space wrap style={{ marginBottom: 8 }}>
+          <Text>{lang === "en" ? "Inventory branch" : "สาขาสำหรับวิเคราะห์สต็อก"}</Text>
+          <Select
+            style={{ minWidth: 220 }}
+            value={inventoryLocationId ?? "ALL"}
+            onChange={(value)=>setInventoryLocationId(value === "ALL" ? null : value)}
+            options={[{value:"ALL",label:lang === "en" ? "All permitted branches" : "ทุกสาขาที่มีสิทธิ์"},
+              ...(inventoryLocationsData?.bmsInventoryIntelligenceLocations || []).filter((row:any)=>row.active).map((row:any)=>({value:row.id,label:row.name}))]}
+          />
+          {!inventoryEvidenceLoading && !inventoryEvidenceUnavailable && <Text type="secondary">
+            {inventoryForecastAccuracy?.sampleCount > 0
+              ? (lang === "en"
+                ? `90-day forecast evidence: ${inventoryForecastAccuracy.sampleCount} samples · MAE ${inventoryForecastAccuracy.mae} units · WAPE ${inventoryForecastAccuracy.wape == null ? "—" : `${Math.round(inventoryForecastAccuracy.wape * 100)}%`}`
+                : `หลักฐาน forecast 90 วัน: ${inventoryForecastAccuracy.sampleCount} ตัวอย่าง · คลาดเคลื่อนเฉลี่ย ${inventoryForecastAccuracy.mae} หน่วย · WAPE ${inventoryForecastAccuracy.wape == null ? "—" : `${Math.round(inventoryForecastAccuracy.wape * 100)}%`}`)
+              : (lang === "en" ? "Forecast accuracy will appear after the first forecast matures." : "ความแม่นยำจะแสดงเมื่อ forecast รอบแรกครบกำหนด")}
+          </Text>}
+        </Space>
+        {inventoryEvidenceLoading || inventoryEvidenceUnavailable ? (
+          <Alert showIcon type={inventoryEvidenceLoading ? "info" : "error"}
+            message={inventoryEvidenceLoading
+              ? (lang === "en" ? "Loading inventory evidence" : "กำลังอ่านข้อมูลวิเคราะห์สต็อก")
+              : (lang === "en" ? "Inventory evidence could not be loaded" : "อ่านข้อมูลวิเคราะห์สต็อกไม่สำเร็จ")}
+            description={lang === "en" ? "Stock figures and recommendations will appear after the reads succeed." : "ยอดสต็อกและคำแนะนำจะแสดงเมื่ออ่านข้อมูลสำเร็จ"}
+            action={!inventoryEvidenceLoading && <Button onClick={() => { void Promise.allSettled([
+              refetchInventoryAction(), refetchInventoryAnomalies(), refetchInventoryLocations(),
+            ]); }}>{lang === "en" ? "Retry inventory reads" : "ลองอ่านข้อมูลสต็อกใหม่"}</Button>}
+          />
+        ) : <>
+        {((inventoryAction?.summary?.unallocatedDemandUnits ?? 0) > 0 || (inventoryAction?.summary?.unallocatedIncomingUnits ?? 0) > 0) && (
+          <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+            closable
+            message={lang === "en" ? "Some demand or incoming supply has no branch allocation" : "มีความต้องการหรือของกำลังเข้าที่ยังไม่ระบุสาขา"}
+            description={lang === "en"
+              ? `${inventoryAction.summary.unallocatedDemandUnits} demand units and ${inventoryAction.summary.unallocatedIncomingUnits} incoming units are shown separately and are not duplicated into branch recommendations.`
+              : `ความต้องการ ${inventoryAction.summary.unallocatedDemandUnits} หน่วย และของกำลังเข้า ${inventoryAction.summary.unallocatedIncomingUnits} หน่วย ถูกแยกไว้และไม่กระจายซ้ำเข้าแต่ละสาขา`} />
+        )}
+        {(inventoryAnomalies?.totalCount ?? 0) > 0 && (
+          <Card
+            id="inventory-anomalies"
+            title={lang === "en" ? "Inventory integrity and anomaly review" : "ตรวจความถูกต้องและความผิดปกติของสต็อก"}
+            style={{ borderRadius:10, marginBottom:8 }}
+            className={styles.compactCard}
+            extra={<Text type="secondary">{inventoryAnomalies.totalCount} {lang === "en" ? "signals" : "รายการ"}</Text>}
+          >
+            <Alert
+              type="warning"
+              showIcon
+              closable
+              style={{ marginBottom:8 }}
+              message={lang === "en" ? "Review evidence before changing stock" : "ตรวจหลักฐานก่อนแก้ยอดสต็อก"}
+              description={lang === "en" ? "These are deterministic signals, not proof of fraud. Stock changes still require the normal count, transfer, or receiving workflow." : "รายการเหล่านี้เป็นสัญญาณจากกฎที่ตรวจสอบได้ ไม่ใช่ข้อสรุปเรื่องทุจริต การแก้ยอดยังต้องผ่านขั้นตอนตรวจนับ โอน หรือรับสินค้าตามปกติ"}
+            />
+            <Table
+              rowKey={(row:any,index?:number)=>`${row.code}-${row.locationId || "all"}-${row.sku || "none"}-${row.size || "none"}-${index ?? 0}`}
+              size="small"
+              pagination={false}
+              scroll={{ x:760 }}
+              dataSource={inventoryAnomalies.items || []}
+              columns={[
+                { title:lang === "en" ? "Severity" : "ระดับ",dataIndex:"severity",width:90,render:(value:string)=><Tag color={value === "CRITICAL" ? "red" : value === "HIGH" ? "orange" : "gold"}>{value}</Tag> },
+                { title:lang === "en" ? "Signal" : "สัญญาณ",dataIndex:"code",width:190 },
+                { title:lang === "en" ? "Branch / item" : "สาขา / สินค้า",width:190,render:(_:unknown,row:any)=><Space direction="vertical" size={0}><Text>{row.locationName || (lang === "en" ? "Not branch-specific" : "ไม่ระบุสาขา")}</Text><Text type="secondary">{row.sku ? `${row.sku} · ${row.size}` : "—"}</Text></Space> },
+                { title:lang === "en" ? "Evidence" : "หลักฐาน",width:130,render:(_:unknown,row:any)=>`${row.observedValue ?? "—"} / ${row.expectedValue ?? "—"}` },
+                { title:lang === "en" ? "Recommended review" : "สิ่งที่ควรตรวจ",dataIndex:"recommendedReview",width:300,render:(value:string,row:any)=><Link href={row.deepLink}>{value}</Link> },
+              ]}
+            />
+            {inventoryAnomalies.truncated && <Text type="secondary">{lang === "en" ? "Showing the first 20 signals." : "แสดง 20 รายการแรก"}</Text>}
+          </Card>
+        )}
 
         <Row gutter={[8, 8]} style={{ marginBottom: 8 }}>
           <Col xs={12} xl={6}>
@@ -472,7 +573,7 @@ export default function Page() {
               extra={<Link href="/admin/products">{t("admin_dashboard.triage_cta_view_products")}</Link>}
             >
               <Table
-                rowKey={(row: any) => `${row.sku}-${row.size}`}
+                rowKey={(row: any) => `${row.locationId}-${row.sku}-${row.size}`}
                 size="small"
                 pagination={false}
                 scroll={{ x: 560 }}
@@ -486,7 +587,7 @@ export default function Page() {
                     render: (_: any, row: any) => (
                       <Space direction="vertical" size={0}>
                         <Text>{row.name}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{row.locationName} · {row.size}</Text>
                       </Space>
                     ),
                   },
@@ -511,7 +612,7 @@ export default function Page() {
               extra={<Link href="/admin/purchase">{t("admin_dashboard.triage_cta_open_purchase")}</Link>}
             >
               <Table
-                rowKey={(row: any) => `${row.sku}-${row.size}`}
+                rowKey={(row: any) => `${row.locationId}-${row.sku}-${row.size}`}
                 size="small"
                 pagination={false}
                 scroll={{ x: 740 }}
@@ -525,7 +626,7 @@ export default function Page() {
                     render: (_: any, row: any) => (
                       <Space direction="vertical" size={0}>
                         <Text>{row.name}</Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{row.locationName} · {row.size}</Text>
                       </Space>
                     ),
                   },
@@ -536,7 +637,7 @@ export default function Page() {
                   { title: t("admin_dashboard.col_policy"), key:"policy", width:150, render:(_:any,row:any)=><Button size="small" loading={savingPolicy} onClick={async()=>{
                     const safety=Number(window.prompt(t("admin_dashboard.safety_days_prompt"),String(Math.round(row.safetyStock/(row.avgPerDay || 1))))); if(!Number.isInteger(safety)||safety<0||safety>90)return;
                     const lead=Number(window.prompt(t("admin_dashboard.lead_days_prompt"),String(row.leadTimeDays))); if(!Number.isInteger(lead)||lead<0||lead>180)return;
-                    await savePolicy({variables:{input:{sku:row.sku,size:row.size,safetyStockDays:safety,leadTimeDays:lead}}});
+                     await savePolicy({variables:{input:{locationId:row.locationId,sku:row.sku,size:row.size,safetyStockDays:safety,leadTimeDays:lead}}});
                   }}>{t("admin_dashboard.set_policy")}</Button> },
                 ]}
               />
@@ -555,7 +656,7 @@ export default function Page() {
                   description={inventoryAction?.summary?.disclaimer || t("admin_dashboard.phase1_note_fallback")}
                 />
                 <Table
-                  rowKey={(row: any) => `${row.sku}-${row.size}`}
+                  rowKey={(row: any) => `${row.locationId}-${row.sku}-${row.size}`}
                   size="small"
                   pagination={false}
                   scroll={{ x: 600 }}
@@ -569,7 +670,7 @@ export default function Page() {
                       render: (_: any, row: any) => (
                         <Space direction="vertical" size={0}>
                           <Text>{row.name}</Text>
-                          <Text type="secondary" style={{ fontSize: 12 }}>{row.size}</Text>
+                          <Text type="secondary" style={{ fontSize: 12 }}>{row.locationName} · {row.size}</Text>
                         </Space>
                       ),
                     },
@@ -577,7 +678,7 @@ export default function Page() {
                     { title: t("admin_dashboard.col_reorder_point"), dataIndex: "reorderPoint", key: "reorderPoint", width: 100, align: "right" },
                     { title: t("admin_dashboard.col_feedback"), key: "feedback", width: 130, render: (_:any,row:any) => <Button size="small" loading={recordingDemand} onClick={async()=>{
                       const raw=window.prompt(t("admin_dashboard.demand_qty_prompt"),"1"); const qty=Number(raw); if(!Number.isInteger(qty)||qty<1)return;
-                      await recordDemand({variables:{input:{sku:row.sku,size:row.size,kind:"LOST_SALE",qty}}});
+                      await recordDemand({variables:{input:{locationId:row.locationId,sku:row.sku,size:row.size,kind:"LOST_SALE",qty}}});
                     }}>{t("admin_dashboard.record_lost_sale")}</Button> },
                   ]}
                 />
@@ -585,20 +686,21 @@ export default function Page() {
             </Card>
         </div>
         <Row gutter={[8,8]} style={{ marginTop: 8 }}>
-          <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}`} size="small" pagination={false} scroll={{ x: 560 }} dataSource={inventoryAction?.slowMoving || []} columns={[
-            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.slow_stock_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.locationId}-${r.sku}-${r.size}`} size="small" pagination={false} scroll={{ x: 560 }} dataSource={inventoryAction?.slowMoving || []} columns={[
+            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.locationName} · ${r.size}` },
             { title:t("admin_dashboard.col_available"), dataIndex:"available", align:"right" },
             { title:t("admin_dashboard.col_classification"), dataIndex:"classification", render:(v:string)=><Tag color={v === "DEAD" ? "red" : "orange"}>{v}</Tag> },
             { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
           ]} /></Card></Col>
-          <Col xs={24} lg={12}><Card title={t("admin_dashboard.expiring_lots_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.sku}-${r.size}-${r.lotNo}`} size="small" pagination={false} scroll={{ x: 640 }} dataSource={inventoryAction?.expiringLots || []} columns={[
-            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.size}` },
+          <Col xs={24} lg={12}><Card title={t("admin_dashboard.expiring_lots_title")} className={styles.compactCard}><Table rowKey={(r:any)=>`${r.locationId}-${r.sku}-${r.size}-${r.lotNo}`} size="small" pagination={false} scroll={{ x: 640 }} dataSource={inventoryAction?.expiringLots || []} columns={[
+            { title:t("admin_dashboard.col_product"), render:(_:any,r:any)=>`${r.name} · ${r.locationName} · ${r.size}` },
             { title:t("admin_dashboard.col_lot"), dataIndex:"lotNo" },
             { title:t("admin_dashboard.col_expiry"), dataIndex:"expiryDate" },
             { title:t("admin_dashboard.col_qty"), dataIndex:"qty", align:"right" },
             { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
           ]} /></Card></Col>
         </Row>
+        </>}
       </div>
 
       {/* ===== ภาพรวมธุรกิจ — ดูเมื่อมีเวลา ไม่ใช่งานเร่งด่วน จึงลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า ===== */}

@@ -6,6 +6,7 @@ const migration = readFileSync(new URL("../db/migrations/9.12__bms_phase1_action
 const bilingualMigration = readFileSync(new URL("../db/migrations/9.13__bms_actions_bilingual_copy.sql", import.meta.url), "utf8");
 const service = readFileSync(new URL("../apps/web/lib/bms/actionCenter.ts", import.meta.url), "utf8");
 const dashboard = readFileSync(new URL("../apps/web/lib/bms/dashboard.ts", import.meta.url), "utf8");
+const intelligence = readFileSync(new URL("../apps/web/lib/bms/inventoryIntelligence.ts", import.meta.url), "utf8");
 
 test("Phase 1 tenant tables enforce RLS and expose no delete grant", () => {
   for (const table of ["bms_actions", "bms_action_events", "bms_inventory_policies", "bms_inventory_demand_events"]) {
@@ -26,13 +27,14 @@ test("action transitions are bounded and audited in the write transaction", () =
 });
 
 test("inventory recommendation includes policy, incoming supply, feedback, and expiry", () => {
-  assert.match(dashboard, /bms_inventory_policies/);
-  assert.match(dashboard, /bms_inventory_demand_events/);
-  assert.match(dashboard, /bms_restock_subscriptions/);
-  assert.match(dashboard, /bms_purchase_order_items/);
-  assert.match(dashboard, /bms_inventory_lots/);
-  assert.match(dashboard, /safetyStock/);
-  assert.match(dashboard, /leadTimeDays/);
+  assert.match(dashboard, /getInventoryIntelligence/);
+  assert.match(intelligence, /bms_inventory_location_policies/);
+  assert.match(intelligence, /bms_inventory_demand_events/);
+  assert.match(intelligence, /bms_restock_subscriptions/);
+  assert.match(intelligence, /bms_purchase_order_items/);
+  assert.match(intelligence, /bms_inventory_lots/);
+  assert.match(intelligence, /safetyStock/);
+  assert.match(intelligence, /leadTimeDays/);
 });
 
 test("persisted actions have bilingual copy", () => {

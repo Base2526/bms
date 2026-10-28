@@ -178,6 +178,8 @@ const OPS_TELEMETRY = [
   "bms_followup_history", "bms_followup_jobs", "bms_etax_submissions",
   "bms_board_game_idempotency_results",
   "bms_inventory_operation_idempotency",
+  "bms_purchase_order_idempotency", // Retry ledger only; the PO aggregate owns business visibility.
+  "bms_inventory_forecast_runs", "bms_inventory_forecast_items", // Advisory forecast evidence, read on demand after the daily evaluator.
   "bms_delivery_events", "bms_delivery_commands",
   "bms_retail_local_licenses", "bms_retail_local_license_tokens",
   "bms_retail_local_license_installations", "bms_retail_local_license_events",
@@ -197,7 +199,7 @@ const CONFIGURATION = [
   "bms_master_barcodes", "bms_barcode_master_contributions", "bms_master_drugs", // Reviewed global references; forms refetch after save/review.
   "bms_emergency_facilities",
   "bms_commission_rules", "bms_coupon_locations", "bms_document_counters",
-  "bms_followup_rules", "bms_inventory_policies", "bms_kitchen_stations",
+  "bms_followup_rules", "bms_inventory_policies", "bms_inventory_location_policies", "bms_kitchen_stations",
   "bms_kitchen_station_slas", "bms_locations", "bms_loyalty_settings",
   "bms_membership_tiers", "bms_pending_shop_signups", "bms_pharmacy_product_policies",
   "bms_pharmacy_guidance_templates", "bms_pharmacy_protocols", "bms_product_categories", "bms_product_images",

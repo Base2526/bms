@@ -68,21 +68,24 @@ export const bmsPurchaseResolvers = {
         supplierId?: string | null;
         supplierName?: string | null;
         note?: string | null;
+        requestId?: string | null;
         items: PoItemInput[];
       },
       ctx: any
     ) {
       await requirePermission(ctx, "purchase.edit");
+      const auth = requireAuth(ctx);
       const result = await createPurchaseOrder({
         tenantId: getTenantId(ctx),
         supplierId: args.supplierId ?? null,
         supplierName: args.supplierName ?? null,
         note: args.note ?? null,
+        requestId: args.requestId ?? null,
         items: Array.isArray(args.items) ? args.items : [],
+        audit: { actor:String(ctx?.admin?.email ?? ctx?.admin?.id ?? auth.author_id), meta:{surface:"admin"} },
       });
 
       if (result.status === "CREATED") {
-        await audit(ctx, "purchase.create", result.poId, { total: result.total });
         return { status: "CREATED", poId: result.poId, message: "สร้างใบสั่งซื้อแล้ว" };
       }
       if (result.status === "NOT_FOUND") {
@@ -103,6 +106,9 @@ export const bmsPurchaseResolvers = {
       }
       if (result.status === "INVALID_INPUT") {
         return { status: result.status, poId: null, message: "ข้อมูลสินค้าในใบสั่งซื้อไม่ถูกต้อง" };
+      }
+      if (result.status === "IDEMPOTENCY_CONFLICT") {
+        return { status: result.status, poId: null, message: "คีย์รายการซ้ำถูกใช้กับข้อมูลอื่น" };
       }
       return { status: "EMPTY", poId: null, message: "ไม่มีรายการสินค้า" };
     },

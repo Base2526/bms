@@ -1363,6 +1363,49 @@ only a customer-observed lost sale or restock request; guesses inflate purchasin
 `bms_inventory_policies` defaults to seven safety-stock days and seven lead-time days until a manager
 sets a variant-specific policy.
 
+### Branch-aware inventory copilot (10.99)
+
+`inventoryIntelligence.ts` is now the common read model for Dashboard and staff AI tools. Every row
+is keyed by `(tenant, location, SKU, size)`. Demand velocity comes from
+`bms_order_stock_lines`, not catalog items, and usable stock comes from the shared lot-quality rule.
+An optional row in `bms_inventory_location_policies` overrides the tenant-wide policy for one branch.
+Demand and open PO quantities that have no verified branch allocation remain in separate
+`unallocatedDemand` / `unallocatedIncoming` lists; they are never copied into every branch.
+
+The Dashboard and assistant expose deterministic reservation/lot reconciliation, stale transfer/PO,
+repeated count adjustment, wastage/loss and missing-policy signals. These are review signals, not a
+fraud verdict, and never adjust inventory. Transfer suggestions only use donor stock above that
+branch's safety, lead-time and coverage target; each unit of surplus is allocated once across the
+suggested receivers, including branches beyond the first result page. Creating a PO or draft transfer
+through the assistant is propose-only: a fresh proposal gets a fresh idempotency key, and confirmation
+retries keep that proposal's key. It still requires the shared human confirmation UI.
+Receiving a PO is deliberately not an AI tool.
+
+Dashboard distinguishes loading/failed evidence from verified zero stock or an empty forecast history.
+When an inventory read fails, retry the inventory reads; figures and recommendations appear only after
+the branch list, inventory, anomaly and accuracy reads succeed. A failed accuracy read never claims
+that the first snapshot has not matured.
+
+The daily `inventory-intelligence-maintenance` job records bounded forecast evidence and evaluates a
+matured snapshot against later paid stock consumption. Method `2.1` compares the exact interval
+`[generated_at, generated_at + horizon_days)` and excludes unfulfilled demand from this accuracy
+baseline. MAE, WAPE and bias use only `2.1` snapshots, with sample counts; old evidence is preserved.
+Uncalibrated prediction bounds remain null. Each branch must independently meet the history floor
+before recommendations or snapshots are produced. The summary's active-sales-day count is the maximum
+per branch, while each row's classification reflects its own branch. Forecast rows never create a PO,
+transfer stock, alter a policy or change an action automatically.
+
+Partial PO receipts do not identify which branch allocation was fulfilled. The read model therefore
+uses a conservative remaining allocation `max(allocation - total received, 0)` per branch and reports
+the residual outstanding quantity as unallocated. It never attributes the same remaining PO units to
+multiple branches. Tenant evidence reads set the tenant GUC and `bms_app` role, including forecast
+accuracy and branch policy reads. Unallocated lists are bounded and disclose truncation separately.
+The maintenance evaluator claims due items with `SKIP LOCKED`; a failed tenant makes the job fail so
+the same page can be retried, while completed snapshots remain idempotent.
+
+Migration `10.100` corrects branch deletion to clear only demand `location_id`, preserving tenant
+ownership and the demand evidence. Apply it after `10.99`.
+
 Missing product cost is not zero cost. Profit output is incomplete (`cost`, `profit`, and margin are
 `null`) whenever any sold SKU lacks `cost_price`, while known-cost and missing-line/SKU counts remain
 visible for repair. Action Center separately flags missing costs and zero prices. Zero price remains
