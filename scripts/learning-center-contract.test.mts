@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { getTrackLessons, isRestaurantFormat, isRetailFormat, isTrack, lessons, searchLessons, trackOrder } from "../apps/web/lib/learning/catalog.ts";
+import { businessTrackIds, getTrackLessons, isRestaurantFormat, isRetailFormat, isTrack, lessons, searchLessons, specialistTrackIds, trackOrder } from "../apps/web/lib/learning/catalog.ts";
 
 test("public learning paths resolve unique bilingual lessons and real action destinations", () => {
   assert.equal(new Set(lessons.map((lesson) => lesson.slug)).size, lessons.length);
-  for (const track of ["retail", "board-game", "restaurant", "pharmacy"] as const) {
+  for (const track of [...businessTrackIds, ...specialistTrackIds]) {
     const path = getTrackLessons(track);
     assert.equal(path.length, trackOrder[track].length);
     assert.equal(new Set(path.map((lesson) => lesson.slug)).size, path.length);
-    assert.equal(path[0].slug, "start-here");
-    assert.equal(path.at(-1)?.slug, "launch-checklist");
+    assert.equal(path[0].slug, track === "inventory" ? "inventory-overview" : "start-here");
+    assert.equal(path.at(-1)?.slug, track === "inventory" ? "inventory-rehearsal" : "launch-checklist");
     for (const lesson of path) assert.ok(lesson.tracks.includes(track));
     assert.deepEqual(new Set(path.map((lesson) => lesson.slug)), new Set(lessons.filter((lesson) => lesson.tracks.includes(track)).map((lesson) => lesson.slug)));
   }
@@ -24,6 +24,27 @@ test("public learning paths resolve unique bilingual lessons and real action des
     }
     assert.ok(["", "(main)", "(admin)", "(pos)"].some((group) => existsSync(resolve(import.meta.dirname, "../apps/web/app", group, lesson.action.slice(1), "page.tsx"))), `Missing destination: ${lesson.action}`);
   }
+});
+
+test("inventory is a cross-business specialist guide with the complete controlled stock lifecycle", () => {
+  assert.deepEqual(businessTrackIds, ["retail", "board-game", "restaurant", "pharmacy"]);
+  assert.deepEqual(specialistTrackIds, ["inventory"]);
+  const path = getTrackLessons("inventory");
+  const slugs = path.map((lesson) => lesson.slug);
+  for (const required of [
+    "inventory-overview", "products-import", "inventory-catalog-models", "inventory-branch-balances",
+    "inventory", "inventory-purchase-receiving", "inventory-requisitions", "inventory-transfer-control",
+    "inventory-count-control", "inventory-reservations", "inventory-lots-quality", "inventory-wastage",
+    "inventory-reports-recovery", "inventory-rehearsal",
+  ]) assert.ok(slugs.includes(required), `Inventory guide is missing ${required}`);
+  const inventoryText = path.flatMap((lesson) => [lesson.title, lesson.summary, ...lesson.steps, lesson.check, lesson.caution])
+    .map((copy) => `${copy.th} ${copy.en}`).join(" ");
+  assert.match(inventoryText, /send then receive|Send.*Receive|ส่ง.*รับ/);
+  assert.match(inventoryText, /counted.*snapshot|counted − snapshot|Snapshot/);
+  assert.match(inventoryText, /reserved|ยอดจอง/);
+  assert.match(inventoryText, /quarantine|กักกัน/);
+  assert.match(inventoryText, /unknown|ไม่ทราบ/);
+  assert.equal(isTrack("inventory"), true);
 });
 
 test("restaurant and cafe guide filters Restaurant POS formats without treating an ordinary counter cafe as a kitchen workflow", () => {
