@@ -21,7 +21,7 @@ try {
     page.on("request", (request) => { if (request.url().includes("/api/")) requests.push(new URL(request.url()).pathname); });
     for (const width of [1440, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
-      for (const path of ["/learn", "/learn/board-game", "/learn/restaurant", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
+      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
         const response = await page.goto(`${baseURL}${path}`, { waitUntil: "networkidle" });
         assert.equal(response.status(), 200, path);
         await page.locator("h1").waitFor();
@@ -50,6 +50,17 @@ try {
       assert.ok(size.scroll <= size.width + 1, `${articlePath}: mobile overflow`);
     }
     console.log(`Verified ${articlePaths.length} board-game articles in ${lang}`);
+    await page.goto(`${baseURL}/learn/pharmacy`);
+    const pharmacyPaths = await page.locator('main ol a[href^="/learn/guides/pharmacy-"]').evaluateAll((links) =>
+      [...new Set(links.map((link) => link.getAttribute("href")))]);
+    assert.ok(pharmacyPaths.length >= 8, "Pharmacy path is missing reviewed lessons");
+    for (const articlePath of pharmacyPaths) {
+      const response = await page.goto(`${baseURL}${articlePath}`);
+      assert.equal(response.status(), 200, articlePath);
+      assert.ok(await page.locator("article ol li").count() >= 4, `${articlePath}: missing steps`);
+      assert.ok((await page.locator("article").innerText()).length > 600, `${articlePath}: missing content`);
+    }
+    console.log(`Verified ${pharmacyPaths.length} pharmacy articles in ${lang}`);
     assert.ok(requests.every((path) => path === "/api/auth/me"), `Unexpected public API calls: ${requests.join(",")}`);
     await page.goto(`${baseURL}/learn`);
     await page.getByRole("searchbox").fill("แยกกลุ่ม");
@@ -67,6 +78,21 @@ try {
     await page.getByRole("button", { name: lang === "th" ? "✓ อ่านแล้ว" : "✓ Read", exact: true }).waitFor();
     await page.goto(`${baseURL}/learn/restaurant`);
     await page.waitForFunction(() => document.querySelector('input[type="checkbox"]')?.checked === true);
+    await page.getByRole("link", { name: lang === "th" ? /เคาน์เตอร์ที่ใช้ครัว/ : /Counter with kitchen/ }).click();
+    await page.waitForURL(/\/learn\/restaurant\?format=counter-kitchen$/);
+    assert.equal(await page.locator('main a[href*="restaurant-floor"]').count(), 0);
+    assert.ok(await page.locator('main a[href*="restaurant-service"]').count());
+    assert.equal(await page.locator('main a[href*="restaurant-online"]').count(), 0);
+    await page.getByRole("link", { name: lang === "th" ? /รับกลับและเดลิเวอรี/ : /Pickup & delivery/ }).click();
+    await page.waitForURL(/\/learn\/restaurant\?format=pickup-delivery$/);
+    assert.ok(await page.locator('main a[href*="restaurant-online"]').count());
+    assert.equal(await page.locator('main a[href*="restaurant-floor"]').count(), 0);
+    await page.goto(`${baseURL}/learn/retail`);
+    await page.getByRole("link", { name: lang === "th" ? /อาหารและเครื่องดื่มหน้าเคาน์เตอร์/ : /Food & drink counter/ }).click();
+    await page.waitForURL(/\/learn\/retail\?format=food-counter$/);
+    assert.ok(await page.locator('main a[href*="retail-food-counter"]').count());
+    assert.equal(await page.locator('main a[href*="retail-variants-serials"]').count(), 0);
+    assert.equal(await page.locator('main a[href*="retail-credit-receivables"]').count(), 0);
     await page.goto(`${baseURL}/learn/guides/restaurant-service?track=restaurant`);
     assert.match(await page.locator('nav[aria-label="Breadcrumb"]').innerText(), lang === "th" ? /ร้านอาหาร/ : /Restaurant/);
     await page.emulateMedia({ media: "print" });
@@ -135,6 +161,10 @@ try {
     await navigation.setViewportSize({ width, height: 950 });
     await navigation.goto(`${baseURL}/`);
     await navigation.locator('footer a[href="/learn"]').waitFor();
+    await navigation.locator('footer a[href="/learn/retail"]').waitFor();
+    await navigation.locator('footer a[href="/learn/restaurant"]').waitFor();
+    await navigation.locator('footer a[href="/learn/board-game"]').waitFor();
+    await navigation.locator('footer a[href="/learn/pharmacy"]').waitFor();
     if (width >= 940) await navigation.locator('header nav a[href="/learn"]').waitFor();
     else {
       await navigation.locator('header button:has(.anticon-more)').click();

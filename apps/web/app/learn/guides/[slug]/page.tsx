@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getLesson, getTrackLessons, isTrack, LEARNING_REVIEWED_AT, localize, roleLabels, tracks } from "@/lib/learning/catalog";
+import { getLesson, getTrackLessons, isTrack, isTrackFormat, LEARNING_REVIEWED_AT, lessonSupportsTrackFormat, localize, roleLabels, tracks } from "@/lib/learning/catalog";
 import { ArticleTools, StoreLink } from "../../Controls";
 import { learningLang, learningMetadata, LessonCard } from "../../shared";
 import s from "../../learning.module.css";
 
-type Props = { params: { slug: string }; searchParams: { track?: string } };
+type Props = { params: { slug: string }; searchParams: { track?: string; format?: string } };
 export function generateMetadata({ params }: Props) {
   const lesson = getLesson(params.slug); if (!lesson) return {};
   const lang = learningLang();
@@ -14,13 +14,17 @@ export function generateMetadata({ params }: Props) {
 export default function ArticlePage({ params, searchParams }: Props) {
   const lesson = getLesson(params.slug); if (!lesson) notFound();
   const track = typeof searchParams.track === "string" && isTrack(searchParams.track) && lesson.tracks.includes(searchParams.track) ? searchParams.track : lesson.tracks[0];
-  const items = getTrackLessons(track); const index = items.findIndex((item) => item.slug === lesson.slug);
+  const requestedFormat = typeof searchParams.format === "string" && isTrackFormat(track, searchParams.format) ? searchParams.format : undefined;
+  const format = requestedFormat && lessonSupportsTrackFormat(lesson, track, requestedFormat) ? requestedFormat : undefined;
+  const items = getTrackLessons(track, format); const index = items.findIndex((item) => item.slug === lesson.slug);
   const prev = items[index - 1]; const next = items[index + 1];
+  const trackHref = `/learn/${track}${format ? `?format=${format}` : ""}`;
+  const lessonHref = (slug: string) => `/learn/guides/${slug}?track=${track}${format ? `&format=${format}` : ""}`;
   const lang = learningLang(); const th = lang === "th";
   const txt = (value: Parameters<typeof localize>[0]) => localize(value, lang);
   const anchors = [["prepare", th ? "ก่อนเริ่ม" : "Before you begin"], ["steps", th ? "ขั้นตอนใช้งาน" : "Steps"], ["verify", th ? "ตรวจผลลัพธ์" : "Verify the result"], ["limits", th ? "ข้อจำกัดและกรณีติดขัด" : "Limits & troubleshooting"]];
   return <>
-    <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href="/learn">{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><Link href={`/learn/${track}`}>{txt(tracks[track].title)}</Link><span>/</span><span aria-current="page">{th ? "บทที่" : "Lesson"} {index + 1}</span></nav>
+    <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href="/learn">{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><Link href={trackHref}>{txt(tracks[track].title)}</Link><span>/</span><span aria-current="page">{th ? "บทที่" : "Lesson"} {index + 1}</span></nav>
     <div className={s.articleLayout}>
       <article className={s.article}>
         <span className={s.eyebrow}>{th ? "บทที่" : "Lesson"} {index + 1} / {items.length}</span>
@@ -37,13 +41,13 @@ export default function ArticlePage({ params, searchParams }: Props) {
         </section>
         <ArticleTools slug={lesson.slug} lang={lang} />
         <nav className={s.pager} aria-label={th ? "บทเรียนก่อนหน้าและถัดไป" : "Lesson navigation"}>
-          {prev ? <Link href={`/learn/guides/${prev.slug}?track=${track}`}><small>← {th ? "บทก่อนหน้า" : "Previous"}</small>{txt(prev.title)}</Link> : <Link href={`/learn/${track}`}>{th ? "← กลับสารบัญ" : "← Contents"}</Link>}
-          {next ? <Link href={`/learn/guides/${next.slug}?track=${track}`}><small>{th ? "บทถัดไป" : "Next"} →</small>{txt(next.title)}</Link> : <Link href={`/learn/${track}`}>{th ? "กลับไปตรวจ Checklist →" : "Review your checklist →"}</Link>}
+          {prev ? <Link href={lessonHref(prev.slug)}><small>← {th ? "บทก่อนหน้า" : "Previous"}</small>{txt(prev.title)}</Link> : <Link href={trackHref}>{th ? "← กลับสารบัญ" : "← Contents"}</Link>}
+          {next ? <Link href={lessonHref(next.slug)}><small>{th ? "บทถัดไป" : "Next"} →</small>{txt(next.title)}</Link> : <Link href={trackHref}>{th ? "กลับไปตรวจ Checklist →" : "Review your checklist →"}</Link>}
         </nav>
         <div className={`${s.links} ${s.noPrint}`}><Link href="/support">{th ? "พบข้อมูลไม่ตรง / ต้องการความช่วยเหลือ" : "Report outdated guidance / Get help"}</Link><Link href={`/learn?q=${encodeURIComponent(txt(lesson.title))}`}>{th ? "ค้นหาบทเรียนที่เกี่ยวข้อง" : "Search related lessons"}</Link></div>
       </article>
-      <aside className={s.articleAside}><h2>{th ? "ในบทนี้" : "On this page"}</h2>{anchors.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}<p>{th ? "บททั่วไปใช้ร่วมกันระหว่างประเภทร้าน เพื่อให้เนื้อหาอัปเดตตรงกัน" : "Shared lessons are reused across business guides to keep instructions consistent."}</p><Link href={`/learn/${track}`}>← {txt(tracks[track].title)}</Link></aside>
+      <aside className={s.articleAside}><h2>{th ? "ในบทนี้" : "On this page"}</h2>{anchors.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}<p>{th ? "บททั่วไปใช้ร่วมกันระหว่างประเภทร้าน เพื่อให้เนื้อหาอัปเดตตรงกัน" : "Shared lessons are reused across business guides to keep instructions consistent."}</p><Link href={trackHref}>← {txt(tracks[track].title)}</Link></aside>
     </div>
-    <section className={`${s.section} ${s.relatedLessons} ${s.noPrint}`}><h2 className={s.sectionTitle}>{th ? "อ่านต่อ" : "Keep learning"}</h2><div className={s.grid}>{items.filter((item) => item.category === lesson.category && item.slug !== lesson.slug).slice(0, 2).map((item) => <LessonCard key={item.slug} lesson={item} lang={lang} track={track} />)}</div></section>
+    <section className={`${s.section} ${s.relatedLessons} ${s.noPrint}`}><h2 className={s.sectionTitle}>{th ? "อ่านต่อ" : "Keep learning"}</h2><div className={s.grid}>{items.filter((item) => item.category === lesson.category && item.slug !== lesson.slug).slice(0, 2).map((item) => <LessonCard key={item.slug} lesson={item} lang={lang} track={track} format={format} />)}</div></section>
   </>;
 }

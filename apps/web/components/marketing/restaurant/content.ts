@@ -15,7 +15,7 @@ type ProfileCopy = {
 type Copy = {
   breadcrumb: string;
   print: string; printHint: string; nativeShare: string; shared: string; page: string; continued: string;
-  title: string; description: string; metaDescription: string; explore: string; contact: string;
+  title: string; description: string; metaDescription: string; explore: string; contact: string; learnGuide: string;
   dashboard: string; signup: string; journey: string[]; groups: string[]; groupLabel: string;
   explorerTitle: string; explorerDescription: string; diagram: string; diagramHint: string;
   zoom: string; fit: string; transcript: string; flowLabel: string; share: string; copied: string;
@@ -31,7 +31,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     title: "มองเห็นทุกขั้นตอน ก่อนเลือกระบบให้ร้านคุณ",
     description: "จัดการโต๊ะ ออร์เดอร์ ครัว วัตถุดิบ และต้นทุนใน BMS ให้ทีมร้านทำงานต่อกันได้ และเจ้าของตรวจสอบที่มาของตัวเลขได้",
     metaDescription: "สำรวจ 11 Flow ร้านอาหารและคาเฟ่ใน BMS ผ่าน Sequence Diagram ตั้งแต่สูตรอาหาร จัดซื้อ หน้าร้าน ครัว รับเงิน จนถึงต้นทุนและหลายสาขา พร้อมขอบเขตการใช้งาน",
-    explore: "สำรวจการทำงานของร้าน", contact: "คุยกับ BMS ทาง LINE", dashboard: "เข้าหลังบ้าน", signup: "เริ่มตั้งค่าร้าน",
+    explore: "สำรวจการทำงานของร้าน", contact: "คุยกับ BMS ทาง LINE", learnGuide: "อ่านคู่มือที่ตรงกับร้านนี้", dashboard: "เข้าหลังบ้าน", signup: "เริ่มตั้งค่าร้าน",
     journey: ["เตรียมของ", "รับออร์เดอร์", "ส่งครัว", "รับเงิน", "ดูผลร้าน"],
     groups: ["ตั้งเมนูและเตรียมวัตถุดิบ", "รับออร์เดอร์และดูแลลูกค้า", "เช็กยอดขาย ต้นทุน และเงิน", "กำหนดสิทธิ์และป้องกันข้อผิดพลาด"],
     groupLabel: "หมวดการทำงาน", explorerTitle: "เลือกงานที่อยากเข้าใจ", explorerDescription: "11 Flow ใน 4 หมวดงาน — ดูว่าใครทำอะไร ระบบช่วยตรงไหน และกรณียกเว้นต้องจัดการอย่างไร",
@@ -97,7 +97,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     title: "See every step before choosing a system for your restaurant",
     description: "Connect tables, orders, kitchen work, ingredients and costs in BMS so your team can work together and you can trace the numbers.",
     metaDescription: "Explore 11 BMS restaurant and cafe workflows with sequence diagrams: recipes, purchasing, service, kitchen, payments, costs and multiple branches, with clear operating limits.",
-    explore: "Explore the workflows", contact: "Talk to BMS on LINE", dashboard: "Open dashboard", signup: "Set up your store",
+    explore: "Explore the workflows", contact: "Talk to BMS on LINE", learnGuide: "Read the guide for this format", dashboard: "Open dashboard", signup: "Set up your store",
     journey: ["Prepare stock", "Take orders", "Send to kitchen", "Take payment", "Review results"],
     groups: ["Set up menus and stock", "Take orders and serve customers", "Review sales, costs and cash", "Control access and prevent mistakes"],
     groupLabel: "Workflow categories", explorerTitle: "Choose the work you want to understand", explorerDescription: "11 flows in 4 categories — see who does what, where BMS helps, and how exceptions are handled.",

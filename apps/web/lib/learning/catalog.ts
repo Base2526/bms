@@ -1,8 +1,11 @@
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 
 export const LEARNING_REVIEWED_AT = "2026-10-28";
-export type TrackId = "board-game" | "restaurant";
-export type Role = "owner" | "manager" | "cashier";
+export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy";
+export type RestaurantFormat = "dine-in" | "counter-kitchen" | "pickup-delivery";
+export type RetailFormat = "general" | "variants" | "food-counter" | "wholesale";
+export type TrackFormat = RestaurantFormat | RetailFormat;
+export type Role = "owner" | "manager" | "cashier" | "pharmacist";
 export type Localized = Bilingual<string>;
 export const bi = (th: string, en: string): Localized => ({ th, en });
 export const localize = (value: Localized, lang: "th" | "en") => resolveBilingual(value, lang);
@@ -14,6 +17,8 @@ export type Lesson = {
   category: "setup" | "daily" | "growth" | "recovery";
   roles: Role[];
   tracks: TrackId[];
+  restaurantFormats?: RestaurantFormat[];
+  retailFormats?: RetailFormat[];
   menu: Localized;
   action: string;
   prerequisite: Localized;
@@ -26,6 +31,7 @@ export const roleLabels = {
   owner: bi("เจ้าของร้าน / ผู้ดูแล", "Owner / administrator"),
   manager: bi("ผู้จัดการ", "Manager"),
   cashier: bi("แคชเชียร์ / พนักงาน", "Cashier / staff"),
+  pharmacist: bi("เภสัชกร", "Pharmacist"),
 };
 export const categoryLabels = {
   setup: bi("ตั้งค่าก่อนเปิดร้าน", "Set up your shop"),
@@ -35,18 +41,19 @@ export const categoryLabels = {
 };
 
 // Authored public instructions only. Never import internal tool catalogs, tenant records or secrets.
-const both: TrackId[] = ["board-game", "restaurant"];
-const all: Role[] = ["owner", "manager", "cashier"];
+const everyTrack: TrackId[] = ["retail", "board-game", "restaurant", "pharmacy"];
+const all: Role[] = ["owner", "manager", "cashier", "pharmacist"];
 const managers: Role[] = ["owner", "manager"];
+const pharmacyManagers: Role[] = ["owner", "manager", "pharmacist"];
 export const lessons: Lesson[] = [
   {
     slug: "start-here", title: bi("เริ่มต้น: เตรียมร้านและเลือกประเภทธุรกิจ", "Start here: prepare your shop"),
     summary: bi("สิ่งที่ต้องเตรียมก่อนสมัคร เลือกประเภทร้าน และวางแผนย้ายจากระบบเดิม", "Prepare your information, select a business type and plan a migration."),
-    category: "setup", roles: all, tracks: both, menu: bi("สมัครร้าน → Settings → ข้อมูลร้าน", "Shop signup → Settings → Store profile"), action: "/admin/settings",
+    category: "setup", roles: all, tracks: everyTrack, menu: bi("สมัครร้าน → Settings → ข้อมูลร้าน", "Shop signup → Settings → Store profile"), action: "/admin/settings",
     prerequisite: bi("เตรียมอีเมลเจ้าของร้าน ชื่อร้าน ที่อยู่ รายชื่อสาขา และผู้รับผิดชอบการเงิน", "Prepare the owner's email, shop name, address, branches and finance contact."),
     steps: [
       bi("สมัครร้านด้วยอีเมลที่เจ้าของควบคุมเอง ทำขั้นตอนยืนยันตัวตนที่หน้าจอกำหนด แล้วตรวจชื่อร้านและบัญชีผู้ดูแล", "Register with an owner-controlled email, complete the identity checks shown and verify the shop and administrator account."),
-      bi("เลือกประเภทร้านให้ตรงกับงานหลัก: ร้านบอร์ดเกมสำหรับค่าเล่นตามเวลา หรือร้านอาหารสำหรับโต๊ะและงานครัว ก่อนสร้างออร์เดอร์จริงครั้งแรก", "Choose board-game cafe for timed play or restaurant for dining and kitchen workflows before creating the first real order."),
+      bi("เลือกประเภทร้านให้ตรงกับงานหลักก่อนสร้างออร์เดอร์จริงครั้งแรก: ร้านค้าปลีก/อาหารและเครื่องดื่มสำหรับขายสินค้า, ร้านอาหารสำหรับบิลโต๊ะและงานครัว, ร้านบอร์ดเกมสำหรับค่าเล่นตามเวลา หรือร้านขายยาสำหรับนโยบายสินค้าและการทบทวนโดยเภสัชกร", "Choose the business type before the first real order: retail/food and beverage for product sales, restaurant for table and kitchen workflows, board-game cafe for timed play, or pharmacy for product-policy and licensed-pharmacist review workflows."),
       bi("มอบหมายผู้ดูแลข้อมูลสินค้า คลังเกม สมาชิก เงิน และอุปกรณ์ แยกร้านทดสอบออกจากร้านจริง และใช้ข้อมูลสมมติในการฝึก", "Assign owners for products, games, customers, finance and devices. Train with fictional data in a separate test shop."),
       bi("หากย้ายระบบ เลือกวันตัดยอด เก็บรายงานระบบเดิม และรวบรวมสต็อก สมาชิก คะแนน แพ็กเกจ เงินมัดจำ และการจองค้างเพื่อเทียบยอด", "For migration, choose a cutover date, retain old reports and reconcile stock, members, points, passes, deposits and open reservations."),
     ],
@@ -56,10 +63,11 @@ export const lessons: Lesson[] = [
   {
     slug: "branches-hours", title: bi("สาขา เวลาเปิด–ปิด และวันให้บริการ", "Branches, hours & service days"),
     summary: bi("ตั้งขอบเขตสาขาและตรวจการทำงานของร้านที่เปิดข้ามเที่ยงคืน", "Set up branch scope and verify operations across midnight."),
-    category: "setup", roles: managers, tracks: both, menu: bi("Locations → ตั้งค่าสาขา / ตั้งค่าร้านบอร์ดเกมหรือร้านอาหาร", "Locations → Branch / board-game or restaurant settings"), action: "/admin/locations",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("Locations → ตั้งค่าสาขา / ตั้งค่าตามประเภทร้าน", "Locations → Branch / business-type settings"), action: "/admin/locations",
     prerequisite: bi("รายการสาขา รหัสสาขา ความจุ และตารางเปิดร้านที่ตกลงกันแล้ว", "Agreed branch codes, capacities and operating hours."),
     steps: [
       bi("เพิ่มสาขา กำหนดรหัสและชื่อที่พนักงานแยกได้ชัด เช่น MAIN และ BR02 ตรวจว่าเครื่องขายและคลังสินค้าผูกสาขาถูกต้อง", "Create branches with recognizable codes such as MAIN and BR02. Check register and stock-location assignments."),
+      bi("ร้านค้าปลีก: ตั้ง Timezone และข้อมูลสาขาให้ตรงกับวันขายจริง ตรวจเวลาที่ใช้ในกะ เอกสารภาษี รายงานและการรับออร์เดอร์ข้ามเที่ยงคืน", "For retail, set the store timezone and branch profile to the actual trading day; verify shift, tax-document, report and overnight-order dates."),
       bi("ร้านบอร์ดเกม: ตั้ง Timezone ที่ Settings → ข้อมูลร้าน แล้วเลือกสาขาในหน้าโต๊ะบอร์ดเกมเพื่อตั้งข้อความเวลาเปิดและนโยบายจอง ตารางเวลารายวันสำหรับ Analytics ตั้งแยกในแท็บวิเคราะห์ ไม่ใช่ตารางปิดรับจองอัตโนมัติ", "For board games, set the timezone in Settings → Store profile, then select the branch under Board-game tables to configure displayed hours and booking policy. The daily hours editor is in Analytics and does not automatically restrict booking hours."),
       bi("ร้านอาหาร: ตรวจวันให้บริการในตั้งค่าร้านอาหาร เลขคิวและรายการหมดวันนี้ใช้วันให้บริการ ไม่จำเป็นต้องเปลี่ยนวันที่เที่ยงคืน", "For restaurants, review service-day settings. Queue numbers and sold-out-today entries follow the service day, not necessarily midnight."),
       bi("คิวบอร์ดเกมตัดวันให้บริการที่ 04:00 ตาม Timezone ร้าน ตัวอย่าง 01:00 ยังอยู่วันให้บริการก่อนหน้า ทดสอบทั้งเที่ยงคืนและ 04:00; วันหยุดพิเศษต้องให้พนักงานตรวจคำขอเอง ข้อความวันหยุดหรือวันปิดใน Analytics ไม่ได้ปิดรับจองแทน", "Board-game queues use a 04:00 service-day boundary in the store timezone: 01:00 belongs to the previous service day. Test midnight and 04:00. Staff must review holiday bookings; holiday text and Analytics closed days do not block reservations."),
@@ -70,7 +78,7 @@ export const lessons: Lesson[] = [
   {
     slug: "staff-permissions", title: bi("พนักงาน PIN และผู้อนุมัติ", "Staff, PINs & approvers"),
     summary: bi("เริ่มงานตามบทบาท ทดสอบสิทธิ์ และยกเลิกสิทธิ์เมื่อเลิกงานกับร้าน", "Onboard by role, test access and revoke access when employment ends."),
-    category: "setup", roles: managers, tracks: both, menu: bi("Users / Permissions → POS Devices", "Users / Permissions → POS Devices"), action: "/admin/pos-devices",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("Users / Permissions → POS Devices", "Users / Permissions → POS Devices"), action: "/admin/pos-devices",
     prerequisite: bi("รายชื่อเจ้าของ ผู้จัดการ แคชเชียร์ และผู้อนุมัติสำรอง", "An owner, manager, cashier and backup approver roster."),
     steps: [
       bi("สร้างบัญชีรายคนและกำหนดสิทธิ์ตามงาน ให้แคชเชียร์ใช้บัญชี POS-only หากไม่ต้องเข้าหลังบ้าน", "Create individual accounts with job-appropriate permissions. Use POS-only cashiers when back-office access is unnecessary."),
@@ -84,7 +92,7 @@ export const lessons: Lesson[] = [
   {
     slug: "products-import", title: bi("สินค้า SKU บาร์โค้ด และนำเข้า", "Products, SKUs, barcodes & imports"),
     summary: bi("เตรียมน้ำ ขนม สินค้าขาย หรือวัตถุดิบ พร้อมราคาต้นทุนและหน่วย", "Set up drinks, snacks, merchandise or ingredients with prices, costs and units."),
-    category: "setup", roles: managers, tracks: both, menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/products",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/products",
     prerequisite: bi("รายการ SKU หน่วย ราคาขาย ต้นทุน ประเภท VAT และยอดตั้งต้นที่ตรวจแล้ว", "A checked list of SKUs, units, sale prices, costs, VAT categories and opening quantities."),
     steps: [
       bi("สร้างสินค้าหนึ่งรายการก่อน กำหนด SKU ไม่ซ้ำ ชื่อ หน่วย รูปแบบสต็อก ราคาขาย ต้นทุน และประเภท VAT; ต้นทุนที่ไม่ทราบต้องไม่กรอกเป็นศูนย์แทน", "Create one item first with a unique SKU, name, unit, stock policy, price, cost and VAT category. Do not substitute zero for unknown cost."),
@@ -98,7 +106,7 @@ export const lessons: Lesson[] = [
   {
     slug: "inventory", title: bi("รับเข้า โอน และตรวจนับสต็อก", "Receive, transfer & count stock"),
     summary: bi("จัดการของที่ขายจริงแยกสาขา พร้อมตรวจส่วนต่างและของเสีย", "Manage sellable inventory by branch, including variances and wastage."),
-    category: "daily", roles: managers, tracks: both, menu: bi("Purchase / Stock Transfers / Stock Counts", "Purchase / Stock Transfers / Stock Counts"), action: "/admin/stock-transfers",
+    category: "daily", roles: managers, tracks: everyTrack, menu: bi("Purchase / Stock Transfers / Stock Counts", "Purchase / Stock Transfers / Stock Counts"), action: "/admin/stock-transfers",
     prerequisite: bi("สินค้า หน่วย สาขา และผู้รับผิดชอบตรวจรับพร้อมใช้งาน", "Products, units, branches and receiving staff are ready."),
     steps: [
       bi("รับสินค้าตามใบสั่งซื้อ เลือกสาขาที่รับ ตรวจจำนวนและต้นทุนตามของจริงก่อนยืนยันรับ", "Receive against a purchase order, select the receiving branch and check actual quantities and costs."),
@@ -112,7 +120,7 @@ export const lessons: Lesson[] = [
   {
     slug: "tax-receipts", title: bi("VAT ใบเสร็จ และคำขอใบกำกับภาษี", "VAT, receipts & tax-invoice requests"),
     summary: bi("ตั้งข้อมูลผู้ขาย ตรวจเอกสาร และเข้าใจขอบเขต e-Tax", "Configure seller details, review documents and understand e-Tax availability."),
-    category: "setup", roles: managers, tracks: both, menu: bi("Settings / POS Readiness → ภาษีขาย", "Settings / POS Readiness → Output tax"), action: "/admin/pos-readiness",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("Settings / POS Readiness → ภาษีขาย", "Settings / POS Readiness → Output tax"), action: "/admin/pos-readiness",
     prerequisite: bi("ข้อมูลกิจการและรูปแบบภาษีที่ผู้รับผิดชอบบัญชีตรวจแล้ว", "Business details and tax configuration reviewed by your accounting owner."),
     steps: [
       bi("ตั้งชื่อ ที่อยู่ เลขผู้เสียภาษี สำนักงานใหญ่/เลขสาขา สถานะ VAT และรูปแบบราคารวม/ไม่รวม VAT ตรวจประเภทภาษีของสินค้าทุกตัว", "Set seller name, address, tax ID, establishment branch, VAT status and tax-inclusive/exclusive pricing. Classify every product."),
@@ -126,7 +134,7 @@ export const lessons: Lesson[] = [
   {
     slug: "pos-devices", title: bi("สร้างเครื่อง POS และจับคู่", "Create & pair a POS register"),
     summary: bi("ผูกเครื่องกับสาขา เปิดใช้งาน PIN และรับมือเครื่องสูญหาย", "Assign the register to a branch, enable PIN access and handle lost devices."),
-    category: "setup", roles: managers, tracks: both, menu: bi("POS Devices → POS Readiness", "POS Devices → POS Readiness"), action: "/admin/pos-devices",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("POS Devices → POS Readiness", "POS Devices → POS Readiness"), action: "/admin/pos-devices",
     prerequisite: bi("มีสาขาและพนักงานพร้อม PIN; ใช้เครื่องที่ร้านควบคุมได้", "A branch and cashier PINs exist; use a shop-controlled computer."),
     steps: [
       bi("เพิ่มเครื่องขาย กรอกรหัส ชื่อ สาขา เลขเครื่องที่เกี่ยวข้องและ Prefix ใบเสร็จ ตรวจสาขาก่อนบันทึก", "Add a register with its code, name, branch, applicable register number and receipt prefix. Verify the branch before saving."),
@@ -140,7 +148,7 @@ export const lessons: Lesson[] = [
   {
     slug: "desktop-hardware", title: bi("Desktop App หน้าจอ 2 และเครื่องพิมพ์", "Desktop app, second display & printers"),
     summary: bi("ติดตั้ง POS Client ตั้งหน้าจอลูกค้า สแกนเนอร์ และซ้อมอุปกรณ์สำรอง", "Install the POS client, configure customer display and scanner, and rehearse device fallback."),
-    category: "setup", roles: managers, tracks: both, menu: bi("ดาวน์โหลด → POS Settings", "Downloads → POS Settings"), action: "/retail-local",
+    category: "setup", roles: managers, tracks: everyTrack, menu: bi("ดาวน์โหลด → POS Settings", "Downloads → POS Settings"), action: "/retail-local",
     prerequisite: bi("ตรวจ OS/สถาปัตยกรรมของเครื่อง ลิงก์จากทีมงาน และลิงก์จับคู่ที่ถูกต้อง", "Verify your OS/architecture, the official release link and a valid pairing link."),
     steps: [
       bi("เลือกชุด POS Client ให้ตรง Windows, macOS หรือ Linux จากรายการเผยแพร่ของระบบหรือทีมงาน แยกจากชุด Server/Server + POS; ถ้าไม่มีไฟล์สำหรับเครื่องให้ติดต่อทีมงาน", "Choose a published POS Client matching Windows, macOS or Linux. Distinguish it from Server/Server + POS packages; contact the team if no matching installer is published."),
@@ -155,7 +163,7 @@ export const lessons: Lesson[] = [
   {
     slug: "payments-qr", title: bi("ตั้ง QR รับเงินและชำระหลายช่องทาง", "Payment QR & split tender"),
     summary: bi("ตั้งผู้รับเงิน ตรวจเงินเข้าจริง และแยก QR ทั้งสามประเภท", "Set the recipient, verify received funds and distinguish the three QR purposes."),
-    category: "setup", roles: all, tracks: both, menu: bi("Settings → บัญชีรับเงิน / POS → ชำระเงิน", "Settings → Receiving accounts / POS → Payment"), action: "/admin/settings",
+    category: "setup", roles: all, tracks: everyTrack, menu: bi("Settings → บัญชีรับเงิน / POS → ชำระเงิน", "Settings → Receiving accounts / POS → Payment"), action: "/admin/settings",
     prerequisite: bi("บัญชีรับเงินของร้านและผู้มีสิทธิ์ตั้งค่า", "A shop receiving account and an authorized administrator."),
     steps: [
       bi("เพิ่มบัญชีรับเงิน เลือก PromptPay ระบุชื่อบัญชีและ ID หรือใช้ภาพ QR จากธนาคาร/ผู้ให้บริการที่ใช้ซ้ำได้และไม่ระบุยอด ตรวจผู้รับก่อนบันทึก", "Add a PromptPay receiving account with name and ID, or a reusable provider/bank QR without a fixed amount. Verify the recipient before saving."),
@@ -169,7 +177,7 @@ export const lessons: Lesson[] = [
   {
     slug: "members-coupons", title: bi("สมัครสมาชิก แจกคูปอง และใช้สิทธิ์", "Enroll members & redeem coupons"),
     summary: bi("ตรวจตัวตนสมาชิกและเงื่อนไขคูปองก่อนลดราคาสินค้า", "Verify membership and coupon eligibility before discounting products."),
-    category: "growth", roles: all, tracks: both, menu: bi("Customers / Loyalty / Coupons / POS", "Customers / Loyalty / Coupons / POS"), action: "/admin/coupons",
+    category: "growth", roles: all, tracks: everyTrack, menu: bi("Customers / Loyalty / Coupons / POS", "Customers / Loyalty / Coupons / POS"), action: "/admin/coupons",
     prerequisite: bi("กำหนดผู้รับผิดชอบข้อมูลลูกค้าและนโยบายสมาชิก", "Assign a customer-data owner and agree on membership rules."),
     steps: [
       bi("ค้นลูกค้าเดิมด้วยข้อมูลที่ลูกค้ายืนยันก่อนสมัครใหม่ ใน POS เลือกสมาชิกหรือสมัครจากหน้าที่รองรับ ตรวจชื่อและเบอร์ก่อนบันทึก", "Search for an existing customer using customer-confirmed details before enrolling. Select/enroll through POS and check name and phone before saving."),
@@ -183,7 +191,7 @@ export const lessons: Lesson[] = [
   {
     slug: "balances-privacy", title: bi("คะแนน Store Credit และข้อมูลลูกค้า", "Points, store credit & customer data"),
     summary: bi("ตรวจยอดและวันหมดอายุ แยกความยินยอม และจำกัดข้อมูลที่เข้าถึง", "Reconcile balances and expiry, handle consent and limit data access."),
-    category: "growth", roles: managers, tracks: both, menu: bi("Loyalty / Customers / Audit", "Loyalty / Customers / Audit"), action: "/admin/loyalty",
+    category: "growth", roles: managers, tracks: everyTrack, menu: bi("Loyalty / Customers / Audit", "Loyalty / Customers / Audit"), action: "/admin/loyalty",
     prerequisite: bi("ยอดตั้งต้นและหลักฐานจากระบบเดิมที่ตรวจสอบได้", "Verified opening balances and evidence from the previous system."),
     steps: [
       bi("ตรวจโปรแกรมคะแนนและประวัติการเคลื่อนไหวก่อนปรับยอด เก็บหลักฐานและเหตุผลให้ผู้มีสิทธิ์ดำเนินการ", "Review the points program and movement history before adjusting balances. Retain evidence and reasons for an authorized operator."),
@@ -197,7 +205,7 @@ export const lessons: Lesson[] = [
   {
     slug: "shifts", title: bi("เปิดกะ เงินทอน ปิดกะ และส่งมอบ", "Open, reconcile & hand over shifts"),
     summary: bi("ตรวจเงินสดจริงและรายการค้างก่อนส่งมอบเครื่องขาย", "Count actual cash and resolve pending work before handing over a register."),
-    category: "daily", roles: all, tracks: both, menu: bi("POS → กะ / ภาพรวมกะ POS", "POS → Shift / POS shift overview"), action: "/pos",
+    category: "daily", roles: all, tracks: everyTrack, menu: bi("POS → กะ / ภาพรวมกะ POS", "POS → Shift / POS shift overview"), action: "/pos",
     prerequisite: bi("เครื่องจับคู่แล้ว PIN ใช้ได้ และมีเงินทอนเริ่มต้นที่นับจริง", "A paired register, valid PIN and counted opening float."),
     steps: [
       bi("เลือกชื่อพนักงาน ใส่ PIN เปิดกะและกรอกเงินทอนจริง ตรวจสาขา เครื่องพิมพ์ และรายการค้างก่อนรับลูกค้า", "Select a cashier, enter PIN, open the shift with the counted float and review branch, printer and pending work."),
@@ -348,7 +356,7 @@ export const lessons: Lesson[] = [
   {
     slug: "restaurant-floor", title: bi("ร้านอาหาร: ผังโต๊ะและ QR ลูกค้า", "Restaurant: floor plan & guest QR"),
     summary: bi("จัดโซน โต๊ะ ความจุ และรับคำขอจาก QR อย่างถูกขั้นตอน", "Configure areas, tables and capacity, then review guest QR proposals."),
-    category: "setup", roles: managers, tracks: ["restaurant"], menu: bi("จัดผังร้าน → POS ร้านอาหาร", "Floor plan → Restaurant POS"), action: "/admin/restaurant-floor",
+    category: "setup", roles: managers, tracks: ["restaurant"], restaurantFormats: ["dine-in"], menu: bi("จัดผังร้าน → POS ร้านอาหาร", "Floor plan → Restaurant POS"), action: "/admin/restaurant-floor",
     prerequisite: bi("สาขา เมนู และสิทธิ์จัดการผังร้านอาหาร", "A branch, menu and restaurant floor-management permission."),
     steps: [
       bi("สร้างโซนและโต๊ะในสาขา ตั้งรหัส จำนวนที่นั่ง และตำแหน่งบนผัง ตรวจเส้นทางเดินและชื่อที่พนักงานเรียกจริง", "Create branch areas and tables with codes, seats and floor positions. Use names staff actually recognize."),
@@ -362,7 +370,7 @@ export const lessons: Lesson[] = [
   {
     slug: "restaurant-service", title: bi("ร้านอาหาร: เปิดบิล ส่งครัว และคิดเงิน", "Restaurant: open checks, kitchen & checkout"),
     summary: bi("ทำงานเป็นรอบอาหาร ย้าย/แยก/รวมบิล และตรวจงานก่อนรับเงิน", "Manage kitchen rounds, move/split/merge checks and review before payment."),
-    category: "daily", roles: all, tracks: ["restaurant"], menu: bi("POS → Restaurant / กระดานครัว", "POS → Restaurant / Kitchen board"), action: "/pos/restaurant",
+    category: "daily", roles: all, tracks: ["restaurant"], restaurantFormats: ["dine-in", "counter-kitchen"], menu: bi("POS → Restaurant / กระดานครัว", "POS → Restaurant / Kitchen board"), action: "/pos/restaurant",
     prerequisite: bi("เปิดกะแล้ว มีเมนู สถานีครัว และ PIN ที่มีสิทธิ์ร้านอาหาร", "An open shift, menus, kitchen stations and a PIN with restaurant permissions."),
     steps: [
       bi("เลือกโต๊ะและเปิดบิล DINE_IN หรือเปิด TAKEAWAY เลือกเมนู จำนวน ตัวเลือก และหมายเหตุ ตรวจรายการก่อนส่งครัว", "Open DINE_IN on a table or a TAKEAWAY check. Select dishes, quantities, modifiers and notes, then review the draft."),
@@ -376,7 +384,7 @@ export const lessons: Lesson[] = [
   {
     slug: "restaurant-online", title: bi("ร้านอาหาร: คิวและออร์เดอร์ออนไลน์", "Restaurant: queues & online orders"),
     summary: bi("แยกการรับคิว การชำระเงิน และการยอมรับงานเข้าครัว", "Separate waiting lists, payment and kitchen acceptance."),
-    category: "daily", roles: all, tracks: ["restaurant"], menu: bi("POS ร้านอาหาร → คิว / ออร์เดอร์เข้า / Inbox", "Restaurant POS → Queue / Incoming orders / Inbox"), action: "/pos/restaurant",
+    category: "daily", roles: all, tracks: ["restaurant"], restaurantFormats: ["dine-in", "pickup-delivery"], menu: bi("POS ร้านอาหาร → คิว / ออร์เดอร์เข้า / Inbox", "Restaurant POS → Queue / Incoming orders / Inbox"), action: "/pos/restaurant",
     prerequisite: bi("ตั้งสาขา เมนูที่ขายช่องทางนั้น เวลาและรูปแบบรับสินค้า", "Configure branch, channel-visible menu, hours and fulfillment options."),
     steps: [
       bi("เพิ่มคิวและจำนวนคน เรียกเมื่อมีโต๊ะเหมาะสม พาไปนั่งจึงเปิดบิลจริง ตรวจ No-show ตามสถานะที่หน้าจอมี", "Add parties to the queue, call when a suitable table is available and seat them to open the actual check. Review no-shows through the supported states."),
@@ -388,9 +396,69 @@ export const lessons: Lesson[] = [
     caution: bi("เดลิเวอรีภายนอกต้องตรวจความพร้อมรายผู้ให้บริการ ไม่ถือว่า GrabFood, LINE MAN หรือการเรียกไรเดอร์อัตโนมัติพร้อมใช้เพียงเพราะมีชื่อเมนู", "Check readiness per provider. A menu label does not prove live GrabFood, LINE MAN or automatic rider booking is available."),
   },
   {
+    slug: "restaurant-kitchen-availability", title: bi("ของหมดวันนี้ Kitchen Board และการยกเลิกรายการ", "Sold-out items, Kitchen Board & line cancellation"),
+    summary: bi("หยุดรับเมนูตามสาขา ติดตามงานครัว และแก้รายการโดยไม่ลบหลักฐานหรือคืนเงินผิด", "Stop branch intake, track kitchen work and correct lines without erasing evidence or mis-refunding."),
+    category: "daily", roles: all, tracks: ["restaurant"], menu: bi("POS ร้านอาหาร → ของหมดวันนี้ / Kitchen Board / ออร์เดอร์เข้า", "Restaurant POS → Sold out today / Kitchen Board / Incoming orders"), action: "/admin/kitchen",
+    prerequisite: bi("เมนูผูกสาขาและสถานีครัวแล้ว มีผู้รับผิดชอบรับงาน ยกเลิก และตรวจ Refund", "Menus are assigned to branches/stations with owners for acceptance, cancellation and refund review."),
+    steps: [
+      bi("เมื่อเมนูหมด ให้ตั้ง ‘หมดวันนี้’ ที่สาขาที่เกิดเหตุ ไม่ปิดสินค้าแม่ทั้งร้าน ตรวจว่า POS, QR และช่องทางออนไลน์หยุดรับรายการใหม่ของสาขานั้น", "Mark an item sold out today for the affected branch; do not disable the product for every branch. Verify POS, QR and online intake stop new lines there."),
+      bi("Kitchen Board ต้องแสดงสถานีและลำดับงานจริง ให้ครัวเลื่อนสถานะเมื่อรับ ทำเสร็จ และเสิร์ฟ ใช้ตัวบอกข้อมูลช้าเพื่อโทรยืนยันเมื่อจอไม่สด", "Kitchen Board must reflect real stations and work order. Advance tickets only when acknowledged, completed and served; verify manually when the feed is stale."),
+      bi("รายการที่ส่งครัวแล้วให้ยกเลิกด้วย action และเหตุผลที่หน้าจอรองรับ ไม่ลบหรือแก้ประวัติ ถ้าต้องอนุมัติ ให้ผู้มีสิทธิ์อีกคนตรวจตามกติกา", "Cancel sent lines through the supported action with a reason; never erase history. Use the required distinct approver when prompted."),
+      bi("ออร์เดอร์ออนไลน์ที่ต้องลดรายการให้เลือกสาเหตุและจำนวนคงเหลือจริง ระบบคำนวณบิลใหม่และแยกเงินสดที่คืนทันทีจาก non-cash refund ที่ยังรอหลักฐาน", "For online line cancellation, choose the actual cause and remaining quantity. Let the server reprice the bill and separate immediate cash from pending non-cash refunds."),
+      bi("รายการหมดจะคืนตามเวลาร้านที่ตั้งและ scheduler; การเปิดกะล้างได้เฉพาะรายการที่หมดอายุแล้ว ไม่ใช้การเปิดเครื่องหรือเปิดกะใหม่เพื่อบังคับให้เมนูกลับมาขาย", "Sold-out entries clear according to configured store time and scheduling. Shift open may clear only expired entries; never reopen a device/shift to force availability."),
+    ],
+    check: bi("สาขาที่หมดรับรายการใหม่ไม่ได้ งานครัวเก่ายังปิดได้ และรายการยกเลิกกระทบยอดบิล Refund สต็อกและ Audit ตรงกัน", "The affected branch rejects new intake, existing kitchen work can finish and cancelled lines reconcile across bill, refund, stock and audit."),
+    caution: bi("‘หมดวันนี้’ เป็นกฎตอนรับรายการใหม่ ไม่ควรทำให้บิลโต๊ะที่ทำไปแล้วติดค้าง การชำระเงินออนไลน์อย่างเดียวไม่สร้างงานครัว", "Sold-out is an intake rule and must not strand an existing check. Online payment alone never creates kitchen work."),
+  },
+  {
+    slug: "restaurant-operations-checklists", title: bi("Checklist งาน กะ และการส่งมอบ", "Operational checklists, duties & handover"),
+    summary: bi("ใช้มาตรฐานงานที่มีเวอร์ชัน แยกผู้ทำ ผู้ตรวจ และงานแก้ไข พร้อมส่งต่อกะอย่างตรวจสอบได้", "Use versioned standards with separate performers, reviewers, corrective actions and auditable handover."),
+    category: "daily", roles: managers, tracks: ["restaurant", "retail"], restaurantFormats: ["dine-in", "counter-kitchen", "pickup-delivery"], retailFormats: ["food-counter"], menu: bi("Operations → Templates / My Work / Handover", "Operations → Templates / My Work / Handover"), action: "/admin/operations",
+    prerequisite: bi("กำหนดผู้รับผิดชอบเปิดร้าน ปิดร้าน เตรียมของ ตรวจอุปกรณ์ และหัวหน้าผู้ทบทวนในแต่ละสาขา", "Named owners for opening, closing, preparation, equipment checks and branch review."),
+    steps: [
+      bi("สร้าง Template จากขั้นตอนที่ร้านใช้จริง กำหนดผลที่รับได้ หลักฐานที่ต้องแนบและสาขา แล้วเผยแพร่; การแก้ไขภายหลังต้องสร้างเวอร์ชันใหม่", "Build templates from actual shop procedures with accepted results, evidence and branch scope, then publish. Later edits create a new version."),
+      bi("กำหนดตารางและหน้าที่ให้ผู้ปฏิบัติงานตรวจ My Work ก่อนเริ่มกะ การแจ้งเตือนเป็นงานภายในระบบ ไม่ถือว่าส่ง LINE หรืออีเมลแล้ว", "Assign schedules/duties and have staff check My Work before service. In-app notices are not proof of LINE/email delivery."),
+      bi("บันทึก PASS/FAIL ตามสิ่งที่ตรวจจริง แนบภาพเฉพาะหลักฐานของร้าน FAIL ต้องมี Corrective Action และผู้รับผิดชอบ ไม่แก้ผลเก่าให้เป็น PASS", "Record observed PASS/FAIL and attach only shop-owned evidence. A FAIL needs a corrective action and owner; never rewrite the old result as PASS."),
+      bi("ให้ผู้ทบทวนที่แยกจากผู้ทำตรวจงานตามเงื่อนไข รับทราบไม่เท่ากับอนุมัติ และการส่งมอบกะไม่ปิดบิล POS หรือย้ายเจ้าของเงินอัตโนมัติ", "Use a separate reviewer where required. Acknowledgement is not approval, and handover does not close POS bills or transfer financial ownership."),
+      bi("ปิดรอบด้วยสรุปที่ผู้จัดการยืนยัน ตรวจงานค้าง ผู้รับต่อและกำหนดแก้ แล้วใช้รายงานติดตามงานเกินกำหนดโดยไม่ตีความเป็นคะแนนรับรอง", "Close the cycle with a manager-confirmed summary, pending owners and remediation dates. Use reports for overdue follow-up, not as a certification score."),
+    ],
+    check: bi("ทุกงานมีเวอร์ชัน ผู้ทำ ผู้ตรวจ หลักฐานและผู้รับแก้ครบ งานค้างตามไปถึงกะถัดไปโดยไม่เปลี่ยนสถานะการเงิน", "Every task has version, performer, reviewer, evidence and remediation owner; pending work reaches the next shift without changing financial state."),
+    caution: bi("ค่าเกณฑ์ที่ร้านตั้งและการอนุมัติ Checklist เป็นหลักฐานการทำงาน ไม่ใช่ใบรับรองความปลอดภัยอาหารหรือข้อกฎหมาย", "Shop-configured limits and checklist approval are operational evidence, not food-safety or legal certification."),
+  },
+  {
+    slug: "restaurant-costs-quality", title: bi("วัตถุดิบ การผลิต ของเสีย คุณภาพ และต้นทุน", "Ingredients, production, wastage, quality & cost"),
+    summary: bi("เชื่อมสูตร การรับเข้า การเตรียม ของเสีย รายจ่าย และรายงานโดยรักษาค่าที่ไม่ทราบไว้", "Connect recipes, receiving, preparation, wastage, expenses and reports while preserving unknowns."),
+    category: "growth", roles: managers, tracks: ["restaurant"], menu: bi("Products / Purchase / Wastage / Operations / Reports", "Products / Purchase / Wastage / Operations / Reports"), action: "/admin/reports",
+    prerequisite: bi("สูตรและหน่วยฐานผ่านการตรวจ มีต้นทุนรับเข้าจริง สาขา ล็อต และผู้ตรวจคุณภาพตามที่ร้านใช้", "Reviewed recipes/base units plus real receiving costs, branches, lots and shop-defined quality reviewers."),
+    steps: [
+      bi("ตรึงสูตรและ SOP ที่ใช้กับงานเตรียมหรือผลิต ตรวจผลผลิตต่อ Batch และหน่วยวัตถุดิบก่อนเริ่ม ไม่แก้สูตรปัจจุบันเพื่อเปลี่ยนต้นทุนบิลเก่า", "Pin the recipe and SOP used for preparation/production. Verify batch yield and ingredient units; do not edit today's recipe to rewrite old-sale cost."),
+      bi("รับวัตถุดิบด้วย PO/หลักฐานล็อต จำนวนและต้นทุนจริง แยกของพร้อมใช้ ของพักตรวจ ของเสียและของระหว่างโอน ไม่รวมทั้งหมดเป็นสต็อกขายได้", "Receive ingredients with PO/lot evidence, actual quantity and cost. Keep usable, held, wasted and in-transit quantities distinct."),
+      bi("บันทึกงานผลิตและของเสียจากล็อตจริงเมื่อใช้ workflow นี้ ส่วนต่างผลผลิตไม่ควรถูกทิ้งซ้ำทั้งในใบผลิตและ Wastage", "When the workflow is enabled, record production and wastage against actual lots; do not dispose the same yield variance twice."),
+      bi("บันทึกรายจ่ายและภาษีซื้อแยกจากการรับสินค้า แล้วเปิด Reports/กระทบยอดต้นทุน ตรวจยอดขาย ต้นทุนที่มีหลักฐาน ค่าใช้จ่ายที่ทบทวน และรายการที่ยังไม่ทราบ", "Record expenses/input VAT separately from receiving. In Reports/cost reconciliation, review sales, evidenced cost, reviewed expenses and every unknown."),
+      bi("ใช้รายงานเมนูและประมาณการต้นทุนเพื่อช่วยทบทวนราคาเท่านั้น ให้คนตรวจข้อมูลก่อนเปลี่ยนสูตร ราคา การสั่งซื้อ หรือปล่อยล็อตพัก", "Use menu/cost analysis as decision support only. A human reviews evidence before changing recipe, price, purchasing or releasing held lots."),
+    ],
+    check: bi("หนึ่งหน่วยขายตามกลับถึงสูตร/ล็อต/ต้นทุนได้ ของเสียไม่ซ้ำ และต้นทุนที่ขาดแสดงว่าไม่ทราบแทนศูนย์", "A sold unit traces to recipe/lot/cost, wastage is not duplicated and missing cost remains unknown rather than zero."),
+    caution: bi("การอนุมัติ Checklist หรือปล่อยล็อตเป็นการตัดสินของคนตามหลักฐาน ไม่ใช่การรับรองความปลอดภัยอัตโนมัติ และกำไรจากรายงานไม่ใช่คำยื่นภาษี", "Checklist approval or lot release is a human evidence-based decision, not automatic safety certification; report profit is not a tax filing."),
+  },
+  {
+    slug: "restaurant-rehearsal", title: bi("แบบฝึกก่อนเปิดจริงสำหรับร้านอาหารและคาเฟ่", "Restaurant & cafe launch rehearsal"),
+    summary: bi("ซ้อมโต๊ะ TAKEAWAY ครัว ของหมด ออนไลน์ ยกเลิก และปิดกะด้วยข้อมูลทดสอบ", "Rehearse tables, takeaway, kitchen, sold-out, online, cancellation and shift close."),
+    category: "recovery", roles: managers, tracks: ["restaurant"], menu: bi("ร้านทดสอบ → POS ร้านอาหาร / Kitchen / Operations / Reports", "Test shop → Restaurant POS / Kitchen / Operations / Reports"), action: "/admin/pos-readiness",
+    prerequisite: bi("ร้านทดสอบ เมนูสองสถานี โต๊ะ/TAKEAWAY ช่องทางรับเงิน ผู้ทดสอบทุกบทบาทและแบบบันทึกผล", "A test shop, two-station menu, table/takeaway workflows, tenders, every role and an evidence sheet."),
+    steps: [
+      bi("DINE_IN: เปิดโต๊ะ สั่งสองรอบ รับ QR proposal ย้ายโต๊ะ แยก/รวมบิล ใช้ส่วนลด แล้วจ่ายแต่ละรูปแบบ ตรวจครัว ใบเสร็จและสต็อก", "DINE_IN: open a table, send two rounds, accept a QR proposal, move/split/merge, discount and settle, checking kitchen, receipt and stock."),
+      bi("TAKEAWAY/ออนไลน์: สร้างออร์เดอร์สาขาและ fulfillment ชัดเจน ตรวจชำระแล้วให้คนรับเข้าครัว ส่งมอบผู้รับจริง และยืนยันว่าจ่ายเงินอย่างเดียวไม่สร้างตั๋วครัว", "TAKEAWAY/online: use explicit branch and fulfillment, verify payment, have staff accept kitchen work and hand off to the recipient; payment alone must not create a ticket."),
+      bi("ตั้งเมนูหมดวันนี้ระหว่างมีบิลเก่า ตรวจว่ารายการใหม่ถูกบล็อกแต่บิลเดิมปิดได้ ยกเลิกรายการหลังส่งครัวด้วยเหตุผล/ผู้อนุมัติและตรวจ Refund ค้าง", "Mark an item sold out while an older check is open; new intake stops while the old check can finish. Cancel a sent line with reason/approval and inspect pending refunds."),
+      bi("ซ้อม Checklist เปิด–ปิด FAIL และงานแก้ ส่งมอบกะ ตรวจวัตถุดิบ ของเสีย รายจ่ายและรายงานต้นทุน โดยค่าที่ไม่มีหลักฐานต้องไม่กลายเป็นศูนย์", "Rehearse opening/closing checklists, FAIL remediation, handover, ingredients, waste, expenses and cost reports; missing evidence must not become zero."),
+      bi("ตัดเน็ตก่อนและหลังรับเงิน ทดสอบข้อมูลช้าบน Kitchen Board และผลรับเงินไม่ชัด ตรวจบิลเดิมก่อนลองใหม่ จากนั้นปิดกะเทียบ Cash In/Out Refund และงานค้าง", "Cut connectivity before/after tender, test stale Kitchen Board and uncertain payments, inspect the original bill before retrying, then reconcile Cash In/Out, refunds and pending work at close."),
+    ],
+    check: bi("ทุกสถานการณ์มีผลจริง ผู้จัดการยืนยันบิล–ครัว–เงิน–สต็อกตรงกัน และข้อผิดพลาดสำคัญปิดก่อน Soft Opening", "Every scenario has observed evidence; a manager reconciles check, kitchen, money and stock and closes critical issues before soft opening."),
+    caution: bi("Restaurant POS ไม่มี Emergency Offline และแบบฝึกนี้ไม่รับรอง provider เครื่องพิมพ์ หรือความปลอดภัยอาหารจนกว่าจะทดสอบของร้านจริง", "Restaurant POS has no Emergency Offline. This rehearsal does not certify providers, printers or food safety without shop-specific live testing."),
+  },
+  {
     slug: "returns-recovery", title: bi("ยกเลิก คืนสินค้า และคืนเงินค้าง", "Cancel, return & resolve pending refunds"),
     summary: bi("เลือกบิลต้นฉบับ ตรวจผู้อนุมัติ และติดตามเงินที่คืนจริง", "Use the original bill, verify approval and track actual money returned."),
-    category: "recovery", roles: all, tracks: both, menu: bi("POS → บิล / คืนสินค้า → Payment", "POS → Bills / Returns → Payment"), action: "/pos",
+    category: "recovery", roles: all, tracks: everyTrack, menu: bi("POS → บิล / คืนสินค้า → Payment", "POS → Bills / Returns → Payment"), action: "/pos",
     prerequisite: bi("เลขบิลต้นฉบับ เหตุผล หลักฐานและผู้มีสิทธิ์อนุมัติ", "Original bill reference, reason, evidence and an authorized approver."),
     steps: [
       bi("ตรวจว่ากำลังยกเลิกงานที่ยังไม่ขาย หรือคืนรายการที่ชำระแล้ว เลือกบิลเดิมและจำนวนที่คืนจริง ไม่เปิดบิลใหม่มาหักล้าง", "Distinguish cancelling unfinished work from returning a completed sale. Select the original bill and actual returned quantities instead of offsetting with a new sale."),
@@ -403,28 +471,28 @@ export const lessons: Lesson[] = [
   },
   {
     slug: "reports-ai", title: bi("รายงาน Live Dashboard และผู้ช่วย AI", "Reports, live dashboard & AI assistant"),
-    summary: bi("ถามยอดขาย เกมยอดนิยม และวิธีใช้งาน พร้อมอ่านช่วงข้อมูลและข้อจำกัด", "Ask about sales, popular games and usage, while checking scope and limitations."),
-    category: "growth", roles: managers, tracks: both, menu: bi("Reports / Live Dashboard / ผู้ช่วย AI", "Reports / Live Dashboard / AI assistant"), action: "/admin/assistant",
+    summary: bi("อ่านยอดขาย สินค้าหรือบริการที่มีหลักฐาน และถามวิธีใช้งาน พร้อมตรวจช่วงข้อมูลและข้อจำกัด", "Review sales and evidenced product/service activity, and ask for usage help while checking scope and limitations."),
+    category: "growth", roles: managers, tracks: everyTrack, menu: bi("Reports / Live Dashboard / ผู้ช่วย AI", "Reports / Live Dashboard / AI assistant"), action: "/admin/assistant",
     prerequisite: bi("สิทธิ์รายงานและสิทธิ์ข้อมูลที่เกี่ยวข้อง พร้อมช่วงวันที่/สาขาที่ต้องการ", "Reporting and relevant data permissions, with an explicit branch/date range."),
     steps: [
       bi("เปิด Reports เลือกสาขาและช่วงวันที่ ตรวจว่ายอดหมายถึงยอดขาย เงินรับ หรือกำไรขั้นต้นก่อนส่งออก ไม่รวมยอดคนละความหมายเข้าด้วยกัน", "In Reports, choose branch/date range and distinguish sales, receipts and gross profit before exporting. Do not add unlike metrics together."),
       bi("ร้านบอร์ดเกมดู Analytics สำหรับเวลาเล่น การใช้โต๊ะ คิว No-show เกมยืม และแพ็กเกจ; เกมนิยมหมายถึงจำนวนยืมที่บันทึก ไม่ใช่ความชอบของลูกค้าทุกคน", "Use board-game Analytics for visits, utilization, queue/no-shows, loans and passes. Popularity means recorded borrowing, not every customer's preference."),
       bi("ใช้ Live Dashboard เมื่อมีสิทธิ์ดูข้อมูลจริง ตรวจป้ายข้อมูลที่ยังไม่เชื่อม หน้านี้ไม่ใช่ลิงก์เปิดเผยยอดร้านให้คนทั่วไป", "Use Live Dashboard with authorized live-data access. Read labels for unconnected data; this is not a public link exposing shop sales."),
-      bi("ถามผู้ช่วย เช่น ‘วันนี้สาขานี้อะไรขายดี’ ‘เดือนนี้เกมใดถูกยืมมากที่สุด’ หรือ ‘ทำไมปิดบิลไม่ได้’ ตรวจช่วงเวลาและแหล่งข้อมูลในคำตอบก่อนใช้ตัดสินใจ", "Ask the assistant: 'What sold best at this branch today?', 'Which games were borrowed most this month?' or 'Why can I not close this bill?' Check dates and evidence before acting."),
+      bi("ถามผู้ช่วย เช่น ‘วันนี้สาขานี้อะไรขายดี’ ‘เดือนนี้กิจกรรมใดมีหลักฐานมากที่สุด’ หรือ ‘ทำไมปิดบิลไม่ได้’ ตรวจช่วงเวลา ประเภทรายงานและแหล่งข้อมูลก่อนใช้ตัดสินใจ", "Ask the assistant: 'What sold best at this branch today?', 'Which recorded activity was highest this month?' or 'Why can I not close this bill?' Check dates, report type and evidence before acting."),
       bi("ถามวิธีใช้เมนูจากผู้ช่วยในระบบได้ หากไม่มีเครื่องมืออ่านข้อมูลนั้น ให้เปิดหน้าที่ผู้ช่วยอ้างถึง การส่งอีเมลรายงานหรือการเปลี่ยนข้อมูลต้องตรวจและยืนยัน", "Use the in-app assistant for menu guidance. When no live-data tool exists, open the referenced page. Review and confirm report emails or data-changing proposals."),
     ],
     check: bi("ตอบได้ว่าตัวเลขมาจากสาขาและช่วงใด ข้อมูลต้นทุนที่ขาดแสดงว่าไม่ทราบ และส่งออกตรงหน้ารายงาน", "You can identify branch and period, missing costs remain unknown and exports match the report."),
-    caution: bi("AI ไม่รับประกันยอดขายในอนาคตหรือสั่งซื้อเกมแทนผู้จัดการ คู่มือสาธารณะค้นบทความได้โดยไม่เข้าถึงข้อมูลร้าน; ผู้ช่วยข้อมูลจริงต้องเข้าสู่ระบบตามสิทธิ์", "AI does not guarantee future sales or buy games for the manager. Public learning search cannot access shop data; live-data assistance requires authorized sign-in."),
+    caution: bi("AI ไม่รับประกันยอดขายในอนาคตหรือสั่งซื้อสินค้าแทนผู้จัดการ สำหรับร้านขายยา AI ไม่วินิจฉัยหรืออนุมัติการจ่ายยา คู่มือสาธารณะค้นบทความได้โดยไม่เข้าถึงข้อมูลร้าน; ผู้ช่วยข้อมูลจริงต้องเข้าสู่ระบบตามสิทธิ์", "AI does not guarantee future sales or purchase stock for the manager. In pharmacies, AI neither diagnoses nor authorizes dispensing. Public learning search cannot access shop data; live-data assistance requires authorized sign-in."),
   },
   {
     slug: "outages-support", title: bi("เน็ตล่ม ไฟดับ รายการค้าง และ Support", "Outages, uncertain results & support"),
     summary: bi("หยุดรายการซ้ำ เก็บหลักฐาน และกู้การทำงานตามบิลเดิม", "Avoid duplicates, retain evidence and recover using the original transaction."),
-    category: "recovery", roles: all, tracks: both, menu: bi("POS / Support / Audit", "POS / Support / Audit"), action: "/support",
+    category: "recovery", roles: all, tracks: everyTrack, menu: bi("POS / Support / Audit", "POS / Support / Audit"), action: "/support",
     prerequisite: bi("ผู้จัดการเวร แบบบันทึกฉุกเฉิน และช่องทางติดต่อทีมงาน", "A duty manager, contingency log and support contact."),
     steps: [
       bi("เมื่อหน้าจอค้างหลังรับเงิน ให้จดเวลา สาขา เครื่อง เลขบิลและผลที่เห็น ตรวจบิลเดิมและเงินเข้าก่อนทำรายการต่อ ไม่รับเงินซ้ำ", "If the screen stalls after payment, record time, branch, device, bill and observed result. Check the original bill and received funds before proceeding; do not charge again."),
       bi("ถ้าระบบเสนอให้ลองรายการเดิม ให้ใช้ข้อมูลเดิมและรหัสคำขอเดิม ไม่เปิดบิลใหม่เพื่อหลบข้อผิดพลาด ให้ผู้จัดการตรวจกรณีผลยังไม่ชัด", "Use the original retry/recovery action with the same request identity. Do not create a new bill to bypass an error. Escalate unresolved outcomes to the manager."),
-      bi("บอร์ดเกม/ร้านอาหารไม่รองรับ Emergency Offline ให้จดเวลาที่ตรวจได้ รายการและเงินรับในแบบฉุกเฉินตามนโยบายร้าน แล้วผู้จัดการกระทบยอดหลังระบบกลับมา", "Board-game and restaurant bills are not supported by Emergency Offline. Record verified times, items and receipts in the shop contingency log; a manager reconciles after recovery."),
+      bi("บอร์ดเกม ร้านอาหาร และร้านขายยาไม่รองรับ Emergency Offline ให้จดเวลาที่ตรวจได้ รายการและเงินรับในแบบฉุกเฉินตามนโยบายร้าน แล้วผู้จัดการกระทบยอดหลังระบบกลับมา", "Board-game, restaurant and pharmacy bills are not supported by Emergency Offline. Record verified times, items and receipts in the shop contingency log; a manager reconciles after recovery."),
       bi("ส่ง Support: เวลาเกิดเหตุ สาขา รหัสเครื่อง/บิล รุ่นแอป ขั้นตอนและข้อความผิดพลาด ปิดบังข้อมูลลูกค้า ห้ามส่ง PIN รหัสผ่าน Token หรือ QR จับคู่", "Send support the incident time, branch, device/bill reference, app version, steps and error. Redact customer data; never send PINs, passwords, tokens or pairing QR codes."),
       bi("หลังแก้ ตรวจบิล เงิน สต็อก เกมและบัตรค้ำที่ค้าง รวมทั้ง Audit Log แล้วบันทึกเหตุและผู้ติดตามเพื่อปรับขั้นตอน", "After recovery, reconcile bills, money, stock, outstanding games/documents and audit history. Record the incident and follow-up owner."),
     ],
@@ -434,17 +502,172 @@ export const lessons: Lesson[] = [
   {
     slug: "launch-checklist", title: bi("ซ้อมครบวงจรและ Checklist ก่อนเปิดจริง", "End-to-end rehearsal & launch checklist"),
     summary: bi("ทดสอบตามบทบาท ทำ Soft Opening และตกลงแผนย้อนกลับ", "Rehearse by role, run a soft opening and agree on rollback ownership."),
-    category: "recovery", roles: managers, tracks: both, menu: bi("POS Readiness → ร้านทดสอบ → Soft Opening", "POS Readiness → Test shop → Soft opening"), action: "/admin/pos-readiness",
+    category: "recovery", roles: managers, tracks: everyTrack, menu: bi("POS Readiness → ร้านทดสอบ → Soft Opening", "POS Readiness → Test shop → Soft opening"), action: "/admin/pos-readiness",
     prerequisite: bi("อ่านบทตั้งค่าแล้ว มีร้านทดสอบและผู้รับผิดชอบทุกบทบาท", "Setup lessons completed, a test shop and all role owners available."),
     steps: [
       bi("ตรวจยอดตั้งต้นสินค้า สมาชิก สิทธิ์และมัดจำ เลือกวันตัดระบบเดิม กำหนดว่าหากไม่ผ่านจะหยุดรับรายการใหม่และให้ใครกระทบยอด ห้ามใช้สองระบบขายทับกัน", "Reconcile opening stock, members, entitlements and deposits. Choose cutover and define who stops new entries/reconciles on failure. Avoid overlapping sales in two systems."),
-      bi("ทดสอบเจ้าของ ผู้จัดการ และแคชเชียร์จริง: เปิดกะ เงินทอน เปิดโต๊ะ เพิ่มสินค้า ใช้สมาชิก/คูปอง รับเงินหลายช่องทาง และพิมพ์ซ้ำ", "Use actual owner, manager and cashier roles to test shift opening, float, table opening, goods, members/coupons, tender methods and reprints."),
-      bi("บอร์ดเกม: สองกลุ่มบิล ยืมเกม รับบัตร ย้าย/รวม/แยกโต๊ะ ปิดกลุ่มแรก อีกกลุ่มเล่นต่อ คืนเกม/บัตร แล้วชำระครบ; ร้านอาหาร: สองรอบครัว QR รอรับ แยกบิลและเสิร์ฟ", "Board games: two bill groups, loans/collateral, move/merge/detach, early-group payment, continued play, returns and final settlement. Restaurant: two kitchen rounds, QR review, split checks and service."),
+      bi("ทดสอบเจ้าของ ผู้จัดการ และแคชเชียร์จริง: เปิดกะ เงินทอน สร้างบิลตามรูปแบบร้าน เพิ่มสินค้า ใช้สมาชิก/คูปอง รับเงินหลายช่องทาง และพิมพ์ซ้ำ", "Use actual owner, manager and cashier roles to test shift opening, float, the shop's bill workflow, goods, members/coupons, tender methods and reprints."),
+      bi("ค้าปลีก: สแกนชิ้น/แพ็ก รับเข้า คืนสินค้าและ Emergency Offline ที่เข้าเงื่อนไข; บอร์ดเกม: สองกลุ่มบิล ยืมเกมและปิดทีละกลุ่ม; ร้านอาหาร: สองรอบครัว QR รอรับ แยกบิลและเสิร์ฟ; ร้านขายยา: สินค้านโยบายต่างกัน เคสเภสัชกร หลักฐาน และการปฏิเสธผู้ไม่มีใบอนุญาต", "Retail: loose/pack scans, receiving, returns and eligible Emergency Offline; board games: two billing groups, loans and staged settlement; restaurant: two kitchen rounds, QR review, split checks and service; pharmacy: distinct product policies, pharmacist cases, evidence and denial of unlicensed decisions."),
       bi("ซ้อมจองไม่ชนกันและข้ามเที่ยงคืน ทดลองสิทธิ์ที่ต้องถูกปฏิเสธ คืนสินค้า/เงินค้าง อุปกรณ์หลุดและผลรับเงินไม่ชัดเจน แล้วปิดกะเทียบรายงาน", "Test overlapping bookings, midnight boundaries, permission denial, returns/pending refunds, disconnected devices and uncertain payment results. Close the shift and reconcile reports."),
       bi("Soft Opening เริ่มหนึ่งกะหรือพื้นที่เล็ก เก็บปัญหาจริง มอบหมายคนแก้ ตรวจทุกข้ออีกครั้งก่อนเปิดเต็ม และวางรอบตรวจสต็อก เกม สิทธิ์และยอดคงเหลือ", "Start a soft opening with one shift or small area. Record issues and owners, repeat failed checks before full launch and schedule stock, game, access and balance reviews."),
     ],
     check: bi("ผู้จัดการลงชื่อผ่านรายการทดสอบพร้อมหลักฐาน ไม่มียอดไม่ตรงหรือรายการสำคัญที่ยังหาคำตอบไม่ได้", "A manager signs off evidence-backed checks with no unexplained variance or unresolved critical result."),
     caution: bi("Checklist การอ่านในศูนย์เรียนรู้ช่วยติดตามบทเรียนเท่านั้น ไม่ใช่การตรวจระบบจริงหรือใบรับรองว่าเปิดร้านได้", "Learning-center completion tracks reading only. It is not a live system check or certification of launch readiness."),
+  },
+  {
+    slug: "retail-pos-sale", title: bi("ขายหน้าร้าน: สแกนสินค้า ตรวจราคา และรับชำระ", "Counter sale: scan, review & take payment"),
+    summary: bi("ทำบิลค้าปลีกผ่านเส้นทางเงินและสต็อกหลักโดยไม่สร้างรายการซ้ำ", "Complete a retail bill through the authoritative money and stock path without duplicates."),
+    category: "daily", roles: all, tracks: ["retail"], menu: bi("POS → ขายสินค้า", "POS → Sell"), action: "/pos",
+    prerequisite: bi("จับคู่เครื่อง เปิดกะ เลือกพนักงานด้วย PIN และมีสินค้าที่เปิดขายบน RETAIL_POS", "A paired register, open shift, PIN-selected cashier and products published to RETAIL_POS."),
+    steps: [
+      bi("สแกนบาร์โค้ดหรือค้นสินค้าจากรายการที่เครื่องโหลดจาก server ตรวจ SKU, variant, หน่วยขายและจำนวนก่อนเพิ่มลงตะกร้า", "Scan a barcode or search the server-loaded catalog. Verify SKU, variant, selling unit and quantity before adding it."),
+      bi("ตรวจราคา โปรโมชัน ภาษี สมาชิก คูปองและคะแนนจาก preview ปัจจุบัน หากแก้ตะกร้าต้องรอ preview ใหม่ก่อนรับเงิน", "Review current price, promotions, tax, member, coupon and point results. Wait for a fresh preview after changing the cart."),
+      bi("ส่วนลดมือใช้ผู้อนุมัติอีกคนที่มีสิทธิ์และ PIN ของตนเอง ตรวจยอดสุดท้ายกับลูกค้าก่อนเลือกวิธีชำระ", "Manual discounts require a distinct authorized person using their own PIN. Confirm the final total before choosing tender."),
+      bi("รับชำระและรอผลบิลเดิม ถ้าคำตอบขาดหายให้ค้นบิลและเงินเข้าก่อนลองซ้ำ จากนั้นตรวจใบเสร็จและยอดสต็อกที่ตัด", "Take payment and await the original bill result. After an uncertain response, check the bill and received funds before retrying, then verify receipt and stock movement."),
+    ],
+    check: bi("บิลเป็น COMPLETED ยอดรับตรงใบเสร็จ สินค้าตัดจากสาขาเครื่องนี้ และไม่เกิดบิลซ้ำ", "The bill is COMPLETED, tender matches the receipt, stock moved at this register's branch and no duplicate bill exists."),
+    caution: bi("เครื่องที่จับคู่ไม่ใช่ตัวตนพนักงาน ทุกการขายต้องใช้ PIN และสิทธิ์ pos.sell เงินของบิลยึด line amount ที่ server บันทึก ไม่คำนวณใหม่จากหน้าจอ", "A paired device is not a cashier identity. Every sale needs a PIN and pos.sell; server-recorded line amounts are authoritative."),
+  },
+  {
+    slug: "retail-packs-barcodes", title: bi("แพ็ก บาร์โค้ด และหน่วยขาย", "Packs, barcodes & selling units"),
+    summary: bi("ตั้งหน่วยเดี่ยวและแพ็กให้สแกนได้ถูกจำนวนโดยไม่สร้าง SKU ซ้ำที่ความหมายชนกัน", "Configure loose units and packs so scans resolve the correct quantity without ambiguous duplicate SKUs."),
+    category: "setup", roles: managers, tracks: ["retail"], menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/product-packs",
+    prerequisite: bi("มี SKU หลัก จำนวนต่อแพ็ก ราคาขาย และบาร์โค้ดจากสินค้าจริง", "A base SKU, verified pack quantities, prices and physical product barcodes."),
+    steps: [
+      bi("กำหนดหน่วยฐานให้ตรงกับการตัดสต็อก เช่น ชิ้น ขวด หรือถุง แล้วสร้างแพ็กเมื่อหนึ่งหน่วยขายมีหลายหน่วยฐาน", "Set the base stock unit, such as piece, bottle or bag, then create a pack when one selling unit contains several base units."),
+      bi("ใส่จำนวนต่อแพ็กและราคาคงที่ของแพ็กจากข้อมูลจริง แพ็กชื่อเฉพาะไม่ใช้กติกาของแถมข้าม SKU", "Enter the verified pack quantity and fixed pack price. Named packs do not use cross-SKU gift rules."),
+      bi("ผูกบาร์โค้ดแต่ละหน่วยขายไม่ให้ซ้ำในร้าน พิมพ์ฉลาก แล้วทดสอบสแกนทั้งชิ้นและแพ็กบนเครื่องจริง", "Assign a shop-unique barcode to each selling unit, print labels and test both loose and pack scans on the real register."),
+      bi("ขายตัวอย่างหนึ่งบิลและตรวจว่าจำนวนสต็อกลดตาม pack quantity ไม่ใช่ลดหนึ่งหน่วยเพียงเพราะสแกนหนึ่งครั้ง", "Run a test sale and confirm stock decreases by the pack quantity, not by one merely because the barcode was scanned once."),
+    ],
+    check: bi("แต่ละบาร์โค้ดเลือกสินค้าและหน่วยขายถูกต้อง ราคาแพ็กถูกต้อง และ movement ตรงจำนวนฐาน", "Each barcode selects the correct product/unit, pack price is correct and movements match base-unit quantity."),
+    caution: bi("อย่าใช้ Pack แทน Variant สี/ไซซ์ และอย่าแก้จำนวนต่อแพ็กเพื่อชดเชยสต็อกที่นับผิด ให้แก้ผ่านกระบวนการสต็อก", "Do not use packs as color/size variants or alter pack quantity to compensate for a stock discrepancy."),
+  },
+  {
+    slug: "retail-variants-serials", title: bi("รุ่น สี ไซซ์ ล็อต และเลขเครื่อง", "Variants, lots & serial numbers"),
+    summary: bi("เลือกวิธีติดตามสินค้าให้ตรงกับสิ่งที่ร้านต้องระบุตอนขายและตอนคืน", "Choose tracking that matches what staff must identify at sale and return."),
+    category: "setup", roles: managers, tracks: ["retail"], retailFormats: ["variants"], menu: bi("Products → Stock models → Inventory", "Products → Stock models → Inventory"), action: "/admin/stock-models",
+    prerequisite: bi("กำหนดว่าอะไรคือรุ่น/สี/ไซซ์ อะไรต้องติดตามล็อต วันหมดอายุ หรือ serial จริง", "Define which attributes are variants and which goods require real lot, expiry or serial tracking."),
+    steps: [
+      bi("สร้าง Variant สำหรับตัวเลือกที่ลูกค้าซื้อ เช่น สีและไซซ์ ไม่ใช้จำนวนใน Inventory เป็นรายการตัวเลือกสินค้า", "Create variants for customer-selected options such as color and size; inventory quantities are not a variant catalog."),
+      bi("เปิด lot/expiry เฉพาะสินค้าที่ต้องรับเข้าเป็นชุดหลักฐาน และบันทึกวันที่จากฉลากจริง ไม่ใช้วันที่ประมาณเป็นข้อเท็จจริง", "Use lot/expiry tracking only when receipts carry that evidence, recording dates from actual labels rather than estimates."),
+      bi("เปิด serial tracking สำหรับสินค้าที่ต้องระบุเครื่องต่อเครื่อง รับเลขเครื่องเข้าก่อนขาย และทดสอบว่าขายเลขซ้ำไม่ได้", "Use serial tracking for individually identified units, receive serials before sale and verify a serial cannot be sold twice."),
+      bi("ทดสอบขายและคืน Variant/Lot/Serial เดิมจากบิลจริง ตรวจว่าหลักฐานบนบิลและสต็อกยังอ้างรายการเดียวกัน", "Test sale and return from the original bill, confirming variant/lot/serial evidence and stock refer to the same unit."),
+    ],
+    check: bi("ค้นและสแกนได้ Variant ถูกต้อง ล็อต/serial ที่เลือกมีอยู่จริง และรายการคืนอ้างหลักฐานเดิม", "Search/scan resolves the right variant, selected lot/serial exists and returns use original evidence."),
+    caution: bi("Capability บางชื่อเป็นคำอธิบายจากข้อมูลที่ตั้งไว้ ไม่ใช่สวิตช์เปิดระบบเสมอ ต้องทดสอบพฤติกรรมจริงก่อนเปิดขาย", "Some capability labels describe configured data rather than acting as switches; test actual behavior before launch."),
+  },
+  {
+    slug: "retail-food-counter", title: bi("คาเฟ่และอาหารหน้าเคาน์เตอร์แบบ Retail POS", "Cafe & food counter on Retail POS"),
+    summary: bi("ขายเครื่องดื่มหรืออาหารเป็นสินค้าโดยไม่อ้างว่ามีผังโต๊ะและ Kitchen Board เต็มรูปแบบ", "Sell food and drinks as products without implying full table or Kitchen Board workflows."),
+    category: "daily", roles: all, tracks: ["retail"], retailFormats: ["food-counter"], menu: bi("Products → POS", "Products → POS"), action: "/pos",
+    prerequisite: bi("ร้านเลือก Food & Beverage หรือค้าปลีก มีเมนู/ขนาด/ตัวเลือกที่ตั้งเป็นสินค้าขายจริง", "A Food & Beverage or retail shop with sellable menu products, sizes and supported options."),
+    steps: [
+      bi("สร้างเมนูและขนาดที่ลูกค้าเลือกจริง เปิด RETAIL_POS และตั้งราคา/ภาษีให้ครบก่อนขาย", "Create the actual menu sizes customers choose, publish to RETAIL_POS and complete price/tax setup."),
+      bi("รับออร์เดอร์หน้าเคาน์เตอร์เป็นตะกร้าค้าปลีก ตรวจชื่อ ขนาด จำนวนและหมายเหตุตามช่องที่ระบบรองรับ", "Take the counter order as a retail cart, verifying item, size, quantity and supported notes."),
+      bi("รับชำระผ่านบิล POS ปกติและใช้เลขบิลหรือระบบเรียกคิวของร้านเองในการส่งมอบ อย่าอ้างว่าการจ่ายเงินสร้างตั๋วครัว", "Settle through the normal POS bill and use the shop's documented bill/queue handoff; payment does not create a kitchen ticket."),
+      bi("หากร้านต้องใช้รอบส่งครัว Kitchen Board บิลโต๊ะ หรือ QR โต๊ะ ให้ทดสอบ Restaurant archetype ในร้านทดสอบก่อนออร์เดอร์จริงแรก", "If the shop needs kitchen rounds, Kitchen Board, table checks or table QR, test the Restaurant archetype before the first real order."),
+    ],
+    check: bi("พนักงานขายและส่งมอบออร์เดอร์เคาน์เตอร์ได้โดยไม่เห็นเมนูโต๊ะ/ครัวที่ร้านไม่ได้เปิดใช้", "Staff can sell and hand off counter orders without relying on table/kitchen features the shop has not enabled."),
+    caution: bi("Food & Beverage ไม่ได้เปิด Restaurant POS เต็มรูปแบบโดยอัตโนมัติ และ archetype ถูกล็อกหลังออร์เดอร์จริงแรก", "Food & Beverage does not automatically enable full Restaurant POS, and the archetype locks after the first real order."),
+  },
+  {
+    slug: "retail-promotions", title: bi("โปรโมชัน ของแถม และส่วนลด", "Promotions, gifts & discounts"),
+    summary: bi("ทดลองกติกากับตะกร้าจริงและแยกส่วนลดอัตโนมัติออกจากส่วนลดมือ", "Test rules against real carts and distinguish automatic promotions from manual discounts."),
+    category: "growth", roles: managers, tracks: ["retail"], menu: bi("Promotions → POS", "Promotions → POS"), action: "/admin/promotions",
+    prerequisite: bi("มีช่วงเวลา สาขา ช่องทาง สินค้าและจำนวนที่ต้องเข้ากติกา", "Defined dates, branches, channels, products and qualifying quantities."),
+    steps: [
+      bi("สร้างกติกาโดยระบุช่วงเวลา สาขา ช่องทางและเงื่อนไขจำนวน ตรวจว่า SKU/Variant ที่เลือกขายอยู่จริง", "Create the rule with dates, branch, channel and quantity conditions, using sellable SKUs/variants."),
+      bi("ของแถม BUY_A_GET_B ต้องเป็นบรรทัดสินค้าจริงในตะกร้าและมีสต็อก ไม่สร้างของแถมที่ไม่มี movement", "A BUY_A_GET_B gift must be a real in-stock cart line; never create a stock-free gift."),
+      bi("ทดลองตะกร้าที่เข้าและไม่เข้าเงื่อนไข รวมถึงจำนวนเกิน แพ็ก และโปรชนกัน ตรวจยอดจาก preview server", "Test qualifying and non-qualifying carts, excess quantities, packs and overlaps using the server preview."),
+      bi("ทดลองคืนสินค้าที่ทำให้หมดสิทธิ์ของแถม ระบบต้องใช้กติกาที่แช่แข็งจากเวลาขาย ไม่ใช้โปรวันนี้", "Test a return that loses gift eligibility; the system must use the frozen sale-time rule, not today's promotion."),
+    ],
+    check: bi("ยอดและของแถมตรงเงื่อนไข สต็อกตัดครบ และกรณีคืนไม่คืนเงินเกินหลักฐานบิลเดิม", "Totals and gifts match the rule, stock moves completely and returns never exceed original evidence."),
+    caution: bi("ส่วนลดมือ Void และ Cash Out ต้องใช้ PIN คนที่สองตามสิทธิ์ การซ่อนปุ่มไม่ใช่การอนุญาต", "Manual discounts, void and cash out need a second authorized PIN; hiding a button is not authorization."),
+  },
+  {
+    slug: "retail-purchase-receiving", title: bi("สั่งซื้อ Supplier และรับสินค้าเข้า", "Supplier purchase & receiving"),
+    summary: bi("สร้าง PO รับตามของที่มาถึงจริง และเก็บหลักฐานต้นทุนโดยไม่เพิ่มสต็อกซ้ำ", "Create a PO, receive actual goods and retain cost evidence without duplicate stock."),
+    category: "daily", roles: managers, tracks: ["retail"], menu: bi("Purchase → Receive purchase", "Purchase → Receive purchase"), action: "/admin/purchase",
+    prerequisite: bi("Supplier, สาขารับ, รายการสินค้า หน่วย จำนวนและราคาที่ตกลง", "A supplier, receiving branch and agreed products, units, quantities and prices."),
+    steps: [
+      bi("สร้าง PO ด้วยสาขาและหน่วยซื้อที่ถูกต้อง ตรวจความสัมพันธ์ระหว่างหน่วยซื้อกับหน่วยสต็อกก่อนส่งอนุมัติ", "Create the PO for the correct branch and purchase units, checking conversion to stock units before approval."),
+      bi("เมื่อของมาถึง ให้นับของจริงและบันทึกจำนวนรับ ล็อต วันหมดอายุหรือ serial ตามสินค้าที่ต้องติดตาม ไม่รับส่วนที่ยังไม่ถึง", "On arrival count actual goods and record received quantities plus required lot, expiry or serial evidence; do not receive missing goods."),
+      bi("ใช้ idempotency เดิมเมื่อผลรับไม่ชัด ตรวจ PO และ movement ก่อนกดใหม่ การรับต้องเพิ่มสต็อกและบันทึกหลักฐานในธุรกรรมเดียว", "After an uncertain response, reuse the original request identity and inspect PO/movements before retrying; receipt and stock evidence commit together."),
+      bi("เทียบยอดคงค้าง ต้นทุนและเอกสาร Supplier แยกการบันทึกรายจ่าย/ภาษีซื้อออกจากการรับสต็อกตามหลักฐานจริง", "Reconcile remaining quantity, cost and supplier documents; record expense/input VAT separately from stock receipt using actual evidence."),
+    ],
+    check: bi("PO แสดงยอดสั่ง รับ และคงเหลือถูกต้อง สต็อกเพิ่มหนึ่งครั้งที่สาขารับ และต้นทุนมีหลักฐาน", "PO ordered/received/remaining totals agree, stock increased once at the receiving branch and cost has evidence."),
+    caution: bi("อย่าปรับสต็อกมือเพื่อชดเชย PO ที่ผลไม่ชัด และอย่าถือว่าการรับสินค้าเป็นหลักฐานว่าจ่าย Supplier แล้ว", "Do not manually adjust stock to compensate for an uncertain PO receipt; receiving goods is not proof of supplier payment."),
+  },
+  {
+    slug: "retail-orders-shipping", title: bi("ออร์เดอร์หลังบ้าน แพ็ก และจัดส่ง", "Back-office orders, packing & shipping"),
+    summary: bi("เดินสถานะออร์เดอร์ตามของและการชำระจริง พร้อมเก็บเลขติดตามที่ตรวจสอบได้", "Advance orders according to actual goods and payment, retaining verified tracking evidence."),
+    category: "daily", roles: managers, tracks: ["retail"], menu: bi("Orders → Shipment", "Orders → Shipment"), action: "/admin/orders",
+    prerequisite: bi("มีออร์เดอร์ที่ยืนยัน สาขาจัดของ ที่อยู่/วิธีรับ และสถานะชำระที่ตรวจแล้ว", "A confirmed order with fulfillment branch, address/pickup method and verified payment status."),
+    steps: [
+      bi("เปิดออร์เดอร์และตรวจลูกค้า รายการ จำนวน สาขา วิธีรับและสถานะชำระจากข้อมูล server ไม่ใช้ข้อความแชทแทนสถานะ", "Open the order and verify customer, lines, quantities, branch, fulfillment and payment from server data rather than chat wording."),
+      bi("จัดและแพ็กตามรายการ บันทึกของขาดหรือการแก้ไขผ่าน workflow ที่รองรับ ห้ามเปลี่ยนสินค้าเองหลังลูกค้ายืนยัน", "Pick and pack the recorded lines, using supported exception handling for shortages; never substitute after confirmation without a new agreement."),
+      bi("สร้างการจัดส่งหรือบันทึกรับที่ร้านตามผู้ให้บริการที่พร้อมจริง เลขติดตามต้องมาจากหลักฐาน ไม่เดาหรือใส่ค่าทดสอบในออร์เดอร์จริง", "Create shipment or pickup only through a genuinely available provider/process; tracking must come from evidence, never a guess or test value."),
+      bi("เปลี่ยนสถานะเมื่อเหตุการณ์เกิดขึ้นจริง แจ้งลูกค้าด้วยลิงก์สาธารณะหรือเลขติดตาม ไม่ส่งลิงก์ /admin ให้ลูกค้า", "Change status only when the event occurs and send customer-safe links/tracking, never an /admin URL."),
+    ],
+    check: bi("รายการจัดส่งผูกออร์เดอร์และสาขาถูกต้อง สถานะไม่ล้ำเหตุการณ์จริง และลูกค้าติดตามได้จากข้อมูลที่เผยแพร่", "Shipment belongs to the correct order/branch, status does not outrun reality and customers can track using published evidence."),
+    caution: bi("ความพร้อม Carrier และ Delivery Platform ต้องตรวจรายผู้ให้บริการ การมีเมนูหรือปุ่มไม่ยืนยันว่าบัญชีเชื่อมต่อแล้ว", "Verify readiness per carrier/platform; a menu or button does not prove the account is connected."),
+  },
+  {
+    slug: "retail-credit-receivables", title: bi("ขายเชื่อ วงเงิน และเก็บลูกหนี้", "Credit sales, limits & collection"),
+    summary: bi("แยกการส่งของเป็นหนี้ออกจากเงินสดที่เก็บภายหลัง", "Keep debt-creating sales separate from cash collected later."),
+    category: "daily", roles: managers, tracks: ["retail"], retailFormats: ["wholesale"], menu: bi("POS → Credit sale / Receivables", "POS → Credit sale / Receivables"), action: "/admin/receivables",
+    prerequisite: bi("ลูกค้าบัญชีเครดิต วงเงิน เงื่อนไขครบกำหนด และผู้มีสิทธิ์ขายเชื่อ", "A credit account, limit, due terms and an operator authorized for credit sales."),
+    steps: [
+      bi("ตรวจบัญชีเครดิต วงเงินคงเหลือ ยอดค้างและวันครบกำหนดก่อนสร้างบิล ไม่ใช้ Store Credit แทนวงเงินขายเชื่อ", "Review account, remaining limit, outstanding debt and terms before sale; store credit is not a credit-sale limit."),
+      bi("ชำระแบบ CREDIT เพื่อให้บิลขายและสต็อกเสร็จพร้อมสร้างลูกหนี้ในธุรกรรมเดียว เงินนี้ไม่เข้าลิ้นชักในวันขาย", "Use CREDIT tender so sale, stock and receivable commit together; no drawer cash is recorded on the sale date."),
+      bi("เมื่อรับชำระภายหลัง ให้บันทึก collection ที่ Receivables หากรับเงินสดให้เป็น Cash In ของกะที่เก็บเงินจริง", "Record later collection against the receivable; cash collection becomes Cash In on the shift that actually receives it."),
+      bi("ตรวจใบรับชำระ ยอดหนี้คงเหลือและ drawer ของวันเก็บเงิน ทดลองคืนสินค้าจากบิลเชื่อและตรวจว่าหนี้ลดตามหลักฐาน", "Verify receipt, remaining debt and collecting drawer; test a credit-sale return and confirm debt reduction from original evidence."),
+    ],
+    check: bi("ยอดลูกหนี้ตรงบิลและการรับชำระ เงินสดอยู่ในกะวันที่เก็บจริง และไม่มี payment ซ้ำบนบิลเก่า", "Receivable matches sale/collections, cash belongs to the collecting shift and no duplicate payment is added to the old bill."),
+    caution: bi("การเก็บเงินลูกหนี้ไม่ใช่การแก้ payment ของบิลเดิม และการคืนอาจทำให้ต้องตรวจยอดเกินชำระ", "Collection does not rewrite the original bill payment, and returns may require review of overpayment."),
+  },
+  {
+    slug: "expenses-input-vat", title: bi("รายจ่าย เงินสดย่อย และภาษีซื้อ", "Expenses, petty cash & input VAT"),
+    summary: bi("เก็บเอกสารรายจ่ายและ movement เงินสดโดยไม่อ้างว่าเป็นการยื่นภาษี", "Record expense evidence and drawer movement without claiming statutory filing."),
+    category: "daily", roles: managers, tracks: everyTrack, menu: bi("Expenses / POS Cash Out", "Expenses / POS Cash Out"), action: "/admin/expenses",
+    prerequisite: bi("ใบเสร็จหรือใบกำกับจริง ผู้ขาย วันที่ สาขา วิธีจ่าย และผู้อนุมัติ", "Actual receipt/invoice, supplier, date, branch, payment method and approver."),
+    steps: [
+      bi("สร้างรายจ่ายด้วยประเภทเอกสาร ผู้ขาย เลขที่เอกสาร วันที่และสาขาตามหลักฐาน แนบไฟล์ที่เป็นของร้านเดียวกัน", "Create the expense with evidence-backed document type, supplier, number, date and branch; attach only tenant-owned files."),
+      bi("บันทึก Input VAT เฉพาะ TAX_INVOICE ที่ข้อมูลภาษีครบและยอดผ่านการตรวจ เอกสารอื่นให้ VAT เป็นศูนย์โดยเหตุผลจริง", "Record input VAT only for a valid TAX_INVOICE with verified tax fields; other document types carry no input VAT."),
+      bi("ถ้าจ่ายจากลิ้นชัก ให้ทำ Cash Out ด้วยผู้อนุมัติคนที่สองและ idempotency เดิม รายจ่ายกับ movement ต้องอ้างรายการเดียวกัน", "For drawer-funded expenses, use Cash Out with a second approver and stable idempotency, linking expense and movement."),
+      bi("เอกสารผิดให้ VOID พร้อมเหตุผลแล้วสร้างฉบับแก้ ไม่ลบหรือเขียนทับหลักฐานเดิม ตรวจรายงาน VAT ซื้อในเดือนที่บันทึก claim", "VOID incorrect evidence with a reason and create a correction; never delete/overwrite history. Review input VAT by recorded claim month."),
+    ],
+    check: bi("รายจ่ายมีเอกสารและสาขาถูกต้อง Cash Out ตรงลิ้นชัก และ VAT ซื้อแสดงเฉพาะหลักฐานที่ผ่านเงื่อนไข", "Expense evidence/branch are correct, Cash Out matches the drawer and input VAT includes only qualifying evidence."),
+    caution: bi("รายงานช่วยนักบัญชีแต่ไม่ใช่การยื่น PP.30, PND.3 หรือ PND.53 และการรับสินค้าไม่เท่ากับการบันทึกรายจ่าย", "Reports assist accounting but do not file PP.30, PND.3 or PND.53; receiving stock is not an expense record."),
+  },
+  {
+    slug: "retail-offline", title: bi("Emergency Offline สำหรับขายเงินสด", "Emergency Offline cash sales"),
+    summary: bi("ใช้คิวฉุกเฉินบนโทรศัพท์เฉพาะบิลค้าปลีกเงินสดที่เข้าเงื่อนไข", "Use the phone's emergency queue only for eligible plain-retail cash bills."),
+    category: "recovery", roles: all, tracks: ["retail"], menu: bi("Mobile POS → Emergency Offline", "Mobile POS → Emergency Offline"), action: "/admin/pos-readiness",
+    prerequisite: bi("ซ้อมบน Mobile POS มีนโยบายเงินสดฉุกเฉินและผู้จัดการรับผิดชอบกระทบยอด", "A rehearsed Mobile POS, emergency cash policy and manager responsible for reconciliation."),
+    steps: [
+      bi("ใช้เฉพาะสินค้าค้าปลีกธรรมดาและรับเงินสด ห้ามใช้สมาชิก แต้ม คูปอง ส่วนลดมือ serial สินค้าชั่ง สูตรยา ขายเชื่อ มัดจำ ร้านอาหารหรือบอร์ดเกม", "Use only plain retail products with cash; exclude members, points, coupons, manual discounts, serial/weighted/recipe/pharmacy items, credit, deposits, restaurant and board-game bills."),
+      bi("บันทึกรายการในคิวเข้ารหัสของโทรศัพท์และออกหลักฐานชั่วคราวตามหน้าจอ รายการ pending ยังไม่ใช่ใบเสร็จหรือเอกสารภาษี", "Save the sale in the phone's encrypted queue and issue only the shown temporary evidence; pending is not a receipt or tax document."),
+      bi("เมื่อออนไลน์ ให้ replay ตามลำดับด้วย idempotency เดิม ห้ามสร้างบิลใหม่หรือทิ้งเงินสดที่รับแล้วแม้กะเดิมปิดไป", "When online, replay serially with the original idempotency; never create a replacement bill or discard accepted cash even if the shift closed."),
+      bi("ผู้จัดการเทียบคิว บิลที่สำเร็จ เงินสด movement สต็อกและรายการที่ยังแก้ไม่ได้ก่อนอนุญาตปิดกะหรือเปลี่ยนเครื่อง", "A manager reconciles queue, committed bills, cash, movements, stock and unresolved entries before shift close or device replacement."),
+    ],
+    check: bi("รายการฉุกเฉินทุกใบมีผลสำเร็จหรือเจ้าของติดตาม เงินสดไม่หาย บิลไม่ซ้ำ และสต็อกตัดหลัง replay", "Every emergency entry is committed or assigned, cash is preserved, no bill duplicates and stock moves after replay."),
+    caution: bi("เส้นทางนี้อยู่บนโทรศัพท์และไม่ใช่ระบบขายออฟไลน์เต็มรูปแบบ Desktop shell ไม่มี settlement/offline engine ของตนเอง", "This phone-only path is not a full offline POS; the desktop shell owns no settlement or offline engine."),
+  },
+  {
+    slug: "retail-rehearsal", title: bi("แบบฝึกก่อนเปิดจริงสำหรับร้านค้าปลีก", "Retail launch rehearsal scenarios"),
+    summary: bi("ซ้อมขาย รับเข้า คืนสินค้า ไฟดับ และปิดกะด้วยข้อมูลทดสอบ", "Rehearse sales, receiving, returns, outages and shift close with test data."),
+    category: "recovery", roles: managers, tracks: ["retail"], menu: bi("ร้านทดสอบ → POS / Purchase / Reports", "Test shop → POS / Purchase / Reports"), action: "/admin/pos-readiness",
+    prerequisite: bi("ร้านทดสอบ สินค้าตัวอย่าง ผู้ทดสอบทุกบทบาทและแบบบันทึกผล", "A test shop, sample products, every test role and an evidence sheet."),
+    steps: [
+      bi("ขายเงินสด QR และชำระหลายช่องทาง ทดสอบสแกนชิ้น/แพ็ก Variant และโปรโมชัน แล้วเทียบใบเสร็จกับ movement", "Test cash, QR and split tender plus loose/pack/variant scans and promotions, reconciling receipt to movement."),
+      bi("ทดสอบส่วนลดมือ Void คืนบางส่วนและคืนเต็มด้วยผู้อนุมัติที่ถูกต้อง ตรวจ stock, refund และเอกสารภาษี", "Test manual discount, void, partial/full return with correct approvers, checking stock, refund and tax evidence."),
+      bi("สร้าง PO รับบางส่วน โอนสาขา ตรวจนับ และบันทึกรายจ่ายเงินสดย่อย ตรวจว่าแต่ละงานเกิดหนึ่งครั้งแม้ลองส่งซ้ำ", "Create a PO with partial receipt, transfer, count and petty-cash expense, verifying each action occurs once on retry."),
+      bi("ตัดเน็ตก่อนรับเงินและหลังรับเงิน ซ้อม Emergency Offline เฉพาะบิลที่รองรับ และซ้อมตรวจบิลเดิมเมื่อผลไม่ชัด", "Cut connectivity before and after tender, rehearse eligible Emergency Offline and inspect the original bill after uncertain results."),
+      bi("ปิดกะเทียบเงินสด บิล คืนเงิน Cash In/Out และรายการค้าง บันทึกผลจริง ผู้รับผิดชอบและวันแก้ก่อน Soft Opening", "Close the shift and reconcile cash, bills, refunds, Cash In/Out and pending items, recording result, owner and remediation date."),
+    ],
+    check: bi("ทุกสถานการณ์มีผลจริงและหลักฐาน ผู้จัดการยืนยันยอดตรงและข้อผิดพลาดสำคัญถูกปิดก่อนเปิดร้าน", "Every scenario has observed evidence; a manager confirms reconciliation and critical issues are closed before launch."),
+    caution: bi("การอ่านครบไม่ใช่ readiness จริง ต้องทดสอบเครื่องพิมพ์ เครือข่าย อุปกรณ์และวิธีรับเงินของร้านนั้น", "Reading completion is not live readiness; test the shop's printers, network, devices and tender methods."),
   },
   {
     slug: "board-game-hours", title: bi("เวลาเปิดร้าน วันให้บริการ และการเปิดข้ามคืน", "Opening hours, service days & overnight visits"),
@@ -701,34 +924,196 @@ export const lessons: Lesson[] = [
     check: bi("ทุกกรณีสำคัญมีหลักฐานผลจริง ผู้จัดการอนุมัติความพร้อม และข้อผิดพลาดมีผู้รับผิดชอบแก้ก่อนเปิดเต็ม", "Critical scenarios have observed evidence, manager readiness approval and resolved issues before full launch."),
     caution: bi("ทำในร้านทดสอบก่อน บทนี้เป็นแผนทดสอบ ไม่ใช่การรับรองว่าเครื่องพิมพ์ เครือข่าย อีเมล LINE หรือเงินโอนของร้านผ่านแล้ว", "Rehearse in a test shop first. This is a test plan, not certification that your printers, network, email, LINE or bank transfers have been verified."),
   },
+  {
+    slug: "pharmacy-readiness-licenses", title: bi("ร้านขายยา: ความพร้อม ใบอนุญาต และสิทธิ์", "Pharmacy readiness, licences & access"),
+    summary: bi("แยกบทบาทผู้ดูแล ผู้จัดการ แคชเชียร์ และเภสัชกร พร้อมตรวจ Feature Gate ก่อนใช้เคสจริง", "Separate administrator, manager, cashier and pharmacist roles, then verify feature gates before real cases."),
+    category: "setup", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("คู่มือร้านยา → ใบอนุญาตเภสัชกร → POS Readiness", "Pharmacy manual → Pharmacist licences → POS Readiness"), action: "/admin/pharmacy-manual",
+    prerequisite: bi("ร้านตั้งเป็น Pharmacy มีผู้รับผิดชอบกฎหมาย/คลินิกจริง และใช้ Sandbox ที่ไม่มีข้อมูลผู้ป่วยจริงสำหรับการซ้อม", "A Pharmacy tenant, a real legal/clinical owner and a sandbox without real patient data for rehearsal."),
+    steps: [
+      bi("อ่านคู่มือร้านยาและขอบเขตฟีเจอร์ก่อนเปิดใช้ แยกการขายสินค้า ข้อมูลฉลาก นโยบายขาย Intake และการตัดสินทางคลินิกออกจากกัน", "Read the pharmacy manual and feature boundaries. Keep commerce, label facts, sale policy, intake and clinical decisions distinct."),
+      bi("ผู้ดูแลบันทึกสถานะใบอนุญาตให้ผู้ใช้จริงในหน้าใบอนุญาต จากนั้นกำหนดสิทธิ์ตามงาน; บทบาท Administrator อย่างเดียวไม่ทำให้คนเป็นเภสัชกร", "An administrator records the real user's pharmacist licence and assigns job permissions. Administrator role alone never makes a person a pharmacist."),
+      bi("ตรวจ POS Readiness, migrations และสวิตช์ร้านขายยา ระบบ Intake/AI/Protocol เริ่มต้นเป็นปิดหรือว่าง และต้องเปิดเฉพาะ Sandbox หลังผู้รับผิดชอบอนุมัติ", "Review POS Readiness, migrations and pharmacy switches. Intake/AI/protocol gates default off or empty and should be enabled first in an approved sandbox."),
+      bi("ทดสอบบัญชีแคชเชียร์ ผู้จัดการ เภสัชกรมีใบอนุญาต และผู้ใช้ที่ไม่มีใบอนุญาต โดยเฉพาะการ Claim/Review/Approve และการอ่านหลักฐาน", "Test cashier, manager, licensed pharmacist and unlicensed accounts, especially claim/review/approve and evidence access."),
+      bi("กำหนดผู้รับช่วงเมื่อเภสัชกรไม่พร้อม ระบบห้ามอ้างว่าเภสัชกรอยู่ ตอบเมื่อไร หรือได้รับแจ้งแล้ว หากไม่มีหลักฐานจาก workflow", "Define handoff ownership when a pharmacist is unavailable. Never claim presence, response time or notification without workflow evidence."),
+    ],
+    check: bi("ผู้ไม่มีใบอนุญาตอนุมัติไม่ได้ สิทธิ์อ่าน/จัดการแยกตามบทบาท และ Feature Gate ที่ยังไม่ผ่านปิดอยู่", "Unlicensed users cannot approve, read/manage access is role-correct and unverified feature gates remain off."),
+    caution: bi("ใบอนุญาตเป็นข้อเท็จจริงของบุคคล ไม่ใช่ Permission ที่ Administrator ได้อัตโนมัติ คู่มือนี้ไม่แทนการตรวจข้อกฎหมายหรือเภสัชกรผู้รับผิดชอบ", "A licence is a fact about the person, not an Administrator permission. This guide does not replace legal review or the pharmacist in charge."),
+  },
+  {
+    slug: "pharmacy-product-policies", title: bi("ข้อมูลยา Product Policy และการอนุมัติ SKU", "Medicine facts, Product Policy & SKU approval"),
+    summary: bi("บันทึกข้อเท็จจริงจากฉลาก แยกจากนโยบายขาย และให้เภสัชกรของร้านอนุมัติทีละเวอร์ชัน", "Record label facts separately from sale policy and obtain shop-pharmacist approval per version."),
+    category: "setup", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("Products → Pharmacy Protocols → Product Policy", "Products → Pharmacy Protocols → Product Policy"), action: "/admin/pharmacy-protocols",
+    prerequisite: bi("SKU/Variant/Pack ชัดเจน มีฉลากและแหล่งอ้างอิงที่ผู้รับผิดชอบตรวจได้", "Clear SKU/variant/pack identity with label and provenance a responsible reviewer can verify."),
+    steps: [
+      bi("สร้างสินค้าและหน่วยขายตามกล่องจริง บันทึก Active Ingredient, Strength และ Dosage Form เป็นข้อเท็จจริงจากฉลาก; ช่องว่างหมายถึงไม่ทราบ ไม่เติมจากความจำ", "Create products/packs from the physical item. Record active ingredient, strength and dosage form only as label facts; blank means unknown, never memory-filled."),
+      bi("สร้าง Product Policy ด้วยประเภทสินค้า กรอบกำกับ นโยบายขาย เพดานจำนวนและแหล่งอ้างอิงที่ตรวจแล้ว ส่งจาก DRAFT ไป PENDING_REVIEW", "Create Product Policy with product type, regulatory framework, sale policy, quantity limit and reviewed source, then submit DRAFT to PENDING_REVIEW."),
+      bi("ข้อมูลยากลางหรือบาร์โค้ดเป็นเพียงคำแนะนำ การกดใช้คัดลอก Snapshot มาเป็น DRAFT ของร้าน ไม่อนุมัติหรือเปลี่ยนนโยบายเดิมโดยอัตโนมัติ", "Master/barcode data is only a suggestion. Applying it copies a shop-owned DRAFT snapshot; it never approves or silently replaces policy."),
+      bi("เภสัชกรที่มีใบอนุญาตตรวจ SKU/ขนาด/หลักฐานและอนุมัติหรือส่งกลับแก้ การแก้ Policy ที่อนุมัติแล้วต้องกลับเข้าสู่วงจรตรวจใหม่", "A licensed pharmacist reviews SKU, size and evidence, then approves or returns it. Editing an approved policy requires a fresh review cycle."),
+      bi("ตรวจรายการนโยบายขาด/รอ/อนุมัติใน Readiness ก่อนเปิดกะ เลือกว่าจะบล็อกกะเมื่อค้างหรือให้เภสัชกรอนุมัติที่เคาน์เตอร์ตามสวิตช์ร้าน", "Review missing/pending/approved policy counts before opening. Choose whether backlog blocks shift open or uses counter authorization under shop settings."),
+    ],
+    check: bi("ทุก SKU ที่ขายมีสถานะและหลักฐานอ่านได้ ความแรง/หน่วยไม่สลับ และนโยบายที่แก้แล้วไม่คง APPROVED", "Every sold SKU has readable status/provenance, strength/unit identity is correct and edited policy does not remain APPROVED."),
+    caution: bi("การอนุมัติ Product Policy อนุญาตตามกฎการขายเท่านั้น ไม่ใช่อนุมัติข้อความข้อบ่งใช้ วิธีใช้ ความปลอดภัย หรือความเหมาะสมของผู้ป่วย", "Product Policy approval governs sale rules only; it does not approve indications, directions, safety wording or patient suitability."),
+  },
+  {
+    slug: "pharmacy-counter-sale", title: bi("ขายที่เคาน์เตอร์และการยืนยันโดยเภสัชกร", "Counter sale & pharmacist authorization"),
+    summary: bi("ขายสินค้าทั่วไปและจัดการตะกร้าที่ต้องให้เภสัชกรตรวจ โดยผูกหลักฐานกับบิลและสินค้าที่เห็นจริง", "Sell ordinary goods and route gated baskets to a pharmacist, binding evidence to the reviewed bill and items."),
+    category: "daily", roles: all, tracks: ["pharmacy"], menu: bi("POS → ขายสินค้า / ส่งให้เภสัชกรตรวจ / Pharmacy Queue", "POS → Sell / Pharmacist review / Pharmacy Queue"), action: "/pos",
+    prerequisite: bi("เปิดกะ สินค้าและ Product Policy พร้อม เภสัชกร/Queue ตามนโยบายร้าน และ PIN ใช้งานได้", "Open shift, ready products/policies, the shop's pharmacist/queue process and working PINs."),
+    steps: [
+      bi("สแกน SKU/ขนาด/หน่วยขายและตรวจจำนวนจริง สินค้า DIRECT_SALE ที่ Policy อนุมัติขายผ่าน POS ปกติ ส่วนสินค้าที่ติดเงื่อนไขต้องหยุดก่อนชำระ", "Scan exact SKU/size/selling unit and quantity. Approved DIRECT_SALE items use normal POS; gated items must stop before payment."),
+      bi("เลือกตามนโยบายร้านว่าจะส่งตะกร้าเข้า Pharmacy Queue หรือให้เภสัชกรที่เคาน์เตอร์ใส่ PIN ตรวจตะกร้าที่อยู่บนจอ การแก้สินค้า/จำนวนทำให้ต้องยืนยันใหม่", "Follow shop policy: send the basket to Pharmacy Queue or have a counter pharmacist enter PIN for the on-screen basket. Any item/quantity change requires fresh authorization."),
+      bi("เภสัชกรอาจเป็นแคชเชียร์คนเดียวกันได้ แต่ระบบต้องตรวจใบอนุญาตในธุรกรรม ไม่ใช้สิทธิ์ Administrator แทน และเก็บหลักฐานผู้อนุมัติกับบิล", "The pharmacist may also be the cashier, but the transaction rechecks licence; Administrator access is no substitute. Authorization evidence commits with the bill."),
+      bi("PRESCRIPTION_REQUIRED อนุญาตได้เฉพาะเคาน์เตอร์หลังเภสัชกรตรวจหลักฐานตามวิจารณญาณ ส่วน ONLINE_SALE_PROHIBITED และสินค้าที่ต้องมีใบสั่งไม่ขายผ่านช่องทางออนไลน์", "PRESCRIPTION_REQUIRED may proceed only at the counter after pharmacist evidence review. Prescription and ONLINE_SALE_PROHIBITED items cannot be sold online."),
+      bi("Quantity Limit แก้ด้วย PIN ไม่ได้ ต้องแก้ Policy แล้วทบทวนใหม่ หลังขายให้ตรวจใบเสร็จ สต็อก และบันทึกการจ่ายยาที่เคาน์เตอร์", "A PIN cannot override a quantity limit; edit and re-review policy instead. After sale, check receipt, stock and the counter-authorization log."),
+    ],
+    check: bi("บิลมี SKU/จำนวนตรงตะกร้าที่ตรวจ ผู้ที่ไม่มีใบอนุญาตปลดเงื่อนไขไม่ได้ และไม่มีการอนุมัติค้างใช้กับบิลถัดไป", "The bill matches the reviewed basket, unlicensed staff cannot clear gates and authorization never carries to another bill."),
+    caution: bi("การยกเลิกบิลไม่คืนสิทธิ์อนุมัติเดิม และระบบยังไม่มี Pharmacy-specific gate สำหรับนำยาคืนกลับเป็นสต็อกขายได้ ให้ร้านกำหนดขั้นตอนกัก/ตรวจโดยเภสัชกร", "Cancelling a bill does not restore its approval. There is no pharmacy-specific gate for returning medicine to sellable stock; define a pharmacist quarantine/review process."),
+  },
+  {
+    slug: "pharmacy-intake-queue", title: bi("Intake, Pharmacy Queue และการตัดสินของเภสัชกร", "Intake, Pharmacy Queue & pharmacist decisions"),
+    summary: bi("รับข้อมูลแบบมีความยินยอม ส่งต่อเคส และให้เภสัชกรเป็นผู้ตัดสินโดยไม่ให้ AI ข้ามขั้น", "Collect consented information, hand off cases and keep every decision with a pharmacist rather than AI."),
+    category: "daily", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("Pharmacy Queue → รายละเอียดเคส", "Pharmacy Queue → Case detail"), action: "/admin/pharmacy-queue",
+    prerequisite: bi("เปิด Feature Gate เฉพาะสภาพแวดล้อมที่อนุมัติ มี Protocol ที่ผ่านการตรวจและเภสัชกรรับผิดชอบ Queue", "Approved environment gates, a reviewed protocol and a pharmacist responsible for the queue."),
+    steps: [
+      bi("ลูกค้าต้องเห็นข้อความว่า AI ไม่ใช่เภสัชกรและให้ความยินยอมก่อน Intake คำถามมาจาก Protocol ที่อนุมัติทีละข้อ ไม่ใช่โมเดลคิดชุดคำถามเอง", "Customers see the AI-not-pharmacist notice and consent before intake. Questions come one at a time from an approved protocol, not a model-invented set."),
+      bi("ระบบตรวจ Red Flag, ข้อมูลขาดและข้อมูลขัดกันด้วยกฎฝั่ง Server ลูกค้าตรวจสรุปล่าสุดก่อนส่ง Queue; การยืนยันสรุปไม่ใช่อนุมัติยา", "Server rules check red flags, missing and conflicting fields. The customer confirms the latest summary before queueing; summary confirmation is not medicine approval."),
+      bi("เภสัชกร Claim เคส ตรวจข้อความต้นทาง สรุป ข้อมูลขาด ความขัดแย้งและหลักฐาน สามารถขอข้อมูลเพิ่ม แก้สรุป ปฏิเสธ ส่งต่อแพทย์ หรือ Escalate ตามหน้าจอ", "A pharmacist claims the case and reviews source messages, summary, gaps, conflicts and evidence, then may request more information, edit, reject, refer or escalate through the UI."),
+      bi("Approve/Reject/Refer ต้องเป็นสถานะและผู้กระทำที่ระบบอนุญาต เฉพาะเภสัชกรมีใบอนุญาตจึงอนุมัติได้ และข้อความอนุมัติถึงลูกค้าเป็นข้อความที่เภสัชกรพิมพ์เอง", "Approve/reject/refer follow guarded states and actors. Only a licensed pharmacist may approve, and approved customer wording is the pharmacist's own typed text."),
+      bi("คำแนะนำยาที่ AI สร้างได้เป็น Draft เฉพาะหน้าของเภสัชกร ต้องกดสร้าง ใช้/แก้ และอนุมัติเอง ไม่แสดงแก่ลูกค้าหรือสร้างออร์เดอร์โดยอัตโนมัติ", "AI medication suggestions are pharmacist-only drafts: explicitly generate, use/edit and approve them. They never reach customers or create orders automatically."),
+    ],
+    check: bi("เคสทดสอบผ่านลำดับสถานะ มี Audit โดยไม่เก็บข้อมูลสุขภาพดิบใน metadata และผู้ไม่มีใบอนุญาตอนุมัติไม่ได้", "The test case follows valid states, audit metadata omits raw health data and unlicensed users cannot approve."),
+    caution: bi("Intake/AI/Protocol เริ่มต้นปิดและยังต้องพิสูจน์กับฐาน/Provider Sandbox ของ deployment นั้น อย่าเปิด production จากการอ่านคู่มือเพียงอย่างเดียว", "Intake/AI/protocol gates default off and require deployment-specific DB/provider sandbox evidence. Reading this guide alone does not authorize production rollout."),
+  },
+  {
+    slug: "pharmacy-evidence-privacy", title: bi("หลักฐานคลินิก ความเป็นส่วนตัว และ Audit", "Clinical evidence, privacy & audit"),
+    summary: bi("แนบใบสั่งหรือบันทึกเฉพาะเมื่อจำเป็น จำกัดผู้ชม และไม่ส่งข้อมูลผู้ป่วยในภาพตัวอย่างหรือ Support", "Attach necessary prescription/counselling evidence, restrict its audience and keep patient data out of demos/support."),
+    category: "daily", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("Pharmacy Queue → Clinical evidence / Counter authorization log", "Pharmacy Queue → Clinical evidence / Counter authorization log"), action: "/admin/pharmacy-queue",
+    prerequisite: bi("นโยบายเก็บหลักฐานของร้าน ผู้มีสิทธิ์ Pharmacy Evidence และอุปกรณ์ที่ร้านควบคุม", "Shop evidence policy, Pharmacy Evidence access and a shop-controlled device."),
+    steps: [
+      bi("เลือกเคสและชนิดหลักฐานให้ตรง: รูป/PDF ใบสั่ง, เลขอ้างอิง หรือ Counseling Note แนบเฉพาะข้อมูลที่เภสัชกรเห็นว่าจำเป็น", "Choose the correct case and evidence kind: prescription image/PDF, reference or counselling note. Attach only what the pharmacist deems necessary."),
+      bi("แคชเชียร์ที่ POS อัปโหลดหลักฐานให้เคสได้ตามสิทธิ์ขาย แต่ไม่ควรเข้าถึงไฟล์ของผู้ป่วยรายอื่น เภสัชกร/ผู้มีสิทธิ์เปิดไฟล์จาก Route เฉพาะเท่านั้น", "A POS cashier may upload evidence for the case under sale authorization but must not browse other patients' files. Authorized viewers use only the dedicated evidence route."),
+      bi("ตรวจว่าไฟล์เป็นของร้านเดียวกัน แสดงแบบ private/no-store และไม่มี file id หรือ URL สาธารณะ ห้ามเปิดผ่านเส้นทางไฟล์ทั่วไป", "Verify tenant ownership, private/no-store delivery and no public file id/URL. Never use a generic file route."),
+      bi("Audit/Event เก็บชนิด แหล่งและผู้กระทำ ไม่เก็บข้อความสุขภาพ เลขใบสั่งหรือภาพใน metadata; ใช้หน้ารายละเอียดเคสสำหรับเนื้อหาตามสิทธิ์", "Audit/events keep kind, source and actor, not health text, prescription number or image in metadata. Use the permissioned case view for content."),
+      bi("หากต้องลบ ใช้ Soft Delete และเหตุผลตามขั้นตอนร้าน ไม่ดาวน์โหลดข้อมูลจริงไปทำคู่มือ Ticket หรือชุดทดสอบ", "Use soft delete with shop policy/reason. Never download real patient data into guides, support tickets or test fixtures."),
+    ],
+    check: bi("บัญชีไม่มีสิทธิ์เปิดไฟล์ไม่ได้ ผู้มีสิทธิ์เห็นเฉพาะร้านตน และ Audit ไม่มีข้อมูลสุขภาพดิบ", "Unauthorized accounts cannot open files, authorized users remain tenant-scoped and audit contains no raw health data."),
+    caution: bi("ระบบยังไม่มีระยะ Retention อัตโนมัติสำหรับหลักฐานคลินิก ร้านต้องตัดสินนโยบายกฎหมายและกำกับการลบเอง", "Clinical evidence has no automatic retention period; the shop must decide and govern its legal retention policy."),
+  },
+  {
+    slug: "pharmacy-guidance-protocols", title: bi("Protocol และข้อความ Guidance ที่เภสัชกรอนุมัติ", "Protocols & pharmacist-approved guidance"),
+    summary: bi("แยกกฎ Intake ออกจากข้อความตอบคำถาม และอนุมัติเป็นเวอร์ชันต่อร้านโดยไม่ให้ AI แต่งเพิ่ม", "Separate intake rules from reply guidance and approve shop-specific versions without AI rewriting."),
+    category: "growth", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("Pharmacy Protocols / Pharmacy Guidance", "Pharmacy Protocols / Pharmacy Guidance"), action: "/admin/pharmacy-guidance",
+    prerequisite: bi("เภสัชกรผู้ทบทวนจริง แหล่งอ้างอิงของร้าน และ Sandbox สำหรับทดสอบข้อความไทย/อังกฤษ", "A real pharmacist reviewer, shop sources and a sandbox for Thai/English testing."),
+    steps: [
+      bi("Protocol ใหม่เริ่ม DRAFT ตรวจ Field, Red Flag, Trigger และ Completion แล้วส่งตรวจ; APPROVED ยังไม่เปิดใช้จนกว่าจะเปิดสวิตช์และ Environment allowlist ครบ", "A new protocol starts DRAFT. Validate fields, red flags, triggers and completion, then submit it. APPROVED is still inactive until the enable switch and environment allowlist agree."),
+      bi("Guidance ใช้กับประเภทคำถามที่ระบบจำแนกแบบกำหนดไว้ เภสัชกรแก้ Draft ดู Preview จากข้อมูลร้านจริง แล้วอนุมัติเวอร์ชันของร้าน", "Guidance applies to deterministically classified question types. A pharmacist edits a draft, previews real shop facts and approves the shop version."),
+      bi("เมื่อแก้ข้อความที่ APPROVED ต้องกลับ DRAFT ก่อนลูกค้าเห็นเวอร์ชันใหม่ ข้อความที่ไม่มีอนุมัติ อ่านช้า หรือผิดรูปจะกลับไป Handoff มาตรฐาน", "Editing APPROVED guidance returns it to DRAFT before a new version can reach customers. Missing, slow or malformed reads fall back to the standard handoff."),
+      bi("ข้อความลูกค้าถูกส่งตามตัวอักษรที่เภสัชกรอนุมัติ ระบบไม่ให้ AI แปล ย่อ หรือแต่งเพิ่ม และคำถามฉุกเฉินต้องเข้าทางฉุกเฉินก่อนเสมอ", "Customers receive the pharmacist-approved wording verbatim; AI does not translate, shorten or elaborate it. Emergency routing always runs first."),
+      bi("ทดสอบทั้งข้อความที่ควรใช้ Guidance, ข้อความที่ต้อง Handoff, เหตุฉุกเฉิน และกรณี Placeholder ร้านขาด โดยต้องไม่มี Token Template หลุดถึงลูกค้า", "Test guidance, handoff, emergency and missing-shop-placeholder cases; template tokens must never leak to customers."),
+    ],
+    check: bi("Protocol ทำงานเฉพาะเมื่อ Gate ครบ Guidance ถึงลูกค้าเฉพาะ APPROVED และการแก้ไขบังคับทบทวนใหม่", "Protocols run only when every gate agrees, customers see only APPROVED guidance and edits require re-review."),
+    caution: bi("Template ตั้งต้นไม่ใช่คำแนะนำทางคลินิกที่พร้อมใช้ และ Product Policy ที่อนุมัติขายไม่ใช่การอนุมัติ Guidance", "Starter templates are not ready clinical advice, and approved sale policy is not guidance approval."),
+  },
+  {
+    slug: "pharmacy-emergency-boundary", title: bi("เหตุฉุกเฉิน Clinical Handoff และสิ่งที่ห้ามรับปาก", "Emergency routing, clinical handoff & prohibited promises"),
+    summary: bi("ให้เส้นทางฉุกเฉินมาก่อนทุกระบบ และสื่อสารเฉพาะสถานะที่มีหลักฐานโดยไม่วินิจฉัย", "Put emergency routing ahead of every workflow and communicate only evidenced status without diagnosis."),
+    category: "recovery", roles: all, tracks: ["pharmacy"], menu: bi("Pharmacy Queue / Inbox / คู่มือร้านยา", "Pharmacy Queue / Inbox / Pharmacy manual"), action: "/admin/pharmacy-manual",
+    prerequisite: bi("ทีมอ่านถ้อยคำฉุกเฉินที่ระบบใช้ รู้ผู้รับผิดชอบหน้างาน และมีขั้นตอนโทรฉุกเฉินของร้าน", "The team has reviewed fixed emergency wording, duty ownership and the shop's emergency-call procedure."),
+    steps: [
+      bi("ข้อความเข้าข่ายฉุกเฉินต้องผ่านคำตอบฉุกเฉินแบบกำหนดไว้ก่อนอ่าน Profile, ประวัติ, Catalog หรือเรียก AI ห้ามเปลี่ยนเป็นการขายหรือ Intake ปกติ", "Emergency-shaped text must use the fixed emergency path before profile, history, catalog or AI. Never convert it into commerce or normal intake."),
+      bi("คำถามยา ความเหมาะสม ขนาด การใช้ร่วมกัน หรืออาการที่ระบบไม่รองรับให้ส่ง Clinical Handoff หรือ Guidance ที่ APPROVED เท่านั้น ไม่ตอบจากความรู้ทั่วไปของพนักงานหรือ AI", "Medication suitability, dose, interaction or unsupported symptom questions use clinical handoff or APPROVED guidance only, never general staff/AI knowledge."),
+      bi("ตรวจ Queue และ Inbox จากสถานะจริง คำว่าได้รับเรื่อง หมายเลขเคส หรือแจ้งเภสัชกรแล้วใช้ได้ต่อเมื่อระบบสร้างหลักฐานนั้นสำเร็จ", "Read Queue/Inbox state from the system. Say received, provide a case reference or claim notification only when that evidence was created successfully."),
+      bi("ห้ามใช้ตราประทับกะสรุปว่าเภสัชกรอยู่ตอนนี้ ห้ามบอกเวลาตอบกลับจากวันหมดอายุเคส และห้ามบอกว่าไม่มี Red Flag เท่ากับปลอดภัย", "A shift stamp does not prove current pharmacist presence. Case expiry is not a response ETA, and no detected red flag does not mean safe."),
+      bi("หลังเหตุการณ์ ผู้จัดการและเภสัชกรตรวจเส้นทาง ข้อความที่ส่ง สถานะเคสและ Audit โดยไม่คัดลอกข้อมูลผู้ป่วยไป Support เกินจำเป็น", "After the event, manager and pharmacist review routing, delivered wording, case state and audit without copying unnecessary patient data to support."),
+    ],
+    check: bi("เหตุฉุกเฉินไม่แตะ AI/การขายก่อนตอบ Handoff ไม่อ้างสิ่งที่ไม่ถูกสร้าง และพนักงานอธิบายขอบเขตได้ตรงกัน", "Emergency replies precede AI/commerce, handoff makes no unsupported creation claim and staff can explain the boundary consistently."),
+    caution: bi("ตัวตรวจข้อความเป็นเส้นทางอนุรักษนิยม ไม่ใช่การวินิจฉัยหรือระบบคัดกรองที่ครบทุกกรณี ต้องให้ผู้เชี่ยวชาญทบทวนก่อนใช้งานจริง", "Text matching is conservative routing, not diagnosis or complete triage; expert review is required before live use."),
+  },
+  {
+    slug: "pharmacy-rehearsal", title: bi("แบบฝึกก่อนเปิดจริงสำหรับร้านขายยา", "Pharmacy launch rehearsal"),
+    summary: bi("ซ้อมนโยบายสินค้า เคาน์เตอร์ Queue หลักฐาน ฉุกเฉิน และความล้มเหลวโดยใช้ข้อมูลสมมติ", "Rehearse product policy, counter, queue, evidence, emergency and failure paths with fictional data."),
+    category: "recovery", roles: pharmacyManagers, tracks: ["pharmacy"], menu: bi("ร้านทดสอบ → Pharmacy Intake Lab / Queue / POS Readiness", "Test shop → Pharmacy Intake Lab / Queue / POS Readiness"), action: "/admin/pharmacy-intake-lab",
+    prerequisite: bi("Sandbox ที่ migrations ครบ ข้อมูลสมมติ ผู้ทดสอบทุกบทบาท และห้ามใช้ข้อมูลสุขภาพ/ใบสั่งจริง", "A fully migrated sandbox, fictional data, every test role and no real health/prescription data."),
+    steps: [
+      bi("สร้าง SKU ทดสอบให้ครบ DIRECT_SALE, ต้องตรวจสั้น, ต้องเภสัชกร, ห้ามออนไลน์, ต้องใบสั่ง, Policy ขาด และเกิน Quantity Limit ตรวจผล Counter/Online แยกกัน", "Create test SKUs for DIRECT_SALE, short check, pharmacist approval, online-prohibited, prescription, missing policy and quantity-limit cases; test counter and online separately."),
+      bi("ทดลองเภสัชกรที่เคาน์เตอร์และ Queue แก้ตะกร้าหลังอนุมัติ ยกเลิกบิล และลองใช้ approval ซ้ำ ต้องถูกบังคับยืนยันใหม่และไม่ปล่อย Quantity Limit", "Test counter pharmacist and Queue paths, basket edits, bill cancellation and approval reuse. Fresh authorization is required and quantity limits remain enforced."),
+      bi("ใน Intake Lab ทดสอบ Consent, ข้อมูลขาด, ข้อมูลขัดกัน, Red Flag, AI ปิด/ล้ม และ Manual Fill แล้วให้ผู้ไม่มีใบอนุญาตลองอนุมัติก่อนเภสัชกรจริง", "In Intake Lab test consent, missing/conflicting data, red flag, AI-off/failure and manual fill. Attempt approval as an unlicensed user before a real pharmacist."),
+      bi("แนบหลักฐานสมมติ ตรวจผู้ไม่มีสิทธิ์อ่านไม่ได้ แก้ Guidance ที่อนุมัติแล้วให้กลับ DRAFT และยืนยันว่า AI suggestion ไม่ออกสู่ลูกค้าหรือสร้างออร์เดอร์เอง", "Attach fictional evidence and verify access denial. Edit approved guidance back to DRAFT and confirm AI suggestions neither reach customers nor create orders."),
+      bi("ตัด Provider/DB dependency ใน Sandbox ตามแผน ทดสอบ fixed fallback และเหตุฉุกเฉิน เก็บผลคาดหวัง/จริง ผู้ทดสอบและผู้แก้ทุกข้อก่อนเปิด Soft Launch", "Exercise planned provider/DB failures in sandbox, fixed fallback and emergency routing. Record expected/actual results, tester and remediation owner before soft launch."),
+    ],
+    check: bi("ทุกกรณีมีหลักฐานผลจริง ผู้มีใบอนุญาตลงชื่อรับรองขั้นตอน และไม่มีข้อมูลผู้ป่วยจริงใน Fixture, Screenshot หรือ Export", "Every scenario has observed evidence, a licensed pharmacist signs off the workflow and fixtures/screenshots/exports contain no real patient data."),
+    caution: bi("Pure tests และ Lab ไม่พิสูจน์ RLS, Provider, Hardware หรือฐานจริง ต้องผ่าน DB/Sandbox และการทบทวนทางคลินิกก่อน Production", "Pure tests and Lab do not prove RLS, provider, hardware or live database behavior; DB/sandbox and clinical review are required before production."),
+  },
 ];
 
 export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
+  retail: { title: bi("ร้านค้าปลีกและค้าส่ง", "Retail & wholesale"), description: bi("ขายหน้าร้าน คาเฟ่เคาน์เตอร์ สินค้ามีรุ่น และงานขายส่ง โดยใช้ POS สินค้า สต็อกและการเงินชุดเดียวกัน", "Counter retail, counter cafes, variant goods and wholesale using the shared POS, catalog, stock and finance workflows."), icon: "🛒" },
   "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
-  restaurant: { title: bi("ร้านอาหาร", "Restaurant"), description: bi("ตั้งเมนู ผังโต๊ะ ครัว และบริการตั้งแต่รับออร์เดอร์จนปิดบิล", "Configure menus, tables and kitchen service through final checkout."), icon: "🍽" },
+  restaurant: { title: bi("ร้านอาหารและคาเฟ่", "Restaurants & cafes"), description: bi("สำหรับร้านที่ใช้ Restaurant POS บิลโต๊ะหรือ TAKEAWAY รอบส่งครัว และ Kitchen Board; คาเฟ่ขายหน้าเคาน์เตอร์ทั่วไปอยู่ในคู่มือค้าปลีก", "For shops using Restaurant POS, table or TAKEAWAY checks, kitchen rounds and Kitchen Board; ordinary counter cafes use the retail guide."), icon: "🍽" },
+  pharmacy: { title: bi("ร้านขายยา", "Pharmacy"), description: bi("ตั้งสินค้าและนโยบายขาย ทำงานที่เคาน์เตอร์และ Pharmacy Queue โดยให้เภสัชกรมีใบอนุญาตเป็นผู้ตัดสินทุกเรื่องทางคลินิก", "Configure products and sale policy, then operate counter and Pharmacy Queue workflows while every clinical decision remains with a licensed pharmacist."), icon: "⚕️" },
 };
 
 export const trackOrder: Record<TrackId, string[]> = {
+  retail: [
+    "start-here", "branches-hours", "staff-permissions", "products-import", "retail-packs-barcodes", "retail-variants-serials",
+    "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "retail-pos-sale",
+    "members-coupons", "balances-privacy", "shifts", "retail-food-counter", "restaurant-operations-checklists", "retail-promotions",
+    "retail-purchase-receiving", "retail-orders-shipping", "retail-credit-receivables", "expenses-input-vat",
+    "returns-recovery", "reports-ai", "outages-support", "retail-offline", "retail-rehearsal", "launch-checklist",
+  ],
   "board-game": [
     "start-here", "branches-hours", "board-game-hours", "staff-permissions", "board-game-permissions",
     "products-import", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr",
     "board-game-tables", "board-game-rates", "board-game-offers", "board-game-library", "board-game-public",
     "shifts", "board-game-waitlist", "board-game-reservations", "board-game-deposits", "board-game-service",
-    "board-game-tab", "board-game-service-qr", "board-game-collateral", "board-game-move-split", "board-game-checkout", "inventory",
+    "board-game-tab", "board-game-service-qr", "board-game-collateral", "board-game-move-split", "board-game-checkout", "inventory", "expenses-input-vat",
     "members-coupons", "board-game-passes", "board-game-renewals", "balances-privacy", "line-ai-booking",
     "board-game-analytics", "board-game-ai-owner", "reports-ai", "board-game-game-issues",
     "board-game-cancel-errors", "returns-recovery", "outages-support", "board-game-rehearsal", "launch-checklist",
   ],
-  restaurant: ["start-here", "branches-hours", "staff-permissions", "products-import", "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "restaurant-menu", "restaurant-floor", "members-coupons", "balances-privacy", "shifts", "restaurant-service", "restaurant-online", "returns-recovery", "reports-ai", "outages-support", "launch-checklist"],
+  restaurant: [
+    "start-here", "branches-hours", "staff-permissions", "products-import", "restaurant-menu", "restaurant-floor",
+    "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "members-coupons", "balances-privacy", "shifts",
+    "restaurant-service", "restaurant-online", "restaurant-kitchen-availability", "restaurant-operations-checklists", "expenses-input-vat",
+    "restaurant-costs-quality", "returns-recovery", "reports-ai", "outages-support", "restaurant-rehearsal", "launch-checklist",
+  ],
+  pharmacy: [
+    "start-here", "branches-hours", "staff-permissions", "products-import", "pharmacy-readiness-licenses", "pharmacy-product-policies",
+    "inventory", "tax-receipts", "pos-devices", "desktop-hardware", "payments-qr", "members-coupons", "balances-privacy", "shifts",
+    "pharmacy-counter-sale", "pharmacy-intake-queue", "pharmacy-evidence-privacy", "expenses-input-vat", "pharmacy-guidance-protocols",
+    "returns-recovery", "reports-ai", "pharmacy-emergency-boundary", "outages-support", "pharmacy-rehearsal", "launch-checklist",
+  ],
 };
 
 export function getLesson(slug: string) { return lessons.find((lesson) => lesson.slug === slug); }
-export function getTrackLessons(track: TrackId) {
+export function lessonSupportsRestaurantFormat(lesson: Lesson, format: RestaurantFormat) {
+  return lesson.tracks.includes("restaurant") && (!lesson.restaurantFormats || lesson.restaurantFormats.includes(format));
+}
+export function lessonSupportsRetailFormat(lesson: Lesson, format: RetailFormat) {
+  return lesson.tracks.includes("retail") && (!lesson.retailFormats || lesson.retailFormats.includes(format));
+}
+export function getTrackLessons(track: TrackId, format?: TrackFormat) {
   const categories = Object.keys(categoryLabels);
   return trackOrder[track].map((slug) => getLesson(slug)!)
+    .filter((lesson) => track !== "restaurant" || !format || !isRestaurantFormat(format) || lessonSupportsRestaurantFormat(lesson, format))
+    .filter((lesson) => track !== "retail" || !format || !isRetailFormat(format) || lessonSupportsRetailFormat(lesson, format))
     .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
 }
-export function isTrack(value: string): value is TrackId { return value === "board-game" || value === "restaurant"; }
+export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy"; }
+export function isRestaurantFormat(value: string): value is RestaurantFormat {
+  return value === "dine-in" || value === "counter-kitchen" || value === "pickup-delivery";
+}
+export function isRetailFormat(value: string): value is RetailFormat {
+  return value === "general" || value === "variants" || value === "food-counter" || value === "wholesale";
+}
+export function isTrackFormat(track: TrackId, value: string): value is TrackFormat {
+  return track === "restaurant" ? isRestaurantFormat(value) : track === "retail" ? isRetailFormat(value) : false;
+}
+export function lessonSupportsTrackFormat(lesson: Lesson, track: TrackId, format: TrackFormat) {
+  if (track === "restaurant" && isRestaurantFormat(format)) return lessonSupportsRestaurantFormat(lesson, format);
+  if (track === "retail" && isRetailFormat(format)) return lessonSupportsRetailFormat(lesson, format);
+  return false;
+}
 export function searchLessons(query: string, lang: "th" | "en", track?: TrackId, role?: Role) {
   const words = query.normalize("NFKC").toLocaleLowerCase().trim().split(/\s+/).filter(Boolean).slice(0, 20);
   return lessons.filter((lesson) => (!track || lesson.tracks.includes(track)) && (!role || lesson.roles.includes(role)))

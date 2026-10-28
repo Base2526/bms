@@ -67,6 +67,13 @@ export default function RestaurantGuide() {
   const printScope = `${profile.shop === "board_game_cafe" ? copy.profile.additionalHeading : copy.profile.primaryHeading} · ${shopLabels[profile.shop]}${profile.shop === "restaurant" ? ` · ${copy.profile.services[profile.service]}` : ""}`;
   const fitLabel = (value: ReturnType<typeof flowFit>) => value === "restaurant_example" ? copy.profile.restaurantExample : copy.profile[value];
   const recommended = restaurantFlows.filter(item => flowFit(item.id, profile) === "recommended");
+  const learningHref = profile.shop === "food_beverage"
+    ? "/learn/retail?format=food-counter"
+    : profile.shop === "board_game_cafe"
+      ? "/learn/board-game"
+      : profile.shop === "restaurant"
+        ? `/learn/restaurant?format=${profile.service === "dine_in" ? "dine-in" : profile.service === "counter" ? "counter-kitchen" : "pickup-delivery"}`
+        : "/learn/restaurant";
   const address = (id: number, nextProfile: GuideProfile) => {
     const url = new URL(window.location.href);
     if (nextProfile.shop === "overview") url.searchParams.delete("shop");
@@ -125,6 +132,7 @@ export default function RestaurantGuide() {
         <ol className={styles.journey}>{copy.journey.map(step => <li key={step}>{step}</li>)}</ol>
         <div className={styles.actions}>
           <a className={styles.primaryButton} href="#restaurant-flows">{copy.explore} <span aria-hidden="true">↓</span></a>
+          <Link className={styles.button} href={learningHref}>{copy.learnGuide} <span aria-hidden="true">→</span></Link>
           <a className={styles.button} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} <span aria-hidden="true">↗</span></a>
         </div>
       </div>
@@ -192,6 +200,7 @@ export default function RestaurantGuide() {
     </section>
     <section className={styles.cta}><div><h2>{copy.ctaTitle}</h2><p>{copy.ctaDescription}</p></div><div className={styles.actions}>
       <a className={styles.primaryButton} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} ↗</a>
+      <Link className={styles.button} href={learningHref}>{copy.learnGuide} →</Link>
       {!loading && <Link className={styles.button} href={admin ? "/admin/dashboard" : "/shop-signup"}>{admin ? copy.dashboard : copy.signup}</Link>}
     </div></section>
     <p className={styles.scope}>{copy.scope}</p>

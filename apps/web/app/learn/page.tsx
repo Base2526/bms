@@ -6,7 +6,7 @@ import s from "./learning.module.css";
 type Params = { q?: string; track?: string; role?: string };
 export function generateMetadata() {
   const th = learningLang() === "th";
-  return learningMetadata(th ? "ศูนย์เรียนรู้สาธารณะ" : "Public learning center", th ? "คู่มือ BMS ร้านบอร์ดเกมและร้านอาหาร ตั้งค่า POS ใช้งานประจำวัน และเตรียมเปิดร้าน อ่านฟรีโดยไม่ต้องสมัคร" : "Free BMS guides for board-game cafes and restaurants: setup, POS, daily work and launch checklists. No signup needed.", "/learn");
+  return learningMetadata(th ? "ศูนย์เรียนรู้สาธารณะ" : "Public learning center", th ? "คู่มือ BMS สำหรับร้านค้าปลีก ค้าส่ง ร้านอาหาร คาเฟ่ ร้านบอร์ดเกม และร้านขายยา ตั้งค่า POS ใช้งานประจำวัน และเตรียมเปิดร้าน อ่านฟรีโดยไม่ต้องสมัคร" : "Free BMS guides for retail, wholesale, restaurants, cafes, board-game cafes and pharmacies: setup, POS, daily work and launch checklists. No signup needed.", "/learn");
 }
 export default function LearnPage({ searchParams }: { searchParams: Params }) {
   const lang = learningLang(); const th = lang === "th";

@@ -10,8 +10,10 @@ export default function LearningLayout({ children }: { children: React.ReactNode
   const lang = cookies().get("lang")?.value === "en" ? "en" : "th";
   const links = <>
     <Link href="/learn">{lang === "th" ? "คู่มือทั้งหมด" : "All guides"}</Link>
+    <Link href="/learn/retail">{lang === "th" ? "ค้าปลีกและค้าส่ง" : "Retail & wholesale"}</Link>
     <Link href="/learn/board-game">{lang === "th" ? "บอร์ดเกม" : "Board games"}</Link>
-    <Link href="/learn/restaurant">{lang === "th" ? "ร้านอาหาร" : "Restaurants"}</Link>
+    <Link href="/learn/restaurant">{lang === "th" ? "ร้านอาหารและคาเฟ่" : "Restaurants & cafes"}</Link>
+    <Link href="/learn/pharmacy">{lang === "th" ? "ร้านขายยา" : "Pharmacy"}</Link>
     <LanguageControl lang={lang} /><StoreLink lang={lang} />
   </>;
   return <div className={s.shell}>
