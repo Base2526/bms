@@ -19,9 +19,9 @@ try {
     page.on("pageerror", (error) => failures.push(error.message));
     const requests = [];
     page.on("request", (request) => { if (request.url().includes("/api/")) requests.push(new URL(request.url()).pathname); });
-    for (const width of [1440, 390, 320]) {
+    for (const width of [1440, 1024, 390, 320]) {
       await page.setViewportSize({ width, height: 950 });
-      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
+      for (const path of ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/inventory", "/learn/guides/retail-pos-sale", "/learn/guides/board-game-move-split", "/learn/guides/desktop-hardware", "/learn/guides/restaurant-service", "/learn/guides/restaurant-rehearsal", "/learn/guides/pharmacy-counter-sale", "/learn/guides/pharmacy-rehearsal", "/learn/guides/inventory-transfer-control", "/learn/guides/inventory-rehearsal", "/learn/guides/board-game-deposits", "/learn/guides/board-game-rehearsal"]) {
         const response = await page.goto(`${baseURL}${path}`, { waitUntil: "networkidle" });
         assert.equal(response.status(), 200, path);
         await page.locator("h1").waitFor();
@@ -61,6 +61,17 @@ try {
       assert.ok((await page.locator("article").innerText()).length > 600, `${articlePath}: missing content`);
     }
     console.log(`Verified ${pharmacyPaths.length} pharmacy articles in ${lang}`);
+    await page.goto(`${baseURL}/learn/inventory`);
+    const inventoryPaths = await page.locator('main ol a[href*="track=inventory"]').evaluateAll((links) =>
+      [...new Set(links.map((link) => link.getAttribute("href")))]);
+    assert.ok(inventoryPaths.length >= 14, "Inventory path is missing reviewed lessons");
+    for (const articlePath of inventoryPaths) {
+      const response = await page.goto(`${baseURL}${articlePath}`);
+      assert.equal(response.status(), 200, articlePath);
+      assert.ok(await page.locator("article ol li").count() >= 4, `${articlePath}: missing steps`);
+      assert.ok((await page.locator("article").innerText()).length > 600, `${articlePath}: missing content`);
+    }
+    console.log(`Verified ${inventoryPaths.length} inventory articles in ${lang}`);
     assert.ok(requests.every((path) => path === "/api/auth/me"), `Unexpected public API calls: ${requests.join(",")}`);
     await page.goto(`${baseURL}/learn`);
     await page.getByRole("searchbox").fill("แยกกลุ่ม");
@@ -165,6 +176,7 @@ try {
     await navigation.locator('footer a[href="/learn/restaurant"]').waitFor();
     await navigation.locator('footer a[href="/learn/board-game"]').waitFor();
     await navigation.locator('footer a[href="/learn/pharmacy"]').waitFor();
+    await navigation.locator('footer a[href="/learn/inventory"]').waitFor();
     if (width >= 940) await navigation.locator('header nav a[href="/learn"]').waitFor();
     else {
       await navigation.locator('header button:has(.anticon-more)').click();

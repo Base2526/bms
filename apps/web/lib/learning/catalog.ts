@@ -1,7 +1,7 @@
 import { resolveBilingual, type Bilingual } from "@/lib/static-page-i18n";
 
 export const LEARNING_REVIEWED_AT = "2026-10-28";
-export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy";
+export type TrackId = "retail" | "board-game" | "restaurant" | "pharmacy" | "inventory";
 export type RestaurantFormat = "dine-in" | "counter-kitchen" | "pickup-delivery";
 export type RetailFormat = "general" | "variants" | "food-counter" | "wholesale";
 export type TrackFormat = RestaurantFormat | RetailFormat;
@@ -42,6 +42,8 @@ export const categoryLabels = {
 
 // Authored public instructions only. Never import internal tool catalogs, tenant records or secrets.
 const everyTrack: TrackId[] = ["retail", "board-game", "restaurant", "pharmacy"];
+export const businessTrackIds = ["retail", "board-game", "restaurant", "pharmacy"] as const;
+export const specialistTrackIds = ["inventory"] as const;
 const all: Role[] = ["owner", "manager", "cashier", "pharmacist"];
 const managers: Role[] = ["owner", "manager"];
 const pharmacyManagers: Role[] = ["owner", "manager", "pharmacist"];
@@ -92,7 +94,7 @@ export const lessons: Lesson[] = [
   {
     slug: "products-import", title: bi("สินค้า SKU บาร์โค้ด และนำเข้า", "Products, SKUs, barcodes & imports"),
     summary: bi("เตรียมน้ำ ขนม สินค้าขาย หรือวัตถุดิบ พร้อมราคาต้นทุนและหน่วย", "Set up drinks, snacks, merchandise or ingredients with prices, costs and units."),
-    category: "setup", roles: managers, tracks: everyTrack, menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/products",
+    category: "setup", roles: managers, tracks: [...everyTrack, "inventory"], menu: bi("Products → Product packs → Product labels", "Products → Product packs → Product labels"), action: "/admin/products",
     prerequisite: bi("รายการ SKU หน่วย ราคาขาย ต้นทุน ประเภท VAT และยอดตั้งต้นที่ตรวจแล้ว", "A checked list of SKUs, units, sale prices, costs, VAT categories and opening quantities."),
     steps: [
       bi("สร้างสินค้าหนึ่งรายการก่อน กำหนด SKU ไม่ซ้ำ ชื่อ หน่วย รูปแบบสต็อก ราคาขาย ต้นทุน และประเภท VAT; ต้นทุนที่ไม่ทราบต้องไม่กรอกเป็นศูนย์แทน", "Create one item first with a unique SKU, name, unit, stock policy, price, cost and VAT category. Do not substitute zero for unknown cost."),
@@ -106,7 +108,7 @@ export const lessons: Lesson[] = [
   {
     slug: "inventory", title: bi("รับเข้า โอน และตรวจนับสต็อก", "Receive, transfer & count stock"),
     summary: bi("จัดการของที่ขายจริงแยกสาขา พร้อมตรวจส่วนต่างและของเสีย", "Manage sellable inventory by branch, including variances and wastage."),
-    category: "daily", roles: managers, tracks: everyTrack, menu: bi("Purchase / Stock Transfers / Stock Counts", "Purchase / Stock Transfers / Stock Counts"), action: "/admin/stock-transfers",
+    category: "daily", roles: managers, tracks: [...everyTrack, "inventory"], menu: bi("Purchase / Stock Transfers / Stock Counts", "Purchase / Stock Transfers / Stock Counts"), action: "/admin/stock-transfers",
     prerequisite: bi("สินค้า หน่วย สาขา และผู้รับผิดชอบตรวจรับพร้อมใช้งาน", "Products, units, branches and receiving staff are ready."),
     steps: [
       bi("รับสินค้าตามใบสั่งซื้อ เลือกสาขาที่รับ ตรวจจำนวนและต้นทุนตามของจริงก่อนยืนยันรับ", "Receive against a purchase order, select the receiving branch and check actual quantities and costs."),
@@ -1044,6 +1046,175 @@ export const lessons: Lesson[] = [
     check: bi("ทุกกรณีมีหลักฐานผลจริง ผู้มีใบอนุญาตลงชื่อรับรองขั้นตอน และไม่มีข้อมูลผู้ป่วยจริงใน Fixture, Screenshot หรือ Export", "Every scenario has observed evidence, a licensed pharmacist signs off the workflow and fixtures/screenshots/exports contain no real patient data."),
     caution: bi("Pure tests และ Lab ไม่พิสูจน์ RLS, Provider, Hardware หรือฐานจริง ต้องผ่าน DB/Sandbox และการทบทวนทางคลินิกก่อน Production", "Pure tests and Lab do not prove RLS, provider, hardware or live database behavior; DB/sandbox and clinical review are required before production."),
   },
+  {
+    slug: "inventory-overview", title: bi("เริ่มต้นคู่มือสต็อกและคลังสินค้า", "Start the inventory & warehouse guide"),
+    summary: bi("วางขอบเขตสินค้า สาขา ผู้รับผิดชอบ และหลักฐานก่อนเริ่มขยับยอด", "Define products, branches, owners and evidence before moving stock."),
+    category: "setup", roles: managers, tracks: ["inventory"], menu: bi("Locations → Products → คู่มือสต็อก", "Locations → Products → Inventory guide"), action: "/admin/locations",
+    prerequisite: bi("มีผู้รับผิดชอบสินค้า การรับเข้า การโอน การนับ และผู้อนุมัติผลต่าง", "Named owners for catalog, receiving, transfers, counts and variance approval."),
+    steps: [
+      bi("แยก Catalog ออกจากยอดคงเหลือ: SKU, Variant, Pack และนโยบายสต็อกบอกว่าสินค้าคืออะไร ส่วนยอดจริงอยู่แยกตามสาขาและไซซ์", "Separate catalog from balances: SKU, variant, pack and stock policy define the item; actual quantity belongs to a branch and size."),
+      bi("กำหนดสาขา/คลังและผู้รับผิดชอบแต่ละงาน ตรวจสิทธิ์ product, purchase, inventory.transfer, inventory.count และ inventory.count.apply ตามหน้าที่", "Define branches/warehouses and task owners. Verify product, purchase, inventory.transfer, inventory.count and inventory.count.apply permissions by role."),
+      bi("เลือกวันตัดยอด หากย้ายระบบให้เก็บรายการต้นทาง นับจริง และนำยอดเข้าเพียงครั้งเดียวด้วยเอกสารที่ตรวจย้อนกลับได้", "Choose a cutover date. For migration, retain source records, perform a physical count and load opening stock once with traceable evidence."),
+      bi("ตกลงคำศัพท์ร่วมกัน: พร้อมขาย, จองแล้ว, ระหว่างทาง, กักกัน, เสียหาย, สูญหาย และยังไม่ทราบ ห้ามรวมทุกอย่างเป็นคำว่าเหลือ", "Agree on shared terms: sellable, reserved, in transit, quarantined, damaged, missing and unknown. Do not collapse them into one on-hand number."),
+    ],
+    check: bi("ทีมระบุได้ว่ายอดแต่ละชนิดอยู่ที่ไหน ใครอนุมัติ และเอกสารใดเป็นหลักฐาน", "The team can identify each balance, its approver and its source evidence."),
+    caution: bi("คู่มือนี้เป็นคู่มือเฉพาะงานที่ใช้ร่วมหลายประเภทร้าน ไม่เปลี่ยน business archetype หรือเปิดความสามารถใหม่ให้ร้าน", "This is a cross-business specialist guide; it does not change the business archetype or enable capabilities."),
+  },
+  {
+    slug: "inventory-catalog-models", title: bi("หน่วยฐาน Variant Pack และรูปแบบสต็อก", "Base units, variants, packs & stock models"),
+    summary: bi("ตั้งโครงสร้างสินค้าให้การขาย รับเข้า สูตร ล็อต และ Serial ใช้หน่วยเดียวกัน", "Align sales, receiving, recipes, lots and serials on one product structure."),
+    category: "setup", roles: managers, tracks: ["inventory"], menu: bi("Products → รูปแบบสต็อก / Product packs", "Products → Stock models / Product packs"), action: "/admin/stock-models",
+    prerequisite: bi("รายการสินค้า หน่วยซื้อ หน่วยขาย ขนาด และวิธีตัดสต็อกที่ตรวจแล้ว", "A reviewed list of purchasing units, selling units, sizes and consumption methods."),
+    steps: [
+      bi("กำหนด SKU และหน่วยฐานที่ไม่เปลี่ยนความหมายกลางทาง ใช้ Variant สำหรับขนาด และ Pack สำหรับจำนวนหน่วยฐานต่อหน่วยขาย", "Define a stable SKU and base unit. Use variants for sizes and packs for the number of base units per selling unit."),
+      bi("เลือก Stock Policy ตามงานจริง: ตัดตรง สูตร สินค้าชั่ง ของเสีย หรือไม่คุมสต็อก เฉพาะความสามารถที่หน้าจอเปิดและ readiness ผ่านเท่านั้น", "Choose the stock policy that matches actual work: direct, recipe, weighted, wastage or non-stock. Use only capabilities exposed and cleared by readiness."),
+      bi("สูตรใช้จำนวนเต็มของหน่วยฐานและสร้าง version ใหม่เมื่อส่วนประกอบเปลี่ยน สูตรย่อยต้อง pin version; ค่าแรง/พลังงานเป็นประมาณการ ไม่ใช่ movement", "Recipes consume integer base units and append a version when components change. Subrecipes pin versions; labor and energy estimates are not movements."),
+      bi("ทดสอบสแกนหน่วยเดี่ยว แพ็ก และ Variant รวมถึงกรณีไม่มี inventory row; Variant เป็นข้อมูล Catalog ไม่ได้เกิดจากยอดบนชั้น", "Test scans for loose units, packs and variants, including no inventory row. Variants are catalog data, not inferred from shelf quantity."),
+    ],
+    check: bi("หนึ่งการขายและหนึ่งการรับเข้าคำนวณกลับเป็นหน่วยฐานได้ตรงกันโดยไม่ปัดเศษเงียบ", "One sale and one receipt reconcile to base units without silent rounding."),
+    caution: bi("NON_STOCK ไม่ได้แปลว่าฟรีหรือไม่มีต้นทุน และการเปลี่ยนรูปแบบสต็อกของ SKU ที่ขายจริงแล้วต้องทบทวนผลต่อบิลค้าง", "NON_STOCK does not mean free or zero cost. Review open work before changing the stock model of a live SKU."),
+  },
+  {
+    slug: "inventory-branch-balances", title: bi("ยอดสาขา จุดเตือน และสินค้าพร้อมขาย", "Branch balances, reorder points & sellable stock"),
+    summary: bi("อ่านยอดคงเหลือโดยไม่ปนยอดจอง ของระหว่างทาง หรือของกักกัน", "Read balances without mixing reservations, transit or quarantine."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Products → ขยายสินค้า → สต็อกต่อสาขา", "Products → Expand product → Branch stock"), action: "/admin/products",
+    prerequisite: bi("สร้างสินค้า Variant และสาขาแล้ว และผู้ใช้มองเห็นสาขาที่รับผิดชอบ", "Products, variants and branches exist, and the user can access the assigned branches."),
+    steps: [
+      bi("เปิดสินค้าและดูสาขา × Variant แยก current, reserved, in transit และ quarantine ก่อนตัดสินใจขายหรือเติมสินค้า", "Open the product and inspect branch × variant current, reserved, in-transit and quarantine quantities before selling or replenishing."),
+      bi("การปรับยอดและ Reorder Point ต้องเลือกสาขาเสมอ ใส่เหตุผลและตรวจหน่วยก่อนยืนยัน ไม่ใช้ยอดรวมทุกสาขาแทนยอดของจุดขาย", "Adjustments and reorder points always require a branch. Confirm reason and unit; never substitute all-branch totals for the selling branch."),
+      bi("ถือ usable/sellable stock เป็นยอดที่ใช้ตัดสินใจ ของกักกันและของระหว่างทางไม่ใช่ของพร้อมขาย และ capacity ไม่ใช่ vacancy", "Use usable/sellable stock for decisions. Quarantine and transit are not sellable; capacity is not vacancy."),
+      bi("ตรวจ Low stock และ Restock subscriptions ตามสาขา แล้วกำหนดผู้รับผิดชอบว่าจะซื้อ โอน หรือปิดคำขอเมื่อมีหลักฐานของเข้า", "Review low stock and restock subscriptions by branch, assigning an owner to buy, transfer or close requests after verified replenishment."),
+    ],
+    check: bi("พนักงานอธิบายได้ว่ายอดพร้อมขายต่างจาก current/reserved/transit/quarantine อย่างไร", "Staff can explain how sellable differs from current, reserved, transit and quarantine."),
+    caution: bi("ค่าติดลบ ยอดที่ไม่ทราบ หรือรายการโหลดไม่ครบต้องสืบหาสาเหตุ ไม่แก้ด้วยการปรับยอดรวมให้ดูตรง", "Investigate negative, unknown or truncated balances; do not force totals to look correct with an adjustment."),
+  },
+  {
+    slug: "inventory-purchase-receiving", title: bi("Purchase Order การรับเข้า และต้นทุน", "Purchase orders, receiving & cost"),
+    summary: bi("รับสินค้าตาม PO เข้าสาขาที่ถูกต้อง พร้อมจำนวน ต้นทุน ล็อต และหลักฐาน", "Receive PO goods into the correct branch with quantity, cost, lot and evidence."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Purchase → สร้าง PO / รับสินค้า", "Purchase → Create PO / Receive"), action: "/admin/purchase",
+    prerequisite: bi("Supplier, SKU ร้าน, Variant, สาขารับ และผู้มีสิทธิ์ purchase.receive พร้อม", "Supplier, shop SKU, variant, receiving branch and purchase.receive staff are ready."),
+    steps: [
+      bi("สร้าง PO และจับคู่ SKU ผู้ขายกับ SKU/Variant ของร้าน ตรวจหน่วย จำนวน ราคาต่อหน่วยและวันที่คาดรับก่อนส่ง", "Create the PO and map supplier SKU to the shop SKU/variant. Check unit, quantity, unit cost and expected date before submission."),
+      bi("เมื่อของถึง ให้นับและตรวจของจริงก่อนรับ เลือกสาขาปลายทาง บันทึกล็อต/วันหมดอายุเมื่อสินค้าใช้ข้อมูลนั้น และรับเฉพาะจำนวนที่ตรวจแล้ว", "On arrival, inspect and count first. Select the destination branch, record lot/expiry where used and receive only verified quantities."),
+      bi("รับบางส่วนให้ PO คงสถานะตามของที่ยังขาด อย่าสร้าง PO ใหม่เพื่อซ่อนยอดค้าง และใช้คำขอเดิมเมื่อผลตอบกลับไม่ชัดเจน", "A partial receipt keeps the remaining PO open. Do not create a replacement PO to hide shortages, and reuse the original request after an unknown outcome."),
+      bi("ตรวจ movement, ยอดสาขา และต้นทุนหลังรับเข้า ค่าเฉลี่ยถ่วงน้ำหนักเป็นหลักฐานตามที่ระบบบันทึก ไม่ย้อนเติมต้นทุนให้บิลเก่า", "Reconcile movement, branch balance and cost after receiving. Weighted average follows recorded evidence and does not backfill old sales."),
+    ],
+    check: bi("จำนวนรับจริง ยอดค้าง PO movement และยอดสาขาตรงกัน รวมถึงล็อตที่ต้องติดตาม", "Received quantity, PO remainder, movement, branch balance and tracked lots agree."),
+    caution: bi("ใบลด/เพิ่มหนี้ผู้ขายเปลี่ยนหลักฐานราคา ไม่ขยับเงินหรือสต็อกเอง และ Inspection approval ไม่ใช่การรับสินค้า", "Supplier debit/credit notes change price evidence, not cash or stock. Inspection approval is not receiving."),
+  },
+  {
+    slug: "inventory-requisitions", title: bi("คำขอสาขาและการวางแผนเติมสินค้า", "Branch requisitions & replenishment planning"),
+    summary: bi("เปลี่ยนความต้องการของสาขาเป็นใบโอนหรือ PO โดยยังไม่ตัดสต็อกก่อนอนุมัติ", "Turn branch demand into a transfer or PO without moving stock before approval."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Branch Requisitions → Review queue", "Branch Requisitions → Review queue"), action: "/admin/branch-requisitions",
+    prerequisite: bi("สาขา จุดเตือน ผู้ตรวจคำขอ และแหล่งเติมจากสาขาอื่นหรือ Supplier", "Branches, reorder points, reviewers and transfer/supplier replenishment sources."),
+    steps: [
+      bi("สาขาสร้าง Draft ระบุสินค้าจำนวนที่ต้องการ วันที่ต้องใช้ ความเร่งด่วนและเหตุผล แล้วตรวจยอดพร้อมขาย/กำลังมาก่อนส่ง", "The branch drafts items, requested quantities, need-by date, urgency and reason, then checks sellable and pending supply before submission."),
+      bi("ผู้ตรวจพิจารณาทีละบรรทัด อนุมัติจำนวนพร้อมเหตุผล และเลือกว่าจะสร้างใบโอน Draft หรือผูกกับ PO", "The reviewer decides each line, records approved quantity and reason, then creates a draft transfer or links procurement."),
+      bi("คำขอไม่ขยับสต็อก การสร้าง PO ไม่แปลว่าสาขาได้รับของ และใบโอนยังต้อง Send แล้ว Receive ตามขั้นตอน", "A requisition moves no stock. A PO is not branch receipt, and a transfer still requires Send then Receive."),
+      bi("ติดตามเลขเอกสารจริง ประวัติส่ง/รับ/ส่วนต่าง และรีเฟรชเมื่อการแจ้งเตือนยังไม่มา แยก pending supply ออกจาก usable stock", "Follow the real document, send/receive/discrepancy history and refresh if notification lags. Keep pending supply separate from usable stock."),
+    ],
+    check: bi("ทุกคำขอที่อนุมัติมีปลายทางเป็นใบโอนหรือ PO และไม่มีรายการถูกนับว่าได้รับก่อนหลักฐานจริง", "Every approved request leads to a transfer or PO, with nothing counted as received before evidence."),
+    caution: bi("คำแนะนำ Demand/Safety stock/Lead time เป็นข้อมูลช่วยตัดสินใจ พนักงานต้องทบทวนก่อนสร้างเอกสารจริง", "Demand, safety-stock and lead-time suggestions are advisory; staff review precedes real documents."),
+  },
+  {
+    slug: "inventory-transfer-control", title: bi("โอนสต็อกแบบส่ง–รับและจัดการส่วนต่าง", "Send–receive transfers & discrepancies"),
+    summary: bi("ควบคุมของระหว่างทาง ของเสียหาย และของสูญหายโดยไม่เพิ่มเข้าปลายทางผิด", "Control transit, damaged and missing units without inflating destination stock."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Stock Transfers → Create / Send / Receive", "Stock Transfers → Create / Send / Receive"), action: "/admin/stock-transfers",
+    prerequisite: bi("ผู้สร้างเข้าถึงทั้งสองสาขา ผู้ส่งอยู่ต้นทาง ผู้รับอยู่ปลายทาง และมีเลขอ้างอิงขนส่ง", "Creator can access both branches; sender owns source, receiver owns destination, and shipment references are ready."),
+    steps: [
+      bi("สร้าง Draft เลือกต้นทาง ปลายทาง SKU/Variant และจำนวน ตรวจยอดที่ไม่ถูกจองก่อนยืนยันรายการ", "Create a draft with source, destination, SKU/variant and quantity; verify unreserved availability before confirmation."),
+      bi("Send ตัดของที่ไม่ถูกจองจากต้นทางเป็น TRANSFER_OUT ของจะอยู่ระหว่างทางและยังไม่ใช่ยอดสาขาปลายทาง", "Send removes unreserved source stock as TRANSFER_OUT. It becomes in transit, not destination stock."),
+      bi("Receive บันทึกจำนวนรับจริง แยกพร้อมขาย เสียหาย/กักกัน และขาด พร้อมเหตุผลและหมายเหตุ ส่วนขาดต้องอยู่ในหลักฐานไม่ถูกซ่อน", "Receive records actual sellable, damaged/quarantined and missing quantities with reason and note. Missing units remain visible evidence."),
+      bi("หากผลไม่ชัดเจน ใช้ Check original request และ idempotency key เดิม ห้ามสร้างใบแทนจากแท็บหรือเครื่องอื่น", "After an unknown result, check the original request and reuse its idempotency key; never create a replacement from another tab or device."),
+    ],
+    check: bi("ต้นทาง + ระหว่างทาง/สูญหาย + ปลายทางกระทบยอดได้ และทุกส่วนต่างมีผู้รับผิดชอบ", "Source, transit/missing and destination reconcile, with an owner for every discrepancy."),
+    caution: bi("การยกเลิกหลังส่งไม่ใช่การรับกลับ หากต้องคืนของให้ทำเอกสารตามสถานะจริง ไม่แก้ยอดด้วยมือเพื่อปิดใบ", "Cancellation after send is not a receipt back. Follow the actual document state instead of hand-adjusting balances to close it."),
+  },
+  {
+    slug: "inventory-count-control", title: bi("ตรวจนับแบบ Snapshot และอนุมัติผลต่าง", "Snapshot counts & variance approval"),
+    summary: bi("นับของบนชั้นโดยไม่ทับยอดขายที่เกิดระหว่างการนับ", "Count shelves without overwriting sales made during the count."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Stock Counts → Create / Count / Apply", "Stock Counts → Create / Count / Apply"), action: "/admin/stock-counts",
+    prerequisite: bi("กำหนดขอบเขตสาขา/พื้นที่ รายการสินค้า ผู้ตรวจนับ และผู้อนุมัติผลต่างแยกกัน", "A branch/area scope, item list, counters and a separate variance approver."),
+    steps: [
+      bi("สร้าง Count เลือกสาขาและรายการ ระบบเก็บ Snapshot ครั้งแรก จากนั้นล็อกขอบเขตและสื่อสารเวลานับกับหน้าร้าน", "Create the count for a branch and item set. The first entry freezes a snapshot; communicate scope and timing to the shop floor."),
+      bi("ผู้มี inventory.count กรอกจำนวนจริงและหลักฐาน แต่ยังไม่เปลี่ยนสต็อก ตรวจหน่วย ล็อต ของกักกันและรายการที่นับไม่ได้", "Staff with inventory.count enter physical quantities and evidence without moving stock. Check units, lots, quarantine and uncounted items."),
+      bi("ผู้มี inventory.count.apply ตรวจผลต่างและยืนยัน ระบบใช้ counted − snapshot เป็น Delta บนยอดปัจจุบัน จึงรักษาการขายระหว่างนับ", "A staff member with inventory.count.apply reviews and accepts variance. The system applies counted minus snapshot to current stock, preserving intervening sales."),
+      bi("หากผลจะต่ำกว่ายอดจอง ระบบต้องปฏิเสธทั้งชุด ให้สืบหาบิลที่ถือของหรือข้อมูลผิดก่อนแก้และ Apply ใหม่", "If any result falls below reserved stock, the whole apply is refused. Investigate reservation owners or bad data before retrying."),
+    ],
+    check: bi("ยอดหลัง Apply เท่ากับยอดก่อน Apply บวก Delta และบิลที่ขายระหว่างนับยังคงตัดสต็อก", "Post-apply balance equals pre-apply plus delta, while sales during counting remain consumed."),
+    caution: bi("การกรอกจำนวนกับการยอมรับผลต่างเป็นคนละงาน อย่าให้สิทธิ์ Apply เพียงเพื่อให้ผู้ตรวจนับทำงานเร็วขึ้น", "Counting and accepting variance are separate duties; do not grant apply merely for convenience."),
+  },
+  {
+    slug: "inventory-reservations", title: bi("ยอดจอง บิลที่ถือของ และของค้างไม่ทราบเจ้าของ", "Reservations, holding orders & unexplained stock"),
+    summary: bi("ค้นว่าใครถือสต็อกก่อนขายชิ้นสุดท้ายหรือแก้ยอดจอง", "Find who holds stock before selling the last unit or correcting reservations."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Products → สต็อก Variant → ดูรายการจอง / Orders", "Products → Variant stock → Reservations / Orders"), action: "/admin/orders",
+    prerequisite: bi("มีสิทธิ์ order.view และเลือก SKU, Variant/Size และสาขาที่ตรงกับรายการ", "order.view access and the exact SKU, variant/size and branch."),
+    steps: [
+      bi("เปิดยอดจองของ Variant จากรายการที่คลิก ตรวจว่าผลยังตรง SKU/Size เดิมก่อนใช้ตัดสินใจ", "Open reservations from the selected variant and confirm the result still matches that SKU/size before acting."),
+      bi("ตรวจบิลสถานะ PENDING, PAID และ PACKING ที่ยังถือของ รวมถึงส่วนประกอบ Bundle/Recipe จาก stock-consumption snapshot", "Review PENDING, PAID and PACKING orders still holding stock, including bundle/recipe components from the consumption snapshot."),
+      bi("เทียบ reserved total กับจำนวนที่อธิบายได้ ส่วนต่างที่ไม่ผูกบิลต้องแสดงเป็น unexplained ไม่สรุปว่าไม่มีใครถือ", "Compare reserved total with explained quantities. Any unmatched amount remains unexplained; never conclude nobody holds it."),
+      bi("แก้ที่ต้นเหตุ เช่น ดำเนินบิล ยกเลิกตามสิทธิ์ หรือสอบสวน hold เก่า แล้วตรวจยอดอีกครั้ง ห้ามลดยอดจองด้วย SQL/ปรับมือ", "Resolve the source—process or authorized-cancel the order, or investigate an old hold—then recheck. Never clear reservations with SQL or a manual adjustment."),
+    ],
+    check: bi("ยอดจองทั้งหมดมีบิล/เหตุผลรองรับ หรือถูกระบุชัดว่า unexplained พร้อมผู้ตามงาน", "Every reserved unit is explained or explicitly marked unexplained with an investigation owner."),
+    caution: bi("Query ล้มเหลวไม่เท่ากับไม่มีผู้ถือของ และ shipped/cancelled ไม่ควรถูกนับเป็นผู้ถือสต็อกปัจจุบัน", "A failed query does not mean no holder; shipped or cancelled orders are not current reservation owners."),
+  },
+  {
+    slug: "inventory-lots-quality", title: bi("ล็อต วันหมดอายุ Serial กักกัน และคุณภาพ", "Lots, expiry, serials, quarantine & quality"),
+    summary: bi("รักษาหลักฐานเฉพาะหน่วยและกันสินค้าที่ไม่พร้อมขายออกจากยอดใช้งาน", "Preserve unit evidence and keep restricted goods out of usable stock."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Products / Operations → Quality / POS Readiness", "Products / Operations → Quality / POS Readiness"), action: "/admin/operations",
+    prerequisite: bi("สินค้าที่ต้องติดตามกำหนด Lot/Expiry/Serial และมีขั้นตอนตรวจคุณภาพที่ร้านอนุมัติ", "Tracked products define lot/expiry/serial requirements and an approved shop quality procedure."),
+    steps: [
+      bi("รับเข้าและขายด้วย Lot/Serial ที่ตรงของจริง ใช้ FEFO เมื่อข้อมูลครบ แต่วันหมดอายุไม่ใช่ใบรับรองความปลอดภัย", "Receive and sell against the physical lot/serial. Use FEFO when evidence is complete; expiry date is not safety certification."),
+      bi("HOLD/Quarantine จำกัด usable stock โดยไม่แก้ยอดกายภาพหรือมูลค่า การอนุมัติ Inspection ยังไม่ใช่การ RELEASE หรือรับสินค้า", "HOLD/quarantine restricts usable stock without rewriting physical/value balances. Inspection approval is neither RELEASE nor receiving."),
+      bi("ร้านอาหารใช้ Operations สำหรับวัตถุดิบ การผลิต ของเสีย และหลักฐานคุณภาพ โดยสูตร/SOP version ไม่พิสูจน์ว่างานผลิตเสร็จ", "Restaurants use Operations for materials, production, waste and quality evidence. Recipe/SOP versions do not prove production completion."),
+      bi("ร้านขายยาต้องแยกนโยบายขายจากสต็อก และให้เภสัชกรกำหนดขั้นตอนกัก/ตรวจสินค้าคืน เพราะยังไม่มี Pharmacy-specific sellable-return gate", "Pharmacies separate sale policy from stock and require a pharmacist-defined quarantine/review process because no pharmacy-specific sellable-return gate exists."),
+    ],
+    check: bi("สินค้าที่ HOLD/หมดอายุ/Serial ไม่ตรงไม่ถูกเสนอเป็นพร้อมขาย และหลักฐานตรวจย้อนกลับถึงหน่วยจริง", "Held, expired or serial-mismatched goods are not offered as sellable, and evidence traces to the physical unit."),
+    caution: bi("อย่าเปิด capability จากชื่ออย่างเดียว ความสามารถบางตัวอนุมานจากข้อมูลและบางตัวมี gate จริง ต้องตรวจ POS Readiness และ workflow ปัจจุบัน", "Do not infer capability from its label. Some derive from data and some have real gates; check current readiness and workflow."),
+  },
+  {
+    slug: "inventory-wastage", title: bi("ของเสีย สูญหาย คืนสินค้า และการตัดยอด", "Wastage, losses, returns & write-offs"),
+    summary: bi("บันทึกเหตุผลและแยกการคืนขายได้ กักกัน ของเสีย และของสูญหาย", "Record reasons and distinguish sellable returns, quarantine, waste and loss."),
+    category: "daily", roles: managers, tracks: ["inventory"], menu: bi("Wastage / Returns / Stock Transfers", "Wastage / Returns / Stock Transfers"), action: "/admin/wastage",
+    prerequisite: bi("นโยบายร้านสำหรับของเสีย ของหมดอายุ ของชำรุด และสินค้าคืน พร้อมผู้อนุมัติ", "Shop policy and approvers for waste, expiry, damage and returns."),
+    steps: [
+      bi("เลือกสาขา SKU/Variant จำนวน Lot และเหตุผลตรงของจริง ของเสียต้องตัด movement และ audit ใน transaction เดียว", "Select the actual branch, SKU/variant, quantity, lot and reason. Wastage movement and audit commit together."),
+      bi("การรับคืนผ่านบิลต้นฉบับและกลไก Return/Void ไม่ใช้ Wastage แทน การคืนข้ามสาขาเข้าสต็อกสาขาที่รับของจริงตามสิทธิ์", "Returns use the original bill and Return/Void machinery, not wastage. Cross-branch returns enter the physically receiving branch under authorization."),
+      bi("ของสูญหายระหว่างโอนอยู่ใน discrepancy/ledger ของใบโอน ไม่เพิ่มปลายทางและไม่ตัดซ้ำเป็น Wastage", "Transfer losses remain in transfer discrepancy/ledger evidence; do not add them at destination or write them off twice."),
+      bi("ตรวจผลต่อยอดพร้อมขาย มูลค่าและรายงาน ข้อมูลต้นทุนที่ขาดยังคงไม่ทราบ ห้ามใช้ราคาปัจจุบันเติมประวัติ", "Review effects on sellable quantity, value and reports. Missing historical cost remains unknown; never backfill it with today's price."),
+    ],
+    check: bi("ทุกการลดสต็อกมี movement เหตุผล เอกสารต้นทางและผู้อนุมัติ โดยไม่มีการตัดซ้ำ", "Every reduction has a movement, reason, source document and approver, without duplicate write-off."),
+    caution: bi("การคืนเงิน การคืนสต็อก และเอกสารภาษีเป็นหลักฐานคนละชุด อย่าถือว่างานหนึ่งทำให้อีกงานเสร็จอัตโนมัติ", "Refund, stock return and tax document are separate evidence; one does not automatically complete another."),
+  },
+  {
+    slug: "inventory-reports-recovery", title: bi("รายงาน กระทบยอด และกู้ผลลัพธ์ที่ไม่ชัดเจน", "Reports, reconciliation & unknown-result recovery"),
+    summary: bi("กระทบ movement กับยอดสาขาและใช้คำขอเดิมเมื่อเครือข่ายขาดช่วง", "Reconcile movements to branch balances and reuse original requests after interruptions."),
+    category: "recovery", roles: managers, tracks: ["inventory"], menu: bi("Reports → Inventory / POS Readiness / Audit", "Reports → Inventory / POS Readiness / Audit"), action: "/admin/reports",
+    prerequisite: bi("ช่วงวันที่ สาขา เอกสารรับเข้า/โอน/นับ/ของเสีย และสิทธิ์รายงานที่เกี่ยวข้อง", "A date range, branches, receipt/transfer/count/waste documents and reporting access."),
+    steps: [
+      bi("เลือกช่วงวันที่และสาขาเดียวกัน เทียบยอดเปิด + รับเข้า + โอนเข้า − โอนออก − ขาย − ของเสีย ± ผลนับ กับยอดปลายงวด", "Use the same dates and branch to reconcile opening + receipts + transfers in − transfers out − sales − waste ± count deltas to closing."),
+      bi("แยกจำนวนจากมูลค่า ต้นทุนที่ยังไม่ทราบทำให้มูลค่า/กำไรยังไม่ครบ แม้จำนวนจะกระทบยอดได้", "Separate quantity from value. Unknown cost keeps valuation/profit incomplete even when quantity reconciles."),
+      bi("เมื่อกดงานแล้วเน็ตขาด หยุดสร้างซ้ำ เปิดเอกสารเดิมหรือ Check original request ด้วย key เดิม แล้วเทียบ movement/audit ก่อนตัดสินใจ", "After a network loss, stop duplicate creation. Open the original document or check the original request with its key, then inspect movement/audit."),
+      bi("ใช้ POS Readiness หา blocker และ Audit หา actor/time/reason; ระบบล่มหรือ query ผิดต้องรายงานว่าไม่ทราบ ไม่แสดงเป็นศูนย์", "Use POS Readiness for blockers and Audit for actor/time/reason. An outage or failed query is unknown, never zero."),
+    ],
+    check: bi("ทุกส่วนต่างมีคำอธิบาย เอกสาร และผู้ตามงาน; รายงานไม่อ้างว่าครบเมื่อข้อมูลถูกตัดหรือไม่ทราบต้นทุน", "Every variance has an explanation, document and owner; reports do not claim completeness when truncated or cost is unknown."),
+    caution: bi("รายงานกำไรและมูลค่าสต็อกเป็นผลจากหลักฐานที่บันทึก ไม่ใช่การตรวจนับกายภาพหรือการรับรองบัญชี/ภาษี", "Profit and valuation reports reflect recorded evidence; they are not a physical count or accounting/tax certification."),
+  },
+  {
+    slug: "inventory-rehearsal", title: bi("แบบฝึกสต็อกก่อนเปิดจริง", "Inventory go-live rehearsal"),
+    summary: bi("ซ้อมรับเข้า โอน นับ จอง ของเสีย และเหตุขัดข้องด้วยข้อมูลทดสอบ", "Rehearse receiving, transfer, count, reservation, waste and failure paths with test data."),
+    category: "recovery", roles: managers, tracks: ["inventory"], menu: bi("ร้านทดสอบ → Products / Purchase / Transfers / Counts", "Test shop → Products / Purchase / Transfers / Counts"), action: "/admin/stock-counts",
+    prerequisite: bi("Sandbox สองสาขา SKU/Variant/Pack/Lot ทดสอบ ผู้ใช้ทุกบทบาท และข้อมูลสมมติ", "A two-branch sandbox, test SKU/variant/pack/lot, every role and fictional data."),
+    steps: [
+      bi("สร้างสินค้าและรับ PO แบบเต็ม/บางส่วน ตรวจ Pack, Lot, ต้นทุน movement และยอดสาขา", "Create products and receive full/partial POs; verify pack, lot, cost, movement and branch balances."),
+      bi("สร้างใบโอน Send แล้ว Receive แบบครบ ขาด และกักกัน ทดลอง unknown result แล้วใช้คำขอเดิมโดยไม่สร้างซ้ำ", "Send and receive transfers as full, short and quarantined; simulate an unknown result and reuse the original request."),
+      bi("เปิด Count ขายสินค้าระหว่างนับ แล้ว Apply ผลต่าง ตรวจว่า Delta รักษาการขายและปฏิเสธผลที่ต่ำกว่ายอดจอง", "Open a count, sell during counting, then apply variance. Verify the delta preserves sales and rejects results below reservations."),
+      bi("ทดสอบบิลถือชิ้นสุดท้าย ของเสีย สินค้าคืน HOLD/RELEASE และผู้ไม่มีสิทธิ์ เก็บ expected/actual พร้อมผู้แก้ทุกข้อ", "Test a bill holding the last unit, wastage, return, HOLD/RELEASE and unauthorized users; record expected/actual results and remediation owners."),
+      bi("ตัดเครือข่ายตามแผนระหว่าง Submit ตรวจ recovery, audit และการไม่ทำซ้ำ แล้วกระทบยอดปลายวันก่อนอนุมัติ Soft Launch", "Interrupt the network during submit, verify recovery/audit/no duplicate effects, then reconcile day-end before approving soft launch."),
+    ],
+    check: bi("ผู้ปฏิบัติงานทำงานครบวงจรและอธิบายส่วนต่างได้ โดยไม่มี movement ซ้ำหรือข้อมูลจริงปะปน", "Operators complete the lifecycle and explain variances without duplicate movements or real data."),
+    caution: bi("การทดสอบหน้าเว็บไม่พิสูจน์เครื่องสแกน เครื่องพิมพ์ เครือข่าย หรือฐาน Production ต้องซ้อมอุปกรณ์และแผนย้อนกลับแยก", "Web tests do not prove scanners, printers, networking or production data; rehearse hardware and rollback separately."),
+  },
 ];
 
 export const tracks: Record<TrackId, { title: Localized; description: Localized; icon: string }> = {
@@ -1051,6 +1222,7 @@ export const tracks: Record<TrackId, { title: Localized; description: Localized;
   "board-game": { title: bi("ร้านบอร์ดเกม", "Board-game cafe"), description: bi("จากโต๊ะว่าง สู่รอบเล่นแรกและปิดกะอย่างมั่นใจ", "From an empty floor to your first session and reconciled shift."), icon: "🎲" },
   restaurant: { title: bi("ร้านอาหารและคาเฟ่", "Restaurants & cafes"), description: bi("สำหรับร้านที่ใช้ Restaurant POS บิลโต๊ะหรือ TAKEAWAY รอบส่งครัว และ Kitchen Board; คาเฟ่ขายหน้าเคาน์เตอร์ทั่วไปอยู่ในคู่มือค้าปลีก", "For shops using Restaurant POS, table or TAKEAWAY checks, kitchen rounds and Kitchen Board; ordinary counter cafes use the retail guide."), icon: "🍽" },
   pharmacy: { title: bi("ร้านขายยา", "Pharmacy"), description: bi("ตั้งสินค้าและนโยบายขาย ทำงานที่เคาน์เตอร์และ Pharmacy Queue โดยให้เภสัชกรมีใบอนุญาตเป็นผู้ตัดสินทุกเรื่องทางคลินิก", "Configure products and sale policy, then operate counter and Pharmacy Queue workflows while every clinical decision remains with a licensed pharmacist."), icon: "⚕️" },
+  inventory: { title: bi("สต็อกและคลังสินค้า", "Inventory & warehouse"), description: bi("คู่มือเฉพาะงานที่ใช้ร่วมทุกประเภทร้าน ตั้ง Catalog รับเข้า เติมสินค้า โอน ตรวจนับ จอง กักกัน ของเสีย และกระทบยอด", "A cross-business specialist guide for catalog, receiving, replenishment, transfers, counts, reservations, quarantine, wastage and reconciliation."), icon: "📦" },
 };
 
 export const trackOrder: Record<TrackId, string[]> = {
@@ -1083,6 +1255,12 @@ export const trackOrder: Record<TrackId, string[]> = {
     "pharmacy-counter-sale", "pharmacy-intake-queue", "pharmacy-evidence-privacy", "expenses-input-vat", "pharmacy-guidance-protocols",
     "returns-recovery", "reports-ai", "pharmacy-emergency-boundary", "outages-support", "pharmacy-rehearsal", "launch-checklist",
   ],
+  inventory: [
+    "inventory-overview", "products-import", "inventory-catalog-models", "inventory-branch-balances",
+    "inventory", "inventory-purchase-receiving", "inventory-requisitions", "inventory-transfer-control",
+    "inventory-count-control", "inventory-reservations", "inventory-lots-quality", "inventory-wastage",
+    "inventory-reports-recovery", "inventory-rehearsal",
+  ],
 };
 
 export function getLesson(slug: string) { return lessons.find((lesson) => lesson.slug === slug); }
@@ -1099,7 +1277,7 @@ export function getTrackLessons(track: TrackId, format?: TrackFormat) {
     .filter((lesson) => track !== "retail" || !format || !isRetailFormat(format) || lessonSupportsRetailFormat(lesson, format))
     .sort((a, b) => categories.indexOf(a.category) - categories.indexOf(b.category));
 }
-export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy"; }
+export function isTrack(value: string): value is TrackId { return value === "retail" || value === "board-game" || value === "restaurant" || value === "pharmacy" || value === "inventory"; }
 export function isRestaurantFormat(value: string): value is RestaurantFormat {
   return value === "dine-in" || value === "counter-kitchen" || value === "pickup-delivery";
 }

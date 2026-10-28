@@ -3221,7 +3221,7 @@ export default function Page() {
         type="info"
         showIcon
         closable
-        message={<Link href="/learn">{lang === "en" ? "Public learning center — retail, restaurant, board-game and pharmacy guides" : "ศูนย์เรียนรู้สาธารณะ — คู่มือค้าปลีก ร้านอาหาร บอร์ดเกม และร้านขายยา"}</Link>}
+        message={<Link href="/learn">{lang === "en" ? "Public learning center — business guides plus inventory & warehouse" : "ศูนย์เรียนรู้สาธารณะ — คู่มือตามประเภทร้านและคู่มือสต็อก/คลังสินค้า"}</Link>}
         description={lang === "en" ? "Step-by-step lessons, reading checklists and troubleshooting. Share with your team before their first shift." : "บทเรียนทีละขั้น Checklist การอ่าน และวิธีแก้ปัญหา แชร์ให้พนักงานเรียนรู้ก่อนเริ่มกะแรกได้"}
       />
       <div id="hero" className={styles.heroWrap}>

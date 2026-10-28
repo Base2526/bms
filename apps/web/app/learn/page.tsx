@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { categoryLabels, lessons, localize, roleLabels, searchLessons, tracks, trackOrder, isTrack, type Role, type TrackId } from "@/lib/learning/catalog";
+import { businessTrackIds, categoryLabels, lessons, localize, roleLabels, searchLessons, specialistTrackIds, tracks, trackOrder, isTrack, type Role } from "@/lib/learning/catalog";
 import { learningLang, learningMetadata, LessonCard, Sidebar } from "./shared";
 import s from "./learning.module.css";
 
 type Params = { q?: string; track?: string; role?: string };
 export function generateMetadata() {
   const th = learningLang() === "th";
-  return learningMetadata(th ? "ศูนย์เรียนรู้สาธารณะ" : "Public learning center", th ? "คู่มือ BMS สำหรับร้านค้าปลีก ค้าส่ง ร้านอาหาร คาเฟ่ ร้านบอร์ดเกม และร้านขายยา ตั้งค่า POS ใช้งานประจำวัน และเตรียมเปิดร้าน อ่านฟรีโดยไม่ต้องสมัคร" : "Free BMS guides for retail, wholesale, restaurants, cafes, board-game cafes and pharmacies: setup, POS, daily work and launch checklists. No signup needed.", "/learn");
+  return learningMetadata(th ? "ศูนย์เรียนรู้สาธารณะ" : "Public learning center", th ? "คู่มือ BMS ตามประเภทร้าน พร้อมคู่มือเฉพาะงานสต็อกและคลังสินค้า ตั้งค่า POS ใช้งานประจำวัน และเตรียมเปิดร้าน อ่านฟรีโดยไม่ต้องสมัคร" : "Free BMS guides by business type, plus a specialist inventory and warehouse path for setup, daily operations and go-live. No signup needed.", "/learn");
 }
 export default function LearnPage({ searchParams }: { searchParams: Params }) {
   const lang = learningLang(); const th = lang === "th";
@@ -24,7 +24,7 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
         <label htmlFor="learning-query">{th ? "ค้นหาวิธีใช้งาน" : "Search guides"}
         <input id="learning-query" type="search" name="q" defaultValue={q} maxLength={200} placeholder={th ? "เช่น แยกบิล, สมัครสมาชิก, QR รับเงิน" : "Try split bills, member signup, payment QR"} />
         </label>
-          <label>{th ? "ประเภทร้าน" : "Business type"}<select name="track" defaultValue={track || ""}><option value="">{th ? "ทุกประเภท" : "All types"}</option>{(Object.keys(tracks) as TrackId[]).map((id) => <option key={id} value={id}>{localize(tracks[id].title, lang)}</option>)}</select></label>
+          <label>{th ? "ประเภทคู่มือ" : "Guide type"}<select name="track" defaultValue={track || ""}><option value="">{th ? "ทุกคู่มือ" : "All guides"}</option><optgroup label={th ? "ตามประเภทร้าน" : "By business type"}>{businessTrackIds.map((id) => <option key={id} value={id}>{localize(tracks[id].title, lang)}</option>)}</optgroup><optgroup label={th ? "คู่มือเฉพาะงาน" : "Specialist guides"}>{specialistTrackIds.map((id) => <option key={id} value={id}>{localize(tracks[id].title, lang)}</option>)}</optgroup></select></label>
           <label>{th ? "บทบาทของคุณ" : "Your role"}<select name="role" defaultValue={role || ""}><option value="">{th ? "ทุกบทบาท" : "All roles"}</option>{(Object.keys(roleLabels) as Role[]).map((id) => <option key={id} value={id}>{localize(roleLabels[id], lang)}</option>)}</select></label>
         <button type="submit" className={s.button}>{th ? "ค้นหาคู่มือ" : "Search guides"}</button>
         {filtered && <Link href="/learn" className={s.clearFilters}>{th ? "ล้างตัวกรอง" : "Clear filters"}</Link>}
@@ -38,9 +38,15 @@ export default function LearnPage({ searchParams }: { searchParams: Params }) {
           {results.length ? <div className={s.grid}>{results.map((lesson) => <LessonCard key={lesson.slug} lesson={lesson} lang={lang} track={track} />)}</div> : <div className={s.empty}><h3>{th ? "ยังไม่พบบทเรียนที่ตรงกัน" : "No matching lesson"}</h3><p>{th ? "ลองคำสั้นลง เช่น โต๊ะ, PIN หรือ คืนเงิน หรือเลือกดูเส้นทางตามประเภทร้าน" : "Try shorter terms such as table, PIN or refund, or browse a business learning path."}</p><Link className={s.secondary} href="/learn">{th ? "ดูคู่มือทั้งหมด" : "Browse all guides"}</Link></div>}
         </section> : <>
           <section><h2 className={s.sectionTitle}>{th ? "เริ่มจากร้านของคุณ" : "Start with your business"}</h2>
-            <div className={s.grid}>{(Object.keys(tracks) as TrackId[]).map((id) => <Link className={`${s.card} ${s.businessCard}`} href={`/learn/${id}`} key={id}>
+            <div className={s.grid}>{businessTrackIds.map((id) => <Link className={`${s.card} ${s.businessCard}`} href={`/learn/${id}`} key={id}>
               <h3><span className={s.icon} aria-hidden="true">{tracks[id].icon}</span> {localize(tracks[id].title, lang)}</h3>
               <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {th ? "บทเรียน · ตั้งค่าถึงเปิดจริง" : "lessons · Setup to launch"}</span><span className={s.arrow}>{th ? "เริ่มเรียน" : "Start learning"} →</span></div>
+            </Link>)}</div>
+          </section>
+          <section><h2 className={s.sectionTitle}>{th ? "คู่มือเฉพาะงาน" : "Specialist guides"}</h2>
+            <div className={s.grid}>{specialistTrackIds.map((id) => <Link className={`${s.card} ${s.businessCard}`} href={`/learn/${id}`} key={id}>
+              <h3><span className={s.icon} aria-hidden="true">{tracks[id].icon}</span> {localize(tracks[id].title, lang)}</h3>
+              <p>{localize(tracks[id].description, lang)}</p><div className={s.businessMeta}><span className={s.tag}>{trackOrder[id].length} {th ? "บทเรียน · ใช้ร่วมหลายประเภทร้าน" : "lessons · Cross-business workflow"}</span><span className={s.arrow}>{th ? "เปิดคู่มือ" : "Open guide"} →</span></div>
             </Link>)}</div>
           </section>
           <section className={s.callout}><h2>{th ? "เพิ่งเริ่มใช้ BMS?" : "New to BMS?"}</h2><p>{th ? "อ่านภาพรวมก่อน แล้วตั้งสาขา พนักงาน สินค้า และเครื่องขายตามลำดับ ทดลองในร้านทดสอบก่อนเริ่มรับเงินจริง" : "Start with the overview, then configure branches, staff, products and registers. Rehearse in a test shop before taking real payments."}</p><div className={s.links}><Link href="/learn/guides/start-here">{th ? "เริ่มบทแรก →" : "First lesson →"}</Link><Link href="/learn/guides/launch-checklist">{th ? "Checklist เปิดร้าน →" : "Launch checklist →"}</Link></div></section>
