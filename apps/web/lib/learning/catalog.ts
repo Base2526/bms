@@ -1187,6 +1187,21 @@ export const lessons: Lesson[] = [
     caution: bi("การคืนเงิน การคืนสต็อก และเอกสารภาษีเป็นหลักฐานคนละชุด อย่าถือว่างานหนึ่งทำให้อีกงานเสร็จอัตโนมัติ", "Refund, stock return and tax document are separate evidence; one does not automatically complete another."),
   },
   {
+    slug: "inventory-ai-assistant", title: bi("AI สำหรับลูกค้า การวิเคราะห์สต็อก และการส่งออกรายงาน", "Customer AI, inventory intelligence & report exports"),
+    summary: bi("แยกข้อมูลที่ลูกค้าถามได้จากข้อมูลหลังบ้าน และใช้ผู้ช่วยอ่านหลักฐานโดยไม่ให้ AI เปลี่ยนยอดเอง", "Separate customer-safe answers from back-office data and use the assistant to explain evidence without letting AI change balances itself."),
+    category: "growth", roles: managers, tracks: ["inventory"], menu: bi("Settings → Channels / ผู้ช่วย AI / Reports", "Settings → Channels / AI assistant / Reports"), action: "/admin/assistant",
+    prerequisite: bi("ช่องทางของร้านเชื่อมต่อและเปิดใช้งานจริง สินค้าเปิด CUSTOMER_AI และผู้ใช้หลังบ้านมีสิทธิ์รายงาน/ข้อมูลที่ต้องถาม", "A connected and enabled shop channel, products published to CUSTOMER_AI and back-office users with the reporting/data permissions required by the question."),
+    steps: [
+      bi("เชื่อม LINE OA, Facebook, Instagram หรือ Web chat ตามหน้าตั้งค่าที่รองรับ ตรวจ signature/token และสถานะช่องทางก่อนเปิดใช้ การมีชื่อช่องทางไม่พิสูจน์ว่าเชื่อมสำเร็จ", "Connect LINE OA, Facebook, Instagram or web chat through the supported settings, then verify signatures/tokens and channel health before enabling it. A channel label alone does not prove a working connection."),
+      bi("ลูกค้าถามสินค้า ราคา ไซซ์ สาขา สินค้าทดแทน สถานะออร์เดอร์ หรือขอแจ้งเตือนของเข้าได้จากเครื่องมือที่อนุญาตเท่านั้น การแจ้งเตือนต้องได้ความยินยอมชัดเจนและข้อมูลที่ตรวจไม่สำเร็จต้องตอบว่าไม่ทราบ", "Customers may ask about products, prices, sizes, branches, verified alternatives, order status or opt into restock notices only through approved tools. Restock consent must be explicit, and an unverified read remains unknown."),
+      bi("เจ้าของหรือผู้จัดการถามยอดขาย สินค้าขายดี สต็อกต่ำ ความเสี่ยงของหมด สินค้าช้า ล็อตใกล้หมดอายุ หรือโอกาสโอนระหว่างสาขาได้ตามสิทธิ์ โดยระบุช่วงเวลา สาขา หน่วย และข้อมูลที่ถูกตัด", "Authorized owners or managers may ask about sales, top products, low stock, stockout risk, slow stock, expiring lots or transfer opportunities. Answers state the period, branch, units and any truncation."),
+      bi("เมื่อผู้ใช้ขอไฟล์อย่างชัดเจน ผู้ช่วยสร้างรายงาน Sales, Inventory หรือรายงานที่รองรับเป็น Excel, CSV หรือ PDF และคืนลิงก์ดาวน์โหลด การส่งอีเมลเป็นอีกการกระทำที่ต้องตรวจผู้รับและกดยืนยัน", "When the user explicitly requests a file, the assistant generates a supported Sales, Inventory or other report as Excel, CSV or PDF and returns a download link. Emailing it is a separate action that requires recipient review and confirmation."),
+      bi("Forecast และคำแนะนำเติม/โอนแสดงช่วงข้อมูล คุณภาพ สมมติฐาน และความไม่แน่นอน การสร้าง PO ใบโอน หรือปรับสต็อกเป็นข้อเสนอให้คนตรวจและยืนยัน ไม่ใช่งานที่ AI ทำเอง", "Forecasts and replenishment/transfer suggestions show their data period, quality, assumptions and uncertainty. Creating a PO, transfer or stock adjustment remains a human-reviewed proposal, never an autonomous AI action."),
+    ],
+    check: bi("ลูกค้าเห็นเฉพาะข้อมูลที่ปลอดภัย เจ้าของเห็นตัวเลขตามสิทธิ์และที่มา ไฟล์ตรงคำขอ และทุกการเปลี่ยนยอดยังผ่านการยืนยันของคน", "Customers see only customer-safe facts, owners see permission-scoped figures with provenance, exports match the request and every balance-changing action remains under human confirmation."),
+    caution: bi("AI เป็นชั้นสื่อสารเหนือเครื่องมือที่อนุญาต ไม่ใช่ฐานข้อมูลหรือผู้อนุมัติ หากช่องทาง เครื่องมือ หรือรายงานล้มเหลวต้องบอกว่าไม่สามารถตรวจสอบได้ ห้ามเดาตัวเลขหรืออ้างว่าส่งไฟล์สำเร็จ", "AI is a communication layer over approved tools, not the database or an approver. If a channel, tool or report fails, say it could not be verified; never invent figures or claim a file was delivered."),
+  },
+  {
     slug: "inventory-reports-recovery", title: bi("รายงาน กระทบยอด และกู้ผลลัพธ์ที่ไม่ชัดเจน", "Reports, reconciliation & unknown-result recovery"),
     summary: bi("กระทบ movement กับยอดสาขาและใช้คำขอเดิมเมื่อเครือข่ายขาดช่วง", "Reconcile movements to branch balances and reuse original requests after interruptions."),
     category: "recovery", roles: managers, tracks: ["inventory"], menu: bi("Reports → Inventory / POS Readiness / Audit", "Reports → Inventory / POS Readiness / Audit"), action: "/admin/reports",
@@ -1259,7 +1274,7 @@ export const trackOrder: Record<TrackId, string[]> = {
     "inventory-overview", "products-import", "inventory-catalog-models", "inventory-branch-balances",
     "inventory", "inventory-purchase-receiving", "inventory-requisitions", "inventory-transfer-control",
     "inventory-count-control", "inventory-reservations", "inventory-lots-quality", "inventory-wastage",
-    "inventory-reports-recovery", "inventory-rehearsal",
+    "inventory-ai-assistant", "inventory-reports-recovery", "inventory-rehearsal",
   ],
 };
 

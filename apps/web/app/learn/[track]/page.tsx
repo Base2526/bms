@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { categoryLabels, getTrackLessons, isTrack, isTrackFormat, localize, tracks, type RestaurantFormat, type RetailFormat, type TrackFormat } from "@/lib/learning/catalog";
 import { learningLang, learningMetadata, Sidebar } from "../shared";
 import { ReadingChecklist } from "../Controls";
+import { BusinessGuideOverview } from "../BusinessGuideOverview";
+import { InventoryGuideOverview } from "../InventoryGuideOverview";
+import type { BusinessTrackId } from "@/lib/learning/businessGuideFlow";
 import s from "../learning.module.css";
 
 export function generateMetadata({ params }: { params: { track: string } }) {
@@ -77,33 +80,76 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
       : undefined;
   const items = getTrackLessons(id, format);
   const lessonQuery = `track=${id}${format ? `&format=${format}` : ""}`;
-  return <>
-    <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href="/learn">{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><span>{localize(track.title, lang)}</span></nav>
-    <section className={s.trackHero}><div><span className={s.eyebrow}>{items.length} {th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed"}</span><h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1><p>{localize(track.description, lang)}</p></div><Link className={s.button} href={`/learn/guides/${items[0].slug}?${lessonQuery}`}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link></section>
-    {id === "inventory" ? <section className={s.callout}><h2>{th ? "คู่มือเฉพาะงาน ไม่ใช่ประเภทร้าน" : "A specialist guide, not a business type"}</h2><p>{th ? "ใช้คู่มือนี้ร่วมกับคู่มือร้านของคุณเมื่อทำงานสินค้า รับเข้า โอน นับ จอง กักกัน ของเสีย และกระทบยอด การเปิดหน้านี้ไม่เปลี่ยนการตั้งค่าหรือความสามารถของร้าน" : "Use this alongside your business guide for catalog, receiving, transfers, counts, reservations, quarantine, wastage and reconciliation. Opening it changes no shop setting or capability."}</p></section>
-      : <section className={s.callout}><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "บทสต็อกในคู่มือนี้สรุปเฉพาะสิ่งที่ร้านต้องใช้ งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "This business path summarizes the stock work it needs. Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation are covered in the specialist guide."}</p><div className={s.links}><Link href="/learn/inventory">{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></div></section>}
-    {formatOptions && <section className={s.formatPanel} aria-labelledby="track-format-title">
-      <div className={s.formatHeading}><div><h2 id="track-format-title">{id === "restaurant" ? (th ? "ร้านของคุณให้บริการแบบไหน?" : "How does your shop serve customers?") : (th ? "ร้านของคุณขายสินค้าแบบไหน?" : "How does your shop sell?")}</h2><p>{th ? "เลือกเพื่อซ่อนขั้นตอนที่ไม่เกี่ยวข้อง การเลือกนี้ไม่เปลี่ยนการตั้งค่าร้านจริง" : "Choose a format to hide unrelated steps. This does not change your actual shop settings."}</p></div>
-        <Link href={`/learn/${id}`} className={!format ? s.formatAllActive : s.formatAll} aria-current={!format ? "page" : undefined}>{th ? "ดูคู่มือทั้งหมด" : "View all lessons"}</Link>
-      </div>
-      <div className={`${s.formatChoices} ${formatOptions.length === 4 ? s.formatChoicesFour : ""}`}>{formatOptions.map((option) => {
-        const value = option.value;
-        return <Link key={value} href={`/learn/${id}?format=${value}`} className={`${s.formatCard} ${format === value ? s.formatCardActive : ""}`} aria-current={format === value ? "page" : undefined}>
+  const categoryIcons = { setup: "◆", daily: "✓", growth: "✦", recovery: "▣" } as const;
+  const heroChecklist = id === "inventory"
+    ? (th ? ["รับสินค้า", "โอนย้ายสาขา", "นับสต็อก", "ตัดสต็อก"] : ["Receive", "Transfer", "Count", "Deduct"])
+    : id === "retail"
+      ? (th ? ["สินค้า / บาร์โค้ด", "POS", "คืนสินค้า", "รายงาน"] : ["Products / barcodes", "POS", "Returns", "Reports"])
+      : id === "board-game"
+        ? (th ? ["Walk-in และคิว", "จองโต๊ะ", "เล่นเป็นกลุ่ม", "คลังเกม"] : ["Walk-in & queue", "Bookings", "Group play", "Game library"])
+        : id === "restaurant"
+          ? (th ? ["เมนูและสูตร", "โต๊ะ / QR", "รอบครัว", "เคลียร์บิล"] : ["Menu & recipes", "Tables / QR", "Kitchen rounds", "Settlement"])
+          : (th ? ["ใบอนุญาต", "เภสัชกร", "ล็อต / วันหมดอายุ", "หลักฐาน"] : ["Licences", "Pharmacist", "Lot / expiry", "Evidence"]);
+
+  return <div className={`${s.layout} ${s.trackLayout} ${s.inventoryFullLayout}`}>
+    <Sidebar lang={lang} track={id} />
+    <div className={`${s.trackContents} ${s.inventoryFullContent}`}>
+      <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href="/learn">{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><span>{localize(track.title, lang)}</span></nav>
+      <section className={`${s.trackHero} ${s.inventoryTrackHero} ${id === "inventory" ? "" : s.businessTrackHero}`} data-track={id}>
+        <div className={s.inventoryHeroCopy}>
+          <span className={s.eyebrow}>{items.length} {th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed"}</span>
+          <h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1>
+          <p>{localize(track.description, lang)}</p>
+          <Link className={s.button} href={`/learn/guides/${items[0].slug}?${lessonQuery}`}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
+        </div>
+        {id === "inventory" ? <div className={s.inventoryHeroVisual} aria-hidden="true">
+          <div className={s.inventoryHeroShelf}><span>▰</span><span>▰</span><span>▰</span></div>
+          <div className={s.inventoryHeroShelf}><span>▰</span><span>▰</span></div>
+          <div className={s.inventoryHeroScanner}>▱</div>
+          <ul>{heroChecklist.map((item) => <li key={item}>✓ {item}</li>)}</ul>
+        </div> : <div className={s.businessHeroVisual} data-track={id} aria-hidden="true">
+          <span className={s.businessHeroIcon}>{track.icon}</span>
+          <div className={s.businessHeroBlocks}><i /><i /><i /><i /></div>
+          <ul>{heroChecklist.map((item) => <li key={item}>✓ {item}</li>)}</ul>
+        </div>}
+      </section>
+
+      {id === "inventory" && <section className={`${s.callout} ${s.inventorySpecialistCallout}`}>
+        <span aria-hidden="true">▣</span><div><h2>{th ? "คู่มือเฉพาะงาน ไม่ใช่ประเภทร้าน" : "A specialist guide, not a business type"}</h2><p>{th ? "ใช้คู่มือนี้ร่วมกับคู่มือร้านของคุณเมื่อทำงานสินค้า รับเข้า โอน นับ จอง กักกัน ของเสีย และกระทบยอด การเปิดหน้านี้ไม่เปลี่ยนการตั้งค่าหรือความสามารถของร้าน" : "Use this alongside your business guide for catalog, receiving, transfers, counts, reservations, quarantine, wastage and reconciliation. Opening it changes no shop setting or capability."}</p></div>
+      </section>}
+
+      {formatOptions && <section className={`${s.formatPanel} ${s.businessFormatPanel}`} aria-labelledby="track-format-title">
+        <div className={s.formatHeading}><div><h2 id="track-format-title">{id === "restaurant" ? (th ? "ร้านของคุณให้บริการแบบไหน?" : "How does your shop serve customers?") : (th ? "ร้านของคุณขายสินค้าแบบไหน?" : "How does your shop sell?")}</h2><p>{th ? "เลือกเพื่อซ่อนขั้นตอนที่ไม่เกี่ยวข้อง การเลือกนี้ไม่เปลี่ยนการตั้งค่าร้านจริง" : "Choose a format to hide unrelated steps. This does not change your actual shop settings."}</p></div>
+          <Link href={`/learn/${id}`} className={!format ? s.formatAllActive : s.formatAll} aria-current={!format ? "page" : undefined}>{th ? "ดูคู่มือทั้งหมด" : "View all lessons"}</Link>
+        </div>
+        <div className={`${s.formatChoices} ${formatOptions.length === 4 ? s.formatChoicesFour : ""}`}>{formatOptions.map((option) => <Link key={option.value} href={`/learn/${id}?format=${option.value}`} className={`${s.formatCard} ${format === option.value ? s.formatCardActive : ""}`} aria-current={format === option.value ? "page" : undefined}>
           <span aria-hidden="true">{option.icon}</span><div><h3>{option.title[lang]}</h3><p>{option.description[lang]}</p></div>
-        </Link>;
-      })}</div>
-      <p className={s.formatNotice}>{formatNotice(format, lang)}</p>
-    </section>}
-    <div className={`${s.layout} ${s.trackLayout}`}><Sidebar lang={lang} track={id} /><div className={s.trackContents}>
-      {(Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => items.some((lesson) => lesson.category === category) && <section className={s.section} key={category}>
-        <h2 className={s.sectionTitle}>{localize(categoryLabels[category], lang)}</h2>
-        <ol className={`${s.lessonList} ${s.compactLessons}`}>{items.filter((lesson) => lesson.category === category).map((lesson) => <li key={lesson.slug}>
-          <Link className={s.lessonRow} href={`/learn/guides/${lesson.slug}?${lessonQuery}`}><span>{String(items.indexOf(lesson) + 1).padStart(2, "0")}</span><div><h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p></div></Link>
-        </li>)}</ol>
-      </section>)}
-      <details className={s.readingDetails}><summary>{th ? "Checklist การอ่าน" : "Reading checklist"} · {items.length} {th ? "บทเรียน" : "lessons"}</summary>
+        </Link>)}</div>
+        <p className={s.formatNotice}>{formatNotice(format, lang)}</p>
+      </section>}
+
+      {id === "inventory" ? <InventoryGuideOverview lang={lang} /> : <BusinessGuideOverview track={id as BusinessTrackId} lang={lang} />}
+
+      {id !== "inventory" && <section className={`${s.callout} ${s.businessInventoryCallout}`}><div><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation live in the specialist guide."}</p></div><Link href="/learn/inventory">{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></section>}
+
+      <section className={s.inventoryLessonCatalog} aria-labelledby={`${id}-lessons-title`}>
+        <div className={s.inventoryLessonCatalogHeading}><div><span aria-hidden="true">▣</span><h2 id={`${id}-lessons-title`}>{th ? "รายการบทเรียนทั้งหมด" : "All lessons"}</h2></div><strong>{items.length} {th ? "บทเรียน" : "lessons"}</strong></div>
+        <div className={s.inventoryLessonGroups}>
+          {(Object.keys(categoryLabels) as (keyof typeof categoryLabels)[]).map((category) => {
+            const categoryItems = items.filter((lesson) => lesson.category === category);
+            if (!categoryItems.length) return null;
+            return <section className={s.inventoryLessonGroup} data-category={category} key={category}>
+              <h2 className={s.sectionTitle}><span aria-hidden="true">{categoryIcons[category]}</span>{localize(categoryLabels[category], lang)}<small>{categoryItems.length} {th ? "บทเรียน" : "lessons"}</small></h2>
+              <ol className={`${s.lessonList} ${s.compactLessons}`}>{categoryItems.map((lesson) => <li key={lesson.slug}>
+                <Link className={s.lessonRow} href={`/learn/guides/${lesson.slug}?${lessonQuery}`}><span>{String(items.indexOf(lesson) + 1).padStart(2, "0")}</span><div><h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p></div><b aria-hidden="true">›</b></Link>
+              </li>)}</ol>
+            </section>;
+          })}
+        </div>
+      </section>
+      <details className={`${s.readingDetails} ${s.inventoryReadingDetails}`}><summary><span aria-hidden="true">▣</span> {th ? "Checklist การอ่าน" : "Reading checklist"} · {items.length} {th ? "บทเรียน" : "lessons"}</summary>
         <ReadingChecklist items={items.map(({ slug, title }) => ({ slug, title }))} track={id} format={format} lang={lang} />
       </details>
-    </div></div>
-  </>;
+    </div>
+  </div>;
 }

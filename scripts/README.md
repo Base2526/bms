@@ -42,6 +42,17 @@ Thai narration regeneration (offline build tool, not a web/Compose dependency):
 
 The pronunciation map expands public guide abbreviations (BMS, POS, PIN, PO, etc.) and statuses;
 it does not generate or change business claims. Audio remains AI-generated and is labeled in UI.
+
+The Inventory learning flow uses the same pinned `thai_som` voice and recorded-player helper. After
+editing `inventoryNarration.ts`, run `inventory-narration-export.mts`, then
+`generate-inventory-thai-audio.py --model-dir .test-output/fastthai-model`. Commit the generated
+Inventory manifest, MP3 files and provenance together; the learning-center contract checks every cue.
+
+The four business learning flows use that same pinned voice. After editing
+`lib/learning/businessGuideFlow.ts`, run `business-guide-narration-export.mts`, then
+`generate-business-guide-thai-audio.py --model-dir .test-output/fastthai-model`. Commit
+`businessThaiAudio.json`, the MP3 files and their provenance together; the learning-center contract
+checks that every Thai cue has a verified recording.
 - `node scripts/restaurant-public-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default port
   3107); TH/EN at 1440/390 px, every diagram, zoom/pan, deep links/history, text transcript,
   light/dark themes, session-aware CTA, homepage/footer links and page overflow. Uses intercepted

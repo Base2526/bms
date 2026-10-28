@@ -70,7 +70,25 @@ Design references: [Shopify initial setup](https://help.shopify.com/en/manual/in
 and [setup-guide composition](https://shopify.dev/docs/api/app-home/latest/patterns/compositions/setup-guide):
 searchable guidance, step-by-step paths and a printable checklist, adapted to actual BMS workflows.
 
-## Verification
+## Narrated workflow overviews
+
+The retail, board-game, restaurant, pharmacy and specialist inventory paths include bilingual
+workflow diagrams with separate customer and owner AI examples. Owner narration covers operational
+analysis and reports, with data completeness and human confirmation boundaries. Board-game analytics
+exports are XLSX; the general report examples show XLSX/CSV/PDF. Pharmacy clinical decisions remain
+with a licensed pharmacist.
+
+Thai narration ships as 64 recorded MP3 cues using the same pinned `thai_som` voice as the Restaurant
+guide; English uses browser speech synthesis when available. The active diagram node follows each
+cue's completion. Previous/next, restart and speed changes stop the current cue. Playing the final
+cue replays that cue rather than resetting the guide. Generation instructions are in `scripts/README.md`.
+
+The shared full-screen viewer is a native modal dialog with keyboard focus containment, Escape and
+focus return, scrollable narration, zoom/pan and optional cue following. Background page scrolling
+is suspended during narration in the dialog. Phones retain a scrollable transcript below the diagram.
+These public examples do not query shop data or execute AI tools.
+
+## Verification commands
 
 - `cd apps/web && npm run typecheck`
 - `node scripts/run-contract-tests.mjs pure learning-center`
