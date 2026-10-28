@@ -1393,17 +1393,24 @@ Confidence
 - `get_inventory_anomalies(...)` — สัญญาณ integrity/เหตุการณ์ผิดปกติแบบ deterministic; ไม่แก้ยอด
 - `find_inventory_transfer_opportunities(...)` — review-only; ใช้เฉพาะ surplus เหนือ safety/coverage
 - `get_inventory_forecast_accuracy(...)` — MAE/WAPE/bias จาก snapshot ที่ครบกำหนดแล้ว
-- `get_supplier_intelligence(...)` (`purchase.view`) — fill rate, lead time ที่บันทึกจริง และ cost change ของ SKU เดิม
+- `get_supplier_intelligence(...)` (`purchase.view`) — fill rate, อายุ PO จากวันสร้างถึงแก้ไขล่าสุดของ PO ที่รับครบ (ไม่ใช่เวลาส่งจริง) และ cost change ของ SKU เดิม
 
-Every forecast response includes `generatedAt` and `dataQuality` (paid-order count, distinct Bangkok
-sales days, and the required floor). Fewer than seven paid orders or three distinct sales days
-returns `INSUFFICIENT`, no items, and an explicit reason. The model must relay that limitation and
-must not turn absence of history into a demand prediction.
+Every forecast response includes `generatedAt` and `dataQuality` (paid-order count, Bangkok sales days,
+and the required floor). Each branch needs seven paid orders and three distinct sales days; otherwise
+its rows are `INSUFFICIENT_DATA` with no purchase recommendation, stockout date or forecast snapshot.
+Observed stock rows remain available. The summary's day count is the maximum branch count, not a
+claim that every branch has sufficient data. The model must relay row-level limitations.
+Accuracy method `2.1` compares paid stock consumption over an exact horizon; unfulfilled demand is
+excluded from that baseline and uncalibrated bounds remain unknown.
 
 All inventory rows are scoped by permitted branch. Demand and incoming PO quantities without a
 verified branch are returned separately and never duplicated into branch recommendations. The
 assistant cannot receive a PO. Creating a PO or draft transfer returns a shared confirmation proposal;
-only the existing backend mutation can perform the write after staff confirms it.
+only the existing backend mutation can perform the write after staff confirms it. A new proposal has
+a fresh key; retrying its saved confirmation retains the same key. Transfer suggestions conserve
+donor surplus across receivers and reserve safety, lead-time and coverage stock. Partial PO allocation
+is conservative when receipt attribution is unknown; residual incoming stock stays unallocated.
+Unallocated result lists expose their own truncation flags; a partial list never proves absence.
 
 ## AI-native (data providers — deterministic)
 

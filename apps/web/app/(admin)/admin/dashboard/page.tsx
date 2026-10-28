@@ -244,22 +244,27 @@ export default function Page() {
     skip: shouldSkipReportQueries,
   });
   const alerts = alertsData?.bmsOperationalAlerts;
-  const { data: inventoryLocationsData } = useQuery(Q_INVENTORY_LOCATIONS, { skip:shouldSkipReportQueries });
-  const { data: inventoryActionData, refetch: refetchInventoryAction } = useQuery(Q_INVENTORY_ACTION, {
+  const { data: inventoryLocationsData, error: inventoryLocationsError, loading: inventoryLocationsLoading, refetch: refetchInventoryLocations } = useQuery(Q_INVENTORY_LOCATIONS, { skip:shouldSkipReportQueries, notifyOnNetworkStatusChange:true });
+  const { data: inventoryActionData, error: inventoryActionError, loading: inventoryActionLoading, refetch: refetchInventoryAction } = useQuery(Q_INVENTORY_ACTION, {
     variables:{locationId:inventoryLocationId},
     fetchPolicy: "cache-first",
     pollInterval: 120000,
     skip: shouldSkipReportQueries,
+    notifyOnNetworkStatusChange: true,
   });
   const inventoryAction = inventoryActionData?.bmsInventoryActionCenter;
-  const { data: inventoryAnomalyData } = useQuery(Q_INVENTORY_ANOMALIES, {
+  const { data: inventoryAnomalyData, error: inventoryAnomalyError, loading: inventoryAnomalyLoading, refetch: refetchInventoryAnomalies } = useQuery(Q_INVENTORY_ANOMALIES, {
     variables:{locationId:inventoryLocationId},
     fetchPolicy:"cache-first",
     pollInterval:120000,
     skip:shouldSkipReportQueries,
+    notifyOnNetworkStatusChange:true,
   });
   const inventoryAnomalies = inventoryAnomalyData?.bmsInventoryAnomalies;
   const inventoryForecastAccuracy = inventoryAnomalyData?.bmsInventoryForecastAccuracy;
+  const inventoryEvidenceLoading = inventoryActionLoading || inventoryAnomalyLoading || inventoryLocationsLoading;
+  const inventoryEvidenceUnavailable = inventoryActionError || inventoryAnomalyError || inventoryLocationsError
+    || !inventoryAction || !inventoryAnomalies || !inventoryForecastAccuracy || !inventoryLocationsData?.bmsInventoryIntelligenceLocations;
   const [recordDemand, { loading: recordingDemand }] = useMutation(M_RECORD_DEMAND, { onCompleted: () => refetchInventoryAction() });
   const [savePolicy, { loading: savingPolicy }] = useMutation(M_POLICY, { onCompleted: () => refetchInventoryAction() });
   const recommendationText = (code: string) => t(`admin_dashboard.recommendation_${String(code || "monitor").toLowerCase()}`);
@@ -449,7 +454,7 @@ export default function Page() {
 
       <DashboardActions enabled={!shouldSkipReportQueries} canManage={canManageActions} />
 
-      <div className={styles.inventorySection}>
+      <div className={styles.inventorySection} role="region" aria-label={lang === "en" ? "Inventory intelligence" : "วิเคราะห์สต็อก"}>
         <h2>{t("admin_dashboard.phase1_heading")}</h2>
         <Space wrap style={{ marginBottom: 8 }}>
           <Text>{lang === "en" ? "Inventory branch" : "สาขาสำหรับวิเคราะห์สต็อก"}</Text>
@@ -460,14 +465,25 @@ export default function Page() {
             options={[{value:"ALL",label:lang === "en" ? "All permitted branches" : "ทุกสาขาที่มีสิทธิ์"},
               ...(inventoryLocationsData?.bmsInventoryIntelligenceLocations || []).filter((row:any)=>row.active).map((row:any)=>({value:row.id,label:row.name}))]}
           />
-          <Text type="secondary">
+          {!inventoryEvidenceLoading && !inventoryEvidenceUnavailable && <Text type="secondary">
             {inventoryForecastAccuracy?.sampleCount > 0
               ? (lang === "en"
                 ? `90-day forecast evidence: ${inventoryForecastAccuracy.sampleCount} samples · MAE ${inventoryForecastAccuracy.mae} units · WAPE ${inventoryForecastAccuracy.wape == null ? "—" : `${Math.round(inventoryForecastAccuracy.wape * 100)}%`}`
                 : `หลักฐาน forecast 90 วัน: ${inventoryForecastAccuracy.sampleCount} ตัวอย่าง · คลาดเคลื่อนเฉลี่ย ${inventoryForecastAccuracy.mae} หน่วย · WAPE ${inventoryForecastAccuracy.wape == null ? "—" : `${Math.round(inventoryForecastAccuracy.wape * 100)}%`}`)
               : (lang === "en" ? "Forecast accuracy will appear after the first forecast matures." : "ความแม่นยำจะแสดงเมื่อ forecast รอบแรกครบกำหนด")}
-          </Text>
+          </Text>}
         </Space>
+        {inventoryEvidenceLoading || inventoryEvidenceUnavailable ? (
+          <Alert showIcon type={inventoryEvidenceLoading ? "info" : "error"}
+            message={inventoryEvidenceLoading
+              ? (lang === "en" ? "Loading inventory evidence" : "กำลังอ่านข้อมูลวิเคราะห์สต็อก")
+              : (lang === "en" ? "Inventory evidence could not be loaded" : "อ่านข้อมูลวิเคราะห์สต็อกไม่สำเร็จ")}
+            description={lang === "en" ? "Stock figures and recommendations will appear after the reads succeed." : "ยอดสต็อกและคำแนะนำจะแสดงเมื่ออ่านข้อมูลสำเร็จ"}
+            action={!inventoryEvidenceLoading && <Button onClick={() => { void Promise.allSettled([
+              refetchInventoryAction(), refetchInventoryAnomalies(), refetchInventoryLocations(),
+            ]); }}>{lang === "en" ? "Retry inventory reads" : "ลองอ่านข้อมูลสต็อกใหม่"}</Button>}
+          />
+        ) : <>
         {((inventoryAction?.summary?.unallocatedDemandUnits ?? 0) > 0 || (inventoryAction?.summary?.unallocatedIncomingUnits ?? 0) > 0) && (
           <Alert type="warning" showIcon style={{ marginBottom: 8 }}
             closable
@@ -684,6 +700,7 @@ export default function Page() {
             { title:t("admin_dashboard.col_recommended_action"), dataIndex:"recommendedAction", render:(v:string)=>recommendationText(v) },
           ]} /></Card></Col>
         </Row>
+        </>}
       </div>
 
       {/* ===== ภาพรวมธุรกิจ — ดูเมื่อมีเวลา ไม่ใช่งานเร่งด่วน จึงลดน้ำหนักภาพลงด้วยพื้นหลังทึบกว่า ===== */}

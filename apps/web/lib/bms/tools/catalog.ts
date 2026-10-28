@@ -6,7 +6,7 @@
 // ยึด docs/AI_GUIDELINES.md — tenant มาจาก server, validate args, bounded output
 // =============================================================
 
-import { createHash } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { audit } from "../audit";
 import { getBoardGameTopGamesTool, getBoardGameTableRevenueTool, listBoardGameReportBranchesTool,
   getBoardGameReportTool, getBoardGameLiveOperationsTool, getBoardGamePassBalancesTool, getBoardGameLibraryReportTool,
@@ -242,6 +242,7 @@ async function auditWrite(ec: ExecCtx, action: string, target: string | null, me
 
 async function inventoryToolScope(ec: ExecCtx, locationId?: string | null) {
   const actorId = ec.ctx?.admin?.id ? String(ec.ctx.admin.id) : null;
+  if (!actorId || ec.surface !== "staff") throw new ToolArgError("ต้องมีบัญชีพนักงานเพื่ออ่านข้อมูลสต็อก");
   const locationScoped = actorId ? await userHasLocationScope(ec.tenantId, actorId) : false;
   const allowedLocationIds = actorId
     ? (await listLocationsForUser(ec.tenantId, actorId)).map((location) => location.id)
@@ -2779,7 +2780,7 @@ const createPurchaseOrderTool: BmsTool = {
     }));
     const payload={supplierId:optString(args,"supplierId")??null,supplierName:optString(args,"supplierName")??null,
       note:optString(args,"note")??null,items};
-    const requestId=`ai-po-${createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0,40)}`;
+    const requestId=`ai-po-${randomUUID()}`;
     return {ok:true,proposal:{tool:"create_purchase_order",mutation:"bmsCreatePurchaseOrder",args:{...payload,requestId},
       summary:`สร้าง PO ${items.length} รายการ รวม ${items.reduce((sum,item)=>sum+item.qty,0)} หน่วย`}};
   },
@@ -3057,7 +3058,7 @@ const A3_TOOLS: BmsTool[] = [
     buildArgs:(a)=>{
       const items=reqItems(a);
       const payload={fromLocationId:reqString(a,"fromLocationId"),toLocationId:reqString(a,"toLocationId"),items,note:optString(a,"note")??null};
-      const idempotencyKey=`ai-transfer-${createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0,32)}`;
+      const idempotencyKey=`ai-transfer-${randomUUID()}`;
       return {input:{...payload,idempotencyKey}};
     },
     summary:(a)=>`สร้างใบโอนฉบับร่าง ${reqItems(a).length} รายการ จาก ${String(a.fromLocationId).slice(0,8)} ไป ${String(a.toLocationId).slice(0,8)} (ยังไม่ส่งของ)`,
@@ -3466,7 +3467,7 @@ const getInventoryForecastAccuracyTool: BmsTool = {
 
 const getSupplierIntelligenceTool: BmsTool = {
   name:"get_supplier_intelligence",
-  description:"Read evidence-backed supplier history from purchase orders: fill rate, recorded receipt lead time, comparable product cost changes and evidence count. Missing delivery promises or quality evidence remain unknown.",
+  description:"Read supplier history from purchase orders: recorded fill rate, approximate age from creation to last update of received POs, comparable product cost changes and evidence count. The age is not a verified delivery duration. Missing delivery promises or quality evidence remain unknown.",
   surfaces:["staff"],permission:"purchase.view",
   inputSchema:{type:"object",properties:{supplierId:{type:"string"},days:{type:"integer"},limit:{type:"integer"}},additionalProperties:false},
   execute:async(args,ec):Promise<ToolResult>=>({ok:true,data:await getSupplierIntelligence({tenantId:ec.tenantId,

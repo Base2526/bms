@@ -1,4 +1,4 @@
-import { query } from "@/lib/db";
+import { readInventoryEvidence } from "./inventoryEvidenceRead";
 
 export type InventoryAnomalyCode =
   | "RESERVATION_UNATTRIBUTED"
@@ -40,8 +40,8 @@ export async function getInventoryAnomalies(input: {
   if (locationId && allowed && !allowed.includes(locationId)) throw new Error("ไม่มีสิทธิ์ดูสาขานี้");
   const limit = Math.min(Math.max(Math.floor(input.limit ?? 50), 1), 100);
   const params = [input.tenantId, locationId, allowed];
-  const [reservations, lots, transfers, purchaseOrders, movements, wastage, missingPolicies] = await Promise.all([
-    query<any>(
+  const [reservations, lots, transfers, purchaseOrders, movements, wastage, missingPolicies] = await readInventoryEvidence(input.tenantId, (client) => Promise.all([
+    client.query<any>(
       `WITH attributed AS (
          SELECT sl.location_id,sl.product_sku,sl.size,SUM(sl.qty)::int qty
            FROM bms_order_stock_lines sl JOIN bms_orders o ON o.tenant_id=sl.tenant_id AND o.id=sl.order_id
@@ -55,7 +55,7 @@ export async function getInventoryAnomalies(input: {
         WHERE i.tenant_id=$1 AND i.reserved_stock<>COALESCE(a.qty,0)
           AND ($2::uuid IS NULL OR i.location_id=$2) AND ($3::uuid[] IS NULL OR i.location_id=ANY($3))
         ORDER BY ABS(i.reserved_stock-COALESCE(a.qty,0)) DESC LIMIT 101`, params),
-    query<any>(
+    client.query<any>(
       `SELECT i.location_id,l.name location_name,i.product_sku sku,i.size,i.current_stock::int current_stock,
               COALESCE(SUM(lot.qty),0)::int lot_stock
          FROM bms_inventory i JOIN bms_locations l ON l.tenant_id=i.tenant_id AND l.id=i.location_id
@@ -66,7 +66,7 @@ export async function getInventoryAnomalies(input: {
         GROUP BY i.location_id,l.name,i.product_sku,i.size,i.current_stock
        HAVING i.current_stock<>COALESCE(SUM(lot.qty),0)
         ORDER BY ABS(i.current_stock-COALESCE(SUM(lot.qty),0)) DESC LIMIT 101`, params),
-    query<any>(
+    client.query<any>(
       `SELECT t.id,t.from_location_id,t.to_location_id,lf.name from_name,lt.name to_name,
               EXTRACT(EPOCH FROM (now()-t.sent_at))/3600 age_hours
          FROM bms_stock_transfers t
@@ -76,13 +76,13 @@ export async function getInventoryAnomalies(input: {
           AND ($2::uuid IS NULL OR t.from_location_id=$2 OR t.to_location_id=$2)
           AND ($3::uuid[] IS NULL OR t.from_location_id=ANY($3) OR t.to_location_id=ANY($3))
         ORDER BY t.sent_at LIMIT 101`, params),
-    includeTenantWide ? query<any>(
+    includeTenantWide ? client.query<any>(
       `SELECT po.id,po.created_at,EXTRACT(EPOCH FROM (now()-po.created_at))/86400 age_days,
               SUM(GREATEST(poi.qty_ordered-poi.qty_received,0))::int remaining
          FROM bms_purchase_orders po JOIN bms_purchase_order_items poi ON poi.tenant_id=po.tenant_id AND poi.po_id=po.id
         WHERE po.tenant_id=$1 AND po.status IN ('OPEN','PARTIAL') AND po.created_at<now()-interval '30 days'
         GROUP BY po.id,po.created_at ORDER BY po.created_at LIMIT 101`, [input.tenantId]) : Promise.resolve({ rows: [] }),
-    query<any>(
+    client.query<any>(
       `SELECT m.location_id,l.name location_name,m.product_sku sku,m.size,m.type,
               SUM(ABS(m.qty))::int units,COUNT(*)::int events
          FROM bms_stock_movements m JOIN bms_locations l ON l.tenant_id=m.tenant_id AND l.id=m.location_id
@@ -91,14 +91,14 @@ export async function getInventoryAnomalies(input: {
           AND ($2::uuid IS NULL OR m.location_id=$2) AND ($3::uuid[] IS NULL OR m.location_id=ANY($3))
         GROUP BY m.location_id,l.name,m.product_sku,m.size,m.type
        HAVING COUNT(*)>=3 OR SUM(ABS(m.qty))>=20 ORDER BY units DESC LIMIT 101`, params),
-    query<any>(
+    client.query<any>(
       `SELECT w.location_id,l.name location_name,w.product_sku sku,w.size,SUM(w.qty)::int units,COUNT(*)::int events
          FROM bms_inventory_wastage w JOIN bms_locations l ON l.tenant_id=w.tenant_id AND l.id=w.location_id
         WHERE w.tenant_id=$1 AND w.created_at>=now()-interval '30 days'
           AND ($2::uuid IS NULL OR w.location_id=$2) AND ($3::uuid[] IS NULL OR w.location_id=ANY($3))
         GROUP BY w.location_id,l.name,w.product_sku,w.size
        HAVING COUNT(*)>=3 OR SUM(w.qty)>=20 ORDER BY units DESC LIMIT 101`, params),
-    query<any>(
+    client.query<any>(
       `SELECT i.location_id,l.name location_name,i.product_sku sku,i.size
          FROM bms_inventory i JOIN bms_locations l ON l.tenant_id=i.tenant_id AND l.id=i.location_id
          LEFT JOIN bms_inventory_location_policies p ON p.tenant_id=i.tenant_id AND p.location_id=i.location_id
@@ -106,7 +106,7 @@ export async function getInventoryAnomalies(input: {
         WHERE i.tenant_id=$1 AND p.tenant_id IS NULL
           AND ($2::uuid IS NULL OR i.location_id=$2) AND ($3::uuid[] IS NULL OR i.location_id=ANY($3))
         ORDER BY l.name,i.product_sku,i.size LIMIT 101`, params),
-  ]);
+  ]));
 
   const detectedAt = new Date().toISOString();
   const items: InventoryAnomaly[] = [];

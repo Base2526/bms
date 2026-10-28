@@ -1425,3 +1425,23 @@ rejection, disabled wastage and immediate held-return notices (including future-
 SDL in English/Thai at 1280/390px with mocked auth/transport (no production writes). Set
 `BMS_SMOKE_URL` to the isolated built server; `BMS_PLAYWRIGHT_MODULE` may point to the local runtime.
 The browser also asserts exact due-time preservation on findings-only edits and visible return links.
+
+## Inventory intelligence recheck
+
+- `node scripts/run-contract-tests.mjs pure inventory-intelligence`: real-service boundary tests for
+  SQL bindings, tenant transactions, rollback, branch history, donor conservation, pagination and
+  forecast periods, plus structural integration checks and maintenance-route auth, bad input and
+  failure/success status handling.
+- `node scripts/run-contract-tests.mjs pure inventory-proposals`: real tool proposals and shared
+  confirmation variables; fresh operations receive different keys and retries retain the saved key.
+- `node scripts/run-contract-tests.mjs db inventory-intelligence-sql`: local PostgreSQL component
+  fixture in a uniquely named schema, removed afterward. Requires the existing `bms_app` role and a
+  disposable test admin connection able to create schemas/SET ROLE and seed fixtures despite forced
+  RLS. Applies `10.99` and `10.100` twice; tests reads as
+  `bms_app`, RLS without tenant WHERE, cross-tenant denial, partial PO allocations, snapshot replay,
+  exact forecast interval boundaries and branch-deletion attribution. Dependency tables are synthetic:
+  this is not a restored-database test of the full schema, stock triggers or PO/transfer mutations.
+- `node scripts/inventory-intelligence-browser-smoke.mjs`: compiled Dashboard with mocked auth/API,
+  Thai/English at 1440/390px. Checks failed reads do not render empty evidence, retry recovery, branch
+  query scope, committed SDL compatibility and horizontal overflow. Set `BMS_SMOKE_URL` and, when
+  necessary, `BMS_PLAYWRIGHT_MODULE`. Screenshots use `.test-output/inventory-intelligence-browser/`.

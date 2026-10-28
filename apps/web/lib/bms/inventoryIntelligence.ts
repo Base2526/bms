@@ -3,10 +3,11 @@ import { getClient, query } from "@/lib/db";
 import { forecastDataQualityFromCounts, type ForecastDataQuality } from "./forecastQuality";
 import { usableStockSql } from "./lotQuality";
 import { beginTenantTx } from "./tenant";
+import { readInventoryEvidence } from "./inventoryEvidenceRead";
 
 const PAID_STATUSES = ["PAID", "PACKING", "SHIPPED", "COMPLETED"];
 const METHOD = "branch_stock_consumption_velocity";
-export const INVENTORY_INTELLIGENCE_METHOD_VERSION = "2.0";
+export const INVENTORY_INTELLIGENCE_METHOD_VERSION = "2.1";
 const DISCLAIMER =
   "ประมาณการจาก stock consumption และ demand ที่ตรวจสอบได้ ไม่ใช่ตัวเลขรับประกัน — ต้องให้พนักงานตรวจสอบก่อนซื้อ โอน หรือปรับสต็อก";
 
@@ -99,6 +100,9 @@ export type InventoryIntelligenceResult = {
   }>;
   unallocatedDemand: UnallocatedInventorySignal[];
   unallocatedIncoming: UnallocatedInventorySignal[];
+  unallocatedDemandTruncated: boolean;
+  unallocatedIncomingTruncated: boolean;
+  expiringLotsTruncated: boolean;
   totalCount: number;
   truncated: boolean;
   nextOffset: number | null;
@@ -119,6 +123,10 @@ function isoDateAfter(days: number) {
 }
 
 export async function getInventoryIntelligence(input: InventoryIntelligenceInput): Promise<InventoryIntelligenceResult> {
+  return readInventoryIntelligence(input);
+}
+
+async function readInventoryIntelligence(input: InventoryIntelligenceInput, all = false): Promise<InventoryIntelligenceResult> {
   const windowDays = boundedInt(input.windowDays, 7, 180, 30);
   const coverageDays = boundedInt(input.coverageDays, 1, 180, 30);
   const limit = boundedInt(input.limit, 1, 100, 20);
@@ -131,9 +139,9 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
   if (locationId && allowed && !allowed.includes(locationId)) throw new Error("ไม่มีสิทธิ์ดูสาขานี้");
 
   const params = [input.tenantId, windowDays, PAID_STATUSES, locationId, allowed, sku, size];
-  const [qualityRows, rows, expiring, unallocatedDemandRows, unallocatedIncomingRows] = await Promise.all([
-    query<{ paid_order_count: number; active_sales_days: number }>(
-      `SELECT COUNT(DISTINCT o.id)::int AS paid_order_count,
+  const [qualityRows, rows, expiring, unallocatedDemandRows, unallocatedIncomingRows] = await readInventoryEvidence(input.tenantId, (client) => Promise.all([
+    client.query<{ location_id: string; paid_order_count: number; active_sales_days: number }>(
+      `SELECT o.location_id,COUNT(DISTINCT o.id)::int AS paid_order_count,
               COUNT(DISTINCT (COALESCE(o.paid_at,o.created_at) AT TIME ZONE 'Asia/Bangkok')::date)::int AS active_sales_days
          FROM bms_orders o
         WHERE o.tenant_id=$1 AND o.status=ANY($3)
@@ -144,10 +152,10 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
             SELECT 1 FROM bms_order_stock_lines sl
              WHERE sl.tenant_id=o.tenant_id AND sl.order_id=o.id
                AND sl.product_sku=$6 AND ($7::text IS NULL OR sl.size=$7)
-          ))`,
+          )) GROUP BY o.location_id`,
       params
     ),
-    query<any>(
+    client.query<any>(
       `WITH sales AS (
          SELECT sl.location_id,sl.product_sku sku,sl.size,
            COALESCE(SUM(sl.qty) FILTER (WHERE COALESCE(o.paid_at,o.created_at)>=now()-make_interval(days=>$2)),0)::int sold_recent,
@@ -165,7 +173,7 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
           GROUP BY location_id,product_sku,size
        ), allocated_incoming AS (
          SELECT r.location_id,ri.product_sku sku,ri.size,
-           SUM(LEAST(rp.qty,GREATEST(poi.qty_ordered-poi.qty_received,0)))::int qty
+           SUM(GREATEST(rp.qty-poi.qty_received,0))::int qty
            FROM bms_branch_requisition_purchases rp
            JOIN bms_branch_requisition_items ri ON ri.tenant_id=rp.tenant_id AND ri.id=rp.item_id
            JOIN bms_branch_requisitions r ON r.tenant_id=ri.tenant_id AND r.id=ri.requisition_id
@@ -198,7 +206,7 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
         ORDER BY l.name,p.name,i.size`,
       params
     ),
-    query<any>(
+    client.query<any>(
       `SELECT lot.location_id,l.name location_name,lot.product_sku sku,p.name,lot.size,lot.lot_no,lot.expiry_date,lot.qty::int,
               (lot.expiry_date-(now() AT TIME ZONE 'Asia/Bangkok')::date)::int days_to_expiry
          FROM bms_inventory_lots lot
@@ -206,52 +214,55 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
          JOIN bms_locations l ON l.tenant_id=lot.tenant_id AND l.id=lot.location_id
         WHERE lot.tenant_id=$1 AND lot.qty>0 AND lot.expiry_date IS NOT NULL
           AND lot.expiry_date<=(now() AT TIME ZONE 'Asia/Bangkok')::date+60
-          AND ($4::uuid IS NULL OR lot.location_id=$4)
-          AND ($5::uuid[] IS NULL OR lot.location_id=ANY($5))
-          AND ($6::text IS NULL OR lot.product_sku=$6)
-          AND ($7::text IS NULL OR lot.size=$7)
+          AND ($2::uuid IS NULL OR lot.location_id=$2)
+          AND ($3::uuid[] IS NULL OR lot.location_id=ANY($3))
+          AND ($4::text IS NULL OR lot.product_sku=$4)
+          AND ($5::text IS NULL OR lot.size=$5)
         ORDER BY lot.expiry_date,lot.qty DESC`,
-      params
+      [input.tenantId, locationId, allowed, sku, size]
     ),
-    includeUnallocated ? query<any>(
+    includeUnallocated ? client.query<any>(
       `SELECT product_sku sku,size,SUM(qty)::int qty FROM (
          SELECT product_sku,size,qty FROM bms_inventory_demand_events
           WHERE tenant_id=$1 AND location_id IS NULL AND occurred_at>=now()-make_interval(days=>$2)
          UNION ALL
          SELECT product_sku,size,requested_qty qty FROM bms_restock_subscriptions
           WHERE tenant_id=$1 AND status IN ('ACTIVE','READY_TO_NOTIFY','NOTIFIED')
-       ) q WHERE ($6::text IS NULL OR product_sku=$6) AND ($7::text IS NULL OR size=$7)
+       ) q WHERE ($3::text IS NULL OR product_sku=$3) AND ($4::text IS NULL OR size=$4)
        GROUP BY product_sku,size ORDER BY qty DESC`,
-      params
+      [input.tenantId, windowDays, sku, size]
     ) : Promise.resolve({ rows: [] }),
-    includeUnallocated ? query<any>(
+    includeUnallocated ? client.query<any>(
       `WITH remaining AS (
          SELECT poi.id,poi.product_sku sku,poi.size,GREATEST(poi.qty_ordered-poi.qty_received,0)::int qty
            FROM bms_purchase_order_items poi
            JOIN bms_purchase_orders po ON po.tenant_id=poi.tenant_id AND po.id=poi.po_id
           WHERE poi.tenant_id=$1 AND po.status IN ('OPEN','PARTIAL')
        ), allocated AS (
-         SELECT rp.po_item_id,SUM(rp.qty)::int qty
+         SELECT rp.po_item_id,SUM(GREATEST(rp.qty-poi.qty_received,0))::int qty
            FROM bms_branch_requisition_purchases rp
+           JOIN bms_purchase_order_items poi ON poi.tenant_id=rp.tenant_id AND poi.id=rp.po_item_id
            JOIN bms_branch_requisition_items ri ON ri.tenant_id=rp.tenant_id AND ri.id=rp.item_id
            JOIN bms_branch_requisitions r ON r.tenant_id=ri.tenant_id AND r.id=ri.requisition_id
           WHERE rp.tenant_id=$1 AND r.status NOT IN ('REJECTED','CANCELLED') GROUP BY rp.po_item_id
        )
        SELECT rem.sku,rem.size,SUM(GREATEST(rem.qty-COALESCE(a.qty,0),0))::int qty
          FROM remaining rem LEFT JOIN allocated a ON a.po_item_id=rem.id
-        WHERE ($6::text IS NULL OR rem.sku=$6) AND ($7::text IS NULL OR rem.size=$7)
+        WHERE ($2::text IS NULL OR rem.sku=$2) AND ($3::text IS NULL OR rem.size=$3)
         GROUP BY rem.sku,rem.size HAVING SUM(GREATEST(rem.qty-COALESCE(a.qty,0),0))>0
         ORDER BY qty DESC`,
-      params
+      [input.tenantId, sku, size]
     ) : Promise.resolve({ rows: [] }),
-  ]);
+  ]));
 
   const quality = forecastDataQualityFromCounts(
-    Number(qualityRows.rows[0]?.paid_order_count ?? 0),
-    Number(qualityRows.rows[0]?.active_sales_days ?? 0)
+    qualityRows.rows.reduce((sum, row) => sum + Number(row.paid_order_count), 0),
+    Math.max(0, ...qualityRows.rows.map((row) => Number(row.active_sales_days)))
   );
-  const sufficient = quality.status === "SUFFICIENT";
+  const branchQuality = new Map(qualityRows.rows.map((row) => [String(row.location_id),
+    forecastDataQualityFromCounts(Number(row.paid_order_count), Number(row.active_sales_days))]));
   const allItems: InventoryIntelligenceItem[] = rows.rows.map((row: any) => {
+    const sufficient = branchQuality.get(String(row.location_id))?.status === "SUFFICIENT";
     const usableStock = Number(row.usable_stock);
     const soldRecent = Number(row.sold_recent);
     const confirmedDemand = Number(row.confirmed_demand);
@@ -306,12 +317,12 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
       name: String(row.name), size: String(row.size), lotNo: String(row.lot_no),
       expiryDate: row.expiry_date instanceof Date ? row.expiry_date.toISOString().slice(0, 10) : String(row.expiry_date),
       qty: Number(row.qty), daysToExpiry: days,
-      recommendedAction: (days <= 0 ? "BLOCK_AND_DISPOSE" : days <= 30 ? "FEFO_MARKDOWN_OR_TRANSFER" : "FEFO_PRIORITY") as
+      recommendedAction: (days < 0 ? "BLOCK_AND_DISPOSE" : days <= 30 ? "FEFO_MARKDOWN_OR_TRANSFER" : "FEFO_PRIORITY") as
         "BLOCK_AND_DISPOSE" | "FEFO_MARKDOWN_OR_TRANSFER" | "FEFO_PRIORITY",
     };
   });
-  const paged = allItems.slice(offset, offset + limit);
-  const truncated = offset + limit < allItems.length;
+  const paged = all ? allItems : allItems.slice(offset, offset + limit);
+  const truncated = !all && offset + limit < allItems.length;
   const slice = <T>(values: T[]) => values.slice(offset, offset + limit);
   return {
     method: METHOD,
@@ -324,6 +335,8 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
       "ยอดใช้สต็อกอ่านจาก bms_order_stock_lines ซึ่งเป็น sale-time stock consumption snapshot",
       "ของพร้อมขายตัดล็อตหมดอายุ lot hold และกรณียอดล็อต reconcile ไม่ได้",
       "PO และ demand ที่ยังไม่มีสาขาแสดงแยกและไม่ถูกกระจายซ้ำทุกสาขา",
+      "PO ที่รับบางส่วนหักยอดรับจากทุก allocation อย่างระมัดระวัง ส่วนที่ระบุสาขาไม่ได้แสดงเป็น unallocated",
+      "ความพร้อมของข้อมูลประเมินแยกสาขา; activeSalesDays สรุปเป็นจำนวนวันขายสูงสุดของสาขา",
     ],
     disclaimer: quality.reason ? `${DISCLAIMER} — ${quality.reason}` : DISCLAIMER,
     dataQuality: quality,
@@ -346,8 +359,11 @@ export async function getInventoryIntelligence(input: InventoryIntelligenceInput
     purchaseSuggestions: slice(purchaseAll),
     slowMoving: slice(slowAll),
     expiringLots: slice(expiringLots),
-    unallocatedDemand,
-    unallocatedIncoming,
+    unallocatedDemand: slice(unallocatedDemand),
+    unallocatedIncoming: slice(unallocatedIncoming),
+    unallocatedDemandTruncated: offset + limit < unallocatedDemand.length,
+    unallocatedIncomingTruncated: offset + limit < unallocatedIncoming.length,
+    expiringLotsTruncated: offset + limit < expiringLots.length,
     totalCount: allItems.length,
     truncated,
     nextOffset: truncated ? offset + limit : null,
@@ -363,20 +379,28 @@ export async function explainInventoryRisk(input: InventoryIntelligenceInput & {
     dataQuality: result.dataQuality,
     disclaimer: result.disclaimer,
     items: result.items,
+    truncated: result.truncated,
+    totalCount: result.totalCount,
+    nextOffset: result.nextOffset,
     unallocatedDemand: result.unallocatedDemand,
     unallocatedIncoming: result.unallocatedIncoming,
+    unallocatedDemandTruncated: result.unallocatedDemandTruncated,
+    unallocatedIncomingTruncated: result.unallocatedIncomingTruncated,
     formula: "ceil(avgPerDay × (leadTimeDays + safetyStockDays + coverageDays)) - usableStock - allocatedIncoming",
   };
 }
 
 export async function findInventoryTransferOpportunities(input: InventoryIntelligenceInput) {
-  const result = await getInventoryIntelligence({ ...input, limit: 100, offset: 0 });
+  const result = await readInventoryIntelligence({ ...input, limit: 100, offset: 0 }, true);
   const items = result.items;
+  const surplus = new Map(items.map((item) => [item,
+    item.classification === "INSUFFICIENT_DATA" || item.suggestedQty > 0 ? 0 : Math.max(0,
+      item.usableStock - item.safetyStock - Math.ceil(item.avgPerDay * (result.coverageDays + item.leadTimeDays)))]));
   const opportunities: Array<{sku:string;name:string;size:string;fromLocationId:string;fromLocationName:string;toLocationId:string;toLocationName:string;qty:number;donorSurplus:number;receiverShortage:number;reason:string}> = [];
   for (const receiver of items.filter((item)=>item.suggestedQty>0)) {
     let remaining=receiver.suggestedQty;
     const donors=items.filter((item)=>item.sku===receiver.sku&&item.size===receiver.size&&item.locationId!==receiver.locationId)
-      .map((item)=>({item,surplus:Math.max(0,item.usableStock-item.safetyStock-Math.ceil(item.avgPerDay*result.coverageDays))}))
+      .map((item)=>({item,surplus:surplus.get(item) ?? 0}))
       .filter((entry)=>entry.surplus>0).sort((a,b)=>b.surplus-a.surplus);
     for (const donor of donors) {
       if (remaining<=0) break;
@@ -386,24 +410,22 @@ export async function findInventoryTransferOpportunities(input: InventoryIntelli
         qty,donorSurplus:donor.surplus,receiverShortage:receiver.suggestedQty,
         reason:"โอนเฉพาะ usable stock ที่เหลือเหนือ safety stock และ demand coverage ของสาขาต้นทาง"});
       remaining-=qty;
+      surplus.set(donor.item, donor.surplus - qty);
     }
   }
+  const limit = boundedInt(input.limit, 1, 50, 20);
   return {method:result.method,methodVersion:result.methodVersion,generatedAt:result.generatedAt,dataQuality:result.dataQuality,
-    disclaimer:result.disclaimer,items:opportunities.slice(0,Math.min(Math.max(input.limit??20,1),50)),
-    totalCount:opportunities.length,truncated:opportunities.length>(input.limit??20)};
+    disclaimer:result.disclaimer,items:opportunities.slice(0,limit),
+    totalCount:opportunities.length,truncated:opportunities.length>limit};
 }
 
 export async function recordInventoryForecastSnapshot(input: InventoryIntelligenceInput & { horizonDays?: number }) {
-  const first = await getInventoryIntelligence({ ...input, limit: 100, offset: 0 });
-  const forecastItems = [...first.items];
-  for (let offset = 100; offset < first.totalCount; offset += 100) {
-    const page = await getInventoryIntelligence({ ...input, limit: 100, offset });
-    forecastItems.push(...page.items);
-  }
+  const first = await readInventoryIntelligence({ ...input, limit: 100, offset: 0 }, true);
+  const forecastItems = first.items.filter((item) => item.classification !== "INSUFFICIENT_DATA");
   const horizonDays = boundedInt(input.horizonDays, 1, 180, first.coverageDays);
   const evidenceDigest = createHash("sha256").update(JSON.stringify({
     method: first.method, methodVersion: first.methodVersion, windowDays: first.windowDays,
-    horizonDays, items: forecastItems.map((item) => [item.locationId, item.sku, item.size, item.avgPerDay]),
+    horizonDays, items: forecastItems.map((item) => [item.locationId, item.sku, item.size, item.soldInWindow]),
   })).digest("hex");
   const targetDate = isoDateAfter(horizonDays);
   const client = await getClient();
@@ -429,13 +451,14 @@ export async function recordInventoryForecastSnapshot(input: InventoryIntelligen
     }
     const runId = run.rows[0].id;
     for (const item of forecastItems) {
-      const predicted = +(item.avgPerDay * horizonDays).toFixed(3);
+      // Accuracy compares paid consumption with paid consumption, excluding unmet demand.
+      const predicted = +(item.soldInWindow / first.windowDays * horizonDays).toFixed(3);
       await client.query(
         `INSERT INTO bms_inventory_forecast_items
           (tenant_id,run_id,location_id,product_sku,size,target_date,predicted_qty,lower_bound,upper_bound)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT DO NOTHING`,
         [input.tenantId, runId, item.locationId, item.sku, item.size, targetDate, predicted,
-          +(predicted * 0.7).toFixed(3), +(predicted * 1.3).toFixed(3)]
+          null, null]
       );
     }
     await client.query("COMMIT");
@@ -453,23 +476,29 @@ export async function evaluateDueInventoryForecasts(tenantId: string): Promise<n
   try {
     await beginTenantTx(client, tenantId);
     const updated = await client.query(
-      `WITH actuals AS (
+      `WITH due AS (
+         SELECT fi.id FROM bms_inventory_forecast_items fi
+           JOIN bms_inventory_forecast_runs fr ON fr.tenant_id=fi.tenant_id AND fr.id=fi.run_id
+          WHERE fi.tenant_id=$1 AND fi.actual_qty IS NULL AND fr.method_version=$3
+            AND fr.generated_at+make_interval(days=>fr.horizon_days)<=now()
+          FOR UPDATE OF fi SKIP LOCKED
+       ), actuals AS (
          SELECT fi.id,COALESCE(SUM(sl.qty) FILTER (WHERE o.id IS NOT NULL),0)::numeric AS actual_qty
            FROM bms_inventory_forecast_items fi
+           JOIN due ON due.id=fi.id
            JOIN bms_inventory_forecast_runs fr ON fr.tenant_id=fi.tenant_id AND fr.id=fi.run_id
            LEFT JOIN bms_order_stock_lines sl ON sl.tenant_id=fi.tenant_id AND sl.location_id=fi.location_id
             AND sl.product_sku=fi.product_sku AND sl.size=fi.size
            LEFT JOIN bms_orders o ON o.tenant_id=sl.tenant_id AND o.id=sl.order_id
             AND o.status=ANY($2::text[]) AND COALESCE(o.paid_at,o.created_at)>=fr.generated_at
-            AND COALESCE(o.paid_at,o.created_at)<fi.target_date+1
+            AND COALESCE(o.paid_at,o.created_at)<fr.generated_at+make_interval(days=>fr.horizon_days)
           WHERE fi.tenant_id=$1 AND fi.actual_qty IS NULL
-            AND fi.target_date<(now() AT TIME ZONE 'Asia/Bangkok')::date
           GROUP BY fi.id
        )
        UPDATE bms_inventory_forecast_items fi
           SET actual_qty=a.actual_qty,evaluated_at=now()
-         FROM actuals a WHERE fi.tenant_id=$1 AND fi.id=a.id`,
-      [tenantId, PAID_STATUSES]
+         FROM actuals a WHERE fi.tenant_id=$1 AND fi.id=a.id AND fi.actual_qty IS NULL`,
+      [tenantId, PAID_STATUSES, INVENTORY_INTELLIGENCE_METHOD_VERSION]
     );
     await client.query("COMMIT");
     return updated.rowCount ?? 0;
@@ -491,7 +520,7 @@ export async function getInventoryForecastAccuracy(input: {
   const locationId = input.locationId?.trim() || null;
   const allowed = input.allowedLocationIds ? [...input.allowedLocationIds] : null;
   if (locationId && allowed && !allowed.includes(locationId)) throw new Error("ไม่มีสิทธิ์ดูสาขานี้");
-  const result = await query<any>(
+  const result = await readInventoryEvidence(input.tenantId, (client) => client.query<any>(
     `SELECT COUNT(*)::int sample_count,
             COALESCE(AVG(ABS(fi.predicted_qty-fi.actual_qty)),0)::numeric mae,
             CASE WHEN SUM(fi.actual_qty)>0 THEN SUM(ABS(fi.predicted_qty-fi.actual_qty))/SUM(fi.actual_qty) ELSE NULL END AS wape,
@@ -500,10 +529,11 @@ export async function getInventoryForecastAccuracy(input: {
        FROM bms_inventory_forecast_items fi
        JOIN bms_inventory_forecast_runs fr ON fr.tenant_id=fi.tenant_id AND fr.id=fi.run_id
       WHERE fi.tenant_id=$1 AND fi.actual_qty IS NOT NULL AND fr.generated_at>=now()-make_interval(days=>$2)
+        AND fr.method_version=$5
         AND ($3::uuid IS NULL OR fi.location_id=$3)
         AND ($4::uuid[] IS NULL OR fi.location_id=ANY($4))`,
-    [input.tenantId, days, locationId, allowed]
-  );
+    [input.tenantId, days, locationId, allowed, INVENTORY_INTELLIGENCE_METHOD_VERSION]
+  ));
   const row = result.rows[0] ?? {};
   return {
     method:METHOD,methodVersion:INVENTORY_INTELLIGENCE_METHOD_VERSION,windowDays:days,

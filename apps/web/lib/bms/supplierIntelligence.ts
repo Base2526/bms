@@ -1,9 +1,9 @@
-import { query } from "@/lib/db";
+import { readInventoryEvidence } from "./inventoryEvidenceRead";
 
 export async function getSupplierIntelligence(input:{tenantId:string;supplierId?:string|null;days?:number;limit?:number}) {
   const days=Math.min(Math.max(Math.floor(input.days??180),30),730);
   const limit=Math.min(Math.max(Math.floor(input.limit??25),1),100);
-  const result=await query<any>(
+  const result=await readInventoryEvidence(input.tenantId, (client) => client.query<any>(
     `WITH line_history AS (
        SELECT po.supplier_id,poi.product_sku,poi.size,po.created_at,poi.unit_cost,
               LAG(poi.unit_cost) OVER(PARTITION BY po.supplier_id,poi.product_sku,poi.size ORDER BY po.created_at,poi.id) previous_cost
@@ -36,7 +36,7 @@ export async function getSupplierIntelligence(input:{tenantId:string;supplierId?
       WHERE s.tenant_id=$1 AND ($2::uuid IS NULL OR s.id=$2)
       ORDER BY pm.last_order_at DESC NULLS LAST,s.name LIMIT $4`,
     [input.tenantId,input.supplierId?.trim()||null,days,limit]
-  );
+  ));
   const items=result.rows.map((row:any)=>{
     const fillRate=row.fill_rate==null?null:+Number(row.fill_rate).toFixed(4);
     const avgLeadDays=row.avg_lead_days==null?null:+Number(row.avg_lead_days).toFixed(1);
@@ -47,5 +47,5 @@ export async function getSupplierIntelligence(input:{tenantId:string;supplierId?
       cancelledCount:Number(row.cancelled_count),fillRate,avgLeadDays,avgCostChangePct,mappedProductCount:Number(row.mapped_products),
       lastOrderAt:row.last_order_at?.toISOString?.()??row.last_order_at??null,classification};
   });
-  return {windowDays:days,generatedAt:new Date().toISOString(),items,disclaimer:"Derived from recorded PO quantities, status timestamps and comparable supplier-product costs. It does not infer delivery promises or supplier quality that BMS did not record."};
+  return {windowDays:days,generatedAt:new Date().toISOString(),items,disclaimer:"Derived from recorded PO quantities and comparable supplier-product costs. avgLeadDays is a proxy from creation to last update of received POs, not a verified delivery duration. Fill rate includes open and cancelled POs; it is not an on-time delivery rate."};
 }

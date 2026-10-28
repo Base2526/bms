@@ -18,8 +18,11 @@ async function handlePOST(req: NextRequest) {
     return NextResponse.json({ok:false,error:"INVALID_AFTER_TENANT"},{status:400});
   }
   try {
-    const result = await recordJobRun("inventory-intelligence-maintenance", "cron", () =>
-      runInventoryForecastMaintenancePage(afterTenant, 25));
+    const result = await recordJobRun("inventory-intelligence-maintenance", "cron", async () => {
+      const page = await runInventoryForecastMaintenancePage(afterTenant, 25);
+      if (page.failed > 0) throw new Error(`Inventory maintenance failed for ${page.failed} tenant(s); retry this page`);
+      return page;
+    });
     return NextResponse.json({ok:true,...result});
   } catch (error) {
     return NextResponse.json({ok:false,error:error instanceof Error ? error.message : "failed"},{status:500});

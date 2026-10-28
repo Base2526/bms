@@ -35,7 +35,7 @@ test("inventory recommendations use authoritative branch evidence and keep unkno
   assert.match(service,/bms_inventory_location_policies/);
   assert.match(service,/beginTenantTx\(client, input\.tenantId\)/);
   assert.match(service,/includeUnallocated = input\.includeUnallocated \?\? allowed === null/);
-  assert.match(service,/includeUnallocated \? query<any>/);
+  assert.match(service,/includeUnallocated \? client\.query<any>/);
 });
 
 test("anomaly detection is review-only and checks the stock integrity boundaries",()=>{
@@ -70,7 +70,7 @@ test("GraphQL and daily maintenance expose branch scope and matured forecast acc
   assert.match(resolver,/userCanAccessLocation/);
   assert.match(resolver,/includeUnallocated:!locationScoped/);
   assert.match(resolver,/includeTenantWide:!locationScoped/);
-  assert.match(anomalies,/includeTenantWide \? query<any>/);
+  assert.match(anomalies,/includeTenantWide \? client\.query<any>/);
   assert.match(scheduler,/inventory-intelligence\/maintain/);
   assert.match(service,/evaluateDueInventoryForecasts/);
   assert.match(service,/\bmae\b/);
