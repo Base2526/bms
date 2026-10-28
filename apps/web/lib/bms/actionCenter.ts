@@ -1,6 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { getInventoryActionCenter, getOperationalAlerts } from "./dashboard";
+import { getInventoryAnomalies } from "./inventoryAnomalies";
 import { listChannelHealth } from "./channelHealth";
 import { listChannelsMasked } from "./channels";
 
@@ -109,9 +110,10 @@ const row = (r: any) => ({
 });
 
 async function collectSignals(tenantId: string): Promise<Signal[]> {
-  const [ops, inventory, margin, retention, sales, pos, customerQuality, duplicateCustomers, paymentConflicts, orderOutliers, channelHealth, channelConfig, deliverySignals] = await Promise.all([
+  const [ops, inventory, inventoryAnomalies, margin, retention, sales, pos, customerQuality, duplicateCustomers, paymentConflicts, orderOutliers, channelHealth, channelConfig, deliverySignals] = await Promise.all([
     getOperationalAlerts(tenantId),
     getInventoryActionCenter(tenantId, 30, 30, 20),
+    getInventoryAnomalies({ tenantId, limit: 100 }),
     query<any>(`SELECT
       COUNT(*) FILTER (WHERE cost_price IS NOT NULL AND price <= cost_price)::int AS non_positive_count,
       COUNT(*) FILTER (WHERE cost_price IS NULL)::int AS missing_cost_count,
@@ -187,6 +189,10 @@ async function collectSignals(tenantId: string): Promise<Signal[]> {
   add(inventory.summary.stockoutWithin7DaysCount > 0, { key:"stock:stockout-7d",category:"STOCK",priority:"HIGH",title:"ทบทวนสินค้าที่เสี่ยงหมดใน 7 วัน",titleEn:"Review variants at risk of stocking out within 7 days",evidence:{count:inventory.summary.stockoutWithin7DaysCount,suggestedUnits:inventory.summary.totalSuggestedQty},expectedImpact:"ลด Lost sales จากของหมด",expectedImpactEn:"Reduce lost sales caused by stock-outs",confidence:.75,dueHours:24,deepLink:"/admin/purchase" });
   add(inventory.summary.slowMovingCount > 0, { key:"stock:slow-moving",category:"STOCK",priority:"MEDIUM",title:"จัดการสินค้าขายช้าและเงินจม",titleEn:"Act on slow-moving and dead stock",evidence:{count:inventory.summary.slowMovingCount},expectedImpact:"คืนเงินสดจากสต็อกที่หมุนช้า",expectedImpactEn:"Release cash trapped in slow inventory",confidence:.7,dueHours:72,deepLink:"/admin/products" });
   add(inventory.summary.expiringLotCount > 0, { key:"stock:expiring",category:"STOCK",priority:"HIGH",title:"จัดการล็อตใกล้หมดอายุ",titleEn:"Act on expiring inventory lots",evidence:{count:inventory.summary.expiringLotCount,units:inventory.summary.expiringUnits},expectedImpact:"ลดของเสียจากหมดอายุด้วย FEFO, ลดราคา หรือโอนสาขา",expectedImpactEn:"Reduce expiry waste with FEFO, markdowns, or transfers",confidence:.95,dueHours:24,deepLink:"/admin/products" });
+  const criticalInventoryAnomalies = inventoryAnomalies.items.filter((item) => item.severity === "CRITICAL");
+  const highInventoryAnomalies = inventoryAnomalies.items.filter((item) => item.severity === "HIGH");
+  add(criticalInventoryAnomalies.length > 0, { key:"stock:integrity-critical",category:"STOCK",priority:"CRITICAL",title:"ตรวจความไม่สอดคล้องของสต็อกที่กระทบยอดพร้อมใช้",titleEn:"Review critical inventory integrity mismatches",evidence:{count:criticalInventoryAnomalies.length,totalDetected:inventoryAnomalies.totalCount,codes:[...new Set(criticalInventoryAnomalies.map((item) => item.code))]},expectedImpact:"หยุดการตัดสินใจจากยอดจองหรือล็อตที่ไม่ตรงกับแหล่งอ้างอิง",expectedImpactEn:"Prevent decisions based on reservations or lot totals that disagree with source records",confidence:1,dueHours:1,deepLink:"/admin/dashboard?focus=inventory-anomalies" });
+  add(highInventoryAnomalies.length > 0, { key:"stock:anomaly-review",category:"STOCK",priority:"HIGH",title:"ตรวจเหตุการณ์สต็อกผิดปกติ",titleEn:"Review unusual inventory activity",evidence:{count:highInventoryAnomalies.length,totalDetected:inventoryAnomalies.totalCount,codes:[...new Set(highInventoryAnomalies.map((item) => item.code))]},expectedImpact:"ลดความเสียหายจากรายการปรับยอด ของเสีย การโอน หรือ PO ที่ค้างผิดปกติ",expectedImpactEn:"Reduce losses from unusual adjustments, wastage, transfers, or stale purchase orders",confidence:.9,dueHours:24,deepLink:"/admin/dashboard?focus=inventory-anomalies" });
   add(Number(margin.rows[0]?.non_positive_count)>0, { key:"margin:non-positive",category:"MARGIN",priority:"HIGH",title:"ตรวจสินค้าที่ราคาขายไม่สูงกว่าทุน",titleEn:"Review products priced at or below cost",evidence:{count:Number(margin.rows[0]?.non_positive_count)},expectedImpact:"หยุดการขายที่ไม่สร้างกำไรขั้นต้น",expectedImpactEn:"Stop sales that produce no gross margin",confidence:.9,dueHours:24,deepLink:"/admin/products" });
   add(Number(margin.rows[0]?.missing_cost_count)>0, { key:"margin:missing-cost",category:"MARGIN",priority:"HIGH",title:"เติมต้นทุนสินค้าที่หาย",titleEn:"Complete missing product costs",evidence:{count:Number(margin.rows[0]?.missing_cost_count)},expectedImpact:"ทำให้รายงานกำไรไม่ตีต้นทุนที่หายเป็นศูนย์",expectedImpactEn:"Prevent profit reports from treating missing costs as zero",confidence:1,dueHours:24,deepLink:"/admin/products" });
   add(Number(margin.rows[0]?.zero_price_count)>0, { key:"margin:zero-price",category:"MARGIN",priority:"HIGH",title:"ตรวจสินค้าที่ราคาขายเป็นศูนย์",titleEn:"Review zero-priced products",evidence:{count:Number(margin.rows[0]?.zero_price_count)},expectedImpact:"ยืนยันว่าราคาศูนย์เป็นของแจกโดยตั้งใจ ไม่ใช่ข้อมูลผิด",expectedImpactEn:"Confirm zero prices are intentional giveaways rather than bad data",confidence:1,dueHours:24,deepLink:"/admin/products" });
@@ -308,27 +314,32 @@ export async function transitionAction(tenantId: string, actionId: string, actor
   } catch (error) { await client.query("ROLLBACK").catch(() => undefined); throw error; } finally { client.release(); }
 }
 
-export async function recordDemandEvent(tenantId: string, actorId: string, input: { sku: string; size: string; kind: "LOST_SALE" | "RESTOCK_REQUEST"; qty: number; note?: string | null }) {
+export async function recordDemandEvent(tenantId: string, actorId: string, input: { locationId?: string | null; sku: string; size: string; kind: "LOST_SALE" | "RESTOCK_REQUEST"; qty: number; note?: string | null }) {
   if (!(["LOST_SALE", "RESTOCK_REQUEST"] as const).includes(input.kind)) throw new Error("invalid demand kind");
   if (!Number.isInteger(input.qty) || input.qty < 1 || input.qty > 10000) throw new Error("qty must be 1-10000");
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorId });
-    const result = await client.query<any>(`INSERT INTO bms_inventory_demand_events (tenant_id,product_sku,size,kind,qty,note,actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, [tenantId, input.sku.trim(), input.size.trim().toUpperCase(), input.kind, input.qty, input.note?.trim() || null, actorId]);
-    await client.query(`INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta) VALUES ($1,$2,'inventory.demand.record',$3,$4)`, [tenantId, actorId, result.rows[0].id, JSON.stringify({ sku: input.sku, size: input.size, kind: input.kind, qty: input.qty })]);
+    const result = await client.query<any>(`INSERT INTO bms_inventory_demand_events (tenant_id,location_id,product_sku,size,kind,qty,note,actor_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`, [tenantId, input.locationId ?? null, input.sku.trim(), input.size.trim().toUpperCase(), input.kind, input.qty, input.note?.trim() || null, actorId]);
+    await client.query(`INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta) VALUES ($1,$2,'inventory.demand.record',$3,$4)`, [tenantId, actorId, result.rows[0].id, JSON.stringify({ locationId:input.locationId ?? null,sku: input.sku, size: input.size, kind: input.kind, qty: input.qty })]);
     await client.query("COMMIT"); return result.rows[0].id;
   } catch (error) { await client.query("ROLLBACK").catch(() => undefined); throw error; } finally { client.release(); }
 }
 
-export async function upsertInventoryPolicy(tenantId: string, actorId: string, input: { sku: string; size: string; safetyStockDays: number; leadTimeDays: number }) {
+export async function upsertInventoryPolicy(tenantId: string, actorId: string, input: { locationId?: string | null; sku: string; size: string; safetyStockDays: number; leadTimeDays: number }) {
   if (!Number.isInteger(input.safetyStockDays) || input.safetyStockDays < 0 || input.safetyStockDays > 90) throw new Error("safetyStockDays must be 0-90");
   if (!Number.isInteger(input.leadTimeDays) || input.leadTimeDays < 0 || input.leadTimeDays > 180) throw new Error("leadTimeDays must be 0-180");
   const client = await getClient();
   try {
     await beginTenantTx(client, tenantId, { editorId: actorId });
-    await client.query(`INSERT INTO bms_inventory_policies (tenant_id,product_sku,size,safety_stock_days,lead_time_days,updated_by) VALUES ($1,$2,$3,$4,$5,$6)
-      ON CONFLICT (tenant_id,product_sku,size) DO UPDATE SET safety_stock_days=EXCLUDED.safety_stock_days,lead_time_days=EXCLUDED.lead_time_days,updated_by=EXCLUDED.updated_by,updated_at=now()`, [tenantId,input.sku.trim(),input.size.trim().toUpperCase(),input.safetyStockDays,input.leadTimeDays,actorId]);
-    await client.query(`INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta) VALUES ($1,$2,'inventory.policy.update',$3,$4)`, [tenantId,actorId,`${input.sku}:${input.size}`,JSON.stringify({ safetyStockDays:input.safetyStockDays,leadTimeDays:input.leadTimeDays })]);
+    if (input.locationId) {
+      await client.query(`INSERT INTO bms_inventory_location_policies (tenant_id,location_id,product_sku,size,safety_stock_days,lead_time_days,updated_by) VALUES ($1,$2,$3,$4,$5,$6,$7)
+        ON CONFLICT (tenant_id,location_id,product_sku,size) DO UPDATE SET safety_stock_days=EXCLUDED.safety_stock_days,lead_time_days=EXCLUDED.lead_time_days,updated_by=EXCLUDED.updated_by,updated_at=now()`, [tenantId,input.locationId,input.sku.trim(),input.size.trim().toUpperCase(),input.safetyStockDays,input.leadTimeDays,actorId]);
+    } else {
+      await client.query(`INSERT INTO bms_inventory_policies (tenant_id,product_sku,size,safety_stock_days,lead_time_days,updated_by) VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (tenant_id,product_sku,size) DO UPDATE SET safety_stock_days=EXCLUDED.safety_stock_days,lead_time_days=EXCLUDED.lead_time_days,updated_by=EXCLUDED.updated_by,updated_at=now()`, [tenantId,input.sku.trim(),input.size.trim().toUpperCase(),input.safetyStockDays,input.leadTimeDays,actorId]);
+    }
+    await client.query(`INSERT INTO bms_audit_log (tenant_id,actor,action,target,meta) VALUES ($1,$2,'inventory.policy.update',$3,$4)`, [tenantId,actorId,`${input.locationId ?? "tenant"}:${input.sku}:${input.size}`,JSON.stringify({ locationId:input.locationId ?? null,safetyStockDays:input.safetyStockDays,leadTimeDays:input.leadTimeDays })]);
     await client.query("COMMIT"); return true;
   } catch (error) { await client.query("ROLLBACK").catch(()=>undefined); throw error; } finally { client.release(); }
 }

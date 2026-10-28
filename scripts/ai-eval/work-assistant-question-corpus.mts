@@ -371,7 +371,7 @@ export const WORK_ASSISTANT_QUESTION_CORPUS: readonly CorpusCase[] = [
   { q: "สร้างพัสดุและใส่เลขติดตามยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "shipping.create", origin: "coverage" },
   {
     q: "รับของเข้าใบสั่งซื้อยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "purchase.receive",
-    expectTool: { name: "receive_purchase_order", permission: "purchase.receive" },
+    why: "Receiving changes stock and remains a manual Purchase/POS workflow; the assistant explains the verified guide but has no receiving tool.",
     origin: "coverage",
   },
   { q: "คิวติดตามลูกค้าใช้ยังไง", locale: "th", context: GUIDES, expect: "answer", expectTop: "followup.review-queue", origin: "coverage" },

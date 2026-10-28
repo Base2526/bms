@@ -17,5 +17,6 @@
   { "name": "channel-health", "group": "daily", "path": "/api/bms/channels/check-health" },
   { "name": "ai-health", "group": "daily", "path": "/api/bms/ai/check-health" },
   { "name": "report-digest", "group": "daily", "path": "/api/bms/reports/send-digest" },
+  { "name": "inventory-intelligence-maintenance", "group": "daily", "path": "/api/bms/inventory-intelligence/maintain", "paginated": true },
   { "name": "ai-answer-evidence-retention", "group": "daily", "path": "/api/bms/ai/evidence/purge-expired", "paginated": true }
 ]

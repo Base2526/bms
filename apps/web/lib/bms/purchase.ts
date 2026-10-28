@@ -18,6 +18,7 @@ import { receiveLotInTx } from "./lots";
 import { beginTenantTx } from "./tenant";
 import { markRestockSubscriptionsReady } from "./restockSubscriptions";
 import { enqueueRealtimeEventInTx, realtimeEvent } from "./realtimeOutbox";
+import { IDEMPOTENCY_CONFLICT_MESSAGE, IdempotencyConflictError } from "./idempotencyErrors";
 
 // ---- types ---------------------------------------------------
 export type PoItemInput = {
@@ -40,6 +41,8 @@ export type CreatePOInput = {
   items: PoItemInput[];
   note?: string | null;
   actor?: string | null;
+  requestId?: string | null;
+  audit?: { actor: string; meta?: Record<string, unknown> } | null;
 };
 
 export type PoLine = {
@@ -53,11 +56,12 @@ export type PoLine = {
 };
 
 export type CreatePOResult =
-  | { status: "CREATED"; poId: string; total: number; supplierId: string | null; items: PoLine[] }
+  | { status: "CREATED"; poId: string; total: number; supplierId: string | null; items: PoLine[]; replayed?: boolean }
   | { status: "NOT_FOUND"; sku: string }
   | { status: "SUPPLIER_NOT_FOUND" }
   | { status: "SUPPLIER_REQUIRED"; supplierSku: string }
   | { status: "SUPPLIER_SKU_CONFLICT"; supplierSku: string; sku: string; size: string }
+  | { status: "IDEMPOTENCY_CONFLICT" }
   | { status: "INVALID_INPUT" }
   | { status: "EMPTY" };
 
@@ -241,10 +245,20 @@ export async function createPurchaseOrder(
   try {
     await beginTenantTx(client, input.tenantId);
     const result = await createPurchaseOrderInTx(client, input);
+    if (result.status === "CREATED" && !result.replayed && input.audit) {
+      await client.query(
+        `INSERT INTO bms_audit_log(tenant_id,actor,action,target,meta)
+         VALUES($1,$2,'purchase.create',$3,$4::jsonb)`,
+        [input.tenantId,input.audit.actor,result.poId,JSON.stringify({
+          total:result.total,itemCount:result.items.length,...(input.audit.meta ?? {}),
+        })]
+      );
+    }
     await client.query(result.status === "CREATED" ? "COMMIT" : "ROLLBACK");
     return result;
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error instanceof IdempotencyConflictError) return { status:"IDEMPOTENCY_CONFLICT" };
     throw error;
   } finally {
     client.release();
@@ -302,6 +316,32 @@ export async function createPurchaseOrderInTx(
   const items = mergeItems(normalized);
   if (items.length === 0) return { status: "EMPTY" };
 
+  let requestHash: string | null = null;
+  const requestId = input.requestId?.trim() || null;
+  if (requestId) {
+    if (requestId.length < 8 || requestId.length > 200) return { status:"INVALID_INPUT" };
+    requestHash = crypto.createHash("sha256").update(JSON.stringify({supplierId:input.supplierId??null,
+      supplierName:input.supplierName?.trim()||null,note:input.note??null,items})).digest("hex");
+    const claimed = await client.query(
+      `INSERT INTO bms_purchase_order_idempotency(tenant_id,request_id,request_hash)
+       VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING request_id`,
+      [tenantId,requestId,requestHash]
+    );
+    if (!claimed.rowCount) {
+      const prior=await client.query<{request_hash:string;po_id:string|null}>(
+        `SELECT request_hash,po_id FROM bms_purchase_order_idempotency
+          WHERE tenant_id=$1 AND request_id=$2 FOR UPDATE`,[tenantId,requestId]);
+      if (prior.rows[0]?.request_hash!==requestHash) throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE,"purchase.create");
+      if (prior.rows[0]?.po_id) {
+        const replay=await client.query<any>(`SELECT supplier_id,total_amount FROM bms_purchase_orders WHERE tenant_id=$1 AND id=$2`,[tenantId,prior.rows[0].po_id]);
+        const replayItems=await client.query<any>(`SELECT product_sku,size,supplier_sku,supplier_product_name,qty_ordered,qty_received,unit_cost FROM bms_purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id`,[tenantId,prior.rows[0].po_id]);
+        return {status:"CREATED",poId:prior.rows[0].po_id,total:Number(replay.rows[0].total_amount),supplierId:replay.rows[0].supplier_id??null,replayed:true,
+          items:replayItems.rows.map((row:any)=>({sku:row.product_sku,size:row.size,supplierSku:row.supplier_sku??null,
+            supplierProductName:row.supplier_product_name??null,qtyOrdered:Number(row.qty_ordered),qtyReceived:Number(row.qty_received),unitCost:Number(row.unit_cost)}))};
+      }
+    }
+  }
+
   // สินค้าทุก sku ต้องมีในร้าน
   for (const it of items) {
     const prod = await client.query(
@@ -336,6 +376,10 @@ export async function createPurchaseOrderInTx(
     [tenantId, supplierId, total, input.note ?? null],
   );
   const poId = po.rows[0].id;
+  if (requestId && requestHash) await client.query(
+    `UPDATE bms_purchase_order_idempotency SET po_id=$3 WHERE tenant_id=$1 AND request_id=$2 AND request_hash=$4`,
+    [tenantId,requestId,poId,requestHash]
+  );
 
   const lines: PoLine[] = [];
   for (const it of items) {

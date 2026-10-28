@@ -456,8 +456,9 @@ const MENU_CARDS_TH: MenuCard[] = [
     bullets: [
       "เริ่มวันจากยอดขายวันนี้, จำนวนออเดอร์, ลูกค้า, และ low stock",
       "ดูการ์ดงานด่วน เช่น แชทรอ, สลิปรอตรวจ, ออเดอร์รอแพ็ก และจองสินค้าที่ใกล้หมดเวลา",
-      "Phase 1 ใช้ refresh action เพื่อให้ระบบเสนอสิ่งที่ควรทำต่อ เช่น ซื้อเพิ่ม, เร่งแพ็ก, หรือแก้สต็อก",
-      "บันทึก lost sale หรือปรับ inventory policy จากหน้าเดียวได้ เพื่อให้คำแนะนำรอบถัดไปแม่นขึ้น",
+      "เลือกสาขาแล้วดูความเสี่ยงหมดสต็อก คำแนะนำซื้อ ความผิดปกติ และความแม่นยำของ forecast จากหลักฐานแยกสาขา",
+      "บันทึก lost sale หรือปรับ inventory policy รายสาขาจากหน้าเดียวได้; demand/PO ที่ยังไม่ระบุสาขาจะแสดงแยกและไม่ถูกนับซ้ำ",
+      "AI อธิบายเหตุผลและเตรียม PO/ใบโอนร่างได้ แต่ต้องกด Confirm; AI รับสินค้า ส่งของ หรือปรับยอดเองไม่ได้",
       "ดูสถานะช่องทางขายว่า ยังไม่ตั้งค่า / ปิดเอง / มีปัญหาจริง และกดต่อไปหน้า Settings ได้",
     ],
   },
@@ -2290,7 +2291,7 @@ const LINK_STEPS_EN: LinkStep[] = [
         <b> AI Report Generator</b> card on the Reports page to produce Excel / CSV / PDF exports of sales, inventory,
         or gross profit (estimated), and re-download them later from the report history. Net sales attribute refunds to
         the date money was actually returned; a profit report with missing product costs says the data is incomplete
-        instead of assuming zero cost, and a new shop with too little history receives no confident purchase forecast · to review individual answers,
+        instead of assuming zero cost, and a new shop with too little history receives no confident purchase forecast. Inventory intelligence is branch-scoped, keeps unallocated demand/supply separate, shows integrity signals, and reports accuracy only after snapshots mature · to review individual answers,
         open {L.aiQuality} for success/handoff/unresolved rates, failure cases, and sampled conversations, with personal
         data masked automatically on the review screen
       </>
@@ -3325,8 +3326,8 @@ export default function Page() {
           style={{ marginTop: 12, borderRadius: 12 }}
           message={lang === "en" ? "Phase 1: daily actions + smarter purchasing" : "Phase 1: งานวันนี้ + ซื้อของแม่นขึ้น"}
           description={lang === "en"
-            ? "On Dashboard, refresh signals, accept an action, then complete or dismiss it with a reason. Inventory recommendations include demand trend, safety stock, lead time, open PO quantities, slow/dead stock and FEFO expiry. Record a lost sale on a low-stock line so unmet demand improves the next recommendation. Recommendations remain advisory and require staff review."
-            : "ที่ Dashboard ให้กดอัปเดตสัญญาณ รับทำ Action แล้วปิดงานหรือเลือกไม่ทำพร้อมเหตุผล คำแนะนำสต็อกจะรวมแนวโน้ม Demand, Safety stock, Lead time, ของที่กำลังมากับ PO, Slow/Dead stock และวันหมดอายุแบบ FEFO หากขายไม่ได้เพราะของขาด ให้บันทึก Lost sale ในรายการ Low stock เพื่อให้คำแนะนำรอบถัดไปนับ Demand ที่พลาดด้วย ทุกคำแนะนำยังต้องให้พนักงานทบทวนก่อนสั่งซื้อจริง"}
+            ? "On Dashboard, choose a permitted branch and review demand trend, usable stock, branch policy, allocated incoming supply, anomaly evidence and matured forecast accuracy. Unallocated demand/supply stays separate. Record a lost sale to improve later evidence. AI may prepare a PO or draft transfer, but a person must confirm; receiving and stock changes remain in their normal workflows."
+            : "ที่ Dashboard ให้เลือกสาขาที่มีสิทธิ์ แล้วตรวจแนวโน้ม Demand, ของพร้อมขาย, policy สาขา, ของเข้าที่ผูกสาขา, หลักฐานความผิดปกติ และความแม่นยำเมื่อ forecast ครบกำหนด Demand/PO ที่ไม่ระบุสาขาจะแสดงแยก บันทึก Lost sale เพื่อเพิ่มหลักฐานรอบถัดไป AI เตรียม PO หรือใบโอนร่างได้แต่คนต้องกด Confirm ส่วนการรับของและแก้ยอดยังทำผ่าน workflow เดิม"}
         />
         <Alert
           type="info" showIcon closable style={{ marginTop: 12, borderRadius: 12 }}

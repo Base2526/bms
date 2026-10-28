@@ -45,7 +45,7 @@ test("UTC slots handle the daily boundary and recover only the latest slot after
 test("all schedules match the existing workflow and use real guarded routes", () => {
   const workflow = read(".github/workflows/bms-cron.yml");
   const entries = [...workflow.matchAll(/- name: ([\w-]+)\s+path: (\/api\/\S+)/g)];
-  assert.equal(jobs.length, 19);
+  assert.equal(jobs.length, 20);
   assert.deepEqual(jobs.map((j: typeof job) => [j.name, j.path]).sort(), entries.map((m) => [m[1], m[2]]).sort());
   assert.equal(new Set(jobs.map((j: typeof job) => j.name)).size, jobs.length);
   const dailyStart = workflow.indexOf("  daily:");

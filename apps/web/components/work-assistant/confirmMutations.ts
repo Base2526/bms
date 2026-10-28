@@ -43,6 +43,19 @@ export const WORK_ASSISTANT_CONFIRM_MUTATIONS: Record<
     doc: gql`mutation($id: ID!) { bmsCancelPurchaseOrder(id: $id) }`,
     vars: (args) => ({ id: args.id }),
   },
+  bmsCreatePurchaseOrder: {
+    doc: gql`mutation($requestId: String, $supplierId: ID, $supplierName: String, $note: String, $items: [BmsPurchaseItemInput!]!) {
+      bmsCreatePurchaseOrder(requestId: $requestId, supplierId: $supplierId, supplierName: $supplierName, note: $note, items: $items) { status poId message }
+    }`,
+    vars: (args) => ({ requestId:args.requestId ?? null,supplierId:args.supplierId ?? null,supplierName:args.supplierName ?? null,
+      note:args.note ?? null,items:Array.isArray(args.items) ? args.items : [] }),
+  },
+  bmsCreateStockTransfer: {
+    doc: gql`mutation($input: BmsCreateStockTransferInput!) {
+      bmsCreateStockTransfer(input: $input) { status transferId reason }
+    }`,
+    vars: (args) => ({ input:args.input }),
+  },
   bmsCancelShipment: {
     doc: gql`mutation($id: ID!) { bmsCancelShipment(id: $id) }`,
     vars: (args) => ({ id: args.id }),

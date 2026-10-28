@@ -1522,7 +1522,10 @@ export const typeDefs = /* GraphQL */ `
     # ===== BMS Dashboard (admin) =====
     bmsDashboard: BmsDashboard!
     bmsOperationalAlerts: BmsOperationalAlerts!
-    bmsInventoryActionCenter(windowDays: Int = 30, coverageDays: Int = 30, limit: Int = 5): BmsInventoryActionCenter!
+    bmsInventoryActionCenter(windowDays: Int = 30, coverageDays: Int = 30, limit: Int = 5, offset: Int = 0, locationId: ID, sku: String, size: String): BmsInventoryActionCenter!
+    bmsInventoryAnomalies(locationId: ID, limit: Int = 50): BmsInventoryAnomalyResult!
+    bmsInventoryForecastAccuracy(locationId: ID, days: Int = 90): BmsInventoryForecastAccuracy!
+    bmsInventoryIntelligenceLocations: [BmsLocation!]!
     bmsActions(limit: Int = 50, group: String = "ALL", offset: Int = 0): [BmsAction!]!
     bmsActionMetrics(days: Int = 30): BmsActionMetrics!
     bmsRetentionCases(limit: Int = 100): [BmsRetentionCase!]!
@@ -3205,12 +3208,16 @@ export const typeDefs = /* GraphQL */ `
     deadStockCount: Int!
     expiringLotCount: Int!
     expiringUnits: Int!
+    unallocatedDemandUnits: Int!
+    unallocatedIncomingUnits: Int!
     windowDays: Int!
     coverageDays: Int!
     disclaimer: String!
   }
 
   type BmsInventoryActionLowStockItem {
+    locationId: ID!
+    locationName: String!
     sku: String!
     name: String!
     size: String!
@@ -3219,6 +3226,8 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsStockoutRiskItem {
+    locationId: ID!
+    locationName: String!
     sku: String!
     name: String!
     size: String!
@@ -3229,6 +3238,8 @@ export const typeDefs = /* GraphQL */ `
   }
 
   type BmsPurchaseSuggestionItem {
+    locationId: ID!
+    locationName: String!
     sku: String!
     name: String!
     size: String!
@@ -3245,17 +3256,32 @@ export const typeDefs = /* GraphQL */ `
     recommendedAction: String!
   }
 
-  type BmsSlowMovingItem { sku: String! name: String! size: String! available: Int! soldInWindow: Int! trendPct: Float! classification: String! recommendedAction: String! }
-  type BmsExpiringLotItem { sku: String! name: String! size: String! lotNo: String! expiryDate: String! qty: Int! daysToExpiry: Int! recommendedAction: String! }
+  type BmsSlowMovingItem { locationId: ID! locationName: String! sku: String! name: String! size: String! available: Int! soldInWindow: Int! trendPct: Float! classification: String! recommendedAction: String! }
+  type BmsExpiringLotItem { locationId: ID! locationName: String! sku: String! name: String! size: String! lotNo: String! expiryDate: String! qty: Int! daysToExpiry: Int! recommendedAction: String! }
+  type BmsInventoryUnallocatedSignal { sku: String! size: String! qty: Int! }
 
   type BmsInventoryActionCenter {
+    method: String!
+    methodVersion: String!
+    generatedAt: String!
+    verifiedAt: String!
+    dataQuality: JSON!
     summary: BmsInventoryActionSummary!
     lowStock: [BmsInventoryActionLowStockItem!]!
     stockoutRisk: [BmsStockoutRiskItem!]!
     purchaseSuggestions: [BmsPurchaseSuggestionItem!]!
     slowMoving: [BmsSlowMovingItem!]!
     expiringLots: [BmsExpiringLotItem!]!
+    unallocatedDemand: [BmsInventoryUnallocatedSignal!]!
+    unallocatedIncoming: [BmsInventoryUnallocatedSignal!]!
+    totalCount: Int!
+    truncated: Boolean!
+    nextOffset: Int
   }
+
+  type BmsInventoryAnomaly { code: String! severity: String! locationId: ID locationName: String sku: String size: String observedValue: Float expectedValue: Float threshold: String! evidence: JSON! detectedAt: String! deepLink: String! recommendedReview: String! }
+  type BmsInventoryAnomalyResult { items: [BmsInventoryAnomaly!]! totalCount: Int! truncated: Boolean! verifiedAt: String! }
+  type BmsInventoryForecastAccuracy { method: String! methodVersion: String! windowDays: Int! sampleCount: Int! mae: Float! wape: Float bias: Float! firstGeneratedAt: String lastEvaluatedAt: String disclaimer: String! }
 
   type BmsAction { id: ID! actionKey: String! category: String! priority: String! title: String! titleEn: String! evidence: JSON! expectedImpact: String! expectedImpactEn: String! confidence: Float! ownerId: ID ownerName: String dueAt: String deepLink: String! status: BmsActionStatus! statusReason: String measuredOutcome: JSON firstSeenAt: String! lastSeenAt: String! }
   type BmsActionMetrics { days: Int! total: Int! accepted: Int! completed: Int! acceptanceRate: Float! completionRate: Float! avgTimeToActionMinutes: Float! measuredOutcomeCount: Int! }
@@ -3264,8 +3290,8 @@ export const typeDefs = /* GraphQL */ `
   type BmsRetentionAnalytics { treatmentTotal: Int! holdoutTotal: Int! treatmentConverted: Int! holdoutConverted: Int! treatmentRate: Float! holdoutRate: Float! incrementalLift: Float! retentionRevenue: Float! }
   enum BmsActionStatus { NEW ACCEPTED COMPLETED DISMISSED EXPIRED }
   enum BmsInventoryDemandKind { LOST_SALE RESTOCK_REQUEST }
-  input BmsInventoryDemandInput { sku: String! size: String! kind: BmsInventoryDemandKind! qty: Int! note: String }
-  input BmsInventoryPolicyInput { sku: String! size: String! safetyStockDays: Int! leadTimeDays: Int! }
+  input BmsInventoryDemandInput { locationId: ID sku: String! size: String! kind: BmsInventoryDemandKind! qty: Int! note: String }
+  input BmsInventoryPolicyInput { locationId: ID sku: String! size: String! safetyStockDays: Int! leadTimeDays: Int! }
 
   type BmsAiToolFailureRow {
     tool: String!
@@ -5573,7 +5599,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetReorderPoint(sku: String!, size: String!, locationId: ID!, reorderPoint: Int!): BmsVariant!
 
     # ===== BMS purchase (admin) — PO lifecycle =====
-    bmsCreatePurchaseOrder(supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
+    bmsCreatePurchaseOrder(requestId: String, supplierId: ID, supplierName: String, note: String, items: [BmsPurchaseItemInput!]!): BmsPurchaseResult!
     bmsReceivePurchaseOrder(id: ID!, items: [BmsReceiveItemInput!]!): BmsPurchaseResult!  # OPEN/PARTIAL → PARTIAL/RECEIVED (STOCK_IN)
     bmsCancelPurchaseOrder(id: ID!): Boolean!                                            # OPEN/PARTIAL → CANCELLED
 

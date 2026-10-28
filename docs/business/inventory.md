@@ -1363,6 +1363,27 @@ only a customer-observed lost sale or restock request; guesses inflate purchasin
 `bms_inventory_policies` defaults to seven safety-stock days and seven lead-time days until a manager
 sets a variant-specific policy.
 
+### Branch-aware inventory copilot (10.99)
+
+`inventoryIntelligence.ts` is now the common read model for Dashboard and staff AI tools. Every row
+is keyed by `(tenant, location, SKU, size)`. Demand velocity comes from
+`bms_order_stock_lines`, not catalog items, and usable stock comes from the shared lot-quality rule.
+An optional row in `bms_inventory_location_policies` overrides the tenant-wide policy for one branch.
+Demand and open PO quantities that have no verified branch allocation remain in separate
+`unallocatedDemand` / `unallocatedIncoming` lists; they are never copied into every branch.
+
+The Dashboard and assistant expose deterministic reservation/lot reconciliation, stale transfer/PO,
+repeated count adjustment, wastage/loss and missing-policy signals. These are review signals, not a
+fraud verdict, and never adjust inventory. Transfer suggestions only use donor stock above that
+branch's safety and coverage target. Creating a PO or draft transfer through the assistant is
+propose-only, uses a stable idempotency key, and still requires the shared human confirmation UI.
+Receiving a PO is deliberately not an AI tool.
+
+The daily `inventory-intelligence-maintenance` job records bounded forecast evidence and evaluates a
+matured snapshot against later verified stock demand. MAE, WAPE and bias are reported with sample
+count. Forecast rows are evidence only: they never create a PO, transfer stock, alter a policy or
+change an action automatically.
+
 Missing product cost is not zero cost. Profit output is incomplete (`cost`, `profit`, and margin are
 `null`) whenever any sold SKU lacks `cost_price`, while known-cost and missing-line/SKU counts remain
 visible for repair. Action Center separately flags missing costs and zero prices. Zero price remains

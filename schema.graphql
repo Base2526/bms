@@ -1965,6 +1965,8 @@ type BmsExpenseTaxTotal {
 type BmsExpiringLotItem {
   daysToExpiry: Int!
   expiryDate: String!
+  locationId: ID!
+  locationName: String!
   lotNo: String!
   name: String!
   qty: Int!
@@ -2284,16 +2286,28 @@ type BmsInboxDiagnosticMessageResult {
 }
 
 type BmsInventoryActionCenter {
+  dataQuality: JSON!
   expiringLots: [BmsExpiringLotItem!]!
+  generatedAt: String!
   lowStock: [BmsInventoryActionLowStockItem!]!
+  method: String!
+  methodVersion: String!
+  nextOffset: Int
   purchaseSuggestions: [BmsPurchaseSuggestionItem!]!
   slowMoving: [BmsSlowMovingItem!]!
   stockoutRisk: [BmsStockoutRiskItem!]!
   summary: BmsInventoryActionSummary!
+  totalCount: Int!
+  truncated: Boolean!
+  unallocatedDemand: [BmsInventoryUnallocatedSignal!]!
+  unallocatedIncoming: [BmsInventoryUnallocatedSignal!]!
+  verifiedAt: String!
 }
 
 type BmsInventoryActionLowStockItem {
   available: Int!
+  locationId: ID!
+  locationName: String!
   name: String!
   reorderPoint: Int!
   size: String!
@@ -2312,6 +2326,8 @@ type BmsInventoryActionSummary {
   slowMovingCount: Int!
   stockoutWithin7DaysCount: Int!
   totalSuggestedQty: Int!
+  unallocatedDemandUnits: Int!
+  unallocatedIncomingUnits: Int!
   windowDays: Int!
 }
 
@@ -2330,8 +2346,32 @@ type BmsInventoryAgingReport {
   stockedVariantCount: Int!
 }
 
+type BmsInventoryAnomaly {
+  code: String!
+  deepLink: String!
+  detectedAt: String!
+  evidence: JSON!
+  expectedValue: Float
+  locationId: ID
+  locationName: String
+  observedValue: Float
+  recommendedReview: String!
+  severity: String!
+  size: String
+  sku: String
+  threshold: String!
+}
+
+type BmsInventoryAnomalyResult {
+  items: [BmsInventoryAnomaly!]!
+  totalCount: Int!
+  truncated: Boolean!
+  verifiedAt: String!
+}
+
 input BmsInventoryDemandInput {
   kind: BmsInventoryDemandKind!
+  locationId: ID
   note: String
   qty: Int!
   size: String!
@@ -2341,6 +2381,19 @@ input BmsInventoryDemandInput {
 enum BmsInventoryDemandKind {
   LOST_SALE
   RESTOCK_REQUEST
+}
+
+type BmsInventoryForecastAccuracy {
+  bias: Float!
+  disclaimer: String!
+  firstGeneratedAt: String
+  lastEvaluatedAt: String
+  mae: Float!
+  method: String!
+  methodVersion: String!
+  sampleCount: Int!
+  wape: Float
+  windowDays: Int!
 }
 
 type BmsInventoryLot {
@@ -2371,6 +2424,7 @@ input BmsInventoryOpeningInput {
 
 input BmsInventoryPolicyInput {
   leadTimeDays: Int!
+  locationId: ID
   safetyStockDays: Int!
   size: String!
   sku: String!
@@ -2389,6 +2443,12 @@ type BmsInventorySummary {
   stockValue: Float!
   totalUnits: Int!
   variantCount: Int!
+}
+
+type BmsInventoryUnallocatedSignal {
+  qty: Int!
+  size: String!
+  sku: String!
 }
 
 type BmsInventoryValuationReport {
@@ -7639,6 +7699,8 @@ type BmsPurchaseSuggestionItem {
   demandFeedback: Int!
   incomingQty: Int!
   leadTimeDays: Int!
+  locationId: ID!
+  locationName: String!
   name: String!
   recommendedAction: String!
   safetyStock: Int!
@@ -8786,6 +8848,8 @@ type BmsSlipVerification {
 type BmsSlowMovingItem {
   available: Int!
   classification: String!
+  locationId: ID!
+  locationName: String!
   name: String!
   recommendedAction: String!
   size: String!
@@ -8899,6 +8963,8 @@ type BmsStockoutRiskItem {
   available: Int!
   avgPerDay: Float!
   daysToStockout: Float
+  locationId: ID!
+  locationName: String!
   name: String!
   projectedStockoutDate: String
   size: String!
@@ -9934,7 +10000,7 @@ type Mutation {
   bmsCreateOrder(channel: String, couponCode: String, customerRef: String, items: [BmsOrderItemInput!]!, locationId: ID, preferredCarrier: BmsCarrier): BmsReorderResult!
   bmsCreatePharmacyLabOrder(items: [BmsPharmacyLabCartItemInput!]!): BmsReorderResult!
   bmsCreateProductCategory(name: String!): BmsProductCategory!
-  bmsCreatePurchaseOrder(items: [BmsPurchaseItemInput!]!, note: String, supplierId: ID, supplierName: String): BmsPurchaseResult!
+  bmsCreatePurchaseOrder(items: [BmsPurchaseItemInput!]!, note: String, requestId: String, supplierId: ID, supplierName: String): BmsPurchaseResult!
   bmsCreateRestaurantArea(locationId: ID!, name: String!): BmsRestaurantArea!
   bmsCreateRestaurantTable(areaId: ID!, locationId: ID!, name: String!, seats: Int!, shape: String!): BmsRestaurantTableAdmin!
   bmsCreateShipment(carrier: BmsCarrier!, note: String, orderId: ID!, trackingNo: String): BmsShipmentResult!
@@ -10621,7 +10687,10 @@ type Query {
   bmsImprovementWorkspace(filter: BmsImprovementFilter): JSON!
   bmsInboxDiagnosticLatest: [BmsInboxDiagnosticLatest!]!
   bmsInboxUnreadCount: Int!
-  bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, windowDays: Int = 30): BmsInventoryActionCenter!
+  bmsInventoryActionCenter(coverageDays: Int = 30, limit: Int = 5, locationId: ID, offset: Int = 0, size: String, sku: String, windowDays: Int = 30): BmsInventoryActionCenter!
+  bmsInventoryAnomalies(limit: Int = 50, locationId: ID): BmsInventoryAnomalyResult!
+  bmsInventoryForecastAccuracy(days: Int = 90, locationId: ID): BmsInventoryForecastAccuracy!
+  bmsInventoryIntelligenceLocations: [BmsLocation!]!
   bmsInventoryLots(locationId: ID, productSku: String, size: String): [BmsInventoryLot!]!
   bmsInventorySummary(locationId: ID): BmsInventorySummary!
   bmsInventoryValuation(limit: Int, locationId: ID!, offset: Int, search: String): BmsInventoryValuationReport!
