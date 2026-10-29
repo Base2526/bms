@@ -364,14 +364,20 @@ export default function NotificationPage() {
 
 ---
 
-## 4. ถ้าอยากให้ URL รองรับ `/th/...` / `/en/...` (optional)
+## 4. URL สาธารณะ `/th/...` / `/en/...`
 
-ตอนนี้คุณใช้ cookie เป็นหลัก ซึ่งโอเคแล้ว
-แต่ถ้าอยาก SEO-friendly หรือแชร์ลิงก์ระบุภาษาได้:
+หน้าการตลาดและศูนย์เรียนรู้มี URL ภาษาคงที่แล้ว เช่น `/th/restaurant`, `/en/restaurant`,
+`/th/learn/**` และ `/en/learn/**` โดย `middleware.ts` rewrite เข้า page implementation เดิมและ
+กำหนด `lang` ให้ request นั้นก่อน RootLayout อ่านค่า จึงไม่ต้องทำสำเนา page/component สองชุด
 
-* ให้เพิ่ม segment `[lang]` เช่น `app/[lang]/page.tsx`
-* ใช้ Next.js i18n หรือ `next-intl` ช่วยจัดการ routing
-* แต่เพราะระบบคุณเริ่มจาก cookie แล้ว ผมจะไม่เปลี่ยน structure ตอนนี้ (เดี๋ยว refactor ใหญ่)
+* เพิ่มหน้าสาธารณะที่ต้อง index ใน `lib/publicSeo.ts` เท่านั้น ห้ามใส่ Admin, POS, checkout,
+  signed-token หรือ tenant-shop URL ลง catalog นี้
+* URL เดิมที่ไม่มีภาษา redirect 307 ตาม cookie และใช้ภาษาไทยเมื่อยังไม่มี cookie พร้อม `Cache-Control: private, no-store` เพื่อไม่ให้ cache ปลายทางภาษาของผู้ใช้
+* metadata ต้องใช้ `publicAlternates()` เพื่อให้ self-canonical, `th-TH`, `en-US` และ
+  `x-default` ตรงกัน
+* link ระหว่างหน้าสาธารณะใช้ `localizedPublicPath()` เพื่อไม่สร้าง redirect hop
+* `robots.ts` และ root `sitemap.ts` เป็น contract หลัก; sitemap ใส่เฉพาะ URL ที่เปิดเผยจริง
+* `OAI-SearchBot` ใช้กับ ChatGPT Search ส่วนการอนุญาต GPTBot สำหรับ training เป็นนโยบายแยกกัน
 
 ---
 
@@ -384,8 +390,8 @@ export default function NotificationPage() {
 5. ปุ่มเปลี่ยนภาษาที่ Header:
 
    * เซ็ต cookie `lang=...`
-   * เรียก `setLang()`
-   * `router.refresh()` เพื่อ sync server components
+   * ถ้าอยู่ public localized URL ให้เปลี่ยน prefix และคง query/hash ไว้
+   * route อื่นเรียก `router.refresh()` เพื่อ sync server components
 
 ---
 

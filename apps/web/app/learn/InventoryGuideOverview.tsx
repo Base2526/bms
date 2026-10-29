@@ -7,6 +7,7 @@ import { inventoryNarrationCues, type InventoryNarrationTarget } from "@/lib/lea
 import thaiAudio from "./inventoryThaiAudio.json";
 import { LearningFlowFullscreen } from "./LearningFlowFullscreen";
 import s from "./learning.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 type Lang = "th" | "en";
 const recordings: Record<string, { file: string; duration: number }> = thaiAudio;
@@ -391,6 +392,6 @@ export function InventoryGuideOverview({ lang }: { lang: Lang }) {
       <p>{t.architectureNote}</p>
     </div>
 
-    <Link className={s.inventoryGuideLink} href="/learn/guides/inventory-ai-assistant?track=inventory">{t.learnMore} →</Link>
+    <Link className={s.inventoryGuideLink} href={localizedPublicPath("/learn/guides/inventory-ai-assistant?track=inventory", lang)}>{t.learnMore} →</Link>
   </section>;
 }

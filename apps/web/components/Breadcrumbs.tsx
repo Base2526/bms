@@ -6,26 +6,30 @@ import { usePathname } from "next/navigation";
 import { HomeOutlined, RightOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 import { useBreadcrumbsOverride, type BreadcrumbItem } from "./breadcrumbs-context";
+import { isLocalizedPublicPath, localeFromPublicPath, localizedPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
 const PUBLIC_PRODUCT_PATH_RE = /^\/shop\/[^/]+\/products\/[^/]+$/;
 
 export default function Breadcrumbs() {
   const pathname = usePathname() || "/";
-  const { t } = useI18n();
+  const locale = localeFromPublicPath(pathname);
+  const contentPathname = stripPublicLocale(pathname);
+  const { t, lang } = useI18n();
   const override = useBreadcrumbsOverride();
 
   const items = useMemo<BreadcrumbItem[] | null>(() => {
-    if (override.pathname === pathname && override.items?.length) {
+    if ((override.pathname === pathname || override.pathname === contentPathname) && override.items?.length) {
       return override.items.map((item, idx) => ({
         ...item,
+        href: locale && item.href && isLocalizedPublicPath(item.href) ? localizedPublicPath(item.href, locale) : item.href,
         isLast: item.isLast ?? idx === override.items!.length - 1,
         isClickable: item.isClickable ?? Boolean(item.href),
       }));
     }
 
-    if (PUBLIC_PRODUCT_PATH_RE.test(pathname)) return null;
+    if (PUBLIC_PRODUCT_PATH_RE.test(contentPathname)) return null;
 
-    const segmentsRaw = pathname
+    const segmentsRaw = contentPathname
       .split("?")[0]
       .split("#")[0]
       .split("/")
@@ -40,7 +44,7 @@ export default function Breadcrumbs() {
 
     const first = [
       {
-        href: "/",
+        href: locale ? localizedPublicPath("/", locale) : "/",
         label: t("breadcrumbs.home"),
         isLast: segments.length === 0,
         isClickable: true,
@@ -50,14 +54,18 @@ export default function Breadcrumbs() {
     const rest = segments.map((seg, idx) => {
       const href = isPostDetailRoute
         ? `/post/${seg}`
-        : "/" + segments.slice(0, idx + 1).join("/");
+        : (locale ? localizedPublicPath("/" + segments.slice(0, idx + 1).join("/"), locale) : "/" + segments.slice(0, idx + 1).join("/"));
 
-      const label = isPostDetailRoute
+      const authorityLabels: Record<string, string> = {
+        about: lang === "th" ? "เกี่ยวกับ BMS" : "About BMS",
+        "ai-business-system": lang === "th" ? "AI ใน BMS" : "AI in BMS",
+      };
+      const label = authorityLabels[seg] ?? (isPostDetailRoute
         ? decodeURIComponent(seg)
         : decodeURIComponent(seg)
             .replace(/^\[|\]$/g, "")
             .replace(/-/g, " ")
-            .replace(/\b\w/g, (c) => c.toUpperCase());
+            .replace(/\b\w/g, (c) => c.toUpperCase()));
 
       return {
         href,
@@ -68,7 +76,7 @@ export default function Breadcrumbs() {
     });
 
     return [...first, ...rest];
-  }, [override.items, override.pathname, pathname, t]);
+  }, [contentPathname, lang, locale, override.items, override.pathname, pathname, t]);
 
   if (!items?.length) return null;
 

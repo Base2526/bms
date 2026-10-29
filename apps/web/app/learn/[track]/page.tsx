@@ -7,11 +7,14 @@ import { BusinessGuideOverview } from "../BusinessGuideOverview";
 import { InventoryGuideOverview } from "../InventoryGuideOverview";
 import type { BusinessTrackId } from "@/lib/learning/businessGuideFlow";
 import s from "../learning.module.css";
+import StructuredData from "@/components/seo/StructuredData";
+import { localizedPublicPath } from "@/lib/publicSeo";
+import { breadcrumbJsonLd } from "@/lib/seoJsonLd";
 
 export function generateMetadata({ params }: { params: { track: string } }) {
   if (!isTrack(params.track)) return {};
   const lang = learningLang(); const track = tracks[params.track];
-  return learningMetadata(localize(track.title, lang), localize(track.description, lang), `/learn/${params.track}`);
+  return learningMetadata(localize(track.title, lang), localize(track.description, lang), `/learn/${params.track}`, lang);
 }
 type FormatOption = { value: TrackFormat; icon: string; title: { th: string; en: string }; description: { th: string; en: string } };
 const restaurantFormats: Record<RestaurantFormat, Omit<FormatOption, "value">> = {
@@ -91,16 +94,22 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
           ? (th ? ["เมนูและสูตร", "โต๊ะ / QR", "รอบครัว", "เคลียร์บิล"] : ["Menu & recipes", "Tables / QR", "Kitchen rounds", "Settlement"])
           : (th ? ["ใบอนุญาต", "เภสัชกร", "ล็อต / วันหมดอายุ", "หลักฐาน"] : ["Licences", "Pharmacist", "Lot / expiry", "Evidence"]);
 
-  return <div className={`${s.layout} ${s.trackLayout} ${s.inventoryFullLayout}`}>
+  return <>
+    <StructuredData id="learning-track-breadcrumb-jsonld" data={breadcrumbJsonLd(lang, [
+      { name: th ? "หน้าหลัก" : "Home", path: "/" },
+      { name: th ? "ศูนย์เรียนรู้" : "Learning center", path: "/learn" },
+      { name: localize(track.title, lang), path: `/learn/${id}` },
+    ])} />
+    <div className={`${s.layout} ${s.trackLayout} ${s.inventoryFullLayout}`}>
     <Sidebar lang={lang} track={id} />
     <div className={`${s.trackContents} ${s.inventoryFullContent}`}>
-      <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href="/learn">{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><span>{localize(track.title, lang)}</span></nav>
+      <nav className={s.breadcrumb} aria-label="Breadcrumb"><Link href={localizedPublicPath("/learn", lang)}>{th ? "ศูนย์เรียนรู้" : "Learning center"}</Link><span>/</span><span>{localize(track.title, lang)}</span></nav>
       <section className={`${s.trackHero} ${s.inventoryTrackHero} ${id === "inventory" ? "" : s.businessTrackHero}`} data-track={id}>
         <div className={s.inventoryHeroCopy}>
           <span className={s.eyebrow}>{items.length} {th ? "บทเรียน · อ่านได้โดยไม่ต้องสมัคร" : "lessons · No signup needed"}</span>
           <h1>{track.icon} {th ? "คู่มือ" : "Guide:"} {localize(track.title, lang)}</h1>
           <p>{localize(track.description, lang)}</p>
-          <Link className={s.button} href={`/learn/guides/${items[0].slug}?${lessonQuery}`}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
+          <Link className={s.button} href={localizedPublicPath(`/learn/guides/${items[0].slug}?${lessonQuery}`, lang)}>{th ? "เริ่มจากบทแรก" : "Start the first lesson"} →</Link>
         </div>
         {id === "inventory" ? <div className={s.inventoryHeroVisual} aria-hidden="true">
           <div className={s.inventoryHeroShelf}><span>▰</span><span>▰</span><span>▰</span></div>
@@ -120,9 +129,9 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
 
       {formatOptions && <section className={`${s.formatPanel} ${s.businessFormatPanel}`} aria-labelledby="track-format-title">
         <div className={s.formatHeading}><div><h2 id="track-format-title">{id === "restaurant" ? (th ? "ร้านของคุณให้บริการแบบไหน?" : "How does your shop serve customers?") : (th ? "ร้านของคุณขายสินค้าแบบไหน?" : "How does your shop sell?")}</h2><p>{th ? "เลือกเพื่อซ่อนขั้นตอนที่ไม่เกี่ยวข้อง การเลือกนี้ไม่เปลี่ยนการตั้งค่าร้านจริง" : "Choose a format to hide unrelated steps. This does not change your actual shop settings."}</p></div>
-          <Link href={`/learn/${id}`} className={!format ? s.formatAllActive : s.formatAll} aria-current={!format ? "page" : undefined}>{th ? "ดูคู่มือทั้งหมด" : "View all lessons"}</Link>
+          <Link href={localizedPublicPath(`/learn/${id}`, lang)} className={!format ? s.formatAllActive : s.formatAll} aria-current={!format ? "page" : undefined}>{th ? "ดูคู่มือทั้งหมด" : "View all lessons"}</Link>
         </div>
-        <div className={`${s.formatChoices} ${formatOptions.length === 4 ? s.formatChoicesFour : ""}`}>{formatOptions.map((option) => <Link key={option.value} href={`/learn/${id}?format=${option.value}`} className={`${s.formatCard} ${format === option.value ? s.formatCardActive : ""}`} aria-current={format === option.value ? "page" : undefined}>
+        <div className={`${s.formatChoices} ${formatOptions.length === 4 ? s.formatChoicesFour : ""}`}>{formatOptions.map((option) => <Link key={option.value} href={localizedPublicPath(`/learn/${id}?format=${option.value}`, lang)} className={`${s.formatCard} ${format === option.value ? s.formatCardActive : ""}`} aria-current={format === option.value ? "page" : undefined}>
           <span aria-hidden="true">{option.icon}</span><div><h3>{option.title[lang]}</h3><p>{option.description[lang]}</p></div>
         </Link>)}</div>
         <p className={s.formatNotice}>{formatNotice(format, lang)}</p>
@@ -130,7 +139,7 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
 
       {id === "inventory" ? <InventoryGuideOverview lang={lang} /> : <BusinessGuideOverview track={id as BusinessTrackId} lang={lang} />}
 
-      {id !== "inventory" && <section className={`${s.callout} ${s.businessInventoryCallout}`}><div><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation live in the specialist guide."}</p></div><Link href="/learn/inventory">{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></section>}
+      {id !== "inventory" && <section className={`${s.callout} ${s.businessInventoryCallout}`}><div><h2>{th ? "ต้องทำงานสต็อกแบบละเอียด?" : "Need the full inventory workflow?"}</h2><p>{th ? "งานรับเข้า โอน ตรวจนับ ยอดจอง ล็อต กักกัน ของเสีย และกระทบยอดอยู่ในคู่มือเฉพาะงาน" : "Receiving, transfers, counts, reservations, lots, quarantine, wastage and reconciliation live in the specialist guide."}</p></div><Link href={localizedPublicPath("/learn/inventory", lang)}>{th ? "เปิดคู่มือสต็อกและคลังสินค้า →" : "Open inventory & warehouse guide →"}</Link></section>}
 
       <section className={s.inventoryLessonCatalog} aria-labelledby={`${id}-lessons-title`}>
         <div className={s.inventoryLessonCatalogHeading}><div><span aria-hidden="true">▣</span><h2 id={`${id}-lessons-title`}>{th ? "รายการบทเรียนทั้งหมด" : "All lessons"}</h2></div><strong>{items.length} {th ? "บทเรียน" : "lessons"}</strong></div>
@@ -141,7 +150,7 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
             return <section className={s.inventoryLessonGroup} data-category={category} key={category}>
               <h2 className={s.sectionTitle}><span aria-hidden="true">{categoryIcons[category]}</span>{localize(categoryLabels[category], lang)}<small>{categoryItems.length} {th ? "บทเรียน" : "lessons"}</small></h2>
               <ol className={`${s.lessonList} ${s.compactLessons}`}>{categoryItems.map((lesson) => <li key={lesson.slug}>
-                <Link className={s.lessonRow} href={`/learn/guides/${lesson.slug}?${lessonQuery}`}><span>{String(items.indexOf(lesson) + 1).padStart(2, "0")}</span><div><h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p></div><b aria-hidden="true">›</b></Link>
+                <Link className={s.lessonRow} href={localizedPublicPath(`/learn/guides/${lesson.slug}?${lessonQuery}`, lang)}><span>{String(items.indexOf(lesson) + 1).padStart(2, "0")}</span><div><h3>{localize(lesson.title, lang)}</h3><p>{localize(lesson.summary, lang)}</p></div><b aria-hidden="true">›</b></Link>
               </li>)}</ol>
             </section>;
           })}
@@ -151,5 +160,6 @@ export default function TrackPage({ params, searchParams }: { params: { track: s
         <ReadingChecklist items={items.map(({ slug, title }) => ({ slug, title }))} track={id} format={format} lang={lang} />
       </details>
     </div>
-  </div>;
+    </div>
+  </>;
 }

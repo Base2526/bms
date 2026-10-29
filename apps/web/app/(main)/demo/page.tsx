@@ -29,8 +29,9 @@ import {
 import { useI18n } from '@/lib/i18nContext';
 import { resolveBilingual, type Bilingual } from '@/lib/static-page-i18n';
 import type { Lang } from '@/i18n';
+import { localizedPublicPath } from '@/lib/publicSeo';
 
-const { Paragraph, Text } = Typography;
+const { Paragraph, Text, Title } = Typography;
 
 type ArchetypeKey = 'fashion' | 'food' | 'beauty' | 'grocery' | 'gadgets';
 
@@ -849,9 +850,9 @@ export default function DemoPage() {
             >
               <DownOutlined style={{ fontSize: 10 }} />
             </span>
-            <Text strong style={{ fontSize: 16.5, flex: 1 }}>
+            <Title level={1} style={{ fontSize: 16.5, lineHeight: 1.5, margin: 0, flex: 1 }}>
               {ui.heroCollapsedTitle}
-            </Text>
+            </Title>
             {!heroOpen ? <Text type="secondary" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>{ui.heroCollapsedHint}</Text> : null}
           </div>
 
@@ -1165,7 +1166,7 @@ export default function DemoPage() {
                     {ui.nextUpBody}
                   </Paragraph>
                   <Space wrap>
-                    <Link href="/help">
+                    <Link href={localizedPublicPath("/help", lang)}>
                       <Button>{ui.viewHelpCta}</Button>
                     </Link>
                     <Link href="/shop-signup">

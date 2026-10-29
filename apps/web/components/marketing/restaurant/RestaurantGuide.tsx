@@ -12,6 +12,27 @@ import { restaurantFlows } from "./flowContent";
 import { ADDITIONAL_GUIDE_SHOPS, PRIMARY_GUIDE_SHOPS, flowFit, guideFlows, guideFlowCopy, type GuideProfile, type ServiceStyle, type ShopType } from "./guideProfiles";
 import SequenceDiagram from "./SequenceDiagram";
 import styles from "./restaurant.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
+
+function JourneyIcon({ index }: { index: number }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...common}>
+    {index === 0 && <><path d="M5 8h14l-1 11H6L5 8Z" /><path d="m8 8 2-4m6 4-2-4M4 8h16" /></>}
+    {index === 1 && <><path d="M7 3h10a2 2 0 0 1 2 2v16l-3-2-4 2-4-2-3 2V5a2 2 0 0 1 2-2Z" /><path d="M8 8h8m-8 4h8m-8 4h5" /></>}
+    {index === 2 && <><path d="M5 12a4 4 0 0 1 3-3.87A4.5 4.5 0 0 1 16.5 7 4 4 0 0 1 19 14H5a2 2 0 0 1 0-4" /><path d="M7 14v5h10v-5" /></>}
+    {index === 3 && <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M6 15h4" /></>}
+    {index === 4 && <><path d="M4 20V10m5 10V4m6 16v-7m5 7V7" /><path d="m3 6 5-3 6 5 6-5" /></>}
+  </svg>;
+}
+
+function TrustIcon({ index }: { index: number }) {
+  const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false" {...common}>
+    {index === 0 && <><ellipse cx="12" cy="5" rx="7" ry="3" /><path d="M5 5v7c0 1.7 3.1 3 7 3s7-1.3 7-3V5M5 12v7c0 1.7 3.1 3 7 3s7-1.3 7-3v-7" /></>}
+    {index === 1 && <><path d="M12 3 4.5 6v5.5c0 4.7 3.2 7.9 7.5 9.5 4.3-1.6 7.5-4.8 7.5-9.5V6L12 3Z" /><path d="m8.5 12 2.2 2.2 4.8-5" /></>}
+    {index === 2 && <><path d="m13 2-9 12h7l-1 8 10-13h-7V2Z" /></>}
+  </svg>;
+}
 
 export default function RestaurantGuide() {
   const { lang, t } = useI18n(), { admin, loading } = useSessionCtx();
@@ -67,13 +88,14 @@ export default function RestaurantGuide() {
   const printScope = `${profile.shop === "board_game_cafe" ? copy.profile.additionalHeading : copy.profile.primaryHeading} · ${shopLabels[profile.shop]}${profile.shop === "restaurant" ? ` · ${copy.profile.services[profile.service]}` : ""}`;
   const fitLabel = (value: ReturnType<typeof flowFit>) => value === "restaurant_example" ? copy.profile.restaurantExample : copy.profile[value];
   const recommended = restaurantFlows.filter(item => flowFit(item.id, profile) === "recommended");
-  const learningHref = profile.shop === "food_beverage"
+  const learningPath = profile.shop === "food_beverage"
     ? "/learn/retail?format=food-counter"
     : profile.shop === "board_game_cafe"
       ? "/learn/board-game"
       : profile.shop === "restaurant"
         ? `/learn/restaurant?format=${profile.service === "dine_in" ? "dine-in" : profile.service === "counter" ? "counter-kitchen" : "pickup-delivery"}`
         : "/learn/restaurant";
+  const learningHref = localizedPublicPath(learningPath, lang);
   const address = (id: number, nextProfile: GuideProfile) => {
     const url = new URL(window.location.href);
     if (nextProfile.shop === "overview") url.searchParams.delete("shop");
@@ -123,21 +145,49 @@ export default function RestaurantGuide() {
   };
   return <article className={styles.page} data-restaurant-guide>
     <header className={styles.hero}>
-      <div>
+      <div className={styles.heroCopy}>
         <p className={styles.eyebrow}>BMS FOR RESTAURANTS &amp; CAFÉS</p>
         <h1>{copy.title}</h1>
-      </div>
-      <div>
         <p className={styles.intro}>{copy.description}</p>
-        <ol className={styles.journey}>{copy.journey.map(step => <li key={step}>{step}</li>)}</ol>
         <div className={styles.actions}>
           <a className={styles.primaryButton} href="#restaurant-flows">{copy.explore} <span aria-hidden="true">↓</span></a>
           <Link className={styles.button} href={learningHref}>{copy.learnGuide} <span aria-hidden="true">→</span></Link>
-          <Link className={styles.button} href="/cost-pricing">{lang === "th" ? "คำนวณต้นทุนและราคาขาย" : "Costs and selling prices"} <span aria-hidden="true">→</span></Link>
-          <a className={styles.button} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} <span aria-hidden="true">↗</span></a>
+        </div>
+        <nav className={styles.heroLinks} aria-label={lang === "th" ? "เครื่องมือเพิ่มเติม" : "More tools"}>
+          <Link href={localizedPublicPath("/cost-pricing", lang)}>{lang === "th" ? "คำนวณต้นทุนและราคาขาย" : "Costs and selling prices"} <span aria-hidden="true">→</span></Link>
+          <a href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} <span aria-hidden="true">↗</span></a>
+        </nav>
+      </div>
+
+      <div className={styles.heroVisual}>
+        <ol className={styles.journey} aria-label={lang === "th" ? "ลำดับการทำงานของร้าน" : "Restaurant workflow"}>
+          {copy.journey.map((step, index) => <li key={step}>
+            <span className={styles.journeyIcon}><JourneyIcon index={index} /></span>
+            <strong>{step}</strong>
+          </li>)}
+        </ol>
+        <div className={styles.visualBottom}>
+          <div className={styles.signalCard}>
+            <span className={styles.signalIcon}><TrustIcon index={0} /></span>
+            <span><strong>{copy.heroSignalTitle}</strong><small>{copy.heroSignalDescription}</small></span>
+          </div>
+          <div className={styles.operationsPreview} aria-hidden="true">
+            <div className={styles.previewTop}><span /><span /></div>
+            <div className={styles.previewBody}>
+              <div className={styles.previewNav}><i /><i /><i /></div>
+              <div className={styles.previewRows}><span /><span /><span /><span /></div>
+            </div>
+          </div>
         </div>
       </div>
     </header>
+
+    <section className={styles.trustStrip} aria-label={lang === "th" ? "จุดเด่นของ BMS" : "Why BMS"}>
+      {copy.trustPoints.map((point, index) => <div className={styles.trustItem} key={point.title}>
+        <span className={styles.trustIcon}><TrustIcon index={index} /></span>
+        <span><strong>{point.title}</strong><small>{point.description}</small></span>
+      </div>)}
+    </section>
 
     <section id="restaurant-flows" className={styles.explore} aria-labelledby="restaurant-flows-title">
       <div className={styles.sectionHead}><p className={styles.eyebrow}>HOW YOUR RESTAURANT WORKS</p>

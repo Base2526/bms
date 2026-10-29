@@ -6,6 +6,7 @@ import { LaptopOutlined, MoonOutlined, SunOutlined } from "@ant-design/icons";
 import { gql, useMutation } from "@apollo/client";
 
 import { useTheme } from "@/lib/useTheme";
+import { useSession } from "@/lib/useSession";
 import type { ThemeMode } from "@/lib/theme";
 
 const M_UPDATE_THEME = gql`
@@ -31,6 +32,7 @@ function iconFor(mode: ThemeMode) {
 
 function ThemeToggleInner() {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const { isAuthenticated } = useSession();
   const [updateTheme] = useMutation(M_UPDATE_THEME);
 
   const items: MenuProps["items"] = useMemo(
@@ -50,13 +52,15 @@ function ThemeToggleInner() {
       onClick: ({ key }: { key: string }) => {
         if (key === "light" || key === "dark" || key === "system") {
           setTheme(key);
-          void updateTheme({ variables: { data: { themePreference: key } } }).catch(() => {
-            // Public/signed-out pages still keep the local cookie/storage preference.
-          });
+          if (isAuthenticated) {
+            void updateTheme({ variables: { data: { themePreference: key } } }).catch(() => {
+              // Keep the local preference if saving to the profile fails.
+            });
+          }
         }
       },
     }),
-    [items, setTheme, theme, updateTheme]
+    [items, setTheme, theme, updateTheme, isAuthenticated]
   );
 
   const tooltip = theme === "system" ? `Theme: System (${resolvedTheme})` : `Theme: ${labelFor(theme)}`;

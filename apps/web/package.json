@@ -12,6 +12,8 @@
     "test:db": "node ../../scripts/run-contract-tests.mjs db",
     "test:all": "node ../../scripts/run-contract-tests.mjs all",
     "gate": "npm run typecheck && npm run test:pure && npm run build",
+    "seo:audit": "node ../../scripts/public-seo-live-audit.mjs",
+    "seo:indexnow": "node ../../scripts/public-seo-indexnow.mjs",
     "schema:export": "tsx --import ../../scripts/testing/next-runtime-shim.mjs ../../scripts/export-graphql-schema.mts",
     "test:user-admin": "tsx --test ../../scripts/auth-identity-contract.test.mts ../../scripts/user-admin-contract.test.mts",
     "test:pos": "tsx --test ../../scripts/pos-contract.test.mts ../../scripts/pos-client-core-contract.test.mts"

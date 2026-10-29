@@ -62,9 +62,14 @@ Desktop keeps the expanded navigation; the menu does not push article content do
 
 `/learn` skips SessionLayer (not the auth-route gate) so the article HTML remains server-rendered and
 does not initialize global chat/realtime. A small session-aware CTA reads `/api/auth/me` only.
-The pages use normal global theme variables, cookies for Thai/English selection and scoped CSS.
-Canonical metadata is per page; `/learn/sitemap.xml` lists indexable learning URLs and can be
-submitted to search engines. Existing help pages stay available.
+The pages use normal global theme variables, scoped CSS and language-prefixed public URLs. Requests
+to `/th/learn/**` and `/en/learn/**` are rewritten to the shared page implementation while the
+middleware pins the request language, so the server-rendered `<html lang>`, copy and metadata agree.
+Legacy unprefixed public URLs use a temporary 307 redirect to the current cookie language (Thai by
+default), with private/no-store caching so a user's language choice is not cached permanently.
+Every page has a self-canonical plus reciprocal `th-TH`, `en-US` and `x-default` alternates.
+`/sitemap.xml` is the primary site sitemap; `/learn/sitemap.xml` remains as the localized
+learning-only compatibility sitemap. Existing help pages stay available.
 
 Design references: [Shopify initial setup](https://help.shopify.com/en/manual/intro-to-shopify)
 and [setup-guide composition](https://shopify.dev/docs/api/app-home/latest/patterns/compositions/setup-guide):

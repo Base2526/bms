@@ -5,12 +5,23 @@ import {
   type RetailLocalPlatform,
 } from "@/lib/bms/retailLocalReleases";
 import RetailLocalPageClient from "./RetailLocalPageClient";
+import { cookies } from "next/headers";
+import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
 
-export const metadata: Metadata = {
-  title: "BMS Retail Local",
-  description:
-    "Download the BMS Retail Local installer for a Windows, Ubuntu or macOS shop computer.",
-};
+export function generateMetadata(): Metadata {
+  const lang: PublicSeoLocale = cookies().get("lang")?.value === "en" ? "en" : "th";
+  const title = "BMS Retail Local";
+  const description = lang === "th"
+    ? "ดาวน์โหลดตัวติดตั้ง BMS Retail Local สำหรับคอมพิวเตอร์ร้านที่ใช้ Windows, Ubuntu หรือ macOS"
+    : "Download the BMS Retail Local installer for a Windows, Ubuntu or macOS shop computer.";
+  return {
+    title,
+    description,
+    alternates: publicAlternates("/retail-local", lang),
+    openGraph: { title, description, url: localizedPublicPath("/retail-local", lang), type: "website", images: [{ url: "/og.png", width: 1200, height: 630 }] },
+    twitter: { card: "summary_large_image", title, description, images: ["/og.png"] },
+  };
+}
 
 export const dynamic = "force-dynamic";
 
