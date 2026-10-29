@@ -1,7 +1,11 @@
 import type { MetadataRoute } from "next";
-import { lessons, LEARNING_REVIEWED_AT } from "@/lib/learning/catalog";
+import { lessons, LEARNING_REVIEWED_AT, trackOrder } from "@/lib/learning/catalog";
+import { absolutePublicUrl, localizedPublicPath, PUBLIC_SEO_LOCALES } from "@/lib/publicSeo";
 export default function sitemap(): MetadataRoute.Sitemap {
-  const base = (process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com").replace(/\/$/, "");
-  return ["/learn", "/learn/retail", "/learn/board-game", "/learn/restaurant", "/learn/pharmacy", "/learn/inventory", ...lessons.map((lesson) => `/learn/guides/${lesson.slug}`)]
-    .map((path) => ({ url: `${base}${path}`, lastModified: new Date(LEARNING_REVIEWED_AT), changeFrequency: "monthly" as const }));
+  const paths = ["/learn", ...(Object.keys(trackOrder) as Array<keyof typeof trackOrder>).map((track) => `/learn/${track}`), ...lessons.map((lesson) => `/learn/guides/${lesson.slug}`)];
+  return PUBLIC_SEO_LOCALES.flatMap((locale) => paths.map((path) => ({
+    url: absolutePublicUrl(localizedPublicPath(path, locale)),
+    lastModified: new Date(LEARNING_REVIEWED_AT),
+    changeFrequency: "monthly" as const,
+  })));
 }

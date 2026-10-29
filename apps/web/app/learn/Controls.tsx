@@ -7,6 +7,7 @@ import { useSession } from "@/lib/useSession";
 import { setLangCookie } from "@/lib/lang";
 import { localize, type Lesson, type TrackFormat, type TrackId } from "@/lib/learning/catalog";
 import s from "./learning.module.css";
+import { localizedPublicPath, localeFromPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
 type Lang = "th" | "en";
 export function MobileNavigation({ lang, children }: { lang: Lang; children: React.ReactNode }) {
@@ -48,8 +49,18 @@ function writeCompleted(value: string[]): boolean {
 
 export function LanguageControl({ lang }: { lang: Lang }) {
   const router = useRouter();
+  const pathname = usePathname() || "/learn";
   return <button className={s.secondary} type="button" aria-label={lang === "th" ? "Switch to English" : "เปลี่ยนเป็นภาษาไทย"}
-    onClick={() => { setLangCookie(lang === "th" ? "en" : "th"); router.refresh(); }}>
+    onClick={() => {
+      const nextLang = lang === "th" ? "en" : "th";
+      setLangCookie(nextLang);
+      if (localeFromPublicPath(pathname)) {
+        const nextPath = localizedPublicPath(stripPublicLocale(pathname), nextLang);
+        window.location.assign(`${nextPath}${window.location.search}${window.location.hash}`);
+      } else {
+        router.refresh();
+      }
+    }}>
     {lang === "th" ? "EN" : "ไทย"}
   </button>;
 }
@@ -109,7 +120,7 @@ export function ReadingChecklist({ items, track, format, lang }: { items: Pick<L
         const next = current.includes(item.slug) ? current.filter((id) => id !== item.slug) : [...current, item.slug];
         setStorageError(!writeCompleted(next)); setDone(next);
       }} /><span>{localize(item.title, lang)}</span></label>
-      <div className={s.checklistLinks}><Link href={`/learn/guides/${item.slug}?track=${track}${format ? `&format=${format}` : ""}`}>{lang === "th" ? "อ่านบทเรียน →" : "Read lesson →"}</Link></div>
+      <div className={s.checklistLinks}><Link href={localizedPublicPath(`/learn/guides/${item.slug}?track=${track}${format ? `&format=${format}` : ""}`, lang)}>{lang === "th" ? "อ่านบทเรียน →" : "Read lesson →"}</Link></div>
     </li>)}</ul>
     {storageError && <p role="status">{lang === "th" ? "เบราว์เซอร์ไม่อนุญาตให้บันทึก ความคืบหน้าจะหายเมื่อออกจากหน้านี้" : "Browser storage is unavailable; progress will be lost when you leave."}</p>}
   </section>;

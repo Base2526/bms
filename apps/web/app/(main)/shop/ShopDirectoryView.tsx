@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useBreadcrumbsOverride } from "@/components/breadcrumbs-context";
 import type { PublicShopCard } from "@/lib/bms/products";
 import styles from "./public-shop.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 function formatUpdatedAt(value: string | null, lang: "th" | "en") {
   if (!value) return null;
@@ -129,7 +130,7 @@ export default function ShopDirectoryView({
         <div className={styles.stats}>
           <span className={styles.statPill}>{shops.length} {copy.shopsLabel}</span>
           <span className={styles.statPill}>{totalProducts} {copy.productsLabel}</span>
-          <Link href="/board-game" className={styles.discoveryLink}>{copy.boardGameCafes}</Link>
+          <Link href={localizedPublicPath("/board-game", lang)} className={styles.discoveryLink}>{copy.boardGameCafes}</Link>
         </div>
       </header>
 

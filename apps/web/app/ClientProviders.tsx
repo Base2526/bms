@@ -10,6 +10,8 @@ import { I18nProvider } from "@/lib/i18nContext";
 import type { Lang } from "@/i18n";
 import AntdThemeProvider from "@/app/AntdThemeProvider";
 import { PosRealtimeProvider } from "@/components/realtime/RealtimeProvider";
+import { SessionProvider } from "@/lib/session-context";
+import { isLocalizedPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
 // ssr:false = server ส่ง placeholder เปล่าให้เสมอสำหรับทุกอย่างใต้ SessionLayer (รวม
 // AdminSidebar) เพราะ session มาจาก cookie ที่รู้ได้แค่ฝั่ง client (SWR ไป /api/auth/me)
@@ -37,6 +39,7 @@ function isAuthPath(pathname: string) {
 }
 
 function skipsSessionLayer(pathname: string) {
+  pathname = stripPublicLocale(pathname);
   return isAuthPath(pathname) || pathname === "/learn" || pathname.startsWith("/learn/")
     || pathname === "/installer-report" || pathname === "/checkout" || pathname === "/pos"
     || pathname.startsWith("/pos/restaurant") || pathname.startsWith("/q/") || pathname === "/tax-invoice/request";
@@ -50,7 +53,9 @@ export default function ClientProviders({
   children: React.ReactNode;
 }) {
   const pathname = usePathname() || "";
+  const publicPathname = stripPublicLocale(pathname);
   const onPublicStandaloneRoute = skipsSessionLayer(pathname);
+  const onPublicSeoRoute = isLocalizedPublicPath(publicPathname);
   const onPosRoute = pathname === "/pos" || pathname.startsWith("/pos/");
 
   return (
@@ -62,7 +67,13 @@ export default function ClientProviders({
         <AntdThemeProvider>
           {onPosRoute
             ? <PosRealtimeProvider>{children}</PosRealtimeProvider>
-            : onPublicStandaloneRoute ? children : <SessionLayer>{children}</SessionLayer>}
+            : onPublicStandaloneRoute
+              ? children
+              : onPublicSeoRoute
+                // Public marketing copy must remain in the server HTML. SessionProvider
+                // starts in a loading state and hydrates the CTA without blanking children.
+                ? <SessionProvider>{children}</SessionProvider>
+                : <SessionLayer>{children}</SessionLayer>}
         </AntdThemeProvider>
       </I18nProvider>
     </ApolloProvider>

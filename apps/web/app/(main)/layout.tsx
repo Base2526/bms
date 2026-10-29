@@ -2,7 +2,9 @@
 import { cookies } from "next/headers";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
+import AppFooter from "@/components/footer/AppFooter";
 import { BreadcrumbsProvider } from "@/components/breadcrumbs-context";
+import { publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
 
 const HeaderBar = dynamic(() => import("@/components/HeaderBar"), {
   ssr: false,
@@ -14,17 +16,12 @@ const Breadcrumbs = dynamic(() => import("@/components/Breadcrumbs"), {
   loading: () => null,
 });
 
-const AppFooter = dynamic(() => import("@/components/footer/AppFooter"), {
-  ssr: false,
-  loading: () => <div style={{ height: 220 }} />,
-});
-
 const SITE_NAME = "BMS";
 const SITE_URL = process.env.NEXT_PUBLIC_BASE_URL || "https://jachoei.com";
 
 export async function generateMetadata(): Promise<Metadata> {
   const cookieStore = await cookies();
-  const lang = cookieStore.get("lang")?.value === "en" ? "en" : "th";
+  const lang: PublicSeoLocale = cookieStore.get("lang")?.value === "en" ? "en" : "th";
 
   const seo = {
     th: {
@@ -44,13 +41,13 @@ export async function generateMetadata(): Promise<Metadata> {
       template: `%s | ${SITE_NAME}`,
     },
     description: seo.desc,
-    alternates: { canonical: SITE_URL },
+    alternates: publicAlternates("/", lang),
     openGraph: {
       type: "website",
       siteName: SITE_NAME,
       title: seo.title,
       description: seo.desc,
-      url: SITE_URL,
+      url: `/${lang}`,
       images: [{ url: "/og.png", width: 1200, height: 630 }],
     },
     twitter: {

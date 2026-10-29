@@ -38,7 +38,7 @@ import {
   VideoCameraOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { gql, useQuery } from "@apollo/client";
 
 import { useSession } from "@/lib/useSession";
@@ -47,6 +47,7 @@ import { useI18n } from "@/lib/i18nContext";
 import ThemeToggle from "@/components/ThemeToggle";
 import type { Lang } from "@/i18n";
 import { getLangCookie, setLangCookie } from "@/lib/lang";
+import { localeFromPublicPath, localizedPublicPath, stripPublicLocale } from "@/lib/publicSeo";
 
 const { Header } = Layout;
 const { Text } = Typography;
@@ -110,6 +111,7 @@ export default function HeaderBar({
   isMobile = false,
 }: HeaderBarProps) {
   const router = useRouter();
+  const pathname = usePathname() || "/";
   const { user: userSession, admin: adminSession, refreshSession } = useSession();
   const { t, lang, setLang } = useI18n();
   const isAdminSession = Boolean(adminSession);
@@ -222,6 +224,11 @@ export default function HeaderBar({
     setLangCookie(nextLang);
     setCurrentLang(nextLang);
     setLang?.(nextLang);
+    if (localeFromPublicPath(pathname)) {
+      const nextPath = localizedPublicPath(stripPublicLocale(pathname), nextLang);
+      window.location.assign(`${nextPath}${window.location.search}${window.location.hash}`);
+      return;
+    }
     router.refresh();
   };
 
@@ -467,7 +474,7 @@ export default function HeaderBar({
             key: "help",
             label: t("header.help") || "Help",
             icon: <QuestionCircleOutlined />,
-            onClick: () => router.push("/help"),
+            onClick: () => router.push(localizedPublicPath("/help", currentLang)),
           },
           { type: "divider" }
         );
@@ -478,25 +485,25 @@ export default function HeaderBar({
           key: "demo",
           label: t("header.demo"),
           icon: <MessageOutlined />,
-          onClick: () => router.push("/demo"),
+          onClick: () => router.push(localizedPublicPath("/demo", currentLang)),
         },
         {
           key: "workflow",
           label: t("header.workflow"),
           icon: <ApiOutlined />,
-          onClick: () => router.push("/#workflow"),
+          onClick: () => router.push(localizedPublicPath("/#workflow", currentLang)),
         },
         {
           key: "security",
           label: t("header.security"),
           icon: <SafetyOutlined />,
-          onClick: () => router.push("/#security"),
+          onClick: () => router.push(localizedPublicPath("/#security", currentLang)),
         },
         {
           key: "pricing",
           label: t("header.pricing"),
           icon: <ShopOutlined />,
-          onClick: () => router.push("/#pricing"),
+          onClick: () => router.push(localizedPublicPath("/#pricing", currentLang)),
         },
         {
           key: "signup",
@@ -512,7 +519,7 @@ export default function HeaderBar({
           key: "help",
           label: t("header.help") || "Help",
           icon: <QuestionCircleOutlined />,
-          onClick: () => router.push("/help"),
+          onClick: () => router.push(localizedPublicPath("/help", currentLang)),
         },
         { type: "divider" }
       );
@@ -523,7 +530,7 @@ export default function HeaderBar({
         key: "learning-center",
         label: t("header.learningCenter"),
         icon: <QuestionCircleOutlined />,
-        onClick: () => router.push("/learn"),
+        onClick: () => router.push(localizedPublicPath("/learn", currentLang)),
       },
       {
         key: "lang-th",
@@ -573,7 +580,7 @@ export default function HeaderBar({
       >
         <div className="jachoei-header-shell">
           <div className="jachoei-header-left">
-            <Link href="/" aria-label={t("common.go_home")} className="jachoei-brand-link">
+            <Link href={localizedPublicPath("/", currentLang)} aria-label={t("common.go_home")} className="jachoei-brand-link">
               <span className="jachoei-brand-icon">
                 <img
                   src="/icons/icon.svg"
@@ -705,11 +712,11 @@ export default function HeaderBar({
 
           {!isMobileView && !hasSession && !SHOW_HEADER_SEARCH && (
             <nav className="jachoei-product-nav" aria-label={t("header.productNavigation")}>
-              <Link href="/#workflow">{t("header.workflow")}</Link>
-              <Link href="/demo">{t("header.demo")}</Link>
-              <Link href="/#security">{t("header.security")}</Link>
-              <Link href="/#pricing">{t("header.pricing")}</Link>
-              <Link href="/learn">{t("header.learningCenter")}</Link>
+              <Link href={localizedPublicPath("/#workflow", currentLang)}>{t("header.workflow")}</Link>
+              <Link href={localizedPublicPath("/demo", currentLang)}>{t("header.demo")}</Link>
+              <Link href={localizedPublicPath("/#security", currentLang)}>{t("header.security")}</Link>
+              <Link href={localizedPublicPath("/#pricing", currentLang)}>{t("header.pricing")}</Link>
+              <Link href={localizedPublicPath("/learn", currentLang)}>{t("header.learningCenter")}</Link>
             </nav>
           )}
 

@@ -10,6 +10,7 @@ import { FlowNodeDetail } from "./FlowNodeDetail";
 import { FlowStepper } from "./FlowStepper";
 import type { FlowNode, ShopScenario } from "./flowTypes";
 import styles from "./BmsFlowDiagram.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 type Variant = "compact" | "full";
 type Point = { x: number; y: number };
@@ -331,14 +332,14 @@ export default function BmsFlowDiagram({ variant = "full" }: { variant?: Variant
 
       {variant === "compact" ? (
         <div className={styles.compactFooter}>
-          <Link className={styles.detailedCta} href="/how-it-works">{t("bmsFlow.detailedCta")}</Link>
+          <Link className={styles.detailedCta} href={localizedPublicPath("/how-it-works", lang)}>{t("bmsFlow.detailedCta")}</Link>
           <small>{t("bmsFlow.supplements.updated", { date: formattedDate })}</small>
         </div>
       ) : (
         <div className={styles.fullExtras}>
           <div className={styles.extraCards}>
-            <article className={styles.localCard}><div><h3>{t("bmsFlow.supplements.localTitle")} <span>PILOT</span></h3><p>{t("bmsFlow.supplements.localBody")}</p></div><Link href="/retail-local">{t("bmsFlow.learnMore")} →</Link></article>
-            <article className={styles.connectingCard}><div><h3>{t("bmsFlow.supplements.connectingTitle")}</h3><small>{t("bmsFlow.supplements.connectingHint")}</small></div><p>{t("bmsFlow.supplements.connecting")}</p><Link href="/roadmap">{t("bmsFlow.learnMore")} →</Link></article>
+            <article className={styles.localCard}><div><h3>{t("bmsFlow.supplements.localTitle")} <span>PILOT</span></h3><p>{t("bmsFlow.supplements.localBody")}</p></div><Link href={localizedPublicPath("/retail-local", lang)}>{t("bmsFlow.learnMore")} →</Link></article>
+            <article className={styles.connectingCard}><div><h3>{t("bmsFlow.supplements.connectingTitle")}</h3><small>{t("bmsFlow.supplements.connectingHint")}</small></div><p>{t("bmsFlow.supplements.connecting")}</p><Link href={localizedPublicPath("/roadmap", lang)}>{t("bmsFlow.learnMore")} →</Link></article>
           </div>
           <div className={styles.trustBar}><strong>{t("bmsFlow.supplements.trustTitle")}</strong>{[1, 2, 3, 4, 5].map((index) => <span key={index}><FlowIcon name={index === 1 ? "ucheck" : index === 2 ? "lock" : index === 3 ? "hist" : index === 4 ? "shield" : "doc"} /><span className={styles.trustItemText}>{t(`bmsFlow.supplements.trust${index}`)}</span></span>)}</div>
           <div className={styles.footnotes}><span>* {t("bmsFlow.supplements.pharmacyFootnote")}</span><span>* {t("bmsFlow.supplements.offlineFootnote")}</span><span>* {t("bmsFlow.supplements.updated", { date: formattedDate })}</span></div>

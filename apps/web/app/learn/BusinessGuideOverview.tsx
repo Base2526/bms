@@ -8,6 +8,7 @@ import { businessGuideFlows, businessNarrationCues, type BusinessTrackId, type G
 import audioManifest from "./businessThaiAudio.json";
 import { LearningFlowFullscreen } from "./LearningFlowFullscreen";
 import s from "./learning.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 type Recording = { file: string; duration: number };
 const recordings: Record<string, Recording> = audioManifest;
@@ -246,6 +247,6 @@ export function BusinessGuideOverview({ track, lang }: { track: BusinessTrackId;
     <div className={s.inventoryArchitecture} aria-label={lang === "th" ? "ภาพรวมสถาปัตยกรรมการทำงาน" : "Workflow architecture"}>
       {config.architecture[lang].map((item, index) => <span key={item}>{item}{index < config.architecture[lang].length - 1 && <b aria-hidden="true">→</b>}</span>)}
     </div>
-    <Link className={s.inventoryGuideLink} href={`/learn/guides/${config.guideSlug}?track=${track}`}>{t.learnMore} →</Link>
+    <Link className={s.inventoryGuideLink} href={localizedPublicPath(`/learn/guides/${config.guideSlug}?track=${track}`, lang)}>{t.learnMore} →</Link>
   </section>;
 }

@@ -38,6 +38,7 @@ import PlanAiChangeNotice from "@/components/billing/PlanAiChangeNotice";
 import { LineIcon } from "@/components/marketing/LineOa";
 import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
 import styles from "./page.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -313,7 +314,7 @@ export default function HomePage() {
           </Paragraph>
           <Space size={12} wrap>
             {!admin && (
-              <Link href="/demo">
+              <Link href={localizedPublicPath("/demo", lang)}>
                 <Button type="primary" size="large" icon={<MessageOutlined />}>{t("landing.tryDemo")}</Button>
               </Link>
             )}
@@ -396,9 +397,11 @@ export default function HomePage() {
       </section>
 
       <BmsFlowDiagram variant="compact" />
-      <p style={{ textAlign: "center", margin: "24px 0" }}>
-        <Link href="/restaurant"><Button size="large">{t("landing.restaurantGuideCta")}</Button></Link>
-      </p>
+      <Space wrap size={10} style={{ display: "flex", justifyContent: "center", margin: "24px 0" }}>
+        <Link href={localizedPublicPath("/about", lang)}><Button size="large">{lang === "th" ? "BMS คืออะไร" : "What is BMS?"}</Button></Link>
+        <Link href={localizedPublicPath("/ai-business-system", lang)}><Button size="large">{lang === "th" ? "AI ใน BMS ทำงานอย่างไร" : "How AI works in BMS"}</Button></Link>
+        <Link href={localizedPublicPath("/restaurant", lang)}><Button size="large">{t("landing.restaurantGuideCta")}</Button></Link>
+      </Space>
 
       <section className={styles.resilienceSection} id="resilience">
         <div className={styles.sectionHeadingSimple}>
@@ -430,7 +433,7 @@ export default function HomePage() {
             <strong>{t("landing.hybridBoundaryTitle")}</strong>
             <small>{t("landing.hybridBoundaryDescription")}</small>
           </span>
-          <Link href="/retail-local"><Button>{t("landing.retailLocalCta")}</Button></Link>
+          <Link href={localizedPublicPath("/retail-local", lang)}><Button>{t("landing.retailLocalCta")}</Button></Link>
         </div>
       </section>
 
@@ -469,7 +472,7 @@ export default function HomePage() {
         )}
         <div className={styles.pricingFooter}>
           <PackageActions lang={lang} t={t} disabled={!plans.length} />
-          <Link href="/demo"><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
+          <Link href={localizedPublicPath("/demo", lang)}><Button icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
         </div>
       </section>
 
@@ -479,7 +482,7 @@ export default function HomePage() {
           <Paragraph>{t("landing.finalDescription")}</Paragraph>
         </div>
         <Space wrap>
-          <Link href="/demo"><Button size="large" icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
+          <Link href={localizedPublicPath("/demo", lang)}><Button size="large" icon={<MessageOutlined />}>{t("landing.tryBeforeSignup")}</Button></Link>
           <Link href={primaryCta.href}>
             <Button type="primary" size="large" icon={<RocketOutlined />}>{primaryCta.label}</Button>
           </Link>

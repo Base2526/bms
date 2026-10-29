@@ -2,10 +2,12 @@
 
 import { Divider, Typography } from "antd";
 import type React from "react";
+import { useI18n } from "@/lib/i18nContext";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 const { Title, Paragraph, Link } = Typography;
 
-const SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL || "/support";
+const CONFIGURED_SUPPORT_URL = process.env.NEXT_PUBLIC_SUPPORT_URL?.trim();
 const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_TO_EMAIL || "whosscam.io@gmail.com";
 
 type DataDeletionSection = {
@@ -13,7 +15,7 @@ type DataDeletionSection = {
   body: React.ReactNode;
 };
 
-const englishSections: DataDeletionSection[] = [
+const englishSections = (supportUrl: string): DataDeletionSection[] => [
   {
     title: "Who can request deletion",
     body: (
@@ -29,7 +31,7 @@ const englishSections: DataDeletionSection[] = [
     body: (
       <ol>
         <li>
-          Open the <Link href={SUPPORT_URL}>BMS support page</Link> and choose the account, privacy, or data deletion topic.
+          Open the <Link href={supportUrl}>BMS support page</Link> and choose the account, privacy, or data deletion topic.
         </li>
         <li>Include your store name, account email or phone number, and a short description of the data you want deleted.</li>
         <li>If you are requesting deletion for customer records, include enough order, receipt, or contact details for us to identify the correct store record without exposing extra personal data.</li>
@@ -69,7 +71,7 @@ const englishSections: DataDeletionSection[] = [
   },
 ];
 
-const thaiSections: DataDeletionSection[] = [
+const thaiSections = (supportUrl: string): DataDeletionSection[] => [
   {
     title: "ใครสามารถขอลบข้อมูลได้",
     body: (
@@ -85,7 +87,7 @@ const thaiSections: DataDeletionSection[] = [
     body: (
       <ol>
         <li>
-          เปิด <Link href={SUPPORT_URL}>หน้า Support ของ BMS</Link> แล้วเลือกหัวข้อบัญชี ความเป็นส่วนตัว หรือการลบข้อมูล
+          เปิด <Link href={supportUrl}>หน้า Support ของ BMS</Link> แล้วเลือกหัวข้อบัญชี ความเป็นส่วนตัว หรือการลบข้อมูล
         </li>
         <li>ระบุชื่อร้าน อีเมลหรือเบอร์โทรของบัญชี และอธิบายสั้น ๆ ว่าต้องการให้ลบข้อมูลใด</li>
         <li>หากเป็นคำขอลบข้อมูลลูกค้า กรุณาระบุข้อมูลอ้างอิงเท่าที่จำเป็น เช่น เลขออเดอร์ ใบเสร็จ หรือช่องทางติดต่อ เพื่อให้เราระบุรายการที่ถูกต้องโดยไม่เปิดเผยข้อมูลเกินจำเป็น</li>
@@ -126,10 +128,13 @@ const thaiSections: DataDeletionSection[] = [
 ];
 
 export default function DataDeletionPage() {
+  const { lang } = useI18n();
+  const supportUrl = CONFIGURED_SUPPORT_URL || localizedPublicPath("/support", lang);
+
   return (
     <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
       <Typography>
-        <Title level={2}>Data Deletion Request / การขอลบข้อมูล</Title>
+        <Title level={1}>Data Deletion Request / การขอลบข้อมูล</Title>
         <Paragraph>
           This page explains how BMS POS users, store administrators, staff, and end customers can request deletion of personal data.
         </Paragraph>
@@ -140,7 +145,7 @@ export default function DataDeletionPage() {
         <Divider />
 
         <Title level={3}>English</Title>
-        {englishSections.map((section) => (
+        {englishSections(supportUrl).map((section) => (
           <section key={section.title}>
             <Title level={4}>{section.title}</Title>
             {section.body}
@@ -150,7 +155,7 @@ export default function DataDeletionPage() {
         <Divider />
 
         <Title level={3}>ภาษาไทย</Title>
-        {thaiSections.map((section) => (
+        {thaiSections(supportUrl).map((section) => (
           <section key={section.title}>
             <Title level={4}>{section.title}</Title>
             {section.body}

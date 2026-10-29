@@ -10,6 +10,7 @@ import { costCopy } from "./content";
 import { calculateExample } from "./example";
 import CostFlow from "./CostFlow";
 import styles from "./cost-pricing.module.css";
+import { localizedPublicPath } from "@/lib/publicSeo";
 
 export default function CostPricingPage() {
   const { lang, t } = useI18n(), { admin, loading } = useSessionCtx();
@@ -43,6 +44,6 @@ export default function CostPricingPage() {
     <section className={styles.closing}><div><h2>{c.closing}</h2><p>{c.closingDescription}</p></div><div className={styles.actions}>
       <a className={styles.primary} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{c.contact} ↗</a>
       {!loading && <Link className={styles.button} data-session-cta href={admin ? "/admin/dashboard" : "/shop-signup"}>{admin ? c.dashboard : c.signup}</Link>}
-    </div></section><Link className={styles.guideLink} href="/restaurant">{c.restaurant} →</Link>
+    </div></section><Link className={styles.guideLink} href={localizedPublicPath("/restaurant", lang)}>{c.restaurant} →</Link>
   </article>;
 }

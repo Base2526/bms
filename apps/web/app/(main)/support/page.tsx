@@ -323,7 +323,7 @@ export default function SupportPage() {
       <Row gutter={[16, 16]}>
         <Col xs={24} md={16}>
           <Card style={{ borderRadius: 14 }}>
-            <Title level={3} style={{ marginTop: 0 }}>
+            <Title level={1} style={{ marginTop: 0, fontSize: 24 }}>
               {content.title}
             </Title>
             <Text type="secondary">

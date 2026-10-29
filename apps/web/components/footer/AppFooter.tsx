@@ -4,6 +4,8 @@ import React, { memo, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LineIcon, LineOaQr } from "@/components/marketing/LineOa";
 import { BMS_LINE_OA_ID, BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
+import { localizedPublicPath } from "@/lib/publicSeo";
+import { useSession } from "@/lib/useSession";
 import {
   ApiOutlined,
   BarChartOutlined,
@@ -58,6 +60,8 @@ const COPY = {
     lineNote: "สอบถาม/แจ้งปัญหา",
     lineQrAria: "QR code เพิ่มเพื่อน LINE ของ BMS",
     product: "ผลิตภัณฑ์",
+    about: "BMS คืออะไร",
+    aiSystem: "AI ใน BMS ทำงานอย่างไร",
     workflow: "การทำงานของ BMS",
     demo: "ทดลองคุยกับ AI",
     security: "ความปลอดภัย",
@@ -101,6 +105,8 @@ const COPY = {
     lineNote: "Questions and support",
     lineQrAria: "QR code to add BMS on LINE",
     product: "Product",
+    about: "What is BMS?",
+    aiSystem: "How AI works in BMS",
     workflow: "How BMS works",
     demo: "Try the AI",
     security: "Security",
@@ -140,6 +146,7 @@ const COPY = {
 } as const;
 
 function AppFooterInner({ lang }: { lang?: Lang }) {
+  const { admin } = useSession();
   const locale = lang === "en" ? "en" : "th";
   const t = COPY[locale];
   const year = useMemo(() => new Date().getFullYear(), []);
@@ -169,34 +176,36 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
   }, []);
 
   const productLinks = [
-    { href: "/#workflow", label: t.workflow, icon: <ApiOutlined /> },
-    { href: "/demo", label: t.demo, icon: <MessageOutlined /> },
-    { href: "/#security", label: t.security, icon: <LockOutlined /> },
-    { href: "/#pricing", label: t.pricing, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/about", locale), label: t.about, icon: <QuestionCircleOutlined /> },
+    { href: localizedPublicPath("/ai-business-system", locale), label: t.aiSystem, icon: <ApiOutlined /> },
+    { href: localizedPublicPath("/#workflow", locale), label: t.workflow, icon: <ApiOutlined /> },
+    { href: localizedPublicPath("/demo", locale), label: t.demo, icon: <MessageOutlined /> },
+    { href: localizedPublicPath("/#security", locale), label: t.security, icon: <LockOutlined /> },
+    { href: localizedPublicPath("/#pricing", locale), label: t.pricing, icon: <ShopOutlined /> },
     { href: "/admin/dashboard", label: t.dashboard, icon: <BarChartOutlined /> },
-    { href: "/retail-local", label: t.retailLocal, icon: <DesktopOutlined /> },
-    { href: "/restaurant", label: t.restaurant, icon: <ShopOutlined /> },
-    { href: "/cost-pricing", label: t.costPricing, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/retail-local", locale), label: t.retailLocal, icon: <DesktopOutlined /> },
+    { href: localizedPublicPath("/restaurant", locale), label: t.restaurant, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/cost-pricing", locale), label: t.costPricing, icon: <ShopOutlined /> },
   ];
 
   const resourceLinks = [
-    { href: "/learn", label: t.learn, icon: <BookOutlined /> },
-    { href: "/learn/retail", label: t.retailGuide, icon: <ShopOutlined /> },
-    { href: "/learn/restaurant", label: t.restaurantGuide, icon: <ShopOutlined /> },
-    { href: "/learn/board-game", label: t.boardGameGuide, icon: <ShopOutlined /> },
-    { href: "/learn/pharmacy", label: t.pharmacyGuide, icon: <SafetyCertificateOutlined /> },
-    { href: "/learn/inventory", label: t.inventoryGuide, icon: <ShopOutlined /> },
-    { href: "/help", label: t.help, icon: <QuestionCircleOutlined /> },
-    { href: "/roadmap", label: t.roadmap, icon: <ApiOutlined /> },
-    { href: "/support", label: t.support, icon: <CustomerServiceOutlined /> },
-    { href: "/help", label: t.faq, icon: <BookOutlined /> },
+    { href: localizedPublicPath("/learn", locale), label: t.learn, icon: <BookOutlined /> },
+    { href: localizedPublicPath("/learn/retail", locale), label: t.retailGuide, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/learn/restaurant", locale), label: t.restaurantGuide, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/learn/board-game", locale), label: t.boardGameGuide, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/learn/pharmacy", locale), label: t.pharmacyGuide, icon: <SafetyCertificateOutlined /> },
+    { href: localizedPublicPath("/learn/inventory", locale), label: t.inventoryGuide, icon: <ShopOutlined /> },
+    { href: localizedPublicPath("/help", locale), label: t.help, icon: <QuestionCircleOutlined /> },
+    { href: localizedPublicPath("/roadmap", locale), label: t.roadmap, icon: <ApiOutlined /> },
+    { href: localizedPublicPath("/support", locale), label: t.support, icon: <CustomerServiceOutlined /> },
+    { href: localizedPublicPath("/help", locale), label: t.faq, icon: <BookOutlined /> },
   ];
 
   const legalLinks = [
-    { href: "/terms", label: t.terms, icon: <FileTextOutlined /> },
-    { href: "/privacy", label: t.privacy, icon: <SafetyCertificateOutlined /> },
-    { href: "/open-source", label: t.openSource, icon: <CodeOutlined /> },
-    { href: "/license", label: t.license, icon: <BookOutlined /> },
+    { href: localizedPublicPath("/terms", locale), label: t.terms, icon: <FileTextOutlined /> },
+    { href: localizedPublicPath("/privacy", locale), label: t.privacy, icon: <SafetyCertificateOutlined /> },
+    { href: localizedPublicPath("/open-source", locale), label: t.openSource, icon: <CodeOutlined /> },
+    { href: localizedPublicPath("/license", locale), label: t.license, icon: <BookOutlined /> },
   ];
 
   return (
@@ -205,14 +214,14 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         <div className="bms-footer-shell">
           <div className="bms-footer-grid">
             <div className="bms-footer-brand">
-              <Link href="/" className="bms-footer-brand-line" aria-label={t.homeAria}>
+              <Link href={localizedPublicPath("/", locale)} className="bms-footer-brand-line" aria-label={t.homeAria}>
                 <span className="bms-footer-logo">
                   <img src="/icons/icon.svg" alt="" width={48} height={48} />
                 </span>
                 <span><strong>BMS</strong><small>{t.footerLine}</small></span>
               </Link>
               <p>{t.description}</p>
-              <Link href="/shop-signup" className="bms-footer-cta"><RocketOutlined />{t.start}</Link>
+              <Link href={admin ? "/admin/dashboard" : "/shop-signup"} className="bms-footer-cta"><RocketOutlined />{admin ? t.dashboard : t.start}</Link>
               <div className="bms-footer-line">
                 <span className="bms-footer-line-qr"><LineOaQr url={BMS_LINE_OA_URL} label={t.lineQrAria} /></span>
                 <span className="bms-footer-line-copy">
@@ -246,7 +255,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
             <div className="bms-pdpa-copy">
               <strong>{t.pdpaTitle}</strong>
               <span>{t.pdpaDesc}</span>
-              <span className="bms-pdpa-links"><Link href="/privacy">{t.privacy}</Link><Link href="/terms">{t.terms}</Link></span>
+              <span className="bms-pdpa-links"><Link href={localizedPublicPath("/privacy", locale)}>{t.privacy}</Link><Link href={localizedPublicPath("/terms", locale)}>{t.terms}</Link></span>
             </div>
             <div className="bms-pdpa-actions">
               <button type="button" className="bms-pdpa-secondary" onClick={onReject}><CloseCircleOutlined />{t.reject}</button>
@@ -257,7 +266,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
         </div>
       )}
 
-      <style>{`
+      <style dangerouslySetInnerHTML={{ __html: `
         .bms-footer {
           background: var(--app-bg);
           padding: 26px 16px 30px;
@@ -468,7 +477,7 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
           .bms-pdpa-actions button { justify-content: center; flex: 1; }
           .bms-pdpa-primary { order: -1; flex: 1 1 100%; }
         }
-      `}</style>
+      ` }} />
     </>
   );
 }

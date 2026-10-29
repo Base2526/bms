@@ -7,6 +7,8 @@ import type { Lang } from "@/i18n";
 import type { ThemeMode } from "@/lib/theme";
 import ClientProviders from "./ClientProviders";  // เราจะสร้างไฟล์นี้ใหม่
 import { getBuildInfo } from "@/lib/buildInfo";
+import StructuredData from "@/components/seo/StructuredData";
+import { organizationJsonLd, websiteJsonLd } from "@/lib/seoJsonLd";
 
 const { buildId, buildTime } = getBuildInfo();
 export const metadata: Metadata = {
@@ -70,6 +72,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang={lang} className={themeClassName} data-theme-mode={themeMode} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        <StructuredData id="bms-organization-jsonld" data={organizationJsonLd()} />
+        <StructuredData id="bms-website-jsonld" data={websiteJsonLd()} />
       </head>
       <body>
         {/* ส่ง lang ให้ ClientProviders */}

@@ -253,7 +253,7 @@ export default function PrivacyPage() {
   return (
     <div style={{ width: "100%", minHeight: 520, padding: 16 }}>
       <Typography>
-        <Title level={2}>{content.title}</Title>
+        <Title level={1}>{content.title}</Title>
         <Paragraph>{content.intro(t("header.title"))}</Paragraph>
 
         <Divider />
