@@ -494,6 +494,7 @@ const MENU_CARDS_TH: MenuCard[] = [
     desc: "สร้าง PO, เลือกผู้ขาย, รับของเข้าคลัง และอ้างอิงต้นทุนล่าสุดได้จาก workflow เดิม",
     bullets: [
       "เลือก supplier ก่อนสร้าง PO เพื่อค้นได้ทั้ง SKU ร้านและ SKU ผู้ขาย",
+      "แยกราคาซื้อออกจากค่าจัดหาเพิ่มต่อหน่วย เช่น ค่าขนส่ง อากร หรือภาษีที่ขอคืนไม่ได้ ระบบแสดงทุนถึงร้านและใช้ผลรวมเป็นมูลค่าสต็อกเมื่อรับของ โดยไม่ย้อนแก้ของที่รับแล้ว",
       "ครั้งแรกให้จับคู่ SKU ผู้ขายกับ SKU ร้าน + ไซซ์ แล้วระบบจะจำ mapping ไปใช้ครั้งถัดไป",
       "ตอนรับของให้ตรวจจำนวน Lot/Expiry และสถานะ OPEN / PARTIAL / RECEIVED",
       "รับของจากหน้า Purchase ได้ หรือใช้ PO เดิมใน POS Receive เพื่อสแกนเป็นร่างแล้วค่อยยืนยันเข้าสต็อกสาขาของเครื่อง",
@@ -1789,6 +1790,7 @@ const MENU_CARDS_EN: MenuCard[] = [
     desc: "Create POs, choose suppliers, receive goods into inventory, and reuse supplier mappings and last costs",
     bullets: [
       "Choose the supplier before creating a PO so search works by either the shop SKU or the supplier SKU",
+      "Keep the supplier goods price separate from per-unit freight, duty or other non-recoverable acquisition cost; the displayed landed cost is frozen into inventory value on receipt without rewriting prior receipts",
       "On the first PO, map the supplier SKU to the shop SKU + size, then the system reuses that mapping later",
       "When receiving, review quantities, lot, expiry, and the OPEN / PARTIAL / RECEIVED status carefully",
       "You can receive from the Purchase page, or reopen the same PO in POS Receive to scan a draft and confirm it into the register branch",

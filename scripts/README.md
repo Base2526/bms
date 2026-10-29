@@ -66,6 +66,30 @@ checks that every Thai cue has a verified recording.
   into the same ignored directory for visual review. Pure pagination checks preserve contiguous
   steps and refuse cuts through a label or arrow.
 
+## Public cost and pricing feature
+
+Public cost/pricing feature: `/cost-pricing` is a bilingual, session-aware marketing page linked
+from the Restaurant guide and footer. The local 100-cup calculator is an illustrative scenario,
+not an order-pricing or inventory service. The seven-step sequence reuses Restaurant's
+`RecordedNarration` player and pinned `thai_som` voice; English captions explicitly label Thai audio.
+Source: `components/marketing/cost-pricing/flow.json`; recordings, license and exact spoken-text
+provenance: `public/audio/cost-pricing/th/`. Changes to speech must regenerate the matching audio.
+With the Restaurant Python environment and ffmpeg installed, run
+`python scripts/generate-cost-pricing-thai-audio.py --model-dir .test-output/fastthai-model`.
+It reuses the Restaurant builder's pronunciation rules and pinned model checks.
+Run `node scripts/run-contract-tests.mjs pure cost-pricing-public` and
+`node scripts/cost-pricing-browser-smoke.mjs` (local `BMS_SMOKE_URL`; optional `BMS_PLAYWRIGHT_MODULE`).
+The browser suite uses guest/admin session fixtures and never writes business data.
+It checks exact satang inputs (including 65.10 baht), all seven audio transitions, MP3 download,
+media failure/retry and light/dark layouts at desktop, tablet and mobile widths.
+
+For PO landed costs, `purchase-landed-cost-browser-smoke.mjs` uses mocked API responses to check
+the base/additional/landed columns, required allocation evidence and create payload on desktop/mobile.
+`node scripts/run-contract-tests.mjs db restaurant-actual-costs` requires the disposable restored
+database described in `docs/architecture/realtime-test-database.md`, including migrations 10.99 and
+10.103. It also proves partial receipt valuation, create replay/conflict, tenant isolation and
+receipt audit rollback. Never run that suite against the normal application database.
+
 ## Operations integration regressions
 
 `node scripts/run-contract-tests.mjs pure operation-integration-regression` executes the real

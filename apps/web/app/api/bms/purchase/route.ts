@@ -4,7 +4,8 @@
 //   curl -X POST http://localhost:3000/api/bms/purchase \
 //     -H "content-type: application/json" \
 //     -d '{"supplierName":"ABC Trading","note":"lot ก.ค.",
-//          "items":[{"sku":"NIKE-AIR","size":"XL","qty":20,"unitCost":1800}]}'
+//          "items":[{"sku":"NIKE-AIR","size":"XL","qty":20,"unitCost":1800,
+//                    "additionalUnitCost":25,"additionalCostNote":"ขนส่ง 500 บาท / 20 ชิ้น"}]}'
 // =============================================================
 
 import { NextResponse } from "next/server";
@@ -48,6 +49,8 @@ async function handlePOST(req: NextRequest) {
     size: String(r?.size ?? "").trim(),
     qty: Number(r?.qty),
     unitCost: Number(r?.unitCost ?? 0),
+    additionalUnitCost: Number(r?.additionalUnitCost ?? 0),
+    additionalCostNote: typeof r?.additionalCostNote === "string" ? r.additionalCostNote : null,
     supplierSku: typeof r?.supplierSku === "string" ? r.supplierSku : null,
     supplierProductName: typeof r?.supplierProductName === "string" ? r.supplierProductName : null,
     supplierBarcode: typeof r?.supplierBarcode === "string" ? r.supplierBarcode : null,

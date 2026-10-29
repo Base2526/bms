@@ -7668,6 +7668,9 @@ input BmsPublishPriceInput {
 }
 
 type BmsPurchaseItem {
+  additionalCostNote: String
+  additionalUnitCost: Float!
+  landedUnitCost: Float!
   qtyOrdered: Int!
   qtyReceived: Int!
   size: String!
@@ -7678,6 +7681,8 @@ type BmsPurchaseItem {
 }
 
 input BmsPurchaseItemInput {
+  additionalCostNote: String
+  additionalUnitCost: Float
   leadTimeDays: Int
   minOrderQty: Int
   packQty: Int
@@ -7694,6 +7699,7 @@ type BmsPurchaseOrder {
   createdAt: String!
   id: ID!
   items: [BmsPurchaseItem!]!
+  landedTotal: Float!
   note: String
   qtyOrdered: Int!
   qtyReceived: Int!

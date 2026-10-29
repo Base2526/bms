@@ -1460,6 +1460,13 @@ central catalog cost updates; Single/Batch recipes, pinned subrecipes/BOM and SO
 assumptions; reviewed rent/depreciation; price/VAT/GP scenarios, retail/pack prices, promotion comparisons
 and daily break-even targets; and menu engineering. Actual-cost and publishing additions are below.
 
+Purchase landed-cost follow-up (`10.103`): each PO line can keep an additional per-unit acquisition
+cost for allocated freight, duty or non-recoverable tax. The PO continues to show the supplier goods
+price separately. Receiving stock freezes their sum into moving weighted-average valuation and lot
+cost in the same transaction; existing received stock is not rewritten. Allocation is staff-reviewed
+input rather than an automatic split of a supplier invoice, so a source/basis note is mandatory on
+each line whose additional acquisition cost is positive.
+
 - **Actual valuation:** moving weighted average per SKU/variant/branch, using authoritative PO item
   cost on receipt. Review unknown opening inventory at Reports > Actual costs and menu engineering,
   with evidence, current quantity/version and explicit confirmation. It never rewrites old sales.

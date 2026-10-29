@@ -2183,6 +2183,24 @@ Confirmed snapshots reconcile menu totals to existing net-profit evidence includ
 non-menu revenue bucket. Bundle publication reuses `bms_price_plan_publications` with mode MENU_BUNDLE
 and existing product/recipe tables, all in one tenant transaction. No guessed opening stock values.
 
+### 10.103 — purchase landed cost
+
+`bms_purchase_order_items.additional_unit_cost` stores a reviewed per-unit allocation of acquisition
+costs such as freight, duty and non-recoverable tax. `unit_cost` remains the supplier's invoiced goods
+price, so supplier-price history and landed inventory valuation are not conflated. The field defaults
+to zero for existing callers and rows and is constrained nonnegative. A positive amount requires a
+1–500 character `additional_cost_note` recording the allocation source/basis; zero requires no note.
+The API rejects sub-satang precision, values beyond the receiving lot's NUMERIC(12,2) range,
+and duplicate SKU/size lines with conflicting prices, allocations or evidence. Identical lines
+may merge. Zero-allocation requests retain their pre-rollout idempotency fingerprint.
+
+On PO receipt, the immutable stock movement valuation and lot cost use
+`(unit_cost + additional_unit_cost) × received quantity` in the same tenant transaction as the
+physical `STOCK_IN`. Partial receipts therefore carry the same frozen per-unit allocation without
+reallocating prior receipts. Existing received stock and historical value entries are never
+backfilled. The PO UI and GraphQL reader expose base, additional and landed unit costs plus the
+allocation evidence separately.
+
 ## Restaurant pickup checkout audit (2026-10-22; no schema change)
 
 Existing `bms_orders.fulfillment_type = 'PICKUP'` (9.56) waives the shipping-address

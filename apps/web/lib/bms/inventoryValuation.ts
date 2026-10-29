@@ -44,7 +44,7 @@ export async function valueMovementInTx(client: PoolClient, movementId: string, 
     if (total > 0n && used+q <= total && source.amount != null)
       amount = portion(micro(source.amount),used+q,total)-portion(micro(source.amount),used,total);
   } else if (m.type === "STOCK_IN" && m.purchaseItemId != null) {
-    const source = (await client.query<{cost:string}>(`SELECT (i.unit_cost*$3)::text AS cost
+    const source = (await client.query<{cost:string}>(`SELECT ((i.unit_cost+i.additional_unit_cost)*$3)::text AS cost
       FROM bms_purchase_order_items i JOIN bms_purchase_orders p ON p.id=i.po_id AND p.tenant_id=i.tenant_id
       WHERE i.tenant_id=$1 AND i.id=$2 AND i.product_sku=$4 AND i.size=$5`,
     [m.tenantId,m.purchaseItemId,m.qty,m.sku,m.size])).rows[0];
