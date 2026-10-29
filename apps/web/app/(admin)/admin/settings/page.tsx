@@ -408,6 +408,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
               label={t("admin_settings.meta_account_id_label")}
               name="externalAccountId"
               initialValue={cfg?.external_account_id ?? ""}
+              extra={t("admin_settings.meta_account_id_help")}
               rules={[{ pattern: /^\d{5,32}$/, message: t("admin_settings.meta_account_id_invalid") }]}
             >
               <Input placeholder={t("admin_settings.meta_account_id_placeholder")} autoComplete="off" />

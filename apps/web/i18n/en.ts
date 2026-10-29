@@ -5561,6 +5561,7 @@ const en = {
     channel_facebook_hint: "Access Token = Page Access Token · Channel Secret = App Secret for signatures · Verify Token must be a separate value",
     channel_facebook_needs: "Page Access Token + App Secret + Page ID + Verify Token",
     meta_account_id_label: "Facebook Page ID / Instagram Professional Account ID",
+    meta_account_id_help: "For Messenger, use the Page ID shown in Meta Messenger API Settings. The number in a public profile.php link may differ.",
     meta_account_id_placeholder: "Numeric ID of the account receiving messages",
     meta_account_id_invalid: "Page ID must contain 5–32 digits",
     webhook_verify_token_label: "Webhook Verify Token",

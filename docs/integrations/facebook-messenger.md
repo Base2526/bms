@@ -11,6 +11,8 @@ message supplies only the tenant-bound customer identity and untrusted message c
 3. In BMS Settings → Channels → Facebook Messenger, save the Page Access Token, App Secret, numeric
    Facebook Page ID, and a random Webhook Verify Token of at least 32 characters. The Verify Token
    must be distinct from the App Secret.
+   Read the Page ID from the connected Page row in Meta Messenger API Settings. A public
+   `profile.php?id=...` URL can show a different number for the same Page.
 4. Copy `/api/bms/facebook/webhook/<tenant-id>` from Settings into Meta's Callback URL and paste
    the same Verify Token. Subscribe the Page to `messages` and, when using the starter buttons below,
    `messaging_postbacks`.

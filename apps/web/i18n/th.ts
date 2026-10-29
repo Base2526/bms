@@ -5563,6 +5563,7 @@ const th = {
     channel_facebook_hint: "Access Token = Page Access Token · Channel Secret = App Secret สำหรับตรวจลายเซ็น · Verify Token ต้องเป็นคนละค่ากับ App Secret",
     channel_facebook_needs: "Page Access Token + App Secret + Page ID + Verify Token",
     meta_account_id_label: "Facebook Page ID / Instagram Professional Account ID",
+    meta_account_id_help: "Messenger: ใช้ Page ID ที่แสดงใน Meta Messenger API Settings เลขในลิงก์ profile.php อาจเป็นคนละเลข",
     meta_account_id_placeholder: "รหัสตัวเลขของบัญชีที่รับข้อความ",
     meta_account_id_invalid: "Page ID ต้องเป็นตัวเลข 5–32 หลัก",
     webhook_verify_token_label: "Webhook Verify Token",
