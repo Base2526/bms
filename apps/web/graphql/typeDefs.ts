@@ -3529,6 +3529,9 @@ export const typeDefs = /* GraphQL */ `
     has_secret: Boolean!
     access_token_masked: String
     channel_secret_masked: String
+    webhook_verify_token_masked: String
+    has_verify_token: Boolean!
+    external_account_id: String
   }
 
   type BmsChannelHealth {
@@ -5708,7 +5711,7 @@ export const typeDefs = /* GraphQL */ `
     bmsSetRolePermissions(roleId: ID!, permissions: [String!]!): Boolean!
 
     # ===== BMS settings / channels (admin) =====
-    bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, active: Boolean): Boolean!
+    bmsUpsertChannel(channel: String!, accessToken: String, channelSecret: String, webhookVerifyToken: String, externalAccountId: String, active: Boolean): Boolean!
     bmsTestChannel(channel: String!): BmsTestChannelResult!
     bmsUpsertReportSubscription(input: BmsUpsertReportSubscriptionInput!): BmsReportSubscription!
     bmsSendTestReportNow: BmsSendReportResult!

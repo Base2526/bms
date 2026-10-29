@@ -790,8 +790,11 @@ type BmsChannelConfig {
   active: Boolean!
   channel: String!
   channel_secret_masked: String
+  external_account_id: String
   has_secret: Boolean!
   has_token: Boolean!
+  has_verify_token: Boolean!
+  webhook_verify_token_masked: String
 }
 
 type BmsChannelHealth {
@@ -10304,7 +10307,7 @@ type Mutation {
   bmsUpdateTracking(carrier: BmsCarrier, id: ID!, trackingNo: String): Boolean!
   bmsUpsertArAccount(creditLimit: Float!, customerId: ID!, note: String, status: String, termsDays: Int!): BmsArAccount!
   bmsUpsertBoardGameBranchHours(input: BmsUpsertBoardGameBranchHoursInput!): BmsBoardGameBranchHoursResult!
-  bmsUpsertChannel(accessToken: String, active: Boolean, channel: String!, channelSecret: String): Boolean!
+  bmsUpsertChannel(accessToken: String, active: Boolean, channel: String!, channelSecret: String, externalAccountId: String, webhookVerifyToken: String): Boolean!
   bmsUpsertCoupon(input: BmsCouponInput!): BmsCoupon!
   bmsUpsertCustomer(input: BmsCustomerInput!): BmsCustomer!
   bmsUpsertEmergencyFacility(input: BmsEmergencyFacilityInput!): BmsEmergencyFacility!

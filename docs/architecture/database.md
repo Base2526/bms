@@ -820,8 +820,11 @@ experiment, but the current product flow normalizes those rows back to `ASSIGNED
 longer need to press a claim button.
 
 **`bms_tenant_channels`** — one row per `(tenant_id, channel)`, `channel` is a free-text column
-(no CHECK constraint / enum), storing `access_token` and `channel_secret` **encrypted** (AES-256-GCM
-via `lib/bms/crypto.ts`), plus an `extra JSONB` column and `active BOOLEAN`. Because `channel` is
+(no CHECK constraint / enum), storing `access_token`, `channel_secret`, and the distinct
+`webhook_verify_token` **encrypted** (AES-256-GCM via `lib/bms/crypto.ts`), plus a provider-owned
+`external_account_id`, an `extra JSONB` column and `active BOOLEAN`. For Facebook Messenger,
+`external_account_id` is the Page ID: the webhook binds `entry.id` to it rather than treating the
+tenant id in the callback URL as provider authority. Because `channel` is
 unconstrained text, adding a new channel (e.g. Shopee/Lazada) needs no migration — only application
 code needs to know the new value (see [../integrations/](../integrations/)). LINE OA bot/source
 display metadata is cached in `extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`,
@@ -1153,6 +1156,13 @@ Migration `7.30` also adds validated AI language/ordering/required-field/short-r
 `bms_ai_synonym_candidates` stores bounded search misses for human review. Both have forced RLS and
 `bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
 stock remain backend sources of truth.
+
+Migration `10.104` adds `bms_channel_inbound_jobs` for Facebook/Instagram messages. The unique
+tenant/channel/event key is Meta `message.mid`; bounded message fields commit before AI or Graph API
+I/O. `PENDING`/`FAILED` rows and pre-effect expired `PROCESSING` leases are retryable. Once
+`effects_started_at` is stamped, an unknown outcome becomes `DEAD` instead of replaying a possible
+order or stock write; `SUCCEEDED` is complete. The tenant-owned table has forced RLS and `bms_app`
+grants; every claim/update runs inside `beginTenantTx()`.
 
 **Multi-store stock capabilities (`9.40`–`9.41`, `9.45`)** — `bms_store_capabilities` stores manual tenant
 overrides on top of archetype presets. `bms_product_stock_policies` stores product-level stock mode,

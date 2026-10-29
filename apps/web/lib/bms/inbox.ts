@@ -1233,7 +1233,7 @@ export async function markAllMentionsRead(tenantId: string, userId: string): Pro
 // ---- staff reply (persist + ยิงกลับช่องทาง) ------------------
 export type SendResult = { status: "SENT"; delivered: boolean; messageId?: string } | { status: "NOT_FOUND" } | { status: "EMPTY" };
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
 
 export function isFakeCustomerRef(customerRef: string | null | undefined): boolean {
   return /^FAKE-/i.test(customerRef?.trim() ?? "");
@@ -1285,8 +1285,22 @@ export async function deliverToChannel(
 
   if (channel === "facebook" || channel === "instagram") {
     const cfg = await getChannel(tenantId, channel);
-    if (!cfg?.active || !cfg.access_token) return false;
-    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/me/messages?access_token=${encodeURIComponent(cfg.access_token)}`;
+    if (!cfg?.active || !cfg.access_token || !cfg.external_account_id) return false;
+    // RESPONSE is valid only in Meta's standard customer-service window. The latest inbound row
+    // is server evidence; order intent, a stored PSID or a previous outbound message is not consent.
+    const window = await query<{ allowed: boolean }>(
+      `SELECT EXISTS(
+         SELECT 1 FROM bms_channel_inbound_jobs j
+        WHERE j.tenant_id=$1 AND j.channel=$2 AND j.customer_ref=$3
+          AND j.external_account_id=$4 AND j.created_at>=now()-interval '24 hours'
+       ) AS allowed`,
+      [tenantId, channel, to, cfg.external_account_id],
+    );
+    if (!window.rows[0]?.allowed) {
+      await recordOutboundError(tenantId, channel, 400, "Meta 24-hour messaging window is closed");
+      return false;
+    }
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(cfg.external_account_id)}/messages?access_token=${encodeURIComponent(cfg.access_token)}`;
     const send = (msg: any) => fetch(url, {
       method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),

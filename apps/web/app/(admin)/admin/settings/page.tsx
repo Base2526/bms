@@ -14,7 +14,10 @@ const { Text, Paragraph, Title } = Typography;
 const Q = gql`
   query {
     bmsMyTenant { id name slug }
-    bmsChannels { channel active has_token has_secret access_token_masked channel_secret_masked }
+    bmsChannels {
+      channel active has_token has_secret has_verify_token external_account_id
+      access_token_masked channel_secret_masked webhook_verify_token_masked
+    }
     bmsChannelHealth {
       channel active status status_detail
       last_error_at last_inbound_event_at last_outbound_success_at last_checked_at
@@ -24,8 +27,8 @@ const Q = gql`
   }
 `;
 const M = gql`
-  mutation ($channel: String!, $accessToken: String, $channelSecret: String, $active: Boolean) {
-    bmsUpsertChannel(channel: $channel, accessToken: $accessToken, channelSecret: $channelSecret, active: $active)
+  mutation ($channel: String!, $accessToken: String, $channelSecret: String, $webhookVerifyToken: String, $externalAccountId: String, $active: Boolean) {
+    bmsUpsertChannel(channel: $channel, accessToken: $accessToken, channelSecret: $channelSecret, webhookVerifyToken: $webhookVerifyToken, externalAccountId: $externalAccountId, active: $active)
   }
 `;
 const M_TEST = gql`
@@ -103,6 +106,10 @@ function computeHealthBadge(
   disabledText: string
 ) {
   if (!cfg?.has_token) return { color: "default", text: unsetText, action: "" };
+  if ((cfg.channel === "facebook" || cfg.channel === "instagram") &&
+      (!cfg.has_secret || !cfg.has_verify_token || !cfg.external_account_id)) {
+    return { color: "default", text: unsetText, action: "" };
+  }
   if (cfg?.active === false) return { color: "default", text: disabledText, action: "" };
   return HEALTH_META[health?.status as string] || HEALTH_META.connected;
 }
@@ -325,6 +332,8 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
       channel: ch.key,
       accessToken: v.accessToken || null,
       channelSecret: v.channelSecret || null,
+      webhookVerifyToken: v.webhookVerifyToken || null,
+      externalAccountId: v.externalAccountId || null,
       active: v.active,
     }});
 
@@ -338,7 +347,9 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
 
   // Keep recovery available while unhealthy: the test itself is what can prove that a
   // replacement token works and move the channel back to connected.
-  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active;
+  const metaReady = (ch.key !== "facebook" && ch.key !== "instagram") ||
+    (cfg?.has_secret && cfg?.has_verify_token && cfg?.external_account_id);
+  const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && metaReady;
 
   useEffect(() => {
     if (!focused) return;
@@ -391,6 +402,26 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
         <Form.Item label={`${t("admin_settings.channel_secret_label")} ${cfg?.has_secret ? t("admin_settings.access_token_current", { masked: cfg.channel_secret_masked }) : ""} ${t("admin_settings.channel_secret_suffix")}`} name="channelSecret">
           <Input.Password placeholder={cfg?.has_secret ? t("admin_settings.access_token_placeholder_set") : t("admin_settings.channel_secret_placeholder_empty")} autoComplete="off" />
         </Form.Item>
+        {(ch.key === "facebook" || ch.key === "instagram") && (
+          <>
+            <Form.Item
+              label={t("admin_settings.meta_account_id_label")}
+              name="externalAccountId"
+              initialValue={cfg?.external_account_id ?? ""}
+              rules={[{ pattern: /^\d{5,32}$/, message: t("admin_settings.meta_account_id_invalid") }]}
+            >
+              <Input placeholder={t("admin_settings.meta_account_id_placeholder")} autoComplete="off" />
+            </Form.Item>
+            <Form.Item
+              label={`${t("admin_settings.webhook_verify_token_label")} ${cfg?.has_verify_token ? t("admin_settings.access_token_current", { masked: cfg.webhook_verify_token_masked }) : ""}`}
+              name="webhookVerifyToken"
+              extra={t("admin_settings.webhook_verify_token_help")}
+              rules={[{ min: 32, message: t("admin_settings.webhook_verify_token_invalid") }]}
+            >
+              <Input.Password placeholder={cfg?.has_verify_token ? t("admin_settings.access_token_placeholder_set") : t("admin_settings.webhook_verify_token_placeholder")} autoComplete="new-password" />
+            </Form.Item>
+          </>
+        )}
         <Form.Item label={t("admin_settings.active_label")} name="active" valuePropName="checked">
           <Switch checkedChildren={t("admin_settings.switch_on")} unCheckedChildren={t("admin_settings.switch_off")} />
         </Form.Item>
