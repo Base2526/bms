@@ -975,6 +975,8 @@ const LINK_STEPS_TH: LinkStep[] = [
         ไปที่ {L.settings} เพื่อวาง token และตั้ง webhook · Facebook Messenger ต้องกรอก Page Access Token,
         App Secret, Page ID และ Verify Token ที่สุ่มแยกจาก App Secret แล้วกดทดสอบให้ Page ID ตรงกัน · ถ้าต้องทดสอบ
         Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
+        · โฆษณา Send message ต้องเลือกเพจเดียวกับที่เชื่อมร้าน และตั้งข้อความต้อนรับ/คำถามใน Meta Ads Manager
+        · เพจร้านใช้ AI ขายสินค้าของร้าน ส่วนเพจขายระบบ BMS ต้องให้ผู้ดูแลแพลตฟอร์มระบุเพจและร้านฝ่ายขายก่อน
       </>
     ),
   },
@@ -2259,6 +2261,8 @@ const LINK_STEPS_EN: LinkStep[] = [
         App Secret, Page ID, and a random Verify Token distinct from the App Secret; test it to prove the Page ID binding ·
         to test Inbox realtime, open {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
         profile cache once the webhook arrives
+        · Send message ads must use the connected shop Page; configure greetings and questions in Meta Ads Manager
+        · Shop Pages use commerce AI; BMS's own sales Page requires the platform operator to designate its Page and sales tenant
       </>
     ),
   },

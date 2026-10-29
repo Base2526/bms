@@ -8,6 +8,15 @@
 // =============================================================
 
 import type { ChannelConfig } from "./channels";
+import { createHash } from "node:crypto";
+
+// These buttons start a conversation; they never authorize checkout, payment or other writes.
+const STARTER_MESSAGES: Readonly<Record<string, string>> = {
+  BMS_CHAT_PRICE: "ขอทราบราคา",
+  BMS_CHAT_DETAILS: "ขอรายละเอียดสินค้าและบริการ",
+  BMS_CHAT_INTERESTED: "สนใจซื้อ ขอทราบขั้นตอนและรายละเอียดก่อนตัดสินใจ",
+  BMS_CHAT_START: "สวัสดี ขอข้อมูลสินค้าและบริการ",
+};
 
 /** Verify the separate webhook handshake credential. */
 export function metaChallenge(url: URL, cfg: ChannelConfig | null): string | null {
@@ -59,6 +68,22 @@ export function parseMetaEvents(
     const messaging = Array.isArray(entry?.messaging) ? entry.messaging : [];
     for (const ev of messaging) {
       const senderId = ev?.sender?.id;
+      if (expectedObject === "page" && ev?.postback && !ev?.message) {
+        const payload = ev.postback.payload;
+        const text = typeof payload === "string" && Object.hasOwn(STARTER_MESSAGES, payload)
+          ? STARTER_MESSAGES[payload] : null;
+        const timestamp = ev.timestamp;
+        if (!text || typeof senderId !== "string" || !/^\d{5,64}$/.test(senderId) ||
+            !Number.isSafeInteger(timestamp) || timestamp <= 0 ||
+            ev?.recipient?.id !== externalAccountId) continue;
+        // Some postbacks have no mid. The provider timestamp makes retries stable while
+        // allowing the same customer to press the same button again later.
+        const eventId = `postback:${createHash("sha256").update(JSON.stringify([
+          externalAccountId, senderId, timestamp, payload,
+        ])).digest("hex")}`;
+        out.push({ externalAccountId, senderId, text, eventId, attachments: [] });
+        continue;
+      }
       const eventId = typeof ev?.message?.mid === "string" ? ev.message.mid.trim() : "";
       const text = typeof ev?.message?.text === "string" ? ev.message.text.trim() : "";
       const attachments = Array.isArray(ev?.message?.attachments)

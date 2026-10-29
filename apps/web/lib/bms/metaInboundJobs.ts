@@ -1,6 +1,7 @@
 import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { getChannel } from "./channels";
+import { facebookAssistantMode } from "./facebookAssistantMode";
 import { runPipeline } from "./pipeline";
 import {
   deliverToChannel,
@@ -244,7 +245,12 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
 
   let result: Pick<Awaited<ReturnType<typeof runPipeline>>, "reply" | "quality">;
   try {
-    result = await runPipeline(job.messageText, job.channel, job.tenantId, job.customerRef);
+    const mode = job.channel === "facebook"
+      ? facebookAssistantMode(job.tenantId, job.externalAccountId)
+      : "shop_commerce";
+    result = mode === "bms_presales"
+      ? await runPipeline(job.messageText, job.channel, job.tenantId, job.customerRef, { assistantMode: mode })
+      : await runPipeline(job.messageText, job.channel, job.tenantId, job.customerRef);
   } catch (error) {
     const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
     await reportBmsFailure({

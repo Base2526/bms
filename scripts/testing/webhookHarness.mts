@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import * as lineBotIdentity from "../../apps/web/lib/bms/lineBotIdentity.ts";
 import { isBmsLineOfficialAccount } from "../../apps/web/lib/bms/lineOfficialAccount.ts";
+import { facebookAssistantMode } from "../../apps/web/lib/bms/facebookAssistantMode.ts";
 
 const require = createRequire(new URL("../../apps/web/package.json", import.meta.url));
 const ts = require("typescript");
@@ -41,6 +42,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   const worker = loadWithStubs("apps/web/lib/bms/metaInboundJobs.ts", {
     "@/lib/db": { getClient: async () => ({ release() {}, query: async () => ({ rows: [], rowCount: 1 }) }) },
     "./tenant": { beginTenantTx: noop },
+    "./facebookAssistantMode": { facebookAssistantMode },
     "./channels": { getChannel: async () => ({ active: true, external_account_id: "123456789012345" }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "./inbox": {

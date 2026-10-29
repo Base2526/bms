@@ -5,6 +5,14 @@
 Every channel flows into the same pipeline (channel-agnostic).
 Implemented: [`apps/web/lib/bms/pipeline.ts`](../../apps/web/lib/bms/pipeline.ts)
 
+Facebook uses shop commerce by default. `facebookAssistantMode.ts` selects the existing BMS presales
+runtime only when the server-configured BMS tenant AND Page match the verified inbound job. These
+identities are configured through `BMS_FACEBOOK_PRESALES_TENANT_ID` and
+`BMS_FACEBOOK_PRESALES_PAGE_ID`, never customer text or tenant labels. See
+[Messenger setup and ad starters](../integrations/facebook-messenger.md). Starter postbacks map only
+to informational customer messages and do not grant mutation authority. LINE's verified bot routing
+and Instagram shop commerce are unchanged.
+
 Customer-turn evidence (`10.53`) starts before early guards and follows both approved-tool paths.
 The final sanitized reply is linked to its exact incoming message by `logConversation`, not by
 nearest timestamp. Evidence travels server-side only; a pipeline exception produces one terminal

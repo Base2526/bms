@@ -5,8 +5,8 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 const job = { id: "job-1", tenantId: "tenant-1", channel: "facebook", eventId: "mid-1",
   externalAccountId: "123456", customerRef: "998877", messageText: "hello", attachments: [], attempts: 2 };
 
-function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean } = {}) {
-  const calls = { pipeline: 0, sends: 0, incidents: [] as any[], sql: [] as string[] };
+function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string } = {}) {
+  const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, incidents: [] as any[], sql: [] as string[] };
   const client = { release() {}, query: async (sql: string, args: any[]) => {
     calls.sql.push(sql);
     if (sql.includes("SET effects_started_at=now()")) {
@@ -27,8 +27,9 @@ function harness(options: { claimed?: number; active?: boolean; account?: string
       return { rows: [{ tenant_id: job.tenantId }] };
     } },
     "./tenant": { beginTenantTx: noop },
+    "./facebookAssistantMode": { facebookAssistantMode: () => options.mode ?? "shop_commerce" },
     "./channels": { getChannel: async () => ({ active: options.active ?? true, external_account_id: options.account ?? job.externalAccountId }) },
-    "./pipeline": { runPipeline: async () => { calls.pipeline++; return { reply: "hello" }; } },
+    "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline++; calls.pipelineArgs.push(args); return { reply: "hello" }; } },
     "./inbox": { logConversation: noop, logInboundMessage: noop, deliverToChannel: async () => { calls.sends++; return true; } },
     "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({}) },
     "./channelHealth": { recordInboundEvent: noop },
@@ -59,6 +60,19 @@ test("valid lease processes one customer turn and reply", async () => {
   await worker.processMetaInboundJob(job);
   assert.equal(calls.pipeline, 1);
   assert.equal(calls.sends, 1);
+});
+
+test("the designated Facebook Page uses presales while shops and Instagram retain commerce", async () => {
+  for (const channel of ["facebook", "instagram"]) {
+    for (const mode of ["bms_presales", "shop_commerce"]) {
+      const { worker, calls } = harness({ mode });
+      await worker.processMetaInboundJob({ ...job, channel });
+      assert.deepEqual(calls.pipelineArgs[0][4], channel === "facebook" && mode === "bms_presales"
+        ? { assistantMode: "bms_presales" } : undefined);
+      assert.equal(calls.pipelineArgs[0][2], job.tenantId);
+      assert.equal(calls.pipelineArgs[0][3], job.customerRef);
+    }
+  }
 });
 
 test("cron finds and reports expired uncertain jobs even with no pending work", async () => {
