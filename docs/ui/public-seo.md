@@ -94,15 +94,112 @@ Record one row per locale and query group:
 | --- | --- | --- |
 | Valid indexed URLs vs sitemap URLs | Search Console Pages + Sitemaps | Find discovery or canonical problems |
 | Impressions, clicks, CTR and average position | Search Console Performance | Prioritize title, snippet and content work |
+| AI-feature impressions by page, country and device | Search Console Generative AI performance | Measure Google AI visibility separately from ordinary search |
 | Queries by landing page and locale | Search Console Performance | Find missing answer pages and language mismatch |
 | Structured-data valid/invalid count | Search Console enhancements and Rich Results Test | Catch template regressions |
 | Bing indexed pages and crawl errors | Bing Webmaster Tools | Confirm non-Google discovery |
+| Citations, cited URLs and grounding queries | Bing AI Performance | Measure citations on supported Microsoft/partner surfaces, not all AI engines |
 | Referrals with `utm_source=chatgpt.com` | Web analytics | Measure visits from ChatGPT search citations |
 | Organic conversion to demo, signup or LINE | Consent-aware web analytics | Separate visibility from useful outcomes |
 
 Do not compare only total traffic. Review the Thai and English cohorts separately, annotate releases,
 and compare at least 28 days against the preceding 28 days. Search Console data is delayed; do not
 treat the first days after deployment as a ranking verdict.
+
+## How to judge whether the work delivers results
+
+Technical audit success is a release prerequisite, not proof of traffic, citations or revenue.
+Use four separate layers; do not combine them into an invented universal AI SEO score.
+
+| Layer | Measure | Evidence of improvement | Interpretation limit |
+| --- | --- | --- | --- |
+| Discovery | Intended canonical pages indexed / intended indexable pages; priority-page crawl/index status | Priority pages are discoverable with no blocking errors | A 200 response, sitemap entry or bot visit does not prove indexing |
+| AI visibility | Google AI-feature impressions; Bing citations and cited pages; repeatable prompt-panel citation rate | More relevant non-brand visibility and accurate citations across multiple periods | Each provider covers different surfaces; do not sum their metrics into a global market share |
+| Visits and intent | Observed AI-source sessions; sessions containing a contact/demo/signup CTA | Absolute intent sessions and intent rate rise together | Opt-in and referrer loss undercount traffic; clicks do not prove conversations or registrations |
+| Business outcomes | Qualified enquiries, completed shop registrations, activated shops and paid subscriptions with supported attribution | More real prospective shops or customers, with stable or improving quality | The current public analytics integration does not join visits to authenticated/business outcomes |
+
+### Measurement setup and baseline
+
+- Record the actual production deployment time and commit. Pushing Git is not deployment. Compare
+  production evidence with the deployed commit; local audits cannot measure production impact.
+- Verify Search Console and Bing ownership, submit the canonical sitemap, and confirm Google Search
+  generative-AI inclusion settings. Activate GA4 only after following the consent and stream setup
+  below. Export account data privately; do not commit it to this repository.
+- Capture a pre-release snapshot of priority URLs: `/th`, `/en`, both language variants of `/about`,
+  `/ai-business-system`, `/restaurant`, `/cost-pricing`, and the most relevant learning articles.
+- Use the prior 28 days if genuine historical data exists. When it does not, mark the baseline
+  **unavailable**, not zero, and use the first complete collection window as the starting point.
+  GA4 cannot reconstruct visits from before it was enabled.
+- Segment Thai/English, brand/non-brand questions, landing page and source. Brand searches such as
+  “BMS คืออะไร” measure recognition; unbranded questions measure discovery. Exclude staff, QA and
+  development traffic. Track measurement/consent changes as well as product and marketing releases.
+- Review crawl and tagging problems after release, then compare complete 28-day windows. Use a
+  second comparable window (roughly days 29–56) and a later review around day 84 to assess persistence.
+  These are review checkpoints, not promised indexing or ranking deadlines. Exclude preliminary
+  report days and preserve each provider's time-zone and aggregation definitions.
+
+### A reproducible AI-answer panel
+
+Start with a fixed panel of 20 relevant questions, split into branded and non-branded groups and
+reported separately for Thai and English. Candidate questions include:
+
+- “ระบบจัดการร้านอาหารที่เชื่อมออร์เดอร์ ครัว และสต็อก มีอะไรบ้าง”
+- “คาเฟ่ควรคิดต้นทุนต่อแก้วและจุดคุ้มทุนอย่างไร”
+- “ระบบ AI ช่วยเจ้าของร้านตรวจยอดขายและสต็อกได้อย่างไร”
+- “BMS ต่างจากแชทบอทอย่างไร”
+- “How should a cafe calculate cost per cup and break-even sales?”
+
+For each selected engine, keep the exact question, language, search-enabled mode, region and model
+version recorded. Use fresh conversations without prior BMS context or memory. Repeat each question
+three times per review and retain the date, answer and cited URLs as private evidence. Do not change
+questions because one wording happens to produce a favorable result.
+
+Record separately: (1) BMS mentioned, (2) a `jachoei.com` URL cited, and (3) claims about BMS correct.
+Panel citation rate = answers citing a BMS URL / completed answer runs; failed runs are recorded
+separately. Also report the number of distinct questions that produced a citation. A panel rate
+measures this controlled sample only, not the share of all real AI questions. Provider reports and
+actual visitors are needed to determine whether the sample corresponds to real demand.
+
+### Outcome definitions and decisions
+
+For the consented/observed audience, intent rate = AI-source sessions with at least one
+`public_cta_click` / observed AI-source sessions. Use session segments and deduplicate repeated
+clicks. Register event-scoped `discovery_source` and `cta_action` dimensions in GA4 as described below.
+The current source classification is a coarse per-document observation; a full reload, stripped
+referrer, missing UTM or consent refusal can break attribution. Do not label all Google visits as
+AI traffic or treat absent attribution as evidence of no AI influence.
+
+`line_contact` is a link click, not a LINE conversation; `signup_start` is not a completed account;
+`demo_open` is not a sales-qualified lead. To measure actual conversion, plan a separate consented,
+server-confirmed attribution design at registration/activation boundaries, or maintain a private
+qualified-lead log with voluntarily reported discovery source. Avoid sending tenant/customer IDs
+or personal data into this public tracking integration.
+
+- Not indexed: investigate crawl access, canonicalization, internal links and indexing evidence.
+- Indexed but little relevant AI visibility: improve answers for real non-brand customer questions,
+  original evidence and trusted references; do not keep adding schema as a substitute for substance.
+- Citations/impressions grow but visits do not: inspect intent and whether the AI answer satisfies
+  the task without a click. Visibility alone is not evidence of acquisition growth.
+- Visits grow but CTA intent does not: review landing-page relevance, mobile usability and the next step.
+- Intent grows but qualified enquiries or completed registrations do not: investigate contact/signup
+  friction and attribution before claiming commercial success.
+- Relevant visibility, observed intent and verified business outcomes improve across comparable
+  periods: evidence of useful progress. Report raw counts alongside rates; small baselines make
+  percentage increases unstable. Set numeric growth targets only after a real baseline exists.
+
+Before/after trends are observational. Record campaigns, seasonality, outages and engine/model
+changes. Where possible, compare with similar pages unaffected by the specific content change;
+sitewide changes can contaminate that comparison. A staggered rollout in a future iteration can
+provide stronger evidence than attributing every increase to this release.
+
+Current official measurement references, checked 2026-10-29:
+
+- [Google Generative AI performance report](https://support.google.com/webmasters/answer/16984139?hl=en)
+  reports AI-feature impressions, including AI Overviews and AI Mode. The report may not appear when
+  impression volume is too low; do not interpret a missing report as a measured zero.
+- [Bing AI Performance](https://www.bing.com/webmasters/help/ai-performance-9f8e7d6c)
+  reports citations on supported Microsoft/partner surfaces. Citation trends alone do not establish
+  which content change caused an increase.
 
 ## Release status and external dependencies
 
