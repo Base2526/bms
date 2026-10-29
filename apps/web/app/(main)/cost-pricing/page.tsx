@@ -1,3 +1,4 @@
+import PublicAnswers from "@/components/marketing/answers/PublicAnswers";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { resolveBilingual } from "@/lib/static-page-i18n";
@@ -21,6 +22,6 @@ export default function Page() {
       { name: lang === "th" ? "หน้าหลัก" : "Home", path: "/" },
       { name: lang === "th" ? "ต้นทุนและราคาขาย" : "Cost & pricing", path: "/cost-pricing" },
     ])} />
-    <CostPricingPage />
+    <CostPricingPage><PublicAnswers topic="cost-pricing" locale={lang} /></CostPricingPage>
   </>;
 }

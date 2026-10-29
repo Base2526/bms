@@ -114,6 +114,18 @@ export default function AuthorityPage({
         </div>
       </section>
 
+      <section className={styles.references} aria-label={locale === "th" ? "ที่มาของเนื้อหา" : "About this content"}>
+        <h2>{locale === "th" ? "อ่านต่อและตรวจสอบรายละเอียด" : "Further reading and verification"}</h2>
+        <p>{locale === "th"
+          ? "BMS จัดทำคำอธิบายนี้จากขอบเขตผลิตภัณฑ์และคู่มือของระบบ ตัวอย่างมีไว้เพื่ออธิบายขั้นตอน ความพร้อมของการเชื่อมต่อและการใช้งานขึ้นอยู่กับการตั้งค่าและสิทธิ์ของร้าน หากพบข้อมูลคลาดเคลื่อน แจ้งทีมงานเพื่อทบทวนได้"
+          : "BMS prepares this explanation from its product boundaries and operating guides. Examples illustrate workflows; integration availability and access depend on shop configuration and permissions. Contact the team to report information that needs correction."}</p>
+        <nav aria-label={locale === "th" ? "คู่มือประกอบ" : "Supporting guides"}>
+          <Link href={localizedPublicPath("/learn/guides/reports-ai", locale)}>{locale === "th" ? "รายงานและผู้ช่วย AI" : "Reports and the AI assistant"}</Link>
+          <Link href={localizedPublicPath("/learn/guides/start-here", locale)}>{locale === "th" ? "คู่มือเริ่มต้นใช้งาน" : "Getting started guide"}</Link>
+          <Link href={localizedPublicPath("/support", locale)}>{locale === "th" ? "ติดต่อ BMS / แจ้งแก้ไขข้อมูล" : "Contact BMS / report a correction"}</Link>
+        </nav>
+      </section>
+
       <section className={styles.cta}>
         <div>
           <h2>{content.cta.title}</h2>

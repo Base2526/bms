@@ -1,3 +1,4 @@
+import { BMS_LINE_OA_URL } from "./bms/lineOfficialAccount";
 import { absolutePublicUrl, localizedPublicPath, type PublicSeoLocale } from "@/lib/publicSeo";
 
 export type JsonLdValue = Record<string, unknown> | Array<Record<string, unknown>>;
@@ -10,6 +11,13 @@ export function organizationJsonLd(): Record<string, unknown> {
     name: "BMS",
     url: absolutePublicUrl("/"),
     logo: absolutePublicUrl("/icons/ios-icon-1024.png"),
+    sameAs: [BMS_LINE_OA_URL],
+    contactPoint: {
+      "@type": "ContactPoint",
+      contactType: "customer support",
+      url: absolutePublicUrl("/th/support"),
+      availableLanguage: ["Thai", "English"],
+    },
     description: "BMS is an AI-first business operating system that connects customer conversations to CRM, orders, inventory, payments, shipping and dashboards.",
     knowsAbout: [
       "business management",
@@ -112,7 +120,7 @@ export function learningArticleJsonLd(input: {
     url,
     inLanguage: input.locale === "th" ? "th-TH" : "en-US",
     dateModified: input.reviewedAt,
-    author: { "@id": `${absolutePublicUrl("/")}#organization` },
+    author: { "@type": "Organization", "@id": `${absolutePublicUrl("/")}#organization`, name: "BMS", url: absolutePublicUrl(localizedPublicPath("/about", input.locale)) },
     publisher: { "@id": `${absolutePublicUrl("/")}#organization` },
     image: absolutePublicUrl("/og.png"),
   };

@@ -34,7 +34,7 @@ function TrustIcon({ index }: { index: number }) {
   </svg>;
 }
 
-export default function RestaurantGuide() {
+export default function RestaurantGuide({ children }: { children?: React.ReactNode }) {
   const { lang, t } = useI18n(), { admin, loading } = useSessionCtx();
   const copy = resolveBilingual(restaurantCopy, lang);
   const { setOverride, clearOverride } = useBreadcrumbsOverride();
@@ -249,6 +249,7 @@ export default function RestaurantGuide() {
       <div><h2>{copy.fitTitle}</h2><p>{copy.fitDescription}</p><ul className={styles.fitTags}>{copy.fits.map(fit => <li key={fit}>{fit}</li>)}</ul></div>
       <div><h2 id="restaurant-readiness-title">{copy.readinessTitle}</h2><ul className={styles.limits}>{copy.readiness.map(point => <li key={point}>{point}</li>)}</ul></div>
     </section>
+    {children}
     <section className={styles.cta}><div><h2>{copy.ctaTitle}</h2><p>{copy.ctaDescription}</p></div><div className={styles.actions}>
       <a className={styles.primaryButton} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} ↗</a>
       <Link className={styles.button} href={learningHref}>{copy.learnGuide} →</Link>

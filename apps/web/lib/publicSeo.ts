@@ -35,8 +35,9 @@ export function publicSiteUrl(): string {
   if (configured) {
     try {
       const url = new URL(configured);
-      if (url.protocol === "https:" || process.env.NODE_ENV !== "production") {
-        return url.toString().replace(/\/$/, "");
+      if (!url.username && !url.password && (url.protocol === "https:" ||
+          (url.protocol === "http:" && process.env.NODE_ENV !== "production"))) {
+        return url.origin;
       }
     } catch {
       // Fall through to the production public origin.
@@ -68,6 +69,8 @@ export function localizedPublicPath(path: string, locale: PublicSeoLocale): stri
   const suffixIndex = [hashIndex, queryIndex].filter((index) => index >= 0).sort((a, b) => a - b)[0] ?? path.length;
   const pathname = stripPublicLocale(path.slice(0, suffixIndex)) || "/";
   const suffix = path.slice(suffixIndex);
+  // Operational and signed URLs never receive a public language prefix.
+  if (!isLocalizedPublicPath(pathname)) return `${pathname}${suffix}`;
   return pathname === "/" ? `/${locale}${suffix}` : `/${locale}${pathname}${suffix}`;
 }
 

@@ -82,6 +82,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
           <ul>
             <li><strong>Messaging channels:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — to send and receive messages on behalf of a shop.</li>
             <li><strong>AI providers:</strong> configured large-model and OCR providers such as Anthropic (Claude), DeepSeek, or Alibaba Cloud Model Studio (Qwen OCR) — to generate AI replies and analyze payment slip images, when a Shop Owner enables these features.</li>
+            <li><strong>Optional public-site analytics:</strong> when Google Analytics is configured, it loads only after you allow analytics in PDPA settings. We send the public page path, a coarse referral category and contact/demo/signup link clicks. We do not send form text, calculator inputs, raw query strings, account identifiers or private business pages. Google may process technical connection information and analytics cookies. Advertising signals are disabled. You may withdraw permission in the footer; future collection stops and this integration's cookies are cleared. The consent choice and analytics cookies expire after 180 days. A link click is not proof of a completed registration or sale.</li>
             <li><strong>Infrastructure:</strong> our hosting and database providers, used to run and store the Platform's data securely.</li>
             <li>We do not sell personal data to third parties, and we do not use conversation content for advertising.</li>
           </ul>
@@ -196,6 +197,7 @@ const PRIVACY: { en: PrivacyContent; th: PrivacyContent } = {
           <ul>
             <li><strong>ช่องทางส่งข้อความ:</strong> LINE Messaging API, Meta (Facebook/Instagram) Graph API, TikTok — เพื่อส่ง/รับข้อความในนามร้าน</li>
             <li><strong>ผู้ให้บริการ AI:</strong> ผู้ให้บริการโมเดลและ OCR ที่ระบบตั้งค่าไว้ เช่น Anthropic (Claude), DeepSeek หรือ Alibaba Cloud Model Studio (Qwen OCR) — สำหรับสร้างคำตอบ AI และวิเคราะห์สลิปการโอนเงิน เมื่อเจ้าของร้านเปิดใช้ฟีเจอร์เหล่านี้</li>
+            <li><strong>การวิเคราะห์หน้าสาธารณะแบบเลือกได้:</strong> เมื่อมีการตั้งค่า Google Analytics ระบบจะโหลดหลังคุณอนุญาตการวิเคราะห์ในตั้งค่า PDPA เท่านั้น ข้อมูลที่ส่งคือเส้นทางหน้าสาธารณะ หมวดแหล่งที่มา และการคลิกลิงก์ติดต่อ ทดลอง หรือเริ่มสมัคร ไม่ส่งข้อความในฟอร์ม ตัวเลขที่กรอกในเครื่องคำนวณ query string ดิบ รหัสบัญชี หรือหน้าข้อมูลธุรกิจส่วนตัว Google อาจประมวลผลข้อมูลทางเทคนิคของการเชื่อมต่อและคุกกี้วิเคราะห์ โดยปิดสัญญาณโฆษณา คุณถอนความยินยอมได้ที่ท้ายหน้าเพื่อหยุดการเก็บข้อมูลครั้งต่อไปและล้างคุกกี้ของส่วนนี้ ตัวเลือกความยินยอมและคุกกี้วิเคราะห์หมดอายุใน 180 วัน การคลิกลิงก์ไม่ได้หมายความว่าสมัครหรือซื้อสำเร็จแล้ว</li>
             <li><strong>โครงสร้างพื้นฐาน:</strong> ผู้ให้บริการ hosting และฐานข้อมูลที่เราใช้รันและจัดเก็บข้อมูลของแพลตฟอร์มอย่างปลอดภัย</li>
             <li>เราไม่ขายข้อมูลส่วนบุคคลให้บุคคลที่สาม และไม่ใช้เนื้อหาบทสนทนาเพื่อการโฆษณา</li>
           </ul>

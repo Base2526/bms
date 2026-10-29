@@ -8,8 +8,8 @@ import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/l
 export function learningLang(): "th" | "en" { return cookies().get("lang")?.value === "en" ? "en" : "th"; }
 export function learningMetadata(title: string, description: string, path: string, lang: PublicSeoLocale): Metadata {
   return { title: `${title} | BMS`, description, alternates: publicAlternates(path, lang),
-    openGraph: { title, description, url: localizedPublicPath(path, lang), type: "website", siteName: "BMS", locale: lang === "th" ? "th_TH" : "en_US" },
-    twitter: { card: "summary", title, description } };
+    openGraph: { title, description, url: localizedPublicPath(path, lang), type: "website", siteName: "BMS", locale: lang === "th" ? "th_TH" : "en_US", images: [{ url: "/og.png", width: 1200, height: 630, alt: "BMS learning center" }] },
+    twitter: { card: "summary_large_image", title, description, images: ["/og.png"] } };
 }
 export function Sidebar({ lang, track }: { lang: "th" | "en"; track?: TrackId }) {
   return <nav className={s.sidebar} aria-label={lang === "th" ? "หมวดคู่มือ" : "Guide categories"}>

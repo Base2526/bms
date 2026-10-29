@@ -173,7 +173,7 @@
   .printPage { page: restaurant-flow; width: 277mm; height: 188mm; margin: 0; padding: 0; break-after: page; break-inside: avoid; display: flex; flex-direction: column; }
   .printPage:last-child { break-after: auto; }
   .printHeading { height: 22mm; flex: 0 0 22mm; }
-  .printHeading h1 { font-size: 16px; line-height: 1.4; margin: 0 0 3px; }
+  .printHeading h2 { font-size: 16px; line-height: 1.4; margin: 0 0 3px; }
   .printHeading p { font-size: 11px; line-height: 1.4; margin: 2px 0; }
   .printDiagram { height: 145mm; flex: 0 0 145mm; }
   .printDiagram svg { width: 100% !important; display: block; height: auto; overflow: hidden; }

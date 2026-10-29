@@ -25,32 +25,8 @@ import {
   ShopOutlined,
 } from "@ant-design/icons";
 
-type ConsentValue = "allow" | "reject";
+import { readAnalyticsConsent, writeAnalyticsConsent, syncAnalyticsConsent, ANALYTICS_CONSENT_EVENT, type ConsentValue } from "@/lib/analyticsConsent";
 type Lang = "th" | "en";
-
-const CONSENT_KEY = "pdpa_consent_v1";
-
-function readConsent(): { value: ConsentValue; at: string } | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(CONSENT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed?.value === "allow" || parsed?.value === "reject") return parsed;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function writeConsent(value: ConsentValue) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(CONSENT_KEY, JSON.stringify({ value, at: new Date().toISOString() }));
-  } catch {
-    // Local storage may be unavailable in privacy mode. Consent remains session-only.
-  }
-}
 
 const COPY = {
   th: {
@@ -89,9 +65,9 @@ const COPY = {
     footerLine: "AI Business Management System",
     pdpa: "ตั้งค่า PDPA",
     pdpaTitle: "PDPA / Cookies",
-    pdpaDesc: "เราใช้คุกกี้ที่จำเป็นเพื่อให้เว็บไซต์ทำงาน และอาจใช้คุกกี้วิเคราะห์เพื่อปรับปรุงประสบการณ์ใช้งาน คุณสามารถเลือกอนุญาตหรือปฏิเสธได้",
-    allow: "อนุญาต",
-    reject: "ปฏิเสธ",
+    pdpaDesc: "คุกกี้ที่จำเป็นช่วยให้เว็บไซต์ทำงาน หากคุณอนุญาต เมื่อเปิดใช้ Google Analytics เราจะวัดการเข้าชมหน้าสาธารณะ แหล่งที่มา และการคลิกติดต่อ/เริ่มใช้งาน คุณเปลี่ยนใจได้ที่ตั้งค่า PDPA โดยไม่กระทบการใช้งาน",
+    allow: "อนุญาตการวิเคราะห์",
+    reject: "ใช้เฉพาะที่จำเป็น",
     close: "ปิด",
     homeAria: "หน้าแรก BMS",
     pdpaDialogAria: "การตั้งค่าคุกกี้ PDPA",
@@ -134,9 +110,9 @@ const COPY = {
     footerLine: "AI Business Management System",
     pdpa: "PDPA settings",
     pdpaTitle: "PDPA / Cookies",
-    pdpaDesc: "We use necessary cookies to keep the website working and may use analytics cookies to improve your experience. You can allow or reject them.",
-    allow: "Allow",
-    reject: "Reject",
+    pdpaDesc: "Necessary cookies keep this site working. With your permission, when Google Analytics is configured, we measure public-page visits, referral categories and contact/signup clicks. Change your choice in PDPA settings at any time without affecting access.",
+    allow: "Allow analytics",
+    reject: "Necessary only",
     close: "Close",
     homeAria: "BMS home",
     pdpaDialogAria: "PDPA cookie settings",
@@ -154,23 +130,28 @@ function AppFooterInner({ lang }: { lang?: Lang }) {
   const [showPdpa, setShowPdpa] = useState(false);
 
   useEffect(() => {
-    const current = readConsent();
-    if (current?.value) {
-      setConsent(current.value);
+    const current = readAnalyticsConsent();
+    if (current) {
+      setConsent(current);
       setShowPdpa(false);
     } else {
       setShowPdpa(true);
     }
+    const sync = () => setConsent(readAnalyticsConsent());
+    const storage = (event: StorageEvent) => { syncAnalyticsConsent(event); sync(); };
+    window.addEventListener(ANALYTICS_CONSENT_EVENT, sync);
+    window.addEventListener("storage", storage);
+    return () => { window.removeEventListener(ANALYTICS_CONSENT_EVENT, sync); window.removeEventListener("storage", storage); };
   }, []);
 
   const onAllow = useCallback(() => {
-    writeConsent("allow");
+    writeAnalyticsConsent("allow");
     setConsent("allow");
     setShowPdpa(false);
   }, []);
 
   const onReject = useCallback(() => {
-    writeConsent("reject");
+    writeAnalyticsConsent("reject");
     setConsent("reject");
     setShowPdpa(false);
   }, []);

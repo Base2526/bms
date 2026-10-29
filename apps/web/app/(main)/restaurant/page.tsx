@@ -1,3 +1,4 @@
+import PublicAnswers from "@/components/marketing/answers/PublicAnswers";
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { resolveBilingual } from "@/lib/static-page-i18n";
@@ -26,6 +27,6 @@ export default function RestaurantPage() {
       { name: lang === "th" ? "หน้าหลัก" : "Home", path: "/" },
       { name: lang === "th" ? "ร้านอาหารและคาเฟ่" : "Restaurants & cafes", path: "/restaurant" },
     ])} />
-    <RestaurantGuide />
+    <RestaurantGuide><PublicAnswers topic="restaurant" locale={lang} /></RestaurantGuide>
   </>;
 }

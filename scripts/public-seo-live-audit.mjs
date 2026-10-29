@@ -1,5 +1,15 @@
 #!/usr/bin/env node
 
+import { writeFile, mkdir } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { inspectPublicHtml, duplicateMetadata, blocksSnippets } from "./lib/public-seo-audit.mjs";
+
+const args = process.argv.slice(2);
+if (args.length && (args.length !== 2 || args[0] !== "--output" || !args[1])) {
+  throw new Error("Usage: public-seo-live-audit.mjs [--output report.json]");
+}
+const outputFile = args[1] ? resolve(args[1]) : null;
+const startedAt = new Date().toISOString();
 const baseUrl = new URL(process.env.SEO_BASE_URL || "http://localhost:3000");
 const requestedConcurrency = Number(process.env.SEO_AUDIT_CONCURRENCY || 6);
 if (!Number.isInteger(requestedConcurrency) || requestedConcurrency < 1 || requestedConcurrency > 16) {
@@ -35,15 +45,16 @@ function publicHrefErrors(html) {
     .filter((href) => href && pattern.test(href));
 }
 
-async function auditPage(canonicalUrl) {
+async function auditPage(canonicalUrl, sitemapUrls) {
   const canonical = new URL(canonicalUrl);
   const requestUrl = new URL(`${canonical.pathname}${canonical.search}`, baseUrl);
+  const started = performance.now();
   const response = await fetch(requestUrl, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
   const html = await response.text();
   const errors = [];
 
   if (response.status !== 200) errors.push(`status ${response.status}`);
-  if (response.headers.get("x-robots-tag")) errors.push(`x-robots-tag ${response.headers.get("x-robots-tag")}`);
+  if (blocksSnippets(response.headers.get("x-robots-tag"))) errors.push(`x-robots-tag ${response.headers.get("x-robots-tag")}`);
   if (!textOf(html, "title")) errors.push("missing title");
   if (!tags(html, "meta").some((tag) => attr(tag, "name")?.toLowerCase() === "description" && attr(tag, "content"))) {
     errors.push("missing meta description");
@@ -84,7 +95,12 @@ async function auditPage(canonicalUrl) {
   const badHrefs = publicHrefErrors(html);
   if (badHrefs.length) errors.push(`unlocalized public hrefs: ${[...new Set(badHrefs)].join(", ")}`);
 
-  return { canonicalUrl, errors };
+  if (!response.headers.get("content-type")?.includes("text/html")) errors.push("response is not HTML");
+  const semantic = inspectPublicHtml(html, canonicalUrl, sitemapUrls);
+  return { canonicalUrl, ...semantic, status: response.status,
+    responseMs: Math.round(performance.now() - started), htmlBytes: Buffer.byteLength(html),
+    errors: [...new Set([...errors, ...semantic.errors])] };
+
 }
 
 async function main() {
@@ -116,15 +132,17 @@ async function main() {
   let cursor = 0;
   let checked = 0;
   const failures = [];
+  const results = [];
   async function worker() {
     while (cursor < urls.length) {
       const index = cursor++;
       let result;
       try {
-        result = await auditPage(urls[index]);
+        result = await auditPage(urls[index], urls);
       } catch (error) {
         result = { canonicalUrl: urls[index], errors: [error instanceof Error ? error.message : String(error)] };
       }
+      results.push(result);
       checked++;
       if (result.errors.length) failures.push(result);
       if (checked % 50 === 0) console.log(`[seo-audit] checked ${checked}/${urls.length}`);
@@ -132,6 +150,24 @@ async function main() {
   }
 
   await Promise.all(Array.from({ length: concurrency }, worker));
+  results.sort((a, b) => a.canonicalUrl.localeCompare(b.canonicalUrl));
+  const duplicates = { titles: duplicateMetadata(results, "title"), descriptions: duplicateMetadata(results, "description") };
+  const warnings = results.filter(result => result.warnings?.length);
+  for (const [field, groups] of Object.entries(duplicates)) {
+    for (const group of groups) console.warn(`[seo-audit] WARN duplicate ${field}: ${group.join(", ")}`);
+  }
+  for (const result of warnings) console.warn(`[seo-audit] WARN ${result.canonicalUrl}: ${result.warnings.join("; ")}`);
+  if (outputFile) {
+    await mkdir(dirname(outputFile), { recursive: true });
+    await writeFile(outputFile, JSON.stringify({
+      version: 1, baseUrl: baseUrl.origin, startedAt, completedAt: new Date().toISOString(),
+      total: urls.length, passed: urls.length - failures.length, failed: failures.length,
+      duplicateMetadata: duplicates, pagesWithWarnings: warnings.length,
+      limitations: ["HTTP checks do not prove search indexing or AI citations.", "Response times are diagnostic fetch durations, not Core Web Vitals.", "JSON-LD checks do not establish eligibility for rich results."],
+      pages: results,
+    }, null, 2) + "\n");
+    console.log(`[seo-audit] Report: ${outputFile}`);
+  }
   if (failures.length) {
     for (const failure of failures) console.error(`[seo-audit] ${failure.canonicalUrl}: ${failure.errors.join("; ")}`);
     throw new Error(`${failures.length}/${urls.length} public pages failed`);
