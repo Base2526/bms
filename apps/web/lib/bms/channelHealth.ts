@@ -23,7 +23,7 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { getChannel } from "./channels";
 
-const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v21.0";
+const META_GRAPH_VERSION = process.env.META_GRAPH_VERSION || "v26.0";
 
 export type ChannelHealthStatus =
   | "connected"
@@ -286,12 +286,18 @@ export async function testChannelConnection(tenantId: string, channel: string): 
   if (channel === "facebook" || channel === "instagram") {
     try {
       const resp = await fetch(
-        `https://graph.facebook.com/${META_GRAPH_VERSION}/me?access_token=${encodeURIComponent(cfg.access_token)}`
+        `https://graph.facebook.com/${META_GRAPH_VERSION}/me?fields=${channel === "instagram" ? "id,name,instagram_business_account" : "id,name"}&access_token=${encodeURIComponent(cfg.access_token)}`
       );
       const bodyText = await resp.text().catch(() => "");
       if (resp.ok) {
-        await recordOutboundSuccess(tenantId, channel);
         const info = (() => { try { return JSON.parse(bodyText); } catch { return {}; } })();
+        const accountId = channel === "instagram" ? info.instagram_business_account?.id : info.id;
+        if (!cfg.external_account_id || String(accountId ?? "") !== cfg.external_account_id) {
+          const detail = "Page token does not belong to the configured Meta account ID";
+          await recordOutboundError(tenantId, channel, 403, detail);
+          return { ok: false, message: detail };
+        }
+        await recordOutboundSuccess(tenantId, channel);
         return { ok: true, message: `เชื่อมต่อสำเร็จ — เพจ "${info.name || "ไม่ทราบชื่อ"}"` };
       }
       const detail = formatOutboundErrorDetail(resp, bodyText);

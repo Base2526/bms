@@ -45,7 +45,7 @@ test("real channel service protects metadata for extra-only saves, same-token sa
       "./lineBotIdentity": identity,
     });
     await channels.upsertChannel("FAKE-tenant", "line", { accessToken: replacement, extra: { botBasicId: "@168tnlzi", custom: "kept" } }, "FAKE-actor");
-    const saved = calls.find(c => c.sql?.includes("INSERT INTO bms_tenant_channels")).args[5];
+    const saved = calls.find(c => c.sql?.includes("INSERT INTO bms_tenant_channels")).args[7];
     assert.equal(saved.custom, "kept");
     assert.equal(saved.botBasicId, replacement === "FAKE-new" ? undefined : "@fake-shop");
     assert.ok(calls.find(c => c.tx === "FAKE-tenant"));

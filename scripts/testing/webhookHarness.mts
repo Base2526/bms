@@ -37,10 +37,40 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   const verifiedExtra = { botBasicId: "@fake-shop", botInfoSyncedAt: new Date().toISOString(),
     botIdentityTokenHash: lineBotIdentity.lineBotTokenHash("FAKE-token") };
   const noop = async () => {};
+  let queuedMetaEvents: any[] = [];
+  const worker = loadWithStubs("apps/web/lib/bms/metaInboundJobs.ts", {
+    "@/lib/db": { getClient: async () => ({ release() {}, query: async () => ({ rows: [], rowCount: 1 }) }) },
+    "./tenant": { beginTenantTx: noop },
+    "./channels": { getChannel: async () => ({ active: true, external_account_id: "123456789012345" }) },
+    "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
+    "./inbox": {
+      logConversation: async (...args: any[]) => { calls.logs.push(args); },
+      logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
+      deliverToChannel: async (...args: any[]) => { calls.deliveries.push(args); return options.deliver ? options.deliver(...args) : true; },
+    },
+    "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE" }) },
+    "./channelHealth": { recordInboundEvent: noop },
+    "./failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },
+  });
+  const processQueuedMetaEvents = async () => {
+    let processed = 0;
+    let deadLettered = 0;
+    for (const event of queuedMetaEvents.splice(0)) {
+      try {
+        await worker.processMetaInboundJob({ id: event.eventId, tenantId: "FAKE-tenant", channel,
+          eventId: event.eventId, externalAccountId: event.externalAccountId,
+          customerRef: event.senderId, messageText: event.text, attachments: event.attachments, attempts: 1 });
+        processed++;
+      } catch {
+        deadLettered++;
+      }
+    }
+    return { processed, failed: 0, deadLettered };
+  };
   const route = loadWithStubs(`apps/web/app/api/bms/${channel}/webhook/[tenantId]/route.ts`, {
     "next/server": { NextResponse: { json: (body: unknown, options?: { status: number }) => ({ body, status: options?.status ?? 200 }) } },
     "@/lib/bms/rateLimit": { rateLimit: async () => ({ ok: true }) },
-    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", extra: options.lineBotExtra ?? verifiedExtra }) },
+    "@/lib/bms/channels": { getChannel: async () => ({ active: true, channel_secret: options.secret === undefined ? "FAKE-secret" : options.secret, access_token: "FAKE-token", webhook_verify_token: "FAKE-verify-token-0123456789012345", external_account_id: "123456789012345", extra: options.lineBotExtra ?? verifiedExtra }) },
     "@/lib/bms/crypto": { verifyLineSignature: () => options.signatureValid !== false, verifyMetaSignature: () => options.signatureValid !== false },
     "@/lib/bms/inboundEvents": { claimInboundEvent: async (...args: any[]) => { calls.claims.push(args); return options.claim ? options.claim(...args) : true; } },
     "@/lib/bms/pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
@@ -59,7 +89,17 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/bms/failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },
     // Leave errors visible to assert.rejects; production wraps these in a non-200 response.
     "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
-    "@/lib/bms/meta": { metaChallenge: () => null, parseMetaEvents: (body: any) => body.events },
+    "@/lib/bms/meta": { metaChallenge: () => null, metaEnvelopeMatches: () => true,
+      parseMetaEvents: (body: any) => body.events.map((item: any) => ({ ...item, externalAccountId: "123456789012345" })) },
+    "@/lib/bms/metaInboundJobs": {
+      enqueueMetaInboundEvents: async (_tenantId: string, _channel: string, events: any[]) => {
+        calls.claims.push([_tenantId, _channel, ...events]);
+        const accepted = options.claim ? await options.claim(...events) : true;
+        if (accepted) queuedMetaEvents.push(...events);
+        return { accepted: accepted ? events.length : 0, duplicates: accepted ? 0 : events.length };
+      },
+      runMetaInboundBatch: processQueuedMetaEvents,
+    },
     "@/lib/storage": {},
     "@/lib/bms/lineProfile": {
       syncLineUserProfile: async () => { calls.profiles++; return { ok: true, conversationIds: [] }; },
@@ -73,7 +113,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   });
   const event = (text: string, id = "FAKE-event") => channel === "line"
     ? { type: "message", message: { id, type: "text", text }, replyToken: `FAKE-reply-${id}`, source: { userId: "FAKE-customer" } }
-    : { text, eventId: id, senderId: "FAKE-customer", attachments: [] };
+    : { text, eventId: id, externalAccountId: "123456789012345", senderId: "FAKE-customer", attachments: [] };
   const post = (events = [event("hello")], readBody = async () => JSON.stringify({ events })) => route.POST(
     { headers: new Headers(), text: readBody }, { params: { tenantId: "FAKE-tenant" } }
   );

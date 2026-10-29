@@ -8,33 +8,18 @@
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
 import { verifyMetaSignature } from "@/lib/bms/crypto";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, deliverToChannel, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
-import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
-import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
-import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
-import { reportBmsFailure } from "@/lib/bms/failureAlert";
+import { metaChallenge, metaEnvelopeMatches, parseMetaEvents } from "@/lib/bms/meta";
+import { recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
+import { enqueueMetaInboundEvents, runMetaInboundBatch } from "@/lib/bms/metaInboundJobs";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHANNEL = "facebook";
-
-function firstMetaAttachment(ev: { attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }> }): Attachment | null {
-  const att = ev.attachments.find((item) => item.url);
-  if (!att?.url) return null;
-  const type = (att.type ?? "file").toLowerCase();
-  return {
-    url: att.url,
-    name: att.title ?? `${type || "attachment"} from Facebook`,
-    mimeType: att.mimeType ?? (type === "image" ? "image/jpeg" : null),
-  };
-}
 
 async function handleGET(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const cfg = await getChannel(params.tenantId?.trim(), CHANNEL);
@@ -52,6 +37,9 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
 
   const cfg = await getChannel(tenantId, CHANNEL);
   if (!cfg || !cfg.active) return NextResponse.json({ ok: true, skipped: "channel not configured" });
+  if (!cfg.external_account_id || !cfg.webhook_verify_token) {
+    return NextResponse.json({ error: "Meta Page ID / webhook verify token not configured" }, { status: 503 });
+  }
 
   const raw = await req.text();
   // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
@@ -67,69 +55,20 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
-  const events = parseMetaEvents(body);
-
-  for (const ev of events) {
-    if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
-    const attachment = firstMetaAttachment(ev);
-    if (ev.text) {
-      let result: Pick<Awaited<ReturnType<typeof runPipeline>>, "reply" | "quality">;
-      try {
-        result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
-      } catch (error) {
-        const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
-        console.error("[BMS] Facebook webhook event handling failed:", {
-          tenantId,
-          senderId: ev.senderId,
-          eventId: ev.eventId,
-          error,
-        });
-        await reportBmsFailure({
-          tenantId,
-          code: "channel.reply_failed",
-          error,
-          surface: "customer",
-          channel: CHANNEL,
-          customerRef: ev.senderId,
-          meta: { eventId: ev.eventId },
-        });
-        result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error, fallbackReply) };
-      }
-      await logConversation(
-        tenantId,
-        CHANNEL,
-        ev.senderId,
-        ev.text,
-        result.reply,
-        result.quality,
-        attachment,
-        attachment ? { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, raw: { attachmentCount: ev.attachments.length } } : null
-      );
-      const delivered = await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
-      if (!delivered) {
-        console.error("[BMS] Facebook webhook reply delivery failed:", { tenantId, eventId: ev.eventId });
-        await reportBmsFailure({
-          tenantId,
-          code: "channel.push_failed",
-          error: "Facebook reply delivery failed",
-          surface: "customer",
-          channel: CHANNEL,
-          customerRef: ev.senderId,
-          meta: { eventId: ev.eventId },
-        });
-      }
-    } else {
-      await logInboundMessage(tenantId, CHANNEL, ev.senderId, {
-        body: "",
-        attachment,
-        meta: { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, unsupportedForAi: true, raw: { attachmentCount: ev.attachments.length } },
-      });
-    }
+  if (!metaEnvelopeMatches(body, cfg.external_account_id)) {
+    await recordWebhookVerifyFailed(tenantId, CHANNEL);
+    return NextResponse.json({ error: "Meta Page does not match this tenant" }, { status: 403 });
   }
-  if (events.length > 0) await recordInboundEvent(tenantId, CHANNEL);
+  const events = parseMetaEvents(body, cfg.external_account_id);
+  const queued = await enqueueMetaInboundEvents(tenantId, CHANNEL, events);
+  // Process the just-arrived tenant immediately for chat latency. The row already exists, so a
+  // request interruption or process crash is recoverable by Meta retry and the cron worker.
+  const work = events.length > 0
+    ? await runMetaInboundBatch(Math.min(events.length, 25), tenantId)
+    : { processed: 0, failed: 0, deadLettered: 0 };
 
-  // Meta ต้องการ 200 เร็ว ๆ ไม่งั้น retry
-  return NextResponse.json({ ok: true, tenantId, handled: events.length });
+  // The durable row makes an interrupted inline attempt recoverable without re-accepting effects.
+  return NextResponse.json({ ok: true, tenantId, received: events.length, ...queued, ...work });
 }
 
 export const GET = withRouteErrorLog("GET /api/bms/facebook/webhook/[tenantId]", handleGET);

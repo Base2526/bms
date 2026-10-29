@@ -1,41 +1,18 @@
-// =============================================================
-// /api/bms/instagram/webhook/[tenantId] — Instagram DM webhook ต่อร้าน
-// -------------------------------------------------------------
-// IG DM ใช้ Messenger Platform เดียวกับ Facebook (graph.facebook.com)
-//   GET  = verification (hub.challenge)
-//   POST = ข้อความเข้า → pipeline → log inbox → ตอบผ่าน Graph Send API
-//   verify X-Hub-Signature-256 ด้วย App Secret (channel_secret ของร้าน)
-// =============================================================
+// Instagram DM uses the same tenant-bound Meta webhook queue as Facebook Messenger.
+import { NextResponse, type NextRequest } from "next/server";
 
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { runPipeline } from "@/lib/bms/pipeline";
 import { getChannel } from "@/lib/bms/channels";
+import { recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { verifyMetaSignature } from "@/lib/bms/crypto";
+import { metaChallenge, metaEnvelopeMatches, parseMetaEvents } from "@/lib/bms/meta";
+import { enqueueMetaInboundEvents, runMetaInboundBatch } from "@/lib/bms/metaInboundJobs";
 import { rateLimit } from "@/lib/bms/rateLimit";
-import { logConversation, deliverToChannel, logInboundMessage, type Attachment } from "@/lib/bms/inbox";
-import { fallbackEvidenceQuality } from "@/lib/bms/customerAnswerEvidence";
-import { metaChallenge, parseMetaEvents } from "@/lib/bms/meta";
-import { recordInboundEvent, recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
-import { claimInboundEvent } from "@/lib/bms/inboundEvents";
-import { reportBmsFailure } from "@/lib/bms/failureAlert";
 import { withRouteErrorLog } from "@/lib/log/routeError";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CHANNEL = "instagram";
-
-function firstMetaAttachment(ev: { attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }> }): Attachment | null {
-  const att = ev.attachments.find((item) => item.url);
-  if (!att?.url) return null;
-  const type = (att.type ?? "file").toLowerCase();
-  return {
-    url: att.url,
-    name: att.title ?? `${type || "attachment"} from Instagram`,
-    mimeType: att.mimeType ?? (type === "image" ? "image/jpeg" : null),
-  };
-}
 
 async function handleGET(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const cfg = await getChannel(params.tenantId?.trim(), CHANNEL);
@@ -48,88 +25,41 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
   const tenantId = params.tenantId?.trim();
   if (!tenantId) return NextResponse.json({ error: "tenant required" }, { status: 400 });
 
-  const rl = await rateLimit(`${CHANNEL}:${tenantId}`, 120, 60_000);
-  if (!rl.ok) return NextResponse.json({ error: "rate limit exceeded" }, { status: 429, headers: { "retry-after": String(rl.retryAfter) } });
+  const limited = await rateLimit(`${CHANNEL}:${tenantId}`, 120, 60_000);
+  if (!limited.ok) {
+    return NextResponse.json(
+      { error: "rate limit exceeded" },
+      { status: 429, headers: { "retry-after": String(limited.retryAfter) } },
+    );
+  }
 
   const cfg = await getChannel(tenantId, CHANNEL);
   if (!cfg || !cfg.active) return NextResponse.json({ ok: true, skipped: "channel not configured" });
+  if (!cfg.external_account_id || !cfg.webhook_verify_token) {
+    return NextResponse.json({ error: "Meta account ID / webhook verify token not configured" }, { status: 503 });
+  }
 
   const raw = await req.text();
-  // fail-closed: channel active ต้องมี channel_secret เสมอ ไม่งั้นใครก็ปลอม request เข้ามาได้
-  // (เดิมข้ามการ verify ไปเลยถ้าไม่มี secret — เป็นช่องโหว่ ไม่ใช่ fallback ที่ตั้งใจ)
   if (!cfg.channel_secret) {
     await recordWebhookVerifyFailed(tenantId, CHANNEL);
     return NextResponse.json({ error: "channel secret not configured" }, { status: 401 });
   }
-  const ok = verifyMetaSignature(cfg.channel_secret, raw, req.headers.get("x-hub-signature-256"));
-  if (!ok) {
+  if (!verifyMetaSignature(cfg.channel_secret, raw, req.headers.get("x-hub-signature-256"))) {
     await recordWebhookVerifyFailed(tenantId, CHANNEL);
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
   const body = (() => { try { return JSON.parse(raw); } catch { return {}; } })();
-  const events = parseMetaEvents(body);
-
-  for (const ev of events) {
-    if (!(await claimInboundEvent(tenantId, CHANNEL, ev.eventId))) continue;
-    const attachment = firstMetaAttachment(ev);
-    if (ev.text) {
-      let result: Pick<Awaited<ReturnType<typeof runPipeline>>, "reply" | "quality">;
-      try {
-        result = await runPipeline(ev.text, CHANNEL, tenantId, ev.senderId);
-      } catch (error) {
-        const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";
-        console.error("[BMS] Instagram webhook event handling failed:", {
-          tenantId,
-          senderId: ev.senderId,
-          eventId: ev.eventId,
-          error,
-        });
-        await reportBmsFailure({
-          tenantId,
-          code: "channel.reply_failed",
-          error,
-          surface: "customer",
-          channel: CHANNEL,
-          customerRef: ev.senderId,
-          meta: { eventId: ev.eventId },
-        });
-        result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error, fallbackReply) };
-      }
-      await logConversation(
-        tenantId,
-        CHANNEL,
-        ev.senderId,
-        ev.text,
-        result.reply,
-        result.quality,
-        attachment,
-        attachment ? { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, raw: { attachmentCount: ev.attachments.length } } : null
-      );
-      const delivered = await deliverToChannel(tenantId, CHANNEL, ev.senderId, result.reply);
-      if (!delivered) {
-        console.error("[BMS] Instagram webhook reply delivery failed:", { tenantId, eventId: ev.eventId });
-        await reportBmsFailure({
-          tenantId,
-          code: "channel.push_failed",
-          error: "Instagram reply delivery failed",
-          surface: "customer",
-          channel: CHANNEL,
-          customerRef: ev.senderId,
-          meta: { eventId: ev.eventId },
-        });
-      }
-    } else {
-      await logInboundMessage(tenantId, CHANNEL, ev.senderId, {
-        body: "",
-        attachment,
-        meta: { type: ev.attachments[0]?.type ?? "attachment", providerMessageId: ev.eventId, unsupportedForAi: true, raw: { attachmentCount: ev.attachments.length } },
-      });
-    }
+  if (!metaEnvelopeMatches(body, cfg.external_account_id, "instagram")) {
+    await recordWebhookVerifyFailed(tenantId, CHANNEL);
+    return NextResponse.json({ error: "Meta account does not match this tenant" }, { status: 403 });
   }
-  if (events.length > 0) await recordInboundEvent(tenantId, CHANNEL);
-
-  return NextResponse.json({ ok: true, tenantId, handled: events.length });
+  const events = parseMetaEvents(body, cfg.external_account_id, "instagram");
+  const queued = await enqueueMetaInboundEvents(tenantId, CHANNEL, events);
+  const work = events.length > 0
+    ? await runMetaInboundBatch(Math.min(events.length, 25), tenantId)
+    : { processed: 0, failed: 0, deadLettered: 0 };
+  return NextResponse.json({ ok: true, tenantId, received: events.length, ...queued, ...work });
 }
 
 export const GET = withRouteErrorLog("GET /api/bms/instagram/webhook/[tenantId]", handleGET);

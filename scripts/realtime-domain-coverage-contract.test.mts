@@ -170,7 +170,7 @@ const OPS_TELEMETRY = [
   "bms_package_events", // Platform package pilot refreshes on demand; no operational subscriber.
   "bms_ai_turn_evidence", "bms_ai_tool_evidence", // QA snapshots refresh on inspection, never business authority.
   "bms_ai_provider_health", "bms_ai_provider_health_log", "bms_ai_usage_monthly",
-  "bms_audit_log", "bms_channel_health_log", "bms_failure_incidents",
+  "bms_audit_log", "bms_channel_health_log", "bms_channel_inbound_jobs", "bms_failure_incidents",
   "bms_fake_eval_cases", "bms_fake_eval_results", "bms_fake_eval_runs", "bms_job_runs",
   "bms_mail_log", "bms_onboarding_seed_runs", "bms_support_bundles",
   "bms_ai_credit_ledger", "bms_ai_quality_reviews", "bms_ai_synonym_candidates",

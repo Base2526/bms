@@ -972,8 +972,9 @@ const LINK_STEPS_TH: LinkStep[] = [
     title: "เชื่อมช่องทางจริง",
     description: (
       <>
-        ไปที่ {L.settings} เพื่อวาง token และตั้ง webhook · ถ้าต้องทดสอบ Inbox realtime ให้เปิด{" "}
-        {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
+        ไปที่ {L.settings} เพื่อวาง token และตั้ง webhook · Facebook Messenger ต้องกรอก Page Access Token,
+        App Secret, Page ID และ Verify Token ที่สุ่มแยกจาก App Secret แล้วกดทดสอบให้ Page ID ตรงกัน · ถ้าต้องทดสอบ
+        Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
       </>
     ),
   },
@@ -2254,8 +2255,9 @@ const LINK_STEPS_EN: LinkStep[] = [
     title: "Connect your real sales channels",
     description: (
       <>
-        Go to {L.settings} to paste tokens and set up webhooks · to test Inbox realtime, open{" "}
-        {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
+        Go to {L.settings} to paste tokens and set up webhooks · Facebook Messenger requires a Page Access Token,
+        App Secret, Page ID, and a random Verify Token distinct from the App Secret; test it to prove the Page ID binding ·
+        to test Inbox realtime, open {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
         profile cache once the webhook arrives
       </>
     ),

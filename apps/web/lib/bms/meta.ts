@@ -9,33 +9,58 @@
 
 import type { ChannelConfig } from "./channels";
 
-/** ตอบ challenge ตอนตั้ง webhook (GET) — verify_token เทียบกับ channel_secret ที่ตั้งไว้ */
+/** Verify the separate webhook handshake credential. */
 export function metaChallenge(url: URL, cfg: ChannelConfig | null): string | null {
   const mode = url.searchParams.get("hub.mode");
   const token = url.searchParams.get("hub.verify_token");
   const challenge = url.searchParams.get("hub.challenge");
   if (mode !== "subscribe" || !challenge) return null;
-  // ถ้าตั้ง channel_secret ไว้ → verify_token ต้องตรง; ถ้ายังไม่ตั้ง → ผ่าน (ช่วงตั้งค่า)
-  if (cfg?.channel_secret && token !== cfg.channel_secret) return null;
+  // Verify Token is a revocable handshake credential, not the App Secret used to sign POSTs.
+  // Fail closed when the channel has not been configured; accepting any token lets a typo or
+  // stale tenant URL appear successfully registered in Meta.
+  if (!cfg?.webhook_verify_token || token !== cfg.webhook_verify_token) return null;
   return challenge;
 }
 
 export type MetaEvent = {
+  externalAccountId: string;
   senderId: string;
   text: string;
-  eventId: string | null;
+  eventId: string;
   attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }>;
 };
 
+export function metaEnvelopeMatches(
+  body: any,
+  expectedExternalAccountId: string,
+  expectedObject: "page" | "instagram" = "page",
+): boolean {
+  if (body?.object !== expectedObject || !expectedExternalAccountId) return false;
+  const entries = Array.isArray(body?.entry) ? body.entry : [];
+  return entries.length > 0 && entries.every((entry: any) =>
+    typeof entry?.id === "string" && entry.id.trim() === expectedExternalAccountId);
+}
+
 /** แกะข้อความและ attachment จาก payload (รองรับทั้ง Messenger และ IG) */
-export function parseMetaEvents(body: any): MetaEvent[] {
+export function parseMetaEvents(
+  body: any,
+  expectedExternalAccountId: string,
+  expectedObject: "page" | "instagram" = "page",
+): MetaEvent[] {
   const out: MetaEvent[] = [];
+  if (!metaEnvelopeMatches(body, expectedExternalAccountId, expectedObject)) return out;
   const entries = Array.isArray(body?.entry) ? body.entry : [];
   for (const entry of entries) {
+    const externalAccountId = typeof entry?.id === "string" ? entry.id.trim() : "";
+    // The callback URL contains a tenant id, but that URL is not authority. Bind every event to
+    // the provider-owned Page ID saved for this tenant so a shared App Secret cannot replay one
+    // Page's signed payload into another tenant URL.
+    if (!externalAccountId || externalAccountId !== expectedExternalAccountId) continue;
     const messaging = Array.isArray(entry?.messaging) ? entry.messaging : [];
     for (const ev of messaging) {
       const senderId = ev?.sender?.id;
-      const text = ev?.message?.text?.trim() ?? "";
+      const eventId = typeof ev?.message?.mid === "string" ? ev.message.mid.trim() : "";
+      const text = typeof ev?.message?.text === "string" ? ev.message.text.trim() : "";
       const attachments = Array.isArray(ev?.message?.attachments)
         ? ev.message.attachments.map((att: any) => ({
           type: typeof att?.type === "string" ? att.type : null,
@@ -45,12 +70,13 @@ export function parseMetaEvents(body: any): MetaEvent[] {
         }))
         : [];
       // ข้าม echo (ข้อความที่เพจ/บัญชีส่งเอง) และ event ที่ไม่มีเนื้อหาให้ทีมเห็น
-      if (senderId && !ev?.message?.is_echo && (text || attachments.length > 0)) {
+      if (typeof senderId === "string" && /^\d{5,64}$/.test(senderId) && eventId && !ev?.message?.is_echo && (text || attachments.length > 0)) {
         out.push({
+          externalAccountId,
           senderId,
           text,
           attachments,
-          eventId: typeof ev?.message?.mid === "string" ? ev.message.mid : null,
+          eventId,
         });
       }
     }

@@ -66,7 +66,7 @@ export const bmsChannelsResolvers = {
   Mutation: {
     async bmsUpsertChannel(
       _p: unknown,
-      args: { channel: string; accessToken?: string; channelSecret?: string; active?: boolean },
+      args: { channel: string; accessToken?: string; channelSecret?: string; webhookVerifyToken?: string; externalAccountId?: string; active?: boolean },
       ctx: any
     ) {
       requireTenantAdmin(ctx);
@@ -78,6 +78,8 @@ export const bmsChannelsResolvers = {
         ok = await upsertChannel(getTenantId(ctx), args.channel, {
           accessToken: args.accessToken,
           channelSecret: args.channelSecret,
+          webhookVerifyToken: args.webhookVerifyToken,
+          externalAccountId: args.externalAccountId,
           active: args.active,
         }, String(requireAuth(ctx).author_id));
       } catch (err: any) {

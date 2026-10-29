@@ -236,6 +236,7 @@ services:
       QWEN_OCR_OUTPUT_USD_PER_MILLION: ${QWEN_OCR_OUTPUT_USD_PER_MILLION:-}
       BMS_SLIP_READER_PROVIDER: ${BMS_SLIP_READER_PROVIDER}
       BMS_SLIP_READER_FALLBACK_PROVIDER: ${BMS_SLIP_READER_FALLBACK_PROVIDER:-}
+      META_GRAPH_VERSION: ${META_GRAPH_VERSION:-v26.0}
       # ความลับที่โค้ดต้องใช้ตอน runtime — ต้องอยู่ใน environment: ไม่ใช่แค่ใน .env
       # (compose ส่งเข้า container เฉพาะตัวที่ระบุที่นี่ · --env-file ไม่ inject ให้)
       # ไม่ตั้ง = production throw ตั้งใจ ดู lib/auth/token.ts และ lib/bms/crypto.ts

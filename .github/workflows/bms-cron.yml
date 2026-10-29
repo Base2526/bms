@@ -67,6 +67,10 @@ jobs:
           # continuously; this schedule prevents a stopped worker from becoming invisible.
           - name: delivery-events-process
             path: /api/bms/delivery/events/process
+          # Recovery for a Meta webhook request interrupted after its durable enqueue.
+          # Normal chat replies are processed immediately by the webhook route.
+          - name: meta-inbound-process
+            path: /api/bms/meta/inbound/process
           - name: delivery-commands-process
             path: /api/bms/delivery/commands/process
           - name: delivery-intake-auto-resume
