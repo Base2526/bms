@@ -137,6 +137,8 @@ services:
     image: node:20-alpine
     working_dir: /app/apps/web
     environment:
+      # Optional public-page analytics; empty means no Google tag or collection.
+      PUBLIC_GA4_MEASUREMENT_ID: ${PUBLIC_GA4_MEASUREMENT_ID:-}
       NEXT_PUBLIC_BASE_URL: ${NEXT_PUBLIC_BASE_URL}
       NEXT_PUBLIC_GRAPHQL_HTTP: ${NEXT_PUBLIC_GRAPHQL_HTTP}
       NEXT_PUBLIC_GRAPHQL_WS: ${NEXT_PUBLIC_GRAPHQL_WS}

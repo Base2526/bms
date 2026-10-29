@@ -10,6 +10,7 @@ import {
   localeFromPublicPath,
   localizedPublicPath,
   publicAlternates,
+  publicSiteUrl,
   stripPublicLocale,
 } from "../apps/web/lib/publicSeo.ts";
 import { breadcrumbJsonLd, faqPageJsonLd, learningArticleJsonLd, organizationJsonLd, webPageJsonLd, websiteJsonLd } from "../apps/web/lib/seoJsonLd.ts";
@@ -18,6 +19,9 @@ const repo = resolve(import.meta.dirname, "..");
 
 test("public SEO paths have stable language prefixes and reciprocal alternates", () => {
   assert.equal(localizedPublicPath("/", "th"), "/th");
+  assert.equal(localizedPublicPath("/pos", "th"), "/pos");
+  assert.equal(localizedPublicPath("/pos/restaurant?branch=example", "en"), "/pos/restaurant?branch=example");
+  assert.equal(localizedPublicPath("/admin/dashboard", "th"), "/admin/dashboard");
   assert.equal(localizedPublicPath("/restaurant", "en"), "/en/restaurant");
   assert.equal(localizedPublicPath("/learn?q=stock", "th"), "/th/learn?q=stock");
   assert.equal(localizedPublicPath("/th/learn#steps", "en"), "/en/learn#steps");
@@ -149,4 +153,20 @@ test("footer discovery survives SSR without escaped CSS text hydration errors", 
   assert.match(layout, /import AppFooter from/);
   assert.doesNotMatch(footer, /<style>\{/);
   assert.match(footer, /<style dangerouslySetInnerHTML=/);
+});
+
+
+test("public origin normalization prevents malformed canonical roots and embedded credentials", () => {
+  const previous = process.env.NEXT_PUBLIC_BASE_URL;
+  try {
+    process.env.NEXT_PUBLIC_BASE_URL = "https://jachoei.com/path?query=1#fragment";
+    assert.equal(publicSiteUrl(), "https://jachoei.com");
+    for (const invalid of ["ftp://example.com", "https://user:password@example.com", "not a URL"]) {
+      process.env.NEXT_PUBLIC_BASE_URL = invalid;
+      assert.equal(publicSiteUrl(), "https://jachoei.com");
+    }
+  } finally {
+    if (previous === undefined) delete process.env.NEXT_PUBLIC_BASE_URL;
+    else process.env.NEXT_PUBLIC_BASE_URL = previous;
+  }
 });

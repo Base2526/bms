@@ -57,6 +57,8 @@ services:
              test -f ../../packages/graphql-core/node_modules/.package-lock.json || npm --prefix ../../packages/graphql-core ci &&
              npm run dev"
     environment:
+      # Optional public-page analytics; empty means no Google tag or collection.
+      PUBLIC_GA4_MEASUREMENT_ID: ${PUBLIC_GA4_MEASUREMENT_ID:-}
       NODE_ENV: development
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-${NEXT_PUBLIC_GOOGLE_CLIENT_ID}}
       FACEBOOK_APP_ID: ${FACEBOOK_APP_ID:-${NEXT_PUBLIC_FACEBOOK_APP_ID}}

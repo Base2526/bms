@@ -106,11 +106,67 @@ treat the first days after deployment as a ranking verdict.
 
 ## Release status and external dependencies
 
-Phases 1–4 are implemented and locally validated. Phase 5 has local audit and discovery tooling;
-production rollout and measurement remain outstanding: Search Console/Bing ownership and sitemap submission, IndexNow
-submission, and a consent-aware analytics destination still need the deployed site and account access.
-The monthly scorecard above is an operating procedure, not an implemented analytics integration or
-evidence of collected traffic. No scheduled monitor has been enabled.
+Phases 1–4 have been implemented. Production passed the previous HTTP audit for 208 URLs on
+2026-10-29; that verifies the deployed technical surface, not indexing or citations. The expanded audit exposed 30 learning pages linking to `/th/pos` or `/en/pos`
+(and restaurant variants), which returned 404. The locale helper now leaves operational URLs
+unprefixed; regression coverage prevents this mistake. The current branch adds answer sections, entity/contact links, stronger auditing and optional consent-gated
+analytics. These changes require deployment before they affect production.
+
+Search Console/Bing ownership, sitemap submission, IndexNow submission and GA4 account setup remain
+external steps. There is no evidence in the repository that these account-side steps are complete.
+No scheduled monitor has been enabled.
+
+### Optional GA4 activation (disabled by default)
+
+1. Create a dedicated GA4 web data stream for the public BMS website. **Turn off Enhanced
+   Measurement entirely**, including history page views, outbound clicks, form interactions, search
+   and downloads. `send_page_view: false` alone does not disable enhanced/history measurement.
+   Do not install another Google tag or GTM container beside this integration.
+2. Set appropriate GA property retention and access settings. Register `discovery_source` and
+   `cta_action` as event-scoped custom dimensions if needed. Events are `page_view` and
+   `public_cta_click`; CTA values are `demo_open`, `signup_start`, `line_contact`, and `support_open`.
+   These are intent clicks, **not completed registrations, payments or leads**. GA4 may additionally
+   create its standard session/engagement events once enabled.
+3. Set runtime `PUBLIC_GA4_MEASUREMENT_ID=G-...` in the deployment environment, then recreate the
+   web service. This public identifier is read on the server, not baked into `NEXT_PUBLIC_*`.
+   All three standard Compose profiles pass it through. Missing/invalid IDs load no tag and send
+   no data; never enable the fake browser-test ID on a deployed site.
+4. Verify no Google requests before consent or after rejection; consent must explicitly name Google
+   Analytics. Prior `pdpa_consent_v1` choices are not reused. Re-test grant, revoke, blocked storage,
+   cross-tab changes and private-route navigation before enabling real collection.
+5. Confirm the manually sent page URL has no query or fragment. Raw referrers/UTMs, typed text,
+   calculator values, account identifiers, tenant shops and private pages are excluded. The source
+   classification is a bounded category, not proof that AI cited the page. DNT/GPC disables collection.
+6. The footer allows withdrawal. Consent is stored for up to 180 days; rejection clears this
+   integration's `bms_analytics_*` cookies. Advertising storage, personalization and Google signals
+   are disabled. No advanced-consent cookieless pings are intentionally sent. The Google tag still
+   processes connection metadata and its own analytics cookies after explicit permission.
+7. Learning pages can use a previously granted preference. Visitors can manage it through the
+   privacy page's footer; visiting a guide does not opt them in.
+
+Account-side Enhanced Measurement settings cannot be verified from repository tests. Validate
+in the actual GA4 stream before launch.
+
+References: [Google consent setup](https://developers.google.com/tag-platform/security/guides/consent),
+[manual page views](https://developers.google.com/analytics/devguides/collection/ga4/views).
+
+### Repeatable audit evidence
+
+```bash
+SEO_BASE_URL=http://localhost:3000 npm run seo:audit -- --output ../../.test-output/seo/local.json
+SEO_BASE_URL=https://jachoei.com npm run seo:audit -- --output ../../.test-output/seo/production.json
+```
+
+Reports include each URL's status, canonical/hreflang checks, title, description, schema types,
+localized links, warnings, HTML bytes and request duration. The audit now rejects broken localized
+links to pages outside the sitemap, duplicate canonical tags, restrictive snippet directives, page
+schema/OG URL drift, invalid review dates and FAQ claims absent from server HTML. Duplicate titles
+and descriptions within one language are reported for editorial review. HTML/link and JSON-LD
+checks do not prove indexing, rich-result eligibility or citations. Fetch durations are not Core Web
+Vitals; measure those separately with field data and browser performance tooling.
+
+Store reports under ignored `.test-output/`. Compare the same environment and build when reviewing
+changes. Do not commit account reports or visitor data.
 
 ## Content rules
 
@@ -121,3 +177,23 @@ evidence of collected traffic. No scheduled monitor has been enabled.
 - Refresh `dateModified` only after the visible content is substantively reviewed.
 - Structured data must match visible content and use the same canonical URL.
 - Keep private, checkout, token, POS, API and admin surfaces out of the sitemap and marked noindex.
+
+
+### Browser regression check
+
+Start a local production build with the fake test identifier (never a real GA4 property):
+
+```bash
+cd apps/web
+PUBLIC_GA4_MEASUREMENT_ID=G-BMSSEOQA PORT=3114 npm run start
+# In another terminal, from the repository root:
+BMS_SMOKE_URL=http://127.0.0.1:3114 node scripts/public-seo-browser-smoke.mjs
+```
+
+The smoke requires Playwright and Chrome; `BMS_PLAYWRIGHT_MODULE` can point to an installed
+Playwright module. All external traffic is blocked and the Google tag is replaced with a local
+fixture. It checks both languages at 1440px/390px, live FAQ interactions, corrected POS links,
+explicit opt-in, withdrawal, cross-tab synchronization, DNT/GPC, blocked storage, sanitized payloads
+and SPA page views. Use `BMS_SEO_VISUAL_ONLY=1` to run the page/layout checks against the regular
+unconfigured development server. Screenshots and local navigation timings go to
+`.test-output/public-seo-browser/`; they are not field Core Web Vitals.

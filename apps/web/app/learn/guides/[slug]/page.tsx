@@ -45,7 +45,7 @@ export default function ArticlePage({ params, searchParams }: Props) {
       <article className={s.article}>
         <span className={s.eyebrow}>{th ? "บทที่" : "Lesson"} {index + 1} / {items.length}</span>
         <h1>{txt(lesson.title)}</h1><p className={s.lead}>{txt(lesson.summary)}</p>
-        <div className={`${s.muted} ${s.articleMeta}`}><span>{lesson.roles.map((role) => txt(roleLabels[role])).join(" · ")}</span><span>{th ? "ทบทวนเนื้อหา" : "Content reviewed"} <time dateTime={LEARNING_REVIEWED_AT}>{LEARNING_REVIEWED_AT}</time></span></div>
+        <div className={`${s.muted} ${s.articleMeta}`}><span>{th ? "จัดทำโดย " : "Prepared by "}<Link href={localizedPublicPath("/about", lang)}>BMS</Link></span><span>{lesson.roles.map((role) => txt(roleLabels[role])).join(" · ")}</span><span>{th ? "ทบทวนเนื้อหา" : "Content reviewed"} <time dateTime={LEARNING_REVIEWED_AT}>{LEARNING_REVIEWED_AT}</time></span></div>
         <details className={`${s.mobileContents} ${s.noPrint}`}><summary>{th ? "ในบทนี้ · ข้ามไปยังหัวข้อ" : "On this page · Jump to a section"}</summary><nav aria-label={th ? "หัวข้อในบทเรียน" : "Lesson sections"}>{anchors.map(([id, label]) => <a key={id} href={`#${id}`}>{label}</a>)}</nav></details>
         <h2 id="prepare">{th ? "ก่อนเริ่ม" : "Before you begin"}</h2><p>{txt(lesson.prerequisite)}</p>
         <div className={s.callout}><strong>{th ? "เมนูที่ใช้" : "Where to go"}</strong><p>{txt(lesson.menu)}</p><span className={s.muted}>{th ? "ชื่อและรายการที่เห็นอาจต่างตามภาษา สิทธิ์ รุ่นแอป และการตั้งค่าร้าน" : "Visible menus may vary with language, permissions, app version and shop configuration."}</span></div>

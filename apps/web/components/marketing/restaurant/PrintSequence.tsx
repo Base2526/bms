@@ -17,7 +17,7 @@ export default function PrintSequence({ layout, flow }: { layout: SequenceLayout
   return createPortal(<div className={styles.printRoot} data-restaurant-print>
     {pages.map((page, i) => <section className={styles.printPage} key={page.start}>
       <header className={styles.printHeading}>
-        <h1>BMS · FLOW {String(flow.id).padStart(2, "0")} · {flow.title}</h1>
+        <h2>BMS · FLOW {String(flow.id).padStart(2, "0")} · {flow.title}</h2>
         <p>{flow.description}</p>
         <p>{page.context.length ? `${flow.continued}: ${page.context.join(" / ")}` : "Sequence Diagram"}</p>
       </header>

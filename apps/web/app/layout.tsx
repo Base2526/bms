@@ -7,12 +7,16 @@ import type { Lang } from "@/i18n";
 import type { ThemeMode } from "@/lib/theme";
 import ClientProviders from "./ClientProviders";  // เราจะสร้างไฟล์นี้ใหม่
 import { getBuildInfo } from "@/lib/buildInfo";
+import PublicAnalytics from "@/components/seo/PublicAnalytics";
+import { publicSiteUrl } from "@/lib/publicSeo";
+import { validMeasurementId } from "@/lib/publicAnalytics";
+import { lessons, trackOrder } from "@/lib/learning/catalog";
 import StructuredData from "@/components/seo/StructuredData";
 import { organizationJsonLd, websiteJsonLd } from "@/lib/seoJsonLd";
 
 const { buildId, buildTime } = getBuildInfo();
 export const metadata: Metadata = {
-  metadataBase: new URL(`${process.env.NEXT_PUBLIC_BASE_URL || 'https://jachoei.com'}`),
+  metadataBase: new URL(publicSiteUrl()),
   icons: {
     icon: `/favicon.ico?v=${buildId}-${buildTime}`
   },
@@ -20,6 +24,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = cookies();
+  const measurementId = validMeasurementId(process.env.PUBLIC_GA4_MEASUREMENT_ID);
   const langCookie = cookieStore.get("lang")?.value as Lang | undefined;
   const lang: Lang = langCookie === "en" ? "en" : "th";
 
@@ -79,6 +84,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* ส่ง lang ให้ ClientProviders */}
         <ClientProviders lang={lang}>
           {children}
+          {measurementId && <PublicAnalytics measurementId={measurementId}
+            learningPaths={["/learn", ...Object.keys(trackOrder).map(track => `/learn/${track}`), ...lessons.map(lesson => `/learn/guides/${lesson.slug}`)]} />}
         </ClientProviders>
       </body>
     </html>
