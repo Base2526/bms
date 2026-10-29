@@ -37,6 +37,9 @@ type POItem = {
   qtyOrdered: number;
   qtyReceived: number;
   unitCost: number;
+  additionalUnitCost: number;
+  landedUnitCost: number;
+  additionalCostNote: string | null;
 };
 type Supplier = { id: string; name: string };
 type SupplierProduct = {
@@ -58,6 +61,7 @@ type PO = {
   id: string;
   status: POStatus;
   total: number;
+  landedTotal: number;
   note: string | null;
   supplier: Supplier | null;
   qtyOrdered: number;
@@ -71,9 +75,9 @@ type PO = {
 const Q_POS = gql`
   query BmsPurchaseOrders($search: String, $limit: Int, $offset: Int) {
     bmsPurchaseOrders(search: $search, limit: $limit, offset: $offset) {
-      id status total note qtyOrdered qtyReceived createdAt updatedAt
+      id status total landedTotal note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
-      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote }
     }
   }
 `;
@@ -85,9 +89,9 @@ const Q_PRODUCTS = gql`
 const Q_LINKED_PO = gql`
   query LinkedPurchaseOrder($id: ID!) {
     bmsPurchaseOrder(id: $id) {
-      id status total note qtyOrdered qtyReceived createdAt updatedAt
+      id status total landedTotal note qtyOrdered qtyReceived createdAt updatedAt
       supplier { id name }
-      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost }
+      items { sku size supplierSku supplierProductName qtyOrdered qtyReceived unitCost additionalUnitCost landedUnitCost additionalCostNote }
     }
   }
 `;
@@ -200,6 +204,8 @@ function PurchaseManagement() {
         render: (_: any, r: PO) => t("admin_purchase.col_progress_value", { received: r.qtyReceived, ordered: r.qtyOrdered }) },
       { title: t("admin_purchase.col_value"), dataIndex: "total", key: "total", width: 120, align: "right" as const,
         render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+      { title: t("admin_purchase.col_landed_value"), dataIndex: "landedTotal", key: "landedTotal", width: 140, align: "right" as const,
+        render: (v: number) => <Typography.Text strong>{Number(v).toLocaleString()} ฿</Typography.Text> },
       { title: t("admin_purchase.col_status"), dataIndex: "status", key: "status", width: 140,
         render: (s: POStatus) => <Tag color={STATUS_COLOR[s]}>{s} · {STATUS_LABEL[s]}</Tag> },
       { title: t("admin_purchase.col_created"), dataIndex: "createdAt", key: "createdAt", width: 160,
@@ -220,6 +226,12 @@ function PurchaseManagement() {
       render: (_: any, it: POItem) => it.qtyOrdered - it.qtyReceived },
     { title: t("admin_purchase.item_col_unit_cost"), dataIndex: "unitCost", key: "uc", width: 110, align: "right" as const,
       render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+    { title: t("admin_purchase.item_col_additional_cost"), dataIndex: "additionalUnitCost", key: "auc", width: 140, align: "right" as const,
+      render: (v: number) => `${Number(v).toLocaleString()} ฿` },
+    { title: t("admin_purchase.item_col_landed_cost"), dataIndex: "landedUnitCost", key: "luc", width: 140, align: "right" as const,
+      render: (v: number) => <Typography.Text strong>{Number(v).toLocaleString()} ฿</Typography.Text> },
+    { title: t("admin_purchase.item_col_additional_note"), dataIndex: "additionalCostNote", key: "acn", width: 220,
+      render: (v: string | null) => v || <Typography.Text type="secondary">—</Typography.Text> },
   ];
 
   if (error) return <Alert closable type="error" message={t("admin_purchase.load_error")} description={error.message} showIcon />;
@@ -317,12 +329,16 @@ function CreatePOModal({
   });
 
   const submit = async () => {
-    const v = await form.validateFields();
+    // AntD displays field errors; a rejected validation is not an unhandled page error.
+    let v;
+    try { v = await form.validateFields(); } catch { return; }
     const items = (v.items || []).map((it: any) => ({
       sku: it.sku,
       size: it.size,
       qty: Number(it.qty),
       unitCost: Number(it.unitCost ?? 0),
+      additionalUnitCost: Number(it.additionalUnitCost ?? 0),
+      additionalCostNote: it.additionalUnitCost > 0 ? String(it.additionalCostNote ?? "").trim() : null,
       supplierSku: it.supplierSku || null,
       supplierProductName: it.supplierProductName || null,
       supplierBarcode: it.supplierBarcode || null,
@@ -382,7 +398,7 @@ function CreatePOModal({
       title={t("admin_purchase.create_modal_title")} open={open} onCancel={onClose} onOk={submit}
       confirmLoading={loading} okText={t("admin_purchase.create_ok_text")} cancelText={t("admin_purchase.btn_cancel")} width={1100} destroyOnClose
     >
-      <Form form={form} layout="vertical" initialValues={{ items: [{}] }}>
+      <Form form={form} layout="vertical" initialValues={{ items: [{ additionalUnitCost: 0 }] }}>
         <Form.Item name="supplierName" label={t("admin_purchase.supplier_label")}>
           <AutoComplete
             allowClear
@@ -480,12 +496,23 @@ function CreatePOModal({
                     <InputNumber placeholder={t("admin_purchase.qty_placeholder")} min={1} style={{ width: 100 }} />
                   </Form.Item>
                   <Form.Item {...rest} name={[name, "unitCost"]}>
-                    <InputNumber placeholder={t("admin_purchase.unit_cost_placeholder")} min={0} style={{ width: 120 }} />
+                    <InputNumber placeholder={t("admin_purchase.unit_cost_placeholder")} min={0} precision={2} style={{ width: 120 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "additionalUnitCost"]} initialValue={0}>
+                    <InputNumber placeholder={t("admin_purchase.additional_unit_cost_placeholder")} min={0} precision={2} style={{ width: 150 }} />
+                  </Form.Item>
+                  <Form.Item {...rest} name={[name, "additionalCostNote"]} dependencies={[["items", name, "additionalUnitCost"]]}
+                    rules={[({ getFieldValue }) => ({ validator: async (_, value) => {
+                      if (Number(getFieldValue(["items", name, "additionalUnitCost"]) ?? 0) > 0 && !String(value ?? "").trim()) {
+                        throw new Error(t("admin_purchase.additional_cost_note_required"));
+                      }
+                    } })]}>
+                    <Input placeholder={t("admin_purchase.additional_cost_note_placeholder")} maxLength={500} style={{ width: 220 }} />
                   </Form.Item>
                   {fields.length > 1 && <MinusCircleOutlined onClick={() => remove(name)} />}
                 </Space>
               ))}
-              <Button type="dashed" onClick={() => add({})} icon={<PlusOutlined />} block>{t("admin_purchase.add_item")}</Button>
+              <Button type="dashed" onClick={() => add({ additionalUnitCost: 0 })} icon={<PlusOutlined />} block>{t("admin_purchase.add_item")}</Button>
             </>
           )}
         </Form.List>

@@ -26,6 +26,8 @@ export type PoItemInput = {
   size: string;
   qty: number;
   unitCost?: number;
+  additionalUnitCost?: number;
+  additionalCostNote?: string | null;
   supplierSku?: string | null;
   supplierProductName?: string | null;
   supplierBarcode?: string | null;
@@ -53,6 +55,9 @@ export type PoLine = {
   qtyOrdered: number;
   qtyReceived: number;
   unitCost: number;
+  additionalUnitCost: number;
+  landedUnitCost: number;
+  additionalCostNote: string | null;
 };
 
 export type CreatePOResult =
@@ -123,7 +128,7 @@ export type ReceivePurchaseOptions = {
 function mergeItems<T extends { sku: string; size: string; qty: number; lotNo?: string | null }>(items: T[]): T[] {
   const map = new Map<string, T>();
   for (const it of items) {
-    const key = `${it.sku}__${it.size}__${it.lotNo ?? ""}`;
+    const key = JSON.stringify([it.sku, it.size, it.lotNo ?? ""]);
     const cur = map.get(key);
     if (cur) cur.qty += it.qty;
     else map.set(key, { ...it });
@@ -271,12 +276,21 @@ export async function createPurchaseOrderInTx(
   input: CreatePOInput,
 ): Promise<CreatePOResult> {
   const tenantId = input.tenantId;
+  // Match NUMERIC(12,2) before writing; silently rounding an allocation loses evidence.
+  const validCost = (value: number) => Number.isFinite(value) && value >= 0 &&
+    value <= 9999999999.99 && Number(value.toFixed(2)) === value;
+  if (input.items.some(it => it.additionalCostNote != null &&
+    (typeof it.additionalCostNote !== "string" || it.additionalCostNote.trim().length > 500))) {
+    return { status: "INVALID_INPUT" };
+  }
   const normalized = input.items.map((it) => ({
     ...it,
     sku: String(it.sku ?? "").trim(),
     size: String(it.size ?? "").trim(),
     qty: Number(it.qty),
     unitCost: Number(it.unitCost ?? 0),
+    additionalUnitCost: Number(it.additionalUnitCost ?? 0),
+    additionalCostNote: optionalText(it.additionalCostNote, 500),
     supplierSku: optionalText(it.supplierSku, 200),
     supplierProductName: optionalText(it.supplierProductName, 500),
     supplierBarcode: optionalText(it.supplierBarcode, 200),
@@ -290,8 +304,11 @@ export async function createPurchaseOrderInTx(
         it.size.length > 100 ||
         !Number.isInteger(it.qty) ||
         it.qty <= 0 ||
-        !Number.isFinite(it.unitCost) ||
-        it.unitCost < 0 ||
+        !validCost(it.unitCost) ||
+        !validCost(it.additionalUnitCost) ||
+        it.unitCost + it.additionalUnitCost > 9999999999.99 ||
+        (it.additionalUnitCost > 0 && !it.additionalCostNote) ||
+        (it.additionalUnitCost === 0 && it.additionalCostNote != null) ||
         (it.packQty != null &&
           (!Number.isInteger(Number(it.packQty)) || Number(it.packQty) <= 0)) ||
         (it.minOrderQty != null &&
@@ -307,11 +324,12 @@ export async function createPurchaseOrderInTx(
   const identity = new Map<string, string>();
   for (const item of normalized) {
     const key = `${item.sku}\u0000${item.size}`;
-    const supplierSku = item.supplierSku?.toLocaleLowerCase() ?? "";
+    const lineIdentity = JSON.stringify([item.supplierSku?.toLocaleLowerCase() ?? "",
+      item.unitCost, item.additionalUnitCost, item.additionalCostNote]);
     const prior = identity.get(key);
-    if (prior != null && prior !== supplierSku)
+    if (prior != null && prior !== lineIdentity)
       return { status: "INVALID_INPUT" };
-    identity.set(key, supplierSku);
+    identity.set(key, lineIdentity);
   }
   const items = mergeItems(normalized);
   if (items.length === 0) return { status: "EMPTY" };
@@ -321,7 +339,10 @@ export async function createPurchaseOrderInTx(
   if (requestId) {
     if (requestId.length < 8 || requestId.length > 200) return { status:"INVALID_INPUT" };
     requestHash = crypto.createHash("sha256").update(JSON.stringify({supplierId:input.supplierId??null,
-      supplierName:input.supplierName?.trim()||null,note:input.note??null,items})).digest("hex");
+      supplierName:input.supplierName?.trim()||null,note:input.note??null,
+      // Preserve pre-landed-cost fingerprints for unchanged requests retried after rollout.
+      items:items.map(({additionalUnitCost,additionalCostNote,...item}) => additionalUnitCost === 0
+        ? item : {...item,additionalUnitCost,additionalCostNote})})).digest("hex");
     const claimed = await client.query(
       `INSERT INTO bms_purchase_order_idempotency(tenant_id,request_id,request_hash)
        VALUES($1,$2,$3) ON CONFLICT DO NOTHING RETURNING request_id`,
@@ -334,10 +355,11 @@ export async function createPurchaseOrderInTx(
       if (prior.rows[0]?.request_hash!==requestHash) throw new IdempotencyConflictError(IDEMPOTENCY_CONFLICT_MESSAGE,"purchase.create");
       if (prior.rows[0]?.po_id) {
         const replay=await client.query<any>(`SELECT supplier_id,total_amount FROM bms_purchase_orders WHERE tenant_id=$1 AND id=$2`,[tenantId,prior.rows[0].po_id]);
-        const replayItems=await client.query<any>(`SELECT product_sku,size,supplier_sku,supplier_product_name,qty_ordered,qty_received,unit_cost FROM bms_purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id`,[tenantId,prior.rows[0].po_id]);
+        const replayItems=await client.query<any>(`SELECT product_sku,size,supplier_sku,supplier_product_name,qty_ordered,qty_received,unit_cost,additional_unit_cost,additional_cost_note FROM bms_purchase_order_items WHERE tenant_id=$1 AND po_id=$2 ORDER BY id`,[tenantId,prior.rows[0].po_id]);
         return {status:"CREATED",poId:prior.rows[0].po_id,total:Number(replay.rows[0].total_amount),supplierId:replay.rows[0].supplier_id??null,replayed:true,
           items:replayItems.rows.map((row:any)=>({sku:row.product_sku,size:row.size,supplierSku:row.supplier_sku??null,
-            supplierProductName:row.supplier_product_name??null,qtyOrdered:Number(row.qty_ordered),qtyReceived:Number(row.qty_received),unitCost:Number(row.unit_cost)}))};
+            supplierProductName:row.supplier_product_name??null,qtyOrdered:Number(row.qty_ordered),qtyReceived:Number(row.qty_received),unitCost:Number(row.unit_cost),
+            additionalUnitCost:Number(row.additional_unit_cost),landedUnitCost:Number(row.unit_cost)+Number(row.additional_unit_cost),additionalCostNote:row.additional_cost_note??null}))};
       }
     }
   }
@@ -407,8 +429,8 @@ export async function createPurchaseOrderInTx(
     await client.query(
       `INSERT INTO bms_purchase_order_items
            (tenant_id, po_id, product_sku, size, supplier_sku, supplier_product_name,
-            qty_ordered, unit_cost)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            qty_ordered, unit_cost, additional_unit_cost, additional_cost_note)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
       [
         tenantId,
         poId,
@@ -418,6 +440,8 @@ export async function createPurchaseOrderInTx(
         mapping.supplierProductName,
         it.qty,
         it.unitCost,
+        it.additionalUnitCost,
+        it.additionalCostNote,
       ],
     );
     lines.push({
@@ -428,6 +452,9 @@ export async function createPurchaseOrderInTx(
       qtyOrdered: it.qty,
       qtyReceived: 0,
       unitCost: it.unitCost,
+      additionalUnitCost: it.additionalUnitCost,
+      landedUnitCost: it.unitCost + it.additionalUnitCost,
+      additionalCostNote: it.additionalCostNote,
     });
   }
 
@@ -581,15 +608,15 @@ export async function receivePurchaseOrderInTx(
 
     for (const ln of lines) {
       // ล็อกรายการ PO ที่ตรง sku+size
-      const item = await client.query<{ id: string; qty_ordered: number; qty_received: number; unit_cost: string }>(
-        `SELECT id, qty_ordered, qty_received, unit_cost FROM bms_purchase_order_items
+      const item = await client.query<{ id: string; qty_ordered: number; qty_received: number; unit_cost: string; additional_unit_cost: string }>(
+        `SELECT id, qty_ordered, qty_received, unit_cost, additional_unit_cost FROM bms_purchase_order_items
           WHERE tenant_id = $1 AND po_id = $2 AND product_sku = $3 AND size = $4 FOR UPDATE`,
         [tenantId, poId, ln.sku, ln.size]
       );
       if (item.rowCount === 0) {
         return { status: "LINE_NOT_FOUND", sku: ln.sku, size: ln.size };
       }
-      const { id: itemId, qty_ordered, qty_received, unit_cost } = item.rows[0];
+      const { id: itemId, qty_ordered, qty_received, unit_cost, additional_unit_cost } = item.rows[0];
       const remaining = qty_ordered - qty_received;
       if (ln.qty > remaining) {
         return { status: "OVER_RECEIVE", sku: ln.sku, size: ln.size, remaining, requested: ln.qty };
@@ -617,7 +644,7 @@ export async function receivePurchaseOrderInTx(
           expiryDate: ln.expiryDate,
           supplierId,
           // Cost is authoritative PO data; POS/admin input cannot rewrite lot cost.
-          unitCost: Number(unit_cost),
+          unitCost: Number(unit_cost) + Number(additional_unit_cost),
         });
       }
 
@@ -659,10 +686,10 @@ export async function receivePurchaseOrderInTx(
     // อ่านรายการล่าสุดกลับไป
     const items = await client.query<{
       product_sku: string; size: string; supplier_sku: string | null;
-      supplier_product_name: string | null; qty_ordered: number; qty_received: number; unit_cost: string;
+      supplier_product_name: string | null; qty_ordered: number; qty_received: number; unit_cost: string; additional_unit_cost: string; additional_cost_note: string | null;
     }>(
       `SELECT product_sku, size, supplier_sku, supplier_product_name,
-              qty_ordered, qty_received, unit_cost
+              qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
          FROM bms_purchase_order_items WHERE po_id = $1 ORDER BY product_sku, size`,
       [poId]
     );
@@ -676,6 +703,9 @@ export async function receivePurchaseOrderInTx(
         supplierProductName: r.supplier_product_name,
         qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
         unitCost: Number(r.unit_cost),
+        additionalUnitCost: Number(r.additional_unit_cost),
+        landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
+        additionalCostNote: r.additional_cost_note,
       })),
     };
 
@@ -754,7 +784,8 @@ export async function listPurchaseOrders(tenantId: string, search = "", limit = 
     `SELECT po.id, po.status, po.total_amount, po.note, po.created_at, po.updated_at,
             s.id AS supplier_id, s.name AS supplier_name,
             COALESCE(SUM(i.qty_ordered), 0)::int  AS qty_ordered,
-            COALESCE(SUM(i.qty_received), 0)::int AS qty_received
+            COALESCE(SUM(i.qty_received), 0)::int AS qty_received,
+            COALESCE(SUM(i.qty_ordered * (i.unit_cost + i.additional_unit_cost)), 0) AS landed_total
        FROM bms_purchase_orders po
        LEFT JOIN bms_suppliers s ON s.id = po.supplier_id
        LEFT JOIN bms_purchase_order_items i ON i.po_id = po.id
@@ -785,6 +816,7 @@ export async function listPurchaseOrders(tenantId: string, search = "", limit = 
     id: r.id,
     status: r.status,
     total: Number(r.total_amount),
+    landedTotal: Number(r.landed_total),
     note: r.note,
     supplier: r.supplier_id ? { id: r.supplier_id, name: r.supplier_name } : null,
     qtyOrdered: r.qty_ordered,
@@ -801,7 +833,8 @@ export async function listReceivablePurchaseOrders(tenantId: string, limit = 50)
     `SELECT po.id, po.status, po.total_amount, po.note, po.created_at, po.updated_at,
             s.id AS supplier_id, s.name AS supplier_name,
             COALESCE(SUM(i.qty_ordered), 0)::int AS qty_ordered,
-            COALESCE(SUM(i.qty_received), 0)::int AS qty_received
+            COALESCE(SUM(i.qty_received), 0)::int AS qty_received,
+            COALESCE(SUM(i.qty_ordered * (i.unit_cost + i.additional_unit_cost)), 0) AS landed_total
        FROM bms_purchase_orders po
        LEFT JOIN bms_suppliers s ON s.id = po.supplier_id
        LEFT JOIN bms_purchase_order_items i ON i.po_id = po.id AND i.tenant_id = po.tenant_id
@@ -815,6 +848,7 @@ export async function listReceivablePurchaseOrders(tenantId: string, limit = 50)
     id: r.id,
     status: r.status,
     total: Number(r.total_amount),
+    landedTotal: Number(r.landed_total),
     note: r.note,
     supplier: r.supplier_id ? { id: r.supplier_id, name: r.supplier_name } : null,
     qtyOrdered: Number(r.qty_ordered),
@@ -827,7 +861,10 @@ export async function listReceivablePurchaseOrders(tenantId: string, limit = 50)
 export async function getPurchaseOrder(tenantId: string, poId: string) {
   const head = await query(
     `SELECT po.id, po.status, po.total_amount, po.note, po.created_at, po.updated_at,
-            s.id AS supplier_id, s.name AS supplier_name
+            s.id AS supplier_id, s.name AS supplier_name,
+            (SELECT COALESCE(SUM(i.qty_ordered * (i.unit_cost + i.additional_unit_cost)), 0)
+               FROM bms_purchase_order_items i
+              WHERE i.tenant_id = po.tenant_id AND i.po_id = po.id) AS landed_total
        FROM bms_purchase_orders po
        LEFT JOIN bms_suppliers s ON s.id = po.supplier_id
       WHERE po.tenant_id = $1 AND po.id = $2`,
@@ -836,7 +873,7 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
   if (head.rowCount === 0) return null;
   const items = await query(
     `SELECT product_sku, size, supplier_sku, supplier_product_name,
-            qty_ordered, qty_received, unit_cost
+            qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
        FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
       ORDER BY product_sku, size`,
     [tenantId, poId]
@@ -846,6 +883,7 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
     id: h.id,
     status: h.status,
     total: Number(h.total_amount),
+    landedTotal: Number(h.landed_total),
     note: h.note,
     supplier: h.supplier_id ? { id: h.supplier_id, name: h.supplier_name } : null,
     createdAt: h.created_at,
@@ -856,6 +894,9 @@ export async function getPurchaseOrder(tenantId: string, poId: string) {
       supplierProductName: r.supplier_product_name,
       qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
       unitCost: Number(r.unit_cost),
+      additionalUnitCost: Number(r.additional_unit_cost),
+      landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
+      additionalCostNote: r.additional_cost_note,
     })),
   };
 }

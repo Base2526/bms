@@ -4,7 +4,7 @@ import test from 'node:test';
 import {getClient,query} from '../apps/web/lib/db.ts';
 import {beginTenantTx} from '../apps/web/lib/bms/tenant.ts';
 import {confirmInventoryValue,inventoryValuation} from '../apps/web/lib/bms/inventoryValuation.ts';
-import {createPurchaseOrder,receivePurchaseOrder} from '../apps/web/lib/bms/purchase.ts';
+import {createPurchaseOrder,receivePurchaseOrder,getPurchaseOrder} from '../apps/web/lib/bms/purchase.ts';
 import {partiallyReturnPosSale} from '../apps/web/lib/bms/pos.ts';
 import {recordInventoryWastage} from '../apps/web/lib/bms/wastage.ts';
 import {createStockTransfer,sendStockTransfer,receiveStockTransfer} from '../apps/web/lib/bms/stockTransfers.ts';
@@ -47,6 +47,34 @@ test('actual costs: opening evidence is confirmed, stale-safe, idempotent, scope
   assert.equal((await inventoryValuation(f.tenant,f.actor,f.location)).rows.find(r=>r.sku==='FAKE-B')!.value,null);
   await query('INSERT INTO bms_user_allowed_locations(tenant_id,user_id,location_id) VALUES($1,$2,$3)',[f.tenant,f.actor,f.locations[1]]);
   await assert.rejects(inventoryValuation(f.tenant,f.actor,f.location),/FORBIDDEN/);
+}));
+
+test('actual costs: landed purchase costs survive partial receipts, retries and audit rollback',async()=>withCostingFixture(async f=>{
+  await f.product('FAKE-LANDED');await opening(f,'FAKE-LANDED');
+  const input={tenantId:f.tenant,requestId:randomUUID(),items:[{sku:'FAKE-LANDED',size:'BASE',qty:10,unitCost:10,
+    additionalUnitCost:2,additionalCostNote:'FAKE freight 20 baht / 10 units'}]};
+  const po=await createPurchaseOrder(input);
+  assert.equal(po.status,'CREATED');if(po.status!=='CREATED')throw new Error('PO failed');
+  assert.equal(po.total,100);assert.equal(po.items[0].landedUnitCost,12);
+  const replay=await createPurchaseOrder(input);
+  assert.equal(replay.status,'CREATED');if(replay.status!=='CREATED')throw new Error('Replay failed');
+  assert.equal(replay.poId,po.poId);assert.equal(replay.replayed,true);
+  assert.equal(replay.items[0].additionalCostNote,input.items[0].additionalCostNote);
+  assert.equal((await createPurchaseOrder({...input,items:[{...input.items[0],additionalUnitCost:3}]})).status,'IDEMPOTENCY_CONFLICT');
+  const options={locationId:f.location,audit:{actor:f.actor,action:'purchase.receive'}};
+  const receipt=(qty:number)=>receivePurchaseOrder(f.tenant,po.poId,[{sku:'FAKE-LANDED',size:'BASE',qty}],f.actor,f.actor,options);
+  assert.equal((await receipt(4)).status,'PARTIAL');
+  const before=(await inventoryValuation(f.tenant,f.actor,f.location)).rows.find(r=>r.sku==='FAKE-LANDED')!;
+  assert.equal(before.qty,'1004');assert.equal(before.value,'10048.000000');
+  await withAuditFailure(f.tenant,'purchase.receive',async()=>assert.rejects(receipt(6),/TEST_COST_AUDIT_FAILURE/));
+  assert.deepEqual((await inventoryValuation(f.tenant,f.actor,f.location)).rows.find(r=>r.sku==='FAKE-LANDED'),before);
+  assert.equal((await getPurchaseOrder(f.tenant,po.poId))?.items[0].qtyReceived,4);
+  assert.equal((await receipt(6)).status,'RECEIVED');
+  const after=(await inventoryValuation(f.tenant,f.actor,f.location)).rows.find(r=>r.sku==='FAKE-LANDED')!;
+  assert.equal(after.qty,'1010');assert.equal(after.value,'10120.000000');
+  const detail=await getPurchaseOrder(f.tenant,po.poId);
+  assert.equal(detail?.total,100);assert.equal(detail?.landedTotal,120);
+  assert.equal(await getPurchaseOrder(randomUUID(),po.poId),null);
 }));
 
 test('actual costs: purchase receipts update weighted average; sale freezes cost despite later catalog and purchase changes',async()=>withCostingFixture(async f=>{

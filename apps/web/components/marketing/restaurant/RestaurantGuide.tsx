@@ -133,6 +133,7 @@ export default function RestaurantGuide() {
         <div className={styles.actions}>
           <a className={styles.primaryButton} href="#restaurant-flows">{copy.explore} <span aria-hidden="true">↓</span></a>
           <Link className={styles.button} href={learningHref}>{copy.learnGuide} <span aria-hidden="true">→</span></Link>
+          <Link className={styles.button} href="/cost-pricing">{lang === "th" ? "คำนวณต้นทุนและราคาขาย" : "Costs and selling prices"} <span aria-hidden="true">→</span></Link>
           <a className={styles.button} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} <span aria-hidden="true">↗</span></a>
         </div>
       </div>

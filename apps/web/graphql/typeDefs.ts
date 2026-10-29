@@ -1850,12 +1850,16 @@ export const typeDefs = /* GraphQL */ `
     qtyOrdered: Int!
     qtyReceived: Int!
     unitCost: Float!
+    additionalUnitCost: Float!
+    landedUnitCost: Float!
+    additionalCostNote: String
   }
 
   type BmsPurchaseOrder {
     id: ID!
     status: BmsPurchaseStatus!
     total: Float!
+    landedTotal: Float!
     note: String
     supplier: BmsSupplier
     qtyOrdered: Int!
@@ -1870,6 +1874,8 @@ export const typeDefs = /* GraphQL */ `
     size: String!
     qty: Int!
     unitCost: Float
+    additionalUnitCost: Float
+    additionalCostNote: String
     supplierSku: String
     supplierProductName: String
     supplierBarcode: String

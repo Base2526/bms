@@ -177,7 +177,7 @@ export const bmsPurchaseResolvers = {
       if (p.items) return p.items;
       const res = await query(
         `SELECT product_sku, size, supplier_sku, supplier_product_name,
-                qty_ordered, qty_received, unit_cost
+                qty_ordered, qty_received, unit_cost, additional_unit_cost, additional_cost_note
            FROM bms_purchase_order_items WHERE tenant_id = $1 AND po_id = $2
           ORDER BY product_sku, size`,
         [getTenantId(ctx), p.id]
@@ -188,6 +188,9 @@ export const bmsPurchaseResolvers = {
         supplierProductName: r.supplier_product_name,
         qtyOrdered: r.qty_ordered, qtyReceived: r.qty_received,
         unitCost: Number(r.unit_cost),
+        additionalUnitCost: Number(r.additional_unit_cost),
+        landedUnitCost: Number(r.unit_cost) + Number(r.additional_unit_cost),
+        additionalCostNote: r.additional_cost_note,
       }));
     },
   },

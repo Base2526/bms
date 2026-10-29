@@ -1,0 +1,135 @@
+[
+  {
+    "from": 0,
+    "to": 1,
+    "reply": false,
+    "phase": 0,
+    "th": {
+      "title": "บันทึกต้นทุนที่ซื้อมา",
+      "label": "ราคาซื้อ + ค่าจัดหา + ที่มา",
+      "sub": "2,000 + 200 บาท / 100 หน่วย",
+      "speech": "ขั้นที่หนึ่ง พนักงานบันทึกราคาวัตถุดิบสองพันบาท และค่าขนส่งสองร้อยบาท สำหรับหนึ่งร้อยหน่วย พร้อมระบุหลักการปันส่วน จึงได้ต้นทุนถึงร้านหน่วยละยี่สิบสองบาท"
+    },
+    "en": {
+      "title": "Record purchase costs",
+      "label": "Goods price + extra acquisition cost",
+      "sub": "2,000 + 200 baht / 100 units",
+      "speech": "Staff record 2,000 baht of goods and 200 baht of freight for 100 units, with the allocation basis. Landed cost is 22 baht per unit."
+    },
+    "audio": "/audio/cost-pricing/th/step-1.mp3"
+  },
+  {
+    "from": 0,
+    "to": 1,
+    "reply": false,
+    "phase": null,
+    "th": {
+      "title": "ยืนยันรับของเข้าสต็อก",
+      "label": "ตรวจจำนวน แล้วรับของ",
+      "sub": "บันทึกต้นทุนรับเข้าในสาขา",
+      "speech": "ขั้นที่สอง พนักงานตรวจจำนวนและยืนยันรับของ บี เอ็ม เอส บันทึกสต็อกและมูลค่ารับเข้า หากรับเพียงบางส่วน จะบันทึกตามจำนวนที่รับจริง"
+    },
+    "en": {
+      "title": "Confirm stock receipt",
+      "label": "Check quantities and receive stock",
+      "sub": "Record value in the receiving branch",
+      "speech": "Staff confirm the quantity actually received. BMS records stock and receipt value. Partial receipts only record the received quantity."
+    },
+    "audio": "/audio/cost-pricing/th/step-2.mp3"
+  },
+  {
+    "from": 2,
+    "to": 1,
+    "reply": false,
+    "phase": 1,
+    "th": {
+      "title": "ทบทวนต้นทุนในสูตร",
+      "label": "ตรวจสูตรและต้นทุนอ้างอิง",
+      "sub": "วัตถุดิบ 22 + ค่าอื่น 8 = 30 บาท",
+      "speech": "ขั้นที่สาม ผู้จัดการทบทวนต้นทุนอ้างอิงและสูตร สมมติวัตถุดิบยี่สิบสองบาท บรรจุภัณฑ์สามบาท และแรงงานกับพลังงานห้าบาท รวมสามสิบบาทต่อแก้ว ตัวเลขนี้ใช้วางแผน การรับของไม่ได้ยืนยันว่าต้นทุนสูตรเปลี่ยนตามอัตโนมัติ"
+    },
+    "en": {
+      "title": "Review recipe costs",
+      "label": "Review the recipe and cost basis",
+      "sub": "Ingredients 22 + other costs 8 = 30 baht",
+      "speech": "The manager reviews reference costs and the recipe: 22 baht of ingredients, 3 of packaging, and 5 of labor and energy. The 30 baht total is a planning estimate. Receiving a PO does not automatically confirm an updated recipe estimate."
+    },
+    "audio": "/audio/cost-pricing/th/step-3.mp3"
+  },
+  {
+    "from": 1,
+    "to": 2,
+    "reply": true,
+    "phase": null,
+    "th": {
+      "title": "เปรียบเทียบราคาและจุดคุ้มทุน",
+      "label": "แสดงผลจำลองราคาขาย",
+      "sub": "ขาย 65 · เหลือ 35 บาทก่อนค่าใช้จ่ายคงที่",
+      "speech": "ขั้นที่สี่ ระบบแสดงผลจำลอง ขายหกสิบห้าบาท หักต้นทุนสามสิบบาท เหลือสามสิบห้าบาทก่อนค่าใช้จ่ายคงที่ ถ้าค่าใช้จ่ายคงที่เดือนละสองหมื่นหนึ่งพันบาท ต้องขายหกร้อยแก้วจึงคุ้มทุน ตัวอย่างนี้ยังไม่รวมภาษี ค่าธรรมเนียม ส่วนลด และของเสีย"
+    },
+    "en": {
+      "title": "Compare price and break-even",
+      "label": "Return the price simulation",
+      "sub": "Sell at 65; contribution before fixed costs: 35",
+      "speech": "A 65 baht price less a 30 baht variable cost leaves 35 baht before fixed costs. At 21,000 baht of monthly fixed costs, break-even is 600 cups. This example excludes VAT, channel fees, discounts and waste."
+    },
+    "audio": "/audio/cost-pricing/th/step-4.mp3"
+  },
+  {
+    "from": 2,
+    "to": 1,
+    "reply": false,
+    "phase": 2,
+    "th": {
+      "title": "ยืนยันเผยแพร่ราคา",
+      "label": "ทบทวนข้อมูลล่าสุด และยืนยัน",
+      "sub": "ผู้มีสิทธิ์เลือกใช้ราคา 65 บาท",
+      "speech": "ขั้นที่ห้า ผู้มีสิทธิ์ตรวจข้อมูลล่าสุดและยืนยันใช้ราคาขายหกสิบห้าบาท การทดลองราคาอย่างเดียวไม่เปลี่ยนราคาหน้าขาย ถ้าต้นทุนเปลี่ยนระหว่างทบทวน ต้องตรวจใหม่ก่อนยืนยัน"
+    },
+    "en": {
+      "title": "Confirm price publication",
+      "label": "Review current evidence and confirm",
+      "sub": "An authorized user publishes 65 baht",
+      "speech": "An authorized user reviews current evidence and confirms publication. Trying a price does not change the selling price. Changed evidence requires another review."
+    },
+    "audio": "/audio/cost-pricing/th/step-5.mp3"
+  },
+  {
+    "from": 1,
+    "to": 3,
+    "reply": false,
+    "phase": null,
+    "th": {
+      "title": "ใช้ราคากับรายการขาย",
+      "label": "ราคาที่เผยแพร่ → หน้าขาย",
+      "sub": "บันทึกยอดขายและหลักฐานต้นทุน",
+      "speech": "ขั้นที่หก หน้าขายใช้ราคาที่เผยแพร่ เมื่อเกิดรายการขาย ระบบบันทึกยอดขายและหลักฐานต้นทุนตามขั้นตอนของรายการ เพื่อใช้ตรวจผลภายหลัง"
+    },
+    "en": {
+      "title": "Use the price in sales",
+      "label": "Published price reaches checkout",
+      "sub": "Record sales and cost evidence",
+      "speech": "Checkout uses the published price. Sales and their cost evidence are recorded through the existing workflow for later reporting."
+    },
+    "audio": "/audio/cost-pricing/th/step-6.mp3"
+  },
+  {
+    "from": 3,
+    "to": 2,
+    "reply": true,
+    "phase": null,
+    "th": {
+      "title": "ตรวจผลจริงแล้วกลับมาทบทวน",
+      "label": "รายงานผลจากข้อมูลที่บันทึก",
+      "sub": "ข้อมูลขาด → แสดงว่ายังไม่ครบ",
+      "speech": "ขั้นที่เจ็ด เจ้าของร้านดูผลจากยอดขาย หลักฐานต้นทุน และค่าใช้จ่ายที่บันทึก หากข้อมูลไม่ครบ ระบบต้องแสดงข้อจำกัด ไม่แทนต้นทุนที่หายด้วยศูนย์ แล้วนำผลกลับไปทบทวนสูตรและราคาขายในรอบถัดไป"
+    },
+    "en": {
+      "title": "Review actual results",
+      "label": "Report recorded sales and costs",
+      "sub": "Missing evidence remains incomplete",
+      "speech": "The owner reviews sales, cost evidence and recorded expenses. Missing evidence is disclosed, not replaced with zero. Results inform the next recipe and pricing review."
+    },
+    "audio": "/audio/cost-pricing/th/step-7.mp3"
+  }
+]
