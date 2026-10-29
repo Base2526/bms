@@ -45,6 +45,10 @@ are processed in queue order; expired uncertain work raises a failure incident f
 - `active` is the operator switch; Channel Health is observed connectivity.
 - The Test button calls `/me` with the Page token and refuses a token whose Page ID does not equal
   the configured Page ID.
+- Meta's `/me` read probe also requires `pages_read_engagement`. A Page token with only
+  `pages_messaging` can still receive and send messages; a missing read permission makes the Test
+  button report that it cannot verify Page details without changing health established by actual
+  inbound/outbound traffic. Test one real message from an app-role account before App Review.
 - `META_GRAPH_VERSION` defaults to `v26.0` in every Web compose environment. Upgrade it deliberately
   with contract and live sandbox tests before Meta sunsets it.
 - Rotate a Page token or App Secret in Settings. Rotate the Verify Token in both BMS and Meta.

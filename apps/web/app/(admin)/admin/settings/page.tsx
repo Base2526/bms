@@ -310,7 +310,7 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
   const [form] = Form.useForm();
   const accessTokenInputRef = useRef<any>(null);
   const [saveChannel, { loading: saving }] = useMutation(M, {
-    onCompleted: () => { message.success(t("admin_settings.save_success", { label: ch.label })); form.setFieldsValue({ accessToken: "", channelSecret: "" }); onSaved(); },
+    onCompleted: () => { message.success(t("admin_settings.save_success", { label: ch.label })); form.setFieldsValue({ accessToken: "", channelSecret: "", webhookVerifyToken: "" }); onSaved(); },
     onError: (e) => message.error(e?.message || t("admin_settings.save_failed")),
   });
   const [testChannel, { loading: testing }] = useMutation(M_TEST, {
@@ -350,6 +350,11 @@ function ChannelPanelBody({ ch, cfg, health, badge, tenantId, origin, focused, o
   const metaReady = (ch.key !== "facebook" && ch.key !== "instagram") ||
     (cfg?.has_secret && cfg?.has_verify_token && cfg?.external_account_id);
   const canTest = TESTABLE_CHANNELS.has(ch.key) && cfg?.has_token && cfg?.active && metaReady;
+
+  useEffect(() => {
+    if (!cfg) return;
+    form.setFieldsValue({ externalAccountId: cfg.external_account_id ?? "", active: cfg.active ?? true });
+  }, [form, cfg?.external_account_id, cfg?.active]);
 
   useEffect(() => {
     if (!focused) return;

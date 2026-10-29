@@ -251,7 +251,8 @@ export type TestConnectionResult = { ok: boolean; message: string };
  * ปุ่ม "ทดสอบ" ในหน้า Settings (ช่องทางที่ active และมี token รวมถึงสถานะ error ที่กำลังกู้คืน) — เรียก endpoint
  * แบบ "verify token" ของแพลตฟอร์มที่ไม่ต้องมีผู้รับ (ไม่ต้องส่งข้อความหาลูกค้าจริง):
  *   LINE       → GET /v2/bot/info            (คืนชื่อบอทถ้า token ยังใช้ได้)
- *   FB/IG      → GET /me?access_token=...    (คืนชื่อเพจถ้า token ยังใช้ได้)
+ *   FB/IG      → GET /me?access_token=...    (requires Page read permission;
+ *                a messaging-only token can still receive/send successfully)
  * TikTok/Shopee/Lazada ไม่มี endpoint แบบนี้ (ไม่มี send API จริงด้วย — ดู docs/integrations/lazada.md)
  * และ Web ไม่มี token ให้ทดสอบ — คืน ok:false พร้อมข้อความอธิบายแทนที่จะเดา
  *
@@ -299,6 +300,18 @@ export async function testChannelConnection(tenantId: string, channel: string): 
         }
         await recordOutboundSuccess(tenantId, channel);
         return { ok: true, message: `เชื่อมต่อสำเร็จ — เพจ "${info.name || "ไม่ทราบชื่อ"}"` };
+      }
+      // The /me Page read probe needs pages_read_engagement, while a valid
+      // pages_messaging-only Page token can send and receive Messenger traffic.
+      // This probe must not overwrite health established by real delivery.
+      const readPermissionMissing = (() => {
+        try {
+          const error = JSON.parse(bodyText)?.error;
+          return error?.code === 100 && /pages_read_engagement/i.test(String(error?.message ?? ""));
+        } catch { return false; }
+      })();
+      if (readPermissionMissing) {
+        return { ok: false, message: "ปุ่มทดสอบอ่านข้อมูลเพจไม่ได้เพราะ Page Token ไม่มี pages_read_engagement; ตรวจการรับและส่งข้อความจริงใน Inbox เพื่อยืนยันการเชื่อมต่อ" };
       }
       const detail = formatOutboundErrorDetail(resp, bodyText);
       await recordOutboundError(tenantId, channel, resp.status, detail);
