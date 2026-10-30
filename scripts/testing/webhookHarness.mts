@@ -32,6 +32,7 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
   secret?: string | null;
   lineBotExtra?: Record<string, unknown>;
   botSync?: Function;
+  profileSync?: Function;
 } = {}) {
   const calls = { claims: [] as any[][], pipeline: [] as any[][], logs: [] as any[][],
     deliveries: [] as any[][], incidents: [] as any[], health: [] as any[][], inbound: [] as any[][], profiles: 0, botSync: [] as any[][] };
@@ -43,11 +44,20 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     "@/lib/db": { getClient: async () => ({ release() {}, query: async () => ({ rows: [], rowCount: 1 }) }) },
     "./tenant": { beginTenantTx: noop },
     "./facebookAssistantMode": { facebookAssistantMode },
-    "./channels": { getChannel: async () => ({ active: true, external_account_id: "123456789012345" }) },
+    "./channels": { getChannel: async () => ({ active: true, access_token: "FAKE-token", external_account_id: "123456789012345" }) },
+    "./facebookProfile": { syncFacebookUserProfile: async () => {
+      calls.profiles++; return { ok: true, conversationIds: [] };
+    }, syncFacebookPageProfile: async () => ({ ok: true }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline.push(args); return options.pipeline ? options.pipeline(...args) : { reply: `reply:${args[0]}` }; } },
     "./inbox": {
       logConversation: async (...args: any[]) => { calls.logs.push(args); },
       logInboundMessage: async (...args: any[]) => { calls.inbound.push(args); },
+      notifyInboxConversationChanged() {},
+      recordProviderMessageIds() {},
+      deliverToChannelTracked: async (...args: any[]) => {
+        calls.deliveries.push(args);
+        return { delivered: options.deliver ? await options.deliver(...args) : true, providerMessageIds: [] };
+      },
       deliverToChannel: async (...args: any[]) => { calls.deliveries.push(args); return options.deliver ? options.deliver(...args) : true; },
     },
     "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({ outcome: "FAILURE" }) },
@@ -61,7 +71,8 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
       try {
         await worker.processMetaInboundJob({ id: event.eventId, tenantId: "FAKE-tenant", channel,
           eventId: event.eventId, externalAccountId: event.externalAccountId,
-          customerRef: event.senderId, messageText: event.text, attachments: event.attachments, attempts: 1 });
+          customerRef: event.senderId, messageText: event.text, attachments: event.attachments,
+          eventMeta: event.meta ?? {}, attempts: 1 });
         processed++;
       } catch {
         deadLettered++;
@@ -92,7 +103,9 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     // Leave errors visible to assert.rejects; production wraps these in a non-200 response.
     "@/lib/log/routeError": { withRouteErrorLog: (_name: string, handler: unknown) => handler },
     "@/lib/bms/meta": { metaChallenge: () => null, metaEnvelopeMatches: () => true,
-      parseMetaEvents: (body: any) => body.events.map((item: any) => ({ ...item, externalAccountId: "123456789012345" })) },
+      parseMetaInboxSignals: () => [],
+      parseMetaEvents: (body: any) => body.events.map((item: any) => ({ ...item, meta: item.meta ?? {}, externalAccountId: "123456789012345" })) },
+    "@/lib/bms/metaInboxSignals": { applyMetaInboxSignals: async () => ({ echoes: 0, deliveries: 0, reads: 0 }) },
     "@/lib/bms/metaInboundJobs": {
       enqueueMetaInboundEvents: async (_tenantId: string, _channel: string, events: any[]) => {
         calls.claims.push([_tenantId, _channel, ...events]);
@@ -104,7 +117,10 @@ export function webhookHarness(channel: "line" | "facebook" | "instagram", optio
     },
     "@/lib/storage": {},
     "@/lib/bms/lineProfile": {
-      syncLineUserProfile: async () => { calls.profiles++; return { ok: true, conversationIds: [] }; },
+      syncLineUserProfile: async (...args: any[]) => {
+        calls.profiles++;
+        return options.profileSync ? options.profileSync(...args) : { ok: true, conversationIds: [] };
+      },
       syncLineBotInfo: async (...args: any[]) => { calls.botSync.push(args); return options.botSync ? options.botSync(...args) : { ok: true, extra: verifiedExtra }; },
     },
     "@/lib/bms/lineOfficialAccount": { isBmsLineOfficialAccount },

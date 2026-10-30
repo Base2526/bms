@@ -6291,6 +6291,8 @@ const en = {
     send_failed_label: "Send failed",
     resend_button: "Resend",
     sent_label: "Sent",
+    delivered_label: "Delivered",
+    read_label: "Read",
     no_delivery_report_tooltip: "This channel doesn't report delivery/read status",
     saved_label: "Saved",
     coupon_added_toast: "Added coupon {code} to the draft message",

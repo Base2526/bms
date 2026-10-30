@@ -7,6 +7,7 @@
   { "name": "menu-availability-reset", "group": "frequent", "path": "/api/bms/menu-availability/reset" },
   { "name": "delivery-events-process", "group": "frequent", "path": "/api/bms/delivery/events/process" },
   { "name": "meta-inbound-process", "group": "frequent", "path": "/api/bms/meta/inbound/process" },
+  { "name": "channel-profile-sync", "group": "frequent", "path": "/api/bms/channels/sync-profiles" },
   { "name": "delivery-commands-process", "group": "frequent", "path": "/api/bms/delivery/commands/process" },
   { "name": "delivery-intake-auto-resume", "group": "frequent", "path": "/api/bms/delivery/intake/auto-resume" },
   { "name": "delivery-scheduled-preparation", "group": "frequent", "path": "/api/bms/delivery/scheduled-preparation" },

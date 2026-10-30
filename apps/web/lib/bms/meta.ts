@@ -37,7 +37,59 @@ export type MetaEvent = {
   text: string;
   eventId: string;
   attachments: Array<{ type: string | null; url: string | null; title?: string | null; mimeType?: string | null }>;
+  meta: MetaInboundContext;
 };
+
+export type MetaInboundContext = {
+  replyToMessageId?: string;
+  quickReplyPayload?: string;
+  postbackPayload?: string;
+  referral?: { source?: string; type?: string; ref?: string; adId?: string };
+};
+
+export type MetaInboxSignal =
+  | { kind: "ECHO"; externalAccountId: string; customerRef: string; providerMessageId: string;
+      text: string; attachments: MetaEvent["attachments"]; occurredAt: number }
+  | { kind: "DELIVERY"; externalAccountId: string; customerRef: string;
+      providerMessageIds: string[]; occurredAt: number }
+  | { kind: "READ"; externalAccountId: string; customerRef: string; occurredAt: number };
+
+function boundedString(value: unknown, max = 500): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : undefined;
+}
+
+function attachmentList(message: any): MetaEvent["attachments"] {
+  return Array.isArray(message?.attachments)
+    ? message.attachments.slice(0, 10).map((att: any) => ({
+      type: boundedString(att?.type, 40) ?? null,
+      url: boundedString(att?.payload?.url, 2_000) ?? null,
+      title: boundedString(att?.title, 255) ?? null,
+      mimeType: boundedString(att?.mime_type, 120) ?? null,
+    }))
+    : [];
+}
+
+function referralContext(value: any): MetaInboundContext["referral"] | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const referral = {
+    source: boundedString(value.source, 80),
+    type: boundedString(value.type, 80),
+    ref: boundedString(value.ref, 500),
+    adId: boundedString(value.ad_id, 100),
+  };
+  return Object.values(referral).some(Boolean) ? referral : undefined;
+}
+
+function inboundContext(message: any, referral: any): MetaInboundContext {
+  const context: MetaInboundContext = {};
+  const replyToMessageId = boundedString(message?.reply_to?.mid, 500);
+  const quickReplyPayload = boundedString(message?.quick_reply?.payload);
+  const parsedReferral = referralContext(referral);
+  if (replyToMessageId) context.replyToMessageId = replyToMessageId;
+  if (quickReplyPayload) context.quickReplyPayload = quickReplyPayload;
+  if (parsedReferral) context.referral = parsedReferral;
+  return context;
+}
 
 export function metaEnvelopeMatches(
   body: any,
@@ -81,19 +133,19 @@ export function parseMetaEvents(
         const eventId = `postback:${createHash("sha256").update(JSON.stringify([
           externalAccountId, senderId, timestamp, payload,
         ])).digest("hex")}`;
-        out.push({ externalAccountId, senderId, text, eventId, attachments: [] });
+        out.push({
+          externalAccountId, senderId, text, eventId, attachments: [],
+          meta: {
+            ...(boundedString(payload) ? { postbackPayload: boundedString(payload) } : {}),
+            ...(referralContext(ev.postback.referral ?? ev.referral)
+              ? { referral: referralContext(ev.postback.referral ?? ev.referral) } : {}),
+          },
+        });
         continue;
       }
       const eventId = typeof ev?.message?.mid === "string" ? ev.message.mid.trim() : "";
       const text = typeof ev?.message?.text === "string" ? ev.message.text.trim() : "";
-      const attachments = Array.isArray(ev?.message?.attachments)
-        ? ev.message.attachments.map((att: any) => ({
-          type: typeof att?.type === "string" ? att.type : null,
-          url: typeof att?.payload?.url === "string" ? att.payload.url : null,
-          title: typeof att?.title === "string" ? att.title : null,
-          mimeType: typeof att?.mime_type === "string" ? att.mime_type : null,
-        }))
-        : [];
+      const attachments = attachmentList(ev?.message);
       // ข้าม echo (ข้อความที่เพจ/บัญชีส่งเอง) และ event ที่ไม่มีเนื้อหาให้ทีมเห็น
       if (typeof senderId === "string" && /^\d{5,64}$/.test(senderId) && eventId && !ev?.message?.is_echo && (text || attachments.length > 0)) {
         out.push({
@@ -102,9 +154,55 @@ export function parseMetaEvents(
           text,
           attachments,
           eventId,
+          meta: inboundContext(ev?.message, ev?.referral),
         });
       }
     }
   }
   return out;
+}
+
+/** Parse non-customer-turn events. They update Inbox state but must never enter the AI pipeline. */
+export function parseMetaInboxSignals(
+  body: any,
+  expectedExternalAccountId: string,
+  expectedObject: "page" | "instagram" = "page",
+): MetaInboxSignal[] {
+  if (!metaEnvelopeMatches(body, expectedExternalAccountId, expectedObject)) return [];
+  const signals: MetaInboxSignal[] = [];
+  for (const entry of Array.isArray(body?.entry) ? body.entry : []) {
+    const externalAccountId = boundedString(entry?.id, 64);
+    if (externalAccountId !== expectedExternalAccountId) continue;
+    for (const ev of Array.isArray(entry?.messaging) ? entry.messaging : []) {
+      const senderId = boundedString(ev?.sender?.id, 64);
+      const recipientId = boundedString(ev?.recipient?.id, 64);
+      if (ev?.message?.is_echo === true && senderId === externalAccountId && /^\d{5,64}$/.test(recipientId ?? "")) {
+        const providerMessageId = boundedString(ev.message.mid, 500);
+        const occurredAt = Number(ev.timestamp);
+        const text = boundedString(ev.message.text, 20_000) ?? "";
+        const attachments = attachmentList(ev.message);
+        if (providerMessageId && Number.isSafeInteger(occurredAt) && occurredAt > 0 && (text || attachments.length)) {
+          signals.push({ kind: "ECHO", externalAccountId, customerRef: recipientId!, providerMessageId,
+            text, attachments, occurredAt });
+        }
+        continue;
+      }
+      if (!/^\d{5,64}$/.test(senderId ?? "") || recipientId !== externalAccountId) continue;
+      if (ev?.delivery) {
+        const occurredAt = Number(ev.delivery.watermark ?? ev.timestamp);
+        const providerMessageIds = Array.isArray(ev.delivery.mids)
+          ? ev.delivery.mids.map((mid: unknown) => boundedString(mid, 500)).filter((mid: any): mid is string => Boolean(mid)).slice(0, 100)
+          : [];
+        if (Number.isSafeInteger(occurredAt) && occurredAt > 0) {
+          signals.push({ kind: "DELIVERY", externalAccountId, customerRef: senderId!, providerMessageIds, occurredAt });
+        }
+      } else if (ev?.read) {
+        const occurredAt = Number(ev.read.watermark ?? ev.timestamp);
+        if (Number.isSafeInteger(occurredAt) && occurredAt > 0) {
+          signals.push({ kind: "READ", externalAccountId, customerRef: senderId!, occurredAt });
+        }
+      }
+    }
+  }
+  return signals;
 }

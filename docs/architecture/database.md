@@ -657,9 +657,9 @@ in `3.6`). This is *the* matching key for "who is this customer" — there is no
 phone/email across channels (see [../ui/customer360.md](../ui/customer360.md) for the manual merge
 feature that fixes this per-customer). Since `6.7`, the table also stores cached channel profile
 metadata (`display_name`, `picture_url`, `status_message`, `language`, `profile_synced_at`,
-`profile_error_at`, `profile_error`) for display-only use. LINE OA sync writes these fields after
-webhook processing; Inbox uses them as fallback when no authoritative CRM customer name/avatar is
-available.
+`profile_error_at`, `profile_error`) for display-only use. LINE OA and Facebook Messenger sync write
+these fields after webhook processing and through the bounded `channel-profile-sync` maintenance job;
+Inbox uses them as fallback when no authoritative CRM customer name/avatar is available.
 
 Pharmacy intake establishes this identity before creating an assessment, then stores the canonical
 `customer_id` on `bms_pharmacy_assessments`. Migration `7.69` changes new assessments to begin with
@@ -1157,7 +1157,9 @@ Migration `7.30` also adds validated AI language/ordering/required-field/short-r
 `bms_app` grants. `bms_conversations.ai_state` is non-authoritative conversation memory; orders and
 stock remain backend sources of truth.
 
-Migration `10.104` adds `bms_channel_inbound_jobs` for Facebook/Instagram messages. The unique
+Migration `10.104` adds `bms_channel_inbound_jobs` for Facebook/Instagram messages. Migration
+`10.106` adds its bounded `event_meta` JSONB context for reply targets, quick replies and ad
+referrals; it never stores the raw signed webhook payload. The unique
 tenant/channel/event key is Meta `message.mid`; bounded message fields commit before AI or Graph API
 I/O. `PENDING`/`FAILED` rows and pre-effect expired `PROCESSING` leases are retryable. Once
 `effects_started_at` is stamped, an unknown outcome becomes `DEAD` instead of replaying a possible

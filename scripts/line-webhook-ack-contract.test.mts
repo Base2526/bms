@@ -76,6 +76,26 @@ test("LINE delivery rejection reports push failure without rerunning AI", async 
   assert.deepEqual(h.calls.incidents.map(x => x.code), ["channel.push_failed"]);
 });
 
+test("LINE profile enrichment is best-effort after text replies and also runs for non-text messages", async () => {
+  const text = webhookHarness("line", { profileSync: async () => { throw new Error("FAKE profile cache unavailable"); } });
+  assert.equal((await text.post()).status, 200);
+  assert.equal(text.calls.pipeline.length, 1);
+  assert.equal(text.calls.logs.length, 1);
+  assert.equal(text.calls.deliveries.length, 1, "profile failure must not send a fallback reply");
+  assert.equal(text.calls.profiles, 1);
+
+  const media = webhookHarness("line");
+  const event = {
+    type: "message",
+    message: { id: "FAKE-sticker-profile", type: "sticker", packageId: "FAKE", stickerId: "FAKE" },
+    source: { userId: "FAKE-customer" },
+  } as any;
+  assert.equal((await media.post([event])).status, 200);
+  assert.equal(media.calls.inbound.length, 1);
+  assert.equal(media.calls.profiles, 1);
+  assert.equal(media.calls.pipeline.length, 0);
+});
+
 test("verified BMS LINE OA selects presales mode while ordinary LINE stays in shop mode", async () => {
   const bms = webhookHarness("line", {
     lineBotExtra: { botBasicId: "@168tnlzi", botInfoSyncedAt: "2026-10-21T00:00:00Z", botIdentityTokenHash: lineBotTokenHash("FAKE-token") },

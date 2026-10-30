@@ -5,8 +5,9 @@ import { loadWithStubs } from "./testing/webhookHarness.mts";
 const job = { id: "job-1", tenantId: "tenant-1", channel: "facebook", eventId: "mid-1",
   externalAccountId: "123456", customerRef: "998877", messageText: "hello", attachments: [], attempts: 2 };
 
-function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string } = {}) {
-  const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, incidents: [] as any[], sql: [] as string[] };
+function harness(options: { claimed?: number; active?: boolean; account?: string; expired?: boolean; mode?: string; profileThrows?: boolean } = {}) {
+  const calls = { pipeline: 0, pipelineArgs: [] as any[][], sends: 0, profiles: 0,
+    profileNotifications: [] as any[][], incidents: [] as any[], sql: [] as string[] };
   const client = { release() {}, query: async (sql: string, args: any[]) => {
     calls.sql.push(sql);
     if (sql.includes("SET effects_started_at=now()")) {
@@ -28,9 +29,17 @@ function harness(options: { claimed?: number; active?: boolean; account?: string
     } },
     "./tenant": { beginTenantTx: noop },
     "./facebookAssistantMode": { facebookAssistantMode: () => options.mode ?? "shop_commerce" },
-    "./channels": { getChannel: async () => ({ active: options.active ?? true, external_account_id: options.account ?? job.externalAccountId }) },
+    "./channels": { getChannel: async () => ({ active: options.active ?? true, access_token: "FAKE-page-token", external_account_id: options.account ?? job.externalAccountId }) },
+    "./facebookProfile": { syncFacebookUserProfile: async () => {
+      calls.profiles++;
+      if (options.profileThrows) throw new Error("FAKE-profile-write-failed");
+      return { ok: true, conversationIds: ["conversation-1"] };
+    }, syncFacebookPageProfile: async () => ({ ok: true }) },
     "./pipeline": { runPipeline: async (...args: any[]) => { calls.pipeline++; calls.pipelineArgs.push(args); return { reply: "hello" }; } },
-    "./inbox": { logConversation: noop, logInboundMessage: noop, deliverToChannel: async () => { calls.sends++; return true; } },
+    "./inbox": { logConversation: noop, logInboundMessage: noop,
+      notifyInboxConversationChanged: (...args: any[]) => { calls.profileNotifications.push(args); },
+      recordProviderMessageIds: noop,
+      deliverToChannelTracked: async () => { calls.sends++; return { delivered: true, providerMessageIds: [] }; } },
     "./customerAnswerEvidence": { fallbackEvidenceQuality: () => ({}) },
     "./channelHealth": { recordInboundEvent: noop },
     "./failureAlert": { reportBmsFailure: async (incident: any) => { calls.incidents.push(incident); } },
@@ -60,6 +69,17 @@ test("valid lease processes one customer turn and reply", async () => {
   await worker.processMetaInboundJob(job);
   assert.equal(calls.pipeline, 1);
   assert.equal(calls.sends, 1);
+  assert.equal(calls.profiles, 1);
+  assert.deepEqual(calls.profileNotifications[0], [job.tenantId, "conversation-1", "CONVERSATION_CHANGED"]);
+});
+
+test("Facebook profile enrichment failure never blocks the verified message or reply", async () => {
+  const { worker, calls } = harness({ profileThrows: true });
+  await worker.processMetaInboundJob(job);
+  assert.equal(calls.pipeline, 1);
+  assert.equal(calls.sends, 1);
+  assert.equal(calls.profiles, 1);
+  assert.equal(calls.incidents.length, 0);
 });
 
 test("the designated Facebook Page uses presales while shops and Instagram retain commerce", async () => {

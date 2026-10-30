@@ -973,8 +973,12 @@ const LINK_STEPS_TH: LinkStep[] = [
     description: (
       <>
         ไปที่ {L.settings} เพื่อวาง token และตั้ง webhook · Facebook Messenger ต้องกรอก Page Access Token,
-        App Secret, Page ID และ Verify Token ที่สุ่มแยกจาก App Secret แล้วกดทดสอบให้ Page ID ตรงกัน · ถ้าต้องทดสอบ
-        Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลัง webhook เข้า
+        App Secret, Page ID และ Verify Token ที่สุ่มแยกจาก App Secret แล้วกดทดสอบให้ Page ID ตรงกัน ·
+        ให้สมัคร webhook fields messages, messaging_postbacks, message_echoes, message_deliveries และ message_reads
+        และขอ Business Asset User Profile Access สำหรับชื่อ/รูปลูกค้า · หลังเปิดใช้งาน ระบบจะทยอย backfill โปรไฟล์เดิม
+        และนำข้อความที่ตอบจาก Business Suite พร้อมสถานะส่งถึง/อ่านแล้วเข้า timeline โดยไม่เรียก AI · ถ้าต้องทดสอบ
+        Inbox realtime ให้เปิด {L.realtimeDiagnostics} แล้วกด Create Msg · LINE OA จริงจะ sync ชื่อ/รูปจาก LINE profile cache หลังข้อความทุกชนิดเข้า
+        และทยอย backfill โปรไฟล์เดิมรอบละ 20 รายการทุก 15 นาที
         · โฆษณา Send message ต้องเลือกเพจเดียวกับที่เชื่อมร้าน และตั้งข้อความต้อนรับ/คำถามใน Meta Ads Manager
         · เพจร้านใช้ AI ขายสินค้าของร้าน ส่วนเพจขายระบบ BMS ต้องให้ผู้ดูแลแพลตฟอร์มระบุเพจและร้านฝ่ายขายก่อน
       </>
@@ -2259,8 +2263,11 @@ const LINK_STEPS_EN: LinkStep[] = [
       <>
         Go to {L.settings} to paste tokens and set up webhooks · Facebook Messenger requires a Page Access Token,
         App Secret, Page ID, and a random Verify Token distinct from the App Secret; test it to prove the Page ID binding ·
+        subscribe to messages, messaging_postbacks, message_echoes, message_deliveries, and message_reads, and request
+        Business Asset User Profile Access for customer names/photos · after activation, BMS gradually backfills existing
+        profiles and records Business Suite echoes plus delivered/read status without invoking AI ·
         to test Inbox realtime, open {L.realtimeDiagnostics} and press Create Msg · a live LINE OA syncs the display name and picture from the LINE
-        profile cache once the webhook arrives
+        profile cache after any message type and backfills up to 20 stale profiles every 15 minutes
         · Send message ads must use the connected shop Page; configure greetings and questions in Meta Ads Manager
         · Shop Pages use commerce AI; BMS's own sales Page requires the platform operator to designate its Page and sales tenant
       </>

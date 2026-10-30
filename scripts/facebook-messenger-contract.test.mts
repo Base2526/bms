@@ -52,6 +52,7 @@ test("Facebook parser binds Page ID, ignores echo and requires a durable mid", (
     text: "hello",
     eventId: "m-1",
     attachments: [],
+    meta: {},
   }]);
   assert.deepEqual(parseMetaEvents(body, "different-page"), []);
   assert.equal(metaEnvelopeMatches(body, "different-page"), false);
@@ -70,11 +71,14 @@ test("Facebook route durably enqueues before running the AI worker", () => {
 
 test("Meta credentials, Page binding and queue are represented in the migration", () => {
   const migration = readFileSync(path.join(repo, "db/migrations/10.104__bms_meta_messenger_hardening.sql"), "utf8");
+  const enrichment = readFileSync(path.join(repo, "db/migrations/10.106__bms_meta_inbox_enrichment.sql"), "utf8");
   assert.match(migration, /webhook_verify_token TEXT/);
   assert.match(migration, /external_account_id TEXT/);
   assert.match(migration, /CREATE TABLE IF NOT EXISTS bms_channel_inbound_jobs/);
   assert.match(migration, /ENABLE ROW LEVEL SECURITY/);
   assert.match(migration, /GRANT SELECT, INSERT, UPDATE, DELETE ON bms_channel_inbound_jobs TO bms_app/);
+  assert.match(enrichment, /ADD COLUMN IF NOT EXISTS event_meta JSONB NOT NULL/);
+  assert.match(enrichment, /never raw webhook payload/i);
 });
 
 test("Facebook outbound replies are Page-bound and stay inside the response window", () => {
@@ -83,5 +87,7 @@ test("Facebook outbound replies are Page-bound and stay inside the response wind
   assert.match(inbox, /interval '24 hours'/);
   assert.match(inbox, /cfg\.external_account_id/);
   assert.match(inbox, /encodeURIComponent\(cfg\.external_account_id\).*\/messages/);
+  assert.match(inbox, /authorization: `Bearer \$\{cfg\.access_token\}`/);
+  assert.doesNotMatch(inbox, /messages\?access_token=/);
   assert.match(health, /String\(accountId \?\? ""\) !== cfg\.external_account_id/);
 });

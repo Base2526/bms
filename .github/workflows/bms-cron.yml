@@ -71,6 +71,9 @@ jobs:
           # Normal chat replies are processed immediately by the webhook route.
           - name: meta-inbound-process
             path: /api/bms/meta/inbound/process
+          # Bounded cached display-profile refresh for existing LINE/Facebook conversations.
+          - name: channel-profile-sync
+            path: /api/bms/channels/sync-profiles
           - name: delivery-commands-process
             path: /api/bms/delivery/commands/process
           - name: delivery-intake-auto-resume

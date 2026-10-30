@@ -2106,7 +2106,7 @@ export const typeDefs = /* GraphQL */ `
     sender: String          # customer | ai | staff:<email>
     createdAt: String!
     attachment: BmsMessageAttachment
-    status: String          # (OUT only) SENT | FAILED · null = ไม่มีสถานะ
+    status: String          # (OUT only) SENT | DELIVERED | READ | FAILED · null = ไม่มีสถานะ
     canReportDelivery: Boolean!   # ช่องนี้ push/รายงานผลได้ไหม (LINE/FB/IG=true · web/tiktok=false)
   }
 
