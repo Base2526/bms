@@ -1003,6 +1003,11 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'server-only' imported from
 เทสที่ import โมดูลฝั่ง server (เช่น `lib/bms/tools/catalog.ts`) ต้องมี shim ตัวนี้
 ส่วนเทสที่แตะแต่โมดูล pure รันได้โดยไม่มี — จึงพลาดง่ายและอาการไม่เหมือนเทสแดง
 
+**ถ้าใส่ `--test-force-exit` เองต้องใส่ `--import ../../scripts/testing/blocking-stdio.mjs` ด้วย** —
+บน macOS/Windows ลูกของแต่ละไฟล์ exit ก่อนผลเทสที่ค้างบน stdout pipe ถูกส่งถึงพ่อ แล้วรายงาน
+"ผ่าน" ด้วยจำนวนเทสที่น้อยลงเงียบ ๆ (เจอ 2026-10-30: `pharmacy-customer-assistance-contract`
+นับได้ 173–211 สลับกันทุกรอบ fail 0) · ตัวรันกลางใส่ให้แล้ว และ `contract-runner-contract` คุมไว้
+
 ### Live realtime fan-out smoke
 
 หลังเปิด web, Redis และ WS อย่างน้อยสอง instance ให้พิสูจน์เส้นจริงจาก domain event ผ่าน
