@@ -47,11 +47,19 @@ export function desktopMenuTemplate(platform, devToolsEnabled = false, actions =
     enabled: actions.adminAvailable === true,
     click: typeof actions.openAdmin === "function" ? actions.openAdmin : () => {},
   };
+  const launchAtLogin = {
+    label: "เปิดแอปอัตโนมัติเมื่อเปิดเครื่อง",
+    type: "checkbox",
+    checked: actions.launchAtLogin === true,
+    enabled: actions.launchAtLoginSupported === true,
+    click: typeof actions.toggleLaunchAtLogin === "function" ? actions.toggleLaunchAtLogin : () => {},
+  };
   const appSubmenu = platform === "darwin"
     ? [
       { role: "about" },
       { type: "separator" },
       openAdmin,
+      launchAtLogin,
       { type: "separator" },
       { role: "services" },
       { type: "separator" },
@@ -61,7 +69,7 @@ export function desktopMenuTemplate(platform, devToolsEnabled = false, actions =
       { type: "separator" },
       { role: "quit" },
     ]
-    : [openAdmin, { type: "separator" }, { role: "quit" }];
+    : [openAdmin, launchAtLogin, { type: "separator" }, { role: "quit" }];
   const viewSubmenu = [
     {
       label: "รีเฟรชข้อมูลหน้าปัจจุบัน",

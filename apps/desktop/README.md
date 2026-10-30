@@ -132,6 +132,26 @@ npm start
 `npm run gate` in `apps/web` does not run these; run them from this directory when you change the
 shell.
 
+## Start with the computer
+
+The **BMS POS** menu has a checkbox, *เปิดแอปอัตโนมัติเมื่อเปิดเครื่อง*. It is a per-user OS setting,
+not a server setting. It is **on by default**: the first packaged launch registers the app, and
+`launch-at-login.json` in the user-data folder records the choice so unticking it is never undone by
+a restart or an update:
+
+- **macOS / Windows** — Electron `app.setLoginItemSettings`. macOS 13+ may hold the item for approval
+  in System Settings > General > Login Items; the checkbox shows what the OS actually kept and warns
+  when it did not stick.
+- **Linux** — writes `~/.config/autostart/bms-pos.desktop` (honours `XDG_CONFIG_HOME`). AppImage
+  builds point the entry at `$APPIMAGE`, not the temporary mount.
+- macOS: the default (and the checkbox) waits until the app runs from Applications, not the DMG.
+- Each launch re-points an existing entry at the current copy (Windows reinstall into another
+  folder, a newer AppImage), but never re-enables one the operator switched off in Task Manager or
+  Startup Applications. The Windows uninstaller removes the Run value
+  (`installer/uninstall-login-item.nsh`), but not during an update.
+- Unpackaged `npm run dev` builds show the checkbox disabled, so a dev machine never registers the
+  bare Electron binary at login.
+
 ## Customer display
 
 Connect the customer monitor as an **extended** desktop, not a mirrored screen. In the register,

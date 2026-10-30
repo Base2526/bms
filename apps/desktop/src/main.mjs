@@ -32,6 +32,7 @@ import {
   POS_NAVIGATION_TIMEOUT_MS,
   resolvePosEntryPath,
 } from "./renderer-route.mjs";
+import { createLaunchAtLogin } from "./launch-at-login.mjs";
 import { platformClientLabel, platformSecurityNote, secureStorageStatus } from "./secure-storage.mjs";
 import {
   desktopMenuTemplate,
@@ -42,6 +43,10 @@ import {
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, Notification, safeStorage, screen, shell } = electronMain;
 
 installGlobalZoomPolicy(app);
+const launchAtLogin = createLaunchAtLogin({
+  app,
+  preferencePath: () => path.join(app.getPath("userData"), "launch-at-login.json"),
+});
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SETUP_FILE = path.join(__dirname, "../renderer/setup.html");
@@ -330,6 +335,46 @@ async function setupAdminTarget() {
   return local ? "local" : "cloud";
 }
 
+let launchAtLoginEnabled = false;
+let launchAtLoginBusy = false;
+
+async function toggleLaunchAtLogin(menuItem) {
+  const wanted = menuItem?.checked === true;
+  if (launchAtLoginBusy) {
+    // A second click while the OS is still answering: redraw the real state, change nothing.
+    installApplicationMenu();
+    return;
+  }
+  if (wanted && launchAtLogin.blockedReason() === "not-in-applications") {
+    installApplicationMenu();
+    void dialog.showMessageBox(mainWindow ?? undefined, {
+      type: "info",
+      message: "ย้ายแอปไปไว้ในโฟลเดอร์ Applications ก่อน",
+      detail: "แอปกำลังเปิดจากไฟล์ติดตั้ง (DMG) ซึ่งจะหายไปหลังรีสตาร์ท ลาก BMS POS ไปไว้ใน Applications แล้วเปิดจากที่นั่น จากนั้นค่อยติ๊กตัวเลือกนี้",
+    });
+    return;
+  }
+  launchAtLoginBusy = true;
+  try {
+    launchAtLoginEnabled = await launchAtLogin.setEnabled(wanted);
+  } catch (error) {
+    console.error("Unable to change launch-at-login setting", error?.message ?? error);
+    launchAtLoginEnabled = await launchAtLogin.isEnabled().catch(() => false);
+  } finally {
+    launchAtLoginBusy = false;
+  }
+  installApplicationMenu();
+  if (launchAtLoginEnabled !== wanted) {
+    void dialog.showMessageBox(mainWindow ?? undefined, {
+      type: "warning",
+      message: wanted ? "ตั้งให้เปิดอัตโนมัติไม่สำเร็จ" : "ยกเลิกการเปิดอัตโนมัติไม่สำเร็จ",
+      detail: process.platform === "darwin"
+        ? "macOS อาจต้องให้อนุญาตเองที่ System Settings > General > Login Items"
+        : "ระบบปฏิบัติการไม่ยอมบันทึกการตั้งค่านี้ กรุณาลองใหม่หรือตั้งค่าจากระบบปฏิบัติการโดยตรง",
+    });
+  }
+}
+
 function installApplicationMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(desktopMenuTemplate(
     process.platform,
@@ -339,6 +384,9 @@ function installApplicationMenu() {
       openAdmin: openAdminBackoffice,
       refreshData: refreshMainWindowData,
       reloadApplication: reloadMainApplication,
+      launchAtLogin: launchAtLoginEnabled,
+      launchAtLoginSupported: launchAtLogin.supported(),
+      toggleLaunchAtLogin: (menuItem) => { void toggleLaunchAtLogin(menuItem); },
     },
   )));
 }
@@ -1139,6 +1187,10 @@ if (!singleInstance) {
     }
     activePairing = await readPairing();
     if (!activePairing) activePairing = await consumePairingHandoff();
+    launchAtLoginEnabled = await launchAtLogin.initialize().catch((error) => {
+      console.error("Unable to apply launch-at-login default", error?.message ?? error);
+      return false;
+    });
     installApplicationMenu();
     if (activePairing) {
       void startPosNavigation();
