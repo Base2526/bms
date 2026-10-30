@@ -172,6 +172,48 @@ test('the Windows runner bypasses cmd.exe so the full suite is not capped at 8,1
 });
 
 // =============================================================
+// --test-force-exit + stdout แบบ pipe = ผลเทสหายเงียบ ๆ แล้วรายงานว่าผ่าน
+// -------------------------------------------------------------
+// เจอจริง 2026-10-30: pharmacy-customer-assistance-contract นับได้ 173 / 198 / 181 / 211
+// เทสในสี่รอบติดกัน fail 0 ทุกรอบ · ลูกเรียก process.exit() ขณะที่ผลเทส 4–59 KB ยังค้างคิว
+// อยู่บน stdout pipe (async บน macOS/Windows) · ดูหัวไฟล์ testing/blocking-stdio.mjs
+// =============================================================
+
+const BLOCKING_STDIO = path.join(SCRIPTS, 'testing', 'blocking-stdio.mjs');
+const runChild = (code: string, preload = true) => spawnSync(process.execPath, [
+  ...(preload ? ['--import', BLOCKING_STDIO] : []),
+  '--input-type=module', '-e', code,
+], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: { ...process.env, NODE_OPTIONS: '' } });
+
+test('force-exit never runs without the blocking-stdio preload, and the preload loads before --test', () => {
+  const source = readFileSync(RUNNER, 'utf8');
+  const args = source.slice(source.indexOf('const args = ['), source.indexOf('];', source.indexOf('const args = [')));
+  const preload = args.indexOf('"blocking-stdio.mjs"');
+  assert.ok(preload > 0, 'ตัวรันต้อง --import testing/blocking-stdio.mjs');
+  assert.match(args.slice(0, preload), /"--import",\s*(?:\/\/[^\n]*\n\s*)*pathToFileURL\(path\.join\(SCRIPTS, "testing", $/);
+  assert.ok(preload < args.indexOf('"--test"'), 'preload ต้องมาก่อน --test ไม่งั้นลูกของแต่ละไฟล์ไม่ได้รับ');
+});
+
+test('a process that exits right after a large stdout write still delivers every byte', () => {
+  // 8 MB ในครั้งเดียว: pipe รับได้ราว 64 KB ที่เหลือค้างคิว — ถ้าไม่ blocking ข้อมูลหายทันที
+  const size = 8 * 1024 * 1024;
+  const child = runChild(`process.stdout.write("x".repeat(${size})); process.exit();`);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.length, size, 'ผลที่ลูกเขียนก่อน process.exit() ต้องถึงพ่อครบ');
+});
+
+test('if output is still queued at exit anyway, the run fails loudly instead of passing short', () => {
+  // cork = บังคับให้ข้อมูลค้างใน buffer ทุกแพลตฟอร์ม · จำลองวันที่ setBlocking ใช้ไม่ได้
+  const child = runChild('process.stdout.cork(); process.stdout.write("lost"); process.exit();');
+  assert.equal(child.status, 1, 'ข้อมูลหายแต่ exit 0 = เทสหายแล้วอ่านว่าผ่าน');
+  assert.match(child.stderr, /\[blocking-stdio\].*unflushed stdout 4 bytes/);
+  // exit code ที่ไม่ใช่ 0 อยู่แล้วต้องไม่ถูกกลบ
+  assert.equal(runChild('process.stdout.cork(); process.stdout.write("x"); process.exit(3);').status, 3);
+  // และรอบปกติต้องไม่โดนด่านนี้
+  assert.equal(runChild('process.stdout.write("ok"); process.exit();').status, 0);
+});
+
+// =============================================================
 // ไฟล์สรุป "เฉพาะที่แดง" — ของที่เอาไปแปะให้คน/AI อ่านต่อได้จริง
 // -------------------------------------------------------------
 // TAP เต็มคือ 263 KB ตอนเขียว และ **หนึ่ง** assertion ที่แดงกินได้ 28 KB เพราะ assert.match

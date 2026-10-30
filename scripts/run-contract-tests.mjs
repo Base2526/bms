@@ -148,6 +148,11 @@ const args = [
   // แล้วทุกไฟล์เทสล้มพร้อมกันด้วย ERR_UNSUPPORTED_ESM_URL_SCHEME
   "--import",
   pathToFileURL(path.join(SCRIPTS, "testing", "next-runtime-shim.mjs")).href,
+  // ต้องมาคู่กับ --test-force-exit เสมอ: ลูกเรียก process.exit() ทันทีที่เทสจบ และบน macOS
+  // stdout ที่เป็น pipe เขียนแบบ async — ผลเทสที่ค้างคิวหายเงียบ ๆ แล้วรายงานว่าผ่าน
+  // (เคยเห็น pharmacy-customer-assistance นับได้ 173–211 เทสสลับกันทุกรอบ) ดูหัวไฟล์ preload
+  "--import",
+  pathToFileURL(path.join(SCRIPTS, "testing", "blocking-stdio.mjs")).href,
   "--test",
   // สองชุดขึ้นไปใช้ร้านแรกร่วมกัน รันขนานกันแล้วเหยียบกันเอง (บทเรียนจาก loyalty/pos)
   "--test-concurrency=1",
