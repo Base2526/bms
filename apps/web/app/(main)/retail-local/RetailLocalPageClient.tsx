@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import {
   AppstoreAddOutlined,
   AppleOutlined,
-  ArrowRightOutlined,
   CheckCircleFilled,
   CloudOutlined,
   CodeOutlined,
@@ -17,6 +16,7 @@ import {
   LaptopOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
+  SoundOutlined,
   ThunderboltOutlined,
   WindowsOutlined,
 } from "@ant-design/icons";
@@ -24,6 +24,9 @@ import { Alert, Button, Collapse, Segmented, Tag, Typography } from "antd";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual } from "@/lib/static-page-i18n";
 import styles from "./page.module.css";
+import RetailLocalPricing from "./RetailLocalPricing";
+import { retailLocalPricing } from "@/lib/bms/retailLocalPricing";
+import RetailLocalGuide from "@/components/retail-local/RetailLocalGuide";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -147,8 +150,8 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     title: "ระบบขายหน้าร้านที่ทำงานบนเครื่องของร้าน",
     description:
       "ใช้ Web, POS, ฐานข้อมูล และกติกาธุรกิจชุดเดียวกับ BMS โดยเก็บข้อมูลหลักไว้ที่เครื่องร้าน เหมาะกับร้านที่ต้องการควบคุมระบบภายในและมีทีมดูแลเครื่องตามข้อกำหนด",
-    viewDownloads: "ดูไฟล์ดาวน์โหลด",
-    seeRequirements: "ตรวจสอบเครื่องที่รองรับ",
+    viewDownloads: "ดาวน์โหลดฟรี",
+    seeRequirements: "ดูราคา",
     localFacts: [
       { title: "ข้อมูลหลักอยู่ที่ร้าน", description: "PostgreSQL บนเครื่องร้านเป็นแหล่งข้อมูลจริงเพียงชุดเดียว ไม่มี cloud replica" },
       { title: "กติกาชุดเดียวกับ BMS", description: "ราคา สต็อก สิทธิ์ การชำระเงิน และ audit ยังตรวจจาก server เดิม" },
@@ -283,8 +286,8 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     title: "Run your retail system on the shop computer",
     description:
       "Use the same BMS Web, POS, database and business rules while keeping the primary data on the shop host. Designed for stores that can operate and protect a supported local machine.",
-    viewDownloads: "View downloads",
-    seeRequirements: "Check system requirements",
+    viewDownloads: "Download free",
+    seeRequirements: "View pricing",
     localFacts: [
       { title: "Shop-hosted source of truth", description: "Local PostgreSQL is the only primary datastore; there is no cloud replica." },
       { title: "One BMS rule set", description: "Price, stock, permissions, payments and audit remain server-authoritative." },
@@ -488,8 +491,9 @@ export default function RetailLocalPageClient({
           <Title className={styles.heroTitle}>{content.title}</Title>
           <Paragraph className={styles.heroDescription}>{content.description}</Paragraph>
           <div className={styles.heroActions}>
+            <Button size="large" href="#retail-local-guide" icon={<SoundOutlined />}>{lang === "th" ? "ฟังวิธีเริ่มใช้งาน" : "Listen to the setup guide"}</Button>
             <Button type="primary" size="large" href="#downloads" icon={<DownloadOutlined />}>{content.viewDownloads}</Button>
-            <Button size="large" href="#requirements" icon={<DesktopOutlined />}>{content.seeRequirements}</Button>
+            <Button size="large" href="#pricing" icon={<DesktopOutlined />}>{content.seeRequirements}</Button>
           </div>
           <div className={styles.factStrip}>
             {content.localFacts.map((fact, index) => (
@@ -526,6 +530,8 @@ export default function RetailLocalPageClient({
           </div>
         </div>
       </section>
+
+      <RetailLocalGuide followHash />
 
       <section className={styles.requirements} id="requirements">
         <div className={styles.sectionHeading}>
@@ -569,23 +575,7 @@ export default function RetailLocalPageClient({
         </div>
       </section>
 
-      <section className={styles.flowSection}>
-        <div className={styles.sectionHeading}>
-          <Text className={styles.eyebrow}>{content.flowEyebrow}</Text>
-          <Title level={2}>{content.flowTitle}</Title>
-          <Paragraph>{content.flowDescription}</Paragraph>
-        </div>
-        <div className={styles.flowGrid}>
-          {content.steps.map((step, index) => (
-            <div key={step.title} className={styles.flowStep}>
-              <span className={styles.stepNumber}>{String(index + 1).padStart(2, "0")}</span>
-              <strong>{step.title}</strong>
-              <small>{step.description}</small>
-              {index < content.steps.length - 1 && <ArrowRightOutlined className={styles.stepArrow} />}
-            </div>
-          ))}
-        </div>
-      </section>
+      <RetailLocalPricing />
 
       <section className={styles.releaseSection} id="downloads">
         <div className={styles.sectionHeading}>
@@ -714,11 +704,13 @@ export default function RetailLocalPageClient({
                 ) : (
                   <Button size="large" block disabled icon={<DownloadOutlined />}>{content.unavailable[packageType]}</Button>
                 )}
+                <small>{lang === "th" ? `ฟรี ${retailLocalPricing.freeDevices} เครื่อง · ไม่ต้องลงทะเบียน` : `${retailLocalPricing.freeDevices} device free · No registration required`}</small>
               </article>
             );
           })}
         </div>
         <p className={styles.releaseIncludes}><InfoCircleOutlined />{content.includes}</p>
+        <Alert closable showIcon type="warning" message={lang === "th" ? "คำเตือน SmartScreen / Gatekeeper ในรุ่นนำร่อง" : "SmartScreen / Gatekeeper warnings in the pilot"} description={lang === "th" ? "ตรวจแหล่งดาวน์โหลด SHA-256 และ publisher ก่อนเปิดไฟล์ หาก Windows แจ้งคำเตือนชื่อเสียง ให้ตรวจ More info และเลือก Run anyway เฉพาะเมื่อยืนยันไฟล์ได้ บน macOS ใช้ Privacy & Security > Open Anyway เฉพาะไฟล์ที่ตรวจสอบแล้ว ห้ามปิดระบบป้องกันทั้งเครื่องหรือข้ามคำเตือนมัลแวร์" : "Verify the download source, SHA-256 and publisher first. For a Windows reputation warning, inspect More info and use Run anyway only after verifying the file. On macOS, use Privacy & Security > Open Anyway only for a verified file. Never disable system-wide protection or bypass a malware detection."} />
 
         <Collapse
           className={styles.archive}

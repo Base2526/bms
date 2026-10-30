@@ -185,6 +185,8 @@ const OPS_TELEMETRY = [
   "bms_retail_local_license_installations", "bms_retail_local_license_events",
   "bms_retail_local_license_reviews", "bms_retail_local_license_commercial_events",
   "bms_retail_local_license_bootstrap_tokens", "bms_retail_local_trial_followups",
+  // Platform-global consented PII; no tenant broadcast audience. Admin refreshes on filter/save.
+  "bms_retail_local_leads", "bms_retail_local_lead_events", "bms_retail_local_leads_revisions",
   "bms_delivery_provider_setting_events", "bms_social_auth_setting_events",
   // Pre-install platform evidence has no tenant audience; the inbox explicitly refreshes.
   "bms_installer_reports", "bms_retail_local_installation_registry",

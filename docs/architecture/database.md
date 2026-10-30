@@ -1856,6 +1856,13 @@ limit, key, chain and transfer conflicts. These tables are read and mutated only
 ingestion service and platform-admin routes. No POS, payment, inventory, startup, backup or restore
 query reads them, so an outage or `REVIEW_REQUIRED` state cannot disable a shop.
 
+Review resolution locks the parent license before its installation rows, matching ingestion's lock
+order. This serializes approval/capacity checks and transfers under the same license. A transfer
+changes the active source to `TRANSFERRED`, activates the target and records `resolved_by` and
+`resolution = TRANSFER` on its open reviews in one transaction. A missing/inactive source rolls back
+the whole operation. Later valid source heartbeats retain `TRANSFERRED`; they do not reactivate it.
+The platform-admin detail drawer exposes this explicitly confirmed transfer and review history.
+
 Migration `10.35` adds nullable `redemption_request_id UUID` to the existing
 `bms_retail_local_license_bootstrap_tokens` table. Code redemption locks the bootstrap and
 license rows, consumes the one-use code, records the caller's retry UUID and inserts the ingestion
@@ -1878,6 +1885,21 @@ within its license. The shop-facing `/admin/retail-local-license` uses a sanitiz
 not direct cloud-table access. Its `retail_local.license.view` / `.manage` permissions, singleton
 local-tenant check and explicit confirmation guard access to a file mailbox; the host alone owns
 the signing identity and ingestion credential. No new tenant-owned table or POS license gate is added.
+
+## Retail Local consented leads (`10.105`)
+
+`bms_retail_local_leads` is a platform-global sales follow-up queue containing only contact data
+submitted from the public download page after explicit consent. It requires at least a Thai phone
+number or LINE ID and records the consent timestamp/text version, source, platform and locale.
+`NEW`, `CONTACTED`, `TRIAL_ISSUED`, `PAID` and `NOT_INTERESTED` are back-office workflow states;
+none is license authority or an input to a local runtime.
+
+The public role has no direct table insert or read privilege. It can call only
+`bms_submit_retail_local_lead(...)`, a narrow function that inserts a row and returns no PII or id.
+RLS protects reads/updates through a database-verified platform admin in `app.editor_id`.
+`bms_retail_local_leads_revisions` stores the previous row snapshot on each update, while
+`bms_retail_local_lead_events` records the actor, status transition and whether note/follow-up fields
+changed in the same transaction. Contact and consent fields are immutable after submission.
 
 ## Installer error reports (`10.31`)
 

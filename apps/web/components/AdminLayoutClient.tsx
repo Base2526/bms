@@ -11,6 +11,8 @@ import { useSessionCtx } from "@/lib/session-context";
 import { LocalLicenseBadge } from "@/components/retail-local/LocalLicense";
 import AiLimitStatus from "@/components/AiLimitStatus";
 import OperationsBell from "@/components/operations/OperationsBell";
+import { RetailLocalMode } from "@/components/retail-local/RetailLocalMode";
+import LocalBackupAlert from "@/components/retail-local/LocalBackupAlert";
 
 const { Content } = Layout;
 
@@ -78,7 +80,7 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
   if (hideHeader) return <main>{children}</main>;
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    <RetailLocalMode.Provider value={retailLocal}><Layout style={{ minHeight: '100vh' }}>
       <AdminSidebar retailLocal={retailLocal} />
       <Layout style={{ minWidth: 0 }}>
         <Content style={{ padding: "clamp(12px, 4vw, 24px)", minWidth: 0, overflowX: "auto" }}>
@@ -87,10 +89,11 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
           <AiLimitStatus />
           <OperationsBell />
           {retailLocal && <LocalLicenseBadge />}
+          {retailLocal && <LocalBackupAlert />}
           {children}
         </Content>
         <WorkAssistantDrawer />
       </Layout>
-    </Layout>
+    </Layout></RetailLocalMode.Provider>
   );
 }

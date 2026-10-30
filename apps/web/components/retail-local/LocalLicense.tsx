@@ -7,6 +7,8 @@ import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { localLicenseBadge, type LocalLicenseView } from "@/lib/bms/localLicenseView";
+import { LocalPlanCard } from "./LocalCommercial";
+import GuideLauncher from "./GuideLauncher";
 
 const endpoint = "/api/admin/retail-local/local-license";
 function useLocalLicense() {
@@ -65,7 +67,14 @@ export default function LocalLicensePage() {
   return <div style={{ maxWidth: 960, margin: "0 auto" }}>
     <Typography.Title level={2}>{L("การลงทะเบียน Retail Local", "Retail Local registration")}</Typography.Title>
     <Typography.Paragraph>{L("ดูสถานะ License และลงทะเบียนเครื่องนี้เมื่อได้รับ Activation Code จาก BMS", "View the license status and register this installation with an Activation Code from BMS.")}</Typography.Paragraph>
+    <GuideLauncher />
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <LocalPlanCard view={error ? undefined : data} />
+      <Card id="backup" title={L("ตั้ง backup นอกเครื่อง", "Set up off-host backup")}>
+        <p>{L("Windows: Start > BMS Retail Local > Configure Off-host Backup เลือก USB/NAS ที่แยกจาก disk ระบบ", "Windows: Start > BMS Retail Local > Configure Off-host Backup. Choose USB/NAS separate from the system disk.")}</p>
+        <p>Ubuntu: <code>sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST</code></p>
+        <p>{L("เก็บ recovery identity แยกจากเครื่องร้าน แล้วทดสอบ restore; BMS ไม่ host backup ให้ macOS ยังไม่มี scheduled off-host backup", "Keep the recovery identity away from the shop host and test restore. BMS does not host backups. Scheduled off-host backup is not available on macOS.")}</p>
+      </Card>
       <Card title={<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 0", whiteSpace: "normal" }}>
         <span>{L("License ของเครื่องนี้", "This installation’s license")}</span>
         {badge && <Tag color={badge.color} style={{ whiteSpace: "normal", marginInlineEnd: 0 }}>{badge.label}</Tag>}

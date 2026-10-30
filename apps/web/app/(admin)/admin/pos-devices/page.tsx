@@ -16,6 +16,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { LocalExtraDeviceNotice } from "@/components/retail-local/LocalCommercial";
 import {
   isPosPinValid,
   normalizePosPinInput,
@@ -224,6 +225,7 @@ export default function PosDevicesPage() {
           }
           loading={loading}
         >
+          <LocalExtraDeviceNotice count={devices.length} />
           {devices.length === 0 ? (
             <Empty description="ยังไม่มีเครื่องขาย" />
           ) : (

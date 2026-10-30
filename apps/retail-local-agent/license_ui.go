@@ -40,22 +40,23 @@ type licenseUICheckpoint struct {
 	Recorded    bool             `json:"recorded"`
 }
 type licenseUISnapshot struct {
-	TenantID           string     `json:"tenantId"`
-	Heartbeat          time.Time  `json:"heartbeat"`
-	Available          bool       `json:"available"`
-	Registered         bool       `json:"registered"`
-	Online             bool       `json:"online"`
-	LicenseCode        string     `json:"licenseCode,omitempty"`
-	LicenseType        string     `json:"licenseType,omitempty"`
-	CommercialStatus   string     `json:"commercialStatus,omitempty"`
-	TrialExpiresAt     *time.Time `json:"trialExpiresAt,omitempty"`
-	TrialDaysRemaining *int       `json:"trialDaysRemaining,omitempty"`
-	RegistrationStatus string     `json:"registrationStatus,omitempty"`
-	ReviewRequired     bool       `json:"reviewRequired"`
-	CheckedAt          *time.Time `json:"checkedAt,omitempty"`
-	RequestID          string     `json:"requestId,omitempty"`
-	RequestStatus      string     `json:"requestStatus,omitempty"`
-	ErrorCode          string     `json:"errorCode,omitempty"`
+	Backup             backupUISnapshot `json:"backup"`
+	TenantID           string           `json:"tenantId"`
+	Heartbeat          time.Time        `json:"heartbeat"`
+	Available          bool             `json:"available"`
+	Registered         bool             `json:"registered"`
+	Online             bool             `json:"online"`
+	LicenseCode        string           `json:"licenseCode,omitempty"`
+	LicenseType        string           `json:"licenseType,omitempty"`
+	CommercialStatus   string           `json:"commercialStatus,omitempty"`
+	TrialExpiresAt     *time.Time       `json:"trialExpiresAt,omitempty"`
+	TrialDaysRemaining *int             `json:"trialDaysRemaining,omitempty"`
+	RegistrationStatus string           `json:"registrationStatus,omitempty"`
+	ReviewRequired     bool             `json:"reviewRequired"`
+	CheckedAt          *time.Time       `json:"checkedAt,omitempty"`
+	RequestID          string           `json:"requestId,omitempty"`
+	RequestStatus      string           `json:"requestStatus,omitempty"`
+	ErrorCode          string           `json:"errorCode,omitempty"`
 }
 type licenseUIBridge struct {
 	root, engine, distro, activationURI string
@@ -423,6 +424,7 @@ func (b *licenseUIBridge) poll(ctx context.Context) error {
 	return b.publish(view, statePath)
 }
 func (b *licenseUIBridge) publish(view licenseUISnapshot, path string) error {
+	view.Backup = b.backupSnapshot()
 	if err := writeLicenseUIJSON(path, view); err != nil {
 		return err
 	}

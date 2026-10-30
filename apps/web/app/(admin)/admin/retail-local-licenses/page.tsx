@@ -17,6 +17,7 @@ import {
   Space,
   Statistic,
   Table,
+  Tabs,
   Tag,
   Timeline,
   Typography,
@@ -30,6 +31,7 @@ import {
   SettingOutlined,
 } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
+import RetailLocalLeadsPanel from "@/components/retail-local/RetailLocalLeadsPanel";
 
 type EffectiveStatus =
   | "TRIAL_ACTIVE" | "TRIAL_EXPIRING" | "TRIAL_EXPIRED"
@@ -102,6 +104,9 @@ export default function RetailLocalLicensesPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detail, setDetail] = useState<any>(null);
   const [detailBusy, setDetailBusy] = useState(false);
+  const [transferTarget, setTransferTarget] = useState<string | null>(null);
+  const [transferBusy, setTransferBusy] = useState(false);
+  const [transferForm] = Form.useForm();
   const [createForm] = Form.useForm();
   const [actionForm] = Form.useForm();
   const [followUpForm] = Form.useForm();
@@ -267,6 +272,28 @@ export default function RetailLocalLicensesPage() {
     }
   };
 
+  const transferInstallation = async () => {
+    if (!detail?.license?.id || !transferTarget) return;
+    const values = await transferForm.validateFields();
+    setTransferBusy(true);
+    try {
+      await jsonRequest(`/api/admin/retail-local/licenses/${detail.license.id}/resolve`, {
+        method: "POST",
+        body: JSON.stringify({ action: "TRANSFER", installationId: transferTarget,
+          fromInstallationId: values.fromInstallationId, confirmation: "TRANSFER-LICENSE-INSTALLATION" }),
+      });
+      setTransferTarget(null);
+      transferForm.resetFields();
+      message.success(copy.saved);
+      await openDetails(detail.license);
+      await load();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : String(error));
+    } finally {
+      setTransferBusy(false);
+    }
+  };
+
   const formatDate = (value: string | null) => value
     ? new Intl.DateTimeFormat(th ? "th-TH" : "en-GB", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value))
     : "—";
@@ -348,7 +375,7 @@ export default function RetailLocalLicensesPage() {
     },
   ];
 
-  return (
+  const licensesPanel = (
     <div style={{ minWidth: 0 }}>
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
         <div>
@@ -462,11 +489,25 @@ export default function RetailLocalLicensesPage() {
             </Descriptions>
             <div>
               <Typography.Title level={5}>{th ? "เครื่องที่ผูกกับ License" : "Linked installations"}</Typography.Title>
-              <Table rowKey="installation_id" size="small" pagination={false} dataSource={detail.installations || []} columns={[
+              <Table rowKey="installation_id" size="small" pagination={false} scroll={{ x: 760 }} dataSource={detail.installations || []} columns={[
+                { title: "Installation ID", dataIndex: "installation_id", width: 180, render: (value: string) => <Typography.Text style={{ overflowWrap: "anywhere" }}>{value}</Typography.Text> },
                 { title: th ? "ร้าน/tenant จากเครื่อง" : "Tenant reference", dataIndex: "tenant_reference", render: (value: string | null) => value || "—" },
                 { title: th ? "POS device" : "POS device", dataIndex: "pos_device_reference", render: (value: string | null) => value || "—" },
                 { title: th ? "สถานะ" : "Status", dataIndex: "status", render: (value: string) => <Tag>{value}</Tag> },
                 { title: th ? "พบล่าสุด" : "Last seen", dataIndex: "last_seen_at", render: formatDate },
+                { title: copy.actions, render: (_: unknown, row: any) => row.status === "REVIEW_REQUIRED"
+                  ? <Button size="small" onClick={() => { transferForm.resetFields(); setTransferTarget(row.installation_id); }}>{th ? "ย้ายมายังเครื่องนี้" : "Transfer to this installation"}</Button>
+                  : null },
+              ]} />
+            </div>
+            <div>
+              <Typography.Title level={5}>{th ? "ประวัติการตรวจสอบเครื่อง" : "Installation reviews"}</Typography.Title>
+              <Table rowKey="id" size="small" pagination={false} scroll={{ x: 680 }} dataSource={detail.reviews || []} columns={[
+                { title: "Installation ID", dataIndex: "installation_id" },
+                { title: th ? "สาเหตุ" : "Reason", dataIndex: "reason" },
+                { title: copy.status, dataIndex: "status" },
+                { title: th ? "ผลการตรวจสอบ" : "Resolution", dataIndex: "resolution" },
+                { title: th ? "ผู้ยืนยัน" : "Confirmed by", dataIndex: "resolved_by" },
               ]} />
             </div>
             <div>
@@ -490,6 +531,24 @@ export default function RetailLocalLicensesPage() {
         )}
       </Drawer>
 
+      <Modal title={th ? "ยืนยันย้ายเครื่อง" : "Confirm installation transfer"}
+        open={Boolean(transferTarget)} confirmLoading={transferBusy}
+        onCancel={() => { if (!transferBusy) setTransferTarget(null); }}
+        onOk={() => void transferInstallation()} destroyOnClose>
+        <Alert type="info" showIcon closable message={th
+          ? "เครื่องต้นทางจะเป็น TRANSFERRED และเครื่องปลายทางจะเป็น ACTIVE ภายใต้ License เดิม ขั้นตอนนี้ไม่ย้ายข้อมูลร้าน ต้องตรวจ restore แยกต่างหาก"
+          : "The source becomes TRANSFERRED and the destination becomes ACTIVE under the same license. This does not move shop data; verify the restore separately."} />
+        <Typography.Paragraph style={{ marginTop: 16, overflowWrap: "anywhere" }}>
+          {th ? "เครื่องปลายทาง" : "Destination"}: {transferTarget}
+        </Typography.Paragraph>
+        <Form form={transferForm} layout="vertical">
+          <Form.Item name="fromInstallationId" label={th ? "เครื่องต้นทางที่ใช้งานอยู่" : "Active source installation"} rules={[{ required: true }]}>
+            <Select options={(detail?.installations || []).filter((row: any) => row.status === "ACTIVE" && row.installation_id !== transferTarget)
+              .map((row: any) => ({ value: row.installation_id, label: row.installation_id }))} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Modal title={th ? "บันทึกการติดตาม Trial" : "Acknowledge trial follow-up"}
         open={Boolean(followUpTarget)} onCancel={() => { setFollowUpTarget(null); followUpForm.resetFields(); }}
         onOk={() => void acknowledgeFollowUp()} confirmLoading={followUpBusy} destroyOnClose>
@@ -501,5 +560,15 @@ export default function RetailLocalLicensesPage() {
         </Form>
       </Modal>
     </div>
+  );
+
+  return (
+    <Tabs
+      destroyInactiveTabPane={false}
+      items={[
+        { key: "licenses", label: th ? "License" : "Licenses", children: licensesPanel },
+        { key: "leads", label: th ? "Lead" : "Leads", children: <RetailLocalLeadsPanel /> },
+      ]}
+    />
   );
 }

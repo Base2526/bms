@@ -1,0 +1,592 @@
+[
+  {
+    "id": "prepare",
+    "phase": "start",
+    "audio": "/audio/retail-local/th/step-1.mp3",
+    "th": {
+      "title": "เลือกเครื่องและบทบาท",
+      "speech": "เริ่มจากเลือกเครื่องที่จะเก็บข้อมูลร้าน ถ้าร้านใช้คอมพิวเตอร์เครื่องเดียว เลือก Server + POS ถ้าแยกเครื่องแม่ข่ายกับจุดขาย ให้เลือกบทบาทให้ตรง แล้วตรวจระบบปฏิบัติการ สเปก และอุปกรณ์ที่รองรับก่อนดาวน์โหลด",
+      "nodes": [
+        [
+          "store",
+          "ร้านของคุณ",
+          "เครื่องเดียว หรือแยกจุดขาย"
+        ],
+        [
+          "monitor",
+          "เลือกบทบาท",
+          "Server + POS / Server / POS"
+        ],
+        [
+          "list-checks",
+          "ตรวจความพร้อม",
+          "OS · สเปก · อุปกรณ์"
+        ]
+      ],
+      "outcome": "รู้ว่าเครื่องไหนเก็บข้อมูล และเครื่องไหนเป็นจุดขาย"
+    },
+    "en": {
+      "title": "Choose the host and its role",
+      "speech": "First choose the computer that will hold the shop data. For a single-computer shop, choose Server + POS. If the host and tills are separate, choose the right role for each computer. Check the supported operating system, hardware requirements and peripherals before downloading.",
+      "nodes": [
+        [
+          "store",
+          "Your shop",
+          "One computer or separate tills"
+        ],
+        [
+          "monitor",
+          "Choose a role",
+          "Server + POS / Server / POS"
+        ],
+        [
+          "list-checks",
+          "Check readiness",
+          "OS, hardware and peripherals"
+        ]
+      ],
+      "outcome": "Identify which computer holds data and which runs the till."
+    }
+  },
+  {
+    "id": "download",
+    "phase": "start",
+    "audio": "/audio/retail-local/th/step-2.mp3",
+    "th": {
+      "title": "ดาวน์โหลดและตรวจไฟล์",
+      "speech": "ดาวน์โหลดจากหน้า Retail Local เลือกไฟล์ให้ตรงกับระบบปฏิบัติการและบทบาทของเครื่อง ตรวจรุ่นและค่า SHA-256 ให้ตรงกับไฟล์ที่ประกาศก่อนเปิดติดตั้ง หากไม่มีไฟล์สำหรับเครื่องของคุณ ให้หยุดและติดต่อผู้ดูแล",
+      "nodes": [
+        [
+          "globe",
+          "หน้า Retail Local",
+          "เลือก OS และบทบาท"
+        ],
+        [
+          "download",
+          "ไฟล์ติดตั้ง",
+          "รุ่นและสถาปัตยกรรมตรงกัน"
+        ],
+        [
+          "shield-check",
+          "ตรวจ SHA-256",
+          "เทียบกับค่าที่ประกาศ"
+        ]
+      ],
+      "outcome": "ได้ไฟล์ที่ตรงกับเครื่อง และตรวจสอบไฟล์ก่อนใช้งาน"
+    },
+    "en": {
+      "title": "Download and verify the file",
+      "speech": "Download from the Retail Local page. Match the installer to your operating system, architecture and computer role. Check the release and compare the file’s SHA-256 checksum with the published value before installing. If no matching installer is available, stop and contact the administrator.",
+      "nodes": [
+        [
+          "globe",
+          "Retail Local page",
+          "Choose the OS and role"
+        ],
+        [
+          "download",
+          "Installer file",
+          "Matching release and architecture"
+        ],
+        [
+          "shield-check",
+          "Check SHA-256",
+          "Compare the published checksum"
+        ]
+      ],
+      "outcome": "Use the right installer and verify it before running it."
+    }
+  },
+  {
+    "id": "install",
+    "phase": "start",
+    "audio": "/audio/retail-local/th/step-3.mp3",
+    "th": {
+      "title": "ติดตั้งโดยไม่ต้องมี Code",
+      "speech": "การติดตั้งครั้งแรกต้องใช้อินเทอร์เน็ต เปิดตัวติดตั้งและทำตามขั้นตอน ระบบจะตรวจความพร้อมและติดตั้งส่วนที่จำเป็น หากมีคำขอให้รีสตาร์ต ให้ทำตามคำแนะนำ ยังไม่ต้องมี Activation Code และการติดตั้งไม่ได้เริ่ม Trial อัตโนมัติ หากการติดตั้งสะดุด ให้ทำตามคำแนะนำกู้การติดตั้ง อย่าลบข้อมูลร้านเพื่อเริ่มใหม่",
+      "nodes": [
+        [
+          "wifi",
+          "เชื่อมต่ออินเทอร์เน็ต",
+          "สำหรับติดตั้งครั้งแรก"
+        ],
+        [
+          "settings",
+          "ตัวติดตั้ง",
+          "ตรวจเครื่องและติดตั้งบริการ"
+        ],
+        [
+          "circle-check",
+          "พร้อมตั้งค่าร้าน",
+          "ยังไม่ต้องกรอก Code"
+        ]
+      ],
+      "outcome": "ติดตั้งสำเร็จก่อน แล้วลงทะเบียน License ภายหลังได้"
+    },
+    "en": {
+      "title": "Install without an activation code",
+      "speech": "The first installation needs internet access. Run the installer and follow the readiness checks. Restart when instructed. You do not need an Activation Code to install Server or Server + POS, and installation does not automatically start a trial. If setup is interrupted, follow its recovery instructions rather than deleting shop data.",
+      "nodes": [
+        [
+          "wifi",
+          "Connect to the internet",
+          "Required for initial setup"
+        ],
+        [
+          "settings",
+          "Run the installer",
+          "Readiness checks and services"
+        ],
+        [
+          "circle-check",
+          "Ready to set up the shop",
+          "No activation code required"
+        ]
+      ],
+      "outcome": "Install first; registration is a separate, later step."
+    }
+  },
+  {
+    "id": "setup-pos",
+    "phase": "start",
+    "audio": "/audio/retail-local/th/step-4.mp3",
+    "th": {
+      "title": "ตั้งค่าร้านและจับคู่ POS",
+      "speech": "เปิดหลังบ้าน ตั้งค่าร้านและผู้ดูแลตามขั้นตอนเตรียมระบบ จากนั้นจับคู่จุดขายกับเครื่องแม่ข่าย และตั้งสิทธิ์ผู้ใช้งาน ทดลองขายและพิมพ์ใบเสร็จกับอุปกรณ์จริงก่อนเริ่มรับลูกค้า",
+      "nodes": [
+        [
+          "store",
+          "ตั้งค่าร้าน",
+          "ข้อมูลร้านและผู้ดูแล"
+        ],
+        [
+          "link",
+          "จับคู่จุดขาย",
+          "เชื่อมเครื่องแม่ข่ายและตั้งสิทธิ์"
+        ],
+        [
+          "receipt",
+          "ทดลองใช้งาน",
+          "ขาย · พิมพ์ · ตรวจยอด"
+        ]
+      ],
+      "outcome": "ร้านและจุดขายเชื่อมกัน พร้อมตรวจงานจริงก่อนเปิดขาย"
+    },
+    "en": {
+      "title": "Set up the shop and pair POS",
+      "speech": "Open the admin area and complete shop and administrator setup. Pair the till with the host and assign user permissions. Test a sale and receipt printing on the actual hardware before serving customers.",
+      "nodes": [
+        [
+          "store",
+          "Set up the shop",
+          "Shop details and administrator"
+        ],
+        [
+          "link",
+          "Pair the till",
+          "Connect to the host and assign permissions"
+        ],
+        [
+          "receipt",
+          "Test the workflow",
+          "Sale, printing and totals"
+        ]
+      ],
+      "outcome": "Check the connected shop and till before opening for sales."
+    }
+  },
+  {
+    "id": "daily-use",
+    "separateLast": true,
+    "phase": "start",
+    "audio": "/audio/retail-local/th/step-5.mp3",
+    "th": {
+      "title": "ใช้งานร้านในแต่ละวัน",
+      "speech": "การขาย สต็อก และข้อมูลหลักทำงานอยู่บนเครื่องของร้าน การใช้งานส่วนหลักในร้านไม่จำเป็นต้องพึ่งคลาวด์ทุกครั้ง แต่เอไอ แชต อีเมล และบริการภายนอกยังต้องใช้อินเทอร์เน็ต ควรตรวจสถานะสำรองข้อมูลเป็นประจำด้วย",
+      "nodes": [
+        [
+          "shopping-cart",
+          "ขายที่ POS",
+          "ตามสิทธิ์ผู้ใช้งาน"
+        ],
+        [
+          "database",
+          "ข้อมูลอยู่เครื่องร้าน",
+          "ขาย · สต็อก · รายงาน"
+        ],
+        [
+          "cloud",
+          "บริการออนไลน์",
+          "AI · แชต · อีเมล ใช้เน็ตเมื่อเรียก"
+        ]
+      ],
+      "outcome": "แยกให้ออกว่าอะไรอยู่ในร้าน และอะไรยังต้องใช้อินเทอร์เน็ต"
+    },
+    "en": {
+      "title": "Run the shop each day",
+      "speech": "Sales, stock and the main shop data run on the shop host. Core local work does not require a cloud call for every action. AI, chat, email and external services still need internet access. Check backup status regularly as part of operating the shop.",
+      "nodes": [
+        [
+          "shopping-cart",
+          "Sell at POS",
+          "Within the cashier’s permissions"
+        ],
+        [
+          "database",
+          "Data on the shop host",
+          "Sales, stock and reports"
+        ],
+        [
+          "cloud",
+          "Online services",
+          "AI, chat and email need internet"
+        ]
+      ],
+      "outcome": "Know which work stays local and which services need the internet."
+    }
+  },
+  {
+    "id": "activate",
+    "phase": "license",
+    "audio": "/audio/retail-local/th/step-6.mp3",
+    "th": {
+      "title": "Activate เมื่อได้รับ Code",
+      "speech": "เมื่อต้องการลงทะเบียนและได้รับ Activation Code จาก BMS ให้ผู้ดูแลเปิดหน้า License ของเครื่องนี้ หรือช่องทาง Activate or Transfer ที่ตรงกับระบบปฏิบัติการ กรอก Code และยืนยัน Code ใช้ครั้งเดียว ไม่ควรส่งในแชตผู้ช่วยหรือบันทึกทั่วไป Code หมดอายุในเจ็ดวัน และเลขอ้างอิง LIC- ใช้แทน Code ไม่ได้",
+      "nodes": [
+        [
+          "key-round",
+          "รับ Code จาก BMS",
+          "ใช้ครั้งเดียว · หมดอายุใน 7 วัน"
+        ],
+        [
+          "monitor",
+          "ยืนยันบนเครื่องร้าน",
+          "License ของเครื่องนี้"
+        ],
+        [
+          "badge-check",
+          "ตรวจสถานะลงทะเบียน",
+          "เมื่อเชื่อมต่อบริการสำเร็จ"
+        ]
+      ],
+      "outcome": "การลงทะเบียนเป็นอีกขั้นหนึ่ง ไม่ใช่เงื่อนไขก่อนติดตั้ง"
+    },
+    "en": {
+      "title": "Activate after receiving a code",
+      "speech": "When BMS provides an Activation Code, an authorized administrator can register through This installation’s license or the operating system’s Activate or Transfer entry point. Enter the code and confirm. Codes are single-use and expire after seven days; a LIC- reference is not an activation code. Keep codes out of assistant chat and ordinary logs.",
+      "nodes": [
+        [
+          "key-round",
+          "Code from BMS",
+          "Single-use; expires after 7 days"
+        ],
+        [
+          "monitor",
+          "Confirm on the shop host",
+          "This installation’s license"
+        ],
+        [
+          "badge-check",
+          "Check registration status",
+          "After a successful connection"
+        ]
+      ],
+      "outcome": "Registration is separate from installation."
+    }
+  },
+  {
+    "id": "trial-paid",
+    "phase": "license",
+    "audio": "/audio/retail-local/th/step-7.mp3",
+    "th": {
+      "title": "จาก Trial ไปเป็น Paid",
+      "speech": "ถ้าเริ่มด้วย Trial ผู้ดูแล BMS จะตรวจหลักฐานการชำระก่อนเปลี่ยนรายการเป็น Paid ภายใต้ License เดิม ไม่ต้องติดตั้งใหม่หรือย้ายข้อมูลเพื่อเปลี่ยนสถานะ แม้ Trial หมดอายุหรือกำลังรอตรวจ ก็ไม่ล็อกการขายและการเข้าถึงข้อมูลร้าน Trial เริ่มเมื่อ BMS ออก Trial ให้ ไม่ใช่ตอนดาวน์โหลด ติดตั้ง หรือ Activate และการแปลงเป็น Paid ไม่ต้องกรอก Code ใหม่",
+      "nodes": [
+        [
+          "clock",
+          "Trial เดิม",
+          "เริ่มเมื่อ BMS ออก Trial ให้"
+        ],
+        [
+          "clipboard-check",
+          "BMS ตรวจชำระ",
+          "เจ้าหน้าที่ยืนยัน"
+        ],
+        [
+          "badge-check",
+          "Paid",
+          "License และข้อมูลเดิม · ไม่ต้องใช้ Code ใหม่"
+        ]
+      ],
+      "outcome": "เปลี่ยนสถานะ License ได้ โดยไม่เริ่มร้านใหม่"
+    },
+    "en": {
+      "title": "Move from Trial to Paid",
+      "speech": "For a trial license, BMS staff verify payment before converting the existing license to Paid. The trial begins when BMS issues the trial license, not when you download, install or activate. Conversion does not require another installation, fresh code or new shop data. Trial expiry or payment review must not block sales or access to shop data.",
+      "nodes": [
+        [
+          "clock",
+          "Existing Trial",
+          "Starts when the trial is issued"
+        ],
+        [
+          "clipboard-check",
+          "BMS verifies payment",
+          "An authorized person confirms"
+        ],
+        [
+          "badge-check",
+          "Paid",
+          "Same license and data; no new code"
+        ]
+      ],
+      "outcome": "Change commercial state without starting the shop again."
+    }
+  },
+  {
+    "id": "backup-setup",
+    "separateLast": true,
+    "phase": "care",
+    "audio": "/audio/retail-local/th/step-8.mp3",
+    "th": {
+      "title": "เตรียม USB / NAS และกุญแจ",
+      "speech": "ข้อมูลอยู่ที่ร้าน จึงต้องมีสำเนาไว้นอกเครื่องหลัก เตรียม USB หรือ NAS และตั้งปลายทางตามคู่มือ เก็บรหัสหรือกุญแจกู้คืนแยกต่างหาก อย่าเก็บสำเนาและกุญแจทั้งหมดไว้ในเครื่องเดียว BMS ไม่ได้ฝากสำรองข้อมูลร้านไว้บนคลาวด์ให้ สำหรับ macOS ยังไม่มีการสำรองนอกเครื่องตามตารางอัตโนมัติ ให้ทำตามคู่มือของรุ่นที่ใช้",
+      "nodes": [
+        [
+          "monitor",
+          "เครื่องหลักของร้าน",
+          "ข้อมูลที่ใช้งานทุกวัน"
+        ],
+        [
+          "hard-drive",
+          "USB / NAS",
+          "ปลายทางอยู่นอกเครื่องหลัก"
+        ],
+        [
+          "key-round",
+          "กุญแจกู้คืน",
+          "เก็บแยกจากชุดสำรองและเครื่องหลัก"
+        ]
+      ],
+      "outcome": "ถ้าเครื่องหลักเสีย ยังมีทั้งไฟล์สำรองและกุญแจสำหรับกู้คืน"
+    },
+    "en": {
+      "title": "Prepare USB / NAS and the recovery key",
+      "speech": "Shop data needs a copy outside the main computer. Prepare USB or NAS storage and configure the destination using the instructions for your release. Keep the recovery key or password separately. BMS does not host your shop’s backups. Scheduled off-host backup is not yet available on macOS; follow its manual recovery instructions.",
+      "nodes": [
+        [
+          "monitor",
+          "Main shop computer",
+          "The data used every day"
+        ],
+        [
+          "hard-drive",
+          "USB / NAS",
+          "Outside the main computer"
+        ],
+        [
+          "key-round",
+          "Recovery key",
+          "Separate from the backup and main computer"
+        ]
+      ],
+      "outcome": "Keep both a usable backup and its recovery key available if the host fails."
+    }
+  },
+  {
+    "id": "backup-check",
+    "phase": "care",
+    "audio": "/audio/retail-local/th/step-9.mp3",
+    "th": {
+      "title": "สำรองและตรวจผลทุกครั้ง",
+      "speech": "ใช้ขั้นตอนสำรองข้อมูลของรุ่นที่ติดตั้ง ให้ได้ชุดเข้ารหัสที่มีฐานข้อมูล ไฟล์ และข้อมูลลับที่จำเป็นจากรอบเดียวกัน ตรวจว่าการสำรองสำเร็จ และมีไฟล์อยู่ใน USB หรือ NAS จริง อ่านเวลาสำรองล่าสุดจากหลังบ้าน ถ้าสถานะไม่ทราบผล อย่าถือว่าสำเร็จ",
+      "nodes": [
+        [
+          "database",
+          "ข้อมูลรอบเดียวกัน",
+          "ฐานข้อมูล + ไฟล์ + ข้อมูลลับ"
+        ],
+        [
+          "lock-keyhole",
+          "ชุดสำรองเข้ารหัส",
+          "ทำตามคู่มือของรุ่น"
+        ],
+        [
+          "hard-drive",
+          "ตรวจสำเนานอกเครื่อง",
+          "ไฟล์จริง + เวลาสำรอง"
+        ]
+      ],
+      "outcome": "ไม่ใช่แค่มีตารางเวลา ต้องมีไฟล์และผลสำรองที่ตรวจได้"
+    },
+    "en": {
+      "title": "Back up and check the result",
+      "speech": "Use the backup procedure for the installed release to create one encrypted set containing the database, files, installation metadata and matching secrets. Verify completion and the actual copy on USB or NAS. Check the last backup time in the admin area. An unknown status is not proof of a successful backup.",
+      "nodes": [
+        [
+          "database",
+          "One consistent snapshot",
+          "Database, files and secrets"
+        ],
+        [
+          "lock-keyhole",
+          "Encrypted backup set",
+          "Follow the release procedure"
+        ],
+        [
+          "hard-drive",
+          "Check the off-host copy",
+          "Actual file and backup time"
+        ]
+      ],
+      "outcome": "A schedule alone is not enough: verify the file and its result."
+    }
+  },
+  {
+    "id": "restore",
+    "phase": "care",
+    "audio": "/audio/retail-local/th/step-10.mp3",
+    "th": {
+      "title": "Restore และตรวจข้อมูล",
+      "speech": "ก่อนกู้คืน ให้เก็บเครื่องเดิมและไฟล์สำรองไว้ ติดตั้งรุ่นที่รองรับบนเครื่องทดแทน แล้วกู้ฐานข้อมูล ไฟล์ และข้อมูลลับจากรอบเดียวกัน ตรวจยอดขาย สต็อก การชำระเงิน ไฟล์ และการจับคู่จุดขาย อย่าลบข้อมูลเดิมจนกว่าจะตรวจครบ",
+      "nodes": [
+        [
+          "hard-drive",
+          "Backup + กุญแจ",
+          "เก็บต้นฉบับไว้ก่อน"
+        ],
+        [
+          "database-backup",
+          "กู้บนเครื่องทดแทน",
+          "ข้อมูลครบจากรอบเดียวกัน"
+        ],
+        [
+          "clipboard-check",
+          "เทียบข้อมูลจริง",
+          "ยอดขาย · สต็อก · การชำระ · ไฟล์ · POS"
+        ]
+      ],
+      "outcome": "ไฟล์สำรองที่ดีต้องกู้ได้ และข้อมูลหลังการกู้ต้องตรวจตรงกัน"
+    },
+    "en": {
+      "title": "Restore and reconcile data",
+      "speech": "Preserve the old host and backup media. Install a supported release on the replacement computer and restore the database, files, installation metadata and secrets from the same backup generation. Verify service health, sales totals, stock, payments, files and POS pairing. Keep the old data until reconciliation succeeds.",
+      "nodes": [
+        [
+          "hard-drive",
+          "Backup and recovery key",
+          "Preserve the original first"
+        ],
+        [
+          "database-backup",
+          "Restore on a replacement",
+          "One matching backup generation"
+        ],
+        [
+          "clipboard-check",
+          "Reconcile the results",
+          "Sales, stock, payments, files and POS"
+        ]
+      ],
+      "outcome": "A backup must restore successfully and its data must reconcile."
+    }
+  },
+  {
+    "id": "transfer",
+    "phase": "care",
+    "audio": "/audio/retail-local/th/step-11.mp3",
+    "th": {
+      "title": "ย้าย License ไปเครื่องใหม่",
+      "speech": "หลังตรวจข้อมูลที่กู้แล้ว ให้ขอ Code ใหม่สำหรับ License เดิม ลงทะเบียนเครื่องใหม่ผ่าน Activate or Transfer ผู้ดูแล BMS ตรวจต้นทางและปลายทางก่อนยืนยันการย้าย การย้าย License ไม่ได้คัดลอกข้อมูล และระหว่างรอตรวจต้องไม่ล็อกการใช้งานร้าน อย่าคัดลอกกุญแจลงลายเซ็นหรือโทเคนของเครื่องเดิมไปใช้กับเครื่องใหม่",
+      "nodes": [
+        [
+          "key-round",
+          "Code ใหม่",
+          "สำหรับ License เดิม"
+        ],
+        [
+          "monitor",
+          "เครื่องทดแทน",
+          "Activate or Transfer · ใช้กุญแจเครื่องใหม่"
+        ],
+        [
+          "user-check",
+          "BMS ยืนยันย้าย",
+          "ตรวจเครื่องเก่าและใหม่"
+        ]
+      ],
+      "outcome": "เครื่องใหม่ลงทะเบียนถูกต้อง โดยไม่ใช้ Code หรือกุญแจเครื่องเดิมซ้ำ"
+    },
+    "en": {
+      "title": "Transfer the license to a new host",
+      "speech": "After checking the restored data, request a new code for the existing license. Register the new computer through Activate or Transfer. BMS staff review the old and new installations before confirming the transfer. Do not copy device signing keys or bearer tokens. License transfer does not copy shop data; review must not block the restored shop.",
+      "nodes": [
+        [
+          "key-round",
+          "A new activation code",
+          "For the existing license"
+        ],
+        [
+          "monitor",
+          "Replacement computer",
+          "Activate or Transfer; new host credentials"
+        ],
+        [
+          "user-check",
+          "BMS confirms transfer",
+          "Review the old and new hosts"
+        ]
+      ],
+      "outcome": "Register the replacement without reusing the old code or host credentials."
+    }
+  },
+  {
+    "id": "update",
+    "phase": "care",
+    "audio": "/audio/retail-local/th/step-12.mp3",
+    "th": {
+      "title": "อัปเดตและดูแลต่อเนื่อง",
+      "speech": "ก่อนอัปเดต อ่านหมายเหตุของรุ่น ตรวจว่ารองรับเครื่องของร้าน และมีชุดสำรองที่กู้ได้ เลือกเวลาที่เหมาะสม หลังอัปเดตตรวจระบบ ทดลองขายและอุปกรณ์หน้าร้าน แล้วตรวจการสำรองรอบใหม่ หากติดขัด ให้ส่งข้อความผิดพลาดและรุ่นที่ใช้โดยปิดข้อมูลลับก่อน การอัปเดตต้องให้ผู้ดูแลเลือกและยืนยันก่อนเสมอ",
+      "nodes": [
+        [
+          "hard-drive",
+          "เตรียมก่อนอัปเดต",
+          "อ่านรุ่น + สำรองข้อมูล"
+        ],
+        [
+          "refresh-cw",
+          "อัปเดตตามคู่มือ",
+          "เลือกเวลาและยืนยันก่อนเริ่ม"
+        ],
+        [
+          "circle-check",
+          "ตรวจหลังอัปเดต",
+          "ขาย · อุปกรณ์ · backup"
+        ]
+      ],
+      "outcome": "ดูแลร้านเป็นรอบ: สำรอง → อัปเดต → ตรวจ → สำรองอีกครั้ง"
+    },
+    "en": {
+      "title": "Update and keep checking",
+      "speech": "Before updating, read the release notes, check platform compatibility and prepare a verified encrypted backup. Choose a suitable time and explicitly confirm the update. Then check service health, test sales and peripherals, and verify a fresh off-host backup. If something fails, follow the release’s recovery instructions and share errors without secrets.",
+      "nodes": [
+        [
+          "hard-drive",
+          "Before updating",
+          "Read release notes and back up"
+        ],
+        [
+          "refresh-cw",
+          "Confirm the update",
+          "Choose an appropriate time"
+        ],
+        [
+          "circle-check",
+          "Check after updating",
+          "Sales, peripherals and backup"
+        ]
+      ],
+      "outcome": "Repeat the care cycle: back up, update, verify and back up again."
+    }
+  }
+]
