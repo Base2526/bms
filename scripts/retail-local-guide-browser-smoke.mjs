@@ -22,7 +22,7 @@ async function noOverflow(page) {
 async function aligned(guide,lang,index,{playing=false}={}) {
   const step=steps[index],copy=step[lang];
   assert.equal(await guide.locator('[data-guide-counter]').innerText(),`${index+1} / 12`);
-  assert.equal(await guide.locator('[data-guide-title]').innerText(),`${index+1}. ${copy.title}`);
+  assert.equal(await guide.locator('[data-guide-title]').innerText(),copy.title);
   assert.equal(await guide.locator('[data-guide-caption]').innerText(),copy.speech);
   assert.equal(await guide.locator('[data-guide-outcome]').innerText(),copy.outcome);
   assert.deepEqual(await guide.locator('[data-guide-step][aria-pressed=true]').evaluateAll(nodes=>nodes.map(n=>n.dataset.guideStep)),[step.id]);
@@ -65,6 +65,13 @@ async function allChapters(page,guide,lang) {
   assert.ok(await guide.locator('audio').evaluate(a=>a.currentTime<3));
   await guide.locator('[data-guide-step="prepare"]').click();await aligned(guide,lang,0);
 }
+async function focusedLayout(guide,width) {
+  const chapters=await guide.locator('[data-guide-chapters]').boundingBox();
+  const card=await guide.locator('[data-guide-chapter-card]').boundingBox();
+  assert.ok(chapters&&card);
+  if(width>700) assert.ok(chapters.x<card.x,'Chapter journey stays to the left on desktop');
+  else assert.ok(chapters.y>card.y,'Current chapter stays before the journey on mobile');
+}
 try {
   for(const lang of ['th','en']) for(const width of [1280,390]) {
     const context=await browser.newContext({viewport:{width,height:1000},serviceWorkers:'block'});
@@ -79,6 +86,7 @@ try {
     await consent.waitFor({timeout:3000}).catch(()=>{});
     if(await consent.isVisible()) await consent.click();
     const guide=page.locator('[data-retail-local-guide]');await guide.waitFor();
+    await focusedLayout(guide,width);
     assert.equal(await guide.locator('[data-guide-step]').count(),12);
     assert.ok(await guide.locator('audio').evaluate(a=>a.paused&&!a.getAttribute('src')),'No audio on page load');
     assert.ok(await page.evaluate(()=>document.querySelector('#retail-local-guide').compareDocumentPosition(document.querySelector('#requirements'))&Node.DOCUMENT_POSITION_FOLLOWING));
@@ -149,6 +157,7 @@ try {
     assert.equal((await page.goto(`${local}/admin/retail-local-license?guide=backup-setup#backup`)).status(),200);
     const drawer=page.getByRole('dialog');const guide=drawer.locator('[data-retail-local-guide]');
     await guide.waitFor();assert.equal(await guide.locator('[data-guide-counter]').innerText(),'8 / 12');
+    await focusedLayout(guide,width);
     assert.ok(await guide.locator('audio').evaluate(a=>a.paused));
     await guide.locator('[data-guide-play]').click();await mediaPlaying(page);
     await page.evaluate(()=>window.closedGuideAudio=document.querySelector('[data-retail-guide-player] audio'));

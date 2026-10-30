@@ -113,47 +113,67 @@ export default function RetailLocalGuide({ initialStep = "prepare", followHash =
   }, [initialStep, followHash]);
   useEffect(() => { pause(); }, [lang]);
 
+  const next = step < steps.length - 1 ? resolveBilingual(steps[step + 1], lang) : null;
   return <section id="retail-local-guide" ref={section} className={styles.guide} data-retail-local-guide aria-labelledby="retail-local-guide-title">
     <header className={styles.heading}>
       <div><p className={styles.eyebrow}>{th ? "ฟังแล้วทำตาม · RETAIL LOCAL" : "LISTEN AND FOLLOW · RETAIL LOCAL"}</p>
-        <h2 id="retail-local-guide-title">{th ? "จากดาวน์โหลด ถึงกู้ร้านกลับมา" : "From download to recovering your shop"}</h2>
-        <p className={styles.muted}>{th ? "เลือกฟังเฉพาะตอน หรือฟังต่อเนื่องตามแผนภาพ" : "Choose a chapter or follow the complete journey with the diagram."}</p></div>
-      <span className={styles.badge}>{th ? "12 ตอน · เสียงภาษาไทย" : "12 chapters · Thai audio"} · {time(audioMetadata.totalDuration)}</span>
-    </header>
-    <div className={styles.player} data-retail-guide-player>
-      <audio ref={audio} preload="none" />
-      <div className={styles.now}><SoundOutlined aria-hidden /><strong data-guide-title>{step + 1}. {current.title}</strong><span data-guide-counter>{step + 1} / {steps.length}</span></div>
-      <div className={styles.controls}>
-        <button className={styles.primary} data-guide-play onClick={() => playing ? pause() : start(selected.current, resumeAt.current)}>
-          {playing ? (th ? "หยุดชั่วคราว" : "Pause") : failed ? (th ? "ลองเล่นอีกครั้ง" : "Retry audio") : resumeAt.current > 0 ? (th ? "ฟังต่อ" : "Resume") : (th ? "ฟังตอนนี้" : "Play chapter")}
-        </button>
-        <button data-guide-previous disabled={step === 0} onClick={() => choose(step - 1)}>{th ? "ก่อนหน้า" : "Previous"}</button>
-        <button data-guide-next disabled={step === steps.length - 1} onClick={() => choose(step + 1)}>{th ? "ถัดไป" : "Next"}</button>
-        <button data-guide-all onClick={() => { choose(0); start(0); }}><PlayCircleOutlined aria-hidden /> {th ? "ฟังตั้งแต่ต้น" : "Play all"}</button>
-        <label>{th ? "ความเร็ว" : "Speed"} <select value={rate} data-guide-rate onChange={event => {
-          const next = Number(event.target.value); pause(); speed.current = next; setRate(next);
-        }}>{[1, 1.25, 1.5].map(value => <option key={value} value={value}>{value}×</option>)}</select></label>
-        <a href="/audio/retail-local/th/summary.mp3" download="bms-retail-local-th.mp3">{th ? "ดาวน์โหลดเสียงทั้งหมด" : "Download all Thai audio"}</a>
+        <h2 id="retail-local-guide-title">{th ? "เริ่มใช้ Retail Local อย่างมั่นใจ" : "Start using Retail Local with confidence"}</h2>
+        <p className={styles.muted}>{th ? "เลือกตอนจากเส้นทาง แล้วทำตามเสียงและแผนภาพทีละขั้น" : "Choose a chapter from the journey, then follow its narration and diagram."}</p></div>
+      <div className={styles.badges} aria-label={th ? "ข้อมูลคู่มือ" : "Guide details"}>
+        <span>{steps.length} {th ? "ตอน" : "chapters"}</span>
+        <span>{th ? "เสียงภาษาไทย" : "Thai audio"} · {time(audioMetadata.totalDuration)}</span>
+        <span>{th ? "ไม่เล่นอัตโนมัติ" : "No autoplay"}</span>
       </div>
-      <div className={styles.progressRow}><progress aria-label={th ? "ความคืบหน้าของตอน" : "Chapter progress"} max={duration || 1} value={elapsed} /><span>{time(elapsed)} / {time(duration)}</span></div>
-      <p className={styles.caption} data-guide-caption aria-live={playing ? "off" : "polite"}>{current.speech}</p>
-      <p className={styles.voice} role="status" data-guide-status>{failed
-        ? (th ? "โหลดเสียงไม่ได้ กดลองอีกครั้ง หรืออ่านคำบรรยายและเลือกตอนต่อไปได้" : "Audio could not load. Retry, or read the captions and choose another chapter.")
-        : th ? "เสียงสังเคราะห์ภาษาไทย · ไม่เล่นอัตโนมัติเมื่อเปิดหน้า" : "Synthetic Thai narration; English captions. Audio starts only when you press Play."}</p>
+    </header>
+    <div className={styles.guideLayout}>
+      <nav className={styles.chapters} data-guide-chapters aria-label={th ? "เลือกตอนในคู่มือ" : "Guide chapters"}>
+        <div className={styles.chapterHeading}><h3>{th ? "เส้นทางทั้งหมด" : "Complete journey"}</h3><span>{step + 1} / {steps.length}</span></div>
+        {groups.map(([id, title, hint]) => <div className={styles.chapterGroup} key={id}><h3>{title}</h3><p>{hint}</p>
+          {steps.map((entry, i) => entry.phase === id && <button key={entry.id} id={`retail-local-guide-${entry.id}`}
+            data-guide-step={entry.id} aria-pressed={i === step} onClick={() => choose(i)}><span>{String(i + 1).padStart(2, "0")}</span><span>{resolveBilingual(entry, lang).title}</span>{i === step && <SoundOutlined aria-hidden />}</button>)}
+        </div>)}
+      </nav>
+      <article className={styles.chapterCard} data-guide-chapter-card>
+        <div className={styles.chapterTitle}>
+          <span className={styles.chapterNumber}>{String(step + 1).padStart(2, "0")}</span>
+          <div><p className={styles.eyebrow}>{groups.find(([id]) => id === steps[step].phase)?.[1]}</p><strong data-guide-title>{current.title}</strong></div>
+          <span data-guide-counter>{step + 1} / {steps.length}</span>
+        </div>
+        <div className={styles.player} data-retail-guide-player>
+          <audio ref={audio} preload="none" />
+          <div className={styles.controls}>
+            <button className={styles.primary} data-guide-play onClick={() => playing ? pause() : start(selected.current, resumeAt.current)}>
+              <PlayCircleOutlined aria-hidden /> {playing ? (th ? "หยุดชั่วคราว" : "Pause") : failed ? (th ? "ลองเล่นอีกครั้ง" : "Retry audio") : resumeAt.current > 0 ? (th ? "ฟังต่อ" : "Resume") : (th ? "ฟังตอนนี้" : "Play chapter")}
+            </button>
+            <button data-guide-previous disabled={step === 0} onClick={() => choose(step - 1)}>{th ? "ก่อนหน้า" : "Previous"}</button>
+            <button data-guide-next disabled={step === steps.length - 1} onClick={() => choose(step + 1)}>{th ? "ถัดไป" : "Next"}</button>
+            <button data-guide-all onClick={() => { choose(0); start(0); }}>{th ? "ฟังตั้งแต่ต้น" : "Play all"}</button>
+            <label>{th ? "ความเร็ว" : "Speed"} <select value={rate} data-guide-rate onChange={event => {
+              const nextRate = Number(event.target.value); pause(); speed.current = nextRate; setRate(nextRate);
+            }}>{[1, 1.25, 1.5].map(value => <option key={value} value={value}>{value}×</option>)}</select></label>
+            <a href="/audio/retail-local/th/summary.mp3" download="bms-retail-local-th.mp3">{th ? "ดาวน์โหลดเสียงทั้งหมด" : "Download all Thai audio"}</a>
+          </div>
+          <div className={styles.progressRow}><progress aria-label={th ? "ความคืบหน้าของตอน" : "Chapter progress"} max={duration || 1} value={elapsed} /><span>{time(elapsed)} / {time(duration)}</span></div>
+          <p className={styles.caption} data-guide-caption aria-live={playing ? "off" : "polite"}>{current.speech}</p>
+          <p className={styles.voice} role="status" data-guide-status>{failed
+            ? (th ? "โหลดเสียงไม่ได้ กดลองอีกครั้ง หรืออ่านคำบรรยายและเลือกตอนต่อไปได้" : "Audio could not load. Retry, or read the captions and choose another chapter.")
+            : th ? "เสียงสังเคราะห์ภาษาไทย · ไม่เล่นอัตโนมัติเมื่อเปิดหน้า" : "Synthetic Thai narration; English captions. Audio starts only when you press Play."}</p>
+        </div>
+        <div className={styles.diagramSection}>
+          <div className={styles.diagramLabel}><span>{th ? "แผนภาพของตอนนี้" : "Diagram for this chapter"}</span><span>{th ? "ทำจากซ้ายไปขวา" : "Follow left to right"}</span></div>
+          <ol className={styles.diagram} data-guide-diagram data-separate-last={steps[step].separateLast || undefined} aria-label={th ? `ขั้นตอน: ${current.title}` : `Steps: ${current.title}`}>
+            {current.nodes.map(([icon, title, detail], i) => <li key={`${steps[step].id}-${i}`}>
+              <span className={styles.nodeIcon} aria-hidden>{icons[icon] ?? <CheckCircleOutlined />}</span><strong>{title}</strong><small>{detail}</small>
+            </li>)}
+          </ol>
+          <p className={styles.outcome}><CheckCircleOutlined aria-hidden /> <span data-guide-outcome>{current.outcome}</span></p>
+        </div>
+        <div className={styles.nextChapter}>
+          <span>{next ? (th ? "เสร็จแล้วไปขั้นต่อไป" : "Continue when ready") : (th ? "ครบทุกขั้นแล้ว" : "Journey complete")}</span>
+          {next && <button onClick={() => choose(step + 1)}>{next.title} →</button>}
+        </div>
+      </article>
     </div>
-    <p className={styles.diagramLabel}>{th ? "แผนภาพตามตอนที่เลือก" : "Diagram for this chapter"}</p>
-    <ol className={styles.diagram} data-guide-diagram data-separate-last={steps[step].separateLast || undefined} aria-label={th ? `ขั้นตอน: ${current.title}` : `Steps: ${current.title}`}>
-      {current.nodes.map(([icon, title, detail], i) => <li key={`${steps[step].id}-${i}`}>
-        <span className={styles.nodeIcon} aria-hidden>{icons[icon] ?? <CheckCircleOutlined />}</span><strong>{title}</strong><small>{detail}</small>
-      </li>)}
-    </ol>
-    <p className={styles.outcome}><CheckCircleOutlined aria-hidden /> <span data-guide-outcome>{current.outcome}</span></p>
-    <nav className={styles.chapters} aria-label={th ? "เลือกตอนในคู่มือ" : "Guide chapters"}>
-      {groups.map(([id, title, hint]) => <div key={id}><h3>{title}</h3><p>{hint}</p>
-        {steps.map((entry, i) => entry.phase === id && <button key={entry.id} id={`retail-local-guide-${entry.id}`}
-          data-guide-step={entry.id} aria-pressed={i === step} onClick={() => choose(i)}><span>{String(i + 1).padStart(2, "0")}</span>{resolveBilingual(entry, lang).title}</button>)}
-      </div>)}
-    </nav>
     <p className={styles.footer}><SafetyCertificateOutlined aria-hidden />{th
       ? "Technical pilot · ติดตั้งได้โดยไม่ต้องมี Code · Trial หมดอายุไม่ล็อกการขายหรือการกู้ข้อมูล"
       : "Technical pilot · Install without a code · Trial expiry never locks sales or recovery"}</p>
