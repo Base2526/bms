@@ -96,10 +96,11 @@ test("lead offer is config-backed and never wraps or controls download links", (
 });
 
 test("public handler enforces rate limit, bounded consent validation and a PII-free response", async () => {
-  let limited = false; let saved = 0;
+  let limited = false; let saved = 0; let local = false;
   const api = loadWithStubs("apps/web/app/api/public/retail-local/lead/route.ts", {
     "next/server": { NextResponse: { json: (body: unknown, init: any) => ({ body, ...init }) } },
     "@/lib/log/routeError": { withRouteErrorLog: (_: string, fn: Function) => fn },
+    "@/lib/bms/deploymentMode": { isRetailLocalDeployment: () => local },
     "@/lib/bms/retailLocalRequestBody": requestBody,
     "@/lib/bms/rateLimit": { rateLimit: async (_: string, count: number, window: number) => {
       assert.equal(count, 5); assert.equal(window, 3600000);
@@ -119,6 +120,11 @@ test("public handler enforces rate limit, bounded consent validation and a PII-f
   const denied = await api.POST(request(valid));
   assert.equal(denied.status, 429); assert.equal(denied.headers["Retry-After"], "60");
   assert.equal(saved, 1);
+  // On a shop's own Retail Local install the endpoint refuses and stores nothing.
+  limited = false; local = true;
+  const onLocal = await api.POST(request(valid));
+  assert.equal(onLocal.status, 404);
+  assert.equal(saved, 1);
 });
 
 test("admin adapters reject unauthenticated/non-platform callers and cross-origin writes before services", async () => {
@@ -130,7 +136,8 @@ test("admin adapters reject unauthenticated/non-platform callers and cross-origi
     "@/lib/bms/retailLocalRequestBody": requestBody,
     "@/lib/bms/retailLocalLeads": { RetailLocalLeadError,
       listRetailLocalLeads: async () => { calls++; return []; },
-      updateRetailLocalLead: async (input: any) => { calls++; assert.equal(input.adminId, "server-admin"); return { id: input.id }; } },
+      updateRetailLocalLead: async (input: any) => { calls++; assert.equal(input.adminId, "server-admin"); return { id: input.id }; },
+      eraseRetailLocalLead: async (input: any) => { calls++; assert.equal(input.adminId, "server-admin"); return { erased: true }; } },
   };
   const list = loadWithStubs("apps/web/app/api/admin/retail-local/leads/route.ts", modules);
   const update = loadWithStubs("apps/web/app/api/admin/retail-local/leads/[id]/route.ts", modules);
@@ -139,11 +146,47 @@ test("admin adapters reject unauthenticated/non-platform callers and cross-origi
     auth = { ok: false, status };
     assert.equal((await list.GET(request())).status, status);
     assert.equal((await update.PATCH(request(), { params: { id: "fake-id" } })).status, status);
+    assert.equal((await update.DELETE(request(), { params: { id: "fake-id" } })).status, status);
   }
   auth = { ok: true, adminId: "server-admin" };
   assert.equal((await update.PATCH(request("https://other.test"), { params: { id: "fake-id" } })).status, 403);
+  assert.equal((await update.DELETE(request("https://other.test"), { params: { id: "fake-id" } })).status, 403);
   assert.equal(calls, 0);
   assert.equal((await list.GET(request())).status, 200);
   assert.equal((await update.PATCH(request(), { params: { id: "fake-id" } })).status, 200);
-  assert.equal(calls, 2);
+  const erased = await update.DELETE(request(), { params: { id: "fake-id" } });
+  assert.equal(erased.status, 200); assert.deepEqual(erased.body, { erased: true }, "erase returns no personal data");
+  assert.equal(calls, 3);
+});
+
+test("lead capture is Cloud-only: a shop's own Retail Local install neither shows the form nor stores leads", () => {
+  // A lead saved on a shop's local database never reaches BMS, yet the form
+  // would tell the shop it was received. The endpoint and the form both refuse.
+  const guard = route.indexOf("if (isRetailLocalDeployment())");
+  assert.ok(guard > 0, "the public lead route must refuse on a Retail Local install");
+  assert.ok(guard < route.indexOf("rateLimit("), "refuse before rate limiting or reading the body");
+  assert.ok(guard < route.indexOf("createRetailLocalLead("), "refuse before any lead is stored");
+  const page = read("apps/web/app/(main)/retail-local/page.tsx");
+  assert.match(page, /leadCaptureEnabled=\{!isRetailLocalDeployment\(\)\}/);
+  const client = read("apps/web/app/(main)/retail-local/RetailLocalPageClient.tsx");
+  assert.match(client, /<RetailLocalPricing leadCaptureEnabled=\{leadCaptureEnabled\} \/>/);
+  const pricing = read("apps/web/app/(main)/retail-local/RetailLocalPricing.tsx");
+  assert.match(pricing, /\{leadCaptureEnabled && <Card className=\{styles\.lead\}/);
+});
+
+test("10.106 erasure is platform-admin only, clears history snapshots and is re-runnable", () => {
+  const erasure = read("db/migrations/10.106__bms_retail_local_lead_erasure.sql");
+  assert.match(erasure, /-- ROLLBACK/);
+  assert.match(erasure, /IF NOT public\.bms_is_current_platform_admin\(\) THEN/);
+  assert.match(erasure, /UPDATE public\.bms_retail_local_leads_revisions\s+SET snapshot = jsonb_build_object/);
+  assert.match(erasure, /IF OLD\.erased_at IS NOT NULL THEN/, "an erased lead is frozen");
+  assert.match(erasure, /REVOKE ALL ON FUNCTION public\.bms_erase_retail_local_lead\(uuid\) FROM PUBLIC/);
+  assert.match(erasure, /ADD COLUMN IF NOT EXISTS erased_at/);
+  assert.match(erasure, /DROP CONSTRAINT IF EXISTS bms_retail_local_leads_contact_check/);
+  for (const field of ["shop_name", "contact_name", "phone", "line_id", "business_type", "note", "follow_up_at"]) {
+    assert.match(erasure, new RegExp(`${field} = NULL`), `erasure must clear ${field}`);
+  }
+  const panel = read("apps/web/components/retail-local/RetailLocalLeadsPanel.tsx");
+  assert.match(panel, /<Popconfirm/, "erasing asks for confirmation first");
+  assert.match(panel, /method: "DELETE"/);
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Form, Input, Modal, Select, Space, Table, Tag, Typography, message } from "antd";
+import { Alert, Button, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import { useI18n } from "@/lib/i18nContext";
 
@@ -23,6 +23,7 @@ type LeadRow = {
   follow_up_at: string | null;
   note: string | null;
   created_at: string;
+  erased_at: string | null;
 };
 
 async function jsonRequest<T>(url: string, init?: RequestInit): Promise<T> {
@@ -112,6 +113,18 @@ export default function RetailLocalLeadsPanel() {
     }
   };
 
+  // PDPA erasure on request (10.106). Irreversible: contact details and their history
+  // snapshots are cleared; the row stays with status and consent time only.
+  const erase = async (row: LeadRow) => {
+    try {
+      await jsonRequest(`/api/admin/retail-local/leads/${row.id}`, { method: "DELETE" });
+      message.success(th ? "ลบข้อมูลส่วนบุคคลของ Lead นี้แล้ว" : "Personal data for this lead was erased");
+      await load();
+    } catch (eraseError) {
+      message.error(eraseError instanceof Error ? eraseError.message : String(eraseError));
+    }
+  };
+
   return (
     <div style={{ minWidth: 0 }}>
       <Space style={{ width: "100%", justifyContent: "space-between", marginBottom: 16 }} wrap>
@@ -147,14 +160,30 @@ export default function RetailLocalLeadsPanel() {
         scroll={{ x: 1280 }}
         pagination={{ pageSize: 20, showSizeChanger: false }}
         columns={[
-          { title: th ? "ร้าน/ผู้ติดต่อ" : "Shop/contact", width: 220, render: (_: unknown, row: LeadRow) => <div><b>{row.shop_name || "—"}</b><br /><Typography.Text type="secondary">{row.contact_name || "—"}</Typography.Text></div> },
+          { title: th ? "ร้าน/ผู้ติดต่อ" : "Shop/contact", width: 220, render: (_: unknown, row: LeadRow) => row.erased_at
+            ? <Tag>{th ? `ลบข้อมูลแล้ว ${formatDate(row.erased_at)}` : `Erased ${formatDate(row.erased_at)}`}</Tag>
+            : <div><b>{row.shop_name || "—"}</b><br /><Typography.Text type="secondary">{row.contact_name || "—"}</Typography.Text></div> },
           { title: th ? "ช่องทาง" : "Contact", width: 180, render: (_: unknown, row: LeadRow) => <div>{row.phone || "—"}<br />{row.line_id ? `LINE: ${row.line_id}` : "—"}</div> },
           { title: th ? "ประเภทร้าน" : "Business", dataIndex: "business_type", width: 150, render: (value: string | null) => value || "—" },
           { title: "Platform", dataIndex: "platform", width: 110, render: (value: string) => <Tag>{value}</Tag> },
           { title: th ? "สถานะ" : "Status", dataIndex: "status", width: 140, render: (value: string) => <Tag color={value === "PAID" ? "green" : value === "NEW" ? "blue" : "default"}>{value}</Tag> },
           { title: th ? "โทรตาม" : "Follow up", dataIndex: "follow_up_at", width: 190, render: formatDate },
           { title: th ? "ยินยอมเมื่อ" : "Consented", dataIndex: "consent_at", width: 190, render: formatDate },
-          { title: "", fixed: "right", width: 100, render: (_: unknown, row: LeadRow) => <Button size="small" onClick={() => openEdit(row)}>{th ? "แก้ไข" : "Edit"}</Button> },
+          { title: "", fixed: "right", width: 190, render: (_: unknown, row: LeadRow) => row.erased_at ? null : <Space size={4}>
+            <Button size="small" onClick={() => openEdit(row)}>{th ? "แก้ไข" : "Edit"}</Button>
+            <Popconfirm
+              title={th ? "ลบข้อมูลส่วนบุคคลของ Lead นี้?" : "Erase this lead's personal data?"}
+              description={th
+                ? "ชื่อร้าน ผู้ติดต่อ เบอร์ LINE ประเภทร้าน โน้ต และประวัติที่มีข้อมูลเหล่านี้จะถูกลบถาวร ย้อนกลับไม่ได้ ใช้เมื่อเจ้าของข้อมูลขอให้ลบ"
+                : "Shop, contact, phone, LINE, business type, note and the history holding them are permanently erased. Use when the person asks to be deleted."}
+              okText={th ? "ลบถาวร" : "Erase"}
+              cancelText={th ? "ยกเลิก" : "Cancel"}
+              okButtonProps={{ danger: true }}
+              onConfirm={() => erase(row)}
+            >
+              <Button size="small" danger>{th ? "ลบข้อมูล" : "Erase"}</Button>
+            </Popconfirm>
+          </Space> },
         ]}
       />
 

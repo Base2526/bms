@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { getClient, closeDatabasePool } from "../apps/web/lib/db.ts";
-import { createRetailLocalLead, listRetailLocalLeads, updateRetailLocalLead } from "../apps/web/lib/bms/retailLocalLeads.ts";
+import { createRetailLocalLead, eraseRetailLocalLead, listRetailLocalLeads, updateRetailLocalLead } from "../apps/web/lib/bms/retailLocalLeads.ts";
 
 after(closeDatabasePool);
 
@@ -117,13 +117,92 @@ test("10.105 executes twice without losing existing data or policies", {
     sentinelId = original.id;
     const before = (await c.query(`SELECT count(*)::int AS n FROM bms_retail_local_leads`)).rows[0].n;
     const sql = readFileSync(new URL('../db/migrations/10.105__bms_retail_local_leads.sql', import.meta.url), 'utf8');
+    // 10.106 replaces the 10.105 revision trigger; re-running 10.105 alone would put the
+    // old trigger back and silently drop the erasure rules, so re-apply 10.106 after it.
+    const erasure = readFileSync(new URL('../db/migrations/10.106__bms_retail_local_lead_erasure.sql', import.meta.url), 'utf8');
     await c.query(sql);
     await c.query(sql);
+    await c.query(erasure);
+    await c.query(erasure);
     assert.equal((await c.query(`SELECT count(*)::int AS n FROM bms_retail_local_leads`)).rows[0].n, before);
     assert.deepEqual((await c.query(`SELECT * FROM bms_retail_local_leads WHERE id=$1`, [sentinelId])).rows[0], original);
     assert.equal((await c.query(`SELECT count(*)::int AS n FROM pg_policies WHERE tablename=ANY($1::text[])`, [['bms_retail_local_leads','bms_retail_local_leads_revisions','bms_retail_local_lead_events']])).rows[0].n, 3);
+    const checks = (await c.query(`SELECT count(*)::int AS n FROM pg_constraint
+      WHERE conrelid='bms_retail_local_lead_events'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%action%'`)).rows[0].n;
+    assert.equal(checks, 1, "10.106 must leave exactly one action CHECK on the event table");
+    assert.match((await c.query(`SELECT prosrc FROM pg_proc WHERE proname='bms_retail_local_lead_revision'`)).rows[0].prosrc, /erased_at/);
   } finally {
     if (sentinelId) await c.query(`DELETE FROM bms_retail_local_leads WHERE id=$1`, [sentinelId]);
+    c.release();
+  }
+});
+
+test("erasure clears contact details everywhere, records who did it, and freezes the lead", async () => {
+  const c = await getClient();
+  const marker = `FAKE-lead-erase-${randomUUID()}`;
+  const phone = "0899999991";
+  let id: string | undefined;
+  try {
+    const adminId = (await c.query(`SELECT id FROM users WHERE is_platform_admin=TRUE LIMIT 1`)).rows[0]?.id;
+    const staffId = (await c.query(`SELECT id FROM users WHERE is_platform_admin=FALSE AND role='Administrator' LIMIT 1`)).rows[0]?.id;
+    assert.ok(adminId && staffId);
+    await createRetailLocalLead({ shopName: marker, contactName: "FAKE contact", consent: true, phone, lineId: "fake-erase", businessType: "FAKE type", platform: "windows", locale: "th" });
+    id = (await c.query(`SELECT id FROM bms_retail_local_leads WHERE shop_name=$1`, [marker])).rows[0].id;
+    // Two edits leave two revision snapshots that both contain the phone number.
+    await updateRetailLocalLead({ id: id!, adminId, status: "CONTACTED", note: `FAKE note ${phone}`, followUpAt: "2026-11-01T03:30:00Z" });
+    await updateRetailLocalLead({ id: id!, adminId, status: "TRIAL_ISSUED", note: "FAKE second", followUpAt: null });
+    assert.ok((await c.query(`SELECT count(*)::int AS n FROM bms_retail_local_leads_revisions WHERE lead_id=$1 AND snapshot::text LIKE $2`, [id, `%${phone}%`])).rows[0].n >= 2);
+
+    await assert.rejects(eraseRetailLocalLead({ id: id!, adminId: staffId }), (error: any) => error.status === 403, "shop administrators cannot erase");
+    await assert.rejects(eraseRetailLocalLead({ id: randomUUID(), adminId }), (error: any) => error.status === 404);
+
+    assert.deepEqual(await eraseRetailLocalLead({ id: id!, adminId }), { erased: true });
+    const row = (await c.query(`SELECT * FROM bms_retail_local_leads WHERE id=$1`, [id])).rows[0];
+    for (const field of ["shop_name", "contact_name", "phone", "line_id", "business_type", "note", "follow_up_at"]) {
+      assert.equal(row[field], null, `${field} must be cleared`);
+    }
+    assert.ok(row.erased_at);
+    assert.equal(String(row.erased_by), String(adminId));
+    assert.equal(row.status, "TRIAL_ISSUED", "status is kept");
+    assert.ok(row.consent_at, "consent time is kept as proof of lawful collection");
+    const leaked = (await c.query(`SELECT count(*)::int AS n FROM bms_retail_local_leads_revisions
+      WHERE lead_id=$1 AND (snapshot::text LIKE $2 OR snapshot::text LIKE $3 OR snapshot::text LIKE '%fake-erase%')`, [id, `%${phone}%`, `%${marker}%`])).rows[0].n;
+    assert.equal(leaked, 0, "no revision snapshot may still hold the contact details");
+    const events = (await c.query(`SELECT action, actor_id FROM bms_retail_local_lead_events WHERE lead_id=$1 ORDER BY occurred_at, id`, [id])).rows;
+    assert.equal(events.at(-1)?.action, "LEAD_ERASED");
+    assert.equal(String(events.at(-1)?.actor_id), String(adminId));
+
+    assert.deepEqual(await eraseRetailLocalLead({ id: id!, adminId }), { erased: false }, "erasing twice is a no-op");
+    await assert.rejects(updateRetailLocalLead({ id: id!, adminId, status: "PAID", note: null, followUpAt: null }), (error: any) => error.status === 409);
+
+    // The database refuses too, not only the service.
+    await c.query("BEGIN");
+    await c.query("SET LOCAL ROLE bms_app");
+    await c.query(`SELECT set_config('app.editor_id',$1,true)`, [adminId]);
+    await c.query("SAVEPOINT frozen");
+    await assert.rejects(c.query(`UPDATE bms_retail_local_leads SET status='PAID' WHERE id=$1`, [id]));
+    await c.query("ROLLBACK TO SAVEPOINT frozen");
+    await assert.rejects(c.query(`UPDATE bms_retail_local_leads_revisions SET snapshot='{}'::jsonb WHERE lead_id=$1`, [id]), (error: any) => error.code === "42501");
+    await c.query("ROLLBACK");
+    await c.query("BEGIN");
+    await c.query("SET LOCAL ROLE bms_app");
+    await c.query(`SELECT set_config('app.editor_id',$1,true)`, [staffId]);
+    await assert.rejects(c.query(`SELECT public.bms_erase_retail_local_lead($1::uuid)`, [id]), (error: any) => error.code === "42501");
+    await c.query("ROLLBACK");
+
+    const privileges = (await c.query(`SELECT
+      has_function_privilege('bms_app','bms_erase_retail_local_lead(uuid)','EXECUTE') AS app,
+      (SELECT count(*)::int FROM pg_proc p, LATERAL aclexplode(COALESCE(p.proacl,acldefault('f',p.proowner))) a
+        WHERE p.proname='bms_erase_retail_local_lead' AND a.grantee=0) AS public_grants`)).rows[0];
+    assert.deepEqual(privileges, { app: true, public_grants: 0 });
+  } finally {
+    await c.query("ROLLBACK").catch(() => undefined);
+    if (id) {
+      await c.query("BEGIN");
+      for (const table of ["bms_retail_local_lead_events", "bms_retail_local_leads_revisions"]) await c.query(`DELETE FROM ${table} WHERE lead_id=$1`, [id]);
+      await c.query(`DELETE FROM bms_retail_local_leads WHERE id=$1`, [id]);
+      await c.query("COMMIT");
+    }
     c.release();
   }
 });

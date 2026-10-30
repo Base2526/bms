@@ -1901,6 +1901,19 @@ RLS protects reads/updates through a database-verified platform admin in `app.ed
 `bms_retail_local_lead_events` records the actor, status transition and whether note/follow-up fields
 changed in the same transaction. Contact and consent fields are immutable after submission.
 
+### Lead erasure (`10.106`)
+
+PDPA erasure on request goes through `bms_erase_retail_local_lead(uuid)`, a SECURITY DEFINER function
+callable only when `app.editor_id` is a database-verified platform admin (`42501` otherwise). In one
+transaction it clears shop/contact name, phone, LINE ID, business type, note and follow-up date, sets
+`erased_at`/`erased_by`, rewrites every earlier revision snapshot of that lead to
+`{"erased": true, "status": ...}`, and appends a `LEAD_ERASED` event (status and actor only).
+Platform, locale, consent time/version and status remain as proof of lawful collection. The revision
+trigger refuses any later update of an erased lead. Erasing twice returns `false`.
+
+`10.106` replaces the `10.105` trigger body. Re-running `10.105` alone after `10.106` restores the
+old trigger and silently drops the erasure rules, so always re-apply `10.106` after it.
+
 ## Installer error reports (`10.31`)
 
 `bms_installer_reports` stores platform-global pre-install evidence; an installation may

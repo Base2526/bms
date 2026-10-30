@@ -18,6 +18,14 @@ export const retailLocalPricing = {
   },
 } as const;
 
+// BMS cannot see device pairings, so this notice asks rather than gates. On the
+// device list it appears only once a shop is over the free allowance; in the
+// add-device dialog, when the device being added would be beyond it. A shop
+// running exactly its free devices sees nothing.
+export function shouldShowExtraDeviceNotice(deviceCount: number, adding: boolean): boolean {
+  return adding ? deviceCount >= retailLocalPricing.freeDevices : deviceCount > retailLocalPricing.freeDevices;
+}
+
 export function retailLocalPrice(value: number, locale: "th" | "en" = "th") {
   return `${value.toLocaleString(locale === "th" ? "th-TH" : "en-GB")} ${locale === "th" ? "บาท" : "THB"}`;
 }

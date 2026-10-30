@@ -5,6 +5,7 @@ import {
   type RetailLocalPlatform,
 } from "@/lib/bms/retailLocalReleases";
 import RetailLocalPageClient from "./RetailLocalPageClient";
+import { isRetailLocalDeployment } from "@/lib/bms/deploymentMode";
 import { cookies } from "next/headers";
 import { localizedPublicPath, publicAlternates, type PublicSeoLocale } from "@/lib/publicSeo";
 
@@ -101,6 +102,7 @@ export default async function RetailLocalPage() {
 
   return (
     <RetailLocalPageClient
+      leadCaptureEnabled={!isRetailLocalDeployment()}
       downloads={{
         windows: {
           ...releaseDownloads.windows,

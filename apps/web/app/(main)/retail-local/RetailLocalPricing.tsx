@@ -7,17 +7,18 @@ import { retailLocalPricing as p, retailLocalPrice } from "@/lib/bms/retailLocal
 import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
 import styles from "./pricing.module.css";
 
-export default function RetailLocalPricing() {
+export default function RetailLocalPricing({ leadCaptureEnabled = true }: { leadCaptureEnabled?: boolean }) {
   const { lang } = useI18n(); const th = lang === "th";
   const L = (a: string, b: string) => th ? a : b;
   const price = (n: number) => retailLocalPrice(n, th ? "th" : "en");
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<"ok" | "error" | null>(null);
+  const [result, setResult] = useState<"ok" | "error" | "rate" | null>(null);
   const [form] = Form.useForm();
   const submit = async (values: Record<string, unknown>) => {
     setBusy(true); setResult(null);
     try {
       const response = await fetch("/api/public/retail-local/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, locale: th ? "th" : "en" }) });
+      if (response.status === 429) { setResult("rate"); return; }
       if (!response.ok) throw new Error("failed");
       setResult("ok"); form.resetFields();
     } catch { setResult("error"); } finally { setBusy(false); }
@@ -59,7 +60,7 @@ export default function RetailLocalPricing() {
       <tr><th>Backup</th><td>{L("ร้านเก็บที่ USB/NAS เอง BMS ไม่ host backup", "Use your own USB/NAS. BMS does not host backups.")}</td></tr>
       <tr><th>Local → Cloud</th><td>{L("ยังไม่มีเครื่องมือย้ายข้อมูล", "Data migration tooling is not available")}</td></tr>
     </tbody></table>
-    <Card className={styles.lead} title={p.leadOffer[th ? "th" : "en"]}>
+    {leadCaptureEnabled && <Card className={styles.lead} title={p.leadOffer[th ? "th" : "en"]}>
       <p>{L("ฝากข้อมูลได้ตามสมัครใจ การดาวน์โหลดไม่ต้องกรอกฟอร์มหรือลงทะเบียน ข้อเสนอความช่วยเหลือรอเจ้าของอนุมัติ", "Leaving contact details is optional. Downloads require no form or registration. The assistance offer awaits owner approval.")}</p>
       <Form form={form} layout="vertical" onFinish={submit} initialValues={{ platform: "windows" }}>
         <div className={styles.fields}>
@@ -73,7 +74,11 @@ export default function RetailLocalPricing() {
         <Form.Item name="consent" valuePropName="checked" rules={[{ validator: (_, v) => v === true ? Promise.resolve() : Promise.reject(new Error(L("กรุณายืนยันความยินยอม", "Consent is required"))) }]}><Checkbox>{L("ยินยอมให้ BMS เก็บและใช้ข้อมูลที่กรอกเพื่อติดต่อเรื่องการติดตั้งและข้อเสนอ Retail Local ตาม", "I consent to BMS storing and using these details to contact me about Retail Local installation and offers under the")} <Link href="/privacy" target="_blank">{L("นโยบายความเป็นส่วนตัว", "privacy policy")}</Link></Checkbox></Form.Item>
         <Button type="primary" htmlType="submit" loading={busy}>{L("ส่งข้อมูลติดต่อ", "Submit contact details")}</Button>
       </Form>
-      {result && <Alert closable showIcon type={result === "ok" ? "success" : "error"} message={result === "ok" ? L("บันทึกข้อมูลแล้ว", "Details saved") : L("ส่งไม่สำเร็จ ตรวจเบอร์/LINE และลองใหม่ภายหลัง คุณยังดาวน์โหลดได้", "Could not submit. Check phone/LINE and retry later. Downloads remain available.")} />}
-    </Card>
+      {result && <Alert closable showIcon type={result === "ok" ? "success" : "error"} message={result === "ok"
+        ? L("บันทึกข้อมูลแล้ว", "Details saved")
+        : result === "rate"
+          ? L("ส่งข้อมูลบ่อยเกินไป กรุณาลองใหม่ภายหลัง หรือทักทาง LINE ได้เลย คุณยังดาวน์โหลดได้", "Too many submissions. Please try later or message us on LINE. Downloads remain available.")
+          : L("ส่งไม่สำเร็จ ตรวจเบอร์/LINE และลองใหม่ภายหลัง คุณยังดาวน์โหลดได้", "Could not submit. Check phone/LINE and retry later. Downloads remain available.")} />}
+    </Card>}
   </section>;
 }
