@@ -1,0 +1,15 @@
+BMS Retail Local guide - generated Thai narration
+
+These MP3 files are generated from authored public guide text using the same
+FastThaiG2P / Thai Kokoro-82M model and thai_som voice as the cost/pricing guide.
+They are synthetic narration, not employee recordings or an endorsement.
+
+Engine: https://github.com/awslabs/FastThaiG2P
+Source revision: 4e82a291b4cf2876326744c6580121e9986ad354
+Model release: https://github.com/awslabs/FastThaiG2P/releases/tag/v0.3.0
+Copyright 2026 Charin Polpanumas and Amazon Web Services.
+Apache License 2.0: see LICENSE-FastThaiG2P.txt.
+Base model: https://huggingface.co/hexgrad/Kokoro-82M (Apache-2.0).
+
+provenance.json records original text, normalized speech, duration and checksums.
+Only generated audio is shipped; model weights stay in the offline build environment.

@@ -479,6 +479,8 @@ if [[ -n ${BMS_LICENSE_ID:-} ]]; then
   fi
 fi
 step 7 "Installation complete"
+printf 'Choose a separate USB/NAS backup destination. Configure with: sudo bms-retail-local-configure-backup AGE_RECIPIENT /mnt/OFF_HOST\n'
+printf 'Store the recovery identity separately and test restore before relying on the backup\n'
 systemctl enable --now bms-retail-local-license-ui.timer >/dev/null 2>&1 || true
 printf 'BMS Retail Local is ready: http://127.0.0.1:3100\n'
 printf 'You can try the system immediately without an Activation Code\n'

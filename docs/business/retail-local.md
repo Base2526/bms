@@ -1,5 +1,46 @@
 # BMS Retail Local
 
+## Audio and diagram guide
+
+The public `/th/retail-local` and `/en/retail-local` pages place a 12-chapter guide below the hero,
+before requirements, pricing and downloads, replacing the old six-step strip. It covers preparation,
+verified download, installation, shop/POS setup, daily use, optional activation and Trial/Paid,
+off-host backup setup and checking, restore/reconciliation, license transfer and updates.
+Deep links such as `#retail-local-guide-backup-setup` select a chapter without starting audio.
+
+The local `/admin/retail-local-license` page opens the same guide from activation and backup buttons.
+Backup warnings link to `?guide=backup-setup#backup`, selecting the matching chapter in a drawer.
+Closing it stops audio. This guidance does not submit activation, start backups or change permissions.
+The existing local-mode, tenant and license-view guards continue to apply to the admin page.
+
+Thai narration uses the same pinned synthetic voice as cost/pricing. English has translated diagrams
+and captions with an explicit Thai-audio label. Audio is bundled locally, user-started, resumable within
+the chapter, and advances the diagram only after the recording ends. Changing chapter, navigating away,
+closing the drawer or hiding the page stops playback. Failed playback leaves readable captions and a retry.
+There is a downloadable complete MP3. No browser TTS, runtime provider call or customer data is involved.
+The guide keeps installation separate from activation, does not start a trial, and states the current
+macOS scheduled off-host backup limitation. It is guidance for a technical pilot, not a GA claim.
+The daily-use diagram separates internet services from the local sale/data path. The backup diagram
+shows the recovery key separately from the host-to-USB/NAS path; neither uses an arrow implying
+that core sales require cloud access or that the recovery key belongs on the backup media.
+
+Verified on 30 October 2026: 12 generated chapters (178.4 seconds total), audio/provenance contracts,
+shared-player regression checks, 300 pure suites (3,287 passed, 2 skipped, 0 failed), and production
+build/type checking. Real Chrome checks passed eight groups: Thai/English at 1280/390px on the public
+page and authenticated local admin route. They covered actual audio progression, pause/resume,
+speed, blocked/missing media, retry, context/deep links, drawer teardown and the updated manual.
+Mobile checks use viewport emulation, not physical iOS/Android hardware. This change was not deployed.
+
+The follow-up alignment audit on the same date passed all eight browser groups again, checking
+every chapter by direct selection and sequential playback on both surfaces (96 selections and
+96 sequential tracks). Each check compared the selected chapter, title, full caption, three diagram
+nodes, outcome and actual playing MP3 URL. Switching during playback, stale callbacks, previous/next
+and replay of the completed final chapter also passed. Audio provenance/checksum and shared-player
+contracts passed (4 tests), as did the updated production build. Decoding and waveform comparison
+confirmed all 12 chapters occur in the downloadable summary in order, allowing for MP3 encoder
+priming/padding (each chapter correlation exceeded 0.999). These checks verify script provenance,
+file integrity and browser synchronization; they are not an independent human pronunciation review.
+
 ## AI usage and owner keys
 
 Retail Local has no BMS AI point subscription. A tenant key saved in Settings or a chat provider key
@@ -513,3 +554,30 @@ If no managed release exists for a platform, a valid HTTPS fallback URL may enab
 unset or invalid URL leaves that platform's download button disabled; the page must not invent a link
 or fall back to an unversioned file. Older releases stay outside the primary download action because
 an in-place downgrade may be incompatible with the installed schema.
+
+## Commercial pricing and consented follow-up
+
+Retail Local remains a technical pilot. Proposed prices and the installation-help offer live only in
+`apps/web/lib/bms/retailLocalPricing.ts`; the public page, admin device notice, staff guide and BMS
+presales knowledge all read that module. Owner approval, EULA review and accounting approval are
+still outstanding; the public page labels the proposal accordingly. Free use has no expiry and
+commercial state never blocks transactions, backup, recovery or corrective updates.
+
+Downloads do not require the optional contact form. Explicit unchecked-by-default consent is required
+before `/api/public/retail-local/lead` accepts a bounded request, subject to an IP rate limit. Consent
+version/time and contact details are stored by migration `10.105`. Platform administrators use the
+Leads tab of `/admin/retail-local-licenses` to filter status and edit notes/follow-up dates; revisions
+and redacted change events commit with each edit. Contact/consent identity is immutable.
+
+## Backup reminders
+
+The host license-status mailbox includes an allowlisted backup status/time read from the host's
+existing off-host scheduler report. The report contains no destination, recipient or private key.
+Only the provisioned local tenant can read it, with `retail_local.license.view`. Admin pages show a
+dismissible warning for unconfigured, failed, over-seven-day or unavailable evidence. A missing or
+stale host heartbeat is unknown even when the last backup passed. No warning is mounted in POS.
+The License page links to host setup instructions; configuring USB/NAS remains an operator action.
+An older host agent without this field reports unknown; deploy matching Web and agent releases.
+
+Operational drafts: [rollout status](retail-local-commercial/rollout-status.md),
+[decisions](retail-local-commercial/decisions.md), [recovery](retail-local-machine-recovery.md).

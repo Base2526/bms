@@ -1,5 +1,6 @@
 import { listPlans, type Plan } from "./entitlements";
 import { BMS_PRESALES_FAQ } from "./platformPresalesFaq";
+import { retailLocalPricingSummary } from "./retailLocalPricing";
 export { extractPresalesNeeds, composePresalesRecommendation, presalesContact } from "./presalesAdvisor";
 
 export type PresalesLocale = "th" | "en";
@@ -30,6 +31,11 @@ const aliases = (th: readonly string[], en: readonly string[]) => ({ th, en }) a
  * exposed to prospects. Keep claims aligned with docs/business/product-overview-th.md.
  */
 export const BMS_PRESALES_KNOWLEDGE: readonly PresalesKnowledgeEntry[] = [
+  {
+    id: "retail-local-pricing", title: both("ราคา Retail Local รุ่นนำร่อง", "Retail Local pilot pricing"),
+    aliases: aliases(["ราคา local", "local plus", "retail local ราคา", "local ซื้อขาด"], ["local pricing", "local plus price", "retail local cost"]),
+    answer: both(retailLocalPricingSummary("th"), retailLocalPricingSummary("en")), availability: "PILOT",
+  },
   {
     id: "overview",
     title: both("BMS คืออะไร", "What is BMS?"),
