@@ -2,6 +2,11 @@
 -- บนเซิร์ฟเวอร์:  docker compose ... exec -T postgres psql -U <user> -d <db> < readiness.sql
 CREATE TEMP TABLE bms_schema_readiness AS
 WITH required(migration, kind, tbl, col, impact, expected) AS (VALUES
+    ('10.106__bms_retail_local_lead_erasure.sql', 'column', 'bms_retail_local_leads', 'erased_at', 'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger', NULL),
+    ('10.106__bms_retail_local_lead_erasure.sql', 'column', 'bms_retail_local_leads', 'erased_by', 'The Retail Local leads tab and lead updates read erased_at; PDPA erasure needs the function and frozen-lead trigger', NULL),
+    ('10.105__bms_retail_local_leads.sql', 'table', 'bms_retail_local_leads', NULL, 'The public Retail Local contact form and the leads tab fail without the consented lead tables', NULL),
+    ('10.105__bms_retail_local_leads.sql', 'table', 'bms_retail_local_leads_revisions', NULL, 'The public Retail Local contact form and the leads tab fail without the consented lead tables', NULL),
+    ('10.105__bms_retail_local_leads.sql', 'table', 'bms_retail_local_lead_events', NULL, 'The public Retail Local contact form and the leads tab fail without the consented lead tables', NULL),
     ('10.98__bms_operation_quality.sql', 'table', 'bms_operation_quality_cases', NULL, 'Quality cases and mandatory lot restrictions require H before any stock writer deploys', NULL),
     ('10.98__bms_operation_quality.sql', 'table', 'bms_operation_lot_holds', NULL, 'Quality cases and mandatory lot restrictions require H before any stock writer deploys', NULL),
     ('10.98__bms_operation_quality.sql', 'table', 'bms_operation_quality_decisions', NULL, 'Quality cases and mandatory lot restrictions require H before any stock writer deploys', NULL),

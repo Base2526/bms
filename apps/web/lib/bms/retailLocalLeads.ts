@@ -132,7 +132,7 @@ export async function listRetailLocalLeads(input: {
     const result = await client.query(
       `SELECT id, shop_name, contact_name, phone, line_id, business_type, platform, locale,
               consent_at, consent_text_version, source, status, follow_up_at, note,
-              created_at, updated_at
+              created_at, updated_at, erased_at
        FROM bms_retail_local_leads
        WHERE ($1::text IS NULL OR status = $1)
        ORDER BY follow_up_at ASC NULLS LAST, created_at DESC
@@ -181,20 +181,22 @@ export async function updateRetailLocalLead(input: {
       status: RetailLocalLeadStatus;
       note: string | null;
       follow_up_at: string | null;
+      erased_at: string | null;
     }>(
-      `SELECT status, note, follow_up_at
+      `SELECT status, note, follow_up_at, erased_at
        FROM bms_retail_local_leads WHERE id = $1 FOR UPDATE`,
       [input.id],
     );
     if (!current.rows[0]) throw new RetailLocalLeadError("ไม่พบ lead", 404);
     const previous = current.rows[0];
+    if (previous.erased_at) throw new RetailLocalLeadError("lead นี้ถูกลบข้อมูลส่วนบุคคลแล้ว แก้ไขไม่ได้", 409);
     const updated = await client.query(
       `UPDATE bms_retail_local_leads
        SET status = $2, note = $3, follow_up_at = $4
        WHERE id = $1
        RETURNING id, shop_name, contact_name, phone, line_id, business_type, platform, locale,
                  consent_at, consent_text_version, source, status, follow_up_at, note,
-                 created_at, updated_at`,
+                 created_at, updated_at, erased_at`,
       [input.id, status, note, followUpAt],
     );
     await client.query(
@@ -212,6 +214,33 @@ export async function updateRetailLocalLead(input: {
     );
     await client.query("COMMIT");
     return updated.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+// PDPA erasure (10.106): clears the lead's contact and free-text fields and every
+// earlier revision snapshot of them, in one transaction, through a platform-admin
+// SECURITY DEFINER function that also records the actor and a LEAD_ERASED event.
+// Erasing twice is a no-op that reports `erased: false`; an unknown id is 404.
+export async function eraseRetailLocalLead(input: { id: string; adminId: string | number }) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.id)) {
+    throw new RetailLocalLeadError("lead id ไม่ถูกต้อง");
+  }
+  const client = await getClient();
+  try {
+    await beginPlatformAdminTx(client, input.adminId);
+    const exists = await client.query(`SELECT 1 FROM bms_retail_local_leads WHERE id = $1`, [input.id]);
+    if (!exists.rowCount) throw new RetailLocalLeadError("ไม่พบ lead", 404);
+    const result = await client.query<{ erased: boolean }>(
+      `SELECT public.bms_erase_retail_local_lead($1::uuid) AS erased`,
+      [input.id],
+    );
+    await client.query("COMMIT");
+    return { erased: result.rows[0]?.erased === true };
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;

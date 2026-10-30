@@ -569,6 +569,15 @@ version/time and contact details are stored by migration `10.105`. Platform admi
 Leads tab of `/admin/retail-local-licenses` to filter status and edit notes/follow-up dates; revisions
 and redacted change events commit with each edit. Contact/consent identity is immutable.
 
+Lead capture is Cloud-only. On a shop's own Retail Local install the contact form is hidden and the
+public endpoint answers 404, because a lead stored in the shop's local database never reaches BMS.
+
+When a person asks BMS to delete their details, a platform administrator uses **Erase** on that lead
+(confirmation required). Migration `10.106` clears the contact fields and every history snapshot that
+held them, records who erased it and when, and freezes the row. The privacy policy linked from the
+consent box does not yet describe these leads, their retention or how to request erasure; that text
+needs legal review before leads are collected in production.
+
 ## Backup reminders
 
 The host license-status mailbox includes an allowlisted backup status/time read from the host's

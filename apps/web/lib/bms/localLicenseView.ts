@@ -41,3 +41,11 @@ export function localLicenseBadge(view: LocalLicenseView, th: boolean) {
     default: return { color: "default", label: th ? "ตรวจสถานะไม่ได้" : "Status unavailable" };
   }
 }
+// Plan name for the shop's plan card. It reuses localLicenseBadge() so the card and
+// the licence badge on the same page always agree: a second mapping once showed
+// TRIAL_EXPIRED as "Trial" and CANCELLED as "Under review". Unregistered = Free.
+export function localPlanLabel(view: LocalLicenseView | undefined, th: boolean): string {
+  if (!view?.available) return th ? "ตรวจสถานะไม่ได้" : "Status unavailable";
+  if (!view.registered) return th ? "ฟรี" : "Free";
+  return localLicenseBadge(view, th).label;
+}

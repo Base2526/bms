@@ -545,6 +545,7 @@ export default function PosDevicesPage() {
         okText="บันทึก"
         cancelText="ยกเลิก"
       >
+        {!editing && <LocalExtraDeviceNotice count={devices.length} adding />}
         <Form form={deviceForm} layout="vertical">
           <Form.Item name="code" label="รหัสเครื่อง" rules={[{ required: true, message: "ต้องระบุรหัส" }]}>
             <Input placeholder="POS-01" disabled={Boolean(editing)} />

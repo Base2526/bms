@@ -421,9 +421,12 @@ const CONTENT: { th: PageContent; en: PageContent } = {
 export default function RetailLocalPageClient({
   downloads,
   archive,
+  leadCaptureEnabled = true,
 }: {
   downloads: Record<DownloadPlatform, Record<PackageType, DownloadAsset | null>>;
   archive: ArchiveAsset[];
+  /** False on a shop's own Retail Local install: a lead saved there never reaches BMS. */
+  leadCaptureEnabled?: boolean;
 }) {
   const { lang } = useI18n();
   const content = resolveBilingual(CONTENT, lang);
@@ -575,7 +578,7 @@ export default function RetailLocalPageClient({
         </div>
       </section>
 
-      <RetailLocalPricing />
+      <RetailLocalPricing leadCaptureEnabled={leadCaptureEnabled} />
 
       <section className={styles.releaseSection} id="downloads">
         <div className={styles.sectionHeading}>
