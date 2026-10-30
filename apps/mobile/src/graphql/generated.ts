@@ -859,8 +859,11 @@ export type SchemaBmsChannelConfig = {
   active: Scalars['Boolean']['output'];
   channel: Scalars['String']['output'];
   channel_secret_masked: Maybe<Scalars['String']['output']>;
+  external_account_id: Maybe<Scalars['String']['output']>;
   has_secret: Scalars['Boolean']['output'];
   has_token: Scalars['Boolean']['output'];
+  has_verify_token: Scalars['Boolean']['output'];
+  webhook_verify_token_masked: Maybe<Scalars['String']['output']>;
 };
 
 export type SchemaBmsChannelHealth = {
@@ -8080,6 +8083,9 @@ export type SchemaBmsPublishPriceInput = {
 
 export type SchemaBmsPurchaseItem = {
   __typename?: 'BmsPurchaseItem';
+  additionalCostNote: Maybe<Scalars['String']['output']>;
+  additionalUnitCost: Scalars['Float']['output'];
+  landedUnitCost: Scalars['Float']['output'];
   qtyOrdered: Scalars['Int']['output'];
   qtyReceived: Scalars['Int']['output'];
   size: Scalars['String']['output'];
@@ -8090,6 +8096,8 @@ export type SchemaBmsPurchaseItem = {
 };
 
 export type SchemaBmsPurchaseItemInput = {
+  additionalCostNote: InputMaybe<Scalars['String']['input']>;
+  additionalUnitCost: InputMaybe<Scalars['Float']['input']>;
   leadTimeDays: InputMaybe<Scalars['Int']['input']>;
   minOrderQty: InputMaybe<Scalars['Int']['input']>;
   packQty: InputMaybe<Scalars['Int']['input']>;
@@ -8107,6 +8115,7 @@ export type SchemaBmsPurchaseOrder = {
   createdAt: Scalars['String']['output'];
   id: Scalars['ID']['output'];
   items: Array<SchemaBmsPurchaseItem>;
+  landedTotal: Scalars['Float']['output'];
   note: Maybe<Scalars['String']['output']>;
   qtyOrdered: Scalars['Int']['output'];
   qtyReceived: Scalars['Int']['output'];
@@ -12518,6 +12527,8 @@ export type SchemaMutationBmsUpsertChannelArgs = {
   active: InputMaybe<Scalars['Boolean']['input']>;
   channel: Scalars['String']['input'];
   channelSecret: InputMaybe<Scalars['String']['input']>;
+  externalAccountId: InputMaybe<Scalars['String']['input']>;
+  webhookVerifyToken: InputMaybe<Scalars['String']['input']>;
 };
 
 

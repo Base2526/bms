@@ -153,7 +153,7 @@ test("mobile non-offline sale retains unknown results; completed sale/deposit su
 test("mobile disables leaving and editing a retained bill while exposing a manual retry", () => {
   assert.match(source, /usePreventRemove\(submitting \|\| Boolean\(saleAttemptRef.current\)/);
   const recovery = source.slice(source.indexOf("  if (saleRetryMessage && saleAttemptRef.current)"));
-  assert.match(recovery.slice(0, recovery.indexOf("\n  return (")), /onPress=\{\(\) => void completeSale\(\)\}/);
+  assert.match(recovery.slice(0, recovery.indexOf("\n  return (")), /onPress=\{completeSale\}/);
   assert.match(source, /syncSingleCheckoutPayment\(\s*current,\s*total,\s*submittedRef.current \|\| Boolean\(saleAttemptRef.current\),?\s*\)/);
 });
 
