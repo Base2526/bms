@@ -9,6 +9,7 @@ import WorkAssistantDrawer from "@/components/work-assistant/WorkAssistantDrawer
 import { useRealtimeStatus } from "@/components/realtime/RealtimeProvider";
 import { useSessionCtx } from "@/lib/session-context";
 import { LocalLicenseBadge } from "@/components/retail-local/LocalLicense";
+import { RetailLocalModeProvider } from "@/components/retail-local/RetailLocalMode";
 import AiLimitStatus from "@/components/AiLimitStatus";
 import OperationsBell from "@/components/operations/OperationsBell";
 
@@ -78,6 +79,7 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
   if (hideHeader) return <main>{children}</main>;
 
   return (
+    <RetailLocalModeProvider value={retailLocal}>
     <Layout style={{ minHeight: '100vh' }}>
       <AdminSidebar retailLocal={retailLocal} />
       <Layout style={{ minWidth: 0 }}>
@@ -92,5 +94,6 @@ export default function AdminLayoutClient({ children, retailLocal = false }: { c
         <WorkAssistantDrawer />
       </Layout>
     </Layout>
+    </RetailLocalModeProvider>
   );
 }

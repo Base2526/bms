@@ -16,6 +16,9 @@ import Link from "next/link";
 import { useState } from "react";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { useRetailLocalMode } from "@/components/retail-local/RetailLocalMode";
+import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
+import { RETAIL_LOCAL_PRICING, formatRetailLocalBaht } from "@/lib/bms/retailLocalPricing";
 import {
   isPosPinValid,
   normalizePosPinInput,
@@ -99,6 +102,7 @@ export default function PosDevicesPage() {
   const canDevices = can("pos.device.manage");
   const canPins = can("pos.pin.manage");
   const canStaff = can("pos.staff.manage");
+  const retailLocal = useRetailLocalMode();
   const canDiagnostics = can("support.logs.view");
   const [diagnosticDeviceId, setDiagnosticDeviceId] = useState<string | null>(null);
   const [diagnosticStatus, setDiagnosticStatus] = useState("all");
@@ -543,6 +547,25 @@ export default function PosDevicesPage() {
         okText="บันทึก"
         cancelText="ยกเลิก"
       >
+        {/* Retail Local only, and informational only: we cannot see device pairings
+            and licensing must never block a shop, so this asks rather than gates. */}
+        {retailLocal && !editing && devices.length >= RETAIL_LOCAL_PRICING.free.posDevices && (
+          <Alert
+            closable
+            showIcon
+            type="info"
+            style={{ marginBottom: 16 }}
+            message={`แพ็กเกจฟรีครอบคลุม ${RETAIL_LOCAL_PRICING.free.posDevices} เครื่อง`}
+            description={
+              <span>
+                เครื่องที่ {RETAIL_LOCAL_PRICING.free.posDevices + 1} ขึ้นไป กรุณาติดต่อ BMS เพื่อรับสิทธิ์
+                ({formatRetailLocalBaht(RETAIL_LOCAL_PRICING.extraDevice.amount, "th")}/เครื่อง ไม่รวม VAT)
+                {" · "}เพิ่มเครื่องและขายได้ทันที{" "}
+                <a href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">ติดต่อทาง LINE</a>
+              </span>
+            }
+          />
+        )}
         <Form form={deviceForm} layout="vertical">
           <Form.Item name="code" label="รหัสเครื่อง" rules={[{ required: true, message: "ต้องระบุรหัส" }]}>
             <Input placeholder="POS-01" disabled={Boolean(editing)} />

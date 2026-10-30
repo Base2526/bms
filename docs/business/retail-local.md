@@ -513,3 +513,30 @@ If no managed release exists for a platform, a valid HTTPS fallback URL may enab
 unset or invalid URL leaves that platform's download button disabled; the page must not invent a link
 or fall back to an unversioned file. Older releases stay outside the primary download action because
 an in-place downgrade may be incompatible with the installed schema.
+
+## Commercial pricing (technical pilot)
+
+Prices live in one file, `apps/web/lib/bms/retailLocalPricing.ts`, and every surface reads it: the
+public `/retail-local` pricing section, the shop's plan card on `/admin/retail-local-license`, and the
+Retail Local-only notice in the `/admin/pos-devices` add-device dialog. All amounts exclude 7% VAT.
+
+| Item | Price | What it buys |
+| --- | --- | --- |
+| Free | 0 | Server + POS on one installation; sales, stock, tax, updates, backup and restore; manual and built-in assistant only |
+| Local Plus | 2,990 one-time (first 20 pilot shops 1,990) | 12 months of LINE/remote support, licence transfer when a machine fails, restore help |
+| Support renewal | 990 per year, optional | Continued support and transfer; next major version while renewed |
+| Extra POS device | 990 per device, one-time | Honour system: licence evidence carries no device count, so BMS cannot see pairings |
+| Backup setup | 500 one-time | Scheduled backup to the shop's own USB/NAS plus a restore test. BMS does not host backups |
+| On-site installation | from 1,500 | |
+
+Rules that follow from the fail-open licensing invariant:
+
+- A plan buys service, never permission to sell. Free, unregistered, trial-expired and lapsed installs
+  keep selling, updating, backing up and restoring; no copy may suggest otherwise.
+- Prices appear only on the public page and in the back office. Nothing on a POS, payment, receipt,
+  tax document or kitchen path imports the price list (`retail-local-pricing-contract` enforces this).
+- The add-device notice is informational and Local-only (`RetailLocalModeProvider` from the admin
+  layout); it never disables saving a device.
+- Selling is manual for now: the shop asks on BMS LINE OA, pays by transfer, a platform admin issues
+  the Activation Code at `/admin/retail-local-licenses`, and BMS issues its own tax invoice outside
+  this system. There is no checkout, lead capture or hosted backup yet.

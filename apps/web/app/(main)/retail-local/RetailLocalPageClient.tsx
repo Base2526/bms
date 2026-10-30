@@ -17,6 +17,7 @@ import {
   LaptopOutlined,
   LockOutlined,
   SafetyCertificateOutlined,
+  TagOutlined,
   ThunderboltOutlined,
   WindowsOutlined,
 } from "@ant-design/icons";
@@ -24,6 +25,7 @@ import { Alert, Button, Collapse, Segmented, Tag, Typography } from "antd";
 import { useI18n } from "@/lib/i18nContext";
 import { resolveBilingual } from "@/lib/static-page-i18n";
 import styles from "./page.module.css";
+import RetailLocalPricing from "./RetailLocalPricing";
 
 const { Title, Paragraph, Text } = Typography;
 
@@ -62,6 +64,8 @@ type PageContent = {
   title: string;
   description: string;
   viewDownloads: string;
+  downloadFree: string;
+  seePricing: string;
   seeRequirements: string;
   localFacts: Array<{ title: string; description: string }>;
   setupEyebrow: string;
@@ -148,6 +152,8 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     description:
       "ใช้ Web, POS, ฐานข้อมูล และกติกาธุรกิจชุดเดียวกับ BMS โดยเก็บข้อมูลหลักไว้ที่เครื่องร้าน เหมาะกับร้านที่ต้องการควบคุมระบบภายในและมีทีมดูแลเครื่องตามข้อกำหนด",
     viewDownloads: "ดูไฟล์ดาวน์โหลด",
+    downloadFree: "ดาวน์โหลดฟรี",
+    seePricing: "ดูราคา",
     seeRequirements: "ตรวจสอบเครื่องที่รองรับ",
     localFacts: [
       { title: "ข้อมูลหลักอยู่ที่ร้าน", description: "PostgreSQL บนเครื่องร้านเป็นแหล่งข้อมูลจริงเพียงชุดเดียว ไม่มี cloud replica" },
@@ -284,6 +290,8 @@ const CONTENT: { th: PageContent; en: PageContent } = {
     description:
       "Use the same BMS Web, POS, database and business rules while keeping the primary data on the shop host. Designed for stores that can operate and protect a supported local machine.",
     viewDownloads: "View downloads",
+    downloadFree: "Download free",
+    seePricing: "See pricing",
     seeRequirements: "Check system requirements",
     localFacts: [
       { title: "Shop-hosted source of truth", description: "Local PostgreSQL is the only primary datastore; there is no cloud replica." },
@@ -488,8 +496,9 @@ export default function RetailLocalPageClient({
           <Title className={styles.heroTitle}>{content.title}</Title>
           <Paragraph className={styles.heroDescription}>{content.description}</Paragraph>
           <div className={styles.heroActions}>
-            <Button type="primary" size="large" href="#downloads" icon={<DownloadOutlined />}>{content.viewDownloads}</Button>
-            <Button size="large" href="#requirements" icon={<DesktopOutlined />}>{content.seeRequirements}</Button>
+            <Button type="primary" size="large" href="#downloads" icon={<DownloadOutlined />}>{content.downloadFree}</Button>
+            <Button size="large" href="#pricing" icon={<TagOutlined />}>{content.seePricing}</Button>
+            <Button type="link" size="large" href="#requirements" icon={<DesktopOutlined />}>{content.seeRequirements}</Button>
           </div>
           <div className={styles.factStrip}>
             {content.localFacts.map((fact, index) => (
@@ -526,6 +535,8 @@ export default function RetailLocalPageClient({
           </div>
         </div>
       </section>
+
+      <RetailLocalPricing />
 
       <section className={styles.requirements} id="requirements">
         <div className={styles.sectionHeading}>

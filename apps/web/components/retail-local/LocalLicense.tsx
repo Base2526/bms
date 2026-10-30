@@ -7,6 +7,43 @@ import { SafetyCertificateOutlined } from "@ant-design/icons";
 import { useBmsPermissions } from "@/app/hooks/useBmsPermissions";
 import { useI18n } from "@/lib/i18nContext";
 import { localLicenseBadge, type LocalLicenseView } from "@/lib/bms/localLicenseView";
+import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
+import { RETAIL_LOCAL_PRICING, formatRetailLocalBaht } from "@/lib/bms/retailLocalPricing";
+
+// Plan card: tells the shop what it has and what Local Plus adds. It never
+// gates anything — a free, unregistered or lapsed install keeps selling — so
+// it must not say or imply otherwise. Back office only: never on POS or receipts.
+function LocalPlanCard({ data, th }: { data?: LocalLicenseView; th: boolean }) {
+  const L = (thai: string, english: string) => th ? thai : english;
+  const baht = (amount: number) => formatRetailLocalBaht(amount, th ? "th" : "en");
+  const paid = data?.commercialStatus === "PAID_ACTIVE";
+  const cell = { border: "1px solid var(--app-border, #e5e7eb)", borderRadius: 8, padding: 16, display: "grid", gap: 6, alignContent: "start" } as const;
+  return <Card title={<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 0", whiteSpace: "normal" }}>
+    <span>{paid ? L("แพ็กเกจของร้าน: Local Plus", "Your plan: Local Plus") : L("แพ็กเกจของร้าน: ฟรี", "Your plan: Free")}</span>
+    <Tag color="green" style={{ marginInlineEnd: 0 }}>{L("ร้านขายได้ตามปกติ", "Your shop keeps selling")}</Tag>
+  </div>}>
+    {paid ? <Typography.Paragraph style={{ margin: 0 }}>
+      {L("ร้านนี้ได้รับซัพพอร์ตทาง LINE และรีโมต รวมถึงการย้ายเครื่องเมื่อเครื่องเสีย ติดต่อทีม BMS ได้ที่ LINE", "This shop has LINE and remote support, including a licence transfer if the machine fails. Reach the BMS team on LINE.")}
+    </Typography.Paragraph> : <div style={{ display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(min(260px, 100%), 1fr))" }}>
+      <div style={cell}>
+        <strong>{L("ฟรี (ที่ใช้อยู่)", "Free (current)")}</strong>
+        <span>{L(`ขาย สต็อก ภาษี อัปเดต · ${RETAIL_LOCAL_PRICING.free.posDevices} เครื่อง`, `Sales, stock, tax, updates · ${RETAIL_LOCAL_PRICING.free.posDevices} device`)}</span>
+        <span>{L("ช่วยเหลือผ่านคู่มือและผู้ช่วยในระบบ", "Help from the manual and built-in assistant")}</span>
+      </div>
+      <div style={{ ...cell, border: "2px solid var(--app-primary, #1677ff)" }}>
+        <strong>Local Plus · {baht(RETAIL_LOCAL_PRICING.plus.amount)}</strong>
+        <span>{L(`ซัพพอร์ต LINE + รีโมต ${RETAIL_LOCAL_PRICING.plus.supportMonths} เดือน`, `${RETAIL_LOCAL_PRICING.plus.supportMonths} months of LINE and remote support`)}</span>
+        <span>{L("ย้าย License เมื่อเครื่องเสีย · ช่วยกู้ข้อมูลจาก backup", "Licence transfer if the machine fails · restore help")}</span>
+      </div>
+    </div>}
+    <Space wrap style={{ marginTop: 16 }}>
+      <Button type={paid ? "default" : "primary"} href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">
+        {paid ? L("ติดต่อทีม BMS ทาง LINE", "Contact BMS on LINE") : L("ขอ Activation Code ทาง LINE", "Request an Activation Code on LINE")}
+      </Button>
+      {!paid && <Typography.Text type="secondary">{L("ราคายังไม่รวม VAT · ไม่ซื้อก็ใช้งานต่อได้", "Prices exclude VAT · Not buying never stops your shop")}</Typography.Text>}
+    </Space>
+  </Card>;
+}
 
 const endpoint = "/api/admin/retail-local/local-license";
 function useLocalLicense() {
@@ -66,6 +103,7 @@ export default function LocalLicensePage() {
     <Typography.Title level={2}>{L("การลงทะเบียน Retail Local", "Retail Local registration")}</Typography.Title>
     <Typography.Paragraph>{L("ดูสถานะ License และลงทะเบียนเครื่องนี้เมื่อได้รับ Activation Code จาก BMS", "View the license status and register this installation with an Activation Code from BMS.")}</Typography.Paragraph>
     <Space direction="vertical" size="large" style={{ width: "100%" }}>
+      <LocalPlanCard data={data} th={th} />
       <Card title={<div style={{ display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "space-between", alignItems: "center", padding: "12px 0", whiteSpace: "normal" }}>
         <span>{L("License ของเครื่องนี้", "This installation’s license")}</span>
         {badge && <Tag color={badge.color} style={{ whiteSpace: "normal", marginInlineEnd: 0 }}>{badge.label}</Tag>}
