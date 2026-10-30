@@ -2035,7 +2035,7 @@ export default function CheckoutScreen({ route, navigation }: Props) {
             label="ลองบันทึกบิลเดิมอีกครั้ง"
             loading={submitting}
             disabled={submitting}
-            onPress={() => void completeSale()}
+            onPress={completeSale}
           />
         </Card>
       </ScreenContainer>
