@@ -94,6 +94,23 @@ test("callback service commits priority, assignment, note, mention and PII-minim
   assert.doesNotMatch(JSON.stringify(audit?.params), /0812345678|FAKE-ref/);
 });
 
+test("verified Facebook presales callback uses the same durable Sales queue", async () => {
+  const h = serviceHarness();
+  const result = await h.api.recordPresalesCallbackRequest({
+    tenantId: "FAKE-tenant", channel: "facebook", customerRef: "FAKE-psid", incoming: "ติดต่อกลับด้วย",
+  });
+  assert.equal(result.conversationId, h.conversationId);
+  assert.deepEqual(h.calls.tenants, ["FAKE-tenant"]);
+  const identity = h.calls.sql.find(call => call.text.includes("SELECT customer_id FROM bms_customer_identities"));
+  const conversation = h.calls.sql.find(call => call.text.includes("INSERT INTO bms_conversations"));
+  const audit = h.calls.sql.find(call => call.text.includes("INSERT INTO bms_audit_log"));
+  assert.deepEqual(identity?.params, ["FAKE-tenant", "facebook", "FAKE-psid"]);
+  assert.equal(conversation?.params[1], "facebook");
+  assert.match(String(audit?.params[2]), /"channel":"facebook"/);
+  assert.equal(h.calls.sql.at(-1)?.text, "COMMIT");
+  assert.equal(h.calls.notifications.length, 1);
+});
+
 test("repeat requests within the dedupe window stay urgent without notification spam", async () => {
   const h = serviceHarness(true);
   const result = await h.api.recordPresalesCallbackRequest({ tenantId: "FAKE-tenant", channel: "line", customerRef: "FAKE-ref", incoming: "ให้ Sales ติดต่อกลับ" });

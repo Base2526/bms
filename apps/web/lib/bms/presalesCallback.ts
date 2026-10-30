@@ -6,6 +6,7 @@ import { notifyInboxConversationChanged, pickAutoAssignee } from "./inbox";
 const CALLBACK_TAG = "sales-callback";
 const HOT_LEAD_TAG = "hot-lead";
 const NOTIFICATION_DEDUPE_MINUTES = 15;
+const PRESALES_CALLBACK_CHANNELS = new Set(["line", "facebook"]);
 
 export type PresalesCallbackResult = {
   conversationId: string;
@@ -21,8 +22,10 @@ export async function recordPresalesCallbackRequest(input: {
   customerRef: string | null | undefined;
   incoming: string;
 }): Promise<PresalesCallbackResult> {
-  // BMS presales is currently served by its verified LINE OA only.
-  if (!input.tenantId || !input.customerRef?.trim() || input.channel !== "line" || !input.incoming.trim()) {
+  // The caller selects BMS presales only from server-verified LINE OA or Facebook Page
+  // context. Keep this write closed to every other customer channel.
+  if (!input.tenantId || !input.customerRef?.trim() ||
+      !PRESALES_CALLBACK_CHANNELS.has(input.channel) || !input.incoming.trim()) {
     throw new Error("PERSISTED_CUSTOMER_CONTEXT_REQUIRED");
   }
   const client = await getClient();
