@@ -30,10 +30,10 @@ export default function RetailLocalPricing() {
         <Typography.Title level={3}>{L("0 บาท", "0 THB")}</Typography.Title>
         <p className={styles.sub}>{L("ไม่มีวันหมดอายุ", "No expiry")}</p>
         <ul className={styles.rows}>
-          <li className={styles.yes}>{L("ขายได้ครบ ไม่ล็อกฟีเจอร์ขาย", "Full selling features, nothing locked")}</li>
+          <li className={styles.yes}>{L("ขายหน้าร้านได้ครบ ไม่ถูกล็อกฟีเจอร์", "Full in-store selling, nothing locked")}</li>
           <li className={styles.yes}>{L(`${p.freeDevices} เครื่อง · 1 ร้าน · 1 สาขา`, `${p.freeDevices} device · one shop · one branch`)}</li>
-          <li className={styles.no}>{L("ซัพพอร์ต (มีคู่มือและผู้ช่วย AI)", "Support (guides and AI assistance only)")}</li>
-          <li className={styles.no}>{L("ย้าย License เมื่อเครื่องเสีย", "License transfer after host failure")}</li>
+          <li className={styles.no}>{L(`ซัพพอร์ต ${p.supportMonths} เดือน — มีคู่มือและผู้ช่วย AI (AI ในร้านใช้คีย์ของร้าน)`, `${p.supportMonths} months of support — guides and AI assistance only (in-store AI uses your own key)`)}</li>
+          <li className={styles.yes}>{L("ไม่ต้องลงทะเบียน ไม่ต้องใช้ License", "No registration or license needed")}</li>
         </ul>
         <div className={styles.next}><strong>{L("อยากได้ซัพพอร์ต?", "Need support?")}</strong> {L("อัปเกรดเป็น Local Plus", "Upgrade to Local Plus")}</div>
         <Button href="#downloads">{L("ดาวน์โหลดฟรี", "Download free")}</Button>
@@ -42,12 +42,12 @@ export default function RetailLocalPricing() {
         <Typography.Title level={3}>{price(p.plus)}</Typography.Title>
         <p className={styles.sub}>{L(`จ่ายครั้งเดียว · นำร่อง ${p.pilotShops} ร้านแรก ${price(p.pilotPlus)}`, `One-time · first ${p.pilotShops} pilot shops ${price(p.pilotPlus)}`)}</p>
         <ul className={styles.rows}>
-          <li className={styles.yes}>{L("ขายได้ครบ ไม่ล็อกฟีเจอร์ขาย", "Full selling features, nothing locked")}</li>
+          <li className={styles.yes}>{L("ขายหน้าร้านได้ครบ ไม่ถูกล็อกฟีเจอร์", "Full in-store selling, nothing locked")}</li>
           <li className={styles.yes}>{L("ใช้ได้ไม่มีวันหมดอายุ", "No expiry")}</li>
           <li className={styles.yes}>{L(`ซัพพอร์ต ${p.supportMonths} เดือน`, `${p.supportMonths} months of support`)}</li>
           <li className={styles.yes}>{L("ย้าย License เมื่อเครื่องเสีย", "License transfer after host failure")}</li>
         </ul>
-        <div className={styles.next}><strong>{L(`หลัง ${p.supportMonths} เดือน:`, `After ${p.supportMonths} months:`)}</strong> {L(`ใช้ต่อได้ตลอดโดยไม่ต้องจ่าย หรือต่อซัพพอร์ต ${price(p.annualSupport)}/ปี (ไม่บังคับ)`, `keep using it at no cost, or renew support for ${price(p.annualSupport)}/year (optional)`)}</div>
+        <div className={styles.next}><strong>{L(`หลัง ${p.supportMonths} เดือน:`, `After ${p.supportMonths} months:`)}</strong> {L(`ใช้รุ่นที่ติดตั้งไว้ต่อได้โดยไม่ต้องจ่าย หรือต่อซัพพอร์ต ${price(p.annualSupport)}/ปี (ไม่บังคับ)`, `keep using your installed version at no cost, or renew support for ${price(p.annualSupport)}/year (optional)`)}</div>
         <Button href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{L("สอบถามทาง LINE", "Ask on LINE")}</Button>
       </Card>
     </div>
