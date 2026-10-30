@@ -49,7 +49,9 @@ function frontendLogout(reason?: string) {
 // });
 
 const httpLink = createUploadLink({
-  uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP, // e.g. http://localhost:3000/api/graphql
+  // Keep a host build usable without a baked-in deployment URL. The upload link
+  // otherwise defaults to /graphql, but BMS serves this API at /api/graphql.
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_HTTP || "/api/graphql",
   credentials: "include", // ให้ส่ง cookie ไปด้วยถ้ามี
   fetch,
 });

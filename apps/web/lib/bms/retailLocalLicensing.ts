@@ -854,6 +854,12 @@ export async function resolveRetailLocalLicenseReview(input: {
   const client = await getClient();
   try {
     await client.query("BEGIN");
+    // Use the same parent lock as evidence ingestion before locking installations.
+    // Concurrent approvals must not both observe the last free slot.
+    const license = await client.query(
+      `SELECT id FROM bms_retail_local_licenses WHERE id = $1 FOR UPDATE`, [input.licenseId]
+    );
+    if (!license.rowCount) throw new RetailLocalLicenseError("ไม่พบ license", 404);
     const target = await client.query(
       `SELECT installation_id FROM bms_retail_local_license_installations
        WHERE license_id = $1 AND installation_id = $2 FOR UPDATE`, [input.licenseId, input.installationId]

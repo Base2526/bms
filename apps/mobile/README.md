@@ -144,6 +144,12 @@ npm run ios
 npm run android
 ```
 
+The `Mobile contracts` workflow (`.github/workflows/mobile-contracts.yml`) runs on every PR and
+push to `main`/`develop`, including backend-only changes. It checks generated GraphQL types,
+TypeScript, lint, and Jest; it does not build Android/iOS binaries or exercise real devices.
+After updating `schema.graphql`, run `npm run graphql:codegen` here and include the generated diff
+in the same change. CI runs `npm run graphql:check` to reject stale committed output.
+
 Use a URL reachable from the simulator/device when pairing. `localhost` inside Android does not
 refer to the development Mac; use the emulator host alias or a LAN address as appropriate.
 The paired origin must route both `/api/graphql` to the web service and WebSocket upgrades on

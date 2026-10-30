@@ -1,147 +1,79 @@
 "use client";
-
-import { CheckCircleFilled, CloseCircleOutlined, DownloadOutlined, MessageOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
-import { Button, Tag, Typography } from "antd";
+import { useState } from "react";
+import { Alert, Button, Card, Checkbox, Form, Input, Select, Typography } from "antd";
+import Link from "next/link";
 import { useI18n } from "@/lib/i18nContext";
+import { retailLocalPricing as p, retailLocalPrice } from "@/lib/bms/retailLocalPricing";
 import { BMS_LINE_OA_URL } from "@/lib/bms/lineOfficialAccount";
-import { RETAIL_LOCAL_PRICING as P, formatRetailLocalBaht } from "@/lib/bms/retailLocalPricing";
 import styles from "./pricing.module.css";
 
-const { Title, Paragraph, Text } = Typography;
-
-// Prices come from RETAIL_LOCAL_PRICING only. What a plan buys is support and
-// services: the free install keeps selling, updating, backing up and restoring
-// forever, and nothing on this page may suggest otherwise.
 export default function RetailLocalPricing() {
-  const { lang } = useI18n();
-  const th = lang !== "en";
-  const L = (thText: string, enText: string) => (th ? thText : enText);
-  const baht = (amount: number) => formatRetailLocalBaht(amount, th ? "th" : "en");
-
-  const plans = [
-    {
-      key: "free",
-      name: L("ฟรี", "Free"),
-      price: baht(P.free.amount),
-      unit: L("ใช้ได้ไม่มีวันหมดอายุ", "No expiry"),
-      points: [
-        L(`Server + POS ${P.free.posDevices} เครื่อง`, `Server + POS on ${P.free.posDevices} device`),
-        L("ขาย สต็อก สมาชิก ใบกำกับภาษี", "Sales, stock, members, tax invoices"),
-        L("อัปเดตและ backup ได้ตามปกติ", "Updates and backups as normal"),
-        L("ช่วยเหลือผ่านคู่มือและผู้ช่วยในระบบ", "Help from the manual and built-in assistant"),
-      ],
-      action: <Button size="large" block href="#downloads" icon={<DownloadOutlined />}>{L("ดาวน์โหลดฟรี", "Download free")}</Button>,
-    },
-    {
-      key: "plus",
-      name: "Local Plus",
-      featured: true,
-      price: baht(P.plus.amount),
-      unit: L("ซื้อครั้งเดียว", "One-time"),
-      note: L(`ร้านนำร่อง ${P.pilot.shops} ร้านแรก ${baht(P.pilot.amount)}`, `First ${P.pilot.shops} pilot shops: ${baht(P.pilot.amount)}`),
-      points: [
-        L("ทุกอย่างในแพ็กเกจฟรี", "Everything in Free"),
-        L(`ซัพพอร์ต LINE + รีโมต ${P.plus.supportMonths} เดือน`, `${P.plus.supportMonths} months of LINE and remote support`),
-        L("ย้าย License เมื่อเครื่องเสีย", "License transfer when a machine fails"),
-        L("ช่วยกู้ข้อมูลจาก backup", "Help restoring from backup"),
-      ],
-      action: (
-        <Button type="primary" size="large" block href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer" icon={<MessageOutlined />}>
-          {L("ขอ Activation Code ทาง LINE", "Request an Activation Code on LINE")}
-        </Button>
-      ),
-    },
-    {
-      key: "renewal",
-      name: L("ต่อซัพพอร์ตรายปี", "Yearly support renewal"),
-      price: baht(P.supportRenewal.amount),
-      unit: L("ต่อปี · ไม่บังคับ", "per year · optional"),
-      points: [
-        L("ไม่ต่อก็ขายได้ตามปกติ", "Not renewing never stops your shop"),
-        L("ซัพพอร์ตและการย้ายเครื่องต่อเนื่อง", "Continued support and machine transfer"),
-        L("ได้รุ่นใหญ่ถัดไปเมื่อยังต่ออยู่", "Next major version while renewed"),
-      ],
-    },
-  ];
-
-  const addOns = [
-    { label: L("เครื่องขายเพิ่ม", "Extra POS device"), value: `${baht(P.extraDevice.amount)} ${L("/ เครื่อง", "/ device")}` },
-    { label: L("ตั้งค่า backup ลง USB/NAS + ทดสอบกู้ข้อมูล", "Backup to USB/NAS setup + restore test"), value: baht(P.backupSetup.amount) },
-    { label: L("ติดตั้งให้ถึงร้าน", "On-site installation"), value: L(`เริ่ม ${baht(P.onSiteInstall.fromAmount)}`, `From ${baht(P.onSiteInstall.fromAmount)}`) },
-  ];
-
-  const notIncluded = [
-    L("รับออร์เดอร์จาก LINE แชท หรือหน้าร้านออนไลน์", "Orders from LINE, chat or an online store"),
-    L("หลายสาขา (รุ่นนี้มี 1 ร้าน 1 สาขา)", "Multiple branches (one shop, one branch)"),
-    L("AI ต้องใช้คีย์ของร้านเอง", "AI needs your own provider key"),
-    L("ย้ายข้อมูลไป BMS Cloud ภายหลัง (ยังไม่มีเครื่องมือ)", "Moving data to BMS Cloud later (no tool yet)"),
-  ];
-
-  return (
-    <section className={styles.pricing} id="pricing" aria-labelledby="retail-local-pricing-title">
-      <div className={styles.heading}>
-        <Text className={styles.eyebrow}>{L("ราคา", "PRICING")}</Text>
-        <Title level={2} id="retail-local-pricing-title">{L("ลองใช้ฟรีก่อน จ่ายเมื่ออยากได้ซัพพอร์ต", "Try it free. Pay when you want support.")}</Title>
-        <Paragraph>
-          {L(
-            "ติดตั้งแล้วขายได้เลย ไม่ต้องลงทะเบียน ไม่มีวันหมดอายุ และไม่ล็อกเครื่องเมื่อไม่ต่ออายุ",
-            "Install and start selling. No registration, no expiry, and nothing locks if you stop paying.",
-          )}
-        </Paragraph>
-        <Text className={styles.vat}>{L("ราคายังไม่รวม VAT 7% · รุ่นนำร่อง (Technical pilot)", "Prices exclude 7% VAT · Technical pilot")}</Text>
-      </div>
-
-      <div className={styles.plans}>
-        {plans.map((plan) => (
-          <article key={plan.key} className={`${styles.plan} ${plan.featured ? styles.planFeatured : ""}`}>
-            <div className={styles.planTop}>
-              <strong>{plan.name}</strong>
-              {plan.featured && <Tag color="blue">{L("แนะนำ", "Recommended")}</Tag>}
-            </div>
-            <div className={styles.price}>
-              <span>{plan.price}</span>
-              <small>{plan.unit}</small>
-            </div>
-            {plan.note && <Text className={styles.pilotNote}>{plan.note}</Text>}
-            <ul>
-              {plan.points.map((point) => <li key={point}><CheckCircleFilled aria-hidden="true" />{point}</li>)}
-            </ul>
-            {plan.action && <div className={styles.planAction}>{plan.action}</div>}
-          </article>
-        ))}
-      </div>
-
-      <div className={styles.details}>
-        <div className={styles.addOns}>
-          <strong>{L("บริการเสริม", "Add-ons")}</strong>
-          <dl>
-            {addOns.map((item) => <div key={item.label}><dt>{item.label}</dt><dd>{item.value}</dd></div>)}
-          </dl>
-          <small>
-            {L(
-              "เครื่องขายเพิ่มเชื่อกับ Server เดิมได้ทันที กรุณาแจ้ง BMS เพื่อรับสิทธิ์",
-              "Extra devices pair with your server right away; please tell BMS to license them.",
-            )}
-          </small>
+  const { lang } = useI18n(); const th = lang === "th";
+  const L = (a: string, b: string) => th ? a : b;
+  const price = (n: number) => retailLocalPrice(n, th ? "th" : "en");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<"ok" | "error" | null>(null);
+  const [form] = Form.useForm();
+  const submit = async (values: Record<string, unknown>) => {
+    setBusy(true); setResult(null);
+    try {
+      const response = await fetch("/api/public/retail-local/lead", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...values, locale: th ? "th" : "en" }) });
+      if (!response.ok) throw new Error("failed");
+      setResult("ok"); form.resetFields();
+    } catch { setResult("error"); } finally { setBusy(false); }
+  };
+  return <section id="pricing" className={styles.section}>
+    <Typography.Title level={2}>{L("แพ็กเกจ Retail Local · รุ่นนำร่อง", "Retail Local plans · Technical pilot")}</Typography.Title>
+    <Alert closable showIcon type="info" message={L("ราคาข้อเสนอ รอเจ้าของอนุมัติ — ขอใบเสนอราคายืนยันก่อนซื้อ", "Proposed prices pending owner approval — request a confirmed quotation before purchase")} />
+    <div className={styles.grid}>
+      <Card className={styles.plan} title={L("ฟรี", "Free")}>
+        <Typography.Title level={3}>{L("0 บาท", "0 THB")}</Typography.Title>
+        <p className={styles.sub}>{L("ไม่มีวันหมดอายุ", "No expiry")}</p>
+        <ul className={styles.rows}>
+          <li className={styles.yes}>{L("ขายหน้าร้านได้ครบ ไม่ถูกล็อกฟีเจอร์", "Full in-store selling, nothing locked")}</li>
+          <li className={styles.yes}>{L(`${p.freeDevices} เครื่อง · 1 ร้าน · 1 สาขา`, `${p.freeDevices} device · one shop · one branch`)}</li>
+          <li className={styles.no}>{L(`ซัพพอร์ต ${p.supportMonths} เดือน — มีคู่มือและผู้ช่วย AI (AI ในร้านใช้คีย์ของร้าน)`, `${p.supportMonths} months of support — guides and AI assistance only (in-store AI uses your own key)`)}</li>
+          <li className={styles.yes}>{L("ไม่ต้องลงทะเบียน ไม่ต้องใช้ License", "No registration or license needed")}</li>
+        </ul>
+        <div className={styles.next}><strong>{L("อยากได้ซัพพอร์ต?", "Need support?")}</strong> {L("อัปเกรดเป็น Local Plus", "Upgrade to Local Plus")}</div>
+        <Button href="#downloads">{L("ดาวน์โหลดฟรี", "Download free")}</Button>
+      </Card>
+      <Card className={styles.plan} title="Local Plus">
+        <Typography.Title level={3}>{price(p.plus)}</Typography.Title>
+        <p className={styles.sub}>{L(`จ่ายครั้งเดียว · นำร่อง ${p.pilotShops} ร้านแรก ${price(p.pilotPlus)}`, `One-time · first ${p.pilotShops} pilot shops ${price(p.pilotPlus)}`)}</p>
+        <ul className={styles.rows}>
+          <li className={styles.yes}>{L("ขายหน้าร้านได้ครบ ไม่ถูกล็อกฟีเจอร์", "Full in-store selling, nothing locked")}</li>
+          <li className={styles.yes}>{L("ใช้ได้ไม่มีวันหมดอายุ", "No expiry")}</li>
+          <li className={styles.yes}>{L(`ซัพพอร์ต ${p.supportMonths} เดือน`, `${p.supportMonths} months of support`)}</li>
+          <li className={styles.yes}>{L("ย้าย License เมื่อเครื่องเสีย", "License transfer after host failure")}</li>
+        </ul>
+        <div className={styles.next}><strong>{L(`หลัง ${p.supportMonths} เดือน:`, `After ${p.supportMonths} months:`)}</strong> {L(`ใช้รุ่นที่ติดตั้งไว้ต่อได้โดยไม่ต้องจ่าย หรือต่อซัพพอร์ต ${price(p.annualSupport)}/ปี (ไม่บังคับ)`, `keep using your installed version at no cost, or renew support for ${price(p.annualSupport)}/year (optional)`)}</div>
+        <Button href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{L("สอบถามทาง LINE", "Ask on LINE")}</Button>
+      </Card>
+    </div>
+    <p>{L(`บริการเพิ่มเติม: เครื่องเพิ่ม ${price(p.extraDevice)}/เครื่อง · ตั้ง backup USB/NAS + ทดสอบ restore ${price(p.backupSetup)} ครั้งเดียว · ติดตั้งถึงร้านเริ่ม ${price(p.onsiteFrom)}`, `Add-ons: extra device ${price(p.extraDevice)} per device · USB/NAS backup setup + restore test ${price(p.backupSetup)} once · onsite installation from ${price(p.onsiteFrom)}`)}</p>
+    <p>{L(`ทุกราคายังไม่รวม VAT ${p.vatPercent}% · ขอบเขต MA และรุ่นใหญ่ของการต่อซัพพอร์ตรออนุมัติ`, `All prices exclude ${p.vatPercent}% VAT · MA and major-version terms for support renewal await approval`)}</p>
+    <table className={styles.table}><caption>{L("ขอบเขตแพ็กเกจฟรี", "Free plan scope")}</caption><tbody>
+      <tr><th>{L("ระบบในร้าน", "In-store system")}</th><td>{L("POS สต็อก รายงาน และข้อมูลอยู่ที่ร้าน", "POS, inventory, reports and locally stored data")}</td></tr>
+      <tr><th>{L("ออนไลน์", "Online services")}</th><td>{L("ไม่รวมบริการเชื่อม LINE/แชท/ออเดอร์ออนไลน์ที่ BMS ดูแลให้", "BMS-managed LINE/chat/online-order services are not included")}</td></tr>
+      <tr><th>Backup</th><td>{L("ร้านเก็บที่ USB/NAS เอง BMS ไม่ host backup", "Use your own USB/NAS. BMS does not host backups.")}</td></tr>
+      <tr><th>Local → Cloud</th><td>{L("ยังไม่มีเครื่องมือย้ายข้อมูล", "Data migration tooling is not available")}</td></tr>
+    </tbody></table>
+    <Card className={styles.lead} title={p.leadOffer[th ? "th" : "en"]}>
+      <p>{L("ฝากข้อมูลได้ตามสมัครใจ การดาวน์โหลดไม่ต้องกรอกฟอร์มหรือลงทะเบียน ข้อเสนอความช่วยเหลือรอเจ้าของอนุมัติ", "Leaving contact details is optional. Downloads require no form or registration. The assistance offer awaits owner approval.")}</p>
+      <Form form={form} layout="vertical" onFinish={submit} initialValues={{ platform: "windows" }}>
+        <div className={styles.fields}>
+          <Form.Item name="shopName" label={L("ชื่อร้าน", "Shop name")}><Input maxLength={120} /></Form.Item>
+          <Form.Item name="contactName" label={L("ชื่อผู้ติดต่อ", "Contact name")}><Input maxLength={120} /></Form.Item>
+          <Form.Item name="phone" label={L("เบอร์โทรไทย (กรอกเบอร์หรือ LINE อย่างน้อยหนึ่งช่อง)", "Thai phone (phone or LINE is required)")} dependencies={["lineId"]} rules={[({ getFieldValue }) => ({ validator(_, v) { return v?.trim() || getFieldValue("lineId")?.trim() ? Promise.resolve() : Promise.reject(new Error(L("กรอกเบอร์หรือ LINE", "Enter phone or LINE"))); } })]}><Input maxLength={24} autoComplete="tel" /></Form.Item>
+          <Form.Item name="lineId" label="LINE ID"><Input maxLength={50} /></Form.Item>
+          <Form.Item name="businessType" label={L("ประเภทร้าน", "Business type")}><Input maxLength={80} /></Form.Item>
+          <Form.Item name="platform" label={L("ระบบปฏิบัติการ", "Operating system")} rules={[{ required: true }]}><Select options={["windows", "ubuntu", "macos"].map(value => ({ value, label: value }))} /></Form.Item>
         </div>
-        <div className={styles.notIncluded}>
-          <strong>{L("Retail Local ยังไม่รองรับ", "Not included in Retail Local")}</strong>
-          <ul>
-            {notIncluded.map((item) => <li key={item}><CloseCircleOutlined aria-hidden="true" />{item}</li>)}
-          </ul>
-          <a href="/#pricing">{L("ต้องการสิ่งเหล่านี้? ดูแพ็กเกจ BMS Cloud →", "Need these? See BMS Cloud plans →")}</a>
-        </div>
-      </div>
-
-      <div className={styles.installNote}>
-        <SafetyCertificateOutlined aria-hidden="true" />
-        <span>
-          {L(
-            "ไฟล์ติดตั้งรุ่นนำร่องยังไม่ได้ลงลายเซ็นดิจิทัล Windows อาจขึ้น “Windows protected your PC” ให้กด “More info” แล้ว “Run anyway” · macOS อาจต้องอนุญาตใน System Settings › Privacy & Security ตรวจ SHA-256 ของไฟล์ก่อนติดตั้งทุกครั้ง",
-            "Pilot installers are not code-signed yet. Windows may show “Windows protected your PC”: choose “More info”, then “Run anyway”. macOS may ask you to allow it in System Settings › Privacy & Security. Always check the file’s SHA-256 first.",
-          )}
-        </span>
-      </div>
-    </section>
-  );
+        <Form.Item name="consent" valuePropName="checked" rules={[{ validator: (_, v) => v === true ? Promise.resolve() : Promise.reject(new Error(L("กรุณายืนยันความยินยอม", "Consent is required"))) }]}><Checkbox>{L("ยินยอมให้ BMS เก็บและใช้ข้อมูลที่กรอกเพื่อติดต่อเรื่องการติดตั้งและข้อเสนอ Retail Local ตาม", "I consent to BMS storing and using these details to contact me about Retail Local installation and offers under the")} <Link href="/privacy" target="_blank">{L("นโยบายความเป็นส่วนตัว", "privacy policy")}</Link></Checkbox></Form.Item>
+        <Button type="primary" htmlType="submit" loading={busy}>{L("ส่งข้อมูลติดต่อ", "Submit contact details")}</Button>
+      </Form>
+      {result && <Alert closable showIcon type={result === "ok" ? "success" : "error"} message={result === "ok" ? L("บันทึกข้อมูลแล้ว", "Details saved") : L("ส่งไม่สำเร็จ ตรวจเบอร์/LINE และลองใหม่ภายหลัง คุณยังดาวน์โหลดได้", "Could not submit. Check phone/LINE and retry later. Downloads remain available.")} />}
+    </Card>
+  </section>;
 }

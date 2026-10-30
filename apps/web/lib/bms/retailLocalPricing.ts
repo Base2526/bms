@@ -1,39 +1,31 @@
-// Retail Local commercial price list — the one place these numbers live.
-//
-// The public /retail-local page, the shop's /admin/retail-local-license card and
-// the add-device notice at /admin/pos-devices all read from here. A second copy
-// of a price is the copy that drifts.
-//
-// These prices buy SERVICE, never permission to keep selling. Retail Local
-// licensing is evidence-only and fail-open (docs/agent-invariants.md): an
-// unregistered, unpaid or lapsed install keeps selling, updating, backing up
-// and restoring. Nothing here may be read on a POS, payment, stock, tax,
-// backup, restore or update path, and no price or plan wording may appear on
-// a receipt, bill, tax document or kitchen ticket.
-//
-// Pure module with no imports so client components can use it.
-
-export const RETAIL_LOCAL_PRICING = {
-  currency: "THB",
-  /** Every amount below excludes 7% VAT. */
-  vatIncluded: false,
-  /** Install, sell, update, back up and restore on one installation. */
-  free: { amount: 0, posDevices: 1 },
-  /** One-time licence: support for `supportMonths`, machine transfer, restore help. */
-  plus: { amount: 2990, supportMonths: 12 },
-  /** Early-adopter price for the technical pilot. */
-  pilot: { amount: 1990, shops: 20 },
-  /** Optional yearly renewal of support; not renewing never stops the shop. */
-  supportRenewal: { amount: 990, per: "year" },
-  /** Each POS device after the first, one-time. Honour system: we cannot see pairings. */
-  extraDevice: { amount: 990, per: "device" },
-  /** Set up a scheduled backup to the shop's own USB/NAS and test a restore, one-time. */
-  backupSetup: { amount: 500 },
-  /** On-site installation, from this amount. */
-  onSiteInstall: { fromAmount: 1500 },
+/** Proposed pilot terms, pending owner approval. Never an entitlement/transaction gate. */
+export const retailLocalPricing = {
+  approved: false,
+  freeDevices: 1,
+  plus: 2990,
+  pilotPlus: 1990,
+  pilotShops: 20,
+  supportMonths: 12,
+  annualSupport: 990,
+  pilotAnnualSupportAlternative: 690,
+  extraDevice: 990,
+  backupSetup: 500,
+  onsiteFrom: 1500,
+  vatPercent: 7,
+  leadOffer: {
+    th: "รับคู่มือติดตั้ง + ช่วยติดตั้งฟรีทาง LINE 14 วัน",
+    en: "Get the installation guide + 14 days of free installation help on LINE",
+  },
 } as const;
 
-export function formatRetailLocalBaht(amount: number, lang: "th" | "en"): string {
-  const n = amount.toLocaleString("en-US");
-  return lang === "th" ? `${n} บาท` : `฿${n}`;
+export function retailLocalPrice(value: number, locale: "th" | "en" = "th") {
+  return `${value.toLocaleString(locale === "th" ? "th-TH" : "en-GB")} ${locale === "th" ? "บาท" : "THB"}`;
+}
+
+export function retailLocalPricingSummary(locale: "th" | "en") {
+  const p = retailLocalPricing;
+  const price = (n: number) => retailLocalPrice(n, locale);
+  return locale === "th"
+    ? `ข้อเสนอรุ่นนำร่อง รอเจ้าของอนุมัติ: ฟรี ${p.freeDevices} เครื่อง ไม่มีวันหมดอายุ ไม่ต้องลงทะเบียนหรือใช้ License; Local Plus ซื้อขาด ${price(p.plus)} (นำร่อง ${p.pilotShops} ร้านแรก ${price(p.pilotPlus)}) พร้อมซัพพอร์ต ${p.supportMonths} เดือนและย้าย License เมื่อเครื่องเสีย หลังจากนั้นใช้รุ่นที่ติดตั้งไว้ต่อได้ หรือต่อซัพพอร์ต Local Plus ${price(p.annualSupport)}/ปี (ไม่บังคับ); เครื่องเพิ่ม ${price(p.extraDevice)}/เครื่อง; ตั้ง backup USB/NAS และทดสอบ restore ${price(p.backupSetup)} ครั้งเดียว; ติดตั้งถึงร้านเริ่ม ${price(p.onsiteFrom)}. ราคายังไม่รวม VAT ${p.vatPercent}%. ไม่ซื้อก็ใช้งานต่อได้ BMS ไม่ host backup และยังย้ายข้อมูล Local ไป Cloud ไม่ได้`
+    : `Pilot proposal, pending owner approval: ${p.freeDevices} device free without expiry, no registration or license; Local Plus ${price(p.plus)} once (${price(p.pilotPlus)} for the first ${p.pilotShops} pilot shops), including ${p.supportMonths} months of support and license transfer after host failure; afterwards keep the installed version or optionally renew Local Plus support for ${price(p.annualSupport)}/year; extra device ${price(p.extraDevice)}; USB/NAS backup setup and restore test ${price(p.backupSetup)} once; onsite installation from ${price(p.onsiteFrom)}. Prices exclude ${p.vatPercent}% VAT. Shops keep operating without purchase. BMS does not host backups; Local-to-Cloud data migration is unavailable.`;
 }

@@ -1,4 +1,5 @@
 import type { SystemGuide } from "./types";
+import { retailLocalPricingSummary } from "../retailLocalPricing";
 
 const both = (th: string, en: string) => ({ th, en }) as const;
 const lists = (th: readonly string[], en: readonly string[]) => ({ th, en }) as const;
@@ -44,6 +45,15 @@ function menuGuide(input: {
 /** Verified bilingual guides for every routable Admin sidebar surface plus POS workflows. */
 export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
+    id: "retail-local.pricing", module: "settings", route: "/admin/retail-local-license",
+    title: ["ราคา Retail Local รุ่นนำร่อง", "Retail Local pilot prices"],
+    summary: [retailLocalPricingSummary("th"), retailLocalPricingSummary("en")],
+    aliases: [["ราคา local plus", "retail local ซื้อขาด", "เครื่องเพิ่ม retail local"], ["local plus pricing", "retail local perpetual price", "extra retail local device"]],
+    requiredPermissions: ["retail_local.license.view"],
+    steps: [["อ่านข้อเสนอและขอบเขตบนหน้าราคา", "ขอใบเสนอราคาที่ยืนยันจาก BMS ทาง LINE"], ["Review the proposal and scope on the pricing page.", "Request a confirmed quotation from BMS on LINE."]],
+    warnings: [["ราคาและนโยบายรอเจ้าของอนุมัติ", "ไม่มีการบล็อกธุรกรรมจากสถานะการซื้อ"], ["Prices and policies await owner approval.", "Purchase status does not block shop transactions."]],
+  }),
+  menuGuide({
     id: "operations.checklists", module: "operations", route: "/admin/operations",
     title: ["Checklist งานประจำร้านและ Food Safety", "Operations checklists and food safety records"],
     summary: ["สร้างต้นแบบแยกสาขา บันทึกผลและรูป ส่งตรวจ และติดตามการแก้ไข", "Create branch templates, record results and photos, submit for review and track corrective actions."],
@@ -58,12 +68,21 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   menuGuide({
     id: "retail-local.register-installation", module: "settings", route: "/admin/retail-local-license",
     title: ["ลงทะเบียน License ของเครื่องนี้", "Register this installation's license"],
-    aliases: [["ราคา retail local", "แพ็กเกจ local plus", "ซื้อ local plus", "retail local ฟรีไหม", "ขอ activation code"], ["retail local price", "local plus plan", "buy local plus", "is retail local free", "request activation code"]],
     summary: ["ดูสถานะการลงทะเบียน Trial และ Licensed ของ Retail Local และกรอก Activation Code หลังติดตั้ง", "View Retail Local registration, Trial and Licensed status, and enter an Activation Code after installation."],
     requiredPermissions: ["retail_local.license.view"],
     prerequisites: [["ใช้ได้ใน Retail Local เท่านั้น", "ผู้ลงทะเบียนต้องมี retail_local.license.manage และได้รับ Activation Code จาก BMS"], ["Available only in Retail Local.", "Registration requires retail_local.license.manage and an Activation Code issued by BMS."]],
     steps: [["เปิดการตั้งค่า > License ของเครื่องนี้ หรือกดป้าย License ด้านบน", "ตรวจสถานะและวันตรวจสอบกับ BMS ล่าสุด", "กรอก Code ที่ขึ้นต้นด้วย bmsla_ ในหน้า License โดยตรง แล้วตรวจและยืนยันลงทะเบียน", "รอระบบบนเครื่องรับคำขอ หากการเชื่อมต่อขัดข้องระบบจะลองต่ออัตโนมัติ"], ["Open Settings > This installation's license or select the header badge.", "Review the status and last BMS check time.", "Enter the bmsla_ code directly on the License page, review, and confirm registration.", "Wait for the host runtime to process the request; connection failures are retried automatically."]],
-    warnings: [["ห้ามส่ง Activation Code ในแชทผู้ช่วย", "เลข LIC- เป็นเลขอ้างอิง ไม่ใช่ Activation Code", "การติดตั้งไม่เริ่ม Trial; Trial เริ่มเมื่อ BMS ออก License", "เมื่อออฟไลน์ให้ดูเวลาตรวจล่าสุด ไม่สรุปสถานะใหม่เอง", "สถานะ License ไม่ได้ปิดกั้นการทำงานของร้าน", "แพ็กเกจฟรีใช้ได้ 1 เครื่องโดยไม่หมดอายุ Local Plus ซื้อทาง LINE ของ BMS เพื่อรับซัพพอร์ตและการย้ายเครื่อง ราคาดูในการ์ดแพ็กเกจของหน้านี้"], ["Never send an Activation Code to the assistant.", "A LIC- reference is not an Activation Code.", "Installation does not start a trial; BMS license issuance does.", "When offline, use the last check time; do not infer a new status.", "License status does not block shop operations.", "Free covers one installation with no expiry. Local Plus, bought on BMS LINE, adds support and machine transfer; see the plan card on this page for prices."]],
+    warnings: [["ห้ามส่ง Activation Code ในแชทผู้ช่วย", "เลข LIC- เป็นเลขอ้างอิง ไม่ใช่ Activation Code", "การติดตั้งไม่เริ่ม Trial; Trial เริ่มเมื่อ BMS ออก License", "เมื่อออฟไลน์ให้ดูเวลาตรวจล่าสุด ไม่สรุปสถานะใหม่เอง", "สถานะ License ไม่ได้ปิดกั้นการทำงานของร้าน"], ["Never send an Activation Code to the assistant.", "A LIC- reference is not an Activation Code.", "Installation does not start a trial; BMS license issuance does.", "When offline, use the last check time; do not infer a new status.", "License status does not block shop operations."]],
+  }),
+  menuGuide({
+    id: "retail-local.recover-machine", module: "settings", route: "/admin/retail-local-license",
+    title: ["กู้ Retail Local เมื่อเครื่องพัง", "Recover Retail Local after a host failure"],
+    summary: ["กู้ฐานข้อมูล ไฟล์ และ secret bundle จาก backup นอกเครื่อง แล้วขอ Activation Code ใหม่เพื่อ Activate or Transfer", "Restore the database, files, and secret bundle from an off-host backup, then request a fresh Activation Code and use Activate or Transfer."],
+    aliases: [["เครื่อง retail local พัง", "กู้ข้อมูล retail local", "ย้าย retail local ไปเครื่องใหม่", "restore แล้วทำอะไรต่อ"], ["retail local computer failed", "recover retail local", "move retail local to a new computer", "what to do after restore"]],
+    requiredPermissions: ["retail_local.license.view"],
+    prerequisites: [["ต้องมี encrypted backup และ recovery identity ที่เก็บแยกจากเครื่องเดิม", "ต้องใช้เครื่องทดแทนที่ผ่าน preflight"], ["A complete encrypted backup and separately stored recovery identity are required.", "The replacement host must pass preflight."]],
+    steps: [["ติดตั้ง Retail Local บนเครื่องทดแทน", "restore ฐานข้อมูล ไฟล์ และ secret bundle พร้อมกันแล้ว reconcile", "ขอ Activation Code ใหม่สำหรับ License เดิม", "เลือก Activate or Transfer และให้ platform admin ตรวจ TRANSFER_REQUESTED"], ["Install Retail Local on the replacement host.", "Restore the database, files, and secret bundle together, then reconcile.", "Request a fresh Activation Code for the existing license.", "Use Activate or Transfer and have a platform administrator review TRANSFER_REQUESTED."]],
+    warnings: [["BMS ไม่ host backup ของร้าน", "ห้ามคัดลอก live VHDX/data directory แทน logical restore", "activation และ review ต้องไม่หยุดร้าน"], ["BMS does not host the shop's backup.", "Do not copy a live VHDX/data directory instead of a logical restore.", "Activation and review must not stop the shop."]],
   }),
   {
     id: "reports.create-export", module: "reports", pageId: "reports", route: "/admin/reports",
@@ -1255,7 +1274,7 @@ export const SYSTEM_GUIDES: readonly SystemGuide[] = [
   ...([
     ["platform.architecture", "architecture", "/admin/architecture", "ดูสถาปัตยกรรมระบบ", "Review system architecture", "อ่านโครงสร้าง dependency และขอบเขตระบบระดับแพลตฟอร์ม", "Review platform structure, dependencies, and boundaries.", ["สถาปัตยกรรมระบบ", "โครงสร้างระบบ"], ["system architecture", "how the system fits together"]],
     ["platform.tenants", "tenants", "/admin/tenants", "จัดการร้านทั้งหมด", "Manage tenants", "ตรวจร้านและสถานะระดับ fleet โดยไม่ปะปนกับมุมร้านปัจจุบัน", "Review fleet-wide shops without confusing them with current-tenant scope.", ["ร้านทั้งหมด", "ดูร้านค้าในระบบ", "เข้าไปดูร้านลูกค้า"], ["all shops", "tenant list"]],
-    ["platform.retail-local-licenses", "retail-local-licenses", "/admin/retail-local-licenses", "จัดการ License Retail Local", "Manage Retail Local licenses", "ออก Trial 30 วัน ต่ออายุ แปลงเป็น Paid และตรวจ timeline โดยสถานะเชิงพาณิชย์ไม่หยุดร้าน", "Issue 30-day trials, extend or convert them to paid, and review the timeline without turning commercial state into a store shutdown.", ["ออก trial retail local", "ต่อ trial", "แปลง license เป็น paid", "trial หมดอายุ"], ["issue retail local trial", "extend trial", "convert license to paid", "trial expired"]],
+    ["platform.retail-local-licenses", "retail-local-licenses", "/admin/retail-local-licenses", "จัดการ License และ Lead Retail Local", "Manage Retail Local licenses and leads", "ออก Trial ต่ออายุ แปลงเป็น Paid ตรวจ timeline และติดตาม Lead ที่ยินยอมฝากข้อมูล โดยสถานะเชิงพาณิชย์ไม่หยุดร้าน", "Issue trials, extend or convert them to paid, review the timeline, and follow up consented download leads without turning commercial state into a store shutdown.", ["ออก trial retail local", "ต่อ trial", "แปลง license เป็น paid", "trial หมดอายุ", "ดู lead retail local", "ลูกค้าฝากเบอร์ดาวน์โหลด"], ["issue retail local trial", "extend trial", "convert license to paid", "trial expired", "retail local leads", "download contact leads"]],
     ["platform.retail-local-releases", "retail-local-releases", "/admin/retail-local-releases", "จัดการไฟล์ติดตั้ง Retail Local", "Manage Retail Local downloads", "อัปโหลด ตรวจ checksum กำหนดสถานะ และเผยแพร่ installer ตาม OS และชนิดแพ็กเกจ", "Upload, checksum, classify, and publish installers by OS and package type.", ["อัปโหลด installer retail local", "ดาวน์โหลด retail local", "เผยแพร่ pkg exe deb"], ["upload retail local installer", "retail local downloads", "publish pkg exe deb"]],
     ["platform.retail-local-runtime-releases", "retail-local-runtime-releases", "/admin/retail-local-runtime-releases", "เผยแพร่ Managed Runtime Release", "Publish Managed Runtime releases", "อัปโหลด signed manifest กับ component artifacts ทั้งโฟลเดอร์ แล้วตรวจ signature, target, URL, ขนาดและ SHA-256 ก่อนเผยแพร่แบบแก้ทับไม่ได้", "Upload a complete signed manifest/component folder and verify its signature, target, URLs, sizes, and SHA-256 values before immutable publication.", ["อัปโหลด artifact retail local", "publish release.jws.json", "managed runtime release"], ["upload runtime artifacts", "publish signed release components", "release.jws.json"]],
     ["platform.installer-reports", "installer-reports", "/admin/installer-reports", "ตรวจรายงานปัญหาการติดตั้ง", "Review installer error reports", "ผู้ดูแลแพลตฟอร์มกรองรายงานที่ผู้ใช้ยินยอมส่งตาม OS/รุ่น installer ตรวจหลักฐานและบันทึกผล ข้อมูลจากเครื่องยังไม่ได้ยืนยันและไม่มีการวิเคราะห์ AI อัตโนมัติ", "Platform administrators filter consented reports by OS/installer version, review evidence and record findings. Client evidence is unverified; no automatic AI analysis is performed.", ["ติดตั้ง error ดูที่ไหน", "รายงานปัญหา installer", "เวอร์ชัน Windows ที่มีปัญหา"], ["installer errors", "installation reports", "Windows version failure"]],

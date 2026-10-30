@@ -66,6 +66,38 @@ checks that every Thai cue has a verified recording.
   into the same ignored directory for visual review. Pure pagination checks preserve contiguous
   steps and refuse cuts through a label or arrow.
 
+## Retail Local audio and diagram guide
+
+`components/retail-local/guide-flow.json` is the bilingual source for twelve chapters shared by the
+public page and the local License drawer. Thai narration is shipped in `public/audio/retail-local/th/`
+with original/normalized text, duration, SHA-256 provenance, NOTICE and the upstream license.
+It uses the exact pinned model/voice from cost/pricing; English explicitly presents Thai audio with
+English captions. Model weights and the isolated Python environment stay under ignored test output.
+
+After installing the Restaurant narration dependencies and pinned model above, run:
+
+```powershell
+python scripts/generate-retail-local-thai-audio.py --model-dir .test-output/fastthai-model
+node scripts/run-contract-tests.mjs pure retail-local-guide
+node scripts/run-contract-tests.mjs pure restaurant-recorded-narration
+```
+
+The builder resumes only checksum-verified, unchanged clips, rejects unpronounced characters,
+decodes each MP3 and publishes the complete summary/provenance only after all chapters pass.
+It needs no ffmpeg. Regenerate recordings whenever the Thai speech changes.
+
+For real browser checks use the [isolated environment](../docs/architecture/retail-local-commercial-test.md):
+`setup`, `build`, then `web` (3011) and `web-local` (3012) in separate terminals. With Chrome and
+Playwright configured, run `node scripts/retail-local-guide-browser-smoke.mjs`.
+On both public and admin surfaces, each language and viewport checks all 12 direct selections and
+all 12 sequential tracks against their exact title, caption, diagram nodes, outcome and MP3 URL.
+It also checks stale callbacks after switching chapters, previous/next, replay after completion,
+separate diagram nodes, real audio, end-of-track advancement, pause/resume, speed, blocked/missing media,
+retry, hidden-page pause, deep links and Thai/English desktop/mobile layouts. It logs into the actual
+local admin route, temporarily points only the fake test user at the cloned installation, restores
+that user's tenant/language in `finally`, and verifies context links, drawer teardown and manual.
+It never submits activation, runs backup, changes shop data or calls a payment provider.
+
 ## Public cost and pricing feature
 
 Public cost/pricing feature: `/cost-pricing` is a bilingual, session-aware marketing page linked
@@ -1493,3 +1525,18 @@ The browser also asserts exact due-time preservation on findings-only edits and 
   Thai/English at 1440/390px. Checks failed reads do not render empty evidence, retry recovery, branch
   query scope, committed SDL compatibility and horizontal overflow. Set `BMS_SMOKE_URL` and, when
   necessary, `BMS_PLAYWRIGHT_MODULE`. Screenshots use `.test-output/inventory-intelligence-browser/`.
+
+## Retail Local commercial integration
+
+- [Local database/browser runbook](../docs/architecture/retail-local-commercial-test.md): snapshot a
+  stopped PostgreSQL 16 volume into its own labelled loopback-only test instance; never migrate the source.
+- `node scripts/testing/retail-local-commercial-local.mjs db`: real Lead RLS/grants, service rollback,
+  audit/revisions and migration rerun checks. Run `setup` first as described in the runbook.
+- `node scripts/retail-local-commercial-integration-browser.mjs`: real login and Lead HTTP/database flows
+  at 1280/390px in Thai/English; requires the isolated Web server and optional `BMS_PLAYWRIGHT_MODULE`.
+  No API mocks; generated credentials and output stay in the ignored integration-output directory.
+- `node scripts/testing/retail-local-commercial-local.mjs license-db`: licensing DB contracts,
+  including concurrent approval capacity and failed-transfer rollback.
+- `node scripts/retail-local-license-rehearsal-browser.mjs`: issue Trial/code, payment review/Paid,
+  fresh Go host identities, confirmed transfer, audit and post-transfer heartbeats through real APIs/UI.
+  Requires Go, Chrome, Playwright and the same isolated environment. Cleans its own synthetic license.

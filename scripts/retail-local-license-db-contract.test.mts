@@ -9,6 +9,8 @@ import {
   getRetailLocalHostLicenseStatus,
   RetailLocalLicenseError,
   updateRetailLocalLicenseCommercialState,
+  createRetailLocalLicense,
+  resolveRetailLocalLicenseReview,
 } from "../apps/web/lib/bms/retailLocalLicensing.ts";
 
 function evidence(input: {
@@ -94,6 +96,41 @@ test("license ingestion stores an accepted chain and flags a second installation
     `SELECT reason FROM bms_retail_local_license_reviews WHERE license_id = $1 AND status = 'OPEN'`, [licenseId]
   );
   assert.equal(reviews.rows[0]?.reason, "ACTIVE_INSTALLATION_LIMIT");
+});
+
+test("concurrent review approvals preserve capacity and a failed transfer rolls back", async (t) => {
+  const adminId = crypto.randomUUID();
+  await query(`INSERT INTO users(id,name,email,password_hash) VALUES($1,$2,$3,$4)`,
+    [adminId, "FAKE license reviewer", `${adminId}@example.invalid`, "not-a-login"]);
+  const license = await createRetailLocalLicense({ customerReference: `FAKE-${crypto.randomUUID()}`,
+    maxActiveInstallations: 1, licenseType: "TRIAL", adminId });
+  t.after(async () => {
+    for (const table of ["bms_retail_local_license_reviews", "bms_retail_local_license_events",
+      "bms_retail_local_license_installations", "bms_retail_local_trial_followups",
+      "bms_retail_local_license_commercial_events", "bms_retail_local_license_bootstrap_tokens",
+      "bms_retail_local_license_tokens"]) await query(`DELETE FROM ${table} WHERE license_id=$1`, [license.id]);
+    await query(`DELETE FROM bms_retail_local_licenses WHERE id=$1`, [license.id]);
+    await query(`DELETE FROM users WHERE id=$1`, [adminId]);
+  });
+  const activation = await redeemRetailLocalActivationCode(license.activationCode, crypto.randomUUID());
+  const installs = [crypto.randomUUID(), crypto.randomUUID()];
+  for (const installationId of installs) {
+    await ingestRetailLocalLicenseEvidence(activation.ingestionToken,
+      evidence({ licenseCode: license.licenseCode, installationId, sequence: 1 }).envelope);
+  }
+  await resolveRetailLocalLicenseReview({ licenseId: license.id, installationId: installs[0], action: "DEACTIVATE", adminId });
+  const results = await Promise.allSettled(installs.map(installationId => resolveRetailLocalLicenseReview({
+    licenseId: license.id, installationId, action: "APPROVE", adminId,
+  })));
+  assert.equal(results.filter(result => result.status === "fulfilled").length, 1);
+  const rejected = results.find(result => result.status === "rejected") as PromiseRejectedResult;
+  assert.equal(rejected.reason.status, 409);
+  const before = (await query(`SELECT installation_id,status FROM bms_retail_local_license_installations WHERE license_id=$1 ORDER BY installation_id`, [license.id])).rows;
+  const inactive = before.find(row => row.status !== "ACTIVE").installation_id;
+  await assert.rejects(() => resolveRetailLocalLicenseReview({ licenseId: license.id,
+    installationId: inactive, fromInstallationId: crypto.randomUUID(), action: "TRANSFER", adminId }),
+    (error: unknown) => error instanceof RetailLocalLicenseError && error.status === 409);
+  assert.deepEqual((await query(`SELECT installation_id,status FROM bms_retail_local_license_installations WHERE license_id=$1 ORDER BY installation_id`, [license.id])).rows, before);
 });
 
 test("activation is one-use and commercial retries are idempotent", async (t) => {
