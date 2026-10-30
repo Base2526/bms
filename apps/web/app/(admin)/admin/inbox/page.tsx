@@ -1358,7 +1358,7 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
     e.target.value = ""; // reset ให้เลือกไฟล์เดิมซ้ำได้
   };
 
-  // Phase 1 status: OUT เท่านั้น · FAILED → ปุ่มส่งใหม่ · SENT → capability-gated
+  // OUT only: Meta webhooks can advance SENT → DELIVERED → READ.
   const statusNode = (m: Msg) => {
     if (m.direction !== "OUT" || !m.status) return null;
     if (m.status === "FAILED") return (
@@ -1366,6 +1366,12 @@ function ConversationPane({ conv, can, onChanged, isMobile = false, onBack, gend
         <Button type="link" size="small" style={{ padding: 0, height: "auto", fontSize: 11 }}
           loading={retrying} onClick={() => retry({ variables: { id: m.id } })}>{t("admin_inbox.resend_button")}</Button>
       </>
+    );
+    if (m.status === "READ") return (
+      <> {" · "}<span style={{ color: "#1677ff" }}>✓✓ {t("admin_inbox.read_label")}</span></>
+    );
+    if (m.status === "DELIVERED") return (
+      <> {" · "}<span style={{ color: "#52c41a" }}>✓✓ {t("admin_inbox.delivered_label")}</span></>
     );
     return m.canReportDelivery
       ? <>{" · "}<span style={{ color: "#52c41a" }}>✓ {t("admin_inbox.sent_label")}</span></>

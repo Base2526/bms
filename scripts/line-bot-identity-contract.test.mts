@@ -73,6 +73,9 @@ function profileHarness(options: { extra?: any; changed?: boolean; wrongToken?: 
     "./tenant": { beginTenantTx: async (_client: any, tenant: string) => { calls.tx.push(tenant); } },
     "./crypto": { decryptSecret: () => options.wrongToken ? "FAKE-other" : token },
     "./lineBotIdentity": identity,
+    "./channels": { getChannel: async () => null },
+    "./customers": { resolveOrCreateCustomer: async () => null },
+    "./inbox": { notifyInboxConversationChanged() {} },
   }, async (url: string) => {
     assert.equal(url, "https://api.line.me/v2/bot/info"); calls.fetches++;
     return { ok: !options.failFetch, status: options.failFetch ? 503 : 200,

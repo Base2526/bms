@@ -6293,6 +6293,8 @@ const th = {
     send_failed_label: "ส่งไม่สำเร็จ",
     resend_button: "ส่งใหม่",
     sent_label: "ส่งแล้ว",
+    delivered_label: "ส่งถึงแล้ว",
+    read_label: "อ่านแล้ว",
     no_delivery_report_tooltip: "ช่องนี้ไม่รายงานสถานะการส่งถึง/อ่าน",
     saved_label: "บันทึกแล้ว",
     coupon_added_toast: "เพิ่มคูปอง {code} ในข้อความร่างแล้ว",

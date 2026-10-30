@@ -2,17 +2,20 @@ import { getClient, query } from "@/lib/db";
 import { beginTenantTx } from "./tenant";
 import { getChannel } from "./channels";
 import { facebookAssistantMode } from "./facebookAssistantMode";
+import { syncFacebookPageProfile, syncFacebookUserProfile } from "./facebookProfile";
 import { runPipeline } from "./pipeline";
 import {
-  deliverToChannel,
+  deliverToChannelTracked,
   logConversation,
   logInboundMessage,
+  notifyInboxConversationChanged,
+  recordProviderMessageIds,
   type Attachment,
 } from "./inbox";
 import { fallbackEvidenceQuality } from "./customerAnswerEvidence";
 import { recordInboundEvent } from "./channelHealth";
 import { reportBmsFailure } from "./failureAlert";
-import type { MetaEvent } from "./meta";
+import type { MetaEvent, MetaInboundContext } from "./meta";
 
 const META_CHANNELS = new Set(["facebook", "instagram"]);
 const LEASE_MS = 5 * 60_000;
@@ -28,6 +31,7 @@ export type MetaInboundJob = {
   customerRef: string;
   messageText: string;
   attachments: StoredAttachment[];
+  eventMeta: MetaInboundContext;
   attempts: number;
 };
 
@@ -41,6 +45,14 @@ function boundedEvent(event: MetaEvent): MetaEvent {
   if (!/^\d{5,64}$/.test(event.senderId)) throw new Error("invalid Meta sender id");
   if (event.text.length > 20_000) throw new Error("Meta message is too long");
   if (event.attachments.length > 10) throw new Error("too many Meta attachments");
+  const clean = (value: unknown, max: number) => typeof value === "string" && value.trim()
+    ? value.trim().slice(0, max) : undefined;
+  const referral = event.meta?.referral ? {
+    source: clean(event.meta.referral.source, 80),
+    type: clean(event.meta.referral.type, 80),
+    ref: clean(event.meta.referral.ref, 500),
+    adId: clean(event.meta.referral.adId, 100),
+  } : undefined;
   return {
     ...event,
     attachments: event.attachments.map((attachment) => ({
@@ -49,6 +61,12 @@ function boundedEvent(event: MetaEvent): MetaEvent {
       title: attachment.title?.slice(0, 500) ?? null,
       mimeType: attachment.mimeType?.slice(0, 255) ?? null,
     })),
+    meta: {
+      ...(clean(event.meta?.replyToMessageId, 500) ? { replyToMessageId: clean(event.meta?.replyToMessageId, 500) } : {}),
+      ...(clean(event.meta?.quickReplyPayload, 500) ? { quickReplyPayload: clean(event.meta?.quickReplyPayload, 500) } : {}),
+      ...(clean(event.meta?.postbackPayload, 500) ? { postbackPayload: clean(event.meta?.postbackPayload, 500) } : {}),
+      ...(referral && Object.values(referral).some(Boolean) ? { referral } : {}),
+    },
   };
 }
 
@@ -67,11 +85,11 @@ export async function enqueueMetaInboundEvents(
       const event = boundedEvent(rawEvent);
       const inserted = await client.query(
         `INSERT INTO bms_channel_inbound_jobs
-           (tenant_id,channel,external_event_id,external_account_id,customer_ref,message_text,attachments)
-         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb)
+          (tenant_id,channel,external_event_id,external_account_id,customer_ref,message_text,attachments,event_meta)
+         VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb)
          ON CONFLICT (tenant_id,channel,external_event_id) DO NOTHING`,
         [tenantId, channel, event.eventId, event.externalAccountId, event.senderId,
-          event.text, JSON.stringify(event.attachments)],
+          event.text, JSON.stringify(event.attachments), JSON.stringify(event.meta ?? {})],
       );
       accepted += inserted.rowCount ?? 0;
     }
@@ -100,7 +118,7 @@ async function claimForTenant(tenantId: string): Promise<MetaInboundJob | null> 
     );
     const selected = await client.query<any>(
       `SELECT id,tenant_id,channel,external_event_id,external_account_id,customer_ref,
-              message_text,attachments,attempts
+              message_text,attachments,event_meta,attempts
          FROM bms_channel_inbound_jobs j
         WHERE tenant_id=$1 AND available_at<=now()
           AND effects_started_at IS NULL
@@ -140,6 +158,7 @@ async function claimForTenant(tenantId: string): Promise<MetaInboundJob | null> 
       customerRef: row.customer_ref,
       messageText: row.message_text,
       attachments: Array.isArray(row.attachments) ? row.attachments : [],
+      eventMeta: row.event_meta && typeof row.event_meta === "object" ? row.event_meta : {},
       attempts: Number(row.attempts) + 1,
     };
   } catch (error) {
@@ -205,6 +224,38 @@ function firstAttachment(job: MetaInboundJob): Attachment | null {
   };
 }
 
+async function syncFacebookProfileBestEffort(job: MetaInboundJob, accessToken: string | null): Promise<void> {
+  if (job.channel !== "facebook") return;
+  try {
+    const [result] = await Promise.all([
+      syncFacebookUserProfile(job.tenantId, job.customerRef, accessToken),
+      syncFacebookPageProfile(job.tenantId, job.externalAccountId, accessToken).catch((error) => {
+        console.warn("[BMS] Facebook Page profile sync failed:", {
+          tenantId: job.tenantId,
+          error: error instanceof Error ? error.message : "unknown error",
+        });
+        return { ok: false };
+      }),
+    ]);
+    for (const conversationId of result.conversationIds) {
+      notifyInboxConversationChanged(job.tenantId, conversationId, "CONVERSATION_CHANGED");
+    }
+    if (!result.ok && !result.skipped) {
+      console.warn("[BMS] Facebook profile sync failed:", {
+        tenantId: job.tenantId,
+        status: result.status,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    // Profile enrichment is never allowed to turn a verified inbound message into a DEAD job.
+    console.warn("[BMS] Facebook profile cache write failed:", {
+      tenantId: job.tenantId,
+      error: error instanceof Error ? error.message : "unknown error",
+    });
+  }
+}
+
 export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> {
   const cfg = await getChannel(job.tenantId, job.channel);
   if (!cfg?.active || cfg.external_account_id !== job.externalAccountId) {
@@ -236,9 +287,10 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
         type: job.attachments[0]?.type ?? "attachment",
         providerMessageId: job.eventId,
         unsupportedForAi: true,
-        raw: { attachmentCount: job.attachments.length },
+        raw: { attachmentCount: job.attachments.length, ...job.eventMeta },
       },
     });
+    await syncFacebookProfileBestEffort(job, cfg.access_token);
     await recordInboundEvent(job.tenantId, job.channel);
     return;
   }
@@ -265,7 +317,7 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
     result = { reply: fallbackReply, quality: fallbackEvidenceQuality(error, fallbackReply) };
   }
 
-  await logConversation(
+  const persisted = await logConversation(
     job.tenantId,
     job.channel,
     job.customerRef,
@@ -273,14 +325,20 @@ export async function processMetaInboundJob(job: MetaInboundJob): Promise<void> 
     result.reply,
     result.quality,
     attachment,
-    attachment ? {
+    {
       type: job.attachments[0]?.type ?? "attachment",
       providerMessageId: job.eventId,
-      raw: { attachmentCount: job.attachments.length },
-    } : null,
+      raw: { attachmentCount: job.attachments.length, ...job.eventMeta },
+    },
   );
-  const delivered = await deliverToChannel(job.tenantId, job.channel, job.customerRef, result.reply);
-  if (!delivered) {
+  // Start optional enrichment alongside delivery so a slow profile read does not add to reply latency.
+  const profileSync = syncFacebookProfileBestEffort(job, cfg.access_token);
+  const delivery = await deliverToChannelTracked(job.tenantId, job.channel, job.customerRef, result.reply);
+  await profileSync;
+  if (persisted?.outboundMessageId && delivery.providerMessageIds.length) {
+    await recordProviderMessageIds(job.tenantId, persisted.outboundMessageId, delivery.providerMessageIds);
+  }
+  if (!delivery.delivered) {
     await reportBmsFailure({
       tenantId: job.tenantId,
       code: "channel.push_failed",

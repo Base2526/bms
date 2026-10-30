@@ -4,7 +4,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getChannel } from "@/lib/bms/channels";
 import { recordWebhookVerifyFailed } from "@/lib/bms/channelHealth";
 import { verifyMetaSignature } from "@/lib/bms/crypto";
-import { metaChallenge, metaEnvelopeMatches, parseMetaEvents } from "@/lib/bms/meta";
+import { metaChallenge, metaEnvelopeMatches, parseMetaEvents, parseMetaInboxSignals } from "@/lib/bms/meta";
+import { applyMetaInboxSignals } from "@/lib/bms/metaInboxSignals";
 import { enqueueMetaInboundEvents, runMetaInboundBatch } from "@/lib/bms/metaInboundJobs";
 import { rateLimit } from "@/lib/bms/rateLimit";
 import { withRouteErrorLog } from "@/lib/log/routeError";
@@ -55,11 +56,14 @@ async function handlePOST(req: NextRequest, { params }: { params: { tenantId: st
     return NextResponse.json({ error: "Meta account does not match this tenant" }, { status: 403 });
   }
   const events = parseMetaEvents(body, cfg.external_account_id, "instagram");
+  const signals = parseMetaInboxSignals(body, cfg.external_account_id, "instagram");
+  const signalResult = await applyMetaInboxSignals(tenantId, CHANNEL, signals);
   const queued = await enqueueMetaInboundEvents(tenantId, CHANNEL, events);
   const work = events.length > 0
     ? await runMetaInboundBatch(Math.min(events.length, 25), tenantId)
     : { processed: 0, failed: 0, deadLettered: 0 };
-  return NextResponse.json({ ok: true, tenantId, received: events.length, ...queued, ...work });
+  return NextResponse.json({ ok: true, tenantId, received: events.length, signals: signals.length,
+    ...signalResult, ...queued, ...work });
 }
 
 export const GET = withRouteErrorLog("GET /api/bms/instagram/webhook/[tenantId]", handleGET);

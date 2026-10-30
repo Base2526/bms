@@ -29,6 +29,7 @@ test("starter clicks become bounded customer text with stable retry identities",
   const first = parse([event]);
   assert.equal(first.length, 1);
   assert.equal(first[0].text, "ขอทราบราคา");
+  assert.equal(first[0].meta.postbackPayload, "BMS_CHAT_PRICE");
   assert.deepEqual(parse([event]), first);
   assert.notEqual(parse([{ ...event, timestamp: event.timestamp + 1 }])[0].eventId, first[0].eventId);
   assert.deepEqual(parse([event], "654321"), []);
@@ -50,4 +51,5 @@ test("typed and quick-reply messages retain the customer's text and provider mid
   } }]);
   assert.equal(message.text, "รายละเอียดสินค้าร้านนี้");
   assert.equal(message.eventId, "message-1");
+  assert.equal(message.meta.quickReplyPayload, "bms_presales");
 });

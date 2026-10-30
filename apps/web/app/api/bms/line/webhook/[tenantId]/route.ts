@@ -152,6 +152,35 @@ async function pushLineReply(
   }
 }
 
+async function refreshLineUserProfile(
+  tenantId: string,
+  userId: string | null,
+  accessToken: string | null,
+): Promise<void> {
+  if (!userId || !accessToken) return;
+  try {
+    const profileSync = await syncLineUserProfile(tenantId, userId, accessToken);
+    if (profileSync.ok) {
+      for (const conversationId of profileSync.conversationIds) {
+        notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
+      }
+    } else if (!profileSync.skipped) {
+      console.warn("[BMS] LINE profile sync failed:", {
+        tenantId,
+        status: profileSync.status,
+        error: profileSync.error,
+      });
+    }
+  } catch (error) {
+    // Profile metadata is display-only. A cache/database/provider failure must
+    // never rerun the pipeline or send a second fallback after a valid reply.
+    console.warn("[BMS] LINE profile sync failed:", {
+      tenantId,
+      error: error instanceof Error ? error.message : "profile sync failed",
+    });
+  }
+}
+
 async function processLineEvent(
   tenantId: string,
   cfg: LineChannelConfig,
@@ -182,6 +211,7 @@ async function processLineEvent(
         },
       },
     });
+    await refreshLineUserProfile(tenantId, userId, cfg.access_token);
     return { replyToken: ev.replyToken, logged: ev.message.type, handled: true };
   }
 
@@ -201,20 +231,7 @@ async function processLineEvent(
     // Best-effort LINE profile cache. This is intentionally after the
     // Inbox write/reply path: profile sync must never block the sale-critical
     // message from appearing in Inbox.
-    if (userId && cfg.access_token) {
-      const profileSync = await syncLineUserProfile(tenantId, userId, cfg.access_token);
-      if (profileSync.ok) {
-        for (const conversationId of profileSync.conversationIds) {
-          notifyInboxConversationChanged(tenantId, conversationId, "CONVERSATION_CHANGED");
-        }
-      } else if (!profileSync.skipped) {
-        console.warn("[BMS] LINE profile sync skipped/failed:", {
-          tenantId,
-          status: profileSync.status,
-          error: profileSync.error,
-        });
-      }
-    }
+    await refreshLineUserProfile(tenantId, userId, cfg.access_token);
     return { replyToken: ev.replyToken, reply: result.reply, handled: true };
   } catch (error) {
     const fallbackReply = "ขออภัยค่ะ ระบบขัดข้องชั่วคราว รบกวนลองใหม่อีกครั้งในสักครู่นะคะ 🙏";

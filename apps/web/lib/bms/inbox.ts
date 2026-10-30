@@ -124,9 +124,10 @@ export async function logConversation(
   quality?: AiTurnQuality,
   incomingAttachment?: Attachment | null,
   incomingMeta?: InboundMessageMeta | null
-): Promise<void> {
-  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return;
+): Promise<{ conversationId: string; inboundMessageId: string; outboundMessageId: string } | null> {
+  if (!customerRef || (channel === "test" && !isPersistedPharmacyLabConversation(channel, customerRef))) return null;
   let messagesPersisted = false;
+  let persistedResult: { conversationId: string; inboundMessageId: string; outboundMessageId: string } | null = null;
   let client: PoolClient | null = null;
   let evidenceFailed = false;
   const evidence = evidenceForQuality(quality);
@@ -161,7 +162,7 @@ export async function logConversation(
       await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [evidence.id]);
       const existing = await client.query(`SELECT id FROM bms_messages WHERE tenant_id=$1
         AND direction='OUT' AND meta->'aiEvidence'->>'turnId'=$2 LIMIT 1`, [tenantId,evidence.id]);
-      if (existing.rows.length) { await client.query("COMMIT"); return; }
+      if (existing.rows.length) { await client.query("COMMIT"); return null; }
     }
     const conv = await client.query<{ id: string; inserted: boolean }>(
       `INSERT INTO bms_conversations
@@ -224,6 +225,13 @@ export async function logConversation(
     }
     await client.query("COMMIT");
     messagesPersisted = true;
+    if (incomingMessage && aiMessage) {
+      persistedResult = {
+        conversationId: convId,
+        inboundMessageId: String(incomingMessage.id),
+        outboundMessageId: String(aiMessage.id),
+      };
+    }
     client.release();
     client = null;
     if (evidenceFailed) {
@@ -266,6 +274,7 @@ export async function logConversation(
       });
     }
   } finally { client?.release(); }
+  return persistedResult;
 }
 
 /**
@@ -1246,12 +1255,14 @@ export function isFakeCustomerRef(customerRef: string | null | undefined): boole
  *   • web               → ไม่ต้อง push (ตอบผ่าน HTTP response ของ widget)
  *   • tiktok            → ยังไม่ผูก send API — persist อย่างเดียว
  */
-export async function deliverToChannel(
+export type ChannelDeliveryResult = { delivered: boolean; providerMessageIds: string[] };
+
+export async function deliverToChannelTracked(
   tenantId: string, channel: string, to: string | null, text: string, attachment?: Attachment | null
-): Promise<boolean> {
-  if (!to) return false;
+): Promise<ChannelDeliveryResult> {
+  if (!to) return { delivered: false, providerMessageIds: [] };
   // Fake-data conversations must exercise the Inbox flow without contacting real channel APIs.
-  if (isFakeCustomerRef(to)) return true;
+  if (isFakeCustomerRef(to)) return { delivered: true, providerMessageIds: [] };
   const img = attachment && isImageMime(attachment.mimeType) ? absoluteUrl(attachment.url) : null;
   // ไฟล์ที่ไม่ใช่รูป → แนบเป็นลิงก์ท้ายข้อความ (channel ส่วนใหญ่ไม่มี generic file message)
   const fileLink = attachment && !img ? absoluteUrl(attachment.url) : null;
@@ -1259,11 +1270,11 @@ export async function deliverToChannel(
 
   if (channel === "line") {
     const cfg = await getChannel(tenantId, "line");
-    if (!cfg?.active || !cfg.access_token) return false;
+    if (!cfg?.active || !cfg.access_token) return { delivered: false, providerMessageIds: [] };
     const messages: any[] = [];
     if (outText) messages.push({ type: "text", text: outText });
     if (img) messages.push({ type: "image", originalContentUrl: img, previewImageUrl: img });
-    if (messages.length === 0) return false;
+    if (messages.length === 0) return { delivered: false, providerMessageIds: [] };
     try {
       const resp = await fetch("https://api.line.me/v2/bot/message/push", {
         method: "POST",
@@ -1276,16 +1287,18 @@ export async function deliverToChannel(
         const detail = formatOutboundErrorDetail(resp, await resp.text().catch(() => ""));
         await recordOutboundError(tenantId, "line", resp.status, detail);
       }
-      return resp.ok;
+      return { delivered: resp.ok, providerMessageIds: [] };
     } catch (e) {
       console.error("[BMS] LINE push failed:", e);
-      return false;
+      return { delivered: false, providerMessageIds: [] };
     }
   }
 
   if (channel === "facebook" || channel === "instagram") {
     const cfg = await getChannel(tenantId, channel);
-    if (!cfg?.active || !cfg.access_token || !cfg.external_account_id) return false;
+    if (!cfg?.active || !cfg.access_token || !cfg.external_account_id) {
+      return { delivered: false, providerMessageIds: [] };
+    }
     // RESPONSE is valid only in Meta's standard customer-service window. The latest inbound row
     // is server evidence; order intent, a stored PSID or a previous outbound message is not consent.
     const window = await query<{ allowed: boolean }>(
@@ -1298,41 +1311,86 @@ export async function deliverToChannel(
     );
     if (!window.rows[0]?.allowed) {
       await recordOutboundError(tenantId, channel, 400, "Meta 24-hour messaging window is closed");
-      return false;
+      return { delivered: false, providerMessageIds: [] };
     }
-    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(cfg.external_account_id)}/messages?access_token=${encodeURIComponent(cfg.access_token)}`;
-    const send = (msg: any) => fetch(url, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),
-    });
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/${encodeURIComponent(cfg.external_account_id)}/messages`;
+    const send = async (msg: any) => {
+      const response = await fetch(url, {
+        method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${cfg.access_token}` },
+        body: JSON.stringify({ recipient: { id: to }, messaging_type: "RESPONSE", message: msg }),
+      });
+      const bodyText = typeof response.text === "function" ? await response.text().catch(() => "") : "";
+      let providerMessageId: string | null = null;
+      if (response.ok) {
+        try {
+          const parsed = JSON.parse(bodyText || "{}");
+          providerMessageId = typeof parsed?.message_id === "string" ? parsed.message_id.slice(0, 500) : null;
+        } catch {}
+      }
+      return { response, bodyText, providerMessageId };
+    };
     try {
       let ok = true;
-      let lastFailed: Response | null = null;
+      let lastFailed: { response: Response; bodyText: string } | null = null;
+      const providerMessageIds: string[] = [];
       if (outText) {
-        const resp = await send({ text: outText });
-        if (!resp.ok) lastFailed = resp;
-        ok = resp.ok && ok;
+        const sent = await send({ text: outText });
+        if (!sent.response.ok) lastFailed = sent;
+        if (sent.providerMessageId) providerMessageIds.push(sent.providerMessageId);
+        ok = sent.response.ok && ok;
       }
       if (img) {
-        const resp = await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } });
-        if (!resp.ok) lastFailed = resp;
-        ok = resp.ok && ok;
+        const sent = await send({ attachment: { type: "image", payload: { url: img, is_reusable: true } } });
+        if (!sent.response.ok) lastFailed = sent;
+        if (sent.providerMessageId) providerMessageIds.push(sent.providerMessageId);
+        ok = sent.response.ok && ok;
       }
       if (lastFailed) {
-        const detail = formatOutboundErrorDetail(lastFailed, await lastFailed.text().catch(() => ""));
-        await recordOutboundError(tenantId, channel, lastFailed.status, detail);
+        const detail = formatOutboundErrorDetail(lastFailed.response, lastFailed.bodyText);
+        await recordOutboundError(tenantId, channel, lastFailed.response.status, detail);
       } else {
         await recordOutboundSuccess(tenantId, channel);
       }
-      return ok;
+      return { delivered: ok, providerMessageIds };
     } catch (e) {
       console.error(`[BMS] ${channel} send failed:`, e);
-      return false;
+      return { delivered: false, providerMessageIds: [] };
     }
   }
 
   // web (ตอบผ่าน HTTP response) / tiktok (ยังไม่ผูก API) → persist อย่างเดียว
-  return false;
+  return { delivered: false, providerMessageIds: [] };
+}
+
+export async function deliverToChannel(
+  tenantId: string, channel: string, to: string | null, text: string, attachment?: Attachment | null
+): Promise<boolean> {
+  return (await deliverToChannelTracked(tenantId, channel, to, text, attachment)).delivered;
+}
+
+export async function recordProviderMessageIds(
+  tenantId: string,
+  messageId: string,
+  providerMessageIds: string[],
+): Promise<void> {
+  const bounded = [...new Set(providerMessageIds.filter(Boolean).map((id) => id.slice(0, 500)))].slice(0, 10);
+  if (!bounded.length) return;
+  const client = await getClient();
+  try {
+    await beginTenantTx(client, tenantId);
+    await client.query(
+      `UPDATE bms_messages
+          SET meta=meta || jsonb_build_object('providerMessageIds',$3::jsonb)
+        WHERE tenant_id=$1 AND id=$2`,
+      [tenantId, messageId, JSON.stringify(bounded)],
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export async function sendStaffMessage(
@@ -1376,7 +1434,8 @@ export async function sendStaffMessage(
     }
   }
 
-  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, outgoingText, att);
+  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, outgoingText, att);
+  const delivered = delivery.delivered;
   const status = outboundStatus(channel, delivered);
 
   // body NOT NULL — เก็บข้อความ (อาจว่างถ้าเป็น attachment ล้วน)
@@ -1384,7 +1443,10 @@ export async function sendStaffMessage(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, $4, $5)
      RETURNING id`,
-    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({ delivered, status, simulated, attachment: att, couponWalletLink })]
+    [tenantId, conversationId, outgoingText, `staff:${staff ?? "admin"}`, JSON.stringify({
+      delivered, status, simulated, attachment: att, couponWalletLink,
+      providerMessageIds: delivery.providerMessageIds,
+    })]
   );
   // preview: ข้อความ · ถ้าไม่มีข้อความใช้ [รูปภาพ]/[ไฟล์]
   const preview = messagePreview(outgoingText, att);
@@ -1421,14 +1483,16 @@ export async function sendFollowupMessage(
 
   const channel = conv.rows[0].channel;
   const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
+  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, text);
+  const delivered = delivery.delivered;
   const status = outboundStatus(channel, delivered);
 
   const inserted = await query<{ id: string }>(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, 'ai', $4)
      RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, followup: true, ...followupMeta })]
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, followup: true,
+      providerMessageIds: delivery.providerMessageIds, ...followupMeta })]
   );
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
@@ -1464,14 +1528,16 @@ export async function sendPharmacyIntakeMessage(
 
   const channel = conv.rows[0].channel;
   const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, text);
+  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, text);
+  const delivered = delivery.delivered;
   const status = outboundStatus(channel, delivered);
 
   const inserted = await query<{ id: string }>(
     `INSERT INTO bms_messages (tenant_id, conversation_id, direction, body, sender, meta)
      VALUES ($1, $2, 'OUT', $3, 'ai', $4)
      RETURNING id`,
-    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated, pharmacyIntake: meta })]
+    [tenantId, conversationId, text, JSON.stringify({ delivered, status, simulated,
+      providerMessageIds: delivery.providerMessageIds, pharmacyIntake: meta })]
   );
   await query(
     `UPDATE bms_conversations SET last_message = $3, last_message_at = now(), last_sender_type = 'ai', updated_at = now()
@@ -1502,13 +1568,15 @@ export async function retryMessage(tenantId: string, messageId: string): Promise
   const att: Attachment | null = row.meta?.attachment ?? null;
   const channel = conv.rows[0].channel;
   const simulated = isFakeCustomerRef(conv.rows[0].customer_ref);
-  const delivered = await deliverToChannel(tenantId, channel, conv.rows[0].customer_ref, row.body || "", att);
+  const delivery = await deliverToChannelTracked(tenantId, channel, conv.rows[0].customer_ref, row.body || "", att);
+  const delivered = delivery.delivered;
   const status = outboundStatus(channel, delivered);
 
   // merge เข้า meta เดิม (คง attachment ไว้)
   await query(
     `UPDATE bms_messages SET meta = meta || $3::jsonb WHERE tenant_id = $1 AND id = $2`,
-    [tenantId, messageId, JSON.stringify({ delivered, status, simulated })]
+    [tenantId, messageId, JSON.stringify({ delivered, status, simulated,
+      providerMessageIds: delivery.providerMessageIds })]
   );
   publishInboxChanged(tenantId, row.conversation_id, "CONVERSATION_CHANGED");
   return { status: "SENT", delivered };

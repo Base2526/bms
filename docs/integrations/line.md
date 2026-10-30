@@ -18,10 +18,13 @@
 
 ## Message flow
 
-Only `type: "message"` text events are processed. For each: `runPipeline(text, "line", tenantId,
+`type: "message"` text events run the customer pipeline. For each: `runPipeline(text, "line", tenantId,
 userId)` → `logConversation()` (best-effort, records both the incoming message and the AI's reply
 in the Omnichannel Inbox) → if the shop's `access_token` is set and the event had a `replyToken`,
 reply immediately via LINE's `reply` API (`pushLineReply`).
+
+Image, video, audio, file, sticker and location messages enter Inbox without invoking the AI
+tool loop. Both text and non-text message paths then attempt the same display-profile refresh.
 
 Events within one webhook request are awaited sequentially so the next text sees the preceding
 turn's saved history. The route does not acknowledge background work with an early `200`:
@@ -55,7 +58,13 @@ sync using `GET /v2/bot/profile/{userId}`. The response is cached on
 `profile_synced_at`) and is used only as Inbox display fallback. It must not overwrite
 staff-maintained CRM fields. The sync is TTL-gated and short-timeout, so a LINE profile outage,
 blocked user, missing consent/friendship, or rate limit never prevents the message from appearing
-in Inbox.
+in Inbox or causes a second fallback reply. Failures are retried no sooner than 15 minutes. The
+`channel-profile-sync` scheduled job refreshes up to 20 stale LINE identities per run, so existing
+conversations can gain names and pictures without waiting for another customer message. Profile
+URLs must be HTTPS and a returned `userId` must match the webhook identity before the cache is written.
+The standard Messaging API channel access token is sufficient; there is no separate profile-review
+permission like Meta. LINE can still return `404` when the user has not consented, has not added the
+OA as a friend, or has blocked it, so raw LINE user IDs remain the final display fallback.
 
 The text-message path also syncs LINE OA/bot metadata via `GET /v2/bot/info` and caches it on
 `bms_tenant_channels.extra` (`botDisplayName`, `botBasicId`, `botPictureUrl`, `botChatMode`,

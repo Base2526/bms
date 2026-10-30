@@ -14,8 +14,8 @@ message supplies only the tenant-bound customer identity and untrusted message c
    Read the Page ID from the connected Page row in Meta Messenger API Settings. A public
    `profile.php?id=...` URL can show a different number for the same Page.
 4. Copy `/api/bms/facebook/webhook/<tenant-id>` from Settings into Meta's Callback URL and paste
-   the same Verify Token. Subscribe the Page to `messages` and, when using the starter buttons below,
-   `messaging_postbacks`.
+   the same Verify Token. Subscribe the Page to `messages`, `message_echoes`, `message_deliveries`,
+   `message_reads` and, when using the starter buttons below, `messaging_postbacks`.
 5. Test the channel in Settings, then send a message from a non-admin Facebook account. Development
    mode is restricted to app roles; public traffic requires the appropriate Live-mode review and
    advanced access from Meta.
@@ -33,8 +33,27 @@ or Graph API I/O. It then runs the shared customer pipeline and Inbox persistenc
 event was durably received within the standard 24-hour window. Recovery does not reopen that window
 by inserting a new Inbox row. The saved account ID must still match when queued work starts.
 
+After the verified message is persisted, BMS also makes a best-effort User Profile API read for the
+Page-scoped sender ID and caches the returned first/last name and profile picture on
+`bms_customer_identities`. Inbox renders that cache without making provider calls. The cache refreshes
+at most once per 24 hours and never overwrites a staff-maintained CRM customer name. A timeout,
+permission error, malformed response or cache-write failure must not reject the webhook, suppress the
+Inbox message, fail the customer reply, or turn the durable inbound job into `DEAD`; diagnostics are
+stored on the identity and a failed read is retried after a short backoff. Meta profile-photo URLs
+expire, so a successful cache is refreshed daily. The same bounded maintenance job backfills stale
+Facebook identities (20 per scheduled run) so existing conversations do not have to wait for another
+customer message. Page name, username and picture are cached in channel `extra` for the Inbox source
+header; neither cache overwrites CRM customer data.
+
+Verified webhook context is split by purpose. Customer messages retain only bounded reply-target,
+quick-reply and ad-referral identifiers in the durable job. Echoes from Meta Business Suite are stored
+as outbound Inbox messages and never enter the AI pipeline. Delivery/read events advance matching
+outbound message status from `SENT` to `DELIVERED` to `READ`. All signal writes are tenant-scoped and
+idempotent by Meta message ID; raw webhook payloads are never stored.
+
 New work is processed immediately for chat latency. The `meta-inbound-process` scheduled job is
-crash recovery: it can reclaim a lease only before the business pipeline starts. Once effects have
+crash recovery: it can reclaim a lease only before the business pipeline starts. The shared
+`channel-profile-sync` scheduled job refreshes bounded Facebook and LINE profile batches. Once effects have
 started, an expired lease or unexpected failure becomes `DEAD` for manual review instead of risking
 a duplicate order/reservation. The queue stores bounded message fields, not the full signed payload.
 Lease ownership is fenced by the attempt number before effects start. Messages for one customer
@@ -49,6 +68,11 @@ are processed in queue order; expired uncertain work raises a failure incident f
   `pages_messaging` can still receive and send messages; a missing read permission makes the Test
   button report that it cannot verify Page details without changing health established by actual
   inbound/outbound traffic. Test one real message from an app-role account before App Review.
+- Customer names and pictures come from the Messenger User Profile API using the Page-scoped sender
+  ID and Page Access Token. Meta requires Advanced Access for the **Business Asset User Profile
+  Access** feature for `id`, `name`, `first_name`, `last_name`, and `profile_pic`; add that feature to
+  App Review before relying on profiles from non-role users. Receiving and replying successfully does
+  not prove this separate profile read is permitted.
 - `META_GRAPH_VERSION` defaults to `v26.0` in every Web compose environment. Upgrade it deliberately
   with contract and live sandbox tests before Meta sunsets it.
 - Rotate a Page token or App Secret in Settings. Rotate the Verify Token in both BMS and Meta.
@@ -59,12 +83,16 @@ are processed in queue order; expired uncertain work raises a failure incident f
 
 This is manual per-tenant credential onboarding. A future shared-app OAuth flow must still persist
 and verify the Page ID per tenant; a shared App Secret must never make the callback URL authoritative.
-Meta Business Suite handover/echo synchronization is not an implemented source of BMS staff state,
-so operators should reply from BMS Inbox when AI and human ownership must remain in one timeline.
+Business Suite message echoes are timeline evidence only: they do not assign a BMS staff owner,
+invoke AI, create business actions or bypass the 24-hour response window. One tenant currently has
+one Facebook channel row and therefore one configured Page; multi-Page shops require a separate
+account-scoped channel model rather than overwriting this row.
 
 ## Rollout and Instagram compatibility
 
-Apply migration 10.104 before deploying: the shared channel service reads its new columns for LINE
+Apply migrations 10.104 and 10.106 before deploying: the shared channel service reads the Meta
+account columns and the durable worker reads bounded `event_meta` context. The 10.106 application
+code must not be deployed before that additive column exists. The shared 10.104 channel columns affect LINE
 and other channels too. Existing Meta configurations require a separate Verify Token and account ID;
 plan this configuration change alongside deployment. LINE credentials and identity routing are unchanged.
 Instagram uses the Professional Account ID from the linked Page's `instagram_business_account.id`,
