@@ -254,7 +254,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
           </div></div>
           {fit === "restaurant_example" && <p className={styles.exampleNotice} data-flow-reference>{copy.profile.exampleNotice}</p>}
           <h4 className={styles.diagramHeading}>{copy.diagram}</h4>
-          <SequenceDiagram key={`${flow.id}-${lang}-${profile.shop}-${profile.service}-${profile.multiBranch}`} source={detail.source} title={`${copy.diagram}: ${detail.title}`} lang={lang} labels={copy.labels} zoomLabel={copy.zoom} fitLabel={copy.fit} hint={copy.diagramHint} transcriptLabel={copy.transcript} playerCopy={copy.player}
+          <SequenceDiagram key={`${flow.id}-${lang}-${profile.shop}-${profile.service}-${profile.multiBranch}`} source={detail.source} title={`${copy.diagram}: ${detail.title}`} lang={lang} labels={copy.labels} zoomLabel={copy.zoom} fitLabel={copy.fit} hint={copy.diagramHint} transcriptLabel={copy.transcript} playerCopy={copy.player} fullscreenCopy={copy.fullscreen}
             printFlow={{ id: flow.id, title: detail.title, description: detail.description, note: detail.note, pageLabel: copy.page, continued: copy.continued, scope: `${printScope} · ${fitLabel(fit)}. ${copy.scope}` }} />
           <p className={styles.boundary}>{detail.note}</p>
         </section>

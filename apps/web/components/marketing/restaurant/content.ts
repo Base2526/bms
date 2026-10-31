@@ -1,5 +1,6 @@
 import type { Bilingual } from "@/lib/static-page-i18n";
 import type { DiagramLabels } from "./sequence";
+import type { FullscreenCopy } from "./SequenceDiagram";
 import type { PlayerCopy } from "./PlaybackPlayer";
 
 type ProfileCopy = {
@@ -24,6 +25,7 @@ type Copy = {
   copyFailed: string; fitTitle: string; fitDescription: string; fits: string[];
   readinessTitle: string; readiness: string[]; ctaTitle: string; ctaDescription: string;
   scope: string; labels: DiagramLabels;
+  fullscreen: FullscreenCopy;
   profile: ProfileCopy; player: PlayerCopy;
 };
 export const restaurantCopy: Bilingual<Copy> = {
@@ -63,6 +65,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     ],
     ctaTitle: "ร้านของคุณเริ่มจาก Flow ไหน?", ctaDescription: "เล่ารูปแบบร้าน จำนวนสาขา และจุดที่อยากจัดการให้ดีขึ้นกับทีม BMS",
     scope: "ภาพอธิบายความสามารถของระบบ ไม่ใช่ข้อมูลร้านจริงหรือหลักฐานว่ารายการเกิดขึ้นแล้ว · ขอบเขตเนื้อหาตรวจเมื่อ 31 ต.ค. 2569",
+    fullscreen: { open: "เต็มจอ", close: "ปิดเต็มจอ", rotateHint: "หมุนจอเป็นแนวนอนเพื่อดูทุกคอลัมน์ หรือเลื่อนซ้าย–ขวา", dismiss: "เข้าใจแล้ว" },
     labels: { person: "ผู้ดำเนินงาน", system: "ระบบ", assistant: "อ่านอย่างเดียว", alt: "กรณี", opt: "เมื่อมีเงื่อนไข", loop: "ทำซ้ำ", else: "อีกกรณี" },
     profile: {
       heading: "เลือกรูปแบบร้านของคุณ", description: "เลือกเพื่อดูตัวอย่างและลำดับ Flow ที่ใกล้กับงานของร้าน การเลือกนี้ไม่แก้การตั้งค่าร้านจริง",
@@ -140,6 +143,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     ],
     ctaTitle: "Which workflow matters to your restaurant?", ctaDescription: "Tell the BMS team about your store, branch count and the work you want to improve.",
     scope: "These diagrams explain system capabilities. They are not live store data or proof of completed transactions. Content reviewed 31 October 2026.",
+    fullscreen: { open: "Full screen", close: "Exit full screen", rotateHint: "Rotate to landscape to see every column, or scroll sideways.", dismiss: "Got it" },
     labels: { person: "Person", system: "System", assistant: "Read-only", alt: "Case", opt: "When applicable", loop: "Repeat", else: "Alternative" },
     profile: {
       heading: "Choose how your shop works", description: "Select an example and recommended flows. This does not change your store configuration.",

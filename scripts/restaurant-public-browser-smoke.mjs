@@ -76,25 +76,26 @@ try {
       await page.emulateMedia({ media: "screen" });
     }
     await page.goBack();
-    await page.waitForFunction(() => location.hash === "#flow-10");
-    await guide.locator("#flow-10").waitFor();
+    // Flow 12 lives in group 1: selecting that group visits Flow 1 before opening Flow 12.
+    await page.waitForFunction(() => location.hash === "#flow-1");
+    await guide.locator("#flow-1").waitFor();
     await page.goto(`${base}/restaurant#flow-2`);
     await guide.locator("#flow-2").waitFor();
     await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
       value: { writeText: async text => { window.copiedFlowLink = text; } } }));
     await guide.locator('[data-copy-flow]').click();
-    assert.equal(await page.evaluate(() => window.copiedFlowLink), `${base}/restaurant#flow-2`);
+    assert.equal(await page.evaluate(() => window.copiedFlowLink), page.url());
     await page.evaluate(() => Object.defineProperty(navigator, "share", { configurable: true,
       value: async data => { window.sharedFlow = data; } }));
     await guide.locator('[data-share-flow]').click();
-    assert.equal(await page.evaluate(() => window.sharedFlow.url), `${base}/restaurant#flow-2`);
+    assert.equal(await page.evaluate(() => window.sharedFlow.url), page.url());
     await page.evaluate(() => { window.copiedFlowLink = null; Object.defineProperty(navigator, "share", { configurable: true,
       value: async () => { throw new DOMException("FAKE cancelled", "AbortError"); } }); });
     await guide.locator('[data-share-flow]').click();
     assert.equal(await page.evaluate(() => window.copiedFlowLink), null, "Cancelling share must not copy");
     await page.evaluate(() => Object.defineProperty(navigator, "share", { configurable: true, value: undefined }));
     await guide.locator('[data-share-flow]').click();
-    assert.equal(await page.evaluate(() => window.copiedFlowLink), `${base}/restaurant#flow-2`);
+    assert.equal(await page.evaluate(() => window.copiedFlowLink), page.url());
     await page.evaluate(() => { window.print = () => { window.flowPrintCalled = true; }; });
     await guide.locator('[data-print-flow]').click();
     await page.waitForFunction(() => window.flowPrintCalled === true);
@@ -108,9 +109,10 @@ try {
     await guide.locator('select[aria-label]').selectOption("1.5");
     assert.ok(await svg.evaluate(el => el.getBoundingClientRect().width) > before);
     await guide.locator('select[aria-label]').selectOption("fit");
-    await guide.locator("details summary").click();
-    assert.ok(await guide.locator("details[open] li").count() > 10);
-    await guide.locator("details summary").click();
+    const transcript = guide.locator("#flow-2 details");
+    await transcript.locator("summary").click();
+    assert.ok(await transcript.locator("li").count() > 10);
+    await transcript.locator("summary").click();
     await page.goto(`${base}/restaurant?shop=food_beverage#flow-3`);
     await guide.locator("#flow-3").waitFor();
     assert.match(await guide.locator("#flow-3 h3").innerText(), lang === "th" ? /คาเฟ่/ : /Cafe/);
@@ -174,6 +176,24 @@ try {
     await page.goto(`${base}/restaurant#flow-2`);
     await guide.locator("#flow-2").waitFor();
     await page.evaluate(() => window.scrollTo(0, 0));
+    // Full screen falls back to an overlay when headless Chrome refuses the API; both must cover the viewport.
+    await guide.locator('[data-open-fullscreen]').click();
+    const frame = guide.locator('[data-diagram-frame]:not([data-diagram-frame="inline"])');
+    await frame.waitFor();
+    const box = await frame.boundingBox();
+    assert.ok(box.width >= width - 1 && box.height >= 999, `Full screen covers the viewport at ${width}`);
+    assert.ok(await frame.locator('[data-restaurant-player]').count() === 1 && await frame.locator('svg[role="img"]').count() === 1);
+    assert.ok(await page.evaluate(() => document.activeElement?.hasAttribute("data-close-fullscreen")));
+    await page.keyboard.press("Escape");
+    await guide.locator('[data-diagram-frame="inline"]').waitFor();
+    assert.ok(await page.evaluate(() => document.activeElement?.hasAttribute("data-open-fullscreen")), "Focus returns to the button");
+    if (width === 390) {
+      await page.evaluate(() => Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: false }));
+      await guide.locator('[data-open-fullscreen]').click();
+      await guide.locator('[data-diagram-frame="overlay"]').waitFor();
+      await page.keyboard.press("Escape");
+      await guide.locator('[data-diagram-frame="inline"]').waitFor();
+    }
     await page.screenshot({ path: `${output}/${lang}-${width}-page.png`, fullPage: true });
     await page.screenshot({ path: `${output}/${lang}-${width}-preview.png` });
     await guide.locator("#flow-2").screenshot({ path: `${output}/${lang}-${width}-diagram.png` });
@@ -187,8 +207,8 @@ try {
     await guide.locator("#flow-2").screenshot({ path: `${output}/${lang}-${width}-dark.png` });
     await page.goto(base);
     assert.equal(await page.locator('[data-restaurant-print]').count(), 0, "Print portal cleans up after navigation");
-    await page.locator('main a[href="/restaurant"]').first().waitFor();
-    assert.ok(await page.locator('footer a[href="/restaurant"]').count() >= 1);
+    await page.locator('main a[href$="/restaurant"]').first().waitFor();
+    assert.ok(await page.locator('footer a[href$="/restaurant"]').count() >= 1);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Homepage overflow");
     assert.deepEqual(errors, [], `Browser exceptions: ${lang}/${width}`);
     await context.close();

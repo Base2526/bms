@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { restaurantFlows } from "../apps/web/components/marketing/restaurant/flowContent.ts";
 import { restaurantCopy } from "../apps/web/components/marketing/restaurant/content.ts";
 import { parseSequence, layoutSequence, paginateSequence, wrapSequenceText } from "../apps/web/components/marketing/restaurant/sequence.ts";
@@ -214,4 +215,25 @@ test("invalid branch input falls back safely and loops disclose a single example
   for (const value of [NaN, Infinity, -1, 0.5, 99]) assert.deepEqual(compilePlayback(sequence, { [branch.id]: value }), first);
   assert.ok(!first.cues.some(cue => cue.label === "Second"));
   assert.equal(first.cues.filter(cue => cue.kind === "loop").length, 1);
+});
+
+test("full screen reuses the on-page player and diagram, with a fallback where the API is missing", () => {
+  const read = (file: string) => readFileSync(new URL(`../apps/web/components/marketing/restaurant/${file}`, import.meta.url), "utf8");
+  const source = read("SequenceDiagram.tsx").replace(/^\s*\/\/.*$/gm, "");
+  const frame = source.slice(source.indexOf("<div ref={frame}"), source.indexOf("<details"));
+  // One frame: entering full screen must not remount playback (it would stop the Thai audio mid-step).
+  assert.equal((source.match(/<PlaybackPlayer/g) ?? []).length, 1);
+  assert.ok(frame.includes("<PlaybackPlayer") && frame.includes("<SequenceSvg"), "player and diagram live inside the full-screen frame");
+  assert.match(source, /element\.requestFullscreen\(\)/);
+  assert.match(source, /setExpanded\("overlay"\)/, "iPhone Safari has no element full screen; use the overlay");
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /fullscreenchange/);
+  assert.match(source, /openButton\.current\?\.focus\(\)/, "focus returns to the button that opened full screen");
+  for (const lang of ["th", "en"] as const) {
+    const copy = restaurantCopy[lang].fullscreen;
+    assert.ok(copy.open && copy.close && copy.rotateHint && copy.dismiss, lang);
+  }
+  const css = read("restaurant.module.css");
+  assert.match(css, /\.fullscreenFrame \{[^}]*position: fixed;[^}]*inset: 0;/);
+  assert.match(css, /\.fullscreenFrame \.diagramScroll \{[^}]*min-height: 0;/, "the diagram, not the page, scrolls inside full screen");
 });

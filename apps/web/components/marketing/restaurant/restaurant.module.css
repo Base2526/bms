@@ -137,6 +137,36 @@
 .diagramTools p { font-size: 12px; color: var(--sub); max-width: 640px; }
 .diagramTools label { display: flex; gap: 10px; align-items: center; flex-shrink: 0; font-size: 12px; }
 .diagramTools select { min-height: 44px; background: var(--paper); color: var(--ink); border: 1px solid var(--line); padding: 7px 9px; border-radius: 7px; }
+.diagramActions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; flex-shrink: 0; }
+.diagramActions .primaryButton { min-height: 40px; padding: 7px 14px; font-size: 13px; gap: 8px; }
+.diagramActions svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* Full screen: the same frame as the page (no remount), laid out as bar → diagram → player. */
+.fullscreenFrame { position: fixed; inset: 0; z-index: 1000; display: flex; flex-direction: column; gap: 10px; overflow: hidden; background: var(--paper); color: var(--ink);
+  padding: max(10px, env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) max(10px, env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px)); }
+.fullscreenFrame:fullscreen { width: 100%; height: 100%; }
+.fullscreenBar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.fullscreenBar div { display: grid; min-width: 0; }
+.fullscreenBar small { color: var(--accent); font-size: 12px; font-weight: 600; }
+.fullscreenBar strong { font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fullscreenBar .button { min-height: 40px; flex-shrink: 0; }
+.fullscreenFrame .diagramTools { margin: 0; padding: 8px 12px; }
+.fullscreenFrame .diagramTools p { display: none; }
+.fullscreenFrame .diagramScroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 8px 0; border: 1px solid var(--line); }
+.fullscreenFrame [data-restaurant-player] { order: 1; margin-top: 0; padding: 10px 12px; }
+.fullscreenFrame .playerHeading p, .fullscreenFrame .voiceNotice { display: none; }
+.fullscreenFrame .playerChoices { padding: 8px 0; }
+.fullscreenFrame .currentCue { min-height: 0; padding: 8px 12px; }
+.fullscreenFrame .playerControls { margin-top: 8px; }
+.fullscreenFrame [data-download-narration] { display: none; }
+.rotateHint { display: none; }
+@media (orientation: portrait) and (max-width: 767px) {
+  .fullscreenFrame .rotateHint { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0; padding: 8px 12px; border-radius: 10px; background: var(--soft); font-size: 12px; color: var(--sub); }
+  .rotateHint button { border: 0; background: none; color: var(--accent); font-weight: 600; min-height: 36px; }
+  .fullscreenFrame .currentCue { grid-template-columns: minmax(0, 1fr); }
+  .fullscreenFrame .currentCue p { border-left: 0; padding-left: 0; }
+  .fullscreenFrame .playerControls .primaryButton { flex: 0 1 auto; }
+  .fullscreenFrame .playerChoices { display: none; }
+}
 .diagramScroll { max-width: 100%; overflow-x: auto; padding: 20px 0 10px; border-radius: 12px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
 .diagramSvg { display: block; height: auto; max-width: none; font-family: inherit; }
 .svgText { fill: var(--ink); }
