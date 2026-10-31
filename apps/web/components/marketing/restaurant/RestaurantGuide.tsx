@@ -22,8 +22,11 @@ function JourneyIcon({ index }: { index: number }) {
     {index === 2 && <><path d="M5 12a4 4 0 0 1 3-3.87A4.5 4.5 0 0 1 16.5 7 4 4 0 0 1 19 14H5a2 2 0 0 1 0-4" /><path d="M7 14v5h10v-5" /></>}
     {index === 3 && <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 9h18M6 15h4" /></>}
     {index === 4 && <><path d="M4 20V10m5 10V4m6 16v-7m5 7V7" /><path d="m3 6 5-3 6 5 6-5" /></>}
+    {index === 5 && <><path d="M3 21h18M5 21V10l7-5 7 5v11" /><path d="M9 21v-6h6v6M9 10h6" /></>}
   </svg>;
 }
+// Journey copy starts with the central kitchen (icon 5); the remaining steps keep their original icons.
+const JOURNEY_ICONS = [5, 0, 1, 2, 3, 4];
 
 function TrustIcon({ index }: { index: number }) {
   const common = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -44,7 +47,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
     return () => clearOverride("/restaurant");
   }, [setOverride, clearOverride, homeLabel, copy.breadcrumb]);
   const [selected, setSelected] = useState(3), [shareStatus, setShareStatus] = useState<"copied" | "failed" | "shared" | null>(null);
-  const [profile, setProfile] = useState<GuideProfile>({ shop: "overview", service: "dine_in", multiBranch: false });
+  const [profile, setProfile] = useState<GuideProfile>({ shop: "overview", service: "dine_in", multiBranch: false, centralKitchen: false });
   const [includeExamples, setIncludeExamples] = useState(false);
   const shareRequest = useRef(0);
   useEffect(() => { shareRequest.current++; setShareStatus(null); return () => { shareRequest.current++; }; }, [lang]);
@@ -57,10 +60,12 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
       const url = new URL(window.location.href);
       const shop = url.searchParams.get("shop");
       const service = url.searchParams.get("service");
+      const multiBranch = url.searchParams.get("branches") === "multi";
       setProfile({
         shop: shop === "restaurant" || shop === "food_beverage" || shop === "board_game_cafe" ? shop : "overview",
         service: service === "counter" || service === "online" ? service : "dine_in",
-        multiBranch: url.searchParams.get("branches") === "multi",
+        multiBranch,
+        centralKitchen: multiBranch && url.searchParams.get("kitchen") === "central",
       });
       setShareStatus(null);
       setIncludeExamples(false);
@@ -84,7 +89,9 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
   const visibleIds = guideFlows(profile, showingExamples);
   const visibleFlows = restaurantFlows.filter(item => visibleIds.includes(item.id));
   const hasExamples = guideFlows(profile).length < restaurantFlows.length;
-  const scopeSummary = copy.profile.scopes[profile.shop === "restaurant" ? profile.service : profile.shop];
+  const branchShop = profile.shop === "restaurant" || profile.shop === "food_beverage";
+  const scopeSummary = copy.profile.scopes[profile.shop === "restaurant" ? profile.service : profile.shop]
+    + (branchShop && profile.multiBranch && profile.centralKitchen ? ` ${copy.profile.centralKitchenScope}` : "");
   const printScope = `${profile.shop === "board_game_cafe" ? copy.profile.additionalHeading : copy.profile.primaryHeading} · ${shopLabels[profile.shop]}${profile.shop === "restaurant" ? ` · ${copy.profile.services[profile.service]}` : ""}`;
   const fitLabel = (value: ReturnType<typeof flowFit>) => value === "restaurant_example" ? copy.profile.restaurantExample : copy.profile[value];
   const recommended = restaurantFlows.filter(item => flowFit(item.id, profile) === "recommended");
@@ -104,6 +111,8 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
     else url.searchParams.delete("service");
     if (nextProfile.multiBranch) url.searchParams.set("branches", "multi");
     else url.searchParams.delete("branches");
+    if (nextProfile.multiBranch && nextProfile.centralKitchen) url.searchParams.set("kitchen", "central");
+    else url.searchParams.delete("kitchen");
     url.hash = `flow-${id}`;
     return url;
   };
@@ -118,7 +127,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
   const changeShop = (shop: ShopType) => {
     if (shop === profile.shop) return;
     setIncludeExamples(false);
-    const nextProfile: GuideProfile = { shop, service: shop === "restaurant" ? "dine_in" : "counter", multiBranch: profile.multiBranch };
+    const nextProfile: GuideProfile = { shop, service: shop === "restaurant" ? "dine_in" : "counter", multiBranch: profile.multiBranch, centralKitchen: profile.centralKitchen };
     navigate(shop === "restaurant" || shop === "food_beverage" || shop === "board_game_cafe" ? 3 : selected, nextProfile);
   };
   const changeService = (service: ServiceStyle) => {
@@ -162,7 +171,7 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
       <div className={styles.heroVisual}>
         <ol className={styles.journey} aria-label={lang === "th" ? "ลำดับการทำงานของร้าน" : "Restaurant workflow"}>
           {copy.journey.map((step, index) => <li key={step}>
-            <span className={styles.journeyIcon}><JourneyIcon index={index} /></span>
+            <span className={styles.journeyIcon}><JourneyIcon index={JOURNEY_ICONS[index]} /></span>
             <strong>{step}</strong>
           </li>)}
         </ol>
@@ -207,7 +216,14 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
         {profile.shop === "restaurant" && <fieldset className={styles.serviceChoices}><legend>{copy.profile.serviceLabel}</legend>
           {(Object.keys(copy.profile.services) as ServiceStyle[]).map(service => <button key={service} type="button" aria-pressed={profile.service === service} onClick={() => changeService(service)}>{copy.profile.services[service]}</button>)}
         </fieldset>}
-        {(profile.shop === "restaurant" || profile.shop === "food_beverage") && <label className={styles.branchChoice}><input type="checkbox" checked={profile.multiBranch} onChange={event => navigate(selected, { ...profile, multiBranch: event.target.checked })} />{copy.profile.multiBranch}</label>}
+        {branchShop && <label className={styles.branchChoice}><input type="checkbox" checked={profile.multiBranch} onChange={event => {
+          const multiBranch = event.target.checked;
+          navigate(!multiBranch && selected === 12 ? 2 : selected, { ...profile, multiBranch, centralKitchen: multiBranch && profile.centralKitchen });
+        }} />{copy.profile.multiBranch}</label>}
+        {branchShop && profile.multiBranch && <label className={styles.branchChoice}><input data-central-kitchen type="checkbox" checked={!!profile.centralKitchen} onChange={event => {
+          const centralKitchen = event.target.checked;
+          navigate(centralKitchen ? 12 : selected, { ...profile, centralKitchen });
+        }} />{copy.profile.centralKitchen}</label>}
         <p className={styles.profileScope} data-profile-scope>{scopeSummary}</p>
         {hasExamples && <label className={styles.branchChoice}><input data-show-examples type="checkbox" checked={showingExamples} onChange={event => {
           setIncludeExamples(event.target.checked);

@@ -115,6 +115,10 @@
     "file": "/audio/restaurant/th/b39084a3f220e549080cd3e4.mp3",
     "duration": 2.808
   },
+  "การอนุมัติ ผลิต และโอนต้องมีคนยืนยันทุกครั้ง ใบโอนยังไม่รองรับสินค้าที่ติดล็อตหรือวันหมดอายุ ของที่ผลิตเป็นล็อตจึงยังส่งผ่านคำขอไม่ได้": {
+    "file": "/audio/restaurant/th/e0a4a38a4b415466944cf64c.mp3",
+    "duration": 8.184
+  },
   "การเลือกดูตัวอย่างนี้ไม่เปลี่ยนประเภทร้านหรือการตั้งค่าจริง": {
     "file": "/audio/restaurant/th/797413b4fa67460dfa34ec8f.mp3",
     "duration": 3.48
@@ -130,6 +134,10 @@
   "ของพร้อมขาย": {
     "file": "/audio/restaurant/th/b110ddf0b8b650299779a218.mp3",
     "duration": 0.96
+  },
+  "ของพร้อมส่งไม่พอ": {
+    "file": "/audio/restaurant/th/049c4cb8ed06505f985ca184.mp3",
+    "duration": 1.344
   },
   "ของส่วนกลางไม่พอ": {
     "file": "/audio/restaurant/th/9d4436e9ca0ed44ae51092af.mp3",
@@ -207,6 +215,14 @@
     "file": "/audio/restaurant/th/66d26a4a7b7d4521b15d74c8.mp3",
     "duration": 2.76
   },
+  "คำขอเติมของ. ตัดของจากครัวกลาง ของอยู่ระหว่างขนส่ง": {
+    "file": "/audio/restaurant/th/22e8868e438a01f7f08f9bf8.mp3",
+    "duration": 3.168
+  },
+  "คำขอเติมของ. รวมคำขอทุกสาขาตามสินค้า": {
+    "file": "/audio/restaurant/th/ec9ba9903930ed95199f1bcd.mp3",
+    "duration": 2.928
+  },
   "คำขอเติมสินค้า. สร้าง DRAFT": {
     "file": "/audio/restaurant/th/6a8c9fa3ac215784bef29419.mp3",
     "duration": 2.16
@@ -242,6 +258,18 @@
   "งานครัว. แจ้งอาหารพร้อมส่งมอบ": {
     "file": "/audio/restaurant/th/8ea0485a8b655db06cb58479.mp3",
     "duration": 1.968
+  },
+  "งานผลิตและวัตถุดิบ. ตรวจวัตถุดิบที่มี ที่รอรับ และที่ขาด": {
+    "file": "/audio/restaurant/th/045a0bf0ff0a2e98e1a28be5.mp3",
+    "duration": 3.408
+  },
+  "งานผลิตและวัตถุดิบ. ตัดวัตถุดิบที่หมดอายุก่อน และรับของที่ผลิตเป็นล็อตใหม่": {
+    "file": "/audio/restaurant/th/aa7b4771e099c6241dc9a7fa.mp3",
+    "duration": 4.296
+  },
+  "งานผลิตและวัตถุดิบ. รับวัตถุดิบที่ผ่านการตรวจเข้าสต็อก": {
+    "file": "/audio/restaurant/th/e67970a5aa6dce71e1a52b98.mp3",
+    "duration": 3.288
   },
   "จอครัว KDS. ทีมครัวรับงานและทำอาหาร": {
     "file": "/audio/restaurant/th/d5ecc5e654a6c6c73fd06706.mp3",
@@ -423,6 +451,10 @@
     "file": "/audio/restaurant/th/37b974f4f43e45edaa08649f.mp3",
     "duration": 4.344
   },
+  "ผลิตที่ครัวกลางและส่งให้สาขา. ผู้ช่วย AI อธิบายว่าสาขาไหนใกล้ของหมด สาขาส่งคำขอ ครัวกลางรวมคำขอ วางแผนผลิตและวัตถุดิบ ผลิตเป็นล็อต แล้วส่งให้สาขาตรวจรับ": {
+    "file": "/audio/restaurant/th/bf947a0802c56efaa3f02cf1.mp3",
+    "duration": 9.696
+  },
   "ผู้จัดการ / บัญชี. ตรวจข้อมูลและยืนยัน": {
     "file": "/audio/restaurant/th/e2bc2ba6f8a972c56ff7c89b.mp3",
     "duration": 2.4
@@ -491,6 +523,34 @@
     "file": "/audio/restaurant/th/50f1da3a3161c9b8bc5d6f6e.mp3",
     "duration": 1.68
   },
+  "ผู้จัดการครัวกลาง. ถามว่าสาขาไหนใกล้ของหมด": {
+    "file": "/audio/restaurant/th/7b43f1096f9c2ddda9d0a470.mp3",
+    "duration": 2.928
+  },
+  "ผู้จัดการครัวกลาง. บันทึกวัตถุดิบที่ใช้และผลได้จริง": {
+    "file": "/audio/restaurant/th/59c370779eac315e2c3d3e9f.mp3",
+    "duration": 3.168
+  },
+  "ผู้จัดการครัวกลาง. ปฏิเสธพร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/ef4f18040dc7a37a0fe7cef2.mp3",
+    "duration": 2.448
+  },
+  "ผู้จัดการครัวกลาง. ยืนยันจำนวนอนุมัติพร้อมเหตุผล": {
+    "file": "/audio/restaurant/th/79242d70017c1540c3c448dc.mp3",
+    "duration": 3.096
+  },
+  "ผู้จัดการครัวกลาง. ยืนยันสร้างใบโอนที่ผูกคำขอ": {
+    "file": "/audio/restaurant/th/c46601c70dad6d228ab4d7a9.mp3",
+    "duration": 3.144
+  },
+  "ผู้จัดการครัวกลาง. สร้าง PO และตรวจรับวัตถุดิบ": {
+    "file": "/audio/restaurant/th/1dbfd7e2987c8fc7b2ee75ba.mp3",
+    "duration": 2.856
+  },
+  "ผู้จัดการครัวกลาง. สร้างงานผลิตและแผนวัตถุดิบล่วงหน้าไม่เกิน 7 วัน": {
+    "file": "/audio/restaurant/th/07ea01f88f5892b0273957b8.mp3",
+    "duration": 3.936
+  },
   "ผู้จัดซื้อ. ติดตามส่วนที่ขาด": {
     "file": "/audio/restaurant/th/24209ab4028c0ecba0d9d87a.mp3",
     "duration": 1.896
@@ -506,6 +566,18 @@
   "ผู้จัดซื้อ. ส่งคำสั่งซื้อผ่านช่องทางที่ใช้งาน": {
     "file": "/audio/restaurant/th/aa1308862dfc4b80854e39ff.mp3",
     "duration": 2.88
+  },
+  "ผู้ช่วย AI อ่านและอธิบายเท่านั้น ไม่สร้างคำขอ ไม่อนุมัติ ไม่สั่งผลิต และไม่ย้ายสต็อก": {
+    "file": "/audio/restaurant/th/a904c7089c75d330ada80b6a.mp3",
+    "duration": 5.088
+  },
+  "ผู้ช่วย AI. อธิบายตัวเลขพร้อมบอกว่าเป็นค่าประมาณ": {
+    "file": "/audio/restaurant/th/4b3d3c29b7dcf21d16d8b0d5.mp3",
+    "duration": 3.048
+  },
+  "ผู้ช่วย AI. อ่านคำเตือนของใกล้หมดรายสาขา": {
+    "file": "/audio/restaurant/th/51e64e0d1a6a2b2e794f4093.mp3",
+    "duration": 2.784
   },
   "ผู้ดูแลสูตร. บันทึกสูตรต่อเสิร์ฟ สูตรย่อย และ SOP": {
     "file": "/audio/restaurant/th/91c2a4134120430fb38fbaad.mp3",
@@ -730,6 +802,14 @@
   "พนักงานสาขา. ขอสินค้า จำนวน และวันที่ต้องการ": {
     "file": "/audio/restaurant/th/49d1154b54ea8ba6380cb1f8.mp3",
     "duration": 3.072
+  },
+  "พนักงานสาขา. ขอสินค้า จำนวน และวันที่ต้องใช้": {
+    "file": "/audio/restaurant/th/0fbd623cb2eb9837a329df8e.mp3",
+    "duration": 3.048
+  },
+  "พนักงานสาขา. ตรวจรับของดี เสียหาย และขาด": {
+    "file": "/audio/restaurant/th/458b282f96c6c2b38c930e44.mp3",
+    "duration": 2.808
   },
   "พนักงานสาขา. ตรวจรับดี เสียหาย และขาด พร้อมเหตุผล": {
     "file": "/audio/restaurant/th/da3f0c4841c7dafa73010bc7.mp3",
@@ -1014,6 +1094,14 @@
   "สต็อกและต้นทุน. ผลการจอง": {
     "file": "/audio/restaurant/th/e4fc9a47ea8d4ebf040bb16a.mp3",
     "duration": 1.824
+  },
+  "สต็อกและล็อต. วันที่น่าจะหมด จำนวนแนะนำ และสูตรที่ใช้": {
+    "file": "/audio/restaurant/th/f1f93b71bd20eec3d71412a4.mp3",
+    "duration": 3.288
+  },
+  "สต็อกและล็อต. อัปเดตจำนวนที่สาขารับจริง": {
+    "file": "/audio/restaurant/th/df017aad525b850649ed90c2.mp3",
+    "duration": 2.712
   },
   "สร้างใช้ทั้งสองสาขา ส่งและยกเลิกใช้ต้นทาง รับใช้ปลายทาง": {
     "file": "/audio/restaurant/th/b629b3e99416197fb79ed73b.mp3",

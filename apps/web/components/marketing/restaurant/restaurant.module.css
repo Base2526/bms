@@ -6,6 +6,9 @@
   --line: var(--app-border);
   --accent: var(--app-primary);
   --warm: rgba(217, 119, 6, .1);
+  /* AI assistant: violet, kept apart from the orange playback highlight. */
+  --assistant: #7449c9;
+  --assistant-soft: color-mix(in srgb, var(--assistant) 12%, var(--paper));
   width: 100%; min-width: 0; color: var(--ink); background: var(--paper);
   padding: 8px clamp(12px, 3vw, 42px) 24px; line-height: 1.7;
 }
@@ -35,7 +38,7 @@
 .heroVisual::before, .heroVisual::after { content: ""; position: absolute; z-index: -1; border: 2px solid color-mix(in srgb, var(--accent) 10%, transparent); border-radius: 50%; }
 .heroVisual::before { width: 380px; height: 220px; right: -80px; top: 54px; transform: rotate(-8deg); }
 .heroVisual::after { width: 300px; height: 180px; left: -120px; bottom: -65px; }
-.journey { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
+.journey { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; list-style: none; padding: 0; margin: 0; }
 .journey li { position: relative; min-width: 0; min-height: 142px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 13px; padding: 16px 8px; border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line)); border-radius: 14px; background: color-mix(in srgb, var(--paper) 96%, transparent); box-shadow: 0 10px 26px rgba(36, 88, 206, .07); text-align: center; }
 .journey li:not(:last-child)::after { content: "→"; position: absolute; z-index: 2; right: -18px; top: 50%; width: 24px; color: var(--accent); font-weight: 700; transform: translateY(-50%); }
 .journey strong { color: var(--ink); font-size: 13px; line-height: 1.4; }
@@ -140,14 +143,17 @@
 .svgMuted { fill: var(--sub); }
 .rect_person { fill: var(--warm); }
 .rect_system { fill: var(--soft); }
+.rect_assistant { fill: var(--assistant-soft); stroke: var(--assistant); stroke-width: 1; }
 .rect_paper { fill: var(--paper); }
 .rect_frame { fill: none; stroke: var(--line); stroke-width: 1; }
 .guideLine { stroke: var(--line); stroke-width: 1; }
 .messageLine { fill: none; stroke: var(--accent); stroke-width: 1.4; }
+.assistantLine { fill: none; stroke: var(--assistant); stroke-width: 1.6; }
 .activeRect { stroke: var(--accent); stroke-width: 2.5; fill: color-mix(in srgb, var(--accent) 12%, var(--paper)); }
 .activeText { fill: var(--accent); font-weight: 700; }
 .activeLine { stroke: #e26a00; stroke-width: 3.5; }
 .arrowHead { fill: var(--accent); }
+.assistantArrowHead { fill: var(--assistant); }
 .transcript { margin-top: 14px; border: 1px solid var(--line); border-radius: 9px; padding: 12px 16px; font-size: 14px; }
 .transcript summary { cursor: pointer; min-height: 28px; }
 .transcript ol { padding-left: 22px; }
@@ -168,7 +174,7 @@
 .printRoot { display: none; }
 @page restaurant-flow { size: A4 landscape; margin: 10mm; }
 @media print {
-  .printRoot { display: block; --ink: #172033; --sub: #43516a; --paper: #fff; --soft: #edf1f6; --line: #bcc5d2; --accent: #2458ce; --warm: #fbf0e1; color: var(--ink); background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .printRoot { display: block; --ink: #172033; --sub: #43516a; --paper: #fff; --soft: #edf1f6; --line: #bcc5d2; --accent: #2458ce; --warm: #fbf0e1; --assistant: #6a3fc0; --assistant-soft: #efe8fb; color: var(--ink); background: #fff; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .printRoot * { box-sizing: border-box; }
   .printPage { page: restaurant-flow; width: 277mm; height: 188mm; margin: 0; padding: 0; break-after: page; break-inside: avoid; display: flex; flex-direction: column; }
   .printPage:last-child { break-after: auto; }
@@ -199,7 +205,6 @@
   .heroVisual { min-height: 0; padding: 16px; border-radius: 18px; }
   .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
   .journey li { min-height: 112px; padding: 13px 6px; }
-  .journey li:last-child { grid-column: 1 / -1; min-height: 96px; }
   .journey li::after { display: none; }
   .journeyIcon { width: 34px; height: 34px; }
   .visualBottom { min-height: 0; grid-template-columns: minmax(0, 1fr); margin-top: 12px; }

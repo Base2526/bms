@@ -12,7 +12,7 @@ test("main formats and additional board game format have explicit, relevant flow
   assert.deepEqual(PRIMARY_GUIDE_SHOPS, ["overview", "restaurant", "food_beverage"]);
   assert.deepEqual(ADDITIONAL_GUIDE_SHOPS, ["board_game_cafe"]);
   const cases: Array<[GuideProfile, number[]]> = [
-    [{ shop: "overview", service: "dine_in", multiBranch: false }, [1,2,3,4,5,6,7,8,9,10,11]],
+    [{ shop: "overview", service: "dine_in", multiBranch: false }, [1,2,3,4,5,6,7,8,9,10,11,12]],
     [{ shop: "restaurant", service: "dine_in", multiBranch: false }, [1,3,4,5,6,7,8,9,10,11]],
     [{ shop: "restaurant", service: "counter", multiBranch: false }, [1,3,4,5,7,8,9,10,11]],
     [{ shop: "restaurant", service: "online", multiBranch: false }, [1,4,5,7,8,9,10,11]],
@@ -21,11 +21,35 @@ test("main formats and additional board game format have explicit, relevant flow
   ];
   for (const [profile, expected] of cases) {
     assert.deepEqual(guideFlows(profile), expected, JSON.stringify(profile));
-    assert.equal(guideFlows(profile, true).length, 11);
+    assert.equal(guideFlows(profile, true).length, 12);
   }
   for (const shop of ["restaurant", "food_beverage"] as const) {
     const profile: GuideProfile = { shop, service: "counter", multiBranch: true };
     assert.ok(guideFlows(profile).includes(2)); assert.equal(flowFit(2, profile), "recommended");
+    // The central kitchen flow needs several branches; ticking "central kitchen" promotes it.
+    assert.equal(flowFit(12, { ...profile, multiBranch: false }), "restaurant_example");
+    assert.equal(flowFit(12, profile), "related");
+    assert.equal(flowFit(12, { ...profile, centralKitchen: true }), "recommended");
+  }
+  assert.equal(flowFit(12, { shop: "board_game_cafe", service: "counter", multiBranch: true, centralKitchen: true }), "restaurant_example");
+});
+
+test("the AI assistant is its own read-only participant and never writes business records", () => {
+  assert.equal(parseSequence("sequenceDiagram\nassistant AI as Assistant\nparticipant B as BMS\nAI->>B: Read").participants[0].assistant, true);
+  for (const flow of restaurantFlows) for (const lang of ["th", "en"] as const) {
+    const sequence = parseSequence(flow[lang].source);
+    const assistants = sequence.participants.filter(p => p.assistant).map(p => p.id);
+    if (flow.id !== 12) { assert.deepEqual(assistants, [], `Flow ${flow.id} has no AI step`); continue; }
+    assert.deepEqual(assistants, ["AI"]);
+    for (const event of sequence.events) if (event.kind === "message" && event.from === "AI")
+      assert.ok(event.to === "Stock" || (event.reply && event.to === "Manager"), `${lang}: AI may only read stock and answer: ${event.label}`);
+    const layout = layoutSequence(sequence, measure, lang, restaurantCopy[lang].labels);
+    assert.ok(layout.shapes.some(shape => shape.type === "rect" && shape.tone === "assistant"));
+    assert.ok(layout.shapes.some(shape => shape.type === "line" && shape.tone === "assistant"));
+    // One row only: a wrapped header label would overlap the participant name.
+    assert.ok(layout.shapes.some(shape => shape.type === "text" && shape.rows.length === 1 && shape.rows[0] === restaurantCopy[lang].labels.assistant));
+    // The page must not claim lot-produced goods can be transferred until transfers move lots.
+    assert.match(flow[lang].note, lang === "th" ? /ยังไม่รองรับสินค้าที่ติดล็อต/ : /do not yet support lot/);
   }
 });
 
@@ -50,14 +74,15 @@ test("print pagination preserves every step without splitting labels or arrows",
 });
 const topology = (source: string) => {
   const parsed = parseSequence(source);
-  return { participants: parsed.participants.map(({ id, human }) => ({ id, human })),
+  return { participants: parsed.participants.map(({ id, human, assistant }) => ({ id, human, assistant })),
     events: parsed.events.map(event => event.kind === "message"
       ? { kind: event.kind, from: event.from, to: event.to, reply: event.reply }
       : { kind: event.kind }) };
 };
 
-test("all 11 translated guides preserve actors, messages and exception branches", () => {
-  assert.deepEqual(restaurantFlows.map(f => f.id), Array.from({ length: 11 }, (_, i) => i + 1));
+test("all 12 translated guides preserve actors, messages and exception branches", () => {
+  // IDs are public deep links (#flow-N); new flows append instead of renumbering.
+  assert.deepEqual(restaurantFlows.map(f => f.id), Array.from({ length: 12 }, (_, i) => i + 1));
   assert.equal(new Set(restaurantFlows.map(f => f.group)).size, 4);
   for (const flow of restaurantFlows) {
     assert.deepEqual(topology(flow.th.source), topology(flow.en.source), `Flow ${flow.id}`);

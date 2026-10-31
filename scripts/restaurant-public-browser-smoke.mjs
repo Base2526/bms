@@ -35,8 +35,8 @@ try {
     assert.ok(await page.locator('meta[name="description"]').getAttribute("content"));
     assert.ok(await guide.locator('a[href*="line.me"]').count() >= 1);
     const categories = guide.locator('[role="group"] button');
-    const groups = { 1: 0, 2: 0, 3: 1, 4: 2, 5: 2, 6: 1, 7: 1, 8: 0, 9: 1, 10: 2, 11: 3 };
-    for (let id = 1; id <= 11; id++) {
+    const groups = { 1: 0, 2: 0, 3: 1, 4: 2, 5: 2, 6: 1, 7: 1, 8: 0, 9: 1, 10: 2, 11: 3, 12: 0 };
+    for (let id = 1; id <= 12; id++) {
       await categories.nth(groups[id]).click();
       await guide.locator(`[data-flow-id="${id}"]`).click();
       await page.waitForFunction(id => location.hash === `#flow-${id}`, id);
@@ -132,7 +132,7 @@ try {
     }
     await guide.locator('[data-show-examples]').check();
     await categories.nth(0).click();
-    assert.deepEqual(await listedFlows(), [1, 2, 8]);
+    assert.deepEqual(await listedFlows(), [1, 2, 8, 12]);
     await guide.locator('[data-flow-id="1"]').click();
     await guide.locator('[data-flow-reference]').waitFor();
     await page.emulateMedia({ media: "print" });
@@ -161,7 +161,13 @@ try {
     await categories.nth(0).click();
     assert.deepEqual(await listedFlows(), [1, 8]);
     await guide.getByRole('checkbox', { name: lang === 'th' ? 'มีหลายสาขา' : 'Multiple branches', exact: true }).check();
-    assert.deepEqual(await listedFlows(), [1, 2, 8]);
+    assert.deepEqual(await listedFlows(), [1, 2, 8, 12]);
+    await guide.locator('[data-central-kitchen]').check();
+    await page.waitForFunction(() => location.hash === "#flow-12" && new URL(location.href).searchParams.get("kitchen") === "central");
+    assert.match(await guide.locator('[data-profile-scope]').innerText(), lang === "th" ? /มีครัวกลาง/ : /Central kitchen/);
+    await guide.getByRole('checkbox', { name: lang === 'th' ? 'มีหลายสาขา' : 'Multiple branches', exact: true }).uncheck();
+    await page.waitForFunction(() => location.hash === "#flow-2" && !new URL(location.href).searchParams.has("kitchen"));
+    assert.equal(await guide.locator('[data-central-kitchen]').count(), 0);
     await guide.locator('[data-shop="board_game_cafe"]').click();
     await guide.locator('[data-additional-shops]').scrollIntoViewIfNeeded();
     await page.screenshot({ path: `${output}/${lang}-${width}-shop-groups.png` });
@@ -186,7 +192,7 @@ try {
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), "Homepage overflow");
     assert.deepEqual(errors, [], `Browser exceptions: ${lang}/${width}`);
     await context.close();
-    console.log(`PASS ${lang} ${width}px: 11 diagrams, history, deep link, zoom, transcript, theme, session CTA, navigation`);
+    console.log(`PASS ${lang} ${width}px: 12 diagrams, history, deep link, zoom, transcript, theme, session CTA, navigation`);
   }
   await writeFile(`${output}/pdf-manifest.json`, JSON.stringify(pdfManifest, null, 2));
 } finally { await browser.close(); }

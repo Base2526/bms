@@ -1,5 +1,6 @@
 /** A deliberately small, validated sequence notation for authored marketing content. */
-export type Participant = { id: string; label: string; human: boolean };
+/** `assistant` is the AI work assistant: it reads and explains, so it is drawn apart from people and systems. */
+export type Participant = { id: string; label: string; human: boolean; assistant: boolean };
 export type SequenceEvent =
   | { kind: "message"; from: string; to: string; label: string; reply: boolean }
   | { kind: "alt" | "opt" | "loop" | "else" | "note"; label: string }
@@ -12,10 +13,10 @@ export function parseSequence(source: string): Sequence {
   for (const raw of source.split("\n")) {
     const line = raw.trim();
     if (!line || line === "sequenceDiagram" || line === "autonumber") continue;
-    const actor = line.match(/^(actor|participant) (\w+) as (.+)$/);
+    const actor = line.match(/^(actor|participant|assistant) (\w+) as (.+)$/);
     if (actor) {
       if (participants.some(p => p.id === actor[2])) throw new Error("Duplicate participant");
-      participants.push({ id: actor[2], label: actor[3], human: actor[1] === "actor" });
+      participants.push({ id: actor[2], label: actor[3], human: actor[1] === "actor", assistant: actor[1] === "assistant" });
       continue;
     }
     const message = line.match(/^(\w+)(--?>>)(\w+):\s*(.+)$/);
@@ -70,11 +71,11 @@ export function wrapSequenceText(text: string, max: number, measure: Measure, la
 }
 
 export type Shape = (
-  | { type: "rect"; x: number; y: number; width: number; height: number; tone: "person" | "system" | "frame" | "paper"; radius: number }
+  | { type: "rect"; x: number; y: number; width: number; height: number; tone: "person" | "system" | "assistant" | "frame" | "paper"; radius: number }
   | { type: "text"; x: number; y: number; rows: string[]; anchor: "start" | "middle" | "end"; small?: boolean; muted?: boolean }
-  | { type: "line"; x1: number; x2: number; y1: number; y2: number; tone: "lifeline" | "divider" | "message"; reply?: boolean }
-  | { type: "self"; x: number; y: number }) & { eventIndex?: number };
-export type DiagramLabels = { person: string; system: string; alt: string; opt: string; loop: string; else: string };
+  | { type: "line"; x1: number; x2: number; y1: number; y2: number; tone: "lifeline" | "divider" | "message" | "assistant"; reply?: boolean }
+  | { type: "self"; x: number; y: number; assistant?: boolean }) & { eventIndex?: number };
+export type DiagramLabels = { person: string; system: string; assistant: string; alt: string; opt: string; loop: string; else: string };
 
 export function layoutSequence(sequence: Sequence, measure: Measure, lang: string, labels: DiagramLabels) {
   const width = Math.max(850, sequence.participants.length * 170 + 100);
@@ -99,7 +100,8 @@ export function layoutSequence(sequence: Sequence, measure: Measure, lang: strin
       const lineY = y + words.rows.length * 21 + 4;
       content.push(text(String(++number).padStart(2, "0"), 15, lineY + 4, 25, "start", true, true));
       content.push({ type: "rect", x: self ? (left ? x - max - 5 : x - 7) : x - max / 2 - 5, y: y - 7, width: max + 10, height: words.rows.length * 21 + 2, radius: 5, tone: "paper" }, words);
-      content.push(self ? { type: "self", x: xs[a], y: lineY } : { type: "line", x1: xs[a], x2: xs[b], y1: lineY, y2: lineY, tone: "message", reply: event.reply });
+      const assisted = sequence.participants[a].assistant || sequence.participants[b].assistant;
+      content.push(self ? { type: "self", x: xs[a], y: lineY, assistant: assisted } : { type: "line", x1: xs[a], x2: xs[b], y1: lineY, y2: lineY, tone: assisted ? "assistant" : "message", reply: event.reply });
       y = lineY + (self ? 48 : 34);
     } else if (event.kind === "alt" || event.kind === "opt" || event.kind === "loop") {
       context.push(`${labels[event.kind]}: ${event.label}`);
@@ -131,8 +133,8 @@ export function layoutSequence(sequence: Sequence, measure: Measure, lang: strin
   }
   sequence.participants.forEach((p, i) => headers.push(
     { type: "line", x1: xs[i], x2: xs[i], y1: headerHeight + 8, y2: y - 14, tone: "lifeline" },
-    { type: "rect", x: xs[i] - 73, y: 8, width: 146, height: headerHeight, radius: 12, tone: p.human ? "person" : "system" },
-    text(p.human ? labels.person : labels.system, xs[i], 30, 127, "middle", true, true),
+    { type: "rect", x: xs[i] - 73, y: 8, width: 146, height: headerHeight, radius: 12, tone: p.assistant ? "assistant" : p.human ? "person" : "system" },
+    text(p.assistant ? labels.assistant : p.human ? labels.person : labels.system, xs[i], 30, 127, "middle", true, true),
     { type: "text", x: xs[i], y: 53, rows: headerRows[i], anchor: "middle" },
   ));
   return { width, height: y + 10, headerBottom: headerHeight + 20, breaks, shapes: [...headers, ...frames, ...content] };

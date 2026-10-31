@@ -173,6 +173,12 @@
     "sha256": "ea271668485f2021a5226ecbdab8ce922bf128cb0c3182fd340b8f9feb14c945",
     "spoken": "การ ชำระ และ กะ ขาย บิล สำเร็จ และ ข้อมูล ใบเสร็จ"
   },
+  "e0a4a38a4b415466944cf64c": {
+    "file": "/audio/restaurant/th/e0a4a38a4b415466944cf64c.mp3",
+    "duration": 8.184,
+    "sha256": "3c2ba31ccc50a814a8abbdead1676f58c7cd46eda86a0773f75e9ec8642fd909",
+    "spoken": "การอนุมัติ ผลิต และ โอน ต้อง มี คน ยืนยัน ทุกครั้ง ใบ โอน ยัง ไม่ รองรับ สินค้า ที่ ติด ล็อต หรือ วันหมดอายุ ของ ที่ ผลิต เป็น ล็อต จึง ยัง ส่งผ่าน คำขอ ไม่ ได้"
+  },
   "797413b4fa67460dfa34ec8f": {
     "file": "/audio/restaurant/th/797413b4fa67460dfa34ec8f.mp3",
     "duration": 3.48,
@@ -196,6 +202,12 @@
     "duration": 0.96,
     "sha256": "a26bf5c24a9040f641ee7bee11910e34118360860cc3054b7677010290e8223d",
     "spoken": "ของ พร้อม ขาย"
+  },
+  "049c4cb8ed06505f985ca184": {
+    "file": "/audio/restaurant/th/049c4cb8ed06505f985ca184.mp3",
+    "duration": 1.344,
+    "sha256": "f54823a90e93d22ec793d506d896f0c3cdc204320f30a4bc3125f6af2e3e5ef2",
+    "spoken": "ของ พร้อม ส่ง ไม่ พอ"
   },
   "9d4436e9ca0ed44ae51092af": {
     "file": "/audio/restaurant/th/9d4436e9ca0ed44ae51092af.mp3",
@@ -311,6 +323,18 @@
     "sha256": "9c9c12dca35671cb9bd16e1444ceef08c9a910287bb397ffc14e3a752730a7ff",
     "spoken": "คำขอ ออนไลน์ สร้าง ออร์เดอร์ จอง ของ และ ลิงก์ ชำระ"
   },
+  "22e8868e438a01f7f08f9bf8": {
+    "file": "/audio/restaurant/th/22e8868e438a01f7f08f9bf8.mp3",
+    "duration": 3.168,
+    "sha256": "f141963d68a00ed32308bebb8b5ef1328d5082502f2e6efc6e7614b71579a04b",
+    "spoken": "คำขอ เติม ของ ตัด ของ จาก ครัว กลาง ของ อยู่ ระหว่าง ขนส่ง"
+  },
+  "ec9ba9903930ed95199f1bcd": {
+    "file": "/audio/restaurant/th/ec9ba9903930ed95199f1bcd.mp3",
+    "duration": 2.928,
+    "sha256": "f353eb5b43b1a3f51672cf1c0a637c23c2529330c0cb60b120e0edb7595ee1e7",
+    "spoken": "คำขอ เติม ของ รวม คำขอ ทุก สาขา ตาม สินค้า"
+  },
   "6a8c9fa3ac215784bef29419": {
     "file": "/audio/restaurant/th/6a8c9fa3ac215784bef29419.mp3",
     "duration": 2.16,
@@ -364,6 +388,24 @@
     "duration": 1.968,
     "sha256": "8c6ee8a13679fe853fc5c5da51d80c945e849cc5e7e1be7f93d3b5717b963ae7",
     "spoken": "งาน ครัว แจ้ง อาหาร พร้อม ส่งมอบ"
+  },
+  "045a0bf0ff0a2e98e1a28be5": {
+    "file": "/audio/restaurant/th/045a0bf0ff0a2e98e1a28be5.mp3",
+    "duration": 3.408,
+    "sha256": "b184e9b93a45ac08968e6bd10b591812f5798aac377e2bcf59152be0b7e0de01",
+    "spoken": "งาน ผลิต และ วัตถุดิบ ตรวจ วัตถุดิบ ที่ มี ที่ รอ รับ และ ที่ ขาด"
+  },
+  "aa7b4771e099c6241dc9a7fa": {
+    "file": "/audio/restaurant/th/aa7b4771e099c6241dc9a7fa.mp3",
+    "duration": 4.296,
+    "sha256": "5313eac7188c9b97d9aed59445bbf3dd45f0a00ab16089d6306972fbf6ab6970",
+    "spoken": "งาน ผลิต และ วัตถุดิบ ตัด วัตถุดิบ ที่ หมดอายุ ก่อน และ รับ ของ ที่ ผลิต เป็น ล็อต ใหม่"
+  },
+  "e67970a5aa6dce71e1a52b98": {
+    "file": "/audio/restaurant/th/e67970a5aa6dce71e1a52b98.mp3",
+    "duration": 3.288,
+    "sha256": "de4ae70aaf2e8ba2514344bf8972a6cc31b89dfb6cee1f0ad9128dad63d688d4",
+    "spoken": "งาน ผลิต และ วัตถุดิบ รับ วัตถุดิบ ที่ ผ่าน การ ตรวจ เข้า สต็อก"
   },
   "d5ecc5e654a6c6c73fd06706": {
     "file": "/audio/restaurant/th/d5ecc5e654a6c6c73fd06706.mp3",
@@ -635,6 +677,12 @@
     "sha256": "71d079257d2cb080fe1ed4ced959a52c56fe73b00283e612098cd7e853468dec",
     "spoken": "ปิด กะ ไม่ ใช่ การ กระทบ ยอด ธนาคาร อัตโนมัติ และ สำเนา พี ดี เอฟ ไม่ ใช่ อี แท็ก ซ์"
   },
+  "bf947a0802c56efaa3f02cf1": {
+    "file": "/audio/restaurant/th/bf947a0802c56efaa3f02cf1.mp3",
+    "duration": 9.696,
+    "sha256": "b6665476bd62e1c5994765471f5ff02d6e343f89afacffa1f2be7e01beb267ca",
+    "spoken": "ผลิต ที่ ครัว กลาง และ ส่ง ให้ สาขา ผู้ช่วย เอ ไอ อธิบาย ว่า สาขา ไหน ใกล้ ของ หมด สาขา ส่ง คำขอ ครัว กลาง รวม คำขอ วางแผน ผลิต และ วัตถุดิบ ผลิต เป็น ล็อต แล้ว ส่ง ให้ สาขา ตรวจรับ"
+  },
   "e2bc2ba6f8a972c56ff7c89b": {
     "file": "/audio/restaurant/th/e2bc2ba6f8a972c56ff7c89b.mp3",
     "duration": 2.4,
@@ -737,6 +785,48 @@
     "sha256": "89891ca5f6d78292d55e886db9ee8500a2b0476de9a2bd37ef566f7ca9b2c933",
     "spoken": "ผู้จัดการ ยืนยัน ส่ง ของ"
   },
+  "7b43f1096f9c2ddda9d0a470": {
+    "file": "/audio/restaurant/th/7b43f1096f9c2ddda9d0a470.mp3",
+    "duration": 2.928,
+    "sha256": "7bb895fd1a0ffec8450dec6f0d4f027829fb508db9393c6a644736c6b73ab327",
+    "spoken": "ผู้จัดการ ครัว กลาง ถาม ว่า สาขา ไหน ใกล้ ของ หมด"
+  },
+  "59c370779eac315e2c3d3e9f": {
+    "file": "/audio/restaurant/th/59c370779eac315e2c3d3e9f.mp3",
+    "duration": 3.168,
+    "sha256": "dabd92951ffd213f11461f52f2d08df0be908957d3892737cc69dc8f2d8145d0",
+    "spoken": "ผู้จัดการ ครัว กลาง บันทึก วัตถุดิบ ที่ ใช้ และ ผลได้ จริง"
+  },
+  "ef4f18040dc7a37a0fe7cef2": {
+    "file": "/audio/restaurant/th/ef4f18040dc7a37a0fe7cef2.mp3",
+    "duration": 2.448,
+    "sha256": "ae4c2989ce4b5fa8bd86879d4ce35f022330b31bff5c7636a802c8a69bff1632",
+    "spoken": "ผู้จัดการ ครัว กลาง ปฏิเสธ พร้อม เหตุผล"
+  },
+  "79242d70017c1540c3c448dc": {
+    "file": "/audio/restaurant/th/79242d70017c1540c3c448dc.mp3",
+    "duration": 3.096,
+    "sha256": "706c95e4358af295d406dc72cf4d6eb6d0bba4f12885e37b307262527ed73fc2",
+    "spoken": "ผู้จัดการ ครัว กลาง ยืนยัน จำนวน อนุมัติ พร้อม เหตุผล"
+  },
+  "c46601c70dad6d228ab4d7a9": {
+    "file": "/audio/restaurant/th/c46601c70dad6d228ab4d7a9.mp3",
+    "duration": 3.144,
+    "sha256": "157976fbd901832575cba93d44511f41ffc866c06a409ee8252e1d5856ad2cc8",
+    "spoken": "ผู้จัดการ ครัว กลาง ยืนยัน สร้าง ใบ โอน ที่ ผูก คำขอ"
+  },
+  "1dbfd7e2987c8fc7b2ee75ba": {
+    "file": "/audio/restaurant/th/1dbfd7e2987c8fc7b2ee75ba.mp3",
+    "duration": 2.856,
+    "sha256": "5c7210b3b160f7adbcd14ee77161ae8dd5ccd10a02e0d6299b70f84c4e403794",
+    "spoken": "ผู้จัดการ ครัว กลาง สร้าง พี โอ และ ตรวจรับ วัตถุดิบ"
+  },
+  "07ea01f88f5892b0273957b8": {
+    "file": "/audio/restaurant/th/07ea01f88f5892b0273957b8.mp3",
+    "duration": 3.936,
+    "sha256": "eceea70bccc4f6095a83d3ea479b1328017be3a689015596548045c51d8ccad5",
+    "spoken": "ผู้จัดการ ครัว กลาง สร้าง งาน ผลิต และ แผน วัตถุดิบ ล่วงหน้า ไม่ เกิน เจ็ด วัน"
+  },
   "24209ab4028c0ecba0d9d87a": {
     "file": "/audio/restaurant/th/24209ab4028c0ecba0d9d87a.mp3",
     "duration": 1.896,
@@ -760,6 +850,24 @@
     "duration": 2.88,
     "sha256": "bef66ac666f10ad9e5a73e46ec2ef7968823e4c309da1cbb466b024852eb0970",
     "spoken": "ผู้ จัดซื้อ ส่ง คำ สั่งซื้อ ผ่าน ช่องทาง ที่ ใช้งาน"
+  },
+  "a904c7089c75d330ada80b6a": {
+    "file": "/audio/restaurant/th/a904c7089c75d330ada80b6a.mp3",
+    "duration": 5.088,
+    "sha256": "e355b22043ecf80d9d430e2bd92ff29581eac50e0236d06faf7b5a92329bd012",
+    "spoken": "ผู้ช่วย เอ ไอ อ่าน และ อธิบาย เท่านั้น ไม่ สร้าง คำขอ ไม่ อนุมัติ ไม่ สั่ง ผลิต และ ไม่ ย้าย สต็อก"
+  },
+  "4b3d3c29b7dcf21d16d8b0d5": {
+    "file": "/audio/restaurant/th/4b3d3c29b7dcf21d16d8b0d5.mp3",
+    "duration": 3.048,
+    "sha256": "211c10f81f312502bd0c7484f923f265edae48c45dbd2ec069882507527ae1b9",
+    "spoken": "ผู้ช่วย เอ ไอ อธิบาย ตัวเลข พร้อม บอ กว่า เป็น ค่า ประมาณ"
+  },
+  "51e64e0d1a6a2b2e794f4093": {
+    "file": "/audio/restaurant/th/51e64e0d1a6a2b2e794f4093.mp3",
+    "duration": 2.784,
+    "sha256": "6afeb7ec0bcb1e4871c182d20beead88ae04b87bb36d2357e5e1bd7c66e3a65b",
+    "spoken": "ผู้ช่วย เอ ไอ อ่าน คำเตือน ของ ใกล้ หมด ราย สาขา"
   },
   "91c2a4134120430fb38fbaad": {
     "file": "/audio/restaurant/th/91c2a4134120430fb38fbaad.mp3",
@@ -1096,6 +1204,18 @@
     "duration": 3.072,
     "sha256": "27a4045ebb96ef99e2613666f79b82b07a91dbda6070a8301b73f874a16af4cd",
     "spoken": "พนักงาน สาขา ขอ สินค้า จำนวน และ วันที่ ต้องการ"
+  },
+  "0fbd623cb2eb9837a329df8e": {
+    "file": "/audio/restaurant/th/0fbd623cb2eb9837a329df8e.mp3",
+    "duration": 3.048,
+    "sha256": "c9f1732b36fc596776853b9512584debcb20ef254613126a4bc63355f0d1a243",
+    "spoken": "พนักงาน สาขา ขอ สินค้า จำนวน และ วันที่ ต้อง ใช้"
+  },
+  "458b282f96c6c2b38c930e44": {
+    "file": "/audio/restaurant/th/458b282f96c6c2b38c930e44.mp3",
+    "duration": 2.808,
+    "sha256": "bac02528e8f814bf1ab17bc771911ffd589413e9e695264fdb3881194e5a0194",
+    "spoken": "พนักงาน สาขา ตรวจรับ ของดี เสียหาย และ ขาด"
   },
   "da3f0c4841c7dafa73010bc7": {
     "file": "/audio/restaurant/th/da3f0c4841c7dafa73010bc7.mp3",
@@ -1522,6 +1642,18 @@
     "duration": 1.824,
     "sha256": "b8d550bca40cb55030b91aecd230fef5822264abdfcd8929c19a59182b3d4782",
     "spoken": "สต็อก และ ต้นทุน ผล การ จอง"
+  },
+  "f1f93b71bd20eec3d71412a4": {
+    "file": "/audio/restaurant/th/f1f93b71bd20eec3d71412a4.mp3",
+    "duration": 3.288,
+    "sha256": "125b6c753d85fdb229abf20e123d4d63cb518f0da29cbd6a98d3b8f5d41e367b",
+    "spoken": "สต็อก และ ล็อต วันที่ น่าจะ หมด จำนวน แนะนำ และ สูตร ที่ ใช้"
+  },
+  "df017aad525b850649ed90c2": {
+    "file": "/audio/restaurant/th/df017aad525b850649ed90c2.mp3",
+    "duration": 2.712,
+    "sha256": "18da29ad33ebbbf560c8e9e4ab1fff247ba4ccfeb8a28e1c9c1bea87c929ec36",
+    "spoken": "สต็อก และ ล็อต อัปเดต จำนวน ที่ สาขา รับ จริง"
   },
   "b629b3e99416197fb79ed73b": {
     "file": "/audio/restaurant/th/b629b3e99416197fb79ed73b.mp3",

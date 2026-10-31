@@ -8,7 +8,7 @@
   recipe/price/loyalty/requisition calculators and an independent cash/stock reconciliation oracle.
   Reads `docs/testing/restaurant-uat-sample-data.json`; creates no tenant, sale, stock, or tax document.
 
-- `node scripts/run-contract-tests.mjs pure restaurant-public-guide`: validates all 11 bilingual
+- `node scripts/run-contract-tests.mjs pure restaurant-public-guide`: validates all 12 bilingual
   sequences, equivalent translated branches, canvas bounds, invalid notation and Thai text wrapping.
   Also checks exclusive failure/success paths for stock, online handover, PO receipts and loyalty.
 - `node scripts/restaurant-playback-browser-smoke.mjs`: local web at `BMS_SMOKE_URL` (default
@@ -21,7 +21,7 @@
   actual MP3 playback with Speech Synthesis removed, desktop/mobile, native audio completion,
   pause/next/rate/mute, flow-switch cleanup, HTTP failure/retry and blocked media permission.
 - `node scripts/run-contract-tests.mjs pure restaurant-recorded-narration`: all authored Thai
-  cues across 11 flows and three profile variants, including hidden branches, must have a shipped
+  cues across 12 flows and three profile variants, including hidden branches, must have a shipped
   MP3 with the expected hash. The title-and-description introduction is also the downloadable Flow
   summary file. Text edits require regeneration; the player never sends text to TTS.
 
@@ -62,7 +62,7 @@ checks that every Thai cue has a verified recording.
   Also checks native-share success/cancellation and clipboard fallback, print button,
   grouping of primary restaurant/cafe vs additional board game formats, profile-specific flow lists,
   explicit reference examples, multi-branch visibility and profile/reference scope in PDF.
-  It verifies print-only layout for all 11 flows and portal cleanup after navigation. Exports TH/EN A4 landscape PDFs
+  It verifies print-only layout for all 12 flows and portal cleanup after navigation. Exports TH/EN A4 landscape PDFs
   into the same ignored directory for visual review. Pure pagination checks preserve contiguous
   steps and refuse cuts through a label or arrow.
 

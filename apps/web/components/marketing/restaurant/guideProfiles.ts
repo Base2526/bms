@@ -2,7 +2,8 @@ import { restaurantFlows, type RestaurantFlow, type RestaurantFlowCopy } from ".
 
 export type ShopType = "overview" | "restaurant" | "food_beverage" | "board_game_cafe";
 export type ServiceStyle = "dine_in" | "counter" | "online";
-export type GuideProfile = { shop: ShopType; service: ServiceStyle; multiBranch: boolean };
+/** `centralKitchen` only matters with several branches: one branch prepares goods for the others. */
+export type GuideProfile = { shop: ShopType; service: ServiceStyle; multiBranch: boolean; centralKitchen?: boolean };
 export type FlowFit = "recommended" | "related" | "restaurant_example";
 export const PRIMARY_GUIDE_SHOPS = ["overview", "restaurant", "food_beverage"] as const;
 export const ADDITIONAL_GUIDE_SHOPS = ["board_game_cafe"] as const;
@@ -15,6 +16,10 @@ export function guideFlows(profile: GuideProfile, includeExamples = false) {
 
 export function flowFit(id: number, profile: GuideProfile): FlowFit {
   if (profile.shop === "overview") return "related";
+  if (id === 12) {
+    if (profile.shop === "board_game_cafe" || !profile.multiBranch) return "restaurant_example";
+    return profile.centralKitchen ? "recommended" : "related";
+  }
   if (id === 2 && !profile.multiBranch) return "restaurant_example";
   if (profile.shop === "restaurant") {
     if (id === 6 && profile.service !== "dine_in") return "restaurant_example";
