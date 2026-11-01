@@ -156,47 +156,28 @@ export default function RestaurantGuide({ children }: { children?: React.ReactNo
     <header className={styles.hero}>
       <div className={styles.heroCopy}>
         <p className={styles.eyebrow}>BMS FOR RESTAURANTS &amp; CAFÉS</p>
-        <h1>{copy.title}</h1>
-        <p className={styles.intro}>{copy.description}</p>
+        <h1>{copy.titleLines.map((line, index) => <span key={line}>{line}{index === 0 ? " " : ""}</span>)}</h1>
+        <p className={styles.intro}>{copy.descriptionLines.map((line, index) => <span key={line}>{line}{index === 0 ? " " : ""}</span>)}</p>
         <div className={styles.actions}>
           <a className={styles.primaryButton} href="#restaurant-flows">{copy.explore} <span aria-hidden="true">↓</span></a>
-          <Link className={styles.button} href={learningHref}>{copy.learnGuide} <span aria-hidden="true">→</span></Link>
+          <Link className={styles.heroGuideLink} href={learningHref}>{copy.learnGuide} <span aria-hidden="true">→</span></Link>
         </div>
-        <nav className={styles.heroLinks} aria-label={lang === "th" ? "เครื่องมือเพิ่มเติม" : "More tools"}>
-          <Link href={localizedPublicPath("/cost-pricing", lang)}>{lang === "th" ? "คำนวณต้นทุนและราคาขาย" : "Costs and selling prices"} <span aria-hidden="true">→</span></Link>
-          <a href={BMS_LINE_OA_URL} target="_blank" rel="noopener noreferrer">{copy.contact} <span aria-hidden="true">↗</span></a>
-        </nav>
       </div>
 
       <div className={styles.heroVisual}>
+        <h2 className={styles.heroFlowTitle}>{copy.heroSignalTitle}</h2>
         <ol className={styles.journey} aria-label={lang === "th" ? "ลำดับการทำงานของร้าน" : "Restaurant workflow"}>
           {copy.journey.map((step, index) => <li key={step}>
             <span className={styles.journeyIcon}><JourneyIcon index={JOURNEY_ICONS[index]} /></span>
             <strong>{step}</strong>
           </li>)}
         </ol>
-        <div className={styles.visualBottom}>
-          <div className={styles.signalCard}>
-            <span className={styles.signalIcon}><TrustIcon index={0} /></span>
-            <span><strong>{copy.heroSignalTitle}</strong><small>{copy.heroSignalDescription}</small></span>
-          </div>
-          <div className={styles.operationsPreview} aria-hidden="true">
-            <div className={styles.previewTop}><span /><span /></div>
-            <div className={styles.previewBody}>
-              <div className={styles.previewNav}><i /><i /><i /></div>
-              <div className={styles.previewRows}><span /><span /><span /><span /></div>
-            </div>
-          </div>
+        <div className={styles.heroTrustLine}>
+          <span className={styles.signalIcon}><TrustIcon index={1} /></span>
+          <strong>{copy.heroSignalDescription}</strong>
         </div>
       </div>
     </header>
-
-    <section className={styles.trustStrip} aria-label={lang === "th" ? "จุดเด่นของ BMS" : "Why BMS"}>
-      {copy.trustPoints.map((point, index) => <div className={styles.trustItem} key={point.title}>
-        <span className={styles.trustIcon}><TrustIcon index={index} /></span>
-        <span><strong>{point.title}</strong><small>{point.description}</small></span>
-      </div>)}
-    </section>
 
     <section id="restaurant-flows" className={styles.explore} aria-labelledby="restaurant-flows-title">
       <div className={styles.sectionHead}><p className={styles.eyebrow}>HOW YOUR RESTAURANT WORKS</p>

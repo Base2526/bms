@@ -16,10 +16,9 @@ type ProfileCopy = {
 type Copy = {
   breadcrumb: string;
   print: string; printHint: string; nativeShare: string; shared: string; page: string; continued: string;
-  title: string; description: string; metaDescription: string; explore: string; contact: string; learnGuide: string;
+  title: string; titleLines: [string, string]; description: string; descriptionLines: [string, string]; metaDescription: string; explore: string; contact: string; learnGuide: string;
   dashboard: string; signup: string; journey: string[]; groups: string[]; groupLabel: string;
   heroSignalTitle: string; heroSignalDescription: string;
-  trustPoints: { title: string; description: string }[];
   explorerTitle: string; explorerDescription: string; diagram: string; diagramHint: string;
   zoom: string; fit: string; transcript: string; flowLabel: string; share: string; copied: string;
   copyFailed: string; fitTitle: string; fitDescription: string; fits: string[];
@@ -32,18 +31,15 @@ export const restaurantCopy: Bilingual<Copy> = {
   th: {
     breadcrumb: "ร้านอาหารและคาเฟ่",
     print: "พิมพ์ / PDF Flow นี้", printHint: "เลือกบันทึกเป็น PDF ในหน้าต่างพิมพ์ · A4 แนวนอน", nativeShare: "แชร์ Flow นี้", shared: "เปิดการแชร์แล้ว", page: "หน้า", continued: "ต่อจากเงื่อนไข",
-    title: "มองเห็นทุกขั้นตอน ตั้งแต่ครัวกลางจนถึงโต๊ะลูกค้า",
-    description: "จัดการครัวกลาง โต๊ะ ออร์เดอร์ ครัว วัตถุดิบ และต้นทุนใน BMS ให้ทุกสาขาทำงานต่อกันได้ ผู้ช่วย AI อธิบายที่มาของตัวเลข ส่วนการตัดสินใจเป็นของคน",
+    title: "เห็นทุกขั้นตอน จากครัวกลางถึงโต๊ะลูกค้า",
+    titleLines: ["เห็นทุกขั้นตอน", "จากครัวกลางถึงโต๊ะลูกค้า"],
+    description: "เชื่อมครัวกลาง สาขา ออร์เดอร์ ครัว สต็อก และต้นทุนไว้ในระบบเดียว โดย AI ช่วยอธิบายข้อมูลและคนเป็นผู้ตัดสินใจ",
+    descriptionLines: ["เชื่อมครัวกลาง สาขา ออร์เดอร์ ครัว สต็อก และต้นทุนไว้ในระบบเดียว", "AI ช่วยอธิบายข้อมูล คนเป็นผู้ตัดสินใจ"],
     metaDescription: "สำรวจ 12 Flow ร้านอาหารและคาเฟ่ใน BMS ผ่าน Sequence Diagram ตั้งแต่สูตรอาหาร ครัวกลาง จัดซื้อ หน้าร้าน ครัว รับเงิน จนถึงต้นทุนและหลายสาขา พร้อมจุดที่ผู้ช่วย AI ช่วยและขอบเขตการใช้งาน",
-    explore: "สำรวจการทำงานของร้าน", contact: "คุยกับ BMS ทาง LINE", learnGuide: "อ่านคู่มือที่ตรงกับร้านนี้", dashboard: "เข้าหลังบ้าน", signup: "เริ่มตั้งค่าร้าน",
+    explore: "ดู Flow การทำงาน", contact: "คุยกับ BMS ทาง LINE", learnGuide: "คู่มือร้านอาหาร", dashboard: "เข้าหลังบ้าน", signup: "เริ่มตั้งค่าร้าน",
     journey: ["ครัวกลาง", "เตรียมของ", "รับออร์เดอร์", "ส่งครัว", "รับเงิน", "ดูผลร้าน"],
-    heroSignalTitle: "ข้อมูลเดียวกันทั้งร้าน",
-    heroSignalDescription: "ทุกขั้นตอนเชื่อมต่อกัน ตรวจสอบที่มาของตัวเลขได้",
-    trustPoints: [
-      { title: "ข้อมูลเดียวกันทั้งร้าน", description: "ทุกแผนกทำงานบนข้อมูลชุดเดียวกัน" },
-      { title: "ตรวจสอบที่มาของตัวเลขได้", description: "ดูได้ว่าตัวเลขมาจากขั้นตอนไหน" },
-      { title: "AI อธิบาย คนตัดสิน", description: "ผู้ช่วยไม่อนุมัติ ไม่สั่งผลิต และไม่ย้ายสต็อกเอง" },
-    ],
+    heroSignalTitle: "Flow งานร้านในภาพเดียว",
+    heroSignalDescription: "ข้อมูลชุดเดียว · ตรวจสอบที่มาได้ · AI อธิบาย คนตัดสิน",
     groups: ["ตั้งเมนูและเตรียมวัตถุดิบ", "รับออร์เดอร์และดูแลลูกค้า", "เช็กยอดขาย ต้นทุน และเงิน", "กำหนดสิทธิ์และป้องกันข้อผิดพลาด"],
     groupLabel: "หมวดการทำงาน", explorerTitle: "เลือกงานที่อยากเข้าใจ", explorerDescription: "12 Flow ใน 4 หมวดงาน — ดูว่าใครทำอะไร ระบบและผู้ช่วย AI ช่วยตรงไหน และกรณียกเว้นต้องจัดการอย่างไร",
     diagram: "Sequence Diagram · ขั้นตอนและกรณียกเว้น", diagramHint: "อ่านจากบนลงล่าง เส้นประคือการตอบกลับ เลื่อนซ้าย–ขวาเพื่อดูทุกคอลัมน์ หรือเลือกอ่านเป็นข้อความด้านล่าง",
@@ -65,7 +61,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     ],
     ctaTitle: "ร้านของคุณเริ่มจาก Flow ไหน?", ctaDescription: "เล่ารูปแบบร้าน จำนวนสาขา และจุดที่อยากจัดการให้ดีขึ้นกับทีม BMS",
     scope: "ภาพอธิบายความสามารถของระบบ ไม่ใช่ข้อมูลร้านจริงหรือหลักฐานว่ารายการเกิดขึ้นแล้ว · ขอบเขตเนื้อหาตรวจเมื่อ 31 ต.ค. 2569",
-    fullscreen: { open: "เต็มจอ", close: "ปิดเต็มจอ", rotateHint: "หมุนจอเป็นแนวนอนเพื่อดูทุกคอลัมน์ หรือเลื่อนซ้าย–ขวา", dismiss: "เข้าใจแล้ว" },
+    fullscreen: { open: "ดู Flow เต็มจอ", close: "ปิดเต็มจอ", rotateHint: "หมุนจอเป็นแนวนอนเพื่อดูทุกคอลัมน์ หรือเลื่อนซ้าย–ขวา", dismiss: "เข้าใจแล้ว" },
     labels: { person: "ผู้ดำเนินงาน", system: "ระบบ", assistant: "อ่านอย่างเดียว", alt: "กรณี", opt: "เมื่อมีเงื่อนไข", loop: "ทำซ้ำ", else: "อีกกรณี" },
     profile: {
       heading: "เลือกรูปแบบร้านของคุณ", description: "เลือกเพื่อดูตัวอย่างและลำดับ Flow ที่ใกล้กับงานของร้าน การเลือกนี้ไม่แก้การตั้งค่าร้านจริง",
@@ -110,18 +106,15 @@ export const restaurantCopy: Bilingual<Copy> = {
   en: {
     breadcrumb: "Restaurants and cafes",
     print: "Print / PDF this flow", printHint: "Choose Save as PDF in the print dialog · A4 landscape", nativeShare: "Share this flow", shared: "Shared", page: "Page", continued: "Continuing condition",
-    title: "See every step, from the central kitchen to the customer's table",
-    description: "Connect your central kitchen, tables, orders, kitchen work, ingredients and costs in BMS so every branch works together. The AI assistant explains where the numbers come from; people make the decisions.",
+    title: "See every step from the central kitchen to the customer's table",
+    titleLines: ["See every step", "from central kitchen to table"],
+    description: "Connect the central kitchen, branches, orders, kitchen, stock and costs in one system. AI explains the data; people make the decisions.",
+    descriptionLines: ["Connect the central kitchen, branches, orders, kitchen, stock and costs in one system.", "AI explains the data; people make the decisions."],
     metaDescription: "Explore 12 BMS restaurant and cafe workflows with sequence diagrams: recipes, central kitchen, purchasing, service, kitchen, payments, costs and multiple branches, with where the AI assistant helps and clear operating limits.",
-    explore: "Explore the workflows", contact: "Talk to BMS on LINE", learnGuide: "Read the guide for this format", dashboard: "Open dashboard", signup: "Set up your store",
+    explore: "View the workflow", contact: "Talk to BMS on LINE", learnGuide: "Restaurant guide", dashboard: "Open dashboard", signup: "Set up your store",
     journey: ["Central kitchen", "Prepare stock", "Take orders", "Send to kitchen", "Take payment", "Review results"],
-    heroSignalTitle: "One source of truth for the whole restaurant",
-    heroSignalDescription: "Every step stays connected, so you can trace where each number came from.",
-    trustPoints: [
-      { title: "One source of truth", description: "Every team works from the same operational data." },
-      { title: "Trace every number", description: "See which step produced each result." },
-      { title: "AI explains, people decide", description: "The assistant never approves, produces or moves stock on its own." },
-    ],
+    heroSignalTitle: "One restaurant workflow",
+    heroSignalDescription: "One data set · Traceable sources · AI explains, people decide",
     groups: ["Set up menus and stock", "Take orders and serve customers", "Review sales, costs and cash", "Control access and prevent mistakes"],
     groupLabel: "Workflow categories", explorerTitle: "Choose the work you want to understand", explorerDescription: "12 flows in 4 categories — see who does what, where BMS and the AI assistant help, and how exceptions are handled.",
     diagram: "Sequence diagram · steps and exceptions", diagramHint: "Read from top to bottom. Dashed arrows are replies. Scroll horizontally to see all participants, or use the text transcript below.",
@@ -143,7 +136,7 @@ export const restaurantCopy: Bilingual<Copy> = {
     ],
     ctaTitle: "Which workflow matters to your restaurant?", ctaDescription: "Tell the BMS team about your store, branch count and the work you want to improve.",
     scope: "These diagrams explain system capabilities. They are not live store data or proof of completed transactions. Content reviewed 31 October 2026.",
-    fullscreen: { open: "Full screen", close: "Exit full screen", rotateHint: "Rotate to landscape to see every column, or scroll sideways.", dismiss: "Got it" },
+    fullscreen: { open: "View flow full screen", close: "Exit full screen", rotateHint: "Rotate to landscape to see every column, or scroll sideways.", dismiss: "Got it" },
     labels: { person: "Person", system: "System", assistant: "Read-only", alt: "Case", opt: "When applicable", loop: "Repeat", else: "Alternative" },
     profile: {
       heading: "Choose how your shop works", description: "Select an example and recommended flows. This does not change your store configuration.",

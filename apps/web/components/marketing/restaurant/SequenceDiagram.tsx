@@ -137,8 +137,6 @@ export default function SequenceDiagram({ source, title, lang, labels, zoomLabel
     </div>}
     {expanded && !rotateDismissed && <p className={styles.rotateHint}>{fullscreenCopy.rotateHint}
       <button type="button" onClick={() => setRotateDismissed(true)}>{fullscreenCopy.dismiss}</button></p>}
-    <PlaybackPlayer sequence={sequence} lang={lang} copy={playerCopy} introduction={`${printFlow.title}. ${printFlow.description}`} conclusion={printFlow.note}
-      downloadName={`bms-restaurant-flow-${String(printFlow.id).padStart(2, "0")}-${lang}.mp3`} onActive={setActiveEventIndex} />
     <div className={styles.diagramTools}>
       <p id={`${id}-hint`}>{hint}</p>
       <div className={styles.diagramActions}>
@@ -150,6 +148,8 @@ export default function SequenceDiagram({ source, title, lang, labels, zoomLabel
         </button>}
       </div>
     </div>
+    <PlaybackPlayer sequence={sequence} lang={lang} copy={playerCopy} introduction={`${printFlow.title}. ${printFlow.description}`} conclusion={printFlow.note}
+      downloadName={`bms-restaurant-flow-${String(printFlow.id).padStart(2, "0")}-${lang}.mp3`} onActive={setActiveEventIndex} />
     <div ref={holder} className={styles.diagramScroll} tabIndex={0} role="region" aria-label={title} aria-describedby={`${id}-hint`}>
       <SequenceSvg layout={layout} title={title} width={width} activeEventIndex={activeEventIndex} />
     </div>
